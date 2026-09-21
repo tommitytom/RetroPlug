@@ -10,44 +10,21 @@
 // rom.setKit (which dual-writes the resident metadata mirror). Applying reuses the pure-TS patcher (src/risa/rom).
 import type { RoleRegistry, ConstructCaps } from "./systemRoles";
 import type { ConstructSpec } from "./backend";
-import type { RisaTheme } from "./risa/rom";
 import { z } from "./configSchema";
-import { RisaRom, encodeThemeRecord, encodeThemeName, normalizeTheme, KIT_BANK_SIZE, isBankPopulated } from "./risa/rom";
+import { RisaRom } from "./risa/rom";
+import { applyRitOverride, ritOverrideSchema, CHR_BANK_SIZE, type RitAssetOverride } from "./ritAssetsRole";
 
 export const RISA_ASSETS_ROLE = "risa-assets";
-export const RISA_CHR_BANK_SIZE = 0x2000; // one font slot = one 8 KB CHR bank
+/** @deprecated Use CHR_BANK_SIZE from ./ritAssetsRole - kept because it is a public export. */
+export const RISA_CHR_BANK_SIZE = CHR_BANK_SIZE;
 
 /** One asset override for `slot`. THEMES are palette indices, stored INLINE as a readable `theme` object
  *  (name + 7 "0xNN" role indices — no file, no base64). FONTS and KITS are binary, so they LINK their file
  *  on disk by `path` (a `.chr` bank / a pre-built 8 KB `.rkit` DMC bank, read at construct). A kit override
  *  with `erase: true` empties the slot instead (a "delete this kit" override). `name` is a display label. */
-export interface RisaAssetOverride {
-  type: "theme" | "font" | "kit";
-  slot: number;
-  name?: string;
-  theme?: RisaTheme; // theme — stored inline
-  path?: string; // font / kit — the .chr / .rkit bank file on disk
-  erase?: boolean; // kit — empty the slot instead of linking a bank
-}
+export type RisaAssetOverride = RitAssetOverride;
 
-const themeSchema = z.object({
-  name: z.string(),
-  bg: z.string(),
-  normal: z.string(),
-  shaded: z.string(),
-  alternate: z.string(),
-  status: z.string(),
-  cursor: z.string(),
-  selection: z.string(),
-});
-const overrideSchema = z.object({
-  type: z.enum(["theme", "font", "kit"]),
-  slot: z.number().int().nonnegative(),
-  name: z.string().optional(),
-  theme: themeSchema.optional(),
-  path: z.string().optional(),
-  erase: z.boolean().optional(),
-});
+const overrideSchema = ritOverrideSchema;
 
 // The role config: just the override list (empty by default — a risa cart with no replacements).
 const risaAssetsSchema = z.object({
@@ -58,36 +35,6 @@ const risaAssetsSchema = z.object({
 export function readOverrides(config: Record<string, unknown> | undefined): RisaAssetOverride[] {
   const raw = config?.overrides;
   return Array.isArray(raw) ? (raw as RisaAssetOverride[]) : [];
-}
-
-// Apply one override onto an open RisaRom. Themes apply from their inline object; fonts read their linked
-// `.chr`. Isolated + throwing so the caller can try/catch per entry (a moved file / bad asset just skips).
-function applyOne(rom: RisaRom, ov: RisaAssetOverride, caps: ConstructCaps): void {
-  if (ov.type === "theme") {
-    if (!ov.theme) throw new Error(`theme override slot ${ov.slot}: no theme`);
-    const theme = normalizeTheme(ov.theme);
-    rom.setTheme(ov.slot, encodeThemeRecord(theme), encodeThemeName(theme));
-    return;
-  }
-  if (ov.type === "kit") {
-    if (ov.erase) {
-      rom.clearKitBank(ov.slot); // "delete this kit" override
-      return;
-    }
-    if (!ov.path) throw new Error(`kit override slot ${ov.slot}: no path`);
-    const bank = caps.readFile(ov.path);
-    if (!bank) throw new Error(`kit override slot ${ov.slot}: cannot read ${ov.path}`);
-    if (bank.length !== KIT_BANK_SIZE) throw new Error(`kit override slot ${ov.slot}: .rkit must be exactly 8 KB`);
-    if (!isBankPopulated(bank)) throw new Error(`kit override slot ${ov.slot}: not a populated kit bank`);
-    rom.setKit(ov.slot, bank); // dual-writes the resident metadata mirror
-    return;
-  }
-  // font
-  if (!ov.path) throw new Error(`font override slot ${ov.slot}: no path`);
-  const bytes = caps.readFile(ov.path);
-  if (!bytes) throw new Error(`font override slot ${ov.slot}: cannot read ${ov.path}`);
-  if (bytes.length !== RISA_CHR_BANK_SIZE) throw new Error(`font override slot ${ov.slot}: .chr must be exactly 8 KB`);
-  rom.setChrFontSlot(ov.slot, bytes);
 }
 
 /** Fold a list of overrides onto base ROM bytes, returning the patched image (per-override try/catch so a
@@ -104,11 +51,15 @@ export function applyOverridesToRom(
   if (!rom.isRisa) return baseBytes;
   for (const ov of overrides) {
     try {
-      applyOne(rom, ov, caps);
+      applyRitOverride(rom, ov, caps);
     } catch (e) {
       const message = (e as Error).message;
-      console.log(`[risa-assets] skipped ${ov.type} slot ${ov.slot}: ${message}`);
-      onSkip?.(ov, message);
+      // Logged only when nobody is listening. A caller that supplies onSkip owns the reporting, and a
+      // library that writes to the console regardless leaves it no way to stay quiet. BlipToaster's copy
+      // of this loop already worked this way; the other two did not, so a failed BlipToaster bake was
+      // silent on the console while an identical risa one was not.
+      if (onSkip) onSkip(ov, message);
+      else console.log(`[risa-assets] skipped ${ov.type} slot ${ov.slot}: ${message}`);
     }
   }
   return rom.bytes();

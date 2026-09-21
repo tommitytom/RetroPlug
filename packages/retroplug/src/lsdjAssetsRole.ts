@@ -97,8 +97,12 @@ export function applyOverridesToRom(
       applyOne(rom, ov, caps);
     } catch (e) {
       const message = (e as Error).message;
-      console.log(`[lsdj-assets] skipped ${ov.type} slot ${ov.slot}: ${message}`);
-      onSkip?.(ov, message);
+      // Logged only when nobody is listening. A caller that supplies onSkip owns the reporting, and a
+      // library that writes to the console regardless leaves it no way to stay quiet. BlipToaster's copy
+      // of this loop already worked this way; the other two did not, so a failed BlipToaster bake was
+      // silent on the console while an identical risa one was not.
+      if (onSkip) onSkip(ov, message);
+      else console.log(`[lsdj-assets] skipped ${ov.type} slot ${ov.slot}: ${message}`);
     }
   }
   return rom.bytes();

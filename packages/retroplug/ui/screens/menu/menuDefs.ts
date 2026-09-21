@@ -1112,9 +1112,14 @@ function bakeRom(
   const base = sys.romPath ? ctx.stores.backend.readFile(sys.romPath) : null;
   if (!base) return null;
   const skipped: string[] = [];
-  const bytes = spec.catalog.applyRoleConfig(base, roleConfigFor(sys, spec.catalog.assetRole), ctx.stores.backend, (ov) =>
-    skipped.push(`${ov.type} ${ov.slot}`),
-  );
+  const bytes = spec.catalog.applyRoleConfig(base, roleConfigFor(sys, spec.catalog.assetRole), ctx.stores.backend, (ov, message) => {
+    skipped.push(`${ov.type} ${ov.slot}`);
+    // The row label is what the overlay shows; the REASON ("cannot read /kits/moved.rkit") has nowhere to
+    // go in one line of red text, and it is the half that says what to do about it. The role modules used
+    // to log it themselves, from library code, whether or not anyone was listening - so it is logged here
+    // instead, by the caller that asked to be told.
+    console.log(`[${spec.id}-assets] skipped ${ov.type} slot ${ov.slot}: ${message}`);
+  });
   return { bytes, skipped, recognised: bytes !== base };
 }
 

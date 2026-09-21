@@ -20,53 +20,21 @@ import type { RoleRegistry, ConstructCaps } from "./systemRoles";
 import type { ConstructSpec } from "./backend";
 import { z } from "./configSchema";
 import {
-  KIT_BANK_SIZE,
-  CHR_BANK_SIZE,
-  isBankPopulated,
-  encodeThemeRecord,
-  encodeThemeName,
-  normalizeTheme,
-  type RisaTheme,
-} from "./risa/rom";
-import {
   BlipToasterRom,
   SETTINGS_THEME_COUNT,
   SETTINGS_FONT_COUNT,
   type BlipToasterSettingsPatch,
 } from "./bliptoaster/rom";
+import { applyRitOverride, ritOverrideSchema, type RitAssetOverride } from "./ritAssetsRole";
 
 export const BLIPTOASTER_ASSETS_ROLE = "bliptoaster-assets";
 
 /** One asset override for `slot`. KITS and FONTS are binary, so they LINK their file on disk by `path` (a
  *  pre-built 8 KB `.rkit` DMC bank / an 8 KB `.chr` CHR bank, read at construct). A kit override with
  *  `erase: true` empties the slot instead of linking a bank. `name` is a display label. */
-export interface BlipToasterAssetOverride {
-  type: "theme" | "font" | "kit";
-  slot: number;
-  name?: string;
-  theme?: RisaTheme; // theme — stored inline (7 palette-index roles, no file)
-  path?: string; // font / kit — the .chr / .rkit bank file on disk
-  erase?: boolean; // kit — empty the slot instead of linking a bank
-}
+export type BlipToasterAssetOverride = RitAssetOverride;
 
-const themeSchema = z.object({
-  name: z.string(),
-  bg: z.string(),
-  normal: z.string(),
-  shaded: z.string(),
-  alternate: z.string(),
-  status: z.string(),
-  cursor: z.string(),
-  selection: z.string(),
-});
-const overrideSchema = z.object({
-  type: z.enum(["theme", "font", "kit"]),
-  slot: z.number().int().nonnegative(),
-  name: z.string().optional(),
-  theme: themeSchema.optional(),
-  path: z.string().optional(),
-  erase: z.boolean().optional(),
-});
+const overrideSchema = ritOverrideSchema;
 
 // Every settings field is OPTIONAL, and that is the semantic: an absent field means "leave the byte the .nes
 // baked", so a project pins only what the user actually changed. Ranges match the ROM's own (settings.ts).
@@ -98,36 +66,6 @@ export function readSettings(config: Record<string, unknown> | undefined): BlipT
   return raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as BlipToasterSettingsPatch) : {};
 }
 
-// Apply one override onto an open BlipToasterRom. Isolated + throwing so the caller can try/catch per entry
-// (a moved file / bad asset just skips).
-function applyOne(rom: BlipToasterRom, ov: BlipToasterAssetOverride, caps: ConstructCaps): void {
-  if (ov.type === "theme") {
-    if (!ov.theme) throw new Error(`theme override slot ${ov.slot}: no theme`);
-    const theme = normalizeTheme(ov.theme);
-    rom.setTheme(ov.slot, encodeThemeRecord(theme), encodeThemeName(theme));
-    return;
-  }
-  if (ov.type === "kit") {
-    if (ov.erase) {
-      rom.clearKitBank(ov.slot); // "delete this kit" override
-      return;
-    }
-    if (!ov.path) throw new Error(`kit override slot ${ov.slot}: no path`);
-    const bank = caps.readFile(ov.path);
-    if (!bank) throw new Error(`kit override slot ${ov.slot}: cannot read ${ov.path}`);
-    if (bank.length !== KIT_BANK_SIZE) throw new Error(`kit override slot ${ov.slot}: .rkit must be exactly 8 KB`);
-    if (!isBankPopulated(bank)) throw new Error(`kit override slot ${ov.slot}: not a populated kit bank`);
-    rom.setKit(ov.slot, bank);
-    return;
-  }
-  // font
-  if (!ov.path) throw new Error(`font override slot ${ov.slot}: no path`);
-  const bytes = caps.readFile(ov.path);
-  if (!bytes) throw new Error(`font override slot ${ov.slot}: cannot read ${ov.path}`);
-  if (bytes.length !== CHR_BANK_SIZE) throw new Error(`font override slot ${ov.slot}: .chr must be exactly 8 KB`);
-  rom.setChrFontSlot(ov.slot, bytes);
-}
-
 /** Fold a list of overrides onto base ROM bytes, returning the patched image (per-override try/catch so a
  *  bad entry just skips). Returns the base unchanged if it isn't a BlipToaster image. */
 export function applyOverridesToRom(
@@ -153,9 +91,13 @@ export function applyConfigToRom(
   if (!rom.isBlipToaster) return baseBytes;
   for (const ov of readOverrides(config)) {
     try {
-      applyOne(rom, ov, caps);
+      applyRitOverride(rom, ov, caps);
     } catch (e) {
       const msg = (e as Error).message;
+      // Logged only when nobody is listening. A caller that supplies onSkip owns the reporting, and a
+      // library that writes to the console regardless leaves it no way to stay quiet. BlipToaster's copy
+      // of this loop already worked this way; the other two did not, so a failed BlipToaster bake was
+      // silent on the console while an identical risa one was not.
       if (onSkip) onSkip(ov, msg);
       else console.log(`[bliptoaster-assets] skipped ${ov.type} slot ${ov.slot}: ${msg}`);
     }
