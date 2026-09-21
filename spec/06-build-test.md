@@ -144,7 +144,7 @@ Root [package.json](../package.json). Each builds its CMake target(s) first, the
 | `test:cli-ts` | `retroplug-cli` | Runs a directory of `.ts` tests through the CLI's own embedded stripper + harness — the consumer-kit path ([09-cli-debugging.md](09-cli-debugging.md)). In CI. |
 | `validate` | `-clap` + `-vst3` | `clap-validator` + `pluginval` against the built binaries via the shared [validate-plugins.sh](../tools/validate-plugins.sh). Fails if a validator is missing rather than skipping it. |
 | `reaper:mgb-smoke-author` | `-vst3` | Authors + bakes the `.rplg` fixture for the Reaper render. |
-| `reaper:mgb-smoke` | `-vst3` | Renders [mgb_smoke.rpp](../examples/reaper/mgb_smoke.rpp) through real Reaper — end-to-end DAW proof. |
+| `reaper:mgb-smoke` | `-vst3` | Renders `examples/reaper/mgb_smoke.rpp` through real Reaper — end-to-end DAW proof. The `.rpp` fixtures are gitignored and derived: every `reaper:*` run re-authors its own before rendering, so a fresh clone needs no `examples/`. |
 | `reaper:all` | `-vst3` | Builds + authors once, then runs the **whole** Reaper leg — **15 checks: 9 audio renders + 6 editor/host checks** — concurrently, with a PASS/FAIL summary ([run-reaper-suite.sh](../tools/run-reaper-suite.sh)). |
 
 `pnpm test` runs the mock-backend TS suite; the native, UI, plugin, and Reaper tiers are invoked

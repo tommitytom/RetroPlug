@@ -380,7 +380,7 @@ normal DAW behaviour).
   `/opt/reaper-mcp-server`; the projects dir defaults to
   `../resources/reaper/projects/` (override with `RETROPLUG_REAPER_DIR`).
 - **VST3 plugin host check** — `pnpm reaper:mgb-smoke` renders
-  [examples/reaper/mgb_smoke.rpp](../examples/reaper/mgb_smoke.rpp) headlessly
+  `examples/reaper/mgb_smoke.rpp` (derived; `reaper:mgb-smoke-author` writes it) headlessly
   through real Reaper 7.x: instantiates `retroplug.vst3`, plays a C-major chord
   through mGB, writes `build/reaper-mgb-smoke.wav`. First end-to-end proof the
   plugin works inside a DAW (not just `retroplug-cli`, which bypasses DPF).
@@ -393,7 +393,7 @@ normal DAW behaviour).
   block** (`REAPER_JACK_PERIOD=8192` → the plugin's `run(frames,…)` sees 8192-frame
   blocks; the JACK dummy period *is* Reaper's offline render block size), so an offset
   within a block is tens of ms and resolvable in the audio. The fixture
-  ([examples/reaper/mgb_midi_timing.rpp](../examples/reaper/mgb_midi_timing.rpp), authored by
+  (`examples/reaper/mgb_midi_timing.rpp`, authored by
   [tools/reaper-mgb-timing-author.lua](../tools/reaper-mgb-timing-author.lua)) drops **two mGB
   notes into one render block** (near its start + end, ~136 ms apart, placed after the DMG
   boot so the boot burst can't contaminate onsets), plus a ReaSynth click hard-R coincident
@@ -417,7 +417,7 @@ normal DAW behaviour).
   guarded deterministically by `NesN8MidiTiming.test.cpp` (no emulator). Not in CI. Regenerate with
   `pnpm reaper:n8-midi-timing-author`.
 - **Arduinoboy startup-sync latency** — `pnpm reaper:lsdj-arduinoboy-metro`
-  renders [examples/reaper/lsdj_arduinoboy_metro.rpp](../examples/reaper/lsdj_arduinoboy_metro.rpp)
+  renders `examples/reaper/lsdj_arduinoboy_metro.rpp`
   (LSDj hard-L on `MidiSyncArduinoboy`, a ReaSynth click hard-R, one note/quarter
   at 120 BPM), then [tools/reaper-timing-analyze.py](../tools/reaper-timing-analyze.py)
   reports the offset between host transport start and LSDj's first audible sample.
