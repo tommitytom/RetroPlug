@@ -376,9 +376,6 @@ void MesenSmsSystem::onSampleRateChanged(double sampleRate) {
     }
 }
 
-void MesenSmsSystem::onReset() {
-    if (emu_) emu_->Reset();
-}
 
 void MesenSmsSystem::setGainDb(float dB) {
     config_.gainDb = dB;
@@ -687,16 +684,3 @@ bool MesenSmsSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
     return emu_->GetSaveStateManager()->LoadState(ss);
 }
 
-std::unique_ptr<SystemBase> MesenSmsSystem::clone(SystemId newId, double sampleRate) const {
-    MesenSmsConfig cfg = config_;
-    cfg.savSuffix = 0;   // caller (duplicateSystem) assigns a non-colliding suffix
-    cfg.savPath.clear(); // and its own sav file, not the source's paired one
-    auto sramBytes = saveSramBytes();
-    if (!sramBytes.empty()) cfg.sram = std::move(sramBytes);
-    auto stateBytes = saveStateBytes();
-    if (!stateBytes.empty()) cfg.savestate = std::move(stateBytes);
-    std::vector<std::uint8_t> romCopy = rom_;
-    auto out = std::make_unique<MesenSmsSystem>(newId, std::move(cfg), std::move(romCopy));
-    out->onActivate(sampleRate);
-    return out;
-}

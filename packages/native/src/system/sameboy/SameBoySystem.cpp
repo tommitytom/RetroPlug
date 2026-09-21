@@ -348,13 +348,6 @@ void SameBoySystem::serialBroadcastBit() const {
     }
 }
 
-void SameBoySystem::onReset() {
-    if (gb_) {
-        GB_reset(gb_);
-        audioFrameCount_ = 0;
-    }
-    pendingButtons_.clear();
-}
 
 void SameBoySystem::restartEmulator() {
     if (!gb_) return;
@@ -398,18 +391,6 @@ std::vector<std::uint8_t> SameBoySystem::saveSramBytes() const {
     return out;
 }
 
-bool SameBoySystem::loadSramBytes(const std::vector<std::uint8_t>& bytes) {
-    if (!gb_ || bytes.empty()) return false;
-    const int sramSize = GB_save_battery_size(gb_);
-    if (sramSize <= 0) return false;
-    // Pad/truncate to the cartridge's battery size, matching the load path
-    // in onActivate (GB_load_battery_from_buffer wants the exact size).
-    std::vector<std::uint8_t> sram = bytes;
-    sram.resize(static_cast<std::size_t>(sramSize), 0);
-    GB_load_battery_from_buffer(gb_, sram.data(), sram.size());
-    config_.sram = std::move(sram);
-    return true;
-}
 
 std::vector<std::uint8_t> SameBoySystem::saveStateBytes() const {
     if (!gb_) return {};
@@ -486,44 +467,7 @@ SystemBase::StateRegionTable SameBoySystem::stateSnapshotRegions() const {
     return t;
 }
 
-std::unique_ptr<SystemBase> SameBoySystem::clone(SystemId newId, double sampleRate) const {
-    SameBoyConfig cfg = config_;
-    cfg.linkGroupId   = 0;
-    cfg.savSuffix     = 0;   // caller (duplicateSystem) assigns a non-colliding suffix
-    cfg.savPath.clear();     // and its own sav file, not the source's paired one
-    auto sramBytes  = saveSramBytes();
-    if (!sramBytes.empty())  cfg.sram      = std::move(sramBytes);
-    auto stateBytes = saveStateBytes();
-    if (!stateBytes.empty()) cfg.savestate = std::move(stateBytes);
-    std::vector<std::uint8_t> romCopy = rom_;
-    auto out = std::make_unique<SameBoySystem>(newId, std::move(cfg), std::move(romCopy));
-    out->onActivate(sampleRate);
-    return out;
-}
 
-std::unique_ptr<SystemBase> SameBoySystem::cloneFromState(
-        SystemId newId, double sampleRate,
-        const std::vector<std::uint8_t>& savestate) const {
-    if (savestate.empty()) return nullptr;
-    SameBoyConfig cfg = config_;       // non-state config copy (the deferred config-race)
-    cfg.linkGroupId   = 0;
-    cfg.savSuffix     = 0;   // caller (duplicateSystem) assigns a non-colliding suffix
-    cfg.savPath.clear();     // and its own sav file, not the source's paired one
-    cfg.savestate     = savestate;
-    // Slice SRAM out of the savestate (same offsets the snapshot uses) so the
-    // clone's battery RAM round-trips, matching clone().
-    const auto regions = stateSnapshotRegions();
-    const auto& sram   = regions[static_cast<std::size_t>(rp::MemoryType::Sram)];
-    if (sram.size > 0 &&
-        static_cast<std::size_t>(sram.offset) + sram.size <= savestate.size()) {
-        cfg.sram.assign(savestate.begin() + sram.offset,
-                        savestate.begin() + sram.offset + sram.size);
-    }
-    std::vector<std::uint8_t> romCopy = rom_;
-    auto out = std::make_unique<SameBoySystem>(newId, std::move(cfg), std::move(romCopy));
-    out->onActivate(sampleRate);
-    return out;
-}
 
 void SameBoySystem::captureSerialOutBit(bool bit) {
     // MSB-first to match nextSerialInBit / standard GB serial shift order.

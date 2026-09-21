@@ -35,7 +35,6 @@ public:
     void onActivate(double sampleRate) override;
     void onDeactivate() override;
     void onSampleRateChanged(double sampleRate) override;
-    void onReset() override;
 
     // SystemBase per-block triad (see base for the contract); the runner
     // (runUnit) drives these directly. NES is a degenerate 1-member unit:
@@ -108,7 +107,6 @@ public:
     bool                      loadStateBytes(const std::vector<std::uint8_t>& bytes) override;
     std::size_t               stateSnapshotSize() const override;
     bool                      captureStateSnapshot(std::vector<std::uint8_t>& dst) override;
-    std::unique_ptr<SystemBase> clone(SystemId newId, double sampleRate) const override;
 
     void setGainDb(float dB) override;
 

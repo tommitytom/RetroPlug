@@ -49,7 +49,6 @@ public:
     virtual void onActivate(double sampleRate) = 0;
     virtual void onDeactivate() {}
     virtual void onSampleRateChanged(double sampleRate) = 0;
-    virtual void onReset() {}
 
     // -- Per-block audio lockstep -------------------------------------------
     //
@@ -190,7 +189,6 @@ public:
     // Cartridge battery RAM. Empty vector when the cartridge has no battery
     // or the backend doesn't yet support snapshotting.
     virtual std::vector<std::uint8_t> saveSramBytes() const { return {}; }
-    virtual bool loadSramBytes(const std::vector<std::uint8_t>& /*bytes*/) { return false; }
     virtual void                       clearSram() {}
 
     // Savestate, byte-for-byte. False on unsupported backends or malformed
@@ -198,24 +196,6 @@ public:
     virtual std::vector<std::uint8_t> saveStateBytes() const { return {}; }
     virtual bool loadStateBytes(const std::vector<std::uint8_t>& /*bytes*/) { return false; }
 
-    // Deep clone for Duplicate. Caller supplies the new SystemId and the
-    // current sample rate; the returned system has already been onActivate'd.
-    // Returns nullptr if the backend can't clone (rare; shouldn't happen on
-    // a constructed instance).
-    virtual std::unique_ptr<SystemBase> clone(SystemId /*newId*/,
-                                              double  /*sampleRate*/) const {
-        return nullptr;
-    }
-
-    // Like clone(), but seeds the copy from a pre-captured savestate (e.g. one
-    // read from the DSP-published state snapshot) instead of the live
-    // emulator. Lets Duplicate stay race-free. SRAM is taken from within the
-    // savestate where the backend can locate it. Default: unsupported.
-    virtual std::unique_ptr<SystemBase> cloneFromState(SystemId /*newId*/,
-                                                       double /*sampleRate*/,
-                                                       const std::vector<std::uint8_t>& /*savestate*/) const {
-        return nullptr;
-    }
 
     // -- Memory access -------------------------------------------------------
 
