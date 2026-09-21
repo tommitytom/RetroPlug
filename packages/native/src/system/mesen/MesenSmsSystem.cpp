@@ -311,16 +311,7 @@ void MesenSmsSystem::onActivate(double sampleRate) {
 
     // Restore persisted battery RAM / savestate. Write directly into the
     // SmsCartRam region rather than going through Mesen's BatteryManager.
-    if (!config_.sram.empty()) {
-        auto accessor = getMemory(rp::MemoryType::Sram, rp::AccessType::ReadWrite);
-        if (accessor.valid() && accessor.size() > 0) {
-            const std::size_t n = std::min(config_.sram.size(), accessor.size());
-            if (n > 0) std::memcpy(accessor.data(), config_.sram.data(), n);
-        }
-    }
-    if (!config_.savestate.empty()) {
-        loadStateBytes(config_.savestate);
-    }
+    seedSramAndState(config_.sram, config_.savestate);
 
     activated_ = true;
 }

@@ -11,16 +11,9 @@
 #include "system/mesen/MesenGbaSystem.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
 #include "system/mesen/MesenSmsSystem.hpp"
+#include "util/SlurpFile.hpp"
 
 namespace {
-
-// Whole file into a byte vector (empty if unreadable).
-std::vector<std::uint8_t> slurpAll(const std::string& path) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) return {};
-    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(in),
-                                     std::istreambuf_iterator<char>());
-}
 
 // Shared Mesen boot tail (mirrors SameBoyBackend::buildSameBoy): activate the core, reject the build
 // if Mesen's LoadRom failed (a corrupt ROM that passed the magic gate) rather than adopting a dead

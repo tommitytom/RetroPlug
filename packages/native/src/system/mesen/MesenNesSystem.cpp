@@ -241,16 +241,7 @@ void MesenNesSystem::onActivate(double sampleRate) {
     // have already called LoadBattery (no provider set → from disk under our
     // tmp home folder, almost always empty). Override by writing directly
     // into the live NesSaveRam region.
-    if (!config_.sram.empty()) {
-        auto accessor = getMemory(rp::MemoryType::Sram, rp::AccessType::ReadWrite);
-        if (accessor.valid() && accessor.size() > 0) {
-            const std::size_t n = std::min(config_.sram.size(), accessor.size());
-            if (n > 0) std::memcpy(accessor.data(), config_.sram.data(), n);
-        }
-    }
-    if (!config_.savestate.empty()) {
-        loadStateBytes(config_.savestate);
-    }
+    seedSramAndState(config_.sram, config_.savestate);
 
     activated_ = true;
 }

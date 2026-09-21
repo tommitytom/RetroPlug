@@ -22,6 +22,7 @@
 #include "kit/KitCompiler.hpp"       // rp::kit::KitCompiler (generic, compileKit) — heavy, so only in this TU
 #include "lsdj/LsdjKitCodec.hpp"     // rp::lsdj::LsdjKitCodec (the LSDJ nibble/16KB-bank codec)
 #include "risa/RisaDmcCodec.hpp"     // rp::risa::RisaDmcCodec (the risa NES-DPCM/8KB-bank codec)
+#include "util/SlurpFile.hpp"
 
 namespace {
 
@@ -35,13 +36,6 @@ rfl::Bytestring toBytestring(const std::vector<std::uint8_t>& v) {
 std::vector<std::uint8_t> toBytes(const rfl::Bytestring& b) {
     const auto* p = reinterpret_cast<const std::uint8_t*>(b.data());
     return std::vector<std::uint8_t>(p, p + b.size());
-}
-
-// Whole file into a byte vector (empty if unreadable). Used for a seed .sav/state + the reload ROM.
-std::vector<std::uint8_t> slurpAll(const std::string& path) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) return {};
-    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 }
 
 // The default core for a platform — the fallback when the wire spec omits `core`. TS always sends

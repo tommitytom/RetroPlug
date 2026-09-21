@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <string>
@@ -357,6 +358,21 @@ public:
     // SameBoy model switch can overflow it, mirroring the headroom this triple was allocated with
     // (stateSnapshotSize() is the backend's ceiling).
     std::size_t stateSnapshotCapacity() const;
+
+    /** Seed a freshly-built core from its construct spec: cartridge battery first, then a savestate over
+     *  the top if one was supplied. Both Mesen and SameBoy backends end onActivate with exactly this, so
+     *  it lives here rather than three times over. A savestate LAST is deliberate - it carries its own
+     *  SRAM, so restoring it after the seed is what makes "boot from a savestate" mean what it says. */
+    void seedSramAndState(const std::vector<std::uint8_t>& sram, const std::vector<std::uint8_t>& state) {
+        if (!sram.empty()) {
+            auto accessor = getMemory(rp::MemoryType::Sram, rp::AccessType::ReadWrite);
+            if (accessor.valid() && accessor.size() > 0) {
+                const std::size_t n = std::min(sram.size(), accessor.size());
+                if (n > 0) std::memcpy(accessor.data(), sram.data(), n);
+            }
+        }
+        if (!state.empty()) loadStateBytes(state);
+    }
 
 protected:
     std::vector<::MidiEvent> midiOut_;
