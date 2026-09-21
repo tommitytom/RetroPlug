@@ -113,6 +113,26 @@ void configureNes(Emulator& emu, std::uint32_t region, bool removeSpriteLimit,
 
 constexpr double kNesCpuHz = 1789773.0;
 
+/** A backstop for the audio-thread step loop: the most instructions it may execute for one block.
+ *
+ *  DERIVED rather than pinned, which matters. SMS's equivalent is a flat 80000 with "~10x headroom" in
+ *  its comment, and that headroom is quoted for ONE block size - at 2048 frames, an ordinary DAW buffer,
+ *  the same constant is only ~3.5x on NES and would start truncating blocks rather than backstopping
+ *  them. Scaling with the block turns a constant that happens to fit into one that cannot stop fitting.
+ *
+ *  framesNeeded/sampleRate seconds of audio is that many CPU cycles; a 6502 instruction is at least two
+ *  cycles; x8 is the slack. ~166k at a 1024-frame block against the ~12k a real block takes.
+ *
+ *  This is not expected to fire. NesApu::Exec auto-flushes from CPU execution itself, so samples accrue
+ *  as long as the CPU runs at all. It is here because an unbounded `while` on the audio thread is a
+ *  deadlock waiting for a reason, and the capture branch has a documented way to stall (see finishBlock).
+ *  If it does fire the ring comes up short and finishBlock emits SILENCE for the remainder - not a stale
+ *  echo, since sumStereoWithGain blanks the unfilled tail. Nothing is logged: this is the audio thread. */
+std::uint64_t nesInstructionBudget(std::uint32_t framesNeeded, double sampleRate) {
+    const double cycles = double(framesNeeded) * kNesCpuHz / (sampleRate > 0.0 ? sampleRate : 44100.0);
+    return static_cast<std::uint64_t>(cycles * 4.0) + 1024;
+}
+
 } // namespace
 
 MesenNesSystem::MesenNesSystem(SystemId id,
@@ -464,14 +484,15 @@ bool MesenNesSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
     MesenNesDebugSession* breakWatch =
         (debugSession_ && debugSession_->breakCaptureArmed()) ? debugSession_.get() : nullptr;
 
+    std::uint64_t budget = nesInstructionBudget(framesNeeded, sampleRate_);
     if (channelCapture_ && nesMixer_) {
-        while (nesMixer_->AvailableCaptureFrames() < framesNeeded) {
+        while (nesMixer_->AvailableCaptureFrames() < framesNeeded && budget-- > 0) {
             if (n8Role_) n8Role_->pumpUntil(static_cast<std::uint32_t>(nesMixer_->AvailableCaptureFrames()));
             cpu->Exec();
             if (breakWatch) breakWatch->captureBreakHit();
         }
     } else {
-        while (audioDevice_->availableFrames() < framesNeeded) {
+        while (audioDevice_->availableFrames() < framesNeeded && budget-- > 0) {
             if (n8Role_) n8Role_->pumpUntil(static_cast<std::uint32_t>(audioDevice_->availableFrames()));
             cpu->Exec();
             if (breakWatch) breakWatch->captureBreakHit();

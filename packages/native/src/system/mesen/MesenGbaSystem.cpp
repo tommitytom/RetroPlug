@@ -281,7 +281,23 @@ bool MesenGbaSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
     // during CPU execution.) Loop RunFrame until we have enough samples for
     // this host block. ~735 samples per frame @ 44.1 kHz / 60 fps, so usually
     // 2 frames per 1024-sample block.
-    while (audioDevice_->availableFrames() < framesNeeded) {
+    //
+    // Bounded, but be clear about what the bound is worth. The loop unit is a whole VIDEO FRAME, so a
+    // 1024-sample block needs 2 iterations and a cap of a few more is the only sane shape - SMS's
+    // instruction budget of 80000 would be ~22 minutes of emulated time here, decoration rather than a
+    // backstop. And the genuinely unbounded loop is not this one: GbaConsole::RunFrame is itself
+    // `while (frameCount == newCount) _cpu->Exec()`, inside the vendored core, where nothing we write
+    // can reach it.
+    //
+    // So this guards the case it can: the PPU advancing without the APU producing enough samples. It is
+    // not expected to fire either - GbaApu::InternalRun appends a sample per tick OUTSIDE its
+    // enabled-check, so even a silent ROM yields ~738 frames per call. (Which also corrects the premise
+    // this bound was requested under: "a ROM that stops producing audio would spin it forever" is true
+    // of a bare-Exec loop and not of this one.) If it does fire the ring comes up short and finishBlock
+    // emits silence for the remainder, not a stale echo. Nothing is logged: this is the audio thread.
+    const double  framesPerVideoFrame = (sampleRate_ > 0.0 ? sampleRate_ : 44100.0) / 59.7275;
+    std::uint32_t budget = static_cast<std::uint32_t>(double(framesNeeded) / framesPerVideoFrame) + 4;
+    while (audioDevice_->availableFrames() < framesNeeded && budget-- > 0) {
         console->RunFrame();
     }
     return false;
