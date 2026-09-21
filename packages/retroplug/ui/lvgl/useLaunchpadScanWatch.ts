@@ -8,36 +8,16 @@
 // happens to be open, and its answer is what makes the instance menu's Launchpad submenu appear. A result
 // that only landed while somebody was looking at the right row would be a scan you had to watch.
 
-import { useRef, useState } from "react";
-
 import { applyLaunchpadScan, getLaunchpadScan } from "../screens/menu/launchpadDevices";
-import { useNativeEvent } from "./useNativeEvent";
+import { useVersionedPoll } from "./useFramePoll";
 
 // ~10 Hz at 60 fps - prompt enough to catch "done" and to animate the per-port phase, cheap enough to run
 // forever.
 const POLL_FRAMES = 6;
 
 export function useLaunchpadScanWatch(): void {
-  const [, bump] = useState(0);
-  const ticks = useRef(0);
-  const seenVersion = useRef(-1);
-  const applied = useRef(false);
-
-  useNativeEvent("frame", () => {
-    if (++ticks.current < POLL_FRAMES) return;
-    ticks.current = 0;
-    const s = getLaunchpadScan();
-    if (!s) return;
-    if (s.busy) applied.current = false; // a fresh scan: its result has not been taken yet
-    // The finishing EDGE, latched: polling means we see "done" many times over, and re-applying would keep
-    // rewriting launchpad.cfg (and stomp a port the user picked by hand afterwards).
-    if (s.done && !s.busy && !applied.current) {
-      applied.current = true;
-      applyLaunchpadScan(s);
-    }
-    if (s.version !== seenVersion.current) {
-      seenVersion.current = s.version;
-      bump((n) => n + 1);
-    }
-  });
+  // The third argument is the finishing EDGE, latched by useVersionedPoll: polling sees "done" many
+  // times over, and re-applying each time would keep rewriting launchpad.cfg - and stomp a port the user
+  // picked by hand afterwards.
+  useVersionedPoll(POLL_FRAMES, getLaunchpadScan, applyLaunchpadScan);
 }

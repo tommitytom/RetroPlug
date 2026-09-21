@@ -15,7 +15,7 @@ import { useRef } from "react";
 
 import type { AppStores } from "../../src/appStores";
 import { SramAutoSaver } from "../../src/sramAutoSave";
-import { useNativeEvent } from "./useNativeEvent";
+import { useFrameDivider } from "./useFramePoll";
 
 // ~2 s at 60 fps. Deliberately slower than useSongWatch's 0.5 s: that polls a header-only name parse,
 // whereas a battery check can reach sramSignature's full encodeSong(decodeSong(...)) round-trip. The raw
@@ -24,13 +24,10 @@ import { useNativeEvent } from "./useNativeEvent";
 const POLL_FRAMES = 120;
 
 export function useSramAutoSave(stores: AppStores): void {
-  const ticks = useRef(0);
   const saver = useRef<SramAutoSaver | null>(null);
   saver.current ??= new SramAutoSaver(stores.backend, stores.project.systems, stores.userConfig);
 
-  useNativeEvent("frame", () => {
-    if (++ticks.current < POLL_FRAMES) return;
-    ticks.current = 0;
+  useFrameDivider(POLL_FRAMES, () => {
     // One system per tick: bounded per-frame work, so a multi-cart project can't stall a frame.
     saver.current!.pump(1);
   });

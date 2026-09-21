@@ -11,21 +11,15 @@
 // Editor-driven, like the file watcher: a DAW instance whose editor is closed records nothing until it's
 // opened again.
 
-import { useRef } from "react";
-
 import type { AppStores } from "../../src/appStores";
-import { useNativeEvent } from "./useNativeEvent";
+import { useFrameDivider } from "./useFramePoll";
 
 // ~0.5 s at 60 fps. Fast enough that the row is there by the time the user reopens the menu, slow enough
 // that the battery read never shows up in a profile.
 const POLL_FRAMES = 30;
 
 export function useSongWatch(stores: AppStores): void {
-  const ticks = useRef(0);
-
-  useNativeEvent("frame", () => {
-    if (++ticks.current < POLL_FRAMES) return;
-    ticks.current = 0;
+  useFrameDivider(POLL_FRAMES, () => {
     stores.project.syncRecent();
     // Same rhythm, same battery, different question: has the SONG ITSELF changed under a control surface?
     // A cart being edited on its own screen tells the app nothing, so this is the only way the Launchpad's
