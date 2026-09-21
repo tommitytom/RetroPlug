@@ -51,14 +51,18 @@ export function resolveJobs(argv = process.argv.slice(2)) {
   return jobs;
 }
 
-// Strip the jobs flags from a runner's argv so the remaining positional slug filter is
-// unaffected (the runners read argv[0] as their filter).
-export function stripJobsArgs(argv = process.argv.slice(2)) {
+// Strip the runner's own flags from argv so the remaining positional slug filter is unaffected (the
+// runners read argv[0] as their filter). Anything added here must also be listed, or a new flag silently
+// becomes a filter that matches no test.
+const VALUELESS_FLAGS = new Set(["--update-skip-baseline"]);
+
+export function stripRunnerFlags(argv = process.argv.slice(2)) {
   const out = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--jobs" || a === "-j") { i++; continue; } // also drop its value
     if (a.startsWith("--jobs=") || (a.startsWith("-j") && a.length > 2)) continue;
+    if (VALUELESS_FLAGS.has(a)) continue;
     out.push(a);
   }
   return out;

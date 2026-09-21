@@ -19,7 +19,8 @@ import { readdirSync, mkdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, relative } from "node:path";
 import { build } from "esbuild";
-import { runPool, spawnBuffered, resolveJobs, stripJobsArgs, flush, parseTap } from "./lib/testPool.mjs";
+import { runPool, spawnBuffered, resolveJobs, stripRunnerFlags, flush, parseTap } from "./lib/testPool.mjs";
+import { checkSkipBaseline } from "./lib/skipBaseline.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = resolve(PKG, "../..");
@@ -44,7 +45,7 @@ if (!existsSync(TJS)) {
 }
 
 const jobs = resolveJobs();
-const filter = stripJobsArgs()[0];
+const filter = stripRunnerFlags()[0];
 
 function walk(dir, out = []) {
   if (!existsSync(dir)) return out;
@@ -119,3 +120,17 @@ if (skipped.length)
     `#   ${skipTotal} case(s) SKIPPED in ${skipped.length} file(s): ` +
       skipped.map((x) => `${x.slug}(${x.n})`).join(", "),
   );
+
+// The ratchet. A filtered run has no reading for the files it did not execute, so it cannot judge the
+// baseline and does not try.
+const baseline = checkSkipBaseline(
+  "ts",
+  tests.map((t, i) => ({ slug: t.slug, skip: results[i]?.tap.skip ?? 0, total: results[i]?.tap.plan ?? 0 })),
+  {
+    filtered: filter !== undefined,
+    update: process.argv.slice(2).includes("--update-skip-baseline"),
+    strict: process.env.RP_FAIL_ON_SKIP === "1",
+  },
+);
+for (const line of baseline.lines) console.error(line);
+if (!baseline.ok) process.exit(1);

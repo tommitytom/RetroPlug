@@ -14,7 +14,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { build } from "esbuild";
-import { runPool, spawnBuffered, resolveJobs, stripJobsArgs, flush, parseTap } from "./lib/testPool.mjs";
+import { runPool, spawnBuffered, resolveJobs, stripRunnerFlags, flush, parseTap } from "./lib/testPool.mjs";
+import { checkSkipBaseline } from "./lib/skipBaseline.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = resolve(PKG, "../..");
@@ -40,7 +41,7 @@ if (!existsSync(HOST)) {
 const UI_HARNESS = join(PKG, "test-ui/uiHarness.ts");
 
 const jobs = resolveJobs();
-const filter = stripJobsArgs()[0];
+const filter = stripRunnerFlags()[0];
 
 function walk(dir, out = []) {
   if (!existsSync(dir)) return out;
@@ -86,7 +87,10 @@ async function runOne({ file, slug }) {
   copyFileSync(join(REPO, "resources/roms/smsggdj_v0_45.sms"), join(romsDir, "smsggdj_v0_45.sms"));
   // Stage an LSDj ROM too when one is present (local or the sibling resources tree) — the LSDj-overlay
   // test drops it; absent, that test SKIPs. It's a large external asset, so this is best-effort.
-  for (const src of [join(REPO, "resources/roms/lsdj/lsdj9_4_2.gb"), join(REPO, "../resources/roms/lsdj/lsdj9_4_2.gb")]) {
+  // The sibling resources tree, via the same override the native runner uses — so a fixture-less run
+  // (which is how the skip baseline is generated) can actually be simulated here too.
+  const resourcesDir = process.env.RETROPLUG_RESOURCES_DIR || join(REPO, "../resources");
+  for (const src of [join(REPO, "resources/roms/lsdj/lsdj9_4_2.gb"), join(resourcesDir, "roms/lsdj/lsdj9_4_2.gb")]) {
     if (existsSync(src)) { copyFileSync(src, join(romsDir, "lsdj9_4_2.gb")); break; }
   }
   // Stage a built risa ROM too when present (RISA_ROM env, resources, or the sibling risa source tree) —
@@ -147,3 +151,17 @@ if (skipped.length)
     `#   ${skipTotal} case(s) SKIPPED in ${skipped.length} file(s): ` +
       skipped.map((x) => `${x.slug}(${x.n})`).join(", "),
   );
+
+// The ratchet. A filtered run has no reading for the files it did not execute, so it cannot judge the
+// baseline and does not try.
+const baseline = checkSkipBaseline(
+  "ui",
+  tests.map((t, i) => ({ slug: t.slug, skip: results[i]?.tap.skip ?? 0, total: results[i]?.tap.plan ?? 0 })),
+  {
+    filtered: filter !== undefined,
+    update: process.argv.slice(2).includes("--update-skip-baseline"),
+    strict: process.env.RP_FAIL_ON_SKIP === "1",
+  },
+);
+for (const line of baseline.lines) console.error(line);
+if (!baseline.ok) process.exit(1);

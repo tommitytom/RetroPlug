@@ -1,0 +1,215 @@
+{
+ "native": {
+  "app-cores": {
+   "skipped": 2,
+   "total": 5
+  },
+  "app-lsdj-seed": {
+   "skipped": 1,
+   "total": 1
+  },
+  "app-play-lsdj": {
+   "skipped": 1,
+   "total": 1
+  },
+  "app-song-recents": {
+   "skipped": 1,
+   "total": 1
+  },
+  "app-unsaved-changes": {
+   "skipped": 1,
+   "total": 1
+  },
+  "dsp-bench": {
+   "skipped": 1,
+   "total": 1
+  },
+  "dsp-lsdj-midisync": {
+   "skipped": 1,
+   "total": 1
+  },
+  "dsp-risa-sync": {
+   "skipped": 2,
+   "total": 2
+  },
+  "dsp-risa-sync-grid": {
+   "skipped": 1,
+   "total": 1
+  },
+  "dsp-risa-sync-locate": {
+   "skipped": 2,
+   "total": 2
+  },
+  "dsp-threaded": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-arduinoboy-slave": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-codec-corpus": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-drift-detect": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-keyboardmidi": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-launchpad": {
+   "skipped": 2,
+   "total": 4
+  },
+  "lsdj-launchpad-role": {
+   "skipped": 2,
+   "total": 2
+  },
+  "lsdj-legacy-offsets": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-mastersync": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-midimap": {
+   "skipped": 2,
+   "total": 2
+  },
+  "lsdj-midiout": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-old-drift": {
+   "skipped": 2,
+   "total": 2
+  },
+  "lsdj-passthrough": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-playback-differential": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-playback-probe": {
+   "skipped": 10,
+   "total": 10
+  },
+  "lsdj-rom": {
+   "skipped": 8,
+   "total": 10
+  },
+  "lsdj-runtime": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-sync-negative": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-sync-pattern": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-wram-seam": {
+   "skipped": 2,
+   "total": 2
+  },
+  "lsdj-wram-spike": {
+   "skipped": 1,
+   "total": 1
+  },
+  "mesen-state-ceiling": {
+   "skipped": 1,
+   "total": 2
+  },
+  "nes-bench": {
+   "skipped": 1,
+   "total": 1
+  },
+  "risa-220-layout": {
+   "skipped": 1,
+   "total": 1
+  },
+  "risa-230-layout": {
+   "skipped": 1,
+   "total": 1
+  },
+  "risa-kit": {
+   "skipped": 2,
+   "total": 4
+  },
+  "risa-load": {
+   "skipped": 1,
+   "total": 1
+  },
+  "risa-m0-spike": {
+   "skipped": 1,
+   "total": 1
+  },
+  "risa-render": {
+   "skipped": 6,
+   "total": 6
+  },
+  "risa-render-hff": {
+   "skipped": 1,
+   "total": 1
+  },
+  "risa-render-region": {
+   "skipped": 1,
+   "total": 1
+  },
+  "risa-rom": {
+   "skipped": 2,
+   "total": 2
+  },
+  "risa-rom-cli": {
+   "skipped": 5,
+   "total": 5
+  },
+  "risa-runtime": {
+   "skipped": 1,
+   "total": 1
+  },
+  "risa-songs": {
+   "skipped": 1,
+   "total": 1
+  },
+  "sameboy-state-model-switch": {
+   "skipped": 3,
+   "total": 3
+  },
+  "song-guard-e2e": {
+   "skipped": 1,
+   "total": 1
+  },
+  "sram-continuous": {
+   "skipped": 1,
+   "total": 1
+  },
+  "tracker-working-dirty": {
+   "skipped": 2,
+   "total": 2
+  }
+ },
+ "ts": {},
+ "ui": {
+  "lsdj-hd": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-overlay": {
+   "skipped": 1,
+   "total": 1
+  },
+  "risa-overlay": {
+   "skipped": 1,
+   "total": 1
+  }
+ }
+}

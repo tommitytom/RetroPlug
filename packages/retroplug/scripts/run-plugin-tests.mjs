@@ -18,7 +18,7 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
-import { runPool, spawnBuffered, resolveJobs, stripJobsArgs, flush } from "./lib/testPool.mjs";
+import { runPool, spawnBuffered, resolveJobs, stripRunnerFlags, flush } from "./lib/testPool.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = resolve(PKG, "../..");
@@ -28,7 +28,7 @@ const EXE = process.platform === "win32" ? ".exe" : "";
 const BINARIES = ["retroplug-plugin-test", "retroplug-dynparams-test", "retroplug-classid-test", "retroplug-audio-test", "retroplug-watcher-test", "retroplug-lottie-test", "retroplug-midi-test", "retroplug-launchpad-test"];
 
 const jobs = resolveJobs();
-const filter = stripJobsArgs()[0];
+const filter = stripRunnerFlags()[0];
 const selected = filter ? BINARIES.filter((b) => b.includes(filter)) : BINARIES;
 
 if (!selected.length) {
