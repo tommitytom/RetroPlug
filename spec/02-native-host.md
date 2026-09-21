@@ -19,6 +19,24 @@ two test hosts link — so all three drive the *same* `Engine` over the *same* R
 
 ## The composition root: the RPC services + facets
 
+> **Where the shared pieces live.** Seven hosts stand this up - the plugin, the SDL standalone, the CLI,
+> the Node addon, the test host, the render host and the UI test harness - and the parts they share are
+> in [`src/host/`](../packages/native/src/host/):
+>
+> - `HostServices.hpp` - the graph itself (Engine, SystemFactory + core backends, the one QueuedInvoker,
+>   `HostRpcService`, `EngineRpcService`). Codec-agnostic, which is what lets the Node addon share it.
+>   It deliberately STOPS there: `DebugRpcService` and `AudioDriverRpcService` are declared by the hosts
+>   that mount them, because `~AudioDriverRpcService` clears the invoker's `audioThreadOwns` bit and
+>   calls `freePending()` + `reclaimReleased()` - so merely owning one changes teardown, and the plugin
+>   and SDL standalone mount neither facet.
+> - `QuickJsGlobals.hpp` - `installPluginNamespace` (the `Symbol.for("plugin")` install, six hosts),
+>   `jsCallGlobal` / `jsReadReady` / `jsHasGlobalFunction`, the close guard and the file-browser
+>   delivery. `jsCallGlobal` carries a `ready` flag because the plugin must refuse to call into a
+>   control plane that never signalled ready (a DAW scan degrades; it cannot exit) while SDL exits 1 on
+>   that path and has no analogue.
+> - `input/GamepadPump.hpp`, `ui/OpenPath.hpp` - the editor/standalone input and shell-out seams.
+
+
 There is **no single facade object**. A host composes a shared
 [`Engine`](../packages/native/src/host/engine/Engine.hpp#L35), a
 [`SystemFactory`](../packages/native/src/system/SystemFactory.hpp) (populated by
