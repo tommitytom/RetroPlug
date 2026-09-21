@@ -83,6 +83,17 @@ jobs:
       - name: UI tests (headless LVGL)
         run: pnpm test:ui
 
+      # The only gates in CI on the SDL and CLI host bodies. Everything above drives the test host,
+      # the UI harness or the plugin; until these ran here, CI proved sdl/main.cpp and cli/main.cpp
+      # COMPILED and nothing more, while between them they carry the gamepad pump, the key bus, the
+      # close guard, the geometry latch and the whole TS-stripping harness a consumer repo depends on.
+      # Neither needs a display server or an audio server: the smoke runs SDL's dummy drivers.
+      - name: SDL standalone smoke (dummy video/audio)
+        run: pnpm sdl:smoke
+
+      - name: CLI TypeScript harness
+        run: pnpm test:cli-ts
+
       # The SDL standalone (retroplug-sdl) is in the default `all` target, so the Build
       # step above already compiles and links it on every platform, and it rides along in
       # the artifact below. `pnpm sdl:smoke` is still NOT run here — CI proves it builds,
