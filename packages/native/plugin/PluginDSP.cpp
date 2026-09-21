@@ -37,6 +37,7 @@
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
 #include "host/QuickJsGlobals.hpp"
+#include "host/HostServices.hpp"
 
 // The embedded control-plane bundle (bytecode) — build/native/cp-bundle_data.c, rp_ prefix.
 extern "C" {
@@ -78,17 +79,15 @@ struct CcSlotDto {
 class PluginDSP : public Plugin {
     // Control-plane runtime (main-thread only): the txiki context + the backend service graph it drives
     // over __rpcSend. The plugin owns the Engine and drives it per audio block from run() directly (it
-    // never routes audio through RPC), so it holds engine_ + the ONE invoker plus the host + emulator
+    // never routes audio through RPC), so it holds svc_.engine + the ONE invoker plus the host + emulator
     // services it mounts. Declaration order is load-bearing.
     TjsHostRuntime host_;
-    Engine           engine_;
-    SystemFactory    factory_;
-    QueuedInvoker    invoker_{engine_, engine_.registry()};
-    HostRpcService   hostSvc_;
-    EngineRpcService engineSvc_{engine_, factory_, invoker_};
+    // The three facets below are ALL this channel mounts — no debug, no audio-driver. See host/
+    // HostServices.hpp for why those two are not members here rather than merely unmounted.
+    HostServices     svc_;
     // Physical Everdrive N8 Pro streaming (Settings > N8) - the SAME N8Host the SDL standalone uses. The
     // core-byte sink (risa host sync) + the run() MIDI tap push to n8Host_.link() on the audio thread; the
-    // config UI drives connect/setPort through bindN8Hooks. hostSvc_ (above) provides the n8.cfg dir.
+    // config UI drives connect/setPort through bindN8Hooks. svc_.host (above) provides the n8.cfg dir.
     retroplug::N8Host n8Host_{
         [](const std::string& p) -> std::unique_ptr<retroplug::ISerialPort> {
             return std::make_unique<retroplug::WjwwoodSerialPort>(p);
@@ -98,7 +97,7 @@ class PluginDSP : public Plugin {
             for (const auto& p : retroplug::listSerialPorts()) ports.push_back({p.port, p.isN8});
             return ports;
         },
-        hostSvc_.configDir()};
+        svc_.host.configDir()};
     std::unique_ptr<rpcpp::QuickJSTransport> transport_;
     std::unique_ptr<PluginRpcServer>     server_;
     // Did the control plane come up AND signal __rp_ready? Gates callGlobal, so a runtime that failed
@@ -267,7 +266,7 @@ protected:
         // Hand the Engine to the DPF audio thread: from here every control-plane edit is push-only,
         // drained by run() each block. (Set BEFORE the host starts calling run(); the quiescent path
         // flushed every push, so the command ring is empty at this handoff.) Then report PDC latency.
-        invoker_.setAudioThreadOwns(true);
+        svc_.invoker.setAudioThreadOwns(true);
         updateLatency();
         updateParameterMap();
     }
@@ -275,11 +274,11 @@ protected:
         // DPF guarantees no run() during/after deactivate, so the ring has a single accessor again. Take
         // the Engine back, apply any commands the last block didn't drain (no lost mutation), and reclaim
         // cores the audio thread released just before stopping (freeing each snapshot slot).
-        invoker_.setAudioThreadOwns(false);
-        invoker_.drainInto(engine_);
-        invoker_.reclaimReleased();
+        svc_.invoker.setAudioThreadOwns(false);
+        svc_.invoker.drainInto(svc_.engine);
+        svc_.invoker.reclaimReleased();
     }
-    void sampleRateChanged(double newSampleRate) override { engine_.setSampleRate(newSampleRate); }
+    void sampleRateChanged(double newSampleRate) override { svc_.engine.setSampleRate(newSampleRate); }
 
     // --- the per-block loop (replaces AudioDriverRpcService::audioLoop) ---
     void run(const float**, float** outputs, uint32_t frames,
@@ -306,7 +305,7 @@ protected:
             // e.frame preserves the DAW's intra-block timing (the N8Link scheduler releases on it).
             if (!(e.size == 1 && bytes[0] >= 0xF8))
                 n8Host_.link().push(e.frame, bytes, e.size, getSampleRate());
-            engine_.stageMidi(e.frame, std::vector<std::uint8_t>(bytes, bytes + e.size));
+            svc_.engine.stageMidi(e.frame, std::vector<std::uint8_t>(bytes, bytes + e.size));
         }
 
         // DAW automation → MIDI CC. A claimed slot emits at the head of the block whenever its value
@@ -329,19 +328,19 @@ protected:
                 static_cast<std::uint8_t>(iv),
             };
             n8Host_.link().push(0, cc, 3, getSampleRate());
-            engine_.stageMidi(0, std::vector<std::uint8_t>(cc, cc + 3));
+            svc_.engine.stageMidi(0, std::vector<std::uint8_t>(cc, cc + 3));
         }
 
         // One audio block: drain control-thread structural edits on the audio thread → set transport
         // (direct — we're the audio thread) → render into the output channels (the plugin's 4 stereo
         // pairs; routed per audioRouting by the Engine's MultiOutRouter).
-        invoker_.drainInto(engine_);
-        engine_.setBpm(bpm);
-        engine_.setTransport(playing);
-        engine_.processBlock(frames, outputs, DISTRHO_PLUGIN_NUM_OUTPUTS);
+        svc_.invoker.drainInto(svc_.engine);
+        svc_.engine.setBpm(bpm);
+        svc_.engine.setTransport(playing);
+        svc_.engine.processBlock(frames, outputs, DISTRHO_PLUGIN_NUM_OUTPUTS);
 
         // Kernel MIDI-out → the DAW (drain the block just rendered, then clear).
-        for (const auto& mo : engine_.midiOut()) {
+        for (const auto& mo : svc_.engine.midiOut()) {
             if (mo.data.empty() || mo.data.size() > MidiEvent::kDataSize) continue;
             MidiEvent ev{};
             ev.frame = mo.frame;
@@ -349,7 +348,7 @@ protected:
             for (std::size_t j = 0; j < mo.data.size(); ++j) ev.data[j] = mo.data[j];
             writeMidiEvent(ev);
         }
-        engine_.clearMidiOut();
+        svc_.engine.clearMidiOut();
 
         // Master gain across every output channel (post-render; the Engine has no master-gain stage).
         const float lin = std::pow(10.0f, gainDb_ / 20.0f);
@@ -364,7 +363,7 @@ private:
         if (!host_.init()) { d_stderr("[retroplug] TjsHostRuntime init failed"); return; }
         JSContext* ctx = host_.context();
 
-        registerCoreBackends(factory_);  // sameboy + mesen — before the bundle autoloads any system
+        registerCoreBackends(svc_.factory);  // sameboy + mesen — before the bundle autoloads any system
 
         transport_ = std::make_unique<rpcpp::QuickJSTransport>(ctx, [](JSContext*, JSValue) {});
         server_    = std::make_unique<PluginRpcServer>(*transport_, rpcpp::QuickJSCodec{ctx});
@@ -372,9 +371,9 @@ private:
         // drives audio per block in C++ (never the renderAudio harness), never debugs the live core,
         // and never spawns the background audio-driver thread — so those facets are NOT on this channel.
         // The editor reuses this same context/channel, so it inherits exactly this surface.
-        registerHostRpc(*server_, hostSvc_);
-        registerEmulatorRpc(*server_, engineSvc_);
-        registerDspKernelRpc(*server_, engineSvc_);
+        registerHostRpc(*server_, svc_.host);
+        registerEmulatorRpc(*server_, svc_.engineSvc);
+        registerDspKernelRpc(*server_, svc_.engineSvc);
         server_->addDiscoveryMethod();
 
         // globalThis[Symbol.for("plugin")] = { __rpcSend } — the namespace realBackend.ts targets.
@@ -394,7 +393,7 @@ private:
         JS_FreeValue(ctx, global);
 
         // Systems bake the sample rate at construct — set it BEFORE the bundle composes / autoloads.
-        engine_.setSampleRate(getSampleRate());
+        svc_.engine.setSampleRate(getSampleRate());
 
         // Eval the control-plane bundle (composes stores + kernel, defines the __rp_* globals), then
         // pump until it signals ready (the composition is synchronous; a bounded pump covers module eval).
@@ -410,14 +409,14 @@ private:
         // Turn on the native file watcher (config.json + bindings/ recursively; ROMs registered by TS via
         // setWatchedRoms). The TS FileWatcher.pump() drains it from the UI idle loop (__rp_pumpWatcher).
         // Only the plugin enables this — the test host / CLI leave drainChangedPaths inert.
-        hostSvc_.enableWatching(hostSvc_.configDir());
+        svc_.host.enableWatching(svc_.host.configDir());
 
         // Physical Everdrive N8 Pro (Settings > N8): mirror the Engine's generated core-byte stream (risa's
         // arm/clock/stop host sync) to a connected cart, expose the config hooks to the shared UI, and restore
         // the persisted link. The sink fires during processBlock on the audio thread; push is lock-free and a
         // no-op until an N8 is connected. Same N8Host + hooks the SDL standalone uses - so the plugin drives a
         // real NES from the DAW transport, in lock-step with the emulated core.
-        engine_.setCoreByteSink([this](std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool) {
+        svc_.engine.setCoreByteSink([this](std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool) {
             n8Host_.link().push(frame, data, size, getSampleRate());
         });
         retroplug::bindN8Hooks(ctx, n8Host_);

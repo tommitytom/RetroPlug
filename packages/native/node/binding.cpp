@@ -33,6 +33,7 @@
 #include "host/rpc/BackendRpcRegistration.hpp"
 #include "system/CoreBackends.hpp"
 #include "system/SystemFactory.hpp"
+#include "host/HostServices.hpp"
 
 namespace {
 
@@ -43,27 +44,22 @@ using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::NodeCodec>;
 // backend. Member order mirrors cli/main.cpp's composition block: the Engine and factory come first
 // because the services hold references to them.
 struct AddonState {
-    Engine                engine;
-    SystemFactory         factory;
-    QueuedInvoker         invoker;
-    HostRpcService        host;
-    EngineRpcService      engineSvc;
-    DebugRpcService       debugSvc;
-    AudioDriverRpcService driver;
+    // The same graph every other host stands up (host/HostServices.hpp). It is codec-agnostic, which is
+    // what lets this addon share it - the transport and server below are the N-API half and stay here.
+    HostServices          svc;
+    // Declared here rather than in HostServices: ~AudioDriverRpcService has teardown side effects that a
+    // host which never mounts the facet should not inherit (the plugin and SDL standalone do not).
+    DebugRpcService       debugSvc{svc.engine};
+    AudioDriverRpcService driver{svc.engine, svc.invoker};
     rpcpp::NodeTransport  transport;
     BackendRpcServer      server;
 
     explicit AddonState(napi_env env)
-        : invoker(engine, engine.registry()),
-          engineSvc(engine, factory, invoker),
-          debugSvc(engine),
-          driver(engine, invoker),
-          // No primary object: every facet is mounted cross-object. The async sink is unused (nothing
-          // in the backend surface pushes today), matching the CLI host.
-          transport([](napi_env, napi_value) {}),
+        // No primary object: every facet is mounted cross-object. The async sink is unused (nothing
+        // in the backend surface pushes today), matching the CLI host.
+        : transport([](napi_env, napi_value) {}),
           server(transport, rpcpp::NodeCodec{env}) {
-        registerCoreBackends(factory);
-        registerAllBackendRpc(server, host, engineSvc, debugSvc, driver);
+        registerAllBackendRpc(server, svc.host, svc.engineSvc, debugSvc, driver);
     }
 };
 

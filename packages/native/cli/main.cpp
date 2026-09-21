@@ -39,6 +39,7 @@
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
+#include "host/HostServices.hpp"
 
 using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec>;
 
@@ -175,22 +176,20 @@ int main(int argc, char** argv) try {
     }
     JSContext* ctx = host.context();
 
-    // The backend service graph: one Engine + factory + the ONE invoker, and the four concern services
-    // over them. The CLI exposes the whole surface (incl. the debug facet), so it mounts every facet.
-    Engine engine;
-    SystemFactory factory;
-    registerCoreBackends(factory);
-    QueuedInvoker invoker{engine, engine.registry()};
-    HostRpcService        hostSvc;
-    EngineRpcService      engineSvc{engine, factory, invoker};
-    DebugRpcService       debugSvc{engine};
-    AudioDriverRpcService driver{engine, invoker};
+    // The backend service graph (see host/HostServices.hpp). The CLI exposes the whole surface (incl. the
+    // debug facet), so it mounts every facet.
+    HostServices svc;
+    // The two facets the plugin and the SDL standalone deliberately do NOT mount, so they are not
+    // in HostServices: ~AudioDriverRpcService has teardown side effects a host that never uses the
+    // facet should not inherit.
+    DebugRpcService       debugSvc{svc.engine};
+    AudioDriverRpcService driver{svc.engine, svc.invoker};
 
     // rpcpp server over the QuickJS object codec (marshals request/response as live JS objects against
     // ctx — nothing serialized). No primary object: every facet is mounted cross-object. Async sink unused.
     rpcpp::QuickJSTransport transport(ctx, [](JSContext*, JSValue) {});
     BackendRpcServer server(transport, rpcpp::QuickJSCodec{ctx});
-    registerAllBackendRpc(server, hostSvc, engineSvc, debugSvc, driver);
+    registerAllBackendRpc(server, svc.host, svc.engineSvc, debugSvc, driver);
 
 #ifdef RETROPLUG_N8_BRIDGE
     // The serial + MIDI-input transport facets (CLI-only): the thin native seams the TS N8 stack (Edio
