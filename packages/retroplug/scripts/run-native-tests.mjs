@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { build, buildSync } from "esbuild";
-import { runPool, spawnBuffered, resolveJobs, stripJobsArgs, flush } from "./lib/testPool.mjs";
+import { runPool, spawnBuffered, resolveJobs, stripJobsArgs, flush, parseTap } from "./lib/testPool.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = resolve(PKG, "../..");
@@ -127,17 +127,28 @@ async function runOne({ file, slug }) {
   });
   flush(slug, run.output);
   rmSync(cfgDir, { recursive: true, force: true });
-  return run.status === 0;
+  const tap = parseTap(run.output);
+  if (run.status === 0 && !tap.ok) console.error(`# ${slug}: ${tap.problem}`);
+  return { ok: run.status === 0 && tap.ok, tap };
 }
 
 const results = await runPool(tests, runOne, {
   jobs,
   timings: { file: join(PKG, ".test-timings/native.json"), key: (t) => t.slug },
 });
-const failures = tests.filter((_, i) => results[i] === false).map((t) => t.slug);
+const failures = tests.filter((_, i) => results[i]?.ok !== true).map((t) => t.slug);
 
 if (failures.length) {
   console.error(`\n# ${failures.length}/${tests.length} native test file(s) FAILED: ${failures.join(", ")}`);
   process.exit(1);
 }
+const skipped = tests
+  .map((t, i) => ({ slug: t.slug, n: results[i]?.tap.skip ?? 0 }))
+  .filter((x) => x.n > 0);
+const skipTotal = skipped.reduce((a, x) => a + x.n, 0);
 console.error(`\n# ${tests.length} native test file(s) passed (jobs=${jobs})`);
+if (skipped.length)
+  console.error(
+    `#   ${skipTotal} case(s) SKIPPED in ${skipped.length} file(s): ` +
+      skipped.map((x) => `${x.slug}(${x.n})`).join(", "),
+  );

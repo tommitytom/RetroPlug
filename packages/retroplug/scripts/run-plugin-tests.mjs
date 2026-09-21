@@ -51,7 +51,9 @@ const results = await runPool(selected, runOne, {
   jobs,
   timings: { file: join(PKG, ".test-timings/plugin.json"), key: (name) => name },
 });
-const failures = selected.filter((_, i) => results[i] === false);
+// `!== true`, not `=== false`: runPool leaves `undefined` for a worker that threw, and `=== false`
+// counted that as a pass. These binaries emit no TAP, so the verdict stays the exit code.
+const failures = selected.filter((_, i) => results[i] !== true);
 
 if (failures.length) {
   console.error(`\n# ${failures.length}/${selected.length} plugin test binary(ies) FAILED: ${failures.join(", ")}`);

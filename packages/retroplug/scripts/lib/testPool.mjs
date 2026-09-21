@@ -151,6 +151,35 @@ export async function runPool(items, worker, { jobs = 1, timings } = {}) {
   return results;
 }
 
+// Parse a child's TAP output into per-file counts.
+//
+// Everything is derived from the RESULT LINES, never from the harness's own trailing summary comment, so
+// the two cannot disagree - the comment is for a human reading the block, this is for the runner.
+//
+// `ok` also answers a question the exit code cannot: did the file account for itself? The harness buffers
+// its whole report and prints it in one go at the end, and schedules that print only from inside test() -
+// so a file that registers no cases (an empty table-driven array, an early tjs.exit) prints NOTHING and
+// exits 0. That is a vacuous pass one level up from the skip: not a case that quietly did not run, but a
+// whole FILE. A missing plan line, or a plan that disagrees with the result lines, fails the file.
+export function parseTap(output) {
+  let plan = -1;
+  let pass = 0;
+  let fail = 0;
+  let skip = 0;
+  for (const line of (output ?? "").split("\n")) {
+    const m = /^1\.\.(\d+)\s*$/.exec(line);
+    if (m) { plan = Number(m[1]); continue; }
+    if (/^not ok \d+/.test(line)) { fail++; continue; }
+    // TAP matches a directive case-insensitively; the harness writes it uppercase.
+    if (/^ok \d+/.test(line)) { if (/\s#\s*skip\b/i.test(line)) skip++; else pass++; }
+  }
+  const counted = pass + fail + skip;
+  let problem = null;
+  if (plan < 0) problem = "no TAP plan line — the file registered no cases, or exited before reporting";
+  else if (counted !== plan) problem = `TAP plan says ${plan} case(s), found ${counted}`;
+  return { plan, pass, fail, skip, ok: problem === null, problem };
+}
+
 // Print a child's buffered output as one labelled block (grouped, not interleaved).
 export function flush(label, output) {
   process.stderr.write(`\n# ${label}\n`);
