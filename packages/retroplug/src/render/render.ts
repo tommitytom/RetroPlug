@@ -37,6 +37,10 @@ import {
   type SplitMode,
   RenderCancelled,
 } from "./types";
+// Re-exported as well as used: this module used to declare its own copy, spelled in literals
+// (0x20000 / 0x813e) where the codec spells it in named constants, and that copy has importers.
+import { isLsdjSav } from "../lsdj";
+export { isLsdjSav };
 
 const GB_START = 7; // GameboyButton::Start — LSDj/mGB begin playback on a Start press.
 const NES_START = 7; // NesButton::Start (same index) ; NES_SELECT = 6. risa plays a song on SELECT+START.
@@ -54,10 +58,7 @@ const NR52_ON = 0x80; // bit 7 = all-sound-on
 const DETECT_CHUNK_MS = 100; // poll granularity (≈ detection precision)
 const DETECT_OFF_CHUNKS = 2; // NR52 must read off this many consecutive chunks to count as the HFF stop
 
-/** A 128 KiB image carrying LSDj's 'jk' SRAM-init magic at 0x813E/0x813F — same check as lsdjSramSignature. */
-export function isLsdjSav(bytes: Uint8Array): boolean {
-  return bytes.length >= 0x20000 && bytes[0x813e] === 0x6a && bytes[0x813f] === 0x6b;
-}
+
 
 // Per-mode stream labels, matching each system's channelLayout() order.
 const GB_CHANNELS = ["pulse1", "pulse2", "wave", "noise"]; // SameBoySystem::channelLayout (stereo streams)

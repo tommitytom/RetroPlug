@@ -69,10 +69,10 @@ import {
   SAVE_MAGIC_VER,
   DEFAULT_GROOVE_SPEED,
   DEFAULT_SETTINGS,
-  UNTITLED,
 } from "./constants";
 import type { RisaRecord } from "./record";
 import { decodeRecord } from "./record";
+import { decodeName, encodeName } from "./bytes";
 
 const CHAIN_STRIDE = 32; // 16 rows * 2
 const PHRASE_STRIDE = 64; // 16 rows * 4
@@ -90,20 +90,6 @@ const grooveBase = (idx: number): number => bankOff(BANK_DATA, GROOVE_OFFSET + i
 const tableBase = (idx: number): number => bankOff(BANK_TABLES, TABLE_OFFSET + idx * TABLE_STRIDE);
 const auxBase = (idx: number): number => bankOff(BANK_TABLES, AUX_SHARED_OFFSET + idx * PHRASE_ROWS);
 
-function decodeName(bytes: Uint8Array): string {
-  let out = "";
-  for (const byte of bytes) {
-    if (byte === 0) break;
-    out += String.fromCharCode(byte);
-  }
-  return out.replace(/\s+$/, "") || UNTITLED;
-}
-function encodeName(name: string): Uint8Array {
-  const out = new Uint8Array(SONG_NAME_LEN).fill(0x20);
-  const s = String(name || UNTITLED).slice(0, SONG_NAME_LEN);
-  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 0xff;
-  return out;
-}
 
 const grooveSerializedLen = (len: number): number => (len >= 1 && len <= 16 ? len : 16);
 

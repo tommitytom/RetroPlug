@@ -4,18 +4,8 @@
 // globalThis[Symbol.for("plugin")].__rpcSend channel realBackend/dspRuntime use. A dev/test
 // facade for driving the emulator headlessly.
 
-type RpcSend = (request: unknown) => unknown;
-interface Reply {
-  result?: unknown;
-  error?: { code: number; message: string };
-}
 
-function resolveSend(): RpcSend {
-  const ns = (globalThis as Record<symbol, unknown>)[Symbol.for("plugin")] as { __rpcSend?: RpcSend } | undefined;
-  if (!ns || typeof ns.__rpcSend !== "function")
-    throw new Error("no native backend: globalThis[Symbol.for('plugin')].__rpcSend is missing");
-  return ns.__rpcSend;
-}
+import { makeCall } from "./rpcClient";
 
 /** DSP-runtime allocation counters (spec/08-profiling.md). Fields are DELTAS since the last
  *  dspResetAllocStats(); `enabled` is false unless the host was built with RETROPLUG_PROFILE.
@@ -182,15 +172,7 @@ export interface AudioDriver {
 
 /** Build an audio driver backed by the native host. Throws if no RPC surface is bound. */
 export function createAudioDriver(): AudioDriver {
-  const send = resolveSend();
-  let nextId = 1;
-
-  const call = (method: string, ...params: unknown[]): unknown => {
-    const reply = send({ jsonrpc: "2.0", id: nextId++, method, params }) as Reply | null | undefined;
-    if (reply == null) return undefined;
-    if (reply.error) throw new Error(`rpc ${method}: [${reply.error.code}] ${reply.error.message}`);
-    return reply.result;
-  };
+  const call = makeCall();
 
   const ints = (b: Uint8Array | number[]): number[] => Array.from(b);
 

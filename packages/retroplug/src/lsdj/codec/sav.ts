@@ -40,9 +40,15 @@ export interface SavProjectInfo {
 /** List the occupied saved-project slots WITHOUT decompressing any song — a cheap header-only scan (the
  *  block allocation table + name table), suitable for per-render menu use. Returns [] for a 32 KiB
  *  early-SRAM image or a non-LSDj / undersized buffer. */
+/** True when `bytes` is a full 128 KiB LSDj battery carrying the 'jk' SRAM-init magic — the cheap gate for
+ *  "is this an LSDj sav", without decompressing anything. listProjects gates on it too - it used to
+ *  spell the same two comparisons out inline, two lines above this. */
+export function isLsdjSav(bytes: Uint8Array): boolean {
+  return bytes.length >= kSavSize && bytes[kInit] === 0x6a /* 'j' */ && bytes[kInit + 1] === 0x6b /* 'k' */;
+}
+
 export function listProjects(savBytes: Uint8Array): SavProjectInfo[] {
-  if (savBytes.length < kSavSize) return [];
-  if (savBytes[kInit] !== 0x6a /* 'j' */ || savBytes[kInit + 1] !== 0x6b /* 'k' */) return [];
+  if (!isLsdjSav(savBytes)) return [];
   const seen = new Set<number>();
   const out: SavProjectInfo[] = [];
   for (let i = 0; i < kBlockCount; i++) {
@@ -54,11 +60,6 @@ export function listProjects(savBytes: Uint8Array): SavProjectInfo[] {
   return out.sort((a, b) => a.slot - b.slot);
 }
 
-/** True when `bytes` is a full 128 KiB LSDj battery carrying the 'jk' SRAM-init magic — the cheap gate for
- *  "is this an LSDj sav" (the same check listProjects uses), without decompressing anything. */
-export function isLsdjSav(bytes: Uint8Array): boolean {
-  return bytes.length >= kSavSize && bytes[kInit] === 0x6a /* 'j' */ && bytes[kInit + 1] === 0x6b /* 'k' */;
-}
 
 /** Decode a 128 KiB (or 32 KiB early-SRAM) sav image. Throws if malformed. */
 export function decodeSav(savBytes: Uint8Array): Sav {

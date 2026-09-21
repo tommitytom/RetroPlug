@@ -16,12 +16,8 @@
 import type { ApuState, Backend, BreakHitBatch, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CoreTransportStats, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, ExpansionAudioState, FileBrowserOpts, FrameData, HostBackend, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
 import type { OpenSerialPort, SerialClient, SerialPortInfo } from "./n8/transport";
 import { savFromJson as savFromJsonTs } from "./lsdj";
+import { makeCall } from "./rpcClient";
 
-type RpcSend = (request: unknown) => unknown;
-interface Reply {
-  result?: unknown;
-  error?: { code: number; message: string };
-}
 
 // --- file dialog (async, UI-direct) ------------------------------------------------------------------
 // openFileBrowser is the ONE async Backend method, and it does NOT ride the RPC bridge: it calls the
@@ -57,26 +53,7 @@ function browseFile(opts: FileBrowserOpts): Promise<string | null> {
   });
 }
 
-function resolveSend(): RpcSend {
-  const ns = (globalThis as Record<symbol, unknown>)[Symbol.for("plugin")] as { __rpcSend?: RpcSend } | undefined;
-  if (!ns || typeof ns.__rpcSend !== "function")
-    throw new Error("no native backend: globalThis[Symbol.for('plugin')].__rpcSend is missing");
-  return ns.__rpcSend;
-}
 
-// A synchronous JSON-RPC caller over the bound channel. Each client keeps its own id counter; ids are
-// only cosmetic here (the reply is returned inline), so independent counters across facets are fine.
-type Call = (method: string, ...params: unknown[]) => unknown;
-function makeCall(): Call {
-  const send = resolveSend();
-  let nextId = 1;
-  return (method, ...params) => {
-    const reply = send({ jsonrpc: "2.0", id: nextId++, method, params }) as Reply | null | undefined;
-    if (reply == null) return undefined; // notification / no reply
-    if (reply.error) throw new Error(`rpc ${method}: [${reply.error.code}] ${reply.error.message}`);
-    return reply.result;
-  };
-}
 
 // A null RPC result (an absent std::optional) maps to null for the nullable byte reads. Binary
 // crosses as a Uint8Array in both directions (the qjs codec decodes a typed byte param straight

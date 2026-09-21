@@ -14,6 +14,7 @@
 // the module shape of ../../lsdj/codec/sav.ts (listSongs is the risa analog of LSDj listProjects).
 
 import { BANK_DATA, WRAM_BANK_SIZE, SAVE_MAGIC, SAVE_MAGIC_OFFSET, SONG_NAME_OFFSET, SONG_NAME_LEN, SAVE_CURRENT_ENTRY_OFFSET } from "./constants";
+import { readU16, writeU16, decodeName } from "./bytes";
 
 /** One saved song in the RSAV catalog — index + name, plus the record version and total byte length
  *  (both read cheaply from the record header, no payload decode). */
@@ -40,32 +41,18 @@ const kPocketSize = 0x40000; // 256 KB — Analogue Pocket wrapper (save is the 
 const kSaveHeaderSize = 0x100; // catalog header size; records start here (region-relative)
 const kRecHeader = 0x10; // per-record header size (length + name + version)
 const kNameLen = 8; // SONG_NAME_LEN
-const kUntitled = "UNTITLED";
 
 const RSAV_MAGIC = [0x52, 0x53, 0x41, 0x56]; // "RSAV"
 
 export const CURRENT_LAYOUT: CatalogLayout = { key: "current", offset: 0x8000, size: 0x8000, version: 2 };
 export const LEGACY_LAYOUT: CatalogLayout = { key: "legacy", offset: 0x6000, size: 0xa000, version: 1 };
 
-function readU16(bytes: Uint8Array, off: number): number {
-  return bytes[off] | (bytes[off + 1] << 8);
-}
 
-function writeU16(bytes: Uint8Array, off: number, value: number): void {
-  bytes[off] = value & 0xff;
-  bytes[off + 1] = (value >> 8) & 0xff;
-}
 
 /** Decode an 8-byte song name: ASCII up to the first NUL, right-trimmed; empty -> "UNTITLED".
- *  (record_codec.js decodeName / encodeName space-pad with 0x20.) */
-export function decodeSongName(bytes: Uint8Array): string {
-  let s = "";
-  for (let i = 0; i < bytes.length; i++) {
-    if (bytes[i] === 0) break;
-    s += String.fromCharCode(bytes[i]);
-  }
-  return s.replace(/\s+$/, "") || kUntitled;
-}
+ *  The same function record.ts and working.ts use - this was a third copy written as an index loop,
+ *  whose own comment already pointed at the other two. */
+export const decodeSongName = decodeName;
 
 /** The name of the working song (the live song in WRAM banks 0-3), keyed by the 'N8T' magic at bank-1
  *  0x1E80. null when the magic is absent (no working song) or the container is unrecognized. A cheap

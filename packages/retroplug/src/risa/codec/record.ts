@@ -35,8 +35,8 @@ import {
   SAVE_RECORD_VERSION_V3,
   SAVE_RECORD_VERSION_V2,
   SONG_NAME_LEN,
-  UNTITLED,
 } from "./constants";
+import { readU16, writeU16, decodeName, encodeName } from "./bytes";
 
 /** A decoded risa song record — flat typed-array collections mirroring record_codec.js parseSongRecord.
  *  Each collection element is either the object's raw row bytes or null (absent). */
@@ -55,13 +55,6 @@ export interface RisaRecord {
 
 const bitIsSet = (bytes: Uint8Array, idx: number): boolean => (bytes[idx >> 3] & (1 << (idx & 7))) !== 0;
 
-function readU16(bytes: Uint8Array, off: number): number {
-  return bytes[off] | (bytes[off + 1] << 8);
-}
-function writeU16(bytes: Uint8Array, off: number, value: number): void {
-  bytes[off] = value & 0xff;
-  bytes[off + 1] = (value >> 8) & 0xff;
-}
 
 function ensureWithin(bytes: Uint8Array, end: number): void {
   if (end > bytes.length) throw new Error("Song record ended early");
@@ -75,20 +68,6 @@ function readBytes(bytes: Uint8Array, pos: number, len: number): Uint8Array {
   return bytes.slice(pos, pos + len);
 }
 
-function decodeName(bytes: Uint8Array): string {
-  let out = "";
-  for (const byte of bytes) {
-    if (byte === 0) break;
-    out += String.fromCharCode(byte);
-  }
-  return out.replace(/\s+$/, "") || UNTITLED;
-}
-function encodeName(name: string): Uint8Array {
-  const out = new Uint8Array(SONG_NAME_LEN).fill(0x20);
-  const s = String(name || UNTITLED).slice(0, SONG_NAME_LEN);
-  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 0xff;
-  return out;
-}
 
 /** Decode a whole record (16-byte header + payload). Strict: the length header must equal the buffer
  *  length and the payload must consume exactly to the end (a faithful port of parseSongRecord). */

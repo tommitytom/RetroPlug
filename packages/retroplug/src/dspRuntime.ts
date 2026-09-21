@@ -8,19 +8,8 @@
 // A JS object never crosses; the per-block drive happens inside the native render loop, not here.
 
 import type { KernelStructure } from "./dspKernel";
+import { makeCall } from "./rpcClient";
 
-type RpcSend = (request: unknown) => unknown;
-interface Reply {
-  result?: unknown;
-  error?: { code: number; message: string };
-}
-
-function resolveSend(): RpcSend {
-  const ns = (globalThis as Record<symbol, unknown>)[Symbol.for("plugin")] as { __rpcSend?: RpcSend } | undefined;
-  if (!ns || typeof ns.__rpcSend !== "function")
-    throw new Error("no native backend: globalThis[Symbol.for('plugin')].__rpcSend is missing");
-  return ns.__rpcSend;
-}
 
 export interface DspRuntimeClient {
   /** Compile the kernel bundle source to QuickJS bytecode, or null on a compile error. */
@@ -33,15 +22,7 @@ export interface DspRuntimeClient {
 
 /** Build a DSP-runtime client backed by the native host. Throws if no RPC surface is bound. */
 export function createDspRuntime(): DspRuntimeClient {
-  const send = resolveSend();
-  let nextId = 1;
-
-  const call = (method: string, ...params: unknown[]): unknown => {
-    const reply = send({ jsonrpc: "2.0", id: nextId++, method, params }) as Reply | null | undefined;
-    if (reply == null) return undefined;
-    if (reply.error) throw new Error(`rpc ${method}: [${reply.error.code}] ${reply.error.message}`);
-    return reply.result;
-  };
+  const call = makeCall();
 
   // Binary INPUT crosses as a plain number[] (reflect-cpp's byte reader rejects a typed array).
   const ints = (b: Uint8Array): number[] => Array.from(b);
