@@ -6,7 +6,7 @@
 // override, pick a sibling ROM, and apply the load/add/replace + focus rules.
 //
 // Mirrors RecentStore's shape (constructor(backend, onChange), view(), mutators,
-// no-op-guarded change signal). Reproduces PluginRpcService's constructSystem /
+// no-op-guarded change signal). Reproduces the legacy native service's constructSystem /
 // duplicateSystem / reload orchestration and the DSP list handlers
 // (PluginDSP.cpp:406-458), with every path derived by the pure kernels.
 

@@ -154,8 +154,6 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     (item: MenuItem) => Math.min(actionIdxRef.current.get(item.id) ?? 0, Math.max(0, (item.actions?.length ?? 0) - 1)),
     [],
   );
-  // The live text/confirm prompt overlay, or null. The ref mirrors it so the once-mounted key handler
-  // reads the latest; the state drives the render.
   // The last "frame" tick (ms) — the UI's only monotonic clock (LVGL tick, u32), for hold-to-repeat timing.
   const tickRef = useRef(0);
   // The held d-pad button's repeat state, or null: slot = `${pad}:${name}` (release matches on it), the
@@ -169,6 +167,8 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   // fresh one; the synthesized repeats are not).
   const arrowHeldRef = useRef({ up: false, down: false });
   const arrowFreshRef = useRef({ up: false, down: false });
+  // The live text/confirm prompt overlay, or null. The ref mirrors the state so the once-mounted key
+  // handler reads the latest; the state drives the render.
   const [promptState, setPromptState] = useState<PromptState | null>(null);
   const promptStateRef = useRef<PromptState | null>(null);
   const setPrompt = useCallback((next: PromptState | null) => {

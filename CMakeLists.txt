@@ -301,8 +301,9 @@ retroplug_silence_dep_warnings(efsw-static efsw)
 # --- mgb-rom: the mGB Game Boy MIDI-synth ROM, embedded in the binary ---------
 # bin2c turns resources/roms/mGB.gb into an external-linkage byte array; a small
 # static lib so every consumer just links it (no per-source-list / cross-dir
-# generated-source wiring). PluginRpcService::loadMgb builds a system from it,
-# and Project::addSystem re-supplies it for saved projects (see EmbeddedRoms.hpp).
+# generated-source wiring). A construct spec carries `embeddedRom: "mgb"` instead of a
+# path, and SameBoyBackend resolves the marker to these bytes (see EmbeddedRoms.hpp),
+# so a saved project reloads mGB with no file on disk.
 # Fixed, git-tracked asset → a timestamp-tracked rule (regen only when it changes).
 set(MGB_ROM_C "${CMAKE_BINARY_DIR}/generated/roms/mgb_rom_data.c")
 add_custom_command(

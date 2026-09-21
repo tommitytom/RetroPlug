@@ -1,7 +1,8 @@
-// The DPF plugin (DSP-first, UI-less). It hosts the SAME control-plane runtime the test
-// host does — TjsHostRuntime + the backend service graph + the __rpcSend bridge on Symbol.for("plugin") — evals
+// The DPF plugin's DSP half. It hosts the SAME control-plane runtime the test host does —
+// TjsHostRuntime + the backend service graph + the __rpcSend bridge on Symbol.for("plugin") — evals
 // the embedded control-plane bundle (which composes the stores + DSP kernel and defines the __rp_*
-// globals), and drives the Engine per audio block from DPF's run(). No editor: get/setState and the
+// globals), and drives the Engine per audio block from DPF's run(). The editor is PluginUI.cpp
+// (DISTRHO_PLUGIN_HAS_UI 1) and shares this graph rather than composing its own; get/setState and the
 // RETROPLUG_AUTOLOAD_PROJECT hook go through the JS project globals (base64 done in JS).
 #include "DistrhoPlugin.hpp"
 

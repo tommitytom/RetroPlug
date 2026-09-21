@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <vector>
 
-// LSDJ kit sample encoding helpers. Ported from old/src/lsdj/SampleUtil.h.
+// LSDJ kit sample encoding helpers. Ported from the legacy build's SampleUtil.h.
 //
 // LSDJ stores per-kit samples as packed 4-bit nibbles (two samples per byte).
 // Two quirks of the GB DAC and LSDJ's compensation for them are baked into

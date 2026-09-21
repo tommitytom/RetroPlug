@@ -195,7 +195,7 @@ public:
 
     // Reveal `path` in the OS file manager (the Settings -> Open Settings Folder item). Fire-and-forget
     // via the __rp_openPath seam; a per-OS shell handler backgrounded so it never blocks the UI, mirroring
-    // legacy PluginRpcService::openSettingsFolder.
+    // legacy build's openSettingsFolder.
     void openPath(const char* path) {
         if (path && *path) openPathInFileManager(path);
     }

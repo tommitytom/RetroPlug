@@ -10,7 +10,7 @@
 // backend kind); "feature" roles are behaviors attached by a ROM provider. A role's
 // DSP-thread behavior (the doc-06 translator/source/router — mGB, lsdj-sync, routing)
 // is the `dsp` field, authored as a plain TS behavior over dspKernel's per-system
-// context. Its UI-thread behavior (control-plane, e.g. kit-patch) stays a deferred `ui`
+// context. Its UI-thread behavior (a role's own settings UI) stays a deferred `ui`
 // seam — a role is never an opaque native blob.
 
 import type { ProjectBehavior, SystemBehavior } from "./dspKernel";
@@ -56,7 +56,8 @@ export interface RoleType {
    *  Runs only for roles actually attached to the system, so it's inherently ROM-gated. `config` is this
    *  role's own config (e.g. an LSDj asset-override list). */
   onConstruct?(spec: ConstructSpec, caps: ConstructCaps, config: Record<string, unknown>): ConstructSpec;
-  /** DEFERRED: a UI-thread behavior (control-plane, e.g. kit-patch) + settings render descriptor. */
+  /** DEFERRED: a role-owned settings UI + its render descriptor. (Kit patching does NOT need this -
+   *  `lsdj-assets` is a no-DSP role that compiles on the control plane via the compileKit RPC.) */
   ui?: unknown;
 }
 

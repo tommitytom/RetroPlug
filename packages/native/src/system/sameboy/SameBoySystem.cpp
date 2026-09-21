@@ -253,7 +253,7 @@ void SameBoySystem::onActivate(double sampleRate) {
 
     // Cartridge battery RAM. Apply BEFORE savestate so that, when both are
     // present, the savestate's embedded SRAM wins (same convention the
-    // legacy build used in old/src/sameboy/SameBoyHooks.cpp).
+    // legacy build's SameBoyHooks used).
     if (!config_.sram.empty()) {
         const int expected = GB_save_battery_size(gb_);
         if (expected > 0) {
@@ -429,7 +429,7 @@ bool SameBoySystem::captureStateSnapshot(std::vector<std::uint8_t>& dst) {
 // survives a DMG<->CGB switch unchanged — it is computed by subtracting vram+ram+mbc from a total that
 // contains them, so those terms cancel — but it does move across an SGB boundary. Must stay cheap and
 // allocation-free; it runs at the publish cadence on the block thread.
-// Ported from old/src/sameboy/SectionOffsetCollector.c.
+// Ported from the legacy build's SectionOffsetCollector.
 SystemBase::StateRegionTable SameBoySystem::stateSnapshotRegions() const {
     StateRegionTable t{};
     if (!gb_) return t;
@@ -566,7 +566,7 @@ void SameBoySystem::pressButton(std::uint8_t button, bool down) {
     // from the previous entry. This stops a press+release pair sent in the
     // same UI tick from collapsing onto a single sample (which the joypad
     // debouncer would simply miss). Mirrors the old SameBoyUtil::processButtons
-    // logic at old/src/sameboy/SameBoyUtil.cpp:149-163.
+    // logic in the legacy build's SameBoyUtil.
     std::uint32_t offset = 0;
     if (!pendingButtons_.empty())
         offset = pendingButtons_.back().offset + buttonSpacingSamples_;
@@ -598,7 +598,7 @@ void SameBoySystem::writeAudioSample(int16_t left, int16_t right) {
         stereoAccum_[writeIdx + 1] = s16ToF32(right);
     }
     // Overproduction beyond the block size is silently discarded (matches the
-    // old behavior in old/src/sameboy/SameBoyUtil.cpp; ≤1 sample/block click).
+    // behaviour in the legacy build's SameBoyUtil; ≤1 sample/block click).
     ++audioFrameCount_;
 
     // MI.OUT serial-OUT capture — and yes, this belongs in the per-sample APU callback. LSDJ in

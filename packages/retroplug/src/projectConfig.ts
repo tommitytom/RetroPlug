@@ -325,7 +325,8 @@ export function serializeConfig(cfg: ProjectConfig, baseDir: string, canonicaliz
 }
 
 /** Parse config JSON with the zod schemas: migrate an older raw shape up to current
- *  (no-op today), then validate + default + clamp (unknown fields stripped). Never
+ *  (three steps today - see PROJECT_MIGRATIONS), then validate + default + clamp
+ *  (unknown fields are STRIPPED, at every level - the schemas are plain `z.object`). Never
  *  throws — malformed JSON / a non-object root yield an empty-default config, a
  *  garbage system entry is dropped, out-of-range/wrong-type values are coerced. */
 export function parseConfig(json: string): ProjectConfig {
@@ -340,18 +341,19 @@ export function parseConfig(json: string): ProjectConfig {
   const migrated = migrateProjectRaw(root, version);
   const parsed = projectConfigSchema.parse(migrated);
 
-  // Settings: default when missing/invalid, else clamped/defaulted (unknowns kept).
+  // Settings: default when missing/invalid, else clamped/defaulted.
   const sp = projectSettingsSchema.safeParse(parsed.settings);
   const settings = (sp.success ? sp.data : projectSettingsSchema.parse({})) as ProjectSettings;
 
-  // Systems: keep each valid (object) entry with its unknowns preserved; drop garbage.
+  // Systems: keep each valid (object) entry, drop garbage.
   const systems: SystemThin[] = [];
   for (const raw of parsed.systems as unknown[]) {
     const r = systemThinSchema.safeParse(raw);
     if (r.success) systems.push(r.data as SystemThin);
   }
 
-  // Spread `parsed` first to preserve unknown ROOT fields, then override the validated ones.
+  // Spread `parsed` first, then override the validated members. (`parsed` has already been
+  // through projectConfigSchema, so unknown root fields are gone by this point.)
   return { ...parsed, schemaVersion: parsed.schemaVersion as string, settings, systems } as ProjectConfig;
 }
 

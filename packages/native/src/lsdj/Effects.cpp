@@ -129,7 +129,7 @@ void updateCoefficients(const FilterEffect& effect, FilterState& s) {
     }
 }
 
-// ----- Dither algorithms (ported from old/src/core/audio/AudioDithering.h) -----
+// ----- Dither algorithms (ported from the legacy build's AudioDithering.h) -----
 
 void errorDiffusion(std::vector<float>& buf, int bitDepth) {
     const int   levels    = 1 << bitDepth;

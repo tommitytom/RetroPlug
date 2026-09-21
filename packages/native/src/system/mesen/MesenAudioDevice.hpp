@@ -12,7 +12,7 @@
 // rate we ask for; MesenNesSystem drains them as float32 once enough samples
 // for the current audio block have accumulated.
 //
-// Lifted from old/src/mesen/MesenAudioDevice.h verbatim (no orb deps to fix).
+// Carried over from the pre-port build unchanged; it needed no adaptation.
 class MesenAudioDevice final : public IAudioDevice {
 public:
     void PlayBuffer(int16_t* samples, uint32_t count, uint32_t /*sampleRate*/, bool /*isStereo*/) override {

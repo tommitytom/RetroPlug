@@ -1,8 +1,8 @@
 // Sibling-file derivation for a ROM: its battery `.sav`, its project `.rplg`, the
 // resolved save path (suffix sibling vs explicit override), the free-suffix scan
 // used when adding a duplicate instance, and the ordered ROM candidates probed
-// when pairing a picked `.sav`. Ports of packages/native SramAutoSave.hpp,
-// assignSavSuffix, and findSiblingRom's candidate enumeration.
+// when pairing a picked `.sav`. Ported from the legacy native build (SramAutoSave,
+// assignSavSuffix, findSiblingRom's candidate enumeration); all of it is TS-side now.
 //
 // The two "kernels" here stay pure so they're unit-testable without a Backend:
 // `nextFreeSavSuffix` takes ownership/existence predicates, and

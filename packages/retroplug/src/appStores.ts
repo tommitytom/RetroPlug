@@ -11,10 +11,10 @@
 // userConfig / bindings) get it here; project's two signals (systems-structure vs any-state) are wired
 // through its setters.
 //
-// Future unification: the plugin's control-plane bundle (pluginControlPlane.ts) still composes its stores
-// inline because the plugin is headless today — there's no co-resident UI context to share a graph with.
-// When the plugin gains an editor, route its composition through composeAppStores too so the
-// control plane and the UI observe ONE graph.
+// Every host routes through here, the plugin's control-plane bundle (pluginControlPlane.ts) included,
+// so the control plane and the co-resident editor observe ONE graph. That is load-bearing rather than
+// tidy: when they were two graphs, closing and reopening the editor in a DAW showed the start menu
+// instead of the loaded project.
 
 import { createRealBackend } from "./realBackend";
 import type { ControlPlaneBackend } from "./backend";

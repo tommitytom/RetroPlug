@@ -1,7 +1,7 @@
 // The menu trees, ported from legacy menuDefs.tsx. Every leaf drives a store method; current
 // values are baked into labels and recomputed each render (there's no separate "checked" state — the
-// label IS the display). Actions still gated on a deferred backend surface (the bindings editor) are
-// omitted here, noted where their submenu would list them.
+// label IS the display). The bindings editor is no longer deferred - it is `bindingsChildren` below,
+// a profile switcher plus a capture row per button.
 
 import type { AppStores } from "../../../src/appStores";
 import type { SystemView } from "../../../src/systemsStore";
@@ -953,9 +953,6 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   return items;
 }
 
-/** The LSDj sync submenu — Mode + Tempo Divisor + Auto Start cyclers. Shown only for a system carrying an lsdj-sync
- *  role (a sniffed LSDj cart). Both edits re-push the DSP kernel structure (setRoleConfig → markDirty →
- *  syncDspFromStore), so they apply to the running behaviour on the next block — no dedicated RPC. */
 // --- shared tracker asset submenus (kits / palettes-or-themes / fonts) --------------------------------
 // LSDj + risa both expose replaceable ROM assets as a per-system NON-DESTRUCTIVE override list (the
 // `*-assets` role config, applied to the ROM in memory at construct — the base file is never written). The

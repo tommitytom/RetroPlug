@@ -10,7 +10,7 @@
 #include <rfl/TaggedUnion.hpp>
 
 // Sample-processing chain for LSDJ kit compilation. Ported from
-// old/src/core/Effects.h + old/src/core/audio/AudioDithering.h.
+// the legacy build's Effects.h + AudioDithering.h.
 //
 // Each effect is a plain-data struct that round-trips via reflectcpp; the
 // `LsdjEffect` TaggedUnion below is the serialized effect descriptor. The

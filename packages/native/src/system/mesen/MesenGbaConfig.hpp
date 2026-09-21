@@ -32,7 +32,9 @@ struct MesenGbaConfig {
     // See SameBoyConfig::savPath. Empty => suffix-derived sibling; non-empty =>
     // a user-paired `.sav` file that all battery I/O targets.
     std::string   savPath;
-    // Binary blobs live in the .rplg zip as raw entries — see ProjectBinaries.
+    // Binary blobs (romBytes / sramBytes / stateBytes) are TS-owned now: projectStore
+    // frames a `.rplg.zip` with them as raw PKZIP entries, and a thin `.rplg` omits them
+    // entirely. Native only compresses. Nothing here serializes them.
     std::vector<std::uint8_t> romBytes;
     std::vector<std::uint8_t> sram;
     std::vector<std::uint8_t> savestate;

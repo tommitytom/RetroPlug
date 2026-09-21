@@ -11,8 +11,8 @@
 
 #include "lsdj/Effects.hpp"
 
-// LSDJ kit compilation. Ported from old/src/lsdj/KitUtil.{h,cpp} and
-// old/src/lsdj/Rom.h (the Kit struct's binary layout).
+// LSDJ kit compilation. Ported from the legacy build's KitUtil.{h,cpp} and its
+// Rom.h (the Kit struct's binary layout).
 //
 // Kit bank layout (16 KB == 0x4000 bytes):
 //   0x0000  offset table (16 × uint16 little-endian, addressing relative to

@@ -10,9 +10,10 @@
 // a passive claim would blip a frame, and a passive restore could run AFTER a sibling that re-mounted in
 // the same commit already claimed the keypad, clobbering it.
 //
-// The legacy stray-focus guard (isRebuildingRef) is intentionally NOT here: the menu styles
-// its highlight with LVGL's native onFocusedStyle instead of a React cursor fed by onFocus, so there's
-// no state for stray FOCUSED events to corrupt. Re-add it as an opt-in only if a real flicker appears.
+// The legacy stray-focus guard (isRebuildingRef) is intentionally NOT here. The menu DOES keep its
+// highlight in React state, but that state is updated only by explicit nav / click / rebuild and never
+// from an LVGL onFocus event (see Menu.tsx), so a stray FOCUSED event has nothing to corrupt. Re-add
+// the guard as an opt-in only if a real flicker appears.
 
 import { useCallback, useLayoutEffect, useRef } from "react";
 import { createGroup, setKeyboardGroup, type Group } from "lvgljs";

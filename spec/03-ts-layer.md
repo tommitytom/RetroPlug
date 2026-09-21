@@ -277,10 +277,10 @@ host builds the *same* graph the *same* way.
 ### `pluginControlPlane.ts` — the plugin composition root
 
 [`src/pluginControlPlane.ts`](../packages/retroplug/src/pluginControlPlane.ts) is
-evaluated once by the plugin host in its txiki context. It composes `createRealBackend()` +
-`buildAppRegistry()` + `RecentStore` + `ProjectStore` + `createDspRuntime()`, loads the DSP
-kernel (`dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__))`,
-[pluginControlPlane.ts:74](../packages/retroplug/src/pluginControlPlane.ts#L74)), and
+evaluated once by the plugin host in its txiki context. It composes the whole store graph through
+`composeAppStores()` (backend + registry + recent + userConfig + bindings + project +
+fileSelection) plus `createDspRuntime()`, loads the DSP
+kernel (`dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__))`), and
 wires `project.setOnSystemsChange(() => syncDspFromStore(project, dsp))`.
 
 It then exposes the **string-only C++→JS surface** for project I/O — the plugin drives these
@@ -294,9 +294,7 @@ directly with no further RPC:
 | `__rp_newProject()` | DPF `setState("")`: reset to an empty project |
 | `__rp_ready` | Set true once composition + kernel load succeeded |
 
-Base64 is done **here** in runtime-independent code
-([pluginControlPlane.ts:24-64](../packages/retroplug/src/pluginControlPlane.ts#L24)),
-not native, because DPF state is NUL-terminated UTF-8 while a `.rplg` is binary PKZIP — the
+Base64 is done **here** in runtime-independent code, not native, because DPF state is NUL-terminated UTF-8 while a `.rplg` is binary PKZIP — the
 C++ boundary stays string-only.
 
 ### `appStores.ts` — the shared store graph
@@ -306,14 +304,15 @@ backend?, notify? })` builds the full graph — `registry, recent, userConfig, b
 project, fileSelection` — so every host constructs it identically. Change notification is
 injected as one `notify(channel)` where `StoreChannel = "project" | "systems" | "recent" |
 "userConfig" | "bindings"`. It wires the project's two signals plus focus
-([appStores.ts:68-71](../packages/retroplug/src/appStores.ts#L68)) but **does not**
-wire the DSP (that stays the control plane's job). The DPF plugin's editor builds its graph this
-way (through [`StoreProvider`](../packages/retroplug/ui/stores/StoreProvider.tsx#L35)),
-but the plugin's **control-plane bundle** ([`pluginControlPlane.ts`](../packages/retroplug/src/pluginControlPlane.ts))
-still composes a *separate* graph inline — so the plugin currently runs two store graphs on its one
-shared context (the control plane's, which drives DSP projection and DAW get/setState, and the
-editor's) rather than one. Unifying them onto a single `composeAppStores` graph is flagged in
-[appStores.ts:14-17](../packages/retroplug/src/appStores.ts#L14) but not done.
+but **does not** wire the DSP (that stays the control plane's job).
+
+**Every host composes through here, and the plugin runs exactly ONE graph.**
+`pluginControlPlane.ts` calls `composeAppStores` at construct and publishes the result on the
+plugin namespace; the editor's [`StoreProvider`](../packages/retroplug/ui/stores/StoreProvider.tsx)
+reuses that published graph when it is present, and composes its own only when there is none (the
+ui-test harness). This is load-bearing rather than tidy: when the editor composed a second graph,
+the systems the UI showed were not the ones the DSP played or `getState` serialized, and closing
+and reopening the editor in a DAW showed the start menu instead of the loaded project.
 
 ### `appHost.ts` — host glue
 

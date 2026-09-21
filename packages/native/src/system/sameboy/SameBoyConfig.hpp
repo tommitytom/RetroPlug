@@ -14,9 +14,12 @@ enum class SameBoyModel : std::uint32_t {
     Auto = 0,
     DmgB,    // Game Boy             (GB_MODEL_DMG_B)
     Mgb,     // Game Boy Pocket      (GB_MODEL_MGB)
-    Sgb,     // Super Game Boy NTSC  (GB_MODEL_SGB_NTSC_NO_SFC)
-    SgbPal,  // Super Game Boy PAL   (GB_MODEL_SGB_PAL_NO_SFC)
-    Sgb2,    // Super Game Boy 2     (GB_MODEL_SGB2_NO_SFC)
+    // The HLE (Super Famicom emulated) models, NOT the *_NO_SFC variants - see the
+    // mapping in SameBoySystem.cpp for why: only the HLE models run SameBoy's own SGB
+    // command handling and render into gb->screen.
+    Sgb,     // Super Game Boy NTSC  (GB_MODEL_SGB_NTSC)
+    SgbPal,  // Super Game Boy PAL   (GB_MODEL_SGB_PAL)
+    Sgb2,    // Super Game Boy 2     (GB_MODEL_SGB2)
     Cgb0,    // Game Boy Color CPU-0 (GB_MODEL_CGB_0)
     CgbA,    // Game Boy Color CPU-A (GB_MODEL_CGB_A)
     CgbB,    // Game Boy Color CPU-B (GB_MODEL_CGB_B)
@@ -106,9 +109,9 @@ struct SameBoyConfig {
     // Survives the thin-JSON strip (not a binary blob), so a saved project
     // re-supplies the embedded ROM on reopen.
     std::string               embeddedRom;
-    // Binary blobs live in the .rplg zip as raw entries (see ProjectBinaries).
-    // In project.json they always serialize as `[]` because ProjectSerialization
-    // strips them before the JSON pass.
+    // Binary blobs (romBytes / sramBytes / stateBytes) are TS-owned now: projectStore
+    // frames a `.rplg.zip` with them as raw PKZIP entries, and a thin `.rplg` omits them
+    // entirely. Native only compresses. Nothing here serializes them.
     std::vector<std::uint8_t> romBytes;   // populated when embedRom
     // Cartridge battery RAM (.sav contents). Path-based ROM loads slurp the
     // sibling `<rom>.sav` once and stash it here; subsequent host-project

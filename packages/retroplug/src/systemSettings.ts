@@ -4,8 +4,9 @@
 // with the `Core` emulator axis in platform.ts.)
 //
 // The shape + defaults + clamping are a zod schema (the load-time validator); the
-// interface is kept as the public type. `z.looseObject` preserves any unknown
-// forward-compat fields.
+// interface is kept as the public type. The schema is a plain `z.object`, so unknown keys
+// are STRIPPED - forward compatibility is handled by version stamping (a file written by a
+// newer build is refused and latched read-only), not by carrying fields we do not know.
 
 import { z, clampedNumber, boolField } from "./configSchema";
 

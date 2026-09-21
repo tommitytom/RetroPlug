@@ -20,9 +20,9 @@ namespace fs = std::filesystem;
 
 namespace {
 
-// The per-OS config dir. Reimplemented here (rather than linking native's UserConfigPaths.cpp) so
-// this host stays free of UserConfig.hpp / efsw; the logic mirrors
-// packages/native/src/config/UserConfigPaths.cpp exactly.
+// The per-OS config dir, and the only implementation of it - config is TS-owned, so this is the
+// one place the native side decides WHERE. RETROPLUG_USER_CONFIG_DIR overrides it, which is what
+// gives every test an isolated real directory.
 fs::path resolveConfigDir() {
     if (const char* env = std::getenv("RETROPLUG_USER_CONFIG_DIR"); env && *env)
         return fs::path(env);

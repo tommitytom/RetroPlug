@@ -177,8 +177,9 @@ public:
     virtual std::optional<bool> fastBoot() const { return std::nullopt; }
     virtual void                setFastBoot(bool /*on*/) {}
 
-    // "Reload when the ROM file changes on disk" — polled by
-    // PluginRpcService::pumpRomWatchers.
+    // "Reload when the ROM file changes on disk" — a UI-thread flag, not a core one.
+    // The control plane watches the path (HostRpcService::drainChangedPaths, over
+    // NativeFileWatcher) and reloads; nothing on the audio thread reads this.
     virtual bool wantsRomReload() const  { return false; }
     virtual void setRomReload(bool /*on*/) {}
 
@@ -219,11 +220,10 @@ public:
     // their own (heterogeneous) register files by name; every supported
     // backend includes a "pc" register and a getProgramCounter().
     //
-    // SameBoy implements all of these. The Mesen backends (NES/GBA) implement
-    // registers + PC + register writes; instruction stepping and the
-    // side-effect-free readCpuByte are gated on the Mesen debugger and ship
-    // later (see porting/19-mesen-debugger.md) — until then they return the
-    // unsupported defaults (0 / nullopt).
+    // SameBoy implements all of these. So do the Mesen NES and GBA backends, over
+    // Mesen's own debugger. SMS is the one partial backend: registers, PC and the
+    // side-effect-free readCpuByte, but no stepInstruction() — it keeps the
+    // unsupported default (0).
 
     // Live register file (empty when unsupported). Names are canonical lower
     // case ("pc", "sp", "a", "af", "r15", "cpsr", …).

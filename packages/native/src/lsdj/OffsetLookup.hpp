@@ -9,7 +9,7 @@
 // (v9.4.2) and Arduinoboy (v9.3.3) builds are supported; both share an
 // identical kit-bank layout (banks 8..23 for kit slots 0..15).
 //
-// Full ROM-version-aware port of the legacy `old/src/lsdj/OffsetLookup.h`
+// Full ROM-version-aware port of the legacy build's OffsetLookup.h
 // is deferred until support for user-supplied LSDJ ROMs lands. When that
 // happens this file is the natural home for the version table — the
 // public surface `kitBankForSlot()` will pick up an additional `RomInfo`

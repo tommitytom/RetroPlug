@@ -1,7 +1,7 @@
 // Sibling .sav / .rplg derivation + the sav-suffix and ROM-pairing kernels.
-// Ports of packages/native SramAutoSave.hpp (siblingPath/siblingSavPath/
-// resolveSavPath), assignSavSuffix (PluginRpcService.cpp:133), and findSiblingRom's
-// candidate enumeration (PluginRpcService.cpp:380). The suffix scan and candidate
+// Ported from the legacy native build (SramAutoSave's siblingPath / siblingSavPath /
+// resolveSavPath, assignSavSuffix, and findSiblingRom's
+// candidate enumeration); all of it is TS-side now. The suffix scan and candidate
 // list are pure kernels: they take predicates / return an ordered list, and the
 // systems domain wires them to the live systems + Backend later.
 import { test, expect } from "../../testing/harness";
