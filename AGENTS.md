@@ -208,6 +208,19 @@ step needs and pins pnpm via corepack, because pnpm strips `PATH` for spawned ch
 on Windows — without it the scripts die on `spawnSync cmake ENOENT`, which looks like a
 broken tree but is not.
 
+**A case that cannot run SKIPS, and the skip is counted.** `skip(reason)` (exported by
+`testing/harness.ts`, and by the CLI SDK) reports the case as TAP `ok N - name # SKIP reason`
+rather than as a pass — the convention it replaced was a `console.log("# SKIP ...")` plus a bare
+`return`, which printed `ok` and counted as coverage. It THROWS, so it works from inside a helper
+or a loop; call it only from a test body, since an exception raised in a DSP kernel callback is
+flattened to a boolean natively and would vanish. Which files may skip is pinned by
+`packages/retroplug/scripts/skip-baseline.json` — generated with the sibling fixture trees ABSENT,
+so it records CI's worst case and a dev box that owns the fixtures simply skips less. A file that
+starts skipping, skips more than its entry, or loses cases fails the run. Regenerate with
+`--update-skip-baseline` (refused on a filtered run); `RP_FAIL_ON_SKIP=1` demands zero skips.
+Fixtures are reached through `__REPO_RESOURCES_DIR__` / `__RESOURCES_DIR__` / `__RISA_SRC__`, never
+a path literal — pointing the last two at a nonexistent dir reproduces the CI picture locally.
+
 **The four `pnpm test*` suites run in PARALLEL, and a slow suite is nearly always one slow
 FILE, not the pool.** Each runner's unit of work is an isolated child process, dispatched by
 the shared pool in

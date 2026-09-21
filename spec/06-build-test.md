@@ -61,6 +61,34 @@ The TS runners live in `packages/retroplug/scripts/`; every runner discovers
 a nonzero exit on failure. Slugs accept slash or dash form and a directory prefix runs everything
 under it (e.g. `pnpm test paths` or `paths-rebase`).
 
+### Skips are reported, and ratcheted
+
+A case that cannot run — a fixture that is not checked out, a counter only a profile host exposes —
+calls `skip(reason)` from [testing/harness.ts](../packages/retroplug/testing/harness.ts) and is
+reported as TAP `ok N - name # SKIP reason`, counted separately from a pass. It **throws**, so it
+works from inside a helper or a loop (several files delegate a whole case to a shared helper), and
+`return skip(...)` type-checks anywhere. Call it only from a test body: an exception raised in a DSP
+kernel callback is flattened to a boolean by the native runtime and would vanish.
+
+The runners parse that TAP rather than reading only the exit code, which also lets them fail a file
+that **reported nothing at all** — the harness schedules its report from inside `test()`, so a file
+registering no cases prints nothing and exits 0.
+
+Which files may skip is pinned by
+[scripts/skip-baseline.json](../packages/retroplug/scripts/skip-baseline.json), keyed suite → slug →
+`{skipped, total}`. A file may skip only if listed and only up to its listed count, and may not drop
+below its recorded `total` (deleting cases from a skipping file lowers its skip count, which would
+otherwise read as an improvement). Skipping **fewer** is never an error: the baseline is generated
+with the sibling fixture trees absent, which is CI's worst case, so a dev box that owns the fixtures
+simply runs more of the suite. Regenerate with `--update-skip-baseline` (refused on a filtered run,
+which has no reading for the files it did not execute), and set `RP_FAIL_ON_SKIP=1` to demand zero
+skips on a machine with a complete fixture set.
+
+Fixtures are reached through injected paths, never a literal: `__REPO_RESOURCES_DIR__` (committed,
+in-repo, always present), `__RESOURCES_DIR__` (the sibling resources tree, `RETROPLUG_RESOURCES_DIR`)
+and `__RISA_SRC__` (`RISA_SRC`). Pointing the last two at a nonexistent directory is how the CI
+picture is reproduced locally.
+
 Runners execute their per-file (and, for `test:plugin`, per-binary) work in a **bounded parallel
 pool** — each unit is an isolated child process (its own `mkdtemp` config dir; UI runs an in-process
 software display), so concurrency is safe and needs no coordination. Concurrency defaults to **half
