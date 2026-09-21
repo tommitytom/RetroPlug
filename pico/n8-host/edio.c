@@ -112,7 +112,7 @@ bool edio_mem_wr(uint32_t addr, const uint8_t *data, uint32_t len) {
     // FIVE separate transfers - cmd, addr, len, exec, data - with exec in its own 1-byte
     // write. edio_write drains each to completion, so each phase is its own USB transfer.
     // The cart FIFO needs this staging (a coalesced or cmd+9-header write is silently
-    // dropped by the FIFO, though it works for RAM). See pico-n8-fifo-write-bug.md.
+    // dropped by the FIFO, though it works for RAM). See ../pico-n8-fifo-write-bug.md.
     uint8_t a[4], l[4], e = 0;
     put32(a, addr);
     put32(l, len);

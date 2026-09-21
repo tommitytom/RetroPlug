@@ -7,8 +7,8 @@
 #   tools/run-sanitizer.sh address [slug]   # AddressSanitizer -> build-asan/
 #
 # Default slugs are the two audio-thread tests (dsp-threaded + dsp-lifecycle); pass a slug to run
-# just one. tools/run-sanitizers.sh only builds/runs the Catch2 targets (from build-<san>/test/); the
-# host lands in build-<san>/bin/ and needs a JS bundle argument, so this drives it via
+# just one. The Catch2 binaries are a separate job - build them by name into build-<san>/ if you want
+# them instrumented too. The host lands in build-<san>/bin/ and needs a JS bundle argument, so this drives it via
 # run-native-tests.mjs with the instrumented host. Sanitizer flags are global (CMakeLists.txt
 # RETROPLUG_SANITIZE), so the host is instrumented automatically. Reuses the build-<san>/ dir
 # (configure is idempotent); the load-bearing build/ is untouched.

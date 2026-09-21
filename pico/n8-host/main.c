@@ -89,7 +89,7 @@ static void n8_probe(void) {
 // If a game is already running (or wedged) the menu won't answer, and we just forward MIDI.
 // NOTE: this depends on the cart-FIFO WRITE path (memWR to 0x1810000), which does NOT work
 // over Pico-PIO-USB - the N8 ACKs the write but never routes it to the FIFO, so '*t' gets no
-// reply and this returns early. It works from a silicon USB host. See pico-n8-fifo-write-bug.md.
+// reply and this returns early. It works from a silicon USB host. See ../pico-n8-fifo-write-bug.md.
 // The filename on the N8's PHYSICAL SD card, which is not renamed by this repo - it still reads n8-midi.nes
 // until the card is rewritten. Update both together.
 #define BLIPTOASTER_SD_PATH "usb-games/n8-midi.nes"

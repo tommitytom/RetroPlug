@@ -42,7 +42,7 @@
   // usbmon URB capture: bind-mount the host's debugfs so /sys/kernel/debug/usb/usbmon/<bus>u (a plain
   // text URB log) is readable in the container after `sudo modprobe usbmon` on the host. Used to diff
   // a working host cdc-acm FIFO write vs the Pico's PIO-USB output while debugging the N8 cart-FIFO
-  // write path (pico-n8-fifo-write-bug.md). Read with `sudo cat`. cap-add SYS_ADMIN so debugfs is
+  // write path (pico/pico-n8-fifo-write-bug.md). Read with `sudo cat`. cap-add SYS_ADMIN so debugfs is
   // accessible from inside the container.
   "runArgs": [
     "--init",

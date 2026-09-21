@@ -16,13 +16,13 @@ PIO-USB - they don't contend.
 |-------|-------|------|
 | 2.1 | **done (HW-verified)** | USB host enumerates the N8 + Edio `CMD_STATUS` handshake (`main.c`) |
 | 2.2 | **done (HW-verified)** | `edio.c/.h` port: status + sysInfo + memRD - all reads work over PIO-USB |
-| 2.3 | **BLOCKED** | `fifoWR` = memWR(0x1810000, midi). Byte-identical to the working PC host, but the N8 ACKs the write and never routes it to the cart FIFO **over Pico-PIO-USB** (memWR to RAM works). See **`../../pico-n8-fifo-write-bug.md`**. |
+| 2.3 | **BLOCKED** | `fifoWR` = memWR(0x1810000, midi). Byte-identical to the working PC host, but the N8 ACKs the write and never routes it to the cart FIFO **over Pico-PIO-USB** (memWR to RAM works). See **`../pico-n8-fifo-write-bug.md`**. |
 | 2.4 | **BLOCKED (on 2.3)** | the bridge (MIDI UART1/GP5, reuse `../midi-in/midi.c` -> `fifoWR`) + `edio_menu_*` autonomous boot are CODED but can't reach the N8 until the FIFO write works. All prior "verified" audio was the PC host's residual note, not the Pico. |
 
 > **The blocker is a Pico-PIO-USB limitation, not a bug in this code** - the Edio framing is
 > byte-for-byte identical to the PC host that drives the N8 correctly. The likely fix is a
 > **silicon** USB host: build with `-DRP_NATIVE_USB=ON` and wire the N8 to the RP2350's native
-> USB pins (see the toggle below). Full analysis + everything ruled out: `../../pico-n8-fifo-write-bug.md`.
+> USB pins (see the toggle below). Full analysis + everything ruled out: `../pico-n8-fifo-write-bug.md`.
 
 ## Dependencies (not in the repo yet - see "one-time setup")
 

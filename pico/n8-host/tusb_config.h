@@ -15,7 +15,7 @@
 // -DRP_NATIVE_USB=ON routes the host controller to the RP2350's SILICON USB controller
 // (rhport 0, the Pico's native USB pins) instead of the software PIO-USB (rhport 1). The
 // native controller is a hardware host like a PC's, so its wire timing may drive the N8's
-// cart FIFO where PIO-USB can't (pico-n8-fifo-write-bug.md).
+// cart FIFO where PIO-USB can't (../pico-n8-fifo-write-bug.md).
 #define CFG_TUH_ENABLED        1
 #ifdef USE_NATIVE_USB
 #define CFG_TUH_RPI_PIO_USB    0     // native USB host controller

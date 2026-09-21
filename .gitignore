@@ -1,7 +1,7 @@
 # build target dir
 /bin/
 /build/
-# sanitizer build dirs (tools/run-sanitizers.sh)
+# sanitizer build dirs (tools/run-sanitizer.sh)
 /build-tsan/
 /build-asan/
 # profiling build dir (tools/run-profile.sh)
@@ -15,10 +15,8 @@
 CMakeFiles/
 cmake_install.cmake
 CMakeCache.txt
-Makefile
+/Makefile
 node_modules
-# legacy: bundle now lives under build/ui/
-ui/bundle.js
 # generic temp files
 *.a
 *.exe
@@ -26,9 +24,9 @@ _dpf_empty.c
 lv2_ttl_generator
 .claude/settings.local.json
 
-# core dumps
-core
-core.*
+# core dumps (root only - an unanchored `core` would also swallow any src/core/ directory)
+/core
+/core.*
 
 # tools/ Python virtualenv (created by tools/lsdj-manual-setup.sh)
 /tools/.venv/
@@ -36,8 +34,9 @@ core.*
 # Python bytecode cache (e.g. from importing tools/reaper-timing-analyze.py)
 __pycache__/
 
-# Reaper project fixtures (.rpp) — derived/large; regenerate each from its
-# committed .test.ts + author .lua via the matching `make reaper-*-author` target.
+# Reaper project fixtures (.rpp) - derived/large; regenerate each from its committed
+# author .lua via the matching `pnpm reaper:*-author` script (or `pnpm reaper:all`,
+# which re-authors every scenario before rendering it).
 *.rpp
 
 # Package test-bundle output (derived: esbuild -> tjs run / native host)
