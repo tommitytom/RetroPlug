@@ -44,37 +44,40 @@ brief asked for. The recommendation and the numbers behind it are below.
 
 ### 2.1 The codec is C++/reflect-cpp, and write-only from TS
 
-The LSDj save model + codec live entirely in native C++ under
-[packages/native/src/lsdj/](../packages/native/src/lsdj/):
+*(Historical - this section describes the state before the port. The paths below are named rather
+than linked because the files were deleted once the TS codec was certified byte-identical.)*
 
-- **Model** (reflect-cpp structs, the current SSOT): [model/Types.hpp](../packages/native/src/lsdj/model/Types.hpp),
-  [model/Song.hpp](../packages/native/src/lsdj/model/Song.hpp),
-  [model/Instrument.hpp](../packages/native/src/lsdj/model/Instrument.hpp),
-  [model/Sav.hpp](../packages/native/src/lsdj/model/Sav.hpp),
-  [model/FixedArray.hpp](../packages/native/src/lsdj/model/FixedArray.hpp).
-- **Binary codec**: [codec/SongCodec.cpp](../packages/native/src/lsdj/codec/SongCodec.cpp) (562 LOC, the
-  bulk), [codec/SavCodec.cpp](../packages/native/src/lsdj/codec/SavCodec.cpp),
-  [codec/Compression.cpp](../packages/native/src/lsdj/codec/Compression.cpp) (150 LOC — the RLE),
-  [codec/Regions.hpp](../packages/native/src/lsdj/codec/Regions.hpp) (offsets),
-  [codec/SavView.hpp](../packages/native/src/lsdj/codec/SavView.hpp) (bit cursor).
-- **JSON bridge**: [SavSerialization.hpp](../packages/native/src/lsdj/SavSerialization.hpp) (`rfl::json`).
+The LSDj save model + codec lived entirely in native C++ under `packages/native/src/lsdj/`:
+
+- **Model** (reflect-cpp structs, the current SSOT): `model/Types.hpp`,
+  `model/Song.hpp`,
+  `model/Instrument.hpp`,
+  `model/Sav.hpp`,
+  `model/FixedArray.hpp`.
+- **Binary codec**: `codec/SongCodec.cpp` (562 LOC, the
+  bulk), `codec/SavCodec.cpp`,
+  `codec/Compression.cpp` (150 LOC — the RLE),
+  `codec/Regions.hpp` (offsets),
+  `codec/SavView.hpp` (bit cursor).
+- **JSON bridge**: `SavSerialization.hpp` (`rfl::json`).
 
 The **only** thing crossing to TS is encode, via one RPC method:
 `savFromJson(jsonString) → Uint8Array(128 KiB)`
-([HostRpcService.cpp:168](../packages/native/src/host/rpc/HostRpcService.cpp#L168),
-[BackendRpcRegistration.hpp:29](../packages/native/src/host/rpc/BackendRpcRegistration.hpp#L29)).
-TS calls it through [lsdjSav.ts:22](../packages/retroplug/src/lsdjSav.ts#L22).
+(`HostRpcService.cpp:168`,
+`BackendRpcRegistration.hpp:29`).
+TS called it through [lsdjSav.ts](../packages/retroplug/src/lsdjSav.ts), which is now an
+8-line re-export of the pure-TS codec in [src/lsdj/](../packages/retroplug/src/lsdj/).
 
 Critical facts, verified by grep + the research briefs:
 
 - **Decode is dead code.** `decodeSav` / `decodeSong` / `savToJson` / `songToJson` have
   **zero callers** anywhere and are not wired over RPC. The codec is write-only from TS's
   perspective; decode has never been exercised or validated.
-- **One production caller.** [dspRoles.ts:204](../packages/retroplug/src/dspRoles.ts#L204)
+- **One production caller.** [dspRoles.ts](../packages/retroplug/src/dspRoles.ts)
   calls `caps.savFromJson("{}")` to seed an empty sav at LSDj construct — once per system,
   on the main thread. The other 14 callers are `test-native/*.ts` + CLI fixtures.
 - **TS has no typed model.** The `tools/gen-sav-ts.js` promised in
-  [SavSerialization.hpp:15](../packages/native/src/lsdj/SavSerialization.hpp#L15) **does not
+  `SavSerialization.hpp:15` **does not
   exist** (a stale `sav-schema-dump` build artifact remains, but its source is gone).
   Authoring today is stringly-typed `JSON.stringify` against an invisible C++ shape.
 

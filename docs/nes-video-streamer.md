@@ -23,7 +23,7 @@ hardware unchanged. Same playbook that made risa sync work on the first hardware
 Everything the streamer needs on the emulator side already exists:
 
 - **The N8 FIFO is emulated** at `$40F0/$40F1`
-  ([NesEverdriveFifo.hpp](packages/native/src/system/mesen/NesEverdriveFifo.hpp)) - the exact
+  ([NesEverdriveFifo.hpp](../packages/native/src/system/mesen/NesEverdriveFifo.hpp)) - the exact
   register interface a real N8 exposes. `pushBytes` (host -> NES) and the ROM's `$40F0` reads are
   the same bytes hardware would move.
 - **The Edio SD file protocol is emulated** (`execFileRead` / `F_FOPN` / `F_FRD` in the same

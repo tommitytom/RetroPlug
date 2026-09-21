@@ -238,7 +238,7 @@ artifact or a stuck note, NOT proof the game is playing. Cross-check pitch again
 
 > **This console is PAL: pass `--pal` to `--sniff`.** The sniffer cannot tell the region, and without
 > the flag the APU timers decode at the NTSC clock (`decodeSniffer()`'s default,
-> [src/n8/sniffer.ts](../../packages/retroplug/src/n8/sniffer.ts)), so the Hz read ~7.6% HIGH: a capture
+> [src/n8/sniffer.ts](../../../packages/retroplug/src/n8/sniffer.ts)), so the Hz read ~7.6% HIGH: a capture
 > measuring 440 Hz against a sniff reading 474 Hz is **agreement, not a tuning bug** (474 x
 > 1662607/1789773 = 440.3). `n8-load --sniff --pal` decodes at 1.6626 MHz and prints which clock it used;
 > without `--pal` the output reminds you.

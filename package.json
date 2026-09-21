@@ -13,6 +13,7 @@
     "build:cli-sdk": "node tools/build-cli-sdk.mjs",
     "sync:bliptoaster": "tools/sync-cli-to-bliptoaster.sh",
     "typecheck": "pnpm -r typecheck",
+    "check:docs": "node tools/check-doc-links.mjs",
     "test": "node scripts/cmake-build.js tjs-cli && node packages/retroplug/scripts/run-tests.mjs",
     "test:native": "node scripts/cmake-build.js retroplug-host && node packages/retroplug/scripts/run-native-tests.mjs",
     "lsdj:gen-offsets": "node scripts/cmake-build.js retroplug-host && node packages/retroplug/scripts/gen-lsdj-offsets.mjs",

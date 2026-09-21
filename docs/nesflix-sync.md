@@ -49,16 +49,16 @@ Controllers set rate (`ani_speed`), direction (`dir`), position (`ScreenNumber`)
 **RetroPlug NES sync seam.** RetroPlug already attaches an emulated EverDrive N8 FIFO to
 *every* NES ROM at `$40F0` (data) / `$40F1` (status), benign if unused:
 
-- [NesEverdriveFifo.hpp](packages/native/src/system/mesen/NesEverdriveFifo.hpp) - the FIFO.
+- [NesEverdriveFifo.hpp](../packages/native/src/system/mesen/NesEverdriveFifo.hpp) - the FIFO.
   `$40F1` bit 7 set (`0x80`) = empty, clear = byte ready; reading `$40F0` pops one byte.
-- [NesN8FifoRole.hpp](packages/native/src/system/mesen/roles/NesN8FifoRole.hpp) -
+- [NesN8FifoRole.hpp](../packages/native/src/system/mesen/roles/NesN8FifoRole.hpp) -
   `pushBytes(offset, data, count, flush)` schedules bytes into the FIFO at sample offsets,
   released in true order by `pumpUntil`. The same queue feeds host MIDI and a raw protocol.
-- [risaSync.ts](packages/retroplug/src/risaSync.ts) + the `risa-sync` role in
-  [dspRoles.ts](packages/retroplug/src/dspRoles.ts) - turn the DAW transport into a raw byte
+- [risaSync.ts](../packages/retroplug/src/risaSync.ts) + the `risa-sync` role in
+  [dspRoles.ts](../packages/retroplug/src/dspRoles.ts) - turn the DAW transport into a raw byte
   stream over `ctx.pushCoreBytes` -> the FIFO: `0xFA` start, `0xF8` clock (24 PPQN), `0xFC`
   stop, `0xF9 0x52 ss cc tt` locate.
-- [romProviders.ts](packages/retroplug/src/romProviders.ts) - detects a ROM by header/marker
+- [romProviders.ts](../packages/retroplug/src/romProviders.ts) - detects a ROM by header/marker
   and attaches its role(s).
 
 Anything that gets bytes into that FIFO drives the ROM; the byte source is interchangeable:
@@ -250,7 +250,7 @@ Two small pieces mirroring risa:
 
 1. **Role** - a dedicated `nesflix-sync` (recommended) or reuse `risa-sync` verbatim:
    - *Dedicated* (`nesflixSync.ts` + a `SystemBehavior` in
-     [dspRoles.ts](packages/retroplug/src/dspRoles.ts)): ~40 lines mirroring `risaSync`. On
+     [dspRoles.ts](../packages/retroplug/src/dspRoles.ts)): ~40 lines mirroring `risaSync`. On
      transport rise / seek send `0xFA` (Minimal) or a locate; while playing emit `0xF8` at 24
      PPQN via `c.eachTick`; on transport fall send `0xFC`. Config `{ clocksPerFrame: number }`
      (default e.g. 6). Clearer, and carries NESFlix-specific config + Option 3 later.
@@ -258,11 +258,11 @@ Two small pieces mirroring risa:
      ignore the locate. Fastest to prototype; muddier semantically (risa's 96-clock phrase
      grid is meaningless to NESFlix). Good for a first spike, replace with the dedicated role.
 
-2. **Detection + attach** ([romProviders.ts](packages/retroplug/src/romProviders.ts)): bake a
+2. **Detection + attach** ([romProviders.ts](../packages/retroplug/src/romProviders.ts)): bake a
    marker (e.g. `NFXSYNC`) into the patched ROM at a fixed offset and add a detector
    (`isNesflixSyncRom`) + one provider line, mirroring `isEverMidiRomHeader`
-   ([evermidi/romDetect.ts](packages/retroplug/src/evermidi/romDetect.ts)) and `isRisaSyncRom`
-   ([risa.ts](packages/retroplug/src/risa.ts)):
+   ([bliptoaster/romDetect.ts](../packages/retroplug/src/bliptoaster/romDetect.ts)) and `isRisaSyncRom`
+   ([risa/index.ts](../packages/retroplug/src/risa/index.ts)):
 
    ```ts
    registry.registerRomProvider((rom: RomContext): RoleInstance[] =>

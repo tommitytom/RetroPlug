@@ -77,7 +77,7 @@ relative timing (the right trade - a little constant latency over sloppy note/sy
 - The producer stamps each message with a target release time:
   `target = blockStartClock + sampleOffsetInBlock / sampleRate + lookahead`.
   The sample offset already exists - `NesN8FifoRole::pumpUntil` computes it for the emulated FIFO
-  (see [MIDI-in sample timing](packages/native/src/system/mesen/roles/NesN8FifoRole.hpp)).
+  (see [MIDI-in sample timing](../packages/native/src/system/mesen/roles/NesN8FifoRole.hpp)).
 - The serial thread holds a time-ordered queue, `sleep_until(target)` (with a short sub-ms spin for the
   tail), then `fifoWR`s. One clock domain (`steady_clock`) end to end.
 - `lookahead` ~5-15 ms absorbs the block period + USB/OS jitter; because it is constant, note spacing and
@@ -104,10 +104,10 @@ MIDI in ──> routing ──> NesN8FifoRole ──┤
 - **Serial thread** (`EdioProxy`-style, from `ecs-linux:src/mesen/EdioProxy.h`): a `std::jthread` owning the
   `Edio` connection, fed by a lock-free SPSC queue of `{ targetTime, bytes[<=8], size }`. Clean stop (flag +
   sentinel enqueue + join). Model teardown on
-  [NativeFileWatcher](packages/native/src/host/rpc/NativeFileWatcher.hpp) (thread-owning member declared
+  [NativeFileWatcher](../packages/native/src/host/rpc/NativeFileWatcher.hpp) (thread-owning member declared
   LAST). This becomes the timed scheduler from section 3.
 - **Audio->serial tap**: a new audio->control `SpscRing` (mirror `released_` in
-  [EngineInvoker](packages/native/src/host/engine/EngineInvoker.hpp)), or reuse moodycamel as the reference
+  [EngineInvoker](../packages/native/src/host/engine/EngineInvoker.hpp)), or reuse moodycamel as the reference
   did. A DSP sink alongside `NesN8FifoRole` pushes the same routed MIDI (with sample offset) to the ring.
 - **CLI pure-pipe**: no emulator, no audio thread - RtMidi callback -> (optional scheduler) -> `edio.fifoWR`.
 
@@ -148,7 +148,7 @@ streams to the cart; status in the tile/menu.
 1. Vendor `libserialport` + `RtMidi` into the CMake build (submodules, like efsw/catch2).
 2. Port `Edio.{h,cpp}` from `ecs-linux` onto libserialport (protocol unchanged; adapt the ~10 serial calls;
    keep `findN8Port` on `38df:0017`; keep the `CMD_STATUS` handshake).
-3. New `retroplug-cli n8-bridge` subcommand in [cli/main.cpp](packages/native/cli/main.cpp) (same dispatch
+3. New `retroplug-cli n8-bridge` subcommand in [cli/main.cpp](../packages/native/cli/main.cpp) (same dispatch
    seam as `render`): open RtMidi in + `Edio`, pipe in the MIDI callback, optional `--lookahead-ms`
    scheduler, `--list`.
 4. Validate: `RP_FIFO_TRACE` parity against the emulator + a real N8 Pro. A mock/loopback serial for CI.

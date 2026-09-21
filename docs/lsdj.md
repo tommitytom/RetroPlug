@@ -18,66 +18,80 @@ map, Arduinoboy protocol, manual lookup) are build-agnostic.
 
 ## Authoring LSDj state in TypeScript (canonical)
 
-> **API note (the examples below are partly stale).** There is no `emu` harness object today —
-> `emu.loadRom` / `emu.chord` / `emu.tap` / `emu.runMs*` / `emu.drainSerial` don't exist. The real
-> native-tier primitives (see any `packages/retroplug/test-native/*.test.ts`) are `createRealBackend()`
-> + `createAudioDriver()`: author the sav with `savFromJson(...)` (a real export), boot with
-> `backend.constructSystem({ romPath, platform:"gb", core:"sameboy", sramBytes: sav }, id)`, drive with
-> `audio.renderAudio(ms)` + `audio.pressButton(id, 7, down)`, read WRAM with
-> `backend.readMemory(id, MemoryRegion.Ram)` — all in the single-threaded direct-render regime (never
-> `audio.startAudio()`). The sav-authoring shape shown here is still accurate.
+The LSDj-driving tests used to navigate the UI with fragile `SELECT/A`+arrow chords in JSON
+`--script` files to build song/sync state. That state is just bytes in the `.sav`, so tests now
+**author it directly** with the sav codec and boot LSDj straight into it — fast (a valid sav skips
+the 12-15 s self-test) and robust (no timing-sensitive navigation). They live under
+[test-native/](../packages/retroplug/test-native/) as `*.test.ts`; run all with `pnpm test:native`,
+or one with `pnpm test:native <slug>` (slash or dash form, and a directory prefix runs everything
+under it).
 
-The LSDj-driving tests used to navigate the UI with fragile `SELECT/A`+arrow
-chords in JSON `--script` files to build song/sync state. That state is just
-bytes in the `.sav`, so tests now **author it directly** with the sav codec and
-boot LSDj straight into it — fast (a valid sav skips the 12–15 s self-test) and
-robust (no timing-sensitive navigation). Every former JSON test now lives under
-[test/ts/](../test/ts/) as a `*.test.ts` (run all with `pnpm test:cli`,
-or one with `pnpm test:cli <slug>` where `<slug>` is the path under
-`test/ts` in slash or dash form — e.g. `gb/lsdj/sav` or `gb-lsdj-sav` — and a
-directory prefix like `gb/lsdj` runs every test under it).
-
-The pattern (see [test/ts/gb/lsdj/sync_pattern.test.ts](../test/ts/gb/lsdj/sync_pattern.test.ts)
-or [lsdj_arduinoboy_metro.test.ts](../test/ts/gb/lsdj/lsdj_arduinoboy_metro.test.ts)):
+There is no `emu` harness object — that was the legacy build's. The native tier composes the real
+backend directly. The pattern, from
+[lsdj-sync-pattern.test.ts](../packages/retroplug/test-native/lsdj-sync-pattern.test.ts):
 
 ```ts
-const sav = emu.savFromJson(JSON.stringify({
+import { test, expect, skip } from "../testing/harness";
+import { createRealBackend } from "../src/realBackend";
+import { createAudioDriver } from "../src/audioDriver";
+import { savFrom, type SongSettings } from "../src/lsdjSav";
+
+declare const __RESOURCES_DIR__: string;            // injected; never a path literal
+const LSDJ = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_4_2.gb";
+
+const sav = savFrom({
   workingSong: {
-    formatVersion: 22,
-    settings: { syncMode: "Lsdj" },              // PROJECT-screen SYNC (None/Lsdj/Midi/Keyboard/AnalogIn/AnalogOut)
-    rows:    [{ chains: [0] }],                   // rows[0].chains[0]=0 → chain 00
-    chains:  [{ phrases: [0] }],                  // chains[0].phrases[0]=0 → phrase 00
-    phrases: [{ notes: [1], instruments: [0] }],  // phrases[0]: step 0 = note 1 / instrument 0
-    instruments: [{ type: "pulse" }],             // instruments[0]
+    settings: { syncMode: "Lsdj" },               // PROJECT-screen SYNC (None/Lsdj/Midi/Keyboard/AnalogIn/AnalogOut)
+    rows:    [{ chains: [0] }],                    // rows[0].chains[0]=0 -> chain 00
+    chains:  [{ phrases: [0] }],                   // chains[0].phrases[0]=0 -> phrase 00
+    phrases: [{ notes: [1], instruments: [0] }],   // phrases[0]: step 0 = note 1 / instrument 0
+    instruments: [{ type: "pulse" }],              // instruments[0]
   },
-}));
-const sys = emu.loadRom(rom, sav, /*lsdjSyncMode*/ "MidiSyncArduinoboy", /*linkGroup*/ 1);
+});
+
+const be = createRealBackend();
+if (!be.fileExists(LSDJ)) skip(`LSDj ROM not found at ${LSDJ}`);
+const audio = createAudioDriver();
+
+be.constructSystem({ romPath: LSDJ, platform: "gb", core: "sameboy",
+                     embeddedRom: "", savPath: null, statePath: null, sramBytes: sav }, 1);
+be.applyRoleConfig(1, "sameboy", { linkGroupId: 1 });   // link-cable group
+be.applyRoleConfig(1, "lsdj-sync", { mode: "MidiSyncArduinoboy" });
+
+audio.renderAudio(6000);                                 // MILLISECONDS of emulated audio, not frames
+audio.pressButton(1, 7 /* Start */, true);
+audio.renderAudio(120);
+audio.pressButton(1, 7, false);
 ```
 
-Fixed arrays may be short or omitted: the sav codec pads each to its full
-on-disk length with default elements (`0` / `null` / `None` / a default struct),
-so a fixture only specifies the cells it sets. Serialization always writes the
-full length, so on-disk encoding and JSON round-trips are unchanged; supplying
-more than the fixed length is an error. (Implemented by `FixedArray<T,N>` in
-[packages/native/src/lsdj/model/FixedArray.hpp](../packages/native/src/lsdj/model/FixedArray.hpp).)
+Two things to get right, both of which have cost this suite a 10x factor:
 
-`emu.loadRom(path, sav?, lsdjSyncMode?, linkGroup?)`:
-- `sav` — an `ArrayBuffer` from `savFromJson` (or `readMemory(sys, Mem.Sram)`).
-- `lsdjSyncMode` — the `LsdjSyncRole` config: `"MidiSync"`, `"MidiMap"`,
-  `"KeyboardMidi"`, `"MidiPassthrough"`, `"MidiSyncArduinoboy"`,
-  `"ArduinoboyMaster"`, … (distinct from the in-sav PROJECT `syncMode`).
-- `linkGroup` — same nonzero value on two systems puts them in a shared
-  `LinkGroup` (lockstep serial-bit ferrying) for LSDj link-cable sync.
+- **`renderAudio(ms)` takes MILLISECONDS.** `renderAudio(44100)` is 44 seconds of emulated audio.
+- **Remove a system once you have read its state** (`be.removeSystem(id)`). `renderAudio` advances
+  every live system in the host process, so a file that boots and abandons cores gets quadratically
+  slower.
 
-Other harness bindings these tests use (see [test/harness/index.ts](../test/harness/index.ts)):
-`setTransport(bool)` / `setBpm(n)` (simulated host transport → the role's MIDI
-clock), `drainMidi(sys)` / `drainSerial(sys)` (role MIDI-out / GB serial-out
-capture), `runMsPerSystem(ms)` (per-system audio — proves link sync), `writeWav`
-(dump audio for the reaper MCP), `saveRplg` (snapshot → `.rplg` for the Reaper
-DAW fixtures), `loadRplg(path)` (inverse of `saveRplg`: rebuild the project from
-a `.rplg`, config + per-system savestate, exactly as the plugin does on load —
-use it to round-trip a fixture in-harness and reproduce what a DAW sees on
-reload), `patchKit(sys, slot, name, samples)` (compile + queue a kit).
+Fixed arrays may be short or omitted: the sav codec pads each to its full on-disk length with
+default elements (`0` / `null` / `None` / a default struct), so a fixture only specifies the cells
+it sets. Serialization always writes the full length, so on-disk encoding and JSON round-trips are
+unchanged; supplying more than the fixed length is an error.
+
+The two config surfaces are distinct and easy to confuse:
+
+- **In-sav `settings.syncMode`** — what the PROJECT screen shows: `"None"`, `"Lsdj"`, `"Midi"`,
+  `"Keyboard"`, `"AnalogIn"`, `"AnalogOut"`. Part of the song data.
+- **The `lsdj-sync` role config** — RetroPlug's own behaviour: `"MidiSync"`, `"MidiMap"`,
+  `"KeyboardMidi"`, `"MidiPassthrough"`, `"MidiSyncArduinoboy"`, `"ArduinoboyMaster"`, `"MasterSync"`
+  ([dspRoles.ts](../packages/retroplug/src/dspRoles.ts)). Applied with `applyRoleConfig`.
+
+The rest of the native-tier surface these tests use:
+`audio.renderAudioPerSystem(ms)` (per-system buffers in slot order — the thing that proves link
+sync, where a mixed buffer cannot), `audio.setTransport(bool)` / `audio.setBpm(n)` (simulated host
+transport -> the role's MIDI clock), `be.drainMidiOut(id)` / `be.drainSerialOut(id)` (role MIDI-out
+and raw GB serial-out capture), `be.readMemory(id, region)` (WRAM/SRAM reads), and
+`be.removeSystem(id)`. All of it is declared in
+[backend.ts](../packages/retroplug/src/backend.ts); never call `audio.startAudio()` in a test — the
+suite runs in the single-threaded direct-render regime.
 
 ## LSDj runtime state (live WRAM reader)
 
@@ -248,13 +262,14 @@ authored WAV; import-sample splice into TR-606 preserving the other samples; imp
 
 Authoring savs covers song/sync/instrument state. If a test genuinely needs to
 drive the live UI (e.g. exercising a menu interaction), the harness exposes
-`emu.chord(sys, buttons, opts?)` and `emu.tap(sys, button, holdMs?)` (see
-[test/harness/index.ts](../test/harness/index.ts); `gb/smoke.test.ts` uses them).
+`audio.pressButton(id, button, down)` plus `audio.renderAudio(ms)` between the edges. There is no
+chord/tap helper on the native tier - a chord is staged by hand, which makes the timing below
+something you have to honour rather than inherit.
 
 LSDJ relies on two-key chords (`SELECT+CURSOR` to change screen, `A+CURSOR` to
-change a field). `emu.chord` encodes the working timing (modifier held ~200 ms
-before the key, released in reverse) — **never press both keys simultaneously**,
-LSDJ drops the chord. The screen map (empirically verified; manual `Figure 1.2`):
+change a field). The working timing is: press the modifier, render ~200 ms, press the key, render,
+then release in reverse order — **never press both keys in the same render**, LSDJ drops the
+chord. The screen map (empirically verified; manual `Figure 1.2`):
 
 ```
                 PROJECT
@@ -267,27 +282,26 @@ SONG  ◄────────► CHAIN  ◄────────► PHRAS
 `SELECT+LEFT` from SONG enters LIVE mode (the grid wraps). The `LEAD` / `SYNC` /
 `WAIT` indicators in the SONG-screen right margin are the runtime confirmation
 that link-cable sync is flowing once START is pressed (manual §5.1.2 / §5.1.3).
-The `retroplug-cli --script` JSON runner (the embedded TypeScript CLI in
-[packages/cli](../packages/cli), with `chord`/`tap`/`midi`/`screenshot` event forms)
-still exists for ad-hoc exploration, but it has no committed example scripts —
-author savs in TS instead.
+The legacy `retroplug-cli --script` JSON runner is gone. `retroplug-cli` now evaluates a TS/JS
+**session** file directly ([09-cli-debugging.md](../spec/09-cli-debugging.md)), and its timeline
+builder carries the same event forms (`screenshot(ms, system, path)` and friends) as typed calls
+rather than JSON. Author savs in TS either way.
 
 ### Pitfalls cheat-sheet
 
 Most of these only bite when driving the live UI; **authoring a sav sidesteps
-them entirely** (no boot wait, no navigation). They still apply to `emu.chord`/
-`emu.tap` based tests.
+them entirely** (no boot wait, no navigation). They still apply to any test that drives buttons.
 
 - **Boot before ~15 s on a fresh ROM** — `getFrame`/`screenshot` captures the
   GB boot ROM or LSDJ's cartridge self-test, not the song screen. Boot from an
   authored sav and ~3–6 s is enough (the self-test is skipped).
-- **Simultaneous chord keys** — pressing both keys at once is silently dropped
-  by LSDJ. Use `emu.chord` (modifier leads ~200 ms).
+- **Simultaneous chord keys** — pressing both keys in one render is silently dropped
+  by LSDJ. Let the modifier lead by ~200 ms.
 - **Cursor-moving keys auto-repeat** — LSDJ's default `KEY DEL/REPEAT 7/2` means
-  holding >7 frames (~117 ms) starts auto-repeating. `emu.tap`'s default
-  `holdMs: 50` is below that threshold; longer holds fire multiple moves.
+  holding >7 frames (~117 ms) starts auto-repeating. Keep a tap under ~50 ms of rendered
+  audio; longer holds fire multiple moves.
 - **Mix audio alone can't prove sync** — two desynced instances still mix into
-  a healthy-looking WAV. Use `emu.runMsPerSystem` and check each instance's RMS.
+  a healthy-looking WAV. Use `audio.renderAudioPerSystem(ms)` and check each instance's RMS.
 - **`SELECT+LEFT` from SONG enters LIVE mode**, not a "previous screen" — the
   screen grid wraps. Stick to `SELECT+UP/DOWN/RIGHT` for vanilla nav.
 - **`A` in PROJECT on items like `HELP` or `LOAD/SAVE SONG` triggers them**
@@ -295,22 +309,22 @@ them entirely** (no boot wait, no navigation). They still apply to `emu.chord`/
 
 ## LSDj link-cable sync
 
-Covered by three TS tests under [test/ts/gb/lsdj/](../test/ts/gb/lsdj/):
+Covered by a matched pair under [test-native/](../packages/retroplug/test-native/):
 
-- [sync_pattern.test.ts](../test/ts/gb/lsdj/sync_pattern.test.ts) — positive: two
-  instances on the same `linkGroup`, both authored SYNC=LSDJ, START on the
-  leader. Verifies sync via **per-system audio** (`emu.runMsPerSystem`): the
-  follower produces audio (and its RMS tracks the leader's) only because it
-  synced. Also writes `/tmp/lsdj-sync-pattern_sys{0,1}.wav` for the reaper MCP.
-- [sync_negative.test.ts](../test/ts/gb/lsdj/sync_negative.test.ts) — control:
-  same setup with SYNC=None. The follower stays **silent** (never starts). If it
+- [lsdj-sync-pattern.test.ts](../packages/retroplug/test-native/lsdj-sync-pattern.test.ts) —
+  positive: two instances on the same `linkGroupId`, both authored SYNC=LSDJ, START on the
+  leader. Verifies sync via **per-system audio** (`audio.renderAudioPerSystem`): the
+  follower produces audio, and its RMS tracks the leader's, only because it synced.
+- [lsdj-sync-negative.test.ts](../packages/retroplug/test-native/lsdj-sync-negative.test.ts) —
+  control: same setup with SYNC=None. The follower stays **silent** (never starts). If it
   ever produces audio, the positive test isn't measuring real sync.
-- [sync_smoke.test.ts](../test/ts/gb/lsdj/sync_smoke.test.ts) — two-instance boot +
-  audio plumbing.
+
+The control is the half that matters: without it the positive test passes on any two instances
+that happen to make noise.
 
 If link sync is genuinely broken, the follower's per-system RMS stays at 0 in
-the positive test — look at `packages/native/src/system/sameboy/LinkGroup.cpp` and the
-`serialStart` / `serialEnd` callbacks in `SameBoySystem.cpp`. `runMsPerSystem`
+the positive test — look at [LinkGroup.cpp](../packages/native/src/system/sameboy/LinkGroup.cpp) and the
+`serialStart` / `serialEnd` callbacks in `SameBoySystem.cpp`. `renderAudioPerSystem`
 isolates each instance's audio (the canonical way to tell synced playback from a
 healthy-looking mix of two desynced instances).
 
@@ -334,7 +348,7 @@ screen: (1) SameBoy plays the Game Boy boot ROM (white screen + chime, ~1.5 s);
 (`CARTRIDGE TEST ROM...` then `SRAM...`) — on the bundled `lsdj9_4_2.gb` this can
 take **12–15 s**. Schedule any screenshot expecting the song screen at
 `at_ms` ≥ 15000 **on a fresh ROM**. The far better option — and what the TS tests
-do — is to boot from an authored sav (`emu.savFromJson(...)`), so LSDj skips the
+do — is to boot from an authored sav (`savFrom(...)`), so LSDj skips the
 self-test and reaches the song screen in ~3–6 s.
 
 ## Reaper / DAW verification
@@ -342,8 +356,10 @@ self-test and reaches the song screen in ~3–6 s.
 The plugin honours `RETROPLUG_AUTOLOAD_PROJECT=path/to/foo.rplg` at construction:
 if set, the `.rplg` (pure PKZIP) is loaded as the initial project — lets a host
 instantiate the plugin with a preconfigured ROM without authoring the DPF state
-chunk by hand. The canonical way to produce a `.rplg` is a TS harness test:
-author the state (sav + roles), then `emu.saveRplg("/tmp/foo.rplg")`. Then:
+chunk by hand. The canonical way to produce one is an authoring script on the native tier: compose a store over
+the real backend, adopt the ROM with an authored sav + roles, boot it to the song screen, then
+export. [test-native/author-lsdj-rplg.ts](../packages/retroplug/test-native/author-lsdj-rplg.ts) is
+the worked example - it is what every `reaper:lsdj-*-author` script runs. Then:
 
 ```sh
 RETROPLUG_AUTOLOAD_PROJECT=/tmp/foo.rplg \
@@ -354,9 +370,9 @@ RETROPLUG_AUTOLOAD_PROJECT=/tmp/foo.rplg \
 pre-built `.rplg` directly. Without the env var, the plugin starts empty (matches
 normal DAW behaviour).
 
-- **Audio-quality check on a render** — `pnpm reaper:analyze-smoke` (runs
-  `test/ts/gb/mgb.test.ts` → `/tmp/cli-smoke.wav`) or `reaper:analyze-lsdj-sync`
-  (runs `test/ts/gb/lsdj/sync_pattern.test.ts`, per-system WAVs via `emu.writeWav`)
+- **Audio-quality check on a render** — `pnpm reaper:analyze-smoke` (runs the CLI session
+  `build/cli/analyze-mgb.js` → `/tmp/cli-smoke.wav`) or `reaper:analyze-lsdj-sync`
+  (runs `build/cli/analyze-lsdj-sync.js`, per-system WAVs)
   stages the WAV into the reaper-mcp-server's projects dir; then ask the `reaper`
   MCP server for loudness/LUFS, frequency content, dynamics, stereo imaging.
   Catches regressions that aren't "no audio" but "audio is wrong" (clipping,
@@ -369,7 +385,7 @@ normal DAW behaviour).
   through mGB, writes `build/reaper-mgb-smoke.wav`. First end-to-end proof the
   plugin works inside a DAW (not just `retroplug-cli`, which bypasses DPF).
   Headless plumbing: `tools/run-reaper-render.sh` (Xvfb + openbox + dummy jackd +
-  EULA auto-dismiss). Regenerate the fixture with `pnpm reaper:mgb-author`.
+  EULA auto-dismiss). Regenerate the fixture with `pnpm reaper:mgb-smoke-author`.
 - **Host MIDI-in intra-block timing** — `pnpm reaper:mgb-midi-timing` proves a host
   MIDI event keeps its intra-block **sample offset** through a real DAW render (the fix
   that stopped SameBoy collapsing every serial byte to frame 0 —
@@ -499,16 +515,17 @@ releases as `lsdj<ver>.gb`, arduinoboy variants as `lsdj<ver>-arduinoboy.gb`,
 develop snapshots as `lsdj<ver>-develop.gb`. Non-LSDj ROMs (Nanoloop GBA, mGB,
 n8-midi) live one level up at `../resources/roms/`.
 
-The sniffer ([packages/native/src/system/sameboy/RomSniffer.cpp](../packages/native/src/system/sameboy/RomSniffer.cpp))
-treats both ROMs as `RomKind::Lsdj` (any title starting with `LSDj`). The role's
+ROM detection is TS-side now ([romProviders.ts](../packages/retroplug/src/romProviders.ts)): both
+builds match on a header title starting with `LSDj` (case-insensitive) and get the `lsdj-sync` +
+`lsdj-assets` roles. The role's
 `onAttach` logs `build=stock` vs `build=arduinoboy` based on whether the title
 contains `aboy` — check the stderr line `[RetroPlug] LSDJ sync role attached
 (mode=…, build=…)` to confirm which build is loaded.
 
 ### PROJECT-screen SYNC cycle (aboy v9.3.3)
 
-The on-screen SYNC value is the working-song byte at `0x3fbd`. The model
-`SyncMode` enum ([Types.hpp](../packages/native/src/lsdj/model/Types.hpp)) is the
+The on-screen SYNC value is the working-song byte at `0x3fbd`. `SyncModeNames` +
+`SYNC_TO_BYTE` ([lsdj/model.ts](../packages/retroplug/src/lsdj/model.ts)) carry the
 verbatim on-disk byte and `settings.syncMode` authors ALL of them by name (verified:
 author each, screenshot the PROJECT screen, read `0x3fbd`). **The stored byte is NOT
 the on-screen cycle position** — the cycle steps 0..7 but skips bytes 2 and 4. Full
@@ -535,11 +552,11 @@ mode selected" indicator on the aboy build. Read the SYNC field text (or the
 
 A role opts into serial-out capture via `RomRole::wantsSerialOut()`;
 `LsdjSyncRole` enables it when its config is `ArduinoboyMaster`. From a TS test,
-drain the captured bytes with `emu.drainSerial(sys)` (raw GB serial-out — ground
-truth) and `emu.drainMidi(sys)` (the `ArduinoboyMaster` decoder's MIDI output).
-See [test/ts/gb/lsdj/arduinoboy_master.test.ts](../test/ts/gb/lsdj/arduinoboy_master.test.ts),
-which authors SYNC=KEYBD + the `ArduinoboyMaster` role, presses START, and
-asserts thousands of captured bytes (the synthetic-clock + capture path).
+drain the captured bytes with `be.drainSerialOut(id)` (raw GB serial-out — ground
+truth) and `be.drainMidiOut(id)` (the decoder's MIDI output).
+See [lsdj-midiout.test.ts](../packages/retroplug/test-native/lsdj-midiout.test.ts),
+which authors SYNC=MI.OUT with `N` commands, plays, and asserts a transport START, a clock
+stream and NoteOns come back out as host MIDI.
 
 ### Synthetic external-clock serial (subtle but load-bearing)
 
@@ -608,13 +625,14 @@ LSDJ-side effect commands that drive this protocol (placed in note/table cells):
 - **Nxx** — sends a NoteOn absolute (N00 = NoteOff, N01–N6F = MIDI notes 1–112).
 - **Qxx** — sends a NoteOn relative to the channel's current pitch.
 - **Xxx** — sends a CC. (Arduinoboy supports several CC-encoding modes; the
-  [ArduinoboyMaster](../packages/native/src/system/sameboy/roles/ArduinoboyMaster.cpp)
+  [lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts)
   decoder uses the simplest mapping `CC# = m`; refine when there's a use case.)
 - **Yxx** — sends a Program/Patch change.
 
-The decoder is unit-tested in
-[packages/native/test/ArduinoboyMasterTests.cpp](../packages/native/test/ArduinoboyMasterTests.cpp)
-(11 cases covering each protocol byte).
+The decoder moved to TS with the rest of the role layer and is unit-tested in
+[test/dsp/lsdj-arduinoboy.test.ts](../packages/retroplug/test/dsp/lsdj-arduinoboy.test.ts),
+with the real-core end-to-end proof in
+[test-native/lsdj-arduinoboy-slave.test.ts](../packages/retroplug/test-native/lsdj-arduinoboy-slave.test.ts).
 
 **Reaching functional MI.OUT mode (the record, corrected).** An earlier note here
 claimed MI.OUT was unreachable by authoring — that was **wrong on every count** and

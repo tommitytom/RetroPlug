@@ -68,6 +68,12 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # Dead relative links in the docs are invisible in review - a link renders the same whether or
+      # not it resolves - so they only ever surface by misleading a reader. Needs nothing but node and
+      # a checkout, so it runs before the build with the other fast feedback.
+      - name: Doc links
+        run: node tools/check-doc-links.mjs
+
       - name: Build
         run: ./build.sh
 
@@ -94,10 +100,9 @@ jobs:
       - name: CLI TypeScript harness
         run: pnpm test:cli-ts
 
-      # The SDL standalone (retroplug-sdl) is in the default `all` target, so the Build
-      # step above already compiles and links it on every platform, and it rides along in
-      # the artifact below. `pnpm sdl:smoke` is still NOT run here — CI proves it builds,
-      # not that it runs. It is deliberately absent from release.yml's packaging lists.
+      # retroplug-sdl is in the default `all` target, so the Build step compiles and links it on
+      # every platform and it rides along in the artifact below; `pnpm sdl:smoke` above then proves
+      # it RUNS, on this job only. It is deliberately absent from release.yml's packaging lists.
 
       - name: Install plugin-format validators
         run: |
