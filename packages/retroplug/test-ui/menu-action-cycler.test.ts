@@ -100,14 +100,23 @@ test("a kit row carries its verbs inline: Left/Right pick one, Enter runs the pi
   expect(navTo("Fonts")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(10);
+  // WHICH slot is live is the cart's baked default, and a rebuild moves it — this ROM's went 0 -> 1 when
+  // the vendored build was re-staged, which is exactly how the last pinned-to-a-build test broke. So walk
+  // to the row carrying the `*` instead of assuming slot 0: the claim below is about the LIVE row, not
+  // about a particular index.
   expect(navTo("Font 0")).toBeTruthy();
   ui.pump(6);
-  expect(ui.focused()?.text).toBe("[0] Font 0 * < Export... >"); // `*` = the live font (the list is its picker)
+  let live = ui.focused()?.text ?? "";
+  for (let i = 0; i < 8 && !live.includes("*"); i++) live = step(Key.Down);
+  expect(live.includes("*"), "some font row is marked live").toBeTruthy();
+  const liveName = live.split(" <")[0]; // "[n] Font n *"
+
+  expect(live).toBe(`${liveName} < Export... >`); // `*` = the live font (the list is its picker)
   expect(arrowBox()).toBe(fixed);
-  // This cart has ONE font bank, so it is the live one: no Select (nothing to select), not addable, no
-  // override — Export and Replace are the whole list, and it wraps there.
-  expect(step(Key.Right)).toBe("[0] Font 0 * < Replace... >");
-  expect(step(Key.Right)).toBe("[0] Font 0 * < Export... >");
+  // The live bank is the one already selected, so it offers no Select, and a baked font is not addable and
+  // carries no override — Export and Replace are the whole list, and it wraps there.
+  expect(step(Key.Right)).toBe(`${liveName} < Replace... >`);
+  expect(step(Key.Right)).toBe(`${liveName} < Export... >`);
 
   ui.snapshotPng("/tmp/ui-menu-action-cycler.png");
 });
