@@ -426,6 +426,9 @@ const SONG_OFF = 0x1300; // 128 rows x 4 chain numbers, $FF = empty
 const SONG_LEN = 512;
 const GROOVE_OFF = 0x1a00; // 16 grooves x 16 tick bytes
 const GROOVE_STRIDE = 16;
+/** NUM_GROOVES (engine.asm), and therefore also the value of `groove_sel` that means "a CONT tempo glide
+ *  is running": `groove_base` resolves it to `glide_scratch` in work RAM, not to a groove in the block. */
+export const GLIDE_GROOVE_SEL = 16;
 
 /** The song's length in ROWS, by the cart's own rule (`load_rebase`, engine.asm:2282-2308): scan the
  *  grid backwards for the last byte that is not $FF, then `ceil(bytes / 4)`, minimum 1. A song of
@@ -442,7 +445,8 @@ export function songLengthRows(block: Uint8Array): number {
 }
 
 /** True when the groove at `sel` is empty, i.e. its first tick is 0. The cart falls back to groove 0 in
- *  that case, because an empty groove gives the clock nothing to advance on. */
+ *  that case, because an empty groove gives the clock nothing to advance on. Block grooves only: the
+ *  glide sentinel (GLIDE_GROOVE_SEL) lives in work RAM, so the caller has to answer that one itself. */
 export function isGrooveEmpty(block: Uint8Array, sel: number): boolean {
   const at = GROOVE_OFF + sel * GROOVE_STRIDE;
   return at + 1 > block.length || block[at] === 0;

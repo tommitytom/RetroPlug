@@ -14,7 +14,7 @@ import { smsggdjSongCatalog } from "./smsggdjSongCatalog";
 import { smsggdjAssetCatalog } from "./smsggdjAssetCatalog";
 import { identifySmsggdjVersion } from "../smsggdj/romDetect";
 import { resolveSmsggdjLayout } from "../smsggdj/runtime/layout";
-import { readSongBlock, readSongName, readSongEcho, sanitizeEcho, songLengthRows, isGrooveEmpty } from "../smsggdj/codec/sav";
+import { readSongBlock, readSongName, readSongEcho, sanitizeEcho, songLengthRows, isGrooveEmpty, GLIDE_GROOVE_SEL } from "../smsggdj/codec/sav";
 import { bliptoasterAssetCatalog } from "./bliptoasterAssetCatalog";
 import { blipToasterInfo, BLIPTOASTER_MARKER } from "../bliptoaster/romDetect";
 import { identifyLsdj } from "../lsdj/runtime/identify";
@@ -103,8 +103,8 @@ export const smsggdjIntegration: TrackerIntegration = {
     return v ? `smsggdj v${v}` : null;
   },
   // Supported = we have this build's work-RAM layout, exactly as risa gates on a bundled symbol
-  // snapshot. NOT `supportsCurSlot`: that asks whether the CART restores a song at boot, which is the
-  // ROM's own concern and only one of several ways to load. Gating the whole submenu on it greyed out
+  // snapshot. NOT whether the CART restores a song at boot (cur_slot), which is the ROM's own concern
+  // and only one of several ways to load. Gating the whole submenu on that greyed out
   // Export / Replace / Delete / Move / Add / Import too, none of which need the cart's help at all.
   // An unknown build still greys out - the failure mode is unchanged, only the question is right now.
   isVersionSupported: (rom) => resolveSmsggdjLayout(identifySmsggdjVersion(rom)) !== null,
@@ -146,9 +146,13 @@ export const smsggdjIntegration: TrackerIntegration = {
       // Queued LIVE cells address the old song's grid, and a pending chain-end stop would fire against
       // the carried chain.
       writes.push({ offset: layout.liveQ, bytes: new Uint8Array(layout.liveQLen).fill(0xff) });
-      // An empty groove gives the clock nothing to advance on, so the cart falls back to groove 0.
+      // An empty groove gives the clock nothing to advance on, so the cart falls back to groove 0. The
+      // cart asks through `groove_base`, which resolves the glide sentinel to `glide_scratch` in work
+      // RAM - so mid-glide the question is about RAM the load leaves alone. Asked of the block instead,
+      // groove 16 starts exactly at the block's end, read as "empty", and EVERY mid-glide load aborted it.
       const sel = ram[layout.grooveSel];
-      if (isGrooveEmpty(block, sel)) {
+      const empty = sel === GLIDE_GROOVE_SEL ? ram[layout.glideScratch] === 0 : isGrooveEmpty(block, sel);
+      if (empty) {
         writes.push({ offset: layout.grooveSel, bytes: Uint8Array.of(0) });
         writes.push({ offset: layout.groovePos, bytes: Uint8Array.of(0) });
       }

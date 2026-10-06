@@ -1161,9 +1161,8 @@ behave wrongly.
   Start is a real Start, and A/B are buttons 2/1.
 - **No SMS/GG rows in `app-mesen-persistence` / `app-mesen-settings`** - the construct-blob and
   live-knob proofs where NES has them.
-- **Documentation is silent.** Zero mentions of SMS/GG in `README.md`, `RELEASE_TESTING.md` or
-  `spec/`. `renderArgs.ts:24` still says "Render a Game Boy (.gb/.gbc), or NES (.nes) ROM" - it never
-  got `.gba` either, so fix both.
+- ~~**Documentation is silent.**~~ **FIXED.** `README.md` and `spec/` cover SMS/GG, and the render
+  help text names `.gba`, `.sms` and `.gg`.
 - **`pressButtonAt`** (sample-offset button presses). Generic Tier 2 item; not needed for sync, which
   rides `pushCoreBytes`.
 - **Nothing shows which roles a system has.** The union above stops a stale project from being
@@ -1256,7 +1255,7 @@ every build.)
 Work RAM is readable from the moment the core is constructed (the snapshot registry seeds it at claim,
 and SMS RAM powers on zeroed), but for the cart's first ~2.3 s it is the boot sequence's, not the
 cart's: `init` zero-fills `$C000-$DFEE`, the splash runs, `song_new` seeds the blank song (and
-`rle_name_default` writes eight spaces into `song_name`), v0.46+ `boot_autoload` reloads the last slot,
+`rle_name_default` writes eight spaces into `song_name`), the unreleased cur-slot build's `boot_autoload` reloads the last slot,
 `editor_init` and `init_paint` follow. Three bugs in the Recent list were this one fact:
 
 - a song picked from a Recent row did not load - the live write was made at frame 0 of the project
@@ -1271,8 +1270,16 @@ cart's: `init` zero-fills `$C000-$DFEE`, the splash runs, `song_new` seeds the b
 The cart says when it is up. `ints_on` (main.asm) is written exactly once, `ld a,1 / ld (ints_on),a /
 ei` right before the main loop and after everything above; `vdp_set_addr` reads it. It is in the symbol
 table with `frame` (the main-loop counter), regenerated from a v0.45 link that is **byte-identical** to
-the vendored ROM, and both were also read straight out of the v0.46 binaries from the code that writes
-them - `$DF13` / `$DF02` everywhere, so the 0.46 alias holds.
+the vendored ROM, and both were also read straight out of the local cur-slot binaries from the code
+that writes them - `$DF13` / `$DF02` everywhere.
+
+**"v0.46" names two different builds.** The cur-slot branch stamps itself v0.46, and so does the
+upstream RELEASE tagged v0.46 - which has no `cur_slot` and no `boot_autoload` at all (it stopped
+drawing the frame counter; v0.47 then fixed the `J` command's play count). The first alias table was
+certified against the local branch. It has since been re-certified against the release TAGS by linking
+each with `wlalink -S`: every generated label sits at the same address in 0.45, 0.46 and 0.47, so both
+releases alias 0.45. No released build restores a song at boot, so nothing in RetroPlug may key a
+capability on "0.46 or later"; `supportsCurSlot` did, had no callers left, and is gone.
 
 `SongCatalog.workingSongReady(ram)` is that latch (absent = always ready: LSDj and risa keep the working
 song in the battery). Before it reads 1, smsggdj's `workingName` and `workingSongDirty` answer "no
@@ -1483,13 +1490,13 @@ the pixel: the load moved **0** of 48,903 non-animating pixels before the fix an
 a forced repaint afterwards went from 271 to 2. Both halves are asserted, so a regression that quietly
 stops repainting fails on the first number and one that repaints only partially fails on the second.
 
-**One divergence found by reading, not measured.** `isGrooveEmpty(block, sel)` treats an out-of-range
-`sel` as empty, and `groove_sel = NUM_GROOVES` (16) is not out of range - it is the CONT tempo-glide
-SENTINEL, which `groove_base` (`engine.asm:1021-1036`) resolves to `glide_scratch` in RAM rather than to
-a groove in the block. So during a tempo glide the cart keeps the scratch groove and a host-side load
-resets `groove_sel` to 0, aborting the glide. Narrow (it needs a Songs > Load landing inside a CONT
-glide) and the fix is small - either leave the groove alone when `sel >= 16`, or read `glide_scratch`
-out of the RAM snapshot the way the cart reads it - but it is a real difference from `load_rebase`.
+**A tempo glide survives a load (fixed; found by reading).** `groove_sel = NUM_GROOVES` (16) is the
+CONT tempo-glide SENTINEL, which `groove_base` (`engine.asm:1021-1036`) resolves to `glide_scratch` in
+RAM rather than to a groove in the block. The host used to ask the block, where groove 16 begins exactly
+at the block's end, so it read as empty and EVERY mid-glide load reset `groove_sel` to 0, aborting the
+glide. `glide_scratch` is now a generated symbol and `liveLoad` asks it, as the cart does: a live
+scratch groove is kept, an empty one still falls back to 0. Guarded in `smsggdj-catalog.test.ts`; the
+negative control (asking the block again) fails it.
 
 #### Rendering: there is no song end to detect, and three things were missing
 
@@ -1512,7 +1519,7 @@ no diagnostic. Three independent gaps, all "SMS was never added to the render":
   It is a TOGGLE, so it first reads `play_state` and presses only when stopped.
 - `validateRenderOpts` rejected `--song`/`--song-index` for anything but gb/nes, which had also left the
   `resolveSmsggdjSongSeed` below it **unreachable**. That seed wrote the superblock's `cur_slot` byte, which
-  is the right durable record but only a v0.46+ cart reads at boot - so on the shipped v0.45 it selected
+  is the right durable record but only the unreleased cur-slot build reads at boot - so on the shipped v0.45 it selected
   nothing. Selection now resolves to an index and the song is written into the booted core through the same
   `liveLoad` the Songs menu uses.
 - Nothing warned. A bare render now says the cart boots blank and lists the songs it could have played; a

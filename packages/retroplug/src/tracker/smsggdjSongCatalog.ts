@@ -12,11 +12,11 @@
 //
 // So loading is done LIVE instead, by `smsggdjIntegration.liveLoad` - the song is written straight into
 // work RAM through `writeRam`, with no `.sav` write and no reboot. `load` below (which names a slot in
-// the superblock's cur_slot byte, for a v0.46+ cart to pick up at boot) survives as the fallback for a
-// build with no layout, and as the durable record for real hardware and for savetool.html.
+// the superblock's cur_slot byte, for the unreleased cur-slot build to pick up at boot) survives as the
+// fallback for a build with no layout, and as the durable record for real hardware and savetool.html.
 //
 // `workingName` therefore reads the cart's own `song_name` out of work RAM when it has it, falling back
-// to cur_slot; that is what makes it answerable on v0.45, which has no cur_slot at all.
+// to cur_slot; that is what makes it answerable on every released build, none of which has cur_slot.
 //
 // The same fact has a sharper edge than it first appears: because the cold boot is what makes ANY edit
 // take effect, and the working song is not in the image, EVERY battery op here destroys it - not just
@@ -87,9 +87,9 @@ export const smsggdjSongCatalog: SongCatalog = {
   // the FILES screen shows, it survives a load made from INSIDE the cart, and it is what a host-side
   // liveLoad writes. Blank, or not yet booted, is therefore "no song" and never the save's guess - the
   // superblock's cur_slot says which slot the cart will autoload, not what it holds now. That byte is
-  // the fallback only for callers with NO live system (an offline .sav), and it is null on every build
-  // before v0.46 - which is precisely why reading work RAM is what lights the working-song row, per-song
-  // recents and the window title up on v0.45.
+  // the fallback only for callers with NO live system (an offline .sav), and no released cart maintains
+  // it (only the unreleased cur-slot branch does) - which is precisely why reading work RAM is what
+  // lights the working-song row, per-song recents and the window title up on every released build.
   workingName: (sav, ram) => {
     if (ram) return workingNameFromRam(ram);
     const slot = curSlot(sav);

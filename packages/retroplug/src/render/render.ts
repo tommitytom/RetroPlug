@@ -233,7 +233,7 @@ export function readSmsggdjSongs(ctx: RenderContext, o: RenderOpts): { path: str
 // the chosen song into the SRAM the fresh system boots from is enough. smsggdj's working song is the live
 // work-RAM block at $C000 and the cart boots deliberately blank (`song_new`, main.asm:238) - there is
 // nothing in the image to promote. An earlier version of this seeded the superblock's `cur_slot` byte,
-// which is the right durable record but only a v0.46+ cart reads it at boot, so on the shipped v0.45 it
+// which is the right durable record but only the unreleased cur-slot build reads it at boot, so on the shipped v0.45 it
 // selected nothing and the render came out silent. Selection therefore resolves to an INDEX here and the
 // song is written into the booted core by loadSmsggdjSongLive, the same path the Songs menu Load uses.
 
@@ -434,8 +434,9 @@ function currentSongName(ctx: RenderContext, o: RenderOpts, platform: Platform):
   if (!raw) return null;
   if (platform === "gb") return isLsdjSav(raw) ? lsdjSongCatalog.workingName(raw) : null;
   if (platform === "nes") return risaSongCatalog.workingName(raw); // self-guards on the N8T magic
-  // smsggdj answers from the superblock's cur_slot with no work RAM to consult, which is null on every
-  // build before v0.46 — so this falls through to the ROM stem there, as it did before.
+  // smsggdj answers from the superblock's cur_slot with no work RAM to consult. No released cart writes
+  // that byte (only RetroPlug's own Songs load does), so it is usually null and this falls through to
+  // the ROM stem, as it did before.
   if (platform === "sms" || platform === "gg") return smsggdjSongCatalog.workingName(raw);
   return null;
 }

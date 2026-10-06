@@ -33,6 +33,8 @@ export interface SmsggdjSymbols {
   groove_sel_len: number;
   groove_pos: number;
   groove_pos_len: number;
+  glide_scratch: number;
+  glide_scratch_len: number;
   psg_vols: number;
   psg_vols_len: number;
   sram_ok: number;
@@ -78,6 +80,8 @@ export const SMSGGDJ_SYMBOLS: Record<string, SmsggdjSymbols> = {
     groove_sel_len: 0x1,
     groove_pos: 0x1b08,
     groove_pos_len: 0x1,
+    glide_scratch: 0x1b16,
+    glide_scratch_len: 0x10,
     psg_vols: 0x1f4c,
     psg_vols_len: 0x4,
     sram_ok: 0x1c7e,

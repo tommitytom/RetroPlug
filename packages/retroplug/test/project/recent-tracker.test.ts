@@ -57,7 +57,7 @@ test("save: the row is owed while the cart boots, and paid - songless - once it 
   expect(rows().length).toBe(1);
 });
 
-test("a cart that comes up WITH a song (v0.46 boot_autoload) records the song row directly", () => {
+test("a cart that comes up WITH a song (a cur-slot build's boot_autoload) records the song row directly", () => {
   // No songless row is ever written for it - the first row Recent shows is the right one.
   const { project, rows, cart } = smsCart();
   cart({ booted: false });

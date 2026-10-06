@@ -36,6 +36,10 @@ const WANT = [
   // it lands WHILE THE TRANSPORT IS RUNNING. load_rebase `ret z`s on play_state, so all of this is
   // inert for a load made while stopped - which is the common case and needs none of it.
   "play_state", "eng_len", "live_q", "groove_sel", "groove_pos",
+  // The scratch groove a CONT tempo glide plays from. groove_sel = NUM_GROOVES (16) is the glide
+  // SENTINEL, which groove_base resolves HERE rather than into the block's grooves - so load_rebase's
+  // "is the selected groove empty?" check reads this during a glide, and so must the host's.
+  "glide_scratch",
   // PSG shadow attenuations (0 loud .. $F silent), one per channel. Not needed to LOAD a song -
   // they are here so a test can certify the echo address by what the engine actually drives,
   // rather than by how loud the mix happens to be in a given window.
@@ -51,7 +55,7 @@ const WANT = [
   // in it, so a load that skips it leaves the previous song on screen until the user touches something.
   "dirty_rows", "label_dirty",
   // Boot completion. Work RAM is readable from the moment the core is constructed, but the cart spends
-  // its first seconds in `init` (zero-fills $C000-$DFEE), the splash, `song_new` and (v0.46+)
+  // its first seconds in `init` (zero-fills $C000-$DFEE), the splash, `song_new` and (on the unreleased cur-slot build)
   // `boot_autoload` - and every one of those overwrites the working song. A host that reads the song
   // name during that window reads nothing, and one that WRITES a song then has it wiped, which is how
   // a Recent-list load came to silently do nothing. `ints_on` is written exactly once, `ld a,1` right

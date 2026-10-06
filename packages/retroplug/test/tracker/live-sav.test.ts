@@ -292,7 +292,7 @@ test("a just-booted smsggdj cart discards nothing, so loading a recent song asks
 test("an smsggdj cart that has not BOOTED takes no live load, and is never read as holding a song", () => {
   // The other half of the same bug. Work RAM is readable from the moment the core exists, but for the
   // cart's first seconds it is the boot sequence's: `init` zero-fills it, `song_new` seeds the blank
-  // song, v0.46 `boot_autoload` reloads the last slot. A song written in that window is erased a moment
+  // song, the cur-slot build's `boot_autoload` reloads the last slot. A song written in that window is erased a moment
   // later - which is exactly what a Recent-row load did, and it reported success. Refusing until
   // `ints_on` says the main loop is running is what makes "false" mean "nothing happened".
   const { be, systems, sys, block, setWorking } = newSmsCart();

@@ -9,16 +9,20 @@ import { SMDJ4_BLOCK_LEN } from "../codec/sav";
 import type { SmsggdjLayout } from "./types";
 
 // Versions whose work-RAM layout is byte-identical to another's, so they can share a snapshot instead
-// of needing that build's label file. Verified by comparing the linker's symbol output for both:
+// of needing that build's label file. Verified by linking the upstream release TAGS with `wlalink -S`
+// and comparing every label gen-smsggdj-symbols.mjs asks for:
 //
-//   0.46 -> 0.45   wave_ram c000, phrase_pool c100, echo_mode db6d, song_edited ddc0, prj_slot dd58,
-//                  song_name dea4, ints_on df13, frame df02 - identical in both, because the v0.46
-//                  cur_slot change adds ROM code and no RAM variables. (ints_on / frame / song_name were
-//                  also read straight out of the v0.46 BINARIES, from the code that writes them.)
+//   0.46 -> 0.45   all identical. v0.46 stopped DRAWING the frame counter (draw_frame_counter is gone)
+//                  but kept the `frame` variable, so nothing after $DF02 moved.
+//   0.47 -> 0.45   all identical. v0.47 is the J-command play-count fix, engine.asm code only.
+//
+// The tags, not a local build that happens to carry the same number: the unreleased cur_slot branch
+// also stamps itself "v0.46", and the first version of this table was certified against THAT build
+// rather than the release. Same addresses as it turned out, but by luck, not by check.
 //
 // An alias is a claim about two builds, so it is only ever added after that comparison, never on the
 // assumption that a small change cannot move anything.
-const VERSION_ALIASES: Record<string, string> = { "0.46": "0.45" };
+const VERSION_ALIASES: Record<string, string> = { "0.46": "0.45", "0.47": "0.45" };
 
 /** `version` is the ROM's real version (what the splash and identifySmsggdjVersion report);
  *  `symbolsKey` is the snapshot the addresses come from - the same, unless resolved via an alias. */
@@ -44,6 +48,7 @@ function layoutFrom(symbolsKey: string, version: string = symbolsKey): SmsggdjLa
     liveQLen: s.live_q_len,
     grooveSel: s.groove_sel,
     groovePos: s.groove_pos,
+    glideScratch: s.glide_scratch,
     dirtyRows: s.dirty_rows,
     dirtyRowsLen: s.dirty_rows_len,
     labelDirty: s.label_dirty,
@@ -81,7 +86,7 @@ function commonOffset(pick: (s: SmsggdjSymbols) => number): number | null {
   return all.every((s) => pick(s) === first) ? first : null;
 }
 
-/** Where `song_name` sits, for `SongCatalog.workingName`. Agreed today: 0.45 and 0.46 both put it at
+/** Where `song_name` sits, for `SongCatalog.workingName`. Agreed today: 0.45, 0.46 and 0.47 all put it at
  *  +$1EA4. Null makes the catalog fall back to the save's own cur_slot - degraded, but never naming a
  *  song after bytes that might be something else. */
 export function commonSongNameOffset(): { offset: number; length: number } | null {
