@@ -6,7 +6,8 @@
 // (retroplug-classid-test), the per-channel audio taps (retroplug-audio-test),
 // the native file watcher (retroplug-watcher-test), the ThorVG-backed
 // Lottie rasterization behind the <Lottie> component (retroplug-lottie-test),
-// the MIDI device-selection policy (retroplug-midi-test), and the control-surface
+// the MIDI device-selection policy + MidiIo's multi-producer input ring
+// (retroplug-midi-test), and the control-surface
 // device link (retroplug-launchpad-test).
 //
 // A tiny runner (rather than chaining `build/bin/foo && …` in package.json) so

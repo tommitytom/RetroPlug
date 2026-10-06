@@ -163,8 +163,11 @@ public:
     bool hardwareInputsSuspended() const { return inputsSuspended_; }
 
     // Drain queued input into `out` (called from the audio thread each block; clears `out` first). Lock-free
-    // w.r.t. the RtMidi callback thread.
+    // w.r.t. the RtMidi callback threads. Reserve `out` to kCapacity up front and this never allocates.
     void poll(std::vector<Message>& out);
+
+    // The input ring's size: the most messages one poll() can return.
+    static constexpr std::size_t kCapacity = 256;
 
     // Send one short MIDI message out (from the audio thread each block — MI.OUT etc.). No-op if not open.
     void send(const std::uint8_t* data, std::size_t len);
@@ -178,8 +181,8 @@ private:
     static void onMidiIn(double timeStamp, std::vector<unsigned char>* message, void* userData);
     void pushRing(const unsigned char* data, std::size_t len);
 
-    // Connect the selected hardware input(s) — every hardware port when selectedIn_ is empty ("All Devices"),
-    // else only the one whose name matches. Each opened port gets its own RtMidiIn feeding the shared ring.
+    // Connect the selected hardware input(s): none when selectedIn_ is empty, every hardware port for
+    // kAllInputs ("*"), else only the one whose name matches. Each opened port gets its own RtMidiIn feeding the shared ring.
     void openHardwareInputs();
     // Open (or clear) the selected hardware output — the one whose name matches selectedOut_, or none when it's
     // empty ("None"). send() mirrors to it alongside the always-open virtual output.
@@ -197,9 +200,9 @@ private:
     std::unique_ptr<RtMidiOut>              hwOut_;  // the selected hardware output port (optional)
 
     // Fixed-capacity ring, many producers (serialized by pushMutex_) and one consumer. A producer (a callback
-    // thread) allocs into a slot's vector; the consumer (audio thread) moves it out. Overflow drops the incoming message (a drained-every-block consumer never
-    // realistically fills 256; MIDI loss under an extreme flood is acceptable).
-    static constexpr std::size_t kCapacity = 256;
+    // thread) allocs into a slot's vector; the consumer (audio thread) moves it out. Overflow drops the
+    // incoming message (a drained-every-block consumer never realistically fills 256; MIDI loss under an
+    // extreme flood is acceptable).
     std::array<Message, kCapacity> ring_;
     std::atomic<std::size_t>       head_{0};  // consumer index (audio thread)
     std::atomic<std::size_t>       tail_{0};  // producer index (written under pushMutex_)

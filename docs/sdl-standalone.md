@@ -46,7 +46,8 @@ CoreMIDI on mac, WinMM/WinRT on Windows), small, permissively licensed, still ma
 implementation isn't worth it when RtMidi is exactly that abstraction.)
 
 Design:
-- **Input** — `RtMidiIn` callback (its own thread) pushes `{arrival, bytes}` into a lock-free SPSC ring; the
+- **Input**: `RtMidiIn` callback (its own thread) pushes `{arrival, bytes}` into a ring (one callback thread per open port, so
+  producers serialize on a mutex; the drain stays lock-free); the
   audio callback drains it at block start and stages via the existing control→audio MIDI ring (`stageMidiIn`,
   NOT `stageMidi` directly — RtMidi is cross-thread). Frame offset can be approximate (live hardware MIDI
   jitters anyway; block-quantized is fine).

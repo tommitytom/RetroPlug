@@ -14,9 +14,9 @@ Background: [sdl-standalone.md](sdl-standalone.md) (feature history; its parity 
 
 - [x] **MidiIo ring has multiple producers.** *Fixed in `e059a786`: producers serialize on `pushMutex_`,
   `poll()` stays lock-free; guarded by the ring case in `retroplug-midi-test` (plain build aborted/segfaulted
-  3/3 without the fix, TSan clean with it).* Original finding: `MidiIo.hpp` documents an SPSC ring with one producer, but
-  the virtual `RetroPlug In` port and every hardware `RtMidiIn` each run their own callback thread into
-  `pushRing` (`MidiIo.cpp`). Any hardware input pick (or All Devices) gives two or more concurrent
+  3/3 without the fix, TSan clean with it).* Original finding: `MidiIo.hpp` documented an SPSC ring with
+  one producer, but the virtual `RetroPlug In` port and every hardware `RtMidiIn` each run their own
+  callback thread into `pushRing` (`MidiIo.cpp`). Any hardware input pick (or All Devices) gives two or more concurrent
   producers: torn slots, lost messages, possible heap corruption from two threads assigning one slot's
   vector. Fix: serialize the producer side (spinlock / mutex in `pushRing`; consumer stays lock-free), or
   one ring per port. Add a TSan run that drives two producers.
@@ -98,7 +98,7 @@ Background: [sdl-standalone.md](sdl-standalone.md) (feature history; its parity 
   (`wmControlled` / `sizeHonored` / `requestedW/H`), file-browser hook + delivery, quit / openPath / title
   hooks, PNG screenshot (x3 with `test/ui/RenderCore.cpp`), control-plane boot (x4 with CLI + Node). One
   binder taking a small host interface would also bring Render (section 2) to SDL for free.
-- [ ] **Test scaffolding in the shipping `main()`** (*audit*). 23 `getenv("RETROPLUG_...")` hooks,
+- [ ] **Test scaffolding in the shipping `main()`** (*audit*). 23 `getenv("RETROPLUG_...")` call sites (18 distinct variables),
   including a complete `MidiClockSync` unit test. Move `MidiClockSync` to `src/host` with a Catch2 test;
   gate the rest behind one self-test entry point.
 - [ ] **Split `sdl/main.cpp`** (~1900 lines) into audio / input / window / hooks units.

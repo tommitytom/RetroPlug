@@ -23,6 +23,12 @@ namespace {
 
 constexpr int kProducers = 4;
 constexpr int kPerProducer = 5000;
+// Producers yield this often. Without it a few unpaced producers fill the 256-slot ring and nearly
+// everything takes the drop path, which writes no slot - so on a 1-2 core runner the racy write path ran
+// only ~255 times out of 20000. Paced, most messages land and the slot writes actually contend.
+constexpr int kYieldEvery = 16;
+// More than one ring's worth has to arrive, or the slot writes never wrapped onto a reused slot.
+constexpr std::size_t kRing = retroplug::MidiIo::kCapacity;
 
 // Message i from producer p: a status byte naming the producer, i split over two data bytes, then a tail
 // whose length (0-4 bytes) and contents both depend on i - so a slot assembled from two writers fails the
@@ -48,13 +54,19 @@ std::pair<int, int> decode(const std::vector<std::uint8_t>& m) {
 TEST_CASE("MidiIo ring: concurrent producers deliver every message intact, once, in order") {
     retroplug::MidiIo midi;
     std::atomic<int> producersLeft{kProducers};
+    // Start gate: thread creation is slow enough that, ungated, one producer could finish all its pushes
+    // before the next exists, and nothing would ever overlap.
+    std::atomic<int> ready{0};
 
     std::vector<std::thread> producers;
     for (int p = 0; p < kProducers; ++p)
-        producers.emplace_back([&midi, &producersLeft, p] {
+        producers.emplace_back([&midi, &producersLeft, &ready, p] {
+            ready.fetch_add(1, std::memory_order_acq_rel);
+            while (ready.load(std::memory_order_acquire) < kProducers) std::this_thread::yield();
             for (int i = 0; i < kPerProducer; ++i) {
                 const std::vector<std::uint8_t> m = encode(p, i);
                 midi.injectForTest(m.data(), m.size());
+                if (i % kYieldEvery == 0) std::this_thread::yield();
             }
             producersLeft.fetch_sub(1, std::memory_order_release);
         });
@@ -78,21 +90,25 @@ TEST_CASE("MidiIo ring: concurrent producers deliver every message intact, once,
     int lastIndex[kProducers];
     for (int& v : lastIndex) v = -1;
     std::uint64_t lastSeq = 0;
-    int malformed = 0, duplicates = 0, reordered = 0, seqBackwards = 0;
+    int malformed = 0, duplicates = 0, reordered = 0, seqGaps = 0;
     for (const auto& m : received) {
         const auto [p, i] = decode(m.bytes);
         if (p < 0) { ++malformed; continue; }
         if (!seen.insert({p, i}).second) ++duplicates;
         if (i <= lastIndex[p]) ++reordered;
         lastIndex[p] = i;
-        if (m.seq <= lastSeq) ++seqBackwards;
+        // A drop takes no sequence number, so arrivals are contiguous: a gap is a lost slot write.
+        if (m.seq != lastSeq + 1) ++seqGaps;
         lastSeq = m.seq;
     }
 
     CHECK(malformed == 0);
     CHECK(duplicates == 0);
     CHECK(reordered == 0);
-    CHECK(seqBackwards == 0);
+    CHECK(seqGaps == 0);
     // Overflow is allowed (a full ring drops and counts), but nothing may vanish uncounted.
     CHECK(received.size() + midi.droppedCount() == static_cast<std::size_t>(kProducers * kPerProducer));
+    // Nothing landing would make every check above vacuous. Deliberately no tighter threshold: the drop
+    // rate depends on the scheduler, and a rate bound would be a flaky test.
+    CHECK(received.size() > kRing);
 }
