@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -96,10 +97,11 @@ inline void extractRealtime(std::vector<std::uint8_t>& bytes, F&& onRealtime) {
 // Cross-platform MIDI I/O for the SDL standalone, wrapping RtMidi (deps/rtmidi). The DPF plugin gets MIDI
 // from its DAW host, so this is standalone-only.
 //
-// Threading: RtMidi delivers input on its OWN callback thread. The callback pushes each message into a
-// lock-free SPSC ring; the audio thread drains it via poll() at block start (never allocating). Output is
-// sent directly with send(). One producer (RtMidi callback), one consumer (audio thread) — a plain
-// seqlock-free SPSC ring is sufficient.
+// Threading: every open RtMidiIn delivers on its OWN callback thread - the virtual input plus one per
+// connected hardware port - so the input ring has MANY producers and one consumer (the audio thread, which
+// drains it via poll() at block start, never allocating). The producers serialize on pushMutex_, which makes
+// the ring single-producer from the consumer's side; poll() never takes the lock, so the audio thread stays
+// lock-free. Output is sent directly with send().
 class MidiIo {
 public:
     struct Message {
@@ -194,14 +196,17 @@ private:
     std::unique_ptr<RtMidiOut>              out_;    // our virtual output port
     std::unique_ptr<RtMidiOut>              hwOut_;  // the selected hardware output port (optional)
 
-    // Fixed-capacity SPSC ring. The producer (callback thread) allocs into a slot's vector; the consumer
-    // (audio thread) moves it out. Overflow drops the incoming message (a drained-every-block consumer never
+    // Fixed-capacity ring, many producers (serialized by pushMutex_) and one consumer. A producer (a callback
+    // thread) allocs into a slot's vector; the consumer (audio thread) moves it out. Overflow drops the incoming message (a drained-every-block consumer never
     // realistically fills 256; MIDI loss under an extreme flood is acceptable).
     static constexpr std::size_t kCapacity = 256;
     std::array<Message, kCapacity> ring_;
     std::atomic<std::size_t>       head_{0};  // consumer index (audio thread)
-    std::atomic<std::size_t>       tail_{0};  // producer index (callback thread)
-    std::uint64_t                  seq_ = 0;  // producer-only monotonic counter
+    std::atomic<std::size_t>       tail_{0};  // producer index (written under pushMutex_)
+    std::uint64_t                  seq_ = 0;  // monotonic arrival counter (guarded by pushMutex_)
+    // Serializes the producers. Without it two ports delivering at once raced tail_, seq_ and the slot
+    // vector - heap corruption, not just a lost message. Producer-side only: never taken by poll().
+    std::mutex                     pushMutex_;
     // Messages the ring had no room for. A full ring means the audio thread stopped draining (a stall, a
     // device that never started), and the symptom downstream is silent: a tempo estimate built on the
     // pulses that DID land reads slow, in proportion to what was lost. Counted so it can be reported
