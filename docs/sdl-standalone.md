@@ -7,6 +7,9 @@ needs X11/pugl, which rules out framebuffer-only targets (e.g. muOS handhelds â€
 SDL2 drives those via its own video backend. **Goal: make `retroplug-sdl` the primary standalone; keep
 `retroplug-jack` around for debugging DPF/plugin behaviour.**
 
+> **Release readiness:** the open bugs and gaps that block swapping this in for the DPF standalone are
+> tracked as a checklist in [sdl-release-readiness.md](sdl-release-readiness.md). Tick items there as they land.
+
 ## What the SDL host already does
 
 - Full control-plane + React/LVGL UI on one shared `TjsHostRuntime` (same graph as the plugin), embedded
