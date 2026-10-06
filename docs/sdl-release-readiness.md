@@ -12,7 +12,9 @@ Background: [sdl-standalone.md](sdl-standalone.md) (feature history; its parity 
 
 ## 1. Bugs (fix first)
 
-- [ ] **MidiIo ring has multiple producers.** `MidiIo.hpp` documents an SPSC ring with one producer, but
+- [x] **MidiIo ring has multiple producers.** *Fixed in `e059a786`: producers serialize on `pushMutex_`,
+  `poll()` stays lock-free; guarded by the ring case in `retroplug-midi-test` (plain build aborted/segfaulted
+  3/3 without the fix, TSan clean with it).* Original finding: `MidiIo.hpp` documents an SPSC ring with one producer, but
   the virtual `RetroPlug In` port and every hardware `RtMidiIn` each run their own callback thread into
   `pushRing` (`MidiIo.cpp`). Any hardware input pick (or All Devices) gives two or more concurrent
   producers: torn slots, lost messages, possible heap corruption from two threads assigning one slot's
@@ -111,6 +113,7 @@ Background: [sdl-standalone.md](sdl-standalone.md) (feature history; its parity 
 ## 6. Test coverage
 
 - [ ] `pnpm sdl:smoke` as a CI step (today CI proves it compiles and links, not that it runs).
-- [ ] `retroplug-sdl` under `tools/run-sanitizer.sh` (TSan would catch the MidiIo race).
+- [ ] `retroplug-sdl` under `tools/run-sanitizer.sh`. (The MidiIo ring is covered on its own now: build
+  `retroplug-midi-test` in `build-tsan/` and run it with `TSAN_OPTIONS=halt_on_error=1`.)
 - [ ] Run the `sdl:pipewire` wide-output leg somewhere wireplumber starts.
 - [ ] Smoke checks for each parity fix above (render job, watcher, right-click `"mouse"` bus).
