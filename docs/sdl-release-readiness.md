@@ -12,7 +12,7 @@ Background: [sdl-standalone.md](sdl-standalone.md) (feature history; its parity 
 
 ## 1. Bugs (fix first)
 
-- [x] **MidiIo ring has multiple producers.** *Fixed in `e059a786`: producers serialize on `pushMutex_`,
+- [x] **MidiIo ring has multiple producers.** *Fixed in `e059a786` (review follow-ups `1304e33a`): producers serialize on `pushMutex_`,
   `poll()` stays lock-free; guarded by the ring case in `retroplug-midi-test` (plain build aborted/segfaulted
   3/3 without the fix, TSan clean with it).* Original finding: `MidiIo.hpp` documented an SPSC ring with
   one producer, but the virtual `RetroPlug In` port and every hardware `RtMidiIn` each run their own
