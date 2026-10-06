@@ -31,6 +31,13 @@ import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettings
 import type { RoleRegistry, RoleInstance } from "./systemRoles";
 import { blipToasterChip, needsChipLabelScan, BLIPTOASTER_CHIP_SCAN_LEN } from "./bliptoaster/romDetect";
 import { roleConfigForNative, LsdjSyncMode } from "./settingsEnums";
+import { resolveSongCatalog, resolveTracker } from "./tracker/trackerIntegration";
+import type { WorkingSongImage } from "./tracker/songCatalog";
+
+// How long a carried working song waits for the rebooted cart to come up, in settle ticks (the UI settles
+// once per frame, so ~15 s at 60 fps) - ProjectStore's SONG_REQUEST_BUDGET, for the same reason: a cart
+// that never boots is not going to, and a write that waits forever lands in some unrelated later session.
+const CARRY_BUDGET = 900;
 
 // How much ROM header to read for the role providers (title lives at 0x134).
 const ROLE_HEADER_LEN = 0x150;
@@ -118,12 +125,31 @@ export class SystemsStore {
   private onFocusChange: () => void = () => {};
   // Whether a core teardown writes the battery to disk first. Off only for an offline render.
   private batteryFlush = true;
+  // Working songs being carried across a reboot, keyed by the NEW system id - see carryWorkingSong.
+  private carries = new Map<number, { song: WorkingSongImage; ticks: number }>();
+  // Old id -> the id its in-place replacement was built under - see currentId.
+  private successors = new Map<number, number>();
 
   constructor(
     private readonly backend: ControlPlaneBackend,
     private readonly onChange: () => void = () => {},
     private readonly registry?: RoleRegistry,
   ) {}
+
+  /** The id system `id` goes by NOW. Every in-place rebuild - reset, reload, Load SRAM / State, a ROM
+   *  swap or replace - builds the replacement under a NEW id in the same slot, so anything holding the old
+   *  one (the instance menu anchored to it) follows it here instead of holding a dead id. `id` itself when
+   *  it is still live; null when it is gone for good (removed, or its project closed). */
+  currentId(id: number): number | null {
+    let cur = id;
+    for (let hops = 0; hops <= this.successors.size; hops++) {
+      if (findById(this.entries, cur)) return cur;
+      const next = this.successors.get(cur);
+      if (next === undefined) return null;
+      cur = next;
+    }
+    return null;
+  }
 
   /** Snapshot for the UI, with live focus + missing flags. */
   view(): SystemView[] {
@@ -229,6 +255,7 @@ export class SystemsStore {
     const built = this.construct(romPath, "", this.replacementSuffix(id, romPath), opts?.explicitSav, id);
     if (!built) return null;
     this.entries = replaceById(this.entries, id, built.entry);
+    this.successors.set(id, built.id);
     if (this.focusedId === id) this.focusedId = built.id;
     return this.committed(built.id);
   }
@@ -247,9 +274,14 @@ export class SystemsStore {
     if (!prev) return null;
     const sramBytes = this.backend.readSram(id) ?? undefined;
     this.flushBeforeDrop(prev); // the OLD cart's sav — the carried battery lands on the new ROM's
+    // The working song rides along too, for the same reason the battery does - a version bump that keeps
+    // your save should keep your song. Dropped at settle if the new ROM is not a cart that can take it.
+    const song = this.takeWorkingSong(prev);
     const built = this.construct(romPath, "", this.replacementSuffix(id, romPath), undefined, id, sramBytes);
     if (!built) return null;
+    this.carryWorkingSong(built.id, song);
     this.entries = replaceById(this.entries, id, built.entry);
+    this.successors.set(id, built.id);
     if (this.focusedId === id) this.focusedId = built.id;
     return this.committed(built.id);
   }
@@ -318,7 +350,8 @@ export class SystemsStore {
     const prev = findById(this.entries, id);
     if (!prev) return null;
     this.flushBeforeDrop(prev);
-    return this.rebuildInPlace(id, { sramBytes: this.backend.readSram(id) ?? undefined });
+    const song = this.takeWorkingSong(prev);
+    return this.carryWorkingSong(this.rebuildInPlace(id, { sramBytes: this.backend.readSram(id) ?? undefined }), song);
   }
 
   /** Reconstruct system `id` in place from seed bytes: capture the source's spec, build a fresh core
@@ -354,6 +387,7 @@ export class SystemsStore {
     const ok = this.backend.constructSystem(spec, newId);
     if (!ok) return null;
     this.entries = replaceById(this.entries, id, { ...src, id: newId, savPath: override });
+    this.successors.set(id, newId);
     if (this.focusedId === id) this.focusedId = newId;
     return this.committed(newId);
   }
@@ -387,6 +421,13 @@ export class SystemsStore {
    *  the battery (smsggdj) uses to load a song without rewriting the `.sav` or rebooting the cart. */
   writeRam(id: number, offset: number, bytes: Uint8Array): boolean {
     return this.backend.writeRam(id, offset, bytes);
+  }
+
+  /** Poke bytes into system `id`'s live battery, at the offsets `readSram` returns, with no reboot. Lands
+   *  between blocks like `writeRam`; `readSram` reflects it once it has. What saving a work-RAM working
+   *  song (smsggdj) into the cart uses, so the cart and its `.sav` agree without a cold boot. */
+  writeSram(id: number, offset: number, bytes: Uint8Array): boolean {
+    return this.backend.writeSram(id, offset, bytes);
   }
 
   /** Dump system `id`'s battery SRAM to `path`. False when the id has no SRAM published, or the write fails. */
@@ -433,7 +474,86 @@ export class SystemsStore {
     const prev = findById(this.entries, id);
     if (!prev) return null;
     this.flushBeforeDrop(prev);
-    return this.rebuildInPlace(id, { sramBytes: this.backend.readSram(id) ?? undefined });
+    const song = this.takeWorkingSong(prev);
+    return this.carryWorkingSong(this.rebuildInPlace(id, { sramBytes: this.backend.readSram(id) ?? undefined }), song);
+  }
+
+  // --- the working song across a reboot ------------------------------------
+  //
+  // Reset and a ROM-watch reload carry the BATTERY forward, which for LSDj and risa carries the working
+  // song with it - so on those consoles neither reboot costs the user their song. smsggdj keeps its
+  // working song in work RAM and boots blank, so the same two reboots used to erase it, silently. They
+  // now carry it explicitly: lifted out of the old core as an image before the teardown, parked under
+  // the new id, and written back once the new cart is past its boot (the write has to wait - `song_new`
+  // blanks the block on the way up). Load SRAM / Load State / New SRAM are NOT carries: replacing what
+  // the cart holds is what the user asked for, so those confirm instead.
+
+  /** The working song `id` holds that lives outside its battery, from a carry still in flight if there is
+   *  one (the live cart is still booting and holds nothing yet), else from live work RAM. Null for a
+   *  console whose working song is in the battery, or a cart with nothing readable. */
+  workingSongImage(id: number): WorkingSongImage | null {
+    const pending = this.carries.get(id);
+    if (pending) return pending.song;
+    const e = findById(this.entries, id);
+    const catalog = e ? resolveSongCatalog(e.roles) : undefined;
+    if (!catalog?.readWorkingSong) return null;
+    const ram = this.backend.readRam(id);
+    return ram ? catalog.readWorkingSong(ram) : null;
+  }
+
+  /** The song a carry for `id` is holding has just been saved into the battery, so when it lands it
+   *  must land clean rather than re-raising the unsaved flag it was captured with. */
+  markCarriedSongSaved(id: number): void {
+    const pending = this.carries.get(id);
+    if (pending) pending.song = { ...pending.song, edited: false };
+  }
+
+  hasCarries(): boolean {
+    return this.carries.size > 0;
+  }
+
+  /** Write every parked working song whose cart has finished booting back into it. Called once per frame
+   *  by the UI while any are parked; a carry whose system has gone, or whose cart never boots inside the
+   *  budget, is dropped (the latter with a warning). */
+  settleCarries(): void {
+    for (const [id, c] of this.carries) {
+      const e = findById(this.entries, id);
+      const catalog = e ? resolveSongCatalog(e.roles) : undefined;
+      const tracker = e ? resolveTracker(e.roles) : undefined;
+      if (!e || !catalog || !tracker?.restoreWorkingSong) {
+        this.carries.delete(id);
+        continue;
+      }
+      const ram = this.backend.readRam(id) ?? undefined;
+      if (!catalog.workingSongReady?.(ram)) {
+        if (++c.ticks > CARRY_BUDGET) {
+          console.warn(`[systems] working song for system ${id} dropped: the cart never finished booting`);
+          this.carries.delete(id);
+        }
+        continue;
+      }
+      this.carries.delete(id);
+      const rom = e.romPath ? this.backend.readFile(e.romPath) : null;
+      const writes = rom ? tracker.restoreWorkingSong(rom, c.song, ram) : null;
+      if (!writes) {
+        console.warn(`[systems] working song for system ${id} dropped: this build has no layout to restore it into`);
+        continue;
+      }
+      for (const w of writes) if (!this.backend.writeRam(id, w.offset, w.bytes)) break;
+    }
+  }
+
+  /** Lift the working song out of `e` ahead of its teardown. A carry still pending for it wins: a second
+   *  reset inside the boot window would otherwise lift the blank song the cart is still booting into. */
+  private takeWorkingSong(e: SystemEntry): WorkingSongImage | null {
+    const song = this.workingSongImage(e.id);
+    this.carries.delete(e.id);
+    return song;
+  }
+
+  private carryWorkingSong(newId: number | null, song: WorkingSongImage | null): number | null {
+    if (newId !== null && song) this.carries.set(newId, { song, ticks: 0 });
+    return newId;
   }
 
   /** Wipe system `id`'s battery SRAM (a fresh cartridge) and cold-boot it in place. Seeds an all-zero
@@ -551,6 +671,8 @@ export class SystemsStore {
     }
     this.entries = [];
     this.focusedId = 0;
+    this.carries.clear();
+    this.successors.clear();
   }
 
   /** Reconstruct one system from a serialized config entry, preserving its EXACT
@@ -636,6 +758,7 @@ export class SystemsStore {
     this.entries = empty
       ? appendEntry(this.entries, built.entry)
       : replaceById(this.entries, target as number, built.entry);
+    if (!empty) this.successors.set(target as number, built.id);
     this.focusedId = built.id;
     return this.committed(built.id);
   }

@@ -23,8 +23,13 @@
 // `load`. See `workingSongOutsideBattery` below, which is how the shared Songs menu learns to warn about
 // Delete and Move Up as well. It also means the reverse: after a project LOAD the cart has only just
 // booted, so its working song is the cart's, not the user's, and `workingSongDirty` has to say so.
-import type { SongCatalog } from "./songCatalog";
-import { commonBootedOffset, commonSongEditedOffset, commonSongNameOffset } from "../smsggdj/runtime/layout";
+import type { SongCatalog, WorkingSongCommit, WorkingSongImage } from "./songCatalog";
+import {
+  commonBootedOffset,
+  commonEchoOffset,
+  commonSongEditedOffset,
+  commonSongNameOffset,
+} from "../smsggdj/runtime/layout";
 import {
   listSongs,
   isSmsggdjSav,
@@ -34,6 +39,10 @@ import {
   deleteSong,
   reorderSongs,
   importSongs,
+  addSong,
+  replaceSong,
+  ensureSongDirectory,
+  allSongsReadable,
   SMDJ4_BLOCK_LEN,
 } from "../smsggdj/codec/sav";
 
@@ -71,6 +80,62 @@ function workingNameFromRam(ram?: Uint8Array): string | null {
     s += String.fromCharCode(c);
   }
   return s.trim() || null;
+}
+
+/** See SongCatalog.readWorkingSong. Every field from the offsets ALL supported builds agree on, since the
+ *  caller has work RAM and no ROM to ask which build it came from. */
+function readWorkingSong(ram: Uint8Array): WorkingSongImage | null {
+  if (!isBooted(ram) || ram.length < SMDJ4_BLOCK_LEN) return null;
+  const name = commonSongNameOffset();
+  const echo = commonEchoOffset();
+  const edited = commonSongEditedOffset();
+  if (!name || !echo || edited === null) return null;
+  if (ram.length < Math.max(name.offset + name.length, echo.offset + echo.length, edited + 1)) return null;
+  return {
+    block: ram.slice(0, SMDJ4_BLOCK_LEN),
+    name: ram.slice(name.offset, name.offset + name.length),
+    echo: ram.slice(echo.offset, echo.offset + echo.length),
+    edited: ram[edited] !== 0,
+  };
+}
+
+/** See SongCatalog.workingSongImageDirty. A battery with no SMDJ4 directory holds no songs, so an edited
+ *  song on a cart that has never saved is unsaved by definition - which is every new user's first song,
+ *  and was the case this used to call clean. */
+function imageDirty(sav: Uint8Array, song: WorkingSongImage): boolean {
+  if (!song.edited) return false;
+  return !isSmsggdjSav(sav) || !isSongSaved(sav, song.block);
+}
+
+/** The name the cart displays, for matching against a directory entry: up to the first NUL, trailing
+ *  padding dropped. Blank is no name at all, and matches nothing. */
+function displayName(bytes: Uint8Array): string {
+  let s = "";
+  for (const c of bytes) {
+    if (c === 0) break;
+    s += String.fromCharCode(c);
+  }
+  return s.replace(/\s+$/, "");
+}
+
+/** See SongCatalog.commitWorkingSong. */
+function commitWorkingSong(sav: Uint8Array, song: WorkingSongImage): WorkingSongCommit {
+  const base = ensureSongDirectory(sav);
+  if (!base) return { ok: false, reason: "format" };
+  const songs = listSongs(base);
+  const name = displayName(song.name);
+  const same = name ? songs.filter((s) => s.name === name) : [];
+  if (same.length === 1) {
+    const out = replaceSong(base, same[0].index, song.block, song.echo);
+    if (out) return { ok: true, sav: setCurSlot(out, same[0].index) ?? out, index: same[0].index, replaced: true };
+  } else {
+    const out = addSong(base, song.block, song.name, song.echo);
+    if (out) return { ok: true, sav: setCurSlot(out, songs.length) ?? out, index: songs.length, replaced: false };
+  }
+  // Both ops refuse for exactly two reasons: a saved song that will not decode (rebuilding around it would
+  // drop everything after it), or no room. Telling them apart is worth the second look - "cart full" and
+  // "your save is damaged" call for different things from the user.
+  return { ok: false, reason: allSongsReadable(base) ? "full" : "corrupt" };
 }
 
 export const smsggdjSongCatalog: SongCatalog = {
@@ -137,10 +202,16 @@ export const smsggdjSongCatalog: SongCatalog = {
   // Recent offered to discard a song nobody had written, and could only call it "the working song"
   // because there wasn't one to name.
   workingSongDirty: (sav, ram) => {
-    if (!ram || !isBooted(ram) || ram.length < SMDJ4_BLOCK_LEN || !isSmsggdjSav(sav)) return false;
-    const edited = commonSongEditedOffset();
-    if (edited === null || ram.length <= edited || ram[edited] === 0) return false;
-    return !isSongSaved(sav, ram.subarray(0, SMDJ4_BLOCK_LEN));
+    const song = ram ? readWorkingSong(ram) : null;
+    return song ? imageDirty(sav, song) : false;
+  },
+  readWorkingSong,
+  workingSongImageDirty: imageDirty,
+  commitWorkingSong,
+  // `song_edited = 0`, exactly what the cart's own save does (rle.asm:817).
+  workingSongSavedWrites: () => {
+    const at = commonSongEditedOffset();
+    return at === null ? [] : [{ offset: at, bytes: Uint8Array.of(0) }];
   },
 
   // Naming the slot is the whole of `load`; mutateLiveSav's cold boot is what makes the cart act on it.

@@ -184,6 +184,17 @@ bool EngineRpcService::writeRam(std::uint32_t id, std::uint32_t offset, rfl::Byt
     return true;
 }
 
+bool EngineRpcService::writeSram(std::uint32_t id, std::uint32_t offset, rfl::Bytestring bytes) {
+    // writeRam's twin, aimed at the battery, with the same synchronous refusals. The apply republishes
+    // the SRAM snapshot (see Engine::writeMemory), so a readSram after the write lands sees it.
+    if (bytes.empty()) return false;
+    const std::size_t sram = engine_.sramSize(id);
+    if (sram == 0 || static_cast<std::size_t>(offset) + bytes.size() > sram) return false;
+    const auto* p = reinterpret_cast<const std::uint8_t*>(bytes.data());
+    invoker_.writeSram(id, offset, std::vector<std::uint8_t>(p, p + bytes.size()));
+    return true;
+}
+
 bool EngineRpcService::screenshot(std::uint32_t id, std::string path) {
     // Encodes the owned registry frame (a published copy) — safe while the audio thread runs, no guard.
     return engine_.screenshot(id, path);

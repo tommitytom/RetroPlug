@@ -1,6 +1,7 @@
 #include "host/engine/SnapshotRegistry.hpp"
 
 #include <cstdio>
+#include <cstdint>
 #include <cstring>
 
 #include "project/Project.hpp"
@@ -224,6 +225,29 @@ std::optional<std::vector<std::uint8_t>> SnapshotRegistry::readRam(SystemId id) 
     if (len == 0 || static_cast<std::size_t>(len) + kRamLenPrefix > slotSize) return std::nullopt;
     return std::vector<std::uint8_t>(ramReadScratch_.begin() + kRamLenPrefix,
                                      ramReadScratch_.begin() + kRamLenPrefix + len);
+}
+
+std::size_t SnapshotRegistry::sramSize(SystemId id) {
+    // The SRAM triple has no length prefix - it is sized to the cart's battery at claim, and a cart
+    // cannot change its battery size - so the slot size IS the length.
+    Slot* s = find(id);
+    return s && s->sram ? s->sram->size() : 0;
+}
+
+void SnapshotRegistry::republishSram(SystemBase& sys) {
+    Slot* s = find(sys.id());
+    if (!s || !s->sram) return;
+    if (s->sramFromCore) {
+        sramScratch_ = sys.saveSramBytes();
+        if (sramScratch_.size() == s->sram->size()) {
+            std::memcpy(s->sram->writeSlot(), sramScratch_.data(), sramScratch_.size());
+            s->sram->publish();
+        }
+        return;
+    }
+    // Sliced from the savestate: make the next publishAll take the coarse branch. Half the range, so
+    // publishAll's `+= frames` cannot wrap it back below the interval.
+    s->sampleAccum = UINT64_MAX / 2;
 }
 
 std::size_t SnapshotRegistry::ramSize(SystemId id) {

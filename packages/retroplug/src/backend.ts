@@ -203,6 +203,14 @@ export interface Backend {
    *  a confused ROM. Treat it as the debugger-style tool it is. */
   writeRam(id: number, offset: number, bytes: Uint8Array): boolean;
 
+  /** `writeRam`'s twin for the battery: poke bytes into system `id`'s cart SRAM, at the offsets `readSram`
+   *  returns. Same queued, between-blocks apply and the same refusals (gone id, no battery, out of bounds).
+   *  The apply republishes the SRAM snapshot, so `readSram` reflects the write once it has LANDED - which
+   *  is the moment a caller can safely flush it to disk, since the auto-save mirror flushes readSram and
+   *  would otherwise write the pre-write battery straight back. The same "can confuse a running program"
+   *  caveat applies: a cart that caches anything about its own battery is walked past. */
+  writeSram(id: number, offset: number, bytes: Uint8Array): boolean;
+
   /** The system's latest video frame for display, or `null` when the id is gone / has no framebuffer.
    *  `published` is false (and `pixels` empty) until the core has rendered a frame. Read from the
    *  race-free framebuffer triple-buffer, so it is safe to poll while the core plays. */
@@ -395,7 +403,8 @@ export type HostBackend = Pick<
 export type EmulatorBackend = Pick<
   Backend,
   | "constructSystem" | "removeSystem" | "applySystemSetting" | "applyRoleConfig" | "setSerialOutCapture"
-  | "setAudioRouting" | "pressButton" | "stageSystemMidi" | "readState" | "readSram" | "readRam" | "writeRam" | "getFrame"
+  | "setAudioRouting" | "pressButton" | "stageSystemMidi" | "readState" | "readSram" | "readRam" | "writeRam" | "writeSram"
+  | "getFrame"
 >;
 
 /** Live-core inspection / stepping / breakpoints / profiler — the CLI-only debug facet (spec/09). */

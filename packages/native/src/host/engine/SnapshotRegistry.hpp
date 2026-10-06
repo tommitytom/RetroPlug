@@ -67,6 +67,16 @@ public:
     // The published WRAM length WITHOUT copying it - so a bounds check costs nothing. 0 when the id is
     // gone or the core publishes no RAM (a region past kMaxRamBytes is skipped, so readRam is null too).
     std::size_t ramSize(SystemId id);
+    // The published battery length, likewise copy-free. 0 when the id is gone or the cart has none.
+    std::size_t sramSize(SystemId id);
+
+    // Republish `sys`'s battery NOW instead of on the coarse interval - for a host write into it
+    // (Engine::writeMemory), after which a stale copy would hand the TS auto-save mirror the PRE-write
+    // battery to flush over the file. Same threading as publishAll: the thread that owns the core (the
+    // block thread, or the control thread while quiescent). A core-sourced battery (Mesen) is copied
+    // immediately; a savestate-sliced one (SameBoy) needs a savestate capture, so it is forced onto the
+    // next block's publish instead.
+    void republishSram(SystemBase& sys);
 
     // Free a slot when its system is deleted (control thread). Idempotent (no-op for an unknown id).
     void release(SystemId id);

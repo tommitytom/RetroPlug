@@ -273,6 +273,12 @@ function detachAll(sav: Uint8Array): DetachedSong[] | null {
   return out;
 }
 
+/** True when every song the directory lists decodes - the precondition every heap op has (see
+ *  detachAll). Lets a caller whose edit was refused tell "damaged save" from "no room". */
+export function allSongsReadable(sav: Uint8Array): boolean {
+  return detachAll(sav) !== null;
+}
+
 /** Delete the song at `slot`, compacting the heap and packing the directory down. Returns a NEW image,
  *  or null on an invalid slot. The currently-loaded marker follows the song it names: it shifts down
  *  with the survivors, and clears if the deleted song WAS the loaded one. */
@@ -317,15 +323,41 @@ export function importSongs(target: Uint8Array, source: Uint8Array, indices: num
   return rebuild(target, [...songs, ...add], curSlot(target));
 }
 
-/** Append one song. Returns a NEW image, or null when it does not fit / the block is the wrong size. */
-export function addSong(sav: Uint8Array, block: Uint8Array, name: string): Uint8Array | null {
+/** Append one song. Returns a NEW image, or null when it does not fit / the block is the wrong size.
+ *  `name` is a string, or the cart's 8 raw name bytes (carried verbatim, as the cart's own SAVE does);
+ *  `echo` defaults to all-zero (echo off). */
+export function addSong(sav: Uint8Array, block: Uint8Array, name: string | Uint8Array, echo?: Uint8Array): Uint8Array | null {
   if (!isSmsggdjSav(sav) || block.length !== SMDJ4_BLOCK_LEN) return null;
   const songs = detachAll(sav);
   if (!songs) return null;
   const nameBytes = new Uint8Array(NAME_LEN);
-  for (let i = 0; i < NAME_LEN && i < name.length; i++) nameBytes[i] = name.charCodeAt(i) & 0xff;
-  songs.push({ block: block.slice(), name: nameBytes, echo: new Uint8Array(ECHO_LEN) });
+  if (typeof name === "string") {
+    for (let i = 0; i < NAME_LEN && i < name.length; i++) nameBytes[i] = name.charCodeAt(i) & 0xff;
+  } else {
+    nameBytes.set(name.subarray(0, NAME_LEN));
+  }
+  const echoBytes = new Uint8Array(ECHO_LEN);
+  if (echo) echoBytes.set(echo.subarray(0, ECHO_LEN));
+  songs.push({ block: block.slice(), name: nameBytes, echo: echoBytes });
   return rebuild(sav, songs, curSlot(sav));
+}
+
+/** The battery as an SMDJ4 image a song can be saved into: `sav` itself when it already is one, a
+ *  fresh empty directory over it when it carries no SMDJ format at all, and NULL when it is an OLDER
+ *  SMDJ format (SMDJ1-3).
+ *
+ *  The fresh case is the common one, not an edge: a cart only writes its directory on its first SAVE
+ *  (`rle_dir_ensure`), so every new user's battery has none until then. The cart's own rule is "not
+ *  SMDJ4 -> initialise", which would also flatten an SMDJ3 save; this is stricter on purpose, since a
+ *  host-side save is one the user did not watch happen. Those songs belong in tools/migrate.html. The
+ *  OPTIONS block is preserved either way (`rebuild` lifts it out and puts it back). */
+export function ensureSongDirectory(sav: Uint8Array): Uint8Array | null {
+  if (isSmsggdjSav(sav)) return sav;
+  if (sav.length < HEAP_OFF) return null;
+  if (MAGIC.slice(0, 4).every((m, i) => sav[i] === m)) return null; // "SMDJ" + an older version digit
+  const fresh = sav.slice();
+  fresh.fill(0, 0, SUPER_LEN); // the reserved superblock bytes are whatever the battery powered on with
+  return rebuild(fresh, [], -1);
 }
 
 /** Rename the song at `slot` in place - no heap movement, so no re-layout. */

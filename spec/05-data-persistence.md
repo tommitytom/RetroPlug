@@ -278,6 +278,17 @@ both are the user acting rather than a background policy:
 | Saving the project (menu Save / Save As, Save & Quit, the discard-guard's Save) | `flushDirtySram`, via `saveProjectInteractive` |
 | **A cart's core being destroyed** — remove, replace, swap, reset, load SRAM / state, a ROM-watch reload, New/Load Project | `flushBatteryForTeardown`, from `SystemsStore` |
 
+**A working song outside the battery** (smsggdj keeps its working song in work
+RAM) is in neither the project nor the `.sav`, so neither moment above captures
+it on its own. `saveProjectInteractive` therefore first saves each unsaved one
+INTO its cart's live battery (`saveWorkingSong`, via the `writeSram` control-plane
+write, which republishes the SRAM snapshot as it lands), and the battery flush
+then carries it to disk. It has to be the LIVE battery: the teardown flush writes
+`readSram`, so a file-only save would be overwritten by the very close it was made
+for. The unsaved-changes prompt lists such a song as its own row, and Reset, a
+ROM-watch reload and a ROM swap carry it across the reboot
+(`SystemsStore.carryWorkingSong`). See [docs/sms-support.md](../docs/sms-support.md).
+
 The preference then chooses whether it *also* happens while you play:
 
 | Mode | Behaviour |

@@ -26,6 +26,27 @@ export function workingSongTargets(cat: SongCatalog, sav: Uint8Array): SongInfo[
   return cat.list(sav).filter((s) => s.name.trim().toUpperCase() === name);
 }
 
+/** A working song that lives OUTSIDE the battery (smsggdj's work RAM), lifted out as data: the block plus
+ *  the per-song metadata the cart keeps beside it, and the cart's own unsaved flag. Version-independent,
+ *  so it outlives the core it was read from - a reset carries one across the reboot, and saving it
+ *  into the battery needs nothing else. */
+export interface WorkingSongImage {
+  block: Uint8Array;
+  /** The cart's raw name bytes, verbatim (padding included). */
+  name: Uint8Array;
+  echo: Uint8Array;
+  /** The cart's "changed since the last save or load" flag. */
+  edited: boolean;
+}
+
+/** What committing a working song into the battery did. `index` is the slot it landed in; `replaced`
+ *  says whether that slot already held a song (the same-named one) or was appended. The refusals:
+ *  `full` - no room for one more song; `format` - the battery is an older SMDJ format a save would
+ *  flatten; `corrupt` - a saved song will not decode, and rebuilding around it would drop the rest. */
+export type WorkingSongCommit =
+  | { ok: true; sav: Uint8Array; index: number; replaced: boolean }
+  | { ok: false; reason: "full" | "format" | "corrupt" };
+
 export interface SongCatalog {
   /** The role kind that identifies this console on a system (the menu-gate marker, e.g. "lsdj-sync"/"risa"). */
   readonly markerRole: string;
@@ -94,6 +115,22 @@ export interface SongCatalog {
    *  alone. smsggdj breaks the assumption - its working song is work RAM at $C000 and appears nowhere in
    *  the file - so for it EVERY battery edit is destructive, and the menu has to say so. */
   readonly workingSongOutsideBattery?: boolean;
+  /** Lift the working song out of live work RAM, for a console where it lives there. Null when there is
+   *  no RAM, the cart has not booted (see `workingSongReady`), or the build's layout is unknown. */
+  readWorkingSong?(ram: Uint8Array): WorkingSongImage | null;
+  /** True when `song` holds work that is in no saved slot: the cart flagged it edited AND its content is
+   *  not already in the battery. `workingSongDirty`'s question, asked of an image rather than of live
+   *  RAM, so it can also be asked of a song a reset is still carrying across the reboot. */
+  workingSongImageDirty?(sav: Uint8Array, song: WorkingSongImage): boolean;
+  /** Save `song` INTO the battery the way the cart's own SAVE would - what "Save" in the unsaved-changes
+   *  prompt does for a working song that lives outside the battery. Overwrites the slot carrying the same
+   *  name when exactly one does, else appends (two same-named slots are not evidence of which one is
+   *  meant, and overwriting has no undo). Pure: returns the new image, the caller writes it. */
+  commitWorkingSong?(sav: Uint8Array, song: WorkingSongImage): WorkingSongCommit;
+  /** The work-RAM writes that tell a running cart its working song has just been saved - what the cart's
+   *  own SAVE does to its unsaved flag. Without them a host-side save would leave the cart (and every
+   *  dirty check that reads its flag) still believing the song unsaved. */
+  workingSongSavedWrites?(): { offset: number; bytes: Uint8Array }[];
   /** Load a saved song into working memory (+ mark it active). New bytes, or null on an empty slot. */
   load(sav: Uint8Array, index: number): Uint8Array | null;
   /** Delete a saved song. New bytes, or null on an invalid index. */

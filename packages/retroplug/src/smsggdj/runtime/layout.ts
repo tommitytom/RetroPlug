@@ -95,6 +95,14 @@ export function commonSongNameOffset(): { offset: number; length: number } | nul
   return offset === null || length === null ? null : { offset, length };
 }
 
+/** Where the 8 echo bytes sit (`echo_mode` onward), for reading the working song's echo settings out of
+ *  work RAM without the ROM - see commonSongNameOffset for why a caller would have RAM and no ROM. */
+export function commonEchoOffset(): { offset: number; length: number } | null {
+  const offset = commonOffset((s) => s.echo_mode);
+  const length = commonOffset((s) => s.echo_len);
+  return offset === null || length === null ? null : { offset, length };
+}
+
 /** Where `song_edited` sits, for `SongCatalog.workingSongDirty` - the cart's own "song data changed
  *  since the last save or load" flag (editor.asm:141), which is the only thing that can tell an hour of
  *  work from the song the cart happened to boot into. Null leaves that caller saying CLEAN, because a

@@ -76,6 +76,8 @@ export function useProjectModals(stores: AppStores): ProjectModals {
   };
   useNativeEvent("frame", () => {
     if (project.hasSongRequest()) settleSong();
+    // A working song a reset is carrying across the reboot goes back in on the first frame its cart is up.
+    if (project.systems.hasCarries()) project.systems.settleCarries();
   });
 
   // A load result → the next overlay: loaded clears; incompatible/error notify; missing offers relink.

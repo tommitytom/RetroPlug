@@ -317,19 +317,29 @@ std::size_t Engine::ramSize(SystemId id) {
     return registry_.ramSize(id);     // published copy, like readRam - no Project walk, no live core
 }
 
-bool Engine::writeRam(SystemId id, std::uint32_t offset, const std::vector<std::uint8_t>& bytes) {
+std::size_t Engine::sramSize(SystemId id) {
+    return registry_.sramSize(id);
+}
+
+bool Engine::writeMemory(SystemId id, rp::MemoryType region, std::uint32_t offset,
+                         const std::vector<std::uint8_t>& bytes) {
     if (bytes.empty()) return false;
+    if (region != rp::MemoryType::Ram && region != rp::MemoryType::Sram) return false;
     SystemBase* sys = project_.findSystem(id);
     if (!sys) return false;
-    // ReadWrite, so a backend with a read-only RAM view reports failure rather than silently dropping
-    // the poke into a copy nobody reads.
-    auto acc = sys->getMemory(rp::MemoryType::Ram, rp::AccessType::ReadWrite);
+    // ReadWrite, so a backend with a read-only view reports failure rather than silently dropping the
+    // poke into a copy nobody reads.
+    auto acc = sys->getMemory(region, rp::AccessType::ReadWrite);
     if (!acc.valid()) return false;
     // Bounds are the ONE thing this refuses: a short write past the end would corrupt whatever the
-    // core keeps after its RAM region, which is a crash rather than the "confuse the ROM" the caller
+    // core keeps after the region, which is a crash rather than the "confuse the ROM" the caller
     // signed up for. Partial writes are refused too - half a song block is not a song.
     if (static_cast<std::size_t>(offset) + bytes.size() > acc.size()) return false;
     std::memcpy(acc.data() + offset, bytes.data(), bytes.size());
+    // WRAM republishes every block anyway. The battery does not (coarse interval), and a stale copy is
+    // not harmless: the TS auto-save mirror flushes readSram to disk, so it would write the PRE-write
+    // battery back over the file this write was made for. Republish now.
+    if (region == rp::MemoryType::Sram) registry_.republishSram(*sys);
     return true;
 }
 

@@ -150,8 +150,18 @@ void QueuedInvoker::pressButton(SystemId id, std::uint8_t button, bool down) {
 void QueuedInvoker::writeRam(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes) {
     DspCommand c;
     c.kind = DspCommand::Kind::WriteRam;
-    c.writeRam = { static_cast<std::uint32_t>(id), offset, new std::vector<std::uint8_t>(std::move(bytes)) };
+    c.writeRam = { static_cast<std::uint32_t>(id), offset, new std::vector<std::uint8_t>(std::move(bytes)),
+                   static_cast<std::uint8_t>(rp::MemoryType::Ram) };
     if (!commands_.tryPush(c)) delete c.writeRam.bytes;  // full ring: drop the poke, never leak it
+    maybeFlush();
+}
+
+void QueuedInvoker::writeSram(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes) {
+    DspCommand c;
+    c.kind = DspCommand::Kind::WriteRam;  // the same queued poke, aimed at the battery
+    c.writeRam = { static_cast<std::uint32_t>(id), offset, new std::vector<std::uint8_t>(std::move(bytes)),
+                   static_cast<std::uint8_t>(rp::MemoryType::Sram) };
+    if (!commands_.tryPush(c)) delete c.writeRam.bytes;
     maybeFlush();
 }
 
@@ -207,7 +217,8 @@ void QueuedInvoker::drainInto(Engine& engine) {
                 engine.pressButton(cmd.pressButton.id, cmd.pressButton.button, cmd.pressButton.down);
                 break;
             case DspCommand::Kind::WriteRam:
-                engine.writeRam(cmd.writeRam.id, cmd.writeRam.offset, *cmd.writeRam.bytes);
+                engine.writeMemory(cmd.writeRam.id, static_cast<rp::MemoryType>(cmd.writeRam.region),
+                                   cmd.writeRam.offset, *cmd.writeRam.bytes);
                 delete cmd.writeRam.bytes;  // owning payload - free after applying (rare op)
                 break;
             // Lifecycle: alloc-free pointer swaps into the pre-reserved Project; displaced/removed

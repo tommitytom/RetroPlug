@@ -43,10 +43,10 @@ struct DspCommand {
         struct { std::uint32_t id; std::uint8_t button; bool down; } pressButton; // joypad transition → core
         struct { std::uint8_t mode; } setAudioRouting;            // project output-pair placement
         struct { double value; } setPpq;                         // host playhead jump (locate)
-        // Host poke into a core's work RAM. Owning payload (a song block is ~7 KB, far past what the
-        // union can hold inline), freed by the audio thread after applying - the same rare-op pattern
-        // setSystems and loadKernel use.
-        struct { std::uint32_t id; std::uint32_t offset; std::vector<std::uint8_t>* bytes; } writeRam;
+        // Host poke into a core's work RAM or battery (`region` is an rp::MemoryType: Ram or Sram).
+        // Owning payload (a song block is ~7 KB, far past what the union can hold inline), freed by the
+        // audio thread after applying - the same rare-op pattern setSystems and loadKernel use.
+        struct { std::uint32_t id; std::uint32_t offset; std::vector<std::uint8_t>* bytes; std::uint8_t region; } writeRam;
         // MIDI aimed at ONE system, delivered straight to its ingress and NEVER through the routing kernel.
         // That is the whole point: a menu knob has to reach the cart whose menu it is, whatever the project's
         // MUSICAL routing is doing with channels (sendToAll would hit every instance; midiChannelToInstance

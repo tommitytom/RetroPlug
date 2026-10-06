@@ -1579,9 +1579,63 @@ Two things found while building it, both pre-existing and unrelated to this work
   clean build reproduces the vendored v0.45 ROMs byte-for-byte apart from the embedded git-hash build
   stamp and its checksum.
 
+#### The working song outside the battery: close, reset, and the rows that replace it
+
+The Songs menu learned that every battery edit destroys a work-RAM working song. Four other paths had
+not, and each lost an unsaved song without a word:
+
+- **Closing the window** (and New / Open / a Recent project). The close prompt asked about the project
+  and the battery, and this song is in neither. It is now a third channel (`unsavedChanges`, item kind
+  `song`), listed as `Song: MYSONG -> smsggdj.sav`. **Save** writes it INTO the battery the way the
+  cart's own SAVE would - over the one slot with the same name, else appended; two same-named slots or a
+  blank name append, since overwriting has no undo - then the usual flush takes it to disk. When the cart
+  cannot take it, the row says why up front (`cart full`, `old save format`, `damaged save`) and Save
+  leaves the prompt open rather than quitting without it.
+- **A fresh cart.** The dirty check required an SMDJ4 directory, which a cart only writes on its first
+  SAVE - so every new user's first song read as clean, everywhere. A battery with no directory now holds
+  no songs, so an edited song on it is unsaved. Saving into it creates the directory
+  (`ensureSongDirectory`); an older SMDJ1-3 image is refused rather than flattened, which is stricter
+  than the cart's own `rle_dir_ensure` on purpose.
+- **Reset, a ROM-watch reload, a ROM swap.** Each carries the battery, which carries LSDj's and risa's
+  working song - but not this one. They now carry it explicitly: lifted out as a `WorkingSongImage`
+  before the teardown, parked under the new id, written back (`restoreWorkingSong`, the same writes as a
+  Load) on the first frame the new cart's boot latch is up, still marked unsaved. While it is parked the
+  image answers for it, so a close inside the boot window still sees the song.
+- **Load SRAM, Load State, New SRAM, Replace / Remove Instance** replace what the cart holds, so a carry
+  would be wrong; they confirm first when the song is unsaved.
+
+Two things found on the way:
+
+- **`System > FM Audio` never took effect on a running cart.** `applyRoleConfig("mesen")` sends only NES
+  fields, which an SMS core drops at the `MesenNesSystem` cast, and `enableFm` is read only at construct.
+  The menu's own comment said it rebooted the core; nothing did. It now resets - which, with the carry,
+  costs nothing.
+- **The instance menu stranded on any in-place rebuild.** A rebuild gives a system a new id; the menu
+  stayed anchored to the dead one, open but invisible, and the next Esc was spent closing it.
+  `SystemsStore.currentId` follows an id through its successors and `App` re-anchors on it (at the top
+  level - tiles are keyed by id, so the rebuilt cart's menu mounts fresh).
+
+**Why the save writes the LIVE battery.** The teardown flush and the auto-save mirror both write
+`readSram` to disk, so a save made only to the file is overwritten by the stale battery on the very close
+it was for. `writeSram` is the battery twin of `writeRam` (same queued, between-blocks apply), and its
+apply republishes the SRAM snapshot immediately rather than on the 0.5 s interval - without that the
+snapshot would still hold the pre-save battery for the flush to find. `saveWorkingSong` resolves once
+`readSram` shows the new image; it polls on the UI's timer, which `LvglJsEngine::tick` pumps every frame
+(the headless native test host does not pump timers while a test awaits, so there the first,
+synchronous look has to succeed - which it does, because the write applies inline when the audio thread
+is stopped). A live battery write while the cart sits on its FILES screen leaves that screen's list
+stale until it is redrawn; the cart re-reads the directory on every visit.
+
+Guarded by `test/tracker/working-song-save.test.ts` (codec, catalog, save, prompt rows, carry, menu
+guards), `test-native/sms-working-song-save.test.ts` (both machines on the real core: `writeSram`, a save
+that survives the teardown flush, a carry through the boot) and `test-ui/working-song-smsggdj.test.ts`
+(the real app: FM Audio, the close prompt's row, Save & Quit into the `.sav`). Each fix has a negative
+control that fails its test.
+
 ### Suggested order
 
 All three defects are closed, the tracker integration is built, and the Songs menu is live on the
-vendored v0.45 - Load included, via the symbol-driven work-RAM write. Next is assets (which need
-neither a ROM change nor a layout), then the Tier 2 polish in any order. The ROM branch lands whenever
+vendored v0.45 - Load included, via the symbol-driven work-RAM write. An unsaved working song can no
+longer be lost silently. Next is assets (which need neither a ROM change nor a layout), then the Tier 2
+polish in any order. The ROM branch lands whenever
 its author is happy with it; nothing in RetroPlug is waiting on it now.

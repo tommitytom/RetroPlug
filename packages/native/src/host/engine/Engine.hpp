@@ -150,6 +150,8 @@ public:
     std::optional<std::vector<std::uint8_t>> readRam(SystemId id);
     /** The published WRAM length, for a bounds check that costs no copy. 0 = no writable RAM. */
     std::size_t ramSize(SystemId id);
+    /** The published battery length, likewise. 0 = no battery. */
+    std::size_t sramSize(SystemId id);
     bool screenshot(SystemId id, const std::string& path);
     // The system's latest video frame (raw XRGB8888). Reads the concurrent FrameBufferTriple, so it is
     // safe while the audio thread writes; width/height are 0 (published false) for an unknown system.
@@ -160,14 +162,15 @@ public:
     // routes musical MIDI. False when there is no such system. See DspCommand::stageSystemMidi.
     bool stageSystemMidi(SystemId id, const std::uint8_t* bytes, std::size_t len);
 
-    // Audio-thread: poke bytes into a system's work RAM. `offset` indexes the SAME region readRam
-    // returns, so read-modify-write round-trips without a coordinate conversion. Applied between
-    // blocks via the invoker, never from the calling thread - which is what separates it from the
-    // debug facet's writeCpu (a live-core write, valid only when the audio thread is stopped).
+    // Audio-thread: poke bytes into a system's work RAM (`Ram`) or battery (`Sram`). `offset` indexes
+    // the SAME region readRam / readSram returns, so read-modify-write round-trips without a coordinate
+    // conversion. Applied between blocks via the invoker, never from the calling thread - which is what
+    // separates it from the debug facet's writeCpu (a live-core write, valid only when the audio thread
+    // is stopped).
     //
-    // Deliberately unguarded beyond bounds: writing a running core's RAM CAN confuse it, because the
+    // Deliberately unguarded beyond bounds: writing a running core's memory CAN confuse it, because the
     // emulated program has its own invariants over those bytes. That is the point of the feature.
-    bool writeRam(SystemId id, std::uint32_t offset, const std::vector<std::uint8_t>& bytes);
+    bool writeMemory(SystemId id, rp::MemoryType region, std::uint32_t offset, const std::vector<std::uint8_t>& bytes);
     // Apply a live config edit to a system (SameBoy-only cast today). Value-guarded per field so a
     // whole-config re-send only acts on what changed (no spurious model restart).
     void applyConfigField(SystemId id, std::uint8_t field, double value);

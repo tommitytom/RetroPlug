@@ -90,6 +90,7 @@ import {
   type AssetOverride,
   type AssetTypeInfo,
   type TrackerIntegration,
+  savEditWouldDiscard,
 } from "../../../src/tracker";
 import type { HostBackend, ControlPlaneBackend } from "../../../src/backend";
 import { openPath } from "../../lvgl/openPath";
@@ -614,6 +615,30 @@ function action(id: string, label: string, onSelect: () => void, disabled = fals
   // Only attach `disabled` when set, so every enabled action stays byte-identical (toEqual-stable in tests).
   return disabled ? { id, label, kind: "action", onSelect, disabled } : { id, label, kind: "action", onSelect };
 }
+/** `action`, behind a yes/no confirm when running it would throw away an unsaved working song that lives
+ *  outside the battery (smsggdj). For the rows that REPLACE what the cart holds - Load SRAM, Load State,
+ *  New SRAM, Replace / Remove Instance - so carrying the song across, as Reset does, would be wrong; but
+ *  saying nothing lost the song. Asked when the menu is built, and only on a positive signal (see
+ *  savEditWouldDiscard): elsewhere it is exactly `action`. Confirms BEFORE any file picker, as the Songs
+ *  menu does, so cancelling the picker costs nothing. */
+function songGuardedAction(ctx: MenuContext, sys: SystemView, id: string, label: string, run: () => void): MenuItem {
+  if (!savEditWouldDiscard(ctx.stores.project.systems, sys)) return action(id, label, run);
+  return {
+    id,
+    label,
+    kind: "prompt" as const,
+    keepOpen: true,
+    prompt: {
+      title: `${label.replace(/\.\.\.$/, "")}? The working song has unsaved changes - they will be lost.`,
+      hint: "Enter to continue  |  Esc to cancel",
+      confirm: true,
+      onConfirm: () => {
+        run();
+        return null;
+      },
+    },
+  };
+}
 function submenu(id: string, label: string, children: MenuItem[]): MenuItem {
   return { id, label, kind: "submenu", children };
 }
@@ -830,7 +855,8 @@ function renderSubmenu(ctx: MenuContext, sys: SystemView): MenuItem {
 function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   const systems = ctx.stores.project.systems;
   // Reset reboots carrying the battery — pathless, reconstructing in place (no live GB_reset). It leads the
-  // menu; the Render submenu (a WAV background job) sits right below it, then a separator.
+  // menu; the Render submenu (a WAV background job) sits right below it, then a separator. A working song
+  // that lives outside the battery (smsggdj) is carried across too - see SystemsStore.reset.
   const items: MenuItem[] = [action("sys-reset", "Reset", () => void systems.reset(sys.id))];
   if (sys.romPath) items.push(renderSubmenu(ctx, sys));
   items.push(
@@ -886,13 +912,14 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
     );
   }
   // SMS/GG-only core knobs (same "mesen" role, gated on platform for the same reason as above).
-  // FM Audio is applied at construct, so flipping it reboots the core (configureSms runs before LoadRom).
+  // FM Audio is read only at construct (configureSms runs before LoadRom) and has no live path, so storing
+  // it alone changed nothing until the next boot. It resets, then - and Reset carries the working song.
   if (sys.platform === "sms" || sys.platform === "gg") {
     const cfg = mesenConfig(sys);
     items.push(
-      cycler("sys-sms-fm", "FM Audio", OFF_ON, cfg.enableFm ? 1 : 0, (n) =>
-        systems.setRoleConfig(sys.id, "mesen", { enableFm: n === 1 }),
-      ),
+      cycler("sys-sms-fm", "FM Audio", OFF_ON, cfg.enableFm ? 1 : 0, (n) => {
+        if (systems.setRoleConfig(sys.id, "mesen", { enableFm: n === 1 })) systems.reset(sys.id);
+      }),
     );
   }
   // Save/Load SRAM + State. The quick "Save SRAM"/"Save State" write to the ROM's sibling path with no
@@ -914,7 +941,7 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   items.push(action("sys-swaprom", "Swap ROM (Preserve SRAM)...", () => void ctx.stores.fileSelection.browseSwap(sys.id)));
   if (sys.romPath && !noSave)
     items.push(
-      action("sys-newsram", "New SRAM...", () =>
+      songGuardedAction(ctx, sys, "sys-newsram", "New SRAM...", () =>
         browseThen(
           ctx,
           { title: "New SRAM", patterns: SRAM_PATTERNS, saving: true, defaultName: sramName },
@@ -923,7 +950,7 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       ),
     );
   items.push(
-    action("sys-loadsram", "Load SRAM...", () =>
+    songGuardedAction(ctx, sys, "sys-loadsram", "Load SRAM...", () =>
       browseThen(ctx, { title: "Load SRAM", patterns: SRAM_PATTERNS }, (p) => void systems.loadSram(sys.id, p)),
     ),
   );
@@ -939,7 +966,7 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
         browseThen(ctx, { title: "Save SRAM", patterns: SRAM_PATTERNS, saving: true, defaultName: `${romStem || "sram"}.sav` }, (p) => systems.saveSram(sys.id, p)),
       noSave,
     ),
-    action("sys-loadstate", "Load State...", () =>
+    songGuardedAction(ctx, sys, "sys-loadstate", "Load State...", () =>
       browseThen(ctx, { title: "Load State", patterns: STATE_PATTERNS }, (p) => void systems.loadState(sys.id, p)),
     ),
   );
@@ -2417,8 +2444,8 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       // Replace / Remove only make sense with a peer instance — hidden for a lone instance.
       ...(multi
         ? [
-            action("inst-replace", "Replace Instance", () => void ctx.stores.fileSelection.browseReplace(sys.id)),
-            action("inst-remove", "Remove Instance", () => systems.removeSystem(sys.id)),
+            songGuardedAction(ctx, sys, "inst-replace", "Replace Instance", () => void ctx.stores.fileSelection.browseReplace(sys.id)),
+            songGuardedAction(ctx, sys, "inst-remove", "Remove Instance", () => systems.removeSystem(sys.id)),
           ]
         : []),
       // Link Group is SameBoy-only (the GB serial link cable); on a NES/GBA peer it would be a dead

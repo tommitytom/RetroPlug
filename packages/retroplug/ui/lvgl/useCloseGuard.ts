@@ -55,7 +55,9 @@ export function useCloseGuard(stores: AppStores): CloseGuard {
 
   const onSave = useCallback(() => {
     void (async () => {
-      if (!(await saveProjectInteractive(stores))) return; // Save-As cancelled → keep the prompt open
+      // Save-As cancelled, or a working song the cart could not store: keep the prompt open (it now lists
+      // only what is still unsaved, and why).
+      if (!(await saveProjectInteractive(stores))) return;
       setActive(false);
       quitWindow();
     })();

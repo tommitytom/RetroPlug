@@ -327,6 +327,21 @@ export class MockBackend implements Backend {
     return true;
   }
 
+  /** writeRam's battery twin. Writes through to the override `readSram` returns (seeding it from the
+   *  system's synthetic battery on first write), with the same refusals the native side makes. */
+  writeSram(id: number, offset: number, bytes: Uint8Array): boolean {
+    this.log.push("writeSram");
+    let sram = this.sramOverrides.get(id);
+    if (!sram && this.systems.has(id)) {
+      sram = sramBytesFor(id);
+      this.sramOverrides.set(id, sram);
+    }
+    if (!sram || !bytes.length) return false;
+    if (offset < 0 || offset + bytes.length > sram.length) return false;
+    sram.set(bytes, offset);
+    return true;
+  }
+
   getFrame(id: number): FrameData | null {
     this.log.push("getFrame");
     // The mock never advances a real core, so a live system reports GB dimensions but no published
