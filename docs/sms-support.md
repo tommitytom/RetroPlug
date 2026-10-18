@@ -1613,6 +1613,17 @@ not, and each lost an unsaved song without a word:
   computes the real fingerprint only when it moves (a full FNV per frame measured ~0.4 ms on x86).
   Residual: a NEW and an edit inside ONE frame (not reachable through the cart's menus) would still be
   read as the old song.
+- **The battery is published every block.** Mesen's core-sourced battery rode the 0.5 s savestate
+  interval while work RAM went out every block, so the two could describe different moments - found only
+  by the fourth review pass, run against the REAL core rather than the mock (the headless UI harness
+  publishes on every block regardless, which is why no app test caught it). On the block the cart's own
+  SAVE finished, RAM said "saved" and the battery still showed the old directory: the host read a song
+  saved nowhere and dropped its slot, and a reset in that window carried the stale battery and lost the
+  song silently. It is now a plain memcpy off the live accessor at the end of every block (no allocation
+  on the audio thread; it used to copy through a fresh vector). The slot watcher also re-checks a clean
+  song that matched nothing for ~1 s instead of caching that verdict, and Save finds a tracked song an
+  in-cart CLEAR above it shifted down. Echo is compared SANITIZED on both sides: the cart's PROJECT
+  load sanitizes it and its FILES load does not, and a slot written with echo 0 never matched otherwise.
 - **"Saved" means the whole song.** The block, its echo settings and its displayed name all have to
   match a slot. The cart's ECHO screen changes only the echo and sets `song_edited`; comparing the block
   alone called that saved, so an echo edit got no prompt and Save stored nothing.

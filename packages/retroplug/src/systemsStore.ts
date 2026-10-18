@@ -37,6 +37,9 @@ import type { TrackedSlot, WorkingSongImage } from "./tracker/songCatalog";
 // Frames the slot watcher waits for a landed carry's queued writes to appear before it trusts the cart
 // again; they normally appear on the next audio block, so this only bounds a cart that moved on.
 const LANDING_FRAMES = 120;
+// Frames a clean working song that matched no saved slot is re-checked before the verdict sticks (~1 s):
+// long enough to outlast a battery that lags work RAM by a block or two, short enough to cost nothing.
+const UNMATCHED_RECHECKS = 60;
 // How long after a carry lands an export still ships the working song beside the savestate: longer than
 // the savestate's 0.5 s republish interval, with margin for a slow block thread.
 const LANDED_EXPORT_MS = 2000;
@@ -132,12 +135,14 @@ export class SystemsStore {
   // only ever land in the cart it was made for. (A budget used to drop it after ~15 s of UI frames, which
   // a host that stops processing audio - the cart frozen mid-boot - spent without the cart moving at all.)
   private carries = new Map<number, { song: WorkingSongImage }>();
-  // The change signal of each system's last OBSERVED clean working song - see observeWorkingSongs.
-  private observed = new Map<number, number>();
+  // Each system's last OBSERVED clean working song: its change signal, whether it matched a saved slot,
+  // and how many more frames an unmatched one is re-checked - see observeWorkingSongs.
+  private observed = new Map<number, { signal: number; matched: boolean; retries: number }>();
   // A carry's writes are queued, so for a block or so the cart still holds the blank song it booted into.
-  // Until the restored song shows up, the watcher must not read that blank as an in-cart NEW and drop the
-  // slot the carry just restored. id -> the restored song's change signal + frames waited.
-  private landing = new Map<number, { signal: number; frames: number }>();
+  // Until the restored song shows up the CARRIED song is the working song: the watcher must not read the
+  // blank as an in-cart NEW, and Save, the unsaved prompt and an export must not read it as the song.
+  // id -> the restored song, its change signal, frames waited.
+  private landing = new Map<number, { song: WorkingSongImage; signal: number; frames: number }>();
   // When each system's last carry landed - see exportableWorkingSong.
   private landedAt = new Map<number, number>();
   // Old id -> the id its in-place replacement was built under - see currentId.
@@ -513,7 +518,7 @@ export class SystemsStore {
    *  one (the live cart is still booting and holds nothing yet), else from live work RAM. Null for a
    *  console whose working song is in the battery, or a cart with nothing readable. */
   workingSongImage(id: number): WorkingSongImage | null {
-    const pending = this.carries.get(id);
+    const pending = this.carries.get(id) ?? this.landing.get(id);
     if (pending) return pending.song;
     const e = findById(this.entries, id);
     const catalog = e ? resolveSongCatalog(e.roles) : undefined;
@@ -558,11 +563,18 @@ export class SystemsStore {
       }
       if (song.edited) continue;
       const fp = catalog.fingerprintOf(song);
-      if (this.observed.get(e.id) === fp) continue;
+      const seen = this.observed.get(e.id);
+      // An unchanged song is settled once it matched a slot. One that matched NONE is re-checked for a
+      // while: a cart that saves clears its unsaved flag in the same routine that writes its battery, and
+      // reading the two a block apart once took a just-saved song for a NEW one and dropped its slot for
+      // good, because the verdict was cached.
+      if (seen && seen.signal === fp && (seen.matched || seen.retries-- <= 0)) continue;
       const sram = this.backend.readSram(e.id);
       if (!sram) continue;
-      this.observed.set(e.id, fp);
-      this.setWorkingSlot(e.id, catalog.slotOfCleanSong(sram, { ...song, slot: e.workingSlot }) ?? undefined);
+      const slot = catalog.slotOfCleanSong(sram, { ...song, slot: e.workingSlot });
+      if (!seen || seen.signal !== fp) this.observed.set(e.id, { signal: fp, matched: !!slot, retries: UNMATCHED_RECHECKS });
+      else seen.matched = !!slot;
+      this.setWorkingSlot(e.id, slot ?? undefined);
     }
   }
 
@@ -570,15 +582,13 @@ export class SystemsStore {
   private setWorkingSlot(id: number, slot: TrackedSlot | undefined): void {
     const e = findById(this.entries, id);
     if (e) this.entries = replaceById(this.entries, id, { ...e, workingSlot: slot });
-    const pending = this.carries.get(id);
-    if (pending) pending.song = { ...pending.song, slot };
+    for (const held of [this.carries.get(id), this.landing.get(id)]) if (held) held.song = { ...held.song, slot };
   }
 
   /** The song a carry for `id` is holding has just been saved into the battery, so when it lands it
    *  must land clean rather than re-raising the unsaved flag it was captured with. */
   markCarriedSongSaved(id: number): void {
-    const pending = this.carries.get(id);
-    if (pending) pending.song = { ...pending.song, edited: false };
+    for (const held of [this.carries.get(id), this.landing.get(id)]) if (held) held.song = { ...held.song, edited: false };
   }
 
   hasCarries(): boolean {
@@ -628,7 +638,7 @@ export class SystemsStore {
       if (!catalog.workingSongReady?.(ram)) continue;
       this.carries.delete(id);
       this.setWorkingSlot(id, c.song.slot);
-      if (catalog.fingerprintOf) this.landing.set(id, { signal: catalog.fingerprintOf(c.song), frames: 0 });
+      if (catalog.fingerprintOf) this.landing.set(id, { song: { ...c.song }, signal: catalog.fingerprintOf(c.song), frames: 0 });
       this.landedAt.set(id, Date.now());
       const rom = e.romPath ? this.backend.readFile(e.romPath) : null;
       const writes = rom ? tracker.restoreWorkingSong(rom, c.song, ram) : null;

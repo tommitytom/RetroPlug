@@ -48,6 +48,8 @@ import {
   withConfig,
   readSongBlock,
   songFingerprint,
+  slotHolds,
+  sanitizeEcho,
   SMDJ4_BLOCK_LEN,
 } from "../smsggdj/codec/sav";
 
@@ -120,11 +122,14 @@ function trackSlot(sav: Uint8Array, index: number): TrackedSlot | null {
 function slotOfCleanSong(sav: Uint8Array, song: WorkingSongImage): TrackedSlot | null {
   if (song.edited || !isSmsggdjSav(sav)) return null;
   const fingerprint = songFingerprint(song.block);
-  // Two slots can hold the same song; keep the one already tracked rather than hopping to the first.
-  if (song.slot && song.slot.fingerprint === fingerprint && trackSlot(sav, song.slot.index)?.fingerprint === fingerprint) {
+  const packed = packDirectory(sav);
+  // Two slots can hold the same song; keep the one already tracked rather than hopping to the first - but
+  // only if it holds the WHOLE song. Two slots with one block and different echo (an echo A/B the user
+  // saved in the cart) are different songs, and a block-only check kept tracking the one not loaded.
+  if (song.slot && song.slot.fingerprint === fingerprint && slotHolds(packed, song.slot.index, song.block, metaOf(song))) {
     return song.slot;
   }
-  const index = savedSlotOf(packDirectory(sav), song.block, metaOf(song));
+  const index = savedSlotOf(packed, song.block, metaOf(song));
   return index >= 0 ? { index, fingerprint } : null;
 }
 
@@ -134,7 +139,7 @@ function metaOf(song: WorkingSongImage): { echo: Uint8Array; name: string } {
 }
 
 /** A cheap signal that the working song's content changed, for the per-frame watcher: a 32-bit sum of the
- *  block's words, folded with the name. Not an identity (savedSlotOf / songFingerprint decide that) - it
+ *  block's words, folded with the name and the echo settings. Not an identity (savedSlotOf / songFingerprint decide that) - it
  *  only gates the expensive work, and a full FNV every frame measured ~0.4 ms on x86. */
 function changeSignal(song: WorkingSongImage): number {
   const b = song.block;
@@ -143,6 +148,10 @@ function changeSignal(song: WorkingSongImage): number {
   if (words.length) for (let i = 0; i < words.length; i++) h = (h + words[i]) | 0;
   else for (let i = 0; i < b.length; i++) h = (h + (b[i] << ((i & 3) * 8))) | 0;
   for (let i = 0; i < song.name.length; i++) h = Math.imul(h ^ song.name[i], 0x01000193);
+  // Echo is the song too - sanitized, like every echo comparison here: a carry restores it sanitized, and
+  // folding it raw left the landed song's signal forever different from the carried image's.
+  const echo = sanitizeEcho(song.echo);
+  for (let i = 0; i < echo.length; i++) h = Math.imul(h ^ echo[i], 0x01000193);
   return h >>> 0;
 }
 
@@ -172,12 +181,20 @@ function displayName(bytes: Uint8Array): string {
  *  song, which used to append a fresh copy on EVERY save because a blank name matched nothing. */
 function saveTarget(base: Uint8Array, song: WorkingSongImage): number {
   if (!song.slot) return -1;
-  const at = listSongs(base).find((s) => s.index === song.slot!.index);
-  if (!at || at.name !== displayName(song.name)) return -1;
-  // ...and only while it still holds the song it held when tracked. The cart's FILES CLEAR shifts every
-  // later song down a slot, and two untitled songs share a name, so index + name alone once let a Save
-  // write the edited A over an unrelated B that had moved into A's slot.
-  return trackSlot(base, at.index)?.fingerprint === song.slot.fingerprint ? at.index : -1;
+  const tracked = song.slot;
+  const name = displayName(song.name);
+  // Only a slot still holding the song it held when tracked. The cart's FILES CLEAR shifts every later
+  // song down a slot, and two untitled songs share a name, so index + name alone once let a Save write the
+  // edited A over an unrelated B that had moved into A's slot.
+  const holds = (index: number, slotName: string): boolean =>
+    slotName === name && trackSlot(base, index)?.fingerprint === tracked.fingerprint;
+  const songs = listSongs(base);
+  const at = songs.find((s) => s.index === tracked.index);
+  if (at && holds(at.index, at.name)) return at.index;
+  // ...and if a CLEAR above it shifted the tracked song itself, find it where it went - when exactly one
+  // slot holds it. Appending instead left the older copy behind as a duplicate.
+  const moved = songs.filter((s) => s.index !== tracked.index && holds(s.index, s.name));
+  return moved.length === 1 ? moved[0].index : -1;
 }
 
 /** See SongCatalog.commitWorkingSong. */

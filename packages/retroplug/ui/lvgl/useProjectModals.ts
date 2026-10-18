@@ -185,7 +185,9 @@ export function useProjectModals(stores: AppStores): ProjectModals {
       const sys = project.systems.systems().find((x) => x.id === id);
       if (!sys) return setPending(null);
       setPending({ kind: "songReplace", id, proceed, saving: true });
-      const r = await saveWorkingSong(stores.backend, project.systems, sys);
+      const r = await saveWorkingSong(stores.backend, project.systems, sys).catch(
+        (): { kind: "refused"; reason: "unwritable" } => ({ kind: "refused", reason: "unwritable" }),
+      );
       if (modalEpoch.current !== epoch) return; // dismissed while saving: run nothing on its behalf
       if (r.kind === "refused") return setPending({ kind: "songReplace", id, proceed, error: SONG_SAVE_REFUSED[r.reason] });
       const now = project.systems.systems().find((x) => x.id === id);
@@ -201,11 +203,16 @@ export function useProjectModals(stores: AppStores): ProjectModals {
   const saveThen = (proceed: () => void): void => {
     const epoch = modalEpoch.current;
     setPending({ kind: "confirm", proceed, saving: true });
-    void saveProjectInteractive(stores).then((saved) => {
-      if (modalEpoch.current !== epoch) return;
-      if (saved) proceed();
-      else setPending({ kind: "confirm", proceed }); // cancelled Save-As or a refused song: choose again
-    });
+    void saveProjectInteractive(stores)
+      .catch((err) => {
+        console.warn(`[project] save failed: ${String(err)}`);
+        return false;
+      })
+      .then((saved) => {
+        if (modalEpoch.current !== epoch) return;
+        if (saved) proceed();
+        else setPending({ kind: "confirm", proceed }); // cancelled Save-As, a refused song, a failure: choose again
+      });
   };
 
   const modal = pending ? buildModal(pending, stores, handleOutcome, onClose, proceedSong, saveSongThen, saveThen) : null;

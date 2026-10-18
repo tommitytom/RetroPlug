@@ -49,8 +49,8 @@ public:
     // Returns false only if the pool is full (the caller fails the construct).
     bool claim(SystemId id, SystemBase& sys);
 
-    // Copy each live system's latest frame (every block) + savestate/SRAM (on a coarse interval)
-    // into its slot. Runs at the end of Engine::processBlock, on the block-driving thread.
+    // Copy each live system's latest frame, work RAM and core-sourced battery (every block) + its
+    // savestate and any savestate-sliced battery (on a coarse interval) into its slot. Runs at the end of Engine::processBlock, on the block-driving thread.
     void publishAll(const Project& project, std::uint32_t frames, double sampleRate);
 
     // Control-thread reads of the OWNED copies.
@@ -121,7 +121,6 @@ private:
 
     std::array<Slot, kMaxSlots> slots_;
     std::vector<std::uint8_t>   publishScratch_;    // block-thread reuse for readStateSnapshot
-    std::vector<std::uint8_t>   sramScratch_;       // block-thread reuse for a live saveSramBytes() copy
     std::vector<std::uint8_t>   stateReadScratch_;  // control-thread reuse for readState (strips the prefix)
     std::vector<std::uint8_t>   ramReadScratch_;    // control-thread reuse for readRam (strips the prefix)
 };

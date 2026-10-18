@@ -114,8 +114,9 @@ function songWrites(
 ): RamWrite[] {
   const writes: RamWrite[] = [{ offset: layout.song, bytes: block }];
   if (name) writes.push({ offset: layout.name, bytes: name.subarray(0, layout.nameLen) });
-  // Sanitized exactly as the cart sanitizes after its own load, so a corrupt or foreign directory
-  // entry cannot put an out-of-range echo mode or a zero delay tap into the live engine.
+  // Sanitized as the cart's PROJECT-screen load does (`song_load` runs echo_sanitize; its FILES-screen
+  // load does not), so a corrupt or foreign directory entry cannot put an out-of-range echo mode or a
+  // zero delay tap into the live engine. Slot matching compares echo sanitized, so this costs nothing.
   if (echo) writes.push({ offset: layout.echo, bytes: sanitizeEcho(echo.subarray(0, layout.echoLen)) });
   writes.push({ offset: layout.edited, bytes: Uint8Array.of(edited ? 1 : 0) });
   // `prj_slot` is deliberately NOT written. The cart's own load READS it (you move the PROJECT cursor

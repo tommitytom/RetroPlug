@@ -318,23 +318,35 @@ export function packDirectory(sav: Uint8Array): Uint8Array {
 /** The slot holding exactly `block`, or -1. isSongSaved's question with the answer kept: checksums
  *  narrow it, a full compare decides. The first match wins when two slots hold the same song.
  *
- *  `meta`, when given, must match too: the song's echo settings byte for byte and its name as the cart
- *  displays it. Both live in the directory entry, outside the block, and the cart saves both per song -
- *  so a song whose echo or name was changed and nothing else is NOT saved, though its block is. */
-export function savedSlotOf(sav: Uint8Array, block: Uint8Array, meta?: { echo: Uint8Array; name: string }): number {
+ *  `meta`, when given, must match too (see slotHolds): a song whose echo or name changed and nothing else
+ *  is NOT saved, though its block is. */
+export function savedSlotOf(sav: Uint8Array, block: Uint8Array, meta?: SongMeta): number {
   if (block.length !== SMDJ4_BLOCK_LEN) return -1;
-  const want = blockChecksum(block);
-  for (const s of listSongs(sav)) {
-    if (storedChecksum(sav, s.index) !== want) continue;
-    if (meta) {
-      const e = entryAt(s.index) + E_ECHO;
-      if (!meta.echo.every((b, i) => i >= ECHO_LEN || sav[e + i] === b)) continue;
-      if (s.name !== meta.name) continue;
-    }
-    const saved = readSongBlock(sav, s.index);
-    if (saved && saved.every((b, i) => b === block[i])) return s.index;
-  }
+  for (const s of listSongs(sav)) if (slotHolds(sav, s.index, block, meta)) return s.index;
   return -1;
+}
+
+/** The per-song metadata the cart keeps in the directory entry, beside the block. */
+export interface SongMeta {
+  echo: Uint8Array;
+  name: string; // as the cart displays it (trailing padding dropped)
+}
+
+/** Does slot `index` hold exactly this song - its block, and with `meta` its echo settings and displayed
+ *  name? Echo is compared SANITIZED on both sides: the cart's PROJECT-screen load runs echo_sanitize and
+ *  its FILES-screen load does not, so the same song can sit in work RAM either way, and a slot saved by
+ *  a tool that wrote echo 0 (taps of 0, which sanitize to 1) would otherwise never match again. */
+export function slotHolds(sav: Uint8Array, index: number, block: Uint8Array, meta?: SongMeta): boolean {
+  if (block.length !== SMDJ4_BLOCK_LEN || storedChecksum(sav, index) !== blockChecksum(block)) return false;
+  if (meta) {
+    const e = entryAt(index);
+    const stored = sanitizeEcho(sav.subarray(e + E_ECHO, e + E_ECHO + ECHO_LEN));
+    const live = sanitizeEcho(meta.echo.subarray(0, ECHO_LEN));
+    if (!stored.every((b, i) => b === live[i])) return false;
+    if (readName(sav, index) !== meta.name) return false;
+  }
+  const saved = readSongBlock(sav, index);
+  return !!saved && saved.every((b, i) => b === block[i]);
 }
 
 /** A 32-bit FNV-1a over a decoded song block: what identifies "the song that was in this slot" for the

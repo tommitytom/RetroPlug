@@ -29,7 +29,7 @@ import {
 } from "../../src/smsggdj/codec/sav";
 import type { TrackedSlot, WorkingSongImage } from "../../src/tracker/songCatalog";
 import { encodeWorkingSong, decodeWorkingSong } from "../../src/tracker/workingSongBlob";
-import { setCurSlot as setCurSlotFor } from "../../src/smsggdj/codec/sav";
+import { setCurSlot as setCurSlotFor, sanitizeEcho } from "../../src/smsggdj/codec/sav";
 import { smsggdjRom, smsggdjRam } from "../systems/fixtures";
 import { composeAppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
@@ -44,7 +44,7 @@ const block = (tag: number): Uint8Array => {
   return b;
 };
 const nameBytes = (s: string): Uint8Array => Uint8Array.from({ length: 8 }, (_, i) => (i < s.length ? s.charCodeAt(i) : 0x20));
-const image = (tag: number, name: string, edited = true, echo = new Uint8Array(8)): WorkingSongImage => ({
+const image = (tag: number, name: string, edited = true, echo: Uint8Array = new Uint8Array(8)): WorkingSongImage => ({
   block: block(tag),
   name: nameBytes(name),
   echo,
@@ -687,4 +687,81 @@ test("an export just after a carry lands still ships the song, since the savesta
   systems.settleCarries();
   expect(systems.pendingCarry(newId)).toBe(null);
   expect(systems.exportableWorkingSong(newId)!.block).toEqual(block(8)); // read live: the restore landed
+});
+
+// --- fourth review ----------------------------------------------------------------------------------------
+
+test("while a carry is landing, Save, the prompt and an export all see the carried song, not the blank", async () => {
+  // settleCarries dropped the carry before its queued writes applied, and everything but settleSong read
+  // live RAM: an export shipped the blank as the song, the prompt listed nothing, Save did nothing.
+  const { be, project, systems, id } = smsProject();
+  be.setRam(id, ramWith(image(8, "CARRIED")));
+  const newId = systems.reset(id)!;
+  be.setSram(newId, freshBattery());
+  be.seed("/roms/smsggdj.sav", freshBattery());
+  be.setRam(newId, smsggdjRam()); // booted blank
+  const flush = deferRamWrites(be);
+  systems.settleCarries();
+  expect(systems.exportableWorkingSong(newId)!.block).toEqual(block(8));
+  expect(unsavedChanges(be, project).some((i) => i.kind === "song" && i.name === "CARRIED")).toBe(true);
+  expect((await saveWorkingSong(be, systems, systems.systems()[0])).kind).toBe("saved");
+  flush();
+  expect(readSongBlock(be.readSram(newId)!, 0)).toEqual(block(8));
+});
+
+test("two slots with one block but different echo are different songs to the slot tracker", async () => {
+  // An echo A/B saved in the cart: host Load of X, then the cart's own LOAD of Y. Echo was neither in the
+  // change signal nor in the tracked-slot shortcut, so X stayed tracked and Save wrote Y's edits over X.
+  const { be, systems, id } = smsProject();
+  const echoX = Uint8Array.of(1, 2, 3, 0, 0, 0, 0, 0);
+  const echoY = Uint8Array.of(2, 4, 8, 0, 0, 0, 0, 0);
+  const sav = buildSav([{ block: block(1), name: "SONG", echo: echoX }, { block: block(1), name: "SONG", echo: echoY }], CART)!;
+  be.setSram(id, sav);
+  be.setRam(id, ramWith(image(1, "SONG", false, echoX)));
+  systems.observeWorkingSongs();
+  expect(systems.workingSongImage(id)!.slot!.index).toBe(0);
+  be.setRam(id, ramWith(image(1, "SONG", false, echoY))); // the cart loads Y itself
+  systems.observeWorkingSongs();
+  expect(systems.workingSongImage(id)!.slot!.index).toBe(1);
+  be.setRam(id, ramWith(image(6, "SONG", true, echoY)));
+  expect(await saveWorkingSong(be, systems, systems.systems()[0])).toEqual({ kind: "saved", index: 1, replaced: true });
+  expect(readSongEcho(be.readSram(id)!, 0)).toEqual(echoX); // X untouched
+});
+
+test("a slot saved with out-of-range echo still matches once loaded, raw or sanitized", () => {
+  // buildSav / addSong write echo 0 by default (taps of 0, which the cart sanitizes to 1). The cart's
+  // PROJECT load sanitizes and its FILES load does not, so RAM can hold either - and a raw compare never
+  // matched the sanitized copy, so the song was untracked and the next Save appended a duplicate.
+  const { be, systems, id } = smsProject();
+  be.setSram(id, buildSav([{ block: block(1), name: "ALPHA" }], CART)!);
+  for (const echo of [new Uint8Array(8), sanitizeEcho(new Uint8Array(8))]) {
+    be.setRam(id, ramWith(image(1, "ALPHA", false, echo)));
+    systems.observeWorkingSongs();
+    expect(systems.workingSongImage(id)!.slot?.index).toBe(0);
+  }
+});
+
+test("a tracked song shifted down by an in-cart CLEAR above it is written back where it went", () => {
+  // Its fingerprint did not change, so nothing re-tracked it; the stale index failed and Save appended,
+  // leaving the older copy behind as a duplicate.
+  const two = buildSav([{ block: block(1), name: "A" }, { block: block(2), name: "B" }], CART)!;
+  const tracked = smsggdjSongCatalog.trackSlot!(two, 1)!;
+  const shifted = buildSav([{ block: block(2), name: "B" }], CART)!; // the cart CLEARed slot 0
+  const r = smsggdjSongCatalog.commitWorkingSong!(shifted, { ...image(7, "B"), slot: tracked });
+  if (!r.ok) throw new Error(`refused: ${r.reason}`);
+  expect(r).toEqual({ ok: true, sav: r.sav, index: 0, replaced: true });
+  expect(listSongs(r.sav).length).toBe(1);
+});
+
+test("a just-saved song read against a battery a block behind is re-checked, not given up on", () => {
+  // The cart clears its unsaved flag in the routine that writes its battery; read a block apart, the
+  // song matched no slot, and the cached verdict meant it was never looked at again.
+  const { be, systems, id } = smsProject();
+  be.setSram(id, buildSav([{ block: block(1), name: "ALPHA" }], CART)!); // the OLD battery
+  be.setRam(id, ramWith(image(4, "MINE", false))); // just saved by the cart
+  systems.observeWorkingSongs();
+  expect(systems.workingSongImage(id)!.slot).toBe(undefined);
+  be.setSram(id, buildSav([{ block: block(1), name: "ALPHA" }, { block: block(4), name: "MINE" }], CART)!);
+  systems.observeWorkingSongs();
+  expect(systems.workingSongImage(id)!.slot?.index).toBe(1);
 });

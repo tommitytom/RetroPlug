@@ -197,3 +197,28 @@ test("a live song load works on the Game Gear flavor, on the SMS-derived layout"
   expect(peak > 0.01).toBeTruthy(); // and it is audibly playing the loaded song
   expect(be.removeSystem(id)).toBeTruthy();
 });
+
+test("the battery is published in step with work RAM, not half a second behind it", () => {
+  // Mesen's battery rode the 0.5 s savestate interval while work RAM went out every block, so on the
+  // block the cart's own SAVE finished, RAM said "saved" and the battery still showed the old directory:
+  // the host took a just-saved song for one saved nowhere and dropped its slot, and a reset in that window
+  // carried the stale battery and lost the song. On the first block RAM shows the save, the battery must.
+  const be = createRealBackend();
+  if (!be.fileExists(ROM)) return;
+  const id = 42;
+  const audio = boot(be, id, ROM, "sms", new Uint8Array(32 * 1024));
+  chord(audio, id, BTN_2, BTN_DOWN); // -> FILES
+  chord(audio, id, BTN_2, BTN_1); // SAVE preselected
+  tap(audio, id, BTN_1); // arm
+  audio.pressButton(id, BTN_1, true); // run - then watch block by block
+  let checked = false;
+  for (let t = 0; t < 3000 && !checked; t += 10) {
+    audio.renderAudio(10);
+    if (t === 100) audio.pressButton(id, BTN_1, false);
+    if (be.readRam(id)![SYM.file_count] !== 1) continue;
+    expect(listSongs(be.readSram(id)!).length, "RAM shows the cart's save but the battery does not yet").toBe(1);
+    checked = true;
+  }
+  expect(checked, "the cart never finished its save").toBeTruthy();
+  expect(be.removeSystem(id)).toBeTruthy();
+});

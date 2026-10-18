@@ -39,6 +39,8 @@ export async function saveProjectInteractive(stores: AppStores, saveAs?: string)
     }
   }
   flushDirtySram(stores.backend, systems.systems()); // battery → sibling .sav
-  stores.project.save(path);
+  // A project file that could not be written is a failed save, not a successful one: Save & Quit used
+  // to quit on it.
+  if (!stores.project.save(path)) return false;
   return songsSaved;
 }

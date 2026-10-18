@@ -70,8 +70,16 @@ export function useCloseGuard(stores: AppStores): CloseGuard {
     void (async () => {
       // Save-As cancelled, or a working song the cart could not store: keep the prompt open (it now lists
       // only what is still unsaved, and why).
-      const saved = await saveProjectInteractive(stores);
-      saving.current = false;
+      // A save can THROW (the RPC layer turns a backend error into an exception); without the catch the
+      // flag stayed set and every button of every later close prompt was dead - quitting meant a kill.
+      let saved = false;
+      try {
+        saved = await saveProjectInteractive(stores);
+      } catch (err) {
+        console.warn(`[close] save failed: ${String(err)}`);
+      } finally {
+        saving.current = false;
+      }
       if (!saved || epoch.current !== started) return;
       setActive(false);
       quitWindow();
