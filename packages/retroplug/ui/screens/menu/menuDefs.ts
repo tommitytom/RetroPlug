@@ -97,7 +97,8 @@ import { openPath } from "../../lvgl/openPath";
 import { startSystemRender, renderBaseName, validSplits, formatDuration } from "../../lvgl/render";
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
 import { flushDirtySram } from "../../../src/sramAutoSave";
-import { hasUnsavedChanges } from "../../../src/unsavedChanges";
+import { hasUnsavedChanges, unsavedChanges } from "../../../src/unsavedChanges";
+import { SONG_BLOCKED } from "../../lvgl/unsavedRows";
 import type { FileBrowserOpts } from "../../../src/backend";
 import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers, getAudioDevices, getAudioDefaultDevice, getAutoAudioDriver } from "./audioDraft";
 import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput, ALL_INPUTS } from "./midiDevices";
@@ -656,7 +657,11 @@ function actionCycler(id: string, label: string, actions: MenuAction[]): MenuIte
 /** "Save Project", with a trailing " *" when the project or any battery SRAM is unsaved (the same signal the
  *  close guard asks). The star is the file's established "modified" marker (cf. the asset-override rows). */
 function saveProjectLabel(ctx: MenuContext): string {
-  return `Save Project${hasUnsavedChanges(ctx.stores.backend, ctx.stores.project) ? " *" : ""}`;
+  if (!hasUnsavedChanges(ctx.stores.backend, ctx.stores.project)) return "Save Project";
+  // A working song Save cannot store (a full cart, an old save format) stays unsaved however often the row
+  // is pressed - say so here, where the press visibly did nothing, rather than only in the log.
+  const blocked = unsavedChanges(ctx.stores.backend, ctx.stores.project).find((i) => i.kind === "song" && i.blocked);
+  return blocked?.kind === "song" && blocked.blocked ? `Save Project * (song: ${SONG_BLOCKED[blocked.blocked]})` : "Save Project *";
 }
 
 /** A value-cycler row: label shows `prefix: names[current]`, Enter/Right step forward, Left back. */

@@ -24,6 +24,10 @@ import { buildMetronomeBlock } from "./smsSyncSong";
 declare const __REPO_RESOURCES_DIR__: string;
 declare const __CONFIG_DIR__: string;
 
+// This host never fires a timer while a test awaits, so saveWorkingSong must not wait on one: here every
+// battery write applies inline (no audio thread), and its outcome is decided by the first synchronous look.
+(globalThis as { __rp_timersPumped?: boolean }).__rp_timersPumped = false;
+
 const ROMS: { path: string; platform: Platform }[] = [
   { path: __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.sms", platform: "sms" },
   { path: __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.gg", platform: "gg" },
@@ -65,7 +69,7 @@ function freshCart(rom: { path: string; platform: Platform }, stem: string) {
 }
 
 test("writeSram lands in the live battery, and readSram sees it the block it lands", () => {
-  const { be, audio, id, bootUp } = freshCart(ROMS[0], "sms-writesram");
+  const { be, audio, project, id, bootUp } = freshCart(ROMS[0], "sms-writesram");
   bootUp();
   const size = be.readSram(id())!.length;
   expect(size).toBe(32 * 1024);
@@ -78,6 +82,46 @@ test("writeSram lands in the live battery, and readSram sees it the block it lan
   expect(be.writeSram(id(), size - 2, Uint8Array.of(1, 2, 3))).toBeFalsy(); // overruns by one: refused whole
   expect(be.writeSram(id(), 0, new Uint8Array(0))).toBeFalsy();
   expect(be.writeSram(9999, 0, Uint8Array.of(1))).toBeFalsy(); // no such system
+
+  // Conditional: applied only while the battery still holds `expect`. A stale `expect` - the cart wrote
+  // the battery after the caller's snapshot - leaves it untouched, and readSram shows what it holds now.
+  const fresh = Uint8Array.of(7, 7, 7, 7, 7, 7);
+  expect(be.writeSram(id(), 0x100, fresh, Uint8Array.of(0, 0, 0, 0, 0, 0))).toBeTruthy(); // accepted, judged at apply
+  audio.renderAudio(TICK_MS);
+  expect(be.readSram(id())!.subarray(0x100, 0x106)).toEqual(payload); // refused: the battery held `payload`
+  expect(be.writeSram(id(), 0x100, fresh, payload)).toBeTruthy();
+  audio.renderAudio(TICK_MS);
+  expect(be.readSram(id())!.subarray(0x100, 0x106)).toEqual(fresh); // matched: applied
+  expect(be.writeSram(id(), 0x100, fresh, Uint8Array.of(1))).toBeFalsy(); // `expect` of the wrong length
+  project.systems.clear(); // a live core here is emulated by every later test in the file
+});
+
+test("writeSram on a Game Boy (SameBoy) battery is readable at once, not half a second later", () => {
+  // SameBoy publishes its battery sliced out of a savestate the core refreshes every ~0.5 s, so a write
+  // used to stay invisible to readSram that long - forever, with no block running - and the teardown flush
+  // could write the pre-write battery back to disk. Nothing writes a GB battery this way yet; this keeps it
+  // honest for whoever does.
+  const be = createRealBackend();
+  const rom = __REPO_RESOURCES_DIR__ + "/roms/mGB.gb"; // MBC1 + 32 KB cart RAM, shipped in the repo
+  if (!be.fileExists(rom)) skip(`sms-working-song-save: missing ${rom}`);
+  const audio = createAudioDriver();
+  const id = 9001;
+  expect(
+    be.constructSystem({ romPath: rom, platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null }, id),
+  ).toBeTruthy();
+  // Past mGB's own boot, which initialises its settings at the start of cart RAM; the write goes at the
+  // far end, which mGB never touches, so anything that moves it is the publish path and not the cart.
+  audio.renderAudio(1500);
+  const at = 0x7ff0;
+  const payload = Uint8Array.of(0xc0, 0xff, 0xee);
+  expect(be.readSram(id)!.subarray(at, at + 3)).toEqual(Uint8Array.of(0xff, 0xff, 0xff));
+  expect(be.writeSram(id, at, payload)).toBeTruthy();
+  expect(be.readSram(id)!.subarray(at, at + 3)).toEqual(payload); // inline: no block has run
+  audio.renderAudio(TICK_MS);
+  expect(be.readSram(id)!.subarray(at, at + 3)).toEqual(payload); // the next coarse publish keeps it
+  audio.renderAudio(1000);
+  expect(be.readSram(id)!.subarray(at, at + 3)).toEqual(payload);
+  expect(be.removeSystem(id)).toBeTruthy();
 });
 
 for (const rom of ROMS) {
@@ -85,6 +129,7 @@ for (const rom of ROMS) {
 
   test(`[${tag}] Save puts the working song in the battery and the .sav, and the teardown keeps it there`, async () => {
     const { be, audio, project, id, bootUp, compose, savPath } = freshCart(rom, `sms-save-${tag}`);
+    try {
     bootUp();
     const song = buildMetronomeBlock();
     compose(song);
@@ -112,10 +157,14 @@ for (const rom of ROMS) {
     project.systems.clear();
     expect(readSongBlock(be.readFile(savPath)!, 0)).toEqual(song);
     expect(hasUnsavedChanges(be, project)).toBeFalsy();
+    } finally {
+      project.systems.clear();
+    }
   });
 
   test(`[${tag}] a reset carries an unsaved song through the boot that would blank it, still unsaved`, () => {
     const { be, audio, project, id, bootUp, compose, working } = freshCart(rom, `sms-carry-${tag}`);
+    try {
     bootUp();
     const song = buildMetronomeBlock();
     compose(song);
@@ -138,6 +187,8 @@ for (const rom of ROMS) {
     expect(String.fromCharCode(...ram.subarray(layout.name, layout.name + 8))).toBe(NAME);
     expect(ram[layout.edited]).toBe(1); // a reset is not a save
     expect(hasUnsavedChanges(be, project)).toBeTruthy();
-    project.systems.clear();
+    } finally {
+      project.systems.clear();
+    }
   });
 }

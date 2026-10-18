@@ -260,11 +260,14 @@ export function App() {
       case "loadRom":
         modals.loadRomAsProject(action.romPath, action.explicitSav);
         break;
+      // Both replace what the target cart holds, so an unsaved work-RAM song there is offered a save first.
       case "replace":
-        stores.project.systems.replaceSystem(action.id, action.romPath, action.explicitSav ? { explicitSav: action.explicitSav } : undefined);
+        modals.guardSongReplace(action.id, () =>
+          stores.project.systems.replaceSystem(action.id, action.romPath, action.explicitSav ? { explicitSav: action.explicitSav } : undefined),
+        );
         break;
       case "loadSram":
-        stores.project.systems.loadSram(action.id, action.sav);
+        modals.guardSongReplace(action.id, () => stores.project.systems.loadSram(action.id, action.sav));
         break;
       case "patchSongs": {
         const sys = systems.find((s) => s.id === action.id);

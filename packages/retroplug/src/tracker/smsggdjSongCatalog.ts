@@ -26,6 +26,7 @@
 import type { SongCatalog, WorkingSongCommit, WorkingSongImage } from "./songCatalog";
 import {
   commonBootedOffset,
+  commonConfigOffsets,
   commonEchoOffset,
   commonSongEditedOffset,
   commonSongNameOffset,
@@ -43,6 +44,9 @@ import {
   replaceSong,
   ensureSongDirectory,
   allSongsReadable,
+  packDirectory,
+  savedSlotOf,
+  withConfig,
   SMDJ4_BLOCK_LEN,
 } from "../smsggdj/codec/sav";
 
@@ -91,17 +95,24 @@ function readWorkingSong(ram: Uint8Array): WorkingSongImage | null {
   const edited = commonSongEditedOffset();
   if (!name || !echo || edited === null) return null;
   if (ram.length < Math.max(name.offset + name.length, echo.offset + echo.length, edited + 1)) return null;
+  const cfg = commonConfigOffsets();
   return {
     block: ram.slice(0, SMDJ4_BLOCK_LEN),
     name: ram.slice(name.offset, name.offset + name.length),
     echo: ram.slice(echo.offset, echo.offset + echo.length),
     edited: ram[edited] !== 0,
+    ...(cfg && cfg.every((o) => o < ram.length) ? { settings: Uint8Array.from(cfg, (o) => ram[o]) } : {}),
   };
 }
 
 /** See SongCatalog.workingSongImageDirty. A battery with no SMDJ4 directory holds no songs, so an edited
  *  song on a cart that has never saved is unsaved by definition - which is every new user's first song,
  *  and was the case this used to call clean. */
+/** See SongCatalog.slotOfCleanSong. Slot numbers are of the PACKED directory, as every save writes. */
+function slotOfCleanSong(sav: Uint8Array, song: WorkingSongImage): number {
+  return song.edited || !isSmsggdjSav(sav) ? -1 : savedSlotOf(packDirectory(sav), song.block);
+}
+
 function imageDirty(sav: Uint8Array, song: WorkingSongImage): boolean {
   if (!song.edited) return false;
   return !isSmsggdjSav(sav) || !isSongSaved(sav, song.block);
@@ -118,19 +129,28 @@ function displayName(bytes: Uint8Array): string {
   return s.replace(/\s+$/, "");
 }
 
+/** The slot a save of `song` would overwrite in the (packed) image `base`, or -1 to append. Its tracked
+ *  slot, only while that slot still carries the song's name: the name is what the user sees on the
+ *  cart's FILES screen, so a slot renamed or reshuffled since is not the one they mean. No tracked slot
+ *  means append - including when an unrelated saved song shares the name, and including an untitled
+ *  song, which used to append a fresh copy on EVERY save because a blank name matched nothing. */
+function saveTarget(base: Uint8Array, song: WorkingSongImage): number {
+  if (song.slot === undefined) return -1;
+  const at = listSongs(base).find((s) => s.index === song.slot);
+  return at && at.name === displayName(song.name) ? at.index : -1;
+}
+
 /** See SongCatalog.commitWorkingSong. */
 function commitWorkingSong(sav: Uint8Array, song: WorkingSongImage): WorkingSongCommit {
   const base = ensureSongDirectory(sav);
   if (!base) return { ok: false, reason: "format" };
-  const songs = listSongs(base);
-  const name = displayName(song.name);
-  const same = name ? songs.filter((s) => s.name === name) : [];
-  if (same.length === 1) {
-    const out = replaceSong(base, same[0].index, song.block, song.echo);
-    if (out) return { ok: true, sav: setCurSlot(out, same[0].index) ?? out, index: same[0].index, replaced: true };
-  } else {
-    const out = addSong(base, song.block, song.name, song.echo);
-    if (out) return { ok: true, sav: setCurSlot(out, songs.length) ?? out, index: songs.length, replaced: false };
+  const target = saveTarget(base, song);
+  const index = target >= 0 ? target : listSongs(base).length;
+  const written = target >= 0 ? replaceSong(base, target, song.block, song.echo) : addSong(base, song.block, song.name, song.echo);
+  if (written) {
+    const marked = setCurSlot(written, index) ?? written;
+    const out = song.settings ? (withConfig(marked, song.settings) ?? marked) : marked;
+    return { ok: true, sav: out, index, replaced: target >= 0 };
   }
   // Both ops refuse for exactly two reasons: a saved song that will not decode (rebuilding around it would
   // drop everything after it), or no room. Telling them apart is worth the second look - "cart full" and
@@ -208,6 +228,7 @@ export const smsggdjSongCatalog: SongCatalog = {
   readWorkingSong,
   workingSongImageDirty: imageDirty,
   commitWorkingSong,
+  slotOfCleanSong,
   // `song_edited = 0`, exactly what the cart's own save does (rle.asm:817).
   workingSongSavedWrites: () => {
     const at = commonSongEditedOffset();

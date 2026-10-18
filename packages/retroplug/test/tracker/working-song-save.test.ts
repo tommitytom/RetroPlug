@@ -11,7 +11,7 @@ import { SystemsStore } from "../../src/systemsStore";
 import { buildAppRegistry } from "../../src/appHost";
 import { hasUnsavedChanges, unsavedChanges } from "../../src/unsavedChanges";
 import { unsavedLabel } from "../../ui/lvgl/unsavedRows";
-import { saveWorkingSong } from "../../src/tracker/liveSav";
+import { saveWorkingSong, loadSongLive } from "../../src/tracker/liveSav";
 import { smsggdjSongCatalog } from "../../src/tracker/smsggdjSongCatalog";
 import { resolveSmsggdjLayout } from "../../src/smsggdj/runtime/layout";
 import {
@@ -23,6 +23,8 @@ import {
   readSongBlock,
   readSongEcho,
   curSlot,
+  hasDirectoryHoles,
+  packDirectory,
   SMDJ4_BLOCK_LEN,
 } from "../../src/smsggdj/codec/sav";
 import type { WorkingSongImage } from "../../src/tracker/songCatalog";
@@ -47,8 +49,9 @@ const image = (tag: number, name: string, edited = true, echo = new Uint8Array(8
   edited,
 });
 
-/** A battery the cart has never saved into: no SMDJ4 directory at all. What every new user starts with. */
-const freshBattery = (): Uint8Array => new Uint8Array(CART).fill(0xff);
+/** A battery the cart has never saved into: no SMDJ4 directory at all. What every new user starts with -
+ *  all zeros, as Mesen powers a new cart's RAM on (RamPowerOnState AllZeros). */
+const freshBattery = (): Uint8Array => new Uint8Array(CART);
 
 /** Work RAM holding `img` the way the cart holds it, booted. */
 function ramWith(img: WorkingSongImage, booted = true): Uint8Array {
@@ -67,7 +70,7 @@ test("ensureSongDirectory gives a never-saved battery an empty directory, keepin
   expect(isSmsggdjSav(sav)).toBe(true);
   expect(listSongs(sav)).toEqual([]);
   expect(sav.subarray(0x3f60, 0x3f6a)).toEqual(Uint8Array.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
-  expect(raw[0]).toBe(0xff); // a NEW image: the input is never mutated
+  expect(raw[0]).toBe(0); // a NEW image: the input is never mutated
 });
 
 test("ensureSongDirectory refuses an older SMDJ format rather than flattening its songs", () => {
@@ -120,28 +123,73 @@ test("commitWorkingSong appends to a fresh cart, and marks the song as the loade
   expect(curSlot(r.sav)).toBe(0);
 });
 
-test("commitWorkingSong overwrites the ONE slot with the same name, and appends when that is ambiguous", () => {
+test("commitWorkingSong writes back over the slot the song came from - never over a mere namesake", () => {
   const two = buildSav([{ block: block(1), name: "ALPHA" }, { block: block(2), name: "BETA" }], CART)!;
-  const r = smsggdjSongCatalog.commitWorkingSong!(two, image(9, "BETA"));
+
+  // Loaded from slot 1 (tracked): Save writes back there.
+  const back = smsggdjSongCatalog.commitWorkingSong!(two, { ...image(9, "BETA"), slot: 1 });
+  if (!back.ok) throw new Error(`refused: ${back.reason}`);
+  expect(back.replaced).toBe(true);
+  expect(back.index).toBe(1);
+  expect(listSongs(back.sav).length).toBe(2);
+  expect(readSongBlock(back.sav, 1)).toEqual(block(9));
+  expect(readSongBlock(back.sav, 0)).toEqual(block(1));
+
+  // A NEW song the user happened to call BETA (no tracked slot): appended. Name matching used to write it
+  // straight over the unrelated saved BETA, silently.
+  const namesake = smsggdjSongCatalog.commitWorkingSong!(two, image(9, "BETA"));
+  if (!namesake.ok) throw new Error(`refused: ${namesake.reason}`);
+  expect(namesake.replaced).toBe(false);
+  expect(readSongBlock(namesake.sav, 1)).toEqual(block(2)); // the old BETA survives
+
+  // A tracked slot that no longer carries the song's name (renamed in the cart = "save as"): appended.
+  const renamed = smsggdjSongCatalog.commitWorkingSong!(two, { ...image(9, "GAMMA"), slot: 1 });
+  if (!renamed.ok) throw new Error(`refused: ${renamed.reason}`);
+  expect(renamed.replaced).toBe(false);
+  expect(listSongs(renamed.sav).length).toBe(3);
+});
+
+test("an untitled song saved over and over stays ONE slot", () => {
+  // The reported regression: a blank name matched nothing, so every save appended another copy until the
+  // cart was full. Saving tracks the slot, and the next save writes back over it.
+  let sav = freshBattery();
+  let slot: number | undefined;
+  for (let i = 0; i < 5; i++) {
+    const r = smsggdjSongCatalog.commitWorkingSong!(sav, { ...image(10 + i, ""), slot });
+    if (!r.ok) throw new Error(`refused: ${r.reason}`);
+    sav = r.sav;
+    slot = r.index;
+  }
+  expect(listSongs(sav).length).toBe(1);
+  expect(readSongBlock(sav, 0)).toEqual(block(14));
+});
+
+test("a directory with a hole is packed like the cart packs it, not rebuilt without the songs after it", () => {
+  // Executed against the old code: entry 0 cleared, songs at 1 and 2, and a save returned an image holding
+  // only the new song. listSongs stops at a hole, so the heap rebuild dropped everything after it.
+  const holed = buildSav([{ block: block(1), name: "A" }, { block: block(2), name: "B" }, { block: block(3), name: "C" }], CART)!;
+  holed[0x20] = 0; // entry 0's valid byte
+  expect(hasDirectoryHoles(holed)).toBe(true);
+  expect(listSongs(packDirectory(holed))).toEqual([{ index: 0, name: "B" }, { index: 1, name: "C" }]);
+
+  const r = smsggdjSongCatalog.commitWorkingSong!(holed, image(9, "NEW"));
   if (!r.ok) throw new Error(`refused: ${r.reason}`);
-  expect(r.replaced).toBe(true);
-  expect(r.index).toBe(1);
-  expect(listSongs(r.sav).length).toBe(2); // replaced, not duplicated
-  expect(readSongBlock(r.sav, 1)).toEqual(block(9));
-  expect(readSongBlock(r.sav, 0)).toEqual(block(1)); // the other song untouched
+  expect(listSongs(r.sav).map((x) => x.name)).toEqual(["B", "C", "NEW"]);
+  expect(readSongBlock(r.sav, 0)).toEqual(block(2));
+  expect(readSongBlock(r.sav, 1)).toEqual(block(3));
 
-  // Two slots called BETA: no evidence which one is meant, and overwriting has no undo - so append.
-  const dup = buildSav([{ block: block(1), name: "BETA" }, { block: block(2), name: "BETA" }], CART)!;
-  const d = smsggdjSongCatalog.commitWorkingSong!(dup, image(9, "BETA"));
-  if (!d.ok) throw new Error(`refused: ${d.reason}`);
-  expect(d.replaced).toBe(false);
-  expect(listSongs(d.sav).length).toBe(3);
+  // ...and the heap ops that cannot pack first refuse rather than rebuild a short list.
+  expect(addSong(holed, block(9), "X")).toBe(null);
+  // A song saved after the hole still counts as saved, so the working song is not wrongly unsaved.
+  expect(smsggdjSongCatalog.workingSongImageDirty!(holed, image(3, "C"))).toBe(false);
+});
 
-  // A blank name is no identity at all: it never claims a slot, even a blank-named one.
-  const blank = buildSav([{ block: block(1), name: "" }], CART)!;
-  const b = smsggdjSongCatalog.commitWorkingSong!(blank, image(9, ""));
-  if (!b.ok) throw new Error(`refused: ${b.reason}`);
-  expect(b.replaced).toBe(false);
+test("a save persists the cart's OPTIONS, as config_save does", () => {
+  const settings = Uint8Array.of(3, 1, 0, 1, 2, 5, 6);
+  const r = smsggdjSongCatalog.commitWorkingSong!(freshBattery(), { ...image(7, "OPTS"), settings });
+  if (!r.ok) throw new Error(`refused: ${r.reason}`);
+  // "CF", the seven settings, their 8-bit sum - at $3F60 on a 32 KB cart.
+  expect(r.sav.subarray(0x3f60, 0x3f6a)).toEqual(Uint8Array.of(0x43, 0x46, 3, 1, 0, 1, 2, 5, 6, 18));
 });
 
 test("commitWorkingSong says WHY it cannot: an old format, a damaged save, a full cart", () => {
@@ -208,8 +256,8 @@ test("an unsaved working song is an unsaved change, named, with where Save will 
   be.setRam(id, ramWith(image(4, "MYSONG")));
   expect(hasUnsavedChanges(be, project)).toBe(true); // the close guard's gate
   const items = unsavedChanges(be, project);
-  expect(items).toEqual([{ kind: "song", id, name: "MYSONG", savPath: "/roms/smsggdj.sav" }]);
-  expect(unsavedLabel(items[0])).toBe("Song: MYSONG -> smsggdj.sav");
+  expect(items).toEqual([{ kind: "song", id, name: "MYSONG", savPath: "/roms/smsggdj.sav", newSlot: true }]);
+  expect(unsavedLabel(items[0])).toBe("Song: MYSONG -> smsggdj.sav (new slot)");
 });
 
 test("the prompt says up front when Save cannot store the song, and why", () => {
@@ -220,7 +268,7 @@ test("the prompt says up front when Save cannot store the song, and why", () => 
   be.seed("/roms/smsggdj.sav", smdj3);
   be.setRam(id, ramWith(image(4, "")));
   const items = unsavedChanges(be, project);
-  expect(items).toEqual([{ kind: "song", id, name: "", savPath: "/roms/smsggdj.sav", blocked: "format" }]);
+  expect(items).toEqual([{ kind: "song", id, name: "", savPath: "/roms/smsggdj.sav", newSlot: true, blocked: "format" }]);
   expect(unsavedLabel(items[0])).toBe("Song: (untitled) (old save format, can't save)");
 });
 
@@ -343,4 +391,45 @@ test("an in-place rebuild keeps the system findable: currentId follows reset, an
   systems.removeSystem(c);
   expect(systems.currentId(a)).toBe(null);
   expect(systems.currentId(12345)).toBe(null);
+});
+
+// --- tracking which slot the working song is ----------------------------------------------------------
+
+test("Save tracks its slot, a menu Load tracks its slot, and an in-cart load re-syncs it", async () => {
+  const { be, systems, id } = smsProject();
+  be.setSram(id, buildSav([{ block: block(1), name: "ALPHA" }, { block: block(2), name: "BETA" }], CART)!);
+  const sys = () => systems.systems()[0];
+
+  // The cart loaded BETA on its own FILES screen: unedited, byte-identical to slot 1. The watcher sees it.
+  be.setRam(id, ramWith(image(2, "BETA", false)));
+  systems.observeWorkingSongs();
+  expect(systems.workingSongImage(id)!.slot).toBe(1);
+
+  // Edited: Save writes back over slot 1 instead of appending a second BETA.
+  be.setRam(id, ramWith(image(5, "BETA")));
+  expect(await saveWorkingSong(be, systems, sys())).toEqual({ kind: "saved", index: 1, replaced: true });
+  expect(listSongs(be.readSram(id)!).length).toBe(2);
+  expect(readSongBlock(be.readSram(id)!, 1)).toEqual(block(5));
+
+  // A host-side Load of ALPHA retargets it to slot 0.
+  expect(loadSongLive(be, systems, sys(), 0)).toBe(true);
+  expect(systems.workingSongImage(id)!.slot).toBe(0);
+});
+
+test("a save made against a battery the cart wrote meanwhile is rebuilt, not written blind over it", async () => {
+  // The image is built from a snapshot up to ~0.5 s old and replaces the whole battery. A cart that saved
+  // a song itself in that window would have had it reverted.
+  const { be, systems, id } = smsProject();
+  be.setRam(id, ramWith(image(4, "LIVE")));
+  const real = be.writeSram.bind(be);
+  let raced = false;
+  be.writeSram = (i, off, bytes, expect) => {
+    if (!raced) {
+      raced = true; // the cart saves its own song an instant before ours lands
+      be.setSram(id, buildSav([{ block: block(8), name: "CARTS" }], CART)!);
+    }
+    return real(i, off, bytes, expect);
+  };
+  expect(await saveWorkingSong(be, systems, systems.systems()[0])).toEqual({ kind: "saved", index: 1, replaced: false });
+  expect(listSongs(be.readSram(id)!).map((x) => x.name)).toEqual(["CARTS", "LIVE"]);
 });

@@ -208,8 +208,12 @@ export interface Backend {
    *  The apply republishes the SRAM snapshot, so `readSram` reflects the write once it has LANDED - which
    *  is the moment a caller can safely flush it to disk, since the auto-save mirror flushes readSram and
    *  would otherwise write the pre-write battery straight back. The same "can confuse a running program"
-   *  caveat applies: a cart that caches anything about its own battery is walked past. */
-  writeSram(id: number, offset: number, bytes: Uint8Array): boolean;
+   *  caveat applies: a cart that caches anything about its own battery is walked past.
+   *
+   *  `expect` (same length as `bytes`) makes it a compare-and-swap: applied only if the battery STILL holds
+   *  `expect` there - the snapshot the caller built `bytes` from. A battery the cart has written since is
+   *  left alone and its snapshot republished, so the caller sees the current battery and can rebuild. */
+  writeSram(id: number, offset: number, bytes: Uint8Array, expect?: Uint8Array): boolean;
 
   /** The system's latest video frame for display, or `null` when the id is gone / has no framebuffer.
    *  `published` is false (and `pixels` empty) until the core has rendered a frame. Read from the

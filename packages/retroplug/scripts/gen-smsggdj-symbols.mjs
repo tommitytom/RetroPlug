@@ -40,6 +40,10 @@ const WANT = [
   // SENTINEL, which groove_base resolves HERE rather than into the block's grooves - so load_rebase's
   // "is the selected groove empty?" check reads this during a glide, and so must the host's.
   "glide_scratch",
+  // The OPTIONS the cart's own SAVE persists (`config_save`, engine.asm): palette, sync, video, FM,
+  // CONT, key repeat delay / speed. A host-side save has to write the same block, or options changed
+  // since the last in-cart save are lost at the next boot.
+  "pal_sel", "sync_mode", "vid_sel", "fm_on", "cont_play", "key_delay", "key_speed",
   // PSG shadow attenuations (0 loud .. $F silent), one per channel. Not needed to LOAD a song -
   // they are here so a test can certify the echo address by what the engine actually drives,
   // rather than by how loud the mix happens to be in a given window.

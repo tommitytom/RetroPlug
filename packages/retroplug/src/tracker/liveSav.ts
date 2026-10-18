@@ -34,6 +34,8 @@ type SavSystems = Pick<SystemsStore, "readSram" | "loadSram"> & {
   // The working song as an image, including one a reset is still carrying across the reboot (see
   // SystemsStore.workingSongImage). Optional for the same reason as readRam.
   workingSongImage?(id: number): WorkingSongImage | null;
+  // Where the working song now lives in the catalog, once a load or save put it there.
+  noteSongSlot?(id: number, slot: number): void;
 };
 type FocusedSystems = SavSystems & Pick<SystemsStore, "primary">;
 
@@ -110,6 +112,7 @@ export function loadSongLive(backend: SavBackend, systems: SavSystems, sys: Live
   for (const w of writes) {
     if (!systems.writeRam(sys.id, w.offset, w.bytes)) return false;
   }
+  systems.noteSongSlot?.(sys.id, index);
   return true;
 }
 
@@ -208,11 +211,15 @@ export function songLoadByNameWouldDiscard(systems: SavSystems, sys: LiveSavTarg
 export type WorkingSongSave =
   | { kind: "clean" }
   | { kind: "saved"; index: number; replaced: boolean }
-  | { kind: "refused"; reason: "full" | "format" | "corrupt" | "unwritable" };
+  | { kind: "refused"; reason: "full" | "format" | "corrupt" | "unwritable" | "busy" };
 
 /** How long to wait for a battery write to show up in `readSram`. It lands on the next audio block
  *  (milliseconds) or inline when the audio thread is stopped; this bounds a wedged one. */
 const SRAM_LAND_MS = 2000;
+/** How many times to rebuild against a battery the cart wrote mid-save before giving up. Each conflict
+ *  needs the cart to write its battery inside one save's few milliseconds; three in a row is a cart doing
+ *  something other than sitting still, and the save says so rather than racing it. */
+const SAVE_ATTEMPTS = 3;
 
 /** Save `sys`'s working song INTO its battery - for a console whose working song lives outside it
  *  (smsggdj), the host-side twin of the cart's own SAVE, and what "Save" in the unsaved-changes prompt
@@ -221,53 +228,70 @@ const SRAM_LAND_MS = 2000;
  *  The write goes into the LIVE battery (`writeSram`), not just the file, and that is the whole design:
  *  the auto-save mirror and the teardown flush both write `readSram` to disk, so a file-only save would be
  *  overwritten by the stale live battery the moment the core was torn down - i.e. by the very close this
- *  save was for. Resolves once `readSram` shows the new image, so the caller's flush writes it. The live
- *  battery is backed up to `<sav>.bak` first, as every battery edit here is. */
+ *  save was for.
+ *
+ *  The image is rebuilt from a battery SNAPSHOT, republished only every ~0.5 s, and replaces the whole
+ *  battery - so a write made blind would revert anything the cart wrote in between (its own SAVE, LOAD,
+ *  a FILES delete). So it is conditional on the battery still being that snapshot; if the cart moved it,
+ *  native refuses and republishes, and this rebuilds from the fresh one. Resolves once `readSram` shows
+ *  the new image, so the caller's flush writes it. The live battery is backed up to `<sav>.bak` first. */
 export async function saveWorkingSong(
   backend: SavBackend,
   systems: SavSystems & {
-    writeSram(id: number, offset: number, bytes: Uint8Array): boolean;
+    writeSram(id: number, offset: number, bytes: Uint8Array, expect?: Uint8Array): boolean;
     markCarriedSongSaved?(id: number): void;
   },
   sys: LiveSavTarget,
 ): Promise<WorkingSongSave> {
   const catalog = resolveSongCatalog(sys.roles);
   if (!catalog?.commitWorkingSong || !catalog.workingSongImageDirty || !systems.workingSongImage) return { kind: "clean" };
-  const sram = systems.readSram(sys.id);
-  const song = systems.workingSongImage(sys.id);
-  if (!sram || !song || !catalog.workingSongImageDirty(sram, song)) return { kind: "clean" };
-  const r = catalog.commitWorkingSong(sram, song);
-  if (!r.ok) return { kind: "refused", reason: r.reason };
+  for (let attempt = 0; attempt < SAVE_ATTEMPTS; attempt++) {
+    const sram = systems.readSram(sys.id);
+    const song = systems.workingSongImage(sys.id);
+    if (!sram || !song || !catalog.workingSongImageDirty(sram, song)) return { kind: "clean" };
+    const r = catalog.commitWorkingSong(sram, song);
+    if (!r.ok) return { kind: "refused", reason: r.reason };
 
-  try {
-    backend.writeFile(backupSavPath(resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath)), sram);
-  } catch {
-    // best-effort, as in mutateLiveSav: a safety net may not break the save it guards
+    if (attempt === 0) {
+      try {
+        backend.writeFile(backupSavPath(resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath)), sram);
+      } catch {
+        // best-effort, as in mutateLiveSav: a safety net may not break the save it guards
+      }
+    }
+    if (!systems.writeSram(sys.id, 0, r.sav, sram)) return { kind: "refused", reason: "unwritable" };
+    const outcome = await settled(() => systems.readSram(sys.id), r.sav, sram);
+    if (outcome === "conflict") continue; // the cart wrote its battery first: rebuild from what it holds now
+    if (outcome === "timeout") return { kind: "refused", reason: "unwritable" };
+
+    // Only now that the song is really in the battery: the cart's own SAVE clears its unsaved flag, and so
+    // must this, or the cart keeps saying UNSAVED and every dirty check that reads that flag keeps
+    // prompting. A song still being carried across a reboot has no cart to tell yet, so the carry is told.
+    for (const w of catalog.workingSongSavedWrites?.() ?? []) systems.writeRam?.(sys.id, w.offset, w.bytes);
+    systems.markCarriedSongSaved?.(sys.id);
+    systems.noteSongSlot?.(sys.id, r.index);
+    return { kind: "saved", index: r.index, replaced: r.replaced };
   }
-  if (!systems.writeSram(sys.id, 0, r.sav)) return { kind: "refused", reason: "unwritable" };
-  // The cart's own SAVE clears its unsaved flag; so must this, or the cart keeps saying UNSAVED and every
-  // dirty check that reads that flag keeps prompting. A song still being carried across a reboot has no
-  // cart to tell yet, so the carry is told instead.
-  for (const w of catalog.workingSongSavedWrites?.() ?? []) systems.writeRam?.(sys.id, w.offset, w.bytes);
-  systems.markCarriedSongSaved?.(sys.id);
-
-  if (!(await landed(() => systems.readSram(sys.id), r.sav))) return { kind: "refused", reason: "unwritable" };
-  return { kind: "saved", index: r.index, replaced: r.replaced };
+  return { kind: "refused", reason: "busy" };
 }
 
-/** Wait until `read()` returns exactly `want`, or give up after SRAM_LAND_MS. Polls on the host's timer,
- *  which the app's UI runtime services every frame (LvglJsEngine::tick pumps the loop). The first look is
- *  synchronous and is usually enough: with the audio thread stopped the write is applied inline, and the
- *  native side republishes the battery as it applies. The headless test host does NOT pump timers while
- *  a test awaits, so a test that reaches the poll hangs rather than failing - which only happens there
- *  if that republish is missing. */
-async function landed(read: () => Uint8Array | null, want: Uint8Array): Promise<boolean> {
-  const same = (a: Uint8Array | null): boolean => !!a && a.length === want.length && a.every((b, i) => b === want[i]);
+/** Wait for a conditional battery write to resolve: "landed" once `read()` shows `want`, "conflict" once it
+ *  shows anything else but `base` (native refused the write and republished the battery the cart has
+ *  since written), "timeout" after SRAM_LAND_MS. Polls on the host's timer, which the app's UI runtime
+ *  services every frame (LvglJsEngine::tick pumps the loop). The first look is synchronous and is usually
+ *  enough: with the audio thread stopped the write is applied inline, and native republishes the battery
+ *  as it applies. The headless native test host does NOT pump timers while a test awaits, so a test that
+ *  reaches the poll would hang - it is skipped there and reported as a timeout instead. */
+async function settled(read: () => Uint8Array | null, want: Uint8Array, base: Uint8Array): Promise<"landed" | "conflict" | "timeout"> {
+  const same = (a: Uint8Array | null, b: Uint8Array): boolean => !!a && a.length === b.length && a.every((x, i) => x === b[i]);
   const timer = (globalThis as { setTimeout?: (fn: () => void, ms: number) => unknown }).setTimeout;
+  const pumped = (globalThis as { __rp_timersPumped?: boolean }).__rp_timersPumped !== false;
   const deadline = Date.now() + SRAM_LAND_MS;
-  while (!same(read())) {
-    if (!timer || Date.now() > deadline) return false;
+  for (;;) {
+    const now = read();
+    if (same(now, want)) return "landed";
+    if (now && !same(now, base)) return "conflict";
+    if (!timer || !pumped || Date.now() > deadline) return "timeout";
     await new Promise<void>((resolve) => timer(resolve, 10));
   }
-  return true;
 }

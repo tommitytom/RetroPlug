@@ -170,7 +170,14 @@ public:
     //
     // Deliberately unguarded beyond bounds: writing a running core's memory CAN confuse it, because the
     // emulated program has its own invariants over those bytes. That is the point of the feature.
-    bool writeMemory(SystemId id, rp::MemoryType region, std::uint32_t offset, const std::vector<std::uint8_t>& bytes);
+    //
+    // `expectLen` > 0 makes it a compare-and-swap: the last `expectLen` bytes of `payload` are what the
+    // region must still hold at `offset` (the snapshot the caller built its write from), and the rest is
+    // the write. A mismatch refuses the write and, for the battery, republishes the snapshot - so the
+    // caller re-reads the CURRENT battery and can rebuild. Running on the block thread, the compare and
+    // the write are atomic with respect to the emulated program, which is the point.
+    bool writeMemory(SystemId id, rp::MemoryType region, std::uint32_t offset, const std::vector<std::uint8_t>& payload,
+                     std::uint32_t expectLen = 0);
     // Apply a live config edit to a system (SameBoy-only cast today). Value-guarded per field so a
     // whole-config re-send only acts on what changed (no spurious model restart).
     void applyConfigField(SystemId id, std::uint8_t field, double value);

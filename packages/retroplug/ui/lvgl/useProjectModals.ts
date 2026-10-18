@@ -22,6 +22,8 @@ import type { AppStores } from "../../src/appStores";
 import type { LoadOutcome } from "../../src/projectStore";
 import type { MissingFile } from "../../src/projectMissing";
 import { hasUnsavedChanges } from "../../src/unsavedChanges";
+import { savEditWouldDiscard, saveWorkingSong } from "../../src/tracker/liveSav";
+import { flushDirtySram } from "../../src/sramAutoSave";
 import { basename } from "../../src/pathUtil";
 import { SAV_PATTERNS } from "../../src/savPaths";
 import { saveProjectInteractive } from "./saveProjectInteractive";
@@ -40,7 +42,10 @@ type PendingModal =
   | { kind: "relink"; missing: MissingFile[] }
   // A recent SONG row's load, when the cart it lands on holds uncommitted working-song work. The row asked
   // to open song X; silently destroying song Y on the way is not what was agreed to.
-  | { kind: "songDiscard"; song: string; working: string };
+  | { kind: "songDiscard"; song: string; working: string }
+  // An op that REPLACES what one cart holds (a dropped .sav or ROM), when that cart's working song lives
+  // outside its battery and is unsaved. `error` is set when "Save song first" could not store it.
+  | { kind: "songReplace"; id: number; proceed: () => void; error?: string };
 
 export interface ProjectModals {
   /** The overlay to render (null = nothing showing). */
@@ -56,6 +61,10 @@ export interface ProjectModals {
   loadProject: (path: string, song?: string) => void;
   /** Open `romPath` as a fresh project (with an optional paired sav), guarding unsaved changes first. */
   loadRomAsProject: (romPath: string, explicitSav?: string) => void;
+  /** Run `proceed` (an op that replaces what system `id` holds), first offering to save its working song
+   *  when that song lives outside the battery and is unsaved - the drop-target twin of the menu's guarded
+   *  rows. Runs it straight away otherwise. */
+  guardSongReplace: (id: number, proceed: () => void) => void;
 }
 
 export function useProjectModals(stores: AppStores): ProjectModals {
@@ -154,9 +163,37 @@ export function useProjectModals(stores: AppStores): ProjectModals {
     settleSong();
   };
 
-  const modal = pending ? buildModal(pending, stores, handleOutcome, onClose, proceedSong) : null;
-  return { modal, active: pending !== null, onClose, newProject, loadProject, loadRomAsProject };
+  const guardSongReplace = (id: number, proceed: () => void): void => {
+    const sys = project.systems.systems().find((x) => x.id === id);
+    if (sys && savEditWouldDiscard(project.systems, sys)) setPending({ kind: "songReplace", id, proceed });
+    else proceed();
+  };
+
+  // "Save song first": into the cart's battery, then that battery to its .sav, then the replacing op.
+  const saveSongThen = (id: number, proceed: () => void): void => {
+    void (async () => {
+      const sys = project.systems.systems().find((x) => x.id === id);
+      if (!sys) return setPending(null);
+      const r = await saveWorkingSong(stores.backend, project.systems, sys);
+      if (r.kind === "refused") return setPending({ kind: "songReplace", id, proceed, error: SONG_SAVE_REFUSED[r.reason] });
+      flushDirtySram(stores.backend, [sys]);
+      setPending(null);
+      proceed();
+    })();
+  };
+
+  const modal = pending ? buildModal(pending, stores, handleOutcome, onClose, proceedSong, saveSongThen) : null;
+  return { modal, active: pending !== null, onClose, newProject, loadProject, loadRomAsProject, guardSongReplace };
 }
+
+/** Why a working song could not be saved, as a one-line readout. */
+const SONG_SAVE_REFUSED: Record<"full" | "format" | "corrupt" | "unwritable" | "busy", string> = {
+  full: "Cart full - the song can't be saved",
+  format: "Old save format - the song can't be saved",
+  corrupt: "Damaged save - the song can't be saved",
+  unwritable: "The battery couldn't be written",
+  busy: "The cart kept writing its battery - try again",
+};
 
 // Build the overlay tree for `pending`. Every button uses keepOpen (the overlay owns dismissal itself),
 // mirroring the close-guard tree in App.tsx.
@@ -166,6 +203,7 @@ function buildModal(
   handleOutcome: (o: LoadOutcome) => void,
   onClose: () => void,
   proceedSong: () => void,
+  saveSongThen: (id: number, proceed: () => void) => void,
 ): MenuTree {
   const btn = (id: string, label: string, onSelect: () => void): MenuItem => ({ id, label, kind: "action", keepOpen: true, onSelect });
 
@@ -180,6 +218,23 @@ function buildModal(
         btn("discard-save", "Save", () => void saveProjectInteractive(stores).then((saved) => saved && proceed())),
         btn("discard-nosave", "Don't Save", proceed),
         btn("discard-cancel", "Cancel", onClose),
+      ],
+    };
+  }
+
+  if (pending.kind === "songReplace") {
+    const { id, proceed, error } = pending;
+    const go = (): void => {
+      onClose();
+      proceed();
+    };
+    return {
+      title: "Unsaved song",
+      items: [
+        btn("song-replace-what", error ?? "The working song has unsaved changes", () => {}),
+        btn("song-replace-save", "Save song first", () => saveSongThen(id, proceed)),
+        btn("song-replace-discard", "Discard song", go),
+        btn("song-replace-cancel", "Cancel", onClose),
       ],
     };
   }

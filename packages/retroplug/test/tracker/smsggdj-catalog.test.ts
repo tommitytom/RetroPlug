@@ -288,6 +288,11 @@ test("liveLoad leaves a CONT tempo glide running, as the cart's own groove_base 
   const hollowSav = buildSav([{ block: hollow, name: "HOLLOW" }], CART)!;
   const w = smsggdjIntegration.liveLoad!(rom("0.45"), hollowSav, 0, ordinary)!;
   expect(w.find((x) => x.offset === layout.grooveSel)!.bytes).toEqual(Uint8Array.of(0));
+
+  // A stray sel above 16: groove_base computes sel * 16 in 8 bits, so 19 is groove 3 to the cart. It used
+  // to read past the block end here, call that empty, and reset a groove the cart would have kept.
+  ordinary[layout.grooveSel] = 19;
+  expect(resets(ordinary)).toBe(false);
 });
 
 test("songLengthRows follows the cart's own scan, including its minimum of 1", () => {

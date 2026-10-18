@@ -322,8 +322,10 @@ std::size_t Engine::sramSize(SystemId id) {
 }
 
 bool Engine::writeMemory(SystemId id, rp::MemoryType region, std::uint32_t offset,
-                         const std::vector<std::uint8_t>& bytes) {
-    if (bytes.empty()) return false;
+                         const std::vector<std::uint8_t>& payload, std::uint32_t expectLen) {
+    if (expectLen != 0 && payload.size() != 2 * static_cast<std::size_t>(expectLen)) return false;
+    const std::size_t len = payload.size() - expectLen;
+    if (len == 0) return false;
     if (region != rp::MemoryType::Ram && region != rp::MemoryType::Sram) return false;
     SystemBase* sys = project_.findSystem(id);
     if (!sys) return false;
@@ -334,8 +336,14 @@ bool Engine::writeMemory(SystemId id, rp::MemoryType region, std::uint32_t offse
     // Bounds are the ONE thing this refuses: a short write past the end would corrupt whatever the
     // core keeps after the region, which is a crash rather than the "confuse the ROM" the caller
     // signed up for. Partial writes are refused too - half a song block is not a song.
-    if (static_cast<std::size_t>(offset) + bytes.size() > acc.size()) return false;
-    std::memcpy(acc.data() + offset, bytes.data(), bytes.size());
+    if (static_cast<std::size_t>(offset) + len > acc.size()) return false;
+    if (expectLen != 0 && std::memcmp(acc.data() + offset, payload.data() + len, len) != 0) {
+        // The region moved since the caller's snapshot (the cart wrote it). Refuse, and make sure the
+        // caller's next read shows what it holds now rather than the stale copy it built from.
+        if (region == rp::MemoryType::Sram) registry_.republishSram(*sys);
+        return false;
+    }
+    std::memcpy(acc.data() + offset, payload.data(), len);
     // WRAM republishes every block anyway. The battery does not (coarse interval), and a stale copy is
     // not harmless: the TS auto-save mirror flushes readSram to disk, so it would write the PRE-write
     // battery back over the file this write was made for. Republish now.

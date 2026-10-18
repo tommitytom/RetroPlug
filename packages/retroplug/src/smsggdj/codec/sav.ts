@@ -264,12 +264,85 @@ function rebuild(template: Uint8Array, songs: DetachedSong[], cur: number): Uint
  *  song stored after it, during an edit aimed at a completely different slot. One bad byte may cost the
  *  user that one song; it may never cost them the rest of the cart. */
 function detachAll(sav: Uint8Array): DetachedSong[] | null {
+  // A HOLE is the same failure in another shape: listSongs stops at it, so every song after it would be
+  // missing from the list and therefore from the rebuilt image. Refuse; packDirectory closes holes the
+  // way the cart does, and callers that can should pack first.
+  if (hasDirectoryHoles(sav)) return null;
   const out: DetachedSong[] = [];
   for (const s of listSongs(sav)) {
     const d = detach(sav, s.index);
     if (!d) return null;
     out.push(d);
   }
+  return out;
+}
+
+/** True when a valid entry sits after a free one. The cart keeps its directory packed, but only since
+ *  SMDJ4's packed model; a save carried forward from the fixed-slot days can still have holes until the
+ *  cart's FILES screen next packs it (`rle_dir_pack`). listSongs stops at the first hole, so anything
+ *  after one is invisible to every op that lists. */
+export function hasDirectoryHoles(sav: Uint8Array): boolean {
+  if (!isSmsggdjSav(sav)) return false;
+  const n = entryCount(sav);
+  let free = false;
+  for (let slot = 0; slot < n; slot++) {
+    const valid = sav[entryAt(slot) + E_VALID] === VALID;
+    if (valid && free) return true;
+    if (!valid) free = true;
+  }
+  return false;
+}
+
+/** The cart's own `rle_dir_pack` (rle.asm), as a NEW image: every valid entry slid down over the free
+ *  ones in directory order and the tail cleared, heap untouched - the blobs do not move, only the
+ *  entries pointing at them. What the cart runs on every visit to FILES. The loaded-slot marker follows
+ *  its song. A packed image comes back as-is (same array). */
+export function packDirectory(sav: Uint8Array): Uint8Array {
+  if (!hasDirectoryHoles(sav)) return sav;
+  const out = sav.slice();
+  const n = entryCount(sav);
+  const cur = sav[SUPER_CUR_SLOT] - 1;
+  let dst = 0;
+  let nextCur = -1;
+  for (let slot = 0; slot < n; slot++) {
+    if (sav[entryAt(slot) + E_VALID] !== VALID) continue;
+    if (slot === cur) nextCur = dst;
+    out.set(sav.subarray(entryAt(slot), entryAt(slot) + DIR_ENTRY_LEN), entryAt(dst));
+    dst++;
+  }
+  out.fill(0, entryAt(dst), entryAt(n));
+  out[SUPER_CUR_SLOT] = nextCur + 1;
+  return out;
+}
+
+/** The slot holding exactly `block`, or -1. isSongSaved's question with the answer kept: checksums
+ *  narrow it, a full compare decides. The first match wins when two slots hold the same song. */
+export function savedSlotOf(sav: Uint8Array, block: Uint8Array): number {
+  if (block.length !== SMDJ4_BLOCK_LEN) return -1;
+  const want = blockChecksum(block);
+  for (const s of listSongs(sav)) {
+    if (storedChecksum(sav, s.index) !== want) continue;
+    const saved = readSongBlock(sav, s.index);
+    if (saved && saved.every((b, i) => b === block[i])) return s.index;
+  }
+  return -1;
+}
+
+/** `config_save` (engine.asm) as a NEW image: "CF", the seven settings in the cart's order (palette,
+ *  sync, video, FM, CONT, key delay, key speed), then their 8-bit sum. The cart writes this on every
+ *  SAVE; a host-side save that skipped it would boot back into whatever options the cart last saved. */
+export function withConfig(sav: Uint8Array, settings: Uint8Array): Uint8Array | null {
+  if (!isSmsggdjSav(sav) || settings.length !== 7) return null;
+  const out = sav.slice();
+  const at = configOffset(out.length);
+  let sum = 0;
+  out[at] = 0x43; // 'C'
+  out[at + 1] = 0x46; // 'F'
+  for (let i = 0; i < 7; i++) {
+    out[at + 2 + i] = settings[i];
+    sum = (sum + settings[i]) & 0xff;
+  }
+  out[at + 9] = sum;
   return out;
 }
 
@@ -342,7 +415,8 @@ export function addSong(sav: Uint8Array, block: Uint8Array, name: string | Uint8
   return rebuild(sav, songs, curSlot(sav));
 }
 
-/** The battery as an SMDJ4 image a song can be saved into: `sav` itself when it already is one, a
+/** The battery as an SMDJ4 image a song can be saved into: `sav` itself when it already is one (packed,
+ *  as the cart's FILES screen packs it, if its directory has holes), a
  *  fresh empty directory over it when it carries no SMDJ format at all, and NULL when it is an OLDER
  *  SMDJ format (SMDJ1-3).
  *
@@ -352,7 +426,7 @@ export function addSong(sav: Uint8Array, block: Uint8Array, name: string | Uint8
  *  host-side save is one the user did not watch happen. Those songs belong in tools/migrate.html. The
  *  OPTIONS block is preserved either way (`rebuild` lifts it out and puts it back). */
 export function ensureSongDirectory(sav: Uint8Array): Uint8Array | null {
-  if (isSmsggdjSav(sav)) return sav;
+  if (isSmsggdjSav(sav)) return packDirectory(sav);
   if (sav.length < HEAP_OFF) return null;
   if (MAGIC.slice(0, 4).every((m, i) => sav[i] === m)) return null; // "SMDJ" + an older version digit
   const fresh = sav.slice();
@@ -440,14 +514,7 @@ export function storedChecksum(sav: Uint8Array, slot: number): number | null {
  *  costs nothing. Checksums narrow it to a candidate, and only that candidate is decoded - a false match
  *  on a 16-bit sum is possible, so the full compare is what decides. */
 export function isSongSaved(sav: Uint8Array, block: Uint8Array): boolean {
-  if (block.length !== SMDJ4_BLOCK_LEN) return false;
-  const want = blockChecksum(block);
-  for (const s of listSongs(sav)) {
-    if (storedChecksum(sav, s.index) !== want) continue;
-    const saved = readSongBlock(sav, s.index);
-    if (saved && saved.every((b, i) => b === block[i])) return true;
-  }
-  return false;
+  return savedSlotOf(packDirectory(sav), block) >= 0;
 }
 
 // --- fields WITHIN the song block, for a host-side load ------------------------

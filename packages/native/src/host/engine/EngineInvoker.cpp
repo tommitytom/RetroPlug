@@ -151,16 +151,19 @@ void QueuedInvoker::writeRam(SystemId id, std::uint32_t offset, std::vector<std:
     DspCommand c;
     c.kind = DspCommand::Kind::WriteRam;
     c.writeRam = { static_cast<std::uint32_t>(id), offset, new std::vector<std::uint8_t>(std::move(bytes)),
-                   static_cast<std::uint8_t>(rp::MemoryType::Ram) };
+                   static_cast<std::uint8_t>(rp::MemoryType::Ram), 0 };
     if (!commands_.tryPush(c)) delete c.writeRam.bytes;  // full ring: drop the poke, never leak it
     maybeFlush();
 }
 
-void QueuedInvoker::writeSram(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes) {
+void QueuedInvoker::writeSram(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes,
+                              std::vector<std::uint8_t> expect) {
     DspCommand c;
     c.kind = DspCommand::Kind::WriteRam;  // the same queued poke, aimed at the battery
+    const auto expectLen = static_cast<std::uint32_t>(expect.size());
+    bytes.insert(bytes.end(), expect.begin(), expect.end());  // [bytes][expect], one owning payload
     c.writeRam = { static_cast<std::uint32_t>(id), offset, new std::vector<std::uint8_t>(std::move(bytes)),
-                   static_cast<std::uint8_t>(rp::MemoryType::Sram) };
+                   static_cast<std::uint8_t>(rp::MemoryType::Sram), expectLen };
     if (!commands_.tryPush(c)) delete c.writeRam.bytes;
     maybeFlush();
 }
@@ -218,7 +221,7 @@ void QueuedInvoker::drainInto(Engine& engine) {
                 break;
             case DspCommand::Kind::WriteRam:
                 engine.writeMemory(cmd.writeRam.id, static_cast<rp::MemoryType>(cmd.writeRam.region),
-                                   cmd.writeRam.offset, *cmd.writeRam.bytes);
+                                   cmd.writeRam.offset, *cmd.writeRam.bytes, cmd.writeRam.expectLen);
                 delete cmd.writeRam.bytes;  // owning payload - free after applying (rare op)
                 break;
             // Lifecycle: alloc-free pointer swaps into the pre-reserved Project; displaced/removed

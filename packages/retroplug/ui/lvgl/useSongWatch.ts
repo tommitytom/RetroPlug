@@ -21,6 +21,9 @@ const POLL_FRAMES = 30;
 export function useSongWatch(stores: AppStores): void {
   useFrameDivider(POLL_FRAMES, () => {
     stores.project.syncRecent();
+    // Which saved slot each work-RAM working song came from, kept true to loads and saves made on the
+    // cart's own screens - what a host-side Save writes back over.
+    stores.project.systems.observeWorkingSongs();
     // Same rhythm, same battery, different question: has the SONG ITSELF changed under a control surface?
     // A cart being edited on its own screen tells the app nothing, so this is the only way the Launchpad's
     // grid learns that row 12 just gained a chain. Inert unless a controller is enabled.

@@ -184,14 +184,19 @@ bool EngineRpcService::writeRam(std::uint32_t id, std::uint32_t offset, rfl::Byt
     return true;
 }
 
-bool EngineRpcService::writeSram(std::uint32_t id, std::uint32_t offset, rfl::Bytestring bytes) {
+bool EngineRpcService::writeSram(std::uint32_t id, std::uint32_t offset, rfl::Bytestring bytes, rfl::Bytestring expect) {
     // writeRam's twin, aimed at the battery, with the same synchronous refusals. The apply republishes
-    // the SRAM snapshot (see Engine::writeMemory), so a readSram after the write lands sees it.
+    // the SRAM snapshot (see Engine::writeMemory), so a readSram after the write lands sees it. A
+    // non-empty `expect` makes the write conditional on the battery still holding it; that can only be
+    // judged at apply time, so a refusal there shows up as a republished battery, not as false here.
     if (bytes.empty()) return false;
+    if (!expect.empty() && expect.size() != bytes.size()) return false;
     const std::size_t sram = engine_.sramSize(id);
     if (sram == 0 || static_cast<std::size_t>(offset) + bytes.size() > sram) return false;
     const auto* p = reinterpret_cast<const std::uint8_t*>(bytes.data());
-    invoker_.writeSram(id, offset, std::vector<std::uint8_t>(p, p + bytes.size()));
+    const auto* e = reinterpret_cast<const std::uint8_t*>(expect.data());
+    invoker_.writeSram(id, offset, std::vector<std::uint8_t>(p, p + bytes.size()),
+                       std::vector<std::uint8_t>(e, e + expect.size()));
     return true;
 }
 

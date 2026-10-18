@@ -21,7 +21,8 @@ export type UnsavedItem =
   | { kind: "sram"; id: number; savPath: string; isNew: boolean }
   // A working song outside the battery. Save writes it INTO the battery (then the `.sav`), so `savPath`
   // is where it ends up; `blocked` is why Save cannot store it, when it cannot.
-  | { kind: "song"; id: number; name: string; savPath: string; blocked?: "full" | "format" | "corrupt" };
+  // `newSlot` says Save will ADD it as a new song rather than write back over the slot it came from.
+  | { kind: "song"; id: number; name: string; savPath: string; newSlot: boolean; blocked?: "full" | "format" | "corrupt" };
 
 /** True when there are unsaved project changes or unsaved battery SRAM. Deliberately short-circuits on the
  *  project flag: this runs on EVERY menu rebuild (the Save Project row's " *"), so it must not always pay
@@ -51,6 +52,7 @@ export function unsavedChanges(backend: ControlPlaneBackend, project: ProjectSto
       id: sys.id,
       name: song ? songName(song.name) : "",
       savPath: resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath),
+      newSlot: !(commit?.ok && commit.replaced),
       // A dry run of exactly what Save will do, so the prompt can say up front that it cannot, rather than
       // the user finding out by the song still being listed after they pressed it.
       ...(commit && !commit.ok ? { blocked: commit.reason } : {}),

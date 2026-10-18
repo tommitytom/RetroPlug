@@ -103,6 +103,22 @@ export function commonEchoOffset(): { offset: number; length: number } | null {
   return offset === null || length === null ? null : { offset, length };
 }
 
+/** Where the seven OPTIONS the cart's `config_save` persists sit, in the order it writes them: palette,
+ *  sync, video, FM, CONT, key delay, key speed. Null when the builds disagree on any of them. */
+export function commonConfigOffsets(): number[] | null {
+  const picks: ((s: SmsggdjSymbols) => number)[] = [
+    (s) => s.pal_sel,
+    (s) => s.sync_mode,
+    (s) => s.vid_sel,
+    (s) => s.fm_on,
+    (s) => s.cont_play,
+    (s) => s.key_delay,
+    (s) => s.key_speed,
+  ];
+  const out = picks.map(commonOffset);
+  return out.every((o): o is number => o !== null) ? out : null;
+}
+
 /** Where `song_edited` sits, for `SongCatalog.workingSongDirty` - the cart's own "song data changed
  *  since the last save or load" flag (editor.asm:141), which is the only thing that can tell an hour of
  *  work from the song the cart happened to boot into. Null leaves that caller saying CLEAN, because a

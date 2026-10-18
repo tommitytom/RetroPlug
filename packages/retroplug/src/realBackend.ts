@@ -119,7 +119,7 @@ export function createEmulatorClient(): EmulatorBackend {
     readSram: (id) => bytesOrNull(call("readSram", id)),
     readRam: (id) => bytesOrNull(call("readRam", id)),
     writeRam: (id, offset, bytes) => call("writeRam", id, offset, bytes) as boolean,
-    writeSram: (id, offset, bytes) => call("writeSram", id, offset, bytes) as boolean,
+    writeSram: (id, offset, bytes, expect) => call("writeSram", id, offset, bytes, expect ?? new Uint8Array(0)) as boolean,
     getFrame: (id): FrameData | null => {
       const r = call("getFrame", id) as { width: number; height: number; published: boolean; data?: Uint8Array } | null;
       if (r == null || r.width === 0) return null; // no such system / no framebuffer

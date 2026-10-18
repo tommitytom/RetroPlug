@@ -129,6 +129,8 @@ export class SystemsStore {
   private carries = new Map<number, { song: WorkingSongImage; ticks: number }>();
   // Old id -> the id its in-place replacement was built under - see currentId.
   private successors = new Map<number, number>();
+  // The saved slot each system's working song came from or was last saved into - see noteSongSlot.
+  private songSlots = new Map<number, number>();
 
   constructor(
     private readonly backend: ControlPlaneBackend,
@@ -338,6 +340,8 @@ export class SystemsStore {
     this.flushBeforeDrop(e);
     this.backend.removeSystem(id);
     this.entries = removeById(this.entries, id);
+    this.carries.delete(id);
+    this.songSlots.delete(id);
     this.focusedId = nextFocusAfterRemove(this.entries, id, this.focusedId);
     this.markDirty();
     return true;
@@ -426,8 +430,8 @@ export class SystemsStore {
   /** Poke bytes into system `id`'s live battery, at the offsets `readSram` returns, with no reboot. Lands
    *  between blocks like `writeRam`; `readSram` reflects it once it has. What saving a work-RAM working
    *  song (smsggdj) into the cart uses, so the cart and its `.sav` agree without a cold boot. */
-  writeSram(id: number, offset: number, bytes: Uint8Array): boolean {
-    return this.backend.writeSram(id, offset, bytes);
+  writeSram(id: number, offset: number, bytes: Uint8Array, expect?: Uint8Array): boolean {
+    return this.backend.writeSram(id, offset, bytes, expect);
   }
 
   /** Dump system `id`'s battery SRAM to `path`. False when the id has no SRAM published, or the write fails. */
@@ -498,7 +502,34 @@ export class SystemsStore {
     const catalog = e ? resolveSongCatalog(e.roles) : undefined;
     if (!catalog?.readWorkingSong) return null;
     const ram = this.backend.readRam(id);
-    return ram ? catalog.readWorkingSong(ram) : null;
+    const song = ram ? catalog.readWorkingSong(ram) : null;
+    const slot = this.songSlots.get(id);
+    return song && slot !== undefined ? { ...song, slot } : song;
+  }
+
+  /** Record that system `id`'s working song is the saved song at `slot` - it was just loaded from there,
+   *  or saved into it. What a later Save writes back over instead of appending a copy. */
+  noteSongSlot(id: number, slot: number): void {
+    this.songSlots.set(id, slot);
+    const pending = this.carries.get(id);
+    if (pending) pending.song = { ...pending.song, slot };
+  }
+
+  /** Re-sync each tracked slot with what the cart did ITSELF. A song the cart reports unedited and that
+   *  matches a saved slot byte for byte was just loaded or saved on the cart's own screens, which the host
+   *  never hears about otherwise - so that slot is now the one a Save means. Polled from the song watcher. */
+  observeWorkingSongs(): void {
+    for (const e of this.entries) {
+      if (this.carries.has(e.id)) continue; // the booting cart holds nothing of its own yet
+      const catalog = resolveSongCatalog(e.roles);
+      if (!catalog?.readWorkingSong || !catalog.slotOfCleanSong) continue;
+      const ram = this.backend.readRam(e.id);
+      const sram = this.backend.readSram(e.id);
+      const song = ram ? catalog.readWorkingSong(ram) : null;
+      if (!song || !sram) continue;
+      const slot = catalog.slotOfCleanSong(sram, song);
+      if (slot >= 0) this.songSlots.set(e.id, slot);
+    }
   }
 
   /** The song a carry for `id` is holding has just been saved into the battery, so when it lands it
@@ -533,6 +564,7 @@ export class SystemsStore {
         continue;
       }
       this.carries.delete(id);
+      if (c.song.slot !== undefined) this.songSlots.set(id, c.song.slot);
       const rom = e.romPath ? this.backend.readFile(e.romPath) : null;
       const writes = rom ? tracker.restoreWorkingSong(rom, c.song, ram) : null;
       if (!writes) {
@@ -673,6 +705,7 @@ export class SystemsStore {
     this.focusedId = 0;
     this.carries.clear();
     this.successors.clear();
+    this.songSlots.clear();
   }
 
   /** Reconstruct one system from a serialized config entry, preserving its EXACT

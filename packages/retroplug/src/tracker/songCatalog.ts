@@ -37,6 +37,11 @@ export interface WorkingSongImage {
   echo: Uint8Array;
   /** The cart's "changed since the last save or load" flag. */
   edited: boolean;
+  /** The cart's live OPTIONS (palette, sync, ...), which its own SAVE persists alongside the song. */
+  settings?: Uint8Array;
+  /** The saved slot this song was loaded from or last saved into, when the host knows it - what Save
+   *  writes back over. Absent means a new song as far as the host can tell, and Save appends. */
+  slot?: number;
 }
 
 /** What committing a working song into the battery did. `index` is the slot it landed in; `replaced`
@@ -123,10 +128,15 @@ export interface SongCatalog {
    *  RAM, so it can also be asked of a song a reset is still carrying across the reboot. */
   workingSongImageDirty?(sav: Uint8Array, song: WorkingSongImage): boolean;
   /** Save `song` INTO the battery the way the cart's own SAVE would - what "Save" in the unsaved-changes
-   *  prompt does for a working song that lives outside the battery. Overwrites the slot carrying the same
-   *  name when exactly one does, else appends (two same-named slots are not evidence of which one is
-   *  meant, and overwriting has no undo). Pure: returns the new image, the caller writes it. */
+   *  prompt does for a working song that lives outside the battery. Writes over `song.slot` (where it was
+   *  loaded from or last saved) when that slot still carries the song's name, else appends: a name alone
+   *  is not evidence of which saved song this is, and overwriting has no undo. Persists the OPTIONS too,
+   *  as the cart's SAVE does. Pure: returns the new image, the caller writes it. */
   commitWorkingSong?(sav: Uint8Array, song: WorkingSongImage): WorkingSongCommit;
+  /** The saved slot holding exactly `song`'s block when the cart reports it unedited - i.e. the cart just
+   *  loaded or saved it ITSELF (its FILES screen, its PROJECT SAVE), which the host otherwise never hears
+   *  about. -1 otherwise. What keeps the tracked slot (`WorkingSongImage.slot`) true to in-cart moves. */
+  slotOfCleanSong?(sav: Uint8Array, song: WorkingSongImage): number;
   /** The work-RAM writes that tell a running cart its working song has just been saved - what the cart's
    *  own SAVE does to its unsaved flag. Without them a host-side save would leave the cart (and every
    *  dirty check that reads its flag) still believing the song unsaved. */

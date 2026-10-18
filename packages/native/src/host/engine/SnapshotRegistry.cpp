@@ -245,8 +245,17 @@ void SnapshotRegistry::republishSram(SystemBase& sys) {
         }
         return;
     }
-    // Sliced from the savestate: make the next publishAll take the coarse branch. Half the range, so
-    // publishAll's `+= frames` cannot wrap it back below the interval.
+    // Sliced from the savestate. Publish the live cart RAM now, so a read sees the write even with no
+    // block to run (the inline flush while the audio thread is stopped). Then make the core capture a
+    // FRESH savestate on its next block and that block's publishAll slice it: left alone, the core's own
+    // triple refreshes on a ~0.5 s cadence, and the next coarse publish would slice the PRE-write battery
+    // straight back over this one. Half the range, so `+= frames` cannot wrap it below the interval.
+    rp::MemoryAccessor live = sys.getMemory(rp::MemoryType::Sram, rp::AccessType::Read);
+    if (live.valid() && live.size() == s->sram->size()) {
+        std::memcpy(s->sram->writeSlot(), live.data(), live.size());
+        s->sram->publish();
+    }
+    sys.rearmStateSnapshot();
     s->sampleAccum = UINT64_MAX / 2;
 }
 

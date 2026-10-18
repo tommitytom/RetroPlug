@@ -106,7 +106,7 @@ test("an unsaved smsggdj song survives FM Audio, is named on close, and Save & Q
   // Close: vetoed, and the prompt names the song and where Save will put it.
   expect(onCloseRequested()).toBe(true);
   ui.pump(10);
-  expect(ui.findByText("Song: MYSONG -> smsggdj_v0_45.sav") != null).toBeTruthy();
+  expect(ui.findByText("Song: MYSONG -> smsggdj_v0_45.sav (new slot)") != null).toBeTruthy();
   expect(ui.focused()!.text).toBe("Save & Quit");
 
   // Save & Quit: the battery write lands on the next audio block (advance), the save resolves on a UI tick.

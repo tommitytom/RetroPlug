@@ -329,7 +329,7 @@ export class MockBackend implements Backend {
 
   /** writeRam's battery twin. Writes through to the override `readSram` returns (seeding it from the
    *  system's synthetic battery on first write), with the same refusals the native side makes. */
-  writeSram(id: number, offset: number, bytes: Uint8Array): boolean {
+  writeSram(id: number, offset: number, bytes: Uint8Array, expect?: Uint8Array): boolean {
     this.log.push("writeSram");
     let sram = this.sramOverrides.get(id);
     if (!sram && this.systems.has(id)) {
@@ -338,6 +338,10 @@ export class MockBackend implements Backend {
     }
     if (!sram || !bytes.length) return false;
     if (offset < 0 || offset + bytes.length > sram.length) return false;
+    if (expect && expect.length !== bytes.length) return false;
+    // A conditional write the battery has moved under is accepted by the call (as native's is - it can only
+    // be judged when applied) and then not applied.
+    if (expect && !expect.every((b, i) => sram![offset + i] === b)) return true;
     sram.set(bytes, offset);
     return true;
   }

@@ -140,7 +140,9 @@ function songWrites(
     // RAM - so mid-glide the question is about RAM the load leaves alone. Asked of the block instead,
     // groove 16 starts exactly at the block's end, read as "empty", and EVERY mid-glide load aborted it.
     const sel = ram[layout.grooveSel];
-    const empty = sel === GLIDE_GROOVE_SEL ? ram[layout.glideScratch] === 0 : isGrooveEmpty(block, sel);
+    // Any other value is a block groove, and `groove_base` indexes it as `sel * 16` in 8 bits - so a stray
+    // sel above 16 wraps to groove `sel & 15` there, and here.
+    const empty = sel === GLIDE_GROOVE_SEL ? ram[layout.glideScratch] === 0 : isGrooveEmpty(block, sel & 0x0f);
     if (empty) {
       writes.push({ offset: layout.grooveSel, bytes: Uint8Array.of(0) });
       writes.push({ offset: layout.groovePos, bytes: Uint8Array.of(0) });

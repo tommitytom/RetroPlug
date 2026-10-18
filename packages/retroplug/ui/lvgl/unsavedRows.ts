@@ -12,7 +12,7 @@ import { basename } from "../../src/pathUtil";
 import type { MenuItem } from "../screens/menu/menuTree";
 
 /** Why Save cannot store a working song, as the row says it. */
-const SONG_BLOCKED: Record<"full" | "format" | "corrupt", string> = {
+export const SONG_BLOCKED: Record<"full" | "format" | "corrupt", string> = {
   full: "cart full, can't save",
   format: "old save format, can't save",
   corrupt: "damaged save, can't save",
@@ -25,7 +25,8 @@ export function unsavedLabel(item: UnsavedItem): string {
   if (item.kind === "project") return `Project: ${basename(item.path) || "(not saved yet)"}`;
   if (item.kind === "song") {
     const name = item.name || "(untitled)";
-    return item.blocked ? `Song: ${name} (${SONG_BLOCKED[item.blocked]})` : `Song: ${name} -> ${basename(item.savPath)}`;
+    if (item.blocked) return `Song: ${name} (${SONG_BLOCKED[item.blocked]})`;
+    return `Song: ${name} -> ${basename(item.savPath)}${item.newSlot ? " (new slot)" : ""}`;
   }
   return `Battery: ${basename(item.savPath)}${item.isNew ? " (new file)" : ""}`;
 }

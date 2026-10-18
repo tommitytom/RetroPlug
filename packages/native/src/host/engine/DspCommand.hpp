@@ -45,8 +45,13 @@ struct DspCommand {
         struct { double value; } setPpq;                         // host playhead jump (locate)
         // Host poke into a core's work RAM or battery (`region` is an rp::MemoryType: Ram or Sram).
         // Owning payload (a song block is ~7 KB, far past what the union can hold inline), freed by the
-        // audio thread after applying - the same rare-op pattern setSystems and loadKernel use.
-        struct { std::uint32_t id; std::uint32_t offset; std::vector<std::uint8_t>* bytes; std::uint8_t region; } writeRam;
+        // audio thread after applying - the same rare-op pattern setSystems and loadKernel use. When
+        // `expectLen` is non-zero the payload is [bytes][expect] and the write is CONDITIONAL: applied only
+        // if the region still holds `expect` there (see Engine::writeMemory).
+        struct {
+            std::uint32_t id; std::uint32_t offset; std::vector<std::uint8_t>* bytes; std::uint8_t region;
+            std::uint32_t expectLen;
+        } writeRam;
         // MIDI aimed at ONE system, delivered straight to its ingress and NEVER through the routing kernel.
         // That is the whole point: a menu knob has to reach the cart whose menu it is, whatever the project's
         // MUSICAL routing is doing with channels (sendToAll would hit every instance; midiChannelToInstance

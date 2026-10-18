@@ -1586,23 +1586,38 @@ not, and each lost an unsaved song without a word:
 
 - **Closing the window** (and New / Open / a Recent project). The close prompt asked about the project
   and the battery, and this song is in neither. It is now a third channel (`unsavedChanges`, item kind
-  `song`), listed as `Song: MYSONG -> smsggdj.sav`. **Save** writes it INTO the battery the way the
-  cart's own SAVE would - over the one slot with the same name, else appended; two same-named slots or a
-  blank name append, since overwriting has no undo - then the usual flush takes it to disk. When the cart
-  cannot take it, the row says why up front (`cart full`, `old save format`, `damaged save`) and Save
-  leaves the prompt open rather than quitting without it.
+  `song`), listed as `Song: MYSONG -> smsggdj.sav`, with ` (new slot)` when Save will add it rather
+  than write it back. **Save** writes it INTO the battery the way the cart's own SAVE would - back over
+  the slot it was loaded from or last saved into, else appended - plus the OPTIONS block the cart's
+  `config_save` writes beside it, then the usual flush takes it to disk. When the cart cannot take it,
+  the row says why up front (`cart full`, `old save format`, `damaged save`), Save leaves the prompt open
+  rather than quitting without it, and the menu's Save row says so too.
+- **Which slot is "back".** Tracked per system (`SystemsStore.noteSongSlot`): set by a host Load and by a
+  host Save, carried across a reset, and re-synced every half second from what the cart did itself - a
+  song the cart reports unedited and that matches a saved slot byte for byte was just loaded or saved on
+  its own screens (`observeWorkingSongs`). A tracked slot only counts while it still carries the song's
+  name. The first version matched by NAME instead, which an adversarial review broke two ways: an
+  untitled song appended a fresh copy on every save until the cart was full, and a new song that shared
+  a saved one's name silently overwrote it. No tracked slot now means append, always.
 - **A fresh cart.** The dirty check required an SMDJ4 directory, which a cart only writes on its first
-  SAVE - so every new user's first song read as clean, everywhere. A battery with no directory now holds
+  SAVE or visit to FILES (`rle_dir_ensure`) - so a new user's first song read as clean, everywhere. A battery with no directory now holds
   no songs, so an edited song on it is unsaved. Saving into it creates the directory
   (`ensureSongDirectory`); an older SMDJ1-3 image is refused rather than flattened, which is stricter
   than the cart's own `rle_dir_ensure` on purpose.
+- **A directory with holes.** A save carried forward from the fixed-slot days can have free entries
+  before used ones until the cart's FILES screen next packs it (`rle_dir_pack`). `listSongs` stops at a
+  hole, so the heap rebuild behind every save used to drop every song after it - confirmed by execution:
+  three songs with entry 0 cleared came back as only the new one. Saves now pack the directory exactly as
+  the cart does first (`packDirectory`), and every heap op refuses a holed image outright
+  (`hasDirectoryHoles` in `detachAll`), which also closes the same hole in the Songs menu's Add / Import.
 - **Reset, a ROM-watch reload, a ROM swap.** Each carries the battery, which carries LSDj's and risa's
   working song - but not this one. They now carry it explicitly: lifted out as a `WorkingSongImage`
   before the teardown, parked under the new id, written back (`restoreWorkingSong`, the same writes as a
   Load) on the first frame the new cart's boot latch is up, still marked unsaved. While it is parked the
   image answers for it, so a close inside the boot window still sees the song.
 - **Load SRAM, Load State, New SRAM, Replace / Remove Instance** replace what the cart holds, so a carry
-  would be wrong; they confirm first when the song is unsaved.
+  would be wrong; they confirm first when the song is unsaved. So does dropping a `.sav` or a ROM onto
+  that cart's tile, which offers *Save song first* / *Discard song* / *Cancel*.
 
 Two things found on the way:
 
@@ -1615,19 +1630,25 @@ Two things found on the way:
   `SystemsStore.currentId` follows an id through its successors and `App` re-anchors on it (at the top
   level - tiles are keyed by id, so the rebuilt cart's menu mounts fresh).
 
-**Why the save writes the LIVE battery.** The teardown flush and the auto-save mirror both write
-`readSram` to disk, so a save made only to the file is overwritten by the stale battery on the very close
-it was for. `writeSram` is the battery twin of `writeRam` (same queued, between-blocks apply), and its
-apply republishes the SRAM snapshot immediately rather than on the 0.5 s interval - without that the
-snapshot would still hold the pre-save battery for the flush to find. `saveWorkingSong` resolves once
-`readSram` shows the new image; it polls on the UI's timer, which `LvglJsEngine::tick` pumps every frame
-(the headless native test host does not pump timers while a test awaits, so there the first,
-synchronous look has to succeed - which it does, because the write applies inline when the audio thread
-is stopped). A live battery write while the cart sits on its FILES screen leaves that screen's list
+**Why the save writes the LIVE battery, conditionally.** The teardown flush and the auto-save mirror both
+write `readSram` to disk, so a save made only to the file is overwritten by the stale battery on the very
+close it was for. `writeSram` is the battery twin of `writeRam` (same queued, between-blocks apply), and
+its apply republishes the SRAM snapshot immediately rather than on the 0.5 s interval - without that the
+snapshot would still hold the pre-save battery for the flush to find. The image is built from that
+snapshot, though, which can be half a second old, and it replaces the whole battery: written blind it
+would revert an in-cart SAVE, LOAD or FILES delete made in between. So the write carries the snapshot it
+was built from and native applies it only if the battery still holds it - a compare-and-swap on the
+block thread, atomic with respect to the cart. A refusal republishes the battery and `saveWorkingSong`
+rebuilds from it (three attempts, then "busy"). The cart's unsaved flag is cleared only once the write
+has landed. `saveWorkingSong` waits on the UI's timer, which `LvglJsEngine::tick` pumps every frame; the
+headless native test host does not pump timers while a test awaits, so it sets `__rp_timersPumped =
+false` and the first, synchronous look decides (a write there applies inline). On SameBoy, whose battery
+is sliced out of a savestate the core refreshes on its own cadence, the republish copies the live cart
+RAM and re-arms the core's capture, so the next coarse publish cannot slice the pre-write battery back. A live battery write while the cart sits on its FILES screen leaves that screen's list
 stale until it is redrawn; the cart re-reads the directory on every visit.
 
-Guarded by `test/tracker/working-song-save.test.ts` (codec, catalog, save, prompt rows, carry, menu
-guards), `test-native/sms-working-song-save.test.ts` (both machines on the real core: `writeSram`, a save
+Guarded by `test/tracker/working-song-save.test.ts` (codec, catalog, slot tracking, holes, OPTIONS, the
+compare-and-swap retry, prompt rows, carry, menu guards), `test-native/sms-working-song-save.test.ts` (both machines on the real core: `writeSram`, a save
 that survives the teardown flush, a carry through the boot) and `test-ui/working-song-smsggdj.test.ts`
 (the real app: FM Audio, the close prompt's row, Save & Quit into the `.sav`). Each fix has a negative
 control that fails its test.
