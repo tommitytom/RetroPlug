@@ -245,10 +245,29 @@ export async function saveWorkingSong(
 ): Promise<WorkingSongSave> {
   const catalog = resolveSongCatalog(sys.roles);
   if (!catalog?.commitWorkingSong || !catalog.workingSongImageDirty || !systems.workingSongImage) return { kind: "clean" };
+  // After the write lands: what the cart's own SAVE leaves behind. Its unsaved flag clears, or the cart
+  // keeps saying UNSAVED and every dirty check that reads that flag keeps prompting; a song still being
+  // carried across a reboot has no cart to tell yet, so the carry is told. And the slot is tracked.
+  const finish = (index: number): void => {
+    for (const w of catalog.workingSongSavedWrites?.() ?? []) systems.writeRam?.(sys.id, w.offset, w.bytes);
+    systems.markCarriedSongSaved?.(sys.id);
+    systems.noteSongSlot?.(sys.id, index);
+  };
+  let landedAt = -1; // the slot an attempt's write went to, in case a later look finds it already there
   for (let attempt = 0; attempt < SAVE_ATTEMPTS; attempt++) {
     const sram = systems.readSram(sys.id);
     const song = systems.workingSongImage(sys.id);
-    if (!sram || !song || !catalog.workingSongImageDirty(sram, song)) return { kind: "clean" };
+    if (!sram || !song) return { kind: "clean" };
+    if (!catalog.workingSongImageDirty(sram, song)) {
+      // Clean on a RETRY is our own write: it landed, and then the cart wrote its battery too before the
+      // poll looked, which read as a conflict. The song is saved; do what a landed save does.
+      const at = attempt > 0 ? catalog.slotOfCleanSong?.(sram, { ...song, edited: false }) : null;
+      if (at) {
+        finish(at.index);
+        return { kind: "saved", index: at.index, replaced: landedAt === at.index };
+      }
+      return { kind: "clean" };
+    }
     const r = catalog.commitWorkingSong(sram, song);
     if (!r.ok) return { kind: "refused", reason: r.reason };
 
@@ -261,15 +280,12 @@ export async function saveWorkingSong(
     }
     if (!systems.writeSram(sys.id, 0, r.sav, sram)) return { kind: "refused", reason: "unwritable" };
     const outcome = await settled(() => systems.readSram(sys.id), r.sav, sram);
-    if (outcome === "conflict") continue; // the cart wrote its battery first: rebuild from what it holds now
+    if (outcome === "conflict") {
+      landedAt = r.replaced ? r.index : -1;
+      continue; // the cart wrote its battery: rebuild from what it holds now
+    }
     if (outcome === "timeout") return { kind: "refused", reason: "unwritable" };
-
-    // Only now that the song is really in the battery: the cart's own SAVE clears its unsaved flag, and so
-    // must this, or the cart keeps saying UNSAVED and every dirty check that reads that flag keeps
-    // prompting. A song still being carried across a reboot has no cart to tell yet, so the carry is told.
-    for (const w of catalog.workingSongSavedWrites?.() ?? []) systems.writeRam?.(sys.id, w.offset, w.bytes);
-    systems.markCarriedSongSaved?.(sys.id);
-    systems.noteSongSlot?.(sys.id, r.index);
+    finish(r.index);
     return { kind: "saved", index: r.index, replaced: r.replaced };
   }
   return { kind: "refused", reason: "busy" };

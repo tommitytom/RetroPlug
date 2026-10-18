@@ -9,6 +9,7 @@
 // "is this pick my sibling?" override test; findSiblingRom's candidate loop.
 
 import { siblingSavPath, siblingRomCandidates } from "./savPaths";
+import type { TrackedSlot } from "./tracker/songCatalog";
 import type { Platform, Core } from "./platform";
 import type { CommonSettings } from "./systemSettings";
 import type { RoleInstance } from "./systemRoles";
@@ -29,6 +30,9 @@ export interface SystemEntry {
   battery: boolean; // derived (not serialized): the cart has battery-backed save memory
   settings: CommonSettings;
   roles: RoleInstance[];
+  /** The saved song slot a work-RAM working song (smsggdj) came from, when known - see
+   *  SystemsStore.noteSongSlot. Persisted, so a reopened session saves back over the same slot. */
+  workingSlot?: TrackedSlot;
 }
 
 /** The live system with `id`, or undefined. */

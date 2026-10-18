@@ -50,7 +50,9 @@ blob key contract is the pure module
 | **EXPORT** | `.rplg.zip` | PKZIP archive | `export(path)` | the same `project.json` + one entry per live system's SRAM/savestate blob |
 
 Blob entries are keyed by config **index**, not id: `systems/{i}/sram` and
-`systems/{i}/state` ([projectBinaries.ts:17](../packages/retroplug/src/projectBinaries.ts#L17)).
+`systems/{i}/state` ([projectBinaries.ts:17](../packages/retroplug/src/projectBinaries.ts#L17)),
+plus `systems/{i}/song` only when a reset is still carrying a work-RAM working song across its boot
+(the savestate then holds the blank cart; see `workingSongBlob.ts`).
 The store's `systems()` order matches `buildConfig`'s, so index `i` addresses
 both alike. On export, TS gathers each blob through the snapshot read door
 (`backend.readState` / `backend.readSram` — see [01-architecture.md](01-architecture.md)),
@@ -285,7 +287,8 @@ INTO its cart's live battery (`saveWorkingSong`, via the `writeSram` control-pla
 write, which republishes the SRAM snapshot as it lands), and the battery flush
 then carries it to disk. It has to be the LIVE battery: the teardown flush writes
 `readSram`, so a file-only save would be overwritten by the very close it was made
-for. The unsaved-changes prompt lists such a song as its own row, and Reset, a
+for. Which slot it saves back over is the system's `workingSlot` (index + song fingerprint), an
+additive field of the thin config. The unsaved-changes prompt lists such a song as its own row, and Reset, a
 ROM-watch reload and a ROM swap carry it across the reboot
 (`SystemsStore.carryWorkingSong`). See [docs/sms-support.md](../docs/sms-support.md).
 

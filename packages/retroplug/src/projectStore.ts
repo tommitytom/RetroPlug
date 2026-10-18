@@ -48,7 +48,8 @@ import {
   audioRoutingToIndex,
 } from "./settingsEnums";
 import { scanMissingFiles, autoFindSiblings, relinkInConfig, type MissingFile } from "./projectMissing";
-import { PROJECT_JSON, sramKey, stateKey, partitionEntries } from "./projectBinaries";
+import { PROJECT_JSON, sramKey, stateKey, songKey, partitionEntries } from "./projectBinaries";
+import { encodeWorkingSong, decodeWorkingSong } from "./tracker/workingSongBlob";
 
 export type LoadOutcome =
   | { kind: "loaded"; systems: number }
@@ -562,6 +563,10 @@ export class ProjectStore {
       if (state && state.length) entries.push({ name: stateKey(i), bytes: state });
       const sram = this.backend.readSram(sys.id);
       if (sram && sram.length) entries.push({ name: sramKey(i), bytes: sram });
+      // Exported inside a reset's boot window, the savestate holds the blank cart: ship the song the reset
+      // is still carrying beside it, so loading the archive lands it after all.
+      const carried = this.systems.pendingCarry(sys.id);
+      if (carried) entries.push({ name: songKey(i), bytes: encodeWorkingSong(carried) });
     });
     return this.backend.zip(entries);
   }
@@ -657,7 +662,9 @@ export class ProjectStore {
       // runtime state (e.g. an LSDj armed in "wait for MIDI"). The sram blob only seeds a system that
       // has no savestate (a thin load, or a battery-only export).
       const sysBlobs = state ? { stateBytes: state } : sram ? { sramBytes: sram } : undefined;
-      this.systems.adopt(s, sysBlobs);
+      const songBytes = blobs.get(songKey(i));
+      const song = songBytes ? decodeWorkingSong(songBytes) : null;
+      this.systems.adopt(s, song ? { ...sysBlobs, song } : sysBlobs);
     });
     this.projectSettings = { ...DEFAULT_SETTINGS, ...cfg.settings };
     this.pushAudioRouting(); // apply the loaded project's routing to native audio

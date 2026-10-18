@@ -1592,13 +1592,21 @@ not, and each lost an unsaved song without a word:
   `config_save` writes beside it, then the usual flush takes it to disk. When the cart cannot take it,
   the row says why up front (`cart full`, `old save format`, `damaged save`), Save leaves the prompt open
   rather than quitting without it, and the menu's Save row says so too.
-- **Which slot is "back".** Tracked per system (`SystemsStore.noteSongSlot`): set by a host Load and by a
-  host Save, carried across a reset, and re-synced every half second from what the cart did itself - a
-  song the cart reports unedited and that matches a saved slot byte for byte was just loaded or saved on
-  its own screens (`observeWorkingSongs`). A tracked slot only counts while it still carries the song's
-  name. The first version matched by NAME instead, which an adversarial review broke two ways: an
-  untitled song appended a fresh copy on every save until the cart was full, and a new song that shared
-  a saved one's name silently overwrote it. No tracked slot now means append, always.
+- **Which slot is "back".** Tracked per system as an index AND a fingerprint (FNV-1a over the decoded
+  block) of the song that slot held when it was tracked; Save writes back only while the slot still holds
+  exactly that song and carries the song's name, and appends otherwise. Set by a host Load and a host
+  Save; kept true to the cart's own screens by a PER-FRAME watcher (`observeWorkingSongs`) that acts only
+  when the cart reports its song unedited - which it does exactly when the song was replaced wholesale
+  (its own LOAD, SAVE, NEW): a song matching a saved slot is tracked, one matching none (NEW) clears the
+  tracking. Persisted on the system in the project (`workingSlot`), so a session reopened from a
+  savestate - where the song arrives already edited and nothing could re-derive the slot - still saves
+  back over it. Two adversarial passes shaped this. The first version matched by NAME: an untitled song
+  appended a new copy on every save, and a new song sharing a saved one's name overwrote it. The second
+  tracked index + name: an in-cart FILES CLEAR shifts every later song down a slot, so two untitled songs
+  let a Save write the edited A over the B that moved in; and the half-second poll missed an in-cart NEW
+  followed quickly by an edit, so the new song overwrote the loaded one. The fingerprint closes the
+  first, the per-frame watcher the second. Residual: a NEW and an edit inside ONE frame (not humanly
+  reachable through the cart's menus) would still be read as the old song.
 - **A fresh cart.** The dirty check required an SMDJ4 directory, which a cart only writes on its first
   SAVE or visit to FILES (`rle_dir_ensure`) - so a new user's first song read as clean, everywhere. A battery with no directory now holds
   no songs, so an edited song on it is unsaved. Saving into it creates the directory
@@ -1614,7 +1622,11 @@ not, and each lost an unsaved song without a word:
   working song - but not this one. They now carry it explicitly: lifted out as a `WorkingSongImage`
   before the teardown, parked under the new id, written back (`restoreWorkingSong`, the same writes as a
   Load) on the first frame the new cart's boot latch is up, still marked unsaved. While it is parked the
-  image answers for it, so a close inside the boot window still sees the song.
+  image answers for it, so a close inside the boot window still sees the song, and a project exported in
+  that window (a DAW saving its session, possibly with the editor already closed so nothing settles the
+  carry) ships it as a `systems/{i}/song` archive entry that loading parks again - the savestate beside
+  it holds the blank booting cart. A carry has no time limit: it is keyed by its system's id and dies
+  with it.
 - **Load SRAM, Load State, New SRAM, Replace / Remove Instance** replace what the cart holds, so a carry
   would be wrong; they confirm first when the song is unsaved. So does dropping a `.sav` or a ROM onto
   that cart's tile, which offers *Save song first* / *Discard song* / *Cancel*.

@@ -12,8 +12,9 @@ import { saveWorkingSong } from "../../src/tracker/liveSav";
 
 const PROJECT_SAVE_PATTERNS = ["*.rplg"];
 
-export async function saveProjectInteractive(stores: AppStores): Promise<boolean> {
-  let path = stores.project.currentPath();
+/** `saveAs` names the file outright (Save Project As..., which has already asked), skipping the dialog. */
+export async function saveProjectInteractive(stores: AppStores, saveAs?: string): Promise<boolean> {
+  let path = saveAs ?? stores.project.currentPath();
   if (!path) {
     path =
       (await stores.backend.openFileBrowser({

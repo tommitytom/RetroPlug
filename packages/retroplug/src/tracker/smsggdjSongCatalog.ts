@@ -23,7 +23,7 @@
 // `load`. See `workingSongOutsideBattery` below, which is how the shared Songs menu learns to warn about
 // Delete and Move Up as well. It also means the reverse: after a project LOAD the cart has only just
 // booted, so its working song is the cart's, not the user's, and `workingSongDirty` has to say so.
-import type { SongCatalog, WorkingSongCommit, WorkingSongImage } from "./songCatalog";
+import type { SongCatalog, TrackedSlot, WorkingSongCommit, WorkingSongImage } from "./songCatalog";
 import {
   commonBootedOffset,
   commonConfigOffsets,
@@ -47,6 +47,8 @@ import {
   packDirectory,
   savedSlotOf,
   withConfig,
+  readSongBlock,
+  songFingerprint,
   SMDJ4_BLOCK_LEN,
 } from "../smsggdj/codec/sav";
 
@@ -108,9 +110,23 @@ function readWorkingSong(ram: Uint8Array): WorkingSongImage | null {
 /** See SongCatalog.workingSongImageDirty. A battery with no SMDJ4 directory holds no songs, so an edited
  *  song on a cart that has never saved is unsaved by definition - which is every new user's first song,
  *  and was the case this used to call clean. */
-/** See SongCatalog.slotOfCleanSong. Slot numbers are of the PACKED directory, as every save writes. */
-function slotOfCleanSong(sav: Uint8Array, song: WorkingSongImage): number {
-  return song.edited || !isSmsggdjSav(sav) ? -1 : savedSlotOf(packDirectory(sav), song.block);
+/** See SongCatalog.trackSlot. Slot numbers are of the PACKED directory, as every save writes. */
+function trackSlot(sav: Uint8Array, index: number): TrackedSlot | null {
+  if (!isSmsggdjSav(sav)) return null;
+  const block = readSongBlock(packDirectory(sav), index);
+  return block ? { index, fingerprint: songFingerprint(block) } : null;
+}
+
+/** See SongCatalog.slotOfCleanSong. */
+function slotOfCleanSong(sav: Uint8Array, song: WorkingSongImage): TrackedSlot | null {
+  if (song.edited || !isSmsggdjSav(sav)) return null;
+  const fingerprint = songFingerprint(song.block);
+  // Two slots can hold the same song; keep the one already tracked rather than hopping to the first.
+  if (song.slot && song.slot.fingerprint === fingerprint && trackSlot(sav, song.slot.index)?.fingerprint === fingerprint) {
+    return song.slot;
+  }
+  const index = savedSlotOf(packDirectory(sav), song.block);
+  return index >= 0 ? { index, fingerprint } : null;
 }
 
 function imageDirty(sav: Uint8Array, song: WorkingSongImage): boolean {
@@ -130,14 +146,19 @@ function displayName(bytes: Uint8Array): string {
 }
 
 /** The slot a save of `song` would overwrite in the (packed) image `base`, or -1 to append. Its tracked
- *  slot, only while that slot still carries the song's name: the name is what the user sees on the
- *  cart's FILES screen, so a slot renamed or reshuffled since is not the one they mean. No tracked slot
+ *  slot, only while that slot still carries the song's name AND still holds the song it held when
+ *  tracked: the name is what the user sees on the cart's FILES screen, so a slot renamed or reshuffled
+ *  since is not the one they mean. No tracked slot
  *  means append - including when an unrelated saved song shares the name, and including an untitled
  *  song, which used to append a fresh copy on EVERY save because a blank name matched nothing. */
 function saveTarget(base: Uint8Array, song: WorkingSongImage): number {
-  if (song.slot === undefined) return -1;
-  const at = listSongs(base).find((s) => s.index === song.slot);
-  return at && at.name === displayName(song.name) ? at.index : -1;
+  if (!song.slot) return -1;
+  const at = listSongs(base).find((s) => s.index === song.slot!.index);
+  if (!at || at.name !== displayName(song.name)) return -1;
+  // ...and only while it still holds the song it held when tracked. The cart's FILES CLEAR shifts every
+  // later song down a slot, and two untitled songs share a name, so index + name alone once let a Save
+  // write the edited A over an unrelated B that had moved into A's slot.
+  return trackSlot(base, at.index)?.fingerprint === song.slot.fingerprint ? at.index : -1;
 }
 
 /** See SongCatalog.commitWorkingSong. */
@@ -229,6 +250,8 @@ export const smsggdjSongCatalog: SongCatalog = {
   workingSongImageDirty: imageDirty,
   commitWorkingSong,
   slotOfCleanSong,
+  trackSlot,
+  fingerprintOf: (song) => songFingerprint(song.block),
   // `song_edited = 0`, exactly what the cart's own save does (rle.asm:817).
   workingSongSavedWrites: () => {
     const at = commonSongEditedOffset();

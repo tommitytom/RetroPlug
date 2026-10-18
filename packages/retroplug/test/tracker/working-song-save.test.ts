@@ -27,7 +27,8 @@ import {
   packDirectory,
   SMDJ4_BLOCK_LEN,
 } from "../../src/smsggdj/codec/sav";
-import type { WorkingSongImage } from "../../src/tracker/songCatalog";
+import type { TrackedSlot, WorkingSongImage } from "../../src/tracker/songCatalog";
+import { encodeWorkingSong, decodeWorkingSong } from "../../src/tracker/workingSongBlob";
 import { smsggdjRom, smsggdjRam } from "../systems/fixtures";
 import { composeAppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
@@ -127,7 +128,8 @@ test("commitWorkingSong writes back over the slot the song came from - never ove
   const two = buildSav([{ block: block(1), name: "ALPHA" }, { block: block(2), name: "BETA" }], CART)!;
 
   // Loaded from slot 1 (tracked): Save writes back there.
-  const back = smsggdjSongCatalog.commitWorkingSong!(two, { ...image(9, "BETA"), slot: 1 });
+  const slot1 = smsggdjSongCatalog.trackSlot!(two, 1)!;
+  const back = smsggdjSongCatalog.commitWorkingSong!(two, { ...image(9, "BETA"), slot: slot1 });
   if (!back.ok) throw new Error(`refused: ${back.reason}`);
   expect(back.replaced).toBe(true);
   expect(back.index).toBe(1);
@@ -143,7 +145,7 @@ test("commitWorkingSong writes back over the slot the song came from - never ove
   expect(readSongBlock(namesake.sav, 1)).toEqual(block(2)); // the old BETA survives
 
   // A tracked slot that no longer carries the song's name (renamed in the cart = "save as"): appended.
-  const renamed = smsggdjSongCatalog.commitWorkingSong!(two, { ...image(9, "GAMMA"), slot: 1 });
+  const renamed = smsggdjSongCatalog.commitWorkingSong!(two, { ...image(9, "GAMMA"), slot: slot1 });
   if (!renamed.ok) throw new Error(`refused: ${renamed.reason}`);
   expect(renamed.replaced).toBe(false);
   expect(listSongs(renamed.sav).length).toBe(3);
@@ -153,12 +155,12 @@ test("an untitled song saved over and over stays ONE slot", () => {
   // The reported regression: a blank name matched nothing, so every save appended another copy until the
   // cart was full. Saving tracks the slot, and the next save writes back over it.
   let sav = freshBattery();
-  let slot: number | undefined;
+  let slot: TrackedSlot | undefined;
   for (let i = 0; i < 5; i++) {
     const r = smsggdjSongCatalog.commitWorkingSong!(sav, { ...image(10 + i, ""), slot });
     if (!r.ok) throw new Error(`refused: ${r.reason}`);
     sav = r.sav;
-    slot = r.index;
+    slot = smsggdjSongCatalog.trackSlot!(sav, r.index)!;
   }
   expect(listSongs(sav).length).toBe(1);
   expect(readSongBlock(sav, 0)).toEqual(block(14));
@@ -403,7 +405,7 @@ test("Save tracks its slot, a menu Load tracks its slot, and an in-cart load re-
   // The cart loaded BETA on its own FILES screen: unedited, byte-identical to slot 1. The watcher sees it.
   be.setRam(id, ramWith(image(2, "BETA", false)));
   systems.observeWorkingSongs();
-  expect(systems.workingSongImage(id)!.slot).toBe(1);
+  expect(systems.workingSongImage(id)!.slot!.index).toBe(1);
 
   // Edited: Save writes back over slot 1 instead of appending a second BETA.
   be.setRam(id, ramWith(image(5, "BETA")));
@@ -413,7 +415,7 @@ test("Save tracks its slot, a menu Load tracks its slot, and an in-cart load re-
 
   // A host-side Load of ALPHA retargets it to slot 0.
   expect(loadSongLive(be, systems, sys(), 0)).toBe(true);
-  expect(systems.workingSongImage(id)!.slot).toBe(0);
+  expect(systems.workingSongImage(id)!.slot!.index).toBe(0);
 });
 
 test("a save made against a battery the cart wrote meanwhile is rebuilt, not written blind over it", async () => {
@@ -432,4 +434,106 @@ test("a save made against a battery the cart wrote meanwhile is rebuilt, not wri
   };
   expect(await saveWorkingSong(be, systems, systems.systems()[0])).toEqual({ kind: "saved", index: 1, replaced: false });
   expect(listSongs(be.readSram(id)!).map((x) => x.name)).toEqual(["CARTS", "LIVE"]);
+});
+
+// --- second review: the tracked slot must still hold the song it was tracked as ------------------------
+
+test("an in-cart FILES CLEAR that renumbers slots cannot make Save overwrite the song that moved in", () => {
+  // Executed against the index + name rule: [untitled A, untitled B], A tracked at slot 0, A edited, the
+  // user CLEARs slot 0 in the cart so B moves to 0 - and Save wrote the edited A over B.
+  const { be, systems, id } = smsProject();
+  be.setSram(id, buildSav([{ block: block(1), name: "" }, { block: block(2), name: "" }], CART)!);
+  be.setRam(id, ramWith(image(1, "", false)));
+  systems.observeWorkingSongs();
+  expect(systems.workingSongImage(id)!.slot!.index).toBe(0);
+
+  be.setRam(id, ramWith(image(5, ""))); // edited
+  be.setSram(id, buildSav([{ block: block(2), name: "" }], CART)!); // the cart's own CLEAR of slot 0
+  const r = smsggdjSongCatalog.commitWorkingSong!(be.readSram(id)!, systems.workingSongImage(id)!);
+  if (!r.ok) throw new Error(`refused: ${r.reason}`);
+  expect(r.replaced).toBe(false); // appended
+  expect(readSongBlock(r.sav, 0)).toEqual(block(2)); // B survives
+});
+
+test("an in-cart NEW drops the tracked slot, so saving the new song cannot overwrite the loaded one", () => {
+  // Executed against the half-second poll: load untitled A, NEW in the cart, compose, Save - and A was
+  // overwritten, because the tracked slot only ever moved on a MATCH and a fresh song matches nothing.
+  const { be, systems, id } = smsProject();
+  be.setSram(id, buildSav([{ block: block(1), name: "" }], CART)!);
+  be.setRam(id, ramWith(image(1, "", false)));
+  systems.observeWorkingSongs();
+  expect(systems.workingSongImage(id)!.slot!.index).toBe(0);
+
+  be.setRam(id, ramWith({ block: new Uint8Array(SMDJ4_BLOCK_LEN), name: nameBytes(""), echo: new Uint8Array(8), edited: false }));
+  systems.observeWorkingSongs(); // the next frame: a clean song in no slot
+  expect(systems.workingSongImage(id)!.slot).toBe(undefined);
+});
+
+test("a write that lands, then a cart write before the poll looks, still finishes the save", async () => {
+  // Read as a conflict; the retry then found the song already saved and returned "clean" - leaving the
+  // cart's UNSAVED flag set forever and the slot untracked, so the next save appended a duplicate.
+  const { be, systems, id } = smsProject();
+  be.setRam(id, ramWith(image(4, "LIVE")));
+  const real = be.writeSram.bind(be);
+  let once = false;
+  be.writeSram = (i, off, bytes, expect) => {
+    const ok = real(i, off, bytes, expect);
+    if (!once) {
+      once = true;
+      const after = be.readSram(id)!.slice();
+      after[0x3f00] ^= 0x5a; // the cart touches its battery (outside the song heap) right after ours lands
+      be.setSram(id, after);
+    }
+    return ok;
+  };
+  const r = await saveWorkingSong(be, systems, systems.systems()[0]);
+  expect(r).toEqual({ kind: "saved", index: 0, replaced: false });
+  expect(be.readRam(id)![layout.edited]).toBe(0);
+  expect(systems.workingSongImage(id)!.slot!.index).toBe(0);
+});
+
+test("the tracked slot is persisted with the project, so a reopened session saves back over it", () => {
+  // A DAW session reopens from a savestate with the song already edited, so nothing re-derives the slot;
+  // in memory only, every reopen-edit-save cycle appended another copy.
+  const { be, project, systems, id } = smsProject();
+  be.setSram(id, buildSav([{ block: block(1), name: "ALPHA" }], CART)!);
+  be.setRam(id, ramWith(image(1, "ALPHA", false)));
+  systems.observeWorkingSongs();
+  const zip = project.exportBytes()!;
+  expect(project.loadBytes(zip).kind).toBe("loaded");
+  const reopened = systems.systems()[0];
+  expect(reopened.workingSlot!.index).toBe(0);
+  expect(reopened.workingSlot!.fingerprint).toBe(smsggdjSongCatalog.trackSlot!(buildSav([{ block: block(1), name: "ALPHA" }], CART)!, 0)!.fingerprint);
+});
+
+test("a working song still being carried when the project is exported lands after the export is loaded", () => {
+  // The savestate of a cart inside a reset's boot window holds the BLANK song; a DAW saving its session then
+  // (or with the editor closed, so nothing settles it) lost the song on reopen.
+  const { be, project, systems, id } = smsProject();
+  be.setRam(id, ramWith(image(8, "CARRIED")));
+  const newId = systems.reset(id)!;
+  expect(systems.pendingCarry(newId) != null).toBe(true);
+  const zip = project.exportBytes()!;
+
+  expect(project.loadBytes(zip).kind).toBe("loaded");
+  const reopened = systems.systems()[0].id;
+  expect(systems.pendingCarry(reopened)!.block).toEqual(block(8));
+  be.setRam(reopened, smsggdjRam());
+  systems.settleCarries();
+  expect(be.readRam(reopened)!.subarray(0, SMDJ4_BLOCK_LEN)).toEqual(block(8));
+  expect(be.readRam(reopened)![layout.edited]).toBe(1);
+});
+
+test("the archived working song round-trips byte for byte, and anything else decodes to nothing", () => {
+  const song: WorkingSongImage = { ...image(3, "RT"), settings: Uint8Array.of(1, 2, 3, 4, 5, 6, 7), slot: { index: 4, fingerprint: 0xdeadbeef } };
+  const back = decodeWorkingSong(encodeWorkingSong(song))!;
+  expect(back.block).toEqual(song.block);
+  expect(back.name).toEqual(song.name);
+  expect(back.settings).toEqual(song.settings);
+  expect(back.slot).toEqual(song.slot);
+  expect(back.edited).toBe(true);
+  const bad = encodeWorkingSong(song);
+  bad[4] = 2; // a newer version
+  expect(decodeWorkingSong(bad)).toBe(null);
+  expect(decodeWorkingSong(encodeWorkingSong(song).subarray(0, 100))).toBe(null);
 });

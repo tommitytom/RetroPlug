@@ -96,7 +96,6 @@ import type { HostBackend, ControlPlaneBackend } from "../../../src/backend";
 import { openPath } from "../../lvgl/openPath";
 import { startSystemRender, renderBaseName, validSplits, formatDuration } from "../../lvgl/render";
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
-import { flushDirtySram } from "../../../src/sramAutoSave";
 import { hasUnsavedChanges, unsavedChanges } from "../../../src/unsavedChanges";
 import { SONG_BLOCKED } from "../../lvgl/unsavedRows";
 import type { FileBrowserOpts } from "../../../src/backend";
@@ -919,6 +918,8 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   // SMS/GG-only core knobs (same "mesen" role, gated on platform for the same reason as above).
   // FM Audio is read only at construct (configureSms runs before LoadRom) and has no live path, so storing
   // it alone changed nothing until the next boot. It resets, then - and Reset carries the working song.
+  // On Game Gear too: stock hardware has no YM2413, but Mesen's Game Gear port map falls through to the
+  // SMS ports (WriteGameGearPort's default) and so reaches it, and smsggdj drives it there for GG FM mods.
   if (sys.platform === "sms" || sys.platform === "gg") {
     const cfg = mesenConfig(sys);
     items.push(
@@ -2093,10 +2094,11 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
     // saved everything except the battery.
     if (project.currentPath()) items.push(action("proj-save", saveProjectLabel(ctx), () => void saveProjectInteractive(ctx.stores)));
     items.push(action("proj-saveas", "Save Project As...", () =>
-      browseThen(ctx, { title: "Save Project", patterns: PROJECT_PATTERNS, saving: true, defaultName: "project.rplg" }, (p) => {
-        flushDirtySram(ctx.stores.backend, project.systems.systems());
-        project.save(p);
-      }),
+      // Through the same save as every other route, so an unsaved work-RAM working song is saved into its
+      // battery first - flushing and saving directly here skipped it, and the user believed they had saved.
+      browseThen(ctx, { title: "Save Project", patterns: PROJECT_PATTERNS, saving: true, defaultName: "project.rplg" }, (p) =>
+        void saveProjectInteractive(ctx.stores, p),
+      ),
     ));
     items.push(action("proj-export", "Export Zip...", () =>
       browseThen(ctx, { title: "Export Zip", patterns: ZIP_PATTERNS, saving: true, defaultName: "project.rplg.zip" }, (p) => project.export(p)),

@@ -328,6 +328,15 @@ export function savedSlotOf(sav: Uint8Array, block: Uint8Array): number {
   return -1;
 }
 
+/** A 32-bit FNV-1a over a decoded song block: what identifies "the song that was in this slot" for the
+ *  host's slot tracking. The directory's own 16-bit sum is too weak for that job - two untitled songs
+ *  colliding on it would let a Save overwrite the wrong one. */
+export function songFingerprint(block: Uint8Array): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < block.length; i++) h = Math.imul(h ^ block[i], 0x01000193) >>> 0;
+  return h;
+}
+
 /** `config_save` (engine.asm) as a NEW image: "CF", the seven settings in the cart's order (palette,
  *  sync, video, FM, CONT, key delay, key speed), then their 8-bit sum. The cart writes this on every
  *  SAVE; a host-side save that skipped it would boot back into whatever options the cart last saved. */

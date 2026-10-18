@@ -32,12 +32,7 @@ import type { RoleRegistry, RoleInstance } from "./systemRoles";
 import { blipToasterChip, needsChipLabelScan, BLIPTOASTER_CHIP_SCAN_LEN } from "./bliptoaster/romDetect";
 import { roleConfigForNative, LsdjSyncMode } from "./settingsEnums";
 import { resolveSongCatalog, resolveTracker } from "./tracker/trackerIntegration";
-import type { WorkingSongImage } from "./tracker/songCatalog";
-
-// How long a carried working song waits for the rebooted cart to come up, in settle ticks (the UI settles
-// once per frame, so ~15 s at 60 fps) - ProjectStore's SONG_REQUEST_BUDGET, for the same reason: a cart
-// that never boots is not going to, and a write that waits forever lands in some unrelated later session.
-const CARRY_BUDGET = 900;
+import type { TrackedSlot, WorkingSongImage } from "./tracker/songCatalog";
 
 // How much ROM header to read for the role providers (title lives at 0x134).
 const ROLE_HEADER_LEN = 0x150;
@@ -126,11 +121,14 @@ export class SystemsStore {
   // Whether a core teardown writes the battery to disk first. Off only for an offline render.
   private batteryFlush = true;
   // Working songs being carried across a reboot, keyed by the NEW system id - see carryWorkingSong.
-  private carries = new Map<number, { song: WorkingSongImage; ticks: number }>();
+  // No time budget: a carry is keyed by a system id, which dies with its system, so one that waits can
+  // only ever land in the cart it was made for. (A budget used to drop it after ~15 s of UI frames, which
+  // a host that stops processing audio - the cart frozen mid-boot - spent without the cart moving at all.)
+  private carries = new Map<number, { song: WorkingSongImage }>();
+  // The content fingerprint of each system's last OBSERVED clean working song - see observeWorkingSongs.
+  private observed = new Map<number, number>();
   // Old id -> the id its in-place replacement was built under - see currentId.
   private successors = new Map<number, number>();
-  // The saved slot each system's working song came from or was last saved into - see noteSongSlot.
-  private songSlots = new Map<number, number>();
 
   constructor(
     private readonly backend: ControlPlaneBackend,
@@ -341,7 +339,7 @@ export class SystemsStore {
     this.backend.removeSystem(id);
     this.entries = removeById(this.entries, id);
     this.carries.delete(id);
-    this.songSlots.delete(id);
+    this.observed.delete(id);
     this.focusedId = nextFocusAfterRemove(this.entries, id, this.focusedId);
     this.markDirty();
     return true;
@@ -503,33 +501,51 @@ export class SystemsStore {
     if (!catalog?.readWorkingSong) return null;
     const ram = this.backend.readRam(id);
     const song = ram ? catalog.readWorkingSong(ram) : null;
-    const slot = this.songSlots.get(id);
-    return song && slot !== undefined ? { ...song, slot } : song;
+    return song && e!.workingSlot ? { ...song, slot: e!.workingSlot } : song;
   }
 
-  /** Record that system `id`'s working song is the saved song at `slot` - it was just loaded from there,
-   *  or saved into it. What a later Save writes back over instead of appending a copy. */
-  noteSongSlot(id: number, slot: number): void {
-    this.songSlots.set(id, slot);
-    const pending = this.carries.get(id);
-    if (pending) pending.song = { ...pending.song, slot };
+  /** Record that system `id`'s working song is the saved song at `index` - it was just loaded from there,
+   *  or saved into it - as the battery holds that slot NOW. What a later Save writes back over instead of
+   *  appending a copy. Stored on the system, so it is persisted with the project and survives a reset or
+   *  a savestate restore; it is bookkeeping, not an edit, so it does not dirty the project. */
+  noteSongSlot(id: number, index: number): void {
+    const e = findById(this.entries, id);
+    const sram = e ? this.backend.readSram(id) : null;
+    const slot = e && sram ? (resolveSongCatalog(e.roles)?.trackSlot?.(sram, index) ?? null) : null;
+    this.setWorkingSlot(id, slot ?? undefined);
   }
 
-  /** Re-sync each tracked slot with what the cart did ITSELF. A song the cart reports unedited and that
-   *  matches a saved slot byte for byte was just loaded or saved on the cart's own screens, which the host
-   *  never hears about otherwise - so that slot is now the one a Save means. Polled from the song watcher. */
+  /** Keep each tracked slot true to what the cart did ITSELF, every frame (the UI calls it per frame).
+   *  Only an UNEDITED song says anything: the cart clears its unsaved flag exactly when its working song
+   *  is replaced wholesale - its own LOAD, SAVE, NEW. Then the song either matches a saved slot (track
+   *  it) or matches none (a NEW song, or one from outside the battery: track nothing, so Save appends).
+   *  It has to run this often, not on the half-second song poll: an in-cart NEW followed by an edit
+   *  inside one poll interval kept the OLD slot, and Save then wrote the new song over the old one.
+   *  Cheap while nothing changes: a work-RAM snapshot and a fingerprint, the battery read only when the
+   *  clean song's content moves. */
   observeWorkingSongs(): void {
     for (const e of this.entries) {
       if (this.carries.has(e.id)) continue; // the booting cart holds nothing of its own yet
       const catalog = resolveSongCatalog(e.roles);
-      if (!catalog?.readWorkingSong || !catalog.slotOfCleanSong) continue;
+      if (!catalog?.readWorkingSong || !catalog.slotOfCleanSong || !catalog.fingerprintOf) continue;
       const ram = this.backend.readRam(e.id);
-      const sram = this.backend.readSram(e.id);
       const song = ram ? catalog.readWorkingSong(ram) : null;
-      if (!song || !sram) continue;
-      const slot = catalog.slotOfCleanSong(sram, song);
-      if (slot >= 0) this.songSlots.set(e.id, slot);
+      if (!song || song.edited) continue;
+      const fp = catalog.fingerprintOf(song);
+      if (this.observed.get(e.id) === fp) continue;
+      const sram = this.backend.readSram(e.id);
+      if (!sram) continue;
+      this.observed.set(e.id, fp);
+      this.setWorkingSlot(e.id, catalog.slotOfCleanSong(sram, { ...song, slot: e.workingSlot }) ?? undefined);
     }
+  }
+
+  /** Set (or clear) a system's tracked slot - quietly: no dirty, no change signal (nothing renders it). */
+  private setWorkingSlot(id: number, slot: TrackedSlot | undefined): void {
+    const e = findById(this.entries, id);
+    if (e) this.entries = replaceById(this.entries, id, { ...e, workingSlot: slot });
+    const pending = this.carries.get(id);
+    if (pending) pending.song = { ...pending.song, slot };
   }
 
   /** The song a carry for `id` is holding has just been saved into the battery, so when it lands it
@@ -543,9 +559,14 @@ export class SystemsStore {
     return this.carries.size > 0;
   }
 
+  /** The working song system `id` is still waiting to have put back - for a project export made inside
+   *  the boot window, whose savestate holds the blank cart and would otherwise lose it. */
+  pendingCarry(id: number): WorkingSongImage | null {
+    return this.carries.get(id)?.song ?? null;
+  }
+
   /** Write every parked working song whose cart has finished booting back into it. Called once per frame
-   *  by the UI while any are parked; a carry whose system has gone, or whose cart never boots inside the
-   *  budget, is dropped (the latter with a warning). */
+   *  by the UI while any are parked; a carry whose system has gone is dropped. */
   settleCarries(): void {
     for (const [id, c] of this.carries) {
       const e = findById(this.entries, id);
@@ -556,15 +577,9 @@ export class SystemsStore {
         continue;
       }
       const ram = this.backend.readRam(id) ?? undefined;
-      if (!catalog.workingSongReady?.(ram)) {
-        if (++c.ticks > CARRY_BUDGET) {
-          console.warn(`[systems] working song for system ${id} dropped: the cart never finished booting`);
-          this.carries.delete(id);
-        }
-        continue;
-      }
+      if (!catalog.workingSongReady?.(ram)) continue;
       this.carries.delete(id);
-      if (c.song.slot !== undefined) this.songSlots.set(id, c.song.slot);
+      this.setWorkingSlot(id, c.song.slot);
       const rom = e.romPath ? this.backend.readFile(e.romPath) : null;
       const writes = rom ? tracker.restoreWorkingSong(rom, c.song, ram) : null;
       if (!writes) {
@@ -584,7 +599,7 @@ export class SystemsStore {
   }
 
   private carryWorkingSong(newId: number | null, song: WorkingSongImage | null): number | null {
-    if (newId !== null && song) this.carries.set(newId, { song, ticks: 0 });
+    if (newId !== null && song) this.carries.set(newId, { song });
     return newId;
   }
 
@@ -705,7 +720,7 @@ export class SystemsStore {
     this.focusedId = 0;
     this.carries.clear();
     this.successors.clear();
-    this.songSlots.clear();
+    this.observed.clear();
   }
 
   /** Reconstruct one system from a serialized config entry, preserving its EXACT
@@ -729,8 +744,11 @@ export class SystemsStore {
       embeddedRom?: string;
       settings?: Partial<CommonSettings>;
       roles?: RoleInstance[];
+      workingSlot?: TrackedSlot;
     },
-    blobs?: { sramBytes?: Uint8Array; stateBytes?: Uint8Array },
+    // `song`: a working song the exported project was still carrying across a reboot (see
+    // ProjectStore.buildArchive) - parked again on the adopted system, to land once its cart is up.
+    blobs?: { sramBytes?: Uint8Array; stateBytes?: Uint8Array; song?: WorkingSongImage },
   ): number | null {
     const embeddedRom = config.embeddedRom ?? "";
     const romPath = config.romPath ?? "";
@@ -774,9 +792,11 @@ export class SystemsStore {
     const settings = commonSettingsSchema.parse(config.settings ?? {}) as CommonSettings;
     const wasEmpty = this.entries.length === 0;
     const battery = this.detectBattery(romPath, embeddedRom, platform);
-    this.entries = appendEntry(this.entries, { id, platform, core, romPath, savPath: override, savSuffix, embeddedRom, battery, settings, roles });
+    const workingSlot = config.workingSlot ? { ...config.workingSlot } : undefined;
+    this.entries = appendEntry(this.entries, { id, platform, core, romPath, savPath: override, savSuffix, embeddedRom, battery, settings, roles, workingSlot });
     if (wasEmpty) this.focusedId = id;
     this.syncSerialOutCapture(id); // a loaded project may carry a system already in MIDIOUT mode
+    if (blobs?.song) this.carryWorkingSong(id, { ...blobs.song, slot: blobs.song.slot ?? workingSlot });
     return id;
   }
 
