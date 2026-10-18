@@ -195,7 +195,7 @@ function newSmsCart() {
   // `edited` is the cart's own song_edited flag - the thing that separates "typed for an hour" from
   // "this is what the cart booted into", which content alone cannot tell apart. `booted` is its
   // ints_on latch: false is the boot window, where nothing in work RAM is the cart's yet.
-  const setWorking = (b: Uint8Array, opts: { edited?: boolean; booted?: boolean } = {}): void => {
+  const setWorking = (b: Uint8Array, opts: { edited?: boolean; booted?: boolean; name?: string } = {}): void => {
     be.setRam(id, smsggdjRam({ block: b, ...opts }));
   };
   return { be, systems, sys: () => systems.systems()[0], block, setWorking };
@@ -259,7 +259,9 @@ test("savEditWouldDiscard: a battery edit warns on the console whose working son
   // Replace are every bit as destructive as Load and have to ask first.
   const { systems, sys, block, setWorking } = newSmsCart();
 
-  setWorking(block(2), { edited: true }); // working song IS the saved BETA - the reboot costs nothing
+  // The working song IS the saved BETA - block AND name, as a cart that loaded it holds - so the reboot
+  // costs nothing. (The whole song has to match: an echo or name edit is an edit.)
+  setWorking(block(2), { edited: true, name: "BETA" });
   expect(savEditWouldDiscard(systems, sys())).toBe(false);
 
   const edited = block(2);

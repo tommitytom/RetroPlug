@@ -11,7 +11,7 @@ import { SystemsStore } from "../../src/systemsStore";
 import { buildAppRegistry } from "../../src/appHost";
 import { hasUnsavedChanges, unsavedChanges } from "../../src/unsavedChanges";
 import { unsavedLabel } from "../../ui/lvgl/unsavedRows";
-import { saveWorkingSong, loadSongLive } from "../../src/tracker/liveSav";
+import { saveWorkingSong, loadSongLive, songLoadByNameWouldDiscard } from "../../src/tracker/liveSav";
 import { smsggdjSongCatalog } from "../../src/tracker/smsggdjSongCatalog";
 import { resolveSmsggdjLayout } from "../../src/smsggdj/runtime/layout";
 import {
@@ -29,6 +29,7 @@ import {
 } from "../../src/smsggdj/codec/sav";
 import type { TrackedSlot, WorkingSongImage } from "../../src/tracker/songCatalog";
 import { encodeWorkingSong, decodeWorkingSong } from "../../src/tracker/workingSongBlob";
+import { setCurSlot as setCurSlotFor } from "../../src/smsggdj/codec/sav";
 import { smsggdjRom, smsggdjRam } from "../systems/fixtures";
 import { composeAppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
@@ -536,4 +537,154 @@ test("the archived working song round-trips byte for byte, and anything else dec
   bad[4] = 2; // a newer version
   expect(decodeWorkingSong(bad)).toBe(null);
   expect(decodeWorkingSong(encodeWorkingSong(song).subarray(0, 100))).toBe(null);
+});
+
+// --- third review ---------------------------------------------------------------------------------------
+
+/** Find a menu row by id anywhere under `items`. */
+function findRow(items: MenuItem[], id: string): MenuItem | undefined {
+  for (const i of items) {
+    if (i.id === id) return i;
+    const hit = i.children ? findRow(i.children, id) : undefined;
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+/** The audio thread, for a test: writeRam queued and applied only when the "block" runs. */
+function deferRamWrites(be: MockBackend): () => void {
+  const queue: [number, number, Uint8Array][] = [];
+  const real = be.writeRam.bind(be);
+  be.writeRam = (id, off, bytes) => {
+    queue.push([id, off, bytes.slice()]);
+    return true;
+  };
+  return () => {
+    for (const [id, off, bytes] of queue.splice(0)) real(id, off, bytes);
+  };
+}
+
+test("Load State drops the tracked slot, so Save cannot overwrite the song it used to name", () => {
+  // Executed against 42233ca9: [untitled A, KEEP], A loaded and tracked at 0, Load State of an edited
+  // untitled B - the slot survived the rebuild, both checks passed, and Save wrote B over A.
+  const { be, systems, id } = smsProject();
+  be.setSram(id, buildSav([{ block: block(1), name: "" }, { block: block(2), name: "KEEP" }], CART)!);
+  be.setRam(id, ramWith(image(1, "", false)));
+  systems.observeWorkingSongs();
+  expect(systems.workingSongImage(id)!.slot!.index).toBe(0);
+  be.seed("/states/b.ss0", new Uint8Array(16));
+  const newId = systems.loadState(id, "/states/b.ss0")!;
+  be.setRam(newId, ramWith(image(7, ""))); // the restored, edited B
+  be.setSram(newId, be.readSram(id) ?? buildSav([{ block: block(1), name: "" }, { block: block(2), name: "KEEP" }], CART)!);
+  const r = smsggdjSongCatalog.commitWorkingSong!(be.readSram(newId)!, systems.workingSongImage(newId)!);
+  if (!r.ok) throw new Error(`refused: ${r.reason}`);
+  expect(r.replaced).toBe(false);
+  expect(readSongBlock(r.sav, 0)).toEqual(block(1)); // A survives
+});
+
+test("a reset keeps the tracked slot through the frame its carry is still landing", () => {
+  // Executed against 42233ca9: settleCarries queued the restore and observe ran the same frame, saw the
+  // blank booted song (clean, in no slot), and cleared the slot just restored - the next Save appended.
+  const { be, systems, id } = smsProject();
+  be.setSram(id, buildSav([{ block: block(1), name: "ALPHA" }, { block: block(2), name: "BETA" }], CART)!);
+  be.setRam(id, ramWith(image(2, "BETA", false)));
+  systems.observeWorkingSongs();
+  be.setRam(id, ramWith(image(5, "BETA"))); // edited
+  const newId = systems.reset(id)!;
+  be.setSram(newId, be.readSram(id) ?? buildSav([{ block: block(1), name: "ALPHA" }, { block: block(2), name: "BETA" }], CART)!);
+  const block_ = deferRamWrites(be);
+  be.setRam(newId, smsggdjRam()); // booted blank
+  systems.settleCarries();
+  systems.observeWorkingSongs(); // same frame: the writes have not landed
+  block_(); // the audio block
+  systems.observeWorkingSongs();
+  expect(systems.workingSongImage(newId)!.slot!.index).toBe(1);
+  const r = smsggdjSongCatalog.commitWorkingSong!(be.readSram(newId)!, systems.workingSongImage(newId)!);
+  if (!r.ok) throw new Error(`refused: ${r.reason}`);
+  expect(r.replaced).toBe(true);
+  expect(listSongs(r.sav).length).toBe(2);
+});
+
+test("an echo-only edit is an unsaved change, and Save stores the echo", async () => {
+  // The block is unchanged, and isSongSaved compared only the block - so an edit on the cart's ECHO
+  // screen (which sets song_edited) read as saved: no prompt, Save did nothing, the echo was lost.
+  const { be, systems, project, id } = smsProject();
+  be.setSram(id, buildSav([{ block: block(1), name: "ALPHA" }], CART)!);
+  be.seed("/roms/smsggdj.sav", be.readSram(id)!);
+  be.setRam(id, ramWith(image(1, "ALPHA", false)));
+  systems.observeWorkingSongs();
+  const echo = Uint8Array.of(2, 4, 8, 0, 0, 0, 0, 0);
+  be.setRam(id, ramWith(image(1, "ALPHA", true, echo)));
+  expect(hasUnsavedChanges(be, project)).toBe(true);
+  expect(await saveWorkingSong(be, systems, systems.systems()[0])).toEqual({ kind: "saved", index: 0, replaced: true });
+  expect(readSongEcho(be.readSram(id)!, 0)).toEqual(echo);
+});
+
+test("the Songs menu still guards its rows while a reset is carrying the song back", () => {
+  // Inside the boot window the cart holds nothing, and a RAM-only check made Move Up a plain action: it
+  // cold-booted the cart, the carry's id died with the old core, and the song was gone.
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/smsggdj.sms", smsggdjRom("0.45"));
+  stores.project.systems.loadRom("/roms/smsggdj.sms");
+  const id = stores.project.systems.view()[0].id;
+  const two = buildSav([{ block: block(1), name: "ALPHA" }, { block: block(2), name: "BETA" }], CART)!;
+  be.setSram(id, two);
+  be.setRam(id, ramWith(image(5, "MINE")));
+  const newId = stores.project.systems.reset(id)!;
+  be.setSram(newId, two);
+  be.setRam(newId, smsggdjRam({ booted: false }));
+  const ctx: MenuContext = {
+    stores,
+    settings: stores.project.settings(),
+    userConfig: stores.userConfig.config(),
+    bindings: stores.bindings.resolvedBindings(),
+    systems: stores.project.systems.view(),
+    recent: stores.recent.view(),
+    version: "",
+    newProject: () => {},
+    loadProject: () => {},
+    loadRomAsProject: () => {},
+    requestExit: () => {},
+    openLsdjHd: () => {},
+    beginSongImport: () => {},
+  };
+  const sys = stores.project.systems.view().find((x) => x.id === newId)!;
+  const up = findRow(buildInstanceMenu({ ...ctx, system: sys }).items, "smsggdj-song-1-up");
+  expect(up?.kind).toBe("prompt");
+});
+
+test("a Recent request for the last SAVED song still asks before replacing an unrelated unsaved one", () => {
+  // cur_slot names the last song saved, and the no-op check read it instead of the cart: a request for
+  // that song looked like "already loaded" and replaced the unsaved working song with no prompt.
+  const { be, systems, id } = smsProject();
+  be.setSram(id, setCurSlotFor(buildSav([{ block: block(1), name: "ALPHA" }], CART)!, 0)!);
+  be.setRam(id, ramWith(image(9, "MINE")));
+  expect(songLoadByNameWouldDiscard(systems, systems.systems()[0], "ALPHA")).toBe(true);
+});
+
+test("a song request waits for a reset's carry to land instead of being overwritten by it", () => {
+  const { be, project, systems, id } = smsProject();
+  be.setSram(id, buildSav([{ block: block(1), name: "ALPHA" }], CART)!);
+  be.setRam(id, ramWith(image(5, "MINE")));
+  const newId = systems.reset(id)!;
+  be.setSram(newId, buildSav([{ block: block(1), name: "ALPHA" }], CART)!);
+  be.setRam(newId, smsggdjRam());
+  project.requestSong({ name: "ALPHA", confirmed: false });
+  expect(project.settleSong()).toBe("waiting"); // the carry has not landed
+  systems.settleCarries();
+  systems.observeWorkingSongs();
+  // Landed: the carried MINE is the working song, unsaved - so the request now asks first.
+  const r = project.settleSong();
+  expect(typeof r === "object" && r.kind === "discard").toBe(true);
+});
+
+test("an export just after a carry lands still ships the song, since the savestate lags behind", () => {
+  const { be, systems, id } = smsProject();
+  be.setRam(id, ramWith(image(8, "CARRIED")));
+  const newId = systems.reset(id)!;
+  be.setRam(newId, smsggdjRam());
+  systems.settleCarries();
+  expect(systems.pendingCarry(newId)).toBe(null);
+  expect(systems.exportableWorkingSong(newId)!.block).toEqual(block(8)); // read live: the restore landed
 });

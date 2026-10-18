@@ -34,7 +34,6 @@ import {
 import {
   listSongs,
   isSmsggdjSav,
-  isSongSaved,
   curSlot,
   setCurSlot,
   deleteSong,
@@ -125,13 +124,33 @@ function slotOfCleanSong(sav: Uint8Array, song: WorkingSongImage): TrackedSlot |
   if (song.slot && song.slot.fingerprint === fingerprint && trackSlot(sav, song.slot.index)?.fingerprint === fingerprint) {
     return song.slot;
   }
-  const index = savedSlotOf(packDirectory(sav), song.block);
+  const index = savedSlotOf(packDirectory(sav), song.block, metaOf(song));
   return index >= 0 ? { index, fingerprint } : null;
+}
+
+/** The per-song metadata the cart saves beside the block, in the form savedSlotOf compares. */
+function metaOf(song: WorkingSongImage): { echo: Uint8Array; name: string } {
+  return { echo: song.echo, name: displayName(song.name) };
+}
+
+/** A cheap signal that the working song's content changed, for the per-frame watcher: a 32-bit sum of the
+ *  block's words, folded with the name. Not an identity (savedSlotOf / songFingerprint decide that) - it
+ *  only gates the expensive work, and a full FNV every frame measured ~0.4 ms on x86. */
+function changeSignal(song: WorkingSongImage): number {
+  const b = song.block;
+  const words = new Uint32Array(b.buffer, b.byteOffset, b.byteOffset % 4 === 0 ? b.length >> 2 : 0);
+  let h = 0;
+  if (words.length) for (let i = 0; i < words.length; i++) h = (h + words[i]) | 0;
+  else for (let i = 0; i < b.length; i++) h = (h + (b[i] << ((i & 3) * 8))) | 0;
+  for (let i = 0; i < song.name.length; i++) h = Math.imul(h ^ song.name[i], 0x01000193);
+  return h >>> 0;
 }
 
 function imageDirty(sav: Uint8Array, song: WorkingSongImage): boolean {
   if (!song.edited) return false;
-  return !isSmsggdjSav(sav) || !isSongSaved(sav, song.block);
+  // The whole song, not just its block: an echo or name change is a real edit (the cart's ECHO screen sets
+  // song_edited) that the block alone cannot see, and calling it saved lost it with no prompt.
+  return !isSmsggdjSav(sav) || savedSlotOf(packDirectory(sav), song.block, metaOf(song)) < 0;
 }
 
 /** The name the cart displays, for matching against a directory entry: up to the first NUL, trailing
@@ -251,7 +270,7 @@ export const smsggdjSongCatalog: SongCatalog = {
   commitWorkingSong,
   slotOfCleanSong,
   trackSlot,
-  fingerprintOf: (song) => songFingerprint(song.block),
+  fingerprintOf: changeSignal,
   // `song_edited = 0`, exactly what the cart's own save does (rle.asm:817).
   workingSongSavedWrites: () => {
     const at = commonSongEditedOffset();

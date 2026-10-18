@@ -37,7 +37,7 @@ const SRAM_PATTERNS = SAV_PATTERNS; // .sav / .srm battery saves
 // One overlay at a time: a discard confirm before a destructive New/Load, an OK notice, or the relink
 // prompt for a project that loaded with files missing.
 type PendingModal =
-  | { kind: "confirm"; proceed: () => void }
+  | { kind: "confirm"; proceed: () => void; saving?: boolean }
   | { kind: "notice"; title: string; body: string }
   | { kind: "relink"; missing: MissingFile[] }
   // A recent SONG row's load, when the cart it lands on holds uncommitted working-song work. The row asked
@@ -196,10 +196,15 @@ export function useProjectModals(stores: AppStores): ProjectModals {
   };
 
   // The New / Load confirm's Save: the same rule - a dismissal while it saves cancels what follows it.
+  // While it runs, Don't Save is inert: pressed mid-save it used to proceed (start the new project) and
+  // the save then resumed and wrote the NEW, empty project over the user's .rplg.
   const saveThen = (proceed: () => void): void => {
     const epoch = modalEpoch.current;
+    setPending({ kind: "confirm", proceed, saving: true });
     void saveProjectInteractive(stores).then((saved) => {
-      if (saved && modalEpoch.current === epoch) proceed();
+      if (modalEpoch.current !== epoch) return;
+      if (saved) proceed();
+      else setPending({ kind: "confirm", proceed }); // cancelled Save-As or a refused song: choose again
     });
   };
 
@@ -230,15 +235,16 @@ function buildModal(
   const btn = (id: string, label: string, onSelect: () => void): MenuItem => ({ id, label, kind: "action", keepOpen: true, onSelect });
 
   if (pending.kind === "confirm") {
-    const { proceed } = pending;
+    const { proceed, saving } = pending;
+    const live = (onSelect: () => void) => (saving ? () => {} : onSelect);
     // Leads with WHAT is unsaved (the project file + each dirty battery's target .sav), greyed and skipped
     // by nav, so the user can see what Save writes / Don't Save throws away. Same block as the close guard.
     return {
       title: "Unsaved changes",
       items: [
         ...unsavedRows(stores.backend, stores.project),
-        btn("discard-save", "Save", () => saveThen(proceed)),
-        btn("discard-nosave", "Don't Save", proceed),
+        btn("discard-save", saving ? "Saving..." : "Save", live(() => saveThen(proceed))),
+        btn("discard-nosave", "Don't Save", live(proceed)),
         btn("discard-cancel", "Cancel", onClose),
       ],
     };

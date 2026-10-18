@@ -91,6 +91,7 @@ import {
   type AssetTypeInfo,
   type TrackerIntegration,
   savEditWouldDiscard,
+  songLoadWouldDiscard,
 } from "../../../src/tracker";
 import type { HostBackend, ControlPlaneBackend } from "../../../src/backend";
 import { openPath } from "../../lvgl/openPath";
@@ -1707,7 +1708,10 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
   // property of the working song, not of the row you're pointing at. Loading the song you're already on
   // still overwrites working memory from the stored slot, so every row is guarded, including that one.
   const ram = cat.workingSongOutsideBattery ? (ctx.stores.project.systems.readRam(sys.id) ?? undefined) : undefined;
-  const discards = bytes ? (cat.workingSongDirty?.(bytes, ram) ?? false) : false;
+  // Asked of the working song as an IMAGE (songLoadWouldDiscard), not of live RAM: inside a reset's boot
+  // window the cart holds nothing yet but the song being carried back is real, and a RAM-only check turned
+  // every row into a plain action there - Move Up then cold-booted the cart and dropped the carry.
+  const discards = bytes ? songLoadWouldDiscard(ctx.stores.project.systems, sys) : false;
   const workingLabel = (bytes ? cat.workingName(bytes, ram) : null) || "the working song";
   // Every row below rewrites the battery and cold-boots the cart. On a console whose working song lives
   // OUTSIDE the battery that boot destroys it, so Delete / Replace / Move are as destructive as Load -

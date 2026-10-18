@@ -1605,8 +1605,17 @@ not, and each lost an unsaved song without a word:
   tracked index + name: an in-cart FILES CLEAR shifts every later song down a slot, so two untitled songs
   let a Save write the edited A over the B that moved in; and the half-second poll missed an in-cart NEW
   followed quickly by an edit, so the new song overwrote the loaded one. The fingerprint closes the
-  first, the per-frame watcher the second. Residual: a NEW and an edit inside ONE frame (not humanly
-  reachable through the cart's menus) would still be read as the old song.
+  first, the per-frame watcher the second. A third pass found the slot's LIFETIME wrong: kept across Load
+  State / Load SRAM (a restored song then saved over the slot the old song came from) - a rebuild now
+  drops it, and only reset / reload hand it on inside the carried image; and cleared on the frame a
+  carry landed (the watcher saw the not-yet-overwritten blank and took it for an in-cart NEW) - the
+  watcher now waits for the restore to appear. The watcher gates on a cheap word-sum change signal and
+  computes the real fingerprint only when it moves (a full FNV per frame measured ~0.4 ms on x86).
+  Residual: a NEW and an edit inside ONE frame (not reachable through the cart's menus) would still be
+  read as the old song.
+- **"Saved" means the whole song.** The block, its echo settings and its displayed name all have to
+  match a slot. The cart's ECHO screen changes only the echo and sets `song_edited`; comparing the block
+  alone called that saved, so an echo edit got no prompt and Save stored nothing.
 - **A fresh cart.** The dirty check required an SMDJ4 directory, which a cart only writes on its first
   SAVE or visit to FILES (`rle_dir_ensure`) - so a new user's first song read as clean, everywhere. A battery with no directory now holds
   no songs, so an edited song on it is unsaved. Saving into it creates the directory
@@ -1625,7 +1634,9 @@ not, and each lost an unsaved song without a word:
   image answers for it, so a close inside the boot window still sees the song, and a project exported in
   that window (a DAW saving its session, possibly with the editor already closed so nothing settles the
   carry) ships it as a `systems/{i}/song` archive entry that loading parks again - the savestate beside
-  it holds the blank booting cart. A carry has no time limit: it is keyed by its system's id and dies
+  it holds the blank booting cart. So does an export in the ~2 s after it lands (the live song then),
+  because the savestate is only republished every 0.5 s. A song request (a Recent row, a Songs-menu
+  Load) waits until the carry has landed AND shown up in work RAM, then asks before discarding it. A carry has no time limit: it is keyed by its system's id and dies
   with it.
 - **Load SRAM, Load State, New SRAM, Replace / Remove Instance** replace what the cart holds, so a carry
   would be wrong; they confirm first when the song is unsaved. So does dropping a `.sav` or a ROM onto

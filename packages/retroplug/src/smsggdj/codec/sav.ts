@@ -316,12 +316,21 @@ export function packDirectory(sav: Uint8Array): Uint8Array {
 }
 
 /** The slot holding exactly `block`, or -1. isSongSaved's question with the answer kept: checksums
- *  narrow it, a full compare decides. The first match wins when two slots hold the same song. */
-export function savedSlotOf(sav: Uint8Array, block: Uint8Array): number {
+ *  narrow it, a full compare decides. The first match wins when two slots hold the same song.
+ *
+ *  `meta`, when given, must match too: the song's echo settings byte for byte and its name as the cart
+ *  displays it. Both live in the directory entry, outside the block, and the cart saves both per song -
+ *  so a song whose echo or name was changed and nothing else is NOT saved, though its block is. */
+export function savedSlotOf(sav: Uint8Array, block: Uint8Array, meta?: { echo: Uint8Array; name: string }): number {
   if (block.length !== SMDJ4_BLOCK_LEN) return -1;
   const want = blockChecksum(block);
   for (const s of listSongs(sav)) {
     if (storedChecksum(sav, s.index) !== want) continue;
+    if (meta) {
+      const e = entryAt(s.index) + E_ECHO;
+      if (!meta.echo.every((b, i) => i >= ECHO_LEN || sav[e + i] === b)) continue;
+      if (s.name !== meta.name) continue;
+    }
     const saved = readSongBlock(sav, s.index);
     if (saved && saved.every((b, i) => b === block[i])) return s.index;
   }

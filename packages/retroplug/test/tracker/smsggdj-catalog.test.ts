@@ -71,13 +71,18 @@ test("workingSongDirty needs work RAM, and says CLEAN when it has none", () => {
 test("a working song that matches a saved slot is clean; one that matches none is dirty", () => {
   const sav = twoSongs();
   // A running cart (booted), edited since its last save/load. The song block is at the base of work RAM.
-  const ram = smsggdjRam({ block: song(2), edited: true }); // exactly BETA
+  // Exactly BETA - its block and its name, as a cart that loaded BETA holds them. The name and echo are
+  // part of the song (the cart saves both per song), so a block match alone is not "saved".
+  const ram = smsggdjRam({ block: song(2), edited: true, name: "BETA" });
   expect(smsggdjSongCatalog.workingSongDirty!(sav, ram)).toBe(false);
 
   ram[5] ^= 0xff; // ...now edited, and saved nowhere
   expect(smsggdjSongCatalog.workingSongDirty!(sav, ram)).toBe(true);
 
-  ram.set(song(1), 0); // exactly ALPHA - a different slot, still saved
+  ram.set(song(1), 0); // ALPHA's block under BETA's name: a song saved nowhere
+  expect(smsggdjSongCatalog.workingSongDirty!(sav, ram)).toBe(true);
+  const at = resolveSmsggdjLayout("0.45")!;
+  ram.set(smsggdjRam({ name: "ALPHA" }).subarray(at.name, at.name + at.nameLen), at.name); // exactly ALPHA - still saved
   expect(smsggdjSongCatalog.workingSongDirty!(sav, ram)).toBe(false);
 });
 

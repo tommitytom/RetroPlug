@@ -319,7 +319,9 @@ export class ProjectStore {
     const sys = this.primarySystem();
     const catalog = sys ? resolveSongCatalog(sys.roles) : undefined;
     if (!sys || !catalog) return this.dropSongRequest();
-    if (!workingSongReady(this.systems, sys)) {
+    // A reset's carry still to land is the cart's song too: applied first, the request would be
+    // overwritten by it a frame later - the Load silently undone, the song "discarded" coming back.
+    if (!workingSongReady(this.systems, sys) || this.systems.isRestoringSong(sys.id)) {
       if (++req.ticks <= SONG_REQUEST_BUDGET) return "waiting";
       console.warn(`[project] song request ${req.name ?? `#${req.index}`} dropped: the cart never became ready`);
       return this.dropSongRequest();
@@ -563,9 +565,9 @@ export class ProjectStore {
       if (state && state.length) entries.push({ name: stateKey(i), bytes: state });
       const sram = this.backend.readSram(sys.id);
       if (sram && sram.length) entries.push({ name: sramKey(i), bytes: sram });
-      // Exported inside a reset's boot window, the savestate holds the blank cart: ship the song the reset
-      // is still carrying beside it, so loading the archive lands it after all.
-      const carried = this.systems.pendingCarry(sys.id);
+      // Exported inside a reset's boot window (or the half second after it, before the savestate catches
+      // up), the savestate holds the blank cart: ship the song beside it, so loading lands it after all.
+      const carried = this.systems.exportableWorkingSong(sys.id);
       if (carried) entries.push({ name: songKey(i), bytes: encodeWorkingSong(carried) });
     });
     return this.backend.zip(entries);

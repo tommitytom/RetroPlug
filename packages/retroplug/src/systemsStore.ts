@@ -34,6 +34,13 @@ import { roleConfigForNative, LsdjSyncMode } from "./settingsEnums";
 import { resolveSongCatalog, resolveTracker } from "./tracker/trackerIntegration";
 import type { TrackedSlot, WorkingSongImage } from "./tracker/songCatalog";
 
+// Frames the slot watcher waits for a landed carry's queued writes to appear before it trusts the cart
+// again; they normally appear on the next audio block, so this only bounds a cart that moved on.
+const LANDING_FRAMES = 120;
+// How long after a carry lands an export still ships the working song beside the savestate: longer than
+// the savestate's 0.5 s republish interval, with margin for a slow block thread.
+const LANDED_EXPORT_MS = 2000;
+
 // How much ROM header to read for the role providers (title lives at 0x134).
 const ROLE_HEADER_LEN = 0x150;
 
@@ -125,8 +132,14 @@ export class SystemsStore {
   // only ever land in the cart it was made for. (A budget used to drop it after ~15 s of UI frames, which
   // a host that stops processing audio - the cart frozen mid-boot - spent without the cart moving at all.)
   private carries = new Map<number, { song: WorkingSongImage }>();
-  // The content fingerprint of each system's last OBSERVED clean working song - see observeWorkingSongs.
+  // The change signal of each system's last OBSERVED clean working song - see observeWorkingSongs.
   private observed = new Map<number, number>();
+  // A carry's writes are queued, so for a block or so the cart still holds the blank song it booted into.
+  // Until the restored song shows up, the watcher must not read that blank as an in-cart NEW and drop the
+  // slot the carry just restored. id -> the restored song's change signal + frames waited.
+  private landing = new Map<number, { signal: number; frames: number }>();
+  // When each system's last carry landed - see exportableWorkingSong.
+  private landedAt = new Map<number, number>();
   // Old id -> the id its in-place replacement was built under - see currentId.
   private successors = new Map<number, number>();
 
@@ -340,6 +353,8 @@ export class SystemsStore {
     this.entries = removeById(this.entries, id);
     this.carries.delete(id);
     this.observed.delete(id);
+    this.landing.delete(id);
+    this.landedAt.delete(id);
     this.focusedId = nextFocusAfterRemove(this.entries, id, this.focusedId);
     this.markDirty();
     return true;
@@ -388,7 +403,11 @@ export class SystemsStore {
     }, src.roles);
     const ok = this.backend.constructSystem(spec, newId);
     if (!ok) return null;
-    this.entries = replaceById(this.entries, id, { ...src, id: newId, savPath: override });
+    // The tracked slot does NOT survive a rebuild: Load State / Load SRAM / New SRAM / a Songs-menu edit
+    // all replace or renumber what the cart holds, and a stale slot let a Save write a restored song over
+    // the unrelated one it had named. Reset and reload, which keep the song, hand the slot on with it in
+    // the carried image (see carryWorkingSong).
+    this.entries = replaceById(this.entries, id, { ...src, id: newId, savPath: override, workingSlot: undefined });
     this.successors.set(id, newId);
     if (this.focusedId === id) this.focusedId = newId;
     return this.committed(newId);
@@ -530,7 +549,14 @@ export class SystemsStore {
       if (!catalog?.readWorkingSong || !catalog.slotOfCleanSong || !catalog.fingerprintOf) continue;
       const ram = this.backend.readRam(e.id);
       const song = ram ? catalog.readWorkingSong(ram) : null;
-      if (!song || song.edited) continue;
+      if (!song) continue;
+      const land = this.landing.get(e.id);
+      if (land) {
+        // Still the pre-restore blank: wait for the carry's writes (bounded, in case the cart moved on).
+        if (catalog.fingerprintOf(song) !== land.signal && ++land.frames < LANDING_FRAMES) continue;
+        this.landing.delete(e.id);
+      }
+      if (song.edited) continue;
       const fp = catalog.fingerprintOf(song);
       if (this.observed.get(e.id) === fp) continue;
       const sram = this.backend.readSram(e.id);
@@ -559,10 +585,32 @@ export class SystemsStore {
     return this.carries.size > 0;
   }
 
-  /** The working song system `id` is still waiting to have put back - for a project export made inside
-   *  the boot window, whose savestate holds the blank cart and would otherwise lose it. */
+  /** True while a carry for `id` is pending OR has landed but its queued writes have not shown up in work
+   *  RAM yet - the window in which the cart's RAM is not its song. A song request waits it out. */
+  isRestoringSong(id: number): boolean {
+    return this.carries.has(id) || this.landing.has(id);
+  }
+
+  /** The working song system `id` is still waiting to have put back. */
   pendingCarry(id: number): WorkingSongImage | null {
     return this.carries.get(id)?.song ?? null;
+  }
+
+  /** The working song a project export must ship BESIDE the savestate, because the savestate cannot be
+   *  trusted to hold it: while a carry is pending (the savestate is the blank booting cart), and for a
+   *  short while after it lands - the savestate is republished only every ~0.5 s, so for that long it can
+   *  still be the blank cart. In that tail it is the CURRENT song, read live, so an edit made since the
+   *  carry landed is shipped rather than reverted. Null the rest of the time. */
+  exportableWorkingSong(id: number): WorkingSongImage | null {
+    const pending = this.pendingCarry(id);
+    if (pending) return pending;
+    const at = this.landedAt.get(id);
+    if (at === undefined) return null;
+    if (Date.now() - at > LANDED_EXPORT_MS) {
+      this.landedAt.delete(id);
+      return null;
+    }
+    return this.workingSongImage(id);
   }
 
   /** Write every parked working song whose cart has finished booting back into it. Called once per frame
@@ -580,6 +628,8 @@ export class SystemsStore {
       if (!catalog.workingSongReady?.(ram)) continue;
       this.carries.delete(id);
       this.setWorkingSlot(id, c.song.slot);
+      if (catalog.fingerprintOf) this.landing.set(id, { signal: catalog.fingerprintOf(c.song), frames: 0 });
+      this.landedAt.set(id, Date.now());
       const rom = e.romPath ? this.backend.readFile(e.romPath) : null;
       const writes = rom ? tracker.restoreWorkingSong(rom, c.song, ram) : null;
       if (!writes) {
@@ -721,6 +771,8 @@ export class SystemsStore {
     this.carries.clear();
     this.successors.clear();
     this.observed.clear();
+    this.landing.clear();
+    this.landedAt.clear();
   }
 
   /** Reconstruct one system from a serialized config entry, preserving its EXACT

@@ -8,7 +8,7 @@
 // (__rp_openFileBrowser / __rp_onFileBrowserResult) and is inert in the headless harness / a DAW, where
 // neither global is installed (onClose never fires outside the standalone anyway).
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { AppStores } from "../../src/appStores";
 import { hasUnsavedChanges } from "../../src/unsavedChanges";
@@ -46,18 +46,33 @@ export function useCloseGuard(stores: AppStores): CloseGuard {
     };
   }, [stores]);
 
-  const onCancel = useCallback(() => setActive(false), []);
+  // Bumped on Cancel, so a Save & Quit still in flight when the user changes their mind saves but stays.
+  const epoch = useRef(0);
+  const onCancel = useCallback(() => {
+    epoch.current++;
+    setActive(false);
+  }, []);
+
+  // True while Save & Quit is running (it waits for a battery write to land): Discard & Quit and a second
+  // Save are inert until it settles, so a quit cannot cut a save off half-way.
+  const saving = useRef(false);
 
   const onDiscard = useCallback(() => {
+    if (saving.current) return;
     setActive(false);
     quitWindow();
   }, []);
 
   const onSave = useCallback(() => {
+    if (saving.current) return;
+    saving.current = true;
+    const started = epoch.current;
     void (async () => {
       // Save-As cancelled, or a working song the cart could not store: keep the prompt open (it now lists
       // only what is still unsaved, and why).
-      if (!(await saveProjectInteractive(stores))) return;
+      const saved = await saveProjectInteractive(stores);
+      saving.current = false;
+      if (!saved || epoch.current !== started) return;
       setActive(false);
       quitWindow();
     })();

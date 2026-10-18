@@ -200,7 +200,11 @@ export function songLoadByNameWouldDiscard(systems: SavSystems, sys: LiveSavTarg
   const catalog = resolveSongCatalog(sys.roles);
   if (!catalog) return false;
   const sram = systems.readSram(sys.id);
-  if (!sram || catalog.workingName(sram) === name) return false; // no-op load: nothing to lose
+  // What the cart HOLDS, from live RAM where the console keeps it there - not the battery's own record:
+  // smsggdj's cur_slot names the last song SAVED, which every host save sets, so a request for that song
+  // read as a no-op over an unrelated unsaved song and loaded over it with no prompt.
+  const ram = catalog.workingSongOutsideBattery ? (systems.readRam?.(sys.id) ?? undefined) : undefined;
+  if (!sram || catalog.workingName(sram, ram) === name) return false; // no-op load: nothing to lose
   if (!catalog.list(sram).some((s) => s.name === name)) return false; // nothing to load either
   return songLoadWouldDiscard(systems, sys);
 }
