@@ -49,7 +49,9 @@ test("load names the slot rather than moving the song, because the cart does the
   const loaded = smsggdjSongCatalog.load(sav, 1)!;
   expect(curSlot(loaded)).toBe(1);
   expect(smsggdjSongCatalog.workingName(loaded)).toBe("BETA");
-  expect(smsggdjSongCatalog.workingSong!(loaded)).toEqual({ name: "BETA", linked: true });
+  // No synthetic "[working]" row: the battery cannot describe a working song that lives in work RAM, and
+  // answering from cur_slot named the last song SAVED, not the one being edited.
+  expect(smsggdjSongCatalog.workingSong).toBe(undefined);
 
   // Only the marker byte moved: no song was rewritten, so every blob is where it was.
   const a = sav.slice(), b = loaded.slice();

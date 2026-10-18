@@ -1624,6 +1624,15 @@ not, and each lost an unsaved song without a word:
   song that matched nothing for ~1 s instead of caching that verdict, and Save finds a tracked song an
   in-cart CLEAR above it shifted down. Echo is compared SANITIZED on both sides: the cart's PROJECT
   load sanitizes it and its FILES load does not, and a slot written with echo 0 never matched otherwise.
+- **Fifth pass.** The slot fingerprint now covers the WHOLE song (block, sanitized echo, displayed name),
+  so an echo A/B pair is two songs even when a CLEAR shifts both; relocating a shifted song is bounded by
+  how many songs disappeared (`TrackedSlot.count`), so a deliberate backup copy is never taken for the
+  moved original; a landing carry answers for the song only while RAM still shows the exact blank it is
+  replacing, so an edit made the instant it lands is what Save stores; and a song flagged edited but
+  byte-identical to a saved one (the cart writes a song it LOADS a few blocks before clearing its flag)
+  is treated as clean when tracked and when carried. The Songs menu no longer shows a "[working]" row for
+  smsggdj (it was built from cur_slot, the last song SAVED), and its load guard's "Save Working Song &
+  Load" saves through saveWorkingSong and then loads live, instead of reporting "no free slot".
 - **"Saved" means the whole song.** The block, its echo settings and its displayed name all have to
   match a slot. The cart's ECHO screen changes only the echo and sets `song_edited`; comparing the block
   alone called that saved, so an echo edit got no prompt and Save stored nothing.

@@ -306,7 +306,7 @@ std::optional<std::vector<std::uint8_t>> Engine::readState(SystemId id) {
 }
 
 std::optional<std::vector<std::uint8_t>> Engine::readSram(SystemId id) {
-    return registry_.readSram(id);    // SRAM sliced from the published savestate, not a live read
+    return registry_.readSram(id);    // the registry's published copy (per block for Mesen, per savestate for SameBoy), not a live read
 }
 
 std::optional<std::vector<std::uint8_t>> Engine::readRam(SystemId id) {
@@ -344,9 +344,10 @@ bool Engine::writeMemory(SystemId id, rp::MemoryType region, std::uint32_t offse
         return false;
     }
     std::memcpy(acc.data() + offset, payload.data(), len);
-    // WRAM republishes every block anyway. The battery does not (coarse interval), and a stale copy is
-    // not harmless: the TS auto-save mirror flushes readSram to disk, so it would write the PRE-write
-    // battery back over the file this write was made for. Republish now.
+    // The battery republishes at the end of this block anyway on Mesen, but not on SameBoy (sliced from a
+    // savestate the core refreshes every ~0.5 s), and a stale copy is not harmless: the TS auto-save mirror
+    // flushes readSram to disk, so it would write the PRE-write battery back over the file this write was
+    // made for. Republish now, so a read right after the write lands sees it on every core.
     if (region == rp::MemoryType::Sram) registry_.republishSram(*sys);
     return true;
 }

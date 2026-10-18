@@ -13,13 +13,13 @@
 //   6   2  block length (LE)
 //   8   n  block
 //   .   8  name     .   8  echo     .   7  settings (when flagged)
-//   .   1  slot index, 4 fingerprint (LE)  (when flagged)
+//   .   1  slot index, 4 fingerprint (LE), 1 song count (when flagged)
 //
 // A binary entry in the zip, not inline JSON, per the no-base64-in-.rplg rule.
 import type { WorkingSongImage } from "./songCatalog";
 
 const MAGIC = [0x52, 0x50, 0x57, 0x53]; // "RPWS"
-const VERSION = 1;
+const VERSION = 2; // 2 added the song count to the slot; no version-1 archive ever shipped
 const NAME_LEN = 8;
 const ECHO_LEN = 8;
 const SETTINGS_LEN = 7;
@@ -27,7 +27,7 @@ const SETTINGS_LEN = 7;
 export function encodeWorkingSong(song: WorkingSongImage): Uint8Array {
   const settings = song.settings && song.settings.length === SETTINGS_LEN ? song.settings : null;
   const n = song.block.length;
-  const out = new Uint8Array(8 + n + NAME_LEN + ECHO_LEN + (settings ? SETTINGS_LEN : 0) + (song.slot ? 5 : 0));
+  const out = new Uint8Array(8 + n + NAME_LEN + ECHO_LEN + (settings ? SETTINGS_LEN : 0) + (song.slot ? 6 : 0));
   out.set(MAGIC, 0);
   out[4] = VERSION;
   out[5] = (song.edited ? 1 : 0) | (settings ? 2 : 0) | (song.slot ? 4 : 0);
@@ -47,6 +47,7 @@ export function encodeWorkingSong(song: WorkingSongImage): Uint8Array {
   if (song.slot) {
     out[at] = song.slot.index & 0xff;
     new DataView(out.buffer, out.byteOffset).setUint32(at + 1, song.slot.fingerprint >>> 0, true);
+    out[at + 5] = song.slot.count === undefined ? 0xff : song.slot.count & 0xff; // 0xff: unknown
   }
   return out;
 }
@@ -59,7 +60,7 @@ export function decodeWorkingSong(bytes: Uint8Array): WorkingSongImage | null {
   const n = bytes[6] | (bytes[7] << 8);
   const hasSettings = (flags & 2) !== 0;
   const hasSlot = (flags & 4) !== 0;
-  if (bytes.length !== 8 + n + NAME_LEN + ECHO_LEN + (hasSettings ? SETTINGS_LEN : 0) + (hasSlot ? 5 : 0)) return null;
+  if (bytes.length !== 8 + n + NAME_LEN + ECHO_LEN + (hasSettings ? SETTINGS_LEN : 0) + (hasSlot ? 6 : 0)) return null;
   let at = 8;
   const block = bytes.slice(at, at + n);
   at += n;
@@ -72,6 +73,9 @@ export function decodeWorkingSong(bytes: Uint8Array): WorkingSongImage | null {
     song.settings = bytes.slice(at, at + SETTINGS_LEN);
     at += SETTINGS_LEN;
   }
-  if (hasSlot) song.slot = { index: bytes[at], fingerprint: new DataView(bytes.buffer, bytes.byteOffset).getUint32(at + 1, true) };
+  if (hasSlot) {
+    song.slot = { index: bytes[at], fingerprint: new DataView(bytes.buffer, bytes.byteOffset).getUint32(at + 1, true) };
+    if (bytes[at + 5] !== 0xff) song.slot.count = bytes[at + 5];
+  }
   return song;
 }

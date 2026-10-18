@@ -141,8 +141,14 @@ export class SystemsStore {
   // A carry's writes are queued, so for a block or so the cart still holds the blank song it booted into.
   // Until the restored song shows up the CARRIED song is the working song: the watcher must not read the
   // blank as an in-cart NEW, and Save, the unsaved prompt and an export must not read it as the song.
-  // id -> the restored song, its change signal, frames waited.
-  private landing = new Map<number, { song: WorkingSongImage; signal: number; frames: number }>();
+  // id -> the restored song, the change signal of the BLANK it is replacing, frames waited. Keyed on the
+  // blank, not on the restored song: the window is exactly "RAM still shows the blank", so the moment
+  // anything else is there - the restore, or an edit already made on top of it - the cart speaks for
+  // itself again. Keyed on the restored song instead, an edit landing with the restore kept the window
+  // open, and a Save in it stored the pre-edit song and marked the newer one saved.
+  private landing = new Map<number, { song: WorkingSongImage; blank: number; frames: number }>();
+  // Each system's observed `edited` alongside its signal (see observeWorkingSongs).
+  private observedEdited = new Map<number, boolean>();
   // When each system's last carry landed - see exportableWorkingSong.
   private landedAt = new Map<number, number>();
   // Old id -> the id its in-place replacement was built under - see currentId.
@@ -358,6 +364,7 @@ export class SystemsStore {
     this.entries = removeById(this.entries, id);
     this.carries.delete(id);
     this.observed.delete(id);
+    this.observedEdited.delete(id);
     this.landing.delete(id);
     this.landedAt.delete(id);
     this.focusedId = nextFocusAfterRemove(this.entries, id, this.focusedId);
@@ -518,13 +525,15 @@ export class SystemsStore {
    *  one (the live cart is still booting and holds nothing yet), else from live work RAM. Null for a
    *  console whose working song is in the battery, or a cart with nothing readable. */
   workingSongImage(id: number): WorkingSongImage | null {
-    const pending = this.carries.get(id) ?? this.landing.get(id);
+    const pending = this.carries.get(id);
     if (pending) return pending.song;
     const e = findById(this.entries, id);
     const catalog = e ? resolveSongCatalog(e.roles) : undefined;
     if (!catalog?.readWorkingSong) return null;
     const ram = this.backend.readRam(id);
     const song = ram ? catalog.readWorkingSong(ram) : null;
+    const land = this.landing.get(id);
+    if (land && (!song || catalog.fingerprintOf?.(song) === land.blank)) return land.song;
     return song && e!.workingSlot ? { ...song, slot: e!.workingSlot } : song;
   }
 
@@ -555,25 +564,34 @@ export class SystemsStore {
       const ram = this.backend.readRam(e.id);
       const song = ram ? catalog.readWorkingSong(ram) : null;
       if (!song) continue;
+      const fp = catalog.fingerprintOf(song);
       const land = this.landing.get(e.id);
       if (land) {
         // Still the pre-restore blank: wait for the carry's writes (bounded, in case the cart moved on).
-        if (catalog.fingerprintOf(song) !== land.signal && ++land.frames < LANDING_FRAMES) continue;
+        if (fp === land.blank && ++land.frames < LANDING_FRAMES) continue;
         this.landing.delete(e.id);
       }
-      if (song.edited) continue;
-      const fp = catalog.fingerprintOf(song);
       const seen = this.observed.get(e.id);
       // An unchanged song is settled once it matched a slot. One that matched NONE is re-checked for a
       // while: a cart that saves clears its unsaved flag in the same routine that writes its battery, and
       // reading the two a block apart once took a just-saved song for a NEW one and dropped its slot for
       // good, because the verdict was cached.
-      if (seen && seen.signal === fp && (seen.matched || seen.retries-- <= 0)) continue;
+      const same = seen && seen.signal === fp && this.observedEdited.get(e.id) === song.edited;
+      if (same && (seen.matched || seen.retries-- <= 0)) continue;
       const sram = this.backend.readSram(e.id);
       if (!sram) continue;
-      const slot = catalog.slotOfCleanSong(sram, { ...song, slot: e.workingSlot });
-      if (!seen || seen.signal !== fp) this.observed.set(e.id, { signal: fp, matched: !!slot, retries: UNMATCHED_RECHECKS });
-      else seen.matched = !!slot;
+      // An EDITED song says nothing about which slot it is - unless it is byte-identical to a saved one,
+      // which is what the cart holds for the few blocks between writing a song it LOADS and clearing its
+      // unsaved flag (and what an edit undone by hand leaves). Treated as clean, that tracks the slot it
+      // came from; skipped, a reset in those blocks carried a stale slot and an UNSAVED flag that nothing
+      // would ever clear. A genuinely edited song leaves the tracking alone.
+      const identical = song.edited && catalog.workingSongImageDirty && !catalog.workingSongImageDirty(sram, song);
+      const slot = !song.edited || identical ? catalog.slotOfCleanSong(sram, { ...song, edited: false, slot: e.workingSlot }) : undefined;
+      const matched = song.edited && !identical ? true : !!slot; // an edited song is never re-checked
+      if (!same) this.observed.set(e.id, { signal: fp, matched, retries: UNMATCHED_RECHECKS });
+      else seen!.matched = matched;
+      this.observedEdited.set(e.id, song.edited);
+      if (song.edited && !identical) continue;
       this.setWorkingSlot(e.id, slot ?? undefined);
     }
   }
@@ -638,7 +656,8 @@ export class SystemsStore {
       if (!catalog.workingSongReady?.(ram)) continue;
       this.carries.delete(id);
       this.setWorkingSlot(id, c.song.slot);
-      if (catalog.fingerprintOf) this.landing.set(id, { song: { ...c.song }, signal: catalog.fingerprintOf(c.song), frames: 0 });
+      const blank = ram ? catalog.readWorkingSong?.(ram) : null;
+      if (catalog.fingerprintOf && blank) this.landing.set(id, { song: { ...c.song }, blank: catalog.fingerprintOf(blank), frames: 0 });
       this.landedAt.set(id, Date.now());
       const rom = e.romPath ? this.backend.readFile(e.romPath) : null;
       const writes = rom ? tracker.restoreWorkingSong(rom, c.song, ram) : null;
@@ -655,6 +674,15 @@ export class SystemsStore {
   private takeWorkingSong(e: SystemEntry): WorkingSongImage | null {
     const song = this.workingSongImage(e.id);
     this.carries.delete(e.id);
+    // Flagged edited but byte-identical to a saved song is a song the cart has just LOADED and not yet
+    // marked clean (it clears the flag a few blocks after writing the song). Carried as edited, it would
+    // land as "unsaved" forever on a cart that will never clear it, with whatever slot was tracked before.
+    const catalog = resolveSongCatalog(e.roles);
+    const sram = song?.edited ? this.backend.readSram(e.id) : null;
+    if (song && sram && catalog?.workingSongImageDirty && !catalog.workingSongImageDirty(sram, song)) {
+      const slot = catalog.slotOfCleanSong?.(sram, { ...song, edited: false }) ?? undefined;
+      return { ...song, edited: false, slot: slot ?? song.slot };
+    }
     return song;
   }
 
@@ -781,6 +809,7 @@ export class SystemsStore {
     this.carries.clear();
     this.successors.clear();
     this.observed.clear();
+    this.observedEdited.clear();
     this.landing.clear();
     this.landedAt.clear();
   }

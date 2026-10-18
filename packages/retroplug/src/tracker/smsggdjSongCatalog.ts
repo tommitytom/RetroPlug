@@ -48,6 +48,7 @@ import {
   withConfig,
   readSongBlock,
   songFingerprint,
+  slotMeta,
   slotHolds,
   sanitizeEcho,
   SMDJ4_BLOCK_LEN,
@@ -114,15 +115,16 @@ function readWorkingSong(ram: Uint8Array): WorkingSongImage | null {
 /** See SongCatalog.trackSlot. Slot numbers are of the PACKED directory, as every save writes. */
 function trackSlot(sav: Uint8Array, index: number): TrackedSlot | null {
   if (!isSmsggdjSav(sav)) return null;
-  const block = readSongBlock(packDirectory(sav), index);
-  return block ? { index, fingerprint: songFingerprint(block) } : null;
+  const packed = packDirectory(sav);
+  const block = readSongBlock(packed, index);
+  return block ? { index, fingerprint: songFingerprint(block, slotMeta(packed, index)), count: listSongs(packed).length } : null;
 }
 
 /** See SongCatalog.slotOfCleanSong. */
 function slotOfCleanSong(sav: Uint8Array, song: WorkingSongImage): TrackedSlot | null {
   if (song.edited || !isSmsggdjSav(sav)) return null;
-  const fingerprint = songFingerprint(song.block);
   const packed = packDirectory(sav);
+  const fingerprint = songFingerprint(song.block, metaOf(song));
   // Two slots can hold the same song; keep the one already tracked rather than hopping to the first - but
   // only if it holds the WHOLE song. Two slots with one block and different echo (an echo A/B the user
   // saved in the cart) are different songs, and a block-only check kept tracking the one not loaded.
@@ -130,7 +132,7 @@ function slotOfCleanSong(sav: Uint8Array, song: WorkingSongImage): TrackedSlot |
     return song.slot;
   }
   const index = savedSlotOf(packed, song.block, metaOf(song));
-  return index >= 0 ? { index, fingerprint } : null;
+  return index >= 0 ? trackSlot(packed, index) : null;
 }
 
 /** The per-song metadata the cart saves beside the block, in the form savedSlotOf compares. */
@@ -191,9 +193,13 @@ function saveTarget(base: Uint8Array, song: WorkingSongImage): number {
   const songs = listSongs(base);
   const at = songs.find((s) => s.index === tracked.index);
   if (at && holds(at.index, at.name)) return at.index;
-  // ...and if a CLEAR above it shifted the tracked song itself, find it where it went - when exactly one
-  // slot holds it. Appending instead left the older copy behind as a duplicate.
-  const moved = songs.filter((s) => s.index !== tracked.index && holds(s.index, s.name));
+  // ...and if a CLEAR above it shifted the tracked song itself, find it where it went. Only within reach:
+  // k songs gone means it can have moved down at most k slots, never up - so a deliberate backup copy
+  // elsewhere is not "where it went". (Unbounded, the edit was written over a backup the user kept after
+  // clearing the original.) Exactly one candidate, or append.
+  if (tracked.count === undefined) return -1;
+  const gone = tracked.count - songs.length;
+  const moved = songs.filter((s) => s.index >= tracked.index - gone && s.index < tracked.index && holds(s.index, s.name));
   return moved.length === 1 ? moved[0].index : -1;
 }
 
@@ -243,15 +249,10 @@ export const smsggdjSongCatalog: SongCatalog = {
   // the boot takes as long as the splash does and a timer would be a guess.
   workingSongReady: (ram) => isBooted(ram),
 
-  // Always `linked`: the working song got there by being named in the superblock, so it is by
-  // construction the slot it came from. There is no unlinked state to report - unlike risa, where a
-  // working song can be imported from elsewhere and belong to no slot.
-  workingSong: (sav) => {
-    const slot = curSlot(sav);
-    if (slot < 0) return null;
-    const name = listSongs(sav).find((s) => s.index === slot)?.name;
-    return name === undefined ? null : { name, linked: true };
-  },
+  // No `workingSong`: that describes the Songs menu's synthetic "[working]" row from the battery alone,
+  // and this cart's working song is not in the battery. It used to answer from cur_slot - the last song
+  // SAVED - so the row named the wrong song, opened an empty submenu, and the load guard beside it said
+  // "no free slot". The load guard's save goes through saveWorkingSong instead (see loadGuard).
 
   // Every battery edit on this console cold-boots the cart, and the working song is not in the battery,
   // so it does not come back. Delete, Move Up and Add destroy an hour's work exactly as thoroughly as

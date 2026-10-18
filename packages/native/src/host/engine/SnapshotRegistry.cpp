@@ -69,8 +69,8 @@ bool SnapshotRegistry::claim(SystemId id, SystemBase& sys) {
     // out — cheap, no extra core read. Its OFFSET is model-dependent and is therefore not cached here;
     // only the SIZE is, because that comes from the cart header and no model changes it. A core whose savestate exposes no
     // SRAM region (Mesen's streamed format leaves stateRegions() empty) publishes its battery straight
-    // from the live core via saveSramBytes() — sourced HERE on the control thread, republished on the
-    // coarse interval. A no-battery cart reports empty → no slot → readSram stays null (correct).
+    // from the live core via saveSramBytes() - sourced HERE on the control thread, then republished off the
+    // live accessor every block (publishAll). A no-battery cart reports empty → no slot → readSram stays null.
     const auto& reg = sys.stateRegions()[static_cast<std::size_t>(rp::MemoryType::Sram)];
     if (reg.size > 0 && static_cast<std::size_t>(reg.offset) + reg.size <= bootLen) {
         s->sram = std::make_unique<MemorySnapshotTriple>(reg.size);

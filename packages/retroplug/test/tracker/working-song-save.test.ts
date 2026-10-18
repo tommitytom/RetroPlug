@@ -534,7 +534,7 @@ test("the archived working song round-trips byte for byte, and anything else dec
   expect(back.slot).toEqual(song.slot);
   expect(back.edited).toBe(true);
   const bad = encodeWorkingSong(song);
-  bad[4] = 2; // a newer version
+  bad[4] = 3; // a newer version
   expect(decodeWorkingSong(bad)).toBe(null);
   expect(decodeWorkingSong(encodeWorkingSong(song).subarray(0, 100))).toBe(null);
 });
@@ -764,4 +764,104 @@ test("a just-saved song read against a battery a block behind is re-checked, not
   be.setSram(id, buildSav([{ block: block(1), name: "ALPHA" }, { block: block(4), name: "MINE" }], CART)!);
   systems.observeWorkingSongs();
   expect(systems.workingSongImage(id)!.slot?.index).toBe(1);
+});
+
+// --- fifth review ---------------------------------------------------------------------------------------
+
+test("an edit made the moment a carry lands is what Save stores - not the carried song", async () => {
+  // Executed against 0ab09ee7: the window stayed open until RAM matched the CARRIED song, so an edit that
+  // landed with the restore kept it open; Save then stored the pre-edit song and marked the edit saved.
+  const { be, systems, id } = smsProject();
+  be.setRam(id, ramWith(image(8, "CARRIED")));
+  const newId = systems.reset(id)!;
+  be.setSram(newId, freshBattery());
+  be.setRam(newId, smsggdjRam()); // booted blank
+  const flush = deferRamWrites(be);
+  systems.settleCarries();
+  flush(); // the restore lands...
+  be.setRam(newId, ramWith(image(9, "CARRIED"))); // ...and the user's first edit with it, before any frame
+  expect(systems.workingSongImage(newId)!.block).toEqual(block(9));
+  expect((await saveWorkingSong(be, systems, systems.systems()[0])).kind).toBe("saved");
+  expect(readSongBlock(be.readSram(newId)!, 0)).toEqual(block(9));
+});
+
+test("relocation never picks a backup copy the deletions could not have moved the song to", () => {
+  // Executed against 0ab09ee7: [A, X, A-backup], A tracked at 0 and edited, the cart CLEARs slot 0 -
+  // Save "found" A at index 1 (the backup) and wrote the edit over it. One song gone can only have moved
+  // things DOWN one slot; slot 0 itself was the deleted one, so there is nowhere A can have gone.
+  const sav = buildSav([{ block: block(1), name: "A" }, { block: block(2), name: "X" }, { block: block(1), name: "A" }], CART)!;
+  const tracked = smsggdjSongCatalog.trackSlot!(sav, 0)!;
+  const cleared = buildSav([{ block: block(2), name: "X" }, { block: block(1), name: "A" }], CART)!;
+  const r = smsggdjSongCatalog.commitWorkingSong!(cleared, { ...image(7, "A"), slot: tracked });
+  if (!r.ok) throw new Error(`refused: ${r.reason}`);
+  expect(r.replaced).toBe(false);
+  expect(readSongBlock(r.sav, 1)).toEqual(block(1)); // the backup survives
+});
+
+test("an echo A/B pair shifted down together: Save writes back to the variant that was loaded", () => {
+  // Executed against 0ab09ee7: the slot check compared block + name only, so after a CLEAR above both,
+  // the stale index (now the OTHER variant) passed and its echo was overwritten.
+  const echoX = Uint8Array.of(1, 2, 3, 0, 0, 0, 0, 0);
+  const echoY = Uint8Array.of(2, 4, 8, 0, 0, 0, 0, 0);
+  const three = buildSav(
+    [{ block: block(5), name: "X" }, { block: block(1), name: "A", echo: echoX }, { block: block(1), name: "A", echo: echoY }],
+    CART,
+  )!;
+  const tracked = smsggdjSongCatalog.trackSlot!(three, 1)!; // the echoX variant
+  const shifted = buildSav([{ block: block(1), name: "A", echo: echoX }, { block: block(1), name: "A", echo: echoY }], CART)!;
+  const r = smsggdjSongCatalog.commitWorkingSong!(shifted, { ...image(7, "A", true, echoX), slot: tracked });
+  if (!r.ok) throw new Error(`refused: ${r.reason}`);
+  expect(r.index).toBe(0); // where echoX went
+  expect(readSongEcho(r.sav, 1)).toEqual(echoY); // the other variant untouched
+});
+
+test("a reset in the blocks between the cart writing a loaded song and clearing its flag carries it clean", () => {
+  // The cart writes the song it LOADS, then clears song_edited a few blocks later. A reset in between
+  // carried it as edited, with the stale slot - and the new cart never clears that flag, so it read
+  // UNSAVED forever and the next Save appended a duplicate.
+  const { be, systems, id } = smsProject();
+  be.setSram(id, buildSav([{ block: block(1), name: "LOW" }, { block: block(2), name: "HIGH" }], CART)!);
+  be.setRam(id, ramWith(image(2, "HIGH", false)));
+  systems.observeWorkingSongs(); // tracks HIGH at 1
+  be.setRam(id, ramWith(image(1, "LOW", true))); // the cart's FILES LOAD of LOW, flag not cleared yet
+  const newId = systems.reset(id)!;
+  const carried = systems.pendingCarry(newId)!;
+  expect(carried.edited).toBe(false);
+  expect(carried.slot!.index).toBe(0);
+});
+
+test("the Songs menu offers Save Working Song & Load for a work-RAM song, and does it live", async () => {
+  // It used to read the battery's cur_slot: a "[working]" row named the last SAVED song with an empty
+  // submenu, and the guard said "no free slot" on a cart with thirty.
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/smsggdj.sms", smsggdjRom("0.45"));
+  stores.project.systems.loadRom("/roms/smsggdj.sms");
+  const id = stores.project.systems.view()[0].id;
+  be.setSram(id, setCurSlotFor(buildSav([{ block: block(1), name: "LOW" }, { block: block(2), name: "HIGH" }], CART)!, 0)!);
+  be.setRam(id, ramWith(image(9, "HIGH")));
+  const ctx: MenuContext = {
+    stores,
+    settings: stores.project.settings(),
+    userConfig: stores.userConfig.config(),
+    bindings: stores.bindings.resolvedBindings(),
+    systems: stores.project.systems.view(),
+    recent: stores.recent.view(),
+    version: "",
+    newProject: () => {},
+    loadProject: () => {},
+    loadRomAsProject: () => {},
+    requestExit: () => {},
+    openLsdjHd: () => {},
+    beginSongImport: () => {},
+  };
+  const items = buildInstanceMenu({ ...ctx, system: stores.project.systems.view()[0] }).items;
+  const songs = findRow(items, "smsggdj-songs")!.children!;
+  expect(songs.some((r) => r.label.includes("[working]"))).toBe(false);
+  const save = findRow(items, "smsggdj-song-0-load-save")!;
+  expect(save.disabled ?? false).toBe(false);
+  save.onSelect!();
+  await new Promise<void>((r) => (globalThis as unknown as { setTimeout: (f: () => void, ms: number) => void }).setTimeout(r, 30));
+  expect(listSongs(be.readSram(id)!).map((x) => x.name)).toEqual(["LOW", "HIGH", "HIGH"]); // saved (untracked: appended)
+  expect(be.readRam(id)!.subarray(0, SMDJ4_BLOCK_LEN)).toEqual(block(1)); // and LOW loaded, live
 });

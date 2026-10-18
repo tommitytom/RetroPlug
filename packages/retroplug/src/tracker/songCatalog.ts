@@ -50,6 +50,9 @@ export interface WorkingSongImage {
 export interface TrackedSlot {
   index: number;
   fingerprint: number;
+  /** How many songs the catalog held when this was tracked - which bounds where an in-cart delete above
+   *  the slot can have shifted it to (see the catalog's save target). Absent: never relocate. */
+  count?: number;
 }
 
 /** What committing a working song into the battery did. `index` is the slot it landed in; `replaced`

@@ -349,13 +349,25 @@ export function slotHolds(sav: Uint8Array, index: number, block: Uint8Array, met
   return !!saved && saved.every((b, i) => b === block[i]);
 }
 
-/** A 32-bit FNV-1a over a decoded song block: what identifies "the song that was in this slot" for the
- *  host's slot tracking. The directory's own 16-bit sum is too weak for that job - two untitled songs
- *  colliding on it would let a Save overwrite the wrong one. */
-export function songFingerprint(block: Uint8Array): number {
+/** A 32-bit FNV-1a over a WHOLE song - the decoded block, its echo settings (sanitized, as every echo
+ *  comparison here is) and its displayed name: what identifies "the song that was in this slot" for the
+ *  host's slot tracking. The directory's own 16-bit sum is too weak for that (two untitled songs colliding
+ *  on it let a Save overwrite the wrong one), and the block alone cannot tell an echo A/B pair apart. */
+export function songFingerprint(block: Uint8Array, meta: SongMeta): number {
   let h = 0x811c9dc5;
-  for (let i = 0; i < block.length; i++) h = Math.imul(h ^ block[i], 0x01000193) >>> 0;
+  const mix = (b: number): void => {
+    h = Math.imul(h ^ b, 0x01000193) >>> 0;
+  };
+  for (let i = 0; i < block.length; i++) mix(block[i]);
+  for (const b of sanitizeEcho(meta.echo.subarray(0, ECHO_LEN))) mix(b);
+  for (let i = 0; i < meta.name.length; i++) mix(meta.name.charCodeAt(i) & 0xff);
   return h;
+}
+
+/** Slot `index`'s echo settings and displayed name, as slotHolds / songFingerprint compare them. */
+export function slotMeta(sav: Uint8Array, index: number): SongMeta {
+  const e = entryAt(index);
+  return { echo: sav.slice(e + E_ECHO, e + E_ECHO + ECHO_LEN), name: readName(sav, index) };
 }
 
 /** `config_save` (engine.asm) as a NEW image: "CF", the seven settings in the cart's order (palette,

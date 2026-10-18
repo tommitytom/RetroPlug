@@ -234,9 +234,9 @@ const SAVE_ATTEMPTS = 3;
  *  overwritten by the stale live battery the moment the core was torn down - i.e. by the very close this
  *  save was for.
  *
- *  The image is rebuilt from a battery SNAPSHOT, republished only every ~0.5 s, and replaces the whole
- *  battery - so a write made blind would revert anything the cart wrote in between (its own SAVE, LOAD,
- *  a FILES delete). So it is conditional on the battery still being that snapshot; if the cart moved it,
+ *  The image is rebuilt from a battery SNAPSHOT (republished every block on Mesen, but still a moment old
+ *  by the time the write is applied) and replaces the whole battery - so a write made blind would revert
+ *  anything the cart wrote in between (its own SAVE, LOAD, a FILES delete). So it is conditional on the battery still being that snapshot; if the cart moved it,
  *  native refuses and republishes, and this rebuilds from the fresh one. Resolves once `readSram` shows
  *  the new image, so the caller's flush writes it. The live battery is backed up to `<sav>.bak` first. */
 export async function saveWorkingSong(

@@ -93,6 +93,7 @@ import {
   savEditWouldDiscard,
   songLoadWouldDiscard,
 } from "../../../src/tracker";
+import { saveWorkingSong } from "../../../src/tracker/liveSav";
 import type { HostBackend, ControlPlaneBackend } from "../../../src/backend";
 import { openPath } from "../../lvgl/openPath";
 import { startSystemRender, renderBaseName, validSplits, formatDuration } from "../../lvgl/render";
@@ -1664,6 +1665,31 @@ function loadGuard(
   };
 
   const saveRow = ((): MenuItem => {
+    // A working song OUTSIDE the battery (smsggdj) cannot be saved by a byte transform on the sav - it is
+    // not in it. Save it the way the close prompt does (into the live battery, no reboot), then load the
+    // picked song through the same request every Load goes through. Offered only when a dry run says the
+    // cart can take it, and greyed with the real reason when not - this row used to say "no free slot"
+    // on a cart with thirty.
+    const catalog = spec.catalog;
+    if (catalog.commitWorkingSong) {
+      const systems = ctx.stores.project.systems;
+      const image = systems.workingSongImage(sys.id);
+      const dry = image ? catalog.commitWorkingSong(sav, image) : null;
+      if (!dry || !dry.ok) {
+        return action(`${idp}-save-unavailable`, `Save Working Song & Load (${dry ? SONG_BLOCKED[dry.reason] : "nothing to save"})`, () => {}, true);
+      }
+      return action(`${idp}-save`, "Save Working Song & Load", () => {
+        void (async () => {
+          const r = await saveWorkingSong(ctx.stores.backend, systems, sys).catch(() => null);
+          if (!r || r.kind === "refused") {
+            console.warn(`[songs] working song not saved${r ? `: ${r.reason}` : ""}; nothing loaded`);
+            return;
+          }
+          ctx.stores.project.requestSong({ index: song.index, confirmed: true });
+          ctx.stores.project.settleSong();
+        })();
+      });
+    }
     if (!spec.commitWorking || !(spec.canCommitWorking?.(sav) ?? true)) {
       // Not offerable: no such op, or the catalog can't take it (full). Say why rather than fail on click.
       return action(`${idp}-save-unavailable`, "Save Working Song & Load (no free slot)", () => {}, true);
