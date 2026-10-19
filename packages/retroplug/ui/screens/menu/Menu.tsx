@@ -363,10 +363,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   // Modal key input for "capture" and "prompt" rows. Letter keys reach the UI only on the raw "key" bus,
   // not through LVGL's focus-group nav — so arm / type / bind live here. Esc cancels the armed modal;
   // App's Esc handler defers while one is active (menuModal), so the menu stays open.
-  useNativeEvent("key", (...args) => {
-    const code = args[0] as number;
-    const press = args[1] as boolean;
-    const mod = (args[2] as number) ?? 0;
+  useNativeEvent("key", (code, press, mod = 0) => {
     // Arrow hold-tracking for edge-wrap (the LVGL keypad nav it arms runs a beat later, off the indev):
     // the first press of a hold arms a one-shot wrap for its direction; the release disarms it.
     if (code === KEY_UP || code === KEY_DOWN) {
@@ -461,8 +458,8 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   // every HOLD_REPEAT_PERIOD_MS — the gamepad twin of the OS key repeat the arrows already get. The u32
   // diff is wrap-safe (the LVGL tick wraps at ~49.7 days). A prompt/capture modal freezes the repeat
   // (input is owned) but does not drop the hold, so releasing first cancels cleanly.
-  useNativeEvent("frame", (...args) => {
-    const t = (args[0] as number) ?? 0;
+  useNativeEvent("frame", (tick) => {
+    const t = tick ?? 0;
     tickRef.current = t;
     const rep = holdRepeatRef.current;
     if (!rep) return;
@@ -476,10 +473,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
 
   // Gamepad: bind a rebind row when one is armed, else navigate the menu like the keyboard. menuOpen already
   // gates useGamepadInput off while the menu is up, so game routing never competes for these events.
-  useNativeEvent("gamepad-button", (...args) => {
-    const pad = args[0] as number;
-    const name = args[1] as string;
-    const press = args[2] as boolean;
+  useNativeEvent("gamepad-button", (pad, name, press) => {
     const slot = `${pad}:${name}`;
     if (!press) {
       // A release stops THAT button's repeat (any other still-held button's repeat keeps running).
@@ -518,10 +512,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
       holdRepeatRef.current = { slot, nav, since: tickRef.current, last: tickRef.current };
     }
   });
-  useNativeEvent("gamepad-axis", (...args) => {
-    const pad = args[0] as number;
-    const axisName = args[1] as string;
-    const value = args[2] as number;
+  useNativeEvent("gamepad-axis", (pad, axisName, value) => {
 
     // 1. An armed gamepad-source row binds a deliberate stick flick as a half-axis token.
     const armed = capturingIdRef.current;

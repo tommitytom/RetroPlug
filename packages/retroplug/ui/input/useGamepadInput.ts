@@ -43,10 +43,7 @@ export function useGamepadInput({ active, focusedId }: { active: boolean; focuse
     backend.pressButton(target, button, false);
   };
 
-  useNativeEvent("gamepad-button", (...args) => {
-    const pad = args[0] as number;
-    const name = args[1] as string;
-    const press = args[2] as boolean;
+  useNativeEvent("gamepad-button", (pad, name, press) => {
     const button = padToButton.get(name);
     if (button === undefined) return; // unbound controller button
     const slot = `${pad}:${name}`;
@@ -57,10 +54,7 @@ export function useGamepadInput({ active, focusedId }: { active: boolean; focuse
   // Analog stick → d-pad: convert the continuous axis to a digital half-axis token (with hysteresis) and
   // press/release the bound button as the direction changes. A flip through centre releases the old
   // direction then presses the new one; centering releases.
-  useNativeEvent("gamepad-axis", (...args) => {
-    const pad = args[0] as number;
-    const axisName = args[1] as string;
-    const value = args[2] as number;
+  useNativeEvent("gamepad-axis", (pad, axisName, value) => {
     const axisKey = `${pad}:${axisName}`;
     const cur = axisDirRef.current.get(axisKey) ?? "";
     const next = axisToken(axisName, value, cur);

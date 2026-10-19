@@ -15,29 +15,25 @@ import { hasUnsavedChanges } from "../../src/unsavedChanges";
 import { saveProjectInteractive } from "./saveProjectInteractive";
 import { unsavedRows } from "./unsavedRows";
 import type { Overlay } from "./overlay";
+import { native } from "./nativeHooks";
 import type { MenuTree } from "../screens/menu/menuTree";
 import { button } from "../screens/menu/menuItems";
 
 /** The unsaved-changes prompt as an overlay: Save & Quit / Discard & Quit / Cancel (= onClose). */
 export type CloseGuard = Overlay;
 
-function quitWindow(): void {
-  (globalThis as { __rp_quitWindow?: () => void }).__rp_quitWindow?.();
-}
-
 export function useCloseGuard(stores: AppStores): CloseGuard {
   const [active, setActive] = useState(false);
 
   // Install the native close-request hook: veto (and show the prompt) only when something is unsaved.
   useEffect(() => {
-    const g = globalThis as { __rp_onCloseRequested?: () => boolean };
-    g.__rp_onCloseRequested = (): boolean => {
+    native.__rp_onCloseRequested = (): boolean => {
       if (!hasUnsavedChanges(stores.backend, stores.project)) return false; // clean → let it close
       setActive(true);
       return true; // veto: the overlay renders next frame
     };
     return () => {
-      delete g.__rp_onCloseRequested;
+      delete native.__rp_onCloseRequested;
     };
   }, [stores]);
 
@@ -45,14 +41,14 @@ export function useCloseGuard(stores: AppStores): CloseGuard {
 
   const onDiscard = useCallback(() => {
     setActive(false);
-    quitWindow();
+    native.__rp_quitWindow?.();
   }, []);
 
   const onSave = useCallback(() => {
     void (async () => {
       if (!(await saveProjectInteractive(stores))) return; // Save-As cancelled → keep the prompt open
       setActive(false);
-      quitWindow();
+      native.__rp_quitWindow?.();
     })();
   }, [stores]);
 

@@ -25,9 +25,7 @@ export function useGameInput({ active, focusedId }: { active: boolean; focusedId
   // dpf code → the system id its press was routed to (also the held-key set for repeat suppression).
   const targetsRef = useRef<Map<number, number>>(new Map());
 
-  useNativeEvent("key", (...args) => {
-    const key = args[0] as number;
-    const press = args[1] as boolean;
+  useNativeEvent("key", (key, press) => {
     const button = keyToButton.get(key);
     if (button === undefined) return; // not a game key (e.g. Esc → App's menu handler)
 

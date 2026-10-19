@@ -24,6 +24,7 @@ import { useSramAutoSave } from "./lvgl/useSramAutoSave";
 import { useN8SdWatch } from "./lvgl/useN8SdWatch";
 import { useLaunchpadScanWatch } from "./lvgl/useLaunchpadScanWatch";
 import { topOverlay } from "./lvgl/overlay";
+import { native } from "./lvgl/nativeHooks";
 import { useGameInput } from "./input/useGameInput";
 import { useGamepadInput } from "./input/useGamepadInput";
 import { SystemGrid } from "./screens/grid/SystemGrid";
@@ -169,9 +170,7 @@ export function App() {
     else if (action === "CyclePrev" && playing) stores.project.systems.focusNext(-1);
   };
 
-  useNativeEvent("key", (...args) => {
-    const key = args[0] as number;
-    const press = args[1] as boolean;
+  useNativeEvent("key", (key, press) => {
     if (!press) return;
     // Esc always cancels an active overlay — a universal back, independent of the (rebindable) OpenMenu key.
     if (key === KEY_ESCAPE) {
@@ -184,9 +183,7 @@ export function App() {
   });
   // Gamepad app actions. Overlays (close prompt / project modal) render a <Menu>, so they're cancelled by the
   // Menu B button — the gamepad handler just defers under them.
-  useNativeEvent("gamepad-button", (...args) => {
-    const name = args[1] as string;
-    const press = args[2] as boolean;
+  useNativeEvent("gamepad-button", (_pad, name, press) => {
     if (!press) return;
     if (overlay) return;
     runAction(padToAction.get(name));
@@ -196,12 +193,10 @@ export function App() {
   // native editor emits the "mouse" bus as [button, press, x, y]; a left click already focuses/opens rows via
   // LVGL, so we act only on the right button. Ignored on the start screen (its menu is always open) and while
   // a capture/prompt or a full-window overlay owns input.
-  useNativeEvent("mouse", (...args) => {
-    const button = args[0] as number;
-    const press = args[1] as boolean;
+  useNativeEvent("mouse", (button, press, x, y) => {
     if (button !== MOUSE_BUTTON_RIGHT || !press) return;
     if (empty || isMenuModalActive() || overlay) return;
-    const idx = hitTestTile(args[2] as number, args[3] as number, systems.length, settings.layout as SystemLayout, settings.zoom, userConfig.defaultZoom, windowSize);
+    const idx = hitTestTile(x, y, systems.length, settings.layout as SystemLayout, settings.zoom, userConfig.defaultZoom, windowSize);
     if (idx == null) return; // must land on an instance
     const targetId = systems[idx].id;
     stores.project.systems.setFocus(targetId); // focus the right-clicked instance, then anchor its menu
@@ -222,10 +217,10 @@ export function App() {
     if (menuOpen) pollTransport();
   });
 
-  useNativeEvent("file-drop", (...args) => {
-    const paths = String(args[0] ?? "").split("\n").filter((p) => p.length > 0);
+  useNativeEvent("file-drop", (joined, x, y) => {
+    const paths = String(joined ?? "").split("\n").filter((p) => p.length > 0);
     if (paths.length === 0) return;
-    const idx = hitTestTile(args[1] as number, args[2] as number, systems.length, settings.layout as SystemLayout, settings.zoom, userConfig.defaultZoom, windowSize);
+    const idx = hitTestTile(x, y, systems.length, settings.layout as SystemLayout, settings.zoom, userConfig.defaultZoom, windowSize);
     const targetId = idx != null ? systems[idx].id : stores.project.systems.focused();
     const target = systems.find((s) => s.id === targetId);
     const action = resolveDropAction(
@@ -276,9 +271,8 @@ export function App() {
   // uses — __rp_onCloseRequested raises the unsaved-changes prompt and vetoes when dirty; a clean project
   // quits immediately via __rp_quitWindow. Inert in a DAW / the harness (neither global installed).
   const requestExit = (): void => {
-    const g = globalThis as { __rp_onCloseRequested?: () => boolean; __rp_quitWindow?: () => void };
-    const veto = g.__rp_onCloseRequested?.() ?? false;
-    if (!veto) g.__rp_quitWindow?.();
+    const veto = native.__rp_onCloseRequested?.() ?? false;
+    if (!veto) native.__rp_quitWindow?.();
   };
 
   const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject, loadRomAsProject: modals.loadRomAsProject, requestExit, beginSongImport: songImport.begin, openLsdjHd: setHdSystemId };

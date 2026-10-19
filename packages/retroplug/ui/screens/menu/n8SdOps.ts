@@ -7,6 +7,8 @@
 // harness (hasN8Sd() then false -> the rows are hidden). The App polls getN8SdStatus() on the frame bus while
 // a job runs (useN8SdWatch) so the progress row tracks it live.
 
+import { native } from "../../lvgl/nativeHooks";
+
 export interface N8SdStatus {
   busy: boolean;
   op: string; // "load" | "dump" | "restore" | "" (idle)
@@ -19,21 +21,14 @@ export interface N8SdStatus {
   version: number; // bumps on any change, so the UI re-renders only when it moves
 }
 
-type N8SdGlobals = {
-  __rp_getN8SdStatus?: () => Partial<N8SdStatus>;
-  __rp_n8LoadRom?: (path: string) => void;
-  __rp_n8DumpSram?: (path: string) => void;
-  __rp_n8RestoreSram?: (path: string) => void;
-};
-
 /** Whether the host exposes the N8 SD-op seam (bound alongside the streaming config in bindN8Hooks). */
 export function hasN8Sd(): boolean {
-  return typeof (globalThis as N8SdGlobals).__rp_getN8SdStatus === "function";
+  return typeof native.__rp_getN8SdStatus === "function";
 }
 
 /** The live SD-job snapshot, read fresh each poll. null on a host without the seam. */
 export function getN8SdStatus(): N8SdStatus | null {
-  const fn = (globalThis as N8SdGlobals).__rp_getN8SdStatus;
+  const fn = native.__rp_getN8SdStatus;
   if (typeof fn !== "function") return null;
   const s = fn() ?? {};
   return {
@@ -51,15 +46,15 @@ export function getN8SdStatus(): N8SdStatus | null {
 
 /** Upload a local ROM to the cart SD and boot it (needs the cart at its menu). Fire-and-forget. */
 export function n8LoadRom(path: string): void {
-  (globalThis as N8SdGlobals).__rp_n8LoadRom?.(path);
+  native.__rp_n8LoadRom?.(path);
 }
 
 /** Read the 64 KB cart battery and save it to a local file. Fire-and-forget. */
 export function n8DumpSram(path: string): void {
-  (globalThis as N8SdGlobals).__rp_n8DumpSram?.(path);
+  native.__rp_n8DumpSram?.(path);
 }
 
 /** Write a local .srm straight to the running game's cart SRAM. Fire-and-forget. */
 export function n8RestoreSram(path: string): void {
-  (globalThis as N8SdGlobals).__rp_n8RestoreSram?.(path);
+  native.__rp_n8RestoreSram?.(path);
 }

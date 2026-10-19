@@ -10,6 +10,7 @@
 // is false → the submenu is hidden).
 
 import { createSubscribable } from "./subscribable";
+import { native } from "../../lvgl/nativeHooks";
 
 export interface AudioCfg {
   sampleRate: number;
@@ -27,14 +28,14 @@ export const subscribeAudioDraft = notify.subscribe;
 // The native config carries the option sets too — the driver list (drivers) and the output devices per driver
 // (devicesByDriver). They're not part of the draft VALUE, so nativeGet folds only the selected driver/device
 // into AudioCfg; getAudioDrivers() / getAudioDevices() read the lists.
-type NativeAudioCfg = Partial<AudioCfg> & {
+export type NativeAudioConfig = Partial<AudioCfg> & {
   drivers?: string[];
   devicesByDriver?: Record<string, string[]>;
   defaultByDriver?: Record<string, string>;
   autoDriver?: string;
 };
 function nativeGet(): AudioCfg | null {
-  const fn = (globalThis as { __rp_getAudioConfig?: () => NativeAudioCfg }).__rp_getAudioConfig;
+  const fn = native.__rp_getAudioConfig;
   if (typeof fn !== "function") return null;
   const c = fn();
   if (!c) return null;
@@ -47,14 +48,12 @@ function nativeGet(): AudioCfg | null {
   };
 }
 function nativeSet(sampleRate: number, blockSize: number, outChannels: number, driver: string, device: string): void {
-  (
-    globalThis as { __rp_setAudioConfig?: (r: number, b: number, ch: number, d: string, dev: string) => void }
-  ).__rp_setAudioConfig?.(sampleRate, blockSize, outChannels, driver, device);
+  native.__rp_setAudioConfig?.(sampleRate, blockSize, outChannels, driver, device);
 }
 
 /** The audio host APIs the SDL host offers ("Auto" + each compiled-in/available driver). Option set, not draft. */
 export function getAudioDrivers(): string[] {
-  const fn = (globalThis as { __rp_getAudioConfig?: () => NativeAudioCfg }).__rp_getAudioConfig;
+  const fn = native.__rp_getAudioConfig;
   if (typeof fn !== "function") return ["Auto"];
   const list = fn()?.drivers;
   return Array.isArray(list) && list.length > 0 ? list : ["Auto"];
@@ -62,7 +61,7 @@ export function getAudioDrivers(): string[] {
 
 /** The output device names for a given driver (host API); "" = the host API default. Option set, not draft. */
 export function getAudioDevices(driver: string): string[] {
-  const fn = (globalThis as { __rp_getAudioConfig?: () => NativeAudioCfg }).__rp_getAudioConfig;
+  const fn = native.__rp_getAudioConfig;
   if (typeof fn !== "function") return [];
   const list = fn()?.devicesByDriver?.[driver];
   return Array.isArray(list) ? list : [];
@@ -70,7 +69,7 @@ export function getAudioDevices(driver: string): string[] {
 
 /** What an empty device selection resolves to on a driver (the host API's default output); "" if unknown. */
 export function getAudioDefaultDevice(driver: string): string {
-  const fn = (globalThis as { __rp_getAudioConfig?: () => NativeAudioCfg }).__rp_getAudioConfig;
+  const fn = native.__rp_getAudioConfig;
   if (typeof fn !== "function") return "";
   const name = fn()?.defaultByDriver?.[driver];
   return typeof name === "string" ? name : "";
@@ -80,7 +79,7 @@ export function getAudioDefaultDevice(driver: string): string {
  *  brackets on the Driver row, because "Auto" on its own does not tell you which driver you are actually on -
  *  and that is exactly what you want to know when something sounds wrong. */
 export function getAutoAudioDriver(): string {
-  const fn = (globalThis as { __rp_getAudioConfig?: () => NativeAudioCfg }).__rp_getAudioConfig;
+  const fn = native.__rp_getAudioConfig;
   if (typeof fn !== "function") return "";
   const name = fn()?.autoDriver;
   return typeof name === "string" ? name : "";

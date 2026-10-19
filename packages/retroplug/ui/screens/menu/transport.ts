@@ -11,6 +11,7 @@
 // is hidden, exactly like the audio/MIDI device rows.
 
 import { createSubscribable } from "./subscribable";
+import { native } from "../../lvgl/nativeHooks";
 
 export interface TransportState {
   playing: boolean; // what the Engine is being told right now
@@ -30,20 +31,14 @@ const notify = createSubscribable();
 const emit = notify.emit;
 export const subscribeTransport = notify.subscribe;
 
-type TransportGlobals = {
-  __rp_getTransport?: () => Partial<TransportState>;
-  __rp_setTransport?: (playing: boolean) => void;
-  __rp_setClockBpm?: (bpm: number) => void;
-};
-
 /** Whether the host exposes the transport seam (standalone only). Gates the row. */
 export function hasTransport(): boolean {
-  return typeof (globalThis as TransportGlobals).__rp_getTransport === "function";
+  return typeof native.__rp_getTransport === "function";
 }
 
 /** The live transport, read fresh each render (the audio thread publishes it every block). */
 export function getTransport(): TransportState | null {
-  const fn = (globalThis as TransportGlobals).__rp_getTransport;
+  const fn = native.__rp_getTransport;
   if (typeof fn !== "function") return null;
   const t = fn() ?? {};
   const bpm = typeof t.bpm === "number" && t.bpm > 0 ? t.bpm : 120;
@@ -57,7 +52,7 @@ export function getTransport(): TransportState | null {
 
 /** Start/stop the local transport. Applies on the next audio block, then repaints the label. */
 export function setTransport(playing: boolean): void {
-  (globalThis as TransportGlobals).__rp_setTransport?.(playing);
+  native.__rp_setTransport?.(playing);
   emit();
 }
 
@@ -65,7 +60,7 @@ export function setTransport(playing: boolean): void {
  *  refused). Applies on the next audio block and persists; ignored while an external master is running. */
 export function setClockBpm(bpm: number): void {
   const clamped = Math.min(CLOCK_BPM_MAX, Math.max(CLOCK_BPM_MIN, Math.round(bpm)));
-  (globalThis as TransportGlobals).__rp_setClockBpm?.(clamped);
+  native.__rp_setClockBpm?.(clamped);
   emit();
 }
 
@@ -85,5 +80,4 @@ export function pollTransport(): void {
   lastKey = key;
   emit();
 }
-
 

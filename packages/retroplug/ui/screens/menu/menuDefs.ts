@@ -93,6 +93,7 @@ import {
 } from "../../../src/tracker";
 import type { HostBackend, ControlPlaneBackend } from "../../../src/backend";
 import { openPath } from "../../lvgl/openPath";
+import { native } from "../../lvgl/nativeHooks";
 import { startSystemRender, renderBaseName, validSplits, formatDuration } from "../../lvgl/render";
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
 import { flushDirtySram } from "../../../src/sramAutoSave";
@@ -144,7 +145,7 @@ export interface MenuContext {
  *  __rp_isStandalone; a DAW-hosted editor and the headless harness leave it undefined. Gates the "Exit"
  *  row — a DAW owns the plugin window, so it must not offer to quit. */
 function isStandalone(): boolean {
-  return (globalThis as { __rp_isStandalone?: boolean }).__rp_isStandalone === true;
+  return native.__rp_isStandalone === true;
 }
 
 // Standalone audio device config (the SDL host's sample-rate / block-size, for the Audio submenu). The

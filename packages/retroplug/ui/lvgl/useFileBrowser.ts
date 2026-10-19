@@ -16,6 +16,7 @@ import {
 } from "../../src/fileBrowser";
 import { buildFileBrowserMenu } from "../screens/menu/fileBrowserMenu";
 import type { Overlay } from "./overlay";
+import { native } from "./nativeHooks";
 
 /** The browse as an overlay; onClose (Esc / B) cancels it (resolves null). */
 export type FileBrowserOverlay = Overlay;
@@ -29,12 +30,8 @@ export function useFileBrowser(stores: AppStores): FileBrowserOverlay {
   // __rp_onFileBrowserResult; here (UI bundle) we open the React overlay and hand the pick back. Saving the
   // prior native hook lets the useNativeFileDialogs toggle delegate to the OS dialog later (step 2).
   useEffect(() => {
-    const g = globalThis as {
-      __rp_openFileBrowser?: (t: string, p: string, s: boolean, d: string, sd: string, dir: boolean) => void;
-      __rp_onFileBrowserResult?: (path: string | null) => void;
-    };
-    const nativeHook = g.__rp_openFileBrowser;
-    g.__rp_openFileBrowser = (title, patterns, saving, defaultName, startDir, directory) => {
+    const nativeHook = native.__rp_openFileBrowser;
+    native.__rp_openFileBrowser = (title, patterns, saving, defaultName, startDir, directory) => {
       // Default: the host's OS dialog. It falls through to the in-app overlay both when the user has opted
       // out and when the host binds no native hook at all (no desktop dialog helper), so this is safe
       // everywhere - a helper-less host just keeps the browser it always had.
@@ -50,10 +47,10 @@ export function useFileBrowser(stores: AppStores): FileBrowserOverlay {
         defaultName,
         startDir,
         directory: !!directory,
-      }).then((path) => g.__rp_onFileBrowserResult?.(path ?? null));
+      }).then((path) => native.__rp_onFileBrowserResult?.(path ?? null));
     };
     return () => {
-      g.__rp_openFileBrowser = nativeHook;
+      native.__rp_openFileBrowser = nativeHook;
     };
   }, [stores]);
 

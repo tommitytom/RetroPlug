@@ -31,6 +31,7 @@ import {
   PRO_MK3, PRO_MK3_PORT_HINT, deviceInquiry, deviceName, exitToLiveMode, parseInquiryReply,
 } from "../../../src/launchpad";
 import { createSubscribable } from "./subscribable";
+import { native } from "../../lvgl/nativeHooks";
 
 export interface LaunchpadConfig {
   inputs: string[]; // every hardware MIDI input port, unfiltered
@@ -71,19 +72,9 @@ const notify = createSubscribable();
 const emit = notify.emit;
 export const subscribeLaunchpad = notify.subscribe;
 
-type LaunchpadGlobals = {
-  __rp_getLaunchpadConfig?: () => Partial<LaunchpadConfig>;
-  __rp_setLaunchpadPorts?: (input: string, output: string) => void;
-  __rp_connectLaunchpad?: (enabled: boolean) => void;
-  __rp_setLaunchpadFarewell?: (bytes: number[]) => void;
-  __rp_scanLaunchpad?: (probe: number[], windowMs: number) => boolean;
-  __rp_getLaunchpadScan?: () => Partial<LaunchpadScanStatus>;
-  __rp_setLaunchpadDevice?: (label: string) => void;
-};
-
 /** Whether the host exposes the control-surface seam (the SDL standalone). */
 export function hasLaunchpad(): boolean {
-  return typeof (globalThis as LaunchpadGlobals).__rp_getLaunchpadConfig === "function";
+  return typeof native.__rp_getLaunchpadConfig === "function";
 }
 
 /** True for a port name that looks like the Pro MK3's own USB MIDI interface. False says nothing: a
@@ -126,7 +117,7 @@ let farewellTold: unknown = null;
 /** Hand native the bytes that release the device. Called before anything can connect, so the link is never
  *  holding a device it has no way to give back. */
 function ensureFarewell(): void {
-  const fn = (globalThis as LaunchpadGlobals).__rp_setLaunchpadFarewell;
+  const fn = native.__rp_setLaunchpadFarewell;
   if (typeof fn !== "function" || fn === farewellTold) return;
   fn(exitToLiveMode(PRO_MK3));
   farewellTold = fn;
@@ -134,7 +125,7 @@ function ensureFarewell(): void {
 
 /** The live MIDI ports + current link state, read fresh each render. */
 export function getLaunchpadConfig(): LaunchpadConfig | null {
-  const fn = (globalThis as LaunchpadGlobals).__rp_getLaunchpadConfig;
+  const fn = native.__rp_getLaunchpadConfig;
   if (typeof fn !== "function") return null;
   ensureFarewell(); // the menu reads this every render, so the blob lands long before any Connect
   const c = fn() ?? {};
@@ -156,7 +147,7 @@ export function getLaunchpadConfig(): LaunchpadConfig | null {
 
 /** Choose the in/out pair by port name. Applies + persists natively, then repaints the labels. */
 export function setLaunchpadPorts(input: string, output: string): void {
-  (globalThis as LaunchpadGlobals).__rp_setLaunchpadPorts?.(input, output);
+  native.__rp_setLaunchpadPorts?.(input, output);
   emit();
 }
 
@@ -169,35 +160,35 @@ export function connectLaunchpad(enabled: boolean, cfg?: LaunchpadConfig | null)
     const output = cfg.selectedOutput || defaultPort(cfg.outputs);
     if (input && output) setLaunchpadPorts(input, output);
   }
-  (globalThis as LaunchpadGlobals).__rp_connectLaunchpad?.(enabled);
+  native.__rp_connectLaunchpad?.(enabled);
   emit();
 }
 
 /** Forget the recorded device: clears the pair and the label, so the instance submenu goes away again. */
 export function forgetLaunchpad(): void {
-  (globalThis as LaunchpadGlobals).__rp_setLaunchpadPorts?.("", "");
-  (globalThis as LaunchpadGlobals).__rp_setLaunchpadDevice?.("");
+  native.__rp_setLaunchpadPorts?.("", "");
+  native.__rp_setLaunchpadDevice?.("");
   emit();
 }
 
 /** Whether the host can scan (the SDL standalone). Scanning writes MIDI, so it is never implicit: only
  *  Settings > MIDI starts one, and only when the user asks. */
 export function hasLaunchpadScan(): boolean {
-  return typeof (globalThis as LaunchpadGlobals).__rp_scanLaunchpad === "function";
+  return typeof native.__rp_scanLaunchpad === "function";
 }
 
 /** Ask every output "what are you?" and listen on every input. Returns whether a scan started - native
  *  refuses while one is running, or while the link holds a pair (those ports cannot be reopened, and a
  *  connected device needs no finding). */
 export function startLaunchpadScan(): boolean {
-  const started = (globalThis as LaunchpadGlobals).__rp_scanLaunchpad?.(deviceInquiry(), SCAN_WINDOW_MS) ?? false;
+  const started = native.__rp_scanLaunchpad?.(deviceInquiry(), SCAN_WINDOW_MS) ?? false;
   if (started) emit();
   return started;
 }
 
 /** The live scan state, read fresh. null without the seam. */
 export function getLaunchpadScan(): LaunchpadScanStatus | null {
-  const fn = (globalThis as LaunchpadGlobals).__rp_getLaunchpadScan;
+  const fn = native.__rp_getLaunchpadScan;
   if (typeof fn !== "function") return null;
   const s = fn() ?? {};
   const replies = Array.isArray(s.replies) ? s.replies : [];
@@ -232,11 +223,9 @@ export function launchpadFromScan(s: LaunchpadScanStatus): { input: string; outp
 export function applyLaunchpadScan(s: LaunchpadScanStatus): { input: string; output: string; name: string } | null {
   const hit = launchpadFromScan(s);
   if (!hit) return null;
-  const g = globalThis as LaunchpadGlobals;
-  g.__rp_setLaunchpadPorts?.(hit.input, hit.output);
-  g.__rp_setLaunchpadDevice?.(hit.name);
+  native.__rp_setLaunchpadPorts?.(hit.input, hit.output);
+  native.__rp_setLaunchpadDevice?.(hit.name);
   emit();
   return hit;
 }
-
 

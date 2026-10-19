@@ -13,6 +13,7 @@ import { useState } from "react";
 import { Dimensions } from "lvgljs-ui";
 
 import { useNativeEvent } from "./useNativeEvent";
+import { native } from "./nativeHooks";
 
 const FALLBACK = { width: 480, height: 432 };
 
@@ -29,9 +30,7 @@ function readWindowSize(): { width: number; height: number } {
 /** The current editor window size, re-read whenever the editor emits a "resize". */
 export function useWindowSize(): { width: number; height: number } {
   const [size, setSize] = useState(readWindowSize);
-  useNativeEvent("resize", (...args) => {
-    const w = args[0] as number;
-    const h = args[1] as number;
+  useNativeEvent("resize", (w, h) => {
     if (w > 0 && h > 0) setSize((prev) => (prev.width === w && prev.height === h ? prev : { width: w, height: h }));
     else setSize(readWindowSize());
   });
@@ -41,17 +40,17 @@ export function useWindowSize(): { width: number; height: number } {
 /** Ask the editor for a window of `width`×`height` (fit-to-grid). Inert where the native seam isn't
  *  installed (the harness). */
 export function requestWindowSize(width: number, height: number): void {
-  (globalThis as { __rp_setWindowSize?: (w: number, h: number) => void }).__rp_setWindowSize?.(width, height);
+  native.__rp_setWindowSize?.(width, height);
 }
 
 /** True when a tiling WM has taken geometry (so the UI should stop asking to resize). False where the
  *  native seam isn't installed — there is no WM to fight there. */
 export function isWindowSizeControlled(): boolean {
-  return !!(globalThis as { __rp_isWindowSizeControlled?: () => boolean }).__rp_isWindowSizeControlled?.();
+  return !!native.__rp_isWindowSizeControlled?.();
 }
 
 /** Set the standalone OS window title. Inert where the native seam isn't installed (the harness / a DAW,
  *  where the plugin doesn't own the window). */
 export function setWindowTitle(title: string): void {
-  (globalThis as { __rp_setWindowTitle?: (t: string) => void }).__rp_setWindowTitle?.(title);
+  native.__rp_setWindowTitle?.(title);
 }

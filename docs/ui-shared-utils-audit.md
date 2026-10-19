@@ -38,7 +38,7 @@ focusable no-op actions, so the cursor landed on them and Enter did nothing.
 Fix: a pure [menuItems.ts](../packages/retroplug/ui/screens/menu/menuItems.ts) with the builders plus
 `button` (keepOpen action), `infoRow` (disabled readout) and `noticeTree` (body + OK).
 
-## 3. `__rp_*` native hooks: 52 `globalThis as {...}` casts in 16 files
+## 3. `__rp_*` native hooks: 52 `globalThis as {...}` casts in 16 files (DONE)
 
 Every native seam re-declares its own structural type at each call site; `audioDraft.ts` re-casts
 `__rp_getAudioConfig` five times. `Symbol.for("plugin")` is resolved separately in `main.tsx` and
@@ -48,12 +48,21 @@ Proposal: one `lvgl/nativeHooks.ts` with an `RpHooks` interface and a single `na
 `pluginNamespace()` accessor, used for both calling hooks and installing them (`useCloseGuard`,
 `useFileBrowser`, `main.tsx`). One place documents the whole TS/C++ editor surface.
 
-## 4. `useNativeEvent` args are untyped
+Done as [nativeHooks.ts](../packages/retroplug/ui/lvgl/nativeHooks.ts): `RpHooks` (grouped by which native
+file binds each hook), `native` (a live, typed view of globalThis, so test fakes installed later are still
+seen) and `pluginNamespace()`. No `globalThis` cast is left in `ui/` outside that file. Out of scope: the
+control-plane side in `src/` (e.g. realBackend's `__rp_openFileBrowser` call) still declares its own.
+
+## 4. `useNativeEvent` args are untyped (DONE)
 
 Every subscriber unpacks `(...args)` with `args[0] as number` / `args[1] as boolean` (~12 sites). A typed
 channel map (`{ key: [code, press, mod]; frame: [tick]; mouse: [button, press, x, y]; "gamepad-button":
 [pad, name, press]; "gamepad-axis": [pad, axis, value]; resize: [w, h]; "file-drop": [paths, x, y] }`)
 makes `useNativeEvent("key", (code, press, mod) => ...)` type-checked.
+
+Done: `NativeEvents` in [useNativeEvent.ts](../packages/retroplug/ui/lvgl/useNativeEvent.ts), each channel
+annotated with the native files that emit it; every `args[n] as T` is gone. Note the type is only as good
+as the emit sites it was read off - nothing checks the C++ side against it.
 
 ## 5. LSDj / risa runtime readout twins
 

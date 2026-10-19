@@ -11,12 +11,34 @@
 import { useEffect, useRef } from "react";
 import { on, off } from "lvgljs";
 
-export function useNativeEvent(channel: string, handler: (...args: unknown[]) => void): void {
+/** Every channel native emits on the bus, with its argument list. Each emit site is named so a change to
+ *  one side shows up as a mismatch here: PluginUI.cpp (plugin editor), sdl/main.cpp (SDL standalone),
+ *  GamepadPump.hpp (both), and RenderCore.cpp (the UI test harness, which emits the same shapes). */
+export interface NativeEvents {
+  /** One render frame; `tickMs` is the LVGL tick (u32, wraps at ~49.7 days) - the UI's only monotonic clock. */
+  frame: [tickMs: number];
+  /** DPF key code (unshifted code point), press/release, modifier mask (kModifierShift = bit 0). */
+  key: [code: number, press: boolean, mod: number];
+  /** DPF button (left=1, right=2, middle=3), press/release, window-space position. Not emitted by SDL. */
+  mouse: [button: number, press: boolean, x: number, y: number];
+  /** The window's new size. A non-positive size means "re-read Dimensions.window". */
+  resize: [width: number, height: number];
+  /** OS drag-and-drop: newline-joined absolute paths + window-space drop point. */
+  "file-drop": [paths: string, x: number, y: number];
+  /** pad = SDL_JoystickID (stable across hot-plug), name = SDL canonical button name ("a", "dpright"). */
+  "gamepad-button": [pad: number, name: string, press: boolean];
+  /** axis = SDL axis name ("leftx"), value normalised to -1..1. */
+  "gamepad-axis": [pad: number, axis: string, value: number];
+  "gamepad-connected": [pad: number, name: string];
+  "gamepad-disconnected": [pad: number];
+}
+
+export function useNativeEvent<C extends keyof NativeEvents>(channel: C, handler: (...args: NativeEvents[C]) => void): void {
   const ref = useRef(handler);
   ref.current = handler;
 
   useEffect(() => {
-    const listener = (...args: unknown[]) => ref.current(...args);
+    const listener = (...args: unknown[]) => ref.current(...(args as NativeEvents[C]));
     on(channel, listener);
     return () => off(channel, listener);
   }, [channel]);

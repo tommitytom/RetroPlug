@@ -9,17 +9,9 @@
 // (the ui-test harness) falls back to composing its own graph here.
 
 import { useRef, useEffect, type ReactNode } from "react";
-import { composeAppStores, type StoreChannel, type AppStores } from "../../src/appStores";
+import { composeAppStores, type StoreChannel } from "../../src/appStores";
 import { StoreContext, type StoreContextValue } from "./useStores";
-
-type PluginNamespace = {
-  stores?: AppStores;
-  setUiNotify?: (fn: ((channel: StoreChannel) => void) | null) => void;
-};
-
-function pluginNamespace(): PluginNamespace | undefined {
-  return (globalThis as Record<symbol, unknown>)[Symbol.for("plugin")] as PluginNamespace | undefined;
-}
+import { pluginNamespace } from "../lvgl/nativeHooks";
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const ref = useRef<StoreContextValue | null>(null);
