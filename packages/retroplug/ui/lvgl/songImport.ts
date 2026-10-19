@@ -9,6 +9,7 @@ import type { SongCatalog, SongInfo } from "../../src/tracker";
 import { resolveTracker } from "../../src/tracker";
 import { resolveSavPath } from "../../src/savPaths";
 import type { MenuItem, MenuTree } from "../screens/menu/menuTree";
+import { button, infoRow, noticeTree, separator } from "../screens/menu/menuItems";
 
 // The picker for a validated source sav: its songs + the currently-checked source indices.
 export interface PickState {
@@ -52,7 +53,6 @@ export function planImport(sys: SystemView, source: Uint8Array, warning?: string
   return { kind: "pick", sys, cat, source, songs, checked: new Set(songs.map((s) => s.index)), ...(warning ? { warning } : {}) };
 }
 
-/** Import the checked songs into the live battery (readSram -> catalog.importSongs -> write .sav -> cold
 /** The outcome of an import: how many of the `requested` (checked) songs actually landed in the battery.
  *  `imported < requested` means the target filled up (a partial import) — the caller surfaces that. */
 export interface ImportResult {
@@ -84,24 +84,17 @@ export function applyImport(stores: AppStores, pick: PickState): ImportResult {
 /** Build the overlay tree for `pending`. Song rows and the buttons are keepOpen (the overlay owns its own
  *  dismissal), matching buildModal in useProjectModals. Checkbox is ASCII "[x]"/"[ ]" (no LVGL glyph). */
 export function buildImportModal(pending: ImportPending, h: ImportHandlers): MenuTree {
-  if (pending.kind === "notice") {
-    const btn = (id: string, label: string, onSelect: () => void): MenuItem => ({ id, label, kind: "action", keepOpen: true, onSelect });
-    return { title: pending.title, items: [btn("import-notice-body", pending.body, () => {}), btn("import-notice-ok", "OK", h.onClose)] };
-  }
+  if (pending.kind === "notice") return noticeTree("import-notice", pending.title, pending.body, h.onClose);
   const allChecked = pending.songs.length === pending.checked.size;
-  const rows: MenuItem[] = pending.songs.map((s) => ({
-    id: `import-song-${s.index}`,
-    label: `[${pending.checked.has(s.index) ? "x" : " "}] ${s.name || `Song ${s.index}`}`,
-    kind: "action",
-    keepOpen: true,
-    onSelect: () => h.toggle(s.index),
-  }));
+  const rows: MenuItem[] = pending.songs.map((s) =>
+    button(`import-song-${s.index}`, `[${pending.checked.has(s.index) ? "x" : " "}] ${s.name || `Song ${s.index}`}`, () => h.toggle(s.index)),
+  );
   const controls: MenuItem[] = [
-    { id: "import-sep", label: "", kind: "separator" },
-    ...(pending.warning ? [{ id: "import-warning", label: pending.warning, kind: "action" as const, keepOpen: true, disabled: true, onSelect: () => {} }] : []),
-    { id: "import-all", label: allChecked ? "Select None" : "Select All", kind: "action", keepOpen: true, onSelect: h.toggleAll },
-    { id: "import-do", label: `Import (${pending.checked.size})`, kind: "action", keepOpen: true, onSelect: h.apply, ...(pending.checked.size === 0 ? { disabled: true } : {}) },
-    { id: "import-cancel", label: "Cancel", kind: "action", keepOpen: true, onSelect: h.onClose },
+    separator("import-sep"),
+    ...(pending.warning ? [infoRow("import-warning", pending.warning)] : []),
+    button("import-all", allChecked ? "Select None" : "Select All", h.toggleAll),
+    button("import-do", `Import (${pending.checked.size})`, h.apply, pending.checked.size === 0),
+    button("import-cancel", "Cancel", h.onClose),
   ];
   return { title: "Import Songs", items: [...rows, ...controls] };
 }

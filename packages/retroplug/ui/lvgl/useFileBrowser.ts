@@ -15,16 +15,10 @@ import {
   setLastBrowseDir,
 } from "../../src/fileBrowser";
 import { buildFileBrowserMenu } from "../screens/menu/fileBrowserMenu";
-import type { MenuTree } from "../screens/menu/menuTree";
+import type { Overlay } from "./overlay";
 
-export interface FileBrowserOverlay {
-  /** True while a browse is open (App gates Esc + game input on this, like the modals). */
-  active: boolean;
-  /** The overlay tree to render, or null. */
-  tree: MenuTree | null;
-  /** Esc / B — cancel the browse (resolves null). */
-  onClose: () => void;
-}
+/** The browse as an overlay; onClose (Esc / B) cancels it (resolves null). */
+export type FileBrowserOverlay = Overlay;
 
 export function useFileBrowser(stores: AppStores): FileBrowserOverlay {
   const [, bump] = useState(0);

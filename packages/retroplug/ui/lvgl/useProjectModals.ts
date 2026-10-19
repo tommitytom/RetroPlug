@@ -27,7 +27,9 @@ import { SAV_PATTERNS } from "../../src/savPaths";
 import { saveProjectInteractive } from "./saveProjectInteractive";
 import { unsavedRows } from "./unsavedRows";
 import { useNativeEvent } from "./useNativeEvent";
-import type { MenuItem, MenuTree } from "../screens/menu/menuTree";
+import type { Overlay } from "./overlay";
+import type { MenuTree } from "../screens/menu/menuTree";
+import { button, infoRow, noticeTree } from "../screens/menu/menuItems";
 
 const ROM_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes", "*.sms", "*.gg"];
 const SRAM_PATTERNS = SAV_PATTERNS; // .sav / .srm battery saves
@@ -42,13 +44,7 @@ type PendingModal =
   // to open song X; silently destroying song Y on the way is not what was agreed to.
   | { kind: "songDiscard"; song: string; working: string };
 
-export interface ProjectModals {
-  /** The overlay to render (null = nothing showing). */
-  modal: MenuTree | null;
-  /** True while an overlay is up (App gates Esc + game input on this). */
-  active: boolean;
-  /** Esc / dismiss — cancels a pending relink's load, then clears the overlay. */
-  onClose: () => void;
+export interface ProjectModals extends Overlay {
   /** Start a new project, guarding unsaved changes first. */
   newProject: () => void;
   /** Load `path`, guarding unsaved changes first and surfacing the outcome. `song` (a recent row's) is
@@ -152,12 +148,12 @@ export function useProjectModals(stores: AppStores): ProjectModals {
     settleSong();
   };
 
-  const modal = pending ? buildModal(pending, stores, handleOutcome, onClose, proceedSong) : null;
-  return { modal, active: pending !== null, onClose, newProject, loadProject, loadRomAsProject };
+  const tree = pending ? buildModal(pending, stores, handleOutcome, onClose, proceedSong) : null;
+  return { tree, active: pending !== null, onClose, newProject, loadProject, loadRomAsProject };
 }
 
 // Build the overlay tree for `pending`. Every button uses keepOpen (the overlay owns dismissal itself),
-// mirroring the close-guard tree in App.tsx.
+// mirroring the close-guard tree in App.tsx; read-only lines are infoRows, so Enter lands on a button.
 function buildModal(
   pending: PendingModal,
   stores: AppStores,
@@ -165,8 +161,6 @@ function buildModal(
   onClose: () => void,
   proceedSong: () => void,
 ): MenuTree {
-  const btn = (id: string, label: string, onSelect: () => void): MenuItem => ({ id, label, kind: "action", keepOpen: true, onSelect });
-
   if (pending.kind === "confirm") {
     const { proceed } = pending;
     // Leads with WHAT is unsaved (the project file + each dirty battery's target .sav), greyed and skipped
@@ -175,9 +169,9 @@ function buildModal(
       title: "Unsaved changes",
       items: [
         ...unsavedRows(stores.backend, stores.project),
-        btn("discard-save", "Save", () => void saveProjectInteractive(stores).then((saved) => saved && proceed())),
-        btn("discard-nosave", "Don't Save", proceed),
-        btn("discard-cancel", "Cancel", onClose),
+        button("discard-save", "Save", () => void saveProjectInteractive(stores).then((saved) => saved && proceed())),
+        button("discard-nosave", "Don't Save", proceed),
+        button("discard-cancel", "Cancel", onClose),
       ],
     };
   }
@@ -189,24 +183,19 @@ function buildModal(
     return {
       title: "Unsaved song",
       items: [
-        btn("song-discard-what", `"${working}" has unsaved changes`, () => {}),
-        btn("song-discard-go", `Discard & load "${song}"`, proceedSong),
-        btn("song-discard-cancel", "Keep current song", onClose),
+        infoRow("song-discard-what", `"${working}" has unsaved changes`),
+        button("song-discard-go", `Discard & load "${song}"`, proceedSong),
+        button("song-discard-cancel", "Keep current song", onClose),
       ],
     };
   }
 
-  if (pending.kind === "notice") {
-    return {
-      title: pending.title,
-      items: [btn("notice-body", pending.body, () => {}), btn("notice-ok", "OK", onClose)],
-    };
-  }
+  if (pending.kind === "notice") return noticeTree("notice", pending.title, pending.body, onClose);
 
   // relink: one "Locate …" per missing file (the store auto-resolves folder-mates, so one pick often
   // clears the rest), then Cancel.
   const items = pending.missing.map((m, i) =>
-    btn(`relink-${i}`, `Locate ${basename(m.path) || m.itemKind}...`, () =>
+    button(`relink-${i}`, `Locate ${basename(m.path) || m.itemKind}...`, () =>
       void stores.backend
         .openFileBrowser({ title: `Locate ${basename(m.path) || m.itemKind}`, patterns: m.itemKind === "rom" ? ROM_PATTERNS : SRAM_PATTERNS })
         .then((p) => {
@@ -214,6 +203,6 @@ function buildModal(
         }),
     ),
   );
-  items.push(btn("relink-cancel", "Cancel", onClose));
+  items.push(button("relink-cancel", "Cancel", onClose));
   return { title: "Missing files", items };
 }

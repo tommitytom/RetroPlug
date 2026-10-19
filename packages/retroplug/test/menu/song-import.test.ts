@@ -134,6 +134,8 @@ test("buildImportModal renders ASCII checkbox rows, an Import(N) button, and the
   const nt = buildImportModal(notice, handlers);
   expect(nt.title).toBe("Cannot import");
   expect(findItem(nt.items, "import-notice-ok")?.label).toBe("OK");
+  // The body is a statement, not an option: disabled, so the cursor starts on OK and Enter dismisses.
+  expect(findItem(nt.items, "import-notice-body")?.disabled).toBe(true);
 });
 
 // --- applyImport (the write cycle) ----------------------------------------------------------------------

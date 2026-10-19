@@ -23,7 +23,7 @@ import { useSongWatch } from "./lvgl/useSongWatch";
 import { useSramAutoSave } from "./lvgl/useSramAutoSave";
 import { useN8SdWatch } from "./lvgl/useN8SdWatch";
 import { useLaunchpadScanWatch } from "./lvgl/useLaunchpadScanWatch";
-import { unsavedRows } from "./lvgl/unsavedRows";
+import { topOverlay } from "./lvgl/overlay";
 import { useGameInput } from "./input/useGameInput";
 import { useGamepadInput } from "./input/useGamepadInput";
 import { SystemGrid } from "./screens/grid/SystemGrid";
@@ -39,11 +39,10 @@ import { subscribeN8, projectExpVolForN8, setN8ExpVol } from "./screens/menu/n8D
 import { subscribeLaunchpad } from "./screens/menu/launchpadDevices";
 import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
-import { buildKeyToAction, buildGamepadToAction, type AppAction } from "../src/keyCodes";
+import { buildKeyToAction, buildGamepadToAction, KEY_ESCAPE, type AppAction } from "../src/keyCodes";
 import { resolveDropAction } from "../src/fileDrop";
 import { importSongFiles } from "../src/lsdjSongImport";
 
-const KEY_ESCAPE = 0x1b;
 const KEY_BACKTICK = 0x60; // ` — toggles the LSDj runtime debug overlay (a developer aid, off by default)
 const MOUSE_BUTTON_RIGHT = 2; // DPF kMouseButtonRight (left=1, right=2, middle=3) — the "mouse" bus button field
 
@@ -95,8 +94,13 @@ export function App() {
   useEffect(() => setN8ExpVol(n8ExpVol), [n8ExpVol]);
 
   const empty = systems.length === 0;
+  // The full-window overlay that owns the window + input, if any. Priority order: the file browser first (a
+  // browse can be raised from a modal - relink → Locate - so it must sit above it), then the close prompt,
+  // the project modals, the song import. The same order decides what Esc cancels.
+  const overlay = topOverlay([browser, closeGuard, modals, songImport]);
+  const overlayActive = overlay !== null; // a stable effect dep (the hooks return a fresh object each render)
   // "In play": a tile is showing and no menu/overlay owns input. Gates game input AND the cycle actions.
-  const playing = !empty && !menuOpen && !closeGuard.active && !modals.active && !browser.active && !songImport.active;
+  const playing = !empty && !menuOpen && !overlay;
   // App-action lookups (open menu / cycle instances), rebuilt only when the bindings change.
   const keyToAction = useMemo(() => buildKeyToAction(bindings.keyboardActions), [bindings.keyboardActions]);
   const padToAction = useMemo(() => buildGamepadToAction(bindings.gamepadActions), [bindings.gamepadActions]);
@@ -125,8 +129,8 @@ export function App() {
   // Idle: point the keypad at the sink when the grid shows without a menu. Not while a modal overlay owns
   // the keypad (close prompt / project modal) — else closing the menu to raise one steals its focus.
   useEffect(() => {
-    if (!empty && !menuOpen && !closeGuard.active && !modals.active && !browser.active && !songImport.active && sink) setKeyboardGroup(sink);
-  }, [empty, menuOpen, sink, closeGuard.active, modals.active, browser.active, songImport.active]);
+    if (!empty && !menuOpen && !overlayActive && sink) setKeyboardGroup(sink);
+  }, [empty, menuOpen, sink, overlayActive]);
 
   // Fit the window to the grid when the instance count / zoom / layout changes. Deliberately NOT reactive to
   // windowSize: re-asserting the size on every observed resize fights a host/compositor that reverts our
@@ -171,13 +175,10 @@ export function App() {
     if (!press) return;
     // Esc always cancels an active overlay — a universal back, independent of the (rebindable) OpenMenu key.
     if (key === KEY_ESCAPE) {
-      if (browser.active) return void browser.onClose();
-      if (closeGuard.active) return void closeGuard.onCancel();
-      if (modals.active) return void modals.onClose();
-      if (songImport.active) return void songImport.onClose();
+      if (overlay) return void overlay.onClose();
       if (hdSystemId != null) return void setHdSystemId(null); // HD player → back to the grid
     }
-    if (closeGuard.active || modals.active || browser.active || songImport.active) return; // an overlay owns input; actions don't fire under it
+    if (overlay) return; // an overlay owns input; actions don't fire under it
     if (key === KEY_BACKTICK) return void toggleLsdjDebug(); // dev: show/hide the LSDj runtime readout
     runAction(keyToAction.get(key));
   });
@@ -187,7 +188,7 @@ export function App() {
     const name = args[1] as string;
     const press = args[2] as boolean;
     if (!press) return;
-    if (closeGuard.active || modals.active || browser.active || songImport.active) return;
+    if (overlay) return;
     runAction(padToAction.get(name));
   });
 
@@ -199,7 +200,7 @@ export function App() {
     const button = args[0] as number;
     const press = args[1] as boolean;
     if (button !== MOUSE_BUTTON_RIGHT || !press) return;
-    if (empty || isMenuModalActive() || closeGuard.active || modals.active || songImport.active) return;
+    if (empty || isMenuModalActive() || overlay) return;
     const idx = hitTestTile(args[2] as number, args[3] as number, systems.length, settings.layout as SystemLayout, settings.zoom, userConfig.defaultZoom, windowSize);
     if (idx == null) return; // must land on an instance
     const targetId = systems[idx].id;
@@ -282,69 +283,10 @@ export function App() {
 
   const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject, loadRomAsProject: modals.loadRomAsProject, requestExit, beginSongImport: songImport.begin, openLsdjHd: setHdSystemId };
 
-  // In-app file browser (openFileBrowser): a full-window overlay above everything, owning input. A browse can
-  // be raised from a menu OR from a modal (relink → Locate), so it takes precedence. onClose (Esc/B) cancels.
-  if (browser.active && browser.tree) {
-    const { width, height } = windowSize;
-    return (
-      <Box style={{ width, height, "background-color": "#000000" }}>
-        <Menu width={width} height={height} zoom={resolvedZoom} tree={browser.tree} onClose={browser.onClose} />
-      </Box>
-    );
-  }
-
-  // Unsaved-changes prompt on window close (standalone): a full-window overlay above everything, owning
-  // the keypad. It leads with WHAT is unsaved (the project file + each dirty battery's target .sav, greyed
-  // and nav-skipped), then Save & Quit / Discard & Quit / Cancel - the guard drives the native quit +
-  // dismissal. The list is built here rather than latched when the prompt opened, so a battery the cart
-  // writes while it's up shows on the next render.
-  if (closeGuard.active) {
-    const { width, height } = windowSize;
-    const closeTree: MenuTree = {
-      title: "Unsaved changes",
-      items: [
-        ...unsavedRows(stores.backend, stores.project),
-        { id: "close-save", label: "Save & Quit", kind: "action", keepOpen: true, onSelect: closeGuard.onSave },
-        { id: "close-discard", label: "Discard & Quit", kind: "action", keepOpen: true, onSelect: closeGuard.onDiscard },
-        { id: "close-cancel", label: "Cancel", kind: "action", keepOpen: true, onSelect: closeGuard.onCancel },
-      ],
-    };
-    return (
-      <Box style={{ width, height, "background-color": "#000000" }}>
-        <Menu width={width} height={height} zoom={resolvedZoom} tree={closeTree} onClose={closeGuard.onCancel} />
-      </Box>
-    );
-  }
-
-  // Project modals (discard confirm on New/Load, incompatible/error notice, missing-files relink): a
-  // full-window overlay above everything, same pattern as the close prompt. The tree is owned by the hook.
-  if (modals.active && modals.modal) {
-    const { width, height } = windowSize;
-    return (
-      <Box style={{ width, height, "background-color": "#000000" }}>
-        <Menu width={width} height={height} zoom={resolvedZoom} tree={modals.modal} onClose={modals.onClose} />
-      </Box>
-    );
-  }
-
-  // Song-import overlay (validate a source .sav, then the checkbox picker) — same full-window pattern.
-  if (songImport.active && songImport.modal) {
-    const { width, height } = windowSize;
-    return (
-      <Box style={{ width, height, "background-color": "#000000" }}>
-        <Menu width={width} height={height} zoom={resolvedZoom} tree={songImport.modal} onClose={songImport.onClose} />
-      </Box>
-    );
-  }
-
-  if (empty) {
-    const { width, height } = windowSize;
-    return (
-      <Box style={{ width, height, "background-color": "#000000" }}>
-        <Menu width={width} height={height} zoom={resolvedZoom} tree={buildStartMenu(ctx)} onClose={() => {}} />
-      </Box>
-    );
-  }
+  // A full-window overlay (file browser / close prompt / project modal / song import) draws above
+  // everything and owns the keypad; the start menu (empty project) is the same full-window menu, always open.
+  if (overlay) return <FullWindowMenu size={windowSize} zoom={resolvedZoom} tree={overlay.tree!} onClose={overlay.onClose} />;
+  if (empty) return <FullWindowMenu size={windowSize} zoom={resolvedZoom} tree={buildStartMenu(ctx)} onClose={() => {}} />;
 
   // The HD player takes the whole window in place of the grid. A stale id (its system was removed, or the
   // project reloaded) falls through to the grid here and is cleared by the effect above.
@@ -364,5 +306,25 @@ export function App() {
         setMenuSystemId(null);
       }}
     />
+  );
+}
+
+/** A <Menu> filling the window on a black backdrop: every overlay, and the start menu. */
+function FullWindowMenu({
+  size,
+  zoom,
+  tree,
+  onClose,
+}: {
+  size: { width: number; height: number };
+  zoom: number;
+  tree: MenuTree;
+  onClose: () => void;
+}) {
+  const { width, height } = size;
+  return (
+    <Box style={{ width, height, "background-color": "#000000" }}>
+      <Menu width={width} height={height} zoom={zoom} tree={tree} onClose={onClose} />
+    </Box>
   );
 }
