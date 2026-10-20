@@ -51,6 +51,7 @@ import {
   songFingerprint,
   slotMeta,
   prefixFingerprint,
+  directoryFingerprint,
   sameBlockOutsideGrooves,
   slotHolds,
   sanitizeEcho,
@@ -323,6 +324,7 @@ export const smsggdjSongCatalog: SongCatalog = {
   slotOfCleanSong,
   trackSlot,
   fingerprintOf: changeSignal,
+  directorySignal: (sav) => directoryFingerprint(sav),
   // The tracked slot still holds the song it held when tracked, and the working song is that song except
   // for the groove table playback rewrites - with its name and echo intact. Anything wider (a NEW, a
   // load of another song) is not drift.

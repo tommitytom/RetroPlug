@@ -160,6 +160,9 @@ export interface SongCatalog {
   /** True when an UNEDITED working song differs from its tracked slot only in what the cart's playback
    *  rewrites by itself (not a load, not a NEW), so the tracking should hold. */
   isPlaybackDrift?(sav: Uint8Array, slot: TrackedSlot, song: WorkingSongImage): boolean;
+  /** A cheap identity for the battery's song DIRECTORY, so the watcher re-checks when the cart saves,
+   *  clears or renames a song even though its working song did not change. */
+  directorySignal?(sav: Uint8Array): number;
   /** The work-RAM writes that tell a running cart its working song has just been saved - what the cart's
    *  own SAVE does to its unsaved flag. Without them a host-side save would leave the cart (and every
    *  dirty check that reads its flag) still believing the song unsaved. */

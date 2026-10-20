@@ -963,3 +963,41 @@ test("a CONT-only change is unsaved work, and Save writes just the options, not 
   expect(be.readSram(id)!.subarray(0x3f60 + 2, 0x3f60 + 9)).toEqual(song.settings);
   expect(be.readRam(id)![layout.edited]).toBe(0);
 });
+
+// --- the fuzzer -------------------------------------------------------------------------------------------
+
+test("an unedited song the cart saves to a new row moves the tracking there, battery change alone", async () => {
+  // Found by the randomized cart model: the watcher keyed only on the WORKING song, which a save of an
+  // unedited song does not change - so tracking stayed on the old row and the next host Save wrote there.
+  // With playback drift first, that destroyed the original row's groove table.
+  const { be, systems, id } = smsProject();
+  be.setSram(id, buildSav([{ block: block(1), name: "" }], CART)!);
+  be.setRam(id, ramWith(image(1, "", false)));
+  systems.observeWorkingSongs(); // tracked at 0
+  const drifted = ramWith(image(1, "", false));
+  drifted[0x1a00 + 5] ^= 0x03; // playback rewrote a groove tick
+  be.setRam(id, drifted);
+  systems.observeWorkingSongs(); // drift: tracking held at 0
+  // The cart's own SAVE to a new row: the battery grows, the working song does not change.
+  be.setSram(id, buildSav([{ block: block(1), name: "" }, { block: drifted.slice(0, SMDJ4_BLOCK_LEN), name: "" }], CART)!);
+  systems.observeWorkingSongs();
+  expect(systems.workingSongImage(id)!.slot!.index).toBe(1);
+  const edited = drifted.slice();
+  edited[layout.edited] = 1;
+  edited[7] ^= 0x01;
+  be.setRam(id, edited);
+  expect((await saveWorkingSong(be, systems, systems.systems()[0])).kind).toBe("saved");
+  expect(readSongBlock(be.readSram(id)!, 0)).toEqual(block(1)); // the original, groove table and all
+});
+
+test("a re-carried song the cart already holds opens no landing window", () => {
+  // Found by the fuzzer: exported within 2 s of a carry landing, the project re-carries a song its
+  // savestate already holds; the window then keyed on the song's own signal and swallowed the cart's next
+  // same-content LOAD for up to 120 frames.
+  const { be, systems, id } = smsProject();
+  be.setRam(id, ramWith(image(8, "SAME")));
+  const newId = systems.reset(id)!;
+  be.setRam(newId, ramWith(image(8, "SAME"))); // already there when it settles
+  systems.settleCarries();
+  expect(systems.isRestoringSong(newId)).toBe(false);
+});

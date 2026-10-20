@@ -1645,6 +1645,14 @@ not, and each lost an unsaved song without a word:
   arrived confirmed, replacing that instance's unsaved song. And the OPTIONS block counts: a CONT change
   (the cart sets song_edited, the block does not change) is unsaved work, and Save writes just the
   options into the battery rather than a second copy of the song.
+- **A randomized cart model.** A fuzzer driving a model of the cart's own SAVE / LOAD / NEW / CLEAR /
+  rename / playback drift against host Save, reset and export (~20,000 steps, invariants: no silent loss,
+  no clobber of a non-origin song, Save really saves, reset restores exactly) found two more: the watcher
+  keyed only on the working song, so an unedited song the cart saved to a new row left the tracking on
+  the old row (it now also keys on a fingerprint of the battery's directory, ~0.12 ms per frame on the
+  real core); and a re-carried song the cart already held opened a landing window keyed on its own
+  signal (no window now). Remaining reports were identical twin copies and the empty default song,
+  where overwriting the "wrong" one loses nothing.
 - **"Saved" means the whole song.** The block, its echo settings and its displayed name all have to
   match a slot. The cart's ECHO screen changes only the echo and sets `song_edited`; comparing the block
   alone called that saved, so an echo edit got no prompt and Save stored nothing.

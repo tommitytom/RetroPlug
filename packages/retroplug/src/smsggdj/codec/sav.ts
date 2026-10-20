@@ -394,6 +394,16 @@ export function prefixFingerprint(sav: Uint8Array, index: number): number {
   return h;
 }
 
+/** A cheap fingerprint of the superblock + directory (the first 1,056 bytes): it moves on every song the
+ *  cart saves, clears, renames or reorders - each rewrites an entry's checksum, offset or name - and on
+ *  nothing else. What tells the slot watcher the BATTERY changed when the working song did not. */
+export function directoryFingerprint(sav: Uint8Array): number {
+  let h = 0x811c9dc5;
+  const end = Math.min(sav.length, HEAP_OFF);
+  for (let i = 0; i < end; i++) h = Math.imul(h ^ sav[i], 0x01000193) >>> 0;
+  return h;
+}
+
 /** Slot `index`'s echo settings and displayed name, as slotHolds / songFingerprint compare them. */
 export function slotMeta(sav: Uint8Array, index: number): SongMeta {
   const e = entryAt(index);

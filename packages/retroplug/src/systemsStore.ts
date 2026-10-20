@@ -137,7 +137,7 @@ export class SystemsStore {
   private carries = new Map<number, { song: WorkingSongImage }>();
   // Each system's last OBSERVED clean working song: its change signal, whether it matched a saved slot,
   // and how many more frames an unmatched one is re-checked - see observeWorkingSongs.
-  private observed = new Map<number, { signal: number; matched: boolean; retries: number }>();
+  private observed = new Map<number, { signal: number; dir: number; matched: boolean; retries: number }>();
   // A carry's writes are queued, so for a block or so the cart still holds the blank song it booted into.
   // Until the restored song shows up the CARRIED song is the working song: the watcher must not read the
   // blank as an in-cart NEW, and Save, the unsaved prompt and an export must not read it as the song.
@@ -571,22 +571,26 @@ export class SystemsStore {
         if (fp === land.blank && ++land.frames < LANDING_FRAMES) continue;
         this.landing.delete(e.id);
       }
+      const sram = this.backend.readSram(e.id);
+      if (!sram) continue;
+      // The battery's directory is part of the question too: a song the cart SAVES to a new row without
+      // being edited changes the battery and not the working song, and keying on the song alone left the
+      // tracking on the old row - where the next host Save then wrote, over the original.
+      const dir = catalog.directorySignal?.(sram) ?? 0;
       const seen = this.observed.get(e.id);
       // An unchanged song is settled once it matched a slot. One that matched NONE is re-checked for a
       // while: a cart that saves clears its unsaved flag in the same routine that writes its battery, and
       // reading the two a block apart once took a just-saved song for a NEW one and dropped its slot for
       // good, because the verdict was cached.
-      const same = seen && seen.signal === fp && this.observedEdited.get(e.id) === song.edited;
+      const same = seen && seen.signal === fp && seen.dir === dir && this.observedEdited.get(e.id) === song.edited;
       if (same && (seen.matched || seen.retries-- <= 0)) continue;
-      const sram = this.backend.readSram(e.id);
-      if (!sram) continue;
       // Only an UNEDITED song moves the tracking. An edited one says nothing about which slot it is - even
       // byte-identical to a saved song: that is also what one frame of an edit passing through an older
       // copy's value looks like, and taking it as a load moved the tracking onto the old copy for good, so
       // Save overwrote it. The cart's own loads clear its flag a few blocks after writing the song, and
       // THAT observation retargets.
       if (song.edited) {
-        this.observed.set(e.id, { signal: fp, matched: true, retries: 0 });
+        this.observed.set(e.id, { signal: fp, dir, matched: true, retries: 0 });
         this.observedEdited.set(e.id, true);
         continue;
       }
@@ -595,7 +599,7 @@ export class SystemsStore {
       // command rewrites the active groove inside the block, and never sets the flag): keep the tracking.
       // Dropped, the next edit and Save appended a copy instead of writing back.
       if (!slot && e.workingSlot && catalog.isPlaybackDrift?.(sram, e.workingSlot, song)) slot = e.workingSlot;
-      if (!same) this.observed.set(e.id, { signal: fp, matched: !!slot, retries: UNMATCHED_RECHECKS });
+      if (!same) this.observed.set(e.id, { signal: fp, dir, matched: !!slot, retries: UNMATCHED_RECHECKS });
       else seen!.matched = !!slot;
       this.observedEdited.set(e.id, false);
       this.setWorkingSlot(e.id, slot ?? undefined);
@@ -662,8 +666,14 @@ export class SystemsStore {
       if (!catalog.workingSongReady?.(ram)) continue;
       this.carries.delete(id);
       this.setWorkingSlot(id, c.song.slot);
+      // No window when the cart ALREADY holds the carried song (a project exported just after a carry
+      // landed re-carries a song its savestate already has): there is no blank to wait out, and keyed on
+      // the song's own signal the window swallowed the cart's next same-content LOAD and its edits.
       const blank = ram ? catalog.readWorkingSong?.(ram) : null;
-      if (catalog.fingerprintOf && blank) this.landing.set(id, { song: { ...c.song }, blank: catalog.fingerprintOf(blank), frames: 0 });
+      const blankSig = blank && catalog.fingerprintOf ? catalog.fingerprintOf(blank) : null;
+      if (blankSig !== null && blankSig !== catalog.fingerprintOf!(c.song)) {
+        this.landing.set(id, { song: { ...c.song }, blank: blankSig, frames: 0 });
+      }
       this.landedAt.set(id, Date.now());
       const rom = e.romPath ? this.backend.readFile(e.romPath) : null;
       const writes = rom ? tracker.restoreWorkingSong(rom, c.song, ram) : null;
