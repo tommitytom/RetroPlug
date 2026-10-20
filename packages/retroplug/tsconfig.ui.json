@@ -1,0 +1,16 @@
+{
+  // The React/LVGL UI (ui/), which the main tsconfig can't reach: `react` and `lvgljs-ui` only resolve at
+  // bundle time, through lv_binding_js. Mapped here instead - react to lv_binding_js's own @types, lvgljs to
+  // dpf.js's typed runtime front door, lvgljs-ui to a declaration of the slice we use (ui/types/).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "paths": {
+      "react": ["../../deps/dpf.js/deps/lv_binding_js/node_modules/@types/react"],
+      "react/jsx-runtime": ["../../deps/dpf.js/deps/lv_binding_js/node_modules/@types/react/jsx-runtime"],
+      "lvgljs": ["../../deps/dpf.js/runtime/lvgljs/index.ts"],
+      "lvgljs-ui": ["./ui/types/lvgljs-ui.d.ts"]
+    }
+  },
+  "include": ["ui", "src/env.d.ts"]
+}

@@ -86,7 +86,7 @@ Done: `useFrameSampled(sample, signature)` in [useFramePoll.ts](../packages/retr
 (menuDefs' private `roleConfigFor` is gone); `src/` still has ~12 of its own, untouched. `useSystem(id)` is
 in `useStores.ts`. The overlay UI tests now assert the decoded version text, not just the strip.
 
-## 6. lvgljs typing gaps
+## 6. lvgljs typing gaps (DONE)
 
 - `View`, `Text`, `Canvas` each cast `as any` (Box, Menu, EmulatorTile, LsdjHdScreen).
 - `CanvasHandle` interface duplicated.
@@ -96,6 +96,17 @@ in `useStores.ts`. The overlay UI tests now assert the decoded version text, not
 Proposal: `lvgl/lv.ts` with the constants and typed `TextEx` / `CanvasEx` wrappers. Also a home for the
 binding traps currently documented only inside Menu.tsx comments (`flex-grow` needs `display: flex` on the
 child, a Box needs a measured height since there's no LV_SIZE_CONTENT, Texts bubble clicks).
+
+Done: [lv.ts](../packages/retroplug/ui/lvgl/lv.ts) holds `ViewEx` / `TextEx` / `CanvasEx` (the one place the
+components are cast, behind prop types for what native accepts), `CanvasHandle`, the event types and
+`LV_IMAGE_ALIGN_CONTAIN`; [PixelCanvas.tsx](../packages/retroplug/ui/lvgl/PixelCanvas.tsx) is the shared
+nearest-neighbour CONTAIN canvas. The `LV_ALIGN_*` copies are gone: lvgljs-ui already exports `EAlignType`.
+No `as any` is left in `ui/`. The binding-trap notes were left in Menu.tsx next to the code they explain.
+
+Found on the way, both in the lv_binding_js submodule (not ours to edit, so recorded here): its Canvas
+docs number `LV_IMAGE_ALIGN_CONTAIN` as 14 (lv_image.h says 13; 14 is COVER, the value that once cropped
+our tiles), and its event typings spell the method `stopPropogation` while native defines
+`stopPropagation`.
 
 ## 7. Zoom resolved three ways (DONE)
 
@@ -120,7 +131,7 @@ both SystemGrid and hitTestTile call it.
   (`render.ts`, `songImport.ts`, `unsavedRows.ts`, `saveProjectInteractive.ts`); splitting would make the
   shared layer obvious.
 
-## 9. `ui/` is not type-checked
+## 9. `ui/` is not type-checked (DONE)
 
 `pnpm typecheck` covers `src`, `test*`, `cli`, `tools-src`; the `.tsx` UI is reached by nothing in that set
 (`react` does not resolve under `tsc`, it comes through lv_binding_js at bundle time), so only the pure
@@ -132,4 +143,9 @@ both SystemGrid and hitTestTile call it.
 - `menuDefs.ts` uses `console` / `TextEncoder` / `TextDecoder`, which the `lib` setting does not declare.
 - `lvgljs` (the native module: `on` / `off` / `createGroup` / `setKeyboardGroup`) has no declaration file.
 
-Proposal: a `tsconfig.ui.json` with those paths + a `lvgljs.d.ts`, wired into `typecheck`.
+Done: [tsconfig.ui.json](../packages/retroplug/tsconfig.ui.json) maps `react` to lv_binding_js's @types,
+`lvgljs` to dpf.js's typed `runtime/lvgljs/index.ts`, and `lvgljs-ui` to
+[ui/types/lvgljs-ui.d.ts](../packages/retroplug/ui/types/lvgljs-ui.d.ts) - a declaration of the slice we
+use, because the package ships TS source that fails our strict settings ~1600 times. `pnpm typecheck` runs
+it after the main config, so CI (which already installs lv_binding_js first) covers it. It is clean: the
+`console` / `TextEncoder` errors above were an artifact of the scratch config missing `src/env.d.ts`.
