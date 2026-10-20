@@ -9,12 +9,9 @@
 // into a border, `overflow: "auto"` re-enables scroll, and everything else stays square, padding-free, and
 // non-scrolling by default. Reach for Box instead of <View> for any container.
 
-import { View } from "lvgljs-ui";
 import type { ReactNode, Ref } from "react";
 
-// lvgljs-ui's View type doesn't surface ref / onClick / align in its public typings; cast to reach them
-// (the same trick the call sites used directly).
-const ViewAny = View as any;
+import { ViewEx, type ViewExProps, type LvKeyEvent, type LvStyle } from "./lv";
 
 // The theme-chrome reset. Caller style overrides any of these via object-spread precedence.
 export const CHROME_RESET = {
@@ -38,13 +35,13 @@ export function Box({
   innerRef,
   children,
 }: {
-  style?: Record<string, unknown>;
+  style?: LvStyle;
   onClick?: () => void;
   /** LVGL key events for a Box that is itself a focus-group member (a menu row laid out as columns). */
-  onKey?: (event: { key: number }) => void;
+  onKey?: (event: LvKeyEvent) => void;
   /** Style merged in while the pointer is over the Box — the container twin of a Text's hover bar. */
-  onHoveredStyle?: Record<string, unknown>;
-  align?: unknown;
+  onHoveredStyle?: LvStyle;
+  align?: ViewExProps["align"];
   /** Forwarded to the View's native ref (findByTestId tagging, canvas handles, …). */
   innerRef?: Ref<unknown>;
   children?: ReactNode;
@@ -52,11 +49,11 @@ export function Box({
   // Only forward the optional props that are actually set. lv_binding_js's prop iterator runs a handler
   // for every own-key of the props object, and its `align` handler throws on undefined — so an unset
   // `align={undefined}` would crash the reconcile. Building the object conditionally keeps unset keys off.
-  const props: Record<string, unknown> = { style: { ...CHROME_RESET, ...style } };
+  const props: ViewExProps = { style: { ...CHROME_RESET, ...style } };
   if (innerRef !== undefined) props.ref = innerRef;
   if (onClick !== undefined) props.onClick = onClick;
   if (onKey !== undefined) props.onKey = onKey;
   if (onHoveredStyle !== undefined) props.onHoveredStyle = onHoveredStyle;
   if (align !== undefined) props.align = align;
-  return <ViewAny {...props}>{children}</ViewAny>;
+  return <ViewEx {...props}>{children}</ViewEx>;
 }

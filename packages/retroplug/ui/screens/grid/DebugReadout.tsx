@@ -1,11 +1,10 @@
 // The shell both tracker debug overlays draw into (LsdjOverlay, RisaOverlay): a translucent strip along the
 // tile's bottom edge carrying a few lines of live readout. Each overlay only decides WHAT the lines say.
-import { Text } from "lvgljs-ui";
+import { EAlignType, Text } from "lvgljs-ui";
 
 import { Box } from "../../lvgl/Box";
 import { tagTestId } from "../../lvgl/StableSlot";
 
-const LV_ALIGN_BOTTOM_MID = 5;
 const HEIGHT = 44;
 
 /** A byte as two uppercase hex digits, "--" when unknown. */
@@ -26,7 +25,7 @@ export function DebugReadout({
   return (
     <Box
       innerRef={testId ? tagTestId(testId) : undefined}
-      align={{ type: LV_ALIGN_BOTTOM_MID, pos: [0, 0] }}
+      align={{ type: EAlignType.ALIGN_BOTTOM_MID, pos: [0, 0] }}
       style={{ width, height: HEIGHT, "background-color": "#000000", "background-opacity": 0.6 }}
     >
       <Text style={{ "text-color": playing ? "#8bc34a" : "#bbbbbb", "font-size": 11, width: "100%", height: HEIGHT }}>

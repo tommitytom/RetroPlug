@@ -22,6 +22,7 @@ import { Text, ELvKey } from "lvgljs-ui";
 import { useFocusGroup } from "../../lvgl/useFocusGroup";
 import { useNativeEvent } from "../../lvgl/useNativeEvent";
 import { Box } from "../../lvgl/Box";
+import { TextEx, type LvEvent, type LvKeyEvent } from "../../lvgl/lv";
 import {
   dpfCodeToKeyName,
   axisToken,
@@ -70,9 +71,6 @@ interface PromptState {
   error: string;
 }
 
-
-// lvgljs-ui's Text type doesn't expose ref / onKey / onFocusedStyle; cast to reach them.
-const TextAny = Text as any;
 
 interface FlatEntry {
   item: MenuItem;
@@ -315,8 +313,8 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   );
 
   const onItemKey = useCallback(
-    (e: { key: number; fresh?: boolean }) => {
-      (e as { stopPropagation?: () => void }).stopPropagation?.(); // else bubbles to the scroll View
+    (e: LvKeyEvent & { fresh?: boolean }) => {
+      e.stopPropagation?.(); // else bubbles to the scroll View
       if (capturingIdRef.current || promptStateRef.current) return; // freeze nav while a modal is armed
       const entries = flatRef.current;
       const cur = entries.findIndex((f) => f.item.id === focusedIdRef.current);
@@ -669,7 +667,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
             } as const;
             // Texts are created LV_OBJ_FLAG_EVENT_BUBBLE (components/text/text.cpp), so a cell's click would
             // ALSO reach the row's onClick below; each cell stops it.
-            const onCell = (run: () => void) => (e: { stopPropagation?: () => void }) => {
+            const onCell = (run: () => void) => (e: LvEvent) => {
               e?.stopPropagation?.();
               run();
             };
@@ -708,21 +706,21 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
                     `display: flex` is not decoration: lv_binding_js's flex pipe reads `flex-grow` only off a
                     style that also declares it (a label with no children lays nothing out either way). The
                     bar is the unfocused row's affordance; a focused row already wears its cursor. */}
-                <TextAny
+                <TextEx
                   style={{ ...cell, display: "flex", "flex-grow": 1 }}
                   onHoveredStyle={item.disabled || isFocused ? undefined : ROW_HOVER_STYLE}
                 >
                   {item.label}
-                </TextAny>
+                </TextEx>
                 {isFocused && (
                   <Box style={{ width: actionRegionW, display: "flex", "flex-direction": "row", "align-items": "center", "background-opacity": 0 }}>
-                    <TextAny
+                    <TextEx
                       style={{ ...cell, width: actionArrowW, "text-align": "center" }}
                       onHoveredStyle={CELL_HOVER_STYLE}
                       onClick={onCell(() => stepItem(item, -1))}
                     >
                       {"<"}
-                    </TextAny>
+                    </TextEx>
                     {/* Overflow is clipped by this column (Box resets overflow to hidden), so a verb too long
                         for it is cut rather than wrapped onto a second line that would grow the row. */}
                     <Box
@@ -735,17 +733,17 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
                         "background-opacity": 0,
                       }}
                     >
-                      <TextAny style={cell} onHoveredStyle={CELL_HOVER_STYLE} onClick={onCell(() => activate(item))}>
+                      <TextEx style={cell} onHoveredStyle={CELL_HOVER_STYLE} onClick={onCell(() => activate(item))}>
                         {verb}
-                      </TextAny>
+                      </TextEx>
                     </Box>
-                    <TextAny
+                    <TextEx
                       style={{ ...cell, width: actionArrowW, "text-align": "center" }}
                       onHoveredStyle={CELL_HOVER_STYLE}
                       onClick={onCell(() => stepItem(item, 1))}
                     >
                       {">"}
-                    </TextAny>
+                    </TextEx>
                   </Box>
                 )}
               </Box>
@@ -760,7 +758,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
             label = `${colon >= 0 ? item.label.slice(0, colon) : item.label}: Press a ${what}...`;
           } else label = item.label;
           return (
-            <TextAny
+            <TextEx
               key={item.id}
               ref={setRowRef}
               style={{ ...rowStyle, "text-color": rowColor, "font-size": itemFont }}
@@ -769,7 +767,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
               onClick={() => activate(item)}
             >
               {label}
-            </TextAny>
+            </TextEx>
           );
         })}
       </Box>
