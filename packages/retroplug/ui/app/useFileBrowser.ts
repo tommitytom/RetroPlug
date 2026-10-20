@@ -55,7 +55,7 @@ export function useFileBrowser(stores: AppStores): FileBrowserOverlay {
   }, [stores]);
 
   const req = getFileBrowserRequest();
-  if (!req) return { active: false, tree: null, onClose: () => {} };
+  if (!req) return { tree: null, onClose: () => {} };
 
   const dir = getLastBrowseDir(stores.backend.configDir());
   const tree = buildFileBrowserMenu((d) => stores.backend.listDir(d), req.opts, dir, {
@@ -65,5 +65,5 @@ export function useFileBrowser(stores: AppStores): FileBrowserOverlay {
     },
     pick: (path) => resolveFileBrowser(path),
   });
-  return { active: true, tree, onClose: () => resolveFileBrowser(null) };
+  return { tree, onClose: () => resolveFileBrowser(null) };
 }

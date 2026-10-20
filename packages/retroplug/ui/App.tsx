@@ -275,7 +275,7 @@ export function App() {
 
   // A full-window overlay (file browser / close prompt / project modal / song import) draws above
   // everything and owns the keypad; the start menu (empty project) is the same full-window menu, always open.
-  if (overlay) return <FullWindowMenu size={windowSize} zoom={resolvedZoom} tree={overlay.tree!} onClose={overlay.onClose} />;
+  if (overlay) return <FullWindowMenu size={windowSize} zoom={resolvedZoom} tree={overlay.tree} onClose={overlay.onClose} />;
   if (empty) return <FullWindowMenu size={windowSize} zoom={resolvedZoom} tree={buildStartMenu(ctx)} onClose={() => {}} />;
 
   // The HD player takes the whole window in place of the grid. A stale id (its system was removed, or the

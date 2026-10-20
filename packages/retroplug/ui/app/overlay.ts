@@ -6,15 +6,18 @@
 import type { MenuTree } from "../screens/menu/menuTree";
 
 export interface Overlay {
-  /** True while the overlay is up; `tree` is non-null exactly then. */
-  active: boolean;
-  /** The menu tree to draw full-window, or null. */
+  /** The menu tree to draw full-window while the overlay is up; null when it isn't. The ONLY "is it up"
+   *  signal - a separate flag could disagree with it, and an overlay that was up with nothing to draw
+   *  would then be skipped for rendering, Esc and input gating all at once. */
   tree: MenuTree | null;
   /** Esc / B: dismiss (each overlay decides what cancelling means). */
   onClose: () => void;
 }
 
-/** The overlay that owns the window: the first active one in priority order, or null. */
-export function topOverlay(overlays: readonly Overlay[]): Overlay | null {
-  return overlays.find((o) => o.active && o.tree !== null) ?? null;
+/** An overlay that is up, its tree narrowed to non-null. */
+export type LiveOverlay = Overlay & { tree: MenuTree };
+
+/** The overlay that owns the window: the first live one in priority order, or null. */
+export function topOverlay(overlays: readonly Overlay[]): LiveOverlay | null {
+  return overlays.find((o): o is LiveOverlay => o.tree !== null) ?? null;
 }

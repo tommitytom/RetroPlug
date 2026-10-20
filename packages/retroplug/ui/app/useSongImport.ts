@@ -66,5 +66,5 @@ export function useSongImport(stores: AppStores): SongImport {
   };
 
   const tree = pending ? buildImportModal(pending, { toggle, toggleAll, apply, onClose }) : null;
-  return { tree, active: pending !== null, onClose, begin };
+  return { tree, onClose, begin };
 }

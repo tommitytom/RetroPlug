@@ -66,5 +66,5 @@ export function useCloseGuard(stores: AppStores): CloseGuard {
         ],
       }
     : null;
-  return { active, tree, onClose: onCancel };
+  return { tree, onClose: onCancel };
 }
