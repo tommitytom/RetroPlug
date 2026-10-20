@@ -19,7 +19,7 @@ the in-app file browser was open opened the instance menu underneath it, which t
 browse closed.
 
 Fix: every overlay hook already returns the same `{ active, tree, onClose }` shape. App collects them into
-one priority-ordered list ([overlay.ts](../packages/retroplug/ui/lvgl/overlay.ts) `topOverlay`), renders
+one priority-ordered list ([overlay.ts](../packages/retroplug/ui/app/overlay.ts) `topOverlay`), renders
 the first live one through a single `FullWindowMenu`, and derives `overlayActive` once. The close-guard tree
 moved into `useCloseGuard`, so all four hooks return the same `Overlay`. Regression:
 [overlay-input.test.ts](../packages/retroplug/test-ui/overlay-input.test.ts) (fails on the old App).
@@ -44,11 +44,11 @@ Every native seam re-declares its own structural type at each call site; `audioD
 `__rp_getAudioConfig` five times. `Symbol.for("plugin")` is resolved separately in `main.tsx` and
 `StoreProvider.tsx`.
 
-Proposal: one `lvgl/nativeHooks.ts` with an `RpHooks` interface and a single `native` handle, plus a
+Proposal: one `host/nativeHooks.ts` with an `RpHooks` interface and a single `native` handle, plus a
 `pluginNamespace()` accessor, used for both calling hooks and installing them (`useCloseGuard`,
 `useFileBrowser`, `main.tsx`). One place documents the whole TS/C++ editor surface.
 
-Done as [nativeHooks.ts](../packages/retroplug/ui/lvgl/nativeHooks.ts): `RpHooks` (grouped by which native
+Done as [nativeHooks.ts](../packages/retroplug/ui/host/nativeHooks.ts): `RpHooks` (grouped by which native
 file binds each hook), `native` (a live, typed view of globalThis, so test fakes installed later are still
 seen) and `pluginNamespace()`. No `globalThis` cast is left in `ui/` outside that file. Out of scope: the
 control-plane side in `src/` (e.g. realBackend's `__rp_openFileBrowser` call) still declares its own.
@@ -119,10 +119,10 @@ both SystemGrid and hitTestTile call it.
 ## 8. Smaller items
 
 - DONE: `Menu.tsx` mirrored state into a ref three times (capturing, actionIdx, prompt): `useStateRef`
-  ([useStateRef.ts](../packages/retroplug/ui/lvgl/useStateRef.ts)).
+  ([useStateRef.ts](../packages/retroplug/ui/hooks/useStateRef.ts)).
 - DONE: `const [, bump] = useState(0)` force-updates in App, `useFileBrowser`, `useVersionedPoll`, and App's
   five-subscribable effect: `useForceUpdate` / `useRerenderOn(...subscribes)`
-  ([useRerender.ts](../packages/retroplug/ui/lvgl/useRerender.ts)).
+  ([useRerender.ts](../packages/retroplug/ui/hooks/useRerender.ts)).
 - DONE: `lsdjDebug.ts` hand-rolled a listener set; it uses `createSubscribable` now.
 - DONE: held-slot press/release routing (useGameInput / useGamepadInput) is `useHeldRouting`, and stick
   edge detection (useGamepadInput / Menu) is `useAxisEdges`
@@ -134,10 +134,11 @@ both SystemGrid and hitTestTile call it.
   and black backgrounds, so Menu got local `ACCENT` / `FOCUS_BAR` constants instead.
 - DONE (with item 1): `KEY_ESCAPE` redefined in App. DONE (with item 2): the half-deleted doc comment in
   `songImport.ts`.
-- OPEN: `ui/lvgl/` mixes framework shims (Box, StableSlot, lv, focus, events, the frame / rerender / state
-  hooks) with LVGL-free app logic (`render.ts`, `songImport.ts`, `unsavedRows.ts`, `saveProjectInteractive.ts`,
-  `nativeHooks.ts`, the overlay hooks). Splitting it into `lvgl/` + an app-level directory is a pure move,
-  but it touches most import lines in ui/ and test/, so it is worth doing as its own change, not folded in.
+- DONE: `ui/lvgl/` mixed framework shims with LVGL-free app logic. It now holds only the LVGL / native-bus
+  layer (Box, StableSlot, lv, PixelCanvas, focus, events, frame polls, window size); plain React helpers
+  moved to `ui/hooks/`, the native editor seam (`nativeHooks`, `openPath`, `render`) to `ui/host/`, and the
+  app's flows (overlays, unsaved rows, interactive save, background watchers) to `ui/app/`. Layout is
+  described in [spec/03-ts-layer.md](../spec/03-ts-layer.md).
 
 ## 9. `ui/` is not type-checked (DONE)
 

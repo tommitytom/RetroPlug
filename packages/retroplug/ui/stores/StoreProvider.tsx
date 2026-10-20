@@ -11,7 +11,7 @@
 import { useRef, useEffect, type ReactNode } from "react";
 import { composeAppStores, type StoreChannel } from "../../src/appStores";
 import { StoreContext, type StoreContextValue } from "./useStores";
-import { pluginNamespace } from "../lvgl/nativeHooks";
+import { pluginNamespace } from "../host/nativeHooks";
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const ref = useRef<StoreContextValue | null>(null);

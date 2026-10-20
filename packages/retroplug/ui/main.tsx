@@ -11,7 +11,7 @@ import { Render } from "lvgljs-ui";
 import { StoreProvider } from "./stores/StoreProvider";
 import { FocusProvider } from "./lvgl/FocusProvider";
 import { App } from "./App";
-import { native, pluginNamespace } from "./lvgl/nativeHooks";
+import { native, pluginNamespace } from "./host/nativeHooks";
 import { gridContentSize, resolveZoom, SystemLayout } from "./screens/grid/layout";
 
 function Root() {

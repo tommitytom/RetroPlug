@@ -1,4 +1,4 @@
-// Frame-divided polling, which four hooks in this directory were each doing by hand.
+// Frame-divided polling, which the four watcher hooks in ui/app/ were each doing by hand.
 //
 // Several pieces of state live on a background thread natively and push nothing into JS - an N8 SD job,
 // a Launchpad port scan, the song inside a running cart, an unsaved battery. The only way the UI learns
@@ -19,7 +19,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useNativeEvent } from "./useNativeEvent";
-import { useForceUpdate } from "./useRerender";
+import { useForceUpdate } from "../hooks/useRerender";
 
 /** Run `fn` on every `frames`-th render frame. The counter is per-component, not global. */
 export function useFrameDivider(frames: number, fn: () => void): void {

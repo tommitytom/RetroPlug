@@ -31,7 +31,7 @@ import {
   PRO_MK3, PRO_MK3_PORT_HINT, deviceInquiry, deviceName, exitToLiveMode, parseInquiryReply,
 } from "../../../src/launchpad";
 import { createSubscribable } from "./subscribable";
-import { native } from "../../lvgl/nativeHooks";
+import { native } from "../../host/nativeHooks";
 
 export interface LaunchpadConfig {
   inputs: string[]; // every hardware MIDI input port, unfiltered

@@ -9,7 +9,7 @@
 // that only landed while somebody was looking at the right row would be a scan you had to watch.
 
 import { applyLaunchpadScan, getLaunchpadScan } from "../screens/menu/launchpadDevices";
-import { useVersionedPoll } from "./useFramePoll";
+import { useVersionedPoll } from "../lvgl/useFramePoll";
 
 // ~10 Hz at 60 fps - prompt enough to catch "done" and to animate the per-port phase, cheap enough to run
 // forever.

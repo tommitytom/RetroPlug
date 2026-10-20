@@ -9,7 +9,7 @@
 // read. They are gone, counter included.
 //
 // No React here on purpose: these modules are reachable from the pure-TS tests, whose tsconfig does not
-// resolve `react`. The React side is ui/lvgl/useRerender.ts (`useRerenderOn(subscribeX, ...)`, what App
+// resolve `react`. The React side is ui/hooks/useRerender.ts (`useRerenderOn(subscribeX, ...)`, what App
 // uses), or `useSyncExternalStore(x.subscribe, ...)` as ui/screens/grid/lsdjDebug.ts does.
 
 export interface Subscribable {

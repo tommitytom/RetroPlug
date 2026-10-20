@@ -9,7 +9,7 @@
 // is absent in a DAW / JACK standalone / the headless harness (hasMidiConfig() is false → the submenu hidden).
 
 import { createSubscribable } from "./subscribable";
-import { native } from "../../lvgl/nativeHooks";
+import { native } from "../../host/nativeHooks";
 
 /** The input selection meaning "every hardware port at once" - an explicit choice, not the default.
  *  Opening every device turns out to be a surprising thing to do by default: anything plugged in becomes a

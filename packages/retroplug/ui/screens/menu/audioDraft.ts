@@ -10,7 +10,7 @@
 // is false → the submenu is hidden).
 
 import { createSubscribable } from "./subscribable";
-import { native } from "../../lvgl/nativeHooks";
+import { native } from "../../host/nativeHooks";
 
 export interface AudioCfg {
   sampleRate: number;

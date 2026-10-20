@@ -1,10 +1,10 @@
-// The UI render seam (ui/lvgl/render.ts), pure-TS: startSystemRender snapshots the live system's state to a
+// The UI render seam (ui/host/render.ts), pure-TS: startSystemRender snapshots the live system's state to a
 // temp file and calls the __rp_startRender hook with the right spec; pickActiveRenderJob chooses the tile's
 // badge job. The native render itself (RenderHost/RenderJobRegistry) is proven separately in C++.
 
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
-import { startSystemRender, renderBaseName, pickActiveRenderJob, renderBadgeLabel, validSplits, formatDuration, type RenderJobStatus } from "../../ui/lvgl/render";
+import { startSystemRender, renderBaseName, pickActiveRenderJob, renderBadgeLabel, validSplits, formatDuration, type RenderJobStatus } from "../../ui/host/render";
 import { outBase, type RenderOpts } from "../../src/render";
 import { UserConfigStore } from "../../src/userConfigStore";
 import { RENDER_MAX_DURATION_MAX_SEC, RENDER_MAX_DURATION_MIN_SEC } from "../../src/userConfig";

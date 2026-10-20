@@ -6,7 +6,7 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";
-import { unsavedRows } from "../../ui/lvgl/unsavedRows";
+import { unsavedRows } from "../../ui/app/unsavedRows";
 import { gbRomBattery } from "../systems/fixtures";
 
 function newProject() {

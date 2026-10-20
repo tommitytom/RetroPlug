@@ -92,10 +92,10 @@ import {
   type TrackerIntegration,
 } from "../../../src/tracker";
 import type { HostBackend, ControlPlaneBackend } from "../../../src/backend";
-import { openPath } from "../../lvgl/openPath";
-import { native } from "../../lvgl/nativeHooks";
-import { startSystemRender, renderBaseName, validSplits, formatDuration } from "../../lvgl/render";
-import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
+import { openPath } from "../../host/openPath";
+import { native } from "../../host/nativeHooks";
+import { startSystemRender, renderBaseName, validSplits, formatDuration } from "../../host/render";
+import { saveProjectInteractive } from "../../app/saveProjectInteractive";
 import { flushDirtySram } from "../../../src/sramAutoSave";
 import { hasUnsavedChanges } from "../../../src/unsavedChanges";
 import type { FileBrowserOpts } from "../../../src/backend";

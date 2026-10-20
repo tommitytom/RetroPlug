@@ -11,7 +11,7 @@
 // is hidden, exactly like the audio/MIDI device rows.
 
 import { createSubscribable } from "./subscribable";
-import { native } from "../../lvgl/nativeHooks";
+import { native } from "../../host/nativeHooks";
 
 export interface TransportState {
   playing: boolean; // what the Engine is being told right now

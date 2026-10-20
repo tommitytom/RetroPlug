@@ -7,7 +7,7 @@
 // harness (hasN8Sd() then false -> the rows are hidden). The App polls getN8SdStatus() on the frame bus while
 // a job runs (useN8SdWatch) so the progress row tracks it live.
 
-import { native } from "../../lvgl/nativeHooks";
+import { native } from "../../host/nativeHooks";
 
 export interface N8SdStatus {
   busy: boolean;

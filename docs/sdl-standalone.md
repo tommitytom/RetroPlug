@@ -248,7 +248,7 @@ OS dialog helper falls back to. Backed by the cross-host
 `backend.listDir(dir)` RPC ([backend.ts:53](../packages/retroplug/src/backend.ts#L53)), which now marks
 directories with a trailing `/`.
 
-- **Routing** ([useFileBrowser.ts](../packages/retroplug/ui/lvgl/useFileBrowser.ts)): the UI installs a JS
+- **Routing** ([useFileBrowser.ts](../packages/retroplug/ui/app/useFileBrowser.ts)): the UI installs a JS
   `__rp_openFileBrowser` that opens the overlay, overriding any native host browser. `realBackend` still calls
   that global hook + awaits `__rp_onFileBrowserResult`, so the browse crosses the control-plane↔UI **bundle
   boundary via globalThis** (module singletons don't — that's the key subtlety).

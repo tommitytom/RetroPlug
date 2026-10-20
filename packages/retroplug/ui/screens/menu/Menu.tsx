@@ -21,7 +21,7 @@ import { Text, ELvKey } from "lvgljs-ui";
 
 import { useFocusGroup } from "../../lvgl/useFocusGroup";
 import { useNativeEvent } from "../../lvgl/useNativeEvent";
-import { useStateRef } from "../../lvgl/useStateRef";
+import { useStateRef } from "../../hooks/useStateRef";
 import { useAxisEdges } from "../../input/useHeldInput";
 import { Box } from "../../lvgl/Box";
 import { TextEx, type LvEvent, type LvKeyEvent } from "../../lvgl/lv";

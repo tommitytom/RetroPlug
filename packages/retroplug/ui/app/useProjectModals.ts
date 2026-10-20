@@ -26,7 +26,7 @@ import { basename } from "../../src/pathUtil";
 import { SAV_PATTERNS } from "../../src/savPaths";
 import { saveProjectInteractive } from "./saveProjectInteractive";
 import { unsavedRows } from "./unsavedRows";
-import { useNativeEvent } from "./useNativeEvent";
+import { useNativeEvent } from "../lvgl/useNativeEvent";
 import type { Overlay } from "./overlay";
 import type { MenuTree } from "../screens/menu/menuTree";
 import { button, infoRow, noticeTree } from "../screens/menu/menuItems";

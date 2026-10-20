@@ -13,7 +13,7 @@ import { useState } from "react";
 import { Dimensions } from "lvgljs-ui";
 
 import { useNativeEvent } from "./useNativeEvent";
-import { native } from "./nativeHooks";
+import { native } from "../host/nativeHooks";
 
 const FALLBACK = { width: 480, height: 432 };
 

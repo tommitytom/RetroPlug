@@ -13,7 +13,7 @@
 // projectExpVolForN8 / setN8ExpVol at the bottom.
 import type { SystemView } from "../../../src/systemsStore";
 import { createSubscribable } from "./subscribable";
-import { native } from "../../lvgl/nativeHooks";
+import { native } from "../../host/nativeHooks";
 import { roleConfig } from "../../../src/systemRoles";
 
 export interface N8Port {

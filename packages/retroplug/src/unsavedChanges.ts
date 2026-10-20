@@ -3,7 +3,7 @@
 // (dirtySramTargets). Two shapes over the same two channels: `hasUnsavedChanges` for the yes/no gate, and
 // `unsavedChanges` for the ITEMS the prompt lists, each naming the file a save would write. Kept as tiny
 // pure aggregators over the stores so they're unit-testable without the UI, and so the close guard
-// (ui/lvgl/useCloseGuard) stays a thin seam.
+// (ui/app/useCloseGuard) stays a thin seam.
 
 import type { ControlPlaneBackend } from "./backend";
 import type { ProjectStore } from "./projectStore";

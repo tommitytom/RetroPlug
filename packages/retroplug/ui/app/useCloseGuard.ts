@@ -15,7 +15,7 @@ import { hasUnsavedChanges } from "../../src/unsavedChanges";
 import { saveProjectInteractive } from "./saveProjectInteractive";
 import { unsavedRows } from "./unsavedRows";
 import type { Overlay } from "./overlay";
-import { native } from "./nativeHooks";
+import { native } from "../host/nativeHooks";
 import type { MenuTree } from "../screens/menu/menuTree";
 import { button } from "../screens/menu/menuItems";
 

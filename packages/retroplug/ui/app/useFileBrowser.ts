@@ -16,8 +16,8 @@ import {
 } from "../../src/fileBrowser";
 import { buildFileBrowserMenu } from "../screens/menu/fileBrowserMenu";
 import type { Overlay } from "./overlay";
-import { useRerenderOn } from "./useRerender";
-import { native } from "./nativeHooks";
+import { useRerenderOn } from "../hooks/useRerender";
+import { native } from "../host/nativeHooks";
 
 /** The browse as an overlay; onClose (Esc / B) cancels it (resolves null). */
 export type FileBrowserOverlay = Overlay;
