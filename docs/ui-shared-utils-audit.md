@@ -83,7 +83,7 @@ Done: `useFrameSampled(sample, signature)` in [useFramePoll.ts](../packages/retr
 [DebugReadout.tsx](../packages/retroplug/ui/screens/grid/DebugReadout.tsx) is the shared overlay shell + `hex2`.
 `findRole` / `roleConfig` / `hasRole` live next to `RoleInstance` in
 [systemRoles.ts](../packages/retroplug/src/systemRoles.ts) and replace every `roles.find(...)` in `ui/`
-(menuDefs' private `roleConfigFor` is gone); `src/` still has ~12 of its own, untouched. `useSystem(id)` is
+(menuDefs' private `roleConfigFor` is gone); `src/` still has 10 of its own, untouched. `useSystem(id)` is
 in `useStores.ts`. The overlay UI tests now assert the decoded version text, not just the strip.
 
 ## 6. lvgljs typing gaps (DONE)

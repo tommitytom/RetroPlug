@@ -748,8 +748,9 @@ void feedKey(AppState& a, std::uint32_t lvKey, std::uint32_t dpf, bool press, st
     if (ctx) {
         // THREE args, matching PluginUI. DPF gives the unshifted code point ('a' for the A key whether or
         // not Shift is down), so the modifier mask is the only way the prompt text-input can apply
-        // Shift -> uppercase - Menu.tsx reads `args[2] ?? 0`. This emitted two args for a long time, so
-        // that `?? 0` silently made Shift a no-op in the standalone while it worked in the DAW.
+        // Shift -> uppercase - Menu.tsx's key handler takes it as `mod = 0` (NativeEvents in
+        // useNativeEvent.ts types the channel). This emitted two args for a long time, so that default
+        // silently made Shift a no-op in the standalone while it worked in the DAW.
         JSValue args[3] = {JS_NewUint32(ctx, dpf), JS_NewBool(ctx, press), JS_NewUint32(ctx, mods)};
         a.ui.emit("key", 3, args);
         for (JSValue& v : args) JS_FreeValue(ctx, v);

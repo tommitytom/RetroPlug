@@ -1,4 +1,4 @@
-// PixelCanvas — a Canvas showing a pixel buffer scaled to fit: nearest-neighbour (crisp pixels) and
+// PixelCanvas: a Canvas showing a pixel buffer scaled to fit: nearest-neighbour (crisp pixels) and
 // CONTAIN-aligned (keeps aspect, letterboxes rather than crops). The emulator tile and the LSDj HD screen both
 // push frames into one of these through `canvasRef.current.setBuffer(...)`.
 

@@ -11,15 +11,19 @@
 import { useEffect, useRef } from "react";
 import { on, off } from "lvgljs";
 
-/** Every channel native emits on the bus, with its argument list. Each emit site is named so a change to
- *  one side shows up as a mismatch here: PluginUI.cpp (plugin editor), sdl/main.cpp (SDL standalone),
- *  GamepadPump.hpp (both), and RenderCore.cpp (the UI test harness, which emits the same shapes). */
+/** The channels the UI listens to, with their argument lists, read off every emit site: PluginUI.cpp
+ *  (plugin editor), sdl/main.cpp (SDL standalone), GamepadPump.hpp (both), and RenderCore.cpp (the UI test
+ *  harness, which emits the same shapes). A change on one side has to be mirrored here by hand - nothing
+ *  checks the C++. dpf.js also emits `parameter` (LvglJsEngine) and `rpc-message` (JsRpcBridge), which
+ *  the UI does not consume through this hook, so they are left out. */
 export interface NativeEvents {
   /** One render frame; `tickMs` is the LVGL tick (u32, wraps at ~49.7 days) - the UI's only monotonic clock. */
   frame: [tickMs: number];
-  /** DPF key code (unshifted code point), press/release, modifier mask (kModifierShift = bit 0). */
+  /** DPF key code (unshifted code point), press/release, modifier mask (kModifierShift = bit 0). Every
+   *  host sends all three; the standalone once sent two, which a `mod = 0` default hid as "Shift ignored". */
   key: [code: number, press: boolean, mod: number];
-  /** DPF button (left=1, right=2, middle=3), press/release, window-space position. Not emitted by SDL. */
+  /** DPF button (left=1, right=2, middle=3; the test harness's clickAt sends 0), press/release,
+   *  window-space position. Not emitted by SDL. */
   mouse: [button: number, press: boolean, x: number, y: number];
   /** The window's new size. A non-positive size means "re-read Dimensions.window". */
   resize: [width: number, height: number];

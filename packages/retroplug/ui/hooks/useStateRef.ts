@@ -1,4 +1,4 @@
-// useStateRef — React state mirrored into a ref, for state a long-lived handler must read synchronously.
+// useStateRef: React state mirrored into a ref, for state a long-lived handler must read synchronously.
 //
 // The native bus handlers (useNativeEvent) and LVGL's key/click callbacks run between renders: a key that
 // arms a capture row and the next key that it captures can arrive inside one event dispatch, before React

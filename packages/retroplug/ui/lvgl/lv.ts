@@ -1,4 +1,4 @@
-// lv — typed handles on the lvgljs-ui components we use, and the LVGL values the binding doesn't export.
+// lv: typed handles on the lvgljs-ui components we use, and the LVGL values the binding doesn't export.
 //
 // lvgljs-ui's registerComponent is declared as returning `ComponentType<Props> | string` (it returns the tag
 // name), which JSX can't render without a cast, and its prop types leave out what we actually pass (`ref`,
@@ -28,12 +28,20 @@ export interface LvKeyEvent extends LvEvent {
  *  which is what cropped the sides / top and bottom when this was 14. */
 export const LV_IMAGE_ALIGN_CONTAIN = 13;
 
-/** Props shared by every widget we render. `align` positions a child against its parent (layering overlays
- *  on a tile); lv_binding_js's `align` handler throws on undefined, so leave the key OFF rather than unset. */
-interface WidgetProps {
+/** Position a child against its parent (layering overlays on a tile), `type` an EAlignType value. Two
+ *  binding traps: its `align` handler throws on undefined, so leave the key OFF rather than unset; and it
+ *  skips a falsy `type`, so EAlignType.ALIGN_DEFAULT (0) does nothing at all. */
+export type LvAlign = { type: number; pos: [number, number] };
+
+/** The props every widget kind takes (Canvas runs its own setter table, which accepts only these). */
+interface BaseProps {
   style?: LvStyle;
-  align?: { type: number; pos: [number, number] };
+  align?: LvAlign;
   onClick?: (event: LvEvent) => void;
+}
+
+/** Plus the interaction props View / Text get through the binding's CommonComponentApi. */
+interface WidgetProps extends BaseProps {
   onKey?: (event: LvKeyEvent) => void;
   /** Style merged in while the pointer is over the widget (LV_STATE_HOVERED). */
   onHoveredStyle?: LvStyle;
@@ -45,9 +53,13 @@ export interface ViewExProps extends WidgetProps {
   children?: ReactNode;
 }
 
+/** What a Text's `children` setter handles: a string, a number, or an array made ONLY of those. Anything
+ *  else (an array holding a `false` from `{cond && "x"}`) is silently not applied. */
+export type TextChildren = string | number | (string | number)[];
+
 export interface TextExProps extends WidgetProps {
   ref?: Ref<unknown>;
-  children?: string | number | (string | number)[];
+  children?: TextChildren;
 }
 
 /** The native canvas object a Canvas ref resolves to. setBuffer copies the whole buffer and invalidates. */
@@ -55,7 +67,7 @@ export interface CanvasHandle {
   setBuffer(buffer: ArrayBuffer, width: number, height: number): void;
 }
 
-export interface CanvasExProps extends WidgetProps {
+export interface CanvasExProps extends BaseProps {
   ref?: Ref<CanvasHandle | null>;
   /** Nearest-neighbour scaling (crisp pixels). */
   nearestNeighbor?: boolean;

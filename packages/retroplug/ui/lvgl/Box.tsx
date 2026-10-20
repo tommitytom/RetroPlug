@@ -11,7 +11,7 @@
 
 import type { ReactNode, Ref } from "react";
 
-import { ViewEx, type ViewExProps, type LvKeyEvent, type LvStyle } from "./lv";
+import { ViewEx, type ViewExProps, type LvAlign, type LvKeyEvent, type LvStyle } from "./lv";
 
 // The theme-chrome reset. Caller style overrides any of these via object-spread precedence.
 export const CHROME_RESET = {
@@ -41,7 +41,7 @@ export function Box({
   onKey?: (event: LvKeyEvent) => void;
   /** Style merged in while the pointer is over the Box — the container twin of a Text's hover bar. */
   onHoveredStyle?: LvStyle;
-  align?: ViewExProps["align"];
+  align?: LvAlign;
   /** Forwarded to the View's native ref (findByTestId tagging, canvas handles, …). */
   innerRef?: Ref<unknown>;
   children?: ReactNode;

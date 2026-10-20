@@ -332,9 +332,9 @@ harness**:
 | Hook | Owner | Purpose |
 |---|---|---|
 | `__rp_openFileBrowser` / `__rp_onFileBrowserResult` | [realBackend.ts](../packages/retroplug/src/realBackend.ts) | The async file dialog |
-| `__rp_setWindowSize` / `__rp_isWindowSizeControlled` | [useWindowSize.ts:43-51](../packages/retroplug/ui/lvgl/useWindowSize.ts#L43) | Fit-to-grid resize / tiling-WM detection |
+| `__rp_setWindowSize` / `__rp_isWindowSizeControlled` | [useWindowSize.ts:42-50](../packages/retroplug/ui/lvgl/useWindowSize.ts#L42) | Fit-to-grid resize / tiling-WM detection |
 | `__rp_mountUI` / `__rp_unmountUI` | [main.tsx:31-32](../packages/retroplug/ui/main.tsx#L31) | Render/teardown across window close/reopen |
-| `__rp_tagTestId` | [StableSlot.tsx:20](../packages/retroplug/ui/lvgl/StableSlot.tsx#L20) | Test-only widget tagging (inert in production) |
+| `__rp_tagTestId` | [StableSlot.tsx:21](../packages/retroplug/ui/lvgl/StableSlot.tsx#L21) | Test-only widget tagging (inert in production) |
 
 ---
 
@@ -410,7 +410,7 @@ position lands the new widget at the *end* of the LVGL child list.
 [`StableSlot.tsx`](../packages/retroplug/ui/lvgl/StableSlot.tsx) is the workaround: a
 fixed-position wrapper View whose position never changes, whose *single* child swaps — where
 `appendChild` lands correctly. Its `tagTestId`
-([StableSlot.tsx:20](../packages/retroplug/ui/lvgl/StableSlot.tsx#L20)) tags a
+([StableSlot.tsx:21](../packages/retroplug/ui/lvgl/StableSlot.tsx#L21)) tags a
 widget's native uid for the test harness and is inert in production.
 
 ### The menu — [`screens/menu/`](../packages/retroplug/ui/screens/menu)
@@ -460,7 +460,7 @@ widget's native uid for the test harness and is inert in production.
   tree renderer. The focus highlight is React state driven **only** by explicit nav / click /
   rebuild — never by LVGL `onFocus` events — so there's nothing for stray focus events to
   corrupt. It flattens depth-first into open submenus and **re-keys the inner scrollable View
-  on `visibleKey`** ([Menu.tsx:207](../packages/retroplug/ui/screens/menu/Menu.tsx#L207))
+  on `visibleKey`** ([Menu.tsx:590](../packages/retroplug/ui/screens/menu/Menu.tsx#L590))
   — the same append workaround, forcing a full remount so every row mounts in JSX order.
   `useFocusGroup` claims the keypad; Enter → activate, Up/Down move the cursor, Left/Right →
   `onCycle(±1)`.

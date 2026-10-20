@@ -6,12 +6,13 @@
 // Keep it to what ui/ imports. The widgets are declared loosely on purpose: ui/lvgl/lv.ts gives each one the
 // prop types native actually accepts, and that is where call sites should get them from.
 
-import type { ComponentType, ReactElement, ReactNode } from "react";
+import type { ComponentType, ReactElement } from "react";
 
 export declare const View: unknown;
 export declare const Canvas: unknown;
-/** Plain styled text. For ref / key / hover props use TextEx (ui/lvgl/lv.ts). */
-export declare const Text: ComponentType<{ style?: Record<string, unknown>; children?: ReactNode }>;
+/** Plain styled text. For ref / key / hover props use TextEx (ui/lvgl/lv.ts). Children are as narrow as
+ *  native's setter: a string, a number, or an array of only those (see TextChildren in lv.ts). */
+export declare const Text: ComponentType<{ style?: Record<string, unknown>; children?: string | number | (string | number)[] }>;
 
 /** lv_align_t (lv_area.h). */
 export declare const EAlignType: {

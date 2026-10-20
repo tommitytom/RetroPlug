@@ -106,8 +106,8 @@ export function displayZoom(
 
 /** Map a window-pixel coordinate to the grid tile index under it, or `null` when it misses the grid
  *  (outside the content area, or an empty cell in a partially-filled last row). Replicates SystemGrid's
- *  layout exactly — the same `displayZoom` + the grid CENTERED in the window (SystemGrid's
- *  align/justify-center) — so a dropped file lands on the tile it was visibly dropped onto. `projectZoom`
+ *  layout exactly (the same `displayZoom`, and the grid CENTERED in the window by SystemGrid's
+ *  align/justify-center), so a dropped file lands on the tile it was visibly dropped onto. `projectZoom`
  *  is the project's `settings.zoom`; `defaultZoom` the user default (used when the project zoom is out of
  *  range). */
 export function hitTestTile(

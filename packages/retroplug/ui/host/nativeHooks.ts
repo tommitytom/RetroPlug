@@ -1,4 +1,4 @@
-// nativeHooks — the whole `__rp_*` seam between the UI bundle and the native host, typed in one place.
+// nativeHooks: the whole `__rp_*` seam between the UI bundle and the native host, typed in one place.
 //
 // The native side binds these as plain globals on the UI's QuickJS context (PluginUI.cpp for the plugin
 // editor, sdl/main.cpp for the SDL standalone, the N8 / Launchpad hook files for the hardware seams, and

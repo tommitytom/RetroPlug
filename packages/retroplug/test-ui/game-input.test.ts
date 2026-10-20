@@ -15,14 +15,23 @@ ns.__rpcSend = (req) => {
 const take = (): [number, number, boolean][] => presses.splice(0);
 const TAB = 0x09; // DPF code; tapKey passes non-arrow codes through. Default CycleNext binding.
 
-test("keys and pad buttons press once per hold and release to the system they pressed", () => {
+/** Boot once and get a project into play (idempotent, so each test can stand on its own). Nothing may
+ *  reach a joypad before then: the start menu owns the keys. */
+let booted = false;
+function inPlay(): void {
+  if (booted) return;
+  booted = true;
   expect(ui.boot()).toBeTruthy();
   ui.pump(30);
+  ui.tapKey(Key.Right); // on the start menu: menu nav, not a joypad press
   expect(navTo("Load mGB")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(20);
-  take(); // nothing before the grid is in play
+  expect(take()).toEqual([]);
+}
 
+test("keys and pad buttons press once per hold and release to the system they pressed", () => {
+  inPlay();
   // A bound key (Right -> d-pad right): one press, one release, on the focused system.
   ui.tapKey(Key.Right);
   const key = take();
@@ -59,6 +68,7 @@ test("keys and pad buttons press once per hold and release to the system they pr
 });
 
 test("the left stick presses the d-pad, flips direction through centre, and releases on centring", () => {
+  inPlay();
   ui.gamepadAxis("leftx", 1.0);
   const right = take();
   expect(right.length).toBe(1);

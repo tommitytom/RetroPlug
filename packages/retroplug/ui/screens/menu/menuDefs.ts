@@ -969,7 +969,7 @@ function trackerVersionSupported(t: TrackerIntegration, be: HostBackend, romPath
   return !rom || t.isVersionSupported(rom); // unreadable ROM -> can't disprove support; leave the submenu live
 }
 
-// The override list out of a system's `*-assets` role config (console-agnostic — the generic rows only read
+// The override list out of a system's `*-assets` role config (console-agnostic: the generic rows only read
 // type/slot/name/erase; the file-actions read the typed list for their console-specific fields).
 const overridesFor = (sys: SystemView, role: string): AssetOverride[] => readAssetOverrides(roleConfig(sys.roles, role));
 
