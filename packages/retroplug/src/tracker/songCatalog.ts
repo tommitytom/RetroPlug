@@ -53,6 +53,9 @@ export interface TrackedSlot {
   /** How many songs the catalog held when this was tracked - which bounds where an in-cart delete above
    *  the slot can have shifted it to (see the catalog's save target). Absent: never relocate. */
   count?: number;
+  /** A fingerprint of the slots ABOVE `index` when tracked. Unchanged means nothing above was deleted, so
+   *  the song cannot have shifted at all - even if its own slot was cleared. Absent: never relocate. */
+  above?: number;
 }
 
 /** What committing a working song into the battery did. `index` is the slot it landed in; `replaced`
@@ -154,6 +157,9 @@ export interface SongCatalog {
   /** A cheap identity for the working song's CONTENT, so a per-frame watcher can skip work while it is
    *  unchanged. */
   fingerprintOf?(song: WorkingSongImage): number;
+  /** True when an UNEDITED working song differs from its tracked slot only in what the cart's playback
+   *  rewrites by itself (not a load, not a NEW), so the tracking should hold. */
+  isPlaybackDrift?(sav: Uint8Array, slot: TrackedSlot, song: WorkingSongImage): boolean;
   /** The work-RAM writes that tell a running cart its working song has just been saved - what the cart's
    *  own SAVE does to its unsaved flag. Without them a host-side save would leave the cart (and every
    *  dirty check that reads its flag) still believing the song unsaved. */

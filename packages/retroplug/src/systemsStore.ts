@@ -580,18 +580,24 @@ export class SystemsStore {
       if (same && (seen.matched || seen.retries-- <= 0)) continue;
       const sram = this.backend.readSram(e.id);
       if (!sram) continue;
-      // An EDITED song says nothing about which slot it is - unless it is byte-identical to a saved one,
-      // which is what the cart holds for the few blocks between writing a song it LOADS and clearing its
-      // unsaved flag (and what an edit undone by hand leaves). Treated as clean, that tracks the slot it
-      // came from; skipped, a reset in those blocks carried a stale slot and an UNSAVED flag that nothing
-      // would ever clear. A genuinely edited song leaves the tracking alone.
-      const identical = song.edited && catalog.workingSongImageDirty && !catalog.workingSongImageDirty(sram, song);
-      const slot = !song.edited || identical ? catalog.slotOfCleanSong(sram, { ...song, edited: false, slot: e.workingSlot }) : undefined;
-      const matched = song.edited && !identical ? true : !!slot; // an edited song is never re-checked
-      if (!same) this.observed.set(e.id, { signal: fp, matched, retries: UNMATCHED_RECHECKS });
-      else seen!.matched = matched;
-      this.observedEdited.set(e.id, song.edited);
-      if (song.edited && !identical) continue;
+      // Only an UNEDITED song moves the tracking. An edited one says nothing about which slot it is - even
+      // byte-identical to a saved song: that is also what one frame of an edit passing through an older
+      // copy's value looks like, and taking it as a load moved the tracking onto the old copy for good, so
+      // Save overwrote it. The cart's own loads clear its flag a few blocks after writing the song, and
+      // THAT observation retargets.
+      if (song.edited) {
+        this.observed.set(e.id, { signal: fp, matched: true, retries: 0 });
+        this.observedEdited.set(e.id, true);
+        continue;
+      }
+      let slot = catalog.slotOfCleanSong(sram, { ...song, slot: e.workingSlot });
+      // Clean, in no slot, but still the tracked song with only what PLAYBACK rewrites changed (a `T`
+      // command rewrites the active groove inside the block, and never sets the flag): keep the tracking.
+      // Dropped, the next edit and Save appended a copy instead of writing back.
+      if (!slot && e.workingSlot && catalog.isPlaybackDrift?.(sram, e.workingSlot, song)) slot = e.workingSlot;
+      if (!same) this.observed.set(e.id, { signal: fp, matched: !!slot, retries: UNMATCHED_RECHECKS });
+      else seen!.matched = !!slot;
+      this.observedEdited.set(e.id, false);
       this.setWorkingSlot(e.id, slot ?? undefined);
     }
   }
@@ -674,14 +680,15 @@ export class SystemsStore {
   private takeWorkingSong(e: SystemEntry): WorkingSongImage | null {
     const song = this.workingSongImage(e.id);
     this.carries.delete(e.id);
-    // Flagged edited but byte-identical to a saved song is a song the cart has just LOADED and not yet
-    // marked clean (it clears the flag a few blocks after writing the song). Carried as edited, it would
-    // land as "unsaved" forever on a cart that will never clear it, with whatever slot was tracked before.
+    // Flagged edited but byte-identical to a saved song: a song the cart has just LOADED and not yet
+    // marked clean (it clears the flag a few blocks after writing the song) - or an edit that happens to
+    // match a saved copy. Either way nothing is lost by carrying it clean, and carried edited it would
+    // land "unsaved" forever on a cart that will never clear that flag. The slot is NOT moved here: once
+    // it lands clean, the watcher's first observation retargets it from the cart's own state.
     const catalog = resolveSongCatalog(e.roles);
     const sram = song?.edited ? this.backend.readSram(e.id) : null;
     if (song && sram && catalog?.workingSongImageDirty && !catalog.workingSongImageDirty(sram, song)) {
-      const slot = catalog.slotOfCleanSong?.(sram, { ...song, edited: false }) ?? undefined;
-      return { ...song, edited: false, slot: slot ?? song.slot };
+      return { ...song, edited: false };
     }
     return song;
   }

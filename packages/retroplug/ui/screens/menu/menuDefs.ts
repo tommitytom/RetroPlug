@@ -1685,7 +1685,7 @@ function loadGuard(
             console.warn(`[songs] working song not saved${r ? `: ${r.reason}` : ""}; nothing loaded`);
             return;
           }
-          ctx.stores.project.requestSong({ index: song.index, confirmed: true });
+          ctx.stores.project.requestSong({ index: song.index, confirmed: true, systemId: sys.id });
           ctx.stores.project.settleSong();
         })();
       });
@@ -1756,7 +1756,7 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
     // itself, by NAME, so the row is at the top before the user gets back there. `confirmed`: this row was
     // already guarded (loadGuard below) or had nothing to guard, so the store must not ask again.
     const doLoad = (): void => {
-      ctx.stores.project.requestSong({ index: s.index, confirmed: true });
+      ctx.stores.project.requestSong({ index: s.index, confirmed: true, systemId: sys.id });
       ctx.stores.project.settleSong();
     };
     const items: MenuItem[] = [

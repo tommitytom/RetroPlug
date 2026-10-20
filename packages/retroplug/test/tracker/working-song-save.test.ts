@@ -31,6 +31,7 @@ import type { TrackedSlot, WorkingSongImage } from "../../src/tracker/songCatalo
 import { encodeWorkingSong, decodeWorkingSong } from "../../src/tracker/workingSongBlob";
 import { setCurSlot as setCurSlotFor, sanitizeEcho } from "../../src/smsggdj/codec/sav";
 import { smsggdjRom, smsggdjRam } from "../systems/fixtures";
+import { commonConfigOffsets } from "../../src/smsggdj/runtime/layout";
 import { composeAppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
@@ -534,7 +535,7 @@ test("the archived working song round-trips byte for byte, and anything else dec
   expect(back.slot).toEqual(song.slot);
   expect(back.edited).toBe(true);
   const bad = encodeWorkingSong(song);
-  bad[4] = 3; // a newer version
+  bad[4] = 4; // a newer version
   expect(decodeWorkingSong(bad)).toBe(null);
   expect(decodeWorkingSong(encodeWorkingSong(song).subarray(0, 100))).toBe(null);
 });
@@ -826,8 +827,15 @@ test("a reset in the blocks between the cart writing a loaded song and clearing 
   be.setRam(id, ramWith(image(1, "LOW", true))); // the cart's FILES LOAD of LOW, flag not cleared yet
   const newId = systems.reset(id)!;
   const carried = systems.pendingCarry(newId)!;
-  expect(carried.edited).toBe(false);
-  expect(carried.slot!.index).toBe(0);
+  expect(carried.edited).toBe(false); // carried clean...
+  // ...and once it lands, the watcher's first clean look retargets it to the slot it came from. (The carry
+  // itself does not move the slot: an edit passing through an older copy also looks "identical".)
+  be.setSram(newId, buildSav([{ block: block(1), name: "LOW" }, { block: block(2), name: "HIGH" }], CART)!);
+  be.setRam(newId, smsggdjRam());
+  systems.settleCarries();
+  systems.observeWorkingSongs();
+  expect(be.readRam(newId)![layout.edited]).toBe(0);
+  expect(systems.workingSongImage(newId)!.slot!.index).toBe(0);
 });
 
 test("the Songs menu offers Save Working Song & Load for a work-RAM song, and does it live", async () => {
@@ -864,4 +872,94 @@ test("the Songs menu offers Save Working Song & Load for a work-RAM song, and do
   await new Promise<void>((r) => (globalThis as unknown as { setTimeout: (f: () => void, ms: number) => void }).setTimeout(r, 30));
   expect(listSongs(be.readSram(id)!).map((x) => x.name)).toEqual(["LOW", "HIGH", "HIGH"]); // saved (untracked: appended)
   expect(be.readRam(id)!.subarray(0, SMDJ4_BLOCK_LEN)).toEqual(block(1)); // and LOW loaded, live
+});
+
+// --- sixth review ---------------------------------------------------------------------------------------
+
+test("a Songs-menu load settles into the instance whose menu it was, not whichever is focused by then", () => {
+  // Real app, executed against f50e0ceb: the request parked while instance 2 rebooted, focus moved to
+  // instance 1, and the confirmed load landed THERE - replacing instance 1's unsaved song, unprompted.
+  const be = new MockBackend("/cfg");
+  const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
+  be.seed("/roms/smsggdj.sms", smsggdjRom("0.45"));
+  const one = project.systems.addSystem("/roms/smsggdj.sms")!;
+  const two = project.systems.addSystem("/roms/smsggdj.sms")!;
+  const sav = buildSav([{ block: block(1), name: "ALPHA" }, { block: block(2), name: "BETA" }], CART)!;
+  be.setSram(one, sav);
+  be.setSram(two, sav);
+  be.setRam(one, ramWith(image(9, "ONE")));
+  be.setRam(two, ramWith(image(8, "TWO", false)));
+  project.systems.setFocus(two);
+  project.requestSong({ index: 1, confirmed: true, systemId: two });
+  project.systems.setFocus(one); // focus moves before it settles
+  expect(project.settleSong()).toBe("loaded");
+  expect(be.readRam(two)!.subarray(0, SMDJ4_BLOCK_LEN)).toEqual(block(2)); // BETA, into instance 2
+  expect(be.readRam(one)!.subarray(0, SMDJ4_BLOCK_LEN)).toEqual(block(9)); // ONE untouched
+});
+
+test("an edit passing through an older copy's bytes for one frame does not move the tracked slot", async () => {
+  // Executed against f50e0ceb: [SONG v1, SONG v2], v2 loaded (tracked 1); one observed frame of the edit
+  // equal to v1 counted as "identical, so clean", retargeted to 0, and Save then overwrote v1 with v3.
+  const { be, systems, id } = smsProject();
+  be.setSram(id, buildSav([{ block: block(1), name: "SONG" }, { block: block(2), name: "SONG" }], CART)!);
+  be.setRam(id, ramWith(image(2, "SONG", false)));
+  systems.observeWorkingSongs();
+  expect(systems.workingSongImage(id)!.slot!.index).toBe(1);
+  be.setRam(id, ramWith(image(1, "SONG", true))); // the edit passes through v1's value
+  systems.observeWorkingSongs();
+  be.setRam(id, ramWith(image(3, "SONG", true))); // and goes on to v3
+  systems.observeWorkingSongs();
+  expect(await saveWorkingSong(be, systems, systems.systems()[0])).toEqual({ kind: "saved", index: 1, replaced: true });
+  expect(readSongBlock(be.readSram(id)!, 0)).toEqual(block(1)); // v1 survives
+});
+
+test("playback rewriting the groove table does not drop the tracked slot", () => {
+  // The cart's `T` command rewrites the active groove inside the block during play without setting the
+  // unsaved flag; the clean song then matched no slot and its tracking was dropped, so the next Save
+  // appended a copy instead of writing back.
+  const { be, systems, id } = smsProject();
+  be.setSram(id, buildSav([{ block: block(1), name: "ALPHA" }], CART)!);
+  be.setRam(id, ramWith(image(1, "ALPHA", false)));
+  systems.observeWorkingSongs();
+  const played = ramWith(image(1, "ALPHA", false));
+  played[0x1a00 + 3] ^= 0x07; // a groove tick, rewritten by playback
+  be.setRam(id, played);
+  systems.observeWorkingSongs();
+  expect(systems.workingSongImage(id)!.slot?.index).toBe(0);
+
+  // ...whereas an in-cart NEW (a different song, still clean) does drop it.
+  be.setRam(id, ramWith(image(3, "", false)));
+  systems.observeWorkingSongs();
+  expect(systems.workingSongImage(id)!.slot).toBe(undefined);
+});
+
+test("a cleared original never sends Save to a backup copy directly above it", () => {
+  // Executed against f50e0ceb: [X, A-backup, A], A tracked at 2, the cart CLEARs slot 2 - the count bound
+  // opened a window over slot 1 and the edit was written over the backup.
+  const sav = buildSav([{ block: block(5), name: "X" }, { block: block(1), name: "A" }, { block: block(1), name: "A" }], CART)!;
+  const tracked = smsggdjSongCatalog.trackSlot!(sav, 2)!;
+  const cleared = buildSav([{ block: block(5), name: "X" }, { block: block(1), name: "A" }], CART)!;
+  const r = smsggdjSongCatalog.commitWorkingSong!(cleared, { ...image(7, "A"), slot: tracked });
+  if (!r.ok) throw new Error(`refused: ${r.reason}`);
+  expect(r.replaced).toBe(false);
+  expect(readSongBlock(r.sav, 1)).toEqual(block(1)); // the backup survives
+});
+
+test("a CONT-only change is unsaved work, and Save writes just the options, not a second copy", async () => {
+  // The cart saves CONT in its OPTIONS block and sets song_edited for it, but the block does not change -
+  // so the host said "nothing to save" while the cart said UNSAVED, forever.
+  const { be, project, systems, id } = smsProject();
+  const opts = Uint8Array.of(0x43, 0x46, 0, 0, 0, 0, 0, 0x0e, 3, 0x11); // "CF", cont=0
+  be.setSram(id, buildSav([{ block: block(1), name: "ALPHA" }], CART, opts)!);
+  be.seed("/roms/smsggdj.sav", be.readSram(id)!);
+  const song = { ...image(1, "ALPHA", true), settings: Uint8Array.of(0, 0, 0, 0, 2, 0x0e, 3) }; // cont=2
+  const ram = ramWith(song);
+  const offsets = commonConfigOffsets()!;
+  offsets.forEach((o, i) => (ram[o] = song.settings[i]));
+  be.setRam(id, ram);
+  expect(hasUnsavedChanges(be, project)).toBe(true);
+  expect(await saveWorkingSong(be, systems, systems.systems()[0])).toEqual({ kind: "saved", index: 0, replaced: true });
+  expect(listSongs(be.readSram(id)!).length).toBe(1);
+  expect(be.readSram(id)!.subarray(0x3f60 + 2, 0x3f60 + 9)).toEqual(song.settings);
+  expect(be.readRam(id)![layout.edited]).toBe(0);
 });

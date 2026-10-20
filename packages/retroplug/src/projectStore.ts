@@ -86,6 +86,11 @@ const ZOOM_MAX = 6;
 export interface SongRequest {
   name?: string;
   index?: number;
+  /** The system to load into. A Songs-menu row names the instance whose menu it is; a Recent row leaves
+   *  it unset and means the primary one. Without it, a request parked while a cart booted settled into
+   *  whichever instance was focused by then - and, arriving confirmed, replaced that instance's unsaved
+   *  song with no prompt. Followed through in-place rebuilds (SystemsStore.currentId). */
+  systemId?: number;
   /** Whether discarding unsaved working-song work has already been agreed to. A Songs-menu Load was
    *  guarded before it got here; a Recent row's was not, so `settleSong` asks once. */
   confirmed: boolean;
@@ -316,7 +321,12 @@ export class ProjectStore {
   settleSong(): SongSettle {
     const req = this.songRequest;
     if (!req) return "idle";
-    const sys = this.primarySystem();
+    // The named system (followed through a reset or reload), else the primary - and a named system that is
+    // GONE drops the request rather than falling back to some other instance.
+    const targetId = req.systemId !== undefined ? this.systems.currentId(req.systemId) : undefined;
+    const sys = req.systemId !== undefined
+      ? this.systems.systems().find((e) => e.id === targetId)
+      : this.primarySystem();
     const catalog = sys ? resolveSongCatalog(sys.roles) : undefined;
     if (!sys || !catalog) return this.dropSongRequest();
     // A reset's carry still to land is the cart's song too: applied first, the request would be

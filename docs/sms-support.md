@@ -1633,6 +1633,18 @@ not, and each lost an unsaved song without a word:
   is treated as clean when tracked and when carried. The Songs menu no longer shows a "[working]" row for
   smsggdj (it was built from cur_slot, the last song SAVED), and its load guard's "Save Working Song &
   Load" saves through saveWorkingSong and then loads live, instead of reporting "no free slot".
+- **Sixth pass: fewer guesses.** Each heuristic about where the working song came from had opened a hole,
+  so they were made conservative. Only an UNEDITED song moves the tracking (an edit passing through an
+  older copy's bytes for one frame had retargeted Save onto that copy); a carried edited-but-identical
+  song is carried clean but keeps its slot, and the watcher's first clean look after it lands retargets
+  it. A clean song that differs from its tracked slot only in the groove table keeps its tracking
+  (playback's `T` command rewrites it without setting the flag). Relocation additionally requires the
+  slots ABOVE the tracked one to have changed (`TrackedSlot.above`), so clearing the original itself
+  never sends Save to a backup above it. A Songs-menu load names its target system (`SongRequest.systemId`,
+  followed through rebuilds): it used to settle into whichever instance was focused when it settled, and
+  arrived confirmed, replacing that instance's unsaved song. And the OPTIONS block counts: a CONT change
+  (the cart sets song_edited, the block does not change) is unsaved work, and Save writes just the
+  options into the battery rather than a second copy of the song.
 - **"Saved" means the whole song.** The block, its echo settings and its displayed name all have to
   match a slot. The cart's ECHO screen changes only the echo and sets `song_edited`; comparing the block
   alone called that saved, so an echo edit got no prompt and Save stored nothing.

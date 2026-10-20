@@ -46,9 +46,12 @@ import {
   packDirectory,
   savedSlotOf,
   withConfig,
+  readConfig,
   readSongBlock,
   songFingerprint,
   slotMeta,
+  prefixFingerprint,
+  sameBlockOutsideGrooves,
   slotHolds,
   sanitizeEcho,
   SMDJ4_BLOCK_LEN,
@@ -117,7 +120,14 @@ function trackSlot(sav: Uint8Array, index: number): TrackedSlot | null {
   if (!isSmsggdjSav(sav)) return null;
   const packed = packDirectory(sav);
   const block = readSongBlock(packed, index);
-  return block ? { index, fingerprint: songFingerprint(block, slotMeta(packed, index)), count: listSongs(packed).length } : null;
+  return block
+    ? {
+        index,
+        fingerprint: songFingerprint(block, slotMeta(packed, index)),
+        count: listSongs(packed).length,
+        above: prefixFingerprint(packed, index),
+      }
+    : null;
 }
 
 /** See SongCatalog.slotOfCleanSong. */
@@ -157,8 +167,21 @@ function changeSignal(song: WorkingSongImage): number {
   return h >>> 0;
 }
 
+/** True when the cart's live OPTIONS differ from the battery's - what its own SAVE would also write.
+ *  CONT is the one of them the cart counts as a song edit (it sets song_edited from the PROJECT screen)
+ *  while leaving the block alone, so without this a CONT change read as nothing to save. */
+function settingsChanged(sav: Uint8Array, song: WorkingSongImage): boolean {
+  if (!song.settings || !isSmsggdjSav(sav)) return false;
+  // A battery with no OPTIONS block (one the host built, or a cart never saved from) says nothing about
+  // what the options WERE, so it is no evidence of a change - and counting it as one made every song on
+  // such a battery read as unsaved.
+  const stored = readConfig(sav);
+  return !!stored && !stored.every((b, i) => b === song.settings![i]);
+}
+
 function imageDirty(sav: Uint8Array, song: WorkingSongImage): boolean {
   if (!song.edited) return false;
+  if (settingsChanged(sav, song)) return true;
   // The whole song, not just its block: an echo or name change is a real edit (the cart's ECHO screen sets
   // song_edited) that the block alone cannot see, and calling it saved lost it with no prompt.
   return !isSmsggdjSav(sav) || savedSlotOf(packDirectory(sav), song.block, metaOf(song)) < 0;
@@ -197,7 +220,11 @@ function saveTarget(base: Uint8Array, song: WorkingSongImage): number {
   // k songs gone means it can have moved down at most k slots, never up - so a deliberate backup copy
   // elsewhere is not "where it went". (Unbounded, the edit was written over a backup the user kept after
   // clearing the original.) Exactly one candidate, or append.
-  if (tracked.count === undefined) return -1;
+  if (tracked.count === undefined || tracked.above === undefined) return -1;
+  // Nothing above it changed, so nothing above it was deleted and the song cannot have shifted: it was
+  // CLEARED (or overwritten) where it stood. Any match within the window is then a copy - in the case
+  // that slipped through the count bound alone, a backup directly above the original - so append.
+  if (prefixFingerprint(base, tracked.index) === tracked.above) return -1;
   const gone = tracked.count - songs.length;
   const moved = songs.filter((s) => s.index >= tracked.index - gone && s.index < tracked.index && holds(s.index, s.name));
   return moved.length === 1 ? moved[0].index : -1;
@@ -207,6 +234,13 @@ function saveTarget(base: Uint8Array, song: WorkingSongImage): number {
 function commitWorkingSong(sav: Uint8Array, song: WorkingSongImage): WorkingSongCommit {
   const base = ensureSongDirectory(sav);
   if (!base) return { ok: false, reason: "format" };
+  // The song itself is already saved and only the OPTIONS moved (a CONT change): write those alone, into
+  // the slot it already is, rather than appending a second copy of the song to carry them.
+  const already = savedSlotOf(base, song.block, metaOf(song));
+  if (already >= 0 && settingsChanged(base, song)) {
+    const out = withConfig(base, song.settings!) ?? base;
+    return { ok: true, sav: setCurSlot(out, already) ?? out, index: already, replaced: true };
+  }
   const target = saveTarget(base, song);
   const index = target >= 0 ? target : listSongs(base).length;
   const written = target >= 0 ? replaceSong(base, target, song.block, song.echo) : addSong(base, song.block, song.name, song.echo);
@@ -289,6 +323,16 @@ export const smsggdjSongCatalog: SongCatalog = {
   slotOfCleanSong,
   trackSlot,
   fingerprintOf: changeSignal,
+  // The tracked slot still holds the song it held when tracked, and the working song is that song except
+  // for the groove table playback rewrites - with its name and echo intact. Anything wider (a NEW, a
+  // load of another song) is not drift.
+  isPlaybackDrift: (sav, slot, song) => {
+    const packed = packDirectory(sav);
+    const held = trackSlot(packed, slot.index);
+    if (!held || held.fingerprint !== slot.fingerprint) return false;
+    const block = readSongBlock(packed, slot.index);
+    return !!block && sameBlockOutsideGrooves(block, song.block) && slotHolds(packed, slot.index, block, metaOf(song));
+  },
   // `song_edited = 0`, exactly what the cart's own save does (rle.asm:817).
   workingSongSavedWrites: () => {
     const at = commonSongEditedOffset();

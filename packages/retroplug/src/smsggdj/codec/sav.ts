@@ -364,10 +364,51 @@ export function songFingerprint(block: Uint8Array, meta: SongMeta): number {
   return h;
 }
 
+/** True when `a` and `b` are the same song block except inside the groove table - the one region the
+ *  cart's PLAYBACK rewrites without marking the song edited (a `T` command, engine.asm set_tempo). */
+export function sameBlockOutsideGrooves(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== SMDJ4_BLOCK_LEN || b.length !== SMDJ4_BLOCK_LEN) return false;
+  for (let i = 0; i < SMDJ4_BLOCK_LEN; i++) {
+    if (i === GROOVE_OFF) i += 16 * GROOVE_STRIDE;
+    if (i < SMDJ4_BLOCK_LEN && a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+/** A fingerprint of the directory ABOVE slot `index` - each entry's stored checksum and name, in order.
+ *  Changes exactly when a song above was deleted, inserted or replaced; unchanged when only `index` or
+ *  later moved, which is what tells "shifted up by a delete above" from "the original itself cleared". */
+export function prefixFingerprint(sav: Uint8Array, index: number): number {
+  let h = 0x811c9dc5;
+  const mix = (b: number): void => {
+    h = Math.imul(h ^ b, 0x01000193) >>> 0;
+  };
+  for (const s of listSongs(sav)) {
+    if (s.index >= index) break;
+    const sum = storedChecksum(sav, s.index) ?? 0;
+    mix(sum & 0xff);
+    mix(sum >> 8);
+    for (let i = 0; i < s.name.length; i++) mix(s.name.charCodeAt(i) & 0xff);
+    mix(0);
+  }
+  return h;
+}
+
 /** Slot `index`'s echo settings and displayed name, as slotHolds / songFingerprint compare them. */
 export function slotMeta(sav: Uint8Array, index: number): SongMeta {
   const e = entryAt(index);
   return { echo: sav.slice(e + E_ECHO, e + E_ECHO + ECHO_LEN), name: readName(sav, index) };
+}
+
+/** The seven settings of the battery's OPTIONS block (the inverse of withConfig), or null when it holds
+ *  no valid block - no "CF" header, or a checksum that does not add up (config_load refuses those too). */
+export function readConfig(sav: Uint8Array): Uint8Array | null {
+  const at = configOffset(sav.length);
+  if (sav.length < at + CONFIG_LEN || sav[at] !== 0x43 || sav[at + 1] !== 0x46) return null;
+  const settings = sav.slice(at + 2, at + 9);
+  let sum = 0;
+  for (const b of settings) sum = (sum + b) & 0xff;
+  return sum === sav[at + 9] ? settings : null;
 }
 
 /** `config_save` (engine.asm) as a NEW image: "CF", the seven settings in the cart's order (palette,
