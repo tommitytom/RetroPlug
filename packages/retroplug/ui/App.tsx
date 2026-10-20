@@ -14,6 +14,7 @@ import { useStores, useSystems, useProjectSettings, useUserConfig, useRecent, us
 import { useSinkGroup } from "./lvgl/FocusProvider";
 import { Box } from "./lvgl/Box";
 import { useNativeEvent } from "./lvgl/useNativeEvent";
+import { useRerenderOn } from "./lvgl/useRerender";
 import { useWindowSize, requestWindowSize, isWindowSizeControlled, setWindowTitle } from "./lvgl/useWindowSize";
 import { useCloseGuard } from "./lvgl/useCloseGuard";
 import { useProjectModals } from "./lvgl/useProjectModals";
@@ -78,15 +79,9 @@ export function App() {
   // back), the N8 port/connect/lookahead, and the Launchpad port pair. Without this the label would not
   // repaint until some unrelated render happened to come along.
   //
-  // One counter for all five. They were five separate useState/useEffect pairs differing only in the
-  // identifier; a render is a render, so which source fired does not change what happens next.
-  // Inert in a DAW / the harness, where nothing ever emits.
-  const [, bumpNative] = useState(0);
-  useEffect(() => {
-    const bump = () => bumpNative((n) => n + 1);
-    const offs = [subscribeAudioDraft, subscribeMidi, subscribeTransport, subscribeN8, subscribeLaunchpad].map((sub) => sub(bump));
-    return () => offs.forEach((off) => off());
-  }, []);
+  // A render is a render, so which source fired does not change what happens next. Inert in a DAW / the
+  // harness, where nothing ever emits.
+  useRerenderOn(subscribeAudioDraft, subscribeMidi, subscribeTransport, subscribeN8, subscribeLaunchpad);
   // The cartridge sound chip sits at ONE level, whether you are hearing the emulator or a real console: the
   // NES system's "Expansion Volume" knob drives Mesen's expansion channels, and this pushes the same value
   // (rescaled) to a connected N8's `master_vol`. Deriving it from `systems` covers every way it can move -

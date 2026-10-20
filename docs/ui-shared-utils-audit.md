@@ -118,18 +118,26 @@ both SystemGrid and hitTestTile call it.
 
 ## 8. Smaller items
 
-- `Menu.tsx` mirrors state into a ref three times (capturing, actionIdx, prompt): `useStateRef`.
-- `const [, bump] = useState(0)` force-update in App, `useFileBrowser`, `useVersionedPoll`:
-  `useForceUpdate`; App's five-subscribable effect could be `useSubscriptions(...subs)`.
-- `lsdjDebug.ts` hand-rolls a listener set; it can use `createSubscribable`.
-- Held-slot press/release routing is duplicated between `useGameInput` and `useGamepadInput`; stick
-  edge-detection is duplicated between `useGamepadInput` and `Menu.tsx`.
-- Theme colours (`#4fc3f7`, `#000000`, `#14243f`, ...) are literals in ~19 places: `theme.ts`.
-- `KEY_ESCAPE` is redefined in App though `src/keyCodes.ts` exports it.
-- `songImport.ts` carries a half-deleted duplicate doc comment above `ImportResult`.
-- `ui/lvgl/` mixes framework shims (Box, StableSlot, focus, events) with LVGL-free app logic
-  (`render.ts`, `songImport.ts`, `unsavedRows.ts`, `saveProjectInteractive.ts`); splitting would make the
-  shared layer obvious.
+- DONE: `Menu.tsx` mirrored state into a ref three times (capturing, actionIdx, prompt): `useStateRef`
+  ([useStateRef.ts](../packages/retroplug/ui/lvgl/useStateRef.ts)).
+- DONE: `const [, bump] = useState(0)` force-updates in App, `useFileBrowser`, `useVersionedPoll`, and App's
+  five-subscribable effect: `useForceUpdate` / `useRerenderOn(...subscribes)`
+  ([useRerender.ts](../packages/retroplug/ui/lvgl/useRerender.ts)).
+- DONE: `lsdjDebug.ts` hand-rolled a listener set; it uses `createSubscribable` now.
+- DONE: held-slot press/release routing (useGameInput / useGamepadInput) is `useHeldRouting`, and stick
+  edge detection (useGamepadInput / Menu) is `useAxisEdges`
+  ([useHeldInput.ts](../packages/retroplug/ui/input/useHeldInput.ts)). Nothing tested this routing, so
+  [game-input.test.ts](../packages/retroplug/test-ui/game-input.test.ts) now pins it at the pressButton RPC
+  (repeat drop, release-to-original-target across a focus change, stick flips); it passes on the code before
+  and after the refactor.
+- NOT DONE, on purpose: a cross-file `theme.ts`. Counted, the repeated colours are the accent (Menu.tsx only)
+  and black backgrounds, so Menu got local `ACCENT` / `FOCUS_BAR` constants instead.
+- DONE (with item 1): `KEY_ESCAPE` redefined in App. DONE (with item 2): the half-deleted doc comment in
+  `songImport.ts`.
+- OPEN: `ui/lvgl/` mixes framework shims (Box, StableSlot, lv, focus, events, the frame / rerender / state
+  hooks) with LVGL-free app logic (`render.ts`, `songImport.ts`, `unsavedRows.ts`, `saveProjectInteractive.ts`,
+  `nativeHooks.ts`, the overlay hooks). Splitting it into `lvgl/` + an app-level directory is a pure move,
+  but it touches most import lines in ui/ and test/, so it is worth doing as its own change, not folded in.
 
 ## 9. `ui/` is not type-checked (DONE)
 

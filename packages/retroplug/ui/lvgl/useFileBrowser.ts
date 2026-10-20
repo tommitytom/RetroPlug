@@ -3,7 +3,7 @@
 // above everything, and settles the promise on pick / cancel. The current directory is the module-level
 // last-dir (so reopening resumes there); navigate() advances it and bumps a local counter to re-render.
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import type { AppStores } from "../../src/appStores";
 import {
@@ -16,14 +16,14 @@ import {
 } from "../../src/fileBrowser";
 import { buildFileBrowserMenu } from "../screens/menu/fileBrowserMenu";
 import type { Overlay } from "./overlay";
+import { useRerenderOn } from "./useRerender";
 import { native } from "./nativeHooks";
 
 /** The browse as an overlay; onClose (Esc / B) cancels it (resolves null). */
 export type FileBrowserOverlay = Overlay;
 
 export function useFileBrowser(stores: AppStores): FileBrowserOverlay {
-  const [, bump] = useState(0);
-  useEffect(() => subscribeFileBrowser(() => bump((n) => n + 1)), []);
+  const rerender = useRerenderOn(subscribeFileBrowser);
 
   // Install the in-app browser as the __rp_openFileBrowser hook, overriding any native host browser. This is
   // the cross-bundle seam: realBackend (control-plane bundle) calls the global hook and awaits
@@ -61,7 +61,7 @@ export function useFileBrowser(stores: AppStores): FileBrowserOverlay {
   const tree = buildFileBrowserMenu((d) => stores.backend.listDir(d), req.opts, dir, {
     navigate: (d) => {
       setLastBrowseDir(d);
-      bump((n) => n + 1); // re-render → rebuild the tree for the new dir
+      rerender(); // rebuild the tree for the new dir
     },
     pick: (path) => resolveFileBrowser(path),
   });

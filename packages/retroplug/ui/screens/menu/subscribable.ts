@@ -8,10 +8,9 @@
 // one - App bumps a `useState` counter instead - so in five places a counter was incremented and never
 // read. They are gone, counter included.
 //
-// No React here on purpose. `ui/screens/grid/lsdjDebug.ts` wraps the same shape in
-// `useSyncExternalStore`, which is the nicer form, but `react` does not resolve under `tsc` for files
-// reachable from the type-checked set (the UI bundle resolves it at build time through lv_binding_js).
-// Pulling it in here would trade a real dedup for a build-config argument, so the hook stays in App.
+// No React here on purpose: these modules are reachable from the pure-TS tests, whose tsconfig does not
+// resolve `react`. The React side is ui/lvgl/useRerender.ts (`useRerenderOn(subscribeX, ...)`, what App
+// uses), or `useSyncExternalStore(x.subscribe, ...)` as ui/screens/grid/lsdjDebug.ts does.
 
 export interface Subscribable {
   /** Notify every listener. Call after mutating the module's own state. */

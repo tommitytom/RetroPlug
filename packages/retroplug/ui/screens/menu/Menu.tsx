@@ -21,11 +21,12 @@ import { Text, ELvKey } from "lvgljs-ui";
 
 import { useFocusGroup } from "../../lvgl/useFocusGroup";
 import { useNativeEvent } from "../../lvgl/useNativeEvent";
+import { useStateRef } from "../../lvgl/useStateRef";
+import { useAxisEdges } from "../../input/useHeldInput";
 import { Box } from "../../lvgl/Box";
 import { TextEx, type LvEvent, type LvKeyEvent } from "../../lvgl/lv";
 import {
   dpfCodeToKeyName,
-  axisToken,
   menuNavForButton,
   menuNavForAxisToken,
   KEY_ESCAPE,
@@ -44,6 +45,8 @@ import type { MenuItem, MenuTree, PromptSpec } from "./menuTree";
 
 const MOD_SHIFT = 1 << 0; // DPF modifier mask bit for Shift (mirrors Base.hpp kModifierShift), on the "key" bus
 
+const ACCENT = "#4fc3f7"; // the menu's chrome: its border, its title, a focused row's text, the prompt box
+const FOCUS_BAR = "#14243f"; // the full-width highlight bar behind the focused row
 const CAPTURE_COLOR = "#ffb74d"; // orange, matching the legacy capture-armed row
 const DISABLED_COLOR = "#666666"; // greyed text for an inert (unavailable-for-this-cart) row
 const WARN_COLOR = "#ffd54f"; // yellow — a warning row (a recent entry whose file is missing)
@@ -55,7 +58,7 @@ const GAMEPAD_CAPTURE_AXIS = 0.6; // a stick must pass this (past the play thres
 // the "frame" event carries — the headless harness advances it deterministically, so tests are stable.
 const HOLD_REPEAT_DELAY_MS = 400; // first repeat this long into the hold (LVGL's indev long-press default)
 const HOLD_REPEAT_PERIOD_MS = 100; // then every this (LVGL's indev long-press-repeat default)
-// Mouse-hover bar: a dimmer navy than the focus bar (#14243f), so the row under the pointer reads as
+// Mouse-hover bar: a dimmer navy than the focus bar (FOCUS_BAR), so the row under the pointer reads as
 // highlighted but subordinate to the keyboard-selected row. A pre-dimmed colour at full opacity (a
 // state-style's background-opacity isn't reliably applied). LVGL toggles it on LV_STATE_HOVERED.
 const ROW_HOVER_STYLE = { "background-color": "#0d1626", "background-opacity": 255 } as const;
@@ -128,24 +131,16 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   const [focusedId, setFocusedId] = useState<string>("");
   // The armed capture row (a "capture" item awaiting its next key), or "". The ref is set synchronously so
   // the key-bus handler and onItemKey see the armed state within the same event; the state repaints the row.
-  const [capturingId, setCapturingId] = useState<string>("");
-  const capturingIdRef = useRef<string>("");
-  const setCapturing = useCallback((id: string) => {
-    capturingIdRef.current = id;
-    setCapturingId(id);
-  }, []);
+  const [capturingId, capturingIdRef, setCapturing] = useStateRef("");
   // Which action each "actionCycler" row is showing, keyed by item id. Renderer-owned transient state, like
   // `openItems` above: the tree is rebuilt from scratch every render and carries no selection, and a row the
   // user never touched sits on its first (safest) action. The ref mirrors it so LVGL's CLICKED → activate and
   // the gamepad's Select read the index the arrows just set, within the same event.
-  const [actionIdx, setActionIdx] = useState<Map<string, number>>(() => new Map());
-  const actionIdxRef = useRef<Map<string, number>>(actionIdx);
-  const setActionIndex = useCallback((id: string, index: number) => {
-    const next = new Map(actionIdxRef.current);
-    next.set(id, index);
-    actionIdxRef.current = next;
-    setActionIdx(next);
-  }, []);
+  const [, actionIdxRef, setActionIdx] = useStateRef<Map<string, number>>(() => new Map());
+  const setActionIndex = useCallback(
+    (id: string, index: number) => setActionIdx(new Map(actionIdxRef.current).set(id, index)),
+    [actionIdxRef, setActionIdx],
+  );
   // Clamped on read: the list shrinks under the cursor when a row's last action is the one that removes
   // itself (Remove Override drops out of the list once the override is gone).
   const actionIndexOf = useCallback(
@@ -167,12 +162,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   const arrowFreshRef = useRef({ up: false, down: false });
   // The live text/confirm prompt overlay, or null. The ref mirrors the state so the once-mounted key
   // handler reads the latest; the state drives the render.
-  const [promptState, setPromptState] = useState<PromptState | null>(null);
-  const promptStateRef = useRef<PromptState | null>(null);
-  const setPrompt = useCallback((next: PromptState | null) => {
-    promptStateRef.current = next;
-    setPromptState(next);
-  }, []);
+  const [promptState, promptStateRef, setPrompt] = useStateRef<PromptState | null>(null);
 
   // Signal App's Esc handler while a capture/prompt modal is armed, so Esc cancels the modal instead of
   // closing the menu. Flipped from an effect (post-render) so it stays set through the synchronous Esc.
@@ -196,9 +186,9 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   // is snapped to the nearest size the font table actually carries: at small zooms the requested size is not the rendered line
   // height. Until that measurement lands (one frame), fall back to a close estimate.
   const [textRowH, setTextRowH] = useState(0);
-  // `${pad}:${axisName}` → the half-axis token the left stick is currently in, for edge-detected nav (a
-  // held stick fires one move, not a stream). Separate from useGamepadInput's — this one drives the menu.
-  const menuAxisDirRef = useRef<Map<string, string>>(new Map());
+  // Edge-detected stick nav (a held stick fires one move, not a stream). Its own direction state, separate
+  // from useGamepadInput's - this one drives the menu.
+  const axisEdge = useAxisEdges();
 
   // Flatten depth-first, descending only into open submenus.
   const flat: FlatEntry[] = [];
@@ -530,13 +520,10 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     //    direction. The slot is `axis:`-prefixed so a stick release can only cancel a stick-armed repeat
     //    (never a d-pad button's), and vice versa.
     if (axisName !== "leftx" && axisName !== "lefty") return;
-    const key = `${pad}:${axisName}`;
-    const stickSlot = `axis:${key}`;
-    const cur = menuAxisDirRef.current.get(key) ?? "";
-    const next = axisToken(axisName, value, cur);
-    if (next === cur) return;
-    menuAxisDirRef.current.set(key, next);
-    const nav = menuNavForAxisToken(next); // null when centred
+    const stickSlot = `axis:${pad}:${axisName}`;
+    const edge = axisEdge(pad, axisName, value);
+    if (!edge) return;
+    const nav = menuNavForAxisToken(edge.to); // null when centred
     if (nav) {
       applyMenuNav(nav, true); // a deliberate push is a fresh press (repeats come from the frame handler)
       holdRepeatRef.current = { slot: stickSlot, nav, since: tickRef.current, last: tickRef.current };
@@ -587,7 +574,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
         height,
         "background-color": "#000000",
         "border-width": 1,
-        "border-color": "#4fc3f7",
+        "border-color": ACCENT,
         display: "flex",
         "flex-direction": "column",
         "padding-left": outerPadLR,
@@ -596,7 +583,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
         "padding-bottom": outerPadTB,
       }}
     >
-      <Text style={{ "text-color": "#4fc3f7", "font-size": titleFont, "padding-bottom": r(4) }}>{tree.title}</Text>
+      <Text style={{ "text-color": ACCENT, "font-size": titleFont, "padding-bottom": r(4) }}>{tree.title}</Text>
       {/* Re-keyed on the visible set: a submenu toggle fully remounts the row list so every Text mounts via
           appendChild in JSX order (lv_binding_js's insertChildBefore just appends). */}
       <Box
@@ -625,11 +612,11 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
           }
           const isCapturing = capturingId === item.id;
           const isFocused = focusedId === item.id;
-          const rowColor = item.disabled ? DISABLED_COLOR : isCapturing ? CAPTURE_COLOR : item.warn ? WARN_COLOR : isFocused ? "#4fc3f7" : "#ffffff";
+          const rowColor = item.disabled ? DISABLED_COLOR : isCapturing ? CAPTURE_COLOR : item.warn ? WARN_COLOR : isFocused ? ACCENT : "#ffffff";
           // The chrome every row shares: the full-width highlight bar, the depth indent, the vertical rhythm.
           const rowStyle = {
             width: "100%",
-            "background-color": "#14243f", // full-width highlight bar on the focused row
+            "background-color": FOCUS_BAR,
             "background-opacity": isFocused ? 255 : 0,
             "padding-top": itemPadVert,
             "padding-bottom": itemPadVert,
@@ -791,7 +778,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
                 width: promptW,
                 "background-color": "#000000",
                 "border-width": 1,
-                "border-color": "#4fc3f7",
+                "border-color": ACCENT,
                 display: "flex",
                 "flex-direction": "column",
                 "row-spacing": r(4),
@@ -801,7 +788,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
                 "padding-bottom": r(6),
               }}
             >
-              <Text style={{ "text-color": "#4fc3f7", "font-size": fontSize, width: "100%", height: rowH }}>{sp.title}</Text>
+              <Text style={{ "text-color": ACCENT, "font-size": fontSize, width: "100%", height: rowH }}>{sp.title}</Text>
               {!sp.confirm && (
                 <Text
                   style={{

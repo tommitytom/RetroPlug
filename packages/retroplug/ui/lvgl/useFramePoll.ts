@@ -19,6 +19,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useNativeEvent } from "./useNativeEvent";
+import { useForceUpdate } from "./useRerender";
 
 /** Run `fn` on every `frames`-th render frame. The counter is per-component, not global. */
 export function useFrameDivider(frames: number, fn: () => void): void {
@@ -44,7 +45,7 @@ export function useVersionedPoll<T extends { version: number; busy?: boolean; do
   read: () => T | null,
   onSettled?: (status: T) => void,
 ): void {
-  const [, bump] = useState(0);
+  const rerender = useForceUpdate();
   const seenVersion = useRef(-1);
   const settled = useRef(false);
 
@@ -60,7 +61,7 @@ export function useVersionedPoll<T extends { version: number; busy?: boolean; do
     }
     if (s.version !== seenVersion.current) {
       seenVersion.current = s.version;
-      bump((n) => n + 1);
+      rerender();
     }
   });
 }
