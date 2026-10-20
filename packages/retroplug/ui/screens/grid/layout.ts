@@ -91,12 +91,25 @@ export function fitZoom(count: number, layout: SystemLayout, cap: number, area: 
   return MIN_ZOOM;
 }
 
+/** The zoom the grid is actually DRAWN at: the project's effective zoom (resolveZoom), capped by fitZoom so the
+ *  whole grid fits `area`. SystemGrid renders at this and hitTestTile maps pointer coordinates through it, so
+ *  the two can only agree if both ask here. */
+export function displayZoom(
+  count: number,
+  layout: SystemLayout,
+  projectZoom: number,
+  defaultZoom: number,
+  area: { width: number; height: number },
+): number {
+  return fitZoom(count, layout, resolveZoom(projectZoom, defaultZoom), area);
+}
+
 /** Map a window-pixel coordinate to the grid tile index under it, or `null` when it misses the grid
  *  (outside the content area, or an empty cell in a partially-filled last row). Replicates SystemGrid's
- *  layout exactly — the `fitZoom`-capped displayed zoom + the grid CENTERED in the window (SystemGrid's
+ *  layout exactly — the same `displayZoom` + the grid CENTERED in the window (SystemGrid's
  *  align/justify-center) — so a dropped file lands on the tile it was visibly dropped onto. `projectZoom`
  *  is the project's `settings.zoom`; `defaultZoom` the user default (used when the project zoom is out of
- *  range), matching SystemGrid's `resolvedZoom`. */
+ *  range). */
 export function hitTestTile(
   x: number,
   y: number,
@@ -107,8 +120,7 @@ export function hitTestTile(
   windowSize: { width: number; height: number },
 ): number | null {
   if (count <= 0) return null;
-  const cap = projectZoom >= MIN_ZOOM && projectZoom <= MAX_ZOOM ? projectZoom : defaultZoom;
-  const zoom = fitZoom(count, layout, cap, windowSize);
+  const zoom = displayZoom(count, layout, projectZoom, defaultZoom, windowSize);
   const shape = shapeFor(layout, count);
   const tw = tileWidth(zoom);
   const th = tileHeight(zoom);
