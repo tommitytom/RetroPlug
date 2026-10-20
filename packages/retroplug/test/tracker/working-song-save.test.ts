@@ -415,8 +415,10 @@ test("Save tracks its slot, a menu Load tracks its slot, and an in-cart load re-
   expect(listSongs(be.readSram(id)!).length).toBe(2);
   expect(readSongBlock(be.readSram(id)!, 1)).toEqual(block(5));
 
-  // A host-side Load of ALPHA retargets it to slot 0.
+  // A host-side Load of ALPHA retargets it to slot 0 - on the watcher's first look once it has landed (not
+  // before: a reset or export ahead of the queued writes would carry the old song tracked to the new slot).
   expect(loadSongLive(be, systems, sys(), 0)).toBe(true);
+  systems.observeWorkingSongs();
   expect(systems.workingSongImage(id)!.slot!.index).toBe(0);
 });
 
@@ -869,7 +871,8 @@ test("the Songs menu offers Save Working Song & Load for a work-RAM song, and do
   const save = findRow(items, "smsggdj-song-0-load-save")!;
   expect(save.disabled ?? false).toBe(false);
   save.onSelect!();
-  await new Promise<void>((r) => (globalThis as unknown as { setTimeout: (f: () => void, ms: number) => void }).setTimeout(r, 30));
+  // The save waits for the working song to hold still (a few blocks), then writes and lands.
+  await new Promise<void>((r) => (globalThis as unknown as { setTimeout: (f: () => void, ms: number) => void }).setTimeout(r, 300));
   expect(listSongs(be.readSram(id)!).map((x) => x.name)).toEqual(["LOW", "HIGH", "HIGH"]); // saved (untracked: appended)
   expect(be.readRam(id)!.subarray(0, SMDJ4_BLOCK_LEN)).toEqual(block(1)); // and LOW loaded, live
 });
@@ -922,10 +925,21 @@ test("playback rewriting the groove table does not drop the tracked slot", () =>
   be.setRam(id, ramWith(image(1, "ALPHA", false)));
   systems.observeWorkingSongs();
   const played = ramWith(image(1, "ALPHA", false));
-  played[0x1a00 + 3] ^= 0x07; // a groove tick, rewritten by playback
+  played[0x1a00 + 3] ^= 0x07; // a groove tick, rewritten by playback...
+  played[layout.playState] = 1; // ...which only happens while the transport runs
   be.setRam(id, played);
   systems.observeWorkingSongs();
   expect(systems.workingSongImage(id)!.slot?.index).toBe(0);
+
+  // ...and the same groove-only change on a STOPPED cart is not drift (an in-cart NEW over a groove
+  // template looks exactly like it) - it drops the tracking.
+  const stopped = ramWith(image(1, "ALPHA", false));
+  stopped[0x1a00 + 4] ^= 0x07;
+  be.setRam(id, stopped);
+  systems.observeWorkingSongs();
+  expect(systems.workingSongImage(id)!.slot).toBe(undefined);
+  be.setRam(id, played);
+  systems.observeWorkingSongs();
 
   // ...whereas an in-cart NEW (a different song, still clean) does drop it.
   be.setRam(id, ramWith(image(3, "", false)));
@@ -976,6 +990,7 @@ test("an unedited song the cart saves to a new row moves the tracking there, bat
   systems.observeWorkingSongs(); // tracked at 0
   const drifted = ramWith(image(1, "", false));
   drifted[0x1a00 + 5] ^= 0x03; // playback rewrote a groove tick
+  drifted[layout.playState] = 1;
   be.setRam(id, drifted);
   systems.observeWorkingSongs(); // drift: tracking held at 0
   // The cart's own SAVE to a new row: the battery grows, the working song does not change.
@@ -1000,4 +1015,59 @@ test("a re-carried song the cart already holds opens no landing window", () => {
   be.setRam(newId, ramWith(image(8, "SAME"))); // already there when it settles
   systems.settleCarries();
   expect(systems.isRestoringSong(newId)).toBe(false);
+});
+
+// --- the extended fuzzer -----------------------------------------------------------------------------------
+
+test("playback drift onto an older version's exact tempo keeps tracking the version being played", async () => {
+  // v1 (slot 0) and v2 (slot 1) differ only in their groove table. Playing v2, a `T` command sets v1's
+  // tempo: the song is now byte-identical to v1, which a plain match took for an in-cart LOAD of v1 - so
+  // the next edit + Save overwrote v1. The directory did not move, so it was playback.
+  const { be, systems, id } = smsProject();
+  const v1 = block(1);
+  const v2 = block(1);
+  v2[0x1a00 + 2] = 0x33;
+  be.setSram(id, buildSav([{ block: v1, name: "SONG" }, { block: v2, name: "SONG" }], CART)!);
+  const ram = ramWith({ block: v2, name: nameBytes("SONG"), echo: new Uint8Array(8), edited: false });
+  be.setRam(id, ram);
+  systems.observeWorkingSongs();
+  expect(systems.workingSongImage(id)!.slot!.index).toBe(1);
+  const playing = ramWith({ block: v1, name: nameBytes("SONG"), echo: new Uint8Array(8), edited: false });
+  playing[layout.playState] = 1;
+  be.setRam(id, playing);
+  systems.observeWorkingSongs();
+  expect(systems.workingSongImage(id)!.slot!.index).toBe(1);
+});
+
+test("a re-asked menu load still asks when the working song merely shares the target's name", () => {
+  // A parked Songs-menu load lost its confirmation when its cart was rebuilt (a Load State restored
+  // unsaved work), and was then re-checked with the by-NAME test: the working song "A" and the target "A"
+  // were taken for "already loaded, nothing to lose" though they were different songs.
+  const { be, project, id } = smsProject();
+  be.setSram(id, buildSav([{ block: block(1), name: "A" }], CART)!);
+  be.setRam(id, ramWith(image(5, "A"))); // unsaved, and named like slot 0
+  project.requestSong({ index: 0, confirmed: false, systemId: id });
+  const r = project.settleSong();
+  expect(typeof r === "object" && r.kind === "discard").toBe(true);
+});
+
+test("an explicit Load of a row the cart already matches tracks that row, not a twin elsewhere", () => {
+  // Found by the fuzzer: playing v2 (tracked 1), drift made the song byte-identical to row 0, the user then
+  // Loaded row 0 from the Songs menu - and once the load landed nothing told the tracking, which drift kept
+  // on row 1. The Load's own target now becomes the tracking when its writes are seen to land.
+  const { be, systems, id } = smsProject();
+  const v1 = block(1);
+  const v2 = block(1);
+  v2[0x1a00 + 2] = 0x33;
+  be.setSram(id, buildSav([{ block: v1, name: "SONG" }, { block: v2, name: "SONG" }], CART)!);
+  be.setRam(id, ramWith({ block: v2, name: nameBytes("SONG"), echo: sanitizeEcho(new Uint8Array(8)), edited: false }));
+  systems.observeWorkingSongs();
+  const playing = ramWith({ block: v1, name: nameBytes("SONG"), echo: sanitizeEcho(new Uint8Array(8)), edited: false });
+  playing[layout.playState] = 1;
+  be.setRam(id, playing);
+  systems.observeWorkingSongs();
+  expect(systems.workingSongImage(id)!.slot!.index).toBe(1); // drift: still v2
+  expect(loadSongLive(be, systems, systems.systems()[0], 0)).toBe(true);
+  systems.observeWorkingSongs();
+  expect(systems.workingSongImage(id)!.slot!.index).toBe(0); // the user asked for row 0
 });

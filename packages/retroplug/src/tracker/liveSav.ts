@@ -34,6 +34,8 @@ type SavSystems = Pick<SystemsStore, "readSram" | "loadSram"> & {
   // The working song as an image, including one a reset is still carrying across the reboot (see
   // SystemsStore.workingSongImage). Optional for the same reason as readRam.
   workingSongImage?(id: number): WorkingSongImage | null;
+  // The song host writes are about to put into work RAM - see SystemsStore.expectSong.
+  expectSong?(id: number, song: WorkingSongImage, ramNow?: Uint8Array): void;
   // Where the working song now lives in the catalog, once a load or save put it there.
   noteSongSlot?(id: number, slot: number): void;
 };
@@ -107,12 +109,19 @@ export function loadSongLive(backend: SavBackend, systems: SavSystems, sys: Live
   if (!rom || !sram) return false;
   // The CURRENT work RAM, so liveLoad can see whether the transport is running - the cart's own load
   // does different work in that case, and reproducing it needs to know.
-  const writes = tracker.liveLoad(rom, sram, index, systems.readRam?.(sys.id) ?? undefined);
+  const ramNow = systems.readRam?.(sys.id) ?? undefined;
+  const writes = tracker.liveLoad(rom, sram, index, ramNow);
   if (!writes?.length) return false;
+  // Until the queued writes land, the loaded song is the working song (see SystemsStore.expectSong).
+  const catalog = resolveSongCatalog(sys.roles);
+  const loaded = catalog?.slotImage?.(sram, index, ramNow);
+  if (loaded) systems.expectSong?.(sys.id, { ...loaded, slot: catalog?.trackSlot?.(sram, index) ?? undefined }, ramNow);
   for (const w of writes) {
     if (!systems.writeRam(sys.id, w.offset, w.bytes)) return false;
   }
-  systems.noteSongSlot?.(sys.id, index);
+  // The slot is NOT tracked here: the writes are queued, and a reset or an export before they land would
+  // carry the OLD song tracked to the NEW slot - which Save then overwrote. The watcher tracks the loaded
+  // song from the cart itself once it is there (it lands unedited, matching this slot).
   return true;
 }
 
@@ -259,6 +268,16 @@ export async function saveWorkingSong(
   };
   let landedAt = -1; // the slot an attempt's write went to, in case a later look finds it already there
   for (let attempt = 0; attempt < SAVE_ATTEMPTS; attempt++) {
+    // The cart mid-way through its own battery routine: wait it out (it takes a few blocks) rather than
+    // rebuild the battery under it.
+    if (catalog.isBatteryBusy && !(await settledWhen(() => {
+      const now = systems.readSram(sys.id);
+      return !!now && !catalog.isBatteryBusy!(now);
+    }))) return { kind: "refused", reason: "busy" };
+    // ...and for the working song to hold still: a cart mid-way through its own LOAD unpacks the new song
+    // into work RAM over several blocks, and a save read in the middle stored half a song over the slot.
+    // Between a user's keypresses it is stable, so this costs one short look.
+    if (!(await steady(() => systems.workingSongImage?.(sys.id) ?? null))) return { kind: "refused", reason: "busy" };
     const sram = systems.readSram(sys.id);
     const song = systems.workingSongImage(sys.id);
     if (!sram || !song) return { kind: "clean" };
@@ -293,6 +312,45 @@ export async function saveWorkingSong(
     return { kind: "saved", index: r.index, replaced: r.replaced };
   }
   return { kind: "refused", reason: "busy" };
+}
+
+/** How long the working song must stay unchanged before a save reads it - a few audio blocks. */
+const STEADY_MS = 40;
+
+/** Wait until `read()` returns the same song (block, name, echo, flag) across STEADY_MS, within the
+ *  SRAM_LAND_MS budget. With no pumped timer it cannot wait, and takes the first look as steady - the
+ *  headless test host, where no audio runs between looks anyway. */
+async function steady(read: () => WorkingSongImage | null): Promise<boolean> {
+  const timer = (globalThis as { setTimeout?: (fn: () => void, ms: number) => unknown }).setTimeout;
+  const pumped = (globalThis as { __rp_timersPumped?: boolean }).__rp_timersPumped !== false;
+  if (!timer || !pumped) return true;
+  const same = (a: WorkingSongImage | null, b: WorkingSongImage | null): boolean =>
+    a === b ||
+    (!!a && !!b && a.edited === b.edited && [a.block, a.name, a.echo].every((x, i) => {
+      const y = [b.block, b.name, b.echo][i];
+      return x.length === y.length && x.every((v, j) => v === y[j]);
+    }));
+  const deadline = Date.now() + SRAM_LAND_MS;
+  let prev = read();
+  for (;;) {
+    await new Promise<void>((resolve) => timer(resolve, STEADY_MS));
+    const now = read();
+    if (same(prev, now)) return true;
+    if (Date.now() > deadline) return false;
+    prev = now;
+  }
+}
+
+/** Wait until `ready()` holds, on the same timer and budget as `settled`. False if it never does. */
+async function settledWhen(ready: () => boolean): Promise<boolean> {
+  const timer = (globalThis as { setTimeout?: (fn: () => void, ms: number) => unknown }).setTimeout;
+  const pumped = (globalThis as { __rp_timersPumped?: boolean }).__rp_timersPumped !== false;
+  const deadline = Date.now() + SRAM_LAND_MS;
+  while (!ready()) {
+    if (!timer || !pumped || Date.now() > deadline) return false;
+    await new Promise<void>((resolve) => timer(resolve, 10));
+  }
+  return true;
 }
 
 /** Wait for a conditional battery write to resolve: "landed" once `read()` shows `want`, "conflict" once it

@@ -18,7 +18,7 @@ import { SystemsStore } from "./systemsStore";
 import type { SystemEntry } from "./systemsList";
 import type { RoleRegistry } from "./systemRoles";
 import type { RecentStore } from "./recentStore";
-import { resolveSongCatalog, resolveTracker, workingSongReady, songLoadByNameWouldDiscard, loadSongLive, mutateLiveSav } from "./tracker";
+import { resolveSongCatalog, resolveTracker, workingSongReady, songLoadByNameWouldDiscard, songLoadWouldDiscard, loadSongLive, mutateLiveSav } from "./tracker";
 import { workingSongSignature, savSyncMode } from "./lsdj/playback/fromSav";
 import { anchorRowsFromState, anyChannelPlaying, type ControllerAnchor } from "./lsdj/playback/anchor";
 import { LsdjReader } from "./lsdj/runtime";
@@ -324,6 +324,13 @@ export class ProjectStore {
     // The named system (followed through a reset or reload), else the primary - and a named system that is
     // GONE drops the request rather than falling back to some other instance.
     const targetId = req.systemId !== undefined ? this.systems.currentId(req.systemId) : undefined;
+    // Rebuilt under it (Load State, Load SRAM, a reset): whatever the confirmation agreed to discard is not
+    // what the cart holds now - a Load State can restore unsaved work - so ask again if there is anything.
+    if (targetId !== undefined && targetId !== null && targetId !== req.systemId) {
+      req.systemId = targetId;
+      req.confirmed = false;
+      req.asked = false;
+    }
     const sys = req.systemId !== undefined
       ? this.systems.systems().find((e) => e.id === targetId)
       : this.primarySystem();
@@ -348,7 +355,13 @@ export class ProjectStore {
     }
     if (!req.confirmed) {
       if (req.asked) return "waiting"; // the prompt is up
-      if (songLoadByNameWouldDiscard(this.systems, sys, target.name)) {
+      // By index (a Songs-menu row) the question is plain "would this load lose work"; the by-NAME form
+      // treats the working song sharing the target's name as "already loaded, nothing to lose", which for a
+      // DIFFERENT song of the same name let a re-asked request load over unsaved work without asking.
+      const discards = req.index !== undefined
+        ? songLoadWouldDiscard(this.systems, sys)
+        : songLoadByNameWouldDiscard(this.systems, sys, target.name);
+      if (discards) {
         req.asked = true;
         const working = catalog.workingName(sram, this.backend.readRam(sys.id) ?? undefined) || "the working song";
         return { kind: "discard", song: target.name, working };
@@ -676,7 +689,10 @@ export class ProjectStore {
       const sysBlobs = state ? { stateBytes: state } : sram ? { sramBytes: sram } : undefined;
       const songBytes = blobs.get(songKey(i));
       const song = songBytes ? decodeWorkingSong(songBytes) : null;
-      this.systems.adopt(s, song ? { ...sysBlobs, song } : sysBlobs);
+      // With a working-song blob the archive is one moment only if the battery is too: the savestate's own
+      // battery lags by up to 0.5 s, so the exported battery (current, like the song and the tracked slot)
+      // is written over it once the core exists - live, so the restored runtime state is kept.
+      this.systems.adopt(s, song ? { ...sysBlobs, song, freshSram: state ? sram : undefined } : sysBlobs);
     });
     this.projectSettings = { ...DEFAULT_SETTINGS, ...cfg.settings };
     this.pushAudioRouting(); // apply the loaded project's routing to native audio

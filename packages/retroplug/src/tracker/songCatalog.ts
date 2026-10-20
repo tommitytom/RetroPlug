@@ -39,6 +39,9 @@ export interface WorkingSongImage {
   edited: boolean;
   /** The cart's live OPTIONS (palette, sync, ...), which its own SAVE persists alongside the song. */
   settings?: Uint8Array;
+  /** Whether the cart's transport was running when this was read - playback rewrites part of the song by
+   *  itself (smsggdj's `T` command), and only then can a change be that rather than an edit or a load. */
+  playing?: boolean;
   /** The saved slot this song was loaded from or last saved into, when the host knows it - what Save
    *  writes back over. Absent means a new song as far as the host can tell, and Save appends. */
   slot?: TrackedSlot;
@@ -159,7 +162,13 @@ export interface SongCatalog {
   fingerprintOf?(song: WorkingSongImage): number;
   /** True when an UNEDITED working song differs from its tracked slot only in what the cart's playback
    *  rewrites by itself (not a load, not a NEW), so the tracking should hold. */
-  isPlaybackDrift?(sav: Uint8Array, slot: TrackedSlot, song: WorkingSongImage): boolean;
+  isPlaybackDrift?(sav: Uint8Array, slot: TrackedSlot, song: WorkingSongImage, anyTransport?: boolean): boolean;
+  /** Saved slot `index` as the working song it becomes when loaded (unedited) - what a host Load expects
+   *  the cart to hold once its queued writes land. */
+  slotImage?(sav: Uint8Array, index: number, ram?: Uint8Array): WorkingSongImage | null;
+  /** True while the cart is in the middle of one of its own battery routines, so a host save must wait
+   *  rather than rebuild the battery under it. */
+  isBatteryBusy?(sav: Uint8Array): boolean;
   /** A cheap identity for the battery's song DIRECTORY, so the watcher re-checks when the cart saves,
    *  clears or renames a song even though its working song did not change. */
   directorySignal?(sav: Uint8Array): number;

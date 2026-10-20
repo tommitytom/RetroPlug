@@ -71,6 +71,7 @@ for (const rom of ROMS) {
         r = project.settleSong();
         if (r !== "waiting") return r;
         audio.renderAudio(TICK_MS);
+        project.systems.observeWorkingSongs(); // what the UI runs every frame: it ends a load's landing window
       }
       return r;
     };
@@ -100,6 +101,7 @@ for (const rom of ROMS) {
     expect(project.syncRecent()).toBeFalsy();
 
     // A song request on the running cart settles at once and its row supersedes the songless one.
+    project.systems.observeWorkingSongs(); // a frame: any previous load's landing window has closed
     project.requestSong({ name: "ALPHA", confirmed: false });
     expect(project.settleSong()).toBe("loaded");
     audio.renderAudio(200);
@@ -125,6 +127,7 @@ for (const rom of ROMS) {
     expect(recent.view().every((v) => /^[\x20-\x7e]*$/.test(v.song ?? ""))).toBeTruthy(); // and nothing a font cannot draw
 
     // Back to ALPHA by its row: moved up, not duplicated; the cart follows.
+    project.systems.observeWorkingSongs(); // a frame: any previous load's landing window has closed
     project.requestSong({ name: "ALPHA", confirmed: false });
     expect(project.settleSong()).toBe("loaded");
     audio.renderAudio(200);

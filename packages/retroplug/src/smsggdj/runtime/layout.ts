@@ -119,6 +119,11 @@ export function commonConfigOffsets(): number[] | null {
   return out.every((o): o is number => o !== null) ? out : null;
 }
 
+/** Where `play_state` sits (nonzero while the transport runs). */
+export function commonPlayStateOffset(): number | null {
+  return commonOffset((s) => s.play_state);
+}
+
 /** Where `song_edited` sits, for `SongCatalog.workingSongDirty` - the cart's own "song data changed
  *  since the last save or load" flag (editor.asm:141), which is the only thing that can tell an hour of
  *  work from the song the cart happened to boot into. Null leaves that caller saying CLEAN, because a

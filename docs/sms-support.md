@@ -1653,6 +1653,22 @@ not, and each lost an unsaved song without a word:
   real core); and a re-carried song the cart already held opened a landing window keyed on its own
   signal (no window now). Remaining reports were identical twin copies and the empty default song,
   where overwriting the "wrong" one loses nothing.
+- **A permanent fuzzer.** `test/tracker/working-song-fuzz.test.ts` models the cart (edits incl. echo, name
+  and CONT; FILES SAVE with its free-before-write hole and a late flag clear; FILES LOAD writing name/echo,
+  then block, then flag; NEW / CLEAR / rename; playback drift while the transport runs; a reboot mid-routine)
+  across TWO instances, against every host path (Save, Songs-menu Load / Delete / Move / Add / Replace,
+  Recent, Load SRAM / State, New SRAM, reset, reload, FM, Swap ROM, export/import over a lagging savestate,
+  the close prompt), checking six invariants after every step. 16 fixed seeds run in `pnpm test` (~8 s);
+  env vars (`FUZZ_ITER`, `FUZZ_STALL`, `FUZZ_RACE`, `FUZZ_REPLAY`, ...) drive long campaigns. Its first
+  1.4M steps found seven bugs (listed at the bottom of the file); the fixes: a work-RAM song always ships
+  in an export and the live battery is written over the savestate's on reopen, so a reopened session is one
+  moment; a host Load stands its song in until its writes land (`SystemsStore.expectSong`) and tracks its
+  target slot then; drift counts only while playing, keeps precedence over an exact twin unless the
+  directory moved (and a host save rebases that baseline); a save waits out the cart's own routines
+  (directory hole, or a working song still changing); a rebuilt target drops a request's confirmation and
+  index requests are re-checked by index. ~414k further steps on the fixed code came back clean except one
+  case: a host Save while the audio thread is stalled exactly mid-way through the cart's own LOAD unpack,
+  where the half-loaded song holds still.
 - **"Saved" means the whole song.** The block, its echo settings and its displayed name all have to
   match a slot. The cart's ECHO screen changes only the echo and sets `song_edited`; comparing the block
   alone called that saved, so an echo edit got no prompt and Save stored nothing.

@@ -27,6 +27,7 @@ import type { SongCatalog, TrackedSlot, WorkingSongCommit, WorkingSongImage } fr
 import {
   commonBootedOffset,
   commonConfigOffsets,
+  commonPlayStateOffset,
   commonEchoOffset,
   commonSongEditedOffset,
   commonSongNameOffset,
@@ -44,10 +45,13 @@ import {
   ensureSongDirectory,
   allSongsReadable,
   packDirectory,
+  hasDirectoryHoles,
   savedSlotOf,
   withConfig,
   readConfig,
   readSongBlock,
+  readSongName,
+  readSongEcho,
   songFingerprint,
   slotMeta,
   prefixFingerprint,
@@ -104,7 +108,9 @@ function readWorkingSong(ram: Uint8Array): WorkingSongImage | null {
   if (!name || !echo || edited === null) return null;
   if (ram.length < Math.max(name.offset + name.length, echo.offset + echo.length, edited + 1)) return null;
   const cfg = commonConfigOffsets();
+  const play = commonPlayStateOffset();
   return {
+    ...(play !== null && play < ram.length ? { playing: ram[play] !== 0 } : {}),
     block: ram.slice(0, SMDJ4_BLOCK_LEN),
     name: ram.slice(name.offset, name.offset + name.length),
     echo: ram.slice(echo.offset, echo.offset + echo.length),
@@ -325,10 +331,37 @@ export const smsggdjSongCatalog: SongCatalog = {
   trackSlot,
   fingerprintOf: changeSignal,
   directorySignal: (sav) => directoryFingerprint(sav),
+  // What liveLoad writes: the block, the entry's name and its echo (sanitized), the flag cleared - with the
+  // OPTIONS the cart already holds, which a load does not touch.
+  slotImage: (sav, index, ram) => {
+    const block = readSongBlock(sav, index);
+    const name = readSongName(sav, index);
+    const echo = readSongEcho(sav, index);
+    if (!block || !name || !echo) return null;
+    const live = ram ? readWorkingSong(ram) : null;
+    return {
+      block,
+      name,
+      echo: sanitizeEcho(echo),
+      edited: false,
+      ...(live?.settings ? { settings: live.settings } : {}),
+      ...(live?.playing !== undefined ? { playing: live.playing } : {}),
+    };
+  },
+  // The cart's own SAVE frees the old copy of a row before writing the new one (rss_free_old), so for a few
+  // blocks its directory has a hole. A host save rebuilt in that window repacks entries the cart is about
+  // to write by index - its entry then lands on whichever song the repack moved there.
+  isBatteryBusy: (sav) => hasDirectoryHoles(sav),
   // The tracked slot still holds the song it held when tracked, and the working song is that song except
   // for the groove table playback rewrites - with its name and echo intact. Anything wider (a NEW, a
   // load of another song) is not drift.
-  isPlaybackDrift: (sav, slot, song) => {
+  // `anyTransport`: judge the content alone - for a song restored across a reboot, whose drift happened
+  // before it and whose transport flag the restore does not carry.
+  isPlaybackDrift: (sav, slot, song, anyTransport) => {
+    // Only while the transport RUNS: `T` is a playback command. A stopped cart whose song moved only in
+    // its grooves is something else - an in-cart NEW over a tracked song that was itself the blank song
+    // plus a groove (a groove template) looked exactly like drift, and Save then overwrote the template.
+    if (!song.playing && !anyTransport) return false;
     const packed = packDirectory(sav);
     const held = trackSlot(packed, slot.index);
     if (!held || held.fingerprint !== slot.fingerprint) return false;
