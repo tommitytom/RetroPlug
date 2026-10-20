@@ -6,11 +6,12 @@
 // tile is dimmed by a translucent black overlay — the lvgl-js way, since opacity on a Canvas is dropped
 // (only Image widgets route it) and opacity units are 0..1 floats (0.5 = LV_OPA_50).
 
-import { useRef, useState } from "react";
+import { useCallback, useRef } from "react";
 import { Canvas, Text } from "lvgljs-ui";
 
 import { useStores } from "../../stores/useStores";
 import { useNativeEvent } from "../../lvgl/useNativeEvent";
+import { useFrameSampled } from "../../lvgl/useFramePoll";
 import { Box } from "../../lvgl/Box";
 import { tagTestId } from "../../lvgl/StableSlot";
 import { LsdjOverlay } from "./LsdjOverlay";
@@ -54,25 +55,19 @@ export function EmulatorTile({
   const { backend } = useStores();
   const canvasRef = useRef<CanvasHandle | null>(null);
 
-  // The active background render badge for this system (or null). Updated only when its LABEL changes (so
-  // once a second while rendering) rather than on every per-frame poll.
-  const [renderJob, setRenderJob] = useState<RenderJobStatus | null>(null);
-  const renderKey = useRef("");
-
-  useNativeEvent("frame", () => {
-    // Background-render badge: poll this system's jobs, auto-dismiss the finished ones, and surface the
-    // active render (or a lingering error). getRenderJobs() is inert (empty) in the headless harness.
+  // The active background render badge for this system (or null): poll this system's jobs, auto-dismiss the
+  // finished ones, and surface the active render (or a lingering error). Re-renders only when the LABEL
+  // changes (so once a second while rendering). getRenderJobs() is inert (empty) in the headless harness.
+  const sampleRenderJob = useCallback((): RenderJobStatus | null => {
     const jobs = getRenderJobs();
     for (const j of jobs)
       if (j.systemId === systemId && (j.state === "done" || j.state === "cancelled"))
         dismissRenderJob(j.id); // the render finished (file written) — drop the job, vanish the badge
-    const active = pickActiveRenderJob(jobs, systemId);
-    const key = active ? `${active.id}:${renderBadgeLabel(active)}` : "";
-    if (key !== renderKey.current) {
-      renderKey.current = key;
-      setRenderJob(active);
-    }
+    return pickActiveRenderJob(jobs, systemId);
+  }, [systemId]);
+  const renderJob = useFrameSampled(sampleRenderJob, renderJobKey);
 
+  useNativeEvent("frame", () => {
     const frame = backend.getFrame(systemId);
     if (!frame || !frame.published) return;
     const canvas = canvasRef.current;
@@ -135,6 +130,11 @@ export function EmulatorTile({
       )}
     </Box>
   );
+}
+
+/** The badge's dedupe signature: "" for no badge, so an idle tile never re-renders for it. */
+function renderJobKey(job: RenderJobStatus | null): string {
+  return job ? `${job.id}:${renderBadgeLabel(job)}` : "";
 }
 
 /** The render badge bar height / font, scaled to the tile (kept readable on a small tile). */

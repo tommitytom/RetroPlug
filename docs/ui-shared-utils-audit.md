@@ -64,7 +64,7 @@ Done: `NativeEvents` in [useNativeEvent.ts](../packages/retroplug/ui/lvgl/useNat
 annotated with the native files that emit it; every `args[n] as T` is gone. Note the type is only as good
 as the emit sites it was read off - nothing checks the C++ side against it.
 
-## 5. LSDj / risa runtime readout twins
+## 5. LSDj / risa runtime readout twins (DONE)
 
 - `useLsdjRuntime.ts` and `useRisaRuntime.ts` share one skeleton: find the system, check a role, memoise a
   decoder, keep state + a signature ref, dedupe per frame.
@@ -77,6 +77,15 @@ Related: `sys.roles.find((r) => r.kind === X)?.config` appears ~10 times (menuDe
 runtime hooks, the HD session) and `systems.find((s) => s.id === id)` 6 times. `roleConfig(sys, kind)` /
 `hasRole(sys, kind)` helpers and a `useSystem(id)` hook.
 
+Done: `useFrameSampled(sample, signature)` in [useFramePoll.ts](../packages/retroplug/ui/lvgl/useFramePoll.ts)
+(sample per frame, re-render only when the displayed signature moves; `undefined` skips a frame; a new
+`sample` identity resets) now backs both runtime hooks and the render badge.
+[DebugReadout.tsx](../packages/retroplug/ui/screens/grid/DebugReadout.tsx) is the shared overlay shell + `hex2`.
+`findRole` / `roleConfig` / `hasRole` live next to `RoleInstance` in
+[systemRoles.ts](../packages/retroplug/src/systemRoles.ts) and replace every `roles.find(...)` in `ui/`
+(menuDefs' private `roleConfigFor` is gone); `src/` still has ~12 of its own, untouched. `useSystem(id)` is
+in `useStores.ts`. The overlay UI tests now assert the decoded version text, not just the strip.
+
 ## 6. lvgljs typing gaps
 
 - `View`, `Text`, `Canvas` each cast `as any` (Box, Menu, EmulatorTile, LsdjHdScreen).
@@ -88,12 +97,13 @@ Proposal: `lvgl/lv.ts` with the constants and typed `TextEx` / `CanvasEx` wrappe
 binding traps currently documented only inside Menu.tsx comments (`flex-grow` needs `display: flex` on the
 child, a Box needs a measured height since there's no LV_SIZE_CONTENT, Texts bubble clicks).
 
-## 7. Zoom resolved three ways
+## 7. Zoom resolved three ways (DONE)
 
 `layout.resolveZoom` clamps the user default; `SystemGrid.tsx` re-implements it with its own `MIN_ZOOM` /
-`MAX_ZOOM` and does not clamp the default; `hitTestTile` has a third inline copy. With an out-of-range
-default zoom, the grid, the drop / right-click hit-test and the window size can disagree. All three
-should call `resolveZoom`.
+`MAX_ZOOM` and does not clamp the default; `hitTestTile` has a third inline copy. On a closer look this
+was duplication, not a live bug: `fitZoom` clamps its cap, so the three agreed. Done anyway, since the
+grid and the hit-test MUST agree: `displayZoom` in `layout.ts` is the one "zoom the grid is drawn at", and
+both SystemGrid and hitTestTile call it.
 
 ## 8. Smaller items
 
@@ -117,9 +127,8 @@ should call `resolveZoom`.
 `.ts` files a test imports get checked. A scratch tsconfig pointing `react` / `lvgljs-ui` at
 `deps/dpf.js/deps/lv_binding_js/node_modules` checks the whole tree and surfaces real, pre-existing errors:
 
-- `screens/hd/useLsdjHdSession.ts` types its backend as `HostBackend`, which has no `readSram` / `readRam`
-  (it works at runtime because the object passed is the wider control-plane backend).
-- `screens/grid/RisaOverlay.tsx` imports `RisaState` and never uses it.
+- (fixed with item 5) `screens/hd/useLsdjHdSession.ts` typed its backend as `HostBackend`, which has no
+  `readSram` / `readRam`; it is `ControlPlaneBackend` now. `RisaOverlay.tsx`'s unused import is gone too.
 - `menuDefs.ts` uses `console` / `TextEncoder` / `TextDecoder`, which the `lib` setting does not declare.
 - `lvgljs` (the native module: `on` / `off` / `createGroup` / `setKeyboardGroup`) has no declaration file.
 

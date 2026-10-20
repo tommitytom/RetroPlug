@@ -3,17 +3,10 @@
 // → LsdjReader): the visible screen + its cursor position, play/stop, song position, tempo, the ROM
 // version, and each channel's playing phrase.row. Renders nothing for a non-LSDj / unsupported ROM, so
 // EmulatorTile can mount it unconditionally.
-import { Text } from "lvgljs-ui";
-
-import { Box } from "../../lvgl/Box";
-import { tagTestId } from "../../lvgl/StableSlot";
+import { DebugReadout, hex2 } from "./DebugReadout";
 import { useLsdjRuntime } from "./useLsdjRuntime";
 import { useLsdjDebugVisible } from "./lsdjDebug";
 import type { LsdjChannelState, LsdjState } from "../../../src/lsdj/runtime";
-
-const LV_ALIGN_BOTTOM_MID = 5;
-
-const hex2 = (n: number | null): string => (n == null ? "--" : n.toString(16).toUpperCase().padStart(2, "0"));
 
 // "9.4.2" / "9.2.L-aboy" from the parsed version (patchLabel keeps the raw component, e.g. "2" or "L").
 function versionStr(v: LsdjState["version"]): string {
@@ -44,15 +37,5 @@ export function LsdjOverlay({ systemId, width, testId }: { systemId: number; wid
     `${channelCell("1", ch.pu1)}  ${channelCell("2", ch.pu2)}  ${channelCell("W", ch.wav)}  ${channelCell("N", ch.noi)}`,
   ];
 
-  return (
-    <Box
-      innerRef={testId ? tagTestId(testId) : undefined}
-      align={{ type: LV_ALIGN_BOTTOM_MID, pos: [0, 0] }}
-      style={{ width, height: 44, "background-color": "#000000", "background-opacity": 0.6 }}
-    >
-      <Text style={{ "text-color": state.playing ? "#8bc34a" : "#bbbbbb", "font-size": 11, width: "100%", height: 44 }}>
-        {lines.join("\n")}
-      </Text>
-    </Box>
-  );
+  return <DebugReadout lines={lines} playing={state.playing} width={width} testId={testId} />;
 }

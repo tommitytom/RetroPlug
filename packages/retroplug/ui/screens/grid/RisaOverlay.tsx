@@ -3,18 +3,12 @@
 // decodeRisaState): the visible screen + cursor, play/mode, tempo, ROM version, and each of the 5 tracks'
 // playing phrase.row. Renders nothing for a non-risa / unsupported ROM, so EmulatorTile mounts it
 // unconditionally. Shares the backtick debug toggle with LsdjOverlay (one dev switch, per-system readout).
-import { Text } from "lvgljs-ui";
-
-import { Box } from "../../lvgl/Box";
-import { tagTestId } from "../../lvgl/StableSlot";
+import { DebugReadout, hex2 } from "./DebugReadout";
 import { useRisaRuntime } from "./useRisaRuntime";
 import { useLsdjDebugVisible } from "./lsdjDebug";
-import type { RisaState, RisaTrackState } from "../../../src/risa/runtime";
+import type { RisaTrackState } from "../../../src/risa/runtime";
 
-const LV_ALIGN_BOTTOM_MID = 5;
 const TRACK_LABELS = ["1", "2", "T", "N", "D"]; // pulse1, pulse2, triangle, noise, dmc
-
-const hex2 = (n: number | null): string => (n == null ? "--" : n.toString(16).toUpperCase().padStart(2, "0"));
 
 // A per-track cell: the playing phrase.row (hex), or "--" when the track is parked.
 function trackCell(label: string, t: RisaTrackState): string {
@@ -38,15 +32,5 @@ export function RisaOverlay({ systemId, width, testId }: { systemId: number; wid
     state.tracks.map((t, i) => trackCell(TRACK_LABELS[i], t)).join("  "),
   ];
 
-  return (
-    <Box
-      innerRef={testId ? tagTestId(testId) : undefined}
-      align={{ type: LV_ALIGN_BOTTOM_MID, pos: [0, 0] }}
-      style={{ width, height: 44, "background-color": "#000000", "background-opacity": 0.6 }}
-    >
-      <Text style={{ "text-color": state.playing ? "#8bc34a" : "#bbbbbb", "font-size": 11, width: "100%", height: 44 }}>
-        {lines.join("\n")}
-      </Text>
-    </Box>
-  );
+  return <DebugReadout lines={lines} playing={state.playing} width={width} testId={testId} />;
 }

@@ -70,6 +70,12 @@ export function useSystems() {
   return useStoreSnapshot("systems", () => project.systems.view());
 }
 
+/** One system's view by id, or undefined once it's gone (removed, or the project reloaded). Re-renders on the
+ *  same channel as useSystems. */
+export function useSystem(id: number) {
+  return useSystems().find((s) => s.id === id);
+}
+
 /** The project settings (layout / midiRouting / audioRouting / zoom). */
 export function useProjectSettings() {
   const { project } = useStores();

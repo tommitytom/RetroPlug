@@ -113,6 +113,7 @@ import { ControllerRegistry, registerControllerApps, QUANTISE_VALUES, type Quant
 import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "../../../src/settingsEnums";
 import { controllerSyncOverride } from "../../../src/kernelProjection";
 import type { MenuAction, MenuItem, MenuTree } from "./menuTree";
+import { roleConfig } from "../../../src/systemRoles";
 import { action, actionCycler, button, cycleInt, cycler, infoRow, separator, submenu } from "./menuItems";
 
 /** Everything a builder reads (current values) + mutates through (the stores). Rebuilt each render. */
@@ -643,7 +644,7 @@ function sameboyConfig(sys: SystemView): {
   dmgPalette: SameBoyDmgPalette;
   lightTemperature: number;
 } {
-  const c = (sys.roles.find((r) => r.kind === "sameboy")?.config ?? {}) as Record<string, unknown>;
+  const c = roleConfig(sys.roles, "sameboy") ?? {};
   return {
     model: typeof c.model === "string" ? (c.model as SameBoyModel) : "cgbC",
     highpass: typeof c.highpass === "string" ? (c.highpass as SameBoyHighpass) : "accurate",
@@ -687,7 +688,7 @@ function mesenConfig(sys: SystemView): {
   expansionVolume: number;
   enableFm: boolean;
 } {
-  const c = (sys.roles.find((r) => r.kind === "mesen")?.config ?? {}) as Record<string, unknown>;
+  const c = roleConfig(sys.roles, "mesen") ?? {};
   return {
     region: typeof c.region === "string" ? (c.region as ConsoleRegion) : "auto",
     removeSpriteLimit: c.removeSpriteLimit === true,
@@ -968,11 +969,9 @@ function trackerVersionSupported(t: TrackerIntegration, be: HostBackend, romPath
   return !rom || t.isVersionSupported(rom); // unreadable ROM -> can't disprove support; leave the submenu live
 }
 
-// A system's whole `*-assets` role config, and the override list out of it (console-agnostic — the generic rows
-// only read type/slot/name/erase; the file-actions read the typed list for their console-specific fields).
-const roleConfigFor = (sys: SystemView, role: string): Record<string, unknown> | undefined =>
-  sys.roles.find((r) => r.kind === role)?.config;
-const overridesFor = (sys: SystemView, role: string): AssetOverride[] => readAssetOverrides(roleConfigFor(sys, role));
+// The override list out of a system's `*-assets` role config (console-agnostic — the generic rows only read
+// type/slot/name/erase; the file-actions read the typed list for their console-specific fields).
+const overridesFor = (sys: SystemView, role: string): AssetOverride[] => readAssetOverrides(roleConfig(sys.roles, role));
 
 // Persist an override list + rebuild so onConstruct re-patches the effective ROM. setRoleConfig merges at the
 // top level, so this leaves any sibling key (BlipToaster's baked `settings`) alone.
@@ -1080,7 +1079,7 @@ function bakeRom(
   const base = sys.romPath ? ctx.stores.backend.readFile(sys.romPath) : null;
   if (!base) return null;
   const skipped: string[] = [];
-  const bytes = spec.catalog.applyRoleConfig(base, roleConfigFor(sys, spec.catalog.assetRole), ctx.stores.backend, (ov, message) => {
+  const bytes = spec.catalog.applyRoleConfig(base, roleConfig(sys.roles, spec.catalog.assetRole), ctx.stores.backend, (ov, message) => {
     skipped.push(`${ov.type} ${ov.slot}`);
     // The row label is what the overlay shows; the REASON ("cannot read /kits/moved.rkit") has nowhere to
     // go in one line of red text, and it is the half that says what to do about it. The role modules used
@@ -1130,7 +1129,7 @@ function exportPatchedRom(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView
 // The two bake rows, greyed when there's nothing to bake. Both live at the tracker submenu's root (they're
 // whole-ROM ops, not per-asset-type), below the asset submenus.
 function romPatchRows(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): MenuItem[] {
-  const config = roleConfigFor(sys, spec.catalog.assetRole);
+  const config = roleConfig(sys.roles, spec.catalog.assetRole);
   // The catalog decides what counts as a pending edit: for most consoles that is a non-empty override list, but
   // BlipToaster also pins the cart's baked settings, and a bake that ignored those would grey the rows out with
   // real changes waiting (and then write an image missing them).
@@ -1173,7 +1172,7 @@ const readLsdjRom = (be: HostBackend, romPath: string): LsdjRom | null => {
 
 // --- LSDj asset file actions (Export/Replace own the .kit/.lsdpal/.png formats) -----------------------
 const lsdjOverrides = (sys: SystemView): LsdjAssetOverride[] =>
-  readOverrides(sys.roles.find((r) => r.kind === "lsdj-assets")?.config);
+  readOverrides(roleConfig(sys.roles, "lsdj-assets"));
 
 // Export asset `type`/`slot` to a picked file: the override bytes if replaced (already the file format), else
 // the base ROM's asset read straight out via the pure-TS module.
@@ -1275,7 +1274,7 @@ const readLinked = (be: HostBackend, path: string | undefined): Uint8Array | nul
   path ? be.readFile(path) : null;
 
 const ritOverrides = (sys: SystemView, role: string): RisaAssetOverride[] =>
-  readRisaOverrides(sys.roles.find((r) => r.kind === role)?.config);
+  readRisaOverrides(roleConfig(sys.roles, role));
 
 // Export theme/font/kit `slot` to a picked file: the override's data if replaced, else the base ROM's asset.
 function exportRitAsset(
@@ -1354,7 +1353,7 @@ const risaAssetSpec: AssetMenuSpec = {
 
 /** The baked-settings fields this PROJECT pins (not the ROM's own bytes) — only what the user has changed. */
 const readBlipToasterSettings = (sys: SystemView): BlipToasterSettingsPatch =>
-  readBlipToasterSettingsConfig(sys.roles.find((r) => r.kind === "bliptoaster-assets")?.config);
+  readBlipToasterSettingsConfig(roleConfig(sys.roles, "bliptoaster-assets"));
 
 const readBlipToasterRomFor = (be: HostBackend, romPath: string): BlipToasterRom | null => {
   const bytes = romPath ? be.readFile(romPath) : null;
@@ -1993,7 +1992,7 @@ function trackerChildren(t: TrackerIntegration, ctx: MenuContext, sys: SystemVie
 // not yet unified (risa has no sync knobs).
 function lsdjExtras(ctx: MenuContext, sys: SystemView): MenuItem[] {
   const systems = ctx.stores.project.systems;
-  const cfg = sys.roles.find((r) => r.kind === "lsdj-sync")?.config ?? {};
+  const cfg = roleConfig(sys.roles, "lsdj-sync") ?? {};
   const mode = typeof cfg.mode === "string" ? (cfg.mode as LsdjSyncMode) : "midiSync";
   const divisor = typeof cfg.tempoDivisor === "number" ? cfg.tempoDivisor : 1;
   const autoStart = cfg.autoStart === true;

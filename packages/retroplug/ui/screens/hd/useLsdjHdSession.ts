@@ -14,13 +14,14 @@
 
 import { useMemo } from "react";
 
-import { useStores, useSystems } from "../../stores/useStores";
+import { useStores, useSystem } from "../../stores/useStores";
+import { hasRole, roleConfig } from "../../../src/systemRoles";
 import { LsdjReader } from "../../../src/lsdj/runtime";
 import { decodeSong, type Song } from "../../../src/lsdj";
 import { LsdjRom } from "../../../src/lsdj/rom";
 import { applyOverridesToRom, readOverrides } from "../../../src/lsdjAssetsRole";
 import { LsdjHdCanvas, HD_COLS, HD_ROWS, renderMode2, type KitSampleNameLookup } from "../../../src/lsdj/hd";
-import type { HostBackend } from "../../../src/backend";
+import type { ControlPlaneBackend } from "../../../src/backend";
 
 /** The working song is the first 0x8000 bytes of the sav image (codec/sav.ts's kWorkingSong..kSongBytes). */
 const WORKING_SONG_BYTES = 0x8000;
@@ -53,7 +54,7 @@ class HdSession {
   private readonly kitNames = new Map<number, string>();
 
   constructor(
-    private readonly backend: HostBackend,
+    private readonly backend: ControlPlaneBackend,
     private readonly systemId: number,
     private readonly reader: LsdjReader,
     private readonly rom: LsdjRom,
@@ -122,7 +123,7 @@ class HdSession {
 
 /** Build the HD session for `systemId`, or null when the system isn't a supported LSDj cart. */
 function buildSession(
-  backend: HostBackend,
+  backend: ControlPlaneBackend,
   systemId: number,
   romPath: string,
   overrideConfig: Record<string, unknown> | undefined,
@@ -156,11 +157,10 @@ export interface LsdjHdSession {
  */
 export function useLsdjHdSession(systemId: number, enabled = true): LsdjHdSession | null {
   const { backend } = useStores();
-  const systems = useSystems();
-  const sys = systems.find((s) => s.id === systemId);
+  const sys = useSystem(systemId);
   const romPath = sys?.romPath ?? "";
-  const isLsdj = !!sys?.roles?.some((r) => r.kind === "lsdj-sync");
-  const overrideConfig = sys?.roles?.find((r) => r.kind === "lsdj-assets")?.config;
+  const isLsdj = hasRole(sys?.roles, "lsdj-sync");
+  const overrideConfig = roleConfig(sys?.roles, "lsdj-assets");
 
   return useMemo(() => {
     if (!enabled || !isLsdj || !romPath) return null;

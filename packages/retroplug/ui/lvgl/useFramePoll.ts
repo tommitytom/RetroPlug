@@ -5,14 +5,18 @@
 // about them is to look, and the only clock available is the render frame. So each hook counts frames
 // and acts on every Nth.
 //
-// Two shapes, because the four split cleanly in two:
+// Three shapes:
 //
 //   useFrameDivider  - "do this every N frames". No re-render of its own; the caller's work is a store
 //                      call whose own notification drives whatever needs repainting.
 //   useVersionedPoll - "watch this native status and re-render when it MOVES". The status carries a
 //                      version, and re-rendering on every tick instead would repaint the menu ~10x a
 //                      second forever, for a value that changes a handful of times per job.
-import { useRef, useState } from "react";
+//   useFrameSampled  - "sample this EVERY frame and re-render only when what's SHOWN changes". For a live
+//                      readout (the LSDj / risa debug overlays, the render badge): the sample is cheap and
+//                      changes often, so a caller-supplied signature of exactly the displayed fields is the
+//                      dedupe, rather than a version the native side would have to keep.
+import { useEffect, useRef, useState } from "react";
 
 import { useNativeEvent } from "./useNativeEvent";
 
@@ -59,4 +63,35 @@ export function useVersionedPoll<T extends { version: number; busy?: boolean; do
       bump((n) => n + 1);
     }
   });
+}
+
+/**
+ * Sample `sample` on every frame and hold the result as state, re-rendering only when `signature` of the new
+ * sample differs from the last one. `sample` returns `undefined` to skip a frame (nothing readable - keep
+ * what's shown); any other value, `null` included, is a sample. The readout starts at null with an empty
+ * signature, so a signature of "" for the idle value costs no render at all.
+ *
+ * `sample` must be MEMOISED (useMemo / useCallback): a new identity means a new source - the cart was swapped,
+ * or the readout was switched off - and resets the readout to null. Pass null to switch sampling off.
+ */
+export function useFrameSampled<T>(sample: (() => T | undefined) | null, signature: (value: T) => string): T | null {
+  const [state, setState] = useState<T | null>(null);
+  const seen = useRef("");
+
+  useEffect(() => {
+    setState(null);
+    seen.current = "";
+  }, [sample]);
+
+  useNativeEvent("frame", () => {
+    if (!sample) return;
+    const next = sample();
+    if (next === undefined) return;
+    const sig = signature(next);
+    if (sig === seen.current) return; // nothing shown changed → no re-render
+    seen.current = sig;
+    setState(next);
+  });
+
+  return sample ? state : null;
 }

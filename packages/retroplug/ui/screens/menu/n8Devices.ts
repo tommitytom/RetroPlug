@@ -14,6 +14,7 @@
 import type { SystemView } from "../../../src/systemsStore";
 import { createSubscribable } from "./subscribable";
 import { native } from "../../lvgl/nativeHooks";
+import { roleConfig } from "../../../src/systemRoles";
 
 export interface N8Port {
   port: string; // OS serial port name (/dev/ttyACM0, COM3, ...)
@@ -101,7 +102,7 @@ export function projectExpVolForN8(systems: SystemView[]): number {
   const nes = systems.filter((s) => s.platform === "nes");
   if (nes.length === 0) return -1;
   const sys = nes.find((s) => s.focused) ?? nes[0];
-  const cfg = sys.roles.find((r) => r.kind === "mesen")?.config as Record<string, unknown> | undefined;
+  const cfg = roleConfig(sys.roles, "mesen");
   const percent = typeof cfg?.expansionVolume === "number" ? cfg.expansionVolume : 100;
   return expVolToN8(percent);
 }

@@ -29,6 +29,21 @@ export interface RoleInstance {
   config: Record<string, unknown>;
 }
 
+/** The role of `kind` on a system, or undefined. Takes the bare list (not a SystemView) so it serves anything
+ *  that carries roles: a view, a construct spec, a project entry. */
+export function findRole(roles: readonly RoleInstance[] | undefined, kind: string): RoleInstance | undefined {
+  return roles?.find((r) => r.kind === kind);
+}
+
+/** The config of the `kind` role, or undefined when the system has no such role. */
+export function roleConfig(roles: readonly RoleInstance[] | undefined, kind: string): Record<string, unknown> | undefined {
+  return findRole(roles, kind)?.config;
+}
+
+export function hasRole(roles: readonly RoleInstance[] | undefined, kind: string): boolean {
+  return findRole(roles, kind) !== undefined;
+}
+
 /** A role's config validator: a zod schema whose `.parse` fills defaults + clamps a
  *  (possibly partial/invalid) config into a full one. Structurally-typed so the
  *  registry stays zod-agnostic; the schemas themselves are built with zod
