@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <queue>
 #include <vector>
@@ -178,6 +179,19 @@ namespace rp {
 		// ----- RX queue (emulator → NES) --------------------------------
 		std::queue<uint8_t> _rxQueue;
 		std::mutex _mutex;
+
+		// What fifo_a's RAM holds, by slot. On the device the FIFO is a ring over 2048 bytes of block
+		// RAM (fpga/base_sv/base_io.sv `module fifo`: 11-bit we_addr/oe_addr, `dato` wired straight to
+		// the RAM at oe_addr), and a read of an EMPTY FIFO does not advance oe_addr - the pop is gated
+		// on !fifo_empty - so `$40F0` answers with whatever that slot still holds. Empty means
+		// oe_addr == we_addr, so the answer is the byte written 2048 deliveries ago (0, the RAM's
+		// power-up content, until the ring has wrapped). The ROM can be made to read an empty FIFO
+		// without polling `$40F1` first: an NTSC DMC DMA that halts on `lda $40F0` repeats the read,
+		// popping a byte the CPU never sees and leaving the CPU's own read to land on the empty FIFO.
+		// Answering that read with a constant $FF (the old behaviour) is a System Reset to a MIDI
+		// ROM, so the emulator panicked BlipToaster where a cart reads a stale byte.
+		std::array<uint8_t, FIFO_HW_DEPTH> _rxRam{};
+		uint32_t _rxWriteSlot = 0;   // we_addr: the slot the next delivered byte lands in
 
 		// ----- TX queue (NES → host) ------------------------------------
 		// What the ROM handed to CMD_USB_WR, waiting for the host to drain (drainTx). The real MCU
@@ -396,7 +410,10 @@ namespace rp {
 						std::fprintf(stderr, "[fifo] rd  %02X (rem=%zu)\n", val, _rxQueue.size());
 					return val;
 				}
-				return 0xFF;
+				const uint8_t stale = staleRead();
+				if (fifoTraceEnabled())
+					std::fprintf(stderr, "[fifo] rd  %02X (empty: stale slot)\n", stale);
+				return stale;
 			}
 			return 0xFF;
 		}
@@ -407,7 +424,7 @@ namespace rp {
 			// refreshing $40FF must not be able to satisfy the ROM's wait loop on its behalf.
 			if (addr == REG_MSTAT) return static_cast<uint8_t>(MSTAT_BASE | _pendBits | _strobe);
 			if (addr == 0x40F1) return _rxQueue.empty() ? 0x80 : 0x00;
-			if (addr == 0x40F0) return _rxQueue.empty() ? 0xFF : _rxQueue.front();
+			if (addr == 0x40F0) return _rxQueue.empty() ? staleRead() : _rxQueue.front();
 			return 0xFF;
 		}
 
@@ -513,7 +530,14 @@ namespace rp {
 				return;
 			}
 			_rxQueue.push(byte);
+			_rxRam[_rxWriteSlot] = byte;
+			_rxWriteSlot = (_rxWriteSlot + 1) % FIFO_HW_DEPTH;
 		}
+
+		// `$40F0` on an empty fifo_a: the slot the read pointer rests on, which is the write pointer's
+		// (see _rxRam). Holds even when the queue is unbounded and outran the ring: the slot has been
+		// rewritten since, exactly as the device's would have been.
+		uint8_t staleRead() const { return _rxRam[_rxWriteSlot]; }
 
 		// Carry bytes from the host's outbound buffer into fifo_a at the modelled wire rate. Without
 		// a rate or a clock this moves everything, which is the historical behaviour: a pushed byte is
