@@ -71,6 +71,8 @@ std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildSp
         cfg.fifo = role.fifo;
         cfg.fifoDepth = role.fifoDepth;
         cfg.fifoBytesPerSecond = role.fifoBytesPerSecond;
+        cfg.n8Link = role.n8Link;
+        cfg.n8LinkRttUs = role.n8LinkRttUs;
         return bootMesen(std::make_unique<MesenNesSystem>(id, std::move(cfg), std::move(romBytes)),
                          sampleRate);
     }

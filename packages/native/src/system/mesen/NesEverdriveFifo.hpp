@@ -198,6 +198,7 @@ namespace rp {
 		// forwards these straight out of the USB port; a harness reads them here instead. Deliberately
 		// NOT cleared by clearRx/flushAll — those are barriers in the host→NES direction only.
 		std::vector<uint8_t> _txQueue;
+		std::function<void(const uint8_t*, size_t)> _txSink;   // set: CMD_USB_WR payloads go here, not _txQueue
 
 		// ----- TX parser state (NES → emulator) -------------------------
 		enum class ParseState {
@@ -499,6 +500,15 @@ namespace rp {
 			std::vector<uint8_t> out;
 			out.swap(_txQueue);
 			return out;
+		}
+
+		// Hand every CMD_USB_WR payload to `sink` as it is written, INSTEAD of queueing it for drainTx - for a host
+		// link that answers the cart in emulated time (NesN8FifoRole's reliable link reads the ROM's acks here, the
+		// moment the ROM writes them). Called with _mutex held, from the CPU's write: the sink must not call back
+		// into this FIFO. Null restores the queue.
+		void setTxSink(std::function<void(const uint8_t*, size_t)> sink) {
+			std::lock_guard<std::mutex> lock(_mutex);
+			_txSink = std::move(sink);
 		}
 
 		// Bytes waiting in the TX queue (not yet drained by the host). For tests / introspection.
@@ -1148,6 +1158,7 @@ namespace rp {
 		void execUsbWrite() {
 			const uint16_t len = readParamU16(0);
 			if (_params.size() < 2u + len) return;
+			if (_txSink) { _txSink(_params.data() + 2, len); return; }   // a host link consumes it (see setTxSink)
 			_txQueue.insert(_txQueue.end(), _params.begin() + 2, _params.begin() + 2 + len);
 			if (fifoTraceEnabled())
 				std::fprintf(stderr, "[fifo] usb_wr %u (txDepth=%zu)\n", len, _txQueue.size());

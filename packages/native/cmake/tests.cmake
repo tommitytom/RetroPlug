@@ -63,6 +63,7 @@ retroplug_add_test_binary(
              test/audio/NesApuLatency.test.cpp         # runtime NES APU flush window (live apuLatencyMs knob)
              test/audio/NesN8FifoTiming.test.cpp       # host MIDI-in keeps its intra-block offset into the N8 FIFO
              test/audio/NesEverdriveFifo.test.cpp      # Edio status protocol leaves no stale byte to desync MIDI parsing
+             test/audio/N8ReliableLink.test.cpp        # BlipToaster reliable link: framing, acks, re-sends (sender + emulated FIFO role)
              test/audio/NesStems.test.cpp              # NES stereo-mod pins re-sum to the mix (spec/10 step 5)
              test/audio/NesSplitRouting.test.cpp       # NES-in-plugin: PinSplit/ChannelSplit arm the tap live + mono-pack
              test/audio/SmsAudio.test.cpp              # SMS/GG boot, visible geometry, non-silent PSG, teardown survival

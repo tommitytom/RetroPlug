@@ -3,11 +3,13 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "system/mesen/NesEverdriveFifo.hpp"
 #include "transport/MidiTypes.hpp"
+#include "transport/N8ReliableLink.hpp"
 
 class NesConsole;
 
@@ -30,6 +32,14 @@ public:
     // $40F0/$40F1 are routed through it. Called once, on the audio thread,
     // from MesenNesSystem::onActivate after the ROM has loaded.
     void onAttach(NesConsole& console);
+
+    // The cartridge's clock: CPU cycles and their rate. onAttach takes it from the console; a test without one
+    // supplies its own. The FIFO's timing models and the reliable link both run on it.
+    void setClock(std::function<std::uint64_t()> cycles, double hz) {
+        cycles_  = std::move(cycles);
+        clockHz_ = hz;
+        fifo_.setCartClock(cycles_, static_cast<std::uint32_t>(clockHz_));
+    }
 
     // Point the emulated SD card at a host directory ("/" on the card). Set at activate from the
     // "mesen" role's `sdRoot`; empty means a scratch dir private to this FIFO (see NesEverdriveFifo).
@@ -89,8 +99,27 @@ public:
     // fire this block keeps its relative timing next block (already-due bytes clamp to 0).
     void rebase(std::uint32_t frames);
 
-    // Drop all queued (not-yet-delivered) bytes — on reset, to avoid stale MIDI after a state change.
-    void clear() { pending_.clear(); needsSort_ = false; }
+    // BlipToaster's reliable link (transport/N8ReliableLink.hpp): from here on, host MIDI goes out framed, the ROM's
+    // acks are read straight off its CMD_USB_WR writes (in emulated time, so drainUsbTx no longer sees them), and a
+    // lost frame is re-sent `timing.resendDelayNs` after the ack that reports it - the same recovery a physical N8
+    // gets from N8Link. MesenNesSystem turns it on at activate when the ROM's SIG block advertises it.
+    void enableLink(rp::N8ReliableSender::Timing timing);
+    // Does this iNES image advertise the link? BlipToaster's SIG block (file offset 0x10): "bliptoaster", 3 version
+    // bytes, a 4-byte chip tag, then a capability byte - bit 0 is the link, and $FF (older ROMs' padding) is none.
+    static bool romAdvertisesLink(const std::vector<std::uint8_t>& rom) {
+        static const char kMarker[] = "bliptoaster";
+        if (rom.size() < 0x10 + 19) return false;
+        for (std::size_t i = 0; i < 11; ++i)
+            if (rom[0x10 + i] != static_cast<std::uint8_t>(kMarker[i])) return false;
+        const std::uint8_t caps = rom[0x10 + 18];
+        return caps != 0xFF && (caps & 0x01);
+    }
+    bool linkEnabled() const { return link_ != nullptr; }
+    const rp::N8ReliableSender* link() const { return link_.get(); }
+
+    // Drop all queued (not-yet-delivered) bytes — on reset, to avoid stale MIDI after a state change. With the link
+    // on, its window goes too and the next frame is preceded by a sync: the ROM's sequence may no longer be ours.
+    void clear() { pending_.clear(); needsSort_ = false; if (link_) { link_->reset(); linkDueCycle_ = kNoDue; } }
 
     // Drop BOTH queues: the not-yet-delivered bytes AND the delivered-but-unread ones sitting in the
     // FIFO's RX queue. `clear()` alone leaves the latter, which the ROM would still read. Used on a
@@ -101,6 +130,8 @@ public:
     // Introspection / tests.
     std::size_t pendingCount() const { return pending_.size(); }
     std::size_t fifoRxCount() { return fifo_.rxCount(); }
+    // Write a byte to the FIFO as the ROM would (STA $40F0) - an Edio command to the MCU, e.g. a CMD_USB_WR ack.
+    void writeFifoByte(std::uint8_t b) { fifo_.WriteRam(0x40F0, b); }
     // Pop the next delivered byte from the FIFO (as the ROM would via $40F0), or -1 if empty.
     int readFifoByte() {
         if (fifo_.ReadRam(0x40F1) == 0x80) return -1;  // bit7 set = no data
@@ -111,8 +142,18 @@ private:
     struct PendingByte {
         std::uint32_t offset;   // samples from block start
         std::uint8_t  byte;
+        int           seq = -1; // >= 0: the first byte of reliable-link frame `seq` (onSent when released)
     };
     std::deque<PendingByte> pending_;
     bool                    needsSort_ = false;  // set on enqueue; pumpUntil stable-sorts by offset once
     rp::NesEverdriveFifo    fifo_;
+
+    // The reliable link (null = raw MIDI). Its clock is the CPU's: cycles_ and clockHz_ come from onAttach.
+    static constexpr std::uint64_t kNoDue = ~std::uint64_t{0};
+    std::unique_ptr<rp::N8ReliableSender> link_;
+    std::function<std::uint64_t()>        cycles_;
+    double                                clockHz_      = 0.0;
+    std::uint64_t                         linkDueCycle_ = kNoDue;   // next cycle the link has work (poll)
+    std::int64_t  nowNs() const;
+    void          serviceLink();
 };
