@@ -20,6 +20,9 @@ public:
     explicit WjwwoodSerialPort(const std::string& portName);
     ~WjwwoodSerialPort() override;
 
+    // Every write gets this long, whatever the last read asked for (see read()).
+    static constexpr std::uint32_t kWriteTimeoutMs = 2000;
+
     bool               isOpen() const;
     const std::string& portName() const { return portName_; }
 

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "host/n8/Edio.hpp"  // ISerialPort, Edio
+#include "transport/N8ReliableLink.hpp"
 #include "transport/SpscRing.hpp"
 
 namespace retroplug {
@@ -59,6 +60,18 @@ public:
     void          setLookaheadMs(int ms) { lookaheadNs_.store(std::int64_t(ms) * 1'000'000, std::memory_order_relaxed); }
     int           lookaheadMs() const { return static_cast<int>(lookaheadNs_.load(std::memory_order_relaxed) / 1'000'000); }
 
+    // BlipToaster's reliable link (transport/N8ReliableLink.hpp). On connect the serial thread sends a sync (F4) and
+    // listens ~100 ms for the ROM's ack on the cart's USB back-channel: a ROM that answers gets framed MIDI and
+    // re-sends of whatever an NTSC DMC-DMA halt loses - the same sender, and so the same recovery, as the plugin's
+    // emulated N8; one that does not (any other MIDI ROM, an older BlipToaster) gets raw MIDI as before.
+    bool          reliable() const { return reliable_.load(std::memory_order_acquire); }
+    std::uint64_t linkResends() const { return linkResends_.load(std::memory_order_relaxed); }
+    std::uint64_t linkOutstanding() const { return linkOutstanding_.load(std::memory_order_relaxed); }
+    std::int64_t  linkRttMinNs() const { return linkRttMinNs_.load(std::memory_order_relaxed); }
+    // TEST ONLY: drop this many per mille of the framed bytes on their way out, in 1-3 byte bursts - what an NTSC
+    // DMC-DMA halt does at the cart - so the recovery can be exercised on a PAL console (which loses nothing).
+    void          setTestLossPermille(int p) { testLossPermille_.store(p, std::memory_order_relaxed); }
+
     // --- Audio thread ---
     // Forward MIDI/bytes with their intra-block sample offset. Lock-free, never blocks; drops on ring-full;
     // a no-op when not connected. Splits a >8-byte push into multiple chunks (rare - MIDI is <=4).
@@ -72,6 +85,9 @@ private:
     };
 
     void serialLoop();
+    void probeLink();                                    // serial thread: sync + listen for an ack
+    void serviceLink();                                  // serial thread: read acks, send re-sends
+    void writeFramed(std::vector<std::uint8_t>& out, const std::vector<int>& seqs, std::int64_t now);
     void setError(const std::string& msg);
 
     PortFactory                factory_;
@@ -88,6 +104,15 @@ private:
 
     std::mutex             control_;  // guards pendingControl_ (posted by the UI thread, taken by the serial one)
     std::function<void(Edio&)> pendingControl_;
+
+    // The reliable link: owned by the serial thread (null = raw); the atomics are its stats for other threads.
+    std::unique_ptr<rp::N8ReliableSender> rel_;
+    std::atomic<bool>          reliable_{false};
+    std::atomic<std::uint64_t> linkResends_{0};
+    std::atomic<std::uint64_t> linkOutstanding_{0};
+    std::atomic<std::int64_t>  linkRttMinNs_{-1};
+    std::atomic<int>           testLossPermille_{0};
+    std::uint32_t              lossRng_ = 0x2545F491u;
 
     std::unique_ptr<ISerialPort> serialPort_;  // owned; read by the serial thread
     std::unique_ptr<Edio>        edio_;

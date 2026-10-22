@@ -136,6 +136,16 @@ retroplug_add_test_binary(
     # The shared Edio framing golden both this and edio.test.ts assert against (single source, no drift).
     DEFS     EDIO_GOLDEN_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/test/n8/edio-golden.json")
 
+# WjwwoodSerialPort against a pseudo-terminal: that a read's timeout does not leak into the next write (the bug
+# that left a real N8 mid-command behind N8Link's 0 ms back-channel polls). The one N8 test that needs the `serial`
+# lib, so it is its own binary - retroplug-n8-test stays serial-free. Run by `pnpm test:n8`.
+retroplug_add_test_binary(
+    NAME     retroplug-serial-test
+    SOURCES  test/n8/WjwwoodSerialPort.test.cpp
+             src/host/n8/WjwwoodSerialPort.cpp
+    LIBS     serial
+    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 # A manual hardware harness (NOT CI) that drives the real N8 SD/menu ops through the same native
 # N8Host + N8SdWorker the Settings > N8 Pro menu uses, over a real /dev/ttyACM0 (adds the real
 # WjwwoodSerialPort + `serial`). Brings its own main(), hence NO_CATCH2.

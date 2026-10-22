@@ -53,6 +53,11 @@ public:
         // the ROM answers every burst it reads, damaged or not, so a loss is normally reported by an ack. Measured
         // from the later of the frame going out and the last ack, so a cart that is merely busy is not flooded.
         std::int64_t timeoutNs = 100'000'000;
+        // Hardware: blame only frames older than the fastest round trip seen so far (send -> the ack that covered it),
+        // plus condemnAfterNs as slack - an ack can be written while a younger frame is still crossing the USB link.
+        // Until the first round trip is measured, assume rttGuessNs. Off (the emulator): condemnAfterNs alone.
+        bool         adaptiveCondemn = false;
+        std::int64_t rttGuessNs      = 5'000'000;
     };
 
     // Bytes for the transport. seq >= 0 marks the first byte of a frame, which the transport reports back through
@@ -121,6 +126,9 @@ public:
     }
 
     std::size_t outstanding() const { return window_.size(); }
+    // Round trips (frame out -> the ack that covered it): the fastest, and the latest. -1 until one is measured.
+    std::int64_t rttMinNs() const { return rttMinNs_; }
+    std::int64_t lastRttNs() const { return lastRttNs_; }
     std::uint64_t resends() const { return resends_; }
     std::uint8_t  nextSeq() const { return nextSeq_; }
 
@@ -195,8 +203,19 @@ private:
     }
 
     void onAck(std::uint8_t next, std::int64_t nowNs) {
-        while (!window_.empty() && before(window_.front().seq, next)) window_.pop_front();
+        bool advanced = false;
+        while (!window_.empty() && before(window_.front().seq, next)) {
+            advanced = true;
+            const std::int64_t sent = window_.front().sentNs;
+            if (sent >= 0) {
+                const std::int64_t rtt = nowNs - sent;
+                lastRttNs_ = rtt;
+                if (rttMinNs_ < 0 || rtt < rttMinNs_) rttMinNs_ = rtt;
+            }
+            window_.pop_front();
+        }
         if (window_.empty()) { resendAt_ = kNever; return; }
+        if (advanced) resendAt_ = kNever;   // what a pending re-send was for has (partly) arrived: decide afresh
         const Frame& oldest = window_.front();
         if (oldest.seq != next) {
             // The ROM expects something we no longer hold (it rebooted and latched another number, or we reset):
@@ -206,13 +225,26 @@ private:
             scheduleResend(nowNs);
             return;
         }
-        if (oldest.sentNs >= 0 && nowNs - oldest.sentNs >= timing_.condemnAfterNs) scheduleResend(nowNs);
+        // The ack names a frame we sent. If it is old enough to have arrived, it was lost: re-send. If it is younger
+        // (hardware: the ack may have been written while it was still on the USB link), look again once it is old
+        // enough - an ack showing it did arrive cancels that above. Ignoring the early ack instead left a loss for
+        // the NEXT message's ack to report: half a step late on a 170 bpm hat (measured on an N8, 2026-10-22).
+        if (oldest.sentNs >= 0) {
+            const std::int64_t ripe = oldest.sentNs + condemnAfter();
+            scheduleResend(ripe > nowNs ? ripe : nowNs);
+        }
+    }
+
+    std::int64_t condemnAfter() const {
+        if (!timing_.adaptiveCondemn) return timing_.condemnAfterNs;
+        return (rttMinNs_ >= 0 ? rttMinNs_ : timing_.rttGuessNs) + timing_.condemnAfterNs;
     }
 
     std::int64_t lastHeard(const Frame& f) const { return f.sentNs > lastAckNs_ ? f.sentNs : lastAckNs_; }
 
-    void scheduleResend(std::int64_t nowNs) {
-        if (resendAt_ == kNever) resendAt_ = nowNs + timing_.resendDelayNs;
+    void scheduleResend(std::int64_t atNs) {
+        const std::int64_t t = atNs + timing_.resendDelayNs;
+        if (t < resendAt_) resendAt_ = t;
     }
 
     std::int64_t nextDue() const {
@@ -236,6 +268,8 @@ private:
     std::vector<std::uint8_t> pendingSync_;   // a re-sync onAck decided on: poll() sends it ahead of the re-send
     std::uint64_t             resends_    = 0;
     std::int64_t              lastAckNs_  = std::numeric_limits<std::int64_t>::min();
+    std::int64_t              rttMinNs_   = -1;
+    std::int64_t              lastRttNs_  = -1;
 };
 
 }  // namespace rp

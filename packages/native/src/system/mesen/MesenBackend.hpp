@@ -38,7 +38,7 @@ struct MesenNesRoleConfig {
     // BlipToaster's reliable link: 0 = auto (on when the ROM's SIG advertises it), 1 = off (raw MIDI). And the
     // modelled host->cart->host round trip a re-send waits, in us. Construct-time, like fifo.
     std::uint32_t n8Link             = 0;
-    std::uint32_t n8LinkRttUs        = 2000;
+    std::uint32_t n8LinkRttUs        = 2700;   // a real N8 Pro: ~2.2 ms fastest round trip + N8Link's 0.5 ms slack (2026-10-22)
 };
 
 // The SMS/GG slice of that same TS "mesen" role. A separate struct rather than more fields on the one

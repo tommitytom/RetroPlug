@@ -302,3 +302,42 @@ TEST_CASE("reliable link: a SysEx longer than the ROM's frame buffer is not fram
     CHECK(wire.empty());
     CHECK(s.outstanding() == 0);
 }
+
+TEST_CASE("reliable link (hardware timing): an ack too early to blame a frame re-checks it once it is old enough",
+          "[audio][nes][link]") {
+    // On a real N8 an ack can be written while a younger frame is still crossing USB, so a frame is only blamed once
+    // it is older than the fastest round trip. An early ack must not simply be ignored - that left a loss for the
+    // NEXT message's ack to report, half a step late - it schedules a re-check; an ack showing arrival cancels it.
+    N8ReliableSender::Timing t;
+    t.adaptiveCondemn = true;
+    t.rttGuessNs      = 3'000'000;
+    t.condemnAfterNs  = 500'000;
+    t.timeoutNs       = 1'000'000'000;
+    Bytes wire;
+    std::int64_t now = 0;
+
+    SECTION("lost: re-sent once it is old enough") {
+        N8ReliableSender s(t);
+        auto emit = [&](const std::uint8_t* d, std::size_t n, int seq) { wire.insert(wire.end(), d, d + n); if (seq >= 0) s.onSent(seq, now); };
+        s.send(noteOn(0, 60, 100).data(), 3, emit);
+        const Bytes early = { 0xF5, 0 };          // at 1 ms: frame 0 is too young to blame
+        now = 1'000'000; s.onBackChannel(early.data(), early.size(), now);
+        wire.clear();
+        now = 3'000'000; s.poll(now, emit);
+        CHECK(wire.empty());                      // not ripe until 3.5 ms
+        now = 3'600'000; s.poll(now, emit);
+        CHECK(wire == frame(0, { 0x90, 60, 100 }));
+    }
+    SECTION("arrived: a later ack cancels the re-check") {
+        N8ReliableSender s(t);
+        auto emit = [&](const std::uint8_t* d, std::size_t n, int seq) { wire.insert(wire.end(), d, d + n); if (seq >= 0) s.onSent(seq, now); };
+        s.send(noteOn(0, 60, 100).data(), 3, emit);
+        const Bytes early = { 0xF5, 0 }, later = { 0xF5, 1 };
+        now = 1'000'000; s.onBackChannel(early.data(), early.size(), now);
+        now = 2'500'000; s.onBackChannel(later.data(), later.size(), now);
+        wire.clear();
+        now = 10'000'000; s.poll(now, emit);
+        CHECK(wire.empty());
+        CHECK(s.outstanding() == 0);
+    }
+}
