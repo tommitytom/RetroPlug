@@ -17,11 +17,12 @@
 //   F5 <seq> <message> <sum>  a frame: sum = (seq + message bytes) & 0x7F. The ROM reads the whole frame, checks its
 //                       structure and sum, and applies it only if it is intact and carries the next seq
 //
-// and the ROM writes `F5 <next expected>` on the cart's USB back-channel (CMD_USB_WR) whenever its FIFO runs empty
-// after anything changed. An ack that names a frame we sent - long enough ago that it should have arrived - means
-// that frame was lost: go back and re-send it and everything after it (the ROM skips frames behind a gap, which keeps
-// delivery strictly in order, so a note-off can never overtake its note-on). Writes are never repeated by a DMA halt,
-// so acks are not lost; a frame destroyed so thoroughly that the ROM saw nothing of it is caught by the timeout.
+// and the ROM writes `F5 <next expected> <last header read>` on the cart's USB back-channel (CMD_USB_WR) whenever its
+// FIFO runs empty after anything changed. An ack that names a frame we sent means it was lost - at once if the ROM has
+// read that frame's header or a later one, otherwise once the frame is older than a round trip (on a real cart it may
+// still be crossing USB) - so go back and re-send it and everything after it (the ROM skips frames behind a gap, which
+// keeps delivery strictly in order, so a note-off can never overtake its note-on). Writes are never repeated by a DMA
+// halt, so acks are not lost; the timeout is only a safety net for a cart that stops answering.
 //
 // ONE implementation, two transports: the emulator's cart FIFO (NesN8FifoRole, timed in emulated CPU time) and a
 // physical N8 over USB (N8Link, wall-clock time). Which is the point - a user hears the same recovery in the plugin
@@ -42,22 +43,13 @@ public:
     static constexpr std::size_t kMaxMessage = 40;
 
     struct Timing {
-        // An ack can only condemn a frame sent at least this long ago. Emulator: 0 - an ack is written when the FIFO
-        // is empty, and everything released before it has been read. Hardware: the host->cart latency plus slack,
-        // since an ack can be generated while a frame is still crossing the USB link.
-        std::int64_t condemnAfterNs = 0;
-        // Wait this long after condemning a frame before re-sending it. Emulator: the hardware round trip, modelled,
+        // Wait this long after a frame is shown lost before re-sending it. Emulator: the hardware round trip, modelled,
         // so a recovered hit lands as late in the plugin as on the cart. Hardware: 0 - the real latency applies.
         std::int64_t resendDelayNs = 0;
         // Nothing heard from the cart for this long while a frame is outstanding: re-send anyway. A safety net only -
         // the ROM answers every burst it reads, damaged or not, so a loss is normally reported by an ack. Measured
         // from the later of the frame going out and the last ack, so a cart that is merely busy is not flooded.
         std::int64_t timeoutNs = 100'000'000;
-        // Hardware: blame only frames older than the fastest round trip seen so far (send -> the ack that covered it),
-        // plus condemnAfterNs as slack - an ack can be written while a younger frame is still crossing the USB link.
-        // Until the first round trip is measured, assume rttGuessNs. Off (the emulator): condemnAfterNs alone.
-        bool         adaptiveCondemn = false;
-        std::int64_t rttGuessNs      = 5'000'000;
     };
 
     // Bytes for the transport. seq >= 0 marks the first byte of a frame, which the transport reports back through
@@ -76,7 +68,7 @@ public:
         status_ = 0;
         msg_.clear();
         inSysex_ = false;
-        ackPending_ = false;
+        ackState_ = 0;
         resendAt_ = kNever;
         pendingSync_.clear();
     }
@@ -95,12 +87,15 @@ public:
     }
 
     // Back-channel bytes from the cart: the ROM's `F5 <next>` acks (anything else is ignored).
+    // Each ack is F5 <next> <last>: the seq the ROM expects next, and the seq of the last frame header it read.
     void onBackChannel(const std::uint8_t* data, std::size_t n, std::int64_t nowNs) {
         if (n) lastAckNs_ = nowNs;
         for (std::size_t i = 0; i < n; ++i) {
             const std::uint8_t b = data[i];
-            if (ackPending_ && b < 0x80) { onAck(b, nowNs); ackPending_ = false; continue; }
-            ackPending_ = (b == FRAME);
+            if (b == FRAME) { ackState_ = 1; continue; }
+            if (b & 0x80) { ackState_ = 0; continue; }
+            if (ackState_ == 1) { ackNext_ = b; ackState_ = 2; continue; }
+            if (ackState_ == 2) { onAck(ackNext_, b, nowNs); ackState_ = 0; }
         }
     }
 
@@ -119,6 +114,7 @@ public:
             for (auto& f : window_) {
                 if (f.sentNs < 0) continue;   // still queued in the transport: it goes out on its own
                 f.sentNs = -1;                // re-armed; onSent marks it again when it actually leaves
+                ++framesResent_;
                 emit(f.bytes.data(), f.bytes.size(), f.seq);
             }
         }
@@ -130,6 +126,8 @@ public:
     std::int64_t rttMinNs() const { return rttMinNs_; }
     std::int64_t lastRttNs() const { return lastRttNs_; }
     std::uint64_t resends() const { return resends_; }
+    std::uint64_t framesSent() const { return framesSent_; }       // every frame, first sends only
+    std::uint64_t framesResent() const { return framesResent_; }   // frames sent again (each re-send of each frame)
     std::uint8_t  nextSeq() const { return nextSeq_; }
 
     static constexpr std::int64_t kNever = std::numeric_limits<std::int64_t>::max();
@@ -196,13 +194,14 @@ private:
         unsigned sum = nextSeq_;
         for (auto b : msg_) sum += b;
         f.bytes.push_back(static_cast<std::uint8_t>(sum & 0x7F));   // the ROM checks it before anything applies
+        ++framesSent_;
         nextSeq_ = static_cast<std::uint8_t>((nextSeq_ + 1) & 0x7F);
         window_.push_back(std::move(f));
         emit(window_.back().bytes.data(), window_.back().bytes.size(), window_.back().seq);
         msg_.clear();
     }
 
-    void onAck(std::uint8_t next, std::int64_t nowNs) {
+    void onAck(std::uint8_t next, std::uint8_t last, std::int64_t nowNs) {
         bool advanced = false;
         while (!window_.empty() && before(window_.front().seq, next)) {
             advanced = true;
@@ -225,19 +224,13 @@ private:
             scheduleResend(nowNs);
             return;
         }
-        // The ack names a frame we sent. If it is old enough to have arrived, it was lost: re-send. If it is younger
-        // (hardware: the ack may have been written while it was still on the USB link), look again once it is old
-        // enough - an ack showing it did arrive cancels that above. Ignoring the early ack instead left a loss for
-        // the NEXT message's ack to report: half a step late on a 170 bpm hat (measured on an N8, 2026-10-22).
-        if (oldest.sentNs >= 0) {
-            const std::int64_t ripe = oldest.sentNs + condemnAfter();
-            scheduleResend(ripe > nowNs ? ripe : nowNs);
-        }
-    }
-
-    std::int64_t condemnAfter() const {
-        if (!timing_.adaptiveCondemn) return timing_.condemnAfterNs;
-        return (rttMinNs_ >= 0 ? rttMinNs_ : timing_.rttGuessNs) + timing_.condemnAfterNs;
+        // The ack names a frame we sent. If the ROM has READ that frame (<last> at or past <next>: its header, a later
+        // frame's, or bytes it had to throw away - which it reports as the expected frame), it was lost: re-send now.
+        // If not, it is still on its way - on a real cart it may be crossing USB, in the emulator it may land while the
+        // ack is being written - and the ack that follows its arrival settles it; the timeout covers a cart that stops
+        // answering. (Re-checking on a timer instead re-sent frames that had lost nothing, on a cart and in the
+        // emulator alike: the confirming ack comes only once the ROM has processed the frame.)
+        if (oldest.sentNs >= 0 && !before(last, next)) scheduleResend(nowNs);
     }
 
     std::int64_t lastHeard(const Frame& f) const { return f.sentNs > lastAckNs_ ? f.sentNs : lastAckNs_; }
@@ -263,10 +256,13 @@ private:
     std::uint8_t              status_     = 0;
     std::vector<std::uint8_t> msg_;
     bool                      inSysex_    = false;
-    bool                      ackPending_ = false;
+    std::uint8_t              ackState_   = 0;   // 0 idle, 1 after F5, 2 after <next>
+    std::uint8_t              ackNext_    = 0;
     std::int64_t              resendAt_   = kNever;
     std::vector<std::uint8_t> pendingSync_;   // a re-sync onAck decided on: poll() sends it ahead of the re-send
     std::uint64_t             resends_    = 0;
+    std::uint64_t             framesSent_   = 0;
+    std::uint64_t             framesResent_ = 0;
     std::int64_t              lastAckNs_  = std::numeric_limits<std::int64_t>::min();
     std::int64_t              rttMinNs_   = -1;
     std::int64_t              lastRttNs_  = -1;

@@ -113,10 +113,10 @@ export function registerCoreRoles(registry: RoleRegistry): void {
       fifoBytesPerSecond: clampedInt(0, 100_000_000, 0),
       // NES-only: BlipToaster's reliable link (see N8_LINK_VALUES) and the round trip the emulator models for a
       // re-send, in microseconds - the host->cart->host latency of a physical N8 over USB, so a hit the link recovers
-      // lands as late in the plugin as on the cartridge: 2700 = a real N8 Pro's, measured 2026-10-22 (the fastest
-      // round trip, ~2.2 ms, plus the 0.5 ms N8Link waits before blaming a frame). Construct-time: setRoleConfig then reset(id).
+      // lands as late in the plugin as on the cartridge: 2200 = a real N8 Pro's fastest round trip (the ROM's ack out,
+      // the re-sent frame back), measured 2026-10-22. Construct-time: setRoleConfig then reset(id).
       n8Link: enumField(N8_LINK_VALUES, "auto"),
-      n8LinkRttUs: clampedInt(0, 100_000, 2700),
+      n8LinkRttUs: clampedInt(0, 100_000, 2200),
     }),
   });
 }

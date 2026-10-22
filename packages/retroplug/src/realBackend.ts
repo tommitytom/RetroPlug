@@ -148,7 +148,7 @@ export function createDebugClient(): DebugBackend {
     // a caller can subtract two samples without guarding either.
     getCoreTransportStats: (id) =>
       (call("getCoreTransportStats", id) as CoreTransportStats | null | undefined) ??
-      { rxDepth: 0, rxCapacity: 0, droppedBytes: 0, wirePending: 0, txDepth: 0 },
+      { rxDepth: 0, rxCapacity: 0, droppedBytes: 0, wirePending: 0, txDepth: 0, linkFrames: 0, linkResent: 0 },
     loadLabels: (id, path) => call("loadLabels", id, path) as boolean,
     symbolAddress: (id, name) => (call("symbolAddress", id, name) as number | null | undefined) ?? null,
     setCpuRegister: (id, name, value) => call("setCpuRegister", id, name, value) as boolean,

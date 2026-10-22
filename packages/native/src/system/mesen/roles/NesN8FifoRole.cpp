@@ -77,6 +77,7 @@ void NesN8FifoRole::serviceLink() {
     // The cart is still working through what it has: it cannot have answered yet, so the timeout holds off.
     const bool busy = fifo_.rxCount() > 0;
     std::int64_t due = link_->poll(now, [&](const std::uint8_t* data, std::size_t n, int seq) {
+        if (rp::fifoTraceEnabled() && seq >= 0) std::fprintf(stderr, "[fifo] RESEND seq %02X\n", seq);
         for (std::size_t i = 0; i < n; ++i) fifo_.pushByte(data[i]);
         if (seq >= 0) link_->onSent(seq, now);
     }, busy);

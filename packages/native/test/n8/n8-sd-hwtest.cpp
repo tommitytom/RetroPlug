@@ -13,6 +13,7 @@
 //   retroplug-n8-hwtest fiford  <count> [timeout-ms]   [port]  # read the cart's USB back-channel (CMD_USB_WR)
 //   retroplug-n8-hwtest link    <steps> [loss-permille] [port] # BlipToaster's reliable link via N8Link (the plugin's path)
 //   retroplug-n8-hwtest linkdbg [port]                        # the link step by hand: sync, frames, acks, APU mirror
+//   retroplug-n8-hwtest timing  <idle|busy> [steps] [--raw]    # latency / jitter / load on the real console (n8-timing.cpp)
 //   retroplug-n8-hwtest vramdump <out.bin> [port]              # menu '*v': dump VRAM+palette+CHR (screenshot)
 //   retroplug-n8-hwtest sniff    [port]                        # memRD ADDR_SSR: a running game's live APU/PPU/OAM
 //   retroplug-n8-hwtest memwr    <addr-hex> <file> [port]      # block memWR + verify (live-patch CHR/PRG)
@@ -65,13 +66,14 @@ std::vector<std::uint8_t> slurpLocal(const std::string& path) {
 
 }  // namespace
 
+int runTiming(int argc, char** argv, const std::string& defaultPort);   // n8-timing.cpp
 int main(int argc, char** argv) {
     if (argc < 3) {
         // `sniff`/`info`/`fstest` need no path/addr (they auto-detect the port), so allow a bare argc==2.
         const std::string a1 = argc >= 2 ? argv[1] : "";
         if (!(argc == 2 && (a1 == "sniff" || a1 == "info" || a1 == "fstest" || a1 == "linkdbg"))) {
             std::fprintf(stderr,
-                         "usage: %s <dump|load|restore|peek|poke|read|write|vramdump|sniff|memwr|fifowr|fiford|link|info|fstest> <path|addr|count> [len|byte|dest] [port]\n",
+                         "usage: %s <dump|load|restore|peek|poke|read|write|vramdump|sniff|memwr|fifowr|fiford|link|linkdbg|timing|info|fstest> <path|addr|count> [len|byte|dest] [port]\n",
                          argv[0]);
             return 2;
         }
@@ -152,6 +154,10 @@ int main(int argc, char** argv) {
     //
     // Deliberately NO connect() handshake: it begins with flushInput, which would discard bytes already
     // queued by the ROM. The cost is that a wrong port just times out instead of saying "no device".
+    // BlipToaster's MIDI latency / jitter / latency-under-load on the real console, timed against a timestamped
+    // capture of its audio (n8-timing.cpp).
+    if (op == "timing") return runTiming(argc, argv, findN8Port());
+
     // Diagnostic for the reliable link on hardware: one port, every step by hand - sync, read the back-channel,
     // frames, the APU mirror after each - to see where a frame stops landing. It polls the back-channel the way
     // N8Link does (0 ms reads), which is what found the read timeout leaking into writes (WjwwoodSerialPort::read):

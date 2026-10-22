@@ -150,10 +150,12 @@ retroplug_add_test_binary(
 # N8Host + N8SdWorker the Settings > N8 Pro menu uses, over a real /dev/ttyACM0 (adds the real
 # WjwwoodSerialPort + `serial`). Brings its own main(), hence NO_CATCH2.
 # Build by name: cmake --build build --target retroplug-n8-hwtest.
+find_package(ALSA)   # n8-timing.cpp: a timestamped capture of the console's audio
 retroplug_add_test_binary(
     NAME     retroplug-n8-hwtest
     NO_CATCH2
     SOURCES  test/n8/n8-sd-hwtest.cpp
+             test/n8/n8-timing.cpp
              src/host/n8/Edio.cpp
              src/host/n8/N8Link.cpp
              src/host/n8/N8Host.cpp
@@ -162,6 +164,7 @@ retroplug_add_test_binary(
              src/host/n8/WjwwoodSerialPort.cpp
     LIBS     serial
              Threads::Threads
+             ALSA::ALSA
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # Proves the ThorVG-backed <Lottie> capability: that lv_lottie rasterizes animated vector frames on a

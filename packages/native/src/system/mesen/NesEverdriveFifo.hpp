@@ -465,8 +465,8 @@ namespace rp {
 			pumpWire();
 			_wireQueue.push(byte);
 			if (fifoTraceEnabled())
-				std::fprintf(stderr, "[fifo] midi %02X (wire=%zu depth=%zu)\n",
-				             byte, _wireQueue.size(), _rxQueue.size());
+				std::fprintf(stderr, "[fifo] midi %02X (wire=%zu depth=%zu) @%llu\n",
+				             byte, _wireQueue.size(), _rxQueue.size(), static_cast<unsigned long long>(_cartCycles ? _cartCycles() : 0));
 		}
 
 		// Number of bytes waiting in the RX queue (not yet read by the ROM). For tests / introspection.
@@ -1158,6 +1158,11 @@ namespace rp {
 		void execUsbWrite() {
 			const uint16_t len = readParamU16(0);
 			if (_params.size() < 2u + len) return;
+			if (_txSink && fifoTraceEnabled()) {
+				std::fprintf(stderr, "[fifo] ack");
+				for (uint16_t i = 0; i < len; i++) std::fprintf(stderr, " %02X", _params[2 + i]);
+				std::fprintf(stderr, " (rx=%zu) @%llu\n", _rxQueue.size(), static_cast<unsigned long long>(_cartCycles ? _cartCycles() : 0));
+			}
 			if (_txSink) { _txSink(_params.data() + 2, len); return; }   // a host link consumes it (see setTxSink)
 			_txQueue.insert(_txQueue.end(), _params.begin() + 2, _params.begin() + 2 + len);
 			if (fifoTraceEnabled())

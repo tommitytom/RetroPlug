@@ -311,7 +311,7 @@ TEST_CASE("N8Link frames MIDI for a ROM that answers the link probe (BlipToaster
     std::vector<std::uint8_t> captured;
     N8Link link([&captured](const std::string&) -> std::unique_ptr<ISerialPort> {
         auto f = std::make_unique<N8FakePort>(captured);
-        for (std::uint8_t b : { 0x00, 0xA5, 0xF5, 0x00 }) f->toRead.push_back(b);
+        for (std::uint8_t b : { 0x00, 0xA5, 0xF5, 0x00, 0x7F }) f->toRead.push_back(b);
         return f;
     });
     REQUIRE(link.connect("fake"));

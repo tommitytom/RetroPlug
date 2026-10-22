@@ -31,6 +31,7 @@ struct RomModel {
     bool         dirty  = false;
     enum { Idle, WantSync, WantSeq, InMsg, WantSum } st = Idle;
     std::uint8_t seq = 0;
+    std::uint8_t last = 0x7F;   // the last frame header read
     unsigned     sum = 0;
     std::size_t  need = 0;   // message length incl. status; 0 = a SysEx (to F7)
     Bytes        buf;
@@ -43,10 +44,10 @@ struct RomModel {
         switch (st) {
             case WantSync:
                 if (b & 0x80) { st = Idle; byte(b); return; }
-                linkOn = true; next = b; dirty = true; st = Idle; return;
+                linkOn = true; next = b; last = static_cast<std::uint8_t>((b - 1) & 0x7F); dirty = true; st = Idle; return;
             case WantSeq:
-                if (b & 0x80) { bad(); byte(b); return; }               // header cut short
-                seq = b; sum = b; buf.clear(); st = InMsg; return;
+                if (b & 0x80) { last = next; bad(); byte(b); return; }   // header cut short: the expected frame, damaged
+                seq = b; last = b; sum = b; buf.clear(); st = InMsg; return;
             case InMsg:
                 if (buf.empty()) {
                     if (!(b & 0x80)) { bad(); return; }                 // the status was lost
@@ -72,7 +73,7 @@ struct RomModel {
             case Idle:
                 if (b == 0xF4) st = WantSync;
                 else if (b == 0xF5) st = WantSeq;
-                else if (linkOn) dirty = true;                          // unframed: dropped, and reported
+                else if (linkOn) { last = next; dirty = true; }          // orphaned bytes: the expected frame, lost
                 return;
         }
     }
@@ -80,7 +81,7 @@ struct RomModel {
     bool ack(Bytes& out) {
         if (!dirty) return false;
         dirty = false;
-        out = { 0xF5, next };
+        out = { 0xF5, next, last };
         return true;
     }
 };
@@ -146,7 +147,7 @@ TEST_CASE("reliable link: an ack frees the window; an ack naming a sent frame re
     for (std::uint8_t n : { 60, 62, 64 }) s.send(noteOn(0, n, 100).data(), 3, emit);
     REQUIRE(s.outstanding() == 3);
 
-    const Bytes ack1 = { 0xF5, 1 };   // frame 0 arrived; 1 (and so 2) did not
+    const Bytes ack1 = { 0xF5, 1, 2 };   // frame 0 arrived; 1 did not - the ROM read 2 (and dropped it behind the gap)
     s.onBackChannel(ack1.data(), ack1.size(), 500);
     CHECK(s.outstanding() == 2);
 
@@ -157,7 +158,7 @@ TEST_CASE("reliable link: an ack frees the window; an ack naming a sent frame re
     CHECK(wire == cat({ frame(1, { 0x90, 62, 100 }), frame(2, { 0x90, 64, 100 }) }));
     CHECK(s.resends() == 1);
 
-    const Bytes ack3 = { 0xF5, 3 };
+    const Bytes ack3 = { 0xF5, 3, 2 };
     s.onBackChannel(ack3.data(), ack3.size(), 2000);
     CHECK(s.outstanding() == 0);
 }
@@ -187,7 +188,7 @@ TEST_CASE("reliable link: a ROM that lost track (rebooted) is re-synced to the o
         if (seq >= 0) s.onSent(seq, 0);
     };
     for (std::uint8_t n : { 60, 62 }) s.send(noteOn(0, n, 100).data(), 3, emit);
-    const Bytes ack = { 0xF5, 90 };   // a number we never sent
+    const Bytes ack = { 0xF5, 90, 89 };   // a number we never sent
     s.onBackChannel(ack.data(), ack.size(), 10);
     wire.clear();
     s.poll(10, emit);
@@ -273,19 +274,20 @@ TEST_CASE("reliable link: the emulated FIFO role frames MIDI and consumes the RO
 
     // The ROM's ack, written as the cart does it: an Edio CMD_USB_WR with payload F5 <next>. The role takes it
     // (drainUsbTx stays empty) and the window frees.
-    const Bytes cmd = { '+', std::uint8_t('+' ^ 0xFF), 0x22, std::uint8_t(0x22 ^ 0xFF), 2, 0, 0xF5, 1 };
+    const Bytes cmd = { '+', std::uint8_t('+' ^ 0xFF), 0x22, std::uint8_t(0x22 ^ 0xFF), 3, 0, 0xF5, 1, 0 };
     // Writes go through the FIFO's register, as the ROM's STA $40F0 would.
     for (auto b : cmd) role.writeFifoByte(b);
     CHECK(role.drainUsbTx().empty());
     CHECK(role.link()->outstanding() == 0);
 
-    // A lost frame: the ack says 1 is still expected after we sent 1 - the role re-sends it on the next pump.
+    // A lost frame: the ack says 1 is still expected and that the ROM READ frame 1 (damaged) - re-sent on the next pump.
     e.data[1] = 62;
     role.onMidi(&e, 1);
     role.pumpUntil(0);
     while (role.readFifoByte() >= 0) {}            // the "ROM" read it... and lost it
     cycles += 1000;
-    for (auto b : cmd) role.writeFifoByte(b);      // still F5 1
+    const Bytes damaged = { '+', std::uint8_t('+' ^ 0xFF), 0x22, std::uint8_t(0x22 ^ 0xFF), 3, 0, 0xF5, 1, 1 };
+    for (auto b : damaged) role.writeFifoByte(b);  // F5 1 1: still expecting 1, having read it
     role.pumpUntil(0);
     got.clear();
     for (int b; (b = role.readFifoByte()) >= 0;) got.push_back(static_cast<std::uint8_t>(b));
@@ -303,41 +305,39 @@ TEST_CASE("reliable link: a SysEx longer than the ROM's frame buffer is not fram
     CHECK(s.outstanding() == 0);
 }
 
-TEST_CASE("reliable link (hardware timing): an ack too early to blame a frame re-checks it once it is old enough",
-          "[audio][nes][link]") {
-    // On a real N8 an ack can be written while a younger frame is still crossing USB, so a frame is only blamed once
-    // it is older than the fastest round trip. An early ack must not simply be ignored - that left a loss for the
-    // NEXT message's ack to report, half a step late - it schedules a re-check; an ack showing arrival cancels it.
-    N8ReliableSender::Timing t;
-    t.adaptiveCondemn = true;
-    t.rttGuessNs      = 3'000'000;
-    t.condemnAfterNs  = 500'000;
-    t.timeoutNs       = 1'000'000'000;
+TEST_CASE("reliable link: an ack that has not seen the frame waits; one that has re-sends it at once", "[audio][nes][link]") {
+    // <last> before <next>: the ROM has not read the frame - it is still on its way (on a cart, crossing USB; in the
+    // emulator, landing while the ack is written). Re-sending on a timer then duplicated frames that were fine. <last>
+    // at or past <next>: the ROM read it (or bytes it had to discard, which it reports as that frame): lost - re-send.
+    N8ReliableSender s;
     Bytes wire;
     std::int64_t now = 0;
+    auto emit = [&](const std::uint8_t* d, std::size_t n, int seq) { wire.insert(wire.end(), d, d + n); if (seq >= 0) s.onSent(seq, now); };
+    s.send(noteOn(0, 60, 100).data(), 3, emit);
 
-    SECTION("lost: re-sent once it is old enough") {
-        N8ReliableSender s(t);
-        auto emit = [&](const std::uint8_t* d, std::size_t n, int seq) { wire.insert(wire.end(), d, d + n); if (seq >= 0) s.onSent(seq, now); };
-        s.send(noteOn(0, 60, 100).data(), 3, emit);
-        const Bytes early = { 0xF5, 0 };          // at 1 ms: frame 0 is too young to blame
-        now = 1'000'000; s.onBackChannel(early.data(), early.size(), now);
-        wire.clear();
-        now = 3'000'000; s.poll(now, emit);
-        CHECK(wire.empty());                      // not ripe until 3.5 ms
-        now = 3'600'000; s.poll(now, emit);
-        CHECK(wire == frame(0, { 0x90, 60, 100 }));
-    }
-    SECTION("arrived: a later ack cancels the re-check") {
-        N8ReliableSender s(t);
-        auto emit = [&](const std::uint8_t* d, std::size_t n, int seq) { wire.insert(wire.end(), d, d + n); if (seq >= 0) s.onSent(seq, now); };
-        s.send(noteOn(0, 60, 100).data(), 3, emit);
-        const Bytes early = { 0xF5, 0 }, later = { 0xF5, 1 };
-        now = 1'000'000; s.onBackChannel(early.data(), early.size(), now);
-        now = 2'500'000; s.onBackChannel(later.data(), later.size(), now);
-        wire.clear();
-        now = 10'000'000; s.poll(now, emit);
-        CHECK(wire.empty());
-        CHECK(s.outstanding() == 0);
-    }
+    const Bytes notSeen = { 0xF5, 0, 0x7F };
+    now = 1'000'000; s.onBackChannel(notSeen.data(), notSeen.size(), now);
+    wire.clear();
+    now = 50'000'000; s.poll(now, emit);
+    CHECK(wire.empty());                         // in flight: nothing to do (well inside the 100 ms timeout)
+
+    const Bytes seen = { 0xF5, 0, 0 };
+    s.onBackChannel(seen.data(), seen.size(), now);
+    s.poll(now, emit);
+    CHECK(wire == frame(0, { 0x90, 60, 100 }));
+}
+
+TEST_CASE("reliable link: an ack after a frame arrived settles it - no re-send", "[audio][nes][link]") {
+    N8ReliableSender s;
+    Bytes wire;
+    std::int64_t now = 0;
+    auto emit = [&](const std::uint8_t* d, std::size_t n, int seq) { wire.insert(wire.end(), d, d + n); if (seq >= 0) s.onSent(seq, now); };
+    s.send(noteOn(0, 60, 100).data(), 3, emit);
+    const Bytes early = { 0xF5, 0, 0x7F }, later = { 0xF5, 1, 0 };
+    now = 1'000; s.onBackChannel(early.data(), early.size(), now);
+    now = 2'000'000; s.onBackChannel(later.data(), later.size(), now);
+    wire.clear();
+    now = 500'000'000; s.poll(now, emit);
+    CHECK(wire.empty());
+    CHECK(s.outstanding() == 0);
 }

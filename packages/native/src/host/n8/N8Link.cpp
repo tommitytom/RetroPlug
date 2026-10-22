@@ -131,8 +131,6 @@ void N8Link::probeLink() {
         for (std::size_t i = 0; i < n; ++i) {
             if (sawFrame && buf[i] < 0x80) {
                 rp::N8ReliableSender::Timing t;
-                t.adaptiveCondemn = true;        // an ack can be written while a younger frame is still on the wire
-                t.condemnAfterNs  = 500'000;     // slack on top of the fastest round trip seen
                 t.resendDelayNs   = 0;           // the real round trip already applies
                 rel_ = std::make_unique<rp::N8ReliableSender>(t);
                 reliable_.store(true, std::memory_order_release);
@@ -143,7 +141,7 @@ void N8Link::probeLink() {
     }
 }
 
-void N8Link::writeFramed(std::vector<std::uint8_t>& out, const std::vector<int>& seqs, std::int64_t now) {
+void N8Link::writeFramed(std::vector<std::uint8_t>& out, const std::vector<int>& seqs, std::int64_t now, bool resend) {
     if (out.empty()) return;
     // A frame has left once it is written - whether or not the test hook below loses some of it on the way.
     for (int s : seqs) rel_->onSent(s, now);
@@ -168,6 +166,7 @@ void N8Link::writeFramed(std::vector<std::uint8_t>& out, const std::vector<int>&
         for (auto b : out) std::fprintf(stderr, " %02X", b);
         std::fprintf(stderr, "\n");
     }
+    if (writeLog_) writeLog_(out.data(), out.size(), nowNs(), resend);
     edio_->fifoWR(out.data(), out.size());
     bytesForwarded_.fetch_add(out.size(), std::memory_order_relaxed);
 }
@@ -188,7 +187,7 @@ void N8Link::serviceLink() {
         if (seq >= 0) seqs.push_back(seq);
         out.insert(out.end(), d, d + k);
     });
-    if (!out.empty()) writeFramed(out, seqs, now);
+    if (!out.empty()) writeFramed(out, seqs, now, true);
     linkResends_.store(rel_->resends(), std::memory_order_relaxed);
     linkOutstanding_.store(rel_->outstanding(), std::memory_order_relaxed);
     linkRttMinNs_.store(rel_->rttMinNs(), std::memory_order_relaxed);
@@ -196,7 +195,7 @@ void N8Link::serviceLink() {
 
 void N8Link::serialLoop() {
     try {
-        probeLink();
+        if (linkAllowed_) probeLink();
     } catch (const std::exception& e) {
         setError(std::string("serial write failed (N8 unplugged?): ") + e.what());
         connected_.store(false, std::memory_order_release);
@@ -244,8 +243,9 @@ void N8Link::serialLoop() {
                     if (seq >= 0) seqs.push_back(seq);
                     out.insert(out.end(), d, d + k);
                 });
-                writeFramed(out, seqs, nowNs());
+                writeFramed(out, seqs, nowNs(), false);
             } else {
+                if (writeLog_) writeLog_(chunk.data, chunk.len, nowNs(), false);
                 edio_->fifoWR(chunk.data, chunk.len);
                 bytesForwarded_.fetch_add(chunk.len, std::memory_order_relaxed);
             }

@@ -71,6 +71,12 @@ public:
     // TEST ONLY: drop this many per mille of the framed bytes on their way out, in 1-3 byte bursts - what an NTSC
     // DMC-DMA halt does at the cart - so the recovery can be exercised on a PAL console (which loses nothing).
     void          setTestLossPermille(int p) { testLossPermille_.store(p, std::memory_order_relaxed); }
+    // TEST / MEASUREMENT: set before connect. setLinkAllowed(false) skips the probe - raw MIDI even to a ROM with the
+    // link. setWriteLog gets every FIFO write as it goes out (serial thread; the bytes, CLOCK_MONOTONIC ns taken just
+    // before the write, and whether it is a link re-send) - what retroplug-n8-hwtest `timing` times latency from.
+    using WriteLog = std::function<void(const std::uint8_t* data, std::size_t n, std::int64_t ns, bool resend)>;
+    void          setLinkAllowed(bool on) { linkAllowed_ = on; }
+    void          setWriteLog(WriteLog log) { writeLog_ = std::move(log); }
 
     // --- Audio thread ---
     // Forward MIDI/bytes with their intra-block sample offset. Lock-free, never blocks; drops on ring-full;
@@ -87,7 +93,7 @@ private:
     void serialLoop();
     void probeLink();                                    // serial thread: sync + listen for an ack
     void serviceLink();                                  // serial thread: read acks, send re-sends
-    void writeFramed(std::vector<std::uint8_t>& out, const std::vector<int>& seqs, std::int64_t now);
+    void writeFramed(std::vector<std::uint8_t>& out, const std::vector<int>& seqs, std::int64_t now, bool resend);
     void setError(const std::string& msg);
 
     PortFactory                factory_;
@@ -112,6 +118,8 @@ private:
     std::atomic<std::uint64_t> linkOutstanding_{0};
     std::atomic<std::int64_t>  linkRttMinNs_{-1};
     std::atomic<int>           testLossPermille_{0};
+    bool                       linkAllowed_ = true;   // set before connect (see setLinkAllowed)
+    WriteLog                   writeLog_;
     std::uint32_t              lossRng_ = 0x2545F491u;
 
     std::unique_ptr<ISerialPort> serialPort_;  // owned; read by the serial thread
