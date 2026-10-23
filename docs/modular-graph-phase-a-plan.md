@@ -2193,6 +2193,7 @@ TEST_CASE("channel specs are exact", "[graph][descriptor]") {
     CHECK(layoutReason(R"({"ports":[{"id":"a","dir":"out","kind":"audio","channels":{"any":true}}]})").find("cannot be \"any\"") != std::string::npos);
     CHECK(layoutReason(R"({"ports":[{"id":"a","dir":"out","kind":"audio","channels":{"match":"a"}}]})").find("not another audio port") != std::string::npos);
     CHECK(layoutReason(R"({"ports":[{"id":"e","dir":"in","kind":"events","channels":{"any":true}}]})").find("only audio ports") != std::string::npos);
+    CHECK(layoutReason(R"x({"ports":[{"id":"a","dir":"in","kind":"audio","channels":{"count":5,"layout":"discrete(03)"}}]})x").find("not a discrete(n)") != std::string::npos);
     const auto two = parseLayout(R"({"ports":[{"id":"a","dir":"in","kind":"audio","channels":{"count":2.0,"layout":"stereo"}}]})");
     REQUIRE(two);  // 2.0 is the same number JavaScript writes as 2
     CHECK(two->ports[0].channels.count == 2);
@@ -2204,6 +2205,9 @@ TEST_CASE("resource access and exclusive groups are exact", "[graph][descriptor]
     CHECK(layoutReason(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[["nope"]]})").find("exclusive member") != std::string::npos);
     CHECK(layoutReason(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[[]]})").find("non-empty") != std::string::npos);
     CHECK(parseLayout(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[["o","pins.*"]]})"));
+    CHECK(layoutReason(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[["o","o"]]})").find("overlap") != std::string::npos);
+    CHECK(layoutReason(R"({"ports":[{"id":"pins.a","dir":"out","kind":"events"}],"exclusive":[["pins.*","pins.a"]]})").find("overlap") != std::string::npos);
+    CHECK(layoutReason(R"({"exclusive":[["pins.*","pins.x.*"]]})").find("overlap") != std::string::npos);
 }
 
 TEST_CASE("a descriptor's requires flags are exact", "[graph][descriptor]") {
@@ -2335,6 +2339,7 @@ std::string layoutForCount(std::uint32_t channels);
 #include <cmath>
 #include <limits>
 #include <optional>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -2396,7 +2401,7 @@ rfl::Generic paramGeneric(const ParamDesc& p) {
             put(o, "default", rfl::Generic(p.def));
             break;
         case ParamType::Bool:
-            put(o, "default", rfl::Generic(p.def != 0.0));
+            put(o, "default", rfl::Generic(p.def >= 0.5));  // as a node reads it
             break;
         case ParamType::Enum: {
             Array values;
@@ -2517,6 +2522,8 @@ rfl::Result<ChannelSpec> parseChannels(const rfl::Generic& g, const std::string&
     auto layoutName = reqString(*o, "layout", where);
     if (!layoutName) return fail(layoutName.error().what());
     const auto known = layoutChannels(*layoutName);
+    if (!known && layoutName->rfind("discrete(", 0) == 0)
+        return fail(where + ": " + q(*layoutName) + " is not a discrete(n) layout; n is a whole number from 1, no leading zeros");
     if (known && *known != static_cast<std::uint32_t>(count))
         return fail(where + ": layout " + q(*layoutName) + " is " + std::to_string(*known) + " channels, not " +
                     jsNumber(count));
@@ -2668,15 +2675,21 @@ rfl::Result<Layout> parseLayoutObject(const Object& o) {
             layout.params.push_back(std::move(*param));
         }
     }
-    std::unordered_set<std::string> ids;
+    std::unordered_map<std::string_view, const PortDesc*> portsById;
+    std::unordered_set<std::string_view> paramIds;
     for (const auto& p : layout.ports)
-        if (!ids.insert(p.id).second) return fail(q(p.id) + " is used by more than one port or param");
+        if (!portsById.emplace(p.id, &p).second) return fail(q(p.id) + " is used by more than one port or param");
     for (const auto& p : layout.params)
-        if (!ids.insert(p.id).second) return fail(q(p.id) + " is used by more than one port or param");
+        if (portsById.count(p.id) || !paramIds.insert(p.id).second)
+            return fail(q(p.id) + " is used by more than one port or param");
+    auto port = [&](std::string_view id) -> const PortDesc* {
+        const auto it = portsById.find(id);
+        return it == portsById.end() ? nullptr : it->second;
+    };
     // Checks that need the whole port list: what a match names, and what an exclusive group names.
     for (const auto& p : layout.ports) {
         if (p.kind != PortKind::Audio || p.channels.mode != ChannelSpec::Mode::Match) continue;
-        const PortDesc* target = findPort(layout, p.channels.match);
+        const PortDesc* target = port(p.channels.match);
         if (!target || target == &p || target->kind != PortKind::Audio)
             return fail("port " + q(p.id) + ": matches " + q(p.channels.match) + ", which is not another audio port");
     }
@@ -2691,9 +2704,18 @@ rfl::Result<Layout> parseLayoutObject(const Object& o) {
                 auto s = m.to_string();
                 if (!s || s->empty()) return fail("\"exclusive\" members must be non-empty strings");
                 const bool wildcard = s->size() > 2 && s->compare(s->size() - 2, 2, ".*") == 0;
-                const PortDesc* exact = wildcard ? nullptr : findPort(layout, *s);
+                const PortDesc* exact = wildcard ? nullptr : port(*s);
                 if (!wildcard && (!exact || exact->dir != PortDir::Out))
                     return fail("exclusive member " + q(*s) + " must be an output's id or a \"prefix.*\" pattern");
+                // Members must not overlap: one connected port matching two of them would be reported as
+                // two members in use at once.
+                for (const auto& other : group) {
+                    const std::string_view a = *s, b = other;
+                    const bool aw = wildcard, bw = b.size() > 2 && b.substr(b.size() - 2) == ".*";
+                    const bool overlap = a == b || (aw && matchesPattern(a, bw ? b.substr(0, b.size() - 1) : b)) ||
+                                         (bw && matchesPattern(b, aw ? a.substr(0, a.size() - 1) : a));
+                    if (overlap) return fail("exclusive members " + q(other) + " and " + q(*s) + " overlap");
+                }
                 group.push_back(*s);
             }
             layout.exclusive.push_back(std::move(group));
@@ -2828,7 +2850,7 @@ std::string layoutForCount(std::uint32_t channels) {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (213 assertions in 25 test cases)`.
+Expected: `All tests passed (217 assertions in 25 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -2840,8 +2862,9 @@ Ports (six kinds, channel specs, resource write access), params (float,
 int, enum by label, bool) and exclusive groups, written canonically and
 parsed with a reason for anything malformed."
 
-(This task was executed as the original commit plus a review-fix commit, "fix(graph): the descriptor
-parser refuses what it used to coerce". A fresh execution needs one.)
+(This task was executed as the original commit plus two review-fix commits, "fix(graph): the descriptor
+parser refuses what it used to coerce" and "fix(graph): exclusive members may not overlap; discrete(n)
+is spelt one way". A fresh execution needs only the one commit above.)
 ```
 
 ---
@@ -3472,9 +3495,10 @@ struct float_param : detail::param_base {
 template <fixed_string Name, range R = range{}, fixed_string Unit = "">
 struct int_param : detail::param_base {
     static_assert(R.min <= R.max && R.min <= R.init && R.init <= R.max, "a param range needs min <= init <= max");
-    static_assert(R.min == static_cast<double>(static_cast<long long>(R.min)) &&
-                      R.max == static_cast<double>(static_cast<long long>(R.max)) &&
-                      R.init == static_cast<double>(static_cast<long long>(R.init)),
+    static_assert(R.min >= -2147483648.0 && R.max <= 2147483647.0, "an int param's range fits an int, which value() returns");
+    static_assert(R.min == static_cast<double>(static_cast<int>(R.min)) &&
+                      R.max == static_cast<double>(static_cast<int>(R.max)) &&
+                      R.init == static_cast<double>(static_cast<int>(R.init)),
                   "an int param's range is whole numbers");
     static graph::ParamDesc rp_param(std::string id) {
         return {std::move(id), std::string(Name.view()), graph::ParamType::Int, R.min, R.max, R.init, {},
@@ -3938,7 +3962,7 @@ T* peer_as(rp_node* n) {
 - [ ] **Step 7: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (240 assertions in 31 test cases)`.
+Expected: `All tests passed (244 assertions in 31 test cases)`.
 
 - [ ] **Step 8: Commit**
 
@@ -4413,7 +4437,7 @@ std::size_t ResourceTable::liveCount() const { return entries_.size(); }
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (280 assertions in 36 test cases)`.
+Expected: `All tests passed (284 assertions in 36 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -6485,7 +6509,7 @@ const rp_package* hostPackage() {
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (387 assertions in 63 test cases)`.
+Expected: `All tests passed (391 assertions in 63 test cases)`.
 
 - [ ] **Step 7: Commit**
 
@@ -7274,7 +7298,7 @@ const rp_package* corePackage() {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (429 assertions in 75 test cases)`.
+Expected: `All tests passed (433 assertions in 75 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -7488,7 +7512,7 @@ Add both files to the test's `SOURCES` and `Threads::Threads` to its `LIBS`:
 - [ ] **Step 3: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (636 assertions in 77 test cases)`. (These pass immediately: the properties
+Expected: `All tests passed (640 assertions in 77 test cases)`. (These pass immediately: the properties
 were built in by Tasks 2 to 8. If NoAlloc fails, an earlier task let an allocation onto the block path;
 fix that, never the test.)
 
@@ -7502,7 +7526,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-graph-test
 ```
 
-Expected: `All tests passed (636 assertions in 77 test cases)` and no ThreadSanitizer report. (Same
+Expected: `All tests passed (640 assertions in 77 test cases)` and no ThreadSanitizer report. (Same
 configure as `tools/run-sanitizer.sh thread`, which shares `build-tsan/`.)
 
 - [ ] **Step 5: Commit**
@@ -7746,6 +7770,13 @@ test("param ranges and channel specs are checked as the C++ parser checks them",
   expect(bad({}, { out: audio.out(channels.any()) })).toThrow('cannot be "any"');
   expect(bad({}, { out: audio.out(channels.match("nope")) })).toThrow("not another audio port");
   expect(bad({}, { in: audio.in(channels.fixed(2, "mono")) })).toThrow("is 1 channels");
+  expect(bad({ g: param.float({ name: "G", min: 0, max: Infinity, default: 0 }) })).toThrow("finite");
+  bad({}, { in: audio.in(channels.fixed(2, "constructor")) })();  // an unknown layout name, not an Object.prototype key
+  expect(bad({}, { in: audio.in(channels.fixed(3, "discrete(03)")) })).toThrow("not a discrete(n)");
+  expect(() =>
+    defineNode({ id: "rp.test.ex", ports: { "pins.a": events.out() }, exclusive: [["pins.*", "pins.a"]], create: noop }).descriptor(),
+  ).toThrow("overlap");
+  expect(() => defineNode({ id: "rp.test\tx", ports: {}, create: noop })).toThrow("whitespace");
   const unitless = defineNode({ id: "rp.test.unitless", ports: {}, params: { g: param.float({ name: "G", min: 0, max: 1, default: 0, unit: "" }) }, create: noop });
   expect("unit" in unitless.descriptor().params[0]).toBe(false);
 });
@@ -7978,11 +8009,17 @@ const NO_SETTINGS_SCHEMA = { type: "object" };
 /** How many channels a layout name means (mono 1, stereo 2, 5.1 6, 7.1 8, discrete(n) n); null for "any"
  *  or an unknown name. The twin of layoutChannels in packages/native/src/graph/Descriptor.cpp. */
 export function layoutChannels(layout: string): number | null {
-  const named: Record<string, number> = { mono: 1, stereo: 2, "5.1": 6, "7.1": 8 };
-  if (layout in named) return named[layout];
+  switch (layout) {
+    case "mono": return 1;
+    case "stereo": return 2;
+    case "5.1": return 6;
+    case "7.1": return 8;
+  }
   const m = /^discrete\(([1-9][0-9]*)\)$/.exec(layout);
   return m ? Number(m[1]) : null;
 }
+
+const MAX_CHANNELS = 4294967295;
 
 function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
   const portMap = typeof def.ports === "function" ? def.ports(settings) : def.ports;
@@ -8010,22 +8047,45 @@ function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
     }
     if ("count" in c) {
       const known = layoutChannels(c.layout);
-      if (!Number.isInteger(c.count) || c.count < 1) throw new Error(`${def.id}: "${p.id}" needs a whole channel count of at least 1`);
+      if (!Number.isInteger(c.count) || c.count < 1 || c.count > MAX_CHANNELS)
+        throw new Error(`${def.id}: "${p.id}" needs a whole channel count from 1 to ${MAX_CHANNELS}`);
+      if (!c.layout) throw new Error(`${def.id}: "${p.id}" needs a layout name`);
+      if (known === null && c.layout.startsWith("discrete("))
+        throw new Error(`${def.id}: "${p.id}" layout "${c.layout}" is not a discrete(n) layout`);
       if (known !== null && known !== c.count)
         throw new Error(`${def.id}: "${p.id}" layout "${c.layout}" is ${known} channels, not ${c.count}`);
     }
   }
+  for (const p of ordered)
+    if (p.kind === "resource" && !p.resourceType) throw new Error(`${def.id}: resource port "${p.id}" needs a resourceType`);
   for (const p of params) {
     if (p.type === "enum") {
+      if (p.values.length === 0 || p.values.some((v) => !v)) throw new Error(`${def.id}: enum param "${p.id}" needs non-empty values`);
       if (new Set(p.values).size !== p.values.length) throw new Error(`${def.id}: enum param "${p.id}" lists a value twice`);
       if (!p.values.includes(p.default))
         throw new Error(`${def.id}: enum param "${p.id}" default "${p.default}" is not one of its values`);
     } else if (p.type === "float" || p.type === "int") {
+      if (![p.min, p.max, p.default].every(Number.isFinite)) throw new Error(`${def.id}: param "${p.id}" needs finite min, max and default`);
       if (!(p.min <= p.max)) throw new Error(`${def.id}: param "${p.id}" min must not exceed max`);
       if (!(p.min <= p.default && p.default <= p.max)) throw new Error(`${def.id}: param "${p.id}" default must lie within [min, max]`);
       if (p.type === "int" && ![p.min, p.max, p.default].every(Number.isInteger))
         throw new Error(`${def.id}: int param "${p.id}" needs whole-number min, max and default`);
     }
+  }
+  for (const group of def.exclusive ?? []) {
+    if (group.length === 0) throw new Error(`${def.id}: an exclusive group needs members`);
+    group.forEach((m, i) => {
+      const wildcard = m.length > 2 && m.endsWith(".*");
+      if (!m || (!wildcard && !ordered.some((p) => p.id === m && p.dir === "out")))
+        throw new Error(`${def.id}: exclusive member "${m}" must be an output's id or a "prefix.*" pattern`);
+      const covers = (pattern: string, id: string) => pattern.endsWith(".*") && id.startsWith(pattern.slice(0, -1));
+      for (const other of group.slice(0, i)) {
+        const otherId = other.endsWith(".*") ? other.slice(0, -1) : other;
+        const mineId = wildcard ? m.slice(0, -1) : m;
+        if (other === m || covers(m, otherId) || covers(other, mineId))
+          throw new Error(`${def.id}: exclusive members "${other}" and "${m}" overlap`);
+      }
+    });
   }
   const layout: Layout = { ports: ordered, params };
   if (def.exclusive?.length) layout.exclusive = def.exclusive;
@@ -8033,7 +8093,7 @@ function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
 }
 
 export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): DefinedNode<S> {
-  if (!def.id || def.id.includes(" ")) throw new Error(`node type id "${def.id}" must be non-empty with no spaces`);
+  if (!def.id || /\s/.test(def.id)) throw new Error(`node type id "${def.id}" must be non-empty with no whitespace`);
   const parseSettings = (raw: unknown): S => (def.settings ? def.settings.parse(raw ?? {}) : ({} as S));
   return {
     ...def,
