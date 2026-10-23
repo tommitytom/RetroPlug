@@ -1804,6 +1804,10 @@ rfl::Result<rfl::Generic> parseJson(std::string_view json);
 // counting as a change, and to fold a generated JSON Schema into a descriptor.
 rfl::Result<std::string> canonicalizeJson(std::string_view json);
 
+// A string as a JSON string literal, quoted and escaped as JSON.stringify writes it. Error messages quote
+// ids with it, so an id carrying a control character (which is why it was refused) prints intact.
+std::string jsonString(std::string_view s);
+
 // JavaScript's spelling of a number, as JSON.stringify writes it: Number.prototype.toString for a finite
 // double, "null" for NaN or infinity.
 std::string jsNumber(double value);
@@ -2034,6 +2038,12 @@ std::string jsNumber(double value) {
         out += (n - 1 >= 0) ? '+' : '-';
         out += std::to_string(std::abs(n - 1));
     }
+    return out;
+}
+
+std::string jsonString(std::string_view s) {
+    std::string out;
+    appendString(out, s);
     return out;
 }
 
@@ -2455,7 +2465,7 @@ const rfl::Generic* field(const Object& o, std::string_view key) {
     return nullptr;
 }
 
-std::string q(std::string_view s) { return "\"" + std::string(s) + "\""; }
+std::string q(std::string_view s) { return jsonString(s); }
 
 rfl::Result<std::optional<std::string>> optString(const Object& o, std::string_view key, const std::string& where) {
     const auto* v = field(o, key);
@@ -4556,13 +4566,16 @@ TEST_CASE("a package registers every node type it lists", "[graph][registry]") {
     CHECK(reg.find("rp.nope") == nullptr);
 
     // Entries never move: one held across enough later registrations to regrow any contiguous store.
+    // (The registry keeps pointers to the types, so they stay alive while it is used, as a package's do.)
     std::vector<std::string> ids;
+    std::array<rp_node_type, kNumbered.size()> types{};
     for (std::size_t i = 0; i < kNumbered.size(); ++i) ids.push_back("rp.test.n" + std::to_string(i));
     for (std::size_t i = 0; i < kNumbered.size(); ++i) {
-        const rp_node_type t = typeWith(ids[i].c_str(), kNumbered[i]);
+        types[i] = typeWith(ids[i].c_str(), kNumbered[i]);
         const std::string manifest = R"({"id":"p)" + std::to_string(i) + R"("})";
-        REQUIRE(refusal(reg, {&t}, manifest.c_str()) == "registered");
+        REQUIRE(refusal(reg, {&types[i]}, manifest.c_str()) == "registered");
     }
+    CHECK(std::string(reg.find("rp.test.n3")->type->id) == "rp.test.n3");
     CHECK(reg.find("rp.test.source") == e);
     CHECK(e->descriptor.id == "rp.test.source");
     CHECK(reg.size() == 7 + kNumbered.size());
@@ -4711,7 +4724,8 @@ TEST_CASE("resources are refused when their payload would not match their type",
     CHECK(t.createBytes("my type", {}, &error) == 0);
     CHECK(t.createBytes(std::string("audio-buffer\0", 13), {1, 2, 3}, &error) == 0);  // reads as "audio-buffer" in C
     CHECK(error.find("control characters") != std::string::npos);
-    CHECK(t.createBytes("audio\x01buffer", {}, &error) == 0);
+    CHECK(t.createBytes("audio\x01" "buffer", {}, &error) == 0);
+    CHECK(error.find(R"("audio\u0001buffer")") != std::string::npos);  // quoted escaped, so it prints intact
     CHECK(t.createAudioBuffer(0, 64, 48000.0, &error) == 0);
     CHECK(t.createAudioBuffer(2, 0, 48000.0, &error) == 0);
     CHECK(t.createAudioBuffer(2, 64, 0.0, &error) == 0);
@@ -4905,7 +4919,7 @@ struct PackageManifest {
     std::string id;
 };
 
-std::string q(std::string_view s) { return "\"" + std::string(s) + "\""; }
+std::string q(std::string_view s) { return jsonString(s); }
 
 // The manifest's id, or why it has none. Through parseJson, so a repeated key reads as JSON.parse reads it.
 rfl::Result<std::string> packageId(const rp_package* p) {
@@ -5051,6 +5065,7 @@ private:
 #include <cmath>
 #include <vector>
 
+#include "graph/CanonicalJson.hpp"
 #include "graph/Descriptor.hpp"
 
 namespace rp::graph {
@@ -5118,7 +5133,7 @@ ResourceTable::Id ResourceTable::createAudioBuffer(std::uint32_t channels, std::
 
 ResourceTable::Id ResourceTable::createBytes(std::string type, std::vector<std::uint8_t> bytes, std::string* error) {
     if (type.empty()) return refused(error, "a resource needs a type");
-    if (!isPlainId(type)) return refused(error, "resource type \"" + type + "\" must not contain whitespace or control characters");
+    if (!isPlainId(type)) return refused(error, "resource type " + jsonString(type) + " must not contain whitespace or control characters");
     if (type == "audio-buffer") return refused(error, "an \"audio-buffer\" is made with createAudioBuffer, not from bytes");
     auto e = std::make_unique<Entry>();
     e->type = std::move(type);
@@ -5172,7 +5187,7 @@ std::uint32_t ResourceTable::pinCount(Id id) const {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (467 assertions in 45 test cases)`.
+Expected: `All tests passed (469 assertions in 45 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -5184,10 +5199,10 @@ The document TS sends (node ids carry no '.', endpoints split at the
 first dot), the one registry every package goes through - refusing a
 bad package whole, with a reason - and control-thread resource lifetimes."
 
-(This task was executed as the original commit plus two review-fix commits, "fix(graph): the registry
-gates the whole ABI struct; a resource's owner and its pins are counted apart" and "fix(graph): one
-plain-id rule; a dropped resource cannot be newly bound". A fresh execution needs only the one commit
-above.)
+(This task was executed as the original commit plus three review-fix commits, "fix(graph): the registry
+gates the whole ABI struct; a resource's owner and its pins are counted apart", "fix(graph): one
+plain-id rule; a dropped resource cannot be newly bound" and "fix(graph): refusals quote ids as JSON".
+A fresh execution needs only the one commit above.)
 ```
 
 ---
@@ -7262,7 +7277,7 @@ const rp_package* hostPackage() {
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (577 assertions in 72 test cases)`.
+Expected: `All tests passed (579 assertions in 72 test cases)`.
 
 - [ ] **Step 7: Commit**
 
@@ -8068,7 +8083,7 @@ const rp_package* corePackage() {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (626 assertions in 85 test cases)`.
+Expected: `All tests passed (628 assertions in 85 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -8282,7 +8297,7 @@ Add both files to the test's `SOURCES` and `Threads::Threads` to its `LIBS`:
 - [ ] **Step 3: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (833 assertions in 87 test cases)`. (These pass immediately: the properties
+Expected: `All tests passed (835 assertions in 87 test cases)`. (These pass immediately: the properties
 were built in by Tasks 2 to 8. If NoAlloc fails, an earlier task let an allocation onto the block path;
 fix that, never the test.)
 
@@ -8296,7 +8311,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-graph-test
 ```
 
-Expected: `All tests passed (833 assertions in 87 test cases)` and no ThreadSanitizer report. (Same
+Expected: `All tests passed (835 assertions in 87 test cases)` and no ThreadSanitizer report. (Same
 configure as `tools/run-sanitizer.sh thread`, which shares `build-tsan/`.)
 
 - [ ] **Step 5: Commit**
@@ -8547,6 +8562,9 @@ test("param ranges and channel specs are checked as the C++ parser checks them",
     defineNode({ id: "rp.test.ex", ports: { "pins.a": events.out() }, exclusive: [["pins.*", "pins.a"]], create: noop }).descriptor(),
   ).toThrow("overlap");
   expect(() => defineNode({ id: "rp.test\tx", ports: {}, create: noop })).toThrow("whitespace");
+  expect(() => defineNode({ id: "rp.test\u0000x", ports: {}, create: noop })).toThrow("control characters");
+  expect(() => defineNode({ id: "rp.test\u007f", ports: {}, create: noop })).toThrow("control characters");
+  defineNode({ id: "rp.test.caf\u00e9\u00a0", ports: {}, create: noop });  // non-ASCII is fine, as in C++
   const unitless = defineNode({ id: "rp.test.unitless", ports: {}, params: { g: param.float({ name: "G", min: 0, max: 1, default: 0, unit: "" }) }, create: noop });
   expect("unit" in unitless.descriptor().params[0]).toBe(false);
 });
@@ -8863,7 +8881,9 @@ function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
 }
 
 export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): DefinedNode<S> {
-  if (!def.id || /\s/.test(def.id)) throw new Error(`node type id "${def.id}" must be non-empty with no whitespace`);
+  // The C++ registry's isPlainId, code unit for byte: nothing at or below U+0020, nor U+007F.
+  if (!def.id || /[\u0000-\u0020\u007f]/.test(def.id))
+    throw new Error(`node type id ${JSON.stringify(def.id)} must be non-empty, with no whitespace or control characters`);
   const parseSettings = (raw: unknown): S => (def.settings ? def.settings.parse(raw ?? {}) : ({} as S));
   return {
     ...def,
