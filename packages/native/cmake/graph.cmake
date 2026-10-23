@@ -20,7 +20,10 @@ set_target_properties(retroplug-graph-exec PROPERTIES
 # the rp.core package. Links reflect-cpp (settings parsing, JSON Schema).
 add_library(retroplug-graph STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/CanonicalJson.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/Descriptor.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/Descriptor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/GraphDocument.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/NodeRegistry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/ResourceTable.cpp)
 target_link_libraries(retroplug-graph PUBLIC retroplug-graph-exec reflectcpp::reflectcpp)
 set_target_properties(retroplug-graph PROPERTIES
     CXX_STANDARD 20

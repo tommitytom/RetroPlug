@@ -173,5 +173,6 @@ retroplug_add_test_binary(
              test/graph/CanonicalJson.test.cpp
              test/graph/Descriptor.test.cpp
              test/graph/NodeLayer.test.cpp
+             test/graph/Registry.test.cpp
     LIBS     retroplug-graph
     DEFS     RP_GRAPH_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/graph/golden")
