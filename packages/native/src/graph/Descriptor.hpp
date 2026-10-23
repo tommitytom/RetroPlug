@@ -78,6 +78,11 @@ const ParamDesc* findParam(const Layout& layout, std::string_view id);
 
 std::string_view kindName(PortKind kind);
 
+// An id the host stores and compares as a string - a node type or package id, a resource type: non-empty,
+// with no whitespace and no control character (no byte at or below 0x20, nor 0x7f). An embedded NUL in
+// particular would make the C string a node reads differ from the std::string the host checked.
+bool isPlainId(std::string_view s);
+
 // Does an exclusive-group pattern ("pins.*" or an exact id) match this port id?
 bool matchesPattern(std::string_view pattern, std::string_view portId);
 

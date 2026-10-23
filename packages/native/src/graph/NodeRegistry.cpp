@@ -14,12 +14,6 @@ struct PackageManifest {
     std::string id;
 };
 
-bool hasWhitespace(std::string_view s) {
-    for (const char c : s)
-        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') return true;
-    return false;
-}
-
 std::string q(std::string_view s) { return "\"" + std::string(s) + "\""; }
 
 // The manifest's id, or why it has none. Through parseJson, so a repeated key reads as JSON.parse reads it.
@@ -27,8 +21,9 @@ rfl::Result<std::string> packageId(const rp_package* p) {
     if (!p->manifest_json) return rfl::Unexpected<rfl::Error>(rfl::Error("package has no manifest"));
     auto m = parseJson(p->manifest_json).and_then([](const rfl::Generic& g) { return rfl::from_generic<PackageManifest>(g); });
     if (!m) return rfl::Unexpected<rfl::Error>(rfl::Error(std::string("package manifest: ") + m.error().what()));
-    if (m->id.empty() || hasWhitespace(m->id))
-        return rfl::Unexpected<rfl::Error>(rfl::Error("package manifest id " + q(m->id) + " must be non-empty, with no whitespace"));
+    if (!isPlainId(m->id))
+        return rfl::Unexpected<rfl::Error>(
+            rfl::Error("package manifest id " + q(m->id) + " must be non-empty, with no whitespace or control characters"));
     return m->id;
 }
 

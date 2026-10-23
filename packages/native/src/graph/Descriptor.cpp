@@ -155,12 +155,6 @@ rfl::Result<int> enumIndex(const std::string& s, const char* const (&names)[N], 
     return fail(where + ": unknown " + std::string(what) + " " + q(s));
 }
 
-bool hasWhitespace(std::string_view s) {
-    for (const char c : s)
-        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') return true;
-    return false;
-}
-
 rfl::Result<ChannelSpec> parseChannels(const rfl::Generic& g, const std::string& where) {
     auto o = g.to_object();
     if (!o) return fail(where + ": \"channels\" must be an object");
@@ -434,7 +428,7 @@ rfl::Result<TypeDescriptor> parseDescriptor(std::string_view json) {
     TypeDescriptor d;
     auto id = reqString(*o, "id", "descriptor");
     if (!id) return fail(id.error().what());
-    if (hasWhitespace(*id)) return fail("descriptor id " + q(*id) + " must not contain whitespace");
+    if (!isPlainId(*id)) return fail("descriptor id " + q(*id) + " must not contain whitespace or control characters");
     d.id = *id;
     const std::string where = "descriptor " + q(d.id);
     auto version = optString(*o, "version", where);
@@ -479,6 +473,15 @@ const ParamDesc* findParam(const Layout& layout, std::string_view id) {
     for (const auto& p : layout.params)
         if (p.id == id) return &p;
     return nullptr;
+}
+
+bool isPlainId(std::string_view s) {
+    if (s.empty()) return false;
+    for (const char c : s) {
+        const auto b = static_cast<unsigned char>(c);
+        if (b <= 0x20 || b == 0x7f) return false;
+    }
+    return true;
 }
 
 bool matchesPattern(std::string_view pattern, std::string_view portId) {

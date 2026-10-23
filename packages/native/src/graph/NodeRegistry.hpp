@@ -26,7 +26,7 @@ public:
     };
 
     // Register every node type in a package, or none of them. Refused, with a reason, for: an ABI version
-    // mismatch; a manifest that is not a JSON object with a non-empty "id" free of whitespace; a package id
+    // mismatch; a manifest that is not a JSON object with a plain "id" (see isPlainId); a package id
     // already registered; a null node type, or one missing its id or any of its functions; a descriptor
     // that is null, empty (a C++ node whose default layout could not be built) or does not parse; a
     // descriptor whose id is not the node type's; and a type id registered already or listed twice.

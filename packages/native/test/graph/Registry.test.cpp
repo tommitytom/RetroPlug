@@ -1,10 +1,12 @@
 // The registry every package goes through, the graph document's parsing helpers, and resource lifetimes.
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <initializer_list>
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "TestNodes.hpp"
@@ -39,6 +41,21 @@ std::string refusal(NodeRegistry& reg, std::initializer_list<const rp_node_type*
     return reg.addPackage(&pkg, &error) ? std::string("registered") : error;
 }
 
+// rp.test.n0 ... rp.test.n63, each with a descriptor function of its own (a C function pointer cannot
+// capture which one it is).
+template <std::size_t N>
+const char* numberedDescriptor() {
+    static const std::string json = R"({"id":"rp.test.n)" + std::to_string(N) + R"("})";
+    return json.c_str();
+}
+
+template <std::size_t... N>
+constexpr std::array<const char* (*)(), sizeof...(N)> numberedDescriptors(std::index_sequence<N...>) {
+    return {&numberedDescriptor<N>...};
+}
+
+constexpr auto kNumbered = numberedDescriptors(std::make_index_sequence<64>{});
+
 // Throws building its default layout, so node.hpp gives it an empty descriptor.
 struct Unbuildable {
     static constexpr const char* id = "rp.test.unbuildable";
@@ -58,11 +75,17 @@ TEST_CASE("a package registers every node type it lists", "[graph][registry]") {
     CHECK(e->descriptor.layout.params[0].id == "gain");
     CHECK(reg.find("rp.nope") == nullptr);
 
-    // Entries never move: one held across a later registration still reads.
-    const rp_node_type good = typeWith("rp.test.good", &goodDescriptor);
-    CHECK(refusal(reg, {&good}) == "registered");
+    // Entries never move: one held across enough later registrations to regrow any contiguous store.
+    std::vector<std::string> ids;
+    for (std::size_t i = 0; i < kNumbered.size(); ++i) ids.push_back("rp.test.n" + std::to_string(i));
+    for (std::size_t i = 0; i < kNumbered.size(); ++i) {
+        const rp_node_type t = typeWith(ids[i].c_str(), kNumbered[i]);
+        const std::string manifest = R"({"id":"p)" + std::to_string(i) + R"("})";
+        REQUIRE(refusal(reg, {&t}, manifest.c_str()) == "registered");
+    }
     CHECK(reg.find("rp.test.source") == e);
     CHECK(e->descriptor.id == "rp.test.source");
+    CHECK(reg.size() == 7 + kNumbered.size());
 }
 
 TEST_CASE("a bad package registers nothing and says why", "[graph][registry]") {
@@ -184,13 +207,13 @@ TEST_CASE("a resource lives until its owner drops it and its last pin is gone", 
     REQUIRE(t.pin(a));
     CHECK(t.drop(a));
     CHECK_FALSE(t.drop(a));  // a second drop changes nothing
-    CHECK(t.get(a) != nullptr);
     CHECK(t.pinCount(a) == 1);
-    CHECK(t.unpin(a));
-    CHECK(t.get(a) == nullptr);
-    CHECK_FALSE(t.unpin(a));
+    CHECK(t.liveCount() == 2);  // alive for the plan that pins it...
+    CHECK(t.get(a) == nullptr);  // ...but no new document can bind it
     CHECK_FALSE(t.pin(a));
+    CHECK(t.unpin(a));
     CHECK(t.liveCount() == 1);
+    CHECK_FALSE(t.unpin(a));
 
     const auto c = t.createBytes("bytes", {});
     CHECK(c > b);  // ids are never reused
@@ -206,6 +229,9 @@ TEST_CASE("resources are refused when their payload would not match their type",
     CHECK(error.find("createAudioBuffer") != std::string::npos);
     CHECK(t.createBytes("", {}, &error) == 0);
     CHECK(t.createBytes("my type", {}, &error) == 0);
+    CHECK(t.createBytes(std::string("audio-buffer\0", 13), {1, 2, 3}, &error) == 0);  // reads as "audio-buffer" in C
+    CHECK(error.find("control characters") != std::string::npos);
+    CHECK(t.createBytes("audio\x01buffer", {}, &error) == 0);
     CHECK(t.createAudioBuffer(0, 64, 48000.0, &error) == 0);
     CHECK(t.createAudioBuffer(2, 0, 48000.0, &error) == 0);
     CHECK(t.createAudioBuffer(2, 64, 0.0, &error) == 0);

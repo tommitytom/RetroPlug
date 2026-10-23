@@ -4,6 +4,8 @@
 #include <cmath>
 #include <vector>
 
+#include "graph/Descriptor.hpp"
+
 namespace rp::graph {
 
 struct ResourceTable::Entry {
@@ -69,9 +71,7 @@ ResourceTable::Id ResourceTable::createAudioBuffer(std::uint32_t channels, std::
 
 ResourceTable::Id ResourceTable::createBytes(std::string type, std::vector<std::uint8_t> bytes, std::string* error) {
     if (type.empty()) return refused(error, "a resource needs a type");
-    for (const char c : type)
-        if (c == ' ' || c == '\t' || c == '\n' || c == '\r')
-            return refused(error, "resource type \"" + type + "\" must not contain whitespace");
+    if (!isPlainId(type)) return refused(error, "resource type \"" + type + "\" must not contain whitespace or control characters");
     if (type == "audio-buffer") return refused(error, "an \"audio-buffer\" is made with createAudioBuffer, not from bytes");
     auto e = std::make_unique<Entry>();
     e->type = std::move(type);
@@ -83,7 +83,7 @@ ResourceTable::Id ResourceTable::createBytes(std::string type, std::vector<std::
 
 rp_resource* ResourceTable::get(Id id) const {
     const auto it = entries_.find(id);
-    return it != entries_.end() ? &it->second->resource : nullptr;
+    return it != entries_.end() && it->second->owned ? &it->second->resource : nullptr;
 }
 
 void ResourceTable::freeIfUnused(Id id) {
@@ -101,7 +101,7 @@ bool ResourceTable::drop(Id id) {
 
 bool ResourceTable::pin(Id id) {
     const auto it = entries_.find(id);
-    if (it == entries_.end()) return false;
+    if (it == entries_.end() || !it->second->owned) return false;
     ++it->second->pins;
     return true;
 }
