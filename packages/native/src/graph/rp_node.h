@@ -1,0 +1,224 @@
+/* rp_node.h - the RetroPlug node ABI.
+ *
+ * Every node reaches the planner through these structures, whether it is statically linked C++, a
+ * downloaded native pack, or a TypeScript node the host wraps. Plain C so a dynamic library built by any
+ * compiler can fill it in; nothing here may change shape without bumping RP_ABI_VERSION. Optional
+ * capabilities are looked up by versioned string id through get_interface, so they can grow without
+ * touching this core table (docs/modular-graph-design.md section 4).
+ *
+ * Threads: calls marked [control] run on the control thread and may allocate; calls marked [audio] run
+ * on whichever thread drives the block and must not allocate, block, or throw.
+ */
+#ifndef RP_NODE_H
+#define RP_NODE_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define RP_ABI_VERSION 1u
+
+typedef struct rp_node rp_node;
+typedef struct rp_host rp_host;
+
+typedef enum rp_status { RP_OK = 0, RP_FAULT = 1 } rp_status;
+
+/* A control-thread call that fails writes a NUL-terminated reason here. */
+typedef struct rp_error { char message[256]; } rp_error;
+
+enum { RP_SETTINGS_JSON = 0u };
+typedef struct rp_settings {
+    const char* data;   /* not NUL-terminated; use size */
+    size_t      size;
+    uint32_t    encoding; /* RP_SETTINGS_JSON on the desktop */
+} rp_settings;
+
+typedef struct rp_memory_req { size_t size; size_t align; } rp_memory_req;
+
+/* Services the host offers a node. alloc/free are for nodes that declare the heap capability, and only
+ * on the control thread. */
+struct rp_host {
+    uint32_t abi_version;
+    void*    ctx;
+    void* (*alloc)(void* ctx, size_t size, size_t align);
+    void  (*free)(void* ctx, void* ptr);
+    void  (*log)(void* ctx, int level, const char* message);
+};
+
+/* ---- block data ------------------------------------------------------------------------------- */
+
+typedef struct rp_transport {
+    double sample_rate;
+    double tempo;    /* bpm */
+    double ppq;      /* at block start */
+    bool   playing;
+} rp_transport;
+
+/* One timestamped item on an events or bytes port. The payload lives in the queue's byte arena at
+ * [offset, offset + size). flags is per kind: on a bytes port, bit 0 = flush barrier. */
+typedef struct rp_message {
+    uint32_t frame;
+    uint32_t size;
+    uint32_t offset;
+    uint32_t flags;
+} rp_message;
+
+/* A fixed-capacity, frame-ordered queue. Never grows: a push that does not fit is dropped and counted. */
+typedef struct rp_queue {
+    rp_message* items;
+    uint32_t    count;
+    uint32_t    capacity;
+    uint8_t*    bytes;
+    uint32_t    bytes_used;
+    uint32_t    bytes_capacity;
+    uint32_t    dropped;
+} rp_queue;
+
+typedef struct rp_control_change { uint32_t frame; uint32_t reserved; double value; } rp_control_change;
+
+/* A control stream: its value at block start plus this block's frame-ordered changes. */
+typedef struct rp_control_queue {
+    double             start;
+    rp_control_change* changes;
+    uint32_t           count;
+    uint32_t           capacity;
+    uint32_t           dropped;
+} rp_control_queue;
+
+/* A resource: a typed block of data created and freed only on the control thread. type is a
+ * registered resource type id ("audio-buffer", "bytes", "string", ...); payload is interpreted by it. */
+typedef struct rp_resource {
+    const char* type;
+    void*       payload;
+} rp_resource;
+
+/* The payload of an "audio-buffer" resource. */
+typedef struct rp_audio_buffer {
+    uint32_t channels;
+    uint32_t frames;
+    double   sample_rate;
+    float**  data;      /* data[channel][frame] */
+} rp_audio_buffer;
+
+/* The payload of "bytes" and "string" resources. */
+typedef struct rp_bytes { const uint8_t* data; size_t size; } rp_bytes;
+
+typedef enum rp_port_kind {
+    RP_PORT_AUDIO    = 0,
+    RP_PORT_EVENTS   = 1,
+    RP_PORT_BYTES    = 2,
+    RP_PORT_CONTROL  = 3,
+    RP_PORT_LINK     = 4,
+    RP_PORT_RESOURCE = 5
+} rp_port_kind;
+
+typedef struct rp_audio_view {
+    float* const* channels;  /* channels[c][frame]; never null: unconnected ports get silence / scratch */
+    uint32_t      channel_count;
+} rp_audio_view;
+
+/* One port as the node sees it this block. Input views are read-only by contract. */
+typedef struct rp_port_view {
+    uint32_t kind; /* rp_port_kind */
+    union {
+        rp_audio_view     audio;
+        rp_queue*         queue;    /* events, bytes */
+        rp_control_queue* control;
+        rp_resource**     resource; /* the slot holding the current handle (may hold null) */
+    } u;
+} rp_port_view;
+
+typedef struct rp_process {
+    uint32_t                 frames;
+    const rp_transport*      transport;
+    const rp_port_view*      inputs;
+    uint32_t                 input_count;
+    const rp_port_view*      outputs;
+    uint32_t                 output_count;
+    rp_control_queue* const* params;  /* one per param, in layout order */
+    uint32_t                 param_count;
+} rp_process;
+
+/* ---- the node --------------------------------------------------------------------------------- */
+
+typedef enum rp_prepare_result {
+    RP_PREPARE_SWAP    = 0, /* *prepared is ready to commit on the audio thread */
+    RP_PREPARE_REBUILD = 1, /* the change needs a fresh instance (a new ROM, a layout change) */
+    RP_PREPARE_INVALID = 2  /* rejected; err holds the reason */
+} rp_prepare_result;
+
+typedef struct rp_node_vtable {
+    /* [control] Resolved layout JSON (ports, params, exclusive groups) for the current settings. The
+     * string is owned by the node and stays valid until the next layout call or destroy. */
+    const char* (*layout)(rp_node* node);
+    /* [control] Must preserve state: a sample-rate or block-size change re-activates, never resets. */
+    bool (*activate)(rp_node* node, double sample_rate, uint32_t max_frames, rp_error* err);
+    void (*deactivate)(rp_node* node);
+    /* [audio] The connected-output mask changed at a plan swap; connected[i] is 0 or 1 per output. */
+    void (*ports_changed)(rp_node* node, const uint8_t* connected, uint32_t output_count);
+    /* [audio] One block. Must write every frame of every audio output it is given. */
+    rp_status (*process)(rp_node* node, const rp_process* block);
+    /* [control] Validate new settings and decide swap versus rebuild. */
+    rp_prepare_result (*prepare_settings)(rp_node* node, const rp_settings* settings, void** prepared,
+                                          rp_error* err);
+    /* [audio] Swap in a prepared settings object; hand the previous one back through *old. */
+    void (*commit_settings)(rp_node* node, void* prepared, void** old);
+    /* [control] Free a settings object handed back by commit_settings (or a prepared one never committed). */
+    void (*release_settings)(rp_node* node, void* old);
+    /* [any] An optional interface by versioned id ("rp.step/1"), or null. */
+    const void* (*get_interface)(rp_node* node, const char* id);
+} rp_node_vtable;
+
+struct rp_node {
+    const rp_node_vtable* vt;
+};
+
+typedef struct rp_node_type {
+    const char* id;
+    /* [control] The type descriptor JSON; valid for the life of the package. */
+    const char* (*descriptor)(void);
+    /* [control] Size and alignment of one instance for these settings. */
+    bool (*query_memory)(const rp_settings* settings, rp_memory_req* out, rp_error* err);
+    /* [control] Construct into host-supplied memory. Returns null (and fills err) on failure. */
+    rp_node* (*create)(const rp_host* host, void* memory, const rp_settings* settings, rp_error* err);
+    /* [control] Destruct. The host frees the memory afterwards. */
+    void (*destroy)(rp_node* node);
+} rp_node_type;
+
+typedef struct rp_package {
+    uint32_t                   abi_version;
+    const char*                manifest_json;
+    uint32_t                   node_type_count;
+    const rp_node_type* const* node_types;
+} rp_package;
+
+/* A downloaded pack exports this symbol; statically linked packages hand the same struct to the
+ * generated registration list. */
+typedef const rp_package* (*rp_package_entry_fn)(void);
+
+/* ---- optional interfaces ------------------------------------------------------------------------ */
+
+/* "rp.step/1": the block triad coupled groups run in lockstep. */
+#define RP_STEP_INTERFACE "rp.step/1"
+typedef struct rp_step_interface {
+    void (*prepare)(rp_node* node, const rp_process* block);
+    /* Advance toward target_frames; return true once this node has produced them. */
+    bool (*step)(rp_node* node, uint32_t target_frames);
+    void (*finish)(rp_node* node, const rp_process* block);
+} rp_step_interface;
+
+/* "rp.link/1": told its peers whenever the coupled group it belongs to changes. [audio] */
+#define RP_LINK_INTERFACE "rp.link/1"
+typedef struct rp_link_interface {
+    void (*set_peers)(rp_node* node, rp_node* const* peers, uint32_t peer_count);
+} rp_link_interface;
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* RP_NODE_H */

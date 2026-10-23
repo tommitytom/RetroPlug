@@ -5,6 +5,7 @@
 # self-contained are include()d from cmake/ so this stays readable top to bottom:
 #
 #   cmake/test-binary.cmake   retroplug_add_test_binary() — the shape every test binary shares
+#   cmake/graph.cmake         the node-graph engine's libraries (not linked by any host yet)
 #   cmake/node-addon.cmake    retroplug-node, the N-API host (opt-in)
 #   cmake/bundles.cmake       the embedded control-plane + React-UI bytecode
 #   cmake/deps.cmake          rtmidi / serial / portaudio, and the retroplug-cli N8 facets
@@ -440,6 +441,9 @@ set_target_properties(retroplug-ui-test PROPERTIES
 
 # The embedded bundle must exist before the test binary compiles it.
 add_dependencies(retroplug-ui-test retroplug-ui-bundle)
+
+# The node-graph engine's libraries (docs/modular-graph-design.md). Nothing links them yet.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/graph.cmake)
 
 # The ten native test binaries (EXCLUDE_FROM_ALL; built by name).
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/tests.cmake)

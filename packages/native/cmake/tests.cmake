@@ -162,3 +162,13 @@ retroplug_add_test_binary(
     LIBS     lvgl                                      # lv_lottie + lvgl_thorvg (LV_USE_LOTTIE in the active lv_conf.h)
     # The Lottie animation the test rasterizes (a real ~5 KB LVGL example asset).
     DEFS     RP_LOTTIE_JSON_PATH="${DPFJS_PATH}/deps/lv_binding_js/deps/lvgl/examples/widgets/lottie/lv_example_lottie_approve.json")
+
+# Guards the node-graph engine (docs/modular-graph-design.md, Phase A): the executor over raw C-ABI
+# nodes, the canonical JSON C++ and TS share, descriptors, the C++ authoring layer, the planner's
+# validation codes, plan swaps that keep node state, the rp.core nodes, and a no-heap check of the block
+# path. Self-contained: no core, no txiki, no backend.
+retroplug_add_test_binary(
+    NAME     retroplug-graph-test
+    SOURCES  test/graph/Executor.test.cpp
+    LIBS     retroplug-graph-exec
+    DEFS     RP_GRAPH_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/graph/golden")
