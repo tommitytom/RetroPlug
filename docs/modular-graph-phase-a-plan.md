@@ -7993,6 +7993,23 @@ TEST_CASE("split, join and downmix move channels explicitly", "[graph][core]") {
     CHECK(rig.outs[1][0] == 1.0f);  // L + R, the equal-sum downmix
 }
 
+TEST_CASE("5.1 downmixes to stereo by ITU-style coefficients and to mono as an equal sum", "[graph][core]") {
+    GraphRig rig;
+    REQUIRE(rig.set(R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":0.5,"channels":6}},
+                                  {"id":"surround","type":"rp.core.relabel","settings":{"channels":6,"layout":"5.1"}},
+                                  {"id":"stereo","type":"rp.core.downmix","settings":{"from":"5.1","to":"stereo"}},
+                                  {"id":"mono","type":"rp.core.downmix","settings":{"from":"5.1","to":"mono"}},
+                                  {"id":"out","type":"rp.host.audio-out","settings":{"buses":[2,1]}}],
+                         "wires":[{"from":"src.out","to":"surround.in"},{"from":"surround.out","to":"stereo.in"},
+                                  {"from":"surround.out","to":"mono.in"},{"from":"stereo.out","to":"out.out.1-2"},
+                                  {"from":"mono.out","to":"out.out.3"}]})").ok);
+    rig.run();
+    constexpr float k = 0.70710678f;
+    CHECK(rig.outs[0][0] == 0.5f + k * 0.5f + k * 0.5f);  // L + C + Ls, LFE dropped
+    CHECK(rig.outs[1][0] == 0.5f + k * 0.5f + k * 0.5f);
+    CHECK(rig.outs[2][0] == 3.0f);  // all six, unscaled
+}
+
 TEST_CASE("join fixes a mono-into-stereo mismatch; relabel asserts a layout", "[graph][core]") {
     GraphRig rig;
     CHECK(rig.set(R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"channels":1}},
@@ -8475,31 +8492,27 @@ struct Downmix {
         l.ports.push_back(audioPort("out", PortDir::Out, ChannelSpec::fixed(to, s.to)));
     }
 
-    bool surround = false;  // 5.1 source: ITU-style coefficients, LFE dropped
-    void on_settings(const Settings& s) noexcept { surround = s.from == "5.1"; }
+    bool toStereo = false;  // 5.1 -> stereo; every other downmix is to mono
+    void on_settings(const Settings& s) noexcept { toStereo = s.to == "stereo"; }
 
     void process(const rp::Block& b) noexcept {
         const rp_audio_view& in = b.input(0).u.audio;
         const rp_audio_view& out = b.output(0).u.audio;
         const std::uint32_t n = b.frames();
-        if (!surround) {
-            // Equal sum (no scaling): a stereo -> mono downmix is L + R, as today's 1 Ch / Inst bus is.
+        if (!toStereo) {
+            // Anything -> mono is an equal sum, no scaling (so stereo -> mono is L + R, as today's 1 Ch /
+            // Inst bus is), from any layout, 5.1 included.
             std::memcpy(out.channels[0], in.channels[0], n * sizeof(float));
             for (std::uint32_t c = 1; c < in.channel_count; ++c)
                 for (std::uint32_t i = 0; i < n; ++i) out.channels[0][i] += in.channels[c][i];
             return;
         }
-        constexpr float k = 0.70710678f;  // order L R C LFE Ls Rs
+        // 5.1 -> stereo: ITU-style coefficients, LFE dropped. Channel order L R C LFE Ls Rs.
+        constexpr float k = 0.70710678f;
         const float* const* x = in.channels;
         for (std::uint32_t i = 0; i < n; ++i) {
-            const float l = x[0][i] + k * x[2][i] + k * x[4][i];
-            const float r = x[1][i] + k * x[2][i] + k * x[5][i];
-            if (out.channel_count == 2) {
-                out.channels[0][i] = l;
-                out.channels[1][i] = r;
-            } else {
-                out.channels[0][i] = l + r;
-            }
+            out.channels[0][i] = x[0][i] + k * x[2][i] + k * x[4][i];
+            out.channels[1][i] = x[1][i] + k * x[2][i] + k * x[5][i];
         }
     }
 };
@@ -8716,7 +8729,7 @@ const rp_package* corePackage() {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (733 assertions in 104 test cases)`.
+Expected: `All tests passed (737 assertions in 105 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -8729,6 +8742,9 @@ layout; L + R to mono, as today's 1 Ch / Inst bus), relabel, a constant,
 a delay whose line lives in host-supplied memory, and buffer playback and
 recording. First users of resource bindings: one writer per mutable
 buffer, readers ordered by wiring from it, plans pin what they bind."
+
+(This task was executed as the original commit plus one review-fix commit, "fix(graph): 5.1 to mono is
+an equal sum". A fresh execution needs only the one commit above.)
 ```
 
 ---
@@ -8930,7 +8946,7 @@ Add both files to the test's `SOURCES` and `Threads::Threads` to its `LIBS`:
 - [ ] **Step 3: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (940 assertions in 106 test cases)`. (These pass immediately: the properties
+Expected: `All tests passed (944 assertions in 107 test cases)`. (These pass immediately: the properties
 were built in by Tasks 2 to 8. If NoAlloc fails, an earlier task let an allocation onto the block path;
 fix that, never the test.)
 
@@ -8944,7 +8960,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-graph-test
 ```
 
-Expected: `All tests passed (940 assertions in 106 test cases)` and no ThreadSanitizer report. (Same
+Expected: `All tests passed (944 assertions in 107 test cases)` and no ThreadSanitizer report. (Same
 configure as `tools/run-sanitizer.sh thread`, which shares `build-tsan/`.)
 
 - [ ] **Step 5: Commit**
