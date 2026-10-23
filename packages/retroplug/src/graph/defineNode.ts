@@ -12,6 +12,7 @@
 // receives a plain, already-checked object. zod is imported for its types only: the schema a definition
 // carries brings its own toJSONSchema, so a bundle holding just a node's create/process need not hold zod.
 import type { z } from "zod";
+import { plainId, wellFormed } from "./descriptor";
 import type { ChannelSpec, Layout, ParamDesc, PortDesc, TypeDescriptor } from "./descriptor";
 
 // ---- ports ------------------------------------------------------------------------------------------------
@@ -181,23 +182,6 @@ export function layoutChannels(layout: string): number | null {
   const n = m ? Number(m[1]) : 0;
   return n >= 1 && n <= MAX_CHANNELS ? n : null;
 }
-
-/** Can C++ read this string? A lone surrogate has no UTF-8 spelling, so its parser refuses one. */
-function wellFormed(s: string): boolean {
-  for (let i = 0; i < s.length; ++i) {
-    const c = s.charCodeAt(i);
-    if (c >= 0xd800 && c <= 0xdbff) {
-      const next = s.charCodeAt(i + 1);
-      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
-      ++i;
-    } else if (c >= 0xdc00 && c <= 0xdfff) return false;
-  }
-  return true;
-}
-
-/** The C++ registry's isPlainId, code unit for byte: non-empty, nothing at or below U+0020, nor U+007F,
- *  and (since C++ reads UTF-8) no lone surrogate. */
-const plainId = (s: unknown): s is string => typeof s === "string" && s.length > 0 && !/[\u0000-\u0020\u007f]/.test(s) && wellFormed(s);
 
 const isString = (v: unknown): v is string => typeof v === "string";
 const has = (o: object, key: string): boolean => Object.prototype.hasOwnProperty.call(o, key);

@@ -1,6 +1,26 @@
 // The descriptor model shared with C++ (packages/native/src/graph/Descriptor.hpp): what a node type
 // declares (TypeDescriptor) and what one instance resolves to for its settings (Layout). These are the
-// JSON shapes, field for field; canonicalJson spells them identically on both sides.
+// JSON shapes, field for field; canonicalJson spells them identically on both sides. The id rules both
+// sides share are here too.
+
+/** Can C++ read this string? A lone surrogate has no UTF-8 spelling, so its parser refuses one. */
+export function wellFormed(s: string): boolean {
+  for (let i = 0; i < s.length; ++i) {
+    const c = s.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff) {
+      const next = s.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+      ++i;
+    } else if (c >= 0xdc00 && c <= 0xdfff) return false;
+  }
+  return true;
+}
+
+/** The C++ isPlainId (Descriptor.hpp), code unit for byte: non-empty, nothing at or below U+0020, nor
+ *  U+007F, and (since C++ reads UTF-8) no lone surrogate. Node type ids, package ids, node ids, port and
+ *  param ids and resource types all follow it. */
+export const plainId = (s: unknown): s is string =>
+  typeof s === "string" && s.length > 0 && !/[\u0000-\u0020\u007f]/.test(s) && wellFormed(s);
 
 export type PortKind = "audio" | "events" | "bytes" | "control" | "link" | "resource";
 export type PortDir = "in" | "out" | "link";
