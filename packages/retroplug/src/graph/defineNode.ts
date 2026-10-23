@@ -129,6 +129,9 @@ export interface Block {
 export interface NodeInstance {
   /** Return "fault" to be bypassed from now on (the executor silences this node and counts it). */
   process(block: Block): void | "fault";
+  /** A new sample rate or block size (the host re-activates without resetting): resize anything sized from
+   *  CreateContext's maxFrames. Return false if the node cannot run at these. */
+  activate?(sampleRate: number, maxFrames: number): boolean | void;
   /** Called when the connected-output set changes at a plan swap; connected[i] follows output order. */
   portsChanged?(connected: readonly boolean[]): void;
 }

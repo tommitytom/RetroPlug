@@ -567,16 +567,16 @@ private:
         for (std::size_t n = 0; n < nodes_.size(); ++n) {
             const Layout& l = nodes_[n].inst->layout;
             for (const auto& group : l.exclusive) {
-                std::vector<std::string> used;
+                std::vector<std::string> used;  // the first connected port matching each member
                 for (const auto& pattern : group)
                     for (int p : nodes_[n].outPorts)
                         if (matchesPattern(pattern, l.ports[p].id) && connectedOutput(static_cast<int>(n), p)) {
-                            used.push_back(pattern);
+                            used.push_back(l.ports[p].id);
                             break;
                         }
                 if (used.size() > 1)
-                    error(nodes_[n].doc->id, used[0], "exclusive-ports",
-                          q(nodes_[n].doc->id) + " cannot use " + used[0] + " and " + used[1] + " at the same time");
+                    error(nodes_[n].doc->id, used[1], "exclusive-ports",
+                          q(nodes_[n].doc->id) + " cannot use " + q(used[0]) + " and " + q(used[1]) + " at the same time");
             }
         }
         return out_.errors.empty();

@@ -88,6 +88,17 @@ test("the base graph's wires and nodes are claimed before any extension's", () =
   ]);
 });
 
+test("a document param value or resource binding claims its input as a wire does", () => {
+  const reg = new ExtensionRegistry();
+  reg.add(tap("rp.gain", "gain"));
+  reg.add(tap("rp.rom", "rom"));
+  const base = { nodes: [{ id: "sys-1", type: "rp.sameboy.gb", params: { gain: 0.5 }, resources: { rom: "res:1" } }], wires: [] };
+  expect(reg.collect([gb], () => undefined, base).conflicts.map((c) => (c.kind === "input" ? c.input : c.id))).toEqual([
+    "sys-1.gain",
+    "sys-1.rom",
+  ]);
+});
+
 test("one extension claiming an input twice names the nodes it came from", () => {
   const reg = new ExtensionRegistry();
   reg.add(defineExtension({ id: "rp.bus", matches: () => true, contribute: () => ({ wires: [{ from: "a.out", to: "bus.in" }] }) }));

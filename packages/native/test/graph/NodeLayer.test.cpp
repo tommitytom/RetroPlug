@@ -11,6 +11,11 @@
 #include <tuple>
 #include <utility>
 
+#include <rfl/DefaultVal.hpp>
+#include <rfl/Description.hpp>
+#include <rfl/Validator.hpp>
+#include <rfl/comparisons.hpp>
+
 #include "TestNodes.hpp"
 
 using namespace rp::graph;
@@ -488,4 +493,47 @@ TEST_CASE("param values never read undefined, whatever the wire carries", "[grap
     CHECK(paramReading<Mode>(q, -0.7).value() == SyncMode::Off);
     CHECK_FALSE(paramReading<rp::bool_param<"Mute">>(q, nan).value());
     CHECK(paramReading<rp::bool_param<"Mute">>(q, 0.5).value());
+}
+
+// What the reflect-cpp 0.26 upgrade was for: schema defaults, ranges and descriptions, from the settings
+// struct alone, and settings refused (with reflect-cpp's reason) when they break a declared range.
+namespace nodelayer {
+struct RichSettings {
+    rfl::DefaultVal<std::uint32_t>                            voices = 2;
+    rfl::Validator<int, rfl::Minimum<20>, rfl::Maximum<100>> rate = 30;
+    rfl::Description<"How loud", double>                     level = 0.5;
+};
+}  // namespace nodelayer
+
+namespace {
+struct Rich {
+    static constexpr const char* id = "rp.test.rich";
+    using Settings = nodelayer::RichSettings;
+    std::uint32_t voices = 0;
+    int           rate = 0;
+    void on_settings(const Settings& s) noexcept {
+        voices = s.voices.value();
+        rate = s.rate.value();
+    }
+    void process(const rp::Block&) noexcept {}
+};
+}  // namespace
+
+TEST_CASE("settings schemas carry defaults, ranges and descriptions, and ranges are enforced", "[graph][node]") {
+    const std::string d = rp::node_type<Rich>()->descriptor();
+    CHECK(d.find(R"("default":2)") != std::string::npos);
+    CHECK(d.find(R"("minimum":20)") != std::string::npos);
+    CHECK(d.find(R"("maximum":100)") != std::string::npos);
+    CHECK(d.find(R"("description":"How loud")") != std::string::npos);
+    REQUIRE(parseDescriptor(d));  // a schema the registry accepts
+
+    Made m{rp::node_type<Rich>()};
+    make(m, "{}");
+    CHECK(rp::peer_as<Rich>(m.node)->voices == 2);  // defaults apply
+    CHECK(rp::peer_as<Rich>(m.node)->rate == 30);
+    rp_settings low = json(R"({"rate":5})");
+    rp_memory_req req{};
+    rp_error err{};
+    CHECK_FALSE(m.type->query_memory(&low, &req, &err));
+    CHECK(std::string(err.message).find("20") != std::string::npos);
 }

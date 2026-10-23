@@ -3,6 +3,7 @@
 #include <array>
 #include <cstring>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -18,7 +19,8 @@ struct AudioOutSettings {
     std::vector<std::uint32_t> buses = {2, 2, 2, 2};
 };
 
-constexpr std::size_t kMaxBuses = 32;
+constexpr std::size_t   kMaxBuses = 32;
+constexpr std::uint64_t kMaxHostChannels = 256;
 
 struct AudioOut {
     static constexpr const char* id = "rp.host.audio-out";
@@ -26,10 +28,21 @@ struct AudioOut {
     static constexpr const char* category = "host";
     using Settings = AudioOutSettings;
 
+    static std::optional<std::string> validate(const Settings& s) {
+        if (s.buses.size() > kMaxBuses) return "at most " + std::to_string(kMaxBuses) + " buses";
+        std::uint64_t total = 0;
+        for (const auto n : s.buses) {
+            if (n < 1 || n > kMaxChannels) return "every bus needs 1 to " + std::to_string(kMaxChannels) + " channels";
+            total += n;
+        }
+        if (total > kMaxHostChannels) return "the buses add up to more than " + std::to_string(kMaxHostChannels) + " channels";
+        return std::nullopt;
+    }
+
     static void adjust_layout(Layout& l, const Settings& s) {
         std::uint32_t first = 1;
         for (std::size_t i = 0; i < s.buses.size() && i < kMaxBuses; ++i) {
-            const std::uint32_t n = s.buses[i] ? s.buses[i] : 1;
+            const std::uint32_t n = s.buses[i];
             PortDesc p;
             p.id = n == 1 ? "out." + std::to_string(first)
                           : "out." + std::to_string(first) + "-" + std::to_string(first + n - 1);
@@ -52,7 +65,7 @@ struct AudioOut {
         std::uint32_t ch = 0;
         for (std::size_t i = 0; i < s.buses.size() && i < kMaxBuses; ++i) {
             firstChannel[busCount++] = ch;
-            ch += s.buses[i] ? s.buses[i] : 1;
+            ch += s.buses[i];
         }
     }
 

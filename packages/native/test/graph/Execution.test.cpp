@@ -250,6 +250,22 @@ TEST_CASE("a live param rides the next block; document params apply on adoption"
     CHECK_FALSE(rig.host->setParam("ghost", "gain", 1.0));
 }
 
+TEST_CASE("a document value adopted with a swap beats a live change queued before it", "[graph][exec][swap]") {
+    GraphRig rig;
+    auto doc = [](int gain) {
+        return R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":0.5},"params":{"gain":)" +
+               std::to_string(gain) + R"(}},{"id":"out","type":"rp.host.audio-out"}],"wires":[{"from":"src.out","to":"out.out.1-2"}]})";
+    };
+    REQUIRE(rig.set(doc(1)).ok);
+    rig.run();
+    rig.host->setAudioThreadOwns(true);  // both land in the next block's drain, the live change first
+    REQUIRE(rig.host->setParam("src", "gain", 5.0));
+    REQUIRE(rig.set(doc(7)).ok);
+    rig.run(64, 2);
+    CHECK(rig.outs[0][0] == 3.5f);  // the document's 7, not the older 5
+    rig.host->setAudioThreadOwns(false);
+}
+
 TEST_CASE("a swap keeps every reused instance's state", "[graph][exec][swap]") {
     GraphRig rig;
     const std::string a = R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":0.5}},
@@ -429,6 +445,16 @@ TEST_CASE("a control feedback wire delivers its changes one block late", "[graph
     rig.run();
     CHECK(rig.node<Sink>("s").controlChanges == 1);
     CHECK(rig.node<Sink>("s").controlEnd == 7.0);
+}
+
+TEST_CASE("audio-out's buses are validated", "[graph][exec]") {
+    GraphRig rig;
+    CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2,0]}}],"wires":[]})")) == "settings-invalid");
+    CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"out","type":"rp.host.audio-out","settings":{"buses":[65]}}],"wires":[]})")) == "settings-invalid");
+    std::string many = "1";
+    for (int i = 0; i < 32; ++i) many += ",1";  // 33 buses
+    CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"out","type":"rp.host.audio-out","settings":{"buses":[)" + many + R"(]}}],"wires":[]})")) == "settings-invalid");
+    CHECK(rig.set(R"({"nodes":[{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2,1,6]}}],"wires":[]})").ok);
 }
 
 TEST_CASE("host outputs start every block silent", "[graph][exec]") {

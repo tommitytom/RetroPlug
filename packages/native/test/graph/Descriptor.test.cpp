@@ -106,6 +106,13 @@ TEST_CASE("resource access and exclusive groups are exact", "[graph][descriptor]
     CHECK(layoutReason(R"({"ports":[{"id":"r","dir":"in","kind":"resource","resourceType":"x","access":"wirte"}]})").find("can only be") != std::string::npos);
     CHECK(layoutReason(R"({"ports":[{"id":"e","dir":"in","kind":"events","resourceType":"x"}]})").find("only resource ports") != std::string::npos);
     CHECK(layoutReason(R"({"ports":[{"id":"r","dir":"in","kind":"resource","resourceType":"audio buffer"}]})").find("whitespace") != std::string::npos);
+    // a misspelt field is refused, not ignored: "acess" would otherwise declare a reader where a writer was meant
+    CHECK(layoutReason(R"({"ports":[{"id":"r","dir":"in","kind":"resource","resourceType":"x","acess":"write"}]})") ==
+          "port #0: unknown field \"acess\"");
+    CHECK(layoutReason(R"({"params":[{"id":"g","type":"float","dfault":1}]})").find("unknown field") != std::string::npos);
+    CHECK(layoutReason(R"({"ports":[{"id":"a","dir":"in","kind":"audio","channels":{"any":true,"cout":2}}]})").find("unknown field") != std::string::npos);
+    CHECK(layoutReason(R"({"exclusve":[["a"]]})").find("unknown field") != std::string::npos);
+    CHECK(descriptorReason(R"({"id":"x","catgory":"y"})").find("unknown field") != std::string::npos);
     CHECK(layoutReason(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[["nope"]]})").find("exclusive member") != std::string::npos);
     CHECK(layoutReason(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[[]]})").find("non-empty") != std::string::npos);
     CHECK(parseLayout(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[["o","pins.*"]]})"));

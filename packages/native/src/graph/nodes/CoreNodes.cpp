@@ -182,13 +182,14 @@ struct Add {
         else processAudio(b);
     }
 
-    // out = in1 + in2 + ... in input order: exactly the sum today's routers produce into a zeroed bus.
+    // out = 0 + in1 + in2 + ... in input order: exactly the sum today's routers produce into a zeroed bus
+    // (starting from zero, not from a copy of in1, which differs when in1 holds -0.0).
     void processAudio(const rp::Block& b) noexcept {
         const rp_audio_view& out = b.output(0).u.audio;
         for (std::uint32_t c = 0; c < out.channel_count; ++c) {
             float* dst = out.channels[c];
-            std::memcpy(dst, b.input(0).u.audio.channels[c], b.frames() * sizeof(float));
-            for (std::uint32_t k = 1; k < inputCount; ++k) {
+            std::memset(dst, 0, b.frames() * sizeof(float));
+            for (std::uint32_t k = 0; k < inputCount; ++k) {
                 const float* src = b.input(k).u.audio.channels[c];
                 for (std::uint32_t i = 0; i < b.frames(); ++i) dst[i] += src[i];
             }

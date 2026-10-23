@@ -133,7 +133,16 @@ export class ExtensionRegistry {
     const inputs = new Map<string, Contributor[]>();
     const ids = new Map<string, Contributor[]>();
     const claim = (map: Map<string, Contributor[]>, key: string, by: Contributor) => map.set(key, [...(map.get(key) ?? []), by]);
-    for (const n of base.nodes) claim(ids, n.id, "base");
+    // A param given a value, or a resource input given a binding, is an input taken just as a wire takes it:
+    // the planner refuses a wire into either.
+    const claimValues = (n: NodeDoc, by: Contributor) => {
+      for (const id of Object.keys(n.params ?? {})) claim(inputs, `${n.id}.${id}`, by);
+      for (const port of Object.keys(n.resources ?? {})) claim(inputs, `${n.id}.${port}`, by);
+    };
+    for (const n of base.nodes) {
+      claim(ids, n.id, "base");
+      claimValues(n, "base");
+    }
     for (const n of nodes) if (!ids.has(n.id)) claim(ids, n.id, "base");
     for (const w of base.wires) claim(inputs, w.to, "base");
 
@@ -170,6 +179,7 @@ export class ExtensionRegistry {
             continue;
           }
           claim(ids, n.id, by);
+          claimValues(n, by);
           out.nodes.push(copy(n));
         }
         for (const w of c.wires ?? []) {

@@ -1,8 +1,10 @@
 #include "graph/Descriptor.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <charconv>
 #include <cmath>
+#include <initializer_list>
 #include <limits>
 #include <optional>
 #include <unordered_map>
@@ -116,6 +118,16 @@ const rfl::Generic* field(const Object& o, std::string_view key) {
 
 std::string q(std::string_view s) { return jsonString(s); }
 
+// A field this parser does not know is refused, not ignored: a misspelt "acess" would otherwise declare a
+// reader where a writer was meant, and "exclusve" would drop a group, both silently. (New fields come with
+// a new descriptor version; `requires` is the one open set, see parseDescriptor.)
+std::optional<std::string> unknownField(const Object& o, std::initializer_list<std::string_view> known,
+                                        const std::string& where) {
+    for (const auto& [k, v] : o)
+        if (std::find(known.begin(), known.end(), k) == known.end()) return where + ": unknown field " + q(k);
+    return std::nullopt;
+}
+
 rfl::Result<std::optional<std::string>> optString(const Object& o, std::string_view key, const std::string& where) {
     const auto* v = field(o, key);
     if (!v) return std::optional<std::string>();
@@ -158,6 +170,7 @@ rfl::Result<int> enumIndex(const std::string& s, const char* const (&names)[N], 
 rfl::Result<ChannelSpec> parseChannels(const rfl::Generic& g, const std::string& where) {
     auto o = g.to_object();
     if (!o) return fail(where + ": \"channels\" must be an object");
+    if (auto bad = unknownField(*o, {"any", "match", "count", "layout"}, where + " channels")) return fail(*bad);
     const bool hasAny = field(*o, "any") != nullptr;
     const bool hasMatch = field(*o, "match") != nullptr;
     const bool hasCount = field(*o, "count") != nullptr;
@@ -202,6 +215,7 @@ rfl::Result<PortDesc> parsePort(const rfl::Generic& g, std::size_t index) {
     const std::string at = "port #" + std::to_string(index);
     auto o = g.to_object();
     if (!o) return fail(at + " must be an object");
+    if (auto bad = unknownField(*o, {"id", "dir", "kind", "channels", "resourceType", "access"}, at)) return fail(*bad);
     PortDesc p;
     auto id = reqString(*o, "id", at);
     if (!id) return fail(id.error().what());
@@ -252,6 +266,7 @@ rfl::Result<ParamDesc> parseParam(const rfl::Generic& g, std::size_t index) {
     const std::string at = "param #" + std::to_string(index);
     auto o = g.to_object();
     if (!o) return fail(at + " must be an object");
+    if (auto bad = unknownField(*o, {"id", "name", "type", "min", "max", "default", "values", "unit"}, at)) return fail(*bad);
     ParamDesc p;
     auto id = reqString(*o, "id", at);
     if (!id) return fail(id.error().what());
@@ -429,6 +444,7 @@ rfl::Result<Layout> parseLayout(std::string_view json) {
     if (!g) return fail(std::string("layout is not JSON: ") + g.error().what());
     auto o = g->to_object();
     if (!o) return fail("layout must be an object");
+    if (auto bad = unknownField(*o, {"ports", "params", "exclusive"}, "layout")) return fail(*bad);
     return parseLayoutObject(*o);
 }
 
@@ -437,6 +453,9 @@ rfl::Result<TypeDescriptor> parseDescriptor(std::string_view json) {
     if (!g) return fail(std::string("descriptor is not JSON: ") + g.error().what());
     auto o = g->to_object();
     if (!o) return fail("descriptor must be an object");
+    if (auto bad = unknownField(*o, {"id", "version", "name", "category", "requires", "ports", "params", "exclusive", "settings"},
+                                "descriptor"))
+        return fail(*bad);
     TypeDescriptor d;
     auto id = reqString(*o, "id", "descriptor");
     if (!id) return fail(id.error().what());

@@ -53,7 +53,13 @@ void PlanStorage::adopt() {
     for (auto& p : peers) p.link->set_peers(p.node, p.peers.data(), static_cast<std::uint32_t>(p.peers.size()));
     for (auto& p : portsChanged)
         p.node->vt->ports_changed(p.node, p.mask.data(), static_cast<std::uint32_t>(p.mask.size()));
-    for (auto& s : paramSets) s.queue->start = s.value;
+    // A document value replaces the stream outright. Any change still queued was pushed earlier in this
+    // drain, so it is older than the document; left in place it would land on top of the new value and,
+    // since the planner records the value as applied, stay there.
+    for (auto& s : paramSets) {
+        s.queue->start = s.value;
+        s.queue->count = 0;
+    }
 }
 
 }  // namespace rp::graph

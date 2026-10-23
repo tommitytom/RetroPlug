@@ -193,8 +193,10 @@ enum {
 };
 
 typedef struct rp_node_vtable {
-    /* [control] Resolved layout JSON (ports, params, exclusive groups) for the current settings. The
-     * string is owned by the node and stays valid until the next layout call or destroy. */
+    /* [control] Resolved layout JSON (ports, params, exclusive groups) for the settings the instance was
+     * created with. An instance's layout is fixed for its life: the host reads it once, so a settings
+     * change that would alter it must answer RP_PREPARE_REBUILD, never SWAP. The string is owned by the
+     * node and stays valid until destroy. */
     const char* (*layout)(rp_node* node);
     /* [control] Must preserve state: a sample-rate or block-size change re-activates, never resets. */
     bool (*activate)(rp_node* node, double sample_rate, uint32_t max_frames, rp_error* err);
