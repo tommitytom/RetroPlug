@@ -10,7 +10,7 @@
 //   kick   the DMC kit's kick/snare on the DnB pattern (ch4 - measured in `idle` only, where nothing else is on ch4)
 //   busy   adds a song's load on voices that do not touch the measured channels' onsets: a triangle bassline (ch4,
 //          so the kick is not measured there), and on a MUTED pulse 2 (CC7 = 0 - it still costs the ROM everything)
-//          an LFO'd note, a CC1 lane at 100/s and a pitch-bend lane at 50/s
+//          a note with a host-style vibrato (pitch bend at 50/s), a CC1 lane at 100/s
 //
 // One clock for both ends: N8Link's write log stamps each write with CLOCK_MONOTONIC (std::chrono::steady_clock),
 // and the capture is opened with ALSA hardware timestamps of the same clock - after every read the (frame position,
@@ -215,8 +215,6 @@ int runTiming(int argc, char** argv, const std::string& defaultPort) {
     if (busy) {
         at(T0 - 200, {0xB1, 7, 0});                 // pulse 2 muted: it still costs the ROM all of the below
         at(T0 - 190, {0x91, 57, 100});
-        at(T0 - 180, {0xB1, 76, 90});
-        at(T0 - 170, {0xB1, 77, 60});               // its vibrato: the LFO armed
         for (int i = 0; i < steps; i += 2) {
             const std::uint8_t n = static_cast<std::uint8_t>(33 + ((i >> 2) % 5));
             at(T0 + i * STEP, {0x92, n, 100});
@@ -224,8 +222,10 @@ int runTiming(int argc, char** argv, const std::string& defaultPort) {
         }
         for (double t = T0; t < end; t += 10)
             at(t, {0xB1, 1, static_cast<std::uint8_t>(std::lround(64 + 63 * std::sin(t / 300)))});
+        // Its vibrato, the way a DAW's LFO plays it since BlipToaster dropped its own (2026-10-22): a 5 Hz wobble sent as
+        // pitch bend at 50 messages/s - the same load as the emulator's tests/timing.test.ts busy song.
         for (double t = T0 + 5; t < end; t += 20) {
-            const int b = static_cast<int>(std::lround(8192 + 1500 * std::sin(t / 400)));
+            const int b = static_cast<int>(std::lround(8192 + 1500 * std::sin(6.283185307179586 * 5 * t / 1000)));
             at(t, {0xE1, static_cast<std::uint8_t>(b & 0x7F), static_cast<std::uint8_t>(b >> 7)});
         }
     }
