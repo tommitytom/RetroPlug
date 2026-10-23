@@ -51,6 +51,7 @@ PASS=0; FAIL=0
 cleanup() {
     [ -n "${WP_PID:-}" ] && kill "$WP_PID" 2>/dev/null   # only set for the wide-output checks
     [ -n "${PW_PID:-}" ] && kill "$PW_PID" 2>/dev/null
+    [ -n "${DBUS_PID:-}" ] && kill "$DBUS_PID" 2>/dev/null   # wireplumber's private bus, likewise
     rm -rf "$TMP"
 }
 trap cleanup EXIT
@@ -167,6 +168,14 @@ p = sys.argv[1]
 s = open(p).read().replace("{ name = bluetooth.lua, type = config/lua }", "# bluetooth.lua dropped (logind)")
 open(p, "w").write(s)
 PY
+    # It also needs a D-Bus session bus, and quits at startup ("Cannot autolaunch D-Bus without X11
+    # $DISPLAY") when there is none - so this leg only ran from a shell that happened to carry a desktop
+    # session's bus. Give it a private one: that also keeps its device reservations off any real session.
+    command -v dbus-daemon >/dev/null 2>&1 || return 1
+    dbus-daemon --session --address="unix:path=$TMP/dbus.sock" --nofork --nopidfile >"$TMP/dbus.log" 2>&1 &
+    DBUS_PID=$!
+    for _ in $(seq 20); do [ -S "$TMP/dbus.sock" ] && break; sleep 0.1; done
+    DBUS_SESSION_BUS_ADDRESS="unix:path=$TMP/dbus.sock" \
     WIREPLUMBER_CONFIG_DIR="$TMP/wpconf" WIREPLUMBER_DATA_DIR="$TMP/wpconf" \
         wireplumber >"$TMP/wireplumber.log" 2>&1 &
     WP_PID=$!
@@ -202,7 +211,7 @@ if start_session_manager; then
         && { echo "  ok: pair 1 is linked to the sink"; PASS=$((PASS+1)); } \
         || { echo "  FAIL: pair 1 is not linked to the sink (found $LINKED links)"; FAIL=$((FAIL+1)); }
 else
-    echo "  SKIPPED: wide-output checks need wireplumber (not installed, or it would not start)"
+    echo "  SKIPPED: wide-output checks need wireplumber + dbus-daemon (not installed, or it would not start)"
 fi
 
 echo "SDL PipeWire check: $PASS passed, $FAIL failed"

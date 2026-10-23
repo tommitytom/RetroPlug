@@ -119,8 +119,9 @@ The rules below are the parts that don't fit those.
   while the log still says 8. That leg runs LAST and is the one part needing a session
   manager (ports only materialise once something links the stream); it starts wireplumber
   with its bluetooth context dropped, because that context's logind module has no
-  `/run/systemd` in a container and takes the daemon down with it. Not in CI (the runners
-  have no PipeWire); the devcontainer ships one for it.
+  `/run/systemd` in a container and takes the daemon down with it, and on a private
+  `dbus-daemon`, without which it quits at startup whenever the shell has no session bus.
+  Not in CI (the runners have no PipeWire); the devcontainer ships one for it.
   **It ships in the `build.yml` artifact for every platform but is deliberately kept OUT
   of releases** — `release.yml`'s four packaging steps are explicit allowlists, and
   `retroplug-sdl` is not on any of them (each carries a comment saying so). Don't add it
