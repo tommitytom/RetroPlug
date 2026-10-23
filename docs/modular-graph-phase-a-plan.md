@@ -4452,6 +4452,12 @@ hook; reflected enum labels are fixed". A fresh execution needs only the one com
 The document TS sends, the registry every package goes through (statically linked now, downloaded later:
 one path), and resource lifetimes on the control thread.
 
+The registry is the trust boundary for a pack's metadata, so it checks everything the host will later call
+or read (every function pointer, a null or empty descriptor, the manifest) and registers a package whole
+or not at all; its entries never move, because planned instances hold `Entry*`. A resource counts its
+owner (the creator, who drops it once) apart from its pins (one per plan binding it), so a duplicate drop
+cannot free a buffer the audio thread is still reading.
+
 **Files:**
 - Create: `packages/native/src/graph/GraphDocument.hpp`, `packages/native/src/graph/GraphDocument.cpp`,
   `packages/native/src/graph/NodeRegistry.hpp`, `packages/native/src/graph/NodeRegistry.cpp`,
@@ -4467,6 +4473,12 @@ one path), and resource lifetimes on the control thread.
 // The registry every package goes through, the graph document's parsing helpers, and resource lifetimes.
 #include <catch2/catch_test_macros.hpp>
 
+#include <initializer_list>
+#include <limits>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
 #include "TestNodes.hpp"
 #include "graph/GraphDocument.hpp"
 #include "graph/NodeRegistry.hpp"
@@ -4476,12 +4488,35 @@ using namespace rp::graph;
 
 namespace {
 
+const char* goodDescriptor() { return R"({"id":"rp.test.good"})"; }
 const char* badDescriptor() { return "{not json"; }
 const char* liarDescriptor() { return R"({"id":"rp.test.other","ports":[],"params":[]})"; }
+const char* nullDescriptor() { return nullptr; }
+const char* sourceDescriptor() { return R"({"id":"rp.test.source"})"; }
 
+bool noMemory(const rp_settings*, rp_memory_req*, rp_error*) { return false; }
+rp_node* noCreate(const rp_host*, void*, const rp_settings*, rp_error*) { return nullptr; }
+void noDestroy(rp_node*) {}
+
+// A node type whose functions are stubs: these tests only register types, never build them.
 rp_node_type typeWith(const char* id, const char* (*descriptor)()) {
-    return rp_node_type{id, descriptor, nullptr, nullptr, nullptr};
+    return rp_node_type{id, descriptor, &noMemory, &noCreate, &noDestroy};
 }
+
+std::string refusal(NodeRegistry& reg, std::initializer_list<const rp_node_type*> types,
+                    const char* manifest = R"({"id":"p"})") {
+    const std::vector<const rp_node_type*> list(types);
+    const rp_package pkg{RP_ABI_VERSION, manifest, static_cast<std::uint32_t>(list.size()), list.data()};
+    std::string error;
+    return reg.addPackage(&pkg, &error) ? std::string("registered") : error;
+}
+
+// Throws building its default layout, so node.hpp gives it an empty descriptor.
+struct Unbuildable {
+    static constexpr const char* id = "rp.test.unbuildable";
+    static void adjust_layout(Layout&, const rp::detail::NoSettings&) { throw std::runtime_error("no default layout"); }
+    void process(const rp::Block&) noexcept {}
+};
 
 }  // namespace
 
@@ -4494,6 +4529,12 @@ TEST_CASE("a package registers every node type it lists", "[graph][registry]") {
     CHECK(e->package == "rp.test");
     CHECK(e->descriptor.layout.params[0].id == "gain");
     CHECK(reg.find("rp.nope") == nullptr);
+
+    // Entries never move: one held across a later registration still reads.
+    const rp_node_type good = typeWith("rp.test.good", &goodDescriptor);
+    CHECK(refusal(reg, {&good}) == "registered");
+    CHECK(reg.find("rp.test.source") == e);
+    CHECK(e->descriptor.id == "rp.test.source");
 }
 
 TEST_CASE("a bad package registers nothing and says why", "[graph][registry]") {
@@ -4503,7 +4544,7 @@ TEST_CASE("a bad package registers nothing and says why", "[graph][registry]") {
     const std::size_t before = reg.size();
 
     CHECK_FALSE(reg.addPackage(test::testPackage(), &error));
-    CHECK(error.find("already registered") != std::string::npos);
+    CHECK(error == "package \"rp.test\" is already registered");
 
     rp_package wrongAbi = *test::testPackage();
     wrongAbi.abi_version = RP_ABI_VERSION + 1;
@@ -4511,18 +4552,54 @@ TEST_CASE("a bad package registers nothing and says why", "[graph][registry]") {
     CHECK(error.find("ABI") != std::string::npos);
 
     const rp_node_type bad = typeWith("rp.test.bad", &badDescriptor);
-    const rp_node_type* badList[] = {&bad};
-    const rp_package badPkg{RP_ABI_VERSION, R"({"id":"bad"})", 1, badList};
-    CHECK_FALSE(reg.addPackage(&badPkg, &error));
-    CHECK(error.find("rp.test.bad") != std::string::npos);
-
+    CHECK(refusal(reg, {&bad}).find("node type \"rp.test.bad\": ") == 0);
     const rp_node_type liar = typeWith("rp.test.liar", &liarDescriptor);
-    const rp_node_type* liarList[] = {&liar};
-    const rp_package liarPkg{RP_ABI_VERSION, R"({"id":"liar"})", 1, liarList};
-    CHECK_FALSE(reg.addPackage(&liarPkg, &error));
-    CHECK(error.find("describes itself") != std::string::npos);
+    CHECK(refusal(reg, {&liar}) == "node type \"rp.test.liar\" describes itself as \"rp.test.other\"");
+    const rp_node_type source = typeWith("rp.test.source", &sourceDescriptor);  // another package's type id
+    CHECK(refusal(reg, {&source}) == "node type \"rp.test.source\" is already registered");
+
+    // All or nothing: a good type ahead of a bad one is not kept.
+    const rp_node_type good = typeWith("rp.test.good", &goodDescriptor);
+    CHECK(refusal(reg, {&good, &bad}).find("rp.test.bad") != std::string::npos);
+    CHECK(reg.find("rp.test.good") == nullptr);
+    CHECK(refusal(reg, {&good, &good}) == "node type \"rp.test.good\" appears twice in package \"p\"");
+    CHECK(reg.find("rp.test.good") == nullptr);
 
     CHECK(reg.size() == before);
+}
+
+TEST_CASE("addPackage checks everything the host will later call or read", "[graph][registry]") {
+    NodeRegistry reg;
+    rp_node_type noCreateFn = typeWith("rp.test.x", &goodDescriptor);
+    noCreateFn.create = nullptr;
+    CHECK(refusal(reg, {&noCreateFn}) == "node type \"rp.test.x\": create is null");
+    rp_node_type noDestroyFn = typeWith("rp.test.x", &goodDescriptor);
+    noDestroyFn.destroy = nullptr;
+    CHECK(refusal(reg, {&noDestroyFn}) == "node type \"rp.test.x\": destroy is null");
+    rp_node_type noQuery = typeWith("rp.test.x", &goodDescriptor);
+    noQuery.query_memory = nullptr;
+    CHECK(refusal(reg, {&noQuery}) == "node type \"rp.test.x\": query_memory is null");
+    const rp_node_type nullJson = typeWith("rp.test.x", &nullDescriptor);
+    CHECK(refusal(reg, {&nullJson}) == "node type \"rp.test.x\": descriptor() returned null");
+    const rp_node_type noId = typeWith(nullptr, &goodDescriptor);
+    CHECK(refusal(reg, {&noId}) == "package \"p\" node type #0 has no id");
+    CHECK(refusal(reg, {nullptr}) == "package \"p\" node type #0 is null");
+    CHECK(refusal(reg, {rp::node_type<Unbuildable>()}).find("produced no descriptor") != std::string::npos);
+
+    const rp_package noArray{RP_ABI_VERSION, R"({"id":"p"})", 2, nullptr};
+    std::string error;
+    CHECK_FALSE(reg.addPackage(&noArray, &error));
+    CHECK(error.find("no array") != std::string::npos);
+
+    const rp_node_type good = typeWith("rp.test.good", &goodDescriptor);
+    CHECK(refusal(reg, {&good}, nullptr) == "package has no manifest");
+    CHECK(refusal(reg, {&good}, "{not json").find("package manifest: ") == 0);
+    CHECK(refusal(reg, {&good}, R"({"id":5})").find("package manifest: ") == 0);
+    CHECK(refusal(reg, {&good}, R"({"id":"a b"})").find("no whitespace") != std::string::npos);
+    CHECK(refusal(reg, {&good}, R"({})").find("package manifest: ") == 0);
+    CHECK(reg.size() == 0);
+    CHECK(refusal(reg, {&good}, R"({"id":"a","id":"b"})") == "registered");  // the last "id" wins, as in JSON.parse
+    CHECK(reg.find("rp.test.good")->package == "b");
 }
 
 TEST_CASE("endpoints split at the first dot; resource refs parse", "[graph][document]") {
@@ -4534,14 +4611,18 @@ TEST_CASE("endpoints split at the first dot; resource refs parse", "[graph][docu
     CHECK_FALSE(parseEndpoint(".x"));
     CHECK_FALSE(parseEndpoint("x."));
     CHECK(parseResourceRef("res:12") == 12u);
+    CHECK(parseResourceRef("res:4294967295") == 4294967295u);
+    CHECK_FALSE(parseResourceRef("res:4294967296"));
     CHECK_FALSE(parseResourceRef("res:"));
     CHECK_FALSE(parseResourceRef("res:0"));
+    CHECK_FALSE(parseResourceRef("res:007"));
     CHECK_FALSE(parseResourceRef("res:1x"));
+    CHECK_FALSE(parseResourceRef("res:+1"));
     CHECK_FALSE(parseResourceRef("12"));
 }
 
 TEST_CASE("a graph document parses, settings and params kept as JSON", "[graph][document]") {
-    const auto doc = parseGraphDocument(R"({"nodes":[{"id":"a","type":"rp.core.add","settings":{"inputs":3},
+    const auto doc = parseGraphDocument(R"({"nodes":[{"id":"a","type":"rp.core.add","settings":{"inputs":3,"big":18446744073709551615},
                                              "params":{"g":0.5,"mode":"x","on":true},"resources":{"s":"res:1"}}],
                                              "wires":[{"from":"a.out","to":"b.in","feedback":true}]})");
     REQUIRE(doc);
@@ -4549,25 +4630,61 @@ TEST_CASE("a graph document parses, settings and params kept as JSON", "[graph][
     CHECK(doc->nodes[0].settings.has_value());
     CHECK(doc->nodes[0].params->at("mode").to_string().value() == "x");
     CHECK(doc->wires[0].feedback.value());
-    CHECK_FALSE(parseGraphDocument(R"({"nodes":[{"type":"x"}],"wires":[]})"));  // a node needs an id
+    // read as JSON.parse reads it, not wrapped to a negative int64
+    CHECK(doc->nodes[0].settings->to_object()->get("big")->to_double().value() > 0.0);
+
+    const auto noId = parseGraphDocument(R"({"nodes":[{"type":"x"}],"wires":[]})");
+    REQUIRE_FALSE(noId);
+    CHECK(std::string(noId.error().what()).find("graph document: ") == 0);
+    CHECK_FALSE(parseGraphDocument(R"({"nodes":[{"id":"a","type":"x","setings":{}}],"wires":[]})"));  // a typo is refused
+    CHECK_FALSE(parseGraphDocument("[]"));
 }
 
-TEST_CASE("resources live until their last reference is released", "[graph][resources]") {
+TEST_CASE("a resource lives until its owner drops it and its last pin is gone", "[graph][resources]") {
     ResourceTable t;
     const auto a = t.createAudioBuffer(2, 64, 48000.0);
     const auto b = t.createBytes("string", {'h', 'i'});
+    REQUIRE(a != 0);
+    REQUIRE(b != 0);
     CHECK(std::string(t.get(a)->type) == "audio-buffer");
     const auto* audio = static_cast<const rp_audio_buffer*>(t.get(a)->payload);
     CHECK(audio->channels == 2);
     CHECK(audio->frames == 64);
     CHECK(audio->data[1][63] == 0.0f);
     CHECK(static_cast<const rp_bytes*>(t.get(b)->payload)->size == 2);
-    t.retain(a);
-    t.release(a);
+
+    REQUIRE(t.pin(a));
+    CHECK(t.drop(a));
+    CHECK_FALSE(t.drop(a));  // a second drop changes nothing
     CHECK(t.get(a) != nullptr);
-    t.release(a);
+    CHECK(t.pinCount(a) == 1);
+    CHECK(t.unpin(a));
     CHECK(t.get(a) == nullptr);
+    CHECK_FALSE(t.unpin(a));
+    CHECK_FALSE(t.pin(a));
     CHECK(t.liveCount() == 1);
+
+    const auto c = t.createBytes("bytes", {});
+    CHECK(c > b);  // ids are never reused
+    CHECK(t.drop(c));
+    CHECK(t.get(c) == nullptr);
+    CHECK_FALSE(t.drop(999));
+}
+
+TEST_CASE("resources are refused when their payload would not match their type", "[graph][resources]") {
+    ResourceTable t;
+    std::string error;
+    CHECK(t.createBytes("audio-buffer", {1, 2, 3}, &error) == 0);
+    CHECK(error.find("createAudioBuffer") != std::string::npos);
+    CHECK(t.createBytes("", {}, &error) == 0);
+    CHECK(t.createBytes("my type", {}, &error) == 0);
+    CHECK(t.createAudioBuffer(0, 64, 48000.0, &error) == 0);
+    CHECK(t.createAudioBuffer(2, 0, 48000.0, &error) == 0);
+    CHECK(t.createAudioBuffer(2, 64, 0.0, &error) == 0);
+    CHECK(t.createAudioBuffer(2, 64, std::numeric_limits<double>::quiet_NaN(), &error) == 0);
+    CHECK(t.createAudioBuffer(65536, 65536, 48000.0, &error) == 0);
+    CHECK(error.find("larger than") != std::string::npos);
+    CHECK(t.liveCount() == 0);
 }
 ```
 
@@ -4624,9 +4741,10 @@ struct GraphDocument {
     std::vector<WireDoc> wires;
 };
 
-// Numbers are read as JSON.parse reads them (see parseJson).
+// Numbers are read as JSON.parse reads them (see parseJson); an unknown field is refused.
 rfl::Result<GraphDocument> parseGraphDocument(std::string_view json);
 
+// Views into the text it was parsed from, which must outlive it.
 struct Endpoint {
     std::string_view node;
     std::string_view port;
@@ -4635,7 +4753,7 @@ struct Endpoint {
 // Split "node.port"; nullopt when there is no dot or either side is empty.
 std::optional<Endpoint> parseEndpoint(std::string_view text);
 
-// "res:12" -> 12; nullopt for anything else.
+// "res:12" -> 12; nullopt for anything else, including "res:0" and leading zeros.
 std::optional<std::uint32_t> parseResourceRef(std::string_view text);
 
 }  // namespace rp::graph
@@ -4648,6 +4766,7 @@ std::optional<std::uint32_t> parseResourceRef(std::string_view text);
 
 #include <charconv>
 
+#include <rfl/NoExtraFields.hpp>
 #include <rfl/from_generic.hpp>
 
 #include "graph/CanonicalJson.hpp"
@@ -4656,9 +4775,13 @@ namespace rp::graph {
 
 // Through parseJson, not rfl::json::read: settings and param values are kept as Generic, and reflect-cpp's
 // reader would turn an unsigned number above INT64_MAX into a negative one on the way in. (GraphDocument
-// has no integer fields of its own, which matters: rfl::from_generic does not range-check them.)
+// has no integer fields of its own, which matters: rfl::from_generic does not range-check them.) Unknown
+// fields are refused, so a misspelt "setings" is an error rather than a node quietly given defaults.
 rfl::Result<GraphDocument> parseGraphDocument(std::string_view json) {
-    return parseJson(json).and_then([](const rfl::Generic& g) { return rfl::from_generic<GraphDocument>(g); });
+    auto doc = parseJson(json).and_then(
+        [](const rfl::Generic& g) { return rfl::from_generic<GraphDocument, rfl::NoExtraFields>(g); });
+    if (!doc) return rfl::Unexpected<rfl::Error>(rfl::Error(std::string("graph document: ") + doc.error().what()));
+    return doc;
 }
 
 std::optional<Endpoint> parseEndpoint(std::string_view text) {
@@ -4672,8 +4795,9 @@ std::optional<std::uint32_t> parseResourceRef(std::string_view text) {
     if (text.substr(0, kPrefix.size()) != kPrefix) return std::nullopt;
     const auto digits = text.substr(kPrefix.size());
     std::uint32_t id = 0;
+    if (digits.empty() || digits[0] == '0') return std::nullopt;  // one spelling per id: no "res:007", no "res:0"
     const auto [ptr, ec] = std::from_chars(digits.data(), digits.data() + digits.size(), id);
-    if (ec != std::errc() || ptr != digits.data() + digits.size() || id == 0) return std::nullopt;
+    if (ec != std::errc() || ptr != digits.data() + digits.size()) return std::nullopt;
     return id;
 }
 
@@ -4685,9 +4809,10 @@ std::optional<std::uint32_t> parseResourceRef(std::string_view text) {
 ```cpp
 #pragma once
 
+#include <map>
+#include <set>
 #include <string>
 #include <string_view>
-#include <vector>
 
 #include "graph/Descriptor.hpp"
 #include "graph/rp_node.h"
@@ -4695,8 +4820,12 @@ std::optional<std::uint32_t> parseResourceRef(std::string_view text) {
 namespace rp::graph {
 
 // Every node type the planner can build, gathered from rp_package structs - statically linked packages
-// and (later) downloaded ones go through the same addPackage, so there is one loading path. Built on the
-// control thread before any graph is planned; read-only afterwards.
+// and (later) downloaded ones go through the same addPackage, so there is one loading path, and it is the
+// trust boundary for a pack's metadata: everything the host will later call or read is checked here.
+//
+// Entries are never moved or removed, so an Entry* stays valid for the registry's life (a planned instance
+// keeps one). Not thread-safe: addPackage must not overlap any other call, so a registry shared by several
+// hosts is filled before any of them plans; after that, concurrent find() is safe.
 class NodeRegistry {
 public:
     struct Entry {
@@ -4705,15 +4834,19 @@ public:
         std::string         package;
     };
 
-    // Register every node type in a package. Fails, registering nothing, on an ABI version mismatch, an
-    // unreadable descriptor, or a node type id that is already registered.
+    // Register every node type in a package, or none of them. Refused, with a reason, for: an ABI version
+    // mismatch; a manifest that is not a JSON object with a non-empty "id" free of whitespace; a package id
+    // already registered; a null node type, or one missing its id or any of its functions; a descriptor
+    // that is null, empty (a C++ node whose default layout could not be built) or does not parse; a
+    // descriptor whose id is not the node type's; and a type id registered already or listed twice.
     bool addPackage(const rp_package* package, std::string* error = nullptr);
 
     const Entry* find(std::string_view typeId) const;
     std::size_t  size() const { return entries_.size(); }
 
 private:
-    std::vector<Entry> entries_;
+    std::map<std::string, Entry, std::less<>> entries_;  // node-based: an Entry never moves
+    std::set<std::string, std::less<>>        packages_;
 };
 
 }  // namespace rp::graph
@@ -4724,18 +4857,36 @@ private:
 ```cpp
 #include "graph/NodeRegistry.hpp"
 
-#include <rfl/json.hpp>
+#include <vector>
+
+#include <rfl/from_generic.hpp>
+
+#include "graph/CanonicalJson.hpp"
 
 namespace rp::graph {
 
 namespace {
 
-std::string packageId(const rp_package* p) {
-    struct Manifest {
-        std::string id;
-    };
-    auto m = rfl::json::read<Manifest, rfl::DefaultIfMissing>(p->manifest_json ? p->manifest_json : "{}");
-    return m ? m->id : std::string();
+struct PackageManifest {
+    std::string id;
+};
+
+bool hasWhitespace(std::string_view s) {
+    for (const char c : s)
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') return true;
+    return false;
+}
+
+std::string q(std::string_view s) { return "\"" + std::string(s) + "\""; }
+
+// The manifest's id, or why it has none. Through parseJson, so a repeated key reads as JSON.parse reads it.
+rfl::Result<std::string> packageId(const rp_package* p) {
+    if (!p->manifest_json) return rfl::Unexpected<rfl::Error>(rfl::Error("package has no manifest"));
+    auto m = parseJson(p->manifest_json).and_then([](const rfl::Generic& g) { return rfl::from_generic<PackageManifest>(g); });
+    if (!m) return rfl::Unexpected<rfl::Error>(rfl::Error(std::string("package manifest: ") + m.error().what()));
+    if (m->id.empty() || hasWhitespace(m->id))
+        return rfl::Unexpected<rfl::Error>(rfl::Error("package manifest id " + q(m->id) + " must be non-empty, with no whitespace"));
+    return m->id;
 }
 
 }  // namespace
@@ -4746,32 +4897,51 @@ bool NodeRegistry::addPackage(const rp_package* package, std::string* error) {
         return false;
     };
     if (!package) return fail("null package");
+    // First, before reading anything else: under another ABI the later fields may not be where we look.
     if (package->abi_version != RP_ABI_VERSION)
         return fail("package ABI version " + std::to_string(package->abi_version) + ", host is " +
                     std::to_string(RP_ABI_VERSION));
-    const std::string pkg = packageId(package);
+    const auto id = packageId(package);
+    if (!id) return fail(id.error().what());
+    const std::string& pkg = *id;
+    if (packages_.count(pkg)) return fail("package " + q(pkg) + " is already registered");
+    if (package->node_type_count > 0 && !package->node_types)
+        return fail("package " + q(pkg) + " lists " + std::to_string(package->node_type_count) + " node types but no array");
 
     std::vector<Entry> added;
     for (std::uint32_t i = 0; i < package->node_type_count; ++i) {
         const rp_node_type* type = package->node_types[i];
-        if (!type || !type->id || !type->descriptor) return fail("package \"" + pkg + "\": malformed node type");
-        auto descriptor = parseDescriptor(type->descriptor());
-        if (!descriptor) return fail("node type \"" + std::string(type->id) + "\": " + descriptor.error().what());
-        if (descriptor->id != type->id)
-            return fail("node type \"" + std::string(type->id) + "\" describes itself as \"" + descriptor->id + "\"");
-        if (find(type->id)) return fail("node type \"" + std::string(type->id) + "\" is already registered");
+        const std::string at = "package " + q(pkg) + " node type #" + std::to_string(i);
+        if (!type) return fail(at + " is null");
+        if (!type->id || !*type->id) return fail(at + " has no id");
+        const std::string where = "node type " + q(type->id);
+        for (const auto& [fn, name] : {std::pair{type->descriptor != nullptr, "descriptor"},
+                                       std::pair{type->query_memory != nullptr, "query_memory"},
+                                       std::pair{type->create != nullptr, "create"},
+                                       std::pair{type->destroy != nullptr, "destroy"}})
+            if (!fn) return fail(where + ": " + name + " is null");
+        const char* json = type->descriptor();
+        if (!json) return fail(where + ": descriptor() returned null");
+        if (!*json) return fail(where + " produced no descriptor (building its default layout or settings schema failed)");
+        auto descriptor = parseDescriptor(json);
+        if (!descriptor) return fail(where + ": " + descriptor.error().what());
+        if (descriptor->id != type->id) return fail(where + " describes itself as " + q(descriptor->id));
+        if (find(type->id)) return fail(where + " is already registered");
         for (const auto& a : added)
-            if (a.descriptor.id == descriptor->id) return fail("node type \"" + descriptor->id + "\" appears twice");
+            if (a.descriptor.id == descriptor->id) return fail(where + " appears twice in package " + q(pkg));
         added.push_back(Entry{type, std::move(*descriptor), pkg});
     }
-    for (auto& e : added) entries_.push_back(std::move(e));
+    for (auto& e : added) {
+        std::string key = e.descriptor.id;
+        entries_.emplace(std::move(key), std::move(e));
+    }
+    packages_.insert(pkg);
     return true;
 }
 
 const NodeRegistry::Entry* NodeRegistry::find(std::string_view typeId) const {
-    for (const auto& e : entries_)
-        if (e.descriptor.id == typeId) return &e;
-    return nullptr;
+    const auto it = entries_.find(typeId);
+    return it != entries_.end() ? &it->second : nullptr;
 }
 
 }  // namespace rp::graph
@@ -4785,16 +4955,23 @@ const NodeRegistry::Entry* NodeRegistry::find(std::string_view typeId) const {
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include "graph/rp_node.h"
 
 namespace rp::graph {
 
-// Resources: typed blocks of data that live outside the wires (section 2.5). Created, retained, released
-// and freed on the CONTROL thread only. The audio thread only ever sees rp_resource pointers that a plan
-// has pinned (retained), so it can pass them around but never holds the last reference.
+// Resources: typed blocks of data that live outside the wires (section 2.5). Created, pinned, unpinned and
+// freed on the CONTROL thread only; one table belongs to one host's control thread and is not shared.
+//
+// A resource has one owner, its creator (TS, through putResource), and any number of pins, one per plan
+// binding it. It is freed once the owner has dropped it AND the last pin is gone. The two are counted
+// apart so a duplicate drop (a dispose run twice, a retried RPC) cannot take a plan's pin with it: the
+// audio thread only ever sees rp_resource pointers a plan has pinned, so it never holds the last one.
+//
+// Ids count up from 1 and are never reused, so a stale "res:N" is refused as unknown rather than binding
+// whatever took its place. Id 0 is never a resource.
 class ResourceTable {
 public:
     using Id = std::uint32_t;
@@ -4802,23 +4979,33 @@ public:
     ResourceTable();
     ResourceTable(const ResourceTable&) = delete;
     ResourceTable& operator=(const ResourceTable&) = delete;
-    ~ResourceTable();
+    ~ResourceTable();  // asserts (debug builds) that every pin has dropped
 
-    // A zeroed "audio-buffer" (mutable: a recorder may write it). Starts with one reference, the caller's.
-    Id createAudioBuffer(std::uint32_t channels, std::uint32_t frames, double sampleRate);
-    // An immutable byte resource of the given type ("bytes", "string", or a package type).
-    Id createBytes(std::string type, std::vector<std::uint8_t> bytes);
+    // A zeroed "audio-buffer" (mutable: a recorder may write it). Returns 0, with a reason, for zero
+    // channels or frames, a sample rate that is not a positive number, or a buffer beyond kMaxAudioSamples.
+    Id createAudioBuffer(std::uint32_t channels, std::uint32_t frames, double sampleRate, std::string* error = nullptr);
+    // An immutable byte resource of the given type ("bytes", "string", or a package's type). Returns 0, with
+    // a reason, for an empty type, one containing whitespace, or "audio-buffer" (whose payload is not bytes).
+    Id createBytes(std::string type, std::vector<std::uint8_t> bytes, std::string* error = nullptr);
 
+    // Null for an id that was never created or has been freed.
     rp_resource* get(Id id) const;
-    void         retain(Id id);
-    void         release(Id id);  // frees at zero
-    std::size_t  liveCount() const;
+    // The owner's release. Idempotent: false (and nothing changes) for an unknown or already dropped id.
+    bool drop(Id id);
+    // A plan's hold. pin is false for an unknown id; unpin is false for an id that holds no pin.
+    bool          pin(Id id);
+    bool          unpin(Id id);
+    std::uint32_t pinCount(Id id) const;
+    std::size_t   liveCount() const { return entries_.size(); }
+
+    static constexpr std::uint64_t kMaxAudioSamples = std::uint64_t(1) << 28;  // 1 GiB of float
 
 private:
     struct Entry;
-    Entry* find(Id id) const;
-    std::vector<std::unique_ptr<Entry>> entries_;
-    Id                                  next_ = 1;
+    Id   insert(std::unique_ptr<Entry> e, std::string* error);
+    void freeIfUnused(Id id);
+    std::unordered_map<Id, std::unique_ptr<Entry>> entries_;
+    Id                                             next_ = 1;
 };
 
 }  // namespace rp::graph
@@ -4829,13 +5016,20 @@ private:
 ```cpp
 #include "graph/ResourceTable.hpp"
 
-#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <vector>
 
 namespace rp::graph {
 
 struct ResourceTable::Entry {
+    Entry() = default;
+    Entry(const Entry&) = delete;  // rp_resource* handles point into it: it never moves
+    Entry& operator=(const Entry&) = delete;
+
     Id                        id = 0;
-    int                       refs = 1;
+    bool                      owned = true;
+    std::uint32_t             pins = 0;
     std::string               type;
     rp_resource               resource{};
     // audio-buffer payload
@@ -4847,56 +5041,99 @@ struct ResourceTable::Entry {
     rp_bytes                  bytesView{};
 };
 
-ResourceTable::ResourceTable() = default;
-ResourceTable::~ResourceTable() = default;
+namespace {
 
-ResourceTable::Id ResourceTable::createAudioBuffer(std::uint32_t channels, std::uint32_t frames, double sampleRate) {
-    auto e = std::make_unique<Entry>();
+ResourceTable::Id refused(std::string* error, std::string why) {
+    if (error) *error = std::move(why);
+    return 0;
+}
+
+}  // namespace
+
+ResourceTable::ResourceTable() = default;
+
+ResourceTable::~ResourceTable() {
+#ifndef NDEBUG
+    for (const auto& entry : entries_) assert(entry.second->pins == 0 && "a plan still pins a resource the table is freeing");
+#endif
+}
+
+ResourceTable::Id ResourceTable::insert(std::unique_ptr<Entry> e, std::string* error) {
+    if (next_ == 0) return refused(error, "resource ids are exhausted");  // they would wrap onto live ones
     e->id = next_++;
+    const Id id = e->id;
+    entries_.emplace(id, std::move(e));
+    return id;
+}
+
+ResourceTable::Id ResourceTable::createAudioBuffer(std::uint32_t channels, std::uint32_t frames, double sampleRate,
+                                                   std::string* error) {
+    if (channels == 0 || frames == 0) return refused(error, "an audio buffer needs at least one channel and one frame");
+    if (!(sampleRate > 0.0) || !std::isfinite(sampleRate))
+        return refused(error, "an audio buffer's sample rate must be a positive number");
+    if (std::uint64_t(channels) * frames > kMaxAudioSamples)
+        return refused(error, "an audio buffer of " + std::to_string(channels) + " x " + std::to_string(frames) +
+                                  " samples is larger than " + std::to_string(kMaxAudioSamples));
+    auto e = std::make_unique<Entry>();
     e->type = "audio-buffer";
     e->samples.assign(static_cast<std::size_t>(channels) * frames, 0.0f);
     for (std::uint32_t c = 0; c < channels; ++c) e->channelPointers.push_back(e->samples.data() + std::size_t(c) * frames);
     e->audio = rp_audio_buffer{channels, frames, sampleRate, e->channelPointers.data()};
     e->resource = rp_resource{e->type.c_str(), &e->audio};
-    const Id id = e->id;
-    entries_.push_back(std::move(e));
-    return id;
+    return insert(std::move(e), error);
 }
 
-ResourceTable::Id ResourceTable::createBytes(std::string type, std::vector<std::uint8_t> bytes) {
+ResourceTable::Id ResourceTable::createBytes(std::string type, std::vector<std::uint8_t> bytes, std::string* error) {
+    if (type.empty()) return refused(error, "a resource needs a type");
+    for (const char c : type)
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r')
+            return refused(error, "resource type \"" + type + "\" must not contain whitespace");
+    if (type == "audio-buffer") return refused(error, "an \"audio-buffer\" is made with createAudioBuffer, not from bytes");
     auto e = std::make_unique<Entry>();
-    e->id = next_++;
     e->type = std::move(type);
     e->bytes = std::move(bytes);
     e->bytesView = rp_bytes{e->bytes.data(), e->bytes.size()};
     e->resource = rp_resource{e->type.c_str(), &e->bytesView};
-    const Id id = e->id;
-    entries_.push_back(std::move(e));
-    return id;
-}
-
-ResourceTable::Entry* ResourceTable::find(Id id) const {
-    for (const auto& e : entries_)
-        if (e->id == id) return e.get();
-    return nullptr;
+    return insert(std::move(e), error);
 }
 
 rp_resource* ResourceTable::get(Id id) const {
-    Entry* e = find(id);
-    return e ? &e->resource : nullptr;
+    const auto it = entries_.find(id);
+    return it != entries_.end() ? &it->second->resource : nullptr;
 }
 
-void ResourceTable::retain(Id id) {
-    if (Entry* e = find(id)) ++e->refs;
+void ResourceTable::freeIfUnused(Id id) {
+    const auto it = entries_.find(id);
+    if (it != entries_.end() && !it->second->owned && it->second->pins == 0) entries_.erase(it);
 }
 
-void ResourceTable::release(Id id) {
-    auto it = std::find_if(entries_.begin(), entries_.end(), [&](const auto& e) { return e->id == id; });
-    if (it == entries_.end()) return;
-    if (--(*it)->refs <= 0) entries_.erase(it);
+bool ResourceTable::drop(Id id) {
+    const auto it = entries_.find(id);
+    if (it == entries_.end() || !it->second->owned) return false;
+    it->second->owned = false;
+    freeIfUnused(id);
+    return true;
 }
 
-std::size_t ResourceTable::liveCount() const { return entries_.size(); }
+bool ResourceTable::pin(Id id) {
+    const auto it = entries_.find(id);
+    if (it == entries_.end()) return false;
+    ++it->second->pins;
+    return true;
+}
+
+bool ResourceTable::unpin(Id id) {
+    const auto it = entries_.find(id);
+    if (it == entries_.end() || it->second->pins == 0) return false;
+    --it->second->pins;
+    freeIfUnused(id);
+    return true;
+}
+
+std::uint32_t ResourceTable::pinCount(Id id) const {
+    const auto it = entries_.find(id);
+    return it != entries_.end() ? it->second->pins : 0;
+}
 
 }  // namespace rp::graph
 ```
@@ -4904,7 +5141,7 @@ std::size_t ResourceTable::liveCount() const { return entries_.size(); }
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (345 assertions in 43 test cases)`.
+Expected: `All tests passed (400 assertions in 45 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -4915,6 +5152,10 @@ git commit -m "feat(graph): graph document, node registry, resource table
 The document TS sends (node ids carry no '.', endpoints split at the
 first dot), the one registry every package goes through - refusing a
 bad package whole, with a reason - and control-thread resource lifetimes."
+
+(This task was executed as the original commit plus one review-fix commit, "fix(graph): the registry
+gates the whole ABI struct; a resource's owner and its pins are counted apart". A fresh execution needs
+only the one commit above.)
 ```
 
 ---
@@ -5515,6 +5756,7 @@ struct PlanStorage {
 ```cpp
 #include "graph/PlanStorage.hpp"
 
+#include <cassert>
 #include <new>
 
 namespace rp::graph {
@@ -5549,7 +5791,10 @@ PlanStorage::~PlanStorage() {
         }
     }
     if (resources)
-        for (const auto id : pins) resources->release(id);
+        for (const auto id : pins) {
+            [[maybe_unused]] const bool held = resources->unpin(id);
+            assert(held && "a plan unpinned a resource it never pinned");
+        }
 }
 
 void PlanStorage::adopt() {
@@ -6407,9 +6652,8 @@ private:
                             rp_resource* bound = nullptr;
                             for (const auto& [bp, id] : bindings_[n])
                                 if (bp == port) {
-                                    bound = in_.resources->get(id);
-                                    in_.resources->retain(id);
-                                    st.pins.push_back(id);
+                                    bound = in_.resources->get(id);  // checked to exist when bindings_ was built
+                                    if (in_.resources->pin(id)) st.pins.push_back(id);
                                 }
                             st.resourceSlots.push_back(std::make_unique<rp_resource*>(bound));
                             v.u.resource = st.resourceSlots.back().get();
@@ -6986,7 +7230,7 @@ const rp_package* hostPackage() {
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (455 assertions in 70 test cases)`.
+Expected: `All tests passed (510 assertions in 72 test cases)`.
 
 - [ ] **Step 7: Commit**
 
@@ -7196,7 +7440,9 @@ TEST_CASE("a plan pins the resources it binds until it is replaced", "[graph][co
     const auto buf = rig.resources.createAudioBuffer(2, 8, 48000.0);
     REQUIRE(rig.set(R"({"nodes":[{"id":"p","type":"rp.core.buffer-player","resources":{"sample":"res:)" + std::to_string(buf) +
                     R"("}}],"wires":[]})").ok);
-    rig.resources.release(buf);  // the caller's reference; the plan's pin keeps it alive
+    CHECK(rig.resources.pinCount(buf) == 1);
+    CHECK(rig.resources.drop(buf));  // the owner lets go; the plan's pin keeps it alive
+    CHECK_FALSE(rig.resources.drop(buf));  // and a duplicate drop cannot take the pin with it
     CHECK(rig.resources.get(buf) != nullptr);
     REQUIRE(rig.set(R"({"nodes":[],"wires":[]})").ok);
     CHECK(rig.resources.get(buf) == nullptr);
@@ -7787,7 +8033,7 @@ const rp_package* corePackage() {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (500 assertions in 83 test cases)`.
+Expected: `All tests passed (558 assertions in 85 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -8001,7 +8247,7 @@ Add both files to the test's `SOURCES` and `Threads::Threads` to its `LIBS`:
 - [ ] **Step 3: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (707 assertions in 85 test cases)`. (These pass immediately: the properties
+Expected: `All tests passed (765 assertions in 87 test cases)`. (These pass immediately: the properties
 were built in by Tasks 2 to 8. If NoAlloc fails, an earlier task let an allocation onto the block path;
 fix that, never the test.)
 
@@ -8015,7 +8261,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-graph-test
 ```
 
-Expected: `All tests passed (707 assertions in 85 test cases)` and no ThreadSanitizer report. (Same
+Expected: `All tests passed (765 assertions in 87 test cases)` and no ThreadSanitizer report. (Same
 configure as `tools/run-sanitizer.sh thread`, which shares `build-tsan/`.)
 
 - [ ] **Step 5: Commit**

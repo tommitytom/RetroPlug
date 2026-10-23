@@ -140,6 +140,11 @@ rejects a ROM wired into a sampler. Packages register their own resource types (
   that plan comes back on the release ring. A node that references a resource from its *settings* (a
   system node's ROM) acquires it through the host while preparing those settings, and that settings object
   holds the pin until it is released.
+- A resource counts its **owner** (its creator, who drops it once with `releaseResource`) apart from its
+  **pins**, and is freed only when the owner has dropped it and no pin remains. Counting them together
+  would let a duplicate release (a dispose run twice, a retried RPC) take a plan's pin with it and free
+  a buffer the audio thread is still reading. Ids are never reused, so a stale `res:N` is refused rather
+  than binding whatever took its place.
 - A handle emitted at runtime must therefore point at something a node in the plan already holds (a
   sample bank picking one of its 16 slots; a recorder writing into the buffer its settings asked for),
   so the audio thread never holds the last reference.
