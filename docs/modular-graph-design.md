@@ -971,6 +971,9 @@ Built: see docs/modular-graph-phase-a-plan.md.
   `rp.host.audio-out` (Phase A lets the last one win); give host nodes their buffers through
   `rp_host.get_interface` rather than the `ctx` cast Phase A's `rp.host.audio-out` uses; and read the
   host's inputs before `processBlock` silences its outputs, since a DAW often hands both as one buffer.
+  `buildGraph` also has to order its layers around `ExtensionRegistry.collect`, which takes the base graph
+  as already claimed: the MIDI-routing layer wires into nodes extensions insert, so it needs `collect`'s
+  output first (a second, cheap `collect` pass, or a claims check over the merged graph).
 
 ### Phase C: nodes own their knowledge
 

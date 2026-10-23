@@ -10763,6 +10763,17 @@ test("toGraphJson refuses what the C++ parser or planner would", () => {
   expect(doc({ resources: { s: "res:4294967296" } })).toThrow("res:<id>");
   expect(doc({}, [{ from: "n", to: "m.in" }])).toThrow("node.port");
   expect(doc({}, [{ from: "n.out", to: "m.in", feedback: 1 }])).toThrow("true or false");
+  expect(doc({ params: null })).toThrow("params must be an object");
+  expect(doc({ resources: null })).toThrow("resources must be an object");
+  expect(doc({ resources: { "s\ud800": "res:1" } })).toThrow("plain id");
+  expect(doc({ resources: { s: ["res:1"] } })).toThrow("res:<id>");
+  expect(doc({ settings: { bytes: new Uint8Array([1, 2]) } })).toThrow("plain JSON object");
+  expect(doc({ settings: { cb: () => 1 } })).toThrow("function");
+  expect(doc({ settings: { list: [undefined] } })).toThrow("undefined");
+  expect(() => toGraphJson({ nodes: [{ id: "a", type: "rp.x" }, { id: "a", type: "rp.x" }], wires: [] })).toThrow("used twice");
+  // the boundaries are fine
+  const edge = toGraphJson({ nodes: [{ id: "n", type: "rp.x", resources: { s: "res:4294967295" } }], wires: [{ from: "n.out", to: "n.in", feedback: false }] });
+  expect(edge.includes("res:4294967295") && edge.includes('"feedback":false')).toBe(true);
 });
 ```
 
@@ -10872,9 +10883,37 @@ test("bad settings or node ids are reported, and the rest of the graph is still 
   reg.add(lsdj);
   reg.add(defineExtension({ id: "rp.ok", matches: () => true, contribute: () => ({ nodes: [{ id: "ok", type: "rp.x" }, { id: "bad.id", type: "rp.x" }] }) }));
   const c = reg.collect([gb], () => ({ syncMode: "master" }));  // saved by a newer build, say
-  expect(c.errors.map((e) => [e.extension, e.code])).toEqual([["rp.lsdj", "settings-invalid"], ["rp.ok", "node-id"]]);
-  expect(c.errors[0].message.includes("syncMode")).toBe(true);
+  expect(c.errors.map((e) => [e.extension, e.code])).toEqual([["rp.lsdj", "settings-invalid"], ["rp.ok", "node-invalid"]]);
+  expect(c.errors[0].message.includes("syncMode") && c.errors[0].message.includes("using the defaults")).toBe(true);
   expect(c.nodes.map((n) => [n.id, n.params?.mode])).toEqual([["sys-1/lsdj-sync", "midi-sync"], ["ok", undefined]]);  // defaults stand in
+});
+
+test("a contributed node or wire C++ would refuse is reported against its extension, and left out", () => {
+  const reg = new ExtensionRegistry();
+  reg.add(
+    defineExtension({
+      id: "rp.bad",
+      matches: () => true,
+      contribute: () => ({
+        nodes: [{ id: "a", type: "rp bad" }, { id: "b", type: "rp.x", settings: { level: -Infinity } }, { id: "c", type: "rp.x", params: { gain: Number.NaN } }],
+        wires: [{ from: "a.out", to: "sys-1" }, { from: "c.out", to: "sys-1.in" }],
+      }),
+    }),
+  );
+  const c = reg.collect([gb]);
+  expect(c.errors.map((e) => e.code)).toEqual(["node-invalid", "node-invalid", "node-invalid", "wire-invalid"]);
+  expect(c.errors[1].message.includes("-Infinity")).toBe(true);  // seen before the copy could spell it null
+  expect(c.errors[2].message.includes("NaN")).toBe(true);
+  expect(c.wires).toEqual([{ from: "c.out", to: "sys-1.in" }]);
+});
+
+test("an extension whose settings and defaults both fail is left out, and says so", () => {
+  const reg = new ExtensionRegistry();
+  reg.add(defineExtension({ id: "rp.needy", matches: () => true, settings: z.object({ need: z.string() }), contribute: () => ({ nodes: [{ id: "n", type: "rp.x" }] }) }));
+  const c = reg.collect([gb]);
+  expect(c.attached.length).toBe(0);
+  expect(c.nodes.length).toBe(0);
+  expect(c.errors[0].message.includes("left out")).toBe(true);
 });
 
 test("an extension id can be registered once", () => {
@@ -10883,8 +10922,10 @@ test("an extension id can be registered once", () => {
   expect(() => reg.add(lsdj)).toThrow("already registered");
 });
 
-// @ts-expect-error an extension that reads settings has to say what they are
-defineExtension<{ n: number }>({ id: "rp.typed", matches: () => true, contribute: ({ settings }) => ({ nodes: [{ id: String(settings.n), type: "t" }] }) });
+// Type-level only (never called): an extension that reads settings has to say what they are.
+export const typeCheck = () =>
+  // @ts-expect-error a settings type with no schema
+  defineExtension<{ n: number }>({ id: "rp.typed", matches: () => true, contribute: ({ settings }) => ({ nodes: [{ id: String(settings.n), type: "t" }] }) });
 ```
 
 - [ ] **Step 2: Run them to see them fail**
@@ -10946,64 +10987,113 @@ export function parseEndpoint(text: string): { node: string; port: string } | nu
   return { node: text.slice(0, dot), port: text.slice(dot + 1) };
 }
 
-// Every string (and key) in a JSON value is one C++ can read; NaN and infinities spell null, which no
-// param or setting means.
-function readable(v: unknown, where: string): void {
-  if (typeof v === "string") {
-    if (!wellFormed(v)) throw new Error(`${where} holds a lone surrogate, which C++ cannot read`);
-  } else if (typeof v === "number") {
-    if (!Number.isFinite(v)) throw new Error(`${where} holds ${v}, which JSON cannot carry`);
-  } else if (Array.isArray(v)) {
-    v.forEach((x, i) => readable(x, `${where}[${i}]`));
-  } else if (v && typeof v === "object") {
-    for (const [k, x] of Object.entries(v)) {
-      if (!wellFormed(k)) throw new Error(`${where} has a key with a lone surrogate`);
-      readable(x, `${where}.${k}`);
-    }
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v) && [Object.prototype, null].includes(Object.getPrototypeOf(v));
+
+// Why a value is not plain JSON that C++ reads as written, or null. Every string (and key) must have a
+// UTF-8 spelling; NaN and infinities would spell null, and so would functions; typed arrays, dates and
+// maps would be spelt as something else entirely.
+function unreadable(v: unknown, where: string): string | null {
+  switch (typeof v) {
+    case "string":
+      return wellFormed(v) ? null : `${where} holds a lone surrogate, which C++ cannot read`;
+    case "number":
+      return Number.isFinite(v) ? null : `${where} holds ${v}, which JSON cannot carry`;
+    case "boolean":
+      return null;
+    case "object":
+      if (v === null) return null;
+      if (Array.isArray(v)) {
+        for (let i = 0; i < v.length; ++i) {
+          if (v[i] === undefined) return `${where}[${i}] is undefined`;
+          const why = unreadable(v[i], `${where}[${i}]`);
+          if (why) return why;
+        }
+        return null;
+      }
+      if (!isPlainObject(v)) return `${where} is not a plain JSON object`;
+      for (const [k, x] of Object.entries(v)) {
+        if (!wellFormed(k)) return `${where} has a key with a lone surrogate`;
+        const why = x === undefined ? null : unreadable(x, `${where}.${k}`);
+        if (why) return why;
+      }
+      return null;
+    default:
+      return `${where} holds a ${typeof v}, which JSON cannot carry`;
   }
 }
 
-/** The text to send with setGraph: only the fields GraphDocument.hpp reads (C++ refuses the whole document
- *  over one unknown field, which TS's structural types would let through), in canonical JSON. Throws, with
- *  the node it is about, for anything the C++ parser or the planner's structure check would refuse. */
+/** Why the C++ parser or the planner's structure check would refuse this node, or null. */
+export function checkNode(n: NodeDoc): string | null {
+  if (!isNodeId(n.id)) return `id ${q(String(n.id))} is not a node id (a plain id with no ".")`;
+  if (!plainId(n.type)) return `type ${q(String(n.type))} is not a node type id`;
+  if (n.settings !== undefined) {
+    if (!isPlainObject(n.settings)) return "settings must be an object";
+    const why = unreadable(n.settings, "settings");
+    if (why) return why;
+  }
+  if (n.params !== undefined) {
+    if (!isPlainObject(n.params)) return "params must be an object";
+    for (const [id, v] of Object.entries(n.params)) {
+      if (!plainId(id)) return `param id ${q(id)} is not a plain id`;
+      if (!["number", "string", "boolean"].includes(typeof v)) return `param ${q(id)} must be a number, label or bool`;
+      const why = unreadable(v, `param ${q(id)}`);
+      if (why) return why;
+    }
+  }
+  if (n.resources !== undefined) {
+    if (!isPlainObject(n.resources)) return "resources must be an object";
+    for (const [port, ref] of Object.entries(n.resources)) {
+      if (!plainId(port)) return `resource port ${q(port)} is not a plain id`;
+      if (typeof ref !== "string" || !/^res:[1-9][0-9]*$/.test(ref) || Number(ref.slice(4)) > 4294967295)
+        return `resource ${q(port)} must be "res:<id>", not ${q(String(ref))}`;
+    }
+  }
+  return null;
+}
+
+/** Why the C++ parser would refuse this wire, or null. */
+export function checkWire(w: WireDoc): string | null {
+  if (typeof w.from !== "string" || typeof w.to !== "string" || !parseEndpoint(w.from) || !parseEndpoint(w.to))
+    return `${q(String(w.from))} -> ${q(String(w.to))} needs node.port endpoints`;
+  const why = unreadable(w.from, "from") ?? unreadable(w.to, "to");
+  if (why) return why;
+  if (w.feedback !== undefined && typeof w.feedback !== "boolean") return "feedback must be true or false";
+  return null;
+}
+
+// Only the fields GraphDocument.hpp reads: C++ refuses a whole document over one unknown field, which TS's
+// structural types would let through.
+function projectNode(n: NodeDoc): Record<string, unknown> {
+  const out: Record<string, unknown> = { id: n.id, type: n.type };
+  if (n.settings !== undefined) out.settings = n.settings;
+  if (n.params !== undefined) out.params = n.params;
+  if (n.resources !== undefined) out.resources = n.resources;
+  return out;
+}
+
+function projectWire(w: WireDoc): Record<string, unknown> {
+  const out: Record<string, unknown> = { from: w.from, to: w.to };
+  if (w.feedback !== undefined) out.feedback = w.feedback;
+  return out;
+}
+
+/** The text to send with setGraph: only the fields GraphDocument.hpp reads, in canonical JSON. Throws,
+ *  naming the node or wire, for anything the C++ parser or the planner's structure check would refuse
+ *  (checkNode, checkWire, and a node id used twice). */
 export function toGraphJson(doc: GraphDocument): string {
+  const ids = new Set<string>();
   const nodes = doc.nodes.map((n, i) => {
-    const where = `node #${i}`;
-    if (!isNodeId(n.id)) throw new Error(`${where}: id ${q(String(n.id))} is not a node id (a plain id with no ".")`);
-    if (!plainId(n.type)) throw new Error(`node ${q(n.id)}: type ${q(String(n.type))} is not a node type id`);
-    const out: Record<string, unknown> = { id: n.id, type: n.type };
-    if (n.settings !== undefined) {
-      if (typeof n.settings !== "object" || n.settings === null || Array.isArray(n.settings))
-        throw new Error(`node ${q(n.id)}: settings must be an object`);
-      readable(n.settings, `node ${q(n.id)} settings`);
-      out.settings = n.settings;
-    }
-    if (n.params !== undefined) {
-      for (const [id, v] of Object.entries(n.params)) {
-        if (!["number", "string", "boolean"].includes(typeof v)) throw new Error(`node ${q(n.id)}: param ${q(id)} must be a number, label or bool`);
-        readable(v, `node ${q(n.id)} param ${q(id)}`);
-        readable(id, `node ${q(n.id)} params`);
-      }
-      out.params = n.params;
-    }
-    if (n.resources !== undefined) {
-      for (const [port, ref] of Object.entries(n.resources))
-        if (!/^res:[1-9][0-9]*$/.test(ref) || Number(ref.slice(4)) > 4294967295)
-          throw new Error(`node ${q(n.id)}: resource ${q(port)} must be "res:<id>", not ${q(String(ref))}`);
-      out.resources = n.resources;
-    }
-    return out;
+    const why = checkNode(n);
+    if (why) throw new Error(`node #${i} ${q(String(n.id))}: ${why}`);
+    if (ids.has(n.id)) throw new Error(`node id ${q(n.id)} is used twice`);
+    ids.add(n.id);
+    return projectNode(n);
   });
   const wires = doc.wires.map((w, i) => {
-    if (!parseEndpoint(w.from) || !parseEndpoint(w.to)) throw new Error(`wire #${i}: ${q(w.from)} -> ${q(w.to)} needs node.port endpoints`);
-    readable(w.from, `wire #${i}`);
-    readable(w.to, `wire #${i}`);
-    const out: Record<string, unknown> = { from: w.from, to: w.to };
-    if (w.feedback !== undefined) {
-      if (typeof w.feedback !== "boolean") throw new Error(`wire #${i}: feedback must be true or false`);
-      out.feedback = w.feedback;
-    }
-    return out;
+    const why = checkWire(w);
+    if (why) throw new Error(`wire #${i}: ${why}`);
+    return projectWire(w);
   });
   return canonicalJson({ nodes, wires });
 }
@@ -11023,7 +11113,7 @@ import type { z } from "zod";
 import type { AssetCatalog } from "../tracker/assetCatalog";
 import type { SongCatalog } from "../tracker/songCatalog";
 import { plainId } from "./descriptor";
-import { isNodeId, type NodeDoc, type WireDoc } from "./graphDocument";
+import { checkNode, checkWire, type NodeDoc, type WireDoc } from "./graphDocument";
 
 /** What a matcher sees: the node type plus the ROM identity rp.system.rom/1 publishes (when it has one). */
 export interface NodeInfo {
@@ -11100,7 +11190,7 @@ export type Conflict =
 export interface CollectError {
   node: string;
   extension: string;
-  code: "settings-invalid" | "node-id";
+  code: "settings-invalid" | "node-invalid" | "wire-invalid";
   message: string;
 }
 
@@ -11162,23 +11252,36 @@ export class ExtensionRegistry {
           if (parsed.success) {
             settings = parsed.data;
           } else {
-            fail("settings-invalid", parsed.error.issues.map((i) => `${i.path.join(".") || "settings"}: ${i.message}`).join("; "));
+            const issues = parsed.error.issues.map((i) => `${i.path.join(".") || "settings"}: ${i.message}`).join("; ");
             const defaults = ext.settings.safeParse({});
-            if (!defaults.success) continue;  // nothing usable: leave this extension out for this node
+            if (!defaults.success) {  // nothing usable: leave this extension out for this node
+              fail("settings-invalid", `${issues}; the defaults do not parse either, so it is left out`);
+              continue;
+            }
+            fail("settings-invalid", `${issues}; using the defaults`);
             settings = defaults.data;
           }
         }
         const c = ext.contribute({ node, settings });
         out.attached.push({ node: node.id, extension: ext.id, contribution: c });
+        // Each inserted node and wire is checked as toGraphJson will check it, BEFORE the copy (which would
+        // spell a NaN as null): one bad item is reported against its extension and left out, rather than
+        // failing the whole document later with no one to blame.
         for (const n of c.nodes ?? []) {
-          if (!isNodeId(n.id)) {
-            fail("node-id", `inserted node id ${JSON.stringify(String(n.id))} is not a node id (a plain id with no ".")`);
+          const why = checkNode(n);
+          if (why) {
+            fail("node-invalid", `inserted node ${JSON.stringify(String(n.id))}: ${why}`);
             continue;
           }
           claim(ids, n.id, by);
           out.nodes.push(copy(n));
         }
         for (const w of c.wires ?? []) {
+          const why = checkWire(w);
+          if (why) {
+            fail("wire-invalid", `wire ${JSON.stringify(String(w.from))} -> ${JSON.stringify(String(w.to))}: ${why}`);
+            continue;
+          }
           claim(inputs, w.to, by);
           out.wires.push(copy(w));
         }
@@ -11195,8 +11298,8 @@ export class ExtensionRegistry {
 - [ ] **Step 4: Run the graph tests, the whole TS suite, and the type check**
 
 Run: `pnpm test graph && pnpm test && pnpm typecheck`
-Expected: five graph files pass (4 + 12 + 2 + 4 + 8 cases), the full `pnpm test` matches the Task 0
-baseline plus those 30 cases with no new skips, and the type check matches the baseline.
+Expected: five graph files pass (4 + 12 + 2 + 4 + 10 cases), the full `pnpm test` matches the Task 0
+baseline plus those 32 cases with no new skips, and the type check matches the baseline.
 
 - [ ] **Step 5: Commit**
 
@@ -11208,9 +11311,10 @@ Extensions attach to node instances by matcher, parse their settings on
 the control plane, and contribute nodes, wires, views and catalogs; two
 contributors wiring the same node input is reported by name."
 
-(This task was executed as the original commit plus one review-fix commit, "fix(graph): extensions report
-every conflict by claimant; documents are written as C++ reads them", which also added the C++ half of
-the golden-document pact to Task 6's test. A fresh execution needs only the one commit above.)
+(This task was executed as the original commit plus two review-fix commits, "fix(graph): extensions report
+every conflict by claimant; documents are written as C++ reads them" (which also added the C++ half of
+the golden-document pact to Task 6's test) and "fix(graph): collect checks each contributed node and wire
+as toGraphJson will". A fresh execution needs only the one commit above.)
 ```
 
 ---
