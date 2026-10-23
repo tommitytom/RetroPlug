@@ -363,7 +363,7 @@ control thread; on the Pico it is a slice of a static arena. A node that needs a
 | Call | Thread | Purpose |
 |---|---|---|
 | `layout` | control | resolved ports, params and exclusive groups, after settings are applied |
-| `activate` / `deactivate` | control | sample rate, maximum block size |
+| `activate` / `deactivate` | control | sample rate, maximum block size; must preserve state (§5.3) |
 | `ports_changed` | audio | connected-output mask changed at a plan swap |
 | `process` | audio | one block; no allocation, no exceptions |
 | `prepare_settings` / `commit_settings` / `release_settings` | control / audio / control | the settings swap |
@@ -534,16 +534,19 @@ C++, on the control thread, five passes:
    message, which matters for downloaded packs); ports exist; kinds match; each input has at most one
    wire; channel counts and layouts resolve; exclusive groups are respected; capability flags suit the
    target.
-2. **Reconcile instances.** Same id and settings: reuse the instance. Changed settings: prepare a swap.
-   A change the node marks as needing a rebuild (a new ROM): build a fresh instance. New id: allocate,
-   create, activate. Missing id: schedule release. All of this is control-thread work, as cores are
-   built today; carrying state across a rebuild stays TS orchestration (today's reload).
+2. **Reconcile instances.** Same id, type and settings: reuse the instance. Changed settings: the node's
+   `prepare_settings` decides, returning either a prepared swap or "needs rebuild" (a new ROM, a
+   different SameBoy model). Needs rebuild: build a fresh instance. New id: allocate, create, activate.
+   Missing id: schedule release. All of this is control-thread work, as cores are built today; carrying
+   state across a rebuild stays TS orchestration (today's reload, and Swap ROM keeping SRAM). §5.3 says
+   what a reused instance keeps.
 3. **Order.** Topological sort; nodes joined by `link` wires collapse into one **coupled group** (a
    connected set; link wires are undirected).
 4. **Cycles.** Only feedback wires may close a loop (§3.3).
 5. **Assign buffers.** Each output port gets a buffer: audio (channels x max frames); events, bytes and
    control (fixed-capacity queues, capacity from descriptor hints with a default); resource (a handle
-   slot). Buffers are reused by lifetime; feedback wires get persistent double buffers. Every input
+   slot). Buffers are reused by lifetime; feedback wires get persistent double buffers owned by the wire, so they carry over to the next plan
+   (§5.3). Every input
    reads straight from its single source's buffer.
 
 The output is an **immutable plan**: a flat list of steps with port bindings already resolved, the buffer
@@ -561,6 +564,28 @@ The existing rings carry it; their invariants ([spec/01](../spec/01-architecture
   resources, and deactivates and destroys removed nodes.
 - **Quiescent:** the inline-flush rule stays (every push flushes when no audio thread owns the engine).
 - **Live params** stay lightweight POD commands (`SetParam(node, param, value, frame)`), never a replan.
+
+**What survives a swap.** A plan says which instances run, in what order, with which buffers; the
+instances live outside it. A reused instance keeps its memory and therefore all of its state (emulator
+RAM, CPU, APU, SRAM, a TS node's JS state); the swap only rebinds its ports. Rewiring, switching routing
+modes, adding or removing *other* nodes, linking or unlinking Game Boys, param changes, live-swappable
+settings and `ports_changed` tap arming all leave every system running untouched. **The only resets are
+changes that reset today** (a new ROM, a different model), and the node, not the planner, decides which
+those are. Five rules keep it that way:
+
+1. **Node ids are stable.** Reuse is keyed on id, so the graph builder derives ids from the TS system id
+   (`sys-3`, `sys-3.lsdj-sync`), never from position (§7.2).
+2. **Settings compare in canonical form**, so key order or other harmless JSON differences are not a change.
+3. **`activate` / `deactivate` preserve state.** A sample-rate or block-size change re-activates without
+   resetting, as `onSampleRateChanged` does today. Reset is its own explicit action, never a side effect.
+4. **Feedback buffers belong to the wire, not the plan.** If a feedback wire exists in both plans, the
+   new plan points at the same buffer, so an edit never drops the block of data in flight (LSDj's MI.OUT
+   bytes).
+5. **Script-node state lives with the instance** in the script runtime, so `lsdj.sync`'s clock phase
+   survives an edit exactly as a core's state does.
+
+Audio *routing* can still click when a mode change moves a stream to different outputs mid-block, as it
+does today; a short fade at swaps is a possible later refinement. The cores never notice either way.
 
 ### 5.4 Host I/O nodes
 
@@ -746,6 +771,9 @@ export const lsdj = defineExtension({
    is the `sameboy` package's rule, carried over from today's `LinkGroup`.
 6. **Host and controller nodes**: audio and MIDI in/out, the Launchpad surface.
 
+Node ids derive from the TS system id (`sys-3`, `sys-3.lsdj-sync`, `sys-3.mix`), never from position,
+so the same system keeps the same node id through every edit (§5.3).
+
 The stores call `setGraph(buildGraph(...))` whenever the project changes; the planner's diff keeps
 unchanged nodes running. The builder applies today's applicability gates (channel / pin splits need a
 single system, pins need a NES) so behaviour is unchanged.
@@ -883,7 +911,13 @@ All headless, all backed by an exit-zero run.
   interposed to fail, which proves the no-heap claim.
 - **Descriptor conformance**: a C++ node and a TS node with the same declared shape produce
   byte-identical descriptor JSON; gcc and clang produce identical descriptors.
-- **`buildGraph` golden tests** in `pnpm test`: one per audio routing mode, MIDI routing mode, and cart.
+- **`buildGraph` golden tests** in `pnpm test`: one per audio routing mode, MIDI routing mode, and cart,
+  plus an id-stability check: cycling the routing mode and adding / removing other systems leaves every
+  surviving system's node ids unchanged.
+- **State across swaps**: render a system while making unrelated graph edits every few blocks
+  (rewiring, adding and removing other nodes, cycling routing modes, linking a second GB); that system's
+  own output stream and SRAM must be bit-identical to a render with no edits, and MI.OUT bytes on the
+  feedback wire must all arrive.
 - **Parity**: `test:native`, the multichannel `retroplug-audio-test`, the `reaper:lsdj-*` and
   `reaper:risa-sync` drift renders, and `test:ui` (unchanged, since the menus do not change).
 - **Kit byte-identity** (Phase D) and **Pico arena** runs (Phase E) as above.
