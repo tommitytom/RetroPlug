@@ -40,9 +40,10 @@ W=1280; H=720
 MGB_NAME="${RP_PARAMS_EXPECT:-1: PU1 Pulse Width}"
 POOL_NAME="1: CC 1"
 # Autoload mode only: `;`-separated lane names (without the "1: " system prefix) the loaded project's
-# ROM must expose. Defaults to a VRC7 spread - a core 2A03 lane, a per-voice FM lane, and one of the
-# chip-global custom-patch lanes, so a build that silently fell back to the 2A03 table fails here.
-RP_PARAMS_EXPECT_LANES="${RP_PARAMS_EXPECT_LANES:-Pulse 1 Duty;FM 1 Volume;FM 6 Volume;FM Attack;FM Key-Scale Rate;FM 3 LFO Shape;FM 3 Tremolo Depth}"
+# ROM must expose. Defaults to a VRC7 spread - a core 2A03 lane, per-voice FM lanes (core CCs extended
+# onto the FM voices), and chip-global custom-patch lanes, so a build that silently fell back to the
+# 2A03 table fails here.
+RP_PARAMS_EXPECT_LANES="${RP_PARAMS_EXPECT_LANES:-Pulse 1 Duty;FM 1 Volume;FM 6 Volume;FM Attack;FM Key-Scale Rate;FM 3 Sustain Pedal;FM 3 Fine Bend}"
 
 : "${RP_JOB_TAG:=params-$FORMAT}"
 RP_SCREEN_W=$W RP_SCREEN_H=$H
