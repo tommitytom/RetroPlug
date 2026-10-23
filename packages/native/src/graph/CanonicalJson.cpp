@@ -3,16 +3,18 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
-#include <cstdio>
+#include <cstdint>
 #include <cstdlib>
 #include <utility>
 #include <vector>
 
-#include <rfl/json.hpp>
+#include <yyjson.h>
 
 namespace rp::graph {
 
 namespace {
+
+constexpr char kHex[] = "0123456789abcdef";
 
 void appendString(std::string& out, std::string_view s) {
     out += '"';
@@ -28,9 +30,9 @@ void appendString(std::string& out, std::string_view s) {
             case '\t': out += "\\t"; break;
             default:
                 if (c < 0x20) {
-                    char buf[8];
-                    std::snprintf(buf, sizeof buf, "\\u%04x", c);
-                    out += buf;
+                    out += "\\u00";
+                    out += kHex[c >> 4];
+                    out += kHex[c & 0xf];
                 } else {
                     out += ch;
                 }
@@ -39,22 +41,39 @@ void appendString(std::string& out, std::string_view s) {
     out += '"';
 }
 
+// a < b as JavaScript compares strings: by UTF-16 code unit. That is byte order for UTF-8 except where a
+// character in U+E000..U+FFFF (lead byte 0xEE / 0xEF) meets one beyond U+FFFF (lead byte 0xF0..0xF4):
+// UTF-16 spells the latter with a 0xD8..0xDB surrogate, which sorts first.
+bool utf16Less(std::string_view a, std::string_view b) {
+    const auto [ia, ib] = std::mismatch(a.begin(), a.end(), b.begin(), b.end());
+    if (ia == a.end() || ib == b.end()) return ia == a.end() && ib != b.end();
+    auto i = static_cast<std::size_t>(ia - a.begin());
+    while (i > 0 && (static_cast<unsigned char>(a[i]) & 0xC0) == 0x80) --i;  // back to the lead bytes
+    const auto la = static_cast<unsigned char>(a[i]);
+    const auto lb = static_cast<unsigned char>(b[i]);
+    if (la >= 0xEE && la <= 0xEF && lb >= 0xF0) return false;
+    if (lb >= 0xEE && lb <= 0xEF && la >= 0xF0) return true;
+    return static_cast<unsigned char>(*ia) < static_cast<unsigned char>(*ib);
+}
+
 void append(std::string& out, const rfl::Generic& value);
 
 void appendObject(std::string& out, const rfl::Generic::Object& object) {
     std::vector<std::pair<std::string_view, const rfl::Generic*>> entries;
     entries.reserve(object.size());
     for (const auto& [key, v] : object) entries.emplace_back(key, &v);
-    std::sort(entries.begin(), entries.end(),
-              [](const auto& a, const auto& b) { return a.first < b.first; });
+    // Stable, so duplicates keep their document order and the last one can win, as in JSON.parse.
+    std::stable_sort(entries.begin(), entries.end(),
+                     [](const auto& a, const auto& b) { return utf16Less(a.first, b.first); });
     out += '{';
     bool first = true;
-    for (const auto& [key, v] : entries) {
+    for (std::size_t i = 0; i < entries.size(); ++i) {
+        if (i + 1 < entries.size() && entries[i + 1].first == entries[i].first) continue;  // a later twin wins
         if (!first) out += ',';
         first = false;
-        appendString(out, key);
+        appendString(out, entries[i].first);
         out += ':';
-        append(out, *v);
+        append(out, *entries[i].second);
     }
     out += '}';
 }
@@ -66,7 +85,7 @@ void append(std::string& out, const rfl::Generic& value) {
             if constexpr (std::is_same_v<V, bool>) {
                 out += v ? "true" : "false";
             } else if constexpr (std::is_same_v<V, std::int64_t>) {
-                out += std::to_string(v);
+                out += jsNumber(static_cast<double>(v));  // JS holds every number as a double
             } else if constexpr (std::is_same_v<V, double>) {
                 out += jsNumber(v);
             } else if constexpr (std::is_same_v<V, std::string>) {
@@ -87,8 +106,51 @@ void append(std::string& out, const rfl::Generic& value) {
         value.variant());
 }
 
+constexpr std::int64_t kMaxExactInteger = 9007199254740992;  // 2^53: every integer up to here is exact in a double
+
+rfl::Generic fromYyjson(yyjson_val* v) {
+    switch (yyjson_get_type(v)) {
+        case YYJSON_TYPE_BOOL:
+            return rfl::Generic(yyjson_get_bool(v));
+        case YYJSON_TYPE_NUM: {
+            // An integer stays an integer only while a double holds it exactly; beyond that it is the
+            // nearest double, as JSON.parse would make it. Never a wrapped uint64 or a truncated value.
+            if (yyjson_is_sint(v)) {
+                const std::int64_t i = yyjson_get_sint(v);
+                if (i >= -kMaxExactInteger && i <= kMaxExactInteger) return rfl::Generic(i);
+            } else if (yyjson_is_uint(v)) {
+                const std::uint64_t u = yyjson_get_uint(v);
+                if (u <= static_cast<std::uint64_t>(kMaxExactInteger)) return rfl::Generic(static_cast<std::int64_t>(u));
+            }
+            return rfl::Generic(yyjson_get_num(v));
+        }
+        case YYJSON_TYPE_STR:
+            return rfl::Generic(std::string(yyjson_get_str(v), yyjson_get_len(v)));
+        case YYJSON_TYPE_ARR: {
+            rfl::Generic::Array arr;
+            yyjson_val* item;
+            yyjson_arr_iter it = yyjson_arr_iter_with(v);
+            while ((item = yyjson_arr_iter_next(&it))) arr.push_back(fromYyjson(item));
+            return rfl::Generic(std::move(arr));
+        }
+        case YYJSON_TYPE_OBJ: {
+            rfl::Generic::Object obj;
+            yyjson_val* key;
+            yyjson_obj_iter it = yyjson_obj_iter_with(v);
+            while ((key = yyjson_obj_iter_next(&it)))
+                obj.insert(std::make_pair(std::string(yyjson_get_str(key), yyjson_get_len(key)),
+                                          fromYyjson(yyjson_obj_iter_get_val(key))));
+            return rfl::Generic(std::move(obj));
+        }
+        case YYJSON_TYPE_NULL:
+        default:
+            return rfl::Generic(rfl::Generic::VariantType(std::nullopt));
+    }
+}
+
 }  // namespace
 
+// libc++ provides the floating-point std::to_chars only for a macOS deployment target of 13.3 or newer.
 std::string jsNumber(double value) {
     if (!std::isfinite(value)) return "null";
     if (value == 0.0) return "0";  // also -0, which JavaScript prints as "0"
@@ -101,7 +163,10 @@ std::string jsNumber(double value) {
     std::string digits;
     for (const char c : sci.substr(0, ePos))
         if (c != '.') digits += c;
-    const int exponent = std::atoi(std::string(sci.substr(ePos + 1)).c_str());
+    std::string_view expText = sci.substr(ePos + 1);
+    if (!expText.empty() && expText.front() == '+') expText.remove_prefix(1);
+    int exponent = 0;
+    std::from_chars(expText.data(), expText.data() + expText.size(), exponent);
 
     // ECMAScript Number::toString: k significant digits, n = position of the decimal point.
     const int k = static_cast<int>(digits.size());
@@ -137,9 +202,17 @@ std::string canonicalJson(const rfl::Generic& value) {
     return out;
 }
 
+rfl::Result<rfl::Generic> parseJson(std::string_view json) {
+    yyjson_read_err err{};
+    yyjson_doc* doc = yyjson_read_opts(const_cast<char*>(json.data()), json.size(), 0, nullptr, &err);
+    if (!doc) return rfl::Unexpected<rfl::Error>(rfl::Error(std::string("not JSON: ") + err.msg));
+    rfl::Generic g = fromYyjson(yyjson_doc_get_root(doc));
+    yyjson_doc_free(doc);
+    return g;
+}
+
 rfl::Result<std::string> canonicalizeJson(std::string_view json) {
-    return rfl::json::read<rfl::Generic>(json).transform(
-        [](const rfl::Generic& g) { return canonicalJson(g); });
+    return parseJson(json).transform([](const rfl::Generic& g) { return canonicalJson(g); });
 }
 
 }  // namespace rp::graph
