@@ -514,19 +514,34 @@ RP_NODE(Gain);   // emits the rp_node_type + vtable
 ```ts
 export const lsdjSync = defineNode({
   id: "rp.lsdj.sync",
-  ports:  { midi: events.in(), serialIn: bytes.in(), serialOut: bytes.out(), buttons: events.out() },
-  params: { mode: param.enum(["off", "midi-sync", "master"], "midi-sync"), divisor: param.int(1, 16, 1) },
-  settings: z.object({ /* ... */ }),          // zod 4 -> z.toJSONSchema(), draft 2020-12
+  ports: { midi: events.in(), serialIn: bytes.in(), serialOut: bytes.out(), buttons: events.out() },
+  params: {
+    mode: param.enum({ name: "Mode", values: ["off", "midi-sync", "master"], default: "midi-sync" }),
+    divisor: param.int({ name: "Divisor", min: 1, max: 16, default: 1 }),
+  },
+  settings: z.object({ /* ... every field with a .default() */ }),
   create: (ctx) => ({ process(block) { /* ... */ } }),
 });
 ```
 
-- `ports` may be a function of settings: `ports: (s) => ({ in: audio.in(s.channels) })`.
+- `ports` (and `params`) may be a function of settings:
+  `ports: (s) => ({ in: audio.in(channels.fixed(s.channels, "any")) })`.
+- **A TS node can declare only what the C++ parser accepts.** `defineNode` applies the same per-port,
+  per-param and layout checks as `Descriptor.cpp` (and the port-spec types reject most of the same shapes
+  at compile time), so a descriptor the native registry would refuse is an error where it is written.
+  Two shared golden descriptors pin the byte-for-byte agreement.
 - **Settings are validated on the control plane.** The audio-thread code receives plain, already-checked
-  objects, so **zod leaves the audio-thread bundle**. Today ~568 KB of the 638 KB DSP-kernel bundle is
-  zod; removing it is also a hard requirement for MicroQuickJS on the Pico.
+  objects, so **zod leaves the audio-thread bundle**: `defineNode` imports zod's types only, and the
+  descriptor's schema comes from the definition's own schema object (`toJSONSchema({ io: "input" })`, the
+  shape a document may write: defaulted fields optional, as reflect-cpp's `DefaultIfMissing` says too).
+  Today ~568 KB of the 638 KB DSP-kernel bundle is zod; removing it is also a hard requirement for
+  MicroQuickJS on the Pico. Every settings field needs a default, since the descriptor describes the
+  layout for default settings (a C++ node has `S{}`).
 - A TS node sees an audio port as an array of `Float32Array`s, an events port as a frame-ordered array,
-  a resource port as a handle with typed accessors (a `Float32Array` view for an audio buffer).
+  a resource port as a handle with typed accessors (a `Float32Array` view for an audio buffer). Phase A's
+  `Block` and `NodeInstance` types carry audio, messages and control; the resource accessor, link peers
+  and a settings-swap hook (`onSettings`, with a rebuild decision) are added with the script-node runtime
+  in Phase B.
 
 ### 4.9 The script-node runtime
 

@@ -2209,6 +2209,10 @@ TEST_CASE("malformed layouts are refused with a reason", "[graph][descriptor]") 
     CHECK(layoutReason(R"({"params":[{"id":"m","type":"enum","values":[]}]})").find("values") != std::string::npos);
     CHECK(layoutReason("[1,2]") == "layout must be an object");
     CHECK(layoutReason(R"({"ports":[{"id":5,"dir":"in","kind":"events"}]})") == "port #0: \"id\" must be a string");
+    CHECK(layoutReason(R"({"ports":[{"id":"a b","dir":"in","kind":"events"}]})").find("whitespace") != std::string::npos);
+    CHECK(layoutReason(R"({"ports":[{"id":".*","dir":"out","kind":"events"}]})").find("'*'") != std::string::npos);
+    CHECK(layoutReason(R"({"params":[{"id":"g\u0001","type":"float"}]})").find("control characters") != std::string::npos);
+    CHECK_FALSE(matchesPattern(".*", ".x"));  // a wildcard needs a prefix, as the exclusive parser says
 }
 
 TEST_CASE("param ranges are validated, so the planner's clamp is always well-defined", "[graph][descriptor]") {
@@ -2364,7 +2368,8 @@ constexpr std::uint32_t kMaxChannels = 64;
 // particular would make the C string a node reads differ from the std::string the host checked.
 bool isPlainId(std::string_view s);
 
-// Does an exclusive-group pattern ("pins.*" or an exact id) match this port id?
+// Does an exclusive-group pattern ("pins.*", at least one character before the ".*", or an exact id)
+// match this port id?
 bool matchesPattern(std::string_view pattern, std::string_view portId);
 
 // How many channels a layout name means: mono 1, stereo 2, 5.1 6, 7.1 8, discrete(n) n. nullopt for "any"
@@ -2572,6 +2577,14 @@ rfl::Result<ChannelSpec> parseChannels(const rfl::Generic& g, const std::string&
     return ChannelSpec::fixed(static_cast<std::uint32_t>(count), *layoutName);
 }
 
+// A port or param id: a plain id (it is quoted in messages and compared as a string) with no '*', which
+// would make an exclusive-group pattern ambiguous.
+std::optional<std::string> checkMemberId(const std::string& id, const std::string& at) {
+    if (!isPlainId(id) || id.find('*') != std::string::npos)
+        return at + ": id " + q(id) + " must not contain whitespace, control characters or '*'";
+    return std::nullopt;
+}
+
 rfl::Result<PortDesc> parsePort(const rfl::Generic& g, std::size_t index) {
     const std::string at = "port #" + std::to_string(index);
     auto o = g.to_object();
@@ -2579,6 +2592,7 @@ rfl::Result<PortDesc> parsePort(const rfl::Generic& g, std::size_t index) {
     PortDesc p;
     auto id = reqString(*o, "id", at);
     if (!id) return fail(id.error().what());
+    if (auto bad = checkMemberId(*id, at)) return fail(*bad);
     p.id = *id;
     const std::string where = "port " + q(p.id);
     auto dir = reqString(*o, "dir", where).and_then([&](const std::string& s) { return enumIndex(s, kDirNames, "dir", where); });
@@ -2626,6 +2640,7 @@ rfl::Result<ParamDesc> parseParam(const rfl::Generic& g, std::size_t index) {
     ParamDesc p;
     auto id = reqString(*o, "id", at);
     if (!id) return fail(id.error().what());
+    if (auto bad = checkMemberId(*id, at)) return fail(*bad);
     p.id = *id;
     const std::string where = "param " + q(p.id);
     auto name = optString(*o, "name", where);
@@ -2867,7 +2882,7 @@ bool isPlainId(std::string_view s) {
 }
 
 bool matchesPattern(std::string_view pattern, std::string_view portId) {
-    if (pattern.size() >= 2 && pattern.substr(pattern.size() - 2) == ".*")
+    if (pattern.size() > 2 && pattern.substr(pattern.size() - 2) == ".*")  // as the exclusive parser reads it
         return portId.substr(0, pattern.size() - 1) == pattern.substr(0, pattern.size() - 1);
     return pattern == portId;
 }
@@ -2901,7 +2916,7 @@ std::string layoutForCount(std::uint32_t channels) {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (225 assertions in 26 test cases)`.
+Expected: `All tests passed (229 assertions in 26 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -2932,11 +2947,12 @@ the TS half (Task 13) is compared against too.
 
 **Files:**
 - Create: `packages/native/src/graph/node.hpp`, `packages/native/test/graph/TestNodes.hpp`,
-  `packages/native/test/graph/golden/rp.test.gain.descriptor.json`
+  `packages/native/test/graph/golden/rp.test.gain.descriptor.json`,
+  `packages/native/test/graph/golden/rp.test.kitchen-sink.descriptor.json`
 - Modify: `packages/native/cmake/tests.cmake`
 - Test: `packages/native/test/graph/NodeLayer.test.cpp`
 
-- [ ] **Step 1: Add the golden descriptor**
+- [ ] **Step 1: Add the golden descriptors**
 
 `packages/native/test/graph/golden/rp.test.gain.descriptor.json`:
 
@@ -2944,8 +2960,16 @@ the TS half (Task 13) is compared against too.
 {"category":"dsp/utility","id":"rp.test.gain","name":"Gain","params":[{"default":0,"id":"gain","max":12,"min":-60,"name":"Gain","type":"float","unit":"dB"},{"default":"midi-sync","id":"mode","name":"Mode","type":"enum","values":["off","midi-sync","high-pass-tpdf"]},{"default":false,"id":"mute","name":"Mute","type":"bool"},{"default":4,"id":"steps","max":16,"min":1,"name":"Steps","type":"int"}],"ports":[{"channels":{"any":true},"dir":"in","id":"in","kind":"audio"},{"dir":"in","id":"midi","kind":"events"},{"channels":{"match":"in"},"dir":"out","id":"out","kind":"audio"}],"requires":{"heap":false,"threads":false},"settings":{"type":"object"},"version":"1.0.0"}
 ```
 
-(One line, followed by a newline. It was produced by this task's `node.hpp` from the test's `Gain` and then
-checked by hand against section 4.6 of the design; the TS `Gain` twin must produce the same bytes.)
+`packages/native/test/graph/golden/rp.test.kitchen-sink.descriptor.json`:
+
+```json
+{"category":"test/conformance","exclusive":[["pins.*","channels.*"]],"id":"rp.test.kitchen-sink","name":"Kitchen Sink","params":[{"default":1e-7,"id":"tiny","max":1e-7,"min":0,"name":"Tiny","type":"float"},{"default":0,"id":"huge","max":1e+21,"min":-1e+21,"name":"Huge","type":"float"},{"default":4,"id":"steps","max":16,"min":1,"name":"Steps","type":"int","unit":"steps"},{"default":true,"id":"armed","name":"Armed","type":"bool"},{"default":"n8-fifo","id":"sync","name":"Sync","type":"enum","values":["off","midi-sync","n8-fifo"]}],"ports":[{"channels":{"any":true},"dir":"in","id":"in","kind":"audio"},{"channels":{"count":2,"layout":"any"},"dir":"in","id":"side","kind":"audio"},{"dir":"in","id":"midi","kind":"events"},{"dir":"in","id":"serial","kind":"bytes"},{"dir":"in","id":"mod","kind":"control"},{"dir":"link","id":"peer","kind":"link"},{"dir":"in","id":"sample","kind":"resource","resourceType":"audio-buffer"},{"access":"write","dir":"in","id":"target","kind":"resource","resourceType":"audio-buffer"},{"channels":{"match":"in"},"dir":"out","id":"out","kind":"audio"},{"channels":{"count":6,"layout":"5.1"},"dir":"out","id":"surround","kind":"audio"},{"dir":"out","id":"notes","kind":"events"},{"dir":"out","id":"serialOut","kind":"bytes"},{"dir":"out","id":"level","kind":"control"},{"dir":"out","id":"buffer","kind":"resource","resourceType":"audio-buffer"},{"channels":{"count":1,"layout":"mono"},"dir":"out","id":"pins.a","kind":"audio"},{"channels":{"count":1,"layout":"mono"},"dir":"out","id":"pins.b","kind":"audio"},{"channels":{"count":1,"layout":"mono"},"dir":"out","id":"channels.x","kind":"audio"}],"requires":{"heap":true,"threads":false},"settings":{"type":"object"},"version":"2.1.0"}
+```
+
+(Each is one line, followed by a newline. They were produced by this task's `node.hpp` from the test's
+`Gain` and `KitchenSink`, and checked by hand against section 4.6 of the design; the TS twins (Task 13) must
+produce the same bytes. The kitchen sink carries every port kind and direction, every channel spec, every
+param type, extreme number spellings, appended ports, an exclusive group and the metadata fields.)
 
 - [ ] **Step 2: Add the test nodes**
 
@@ -3230,6 +3254,61 @@ void make(Made& m, const char* settings) {
 
 TEST_CASE("a C++ node's descriptor matches the shared golden byte for byte", "[graph][node]") {
     CHECK(std::string(rp::node_type<Gain>()->descriptor()) == readFile(RP_GRAPH_GOLDEN_DIR "/rp.test.gain.descriptor.json"));
+}
+
+namespace {
+
+enum class SyncSource { Off, MidiSync, N8Fifo };
+
+// The second conformance node: every port kind and direction, every channel spec, every param type, an
+// int with a unit, a bool defaulting to true, extreme number spellings, appended ports and an exclusive
+// group, metadata and capability flags. Its TS twin is in conformance.test.ts.
+struct KitchenSink {
+    static constexpr const char* id = "rp.test.kitchen-sink";
+    static constexpr const char* name = "Kitchen Sink";
+    static constexpr const char* category = "test/conformance";
+    static constexpr const char* version = "2.1.0";
+    static constexpr bool heap = true;
+    struct {
+        rp::audio_in<rp::any>                in;
+        rp::audio_in<rp::channels<2, "any">> side;
+        rp::events_in                        midi;
+        rp::bytes_in                         serial;
+        rp::control_in                       mod;
+        rp::link                             peer;
+        rp::resource_in<"audio-buffer">      sample;
+        rp::resource_write<"audio-buffer">   target;
+    } inputs;
+    struct {
+        rp::audio_out<rp::match<"in">>          out;
+        rp::audio_out<rp::channels<6, "5.1">>   surround;
+        rp::events_out                          notes;
+        rp::bytes_out                           serialOut;
+        rp::control_out                         level;
+        rp::resource_out<"audio-buffer">        buffer;
+    } outputs;
+    struct {
+        rp::float_param<"Tiny", rp::range{0, 1e-7, 1e-7}>      tiny;
+        rp::float_param<"Huge", rp::range{-1e21, 1e21, 0}>     huge;
+        rp::int_param<"Steps", rp::range{1, 16, 4}, "steps">   steps;
+        rp::bool_param<"Armed", true>                          armed;
+        rp::enum_param<SyncSource, "Sync", SyncSource::N8Fifo> sync;
+    } params;
+    static void adjust_layout(Layout& l, const rp::detail::NoSettings&) {
+        for (const char* p : {"pins.a", "pins.b", "channels.x"})
+            l.ports.push_back({p, PortDir::Out, PortKind::Audio, ChannelSpec::fixed(1, "mono"), {}, false});
+        l.exclusive.push_back({"pins.*", "channels.*"});
+    }
+    void process(const rp::Block&) noexcept {}
+};
+
+}  // namespace
+
+TEST_CASE("every descriptor feature matches the shared golden byte for byte", "[graph][node]") {
+    const std::string mine = rp::node_type<KitchenSink>()->descriptor();
+    CHECK(mine == readFile(RP_GRAPH_GOLDEN_DIR "/rp.test.kitchen-sink.descriptor.json"));
+    REQUIRE(parseDescriptor(mine));  // and the strict parser accepts it unchanged
+    CHECK(descriptorJson(*parseDescriptor(mine)) == mine);
 }
 
 TEST_CASE("enum labels are the enumerator names in kebab-case", "[graph][node]") {
@@ -4474,7 +4553,7 @@ T* peer_as(rp_node* n) {
 - [ ] **Step 7: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (313 assertions in 39 test cases)`.
+Expected: `All tests passed (320 assertions in 40 test cases)`.
 
 - [ ] **Step 8: Commit**
 
@@ -5218,7 +5297,7 @@ std::uint32_t ResourceTable::pinCount(Id id) const {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (477 assertions in 46 test cases)`.
+Expected: `All tests passed (484 assertions in 47 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -7403,6 +7482,8 @@ struct HostConfig {
     double        sampleRate = 48000.0;
     std::uint32_t maxFrames = 1024;
     Target        target = Target::Desktop;
+    // How long setGraph waits for a stalled audio thread to adopt the previous plan before answering busy.
+    std::uint32_t adoptionTimeoutMs = 2000;
 };
 
 constexpr std::uint32_t kMaxBlockFrames = 1u << 16;
@@ -7525,7 +7606,6 @@ private:
 #include <chrono>
 #include <cmath>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <new>
 #include <stdexcept>
@@ -7539,19 +7619,19 @@ namespace rp::graph {
 
 namespace {
 
-// The ABI's free has no alignment argument, so host allocations are capped at max_align_t.
+// The ABI's free has no alignment argument, so host allocations are capped at max_align_t. Through
+// operator new rather than malloc, so whatever replaces operator new for the process (an allocator, or the
+// no-heap test's hook) sees a node's host allocations too.
 void* hostAlloc(void*, std::size_t size, std::size_t align) {
-    return align <= alignof(std::max_align_t) ? std::malloc(size ? size : 1) : nullptr;
+    return align <= alignof(std::max_align_t) ? ::operator new(size ? size : 1, std::nothrow) : nullptr;
 }
 
-void hostFree(void*, void* ptr) { std::free(ptr); }
+void hostFree(void*, void* ptr) { ::operator delete(ptr); }
 
 void hostLog(void*, int, const char* message) { std::fprintf(stderr, "[graph] %s\n", message); }
 
 // No optional host services yet; this is where they will be offered by id.
 const void* hostInterface(const rp_host*, const char*) { return nullptr; }
-
-constexpr auto kAdoptionTimeout = std::chrono::seconds(2);
 
 }  // namespace
 
@@ -7600,7 +7680,7 @@ void GraphHost::setAudioThreadOwns(bool owns) {
 
 bool GraphHost::waitForAdoption() {
     if (!audioThreadOwns()) return true;  // inline flush already adopted it
-    const auto deadline = std::chrono::steady_clock::now() + kAdoptionTimeout;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(config_.adoptionTimeoutMs);
     while (swapInFlight_.load(std::memory_order_acquire)) {
         if (std::chrono::steady_clock::now() > deadline) return false;
         std::this_thread::sleep_for(std::chrono::microseconds(200));
@@ -7931,7 +8011,7 @@ const rp_package* hostPackage() {
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (692 assertions in 92 test cases)`.
+Expected: `All tests passed (699 assertions in 93 test cases)`.
 
 - [ ] **Step 7: Commit**
 
@@ -9124,7 +9204,7 @@ const rp_package* corePackage() {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (871 assertions in 114 test cases)`.
+Expected: `All tests passed (878 assertions in 115 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -9149,10 +9229,13 @@ the one commit above.)
 
 ### Task 9: The no-heap claim and the swap stress test
 
-Two tests that prove properties rather than features. The first replaces global `operator new` for this
-binary and counts any allocation made on the audio path while a plan is adopted and run. The second runs
-a real audio thread while the control thread swaps plans and sets params 200 times; in a normal build it
-checks a node's output and state survive, and under ThreadSanitizer it is the race check for the rings.
+Tests that prove properties rather than features. The first replaces global `operator new` and `delete`
+for this binary and counts any allocation or free on the audio path, from the very first block, while
+plans with every core node, feedback of each kind and a coupled group are adopted and run. The second runs
+a real audio thread while the control thread swaps plans (live settings swaps, rebuilds, feedback wires
+and a resource binding) and sets params 200 times; in a normal build it checks a node's output, state and
+latest param survive, and under ThreadSanitizer it is the race check for the two rings. A third,
+deterministic, checks that setGraph refuses to plan while the previous swap is still in flight.
 
 **Files:**
 - Modify: `packages/native/cmake/tests.cmake`
@@ -9164,8 +9247,9 @@ checks a node's output and state survive, and under ThreadSanitizer it is the ra
 
 ```cpp
 // The no-heap claim: once a plan is built, the block path - draining commands, adopting a plan, running
-// every core node and the host output - performs no allocation. Global operator new is replaced for this
-// binary; while `forbid` is set on a thread, any allocation on that thread is counted as a violation.
+// every core node, feedback copies, a coupled group and the host output - performs no allocation and frees
+// nothing. Global operator new and delete are replaced for this binary; while `forbid` is set on a thread,
+// any allocation or free on that thread is counted.
 #include <catch2/catch_test_macros.hpp>
 
 #if defined(__GNUC__) && !defined(__clang__)
@@ -9173,8 +9257,11 @@ checks a node's output and state survive, and under ThreadSanitizer it is the ra
 #endif
 
 #include <atomic>
+#include <cstdint>
 #include <cstdlib>
 #include <new>
+#include <span>
+#include <string>
 #if defined(_WIN32)
 #include <malloc.h>
 #endif
@@ -9182,13 +9269,15 @@ checks a node's output and state survive, and under ThreadSanitizer it is the ra
 #include "GraphRig.hpp"
 
 namespace {
-thread_local bool    forbid = false;
-std::atomic<int>     violations{0};
+thread_local bool forbid = false;
+std::atomic<int>  violations{0};  // allocations while forbidden
+std::atomic<int>  frees{0};       // frees while forbidden
 
 // Every block is allocated over-aligned through one pair of calls, so any delete form can free any new
 // form - the platform's aligned allocator does not mix with plain free on Windows.
 void* rawAlloc(std::size_t n, std::size_t align) {
     if (align < alignof(std::max_align_t)) align = alignof(std::max_align_t);
+    if (n > SIZE_MAX - align) return nullptr;  // rounding up would wrap
     const std::size_t size = (n ? n : 1) + align - 1;
 #if defined(_WIN32)
     return _aligned_malloc(size, align);
@@ -9198,6 +9287,7 @@ void* rawAlloc(std::size_t n, std::size_t align) {
 }
 
 void rawFree(void* p) noexcept {
+    if (forbid && p) frees.fetch_add(1, std::memory_order_relaxed);
 #if defined(_WIN32)
     _aligned_free(p);
 #else
@@ -9234,40 +9324,115 @@ void operator delete(void* p, std::size_t, std::align_val_t) noexcept { rawFree(
 
 using rp::graph::test::GraphRig;
 
-TEST_CASE("the block path never allocates", "[graph][noalloc]") {
-    GraphRig rig;
-    const auto buf = rig.resources.createAudioBuffer(2, 512, 48000.0);
-    const auto rec = rig.resources.createAudioBuffer(2, 512, 48000.0);
-    const std::string doc = R"({"nodes":[
-        {"id":"p","type":"rp.core.buffer-player","resources":{"sample":"res:)" + std::to_string(buf) + R"("}},
-        {"id":"d","type":"rp.core.delay","settings":{"maxSamples":256},"params":{"time":32}},
+namespace {
+
+// A coupled member that allocates nothing (the shared rp.test.linked logs to a vector).
+struct QuietLinked {
+    static constexpr const char* id = "rp.test.quiet-linked";
+    struct { rp::link link; } inputs;
+    struct { rp::audio_out<rp::mono> out; } outputs;
+    std::uint32_t produced = 0, peerCount = 0;
+    void set_peers(std::span<rp_node* const> peers) noexcept { peerCount = static_cast<std::uint32_t>(peers.size()); }
+    void prepare(const rp::Block&) noexcept { produced = 0; }
+    bool step(std::uint32_t target) noexcept {
+        if (produced < target) ++produced;
+        return produced >= target;
+    }
+    void finish(const rp::Block& b) noexcept {
+        for (std::uint32_t i = 0; i < b.frames(); ++i) outputs.out[0][i] = static_cast<float>(peerCount);
+    }
+    void process(const rp::Block&) noexcept {}
+};
+
+const rp_package* noAllocPackage() {
+    static const rp_node_type* const kTypes[] = {rp::node_type<QuietLinked>()};
+    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.noalloc"})", 1, kTypes};
+    return &kPackage;
+}
+
+// Every rp.core node, a feedback wire of each kind, a coupled pair and the host output. The `swapped`
+// form changes a setting in place (a live swap), a param value, a coupled group's members, and connects an
+// output that was not (so ports_changed fires), and adds fresh instances and a feedback wire.
+std::string graphDoc(bool swapped, rp::graph::ResourceTable::Id buf, rp::graph::ResourceTable::Id rec) {
+    const std::string b = std::to_string(buf), r = std::to_string(rec);
+    std::string nodes = R"({"id":"src","type":"rp.test.source"},
+        {"id":"p","type":"rp.core.buffer-player",)" + std::string(swapped ? R"("settings":{"loop":false},)" : "") +
+        R"("resources":{"sample":"res:)" + b + R"("}},
+        {"id":"d","type":"rp.core.delay","settings":{"maxSamples":256},"params":{"time":)" + (swapped ? "40" : "32") + R"(}},
         {"id":"k","type":"rp.core.constant","params":{"value":0.5}},
+        {"id":"k2","type":"rp.core.constant","params":{"value":0.25}},
+        {"id":"addc","type":"rp.core.add","settings":{"kind":"control"}},
+        {"id":"cs","type":"rp.test.sink"},
         {"id":"sum","type":"rp.core.add"},
         {"id":"split","type":"rp.core.split"},
         {"id":"dm","type":"rp.core.downmix"},
         {"id":"join","type":"rp.core.join"},
-        {"id":"rec","type":"rp.core.buffer-recorder","resources":{"target":"res:)" + std::to_string(rec) + R"("}},
-        {"id":"out","type":"rp.host.audio-out"}],
-      "wires":[{"from":"p.out","to":"d.in"},{"from":"p.out","to":"sum.in1"},{"from":"d.out","to":"sum.in2"},
-               {"from":"sum.out","to":"split.in"},{"from":"sum.out","to":"dm.in"},
-               {"from":"split.out1","to":"join.in1"},{"from":"dm.out","to":"join.in2"},
-               {"from":"join.out","to":"out.out.1-2"},{"from":"sum.out","to":"rec.in"}]})";
-    REQUIRE(rig.set(doc).ok);
-    rig.run(64, 2);  // warm up outside the check
+        {"id":"rl","type":"rp.core.relabel","settings":{"channels":2,"layout":"stereo"}},
+        {"id":"mg","type":"rp.core.merge"},
+        {"id":"es","type":"rp.test.sink"},
+        {"id":"x","type":"rp.test.through"},{"id":"y","type":"rp.test.through"},
+        {"id":"rec","type":"rp.core.buffer-recorder","resources":{"target":"res:)" + r + R"("}},
+        {"id":"la","type":"rp.test.quiet-linked"},{"id":"lb","type":"rp.test.quiet-linked"},{"id":"ls","type":"rp.test.sink"},
+        {"id":"out","type":"rp.host.audio-out"})";
+    std::string wires = R"({"from":"p.out","to":"d.in"},{"from":"p.out","to":"sum.in1"},{"from":"d.out","to":"sum.in2"},
+        {"from":"sum.out","to":"split.in"},{"from":"sum.out","to":"dm.in"},
+        {"from":"split.out1","to":"join.in1"},{"from":"dm.out","to":"join.in2"},
+        {"from":"join.out","to":"out.out.1-2"},{"from":"sum.out","to":"rec.in"},
+        {"from":"sum.out","to":"rl.in"},{"from":"rl.out","to":"out.out.3-4"},
+        {"from":"k.out","to":"addc.in1"},{"from":"k2.out","to":"addc.in2"},{"from":"addc.out","to":"cs.control","feedback":true},
+        {"from":"src.events","to":"mg.in1"},{"from":"mg.out","to":"es.events"},
+        {"from":"x.out","to":"y.in"},{"from":"y.out","to":"out.out.5-6"},{"from":"y.out","to":"x.in","feedback":true},
+        {"from":"la.link","to":"lb.link"},{"from":"la.out","to":"ls.in"})";
+    if (swapped) {
+        nodes += R"(,{"id":"rl2","type":"rp.core.relabel","settings":{"channels":2,"layout":"stereo"}},{"id":"s2","type":"rp.test.sink"},
+            {"id":"p2","type":"rp.core.buffer-player"},{"id":"s3","type":"rp.test.sink"},{"id":"fbs","type":"rp.test.sink"},
+            {"id":"lc","type":"rp.test.quiet-linked"})";
+        wires += R"(,{"from":"sum.out","to":"rl2.in"},{"from":"rl2.out","to":"s2.in"},
+            {"from":"rec.buffer","to":"p2.sample"},{"from":"p2.out","to":"s3.in"},
+            {"from":"src.events","to":"fbs.events","feedback":true},{"from":"lb.link","to":"lc.link"})";
+    }
+    return R"({"nodes":[)" + nodes + R"(],"wires":[)" + wires + "]}";
+}
 
-    // A swap is queued (audio thread "owns" the drain), so the measured blocks also adopt a plan.
-    rig.host->setAudioThreadOwns(true);
-    std::string swapped = doc;
-    swapped.replace(swapped.find(R"("type":"rp.core.buffer-player",)"), 31, R"("type":"rp.core.buffer-player","settings":{"loop":false},)");
-    REQUIRE(rig.set(swapped).ok);  // a live settings swap: adopted by the measured blocks
-    REQUIRE(rig.host->setParam("k", "value", 0.25, 5));
+struct Measured {
+    int allocations = 0, freed = 0;
+};
 
+Measured measure(GraphRig& rig, int blocks) {
     violations = 0;
+    frees = 0;
     forbid = true;
-    rig.run(64, 8);
+    rig.run(64, blocks);
     forbid = false;
-    CHECK(violations.load() == 0);
+    return {violations.load(), frees.load()};
+}
+
+}  // namespace
+
+TEST_CASE("the block path never allocates or frees", "[graph][noalloc]") {
+    GraphRig rig;
+    REQUIRE(rig.registry.addPackage(noAllocPackage()));
+    const auto buf = rig.resources.createAudioBuffer(2, 512, 48000.0);
+    const auto rec = rig.resources.createAudioBuffer(2, 512, 48000.0);
+    const auto first = rig.set(graphDoc(false, buf, rec));
+    INFO(GraphRig::codes(first));
+    REQUIRE(first.ok);
+    // No warm-up: a node that allocates lazily on its first block is caught too.
+    auto m = measure(rig, 2);
+    CHECK(m.allocations == 0);
+    CHECK(m.freed == 0);
+
+    // A swap is queued (the audio thread "owns" the drain), so the measured blocks also adopt a plan.
+    rig.host->setAudioThreadOwns(true);
+    const auto second = rig.set(graphDoc(true, buf, rec));
+    INFO(GraphRig::codes(second));
+    REQUIRE(second.ok);
+    REQUIRE(rig.host->setParam("k", "value", 0.75, 5));
+    m = measure(rig, 8);
+    CHECK(m.allocations == 0);
+    CHECK(m.freed == 0);
     rig.host->setAudioThreadOwns(false);
+    CHECK(rp::peer_as<QuietLinked>(rig.host->node("la"))->peerCount == 2);  // the peer change was adopted
 }
 ```
 
@@ -9275,60 +9440,167 @@ TEST_CASE("the block path never allocates", "[graph][noalloc]") {
 
 ```cpp
 // A real audio thread runs blocks while the control thread swaps plans, sets params and reclaims. Under
-// ThreadSanitizer (build-tsan/) this is the race check for the command ring, the release ring and plan
-// adoption; in a normal build it checks that a system's own output survives constant unrelated edits.
+// ThreadSanitizer (build-tsan/) this is the race check for the command ring and the release ring; in a
+// normal build it checks that a system's own output and state survive constant edits around it. The
+// adoption handshake itself (setGraph never planning while a swap is in flight) has its own deterministic
+// test below, since a race window that narrow is not something a stress run can be relied on to hit.
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
+#include <chrono>
+#include <iterator>
+#include <string>
 #include <thread>
+#include <vector>
 
 #include "GraphRig.hpp"
 
+using rp::graph::GraphHost;
 using rp::graph::test::GraphRig;
+using rp::graph::test::Sink;
 using rp::graph::test::Source;
 
-TEST_CASE("plan swaps under a running audio thread keep a node's output and state", "[graph][swap][stress]") {
-    GraphRig rig;
-    auto doc = [](int variant) {
-        std::string extra;
-        for (int i = 0; i < variant % 4; ++i) extra += R"(,{"id":"x)" + std::to_string(i) + R"(","type":"rp.test.sink"})";
-        const std::string pair = variant % 2 ? "out.3-4" : "out.1-2";
-        return R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":0.5}},{"id":"out","type":"rp.host.audio-out"})" +
-               extra + R"(],"wires":[{"from":"src.out","to":"out.)" + pair + R"("}]})";
-    };
-    REQUIRE(rig.set(doc(0)).ok);
-    rig.host->setAudioThreadOwns(true);
+namespace {
 
-    std::atomic<bool> running{true};
-    std::atomic<int>  blocks{0};
-    std::atomic<bool> wrong{false};
-    std::thread audio([&] {
+// A node whose settings swap live for a level change and rebuild for a tag change.
+struct TunableSettings {
+    double      level = 0.5;
+    std::string tag = "a";
+};
+
+struct Tunable {
+    static constexpr const char* id = "rp.test.tunable";
+    using Settings = TunableSettings;
+    struct { rp::audio_out<rp::mono> out; } outputs;
+    static bool needs_rebuild(const Settings& a, const Settings& b) { return a.tag != b.tag; }
+    float level = 0.5f;
+    void on_settings(const Settings& s) noexcept { level = static_cast<float>(s.level); }
+    void process(const rp::Block& b) noexcept {
+        for (std::uint32_t i = 0; i < b.frames(); ++i) outputs.out[0][i] = level;
+    }
+};
+
+const rp_package* stressPackage() {
+    static const rp_node_type* const kTypes[] = {rp::node_type<Tunable>()};
+    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.stress"})",
+                                     static_cast<std::uint32_t>(std::size(kTypes)), kTypes};
+    return &kPackage;
+}
+
+// Runs blocks on its own thread until destroyed; stopping and joining in the destructor means a failed
+// check on the control thread unwinds cleanly instead of destroying a joinable std::thread.
+class AudioThread {
+public:
+    explicit AudioThread(GraphHost& host) : host_(host), thread_([this] { run(); }) {}
+    ~AudioThread() { stop(); }
+    void stop() {
+        running_.store(false, std::memory_order_release);
+        if (thread_.joinable()) thread_.join();
+    }
+    int  blocks() const { return blocks_.load(); }
+    bool wrong() const { return wrong_.load(); }
+    // Wait (up to a deadline) until `n` more blocks have run.
+    bool waitBlocks(int n) const {
+        const int target = blocks() + n;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (blocks() < target)
+            if (std::chrono::steady_clock::now() > deadline) return false;
+            else std::this_thread::yield();
+        return true;
+    }
+
+private:
+    void run() {
         std::vector<std::vector<float>> outs(8, std::vector<float>(64));
         std::vector<float*> ptrs;
         for (auto& o : outs) ptrs.push_back(o.data());
-        rp_transport t{48000.0, 120.0, 0.0, 0};
-        while (running.load(std::memory_order_acquire)) {
-            for (auto& o : outs) std::fill(o.begin(), o.end(), 0.0f);
-            rig.host->processBlock(64, t, ptrs.data(), 8);
-            if (outs[0][0] != 0.5f && outs[2][0] != 0.5f) wrong = true;
-            blocks.fetch_add(1);
+        const rp_transport t{48000.0, 120.0, 0.0, 0};
+        while (running_.load(std::memory_order_acquire)) {
+            host_.processBlock(64, t, ptrs.data(), 8);
+            // The source is on one pair or the other, every frame of the block.
+            const bool onFirst = outs[0][0] == 0.5f && outs[1][63] == 0.5f;
+            const bool onSecond = outs[2][0] == 0.5f && outs[3][63] == 0.5f;
+            if (!onFirst && !onSecond) wrong_ = true;
+            blocks_.fetch_add(1);
         }
-    });
-
-    for (int i = 1; i <= 200; ++i) {
-        REQUIRE(rig.set(doc(i)).ok);
-        rig.host->setParam("src", "gain", 1.0);
-        rig.host->reclaim();
     }
-    // Let the last swap land before stopping the thread.
-    const int seen = blocks.load();
-    while (blocks.load() < seen + 4) std::this_thread::yield();
-    running = false;
-    audio.join();
+
+    GraphHost&        host_;
+    std::atomic<bool> running_{true};
+    std::atomic<int>  blocks_{0};
+    std::atomic<bool> wrong_{false};
+    std::thread       thread_;  // last: it starts running in the constructor
+};
+
+// Variants differ in unrelated nodes, the source's output pair, a live settings swap (every variant) and a
+// rebuild (every fifth), feedback wires added and removed, and a resource binding's loop setting.
+std::string stressDoc(int variant, rp::graph::ResourceTable::Id buf) {
+    std::string extra;
+    for (int i = 0; i < variant % 4; ++i) extra += R"(,{"id":"x)" + std::to_string(i) + R"(","type":"rp.test.sink"})";
+    const std::string pair = variant % 2 ? "out.3-4" : "out.1-2";
+    std::string wires = R"({"from":"src.out","to":"out.)" + pair + R"("},{"from":"tun.out","to":"ts.in"},)"
+                        R"({"from":"p.out","to":"ps.in"},{"from":"k.out","to":"ks.control"})";
+    if (variant % 3)
+        wires += R"(,{"from":"src.events","to":"fbs.events","feedback":true},{"from":"src.out","to":"fba.in","feedback":true})";
+    return R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":0.5}},{"id":"out","type":"rp.host.audio-out"},)"
+           R"({"id":"tun","type":"rp.test.tunable","settings":{"level":)" + std::to_string(variant) + R"(,"tag":"t)" +
+           std::to_string(variant / 5) + R"("}},)"
+           R"({"id":"ts","type":"rp.test.sink"},{"id":"fbs","type":"rp.test.sink"},{"id":"fba","type":"rp.test.through"},)"
+           R"({"id":"ps","type":"rp.test.sink"},{"id":"k","type":"rp.core.constant","settings":{"max":1000}},)"
+           R"({"id":"ks","type":"rp.test.sink"},)"
+           R"({"id":"p","type":"rp.core.buffer-player","settings":{"loop":)" + std::string(variant % 2 ? "true" : "false") +
+           R"(},"resources":{"sample":"res:)" + std::to_string(buf) + R"("}})" + extra + R"(],"wires":[)" + wires + "]}";
+}
+
+}  // namespace
+
+TEST_CASE("plan swaps under a running audio thread keep a node's output and state", "[graph][swap][stress]") {
+    GraphRig rig;
+    REQUIRE(rig.registry.addPackage(stressPackage()));
+    const auto buf = rig.resources.createAudioBuffer(2, 512, 48000.0);
+    REQUIRE(rig.set(stressDoc(0, buf)).ok);
+    rig.host->setAudioThreadOwns(true);
+
+    int failedSets = 0, failedParams = 0;
+    bool settled = false;
+    {
+        AudioThread audio(*rig.host);
+        for (int i = 1; i <= 200; ++i) {
+            const auto r = rig.set(stressDoc(i, buf));
+            if (!r.ok) {
+                ++failedSets;
+                UNSCOPED_INFO("set " << i << ": " << GraphRig::codes(r));
+            }
+            if (!rig.host->setParam("k", "value", static_cast<double>(i))) ++failedParams;
+            rig.host->reclaim();
+        }
+        settled = audio.waitBlocks(4);  // let the last swap and param land
+        audio.stop();
+        CHECK_FALSE(audio.wrong());
+        CHECK(rig.node<Source>("src").frames == static_cast<std::uint64_t>(audio.blocks()) * 64);
+    }
     rig.host->setAudioThreadOwns(false);
 
-    CHECK_FALSE(wrong.load());
-    CHECK(rig.node<Source>("src").frames == static_cast<std::uint64_t>(blocks.load()) * 64);
+    CHECK(settled);
+    CHECK(failedSets == 0);
+    CHECK(failedParams == 0);
+    CHECK(rig.node<Tunable>("tun").level == 200.0f);  // the last live settings swap stands
+    CHECK(rig.node<Sink>("ks").controlEnd == 200.0);  // and so does the last param value
+}
+
+TEST_CASE("setGraph waits for the audio thread to adopt the last plan before planning again", "[graph][swap]") {
+    GraphRig rig({48000.0, 64, rp::graph::Target::Desktop, 50});  // a 50 ms adoption timeout
+    REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.sink"}],"wires":[]})").ok);
+    rig.host->setAudioThreadOwns(true);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.sink"},{"id":"b","type":"rp.test.sink"}],"wires":[]})").ok);
+    // Nothing has drained the swap, so the next plan must not be made: the last one is still in flight.
+    const auto busy = rig.set(R"({"nodes":[],"wires":[]})");
+    CHECK(GraphRig::codes(busy) == "busy");
+    rig.run();  // the audio thread's next block adopts it
+    CHECK(rig.set(R"({"nodes":[],"wires":[]})").ok);
+    rig.run();
+    rig.host->setAudioThreadOwns(false);
+    CHECK(rig.host->instanceCount() == 0);
 }
 ```
 
@@ -9344,7 +9616,7 @@ Add both files to the test's `SOURCES` and `Threads::Threads` to its `LIBS`:
 - [ ] **Step 3: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (1078 assertions in 116 test cases)`. (These pass immediately: the properties
+Expected: `All tests passed (901 assertions in 118 test cases)`. (These pass immediately: the properties
 were built in by Tasks 2 to 8. If NoAlloc fails, an earlier task let an allocation onto the block path;
 fix that, never the test.)
 
@@ -9358,7 +9630,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-graph-test
 ```
 
-Expected: `All tests passed (1078 assertions in 116 test cases)` and no ThreadSanitizer report. (Same
+Expected: `All tests passed (901 assertions in 118 test cases)` and no ThreadSanitizer report. (Same
 configure as `tools/run-sanitizer.sh thread`, which shares `build-tsan/`.)
 
 - [ ] **Step 5: Commit**
@@ -9372,6 +9644,11 @@ the audio path - draining commands, adopting a plan with a live settings
 swap, running every core node - is a failure. A real audio thread runs
 while the control thread swaps plans 200 times; the node keeps its output
 and its frame count, and ThreadSanitizer finds no race."
+
+(This task was executed as the original commit plus one review-fix commit, "test(graph): the no-heap
+and swap tests cover every path they claim". It also touched Task 7's GraphHost (a configurable
+adoption timeout; the host allocator through operator new). A fresh execution needs only the one commit
+above.)
 ```
 
 ---
@@ -9480,7 +9757,9 @@ Expected: the bundle step fails: `Could not resolve "../../src/graph/canonicalJs
 // (packages/native/test/graph/golden/, from gen-canonical-cases.mjs), which keeps them in step.
 //
 // For plain JSON data: toJSON methods and function-valued members are not given JSON.stringify's
-// treatment, because descriptors and settings never contain them.
+// treatment, because descriptors and settings never contain them. A lone surrogate is written as
+// JSON.stringify writes it ("\ud800"), which C++'s parser refuses: it has no UTF-8 spelling. defineNode
+// therefore refuses one in anything a descriptor carries.
 export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) {
     const parts: string[] = [];
@@ -9564,15 +9843,31 @@ test("a node without settings declares the same empty schema C++ does", () => {
   expect(n.descriptor().settings).toEqual({ type: "object" });
 });
 
-test("a node with settings ships zod's JSON Schema", () => {
+test("a node with settings ships the JSON Schema of what a document may write", () => {
   const n = defineNode({
     id: "rp.test.schema",
     settings: z.object({ maxSamples: z.number().int().min(1).default(48000) }),
     ports: {},
     create: noop,
   });
-  const schema = n.descriptor().settings as { properties?: Record<string, unknown> };
+  const schema = n.descriptor().settings as { properties?: Record<string, unknown>; required?: string[]; additionalProperties?: unknown };
   expect(Object.keys(schema.properties ?? {})).toEqual(["maxSamples"]);
+  // A defaulted field is optional and extra keys are allowed, as parseSettings (and C++) treat them.
+  expect(schema.required).toBe(undefined);
+  expect(schema.additionalProperties).toBe(undefined);
+  expect(n.parseSettings({}).maxSamples).toBe(48000);
+  expect(n.parseSettings({ maxSamples: 5, extra: 1 }).maxSamples).toBe(5);
+});
+
+test("settings are a JSON object or nothing, and every field needs a default", () => {
+  const n = defineNode({ id: "rp.test.bare", ports: {}, create: noop });
+  expect(n.parseSettings(undefined)).toEqual({});
+  expect(() => n.parseSettings("x")).toThrow("JSON object");
+  expect(() => n.parseSettings(null)).toThrow("JSON object");
+  expect(() => n.parseSettings([1])).toThrow("JSON object");
+  expect(() => defineNode({ id: "rp.test.nodefault", settings: z.object({ rom: z.string() }), ports: {}, create: noop })).toThrow(
+    "needs a default",
+  );
 });
 
 test("duplicate ids and bad enum defaults are rejected", () => {
@@ -9599,11 +9894,12 @@ test("param ranges and channel specs are checked as the C++ parser checks them",
   expect(bad({ g: param.float({ name: "G", min: 0, max: 1, default: 2 }) })).toThrow("within");
   expect(bad({ n: param.int({ name: "N", min: 0.5, max: 3, default: 1 }) })).toThrow("whole-number");
   expect(bad({ m: param.enum({ name: "M", values: ["a", "a"], default: "a" }) })).toThrow("twice");
-  expect(bad({}, { out: audio.out(channels.any()) })).toThrow('cannot be "any"');
+  expect(bad({}, { out: audio.out(channels.any() as never) })).toThrow('cannot be "any"');  // (a type error too)
   expect(bad({}, { out: audio.out(channels.match("nope")) })).toThrow("not another audio port");
   expect(bad({}, { in: audio.in(channels.fixed(2, "mono")) })).toThrow("is 1 channels");
   expect(bad({ g: param.float({ name: "G", min: 0, max: Infinity, default: 0 }) })).toThrow("finite");
-  bad({}, { in: audio.in(channels.fixed(2, "constructor")) })();  // an unknown layout name, not an Object.prototype key
+  // an unknown layout name, not an Object.prototype key
+  expect(bad({}, { in: audio.in(channels.fixed(2, "constructor")) })().ports[0].channels).toEqual({ count: 2, layout: "constructor" });
   expect(bad({}, { in: audio.in(channels.fixed(3, "discrete(03)")) })).toThrow("not a discrete(n)");
   expect(() =>
     defineNode({ id: "rp.test.ex", ports: { "pins.a": events.out() }, exclusive: [["pins.*", "pins.a"]], create: noop }).descriptor(),
@@ -9627,6 +9923,48 @@ test("resource ports carry their type and write access", () => {
     { id: "buffer", dir: "out", kind: "resource", resourceType: "audio-buffer" },
   ]);
 });
+
+test("port shapes are checked as the C++ parser checks them", () => {
+  const shaped = (spec: unknown) => () => defineNode({ id: "rp.test.shape", ports: { p: spec as never }, create: noop }).descriptor();
+  expect(shaped({ dir: "in", kind: "audio" })).toThrow("needs channels");
+  expect(shaped({ dir: "in", kind: "events", channels: { any: true } })).toThrow("only audio ports");
+  expect(shaped({ dir: "in", kind: "link" })).toThrow("link ports");
+  expect(shaped({ dir: "out", kind: "resource", resourceType: "t", access: "write" })).toThrow("only a resource input");
+  expect(shaped({ dir: "in", kind: "events", resourceType: "t" })).toThrow("only resource ports");
+  expect(shaped({ dir: "in", kind: "audio", channels: { any: true, count: 2, layout: "stereo" } })).toThrow("exactly one");
+  expect(shaped({ dir: "in", kind: "audio", channels: { any: false } })).toThrow("must be true");
+  expect(shaped({ dir: "in", kind: "audio", channels: { count: 4294967296, layout: "discrete(4294967296)" } })).toThrow("whole channel count");
+  expect(shaped({ dir: "in", kind: "resource" })).toThrow("resourceType");
+  expect(shaped({ dir: "sideways", kind: "events" })).toThrow("unknown dir");
+});
+
+test("ids are plain, unambiguous and keep their order", () => {
+  const node = (ports: Record<string, unknown>) => () => defineNode({ id: "rp.test.ids", ports: ports as never, create: noop }).descriptor();
+  expect(node({ "a b": events.in() })).toThrow("whitespace");
+  expect(node({ ".*": events.out() })).toThrow("'*'");
+  expect(node({ "1": events.in() })).toThrow("in order");
+  expect(node({ "x\udc00": events.in() })).toThrow("control characters");  // a lone surrogate C++ cannot read
+  expect(() => defineNode({ id: "rp.p.\ud800", ports: {}, create: noop })).toThrow("control characters");
+  expect(defineNode({ id: "rp.p.\ud83c\udfb5", ports: {}, create: noop }).descriptor().id).toBe("rp.p.\ud83c\udfb5");  // a whole pair is fine
+});
+
+test("a returned descriptor is the caller's own copy", () => {
+  const n = defineNode({
+    id: "rp.test.copy",
+    ports: { "pins.a": events.out(), "pins.b": events.out() },
+    params: { m: param.enum({ name: "M", values: ["a", "b"], default: "a" }) },
+    exclusive: [["pins.a", "pins.b"]],
+    create: noop,
+  });
+  const first = n.descriptor();
+  first.exclusive![0].push("pins.a");
+  (first.params[0] as { values: string[] }).values.push("a");
+  (first.settings as Record<string, unknown>).type = "array";
+  const second = n.descriptor();
+  expect(second.exclusive).toEqual([["pins.a", "pins.b"]]);
+  expect((second.params[0] as { values: string[] }).values).toEqual(["a", "b"]);
+  expect(second.settings).toEqual({ type: "object" });
+});
 ```
 
 - [ ] **Step 2: Run it to see it fail**
@@ -9647,8 +9985,12 @@ export type PortKind = "audio" | "events" | "bytes" | "control" | "link" | "reso
 export type PortDir = "in" | "out" | "link";
 
 /** An audio port's channels: a fixed count + layout, any (inputs only), or a copy of another port. A fixed
- *  layout of "any" fixes the count only. */
-export type ChannelSpec = { any: true } | { match: string } | { count: number; layout: string };
+ *  layout of "any" fixes the count only. Exactly one form: the `never` members stop an object literal from
+ *  mixing two (`{ any: true, count: 2 }`), which C++'s parser refuses. */
+export type ChannelSpec =
+  | { any: true; match?: never; count?: never; layout?: never }
+  | { match: string; any?: never; count?: never; layout?: never }
+  | { count: number; layout: string; any?: never; match?: never };
 
 export interface PortDesc {
   id: string;
@@ -9697,25 +10039,39 @@ export interface TypeDescriptor extends Layout {
 //   });
 //
 // Settings are validated on the CONTROL plane (parseSettings), so the code that runs on the audio thread
-// receives a plain, already-checked object and the audio-thread bundle never carries zod.
-import { z } from "zod";
+// receives a plain, already-checked object. zod is imported for its types only: the schema a definition
+// carries brings its own toJSONSchema, so a bundle holding just a node's create/process need not hold zod.
+import type { z } from "zod";
 import type { ChannelSpec, Layout, ParamDesc, PortDesc, TypeDescriptor } from "./descriptor";
 
 // ---- ports ------------------------------------------------------------------------------------------------
 
-type PortSpec = Omit<PortDesc, "id">;
+type AnyChannels = Extract<ChannelSpec, { any: true }>;
+type MatchChannels = Extract<ChannelSpec, { match: string }>;
+type FixedChannels = Extract<ChannelSpec, { count: number }>;
+type OutputChannels = MatchChannels | FixedChannels;
+
+// Each kind's legal shape, so a hand-written spec that C++'s parser would refuse does not type-check. (The
+// same rules are also checked at run time, for callers that are not type-checked.)
+type PortSpec =
+  | { dir: "in"; kind: "audio"; channels: ChannelSpec }
+  | { dir: "out"; kind: "audio"; channels: OutputChannels }
+  | { dir: "in" | "out"; kind: "events" | "bytes" | "control" }
+  | { dir: "in"; kind: "resource"; resourceType: string; access?: "write" }
+  | { dir: "out"; kind: "resource"; resourceType: string }
+  | { dir: "link"; kind: "link" };
 
 export const channels = {
-  any: (): ChannelSpec => ({ any: true }),
-  match: (port: string): ChannelSpec => ({ match: port }),
-  fixed: (count: number, layout: string): ChannelSpec => ({ count, layout }),
-  mono: (): ChannelSpec => ({ count: 1, layout: "mono" }),
-  stereo: (): ChannelSpec => ({ count: 2, layout: "stereo" }),
+  any: (): AnyChannels => ({ any: true }),
+  match: (port: string): MatchChannels => ({ match: port }),
+  fixed: (count: number, layout: string): FixedChannels => ({ count, layout }),
+  mono: (): FixedChannels => ({ count: 1, layout: "mono" }),
+  stereo: (): FixedChannels => ({ count: 2, layout: "stereo" }),
 };
 
 export const audio = {
   in: (spec: ChannelSpec = channels.any()): PortSpec => ({ dir: "in", kind: "audio", channels: spec }),
-  out: (spec: ChannelSpec): PortSpec => ({ dir: "out", kind: "audio", channels: spec }),
+  out: (spec: OutputChannels): PortSpec => ({ dir: "out", kind: "audio", channels: spec }),
 };
 export const events = {
   in: (): PortSpec => ({ dir: "in", kind: "events" }),
@@ -9839,7 +10195,8 @@ export interface DefinedNode<S> extends NodeDefinition<S> {
   descriptor(): TypeDescriptor;
 }
 
-const NO_SETTINGS_SCHEMA = { type: "object" };
+const MAX_CHANNELS = 4294967295;
+const q = (s: string): string => JSON.stringify(s);
 
 /** How many channels a layout name means (mono 1, stereo 2, 5.1 6, 7.1 8, discrete(n) n); null for "any"
  *  or an unknown name. The twin of layoutChannels in packages/native/src/graph/Descriptor.cpp. */
@@ -9851,87 +10208,175 @@ export function layoutChannels(layout: string): number | null {
     case "7.1": return 8;
   }
   const m = /^discrete\(([1-9][0-9]*)\)$/.exec(layout);
-  return m ? Number(m[1]) : null;
+  const n = m ? Number(m[1]) : 0;
+  return n >= 1 && n <= MAX_CHANNELS ? n : null;
 }
 
-const MAX_CHANNELS = 4294967295;
+/** Can C++ read this string? A lone surrogate has no UTF-8 spelling, so its parser refuses one. */
+function wellFormed(s: string): boolean {
+  for (let i = 0; i < s.length; ++i) {
+    const c = s.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff) {
+      const next = s.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+      ++i;
+    } else if (c >= 0xdc00 && c <= 0xdfff) return false;
+  }
+  return true;
+}
+
+/** The C++ registry's isPlainId, code unit for byte: non-empty, nothing at or below U+0020, nor U+007F. */
+const plainId = (s: unknown): s is string => typeof s === "string" && s.length > 0 && !/[\u0000-\u0020\u007f]/.test(s) && wellFormed(s);
+
+const isString = (v: unknown): v is string => typeof v === "string";
+const has = (o: object, key: string): boolean => Object.prototype.hasOwnProperty.call(o, key);
+
+// One port's own shape, as parsePort in Descriptor.cpp checks it.
+function checkPort(node: string, p: PortDesc): void {
+  const where = `${node}: port ${q(p.id)}`;
+  if (!["in", "out", "link"].includes(p.dir)) throw new Error(`${where}: unknown dir ${q(String(p.dir))}`);
+  if (!["audio", "events", "bytes", "control", "link", "resource"].includes(p.kind))
+    throw new Error(`${where}: unknown kind ${q(String(p.kind))}`);
+  if ((p.kind === "link") !== (p.dir === "link")) throw new Error(`${where}: link ports, and only link ports, have dir "link"`);
+  if (p.kind === "audio") {
+    const c = p.channels as Record<string, unknown> | undefined;
+    if (!c || typeof c !== "object") throw new Error(`${where}: an audio port needs channels`);
+    if (["any", "match", "count"].filter((k) => has(c, k)).length !== 1)
+      throw new Error(`${where}: channels needs exactly one of any / match / count`);
+    if (has(c, "any")) {
+      if (c.any !== true) throw new Error(`${where}: channels.any must be true`);
+      if (p.dir === "out") throw new Error(`${where}: an output cannot be "any"; use match or a fixed count`);
+    } else if (has(c, "match")) {
+      if (!plainId(c.match)) throw new Error(`${where}: channels.match must name a port`);
+    } else {
+      const count = c.count as number;
+      if (typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > MAX_CHANNELS)
+        throw new Error(`${where}: needs a whole channel count from 1 to ${MAX_CHANNELS}`);
+      if (!isString(c.layout) || !c.layout || !wellFormed(c.layout)) throw new Error(`${where}: needs a layout name`);
+      const known = layoutChannels(c.layout);
+      if (known === null && c.layout.startsWith("discrete("))
+        throw new Error(`${where}: layout ${q(c.layout)} is not a discrete(n) layout`);
+      if (known !== null && known !== count) throw new Error(`${where}: layout ${q(c.layout)} is ${known} channels, not ${count}`);
+    }
+  } else if (p.channels !== undefined) {
+    throw new Error(`${where}: only audio ports have channels`);
+  }
+  if (p.kind === "resource") {
+    if (!plainId(p.resourceType)) throw new Error(`${where}: a resource port needs a resourceType`);
+    if (p.access !== undefined && p.access !== "write") throw new Error(`${where}: access can only be "write"`);
+    if (p.access === "write" && p.dir !== "in") throw new Error(`${where}: only a resource input may have access "write"`);
+  } else if (p.resourceType !== undefined || p.access !== undefined) {
+    throw new Error(`${where}: only resource ports have resourceType or access`);
+  }
+}
+
+// One param's own shape, as parseParam in Descriptor.cpp checks it.
+function checkParam(node: string, p: ParamDesc): void {
+  const where = `${node}: param ${q(p.id)}`;
+  if (!isString(p.name) || !wellFormed(p.name)) throw new Error(`${where}: needs a name`);
+  if (p.type === "enum") {
+    if (!Array.isArray(p.values) || p.values.length === 0 || p.values.some((v) => !isString(v) || !v || !wellFormed(v)))
+      throw new Error(`${where}: an enum needs non-empty values`);
+    if (new Set(p.values).size !== p.values.length) throw new Error(`${where}: an enum lists a value twice`);
+    if (!p.values.includes(p.default)) throw new Error(`${where}: default ${q(String(p.default))} is not one of its values`);
+  } else if (p.type === "bool") {
+    if (typeof p.default !== "boolean") throw new Error(`${where}: a bool's default must be true or false`);
+  } else if (p.type === "float" || p.type === "int") {
+    if (![p.min, p.max, p.default].every((v) => typeof v === "number" && Number.isFinite(v)))
+      throw new Error(`${where}: needs finite min, max and default`);
+    if (!(p.min <= p.max)) throw new Error(`${where}: min must not exceed max`);
+    if (!(p.min <= p.default && p.default <= p.max)) throw new Error(`${where}: default must lie within [min, max]`);
+    if (p.type === "int" && ![p.min, p.max, p.default].every(Number.isInteger))
+      throw new Error(`${where}: an int param needs whole-number min, max and default`);
+    if (p.unit !== undefined && (!isString(p.unit) || !wellFormed(p.unit))) throw new Error(`${where}: unit must be a string`);
+  } else {
+    throw new Error(`${where}: unknown type ${q(String((p as { type: unknown }).type))}`);
+  }
+}
+
+// A fresh copy of a port, so a caller that edits a returned layout cannot reach the definition.
+function copyPort(id: string, spec: PortSpec): PortDesc {
+  const p: PortDesc = { id, dir: spec.dir, kind: spec.kind };
+  if ("channels" in spec && spec.channels !== undefined) p.channels = { ...spec.channels } as ChannelSpec;
+  if ("resourceType" in spec && spec.resourceType !== undefined) p.resourceType = spec.resourceType;
+  if ("access" in spec && spec.access !== undefined) p.access = spec.access;
+  return p;
+}
+
+function copyParam(id: string, spec: ParamSpec): ParamDesc {
+  const p = { id, ...spec } as ParamDesc;
+  if (p.type === "enum") p.values = [...p.values];
+  return p;
+}
+
+// An integer-like key ("1") would be listed before every other key by Object.entries, so it could not
+// keep its declaration order; C++ keeps it, so the two sides would disagree.
+const integerLike = (id: string): boolean => /^(0|[1-9][0-9]*)$/.test(id);
 
 function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
   const portMap = typeof def.ports === "function" ? def.ports(settings) : def.ports;
   const paramMap = typeof def.params === "function" ? def.params(settings) : (def.params ?? {});
-  const ports: PortDesc[] = Object.entries(portMap).map(([id, spec]) => ({ id, ...spec }));
+  const ports: PortDesc[] = Object.entries(portMap).map(([id, spec]) => copyPort(id, spec));
   // Inputs (and link ports) first, then outputs, each in declaration order - the C++ layer's order too.
   const ordered = [...ports.filter((p) => p.dir !== "out"), ...ports.filter((p) => p.dir === "out")];
-  const params = Object.entries(paramMap).map(([id, spec]) => ({ id, ...spec }) as ParamDesc);
+  const params = Object.entries(paramMap).map(([id, spec]) => copyParam(id, spec));
   const seen = new Set<string>();
   for (const p of [...ordered, ...params]) {
-    if (!p.id) throw new Error(`${def.id}: a port or param needs a non-empty id`);
-    if (seen.has(p.id)) throw new Error(`${def.id}: "${p.id}" is used by more than one port or param`);
+    if (!plainId(p.id) || p.id.includes("*"))
+      throw new Error(`${def.id}: id ${q(p.id)} must be non-empty, with no whitespace, control characters or '*'`);
+    if (integerLike(p.id)) throw new Error(`${def.id}: id ${q(p.id)} is a number, which a JS object cannot keep in order`);
+    if (seen.has(p.id)) throw new Error(`${def.id}: ${q(p.id)} is used by more than one port or param`);
     seen.add(p.id);
   }
   // The same checks the C++ parser applies to every layout (Descriptor.cpp), so a TS node cannot declare
   // what the planner would refuse.
+  for (const p of ordered) checkPort(def.id, p);
+  for (const p of params) checkParam(def.id, p);
   for (const p of ordered) {
-    if (p.kind !== "audio" || !p.channels) continue;
     const c = p.channels;
-    if ("any" in c && p.dir === "out") throw new Error(`${def.id}: output "${p.id}" cannot be "any"`);
-    if ("match" in c) {
-      const target = ordered.find((t) => t.id === c.match);
-      if (!target || target === p || target.kind !== "audio")
-        throw new Error(`${def.id}: "${p.id}" matches "${c.match}", which is not another audio port`);
-    }
-    if ("count" in c) {
-      const known = layoutChannels(c.layout);
-      if (!Number.isInteger(c.count) || c.count < 1 || c.count > MAX_CHANNELS)
-        throw new Error(`${def.id}: "${p.id}" needs a whole channel count from 1 to ${MAX_CHANNELS}`);
-      if (!c.layout) throw new Error(`${def.id}: "${p.id}" needs a layout name`);
-      if (known === null && c.layout.startsWith("discrete("))
-        throw new Error(`${def.id}: "${p.id}" layout "${c.layout}" is not a discrete(n) layout`);
-      if (known !== null && known !== c.count)
-        throw new Error(`${def.id}: "${p.id}" layout "${c.layout}" is ${known} channels, not ${c.count}`);
-    }
+    if (p.kind !== "audio" || !c || !("match" in c) || c.match === undefined) continue;
+    const target = ordered.find((t) => t.id === c.match);
+    if (!target || target === p || target.kind !== "audio")
+      throw new Error(`${def.id}: port ${q(p.id)} matches ${q(c.match)}, which is not another audio port`);
   }
-  for (const p of ordered)
-    if (p.kind === "resource" && !p.resourceType) throw new Error(`${def.id}: resource port "${p.id}" needs a resourceType`);
-  for (const p of params) {
-    if (p.type === "enum") {
-      if (p.values.length === 0 || p.values.some((v) => !v)) throw new Error(`${def.id}: enum param "${p.id}" needs non-empty values`);
-      if (new Set(p.values).size !== p.values.length) throw new Error(`${def.id}: enum param "${p.id}" lists a value twice`);
-      if (!p.values.includes(p.default))
-        throw new Error(`${def.id}: enum param "${p.id}" default "${p.default}" is not one of its values`);
-    } else if (p.type === "float" || p.type === "int") {
-      if (![p.min, p.max, p.default].every(Number.isFinite)) throw new Error(`${def.id}: param "${p.id}" needs finite min, max and default`);
-      if (!(p.min <= p.max)) throw new Error(`${def.id}: param "${p.id}" min must not exceed max`);
-      if (!(p.min <= p.default && p.default <= p.max)) throw new Error(`${def.id}: param "${p.id}" default must lie within [min, max]`);
-      if (p.type === "int" && ![p.min, p.max, p.default].every(Number.isInteger))
-        throw new Error(`${def.id}: int param "${p.id}" needs whole-number min, max and default`);
-    }
-  }
+  const isWildcard = (m: string) => m.length > 2 && m.endsWith(".*");
+  const covers = (pattern: string, id: string) => isWildcard(pattern) && id.startsWith(pattern.slice(0, -1));
   for (const group of def.exclusive ?? []) {
-    if (group.length === 0) throw new Error(`${def.id}: an exclusive group needs members`);
+    if (!Array.isArray(group) || group.length === 0) throw new Error(`${def.id}: an exclusive group needs members`);
     group.forEach((m, i) => {
-      const wildcard = m.length > 2 && m.endsWith(".*");
-      if (!m || (!wildcard && !ordered.some((p) => p.id === m && p.dir === "out")))
-        throw new Error(`${def.id}: exclusive member "${m}" must be an output's id or a "prefix.*" pattern`);
-      const covers = (pattern: string, id: string) => pattern.endsWith(".*") && id.startsWith(pattern.slice(0, -1));
+      if (!isString(m) || !m || !wellFormed(m) || (!isWildcard(m) && !ordered.some((p) => p.id === m && p.dir === "out")))
+        throw new Error(`${def.id}: exclusive member ${q(String(m))} must be an output's id or a "prefix.*" pattern`);
       for (const other of group.slice(0, i)) {
-        const otherId = other.endsWith(".*") ? other.slice(0, -1) : other;
-        const mineId = wildcard ? m.slice(0, -1) : m;
+        const otherId = isWildcard(other) ? other.slice(0, -1) : other;
+        const mineId = isWildcard(m) ? m.slice(0, -1) : m;
         if (other === m || covers(m, otherId) || covers(other, mineId))
-          throw new Error(`${def.id}: exclusive members "${other}" and "${m}" overlap`);
+          throw new Error(`${def.id}: exclusive members ${q(other)} and ${q(m)} overlap`);
       }
     });
   }
   const layout: Layout = { ports: ordered, params };
-  if (def.exclusive?.length) layout.exclusive = def.exclusive;
+  if (def.exclusive?.length) layout.exclusive = def.exclusive.map((g) => [...g]);
   return layout;
 }
 
 export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): DefinedNode<S> {
-  // The C++ registry's isPlainId, code unit for byte: nothing at or below U+0020, nor U+007F.
-  if (!def.id || /[\u0000-\u0020\u007f]/.test(def.id))
-    throw new Error(`node type id ${JSON.stringify(def.id)} must be non-empty, with no whitespace or control characters`);
-  const parseSettings = (raw: unknown): S => (def.settings ? def.settings.parse(raw ?? {}) : ({} as S));
+  if (!plainId(def.id))
+    throw new Error(`node type id ${q(String(def.id))} must be non-empty, with no whitespace or control characters`);
+  // Settings arrive as JSON: an object, or nothing at all (the defaults), never another value, as in C++.
+  const parseSettings = (raw: unknown): S => {
+    const given = raw === undefined ? {} : raw;
+    if (typeof given !== "object" || given === null || Array.isArray(given))
+      throw new Error(`node type ${q(def.id)}: settings must be a JSON object`);
+    return def.settings ? def.settings.parse(given) : ({} as S);
+  };
+  // The descriptor describes the layout for default settings, so every field needs one (C++ has S{}).
+  if (def.settings) {
+    const defaults = def.settings.safeParse({});
+    if (!defaults.success) {
+      const issue = defaults.error.issues[0];
+      throw new Error(`node type ${q(def.id)}: every settings field needs a default (${issue?.path.join(".")}: ${issue?.message})`);
+    }
+  }
   return {
     ...def,
     parseSettings,
@@ -9943,7 +10388,12 @@ export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): D
       category: def.category ?? "",
       requires: { heap: def.requires?.heap ?? false, threads: def.requires?.threads ?? false },
       ...buildLayout(def, parseSettings({})),
-      settings: def.settings ? (z.toJSONSchema(def.settings) as Record<string, unknown>) : NO_SETTINGS_SCHEMA,
+      // The INPUT schema: what a document may write (defaulted fields optional, extra keys allowed), which
+      // is what C++'s DefaultIfMissing schema says too. zod's default, the output schema, would mark every
+      // defaulted field required.
+      settings: def.settings
+        ? (def.settings.toJSONSchema({ io: "input" }) as Record<string, unknown>)
+        : { type: "object" },
     }),
   };
 }
@@ -9952,7 +10402,7 @@ export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): D
 - [ ] **Step 4: Run the test and the type check**
 
 Run: `pnpm test graph/define-node && pnpm typecheck`
-Expected: `# 7 passed, 0 skipped, 0 failed`, and the type check matches the Task 0 baseline.
+Expected: `# 11 passed, 0 skipped, 0 failed`, and the type check matches the Task 0 baseline.
 
 - [ ] **Step 5: Commit**
 
@@ -9970,8 +10420,9 @@ node declares the same {\"type\":\"object\"} schema C++ does."
 
 ### Task 13: The cross-language conformance test
 
-The TS twin of Task 5's `Gain` must spell the same descriptor as the C++ one: both are compared against
-`golden/rp.test.gain.descriptor.json`.
+The TS twins of Task 5's `Gain` and `KitchenSink` must spell the same descriptors as the C++ ones: each
+pair is compared against its golden file, `golden/rp.test.gain.descriptor.json` and
+`golden/rp.test.kitchen-sink.descriptor.json`.
 
 **Files:**
 - Test: `packages/retroplug/test/graph/conformance.test.ts`
@@ -9981,14 +10432,15 @@ The TS twin of Task 5's `Gain` must spell the same descriptor as the C++ one: bo
 `packages/retroplug/test/graph/conformance.test.ts`:
 
 ```ts
-// The cross-language pact: this TS node and the C++ Gain in packages/native/test/graph/NodeLayer.test.cpp
-// declare the same shape, and both must spell the same descriptor bytes - the shared golden file. The C++
+// The cross-language pact: these TS nodes and their C++ twins in packages/native/test/graph/NodeLayer.test.cpp
+// declare the same shapes, and both must spell the same descriptor bytes - the shared golden files. The C++
 // test compares its output to the file text; this one compares canonical spellings, and the
 // canonical-json tests prove the two writers spell identically.
 import { test, expect } from "../../testing/harness";
 import { canonicalJson } from "../../src/graph/canonicalJson";
-import { audio, channels, defineNode, events, param } from "../../src/graph/defineNode";
+import { audio, bytes, channels, control, defineNode, events, link, param, resource } from "../../src/graph/defineNode";
 import golden from "../../../native/test/graph/golden/rp.test.gain.descriptor.json";
+import kitchenGolden from "../../../native/test/graph/golden/rp.test.kitchen-sink.descriptor.json";
 
 const gain = defineNode({
   id: "rp.test.gain",
@@ -10007,13 +10459,56 @@ const gain = defineNode({
 test("the TS gain's descriptor is the C++ gain's descriptor", () => {
   expect(canonicalJson(gain.descriptor())).toBe(canonicalJson(golden));
 });
+
+// Every descriptor feature at once. Inputs and outputs are declared interleaved: the descriptor still lists
+// inputs first, each side in declaration order, as the C++ struct-of-structs does.
+const kitchenSink = defineNode({
+  id: "rp.test.kitchen-sink",
+  name: "Kitchen Sink",
+  category: "test/conformance",
+  version: "2.1.0",
+  requires: { heap: true },
+  ports: {
+    in: audio.in(),
+    out: audio.out(channels.match("in")),
+    side: audio.in(channels.fixed(2, "any")),
+    surround: audio.out(channels.fixed(6, "5.1")),
+    midi: events.in(),
+    notes: events.out(),
+    serial: bytes.in(),
+    serialOut: bytes.out(),
+    mod: control.in(),
+    level: control.out(),
+    peer: link(),
+    sample: resource.in("audio-buffer"),
+    target: resource.write("audio-buffer"),
+    buffer: resource.out("audio-buffer"),
+    "pins.a": audio.out(channels.mono()),
+    "pins.b": audio.out(channels.mono()),
+    "channels.x": audio.out(channels.mono()),
+  },
+  params: {
+    tiny: param.float({ name: "Tiny", min: 0, max: 1e-7, default: 1e-7 }),
+    huge: param.float({ name: "Huge", min: -1e21, max: 1e21, default: 0 }),
+    steps: param.int({ name: "Steps", min: 1, max: 16, default: 4, unit: "steps" }),
+    armed: param.bool({ name: "Armed", default: true }),
+    sync: param.enum({ name: "Sync", values: ["off", "midi-sync", "n8-fifo"], default: "n8-fifo" }),
+  },
+  exclusive: [["pins.*", "channels.*"]],
+  create: () => ({ process() {} }),
+});
+
+test("every descriptor feature spells the same in TS and C++", () => {
+  expect(canonicalJson(kitchenSink.descriptor())).toBe(canonicalJson(kitchenGolden));
+});
 ```
 
 - [ ] **Step 2: Run it**
 
 Run: `pnpm test graph/conformance`
-Expected: `ok 1 - the TS gain's descriptor is the C++ gain's descriptor`. (It passes on first run because
-Tasks 5 and 12 built both halves to the design; if it fails, diff the two canonical strings - the
+Expected: `ok 1 - the TS gain's descriptor is the C++ gain's descriptor` and `ok 2 - every descriptor feature
+spells the same in TS and C++`. (They pass on first run because
+Tasks 5 and 12 built both halves to the design; if one fails, diff the two canonical strings - the
 difference names which side drifted.)
 
 - [ ] **Step 3: Commit**
@@ -10289,8 +10784,8 @@ export class ExtensionRegistry {
 - [ ] **Step 4: Run the graph tests, the whole TS suite, and the type check**
 
 Run: `pnpm test graph && pnpm test && pnpm typecheck`
-Expected: five graph files pass (4 + 7 + 1 + 2 + 4 cases), the full `pnpm test` matches the Task 0
-baseline plus those 18 cases with no new skips, and the type check matches the baseline.
+Expected: five graph files pass (4 + 11 + 2 + 2 + 4 cases), the full `pnpm test` matches the Task 0
+baseline plus those 23 cases with no new skips, and the type check matches the baseline.
 
 - [ ] **Step 5: Commit**
 
