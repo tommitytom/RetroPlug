@@ -535,7 +535,9 @@ export const lsdjSync = defineNode({
   descriptor's schema comes from the definition's own schema object (`toJSONSchema({ io: "input" })`, the
   shape a document may write: defaulted fields optional, as reflect-cpp's `DefaultIfMissing` says too).
   Today ~568 KB of the 638 KB DSP-kernel bundle is zod; removing it is also a hard requirement for
-  MicroQuickJS on the Pico. Every settings field needs a default, since the descriptor describes the
+  MicroQuickJS on the Pico. `defineNode` alone no longer pulls zod in, but a node module that builds its
+  `z.object(...)` at top level still does, so the Phase B runtime has to keep schemas out of the audio
+  bundle (a separate settings module per node, or a schema built lazily on the control plane). Every settings field needs a default, since the descriptor describes the
   layout for default settings (a C++ node has `S{}`).
 - A TS node sees an audio port as an array of `Float32Array`s, an events port as a frame-ordered array,
   a resource port as a handle with typed accessors (a `Float32Array` view for an audio buffer). Phase A's

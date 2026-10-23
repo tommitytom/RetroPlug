@@ -2246,6 +2246,7 @@ TEST_CASE("channel specs are exact", "[graph][descriptor]") {
 TEST_CASE("resource access and exclusive groups are exact", "[graph][descriptor]") {
     CHECK(layoutReason(R"({"ports":[{"id":"r","dir":"in","kind":"resource","resourceType":"x","access":"wirte"}]})").find("can only be") != std::string::npos);
     CHECK(layoutReason(R"({"ports":[{"id":"e","dir":"in","kind":"events","resourceType":"x"}]})").find("only resource ports") != std::string::npos);
+    CHECK(layoutReason(R"({"ports":[{"id":"r","dir":"in","kind":"resource","resourceType":"audio buffer"}]})").find("whitespace") != std::string::npos);
     CHECK(layoutReason(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[["nope"]]})").find("exclusive member") != std::string::npos);
     CHECK(layoutReason(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[[]]})").find("non-empty") != std::string::npos);
     CHECK(parseLayout(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[["o","pins.*"]]})"));
@@ -2621,6 +2622,8 @@ rfl::Result<PortDesc> parsePort(const rfl::Generic& g, std::size_t index) {
     if (p.kind == PortKind::Resource) {
         auto type = reqString(*o, "resourceType", where);
         if (!type) return fail(type.error().what());
+        if (!isPlainId(*type))  // as ResourceTable requires of every resource type
+            return fail(where + ": \"resourceType\" " + q(*type) + " must not contain whitespace or control characters");
         p.resourceType = *type;
         auto access = optString(*o, "access", where);
         if (!access) return fail(access.error().what());
@@ -2916,7 +2919,7 @@ std::string layoutForCount(std::uint32_t channels) {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (229 assertions in 26 test cases)`.
+Expected: `All tests passed (230 assertions in 26 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -4553,7 +4556,7 @@ T* peer_as(rp_node* n) {
 - [ ] **Step 7: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (320 assertions in 40 test cases)`.
+Expected: `All tests passed (321 assertions in 40 test cases)`.
 
 - [ ] **Step 8: Commit**
 
@@ -5297,7 +5300,7 @@ std::uint32_t ResourceTable::pinCount(Id id) const {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (484 assertions in 47 test cases)`.
+Expected: `All tests passed (485 assertions in 47 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -8011,7 +8014,7 @@ const rp_package* hostPackage() {
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (699 assertions in 93 test cases)`.
+Expected: `All tests passed (700 assertions in 93 test cases)`.
 
 - [ ] **Step 7: Commit**
 
@@ -9204,7 +9207,7 @@ const rp_package* corePackage() {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (878 assertions in 115 test cases)`.
+Expected: `All tests passed (879 assertions in 115 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -9235,7 +9238,8 @@ plans with every core node, feedback of each kind and a coupled group are adopte
 a real audio thread while the control thread swaps plans (live settings swaps, rebuilds, feedback wires
 and a resource binding) and sets params 200 times; in a normal build it checks a node's output, state and
 latest param survive, and under ThreadSanitizer it is the race check for the two rings. A third,
-deterministic, checks that setGraph refuses to plan while the previous swap is still in flight.
+deterministic pair checks that setGraph refuses to plan while the previous swap is queued or still being
+adopted.
 
 **Files:**
 - Modify: `packages/native/cmake/tests.cmake`
@@ -9443,7 +9447,8 @@ TEST_CASE("the block path never allocates or frees", "[graph][noalloc]") {
 // ThreadSanitizer (build-tsan/) this is the race check for the command ring and the release ring; in a
 // normal build it checks that a system's own output and state survive constant edits around it. The
 // adoption handshake itself (setGraph never planning while a swap is in flight) has its own deterministic
-// test below, since a race window that narrow is not something a stress run can be relied on to hit.
+// tests below (setGraph waits while a swap is queued, and while one is being adopted), since a race window
+// that narrow is not something a stress run can be relied on to hit.
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
@@ -9493,9 +9498,11 @@ class AudioThread {
 public:
     explicit AudioThread(GraphHost& host) : host_(host), thread_([this] { run(); }) {}
     ~AudioThread() { stop(); }
+    // Stops and joins, then hands the drain back to the control thread.
     void stop() {
         running_.store(false, std::memory_order_release);
         if (thread_.joinable()) thread_.join();
+        host_.setAudioThreadOwns(false);
     }
     int  blocks() const { return blocks_.load(); }
     bool wrong() const { return wrong_.load(); }
@@ -9561,31 +9568,30 @@ TEST_CASE("plan swaps under a running audio thread keep a node's output and stat
     REQUIRE(rig.set(stressDoc(0, buf)).ok);
     rig.host->setAudioThreadOwns(true);
 
-    int failedSets = 0, failedParams = 0;
+    std::string failures;  // checked as one string, so a failure prints every code
     bool settled = false;
     {
         AudioThread audio(*rig.host);
         for (int i = 1; i <= 200; ++i) {
             const auto r = rig.set(stressDoc(i, buf));
-            if (!r.ok) {
-                ++failedSets;
-                UNSCOPED_INFO("set " << i << ": " << GraphRig::codes(r));
-            }
-            if (!rig.host->setParam("k", "value", static_cast<double>(i))) ++failedParams;
+            if (!r.ok) failures += "set " + std::to_string(i) + ": " + GraphRig::codes(r) + "; ";
+            if (!rig.host->setParam("k", "value", static_cast<double>(i))) failures += "param " + std::to_string(i) + "; ";
             rig.host->reclaim();
         }
-        settled = audio.waitBlocks(4);  // let the last swap and param land
+        // The last param before one more swap, and that swap a live one (201 shares 200's tag): what is
+        // checked below has to survive a swap, not merely be the newest thing queued.
+        if (!rig.host->setParam("k", "value", 201.0)) failures += "param 201; ";
+        if (!rig.set(stressDoc(201, buf)).ok) failures += "set 201; ";
+        settled = audio.waitBlocks(4);
         audio.stop();
+        CHECK(failures.empty());
         CHECK_FALSE(audio.wrong());
         CHECK(rig.node<Source>("src").frames == static_cast<std::uint64_t>(audio.blocks()) * 64);
     }
-    rig.host->setAudioThreadOwns(false);
 
     CHECK(settled);
-    CHECK(failedSets == 0);
-    CHECK(failedParams == 0);
-    CHECK(rig.node<Tunable>("tun").level == 200.0f);  // the last live settings swap stands
-    CHECK(rig.node<Sink>("ks").controlEnd == 200.0);  // and so does the last param value
+    CHECK(rig.node<Tunable>("tun").level == 201.0f);  // the last LIVE settings swap landed
+    CHECK(rig.node<Sink>("ks").controlEnd == 201.0);  // and the param value survived it
 }
 
 TEST_CASE("setGraph waits for the audio thread to adopt the last plan before planning again", "[graph][swap]") {
@@ -9599,8 +9605,59 @@ TEST_CASE("setGraph waits for the audio thread to adopt the last plan before pla
     rig.run();  // the audio thread's next block adopts it
     CHECK(rig.set(R"({"nodes":[],"wires":[]})").ok);
     rig.run();
+    CHECK(rig.host->reclaim() >= 1);  // the last plan was adopted: the one it replaced came back
     rig.host->setAudioThreadOwns(false);
-    CHECK(rig.host->instanceCount() == 0);
+}
+
+namespace {
+
+// Holds the audio thread inside a settings commit for as long as `held` is set.
+std::atomic<bool> held{false};
+std::atomic<bool> holding{false};
+
+struct GateSettings {
+    bool hold = false;
+};
+
+struct Gate {
+    static constexpr const char* id = "rp.test.gate";
+    using Settings = GateSettings;
+    void on_settings(const Settings& s) noexcept {
+        if (!s.hold) return;
+        holding = true;
+        while (held.load()) std::this_thread::yield();
+        holding = false;
+    }
+    void process(const rp::Block&) noexcept {}
+};
+
+const rp_package* gatePackage() {
+    static const rp_node_type* const kTypes[] = {rp::node_type<Gate>()};
+    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.gate"})", 1, kTypes};
+    return &kPackage;
+}
+
+}  // namespace
+
+TEST_CASE("setGraph also waits while a plan is being adopted", "[graph][swap]") {
+    GraphRig rig({48000.0, 64, rp::graph::Target::Desktop, 50});
+    REQUIRE(rig.registry.addPackage(gatePackage()));
+    REQUIRE(rig.set(R"({"nodes":[{"id":"g","type":"rp.test.gate"}],"wires":[]})").ok);
+    rig.host->setAudioThreadOwns(true);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"g","type":"rp.test.gate","settings":{"hold":true}}],"wires":[]})").ok);  // a live swap
+    held = true;
+    std::thread audio([&] { rig.run(); });  // adopts it, and stops inside its commit
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!holding.load() && std::chrono::steady_clock::now() < deadline) std::this_thread::yield();
+    CHECK(holding.load());
+    // Mid-adoption: the planner would read the node's settings while the audio thread writes them.
+    const auto busy = rig.set(R"({"nodes":[],"wires":[]})");
+    held = false;
+    audio.join();
+    CHECK(GraphRig::codes(busy) == "busy");
+    CHECK(rig.set(R"({"nodes":[],"wires":[]})").ok);
+    rig.run();
+    rig.host->setAudioThreadOwns(false);
 }
 ```
 
@@ -9616,7 +9673,7 @@ Add both files to the test's `SOURCES` and `Threads::Threads` to its `LIBS`:
 - [ ] **Step 3: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (901 assertions in 118 test cases)`. (These pass immediately: the properties
+Expected: `All tests passed (907 assertions in 119 test cases)`. (These pass immediately: the properties
 were built in by Tasks 2 to 8. If NoAlloc fails, an earlier task let an allocation onto the block path;
 fix that, never the test.)
 
@@ -9630,7 +9687,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-graph-test
 ```
 
-Expected: `All tests passed (901 assertions in 118 test cases)` and no ThreadSanitizer report. (Same
+Expected: `All tests passed (907 assertions in 119 test cases)` and no ThreadSanitizer report. (Same
 configure as `tools/run-sanitizer.sh thread`, which shares `build-tsan/`.)
 
 - [ ] **Step 5: Commit**
@@ -9645,8 +9702,9 @@ swap, running every core node - is a failure. A real audio thread runs
 while the control thread swaps plans 200 times; the node keeps its output
 and its frame count, and ThreadSanitizer finds no race."
 
-(This task was executed as the original commit plus one review-fix commit, "test(graph): the no-heap
-and swap tests cover every path they claim". It also touched Task 7's GraphHost (a configurable
+(This task was executed as the original commit plus two review-fix commits, "test(graph): the no-heap
+and swap tests cover every path they claim" and "test(graph): the stress test's last checks survive a
+swap; adoption itself is gated". It also touched Task 7's GraphHost (a configurable
 adoption timeout; the host allocator through operator new). A fresh execution needs only the one commit
 above.)
 ```
@@ -9948,6 +10006,22 @@ test("ids are plain, unambiguous and keep their order", () => {
   expect(defineNode({ id: "rp.p.\ud83c\udfb5", ports: {}, create: noop }).descriptor().id).toBe("rp.p.\ud83c\udfb5");  // a whole pair is fine
 });
 
+test("metadata, params and settings are typed and readable as C++ reads them", () => {
+  const meta = (extra: Record<string, unknown>) => () => defineNode({ id: "rp.test.meta", ports: {}, create: noop, ...extra } as never).descriptor();
+  expect(meta({ version: 5 })).toThrow("version must be a string");
+  expect(meta({ name: "Gain\ud800" })).toThrow("name must be a string");
+  expect(meta({ requires: { heap: "yes" } })).toThrow("true or false");
+  expect(meta({ params: { b: { type: "bool", name: "B", default: false, unit: 5 } } })).toThrow("unit must be a string");
+  // a stray field is not emitted (C++ would drop it when it spells the descriptor back), a missing name is the id
+  const stray = meta({ params: { b: { type: "bool", default: true, min: 3, foo: 1 } } })();
+  expect(stray.params[0]).toEqual({ id: "b", name: "b", type: "bool", default: true });
+  expect(meta({ settings: z.object({ tag: z.string().default("\ud800") }) })).toThrow("lone surrogate");
+  // an undefined member is no member, as canonicalJson (and so C++) sees it
+  expect(meta({ ports: { in: { dir: "in", kind: "audio", channels: { any: true, count: undefined } } } })().ports[0].channels).toEqual({ any: true, count: undefined });
+  expect(meta({ ports: { r: resource.in("audio buffer") } })).toThrow("resourceType");
+  expect(() => defineNode({ id: "rp.test.rootless", settings: z.number() as never, ports: {}, create: noop })).toThrow("needs a default (");
+});
+
 test("a returned descriptor is the caller's own copy", () => {
   const n = defineNode({
     id: "rp.test.copy",
@@ -10225,7 +10299,8 @@ function wellFormed(s: string): boolean {
   return true;
 }
 
-/** The C++ registry's isPlainId, code unit for byte: non-empty, nothing at or below U+0020, nor U+007F. */
+/** The C++ registry's isPlainId, code unit for byte: non-empty, nothing at or below U+0020, nor U+007F,
+ *  and (since C++ reads UTF-8) no lone surrogate. */
 const plainId = (s: unknown): s is string => typeof s === "string" && s.length > 0 && !/[\u0000-\u0020\u007f]/.test(s) && wellFormed(s);
 
 const isString = (v: unknown): v is string => typeof v === "string";
@@ -10241,7 +10316,7 @@ function checkPort(node: string, p: PortDesc): void {
   if (p.kind === "audio") {
     const c = p.channels as Record<string, unknown> | undefined;
     if (!c || typeof c !== "object") throw new Error(`${where}: an audio port needs channels`);
-    if (["any", "match", "count"].filter((k) => has(c, k)).length !== 1)
+    if (["any", "match", "count"].filter((k) => has(c, k) && c[k] !== undefined).length !== 1)
       throw new Error(`${where}: channels needs exactly one of any / match / count`);
     if (has(c, "any")) {
       if (c.any !== true) throw new Error(`${where}: channels.any must be true`);
@@ -10262,7 +10337,8 @@ function checkPort(node: string, p: PortDesc): void {
     throw new Error(`${where}: only audio ports have channels`);
   }
   if (p.kind === "resource") {
-    if (!plainId(p.resourceType)) throw new Error(`${where}: a resource port needs a resourceType`);
+    if (!plainId(p.resourceType))
+      throw new Error(`${where}: a resource port needs a resourceType with no whitespace, control characters or lone surrogates`);
     if (p.access !== undefined && p.access !== "write") throw new Error(`${where}: access can only be "write"`);
     if (p.access === "write" && p.dir !== "in") throw new Error(`${where}: only a resource input may have access "write"`);
   } else if (p.resourceType !== undefined || p.access !== undefined) {
@@ -10288,10 +10364,11 @@ function checkParam(node: string, p: ParamDesc): void {
     if (!(p.min <= p.default && p.default <= p.max)) throw new Error(`${where}: default must lie within [min, max]`);
     if (p.type === "int" && ![p.min, p.max, p.default].every(Number.isInteger))
       throw new Error(`${where}: an int param needs whole-number min, max and default`);
-    if (p.unit !== undefined && (!isString(p.unit) || !wellFormed(p.unit))) throw new Error(`${where}: unit must be a string`);
   } else {
     throw new Error(`${where}: unknown type ${q(String((p as { type: unknown }).type))}`);
   }
+  const unit = (p as { unit?: unknown }).unit;
+  if (unit !== undefined && (!isString(unit) || !wellFormed(unit))) throw new Error(`${where}: unit must be a string`);
 }
 
 // A fresh copy of a port, so a caller that edits a returned layout cannot reach the definition.
@@ -10303,10 +10380,48 @@ function copyPort(id: string, spec: PortSpec): PortDesc {
   return p;
 }
 
+// Field by field, as C++ writes a param back out: only the fields its type has (a stray one would be
+// dropped by C++'s re-spelling, so the two would disagree), a missing name read as the id, and a unit on
+// any type when it is non-empty.
 function copyParam(id: string, spec: ParamSpec): ParamDesc {
-  const p = { id, ...spec } as ParamDesc;
-  if (p.type === "enum") p.values = [...p.values];
-  return p;
+  const s = spec as Record<string, unknown>;
+  const name = s.name === undefined || s.name === "" ? id : s.name;
+  let p: Record<string, unknown>;
+  if (s.type === "float" || s.type === "int") p = { id, name, type: s.type, min: s.min, max: s.max, default: s.default };
+  else if (s.type === "bool") p = { id, name, type: s.type, default: s.default };
+  else if (s.type === "enum") p = { id, name, type: s.type, values: Array.isArray(s.values) ? [...s.values] : s.values, default: s.default };
+  else p = { id, name, type: s.type };
+  if (s.unit !== undefined && s.unit !== "") p.unit = s.unit;
+  return p as unknown as ParamDesc;
+}
+
+// The metadata a descriptor carries, as C++'s parser types it.
+function checkMetadata<S>(def: NodeDefinition<S>): void {
+  for (const key of ["version", "name", "category"] as const) {
+    const v = def[key];
+    if (v !== undefined && (!isString(v) || !wellFormed(v))) throw new Error(`node type ${q(def.id)}: ${key} must be a string`);
+  }
+  for (const key of ["heap", "threads"] as const) {
+    const v = def.requires?.[key];
+    if (v !== undefined && typeof v !== "boolean") throw new Error(`node type ${q(def.id)}: requires.${key} must be true or false`);
+  }
+}
+
+// Every string (and key) in a JSON value is one C++ can read.
+function allWellFormed(v: unknown): boolean {
+  if (isString(v)) return wellFormed(v);
+  if (Array.isArray(v)) return v.every(allWellFormed);
+  if (v && typeof v === "object") return Object.entries(v).every(([k, x]) => wellFormed(k) && allWellFormed(x));
+  return true;
+}
+
+// The INPUT schema: what a document may write (defaulted fields optional, extra keys allowed), which is
+// what C++'s DefaultIfMissing schema says too. zod's default, the output schema, would mark every
+// defaulted field required.
+function settingsSchema<S>(def: NodeDefinition<S>): Record<string, unknown> {
+  const schema = def.settings!.toJSONSchema({ io: "input" }) as Record<string, unknown>;
+  if (!allWellFormed(schema)) throw new Error(`node type ${q(def.id)}: the settings schema holds a lone surrogate, which C++ cannot read`);
+  return schema;
 }
 
 // An integer-like key ("1") would be listed before every other key by Object.entries, so it could not
@@ -10323,7 +10438,7 @@ function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
   const seen = new Set<string>();
   for (const p of [...ordered, ...params]) {
     if (!plainId(p.id) || p.id.includes("*"))
-      throw new Error(`${def.id}: id ${q(p.id)} must be non-empty, with no whitespace, control characters or '*'`);
+      throw new Error(`${def.id}: id ${q(p.id)} must be non-empty, with no whitespace, control characters, lone surrogates or '*'`);
     if (integerLike(p.id)) throw new Error(`${def.id}: id ${q(p.id)} is a number, which a JS object cannot keep in order`);
     if (seen.has(p.id)) throw new Error(`${def.id}: ${q(p.id)} is used by more than one port or param`);
     seen.add(p.id);
@@ -10361,7 +10476,8 @@ function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
 
 export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): DefinedNode<S> {
   if (!plainId(def.id))
-    throw new Error(`node type id ${q(String(def.id))} must be non-empty, with no whitespace or control characters`);
+    throw new Error(`node type id ${q(String(def.id))} must be non-empty, with no whitespace, control characters or lone surrogates`);
+  checkMetadata(def);
   // Settings arrive as JSON: an object, or nothing at all (the defaults), never another value, as in C++.
   const parseSettings = (raw: unknown): S => {
     const given = raw === undefined ? {} : raw;
@@ -10374,7 +10490,8 @@ export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): D
     const defaults = def.settings.safeParse({});
     if (!defaults.success) {
       const issue = defaults.error.issues[0];
-      throw new Error(`node type ${q(def.id)}: every settings field needs a default (${issue?.path.join(".")}: ${issue?.message})`);
+      const at = issue?.path.length ? `${issue.path.join(".")}: ` : "";
+      throw new Error(`node type ${q(def.id)}: every settings field needs a default (${at}${issue?.message})`);
     }
   }
   return {
@@ -10388,12 +10505,7 @@ export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): D
       category: def.category ?? "",
       requires: { heap: def.requires?.heap ?? false, threads: def.requires?.threads ?? false },
       ...buildLayout(def, parseSettings({})),
-      // The INPUT schema: what a document may write (defaulted fields optional, extra keys allowed), which
-      // is what C++'s DefaultIfMissing schema says too. zod's default, the output schema, would mark every
-      // defaulted field required.
-      settings: def.settings
-        ? (def.settings.toJSONSchema({ io: "input" }) as Record<string, unknown>)
-        : { type: "object" },
+      settings: def.settings ? settingsSchema(def) : { type: "object" },
     }),
   };
 }
@@ -10402,7 +10514,7 @@ export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): D
 - [ ] **Step 4: Run the test and the type check**
 
 Run: `pnpm test graph/define-node && pnpm typecheck`
-Expected: `# 11 passed, 0 skipped, 0 failed`, and the type check matches the Task 0 baseline.
+Expected: `# 12 passed, 0 skipped, 0 failed`, and the type check matches the Task 0 baseline.
 
 - [ ] **Step 5: Commit**
 
@@ -10414,6 +10526,11 @@ Same ports, params, channel specs and resource access as a C++ node;
 inputs before outputs in declaration order; settings parsed on the
 control plane so the audio-thread code never carries zod; a no-settings
 node declares the same {\"type\":\"object\"} schema C++ does."
+
+(Tasks 11 and 12 were executed as their original commits plus two review-fix commits, "fix(graph): TS
+nodes declare only what C++ accepts; a second shared golden" and "fix(graph): TS metadata, params and
+schemas are read as C++ reads them". Both also touched C++ files from Tasks 4 and 5. A fresh execution
+needs only the commits above.)
 ```
 
 ---
@@ -10784,8 +10901,8 @@ export class ExtensionRegistry {
 - [ ] **Step 4: Run the graph tests, the whole TS suite, and the type check**
 
 Run: `pnpm test graph && pnpm test && pnpm typecheck`
-Expected: five graph files pass (4 + 11 + 2 + 2 + 4 cases), the full `pnpm test` matches the Task 0
-baseline plus those 23 cases with no new skips, and the type check matches the baseline.
+Expected: five graph files pass (4 + 12 + 2 + 2 + 4 cases), the full `pnpm test` matches the Task 0
+baseline plus those 24 cases with no new skips, and the type check matches the baseline.
 
 - [ ] **Step 5: Commit**
 
