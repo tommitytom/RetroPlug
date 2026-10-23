@@ -22,7 +22,9 @@ namespace rp::graph {
 // buffer's sample rate (it plays frames, not seconds), and leaves output channels the buffer lacks silent.
 // The recorder's Record param is frame-accurate: turning it on, or binding a new target, starts again
 // from the buffer's first frame, and recording stops at its last; buffer channels beyond its input keep
-// whatever they held.
+// whatever they held. Both spot a new buffer by its handle's address, so one freed and another made at
+// the same address while the node was unbound reads as the same buffer (an offline driver can arrange
+// that; a running host cannot, since the old plan pins the old buffer until the new one exists).
 const rp_package* corePackage();
 
 }  // namespace rp::graph

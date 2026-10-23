@@ -369,6 +369,25 @@ TEST_CASE("the player loops, stops, and starts a new buffer from its beginning",
     CHECK(rig.outs[0][1] == 11.0f);
 }
 
+TEST_CASE("a buffer swapped in mid-play starts from its first frame", "[graph][core]") {
+    CoreRig rig;
+    const auto three = rig.buffer(1, 3, [](std::uint32_t, std::uint32_t i) { return static_cast<float>(i + 1); });
+    const auto other = rig.buffer(1, 7, [](std::uint32_t, std::uint32_t i) { return static_cast<float>(20 + i); });
+    auto doc = [&](ResourceTable::Id b, bool loop) {
+        return R"({"nodes":[{"id":"p","type":"rp.core.buffer-player","settings":{"loop":)" + std::string(loop ? "true" : "false") +
+               R"(},"resources":{"sample":)" + CoreRig::res(b) + R"(}},{"id":"out","type":"rp.host.audio-out"}],
+                    "wires":[{"from":"p.out","to":"out.out.1-2"}]})";
+    };
+    REQUIRE(rig.set(doc(three, true)).ok);
+    rig.run();  // 64 frames of a 3-frame loop: it stops one frame in
+    REQUIRE(rig.set(doc(other, true)).ok);
+    rig.run();  // (and 64 frames of a 7-frame loop stop one frame in too)
+    CHECK(rig.outs[0][0] == 20.0f);
+    REQUIRE(rig.set(doc(three, false)).ok);  // a one-shot too: no loop wrap to hide a missed restart
+    rig.run();
+    CHECK(rig.outs[0][0] == 1.0f);
+}
+
 TEST_CASE("the recorder starts at the frame Record turns on and stops at the buffer's end", "[graph][core]") {
     CoreRig rig;
     const auto ramp = rig.buffer(1, 64, [](std::uint32_t, std::uint32_t i) { return static_cast<float>(i); });
@@ -394,6 +413,12 @@ TEST_CASE("the recorder starts at the frame Record turns on and stops at the buf
     rig.run();
     CHECK(sample(target, 32) == 0.0f);  // the next block carried on from where it was
     CHECK(sample(target, 39) == 7.0f);  // and stopped at the buffer's last frame
+    REQUIRE(rig.host->setParam("rec", "record", 0, 0));
+    rig.run();
+    REQUIRE(rig.host->setParam("rec", "record", 1, 0));
+    rig.run();
+    CHECK(sample(target, 0) == 0.0f);  // turned on again: back to the first frame, overwriting
+    CHECK(sample(target, 39) == 39.0f);
     REQUIRE(rig.set(doc(other)).ok);
     rig.run();
     CHECK(sample(other, 0) == 0.0f);  // a new target starts from its first frame

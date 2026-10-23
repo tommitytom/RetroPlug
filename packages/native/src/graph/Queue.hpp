@@ -7,8 +7,9 @@
 #include "graph/rp_node.h"
 
 // Alloc-free helpers over the ABI's fixed-capacity queues, shared by nodes and the executor. Nothing
-// here grows: a push that does not fit is dropped and counted in `dropped` (an audio-thread counter; the
-// host publishes it rather than letting the control thread read it live).
+// here grows: a message that does not fit is dropped, and a control change that does not fit replaces the
+// stream's last one (so the stream still ends on the right value); either way it is counted in `dropped`
+// (an audio-thread counter; the host publishes it rather than letting the control thread read it live).
 namespace rp::graph {
 
 // Append one message (events or bytes). Frames must be non-decreasing within a block; a message whose
