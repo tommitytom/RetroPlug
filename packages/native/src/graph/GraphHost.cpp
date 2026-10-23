@@ -1,10 +1,17 @@
 #include "graph/GraphHost.hpp"
 
+#include <algorithm>
+#include <cassert>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <new>
+#include <stdexcept>
 #include <thread>
+
+#include "graph/CanonicalJson.hpp"
 
 #include "graph/Executor.hpp"
 #include "graph/Queue.hpp"
@@ -29,12 +36,22 @@ constexpr auto kAdoptionTimeout = std::chrono::seconds(2);
 
 }  // namespace
 
+std::optional<std::string> checkConfig(double sampleRate, std::uint32_t maxFrames) {
+    if (!(sampleRate > 0.0) || !std::isfinite(sampleRate)) return "the sample rate must be a positive number";
+    if (maxFrames < 1 || maxFrames > kMaxBlockFrames)
+        return "the block size must be 1 to " + std::to_string(kMaxBlockFrames) + " frames, not " +
+               std::to_string(maxFrames);
+    return std::nullopt;
+}
+
 GraphHost::GraphHost(const NodeRegistry& registry, ResourceTable& resources, HostConfig config)
     : registry_(registry), resources_(resources), config_(config) {
+    if (auto why = checkConfig(config.sampleRate, config.maxFrames)) throw std::invalid_argument(*why);
     host_ = rp_host{RP_ABI_VERSION, this, &hostAlloc, &hostFree, &hostLog, &hostInterface};
 }
 
 GraphHost::~GraphHost() {
+    assert(!audioThreadOwns() && "destroy a GraphHost only after its audio thread has stopped");
     // The audio thread has stopped (setAudioThreadOwns(false) is the caller's job): adopt anything still
     // queued so every plan is in exactly one place, then free them all here, on the control thread.
     drain();
@@ -89,7 +106,21 @@ SetGraphResult GraphHost::setGraph(const GraphDocument& document) {
         return result;
     }
     reclaim();
+    PlanOutcome outcome = planDocument(document, config_.sampleRate, config_.maxFrames);
+    result.layouts = std::move(outcome.layouts);
+    if (!outcome.errors.empty()) {
+        result.errors = std::move(outcome.errors);
+        return result;
+    }
+    if (!publish(outcome, document)) {
+        result.errors.push_back({"", "", "busy", "the command ring is full"});
+        return result;
+    }
+    result.ok = true;
+    return result;
+}
 
+PlanOutcome GraphHost::planDocument(const GraphDocument& document, double sampleRate, std::uint32_t maxFrames) {
     PlanInput in;
     in.doc = &document;
     in.registry = &registry_;
@@ -97,18 +128,16 @@ SetGraphResult GraphHost::setGraph(const GraphDocument& document) {
     in.live = &live_;
     in.feedback = &feedback_;
     in.host = &host_;
-    in.sampleRate = config_.sampleRate;
-    in.maxFrames = config_.maxFrames;
+    in.sampleRate = sampleRate;
+    in.maxFrames = maxFrames;
     in.target = config_.target;
     in.faults = &faults_;
     in.quiescent = !audioThreadOwns();
-    PlanOutcome outcome = plan(in);
-    result.layouts = std::move(outcome.layouts);
-    if (!outcome.errors.empty()) {
-        result.errors = std::move(outcome.errors);
-        return result;
-    }
+    return plan(in);
+}
 
+// Hand a successful plan to the audio thread. False, with the plan freed unpublished, if the ring is full.
+bool GraphHost::publish(PlanOutcome& outcome, const GraphDocument& document) {
     PlanStorage* storage = outcome.storage.release();
     swapInFlight_.store(true, std::memory_order_release);
     Command c;
@@ -117,8 +146,7 @@ SetGraphResult GraphHost::setGraph(const GraphDocument& document) {
     if (!commands_.tryPush(c)) {
         swapInFlight_.store(false, std::memory_order_release);
         delete storage;  // never published: frees its prepared settings and pins
-        result.errors.push_back({"", "", "busy", "the command ring is full"});
-        return result;
+        return false;
     }
     // Published: the plan will be adopted, so the control-side records can move on.
     document_ = document;
@@ -126,8 +154,11 @@ SetGraphResult GraphHost::setGraph(const GraphDocument& document) {
     feedback_ = std::move(outcome.feedback);
     for (auto& f : outcome.onPublished) f();
     flushIfQuiescent();
-    result.ok = true;
-    return result;
+    return true;
+}
+
+void GraphHost::markFaulted(Instance& inst) {
+    if (!inst.faulted.exchange(true, std::memory_order_relaxed)) faults_.fetch_add(1, std::memory_order_relaxed);
 }
 
 bool GraphHost::setParam(std::string_view nodeId, std::string_view paramId, double value, std::uint32_t frame) {
@@ -136,12 +167,17 @@ bool GraphHost::setParam(std::string_view nodeId, std::string_view paramId, doub
     const auto& params = it->second->layout.params;
     for (std::size_t k = 0; k < params.size(); ++k) {
         if (params[k].id != paramId) continue;
-        if (value != value) return false;
+        const auto& wired = it->second->wiredParams;
+        if (value != value || (k < wired.size() && wired[k])) return false;
+        const ParamDesc& d = params[k];
+        double v = std::clamp(value, d.min, d.max);
+        if (d.type == ParamType::Int || d.type == ParamType::Enum) v = std::round(v);
+        else if (d.type == ParamType::Bool) v = v >= 0.5 ? 1.0 : 0.0;
         Command c;
         c.kind = Command::Kind::SetParam;
         c.queue = &it->second->params[k]->queue;
         c.frame = frame;
-        c.value = value < params[k].min ? params[k].min : value > params[k].max ? params[k].max : value;
+        c.value = v;
         return push(c);
     }
     return false;
@@ -154,8 +190,7 @@ void GraphHost::drain() {
         switch (c.kind) {
             case Command::Kind::SwapPlan:
                 c.plan->adopt();
-                if (replaced && !released_.tryPush(replaced))
-                    std::fprintf(stderr, "[graph] release ring full: leaking a plan rather than freeing on the audio thread\n");
+                if (replaced && !released_.tryPush(replaced)) leakedPlans_.fetch_add(1, std::memory_order_relaxed);
                 replaced = current_;
                 current_ = c.plan;
                 swapInFlight_.store(false, std::memory_order_release);
@@ -167,8 +202,7 @@ void GraphHost::drain() {
     }
     // Hand the replaced plan back only after every command in this drain has been applied, so a param
     // write queued behind a swap can never land in memory the control thread is already freeing.
-    if (replaced && !released_.tryPush(replaced))
-        std::fprintf(stderr, "[graph] release ring full: leaking a plan rather than freeing on the audio thread\n");
+    if (replaced && !released_.tryPush(replaced)) leakedPlans_.fetch_add(1, std::memory_order_relaxed);
 }
 
 std::size_t GraphHost::reclaim() {
@@ -178,21 +212,66 @@ std::size_t GraphHost::reclaim() {
         delete p;
         ++n;
     }
+    // The audio thread only counts a leak (it must not log); say so here, once per new leak.
+    if (const auto leaked = leakedPlans(); leaked != leaksReported_) {
+        std::fprintf(stderr, "[graph] release ring full: %u plan(s) leaked rather than freed on the audio thread\n",
+                     static_cast<unsigned>(leaked - leaksReported_));
+        leaksReported_ = leaked;
+    }
     return n;
 }
 
-bool GraphHost::reactivate(double sampleRate, std::uint32_t maxFrames) {
-    if (audioThreadOwns()) return false;
-    config_.sampleRate = sampleRate;
-    config_.maxFrames = maxFrames;
+bool GraphHost::reactivate(double sampleRate, std::uint32_t maxFrames, std::string* error) {
+    auto fail = [&](std::string why) {
+        if (error) *error = std::move(why);
+        return false;
+    };
+    if (audioThreadOwns()) return fail("reactivate needs the audio thread stopped");
+    if (auto why = checkConfig(sampleRate, maxFrames)) return fail(*why);
+    if (live_.empty()) {
+        config_.sampleRate = sampleRate;
+        config_.maxFrames = maxFrames;
+        return true;
+    }
+    reclaim();
+    // Plan first, at the new size: if the document no longer plans (a resource dropped since), nothing has
+    // changed yet. Same document, same instances, so no state is lost; reused instances need no
+    // activation to be planned.
+    const GraphDocument document = document_;
+    PlanOutcome outcome = planDocument(document, sampleRate, maxFrames);
+    if (!outcome.errors.empty()) return fail("the current graph no longer plans: " + outcome.errors[0].message);
+
+    // Then re-activate every instance. One that refuses puts every instance already switched back on the
+    // old rate and size, so the running plan (built for those) stays right for all of them; the refuser
+    // is bypassed if it will not come back on the old ones either. The new plan is dropped unpublished.
+    auto backToOld = [&](Instance& inst) {
+        rp_error err{};
+        inst.active = inst.node->vt->activate(inst.node, config_.sampleRate, config_.maxFrames, &err);
+        if (!inst.active) markFaulted(inst);
+    };
+    std::vector<Instance*> switched;
     for (auto& [id, inst] : live_) {
         if (inst->active) inst->node->vt->deactivate(inst->node);
         rp_error err{};
         inst->active = inst->node->vt->activate(inst->node, sampleRate, maxFrames, &err);
-        if (!inst->active) return false;
+        if (inst->active) {
+            switched.push_back(inst.get());
+            continue;
+        }
+        const std::string why = "node " + jsonString(id) + " could not activate: " + errorText(err, "no reason given");
+        for (Instance* s : switched) {
+            s->node->vt->deactivate(s->node);
+            backToOld(*s);
+        }
+        backToOld(*inst);
+        return fail(why);
     }
-    // Same document, same instances (so no state is lost), but every buffer re-sized for maxFrames.
-    return live_.empty() || setGraph(GraphDocument(document_)).ok;
+    // Quiescent, so the command ring is empty and publishing cannot be refused.
+    [[maybe_unused]] const bool published = publish(outcome, document);
+    assert(published);
+    config_.sampleRate = sampleRate;
+    config_.maxFrames = maxFrames;
+    return true;
 }
 
 bool GraphHost::isFaulted(std::string_view id) const {
@@ -208,6 +287,11 @@ rp_node* GraphHost::node(std::string_view id) const {
 void GraphHost::processBlock(std::uint32_t frames, const rp_transport& transport, float* const* outputs,
                              std::uint32_t outputCount) {
     drain();
+    // Silence first, so channels no bus covers (or every channel, before the first plan or in a refused
+    // block) never carry what the host left in its buffers, which a DAW often aliases to the inputs.
+    if (outputs)
+        for (std::uint32_t c = 0; c < outputCount; ++c)
+            if (outputs[c]) std::memset(outputs[c], 0, frames * sizeof(float));
     hostOutputs_ = outputs;
     hostOutputCount_ = outputCount;
     // Every buffer in a plan is the plan's maxFrames long, and nodes were activated with that maximum; a

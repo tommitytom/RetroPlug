@@ -33,10 +33,10 @@
 //                                                         never allocate
 //   void bind_host(const rp_host*) noexcept;              at create: host services
 //   bool activate(double sampleRate, std::uint32_t maxFrames);   (or void)   void deactivate();
-//   void ports_changed(std::span<const std::uint8_t> connectedOutputs) noexcept;
+//   void ports_changed(std::span<const std::uint8_t> connectedOutputs) noexcept;   (the span lives for the call)
 //   void prepare(const rp::Block&) noexcept / step(std::uint32_t target) noexcept / void finish(const rp::Block&) noexcept
 //       -> rp.step/1 (all three or none; step returns bool - true once the block is produced - or an rp_step_result)
-//   void set_peers(std::span<rp_node* const>) noexcept    -> rp.link/1
+//   void set_peers(std::span<rp_node* const>) noexcept    -> rp.link/1   (the span lives for the call)
 //   static constexpr const char *name, *category, *version;  static constexpr bool heap, threads;
 //
 // process(const rp::Block&) is required, noexcept, and returns void or rp_status. Exceptions never cross

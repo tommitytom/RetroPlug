@@ -17,6 +17,11 @@ namespace {
 constexpr int kNone = -1;
 constexpr int kEndOfBlock = std::numeric_limits<int>::max();
 
+// Document text quoted for a message: escaped, so whatever it holds prints intact.
+std::string q(std::string_view s) { return jsonString(s); }
+
+std::string reason(const rp_error& err, const char* fallback) { return errorText(err, fallback); }
+
 struct NodePlan {
     const NodeDoc*             doc = nullptr;
     const NodeRegistry::Entry* entry = nullptr;
@@ -40,9 +45,11 @@ struct DataWire {
 };
 
 struct Resolved {
+    enum class State : std::uint8_t { Unvisited, Visiting, Failed };
     std::uint32_t count = 0;
     std::string   layout;
     bool          ok = false;
+    State         state = State::Unvisited;  // meaningful until ok
 };
 
 class Builder {
@@ -50,9 +57,17 @@ public:
     explicit Builder(const PlanInput& in) : in_(in) {}
 
     PlanOutcome run() {
-        if (structure() && reconcile() && params() && wires() && groups() && order() && channels() &&
-            exclusive() && resources()) {
-            build();
+        // Nothing may escape setGraph: an allocation failure (a huge maxFrames, say) is a refused plan,
+        // rolled back like any other.
+        try {
+            if (structure() && reconcile() && params() && wires() && groups() && order() && channels() &&
+                exclusive() && resources()) {
+                build();
+            }
+        } catch (const std::bad_alloc&) {
+            error("", "", "out-of-memory", "planning ran out of memory");
+        } catch (const std::exception& e) {
+            error("", "", "internal", std::string("planning failed: ") + e.what());
         }
         if (!out_.errors.empty()) rollback();
         return std::move(out_);
@@ -70,7 +85,6 @@ private:
     std::vector<std::vector<Resolved>>    resolved_;  // node -> layout port index -> resolution
     std::vector<std::map<int, int>>       inputWire_; // node -> layout port index -> wire
     std::vector<std::map<int, int>>       paramWire_; // node -> param index -> wire
-    std::vector<std::pair<ParamDesc, double>> unused_;
     std::vector<std::vector<std::pair<int, double>>> paramValues_;  // node -> (param index, value)
     std::vector<std::vector<std::pair<int, ResourceTable::Id>>> bindings_;  // node -> (port, resource)
 
@@ -85,17 +99,17 @@ private:
         for (const auto& n : in_.doc->nodes) {
             if (!isPlainId(n.id) || n.id.find('.') != std::string::npos)
                 error(n.id, "", "node-id",
-                      "node id " + jsonString(n.id) + " must be non-empty, with no '.', whitespace or control characters");
+                      "node id " + q(n.id) + " must be non-empty, with no '.', whitespace or control characters");
             else if (index_.count(n.id))
-                error(n.id, "", "node-id", "node id \"" + n.id + "\" is used twice");
+                error(n.id, "", "node-id", "node id " + q(n.id) + " is used twice");
             const auto* entry = in_.registry->find(n.type);
             if (!entry) {
-                error(n.id, "", "unknown-type", "no node type \"" + n.type + "\" is registered");
+                error(n.id, "", "unknown-type", "no node type " + q(n.type) + " is registered");
                 continue;
             }
             if (in_.target == Target::Pico && (entry->descriptor.heap || entry->descriptor.threads))
                 error(n.id, "", "capability",
-                      "node type \"" + n.type + "\" needs " + (entry->descriptor.heap ? "a heap" : "threads") +
+                      "node type " + q(n.type) + " needs " + (entry->descriptor.heap ? "a heap" : "threads") +
                           ", which the Pico target does not provide");
             index_.emplace(n.id, static_cast<int>(nodes_.size()));
             NodePlan p;
@@ -114,26 +128,28 @@ private:
         rp_error err{};
         rp_memory_req req{};
         if (!p.entry->type->query_memory(&s, &req, &err)) {
-            error(p.doc->id, "", "settings-invalid", err.message);
+            error(p.doc->id, "", "settings-invalid", reason(err, "the node refused its settings"));
             return nullptr;
         }
         if (req.align & (req.align - 1)) {  // aligned operator new requires a power of two
-            error(p.doc->id, "", "node-memory", "node asked for an alignment of " + std::to_string(req.align) +
-                                                    ", which is not a power of two");
+            error(p.doc->id, "", "node-memory",
+                  "node asked for an alignment of " + std::to_string(req.align) + ", which is not a power of two");
             return nullptr;
         }
         auto inst = std::make_shared<Instance>();
         inst->id = p.doc->id;
         inst->entry = p.entry;
         inst->align = std::max(req.align, alignof(std::max_align_t));
-        inst->memory = ::operator new(std::max<std::size_t>(req.size, 1), std::align_val_t(inst->align), std::nothrow);
+        inst->memory =
+            ::operator new(std::max<std::size_t>(req.size, 1), std::align_val_t(inst->align), std::nothrow);
         if (!inst->memory) {
-            error(p.doc->id, "", "node-memory", "could not allocate the " + std::to_string(req.size) + " bytes the node asked for");
+            error(p.doc->id, "", "node-memory",
+                  "could not allocate the " + std::to_string(req.size) + " bytes the node asked for");
             return nullptr;
         }
         inst->node = p.entry->type->create(in_.host, inst->memory, &s, &err);
         if (!inst->node) {
-            error(p.doc->id, "", "settings-invalid", err.message);
+            error(p.doc->id, "", "create-failed", reason(err, "the node could not be created"));
             return nullptr;  // ~Instance frees the memory (node is null, so nothing to destroy)
         }
         inst->settings = p.settings;
@@ -150,11 +166,11 @@ private:
             inst->controlOutputs.push_back(port.kind == PortKind::Control
                                                ? std::make_unique<StreamStore>(kStreamChanges, 0.0)
                                                : nullptr);
-            inst->resourceOutputs.push_back(port.kind == PortKind::Resource ? std::make_unique<rp_resource*>(nullptr)
-                                                                            : nullptr);
+            inst->resourceOutputs.push_back(
+                port.kind == PortKind::Resource ? std::make_unique<rp_resource*>(nullptr) : nullptr);
         }
         if (!inst->node->vt->activate(inst->node, in_.sampleRate, in_.maxFrames, &err)) {
-            error(p.doc->id, "", "activate-failed", err.message);
+            error(p.doc->id, "", "activate-failed", reason(err, "the node could not be activated"));
             return nullptr;
         }
         inst->active = true;
@@ -170,8 +186,14 @@ private:
             } else if (sameType) {
                 const rp_settings s{p.settings.data(), p.settings.size(), RP_SETTINGS_JSON};
                 rp_error err{};
-                switch (it->second->node->vt->prepare_settings(it->second->node, &s, &p.prepared, &err)) {
+                const rp_prepare_result result =
+                    it->second->node->vt->prepare_settings(it->second->node, &s, &p.prepared, &err);
+                switch (result) {
                     case RP_PREPARE_SWAP:
+                        if (!p.prepared) {
+                            error(p.doc->id, "", "node-contract", "prepare_settings chose a swap but prepared nothing");
+                            break;
+                        }
                         p.inst = it->second;
                         break;
                     case RP_PREPARE_REBUILD:
@@ -180,7 +202,12 @@ private:
                         p.fresh = true;
                         break;
                     case RP_PREPARE_INVALID:
-                        error(p.doc->id, "", "settings-invalid", err.message);
+                        error(p.doc->id, "", "settings-invalid", reason(err, "the node refused its settings"));
+                        break;
+                    default:
+                        p.prepared = nullptr;  // an unknown result promises nothing about it
+                        error(p.doc->id, "", "node-contract",
+                              "prepare_settings returned " + std::to_string(result) + ", which is not a result");
                         break;
                 }
             } else {
@@ -210,7 +237,7 @@ private:
                 const auto& ps = p.inst->layout.params;
                 const auto it = std::find_if(ps.begin(), ps.end(), [&](const ParamDesc& d) { return d.id == id; });
                 if (it == ps.end()) {
-                    error(p.doc->id, id, "unknown-param", "node \"" + p.doc->id + "\" has no param \"" + id + "\"");
+                    error(p.doc->id, id, "unknown-param", "node " + q(p.doc->id) + " has no param " + q(id));
                     continue;
                 }
                 double v = 0.0;
@@ -234,7 +261,8 @@ private:
                     ok = true;
                 }
                 if (!ok) {
-                    error(p.doc->id, id, "param-value", "param \"" + p.doc->id + "." + id + "\" got a value of the wrong type");
+                    error(p.doc->id, id, "param-value",
+                          "param " + q(p.doc->id + "." + id) + " got a value of the wrong type");
                     continue;
                 }
                 paramValues_[n].emplace_back(static_cast<int>(it - ps.begin()), v);
@@ -252,13 +280,15 @@ private:
             const auto from = parseEndpoint(w.from);
             const auto to = parseEndpoint(w.to);
             if (!from || !to) {
-                error("", "", "wire-endpoint", "wire \"" + w.from + "\" -> \"" + w.to + "\" needs node.port endpoints");
+                error("", "", "wire-endpoint", "wire " + q(w.from) + " -> " + q(w.to) + " needs node.port endpoints");
                 continue;
             }
             const auto fi = index_.find(from->node);
             const auto ti = index_.find(to->node);
             if (fi == index_.end() || ti == index_.end()) {
-                error("", "", "unknown-node", "wire \"" + w.from + "\" -> \"" + w.to + "\" names a node that does not exist");
+                const std::string_view missing = fi == index_.end() ? from->node : to->node;
+                error(std::string(missing), "", "unknown-node",
+                      "wire " + q(w.from) + " -> " + q(w.to) + " names node " + q(missing) + ", which does not exist");
                 continue;
             }
             const NodePlan& src = nodes_[fi->second];
@@ -267,17 +297,18 @@ private:
             const PortDesc* dp = findPort(dst.inst->layout, to->port);
             const ParamDesc* dparam = dp ? nullptr : findParam(dst.inst->layout, to->port);
             if (!sp) {
-                error(src.doc->id, std::string(from->port), "unknown-port", "\"" + w.from + "\" is not a port");
+                error(src.doc->id, std::string(from->port), "unknown-port", q(w.from) + " is not a port");
                 continue;
             }
             if (!dp && !dparam) {
-                error(dst.doc->id, std::string(to->port), "unknown-port", "\"" + w.to + "\" is not a port or param");
+                error(dst.doc->id, std::string(to->port), "unknown-port", q(w.to) + " is not a port or param");
                 continue;
             }
             const bool feedback = w.feedback.value_or(false);
             if (sp->kind == PortKind::Link || (dp && dp->kind == PortKind::Link)) {
                 if (!dp || sp->kind != PortKind::Link || dp->kind != PortKind::Link)
-                    error(dst.doc->id, std::string(to->port), "kind-mismatch", "a link port can only be wired to another link port");
+                    error(dst.doc->id, std::string(to->port), "kind-mismatch",
+                          "a link port can only be wired to another link port");
                 else if (feedback)
                     error(dst.doc->id, std::string(to->port), "feedback-kind", "a link wire cannot be a feedback wire");
                 else
@@ -285,23 +316,23 @@ private:
                 continue;
             }
             if (sp->dir != PortDir::Out) {
-                error(src.doc->id, sp->id, "wire-direction", "\"" + w.from + "\" is an input; a wire starts at an output");
+                error(src.doc->id, sp->id, "wire-direction", q(w.from) + " is an input; a wire starts at an output");
                 continue;
             }
             const PortKind dkind = dp ? dp->kind : PortKind::Control;
             if (dp && dp->dir != PortDir::In) {
-                error(dst.doc->id, dp->id, "wire-direction", "\"" + w.to + "\" is an output; a wire ends at an input");
+                error(dst.doc->id, dp->id, "wire-direction", q(w.to) + " is an output; a wire ends at an input");
                 continue;
             }
             if (sp->kind != dkind) {
                 error(dst.doc->id, std::string(to->port), "kind-mismatch",
-                      "\"" + w.from + "\" is " + std::string(kindName(sp->kind)) + " but \"" + w.to + "\" is " +
+                      q(w.from) + " is " + std::string(kindName(sp->kind)) + " but " + q(w.to) + " is " +
                           std::string(kindName(dkind)));
                 continue;
             }
             if (sp->kind == PortKind::Resource && sp->resourceType != dp->resourceType) {
                 error(dst.doc->id, dp->id, "resource-type-mismatch",
-                      "\"" + w.from + "\" carries " + sp->resourceType + " but \"" + w.to + "\" wants " + dp->resourceType);
+                      q(w.from) + " carries " + sp->resourceType + " but " + q(w.to) + " wants " + dp->resourceType);
                 continue;
             }
             if (feedback && sp->kind == PortKind::Resource) {
@@ -320,8 +351,16 @@ private:
                                 : static_cast<int>(dparam - dst.inst->layout.params.data());
             if (taken.count(slot)) {
                 error(dst.doc->id, std::string(to->port), "input-taken",
-                      "\"" + w.to + "\" already has a wire; combine signals with an explicit node (+, merge)");
+                      q(w.to) + " already has a wire; combine signals with an explicit node (+, merge)");
                 continue;
+            }
+            if (!dp) {
+                const auto& values = paramValues_[dw.to];
+                if (std::any_of(values.begin(), values.end(), [&](const auto& v) { return v.first == slot; })) {
+                    error(dst.doc->id, std::string(to->port), "input-taken",
+                          q(w.to) + " has a document value, so it cannot also take a wire");
+                    continue;
+                }
             }
             (dp ? dw.toPort : dw.toParam) = slot;
             taken[slot] = static_cast<int>(wires_.size());
@@ -355,7 +394,7 @@ private:
             for (int n : g)
                 if (!nodes_[n].inst->node->vt->get_interface(nodes_[n].inst->node, RP_STEP_INTERFACE))
                     error(nodes_[n].doc->id, "", "link-without-step",
-                          "node \"" + nodes_[n].doc->id + "\" is linked but does not implement " RP_STEP_INTERFACE);
+                          "node " + q(nodes_[n].doc->id) + " is linked but does not implement " RP_STEP_INTERFACE);
         }
         groupMembers_ = std::move(members);
         return out_.errors.empty();
@@ -435,14 +474,22 @@ private:
         return it == inputWire_[node].end() ? nullptr : &wires_[it->second];
     }
 
-    Resolved resolve(int node, int port, int depth = 0) {
+    // A port's channel count and layout, following match specs and wires upstream. Each port is resolved
+    // once: a success is cached, and so is a failure, so one bad port is reported once however many
+    // others depend on it.
+    Resolved resolve(int node, int port) {
         Resolved& r = resolved_[node][port];
-        if (r.ok) return r;
+        if (r.ok || r.state == Resolved::State::Failed) return r;
         const PortDesc& d = nodes_[node].inst->layout.ports[port];
-        if (depth > 16) {
-            error(nodes_[node].doc->id, d.id, "channel-match", "\"match\" specs form a loop");
-            return {};
-        }
+        const std::string& id = nodes_[node].doc->id;
+        auto fail = [&](const char* code, std::string message) {
+            r.state = Resolved::State::Failed;
+            if (code) error(id, d.id, code, std::move(message));
+            return Resolved{};
+        };
+        if (r.state == Resolved::State::Visiting)
+            return fail("channel-match", q(d.id) + "'s \"match\" specs form a loop");
+        r.state = Resolved::State::Visiting;
         Resolved out;
         switch (d.channels.mode) {
             case ChannelSpec::Mode::Fixed:
@@ -450,34 +497,29 @@ private:
                 break;
             case ChannelSpec::Mode::Match: {
                 const PortDesc* other = findPort(nodes_[node].inst->layout, d.channels.match);
-                if (!other || other->kind != PortKind::Audio) {
-                    error(nodes_[node].doc->id, d.id, "channel-match", "\"" + d.id + "\" matches \"" + d.channels.match + "\", which is not an audio port");
-                    return {};
-                }
-                out = resolve(node, static_cast<int>(other - nodes_[node].inst->layout.ports.data()), depth + 1);
+                if (!other || other->kind != PortKind::Audio)
+                    return fail("channel-match",
+                                q(d.id) + " matches " + q(d.channels.match) + ", which is not an audio port");
+                out = resolve(node, static_cast<int>(other - nodes_[node].inst->layout.ports.data()));
                 break;
             }
             case ChannelSpec::Mode::Any: {
-                if (d.dir == PortDir::Out) {
-                    error(nodes_[node].doc->id, d.id, "channel-any", "an output cannot be \"any\"; use match or a fixed count");
-                    return {};
-                }
+                if (d.dir == PortDir::Out)
+                    return fail("channel-any", "an output cannot be \"any\"; use match or a fixed count");
                 const DataWire* w = wireInto(node, port);
                 if (!w) out = {1, "mono", true};
-                else if (w->feedback) {
-                    error(nodes_[node].doc->id, d.id, "feedback-inference",
-                          "\"" + d.id + "\" infers its channels from a feedback wire; give it a fixed count");
-                    return {};
-                } else out = resolve(w->from, w->fromPort, depth + 1);
+                else if (w->feedback)
+                    return fail("feedback-inference",
+                                q(d.id) + " infers its channels from a feedback wire; give it a fixed count");
+                else out = resolve(w->from, w->fromPort);
                 break;
             }
         }
-        if (!out.ok) return {};
-        if (out.count == 0 || out.count > kMaxChannels) {
-            error(nodes_[node].doc->id, d.id, "too-many-channels",
-                  "\"" + d.id + "\" resolves to " + std::to_string(out.count) + " channels (1 to " + std::to_string(kMaxChannels) + ")");
-            return {};
-        }
+        if (!out.ok) return fail(nullptr, {});  // upstream already said why
+        if (out.count == 0 || out.count > kMaxChannels)
+            return fail(out.count == 0 ? "channel-count" : "too-many-channels",
+                        q(d.id) + " resolves to " + std::to_string(out.count) + " channels (1 to " +
+                            std::to_string(kMaxChannels) + ")");
         r = out;
         return r;
     }
@@ -529,7 +571,7 @@ private:
                         }
                 if (used.size() > 1)
                     error(nodes_[n].doc->id, used[0], "exclusive-ports",
-                          "\"" + nodes_[n].doc->id + "\" cannot use " + used[0] + " and " + used[1] + " at the same time");
+                          q(nodes_[n].doc->id) + " cannot use " + used[0] + " and " + used[1] + " at the same time");
             }
         }
         return out_.errors.empty();
@@ -540,46 +582,50 @@ private:
     bool resources() {
         bindings_.resize(nodes_.size());
         std::map<ResourceTable::Id, int> writers;
-        std::map<ResourceTable::Id, std::string> readers;
+        std::map<ResourceTable::Id, std::pair<std::string, std::string>> readers;  // id -> (node, port)
         for (std::size_t n = 0; n < nodes_.size(); ++n) {
             const auto& p = nodes_[n];
             if (!p.doc->resources) continue;
             for (const auto& [portId, ref] : *p.doc->resources) {
                 const PortDesc* d = findPort(p.inst->layout, portId);
                 if (!d || d->kind != PortKind::Resource || d->dir != PortDir::In) {
-                    error(p.doc->id, portId, "resource-port", "\"" + p.doc->id + "." + portId + "\" is not a resource input");
+                    error(p.doc->id, portId, "resource-port", q(p.doc->id + "." + portId) + " is not a resource input");
                     continue;
                 }
                 const int port = static_cast<int>(d - p.inst->layout.ports.data());
                 if (wireInto(static_cast<int>(n), port)) {
-                    error(p.doc->id, portId, "input-taken", "\"" + p.doc->id + "." + portId + "\" is both wired and bound");
+                    error(p.doc->id, portId, "input-taken", q(p.doc->id + "." + portId) + " is both wired and bound");
                     continue;
                 }
                 const auto id = parseResourceRef(ref);
                 rp_resource* r = id ? in_.resources->get(*id) : nullptr;
                 if (!r) {
-                    error(p.doc->id, portId, "unknown-resource", "\"" + ref + "\" is not a live resource");
+                    error(p.doc->id, portId, "unknown-resource", q(ref) + " is not a live resource");
                     continue;
                 }
                 if (d->resourceType != r->type) {
                     error(p.doc->id, portId, "resource-type-mismatch",
-                          "\"" + ref + "\" is " + std::string(r->type) + " but \"" + portId + "\" wants " + d->resourceType);
+                          q(ref) + " is " + std::string(r->type) + " but " + q(portId) + " wants " + d->resourceType);
                     continue;
                 }
                 if (d->write) {
                     if (++writers[*id] > 1)
-                        error(p.doc->id, portId, "resource-multiple-writers", "\"" + ref + "\" is bound to more than one writer");
+                        error(p.doc->id, portId, "resource-multiple-writers",
+                              q(ref) + " is bound to more than one writer");
                 } else {
-                    readers[*id] = p.doc->id + "." + portId;
+                    readers[*id] = {p.doc->id, portId};
                 }
                 bindings_[n].emplace_back(port, *id);
             }
         }
-        for (const auto& [id, count] : writers)
-            if (readers.count(id))
-                error("", "", "resource-reader-unordered",
-                      "\"res:" + std::to_string(id) + "\" has a writer, so \"" + readers[id] +
-                          "\" must read it through a wire from the writer's output, not a binding");
+        for (const auto& [id, count] : writers) {
+            const auto r = readers.find(id);
+            if (r != readers.end())
+                error(r->second.first, r->second.second, "resource-reader-unordered",
+                      q("res:" + std::to_string(id)) + " has a writer, so " +
+                          q(r->second.first + "." + r->second.second) +
+                          " must read it through a wire from the writer's output, not a binding");
+        }
         return out_.errors.empty();
     }
 
@@ -609,7 +655,8 @@ private:
         if (w.kind == PortKind::Audio) {
             f->frames = in_.maxFrames;
             f->samples.assign(static_cast<std::size_t>(channelCount) * in_.maxFrames, 0.0f);
-            for (std::uint32_t c = 0; c < channelCount; ++c) f->pointers.push_back(f->samples.data() + std::size_t(c) * in_.maxFrames);
+            for (std::uint32_t c = 0; c < channelCount; ++c)
+                f->pointers.push_back(f->samples.data() + std::size_t(c) * in_.maxFrames);
             if (sameShape && in_.quiescent)
                 for (std::uint32_t c = 0; c < channelCount; ++c)
                     std::copy_n(old->pointers[c], std::min(old->frames, in_.maxFrames), f->pointers[c]);
@@ -621,30 +668,10 @@ private:
         return f;
     }
 
-    void build() {
-        auto s = std::make_unique<PlanStorage>();
-        PlanStorage& st = *s;
-        st.maxFrames = in_.maxFrames;
-        st.resources = in_.resources;
-        st.silence = std::make_unique<float[]>(in_.maxFrames);
-        st.scratch = std::make_unique<float[]>(in_.maxFrames);
-        std::fill_n(st.silence.get(), in_.maxFrames, 0.0f);
-        std::fill_n(st.scratch.get(), in_.maxFrames, 0.0f);
-        st.emptyQueue = std::make_unique<QueueStore>(0, 0);
-        st.scratchQueue = std::make_unique<QueueStore>(kQueueItems, kQueueBytes);
-        st.emptyStream = std::make_unique<StreamStore>(0, 0.0);
-        st.queuesToClear.push_back(&st.scratchQueue->queue);
-
-        const std::size_t count = nodes_.size();
-        st.inputViews.resize(count);
-        st.outputViews.resize(count);
-        st.paramViews.resize(count);
-        for (const auto& p : nodes_) st.instances.push_back(p.inst);
-
-        // Producer side: every output's view, with audio buffers reused by lifetime.
+    // Producer side: every output's view, with audio buffers reused by lifetime.
+    void assignOutputs(PlanStorage& st) {
         std::vector<int> lastUse;  // per audio buffer
         std::vector<int> freeList;
-        std::vector<std::vector<std::vector<int>>> outBuffers(count);  // node -> output ordinal -> buffer ids
         auto takeBuffer = [&](int lastReader) {
             int id;
             if (!freeList.empty()) {
@@ -659,7 +686,6 @@ private:
             lastUse[id] = lastReader;
             return id;
         };
-        for (std::size_t n = 0; n < count; ++n) outBuffers[n].resize(nodes_[n].outPorts.size());
 
         for (int g = 0; g < static_cast<int>(groupMembers_.size()); ++g) {
             for (int n : groupMembers_[g]) {
@@ -683,7 +709,6 @@ private:
                                     ptrs.push_back(st.scratch.get());
                                 } else {
                                     const int id = takeBuffer(lastReader);
-                                    outBuffers[n][o].push_back(id);
                                     ptrs.push_back(st.audio[id].get());
                                 }
                             }
@@ -721,8 +746,10 @@ private:
                     lastUse[id] = kNone;
                 }
         }
+    }
 
-        // Feedback fronts and the copies that feed them.
+    // Feedback fronts, keyed by wire, and the copies that fill them at the end of each block.
+    std::map<std::string, std::shared_ptr<FeedbackFront>> feedbackFronts(PlanStorage& st) {
         std::map<std::string, std::shared_ptr<FeedbackFront>> fronts;
         for (const auto& w : wires_) {
             if (!w.feedback) continue;
@@ -747,8 +774,12 @@ private:
             st.feedbackFronts.push_back(f);
             fronts[w.key] = f;
         }
+        return fronts;
+    }
 
-        // Consumer side: every input, param and resource slot.
+    // Consumer side: every input, param and resource slot.
+    void assignInputs(PlanStorage& st, std::map<std::string, std::shared_ptr<FeedbackFront>>& fronts) {
+        const std::size_t count = nodes_.size();
         for (std::size_t n = 0; n < count; ++n) {
             NodePlan& p = nodes_[n];
             auto& views = st.inputViews[n];
@@ -807,8 +838,10 @@ private:
                 pv.push_back(q);
             }
         }
+    }
 
-        // Steps, in order; a coupled group's members run consecutively behind its first.
+    // Steps, in order; a coupled group's members run consecutively behind its first.
+    void flattenSteps(PlanStorage& st) {
         for (const auto& g : groupMembers_) {
             for (std::size_t m = 0; m < g.size(); ++m) {
                 const int n = g[m];
@@ -822,14 +855,19 @@ private:
                 step.process.params = st.paramViews[n].data();
                 step.process.param_count = static_cast<std::uint32_t>(st.paramViews[n].size());
                 if (g.size() > 1) {
-                    step.step = static_cast<const rp_step_interface*>(step.node->vt->get_interface(step.node, RP_STEP_INTERFACE));
+                    step.step = static_cast<const rp_step_interface*>(
+                        step.node->vt->get_interface(step.node, RP_STEP_INTERFACE));
                     if (m == 0) step.groupSize = static_cast<std::uint32_t>(g.size());
                 }
                 st.steps.push_back(step);
             }
         }
+    }
 
-        // What the audio thread applies when it adopts the plan.
+    // What the audio thread applies when it adopts the plan, and the control-side records that follow
+    // once it is published.
+    void scheduleAdoption(PlanStorage& st) {
+        const std::size_t count = nodes_.size();
         for (std::size_t n = 0; n < count; ++n) {
             NodePlan& p = nodes_[n];
             const std::shared_ptr<Instance> inst = p.inst;
@@ -848,6 +886,9 @@ private:
                     inst->maskSent = true;
                 });
             }
+            std::vector<std::uint8_t> wired(inst->layout.params.size(), 0);
+            for (const auto& [k, w] : paramWire_[n]) wired[static_cast<std::size_t>(k)] = 1;
+            if (inst->wiredParams != wired) out_.onPublished.push_back([inst, wired] { inst->wiredParams = wired; });
             for (const auto& [k, value] : paramValues_[n]) {
                 const std::string& id = inst->layout.params[k].id;
                 const auto it = inst->appliedParams.find(id);
@@ -860,7 +901,8 @@ private:
         for (const auto& g : groupMembers_) {
             for (int n : g) {
                 const std::shared_ptr<Instance> inst = nodes_[n].inst;
-                const auto* link = static_cast<const rp_link_interface*>(inst->node->vt->get_interface(inst->node, RP_LINK_INTERFACE));
+                const auto* link = static_cast<const rp_link_interface*>(
+                    inst->node->vt->get_interface(inst->node, RP_LINK_INTERFACE));
                 if (!link) continue;
                 std::vector<rp_node*> peers;
                 for (int m : g)
@@ -874,6 +916,31 @@ private:
                 }
             }
         }
+    }
+
+    void build() {
+        auto s = std::make_unique<PlanStorage>();
+        PlanStorage& st = *s;
+        st.maxFrames = in_.maxFrames;
+        st.resources = in_.resources;
+        st.silence = std::make_unique<float[]>(in_.maxFrames);
+        st.scratch = std::make_unique<float[]>(in_.maxFrames);
+        std::fill_n(st.silence.get(), in_.maxFrames, 0.0f);
+        std::fill_n(st.scratch.get(), in_.maxFrames, 0.0f);
+        st.emptyQueue = std::make_unique<QueueStore>(0, 0);
+        st.scratchQueue = std::make_unique<QueueStore>(kQueueItems, kQueueBytes);
+        st.emptyStream = std::make_unique<StreamStore>(0, 0.0);
+        st.queuesToClear.push_back(&st.scratchQueue->queue);
+
+        st.inputViews.resize(nodes_.size());
+        st.outputViews.resize(nodes_.size());
+        st.paramViews.resize(nodes_.size());
+        for (const auto& p : nodes_) st.instances.push_back(p.inst);
+        assignOutputs(st);
+        auto fronts = feedbackFronts(st);
+        assignInputs(st, fronts);
+        flattenSteps(st);
+        scheduleAdoption(st);
 
         st.view = PlanView{st.steps, st.queuesToClear, st.controlsToRoll, st.feedback, in_.faults};
         for (const auto& p : nodes_) out_.instances[p.doc->id] = p.inst;
@@ -897,6 +964,11 @@ private:
 };
 
 }  // namespace
+
+std::string errorText(const rp_error& err, const char* fallback) {
+    const std::size_t n = strnlen(err.message, sizeof err.message);
+    return n ? std::string(err.message, n) : std::string(fallback);
+}
 
 PlanOutcome plan(const PlanInput& in) { return Builder(in).run(); }
 

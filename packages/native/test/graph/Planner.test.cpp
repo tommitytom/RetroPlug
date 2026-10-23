@@ -169,7 +169,7 @@ TEST_CASE("a node is told which outputs are connected, on the first plan and on 
 TEST_CASE("a node whose create fails is reported, and its memory is freed", "[graph][planner]") {
     PlannerRig rig;  // (the ASan build is what checks "freed")
     const auto r = rig.set(R"({"nodes":[{"id":"f","type":"rp.test.failing"}],"wires":[]})");
-    REQUIRE(GraphRig::codes(r) == "settings-invalid");
+    REQUIRE(GraphRig::codes(r) == "create-failed");
     CHECK(r.errors[0].message == "no ROM loaded");
 }
 
@@ -207,6 +207,30 @@ TEST_CASE("settings errors come back from the node with its reason", "[graph][pl
     const auto r = rig.set(R"({"nodes":[{"id":"s","type":"rp.test.source","settings":{"channels":"two"}}],"wires":[]})");
     REQUIRE(GraphRig::codes(r) == "settings-invalid");
     CHECK(r.errors[0].message.find("channels") != std::string::npos);
+}
+
+TEST_CASE("a document rejected late, after reconcile, changes nothing and leaks nothing", "[graph][planner]") {
+    GraphRig rig;  // (the ASan build is what checks "leaks nothing")
+    REQUIRE(rig.set(R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":0.5}},
+                                  {"id":"wide","type":"rp.test.source","settings":{"channels":1}},
+                                  {"id":"out","type":"rp.host.audio-out"}],
+                         "wires":[{"from":"src.out","to":"out.out.1-2"}]})").ok);
+    rig.run();
+    rp_node* const wide = rig.host->node("wide");
+    const auto before = rig.host->instanceCount();
+    // A value swap (prepared), a layout change (rebuilt) and a new node, then a cycle at the order pass.
+    const auto r = rig.set(R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":0.25}},
+                                         {"id":"wide","type":"rp.test.source","settings":{"channels":2}},
+                                         {"id":"out","type":"rp.host.audio-out"},{"id":"new","type":"rp.test.sink"},
+                                         {"id":"x","type":"rp.test.through"},{"id":"y","type":"rp.test.through"}],
+                               "wires":[{"from":"src.out","to":"out.out.1-2"},{"from":"x.out","to":"y.in"},
+                                        {"from":"y.out","to":"x.in"}]})");
+    REQUIRE(GraphRig::codes(r) == "cycle");
+    CHECK(rig.host->instanceCount() == before);
+    CHECK(rig.host->node("wide") == wide);
+    CHECK(rig.node<test::Source>("src").value == 0.5f);
+    rig.run();
+    CHECK(rig.outs[0][0] == 0.5f);
 }
 
 TEST_CASE("a rejected document leaves the running graph untouched", "[graph][planner]") {

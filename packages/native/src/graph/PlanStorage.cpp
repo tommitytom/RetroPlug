@@ -35,6 +35,9 @@ PlanStorage::~PlanStorage() {
             c.node->vt->release_settings(c.node, c.prepared);
         }
     }
+    // A node it alone kept may still touch a bound resource or a cached port pointer in deactivate or
+    // destroy, so instances go before the pins and buffers they could reach.
+    instances.clear();
     if (resources)
         for (const auto id : pins) {
             [[maybe_unused]] const bool held = resources->unpin(id);

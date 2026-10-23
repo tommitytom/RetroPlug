@@ -9,8 +9,10 @@ namespace rp::graph {
 
 namespace {
 
-// What a bypassed node leaves on its outputs: silence, empty queues, and no control changes (a control
-// stream keeps its start value, since that is state, not something this block produced).
+// What a bypassed node leaves on its outputs: silence, empty queues, no control changes (a control stream
+// keeps its start value, since that is state, not something this block produced) and no resource handle.
+// The last matters for safety: a resource output slot outlives plans, so a writer that faulted would
+// otherwise keep publishing a handle that only an old plan pinned, and readers would see it freed.
 void silenceOutputs(const rp_process& p, std::uint32_t frames) {
     for (std::uint32_t i = 0; i < p.output_count; ++i) {
         const rp_port_view& v = p.outputs[i];
@@ -26,8 +28,10 @@ void silenceOutputs(const rp_process& p, std::uint32_t frames) {
             case RP_PORT_CONTROL:
                 v.u.control->count = 0;
                 break;
-            case RP_PORT_LINK:
             case RP_PORT_RESOURCE:
+                if (v.u.resource) *v.u.resource = nullptr;
+                break;
+            case RP_PORT_LINK:
             default:
                 break;
         }

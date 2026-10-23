@@ -2,7 +2,9 @@
 // and the state a plan swap must keep (docs/modular-graph-design.md section 5.3).
 #include <catch2/catch_test_macros.hpp>
 
+#include <iterator>
 #include <limits>
+#include <string>
 
 #include "GraphRig.hpp"
 
@@ -12,6 +14,96 @@ using rp::graph::test::Linked;
 using rp::graph::test::Sink;
 using rp::graph::test::Source;
 using rp::graph::test::Through;
+
+namespace {
+
+// Publishes its Value param on a control output each block; keeps what its Steps param last read.
+struct Knob {
+    static constexpr const char* id = "rp.test.knob";
+    struct { rp::control_out out; } outputs;
+    struct {
+        rp::float_param<"Value", rp::range{-100, 100, 0}> value;
+        rp::int_param<"Steps", rp::range{0, 8, 0}>        steps;
+    } params;
+    double steps = 0.0;
+    void process(const rp::Block&) noexcept {
+        outputs.out.push(0, params.value.start());
+        steps = params.steps.start();
+    }
+};
+
+// Publishes the buffer it is bound to as its output each block, until it faults on block `failAt`.
+struct WriterSettings {
+    std::uint32_t failAt = 0;  // 0: never
+};
+
+struct Writer {
+    static constexpr const char* id = "rp.test.writer";
+    using Settings = WriterSettings;
+    struct { rp::resource_write<"audio-buffer"> target; } inputs;
+    struct { rp::resource_out<"audio-buffer"> out; } outputs;
+    std::uint32_t failAt = 0, blocks = 0;
+    void on_settings(const Settings& s) noexcept { failAt = s.failAt; }
+    rp_status process(const rp::Block&) noexcept {
+        if (failAt && ++blocks >= failAt) return RP_FAULT;
+        outputs.out.set(inputs.target.get());
+        return RP_OK;
+    }
+};
+
+// Reads the first sample of whatever buffer it is handed (so ASan sees a freed one).
+struct Reader {
+    static constexpr const char* id = "rp.test.reader";
+    struct { rp::resource_in<"audio-buffer"> in; } inputs;
+    const rp_resource* seen = nullptr;
+    float              first = 0.0f;
+    void process(const rp::Block&) noexcept {
+        seen = inputs.in.get();
+        if (seen) first = static_cast<const rp_audio_buffer*>(seen->payload)->data[0][0];
+    }
+};
+
+// Refuses to activate beyond `limit` frames, or (once) at all after its first activation.
+struct PickySettings {
+    std::uint32_t limit = 0;
+    bool          once = false;
+};
+
+struct Picky {
+    static constexpr const char* id = "rp.test.picky";
+    using Settings = PickySettings;
+    PickySettings s;
+    std::uint32_t activations = 0, processed = 0;
+    void on_settings(const Settings& st) noexcept { s = st; }
+    bool activate(double, std::uint32_t maxFrames) {
+        if ((s.once && activations > 0) || (s.limit && maxFrames > s.limit)) return false;
+        ++activations;
+        return true;
+    }
+    void process(const rp::Block&) noexcept { ++processed; }
+};
+
+int g_countedDestroyed = 0;
+
+struct Counted {
+    static constexpr const char* id = "rp.test.counted";
+    ~Counted() { ++g_countedDestroyed; }
+    void process(const rp::Block&) noexcept {}
+};
+
+const rp_package* execPackage() {
+    static const rp_node_type* const kTypes[] = {rp::node_type<Knob>(), rp::node_type<Writer>(), rp::node_type<Reader>(),
+                                                 rp::node_type<Picky>(), rp::node_type<Counted>()};
+    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.exec"})",
+                                     static_cast<std::uint32_t>(std::size(kTypes)), kTypes};
+    return &kPackage;
+}
+
+struct ExecRig : GraphRig {
+    ExecRig() { registry.addPackage(execPackage()); }
+};
+
+}  // namespace
 
 TEST_CASE("audio-out writes wired buses and silences the rest", "[graph][exec]") {
     GraphRig rig;
@@ -210,7 +302,7 @@ TEST_CASE("a block longer than the plan's buffers is refused, not overrun", "[gr
     REQUIRE(rig.set(R"({"nodes":[{"id":"src","type":"rp.test.source"},{"id":"out","type":"rp.host.audio-out"}],
                          "wires":[{"from":"src.out","to":"out.out.1-2"}]})").ok);
     rig.run(256);
-    CHECK(rig.outs[0][0] == -99.0f);  // nothing ran
+    CHECK(rig.outs[0][0] == 0.0f);  // nothing ran, and the host's buffer was not left as it was
     CHECK(rig.node<Source>("src").frames == 0);
 }
 
@@ -246,10 +338,145 @@ TEST_CASE("feedback data in flight survives a swap that keeps the wire", "[graph
 }
 
 TEST_CASE("removing a node frees it", "[graph][exec]") {
-    GraphRig rig;
-    REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.sink"},{"id":"b","type":"rp.test.sink"}],"wires":[]})").ok);
+    ExecRig rig;
+    g_countedDestroyed = 0;
+    REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.sink"},{"id":"b","type":"rp.test.counted"}],"wires":[]})").ok);
     CHECK(rig.host->instanceCount() == 2);
     REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.sink"}],"wires":[]})").ok);
     CHECK(rig.host->instanceCount() == 1);
     CHECK(rig.host->node("b") == nullptr);
+    rig.host->reclaim();  // the replaced plan held the last reference
+    CHECK(g_countedDestroyed == 1);
+}
+
+TEST_CASE("a node whose type changes under the same id is rebuilt as the new type", "[graph][exec][swap]") {
+    GraphRig rig;
+    REQUIRE(rig.set(R"({"nodes":[{"id":"n","type":"rp.test.sink"}],"wires":[]})").ok);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"n","type":"rp.test.through"}],"wires":[]})").ok);
+    CHECK(rp::peer_as<Through>(rig.host->node("n")) != nullptr);
+    CHECK(rp::peer_as<Sink>(rig.host->node("n")) == nullptr);
+    CHECK(rig.host->instanceCount() == 1);
+}
+
+TEST_CASE("a feedback wire removed and added back starts from silence", "[graph][exec][swap]") {
+    GraphRig rig;
+    const std::string loop = R"({"nodes":[{"id":"x","type":"rp.test.through"},{"id":"y","type":"rp.test.through"},
+                                          {"id":"out","type":"rp.host.audio-out"}],
+                                 "wires":[{"from":"x.out","to":"y.in"},{"from":"y.out","to":"x.in","feedback":true},
+                                          {"from":"y.out","to":"out.out.1-2"}]})";
+    REQUIRE(rig.set(loop).ok);
+    rig.run(64, 2);
+    REQUIRE(rig.outs[0][0] == 4.0f);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"x","type":"rp.test.through"},{"id":"y","type":"rp.test.through"},
+                                  {"id":"out","type":"rp.host.audio-out"}],
+                         "wires":[{"from":"x.out","to":"y.in"},{"from":"y.out","to":"out.out.1-2"}]})").ok);
+    rig.run();
+    REQUIRE(rig.set(loop).ok);
+    rig.run();
+    CHECK(rig.outs[0][0] == 2.0f);  // x read silence, not the 4 the old wire last carried
+}
+
+TEST_CASE("a bypassed writer stops publishing its resource handle", "[graph][exec]") {
+    ExecRig rig;
+    const auto a = rig.resources.createAudioBuffer(1, 4, 48000.0);
+    const auto b = rig.resources.createAudioBuffer(1, 4, 48000.0);
+    static_cast<rp_audio_buffer*>(rig.resources.get(a)->payload)->data[0][0] = 1.0f;
+    auto doc = [](ResourceTable::Id target) {
+        return R"({"nodes":[{"id":"w","type":"rp.test.writer","settings":{"failAt":2},"resources":{"target":"res:)" +
+               std::to_string(target) + R"("}},{"id":"r","type":"rp.test.reader"}],"wires":[{"from":"w.out","to":"r.in"}]})";
+    };
+    REQUIRE(rig.set(doc(a)).ok);
+    rig.run();
+    CHECK(rig.node<Reader>("r").first == 1.0f);
+    rig.run();  // the writer faults
+    CHECK(rig.node<Reader>("r").seen == nullptr);
+    // A is dropped and only the old plan pinned it; once that plan is reclaimed, A is gone.
+    REQUIRE(rig.resources.drop(a));
+    REQUIRE(rig.set(doc(b)).ok);
+    rig.host->reclaim();
+    CHECK(rig.resources.liveCount() == 1);
+    rig.run();
+    CHECK(rig.node<Reader>("r").seen == nullptr);
+}
+
+TEST_CASE("a param wired from a control output follows it; setParam leaves it alone", "[graph][exec]") {
+    ExecRig rig;
+    REQUIRE(rig.set(R"({"nodes":[{"id":"k","type":"rp.test.knob","params":{"value":3}},
+                                  {"id":"src","type":"rp.test.source","settings":{"value":0.5}},
+                                  {"id":"out","type":"rp.host.audio-out"}],
+                         "wires":[{"from":"k.out","to":"src.gain"},{"from":"src.out","to":"out.out.1-2"}]})").ok);
+    rig.run(64, 2);
+    CHECK(rig.outs[0][0] == 1.5f);
+    CHECK_FALSE(rig.host->setParam("src", "gain", 4.0));  // the wire drives it
+    REQUIRE(rig.host->setParam("k", "steps", 2.6));
+    rig.run(64, 2);  // the change rides one block's stream; start() shows it the block after
+    CHECK(rig.node<Knob>("k").steps == 3.0);  // rounded, as a document value would be
+    CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"k","type":"rp.test.knob"},
+                                                {"id":"src","type":"rp.test.source","params":{"gain":2}}],
+                                      "wires":[{"from":"k.out","to":"src.gain"}]})")) == "input-taken");
+}
+
+TEST_CASE("a control feedback wire delivers its changes one block late", "[graph][exec]") {
+    ExecRig rig;
+    REQUIRE(rig.set(R"({"nodes":[{"id":"k","type":"rp.test.knob","params":{"value":7}},{"id":"s","type":"rp.test.sink"}],
+                         "wires":[{"from":"k.out","to":"s.control","feedback":true}]})").ok);
+    rig.run();
+    CHECK(rig.node<Sink>("s").controlChanges == 0);
+    rig.run();
+    CHECK(rig.node<Sink>("s").controlChanges == 1);
+    CHECK(rig.node<Sink>("s").controlEnd == 7.0);
+}
+
+TEST_CASE("host outputs start every block silent", "[graph][exec]") {
+    GraphRig rig;
+    rig.run();  // before any plan
+    CHECK(rig.outs[0][0] == 0.0f);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"src","type":"rp.test.source"},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                         "wires":[{"from":"src.out","to":"out.out.1-2"}]})").ok);
+    rig.run();
+    CHECK(rig.outs[0][0] == 1.0f);
+    CHECK(rig.outs[2][0] == 0.0f);  // beyond the only bus
+    CHECK(rig.outs[7][63] == 0.0f);
+}
+
+TEST_CASE("a node that will not re-activate leaves the running plan safe", "[graph][exec][swap]") {
+    ExecRig rig;  // maxFrames 64
+    REQUIRE(rig.set(R"({"nodes":[{"id":"p","type":"rp.test.picky","settings":{"limit":128}},
+                                  {"id":"src","type":"rp.test.source"}],"wires":[]})").ok);
+    rig.run();
+    std::string error;
+    CHECK_FALSE(rig.host->reactivate(48000.0, 256, &error));
+    CHECK(error.find("\"p\"") != std::string::npos);
+    CHECK_FALSE(rig.host->isFaulted("p"));  // back on 64 frames
+    CHECK(rig.node<Picky>("p").activations == 2);
+    rig.run(256);  // the old plan still refuses what it was not built for
+    CHECK(rig.node<Picky>("p").processed == 1);
+    rig.run(64);
+    CHECK(rig.node<Picky>("p").processed == 2);
+    CHECK(rig.node<Source>("src").frames == 128);
+}
+
+TEST_CASE("a node that will not come back at all is bypassed", "[graph][exec][swap]") {
+    ExecRig rig;
+    REQUIRE(rig.set(R"({"nodes":[{"id":"p","type":"rp.test.picky","settings":{"once":true}},
+                                  {"id":"src","type":"rp.test.source"}],"wires":[]})").ok);
+    CHECK_FALSE(rig.host->reactivate(96000.0, 64));
+    CHECK(rig.host->isFaulted("p"));
+    rig.run();
+    CHECK(rig.node<Picky>("p").processed == 0);  // never run deactivated
+    CHECK(rig.node<Source>("src").frames == 64);
+}
+
+TEST_CASE("reactivate refuses a graph that no longer plans and changes nothing", "[graph][exec][swap]") {
+    ExecRig rig;
+    const auto buf = rig.resources.createAudioBuffer(1, 4, 48000.0);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"r","type":"rp.test.reader","resources":{"in":"res:)" + std::to_string(buf) +
+                    R"("}}],"wires":[]})").ok);
+    REQUIRE(rig.resources.drop(buf));  // still pinned by the running plan, but no longer bindable
+    std::string error;
+    CHECK_FALSE(rig.host->reactivate(48000.0, 256, &error));
+    CHECK(error.find("no longer plans") != std::string::npos);
+    CHECK(rig.host->config().maxFrames == 64);
+    CHECK_FALSE(rig.host->reactivate(0.0, 64, &error));
+    CHECK(error.find("sample rate") != std::string::npos);
 }

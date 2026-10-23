@@ -197,7 +197,8 @@ typedef struct rp_node_vtable {
     bool (*activate)(rp_node* node, double sample_rate, uint32_t max_frames, rp_error* err);
     /* [control] */
     void (*deactivate)(rp_node* node);
-    /* [audio] The connected-output mask changed at a plan swap; connected[i] is 0 or 1 per output. */
+    /* [audio] The connected-output mask changed at a plan swap; connected[i] is 0 or 1 per output. The
+     * array is valid only during the call: copy what you keep. Not called again until the mask changes. */
     void (*ports_changed)(rp_node* node, const uint8_t* connected, uint32_t output_count);
     /* [audio] One block. Must write every frame of every CONNECTED audio output (unconnected ones get a
      * shared scratch buffer, so skipping them is safe, and is what the connected mask is for). Return
@@ -261,9 +262,10 @@ typedef struct rp_step_interface {
     void (*finish)(rp_node* node, const rp_process* block);
 } rp_step_interface;
 
-/* "rp.link/1": told its peers whenever the coupled group it belongs to changes. [audio] A peer may be
- * bypassed later (it faulted), after which it is no longer stepped; a node must tolerate a peer that has
- * stopped advancing rather than wait on it. */
+/* "rp.link/1": told its peers whenever the coupled group it belongs to changes. [audio] The peers array
+ * is valid only during the call (the node pointers in it stay valid until the next set_peers): copy what
+ * you keep. A peer may be bypassed later (it faulted), after which it is no longer stepped; a node must
+ * tolerate a peer that has stopped advancing rather than wait on it. */
 #define RP_LINK_INTERFACE "rp.link/1"
 typedef struct rp_link_interface {
     void (*set_peers)(rp_node* node, rp_node* const* peers, uint32_t peer_count);

@@ -47,6 +47,7 @@ struct Instance {
     std::vector<std::unique_ptr<StreamStore>> controlOutputs;   // per output ordinal; null unless control
     std::vector<std::unique_ptr<rp_resource*>> resourceOutputs; // per output ordinal; null unless resource
     std::map<std::string, double>             appliedParams;    // document values already sent
+    std::vector<std::uint8_t>                 wiredParams;      // per param: driven by a wire, so setParam is refused
     std::vector<std::uint8_t>                 lastMask;
     bool                                      maskSent = false;
     std::vector<rp_node*>                     lastPeers;
@@ -139,7 +140,8 @@ struct PlanStorage {
     PlanStorage(const PlanStorage&) = delete;
     PlanStorage& operator=(const PlanStorage&) = delete;
     // Control thread: frees settings objects (the replaced ones if committed, the unused prepared ones if
-    // not) and drops the plan's resource pins. Instances and feedback buffers go with their last owner.
+    // not), then drops its instances (destroying those it alone kept, while its buffers and pins still
+    // exist), then its resource pins. Feedback buffers go with their last owner.
     ~PlanStorage();
 
     // Audio thread, at adoption: commit settings, tell nodes their peers and connected outputs, apply
