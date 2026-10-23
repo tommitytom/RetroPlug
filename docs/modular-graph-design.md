@@ -483,12 +483,13 @@ RP_NODE(Gain);   // emits the rp_node_type + vtable
 - **Exceptions never cross the ABI.** Every control-thread entry catches and reports through `rp_error`
   (a descriptor that cannot be built is an empty string, which the registry refuses); every audio-thread
   hook (`process`, `on_settings`, `ports_changed`, the step and link hooks) must be `noexcept`.
-- **Optional hooks are detected by name, then checked by signature.** Once a node defines `validate`,
-  `adjust_layout`, `extra_memory` or any other hook, its exact signature is a compile-time assertion, so a
+- **Optional hooks are detected by name, then checked by signature.** Once a node defines a member
+  function called `validate`, `adjust_layout`, `extra_memory` or any other hook name, its exact signature
+  is a compile-time assertion (a data member that shares the name, a sequencer's `step`, is not a hook), so a
   near miss (a missing `noexcept`, a `bool` where `std::optional<std::string>` is expected, two of the
   three step hooks) is an error rather than a hook silently ignored. A port in the wrong struct is an
   error too, and `adjust_layout` may patch and append but never move, drop or re-kind a reflected port
-  or param (they bind by position), which is checked when the layout is built.
+  or param (they bind by position) or relabel a reflected enum, which is checked when the layout is built.
 - **Settings decode** uses reflect-cpp with the JSON Schema-validated types, so a bad value in a
   downloaded document is rejected with a message ("expected >= 20, got 5"), not silently clamped.
 - **reflect-cpp is upgraded to 0.26.x** (schema `default`, which 0.24 lacks). The pin lives in rpcpp
