@@ -27,7 +27,8 @@ add_library(retroplug-graph STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/PlanStorage.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/Planner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/GraphHost.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/HostNodes.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/HostNodes.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/nodes/CoreNodes.cpp)
 target_link_libraries(retroplug-graph PUBLIC retroplug-graph-exec reflectcpp::reflectcpp)
 set_target_properties(retroplug-graph PROPERTIES
     CXX_STANDARD 20

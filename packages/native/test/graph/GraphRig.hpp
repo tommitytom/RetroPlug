@@ -1,6 +1,6 @@
 #pragma once
 
-// A GraphHost wired to the host and test packages, plus host output buffers, for the graph-core
+// A GraphHost wired to the core, host and test packages, plus host output buffers, for the graph-core
 // tests. Quiescent by default, so setGraph flushes inline and run() is the block driver.
 
 #include <memory>
@@ -10,6 +10,7 @@
 #include "TestNodes.hpp"
 #include "graph/GraphHost.hpp"
 #include "graph/HostNodes.hpp"
+#include "graph/nodes/CoreNodes.hpp"
 
 namespace rp::graph::test {
 
@@ -24,6 +25,7 @@ struct GraphRig {
     rp_transport               transport{48000.0, 120.0, 0.0, 0};
 
     explicit GraphRig(HostConfig config = {48000.0, 64, Target::Desktop}, std::uint32_t hostChannels = 8) {
+        registry.addPackage(corePackage());
         registry.addPackage(hostPackage());
         registry.addPackage(testPackage());
         host = std::make_unique<GraphHost>(registry, resources, config);
