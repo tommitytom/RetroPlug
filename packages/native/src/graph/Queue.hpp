@@ -42,12 +42,16 @@ inline void appendQueue(rp_queue& to, const rp_queue& from) {
         pushMessage(to, from.items[i].frame, messageData(from, from.items[i]), from.items[i].flags);
 }
 
+// Append a change (an earlier frame is clamped up to the last one). A full stream keeps its END value
+// right rather than its history: the last change is overwritten by this one and the drop counted, so a
+// burst can lose intermediate values but never leaves the stream on a stale one for the rest of the block.
 inline bool pushControl(rp_control_queue& q, std::uint32_t frame, double value) {
+    if (q.count > 0 && frame < q.changes[q.count - 1].frame) frame = q.changes[q.count - 1].frame;
     if (q.count >= q.capacity) {
         ++q.dropped;
+        if (q.count > 0) q.changes[q.count - 1] = rp_control_change{frame, 0, value};
         return false;
     }
-    if (q.count > 0 && frame < q.changes[q.count - 1].frame) frame = q.changes[q.count - 1].frame;
     q.changes[q.count++] = rp_control_change{frame, 0, value};
     return true;
 }

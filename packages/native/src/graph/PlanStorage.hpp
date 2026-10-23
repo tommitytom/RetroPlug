@@ -78,7 +78,6 @@ struct FeedbackFront {
 constexpr std::uint32_t kQueueItems = 256;
 constexpr std::uint32_t kQueueBytes = 4096;
 constexpr std::uint32_t kStreamChanges = 64;
-constexpr std::uint32_t kMaxChannels = 64;
 
 struct PlanStorage {
     // Every buffer in the plan is this many frames long; the block driver refuses a longer block.

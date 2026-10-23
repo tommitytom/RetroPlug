@@ -333,6 +333,20 @@ TEST_CASE("control feedback carries the start value and the changes", "[graph][e
     CHECK(back.start == 0.25);  // the producer's own stream rolled on
 }
 
+TEST_CASE("a full control stream keeps its end value", "[graph][executor]") {
+    rp_control_change changes[2]{};
+    rp_control_queue q{0.0, changes, 0, 2, 0};
+    CHECK(pushControl(q, 1, 1.0));
+    CHECK(pushControl(q, 2, 2.0));
+    CHECK_FALSE(pushControl(q, 3, 3.0));  // full: replaces the last change
+    CHECK(q.dropped == 1);
+    CHECK(controlEnd(q) == 3.0);
+    CHECK(q.changes[1].frame == 3);
+    rp_control_queue none{0.5, nullptr, 0, 0, 0};
+    CHECK_FALSE(pushControl(none, 0, 1.0));  // no room at all: dropped, the start stands
+    CHECK(controlEnd(none) == 0.5);
+}
+
 TEST_CASE("queues drop, and count, what does not fit", "[graph][executor]") {
     rp_message items[2]{};
     std::uint8_t bytes[4]{};

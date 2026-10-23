@@ -78,6 +78,9 @@ const ParamDesc* findParam(const Layout& layout, std::string_view id);
 
 std::string_view kindName(PortKind kind);
 
+// The most channels one audio port carries; the planner refuses a port that resolves to more.
+constexpr std::uint32_t kMaxChannels = 64;
+
 // An id the host stores and compares as a string - a node type or package id, a resource type: non-empty,
 // with no whitespace and no control character (no byte at or below 0x20, nor 0x7f). An embedded NUL in
 // particular would make the C string a node reads differ from the std::string the host checked.

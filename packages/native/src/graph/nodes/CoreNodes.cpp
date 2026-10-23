@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <iterator>
 #include <vector>
@@ -12,9 +13,67 @@
 
 namespace rp::graph {
 
-// A named namespace, not an anonymous one: a Settings struct's JSON Schema $defs key is its qualified
-// name, which compilers spell differently for an anonymous namespace.
+// The settings structs live in a named namespace, not an anonymous one: a Settings struct's JSON Schema
+// $defs key is its qualified name, which compilers spell differently for an anonymous namespace. Only
+// they need the name; everything else below stays internal to this file.
 namespace core {
+
+using AddKind = rfl::Literal<"audio", "control">;
+
+struct AddSettings {
+    std::uint32_t inputs = 2;
+    AddKind       kind = AddKind::make<"audio">();
+};
+
+struct MergeSettings {
+    std::uint32_t inputs = 2;
+};
+
+struct JoinSettings {
+    std::vector<std::uint32_t> inputs = {1, 1};
+    std::string                layout = "stereo";
+};
+
+struct SplitSettings {
+    std::vector<std::uint32_t> outputs = {1, 1};
+    std::string                layout = "stereo";
+};
+
+struct DownmixSettings {
+    std::string from = "stereo";
+    std::string to = "mono";
+};
+
+struct RelabelSettings {
+    std::uint32_t channels = 6;
+    std::string   layout = "5.1";
+};
+
+struct DelaySettings {
+    std::uint32_t maxSamples = 48000;
+    std::uint32_t channels = 2;
+};
+
+struct ConstantSettings {
+    double min = 0.0;
+    double max = 1.0;
+};
+
+struct PlayerSettings {
+    std::uint32_t channels = 2;
+    std::string   layout = "stereo";
+    bool          loop = true;
+};
+
+struct RecorderSettings {
+    std::uint32_t channels = 2;
+};
+
+}  // namespace core
+
+namespace {
+
+using namespace core;
 
 constexpr std::uint32_t kMaxPorts = 16;
 
@@ -41,7 +100,25 @@ std::optional<std::string> checkCount(std::uint32_t n, std::string_view what) {
     return std::nullopt;
 }
 
-std::uint32_t sumOf(const std::vector<std::uint32_t>& v) {
+std::optional<std::string> checkChannels(std::uint64_t n, std::string_view what) {
+    if (n < 1 || n > kMaxChannels)
+        return std::string(what) + " must be between 1 and " + std::to_string(kMaxChannels) + " channels";
+    return std::nullopt;
+}
+
+// A list of per-port channel counts: 1..kMaxPorts ports of at least one channel, kMaxChannels in all.
+std::optional<std::string> checkChannelList(const std::vector<std::uint32_t>& counts, std::string_view what) {
+    const auto ports = static_cast<std::uint32_t>(std::min<std::size_t>(counts.size(), UINT32_MAX));
+    if (auto e = checkCount(ports, what)) return e;
+    std::uint64_t total = 0;
+    for (auto c : counts) {
+        if (c < 1) return "every one of the " + std::string(what) + " needs at least one channel";
+        total += c;
+    }
+    return checkChannels(total, std::string(what) + " together");
+}
+
+std::uint32_t sumOf(const std::vector<std::uint32_t>& v) {  // validated: at most kMaxChannels
     std::uint32_t n = 0;
     for (auto c : v) n += c;
     return n;
@@ -49,20 +126,28 @@ std::uint32_t sumOf(const std::vector<std::uint32_t>& v) {
 
 std::optional<std::string> checkLayout(std::string_view layout, std::uint32_t channels) {
     const auto n = layoutChannels(layout);
-    if (!n) return "unknown layout \"" + std::string(layout) + "\"";
+    if (!n) return "unknown layout " + jsonString(layout);
     if (*n != channels)
-        return "layout \"" + std::string(layout) + "\" is " + std::to_string(*n) + " channels, not " + std::to_string(channels);
+        return "layout " + jsonString(layout) + " is " + std::to_string(*n) + " channels, not " +
+               std::to_string(channels);
     return std::nullopt;
 }
 
+// Emit a control value at a frame, skipping one equal to what the stream already holds.
+struct ControlWriter {
+    rp_control_queue& out;
+    double            held;
+    explicit ControlWriter(rp_control_queue& q) : out(q), held(q.start) {}
+    void operator()(std::uint32_t frame, double value) noexcept {
+        if (value == held) return;
+        pushControl(out, frame, value);
+        held = value;
+    }
+};
+
 // ---- rp.core.add ------------------------------------------------------------------------------------------
 
-using AddKind = rfl::Literal<"audio", "control">;
-
-struct AddSettings {
-    std::uint32_t inputs = 2;
-    AddKind       kind = AddKind::make<"audio">();
-};
+bool isControl(const AddSettings& s) { return s.kind.value() == AddKind::value_of<"control">(); }
 
 struct Add {
     static constexpr const char* id = "rp.core.add";
@@ -73,13 +158,14 @@ struct Add {
     static std::optional<std::string> validate(const Settings& s) { return checkCount(s.inputs, "inputs"); }
 
     static void adjust_layout(Layout& l, const Settings& s) {
-        const bool control = s.kind.name() == "control";
+        const bool controlKind = isControl(s);
         for (std::uint32_t k = 1; k <= s.inputs; ++k) {
             const std::string portId = "in" + std::to_string(k);
-            if (control) l.ports.push_back(queuePort(portId, PortDir::In, PortKind::Control));
-            else l.ports.push_back(audioPort(portId, PortDir::In, k == 1 ? ChannelSpec::any() : ChannelSpec::matching("in1")));
+            if (controlKind) l.ports.push_back(queuePort(portId, PortDir::In, PortKind::Control));
+            else l.ports.push_back(audioPort(portId, PortDir::In, k == 1 ? ChannelSpec::any()
+                                                                       : ChannelSpec::matching("in1")));
         }
-        if (control) l.ports.push_back(queuePort("out", PortDir::Out, PortKind::Control));
+        if (controlKind) l.ports.push_back(queuePort("out", PortDir::Out, PortKind::Control));
         else l.ports.push_back(audioPort("out", PortDir::Out, ChannelSpec::matching("in1")));
     }
 
@@ -87,7 +173,7 @@ struct Add {
     std::uint32_t inputCount = 2;
 
     void on_settings(const Settings& s) noexcept {
-        control = s.kind.name() == "control";
+        control = isControl(s);
         inputCount = s.inputs;
     }
 
@@ -109,40 +195,33 @@ struct Add {
         }
     }
 
-    // Walk every input's changes in frame order, emitting the running sum at each change frame.
+    // Walk every input's changes in frame order, emitting the sum at each frame where it changes. Frame 0
+    // folds every input's frame-0 changes into the block-start sum, so it is one change, not several.
     void processControl(const rp::Block& b) noexcept {
-        rp_control_queue& out = *b.output(0).u.control;
+        ControlWriter emit(*b.output(0).u.control);
         std::array<double, kMaxPorts> value{};
         std::array<std::uint32_t, kMaxPorts> next{};
-        double sum = 0.0;
-        for (std::uint32_t k = 0; k < inputCount; ++k) {
-            value[k] = b.input(k).u.control->start;
-            sum += value[k];
-        }
-        if (sum != out.start) pushControl(out, 0, sum);
-        for (;;) {
-            std::uint32_t frame = UINT32_MAX;
+        for (std::uint32_t k = 0; k < inputCount; ++k) value[k] = b.input(k).u.control->start;
+        for (std::uint32_t frame = 0;;) {
             for (std::uint32_t k = 0; k < inputCount; ++k) {
                 const rp_control_queue& q = *b.input(k).u.control;
-                if (next[k] < q.count) frame = std::min(frame, q.changes[next[k]].frame);
+                while (next[k] < q.count && q.changes[next[k]].frame <= frame) value[k] = q.changes[next[k]++].value;
             }
-            if (frame == UINT32_MAX) break;
-            for (std::uint32_t k = 0; k < inputCount; ++k) {
-                const rp_control_queue& q = *b.input(k).u.control;
-                while (next[k] < q.count && q.changes[next[k]].frame == frame) value[k] = q.changes[next[k]++].value;
-            }
-            sum = 0.0;
+            double sum = 0.0;
             for (std::uint32_t k = 0; k < inputCount; ++k) sum += value[k];
-            pushControl(out, frame, sum);
+            emit(frame, sum);
+            std::uint32_t following = UINT32_MAX;
+            for (std::uint32_t k = 0; k < inputCount; ++k) {
+                const rp_control_queue& q = *b.input(k).u.control;
+                if (next[k] < q.count) following = std::min(following, q.changes[next[k]].frame);
+            }
+            if (following == UINT32_MAX) break;
+            frame = following;
         }
     }
 };
 
 // ---- rp.core.merge -------------------------------------------------------------------------------------------
-
-struct MergeSettings {
-    std::uint32_t inputs = 2;
-};
 
 struct Merge {
     static constexpr const char* id = "rp.core.merge";
@@ -185,11 +264,6 @@ struct Merge {
 
 // ---- rp.core.join / rp.core.split ------------------------------------------------------------------------
 
-struct JoinSettings {
-    std::vector<std::uint32_t> inputs = {1, 1};
-    std::string                layout = "stereo";
-};
-
 struct Join {
     static constexpr const char* id = "rp.core.join";
     static constexpr const char* name = "Join";
@@ -197,9 +271,7 @@ struct Join {
     using Settings = JoinSettings;
 
     static std::optional<std::string> validate(const Settings& s) {
-        if (auto e = checkCount(static_cast<std::uint32_t>(s.inputs.size()), "inputs")) return e;
-        for (auto c : s.inputs)
-            if (c < 1) return std::string("every input needs at least one channel");
+        if (auto e = checkChannelList(s.inputs, "inputs")) return e;
         return checkLayout(s.layout, sumOf(s.inputs));
     }
 
@@ -221,11 +293,6 @@ struct Join {
     }
 };
 
-struct SplitSettings {
-    std::vector<std::uint32_t> outputs = {1, 1};
-    std::string                layout = "stereo";
-};
-
 struct Split {
     static constexpr const char* id = "rp.core.split";
     static constexpr const char* name = "Split";
@@ -233,9 +300,7 @@ struct Split {
     using Settings = SplitSettings;
 
     static std::optional<std::string> validate(const Settings& s) {
-        if (auto e = checkCount(static_cast<std::uint32_t>(s.outputs.size()), "outputs")) return e;
-        for (auto c : s.outputs)
-            if (c < 1) return std::string("every output needs at least one channel");
+        if (auto e = checkChannelList(s.outputs, "outputs")) return e;
         return checkLayout(s.layout, sumOf(s.outputs));
     }
 
@@ -259,11 +324,6 @@ struct Split {
 
 // ---- rp.core.downmix / rp.core.relabel ----------------------------------------------------------------------
 
-struct DownmixSettings {
-    std::string from = "stereo";
-    std::string to = "mono";
-};
-
 struct Downmix {
     static constexpr const char* id = "rp.core.downmix";
     static constexpr const char* name = "Downmix";
@@ -272,7 +332,8 @@ struct Downmix {
 
     static std::optional<std::string> validate(const Settings& s) {
         const auto from = layoutChannels(s.from);
-        if (!from) return "unknown layout \"" + s.from + "\"";
+        if (!from) return "unknown layout " + jsonString(s.from);
+        if (auto e = checkChannels(*from, "the source layout")) return e;
         if (s.to == "mono") return std::nullopt;
         if (s.to == "stereo" && s.from == "5.1") return std::nullopt;
         return "downmix supports any layout to mono, and 5.1 to stereo; not " + s.from + " to " + s.to;
@@ -310,18 +371,16 @@ struct Downmix {
     }
 };
 
-struct RelabelSettings {
-    std::uint32_t channels = 6;
-    std::string   layout = "5.1";
-};
-
 struct Relabel {
     static constexpr const char* id = "rp.core.relabel";
     static constexpr const char* name = "Relabel";
     static constexpr const char* category = "core/channels";
     using Settings = RelabelSettings;
 
-    static std::optional<std::string> validate(const Settings& s) { return checkLayout(s.layout, s.channels); }
+    static std::optional<std::string> validate(const Settings& s) {
+        if (auto e = checkChannels(s.channels, "relabel")) return e;
+        return checkLayout(s.layout, s.channels);
+    }
 
     static void adjust_layout(Layout& l, const Settings& s) {
         l.ports.push_back(audioPort("in", PortDir::In, ChannelSpec::fixed(s.channels, "any")));
@@ -338,12 +397,8 @@ struct Relabel {
 
 // ---- rp.core.delay ----------------------------------------------------------------------------------------------
 
-constexpr std::uint32_t kMaxDelaySamples = 1u << 24;  // keeps the ring size and the int Time param in range
-
-struct DelaySettings {
-    std::uint32_t maxSamples = 48000;
-    std::uint32_t channels = 2;
-};
+constexpr std::uint32_t kMaxDelaySamples = 1u << 24;      // keeps the int Time param in range
+constexpr std::uint64_t kMaxDelayRingSamples = 1ull << 26;  // 256 MiB of float across every channel
 
 struct Delay {
     static constexpr const char* id = "rp.core.delay";
@@ -356,9 +411,11 @@ struct Delay {
     struct { rp::int_param<"Time", rp::range{0, 48000, 0}, "samples"> time; } params;
 
     static std::optional<std::string> validate(const Settings& s) {
-        if (s.channels < 1 || s.channels > kMaxPorts) return std::string("channels must be between 1 and 16");
+        if (auto e = checkChannels(s.channels, "a delay")) return e;
         if (s.maxSamples < 1 || s.maxSamples > kMaxDelaySamples)
             return "maxSamples must be between 1 and " + std::to_string(kMaxDelaySamples);
+        if ((std::uint64_t(s.maxSamples) + 1) * s.channels > kMaxDelayRingSamples)
+            return "maxSamples x channels must not exceed " + std::to_string(kMaxDelayRingSamples);
         return std::nullopt;
     }
 
@@ -381,10 +438,21 @@ struct Delay {
     }
     void on_settings(const Settings& s) noexcept { length = s.maxSamples + 1; }
 
+    // Time in samples as the ring can hold it: rounded, 0 for NaN, at most maxSamples.
+    std::uint32_t timeOf(double v) const noexcept {
+        if (!(v > 0.0)) return 0;
+        const double t = std::round(v);
+        return t >= double(length - 1) ? length - 1 : static_cast<std::uint32_t>(t);
+    }
+
+    // Sample-accurate: a Time change takes effect at its own frame.
     void process(const rp::Block& b) noexcept {
-        const auto time = static_cast<std::uint32_t>(std::clamp(params.time.value(), 0, static_cast<int>(length - 1)));
+        const auto changes = params.time.changes();
+        std::size_t next = 0;
+        std::uint32_t time = timeOf(params.time.start());
         std::uint32_t w = write;
         for (std::uint32_t i = 0; i < b.frames(); ++i) {
+            while (next < changes.size() && changes[next].frame <= i) time = timeOf(changes[next++].value);
             const std::uint32_t r = (w + length - time) % length;
             for (std::uint32_t c = 0; c < outputs.out.channel_count; ++c) {
                 float* line = ring.data() + std::size_t(c) * length;
@@ -399,11 +467,6 @@ struct Delay {
 
 // ---- rp.core.constant ---------------------------------------------------------------------------------------------
 
-struct ConstantSettings {
-    double min = 0.0;
-    double max = 1.0;
-};
-
 struct Constant {
     static constexpr const char* id = "rp.core.constant";
     static constexpr const char* name = "Constant";
@@ -414,6 +477,7 @@ struct Constant {
     struct { rp::float_param<"Value", rp::range{0, 1, 0}> value; } params;
 
     static std::optional<std::string> validate(const Settings& s) {
+        if (!std::isfinite(s.min) || !std::isfinite(s.max)) return std::string("min and max must be finite numbers");
         if (!(s.min <= s.max)) return std::string("min must not exceed max");
         return std::nullopt;
     }
@@ -424,20 +488,20 @@ struct Constant {
         l.params[0].def = std::clamp(0.0, s.min, s.max);
     }
 
-    // The output follows the param: its value at block start, then each change at its own frame.
+    // The output follows the param: its value from frame 0 (the block-start value, or a frame-0 change),
+    // then each later change at its own frame, skipping any that would not change the output.
     void process(const rp::Block&) noexcept {
-        if (outputs.out.queue->start != params.value.start()) outputs.out.push(0, params.value.start());
-        for (const auto& c : params.value.changes()) outputs.out.push(c.frame, c.value);
+        ControlWriter emit(*outputs.out.queue);
+        const auto changes = params.value.changes();
+        std::size_t next = 0;
+        double first = params.value.start();
+        while (next < changes.size() && changes[next].frame == 0) first = changes[next++].value;
+        emit(0, first);
+        for (; next < changes.size(); ++next) emit(changes[next].frame, changes[next].value);
     }
 };
 
 // ---- rp.core.buffer-player / rp.core.buffer-recorder ------------------------------------------------------------
-
-struct PlayerSettings {
-    std::uint32_t channels = 2;
-    std::string   layout = "stereo";
-    bool          loop = true;
-};
 
 struct BufferPlayer {
     static constexpr const char* id = "rp.core.buffer-player";
@@ -448,27 +512,34 @@ struct BufferPlayer {
     struct { rp::resource_in<"audio-buffer"> sample; } inputs;
     struct { rp::audio_out<rp::stereo> out; } outputs;
 
-    static std::optional<std::string> validate(const Settings& s) { return checkLayout(s.layout, s.channels); }
-    static void adjust_layout(Layout& l, const Settings& s) { l.ports[1].channels = ChannelSpec::fixed(s.channels, s.layout); }
+    static std::optional<std::string> validate(const Settings& s) {
+        if (auto e = checkChannels(s.channels, "a player")) return e;
+        return checkLayout(s.layout, s.channels);
+    }
+    static void adjust_layout(Layout& l, const Settings& s) {
+        l.ports[1].channels = ChannelSpec::fixed(s.channels, s.layout);
+    }
 
-    bool          loop = true;
-    std::uint32_t position = 0;
+    bool               loop = true;
+    std::uint32_t      position = 0;
+    const rp_resource* playing = nullptr;  // the buffer `position` belongs to
     void on_settings(const Settings& s) noexcept { loop = s.loop; }
 
     void process(const rp::Block& b) noexcept {
         const rp_resource* r = inputs.sample.get();
         const auto* buf = r ? static_cast<const rp_audio_buffer*>(r->payload) : nullptr;
+        if (r != playing) {  // a different buffer starts from its beginning
+            playing = r;
+            position = 0;
+        }
+        if (buf && loop && buf->frames > 0 && position >= buf->frames) position = 0;  // looping turned on at the end
         for (std::uint32_t i = 0; i < b.frames(); ++i) {
-            const bool playing = buf && buf->frames > 0 && position < buf->frames;
+            const bool sounding = buf && position < buf->frames;
             for (std::uint32_t c = 0; c < outputs.out.channel_count; ++c)
-                outputs.out[c][i] = (playing && c < buf->channels) ? buf->data[c][position] : 0.0f;
-            if (playing && ++position >= buf->frames && loop) position = 0;
+                outputs.out[c][i] = (sounding && c < buf->channels) ? buf->data[c][position] : 0.0f;
+            if (sounding && ++position >= buf->frames && loop) position = 0;
         }
     }
-};
-
-struct RecorderSettings {
-    std::uint32_t channels = 2;
 };
 
 struct BufferRecorder {
@@ -478,38 +549,58 @@ struct BufferRecorder {
     using Settings = RecorderSettings;
 
     struct {
-        rp::audio_in<rp::channels<2, "any">>   in;
-        rp::resource_write<"audio-buffer">     target;
+        rp::audio_in<rp::channels<2, "any">> in;
+        rp::resource_write<"audio-buffer">   target;
     } inputs;
     struct { rp::resource_out<"audio-buffer"> buffer; } outputs;
     struct { rp::bool_param<"Record", true> record; } params;
 
-    static std::optional<std::string> validate(const Settings& s) { return checkCount(s.channels, "channels"); }
-    static void adjust_layout(Layout& l, const Settings& s) { l.ports[0].channels = ChannelSpec::fixed(s.channels, "any"); }
+    static std::optional<std::string> validate(const Settings& s) { return checkChannels(s.channels, "a recorder"); }
+    static void adjust_layout(Layout& l, const Settings& s) {
+        l.ports[0].channels = ChannelSpec::fixed(s.channels, "any");
+    }
 
-    std::uint32_t position = 0;
+    std::uint32_t      position = 0;
+    bool               recording = false;   // Record as the last frame saw it
+    const rp_resource* writing = nullptr;   // the buffer `position` belongs to
 
     // Publishes the target's handle on `buffer` every block, so readers wired from it are ordered after
-    // this node and see this block's writes.
+    // this node and see this block's writes. Record is frame-accurate; turning it on (or binding a new
+    // target) starts from the buffer's first frame, and recording stops at its last.
     void process(const rp::Block& b) noexcept {
         rp_resource* r = inputs.target.get();
         outputs.buffer.set(r);
-        if (!r || !params.record.value()) return;
-        auto* buf = static_cast<rp_audio_buffer*>(r->payload);
-        for (std::uint32_t i = 0; i < b.frames() && position < buf->frames; ++i, ++position)
+        if (r != writing) {
+            writing = r;
+            position = 0;
+        }
+        auto* buf = r ? static_cast<rp_audio_buffer*>(r->payload) : nullptr;
+        const auto changes = params.record.changes();
+        std::size_t next = 0;
+        auto set = [&](double v) {
+            const bool on = v >= 0.5;
+            if (on && !recording) position = 0;
+            recording = on;
+        };
+        set(params.record.start());
+        for (std::uint32_t i = 0; i < b.frames(); ++i) {
+            while (next < changes.size() && changes[next].frame <= i) set(changes[next++].value);
+            if (!recording || !buf || position >= buf->frames) continue;
             for (std::uint32_t c = 0; c < buf->channels && c < inputs.in.channel_count; ++c)
                 buf->data[c][position] = inputs.in[c][i];
+            ++position;
+        }
     }
 };
 
-}  // namespace core
+}  // namespace
 
 const rp_package* corePackage() {
     static const rp_node_type* const kTypes[] = {
-        rp::node_type<core::Add>(),     rp::node_type<core::Merge>(),    rp::node_type<core::Join>(),
-        rp::node_type<core::Split>(),   rp::node_type<core::Downmix>(),  rp::node_type<core::Relabel>(),
-        rp::node_type<core::Delay>(),   rp::node_type<core::Constant>(), rp::node_type<core::BufferPlayer>(),
-        rp::node_type<core::BufferRecorder>(),
+        rp::node_type<Add>(),     rp::node_type<Merge>(),    rp::node_type<Join>(),
+        rp::node_type<Split>(),   rp::node_type<Downmix>(),  rp::node_type<Relabel>(),
+        rp::node_type<Delay>(),   rp::node_type<Constant>(), rp::node_type<BufferPlayer>(),
+        rp::node_type<BufferRecorder>(),
     };
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.core","version":"1.0.0"})",
                                      static_cast<std::uint32_t>(std::size(kTypes)), kTypes};

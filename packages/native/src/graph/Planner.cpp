@@ -334,6 +334,12 @@ private:
                       q(w.from) + " carries " + sp->resourceType + " but " + q(w.to) + " wants " + dp->resourceType);
                 continue;
             }
+            if (sp->kind == PortKind::Resource && dp->write) {
+                // One writer per mutable resource is counted over bindings, so a writer must be bound.
+                error(dst.doc->id, dp->id, "resource-write-wired",
+                      q(w.to) + " writes its resource, so it is bound to one, never wired");
+                continue;
+            }
             if (feedback && sp->kind == PortKind::Resource) {
                 error(dst.doc->id, dp->id, "feedback-kind", "a resource wire cannot be a feedback wire");
                 continue;
