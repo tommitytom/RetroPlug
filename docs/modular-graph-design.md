@@ -157,7 +157,8 @@ rejects a ROM wired into a sampler. Packages register their own resource types (
 
 - **Immutable resources** (samples, strings, ROM images) are shared by any number of readers in any order.
 - **A mutable resource** (a record buffer, a shared delay line, a system's live RAM) has exactly **one
-  writer port**: a resource input declared with write access (`"access": "write"`). Readers are wired
+  writer port**: a resource input declared with write access (`"access": "write"`), always bound to its
+  resource in the document and never wired, so the one-writer rule is checked over bindings. Readers are wired
   from the writer's resource output, so the planner orders them after the writer within the block, as it
   does for audio; binding a reader to the same resource directly is rejected, because nothing would order
   it. A cycle through a resource is broken by marking one of its data wires feedback (§3.3); a resource
@@ -975,7 +976,8 @@ Five phases; each lands working and verified before the next starts.
   to the instance, so an unrelated graph edit does not revive a wedged node, and `GraphHost::isFaulted`
   names which node it was. Only a fresh instance clears a fault: a rebuild, or removing the node and adding
   it back (with a state seed, if its state should carry over), which is what a "restart node" action does.
-- **Queue overflow** drops and bumps a counter; nothing allocates.
+- **Queue overflow** drops and bumps a counter; nothing allocates. A full control stream keeps its end
+  value right by overwriting its last change, so a burst loses intermediate values, never the final one.
 - **Downloaded native packs** are checked at load for ABI version and a valid descriptor. There is no
   sandbox: a crashing native node takes the host down. Trust prompts and signing belong to the downloads
   project.
