@@ -23,6 +23,8 @@ struct HostConfig {
     double        sampleRate = 48000.0;
     std::uint32_t maxFrames = 1024;
     Target        target = Target::Desktop;
+    // How long setGraph waits for a stalled audio thread to adopt the previous plan before answering busy.
+    std::uint32_t adoptionTimeoutMs = 2000;
 };
 
 constexpr std::uint32_t kMaxBlockFrames = 1u << 16;

@@ -5,7 +5,6 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <new>
 #include <stdexcept>
@@ -19,19 +18,19 @@ namespace rp::graph {
 
 namespace {
 
-// The ABI's free has no alignment argument, so host allocations are capped at max_align_t.
+// The ABI's free has no alignment argument, so host allocations are capped at max_align_t. Through
+// operator new rather than malloc, so whatever replaces operator new for the process (an allocator, or the
+// no-heap test's hook) sees a node's host allocations too.
 void* hostAlloc(void*, std::size_t size, std::size_t align) {
-    return align <= alignof(std::max_align_t) ? std::malloc(size ? size : 1) : nullptr;
+    return align <= alignof(std::max_align_t) ? ::operator new(size ? size : 1, std::nothrow) : nullptr;
 }
 
-void hostFree(void*, void* ptr) { std::free(ptr); }
+void hostFree(void*, void* ptr) { ::operator delete(ptr); }
 
 void hostLog(void*, int, const char* message) { std::fprintf(stderr, "[graph] %s\n", message); }
 
 // No optional host services yet; this is where they will be offered by id.
 const void* hostInterface(const rp_host*, const char*) { return nullptr; }
-
-constexpr auto kAdoptionTimeout = std::chrono::seconds(2);
 
 }  // namespace
 
@@ -80,7 +79,7 @@ void GraphHost::setAudioThreadOwns(bool owns) {
 
 bool GraphHost::waitForAdoption() {
     if (!audioThreadOwns()) return true;  // inline flush already adopted it
-    const auto deadline = std::chrono::steady_clock::now() + kAdoptionTimeout;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(config_.adoptionTimeoutMs);
     while (swapInFlight_.load(std::memory_order_acquire)) {
         if (std::chrono::steady_clock::now() > deadline) return false;
         std::this_thread::sleep_for(std::chrono::microseconds(200));
