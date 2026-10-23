@@ -5219,7 +5219,7 @@ inline and `run()` is the block driver. (Task 8 adds the core package to it.)
 ```cpp
 #pragma once
 
-// A GraphHost wired to the core, host and test packages, plus host output buffers, for the graph-core
+// A GraphHost wired to the host and test packages, plus host output buffers, for the graph-core
 // tests. Quiescent by default, so setGraph flushes inline and run() is the block driver.
 
 #include <memory>
