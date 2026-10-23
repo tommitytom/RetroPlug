@@ -19,7 +19,8 @@ set_target_properties(retroplug-graph-exec PROPERTIES
 # JSON, descriptors, the registry, resources, the planner, GraphHost - plus the host-implemented nodes and
 # the rp.core package. Links reflect-cpp (settings parsing, JSON Schema).
 add_library(retroplug-graph STATIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/CanonicalJson.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/CanonicalJson.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/Descriptor.cpp)
 target_link_libraries(retroplug-graph PUBLIC retroplug-graph-exec reflectcpp::reflectcpp)
 set_target_properties(retroplug-graph PROPERTIES
     CXX_STANDARD 20
