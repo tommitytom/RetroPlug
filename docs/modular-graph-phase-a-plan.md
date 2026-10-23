@@ -4592,11 +4592,22 @@ cannot free a buffer the audio thread is still reading.
 **Files:**
 - Create: `packages/native/src/graph/GraphDocument.hpp`, `packages/native/src/graph/GraphDocument.cpp`,
   `packages/native/src/graph/NodeRegistry.hpp`, `packages/native/src/graph/NodeRegistry.cpp`,
-  `packages/native/src/graph/ResourceTable.hpp`, `packages/native/src/graph/ResourceTable.cpp`
+  `packages/native/src/graph/ResourceTable.hpp`, `packages/native/src/graph/ResourceTable.cpp`,
+  `packages/native/test/graph/golden/graph-document.json`
 - Modify: `packages/native/cmake/graph.cmake`, `packages/native/cmake/tests.cmake`
 - Test: `packages/native/test/graph/Registry.test.cpp`
 
 - [ ] **Step 1: Write the failing test**
+
+The golden graph document is the pact for documents, as Task 5's golden descriptors are for nodes: Task 14's
+TS `toGraphJson` must spell exactly these bytes, and this task's parser must read them. (One line, followed
+by a newline; it was produced by `toGraphJson` and checked by hand against GraphDocument.hpp.)
+
+`packages/native/test/graph/golden/graph-document.json`:
+
+```json
+{"nodes":[{"id":"sys-1","params":{"gain":-6,"mode":"midi-sync","mute":false},"settings":{"model":"dmg","rom":{"path":"lsdj.gb"},"tags":["a","b"],"volume":0.5},"type":"rp.sameboy.gb"},{"id":"sys-1/lsdj-sync","type":"rp.lsdj.sync"},{"id":"player","resources":{"sample":"res:12"},"type":"rp.core.buffer-player"},{"id":"out","type":"rp.host.audio-out"}],"wires":[{"feedback":true,"from":"sys-1/lsdj-sync.serialOut","to":"sys-1.serialIn"},{"from":"sys-1.mix","to":"out.out.1-2"}]}
+```
 
 `packages/native/test/graph/Registry.test.cpp`:
 
@@ -4605,14 +4616,17 @@ cannot free a buffer the audio thread is still reading.
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <fstream>
 #include <initializer_list>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "TestNodes.hpp"
+#include "graph/CanonicalJson.hpp"
 #include "graph/GraphDocument.hpp"
 #include "graph/NodeRegistry.hpp"
 #include "graph/ResourceTable.hpp"
@@ -4795,6 +4809,30 @@ TEST_CASE("a graph document parses, settings and params kept as JSON", "[graph][
     CHECK(std::string(noId.error().what()).find("graph document: ") == 0);
     CHECK_FALSE(parseGraphDocument(R"({"nodes":[{"id":"a","type":"x","setings":{}}],"wires":[]})"));  // a typo is refused
     CHECK_FALSE(parseGraphDocument("[]"));
+}
+
+TEST_CASE("the document TS spells is the document the planner parses", "[graph][document]") {
+    // golden/graph-document.json is written by packages/retroplug/src/graph/graphDocument.ts toGraphJson
+    // (its test holds it to that); here the planner's parser reads it.
+    std::ifstream in(RP_GRAPH_GOLDEN_DIR "/graph-document.json");
+    std::stringstream ss;
+    ss << in.rdbuf();
+    std::string text = ss.str();
+    while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.pop_back();
+    const auto doc = parseGraphDocument(text);
+    INFO((doc ? "" : doc.error().what()));
+    REQUIRE(doc);
+    REQUIRE(doc->nodes.size() == 4);
+    CHECK(doc->nodes[0].id == "sys-1");
+    CHECK(doc->nodes[0].params->at("mode").to_string().value() == "midi-sync");
+    CHECK(doc->nodes[0].params->at("mute").to_bool().value() == false);
+    CHECK(doc->nodes[0].settings->to_object()->get("rom")->to_object()->get("path")->to_string().value() == "lsdj.gb");
+    CHECK(doc->nodes[1].id == "sys-1/lsdj-sync");
+    CHECK(parseResourceRef(doc->nodes[2].resources->at("sample")) == 12u);
+    REQUIRE(doc->wires.size() == 2);
+    CHECK(doc->wires[0].feedback.value());
+    CHECK_FALSE(doc->wires[1].feedback.has_value());
+    CHECK(canonicalizeJson(text).value() == text);  // and C++ spells it the same way back
 }
 
 TEST_CASE("a resource lives until its owner drops it and its last pin is gone", "[graph][resources]") {
@@ -5300,7 +5338,7 @@ std::uint32_t ResourceTable::pinCount(Id id) const {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (485 assertions in 47 test cases)`.
+Expected: `All tests passed (497 assertions in 48 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -8014,7 +8052,7 @@ const rp_package* hostPackage() {
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (700 assertions in 93 test cases)`.
+Expected: `All tests passed (712 assertions in 94 test cases)`.
 
 - [ ] **Step 7: Commit**
 
@@ -9207,7 +9245,7 @@ const rp_package* corePackage() {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (879 assertions in 115 test cases)`.
+Expected: `All tests passed (891 assertions in 116 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -9673,7 +9711,7 @@ Add both files to the test's `SOURCES` and `Threads::Threads` to its `LIBS`:
 - [ ] **Step 3: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (907 assertions in 119 test cases)`. (These pass immediately: the properties
+Expected: `All tests passed (919 assertions in 120 test cases)`. (These pass immediately: the properties
 were built in by Tasks 2 to 8. If NoAlloc fails, an earlier task let an allocation onto the block path;
 fix that, never the test.)
 
@@ -9687,7 +9725,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-graph-test
 ```
 
-Expected: `All tests passed (907 assertions in 119 test cases)` and no ThreadSanitizer report. (Same
+Expected: `All tests passed (919 assertions in 120 test cases)` and no ThreadSanitizer report. (Same
 configure as `tools/run-sanitizer.sh thread`, which shares `build-tsan/`.)
 
 - [ ] **Step 5: Commit**
@@ -10644,8 +10682,11 @@ git commit -m "test(graph): a TS node and a C++ node spell the same descriptor"
 ### Task 14: The graph document and `defineExtension`
 
 The document type TS will send to `setGraph` (Phase B), and the extension contract with port ownership:
-two contributors wiring the same node input is a named conflict. The extension's `menu` and `actions`
-members are deliberately absent until the package split extracts the menu item model (design section 7.7).
+two contributors wiring the same node input, or inserting nodes with the same id, is a conflict naming
+every claimant (an extension on a node, or the base graph the builder made). `toGraphJson` writes only the
+fields the C++ parser reads (C++ refuses a whole document over one unknown field) and is held to Task 6's
+golden document. The extension's `menu` and `actions` members are deliberately absent until the package
+split extracts the menu item model (design section 7.7).
 
 **Files:**
 - Create: `packages/retroplug/src/graph/graphDocument.ts`, `packages/retroplug/src/graph/defineExtension.ts`
@@ -10659,7 +10700,9 @@ members are deliberately absent until the package split extracts the menu item m
 // The graph document's endpoint rule, shared with C++: node ids carry no ".", so an endpoint splits at
 // its first dot and a port id may itself contain dots ("pins.pulse").
 import { test, expect } from "../../testing/harness";
-import { endpoint, parseEndpoint } from "../../src/graph/graphDocument";
+import { canonicalJson } from "../../src/graph/canonicalJson";
+import { endpoint, parseEndpoint, toGraphJson, type GraphDocument, type NodeDoc } from "../../src/graph/graphDocument";
+import golden from "../../../native/test/graph/golden/graph-document.json";
 
 test("an endpoint splits at its first dot", () => {
   expect(parseEndpoint("gb1.pins.pulse")).toEqual({ node: "gb1", port: "pins.pulse" });
@@ -10673,7 +10716,53 @@ test("endpoint refuses a node id that would make the split ambiguous", () => {
   expect(() => endpoint("sys.3", "mix")).toThrow("contain no");
   expect(() => endpoint("", "mix")).toThrow("non-empty");
   expect(() => endpoint("sys 3", "mix")).toThrow("whitespace");  // the planner's node-id rule, the same plain-id rule
+  expect(() => endpoint("sys\u0001", "mix")).toThrow("control characters");
+  expect(() => endpoint("sys\u007f", "mix")).toThrow("control characters");
+  expect(() => endpoint("sys\ud800", "mix")).toThrow("lone surrogates");
+  expect(() => endpoint("sys-3", "")).toThrow("port id");  // "sys-3." would not split back
+  expect(() => endpoint("sys-3", "a b")).toThrow("port id");
   expect(endpoint("sys-3/lsdj-sync", "serialIn")).toBe("sys-3/lsdj-sync.serialIn");
+});
+
+// The pact for documents, as the golden descriptors are for nodes: TS spells this document, and
+// packages/native/test/graph/Registry.test.cpp parses the same golden file with the planner's parser.
+const sample: GraphDocument = {
+  nodes: [
+    {
+      id: "sys-1",
+      type: "rp.sameboy.gb",
+      settings: { model: "dmg", volume: 0.5, tags: ["a", "b"], rom: { path: "lsdj.gb" } },
+      params: { gain: -6, mode: "midi-sync", mute: false },
+    },
+    { id: "sys-1/lsdj-sync", type: "rp.lsdj.sync" },
+    { id: "player", type: "rp.core.buffer-player", resources: { sample: "res:12" } },
+    { id: "out", type: "rp.host.audio-out", label: "Main" } as NodeDoc,  // a UI-side field C++ would refuse
+  ],
+  wires: [
+    { from: "sys-1/lsdj-sync.serialOut", to: "sys-1.serialIn", feedback: true },
+    { from: "sys-1.mix", to: "out.out.1-2" },
+  ],
+};
+
+test("a document TS builds is the document C++ parses", () => {
+  expect(toGraphJson(sample)).toBe(canonicalJson(golden));
+  expect(toGraphJson(sample).includes("label")).toBe(false);  // only the fields C++ reads
+});
+
+test("toGraphJson refuses what the C++ parser or planner would", () => {
+  const doc = (node: Record<string, unknown>, wires: unknown[] = []) => () =>
+    toGraphJson({ nodes: [{ id: "n", type: "rp.x", ...node } as NodeDoc], wires: wires as never });
+  expect(doc({ id: "a.b" })).toThrow("not a node id");
+  expect(doc({ id: "a b" })).toThrow("not a node id");
+  expect(doc({ type: "" })).toThrow("node type id");
+  expect(doc({ params: { gain: Number.NaN } })).toThrow("NaN");
+  expect(doc({ params: { gain: { x: 1 } } })).toThrow("number, label or bool");
+  expect(doc({ settings: { tag: "\ud800" } })).toThrow("lone surrogate");
+  expect(doc({ settings: [1] })).toThrow("settings must be an object");
+  expect(doc({ resources: { s: "res:007" } })).toThrow("res:<id>");
+  expect(doc({ resources: { s: "res:4294967296" } })).toThrow("res:<id>");
+  expect(doc({}, [{ from: "n", to: "m.in" }])).toThrow("node.port");
+  expect(doc({}, [{ from: "n.out", to: "m.in", feedback: 1 }])).toThrow("true or false");
 });
 ```
 
@@ -10681,52 +10770,111 @@ test("endpoint refuses a node id that would make the split ambiguous", () => {
 
 ```ts
 // Extensions attach to node instances by matcher, contribute nodes and wires, and may not both claim the
-// same node input.
+// same node input or node id.
 import { test, expect } from "../../testing/harness";
 import { z } from "zod";
 import { defineExtension, ExtensionRegistry, type NodeInfo } from "../../src/graph/defineExtension";
+import { endpoint } from "../../src/graph/graphDocument";
 
 const gb: NodeInfo = { id: "sys-1", type: "rp.sameboy.gb", rom: { markers: ["lsdj"] } };
-const nes: NodeInfo = { id: "sys-2", type: "rp.mesen.nes", rom: { markers: ["risa"] } };
+const gb2: NodeInfo = { id: "sys-2", type: "rp.sameboy.gb", rom: { markers: ["lsdj"] } };
+const nes: NodeInfo = { id: "sys-3", type: "rp.mesen.nes", rom: { markers: ["risa"] } };
 
 const lsdj = defineExtension({
   id: "rp.lsdj",
   matches: (n) => n.type === "rp.sameboy.gb" && (n.rom?.markers ?? []).includes("lsdj"),
   settings: z.object({ syncMode: z.enum(["off", "midi-sync"]).default("midi-sync") }),
   contribute: ({ node, settings }) => ({
-    nodes: [{ id: `${node.id}.lsdj-sync`.replace(".", "-"), type: "rp.lsdj.sync", params: { mode: settings.syncMode } }],
-    wires: [{ from: `${node.id}-lsdj-sync.serialOut`, to: `${node.id}.serialIn` }],
+    nodes: [{ id: `${node.id}/lsdj-sync`, type: "rp.lsdj.sync", params: { mode: settings.syncMode } }],
+    wires: [{ from: endpoint(`${node.id}/lsdj-sync`, "serialOut"), to: endpoint(node.id, "serialIn") }],
+    views: [{ id: "hd", label: "HD", placement: "fullscreen", component: () => null }],
   }),
 });
+
+const tap = (id: string, input: string) =>
+  defineExtension({ id, matches: (n) => n.type === "rp.sameboy.gb", contribute: ({ node }) => ({ wires: [{ from: "mgb.out", to: endpoint(node.id, input) }] }) });
 
 test("an extension attaches only to the nodes its matcher accepts", () => {
   const reg = new ExtensionRegistry();
   reg.add(lsdj);
   expect(reg.attached(gb).map((e) => e.id)).toEqual(["rp.lsdj"]);
   expect(reg.attached(nes).length).toBe(0);
+  expect(() => defineExtension({ id: "  ", matches: () => true, contribute: () => ({}) })).toThrow("whitespace");
 });
 
-test("collect parses each extension's settings and gathers its nodes and wires", () => {
+test("collect parses each extension's settings and gathers its nodes, wires and views", () => {
   const reg = new ExtensionRegistry();
   reg.add(lsdj);
-  const c = reg.collect([gb, nes], (node, ext) => (node === "sys-1" && ext === "rp.lsdj" ? { syncMode: "off" } : undefined));
-  expect(c.nodes).toEqual([{ id: "sys-1-lsdj-sync", type: "rp.lsdj.sync", params: { mode: "off" } }]);
-  expect(c.wires.length).toBe(1);
+  const c = reg.collect([gb, gb2, nes], (node, ext) => (node === "sys-1" && ext === "rp.lsdj" ? { syncMode: "off" } : undefined));
+  expect(c.nodes).toEqual([
+    { id: "sys-1/lsdj-sync", type: "rp.lsdj.sync", params: { mode: "off" } },
+    { id: "sys-2/lsdj-sync", type: "rp.lsdj.sync", params: { mode: "midi-sync" } },  // the default
+  ]);
+  expect(c.wires).toEqual([
+    { from: "sys-1/lsdj-sync.serialOut", to: "sys-1.serialIn" },
+    { from: "sys-2/lsdj-sync.serialOut", to: "sys-2.serialIn" },
+  ]);
+  expect(c.views.map((v) => [v.node, v.extension, v.view.id])).toEqual([["sys-1", "rp.lsdj", "hd"], ["sys-2", "rp.lsdj", "hd"]]);
+  expect(c.attached.map((a) => [a.node, a.extension])).toEqual([["sys-1", "rp.lsdj"], ["sys-2", "rp.lsdj"]]);
   expect(c.conflicts.length).toBe(0);
+  expect(c.errors.length).toBe(0);
+  c.nodes[0].id = "edited";  // the collected graph is the builder's own copy
+  expect(c.attached[0].contribution.nodes![0].id).toBe("sys-1/lsdj-sync");
 });
 
-test("two contributors wiring the same input is a named conflict", () => {
+test("collection order follows extension ids, not registration order", () => {
+  const a = new ExtensionRegistry();
+  a.add(tap("rp.z", "joypad"));
+  a.add(lsdj);
+  const b = new ExtensionRegistry();
+  b.add(lsdj);
+  b.add(tap("rp.z", "joypad"));
+  const order = (r: ExtensionRegistry) => r.collect([gb, gb2]).attached.map((x) => `${x.node}:${x.extension}`);
+  expect(order(a)).toEqual(["sys-1:rp.lsdj", "sys-1:rp.z", "sys-2:rp.lsdj", "sys-2:rp.z"]);
+  expect(order(b)).toEqual(order(a));
+});
+
+test("two contributors wiring the same input is a conflict naming both", () => {
   const reg = new ExtensionRegistry();
   reg.add(lsdj);
-  reg.add(
-    defineExtension({
-      id: "rp.mgb",
-      matches: (n) => n.type === "rp.sameboy.gb",
-      contribute: ({ node }) => ({ wires: [{ from: "mgb.serialOut", to: `${node.id}.serialIn` }] }),
-    }),
-  );
+  reg.add(tap("rp.mgb", "serialIn"));
+  reg.add(tap("rp.pad", "joypad"));  // a different input of the same node is no conflict
   const c = reg.collect([gb]);
-  expect(c.conflicts).toEqual([{ input: "sys-1.serialIn", extensions: ["rp.lsdj", "rp.mgb"] }]);
+  expect(c.conflicts).toEqual([
+    { kind: "input", input: "sys-1.serialIn", by: [{ extension: "rp.lsdj", node: "sys-1" }, { extension: "rp.mgb", node: "sys-1" }] },
+  ]);
+});
+
+test("the base graph's wires and nodes are claimed before any extension's", () => {
+  const reg = new ExtensionRegistry();
+  reg.add(tap("rp.mgb", "serialIn"));
+  reg.add(
+    defineExtension({ id: "rp.dup", matches: () => true, contribute: ({ node }) => ({ nodes: [{ id: "mix", type: "rp.core.add" }, { id: node.id, type: "rp.x" }] }) }),
+  );
+  const c = reg.collect([gb], () => undefined, { nodes: [{ id: "mix", type: "rp.core.add" }], wires: [{ from: "midi.out", to: "sys-1.serialIn" }] });
+  expect(c.conflicts).toEqual([
+    { kind: "input", input: "sys-1.serialIn", by: ["base", { extension: "rp.mgb", node: "sys-1" }] },
+    { kind: "node-id", id: "mix", by: ["base", { extension: "rp.dup", node: "sys-1" }] },
+    { kind: "node-id", id: "sys-1", by: ["base", { extension: "rp.dup", node: "sys-1" }] },  // the system node itself
+  ]);
+});
+
+test("one extension claiming an input twice names the nodes it came from", () => {
+  const reg = new ExtensionRegistry();
+  reg.add(defineExtension({ id: "rp.bus", matches: () => true, contribute: () => ({ wires: [{ from: "a.out", to: "bus.in" }] }) }));
+  expect(reg.collect([gb, gb2]).conflicts).toEqual([
+    { kind: "input", input: "bus.in", by: [{ extension: "rp.bus", node: "sys-1" }, { extension: "rp.bus", node: "sys-2" }] },
+  ]);
+});
+
+test("bad settings or node ids are reported, and the rest of the graph is still collected", () => {
+  const reg = new ExtensionRegistry();
+  reg.add(lsdj);
+  reg.add(defineExtension({ id: "rp.ok", matches: () => true, contribute: () => ({ nodes: [{ id: "ok", type: "rp.x" }, { id: "bad.id", type: "rp.x" }] }) }));
+  const c = reg.collect([gb], () => ({ syncMode: "master" }));  // saved by a newer build, say
+  expect(c.errors.map((e) => [e.extension, e.code])).toEqual([["rp.lsdj", "settings-invalid"], ["rp.ok", "node-id"]]);
+  expect(c.errors[0].message.includes("syncMode")).toBe(true);
+  expect(c.nodes.map((n) => [n.id, n.params?.mode])).toEqual([["sys-1/lsdj-sync", "midi-sync"], ["ok", undefined]]);  // defaults stand in
 });
 
 test("an extension id can be registered once", () => {
@@ -10734,6 +10882,9 @@ test("an extension id can be registered once", () => {
   reg.add(lsdj);
   expect(() => reg.add(lsdj)).toThrow("already registered");
 });
+
+// @ts-expect-error an extension that reads settings has to say what they are
+defineExtension<{ n: number }>({ id: "rp.typed", matches: () => true, contribute: ({ settings }) => ({ nodes: [{ id: String(settings.n), type: "t" }] }) });
 ```
 
 - [ ] **Step 2: Run them to see them fail**
@@ -10750,7 +10901,8 @@ Expected: the two new files fail to bundle (`Could not resolve "../../src/graph/
 // The graph document TS owns and sends to the C++ planner with setGraph - the JSON shape of
 // packages/native/src/graph/GraphDocument.hpp. Node ids may not contain ".", so an endpoint always splits
 // at its first dot: "gb1.pins.pulse" is node "gb1", port "pins.pulse".
-import { plainId } from "./descriptor";
+import { canonicalJson } from "./canonicalJson";
+import { plainId, wellFormed } from "./descriptor";
 
 export interface NodeDoc {
   id: string;
@@ -10773,11 +10925,17 @@ export interface GraphDocument {
   wires: WireDoc[];
 }
 
-/** "node.port" for a wire endpoint. Throws for a node id the planner would refuse: one that is not a plain
- *  id (see plainId), or that contains "." and so would make the split ambiguous. */
+const q = (s: string): string => JSON.stringify(s);
+
+/** The planner's node-id rule: a plain id (see plainId) with no ".", which would make a split ambiguous. */
+export const isNodeId = (id: unknown): id is string => plainId(id) && !id.includes(".");
+
+/** "node.port" for a wire endpoint. Throws for a node id the planner would refuse, or a port id that is
+ *  not a plain id (an empty one would not even split back). */
 export function endpoint(node: string, port: string): string {
-  if (!plainId(node) || node.includes("."))
-    throw new Error(`node id ${JSON.stringify(node)} must be non-empty and contain no ".", whitespace or control characters`);
+  if (!isNodeId(node))
+    throw new Error(`node id ${q(node)} must be non-empty and contain no ".", whitespace, control characters or lone surrogates`);
+  if (!plainId(port)) throw new Error(`port id ${q(port)} must be non-empty, with no whitespace, control characters or lone surrogates`);
   return `${node}.${port}`;
 }
 
@@ -10786,6 +10944,68 @@ export function parseEndpoint(text: string): { node: string; port: string } | nu
   const dot = text.indexOf(".");
   if (dot <= 0 || dot === text.length - 1) return null;
   return { node: text.slice(0, dot), port: text.slice(dot + 1) };
+}
+
+// Every string (and key) in a JSON value is one C++ can read; NaN and infinities spell null, which no
+// param or setting means.
+function readable(v: unknown, where: string): void {
+  if (typeof v === "string") {
+    if (!wellFormed(v)) throw new Error(`${where} holds a lone surrogate, which C++ cannot read`);
+  } else if (typeof v === "number") {
+    if (!Number.isFinite(v)) throw new Error(`${where} holds ${v}, which JSON cannot carry`);
+  } else if (Array.isArray(v)) {
+    v.forEach((x, i) => readable(x, `${where}[${i}]`));
+  } else if (v && typeof v === "object") {
+    for (const [k, x] of Object.entries(v)) {
+      if (!wellFormed(k)) throw new Error(`${where} has a key with a lone surrogate`);
+      readable(x, `${where}.${k}`);
+    }
+  }
+}
+
+/** The text to send with setGraph: only the fields GraphDocument.hpp reads (C++ refuses the whole document
+ *  over one unknown field, which TS's structural types would let through), in canonical JSON. Throws, with
+ *  the node it is about, for anything the C++ parser or the planner's structure check would refuse. */
+export function toGraphJson(doc: GraphDocument): string {
+  const nodes = doc.nodes.map((n, i) => {
+    const where = `node #${i}`;
+    if (!isNodeId(n.id)) throw new Error(`${where}: id ${q(String(n.id))} is not a node id (a plain id with no ".")`);
+    if (!plainId(n.type)) throw new Error(`node ${q(n.id)}: type ${q(String(n.type))} is not a node type id`);
+    const out: Record<string, unknown> = { id: n.id, type: n.type };
+    if (n.settings !== undefined) {
+      if (typeof n.settings !== "object" || n.settings === null || Array.isArray(n.settings))
+        throw new Error(`node ${q(n.id)}: settings must be an object`);
+      readable(n.settings, `node ${q(n.id)} settings`);
+      out.settings = n.settings;
+    }
+    if (n.params !== undefined) {
+      for (const [id, v] of Object.entries(n.params)) {
+        if (!["number", "string", "boolean"].includes(typeof v)) throw new Error(`node ${q(n.id)}: param ${q(id)} must be a number, label or bool`);
+        readable(v, `node ${q(n.id)} param ${q(id)}`);
+        readable(id, `node ${q(n.id)} params`);
+      }
+      out.params = n.params;
+    }
+    if (n.resources !== undefined) {
+      for (const [port, ref] of Object.entries(n.resources))
+        if (!/^res:[1-9][0-9]*$/.test(ref) || Number(ref.slice(4)) > 4294967295)
+          throw new Error(`node ${q(n.id)}: resource ${q(port)} must be "res:<id>", not ${q(String(ref))}`);
+      out.resources = n.resources;
+    }
+    return out;
+  });
+  const wires = doc.wires.map((w, i) => {
+    if (!parseEndpoint(w.from) || !parseEndpoint(w.to)) throw new Error(`wire #${i}: ${q(w.from)} -> ${q(w.to)} needs node.port endpoints`);
+    readable(w.from, `wire #${i}`);
+    readable(w.to, `wire #${i}`);
+    const out: Record<string, unknown> = { from: w.from, to: w.to };
+    if (w.feedback !== undefined) {
+      if (typeof w.feedback !== "boolean") throw new Error(`wire #${i}: feedback must be true or false`);
+      out.feedback = w.feedback;
+    }
+    return out;
+  });
+  return canonicalJson({ nodes, wires });
 }
 ```
 
@@ -10796,12 +11016,14 @@ export function parseEndpoint(text: string): { node: string; port: string } | nu
 // sections 2.6, 2.7 and 7.1). An extension has no ports; it is chosen by a matcher over the node's
 // identity, and contributes nodes it inserts and wires, views, and song / asset catalogs.
 //
-// Port ownership: each node input may be claimed by only ONE contributor. collect() reports two
-// contributions wiring into the same input as a conflict, by name, instead of silently picking one.
+// Port ownership: each node input may be claimed by only ONE contributor - an extension on a node, or the
+// base graph the builder made itself. collect() reports a second claim as a conflict naming every claimant,
+// and does the same for two contributors inserting nodes with the same id, instead of silently picking one.
 import type { z } from "zod";
 import type { AssetCatalog } from "../tracker/assetCatalog";
 import type { SongCatalog } from "../tracker/songCatalog";
-import type { NodeDoc, WireDoc } from "./graphDocument";
+import { plainId } from "./descriptor";
+import { isNodeId, type NodeDoc, type WireDoc } from "./graphDocument";
 
 /** What a matcher sees: the node type plus the ROM identity rp.system.rom/1 publishes (when it has one). */
 export interface NodeInfo {
@@ -10830,6 +11052,8 @@ export interface ViewDefinition {
   needs?: { memory?: { region: string; range: [number, number] }[]; rate?: "frame" | "block" };
 }
 
+/** What an extension adds for one node. Menu items and actions are deliberately absent until the package
+ *  split extracts the menu item model (design section 7.7). */
 export interface Contribution {
   nodes?: NodeDoc[];
   wires?: WireDoc[];
@@ -10838,6 +11062,7 @@ export interface Contribution {
   assets?: AssetCatalog;
 }
 
+/** What an extension is handed. Capabilities and putResource (design section 7.1) arrive with Phase B. */
 export interface ExtensionContext<S> {
   node: NodeInfo;
   settings: S;
@@ -10850,15 +11075,33 @@ export interface ExtensionDefinition<S = Record<string, never>> {
   contribute(ctx: ExtensionContext<S>): Contribution;
 }
 
-export function defineExtension<S = Record<string, never>>(def: ExtensionDefinition<S>): ExtensionDefinition<S> {
-  if (!def.id) throw new Error("an extension needs an id");
+// Settings and their type come together: an extension that reads settings must say what they are, so
+// `settings` cannot be typed as something the schema-less default ({}) is not.
+export function defineExtension(
+  def: Omit<ExtensionDefinition<Record<string, never>>, "settings"> & { settings?: undefined },
+): ExtensionDefinition<Record<string, never>>;
+export function defineExtension<S>(def: ExtensionDefinition<S> & { settings: z.ZodType<S> }): ExtensionDefinition<S>;
+export function defineExtension<S>(def: ExtensionDefinition<S>): ExtensionDefinition<S> {
+  if (!plainId(def.id))
+    throw new Error(`extension id ${JSON.stringify(String(def.id))} must be non-empty, with no whitespace or control characters`);
   return def;
 }
 
-export interface Conflict {
-  /** The node input two contributors both wire into, "node.port". */
-  input: string;
-  extensions: string[];
+/** Who claimed something: an extension on a node, or the base graph the builder made itself. */
+export type Contributor = { extension: string; node: string } | "base";
+
+export type Conflict =
+  /** Two or more contributors wire into the same node input, "node.port". */
+  | { kind: "input"; input: string; by: Contributor[] }
+  /** Two or more contributors insert a node with the same id. */
+  | { kind: "node-id"; id: string; by: Contributor[] };
+
+/** A contribution that could not be used as given; the rest of the graph is still collected. */
+export interface CollectError {
+  node: string;
+  extension: string;
+  code: "settings-invalid" | "node-id";
+  message: string;
 }
 
 export interface Collected {
@@ -10867,16 +11110,23 @@ export interface Collected {
   views: { node: string; extension: string; view: ViewDefinition }[];
   attached: { node: string; extension: string; contribution: Contribution }[];
   conflicts: Conflict[];
+  errors: CollectError[];
 }
 
-// Extensions are listed in registration order; that order is also the order their contributions are
-// collected in, so graphs built from the same project are identical.
+// A JSON-only copy of a node or wire document, so a builder that edits the collected graph cannot reach the
+// contribution it came from (or the other way round). Views and catalogs are not documents (they carry
+// components and methods), so they are passed through as they are.
+const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+
+// Extensions are kept sorted by id, and contributions are collected node by node in that order, so the
+// same project builds the same graph whatever order packages registered (or loaded) in.
 export class ExtensionRegistry {
   private readonly list: ExtensionDefinition<any>[] = [];
 
   add<S>(ext: ExtensionDefinition<S>): void {
     if (this.list.some((e) => e.id === ext.id)) throw new Error(`extension "${ext.id}" is already registered`);
     this.list.push(ext);
+    this.list.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   }
 
   attached(node: NodeInfo): ExtensionDefinition<any>[] {
@@ -10884,24 +11134,59 @@ export class ExtensionRegistry {
   }
 
   /** Every matched extension's contribution for these nodes. settingsFor returns an extension's raw
-   *  persisted settings for a node (undefined: defaults); they are parsed here, on the control plane. */
-  collect(nodes: readonly NodeInfo[], settingsFor: (node: string, extension: string) => unknown = () => undefined): Collected {
-    const out: Collected = { nodes: [], wires: [], views: [], attached: [], conflicts: [] };
-    const claimed = new Map<string, string[]>();
+   *  persisted settings for a node (undefined: defaults); they are parsed here, on the control plane, and
+   *  settings that no longer parse are reported and replaced by the defaults rather than failing the
+   *  whole collection. `base` is the graph the builder made itself: its node ids and wired inputs are
+   *  already claimed. */
+  collect(
+    nodes: readonly NodeInfo[],
+    settingsFor: (node: string, extension: string) => unknown = () => undefined,
+    base: { nodes: readonly NodeDoc[]; wires: readonly WireDoc[] } = { nodes: [], wires: [] },
+  ): Collected {
+    const out: Collected = { nodes: [], wires: [], views: [], attached: [], conflicts: [], errors: [] };
+    const inputs = new Map<string, Contributor[]>();
+    const ids = new Map<string, Contributor[]>();
+    const claim = (map: Map<string, Contributor[]>, key: string, by: Contributor) => map.set(key, [...(map.get(key) ?? []), by]);
+    for (const n of base.nodes) claim(ids, n.id, "base");
+    for (const n of nodes) if (!ids.has(n.id)) claim(ids, n.id, "base");
+    for (const w of base.wires) claim(inputs, w.to, "base");
+
     for (const node of nodes) {
       for (const ext of this.attached(node)) {
-        const raw = settingsFor(node.id, ext.id);
-        const settings = ext.settings ? ext.settings.parse(raw ?? {}) : {};
+        const by: Contributor = { extension: ext.id, node: node.id };
+        const fail = (code: CollectError["code"], message: string) =>
+          out.errors.push({ node: node.id, extension: ext.id, code, message });
+        let settings: unknown = {};
+        if (ext.settings) {
+          const parsed = ext.settings.safeParse(settingsFor(node.id, ext.id) ?? {});
+          if (parsed.success) {
+            settings = parsed.data;
+          } else {
+            fail("settings-invalid", parsed.error.issues.map((i) => `${i.path.join(".") || "settings"}: ${i.message}`).join("; "));
+            const defaults = ext.settings.safeParse({});
+            if (!defaults.success) continue;  // nothing usable: leave this extension out for this node
+            settings = defaults.data;
+          }
+        }
         const c = ext.contribute({ node, settings });
         out.attached.push({ node: node.id, extension: ext.id, contribution: c });
-        out.nodes.push(...(c.nodes ?? []));
-        out.wires.push(...(c.wires ?? []));
+        for (const n of c.nodes ?? []) {
+          if (!isNodeId(n.id)) {
+            fail("node-id", `inserted node id ${JSON.stringify(String(n.id))} is not a node id (a plain id with no ".")`);
+            continue;
+          }
+          claim(ids, n.id, by);
+          out.nodes.push(copy(n));
+        }
+        for (const w of c.wires ?? []) {
+          claim(inputs, w.to, by);
+          out.wires.push(copy(w));
+        }
         for (const view of c.views ?? []) out.views.push({ node: node.id, extension: ext.id, view });
-        for (const w of c.wires ?? []) claimed.set(w.to, [...(claimed.get(w.to) ?? []), ext.id]);
       }
     }
-    for (const [input, extensions] of claimed)
-      if (extensions.length > 1) out.conflicts.push({ input, extensions });
+    for (const [input, by] of inputs) if (by.length > 1) out.conflicts.push({ kind: "input", input, by });
+    for (const [id, by] of ids) if (by.length > 1) out.conflicts.push({ kind: "node-id", id, by });
     return out;
   }
 }
@@ -10910,8 +11195,8 @@ export class ExtensionRegistry {
 - [ ] **Step 4: Run the graph tests, the whole TS suite, and the type check**
 
 Run: `pnpm test graph && pnpm test && pnpm typecheck`
-Expected: five graph files pass (4 + 12 + 2 + 2 + 4 cases), the full `pnpm test` matches the Task 0
-baseline plus those 24 cases with no new skips, and the type check matches the baseline.
+Expected: five graph files pass (4 + 12 + 2 + 4 + 8 cases), the full `pnpm test` matches the Task 0
+baseline plus those 30 cases with no new skips, and the type check matches the baseline.
 
 - [ ] **Step 5: Commit**
 
@@ -10922,6 +11207,10 @@ git commit -m "feat(graph): the graph document and defineExtension
 Extensions attach to node instances by matcher, parse their settings on
 the control plane, and contribute nodes, wires, views and catalogs; two
 contributors wiring the same node input is reported by name."
+
+(This task was executed as the original commit plus one review-fix commit, "fix(graph): extensions report
+every conflict by claimant; documents are written as C++ reads them", which also added the C++ half of
+the golden-document pact to Task 6's test. A fresh execution needs only the one commit above.)
 ```
 
 ---

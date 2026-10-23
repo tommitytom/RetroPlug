@@ -843,6 +843,13 @@ export const lsdj = defineExtension({
   `putResource` (how asset overrides become a patched ROM resource).
 - **Port ownership:** each node input may be claimed by only one contributor. If two extensions both
   claim a GB's `serialIn`, the graph builder reports the conflict by name instead of silently picking.
+  A contributor is an extension on a node, or the base graph the builder made itself (its own wires and
+  nodes are claimed first); two contributors inserting nodes with the same id is a conflict too.
+  Persisted extension settings that no longer parse are reported and replaced by the defaults, so one
+  stale setting never loses the rest of the graph. (Phase A's `ExtensionRegistry.collect`.)
+- **What crosses to C++:** `toGraphJson` writes only the fields the C++ parser reads (it refuses a whole
+  document over one unknown field, which TS's structural types would let through) and checks ids,
+  values and strings as the parser and planner do. A golden document both sides read pins the shape.
 
 ### 7.2 The graph builder
 
