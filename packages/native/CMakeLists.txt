@@ -10,7 +10,7 @@
 #   cmake/deps.cmake          rtmidi / serial / portaudio, and the retroplug-cli N8 facets
 #   cmake/plugin.cmake        dpf_add_plugin + per-platform packaging
 #   cmake/graph.cmake         the node-graph engine's libraries (not linked by any host yet)
-#   cmake/tests.cmake         the ten native test binaries
+#   cmake/tests.cmake         the eleven native test binaries
 #   cmake/warnings.cmake      /W4 /WX on our own targets (MSVC)
 #
 # They are include()d, not add_subdirectory()'d, which matters: include() keeps the CURRENT
@@ -445,7 +445,7 @@ add_dependencies(retroplug-ui-test retroplug-ui-bundle)
 # The node-graph engine's libraries (docs/modular-graph-design.md). Nothing links them yet.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/graph.cmake)
 
-# The ten native test binaries (EXCLUDE_FROM_ALL; built by name).
+# The eleven native test binaries (EXCLUDE_FROM_ALL; built by name).
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/tests.cmake)
 
 # /W4 /WX on our own targets (MSVC), with per-number suppressions for what we do not own.

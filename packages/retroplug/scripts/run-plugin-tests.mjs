@@ -6,8 +6,9 @@
 // (retroplug-classid-test), the per-channel audio taps (retroplug-audio-test),
 // the native file watcher (retroplug-watcher-test), the ThorVG-backed
 // Lottie rasterization behind the <Lottie> component (retroplug-lottie-test),
-// the MIDI device-selection policy (retroplug-midi-test), and the control-surface
-// device link (retroplug-launchpad-test).
+// the MIDI device-selection policy (retroplug-midi-test), the control-surface
+// device link (retroplug-launchpad-test), and the node-graph engine's foundations
+// (retroplug-graph-test).
 //
 // A tiny runner (rather than chaining `build/bin/foo && …` in package.json) so
 // the suite is cross-platform: it appends `.exe` on Windows and spawns each
@@ -25,7 +26,7 @@ const REPO = resolve(PKG, "../..");
 const BIN_DIR = process.env.RETROPLUG_BIN_DIR || join(REPO, "build", "bin");
 const EXE = process.platform === "win32" ? ".exe" : "";
 
-const BINARIES = ["retroplug-plugin-test", "retroplug-dynparams-test", "retroplug-classid-test", "retroplug-audio-test", "retroplug-watcher-test", "retroplug-lottie-test", "retroplug-midi-test", "retroplug-launchpad-test"];
+const BINARIES = ["retroplug-plugin-test", "retroplug-dynparams-test", "retroplug-classid-test", "retroplug-audio-test", "retroplug-watcher-test", "retroplug-lottie-test", "retroplug-midi-test", "retroplug-launchpad-test", "retroplug-graph-test"];
 
 const jobs = resolveJobs();
 const filter = stripRunnerFlags()[0];

@@ -4,8 +4,8 @@
 # a child scope and re-roots that variable, which is the trap this split is avoiding.)
 #
 # --- native test binaries ---------------------------------------------------------------------------
-# Ten Catch2 binaries, all EXCLUDE_FROM_ALL and built BY NAME (nothing reads BUILD_TESTING):
-# `pnpm test:plugin` builds and runs eight of them, `pnpm test:n8` the ninth, and the tenth needs a
+# Eleven Catch2 binaries, all EXCLUDE_FROM_ALL and built BY NAME (nothing reads BUILD_TESTING):
+# `pnpm test:plugin` builds and runs nine of them, `pnpm test:n8` the tenth, and the eleventh needs a
 # real console on a USB port. The shared shape lives in retroplug_add_test_binary() — see
 # cmake/test-binary.cmake; what is written out here is only what differs per test.
 

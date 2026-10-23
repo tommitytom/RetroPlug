@@ -33,11 +33,11 @@ The rules below are the parts that don't fit those.
   linked into `retroplug-backend`; the watcher is opt-in via `enableWatching`, which
   only the plugin calls). `deps/catch2` is the C++ unit-test framework:
   it's `add_subdirectory`'d at the root (`EXCLUDE_FROM_ALL`) and linked by the
-  eight `test:plugin` binaries (`retroplug-plugin-test` / `-classid-test` / `-audio-test` /
-  `-watcher-test` / `-dynparams-test` / `-midi-test` / `-launchpad-test` / `-lottie-test`) as
-  `Catch2::Catch2WithMain`. `retroplug-dynparams-test` is the odd one out: it compiles DPF's
-  format-neutral core (`DistrhoPlugin.cpp`) plus its OWN `DistrhoPluginInfo.h`, building no plugin
-  format at all, to drive `PluginExporter::reinitParameters` over a toy plugin.
+  nine `test:plugin` binaries (`retroplug-plugin-test` / `-classid-test` / `-audio-test` /
+  `-watcher-test` / `-dynparams-test` / `-midi-test` / `-launchpad-test` / `-lottie-test` /
+  `-graph-test`) as `Catch2::Catch2WithMain`. `retroplug-dynparams-test` is the odd one out: it
+  compiles DPF's format-neutral core (`DistrhoPlugin.cpp`) plus its OWN `DistrhoPluginInfo.h`,
+  building no plugin format at all, to drive `PluginExporter::reinitParameters` over a toy plugin.
 - **`deps/sameboy` is patched at configure — a dirty working tree there is
   EXPECTED, not stray changes.** The per-channel (4-stem) Game Boy audio tap lives
   in `Core/apu.{c,h}` and ships as a tracked patch
