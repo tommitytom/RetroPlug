@@ -7,7 +7,8 @@
 #include "graph/rp_node.h"
 
 // Alloc-free helpers over the ABI's fixed-capacity queues, shared by nodes and the executor. Nothing
-// here grows: a push that does not fit is dropped and counted in `dropped`, which TS can read.
+// here grows: a push that does not fit is dropped and counted in `dropped` (an audio-thread counter; the
+// host publishes it rather than letting the control thread read it live).
 namespace rp::graph {
 
 // Append one message (events or bytes). Frames must be non-decreasing within a block; a message whose
@@ -34,8 +35,8 @@ inline void clearQueue(rp_queue& q) {
     q.bytes_used = 0;
 }
 
-// Copy every message of `from` onto the end of `to` (merge preserves frame order when the caller walks
-// two sources in frame order; a plain append is what a feedback wire needs).
+// Copy every message of `from` onto the end of `to`. A feedback wire appends onto an emptied queue; onto
+// a non-empty one, a message earlier than `to`'s last is clamped up to it, as any push is.
 inline void appendQueue(rp_queue& to, const rp_queue& from) {
     for (std::uint32_t i = 0; i < from.count; ++i)
         pushMessage(to, from.items[i].frame, messageData(from, from.items[i]), from.items[i].flags);

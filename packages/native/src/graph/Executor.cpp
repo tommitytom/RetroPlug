@@ -1,5 +1,6 @@
 #include "graph/Executor.hpp"
 
+#include <cassert>
 #include <cstring>
 
 #include "graph/Queue.hpp"
@@ -8,44 +9,71 @@ namespace rp::graph {
 
 namespace {
 
+// What a bypassed node leaves on its outputs: silence, empty queues, and no control changes (a control
+// stream keeps its start value, since that is state, not something this block produced).
 void silenceOutputs(const rp_process& p, std::uint32_t frames) {
     for (std::uint32_t i = 0; i < p.output_count; ++i) {
         const rp_port_view& v = p.outputs[i];
-        if (v.kind != RP_PORT_AUDIO) continue;
-        for (std::uint32_t c = 0; c < v.u.audio.channel_count; ++c)
-            std::memset(v.u.audio.channels[c], 0, frames * sizeof(float));
+        switch (v.kind) {
+            case RP_PORT_AUDIO:
+                for (std::uint32_t c = 0; c < v.u.audio.channel_count; ++c)
+                    std::memset(v.u.audio.channels[c], 0, frames * sizeof(float));
+                break;
+            case RP_PORT_EVENTS:
+            case RP_PORT_BYTES:
+                clearQueue(*v.u.queue);
+                break;
+            case RP_PORT_CONTROL:
+                v.u.control->count = 0;
+                break;
+            case RP_PORT_LINK:
+            case RP_PORT_RESOURCE:
+            default:
+                break;
+        }
     }
 }
 
-void fault(const PlanView& plan, PlanStep& s, std::uint32_t frames) {
-    if (!s.faulted) {
-        s.faulted = true;
-        if (plan.faults) plan.faults->fetch_add(1, std::memory_order_relaxed);
-    }
-    silenceOutputs(s.process, frames);
+// Flag the node (once) and count it.
+void markFaulted(const PlanView& plan, PlanStep& s) {
+    if (!s.faulted->exchange(true, std::memory_order_relaxed) && plan.faults)
+        plan.faults->fetch_add(1, std::memory_order_relaxed);
 }
+
+bool isFaulted(const PlanStep& s) { return s.faulted->load(std::memory_order_relaxed); }
 
 void runNode(const PlanView& plan, PlanStep& s, std::uint32_t frames) {
-    if (s.faulted) {
-        silenceOutputs(s.process, frames);
-        return;
-    }
-    if (s.node->vt->process(s.node, &s.process) != RP_OK) fault(plan, s, frames);
+    if (!isFaulted(s) && s.node->vt->process(s.node, &s.process) != RP_OK) markFaulted(plan, s);
+    if (isFaulted(s)) silenceOutputs(s.process, frames);
 }
 
-void runGroup(std::span<PlanStep> group, std::uint32_t frames) {
-    for (auto& m : group)
-        if (!m.faulted) m.step->prepare(m.node, &m.process);
-    // Round-robin until every member has produced the block. Each step() call advances a member by a
-    // bounded amount (an instruction or a scanline), which is what keeps linked cores in lockstep.
-    bool allDone = false;
-    while (!allDone) {
-        allDone = true;
-        for (auto& m : group)
-            if (!m.faulted && !m.step->step(m.node, frames)) allDone = false;
+void runGroup(const PlanView& plan, std::span<PlanStep> group, std::uint32_t frames) {
+    for (auto& m : group) {
+        assert(m.step && "every member of a coupled group implements rp.step/1");
+        if (!isFaulted(m)) m.step->prepare(m.node, &m.process);
+    }
+    // Round-robin until every member has produced the block. Each step() advances a member by a bounded
+    // amount (an instruction, a scanline), which is what keeps linked cores in lockstep.
+    const std::uint64_t maxPasses = std::uint64_t(frames ? frames : 1) * kMaxGroupPassesPerFrame;
+    for (std::uint64_t pass = 0;; ++pass) {
+        bool allDone = true;
+        for (auto& m : group) {
+            if (isFaulted(m)) continue;
+            const rp_step_result r = m.step->step(m.node, frames);
+            if (r == RP_STEP_FAULT) markFaulted(plan, m);
+            else if (r != RP_STEP_DONE) allDone = false;
+        }
+        if (allDone) break;
+        if (pass + 1 >= maxPasses) {
+            // Out of passes: whoever is still not done is not making progress. Asking again is safe by
+            // contract - a member that finished just answers RP_STEP_DONE.
+            for (auto& m : group)
+                if (!isFaulted(m) && m.step->step(m.node, frames) != RP_STEP_DONE) markFaulted(plan, m);
+            break;
+        }
     }
     for (auto& m : group) {
-        if (m.faulted) silenceOutputs(m.process, frames);
+        if (isFaulted(m)) silenceOutputs(m.process, frames);
         else m.step->finish(m.node, &m.process);
     }
 }
@@ -53,8 +81,12 @@ void runGroup(std::span<PlanStep> group, std::uint32_t frames) {
 void moveFeedback(const FeedbackCopy& f, std::uint32_t frames) {
     switch (f.kind) {
         case RP_PORT_AUDIO:
-            for (std::uint32_t c = 0; c < f.channels; ++c)
+            for (std::uint32_t c = 0; c < f.channels; ++c) {
                 std::memcpy(f.frontChannels[c], f.backChannels[c], frames * sizeof(float));
+                // A shorter block than the last must not leave the last block's tail to be replayed.
+                if (f.capacity > frames)
+                    std::memset(f.frontChannels[c] + frames, 0, (f.capacity - frames) * sizeof(float));
+            }
             break;
         case RP_PORT_EVENTS:
         case RP_PORT_BYTES:
@@ -70,6 +102,8 @@ void moveFeedback(const FeedbackCopy& f, std::uint32_t frames) {
                 pushControl(front, back.changes[i].frame, back.changes[i].value);
             break;
         }
+        case RP_PORT_LINK:
+        case RP_PORT_RESOURCE:
         default:
             break;
     }
@@ -79,13 +113,15 @@ void moveFeedback(const FeedbackCopy& f, std::uint32_t frames) {
 
 void runBlock(const PlanView& plan, std::uint32_t frames, const rp_transport& transport) {
     for (auto& s : plan.steps) {
+        assert(s.faulted && "every plan step points at its instance's fault flag");
         s.process.frames = frames;
         s.process.transport = &transport;
     }
     for (std::size_t i = 0; i < plan.steps.size();) {
         PlanStep& s = plan.steps[i];
         if (s.groupSize > 1) {
-            runGroup(plan.steps.subspan(i, s.groupSize), frames);
+            assert(i + s.groupSize <= plan.steps.size());
+            runGroup(plan, plan.steps.subspan(i, s.groupSize), frames);
             i += s.groupSize;
         } else {
             runNode(plan, s, frames);

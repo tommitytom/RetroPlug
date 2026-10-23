@@ -7,7 +7,15 @@
  * touching this core table (docs/modular-graph-design.md section 4).
  *
  * Threads: calls marked [control] run on the control thread and may allocate; calls marked [audio] run
- * on whichever thread drives the block and must not allocate, block, or throw.
+ * on whichever thread drives the block and must not allocate, block, or throw. [control] and [audio]
+ * calls on ONE instance may run at the same time, so a node shares no mutable state between them except
+ * through the settings swap (prepare_settings / commit_settings).
+ *
+ * Every rp_node_vtable entry is required: a node with nothing to do supplies a no-op. get_interface may
+ * return null for every id.
+ *
+ * Result codes are fixed-width integers rather than enum types: an enum's size is implementation-defined
+ * (-fshort-enums makes it one byte on some embedded toolchains), and every value here crosses the ABI.
  */
 #ifndef RP_NODE_H
 #define RP_NODE_H
@@ -22,44 +30,62 @@ extern "C" {
 
 #define RP_ABI_VERSION 1u
 
+/* The symbol a downloaded pack exports (an rp_package_entry_fn), and the visibility it needs. */
+#define RP_PACKAGE_ENTRY_SYMBOL "rp_package_entry"
+#if defined(_WIN32)
+#define RP_EXPORT __declspec(dllexport)
+#else
+#define RP_EXPORT __attribute__((visibility("default")))
+#endif
+
 typedef struct rp_node rp_node;
 typedef struct rp_host rp_host;
 
-typedef enum rp_status { RP_OK = 0, RP_FAULT = 1 } rp_status;
+typedef uint32_t rp_status;
+enum { RP_OK = 0u, RP_FAULT = 1u };
+
+enum { RP_LOG_ERROR = 0, RP_LOG_WARNING = 1, RP_LOG_INFO = 2, RP_LOG_DEBUG = 3 };
 
 /* A control-thread call that fails writes a NUL-terminated reason here. */
 typedef struct rp_error { char message[256]; } rp_error;
 
 enum { RP_SETTINGS_JSON = 0u };
 typedef struct rp_settings {
-    const char* data;   /* not NUL-terminated; use size */
+    const char* data;     /* bytes, not NUL-terminated; UTF-8 text when the encoding is JSON */
     size_t      size;
     uint32_t    encoding; /* RP_SETTINGS_JSON on the desktop */
 } rp_settings;
 
 typedef struct rp_memory_req { size_t size; size_t align; } rp_memory_req;
 
-/* Services the host offers a node. alloc/free are for nodes that declare the heap capability, and only
- * on the control thread. */
+/* Services the host offers a node. alloc/free are for nodes that declare the heap capability. */
 struct rp_host {
     uint32_t abi_version;
     void*    ctx;
-    void* (*alloc)(void* ctx, size_t size, size_t align);
-    void  (*free)(void* ctx, void* ptr);
-    void  (*log)(void* ctx, int level, const char* message);
+    void* (*alloc)(void* ctx, size_t size, size_t align);   /* [control] align <= alignof(max_align_t) */
+    void  (*free)(void* ctx, void* ptr);                     /* [control] */
+    void  (*log)(void* ctx, int level, const char* message); /* [control] level: RP_LOG_* */
+    /* [any] An optional host service by versioned id, or null. This is how host services grow without
+     * bumping RP_ABI_VERSION, the host-side twin of rp_node_vtable.get_interface. */
+    const void* (*get_interface)(const rp_host* host, const char* id);
 };
 
 /* ---- block data ------------------------------------------------------------------------------- */
 
+enum { RP_TRANSPORT_PLAYING = 1u << 0 };
+
 typedef struct rp_transport {
-    double sample_rate;
-    double tempo;    /* bpm */
-    double ppq;      /* at block start */
-    bool   playing;
+    double   sample_rate;
+    double   tempo; /* bpm */
+    double   ppq;   /* at block start */
+    uint32_t flags; /* RP_TRANSPORT_*; room to grow (recording, loop) without an ABI bump */
 } rp_transport;
 
+/* On a bytes port: everything up to and including this message must reach the device before what follows. */
+enum { RP_MESSAGE_FLUSH = 1u << 0 };
+
 /* One timestamped item on an events or bytes port. The payload lives in the queue's byte arena at
- * [offset, offset + size). flags is per kind: on a bytes port, bit 0 = flush barrier. */
+ * [offset, offset + size). flags: RP_MESSAGE_*. */
 typedef struct rp_message {
     uint32_t frame;
     uint32_t size;
@@ -67,7 +93,9 @@ typedef struct rp_message {
     uint32_t flags;
 } rp_message;
 
-/* A fixed-capacity, frame-ordered queue. Never grows: a push that does not fit is dropped and counted. */
+/* A fixed-capacity, frame-ordered queue. Never grows: a push that does not fit is dropped and counted in
+ * `dropped`, which is written on the audio thread; a host reads it there (or while quiescent) and
+ * publishes it, never directly from the control thread. */
 typedef struct rp_queue {
     rp_message* items;
     uint32_t    count;
@@ -145,11 +173,12 @@ typedef struct rp_process {
 
 /* ---- the node --------------------------------------------------------------------------------- */
 
-typedef enum rp_prepare_result {
-    RP_PREPARE_SWAP    = 0, /* *prepared is ready to commit on the audio thread */
-    RP_PREPARE_REBUILD = 1, /* the change needs a fresh instance (a new ROM, a layout change) */
-    RP_PREPARE_INVALID = 2  /* rejected; err holds the reason */
-} rp_prepare_result;
+typedef uint32_t rp_prepare_result;
+enum {
+    RP_PREPARE_SWAP    = 0u, /* *prepared is ready to commit on the audio thread */
+    RP_PREPARE_REBUILD = 1u, /* the change needs a fresh instance (a new ROM, a layout change) */
+    RP_PREPARE_INVALID = 2u  /* rejected; err holds the reason */
+};
 
 typedef struct rp_node_vtable {
     /* [control] Resolved layout JSON (ports, params, exclusive groups) for the current settings. The
@@ -157,10 +186,13 @@ typedef struct rp_node_vtable {
     const char* (*layout)(rp_node* node);
     /* [control] Must preserve state: a sample-rate or block-size change re-activates, never resets. */
     bool (*activate)(rp_node* node, double sample_rate, uint32_t max_frames, rp_error* err);
+    /* [control] */
     void (*deactivate)(rp_node* node);
     /* [audio] The connected-output mask changed at a plan swap; connected[i] is 0 or 1 per output. */
     void (*ports_changed)(rp_node* node, const uint8_t* connected, uint32_t output_count);
-    /* [audio] One block. Must write every frame of every audio output it is given. */
+    /* [audio] One block. Must write every frame of every CONNECTED audio output (unconnected ones get a
+     * shared scratch buffer, so skipping them is safe, and is what the connected mask is for). Return
+     * RP_FAULT to be bypassed from then on. */
     rp_status (*process)(rp_node* node, const rp_process* block);
     /* [control] Validate new settings and decide swap versus rebuild. */
     rp_prepare_result (*prepare_settings)(rp_node* node, const rp_settings* settings, void** prepared,
@@ -202,12 +234,16 @@ typedef const rp_package* (*rp_package_entry_fn)(void);
 
 /* ---- optional interfaces ------------------------------------------------------------------------ */
 
-/* "rp.step/1": the block triad coupled groups run in lockstep. */
+/* "rp.step/1": the block triad coupled groups run in lockstep. All three are [audio]. */
 #define RP_STEP_INTERFACE "rp.step/1"
+typedef uint32_t rp_step_result;
+enum { RP_STEP_BELOW = 0u, RP_STEP_DONE = 1u, RP_STEP_FAULT = 2u };
 typedef struct rp_step_interface {
     void (*prepare)(rp_node* node, const rp_process* block);
-    /* Advance toward target_frames; return true once this node has produced them. */
-    bool (*step)(rp_node* node, uint32_t target_frames);
+    /* Advance toward target_frames by a bounded amount (an instruction, a scanline). Return RP_STEP_DONE
+     * once this node has produced target_frames. It may be called again after that, and must then do
+     * nothing and return RP_STEP_DONE. RP_STEP_FAULT bypasses the node as a faulting process() would. */
+    rp_step_result (*step)(rp_node* node, uint32_t target_frames);
     void (*finish)(rp_node* node, const rp_process* block);
 } rp_step_interface;
 

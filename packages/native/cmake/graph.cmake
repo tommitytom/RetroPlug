@@ -4,8 +4,9 @@
 # --- the node-graph engine (docs/modular-graph-design.md) -------------------------------------------
 # Phase A builds these and tests them; nothing in the shipping build links them yet.
 #
-# retroplug-graph-exec: the no-heap executor. It has no dependencies at all (freestanding C++20 over the
-# C ABI in graph/rp_node.h), which is what lets the same code run a plan on the Pico later.
+# retroplug-graph-exec: the no-heap executor. No heap, no exceptions and no dependencies beyond libc's
+# memcpy / memset (it is C++20 over the C ABI in graph/rp_node.h), which is what lets the same code run a
+# plan on the Pico later.
 add_library(retroplug-graph-exec STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/Executor.cpp)
 target_include_directories(retroplug-graph-exec PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)

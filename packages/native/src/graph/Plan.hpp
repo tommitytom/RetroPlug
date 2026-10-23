@@ -18,7 +18,9 @@ struct PlanStep {
     // > 0 on the FIRST member of a coupled group: the group is this step and the next groupSize - 1.
     std::uint32_t            groupSize = 0;
     const rp_step_interface* step = nullptr;  // set for every member of a coupled group
-    bool                     faulted = false;
+    // Required. Owned by the node instance, not the plan, so a node that faulted stays bypassed through
+    // every later plan swap. Written only by the audio thread; atomic so the control thread may read it.
+    std::atomic<bool>*       faulted = nullptr;
 };
 
 // A feedback wire's one block of delay: what the producer wrote this block (`back`) becomes what the
@@ -30,6 +32,7 @@ struct FeedbackCopy {
     float* const* backChannels = nullptr;
     float* const* frontChannels = nullptr;
     std::uint32_t channels = 0;
+    std::uint32_t capacity = 0;  // frames each front channel holds; the tail past this block is zeroed
     // events / bytes
     rp_queue* backQueue = nullptr;
     rp_queue* frontQueue = nullptr;
