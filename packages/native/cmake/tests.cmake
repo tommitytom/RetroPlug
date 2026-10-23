@@ -58,11 +58,13 @@ retroplug_add_test_binary(
              test/audio/SameBoyStems.test.cpp
              test/audio/ChannelSplit.test.cpp
              test/audio/EngineChannelSplit.test.cpp
+             test/audio/EngineCartMirror.test.cpp      # what a physical N8 is fed: the first NES system's kernel output
              test/audio/EngineSampleRate.test.cpp      # host sample-rate change re-rates live cores
              test/audio/SameBoySerialTiming.test.cpp   # host MIDI-in keeps its intra-block sample offset over serial
              test/audio/NesApuLatency.test.cpp         # runtime NES APU flush window (live apuLatencyMs knob)
              test/audio/NesN8FifoTiming.test.cpp       # host MIDI-in keeps its intra-block offset into the N8 FIFO
              test/audio/NesEverdriveFifo.test.cpp      # Edio status protocol leaves no stale byte to desync MIDI parsing
+             test/audio/N8ReliableLink.test.cpp        # BlipToaster reliable link: framing, acks, re-sends (sender + emulated FIFO role)
              test/audio/NesStems.test.cpp              # NES stereo-mod pins re-sum to the mix (spec/10 step 5)
              test/audio/NesSplitRouting.test.cpp       # NES-in-plugin: PinSplit/ChannelSplit arm the tap live + mono-pack
              test/audio/SmsAudio.test.cpp              # SMS/GG boot, visible geometry, non-silent PSG, teardown survival
@@ -135,14 +137,26 @@ retroplug_add_test_binary(
     # The shared Edio framing golden both this and edio.test.ts assert against (single source, no drift).
     DEFS     EDIO_GOLDEN_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/test/n8/edio-golden.json")
 
+# WjwwoodSerialPort against a pseudo-terminal: that a read's timeout does not leak into the next write (the bug
+# that left a real N8 mid-command behind N8Link's 0 ms back-channel polls). The one N8 test that needs the `serial`
+# lib, so it is its own binary - retroplug-n8-test stays serial-free. Run by `pnpm test:n8`.
+retroplug_add_test_binary(
+    NAME     retroplug-serial-test
+    SOURCES  test/n8/WjwwoodSerialPort.test.cpp
+             src/host/n8/WjwwoodSerialPort.cpp
+    LIBS     serial
+    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 # A manual hardware harness (NOT CI) that drives the real N8 SD/menu ops through the same native
 # N8Host + N8SdWorker the Settings > N8 Pro menu uses, over a real /dev/ttyACM0 (adds the real
 # WjwwoodSerialPort + `serial`). Brings its own main(), hence NO_CATCH2.
 # Build by name: cmake --build build --target retroplug-n8-hwtest.
+find_package(ALSA)   # n8-timing.cpp: a timestamped capture of the console's audio
 retroplug_add_test_binary(
     NAME     retroplug-n8-hwtest
     NO_CATCH2
     SOURCES  test/n8/n8-sd-hwtest.cpp
+             test/n8/n8-timing.cpp
              src/host/n8/Edio.cpp
              src/host/n8/N8Link.cpp
              src/host/n8/N8Host.cpp
@@ -151,6 +165,7 @@ retroplug_add_test_binary(
              src/host/n8/WjwwoodSerialPort.cpp
     LIBS     serial
              Threads::Threads
+             ALSA::ALSA
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # Proves the ThorVG-backed <Lottie> capability: that lv_lottie rasterizes animated vector frames on a

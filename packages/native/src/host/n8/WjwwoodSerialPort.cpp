@@ -41,7 +41,12 @@ std::size_t WjwwoodSerialPort::write(const std::uint8_t* data, std::size_t size)
 }
 
 std::size_t WjwwoodSerialPort::read(std::uint8_t* buffer, std::size_t size, int timeoutMs) {
-    serial::Timeout t = serial::Timeout::simpleTimeout(static_cast<std::uint32_t>(timeoutMs));
+    // The READ timeout only. serial::Timeout::simpleTimeout(t) sets the write timeout to t as well, and the port has
+    // one Timeout for both - so every write inherited the last read's: after a short poll of the back-channel (the
+    // reliable link reads with 0 ms) a ~20-byte CMD_MEM_WR timed out part-written, Edio ignores a short write, and
+    // the N8's command parser was left mid-command, swallowing everything after it - frames that never landed,
+    // then a device that answered nothing (2026-10-22, measured: a 0-1 ms read before a fifoWR, every time).
+    serial::Timeout t(serial::Timeout::max(), static_cast<std::uint32_t>(timeoutMs), 0, kWriteTimeoutMs, 0);
     port_->setTimeout(t);
     return port_->read(buffer, size);
 }

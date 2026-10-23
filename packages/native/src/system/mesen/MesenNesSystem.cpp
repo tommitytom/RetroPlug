@@ -206,6 +206,15 @@ void MesenNesSystem::onActivate(double sampleRate) {
             n8Role_->setFifoProfile(depth, rate);
         }
 
+        // BlipToaster's reliable link, when the ROM advertises it and the role has not switched it off: the plugin
+        // then frames MIDI and re-sends what an NTSC DMC-DMA halt loses, exactly as N8Link does for a real cart, with
+        // the re-send held back by the modelled USB round trip so a recovered hit lands as late here as there.
+        if (config_.n8Link == 0 && NesN8FifoRole::romAdvertisesLink(rom_)) {
+            rp::N8ReliableSender::Timing t;
+            t.resendDelayNs  = static_cast<std::int64_t>(config_.n8LinkRttUs) * 1000;
+            n8Role_->enableLink(t);
+        }
+
         // Where a CMD_F_FRD_MEM DMA lands: the MCU reads the open file straight into cartridge memory
         // over the PI bus, so an N8 address has to be resolved to a Mesen buffer. Only the CHR-RAM
         // window is backed - the one nesvj verified byte-exact against a dump off a real cart. PRG
@@ -393,7 +402,9 @@ std::vector<std::uint8_t> MesenNesSystem::drainCoreBytes() {
 CoreTransportStats MesenNesSystem::coreTransportStats() {
     if (!n8Role_) return {};
     const auto s = n8Role_->fifoStats();
-    return CoreTransportStats{ s.rxDepth, s.rxCapacity, s.droppedBytes, s.wirePending, s.txDepth };
+    CoreTransportStats out{ s.rxDepth, s.rxCapacity, s.droppedBytes, s.wirePending, s.txDepth };
+    if (const auto* l = n8Role_->link()) { out.linkFrames = l->framesSent(); out.linkResent = l->framesResent(); }
+    return out;
 }
 
 namespace {

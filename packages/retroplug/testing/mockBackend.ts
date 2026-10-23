@@ -414,7 +414,7 @@ export class MockBackend implements Backend {
     this.log.push("getCoreTransportStats");
     // No real core, so no transport: all zero, which is also what a live core with an unbounded
     // queue and nothing in flight reports.
-    return { rxDepth: 0, rxCapacity: 0, droppedBytes: 0, wirePending: 0, txDepth: 0 };
+    return { rxDepth: 0, rxCapacity: 0, droppedBytes: 0, wirePending: 0, txDepth: 0, linkFrames: 0, linkResent: 0 };
   }
 
   loadLabels(_id: number, _path: string): boolean {

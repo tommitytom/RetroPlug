@@ -148,6 +148,13 @@ void Engine::syncSplitPlan() {
     splitPlan_.mirrorMonoToPair = pairPerMono;
 }
 
+SystemId Engine::cartSystemId() const {
+    if (!dspActive_ || !coreByteSink_) return 0;
+    for (const auto& s : project_.systems())
+        if (s && s->kind() == SystemKind::MesenNes) return s->id();
+    return 0;
+}
+
 // Run the kernel (if active) + fan its system-addressed sinks to the cores BEFORE onProcess
 // (delivered this block); `dInfo`/`AudioBlockInfo` are both built at the block-start `ppq_`, and
 // `ppq_` advances only after — so the kernel's walkTicks and the cores see the same block-start ppq.
@@ -164,6 +171,7 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
         pendingMidi_.clear();       // staged host MIDI consumed this block
         pendingControllerMidi_.clear();
         pendingSerialOut_.clear();  // last block's serial-out consumed by the kernel this block
+        const SystemId cart = cartSystemId();   // the system a physical N8 mirrors (0 = none)
         // serial-in sink → the addressed system's serial FIFO.
         for (const auto& sv : dsp_.serialIn_)
             if (SystemBase* t = project_.findSystem(sv.system)) t->pushSerialIn(sv.frame, sv.byte);
@@ -174,6 +182,8 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
         // it - which also keeps a dangling MidiEvent::dataExt out of SameBoy's queued copy.
         for (const auto& cm : dsp_.coreMidi_) {
             if (cm.data.empty()) continue;
+            // The cart system's MIDI goes to the physical N8 too, as the emulated FIFO gets it (cartSystemId).
+            if (cart != 0 && cm.system == cart) coreByteSink_(cm.frame, cm.data.data(), cm.data.size(), false);
             SystemBase* t = project_.findSystem(cm.system);
             if (!t) continue;
             if (cm.data.size() > ::MidiEvent::kDataSize) {
@@ -191,9 +201,10 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
         for (const auto& cb : dsp_.coreBytes_) {
             if (cb.data.empty()) continue;
             if (tracing) for (std::uint8_t b : cb.data) syncTrace_.byte(cb.frame, b);
-            // Mirror the message to any external sink (the standalone's physical-N8 link) BEFORE the core
-            // dispatch, so the real cart receives byte-identical data to the emulated FIFO. No-op unless set.
-            if (coreByteSink_) coreByteSink_(cb.frame, cb.data.data(), cb.data.size(), cb.flush);
+            // Mirror the cart system's bytes to the physical N8 (cartSystemId) BEFORE the core dispatch, so the real
+            // cart receives byte-identical data to the emulated FIFO - and only that system's: another system's
+            // generated stream (an SMS sync counter, a second NES) is not the cart's business.
+            if (cart != 0 && cb.system == cart) coreByteSink_(cb.frame, cb.data.data(), cb.data.size(), cb.flush);
             if (SystemBase* t = project_.findSystem(cb.system))
                 t->pushCoreBytes(cb.frame, cb.data.data(), cb.data.size(), cb.flush);
         }
@@ -385,6 +396,9 @@ bool Engine::stageSystemMidi(SystemId id, const std::uint8_t* bytes, std::size_t
     if (!bytes || len == 0) return false;
     SystemBase* sys = project_.findSystem(id);
     if (!sys) return false;
+    // The cart mirrors this system (cartSystemId): it gets the message too, or a setting changed from the UI would
+    // reach the emulated console and not the real one. (Drained on the audio thread, like the kernel sinks.)
+    if (id == cartSystemId()) coreByteSink_(0, bytes, len, false);
     // Frame 0: a knob has no musical position, exactly as stageControllerMidi argues for a pad press.
     //
     // pushCoreBytes, not onMidi, and the difference is load-bearing: onMidi is the MIDI-FRAMED door, and the

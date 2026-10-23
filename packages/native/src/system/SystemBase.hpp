@@ -30,6 +30,10 @@ struct CoreTransportStats {
     std::uint64_t droppedBytes = 0;  // lost because the queue was full
     std::uint64_t wirePending  = 0;  // handed over by the host, not yet carried to the core
     std::uint64_t txDepth      = 0;  // sent by the core, not yet drained by the host
+    // BlipToaster's reliable link (NES; 0 when it is off): frames sent, and frames sent AGAIN because the ROM's ack
+    // showed them lost - on an NTSC console, how many bytes a DMC-DMA halt took and the link recovered.
+    std::uint64_t linkFrames   = 0;
+    std::uint64_t linkResent   = 0;
 };
 
 // Polymorphic runtime representation of one emulator instance. Owned by the

@@ -59,6 +59,11 @@ struct MesenNesConfig {
     std::uint32_t fifo               = 0;
     std::uint32_t fifoDepth          = 0;
     std::uint32_t fifoBytesPerSecond = 0;
+    // BlipToaster's reliable link (transport/N8ReliableLink.hpp): 0 = auto - on when the ROM's SIG block advertises
+    // it (capability bit 0) - 1 = off, raw MIDI. n8LinkRttUs is the round trip a re-send waits, modelled on a
+    // physical N8 over USB so a recovered hit lands as late here as on the cart. Construct-time, like fifo.
+    std::uint32_t n8Link             = 0;
+    std::uint32_t n8LinkRttUs        = 2200;   // a real N8 Pro's fastest round trip, measured 2026-10-22
     std::string   romPath;
     // See SameBoyConfig::savSuffix. 0 => owns `<rom>.sav`; N>=2 => `<rom>-N.sav`,
     // so duplicated / repeat-loaded instances don't clobber a shared sibling.

@@ -2,12 +2,19 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace retroplug {
 
 namespace {
 using steady = std::chrono::steady_clock;
+// RP_N8LINK_TRACE=1 logs every byte the link writes and every back-channel byte it reads (stderr) - read once.
+bool traceOn() {
+    static const bool on = std::getenv("RP_N8LINK_TRACE") != nullptr;
+    return on;
+}
 std::int64_t nowNs() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(steady::now().time_since_epoch()).count();
 }
@@ -75,6 +82,8 @@ bool N8Link::connect(const std::string& port) {
 void N8Link::disconnect() {
     running_.store(false, std::memory_order_release);
     if (thread_.joinable()) thread_.join();  // the serial thread stops touching edio_ before we reset it
+    rel_.reset();
+    reliable_.store(false, std::memory_order_release);
     connected_.store(false, std::memory_order_release);
     edio_.reset();
     serialPort_.reset();
@@ -106,8 +115,95 @@ void N8Link::push(std::uint32_t sampleOffset, const std::uint8_t* data, std::siz
     }
 }
 
+void N8Link::probeLink() {
+    // F4 00 is the link's sync: a BlipToaster with the link answers it with an ack (F5 00) on the back-channel the
+    // moment its FIFO runs empty; any other ROM ignores an undefined System Common status. ~100 ms covers a busy
+    // ROM and the USB round trip with room to spare - and costs nothing after connect.
+    rel_.reset();
+    reliable_.store(false, std::memory_order_release);
+    const std::uint8_t sync[2] = { rp::N8ReliableSender::SYNC, 0 };
+    edio_->fifoWR(sync, 2);
+    const std::int64_t until = nowNs() + 100'000'000;
+    bool sawFrame = false;
+    while (running_.load(std::memory_order_acquire) && nowNs() < until) {
+        std::uint8_t buf[32];
+        const std::size_t n = serialPort_->read(buf, sizeof buf, 2);
+        for (std::size_t i = 0; i < n; ++i) {
+            if (sawFrame && buf[i] < 0x80) {
+                rp::N8ReliableSender::Timing t;
+                t.resendDelayNs   = 0;           // the real round trip already applies
+                rel_ = std::make_unique<rp::N8ReliableSender>(t);
+                reliable_.store(true, std::memory_order_release);
+                return;
+            }
+            sawFrame = (buf[i] == rp::N8ReliableSender::FRAME);
+        }
+    }
+}
+
+void N8Link::writeFramed(std::vector<std::uint8_t>& out, const std::vector<int>& seqs, std::int64_t now, bool resend) {
+    if (out.empty()) return;
+    // A frame has left once it is written - whether or not the test hook below loses some of it on the way.
+    for (int s : seqs) rel_->onSent(s, now);
+    const int p = testLossPermille_.load(std::memory_order_relaxed);
+    if (p > 0) {
+        std::vector<std::uint8_t> kept;
+        kept.reserve(out.size());
+        for (std::size_t i = 0; i < out.size(); ++i) {
+            lossRng_ = lossRng_ * 1664525u + 1013904223u;
+            if (static_cast<int>((lossRng_ >> 8) % 1000) < p) {   // a 1-3 byte burst, like a DMC-DMA halt
+                lossRng_ = lossRng_ * 1664525u + 1013904223u;
+                i += (lossRng_ >> 8) % 3;
+                continue;
+            }
+            kept.push_back(out[i]);
+        }
+        out.swap(kept);
+        if (out.empty()) return;
+    }
+    if (traceOn()) {
+        std::fprintf(stderr, "[n8link] %.3f tx", static_cast<double>(nowNs()) / 1e6);
+        for (auto b : out) std::fprintf(stderr, " %02X", b);
+        std::fprintf(stderr, "\n");
+    }
+    if (writeLog_) writeLog_(out.data(), out.size(), nowNs(), resend);
+    edio_->fifoWR(out.data(), out.size());
+    bytesForwarded_.fetch_add(out.size(), std::memory_order_relaxed);
+}
+
+void N8Link::serviceLink() {
+    const std::int64_t now = nowNs();
+    std::uint8_t buf[64];
+    const std::size_t n = serialPort_->read(buf, sizeof buf, 0);   // whatever the cart has said: never waits
+    if (n && traceOn()) {
+        std::fprintf(stderr, "[n8link] %.3f rx", static_cast<double>(now) / 1e6);
+        for (std::size_t i = 0; i < n; ++i) std::fprintf(stderr, " %02X", buf[i]);
+        std::fprintf(stderr, "\n");
+    }
+    if (n) rel_->onBackChannel(buf, n, now);
+    std::vector<std::uint8_t> out;
+    std::vector<int> seqs;
+    rel_->poll(now, [&](const std::uint8_t* d, std::size_t k, int seq) {
+        if (seq >= 0) seqs.push_back(seq);
+        out.insert(out.end(), d, d + k);
+    });
+    if (!out.empty()) writeFramed(out, seqs, now, true);
+    linkResends_.store(rel_->resends(), std::memory_order_relaxed);
+    linkOutstanding_.store(rel_->outstanding(), std::memory_order_relaxed);
+    linkRttMinNs_.store(rel_->rttMinNs(), std::memory_order_relaxed);
+}
+
 void N8Link::serialLoop() {
+    try {
+        if (linkAllowed_) probeLink();
+    } catch (const std::exception& e) {
+        setError(std::string("serial write failed (N8 unplugged?): ") + e.what());
+        connected_.store(false, std::memory_order_release);
+        running_.store(false, std::memory_order_release);
+        return;
+    }
     TimedChunk chunk;
+    bool have = false;
     while (running_.load(std::memory_order_acquire)) {
         // A posted control write (see postControl) runs between chunks, on the thread that owns the port.
         // Best-effort, like the connect-time one: a config register must not take the MIDI link down.
@@ -125,21 +221,34 @@ void N8Link::serialLoop() {
                 }
             }
         }
-        if (!ring_.tryPop(chunk)) {
-            std::this_thread::sleep_for(std::chrono::microseconds(200));  // ring empty
-            continue;
-        }
-        // Wait until this chunk's release time, re-checking running_ so disconnect() stays responsive.
-        while (running_.load(std::memory_order_acquire)) {
-            const std::int64_t now = nowNs();
-            if (now >= chunk.targetNs) break;
-            const std::int64_t remNs = chunk.targetNs - now;
-            std::this_thread::sleep_for(std::chrono::nanoseconds(std::min<std::int64_t>(remNs, 2'000'000)));
-        }
-        if (!running_.load(std::memory_order_acquire)) break;
         try {
-            edio_->fifoWR(chunk.data, chunk.len);
-            bytesForwarded_.fetch_add(chunk.len, std::memory_order_relaxed);
+            if (rel_) serviceLink();   // acks in, re-sends out - between every chunk and while waiting for one
+            if (!have) have = ring_.tryPop(chunk);
+            if (!have) {
+                std::this_thread::sleep_for(std::chrono::microseconds(200));  // ring empty
+                continue;
+            }
+            // Wait until this chunk's release time, re-checking running_ so disconnect() stays responsive.
+            const std::int64_t now = nowNs();
+            if (now < chunk.targetNs) {
+                const std::int64_t remNs = chunk.targetNs - now;
+                std::this_thread::sleep_for(std::chrono::nanoseconds(std::min<std::int64_t>(remNs, rel_ ? 200'000 : 2'000'000)));
+                continue;
+            }
+            have = false;
+            if (rel_) {
+                std::vector<std::uint8_t> out;
+                std::vector<int> seqs;
+                rel_->send(chunk.data, chunk.len, [&](const std::uint8_t* d, std::size_t k, int seq) {
+                    if (seq >= 0) seqs.push_back(seq);
+                    out.insert(out.end(), d, d + k);
+                });
+                writeFramed(out, seqs, nowNs(), false);
+            } else {
+                if (writeLog_) writeLog_(chunk.data, chunk.len, nowNs(), false);
+                edio_->fifoWR(chunk.data, chunk.len);
+                bytesForwarded_.fetch_add(chunk.len, std::memory_order_relaxed);
+            }
         } catch (const std::exception& e) {
             setError(std::string("serial write failed (N8 unplugged?): ") + e.what());
             connected_.store(false, std::memory_order_release);

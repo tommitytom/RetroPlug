@@ -11,6 +11,9 @@
 //   retroplug-n8-hwtest read    <sd-path> <local-dest> [port]  # CMD_F_FRD: read an SD file over USB
 //   retroplug-n8-hwtest write   <local-src> <sd-path>  [port]  # CMD_F_FWR: write a local file to the SD card
 //   retroplug-n8-hwtest fiford  <count> [timeout-ms]   [port]  # read the cart's USB back-channel (CMD_USB_WR)
+//   retroplug-n8-hwtest link    <steps> [loss-permille] [port] # BlipToaster's reliable link via N8Link (the plugin's path)
+//   retroplug-n8-hwtest linkdbg [port]                        # the link step by hand: sync, frames, acks, APU mirror
+//   retroplug-n8-hwtest timing  <idle|busy> [steps] [--raw]    # latency / jitter / load on the real console (n8-timing.cpp)
 //   retroplug-n8-hwtest vramdump <out.bin> [port]              # menu '*v': dump VRAM+palette+CHR (screenshot)
 //   retroplug-n8-hwtest sniff    [port]                        # memRD ADDR_SSR: a running game's live APU/PPU/OAM
 //   retroplug-n8-hwtest memwr    <addr-hex> <file> [port]      # block memWR + verify (live-patch CHR/PRG)
@@ -32,6 +35,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 #include <memory>
 #include <string>
 #include <thread>
@@ -39,6 +43,7 @@
 
 #include "host/n8/Edio.hpp"
 #include "host/n8/N8Host.hpp"
+#include "host/n8/N8Link.hpp"
 #include "host/n8/N8Menu.hpp"
 #include "host/n8/WjwwoodSerialPort.hpp"
 
@@ -61,13 +66,14 @@ std::vector<std::uint8_t> slurpLocal(const std::string& path) {
 
 }  // namespace
 
+int runTiming(int argc, char** argv, const std::string& defaultPort);   // n8-timing.cpp
 int main(int argc, char** argv) {
     if (argc < 3) {
         // `sniff`/`info`/`fstest` need no path/addr (they auto-detect the port), so allow a bare argc==2.
         const std::string a1 = argc >= 2 ? argv[1] : "";
-        if (!(argc == 2 && (a1 == "sniff" || a1 == "info" || a1 == "fstest"))) {
+        if (!(argc == 2 && (a1 == "sniff" || a1 == "info" || a1 == "fstest" || a1 == "linkdbg"))) {
             std::fprintf(stderr,
-                         "usage: %s <dump|load|restore|peek|poke|read|write|vramdump|sniff|memwr|fifowr|fiford|info|fstest> <path|addr|count> [len|byte|dest] [port]\n",
+                         "usage: %s <dump|load|restore|peek|poke|read|write|vramdump|sniff|memwr|fifowr|fiford|link|linkdbg|timing|info|fstest> <path|addr|count> [len|byte|dest] [port]\n",
                          argv[0]);
             return 2;
         }
@@ -148,6 +154,120 @@ int main(int argc, char** argv) {
     //
     // Deliberately NO connect() handshake: it begins with flushInput, which would discard bytes already
     // queued by the ROM. The cost is that a wrong port just times out instead of saying "no device".
+    // BlipToaster's MIDI latency / jitter / latency-under-load on the real console, timed against a timestamped
+    // capture of its audio (n8-timing.cpp).
+    if (op == "timing") return runTiming(argc, argv, findN8Port());
+
+    // Diagnostic for the reliable link on hardware: one port, every step by hand - sync, read the back-channel,
+    // frames, the APU mirror after each - to see where a frame stops landing. It polls the back-channel the way
+    // N8Link does (0 ms reads), which is what found the read timeout leaking into writes (WjwwoodSerialPort::read):
+    // a healthy run acks F5 50, F5 51, F5 52 and every memRD answers.
+    if (op == "linkdbg") {
+        const std::string pport = argc > 2 ? argv[2] : findN8Port();
+        try {
+            WjwwoodSerialPort sp(pport);
+            Edio              edio(sp);
+            edio.connect();
+            auto apu = [&](const char* tag) {
+                std::vector<std::uint8_t> ssr(0x200);
+                edio.memRD(Edio::ADDR_SSR, ssr.data(), ssr.size());
+                std::printf("%-28s $4000=%02X $400C=%02X\n", tag, ssr[0x080], ssr[0x08C]);
+            };
+            auto drain = [&](const char* tag, int ms) {
+                std::uint8_t b[64];
+                std::printf("%-28s rx:", tag);
+                const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+                while (std::chrono::steady_clock::now() < until) {
+                    const std::size_t n = sp.read(b, sizeof b, 0);   // N8Link's own polling: 0 ms reads
+                    std::this_thread::sleep_for(std::chrono::microseconds(200));
+                    for (std::size_t i = 0; i < n; ++i) std::printf(" %02X", b[i]);
+                }
+                std::printf("\n");
+            };
+            auto frame = [](std::uint8_t seq, std::initializer_list<std::uint8_t> msg) {
+                std::vector<std::uint8_t> f = { 0xF5, seq };
+                unsigned sum = seq;
+                for (auto m : msg) { f.push_back(m); sum += m; }
+                f.push_back(static_cast<std::uint8_t>(sum & 0x7F));
+                return f;
+            };
+            apu("start");
+            const std::uint8_t sync[2] = { 0xF4, 0x50 };
+            edio.fifoWR(sync, 2);
+            drain("after sync", 100);
+            auto a = frame(0x50, { 0x90, 0x48, 0x78 });   // pulse1 C5, vol 15
+            edio.fifoWR(a.data(), a.size());
+            drain("after frame 50 (note-on)", 100);
+            apu("after frame 50");
+            auto b = frame(0x51, { 0x80, 0x48, 0x00 });   // pulse1 off
+            edio.fifoWR(b.data(), b.size());
+            apu("after frame 51, no read");
+            drain("then read", 100);
+            apu("end");
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "linkdbg failed: %s\n", e.what());
+            return 1;
+        }
+    }
+
+    // The reliable link on real hardware, through N8Link - the code the plugin streams to a cart with. Plays
+    // <steps> 16th-note hats (ch4 noise) at 170 bpm, each released half a step later, dropping
+    // <loss-permille> of the framed bytes on the way out in 1-3 byte bursts (what an NTSC DMC-DMA halt does at the
+    // cart; a PAL console loses nothing, so the recovery has to be provoked). Reports whether the ROM answered the
+    // probe, the re-sends, the fastest round trip, and whether every frame was acknowledged. Record the audio
+    // alongside to count the hats that actually sounded (retroplug-cli/repro/capture-onsets.ts in BlipToaster).
+    if (op == "link") {
+        if (argc < 3) {
+            std::fprintf(stderr, "usage: %s link <steps> [loss-permille] [port]\n", argv[0]);
+            return 2;
+        }
+        const int         steps = static_cast<int>(std::strtol(argv[2], nullptr, 0));
+        const int         loss  = argc > 3 ? static_cast<int>(std::strtol(argv[3], nullptr, 0)) : 0;
+        const std::string lport = argc > 4 ? argv[4] : findN8Port();
+        if (lport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        retroplug::N8Link link([](const std::string& p) -> std::unique_ptr<ISerialPort> {
+            return std::make_unique<WjwwoodSerialPort>(p);
+        });
+        if (!link.connect(lport)) {
+            std::fprintf(stderr, "link: connect failed: %s\n", link.lastError().c_str());
+            return 1;
+        }
+        link.setLookaheadMs(0);
+        std::this_thread::sleep_for(std::chrono::milliseconds(250));   // the probe (~100 ms)
+        std::printf("link: %s\n", link.reliable() ? "reliable (the ROM answered the probe)" : "raw (no answer)");
+        link.setTestLossPermille(loss);
+        const auto stepDur = std::chrono::microseconds(static_cast<long>(60e6 / 170 / 4));
+        const auto t0      = std::chrono::steady_clock::now();
+        const std::uint8_t on[]  = {0x93, 60, 120};
+        const std::uint8_t off[] = {0x83, 60, 0};
+        for (int i = 0; i < steps; ++i) {   // a half-step hat, so a capture can count the hits
+            std::this_thread::sleep_until(t0 + stepDur * i);
+            link.push(0, on, sizeof on, 48000.0);
+            std::this_thread::sleep_until(t0 + stepDur * i + stepDur / 2);
+            link.push(0, off, sizeof off, 48000.0);
+        }
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+        while (link.linkOutstanding() > 0 && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        const unsigned long long outstanding = link.linkOutstanding();
+        std::printf("link: %d hats, loss %d/1000, re-sends %llu, outstanding %llu, fastest round trip %.2f ms, %llu bytes\n",
+                    steps, loss, static_cast<unsigned long long>(link.linkResends()), outstanding,
+                    static_cast<double>(link.linkRttMinNs()) / 1e6,
+                    static_cast<unsigned long long>(link.bytesForwarded()));
+        const std::string err = link.lastError();
+        link.disconnect();
+        if (!err.empty()) {
+            std::fprintf(stderr, "link: %s\n", err.c_str());
+            return 1;
+        }
+        return outstanding == 0 ? 0 : 1;
+    }
+
     if (op == "fiford") {
         if (argc < 3) {
             std::fprintf(stderr, "usage: %s fiford <count> [timeout-ms] [port]\n", argv[0]);

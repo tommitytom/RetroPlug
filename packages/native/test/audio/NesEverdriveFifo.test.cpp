@@ -1063,3 +1063,42 @@ TEST_CASE("a host byte already delivered is not overtaken by a later command rep
         CHECK(readBytes(fifo, 2) == std::vector<std::uint8_t>{0xAA});
     }
 }
+
+TEST_CASE("an empty fifo_a reads back the slot its read pointer rests on, not $FF", "[audio][nes][fifo]") {
+    // fpga/base_sv/base_io.sv `module fifo`: a 2048-byte block-RAM ring whose `dato` is the RAM at
+    // oe_addr, with the pop gated on !fifo_empty. So a $40F0 read of an EMPTY FIFO consumes nothing and
+    // answers with the byte 2048 deliveries back (0 until the ring wraps). A ROM gets there without
+    // skipping its $40F1 poll: an NTSC DMC DMA halting on `lda $40F0` repeats the read, and the repeat
+    // pops the byte. The constant $FF this used to answer is MIDI System Reset, so every such collision
+    // panicked BlipToaster in the emulator while the cart read a stale byte and played on.
+    rp::NesEverdriveFifo fifo;
+
+    SECTION("before anything has been delivered: the RAM's power-up zero") {
+        CHECK(fifo.ReadRam(0x40F1) == 0x80);
+        CHECK(fifo.ReadRam(0x40F0) == 0x00);
+        CHECK(fifo.PeekRam(0x40F0) == 0x00);
+    }
+
+    SECTION("after the ring has wrapped: the byte delivered 2048 bytes before the next one") {
+        const std::size_t total = rp::FIFO_HW_DEPTH + 5;
+        for (std::size_t i = 0; i < total; ++i) {
+            fifo.pushByte(patternByte(i));
+            REQUIRE(readBytes(fifo, 1) == std::vector<std::uint8_t>{patternByte(i)});
+        }
+        CHECK(fifo.ReadRam(0x40F1) == 0x80);
+        const std::uint8_t stale = patternByte(total - rp::FIFO_HW_DEPTH);
+        CHECK(stale != 0xFF);
+        CHECK(fifo.ReadRam(0x40F0) == stale);
+        CHECK(fifo.ReadRam(0x40F0) == stale);   // still nothing consumed
+        CHECK(fifo.PeekRam(0x40F0) == stale);
+    }
+
+    SECTION("an empty read costs the stream nothing: the next delivery reads back intact") {
+        fifo.pushByte(0x90);
+        CHECK(readBytes(fifo, 1) == std::vector<std::uint8_t>{0x90});
+        (void)fifo.ReadRam(0x40F0);   // the repeated read a DMC DMA makes
+        fifo.pushByte(0x3C);
+        fifo.pushByte(0x64);
+        CHECK(readBytes(fifo, 3) == std::vector<std::uint8_t>{0x3C, 0x64});
+    }
+}
