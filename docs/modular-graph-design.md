@@ -135,8 +135,11 @@ rejects a ROM wired into a sampler. Packages register their own resource types (
 **Lifetime rule: the audio thread can pass handles around but can never create or free a resource.**
 
 - Every resource is created on the control thread (`putResource`).
-- Every plan **pins** the resources its nodes' settings reference; a pin drops only when that plan comes
-  back on the release ring.
+- Pins come from two places. A document binds a resource straight to a resource input
+  (`"resources": {"sample": "res:12"}`), and the plan **pins** every such binding; the pin drops only when
+  that plan comes back on the release ring. A node that references a resource from its *settings* (a
+  system node's ROM) acquires it through the host while preparing those settings, and that settings object
+  holds the pin until it is released.
 - A handle emitted at runtime must therefore point at something a node in the plan already holds (a
   sample bank picking one of its 16 slots; a recorder writing into the buffer its settings asked for),
   so the audio thread never holds the last reference.
@@ -145,8 +148,10 @@ rejects a ROM wired into a sampler. Packages register their own resource types (
 
 - **Immutable resources** (samples, strings, ROM images) are shared by any number of readers in any order.
 - **A mutable resource** (a record buffer, a shared delay line, a system's live RAM) has exactly **one
-  writer port**. Readers are wired from it, so the planner orders them after the writer within the
-  block, as it does for audio. A cycle needs a feedback wire (§3.3).
+  writer port**: a resource input declared with write access (`"access": "write"`). Readers are wired
+  from the writer's resource output, so the planner orders them after the writer within the block, as it
+  does for audio; binding a reader to the same resource directly is rejected, because nothing would order
+  it. A cycle needs a feedback wire (§3.3).
 
 **Strings** on a wire are handles to immutable string resources, interned on the control thread (Pd's
 symbols). Settings remain the place for values whose change needs a rebuild.
@@ -165,7 +170,8 @@ and run on the control plane. They have no ports. An extension can contribute:
 
 - **nodes it inserts and wires** (the LSDj extension adds `lsdj.sync` feeding the SameBoy's `serialIn` input);
 - song and asset **catalogs**;
-- **actions** and **menu** entries;
+- **actions** and **menu** entries (these two arrive with the package split, once the menu's item model
+  is extracted from `menuDefs.ts`; §7.7);
 - **views** (§2.7);
 - its own **persisted settings**.
 
@@ -237,7 +243,9 @@ A channel-count or layout mismatch is an error. The fixes are explicit nodes:
 
 - `join` concatenates inputs into one port and declares the output layout as a setting (`stereo`, `discrete(2)`);
 - `split` breaks any port into monos;
-- `downmix` sums channels, layout-aware (ITU coefficients for 5.1 -> stereo, equal sum for `discrete`);
+- `downmix` sums channels from a layout its settings name explicitly (`{"from": "5.1", "to": "stereo"}`,
+  so it never infers what a source means): ITU-style coefficients for 5.1 -> stereo, an equal sum (no
+  scaling, L + R) for anything -> mono, which is exactly today's 1 Ch / Inst bus;
 - `relabel` asserts a layout (`discrete(6)` -> `5.1`).
 
 Duplication needs no node: fan one mono output into both inputs of a `join`.
@@ -279,7 +287,8 @@ Three mechanisms, each for a different kind of dynamism:
 
 1. **Every output exists; only connected ones are computed** (system nodes). A Game Boy always exposes
    `mix` and `ch1`-`ch4`; a NES always exposes `mix`, `pins.*` and `channels.*`. Unconnected outputs get
-   a null buffer. When a plan swap changes which outputs are connected, the node gets an alloc-free
+   a shared scratch buffer, never null, so a node that ignores the mask cannot crash; the connected mask
+   is what lets it skip the work. When a plan swap changes which outputs are connected, the node gets an alloc-free
    `ports_changed` call on the audio thread and arms or disarms its taps (today's `syncSplitPlan` /
    `setChannelExportMode`, owned by the node instead of the engine). Connecting the pin outputs *is*
    choosing pins; there is no output-mode setting. A core that can run only one tap at a time declares
@@ -408,7 +417,7 @@ C++ and TS nodes produce the same shape:
   "category": "dsp/utility",
   "requires": { "heap": false, "threads": false },
   "ports": [
-    { "id": "in",  "dir": "in",  "kind": "audio", "channels": "any" },
+    { "id": "in",  "dir": "in",  "kind": "audio", "channels": { "any": true } },
     { "id": "out", "dir": "out", "kind": "audio", "channels": { "match": "in" } }
   ],
   "params": [
@@ -422,8 +431,12 @@ An enum param is `{ "id": "mode", "type": "enum", "values": ["off", "midi-sync",
 "midi-sync" }`; a resource port is `{ "id": "sample", "dir": "in", "kind": "resource", "resourceType":
 "audio-buffer" }`; a fixed audio port is `"channels": { "count": 2, "layout": "stereo" }`.
 
-The descriptor is emitted with canonical key order so it is **byte-stable**: across compilers, and between
-a C++ node and a TS node of the same declared shape (§10).
+The descriptor is emitted in one canonical spelling (keys sorted, no whitespace, numbers and strings exactly
+as JSON.stringify writes them), so its ports, params and metadata are **byte-stable**: across compilers,
+and between a C++ node and a TS node of the same declared shape (§10). The one exception is a node's
+`settings` JSON Schema: reflect-cpp and zod generate structurally different schemas for the same
+constraint (reflect-cpp writes min / max as an `allOf` pair), so settings schemas are generator-specific.
+A node with no settings writes `{"type":"object"}` in both languages, which keeps that case identical.
 
 ### 4.7 C++ nodes
 
@@ -439,7 +452,9 @@ RP_NODE(Gain);   // emits the rp_node_type + vtable
 ```
 
 - **Field names become port and param ids**; metadata comes from the wrapper types (non-type template
-  parameters). C++ enum params take their labels from the enum names via reflect-cpp's enum reflection.
+  parameters). C++ enum params take their labels from the enumerator names via reflect-cpp's enum
+  reflection, converted to kebab-case (`MidiSync` -> `"midi-sync"`), so C++ and TS labels follow one
+  convention. The member names `inputs`, `outputs` and `params` are reserved for the three port structs.
 - **Settings are plain named reflect-cpp structs**, so their JSON Schema is `rfl::json::to_schema`, with
   `rfl::Validator` / `rfl::Description` / `rfl::DefaultVal` for ranges, descriptions and defaults. Named,
   because reflect-cpp derives `$defs` keys from compiler type names, which differ between gcc and clang
@@ -583,6 +598,13 @@ those are. Five rules keep it that way:
    bytes).
 5. **Script-node state lives with the instance** in the script runtime, so `lsdj.sync`'s clock phase
    survives an edit exactly as a core's state does.
+6. **Streams that hold a value belong to the instance too.** A param's stream and every control output
+   stream (and every resource output slot) are owned by the instance, not the plan, so a constant node's
+   output keeps its value through a swap instead of reading 0 until its knob next moves. Only data with no
+   meaning beyond one block (audio buffers, events and bytes queues) is plan-owned.
+7. **The control thread never plans while a swap is in flight.** `setGraph` first waits, at most about
+   one block, for the audio thread to adopt the previous plan, so planning never reads node state (a
+   node's current settings) that the audio thread is in the middle of committing.
 
 Audio *routing* can still click when a mode change moves a stream to different outputs mid-block, as it
 does today; a short fade at swaps is a possible later refinement. The cores never notice either way.
@@ -609,7 +631,8 @@ No heap, no exceptions, the same code on every target. Per block:
 1. Drain the command ring.
 2. Walk the steps. A plain node is one `process` call with pointers already bound. A **coupled group**
    runs prepare on every member, then round-robin `step` until every member reaches the block target,
-   then finish (today's `runUnit` in `BlockRunner`, generalised over `rp.step/1`).
+   then finish (today's `runUnit` in `BlockRunner`, generalised over `rp.step/1`). `rp.step/1` has no
+   status return, so in v1 a coupled-group member cannot fault; only a plain `process` call can.
 3. Reset event, bytes and control queues.
 4. Publish snapshots through the `SnapshotRegistry` (via `rp.snapshot/1`).
 
@@ -620,12 +643,18 @@ parallel (enkiTS) can come later without changing the plan format.
 
 ### 5.6 Library targets
 
+All of it lives in `packages/native/src/graph/`:
+
 | Target | Contents | Depends on |
 |---|---|---|
-| `rp_node.h` | the C ABI | nothing |
-| `retroplug-graph-exec` | the executor | nothing (freestanding C++20; builds for the RP2350) |
-| `retroplug-graph` | planner, registry, plan swap glue | exec, reflect-cpp |
-| `rp/node.hpp` | the C++ authoring layer (header-only) | reflect-cpp |
+| `graph/rp_node.h` | the C ABI | nothing |
+| `retroplug-graph-exec` | the executor (`Executor`, `Plan.hpp`, `Queue.hpp`) | nothing (freestanding C++20; builds for the RP2350) |
+| `retroplug-graph` | canonical JSON, descriptors, the graph document, registry, resources, planner, `GraphHost`, the host nodes, and the `rp.core` node package | exec, reflect-cpp |
+| `graph/node.hpp` | the C++ authoring layer (header-only, on `retroplug-graph`'s include path) | reflect-cpp |
+
+The `rp.core` package (`+`, `merge`, `join`, `split`, `downmix`, `relabel`, `delay`, `constant`,
+`buffer-player`, `buffer-recorder`) sits in `retroplug-graph` for now and moves into the `dsp` package
+when the package split happens.
 
 None of these link a core, txiki, efsw or LVGL. They are the seed of the system-free "retroplug core".
 The TS half (`defineNode`, `defineExtension`, descriptors, `buildGraph`) lives in
@@ -833,7 +862,9 @@ into wiring.
 This project defines the **full** extension and view contract but migrates only the graph-facing parts:
 matchers and node contributions. Menus, song and asset catalogs, the HD player and the overlays keep
 their current wiring and move onto extensions and views in the package-split project. The UI looks and
-behaves exactly as today.
+behaves exactly as today. The extension contract's `menu` and `actions` members are the one part not
+typed in Phase A: they are defined in the package-split project, against the menu item model extracted
+from `menuDefs.ts`, rather than invented now and reworked then.
 
 The CLI's `render` builds its graph with the same `buildGraph`, from a one-system project, and runs the
 offline executor. The SDK gains `session.graph` (`set`, `describe`, `layouts`) for sessions that want to
@@ -910,7 +941,8 @@ All headless, all backed by an exit-zero run.
   buffer reuse, plan swaps under ThreadSanitizer (`build-tsan/`), and an executor run with `malloc`
   interposed to fail, which proves the no-heap claim.
 - **Descriptor conformance**: a C++ node and a TS node with the same declared shape produce
-  byte-identical descriptor JSON; gcc and clang produce identical descriptors.
+  byte-identical descriptor JSON (settings schemas excepted, §4.6), checked against one shared golden
+  file; the canonical writers themselves are held to a shared table of cases that JavaScript generated.
 - **`buildGraph` golden tests** in `pnpm test`: one per audio routing mode, MIDI routing mode, and cart,
   plus an id-stability check: cycling the routing mode and adding / removing other systems leaves every
   surviving system's node ids unchanged.
