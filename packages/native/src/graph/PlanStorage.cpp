@@ -20,10 +20,11 @@ QueueStore::QueueStore(std::uint32_t itemCapacity, std::uint32_t byteCapacity)
 }
 
 Instance::~Instance() {
-    if (!node) return;
-    if (active) node->vt->deactivate(node);
-    entry->type->destroy(node);
-    ::operator delete(memory, std::align_val_t(align));
+    if (node) {
+        if (active) node->vt->deactivate(node);
+        entry->type->destroy(node);
+    }
+    if (memory) ::operator delete(memory, std::align_val_t(align));  // also when create failed
 }
 
 PlanStorage::~PlanStorage() {

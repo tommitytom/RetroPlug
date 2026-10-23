@@ -70,6 +70,20 @@ TEST_CASE("a coupled group runs its members in lockstep", "[graph][exec]") {
     CHECK(rig.node<Linked>("a").peerCount == 1);
 }
 
+TEST_CASE("coupled peers are updated when the group changes", "[graph][exec]") {
+    GraphRig rig;
+    const std::string three = R"({"nodes":[{"id":"a","type":"rp.test.linked"},{"id":"b","type":"rp.test.linked"},
+                                            {"id":"c","type":"rp.test.linked"}],
+                                  "wires":[{"from":"a.link","to":"b.link"},{"from":"b.link","to":"c.link"}]})";
+    REQUIRE(rig.set(three).ok);
+    rig.run();
+    CHECK(rig.node<Linked>("a").peerCount == 2);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.linked"},{"id":"b","type":"rp.test.linked"}],
+                         "wires":[{"from":"a.link","to":"b.link"}]})").ok);
+    rig.run();
+    CHECK(rig.node<Linked>("a").peerCount == 1);
+}
+
 TEST_CASE("a faulting node is bypassed and counted, the rest keeps running", "[graph][exec]") {
     GraphRig rig;
     REQUIRE(rig.set(R"({"nodes":[{"id":"f","type":"rp.test.faulty","settings":{"failAt":2}},
@@ -102,6 +116,22 @@ TEST_CASE("a faulted node stays bypassed through a plan swap", "[graph][exec][sw
     CHECK(rig.outs[0][0] == 0.0f);
     CHECK_FALSE(rig.host->isFaulted("extra"));
     CHECK_FALSE(rig.host->isFaulted("ghost"));
+}
+
+TEST_CASE("removing and re-adding a faulted node builds it fresh", "[graph][exec][swap]") {
+    GraphRig rig;
+    const std::string with = R"({"nodes":[{"id":"f","type":"rp.test.faulty","settings":{"failAt":2}},
+                                           {"id":"out","type":"rp.host.audio-out","settings":{"buses":[1,1]}}],
+                                 "wires":[{"from":"f.out","to":"out.out.1"}]})";
+    REQUIRE(rig.set(with).ok);
+    rig.run(64, 2);
+    REQUIRE(rig.host->isFaulted("f"));
+    REQUIRE(rig.set(R"({"nodes":[{"id":"out","type":"rp.host.audio-out","settings":{"buses":[1,1]}}],"wires":[]})").ok);
+    REQUIRE(rig.set(with).ok);
+    CHECK_FALSE(rig.host->isFaulted("f"));
+    rig.run();
+    CHECK(rig.outs[0][0] == 1.0f);
+    CHECK(rig.host->faultCount() == 1);  // the count is cumulative
 }
 
 TEST_CASE("a live param rides the next block; document params apply on adoption", "[graph][exec]") {

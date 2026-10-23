@@ -83,8 +83,9 @@ private:
 
     bool structure() {
         for (const auto& n : in_.doc->nodes) {
-            if (n.id.empty() || n.id.find('.') != std::string::npos)
-                error(n.id, "", "node-id", "node id \"" + n.id + "\" must be non-empty and contain no '.'");
+            if (!isPlainId(n.id) || n.id.find('.') != std::string::npos)
+                error(n.id, "", "node-id",
+                      "node id " + jsonString(n.id) + " must be non-empty, with no '.', whitespace or control characters");
             else if (index_.count(n.id))
                 error(n.id, "", "node-id", "node id \"" + n.id + "\" is used twice");
             const auto* entry = in_.registry->find(n.type);
@@ -116,11 +117,20 @@ private:
             error(p.doc->id, "", "settings-invalid", err.message);
             return nullptr;
         }
+        if (req.align & (req.align - 1)) {  // aligned operator new requires a power of two
+            error(p.doc->id, "", "node-memory", "node asked for an alignment of " + std::to_string(req.align) +
+                                                    ", which is not a power of two");
+            return nullptr;
+        }
         auto inst = std::make_shared<Instance>();
         inst->id = p.doc->id;
         inst->entry = p.entry;
         inst->align = std::max(req.align, alignof(std::max_align_t));
-        inst->memory = ::operator new(std::max<std::size_t>(req.size, 1), std::align_val_t(inst->align));
+        inst->memory = ::operator new(std::max<std::size_t>(req.size, 1), std::align_val_t(inst->align), std::nothrow);
+        if (!inst->memory) {
+            error(p.doc->id, "", "node-memory", "could not allocate the " + std::to_string(req.size) + " bytes the node asked for");
+            return nullptr;
+        }
         inst->node = p.entry->type->create(in_.host, inst->memory, &s, &err);
         if (!inst->node) {
             error(p.doc->id, "", "settings-invalid", err.message);
@@ -394,29 +404,28 @@ private:
     }
 
     bool reportCycle(const std::vector<std::set<int>>& next, const std::vector<bool>& done) {
-        // Walk forward from any unsorted group until one repeats: that walk is a loop.
-        int start = 0;
-        while (done[start]) ++start;
+        // Walk BACK from any unsorted group until one repeats. Every unsorted group still has an unsorted
+        // predecessor (that is why Kahn's algorithm left it), so the walk cannot dead-end; walking forward
+        // could, from a group that is merely downstream of the loop.
+        std::vector<std::vector<int>> prev(next.size());
+        for (std::size_t a = 0; a < next.size(); ++a)
+            if (!done[a])
+                for (int b : next[a])
+                    if (!done[b]) prev[b].push_back(static_cast<int>(a));
+        int at = 0;
+        while (done[at]) ++at;
         std::vector<int> path;
         std::vector<int> seenAt(next.size(), kNone);
-        int at = start;
         while (seenAt[at] == kNone) {
             seenAt[at] = static_cast<int>(path.size());
             path.push_back(at);
-            int follow = kNone;
-            for (int b : next[at])
-                if (!done[b]) {
-                    follow = b;
-                    break;
-                }
-            at = follow;
+            at = prev[at].front();
         }
-        std::string loop;
-        for (std::size_t i = static_cast<std::size_t>(seenAt[at]); i < path.size(); ++i)
-            loop += nodes_[groupMembers_[path[i]][0]].doc->id + " -> ";
-        loop += nodes_[groupMembers_[at][0]].doc->id;
-        return error(nodes_[groupMembers_[at][0]].doc->id, "", "cycle",
-                     "the graph loops (" + loop + "); mark one wire in the loop feedback");
+        // path[seenAt[at]..] is the loop walked backwards; name it forwards, from `at` back to itself.
+        auto name = [&](int group) { return nodes_[groupMembers_[group][0]].doc->id; };
+        std::string loop = name(at);
+        for (std::size_t i = path.size(); i-- > static_cast<std::size_t>(seenAt[at]);) loop += " -> " + name(path[i]);
+        return error(name(at), "", "cycle", "the graph loops (" + loop + "); mark one wire in the loop feedback");
     }
 
     // ---- channel resolution ---------------------------------------------------------------------------------
