@@ -4526,6 +4526,8 @@ struct PlanInput {
     std::uint32_t                                                maxFrames = 1024;
     Target                                                       target = Target::Desktop;
     std::atomic<std::uint32_t>*                                  faults = nullptr;
+    // True when no audio thread is running the current plan, so the planner may read buffers it uses.
+    bool                                                         quiescent = true;
 };
 
 struct PlanOutcome {
@@ -5138,8 +5140,9 @@ private:
 
     // The wire's front buffer. An existing one is reused when it still fits (same kind and channels, and
     // for audio at least maxFrames long), which is what carries the block in flight through a swap. An
-    // audio front that has grown too short (the host's block size went up) is replaced by a longer one
-    // with the in-flight frames copied across, never trusted past its end.
+    // audio front that has grown too short (the host's block size went up) is replaced by a longer one,
+    // never trusted past its end. The in-flight frames are copied across only while quiescent: the audio
+    // thread writes the old front every block, so with it running the new front starts silent instead.
     std::shared_ptr<FeedbackFront> front(const DataWire& w, std::uint32_t channelCount) {
         const auto it = in_.feedback->find(w.key);
         const FeedbackFront* old = it != in_.feedback->end() ? it->second.get() : nullptr;
@@ -5152,7 +5155,7 @@ private:
             f->frames = in_.maxFrames;
             f->samples.assign(static_cast<std::size_t>(channelCount) * in_.maxFrames, 0.0f);
             for (std::uint32_t c = 0; c < channelCount; ++c) f->pointers.push_back(f->samples.data() + std::size_t(c) * in_.maxFrames);
-            if (sameShape)
+            if (sameShape && in_.quiescent)
                 for (std::uint32_t c = 0; c < channelCount; ++c)
                     std::copy_n(old->pointers[c], std::min(old->frames, in_.maxFrames), f->pointers[c]);
         } else if (w.kind == PortKind::Control) {
@@ -5510,7 +5513,9 @@ public:
     // Destroy plans the audio thread has handed back. Returns how many.
     std::size_t reclaim();
     // Quiescent only: re-activate every instance at a new rate / block size, preserving state, then
-    // re-plan the current document so every buffer is sized for the new maximum.
+    // re-plan the current document so every buffer is sized for the new maximum. False if a node fails
+    // to activate or the re-plan is rejected: the previous plan stays in place (and refuses blocks longer
+    // than it was built for), so the caller must re-plan or rebuild before relying on the new size.
     bool reactivate(double sampleRate, std::uint32_t maxFrames);
     rp_node*      node(std::string_view id) const;
     std::uint32_t faultCount() const { return faults_.load(std::memory_order_relaxed); }
@@ -5672,6 +5677,7 @@ SetGraphResult GraphHost::setGraph(const GraphDocument& document) {
     in.maxFrames = config_.maxFrames;
     in.target = config_.target;
     in.faults = &faults_;
+    in.quiescent = !audioThreadOwns();
     PlanOutcome outcome = plan(in);
     result.layouts = std::move(outcome.layouts);
     if (!outcome.errors.empty()) {
