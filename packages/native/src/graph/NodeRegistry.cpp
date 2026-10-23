@@ -1,17 +1,35 @@
 #include "graph/NodeRegistry.hpp"
 
-#include <rfl/json.hpp>
+#include <vector>
+
+#include <rfl/from_generic.hpp>
+
+#include "graph/CanonicalJson.hpp"
 
 namespace rp::graph {
 
 namespace {
 
-std::string packageId(const rp_package* p) {
-    struct Manifest {
-        std::string id;
-    };
-    auto m = rfl::json::read<Manifest, rfl::DefaultIfMissing>(p->manifest_json ? p->manifest_json : "{}");
-    return m ? m->id : std::string();
+struct PackageManifest {
+    std::string id;
+};
+
+bool hasWhitespace(std::string_view s) {
+    for (const char c : s)
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') return true;
+    return false;
+}
+
+std::string q(std::string_view s) { return "\"" + std::string(s) + "\""; }
+
+// The manifest's id, or why it has none. Through parseJson, so a repeated key reads as JSON.parse reads it.
+rfl::Result<std::string> packageId(const rp_package* p) {
+    if (!p->manifest_json) return rfl::Unexpected<rfl::Error>(rfl::Error("package has no manifest"));
+    auto m = parseJson(p->manifest_json).and_then([](const rfl::Generic& g) { return rfl::from_generic<PackageManifest>(g); });
+    if (!m) return rfl::Unexpected<rfl::Error>(rfl::Error(std::string("package manifest: ") + m.error().what()));
+    if (m->id.empty() || hasWhitespace(m->id))
+        return rfl::Unexpected<rfl::Error>(rfl::Error("package manifest id " + q(m->id) + " must be non-empty, with no whitespace"));
+    return m->id;
 }
 
 }  // namespace
@@ -22,32 +40,51 @@ bool NodeRegistry::addPackage(const rp_package* package, std::string* error) {
         return false;
     };
     if (!package) return fail("null package");
+    // First, before reading anything else: under another ABI the later fields may not be where we look.
     if (package->abi_version != RP_ABI_VERSION)
         return fail("package ABI version " + std::to_string(package->abi_version) + ", host is " +
                     std::to_string(RP_ABI_VERSION));
-    const std::string pkg = packageId(package);
+    const auto id = packageId(package);
+    if (!id) return fail(id.error().what());
+    const std::string& pkg = *id;
+    if (packages_.count(pkg)) return fail("package " + q(pkg) + " is already registered");
+    if (package->node_type_count > 0 && !package->node_types)
+        return fail("package " + q(pkg) + " lists " + std::to_string(package->node_type_count) + " node types but no array");
 
     std::vector<Entry> added;
     for (std::uint32_t i = 0; i < package->node_type_count; ++i) {
         const rp_node_type* type = package->node_types[i];
-        if (!type || !type->id || !type->descriptor) return fail("package \"" + pkg + "\": malformed node type");
-        auto descriptor = parseDescriptor(type->descriptor());
-        if (!descriptor) return fail("node type \"" + std::string(type->id) + "\": " + descriptor.error().what());
-        if (descriptor->id != type->id)
-            return fail("node type \"" + std::string(type->id) + "\" describes itself as \"" + descriptor->id + "\"");
-        if (find(type->id)) return fail("node type \"" + std::string(type->id) + "\" is already registered");
+        const std::string at = "package " + q(pkg) + " node type #" + std::to_string(i);
+        if (!type) return fail(at + " is null");
+        if (!type->id || !*type->id) return fail(at + " has no id");
+        const std::string where = "node type " + q(type->id);
+        for (const auto& [fn, name] : {std::pair{type->descriptor != nullptr, "descriptor"},
+                                       std::pair{type->query_memory != nullptr, "query_memory"},
+                                       std::pair{type->create != nullptr, "create"},
+                                       std::pair{type->destroy != nullptr, "destroy"}})
+            if (!fn) return fail(where + ": " + name + " is null");
+        const char* json = type->descriptor();
+        if (!json) return fail(where + ": descriptor() returned null");
+        if (!*json) return fail(where + " produced no descriptor (building its default layout or settings schema failed)");
+        auto descriptor = parseDescriptor(json);
+        if (!descriptor) return fail(where + ": " + descriptor.error().what());
+        if (descriptor->id != type->id) return fail(where + " describes itself as " + q(descriptor->id));
+        if (find(type->id)) return fail(where + " is already registered");
         for (const auto& a : added)
-            if (a.descriptor.id == descriptor->id) return fail("node type \"" + descriptor->id + "\" appears twice");
+            if (a.descriptor.id == descriptor->id) return fail(where + " appears twice in package " + q(pkg));
         added.push_back(Entry{type, std::move(*descriptor), pkg});
     }
-    for (auto& e : added) entries_.push_back(std::move(e));
+    for (auto& e : added) {
+        std::string key = e.descriptor.id;
+        entries_.emplace(std::move(key), std::move(e));
+    }
+    packages_.insert(pkg);
     return true;
 }
 
 const NodeRegistry::Entry* NodeRegistry::find(std::string_view typeId) const {
-    for (const auto& e : entries_)
-        if (e.descriptor.id == typeId) return &e;
-    return nullptr;
+    const auto it = entries_.find(typeId);
+    return it != entries_.end() ? &it->second : nullptr;
 }
 
 }  // namespace rp::graph

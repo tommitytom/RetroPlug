@@ -1,6 +1,12 @@
 // The registry every package goes through, the graph document's parsing helpers, and resource lifetimes.
 #include <catch2/catch_test_macros.hpp>
 
+#include <initializer_list>
+#include <limits>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
 #include "TestNodes.hpp"
 #include "graph/GraphDocument.hpp"
 #include "graph/NodeRegistry.hpp"
@@ -10,12 +16,35 @@ using namespace rp::graph;
 
 namespace {
 
+const char* goodDescriptor() { return R"({"id":"rp.test.good"})"; }
 const char* badDescriptor() { return "{not json"; }
 const char* liarDescriptor() { return R"({"id":"rp.test.other","ports":[],"params":[]})"; }
+const char* nullDescriptor() { return nullptr; }
+const char* sourceDescriptor() { return R"({"id":"rp.test.source"})"; }
 
+bool noMemory(const rp_settings*, rp_memory_req*, rp_error*) { return false; }
+rp_node* noCreate(const rp_host*, void*, const rp_settings*, rp_error*) { return nullptr; }
+void noDestroy(rp_node*) {}
+
+// A node type whose functions are stubs: these tests only register types, never build them.
 rp_node_type typeWith(const char* id, const char* (*descriptor)()) {
-    return rp_node_type{id, descriptor, nullptr, nullptr, nullptr};
+    return rp_node_type{id, descriptor, &noMemory, &noCreate, &noDestroy};
 }
+
+std::string refusal(NodeRegistry& reg, std::initializer_list<const rp_node_type*> types,
+                    const char* manifest = R"({"id":"p"})") {
+    const std::vector<const rp_node_type*> list(types);
+    const rp_package pkg{RP_ABI_VERSION, manifest, static_cast<std::uint32_t>(list.size()), list.data()};
+    std::string error;
+    return reg.addPackage(&pkg, &error) ? std::string("registered") : error;
+}
+
+// Throws building its default layout, so node.hpp gives it an empty descriptor.
+struct Unbuildable {
+    static constexpr const char* id = "rp.test.unbuildable";
+    static void adjust_layout(Layout&, const rp::detail::NoSettings&) { throw std::runtime_error("no default layout"); }
+    void process(const rp::Block&) noexcept {}
+};
 
 }  // namespace
 
@@ -28,6 +57,12 @@ TEST_CASE("a package registers every node type it lists", "[graph][registry]") {
     CHECK(e->package == "rp.test");
     CHECK(e->descriptor.layout.params[0].id == "gain");
     CHECK(reg.find("rp.nope") == nullptr);
+
+    // Entries never move: one held across a later registration still reads.
+    const rp_node_type good = typeWith("rp.test.good", &goodDescriptor);
+    CHECK(refusal(reg, {&good}) == "registered");
+    CHECK(reg.find("rp.test.source") == e);
+    CHECK(e->descriptor.id == "rp.test.source");
 }
 
 TEST_CASE("a bad package registers nothing and says why", "[graph][registry]") {
@@ -37,7 +72,7 @@ TEST_CASE("a bad package registers nothing and says why", "[graph][registry]") {
     const std::size_t before = reg.size();
 
     CHECK_FALSE(reg.addPackage(test::testPackage(), &error));
-    CHECK(error.find("already registered") != std::string::npos);
+    CHECK(error == "package \"rp.test\" is already registered");
 
     rp_package wrongAbi = *test::testPackage();
     wrongAbi.abi_version = RP_ABI_VERSION + 1;
@@ -45,18 +80,54 @@ TEST_CASE("a bad package registers nothing and says why", "[graph][registry]") {
     CHECK(error.find("ABI") != std::string::npos);
 
     const rp_node_type bad = typeWith("rp.test.bad", &badDescriptor);
-    const rp_node_type* badList[] = {&bad};
-    const rp_package badPkg{RP_ABI_VERSION, R"({"id":"bad"})", 1, badList};
-    CHECK_FALSE(reg.addPackage(&badPkg, &error));
-    CHECK(error.find("rp.test.bad") != std::string::npos);
-
+    CHECK(refusal(reg, {&bad}).find("node type \"rp.test.bad\": ") == 0);
     const rp_node_type liar = typeWith("rp.test.liar", &liarDescriptor);
-    const rp_node_type* liarList[] = {&liar};
-    const rp_package liarPkg{RP_ABI_VERSION, R"({"id":"liar"})", 1, liarList};
-    CHECK_FALSE(reg.addPackage(&liarPkg, &error));
-    CHECK(error.find("describes itself") != std::string::npos);
+    CHECK(refusal(reg, {&liar}) == "node type \"rp.test.liar\" describes itself as \"rp.test.other\"");
+    const rp_node_type source = typeWith("rp.test.source", &sourceDescriptor);  // another package's type id
+    CHECK(refusal(reg, {&source}) == "node type \"rp.test.source\" is already registered");
+
+    // All or nothing: a good type ahead of a bad one is not kept.
+    const rp_node_type good = typeWith("rp.test.good", &goodDescriptor);
+    CHECK(refusal(reg, {&good, &bad}).find("rp.test.bad") != std::string::npos);
+    CHECK(reg.find("rp.test.good") == nullptr);
+    CHECK(refusal(reg, {&good, &good}) == "node type \"rp.test.good\" appears twice in package \"p\"");
+    CHECK(reg.find("rp.test.good") == nullptr);
 
     CHECK(reg.size() == before);
+}
+
+TEST_CASE("addPackage checks everything the host will later call or read", "[graph][registry]") {
+    NodeRegistry reg;
+    rp_node_type noCreateFn = typeWith("rp.test.x", &goodDescriptor);
+    noCreateFn.create = nullptr;
+    CHECK(refusal(reg, {&noCreateFn}) == "node type \"rp.test.x\": create is null");
+    rp_node_type noDestroyFn = typeWith("rp.test.x", &goodDescriptor);
+    noDestroyFn.destroy = nullptr;
+    CHECK(refusal(reg, {&noDestroyFn}) == "node type \"rp.test.x\": destroy is null");
+    rp_node_type noQuery = typeWith("rp.test.x", &goodDescriptor);
+    noQuery.query_memory = nullptr;
+    CHECK(refusal(reg, {&noQuery}) == "node type \"rp.test.x\": query_memory is null");
+    const rp_node_type nullJson = typeWith("rp.test.x", &nullDescriptor);
+    CHECK(refusal(reg, {&nullJson}) == "node type \"rp.test.x\": descriptor() returned null");
+    const rp_node_type noId = typeWith(nullptr, &goodDescriptor);
+    CHECK(refusal(reg, {&noId}) == "package \"p\" node type #0 has no id");
+    CHECK(refusal(reg, {nullptr}) == "package \"p\" node type #0 is null");
+    CHECK(refusal(reg, {rp::node_type<Unbuildable>()}).find("produced no descriptor") != std::string::npos);
+
+    const rp_package noArray{RP_ABI_VERSION, R"({"id":"p"})", 2, nullptr};
+    std::string error;
+    CHECK_FALSE(reg.addPackage(&noArray, &error));
+    CHECK(error.find("no array") != std::string::npos);
+
+    const rp_node_type good = typeWith("rp.test.good", &goodDescriptor);
+    CHECK(refusal(reg, {&good}, nullptr) == "package has no manifest");
+    CHECK(refusal(reg, {&good}, "{not json").find("package manifest: ") == 0);
+    CHECK(refusal(reg, {&good}, R"({"id":5})").find("package manifest: ") == 0);
+    CHECK(refusal(reg, {&good}, R"({"id":"a b"})").find("no whitespace") != std::string::npos);
+    CHECK(refusal(reg, {&good}, R"({})").find("package manifest: ") == 0);
+    CHECK(reg.size() == 0);
+    CHECK(refusal(reg, {&good}, R"({"id":"a","id":"b"})") == "registered");  // the last "id" wins, as in JSON.parse
+    CHECK(reg.find("rp.test.good")->package == "b");
 }
 
 TEST_CASE("endpoints split at the first dot; resource refs parse", "[graph][document]") {
@@ -68,14 +139,18 @@ TEST_CASE("endpoints split at the first dot; resource refs parse", "[graph][docu
     CHECK_FALSE(parseEndpoint(".x"));
     CHECK_FALSE(parseEndpoint("x."));
     CHECK(parseResourceRef("res:12") == 12u);
+    CHECK(parseResourceRef("res:4294967295") == 4294967295u);
+    CHECK_FALSE(parseResourceRef("res:4294967296"));
     CHECK_FALSE(parseResourceRef("res:"));
     CHECK_FALSE(parseResourceRef("res:0"));
+    CHECK_FALSE(parseResourceRef("res:007"));
     CHECK_FALSE(parseResourceRef("res:1x"));
+    CHECK_FALSE(parseResourceRef("res:+1"));
     CHECK_FALSE(parseResourceRef("12"));
 }
 
 TEST_CASE("a graph document parses, settings and params kept as JSON", "[graph][document]") {
-    const auto doc = parseGraphDocument(R"({"nodes":[{"id":"a","type":"rp.core.add","settings":{"inputs":3},
+    const auto doc = parseGraphDocument(R"({"nodes":[{"id":"a","type":"rp.core.add","settings":{"inputs":3,"big":18446744073709551615},
                                              "params":{"g":0.5,"mode":"x","on":true},"resources":{"s":"res:1"}}],
                                              "wires":[{"from":"a.out","to":"b.in","feedback":true}]})");
     REQUIRE(doc);
@@ -83,23 +158,59 @@ TEST_CASE("a graph document parses, settings and params kept as JSON", "[graph][
     CHECK(doc->nodes[0].settings.has_value());
     CHECK(doc->nodes[0].params->at("mode").to_string().value() == "x");
     CHECK(doc->wires[0].feedback.value());
-    CHECK_FALSE(parseGraphDocument(R"({"nodes":[{"type":"x"}],"wires":[]})"));  // a node needs an id
+    // read as JSON.parse reads it, not wrapped to a negative int64
+    CHECK(doc->nodes[0].settings->to_object()->get("big")->to_double().value() > 0.0);
+
+    const auto noId = parseGraphDocument(R"({"nodes":[{"type":"x"}],"wires":[]})");
+    REQUIRE_FALSE(noId);
+    CHECK(std::string(noId.error().what()).find("graph document: ") == 0);
+    CHECK_FALSE(parseGraphDocument(R"({"nodes":[{"id":"a","type":"x","setings":{}}],"wires":[]})"));  // a typo is refused
+    CHECK_FALSE(parseGraphDocument("[]"));
 }
 
-TEST_CASE("resources live until their last reference is released", "[graph][resources]") {
+TEST_CASE("a resource lives until its owner drops it and its last pin is gone", "[graph][resources]") {
     ResourceTable t;
     const auto a = t.createAudioBuffer(2, 64, 48000.0);
     const auto b = t.createBytes("string", {'h', 'i'});
+    REQUIRE(a != 0);
+    REQUIRE(b != 0);
     CHECK(std::string(t.get(a)->type) == "audio-buffer");
     const auto* audio = static_cast<const rp_audio_buffer*>(t.get(a)->payload);
     CHECK(audio->channels == 2);
     CHECK(audio->frames == 64);
     CHECK(audio->data[1][63] == 0.0f);
     CHECK(static_cast<const rp_bytes*>(t.get(b)->payload)->size == 2);
-    t.retain(a);
-    t.release(a);
+
+    REQUIRE(t.pin(a));
+    CHECK(t.drop(a));
+    CHECK_FALSE(t.drop(a));  // a second drop changes nothing
     CHECK(t.get(a) != nullptr);
-    t.release(a);
+    CHECK(t.pinCount(a) == 1);
+    CHECK(t.unpin(a));
     CHECK(t.get(a) == nullptr);
+    CHECK_FALSE(t.unpin(a));
+    CHECK_FALSE(t.pin(a));
     CHECK(t.liveCount() == 1);
+
+    const auto c = t.createBytes("bytes", {});
+    CHECK(c > b);  // ids are never reused
+    CHECK(t.drop(c));
+    CHECK(t.get(c) == nullptr);
+    CHECK_FALSE(t.drop(999));
+}
+
+TEST_CASE("resources are refused when their payload would not match their type", "[graph][resources]") {
+    ResourceTable t;
+    std::string error;
+    CHECK(t.createBytes("audio-buffer", {1, 2, 3}, &error) == 0);
+    CHECK(error.find("createAudioBuffer") != std::string::npos);
+    CHECK(t.createBytes("", {}, &error) == 0);
+    CHECK(t.createBytes("my type", {}, &error) == 0);
+    CHECK(t.createAudioBuffer(0, 64, 48000.0, &error) == 0);
+    CHECK(t.createAudioBuffer(2, 0, 48000.0, &error) == 0);
+    CHECK(t.createAudioBuffer(2, 64, 0.0, &error) == 0);
+    CHECK(t.createAudioBuffer(2, 64, std::numeric_limits<double>::quiet_NaN(), &error) == 0);
+    CHECK(t.createAudioBuffer(65536, 65536, 48000.0, &error) == 0);
+    CHECK(error.find("larger than") != std::string::npos);
+    CHECK(t.liveCount() == 0);
 }

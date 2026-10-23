@@ -35,9 +35,10 @@ struct GraphDocument {
     std::vector<WireDoc> wires;
 };
 
-// Numbers are read as JSON.parse reads them (see parseJson).
+// Numbers are read as JSON.parse reads them (see parseJson); an unknown field is refused.
 rfl::Result<GraphDocument> parseGraphDocument(std::string_view json);
 
+// Views into the text it was parsed from, which must outlive it.
 struct Endpoint {
     std::string_view node;
     std::string_view port;
@@ -46,7 +47,7 @@ struct Endpoint {
 // Split "node.port"; nullopt when there is no dot or either side is empty.
 std::optional<Endpoint> parseEndpoint(std::string_view text);
 
-// "res:12" -> 12; nullopt for anything else.
+// "res:12" -> 12; nullopt for anything else, including "res:0" and leading zeros.
 std::optional<std::uint32_t> parseResourceRef(std::string_view text);
 
 }  // namespace rp::graph
