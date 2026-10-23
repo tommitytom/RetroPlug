@@ -139,7 +139,8 @@ rejects a ROM wired into a sampler. Packages register their own resource types (
   (`"resources": {"sample": "res:12"}`), and the plan **pins** every such binding; the pin drops only when
   that plan comes back on the release ring. A node that references a resource from its *settings* (a
   system node's ROM) acquires it through the host while preparing those settings, and that settings object
-  holds the pin until it is released.
+  holds the pin until it is released. (That host service arrives in Phase B with the first system node;
+  Phase A's host hands nodes no services yet.)
 - A resource counts its **owner** (its creator, who drops it once with `releaseResource`) apart from its
   **pins**, and is freed only when the owner has dropped it and no pin remains. Counting them together
   would let a duplicate release (a dispose run twice, a retried RPC) take a plan's pin with it and free
@@ -159,7 +160,8 @@ rejects a ROM wired into a sampler. Packages register their own resource types (
   writer port**: a resource input declared with write access (`"access": "write"`). Readers are wired
   from the writer's resource output, so the planner orders them after the writer within the block, as it
   does for audio; binding a reader to the same resource directly is rejected, because nothing would order
-  it. A cycle needs a feedback wire (§3.3).
+  it. A cycle through a resource is broken by marking one of its data wires feedback (§3.3); a resource
+  wire itself cannot be one.
 
 **Strings** on a wire are handles to immutable string resources, interned on the control thread (Pd's
 symbols). Settings remain the place for values whose change needs a rebuild.
@@ -261,7 +263,10 @@ Duplication needs no node: fan one mono output into both inputs of a `join`.
 ### 3.3 Cycles and feedback wires
 
 A wire may be marked `feedback: true`. Only feedback wires may close a loop; they deliver their value one
-block late. A cycle with no feedback wire is rejected, and the error names the loop.
+block late. A cycle with no feedback wire is rejected, and the error names the loop. Audio, events, bytes
+and control wires can be feedback; a resource or link wire cannot (a handle or a link has no previous
+block to deliver). Data between two members of one coupled group needs a feedback wire too: the group
+steps as one unit, so a same-block wire inside it would have no order.
 
 LSDj needs this today: `lsdj.sync` feeds the GB's `serialIn`, and the GB's `serialOut` comes back
 to `lsdj.sync` for MI.OUT. The current engine already gives that return path exactly one block of latency
@@ -567,7 +572,8 @@ nodes, so size is a non-issue, and whole-document sends keep planning determinis
 against the running graph by node id.
 
 `setGraph` returns `{ ok, errors[], layouts }`. Each error is `{ nodeId, port?, code, message }`;
-`layouts` are the resolved per-instance ports and params, so TS can show and check them. **A failed plan
+`layouts` are each instance's ports and params as its settings resolve them, so TS can show and check
+them (channel counts the planner infers from wiring, `any` and `match`, are not reported yet). **A failed plan
 changes nothing**: the running plan continues, so a bad edit can never glitch the audio.
 
 ### 5.2 The planner
@@ -588,7 +594,8 @@ C++, on the control thread, five passes:
    connected set; link wires are undirected).
 4. **Cycles.** Only feedback wires may close a loop (§3.3).
 5. **Assign buffers.** Each output port gets a buffer: audio (channels x max frames); events, bytes and
-   control (fixed-capacity queues, capacity from descriptor hints with a default); resource (a handle
+   control (fixed-capacity queues: Phase A gives every queue of a kind one default capacity; per-port
+   hints in the descriptor come when a node needs more); resource (a handle
    slot). Buffers are reused by lifetime; feedback wires get persistent double buffers owned by the wire, so they carry over to the next plan
    (§5.3). Every input
    reads straight from its single source's buffer.
@@ -618,7 +625,8 @@ changes that reset today** (a new ROM, a different model), and the node, not the
 those are. Five rules keep it that way:
 
 1. **Node ids are stable.** Reuse is keyed on id, so the graph builder derives ids from the TS system id
-   (`sys-3`, `sys-3.lsdj-sync`), never from position (§7.2).
+   (`sys-3`, `sys-3/lsdj-sync`), never from position (§7.2). An id is a plain id with no `.`, because an
+   endpoint (`sys-3/lsdj-sync.serialIn`) splits at its first dot.
 2. **Settings compare in canonical form**, so key order or other harmless JSON differences are not a change.
 3. **`activate` / `deactivate` preserve state.** A sample-rate or block-size change re-activates without
    resetting, as `onSampleRateChanged` does today. Reset is its own explicit action, never a side effect.
@@ -631,9 +639,10 @@ those are. Five rules keep it that way:
    stream (and every resource output slot) are owned by the instance, not the plan, so a constant node's
    output keeps its value through a swap instead of reading 0 until its knob next moves. Only data with no
    meaning beyond one block (audio buffers, events and bytes queues) is plan-owned.
-7. **The control thread never plans while a swap is in flight.** `setGraph` first waits, at most about
-   one block, for the audio thread to adopt the previous plan, so planning never reads node state (a
-   node's current settings) that the audio thread is in the middle of committing.
+7. **The control thread never plans while a swap is in flight.** `setGraph` first waits for the audio
+   thread to adopt the previous plan (about one block while audio runs; it gives up with a `busy` error
+   after a timeout if the audio thread has stalled), so planning never reads node state (a node's current
+   settings) that the audio thread is in the middle of committing.
 
 Audio *routing* can still click when a mode change moves a stream to different outputs mid-block, as it
 does today; a short fade at swaps is a possible later refinement. The cores never notice either way.
@@ -667,7 +676,8 @@ No heap, no exceptions, the same code on every target. Per block:
 3. Reset event, bytes and control queues.
 4. Publish snapshots through the `SnapshotRegistry` (via `rp.snapshot/1`).
 
-Queues are fixed-capacity; an overflow drops and bumps a counter TS can read (the same never-allocate
+Queues are fixed-capacity; an overflow drops and bumps a counter TS can read (Phase A keeps the count on
+each queue, and the call that reports it arrives with the TS surface in Phase B; the same never-allocate
 policy as today's full ring). Events stay frame-stamped; v1 uses the host's block size with no
 sub-blocking. v1 is single-threaded; the plan records dependencies, so running independent branches in
 parallel (enkiTS) can come later without changing the plan format.
@@ -831,7 +841,7 @@ export const lsdj = defineExtension({
    is the `sameboy` package's rule, carried over from today's `LinkGroup`.
 6. **Host and controller nodes**: audio and MIDI in/out, the Launchpad surface.
 
-Node ids derive from the TS system id (`sys-3`, `sys-3.lsdj-sync`, `sys-3.mix`), never from position,
+Node ids derive from the TS system id (`sys-3`, `sys-3/lsdj-sync`, `sys-3/mix`), never from position,
 so the same system keeps the same node id through every edit (§5.3).
 
 The stores call `setGraph(buildGraph(...))` whenever the project changes; the planner's diff keeps

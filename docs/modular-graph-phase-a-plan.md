@@ -5299,10 +5299,74 @@ struct GraphRig {
 // Planner validation: every rejection carries a stable code, and a rejected document changes nothing.
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
+#include <cstring>
+#include <iterator>
+#include <span>
+
 #include "GraphRig.hpp"
 
 using namespace rp::graph;
 using rp::graph::test::GraphRig;
+
+namespace {
+
+// A core with two ways to tap its voices, like a NES's pins.* and channels.*: either, never both. It
+// records the connected-output mask the planner hands it.
+struct Tapped {
+    static constexpr const char* id = "rp.test.tapped";
+    struct { rp::audio_out<rp::mono> mix; } outputs;
+    static void adjust_layout(Layout& l, const rp::detail::NoSettings&) {
+        for (const char* port : {"pins.a", "pins.b", "channels.x"})
+            l.ports.push_back({port, PortDir::Out, PortKind::Audio, ChannelSpec::fixed(1, "mono"), {}, false});
+        l.exclusive.push_back({"pins.*", "channels.*"});
+    }
+    std::array<std::uint8_t, 4> mask{};
+    std::uint32_t               maskCalls = 0;
+    void ports_changed(std::span<const std::uint8_t> connected) noexcept {
+        for (std::size_t i = 0; i < connected.size() && i < mask.size(); ++i) mask[i] = connected[i];
+        ++maskCalls;
+    }
+    void process(const rp::Block& b) noexcept {
+        for (std::uint32_t o = 0; o < 4; ++o)
+            for (std::uint32_t i = 0; i < b.frames(); ++i) b.output(o).u.audio.channels[0][i] = 0.0f;
+    }
+};
+
+// A coupled member with an audio input, so one member can be wired into another.
+struct LinkedListener {
+    static constexpr const char* id = "rp.test.linked-listener";
+    struct { rp::link link; rp::audio_in<rp::mono> in; } inputs;
+    struct { rp::audio_out<rp::mono> out; } outputs;
+    void prepare(const rp::Block&) noexcept {}
+    bool step(std::uint32_t) noexcept { return true; }
+    void finish(const rp::Block& b) noexcept {
+        for (std::uint32_t i = 0; i < b.frames(); ++i) outputs.out[0][i] = inputs.in[0][i];
+    }
+    void process(const rp::Block&) noexcept {}
+};
+
+// A pack whose create fails after query_memory succeeded (a ROM that will not load, say).
+const char* failingDescriptor() { return R"({"id":"rp.test.failing"})"; }
+rp_node* failingCreate(const rp_host*, void*, const rp_settings*, rp_error* err) {
+    std::strcpy(err->message, "no ROM loaded");
+    return nullptr;
+}
+
+const rp_package* plannerPackage() {
+    static const rp_node_type failing{"rp.test.failing", &failingDescriptor, rp::node_type<test::Sink>()->query_memory,
+                                      &failingCreate, rp::node_type<test::Sink>()->destroy};
+    static const rp_node_type* const kTypes[] = {rp::node_type<Tapped>(), rp::node_type<LinkedListener>(), &failing};
+    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.planner"})",
+                                     static_cast<std::uint32_t>(std::size(kTypes)), kTypes};
+    return &kPackage;
+}
+
+struct PlannerRig : GraphRig {
+    PlannerRig() { registry.addPackage(plannerPackage()); }
+};
+
+}  // namespace
 
 TEST_CASE("a valid document plans and reports each node's layout", "[graph][planner]") {
     GraphRig rig;
@@ -5317,6 +5381,8 @@ TEST_CASE("structural errors", "[graph][planner]") {
     GraphRig rig;
     CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"a","type":"rp.nope"}],"wires":[]})")) == "unknown-type");
     CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"a.b","type":"rp.test.sink"}],"wires":[]})")) == "node-id");
+    CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"a b","type":"rp.test.sink"}],"wires":[]})")) == "node-id");
+    CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"sys-3/lsdj-sync","type":"rp.test.sink"}],"wires":[]})")).empty());
     CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.sink"},{"id":"a","type":"rp.test.sink"}],"wires":[]})")) == "node-id");
     CHECK(GraphRig::codes(rig.set("{not json")) == "document");
 }
@@ -5349,6 +5415,60 @@ TEST_CASE("a loop needs a feedback wire, and the error names it", "[graph][plann
     REQUIRE(GraphRig::codes(r) == "cycle");
     CHECK(r.errors[0].message.find("x -> y -> x") != std::string::npos);
     CHECK(rig.set("{" + nodes + R"(,"wires":[{"from":"x.out","to":"y.in"},{"from":"y.out","to":"x.in","feedback":true}]})").ok);
+}
+
+TEST_CASE("the loop is named whatever order the nodes are listed in", "[graph][planner]") {
+    GraphRig rig;
+    // c is only downstream of the loop, and listed first.
+    const auto r = rig.set(R"({"nodes":[{"id":"c","type":"rp.test.sink"},{"id":"a","type":"rp.test.through"},
+                                         {"id":"b","type":"rp.test.through"}],
+                               "wires":[{"from":"a.out","to":"b.in"},{"from":"b.out","to":"a.in"},{"from":"a.out","to":"c.in"}]})");
+    REQUIRE(GraphRig::codes(r) == "cycle");
+    CHECK(r.errors[0].nodeId == "a");
+    CHECK(r.errors[0].message.find("(a -> b -> a)") != std::string::npos);
+}
+
+TEST_CASE("a data wire between members of one coupled group needs feedback", "[graph][planner]") {
+    PlannerRig rig;
+    const std::string nodes = R"("nodes":[{"id":"a","type":"rp.test.linked-listener"},{"id":"b","type":"rp.test.linked-listener"}])";
+    const auto r = rig.set("{" + nodes + R"(,"wires":[{"from":"a.link","to":"b.link"},{"from":"a.out","to":"b.in"}]})");
+    REQUIRE(GraphRig::codes(r) == "cycle");
+    CHECK(r.errors[0].message.find("coupled group") != std::string::npos);
+    CHECK(rig.set("{" + nodes + R"(,"wires":[{"from":"a.link","to":"b.link"},{"from":"a.out","to":"b.in","feedback":true}]})").ok);
+}
+
+TEST_CASE("an exclusive group allows either side, never both", "[graph][planner]") {
+    PlannerRig rig;
+    const std::string nodes = R"("nodes":[{"id":"t","type":"rp.test.tapped"},{"id":"s1","type":"rp.test.sink"},
+                                          {"id":"s2","type":"rp.test.sink"}])";
+    CHECK(rig.set("{" + nodes + R"(,"wires":[{"from":"t.pins.a","to":"s1.in"},{"from":"t.mix","to":"s2.in"}]})").ok);
+    CHECK(rig.set("{" + nodes + R"(,"wires":[{"from":"t.channels.x","to":"s1.in"}]})").ok);
+    const auto both = rig.set("{" + nodes + R"(,"wires":[{"from":"t.pins.a","to":"s1.in"},{"from":"t.channels.x","to":"s2.in"}]})");
+    REQUIRE(GraphRig::codes(both) == "exclusive-ports");
+    CHECK(both.errors[0].nodeId == "t");
+}
+
+TEST_CASE("a node is told which outputs are connected, on the first plan and on each change", "[graph][planner]") {
+    PlannerRig rig;
+    const std::string nodes = R"("nodes":[{"id":"t","type":"rp.test.tapped"},{"id":"s1","type":"rp.test.sink"})";
+    REQUIRE(rig.set("{" + nodes + R"(],"wires":[{"from":"t.pins.a","to":"s1.in"}]})").ok);
+    rig.run();
+    CHECK(rig.node<Tapped>("t").mask == std::array<std::uint8_t, 4>{0, 1, 0, 0});
+    CHECK(rig.node<Tapped>("t").maskCalls == 1);
+    REQUIRE(rig.set("{" + nodes + R"(,{"id":"other","type":"rp.test.sink"}],"wires":[{"from":"t.pins.a","to":"s1.in"}]})").ok);
+    rig.run();
+    CHECK(rig.node<Tapped>("t").maskCalls == 1);  // unchanged mask, no call
+    REQUIRE(rig.set("{" + nodes + R"(],"wires":[{"from":"t.channels.x","to":"s1.in"}]})").ok);
+    rig.run();
+    CHECK(rig.node<Tapped>("t").mask == std::array<std::uint8_t, 4>{0, 0, 0, 1});
+    CHECK(rig.node<Tapped>("t").maskCalls == 2);
+}
+
+TEST_CASE("a node whose create fails is reported, and its memory is freed", "[graph][planner]") {
+    PlannerRig rig;  // (the ASan build is what checks "freed")
+    const auto r = rig.set(R"({"nodes":[{"id":"f","type":"rp.test.failing"}],"wires":[]})");
+    REQUIRE(GraphRig::codes(r) == "settings-invalid");
+    CHECK(r.errors[0].message == "no ROM loaded");
 }
 
 TEST_CASE("channel counts and layouts must agree", "[graph][planner]") {
@@ -5476,6 +5596,20 @@ TEST_CASE("a coupled group runs its members in lockstep", "[graph][exec]") {
     CHECK(rig.node<Linked>("a").peerCount == 1);
 }
 
+TEST_CASE("coupled peers are updated when the group changes", "[graph][exec]") {
+    GraphRig rig;
+    const std::string three = R"({"nodes":[{"id":"a","type":"rp.test.linked"},{"id":"b","type":"rp.test.linked"},
+                                            {"id":"c","type":"rp.test.linked"}],
+                                  "wires":[{"from":"a.link","to":"b.link"},{"from":"b.link","to":"c.link"}]})";
+    REQUIRE(rig.set(three).ok);
+    rig.run();
+    CHECK(rig.node<Linked>("a").peerCount == 2);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.linked"},{"id":"b","type":"rp.test.linked"}],
+                         "wires":[{"from":"a.link","to":"b.link"}]})").ok);
+    rig.run();
+    CHECK(rig.node<Linked>("a").peerCount == 1);
+}
+
 TEST_CASE("a faulting node is bypassed and counted, the rest keeps running", "[graph][exec]") {
     GraphRig rig;
     REQUIRE(rig.set(R"({"nodes":[{"id":"f","type":"rp.test.faulty","settings":{"failAt":2}},
@@ -5508,6 +5642,22 @@ TEST_CASE("a faulted node stays bypassed through a plan swap", "[graph][exec][sw
     CHECK(rig.outs[0][0] == 0.0f);
     CHECK_FALSE(rig.host->isFaulted("extra"));
     CHECK_FALSE(rig.host->isFaulted("ghost"));
+}
+
+TEST_CASE("removing and re-adding a faulted node builds it fresh", "[graph][exec][swap]") {
+    GraphRig rig;
+    const std::string with = R"({"nodes":[{"id":"f","type":"rp.test.faulty","settings":{"failAt":2}},
+                                           {"id":"out","type":"rp.host.audio-out","settings":{"buses":[1,1]}}],
+                                 "wires":[{"from":"f.out","to":"out.out.1"}]})";
+    REQUIRE(rig.set(with).ok);
+    rig.run(64, 2);
+    REQUIRE(rig.host->isFaulted("f"));
+    REQUIRE(rig.set(R"({"nodes":[{"id":"out","type":"rp.host.audio-out","settings":{"buses":[1,1]}}],"wires":[]})").ok);
+    REQUIRE(rig.set(with).ok);
+    CHECK_FALSE(rig.host->isFaulted("f"));
+    rig.run();
+    CHECK(rig.outs[0][0] == 1.0f);
+    CHECK(rig.host->faultCount() == 1);  // the count is cumulative
 }
 
 TEST_CASE("a live param rides the next block; document params apply on adoption", "[graph][exec]") {
@@ -5823,10 +5973,11 @@ QueueStore::QueueStore(std::uint32_t itemCapacity, std::uint32_t byteCapacity)
 }
 
 Instance::~Instance() {
-    if (!node) return;
-    if (active) node->vt->deactivate(node);
-    entry->type->destroy(node);
-    ::operator delete(memory, std::align_val_t(align));
+    if (node) {
+        if (active) node->vt->deactivate(node);
+        entry->type->destroy(node);
+    }
+    if (memory) ::operator delete(memory, std::align_val_t(align));  // also when create failed
 }
 
 PlanStorage::~PlanStorage() {
@@ -6010,8 +6161,9 @@ private:
 
     bool structure() {
         for (const auto& n : in_.doc->nodes) {
-            if (n.id.empty() || n.id.find('.') != std::string::npos)
-                error(n.id, "", "node-id", "node id \"" + n.id + "\" must be non-empty and contain no '.'");
+            if (!isPlainId(n.id) || n.id.find('.') != std::string::npos)
+                error(n.id, "", "node-id",
+                      "node id " + jsonString(n.id) + " must be non-empty, with no '.', whitespace or control characters");
             else if (index_.count(n.id))
                 error(n.id, "", "node-id", "node id \"" + n.id + "\" is used twice");
             const auto* entry = in_.registry->find(n.type);
@@ -6043,11 +6195,20 @@ private:
             error(p.doc->id, "", "settings-invalid", err.message);
             return nullptr;
         }
+        if (req.align & (req.align - 1)) {  // aligned operator new requires a power of two
+            error(p.doc->id, "", "node-memory", "node asked for an alignment of " + std::to_string(req.align) +
+                                                    ", which is not a power of two");
+            return nullptr;
+        }
         auto inst = std::make_shared<Instance>();
         inst->id = p.doc->id;
         inst->entry = p.entry;
         inst->align = std::max(req.align, alignof(std::max_align_t));
-        inst->memory = ::operator new(std::max<std::size_t>(req.size, 1), std::align_val_t(inst->align));
+        inst->memory = ::operator new(std::max<std::size_t>(req.size, 1), std::align_val_t(inst->align), std::nothrow);
+        if (!inst->memory) {
+            error(p.doc->id, "", "node-memory", "could not allocate the " + std::to_string(req.size) + " bytes the node asked for");
+            return nullptr;
+        }
         inst->node = p.entry->type->create(in_.host, inst->memory, &s, &err);
         if (!inst->node) {
             error(p.doc->id, "", "settings-invalid", err.message);
@@ -6321,29 +6482,28 @@ private:
     }
 
     bool reportCycle(const std::vector<std::set<int>>& next, const std::vector<bool>& done) {
-        // Walk forward from any unsorted group until one repeats: that walk is a loop.
-        int start = 0;
-        while (done[start]) ++start;
+        // Walk BACK from any unsorted group until one repeats. Every unsorted group still has an unsorted
+        // predecessor (that is why Kahn's algorithm left it), so the walk cannot dead-end; walking forward
+        // could, from a group that is merely downstream of the loop.
+        std::vector<std::vector<int>> prev(next.size());
+        for (std::size_t a = 0; a < next.size(); ++a)
+            if (!done[a])
+                for (int b : next[a])
+                    if (!done[b]) prev[b].push_back(static_cast<int>(a));
+        int at = 0;
+        while (done[at]) ++at;
         std::vector<int> path;
         std::vector<int> seenAt(next.size(), kNone);
-        int at = start;
         while (seenAt[at] == kNone) {
             seenAt[at] = static_cast<int>(path.size());
             path.push_back(at);
-            int follow = kNone;
-            for (int b : next[at])
-                if (!done[b]) {
-                    follow = b;
-                    break;
-                }
-            at = follow;
+            at = prev[at].front();
         }
-        std::string loop;
-        for (std::size_t i = static_cast<std::size_t>(seenAt[at]); i < path.size(); ++i)
-            loop += nodes_[groupMembers_[path[i]][0]].doc->id + " -> ";
-        loop += nodes_[groupMembers_[at][0]].doc->id;
-        return error(nodes_[groupMembers_[at][0]].doc->id, "", "cycle",
-                     "the graph loops (" + loop + "); mark one wire in the loop feedback");
+        // path[seenAt[at]..] is the loop walked backwards; name it forwards, from `at` back to itself.
+        auto name = [&](int group) { return nodes_[groupMembers_[group][0]].doc->id; };
+        std::string loop = name(at);
+        for (std::size_t i = path.size(); i-- > static_cast<std::size_t>(seenAt[at]);) loop += " -> " + name(path[i]);
+        return error(name(at), "", "cycle", "the graph loops (" + loop + "); mark one wire in the loop feedback");
     }
 
     // ---- channel resolution ---------------------------------------------------------------------------------
@@ -7277,7 +7437,7 @@ const rp_package* hostPackage() {
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (579 assertions in 72 test cases)`.
+Expected: `All tests passed (612 assertions in 79 test cases)`.
 
 - [ ] **Step 7: Commit**
 
@@ -7293,6 +7453,10 @@ aliasing a node's own input. GraphHost carries plans over one command
 ring and one release ring, flushes inline while quiescent, and never plans
 while a swap is in flight. rp.host.audio-out writes wired buses and
 silences the rest."
+
+(This task was executed as the original commit plus one review-fix commit, "fix(graph): the cycle
+report walks back; a failed create frees its memory". A fresh execution needs only the one commit
+above.)
 ```
 
 ---
@@ -8083,7 +8247,7 @@ const rp_package* corePackage() {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (628 assertions in 85 test cases)`.
+Expected: `All tests passed (661 assertions in 92 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -8297,7 +8461,7 @@ Add both files to the test's `SOURCES` and `Threads::Threads` to its `LIBS`:
 - [ ] **Step 3: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (835 assertions in 87 test cases)`. (These pass immediately: the properties
+Expected: `All tests passed (868 assertions in 94 test cases)`. (These pass immediately: the properties
 were built in by Tasks 2 to 8. If NoAlloc fails, an earlier task let an allocation onto the block path;
 fix that, never the test.)
 
@@ -8311,7 +8475,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-graph-test
 ```
 
-Expected: `All tests passed (835 assertions in 87 test cases)` and no ThreadSanitizer report. (Same
+Expected: `All tests passed (868 assertions in 94 test cases)` and no ThreadSanitizer report. (Same
 configure as `tools/run-sanitizer.sh thread`, which shares `build-tsan/`.)
 
 - [ ] **Step 5: Commit**
