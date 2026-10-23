@@ -224,19 +224,33 @@ using namespace rp::graph;
 
 namespace {
 
-// A raw C-ABI node: writes `value` to its one audio output, or faults once `failAt` blocks have run.
+// A raw C-ABI node. Its optional log records the calls the executor made: its name for each process()
+// or advancing step(), '<' for prepare and '>' for finish.
 struct RawNode {
-    rp_node       header;
-    float         value = 0.0f;
-    int           blocks = 0;
-    int           failAt = -1;
-    std::string*  log = nullptr;
-    char          name = '?';
-    std::uint32_t produced = 0;
+    rp_node           header;
+    float             value = 0.0f;
+    int               blocks = 0;          // process() calls
+    int               failAt = -1;         // process() faults on this call (0-based) and any later one
+    int               stepFailAt = -1;     // step() faults once `produced` reaches this
+    bool              wedged = false;      // step() never makes progress
+    bool              emitThenFault = false;  // push an event and a control change, then fault
+    std::string*      log = nullptr;
+    char              name = '?';
+    std::uint32_t     produced = 0;
+    std::atomic<bool> faulted{false};      // the instance-owned flag a plan step points at
 };
 
+RawNode* raw(rp_node* n) { return reinterpret_cast<RawNode*>(n); }
+
 rp_status rawProcess(rp_node* n, const rp_process* p) {
-    auto* self = reinterpret_cast<RawNode*>(n);
+    RawNode* self = raw(n);
+    if (self->log) *self->log += self->name;
+    if (self->emitThenFault) {
+        const std::uint8_t note[] = {0x90, 60, 100};
+        pushMessage(*p->outputs[1].u.queue, 0, note);
+        pushControl(*p->outputs[2].u.control, 0, 0.5);
+        return RP_FAULT;
+    }
     if (self->failAt >= 0 && self->blocks++ >= self->failAt) return RP_FAULT;
     const rp_audio_view& out = p->outputs[0].u.audio;
     for (std::uint32_t c = 0; c < out.channel_count; ++c)
@@ -244,25 +258,35 @@ rp_status rawProcess(rp_node* n, const rp_process* p) {
     return RP_OK;
 }
 
-void rawPrepare(rp_node* n, const rp_process*) { reinterpret_cast<RawNode*>(n)->produced = 0; }
-bool rawStep(rp_node* n, std::uint32_t target) {
-    auto* self = reinterpret_cast<RawNode*>(n);
+void rawPrepare(rp_node* n, const rp_process*) {
+    raw(n)->produced = 0;
+    if (raw(n)->log) *raw(n)->log += '<';
+}
+
+rp_step_result rawStep(rp_node* n, std::uint32_t target) {
+    RawNode* self = raw(n);
+    if (self->stepFailAt >= 0 && self->produced >= static_cast<std::uint32_t>(self->stepFailAt)) return RP_STEP_FAULT;
+    if (self->wedged) return RP_STEP_BELOW;
     if (self->produced < target) {
         ++self->produced;
-        *self->log += self->name;
+        if (self->log) *self->log += self->name;
     }
-    return self->produced >= target;
+    return self->produced >= target ? RP_STEP_DONE : RP_STEP_BELOW;
 }
-void rawFinish(rp_node*, const rp_process*) {}
+
+void rawFinish(rp_node* n, const rp_process*) {
+    if (raw(n)->log) *raw(n)->log += '>';
+}
 
 const rp_step_interface kStep{&rawPrepare, &rawStep, &rawFinish};
 
+// Entries the executor never calls are left null in this test.
 const rp_node_vtable kVtable{nullptr, nullptr, nullptr, nullptr, &rawProcess, nullptr, nullptr, nullptr, nullptr};
 
 struct OneOutput {
-    float                   samples[16]{};
-    float*                  channel = samples;
-    rp_port_view            view{};
+    float        samples[16]{};
+    float*       channel = samples;
+    rp_port_view view{};
     OneOutput() {
         view.kind = RP_PORT_AUDIO;
         view.u.audio = rp_audio_view{&channel, 1};
@@ -274,10 +298,16 @@ PlanStep stepFor(RawNode& n, OneOutput& out) {
     s.node = &n.header;
     s.process.outputs = &out.view;
     s.process.output_count = 1;
+    s.faulted = &n.faulted;
     return s;
 }
 
-const rp_transport kTransport{48000.0, 120.0, 0.0, false};
+void makeGroup(PlanStep* first, std::uint32_t size) {
+    first->groupSize = size;
+    for (std::uint32_t i = 0; i < size; ++i) first[i].step = &kStep;
+}
+
+const rp_transport kTransport{48000.0, 120.0, 0.0, 0};
 
 }  // namespace
 
@@ -294,7 +324,7 @@ TEST_CASE("runBlock runs every step and fills its outputs", "[graph][executor]")
     CHECK(steps[0].process.transport == &kTransport);
 }
 
-TEST_CASE("a faulting node is silenced from then on and counted once", "[graph][executor]") {
+TEST_CASE("a faulting node is silenced from then on, never called again, and counted once", "[graph][executor]") {
     RawNode a{{&kVtable}, 1.0f};
     a.failAt = 1;
     OneOutput oa;
@@ -310,11 +340,42 @@ TEST_CASE("a faulting node is silenced from then on and counted once", "[graph][
     oa.samples[0] = 7.0f;
     runBlock(view, 8, kTransport);
     CHECK(oa.samples[0] == 0.0f);
+    CHECK(a.blocks == 2);  // the third block bypassed process() entirely
     CHECK(faults.load() == 1);
-    CHECK(steps[0].faulted);
+    CHECK(a.faulted.load());
 }
 
-TEST_CASE("a coupled group interleaves its members' steps", "[graph][executor]") {
+TEST_CASE("a faulting node's queue outputs are emptied before downstream reads them", "[graph][executor]") {
+    RawNode a{{&kVtable}};
+    a.emitThenFault = true;
+    float samples[8]{};
+    float* channel = samples;
+    rp_message items[4]{};
+    std::uint8_t bytes[16]{};
+    rp_queue events{items, 0, 4, bytes, 0, 16, 0};
+    rp_control_change changes[4]{};
+    rp_control_queue control{0.25, changes, 0, 4, 0};
+    rp_port_view outs[3]{};
+    outs[0].kind = RP_PORT_AUDIO;
+    outs[0].u.audio = rp_audio_view{&channel, 1};
+    outs[1].kind = RP_PORT_EVENTS;
+    outs[1].u.queue = &events;
+    outs[2].kind = RP_PORT_CONTROL;
+    outs[2].u.control = &control;
+    PlanStep steps[1];
+    steps[0].node = &a.header;
+    steps[0].process.outputs = outs;
+    steps[0].process.output_count = 3;
+    steps[0].faulted = &a.faulted;
+    PlanView view;
+    view.steps = steps;
+    runBlock(view, 8, kTransport);
+    CHECK(events.count == 0);
+    CHECK(control.count == 0);
+    CHECK(control.start == 0.25);  // the stream's value is state; only this block's changes are dropped
+}
+
+TEST_CASE("a coupled group interleaves its members, block after block", "[graph][executor]") {
     std::string log;
     RawNode a{{&kVtable}}, b{{&kVtable}};
     a.log = b.log = &log;
@@ -322,12 +383,68 @@ TEST_CASE("a coupled group interleaves its members' steps", "[graph][executor]")
     b.name = 'b';
     OneOutput oa, ob;
     PlanStep steps[] = {stepFor(a, oa), stepFor(b, ob)};
-    steps[0].groupSize = 2;
-    steps[0].step = steps[1].step = &kStep;
+    makeGroup(steps, 2);
     PlanView view;
     view.steps = steps;
     runBlock(view, 3, kTransport);
-    CHECK(log == "ababab");
+    runBlock(view, 3, kTransport);
+    CHECK(log == "<<ababab>><<ababab>>");
+}
+
+TEST_CASE("plain nodes and a coupled group run in plan order", "[graph][executor]") {
+    std::string log;
+    RawNode x{{&kVtable}}, a{{&kVtable}}, b{{&kVtable}}, y{{&kVtable}};
+    x.log = a.log = b.log = y.log = &log;
+    x.name = 'x';
+    a.name = 'a';
+    b.name = 'b';
+    y.name = 'y';
+    OneOutput ox, oa, ob, oy;
+    PlanStep steps[] = {stepFor(x, ox), stepFor(a, oa), stepFor(b, ob), stepFor(y, oy)};
+    makeGroup(&steps[1], 2);
+    PlanView view;
+    view.steps = steps;
+    runBlock(view, 2, kTransport);
+    CHECK(log == "x<<abab>>y");
+}
+
+TEST_CASE("a member that faults through step is bypassed while its peer finishes", "[graph][executor]") {
+    std::string log;
+    RawNode a{{&kVtable}}, b{{&kVtable}};
+    a.log = b.log = &log;
+    a.name = 'a';
+    b.name = 'b';
+    a.stepFailAt = 1;
+    OneOutput oa, ob;
+    oa.samples[0] = 7.0f;
+    PlanStep steps[] = {stepFor(a, oa), stepFor(b, ob)};
+    makeGroup(steps, 2);
+    std::atomic<std::uint32_t> faults{0};
+    PlanView view;
+    view.steps = steps;
+    view.faults = &faults;
+    runBlock(view, 3, kTransport);
+    CHECK(log == "<<abbb>");
+    CHECK(a.faulted.load());
+    CHECK_FALSE(b.faulted.load());
+    CHECK(oa.samples[0] == 0.0f);
+    CHECK(faults.load() == 1);
+}
+
+TEST_CASE("a wedged member is faulted once its group passes the bound; a finished peer is not", "[graph][executor]") {
+    RawNode a{{&kVtable}}, b{{&kVtable}};
+    a.wedged = true;
+    OneOutput oa, ob;
+    PlanStep steps[] = {stepFor(a, oa), stepFor(b, ob)};
+    makeGroup(steps, 2);
+    std::atomic<std::uint32_t> faults{0};
+    PlanView view;
+    view.steps = steps;
+    view.faults = &faults;
+    runBlock(view, 2, kTransport);
+    CHECK(a.faulted.load());
+    CHECK_FALSE(b.faulted.load());
+    CHECK(faults.load() == 1);
 }
 
 TEST_CASE("feedback moves one block on; output queues and control streams reset", "[graph][executor]") {
@@ -360,6 +477,54 @@ TEST_CASE("feedback moves one block on; output queues and control streams reset"
     CHECK(messageData(front, front.items[0])[1] == 60);
     CHECK(control.start == 0.75);
     CHECK(control.count == 0);
+
+    const std::uint8_t later[] = {0x90, 64, 100};
+    pushMessage(back, 9, later);
+    runBlock(view, 16, kTransport);
+    REQUIRE(front.count == 1);  // last block's message, replacing the one before
+    CHECK(front.items[0].frame == 9);
+}
+
+TEST_CASE("audio feedback zeroes the tail a shorter block leaves", "[graph][executor]") {
+    float backSamples[8], frontSamples[8];
+    float* backCh = backSamples;
+    float* frontCh = frontSamples;
+    FeedbackCopy copy;
+    copy.kind = RP_PORT_AUDIO;
+    copy.backChannels = &backCh;
+    copy.frontChannels = &frontCh;
+    copy.channels = 1;
+    copy.capacity = 8;
+    PlanView view;
+    view.feedback = std::span<const FeedbackCopy>(&copy, 1);
+    std::fill(std::begin(backSamples), std::end(backSamples), 2.0f);
+    runBlock(view, 8, kTransport);
+    CHECK(frontSamples[7] == 2.0f);
+    std::fill(std::begin(backSamples), std::end(backSamples), 1.0f);
+    runBlock(view, 4, kTransport);
+    CHECK(frontSamples[3] == 1.0f);
+    CHECK(frontSamples[4] == 0.0f);  // not the 2.0 the previous, longer block left there
+}
+
+TEST_CASE("control feedback carries the start value and the changes", "[graph][executor]") {
+    rp_control_change backChanges[4]{}, frontChanges[4]{};
+    rp_control_queue back{0.5, backChanges, 0, 4, 0};
+    rp_control_queue front{0.0, frontChanges, 0, 4, 0};
+    pushControl(back, 3, 0.25);
+    FeedbackCopy copy;
+    copy.kind = RP_PORT_CONTROL;
+    copy.backControl = &back;
+    copy.frontControl = &front;
+    rp_control_queue* roll[] = {&back};
+    PlanView view;
+    view.feedback = std::span<const FeedbackCopy>(&copy, 1);
+    view.controlsToRoll = roll;
+    runBlock(view, 8, kTransport);
+    CHECK(front.start == 0.5);
+    REQUIRE(front.count == 1);
+    CHECK(front.changes[0].frame == 3);
+    CHECK(front.changes[0].value == 0.25);
+    CHECK(back.start == 0.25);  // the producer's own stream rolled on
 }
 
 TEST_CASE("queues drop, and count, what does not fit", "[graph][executor]") {
@@ -388,8 +553,9 @@ Create `packages/native/cmake/graph.cmake`:
 # --- the node-graph engine (docs/modular-graph-design.md) -------------------------------------------
 # Phase A builds these and tests them; nothing in the shipping build links them yet.
 #
-# retroplug-graph-exec: the no-heap executor. It has no dependencies at all (freestanding C++20 over the
-# C ABI in graph/rp_node.h), which is what lets the same code run a plan on the Pico later.
+# retroplug-graph-exec: the no-heap executor. No heap, no exceptions and no dependencies beyond libc's
+# memcpy / memset (it is C++20 over the C ABI in graph/rp_node.h), which is what lets the same code run a
+# plan on the Pico later.
 add_library(retroplug-graph-exec STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/Executor.cpp)
 target_include_directories(retroplug-graph-exec PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -399,8 +565,9 @@ set_target_properties(retroplug-graph-exec PROPERTIES
     POSITION_INDEPENDENT_CODE ON)   # will be linked into the plugin .so
 ```
 
-In `packages/native/CMakeLists.txt`, add `graph.cmake` to the include list in the header comment (after
-the `test-binary.cmake` line):
+In `packages/native/CMakeLists.txt`, add `graph.cmake` to the include list in the header comment. That
+list follows include order ("ORDER IS SEMANTIC"), so the line goes between the `plugin.cmake` and
+`tests.cmake` lines:
 
 ```cmake
 #   cmake/graph.cmake         the node-graph engine's libraries (not linked by any host yet)
@@ -457,7 +624,15 @@ Expected: configure fails (`Cannot find source file: .../src/graph/Executor.cpp`
  * touching this core table (docs/modular-graph-design.md section 4).
  *
  * Threads: calls marked [control] run on the control thread and may allocate; calls marked [audio] run
- * on whichever thread drives the block and must not allocate, block, or throw.
+ * on whichever thread drives the block and must not allocate, block, or throw. [control] and [audio]
+ * calls on ONE instance may run at the same time, so a node shares no mutable state between them except
+ * through the settings swap (prepare_settings / commit_settings).
+ *
+ * Every rp_node_vtable entry is required: a node with nothing to do supplies a no-op. get_interface may
+ * return null for every id.
+ *
+ * Result codes are fixed-width integers rather than enum types: an enum's size is implementation-defined
+ * (-fshort-enums makes it one byte on some embedded toolchains), and every value here crosses the ABI.
  */
 #ifndef RP_NODE_H
 #define RP_NODE_H
@@ -472,44 +647,62 @@ extern "C" {
 
 #define RP_ABI_VERSION 1u
 
+/* The symbol a downloaded pack exports (an rp_package_entry_fn), and the visibility it needs. */
+#define RP_PACKAGE_ENTRY_SYMBOL "rp_package_entry"
+#if defined(_WIN32)
+#define RP_EXPORT __declspec(dllexport)
+#else
+#define RP_EXPORT __attribute__((visibility("default")))
+#endif
+
 typedef struct rp_node rp_node;
 typedef struct rp_host rp_host;
 
-typedef enum rp_status { RP_OK = 0, RP_FAULT = 1 } rp_status;
+typedef uint32_t rp_status;
+enum { RP_OK = 0u, RP_FAULT = 1u };
+
+enum { RP_LOG_ERROR = 0, RP_LOG_WARNING = 1, RP_LOG_INFO = 2, RP_LOG_DEBUG = 3 };
 
 /* A control-thread call that fails writes a NUL-terminated reason here. */
 typedef struct rp_error { char message[256]; } rp_error;
 
 enum { RP_SETTINGS_JSON = 0u };
 typedef struct rp_settings {
-    const char* data;   /* not NUL-terminated; use size */
+    const char* data;     /* bytes, not NUL-terminated; UTF-8 text when the encoding is JSON */
     size_t      size;
     uint32_t    encoding; /* RP_SETTINGS_JSON on the desktop */
 } rp_settings;
 
 typedef struct rp_memory_req { size_t size; size_t align; } rp_memory_req;
 
-/* Services the host offers a node. alloc/free are for nodes that declare the heap capability, and only
- * on the control thread. */
+/* Services the host offers a node. alloc/free are for nodes that declare the heap capability. */
 struct rp_host {
     uint32_t abi_version;
     void*    ctx;
-    void* (*alloc)(void* ctx, size_t size, size_t align);
-    void  (*free)(void* ctx, void* ptr);
-    void  (*log)(void* ctx, int level, const char* message);
+    void* (*alloc)(void* ctx, size_t size, size_t align);   /* [control] align <= alignof(max_align_t) */
+    void  (*free)(void* ctx, void* ptr);                     /* [control] */
+    void  (*log)(void* ctx, int level, const char* message); /* [control] level: RP_LOG_* */
+    /* [any] An optional host service by versioned id, or null. This is how host services grow without
+     * bumping RP_ABI_VERSION, the host-side twin of rp_node_vtable.get_interface. */
+    const void* (*get_interface)(const rp_host* host, const char* id);
 };
 
 /* ---- block data ------------------------------------------------------------------------------- */
 
+enum { RP_TRANSPORT_PLAYING = 1u << 0 };
+
 typedef struct rp_transport {
-    double sample_rate;
-    double tempo;    /* bpm */
-    double ppq;      /* at block start */
-    bool   playing;
+    double   sample_rate;
+    double   tempo; /* bpm */
+    double   ppq;   /* at block start */
+    uint32_t flags; /* RP_TRANSPORT_*; room to grow (recording, loop) without an ABI bump */
 } rp_transport;
 
+/* On a bytes port: everything up to and including this message must reach the device before what follows. */
+enum { RP_MESSAGE_FLUSH = 1u << 0 };
+
 /* One timestamped item on an events or bytes port. The payload lives in the queue's byte arena at
- * [offset, offset + size). flags is per kind: on a bytes port, bit 0 = flush barrier. */
+ * [offset, offset + size). flags: RP_MESSAGE_*. */
 typedef struct rp_message {
     uint32_t frame;
     uint32_t size;
@@ -517,7 +710,9 @@ typedef struct rp_message {
     uint32_t flags;
 } rp_message;
 
-/* A fixed-capacity, frame-ordered queue. Never grows: a push that does not fit is dropped and counted. */
+/* A fixed-capacity, frame-ordered queue. Never grows: a push that does not fit is dropped and counted in
+ * `dropped`, which is written on the audio thread; a host reads it there (or while quiescent) and
+ * publishes it, never directly from the control thread. */
 typedef struct rp_queue {
     rp_message* items;
     uint32_t    count;
@@ -595,11 +790,12 @@ typedef struct rp_process {
 
 /* ---- the node --------------------------------------------------------------------------------- */
 
-typedef enum rp_prepare_result {
-    RP_PREPARE_SWAP    = 0, /* *prepared is ready to commit on the audio thread */
-    RP_PREPARE_REBUILD = 1, /* the change needs a fresh instance (a new ROM, a layout change) */
-    RP_PREPARE_INVALID = 2  /* rejected; err holds the reason */
-} rp_prepare_result;
+typedef uint32_t rp_prepare_result;
+enum {
+    RP_PREPARE_SWAP    = 0u, /* *prepared is ready to commit on the audio thread */
+    RP_PREPARE_REBUILD = 1u, /* the change needs a fresh instance (a new ROM, a layout change) */
+    RP_PREPARE_INVALID = 2u  /* rejected; err holds the reason */
+};
 
 typedef struct rp_node_vtable {
     /* [control] Resolved layout JSON (ports, params, exclusive groups) for the current settings. The
@@ -607,10 +803,13 @@ typedef struct rp_node_vtable {
     const char* (*layout)(rp_node* node);
     /* [control] Must preserve state: a sample-rate or block-size change re-activates, never resets. */
     bool (*activate)(rp_node* node, double sample_rate, uint32_t max_frames, rp_error* err);
+    /* [control] */
     void (*deactivate)(rp_node* node);
     /* [audio] The connected-output mask changed at a plan swap; connected[i] is 0 or 1 per output. */
     void (*ports_changed)(rp_node* node, const uint8_t* connected, uint32_t output_count);
-    /* [audio] One block. Must write every frame of every audio output it is given. */
+    /* [audio] One block. Must write every frame of every CONNECTED audio output (unconnected ones get a
+     * shared scratch buffer, so skipping them is safe, and is what the connected mask is for). Return
+     * RP_FAULT to be bypassed from then on. */
     rp_status (*process)(rp_node* node, const rp_process* block);
     /* [control] Validate new settings and decide swap versus rebuild. */
     rp_prepare_result (*prepare_settings)(rp_node* node, const rp_settings* settings, void** prepared,
@@ -652,12 +851,16 @@ typedef const rp_package* (*rp_package_entry_fn)(void);
 
 /* ---- optional interfaces ------------------------------------------------------------------------ */
 
-/* "rp.step/1": the block triad coupled groups run in lockstep. */
+/* "rp.step/1": the block triad coupled groups run in lockstep. All three are [audio]. */
 #define RP_STEP_INTERFACE "rp.step/1"
+typedef uint32_t rp_step_result;
+enum { RP_STEP_BELOW = 0u, RP_STEP_DONE = 1u, RP_STEP_FAULT = 2u };
 typedef struct rp_step_interface {
     void (*prepare)(rp_node* node, const rp_process* block);
-    /* Advance toward target_frames; return true once this node has produced them. */
-    bool (*step)(rp_node* node, uint32_t target_frames);
+    /* Advance toward target_frames by a bounded amount (an instruction, a scanline). Return RP_STEP_DONE
+     * once this node has produced target_frames. It may be called again after that, and must then do
+     * nothing and return RP_STEP_DONE. RP_STEP_FAULT bypasses the node as a faulting process() would. */
+    rp_step_result (*step)(rp_node* node, uint32_t target_frames);
     void (*finish)(rp_node* node, const rp_process* block);
 } rp_step_interface;
 
@@ -686,7 +889,8 @@ typedef struct rp_link_interface {
 #include "graph/rp_node.h"
 
 // Alloc-free helpers over the ABI's fixed-capacity queues, shared by nodes and the executor. Nothing
-// here grows: a push that does not fit is dropped and counted in `dropped`, which TS can read.
+// here grows: a push that does not fit is dropped and counted in `dropped` (an audio-thread counter; the
+// host publishes it rather than letting the control thread read it live).
 namespace rp::graph {
 
 // Append one message (events or bytes). Frames must be non-decreasing within a block; a message whose
@@ -713,8 +917,8 @@ inline void clearQueue(rp_queue& q) {
     q.bytes_used = 0;
 }
 
-// Copy every message of `from` onto the end of `to` (merge preserves frame order when the caller walks
-// two sources in frame order; a plain append is what a feedback wire needs).
+// Copy every message of `from` onto the end of `to`. A feedback wire appends onto an emptied queue; onto
+// a non-empty one, a message earlier than `to`'s last is clamped up to it, as any push is.
 inline void appendQueue(rp_queue& to, const rp_queue& from) {
     for (std::uint32_t i = 0; i < from.count; ++i)
         pushMessage(to, from.items[i].frame, messageData(from, from.items[i]), from.items[i].flags);
@@ -767,7 +971,9 @@ struct PlanStep {
     // > 0 on the FIRST member of a coupled group: the group is this step and the next groupSize - 1.
     std::uint32_t            groupSize = 0;
     const rp_step_interface* step = nullptr;  // set for every member of a coupled group
-    bool                     faulted = false;
+    // Required. Owned by the node instance, not the plan, so a node that faulted stays bypassed through
+    // every later plan swap. Written only by the audio thread; atomic so the control thread may read it.
+    std::atomic<bool>*       faulted = nullptr;
 };
 
 // A feedback wire's one block of delay: what the producer wrote this block (`back`) becomes what the
@@ -779,6 +985,7 @@ struct FeedbackCopy {
     float* const* backChannels = nullptr;
     float* const* frontChannels = nullptr;
     std::uint32_t channels = 0;
+    std::uint32_t capacity = 0;  // frames each front channel holds; the tail past this block is zeroed
     // events / bytes
     rp_queue* backQueue = nullptr;
     rp_queue* frontQueue = nullptr;
@@ -809,13 +1016,21 @@ struct PlanView {
 
 namespace rp::graph {
 
+// A coupled group still not done after this many round-robin passes per frame has a member that is not
+// making progress, and every member that is still not done is faulted. The bound is far beyond any real core (a
+// SameBoy step is about one instruction, some 20 passes per sample); it is the v1 guard against a wedged
+// member spinning the audio thread forever.
+constexpr std::uint32_t kMaxGroupPassesPerFrame = 4096;
+
 // Runs one block of a plan. No heap, no exceptions, no locks: the same code drives the audio thread,
 // offline renders and the Pico. It walks the steps in order (a coupled group runs prepare, a round-robin
 // step until every member reaches the block, then finish), then moves feedback data one block on, then
 // empties output queues and rolls control streams for the next block.
 //
-// A node whose process returns RP_FAULT is bypassed from then on: its audio outputs are silenced every
-// block and plan.faults is bumped once, so a wedged node can never take the rest of the graph down.
+// A node that faults (process returns RP_FAULT, step returns RP_STEP_FAULT, or its group exceeds the pass
+// bound) is bypassed from then on: its outputs are silenced every block (audio zeroed, queues emptied,
+// control changes dropped) and plan.faults is bumped once. Its fault flag lives on the instance, so a plan
+// swap does not revive it.
 void runBlock(const PlanView& plan, std::uint32_t frames, const rp_transport& transport);
 
 }  // namespace rp::graph
@@ -826,6 +1041,7 @@ void runBlock(const PlanView& plan, std::uint32_t frames, const rp_transport& tr
 ```cpp
 #include "graph/Executor.hpp"
 
+#include <cassert>
 #include <cstring>
 
 #include "graph/Queue.hpp"
@@ -834,44 +1050,71 @@ namespace rp::graph {
 
 namespace {
 
+// What a bypassed node leaves on its outputs: silence, empty queues, and no control changes (a control
+// stream keeps its start value, since that is state, not something this block produced).
 void silenceOutputs(const rp_process& p, std::uint32_t frames) {
     for (std::uint32_t i = 0; i < p.output_count; ++i) {
         const rp_port_view& v = p.outputs[i];
-        if (v.kind != RP_PORT_AUDIO) continue;
-        for (std::uint32_t c = 0; c < v.u.audio.channel_count; ++c)
-            std::memset(v.u.audio.channels[c], 0, frames * sizeof(float));
+        switch (v.kind) {
+            case RP_PORT_AUDIO:
+                for (std::uint32_t c = 0; c < v.u.audio.channel_count; ++c)
+                    std::memset(v.u.audio.channels[c], 0, frames * sizeof(float));
+                break;
+            case RP_PORT_EVENTS:
+            case RP_PORT_BYTES:
+                clearQueue(*v.u.queue);
+                break;
+            case RP_PORT_CONTROL:
+                v.u.control->count = 0;
+                break;
+            case RP_PORT_LINK:
+            case RP_PORT_RESOURCE:
+            default:
+                break;
+        }
     }
 }
 
-void fault(const PlanView& plan, PlanStep& s, std::uint32_t frames) {
-    if (!s.faulted) {
-        s.faulted = true;
-        if (plan.faults) plan.faults->fetch_add(1, std::memory_order_relaxed);
-    }
-    silenceOutputs(s.process, frames);
+// Flag the node (once) and count it.
+void markFaulted(const PlanView& plan, PlanStep& s) {
+    if (!s.faulted->exchange(true, std::memory_order_relaxed) && plan.faults)
+        plan.faults->fetch_add(1, std::memory_order_relaxed);
 }
+
+bool isFaulted(const PlanStep& s) { return s.faulted->load(std::memory_order_relaxed); }
 
 void runNode(const PlanView& plan, PlanStep& s, std::uint32_t frames) {
-    if (s.faulted) {
-        silenceOutputs(s.process, frames);
-        return;
-    }
-    if (s.node->vt->process(s.node, &s.process) != RP_OK) fault(plan, s, frames);
+    if (!isFaulted(s) && s.node->vt->process(s.node, &s.process) != RP_OK) markFaulted(plan, s);
+    if (isFaulted(s)) silenceOutputs(s.process, frames);
 }
 
-void runGroup(std::span<PlanStep> group, std::uint32_t frames) {
-    for (auto& m : group)
-        if (!m.faulted) m.step->prepare(m.node, &m.process);
-    // Round-robin until every member has produced the block. Each step() call advances a member by a
-    // bounded amount (an instruction or a scanline), which is what keeps linked cores in lockstep.
-    bool allDone = false;
-    while (!allDone) {
-        allDone = true;
-        for (auto& m : group)
-            if (!m.faulted && !m.step->step(m.node, frames)) allDone = false;
+void runGroup(const PlanView& plan, std::span<PlanStep> group, std::uint32_t frames) {
+    for (auto& m : group) {
+        assert(m.step && "every member of a coupled group implements rp.step/1");
+        if (!isFaulted(m)) m.step->prepare(m.node, &m.process);
+    }
+    // Round-robin until every member has produced the block. Each step() advances a member by a bounded
+    // amount (an instruction, a scanline), which is what keeps linked cores in lockstep.
+    const std::uint64_t maxPasses = std::uint64_t(frames ? frames : 1) * kMaxGroupPassesPerFrame;
+    for (std::uint64_t pass = 0;; ++pass) {
+        bool allDone = true;
+        for (auto& m : group) {
+            if (isFaulted(m)) continue;
+            const rp_step_result r = m.step->step(m.node, frames);
+            if (r == RP_STEP_FAULT) markFaulted(plan, m);
+            else if (r != RP_STEP_DONE) allDone = false;
+        }
+        if (allDone) break;
+        if (pass + 1 >= maxPasses) {
+            // Out of passes: whoever is still not done is not making progress. Asking again is safe by
+            // contract - a member that finished just answers RP_STEP_DONE.
+            for (auto& m : group)
+                if (!isFaulted(m) && m.step->step(m.node, frames) != RP_STEP_DONE) markFaulted(plan, m);
+            break;
+        }
     }
     for (auto& m : group) {
-        if (m.faulted) silenceOutputs(m.process, frames);
+        if (isFaulted(m)) silenceOutputs(m.process, frames);
         else m.step->finish(m.node, &m.process);
     }
 }
@@ -879,8 +1122,12 @@ void runGroup(std::span<PlanStep> group, std::uint32_t frames) {
 void moveFeedback(const FeedbackCopy& f, std::uint32_t frames) {
     switch (f.kind) {
         case RP_PORT_AUDIO:
-            for (std::uint32_t c = 0; c < f.channels; ++c)
+            for (std::uint32_t c = 0; c < f.channels; ++c) {
                 std::memcpy(f.frontChannels[c], f.backChannels[c], frames * sizeof(float));
+                // A shorter block than the last must not leave the last block's tail to be replayed.
+                if (f.capacity > frames)
+                    std::memset(f.frontChannels[c] + frames, 0, (f.capacity - frames) * sizeof(float));
+            }
             break;
         case RP_PORT_EVENTS:
         case RP_PORT_BYTES:
@@ -896,6 +1143,8 @@ void moveFeedback(const FeedbackCopy& f, std::uint32_t frames) {
                 pushControl(front, back.changes[i].frame, back.changes[i].value);
             break;
         }
+        case RP_PORT_LINK:
+        case RP_PORT_RESOURCE:
         default:
             break;
     }
@@ -905,13 +1154,15 @@ void moveFeedback(const FeedbackCopy& f, std::uint32_t frames) {
 
 void runBlock(const PlanView& plan, std::uint32_t frames, const rp_transport& transport) {
     for (auto& s : plan.steps) {
+        assert(s.faulted && "every plan step points at its instance's fault flag");
         s.process.frames = frames;
         s.process.transport = &transport;
     }
     for (std::size_t i = 0; i < plan.steps.size();) {
         PlanStep& s = plan.steps[i];
         if (s.groupSize > 1) {
-            runGroup(plan.steps.subspan(i, s.groupSize), frames);
+            assert(i + s.groupSize <= plan.steps.size());
+            runGroup(plan, plan.steps.subspan(i, s.groupSize), frames);
             i += s.groupSize;
         } else {
             runNode(plan, s, frames);
@@ -929,7 +1180,7 @@ void runBlock(const PlanView& plan, std::uint32_t frames, const rp_transport& tr
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake -B build && cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (23 assertions in 5 test cases)`.
+Expected: `All tests passed (46 assertions in 11 test cases)`.
 
 Also prove the header is C:
 
@@ -952,6 +1203,9 @@ retroplug-graph-exec runs a plan block by block with no heap, no
 exceptions and no dependencies, so the same code can later run on the
 Pico. Tested over hand-written C-ABI nodes: lockstep coupled groups,
 feedback, fault bypass, fixed-capacity queues."
+
+(If you are applying the Task 2 review fixes on top of an earlier Task 2 commit, commit them separately
+as "fix(graph): instance-owned fault flags, step results, a host growth point".)
 ```
 
 ---
@@ -1411,7 +1665,7 @@ rfl::Result<std::string> canonicalizeJson(std::string_view json) {
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (69 assertions in 8 test cases)`.
+Expected: `All tests passed (92 assertions in 14 test cases)`.
 
 - [ ] **Step 7: Commit**
 
@@ -1974,7 +2228,7 @@ std::string layoutForCount(std::uint32_t channels) {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (88 assertions in 11 test cases)`.
+Expected: `All tests passed (111 assertions in 17 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -2423,7 +2677,8 @@ Expected: compile error, `graph/node.hpp: No such file or directory`.
 //   void attach(std::span<std::byte>) noexcept;
 //   bool activate(double sampleRate, std::uint32_t maxFrames);   void deactivate();
 //   void ports_changed(std::span<const std::uint8_t> connectedOutputs) noexcept;
-//   void prepare(const rp::Block&) / bool step(std::uint32_t target) / void finish(const rp::Block&)   -> rp.step/1
+//   void prepare(const rp::Block&) / step(std::uint32_t target) / void finish(const rp::Block&)        -> rp.step/1
+//       (step returns bool - true once the block is produced - or an rp_step_result to report a fault)
 //   void set_peers(std::span<rp_node* const>) noexcept                                             -> rp.link/1
 //   void bind_host(const rp_host*) noexcept;              at create: host services (host-implemented nodes reach the host here)
 //   static constexpr const char *name, *category, *version;  static constexpr bool heap, threads;
@@ -2939,7 +3194,11 @@ template <class T> void stepPrepare(rp_node* n, const rp_process* p) {
     bindAll(node, p);
     node.prepare(Block{*p});
 }
-template <class T> bool stepStep(rp_node* n, std::uint32_t target) { return self<T>(n)->node.step(target); }
+template <class T> rp_step_result stepStep(rp_node* n, std::uint32_t target) {
+    T& node = self<T>(n)->node;
+    if constexpr (std::is_same_v<decltype(node.step(target)), bool>) return node.step(target) ? RP_STEP_DONE : RP_STEP_BELOW;
+    else return node.step(target);
+}
 template <class T> void stepFinish(rp_node* n, const rp_process* p) {
     T& node = self<T>(n)->node;
     bindAll(node, p);
@@ -3070,7 +3329,7 @@ T* peer_as(rp_node* n) {
 - [ ] **Step 7: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (115 assertions in 17 test cases)`.
+Expected: `All tests passed (138 assertions in 23 test cases)`.
 
 - [ ] **Step 8: Commit**
 
@@ -3539,7 +3798,7 @@ std::size_t ResourceTable::liveCount() const { return entries_.size(); }
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (155 assertions in 22 test cases)`.
+Expected: `All tests passed (178 assertions in 28 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -3600,7 +3859,7 @@ struct GraphRig {
     std::unique_ptr<GraphHost> host;
     std::vector<std::vector<float>> outs;
     std::vector<float*>        outPointers;
-    rp_transport               transport{48000.0, 120.0, 0.0, false};
+    rp_transport               transport{48000.0, 120.0, 0.0, 0};
 
     explicit GraphRig(HostConfig config = {48000.0, 64, Target::Desktop}, std::uint32_t hostChannels = 8) {
         registry.addPackage(hostPackage());
@@ -3833,6 +4092,26 @@ TEST_CASE("a faulting node is bypassed and counted, the rest keeps running", "[g
     CHECK(rig.host->faultCount() == 1);
 }
 
+TEST_CASE("a faulted node stays bypassed through a plan swap", "[graph][exec][swap]") {
+    GraphRig rig;
+    auto doc = [](const std::string& extra) {
+        return R"({"nodes":[{"id":"f","type":"rp.test.faulty","settings":{"failAt":1}},
+                            {"id":"out","type":"rp.host.audio-out","settings":{"buses":[1,1]}})" + extra +
+               R"(],"wires":[{"from":"f.out","to":"out.out.1"}]})";
+    };
+    REQUIRE(rig.set(doc("")).ok);
+    rig.run();
+    REQUIRE(rig.host->isFaulted("f"));
+    REQUIRE(rig.set(doc(R"(,{"id":"extra","type":"rp.test.sink"})")).ok);  // an unrelated edit
+    rig.run(64, 2);
+    CHECK(rig.host->isFaulted("f"));
+    CHECK(rig.node<rp::graph::test::Faulty>("f").blocks == 1);  // never called again
+    CHECK(rig.host->faultCount() == 1);
+    CHECK(rig.outs[0][0] == 0.0f);
+    CHECK_FALSE(rig.host->isFaulted("extra"));
+    CHECK_FALSE(rig.host->isFaulted("ghost"));
+}
+
 TEST_CASE("a live param rides the next block; document params apply on adoption", "[graph][exec]") {
     GraphRig rig;
     REQUIRE(rig.set(R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":0.5},"params":{"gain":2}},
@@ -3940,6 +4219,7 @@ Expected: fails on the missing sources.
 ```cpp
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -3991,6 +4271,9 @@ struct Instance {
     std::vector<rp_node*>                     lastPeers;
     bool                                      peersSent = false;
     bool                                      active = false;
+    // Set by the executor (audio thread) when the node faults; it survives every later plan swap, which
+    // is what keeps a wedged node bypassed. Read by GraphHost::isFaulted on the control thread.
+    std::atomic<bool>                         faulted{false};
 
     Instance() = default;
     Instance(const Instance&) = delete;
@@ -4920,6 +5203,7 @@ private:
                 copy.backChannels = back.u.audio.channels;
                 copy.frontChannels = f->pointers.data();
                 copy.channels = ch;
+                copy.capacity = in_.maxFrames;
             } else if (w.kind == PortKind::Control) {
                 copy.backControl = back.u.control;
                 copy.frontControl = &f->stream->queue;
@@ -4999,6 +5283,7 @@ private:
                 const int n = g[m];
                 PlanStep step;
                 step.node = nodes_[n].inst->node;
+                step.faulted = &nodes_[n].inst->faulted;
                 step.process.inputs = st.inputViews[n].data();
                 step.process.input_count = static_cast<std::uint32_t>(st.inputViews[n].size());
                 step.process.outputs = st.outputViews[n].data();
@@ -5154,6 +5439,8 @@ public:
     bool reactivate(double sampleRate, std::uint32_t maxFrames);
     rp_node*      node(std::string_view id) const;
     std::uint32_t faultCount() const { return faults_.load(std::memory_order_relaxed); }
+    // Has this node faulted (and so been bypassed since)? False for an unknown id.
+    bool          isFaulted(std::string_view id) const;
     std::size_t   instanceCount() const { return live_.size(); }
 
     // ---- audio thread (or the control thread while quiescent) ----------------------------------------
@@ -5229,13 +5516,16 @@ void hostFree(void*, void* ptr) { std::free(ptr); }
 
 void hostLog(void*, int, const char* message) { std::fprintf(stderr, "[graph] %s\n", message); }
 
+// No optional host services yet; this is where they will be offered by id.
+const void* hostInterface(const rp_host*, const char*) { return nullptr; }
+
 constexpr auto kAdoptionTimeout = std::chrono::seconds(2);
 
 }  // namespace
 
 GraphHost::GraphHost(const NodeRegistry& registry, ResourceTable& resources, HostConfig config)
     : registry_(registry), resources_(resources), config_(config) {
-    host_ = rp_host{RP_ABI_VERSION, this, &hostAlloc, &hostFree, &hostLog};
+    host_ = rp_host{RP_ABI_VERSION, this, &hostAlloc, &hostFree, &hostLog, &hostInterface};
 }
 
 GraphHost::~GraphHost() {
@@ -5395,6 +5685,11 @@ bool GraphHost::reactivate(double sampleRate, std::uint32_t maxFrames) {
     return true;
 }
 
+bool GraphHost::isFaulted(std::string_view id) const {
+    const auto it = live_.find(std::string(id));
+    return it != live_.end() && it->second->faulted.load(std::memory_order_relaxed);
+}
+
 rp_node* GraphHost::node(std::string_view id) const {
     const auto it = live_.find(std::string(id));
     return it == live_.end() ? nullptr : it->second->node;
@@ -5522,7 +5817,7 @@ const rp_package* hostPackage() {
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (243 assertions in 46 test cases)`.
+Expected: `All tests passed (275 assertions in 53 test cases)`.
 
 - [ ] **Step 7: Commit**
 
@@ -6311,7 +6606,7 @@ const rp_package* corePackage() {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (285 assertions in 58 test cases)`.
+Expected: `All tests passed (317 assertions in 65 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -6487,7 +6782,7 @@ TEST_CASE("plan swaps under a running audio thread keep a node's output and stat
         std::vector<std::vector<float>> outs(8, std::vector<float>(64));
         std::vector<float*> ptrs;
         for (auto& o : outs) ptrs.push_back(o.data());
-        rp_transport t{48000.0, 120.0, 0.0, false};
+        rp_transport t{48000.0, 120.0, 0.0, 0};
         while (running.load(std::memory_order_acquire)) {
             for (auto& o : outs) std::fill(o.begin(), o.end(), 0.0f);
             rig.host->processBlock(64, t, ptrs.data(), 8);
@@ -6525,7 +6820,7 @@ Add both files to the test's `SOURCES` and `Threads::Threads` to its `LIBS`:
 - [ ] **Step 3: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (492 assertions in 60 test cases)`. (These pass immediately: the properties
+Expected: `All tests passed (524 assertions in 67 test cases)`. (These pass immediately: the properties
 were built in by Tasks 2 to 8. If NoAlloc fails, an earlier task let an allocation onto the block path;
 fix that, never the test.)
 
@@ -6539,7 +6834,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-graph-test
 ```
 
-Expected: `All tests passed (492 assertions in 60 test cases)` and no ThreadSanitizer report. (Same
+Expected: `All tests passed (524 assertions in 67 test cases)` and no ThreadSanitizer report. (Same
 configure as `tools/run-sanitizer.sh thread`, which shares `build-tsan/`.)
 
 - [ ] **Step 5: Commit**

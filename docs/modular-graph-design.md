@@ -328,9 +328,18 @@ typedef struct rp_package {
     const char* manifest_json;
     uint32_t node_type_count;
     const struct rp_node_type* const* node_types;
-    bool (*init)(const struct rp_host* host);
-    void (*deinit)(void);
-} rp_package;
+} rp_package;  // no init / deinit in ABI v1: a pack needing one-time setup does it in its first create
+
+struct rp_host {   // host services; grows through get_interface, never by reshaping this table
+    uint32_t abi_version;
+    void* ctx;
+    void* (*alloc)(void* ctx, size_t size, size_t align);
+    void  (*free)(void* ctx, void* ptr);
+    void  (*log)(void* ctx, int level, const char* message);
+    const void* (*get_interface)(const struct rp_host* host, const char* id);
+};
+
+typedef uint32_t rp_status;  // RP_OK / RP_FAULT: fixed-width, since an enum's size is not portable
 
 typedef struct rp_settings { const uint8_t* data; size_t size; uint32_t encoding; } rp_settings; // JSON on desktop
 
@@ -348,6 +357,7 @@ typedef struct rp_node_vtable {
     void        (*deactivate)(rp_node*);                                   // control
     void        (*ports_changed)(rp_node*, const rp_connection_mask*);     // audio, alloc-free
     rp_status   (*process)(rp_node*, const rp_process*);                   // audio, alloc-free
+    // (rp_prepare_result, like rp_status, is a uint32_t with named constants)
     void*       (*prepare_settings)(rp_node*, const rp_settings*, rp_error*); // control
     void        (*commit_settings)(rp_node*, void* prepared, void** old);  // audio, pointer swap
     void        (*release_settings)(rp_node*, void* old);                  // control
@@ -631,8 +641,10 @@ No heap, no exceptions, the same code on every target. Per block:
 1. Drain the command ring.
 2. Walk the steps. A plain node is one `process` call with pointers already bound. A **coupled group**
    runs prepare on every member, then round-robin `step` until every member reaches the block target,
-   then finish (today's `runUnit` in `BlockRunner`, generalised over `rp.step/1`). `rp.step/1` has no
-   status return, so in v1 a coupled-group member cannot fault; only a plain `process` call can.
+   then finish (today's `runUnit` in `BlockRunner`, generalised over `rp.step/1`). `step` returns
+   below / done / fault, and may be called again after reporting done. A group still not done after a
+   generous bound of passes per frame (4096) has a member making no progress; each member that still is
+   not done is faulted, which is the guard against a wedged core spinning the audio thread forever.
 3. Reset event, bytes and control queues.
 4. Publish snapshots through the `SnapshotRegistry` (via `rp.snapshot/1`).
 
@@ -922,8 +934,11 @@ Five phases; each lands working and verified before the next starts.
 ## 9. Error handling
 
 - **Planner errors are structured** (`nodeId`, `port`, `code`, `message`). A failed plan changes nothing.
-- **A faulting node is bypassed, not fatal.** `process` cannot throw but can return a fault; the executor
-  then bypasses that node (outputs silence / empty queues) and bumps a fault counter TS can read.
+- **A faulting node is bypassed, not fatal.** `process` cannot throw but can return a fault (as can a
+  coupled member's `step`, or the group pass bound); the executor then bypasses that node (audio silenced,
+  queues emptied, control changes dropped) and bumps a fault counter TS can read. The fault flag belongs
+  to the instance, so an unrelated graph edit does not revive a wedged node, and `GraphHost::isFaulted`
+  names which node it was.
 - **Queue overflow** drops and bumps a counter; nothing allocates.
 - **Downloaded native packs** are checked at load for ABI version and a valid descriptor. There is no
   sandbox: a crashing native node takes the host down. Trust prompts and signing belong to the downloads
