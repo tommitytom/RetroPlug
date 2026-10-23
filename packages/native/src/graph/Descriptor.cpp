@@ -190,6 +190,14 @@ rfl::Result<ChannelSpec> parseChannels(const rfl::Generic& g, const std::string&
     return ChannelSpec::fixed(static_cast<std::uint32_t>(count), *layoutName);
 }
 
+// A port or param id: a plain id (it is quoted in messages and compared as a string) with no '*', which
+// would make an exclusive-group pattern ambiguous.
+std::optional<std::string> checkMemberId(const std::string& id, const std::string& at) {
+    if (!isPlainId(id) || id.find('*') != std::string::npos)
+        return at + ": id " + q(id) + " must not contain whitespace, control characters or '*'";
+    return std::nullopt;
+}
+
 rfl::Result<PortDesc> parsePort(const rfl::Generic& g, std::size_t index) {
     const std::string at = "port #" + std::to_string(index);
     auto o = g.to_object();
@@ -197,6 +205,7 @@ rfl::Result<PortDesc> parsePort(const rfl::Generic& g, std::size_t index) {
     PortDesc p;
     auto id = reqString(*o, "id", at);
     if (!id) return fail(id.error().what());
+    if (auto bad = checkMemberId(*id, at)) return fail(*bad);
     p.id = *id;
     const std::string where = "port " + q(p.id);
     auto dir = reqString(*o, "dir", where).and_then([&](const std::string& s) { return enumIndex(s, kDirNames, "dir", where); });
@@ -244,6 +253,7 @@ rfl::Result<ParamDesc> parseParam(const rfl::Generic& g, std::size_t index) {
     ParamDesc p;
     auto id = reqString(*o, "id", at);
     if (!id) return fail(id.error().what());
+    if (auto bad = checkMemberId(*id, at)) return fail(*bad);
     p.id = *id;
     const std::string where = "param " + q(p.id);
     auto name = optString(*o, "name", where);
@@ -485,7 +495,7 @@ bool isPlainId(std::string_view s) {
 }
 
 bool matchesPattern(std::string_view pattern, std::string_view portId) {
-    if (pattern.size() >= 2 && pattern.substr(pattern.size() - 2) == ".*")
+    if (pattern.size() > 2 && pattern.substr(pattern.size() - 2) == ".*")  // as the exclusive parser reads it
         return portId.substr(0, pattern.size() - 1) == pattern.substr(0, pattern.size() - 1);
     return pattern == portId;
 }

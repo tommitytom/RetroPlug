@@ -68,6 +68,10 @@ TEST_CASE("malformed layouts are refused with a reason", "[graph][descriptor]") 
     CHECK(layoutReason(R"({"params":[{"id":"m","type":"enum","values":[]}]})").find("values") != std::string::npos);
     CHECK(layoutReason("[1,2]") == "layout must be an object");
     CHECK(layoutReason(R"({"ports":[{"id":5,"dir":"in","kind":"events"}]})") == "port #0: \"id\" must be a string");
+    CHECK(layoutReason(R"({"ports":[{"id":"a b","dir":"in","kind":"events"}]})").find("whitespace") != std::string::npos);
+    CHECK(layoutReason(R"({"ports":[{"id":".*","dir":"out","kind":"events"}]})").find("'*'") != std::string::npos);
+    CHECK(layoutReason(R"({"params":[{"id":"g\u0001","type":"float"}]})").find("control characters") != std::string::npos);
+    CHECK_FALSE(matchesPattern(".*", ".x"));  // a wildcard needs a prefix, as the exclusive parser says
 }
 
 TEST_CASE("param ranges are validated, so the planner's clamp is always well-defined", "[graph][descriptor]") {

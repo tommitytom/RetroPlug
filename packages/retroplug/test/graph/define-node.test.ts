@@ -36,15 +36,31 @@ test("a node without settings declares the same empty schema C++ does", () => {
   expect(n.descriptor().settings).toEqual({ type: "object" });
 });
 
-test("a node with settings ships zod's JSON Schema", () => {
+test("a node with settings ships the JSON Schema of what a document may write", () => {
   const n = defineNode({
     id: "rp.test.schema",
     settings: z.object({ maxSamples: z.number().int().min(1).default(48000) }),
     ports: {},
     create: noop,
   });
-  const schema = n.descriptor().settings as { properties?: Record<string, unknown> };
+  const schema = n.descriptor().settings as { properties?: Record<string, unknown>; required?: string[]; additionalProperties?: unknown };
   expect(Object.keys(schema.properties ?? {})).toEqual(["maxSamples"]);
+  // A defaulted field is optional and extra keys are allowed, as parseSettings (and C++) treat them.
+  expect(schema.required).toBe(undefined);
+  expect(schema.additionalProperties).toBe(undefined);
+  expect(n.parseSettings({}).maxSamples).toBe(48000);
+  expect(n.parseSettings({ maxSamples: 5, extra: 1 }).maxSamples).toBe(5);
+});
+
+test("settings are a JSON object or nothing, and every field needs a default", () => {
+  const n = defineNode({ id: "rp.test.bare", ports: {}, create: noop });
+  expect(n.parseSettings(undefined)).toEqual({});
+  expect(() => n.parseSettings("x")).toThrow("JSON object");
+  expect(() => n.parseSettings(null)).toThrow("JSON object");
+  expect(() => n.parseSettings([1])).toThrow("JSON object");
+  expect(() => defineNode({ id: "rp.test.nodefault", settings: z.object({ rom: z.string() }), ports: {}, create: noop })).toThrow(
+    "needs a default",
+  );
 });
 
 test("duplicate ids and bad enum defaults are rejected", () => {
@@ -71,11 +87,12 @@ test("param ranges and channel specs are checked as the C++ parser checks them",
   expect(bad({ g: param.float({ name: "G", min: 0, max: 1, default: 2 }) })).toThrow("within");
   expect(bad({ n: param.int({ name: "N", min: 0.5, max: 3, default: 1 }) })).toThrow("whole-number");
   expect(bad({ m: param.enum({ name: "M", values: ["a", "a"], default: "a" }) })).toThrow("twice");
-  expect(bad({}, { out: audio.out(channels.any()) })).toThrow('cannot be "any"');
+  expect(bad({}, { out: audio.out(channels.any() as never) })).toThrow('cannot be "any"');  // (a type error too)
   expect(bad({}, { out: audio.out(channels.match("nope")) })).toThrow("not another audio port");
   expect(bad({}, { in: audio.in(channels.fixed(2, "mono")) })).toThrow("is 1 channels");
   expect(bad({ g: param.float({ name: "G", min: 0, max: Infinity, default: 0 }) })).toThrow("finite");
-  bad({}, { in: audio.in(channels.fixed(2, "constructor")) })();  // an unknown layout name, not an Object.prototype key
+  // an unknown layout name, not an Object.prototype key
+  expect(bad({}, { in: audio.in(channels.fixed(2, "constructor")) })().ports[0].channels).toEqual({ count: 2, layout: "constructor" });
   expect(bad({}, { in: audio.in(channels.fixed(3, "discrete(03)")) })).toThrow("not a discrete(n)");
   expect(() =>
     defineNode({ id: "rp.test.ex", ports: { "pins.a": events.out() }, exclusive: [["pins.*", "pins.a"]], create: noop }).descriptor(),
@@ -98,4 +115,46 @@ test("resource ports carry their type and write access", () => {
     { id: "target", dir: "in", kind: "resource", resourceType: "audio-buffer", access: "write" },
     { id: "buffer", dir: "out", kind: "resource", resourceType: "audio-buffer" },
   ]);
+});
+
+test("port shapes are checked as the C++ parser checks them", () => {
+  const shaped = (spec: unknown) => () => defineNode({ id: "rp.test.shape", ports: { p: spec as never }, create: noop }).descriptor();
+  expect(shaped({ dir: "in", kind: "audio" })).toThrow("needs channels");
+  expect(shaped({ dir: "in", kind: "events", channels: { any: true } })).toThrow("only audio ports");
+  expect(shaped({ dir: "in", kind: "link" })).toThrow("link ports");
+  expect(shaped({ dir: "out", kind: "resource", resourceType: "t", access: "write" })).toThrow("only a resource input");
+  expect(shaped({ dir: "in", kind: "events", resourceType: "t" })).toThrow("only resource ports");
+  expect(shaped({ dir: "in", kind: "audio", channels: { any: true, count: 2, layout: "stereo" } })).toThrow("exactly one");
+  expect(shaped({ dir: "in", kind: "audio", channels: { any: false } })).toThrow("must be true");
+  expect(shaped({ dir: "in", kind: "audio", channels: { count: 4294967296, layout: "discrete(4294967296)" } })).toThrow("whole channel count");
+  expect(shaped({ dir: "in", kind: "resource" })).toThrow("resourceType");
+  expect(shaped({ dir: "sideways", kind: "events" })).toThrow("unknown dir");
+});
+
+test("ids are plain, unambiguous and keep their order", () => {
+  const node = (ports: Record<string, unknown>) => () => defineNode({ id: "rp.test.ids", ports: ports as never, create: noop }).descriptor();
+  expect(node({ "a b": events.in() })).toThrow("whitespace");
+  expect(node({ ".*": events.out() })).toThrow("'*'");
+  expect(node({ "1": events.in() })).toThrow("in order");
+  expect(node({ "x\udc00": events.in() })).toThrow("control characters");  // a lone surrogate C++ cannot read
+  expect(() => defineNode({ id: "rp.p.\ud800", ports: {}, create: noop })).toThrow("control characters");
+  expect(defineNode({ id: "rp.p.\ud83c\udfb5", ports: {}, create: noop }).descriptor().id).toBe("rp.p.\ud83c\udfb5");  // a whole pair is fine
+});
+
+test("a returned descriptor is the caller's own copy", () => {
+  const n = defineNode({
+    id: "rp.test.copy",
+    ports: { "pins.a": events.out(), "pins.b": events.out() },
+    params: { m: param.enum({ name: "M", values: ["a", "b"], default: "a" }) },
+    exclusive: [["pins.a", "pins.b"]],
+    create: noop,
+  });
+  const first = n.descriptor();
+  first.exclusive![0].push("pins.a");
+  (first.params[0] as { values: string[] }).values.push("a");
+  (first.settings as Record<string, unknown>).type = "array";
+  const second = n.descriptor();
+  expect(second.exclusive).toEqual([["pins.a", "pins.b"]]);
+  expect((second.params[0] as { values: string[] }).values).toEqual(["a", "b"]);
+  expect(second.settings).toEqual({ type: "object" });
 });

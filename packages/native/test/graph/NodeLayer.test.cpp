@@ -76,6 +76,61 @@ TEST_CASE("a C++ node's descriptor matches the shared golden byte for byte", "[g
     CHECK(std::string(rp::node_type<Gain>()->descriptor()) == readFile(RP_GRAPH_GOLDEN_DIR "/rp.test.gain.descriptor.json"));
 }
 
+namespace {
+
+enum class SyncSource { Off, MidiSync, N8Fifo };
+
+// The second conformance node: every port kind and direction, every channel spec, every param type, an
+// int with a unit, a bool defaulting to true, extreme number spellings, appended ports and an exclusive
+// group, metadata and capability flags. Its TS twin is in conformance.test.ts.
+struct KitchenSink {
+    static constexpr const char* id = "rp.test.kitchen-sink";
+    static constexpr const char* name = "Kitchen Sink";
+    static constexpr const char* category = "test/conformance";
+    static constexpr const char* version = "2.1.0";
+    static constexpr bool heap = true;
+    struct {
+        rp::audio_in<rp::any>                in;
+        rp::audio_in<rp::channels<2, "any">> side;
+        rp::events_in                        midi;
+        rp::bytes_in                         serial;
+        rp::control_in                       mod;
+        rp::link                             peer;
+        rp::resource_in<"audio-buffer">      sample;
+        rp::resource_write<"audio-buffer">   target;
+    } inputs;
+    struct {
+        rp::audio_out<rp::match<"in">>          out;
+        rp::audio_out<rp::channels<6, "5.1">>   surround;
+        rp::events_out                          notes;
+        rp::bytes_out                           serialOut;
+        rp::control_out                         level;
+        rp::resource_out<"audio-buffer">        buffer;
+    } outputs;
+    struct {
+        rp::float_param<"Tiny", rp::range{0, 1e-7, 1e-7}>      tiny;
+        rp::float_param<"Huge", rp::range{-1e21, 1e21, 0}>     huge;
+        rp::int_param<"Steps", rp::range{1, 16, 4}, "steps">   steps;
+        rp::bool_param<"Armed", true>                          armed;
+        rp::enum_param<SyncSource, "Sync", SyncSource::N8Fifo> sync;
+    } params;
+    static void adjust_layout(Layout& l, const rp::detail::NoSettings&) {
+        for (const char* p : {"pins.a", "pins.b", "channels.x"})
+            l.ports.push_back({p, PortDir::Out, PortKind::Audio, ChannelSpec::fixed(1, "mono"), {}, false});
+        l.exclusive.push_back({"pins.*", "channels.*"});
+    }
+    void process(const rp::Block&) noexcept {}
+};
+
+}  // namespace
+
+TEST_CASE("every descriptor feature matches the shared golden byte for byte", "[graph][node]") {
+    const std::string mine = rp::node_type<KitchenSink>()->descriptor();
+    CHECK(mine == readFile(RP_GRAPH_GOLDEN_DIR "/rp.test.kitchen-sink.descriptor.json"));
+    REQUIRE(parseDescriptor(mine));  // and the strict parser accepts it unchanged
+    CHECK(descriptorJson(*parseDescriptor(mine)) == mine);
+}
+
 TEST_CASE("enum labels are the enumerator names in kebab-case", "[graph][node]") {
     const std::string d = rp::node_type<Gain>()->descriptor();
     CHECK(d.find(R"("values":["off","midi-sync","high-pass-tpdf"])") != std::string::npos);

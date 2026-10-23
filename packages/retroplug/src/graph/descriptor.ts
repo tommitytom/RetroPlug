@@ -6,8 +6,12 @@ export type PortKind = "audio" | "events" | "bytes" | "control" | "link" | "reso
 export type PortDir = "in" | "out" | "link";
 
 /** An audio port's channels: a fixed count + layout, any (inputs only), or a copy of another port. A fixed
- *  layout of "any" fixes the count only. */
-export type ChannelSpec = { any: true } | { match: string } | { count: number; layout: string };
+ *  layout of "any" fixes the count only. Exactly one form: the `never` members stop an object literal from
+ *  mixing two (`{ any: true, count: 2 }`), which C++'s parser refuses. */
+export type ChannelSpec =
+  | { any: true; match?: never; count?: never; layout?: never }
+  | { match: string; any?: never; count?: never; layout?: never }
+  | { count: number; layout: string; any?: never; match?: never };
 
 export interface PortDesc {
   id: string;

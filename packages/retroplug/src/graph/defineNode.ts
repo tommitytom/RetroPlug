@@ -9,25 +9,39 @@
 //   });
 //
 // Settings are validated on the CONTROL plane (parseSettings), so the code that runs on the audio thread
-// receives a plain, already-checked object and the audio-thread bundle never carries zod.
-import { z } from "zod";
+// receives a plain, already-checked object. zod is imported for its types only: the schema a definition
+// carries brings its own toJSONSchema, so a bundle holding just a node's create/process need not hold zod.
+import type { z } from "zod";
 import type { ChannelSpec, Layout, ParamDesc, PortDesc, TypeDescriptor } from "./descriptor";
 
 // ---- ports ------------------------------------------------------------------------------------------------
 
-type PortSpec = Omit<PortDesc, "id">;
+type AnyChannels = Extract<ChannelSpec, { any: true }>;
+type MatchChannels = Extract<ChannelSpec, { match: string }>;
+type FixedChannels = Extract<ChannelSpec, { count: number }>;
+type OutputChannels = MatchChannels | FixedChannels;
+
+// Each kind's legal shape, so a hand-written spec that C++'s parser would refuse does not type-check. (The
+// same rules are also checked at run time, for callers that are not type-checked.)
+type PortSpec =
+  | { dir: "in"; kind: "audio"; channels: ChannelSpec }
+  | { dir: "out"; kind: "audio"; channels: OutputChannels }
+  | { dir: "in" | "out"; kind: "events" | "bytes" | "control" }
+  | { dir: "in"; kind: "resource"; resourceType: string; access?: "write" }
+  | { dir: "out"; kind: "resource"; resourceType: string }
+  | { dir: "link"; kind: "link" };
 
 export const channels = {
-  any: (): ChannelSpec => ({ any: true }),
-  match: (port: string): ChannelSpec => ({ match: port }),
-  fixed: (count: number, layout: string): ChannelSpec => ({ count, layout }),
-  mono: (): ChannelSpec => ({ count: 1, layout: "mono" }),
-  stereo: (): ChannelSpec => ({ count: 2, layout: "stereo" }),
+  any: (): AnyChannels => ({ any: true }),
+  match: (port: string): MatchChannels => ({ match: port }),
+  fixed: (count: number, layout: string): FixedChannels => ({ count, layout }),
+  mono: (): FixedChannels => ({ count: 1, layout: "mono" }),
+  stereo: (): FixedChannels => ({ count: 2, layout: "stereo" }),
 };
 
 export const audio = {
   in: (spec: ChannelSpec = channels.any()): PortSpec => ({ dir: "in", kind: "audio", channels: spec }),
-  out: (spec: ChannelSpec): PortSpec => ({ dir: "out", kind: "audio", channels: spec }),
+  out: (spec: OutputChannels): PortSpec => ({ dir: "out", kind: "audio", channels: spec }),
 };
 export const events = {
   in: (): PortSpec => ({ dir: "in", kind: "events" }),
@@ -151,7 +165,8 @@ export interface DefinedNode<S> extends NodeDefinition<S> {
   descriptor(): TypeDescriptor;
 }
 
-const NO_SETTINGS_SCHEMA = { type: "object" };
+const MAX_CHANNELS = 4294967295;
+const q = (s: string): string => JSON.stringify(s);
 
 /** How many channels a layout name means (mono 1, stereo 2, 5.1 6, 7.1 8, discrete(n) n); null for "any"
  *  or an unknown name. The twin of layoutChannels in packages/native/src/graph/Descriptor.cpp. */
@@ -163,87 +178,175 @@ export function layoutChannels(layout: string): number | null {
     case "7.1": return 8;
   }
   const m = /^discrete\(([1-9][0-9]*)\)$/.exec(layout);
-  return m ? Number(m[1]) : null;
+  const n = m ? Number(m[1]) : 0;
+  return n >= 1 && n <= MAX_CHANNELS ? n : null;
 }
 
-const MAX_CHANNELS = 4294967295;
+/** Can C++ read this string? A lone surrogate has no UTF-8 spelling, so its parser refuses one. */
+function wellFormed(s: string): boolean {
+  for (let i = 0; i < s.length; ++i) {
+    const c = s.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff) {
+      const next = s.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+      ++i;
+    } else if (c >= 0xdc00 && c <= 0xdfff) return false;
+  }
+  return true;
+}
+
+/** The C++ registry's isPlainId, code unit for byte: non-empty, nothing at or below U+0020, nor U+007F. */
+const plainId = (s: unknown): s is string => typeof s === "string" && s.length > 0 && !/[\u0000-\u0020\u007f]/.test(s) && wellFormed(s);
+
+const isString = (v: unknown): v is string => typeof v === "string";
+const has = (o: object, key: string): boolean => Object.prototype.hasOwnProperty.call(o, key);
+
+// One port's own shape, as parsePort in Descriptor.cpp checks it.
+function checkPort(node: string, p: PortDesc): void {
+  const where = `${node}: port ${q(p.id)}`;
+  if (!["in", "out", "link"].includes(p.dir)) throw new Error(`${where}: unknown dir ${q(String(p.dir))}`);
+  if (!["audio", "events", "bytes", "control", "link", "resource"].includes(p.kind))
+    throw new Error(`${where}: unknown kind ${q(String(p.kind))}`);
+  if ((p.kind === "link") !== (p.dir === "link")) throw new Error(`${where}: link ports, and only link ports, have dir "link"`);
+  if (p.kind === "audio") {
+    const c = p.channels as Record<string, unknown> | undefined;
+    if (!c || typeof c !== "object") throw new Error(`${where}: an audio port needs channels`);
+    if (["any", "match", "count"].filter((k) => has(c, k)).length !== 1)
+      throw new Error(`${where}: channels needs exactly one of any / match / count`);
+    if (has(c, "any")) {
+      if (c.any !== true) throw new Error(`${where}: channels.any must be true`);
+      if (p.dir === "out") throw new Error(`${where}: an output cannot be "any"; use match or a fixed count`);
+    } else if (has(c, "match")) {
+      if (!plainId(c.match)) throw new Error(`${where}: channels.match must name a port`);
+    } else {
+      const count = c.count as number;
+      if (typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > MAX_CHANNELS)
+        throw new Error(`${where}: needs a whole channel count from 1 to ${MAX_CHANNELS}`);
+      if (!isString(c.layout) || !c.layout || !wellFormed(c.layout)) throw new Error(`${where}: needs a layout name`);
+      const known = layoutChannels(c.layout);
+      if (known === null && c.layout.startsWith("discrete("))
+        throw new Error(`${where}: layout ${q(c.layout)} is not a discrete(n) layout`);
+      if (known !== null && known !== count) throw new Error(`${where}: layout ${q(c.layout)} is ${known} channels, not ${count}`);
+    }
+  } else if (p.channels !== undefined) {
+    throw new Error(`${where}: only audio ports have channels`);
+  }
+  if (p.kind === "resource") {
+    if (!plainId(p.resourceType)) throw new Error(`${where}: a resource port needs a resourceType`);
+    if (p.access !== undefined && p.access !== "write") throw new Error(`${where}: access can only be "write"`);
+    if (p.access === "write" && p.dir !== "in") throw new Error(`${where}: only a resource input may have access "write"`);
+  } else if (p.resourceType !== undefined || p.access !== undefined) {
+    throw new Error(`${where}: only resource ports have resourceType or access`);
+  }
+}
+
+// One param's own shape, as parseParam in Descriptor.cpp checks it.
+function checkParam(node: string, p: ParamDesc): void {
+  const where = `${node}: param ${q(p.id)}`;
+  if (!isString(p.name) || !wellFormed(p.name)) throw new Error(`${where}: needs a name`);
+  if (p.type === "enum") {
+    if (!Array.isArray(p.values) || p.values.length === 0 || p.values.some((v) => !isString(v) || !v || !wellFormed(v)))
+      throw new Error(`${where}: an enum needs non-empty values`);
+    if (new Set(p.values).size !== p.values.length) throw new Error(`${where}: an enum lists a value twice`);
+    if (!p.values.includes(p.default)) throw new Error(`${where}: default ${q(String(p.default))} is not one of its values`);
+  } else if (p.type === "bool") {
+    if (typeof p.default !== "boolean") throw new Error(`${where}: a bool's default must be true or false`);
+  } else if (p.type === "float" || p.type === "int") {
+    if (![p.min, p.max, p.default].every((v) => typeof v === "number" && Number.isFinite(v)))
+      throw new Error(`${where}: needs finite min, max and default`);
+    if (!(p.min <= p.max)) throw new Error(`${where}: min must not exceed max`);
+    if (!(p.min <= p.default && p.default <= p.max)) throw new Error(`${where}: default must lie within [min, max]`);
+    if (p.type === "int" && ![p.min, p.max, p.default].every(Number.isInteger))
+      throw new Error(`${where}: an int param needs whole-number min, max and default`);
+    if (p.unit !== undefined && (!isString(p.unit) || !wellFormed(p.unit))) throw new Error(`${where}: unit must be a string`);
+  } else {
+    throw new Error(`${where}: unknown type ${q(String((p as { type: unknown }).type))}`);
+  }
+}
+
+// A fresh copy of a port, so a caller that edits a returned layout cannot reach the definition.
+function copyPort(id: string, spec: PortSpec): PortDesc {
+  const p: PortDesc = { id, dir: spec.dir, kind: spec.kind };
+  if ("channels" in spec && spec.channels !== undefined) p.channels = { ...spec.channels } as ChannelSpec;
+  if ("resourceType" in spec && spec.resourceType !== undefined) p.resourceType = spec.resourceType;
+  if ("access" in spec && spec.access !== undefined) p.access = spec.access;
+  return p;
+}
+
+function copyParam(id: string, spec: ParamSpec): ParamDesc {
+  const p = { id, ...spec } as ParamDesc;
+  if (p.type === "enum") p.values = [...p.values];
+  return p;
+}
+
+// An integer-like key ("1") would be listed before every other key by Object.entries, so it could not
+// keep its declaration order; C++ keeps it, so the two sides would disagree.
+const integerLike = (id: string): boolean => /^(0|[1-9][0-9]*)$/.test(id);
 
 function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
   const portMap = typeof def.ports === "function" ? def.ports(settings) : def.ports;
   const paramMap = typeof def.params === "function" ? def.params(settings) : (def.params ?? {});
-  const ports: PortDesc[] = Object.entries(portMap).map(([id, spec]) => ({ id, ...spec }));
+  const ports: PortDesc[] = Object.entries(portMap).map(([id, spec]) => copyPort(id, spec));
   // Inputs (and link ports) first, then outputs, each in declaration order - the C++ layer's order too.
   const ordered = [...ports.filter((p) => p.dir !== "out"), ...ports.filter((p) => p.dir === "out")];
-  const params = Object.entries(paramMap).map(([id, spec]) => ({ id, ...spec }) as ParamDesc);
+  const params = Object.entries(paramMap).map(([id, spec]) => copyParam(id, spec));
   const seen = new Set<string>();
   for (const p of [...ordered, ...params]) {
-    if (!p.id) throw new Error(`${def.id}: a port or param needs a non-empty id`);
-    if (seen.has(p.id)) throw new Error(`${def.id}: "${p.id}" is used by more than one port or param`);
+    if (!plainId(p.id) || p.id.includes("*"))
+      throw new Error(`${def.id}: id ${q(p.id)} must be non-empty, with no whitespace, control characters or '*'`);
+    if (integerLike(p.id)) throw new Error(`${def.id}: id ${q(p.id)} is a number, which a JS object cannot keep in order`);
+    if (seen.has(p.id)) throw new Error(`${def.id}: ${q(p.id)} is used by more than one port or param`);
     seen.add(p.id);
   }
   // The same checks the C++ parser applies to every layout (Descriptor.cpp), so a TS node cannot declare
   // what the planner would refuse.
+  for (const p of ordered) checkPort(def.id, p);
+  for (const p of params) checkParam(def.id, p);
   for (const p of ordered) {
-    if (p.kind !== "audio" || !p.channels) continue;
     const c = p.channels;
-    if ("any" in c && p.dir === "out") throw new Error(`${def.id}: output "${p.id}" cannot be "any"`);
-    if ("match" in c) {
-      const target = ordered.find((t) => t.id === c.match);
-      if (!target || target === p || target.kind !== "audio")
-        throw new Error(`${def.id}: "${p.id}" matches "${c.match}", which is not another audio port`);
-    }
-    if ("count" in c) {
-      const known = layoutChannels(c.layout);
-      if (!Number.isInteger(c.count) || c.count < 1 || c.count > MAX_CHANNELS)
-        throw new Error(`${def.id}: "${p.id}" needs a whole channel count from 1 to ${MAX_CHANNELS}`);
-      if (!c.layout) throw new Error(`${def.id}: "${p.id}" needs a layout name`);
-      if (known === null && c.layout.startsWith("discrete("))
-        throw new Error(`${def.id}: "${p.id}" layout "${c.layout}" is not a discrete(n) layout`);
-      if (known !== null && known !== c.count)
-        throw new Error(`${def.id}: "${p.id}" layout "${c.layout}" is ${known} channels, not ${c.count}`);
-    }
+    if (p.kind !== "audio" || !c || !("match" in c) || c.match === undefined) continue;
+    const target = ordered.find((t) => t.id === c.match);
+    if (!target || target === p || target.kind !== "audio")
+      throw new Error(`${def.id}: port ${q(p.id)} matches ${q(c.match)}, which is not another audio port`);
   }
-  for (const p of ordered)
-    if (p.kind === "resource" && !p.resourceType) throw new Error(`${def.id}: resource port "${p.id}" needs a resourceType`);
-  for (const p of params) {
-    if (p.type === "enum") {
-      if (p.values.length === 0 || p.values.some((v) => !v)) throw new Error(`${def.id}: enum param "${p.id}" needs non-empty values`);
-      if (new Set(p.values).size !== p.values.length) throw new Error(`${def.id}: enum param "${p.id}" lists a value twice`);
-      if (!p.values.includes(p.default))
-        throw new Error(`${def.id}: enum param "${p.id}" default "${p.default}" is not one of its values`);
-    } else if (p.type === "float" || p.type === "int") {
-      if (![p.min, p.max, p.default].every(Number.isFinite)) throw new Error(`${def.id}: param "${p.id}" needs finite min, max and default`);
-      if (!(p.min <= p.max)) throw new Error(`${def.id}: param "${p.id}" min must not exceed max`);
-      if (!(p.min <= p.default && p.default <= p.max)) throw new Error(`${def.id}: param "${p.id}" default must lie within [min, max]`);
-      if (p.type === "int" && ![p.min, p.max, p.default].every(Number.isInteger))
-        throw new Error(`${def.id}: int param "${p.id}" needs whole-number min, max and default`);
-    }
-  }
+  const isWildcard = (m: string) => m.length > 2 && m.endsWith(".*");
+  const covers = (pattern: string, id: string) => isWildcard(pattern) && id.startsWith(pattern.slice(0, -1));
   for (const group of def.exclusive ?? []) {
-    if (group.length === 0) throw new Error(`${def.id}: an exclusive group needs members`);
+    if (!Array.isArray(group) || group.length === 0) throw new Error(`${def.id}: an exclusive group needs members`);
     group.forEach((m, i) => {
-      const wildcard = m.length > 2 && m.endsWith(".*");
-      if (!m || (!wildcard && !ordered.some((p) => p.id === m && p.dir === "out")))
-        throw new Error(`${def.id}: exclusive member "${m}" must be an output's id or a "prefix.*" pattern`);
-      const covers = (pattern: string, id: string) => pattern.endsWith(".*") && id.startsWith(pattern.slice(0, -1));
+      if (!isString(m) || !m || !wellFormed(m) || (!isWildcard(m) && !ordered.some((p) => p.id === m && p.dir === "out")))
+        throw new Error(`${def.id}: exclusive member ${q(String(m))} must be an output's id or a "prefix.*" pattern`);
       for (const other of group.slice(0, i)) {
-        const otherId = other.endsWith(".*") ? other.slice(0, -1) : other;
-        const mineId = wildcard ? m.slice(0, -1) : m;
+        const otherId = isWildcard(other) ? other.slice(0, -1) : other;
+        const mineId = isWildcard(m) ? m.slice(0, -1) : m;
         if (other === m || covers(m, otherId) || covers(other, mineId))
-          throw new Error(`${def.id}: exclusive members "${other}" and "${m}" overlap`);
+          throw new Error(`${def.id}: exclusive members ${q(other)} and ${q(m)} overlap`);
       }
     });
   }
   const layout: Layout = { ports: ordered, params };
-  if (def.exclusive?.length) layout.exclusive = def.exclusive;
+  if (def.exclusive?.length) layout.exclusive = def.exclusive.map((g) => [...g]);
   return layout;
 }
 
 export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): DefinedNode<S> {
-  // The C++ registry's isPlainId, code unit for byte: nothing at or below U+0020, nor U+007F.
-  if (!def.id || /[\u0000-\u0020\u007f]/.test(def.id))
-    throw new Error(`node type id ${JSON.stringify(def.id)} must be non-empty, with no whitespace or control characters`);
-  const parseSettings = (raw: unknown): S => (def.settings ? def.settings.parse(raw ?? {}) : ({} as S));
+  if (!plainId(def.id))
+    throw new Error(`node type id ${q(String(def.id))} must be non-empty, with no whitespace or control characters`);
+  // Settings arrive as JSON: an object, or nothing at all (the defaults), never another value, as in C++.
+  const parseSettings = (raw: unknown): S => {
+    const given = raw === undefined ? {} : raw;
+    if (typeof given !== "object" || given === null || Array.isArray(given))
+      throw new Error(`node type ${q(def.id)}: settings must be a JSON object`);
+    return def.settings ? def.settings.parse(given) : ({} as S);
+  };
+  // The descriptor describes the layout for default settings, so every field needs one (C++ has S{}).
+  if (def.settings) {
+    const defaults = def.settings.safeParse({});
+    if (!defaults.success) {
+      const issue = defaults.error.issues[0];
+      throw new Error(`node type ${q(def.id)}: every settings field needs a default (${issue?.path.join(".")}: ${issue?.message})`);
+    }
+  }
   return {
     ...def,
     parseSettings,
@@ -255,7 +358,12 @@ export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): D
       category: def.category ?? "",
       requires: { heap: def.requires?.heap ?? false, threads: def.requires?.threads ?? false },
       ...buildLayout(def, parseSettings({})),
-      settings: def.settings ? (z.toJSONSchema(def.settings) as Record<string, unknown>) : NO_SETTINGS_SCHEMA,
+      // The INPUT schema: what a document may write (defaulted fields optional, extra keys allowed), which
+      // is what C++'s DefaultIfMissing schema says too. zod's default, the output schema, would mark every
+      // defaulted field required.
+      settings: def.settings
+        ? (def.settings.toJSONSchema({ io: "input" }) as Record<string, unknown>)
+        : { type: "object" },
     }),
   };
 }

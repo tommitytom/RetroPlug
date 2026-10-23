@@ -6,7 +6,9 @@
 // (packages/native/test/graph/golden/, from gen-canonical-cases.mjs), which keeps them in step.
 //
 // For plain JSON data: toJSON methods and function-valued members are not given JSON.stringify's
-// treatment, because descriptors and settings never contain them.
+// treatment, because descriptors and settings never contain them. A lone surrogate is written as
+// JSON.stringify writes it ("\ud800"), which C++'s parser refuses: it has no UTF-8 spelling. defineNode
+// therefore refuses one in anything a descriptor carries.
 export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) {
     const parts: string[] = [];

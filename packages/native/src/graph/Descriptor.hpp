@@ -86,7 +86,8 @@ constexpr std::uint32_t kMaxChannels = 64;
 // particular would make the C string a node reads differ from the std::string the host checked.
 bool isPlainId(std::string_view s);
 
-// Does an exclusive-group pattern ("pins.*" or an exact id) match this port id?
+// Does an exclusive-group pattern ("pins.*", at least one character before the ".*", or an exact id)
+// match this port id?
 bool matchesPattern(std::string_view pattern, std::string_view portId);
 
 // How many channels a layout name means: mono 1, stereo 2, 5.1 6, 7.1 8, discrete(n) n. nullopt for "any"
