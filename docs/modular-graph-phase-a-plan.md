@@ -2147,18 +2147,73 @@ TEST_CASE("a type descriptor round-trips, settings schema included", "[graph][de
     CHECK(descriptorJson(*back) == json);
 }
 
+namespace {
+std::string layoutReason(const char* json) {
+    auto r = parseLayout(json);
+    return r ? std::string("parsed") : std::string(r.error().what());
+}
+std::string descriptorReason(const char* json) {
+    auto r = parseDescriptor(json);
+    return r ? std::string("parsed") : std::string(r.error().what());
+}
+}  // namespace
+
 TEST_CASE("malformed layouts are refused with a reason", "[graph][descriptor]") {
-    auto reason = [](const char* json) {
-        auto r = parseLayout(json);
-        return r ? std::string("parsed") : std::string(r.error().what());
-    };
-    CHECK(reason(R"({"ports":[{"id":"a","dir":"in","kind":"events"},{"id":"a","dir":"out","kind":"events"}]})").find("duplicate") != std::string::npos);
-    CHECK(reason(R"({"ports":[{"id":"l","dir":"in","kind":"link"}]})").find("link") != std::string::npos);
-    CHECK(reason(R"({"ports":[{"id":"a","dir":"in","kind":"audio"}]})").find("channels") != std::string::npos);
-    CHECK(reason(R"({"ports":[{"id":"a","dir":"sideways","kind":"events"}]})").find("dir") != std::string::npos);
-    CHECK(reason(R"({"ports":[{"id":"g","dir":"in","kind":"control"}],"params":[{"id":"g","type":"float"}]})").find("shares an id") != std::string::npos);
-    CHECK(reason(R"({"params":[{"id":"m","type":"enum","values":[]}]})").find("values") != std::string::npos);
-    CHECK(reason("[1,2]").find("object") != std::string::npos);
+    CHECK(layoutReason(R"({"ports":[{"id":"a","dir":"in","kind":"events"},{"id":"a","dir":"out","kind":"events"}]})") ==
+          "\"a\" is used by more than one port or param");
+    CHECK(layoutReason(R"({"ports":[{"id":"l","dir":"in","kind":"link"}]})").find("link") != std::string::npos);
+    CHECK(layoutReason(R"({"ports":[{"id":"a","dir":"in","kind":"audio"}]})") == "port \"a\": an audio port needs \"channels\"");
+    CHECK(layoutReason(R"({"ports":[{"id":"a","dir":"sideways","kind":"events"}]})") == "port \"a\": unknown dir \"sideways\"");
+    CHECK(layoutReason(R"({"ports":[{"id":"g","dir":"in","kind":"control"}],"params":[{"id":"g","type":"float"}]})") ==
+          "\"g\" is used by more than one port or param");
+    CHECK(layoutReason(R"({"params":[{"id":"m","type":"enum","values":[]}]})").find("values") != std::string::npos);
+    CHECK(layoutReason("[1,2]") == "layout must be an object");
+    CHECK(layoutReason(R"({"ports":[{"id":5,"dir":"in","kind":"events"}]})") == "port #0: \"id\" must be a string");
+}
+
+TEST_CASE("param ranges are validated, so the planner's clamp is always well-defined", "[graph][descriptor]") {
+    CHECK(layoutReason(R"({"params":[{"id":"g","type":"float","min":5,"max":1}]})").find("must not exceed") != std::string::npos);
+    CHECK(layoutReason(R"({"params":[{"id":"g","type":"float","min":0,"max":1,"default":2}]})").find("within") != std::string::npos);
+    CHECK(layoutReason(R"({"params":[{"id":"n","type":"int","min":0.5,"max":3}]})").find("whole numbers") != std::string::npos);
+    CHECK(layoutReason(R"({"params":[{"id":"g","type":"float","min":"0"}]})").find("finite number") != std::string::npos);
+    CHECK(layoutReason(R"({"params":[{"id":"g","type":"float"},{"id":"g","type":"bool"}]})").find("more than one") != std::string::npos);
+    CHECK(layoutReason(R"({"params":[{"id":"b","type":"bool","default":1}]})").find("true or false") != std::string::npos);
+    CHECK(layoutReason(R"({"params":[{"id":"m","type":"enum","values":["a","b"],"default":"c"}]})").find("not one of its values") != std::string::npos);
+    CHECK(layoutReason(R"({"params":[{"id":"m","type":"enum","values":["a","a"]}]})").find("listed twice") != std::string::npos);
+    const auto ok = parseLayout(R"({"params":[{"id":"g","type":"float","min":-1,"max":1,"default":0.5,"unit":""}]})");
+    REQUIRE(ok);
+    CHECK(ok->params[0].name == "g");  // a missing name is the id
+}
+
+TEST_CASE("channel specs are exact", "[graph][descriptor]") {
+    CHECK(layoutReason(R"({"ports":[{"id":"a","dir":"in","kind":"audio","channels":{"count":4294967297,"layout":"x"}}]})").find("4294967295") != std::string::npos);
+    CHECK(layoutReason(R"({"ports":[{"id":"a","dir":"in","kind":"audio","channels":{"count":2,"layout":"mono"}}]})").find("is 1 channels") != std::string::npos);
+    CHECK(layoutReason(R"({"ports":[{"id":"a","dir":"in","kind":"audio","channels":{"any":false}}]})").find("must be true") != std::string::npos);
+    CHECK(layoutReason(R"({"ports":[{"id":"a","dir":"in","kind":"audio","channels":{"any":true,"count":2}}]})").find("exactly one") != std::string::npos);
+    CHECK(layoutReason(R"({"ports":[{"id":"a","dir":"out","kind":"audio","channels":{"any":true}}]})").find("cannot be \"any\"") != std::string::npos);
+    CHECK(layoutReason(R"({"ports":[{"id":"a","dir":"out","kind":"audio","channels":{"match":"a"}}]})").find("not another audio port") != std::string::npos);
+    CHECK(layoutReason(R"({"ports":[{"id":"e","dir":"in","kind":"events","channels":{"any":true}}]})").find("only audio ports") != std::string::npos);
+    const auto two = parseLayout(R"({"ports":[{"id":"a","dir":"in","kind":"audio","channels":{"count":2.0,"layout":"stereo"}}]})");
+    REQUIRE(two);  // 2.0 is the same number JavaScript writes as 2
+    CHECK(two->ports[0].channels.count == 2);
+}
+
+TEST_CASE("resource access and exclusive groups are exact", "[graph][descriptor]") {
+    CHECK(layoutReason(R"({"ports":[{"id":"r","dir":"in","kind":"resource","resourceType":"x","access":"wirte"}]})").find("can only be") != std::string::npos);
+    CHECK(layoutReason(R"({"ports":[{"id":"e","dir":"in","kind":"events","resourceType":"x"}]})").find("only resource ports") != std::string::npos);
+    CHECK(layoutReason(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[["nope"]]})").find("exclusive member") != std::string::npos);
+    CHECK(layoutReason(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[[]]})").find("non-empty") != std::string::npos);
+    CHECK(parseLayout(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[["o","pins.*"]]})"));
+}
+
+TEST_CASE("a descriptor's requires flags are exact", "[graph][descriptor]") {
+    CHECK(descriptorReason(R"({"id":"x","requires":{"heap":1}})").find("true or false") != std::string::npos);
+    CHECK(descriptorReason(R"({"id":"x","requires":{"gpu":true}})").find("does not provide") != std::string::npos);
+    CHECK(descriptorReason(R"({"id":"has space"})").find("whitespace") != std::string::npos);
+    const auto d = parseDescriptor(R"({"id":"x","requires":{"gpu":false}})");
+    REQUIRE(d);
+    CHECK(d->name == "x");
+    CHECK(d->settingsSchema == R"({"type":"object"})");
 }
 ```
 
@@ -2185,7 +2240,6 @@ Expected: fails on the missing `Descriptor.cpp`.
 #include <string_view>
 #include <vector>
 
-#include <rfl/Generic.hpp>
 #include <rfl/Result.hpp>
 
 namespace rp::graph {
@@ -2245,6 +2299,11 @@ struct TypeDescriptor {
 std::string layoutJson(const Layout& layout);
 std::string descriptorJson(const TypeDescriptor& descriptor);
 
+// The gate for a node's JSON, which may come from a downloaded pack: a missing field takes its default,
+// and a field present with the wrong type or an unusable value is refused with a reason that names it
+// (an inverted or excluded param range, an enum default not among its values, a channel count outside
+// 1..2^32-1 or at odds with its layout name, an "any" output, a match that names no other audio port, an
+// id used twice across ports and params, an unknown truthy `requires` flag, ...). Nothing is coerced.
 rfl::Result<Layout>         parseLayout(std::string_view json);
 rfl::Result<TypeDescriptor> parseDescriptor(std::string_view json);
 
@@ -2260,7 +2319,7 @@ bool matchesPattern(std::string_view pattern, std::string_view portId);
 // or an unknown name.
 std::optional<std::uint32_t> layoutChannels(std::string_view layout);
 
-// The layout name a bare channel count gets: mono, stereo, else discrete(n).
+// The layout name a bare channel count (at least 1) gets: mono, stereo, else discrete(n).
 std::string layoutForCount(std::uint32_t channels);
 
 }  // namespace rp::graph
@@ -2271,8 +2330,12 @@ std::string layoutForCount(std::uint32_t channels);
 ```cpp
 #include "graph/Descriptor.hpp"
 
+#include <cassert>
 #include <charconv>
 #include <cmath>
+#include <limits>
+#include <optional>
+#include <unordered_set>
 #include <utility>
 
 #include "graph/CanonicalJson.hpp"
@@ -2287,6 +2350,8 @@ using Array  = rfl::Generic::Array;
 const char* const kKindNames[] = {"audio", "events", "bytes", "control", "link", "resource"};
 const char* const kDirNames[]  = {"in", "out", "link"};
 const char* const kTypeNames[] = {"float", "int", "enum", "bool"};
+
+constexpr const char* kNoSettingsSchema = R"({"type":"object"})";
 
 // rfl::Object's variadic insert(pairs...) outranks insert(key, value) for a string-literal key, so every
 // keyed insert goes through here.
@@ -2311,8 +2376,10 @@ rfl::Generic portGeneric(const PortDesc& p) {
     put(o, "dir", rfl::Generic(std::string(kDirNames[static_cast<int>(p.dir)])));
     put(o, "kind", rfl::Generic(std::string(kindName(p.kind))));
     if (p.kind == PortKind::Audio) put(o, "channels", channelsGeneric(p.channels));
-    if (p.kind == PortKind::Resource) put(o, "resourceType", rfl::Generic(p.resourceType));
-    if (p.write) put(o, "access", rfl::Generic(std::string("write")));
+    if (p.kind == PortKind::Resource) {
+        put(o, "resourceType", rfl::Generic(p.resourceType));
+        if (p.write) put(o, "access", rfl::Generic(std::string("write")));
+    }
     return rfl::Generic(std::move(o));
 }
 
@@ -2335,8 +2402,9 @@ rfl::Generic paramGeneric(const ParamDesc& p) {
             Array values;
             for (const auto& v : p.values) values.emplace_back(v);
             put(o, "values", rfl::Generic(std::move(values)));
-            const auto i = static_cast<std::size_t>(p.def);
-            put(o, "default", rfl::Generic(i < p.values.size() ? p.values[i] : std::string()));
+            // A hand-built ParamDesc can carry any index; only a real one names a label.
+            const bool valid = p.def >= 0.0 && p.def < static_cast<double>(p.values.size());
+            put(o, "default", rfl::Generic(valid ? p.values[static_cast<std::size_t>(p.def)] : std::string()));
             break;
         }
     }
@@ -2362,6 +2430,10 @@ void insertLayout(Object& o, const Layout& layout) {
 }
 
 // ---- parsing ---------------------------------------------------------------------------------------
+//
+// A descriptor or layout may come from a downloaded pack, so the parser is the gate: a field that is
+// missing takes its documented default, and a field that is present with the wrong type or an unusable
+// value is refused, naming where it was. Nothing is silently coerced.
 
 rfl::Unexpected<rfl::Error> fail(const std::string& what) { return rfl::Unexpected<rfl::Error>(rfl::Error(what)); }
 
@@ -2371,114 +2443,205 @@ const rfl::Generic* field(const Object& o, std::string_view key) {
     return nullptr;
 }
 
-rfl::Result<std::string> stringField(const Object& o, std::string_view key, bool required = true) {
+std::string q(std::string_view s) { return "\"" + std::string(s) + "\""; }
+
+rfl::Result<std::optional<std::string>> optString(const Object& o, std::string_view key, const std::string& where) {
     const auto* v = field(o, key);
-    if (!v) return required ? rfl::Result<std::string>(fail("missing \"" + std::string(key) + "\""))
-                            : rfl::Result<std::string>(std::string());
-    return v->to_string();
+    if (!v) return std::optional<std::string>();
+    auto s = v->to_string();
+    if (!s) return fail(where + ": " + q(key) + " must be a string");
+    return std::optional<std::string>(std::move(*s));
 }
 
-rfl::Result<double> numberField(const Object& o, std::string_view key, double fallback) {
+rfl::Result<std::string> reqString(const Object& o, std::string_view key, const std::string& where) {
+    auto s = optString(o, key, where);
+    if (!s) return fail(s.error().what());
+    if (!*s || (*s)->empty()) return fail(where + ": needs a non-empty " + q(key));
+    return **s;
+}
+
+rfl::Result<std::optional<double>> optNumber(const Object& o, std::string_view key, const std::string& where) {
     const auto* v = field(o, key);
-    if (!v) return fallback;
-    return v->to_double();
+    if (!v) return std::optional<double>();
+    auto d = v->to_double();
+    if (!d || !std::isfinite(*d)) return fail(where + ": " + q(key) + " must be a finite number");
+    return std::optional<double>(*d);
+}
+
+rfl::Result<std::optional<bool>> optBool(const Object& o, std::string_view key, const std::string& where) {
+    const auto* v = field(o, key);
+    if (!v) return std::optional<bool>();
+    auto b = v->to_bool();
+    if (!b) return fail(where + ": " + q(key) + " must be true or false");
+    return std::optional<bool>(*b);
 }
 
 template <std::size_t N>
-rfl::Result<int> enumIndex(const std::string& s, const char* const (&names)[N], std::string_view what) {
+rfl::Result<int> enumIndex(const std::string& s, const char* const (&names)[N], std::string_view what,
+                           const std::string& where) {
     for (std::size_t i = 0; i < N; ++i)
         if (s == names[i]) return static_cast<int>(i);
-    return fail("unknown " + std::string(what) + " \"" + s + "\"");
+    return fail(where + ": unknown " + std::string(what) + " " + q(s));
 }
 
-rfl::Result<ChannelSpec> parseChannels(const rfl::Generic& g) {
+bool hasWhitespace(std::string_view s) {
+    for (const char c : s)
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') return true;
+    return false;
+}
+
+rfl::Result<ChannelSpec> parseChannels(const rfl::Generic& g, const std::string& where) {
     auto o = g.to_object();
-    if (!o) return fail("\"channels\" must be an object");
-    if (field(*o, "any")) return ChannelSpec::any();
-    if (field(*o, "match")) return stringField(*o, "match").transform(ChannelSpec::matching);
-    const auto* count = field(*o, "count");
-    if (!count) return fail("\"channels\" needs one of any / match / count");
-    auto n = count->to_int64();
-    if (!n || *n < 1) return fail("\"channels.count\" must be a positive integer");
-    auto layoutName = stringField(*o, "layout");
+    if (!o) return fail(where + ": \"channels\" must be an object");
+    const bool hasAny = field(*o, "any") != nullptr;
+    const bool hasMatch = field(*o, "match") != nullptr;
+    const bool hasCount = field(*o, "count") != nullptr;
+    if (int(hasAny) + int(hasMatch) + int(hasCount) != 1)
+        return fail(where + ": \"channels\" needs exactly one of any / match / count");
+    if (hasAny) {
+        auto any = optBool(*o, "any", where);
+        if (!any) return fail(any.error().what());
+        if (!**any) return fail(where + ": \"channels.any\" must be true");
+        return ChannelSpec::any();
+    }
+    if (hasMatch) {
+        auto m = reqString(*o, "match", where);
+        if (!m) return fail(m.error().what());
+        return ChannelSpec::matching(*m);
+    }
+    auto n = optNumber(*o, "count", where);
+    if (!n) return fail(n.error().what());
+    const double count = **n;
+    if (count < 1.0 || count > static_cast<double>(std::numeric_limits<std::uint32_t>::max()) || count != std::floor(count))
+        return fail(where + ": \"channels.count\" must be a whole number from 1 to 4294967295");
+    auto layoutName = reqString(*o, "layout", where);
     if (!layoutName) return fail(layoutName.error().what());
-    return ChannelSpec::fixed(static_cast<std::uint32_t>(*n), *layoutName);
+    const auto known = layoutChannels(*layoutName);
+    if (known && *known != static_cast<std::uint32_t>(count))
+        return fail(where + ": layout " + q(*layoutName) + " is " + std::to_string(*known) + " channels, not " +
+                    jsNumber(count));
+    return ChannelSpec::fixed(static_cast<std::uint32_t>(count), *layoutName);
 }
 
-rfl::Result<PortDesc> parsePort(const rfl::Generic& g) {
+rfl::Result<PortDesc> parsePort(const rfl::Generic& g, std::size_t index) {
+    const std::string at = "port #" + std::to_string(index);
     auto o = g.to_object();
-    if (!o) return fail("a port must be an object");
+    if (!o) return fail(at + " must be an object");
     PortDesc p;
-    auto id = stringField(*o, "id");
+    auto id = reqString(*o, "id", at);
     if (!id) return fail(id.error().what());
     p.id = *id;
-    auto dir = stringField(*o, "dir").and_then([](const std::string& s) { return enumIndex(s, kDirNames, "dir"); });
-    if (!dir) return fail("port \"" + p.id + "\": " + dir.error().what());
+    const std::string where = "port " + q(p.id);
+    auto dir = reqString(*o, "dir", where).and_then([&](const std::string& s) { return enumIndex(s, kDirNames, "dir", where); });
+    if (!dir) return fail(dir.error().what());
     p.dir = static_cast<PortDir>(*dir);
-    auto kind = stringField(*o, "kind").and_then([](const std::string& s) { return enumIndex(s, kKindNames, "kind"); });
-    if (!kind) return fail("port \"" + p.id + "\": " + kind.error().what());
+    auto kind = reqString(*o, "kind", where).and_then([&](const std::string& s) { return enumIndex(s, kKindNames, "kind", where); });
+    if (!kind) return fail(kind.error().what());
     p.kind = static_cast<PortKind>(*kind);
-    if (p.kind == PortKind::Audio) {
-        const auto* ch = field(*o, "channels");
-        if (!ch) return fail("audio port \"" + p.id + "\" needs \"channels\"");
-        auto spec = parseChannels(*ch);
-        if (!spec) return fail("port \"" + p.id + "\": " + spec.error().what());
-        p.channels = *spec;
-    }
-    if (p.kind == PortKind::Resource) {
-        auto type = stringField(*o, "resourceType");
-        if (!type) return fail("resource port \"" + p.id + "\" needs \"resourceType\"");
-        p.resourceType = *type;
-        p.write = stringField(*o, "access", false).value_or(std::string()) == "write";
-        if (p.write && p.dir != PortDir::In) return fail("port \"" + p.id + "\": only a resource input may have access \"write\"");
-    }
     if ((p.kind == PortKind::Link) != (p.dir == PortDir::Link))
-        return fail("port \"" + p.id + "\": link ports, and only link ports, have dir \"link\"");
+        return fail(where + ": link ports, and only link ports, have dir \"link\"");
+
+    const auto* ch = field(*o, "channels");
+    if (p.kind == PortKind::Audio) {
+        if (!ch) return fail(where + ": an audio port needs \"channels\"");
+        auto spec = parseChannels(*ch, where);
+        if (!spec) return fail(spec.error().what());
+        p.channels = std::move(*spec);
+        if (p.dir == PortDir::Out && p.channels.mode == ChannelSpec::Mode::Any)
+            return fail(where + ": an output cannot be \"any\"; use match or a fixed count");
+    } else if (ch) {
+        return fail(where + ": only audio ports have \"channels\"");
+    }
+
+    const bool hasType = field(*o, "resourceType") != nullptr;
+    const bool hasAccess = field(*o, "access") != nullptr;
+    if (p.kind == PortKind::Resource) {
+        auto type = reqString(*o, "resourceType", where);
+        if (!type) return fail(type.error().what());
+        p.resourceType = *type;
+        auto access = optString(*o, "access", where);
+        if (!access) return fail(access.error().what());
+        if (*access && **access != "write") return fail(where + ": \"access\" can only be \"write\"");
+        p.write = access->has_value();
+        if (p.write && p.dir != PortDir::In) return fail(where + ": only a resource input may have access \"write\"");
+    } else if (hasType || hasAccess) {
+        return fail(where + ": only resource ports have \"resourceType\" or \"access\"");
+    }
     return p;
 }
 
-rfl::Result<ParamDesc> parseParam(const rfl::Generic& g) {
+rfl::Result<ParamDesc> parseParam(const rfl::Generic& g, std::size_t index) {
+    const std::string at = "param #" + std::to_string(index);
     auto o = g.to_object();
-    if (!o) return fail("a param must be an object");
+    if (!o) return fail(at + " must be an object");
     ParamDesc p;
-    auto id = stringField(*o, "id");
+    auto id = reqString(*o, "id", at);
     if (!id) return fail(id.error().what());
     p.id = *id;
-    p.name = stringField(*o, "name", false).value_or(p.id);
-    if (p.name.empty()) p.name = p.id;
-    p.unit = stringField(*o, "unit", false).value_or(std::string());
-    auto type = stringField(*o, "type").and_then([](const std::string& s) { return enumIndex(s, kTypeNames, "param type"); });
-    if (!type) return fail("param \"" + p.id + "\": " + type.error().what());
+    const std::string where = "param " + q(p.id);
+    auto name = optString(*o, "name", where);
+    if (!name) return fail(name.error().what());
+    p.name = (*name && !(*name)->empty()) ? **name : p.id;
+    auto unit = optString(*o, "unit", where);
+    if (!unit) return fail(unit.error().what());
+    p.unit = unit->value_or(std::string());
+    auto type = reqString(*o, "type", where).and_then([&](const std::string& s) { return enumIndex(s, kTypeNames, "type", where); });
+    if (!type) return fail(type.error().what());
     p.type = static_cast<ParamType>(*type);
-    const auto* def = field(*o, "default");
+
     switch (p.type) {
         case ParamType::Float:
         case ParamType::Int: {
-            p.min = numberField(*o, "min", 0.0).value_or(0.0);
-            p.max = numberField(*o, "max", 1.0).value_or(1.0);
-            p.def = def ? def->to_double().value_or(p.min) : p.min;
+            auto mn = optNumber(*o, "min", where);
+            auto mx = optNumber(*o, "max", where);
+            auto df = optNumber(*o, "default", where);
+            if (!mn) return fail(mn.error().what());
+            if (!mx) return fail(mx.error().what());
+            if (!df) return fail(df.error().what());
+            p.min = mn->value_or(0.0);
+            p.max = mx->value_or(1.0);
+            p.def = df->value_or(p.min);
+            // The planner clamps every value into [min, max]; an inverted range would be undefined there.
+            if (!(p.min <= p.max)) return fail(where + ": \"min\" must not exceed \"max\"");
+            if (!(p.min <= p.def && p.def <= p.max)) return fail(where + ": \"default\" must lie within [min, max]");
+            if (p.type == ParamType::Int &&
+                (p.min != std::floor(p.min) || p.max != std::floor(p.max) || p.def != std::floor(p.def)))
+                return fail(where + ": an int param's min, max and default must be whole numbers");
             break;
         }
-        case ParamType::Bool:
+        case ParamType::Bool: {
+            auto df = optBool(*o, "default", where);
+            if (!df) return fail(df.error().what());
             p.min = 0.0;
             p.max = 1.0;
-            p.def = def && def->to_bool().value_or(false) ? 1.0 : 0.0;
+            p.def = df->value_or(false) ? 1.0 : 0.0;
             break;
+        }
         case ParamType::Enum: {
             const auto* values = field(*o, "values");
-            auto arr = values ? values->to_array() : rfl::Result<Array>(fail("enum needs values"));
-            if (!arr || arr->empty()) return fail("enum param \"" + p.id + "\" needs a non-empty \"values\"");
+            auto arr = values ? values->to_array() : rfl::Result<Array>(fail(""));
+            if (!arr || arr->empty()) return fail(where + ": an enum needs a non-empty \"values\" array");
+            std::unordered_set<std::string> seen;
             for (const auto& v : *arr) {
                 auto s = v.to_string();
-                if (!s) return fail("enum param \"" + p.id + "\": values must be strings");
+                if (!s || s->empty()) return fail(where + ": enum values must be non-empty strings");
+                if (!seen.insert(*s).second) return fail(where + ": enum value " + q(*s) + " is listed twice");
                 p.values.push_back(*s);
             }
+            auto df = optString(*o, "default", where);
+            if (!df) return fail(df.error().what());
             p.min = 0.0;
             p.max = static_cast<double>(p.values.size() - 1);
-            const std::string label = def ? def->to_string().value_or(std::string()) : p.values[0];
             p.def = 0.0;
-            for (std::size_t i = 0; i < p.values.size(); ++i)
-                if (p.values[i] == label) p.def = static_cast<double>(i);
+            if (*df) {
+                bool found = false;
+                for (std::size_t i = 0; i < p.values.size(); ++i)
+                    if (p.values[i] == **df) {
+                        p.def = static_cast<double>(i);
+                        found = true;
+                    }
+                if (!found) return fail(where + ": default " + q(**df) + " is not one of its values");
+            }
             break;
         }
     }
@@ -2490,8 +2653,8 @@ rfl::Result<Layout> parseLayoutObject(const Object& o) {
     if (const auto* ports = field(o, "ports")) {
         auto arr = ports->to_array();
         if (!arr) return fail("\"ports\" must be an array");
-        for (const auto& p : *arr) {
-            auto port = parsePort(p);
+        for (std::size_t i = 0; i < arr->size(); ++i) {
+            auto port = parsePort((*arr)[i], i);
             if (!port) return fail(port.error().what());
             layout.ports.push_back(std::move(*port));
         }
@@ -2499,28 +2662,43 @@ rfl::Result<Layout> parseLayoutObject(const Object& o) {
     if (const auto* params = field(o, "params")) {
         auto arr = params->to_array();
         if (!arr) return fail("\"params\" must be an array");
-        for (const auto& p : *arr) {
-            auto param = parseParam(p);
+        for (std::size_t i = 0; i < arr->size(); ++i) {
+            auto param = parseParam((*arr)[i], i);
             if (!param) return fail(param.error().what());
             layout.params.push_back(std::move(*param));
         }
+    }
+    std::unordered_set<std::string> ids;
+    for (const auto& p : layout.ports)
+        if (!ids.insert(p.id).second) return fail(q(p.id) + " is used by more than one port or param");
+    for (const auto& p : layout.params)
+        if (!ids.insert(p.id).second) return fail(q(p.id) + " is used by more than one port or param");
+    // Checks that need the whole port list: what a match names, and what an exclusive group names.
+    for (const auto& p : layout.ports) {
+        if (p.kind != PortKind::Audio || p.channels.mode != ChannelSpec::Mode::Match) continue;
+        const PortDesc* target = findPort(layout, p.channels.match);
+        if (!target || target == &p || target->kind != PortKind::Audio)
+            return fail("port " + q(p.id) + ": matches " + q(p.channels.match) + ", which is not another audio port");
     }
     if (const auto* exclusive = field(o, "exclusive")) {
         auto groups = exclusive->to_array();
         if (!groups) return fail("\"exclusive\" must be an array of arrays");
         for (const auto& g : *groups) {
             auto members = g.to_array();
-            if (!members) return fail("\"exclusive\" must be an array of arrays");
+            if (!members || members->empty()) return fail("\"exclusive\" groups must be non-empty arrays");
             std::vector<std::string> group;
-            for (const auto& m : *members) group.push_back(m.to_string().value_or(std::string()));
+            for (const auto& m : *members) {
+                auto s = m.to_string();
+                if (!s || s->empty()) return fail("\"exclusive\" members must be non-empty strings");
+                const bool wildcard = s->size() > 2 && s->compare(s->size() - 2, 2, ".*") == 0;
+                const PortDesc* exact = wildcard ? nullptr : findPort(layout, *s);
+                if (!wildcard && (!exact || exact->dir != PortDir::Out))
+                    return fail("exclusive member " + q(*s) + " must be an output's id or a \"prefix.*\" pattern");
+                group.push_back(*s);
+            }
             layout.exclusive.push_back(std::move(group));
         }
     }
-    for (std::size_t i = 0; i < layout.ports.size(); ++i)
-        for (std::size_t j = i + 1; j < layout.ports.size(); ++j)
-            if (layout.ports[i].id == layout.ports[j].id) return fail("duplicate port id \"" + layout.ports[i].id + "\"");
-    for (const auto& param : layout.params)
-        if (findPort(layout, param.id)) return fail("param \"" + param.id + "\" shares an id with a port");
     return layout;
 }
 
@@ -2545,8 +2723,10 @@ std::string descriptorJson(const TypeDescriptor& d) {
     put(needs, "threads", rfl::Generic(d.threads));
     put(o, "requires", rfl::Generic(std::move(needs)));
     insertLayout(o, d.layout);
-    auto schema = parseJson(d.settingsSchema.empty() ? std::string("{}") : d.settingsSchema);
-    put(o, "settings", schema ? *schema : rfl::Generic(Object()));
+    // A node without settings declares an empty object schema, the same spelling the TS side writes.
+    auto schema = parseJson(d.settingsSchema.empty() ? std::string(kNoSettingsSchema) : d.settingsSchema);
+    assert(schema && "a TypeDescriptor's settingsSchema is JSON");
+    put(o, "settings", schema ? *schema : *parseJson(kNoSettingsSchema));
     return canonicalJson(rfl::Generic(std::move(o)));
 }
 
@@ -2564,22 +2744,40 @@ rfl::Result<TypeDescriptor> parseDescriptor(std::string_view json) {
     auto o = g->to_object();
     if (!o) return fail("descriptor must be an object");
     TypeDescriptor d;
-    auto id = stringField(*o, "id");
+    auto id = reqString(*o, "id", "descriptor");
     if (!id) return fail(id.error().what());
+    if (hasWhitespace(*id)) return fail("descriptor id " + q(*id) + " must not contain whitespace");
     d.id = *id;
-    d.version = stringField(*o, "version", false).value_or(std::string());
-    d.name = stringField(*o, "name", false).value_or(d.id);
-    d.category = stringField(*o, "category", false).value_or(std::string());
+    const std::string where = "descriptor " + q(d.id);
+    auto version = optString(*o, "version", where);
+    auto name = optString(*o, "name", where);
+    auto category = optString(*o, "category", where);
+    if (!version) return fail(version.error().what());
+    if (!name) return fail(name.error().what());
+    if (!category) return fail(category.error().what());
+    d.version = version->value_or(std::string());
+    d.name = (*name && !(*name)->empty()) ? **name : d.id;
+    d.category = category->value_or(std::string());
     if (const auto* req = field(*o, "requires")) {
-        if (auto r = req->to_object()) {
-            if (const auto* heap = field(*r, "heap")) d.heap = heap->to_bool().value_or(false);
-            if (const auto* threads = field(*r, "threads")) d.threads = threads->to_bool().value_or(false);
+        auto r = req->to_object();
+        if (!r) return fail(where + ": \"requires\" must be an object");
+        for (const auto& [flag, value] : *r) {
+            auto on = value.to_bool();
+            if (!on) return fail(where + ": requires." + flag + " must be true or false");
+            if (flag == "heap") d.heap = *on;
+            else if (flag == "threads") d.threads = *on;
+            else if (*on) return fail(where + ": requires " + q(flag) + ", which this host does not provide");
         }
     }
     auto layout = parseLayoutObject(*o);
-    if (!layout) return fail("descriptor \"" + d.id + "\": " + layout.error().what());
+    if (!layout) return fail(where + ": " + layout.error().what());
     d.layout = std::move(*layout);
-    if (const auto* s = field(*o, "settings")) d.settingsSchema = canonicalJson(*s);
+    if (const auto* s = field(*o, "settings")) {
+        if (!s->to_object()) return fail(where + ": \"settings\" must be a JSON Schema object");
+        d.settingsSchema = canonicalJson(*s);
+    } else {
+        d.settingsSchema = kNoSettingsSchema;
+    }
     return d;
 }
 
@@ -2609,6 +2807,7 @@ std::optional<std::uint32_t> layoutChannels(std::string_view layout) {
     constexpr std::string_view kDiscrete = "discrete(";
     if (layout.size() > kDiscrete.size() && layout.substr(0, kDiscrete.size()) == kDiscrete && layout.back() == ')') {
         const auto digits = layout.substr(kDiscrete.size(), layout.size() - kDiscrete.size() - 1);
+        if (digits.size() > 1 && digits[0] == '0') return std::nullopt;  // one spelling per count
         std::uint32_t n = 0;
         const auto [ptr, ec] = std::from_chars(digits.data(), digits.data() + digits.size(), n);
         if (ec == std::errc() && ptr == digits.data() + digits.size() && n > 0) return n;
@@ -2617,6 +2816,7 @@ std::optional<std::uint32_t> layoutChannels(std::string_view layout) {
 }
 
 std::string layoutForCount(std::uint32_t channels) {
+    assert(channels > 0 && "a port has at least one channel");
     if (channels == 1) return "mono";
     if (channels == 2) return "stereo";
     return "discrete(" + std::to_string(channels) + ")";
@@ -2628,7 +2828,7 @@ std::string layoutForCount(std::uint32_t channels) {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (182 assertions in 21 test cases)`.
+Expected: `All tests passed (213 assertions in 25 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -2639,6 +2839,9 @@ git commit -m "feat(graph): the descriptor model and its JSON
 Ports (six kinds, channel specs, resource write access), params (float,
 int, enum by label, bool) and exclusive groups, written canonically and
 parsed with a reason for anything malformed."
+
+(This task was executed as the original commit plus a review-fix commit, "fix(graph): the descriptor
+parser refuses what it used to coerce". A fresh execution needs one.)
 ```
 
 ---
@@ -3259,6 +3462,7 @@ struct param_base {
 
 template <fixed_string Name, range R = range{}, fixed_string Unit = "">
 struct float_param : detail::param_base {
+    static_assert(R.min <= R.max && R.min <= R.init && R.init <= R.max, "a param range needs min <= init <= max");
     static graph::ParamDesc rp_param(std::string id) {
         return {std::move(id), std::string(Name.view()), graph::ParamType::Float, R.min, R.max, R.init, {},
                 std::string(Unit.view())};
@@ -3267,6 +3471,11 @@ struct float_param : detail::param_base {
 
 template <fixed_string Name, range R = range{}, fixed_string Unit = "">
 struct int_param : detail::param_base {
+    static_assert(R.min <= R.max && R.min <= R.init && R.init <= R.max, "a param range needs min <= init <= max");
+    static_assert(R.min == static_cast<double>(static_cast<long long>(R.min)) &&
+                      R.max == static_cast<double>(static_cast<long long>(R.max)) &&
+                      R.init == static_cast<double>(static_cast<long long>(R.init)),
+                  "an int param's range is whole numbers");
     static graph::ParamDesc rp_param(std::string id) {
         return {std::move(id), std::string(Name.view()), graph::ParamType::Int, R.min, R.max, R.init, {},
                 std::string(Unit.view())};
@@ -3729,7 +3938,7 @@ T* peer_as(rp_node* n) {
 - [ ] **Step 7: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (209 assertions in 27 test cases)`.
+Expected: `All tests passed (240 assertions in 31 test cases)`.
 
 - [ ] **Step 8: Commit**
 
@@ -4204,7 +4413,7 @@ std::size_t ResourceTable::liveCount() const { return entries_.size(); }
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (249 assertions in 32 test cases)`.
+Expected: `All tests passed (280 assertions in 36 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -6276,7 +6485,7 @@ const rp_package* hostPackage() {
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (356 assertions in 59 test cases)`.
+Expected: `All tests passed (387 assertions in 63 test cases)`.
 
 - [ ] **Step 7: Commit**
 
@@ -7065,7 +7274,7 @@ const rp_package* corePackage() {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (398 assertions in 71 test cases)`.
+Expected: `All tests passed (429 assertions in 75 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -7279,7 +7488,7 @@ Add both files to the test's `SOURCES` and `Threads::Threads` to its `LIBS`:
 - [ ] **Step 3: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (605 assertions in 73 test cases)`. (These pass immediately: the properties
+Expected: `All tests passed (636 assertions in 77 test cases)`. (These pass immediately: the properties
 were built in by Tasks 2 to 8. If NoAlloc fails, an earlier task let an allocation onto the block path;
 fix that, never the test.)
 
@@ -7293,7 +7502,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-graph-test
 ```
 
-Expected: `All tests passed (605 assertions in 73 test cases)` and no ThreadSanitizer report. (Same
+Expected: `All tests passed (636 assertions in 77 test cases)` and no ThreadSanitizer report. (Same
 configure as `tools/run-sanitizer.sh thread`, which shares `build-tsan/`.)
 
 - [ ] **Step 5: Commit**
@@ -7527,6 +7736,20 @@ test("duplicate ids and bad enum defaults are rejected", () => {
   expect(() => badEnum.descriptor()).toThrow("not one of its values");
 });
 
+test("param ranges and channel specs are checked as the C++ parser checks them", () => {
+  const bad = (params: Record<string, ReturnType<typeof param.float>>, ports = {}) =>
+    () => defineNode({ id: "rp.test.bad", ports, params, create: noop }).descriptor();
+  expect(bad({ g: param.float({ name: "G", min: 5, max: 1, default: 1 }) })).toThrow("min must not exceed max");
+  expect(bad({ g: param.float({ name: "G", min: 0, max: 1, default: 2 }) })).toThrow("within");
+  expect(bad({ n: param.int({ name: "N", min: 0.5, max: 3, default: 1 }) })).toThrow("whole-number");
+  expect(bad({ m: param.enum({ name: "M", values: ["a", "a"], default: "a" }) })).toThrow("twice");
+  expect(bad({}, { out: audio.out(channels.any()) })).toThrow('cannot be "any"');
+  expect(bad({}, { out: audio.out(channels.match("nope")) })).toThrow("not another audio port");
+  expect(bad({}, { in: audio.in(channels.fixed(2, "mono")) })).toThrow("is 1 channels");
+  const unitless = defineNode({ id: "rp.test.unitless", ports: {}, params: { g: param.float({ name: "G", min: 0, max: 1, default: 0, unit: "" }) }, create: noop });
+  expect("unit" in unitless.descriptor().params[0]).toBe(false);
+});
+
 test("resource ports carry their type and write access", () => {
   const rec = defineNode({
     id: "rp.test.rec",
@@ -7653,9 +7876,15 @@ export const link = (): PortSpec => ({ dir: "link", kind: "link" });
 type ParamSpec = DistributiveOmit<ParamDesc, "id">;
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
 
+// An empty unit is omitted, as the C++ side omits it.
+const numeric = (type: "float" | "int", o: { name: string; min: number; max: number; default: number; unit?: string }): ParamSpec => {
+  const { unit, ...rest } = o;
+  return unit ? { type, ...rest, unit } : { type, ...rest };
+};
+
 export const param = {
-  float: (o: { name: string; min: number; max: number; default: number; unit?: string }): ParamSpec => ({ type: "float", ...o }),
-  int: (o: { name: string; min: number; max: number; default: number; unit?: string }): ParamSpec => ({ type: "int", ...o }),
+  float: (o: { name: string; min: number; max: number; default: number; unit?: string }): ParamSpec => numeric("float", o),
+  int: (o: { name: string; min: number; max: number; default: number; unit?: string }): ParamSpec => numeric("int", o),
   bool: (o: { name: string; default?: boolean }): ParamSpec => ({ type: "bool", name: o.name, default: o.default ?? false }),
   enum: (o: { name: string; values: readonly string[]; default: string }): ParamSpec => ({
     type: "enum",
@@ -7746,6 +7975,15 @@ export interface DefinedNode<S> extends NodeDefinition<S> {
 
 const NO_SETTINGS_SCHEMA = { type: "object" };
 
+/** How many channels a layout name means (mono 1, stereo 2, 5.1 6, 7.1 8, discrete(n) n); null for "any"
+ *  or an unknown name. The twin of layoutChannels in packages/native/src/graph/Descriptor.cpp. */
+export function layoutChannels(layout: string): number | null {
+  const named: Record<string, number> = { mono: 1, stereo: 2, "5.1": 6, "7.1": 8 };
+  if (layout in named) return named[layout];
+  const m = /^discrete\(([1-9][0-9]*)\)$/.exec(layout);
+  return m ? Number(m[1]) : null;
+}
+
 function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
   const portMap = typeof def.ports === "function" ? def.ports(settings) : def.ports;
   const paramMap = typeof def.params === "function" ? def.params(settings) : (def.params ?? {});
@@ -7755,12 +7993,40 @@ function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
   const params = Object.entries(paramMap).map(([id, spec]) => ({ id, ...spec }) as ParamDesc);
   const seen = new Set<string>();
   for (const p of [...ordered, ...params]) {
+    if (!p.id) throw new Error(`${def.id}: a port or param needs a non-empty id`);
     if (seen.has(p.id)) throw new Error(`${def.id}: "${p.id}" is used by more than one port or param`);
     seen.add(p.id);
   }
-  for (const p of params)
-    if (p.type === "enum" && !p.values.includes(p.default))
-      throw new Error(`${def.id}: enum param "${p.id}" default "${p.default}" is not one of its values`);
+  // The same checks the C++ parser applies to every layout (Descriptor.cpp), so a TS node cannot declare
+  // what the planner would refuse.
+  for (const p of ordered) {
+    if (p.kind !== "audio" || !p.channels) continue;
+    const c = p.channels;
+    if ("any" in c && p.dir === "out") throw new Error(`${def.id}: output "${p.id}" cannot be "any"`);
+    if ("match" in c) {
+      const target = ordered.find((t) => t.id === c.match);
+      if (!target || target === p || target.kind !== "audio")
+        throw new Error(`${def.id}: "${p.id}" matches "${c.match}", which is not another audio port`);
+    }
+    if ("count" in c) {
+      const known = layoutChannels(c.layout);
+      if (!Number.isInteger(c.count) || c.count < 1) throw new Error(`${def.id}: "${p.id}" needs a whole channel count of at least 1`);
+      if (known !== null && known !== c.count)
+        throw new Error(`${def.id}: "${p.id}" layout "${c.layout}" is ${known} channels, not ${c.count}`);
+    }
+  }
+  for (const p of params) {
+    if (p.type === "enum") {
+      if (new Set(p.values).size !== p.values.length) throw new Error(`${def.id}: enum param "${p.id}" lists a value twice`);
+      if (!p.values.includes(p.default))
+        throw new Error(`${def.id}: enum param "${p.id}" default "${p.default}" is not one of its values`);
+    } else if (p.type === "float" || p.type === "int") {
+      if (!(p.min <= p.max)) throw new Error(`${def.id}: param "${p.id}" min must not exceed max`);
+      if (!(p.min <= p.default && p.default <= p.max)) throw new Error(`${def.id}: param "${p.id}" default must lie within [min, max]`);
+      if (p.type === "int" && ![p.min, p.max, p.default].every(Number.isInteger))
+        throw new Error(`${def.id}: int param "${p.id}" needs whole-number min, max and default`);
+    }
+  }
   const layout: Layout = { ports: ordered, params };
   if (def.exclusive?.length) layout.exclusive = def.exclusive;
   return layout;
