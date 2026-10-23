@@ -9,6 +9,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <tuple>
+#include <utility>
 
 #include "TestNodes.hpp"
 
@@ -221,6 +222,29 @@ struct Shuffler {
     void process(const rp::Block&) noexcept {}
 };
 
+// Relabels its reflected enum, which would put saved labels out of step with enum_param::value().
+struct RelabelSettings {
+    bool relabel = false;
+};
+
+struct Relabeller {
+    static constexpr const char* id = "rp.test.relabeller";
+    using Settings = RelabelSettings;
+    struct { rp::enum_param<SyncMode, "Mode", SyncMode::Off> mode; } params;
+    static void adjust_layout(Layout& l, const Settings& s) {
+        if (s.relabel) std::swap(l.params[0].values[0], l.params[0].values[1]);
+    }
+    void process(const rp::Block&) noexcept {}
+};
+
+// A sequencer's position may be called `step`: only a member FUNCTION of a hook's name is a hook.
+struct Sequencer {
+    static constexpr const char* id = "rp.test.sequencer";
+    std::uint32_t step = 0;
+    std::uint32_t prepare = 0;
+    void process(const rp::Block&) noexcept { ++step; }
+};
+
 // Throws building its layout for the default settings, so it has no descriptor to give.
 struct Unbuildable {
     static constexpr const char* id = "rp.test.unbuildable";
@@ -334,6 +358,19 @@ TEST_CASE("adjust_layout cannot move or drop a reflected port", "[graph][node]")
     CHECK(std::string(err.message).find("\"a\"") != std::string::npos);
 
     CHECK(std::string(rp::node_type<Unbuildable>()->descriptor()).empty());  // the registry refuses it
+
+    Made relabeller{rp::node_type<Relabeller>()};
+    make(relabeller, "{}");
+    rp_settings relabel = json(R"({"relabel":true})");
+    err = rp_error{};
+    CHECK(relabeller.node->vt->prepare_settings(relabeller.node, &relabel, &prepared, &err) == RP_PREPARE_INVALID);
+    CHECK(std::string(err.message).find("relabelled reflected param \"mode\"") != std::string::npos);
+}
+
+TEST_CASE("a data member named like a hook is not a hook", "[graph][node]") {
+    Made m{rp::node_type<Sequencer>()};
+    make(m, "{}");
+    CHECK(m.node->vt->get_interface(m.node, RP_STEP_INTERFACE) == nullptr);
 }
 
 TEST_CASE("activate failures are reported through err, never thrown", "[graph][node]") {
@@ -375,7 +412,8 @@ TEST_CASE("a node is destroyed before its settings", "[graph][node]") {
     CHECK(g_seenAtDestroy == 0.75f);
 }
 
-TEST_CASE("param values are rounded and clamped, whatever the wire carries", "[graph][node]") {
+TEST_CASE("param values never read undefined, whatever the wire carries", "[graph][node]") {
+    // int rounds and saturates to int (not to its declared range); enum clamps to its labels; NaN is the default
     using Steps = rp::int_param<"Steps", rp::range{1, 16, 4}>;
     using Mode = rp::enum_param<SyncMode, "Mode", SyncMode::MidiSync>;
     const double nan = std::numeric_limits<double>::quiet_NaN();

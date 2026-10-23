@@ -16,8 +16,10 @@
 // keeps a count in a member called `inputs` would be reflected as if it were its port list. A port in the
 // wrong struct (an output in `inputs`) is a compile error.
 //
-// Optional members a node may define. Each is detected by NAME, and once a name is present its exact
-// signature is checked at compile time, so a near miss is an error rather than a hook silently ignored:
+// Optional members a node may define. Each is detected by NAME, and a member FUNCTION with one of these
+// names has its exact signature checked at compile time, so a near miss is an error rather than a hook
+// silently ignored. (A data member of the same name - a sequencer's `step` position - is not a hook and is
+// fine. Do not overload a hook name: an overload set cannot be inspected, so it would not be checked.)
 //
 //   using Settings = SomeNamedStruct;                     reflect-cpp-readable, in a NAMED namespace (its
 //                                                         JSON Schema $defs key comes from the type name)
@@ -233,8 +235,10 @@ struct int_param : detail::param_base {
         return {std::move(id), std::string(Name.view()), graph::ParamType::Int, R.min, R.max, R.init, {},
                 std::string(Unit.view())};
     }
-    // The value at block start, rounded and clamped to int; NaN reads as the declared default. (A wire can
-    // carry any double. A node whose range adjust_layout widened clamps to its own range.)
+    // The value at block start, rounded to the nearest int (half away from zero); NaN reads as the declared
+    // default and anything beyond int saturates. It is NOT clamped to the declared range: a wire can carry
+    // any double and adjust_layout may widen the range, so a node clamps to its own resolved range where
+    // that matters (Delay does).
     int value() const {
         const double v = start();
         if (!(v == v)) return static_cast<int>(R.init);
@@ -415,10 +419,12 @@ inline void checkReflectedPrefix(const graph::Layout& reflected, const graph::La
             if (i >= got.size() || got[i]->id != want[i]->id || got[i]->kind != want[i]->kind || got[i]->dir != want[i]->dir)
                 throw std::logic_error("adjust_layout moved, removed or re-kinded reflected port \"" + want[i]->id + "\"");
     }
+    // An enum's labels too: enum_param::value() maps the index back through its compile-time list.
     for (std::size_t i = 0; i < reflected.params.size(); ++i)
         if (i >= adjusted.params.size() || adjusted.params[i].id != reflected.params[i].id ||
-            adjusted.params[i].type != reflected.params[i].type)
-            throw std::logic_error("adjust_layout moved, removed or re-typed reflected param \"" + reflected.params[i].id + "\"");
+            adjusted.params[i].type != reflected.params[i].type ||
+            (reflected.params[i].type == graph::ParamType::Enum && adjusted.params[i].values != reflected.params[i].values))
+            throw std::logic_error("adjust_layout moved, removed, re-typed or relabelled reflected param \"" + reflected.params[i].id + "\"");
 }
 
 // Inputs first, then outputs, each in declaration order - adjust_layout appends after the reflected ones.
@@ -464,6 +470,10 @@ void bindParams([[maybe_unused]] S& params, [[maybe_unused]] rp_control_queue* c
 
 // ---- compile-time checks of the optional hooks ---------------------------------------------------------------
 
+// A hook is a function; a data member that happens to share its name is not one.
+template <class P>
+inline constexpr bool kIsFunction = std::is_member_function_pointer_v<P> || std::is_function_v<std::remove_pointer_t<P>>;
+
 template <class T>
 constexpr bool checkHooks() {
     using S = typename SettingsOf<T>::type;
@@ -472,40 +482,42 @@ constexpr bool checkHooks() {
     static_assert(requires(T& t, const Block& b) { { t.process(b) } -> std::same_as<void>; } ||
                       requires(T& t, const Block& b) { { t.process(b) } -> std::same_as<rp_status>; },
                   "process returns void or rp_status");
-    if constexpr (requires { &T::validate; })
+    if constexpr (requires { requires kIsFunction<decltype(&T::validate)>; })
         static_assert(requires(const S& s) { { T::validate(s) } -> std::same_as<std::optional<std::string>>; },
                       "validate must be `static std::optional<std::string> validate(const Settings&)`");
-    if constexpr (requires { &T::adjust_layout; })
+    if constexpr (requires { requires kIsFunction<decltype(&T::adjust_layout)>; })
         static_assert(requires(graph::Layout& l, const S& s) { T::adjust_layout(l, s); },
                       "adjust_layout must be `static void adjust_layout(rp::graph::Layout&, const Settings&)`");
-    if constexpr (requires { &T::needs_rebuild; })
+    if constexpr (requires { requires kIsFunction<decltype(&T::needs_rebuild)>; })
         static_assert(requires(const S& s) { { T::needs_rebuild(s, s) } -> std::same_as<bool>; },
                       "needs_rebuild must be `static bool needs_rebuild(const Settings&, const Settings&)`");
-    if constexpr (requires { &T::extra_memory; })
+    if constexpr (requires { requires kIsFunction<decltype(&T::extra_memory)>; })
         static_assert(requires(const S& s) { { T::extra_memory(s) } -> std::same_as<std::size_t>; },
                       "extra_memory must be `static std::size_t extra_memory(const Settings&)`");
-    if constexpr (requires { &T::attach; })
+    if constexpr (requires { requires kIsFunction<decltype(&T::attach)>; })
         static_assert(requires(T& t, std::span<std::byte> m) { { t.attach(m) } noexcept; },
                       "attach must be `void attach(std::span<std::byte>) noexcept`");
-    if constexpr (requires { &T::on_settings; })
+    if constexpr (requires { requires kIsFunction<decltype(&T::on_settings)>; })
         static_assert(requires(T& t, const S& s) { { t.on_settings(s) } noexcept; },
                       "on_settings must be `void on_settings(const Settings&) noexcept`");
-    if constexpr (requires { &T::bind_host; })
+    if constexpr (requires { requires kIsFunction<decltype(&T::bind_host)>; })
         static_assert(requires(T& t, const rp_host* h) { { t.bind_host(h) } noexcept; },
                       "bind_host must be `void bind_host(const rp_host*) noexcept`");
-    if constexpr (requires { &T::activate; })
+    if constexpr (requires { requires kIsFunction<decltype(&T::activate)>; })
         static_assert(requires(T& t) { { t.activate(1.0, 1u) } -> std::same_as<bool>; } ||
                           requires(T& t) { { t.activate(1.0, 1u) } -> std::same_as<void>; },
                       "activate must be `bool activate(double, std::uint32_t)` or return void");
-    if constexpr (requires { &T::deactivate; })
+    if constexpr (requires { requires kIsFunction<decltype(&T::deactivate)>; })
         static_assert(requires(T& t) { t.deactivate(); }, "deactivate must be `void deactivate()`");
-    if constexpr (requires { &T::ports_changed; })
+    if constexpr (requires { requires kIsFunction<decltype(&T::ports_changed)>; })
         static_assert(requires(T& t, std::span<const std::uint8_t> c) { { t.ports_changed(c) } noexcept; },
                       "ports_changed must be `void ports_changed(std::span<const std::uint8_t>) noexcept`");
-    if constexpr (requires { &T::set_peers; })
+    if constexpr (requires { requires kIsFunction<decltype(&T::set_peers)>; })
         static_assert(requires(T& t, std::span<rp_node* const> p) { { t.set_peers(p) } noexcept; },
                       "set_peers must be `void set_peers(std::span<rp_node* const>) noexcept`");
-    constexpr bool anyStep = requires { &T::prepare; } || requires { &T::step; } || requires { &T::finish; };
+    constexpr bool anyStep = requires { requires kIsFunction<decltype(&T::prepare)>; } ||
+                             requires { requires kIsFunction<decltype(&T::step)>; } ||
+                             requires { requires kIsFunction<decltype(&T::finish)>; };
     if constexpr (anyStep) {
         static_assert(requires(T& t, const Block& b) { { t.prepare(b) } noexcept; { t.finish(b) } noexcept; },
                       "rp.step/1 needs `prepare(const rp::Block&) noexcept` and `finish(const rp::Block&) noexcept`");
