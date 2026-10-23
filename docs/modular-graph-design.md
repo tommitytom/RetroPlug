@@ -622,7 +622,7 @@ RAM, CPU, APU, SRAM, a TS node's JS state); the swap only rebinds its ports. Rew
 modes, adding or removing *other* nodes, linking or unlinking Game Boys, param changes, live-swappable
 settings and `ports_changed` tap arming all leave every system running untouched. **The only resets are
 changes that reset today** (a new ROM, a different model), and the node, not the planner, decides which
-those are. Five rules keep it that way:
+those are. Seven rules keep it that way:
 
 1. **Node ids are stable.** Reuse is keyed on id, so the graph builder derives ids from the TS system id
    (`sys-3`, `sys-3/lsdj-sync`), never from position (§7.2). An id is a plain id with no `.`, because an
@@ -938,6 +938,11 @@ Five phases; each lands working and verified before the next starts.
   that cannot hold is documented explicitly, not waved through.
 - Then delete: the routers and native `AudioRouting`; `LinkGroup`; the add / replace / remove / routing /
   config / kernel commands; the DSP kernel.
+- Settled in Phase A, owed by the host that adopts it: call `GraphHost::reclaim()` from an idle tick (a
+  removed node and its resource pins otherwise linger until the next `setGraph`); expect `setGraph` to
+  block the control thread up to its adoption timeout while the audio thread is stalled; refuse a second
+  `rp.host.audio-out` (Phase A lets the last one win); and give host nodes their buffers through
+  `rp_host.get_interface` rather than the `ctx` cast Phase A's `rp.host.audio-out` uses.
 
 ### Phase C: nodes own their knowledge
 

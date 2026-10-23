@@ -831,7 +831,8 @@ typedef struct rp_node_vtable {
     bool (*activate)(rp_node* node, double sample_rate, uint32_t max_frames, rp_error* err);
     /* [control] */
     void (*deactivate)(rp_node* node);
-    /* [audio] The connected-output mask changed at a plan swap; connected[i] is 0 or 1 per output. */
+    /* [audio] The connected-output mask changed at a plan swap; connected[i] is 0 or 1 per output. The
+     * array is valid only during the call: copy what you keep. Not called again until the mask changes. */
     void (*ports_changed)(rp_node* node, const uint8_t* connected, uint32_t output_count);
     /* [audio] One block. Must write every frame of every CONNECTED audio output (unconnected ones get a
      * shared scratch buffer, so skipping them is safe, and is what the connected mask is for). Return
@@ -895,9 +896,10 @@ typedef struct rp_step_interface {
     void (*finish)(rp_node* node, const rp_process* block);
 } rp_step_interface;
 
-/* "rp.link/1": told its peers whenever the coupled group it belongs to changes. [audio] A peer may be
- * bypassed later (it faulted), after which it is no longer stepped; a node must tolerate a peer that has
- * stopped advancing rather than wait on it. */
+/* "rp.link/1": told its peers whenever the coupled group it belongs to changes. [audio] The peers array
+ * is valid only during the call (the node pointers in it stay valid until the next set_peers): copy what
+ * you keep. A peer may be bypassed later (it faulted), after which it is no longer stepped; a node must
+ * tolerate a peer that has stopped advancing rather than wait on it. */
 #define RP_LINK_INTERFACE "rp.link/1"
 typedef struct rp_link_interface {
     void (*set_peers)(rp_node* node, rp_node* const* peers, uint32_t peer_count);
@@ -1083,8 +1085,10 @@ namespace rp::graph {
 
 namespace {
 
-// What a bypassed node leaves on its outputs: silence, empty queues, and no control changes (a control
-// stream keeps its start value, since that is state, not something this block produced).
+// What a bypassed node leaves on its outputs: silence, empty queues, no control changes (a control stream
+// keeps its start value, since that is state, not something this block produced) and no resource handle.
+// The last matters for safety: a resource output slot outlives plans, so a writer that faulted would
+// otherwise keep publishing a handle that only an old plan pinned, and readers would see it freed.
 void silenceOutputs(const rp_process& p, std::uint32_t frames) {
     for (std::uint32_t i = 0; i < p.output_count; ++i) {
         const rp_port_view& v = p.outputs[i];
@@ -1100,8 +1104,10 @@ void silenceOutputs(const rp_process& p, std::uint32_t frames) {
             case RP_PORT_CONTROL:
                 v.u.control->count = 0;
                 break;
-            case RP_PORT_LINK:
             case RP_PORT_RESOURCE:
+                if (v.u.resource) *v.u.resource = nullptr;
+                break;
+            case RP_PORT_LINK:
             default:
                 break;
         }
@@ -3610,10 +3616,10 @@ Expected: compile error, `graph/node.hpp: No such file or directory`.
 //                                                         never allocate
 //   void bind_host(const rp_host*) noexcept;              at create: host services
 //   bool activate(double sampleRate, std::uint32_t maxFrames);   (or void)   void deactivate();
-//   void ports_changed(std::span<const std::uint8_t> connectedOutputs) noexcept;
+//   void ports_changed(std::span<const std::uint8_t> connectedOutputs) noexcept;   (the span lives for the call)
 //   void prepare(const rp::Block&) noexcept / step(std::uint32_t target) noexcept / void finish(const rp::Block&) noexcept
 //       -> rp.step/1 (all three or none; step returns bool - true once the block is produced - or an rp_step_result)
-//   void set_peers(std::span<rp_node* const>) noexcept    -> rp.link/1
+//   void set_peers(std::span<rp_node* const>) noexcept    -> rp.link/1   (the span lives for the call)
 //   static constexpr const char *name, *category, *version;  static constexpr bool heap, threads;
 //
 // process(const rp::Block&) is required, noexcept, and returns void or rp_status. Exceptions never cross
@@ -5467,7 +5473,7 @@ TEST_CASE("a node is told which outputs are connected, on the first plan and on 
 TEST_CASE("a node whose create fails is reported, and its memory is freed", "[graph][planner]") {
     PlannerRig rig;  // (the ASan build is what checks "freed")
     const auto r = rig.set(R"({"nodes":[{"id":"f","type":"rp.test.failing"}],"wires":[]})");
-    REQUIRE(GraphRig::codes(r) == "settings-invalid");
+    REQUIRE(GraphRig::codes(r) == "create-failed");
     CHECK(r.errors[0].message == "no ROM loaded");
 }
 
@@ -5507,6 +5513,30 @@ TEST_CASE("settings errors come back from the node with its reason", "[graph][pl
     CHECK(r.errors[0].message.find("channels") != std::string::npos);
 }
 
+TEST_CASE("a document rejected late, after reconcile, changes nothing and leaks nothing", "[graph][planner]") {
+    GraphRig rig;  // (the ASan build is what checks "leaks nothing")
+    REQUIRE(rig.set(R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":0.5}},
+                                  {"id":"wide","type":"rp.test.source","settings":{"channels":1}},
+                                  {"id":"out","type":"rp.host.audio-out"}],
+                         "wires":[{"from":"src.out","to":"out.out.1-2"}]})").ok);
+    rig.run();
+    rp_node* const wide = rig.host->node("wide");
+    const auto before = rig.host->instanceCount();
+    // A value swap (prepared), a layout change (rebuilt) and a new node, then a cycle at the order pass.
+    const auto r = rig.set(R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":0.25}},
+                                         {"id":"wide","type":"rp.test.source","settings":{"channels":2}},
+                                         {"id":"out","type":"rp.host.audio-out"},{"id":"new","type":"rp.test.sink"},
+                                         {"id":"x","type":"rp.test.through"},{"id":"y","type":"rp.test.through"}],
+                               "wires":[{"from":"src.out","to":"out.out.1-2"},{"from":"x.out","to":"y.in"},
+                                        {"from":"y.out","to":"x.in"}]})");
+    REQUIRE(GraphRig::codes(r) == "cycle");
+    CHECK(rig.host->instanceCount() == before);
+    CHECK(rig.host->node("wide") == wide);
+    CHECK(rig.node<test::Source>("src").value == 0.5f);
+    rig.run();
+    CHECK(rig.outs[0][0] == 0.5f);
+}
+
 TEST_CASE("a rejected document leaves the running graph untouched", "[graph][planner]") {
     GraphRig rig;
     REQUIRE(rig.set(R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":0.5}},{"id":"out","type":"rp.host.audio-out"}],
@@ -5528,7 +5558,9 @@ TEST_CASE("a rejected document leaves the running graph untouched", "[graph][pla
 // and the state a plan swap must keep (docs/modular-graph-design.md section 5.3).
 #include <catch2/catch_test_macros.hpp>
 
+#include <iterator>
 #include <limits>
+#include <string>
 
 #include "GraphRig.hpp"
 
@@ -5538,6 +5570,96 @@ using rp::graph::test::Linked;
 using rp::graph::test::Sink;
 using rp::graph::test::Source;
 using rp::graph::test::Through;
+
+namespace {
+
+// Publishes its Value param on a control output each block; keeps what its Steps param last read.
+struct Knob {
+    static constexpr const char* id = "rp.test.knob";
+    struct { rp::control_out out; } outputs;
+    struct {
+        rp::float_param<"Value", rp::range{-100, 100, 0}> value;
+        rp::int_param<"Steps", rp::range{0, 8, 0}>        steps;
+    } params;
+    double steps = 0.0;
+    void process(const rp::Block&) noexcept {
+        outputs.out.push(0, params.value.start());
+        steps = params.steps.start();
+    }
+};
+
+// Publishes the buffer it is bound to as its output each block, until it faults on block `failAt`.
+struct WriterSettings {
+    std::uint32_t failAt = 0;  // 0: never
+};
+
+struct Writer {
+    static constexpr const char* id = "rp.test.writer";
+    using Settings = WriterSettings;
+    struct { rp::resource_write<"audio-buffer"> target; } inputs;
+    struct { rp::resource_out<"audio-buffer"> out; } outputs;
+    std::uint32_t failAt = 0, blocks = 0;
+    void on_settings(const Settings& s) noexcept { failAt = s.failAt; }
+    rp_status process(const rp::Block&) noexcept {
+        if (failAt && ++blocks >= failAt) return RP_FAULT;
+        outputs.out.set(inputs.target.get());
+        return RP_OK;
+    }
+};
+
+// Reads the first sample of whatever buffer it is handed (so ASan sees a freed one).
+struct Reader {
+    static constexpr const char* id = "rp.test.reader";
+    struct { rp::resource_in<"audio-buffer"> in; } inputs;
+    const rp_resource* seen = nullptr;
+    float              first = 0.0f;
+    void process(const rp::Block&) noexcept {
+        seen = inputs.in.get();
+        if (seen) first = static_cast<const rp_audio_buffer*>(seen->payload)->data[0][0];
+    }
+};
+
+// Refuses to activate beyond `limit` frames, or (once) at all after its first activation.
+struct PickySettings {
+    std::uint32_t limit = 0;
+    bool          once = false;
+};
+
+struct Picky {
+    static constexpr const char* id = "rp.test.picky";
+    using Settings = PickySettings;
+    PickySettings s;
+    std::uint32_t activations = 0, processed = 0;
+    void on_settings(const Settings& st) noexcept { s = st; }
+    bool activate(double, std::uint32_t maxFrames) {
+        if ((s.once && activations > 0) || (s.limit && maxFrames > s.limit)) return false;
+        ++activations;
+        return true;
+    }
+    void process(const rp::Block&) noexcept { ++processed; }
+};
+
+int g_countedDestroyed = 0;
+
+struct Counted {
+    static constexpr const char* id = "rp.test.counted";
+    ~Counted() { ++g_countedDestroyed; }
+    void process(const rp::Block&) noexcept {}
+};
+
+const rp_package* execPackage() {
+    static const rp_node_type* const kTypes[] = {rp::node_type<Knob>(), rp::node_type<Writer>(), rp::node_type<Reader>(),
+                                                 rp::node_type<Picky>(), rp::node_type<Counted>()};
+    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.exec"})",
+                                     static_cast<std::uint32_t>(std::size(kTypes)), kTypes};
+    return &kPackage;
+}
+
+struct ExecRig : GraphRig {
+    ExecRig() { registry.addPackage(execPackage()); }
+};
+
+}  // namespace
 
 TEST_CASE("audio-out writes wired buses and silences the rest", "[graph][exec]") {
     GraphRig rig;
@@ -5736,7 +5858,7 @@ TEST_CASE("a block longer than the plan's buffers is refused, not overrun", "[gr
     REQUIRE(rig.set(R"({"nodes":[{"id":"src","type":"rp.test.source"},{"id":"out","type":"rp.host.audio-out"}],
                          "wires":[{"from":"src.out","to":"out.out.1-2"}]})").ok);
     rig.run(256);
-    CHECK(rig.outs[0][0] == -99.0f);  // nothing ran
+    CHECK(rig.outs[0][0] == 0.0f);  // nothing ran, and the host's buffer was not left as it was
     CHECK(rig.node<Source>("src").frames == 0);
 }
 
@@ -5772,12 +5894,147 @@ TEST_CASE("feedback data in flight survives a swap that keeps the wire", "[graph
 }
 
 TEST_CASE("removing a node frees it", "[graph][exec]") {
-    GraphRig rig;
-    REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.sink"},{"id":"b","type":"rp.test.sink"}],"wires":[]})").ok);
+    ExecRig rig;
+    g_countedDestroyed = 0;
+    REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.sink"},{"id":"b","type":"rp.test.counted"}],"wires":[]})").ok);
     CHECK(rig.host->instanceCount() == 2);
     REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.sink"}],"wires":[]})").ok);
     CHECK(rig.host->instanceCount() == 1);
     CHECK(rig.host->node("b") == nullptr);
+    rig.host->reclaim();  // the replaced plan held the last reference
+    CHECK(g_countedDestroyed == 1);
+}
+
+TEST_CASE("a node whose type changes under the same id is rebuilt as the new type", "[graph][exec][swap]") {
+    GraphRig rig;
+    REQUIRE(rig.set(R"({"nodes":[{"id":"n","type":"rp.test.sink"}],"wires":[]})").ok);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"n","type":"rp.test.through"}],"wires":[]})").ok);
+    CHECK(rp::peer_as<Through>(rig.host->node("n")) != nullptr);
+    CHECK(rp::peer_as<Sink>(rig.host->node("n")) == nullptr);
+    CHECK(rig.host->instanceCount() == 1);
+}
+
+TEST_CASE("a feedback wire removed and added back starts from silence", "[graph][exec][swap]") {
+    GraphRig rig;
+    const std::string loop = R"({"nodes":[{"id":"x","type":"rp.test.through"},{"id":"y","type":"rp.test.through"},
+                                          {"id":"out","type":"rp.host.audio-out"}],
+                                 "wires":[{"from":"x.out","to":"y.in"},{"from":"y.out","to":"x.in","feedback":true},
+                                          {"from":"y.out","to":"out.out.1-2"}]})";
+    REQUIRE(rig.set(loop).ok);
+    rig.run(64, 2);
+    REQUIRE(rig.outs[0][0] == 4.0f);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"x","type":"rp.test.through"},{"id":"y","type":"rp.test.through"},
+                                  {"id":"out","type":"rp.host.audio-out"}],
+                         "wires":[{"from":"x.out","to":"y.in"},{"from":"y.out","to":"out.out.1-2"}]})").ok);
+    rig.run();
+    REQUIRE(rig.set(loop).ok);
+    rig.run();
+    CHECK(rig.outs[0][0] == 2.0f);  // x read silence, not the 4 the old wire last carried
+}
+
+TEST_CASE("a bypassed writer stops publishing its resource handle", "[graph][exec]") {
+    ExecRig rig;
+    const auto a = rig.resources.createAudioBuffer(1, 4, 48000.0);
+    const auto b = rig.resources.createAudioBuffer(1, 4, 48000.0);
+    static_cast<rp_audio_buffer*>(rig.resources.get(a)->payload)->data[0][0] = 1.0f;
+    auto doc = [](ResourceTable::Id target) {
+        return R"({"nodes":[{"id":"w","type":"rp.test.writer","settings":{"failAt":2},"resources":{"target":"res:)" +
+               std::to_string(target) + R"("}},{"id":"r","type":"rp.test.reader"}],"wires":[{"from":"w.out","to":"r.in"}]})";
+    };
+    REQUIRE(rig.set(doc(a)).ok);
+    rig.run();
+    CHECK(rig.node<Reader>("r").first == 1.0f);
+    rig.run();  // the writer faults
+    CHECK(rig.node<Reader>("r").seen == nullptr);
+    // A is dropped and only the old plan pinned it; once that plan is reclaimed, A is gone.
+    REQUIRE(rig.resources.drop(a));
+    REQUIRE(rig.set(doc(b)).ok);
+    rig.host->reclaim();
+    CHECK(rig.resources.liveCount() == 1);
+    rig.run();
+    CHECK(rig.node<Reader>("r").seen == nullptr);
+}
+
+TEST_CASE("a param wired from a control output follows it; setParam leaves it alone", "[graph][exec]") {
+    ExecRig rig;
+    REQUIRE(rig.set(R"({"nodes":[{"id":"k","type":"rp.test.knob","params":{"value":3}},
+                                  {"id":"src","type":"rp.test.source","settings":{"value":0.5}},
+                                  {"id":"out","type":"rp.host.audio-out"}],
+                         "wires":[{"from":"k.out","to":"src.gain"},{"from":"src.out","to":"out.out.1-2"}]})").ok);
+    rig.run(64, 2);
+    CHECK(rig.outs[0][0] == 1.5f);
+    CHECK_FALSE(rig.host->setParam("src", "gain", 4.0));  // the wire drives it
+    REQUIRE(rig.host->setParam("k", "steps", 2.6));
+    rig.run(64, 2);  // the change rides one block's stream; start() shows it the block after
+    CHECK(rig.node<Knob>("k").steps == 3.0);  // rounded, as a document value would be
+    CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"k","type":"rp.test.knob"},
+                                                {"id":"src","type":"rp.test.source","params":{"gain":2}}],
+                                      "wires":[{"from":"k.out","to":"src.gain"}]})")) == "input-taken");
+}
+
+TEST_CASE("a control feedback wire delivers its changes one block late", "[graph][exec]") {
+    ExecRig rig;
+    REQUIRE(rig.set(R"({"nodes":[{"id":"k","type":"rp.test.knob","params":{"value":7}},{"id":"s","type":"rp.test.sink"}],
+                         "wires":[{"from":"k.out","to":"s.control","feedback":true}]})").ok);
+    rig.run();
+    CHECK(rig.node<Sink>("s").controlChanges == 0);
+    rig.run();
+    CHECK(rig.node<Sink>("s").controlChanges == 1);
+    CHECK(rig.node<Sink>("s").controlEnd == 7.0);
+}
+
+TEST_CASE("host outputs start every block silent", "[graph][exec]") {
+    GraphRig rig;
+    rig.run();  // before any plan
+    CHECK(rig.outs[0][0] == 0.0f);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"src","type":"rp.test.source"},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                         "wires":[{"from":"src.out","to":"out.out.1-2"}]})").ok);
+    rig.run();
+    CHECK(rig.outs[0][0] == 1.0f);
+    CHECK(rig.outs[2][0] == 0.0f);  // beyond the only bus
+    CHECK(rig.outs[7][63] == 0.0f);
+}
+
+TEST_CASE("a node that will not re-activate leaves the running plan safe", "[graph][exec][swap]") {
+    ExecRig rig;  // maxFrames 64
+    REQUIRE(rig.set(R"({"nodes":[{"id":"p","type":"rp.test.picky","settings":{"limit":128}},
+                                  {"id":"src","type":"rp.test.source"}],"wires":[]})").ok);
+    rig.run();
+    std::string error;
+    CHECK_FALSE(rig.host->reactivate(48000.0, 256, &error));
+    CHECK(error.find("\"p\"") != std::string::npos);
+    CHECK_FALSE(rig.host->isFaulted("p"));  // back on 64 frames
+    CHECK(rig.node<Picky>("p").activations == 2);
+    rig.run(256);  // the old plan still refuses what it was not built for
+    CHECK(rig.node<Picky>("p").processed == 1);
+    rig.run(64);
+    CHECK(rig.node<Picky>("p").processed == 2);
+    CHECK(rig.node<Source>("src").frames == 128);
+}
+
+TEST_CASE("a node that will not come back at all is bypassed", "[graph][exec][swap]") {
+    ExecRig rig;
+    REQUIRE(rig.set(R"({"nodes":[{"id":"p","type":"rp.test.picky","settings":{"once":true}},
+                                  {"id":"src","type":"rp.test.source"}],"wires":[]})").ok);
+    CHECK_FALSE(rig.host->reactivate(96000.0, 64));
+    CHECK(rig.host->isFaulted("p"));
+    rig.run();
+    CHECK(rig.node<Picky>("p").processed == 0);  // never run deactivated
+    CHECK(rig.node<Source>("src").frames == 64);
+}
+
+TEST_CASE("reactivate refuses a graph that no longer plans and changes nothing", "[graph][exec][swap]") {
+    ExecRig rig;
+    const auto buf = rig.resources.createAudioBuffer(1, 4, 48000.0);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"r","type":"rp.test.reader","resources":{"in":"res:)" + std::to_string(buf) +
+                    R"("}}],"wires":[]})").ok);
+    REQUIRE(rig.resources.drop(buf));  // still pinned by the running plan, but no longer bindable
+    std::string error;
+    CHECK_FALSE(rig.host->reactivate(48000.0, 256, &error));
+    CHECK(error.find("no longer plans") != std::string::npos);
+    CHECK(rig.host->config().maxFrames == 64);
+    CHECK_FALSE(rig.host->reactivate(0.0, 64, &error));
+    CHECK(error.find("sample rate") != std::string::npos);
 }
 ```
 
@@ -5845,6 +6102,7 @@ struct Instance {
     std::vector<std::unique_ptr<StreamStore>> controlOutputs;   // per output ordinal; null unless control
     std::vector<std::unique_ptr<rp_resource*>> resourceOutputs; // per output ordinal; null unless resource
     std::map<std::string, double>             appliedParams;    // document values already sent
+    std::vector<std::uint8_t>                 wiredParams;      // per param: driven by a wire, so setParam is refused
     std::vector<std::uint8_t>                 lastMask;
     bool                                      maskSent = false;
     std::vector<rp_node*>                     lastPeers;
@@ -5937,7 +6195,8 @@ struct PlanStorage {
     PlanStorage(const PlanStorage&) = delete;
     PlanStorage& operator=(const PlanStorage&) = delete;
     // Control thread: frees settings objects (the replaced ones if committed, the unused prepared ones if
-    // not) and drops the plan's resource pins. Instances and feedback buffers go with their last owner.
+    // not), then drops its instances (destroying those it alone kept, while its buffers and pins still
+    // exist), then its resource pins. Feedback buffers go with their last owner.
     ~PlanStorage();
 
     // Audio thread, at adoption: commit settings, tell nodes their peers and connected outputs, apply
@@ -5988,6 +6247,9 @@ PlanStorage::~PlanStorage() {
             c.node->vt->release_settings(c.node, c.prepared);
         }
     }
+    // A node it alone kept may still touch a bound resource or a cached port pointer in deactivate or
+    // destroy, so instances go before the pins and buffers they could reach.
+    instances.clear();
     if (resources)
         for (const auto id : pins) {
             [[maybe_unused]] const bool held = resources->unpin(id);
@@ -6064,6 +6326,9 @@ struct PlanOutcome {
     std::vector<std::function<void()>>                    onPublished;
 };
 
+// A node's rp_error text, bounded (a node may leave it unterminated) and never empty.
+std::string errorText(const rp_error& err, const char* fallback);
+
 // The five planner passes (docs/modular-graph-design.md section 5.2): validate, reconcile instances,
 // order, check cycles, assign buffers. Runs on the control thread and may allocate; never touches a
 // node the audio thread is running except through the ABI's control-thread calls. A failed plan has no
@@ -6095,6 +6360,11 @@ namespace {
 constexpr int kNone = -1;
 constexpr int kEndOfBlock = std::numeric_limits<int>::max();
 
+// Document text quoted for a message: escaped, so whatever it holds prints intact.
+std::string q(std::string_view s) { return jsonString(s); }
+
+std::string reason(const rp_error& err, const char* fallback) { return errorText(err, fallback); }
+
 struct NodePlan {
     const NodeDoc*             doc = nullptr;
     const NodeRegistry::Entry* entry = nullptr;
@@ -6118,9 +6388,11 @@ struct DataWire {
 };
 
 struct Resolved {
+    enum class State : std::uint8_t { Unvisited, Visiting, Failed };
     std::uint32_t count = 0;
     std::string   layout;
     bool          ok = false;
+    State         state = State::Unvisited;  // meaningful until ok
 };
 
 class Builder {
@@ -6128,9 +6400,17 @@ public:
     explicit Builder(const PlanInput& in) : in_(in) {}
 
     PlanOutcome run() {
-        if (structure() && reconcile() && params() && wires() && groups() && order() && channels() &&
-            exclusive() && resources()) {
-            build();
+        // Nothing may escape setGraph: an allocation failure (a huge maxFrames, say) is a refused plan,
+        // rolled back like any other.
+        try {
+            if (structure() && reconcile() && params() && wires() && groups() && order() && channels() &&
+                exclusive() && resources()) {
+                build();
+            }
+        } catch (const std::bad_alloc&) {
+            error("", "", "out-of-memory", "planning ran out of memory");
+        } catch (const std::exception& e) {
+            error("", "", "internal", std::string("planning failed: ") + e.what());
         }
         if (!out_.errors.empty()) rollback();
         return std::move(out_);
@@ -6148,7 +6428,6 @@ private:
     std::vector<std::vector<Resolved>>    resolved_;  // node -> layout port index -> resolution
     std::vector<std::map<int, int>>       inputWire_; // node -> layout port index -> wire
     std::vector<std::map<int, int>>       paramWire_; // node -> param index -> wire
-    std::vector<std::pair<ParamDesc, double>> unused_;
     std::vector<std::vector<std::pair<int, double>>> paramValues_;  // node -> (param index, value)
     std::vector<std::vector<std::pair<int, ResourceTable::Id>>> bindings_;  // node -> (port, resource)
 
@@ -6163,17 +6442,17 @@ private:
         for (const auto& n : in_.doc->nodes) {
             if (!isPlainId(n.id) || n.id.find('.') != std::string::npos)
                 error(n.id, "", "node-id",
-                      "node id " + jsonString(n.id) + " must be non-empty, with no '.', whitespace or control characters");
+                      "node id " + q(n.id) + " must be non-empty, with no '.', whitespace or control characters");
             else if (index_.count(n.id))
-                error(n.id, "", "node-id", "node id \"" + n.id + "\" is used twice");
+                error(n.id, "", "node-id", "node id " + q(n.id) + " is used twice");
             const auto* entry = in_.registry->find(n.type);
             if (!entry) {
-                error(n.id, "", "unknown-type", "no node type \"" + n.type + "\" is registered");
+                error(n.id, "", "unknown-type", "no node type " + q(n.type) + " is registered");
                 continue;
             }
             if (in_.target == Target::Pico && (entry->descriptor.heap || entry->descriptor.threads))
                 error(n.id, "", "capability",
-                      "node type \"" + n.type + "\" needs " + (entry->descriptor.heap ? "a heap" : "threads") +
+                      "node type " + q(n.type) + " needs " + (entry->descriptor.heap ? "a heap" : "threads") +
                           ", which the Pico target does not provide");
             index_.emplace(n.id, static_cast<int>(nodes_.size()));
             NodePlan p;
@@ -6192,26 +6471,28 @@ private:
         rp_error err{};
         rp_memory_req req{};
         if (!p.entry->type->query_memory(&s, &req, &err)) {
-            error(p.doc->id, "", "settings-invalid", err.message);
+            error(p.doc->id, "", "settings-invalid", reason(err, "the node refused its settings"));
             return nullptr;
         }
         if (req.align & (req.align - 1)) {  // aligned operator new requires a power of two
-            error(p.doc->id, "", "node-memory", "node asked for an alignment of " + std::to_string(req.align) +
-                                                    ", which is not a power of two");
+            error(p.doc->id, "", "node-memory",
+                  "node asked for an alignment of " + std::to_string(req.align) + ", which is not a power of two");
             return nullptr;
         }
         auto inst = std::make_shared<Instance>();
         inst->id = p.doc->id;
         inst->entry = p.entry;
         inst->align = std::max(req.align, alignof(std::max_align_t));
-        inst->memory = ::operator new(std::max<std::size_t>(req.size, 1), std::align_val_t(inst->align), std::nothrow);
+        inst->memory =
+            ::operator new(std::max<std::size_t>(req.size, 1), std::align_val_t(inst->align), std::nothrow);
         if (!inst->memory) {
-            error(p.doc->id, "", "node-memory", "could not allocate the " + std::to_string(req.size) + " bytes the node asked for");
+            error(p.doc->id, "", "node-memory",
+                  "could not allocate the " + std::to_string(req.size) + " bytes the node asked for");
             return nullptr;
         }
         inst->node = p.entry->type->create(in_.host, inst->memory, &s, &err);
         if (!inst->node) {
-            error(p.doc->id, "", "settings-invalid", err.message);
+            error(p.doc->id, "", "create-failed", reason(err, "the node could not be created"));
             return nullptr;  // ~Instance frees the memory (node is null, so nothing to destroy)
         }
         inst->settings = p.settings;
@@ -6228,11 +6509,11 @@ private:
             inst->controlOutputs.push_back(port.kind == PortKind::Control
                                                ? std::make_unique<StreamStore>(kStreamChanges, 0.0)
                                                : nullptr);
-            inst->resourceOutputs.push_back(port.kind == PortKind::Resource ? std::make_unique<rp_resource*>(nullptr)
-                                                                            : nullptr);
+            inst->resourceOutputs.push_back(
+                port.kind == PortKind::Resource ? std::make_unique<rp_resource*>(nullptr) : nullptr);
         }
         if (!inst->node->vt->activate(inst->node, in_.sampleRate, in_.maxFrames, &err)) {
-            error(p.doc->id, "", "activate-failed", err.message);
+            error(p.doc->id, "", "activate-failed", reason(err, "the node could not be activated"));
             return nullptr;
         }
         inst->active = true;
@@ -6248,8 +6529,14 @@ private:
             } else if (sameType) {
                 const rp_settings s{p.settings.data(), p.settings.size(), RP_SETTINGS_JSON};
                 rp_error err{};
-                switch (it->second->node->vt->prepare_settings(it->second->node, &s, &p.prepared, &err)) {
+                const rp_prepare_result result =
+                    it->second->node->vt->prepare_settings(it->second->node, &s, &p.prepared, &err);
+                switch (result) {
                     case RP_PREPARE_SWAP:
+                        if (!p.prepared) {
+                            error(p.doc->id, "", "node-contract", "prepare_settings chose a swap but prepared nothing");
+                            break;
+                        }
                         p.inst = it->second;
                         break;
                     case RP_PREPARE_REBUILD:
@@ -6258,7 +6545,12 @@ private:
                         p.fresh = true;
                         break;
                     case RP_PREPARE_INVALID:
-                        error(p.doc->id, "", "settings-invalid", err.message);
+                        error(p.doc->id, "", "settings-invalid", reason(err, "the node refused its settings"));
+                        break;
+                    default:
+                        p.prepared = nullptr;  // an unknown result promises nothing about it
+                        error(p.doc->id, "", "node-contract",
+                              "prepare_settings returned " + std::to_string(result) + ", which is not a result");
                         break;
                 }
             } else {
@@ -6288,7 +6580,7 @@ private:
                 const auto& ps = p.inst->layout.params;
                 const auto it = std::find_if(ps.begin(), ps.end(), [&](const ParamDesc& d) { return d.id == id; });
                 if (it == ps.end()) {
-                    error(p.doc->id, id, "unknown-param", "node \"" + p.doc->id + "\" has no param \"" + id + "\"");
+                    error(p.doc->id, id, "unknown-param", "node " + q(p.doc->id) + " has no param " + q(id));
                     continue;
                 }
                 double v = 0.0;
@@ -6312,7 +6604,8 @@ private:
                     ok = true;
                 }
                 if (!ok) {
-                    error(p.doc->id, id, "param-value", "param \"" + p.doc->id + "." + id + "\" got a value of the wrong type");
+                    error(p.doc->id, id, "param-value",
+                          "param " + q(p.doc->id + "." + id) + " got a value of the wrong type");
                     continue;
                 }
                 paramValues_[n].emplace_back(static_cast<int>(it - ps.begin()), v);
@@ -6330,13 +6623,15 @@ private:
             const auto from = parseEndpoint(w.from);
             const auto to = parseEndpoint(w.to);
             if (!from || !to) {
-                error("", "", "wire-endpoint", "wire \"" + w.from + "\" -> \"" + w.to + "\" needs node.port endpoints");
+                error("", "", "wire-endpoint", "wire " + q(w.from) + " -> " + q(w.to) + " needs node.port endpoints");
                 continue;
             }
             const auto fi = index_.find(from->node);
             const auto ti = index_.find(to->node);
             if (fi == index_.end() || ti == index_.end()) {
-                error("", "", "unknown-node", "wire \"" + w.from + "\" -> \"" + w.to + "\" names a node that does not exist");
+                const std::string_view missing = fi == index_.end() ? from->node : to->node;
+                error(std::string(missing), "", "unknown-node",
+                      "wire " + q(w.from) + " -> " + q(w.to) + " names node " + q(missing) + ", which does not exist");
                 continue;
             }
             const NodePlan& src = nodes_[fi->second];
@@ -6345,17 +6640,18 @@ private:
             const PortDesc* dp = findPort(dst.inst->layout, to->port);
             const ParamDesc* dparam = dp ? nullptr : findParam(dst.inst->layout, to->port);
             if (!sp) {
-                error(src.doc->id, std::string(from->port), "unknown-port", "\"" + w.from + "\" is not a port");
+                error(src.doc->id, std::string(from->port), "unknown-port", q(w.from) + " is not a port");
                 continue;
             }
             if (!dp && !dparam) {
-                error(dst.doc->id, std::string(to->port), "unknown-port", "\"" + w.to + "\" is not a port or param");
+                error(dst.doc->id, std::string(to->port), "unknown-port", q(w.to) + " is not a port or param");
                 continue;
             }
             const bool feedback = w.feedback.value_or(false);
             if (sp->kind == PortKind::Link || (dp && dp->kind == PortKind::Link)) {
                 if (!dp || sp->kind != PortKind::Link || dp->kind != PortKind::Link)
-                    error(dst.doc->id, std::string(to->port), "kind-mismatch", "a link port can only be wired to another link port");
+                    error(dst.doc->id, std::string(to->port), "kind-mismatch",
+                          "a link port can only be wired to another link port");
                 else if (feedback)
                     error(dst.doc->id, std::string(to->port), "feedback-kind", "a link wire cannot be a feedback wire");
                 else
@@ -6363,23 +6659,23 @@ private:
                 continue;
             }
             if (sp->dir != PortDir::Out) {
-                error(src.doc->id, sp->id, "wire-direction", "\"" + w.from + "\" is an input; a wire starts at an output");
+                error(src.doc->id, sp->id, "wire-direction", q(w.from) + " is an input; a wire starts at an output");
                 continue;
             }
             const PortKind dkind = dp ? dp->kind : PortKind::Control;
             if (dp && dp->dir != PortDir::In) {
-                error(dst.doc->id, dp->id, "wire-direction", "\"" + w.to + "\" is an output; a wire ends at an input");
+                error(dst.doc->id, dp->id, "wire-direction", q(w.to) + " is an output; a wire ends at an input");
                 continue;
             }
             if (sp->kind != dkind) {
                 error(dst.doc->id, std::string(to->port), "kind-mismatch",
-                      "\"" + w.from + "\" is " + std::string(kindName(sp->kind)) + " but \"" + w.to + "\" is " +
+                      q(w.from) + " is " + std::string(kindName(sp->kind)) + " but " + q(w.to) + " is " +
                           std::string(kindName(dkind)));
                 continue;
             }
             if (sp->kind == PortKind::Resource && sp->resourceType != dp->resourceType) {
                 error(dst.doc->id, dp->id, "resource-type-mismatch",
-                      "\"" + w.from + "\" carries " + sp->resourceType + " but \"" + w.to + "\" wants " + dp->resourceType);
+                      q(w.from) + " carries " + sp->resourceType + " but " + q(w.to) + " wants " + dp->resourceType);
                 continue;
             }
             if (feedback && sp->kind == PortKind::Resource) {
@@ -6398,8 +6694,16 @@ private:
                                 : static_cast<int>(dparam - dst.inst->layout.params.data());
             if (taken.count(slot)) {
                 error(dst.doc->id, std::string(to->port), "input-taken",
-                      "\"" + w.to + "\" already has a wire; combine signals with an explicit node (+, merge)");
+                      q(w.to) + " already has a wire; combine signals with an explicit node (+, merge)");
                 continue;
+            }
+            if (!dp) {
+                const auto& values = paramValues_[dw.to];
+                if (std::any_of(values.begin(), values.end(), [&](const auto& v) { return v.first == slot; })) {
+                    error(dst.doc->id, std::string(to->port), "input-taken",
+                          q(w.to) + " has a document value, so it cannot also take a wire");
+                    continue;
+                }
             }
             (dp ? dw.toPort : dw.toParam) = slot;
             taken[slot] = static_cast<int>(wires_.size());
@@ -6433,7 +6737,7 @@ private:
             for (int n : g)
                 if (!nodes_[n].inst->node->vt->get_interface(nodes_[n].inst->node, RP_STEP_INTERFACE))
                     error(nodes_[n].doc->id, "", "link-without-step",
-                          "node \"" + nodes_[n].doc->id + "\" is linked but does not implement " RP_STEP_INTERFACE);
+                          "node " + q(nodes_[n].doc->id) + " is linked but does not implement " RP_STEP_INTERFACE);
         }
         groupMembers_ = std::move(members);
         return out_.errors.empty();
@@ -6513,14 +6817,22 @@ private:
         return it == inputWire_[node].end() ? nullptr : &wires_[it->second];
     }
 
-    Resolved resolve(int node, int port, int depth = 0) {
+    // A port's channel count and layout, following match specs and wires upstream. Each port is resolved
+    // once: a success is cached, and so is a failure, so one bad port is reported once however many
+    // others depend on it.
+    Resolved resolve(int node, int port) {
         Resolved& r = resolved_[node][port];
-        if (r.ok) return r;
+        if (r.ok || r.state == Resolved::State::Failed) return r;
         const PortDesc& d = nodes_[node].inst->layout.ports[port];
-        if (depth > 16) {
-            error(nodes_[node].doc->id, d.id, "channel-match", "\"match\" specs form a loop");
-            return {};
-        }
+        const std::string& id = nodes_[node].doc->id;
+        auto fail = [&](const char* code, std::string message) {
+            r.state = Resolved::State::Failed;
+            if (code) error(id, d.id, code, std::move(message));
+            return Resolved{};
+        };
+        if (r.state == Resolved::State::Visiting)
+            return fail("channel-match", q(d.id) + "'s \"match\" specs form a loop");
+        r.state = Resolved::State::Visiting;
         Resolved out;
         switch (d.channels.mode) {
             case ChannelSpec::Mode::Fixed:
@@ -6528,34 +6840,29 @@ private:
                 break;
             case ChannelSpec::Mode::Match: {
                 const PortDesc* other = findPort(nodes_[node].inst->layout, d.channels.match);
-                if (!other || other->kind != PortKind::Audio) {
-                    error(nodes_[node].doc->id, d.id, "channel-match", "\"" + d.id + "\" matches \"" + d.channels.match + "\", which is not an audio port");
-                    return {};
-                }
-                out = resolve(node, static_cast<int>(other - nodes_[node].inst->layout.ports.data()), depth + 1);
+                if (!other || other->kind != PortKind::Audio)
+                    return fail("channel-match",
+                                q(d.id) + " matches " + q(d.channels.match) + ", which is not an audio port");
+                out = resolve(node, static_cast<int>(other - nodes_[node].inst->layout.ports.data()));
                 break;
             }
             case ChannelSpec::Mode::Any: {
-                if (d.dir == PortDir::Out) {
-                    error(nodes_[node].doc->id, d.id, "channel-any", "an output cannot be \"any\"; use match or a fixed count");
-                    return {};
-                }
+                if (d.dir == PortDir::Out)
+                    return fail("channel-any", "an output cannot be \"any\"; use match or a fixed count");
                 const DataWire* w = wireInto(node, port);
                 if (!w) out = {1, "mono", true};
-                else if (w->feedback) {
-                    error(nodes_[node].doc->id, d.id, "feedback-inference",
-                          "\"" + d.id + "\" infers its channels from a feedback wire; give it a fixed count");
-                    return {};
-                } else out = resolve(w->from, w->fromPort, depth + 1);
+                else if (w->feedback)
+                    return fail("feedback-inference",
+                                q(d.id) + " infers its channels from a feedback wire; give it a fixed count");
+                else out = resolve(w->from, w->fromPort);
                 break;
             }
         }
-        if (!out.ok) return {};
-        if (out.count == 0 || out.count > kMaxChannels) {
-            error(nodes_[node].doc->id, d.id, "too-many-channels",
-                  "\"" + d.id + "\" resolves to " + std::to_string(out.count) + " channels (1 to " + std::to_string(kMaxChannels) + ")");
-            return {};
-        }
+        if (!out.ok) return fail(nullptr, {});  // upstream already said why
+        if (out.count == 0 || out.count > kMaxChannels)
+            return fail(out.count == 0 ? "channel-count" : "too-many-channels",
+                        q(d.id) + " resolves to " + std::to_string(out.count) + " channels (1 to " +
+                            std::to_string(kMaxChannels) + ")");
         r = out;
         return r;
     }
@@ -6607,7 +6914,7 @@ private:
                         }
                 if (used.size() > 1)
                     error(nodes_[n].doc->id, used[0], "exclusive-ports",
-                          "\"" + nodes_[n].doc->id + "\" cannot use " + used[0] + " and " + used[1] + " at the same time");
+                          q(nodes_[n].doc->id) + " cannot use " + used[0] + " and " + used[1] + " at the same time");
             }
         }
         return out_.errors.empty();
@@ -6618,46 +6925,50 @@ private:
     bool resources() {
         bindings_.resize(nodes_.size());
         std::map<ResourceTable::Id, int> writers;
-        std::map<ResourceTable::Id, std::string> readers;
+        std::map<ResourceTable::Id, std::pair<std::string, std::string>> readers;  // id -> (node, port)
         for (std::size_t n = 0; n < nodes_.size(); ++n) {
             const auto& p = nodes_[n];
             if (!p.doc->resources) continue;
             for (const auto& [portId, ref] : *p.doc->resources) {
                 const PortDesc* d = findPort(p.inst->layout, portId);
                 if (!d || d->kind != PortKind::Resource || d->dir != PortDir::In) {
-                    error(p.doc->id, portId, "resource-port", "\"" + p.doc->id + "." + portId + "\" is not a resource input");
+                    error(p.doc->id, portId, "resource-port", q(p.doc->id + "." + portId) + " is not a resource input");
                     continue;
                 }
                 const int port = static_cast<int>(d - p.inst->layout.ports.data());
                 if (wireInto(static_cast<int>(n), port)) {
-                    error(p.doc->id, portId, "input-taken", "\"" + p.doc->id + "." + portId + "\" is both wired and bound");
+                    error(p.doc->id, portId, "input-taken", q(p.doc->id + "." + portId) + " is both wired and bound");
                     continue;
                 }
                 const auto id = parseResourceRef(ref);
                 rp_resource* r = id ? in_.resources->get(*id) : nullptr;
                 if (!r) {
-                    error(p.doc->id, portId, "unknown-resource", "\"" + ref + "\" is not a live resource");
+                    error(p.doc->id, portId, "unknown-resource", q(ref) + " is not a live resource");
                     continue;
                 }
                 if (d->resourceType != r->type) {
                     error(p.doc->id, portId, "resource-type-mismatch",
-                          "\"" + ref + "\" is " + std::string(r->type) + " but \"" + portId + "\" wants " + d->resourceType);
+                          q(ref) + " is " + std::string(r->type) + " but " + q(portId) + " wants " + d->resourceType);
                     continue;
                 }
                 if (d->write) {
                     if (++writers[*id] > 1)
-                        error(p.doc->id, portId, "resource-multiple-writers", "\"" + ref + "\" is bound to more than one writer");
+                        error(p.doc->id, portId, "resource-multiple-writers",
+                              q(ref) + " is bound to more than one writer");
                 } else {
-                    readers[*id] = p.doc->id + "." + portId;
+                    readers[*id] = {p.doc->id, portId};
                 }
                 bindings_[n].emplace_back(port, *id);
             }
         }
-        for (const auto& [id, count] : writers)
-            if (readers.count(id))
-                error("", "", "resource-reader-unordered",
-                      "\"res:" + std::to_string(id) + "\" has a writer, so \"" + readers[id] +
-                          "\" must read it through a wire from the writer's output, not a binding");
+        for (const auto& [id, count] : writers) {
+            const auto r = readers.find(id);
+            if (r != readers.end())
+                error(r->second.first, r->second.second, "resource-reader-unordered",
+                      q("res:" + std::to_string(id)) + " has a writer, so " +
+                          q(r->second.first + "." + r->second.second) +
+                          " must read it through a wire from the writer's output, not a binding");
+        }
         return out_.errors.empty();
     }
 
@@ -6687,7 +6998,8 @@ private:
         if (w.kind == PortKind::Audio) {
             f->frames = in_.maxFrames;
             f->samples.assign(static_cast<std::size_t>(channelCount) * in_.maxFrames, 0.0f);
-            for (std::uint32_t c = 0; c < channelCount; ++c) f->pointers.push_back(f->samples.data() + std::size_t(c) * in_.maxFrames);
+            for (std::uint32_t c = 0; c < channelCount; ++c)
+                f->pointers.push_back(f->samples.data() + std::size_t(c) * in_.maxFrames);
             if (sameShape && in_.quiescent)
                 for (std::uint32_t c = 0; c < channelCount; ++c)
                     std::copy_n(old->pointers[c], std::min(old->frames, in_.maxFrames), f->pointers[c]);
@@ -6699,30 +7011,10 @@ private:
         return f;
     }
 
-    void build() {
-        auto s = std::make_unique<PlanStorage>();
-        PlanStorage& st = *s;
-        st.maxFrames = in_.maxFrames;
-        st.resources = in_.resources;
-        st.silence = std::make_unique<float[]>(in_.maxFrames);
-        st.scratch = std::make_unique<float[]>(in_.maxFrames);
-        std::fill_n(st.silence.get(), in_.maxFrames, 0.0f);
-        std::fill_n(st.scratch.get(), in_.maxFrames, 0.0f);
-        st.emptyQueue = std::make_unique<QueueStore>(0, 0);
-        st.scratchQueue = std::make_unique<QueueStore>(kQueueItems, kQueueBytes);
-        st.emptyStream = std::make_unique<StreamStore>(0, 0.0);
-        st.queuesToClear.push_back(&st.scratchQueue->queue);
-
-        const std::size_t count = nodes_.size();
-        st.inputViews.resize(count);
-        st.outputViews.resize(count);
-        st.paramViews.resize(count);
-        for (const auto& p : nodes_) st.instances.push_back(p.inst);
-
-        // Producer side: every output's view, with audio buffers reused by lifetime.
+    // Producer side: every output's view, with audio buffers reused by lifetime.
+    void assignOutputs(PlanStorage& st) {
         std::vector<int> lastUse;  // per audio buffer
         std::vector<int> freeList;
-        std::vector<std::vector<std::vector<int>>> outBuffers(count);  // node -> output ordinal -> buffer ids
         auto takeBuffer = [&](int lastReader) {
             int id;
             if (!freeList.empty()) {
@@ -6737,7 +7029,6 @@ private:
             lastUse[id] = lastReader;
             return id;
         };
-        for (std::size_t n = 0; n < count; ++n) outBuffers[n].resize(nodes_[n].outPorts.size());
 
         for (int g = 0; g < static_cast<int>(groupMembers_.size()); ++g) {
             for (int n : groupMembers_[g]) {
@@ -6761,7 +7052,6 @@ private:
                                     ptrs.push_back(st.scratch.get());
                                 } else {
                                     const int id = takeBuffer(lastReader);
-                                    outBuffers[n][o].push_back(id);
                                     ptrs.push_back(st.audio[id].get());
                                 }
                             }
@@ -6799,8 +7089,10 @@ private:
                     lastUse[id] = kNone;
                 }
         }
+    }
 
-        // Feedback fronts and the copies that feed them.
+    // Feedback fronts, keyed by wire, and the copies that fill them at the end of each block.
+    std::map<std::string, std::shared_ptr<FeedbackFront>> feedbackFronts(PlanStorage& st) {
         std::map<std::string, std::shared_ptr<FeedbackFront>> fronts;
         for (const auto& w : wires_) {
             if (!w.feedback) continue;
@@ -6825,8 +7117,12 @@ private:
             st.feedbackFronts.push_back(f);
             fronts[w.key] = f;
         }
+        return fronts;
+    }
 
-        // Consumer side: every input, param and resource slot.
+    // Consumer side: every input, param and resource slot.
+    void assignInputs(PlanStorage& st, std::map<std::string, std::shared_ptr<FeedbackFront>>& fronts) {
+        const std::size_t count = nodes_.size();
         for (std::size_t n = 0; n < count; ++n) {
             NodePlan& p = nodes_[n];
             auto& views = st.inputViews[n];
@@ -6885,8 +7181,10 @@ private:
                 pv.push_back(q);
             }
         }
+    }
 
-        // Steps, in order; a coupled group's members run consecutively behind its first.
+    // Steps, in order; a coupled group's members run consecutively behind its first.
+    void flattenSteps(PlanStorage& st) {
         for (const auto& g : groupMembers_) {
             for (std::size_t m = 0; m < g.size(); ++m) {
                 const int n = g[m];
@@ -6900,14 +7198,19 @@ private:
                 step.process.params = st.paramViews[n].data();
                 step.process.param_count = static_cast<std::uint32_t>(st.paramViews[n].size());
                 if (g.size() > 1) {
-                    step.step = static_cast<const rp_step_interface*>(step.node->vt->get_interface(step.node, RP_STEP_INTERFACE));
+                    step.step = static_cast<const rp_step_interface*>(
+                        step.node->vt->get_interface(step.node, RP_STEP_INTERFACE));
                     if (m == 0) step.groupSize = static_cast<std::uint32_t>(g.size());
                 }
                 st.steps.push_back(step);
             }
         }
+    }
 
-        // What the audio thread applies when it adopts the plan.
+    // What the audio thread applies when it adopts the plan, and the control-side records that follow
+    // once it is published.
+    void scheduleAdoption(PlanStorage& st) {
+        const std::size_t count = nodes_.size();
         for (std::size_t n = 0; n < count; ++n) {
             NodePlan& p = nodes_[n];
             const std::shared_ptr<Instance> inst = p.inst;
@@ -6926,6 +7229,9 @@ private:
                     inst->maskSent = true;
                 });
             }
+            std::vector<std::uint8_t> wired(inst->layout.params.size(), 0);
+            for (const auto& [k, w] : paramWire_[n]) wired[static_cast<std::size_t>(k)] = 1;
+            if (inst->wiredParams != wired) out_.onPublished.push_back([inst, wired] { inst->wiredParams = wired; });
             for (const auto& [k, value] : paramValues_[n]) {
                 const std::string& id = inst->layout.params[k].id;
                 const auto it = inst->appliedParams.find(id);
@@ -6938,7 +7244,8 @@ private:
         for (const auto& g : groupMembers_) {
             for (int n : g) {
                 const std::shared_ptr<Instance> inst = nodes_[n].inst;
-                const auto* link = static_cast<const rp_link_interface*>(inst->node->vt->get_interface(inst->node, RP_LINK_INTERFACE));
+                const auto* link = static_cast<const rp_link_interface*>(
+                    inst->node->vt->get_interface(inst->node, RP_LINK_INTERFACE));
                 if (!link) continue;
                 std::vector<rp_node*> peers;
                 for (int m : g)
@@ -6952,6 +7259,31 @@ private:
                 }
             }
         }
+    }
+
+    void build() {
+        auto s = std::make_unique<PlanStorage>();
+        PlanStorage& st = *s;
+        st.maxFrames = in_.maxFrames;
+        st.resources = in_.resources;
+        st.silence = std::make_unique<float[]>(in_.maxFrames);
+        st.scratch = std::make_unique<float[]>(in_.maxFrames);
+        std::fill_n(st.silence.get(), in_.maxFrames, 0.0f);
+        std::fill_n(st.scratch.get(), in_.maxFrames, 0.0f);
+        st.emptyQueue = std::make_unique<QueueStore>(0, 0);
+        st.scratchQueue = std::make_unique<QueueStore>(kQueueItems, kQueueBytes);
+        st.emptyStream = std::make_unique<StreamStore>(0, 0.0);
+        st.queuesToClear.push_back(&st.scratchQueue->queue);
+
+        st.inputViews.resize(nodes_.size());
+        st.outputViews.resize(nodes_.size());
+        st.paramViews.resize(nodes_.size());
+        for (const auto& p : nodes_) st.instances.push_back(p.inst);
+        assignOutputs(st);
+        auto fronts = feedbackFronts(st);
+        assignInputs(st, fronts);
+        flattenSteps(st);
+        scheduleAdoption(st);
 
         st.view = PlanView{st.steps, st.queuesToClear, st.controlsToRoll, st.feedback, in_.faults};
         for (const auto& p : nodes_) out_.instances[p.doc->id] = p.inst;
@@ -6976,6 +7308,11 @@ private:
 
 }  // namespace
 
+std::string errorText(const rp_error& err, const char* fallback) {
+    const std::size_t n = strnlen(err.message, sizeof err.message);
+    return n ? std::string(err.message, n) : std::string(fallback);
+}
+
 PlanOutcome plan(const PlanInput& in) { return Builder(in).run(); }
 
 }  // namespace rp::graph
@@ -6990,6 +7327,7 @@ PlanOutcome plan(const PlanInput& in) { return Builder(in).run(); }
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -7010,6 +7348,11 @@ struct HostConfig {
     Target        target = Target::Desktop;
 };
 
+constexpr std::uint32_t kMaxBlockFrames = 1u << 16;
+
+// Why a rate / block size cannot be used (a positive finite rate, 1..kMaxBlockFrames frames), or nullopt.
+std::optional<std::string> checkConfig(double sampleRate, std::uint32_t maxFrames);
+
 struct SetGraphResult {
     bool                               ok = false;
     std::vector<PlanError>             errors;
@@ -7025,41 +7368,47 @@ struct SetGraphResult {
 //   - audioThreadOwns decides who drains. While false the control thread flushes inline after every push,
 //     so the ring is empty at every handoff.
 //
-// It never plans while a swap is in flight: setGraph first waits (at most about one block) for the audio
-// thread to adopt the previous plan, so the planner never reads node state the audio thread is writing.
+// It never plans while a swap is in flight: setGraph first waits (about one block while audio runs, up to
+// a timeout if it has stalled) for the audio thread to adopt the previous plan, so the planner never reads
+// node state the audio thread is writing.
 class GraphHost {
 public:
+    // Throws std::invalid_argument for a config checkConfig refuses.
     GraphHost(const NodeRegistry& registry, ResourceTable& resources, HostConfig config = {});
-    ~GraphHost();
+    ~GraphHost();  // the audio thread must have stopped (setAudioThreadOwns(false))
     GraphHost(const GraphHost&) = delete;
     GraphHost& operator=(const GraphHost&) = delete;
 
     // ---- control thread ------------------------------------------------------------------------------
     SetGraphResult setGraph(std::string_view documentJson);
     SetGraphResult setGraph(const GraphDocument& document);
-    // A live param change, clamped to the param's resolved range and applied at `frame` of the next block.
-    // False for an unknown node or param, or a NaN value.
+    // A live param change, clamped to the param's resolved range (and rounded for int, enum and bool, as a
+    // document value is) and applied at `frame` of the next block. False for an unknown node or param, a
+    // NaN value, or a param a wire drives.
     bool setParam(std::string_view nodeId, std::string_view paramId, double value, std::uint32_t frame = 0);
     // Set true BEFORE the audio thread starts calling processBlock, false AFTER it has stopped.
     void setAudioThreadOwns(bool owns);
     bool audioThreadOwns() const { return audioOwns_.load(std::memory_order_acquire); }
     // Destroy plans the audio thread has handed back. Returns how many.
     std::size_t reclaim();
-    // Quiescent only: re-activate every instance at a new rate / block size, preserving state, then
-    // re-plan the current document so every buffer is sized for the new maximum. False if a node fails
-    // to activate or the re-plan is rejected: the previous plan stays in place (and refuses blocks longer
-    // than it was built for), so the caller must re-plan or rebuild before relying on the new size.
-    bool reactivate(double sampleRate, std::uint32_t maxFrames);
+    // Quiescent only: re-plan the current document at a new rate / block size, then re-activate every
+    // instance at it (preserving state), then publish. False, with a reason, if the document no longer
+    // plans (nothing has changed) or a node will not activate: every instance goes back to the old rate and
+    // size, the old plan keeps running, and a node that will not come back either is bypassed as faulted.
+    bool reactivate(double sampleRate, std::uint32_t maxFrames, std::string* error = nullptr);
     rp_node*      node(std::string_view id) const;
     std::uint32_t faultCount() const { return faults_.load(std::memory_order_relaxed); }
     // Has this node faulted (and so been bypassed since)? False for an unknown id.
     bool          isFaulted(std::string_view id) const;
     std::size_t   instanceCount() const { return live_.size(); }
+    // Replaced plans the audio thread could not hand back (the release ring was full) and so leaked
+    // rather than free on its own thread. Never expected; reclaim() logs it when it happens.
+    std::uint32_t leakedPlans() const { return leakedPlans_.load(std::memory_order_relaxed); }
 
     // ---- audio thread (or the control thread while quiescent) ----------------------------------------
-    // Drain commands (adopting a new plan if one is waiting), then run one block. A block longer than the
-    // running plan's buffers is refused (nothing runs) rather than overrun them. hostOutputs are what
-    // rp.host.audio-out writes into this block.
+    // Drain commands (adopting a new plan if one is waiting), then run one block. Every host output starts
+    // the block silent; rp.host.audio-out writes the buses it has. A block longer than the running plan's
+    // buffers is refused (nothing runs, the outputs stay silent) rather than overrun them.
     void processBlock(std::uint32_t frames, const rp_transport& transport, float* const* outputs = nullptr,
                       std::uint32_t outputCount = 0);
 
@@ -7079,10 +7428,13 @@ private:
         double            value = 0.0;
     };
 
-    bool push(const Command& c);
-    void drain();
-    void flushIfQuiescent();
-    bool waitForAdoption();
+    bool        push(const Command& c);
+    void        drain();
+    void        flushIfQuiescent();
+    bool        waitForAdoption();
+    PlanOutcome planDocument(const GraphDocument& document, double sampleRate, std::uint32_t maxFrames);
+    bool        publish(PlanOutcome& outcome, const GraphDocument& document);
+    void        markFaulted(Instance& inst);
 
     const NodeRegistry&                                   registry_;
     ResourceTable&                                        resources_;
@@ -7093,6 +7445,8 @@ private:
     std::atomic<bool>                                     audioOwns_{false};
     std::atomic<bool>                                     swapInFlight_{false};
     std::atomic<std::uint32_t>                            faults_{0};
+    std::atomic<std::uint32_t>                            leakedPlans_{0};
+    std::uint32_t                                         leaksReported_ = 0;  // control side
     PlanStorage*                                          current_ = nullptr;  // audio side
     GraphDocument                                         document_;           // control side: last published
     std::map<std::string, std::shared_ptr<Instance>>      live_;               // control side
@@ -7109,11 +7463,18 @@ private:
 ```cpp
 #include "graph/GraphHost.hpp"
 
+#include <algorithm>
+#include <cassert>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <new>
+#include <stdexcept>
 #include <thread>
+
+#include "graph/CanonicalJson.hpp"
 
 #include "graph/Executor.hpp"
 #include "graph/Queue.hpp"
@@ -7138,12 +7499,22 @@ constexpr auto kAdoptionTimeout = std::chrono::seconds(2);
 
 }  // namespace
 
+std::optional<std::string> checkConfig(double sampleRate, std::uint32_t maxFrames) {
+    if (!(sampleRate > 0.0) || !std::isfinite(sampleRate)) return "the sample rate must be a positive number";
+    if (maxFrames < 1 || maxFrames > kMaxBlockFrames)
+        return "the block size must be 1 to " + std::to_string(kMaxBlockFrames) + " frames, not " +
+               std::to_string(maxFrames);
+    return std::nullopt;
+}
+
 GraphHost::GraphHost(const NodeRegistry& registry, ResourceTable& resources, HostConfig config)
     : registry_(registry), resources_(resources), config_(config) {
+    if (auto why = checkConfig(config.sampleRate, config.maxFrames)) throw std::invalid_argument(*why);
     host_ = rp_host{RP_ABI_VERSION, this, &hostAlloc, &hostFree, &hostLog, &hostInterface};
 }
 
 GraphHost::~GraphHost() {
+    assert(!audioThreadOwns() && "destroy a GraphHost only after its audio thread has stopped");
     // The audio thread has stopped (setAudioThreadOwns(false) is the caller's job): adopt anything still
     // queued so every plan is in exactly one place, then free them all here, on the control thread.
     drain();
@@ -7198,7 +7569,21 @@ SetGraphResult GraphHost::setGraph(const GraphDocument& document) {
         return result;
     }
     reclaim();
+    PlanOutcome outcome = planDocument(document, config_.sampleRate, config_.maxFrames);
+    result.layouts = std::move(outcome.layouts);
+    if (!outcome.errors.empty()) {
+        result.errors = std::move(outcome.errors);
+        return result;
+    }
+    if (!publish(outcome, document)) {
+        result.errors.push_back({"", "", "busy", "the command ring is full"});
+        return result;
+    }
+    result.ok = true;
+    return result;
+}
 
+PlanOutcome GraphHost::planDocument(const GraphDocument& document, double sampleRate, std::uint32_t maxFrames) {
     PlanInput in;
     in.doc = &document;
     in.registry = &registry_;
@@ -7206,18 +7591,16 @@ SetGraphResult GraphHost::setGraph(const GraphDocument& document) {
     in.live = &live_;
     in.feedback = &feedback_;
     in.host = &host_;
-    in.sampleRate = config_.sampleRate;
-    in.maxFrames = config_.maxFrames;
+    in.sampleRate = sampleRate;
+    in.maxFrames = maxFrames;
     in.target = config_.target;
     in.faults = &faults_;
     in.quiescent = !audioThreadOwns();
-    PlanOutcome outcome = plan(in);
-    result.layouts = std::move(outcome.layouts);
-    if (!outcome.errors.empty()) {
-        result.errors = std::move(outcome.errors);
-        return result;
-    }
+    return plan(in);
+}
 
+// Hand a successful plan to the audio thread. False, with the plan freed unpublished, if the ring is full.
+bool GraphHost::publish(PlanOutcome& outcome, const GraphDocument& document) {
     PlanStorage* storage = outcome.storage.release();
     swapInFlight_.store(true, std::memory_order_release);
     Command c;
@@ -7226,8 +7609,7 @@ SetGraphResult GraphHost::setGraph(const GraphDocument& document) {
     if (!commands_.tryPush(c)) {
         swapInFlight_.store(false, std::memory_order_release);
         delete storage;  // never published: frees its prepared settings and pins
-        result.errors.push_back({"", "", "busy", "the command ring is full"});
-        return result;
+        return false;
     }
     // Published: the plan will be adopted, so the control-side records can move on.
     document_ = document;
@@ -7235,8 +7617,11 @@ SetGraphResult GraphHost::setGraph(const GraphDocument& document) {
     feedback_ = std::move(outcome.feedback);
     for (auto& f : outcome.onPublished) f();
     flushIfQuiescent();
-    result.ok = true;
-    return result;
+    return true;
+}
+
+void GraphHost::markFaulted(Instance& inst) {
+    if (!inst.faulted.exchange(true, std::memory_order_relaxed)) faults_.fetch_add(1, std::memory_order_relaxed);
 }
 
 bool GraphHost::setParam(std::string_view nodeId, std::string_view paramId, double value, std::uint32_t frame) {
@@ -7245,12 +7630,17 @@ bool GraphHost::setParam(std::string_view nodeId, std::string_view paramId, doub
     const auto& params = it->second->layout.params;
     for (std::size_t k = 0; k < params.size(); ++k) {
         if (params[k].id != paramId) continue;
-        if (value != value) return false;
+        const auto& wired = it->second->wiredParams;
+        if (value != value || (k < wired.size() && wired[k])) return false;
+        const ParamDesc& d = params[k];
+        double v = std::clamp(value, d.min, d.max);
+        if (d.type == ParamType::Int || d.type == ParamType::Enum) v = std::round(v);
+        else if (d.type == ParamType::Bool) v = v >= 0.5 ? 1.0 : 0.0;
         Command c;
         c.kind = Command::Kind::SetParam;
         c.queue = &it->second->params[k]->queue;
         c.frame = frame;
-        c.value = value < params[k].min ? params[k].min : value > params[k].max ? params[k].max : value;
+        c.value = v;
         return push(c);
     }
     return false;
@@ -7263,8 +7653,7 @@ void GraphHost::drain() {
         switch (c.kind) {
             case Command::Kind::SwapPlan:
                 c.plan->adopt();
-                if (replaced && !released_.tryPush(replaced))
-                    std::fprintf(stderr, "[graph] release ring full: leaking a plan rather than freeing on the audio thread\n");
+                if (replaced && !released_.tryPush(replaced)) leakedPlans_.fetch_add(1, std::memory_order_relaxed);
                 replaced = current_;
                 current_ = c.plan;
                 swapInFlight_.store(false, std::memory_order_release);
@@ -7276,8 +7665,7 @@ void GraphHost::drain() {
     }
     // Hand the replaced plan back only after every command in this drain has been applied, so a param
     // write queued behind a swap can never land in memory the control thread is already freeing.
-    if (replaced && !released_.tryPush(replaced))
-        std::fprintf(stderr, "[graph] release ring full: leaking a plan rather than freeing on the audio thread\n");
+    if (replaced && !released_.tryPush(replaced)) leakedPlans_.fetch_add(1, std::memory_order_relaxed);
 }
 
 std::size_t GraphHost::reclaim() {
@@ -7287,21 +7675,66 @@ std::size_t GraphHost::reclaim() {
         delete p;
         ++n;
     }
+    // The audio thread only counts a leak (it must not log); say so here, once per new leak.
+    if (const auto leaked = leakedPlans(); leaked != leaksReported_) {
+        std::fprintf(stderr, "[graph] release ring full: %u plan(s) leaked rather than freed on the audio thread\n",
+                     static_cast<unsigned>(leaked - leaksReported_));
+        leaksReported_ = leaked;
+    }
     return n;
 }
 
-bool GraphHost::reactivate(double sampleRate, std::uint32_t maxFrames) {
-    if (audioThreadOwns()) return false;
-    config_.sampleRate = sampleRate;
-    config_.maxFrames = maxFrames;
+bool GraphHost::reactivate(double sampleRate, std::uint32_t maxFrames, std::string* error) {
+    auto fail = [&](std::string why) {
+        if (error) *error = std::move(why);
+        return false;
+    };
+    if (audioThreadOwns()) return fail("reactivate needs the audio thread stopped");
+    if (auto why = checkConfig(sampleRate, maxFrames)) return fail(*why);
+    if (live_.empty()) {
+        config_.sampleRate = sampleRate;
+        config_.maxFrames = maxFrames;
+        return true;
+    }
+    reclaim();
+    // Plan first, at the new size: if the document no longer plans (a resource dropped since), nothing has
+    // changed yet. Same document, same instances, so no state is lost; reused instances need no
+    // activation to be planned.
+    const GraphDocument document = document_;
+    PlanOutcome outcome = planDocument(document, sampleRate, maxFrames);
+    if (!outcome.errors.empty()) return fail("the current graph no longer plans: " + outcome.errors[0].message);
+
+    // Then re-activate every instance. One that refuses puts every instance already switched back on the
+    // old rate and size, so the running plan (built for those) stays right for all of them; the refuser
+    // is bypassed if it will not come back on the old ones either. The new plan is dropped unpublished.
+    auto backToOld = [&](Instance& inst) {
+        rp_error err{};
+        inst.active = inst.node->vt->activate(inst.node, config_.sampleRate, config_.maxFrames, &err);
+        if (!inst.active) markFaulted(inst);
+    };
+    std::vector<Instance*> switched;
     for (auto& [id, inst] : live_) {
         if (inst->active) inst->node->vt->deactivate(inst->node);
         rp_error err{};
         inst->active = inst->node->vt->activate(inst->node, sampleRate, maxFrames, &err);
-        if (!inst->active) return false;
+        if (inst->active) {
+            switched.push_back(inst.get());
+            continue;
+        }
+        const std::string why = "node " + jsonString(id) + " could not activate: " + errorText(err, "no reason given");
+        for (Instance* s : switched) {
+            s->node->vt->deactivate(s->node);
+            backToOld(*s);
+        }
+        backToOld(*inst);
+        return fail(why);
     }
-    // Same document, same instances (so no state is lost), but every buffer re-sized for maxFrames.
-    return live_.empty() || setGraph(GraphDocument(document_)).ok;
+    // Quiescent, so the command ring is empty and publishing cannot be refused.
+    [[maybe_unused]] const bool published = publish(outcome, document);
+    assert(published);
+    config_.sampleRate = sampleRate;
+    config_.maxFrames = maxFrames;
+    return true;
 }
 
 bool GraphHost::isFaulted(std::string_view id) const {
@@ -7317,6 +7750,11 @@ rp_node* GraphHost::node(std::string_view id) const {
 void GraphHost::processBlock(std::uint32_t frames, const rp_transport& transport, float* const* outputs,
                              std::uint32_t outputCount) {
     drain();
+    // Silence first, so channels no bus covers (or every channel, before the first plan or in a refused
+    // block) never carry what the host left in its buffers, which a DAW often aliases to the inputs.
+    if (outputs)
+        for (std::uint32_t c = 0; c < outputCount; ++c)
+            if (outputs[c]) std::memset(outputs[c], 0, frames * sizeof(float));
     hostOutputs_ = outputs;
     hostOutputCount_ = outputCount;
     // Every buffer in a plan is the plan's maxFrames long, and nodes were activated with that maximum; a
@@ -7437,7 +7875,7 @@ const rp_package* hostPackage() {
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (612 assertions in 79 test cases)`.
+Expected: `All tests passed (671 assertions in 89 test cases)`.
 
 - [ ] **Step 7: Commit**
 
@@ -7454,9 +7892,10 @@ ring and one release ring, flushes inline while quiescent, and never plans
 while a swap is in flight. rp.host.audio-out writes wired buses and
 silences the rest."
 
-(This task was executed as the original commit plus one review-fix commit, "fix(graph): the cycle
-report walks back; a failed create frees its memory". A fresh execution needs only the one commit
-above.)
+(This task was executed as the original commit plus two review-fix commits, "fix(graph): the cycle
+report walks back; a failed create frees its memory" and "fix(graph): a bypassed writer drops its
+resource handle; reactivate cannot leave a plan unsafe". The second also touched Task 2's executor and
+the ABI comments. A fresh execution needs only the one commit above.)
 ```
 
 ---
@@ -8247,7 +8686,7 @@ const rp_package* corePackage() {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (661 assertions in 92 test cases)`.
+Expected: `All tests passed (720 assertions in 102 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -8461,7 +8900,7 @@ Add both files to the test's `SOURCES` and `Threads::Threads` to its `LIBS`:
 - [ ] **Step 3: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (868 assertions in 94 test cases)`. (These pass immediately: the properties
+Expected: `All tests passed (927 assertions in 104 test cases)`. (These pass immediately: the properties
 were built in by Tasks 2 to 8. If NoAlloc fails, an earlier task let an allocation onto the block path;
 fix that, never the test.)
 
@@ -8475,7 +8914,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-graph-test
 ```
 
-Expected: `All tests passed (868 assertions in 94 test cases)` and no ThreadSanitizer report. (Same
+Expected: `All tests passed (927 assertions in 104 test cases)` and no ThreadSanitizer report. (Same
 configure as `tools/run-sanitizer.sh thread`, which shares `build-tsan/`.)
 
 - [ ] **Step 5: Commit**
