@@ -941,8 +941,9 @@ typedef struct rp_link_interface {
 #include "graph/rp_node.h"
 
 // Alloc-free helpers over the ABI's fixed-capacity queues, shared by nodes and the executor. Nothing
-// here grows: a push that does not fit is dropped and counted in `dropped` (an audio-thread counter; the
-// host publishes it rather than letting the control thread read it live).
+// here grows: a message that does not fit is dropped, and a control change that does not fit replaces the
+// stream's last one (so the stream still ends on the right value); either way it is counted in `dropped`
+// (an audio-thread counter; the host publishes it rather than letting the control thread read it live).
 namespace rp::graph {
 
 // Append one message (events or bytes). Frames must be non-decreasing within a block; a message whose
@@ -8345,6 +8346,25 @@ TEST_CASE("the player loops, stops, and starts a new buffer from its beginning",
     CHECK(rig.outs[0][1] == 11.0f);
 }
 
+TEST_CASE("a buffer swapped in mid-play starts from its first frame", "[graph][core]") {
+    CoreRig rig;
+    const auto three = rig.buffer(1, 3, [](std::uint32_t, std::uint32_t i) { return static_cast<float>(i + 1); });
+    const auto other = rig.buffer(1, 7, [](std::uint32_t, std::uint32_t i) { return static_cast<float>(20 + i); });
+    auto doc = [&](ResourceTable::Id b, bool loop) {
+        return R"({"nodes":[{"id":"p","type":"rp.core.buffer-player","settings":{"loop":)" + std::string(loop ? "true" : "false") +
+               R"(},"resources":{"sample":)" + CoreRig::res(b) + R"(}},{"id":"out","type":"rp.host.audio-out"}],
+                    "wires":[{"from":"p.out","to":"out.out.1-2"}]})";
+    };
+    REQUIRE(rig.set(doc(three, true)).ok);
+    rig.run();  // 64 frames of a 3-frame loop: it stops one frame in
+    REQUIRE(rig.set(doc(other, true)).ok);
+    rig.run();  // (and 64 frames of a 7-frame loop stop one frame in too)
+    CHECK(rig.outs[0][0] == 20.0f);
+    REQUIRE(rig.set(doc(three, false)).ok);  // a one-shot too: no loop wrap to hide a missed restart
+    rig.run();
+    CHECK(rig.outs[0][0] == 1.0f);
+}
+
 TEST_CASE("the recorder starts at the frame Record turns on and stops at the buffer's end", "[graph][core]") {
     CoreRig rig;
     const auto ramp = rig.buffer(1, 64, [](std::uint32_t, std::uint32_t i) { return static_cast<float>(i); });
@@ -8370,6 +8390,12 @@ TEST_CASE("the recorder starts at the frame Record turns on and stops at the buf
     rig.run();
     CHECK(sample(target, 32) == 0.0f);  // the next block carried on from where it was
     CHECK(sample(target, 39) == 7.0f);  // and stopped at the buffer's last frame
+    REQUIRE(rig.host->setParam("rec", "record", 0, 0));
+    rig.run();
+    REQUIRE(rig.host->setParam("rec", "record", 1, 0));
+    rig.run();
+    CHECK(sample(target, 0) == 0.0f);  // turned on again: back to the first frame, overwriting
+    CHECK(sample(target, 39) == 39.0f);
     REQUIRE(rig.set(doc(other)).ok);
     rig.run();
     CHECK(sample(other, 0) == 0.0f);  // a new target starts from its first frame
@@ -8472,7 +8498,9 @@ namespace rp::graph {
 // buffer's sample rate (it plays frames, not seconds), and leaves output channels the buffer lacks silent.
 // The recorder's Record param is frame-accurate: turning it on, or binding a new target, starts again
 // from the buffer's first frame, and recording stops at its last; buffer channels beyond its input keep
-// whatever they held.
+// whatever they held. Both spot a new buffer by its handle's address, so one freed and another made at
+// the same address while the node was unbound reads as the same buffer (an offline driver can arrange
+// that; a running host cannot, since the old plan pins the old buffer until the new one exists).
 const rp_package* corePackage();
 
 }  // namespace rp::graph
@@ -9096,7 +9124,7 @@ const rp_package* corePackage() {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (862 assertions in 113 test cases)`.
+Expected: `All tests passed (871 assertions in 114 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -9110,10 +9138,11 @@ a delay whose line lives in host-supplied memory, and buffer playback and
 recording. First users of resource bindings: one writer per mutable
 buffer, readers ordered by wiring from it, plans pin what they bind."
 
-(This task was executed as the original commit plus two review-fix commits, "fix(graph): 5.1 to mono is
-an equal sum" and "fix(graph): buffer nodes restart on a new buffer; one writer means bound, never
-wired". The second also touched Task 2's control queue, Task 4's descriptor header and Task 7's
-planner. A fresh execution needs only the one commit above.)
+(This task was executed as the original commit plus three review-fix commits, "fix(graph): 5.1 to mono
+is an equal sum", "fix(graph): buffer nodes restart on a new buffer; one writer means bound, never
+wired" and "test(graph): a buffer swapped mid-play and a re-armed recorder". The second also touched
+Task 2's control queue, Task 4's descriptor header and Task 7's planner. A fresh execution needs only
+the one commit above.)
 ```
 
 ---
@@ -9315,7 +9344,7 @@ Add both files to the test's `SOURCES` and `Threads::Threads` to its `LIBS`:
 - [ ] **Step 3: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (1069 assertions in 115 test cases)`. (These pass immediately: the properties
+Expected: `All tests passed (1078 assertions in 116 test cases)`. (These pass immediately: the properties
 were built in by Tasks 2 to 8. If NoAlloc fails, an earlier task let an allocation onto the block path;
 fix that, never the test.)
 
@@ -9329,7 +9358,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-graph-test
 ```
 
-Expected: `All tests passed (1069 assertions in 115 test cases)` and no ThreadSanitizer report. (Same
+Expected: `All tests passed (1078 assertions in 116 test cases)` and no ThreadSanitizer report. (Same
 configure as `tools/run-sanitizer.sh thread`, which shares `build-tsan/`.)
 
 - [ ] **Step 5: Commit**
