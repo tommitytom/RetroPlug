@@ -92,6 +92,7 @@ TEST_CASE("channel specs are exact", "[graph][descriptor]") {
     CHECK(layoutReason(R"({"ports":[{"id":"a","dir":"out","kind":"audio","channels":{"any":true}}]})").find("cannot be \"any\"") != std::string::npos);
     CHECK(layoutReason(R"({"ports":[{"id":"a","dir":"out","kind":"audio","channels":{"match":"a"}}]})").find("not another audio port") != std::string::npos);
     CHECK(layoutReason(R"({"ports":[{"id":"e","dir":"in","kind":"events","channels":{"any":true}}]})").find("only audio ports") != std::string::npos);
+    CHECK(layoutReason(R"x({"ports":[{"id":"a","dir":"in","kind":"audio","channels":{"count":5,"layout":"discrete(03)"}}]})x").find("not a discrete(n)") != std::string::npos);
     const auto two = parseLayout(R"({"ports":[{"id":"a","dir":"in","kind":"audio","channels":{"count":2.0,"layout":"stereo"}}]})");
     REQUIRE(two);  // 2.0 is the same number JavaScript writes as 2
     CHECK(two->ports[0].channels.count == 2);
@@ -103,6 +104,9 @@ TEST_CASE("resource access and exclusive groups are exact", "[graph][descriptor]
     CHECK(layoutReason(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[["nope"]]})").find("exclusive member") != std::string::npos);
     CHECK(layoutReason(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[[]]})").find("non-empty") != std::string::npos);
     CHECK(parseLayout(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[["o","pins.*"]]})"));
+    CHECK(layoutReason(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[["o","o"]]})").find("overlap") != std::string::npos);
+    CHECK(layoutReason(R"({"ports":[{"id":"pins.a","dir":"out","kind":"events"}],"exclusive":[["pins.*","pins.a"]]})").find("overlap") != std::string::npos);
+    CHECK(layoutReason(R"({"exclusive":[["pins.*","pins.x.*"]]})").find("overlap") != std::string::npos);
 }
 
 TEST_CASE("a descriptor's requires flags are exact", "[graph][descriptor]") {

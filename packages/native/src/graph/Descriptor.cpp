@@ -5,6 +5,7 @@
 #include <cmath>
 #include <limits>
 #include <optional>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -66,7 +67,7 @@ rfl::Generic paramGeneric(const ParamDesc& p) {
             put(o, "default", rfl::Generic(p.def));
             break;
         case ParamType::Bool:
-            put(o, "default", rfl::Generic(p.def != 0.0));
+            put(o, "default", rfl::Generic(p.def >= 0.5));  // as a node reads it
             break;
         case ParamType::Enum: {
             Array values;
@@ -187,6 +188,8 @@ rfl::Result<ChannelSpec> parseChannels(const rfl::Generic& g, const std::string&
     auto layoutName = reqString(*o, "layout", where);
     if (!layoutName) return fail(layoutName.error().what());
     const auto known = layoutChannels(*layoutName);
+    if (!known && layoutName->rfind("discrete(", 0) == 0)
+        return fail(where + ": " + q(*layoutName) + " is not a discrete(n) layout; n is a whole number from 1, no leading zeros");
     if (known && *known != static_cast<std::uint32_t>(count))
         return fail(where + ": layout " + q(*layoutName) + " is " + std::to_string(*known) + " channels, not " +
                     jsNumber(count));
@@ -338,15 +341,21 @@ rfl::Result<Layout> parseLayoutObject(const Object& o) {
             layout.params.push_back(std::move(*param));
         }
     }
-    std::unordered_set<std::string> ids;
+    std::unordered_map<std::string_view, const PortDesc*> portsById;
+    std::unordered_set<std::string_view> paramIds;
     for (const auto& p : layout.ports)
-        if (!ids.insert(p.id).second) return fail(q(p.id) + " is used by more than one port or param");
+        if (!portsById.emplace(p.id, &p).second) return fail(q(p.id) + " is used by more than one port or param");
     for (const auto& p : layout.params)
-        if (!ids.insert(p.id).second) return fail(q(p.id) + " is used by more than one port or param");
+        if (portsById.count(p.id) || !paramIds.insert(p.id).second)
+            return fail(q(p.id) + " is used by more than one port or param");
+    auto port = [&](std::string_view id) -> const PortDesc* {
+        const auto it = portsById.find(id);
+        return it == portsById.end() ? nullptr : it->second;
+    };
     // Checks that need the whole port list: what a match names, and what an exclusive group names.
     for (const auto& p : layout.ports) {
         if (p.kind != PortKind::Audio || p.channels.mode != ChannelSpec::Mode::Match) continue;
-        const PortDesc* target = findPort(layout, p.channels.match);
+        const PortDesc* target = port(p.channels.match);
         if (!target || target == &p || target->kind != PortKind::Audio)
             return fail("port " + q(p.id) + ": matches " + q(p.channels.match) + ", which is not another audio port");
     }
@@ -361,9 +370,18 @@ rfl::Result<Layout> parseLayoutObject(const Object& o) {
                 auto s = m.to_string();
                 if (!s || s->empty()) return fail("\"exclusive\" members must be non-empty strings");
                 const bool wildcard = s->size() > 2 && s->compare(s->size() - 2, 2, ".*") == 0;
-                const PortDesc* exact = wildcard ? nullptr : findPort(layout, *s);
+                const PortDesc* exact = wildcard ? nullptr : port(*s);
                 if (!wildcard && (!exact || exact->dir != PortDir::Out))
                     return fail("exclusive member " + q(*s) + " must be an output's id or a \"prefix.*\" pattern");
+                // Members must not overlap: one connected port matching two of them would be reported as
+                // two members in use at once.
+                for (const auto& other : group) {
+                    const std::string_view a = *s, b = other;
+                    const bool aw = wildcard, bw = b.size() > 2 && b.substr(b.size() - 2) == ".*";
+                    const bool overlap = a == b || (aw && matchesPattern(a, bw ? b.substr(0, b.size() - 1) : b)) ||
+                                         (bw && matchesPattern(b, aw ? a.substr(0, a.size() - 1) : a));
+                    if (overlap) return fail("exclusive members " + q(other) + " and " + q(*s) + " overlap");
+                }
                 group.push_back(*s);
             }
             layout.exclusive.push_back(std::move(group));
