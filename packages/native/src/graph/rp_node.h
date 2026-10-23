@@ -203,7 +203,9 @@ typedef struct rp_node_vtable {
      * shared scratch buffer, so skipping them is safe, and is what the connected mask is for). Return
      * RP_FAULT to be bypassed from then on. */
     rp_status (*process)(rp_node* node, const rp_process* block);
-    /* [control] Validate new settings and decide swap versus rebuild. */
+    /* [control] Validate new settings and decide swap versus rebuild. A host never calls this while a
+     * commit_settings for the same node may still be in flight, so the node may read its current
+     * settings here (to compare against). */
     rp_prepare_result (*prepare_settings)(rp_node* node, const rp_settings* settings, void** prepared,
                                           rp_error* err);
     /* [audio] Swap in a prepared settings object; hand the previous one back through *old. */

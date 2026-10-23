@@ -4,8 +4,11 @@
 
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <new>
 #include <sstream>
+#include <stdexcept>
+#include <tuple>
 
 #include "TestNodes.hpp"
 
@@ -164,4 +167,232 @@ TEST_CASE("extra memory is sized by settings and handed to the node", "[graph][n
     Made m{t};
     make(m, R"({"length":10})");
     CHECK(rp::peer_as<Lined>(m.node)->mem.size() == 10 * sizeof(float));
+}
+
+namespace {
+
+// Reflected ports and params bind by position; the ones adjust_layout appends are reached through Block.
+struct MixedSettings {
+    std::uint32_t aux = 2;
+};
+
+struct Mixed {
+    static constexpr const char* id = "rp.test.mixed";
+    using Settings = MixedSettings;
+    struct { rp::audio_in<rp::mono> in; rp::events_in midi; } inputs;
+    struct { rp::audio_out<rp::mono> out; } outputs;
+    struct { rp::float_param<"Level", rp::range{0, 1, 1}> level; } params;
+
+    static void adjust_layout(Layout& l, const Settings& s) {
+        // An output appended ahead of inputs: the layer still sorts inputs first, each side in order.
+        l.ports.push_back({"tap", PortDir::Out, PortKind::Audio, ChannelSpec::fixed(1, "mono"), {}, false});
+        for (std::uint32_t k = 0; k < s.aux; ++k)
+            l.ports.push_back({"aux" + std::to_string(k + 1), PortDir::In, PortKind::Audio, ChannelSpec::fixed(1, "mono"), {}, false});
+        l.params.push_back({"aux-level", "Aux Level", ParamType::Float, 0, 1, 1, {}, {}});
+    }
+
+    std::uint32_t aux = 0;
+    void on_settings(const Settings& s) noexcept { aux = s.aux; }
+
+    void process(const rp::Block& b) noexcept {
+        const std::uint32_t firstAux = 2;  // after in, midi
+        for (std::uint32_t i = 0; i < b.frames(); ++i) {
+            float v = inputs.in[0][i] * static_cast<float>(params.level.start());
+            for (std::uint32_t k = 0; k < aux; ++k)
+                v += b.input(firstAux + k).u.audio.channels[0][i] * static_cast<float>(b.param(1).start);
+            outputs.out[0][i] = v;
+            b.output(1).u.audio.channels[0][i] = static_cast<float>(inputs.midi.messages().size());
+        }
+    }
+};
+
+// adjust_layout may patch and append, never move or drop a reflected port.
+struct ShufflerSettings {
+    bool drop = false;
+};
+
+struct Shuffler {
+    static constexpr const char* id = "rp.test.shuffler";
+    using Settings = ShufflerSettings;
+    struct { rp::events_in a; rp::events_in b; } inputs;
+    static void adjust_layout(Layout& l, const Settings& s) {
+        if (s.drop) l.ports.erase(l.ports.begin());
+    }
+    void process(const rp::Block&) noexcept {}
+};
+
+// Throws building its layout for the default settings, so it has no descriptor to give.
+struct Unbuildable {
+    static constexpr const char* id = "rp.test.unbuildable";
+    static void adjust_layout(Layout&, const rp::detail::NoSettings&) { throw std::runtime_error("no default layout"); }
+    void process(const rp::Block&) noexcept {}
+};
+
+struct ActivatorSettings {
+    std::uint32_t mode = 0;  // 0 succeeds, 1 returns false, 2 throws
+};
+
+struct Activator {
+    static constexpr const char* id = "rp.test.activator";
+    using Settings = ActivatorSettings;
+    std::uint32_t mode = 0;
+    void on_settings(const Settings& s) noexcept { mode = s.mode; }
+    bool activate(double, std::uint32_t) {
+        if (mode == 2) throw std::runtime_error("no rom loaded");
+        return mode == 0;
+    }
+    void deactivate() { throw std::runtime_error("ignored"); }
+    void process(const rp::Block&) noexcept {}
+};
+
+// Reads its settings in its destructor, which is only safe if the node goes before its settings.
+float g_seenAtDestroy = 0.0f;
+
+struct Holder {
+    static constexpr const char* id = "rp.test.holder";
+    using Settings = test::SourceSettings;
+    const Settings* settings = nullptr;
+    void on_settings(const Settings& s) noexcept { settings = &s; }
+    ~Holder() { g_seenAtDestroy = settings ? settings->value : -1.0f; }
+    void process(const rp::Block&) noexcept {}
+};
+
+template <class P>
+P paramReading(rp_control_queue& q, double v) {
+    q = rp_control_queue{v, nullptr, 0, 0, 0};
+    P p;
+    p.queue = &q;
+    return p;
+}
+
+}  // namespace
+
+TEST_CASE("appended ports and params are reached by index, after the reflected ones", "[graph][node]") {
+    Made m{rp::node_type<Mixed>()};
+    make(m, R"({"aux":2})");
+    const std::string layout = m.node->vt->layout(m.node);
+    // inputs first (reflected, then appended), then outputs (reflected, then appended)
+    const auto at = [&](const char* id) { return layout.find(std::string("\"id\":\"") + id + "\""); };
+    CHECK(at("in") < at("midi"));
+    CHECK(at("midi") < at("aux1"));
+    CHECK(at("aux2") < at("out"));
+    CHECK(at("out") < at("tap"));
+    CHECK(m.node->vt->layout(m.node) == m.node->vt->layout(m.node));  // cached: the same pointer every call
+
+    constexpr std::uint32_t kFrames = 4;
+    float in[kFrames] = {1, 1, 1, 1}, aux1[kFrames] = {2, 2, 2, 2}, aux2[kFrames] = {3, 3, 3, 3};
+    float out[kFrames] = {}, tap[kFrames] = {};
+    float* inCh[] = {in};
+    float* aux1Ch[] = {aux1};
+    float* aux2Ch[] = {aux2};
+    float* outCh[] = {out};
+    float* tapCh[] = {tap};
+    rp_message msgs[1] = {};
+    rp_queue midi{};
+    midi.items = msgs;
+    midi.count = 1;
+    rp_port_view inputs[4] = {};
+    inputs[0].kind = RP_PORT_AUDIO;
+    inputs[0].u.audio = {inCh, 1};
+    inputs[1].kind = RP_PORT_EVENTS;
+    inputs[1].u.queue = &midi;
+    inputs[2].kind = RP_PORT_AUDIO;
+    inputs[2].u.audio = {aux1Ch, 1};
+    inputs[3].kind = RP_PORT_AUDIO;
+    inputs[3].u.audio = {aux2Ch, 1};
+    rp_port_view outputs[2] = {};
+    outputs[0].kind = RP_PORT_AUDIO;
+    outputs[0].u.audio = {outCh, 1};
+    outputs[1].kind = RP_PORT_AUDIO;
+    outputs[1].u.audio = {tapCh, 1};
+    rp_control_queue level{0.5, nullptr, 0, 0, 0}, auxLevel{0.25, nullptr, 0, 0, 0};
+    rp_control_queue* params[] = {&level, &auxLevel};
+    rp_transport transport{};
+    const rp_process block{kFrames, &transport, inputs, 4, outputs, 2, params, 2};
+    REQUIRE(m.node->vt->process(m.node, &block) == RP_OK);
+    CHECK(out[0] == 0.5f + (2.0f + 3.0f) * 0.25f);
+    CHECK(tap[3] == 1.0f);
+}
+
+TEST_CASE("adjust_layout cannot move or drop a reflected port", "[graph][node]") {
+    const rp_node_type* t = rp::node_type<Shuffler>();
+    CHECK(std::string(t->descriptor()).find(R"("id":"rp.test.shuffler")") != std::string::npos);
+    rp_settings drop = json(R"({"drop":true})");
+    rp_memory_req req{};
+    rp_error err{};
+    REQUIRE(t->query_memory(&drop, &req, &err));
+    void* memory = ::operator new(req.size, std::align_val_t(req.align));
+    CHECK(t->create(nullptr, memory, &drop, &err) == nullptr);
+    CHECK(std::string(err.message).find("adjust_layout") != std::string::npos);
+    ::operator delete(memory, std::align_val_t(req.align));
+
+    Made m{t};
+    make(m, "{}");
+    void* prepared = nullptr;
+    err = rp_error{};
+    CHECK(m.node->vt->prepare_settings(m.node, &drop, &prepared, &err) == RP_PREPARE_INVALID);
+    CHECK(std::string(err.message).find("\"a\"") != std::string::npos);
+
+    CHECK(std::string(rp::node_type<Unbuildable>()->descriptor()).empty());  // the registry refuses it
+}
+
+TEST_CASE("activate failures are reported through err, never thrown", "[graph][node]") {
+    for (const auto& [settings, ok, reason] : {std::tuple{R"({"mode":0})", true, ""},
+                                               std::tuple{R"({"mode":1})", false, "activate failed"},
+                                               std::tuple{R"({"mode":2})", false, "no rom loaded"}}) {
+        Made m{rp::node_type<Activator>()};
+        make(m, settings);
+        rp_error err{};
+        CHECK(m.node->vt->activate(m.node, 48000.0, 256, &err) == ok);
+        CHECK(std::string(err.message) == reason);
+        m.node->vt->deactivate(m.node);  // throws inside, and must not escape
+    }
+}
+
+TEST_CASE("a settings-less node still refuses what is not a JSON object", "[graph][node]") {
+    const rp_node_type* t = rp::node_type<test::Sink>();
+    rp_memory_req req{};
+    rp_error err{};
+    rp_settings empty{nullptr, 0, RP_SETTINGS_JSON};
+    CHECK(t->query_memory(&empty, &req, &err));
+    rp_settings object = json("{}");
+    CHECK(t->query_memory(&object, &req, &err));
+    rp_settings array = json("[1]");
+    CHECK_FALSE(t->query_memory(&array, &req, &err));
+    rp_settings garbage = json("not json");
+    CHECK_FALSE(t->query_memory(&garbage, &req, &err));
+    rp_settings other{"{}", 2, 7};
+    CHECK_FALSE(t->query_memory(&other, &req, &err));
+    CHECK(std::string(err.message).find("encoding") != std::string::npos);
+}
+
+TEST_CASE("a node is destroyed before its settings", "[graph][node]") {
+    g_seenAtDestroy = 0.0f;
+    {
+        Made m{rp::node_type<Holder>()};
+        make(m, R"({"value":0.75})");
+    }
+    CHECK(g_seenAtDestroy == 0.75f);
+}
+
+TEST_CASE("param values are rounded and clamped, whatever the wire carries", "[graph][node]") {
+    using Steps = rp::int_param<"Steps", rp::range{1, 16, 4}>;
+    using Mode = rp::enum_param<SyncMode, "Mode", SyncMode::MidiSync>;
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+    rp_control_queue q{};
+    CHECK(paramReading<Steps>(q, nan).value() == 4);
+    CHECK(paramReading<Steps>(q, inf).value() == std::numeric_limits<int>::max());
+    CHECK(paramReading<Steps>(q, -1e300).value() == std::numeric_limits<int>::min());
+    CHECK(paramReading<Steps>(q, 2.5).value() == 3);
+    CHECK(paramReading<Steps>(q, -2.5).value() == -3);
+    CHECK(paramReading<Mode>(q, nan).value() == SyncMode::MidiSync);
+    CHECK(paramReading<Mode>(q, inf).value() == SyncMode::HighPassTPDF);
+    CHECK(paramReading<Mode>(q, -inf).value() == SyncMode::Off);
+    CHECK(paramReading<Mode>(q, 1e300).value() == SyncMode::HighPassTPDF);
+    CHECK(paramReading<Mode>(q, 1.4).value() == SyncMode::MidiSync);
+    CHECK(paramReading<Mode>(q, 1.6).value() == SyncMode::HighPassTPDF);
+    CHECK(paramReading<Mode>(q, -0.7).value() == SyncMode::Off);
+    CHECK_FALSE(paramReading<rp::bool_param<"Mute">>(q, nan).value());
+    CHECK(paramReading<rp::bool_param<"Mute">>(q, 0.5).value());
 }

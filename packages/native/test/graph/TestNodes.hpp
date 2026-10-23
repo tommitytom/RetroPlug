@@ -7,6 +7,7 @@
 #include <array>
 #include <cstdint>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,10 @@ struct Source {
     } outputs;
     struct { rp::float_param<"Gain", rp::range{0, 10, 1}> gain; } params;
 
+    static std::optional<std::string> validate(const Settings& s) {
+        if (s.channels < 1 || s.channels > 8) return "channels must be 1 to 8";
+        return std::nullopt;
+    }
     static void adjust_layout(Layout& l, const Settings& s) {
         l.ports[0].channels = ChannelSpec::fixed(s.channels, layoutForCount(s.channels));
     }
@@ -89,7 +94,9 @@ struct Sink {
     }
 };
 
-// One of a coupled pair. Each step() advances by one frame; the shared log records the interleaving.
+// One of a coupled pair. Each step() advances by one frame; the shared log records the interleaving. The
+// log allocates, which is fine for a test node and nothing else: a step that throws under noexcept
+// terminates the process.
 inline std::vector<std::string>& linkLog() {
     static std::vector<std::string> log;
     return log;
@@ -111,15 +118,15 @@ struct Linked {
     void on_settings(const Settings& s) noexcept { settings = &s; }
     void set_peers(std::span<rp_node* const> peers) noexcept { peerCount = static_cast<std::uint32_t>(peers.size()); }
 
-    void prepare(const rp::Block&) { produced = 0; }
-    bool step(std::uint32_t target) {
+    void prepare(const rp::Block&) noexcept { produced = 0; }
+    bool step(std::uint32_t target) noexcept {
         if (produced < target) {
             ++produced;
             linkLog().push_back(settings->name);
         }
         return produced >= target;
     }
-    void finish(const rp::Block& b) {
+    void finish(const rp::Block& b) noexcept {
         for (std::uint32_t i = 0; i < b.frames(); ++i) outputs.out[0][i] = static_cast<float>(peerCount);
     }
     void process(const rp::Block&) noexcept {}

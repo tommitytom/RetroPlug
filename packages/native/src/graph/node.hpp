@@ -13,36 +13,44 @@
 //
 // Field names become port and param ids (reflect-cpp walks the three structs); the wrapper types carry
 // the rest. The member names `inputs`, `outputs` and `params` are reserved for those structs: a node that
-// keeps a count in a member called `inputs` would be reflected as if it were its port list. Optional members a node may define, each detected and wired only if present:
+// keeps a count in a member called `inputs` would be reflected as if it were its port list. A port in the
+// wrong struct (an output in `inputs`) is a compile error.
 //
-//   using Settings = SomeNamedStruct;                     reflect-cpp-readable; its JSON Schema ships in the descriptor
-//   void on_settings(const Settings&) noexcept;           at create (control) and each commit (audio): copy, never allocate
+// Optional members a node may define. Each is detected by NAME, and once a name is present its exact
+// signature is checked at compile time, so a near miss is an error rather than a hook silently ignored:
+//
+//   using Settings = SomeNamedStruct;                     reflect-cpp-readable, in a NAMED namespace (its
+//                                                         JSON Schema $defs key comes from the type name)
 //   static std::optional<std::string> validate(const Settings&);      reject settings with a reason
-//   static void adjust_layout(rp::graph::Layout&, const Settings&);   patch reflected specs or append ports
+//   static void adjust_layout(rp::graph::Layout&, const Settings&);   patch reflected specs, append ports
+//                                                         or params; never remove or reorder reflected ones
 //   static bool needs_rebuild(const Settings& from, const Settings& to);
-//   static std::size_t extra_memory(const Settings&);     host-supplied tail memory, handed over by attach()
-//   void attach(std::span<std::byte>) noexcept;
-//   bool activate(double sampleRate, std::uint32_t maxFrames);   void deactivate();
+//   static std::size_t extra_memory(const Settings&);     host-supplied tail memory (max_align_t aligned)
+//   void attach(std::span<std::byte>) noexcept;           receives it, at create
+//   void on_settings(const Settings&) noexcept;           at create (control) and each commit (audio): copy,
+//                                                         never allocate
+//   void bind_host(const rp_host*) noexcept;              at create: host services
+//   bool activate(double sampleRate, std::uint32_t maxFrames);   (or void)   void deactivate();
 //   void ports_changed(std::span<const std::uint8_t> connectedOutputs) noexcept;
-//   void prepare(const rp::Block&) / step(std::uint32_t target) / void finish(const rp::Block&)        -> rp.step/1
-//       (step returns bool - true once the block is produced - or an rp_step_result to report a fault)
-//   void set_peers(std::span<rp_node* const>) noexcept                                             -> rp.link/1
-//   void bind_host(const rp_host*) noexcept;              at create: host services (host-implemented nodes reach the host here)
+//   void prepare(const rp::Block&) noexcept / step(std::uint32_t target) noexcept / void finish(const rp::Block&) noexcept
+//       -> rp.step/1 (all three or none; step returns bool - true once the block is produced - or an rp_step_result)
+//   void set_peers(std::span<rp_node* const>) noexcept    -> rp.link/1
 //   static constexpr const char *name, *category, *version;  static constexpr bool heap, threads;
 //
-// process() may return void or rp_status. Exceptions never cross the ABI: every control-thread entry is
-// wrapped, and process is noexcept.
+// process(const rp::Block&) is required, noexcept, and returns void or rp_status. Exceptions never cross
+// the ABI: every control-thread entry catches, and every audio-thread entry is noexcept.
 
 #include <algorithm>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <exception>
+#include <limits>
 #include <new>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -56,6 +64,7 @@
 #include <rfl/num_fields.hpp>
 #include <rfl/to_view.hpp>
 
+#include "graph/CanonicalJson.hpp"
 #include "graph/Descriptor.hpp"
 #include "graph/Queue.hpp"
 #include "graph/rp_node.h"
@@ -215,17 +224,24 @@ struct float_param : detail::param_base {
 
 template <fixed_string Name, range R = range{}, fixed_string Unit = "">
 struct int_param : detail::param_base {
-    static_assert(R.min <= R.max && R.min <= R.init && R.init <= R.max, "a param range needs min <= init <= max");
-    static_assert(R.min >= -2147483648.0 && R.max <= 2147483647.0, "an int param's range fits an int, which value() returns");
-    static_assert(R.min == static_cast<double>(static_cast<int>(R.min)) &&
+    static_assert(R.min <= R.max && R.min <= R.init && R.init <= R.max && R.min >= -2147483648.0 &&
+                      R.max <= 2147483647.0 && R.min == static_cast<double>(static_cast<int>(R.min)) &&
                       R.max == static_cast<double>(static_cast<int>(R.max)) &&
                       R.init == static_cast<double>(static_cast<int>(R.init)),
-                  "an int param's range is whole numbers");
+                  "an int param's range is whole numbers with min <= init <= max, within int");
     static graph::ParamDesc rp_param(std::string id) {
         return {std::move(id), std::string(Name.view()), graph::ParamType::Int, R.min, R.max, R.init, {},
                 std::string(Unit.view())};
     }
-    int value() const { return static_cast<int>(start() + (start() < 0 ? -0.5 : 0.5)); }
+    // The value at block start, rounded and clamped to int; NaN reads as the declared default. (A wire can
+    // carry any double. A node whose range adjust_layout widened clamps to its own range.)
+    int value() const {
+        const double v = start();
+        if (!(v == v)) return static_cast<int>(R.init);
+        if (v <= -2147483648.0) return std::numeric_limits<int>::min();
+        if (v >= 2147483647.0) return std::numeric_limits<int>::max();
+        return static_cast<int>(v + (v < 0 ? -0.5 : 0.5));
+    }
 };
 
 template <fixed_string Name, bool Default = false>
@@ -233,7 +249,7 @@ struct bool_param : detail::param_base {
     static graph::ParamDesc rp_param(std::string id) {
         return {std::move(id), std::string(Name.view()), graph::ParamType::Bool, 0.0, 1.0, Default ? 1.0 : 0.0, {}, {}};
     }
-    bool value() const { return start() >= 0.5; }
+    bool value() const { return start() >= 0.5; }  // NaN reads as false
 };
 
 namespace detail {
@@ -255,15 +271,26 @@ inline std::string kebabCase(std::string_view name) {
     }
     return out;
 }
+
+template <class E, E Value>
+constexpr bool isEnumerator() {
+    for (const auto& entry : rfl::get_enumerator_array<E>())
+        if (entry.second == Value) return true;
+    return false;
+}
 }  // namespace detail
 
 // An enum param: labels are the enumerator names in kebab-case, the runtime value is the index, rounded
-// and clamped so any control can drive it.
+// and clamped so any control can drive it (NaN reads as the default).
 template <class E, fixed_string Name, E Default>
 struct enum_param : detail::param_base {
+    static constexpr auto kEnumerators = rfl::get_enumerator_array<E>();
+    static_assert(kEnumerators.size() > 0, "an enum param needs at least one enumerator");
+    static_assert(detail::isEnumerator<E, Default>(), "an enum param's default must be one of its enumerators");
+
     static graph::ParamDesc rp_param(std::string id) {
         graph::ParamDesc d{std::move(id), std::string(Name.view()), graph::ParamType::Enum, 0.0, 0.0, 0.0, {}, {}};
-        for (const auto& [label, e] : rfl::get_enumerator_array<E>()) {
+        for (const auto& [label, e] : kEnumerators) {
             if (e == Default) d.def = static_cast<double>(d.values.size());
             d.values.push_back(detail::kebabCase(label));
         }
@@ -271,11 +298,12 @@ struct enum_param : detail::param_base {
         return d;
     }
     E value() const {
-        static constexpr auto kEnumerators = rfl::get_enumerator_array<E>();
-        double v = start() + 0.5;
-        if (v < 0.0) v = 0.0;
-        auto i = static_cast<std::size_t>(v);
-        if (i >= kEnumerators.size()) i = kEnumerators.size() - 1;
+        const double v = start();
+        if (!(v == v)) return Default;
+        const auto last = kEnumerators.size() - 1;
+        std::size_t i = 0;
+        if (v >= static_cast<double>(last)) i = last;
+        else if (v > 0.0) i = static_cast<std::size_t>(v + 0.5);
         return kEnumerators[i].second;
     }
 };
@@ -286,9 +314,10 @@ struct Block {
     const rp_process& raw;
     std::uint32_t frames() const { return raw.frames; }
     const rp_transport& transport() const { return *raw.transport; }
-    // Ports beyond the reflected ones (appended by adjust_layout) are reached by index here.
+    // Ports and params beyond the reflected ones (appended by adjust_layout) are reached by index here.
     const rp_port_view& input(std::uint32_t i) const { return raw.inputs[i]; }
     const rp_port_view& output(std::uint32_t i) const { return raw.outputs[i]; }
+    const rp_control_queue& param(std::uint32_t i) const { return *raw.params[i]; }
 };
 
 // ---- reflection glue ---------------------------------------------------------------------------------------
@@ -305,9 +334,22 @@ template <class T> auto& inputsOf(T& t) { if constexpr (requires { t.inputs; }) 
 template <class T> auto& outputsOf(T& t) { if constexpr (requires { t.outputs; }) return t.outputs; else { static NoPorts none; return none; } }
 template <class T> auto& paramsOf(T& t) { if constexpr (requires { t.params; }) return t.params; else { static NoPorts none; return none; } }
 
-template <class Field>
+// The one place fields are walked (design 4.7's fields_of seam): swapping reflect-cpp's field reflection
+// for another one (standalone PFR) touches only these three.
+template <class S> using FieldsOf = typename rfl::named_tuple_t<S>::Fields;
+template <class S> inline constexpr std::size_t kFieldCount = rfl::num_fields<S>;
+template <class S, class F>
+void forEachField(S& s, F&& f) noexcept {
+    rfl::to_view(s).apply([&](auto& field) { f(*field.value()); });
+}
+
+enum class Side { Inputs, Outputs };
+
+template <Side W, class Field>
 graph::PortDesc portDesc() {
     using P = std::remove_cvref_t<typename Field::Type>;
+    if constexpr (W == Side::Inputs) static_assert(P::rp_dir != graph::PortDir::Out, "a port in `inputs` must be an input or a link");
+    else static_assert(P::rp_dir == graph::PortDir::Out, "a port in `outputs` must be an output");
     graph::PortDesc d;
     d.id = std::string(Field::name());
     d.kind = P::rp_kind;
@@ -324,26 +366,24 @@ graph::ParamDesc paramDesc() {
     return P::rp_param(std::string(Field::name()));
 }
 
-template <class S, std::size_t... I>
+template <Side W, class S, std::size_t... I>
 void appendPorts(std::vector<graph::PortDesc>& out, std::index_sequence<I...>) {
-    using Fs = typename rfl::named_tuple_t<S>::Fields;
-    (out.push_back(portDesc<rfl::tuple_element_t<I, Fs>>()), ...);
+    (out.push_back(portDesc<W, rfl::tuple_element_t<I, FieldsOf<S>>>()), ...);
 }
 
 template <class S, std::size_t... I>
 void appendParams(std::vector<graph::ParamDesc>& out, std::index_sequence<I...>) {
-    using Fs = typename rfl::named_tuple_t<S>::Fields;
-    (out.push_back(paramDesc<rfl::tuple_element_t<I, Fs>>()), ...);
+    (out.push_back(paramDesc<rfl::tuple_element_t<I, FieldsOf<S>>>()), ...);
 }
 
-template <class S>
+template <Side W, class S>
 void appendPortsOf(std::vector<graph::PortDesc>& out) {
-    if constexpr (!std::is_same_v<S, NoPorts>) appendPorts<S>(out, std::make_index_sequence<rfl::num_fields<S>>{});
+    if constexpr (!std::is_same_v<S, NoPorts>) appendPorts<W, S>(out, std::make_index_sequence<kFieldCount<S>>{});
 }
 
 template <class S>
 void appendParamsOf(std::vector<graph::ParamDesc>& out) {
-    if constexpr (!std::is_same_v<S, NoPorts>) appendParams<S>(out, std::make_index_sequence<rfl::num_fields<S>>{});
+    if constexpr (!std::is_same_v<S, NoPorts>) appendParams<S>(out, std::make_index_sequence<kFieldCount<S>>{});
 }
 
 template <class T>
@@ -352,28 +392,52 @@ graph::Layout reflectedLayout() {
     using Out = std::remove_cvref_t<decltype(outputsOf(std::declval<T&>()))>;
     using Par = std::remove_cvref_t<decltype(paramsOf(std::declval<T&>()))>;
     graph::Layout l;
-    appendPortsOf<In>(l.ports);
-    appendPortsOf<Out>(l.ports);
+    appendPortsOf<Side::Inputs, In>(l.ports);
+    appendPortsOf<Side::Outputs, Out>(l.ports);
     appendParamsOf<Par>(l.params);
     return l;
 }
 
+// Reflected ports and params bind by position, so adjust_layout may patch their specs and append, but each
+// reflected one must keep its place, id, kind and direction. Throws (which every caller reports as invalid
+// settings) when it did not.
+inline void checkReflectedPrefix(const graph::Layout& reflected, const graph::Layout& adjusted) {
+    auto side = [](const graph::Layout& l, bool outputs) {
+        std::vector<const graph::PortDesc*> v;
+        for (const auto& p : l.ports)
+            if ((p.dir == graph::PortDir::Out) == outputs) v.push_back(&p);
+        return v;
+    };
+    for (const bool outputs : {false, true}) {
+        const auto want = side(reflected, outputs);
+        const auto got = side(adjusted, outputs);
+        for (std::size_t i = 0; i < want.size(); ++i)
+            if (i >= got.size() || got[i]->id != want[i]->id || got[i]->kind != want[i]->kind || got[i]->dir != want[i]->dir)
+                throw std::logic_error("adjust_layout moved, removed or re-kinded reflected port \"" + want[i]->id + "\"");
+    }
+    for (std::size_t i = 0; i < reflected.params.size(); ++i)
+        if (i >= adjusted.params.size() || adjusted.params[i].id != reflected.params[i].id ||
+            adjusted.params[i].type != reflected.params[i].type)
+            throw std::logic_error("adjust_layout moved, removed or re-typed reflected param \"" + reflected.params[i].id + "\"");
+}
+
 // Inputs first, then outputs, each in declaration order - adjust_layout appends after the reflected ones.
 template <class T>
-graph::Layout layoutFor(const typename SettingsOf<T>::type& settings) {
-    graph::Layout l = reflectedLayout<T>();
+graph::Layout layoutFor([[maybe_unused]] const typename SettingsOf<T>::type& settings) {
+    const graph::Layout reflected = reflectedLayout<T>();
+    graph::Layout l = reflected;
     if constexpr (requires(graph::Layout& lr) { T::adjust_layout(lr, settings); }) T::adjust_layout(l, settings);
     std::stable_partition(l.ports.begin(), l.ports.end(),
                           [](const graph::PortDesc& p) { return p.dir != graph::PortDir::Out; });
+    checkReflectedPrefix(reflected, l);
     return l;
 }
 
 template <class S>
-void bindPorts(S& ports, const rp_port_view* views) {
+void bindPorts([[maybe_unused]] S& ports, [[maybe_unused]] const rp_port_view* views) noexcept {
     if constexpr (!std::is_same_v<S, NoPorts>) {
         std::uint32_t i = 0;
-        rfl::to_view(ports).apply([&](auto& f) {
-            auto& port = *f.value();
+        forEachField(ports, [&](auto& port) {
             using P = std::remove_cvref_t<decltype(port)>;
             const rp_port_view& v = views[i++];
             if constexpr (P::rp_kind == graph::PortKind::Audio) {
@@ -391,19 +455,74 @@ void bindPorts(S& ports, const rp_port_view* views) {
 }
 
 template <class S>
-void bindParams(S& params, rp_control_queue* const* queues) {
+void bindParams([[maybe_unused]] S& params, [[maybe_unused]] rp_control_queue* const* queues) noexcept {
     if constexpr (!std::is_same_v<S, NoPorts>) {
         std::uint32_t i = 0;
-        rfl::to_view(params).apply([&](auto& f) { f.value()->queue = queues[i++]; });
+        forEachField(params, [&](auto& param) { param.queue = queues[i++]; });
     }
 }
 
+// ---- compile-time checks of the optional hooks ---------------------------------------------------------------
+
 template <class T>
-struct Instance {
-    rp_node                       header;  // first: an rp_node* IS an Instance<T>*
+constexpr bool checkHooks() {
+    using S = typename SettingsOf<T>::type;
+    static_assert(requires(T& t, const Block& b) { { t.process(b) } noexcept; },
+                  "a node needs `process(const rp::Block&) noexcept`");
+    static_assert(requires(T& t, const Block& b) { { t.process(b) } -> std::same_as<void>; } ||
+                      requires(T& t, const Block& b) { { t.process(b) } -> std::same_as<rp_status>; },
+                  "process returns void or rp_status");
+    if constexpr (requires { &T::validate; })
+        static_assert(requires(const S& s) { { T::validate(s) } -> std::same_as<std::optional<std::string>>; },
+                      "validate must be `static std::optional<std::string> validate(const Settings&)`");
+    if constexpr (requires { &T::adjust_layout; })
+        static_assert(requires(graph::Layout& l, const S& s) { T::adjust_layout(l, s); },
+                      "adjust_layout must be `static void adjust_layout(rp::graph::Layout&, const Settings&)`");
+    if constexpr (requires { &T::needs_rebuild; })
+        static_assert(requires(const S& s) { { T::needs_rebuild(s, s) } -> std::same_as<bool>; },
+                      "needs_rebuild must be `static bool needs_rebuild(const Settings&, const Settings&)`");
+    if constexpr (requires { &T::extra_memory; })
+        static_assert(requires(const S& s) { { T::extra_memory(s) } -> std::same_as<std::size_t>; },
+                      "extra_memory must be `static std::size_t extra_memory(const Settings&)`");
+    if constexpr (requires { &T::attach; })
+        static_assert(requires(T& t, std::span<std::byte> m) { { t.attach(m) } noexcept; },
+                      "attach must be `void attach(std::span<std::byte>) noexcept`");
+    if constexpr (requires { &T::on_settings; })
+        static_assert(requires(T& t, const S& s) { { t.on_settings(s) } noexcept; },
+                      "on_settings must be `void on_settings(const Settings&) noexcept`");
+    if constexpr (requires { &T::bind_host; })
+        static_assert(requires(T& t, const rp_host* h) { { t.bind_host(h) } noexcept; },
+                      "bind_host must be `void bind_host(const rp_host*) noexcept`");
+    if constexpr (requires { &T::activate; })
+        static_assert(requires(T& t) { { t.activate(1.0, 1u) } -> std::same_as<bool>; } ||
+                          requires(T& t) { { t.activate(1.0, 1u) } -> std::same_as<void>; },
+                      "activate must be `bool activate(double, std::uint32_t)` or return void");
+    if constexpr (requires { &T::deactivate; })
+        static_assert(requires(T& t) { t.deactivate(); }, "deactivate must be `void deactivate()`");
+    if constexpr (requires { &T::ports_changed; })
+        static_assert(requires(T& t, std::span<const std::uint8_t> c) { { t.ports_changed(c) } noexcept; },
+                      "ports_changed must be `void ports_changed(std::span<const std::uint8_t>) noexcept`");
+    if constexpr (requires { &T::set_peers; })
+        static_assert(requires(T& t, std::span<rp_node* const> p) { { t.set_peers(p) } noexcept; },
+                      "set_peers must be `void set_peers(std::span<rp_node* const>) noexcept`");
+    constexpr bool anyStep = requires { &T::prepare; } || requires { &T::step; } || requires { &T::finish; };
+    if constexpr (anyStep) {
+        static_assert(requires(T& t, const Block& b) { { t.prepare(b) } noexcept; { t.finish(b) } noexcept; },
+                      "rp.step/1 needs `prepare(const rp::Block&) noexcept` and `finish(const rp::Block&) noexcept`");
+        static_assert(requires(T& t, std::uint32_t f) { { t.step(f) } noexcept -> std::same_as<bool>; } ||
+                          requires(T& t, std::uint32_t f) { { t.step(f) } noexcept -> std::same_as<rp_step_result>; },
+                      "rp.step/1 needs `step(std::uint32_t) noexcept` returning bool or rp_step_result");
+    }
+    return true;
+}
+
+// ---- the ABI table ---------------------------------------------------------------------------------------------
+
+template <class T>
+struct Instance : rp_node {
     T                             node;
     typename SettingsOf<T>::type* settings = nullptr;
-    std::string                   layoutCache;
+    std::string                   layoutJson;  // fixed for the instance's life: a layout change is a rebuild
     std::span<std::byte>          extra;
 };
 
@@ -419,16 +538,23 @@ inline std::string_view settingsText(const rp_settings* s) {
     return {s->data, s->size};
 }
 
+inline rfl::Unexpected<rfl::Error> settingsError(std::string what) {
+    return rfl::Unexpected<rfl::Error>(rfl::Error(std::move(what)));
+}
+
 template <class T>
 rfl::Result<typename SettingsOf<T>::type> parseSettings(const rp_settings* s) {
     using S = typename SettingsOf<T>::type;
+    if (s && s->encoding != RP_SETTINGS_JSON) return settingsError("settings encoding " + std::to_string(s->encoding) + " is not supported; this node reads JSON");
     if constexpr (std::is_same_v<S, NoSettings>) {
+        auto g = graph::parseJson(settingsText(s));
+        if (!g || !g->to_object()) return settingsError("settings must be a JSON object");
         return S{};
     } else {
         auto parsed = rfl::json::read<S, rfl::DefaultIfMissing>(settingsText(s));
-        if constexpr (requires(const S& st) { { T::validate(st) } -> std::same_as<std::optional<std::string>>; }) {
+        if constexpr (requires(const S& st) { T::validate(st); }) {
             if (parsed) {
-                if (auto why = T::validate(*parsed)) return rfl::Unexpected<rfl::Error>(rfl::Error(*why));
+                if (auto why = T::validate(*parsed)) return settingsError(*why);
             }
         }
         return parsed;
@@ -436,7 +562,7 @@ rfl::Result<typename SettingsOf<T>::type> parseSettings(const rp_settings* s) {
 }
 
 template <class T>
-std::size_t extraBytes(const typename SettingsOf<T>::type& s) {
+std::size_t extraBytes([[maybe_unused]] const typename SettingsOf<T>::type& s) {
     if constexpr (requires { T::extra_memory(s); }) return T::extra_memory(s);
     else return 0;
 }
@@ -449,53 +575,66 @@ std::size_t extraOffset() { return alignUp(sizeof(Instance<T>), alignof(std::max
 template <class T> const rp_node_vtable* vtable();
 
 template <class T>
-Instance<T>* self(rp_node* n) { return reinterpret_cast<Instance<T>*>(n); }
+Instance<T>* self(rp_node* n) noexcept { return static_cast<Instance<T>*>(n); }
 
 template <class T>
-const char* layoutFn(rp_node* n) {
-    auto* inst = self<T>(n);
-    inst->layoutCache = graph::layoutJson(layoutFor<T>(*inst->settings));
-    return inst->layoutCache.c_str();
+const char* layoutFn(rp_node* n) noexcept {
+    return self<T>(n)->layoutJson.c_str();
 }
 
 template <class T>
-bool activateFn(rp_node* n, double sampleRate, std::uint32_t maxFrames, rp_error* err) {
-    try {
-        if constexpr (requires(T& t) { { t.activate(sampleRate, maxFrames) } -> std::same_as<bool>; }) {
-            if (!self<T>(n)->node.activate(sampleRate, maxFrames)) {
-                copyError(err, "activate failed");
-                return false;
-            }
-        } else if constexpr (requires(T& t) { t.activate(sampleRate, maxFrames); }) {
-            self<T>(n)->node.activate(sampleRate, maxFrames);
-        }
+bool activateFn([[maybe_unused]] rp_node* n, [[maybe_unused]] double sampleRate,
+                [[maybe_unused]] std::uint32_t maxFrames, [[maybe_unused]] rp_error* err) {
+    if constexpr (!requires(T& t) { t.activate(sampleRate, maxFrames); }) {
         return true;
-    } catch (const std::exception& e) {
-        copyError(err, e.what());
-        return false;
+    } else {
+        try {
+            if constexpr (std::is_same_v<decltype(self<T>(n)->node.activate(sampleRate, maxFrames)), bool>) {
+                if (!self<T>(n)->node.activate(sampleRate, maxFrames)) {
+                    copyError(err, "activate failed");
+                    return false;
+                }
+            } else {
+                self<T>(n)->node.activate(sampleRate, maxFrames);
+            }
+            return true;
+        } catch (const std::exception& e) {
+            copyError(err, e.what());
+            return false;
+        } catch (...) {
+            copyError(err, "activate threw");
+            return false;
+        }
     }
 }
 
 template <class T>
-void deactivateFn(rp_node* n) {
-    if constexpr (requires(T& t) { t.deactivate(); }) self<T>(n)->node.deactivate();
+void deactivateFn([[maybe_unused]] rp_node* n) {
+    if constexpr (requires(T& t) { t.deactivate(); }) {
+        try {
+            self<T>(n)->node.deactivate();
+        } catch (...) {
+            // Nothing to report through: deactivate has no error channel, and it must not unwind the host.
+        }
+    }
 }
 
 template <class T>
-void portsChangedFn(rp_node* n, const std::uint8_t* connected, std::uint32_t count) {
+void portsChangedFn([[maybe_unused]] rp_node* n, [[maybe_unused]] const std::uint8_t* connected,
+                    [[maybe_unused]] std::uint32_t count) noexcept {
     if constexpr (requires(T& t, std::span<const std::uint8_t> c) { t.ports_changed(c); })
         self<T>(n)->node.ports_changed(std::span<const std::uint8_t>(connected, count));
 }
 
 template <class T>
-void bindAll(T& node, const rp_process* p) {
+void bindAll(T& node, const rp_process* p) noexcept {
     bindPorts(inputsOf(node), p->inputs);
     bindPorts(outputsOf(node), p->outputs);
     bindParams(paramsOf(node), p->params);
 }
 
 template <class T>
-rp_status processFn(rp_node* n, const rp_process* p) {
+rp_status processFn(rp_node* n, const rp_process* p) noexcept {
     T& node = self<T>(n)->node;
     bindAll(node, p);
     const Block block{*p};
@@ -506,6 +645,8 @@ rp_status processFn(rp_node* n, const rp_process* p) {
     }
 }
 
+// Reads the instance's current settings (for needs_rebuild). That is safe because a host never prepares
+// while a commit for the same instance may be in flight - GraphHost waits for adoption before it plans.
 template <class T>
 rp_prepare_result prepareFn(rp_node* n, const rp_settings* s, void** prepared, rp_error* err) {
     using S = typename SettingsOf<T>::type;
@@ -516,8 +657,8 @@ rp_prepare_result prepareFn(rp_node* n, const rp_settings* s, void** prepared, r
             return RP_PREPARE_INVALID;
         }
         auto* inst = self<T>(n);
-        const bool layoutChanged = graph::layoutJson(layoutFor<T>(*parsed)) != graph::layoutJson(layoutFor<T>(*inst->settings));
-        bool rebuild = layoutChanged || extraBytes<T>(*parsed) != extraBytes<T>(*inst->settings);
+        bool rebuild = graph::layoutJson(layoutFor<T>(*parsed)) != inst->layoutJson ||
+                       extraBytes<T>(*parsed) != inst->extra.size();
         if constexpr (requires(const S& a) { T::needs_rebuild(a, a); })
             rebuild = rebuild || T::needs_rebuild(*inst->settings, *parsed);
         if (rebuild) return RP_PREPARE_REBUILD;
@@ -526,11 +667,14 @@ rp_prepare_result prepareFn(rp_node* n, const rp_settings* s, void** prepared, r
     } catch (const std::exception& e) {
         copyError(err, e.what());
         return RP_PREPARE_INVALID;
+    } catch (...) {
+        copyError(err, "settings threw");
+        return RP_PREPARE_INVALID;
     }
 }
 
 template <class T>
-void commitFn(rp_node* n, void* prepared, void** old) {
+void commitFn(rp_node* n, void* prepared, void** old) noexcept {
     using S = typename SettingsOf<T>::type;
     auto* inst = self<T>(n);
     *old = inst->settings;
@@ -539,38 +683,38 @@ void commitFn(rp_node* n, void* prepared, void** old) {
 }
 
 template <class T>
-void releaseFn(rp_node*, void* old) {
+void releaseFn(rp_node*, void* old) noexcept {
     delete static_cast<typename SettingsOf<T>::type*>(old);
 }
 
-template <class T> void stepPrepare(rp_node* n, const rp_process* p) {
+template <class T> void stepPrepare(rp_node* n, const rp_process* p) noexcept {
     T& node = self<T>(n)->node;
     bindAll(node, p);
     node.prepare(Block{*p});
 }
-template <class T> rp_step_result stepStep(rp_node* n, std::uint32_t target) {
+template <class T> rp_step_result stepStep(rp_node* n, std::uint32_t target) noexcept {
     T& node = self<T>(n)->node;
     if constexpr (std::is_same_v<decltype(node.step(target)), bool>) return node.step(target) ? RP_STEP_DONE : RP_STEP_BELOW;
     else return node.step(target);
 }
-template <class T> void stepFinish(rp_node* n, const rp_process* p) {
+template <class T> void stepFinish(rp_node* n, const rp_process* p) noexcept {
     T& node = self<T>(n)->node;
     bindAll(node, p);
     node.finish(Block{*p});
 }
-template <class T> void linkSetPeers(rp_node* n, rp_node* const* peers, std::uint32_t count) {
+template <class T> void linkSetPeers(rp_node* n, rp_node* const* peers, std::uint32_t count) noexcept {
     self<T>(n)->node.set_peers(std::span<rp_node* const>(peers, count));
 }
 
 template <class T>
-const void* interfaceFn(rp_node*, const char* id) {
-    const std::string_view want(id);
+const void* interfaceFn(rp_node*, const char* id) noexcept {
+    [[maybe_unused]] const std::string_view want(id);
     if constexpr (requires(T& t, const Block& b, std::uint32_t f) { t.prepare(b); t.step(f); t.finish(b); }) {
-        static const rp_step_interface kStep{&stepPrepare<T>, &stepStep<T>, &stepFinish<T>};
+        static constexpr rp_step_interface kStep{&stepPrepare<T>, &stepStep<T>, &stepFinish<T>};
         if (want == RP_STEP_INTERFACE) return &kStep;
     }
     if constexpr (requires(T& t, std::span<rp_node* const> peers) { t.set_peers(peers); }) {
-        static const rp_link_interface kLink{&linkSetPeers<T>};
+        static constexpr rp_link_interface kLink{&linkSetPeers<T>};
         if (want == RP_LINK_INTERFACE) return &kLink;
     }
     return nullptr;
@@ -578,9 +722,9 @@ const void* interfaceFn(rp_node*, const char* id) {
 
 template <class T>
 const rp_node_vtable* vtable() {
-    static const rp_node_vtable kVtable{&layoutFn<T>,   &activateFn<T>, &deactivateFn<T>,
-                                        &portsChangedFn<T>, &processFn<T>, &prepareFn<T>,
-                                        &commitFn<T>,   &releaseFn<T>,  &interfaceFn<T>};
+    static constexpr rp_node_vtable kVtable{&layoutFn<T>,       &activateFn<T>, &deactivateFn<T>,
+                                            &portsChangedFn<T>, &processFn<T>,  &prepareFn<T>,
+                                            &commitFn<T>,       &releaseFn<T>,  &interfaceFn<T>};
     return &kVtable;
 }
 
@@ -590,21 +734,26 @@ template <class T> constexpr const char* versionOf() { if constexpr (requires { 
 template <class T> constexpr bool heapOf() { if constexpr (requires { T::heap; }) return T::heap; else return false; }
 template <class T> constexpr bool threadsOf() { if constexpr (requires { T::threads; }) return T::threads; else return false; }
 
+// An empty descriptor when building it throws (adjust_layout on default settings, say), which the registry
+// refuses with a reason rather than letting the exception reach it.
 template <class T>
 const char* descriptorFn() {
-    static const std::string kJson = [] {
-        using S = typename SettingsOf<T>::type;
-        graph::TypeDescriptor d;
-        d.id = T::id;
-        d.version = versionOf<T>();
-        d.name = nameOf<T>();
-        d.category = categoryOf<T>();
-        d.heap = heapOf<T>();
-        d.threads = threadsOf<T>();
-        d.layout = layoutFor<T>(S{});
-        if constexpr (!std::is_same_v<S, NoSettings>) d.settingsSchema = rfl::json::to_schema<S, rfl::DefaultIfMissing>();
-        else d.settingsSchema = R"({"type":"object"})";
-        return graph::descriptorJson(d);
+    static const std::string kJson = []() -> std::string {
+        try {
+            using S = typename SettingsOf<T>::type;
+            graph::TypeDescriptor d;
+            d.id = T::id;
+            d.version = versionOf<T>();
+            d.name = nameOf<T>();
+            d.category = categoryOf<T>();
+            d.heap = heapOf<T>();
+            d.threads = threadsOf<T>();
+            d.layout = layoutFor<T>(S{});
+            if constexpr (!std::is_same_v<S, NoSettings>) d.settingsSchema = rfl::json::to_schema<S, rfl::DefaultIfMissing>();
+            return graph::descriptorJson(d);
+        } catch (...) {
+            return std::string();
+        }
     }();
     return kJson.c_str();
 }
@@ -618,55 +767,77 @@ bool queryMemoryFn(const rp_settings* s, rp_memory_req* out, rp_error* err) {
             return false;
         }
         const std::size_t extra = extraBytes<T>(*parsed);
+        if (extra > std::numeric_limits<std::size_t>::max() - extraOffset<T>()) {
+            copyError(err, "extra memory request is too large");
+            return false;
+        }
         out->size = extra ? extraOffset<T>() + extra : sizeof(Instance<T>);
         out->align = alignof(Instance<T>) > alignof(std::max_align_t) ? alignof(Instance<T>) : alignof(std::max_align_t);
         return true;
     } catch (const std::exception& e) {
         copyError(err, e.what());
         return false;
+    } catch (...) {
+        copyError(err, "settings threw");
+        return false;
     }
 }
 
 template <class T>
-rp_node* createFn(const rp_host* host, void* memory, const rp_settings* s, rp_error* err) {
+rp_node* createFn([[maybe_unused]] const rp_host* host, void* memory, const rp_settings* s, rp_error* err) {
     using S = typename SettingsOf<T>::type;
+    Instance<T>* inst = nullptr;
     try {
         auto parsed = parseSettings<T>(s);
         if (!parsed) {
             copyError(err, parsed.error().what());
             return nullptr;
         }
-        auto* inst = new (memory) Instance<T>{};
-        inst->header.vt = vtable<T>();
+        // Everything that can throw on the node's behalf (adjust_layout) runs before the instance exists.
+        std::string layout = graph::layoutJson(layoutFor<T>(*parsed));
+        const std::size_t extra = extraBytes<T>(*parsed);
+        inst = new (memory) Instance<T>{};
+        inst->vt = vtable<T>();
+        inst->layoutJson = std::move(layout);
         inst->settings = new S(std::move(*parsed));
         if constexpr (requires(T& t) { t.bind_host(host); }) inst->node.bind_host(host);
-        if (const std::size_t extra = extraBytes<T>(*inst->settings)) {
+        if (extra) {
             inst->extra = std::span<std::byte>(static_cast<std::byte*>(memory) + extraOffset<T>(), extra);
             std::memset(inst->extra.data(), 0, extra);
             if constexpr (requires(T& t, std::span<std::byte> e) { t.attach(e); }) inst->node.attach(inst->extra);
         }
         if constexpr (requires(T& t, const S& st) { t.on_settings(st); }) inst->node.on_settings(*inst->settings);
-        return &inst->header;
+        return inst;
     } catch (const std::exception& e) {
         copyError(err, e.what());
-        return nullptr;
+    } catch (...) {
+        copyError(err, "create threw");
     }
+    if (inst) {  // only an allocation failure gets here after construction; leave nothing behind
+        delete inst->settings;
+        inst->~Instance<T>();
+    }
+    return nullptr;
 }
 
+// The node goes first: it may hold a pointer to its settings until its own destructor has run.
 template <class T>
 void destroyFn(rp_node* n) {
     auto* inst = self<T>(n);
-    delete inst->settings;
+    auto* settings = inst->settings;
     inst->~Instance<T>();
+    delete settings;
 }
 
 }  // namespace detail
 
-// The ABI table for a C++ node type. One per T, built on first use.
+// The ABI table for a C++ node type. One per T, built on first use; every optional hook's signature is
+// checked here, at compile time.
 template <class T>
 const rp_node_type* node_type() {
-    static const rp_node_type kType{T::id, &detail::descriptorFn<T>, &detail::queryMemoryFn<T>, &detail::createFn<T>,
-                                    &detail::destroyFn<T>};
+    static_assert(detail::checkHooks<T>());
+    static constexpr rp_node_type kType{T::id, &detail::descriptorFn<T>, &detail::queryMemoryFn<T>,
+                                        &detail::createFn<T>, &detail::destroyFn<T>};
     return &kType;
 }
 
