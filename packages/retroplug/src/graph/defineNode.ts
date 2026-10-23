@@ -195,7 +195,8 @@ function wellFormed(s: string): boolean {
   return true;
 }
 
-/** The C++ registry's isPlainId, code unit for byte: non-empty, nothing at or below U+0020, nor U+007F. */
+/** The C++ registry's isPlainId, code unit for byte: non-empty, nothing at or below U+0020, nor U+007F,
+ *  and (since C++ reads UTF-8) no lone surrogate. */
 const plainId = (s: unknown): s is string => typeof s === "string" && s.length > 0 && !/[\u0000-\u0020\u007f]/.test(s) && wellFormed(s);
 
 const isString = (v: unknown): v is string => typeof v === "string";
@@ -211,7 +212,7 @@ function checkPort(node: string, p: PortDesc): void {
   if (p.kind === "audio") {
     const c = p.channels as Record<string, unknown> | undefined;
     if (!c || typeof c !== "object") throw new Error(`${where}: an audio port needs channels`);
-    if (["any", "match", "count"].filter((k) => has(c, k)).length !== 1)
+    if (["any", "match", "count"].filter((k) => has(c, k) && c[k] !== undefined).length !== 1)
       throw new Error(`${where}: channels needs exactly one of any / match / count`);
     if (has(c, "any")) {
       if (c.any !== true) throw new Error(`${where}: channels.any must be true`);
@@ -232,7 +233,8 @@ function checkPort(node: string, p: PortDesc): void {
     throw new Error(`${where}: only audio ports have channels`);
   }
   if (p.kind === "resource") {
-    if (!plainId(p.resourceType)) throw new Error(`${where}: a resource port needs a resourceType`);
+    if (!plainId(p.resourceType))
+      throw new Error(`${where}: a resource port needs a resourceType with no whitespace, control characters or lone surrogates`);
     if (p.access !== undefined && p.access !== "write") throw new Error(`${where}: access can only be "write"`);
     if (p.access === "write" && p.dir !== "in") throw new Error(`${where}: only a resource input may have access "write"`);
   } else if (p.resourceType !== undefined || p.access !== undefined) {
@@ -258,10 +260,11 @@ function checkParam(node: string, p: ParamDesc): void {
     if (!(p.min <= p.default && p.default <= p.max)) throw new Error(`${where}: default must lie within [min, max]`);
     if (p.type === "int" && ![p.min, p.max, p.default].every(Number.isInteger))
       throw new Error(`${where}: an int param needs whole-number min, max and default`);
-    if (p.unit !== undefined && (!isString(p.unit) || !wellFormed(p.unit))) throw new Error(`${where}: unit must be a string`);
   } else {
     throw new Error(`${where}: unknown type ${q(String((p as { type: unknown }).type))}`);
   }
+  const unit = (p as { unit?: unknown }).unit;
+  if (unit !== undefined && (!isString(unit) || !wellFormed(unit))) throw new Error(`${where}: unit must be a string`);
 }
 
 // A fresh copy of a port, so a caller that edits a returned layout cannot reach the definition.
@@ -273,10 +276,48 @@ function copyPort(id: string, spec: PortSpec): PortDesc {
   return p;
 }
 
+// Field by field, as C++ writes a param back out: only the fields its type has (a stray one would be
+// dropped by C++'s re-spelling, so the two would disagree), a missing name read as the id, and a unit on
+// any type when it is non-empty.
 function copyParam(id: string, spec: ParamSpec): ParamDesc {
-  const p = { id, ...spec } as ParamDesc;
-  if (p.type === "enum") p.values = [...p.values];
-  return p;
+  const s = spec as Record<string, unknown>;
+  const name = s.name === undefined || s.name === "" ? id : s.name;
+  let p: Record<string, unknown>;
+  if (s.type === "float" || s.type === "int") p = { id, name, type: s.type, min: s.min, max: s.max, default: s.default };
+  else if (s.type === "bool") p = { id, name, type: s.type, default: s.default };
+  else if (s.type === "enum") p = { id, name, type: s.type, values: Array.isArray(s.values) ? [...s.values] : s.values, default: s.default };
+  else p = { id, name, type: s.type };
+  if (s.unit !== undefined && s.unit !== "") p.unit = s.unit;
+  return p as unknown as ParamDesc;
+}
+
+// The metadata a descriptor carries, as C++'s parser types it.
+function checkMetadata<S>(def: NodeDefinition<S>): void {
+  for (const key of ["version", "name", "category"] as const) {
+    const v = def[key];
+    if (v !== undefined && (!isString(v) || !wellFormed(v))) throw new Error(`node type ${q(def.id)}: ${key} must be a string`);
+  }
+  for (const key of ["heap", "threads"] as const) {
+    const v = def.requires?.[key];
+    if (v !== undefined && typeof v !== "boolean") throw new Error(`node type ${q(def.id)}: requires.${key} must be true or false`);
+  }
+}
+
+// Every string (and key) in a JSON value is one C++ can read.
+function allWellFormed(v: unknown): boolean {
+  if (isString(v)) return wellFormed(v);
+  if (Array.isArray(v)) return v.every(allWellFormed);
+  if (v && typeof v === "object") return Object.entries(v).every(([k, x]) => wellFormed(k) && allWellFormed(x));
+  return true;
+}
+
+// The INPUT schema: what a document may write (defaulted fields optional, extra keys allowed), which is
+// what C++'s DefaultIfMissing schema says too. zod's default, the output schema, would mark every
+// defaulted field required.
+function settingsSchema<S>(def: NodeDefinition<S>): Record<string, unknown> {
+  const schema = def.settings!.toJSONSchema({ io: "input" }) as Record<string, unknown>;
+  if (!allWellFormed(schema)) throw new Error(`node type ${q(def.id)}: the settings schema holds a lone surrogate, which C++ cannot read`);
+  return schema;
 }
 
 // An integer-like key ("1") would be listed before every other key by Object.entries, so it could not
@@ -293,7 +334,7 @@ function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
   const seen = new Set<string>();
   for (const p of [...ordered, ...params]) {
     if (!plainId(p.id) || p.id.includes("*"))
-      throw new Error(`${def.id}: id ${q(p.id)} must be non-empty, with no whitespace, control characters or '*'`);
+      throw new Error(`${def.id}: id ${q(p.id)} must be non-empty, with no whitespace, control characters, lone surrogates or '*'`);
     if (integerLike(p.id)) throw new Error(`${def.id}: id ${q(p.id)} is a number, which a JS object cannot keep in order`);
     if (seen.has(p.id)) throw new Error(`${def.id}: ${q(p.id)} is used by more than one port or param`);
     seen.add(p.id);
@@ -331,7 +372,8 @@ function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
 
 export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): DefinedNode<S> {
   if (!plainId(def.id))
-    throw new Error(`node type id ${q(String(def.id))} must be non-empty, with no whitespace or control characters`);
+    throw new Error(`node type id ${q(String(def.id))} must be non-empty, with no whitespace, control characters or lone surrogates`);
+  checkMetadata(def);
   // Settings arrive as JSON: an object, or nothing at all (the defaults), never another value, as in C++.
   const parseSettings = (raw: unknown): S => {
     const given = raw === undefined ? {} : raw;
@@ -344,7 +386,8 @@ export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): D
     const defaults = def.settings.safeParse({});
     if (!defaults.success) {
       const issue = defaults.error.issues[0];
-      throw new Error(`node type ${q(def.id)}: every settings field needs a default (${issue?.path.join(".")}: ${issue?.message})`);
+      const at = issue?.path.length ? `${issue.path.join(".")}: ` : "";
+      throw new Error(`node type ${q(def.id)}: every settings field needs a default (${at}${issue?.message})`);
     }
   }
   return {
@@ -358,12 +401,7 @@ export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): D
       category: def.category ?? "",
       requires: { heap: def.requires?.heap ?? false, threads: def.requires?.threads ?? false },
       ...buildLayout(def, parseSettings({})),
-      // The INPUT schema: what a document may write (defaulted fields optional, extra keys allowed), which
-      // is what C++'s DefaultIfMissing schema says too. zod's default, the output schema, would mark every
-      // defaulted field required.
-      settings: def.settings
-        ? (def.settings.toJSONSchema({ io: "input" }) as Record<string, unknown>)
-        : { type: "object" },
+      settings: def.settings ? settingsSchema(def) : { type: "object" },
     }),
   };
 }

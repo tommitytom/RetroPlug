@@ -234,6 +234,8 @@ rfl::Result<PortDesc> parsePort(const rfl::Generic& g, std::size_t index) {
     if (p.kind == PortKind::Resource) {
         auto type = reqString(*o, "resourceType", where);
         if (!type) return fail(type.error().what());
+        if (!isPlainId(*type))  // as ResourceTable requires of every resource type
+            return fail(where + ": \"resourceType\" " + q(*type) + " must not contain whitespace or control characters");
         p.resourceType = *type;
         auto access = optString(*o, "access", where);
         if (!access) return fail(access.error().what());

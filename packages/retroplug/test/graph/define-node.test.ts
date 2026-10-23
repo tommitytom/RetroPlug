@@ -141,6 +141,22 @@ test("ids are plain, unambiguous and keep their order", () => {
   expect(defineNode({ id: "rp.p.\ud83c\udfb5", ports: {}, create: noop }).descriptor().id).toBe("rp.p.\ud83c\udfb5");  // a whole pair is fine
 });
 
+test("metadata, params and settings are typed and readable as C++ reads them", () => {
+  const meta = (extra: Record<string, unknown>) => () => defineNode({ id: "rp.test.meta", ports: {}, create: noop, ...extra } as never).descriptor();
+  expect(meta({ version: 5 })).toThrow("version must be a string");
+  expect(meta({ name: "Gain\ud800" })).toThrow("name must be a string");
+  expect(meta({ requires: { heap: "yes" } })).toThrow("true or false");
+  expect(meta({ params: { b: { type: "bool", name: "B", default: false, unit: 5 } } })).toThrow("unit must be a string");
+  // a stray field is not emitted (C++ would drop it when it spells the descriptor back), a missing name is the id
+  const stray = meta({ params: { b: { type: "bool", default: true, min: 3, foo: 1 } } })();
+  expect(stray.params[0]).toEqual({ id: "b", name: "b", type: "bool", default: true });
+  expect(meta({ settings: z.object({ tag: z.string().default("\ud800") }) })).toThrow("lone surrogate");
+  // an undefined member is no member, as canonicalJson (and so C++) sees it
+  expect(meta({ ports: { in: { dir: "in", kind: "audio", channels: { any: true, count: undefined } } } })().ports[0].channels).toEqual({ any: true, count: undefined });
+  expect(meta({ ports: { r: resource.in("audio buffer") } })).toThrow("resourceType");
+  expect(() => defineNode({ id: "rp.test.rootless", settings: z.number() as never, ports: {}, create: noop })).toThrow("needs a default (");
+});
+
 test("a returned descriptor is the caller's own copy", () => {
   const n = defineNode({
     id: "rp.test.copy",
