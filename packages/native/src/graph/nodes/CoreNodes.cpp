@@ -285,31 +285,27 @@ struct Downmix {
         l.ports.push_back(audioPort("out", PortDir::Out, ChannelSpec::fixed(to, s.to)));
     }
 
-    bool surround = false;  // 5.1 source: ITU-style coefficients, LFE dropped
-    void on_settings(const Settings& s) noexcept { surround = s.from == "5.1"; }
+    bool toStereo = false;  // 5.1 -> stereo; every other downmix is to mono
+    void on_settings(const Settings& s) noexcept { toStereo = s.to == "stereo"; }
 
     void process(const rp::Block& b) noexcept {
         const rp_audio_view& in = b.input(0).u.audio;
         const rp_audio_view& out = b.output(0).u.audio;
         const std::uint32_t n = b.frames();
-        if (!surround) {
-            // Equal sum (no scaling): a stereo -> mono downmix is L + R, as today's 1 Ch / Inst bus is.
+        if (!toStereo) {
+            // Anything -> mono is an equal sum, no scaling (so stereo -> mono is L + R, as today's 1 Ch /
+            // Inst bus is), from any layout, 5.1 included.
             std::memcpy(out.channels[0], in.channels[0], n * sizeof(float));
             for (std::uint32_t c = 1; c < in.channel_count; ++c)
                 for (std::uint32_t i = 0; i < n; ++i) out.channels[0][i] += in.channels[c][i];
             return;
         }
-        constexpr float k = 0.70710678f;  // order L R C LFE Ls Rs
+        // 5.1 -> stereo: ITU-style coefficients, LFE dropped. Channel order L R C LFE Ls Rs.
+        constexpr float k = 0.70710678f;
         const float* const* x = in.channels;
         for (std::uint32_t i = 0; i < n; ++i) {
-            const float l = x[0][i] + k * x[2][i] + k * x[4][i];
-            const float r = x[1][i] + k * x[2][i] + k * x[5][i];
-            if (out.channel_count == 2) {
-                out.channels[0][i] = l;
-                out.channels[1][i] = r;
-            } else {
-                out.channels[0][i] = l + r;
-            }
+            out.channels[0][i] = x[0][i] + k * x[2][i] + k * x[4][i];
+            out.channels[1][i] = x[1][i] + k * x[2][i] + k * x[5][i];
         }
     }
 };

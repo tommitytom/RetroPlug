@@ -43,6 +43,23 @@ TEST_CASE("split, join and downmix move channels explicitly", "[graph][core]") {
     CHECK(rig.outs[1][0] == 1.0f);  // L + R, the equal-sum downmix
 }
 
+TEST_CASE("5.1 downmixes to stereo by ITU-style coefficients and to mono as an equal sum", "[graph][core]") {
+    GraphRig rig;
+    REQUIRE(rig.set(R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":0.5,"channels":6}},
+                                  {"id":"surround","type":"rp.core.relabel","settings":{"channels":6,"layout":"5.1"}},
+                                  {"id":"stereo","type":"rp.core.downmix","settings":{"from":"5.1","to":"stereo"}},
+                                  {"id":"mono","type":"rp.core.downmix","settings":{"from":"5.1","to":"mono"}},
+                                  {"id":"out","type":"rp.host.audio-out","settings":{"buses":[2,1]}}],
+                         "wires":[{"from":"src.out","to":"surround.in"},{"from":"surround.out","to":"stereo.in"},
+                                  {"from":"surround.out","to":"mono.in"},{"from":"stereo.out","to":"out.out.1-2"},
+                                  {"from":"mono.out","to":"out.out.3"}]})").ok);
+    rig.run();
+    constexpr float k = 0.70710678f;
+    CHECK(rig.outs[0][0] == 0.5f + k * 0.5f + k * 0.5f);  // L + C + Ls, LFE dropped
+    CHECK(rig.outs[1][0] == 0.5f + k * 0.5f + k * 0.5f);
+    CHECK(rig.outs[2][0] == 3.0f);  // all six, unscaled
+}
+
 TEST_CASE("join fixes a mono-into-stereo mismatch; relabel asserts a layout", "[graph][core]") {
     GraphRig rig;
     CHECK(rig.set(R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"channels":1}},
