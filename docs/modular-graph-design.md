@@ -1,0 +1,953 @@
+# Design: the modular node-graph engine
+
+**Date:** 2026-10-23 · **Branch:** `feature/modularize` · **Status:** design agreed, not yet built.
+
+RetroPlug's long-term direction is a modular system in the spirit of Reaktor: emulated consoles (and
+the real hardware they can drive) appear as nodes in a graph alongside DSP effects and routing nodes.
+This document is the design for the first project on that road: **the node contracts and the graph
+engine**. It keeps today's UI, CLI and `.rplg` format unchanged; they build graphs from the settings
+they already have.
+
+Everything here is forward-looking. The [spec/](../spec/README.md) set describes the build as it is;
+as each phase below lands, the spec doc it touches is rewritten to match.
+
+---
+
+## 0. Decisions taken
+
+| Question | Decision | Consequence |
+|---|---|---|
+| What comes first? | **Contracts + graph engine** | The package split, web host and downloads are later projects that build on these contracts (§11) |
+| What can a TS node process? | **The same ports as a C++ node**, audio included | Fully symmetric contract; heavy DSP stays C++ by convention, not by rule (§4.9) |
+| What is "LSDj support" relative to a SameBoy? | **Nodes + extensions** | Signal work is a node; control-plane features (songs, assets, menus, views) are an extension attached to a node instance (§2.6) |
+| What may a downloadable pack contain? | **TS, assets, and native code** | The node interface is a stable **C ABI** (CLAP-style), and statically linked packages use the very same ABI (§4) |
+| How far does the Pico go? | **Nodes and a tiny runtime** | The executor is no-heap by construction; node memory is supplied by the host; plans export as data (§5.8) |
+| Where is the graph planned? | **A C++ planner inside RetroPlug** | TS owns the graph document; native validates and plans it; one executor runs plans everywhere (§5) |
+| Can several wires feed one input? | **No. Zero or one wire per input, every port kind** | Combining is always an explicit node (`+`, `merge`); the executor never allocates hidden mix buffers (§3) |
+| Implicit channel adaptation? | **None** | Mismatches are errors; `join` / `split` / `downmix` / `relabel` fix them explicitly (§3) |
+| What is a control value? | **A number, typed by the descriptor** | float / int / enum / bool all travel as a double; enums save as labels, run as indices (§2.4) |
+| Strings, buffers, ROM images on wires? | **Resources, passed by handle** | Created and freed only on the control thread; plans pin them (§2.5) |
+| Is the graph saved? | **Not in this project** | `.rplg` and its `K_PROJECT` stay as they are; a pure TS `buildGraph` derives the graph from the project model (§7.2) |
+| UI owned by nodes and extensions? | **Views**, defined now, migrated later | The LSDj HD player and BlipToaster's synth panel are views; the contract is in this spec, the move happens in the package-split project (§2.7) |
+| reflect-cpp | **Upgrade 0.24 -> 0.26**, including the rpcpp pin inside the dpf.js submodule | Needed for JSON Schema defaults on settings (approved) |
+
+---
+
+## 1. Summary
+
+### What this project builds
+
+1. **A node contract** with one C ABI, filled three ways: C++ nodes (avendish-shaped, reflected with
+   reflect-cpp), TypeScript nodes (`defineNode`), and nodes in downloaded native packs. Every node
+   returns a descriptor JSON of the same shape.
+2. **A graph engine**: a C++ planner that turns a graph document into an immutable plan on the control
+   thread, and a no-heap executor that runs plans on the audio thread, in offline renders, and on the Pico.
+3. **System nodes**: SameBoy and Mesen cores as ordinary nodes, with their console-specific knowledge
+   moved out of `Engine`, `Project` and `BlockRunner` and into the nodes themselves.
+4. **An extension and view contract** for everything that sits on top of a node (LSDj songs and assets,
+   the HD player, BlipToaster's panel).
+5. **A TS graph builder** so the existing UI and CLI keep working unchanged: they build graphs from the
+   project model they already have.
+
+### Why
+
+The current code is not console-neutral where it claims to be. `Engine`, `Project`, `BlockRunner` and
+`EngineRpcService` include the cores and `dynamic_cast` to `SameBoySystem` / `MesenNesSystem` for
+config, channel splits, link groups and LSDj MI.OUT. `SystemBase` carries GB serial, the N8 FIFO and
+per-console button enums. The six audio routing modes are six hand-written router classes, each a
+hard-coded topology. On the TS side every registry is populated by hard-wired imports, and every
+bundle carries every cart. A graph engine turns all of that into data.
+
+### Non-goals for this project
+
+- Persisting the graph (and any `K_PROJECT` bump).
+- A modular graph-editing UI.
+- The package split, per-product bundles, Mesen per-console compile-out.
+- The web host, downloadable packs, and their trust model.
+- Moving menus, song/asset catalogs and views into extensions (contract defined here, migration later).
+- A multi-threaded executor (the plan format leaves room for it).
+
+---
+
+## 2. Concept model
+
+### 2.1 Node types and instances
+
+A **node type** has a stable id (`rp.sameboy.gb`, `rp.dsp.gain`, `rp.lsdj.sync`), a version, and a
+descriptor. A **node instance** lives in a graph under an id minted by TS, exactly as system ids are
+minted by TS today; native never mints an id.
+
+### 2.2 Port kinds
+
+| Kind | Carries | Examples |
+|---|---|---|
+| `audio` | N float channels per block, with a layout (§3.4) | system `mix`, `+` in/out |
+| `events` | MIDI-shaped messages stamped with a frame offset | host MIDI in, LSDj MI.OUT notes |
+| `bytes` | a timestamped byte stream | GB serial, N8 FIFO, SMS controller port |
+| `control` | numeric value changes stamped with a frame offset | every param, LFOs, envelope followers |
+| `link` | coupling, not data | the Game Boy link cable |
+| `resource` | a handle to a typed resource (§2.5) | a sample buffer, a ROM image, a string |
+
+Transport is not a port. Tempo, ppq at block start, play state and sample rate arrive in every node's
+block context, as in CLAP.
+
+### 2.3 The three kinds of input
+
+| | Types | Wireable | Changes applied |
+|---|---|---|---|
+| **Ports** | audio, events, bytes, link, resource | yes | per block |
+| **Params** | float, int, enum, bool | yes (each param is also a `control` input) | live, timestamped to the frame |
+| **Settings** | anything JSON Schema can express | no | control plane only; prepared, then swapped in |
+
+The test for param versus setting is whether it can change live. LSDj sync mode, tempo divisor and gain
+are params. A ROM, a core's model and a region are settings, because changing them rebuilds or resets
+the core.
+
+A **wired param is driven entirely by its wire**; an unwired param keeps its own value. To modulate
+around a knob, wire a constant node and an LFO into a `+` (Reaktor's convention).
+
+### 2.4 Control values versus events
+
+The difference is state versus occurrence, not data type.
+
+- A **control value is state**: it has a current value at every moment, a default, and can be saved.
+  The latest change wins, so a receiver may coalesce rapid changes, and a float may be smoothed.
+- An **event is an occurrence**: it has no current value, every one matters, order matters, and merging
+  two changes the meaning. Note-on, MIDI clock, "press Start" and "reset" are events.
+
+On the wire every control value is a **double**. The descriptor says how to read it: continuous range,
+integer steps, enum or bool. Any control can therefore drive any control (an LFO can sweep an enum; the
+receiver rounds and clamps), values are fixed-size, and there is one wire type to check.
+
+An **enum has two representations**: the **index** at runtime, and the **label** in saved state and in
+the JSON Schema (`"mode": "midi-sync"`, never `3`). Reordering an enum can never corrupt an old project,
+and migrations stay readable. This is today's `roleConfigForNative` label-to-ordinal step, made one
+shared rule that C++ and TS both follow.
+
+### 2.5 Resources
+
+A **resource** is a typed block of data that lives outside the wires: an audio buffer, a wavetable, a
+ROM image, a kit, a string. Nodes pass **handles**; a handle is fixed-size and moves through the
+executor with no copy and no allocation. A `resource` port is typed by resource type, so the planner
+rejects a ROM wired into a sampler. Packages register their own resource types (`lsdj.kit`,
+`risa.dmc-kit`).
+
+**Lifetime rule: the audio thread can pass handles around but can never create or free a resource.**
+
+- Every resource is created on the control thread (`putResource`).
+- Every plan **pins** the resources its nodes' settings reference; a pin drops only when that plan comes
+  back on the release ring.
+- A handle emitted at runtime must therefore point at something a node in the plan already holds (a
+  sample bank picking one of its 16 slots; a recorder writing into the buffer its settings asked for),
+  so the audio thread never holds the last reference.
+
+**Mutability rule:**
+
+- **Immutable resources** (samples, strings, ROM images) are shared by any number of readers in any order.
+- **A mutable resource** (a record buffer, a shared delay line, a system's live RAM) has exactly **one
+  writer port**. Readers are wired from it, so the planner orders them after the writer within the
+  block, as it does for audio. A cycle needs a feedback wire (§3.3).
+
+**Strings** on a wire are handles to immutable string resources, interned on the control thread (Pd's
+symbols). Settings remain the place for values whose change needs a rebuild.
+
+Where resources pay off: the kit patcher's processed sample buffers (previewed through a sampler,
+encoded into a kit); patched ROMs (asset overrides become "build a new ROM resource and point the system
+node's ROM setting at it", replacing today's in-memory folding); recording a console into a buffer for
+resampling; and memory taps (a system's live RAM as a mutable resource feeding a "memory to control"
+node, so an LSDj table value or a NES APU register becomes a modulation source).
+
+### 2.6 Extensions
+
+An **extension** attaches to a **node instance**, chosen by a matcher over that node's identity (its
+type, and the ROM title / marker / header that `rp.system.rom/1` publishes). Extensions are TypeScript
+and run on the control plane. They have no ports. An extension can contribute:
+
+- **nodes it inserts and wires** (the LSDj extension adds `lsdj.sync` feeding the SameBoy's `serialIn` input);
+- song and asset **catalogs**;
+- **actions** and **menu** entries;
+- **views** (§2.7);
+- its own **persisted settings**.
+
+It reaches its node through the node's capabilities (memory, SRAM, ROM, buttons, state), always via host
+RPC routed through the snapshot / command-ring doors (§6.4).
+
+### 2.7 Views
+
+A **view** is a UI component that renders for one node instance: Reaktor's structure/panel split. The
+graph is the structure; nodes and extensions contribute panels. Today's app is the panel view of a
+graph the menus build.
+
+```ts
+views: [{
+  id: "bliptoaster.panel", label: "Synth",
+  placement: "tile",                 // or "overlay" | "fullscreen"
+  default: true,
+  component: BlipToasterPanel,       // React, on today's LVGL UI
+  needs: { memory: [{ region: "wram", range: [0xc000, 0xc200] }], rate: "frame" },   // optional
+}]
+```
+
+| Placement | Meaning | Today's example |
+|---|---|---|
+| `tile` | replaces the node's tile content | a BlipToaster synth panel, NES video one switch away |
+| `overlay` | draws over the node's own output | the LSDj / risa overlays `EmulatorTile` always mounts |
+| `fullscreen` | takes the window; Escape returns to the grid | the LSDj HD player |
+
+- Every node instance has a list of available views and one **active** view. A system node always
+  contributes `screen` (the framebuffer via `rp.system.video/1`). An extension's `default` view beats
+  the node type's default; the user's choice persists per instance; the tile gets a "View" row.
+- **Input goes to the active view first**, then falls through to the node's `buttons`. That is what
+  keeps LSDj playable under the HD player.
+- A view reads and writes only node params, extension settings, snapshots, and events it sends to a
+  node. BlipToaster's panel edits the params of a `bliptoaster.synth` node, which turns param changes
+  into FIFO writes; the DAW automation lanes map to the same params, so panel and automation never
+  disagree.
+- `needs` lets the host arm only the memory ranges a view reads, the "arming seam"
+  [spec/07](../spec/07-remaining-work.md) wants for the HD player. Optional in v1.
+- Views are always TS, even in a pack whose nodes are native.
+
+### 2.8 Packages
+
+A **package** is the unit of linking and of downloading. One manifest whatever it holds: id, version,
+dependencies, an optional native part, an optional TS part, and assets. It contributes node types,
+extensions, views, ROM matchers, resource types and CLI commands. It is either statically linked into a
+product or downloaded. The package split itself is a later project (§11); this project defines the
+manifest and the native entry point (§4.1) so that split has a target.
+
+---
+
+## 3. Wiring rules
+
+### 3.1 One wire per input
+
+**Every input accepts zero or one wire, for every port kind.** Outputs fan out to any number of inputs
+for free (the readers share one buffer). Combining is always explicit:
+
+- `+` for audio and control (input count is a setting; channels follow `match`);
+- `merge` for events, ordered by frame;
+- no generic merge for `bytes`: interleaving two serial streams corrupts the protocol, so only a
+  protocol-aware node may combine them.
+
+An unconnected audio input reads silence; an unconnected events / bytes input reads an empty queue.
+
+### 3.2 No implicit adaptation
+
+A channel-count or layout mismatch is an error. The fixes are explicit nodes:
+
+- `join` concatenates inputs into one port and declares the output layout as a setting (`stereo`, `discrete(2)`);
+- `split` breaks any port into monos;
+- `downmix` sums channels, layout-aware (ITU coefficients for 5.1 -> stereo, equal sum for `discrete`);
+- `relabel` asserts a layout (`discrete(6)` -> `5.1`).
+
+Duplication needs no node: fan one mono output into both inputs of a `join`.
+
+### 3.3 Cycles and feedback wires
+
+A wire may be marked `feedback: true`. Only feedback wires may close a loop; they deliver their value one
+block late. A cycle with no feedback wire is rejected, and the error names the loop.
+
+LSDj needs this today: `lsdj.sync` feeds the GB's `serialIn`, and the GB's `serialOut` comes back
+to `lsdj.sync` for MI.OUT. The current engine already gives that return path exactly one block of latency
+(it gathers `serialOutLog_` for the next block), so the graph makes existing behaviour visible. A wire
+flag was chosen over Reaktor's auto-inserted delay because the delay's position matters: the sync-to-GB
+edge must stay in the same block.
+
+### 3.4 Channels and layouts
+
+An audio port carries N channels, stored non-interleaved (one float array per channel, as today's
+`float* const* outs`, CLAP and VST3), with a layout:
+
+| Layout | Channels | Example |
+|---|---|---|
+| `mono` | 1 | a NES pin, `downmix` output |
+| `stereo` | 2 (L, R) | Game Boy `mix`, `ch1`-`ch4` |
+| `5.1`, `7.1`, ... | standard speaker order | a surround panner's output |
+| `discrete(n)` | n unrelated channels | a bundle of the NES's 5 core channels |
+
+A port's channel spec is one of: a **fixed** count and layout; **`any`**; or **`match("<port>")`**,
+which copies both count and layout from another port. The planner propagates counts and layouts along
+wires, so one gain or filter node works on mono, stereo, or 8 channels (VCV Rack's polyphonic cables).
+Only layout-aware nodes (panners, `downmix`, wideners) declare a specific layout.
+
+There is no channel limit in the ABI; the planner enforces a sanity cap (64), and on the Pico the limit
+is whether the plan fits the arena.
+
+### 3.5 Dynamic ports
+
+Three mechanisms, each for a different kind of dynamism:
+
+1. **Every output exists; only connected ones are computed** (system nodes). A Game Boy always exposes
+   `mix` and `ch1`-`ch4`; a NES always exposes `mix`, `pins.*` and `channels.*`. Unconnected outputs get
+   a null buffer. When a plan swap changes which outputs are connected, the node gets an alloc-free
+   `ports_changed` call on the audio thread and arms or disarms its taps (today's `syncSplitPlan` /
+   `setChannelExportMode`, owned by the node instead of the engine). Connecting the pin outputs *is*
+   choosing pins; there is no output-mode setting. A core that can run only one tap at a time declares
+   an **exclusive group** (`exclusive: [["pins.*", "channels.*"]]`) and the planner reports a clear error
+   instead of producing silence.
+2. **Counts chosen by the user come from settings** (an 8-input `+`, a 4-way splitter). Changing the
+   setting means a re-layout and a replan; the planner rejects wires to ports that no longer exist, and
+   the document's owner (today the graph builder, later the modular UI) removes them.
+3. **Inferred channel counts** (`any` / `match`, §3.4) for the DSP library.
+
+### 3.6 Host bus layout
+
+`rp.host.audio-out` follows the host's bus layout: the plugin's four stereo pairs are four stereo ports
+`out.1-2` ... `out.7-8`; the standalone's layout comes from its `Out Channels` setting. Inside the graph
+any layout works. Whether a 5.1 *port* reaches a DAW as a surround bus depends on the plugin format: DPF
+predefines only mono and stereo port groups today, so until it exposes surround buses a 5.1 signal leaving
+the plugin goes through `split` / `join` onto stereo pairs.
+
+---
+
+## 4. The node ABI
+
+### 4.1 One C ABI, three ways to fill it
+
+Every node, whether statically linked C++, a downloaded native pack, or TypeScript, reaches the planner
+as the same C structures. The shape follows CLAP: a small core table, plus optional interfaces looked up
+by versioned string id. Statically linked packages are registered through the same entry point as
+downloaded ones, so there is one loading path.
+
+A sketch (names not final):
+
+```c
+#define RP_ABI_VERSION 1
+
+typedef struct rp_package {
+    uint32_t abi_version;
+    const char* manifest_json;
+    uint32_t node_type_count;
+    const struct rp_node_type* const* node_types;
+    bool (*init)(const struct rp_host* host);
+    void (*deinit)(void);
+} rp_package;
+
+typedef struct rp_settings { const uint8_t* data; size_t size; uint32_t encoding; } rp_settings; // JSON on desktop
+
+typedef struct rp_node_type {
+    const char* id;
+    const char* descriptor_json;
+    bool     (*query_memory)(const rp_settings*, rp_memory_req* out, rp_error* err);  // size + align
+    rp_node* (*create)(const struct rp_host*, void* memory, const rp_settings*, rp_error* err);
+    void     (*destroy)(rp_node*);
+} rp_node_type;
+
+typedef struct rp_node_vtable {
+    bool        (*layout)(rp_node*, rp_layout_writer*);                    // control
+    bool        (*activate)(rp_node*, double sample_rate, uint32_t max_frames); // control
+    void        (*deactivate)(rp_node*);                                   // control
+    void        (*ports_changed)(rp_node*, const rp_connection_mask*);     // audio, alloc-free
+    rp_status   (*process)(rp_node*, const rp_process*);                   // audio, alloc-free
+    void*       (*prepare_settings)(rp_node*, const rp_settings*, rp_error*); // control
+    void        (*commit_settings)(rp_node*, void* prepared, void** old);  // audio, pointer swap
+    void        (*release_settings)(rp_node*, void* old);                  // control
+    const void* (*get_interface)(rp_node*, const char* id);                // any
+} rp_node_vtable;
+```
+
+A downloaded pack exports `rp_package_entry` from a dynamic library; a statically linked package hands
+the same struct to a **generated** registration list. (A registration object in a static library is
+dropped by the linker when nothing references it; a generated `rp_register_packages()` per product
+avoids that.)
+
+### 4.2 Memory is supplied by the host
+
+`query_memory(settings)` returns the size and alignment an instance needs; `create(host, memory,
+settings)` constructs into memory the host provides. On the desktop that memory is an allocation on the
+control thread; on the Pico it is a slice of a static arena. A node that needs a heap beyond its block
+(an emulator core) declares the `heap` capability and uses the host allocator on the control thread only.
+
+### 4.3 The instance calls and their threads
+
+| Call | Thread | Purpose |
+|---|---|---|
+| `layout` | control | resolved ports, params and exclusive groups, after settings are applied |
+| `activate` / `deactivate` | control | sample rate, maximum block size |
+| `ports_changed` | audio | connected-output mask changed at a plan swap |
+| `process` | audio | one block; no allocation, no exceptions |
+| `prepare_settings` / `commit_settings` / `release_settings` | control / audio / control | the settings swap |
+| `get_interface` | any | optional interfaces |
+
+**Ports and params are resolved per instance**, because a `+`'s input count or a mixer's width depend on
+its settings. The type descriptor shows the defaults (for documentation and future UIs). Everything is
+addressed by **stable string ids** in documents and saved state; the planner maps ids to indices for the
+audio thread (CLAP's lesson: stable ids, never names).
+
+`process` returns a status. A node that faults (an emulator that wedges, a bad input it cannot handle)
+returns a fault instead of throwing; §9 says what the executor does with it.
+
+### 4.4 Optional interfaces
+
+| Interface | Purpose |
+|---|---|
+| `rp.state/1` | save and load node state |
+| `rp.step/1` | prepare / step-if-below-target / finish, for coupled groups (§5.5) |
+| `rp.link/1` | peer connection for `link` wires |
+| `rp.snapshot/1` | what the node publishes into the `SnapshotRegistry` |
+| `rp.system.memory/1`, `.sram/1`, `.state/1`, `.rom/1`, `.video/1`, `.buttons/1`, `.debug/1` | system capabilities (§6.4) |
+
+A missing interface returns null. Interface ids carry their own version, so an interface can evolve
+without bumping `RP_ABI_VERSION`.
+
+### 4.5 Capability flags
+
+The descriptor declares what a node needs from its host: `heap`, `threads`, and any future flags. The
+planner checks them against the target: an emulator core declares `heap`, so the Pico planner rejects it
+with a clear error rather than at flash time.
+
+### 4.6 The descriptor JSON
+
+C++ and TS nodes produce the same shape:
+
+```json
+{
+  "id": "rp.dsp.gain",
+  "version": "1.0.0",
+  "name": "Gain",
+  "category": "dsp/utility",
+  "requires": { "heap": false, "threads": false },
+  "ports": [
+    { "id": "in",  "dir": "in",  "kind": "audio", "channels": "any" },
+    { "id": "out", "dir": "out", "kind": "audio", "channels": { "match": "in" } }
+  ],
+  "params": [
+    { "id": "gain", "name": "Gain", "type": "float", "min": -60, "max": 12, "default": 0, "unit": "dB" }
+  ],
+  "settings": { "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "properties": {} }
+}
+```
+
+An enum param is `{ "id": "mode", "type": "enum", "values": ["off", "midi-sync", "master"], "default":
+"midi-sync" }`; a resource port is `{ "id": "sample", "dir": "in", "kind": "resource", "resourceType":
+"audio-buffer" }`; a fixed audio port is `"channels": { "count": 2, "layout": "stereo" }`.
+
+The descriptor is emitted with canonical key order so it is **byte-stable**: across compilers, and between
+a C++ node and a TS node of the same declared shape (§10).
+
+### 4.7 C++ nodes
+
+```cpp
+struct Gain {
+    static constexpr auto id = "rp.dsp.gain";
+    struct { rp::audio_in<rp::any> in; }                                         inputs;
+    struct { rp::audio_out<rp::match<"in">> out; }                               outputs;
+    struct { rp::param<float, "Gain", rp::range{-60, 12, 0}, rp::unit::db> gain; } params;
+    void process(const rp::Block&) noexcept;
+};
+RP_NODE(Gain);   // emits the rp_node_type + vtable
+```
+
+- **Field names become port and param ids**; metadata comes from the wrapper types (non-type template
+  parameters). C++ enum params take their labels from the enum names via reflect-cpp's enum reflection.
+- **Settings are plain named reflect-cpp structs**, so their JSON Schema is `rfl::json::to_schema`, with
+  `rfl::Validator` / `rfl::Description` / `rfl::DefaultVal` for ranges, descriptions and defaults. Named,
+  because reflect-cpp derives `$defs` keys from compiler type names, which differ between gcc and clang
+  for unnamed structs.
+- **Ports and params get their descriptor from our own table**, not from reflect-cpp's schema output, so
+  descriptors stay byte-stable.
+- **The field walk sits behind one `rp::fields_of<T>`**, built on reflect-cpp's `named_tuple_t` /
+  `num_fields`. Measured: a 128-field node costs ~12 s on gcc 13 at -O0 (clang 18: ~3 s; 16 fields: ~1 s).
+  If gcc build times bite on big nodes, `fields_of` can switch to standalone PFR (header-only, no Boost,
+  ~0.7 s for the same node) without touching any node.
+- **No avendish or halp dependency**: avendish needs Boost.MP11 in its core, and halp plus the bindings
+  are GPL-3.0. Only avendish's permissively licensed concept vocabulary (`avnd/concepts/*.hpp`, BSL / CC0 /
+  0BSD) is a model for our naming.
+- **Exceptions never cross the ABI.** `RP_NODE` wraps every control-thread call; `process` is `noexcept`.
+- **Settings decode** uses reflect-cpp with the JSON Schema-validated types, so a bad value in a
+  downloaded document is rejected with a message ("expected >= 20, got 5"), not silently clamped.
+- **reflect-cpp is upgraded to 0.26.x** (schema `default`, which 0.24 lacks). The pin lives in rpcpp
+  inside the dpf.js submodule; bumping both is approved.
+
+### 4.8 TS nodes
+
+```ts
+export const lsdjSync = defineNode({
+  id: "rp.lsdj.sync",
+  ports:  { midi: events.in(), serialIn: bytes.in(), serialOut: bytes.out(), buttons: events.out() },
+  params: { mode: param.enum(["off", "midi-sync", "master"], "midi-sync"), divisor: param.int(1, 16, 1) },
+  settings: z.object({ /* ... */ }),          // zod 4 -> z.toJSONSchema(), draft 2020-12
+  create: (ctx) => ({ process(block) { /* ... */ } }),
+});
+```
+
+- `ports` may be a function of settings: `ports: (s) => ({ in: audio.in(s.channels) })`.
+- **Settings are validated on the control plane.** The audio-thread code receives plain, already-checked
+  objects, so **zod leaves the audio-thread bundle**. Today ~568 KB of the 638 KB DSP-kernel bundle is
+  zod; removing it is also a hard requirement for MicroQuickJS on the Pico.
+- A TS node sees an audio port as an array of `Float32Array`s, an events port as a frame-ordered array,
+  a resource port as a handle with typed accessors (a `Float32Array` view for an audio buffer).
+
+### 4.9 The script-node runtime
+
+The host wraps each TS node instance in the C table. One script runtime per engine holds every TS node
+(as one context holds every role today), and each node's `process` calls into it.
+
+| Platform | Script runtime |
+|---|---|
+| Desktop (plugin, standalone, CLI, SDL, Node) | bare QuickJS, the evolution of today's `DspRuntime` |
+| Web | the browser's own JS engine, in the AudioWorklet |
+| Pico | MicroQuickJS, under the existing `check:portable` rules |
+
+**Cost.** QuickJS is an interpreter: a stereo gain over a 512-frame block is about 1% of a core, a biquad
+about 5%. Fine for event-rate work (sync, MIDI, sequencing) and light audio; heavy DSP belongs in C++.
+In the browser the same node runs under a JIT and is far faster.
+
+**Per-node call overhead.** One JS call per TS node per block replaces today's single `processBlock`
+call. If profiling (the [spec/08](../spec/08-profiling.md) harness) shows the marshalling matters, the
+planner can batch consecutive script nodes into one call. Not built until measured.
+
+---
+
+## 5. Graph document, planner and executor
+
+### 5.1 The graph document
+
+```json
+{
+  "nodes": [
+    { "id": "gb1", "type": "rp.sameboy.gb", "settings": { "rom": "res:12", "model": "cgb-e" }, "params": { "gain": 0 } },
+    { "id": "sync1", "type": "rp.lsdj.sync", "params": { "mode": "midi-sync" } },
+    { "id": "sum", "type": "rp.dsp.add", "settings": { "inputs": 2 } }
+  ],
+  "wires": [
+    { "from": "gb1.mix", "to": "sum.in1" },
+    { "from": "sync1.serialOut", "to": "gb1.serialIn" },
+    { "from": "gb1.serialOut", "to": "sync1.serialIn", "feedback": true }
+  ]
+}
+```
+
+TS sends the **whole document** on every change with one RPC call, `setGraph(doc)`. Graphs are tens of
+nodes, so size is a non-issue, and whole-document sends keep planning deterministic; the planner diffs
+against the running graph by node id.
+
+`setGraph` returns `{ ok, errors[], layouts }`. Each error is `{ nodeId, port?, code, message }`;
+`layouts` are the resolved per-instance ports and params, so TS can show and check them. **A failed plan
+changes nothing**: the running plan continues, so a bad edit can never glitch the audio.
+
+### 5.2 The planner
+
+C++, on the control thread, five passes:
+
+1. **Validate.** Each node type exists; settings are valid (`prepare_settings` may reject with a
+   message, which matters for downloaded packs); ports exist; kinds match; each input has at most one
+   wire; channel counts and layouts resolve; exclusive groups are respected; capability flags suit the
+   target.
+2. **Reconcile instances.** Same id and settings: reuse the instance. Changed settings: prepare a swap.
+   A change the node marks as needing a rebuild (a new ROM): build a fresh instance. New id: allocate,
+   create, activate. Missing id: schedule release. All of this is control-thread work, as cores are
+   built today; carrying state across a rebuild stays TS orchestration (today's reload).
+3. **Order.** Topological sort; nodes joined by `link` wires collapse into one **coupled group** (a
+   connected set; link wires are undirected).
+4. **Cycles.** Only feedback wires may close a loop (§3.3).
+5. **Assign buffers.** Each output port gets a buffer: audio (channels x max frames); events, bytes and
+   control (fixed-capacity queues, capacity from descriptor hints with a default); resource (a handle
+   slot). Buffers are reused by lifetime; feedback wires get persistent double buffers. Every input
+   reads straight from its single source's buffer.
+
+The output is an **immutable plan**: a flat list of steps with port bindings already resolved, the buffer
+pool, the pinned resources, and the nodes to release.
+
+### 5.3 The plan swap
+
+The existing rings carry it; their invariants ([spec/01](../spec/01-architecture.md) §7) are unchanged.
+
+- **Out:** a `SwapPlan` command on the command ring. It replaces today's `AddSystem` / `ReplaceSystem` /
+  `RemoveSystem` / `SetAudioRouting` / `SetConfigField` / `SetSystems` / `LoadKernel` commands.
+- **At the start of the next block:** the audio thread swaps the plan pointer, commits prepared settings,
+  and calls `ports_changed` where connections changed. **A whole graph edit lands atomically, in one block.**
+- **Back:** the old plan returns on the release ring; the control thread frees its buffers, unpins its
+  resources, and deactivates and destroys removed nodes.
+- **Quiescent:** the inline-flush rule stays (every push flushes when no audio thread owns the engine).
+- **Live params** stay lightweight POD commands (`SetParam(node, param, value, frame)`), never a replan.
+
+### 5.4 Host I/O nodes
+
+The host implements these node types itself:
+
+| Node | Role |
+|---|---|
+| `rp.host.audio-out` | copies into the host's output buffers; ports follow the host bus layout (§3.6) |
+| `rp.host.audio-in` | the host's inputs (a capture card, for a real console) |
+| `rp.host.midi-in` | fed from the host's MIDI events |
+| `rp.host.midi-out` | drained to the host after the block |
+
+DAW automation keeps today's CC-slot mechanism ([spec/12](../spec/12-dynamic-parameters.md)) in this
+project. A later `rp.host.params` node whose outputs are control ports would make automation just more
+wiring.
+
+### 5.5 The executor
+
+No heap, no exceptions, the same code on every target. Per block:
+
+1. Drain the command ring.
+2. Walk the steps. A plain node is one `process` call with pointers already bound. A **coupled group**
+   runs prepare on every member, then round-robin `step` until every member reaches the block target,
+   then finish (today's `runUnit` in `BlockRunner`, generalised over `rp.step/1`).
+3. Reset event, bytes and control queues.
+4. Publish snapshots through the `SnapshotRegistry` (via `rp.snapshot/1`).
+
+Queues are fixed-capacity; an overflow drops and bumps a counter TS can read (the same never-allocate
+policy as today's full ring). Events stay frame-stamped; v1 uses the host's block size with no
+sub-blocking. v1 is single-threaded; the plan records dependencies, so running independent branches in
+parallel (enkiTS) can come later without changing the plan format.
+
+### 5.6 Library targets
+
+| Target | Contents | Depends on |
+|---|---|---|
+| `rp_node.h` | the C ABI | nothing |
+| `retroplug-graph-exec` | the executor | nothing (freestanding C++20; builds for the RP2350) |
+| `retroplug-graph` | planner, registry, plan swap glue | exec, reflect-cpp |
+| `rp/node.hpp` | the C++ authoring layer (header-only) | reflect-cpp |
+
+None of these link a core, txiki, efsw or LVGL. They are the seed of the system-free "retroplug core".
+The TS half (`defineNode`, `defineExtension`, descriptors, `buildGraph`) lives in
+`packages/retroplug/src/graph/`.
+
+### 5.7 Offline graphs
+
+A render loop pulls the same executor on any thread. That covers CLI `render`, background render jobs
+([spec/11](../spec/11-ui-rendering.md)) and **kit compiles**: a kit compile is a graph `buffer-player` ->
+filter -> dither -> `buffer-recorder`, run as fast as possible, with the same DSP nodes a live graph
+uses. This is how one sample patcher serves LSDj, risa and BlipToaster: the generic chain plus a
+per-cart profile (sample rate, bit depth, slot layout, codec) contributed by each cart's package.
+Today's `src/kit/KitCompiler` (codec-neutral) and `src/lsdj/Effects` (gain, biquad, dither) are already
+most of this.
+
+### 5.8 The Pico runtime
+
+- The desktop planner exports a plan as a **versioned binary blob** for a named target (`rp2350`). The
+  export applies the target's capability rules, so a `heap` node fails here, on the desktop.
+- The firmware sizes a static arena from the blob (node memory from `query_memory`, plus buffers) and
+  runs the identical executor over node types compiled into the firmware.
+- The blob's settings encoding (likely msgpack, already in the tree via dpf.js) is the Pico phase's
+  decision; the ABI already carries an encoding tag (`rp_settings.encoding`).
+- TS nodes on the Pico run on MicroQuickJS within `check:portable`'s rules.
+
+---
+
+## 6. System nodes
+
+### 6.1 Node types
+
+| Node type | Package | Covers |
+|---|---|---|
+| `rp.sameboy.gb` | `sameboy` | Game Boy and Game Boy Color (model is a setting) |
+| `rp.mesen.nes` | `mesen` | NES |
+| `rp.mesen.gba` | `mesen` | Game Boy Advance |
+| `rp.mesen.sms` | `mesen` | Master System and Game Gear (Game Gear is a setting) |
+
+The type ids are fixed now; the later package split only changes which ones are compiled into a
+product, so `mesen` can be split per console without renaming anything.
+
+### 6.2 Ports
+
+| Node | Inputs | Outputs |
+|---|---|---|
+| GB | `serialIn` (bytes), `buttons` (events), `link` | `mix` (stereo), `ch1`-`ch4` (stereo), `serialOut` (bytes: MI.OUT capture) |
+| NES | `fifo` (bytes: the emulated N8 cart), `buttons` | `mix` (stereo), `pins.pulse` / `.tnd` / `.expansion` (mono), `channels.sq1` / `.sq2` / `.tri` / `.noise` / `.dmc` (mono); exclusive `["pins.*", "channels.*"]` if the tap requires it |
+| SMS / GG | `port` (bytes: the controller-port level smsggdj sync drives), `buttons` | `mix` (stereo) |
+| GBA | `buttons` | `mix` (stereo) |
+
+MIDI never reaches a core directly; it goes through a node that knows a protocol: `mgb.midi` (MIDI ->
+GB serial bytes), `n8.midi-to-fifo` (MIDI -> FIFO writes, replacing native `NesN8FifoRole`). That also
+retires a current oddity: SameBoy's `onMidi` stores MIDI that nothing reads.
+
+### 6.3 Settings and params
+
+- **Settings**: the ROM (a resource handle), SRAM and state seeds, model, region, fast boot, Game Gear mode.
+- **Params**: gain, highpass, expansion volume, colour/palette knobs, and every other live knob.
+
+Each node handles its own params, so `Engine::applyConfigField` (its `dynamic_cast` switch and the mixed
+`ConfigField` enum) goes away, and so does `EngineRpcService::applyRoleConfig`'s `"sameboy"` / `"mesen"`
+branch: decoding a node's settings is the node's job.
+
+### 6.4 System capability interfaces
+
+Today's fat `SystemBase` splits into optional interfaces:
+
+| Interface | Purpose |
+|---|---|
+| `rp.system.memory/1` | named regions (rom / ram / sram / io, size, writable) |
+| `rp.system.sram/1`, `rp.system.state/1` | battery and savestate save / load |
+| `rp.system.rom/1` | header bytes, title, size: what extension matchers read |
+| `rp.system.video/1` | framebuffer triple, size, format |
+| `rp.system.buttons/1` | button names to ids, so bindings and extensions say `"start"`, not per-console enums |
+| `rp.system.debug/1` | today's `IDebugTarget` |
+
+**The threading rule is unchanged: the control plane never touches a live core.** The executor calls
+these interfaces at safe points on the audio thread. Reads come from published snapshots; writes and
+state loads queue on the command ring and apply at a block boundary (as `WriteRam` does today).
+Extensions only ever see host RPC that routes through those two doors.
+
+### 6.5 Where each `dynamic_cast` goes
+
+| Today | Becomes |
+|---|---|
+| `Engine::applyConfigField` casts | node params and settings |
+| `Engine::syncSplitPlan` casts | `ports_changed` (§3.5) |
+| `Engine`'s gather of SameBoy `serialOutLog_` | the GB `serialOut` port |
+| `LinkGroup`, `Project::rebuildLinkGroups` | `link` wires, the planner's coupled groups |
+| `BlockRunner` / `OfflineRender` including SameBoy headers | the console-neutral executor |
+| `SystemKind`, `ConfigField`, native `AudioRouting` | deleted |
+
+What remains of `Engine` is the executor, the rings and the registry.
+
+### 6.6 Real hardware as nodes
+
+`rp.n8.nes` (`n8` package) has the **same `fifo` input as `rp.mesen.nes`**. Its `process` pushes bytes
+onto the lock-free ring `N8Link` already uses to feed its serial thread (so it declares `threads`). It
+implements `rp.system.sram/1` (dump and restore over USB) and `rp.system.rom/1` (upload and boot). It has
+no audio output: the sound comes from the console, or from a capture input through `rp.host.audio-in`.
+
+**Today's "mirror the emulated FIFO to the hardware" (`coreByteSink_`) becomes plain fan-out**: the risa
+sync node's `fifo` output feeds both the emulated NES and the N8 node. Emulated, real, or both is just
+wiring. The Launchpad works the same way: `rp.launchpad.surface` has events ports to and from the device.
+
+---
+
+## 7. The TS side
+
+### 7.1 The extension contract
+
+```ts
+export const lsdj = defineExtension({
+  id: "rp.lsdj",
+  matches: (node) => node.type === "rp.sameboy.gb" && hasLsdjMarker(node.rom),
+  settings: z.object({ syncMode: ..., tempoDivisor: ..., autoStart: ... }),
+  contribute: (ctx) => ({
+    nodes: [/* lsdj.sync, wired between the MIDI router and ctx.node.serialIn */],
+    songs, assets, menu, views,
+  }),
+});
+```
+
+- `matches` reads what `rp.system.rom/1` publishes. That one predicate replaces `romProviders.ts`, the
+  marker roles, and `TRACKER_INTEGRATIONS`' marker lookup.
+- `ctx` provides the extension's persisted settings, its host node's capabilities (§6.4), and
+  `putResource` (how asset overrides become a patched ROM resource).
+- **Port ownership:** each node input may be claimed by only one contributor. If two extensions both
+  claim a GB's `serialIn`, the graph builder reports the conflict by name instead of silently picking.
+
+### 7.2 The graph builder
+
+`buildGraph(project, registry): GraphDocument` is a **pure TS function**, testable in the plain-TS
+`pnpm test` suite with no native code. It builds the graph in layers:
+
+1. **One system node per system**; settings from today's system-role config (`sameboy` / `mesen`).
+2. **Extension contributions**: `lsdj.sync`, `mgb.midi`, `risa.sync`, `sms.sync`, `n8.midi-to-fifo`
+   (BlipToaster), wired to their system node.
+3. **MIDI routing**: `rp.host.midi-in` -> a `midi.route` node (today's four MIDI routing modes as a
+   setting) -> each system's protocol node.
+4. **Audio routing**: the wiring patterns in §7.6.
+5. **Link groups**: `link` wires between GB nodes sharing a `linkGroupId`. How many peers one GB may have
+   is the `sameboy` package's rule, carried over from today's `LinkGroup`.
+6. **Host and controller nodes**: audio and MIDI in/out, the Launchpad surface.
+
+The stores call `setGraph(buildGraph(...))` whenever the project changes; the planner's diff keeps
+unchanged nodes running. The builder applies today's applicability gates (channel / pin splits need a
+single system, pins need a NES) so behaviour is unchanged.
+
+### 7.3 Where today's roles go
+
+| Today | Becomes |
+|---|---|
+| System roles (`sameboy`, `mesen`) | system node settings and params |
+| DSP roles (`mgb`, `lsdj-sync`, `risa-sync`, `sms-sync`, `nes-n8-midi`, `midi-routing`, Launchpad controller) | TS node types, each in the module that will become its package |
+| Marker and asset roles (`lsdj-assets`, `risa`, `risa-assets`, `bliptoaster`, `bliptoaster-assets`) | extensions |
+
+**`.rplg` does not change.** `RoleInstance` stays the saved form and the graph builder reads it; no
+`K_PROJECT` bump, no migration step.
+
+### 7.4 The DSP kernel dissolves
+
+- `dspKernel.ts`'s per-system pipelines become individual TS nodes in the script runtime.
+- The sink thunks (`pushSerialIn`, `emitCoreMidi`, `pushCoreBytes`, `pressButton`, `emitMidiOut`,
+  `emitControllerOut`) become ordinary output ports, and the per-block input object becomes input ports.
+- `kernelProjection.ts`'s special cases (synthesized `midi-routing` and Launchpad stages, the forced
+  `lsdj-sync` mode for MI.MAP) become graph-builder logic.
+- The single 638 KB kernel bundle becomes a per-product **script-node bundle** with no zod in it.
+- `DspRuntime` evolves into the script-node runtime (§4.9); the kernel-loading commands go.
+
+### 7.5 The Backend surface
+
+| Stays or arrives | Goes |
+|---|---|
+| `setGraph(doc)` | `constructSystem`, `removeSystem` |
+| `putResource(type, bytes)` -> handle, `releaseResource(handle)` | `setAudioRouting` |
+| capability calls (memory, SRAM, state, ROM info) addressed by node id | `applyRoleConfig` |
+| `setParam(node, param, value)` | `setSerialOutCapture` |
+| snapshot reads (unchanged) | `dspSetSystems`, kernel loading |
+| host I/O, transport (unchanged) | |
+
+Duplicate and reload become "a new node id whose settings point at a state-seed resource": the same
+TS-owned orchestration as today, over the new calls.
+
+### 7.6 Today's routing modes as graphs
+
+| Mode | Graph |
+|---|---|
+| Stereo | every system's `mix` -> `+` -> `out.1-2` |
+| 2 Ch / Inst | system *i* `mix` -> `out` pair *i* |
+| 1 Ch / Inst | each `mix` -> `downmix`; pairs of monos -> `join` -> each pair |
+| Channels | GB `ch1`-`ch4` -> pairs 1-4; NES `channels.*` -> `join`s -> pairs |
+| Pins | `join(pulse, tnd)` -> `out.1-2`; `join(expansion, none)` -> `out.3-4` |
+| Stereo Pins | each pin fanned into both inputs of a `join` -> its own pair |
+
+`MultiOutRouter`, `ChannelSplitRouter`, `PerSystemRouter`, `PerChannelRouter`, `syncSplitPlan` and the
+native `AudioRouting` enum disappear. The enum survives only in TS, as a menu choice the builder turns
+into wiring.
+
+### 7.7 UI and CLI scope
+
+This project defines the **full** extension and view contract but migrates only the graph-facing parts:
+matchers and node contributions. Menus, song and asset catalogs, the HD player and the overlays keep
+their current wiring and move onto extensions and views in the package-split project. The UI looks and
+behaves exactly as today.
+
+The CLI's `render` builds its graph with the same `buildGraph`, from a one-system project, and runs the
+offline executor. The SDK gains `session.graph` (`set`, `describe`, `layouts`) for sessions that want to
+wire graphs directly.
+
+---
+
+## 8. Migration
+
+Five phases; each lands working and verified before the next starts.
+
+### Phase A: foundations (no behaviour change)
+
+- `rp_node.h`, `retroplug-graph-exec`, `retroplug-graph`, `rp/node.hpp`; reflect-cpp 0.26 (dpf.js /
+  rpcpp bump).
+- The planner, executor and plan swap, exercised on toy nodes: `+`, `join`, `split`, `downmix`,
+  `relabel`, `delay`, `buffer-player`, `buffer-recorder`, `merge`.
+- TS `defineNode` / `defineExtension` / descriptor emission; the C++/TS conformance test.
+
+### Phase B: the engine runs on the graph
+
+- A `SystemNode<T>` adapter over today's `SystemBase` subclasses, mapping prepare / step / finish and
+  port buffers onto the C ABI, so the engine moves before any core is rewritten.
+- The host I/O nodes; `Engine::processBlock` runs the executor.
+- The script-node runtime; the DSP roles ported to TS nodes.
+- `buildGraph`; the stores call `setGraph`; the Backend surface switches (§7.5).
+- **Parity target: bit-identical audio** in every audio routing mode, MIDI routing mode and sync mode.
+  Expected to hold: same cores, same inputs at the same frame offsets; `+` sums in system order into
+  silence, as today's routers do; MI.OUT keeps its one-block latency through the feedback wire. Any case
+  that cannot hold is documented explicitly, not waved through.
+- Then delete: the routers and native `AudioRouting`; `LinkGroup`; the add / replace / remove / routing /
+  config / kernel commands; the DSP kernel.
+
+### Phase C: nodes own their knowledge
+
+- Console-specific code moves into each node; every `dynamic_cast` in §6.5 goes.
+- `SystemBase` shrinks to the capability interfaces; `MesenAudioDevice` gets a preallocated ring (it
+  currently allocates on the audio thread).
+- `rp.n8.nes` and `rp.launchpad.surface` replace the N8 mirror sink and the controller special cases.
+
+### Phase D: the DSP library and offline graphs
+
+- Library nodes: gain, biquad, dither, resample (porting `lsdj/Effects` and the r8brain path).
+- Kit compiles as offline graphs; proof is **byte-identical kit output** against today's `KitCompiler`.
+- CLI `render` and background renders on the offline executor.
+
+### Phase E: the Pico runtime
+
+- `exportPlan` for a named target; the static-arena executor built for the RP2350.
+- First proven on the desktop with heap allocation forbidden, then on hardware, running a real plan with
+  a C node.
+
+---
+
+## 9. Error handling
+
+- **Planner errors are structured** (`nodeId`, `port`, `code`, `message`). A failed plan changes nothing.
+- **A faulting node is bypassed, not fatal.** `process` cannot throw but can return a fault; the executor
+  then bypasses that node (outputs silence / empty queues) and bumps a fault counter TS can read.
+- **Queue overflow** drops and bumps a counter; nothing allocates.
+- **Downloaded native packs** are checked at load for ABI version and a valid descriptor. There is no
+  sandbox: a crashing native node takes the host down. Trust prompts and signing belong to the downloads
+  project.
+- **Resource pins**: a debug assertion that every pin has dropped at teardown.
+
+---
+
+## 10. Testing
+
+All headless, all backed by an exit-zero run.
+
+- **A new Catch2 graph-core binary** (built by name like the other test binaries): planner validation,
+  ordering, cycles and feedback wires, coupled groups, channel / layout propagation, exclusive groups,
+  buffer reuse, plan swaps under ThreadSanitizer (`build-tsan/`), and an executor run with `malloc`
+  interposed to fail, which proves the no-heap claim.
+- **Descriptor conformance**: a C++ node and a TS node with the same declared shape produce
+  byte-identical descriptor JSON; gcc and clang produce identical descriptors.
+- **`buildGraph` golden tests** in `pnpm test`: one per audio routing mode, MIDI routing mode, and cart.
+- **Parity**: `test:native`, the multichannel `retroplug-audio-test`, the `reaper:lsdj-*` and
+  `reaper:risa-sync` drift renders, and `test:ui` (unchanged, since the menus do not change).
+- **Kit byte-identity** (Phase D) and **Pico arena** runs (Phase E) as above.
+
+---
+
+## 11. The road after this project
+
+Each is its own spec -> plan -> implementation cycle. What this investigation already learned is recorded
+here so it is not lost.
+
+### Package split
+
+- Carve `core` (the graph libraries, §5.6), `dsp`, `sameboy`, `mesen` (per console), `lsdj`, `mgb`,
+  `risa`, `smsggdj`, `bliptoaster`, `n8`, `launchpad` into packages, each with a native part, a TS part,
+  or both.
+- **Mesen** compiles all seven consoles into one 426-object archive (NES 6.6 MB, SNES 6.3 MB of objects,
+  ...), and `Core/Shared/Emulator.cpp` plus `Core/Debugger/Debugger.cpp` reference every console, so the
+  linker cannot drop any. Per-console compile-out is a `MESEN_ENABLE_<X>` patch to ~20 files plus a
+  filtered glob (Mesen is vendored, not a submodule). NES-only removes roughly half the object bytes.
+- Generated `registerCoreBackends` / `rp_register_packages()` per product; `txiki` and `efsw` out of
+  `retroplug-backend` into opt-in libraries; LSDj kit DTOs out of `BackendTypes.hpp`; the risa DMC codec's
+  dependency on LSDj files removed; per-product esbuild entries (today every bundle carries every cart).
+- Menus (`menuDefs.ts`'s 240 cart-specific lines, `TRACKER_UI`), catalogs, the HD player and the overlays
+  move onto extensions and views.
+- The Edio protocol exists three times (TS source of truth, C++, Pico C), kept in sync by hand; a package
+  boundary is the moment to fix that.
+
+### Web host
+
+- txiki / libuv is the blocker, and it is avoidable: the TS control plane can run in the browser's own
+  engine through a third rpcpp codec (an `emscripten::val` sibling of the QuickJS and Node codecs), with
+  the synchronous `__rpcSend` unchanged. The control plane already runs on bare QuickJS today (the render
+  worker), which proves it needs no libuv.
+- The executor maps onto a Wasm AudioWorklet; with pthreads that needs SharedArrayBuffer (COOP / COEP
+  headers), or the whole engine can live in the worklet single-threaded (the invoker's inline-flush
+  regime already supports that).
+- efsw has no web backend; RtMidi has WebMIDI; WebSerial is async while the TS `SerialTransport` read is
+  synchronous (needs a worker with `Atomics.wait`, or asyncify); LVGL in a canvas versus a DOM UI for
+  embeds is that project's decision. DPF is not needed on the web.
+- An embed (a risa developer's site) is a product built from `core` + `dsp` + `mesen` (NES only) + `risa`.
+
+### Downloadable packs
+
+- Native code is allowed (decided): per-platform builds of the C ABI, plus TS and assets. That project
+  owns signing / notarisation inside a signed plugin, trust prompts, dependency and version resolution,
+  and the install location. On the web, packs are compiled in at build time.
+
+### Modular UI
+
+- A structure view over the same graph document; the graph becomes the saved source of truth (with a
+  `K_PROJECT` bump and a migration from the role model), and the menus become a panel view of it.
+
+---
+
+## 12. Open questions and risks
+
+- **gcc compile time** on very large C++ nodes (§4.7); mitigated by the `fields_of` seam.
+- **Mesen tap exclusivity**: whether pins and channels can be armed at the same time decides whether the
+  NES declares the exclusive group. To be checked against the patched `NesSoundMixer` in Phase C.
+- **Link groups with more than two Game Boys**: today's `LinkGroup` semantics carry over as the `sameboy`
+  package's rule; the exact peer topology is confirmed in Phase B against the existing link tests.
+- **Bit-identical parity** relies on summing order and frame offsets matching the current engine; any
+  deviation is documented in Phase B.
+- **Script-node call overhead** versus today's single kernel call; measured with the profiling harness
+  before batching is built.
+- **Surround to the DAW** depends on DPF port groups (§3.6).
