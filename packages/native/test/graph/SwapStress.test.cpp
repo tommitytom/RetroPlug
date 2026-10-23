@@ -2,7 +2,8 @@
 // ThreadSanitizer (build-tsan/) this is the race check for the command ring and the release ring; in a
 // normal build it checks that a system's own output and state survive constant edits around it. The
 // adoption handshake itself (setGraph never planning while a swap is in flight) has its own deterministic
-// test below, since a race window that narrow is not something a stress run can be relied on to hit.
+// tests below (setGraph waits while a swap is queued, and while one is being adopted), since a race window
+// that narrow is not something a stress run can be relied on to hit.
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
@@ -52,9 +53,11 @@ class AudioThread {
 public:
     explicit AudioThread(GraphHost& host) : host_(host), thread_([this] { run(); }) {}
     ~AudioThread() { stop(); }
+    // Stops and joins, then hands the drain back to the control thread.
     void stop() {
         running_.store(false, std::memory_order_release);
         if (thread_.joinable()) thread_.join();
+        host_.setAudioThreadOwns(false);
     }
     int  blocks() const { return blocks_.load(); }
     bool wrong() const { return wrong_.load(); }
@@ -120,31 +123,30 @@ TEST_CASE("plan swaps under a running audio thread keep a node's output and stat
     REQUIRE(rig.set(stressDoc(0, buf)).ok);
     rig.host->setAudioThreadOwns(true);
 
-    int failedSets = 0, failedParams = 0;
+    std::string failures;  // checked as one string, so a failure prints every code
     bool settled = false;
     {
         AudioThread audio(*rig.host);
         for (int i = 1; i <= 200; ++i) {
             const auto r = rig.set(stressDoc(i, buf));
-            if (!r.ok) {
-                ++failedSets;
-                UNSCOPED_INFO("set " << i << ": " << GraphRig::codes(r));
-            }
-            if (!rig.host->setParam("k", "value", static_cast<double>(i))) ++failedParams;
+            if (!r.ok) failures += "set " + std::to_string(i) + ": " + GraphRig::codes(r) + "; ";
+            if (!rig.host->setParam("k", "value", static_cast<double>(i))) failures += "param " + std::to_string(i) + "; ";
             rig.host->reclaim();
         }
-        settled = audio.waitBlocks(4);  // let the last swap and param land
+        // The last param before one more swap, and that swap a live one (201 shares 200's tag): what is
+        // checked below has to survive a swap, not merely be the newest thing queued.
+        if (!rig.host->setParam("k", "value", 201.0)) failures += "param 201; ";
+        if (!rig.set(stressDoc(201, buf)).ok) failures += "set 201; ";
+        settled = audio.waitBlocks(4);
         audio.stop();
+        CHECK(failures.empty());
         CHECK_FALSE(audio.wrong());
         CHECK(rig.node<Source>("src").frames == static_cast<std::uint64_t>(audio.blocks()) * 64);
     }
-    rig.host->setAudioThreadOwns(false);
 
     CHECK(settled);
-    CHECK(failedSets == 0);
-    CHECK(failedParams == 0);
-    CHECK(rig.node<Tunable>("tun").level == 200.0f);  // the last live settings swap stands
-    CHECK(rig.node<Sink>("ks").controlEnd == 200.0);  // and so does the last param value
+    CHECK(rig.node<Tunable>("tun").level == 201.0f);  // the last LIVE settings swap landed
+    CHECK(rig.node<Sink>("ks").controlEnd == 201.0);  // and the param value survived it
 }
 
 TEST_CASE("setGraph waits for the audio thread to adopt the last plan before planning again", "[graph][swap]") {
@@ -158,6 +160,57 @@ TEST_CASE("setGraph waits for the audio thread to adopt the last plan before pla
     rig.run();  // the audio thread's next block adopts it
     CHECK(rig.set(R"({"nodes":[],"wires":[]})").ok);
     rig.run();
+    CHECK(rig.host->reclaim() >= 1);  // the last plan was adopted: the one it replaced came back
     rig.host->setAudioThreadOwns(false);
-    CHECK(rig.host->instanceCount() == 0);
+}
+
+namespace {
+
+// Holds the audio thread inside a settings commit for as long as `held` is set.
+std::atomic<bool> held{false};
+std::atomic<bool> holding{false};
+
+struct GateSettings {
+    bool hold = false;
+};
+
+struct Gate {
+    static constexpr const char* id = "rp.test.gate";
+    using Settings = GateSettings;
+    void on_settings(const Settings& s) noexcept {
+        if (!s.hold) return;
+        holding = true;
+        while (held.load()) std::this_thread::yield();
+        holding = false;
+    }
+    void process(const rp::Block&) noexcept {}
+};
+
+const rp_package* gatePackage() {
+    static const rp_node_type* const kTypes[] = {rp::node_type<Gate>()};
+    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.gate"})", 1, kTypes};
+    return &kPackage;
+}
+
+}  // namespace
+
+TEST_CASE("setGraph also waits while a plan is being adopted", "[graph][swap]") {
+    GraphRig rig({48000.0, 64, rp::graph::Target::Desktop, 50});
+    REQUIRE(rig.registry.addPackage(gatePackage()));
+    REQUIRE(rig.set(R"({"nodes":[{"id":"g","type":"rp.test.gate"}],"wires":[]})").ok);
+    rig.host->setAudioThreadOwns(true);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"g","type":"rp.test.gate","settings":{"hold":true}}],"wires":[]})").ok);  // a live swap
+    held = true;
+    std::thread audio([&] { rig.run(); });  // adopts it, and stops inside its commit
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!holding.load() && std::chrono::steady_clock::now() < deadline) std::this_thread::yield();
+    CHECK(holding.load());
+    // Mid-adoption: the planner would read the node's settings while the audio thread writes them.
+    const auto busy = rig.set(R"({"nodes":[],"wires":[]})");
+    held = false;
+    audio.join();
+    CHECK(GraphRig::codes(busy) == "busy");
+    CHECK(rig.set(R"({"nodes":[],"wires":[]})").ok);
+    rig.run();
+    rig.host->setAudioThreadOwns(false);
 }
