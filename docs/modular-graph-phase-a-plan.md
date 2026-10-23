@@ -9500,7 +9500,7 @@ export function canonicalJson(value: unknown): string {
 - [ ] **Step 4: Run the test**
 
 Run: `pnpm test graph/canonical-json`
-Expected: `ok 1` to `ok 3`, `# 3 passed, 0 skipped, 0 failed`.
+Expected: `ok 1` to `ok 4`, `# 4 passed, 0 skipped, 0 failed`.
 
 - [ ] **Step 5: Commit**
 
@@ -9952,7 +9952,7 @@ export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): D
 - [ ] **Step 4: Run the test and the type check**
 
 Run: `pnpm test graph/define-node && pnpm typecheck`
-Expected: `# 6 passed, 0 skipped, 0 failed`, and the type check matches the Task 0 baseline.
+Expected: `# 7 passed, 0 skipped, 0 failed`, and the type check matches the Task 0 baseline.
 
 - [ ] **Step 5: Commit**
 
@@ -10289,8 +10289,8 @@ export class ExtensionRegistry {
 - [ ] **Step 4: Run the graph tests, the whole TS suite, and the type check**
 
 Run: `pnpm test graph && pnpm test && pnpm typecheck`
-Expected: five graph files pass (3 + 6 + 1 + 2 + 4 cases), the full `pnpm test` matches the Task 0
-baseline plus those 16 cases with no new skips, and the type check matches the baseline.
+Expected: five graph files pass (4 + 7 + 1 + 2 + 4 cases), the full `pnpm test` matches the Task 0
+baseline plus those 18 cases with no new skips, and the type check matches the baseline.
 
 - [ ] **Step 5: Commit**
 
