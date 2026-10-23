@@ -96,7 +96,7 @@ the behaviour is a control-plane app selected by the controller settings.
 
 - Code: `src/host/launchpad/` (`LaunchpadHost`, `LaunchpadLink`, `LaunchpadScanner`, `RtMidiPort`),
   with the TS side in `src/launchpad/`.
-- **Prove a change:** `retroplug-launchpad-test` (one of the eight `pnpm test:plugin` binaries),
+- **Prove a change:** `retroplug-launchpad-test` (one of the nine `pnpm test:plugin` binaries),
   `pnpm test:native lsdj-launchpad`, `pnpm test launchpad`, and `tools/run-launchpad-loopback.sh`
   for the port seam.
 - Deeper: [docs/launchpad-plan.md](../docs/launchpad-plan.md).
@@ -150,3 +150,22 @@ build. Distribution is the standing objection to it replacing the CLI.
 
 - Code: `packages/native/node/`.
 - **Prove a change:** `pnpm test:node`.
+
+## The node graph (Phase A)
+
+### `graph/` - the node-graph engine's foundations
+
+The contracts and engine the modular rewrite builds on, ahead of the engine moving onto them: the C ABI
+every node implements (`graph/rp_node.h`, CLAP-style, host-supplied memory), the no-heap executor, the
+C++ planner and `GraphHost` (one command ring, one release ring, state kept across plan swaps), the C++
+authoring layer (`graph/node.hpp`: a plain struct becomes a node through reflect-cpp), the `rp.core`
+package (`+`, merge, join, split, downmix, relabel, delay, constant, buffer player and recorder), and the
+TS `defineNode` / `defineExtension` contract, held byte for byte to the C++ descriptors by shared golden
+files. It is built and tested but **not wired into the engine**: nothing in the shipping build calls it
+yet. That is Phase B of [docs/modular-graph-design.md](../docs/modular-graph-design.md).
+
+- Code: `packages/native/src/graph/` (C++), `packages/retroplug/src/graph/` (TS).
+- **Prove a change:** `pnpm test:plugin graph` (the `retroplug-graph-test` binary), `pnpm test graph`,
+  and the ThreadSanitizer build of `retroplug-graph-test` (`build-tsan/`, as in Task 9 of
+  [docs/modular-graph-phase-a-plan.md](../docs/modular-graph-phase-a-plan.md)).
+- Deeper: [docs/modular-graph-design.md](../docs/modular-graph-design.md).

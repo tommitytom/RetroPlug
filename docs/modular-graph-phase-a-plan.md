@@ -10957,12 +10957,17 @@ and add one line under the Phase A heading in section 8: `Built: see docs/modula
 - [ ] **Step 3: Check for emdashes, then commit**
 
 ```bash
-grep -c $'\u2014' spec/13-subsystems.md docs/modular-graph-design.md docs/modular-graph-phase-a-plan.md
+grep -c $'\u2014' docs/modular-graph-design.md docs/modular-graph-phase-a-plan.md
+git diff spec/13-subsystems.md | grep '^+' | grep -c $'\u2014'
 git add spec/13-subsystems.md docs/modular-graph-design.md
 git commit -m "docs(graph): Phase A is built"
 ```
 
-Expected from the grep: `0` for each file.
+Expected from both greps: `0`. (`spec/13-subsystems.md`'s existing headings use the character; only the
+lines this task adds are checked, and the existing ones are left alone.)
+
+The same commit also brings two counts in `spec/13-subsystems.md` up to date ("one of the eight
+`pnpm test:plugin` binaries" becomes "nine", stale since Task 10).
 
 ---
 

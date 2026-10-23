@@ -1,6 +1,6 @@
 # Design: the modular node-graph engine
 
-**Date:** 2026-10-23 · **Branch:** `feature/modularize` · **Status:** design agreed, not yet built.
+**Date:** 2026-10-23 · **Branch:** `feature/modularize` · **Status:** Phase A built (`packages/native/src/graph/`, `packages/retroplug/src/graph/`); Phases B to E not yet built.
 
 RetroPlug's long-term direction is a modular system in the spirit of Reaktor: emulated consoles (and
 the real hardware they can drive) appear as nodes in a graph alongside DSP effects and routing nodes.
@@ -937,7 +937,9 @@ Five phases; each lands working and verified before the next starts.
 
 ### Phase A: foundations (no behaviour change)
 
-- `rp_node.h`, `retroplug-graph-exec`, `retroplug-graph`, `rp/node.hpp`; reflect-cpp 0.26 (dpf.js /
+Built: see docs/modular-graph-phase-a-plan.md.
+
+- `rp_node.h`, `retroplug-graph-exec`, `retroplug-graph`, `graph/node.hpp`; reflect-cpp 0.26 (dpf.js /
   rpcpp bump).
 - The planner, executor and plan swap, exercised on toy nodes: `+`, `join`, `split`, `downmix`,
   `relabel`, `delay`, `buffer-player`, `buffer-recorder`, `merge`.
