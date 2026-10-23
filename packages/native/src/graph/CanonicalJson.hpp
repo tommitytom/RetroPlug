@@ -31,6 +31,10 @@ rfl::Result<rfl::Generic> parseJson(std::string_view json);
 // counting as a change, and to fold a generated JSON Schema into a descriptor.
 rfl::Result<std::string> canonicalizeJson(std::string_view json);
 
+// A string as a JSON string literal, quoted and escaped as JSON.stringify writes it. Error messages quote
+// ids with it, so an id carrying a control character (which is why it was refused) prints intact.
+std::string jsonString(std::string_view s);
+
 // JavaScript's spelling of a number, as JSON.stringify writes it: Number.prototype.toString for a finite
 // double, "null" for NaN or infinity.
 std::string jsNumber(double value);

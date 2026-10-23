@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 
+#include "graph/CanonicalJson.hpp"
 #include "graph/Descriptor.hpp"
 
 namespace rp::graph {
@@ -71,7 +72,7 @@ ResourceTable::Id ResourceTable::createAudioBuffer(std::uint32_t channels, std::
 
 ResourceTable::Id ResourceTable::createBytes(std::string type, std::vector<std::uint8_t> bytes, std::string* error) {
     if (type.empty()) return refused(error, "a resource needs a type");
-    if (!isPlainId(type)) return refused(error, "resource type \"" + type + "\" must not contain whitespace or control characters");
+    if (!isPlainId(type)) return refused(error, "resource type " + jsonString(type) + " must not contain whitespace or control characters");
     if (type == "audio-buffer") return refused(error, "an \"audio-buffer\" is made with createAudioBuffer, not from bytes");
     auto e = std::make_unique<Entry>();
     e->type = std::move(type);

@@ -14,7 +14,7 @@ struct PackageManifest {
     std::string id;
 };
 
-std::string q(std::string_view s) { return "\"" + std::string(s) + "\""; }
+std::string q(std::string_view s) { return jsonString(s); }
 
 // The manifest's id, or why it has none. Through parseJson, so a repeated key reads as JSON.parse reads it.
 rfl::Result<std::string> packageId(const rp_package* p) {

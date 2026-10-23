@@ -76,13 +76,16 @@ TEST_CASE("a package registers every node type it lists", "[graph][registry]") {
     CHECK(reg.find("rp.nope") == nullptr);
 
     // Entries never move: one held across enough later registrations to regrow any contiguous store.
+    // (The registry keeps pointers to the types, so they stay alive while it is used, as a package's do.)
     std::vector<std::string> ids;
+    std::array<rp_node_type, kNumbered.size()> types{};
     for (std::size_t i = 0; i < kNumbered.size(); ++i) ids.push_back("rp.test.n" + std::to_string(i));
     for (std::size_t i = 0; i < kNumbered.size(); ++i) {
-        const rp_node_type t = typeWith(ids[i].c_str(), kNumbered[i]);
+        types[i] = typeWith(ids[i].c_str(), kNumbered[i]);
         const std::string manifest = R"({"id":"p)" + std::to_string(i) + R"("})";
-        REQUIRE(refusal(reg, {&t}, manifest.c_str()) == "registered");
+        REQUIRE(refusal(reg, {&types[i]}, manifest.c_str()) == "registered");
     }
+    CHECK(std::string(reg.find("rp.test.n3")->type->id) == "rp.test.n3");
     CHECK(reg.find("rp.test.source") == e);
     CHECK(e->descriptor.id == "rp.test.source");
     CHECK(reg.size() == 7 + kNumbered.size());
@@ -231,7 +234,8 @@ TEST_CASE("resources are refused when their payload would not match their type",
     CHECK(t.createBytes("my type", {}, &error) == 0);
     CHECK(t.createBytes(std::string("audio-buffer\0", 13), {1, 2, 3}, &error) == 0);  // reads as "audio-buffer" in C
     CHECK(error.find("control characters") != std::string::npos);
-    CHECK(t.createBytes("audio\x01buffer", {}, &error) == 0);
+    CHECK(t.createBytes("audio\x01" "buffer", {}, &error) == 0);
+    CHECK(error.find(R"("audio\u0001buffer")") != std::string::npos);  // quoted escaped, so it prints intact
     CHECK(t.createAudioBuffer(0, 64, 48000.0, &error) == 0);
     CHECK(t.createAudioBuffer(2, 0, 48000.0, &error) == 0);
     CHECK(t.createAudioBuffer(2, 64, 0.0, &error) == 0);

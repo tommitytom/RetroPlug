@@ -221,6 +221,12 @@ std::string jsNumber(double value) {
     return out;
 }
 
+std::string jsonString(std::string_view s) {
+    std::string out;
+    appendString(out, s);
+    return out;
+}
+
 std::string canonicalJson(const rfl::Generic& value) {
     std::string out;
     append(out, value);

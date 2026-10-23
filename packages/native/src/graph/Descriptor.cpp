@@ -114,7 +114,7 @@ const rfl::Generic* field(const Object& o, std::string_view key) {
     return nullptr;
 }
 
-std::string q(std::string_view s) { return "\"" + std::string(s) + "\""; }
+std::string q(std::string_view s) { return jsonString(s); }
 
 rfl::Result<std::optional<std::string>> optString(const Object& o, std::string_view key, const std::string& where) {
     const auto* v = field(o, key);
