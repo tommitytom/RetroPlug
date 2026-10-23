@@ -802,6 +802,9 @@ typedef struct rp_port_view {
         rp_resource**     resource; /* the slot holding the current handle (may hold null) */
     } u;
 } rp_port_view;
+/* A resource OUTPUT slot outlives plans, so a node rewrites each of its resource outputs every block, with
+ * a handle this block's plan holds (one bound to the node, or a resource it was handed) or null. A handle
+ * left over from an earlier block may belong to a plan that has since been freed. */
 
 typedef struct rp_process {
     uint32_t                 frames;
@@ -5619,21 +5622,25 @@ struct Reader {
     }
 };
 
-// Refuses to activate beyond `limit` frames, or (once) at all after its first activation.
+// Refuses to activate beyond `limit` frames, at all after its first activation (`once`), or at fewer frames
+// than it last had (`noShrink`). Keeps the block size it was last activated with.
 struct PickySettings {
     std::uint32_t limit = 0;
     bool          once = false;
+    bool          noShrink = false;
 };
 
 struct Picky {
     static constexpr const char* id = "rp.test.picky";
     using Settings = PickySettings;
     PickySettings s;
-    std::uint32_t activations = 0, processed = 0;
+    std::uint32_t activations = 0, processed = 0, frames = 0;
     void on_settings(const Settings& st) noexcept { s = st; }
     bool activate(double, std::uint32_t maxFrames) {
-        if ((s.once && activations > 0) || (s.limit && maxFrames > s.limit)) return false;
+        if ((s.once && activations > 0) || (s.limit && maxFrames > s.limit) || (s.noShrink && maxFrames < frames))
+            return false;
         ++activations;
+        frames = maxFrames;
         return true;
     }
     void process(const rp::Block&) noexcept { ++processed; }
@@ -6012,6 +6019,30 @@ TEST_CASE("a node that will not re-activate leaves the running plan safe", "[gra
     CHECK(rig.node<Source>("src").frames == 128);
 }
 
+TEST_CASE("instances switched before a refusal go back to the old size", "[graph][exec][swap]") {
+    ExecRig rig;  // maxFrames 64; live instances re-activate in id order, so "a" switches before "z" refuses
+    REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.picky"},
+                                  {"id":"z","type":"rp.test.picky","settings":{"limit":128}}],"wires":[]})").ok);
+    CHECK_FALSE(rig.host->reactivate(48000.0, 256));
+    CHECK(rig.node<Picky>("a").frames == 64);
+    CHECK(rig.node<Picky>("a").activations == 3);  // 64, then 256, then back to 64
+    CHECK_FALSE(rig.host->isFaulted("a"));
+    CHECK_FALSE(rig.host->isFaulted("z"));
+}
+
+TEST_CASE("a switched instance that will not go back is bypassed", "[graph][exec][swap]") {
+    ExecRig rig;
+    REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.picky","settings":{"noShrink":true}},
+                                  {"id":"z","type":"rp.test.picky","settings":{"limit":128}}],"wires":[]})").ok);
+    CHECK_FALSE(rig.host->reactivate(48000.0, 256));
+    CHECK(rig.host->isFaulted("a"));  // stuck at 256 frames under a plan built for 64
+    CHECK_FALSE(rig.host->isFaulted("z"));
+    CHECK(rig.host->faultCount() == 1);
+    rig.run();
+    CHECK(rig.node<Picky>("a").processed == 0);
+    CHECK(rig.node<Picky>("z").processed == 1);
+}
+
 TEST_CASE("a node that will not come back at all is bypassed", "[graph][exec][swap]") {
     ExecRig rig;
     REQUIRE(rig.set(R"({"nodes":[{"id":"p","type":"rp.test.picky","settings":{"once":true}},
@@ -6363,7 +6394,6 @@ constexpr int kEndOfBlock = std::numeric_limits<int>::max();
 // Document text quoted for a message: escaped, so whatever it holds prints intact.
 std::string q(std::string_view s) { return jsonString(s); }
 
-std::string reason(const rp_error& err, const char* fallback) { return errorText(err, fallback); }
 
 struct NodePlan {
     const NodeDoc*             doc = nullptr;
@@ -6471,7 +6501,7 @@ private:
         rp_error err{};
         rp_memory_req req{};
         if (!p.entry->type->query_memory(&s, &req, &err)) {
-            error(p.doc->id, "", "settings-invalid", reason(err, "the node refused its settings"));
+            error(p.doc->id, "", "settings-invalid", errorText(err, "the node refused its settings"));
             return nullptr;
         }
         if (req.align & (req.align - 1)) {  // aligned operator new requires a power of two
@@ -6492,7 +6522,7 @@ private:
         }
         inst->node = p.entry->type->create(in_.host, inst->memory, &s, &err);
         if (!inst->node) {
-            error(p.doc->id, "", "create-failed", reason(err, "the node could not be created"));
+            error(p.doc->id, "", "create-failed", errorText(err, "the node could not be created"));
             return nullptr;  // ~Instance frees the memory (node is null, so nothing to destroy)
         }
         inst->settings = p.settings;
@@ -6513,7 +6543,7 @@ private:
                 port.kind == PortKind::Resource ? std::make_unique<rp_resource*>(nullptr) : nullptr);
         }
         if (!inst->node->vt->activate(inst->node, in_.sampleRate, in_.maxFrames, &err)) {
-            error(p.doc->id, "", "activate-failed", reason(err, "the node could not be activated"));
+            error(p.doc->id, "", "activate-failed", errorText(err, "the node could not be activated"));
             return nullptr;
         }
         inst->active = true;
@@ -6545,7 +6575,7 @@ private:
                         p.fresh = true;
                         break;
                     case RP_PREPARE_INVALID:
-                        error(p.doc->id, "", "settings-invalid", reason(err, "the node refused its settings"));
+                        error(p.doc->id, "", "settings-invalid", errorText(err, "the node refused its settings"));
                         break;
                     default:
                         p.prepared = nullptr;  // an unknown result promises nothing about it
@@ -7475,7 +7505,6 @@ private:
 #include <thread>
 
 #include "graph/CanonicalJson.hpp"
-
 #include "graph/Executor.hpp"
 #include "graph/Queue.hpp"
 
@@ -7875,7 +7904,7 @@ const rp_package* hostPackage() {
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (671 assertions in 89 test cases)`.
+Expected: `All tests passed (684 assertions in 91 test cases)`.
 
 - [ ] **Step 7: Commit**
 
@@ -7892,10 +7921,11 @@ ring and one release ring, flushes inline while quiescent, and never plans
 while a swap is in flight. rp.host.audio-out writes wired buses and
 silences the rest."
 
-(This task was executed as the original commit plus two review-fix commits, "fix(graph): the cycle
-report walks back; a failed create frees its memory" and "fix(graph): a bypassed writer drops its
-resource handle; reactivate cannot leave a plan unsafe". The second also touched Task 2's executor and
-the ABI comments. A fresh execution needs only the one commit above.)
+(This task was executed as the original commit plus three review-fix commits, "fix(graph): the cycle
+report walks back; a failed create frees its memory", "fix(graph): a bypassed writer drops its
+resource handle; reactivate cannot leave a plan unsafe" and "test(graph): reactivate puts switched
+instances back". The second and third also touched Task 2's executor and the ABI comments. A fresh
+execution needs only the one commit above.)
 ```
 
 ---
@@ -8686,7 +8716,7 @@ const rp_package* corePackage() {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (720 assertions in 102 test cases)`.
+Expected: `All tests passed (733 assertions in 104 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -8900,7 +8930,7 @@ Add both files to the test's `SOURCES` and `Threads::Threads` to its `LIBS`:
 - [ ] **Step 3: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (927 assertions in 104 test cases)`. (These pass immediately: the properties
+Expected: `All tests passed (940 assertions in 106 test cases)`. (These pass immediately: the properties
 were built in by Tasks 2 to 8. If NoAlloc fails, an earlier task let an allocation onto the block path;
 fix that, never the test.)
 
@@ -8914,7 +8944,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-graph-test
 ```
 
-Expected: `All tests passed (927 assertions in 104 test cases)` and no ThreadSanitizer report. (Same
+Expected: `All tests passed (940 assertions in 106 test cases)` and no ThreadSanitizer report. (Same
 configure as `tools/run-sanitizer.sh thread`, which shares `build-tsan/`.)
 
 - [ ] **Step 5: Commit**

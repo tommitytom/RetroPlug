@@ -941,8 +941,9 @@ Five phases; each lands working and verified before the next starts.
 - Settled in Phase A, owed by the host that adopts it: call `GraphHost::reclaim()` from an idle tick (a
   removed node and its resource pins otherwise linger until the next `setGraph`); expect `setGraph` to
   block the control thread up to its adoption timeout while the audio thread is stalled; refuse a second
-  `rp.host.audio-out` (Phase A lets the last one win); and give host nodes their buffers through
-  `rp_host.get_interface` rather than the `ctx` cast Phase A's `rp.host.audio-out` uses.
+  `rp.host.audio-out` (Phase A lets the last one win); give host nodes their buffers through
+  `rp_host.get_interface` rather than the `ctx` cast Phase A's `rp.host.audio-out` uses; and read the
+  host's inputs before `processBlock` silences its outputs, since a DAW often hands both as one buffer.
 
 ### Phase C: nodes own their knowledge
 
