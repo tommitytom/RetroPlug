@@ -1693,6 +1693,21 @@ TEST_CASE("parseJson never wraps an integer", "[graph][json]") {
     CHECK_FALSE(parseJson("1e400"));
 }
 
+TEST_CASE("parseJson keeps a repeated key's last value, and refuses runaway nesting", "[graph][json]") {
+    struct Doc {
+        std::string s;
+    };
+    const auto doc = parseJson(R"({"s":"first","s":"last"})").and_then([](const rfl::Generic& g) {
+        return rfl::from_generic<Doc>(g);
+    });
+    REQUIRE(doc);
+    CHECK(doc->s == "last");  // what canonicalJson writes for the same text, and what JSON.parse keeps
+    CHECK(parseJson(std::string(512, '[') + std::string(512, ']')));
+    const auto deep = parseJson(std::string(600, '[') + std::string(600, ']'));
+    REQUIRE_FALSE(deep);
+    CHECK(std::string(deep.error().what()).find("512") != std::string::npos);
+}
+
 TEST_CASE("jsNumber spells numbers the way Number.prototype.toString does", "[graph][json]") {
     CHECK(jsNumber(-0.0) == "0");
     CHECK(jsNumber(-60.0) == "-60");
@@ -1775,10 +1790,12 @@ namespace rp::graph {
 std::string canonicalJson(const rfl::Generic& value);
 
 // Parse JSON text the way JavaScript's JSON.parse sees it: an integer that a double holds exactly stays an
-// int64, every other number becomes a double (never a wrapped or truncated integer), and duplicate keys
-// are kept for canonicalJson to resolve. Use this, not rfl::json::read<rfl::Generic>, for any JSON whose
-// numbers matter: reflect-cpp's reader turns an unsigned value above INT64_MAX into a negative int64.
-// Refuses what JSON.parse would turn into Infinity (1e400) and lone-surrogate escapes, with a reason.
+// int64, every other number becomes a double (never a wrapped or truncated integer), and a key that
+// appears twice keeps its last value. Use this, not rfl::json::read<rfl::Generic>, to read JSON as a
+// Generic: reflect-cpp's reader turns an unsigned value above INT64_MAX into a negative int64. (To read a
+// typed struct with integer fields, rfl::json::read<T> is still the right call: it range-checks them,
+// and rfl::from_generic<T> does not.) Refuses, with a reason, what JSON.parse would turn into Infinity
+// (1e400), lone-surrogate escapes, and nesting deeper than 512 levels.
 rfl::Result<rfl::Generic> parseJson(std::string_view json);
 
 // parseJson, then re-spell canonically. Used to compare settings without key order or number spelling
@@ -1904,44 +1921,69 @@ void append(std::string& out, const rfl::Generic& value) {
 }
 
 constexpr std::int64_t kMaxExactInteger = 9007199254740992;  // 2^53: every integer up to here is exact in a double
+constexpr int          kMaxDepth = 512;  // deeper is refused rather than recursed into, so a small host thread survives
 
-rfl::Generic fromYyjson(yyjson_val* v) {
+// False only when the document nests deeper than kMaxDepth.
+bool fromYyjson(yyjson_val* v, int depth, rfl::Generic& out) {
+    if (depth > kMaxDepth) return false;
     switch (yyjson_get_type(v)) {
         case YYJSON_TYPE_BOOL:
-            return rfl::Generic(yyjson_get_bool(v));
+            out = rfl::Generic(yyjson_get_bool(v));
+            return true;
         case YYJSON_TYPE_NUM: {
             // An integer stays an integer only while a double holds it exactly; beyond that it is the
             // nearest double, as JSON.parse would make it. Never a wrapped uint64 or a truncated value.
             if (yyjson_is_sint(v)) {
                 const std::int64_t i = yyjson_get_sint(v);
-                if (i >= -kMaxExactInteger && i <= kMaxExactInteger) return rfl::Generic(i);
+                if (i >= -kMaxExactInteger && i <= kMaxExactInteger) {
+                    out = rfl::Generic(i);
+                    return true;
+                }
             } else if (yyjson_is_uint(v)) {
                 const std::uint64_t u = yyjson_get_uint(v);
-                if (u <= static_cast<std::uint64_t>(kMaxExactInteger)) return rfl::Generic(static_cast<std::int64_t>(u));
+                if (u <= static_cast<std::uint64_t>(kMaxExactInteger)) {
+                    out = rfl::Generic(static_cast<std::int64_t>(u));
+                    return true;
+                }
             }
-            return rfl::Generic(yyjson_get_num(v));
+            out = rfl::Generic(yyjson_get_num(v));
+            return true;
         }
         case YYJSON_TYPE_STR:
-            return rfl::Generic(std::string(yyjson_get_str(v), yyjson_get_len(v)));
+            out = rfl::Generic(std::string(yyjson_get_str(v), yyjson_get_len(v)));
+            return true;
         case YYJSON_TYPE_ARR: {
             rfl::Generic::Array arr;
             yyjson_val* item;
             yyjson_arr_iter it = yyjson_arr_iter_with(v);
-            while ((item = yyjson_arr_iter_next(&it))) arr.push_back(fromYyjson(item));
-            return rfl::Generic(std::move(arr));
+            while ((item = yyjson_arr_iter_next(&it))) {
+                arr.emplace_back();
+                if (!fromYyjson(item, depth + 1, arr.back())) return false;
+            }
+            out = rfl::Generic(std::move(arr));
+            return true;
         }
         case YYJSON_TYPE_OBJ: {
             rfl::Generic::Object obj;
             yyjson_val* key;
             yyjson_obj_iter it = yyjson_obj_iter_with(v);
-            while ((key = yyjson_obj_iter_next(&it)))
-                obj.insert(std::make_pair(std::string(yyjson_get_str(key), yyjson_get_len(key)),
-                                          fromYyjson(yyjson_obj_iter_get_val(key))));
-            return rfl::Generic(std::move(obj));
+            while ((key = yyjson_obj_iter_next(&it))) {
+                rfl::Generic value;
+                if (!fromYyjson(yyjson_obj_iter_get_val(key), depth + 1, value)) return false;
+                std::string name(yyjson_get_str(key), yyjson_get_len(key));
+                // A repeated key keeps its last value, as JSON.parse does - so a struct read from this
+                // Generic sees the same value canonicalJson would write.
+                auto existing = std::find_if(obj.begin(), obj.end(), [&](const auto& p) { return p.first == name; });
+                if (existing != obj.end()) existing->second = std::move(value);
+                else obj.insert(std::make_pair(std::move(name), std::move(value)));
+            }
+            out = rfl::Generic(std::move(obj));
+            return true;
         }
         case YYJSON_TYPE_NULL:
         default:
-            return rfl::Generic(rfl::Generic::VariantType(std::nullopt));
+            out = rfl::Generic(rfl::Generic::VariantType(std::nullopt));
+            return true;
     }
 }
 
@@ -2003,8 +2045,10 @@ rfl::Result<rfl::Generic> parseJson(std::string_view json) {
     yyjson_read_err err{};
     yyjson_doc* doc = yyjson_read_opts(const_cast<char*>(json.data()), json.size(), 0, nullptr, &err);
     if (!doc) return rfl::Unexpected<rfl::Error>(rfl::Error(std::string("not JSON: ") + err.msg));
-    rfl::Generic g = fromYyjson(yyjson_doc_get_root(doc));
+    rfl::Generic g;
+    const bool ok = fromYyjson(yyjson_doc_get_root(doc), 0, g);
     yyjson_doc_free(doc);
+    if (!ok) return rfl::Unexpected<rfl::Error>(rfl::Error("JSON nests deeper than " + std::to_string(kMaxDepth) + " levels"));
     return g;
 }
 
@@ -2018,7 +2062,7 @@ rfl::Result<std::string> canonicalizeJson(std::string_view json) {
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (158 assertions in 17 test cases)`.
+Expected: `All tests passed (163 assertions in 18 test cases)`.
 
 - [ ] **Step 7: Commit**
 
@@ -2031,8 +2075,9 @@ numbers spelled exactly as JavaScript spells them, and a parseJson that
 reads numbers as JSON.parse does (never a wrapped uint64). Held to two
 golden tables that a committed JavaScript script generates."
 
-(This task was executed as the original commit plus a review-fix commit, "fix(graph): canonical JSON
-agrees with JavaScript on big integers, duplicate keys and key order". A fresh execution needs one.)
+(This task was executed as the original commit plus two review-fix commits, "fix(graph): canonical JSON
+agrees with JavaScript on big integers, duplicate keys and key order" and "fix(graph): parseJson keeps a
+repeated key's last value and caps nesting". A fresh execution needs one.)
 ```
 
 ---
@@ -2583,7 +2628,7 @@ std::string layoutForCount(std::uint32_t channels) {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (177 assertions in 20 test cases)`.
+Expected: `All tests passed (182 assertions in 21 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -3684,7 +3729,7 @@ T* peer_as(rp_node* n) {
 - [ ] **Step 7: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (204 assertions in 26 test cases)`.
+Expected: `All tests passed (209 assertions in 27 test cases)`.
 
 - [ ] **Step 8: Commit**
 
@@ -3910,7 +3955,8 @@ std::optional<std::uint32_t> parseResourceRef(std::string_view text);
 namespace rp::graph {
 
 // Through parseJson, not rfl::json::read: settings and param values are kept as Generic, and reflect-cpp's
-// reader would turn an unsigned number above INT64_MAX into a negative one on the way in.
+// reader would turn an unsigned number above INT64_MAX into a negative one on the way in. (GraphDocument
+// has no integer fields of its own, which matters: rfl::from_generic does not range-check them.)
 rfl::Result<GraphDocument> parseGraphDocument(std::string_view json) {
     return parseJson(json).and_then([](const rfl::Generic& g) { return rfl::from_generic<GraphDocument>(g); });
 }
@@ -4158,7 +4204,7 @@ std::size_t ResourceTable::liveCount() const { return entries_.size(); }
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (244 assertions in 31 test cases)`.
+Expected: `All tests passed (249 assertions in 32 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -6230,7 +6276,7 @@ const rp_package* hostPackage() {
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (351 assertions in 58 test cases)`.
+Expected: `All tests passed (356 assertions in 59 test cases)`.
 
 - [ ] **Step 7: Commit**
 
@@ -7019,7 +7065,7 @@ const rp_package* corePackage() {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (393 assertions in 70 test cases)`.
+Expected: `All tests passed (398 assertions in 71 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -7233,7 +7279,7 @@ Add both files to the test's `SOURCES` and `Threads::Threads` to its `LIBS`:
 - [ ] **Step 3: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (600 assertions in 72 test cases)`. (These pass immediately: the properties
+Expected: `All tests passed (605 assertions in 73 test cases)`. (These pass immediately: the properties
 were built in by Tasks 2 to 8. If NoAlloc fails, an earlier task let an allocation onto the block path;
 fix that, never the test.)
 
@@ -7247,7 +7293,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-graph-test
 ```
 
-Expected: `All tests passed (600 assertions in 72 test cases)` and no ThreadSanitizer report. (Same
+Expected: `All tests passed (605 assertions in 73 test cases)` and no ThreadSanitizer report. (Same
 configure as `tools/run-sanitizer.sh thread`, which shares `build-tsan/`.)
 
 - [ ] **Step 5: Commit**
