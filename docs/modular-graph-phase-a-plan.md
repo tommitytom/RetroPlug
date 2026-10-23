@@ -213,7 +213,9 @@ executor over nodes written directly against the C structs, with no authoring la
 // hand-built PlanView proves the block walk, coupled-group lockstep, feedback and fault bypass.
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <atomic>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -232,6 +234,7 @@ struct RawNode {
     int               blocks = 0;          // process() calls
     int               failAt = -1;         // process() faults on this call (0-based) and any later one
     int               stepFailAt = -1;     // step() faults once `produced` reaches this
+    bool              stepGarbage = false; // step() answers a value that is not a known result
     bool              wedged = false;      // step() never makes progress
     bool              emitThenFault = false;  // push an event and a control change, then fault
     std::string*      log = nullptr;
@@ -266,6 +269,7 @@ void rawPrepare(rp_node* n, const rp_process*) {
 rp_step_result rawStep(rp_node* n, std::uint32_t target) {
     RawNode* self = raw(n);
     if (self->stepFailAt >= 0 && self->produced >= static_cast<std::uint32_t>(self->stepFailAt)) return RP_STEP_FAULT;
+    if (self->stepGarbage) return 7u;
     if (self->wedged) return RP_STEP_BELOW;
     if (self->produced < target) {
         ++self->produced;
@@ -429,6 +433,19 @@ TEST_CASE("a member that faults through step is bypassed while its peer finishes
     CHECK_FALSE(b.faulted.load());
     CHECK(oa.samples[0] == 0.0f);
     CHECK(faults.load() == 1);
+}
+
+TEST_CASE("an unknown step result is treated as a fault, as an unknown process result is", "[graph][executor]") {
+    RawNode a{{&kVtable}}, b{{&kVtable}};
+    a.stepGarbage = true;
+    OneOutput oa, ob;
+    PlanStep steps[] = {stepFor(a, oa), stepFor(b, ob)};
+    makeGroup(steps, 2);
+    PlanView view;
+    view.steps = steps;
+    runBlock(view, 2, kTransport);
+    CHECK(a.faulted.load());
+    CHECK_FALSE(b.faulted.load());
 }
 
 TEST_CASE("a wedged member is faulted once its group passes the bound; a finished peer is not", "[graph][executor]") {
@@ -626,7 +643,13 @@ Expected: configure fails (`Cannot find source file: .../src/graph/Executor.cpp`
  * Threads: calls marked [control] run on the control thread and may allocate; calls marked [audio] run
  * on whichever thread drives the block and must not allocate, block, or throw. [control] and [audio]
  * calls on ONE instance may run at the same time, so a node shares no mutable state between them except
- * through the settings swap (prepare_settings / commit_settings).
+ * through the settings swap (prepare_settings / commit_settings). The exceptions are activate,
+ * deactivate and destroy: a host never runs them while an [audio] call on that instance is in flight.
+ *
+ * One process may hold several hosts, each with its own control thread (every background render runs
+ * its own engine). So the package- and type-level calls - the entry point, descriptor, query_memory,
+ * create, destroy - may run concurrently for different instances, and any lazy one-time setup a pack
+ * does there must be thread-safe (std::call_once, a function-local static).
  *
  * Every rp_node_vtable entry is required: a node with nothing to do supplies a no-op. get_interface may
  * return null for every id.
@@ -649,10 +672,12 @@ extern "C" {
 
 /* The symbol a downloaded pack exports (an rp_package_entry_fn), and the visibility it needs. */
 #define RP_PACKAGE_ENTRY_SYMBOL "rp_package_entry"
+#ifndef RP_EXPORT
 #if defined(_WIN32)
 #define RP_EXPORT __declspec(dllexport)
 #else
 #define RP_EXPORT __attribute__((visibility("default")))
+#endif
 #endif
 
 typedef struct rp_node rp_node;
@@ -675,7 +700,8 @@ typedef struct rp_settings {
 
 typedef struct rp_memory_req { size_t size; size_t align; } rp_memory_req;
 
-/* Services the host offers a node. alloc/free are for nodes that declare the heap capability. */
+/* Services the host offers a node. alloc/free are for nodes that declare the heap capability, and are
+ * null on a target with no heap (where such a node is never created). get_interface is never null. */
 struct rp_host {
     uint32_t abi_version;
     void*    ctx;
@@ -846,8 +872,10 @@ typedef struct rp_package {
 } rp_package;
 
 /* A downloaded pack exports this symbol; statically linked packages hand the same struct to the
- * generated registration list. */
+ * generated registration list. Declared here, inside the header's C linkage, so a C++ pack that defines
+ * it cannot forget extern "C". */
 typedef const rp_package* (*rp_package_entry_fn)(void);
+RP_EXPORT const rp_package* rp_package_entry(void);
 
 /* ---- optional interfaces ------------------------------------------------------------------------ */
 
@@ -859,12 +887,15 @@ typedef struct rp_step_interface {
     void (*prepare)(rp_node* node, const rp_process* block);
     /* Advance toward target_frames by a bounded amount (an instruction, a scanline). Return RP_STEP_DONE
      * once this node has produced target_frames. It may be called again after that, and must then do
-     * nothing and return RP_STEP_DONE. RP_STEP_FAULT bypasses the node as a faulting process() would. */
+     * nothing and return RP_STEP_DONE. RP_STEP_FAULT, or any value that is not BELOW or DONE, bypasses the
+     * node as a faulting process() would. */
     rp_step_result (*step)(rp_node* node, uint32_t target_frames);
     void (*finish)(rp_node* node, const rp_process* block);
 } rp_step_interface;
 
-/* "rp.link/1": told its peers whenever the coupled group it belongs to changes. [audio] */
+/* "rp.link/1": told its peers whenever the coupled group it belongs to changes. [audio] A peer may be
+ * bypassed later (it faulted), after which it is no longer stepped; a node must tolerate a peer that has
+ * stopped advancing rather than wait on it. */
 #define RP_LINK_INTERFACE "rp.link/1"
 typedef struct rp_link_interface {
     void (*set_peers)(rp_node* node, rp_node* const* peers, uint32_t peer_count);
@@ -1101,8 +1132,8 @@ void runGroup(const PlanView& plan, std::span<PlanStep> group, std::uint32_t fra
         for (auto& m : group) {
             if (isFaulted(m)) continue;
             const rp_step_result r = m.step->step(m.node, frames);
-            if (r == RP_STEP_FAULT) markFaulted(plan, m);
-            else if (r != RP_STEP_DONE) allDone = false;
+            if (r == RP_STEP_BELOW) allDone = false;
+            else if (r != RP_STEP_DONE) markFaulted(plan, m);  // RP_STEP_FAULT, or a value we do not know
         }
         if (allDone) break;
         if (pass + 1 >= maxPasses) {
@@ -1180,7 +1211,7 @@ void runBlock(const PlanView& plan, std::uint32_t frames, const rp_transport& tr
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake -B build && cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (46 assertions in 11 test cases)`.
+Expected: `All tests passed (48 assertions in 12 test cases)`.
 
 Also prove the header is C:
 
@@ -1204,8 +1235,9 @@ exceptions and no dependencies, so the same code can later run on the
 Pico. Tested over hand-written C-ABI nodes: lockstep coupled groups,
 feedback, fault bypass, fixed-capacity queues."
 
-(If you are applying the Task 2 review fixes on top of an earlier Task 2 commit, commit them separately
-as "fix(graph): instance-owned fault flags, step results, a host growth point".)
+(This task was executed in three commits: the original, then two rounds of review fixes - "fix(graph):
+instance-owned fault flags, step results, a host growth point" and "docs(graph): the ABI's threading
+and entry-point contract". A fresh execution needs only the one commit above.)
 ```
 
 ---
@@ -1665,7 +1697,7 @@ rfl::Result<std::string> canonicalizeJson(std::string_view json) {
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (92 assertions in 14 test cases)`.
+Expected: `All tests passed (94 assertions in 15 test cases)`.
 
 - [ ] **Step 7: Commit**
 
@@ -2228,7 +2260,7 @@ std::string layoutForCount(std::uint32_t channels) {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (111 assertions in 17 test cases)`.
+Expected: `All tests passed (113 assertions in 18 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -3329,7 +3361,7 @@ T* peer_as(rp_node* n) {
 - [ ] **Step 7: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (138 assertions in 23 test cases)`.
+Expected: `All tests passed (140 assertions in 24 test cases)`.
 
 - [ ] **Step 8: Commit**
 
@@ -3798,7 +3830,7 @@ std::size_t ResourceTable::liveCount() const { return entries_.size(); }
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (178 assertions in 28 test cases)`.
+Expected: `All tests passed (180 assertions in 29 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -3853,6 +3885,8 @@ inline and `run()` is the block driver. (Task 8 adds the core package to it.)
 
 namespace rp::graph::test {
 
+constexpr std::uint32_t kHostFrames = 1024;
+
 struct GraphRig {
     NodeRegistry               registry;
     ResourceTable              resources;
@@ -3865,7 +3899,7 @@ struct GraphRig {
         registry.addPackage(hostPackage());
         registry.addPackage(testPackage());
         host = std::make_unique<GraphHost>(registry, resources, config);
-        outs.assign(hostChannels, std::vector<float>(config.maxFrames, 0.0f));
+        outs.assign(hostChannels, std::vector<float>(kHostFrames, 0.0f));  // room for blocks after a reactivate
         for (auto& o : outs) outPointers.push_back(o.data());
     }
 
@@ -4178,6 +4212,32 @@ TEST_CASE("re-activation at a new rate preserves state", "[graph][exec][swap]") 
     CHECK(rig.node<Source>("src").frames == 192);
 }
 
+TEST_CASE("a block longer than the plan's buffers is refused, not overrun", "[graph][exec]") {
+    GraphRig rig;  // maxFrames 64
+    REQUIRE(rig.set(R"({"nodes":[{"id":"src","type":"rp.test.source"},{"id":"out","type":"rp.host.audio-out"}],
+                         "wires":[{"from":"src.out","to":"out.out.1-2"}]})").ok);
+    rig.run(256);
+    CHECK(rig.outs[0][0] == -99.0f);  // nothing ran
+    CHECK(rig.node<Source>("src").frames == 0);
+}
+
+TEST_CASE("re-activation at a larger block size re-sizes every buffer, feedback included", "[graph][exec][swap]") {
+    GraphRig rig;  // maxFrames 64
+    REQUIRE(rig.set(R"({"nodes":[{"id":"x","type":"rp.test.through"},{"id":"y","type":"rp.test.through"},
+                                  {"id":"out","type":"rp.host.audio-out"}],
+                         "wires":[{"from":"x.out","to":"y.in"},{"from":"y.out","to":"x.in","feedback":true},
+                                  {"from":"y.out","to":"out.out.1-2"}]})").ok);
+    rig.run(64);  // x reads 0 back, so y = 2
+    REQUIRE(rig.outs[0][63] == 2.0f);
+    REQUIRE(rig.host->reactivate(48000.0, 256));
+    rig.run(256);  // the 64 frames in flight carried over (2 -> 4); the new tail starts from silence (0 -> 2)
+    CHECK(rig.outs[0][0] == 4.0f);
+    CHECK(rig.outs[0][255] == 2.0f);
+    rig.run(256);
+    CHECK(rig.outs[0][0] == 6.0f);
+    CHECK(rig.outs[0][255] == 4.0f);
+}
+
 TEST_CASE("feedback data in flight survives a swap that keeps the wire", "[graph][exec][swap]") {
     GraphRig rig;
     auto doc = [](const std::string& extra) {
@@ -4286,6 +4346,7 @@ struct Instance {
 struct FeedbackFront {
     PortKind                     kind = PortKind::Audio;
     std::uint32_t                channels = 0;
+    std::uint32_t                frames = 0;  // audio: how many frames each channel holds
     std::vector<float>           samples;
     std::vector<float*>          pointers;
     std::unique_ptr<QueueStore>  queue;
@@ -4298,6 +4359,9 @@ constexpr std::uint32_t kStreamChanges = 64;
 constexpr std::uint32_t kMaxChannels = 64;
 
 struct PlanStorage {
+    // Every buffer in the plan is this many frames long; the block driver refuses a longer block.
+    std::uint32_t                               maxFrames = 0;
+
     // Ownership: every instance and feedback buffer the plan references stays alive until the plan does.
     std::vector<std::shared_ptr<Instance>>      instances;
     std::vector<std::shared_ptr<FeedbackFront>> feedbackFronts;
@@ -5072,16 +5136,25 @@ private:
         return raw;
     }
 
+    // The wire's front buffer. An existing one is reused when it still fits (same kind and channels, and
+    // for audio at least maxFrames long), which is what carries the block in flight through a swap. An
+    // audio front that has grown too short (the host's block size went up) is replaced by a longer one
+    // with the in-flight frames copied across, never trusted past its end.
     std::shared_ptr<FeedbackFront> front(const DataWire& w, std::uint32_t channelCount) {
         const auto it = in_.feedback->find(w.key);
-        if (it != in_.feedback->end() && it->second->kind == w.kind && it->second->channels == channelCount)
-            return it->second;
+        const FeedbackFront* old = it != in_.feedback->end() ? it->second.get() : nullptr;
+        const bool sameShape = old && old->kind == w.kind && old->channels == channelCount;
+        if (sameShape && (w.kind != PortKind::Audio || old->frames >= in_.maxFrames)) return it->second;
         auto f = std::make_shared<FeedbackFront>();
         f->kind = w.kind;
         f->channels = channelCount;
         if (w.kind == PortKind::Audio) {
+            f->frames = in_.maxFrames;
             f->samples.assign(static_cast<std::size_t>(channelCount) * in_.maxFrames, 0.0f);
             for (std::uint32_t c = 0; c < channelCount; ++c) f->pointers.push_back(f->samples.data() + std::size_t(c) * in_.maxFrames);
+            if (sameShape)
+                for (std::uint32_t c = 0; c < channelCount; ++c)
+                    std::copy_n(old->pointers[c], std::min(old->frames, in_.maxFrames), f->pointers[c]);
         } else if (w.kind == PortKind::Control) {
             f->stream = std::make_unique<StreamStore>(kStreamChanges, 0.0);
         } else {
@@ -5093,6 +5166,7 @@ private:
     void build() {
         auto s = std::make_unique<PlanStorage>();
         PlanStorage& st = *s;
+        st.maxFrames = in_.maxFrames;
         st.resources = in_.resources;
         st.silence = std::make_unique<float[]>(in_.maxFrames);
         st.scratch = std::make_unique<float[]>(in_.maxFrames);
@@ -5203,7 +5277,7 @@ private:
                 copy.backChannels = back.u.audio.channels;
                 copy.frontChannels = f->pointers.data();
                 copy.channels = ch;
-                copy.capacity = in_.maxFrames;
+                copy.capacity = f->frames;
             } else if (w.kind == PortKind::Control) {
                 copy.backControl = back.u.control;
                 copy.frontControl = &f->stream->queue;
@@ -5435,7 +5509,8 @@ public:
     bool audioThreadOwns() const { return audioOwns_.load(std::memory_order_acquire); }
     // Destroy plans the audio thread has handed back. Returns how many.
     std::size_t reclaim();
-    // Quiescent only: re-activate every instance at a new rate / block size, preserving state.
+    // Quiescent only: re-activate every instance at a new rate / block size, preserving state, then
+    // re-plan the current document so every buffer is sized for the new maximum.
     bool reactivate(double sampleRate, std::uint32_t maxFrames);
     rp_node*      node(std::string_view id) const;
     std::uint32_t faultCount() const { return faults_.load(std::memory_order_relaxed); }
@@ -5444,8 +5519,9 @@ public:
     std::size_t   instanceCount() const { return live_.size(); }
 
     // ---- audio thread (or the control thread while quiescent) ----------------------------------------
-    // Drain commands (adopting a new plan if one is waiting), then run one block of at most
-    // config().maxFrames frames. hostOutputs are what rp.host.audio-out writes into this block.
+    // Drain commands (adopting a new plan if one is waiting), then run one block. A block longer than the
+    // running plan's buffers is refused (nothing runs) rather than overrun them. hostOutputs are what
+    // rp.host.audio-out writes into this block.
     void processBlock(std::uint32_t frames, const rp_transport& transport, float* const* outputs = nullptr,
                       std::uint32_t outputCount = 0);
 
@@ -5480,6 +5556,7 @@ private:
     std::atomic<bool>                                     swapInFlight_{false};
     std::atomic<std::uint32_t>                            faults_{0};
     PlanStorage*                                          current_ = nullptr;  // audio side
+    GraphDocument                                         document_;           // control side: last published
     std::map<std::string, std::shared_ptr<Instance>>      live_;               // control side
     std::map<std::string, std::shared_ptr<FeedbackFront>> feedback_;           // control side
     float* const*                                         hostOutputs_ = nullptr;
@@ -5614,6 +5691,7 @@ SetGraphResult GraphHost::setGraph(const GraphDocument& document) {
         return result;
     }
     // Published: the plan will be adopted, so the control-side records can move on.
+    document_ = document;
     live_ = std::move(outcome.instances);
     feedback_ = std::move(outcome.feedback);
     for (auto& f : outcome.onPublished) f();
@@ -5682,7 +5760,8 @@ bool GraphHost::reactivate(double sampleRate, std::uint32_t maxFrames) {
         inst->active = inst->node->vt->activate(inst->node, sampleRate, maxFrames, &err);
         if (!inst->active) return false;
     }
-    return true;
+    // Same document, same instances (so no state is lost), but every buffer re-sized for maxFrames.
+    return live_.empty() || setGraph(GraphDocument(document_)).ok;
 }
 
 bool GraphHost::isFaulted(std::string_view id) const {
@@ -5700,9 +5779,9 @@ void GraphHost::processBlock(std::uint32_t frames, const rp_transport& transport
     drain();
     hostOutputs_ = outputs;
     hostOutputCount_ = outputCount;
-    // Every buffer in a plan is maxFrames long, and nodes were activated with that maximum; a host that
-    // delivers a longer block must split it.
-    if (current_ && frames > 0 && frames <= config_.maxFrames) runBlock(current_->view, frames, transport);
+    // Every buffer in a plan is the plan's maxFrames long, and nodes were activated with that maximum; a
+    // host that delivers a longer block must split it, or reactivate first.
+    if (current_ && frames > 0 && frames <= current_->maxFrames) runBlock(current_->view, frames, transport);
     hostOutputs_ = nullptr;
     hostOutputCount_ = 0;
 }
@@ -5817,7 +5896,7 @@ const rp_package* hostPackage() {
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (275 assertions in 53 test cases)`.
+Expected: `All tests passed (287 assertions in 56 test cases)`.
 
 - [ ] **Step 7: Commit**
 
@@ -6606,7 +6685,7 @@ const rp_package* corePackage() {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (317 assertions in 65 test cases)`.
+Expected: `All tests passed (329 assertions in 68 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -6820,7 +6899,7 @@ Add both files to the test's `SOURCES` and `Threads::Threads` to its `LIBS`:
 - [ ] **Step 3: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (524 assertions in 67 test cases)`. (These pass immediately: the properties
+Expected: `All tests passed (536 assertions in 70 test cases)`. (These pass immediately: the properties
 were built in by Tasks 2 to 8. If NoAlloc fails, an earlier task let an allocation onto the block path;
 fix that, never the test.)
 
@@ -6834,7 +6913,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-graph-test
 ```
 
-Expected: `All tests passed (524 assertions in 67 test cases)` and no ThreadSanitizer report. (Same
+Expected: `All tests passed (536 assertions in 70 test cases)` and no ThreadSanitizer report. (Same
 configure as `tools/run-sanitizer.sh thread`, which shares `build-tsan/`.)
 
 - [ ] **Step 5: Commit**

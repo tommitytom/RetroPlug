@@ -328,7 +328,8 @@ typedef struct rp_package {
     const char* manifest_json;
     uint32_t node_type_count;
     const struct rp_node_type* const* node_types;
-} rp_package;  // no init / deinit in ABI v1: a pack needing one-time setup does it in its first create
+} rp_package;  // no init / deinit in ABI v1: a pack needing one-time setup does it in its first create,
+               // thread-safely (std::call_once): several hosts in one process may create concurrently
 
 struct rp_host {   // host services; grows through get_interface, never by reshaping this table
     uint32_t abi_version;
@@ -938,7 +939,8 @@ Five phases; each lands working and verified before the next starts.
   coupled member's `step`, or the group pass bound); the executor then bypasses that node (audio silenced,
   queues emptied, control changes dropped) and bumps a fault counter TS can read. The fault flag belongs
   to the instance, so an unrelated graph edit does not revive a wedged node, and `GraphHost::isFaulted`
-  names which node it was.
+  names which node it was. Only a fresh instance clears a fault: a rebuild, or removing the node and adding
+  it back (with a state seed, if its state should carry over), which is what a "restart node" action does.
 - **Queue overflow** drops and bumps a counter; nothing allocates.
 - **Downloaded native packs** are checked at load for ABI version and a valid descriptor. There is no
   sandbox: a crashing native node takes the host down. Trust prompts and signing belong to the downloads
