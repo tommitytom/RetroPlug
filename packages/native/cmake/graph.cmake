@@ -14,3 +14,14 @@ set_target_properties(retroplug-graph-exec PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     POSITION_INDEPENDENT_CODE ON)   # will be linked into the plugin .so
+
+# retroplug-graph: everything the control thread needs to turn a graph document into a plan - canonical
+# JSON, descriptors, the registry, resources, the planner, GraphHost - plus the host-implemented nodes and
+# the rp.core package. Links reflect-cpp (settings parsing, JSON Schema).
+add_library(retroplug-graph STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/CanonicalJson.cpp)
+target_link_libraries(retroplug-graph PUBLIC retroplug-graph-exec reflectcpp::reflectcpp)
+set_target_properties(retroplug-graph PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON)

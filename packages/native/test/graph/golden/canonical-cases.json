@@ -1,0 +1,151 @@
+[
+  {
+    "value": 0,
+    "text": "0"
+  },
+  {
+    "value": 1,
+    "text": "1"
+  },
+  {
+    "value": -1,
+    "text": "-1"
+  },
+  {
+    "value": 0.5,
+    "text": "0.5"
+  },
+  {
+    "value": -60,
+    "text": "-60"
+  },
+  {
+    "value": 12,
+    "text": "12"
+  },
+  {
+    "value": 100,
+    "text": "100"
+  },
+  {
+    "value": 255,
+    "text": "255"
+  },
+  {
+    "value": 0.1,
+    "text": "0.1"
+  },
+  {
+    "value": 0.3333333333333333,
+    "text": "0.3333333333333333"
+  },
+  {
+    "value": 3.14159,
+    "text": "3.14159"
+  },
+  {
+    "value": 1e+21,
+    "text": "1e+21"
+  },
+  {
+    "value": 1e-7,
+    "text": "1e-7"
+  },
+  {
+    "value": 0.000001,
+    "text": "0.000001"
+  },
+  {
+    "value": 0.000001,
+    "text": "0.000001"
+  },
+  {
+    "value": 1.5e-10,
+    "text": "1.5e-10"
+  },
+  {
+    "value": 2.5e+25,
+    "text": "2.5e+25"
+  },
+  {
+    "value": 123456789012345680000,
+    "text": "123456789012345680000"
+  },
+  {
+    "value": 1e+300,
+    "text": "1e+300"
+  },
+  {
+    "value": -1e-300,
+    "text": "-1e-300"
+  },
+  {
+    "value": 48000,
+    "text": "48000"
+  },
+  {
+    "value": 0.70710678,
+    "text": "0.70710678"
+  },
+  {
+    "value": 44100.5,
+    "text": "44100.5"
+  },
+  {
+    "value": "plain",
+    "text": "\"plain\""
+  },
+  {
+    "value": "quote\"inside",
+    "text": "\"quote\\\"inside\""
+  },
+  {
+    "value": "back\\slash",
+    "text": "\"back\\\\slash\""
+  },
+  {
+    "value": "tab\there",
+    "text": "\"tab\\there\""
+  },
+  {
+    "value": "new\nline",
+    "text": "\"new\\nline\""
+  },
+  {
+    "value": "bell\u0007",
+    "text": "\"bell\\u0007\""
+  },
+  {
+    "value": "unicode é中",
+    "text": "\"unicode é中\""
+  },
+  {
+    "value": "slash/ok",
+    "text": "\"slash/ok\""
+  },
+  {
+    "value": {
+      "b": 1,
+      "a": [
+        2,
+        {
+          "d": 1,
+          "c": 2
+        }
+      ]
+    },
+    "text": "{\"a\":[2,{\"c\":2,\"d\":1}],\"b\":1}"
+  },
+  {
+    "value": {
+      "z": true,
+      "a": null,
+      "m": "x"
+    },
+    "text": "{\"a\":null,\"m\":\"x\",\"z\":true}"
+  },
+  {
+    "value": [],
+    "text": "[]"
+  }
+]
