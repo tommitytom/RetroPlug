@@ -841,8 +841,10 @@ enum {
 };
 
 typedef struct rp_node_vtable {
-    /* [control] Resolved layout JSON (ports, params, exclusive groups) for the current settings. The
-     * string is owned by the node and stays valid until the next layout call or destroy. */
+    /* [control] Resolved layout JSON (ports, params, exclusive groups) for the settings the instance was
+     * created with. An instance's layout is fixed for its life: the host reads it once, so a settings
+     * change that would alter it must answer RP_PREPARE_REBUILD, never SWAP. The string is owned by the
+     * node and stays valid until destroy. */
     const char* (*layout)(rp_node* node);
     /* [control] Must preserve state: a sample-rate or block-size change re-activates, never resets. */
     bool (*activate)(rp_node* node, double sample_rate, uint32_t max_frames, rp_error* err);
@@ -2247,6 +2249,13 @@ TEST_CASE("resource access and exclusive groups are exact", "[graph][descriptor]
     CHECK(layoutReason(R"({"ports":[{"id":"r","dir":"in","kind":"resource","resourceType":"x","access":"wirte"}]})").find("can only be") != std::string::npos);
     CHECK(layoutReason(R"({"ports":[{"id":"e","dir":"in","kind":"events","resourceType":"x"}]})").find("only resource ports") != std::string::npos);
     CHECK(layoutReason(R"({"ports":[{"id":"r","dir":"in","kind":"resource","resourceType":"audio buffer"}]})").find("whitespace") != std::string::npos);
+    // a misspelt field is refused, not ignored: "acess" would otherwise declare a reader where a writer was meant
+    CHECK(layoutReason(R"({"ports":[{"id":"r","dir":"in","kind":"resource","resourceType":"x","acess":"write"}]})") ==
+          "port #0: unknown field \"acess\"");
+    CHECK(layoutReason(R"({"params":[{"id":"g","type":"float","dfault":1}]})").find("unknown field") != std::string::npos);
+    CHECK(layoutReason(R"({"ports":[{"id":"a","dir":"in","kind":"audio","channels":{"any":true,"cout":2}}]})").find("unknown field") != std::string::npos);
+    CHECK(layoutReason(R"({"exclusve":[["a"]]})").find("unknown field") != std::string::npos);
+    CHECK(descriptorReason(R"({"id":"x","catgory":"y"})").find("unknown field") != std::string::npos);
     CHECK(layoutReason(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[["nope"]]})").find("exclusive member") != std::string::npos);
     CHECK(layoutReason(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[[]]})").find("non-empty") != std::string::npos);
     CHECK(parseLayout(R"({"ports":[{"id":"o","dir":"out","kind":"events"}],"exclusive":[["o","pins.*"]]})"));
@@ -2388,9 +2397,11 @@ std::string layoutForCount(std::uint32_t channels);
 ```cpp
 #include "graph/Descriptor.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <charconv>
 #include <cmath>
+#include <initializer_list>
 #include <limits>
 #include <optional>
 #include <unordered_map>
@@ -2504,6 +2515,16 @@ const rfl::Generic* field(const Object& o, std::string_view key) {
 
 std::string q(std::string_view s) { return jsonString(s); }
 
+// A field this parser does not know is refused, not ignored: a misspelt "acess" would otherwise declare a
+// reader where a writer was meant, and "exclusve" would drop a group, both silently. (New fields come with
+// a new descriptor version; `requires` is the one open set, see parseDescriptor.)
+std::optional<std::string> unknownField(const Object& o, std::initializer_list<std::string_view> known,
+                                        const std::string& where) {
+    for (const auto& [k, v] : o)
+        if (std::find(known.begin(), known.end(), k) == known.end()) return where + ": unknown field " + q(k);
+    return std::nullopt;
+}
+
 rfl::Result<std::optional<std::string>> optString(const Object& o, std::string_view key, const std::string& where) {
     const auto* v = field(o, key);
     if (!v) return std::optional<std::string>();
@@ -2546,6 +2567,7 @@ rfl::Result<int> enumIndex(const std::string& s, const char* const (&names)[N], 
 rfl::Result<ChannelSpec> parseChannels(const rfl::Generic& g, const std::string& where) {
     auto o = g.to_object();
     if (!o) return fail(where + ": \"channels\" must be an object");
+    if (auto bad = unknownField(*o, {"any", "match", "count", "layout"}, where + " channels")) return fail(*bad);
     const bool hasAny = field(*o, "any") != nullptr;
     const bool hasMatch = field(*o, "match") != nullptr;
     const bool hasCount = field(*o, "count") != nullptr;
@@ -2590,6 +2612,7 @@ rfl::Result<PortDesc> parsePort(const rfl::Generic& g, std::size_t index) {
     const std::string at = "port #" + std::to_string(index);
     auto o = g.to_object();
     if (!o) return fail(at + " must be an object");
+    if (auto bad = unknownField(*o, {"id", "dir", "kind", "channels", "resourceType", "access"}, at)) return fail(*bad);
     PortDesc p;
     auto id = reqString(*o, "id", at);
     if (!id) return fail(id.error().what());
@@ -2640,6 +2663,7 @@ rfl::Result<ParamDesc> parseParam(const rfl::Generic& g, std::size_t index) {
     const std::string at = "param #" + std::to_string(index);
     auto o = g.to_object();
     if (!o) return fail(at + " must be an object");
+    if (auto bad = unknownField(*o, {"id", "name", "type", "min", "max", "default", "values", "unit"}, at)) return fail(*bad);
     ParamDesc p;
     auto id = reqString(*o, "id", at);
     if (!id) return fail(id.error().what());
@@ -2817,6 +2841,7 @@ rfl::Result<Layout> parseLayout(std::string_view json) {
     if (!g) return fail(std::string("layout is not JSON: ") + g.error().what());
     auto o = g->to_object();
     if (!o) return fail("layout must be an object");
+    if (auto bad = unknownField(*o, {"ports", "params", "exclusive"}, "layout")) return fail(*bad);
     return parseLayoutObject(*o);
 }
 
@@ -2825,6 +2850,9 @@ rfl::Result<TypeDescriptor> parseDescriptor(std::string_view json) {
     if (!g) return fail(std::string("descriptor is not JSON: ") + g.error().what());
     auto o = g->to_object();
     if (!o) return fail("descriptor must be an object");
+    if (auto bad = unknownField(*o, {"id", "version", "name", "category", "requires", "ports", "params", "exclusive", "settings"},
+                                "descriptor"))
+        return fail(*bad);
     TypeDescriptor d;
     auto id = reqString(*o, "id", "descriptor");
     if (!id) return fail(id.error().what());
@@ -2919,7 +2947,7 @@ std::string layoutForCount(std::uint32_t channels) {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (230 assertions in 26 test cases)`.
+Expected: `All tests passed (235 assertions in 26 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -3193,6 +3221,11 @@ inline const rp_package* testPackage() {
 #include <stdexcept>
 #include <tuple>
 #include <utility>
+
+#include <rfl/DefaultVal.hpp>
+#include <rfl/Description.hpp>
+#include <rfl/Validator.hpp>
+#include <rfl/comparisons.hpp>
 
 #include "TestNodes.hpp"
 
@@ -3671,6 +3704,49 @@ TEST_CASE("param values never read undefined, whatever the wire carries", "[grap
     CHECK(paramReading<Mode>(q, -0.7).value() == SyncMode::Off);
     CHECK_FALSE(paramReading<rp::bool_param<"Mute">>(q, nan).value());
     CHECK(paramReading<rp::bool_param<"Mute">>(q, 0.5).value());
+}
+
+// What the reflect-cpp 0.26 upgrade was for: schema defaults, ranges and descriptions, from the settings
+// struct alone, and settings refused (with reflect-cpp's reason) when they break a declared range.
+namespace nodelayer {
+struct RichSettings {
+    rfl::DefaultVal<std::uint32_t>                            voices = 2;
+    rfl::Validator<int, rfl::Minimum<20>, rfl::Maximum<100>> rate = 30;
+    rfl::Description<"How loud", double>                     level = 0.5;
+};
+}  // namespace nodelayer
+
+namespace {
+struct Rich {
+    static constexpr const char* id = "rp.test.rich";
+    using Settings = nodelayer::RichSettings;
+    std::uint32_t voices = 0;
+    int           rate = 0;
+    void on_settings(const Settings& s) noexcept {
+        voices = s.voices.value();
+        rate = s.rate.value();
+    }
+    void process(const rp::Block&) noexcept {}
+};
+}  // namespace
+
+TEST_CASE("settings schemas carry defaults, ranges and descriptions, and ranges are enforced", "[graph][node]") {
+    const std::string d = rp::node_type<Rich>()->descriptor();
+    CHECK(d.find(R"("default":2)") != std::string::npos);
+    CHECK(d.find(R"("minimum":20)") != std::string::npos);
+    CHECK(d.find(R"("maximum":100)") != std::string::npos);
+    CHECK(d.find(R"("description":"How loud")") != std::string::npos);
+    REQUIRE(parseDescriptor(d));  // a schema the registry accepts
+
+    Made m{rp::node_type<Rich>()};
+    make(m, "{}");
+    CHECK(rp::peer_as<Rich>(m.node)->voices == 2);  // defaults apply
+    CHECK(rp::peer_as<Rich>(m.node)->rate == 30);
+    rp_settings low = json(R"({"rate":5})");
+    rp_memory_req req{};
+    rp_error err{};
+    CHECK_FALSE(m.type->query_memory(&low, &req, &err));
+    CHECK(std::string(err.message).find("20") != std::string::npos);
 }
 ```
 
@@ -4556,7 +4632,7 @@ T* peer_as(rp_node* n) {
 - [ ] **Step 7: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (321 assertions in 40 test cases)`.
+Expected: `All tests passed (337 assertions in 41 test cases)`.
 
 - [ ] **Step 8: Commit**
 
@@ -5338,7 +5414,7 @@ std::uint32_t ResourceTable::pinCount(Id id) const {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (497 assertions in 48 test cases)`.
+Expected: `All tests passed (513 assertions in 49 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -5951,6 +6027,22 @@ TEST_CASE("a live param rides the next block; document params apply on adoption"
     CHECK_FALSE(rig.host->setParam("ghost", "gain", 1.0));
 }
 
+TEST_CASE("a document value adopted with a swap beats a live change queued before it", "[graph][exec][swap]") {
+    GraphRig rig;
+    auto doc = [](int gain) {
+        return R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":0.5},"params":{"gain":)" +
+               std::to_string(gain) + R"(}},{"id":"out","type":"rp.host.audio-out"}],"wires":[{"from":"src.out","to":"out.out.1-2"}]})";
+    };
+    REQUIRE(rig.set(doc(1)).ok);
+    rig.run();
+    rig.host->setAudioThreadOwns(true);  // both land in the next block's drain, the live change first
+    REQUIRE(rig.host->setParam("src", "gain", 5.0));
+    REQUIRE(rig.set(doc(7)).ok);
+    rig.run(64, 2);
+    CHECK(rig.outs[0][0] == 3.5f);  // the document's 7, not the older 5
+    rig.host->setAudioThreadOwns(false);
+}
+
 TEST_CASE("a swap keeps every reused instance's state", "[graph][exec][swap]") {
     GraphRig rig;
     const std::string a = R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":0.5}},
@@ -6130,6 +6222,16 @@ TEST_CASE("a control feedback wire delivers its changes one block late", "[graph
     rig.run();
     CHECK(rig.node<Sink>("s").controlChanges == 1);
     CHECK(rig.node<Sink>("s").controlEnd == 7.0);
+}
+
+TEST_CASE("audio-out's buses are validated", "[graph][exec]") {
+    GraphRig rig;
+    CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2,0]}}],"wires":[]})")) == "settings-invalid");
+    CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"out","type":"rp.host.audio-out","settings":{"buses":[65]}}],"wires":[]})")) == "settings-invalid");
+    std::string many = "1";
+    for (int i = 0; i < 32; ++i) many += ",1";  // 33 buses
+    CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"out","type":"rp.host.audio-out","settings":{"buses":[)" + many + R"(]}}],"wires":[]})")) == "settings-invalid");
+    CHECK(rig.set(R"({"nodes":[{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2,1,6]}}],"wires":[]})").ok);
 }
 
 TEST_CASE("host outputs start every block silent", "[graph][exec]") {
@@ -6437,7 +6539,13 @@ void PlanStorage::adopt() {
     for (auto& p : peers) p.link->set_peers(p.node, p.peers.data(), static_cast<std::uint32_t>(p.peers.size()));
     for (auto& p : portsChanged)
         p.node->vt->ports_changed(p.node, p.mask.data(), static_cast<std::uint32_t>(p.mask.size()));
-    for (auto& s : paramSets) s.queue->start = s.value;
+    // A document value replaces the stream outright. Any change still queued was pushed earlier in this
+    // drain, so it is older than the document; left in place it would land on top of the new value and,
+    // since the planner records the value as applied, stay there.
+    for (auto& s : paramSets) {
+        s.queue->start = s.value;
+        s.queue->count = 0;
+    }
 }
 
 }  // namespace rp::graph
@@ -7082,16 +7190,16 @@ private:
         for (std::size_t n = 0; n < nodes_.size(); ++n) {
             const Layout& l = nodes_[n].inst->layout;
             for (const auto& group : l.exclusive) {
-                std::vector<std::string> used;
+                std::vector<std::string> used;  // the first connected port matching each member
                 for (const auto& pattern : group)
                     for (int p : nodes_[n].outPorts)
                         if (matchesPattern(pattern, l.ports[p].id) && connectedOutput(static_cast<int>(n), p)) {
-                            used.push_back(pattern);
+                            used.push_back(l.ports[p].id);
                             break;
                         }
                 if (used.size() > 1)
-                    error(nodes_[n].doc->id, used[0], "exclusive-ports",
-                          q(nodes_[n].doc->id) + " cannot use " + used[0] + " and " + used[1] + " at the same time");
+                    error(nodes_[n].doc->id, used[1], "exclusive-ports",
+                          q(nodes_[n].doc->id) + " cannot use " + q(used[0]) + " and " + q(used[1]) + " at the same time");
             }
         }
         return out_.errors.empty();
@@ -7970,6 +8078,7 @@ const rp_package* hostPackage();
 #include <array>
 #include <cstring>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -7985,7 +8094,8 @@ struct AudioOutSettings {
     std::vector<std::uint32_t> buses = {2, 2, 2, 2};
 };
 
-constexpr std::size_t kMaxBuses = 32;
+constexpr std::size_t   kMaxBuses = 32;
+constexpr std::uint64_t kMaxHostChannels = 256;
 
 struct AudioOut {
     static constexpr const char* id = "rp.host.audio-out";
@@ -7993,10 +8103,21 @@ struct AudioOut {
     static constexpr const char* category = "host";
     using Settings = AudioOutSettings;
 
+    static std::optional<std::string> validate(const Settings& s) {
+        if (s.buses.size() > kMaxBuses) return "at most " + std::to_string(kMaxBuses) + " buses";
+        std::uint64_t total = 0;
+        for (const auto n : s.buses) {
+            if (n < 1 || n > kMaxChannels) return "every bus needs 1 to " + std::to_string(kMaxChannels) + " channels";
+            total += n;
+        }
+        if (total > kMaxHostChannels) return "the buses add up to more than " + std::to_string(kMaxHostChannels) + " channels";
+        return std::nullopt;
+    }
+
     static void adjust_layout(Layout& l, const Settings& s) {
         std::uint32_t first = 1;
         for (std::size_t i = 0; i < s.buses.size() && i < kMaxBuses; ++i) {
-            const std::uint32_t n = s.buses[i] ? s.buses[i] : 1;
+            const std::uint32_t n = s.buses[i];
             PortDesc p;
             p.id = n == 1 ? "out." + std::to_string(first)
                           : "out." + std::to_string(first) + "-" + std::to_string(first + n - 1);
@@ -8019,7 +8140,7 @@ struct AudioOut {
         std::uint32_t ch = 0;
         for (std::size_t i = 0; i < s.buses.size() && i < kMaxBuses; ++i) {
             firstChannel[busCount++] = ch;
-            ch += s.buses[i] ? s.buses[i] : 1;
+            ch += s.buses[i];
         }
     }
 
@@ -8052,7 +8173,7 @@ const rp_package* hostPackage() {
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (712 assertions in 94 test cases)`.
+Expected: `All tests passed (736 assertions in 97 test cases)`.
 
 - [ ] **Step 7: Commit**
 
@@ -8814,13 +8935,14 @@ struct Add {
         else processAudio(b);
     }
 
-    // out = in1 + in2 + ... in input order: exactly the sum today's routers produce into a zeroed bus.
+    // out = 0 + in1 + in2 + ... in input order: exactly the sum today's routers produce into a zeroed bus
+    // (starting from zero, not from a copy of in1, which differs when in1 holds -0.0).
     void processAudio(const rp::Block& b) noexcept {
         const rp_audio_view& out = b.output(0).u.audio;
         for (std::uint32_t c = 0; c < out.channel_count; ++c) {
             float* dst = out.channels[c];
-            std::memcpy(dst, b.input(0).u.audio.channels[c], b.frames() * sizeof(float));
-            for (std::uint32_t k = 1; k < inputCount; ++k) {
+            std::memset(dst, 0, b.frames() * sizeof(float));
+            for (std::uint32_t k = 0; k < inputCount; ++k) {
                 const float* src = b.input(k).u.audio.channels[c];
                 for (std::uint32_t i = 0; i < b.frames(); ++i) dst[i] += src[i];
             }
@@ -9245,7 +9367,7 @@ const rp_package* corePackage() {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (891 assertions in 116 test cases)`.
+Expected: `All tests passed (915 assertions in 119 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -9711,7 +9833,7 @@ Add both files to the test's `SOURCES` and `Threads::Threads` to its `LIBS`:
 - [ ] **Step 3: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (919 assertions in 120 test cases)`. (These pass immediately: the properties
+Expected: `All tests passed (943 assertions in 123 test cases)`. (These pass immediately: the properties
 were built in by Tasks 2 to 8. If NoAlloc fails, an earlier task let an allocation onto the block path;
 fix that, never the test.)
 
@@ -9725,7 +9847,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-graph-test
 ```
 
-Expected: `All tests passed (919 assertions in 120 test cases)` and no ThreadSanitizer report. (Same
+Expected: `All tests passed (943 assertions in 123 test cases)` and no ThreadSanitizer report. (Same
 configure as `tools/run-sanitizer.sh thread`, which shares `build-tsan/`.)
 
 - [ ] **Step 5: Commit**
@@ -10291,6 +10413,9 @@ export interface Block {
 export interface NodeInstance {
   /** Return "fault" to be bypassed from now on (the executor silences this node and counts it). */
   process(block: Block): void | "fault";
+  /** A new sample rate or block size (the host re-activates without resetting): resize anything sized from
+   *  CreateContext's maxFrames. Return false if the node cannot run at these. */
+  activate?(sampleRate: number, maxFrames: number): boolean | void;
   /** Called when the connected-output set changes at a plan swap; connected[i] follows output order. */
   portsChanged?(connected: readonly boolean[]): void;
 }
@@ -10870,6 +10995,17 @@ test("the base graph's wires and nodes are claimed before any extension's", () =
   ]);
 });
 
+test("a document param value or resource binding claims its input as a wire does", () => {
+  const reg = new ExtensionRegistry();
+  reg.add(tap("rp.gain", "gain"));
+  reg.add(tap("rp.rom", "rom"));
+  const base = { nodes: [{ id: "sys-1", type: "rp.sameboy.gb", params: { gain: 0.5 }, resources: { rom: "res:1" } }], wires: [] };
+  expect(reg.collect([gb], () => undefined, base).conflicts.map((c) => (c.kind === "input" ? c.input : c.id))).toEqual([
+    "sys-1.gain",
+    "sys-1.rom",
+  ]);
+});
+
 test("one extension claiming an input twice names the nodes it came from", () => {
   const reg = new ExtensionRegistry();
   reg.add(defineExtension({ id: "rp.bus", matches: () => true, contribute: () => ({ wires: [{ from: "a.out", to: "bus.in" }] }) }));
@@ -11237,7 +11373,16 @@ export class ExtensionRegistry {
     const inputs = new Map<string, Contributor[]>();
     const ids = new Map<string, Contributor[]>();
     const claim = (map: Map<string, Contributor[]>, key: string, by: Contributor) => map.set(key, [...(map.get(key) ?? []), by]);
-    for (const n of base.nodes) claim(ids, n.id, "base");
+    // A param given a value, or a resource input given a binding, is an input taken just as a wire takes it:
+    // the planner refuses a wire into either.
+    const claimValues = (n: NodeDoc, by: Contributor) => {
+      for (const id of Object.keys(n.params ?? {})) claim(inputs, `${n.id}.${id}`, by);
+      for (const port of Object.keys(n.resources ?? {})) claim(inputs, `${n.id}.${port}`, by);
+    };
+    for (const n of base.nodes) {
+      claim(ids, n.id, "base");
+      claimValues(n, "base");
+    }
     for (const n of nodes) if (!ids.has(n.id)) claim(ids, n.id, "base");
     for (const w of base.wires) claim(inputs, w.to, "base");
 
@@ -11274,6 +11419,7 @@ export class ExtensionRegistry {
             continue;
           }
           claim(ids, n.id, by);
+          claimValues(n, by);
           out.nodes.push(copy(n));
         }
         for (const w of c.wires ?? []) {
@@ -11298,8 +11444,8 @@ export class ExtensionRegistry {
 - [ ] **Step 4: Run the graph tests, the whole TS suite, and the type check**
 
 Run: `pnpm test graph && pnpm test && pnpm typecheck`
-Expected: five graph files pass (4 + 12 + 2 + 4 + 10 cases), the full `pnpm test` matches the Task 0
-baseline plus those 32 cases with no new skips, and the type check matches the baseline.
+Expected: five graph files pass (4 + 12 + 2 + 4 + 11 cases), the full `pnpm test` matches the Task 0
+baseline plus those 33 cases with no new skips, and the type check matches the baseline.
 
 - [ ] **Step 5: Commit**
 
@@ -11395,6 +11541,11 @@ container has no MSVC; the code was checked with clang `-Wshadow -Wconversion` a
 finding (a local shadowing a member) was fixed. Before calling Phase A done, the Windows CI job (or
 `build.bat` plus `test.bat plugin` on the Windows box) must be green. Per AGENTS.md, a warning there is
 fixed at its source, never suppressed in our own code.
+
+(When this plan was executed, a final whole-branch review after this task led to one more fix commit,
+"fix(graph): the final review's findings", which touched Tasks 4, 5, 7, 8, 12 and 14 and recorded two
+open Phase B decisions in the design's section 8. A fresh execution has those changes in the tasks' code
+blocks already.)
 
 - [ ] **Step 5: Report**
 

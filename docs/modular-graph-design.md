@@ -601,7 +601,10 @@ C++, on the control thread, five passes:
 1. **Validate.** Each node type exists; settings are valid (`prepare_settings` may reject with a
    message, which matters for downloaded packs); ports exist; kinds match; each input has at most one
    wire; channel counts and layouts resolve; exclusive groups are respected; capability flags suit the
-   target.
+   target. (In Phase A the checks that need a layout run after reconcile, because ABI v1 gives a layout
+   only per instance: a document refused late builds and tears down the instances it needed, and a
+   rebuild briefly runs two instances under one id. Both are rolled back and tested; §8 Phase B owes the
+   decision on a type-level layout.)
 2. **Reconcile instances.** Same id, type and settings: reuse the instance. Changed settings: the node's
    `prepare_settings` decides, returning either a prepared swap or "needs rebuild" (a new ROM, a
    different SameBoy model). Needs rebuild: build a fresh instance. New id: allocate, create, activate.
@@ -624,6 +627,8 @@ pool, the pinned resources, and the nodes to release.
 ### 5.3 The plan swap
 
 The existing rings carry it; their invariants ([spec/01](../spec/01-architecture.md) §7) are unchanged.
+(Phase A's `GraphHost` has rings of its own, since nothing else runs on it yet; Phase B either folds them
+into the engine's, or fixes the order between the two - see §8 Phase B.)
 
 - **Out:** a `SwapPlan` command on the command ring. It replaces today's `AddSystem` / `ReplaceSystem` /
   `RemoveSystem` / `SetAudioRouting` / `SetConfigField` / `SetSystems` / `LoadKernel` commands.
@@ -971,6 +976,18 @@ Built: see docs/modular-graph-phase-a-plan.md.
   `rp.host.audio-out` (Phase A lets the last one win); give host nodes their buffers through
   `rp_host.get_interface` rather than the `ctx` cast Phase A's `rp.host.audio-out` uses; and read the
   host's inputs before `processBlock` silences its outputs, since a DAW often hands both as one buffer.
+- Two decisions Phase A leaves open, both cheap now and costly once Phase B builds on them:
+  - **One ring or two.** `GraphHost` has its own command and release rings. The engine's ring also
+    carries commands (RAM writes, state loads) that name nodes. Either give `GraphHost`'s `Command` a
+    slot for those so one ring carries everything, as §5.3 describes, or have the engine drain its own
+    ring BEFORE `GraphHost::processBlock`, never after: `GraphHost`'s drain hands the replaced plan back,
+    and a command naming a node of that plan must not run once `reclaim()` may have freed it.
+  - **Validate before creating.** Add a type-level `layout_for(settings)` to `rp_node_type` while ABI v1
+    is unshipped (both authoring layers can already compute it from settings alone), so the planner can
+    validate a whole document before creating anything; or require of every node that create and
+    activate have no effect outside the instance and are safe with two instances under one id. Real
+    cores (a ROM load, an N8 USB link, Mesen's per-id scratch paths) make the first the safer choice.
+- Snapshot publishing (§5.5 step 4, `rp.snapshot/1`) is not built in Phase A.
   `buildGraph` also has to order its layers around `ExtensionRegistry.collect`, which takes the base graph
   as already claimed: the MIDI-routing layer wires into nodes extensions insert, so it needs `collect`'s
   output first (a second, cheap `collect` pass, or a claims check over the merged graph).
@@ -1005,6 +1022,12 @@ Built: see docs/modular-graph-phase-a-plan.md.
   to the instance, so an unrelated graph edit does not revive a wedged node, and `GraphHost::isFaulted`
   names which node it was. Only a fresh instance clears a fault: a rebuild, or removing the node and adding
   it back (with a state seed, if its state should carry over), which is what a "restart node" action does.
+- **Strictness:** what crosses a language or a package boundary as structure is strict. The graph
+  document and every descriptor (ports, params, channels, the descriptor itself) refuse an unknown
+  field, because a misspelt one would change meaning silently (`"acess"` declares a reader). A node's
+  settings are the one lenient object: unknown keys are ignored on both sides (reflect-cpp's
+  `DefaultIfMissing`, zod's default strip), as the role-config that crosses to native is today, so a
+  project saved by a newer build keeps loading its known fields.
 - **Queue overflow** drops and bumps a counter; nothing allocates. A full control stream keeps its end
   value right by overwriting its last change, so a burst loses intermediate values, never the final one.
 - **Downloaded native packs** are checked at load for ABI version and a valid descriptor. There is no
@@ -1020,8 +1043,9 @@ All headless, all backed by an exit-zero run.
 
 - **A new Catch2 graph-core binary** (built by name like the other test binaries): planner validation,
   ordering, cycles and feedback wires, coupled groups, channel / layout propagation, exclusive groups,
-  buffer reuse, plan swaps under ThreadSanitizer (`build-tsan/`), and an executor run with `malloc`
-  interposed to fail, which proves the no-heap claim.
+  buffer reuse, plan swaps under ThreadSanitizer (`build-tsan/`), and a block-path run with global
+  `operator new` / `delete` replaced to count, which proves the no-heap claim for C++ nodes and the host's
+  allocator (a C pack calling `malloc` directly would need a malloc interposer as well).
 - **Descriptor conformance**: a C++ node and a TS node with the same declared shape produce
   byte-identical descriptor JSON (settings schemas excepted, §4.6), checked against one shared golden
   file; the canonical writers themselves are held to a shared table of cases that JavaScript generated.
