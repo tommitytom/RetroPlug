@@ -19,9 +19,14 @@
   // bind mount one level above the repo), so it survives rebuilds without a
   // Docker volume. post-create.sh symlinks ~/.claude and ~/.claude.json to it.
   "containerEnv": {
-    "TZ": "${localEnv:TZ}",
+    "TZ": "${localEnv:TZ}"
+  },
+  "remoteEnv": {
     // Optional SSH access for tooling on another machine; see start-sshd.sh.
-    // Inert unless this is set in the host environment.
+    // Inert unless this is set in the host environment. remoteEnv, NOT containerEnv:
+    // containerEnv is baked into the image as a Dockerfile ENV line, so a value holding
+    // more than one key (newline-separated) breaks the build. remoteEnv reaches
+    // postStartCommand as a `docker exec -e` argument, newlines intact.
     "DEVCONTAINER_SSH_PUBLIC_KEY": "${localEnv:DEVCONTAINER_SSH_PUBLIC_KEY}"
   },
   // Published on the Docker host's loopback only, on a port unique to this project.
