@@ -143,8 +143,11 @@ rejects a ROM wired into a sampler. Packages register their own resource types (
 - A resource counts its **owner** (its creator, who drops it once with `releaseResource`) apart from its
   **pins**, and is freed only when the owner has dropped it and no pin remains. Counting them together
   would let a duplicate release (a dispose run twice, a retried RPC) take a plan's pin with it and free
-  a buffer the audio thread is still reading. Ids are never reused, so a stale `res:N` is refused rather
-  than binding whatever took its place.
+  a buffer the audio thread is still reading. Once dropped, a resource can no longer be bound by a new
+  document, even while an older plan still pins it, so whether a document plans does not depend on when
+  the last plan happened to be reclaimed. Ids are never reused, so a stale `res:N` is refused rather than
+  binding whatever took its place. Resource types, like node type and package ids, are plain ids: no
+  whitespace or control character, so the C string a node reads is the string the host checked.
 - A handle emitted at runtime must therefore point at something a node in the plan already holds (a
   sample bank picking one of its 16 slots; a recorder writing into the buffer its settings asked for),
   so the audio thread never holds the last reference.
