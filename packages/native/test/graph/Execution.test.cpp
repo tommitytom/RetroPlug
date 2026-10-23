@@ -63,21 +63,25 @@ struct Reader {
     }
 };
 
-// Refuses to activate beyond `limit` frames, or (once) at all after its first activation.
+// Refuses to activate beyond `limit` frames, at all after its first activation (`once`), or at fewer frames
+// than it last had (`noShrink`). Keeps the block size it was last activated with.
 struct PickySettings {
     std::uint32_t limit = 0;
     bool          once = false;
+    bool          noShrink = false;
 };
 
 struct Picky {
     static constexpr const char* id = "rp.test.picky";
     using Settings = PickySettings;
     PickySettings s;
-    std::uint32_t activations = 0, processed = 0;
+    std::uint32_t activations = 0, processed = 0, frames = 0;
     void on_settings(const Settings& st) noexcept { s = st; }
     bool activate(double, std::uint32_t maxFrames) {
-        if ((s.once && activations > 0) || (s.limit && maxFrames > s.limit)) return false;
+        if ((s.once && activations > 0) || (s.limit && maxFrames > s.limit) || (s.noShrink && maxFrames < frames))
+            return false;
         ++activations;
+        frames = maxFrames;
         return true;
     }
     void process(const rp::Block&) noexcept { ++processed; }
@@ -454,6 +458,30 @@ TEST_CASE("a node that will not re-activate leaves the running plan safe", "[gra
     rig.run(64);
     CHECK(rig.node<Picky>("p").processed == 2);
     CHECK(rig.node<Source>("src").frames == 128);
+}
+
+TEST_CASE("instances switched before a refusal go back to the old size", "[graph][exec][swap]") {
+    ExecRig rig;  // maxFrames 64; live instances re-activate in id order, so "a" switches before "z" refuses
+    REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.picky"},
+                                  {"id":"z","type":"rp.test.picky","settings":{"limit":128}}],"wires":[]})").ok);
+    CHECK_FALSE(rig.host->reactivate(48000.0, 256));
+    CHECK(rig.node<Picky>("a").frames == 64);
+    CHECK(rig.node<Picky>("a").activations == 3);  // 64, then 256, then back to 64
+    CHECK_FALSE(rig.host->isFaulted("a"));
+    CHECK_FALSE(rig.host->isFaulted("z"));
+}
+
+TEST_CASE("a switched instance that will not go back is bypassed", "[graph][exec][swap]") {
+    ExecRig rig;
+    REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.picky","settings":{"noShrink":true}},
+                                  {"id":"z","type":"rp.test.picky","settings":{"limit":128}}],"wires":[]})").ok);
+    CHECK_FALSE(rig.host->reactivate(48000.0, 256));
+    CHECK(rig.host->isFaulted("a"));  // stuck at 256 frames under a plan built for 64
+    CHECK_FALSE(rig.host->isFaulted("z"));
+    CHECK(rig.host->faultCount() == 1);
+    rig.run();
+    CHECK(rig.node<Picky>("a").processed == 0);
+    CHECK(rig.node<Picky>("z").processed == 1);
 }
 
 TEST_CASE("a node that will not come back at all is bypassed", "[graph][exec][swap]") {

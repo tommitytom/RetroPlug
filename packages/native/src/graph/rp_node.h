@@ -168,6 +168,9 @@ typedef struct rp_port_view {
         rp_resource**     resource; /* the slot holding the current handle (may hold null) */
     } u;
 } rp_port_view;
+/* A resource OUTPUT slot outlives plans, so a node rewrites each of its resource outputs every block, with
+ * a handle this block's plan holds (one bound to the node, or a resource it was handed) or null. A handle
+ * left over from an earlier block may belong to a plan that has since been freed. */
 
 typedef struct rp_process {
     uint32_t                 frames;

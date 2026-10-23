@@ -20,7 +20,6 @@ constexpr int kEndOfBlock = std::numeric_limits<int>::max();
 // Document text quoted for a message: escaped, so whatever it holds prints intact.
 std::string q(std::string_view s) { return jsonString(s); }
 
-std::string reason(const rp_error& err, const char* fallback) { return errorText(err, fallback); }
 
 struct NodePlan {
     const NodeDoc*             doc = nullptr;
@@ -128,7 +127,7 @@ private:
         rp_error err{};
         rp_memory_req req{};
         if (!p.entry->type->query_memory(&s, &req, &err)) {
-            error(p.doc->id, "", "settings-invalid", reason(err, "the node refused its settings"));
+            error(p.doc->id, "", "settings-invalid", errorText(err, "the node refused its settings"));
             return nullptr;
         }
         if (req.align & (req.align - 1)) {  // aligned operator new requires a power of two
@@ -149,7 +148,7 @@ private:
         }
         inst->node = p.entry->type->create(in_.host, inst->memory, &s, &err);
         if (!inst->node) {
-            error(p.doc->id, "", "create-failed", reason(err, "the node could not be created"));
+            error(p.doc->id, "", "create-failed", errorText(err, "the node could not be created"));
             return nullptr;  // ~Instance frees the memory (node is null, so nothing to destroy)
         }
         inst->settings = p.settings;
@@ -170,7 +169,7 @@ private:
                 port.kind == PortKind::Resource ? std::make_unique<rp_resource*>(nullptr) : nullptr);
         }
         if (!inst->node->vt->activate(inst->node, in_.sampleRate, in_.maxFrames, &err)) {
-            error(p.doc->id, "", "activate-failed", reason(err, "the node could not be activated"));
+            error(p.doc->id, "", "activate-failed", errorText(err, "the node could not be activated"));
             return nullptr;
         }
         inst->active = true;
@@ -202,7 +201,7 @@ private:
                         p.fresh = true;
                         break;
                     case RP_PREPARE_INVALID:
-                        error(p.doc->id, "", "settings-invalid", reason(err, "the node refused its settings"));
+                        error(p.doc->id, "", "settings-invalid", errorText(err, "the node refused its settings"));
                         break;
                     default:
                         p.prepared = nullptr;  // an unknown result promises nothing about it

@@ -12,7 +12,6 @@
 #include <thread>
 
 #include "graph/CanonicalJson.hpp"
-
 #include "graph/Executor.hpp"
 #include "graph/Queue.hpp"
 
