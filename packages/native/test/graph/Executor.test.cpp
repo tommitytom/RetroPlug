@@ -2,7 +2,9 @@
 // hand-built PlanView proves the block walk, coupled-group lockstep, feedback and fault bypass.
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <atomic>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -21,6 +23,7 @@ struct RawNode {
     int               blocks = 0;          // process() calls
     int               failAt = -1;         // process() faults on this call (0-based) and any later one
     int               stepFailAt = -1;     // step() faults once `produced` reaches this
+    bool              stepGarbage = false; // step() answers a value that is not a known result
     bool              wedged = false;      // step() never makes progress
     bool              emitThenFault = false;  // push an event and a control change, then fault
     std::string*      log = nullptr;
@@ -55,6 +58,7 @@ void rawPrepare(rp_node* n, const rp_process*) {
 rp_step_result rawStep(rp_node* n, std::uint32_t target) {
     RawNode* self = raw(n);
     if (self->stepFailAt >= 0 && self->produced >= static_cast<std::uint32_t>(self->stepFailAt)) return RP_STEP_FAULT;
+    if (self->stepGarbage) return 7u;
     if (self->wedged) return RP_STEP_BELOW;
     if (self->produced < target) {
         ++self->produced;
@@ -218,6 +222,19 @@ TEST_CASE("a member that faults through step is bypassed while its peer finishes
     CHECK_FALSE(b.faulted.load());
     CHECK(oa.samples[0] == 0.0f);
     CHECK(faults.load() == 1);
+}
+
+TEST_CASE("an unknown step result is treated as a fault, as an unknown process result is", "[graph][executor]") {
+    RawNode a{{&kVtable}}, b{{&kVtable}};
+    a.stepGarbage = true;
+    OneOutput oa, ob;
+    PlanStep steps[] = {stepFor(a, oa), stepFor(b, ob)};
+    makeGroup(steps, 2);
+    PlanView view;
+    view.steps = steps;
+    runBlock(view, 2, kTransport);
+    CHECK(a.faulted.load());
+    CHECK_FALSE(b.faulted.load());
 }
 
 TEST_CASE("a wedged member is faulted once its group passes the bound; a finished peer is not", "[graph][executor]") {

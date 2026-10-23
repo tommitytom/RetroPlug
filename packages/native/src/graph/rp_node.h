@@ -9,7 +9,13 @@
  * Threads: calls marked [control] run on the control thread and may allocate; calls marked [audio] run
  * on whichever thread drives the block and must not allocate, block, or throw. [control] and [audio]
  * calls on ONE instance may run at the same time, so a node shares no mutable state between them except
- * through the settings swap (prepare_settings / commit_settings).
+ * through the settings swap (prepare_settings / commit_settings). The exceptions are activate,
+ * deactivate and destroy: a host never runs them while an [audio] call on that instance is in flight.
+ *
+ * One process may hold several hosts, each with its own control thread (every background render runs
+ * its own engine). So the package- and type-level calls - the entry point, descriptor, query_memory,
+ * create, destroy - may run concurrently for different instances, and any lazy one-time setup a pack
+ * does there must be thread-safe (std::call_once, a function-local static).
  *
  * Every rp_node_vtable entry is required: a node with nothing to do supplies a no-op. get_interface may
  * return null for every id.
@@ -32,10 +38,12 @@ extern "C" {
 
 /* The symbol a downloaded pack exports (an rp_package_entry_fn), and the visibility it needs. */
 #define RP_PACKAGE_ENTRY_SYMBOL "rp_package_entry"
+#ifndef RP_EXPORT
 #if defined(_WIN32)
 #define RP_EXPORT __declspec(dllexport)
 #else
 #define RP_EXPORT __attribute__((visibility("default")))
+#endif
 #endif
 
 typedef struct rp_node rp_node;
@@ -58,7 +66,8 @@ typedef struct rp_settings {
 
 typedef struct rp_memory_req { size_t size; size_t align; } rp_memory_req;
 
-/* Services the host offers a node. alloc/free are for nodes that declare the heap capability. */
+/* Services the host offers a node. alloc/free are for nodes that declare the heap capability, and are
+ * null on a target with no heap (where such a node is never created). get_interface is never null. */
 struct rp_host {
     uint32_t abi_version;
     void*    ctx;
@@ -229,8 +238,10 @@ typedef struct rp_package {
 } rp_package;
 
 /* A downloaded pack exports this symbol; statically linked packages hand the same struct to the
- * generated registration list. */
+ * generated registration list. Declared here, inside the header's C linkage, so a C++ pack that defines
+ * it cannot forget extern "C". */
 typedef const rp_package* (*rp_package_entry_fn)(void);
+RP_EXPORT const rp_package* rp_package_entry(void);
 
 /* ---- optional interfaces ------------------------------------------------------------------------ */
 
@@ -242,12 +253,15 @@ typedef struct rp_step_interface {
     void (*prepare)(rp_node* node, const rp_process* block);
     /* Advance toward target_frames by a bounded amount (an instruction, a scanline). Return RP_STEP_DONE
      * once this node has produced target_frames. It may be called again after that, and must then do
-     * nothing and return RP_STEP_DONE. RP_STEP_FAULT bypasses the node as a faulting process() would. */
+     * nothing and return RP_STEP_DONE. RP_STEP_FAULT, or any value that is not BELOW or DONE, bypasses the
+     * node as a faulting process() would. */
     rp_step_result (*step)(rp_node* node, uint32_t target_frames);
     void (*finish)(rp_node* node, const rp_process* block);
 } rp_step_interface;
 
-/* "rp.link/1": told its peers whenever the coupled group it belongs to changes. [audio] */
+/* "rp.link/1": told its peers whenever the coupled group it belongs to changes. [audio] A peer may be
+ * bypassed later (it faulted), after which it is no longer stepped; a node must tolerate a peer that has
+ * stopped advancing rather than wait on it. */
 #define RP_LINK_INTERFACE "rp.link/1"
 typedef struct rp_link_interface {
     void (*set_peers)(rp_node* node, rp_node* const* peers, uint32_t peer_count);

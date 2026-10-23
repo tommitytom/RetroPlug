@@ -60,8 +60,8 @@ void runGroup(const PlanView& plan, std::span<PlanStep> group, std::uint32_t fra
         for (auto& m : group) {
             if (isFaulted(m)) continue;
             const rp_step_result r = m.step->step(m.node, frames);
-            if (r == RP_STEP_FAULT) markFaulted(plan, m);
-            else if (r != RP_STEP_DONE) allDone = false;
+            if (r == RP_STEP_BELOW) allDone = false;
+            else if (r != RP_STEP_DONE) markFaulted(plan, m);  // RP_STEP_FAULT, or a value we do not know
         }
         if (allDone) break;
         if (pass + 1 >= maxPasses) {
