@@ -6,7 +6,6 @@
 #include <string_view>
 #include <vector>
 
-#include <rfl/Generic.hpp>
 #include <rfl/Result.hpp>
 
 namespace rp::graph {
@@ -66,6 +65,11 @@ struct TypeDescriptor {
 std::string layoutJson(const Layout& layout);
 std::string descriptorJson(const TypeDescriptor& descriptor);
 
+// The gate for a node's JSON, which may come from a downloaded pack: a missing field takes its default,
+// and a field present with the wrong type or an unusable value is refused with a reason that names it
+// (an inverted or excluded param range, an enum default not among its values, a channel count outside
+// 1..2^32-1 or at odds with its layout name, an "any" output, a match that names no other audio port, an
+// id used twice across ports and params, an unknown truthy `requires` flag, ...). Nothing is coerced.
 rfl::Result<Layout>         parseLayout(std::string_view json);
 rfl::Result<TypeDescriptor> parseDescriptor(std::string_view json);
 
@@ -81,7 +85,7 @@ bool matchesPattern(std::string_view pattern, std::string_view portId);
 // or an unknown name.
 std::optional<std::uint32_t> layoutChannels(std::string_view layout);
 
-// The layout name a bare channel count gets: mono, stereo, else discrete(n).
+// The layout name a bare channel count (at least 1) gets: mono, stereo, else discrete(n).
 std::string layoutForCount(std::uint32_t channels);
 
 }  // namespace rp::graph
