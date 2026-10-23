@@ -2,14 +2,17 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <fstream>
 #include <initializer_list>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "TestNodes.hpp"
+#include "graph/CanonicalJson.hpp"
 #include "graph/GraphDocument.hpp"
 #include "graph/NodeRegistry.hpp"
 #include "graph/ResourceTable.hpp"
@@ -192,6 +195,30 @@ TEST_CASE("a graph document parses, settings and params kept as JSON", "[graph][
     CHECK(std::string(noId.error().what()).find("graph document: ") == 0);
     CHECK_FALSE(parseGraphDocument(R"({"nodes":[{"id":"a","type":"x","setings":{}}],"wires":[]})"));  // a typo is refused
     CHECK_FALSE(parseGraphDocument("[]"));
+}
+
+TEST_CASE("the document TS spells is the document the planner parses", "[graph][document]") {
+    // golden/graph-document.json is written by packages/retroplug/src/graph/graphDocument.ts toGraphJson
+    // (its test holds it to that); here the planner's parser reads it.
+    std::ifstream in(RP_GRAPH_GOLDEN_DIR "/graph-document.json");
+    std::stringstream ss;
+    ss << in.rdbuf();
+    std::string text = ss.str();
+    while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.pop_back();
+    const auto doc = parseGraphDocument(text);
+    INFO((doc ? "" : doc.error().what()));
+    REQUIRE(doc);
+    REQUIRE(doc->nodes.size() == 4);
+    CHECK(doc->nodes[0].id == "sys-1");
+    CHECK(doc->nodes[0].params->at("mode").to_string().value() == "midi-sync");
+    CHECK(doc->nodes[0].params->at("mute").to_bool().value() == false);
+    CHECK(doc->nodes[0].settings->to_object()->get("rom")->to_object()->get("path")->to_string().value() == "lsdj.gb");
+    CHECK(doc->nodes[1].id == "sys-1/lsdj-sync");
+    CHECK(parseResourceRef(doc->nodes[2].resources->at("sample")) == 12u);
+    REQUIRE(doc->wires.size() == 2);
+    CHECK(doc->wires[0].feedback.value());
+    CHECK_FALSE(doc->wires[1].feedback.has_value());
+    CHECK(canonicalizeJson(text).value() == text);  // and C++ spells it the same way back
 }
 
 TEST_CASE("a resource lives until its owner drops it and its last pin is gone", "[graph][resources]") {

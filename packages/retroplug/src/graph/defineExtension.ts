@@ -2,12 +2,14 @@
 // sections 2.6, 2.7 and 7.1). An extension has no ports; it is chosen by a matcher over the node's
 // identity, and contributes nodes it inserts and wires, views, and song / asset catalogs.
 //
-// Port ownership: each node input may be claimed by only ONE contributor. collect() reports two
-// contributions wiring into the same input as a conflict, by name, instead of silently picking one.
+// Port ownership: each node input may be claimed by only ONE contributor - an extension on a node, or the
+// base graph the builder made itself. collect() reports a second claim as a conflict naming every claimant,
+// and does the same for two contributors inserting nodes with the same id, instead of silently picking one.
 import type { z } from "zod";
 import type { AssetCatalog } from "../tracker/assetCatalog";
 import type { SongCatalog } from "../tracker/songCatalog";
-import type { NodeDoc, WireDoc } from "./graphDocument";
+import { plainId } from "./descriptor";
+import { isNodeId, type NodeDoc, type WireDoc } from "./graphDocument";
 
 /** What a matcher sees: the node type plus the ROM identity rp.system.rom/1 publishes (when it has one). */
 export interface NodeInfo {
@@ -36,6 +38,8 @@ export interface ViewDefinition {
   needs?: { memory?: { region: string; range: [number, number] }[]; rate?: "frame" | "block" };
 }
 
+/** What an extension adds for one node. Menu items and actions are deliberately absent until the package
+ *  split extracts the menu item model (design section 7.7). */
 export interface Contribution {
   nodes?: NodeDoc[];
   wires?: WireDoc[];
@@ -44,6 +48,7 @@ export interface Contribution {
   assets?: AssetCatalog;
 }
 
+/** What an extension is handed. Capabilities and putResource (design section 7.1) arrive with Phase B. */
 export interface ExtensionContext<S> {
   node: NodeInfo;
   settings: S;
@@ -56,15 +61,33 @@ export interface ExtensionDefinition<S = Record<string, never>> {
   contribute(ctx: ExtensionContext<S>): Contribution;
 }
 
-export function defineExtension<S = Record<string, never>>(def: ExtensionDefinition<S>): ExtensionDefinition<S> {
-  if (!def.id) throw new Error("an extension needs an id");
+// Settings and their type come together: an extension that reads settings must say what they are, so
+// `settings` cannot be typed as something the schema-less default ({}) is not.
+export function defineExtension(
+  def: Omit<ExtensionDefinition<Record<string, never>>, "settings"> & { settings?: undefined },
+): ExtensionDefinition<Record<string, never>>;
+export function defineExtension<S>(def: ExtensionDefinition<S> & { settings: z.ZodType<S> }): ExtensionDefinition<S>;
+export function defineExtension<S>(def: ExtensionDefinition<S>): ExtensionDefinition<S> {
+  if (!plainId(def.id))
+    throw new Error(`extension id ${JSON.stringify(String(def.id))} must be non-empty, with no whitespace or control characters`);
   return def;
 }
 
-export interface Conflict {
-  /** The node input two contributors both wire into, "node.port". */
-  input: string;
-  extensions: string[];
+/** Who claimed something: an extension on a node, or the base graph the builder made itself. */
+export type Contributor = { extension: string; node: string } | "base";
+
+export type Conflict =
+  /** Two or more contributors wire into the same node input, "node.port". */
+  | { kind: "input"; input: string; by: Contributor[] }
+  /** Two or more contributors insert a node with the same id. */
+  | { kind: "node-id"; id: string; by: Contributor[] };
+
+/** A contribution that could not be used as given; the rest of the graph is still collected. */
+export interface CollectError {
+  node: string;
+  extension: string;
+  code: "settings-invalid" | "node-id";
+  message: string;
 }
 
 export interface Collected {
@@ -73,16 +96,23 @@ export interface Collected {
   views: { node: string; extension: string; view: ViewDefinition }[];
   attached: { node: string; extension: string; contribution: Contribution }[];
   conflicts: Conflict[];
+  errors: CollectError[];
 }
 
-// Extensions are listed in registration order; that order is also the order their contributions are
-// collected in, so graphs built from the same project are identical.
+// A JSON-only copy of a node or wire document, so a builder that edits the collected graph cannot reach the
+// contribution it came from (or the other way round). Views and catalogs are not documents (they carry
+// components and methods), so they are passed through as they are.
+const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+
+// Extensions are kept sorted by id, and contributions are collected node by node in that order, so the
+// same project builds the same graph whatever order packages registered (or loaded) in.
 export class ExtensionRegistry {
   private readonly list: ExtensionDefinition<any>[] = [];
 
   add<S>(ext: ExtensionDefinition<S>): void {
     if (this.list.some((e) => e.id === ext.id)) throw new Error(`extension "${ext.id}" is already registered`);
     this.list.push(ext);
+    this.list.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   }
 
   attached(node: NodeInfo): ExtensionDefinition<any>[] {
@@ -90,24 +120,59 @@ export class ExtensionRegistry {
   }
 
   /** Every matched extension's contribution for these nodes. settingsFor returns an extension's raw
-   *  persisted settings for a node (undefined: defaults); they are parsed here, on the control plane. */
-  collect(nodes: readonly NodeInfo[], settingsFor: (node: string, extension: string) => unknown = () => undefined): Collected {
-    const out: Collected = { nodes: [], wires: [], views: [], attached: [], conflicts: [] };
-    const claimed = new Map<string, string[]>();
+   *  persisted settings for a node (undefined: defaults); they are parsed here, on the control plane, and
+   *  settings that no longer parse are reported and replaced by the defaults rather than failing the
+   *  whole collection. `base` is the graph the builder made itself: its node ids and wired inputs are
+   *  already claimed. */
+  collect(
+    nodes: readonly NodeInfo[],
+    settingsFor: (node: string, extension: string) => unknown = () => undefined,
+    base: { nodes: readonly NodeDoc[]; wires: readonly WireDoc[] } = { nodes: [], wires: [] },
+  ): Collected {
+    const out: Collected = { nodes: [], wires: [], views: [], attached: [], conflicts: [], errors: [] };
+    const inputs = new Map<string, Contributor[]>();
+    const ids = new Map<string, Contributor[]>();
+    const claim = (map: Map<string, Contributor[]>, key: string, by: Contributor) => map.set(key, [...(map.get(key) ?? []), by]);
+    for (const n of base.nodes) claim(ids, n.id, "base");
+    for (const n of nodes) if (!ids.has(n.id)) claim(ids, n.id, "base");
+    for (const w of base.wires) claim(inputs, w.to, "base");
+
     for (const node of nodes) {
       for (const ext of this.attached(node)) {
-        const raw = settingsFor(node.id, ext.id);
-        const settings = ext.settings ? ext.settings.parse(raw ?? {}) : {};
+        const by: Contributor = { extension: ext.id, node: node.id };
+        const fail = (code: CollectError["code"], message: string) =>
+          out.errors.push({ node: node.id, extension: ext.id, code, message });
+        let settings: unknown = {};
+        if (ext.settings) {
+          const parsed = ext.settings.safeParse(settingsFor(node.id, ext.id) ?? {});
+          if (parsed.success) {
+            settings = parsed.data;
+          } else {
+            fail("settings-invalid", parsed.error.issues.map((i) => `${i.path.join(".") || "settings"}: ${i.message}`).join("; "));
+            const defaults = ext.settings.safeParse({});
+            if (!defaults.success) continue;  // nothing usable: leave this extension out for this node
+            settings = defaults.data;
+          }
+        }
         const c = ext.contribute({ node, settings });
         out.attached.push({ node: node.id, extension: ext.id, contribution: c });
-        out.nodes.push(...(c.nodes ?? []));
-        out.wires.push(...(c.wires ?? []));
+        for (const n of c.nodes ?? []) {
+          if (!isNodeId(n.id)) {
+            fail("node-id", `inserted node id ${JSON.stringify(String(n.id))} is not a node id (a plain id with no ".")`);
+            continue;
+          }
+          claim(ids, n.id, by);
+          out.nodes.push(copy(n));
+        }
+        for (const w of c.wires ?? []) {
+          claim(inputs, w.to, by);
+          out.wires.push(copy(w));
+        }
         for (const view of c.views ?? []) out.views.push({ node: node.id, extension: ext.id, view });
-        for (const w of c.wires ?? []) claimed.set(w.to, [...(claimed.get(w.to) ?? []), ext.id]);
       }
     }
-    for (const [input, extensions] of claimed)
-      if (extensions.length > 1) out.conflicts.push({ input, extensions });
+    for (const [input, by] of inputs) if (by.length > 1) out.conflicts.push({ kind: "input", input, by });
+    for (const [id, by] of ids) if (by.length > 1) out.conflicts.push({ kind: "node-id", id, by });
     return out;
   }
 }
