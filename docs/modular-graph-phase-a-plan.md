@@ -837,7 +837,9 @@ typedef struct rp_node_vtable {
      * shared scratch buffer, so skipping them is safe, and is what the connected mask is for). Return
      * RP_FAULT to be bypassed from then on. */
     rp_status (*process)(rp_node* node, const rp_process* block);
-    /* [control] Validate new settings and decide swap versus rebuild. */
+    /* [control] Validate new settings and decide swap versus rebuild. A host never calls this while a
+     * commit_settings for the same node may still be in flight, so the node may read its current
+     * settings here (to compare against). */
     rp_prepare_result (*prepare_settings)(rp_node* node, const rp_settings* settings, void** prepared,
                                           rp_error* err);
     /* [audio] Swap in a prepared settings object; hand the previous one back through *old. */
@@ -2873,8 +2875,10 @@ is spelt one way". A fresh execution needs only the one commit above.)
 
 `graph/node.hpp` turns a plain struct into an `rp_node_type`: reflect-cpp walks the `inputs`, `outputs`
 and `params` structs for ids, the wrapper types carry the rest, and every optional capability (settings,
-validation, layout adjustment, extra memory, the step and link interfaces) is detected and wired only if
-the node defines it. The test pins the C++ half of the cross-language descriptor pact with a golden file
+validation, layout adjustment, extra memory, the step and link interfaces) is detected by name and wired
+only if the node defines it. Once a hook's name is present its exact signature is checked at compile time
+(audio-thread hooks must be `noexcept`), so a near miss is an error rather than a hook silently ignored;
+control-thread entries catch, so no exception crosses the C ABI. The test pins the C++ half of the cross-language descriptor pact with a golden file
 the TS half (Task 13) is compared against too.
 
 **Files:**
@@ -2911,6 +2915,7 @@ faulting node, and nodes that exist only to trip planner checks.
 #include <array>
 #include <cstdint>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -2934,6 +2939,10 @@ struct Source {
     } outputs;
     struct { rp::float_param<"Gain", rp::range{0, 10, 1}> gain; } params;
 
+    static std::optional<std::string> validate(const Settings& s) {
+        if (s.channels < 1 || s.channels > 8) return "channels must be 1 to 8";
+        return std::nullopt;
+    }
     static void adjust_layout(Layout& l, const Settings& s) {
         l.ports[0].channels = ChannelSpec::fixed(s.channels, layoutForCount(s.channels));
     }
@@ -2993,7 +3002,9 @@ struct Sink {
     }
 };
 
-// One of a coupled pair. Each step() advances by one frame; the shared log records the interleaving.
+// One of a coupled pair. Each step() advances by one frame; the shared log records the interleaving. The
+// log allocates, which is fine for a test node and nothing else: a step that throws under noexcept
+// terminates the process.
 inline std::vector<std::string>& linkLog() {
     static std::vector<std::string> log;
     return log;
@@ -3015,15 +3026,15 @@ struct Linked {
     void on_settings(const Settings& s) noexcept { settings = &s; }
     void set_peers(std::span<rp_node* const> peers) noexcept { peerCount = static_cast<std::uint32_t>(peers.size()); }
 
-    void prepare(const rp::Block&) { produced = 0; }
-    bool step(std::uint32_t target) {
+    void prepare(const rp::Block&) noexcept { produced = 0; }
+    bool step(std::uint32_t target) noexcept {
         if (produced < target) {
             ++produced;
             linkLog().push_back(settings->name);
         }
         return produced >= target;
     }
-    void finish(const rp::Block& b) {
+    void finish(const rp::Block& b) noexcept {
         for (std::uint32_t i = 0; i < b.frames(); ++i) outputs.out[0][i] = static_cast<float>(peerCount);
     }
     void process(const rp::Block&) noexcept {}
@@ -3100,8 +3111,11 @@ inline const rp_package* testPackage() {
 
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <new>
 #include <sstream>
+#include <stdexcept>
+#include <tuple>
 
 #include "TestNodes.hpp"
 
@@ -3261,6 +3275,234 @@ TEST_CASE("extra memory is sized by settings and handed to the node", "[graph][n
     make(m, R"({"length":10})");
     CHECK(rp::peer_as<Lined>(m.node)->mem.size() == 10 * sizeof(float));
 }
+
+namespace {
+
+// Reflected ports and params bind by position; the ones adjust_layout appends are reached through Block.
+struct MixedSettings {
+    std::uint32_t aux = 2;
+};
+
+struct Mixed {
+    static constexpr const char* id = "rp.test.mixed";
+    using Settings = MixedSettings;
+    struct { rp::audio_in<rp::mono> in; rp::events_in midi; } inputs;
+    struct { rp::audio_out<rp::mono> out; } outputs;
+    struct { rp::float_param<"Level", rp::range{0, 1, 1}> level; } params;
+
+    static void adjust_layout(Layout& l, const Settings& s) {
+        // An output appended ahead of inputs: the layer still sorts inputs first, each side in order.
+        l.ports.push_back({"tap", PortDir::Out, PortKind::Audio, ChannelSpec::fixed(1, "mono"), {}, false});
+        for (std::uint32_t k = 0; k < s.aux; ++k)
+            l.ports.push_back({"aux" + std::to_string(k + 1), PortDir::In, PortKind::Audio, ChannelSpec::fixed(1, "mono"), {}, false});
+        l.params.push_back({"aux-level", "Aux Level", ParamType::Float, 0, 1, 1, {}, {}});
+    }
+
+    std::uint32_t aux = 0;
+    void on_settings(const Settings& s) noexcept { aux = s.aux; }
+
+    void process(const rp::Block& b) noexcept {
+        const std::uint32_t firstAux = 2;  // after in, midi
+        for (std::uint32_t i = 0; i < b.frames(); ++i) {
+            float v = inputs.in[0][i] * static_cast<float>(params.level.start());
+            for (std::uint32_t k = 0; k < aux; ++k)
+                v += b.input(firstAux + k).u.audio.channels[0][i] * static_cast<float>(b.param(1).start);
+            outputs.out[0][i] = v;
+            b.output(1).u.audio.channels[0][i] = static_cast<float>(inputs.midi.messages().size());
+        }
+    }
+};
+
+// adjust_layout may patch and append, never move or drop a reflected port.
+struct ShufflerSettings {
+    bool drop = false;
+};
+
+struct Shuffler {
+    static constexpr const char* id = "rp.test.shuffler";
+    using Settings = ShufflerSettings;
+    struct { rp::events_in a; rp::events_in b; } inputs;
+    static void adjust_layout(Layout& l, const Settings& s) {
+        if (s.drop) l.ports.erase(l.ports.begin());
+    }
+    void process(const rp::Block&) noexcept {}
+};
+
+// Throws building its layout for the default settings, so it has no descriptor to give.
+struct Unbuildable {
+    static constexpr const char* id = "rp.test.unbuildable";
+    static void adjust_layout(Layout&, const rp::detail::NoSettings&) { throw std::runtime_error("no default layout"); }
+    void process(const rp::Block&) noexcept {}
+};
+
+struct ActivatorSettings {
+    std::uint32_t mode = 0;  // 0 succeeds, 1 returns false, 2 throws
+};
+
+struct Activator {
+    static constexpr const char* id = "rp.test.activator";
+    using Settings = ActivatorSettings;
+    std::uint32_t mode = 0;
+    void on_settings(const Settings& s) noexcept { mode = s.mode; }
+    bool activate(double, std::uint32_t) {
+        if (mode == 2) throw std::runtime_error("no rom loaded");
+        return mode == 0;
+    }
+    void deactivate() { throw std::runtime_error("ignored"); }
+    void process(const rp::Block&) noexcept {}
+};
+
+// Reads its settings in its destructor, which is only safe if the node goes before its settings.
+float g_seenAtDestroy = 0.0f;
+
+struct Holder {
+    static constexpr const char* id = "rp.test.holder";
+    using Settings = test::SourceSettings;
+    const Settings* settings = nullptr;
+    void on_settings(const Settings& s) noexcept { settings = &s; }
+    ~Holder() { g_seenAtDestroy = settings ? settings->value : -1.0f; }
+    void process(const rp::Block&) noexcept {}
+};
+
+template <class P>
+P paramReading(rp_control_queue& q, double v) {
+    q = rp_control_queue{v, nullptr, 0, 0, 0};
+    P p;
+    p.queue = &q;
+    return p;
+}
+
+}  // namespace
+
+TEST_CASE("appended ports and params are reached by index, after the reflected ones", "[graph][node]") {
+    Made m{rp::node_type<Mixed>()};
+    make(m, R"({"aux":2})");
+    const std::string layout = m.node->vt->layout(m.node);
+    // inputs first (reflected, then appended), then outputs (reflected, then appended)
+    const auto at = [&](const char* id) { return layout.find(std::string("\"id\":\"") + id + "\""); };
+    CHECK(at("in") < at("midi"));
+    CHECK(at("midi") < at("aux1"));
+    CHECK(at("aux2") < at("out"));
+    CHECK(at("out") < at("tap"));
+    CHECK(m.node->vt->layout(m.node) == m.node->vt->layout(m.node));  // cached: the same pointer every call
+
+    constexpr std::uint32_t kFrames = 4;
+    float in[kFrames] = {1, 1, 1, 1}, aux1[kFrames] = {2, 2, 2, 2}, aux2[kFrames] = {3, 3, 3, 3};
+    float out[kFrames] = {}, tap[kFrames] = {};
+    float* inCh[] = {in};
+    float* aux1Ch[] = {aux1};
+    float* aux2Ch[] = {aux2};
+    float* outCh[] = {out};
+    float* tapCh[] = {tap};
+    rp_message msgs[1] = {};
+    rp_queue midi{};
+    midi.items = msgs;
+    midi.count = 1;
+    rp_port_view inputs[4] = {};
+    inputs[0].kind = RP_PORT_AUDIO;
+    inputs[0].u.audio = {inCh, 1};
+    inputs[1].kind = RP_PORT_EVENTS;
+    inputs[1].u.queue = &midi;
+    inputs[2].kind = RP_PORT_AUDIO;
+    inputs[2].u.audio = {aux1Ch, 1};
+    inputs[3].kind = RP_PORT_AUDIO;
+    inputs[3].u.audio = {aux2Ch, 1};
+    rp_port_view outputs[2] = {};
+    outputs[0].kind = RP_PORT_AUDIO;
+    outputs[0].u.audio = {outCh, 1};
+    outputs[1].kind = RP_PORT_AUDIO;
+    outputs[1].u.audio = {tapCh, 1};
+    rp_control_queue level{0.5, nullptr, 0, 0, 0}, auxLevel{0.25, nullptr, 0, 0, 0};
+    rp_control_queue* params[] = {&level, &auxLevel};
+    rp_transport transport{};
+    const rp_process block{kFrames, &transport, inputs, 4, outputs, 2, params, 2};
+    REQUIRE(m.node->vt->process(m.node, &block) == RP_OK);
+    CHECK(out[0] == 0.5f + (2.0f + 3.0f) * 0.25f);
+    CHECK(tap[3] == 1.0f);
+}
+
+TEST_CASE("adjust_layout cannot move or drop a reflected port", "[graph][node]") {
+    const rp_node_type* t = rp::node_type<Shuffler>();
+    CHECK(std::string(t->descriptor()).find(R"("id":"rp.test.shuffler")") != std::string::npos);
+    rp_settings drop = json(R"({"drop":true})");
+    rp_memory_req req{};
+    rp_error err{};
+    REQUIRE(t->query_memory(&drop, &req, &err));
+    void* memory = ::operator new(req.size, std::align_val_t(req.align));
+    CHECK(t->create(nullptr, memory, &drop, &err) == nullptr);
+    CHECK(std::string(err.message).find("adjust_layout") != std::string::npos);
+    ::operator delete(memory, std::align_val_t(req.align));
+
+    Made m{t};
+    make(m, "{}");
+    void* prepared = nullptr;
+    err = rp_error{};
+    CHECK(m.node->vt->prepare_settings(m.node, &drop, &prepared, &err) == RP_PREPARE_INVALID);
+    CHECK(std::string(err.message).find("\"a\"") != std::string::npos);
+
+    CHECK(std::string(rp::node_type<Unbuildable>()->descriptor()).empty());  // the registry refuses it
+}
+
+TEST_CASE("activate failures are reported through err, never thrown", "[graph][node]") {
+    for (const auto& [settings, ok, reason] : {std::tuple{R"({"mode":0})", true, ""},
+                                               std::tuple{R"({"mode":1})", false, "activate failed"},
+                                               std::tuple{R"({"mode":2})", false, "no rom loaded"}}) {
+        Made m{rp::node_type<Activator>()};
+        make(m, settings);
+        rp_error err{};
+        CHECK(m.node->vt->activate(m.node, 48000.0, 256, &err) == ok);
+        CHECK(std::string(err.message) == reason);
+        m.node->vt->deactivate(m.node);  // throws inside, and must not escape
+    }
+}
+
+TEST_CASE("a settings-less node still refuses what is not a JSON object", "[graph][node]") {
+    const rp_node_type* t = rp::node_type<test::Sink>();
+    rp_memory_req req{};
+    rp_error err{};
+    rp_settings empty{nullptr, 0, RP_SETTINGS_JSON};
+    CHECK(t->query_memory(&empty, &req, &err));
+    rp_settings object = json("{}");
+    CHECK(t->query_memory(&object, &req, &err));
+    rp_settings array = json("[1]");
+    CHECK_FALSE(t->query_memory(&array, &req, &err));
+    rp_settings garbage = json("not json");
+    CHECK_FALSE(t->query_memory(&garbage, &req, &err));
+    rp_settings other{"{}", 2, 7};
+    CHECK_FALSE(t->query_memory(&other, &req, &err));
+    CHECK(std::string(err.message).find("encoding") != std::string::npos);
+}
+
+TEST_CASE("a node is destroyed before its settings", "[graph][node]") {
+    g_seenAtDestroy = 0.0f;
+    {
+        Made m{rp::node_type<Holder>()};
+        make(m, R"({"value":0.75})");
+    }
+    CHECK(g_seenAtDestroy == 0.75f);
+}
+
+TEST_CASE("param values are rounded and clamped, whatever the wire carries", "[graph][node]") {
+    using Steps = rp::int_param<"Steps", rp::range{1, 16, 4}>;
+    using Mode = rp::enum_param<SyncMode, "Mode", SyncMode::MidiSync>;
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+    rp_control_queue q{};
+    CHECK(paramReading<Steps>(q, nan).value() == 4);
+    CHECK(paramReading<Steps>(q, inf).value() == std::numeric_limits<int>::max());
+    CHECK(paramReading<Steps>(q, -1e300).value() == std::numeric_limits<int>::min());
+    CHECK(paramReading<Steps>(q, 2.5).value() == 3);
+    CHECK(paramReading<Steps>(q, -2.5).value() == -3);
+    CHECK(paramReading<Mode>(q, nan).value() == SyncMode::MidiSync);
+    CHECK(paramReading<Mode>(q, inf).value() == SyncMode::HighPassTPDF);
+    CHECK(paramReading<Mode>(q, -inf).value() == SyncMode::Off);
+    CHECK(paramReading<Mode>(q, 1e300).value() == SyncMode::HighPassTPDF);
+    CHECK(paramReading<Mode>(q, 1.4).value() == SyncMode::MidiSync);
+    CHECK(paramReading<Mode>(q, 1.6).value() == SyncMode::HighPassTPDF);
+    CHECK(paramReading<Mode>(q, -0.7).value() == SyncMode::Off);
+    CHECK_FALSE(paramReading<rp::bool_param<"Mute">>(q, nan).value());
+    CHECK(paramReading<rp::bool_param<"Mute">>(q, 0.5).value());
+}
 ```
 
 - [ ] **Step 4: Register**
@@ -3292,36 +3534,44 @@ Expected: compile error, `graph/node.hpp: No such file or directory`.
 //
 // Field names become port and param ids (reflect-cpp walks the three structs); the wrapper types carry
 // the rest. The member names `inputs`, `outputs` and `params` are reserved for those structs: a node that
-// keeps a count in a member called `inputs` would be reflected as if it were its port list. Optional members a node may define, each detected and wired only if present:
+// keeps a count in a member called `inputs` would be reflected as if it were its port list. A port in the
+// wrong struct (an output in `inputs`) is a compile error.
 //
-//   using Settings = SomeNamedStruct;                     reflect-cpp-readable; its JSON Schema ships in the descriptor
-//   void on_settings(const Settings&) noexcept;           at create (control) and each commit (audio): copy, never allocate
+// Optional members a node may define. Each is detected by NAME, and once a name is present its exact
+// signature is checked at compile time, so a near miss is an error rather than a hook silently ignored:
+//
+//   using Settings = SomeNamedStruct;                     reflect-cpp-readable, in a NAMED namespace (its
+//                                                         JSON Schema $defs key comes from the type name)
 //   static std::optional<std::string> validate(const Settings&);      reject settings with a reason
-//   static void adjust_layout(rp::graph::Layout&, const Settings&);   patch reflected specs or append ports
+//   static void adjust_layout(rp::graph::Layout&, const Settings&);   patch reflected specs, append ports
+//                                                         or params; never remove or reorder reflected ones
 //   static bool needs_rebuild(const Settings& from, const Settings& to);
-//   static std::size_t extra_memory(const Settings&);     host-supplied tail memory, handed over by attach()
-//   void attach(std::span<std::byte>) noexcept;
-//   bool activate(double sampleRate, std::uint32_t maxFrames);   void deactivate();
+//   static std::size_t extra_memory(const Settings&);     host-supplied tail memory (max_align_t aligned)
+//   void attach(std::span<std::byte>) noexcept;           receives it, at create
+//   void on_settings(const Settings&) noexcept;           at create (control) and each commit (audio): copy,
+//                                                         never allocate
+//   void bind_host(const rp_host*) noexcept;              at create: host services
+//   bool activate(double sampleRate, std::uint32_t maxFrames);   (or void)   void deactivate();
 //   void ports_changed(std::span<const std::uint8_t> connectedOutputs) noexcept;
-//   void prepare(const rp::Block&) / step(std::uint32_t target) / void finish(const rp::Block&)        -> rp.step/1
-//       (step returns bool - true once the block is produced - or an rp_step_result to report a fault)
-//   void set_peers(std::span<rp_node* const>) noexcept                                             -> rp.link/1
-//   void bind_host(const rp_host*) noexcept;              at create: host services (host-implemented nodes reach the host here)
+//   void prepare(const rp::Block&) noexcept / step(std::uint32_t target) noexcept / void finish(const rp::Block&) noexcept
+//       -> rp.step/1 (all three or none; step returns bool - true once the block is produced - or an rp_step_result)
+//   void set_peers(std::span<rp_node* const>) noexcept    -> rp.link/1
 //   static constexpr const char *name, *category, *version;  static constexpr bool heap, threads;
 //
-// process() may return void or rp_status. Exceptions never cross the ABI: every control-thread entry is
-// wrapped, and process is noexcept.
+// process(const rp::Block&) is required, noexcept, and returns void or rp_status. Exceptions never cross
+// the ABI: every control-thread entry catches, and every audio-thread entry is noexcept.
 
 #include <algorithm>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <exception>
+#include <limits>
 #include <new>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -3335,6 +3585,7 @@ Expected: compile error, `graph/node.hpp: No such file or directory`.
 #include <rfl/num_fields.hpp>
 #include <rfl/to_view.hpp>
 
+#include "graph/CanonicalJson.hpp"
 #include "graph/Descriptor.hpp"
 #include "graph/Queue.hpp"
 #include "graph/rp_node.h"
@@ -3494,17 +3745,24 @@ struct float_param : detail::param_base {
 
 template <fixed_string Name, range R = range{}, fixed_string Unit = "">
 struct int_param : detail::param_base {
-    static_assert(R.min <= R.max && R.min <= R.init && R.init <= R.max, "a param range needs min <= init <= max");
-    static_assert(R.min >= -2147483648.0 && R.max <= 2147483647.0, "an int param's range fits an int, which value() returns");
-    static_assert(R.min == static_cast<double>(static_cast<int>(R.min)) &&
+    static_assert(R.min <= R.max && R.min <= R.init && R.init <= R.max && R.min >= -2147483648.0 &&
+                      R.max <= 2147483647.0 && R.min == static_cast<double>(static_cast<int>(R.min)) &&
                       R.max == static_cast<double>(static_cast<int>(R.max)) &&
                       R.init == static_cast<double>(static_cast<int>(R.init)),
-                  "an int param's range is whole numbers");
+                  "an int param's range is whole numbers with min <= init <= max, within int");
     static graph::ParamDesc rp_param(std::string id) {
         return {std::move(id), std::string(Name.view()), graph::ParamType::Int, R.min, R.max, R.init, {},
                 std::string(Unit.view())};
     }
-    int value() const { return static_cast<int>(start() + (start() < 0 ? -0.5 : 0.5)); }
+    // The value at block start, rounded and clamped to int; NaN reads as the declared default. (A wire can
+    // carry any double. A node whose range adjust_layout widened clamps to its own range.)
+    int value() const {
+        const double v = start();
+        if (!(v == v)) return static_cast<int>(R.init);
+        if (v <= -2147483648.0) return std::numeric_limits<int>::min();
+        if (v >= 2147483647.0) return std::numeric_limits<int>::max();
+        return static_cast<int>(v + (v < 0 ? -0.5 : 0.5));
+    }
 };
 
 template <fixed_string Name, bool Default = false>
@@ -3512,7 +3770,7 @@ struct bool_param : detail::param_base {
     static graph::ParamDesc rp_param(std::string id) {
         return {std::move(id), std::string(Name.view()), graph::ParamType::Bool, 0.0, 1.0, Default ? 1.0 : 0.0, {}, {}};
     }
-    bool value() const { return start() >= 0.5; }
+    bool value() const { return start() >= 0.5; }  // NaN reads as false
 };
 
 namespace detail {
@@ -3534,15 +3792,26 @@ inline std::string kebabCase(std::string_view name) {
     }
     return out;
 }
+
+template <class E, E Value>
+constexpr bool isEnumerator() {
+    for (const auto& entry : rfl::get_enumerator_array<E>())
+        if (entry.second == Value) return true;
+    return false;
+}
 }  // namespace detail
 
 // An enum param: labels are the enumerator names in kebab-case, the runtime value is the index, rounded
-// and clamped so any control can drive it.
+// and clamped so any control can drive it (NaN reads as the default).
 template <class E, fixed_string Name, E Default>
 struct enum_param : detail::param_base {
+    static constexpr auto kEnumerators = rfl::get_enumerator_array<E>();
+    static_assert(kEnumerators.size() > 0, "an enum param needs at least one enumerator");
+    static_assert(detail::isEnumerator<E, Default>(), "an enum param's default must be one of its enumerators");
+
     static graph::ParamDesc rp_param(std::string id) {
         graph::ParamDesc d{std::move(id), std::string(Name.view()), graph::ParamType::Enum, 0.0, 0.0, 0.0, {}, {}};
-        for (const auto& [label, e] : rfl::get_enumerator_array<E>()) {
+        for (const auto& [label, e] : kEnumerators) {
             if (e == Default) d.def = static_cast<double>(d.values.size());
             d.values.push_back(detail::kebabCase(label));
         }
@@ -3550,11 +3819,12 @@ struct enum_param : detail::param_base {
         return d;
     }
     E value() const {
-        static constexpr auto kEnumerators = rfl::get_enumerator_array<E>();
-        double v = start() + 0.5;
-        if (v < 0.0) v = 0.0;
-        auto i = static_cast<std::size_t>(v);
-        if (i >= kEnumerators.size()) i = kEnumerators.size() - 1;
+        const double v = start();
+        if (!(v == v)) return Default;
+        const auto last = kEnumerators.size() - 1;
+        std::size_t i = 0;
+        if (v >= static_cast<double>(last)) i = last;
+        else if (v > 0.0) i = static_cast<std::size_t>(v + 0.5);
         return kEnumerators[i].second;
     }
 };
@@ -3565,9 +3835,10 @@ struct Block {
     const rp_process& raw;
     std::uint32_t frames() const { return raw.frames; }
     const rp_transport& transport() const { return *raw.transport; }
-    // Ports beyond the reflected ones (appended by adjust_layout) are reached by index here.
+    // Ports and params beyond the reflected ones (appended by adjust_layout) are reached by index here.
     const rp_port_view& input(std::uint32_t i) const { return raw.inputs[i]; }
     const rp_port_view& output(std::uint32_t i) const { return raw.outputs[i]; }
+    const rp_control_queue& param(std::uint32_t i) const { return *raw.params[i]; }
 };
 
 // ---- reflection glue ---------------------------------------------------------------------------------------
@@ -3584,9 +3855,22 @@ template <class T> auto& inputsOf(T& t) { if constexpr (requires { t.inputs; }) 
 template <class T> auto& outputsOf(T& t) { if constexpr (requires { t.outputs; }) return t.outputs; else { static NoPorts none; return none; } }
 template <class T> auto& paramsOf(T& t) { if constexpr (requires { t.params; }) return t.params; else { static NoPorts none; return none; } }
 
-template <class Field>
+// The one place fields are walked (design 4.7's fields_of seam): swapping reflect-cpp's field reflection
+// for another one (standalone PFR) touches only these three.
+template <class S> using FieldsOf = typename rfl::named_tuple_t<S>::Fields;
+template <class S> inline constexpr std::size_t kFieldCount = rfl::num_fields<S>;
+template <class S, class F>
+void forEachField(S& s, F&& f) noexcept {
+    rfl::to_view(s).apply([&](auto& field) { f(*field.value()); });
+}
+
+enum class Side { Inputs, Outputs };
+
+template <Side W, class Field>
 graph::PortDesc portDesc() {
     using P = std::remove_cvref_t<typename Field::Type>;
+    if constexpr (W == Side::Inputs) static_assert(P::rp_dir != graph::PortDir::Out, "a port in `inputs` must be an input or a link");
+    else static_assert(P::rp_dir == graph::PortDir::Out, "a port in `outputs` must be an output");
     graph::PortDesc d;
     d.id = std::string(Field::name());
     d.kind = P::rp_kind;
@@ -3603,26 +3887,24 @@ graph::ParamDesc paramDesc() {
     return P::rp_param(std::string(Field::name()));
 }
 
-template <class S, std::size_t... I>
+template <Side W, class S, std::size_t... I>
 void appendPorts(std::vector<graph::PortDesc>& out, std::index_sequence<I...>) {
-    using Fs = typename rfl::named_tuple_t<S>::Fields;
-    (out.push_back(portDesc<rfl::tuple_element_t<I, Fs>>()), ...);
+    (out.push_back(portDesc<W, rfl::tuple_element_t<I, FieldsOf<S>>>()), ...);
 }
 
 template <class S, std::size_t... I>
 void appendParams(std::vector<graph::ParamDesc>& out, std::index_sequence<I...>) {
-    using Fs = typename rfl::named_tuple_t<S>::Fields;
-    (out.push_back(paramDesc<rfl::tuple_element_t<I, Fs>>()), ...);
+    (out.push_back(paramDesc<rfl::tuple_element_t<I, FieldsOf<S>>>()), ...);
 }
 
-template <class S>
+template <Side W, class S>
 void appendPortsOf(std::vector<graph::PortDesc>& out) {
-    if constexpr (!std::is_same_v<S, NoPorts>) appendPorts<S>(out, std::make_index_sequence<rfl::num_fields<S>>{});
+    if constexpr (!std::is_same_v<S, NoPorts>) appendPorts<W, S>(out, std::make_index_sequence<kFieldCount<S>>{});
 }
 
 template <class S>
 void appendParamsOf(std::vector<graph::ParamDesc>& out) {
-    if constexpr (!std::is_same_v<S, NoPorts>) appendParams<S>(out, std::make_index_sequence<rfl::num_fields<S>>{});
+    if constexpr (!std::is_same_v<S, NoPorts>) appendParams<S>(out, std::make_index_sequence<kFieldCount<S>>{});
 }
 
 template <class T>
@@ -3631,28 +3913,52 @@ graph::Layout reflectedLayout() {
     using Out = std::remove_cvref_t<decltype(outputsOf(std::declval<T&>()))>;
     using Par = std::remove_cvref_t<decltype(paramsOf(std::declval<T&>()))>;
     graph::Layout l;
-    appendPortsOf<In>(l.ports);
-    appendPortsOf<Out>(l.ports);
+    appendPortsOf<Side::Inputs, In>(l.ports);
+    appendPortsOf<Side::Outputs, Out>(l.ports);
     appendParamsOf<Par>(l.params);
     return l;
 }
 
+// Reflected ports and params bind by position, so adjust_layout may patch their specs and append, but each
+// reflected one must keep its place, id, kind and direction. Throws (which every caller reports as invalid
+// settings) when it did not.
+inline void checkReflectedPrefix(const graph::Layout& reflected, const graph::Layout& adjusted) {
+    auto side = [](const graph::Layout& l, bool outputs) {
+        std::vector<const graph::PortDesc*> v;
+        for (const auto& p : l.ports)
+            if ((p.dir == graph::PortDir::Out) == outputs) v.push_back(&p);
+        return v;
+    };
+    for (const bool outputs : {false, true}) {
+        const auto want = side(reflected, outputs);
+        const auto got = side(adjusted, outputs);
+        for (std::size_t i = 0; i < want.size(); ++i)
+            if (i >= got.size() || got[i]->id != want[i]->id || got[i]->kind != want[i]->kind || got[i]->dir != want[i]->dir)
+                throw std::logic_error("adjust_layout moved, removed or re-kinded reflected port \"" + want[i]->id + "\"");
+    }
+    for (std::size_t i = 0; i < reflected.params.size(); ++i)
+        if (i >= adjusted.params.size() || adjusted.params[i].id != reflected.params[i].id ||
+            adjusted.params[i].type != reflected.params[i].type)
+            throw std::logic_error("adjust_layout moved, removed or re-typed reflected param \"" + reflected.params[i].id + "\"");
+}
+
 // Inputs first, then outputs, each in declaration order - adjust_layout appends after the reflected ones.
 template <class T>
-graph::Layout layoutFor(const typename SettingsOf<T>::type& settings) {
-    graph::Layout l = reflectedLayout<T>();
+graph::Layout layoutFor([[maybe_unused]] const typename SettingsOf<T>::type& settings) {
+    const graph::Layout reflected = reflectedLayout<T>();
+    graph::Layout l = reflected;
     if constexpr (requires(graph::Layout& lr) { T::adjust_layout(lr, settings); }) T::adjust_layout(l, settings);
     std::stable_partition(l.ports.begin(), l.ports.end(),
                           [](const graph::PortDesc& p) { return p.dir != graph::PortDir::Out; });
+    checkReflectedPrefix(reflected, l);
     return l;
 }
 
 template <class S>
-void bindPorts(S& ports, const rp_port_view* views) {
+void bindPorts([[maybe_unused]] S& ports, [[maybe_unused]] const rp_port_view* views) noexcept {
     if constexpr (!std::is_same_v<S, NoPorts>) {
         std::uint32_t i = 0;
-        rfl::to_view(ports).apply([&](auto& f) {
-            auto& port = *f.value();
+        forEachField(ports, [&](auto& port) {
             using P = std::remove_cvref_t<decltype(port)>;
             const rp_port_view& v = views[i++];
             if constexpr (P::rp_kind == graph::PortKind::Audio) {
@@ -3670,19 +3976,74 @@ void bindPorts(S& ports, const rp_port_view* views) {
 }
 
 template <class S>
-void bindParams(S& params, rp_control_queue* const* queues) {
+void bindParams([[maybe_unused]] S& params, [[maybe_unused]] rp_control_queue* const* queues) noexcept {
     if constexpr (!std::is_same_v<S, NoPorts>) {
         std::uint32_t i = 0;
-        rfl::to_view(params).apply([&](auto& f) { f.value()->queue = queues[i++]; });
+        forEachField(params, [&](auto& param) { param.queue = queues[i++]; });
     }
 }
 
+// ---- compile-time checks of the optional hooks ---------------------------------------------------------------
+
 template <class T>
-struct Instance {
-    rp_node                       header;  // first: an rp_node* IS an Instance<T>*
+constexpr bool checkHooks() {
+    using S = typename SettingsOf<T>::type;
+    static_assert(requires(T& t, const Block& b) { { t.process(b) } noexcept; },
+                  "a node needs `process(const rp::Block&) noexcept`");
+    static_assert(requires(T& t, const Block& b) { { t.process(b) } -> std::same_as<void>; } ||
+                      requires(T& t, const Block& b) { { t.process(b) } -> std::same_as<rp_status>; },
+                  "process returns void or rp_status");
+    if constexpr (requires { &T::validate; })
+        static_assert(requires(const S& s) { { T::validate(s) } -> std::same_as<std::optional<std::string>>; },
+                      "validate must be `static std::optional<std::string> validate(const Settings&)`");
+    if constexpr (requires { &T::adjust_layout; })
+        static_assert(requires(graph::Layout& l, const S& s) { T::adjust_layout(l, s); },
+                      "adjust_layout must be `static void adjust_layout(rp::graph::Layout&, const Settings&)`");
+    if constexpr (requires { &T::needs_rebuild; })
+        static_assert(requires(const S& s) { { T::needs_rebuild(s, s) } -> std::same_as<bool>; },
+                      "needs_rebuild must be `static bool needs_rebuild(const Settings&, const Settings&)`");
+    if constexpr (requires { &T::extra_memory; })
+        static_assert(requires(const S& s) { { T::extra_memory(s) } -> std::same_as<std::size_t>; },
+                      "extra_memory must be `static std::size_t extra_memory(const Settings&)`");
+    if constexpr (requires { &T::attach; })
+        static_assert(requires(T& t, std::span<std::byte> m) { { t.attach(m) } noexcept; },
+                      "attach must be `void attach(std::span<std::byte>) noexcept`");
+    if constexpr (requires { &T::on_settings; })
+        static_assert(requires(T& t, const S& s) { { t.on_settings(s) } noexcept; },
+                      "on_settings must be `void on_settings(const Settings&) noexcept`");
+    if constexpr (requires { &T::bind_host; })
+        static_assert(requires(T& t, const rp_host* h) { { t.bind_host(h) } noexcept; },
+                      "bind_host must be `void bind_host(const rp_host*) noexcept`");
+    if constexpr (requires { &T::activate; })
+        static_assert(requires(T& t) { { t.activate(1.0, 1u) } -> std::same_as<bool>; } ||
+                          requires(T& t) { { t.activate(1.0, 1u) } -> std::same_as<void>; },
+                      "activate must be `bool activate(double, std::uint32_t)` or return void");
+    if constexpr (requires { &T::deactivate; })
+        static_assert(requires(T& t) { t.deactivate(); }, "deactivate must be `void deactivate()`");
+    if constexpr (requires { &T::ports_changed; })
+        static_assert(requires(T& t, std::span<const std::uint8_t> c) { { t.ports_changed(c) } noexcept; },
+                      "ports_changed must be `void ports_changed(std::span<const std::uint8_t>) noexcept`");
+    if constexpr (requires { &T::set_peers; })
+        static_assert(requires(T& t, std::span<rp_node* const> p) { { t.set_peers(p) } noexcept; },
+                      "set_peers must be `void set_peers(std::span<rp_node* const>) noexcept`");
+    constexpr bool anyStep = requires { &T::prepare; } || requires { &T::step; } || requires { &T::finish; };
+    if constexpr (anyStep) {
+        static_assert(requires(T& t, const Block& b) { { t.prepare(b) } noexcept; { t.finish(b) } noexcept; },
+                      "rp.step/1 needs `prepare(const rp::Block&) noexcept` and `finish(const rp::Block&) noexcept`");
+        static_assert(requires(T& t, std::uint32_t f) { { t.step(f) } noexcept -> std::same_as<bool>; } ||
+                          requires(T& t, std::uint32_t f) { { t.step(f) } noexcept -> std::same_as<rp_step_result>; },
+                      "rp.step/1 needs `step(std::uint32_t) noexcept` returning bool or rp_step_result");
+    }
+    return true;
+}
+
+// ---- the ABI table ---------------------------------------------------------------------------------------------
+
+template <class T>
+struct Instance : rp_node {
     T                             node;
     typename SettingsOf<T>::type* settings = nullptr;
-    std::string                   layoutCache;
+    std::string                   layoutJson;  // fixed for the instance's life: a layout change is a rebuild
     std::span<std::byte>          extra;
 };
 
@@ -3698,16 +4059,23 @@ inline std::string_view settingsText(const rp_settings* s) {
     return {s->data, s->size};
 }
 
+inline rfl::Unexpected<rfl::Error> settingsError(std::string what) {
+    return rfl::Unexpected<rfl::Error>(rfl::Error(std::move(what)));
+}
+
 template <class T>
 rfl::Result<typename SettingsOf<T>::type> parseSettings(const rp_settings* s) {
     using S = typename SettingsOf<T>::type;
+    if (s && s->encoding != RP_SETTINGS_JSON) return settingsError("settings encoding " + std::to_string(s->encoding) + " is not supported; this node reads JSON");
     if constexpr (std::is_same_v<S, NoSettings>) {
+        auto g = graph::parseJson(settingsText(s));
+        if (!g || !g->to_object()) return settingsError("settings must be a JSON object");
         return S{};
     } else {
         auto parsed = rfl::json::read<S, rfl::DefaultIfMissing>(settingsText(s));
-        if constexpr (requires(const S& st) { { T::validate(st) } -> std::same_as<std::optional<std::string>>; }) {
+        if constexpr (requires(const S& st) { T::validate(st); }) {
             if (parsed) {
-                if (auto why = T::validate(*parsed)) return rfl::Unexpected<rfl::Error>(rfl::Error(*why));
+                if (auto why = T::validate(*parsed)) return settingsError(*why);
             }
         }
         return parsed;
@@ -3715,7 +4083,7 @@ rfl::Result<typename SettingsOf<T>::type> parseSettings(const rp_settings* s) {
 }
 
 template <class T>
-std::size_t extraBytes(const typename SettingsOf<T>::type& s) {
+std::size_t extraBytes([[maybe_unused]] const typename SettingsOf<T>::type& s) {
     if constexpr (requires { T::extra_memory(s); }) return T::extra_memory(s);
     else return 0;
 }
@@ -3728,53 +4096,66 @@ std::size_t extraOffset() { return alignUp(sizeof(Instance<T>), alignof(std::max
 template <class T> const rp_node_vtable* vtable();
 
 template <class T>
-Instance<T>* self(rp_node* n) { return reinterpret_cast<Instance<T>*>(n); }
+Instance<T>* self(rp_node* n) noexcept { return static_cast<Instance<T>*>(n); }
 
 template <class T>
-const char* layoutFn(rp_node* n) {
-    auto* inst = self<T>(n);
-    inst->layoutCache = graph::layoutJson(layoutFor<T>(*inst->settings));
-    return inst->layoutCache.c_str();
+const char* layoutFn(rp_node* n) noexcept {
+    return self<T>(n)->layoutJson.c_str();
 }
 
 template <class T>
-bool activateFn(rp_node* n, double sampleRate, std::uint32_t maxFrames, rp_error* err) {
-    try {
-        if constexpr (requires(T& t) { { t.activate(sampleRate, maxFrames) } -> std::same_as<bool>; }) {
-            if (!self<T>(n)->node.activate(sampleRate, maxFrames)) {
-                copyError(err, "activate failed");
-                return false;
-            }
-        } else if constexpr (requires(T& t) { t.activate(sampleRate, maxFrames); }) {
-            self<T>(n)->node.activate(sampleRate, maxFrames);
-        }
+bool activateFn([[maybe_unused]] rp_node* n, [[maybe_unused]] double sampleRate,
+                [[maybe_unused]] std::uint32_t maxFrames, [[maybe_unused]] rp_error* err) {
+    if constexpr (!requires(T& t) { t.activate(sampleRate, maxFrames); }) {
         return true;
-    } catch (const std::exception& e) {
-        copyError(err, e.what());
-        return false;
+    } else {
+        try {
+            if constexpr (std::is_same_v<decltype(self<T>(n)->node.activate(sampleRate, maxFrames)), bool>) {
+                if (!self<T>(n)->node.activate(sampleRate, maxFrames)) {
+                    copyError(err, "activate failed");
+                    return false;
+                }
+            } else {
+                self<T>(n)->node.activate(sampleRate, maxFrames);
+            }
+            return true;
+        } catch (const std::exception& e) {
+            copyError(err, e.what());
+            return false;
+        } catch (...) {
+            copyError(err, "activate threw");
+            return false;
+        }
     }
 }
 
 template <class T>
-void deactivateFn(rp_node* n) {
-    if constexpr (requires(T& t) { t.deactivate(); }) self<T>(n)->node.deactivate();
+void deactivateFn([[maybe_unused]] rp_node* n) {
+    if constexpr (requires(T& t) { t.deactivate(); }) {
+        try {
+            self<T>(n)->node.deactivate();
+        } catch (...) {
+            // Nothing to report through: deactivate has no error channel, and it must not unwind the host.
+        }
+    }
 }
 
 template <class T>
-void portsChangedFn(rp_node* n, const std::uint8_t* connected, std::uint32_t count) {
+void portsChangedFn([[maybe_unused]] rp_node* n, [[maybe_unused]] const std::uint8_t* connected,
+                    [[maybe_unused]] std::uint32_t count) noexcept {
     if constexpr (requires(T& t, std::span<const std::uint8_t> c) { t.ports_changed(c); })
         self<T>(n)->node.ports_changed(std::span<const std::uint8_t>(connected, count));
 }
 
 template <class T>
-void bindAll(T& node, const rp_process* p) {
+void bindAll(T& node, const rp_process* p) noexcept {
     bindPorts(inputsOf(node), p->inputs);
     bindPorts(outputsOf(node), p->outputs);
     bindParams(paramsOf(node), p->params);
 }
 
 template <class T>
-rp_status processFn(rp_node* n, const rp_process* p) {
+rp_status processFn(rp_node* n, const rp_process* p) noexcept {
     T& node = self<T>(n)->node;
     bindAll(node, p);
     const Block block{*p};
@@ -3785,6 +4166,8 @@ rp_status processFn(rp_node* n, const rp_process* p) {
     }
 }
 
+// Reads the instance's current settings (for needs_rebuild). That is safe because a host never prepares
+// while a commit for the same instance may be in flight - GraphHost waits for adoption before it plans.
 template <class T>
 rp_prepare_result prepareFn(rp_node* n, const rp_settings* s, void** prepared, rp_error* err) {
     using S = typename SettingsOf<T>::type;
@@ -3795,8 +4178,8 @@ rp_prepare_result prepareFn(rp_node* n, const rp_settings* s, void** prepared, r
             return RP_PREPARE_INVALID;
         }
         auto* inst = self<T>(n);
-        const bool layoutChanged = graph::layoutJson(layoutFor<T>(*parsed)) != graph::layoutJson(layoutFor<T>(*inst->settings));
-        bool rebuild = layoutChanged || extraBytes<T>(*parsed) != extraBytes<T>(*inst->settings);
+        bool rebuild = graph::layoutJson(layoutFor<T>(*parsed)) != inst->layoutJson ||
+                       extraBytes<T>(*parsed) != inst->extra.size();
         if constexpr (requires(const S& a) { T::needs_rebuild(a, a); })
             rebuild = rebuild || T::needs_rebuild(*inst->settings, *parsed);
         if (rebuild) return RP_PREPARE_REBUILD;
@@ -3805,11 +4188,14 @@ rp_prepare_result prepareFn(rp_node* n, const rp_settings* s, void** prepared, r
     } catch (const std::exception& e) {
         copyError(err, e.what());
         return RP_PREPARE_INVALID;
+    } catch (...) {
+        copyError(err, "settings threw");
+        return RP_PREPARE_INVALID;
     }
 }
 
 template <class T>
-void commitFn(rp_node* n, void* prepared, void** old) {
+void commitFn(rp_node* n, void* prepared, void** old) noexcept {
     using S = typename SettingsOf<T>::type;
     auto* inst = self<T>(n);
     *old = inst->settings;
@@ -3818,38 +4204,38 @@ void commitFn(rp_node* n, void* prepared, void** old) {
 }
 
 template <class T>
-void releaseFn(rp_node*, void* old) {
+void releaseFn(rp_node*, void* old) noexcept {
     delete static_cast<typename SettingsOf<T>::type*>(old);
 }
 
-template <class T> void stepPrepare(rp_node* n, const rp_process* p) {
+template <class T> void stepPrepare(rp_node* n, const rp_process* p) noexcept {
     T& node = self<T>(n)->node;
     bindAll(node, p);
     node.prepare(Block{*p});
 }
-template <class T> rp_step_result stepStep(rp_node* n, std::uint32_t target) {
+template <class T> rp_step_result stepStep(rp_node* n, std::uint32_t target) noexcept {
     T& node = self<T>(n)->node;
     if constexpr (std::is_same_v<decltype(node.step(target)), bool>) return node.step(target) ? RP_STEP_DONE : RP_STEP_BELOW;
     else return node.step(target);
 }
-template <class T> void stepFinish(rp_node* n, const rp_process* p) {
+template <class T> void stepFinish(rp_node* n, const rp_process* p) noexcept {
     T& node = self<T>(n)->node;
     bindAll(node, p);
     node.finish(Block{*p});
 }
-template <class T> void linkSetPeers(rp_node* n, rp_node* const* peers, std::uint32_t count) {
+template <class T> void linkSetPeers(rp_node* n, rp_node* const* peers, std::uint32_t count) noexcept {
     self<T>(n)->node.set_peers(std::span<rp_node* const>(peers, count));
 }
 
 template <class T>
-const void* interfaceFn(rp_node*, const char* id) {
-    const std::string_view want(id);
+const void* interfaceFn(rp_node*, const char* id) noexcept {
+    [[maybe_unused]] const std::string_view want(id);
     if constexpr (requires(T& t, const Block& b, std::uint32_t f) { t.prepare(b); t.step(f); t.finish(b); }) {
-        static const rp_step_interface kStep{&stepPrepare<T>, &stepStep<T>, &stepFinish<T>};
+        static constexpr rp_step_interface kStep{&stepPrepare<T>, &stepStep<T>, &stepFinish<T>};
         if (want == RP_STEP_INTERFACE) return &kStep;
     }
     if constexpr (requires(T& t, std::span<rp_node* const> peers) { t.set_peers(peers); }) {
-        static const rp_link_interface kLink{&linkSetPeers<T>};
+        static constexpr rp_link_interface kLink{&linkSetPeers<T>};
         if (want == RP_LINK_INTERFACE) return &kLink;
     }
     return nullptr;
@@ -3857,9 +4243,9 @@ const void* interfaceFn(rp_node*, const char* id) {
 
 template <class T>
 const rp_node_vtable* vtable() {
-    static const rp_node_vtable kVtable{&layoutFn<T>,   &activateFn<T>, &deactivateFn<T>,
-                                        &portsChangedFn<T>, &processFn<T>, &prepareFn<T>,
-                                        &commitFn<T>,   &releaseFn<T>,  &interfaceFn<T>};
+    static constexpr rp_node_vtable kVtable{&layoutFn<T>,       &activateFn<T>, &deactivateFn<T>,
+                                            &portsChangedFn<T>, &processFn<T>,  &prepareFn<T>,
+                                            &commitFn<T>,       &releaseFn<T>,  &interfaceFn<T>};
     return &kVtable;
 }
 
@@ -3869,21 +4255,26 @@ template <class T> constexpr const char* versionOf() { if constexpr (requires { 
 template <class T> constexpr bool heapOf() { if constexpr (requires { T::heap; }) return T::heap; else return false; }
 template <class T> constexpr bool threadsOf() { if constexpr (requires { T::threads; }) return T::threads; else return false; }
 
+// An empty descriptor when building it throws (adjust_layout on default settings, say), which the registry
+// refuses with a reason rather than letting the exception reach it.
 template <class T>
 const char* descriptorFn() {
-    static const std::string kJson = [] {
-        using S = typename SettingsOf<T>::type;
-        graph::TypeDescriptor d;
-        d.id = T::id;
-        d.version = versionOf<T>();
-        d.name = nameOf<T>();
-        d.category = categoryOf<T>();
-        d.heap = heapOf<T>();
-        d.threads = threadsOf<T>();
-        d.layout = layoutFor<T>(S{});
-        if constexpr (!std::is_same_v<S, NoSettings>) d.settingsSchema = rfl::json::to_schema<S, rfl::DefaultIfMissing>();
-        else d.settingsSchema = R"({"type":"object"})";
-        return graph::descriptorJson(d);
+    static const std::string kJson = []() -> std::string {
+        try {
+            using S = typename SettingsOf<T>::type;
+            graph::TypeDescriptor d;
+            d.id = T::id;
+            d.version = versionOf<T>();
+            d.name = nameOf<T>();
+            d.category = categoryOf<T>();
+            d.heap = heapOf<T>();
+            d.threads = threadsOf<T>();
+            d.layout = layoutFor<T>(S{});
+            if constexpr (!std::is_same_v<S, NoSettings>) d.settingsSchema = rfl::json::to_schema<S, rfl::DefaultIfMissing>();
+            return graph::descriptorJson(d);
+        } catch (...) {
+            return std::string();
+        }
     }();
     return kJson.c_str();
 }
@@ -3897,55 +4288,77 @@ bool queryMemoryFn(const rp_settings* s, rp_memory_req* out, rp_error* err) {
             return false;
         }
         const std::size_t extra = extraBytes<T>(*parsed);
+        if (extra > std::numeric_limits<std::size_t>::max() - extraOffset<T>()) {
+            copyError(err, "extra memory request is too large");
+            return false;
+        }
         out->size = extra ? extraOffset<T>() + extra : sizeof(Instance<T>);
         out->align = alignof(Instance<T>) > alignof(std::max_align_t) ? alignof(Instance<T>) : alignof(std::max_align_t);
         return true;
     } catch (const std::exception& e) {
         copyError(err, e.what());
         return false;
+    } catch (...) {
+        copyError(err, "settings threw");
+        return false;
     }
 }
 
 template <class T>
-rp_node* createFn(const rp_host* host, void* memory, const rp_settings* s, rp_error* err) {
+rp_node* createFn([[maybe_unused]] const rp_host* host, void* memory, const rp_settings* s, rp_error* err) {
     using S = typename SettingsOf<T>::type;
+    Instance<T>* inst = nullptr;
     try {
         auto parsed = parseSettings<T>(s);
         if (!parsed) {
             copyError(err, parsed.error().what());
             return nullptr;
         }
-        auto* inst = new (memory) Instance<T>{};
-        inst->header.vt = vtable<T>();
+        // Everything that can throw on the node's behalf (adjust_layout) runs before the instance exists.
+        std::string layout = graph::layoutJson(layoutFor<T>(*parsed));
+        const std::size_t extra = extraBytes<T>(*parsed);
+        inst = new (memory) Instance<T>{};
+        inst->vt = vtable<T>();
+        inst->layoutJson = std::move(layout);
         inst->settings = new S(std::move(*parsed));
         if constexpr (requires(T& t) { t.bind_host(host); }) inst->node.bind_host(host);
-        if (const std::size_t extra = extraBytes<T>(*inst->settings)) {
+        if (extra) {
             inst->extra = std::span<std::byte>(static_cast<std::byte*>(memory) + extraOffset<T>(), extra);
             std::memset(inst->extra.data(), 0, extra);
             if constexpr (requires(T& t, std::span<std::byte> e) { t.attach(e); }) inst->node.attach(inst->extra);
         }
         if constexpr (requires(T& t, const S& st) { t.on_settings(st); }) inst->node.on_settings(*inst->settings);
-        return &inst->header;
+        return inst;
     } catch (const std::exception& e) {
         copyError(err, e.what());
-        return nullptr;
+    } catch (...) {
+        copyError(err, "create threw");
     }
+    if (inst) {  // only an allocation failure gets here after construction; leave nothing behind
+        delete inst->settings;
+        inst->~Instance<T>();
+    }
+    return nullptr;
 }
 
+// The node goes first: it may hold a pointer to its settings until its own destructor has run.
 template <class T>
 void destroyFn(rp_node* n) {
     auto* inst = self<T>(n);
-    delete inst->settings;
+    auto* settings = inst->settings;
     inst->~Instance<T>();
+    delete settings;
 }
 
 }  // namespace detail
 
-// The ABI table for a C++ node type. One per T, built on first use.
+// The ABI table for a C++ node type. One per T, built on first use; every optional hook's signature is
+// checked here, at compile time.
 template <class T>
 const rp_node_type* node_type() {
-    static const rp_node_type kType{T::id, &detail::descriptorFn<T>, &detail::queryMemoryFn<T>, &detail::createFn<T>,
-                                    &detail::destroyFn<T>};
+    static_assert(detail::checkHooks<T>());
+    static constexpr rp_node_type kType{T::id, &detail::descriptorFn<T>, &detail::queryMemoryFn<T>,
+                                        &detail::createFn<T>, &detail::destroyFn<T>};
     return &kType;
 }
 
@@ -3962,7 +4375,7 @@ T* peer_as(rp_node* n) {
 - [ ] **Step 7: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (244 assertions in 31 test cases)`.
+Expected: `All tests passed (298 assertions in 37 test cases)`.
 
 - [ ] **Step 8: Commit**
 
@@ -3976,6 +4389,10 @@ layout adjustment, host-supplied extra memory and the step / link
 interfaces are wired only when a node defines them. Enum labels are the
 enumerator names in kebab-case. Pinned by a golden descriptor the TS
 twin must also match."
+
+(This task was executed as the original commit plus one review-fix commit, "fix(graph): hooks are
+checked at compile time and nothing throws across the ABI". A fresh execution needs only the one commit
+above.)
 ```
 
 ---
@@ -4437,7 +4854,7 @@ std::size_t ResourceTable::liveCount() const { return entries_.size(); }
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (284 assertions in 36 test cases)`.
+Expected: `All tests passed (338 assertions in 42 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -4653,6 +5070,8 @@ TEST_CASE("a rejected document leaves the running graph untouched", "[graph][pla
 // and the state a plan swap must keep (docs/modular-graph-design.md section 5.3).
 #include <catch2/catch_test_macros.hpp>
 
+#include <limits>
+
 #include "GraphRig.hpp"
 
 using namespace rp::graph;
@@ -4764,6 +5183,11 @@ TEST_CASE("a live param rides the next block; document params apply on adoption"
     rig.run();  // the change rides this block's stream; Source reads gain at block start, so it shows next block
     rig.run();
     CHECK(rig.outs[0][0] == 2.0f);
+    REQUIRE(rig.host->setParam("src", "gain", 1e9));  // clamped to the declared 0..10
+    rig.run();
+    rig.run();
+    CHECK(rig.outs[0][0] == 5.0f);
+    CHECK_FALSE(rig.host->setParam("src", "gain", std::numeric_limits<double>::quiet_NaN()));
     CHECK_FALSE(rig.host->setParam("src", "nope", 1.0));
     CHECK_FALSE(rig.host->setParam("ghost", "gain", 1.0));
 }
@@ -6112,7 +6536,8 @@ public:
     // ---- control thread ------------------------------------------------------------------------------
     SetGraphResult setGraph(std::string_view documentJson);
     SetGraphResult setGraph(const GraphDocument& document);
-    // A live param change, applied at `frame` of the next block. False for an unknown node or param.
+    // A live param change, clamped to the param's resolved range and applied at `frame` of the next block.
+    // False for an unknown node or param, or a NaN value.
     bool setParam(std::string_view nodeId, std::string_view paramId, double value, std::uint32_t frame = 0);
     // Set true BEFORE the audio thread starts calling processBlock, false AFTER it has stopped.
     void setAudioThreadOwns(bool owns);
@@ -6319,11 +6744,12 @@ bool GraphHost::setParam(std::string_view nodeId, std::string_view paramId, doub
     const auto& params = it->second->layout.params;
     for (std::size_t k = 0; k < params.size(); ++k) {
         if (params[k].id != paramId) continue;
+        if (value != value) return false;
         Command c;
         c.kind = Command::Kind::SetParam;
         c.queue = &it->second->params[k]->queue;
         c.frame = frame;
-        c.value = value;
+        c.value = value < params[k].min ? params[k].min : value > params[k].max ? params[k].max : value;
         return push(c);
     }
     return false;
@@ -6436,7 +6862,8 @@ const rp_package* hostPackage();
 
 namespace rp::graph {
 
-namespace {
+// Named, so AudioOutSettings has the same $defs key under every compiler.
+namespace host {
 
 struct AudioOutSettings {
     std::vector<std::uint32_t> buses = {2, 2, 2, 2};
@@ -6494,10 +6921,10 @@ struct AudioOut {
     }
 };
 
-}  // namespace
+}  // namespace host
 
 const rp_package* hostPackage() {
-    static const rp_node_type* const kTypes[] = {rp::node_type<AudioOut>()};
+    static const rp_node_type* const kTypes[] = {rp::node_type<host::AudioOut>()};
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.host","version":"1.0.0"})",
                                      static_cast<std::uint32_t>(std::size(kTypes)), kTypes};
     return &kPackage;
@@ -6509,7 +6936,7 @@ const rp_package* hostPackage() {
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (391 assertions in 63 test cases)`.
+Expected: `All tests passed (448 assertions in 69 test cases)`.
 
 - [ ] **Step 7: Commit**
 
@@ -6613,6 +7040,13 @@ TEST_CASE("core settings are validated with a reason", "[graph][core]") {
     CHECK(r.errors[0].message.find("5.1") != std::string::npos);
     CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"d","type":"rp.core.downmix","settings":{"from":"stereo","to":"5.1"}}],"wires":[]})")) == "settings-invalid");
     CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"a","type":"rp.core.add","settings":{"inputs":0}}],"wires":[]})")) == "settings-invalid");
+    CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"d","type":"rp.core.delay","settings":{"maxSamples":16777217}}],"wires":[]})")) == "settings-invalid");
+}
+
+TEST_CASE("core settings schemas name their structs the same under every compiler", "[graph][core]") {
+    const std::string add = corePackage()->node_types[0]->descriptor();
+    CHECK(add.find(R"("$ref":"#/$defs/rp__graph__core__AddSettings")") != std::string::npos);
+    CHECK(add.find("anonymous") == std::string::npos);
 }
 
 TEST_CASE("merge orders events from several inputs by frame", "[graph][core]") {
@@ -6789,7 +7223,9 @@ const rp_package* corePackage();
 
 namespace rp::graph {
 
-namespace {
+// A named namespace, not an anonymous one: a Settings struct's JSON Schema $defs key is its qualified
+// name, which compilers spell differently for an anonymous namespace.
+namespace core {
 
 constexpr std::uint32_t kMaxPorts = 16;
 
@@ -7117,6 +7553,8 @@ struct Relabel {
 
 // ---- rp.core.delay ----------------------------------------------------------------------------------------------
 
+constexpr std::uint32_t kMaxDelaySamples = 1u << 24;  // keeps the ring size and the int Time param in range
+
 struct DelaySettings {
     std::uint32_t maxSamples = 48000;
     std::uint32_t channels = 2;
@@ -7134,7 +7572,8 @@ struct Delay {
 
     static std::optional<std::string> validate(const Settings& s) {
         if (s.channels < 1 || s.channels > kMaxPorts) return std::string("channels must be between 1 and 16");
-        if (s.maxSamples < 1) return std::string("maxSamples must be at least 1");
+        if (s.maxSamples < 1 || s.maxSamples > kMaxDelaySamples)
+            return "maxSamples must be between 1 and " + std::to_string(kMaxDelaySamples);
         return std::nullopt;
     }
 
@@ -7278,14 +7717,14 @@ struct BufferRecorder {
     }
 };
 
-}  // namespace
+}  // namespace core
 
 const rp_package* corePackage() {
     static const rp_node_type* const kTypes[] = {
-        rp::node_type<Add>(),     rp::node_type<Merge>(),    rp::node_type<Join>(),
-        rp::node_type<Split>(),   rp::node_type<Downmix>(),  rp::node_type<Relabel>(),
-        rp::node_type<Delay>(),   rp::node_type<Constant>(), rp::node_type<BufferPlayer>(),
-        rp::node_type<BufferRecorder>(),
+        rp::node_type<core::Add>(),     rp::node_type<core::Merge>(),    rp::node_type<core::Join>(),
+        rp::node_type<core::Split>(),   rp::node_type<core::Downmix>(),  rp::node_type<core::Relabel>(),
+        rp::node_type<core::Delay>(),   rp::node_type<core::Constant>(), rp::node_type<core::BufferPlayer>(),
+        rp::node_type<core::BufferRecorder>(),
     };
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.core","version":"1.0.0"})",
                                      static_cast<std::uint32_t>(std::size(kTypes)), kTypes};
@@ -7298,7 +7737,7 @@ const rp_package* corePackage() {
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (433 assertions in 75 test cases)`.
+Expected: `All tests passed (493 assertions in 82 test cases)`.
 
 - [ ] **Step 6: Commit**
 
@@ -7512,7 +7951,7 @@ Add both files to the test's `SOURCES` and `Threads::Threads` to its `LIBS`:
 - [ ] **Step 3: Run the tests**
 
 Run: `cmake --build build --target retroplug-graph-test -j$(nproc) && build/bin/retroplug-graph-test`
-Expected: `All tests passed (640 assertions in 77 test cases)`. (These pass immediately: the properties
+Expected: `All tests passed (700 assertions in 84 test cases)`. (These pass immediately: the properties
 were built in by Tasks 2 to 8. If NoAlloc fails, an earlier task let an allocation onto the block path;
 fix that, never the test.)
 
@@ -7526,7 +7965,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-graph-test
 ```
 
-Expected: `All tests passed (640 assertions in 77 test cases)` and no ThreadSanitizer report. (Same
+Expected: `All tests passed (700 assertions in 84 test cases)` and no ThreadSanitizer report. (Same
 configure as `tools/run-sanitizer.sh thread`, which shares `build-tsan/`.)
 
 - [ ] **Step 5: Commit**

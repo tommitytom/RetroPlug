@@ -468,8 +468,9 @@ RP_NODE(Gain);   // emits the rp_node_type + vtable
   convention. The member names `inputs`, `outputs` and `params` are reserved for the three port structs.
 - **Settings are plain named reflect-cpp structs**, so their JSON Schema is `rfl::json::to_schema`, with
   `rfl::Validator` / `rfl::Description` / `rfl::DefaultVal` for ranges, descriptions and defaults. Named,
-  because reflect-cpp derives `$defs` keys from compiler type names, which differ between gcc and clang
-  for unnamed structs.
+  and declared in a named namespace, because reflect-cpp derives `$defs` keys from compiler type names,
+  which differ between gcc and clang for unnamed structs and for anonymous namespaces (gcc
+  `rp__graph___anonymous___X`, clang `rp__graph___anonymous_namespace___X`).
 - **Ports and params get their descriptor from our own table**, not from reflect-cpp's schema output, so
   descriptors stay byte-stable.
 - **The field walk sits behind one `rp::fields_of<T>`**, built on reflect-cpp's `named_tuple_t` /
@@ -479,7 +480,15 @@ RP_NODE(Gain);   // emits the rp_node_type + vtable
 - **No avendish or halp dependency**: avendish needs Boost.MP11 in its core, and halp plus the bindings
   are GPL-3.0. Only avendish's permissively licensed concept vocabulary (`avnd/concepts/*.hpp`, BSL / CC0 /
   0BSD) is a model for our naming.
-- **Exceptions never cross the ABI.** `RP_NODE` wraps every control-thread call; `process` is `noexcept`.
+- **Exceptions never cross the ABI.** Every control-thread entry catches and reports through `rp_error`
+  (a descriptor that cannot be built is an empty string, which the registry refuses); every audio-thread
+  hook (`process`, `on_settings`, `ports_changed`, the step and link hooks) must be `noexcept`.
+- **Optional hooks are detected by name, then checked by signature.** Once a node defines `validate`,
+  `adjust_layout`, `extra_memory` or any other hook, its exact signature is a compile-time assertion, so a
+  near miss (a missing `noexcept`, a `bool` where `std::optional<std::string>` is expected, two of the
+  three step hooks) is an error rather than a hook silently ignored. A port in the wrong struct is an
+  error too, and `adjust_layout` may patch and append but never move, drop or re-kind a reflected port
+  or param (they bind by position), which is checked when the layout is built.
 - **Settings decode** uses reflect-cpp with the JSON Schema-validated types, so a bad value in a
   downloaded document is rejected with a message ("expected >= 20, got 5"), not silently clamped.
 - **reflect-cpp is upgraded to 0.26.x** (schema `default`, which 0.24 lacks). The pin lives in rpcpp
