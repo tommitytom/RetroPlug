@@ -101,9 +101,37 @@ test("bad settings or node ids are reported, and the rest of the graph is still 
   reg.add(lsdj);
   reg.add(defineExtension({ id: "rp.ok", matches: () => true, contribute: () => ({ nodes: [{ id: "ok", type: "rp.x" }, { id: "bad.id", type: "rp.x" }] }) }));
   const c = reg.collect([gb], () => ({ syncMode: "master" }));  // saved by a newer build, say
-  expect(c.errors.map((e) => [e.extension, e.code])).toEqual([["rp.lsdj", "settings-invalid"], ["rp.ok", "node-id"]]);
-  expect(c.errors[0].message.includes("syncMode")).toBe(true);
+  expect(c.errors.map((e) => [e.extension, e.code])).toEqual([["rp.lsdj", "settings-invalid"], ["rp.ok", "node-invalid"]]);
+  expect(c.errors[0].message.includes("syncMode") && c.errors[0].message.includes("using the defaults")).toBe(true);
   expect(c.nodes.map((n) => [n.id, n.params?.mode])).toEqual([["sys-1/lsdj-sync", "midi-sync"], ["ok", undefined]]);  // defaults stand in
+});
+
+test("a contributed node or wire C++ would refuse is reported against its extension, and left out", () => {
+  const reg = new ExtensionRegistry();
+  reg.add(
+    defineExtension({
+      id: "rp.bad",
+      matches: () => true,
+      contribute: () => ({
+        nodes: [{ id: "a", type: "rp bad" }, { id: "b", type: "rp.x", settings: { level: -Infinity } }, { id: "c", type: "rp.x", params: { gain: Number.NaN } }],
+        wires: [{ from: "a.out", to: "sys-1" }, { from: "c.out", to: "sys-1.in" }],
+      }),
+    }),
+  );
+  const c = reg.collect([gb]);
+  expect(c.errors.map((e) => e.code)).toEqual(["node-invalid", "node-invalid", "node-invalid", "wire-invalid"]);
+  expect(c.errors[1].message.includes("-Infinity")).toBe(true);  // seen before the copy could spell it null
+  expect(c.errors[2].message.includes("NaN")).toBe(true);
+  expect(c.wires).toEqual([{ from: "c.out", to: "sys-1.in" }]);
+});
+
+test("an extension whose settings and defaults both fail is left out, and says so", () => {
+  const reg = new ExtensionRegistry();
+  reg.add(defineExtension({ id: "rp.needy", matches: () => true, settings: z.object({ need: z.string() }), contribute: () => ({ nodes: [{ id: "n", type: "rp.x" }] }) }));
+  const c = reg.collect([gb]);
+  expect(c.attached.length).toBe(0);
+  expect(c.nodes.length).toBe(0);
+  expect(c.errors[0].message.includes("left out")).toBe(true);
 });
 
 test("an extension id can be registered once", () => {
@@ -112,5 +140,7 @@ test("an extension id can be registered once", () => {
   expect(() => reg.add(lsdj)).toThrow("already registered");
 });
 
-// @ts-expect-error an extension that reads settings has to say what they are
-defineExtension<{ n: number }>({ id: "rp.typed", matches: () => true, contribute: ({ settings }) => ({ nodes: [{ id: String(settings.n), type: "t" }] }) });
+// Type-level only (never called): an extension that reads settings has to say what they are.
+export const typeCheck = () =>
+  // @ts-expect-error a settings type with no schema
+  defineExtension<{ n: number }>({ id: "rp.typed", matches: () => true, contribute: ({ settings }) => ({ nodes: [{ id: String(settings.n), type: "t" }] }) });

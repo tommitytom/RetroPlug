@@ -46,64 +46,113 @@ export function parseEndpoint(text: string): { node: string; port: string } | nu
   return { node: text.slice(0, dot), port: text.slice(dot + 1) };
 }
 
-// Every string (and key) in a JSON value is one C++ can read; NaN and infinities spell null, which no
-// param or setting means.
-function readable(v: unknown, where: string): void {
-  if (typeof v === "string") {
-    if (!wellFormed(v)) throw new Error(`${where} holds a lone surrogate, which C++ cannot read`);
-  } else if (typeof v === "number") {
-    if (!Number.isFinite(v)) throw new Error(`${where} holds ${v}, which JSON cannot carry`);
-  } else if (Array.isArray(v)) {
-    v.forEach((x, i) => readable(x, `${where}[${i}]`));
-  } else if (v && typeof v === "object") {
-    for (const [k, x] of Object.entries(v)) {
-      if (!wellFormed(k)) throw new Error(`${where} has a key with a lone surrogate`);
-      readable(x, `${where}.${k}`);
-    }
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v) && [Object.prototype, null].includes(Object.getPrototypeOf(v));
+
+// Why a value is not plain JSON that C++ reads as written, or null. Every string (and key) must have a
+// UTF-8 spelling; NaN and infinities would spell null, and so would functions; typed arrays, dates and
+// maps would be spelt as something else entirely.
+function unreadable(v: unknown, where: string): string | null {
+  switch (typeof v) {
+    case "string":
+      return wellFormed(v) ? null : `${where} holds a lone surrogate, which C++ cannot read`;
+    case "number":
+      return Number.isFinite(v) ? null : `${where} holds ${v}, which JSON cannot carry`;
+    case "boolean":
+      return null;
+    case "object":
+      if (v === null) return null;
+      if (Array.isArray(v)) {
+        for (let i = 0; i < v.length; ++i) {
+          if (v[i] === undefined) return `${where}[${i}] is undefined`;
+          const why = unreadable(v[i], `${where}[${i}]`);
+          if (why) return why;
+        }
+        return null;
+      }
+      if (!isPlainObject(v)) return `${where} is not a plain JSON object`;
+      for (const [k, x] of Object.entries(v)) {
+        if (!wellFormed(k)) return `${where} has a key with a lone surrogate`;
+        const why = x === undefined ? null : unreadable(x, `${where}.${k}`);
+        if (why) return why;
+      }
+      return null;
+    default:
+      return `${where} holds a ${typeof v}, which JSON cannot carry`;
   }
 }
 
-/** The text to send with setGraph: only the fields GraphDocument.hpp reads (C++ refuses the whole document
- *  over one unknown field, which TS's structural types would let through), in canonical JSON. Throws, with
- *  the node it is about, for anything the C++ parser or the planner's structure check would refuse. */
+/** Why the C++ parser or the planner's structure check would refuse this node, or null. */
+export function checkNode(n: NodeDoc): string | null {
+  if (!isNodeId(n.id)) return `id ${q(String(n.id))} is not a node id (a plain id with no ".")`;
+  if (!plainId(n.type)) return `type ${q(String(n.type))} is not a node type id`;
+  if (n.settings !== undefined) {
+    if (!isPlainObject(n.settings)) return "settings must be an object";
+    const why = unreadable(n.settings, "settings");
+    if (why) return why;
+  }
+  if (n.params !== undefined) {
+    if (!isPlainObject(n.params)) return "params must be an object";
+    for (const [id, v] of Object.entries(n.params)) {
+      if (!plainId(id)) return `param id ${q(id)} is not a plain id`;
+      if (!["number", "string", "boolean"].includes(typeof v)) return `param ${q(id)} must be a number, label or bool`;
+      const why = unreadable(v, `param ${q(id)}`);
+      if (why) return why;
+    }
+  }
+  if (n.resources !== undefined) {
+    if (!isPlainObject(n.resources)) return "resources must be an object";
+    for (const [port, ref] of Object.entries(n.resources)) {
+      if (!plainId(port)) return `resource port ${q(port)} is not a plain id`;
+      if (typeof ref !== "string" || !/^res:[1-9][0-9]*$/.test(ref) || Number(ref.slice(4)) > 4294967295)
+        return `resource ${q(port)} must be "res:<id>", not ${q(String(ref))}`;
+    }
+  }
+  return null;
+}
+
+/** Why the C++ parser would refuse this wire, or null. */
+export function checkWire(w: WireDoc): string | null {
+  if (typeof w.from !== "string" || typeof w.to !== "string" || !parseEndpoint(w.from) || !parseEndpoint(w.to))
+    return `${q(String(w.from))} -> ${q(String(w.to))} needs node.port endpoints`;
+  const why = unreadable(w.from, "from") ?? unreadable(w.to, "to");
+  if (why) return why;
+  if (w.feedback !== undefined && typeof w.feedback !== "boolean") return "feedback must be true or false";
+  return null;
+}
+
+// Only the fields GraphDocument.hpp reads: C++ refuses a whole document over one unknown field, which TS's
+// structural types would let through.
+function projectNode(n: NodeDoc): Record<string, unknown> {
+  const out: Record<string, unknown> = { id: n.id, type: n.type };
+  if (n.settings !== undefined) out.settings = n.settings;
+  if (n.params !== undefined) out.params = n.params;
+  if (n.resources !== undefined) out.resources = n.resources;
+  return out;
+}
+
+function projectWire(w: WireDoc): Record<string, unknown> {
+  const out: Record<string, unknown> = { from: w.from, to: w.to };
+  if (w.feedback !== undefined) out.feedback = w.feedback;
+  return out;
+}
+
+/** The text to send with setGraph: only the fields GraphDocument.hpp reads, in canonical JSON. Throws,
+ *  naming the node or wire, for anything the C++ parser or the planner's structure check would refuse
+ *  (checkNode, checkWire, and a node id used twice). */
 export function toGraphJson(doc: GraphDocument): string {
+  const ids = new Set<string>();
   const nodes = doc.nodes.map((n, i) => {
-    const where = `node #${i}`;
-    if (!isNodeId(n.id)) throw new Error(`${where}: id ${q(String(n.id))} is not a node id (a plain id with no ".")`);
-    if (!plainId(n.type)) throw new Error(`node ${q(n.id)}: type ${q(String(n.type))} is not a node type id`);
-    const out: Record<string, unknown> = { id: n.id, type: n.type };
-    if (n.settings !== undefined) {
-      if (typeof n.settings !== "object" || n.settings === null || Array.isArray(n.settings))
-        throw new Error(`node ${q(n.id)}: settings must be an object`);
-      readable(n.settings, `node ${q(n.id)} settings`);
-      out.settings = n.settings;
-    }
-    if (n.params !== undefined) {
-      for (const [id, v] of Object.entries(n.params)) {
-        if (!["number", "string", "boolean"].includes(typeof v)) throw new Error(`node ${q(n.id)}: param ${q(id)} must be a number, label or bool`);
-        readable(v, `node ${q(n.id)} param ${q(id)}`);
-        readable(id, `node ${q(n.id)} params`);
-      }
-      out.params = n.params;
-    }
-    if (n.resources !== undefined) {
-      for (const [port, ref] of Object.entries(n.resources))
-        if (!/^res:[1-9][0-9]*$/.test(ref) || Number(ref.slice(4)) > 4294967295)
-          throw new Error(`node ${q(n.id)}: resource ${q(port)} must be "res:<id>", not ${q(String(ref))}`);
-      out.resources = n.resources;
-    }
-    return out;
+    const why = checkNode(n);
+    if (why) throw new Error(`node #${i} ${q(String(n.id))}: ${why}`);
+    if (ids.has(n.id)) throw new Error(`node id ${q(n.id)} is used twice`);
+    ids.add(n.id);
+    return projectNode(n);
   });
   const wires = doc.wires.map((w, i) => {
-    if (!parseEndpoint(w.from) || !parseEndpoint(w.to)) throw new Error(`wire #${i}: ${q(w.from)} -> ${q(w.to)} needs node.port endpoints`);
-    readable(w.from, `wire #${i}`);
-    readable(w.to, `wire #${i}`);
-    const out: Record<string, unknown> = { from: w.from, to: w.to };
-    if (w.feedback !== undefined) {
-      if (typeof w.feedback !== "boolean") throw new Error(`wire #${i}: feedback must be true or false`);
-      out.feedback = w.feedback;
-    }
-    return out;
+    const why = checkWire(w);
+    if (why) throw new Error(`wire #${i}: ${why}`);
+    return projectWire(w);
   });
   return canonicalJson({ nodes, wires });
 }

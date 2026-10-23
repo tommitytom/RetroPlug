@@ -64,4 +64,15 @@ test("toGraphJson refuses what the C++ parser or planner would", () => {
   expect(doc({ resources: { s: "res:4294967296" } })).toThrow("res:<id>");
   expect(doc({}, [{ from: "n", to: "m.in" }])).toThrow("node.port");
   expect(doc({}, [{ from: "n.out", to: "m.in", feedback: 1 }])).toThrow("true or false");
+  expect(doc({ params: null })).toThrow("params must be an object");
+  expect(doc({ resources: null })).toThrow("resources must be an object");
+  expect(doc({ resources: { "s\ud800": "res:1" } })).toThrow("plain id");
+  expect(doc({ resources: { s: ["res:1"] } })).toThrow("res:<id>");
+  expect(doc({ settings: { bytes: new Uint8Array([1, 2]) } })).toThrow("plain JSON object");
+  expect(doc({ settings: { cb: () => 1 } })).toThrow("function");
+  expect(doc({ settings: { list: [undefined] } })).toThrow("undefined");
+  expect(() => toGraphJson({ nodes: [{ id: "a", type: "rp.x" }, { id: "a", type: "rp.x" }], wires: [] })).toThrow("used twice");
+  // the boundaries are fine
+  const edge = toGraphJson({ nodes: [{ id: "n", type: "rp.x", resources: { s: "res:4294967295" } }], wires: [{ from: "n.out", to: "n.in", feedback: false }] });
+  expect(edge.includes("res:4294967295") && edge.includes('"feedback":false')).toBe(true);
 });

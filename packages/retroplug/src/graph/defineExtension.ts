@@ -9,7 +9,7 @@ import type { z } from "zod";
 import type { AssetCatalog } from "../tracker/assetCatalog";
 import type { SongCatalog } from "../tracker/songCatalog";
 import { plainId } from "./descriptor";
-import { isNodeId, type NodeDoc, type WireDoc } from "./graphDocument";
+import { checkNode, checkWire, type NodeDoc, type WireDoc } from "./graphDocument";
 
 /** What a matcher sees: the node type plus the ROM identity rp.system.rom/1 publishes (when it has one). */
 export interface NodeInfo {
@@ -86,7 +86,7 @@ export type Conflict =
 export interface CollectError {
   node: string;
   extension: string;
-  code: "settings-invalid" | "node-id";
+  code: "settings-invalid" | "node-invalid" | "wire-invalid";
   message: string;
 }
 
@@ -148,23 +148,36 @@ export class ExtensionRegistry {
           if (parsed.success) {
             settings = parsed.data;
           } else {
-            fail("settings-invalid", parsed.error.issues.map((i) => `${i.path.join(".") || "settings"}: ${i.message}`).join("; "));
+            const issues = parsed.error.issues.map((i) => `${i.path.join(".") || "settings"}: ${i.message}`).join("; ");
             const defaults = ext.settings.safeParse({});
-            if (!defaults.success) continue;  // nothing usable: leave this extension out for this node
+            if (!defaults.success) {  // nothing usable: leave this extension out for this node
+              fail("settings-invalid", `${issues}; the defaults do not parse either, so it is left out`);
+              continue;
+            }
+            fail("settings-invalid", `${issues}; using the defaults`);
             settings = defaults.data;
           }
         }
         const c = ext.contribute({ node, settings });
         out.attached.push({ node: node.id, extension: ext.id, contribution: c });
+        // Each inserted node and wire is checked as toGraphJson will check it, BEFORE the copy (which would
+        // spell a NaN as null): one bad item is reported against its extension and left out, rather than
+        // failing the whole document later with no one to blame.
         for (const n of c.nodes ?? []) {
-          if (!isNodeId(n.id)) {
-            fail("node-id", `inserted node id ${JSON.stringify(String(n.id))} is not a node id (a plain id with no ".")`);
+          const why = checkNode(n);
+          if (why) {
+            fail("node-invalid", `inserted node ${JSON.stringify(String(n.id))}: ${why}`);
             continue;
           }
           claim(ids, n.id, by);
           out.nodes.push(copy(n));
         }
         for (const w of c.wires ?? []) {
+          const why = checkWire(w);
+          if (why) {
+            fail("wire-invalid", `wire ${JSON.stringify(String(w.from))} -> ${JSON.stringify(String(w.to))}: ${why}`);
+            continue;
+          }
           claim(inputs, w.to, by);
           out.wires.push(copy(w));
         }
