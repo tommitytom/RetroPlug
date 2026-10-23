@@ -107,44 +107,69 @@ void append(std::string& out, const rfl::Generic& value) {
 }
 
 constexpr std::int64_t kMaxExactInteger = 9007199254740992;  // 2^53: every integer up to here is exact in a double
+constexpr int          kMaxDepth = 512;  // deeper is refused rather than recursed into, so a small host thread survives
 
-rfl::Generic fromYyjson(yyjson_val* v) {
+// False only when the document nests deeper than kMaxDepth.
+bool fromYyjson(yyjson_val* v, int depth, rfl::Generic& out) {
+    if (depth > kMaxDepth) return false;
     switch (yyjson_get_type(v)) {
         case YYJSON_TYPE_BOOL:
-            return rfl::Generic(yyjson_get_bool(v));
+            out = rfl::Generic(yyjson_get_bool(v));
+            return true;
         case YYJSON_TYPE_NUM: {
             // An integer stays an integer only while a double holds it exactly; beyond that it is the
             // nearest double, as JSON.parse would make it. Never a wrapped uint64 or a truncated value.
             if (yyjson_is_sint(v)) {
                 const std::int64_t i = yyjson_get_sint(v);
-                if (i >= -kMaxExactInteger && i <= kMaxExactInteger) return rfl::Generic(i);
+                if (i >= -kMaxExactInteger && i <= kMaxExactInteger) {
+                    out = rfl::Generic(i);
+                    return true;
+                }
             } else if (yyjson_is_uint(v)) {
                 const std::uint64_t u = yyjson_get_uint(v);
-                if (u <= static_cast<std::uint64_t>(kMaxExactInteger)) return rfl::Generic(static_cast<std::int64_t>(u));
+                if (u <= static_cast<std::uint64_t>(kMaxExactInteger)) {
+                    out = rfl::Generic(static_cast<std::int64_t>(u));
+                    return true;
+                }
             }
-            return rfl::Generic(yyjson_get_num(v));
+            out = rfl::Generic(yyjson_get_num(v));
+            return true;
         }
         case YYJSON_TYPE_STR:
-            return rfl::Generic(std::string(yyjson_get_str(v), yyjson_get_len(v)));
+            out = rfl::Generic(std::string(yyjson_get_str(v), yyjson_get_len(v)));
+            return true;
         case YYJSON_TYPE_ARR: {
             rfl::Generic::Array arr;
             yyjson_val* item;
             yyjson_arr_iter it = yyjson_arr_iter_with(v);
-            while ((item = yyjson_arr_iter_next(&it))) arr.push_back(fromYyjson(item));
-            return rfl::Generic(std::move(arr));
+            while ((item = yyjson_arr_iter_next(&it))) {
+                arr.emplace_back();
+                if (!fromYyjson(item, depth + 1, arr.back())) return false;
+            }
+            out = rfl::Generic(std::move(arr));
+            return true;
         }
         case YYJSON_TYPE_OBJ: {
             rfl::Generic::Object obj;
             yyjson_val* key;
             yyjson_obj_iter it = yyjson_obj_iter_with(v);
-            while ((key = yyjson_obj_iter_next(&it)))
-                obj.insert(std::make_pair(std::string(yyjson_get_str(key), yyjson_get_len(key)),
-                                          fromYyjson(yyjson_obj_iter_get_val(key))));
-            return rfl::Generic(std::move(obj));
+            while ((key = yyjson_obj_iter_next(&it))) {
+                rfl::Generic value;
+                if (!fromYyjson(yyjson_obj_iter_get_val(key), depth + 1, value)) return false;
+                std::string name(yyjson_get_str(key), yyjson_get_len(key));
+                // A repeated key keeps its last value, as JSON.parse does - so a struct read from this
+                // Generic sees the same value canonicalJson would write.
+                auto existing = std::find_if(obj.begin(), obj.end(), [&](const auto& p) { return p.first == name; });
+                if (existing != obj.end()) existing->second = std::move(value);
+                else obj.insert(std::make_pair(std::move(name), std::move(value)));
+            }
+            out = rfl::Generic(std::move(obj));
+            return true;
         }
         case YYJSON_TYPE_NULL:
         default:
-            return rfl::Generic(rfl::Generic::VariantType(std::nullopt));
+            out = rfl::Generic(rfl::Generic::VariantType(std::nullopt));
+            return true;
     }
 }
 
@@ -206,8 +231,10 @@ rfl::Result<rfl::Generic> parseJson(std::string_view json) {
     yyjson_read_err err{};
     yyjson_doc* doc = yyjson_read_opts(const_cast<char*>(json.data()), json.size(), 0, nullptr, &err);
     if (!doc) return rfl::Unexpected<rfl::Error>(rfl::Error(std::string("not JSON: ") + err.msg));
-    rfl::Generic g = fromYyjson(yyjson_doc_get_root(doc));
+    rfl::Generic g;
+    const bool ok = fromYyjson(yyjson_doc_get_root(doc), 0, g);
     yyjson_doc_free(doc);
+    if (!ok) return rfl::Unexpected<rfl::Error>(rfl::Error("JSON nests deeper than " + std::to_string(kMaxDepth) + " levels"));
     return g;
 }
 

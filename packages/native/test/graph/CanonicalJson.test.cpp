@@ -76,6 +76,21 @@ TEST_CASE("parseJson never wraps an integer", "[graph][json]") {
     CHECK_FALSE(parseJson("1e400"));
 }
 
+TEST_CASE("parseJson keeps a repeated key's last value, and refuses runaway nesting", "[graph][json]") {
+    struct Doc {
+        std::string s;
+    };
+    const auto doc = parseJson(R"({"s":"first","s":"last"})").and_then([](const rfl::Generic& g) {
+        return rfl::from_generic<Doc>(g);
+    });
+    REQUIRE(doc);
+    CHECK(doc->s == "last");  // what canonicalJson writes for the same text, and what JSON.parse keeps
+    CHECK(parseJson(std::string(512, '[') + std::string(512, ']')));
+    const auto deep = parseJson(std::string(600, '[') + std::string(600, ']'));
+    REQUIRE_FALSE(deep);
+    CHECK(std::string(deep.error().what()).find("512") != std::string::npos);
+}
+
 TEST_CASE("jsNumber spells numbers the way Number.prototype.toString does", "[graph][json]") {
     CHECK(jsNumber(-0.0) == "0");
     CHECK(jsNumber(-60.0) == "-60");

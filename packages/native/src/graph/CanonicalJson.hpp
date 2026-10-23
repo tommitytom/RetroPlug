@@ -19,10 +19,12 @@ namespace rp::graph {
 std::string canonicalJson(const rfl::Generic& value);
 
 // Parse JSON text the way JavaScript's JSON.parse sees it: an integer that a double holds exactly stays an
-// int64, every other number becomes a double (never a wrapped or truncated integer), and duplicate keys
-// are kept for canonicalJson to resolve. Use this, not rfl::json::read<rfl::Generic>, for any JSON whose
-// numbers matter: reflect-cpp's reader turns an unsigned value above INT64_MAX into a negative int64.
-// Refuses what JSON.parse would turn into Infinity (1e400) and lone-surrogate escapes, with a reason.
+// int64, every other number becomes a double (never a wrapped or truncated integer), and a key that
+// appears twice keeps its last value. Use this, not rfl::json::read<rfl::Generic>, to read JSON as a
+// Generic: reflect-cpp's reader turns an unsigned value above INT64_MAX into a negative int64. (To read a
+// typed struct with integer fields, rfl::json::read<T> is still the right call: it range-checks them,
+// and rfl::from_generic<T> does not.) Refuses, with a reason, what JSON.parse would turn into Infinity
+// (1e400), lone-surrogate escapes, and nesting deeper than 512 levels.
 rfl::Result<rfl::Generic> parseJson(std::string_view json);
 
 // parseJson, then re-spell canonically. Used to compare settings without key order or number spelling
