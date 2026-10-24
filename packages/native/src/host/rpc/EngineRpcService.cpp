@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <fstream>
 #include <iterator>
+#include <string>
 #include <utility>
 
 #include "host/engine/Engine.hpp"
@@ -464,6 +465,93 @@ void EngineRpcService::accumulateMidiOut() {
 
 std::vector<RpcMidiOut> EngineRpcService::drainMidiOut() {
     return std::exchange(accumMidiOut_, {});  // return the window's accumulation and reset it
+}
+
+namespace {
+
+constexpr std::uint32_t kMaxRenderBlockFrames = 8192;
+
+// Why renderBlocks refuses `req`, or empty. Checked whole before anything renders, so a refused request
+// leaves the Engine exactly as it was.
+std::string renderBlocksRefusal(const RpcRenderBlocksRequest& req) {
+    if (req.outputs < 2 || req.outputs > 8 || req.outputs % 2 != 0) return "outputs must be 2, 4, 6 or 8";
+    for (std::size_t b = 0; b < req.blocks.size(); ++b) {
+        const RpcRenderBlock& blk = req.blocks[b];
+        const std::string at = "block " + std::to_string(b) + ": ";
+        if (blk.frames == 0 || blk.frames > kMaxRenderBlockFrames)
+            return at + "frames must be 1.." + std::to_string(kMaxRenderBlockFrames);
+        std::uint32_t last = 0;
+        for (const RpcBlockMidi& m : blk.midi) {
+            if (m.bytes.empty()) return at + "a MIDI message is empty";
+            if (m.frame >= blk.frames)
+                return at + "MIDI at frame " + std::to_string(m.frame) + " is outside a " + std::to_string(blk.frames) + "-frame block";
+            // A DAW delivers events frame-sorted, so the order today's engine gives unsorted input is
+            // never part of a baseline; ties keep their list order.
+            if (m.frame < last)
+                return at + "MIDI frames go backwards (" + std::to_string(m.frame) + " after " + std::to_string(last) + ")";
+            last = m.frame;
+        }
+        for (const auto& c : blk.controller)
+            if (c.empty() || c.size() > 4) return at + "a controller message must be 1..4 bytes";
+        if (blk.bpm && !(*blk.bpm > 0.0)) return at + "bpm must be positive";
+    }
+    return {};
+}
+
+} // namespace
+
+RpcRenderBlocksResult EngineRpcService::renderBlocks(RpcRenderBlocksRequest req) {
+    RpcRenderBlocksResult result;
+    // This thread calls processBlock itself, which only the Engine's owning thread may do.
+    if (invoker_.audioThreadOwns()) {
+        result.error = "the background audio thread is running";
+        return result;
+    }
+    result.error = renderBlocksRefusal(req);
+    if (!result.error.empty()) return result;
+
+    std::uint64_t total = 0;
+    for (const RpcRenderBlock& b : req.blocks) total += b.frames;
+    // Whole-run planar lanes; each block renders straight into its own slice of them.
+    std::vector<std::vector<float>> lanes(req.outputs, std::vector<float>(total));
+    std::vector<float*> outs(req.outputs);
+
+    std::uint64_t at = 0;
+    for (std::uint32_t b = 0; b < req.blocks.size(); ++b) {
+        RpcRenderBlock& blk = req.blocks[b];
+        // PluginDSP::run's order: host MIDI staged at its frames, then the control plane's queued edits,
+        // then transport, then the block itself.
+        for (RpcBlockMidi& m : blk.midi) engine_.stageMidi(m.frame, std::move(m.bytes));
+        for (auto& c : blk.controller) engine_.stageControllerMidi(std::move(c));
+        invoker_.drainInto(engine_);
+        if (blk.bpm) engine_.setBpm(*blk.bpm);
+        if (blk.playing) engine_.setTransport(*blk.playing);
+        if (blk.ppq) engine_.setPpq(*blk.ppq);
+        for (std::uint32_t c = 0; c < req.outputs; ++c) outs[c] = lanes[c].data() + at;
+        engine_.processBlock(blk.frames, outs.data(), req.outputs);
+        for (const auto& mo : engine_.midiOut()) {
+            RpcBlockMidiOut o;
+            o.block  = b;
+            o.system = mo.system;
+            o.frame  = mo.frame;
+            const auto* p = reinterpret_cast<const std::byte*>(mo.data.data());
+            o.data.assign(p, p + mo.data.size());
+            result.midiOut.push_back(std::move(o));
+        }
+        engine_.clearMidiOut();
+        at += blk.frames;
+    }
+
+    result.lanes.reserve(req.outputs);
+    for (const auto& l : lanes) {
+        const auto* p = reinterpret_cast<const std::byte*>(l.data());
+        result.lanes.emplace_back(p, p + l.size() * sizeof(float));
+    }
+    return result;
+}
+
+std::string EngineRpcService::buildTarget() const {
+    return RETROPLUG_BUILD_TARGET;
 }
 
 // Direct engine_ access (not the invoker): the benchmark drives the synchronous renderAudio pull path

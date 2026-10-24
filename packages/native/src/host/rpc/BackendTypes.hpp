@@ -66,6 +66,28 @@ struct RpcFrame { std::uint32_t width; std::uint32_t height; bool published; rfl
 // drainMidiOut for headless tests — the plugin drains Engine::midiOut() to the DAW directly instead.
 struct RpcMidiOut { std::uint32_t system; std::uint32_t frame; rfl::Bytestring data; };
 
+// renderBlocks (harness facet): render a scripted run of host blocks exactly as the plugin would hand
+// them to the Engine, for the parity suite (test-native/parity). One block = one processBlock call.
+struct RpcBlockMidi { std::uint32_t frame; std::vector<std::uint8_t> bytes; };
+struct RpcRenderBlock {
+    std::uint32_t                          frames;      // 1..8192
+    std::vector<RpcBlockMidi>              midi;        // host MIDI, staged in list order (frames never go backwards)
+    std::vector<std::vector<std::uint8_t>> controller;  // control-surface messages (1..4 bytes each)
+    std::optional<bool>                    playing;     // transport, applied after the drain and before the block
+    std::optional<double>                  bpm;
+    std::optional<double>                  ppq;         // a locate
+};
+struct RpcRenderBlocksRequest { std::uint32_t outputs; std::vector<RpcRenderBlock> blocks; };
+// The kernel's MIDI out, tagged with the block (index into the request) it was emitted in.
+struct RpcBlockMidiOut { std::uint32_t block; std::uint32_t system; std::uint32_t frame; rfl::Bytestring data; };
+// `error` is empty on success; otherwise it says why the request was refused and nothing was rendered.
+// `lanes` are planar f32, one per output, each the whole run long.
+struct RpcRenderBlocksResult {
+    std::string                  error;
+    std::vector<rfl::Bytestring> lanes;
+    std::vector<RpcBlockMidiOut> midiOut;
+};
+
 // Mirrors the ConstructSpec (packages/retroplug/src/backend.ts): concrete
 // paths + an embedded-ROM marker + optional zip-import seed bytes. The optional string fields are
 // absent (nullopt) rather than "" when the TS side has null.

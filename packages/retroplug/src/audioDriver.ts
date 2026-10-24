@@ -85,6 +85,28 @@ export interface RisaKitCompileSpec {
   samples: RisaDmcSampleSpec[];
 }
 
+/** One host block for renderBlocks: what a DAW hands the plugin per process call. */
+export interface RenderBlock {
+  /** 1..8192. */
+  frames: number;
+  /** Host MIDI at frames inside the block, staged in list order; frames may tie but never go backwards. */
+  midi?: { frame: number; bytes: number[] }[];
+  /** Control-surface messages (a Launchpad pad press), staged as stageControllerIn stages them. */
+  controller?: number[][];
+  /** Transport, applied after the block's queued edits drain and before it renders. */
+  playing?: boolean;
+  bpm?: number;
+  /** A locate (quarter notes). */
+  ppq?: number;
+}
+
+export interface RenderBlocksResult {
+  /** Planar f32, one per output, each the whole run long. */
+  lanes: Float32Array[];
+  /** The kernel's MIDI out, tagged with the index of the block that emitted it. */
+  midiOut: { block: number; system: number; frame: number; data: Uint8Array }[];
+}
+
 export interface AudioDriver {
   /** Enqueue a button transition (button = GameboyButton value; down = press/release). A
    *  press then release around a short render is a tap. */
@@ -135,6 +157,13 @@ export interface AudioDriver {
    *  with its source system + block-frame. The plugin drains this to the DAW directly; this is the
    *  headless test path. */
   drainMidiOut(): { system: number; frame: number; data: Uint8Array }[];
+  /** Render `blocks` as the plugin renders each host block (stage MIDI, drain edits, transport,
+   *  processBlock at `outputs` lanes, take the MIDI out), for the parity suite. Throws with the reason
+   *  when the request is refused (a frame outside its block, frames going backwards, a bad output count,
+   *  or the background audio thread running); nothing renders then. */
+  renderBlocks(outputs: 2 | 4 | 6 | 8, blocks: RenderBlock[]): RenderBlocksResult;
+  /** The target the host was built for ("linux-x64-gnu13"): which parity baseline it can be held to. */
+  buildTarget(): string;
 
   // --- DSP-runtime allocation/GC profiling (spec/08-profiling.md; real only in a RETROPLUG_PROFILE host) ---
   /** Snapshot the DSP JS runtime's allocation counters (deltas since the last reset). */
@@ -205,6 +234,29 @@ export function createAudioDriver(): AudioDriver {
     stageControllerIn: (bytes) => call("stageControllerIn", ints(bytes)) as boolean,
     drainMidiOut: () =>
       (call("drainMidiOut") as { system: number; frame: number; data: Uint8Array }[] | null) ?? [],
+    renderBlocks: (outputs, blocks) => {
+      // Every field is sent, absent ones as null/[]: the native struct has no field defaults.
+      const req = {
+        outputs,
+        blocks: blocks.map((b) => ({
+          frames: b.frames,
+          midi: (b.midi ?? []).map((m) => ({ frame: m.frame, bytes: Array.from(m.bytes) })),
+          controller: (b.controller ?? []).map((c) => Array.from(c)),
+          playing: b.playing ?? null,
+          bpm: b.bpm ?? null,
+          ppq: b.ppq ?? null,
+        })),
+      };
+      const r = call("renderBlocks", req) as {
+        error: string;
+        lanes: Uint8Array[];
+        midiOut: { block: number; system: number; frame: number; data: Uint8Array }[];
+      };
+      if (r.error) throw new Error(`renderBlocks: ${r.error}`);
+      // slice() copies each lane to a fresh 4-byte-aligned buffer, as renderAudio does.
+      return { lanes: r.lanes.map((l) => new Float32Array(l.slice().buffer)), midiOut: r.midiOut };
+    },
+    buildTarget: () => call("buildTarget") as string,
     dspAllocStats: () => call("dspAllocStats") as DspAllocStats,
     dspResetAllocStats: (disableAutoGc) => call("dspResetAllocStats", disableAutoGc) as boolean,
     dspRunGc: () => call("dspRunGc") as DspGcResult,

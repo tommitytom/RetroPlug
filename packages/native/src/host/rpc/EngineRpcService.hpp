@@ -88,6 +88,13 @@ public:
     // Drain the MIDI-out the kernel emitted (LSDj MI.OUT decoder), accumulated across renderAudio blocks
     // since the last drain. For headless tests; the plugin drains Engine::midiOut() to the DAW directly.
     std::vector<RpcMidiOut> drainMidiOut();
+    // Render a scripted run of host blocks the way PluginDSP::run renders each one: stage the block's MIDI
+    // at its frames, drain the command ring, apply its transport, processBlock(frames, lanes, outputs),
+    // then take and clear the kernel's MIDI out. Quiescent only. The parity suite's capture call.
+    RpcRenderBlocksResult   renderBlocks(RpcRenderBlocksRequest req);
+    // The target this binary was built for, "<os>-<arch>-<compiler><major>" (linux-x64-gnu13): which
+    // parity baseline its float output can be compared against.
+    std::string             buildTarget() const;
 
     // --- DSP-runtime allocation/GC profiling (spec/08-profiling.md) ---
     // Reads/GC on the DSP JS runtime, reached directly through the Engine (the quiescent renderAudio

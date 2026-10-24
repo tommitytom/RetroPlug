@@ -78,6 +78,8 @@ void registerHarnessRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::stageMidiIn>(e);
     s.template addMethod<&EngineRpcService::stageControllerIn>(e);
     s.template addMethod<&EngineRpcService::drainMidiOut>(e);
+    s.template addMethod<&EngineRpcService::renderBlocks>(e);
+    s.template addMethod<&EngineRpcService::buildTarget>(e);
     s.template addMethod<&EngineRpcService::dspAllocStats>(e);
     s.template addMethod<&EngineRpcService::dspResetAllocStats>(e);
     s.template addMethod<&EngineRpcService::dspRunGc>(e);
