@@ -138,11 +138,18 @@ export function compareAudio(expected: CaseDigest, actual: CaseDigest): string[]
  *  keys (the slot keys) come out in numeric order ahead of the rest, as the language orders them; the
  *  result is still deterministic. */
 export function stableJson(v: unknown): string {
-  const sort = (x: unknown): unknown =>
-    Array.isArray(x)
-      ? x.map(sort)
-      : x !== null && typeof x === "object"
-        ? Object.fromEntries(Object.keys(x as object).sort().map((k) => [k, sort((x as Record<string, unknown>)[k])]))
-        : x;
-  return JSON.stringify(sort(v), null, 1) + "\n";
+  return JSON.stringify(sortKeys(v), null, 1) + "\n";
 }
+
+/** The same sorted keys on ONE line: a case's actual digest in a failure message, so a CI log carries the
+ *  run's output (the value of a baseline entry, ready to set beside it), not only the first difference. */
+export function stableJsonLine(v: unknown): string {
+  return JSON.stringify(sortKeys(v));
+}
+
+const sortKeys = (x: unknown): unknown =>
+  Array.isArray(x)
+    ? x.map(sortKeys)
+    : x !== null && typeof x === "object"
+      ? Object.fromEntries(Object.keys(x as object).sort().map((k) => [k, sortKeys((x as Record<string, unknown>)[k])]))
+      : x;

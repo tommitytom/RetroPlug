@@ -1,7 +1,20 @@
 // The parity comparator on its own: the smallest possible change to audio, MIDI out or SRAM must fail,
 // and the report must name where. If this passes, a matching hash means matching output.
 import { test, expect } from "../../testing/harness";
-import { bytesDigest, compareDigests, fnv1a, hex8, laneDigest, laneSounds, midiDigest, rms4, stableJson, type CaseDigest, type MidiOutEntry } from "./digest";
+import {
+  bytesDigest,
+  compareDigests,
+  fnv1a,
+  hex8,
+  laneDigest,
+  laneSounds,
+  midiDigest,
+  rms4,
+  stableJson,
+  stableJsonLine,
+  type CaseDigest,
+  type MidiOutEntry,
+} from "./digest";
 
 function lanes(seed: number): Float32Array[] {
   return [0, 1, 2].map((l) => Float32Array.from({ length: 256 }, (_, i) => Math.sin((i + 1) * (seed + l + 1) * 0.01)));
@@ -74,6 +87,12 @@ test("one changed work-RAM byte names the slot", () => {
 
 test("a baseline is written with sorted keys, one value per line", () => {
   expect(stableJson({ b: 1, a: { d: [1], c: "x" } })).toBe('{\n "a": {\n  "c": "x",\n  "d": [\n   1\n  ]\n },\n "b": 1\n}\n');
+});
+
+test("a failure's actual digest is the same sorted JSON on one line", () => {
+  const v = { b: 1, a: { d: [1], c: "x" } };
+  expect(stableJsonLine(v)).toBe('{"a":{"c":"x","d":[1]},"b":1}');
+  expect(JSON.stringify(JSON.parse(stableJson(v)))).toBe(stableJsonLine(v));
 });
 
 const utf8 = (t: string): Uint8Array => Uint8Array.from(t, (c) => c.charCodeAt(0));

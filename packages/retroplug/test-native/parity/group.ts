@@ -19,6 +19,7 @@ import {
   laneSounds,
   midiDigest,
   stableJson,
+  stableJsonLine,
   type CaseDigest,
   type MidiOutEntry,
 } from "./digest";
@@ -298,8 +299,10 @@ export function runGroup(group: string, cases: ParityCase[]): void {
           problems.push(...compareAudio(run.digest, runCase(rig, c, false).digest).map((p) => `not deterministic here: ${p}`));
         }
         if (problems.length) {
+          // The first difference first (where to look), then this run's whole digest on one line, so a CI
+          // failure carries CI's output and not only the diff.
           const where = dumped ? `\nlanes and MIDI out written to ${dumped}` : "";
-          throw new Error(problems.join("\n") + where);
+          throw new Error(`${problems.join("\n")}\nactual digest on ${host}: ${stableJsonLine(run.digest)}${where}`);
         }
       } catch (e) {
         if (!isSkip(e)) failed++;

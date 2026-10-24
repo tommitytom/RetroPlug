@@ -151,6 +151,8 @@ modular graph engine is held to ([docs/modular-graph-phase-b0-design.md](../docs
   is alone by construction, and the next unfiltered check compares it with the group order.
   `RP_PARITY_ONLY` can be given to the whole suite (`RP_PARITY_ONLY=<case> pnpm test:native parity`): every
   group without that case runs nothing and passes with a note.
+  A failing case names the first segment and lane that differ, then gives its whole actual digest as one
+  line of JSON, so a CI failure carries CI's output and not only the difference.
   `RP_PARITY_DUMP=<dir>` writes every case a check runs, passing or failing, to `<dir>/<group>/<case>/`:
   its lanes as float WAVs and its MIDI out as JSON, so the same run at an older commit (where the case still
   passes) gives the files to compare against. An
