@@ -1,0 +1,410 @@
+{
+ "cases": {
+  "midiSync-autoStart": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "7b4e782f",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 288000,
+     "lanes": [
+      "377be6a8 0.003835",
+      "377be6a8 0.003835"
+     ]
+    },
+    {
+     "frames": 96000,
+     "lanes": [
+      "c6a278dd 0.02800",
+      "c6a278dd 0.02800"
+     ]
+    },
+    {
+     "frames": 24000,
+     "lanes": [
+      "f90f6526 0.009379",
+      "f90f6526 0.009379"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "9a3c7109",
+     "length": 131072
+    }
+   }
+  },
+  "midiSync-div1": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "817dab8b",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 288000,
+     "lanes": [
+      "377be6a8 0.003835",
+      "377be6a8 0.003835"
+     ]
+    },
+    {
+     "frames": 480,
+     "lanes": [
+      "1681a3c5 0",
+      "1681a3c5 0"
+     ]
+    },
+    {
+     "frames": 3840,
+     "lanes": [
+      "5f74cdc5 0",
+      "5f74cdc5 0"
+     ]
+    },
+    {
+     "frames": 96000,
+     "lanes": [
+      "aa8a97de 0.02799",
+      "aa8a97de 0.02799"
+     ]
+    },
+    {
+     "frames": 24000,
+     "lanes": [
+      "69828d77 0.009388",
+      "69828d77 0.009388"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "9a3c7109",
+     "length": 131072
+    }
+   }
+  },
+  "midiSync-div2": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "a2797bfa",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 288000,
+     "lanes": [
+      "377be6a8 0.003835",
+      "377be6a8 0.003835"
+     ]
+    },
+    {
+     "frames": 480,
+     "lanes": [
+      "1681a3c5 0",
+      "1681a3c5 0"
+     ]
+    },
+    {
+     "frames": 3840,
+     "lanes": [
+      "5f74cdc5 0",
+      "5f74cdc5 0"
+     ]
+    },
+    {
+     "frames": 96000,
+     "lanes": [
+      "055ab62d 0.03142",
+      "055ab62d 0.03142"
+     ]
+    },
+    {
+     "frames": 24000,
+     "lanes": [
+      "636d0dcc 0.01011",
+      "636d0dcc 0.01011"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "9a3c7109",
+     "length": 131072
+    }
+   }
+  },
+  "midiSync-div4": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "7f043fc5",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 288000,
+     "lanes": [
+      "377be6a8 0.003835",
+      "377be6a8 0.003835"
+     ]
+    },
+    {
+     "frames": 480,
+     "lanes": [
+      "1681a3c5 0",
+      "1681a3c5 0"
+     ]
+    },
+    {
+     "frames": 3840,
+     "lanes": [
+      "5f74cdc5 0",
+      "5f74cdc5 0"
+     ]
+    },
+    {
+     "frames": 96000,
+     "lanes": [
+      "3eb68133 0.02261",
+      "3eb68133 0.02261"
+     ]
+    },
+    {
+     "frames": 24000,
+     "lanes": [
+      "b75aecbc 0.009388",
+      "b75aecbc 0.009388"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "9a3c7109",
+     "length": 131072
+    }
+   }
+  },
+  "midiSync-div8": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "5b900143",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 288000,
+     "lanes": [
+      "377be6a8 0.003835",
+      "377be6a8 0.003835"
+     ]
+    },
+    {
+     "frames": 480,
+     "lanes": [
+      "1681a3c5 0",
+      "1681a3c5 0"
+     ]
+    },
+    {
+     "frames": 3840,
+     "lanes": [
+      "5f74cdc5 0",
+      "5f74cdc5 0"
+     ]
+    },
+    {
+     "frames": 96000,
+     "lanes": [
+      "625fd63b 0.01639",
+      "625fd63b 0.01639"
+     ]
+    },
+    {
+     "frames": 24000,
+     "lanes": [
+      "f4f2d785 0.009390",
+      "f4f2d785 0.009390"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "9a3c7109",
+     "length": 131072
+    }
+   }
+  },
+  "midiSyncArduinoboy-div1-1024": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "e96f8b09",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 288000,
+     "lanes": [
+      "377be6a8 0.003835",
+      "377be6a8 0.003835"
+     ]
+    },
+    {
+     "frames": 48000,
+     "lanes": [
+      "f5caf5c5 0",
+      "f5caf5c5 0"
+     ]
+    },
+    {
+     "frames": 96000,
+     "lanes": [
+      "01731f16 0.03735",
+      "01731f16 0.03735"
+     ]
+    },
+    {
+     "frames": 24000,
+     "lanes": [
+      "4d32fba8 0.01582",
+      "4d32fba8 0.01582"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "7fae94f3",
+     "length": 131072
+    }
+   }
+  },
+  "midiSyncArduinoboy-div1-512": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "283db259",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 288000,
+     "lanes": [
+      "377be6a8 0.003835",
+      "377be6a8 0.003835"
+     ]
+    },
+    {
+     "frames": 48000,
+     "lanes": [
+      "f5caf5c5 0",
+      "f5caf5c5 0"
+     ]
+    },
+    {
+     "frames": 96000,
+     "lanes": [
+      "53b94dc5 0",
+      "53b94dc5 0"
+     ]
+    },
+    {
+     "frames": 24000,
+     "lanes": [
+      "7e4bc9c5 0",
+      "7e4bc9c5 0"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "7fae94f3",
+     "length": 131072
+    }
+   }
+  },
+  "midiSyncArduinoboy-div4-1024": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "d75c54d1",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 288000,
+     "lanes": [
+      "377be6a8 0.003835",
+      "377be6a8 0.003835"
+     ]
+    },
+    {
+     "frames": 48000,
+     "lanes": [
+      "f5caf5c5 0",
+      "f5caf5c5 0"
+     ]
+    },
+    {
+     "frames": 96000,
+     "lanes": [
+      "53b94dc5 0",
+      "53b94dc5 0"
+     ]
+    },
+    {
+     "frames": 24000,
+     "lanes": [
+      "7e4bc9c5 0",
+      "7e4bc9c5 0"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "7fae94f3",
+     "length": 131072
+    }
+   }
+  }
+ },
+ "target": "linux-x64-gnu13"
+}
