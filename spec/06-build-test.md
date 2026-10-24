@@ -109,6 +109,52 @@ the wall clock is bounded by the slowest FILE rather than by when the pool happe
 The `reaper:*` tiers are parallel too, by a different mechanism — see
 [Running the Reaper leg in parallel](#running-the-reaper-leg-in-parallel).
 
+### The parity baseline (`test-native/parity/`)
+
+Exact output, not levels. Every other audio test asserts RMS, peaks or timing tolerances, which a
+refactor can move without failing one. The parity suite renders 153 scripted cases on the real
+engine and records, per case, a hash of every output lane of every segment, the kernel's MIDI out, and
+each system's SRAM and work RAM at the end; one changed bit fails it. It is the gate Phase B of the
+modular graph engine is held to ([docs/modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md)).
+
+- **Cases are driven through the stores**, as the UI drives them, so they survive the engine moving
+  underneath. [parity/rig.ts](../packages/retroplug/test-native/parity/rig.ts) boots the app's own control
+  plane and resets it before each case; [parity/scenes.ts](../packages/retroplug/test-native/parity/scenes.ts)
+  holds the systems and stimuli the groups share; each `parity/<group>.test.ts` is a table of cases.
+- **Scenes use `rig.press` and `rig.writeFile`** for input and files, so B2 and B3 only edit `rig.ts`.
+- **Rendering goes through `renderBlocks`**, a harness-facet driver call that repeats `PluginDSP::run`'s
+  order for every host block: stage MIDI at its frame, drain the command ring, apply transport,
+  `processBlock` at 2/4/6/8 lanes, take the MIDI out.
+- **Cores power on in a fixed state.** The runner sets `RETROPLUG_DETERMINISTIC=1` for `parity/` files
+  only ([util/Determinism.hpp](../packages/native/src/util/Determinism.hpp)): SameBoy's power-on randomness
+  off, Mesen NES RAM all zeros, the SMS VDP starting at scanline 0. The app keeps the random power-on.
+- **Baselines** are `parity/baseline/<group>.json`, one value per line, each lane `<fnv> <rms>`, so a
+  re-record diffs readably. Audio is compared exactly only on the target a baseline was recorded on
+  (`linux-x64-gnu13`: the devcontainer and CI's linux-x64 job, both GCC 13.3), because float output is
+  bit-stable only for one compiler on one architecture. On any other target each case renders twice and
+  must agree with itself, and its MIDI out, SRAM and work RAM are still held to the baseline. CI's
+  linux-x64 `test:native` step sets `RP_PARITY_REQUIRE_TARGET=1`: there a host that is not the baseline's
+  target FAILS instead of falling back, so exact checking cannot fade out after a toolchain change.
+  Bumping `PARITY_TARGET` in `parity/group.ts` and re-recording is the deliberate way to move it.
+- **Re-record** with `RP_PARITY_UPDATE=1 pnpm test:native parity/<group>` (`RP_PARITY_ONLY=<case>` for one
+  case). A recording is refused: off the baseline's target; for a case whose hashes change when it is
+  re-run alone in a fresh process (it would depend on the cases before it); for a case whose `audible`
+  lanes are silent after its first (boot) segment; and for a case whose MIDI, controller traffic and
+  transport change nothing (a stimulus sent before a cart finished booting records only the boot).
+  The alone-run child gets its own config dir, so it shares no disk state with the run being checked.
+  `RP_PARITY_DUMP=<dir>` writes a failing case's lanes as float WAVs and its MIDI out as JSON. An
+  intentional audio change re-records the groups it moves in the same commit, and that diff is the record
+  of what moved.
+- **Recorded defects.** The baseline pins four engine defects on purpose; fixing each is its own change
+  with a deliberate re-record: Arduinoboy MIDI sync is silent unless every host block carries a clock
+  tick (and not even then in every configuration); a single NES under a split routing on a host narrower
+  than the split arms the capture tap and drifts (~25 frames per block at 48 kHz / 512, about 49 ms per
+  second); LSDj master sync is broken at 48 kHz and above while serial-out capture is armed; MI.OUT's
+  decoded notes depend on the host sample rate. Details in design section 2.5
+  ([modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md)).
+- LSDj, risa, nanoloop and the controller cases need the sibling fixtures (`RETROPLUG_RESOURCES_DIR`), so
+  those groups skip in CI, counted in the skip baseline.
+
 | Tier | Backend under test | Command | Runner | Test dir |
 |---|---|---|---|---|
 | **mock TS** | [`testing/mockBackend.ts`](../packages/retroplug/testing/mockBackend.ts) (in-memory, no native, no emulator) | `pnpm test` | [run-tests.mjs](../packages/retroplug/scripts/run-tests.mjs) on the `tjs` binary | `test/` |
@@ -164,9 +210,12 @@ sourced helper, [tools/reaper-env.sh](../tools/reaper-env.sh), which keys every 
 resource off `RP_JOB_TAG` — a **uniquely named JACK server** (`jackd -n` + `JACK_DEFAULT_SERVER`,
 the thing that actually lets two Reapers coexist), a per-tag config dir, a `-displayfd`-allocated
 Xvfb display, and per-tag logs (under `build/reaper-cfg-<tag>/logs/`). A bare `reaper:*` run
-defaults the tag to the scenario, so single runs are unchanged. Offline render is sample-accurate
-and wall-clock-independent, so parallel scheduling never changes a rendered sample (the WAV's PCM
-data is byte-identical run-to-run; only Reaper's BWF header timestamp differs). Cap concurrency with
+defaults the tag to the scenario, so single runs are unchanged. The renders are
+NOT bit-repeatable run to run, even with cores powered on in a fixed state: measured over two
+runs of two re-authored passes each, four and then five of the nine legs rendered different PCM in
+consecutive passes, and which legs changed from run to run (why is not yet known). So the analyzers judge timing and level with
+tolerances, and the bit-exact engine baseline is the headless one ([The parity
+baseline](#the-parity-baseline-test-nativeparity)). Cap concurrency with
 `RP_SUITE_JOBS`; the default is whatever `/dev/shm` can back (each jackd mmaps ~107 MB), capped at 8,
 because a dev container's common 512 MB fits only four and the fifth jackd dies with a bus error while
 its Reaper waits forever. Skip the rebuild + fixture regen with `RP_SUITE_NO_BUILD=1`. Not in CI
@@ -196,6 +245,7 @@ Pick the cheapest tier that actually exercises the code you touched. Trust-but-v
 | You changed… | Prove it with | Why this tier |
 |---|---|---|
 | **Application-layer logic** — stores, project model, path/sibling/suffix resolution, config schemas, routing, recent, kit selection | `pnpm test [slug]` | Runs the real TS against the mock backend on `tjs`. No emulator, ~instant. The canonical first stop for anything in `packages/retroplug/src` that doesn't need a live core. |
+| **The engine's output, bit for bit**: routing, block handling, MIDI staging, sync, anything Phase B moves | `pnpm test:native parity` | The parity baseline: one changed bit in any lane, MIDI byte or RAM byte fails, which RMS-based tests never see. |
 | **DSP behaviour / cores / the command-ring & snapshot seam** — role kernel, byte-sinks, MIDI/serial, transport, actual emulator output | `pnpm test:native [slug]` | Runs the **real** Backend RPC surface with a live `SameBoySystem`, real `Project`, and the compiled DSP kernel. Can read emulator state and branch on it. This is the tier that proves audio actually flows. |
 | **React/LVGL UI** — App/SystemGrid/tiles/Menu, input, layout | `pnpm test:ui [slug]` | Boots the real UI bundle on a software LVGL display and asserts on the live widget tree (structure, not just pixels). |
 | **Anything you want to eyeball** in the standalone | `pnpm screenshot` → Read `/tmp/retroplug.png` | Runs the JACK standalone under Xvfb + dummy jackd and dumps the LVGL screen. Drive input mid-run with `tools/standalone-key.sh` using `RETROPLUG_WINDOW_NAME="RetroPlug"`. |

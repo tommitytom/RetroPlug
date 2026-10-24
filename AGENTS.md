@@ -285,6 +285,21 @@ To run the **whole** Reaper leg (**15 checks: 9 renders + 6 editor/host**) at on
 JACK server + per-tag config dir / display / logs), which is also what makes the
 individual `reaper:*` scripts safe to run in parallel.
 
+**The parity baseline** (`pnpm test:native parity`, [spec/06-build-test.md](spec/06-build-test.md)) holds the
+engine's output to the BIT: 153 store-driven cases, each hashed per lane per segment plus MIDI out, SRAM
+and work RAM, against `test-native/parity/baseline/*.json`. Every other audio test asserts levels, which a
+refactor can move without failing one; this one fails on a single changed bit, so treat a parity failure as a
+real change to the audio, never as noise. Exact audio is compared only on `linux-x64-gnu13` (this devcontainer
+and CI's linux-x64 job); elsewhere a case must agree with itself and its integer state is still compared (CI's linux-x64 step sets `RP_PARITY_REQUIRE_TARGET=1`, so there a foreign host fails instead). An
+INTENTIONAL audio change re-records the groups it moves in the same commit (`RP_PARITY_UPDATE=1 pnpm
+test:native parity/<group>`), and the baseline diff is the record of what moved; recording refuses silence,
+order-dependent cases and an ignored stimulus. Three traps, all met building it: cores must power on in a
+fixed state (`RETROPLUG_DETERMINISTIC=1`, which the runner sets for `parity/` only; the SMS VDP's random start
+scanline was the last source); mGB ignores MIDI for its first ~1.5 s, so a case sends nothing before
+`BOOT_MS`; and a second instance of one ROM path gets a fresh `-2.sav` battery slot, so two systems that each
+need a battery each need their own copy (`rig.rom(src, prefix)`). Four engine defects are pinned on purpose (design section 2.5 of [docs/modular-graph-phase-b0-design.md](docs/modular-graph-phase-b0-design.md)); fixing one is its own change with a re-record. The fixture groups need
+`RETROPLUG_RESOURCES_DIR` pointed at the sibling resources tree.
+
 **`retroplug-cli` as a consumer's whole test harness** (`pnpm test:cli-ts`):
 `retroplug-cli test <dir>` strips and runs a directory of `.ts` tests, and `run <session.ts>` does one
 file - so a consumer repo (BlipToaster) needs **no Node, npm, esbuild or node_modules**. Its kit is the

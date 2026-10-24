@@ -960,8 +960,9 @@ Built: see docs/modular-graph-phase-a-plan.md.
 ### Phase B: the engine runs on the graph
 
 Split into four sub-projects, each checked bit for bit against one baseline: B0 records today's engine
-([modular-graph-phase-b0-design.md](modular-graph-phase-b0-design.md)), B1 runs native on the executor
-with TS untouched, B2 hands the graph to TS, B3 dissolves the kernel. The B0 doc's §0 has the table.
+([modular-graph-phase-b0-design.md](modular-graph-phase-b0-design.md); built: `pnpm test:native parity`),
+B1 runs native on the executor with TS untouched, B2 hands the graph to TS, B3 dissolves the kernel. The B0
+doc's §0 has the table, and its §4 the requirements recording today's engine fixed for B1.
 
 - A `SystemNode<T>` adapter over today's `SystemBase` subclasses, mapping prepare / step / finish and
   port buffers onto the C ABI, so the engine moves before any core is rewritten.

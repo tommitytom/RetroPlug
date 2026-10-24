@@ -1,7 +1,7 @@
 # Design: Phase B0, the parity baseline
 
-**Date:** 2026-10-24 · **Branch:** `feature/modularize` · **Status:** designed and prototyped (every group
-recorded and green); the implementation plan is [modular-graph-phase-b0-plan.md](modular-graph-phase-b0-plan.md).
+**Date:** 2026-10-24 · **Branch:** `feature/modularize` · **Status:** built
+([modular-graph-phase-b0-plan.md](modular-graph-phase-b0-plan.md)); B1 to B3 not yet built.
 
 Phase B of [the modular graph design](modular-graph-design.md) (§8) moves the engine onto the graph,
 and its parity target is bit-identical audio in every routing mode, MIDI routing mode and sync mode.

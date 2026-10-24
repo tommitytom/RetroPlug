@@ -9,7 +9,7 @@ change to, so Phase B can move the engine onto the graph and prove it changed no
 
 **Architecture:** Per [docs/modular-graph-phase-b0-design.md](modular-graph-phase-b0-design.md). A
 determinism switch powers cores on in a fixed state; a `renderBlocks` driver call renders scripted host
-blocks as the plugin does; a rig over the app's own control plane drives 149 cases through the stores; a
+blocks as the plugin does; a rig over the app's own control plane drives 153 cases through the stores; a
 group runner records `test-native/parity/baseline/<group>.json` and checks against it, refusing to record
 silence, an ignored stimulus, or a case that depends on the cases before it. Three engine and store bugs
 are fixed first so the baseline holds correct behaviour.
@@ -36,6 +36,21 @@ code is the same, so the hashes must be.
   case in them skips. Pass it on the same command line: a shell `export` does not survive between commands.
 
 ---
+
+## As executed
+
+The plan's code blocks are the prototype's. Review during execution changed the code in these places:
+
+- Task 1: the tests drive the real store-to-kernel wiring, and a pin test guards the LSDj seed hook.
+- Task 2: SameBoy is seeded once (`GB_random_seed(0)` too, for SGB), and the switch stays out of non-parity files.
+- Task 3: `buildTarget` is derived from compiler macros (no CMake define); non-finite bpm/ppq are refused; rendering is in place; tests were added for frame placement, MIDI out, the audio-thread refusal and atomicity.
+- Task 4: the stored format is pinned with known answers, and silence is judged only after the boot segment.
+- Task 5: `PARITY_TARGET` is pinned, a baseline is never re-labelled, the alone-run child gets its own disk, conflicting transport within a block is refused, `rig.press` / `rig.writeFile` were added, and CI requires the target (`RP_PARITY_REQUIRE_TARGET`).
+- Tasks 8-14: NES noise sounds in the split cases, routing slots have distinct gains, a block list every partition shares carries an edge note, sync-sms wraps off the tick grid with 44.1 kHz / 8192-frame cases, and the narrow-host NES split defect is recorded.
+- Tasks 15-16: master sync is split into 44.1 kHz and a recorded 48 kHz defect, MI.MAP is clocked with the transport, the controller's rows have distinct notes, START is pressed on GBA, and the MI.OUT defect is recorded.
+- Task 17: the skip baseline has seven entries.
+
+The committed code, not this plan, is authoritative.
 
 ## File structure
 
@@ -2725,7 +2740,7 @@ export function routingCases(mode: AudioRouting): ParityCase[] {
         outputs,
         audible: routedLanes(mode, outputs, count),
         setup: (rig) => {
-          for (let i = 0; i < count; i++) BY_SLOT[i](rig);
+          for (let i = 0; i < count; i++) BY_SLOT[i]( rig );
           rig.project.setAudioRouting(mode);
         },
         // sendToAll: every system hears the phrase, mGB on its voices 0..3 and the NES on its channels 0..3.
@@ -4319,7 +4334,7 @@ with
 JACK server + per-tag config dir / display / logs), which is also what makes the
 individual `reaper:*` scripts safe to run in parallel.
 
-**The parity baseline** (`pnpm test:native parity`, [spec/06-build-test.md](spec/06-build-test.md)) holds the
+**The parity baseline** (`pnpm test:native parity`, `spec/06-build-test.md`) holds the
 engine's output to the BIT: 149 store-driven cases, each hashed per lane per segment plus MIDI out, SRAM
 and work RAM, against `test-native/parity/baseline/*.json`. Every other audio test asserts levels, which a
 refactor can move without failing one; this one fails on a single changed bit, so treat a parity failure as a
