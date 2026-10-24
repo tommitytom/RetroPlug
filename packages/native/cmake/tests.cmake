@@ -86,6 +86,7 @@ retroplug_add_test_binary(
     NAME     retroplug-engine-graph-test
     SOURCES  test/engine-graph/Deterministic.cpp
              test/engine-graph/SystemNode.test.cpp
+             test/engine-graph/Translator.test.cpp
     LIBS     retroplug-backend
     INCLUDES ${RP_QUICKJS_INCLUDE}
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"

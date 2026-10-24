@@ -144,6 +144,8 @@ add_library(retroplug-backend STATIC
     src/host/engine/SnapshotRegistry.cpp    # owned id-keyed frame/state/SRAM store — the control plane's one read door
     src/host/engine/EngineInvoker.cpp       # Direct/Queued invokers — the only threading-aware layer
     src/host/graph/SystemNodes.cpp          # graph mode: today's cores as rp.sameboy.gb / rp.mesen.* nodes
+    src/host/graph/KernelNode.cpp           # graph mode: today's kernel stage as rp.dsp.kernel
+    src/host/graph/Translator.cpp           # graph mode: today's structural calls as graph documents
     src/system/SystemFactory.cpp            # backend-agnostic build registry (the one build path)
     src/system/CoreBackends.cpp             # registerCoreBackends: mounts sameboy + mesen on a factory
     src/system/sameboy/SameBoyBackend.cpp   # SameBoy builder — the only place SameBoyConfig is constructed
