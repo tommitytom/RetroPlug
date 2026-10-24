@@ -102,8 +102,10 @@ std::function<void(std::uint64_t)> sendAt(std::vector<SystemBase*> all, double s
 
 // parity/scenes.ts smsStart: smsggdj boots a blank song, so once it is up (about 2.5 s) the metronome song (the
 // bytes smsSyncSong.ts' buildMetronomeBlock sets that a blank one does not) is poked into work RAM and
-// PAUSE is held to start it (0.6 s: the 100 ms parity holds did not start the song under these
-// block sizes). Both cores get the same pokes and presses at the same block.
+// PAUSE is held to start it. Both cores get the same pokes and presses at the same block. The hold is
+// 0.6 s because press and release are gated on block starts: an 8192-frame block can carry the clock past
+// both thresholds, so a 100 ms hold (parity cuts its blocks at exactly those times) shrinks to one 64-frame
+// block, shorter than the video frame the pause line is sampled on.
 std::function<void(std::uint64_t)> smsStart(SystemBase& a, SystemBase& b) {
     return [&a, &b, stage = 0](std::uint64_t at) mutable {
         const auto pause = static_cast<std::uint8_t>(SmsButton::Start);
@@ -123,8 +125,8 @@ std::function<void(std::uint64_t)> smsStart(SystemBase& a, SystemBase& b) {
             }
             stage = 1;
         } else if (stage == 1 && at >= static_cast<std::uint64_t>(3.6 * kRate)) {
-            a.pressButton(static_cast<std::uint8_t>(SmsButton::Start), false);
-            b.pressButton(static_cast<std::uint8_t>(SmsButton::Start), false);
+            a.pressButton(pause, false);
+            b.pressButton(pause, false);
             stage = 2;
         }
     };
