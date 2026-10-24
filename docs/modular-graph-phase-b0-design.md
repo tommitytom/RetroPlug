@@ -374,6 +374,10 @@ The implementation plan's tasks, each verified before the next:
   the matrix's coverage only approximately: it drains the command ring BEFORE staging, and stages all MIDI
   at frame 0, where `renderBlocks` (like the plugin) stages each event at its frame and drains after.
   Neither gets a case of its own.
+- The render library's per-channel and pins exports (`src/render/render.ts`, used by the CLI `render`
+  command and the UI's System > Render) go through `renderAudioPerChannel` and
+  `Engine::processBlockPerChannel`, a separate engine entry point over the routers B1 rewrites. No case
+  covers it; B1 should add one before replacing it.
 - Exact audio on arm64, macOS and Windows: those targets get the determinism and integer-state checks of
   §5.2 (never yet run), and §1's argument for the audio bits, which a B1 change to multiply-add fusion on
   arm64 could break unseen.
