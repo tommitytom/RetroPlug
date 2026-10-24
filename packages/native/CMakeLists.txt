@@ -178,21 +178,6 @@ target_link_libraries(retroplug-backend PUBLIC
     Threads::Threads
 )
 
-# The parity baseline's target key (test-native/parity), "<os>-<arch>-<compiler><major>", reported by the
-# renderBlocks host's buildTarget(): float output is only bit-stable for one compiler on one architecture.
-# On the one TU that reports it, so a compiler change does not rebuild the whole backend for a string.
-string(TOLOWER "${CMAKE_SYSTEM_NAME}" _rp_target_os)
-string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _rp_target_arch)
-if(_rp_target_arch MATCHES "^(x86_64|amd64)$")
-    set(_rp_target_arch x64)
-elseif(_rp_target_arch MATCHES "^(aarch64|arm64)$")
-    set(_rp_target_arch arm64)
-endif()
-string(TOLOWER "${CMAKE_CXX_COMPILER_ID}" _rp_target_cc)
-string(REGEX MATCH "^[0-9]+" _rp_target_cc_major "${CMAKE_CXX_COMPILER_VERSION}")
-set_source_files_properties(src/host/rpc/EngineRpcService.cpp PROPERTIES COMPILE_DEFINITIONS
-    "RETROPLUG_BUILD_TARGET=\"${_rp_target_os}-${_rp_target_arch}-${_rp_target_cc}${_rp_target_cc_major}\"")
-
 set_target_properties(retroplug-backend PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON

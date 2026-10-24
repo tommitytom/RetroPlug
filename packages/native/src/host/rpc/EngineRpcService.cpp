@@ -1,6 +1,7 @@
 #include "host/rpc/EngineRpcService.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <fstream>
 #include <iterator>
@@ -485,15 +486,18 @@ std::string renderBlocksRefusal(const RpcRenderBlocksRequest& req) {
             if (m.bytes.empty()) return at + "a MIDI message is empty";
             if (m.frame >= blk.frames)
                 return at + "MIDI at frame " + std::to_string(m.frame) + " is outside a " + std::to_string(blk.frames) + "-frame block";
-            // A DAW delivers events frame-sorted, so the order today's engine gives unsorted input is
-            // never part of a baseline; ties keep their list order.
+            // A DAW delivers events frame-sorted, so unsorted input is left out of the baseline. (The plugin
+            // itself appends automation CCs at frame 0 after later host events and the kernel does not
+            // sort, so unsorted input IS a real plugin path; it is deliberately not recorded.) Ties keep
+            // their list order.
             if (m.frame < last)
                 return at + "MIDI frames go backwards (" + std::to_string(m.frame) + " after " + std::to_string(last) + ")";
             last = m.frame;
         }
         for (const auto& c : blk.controller)
             if (c.empty() || c.size() > 4) return at + "a controller message must be 1..4 bytes";
-        if (blk.bpm && !(*blk.bpm > 0.0)) return at + "bpm must be positive";
+        if (blk.bpm && !(std::isfinite(*blk.bpm) && *blk.bpm > 0.0)) return at + "bpm must be a positive finite number";
+        if (blk.ppq && !std::isfinite(*blk.ppq)) return at + "ppq must be finite";
     }
     return {};
 }
@@ -512,22 +516,26 @@ RpcRenderBlocksResult EngineRpcService::renderBlocks(RpcRenderBlocksRequest req)
 
     std::uint64_t total = 0;
     for (const RpcRenderBlock& b : req.blocks) total += b.frames;
-    // Whole-run planar lanes; each block renders straight into its own slice of them.
-    std::vector<std::vector<float>> lanes(req.outputs, std::vector<float>(total));
+    // Whole-run planar lanes, zero-filled; each block renders straight into its slice of the result.
+    // A std::string-backed buffer's heap allocation is aligned for float.
+    result.lanes.assign(req.outputs, rfl::Bytestring(total * sizeof(float), std::byte{0}));
     std::vector<float*> outs(req.outputs);
 
     std::uint64_t at = 0;
     for (std::uint32_t b = 0; b < req.blocks.size(); ++b) {
         RpcRenderBlock& blk = req.blocks[b];
         // PluginDSP::run's order: host MIDI staged at its frames, then the control plane's queued edits,
-        // then transport, then the block itself.
+        // then transport, then the block itself. Not modelled: the plugin's CC-automation stage and its
+        // MIDI-out size filter. ppq (a locate) and controller have no PluginDSP::run counterpart (the
+        // plugin never calls setPpq, which would double-count; controller traffic is the SDL standalone's).
         for (RpcBlockMidi& m : blk.midi) engine_.stageMidi(m.frame, std::move(m.bytes));
         for (auto& c : blk.controller) engine_.stageControllerMidi(std::move(c));
         invoker_.drainInto(engine_);
         if (blk.bpm) engine_.setBpm(*blk.bpm);
         if (blk.playing) engine_.setTransport(*blk.playing);
         if (blk.ppq) engine_.setPpq(*blk.ppq);
-        for (std::uint32_t c = 0; c < req.outputs; ++c) outs[c] = lanes[c].data() + at;
+        for (std::uint32_t c = 0; c < req.outputs; ++c)
+            outs[c] = reinterpret_cast<float*>(result.lanes[c].data()) + at;
         engine_.processBlock(blk.frames, outs.data(), req.outputs);
         for (const auto& mo : engine_.midiOut()) {
             RpcBlockMidiOut o;
@@ -541,17 +549,47 @@ RpcRenderBlocksResult EngineRpcService::renderBlocks(RpcRenderBlocksRequest req)
         engine_.clearMidiOut();
         at += blk.frames;
     }
-
-    result.lanes.reserve(req.outputs);
-    for (const auto& l : lanes) {
-        const auto* p = reinterpret_cast<const std::byte*>(l.data());
-        result.lanes.emplace_back(p, p + l.size() * sizeof(float));
-    }
     return result;
 }
 
+namespace {
+
+// "<os>-<arch>-<compiler><major>", from the compiler's own macros so each slice of a universal binary
+// names itself (a CMake variable would name the configure host).
+#define RP_STR2(x) #x
+#define RP_STR(x) RP_STR2(x)
+#if defined(__linux__)
+#define RP_TARGET_OS "linux"
+#elif defined(__APPLE__)
+#define RP_TARGET_OS "darwin"
+#elif defined(_WIN32)
+#define RP_TARGET_OS "windows"
+#else
+#define RP_TARGET_OS "unknown"
+#endif
+#if defined(__x86_64__) || defined(_M_X64)
+#define RP_TARGET_ARCH "x64"
+#elif defined(__aarch64__) || defined(_M_ARM64)
+#define RP_TARGET_ARCH "arm64"
+#else
+#define RP_TARGET_ARCH "unknown"
+#endif
+#if defined(__clang__) && defined(__apple_build_version__)
+#define RP_TARGET_CC "appleclang" RP_STR(__clang_major__)
+#elif defined(__clang__)
+#define RP_TARGET_CC "clang" RP_STR(__clang_major__)
+#elif defined(_MSC_VER)
+#define RP_TARGET_CC "msvc" RP_STR(_MSC_VER)  // the full number: MSVC 14.44 and 14.51 differ
+#elif defined(__GNUC__)
+#define RP_TARGET_CC "gnu" RP_STR(__GNUC__)
+#else
+#define RP_TARGET_CC "unknown"
+#endif
+
+} // namespace
+
 std::string EngineRpcService::buildTarget() const {
-    return RETROPLUG_BUILD_TARGET;
+    return RP_TARGET_OS "-" RP_TARGET_ARCH "-" RP_TARGET_CC;
 }
 
 // Direct engine_ access (not the invoker): the benchmark drives the synchronous renderAudio pull path

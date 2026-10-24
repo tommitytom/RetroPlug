@@ -91,6 +91,9 @@ public:
     // Render a scripted run of host blocks the way PluginDSP::run renders each one: stage the block's MIDI
     // at its frames, drain the command ring, apply its transport, processBlock(frames, lanes, outputs),
     // then take and clear the kernel's MIDI out. Quiescent only. The parity suite's capture call.
+    // ppq (a locate) and controller have no PluginDSP::run counterpart (the plugin never calls setPpq, which
+    // would double-count; controller traffic is the SDL standalone's path), and the plugin's CC-automation
+    // stage and MIDI-out size filter are not modelled.
     RpcRenderBlocksResult   renderBlocks(RpcRenderBlocksRequest req);
     // The target this binary was built for, "<os>-<arch>-<compiler><major>" (linux-x64-gnu13): which
     // parity baseline its float output can be compared against.

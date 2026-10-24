@@ -68,6 +68,8 @@ struct RpcMidiOut { std::uint32_t system; std::uint32_t frame; rfl::Bytestring d
 
 // renderBlocks (harness facet): render a scripted run of host blocks exactly as the plugin would hand
 // them to the Engine, for the parity suite (test-native/parity). One block = one processBlock call.
+// `ppq` and `controller` have no PluginDSP::run counterpart (the plugin never calls setPpq; controller
+// traffic is the SDL standalone's path); the plugin's CC-automation stage and MIDI-out filter are not modelled.
 struct RpcBlockMidi { std::uint32_t frame; std::vector<std::uint8_t> bytes; };
 struct RpcRenderBlock {
     std::uint32_t                          frames;      // 1..8192
