@@ -14,8 +14,8 @@
  *
  * One process may hold several hosts, each with its own control thread (every background render runs
  * its own engine). So the package- and type-level calls - the entry point, descriptor, layout_for,
- * query_memory, create, destroy - may run concurrently for different instances, and any lazy one-time setup a pack
- * does there must be thread-safe (std::call_once, a function-local static).
+ * query_memory, create, destroy - may run concurrently for different instances, and any lazy one-time
+ * setup a pack does there must be thread-safe (std::call_once, a function-local static).
  *
  * Every rp_node_vtable entry is required: a node with nothing to do supplies a no-op. get_interface may
  * return null for every id.

@@ -206,7 +206,7 @@ private:
         for (auto& p : nodes_) {
             const auto it = in_.live->find(p.doc->id);
             const bool sameType = it != in_.live->end() && it->second->entry == p.entry;
-            const bool sameLayout = sameType && layoutJson(it->second->layout) == out_.layouts[p.doc->id];
+            const bool sameLayout = sameType && layoutJson(it->second->layout) == out_.layouts.at(p.doc->id);
             if (sameType && sameLayout && it->second->settings == p.settings) {
                 p.inst = it->second;
             } else if (sameType && !sameLayout) {
