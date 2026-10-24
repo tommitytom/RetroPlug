@@ -48,8 +48,11 @@ const cases: ParityCase[] = [
     ...tap(),
     play(2000),
   ]),
-  // LSDj as the clock master, captured as MIDI out: start, clocks, the idle-flood stop. At 44.1 kHz in
-  // 1024-frame blocks it works (about 51 clocks/s, and it plays).
+  // LSDj as the clock master, captured as MIDI out: start, clocks, the idle-flood stop. The RATE is the
+  // cause of the defect (48 kHz at 1024 frames is also broken; 44.1 kHz at 512 plays). 1024 frames is chosen
+  // separately: at 512 the boot-time bytes stay under the decoder's 16-bytes-per-block flood threshold and
+  // open a run that never closes before START, so the real run gets no NoteOn / 0xFA. At 44.1 kHz in 1024
+  // it works (about 51 clocks/s, and it plays).
   lsdjCase(
     "masterSync-44100",
     ROMS.lsdj,

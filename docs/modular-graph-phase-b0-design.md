@@ -160,9 +160,12 @@ can. The baseline pins `nes-channelSplit-o2/o4`, `nes-pinSplit-o2` and `nes-ster
 are; fixing it is its own change with a re-record.
 
 A sixth defect is recorded as it is, not fixed (§1): **LSDj master sync is broken at 48 kHz and above while
-serial-out capture is armed.** Measured: at 48 kHz in 512-frame blocks all 17 captured MIDI messages fall
-inside the boot segment (boot noise) and nothing follows START, and the render is silent, while mode `off`
-plays at 48 kHz. At 44.1 kHz in 1024-frame blocks it works as `test-native/lsdj-mastersync.test.ts` expects:
+serial-out capture is armed.** The RATE is the cause: 48 kHz at 1024 frames is also broken, and 44.1 kHz at 512
+plays. Measured at 48 kHz in 512-frame blocks: all 17 captured MIDI messages fall inside the boot segment
+(boot noise) and nothing follows START, and the render is silent, while mode `off` plays at 48 kHz. The
+cases use 1024 frames at 44.1 kHz for a separate reason: at 512 the boot-time bytes stay under the decoder's
+16-bytes-per-block flood threshold and open a run that never closes before START, so the real run gets no
+NoteOn / 0xFA. At 44.1 kHz in 1024-frame blocks it works as `test-native/lsdj-mastersync.test.ts` expects:
 start, about 51 clocks/s (77 messages in the 1.5 s after the first START) and audio. The baseline records
 `masterSync-44100` (audible) and `masterSync-48000` (silent); fixing it is its own change with a re-record.
 

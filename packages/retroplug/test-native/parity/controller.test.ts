@@ -41,8 +41,10 @@ const cases: ParityCase[] = [
     segments: [
       boot(),
       {
-        blocks: blocks(frames(SR, 2000)),
-        // MI.MAP's clock only runs with the transport, so a launched row would freeze on its first step.
+        blocks: blocks(frames(SR, 4500)),
+        // MI.MAP's clock only runs with the transport, so a launched row would freeze on its first step. While
+        // the transport runs a launch takes effect at the next phrase boundary (~2 s at 120 bpm), so the second
+        // press (1 s in) is queued and lands inside this segment only because it is long enough.
         transport: [{ at: 0, bpm: 120, ppq: 0, playing: true }],
         controller: [
           { at: 0, bytes: press(6) },

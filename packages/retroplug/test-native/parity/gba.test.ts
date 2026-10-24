@@ -1,6 +1,8 @@
 // The GBA core at all: nanoloop booting through the stores, under Stereo and TwoPerInstance. nanoloop is
-// silent until it is played, so these pin that the core renders and what its work RAM holds after boot,
-// not a sound. Needs the sibling nanoloop ROM, so these skip in CI.
+// silent until it is played, so these pin that the core renders and what its work RAM holds after boot.
+// The START press in the second case makes a small click on lane 1 (the core's own output; `audible: []`
+// stays right). That case's value is the GBA input path: the TwoPerInstance half is not observable with one
+// system. Needs the sibling nanoloop ROM, so these skip in CI.
 import { runGroup, type ParityCase } from "./group";
 import { even } from "./rig";
 import { frames, ROMS } from "./scenes";
