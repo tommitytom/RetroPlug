@@ -96,7 +96,7 @@ public:
     // stage and MIDI-out size filter are not modelled.
     RpcRenderBlocksResult   renderBlocks(RpcRenderBlocksRequest req);
     // The target this binary was built for, "<os>-<arch>-<compiler><major>" (linux-x64-gnu13): which
-    // parity baseline its float output can be compared against.
+    // parity baseline its float output can be compared against. MSVC reports the full _MSC_VER (msvc1951).
     std::string             buildTarget() const;
 
     // --- DSP-runtime allocation/GC profiling (spec/08-profiling.md) ---

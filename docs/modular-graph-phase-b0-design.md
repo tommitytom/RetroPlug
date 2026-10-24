@@ -82,10 +82,11 @@ A refused request returns its reason (the driver throws it) and renders nothing:
 block of 0 or more than 8192 frames, a frame at or beyond its block, frames going backwards within a block
 (DAWs deliver events sorted, so the baseline never pins what today's engine does with unsorted input;
 ties keep their list order), an empty MIDI message, a controller message outside 1..4 bytes, a
-non-positive bpm, or the background audio thread running. The response is raw planar PCM; TS hashes it.
+bpm that is not a positive finite number, a non-finite ppq, or the background audio thread running. The response is raw planar PCM; TS hashes it.
 
-`buildTarget` is `<os>-<arch>-<compiler><major>`, compiled into `EngineRpcService.cpp` from CMake's
-system and compiler variables, so the key describes the binary that ran.
+`buildTarget` is `<os>-<arch>-<compiler><major>`, derived at compile time in `EngineRpcService.cpp`
+from the compiler's predefined macros, so each slice of a universal macOS build names its own arch and the key
+describes the binary that ran. MSVC reports the full `_MSC_VER` (e.g. `msvc1951`).
 
 The test host's main loop also gains `__rp_keepAlive()`, the CLI's existing opt-in: a recording awaits a
 child process (§5.3), and the host's bounded pump otherwise gives up before it finishes. Asking is

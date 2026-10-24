@@ -517,7 +517,7 @@ RpcRenderBlocksResult EngineRpcService::renderBlocks(RpcRenderBlocksRequest req)
     std::uint64_t total = 0;
     for (const RpcRenderBlock& b : req.blocks) total += b.frames;
     // Whole-run planar lanes, zero-filled; each block renders straight into its slice of the result.
-    // A std::string-backed buffer's heap allocation is aligned for float.
+    // The vector's allocation comes from operator new, so it is suitably aligned for float.
     result.lanes.assign(req.outputs, rfl::Bytestring(total * sizeof(float), std::byte{0}));
     std::vector<float*> outs(req.outputs);
 
@@ -552,8 +552,6 @@ RpcRenderBlocksResult EngineRpcService::renderBlocks(RpcRenderBlocksRequest req)
     return result;
 }
 
-namespace {
-
 // "<os>-<arch>-<compiler><major>", from the compiler's own macros so each slice of a universal binary
 // names itself (a CMake variable would name the configure host).
 #define RP_STR2(x) #x
@@ -586,11 +584,17 @@ namespace {
 #define RP_TARGET_CC "unknown"
 #endif
 
-} // namespace
-
 std::string EngineRpcService::buildTarget() const {
     return RP_TARGET_OS "-" RP_TARGET_ARCH "-" RP_TARGET_CC;
 }
+
+// On Windows the SameBoy core is compiled by clang-cl (cmake/sameboy.cmake), whose version this key does not
+// carry; that would matter only if a Windows baseline were ever recorded.
+#undef RP_STR2
+#undef RP_STR
+#undef RP_TARGET_OS
+#undef RP_TARGET_ARCH
+#undef RP_TARGET_CC
 
 // Direct engine_ access (not the invoker): the benchmark drives the synchronous renderAudio pull path
 // and never startAudio, so the control thread owns the Engine here — same regime as readState.
