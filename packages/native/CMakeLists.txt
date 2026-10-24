@@ -143,6 +143,7 @@ add_library(retroplug-backend STATIC
     src/host/engine/Engine.cpp              # single-threaded core: owns Project + DspRuntime, runs blocks
     src/host/engine/SnapshotRegistry.cpp    # owned id-keyed frame/state/SRAM store — the control plane's one read door
     src/host/engine/EngineInvoker.cpp       # Direct/Queued invokers — the only threading-aware layer
+    src/host/graph/SystemNodes.cpp          # graph mode: today's cores as rp.sameboy.gb / rp.mesen.* nodes
     src/system/SystemFactory.cpp            # backend-agnostic build registry (the one build path)
     src/system/CoreBackends.cpp             # registerCoreBackends: mounts sameboy + mesen on a factory
     src/system/sameboy/SameBoyBackend.cpp   # SameBoy builder — the only place SameBoyConfig is constructed
@@ -173,6 +174,7 @@ find_package(Threads REQUIRED)  # efsw-static needs pthreads on Linux (its CMake
 
 target_link_libraries(retroplug-backend PUBLIC
     retroplug-core      # Project + SystemBase + SameBoy/Mesen; PUBLIC-brings rpcpp + miniz
+    retroplug-graph     # the graph executor, planner and GraphHost the engine runs on in graph mode
     tjs                 # txiki.js/QuickJS runtime (transitively brings qjs + libuv)
     efsw-static         # NativeFileWatcher's filesystem watcher (PUBLIC-brings efsw/efsw.hpp include dir)
     Threads::Threads
