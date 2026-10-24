@@ -66,7 +66,9 @@ std::vector<std::uint8_t> slurpLocal(const std::string& path) {
 
 }  // namespace
 
+#if defined(RP_N8_TIMING)
 int runTiming(int argc, char** argv, const std::string& defaultPort);   // n8-timing.cpp
+#endif
 int main(int argc, char** argv) {
     if (argc < 3) {
         // `sniff`/`info`/`fstest` need no path/addr (they auto-detect the port), so allow a bare argc==2.
@@ -156,7 +158,14 @@ int main(int argc, char** argv) {
     // queued by the ROM. The cost is that a wrong port just times out instead of saying "no device".
     // BlipToaster's MIDI latency / jitter / latency-under-load on the real console, timed against a timestamped
     // capture of its audio (n8-timing.cpp).
-    if (op == "timing") return runTiming(argc, argv, findN8Port());
+    if (op == "timing") {
+#if defined(RP_N8_TIMING)
+        return runTiming(argc, argv, findN8Port());
+#else
+        std::fprintf(stderr, "timing needs ALSA (this build has none)\n");
+        return 2;
+#endif
+    }
 
     // Diagnostic for the reliable link on hardware: one port, every step by hand - sync, read the back-channel,
     // frames, the APU mirror after each - to see where a frame stops landing. It polls the back-channel the way

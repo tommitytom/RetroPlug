@@ -151,12 +151,10 @@ retroplug_add_test_binary(
 # N8Host + N8SdWorker the Settings > N8 Pro menu uses, over a real /dev/ttyACM0 (adds the real
 # WjwwoodSerialPort + `serial`). Brings its own main(), hence NO_CATCH2.
 # Build by name: cmake --build build --target retroplug-n8-hwtest.
-find_package(ALSA)   # n8-timing.cpp: a timestamped capture of the console's audio
 retroplug_add_test_binary(
     NAME     retroplug-n8-hwtest
     NO_CATCH2
     SOURCES  test/n8/n8-sd-hwtest.cpp
-             test/n8/n8-timing.cpp
              src/host/n8/Edio.cpp
              src/host/n8/N8Link.cpp
              src/host/n8/N8Host.cpp
@@ -165,8 +163,16 @@ retroplug_add_test_binary(
              src/host/n8/WjwwoodSerialPort.cpp
     LIBS     serial
              Threads::Threads
-             ALSA::ALSA
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# `timing` times against an ALSA capture of the console's audio, so it exists only where ALSA does. Linking
+# ALSA::ALSA unconditionally failed the GENERATE step on macOS/Windows - EXCLUDE_FROM_ALL does not spare a target
+# from resolving its link libraries.
+find_package(ALSA)
+if(ALSA_FOUND)
+    target_sources(retroplug-n8-hwtest PRIVATE test/n8/n8-timing.cpp)
+    target_link_libraries(retroplug-n8-hwtest PRIVATE ALSA::ALSA)
+    target_compile_definitions(retroplug-n8-hwtest PRIVATE RP_N8_TIMING=1)
+endif()
 
 # Proves the ThorVG-backed <Lottie> capability: that lv_lottie rasterizes animated vector frames on a
 # headless software display (LV_USE_LOTTIE → ThorVG). Links bare lvgl (which PRIVATE-brings
