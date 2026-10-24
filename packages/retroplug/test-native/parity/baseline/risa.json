@@ -1,0 +1,109 @@
+{
+ "cases": {
+  "transport": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "54660920",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 120000,
+     "lanes": [
+      "41110a39 0.004247",
+      "41110a39 0.004247"
+     ]
+    },
+    {
+     "frames": 72000,
+     "lanes": [
+      "ddaa1de5 0.02241",
+      "ddaa1de5 0.02241"
+     ]
+    },
+    {
+     "frames": 24000,
+     "lanes": [
+      "4d83aba5 0.005660",
+      "4d83aba5 0.005660"
+     ]
+    },
+    {
+     "frames": 72300,
+     "lanes": [
+      "b6b496e1 0.02159",
+      "b6b496e1 0.02159"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "63ca9e1a",
+     "length": 65536
+    }
+   }
+  },
+  "transport-pinSplit": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "54660920",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 120000,
+     "lanes": [
+      "ba2879c5 0",
+      "f0cb23d3 0.004244",
+      "ba2879c5 0",
+      "ba2879c5 0"
+     ]
+    },
+    {
+     "frames": 72000,
+     "lanes": [
+      "a79a21c5 0",
+      "5924b4ec 0.02242",
+      "a79a21c5 0",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 24000,
+     "lanes": [
+      "7e4bc9c5 0",
+      "da0229df 0.005657",
+      "7e4bc9c5 0",
+      "7e4bc9c5 0"
+     ]
+    },
+    {
+     "frames": 72300,
+     "lanes": [
+      "81ef6d85 0",
+      "89bc39e4 0.02158",
+      "81ef6d85 0",
+      "81ef6d85 0"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "63ca9e1a",
+     "length": 65536
+    }
+   }
+  }
+ },
+ "target": "linux-x64-gnu13"
+}

@@ -1,0 +1,39 @@
+{
+ "cases": {
+  "pad-launches": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "4446f81c",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 288000,
+     "lanes": [
+      "377be6a8 0.003835",
+      "377be6a8 0.003835"
+     ]
+    },
+    {
+     "frames": 96000,
+     "lanes": [
+      "33b81406 0.03380",
+      "33b81406 0.03380"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "fd670863",
+     "length": 131072
+    }
+   }
+  }
+ },
+ "target": "linux-x64-gnu13"
+}

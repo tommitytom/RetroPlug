@@ -1,0 +1,81 @@
+{
+ "cases": {
+  "boot-stereo": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "7fb8a79a",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 96000,
+     "lanes": [
+      "53b94dc5 0",
+      "53b94dc5 0",
+      "53b94dc5 0",
+      "53b94dc5 0"
+     ]
+    },
+    {
+     "frames": 48000,
+     "lanes": [
+      "f5caf5c5 0",
+      "f5caf5c5 0",
+      "f5caf5c5 0",
+      "f5caf5c5 0"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "4f731dc5",
+     "length": 32768
+    }
+   }
+  },
+  "boot-twoPerInstance": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "7fb8a79a",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 96000,
+     "lanes": [
+      "53b94dc5 0",
+      "53b94dc5 0",
+      "53b94dc5 0",
+      "53b94dc5 0"
+     ]
+    },
+    {
+     "frames": 48000,
+     "lanes": [
+      "f5caf5c5 0",
+      "f5caf5c5 0",
+      "f5caf5c5 0",
+      "f5caf5c5 0"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "4f731dc5",
+     "length": 32768
+    }
+   }
+  }
+ },
+ "target": "linux-x64-gnu13"
+}
