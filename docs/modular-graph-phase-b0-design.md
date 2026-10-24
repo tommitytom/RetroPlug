@@ -197,7 +197,7 @@ baseline. 153 cases in the 20 group files (counted over `baseline/*.json`; the s
 | `sync-sms` | smsggdj SYNC IN24 on SMS and GG: start, bpm change, stop, locate, a short block at a loop wrap whose end is off the 24-PPQN tick grid (so its locate shows); at 48 kHz / 512 and at 44.1 kHz / 8192-frame blocks | transport-driven sync |
 | `lsdj-sync` *(fixture)* | SYNC=MIDI at divisors 1/2/4/8 and with autoStart; Arduinoboy at 1024 (divisors 1 and 4) and 512, ending with a transport stop | lsdj-sync's clock modes; the Arduinoboy defect |
 | `lsdj-modes` *(fixture)* | off, keyboard (inert: the role emits nothing), midiMap (clocked by the transport), keyboardMidi, midiPassthrough (raw clocks into a dense SYNC=MIDI song), midiOut (play / stop / play; the sample-rate defect), masterSync at 44.1 kHz (works) and 48 kHz (the defect) | every other lsdj-sync mode; MI.OUT and master clock as MIDI out |
-| `lsdj-link` *(fixture)* | leader and follower on one cable | link-cable sync |
+| `lsdj-link` *(fixture)* | leader and follower on one cable, in blocks of 512 and of every other size `blocks-*` uses (64, 199, 1024, 8192 and the cycle) | link-cable sync; lockstep stepping across partitions (the follower's lanes differ in each) |
 | `risa` *(fixture)* | the transport script, also under PinSplit | risa-sync |
 | `gba` *(fixture)* | nanoloop booting under Stereo, and under TwoPerInstance with START pressed (silent until played) | the GBA core at all |
 | `controller` *(fixture)* | pad presses launching distinct rows on an Arduinoboy LSDj in MIDIMAP, transport running | the Launchpad role, controller-in |

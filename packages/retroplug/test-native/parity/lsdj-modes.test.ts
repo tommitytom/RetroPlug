@@ -8,6 +8,7 @@ import { frames, ROMS } from "./scenes";
 import { even } from "./rig";
 
 const play = (ms: number) => ({ blocks: blocks(frames(SR, ms)) });
+const by1024 = (n: number) => even(n, 1024);
 const at = (ms: number) => frames(SR, ms);
 
 const cases: ParityCase[] = [
@@ -57,11 +58,11 @@ const cases: ParityCase[] = [
     "masterSync-44100",
     ROMS.lsdj,
     (rig) => lsdj(rig, ROMS.lsdj, songSav("Lsdj"), { mode: "masterSync" }),
-    [...tap(0, 44100, 1024), { blocks: even(frames(44100, 1500), 1024) }, ...tap(0, 44100, 1024), { blocks: even(frames(44100, 1200), 1024) }],
+    [...tap(0, 44100, by1024), { blocks: by1024(frames(44100, 1500)) }, ...tap(0, 44100, by1024), { blocks: by1024(frames(44100, 1200)) }],
     2,
     [0, 1],
     44100,
-    1024,
+    by1024,
   ),
   // KNOWN DEFECT, recorded as it is (design section 2.5): at 48 kHz and above, with serial-out capture armed,
   // master sync is broken: the only MIDI out is boot noise and nothing follows START, and it is silent

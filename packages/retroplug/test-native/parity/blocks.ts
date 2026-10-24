@@ -10,7 +10,8 @@ import { cycle, even, type Segment } from "./rig";
 import { frames, mgb, MGB_CHANNELS, BOOT_MS, NES_CHANNELS, phrase, ROMS, smsggdj, smsStart, type Blocks } from "./scenes";
 
 const RATES = [44100, 48000];
-const SPLITS: [string, Blocks][] = [
+/** Every host block size the matrix renders, by name; lsdj-link reuses them. */
+export const SPLITS: [string, Blocks][] = [
   ["64", (n) => even(n, 64)],
   ["199", (n) => even(n, 199)],
   ["512", (n) => even(n, 512)],
