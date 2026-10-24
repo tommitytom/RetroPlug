@@ -107,9 +107,10 @@ re-opened live via the `__rp_setAudioConfig` seam (`sr, bs, ch, driver` — see 
 Default **2** is
 byte-identical to the old 2-arg stereo path (zero regression); 4/6/8 opens that many device channels so the
 project's **Audio Routing** modes (`2-Ch/Inst`, `1-Ch/Inst`, `Channels`, and NES-only `Pins` / `Stereo Pins`) fan real stems
-to a multichannel interface. No routing plumbing was needed — `audioRouting` already reaches the SDL Engine
-via the existing `setAudioRouting` RPC; `Engine::processBlock` dispatches `MultiOutRouter`/`ChannelSplitRouter`
-off it, and with only 2 channels every mode collapses to pair 0 (why it was inert before). The lane budget is
+to a multichannel interface. No routing plumbing was needed: `audioRouting` already reaches the SDL Engine
+via the existing `setAudioRouting` RPC, and the SDL host sets the translator's `Multi(N)` host shape to the
+device's channel count, so the translator wires each mode across those N channels as the graph's routing
+(with only 2, every mode collapses to pair 0, which is why it was inert before). The lane budget is
 checked against the device's ACTUAL channel count, so a 4-channel pick still carries a NES's 3 mono `Pins`
 lanes and falls back to stereo for its 5 `Channels` ones (and for `Stereo Pins`, which wants 6). Low priority — matters only on
 desktop with a multichannel interface (a stereo device just has SDL fold the extra channels back down).
@@ -284,8 +285,8 @@ Profiled with the in-tree harness (`dsp-bench` / `nes-bench` under a `RETROPLUG_
 trace spans). Audio-thread JS is ~0.5% of a block for both cores — the emulator core dominates. Two items
 stand out, most relevant on constrained (low-power) devices:
 
-- **NES savestate-serialize spike.** `SnapshotRegistry::publishAll` pumps core state to the control plane on
-  the audio thread every block (a framebuffer copy) plus a **full savestate serialize every 0.5 s**
+- **NES savestate-serialize spike.** `SnapshotRegistry::publishSystem`, which `Engine::processBlock` calls for
+  each system of the running plan, pumps core state to the control plane on the audio thread every block (a framebuffer copy) plus a **full savestate serialize every 0.5 s**
   (`SystemBase::publishStateSnapshot` → `captureStateSnapshot`, which runs *inside* the core block). For
   Mesen that serialize is heavy — a large periodic audio-thread spike — while it's consumed only **on demand**
   (save-state / save-project / render; nothing polls it, and NES SRAM auto-save uses the savestate-independent

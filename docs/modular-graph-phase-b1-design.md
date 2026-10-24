@@ -45,8 +45,9 @@ moves the audio side: emulators, the link cable, mixing and the host outputs.
    3. the mixing nodes (`rp.core.split`, `rp.core.add`);
    4. `rp.host.audio-out`.
 4. Today's tail, unchanged: the MI.OUT collection into `pendingSerialOut_` (only while a kernel is loaded,
-   systems in slot order, frames dropped), `registry_.publishAll`, `syncTrace_.endBlock()`, and the ppq
-   advance `if (transport_) ppq_ += (bpm_ / 60.0) * (double(frames) / sampleRate_)`.
+   systems in slot order, frames dropped), `registry_.publishSystem` for each system in slot order,
+   `syncTrace_.endBlock()`, and the ppq advance `if (transport_) ppq_ += (bpm_ / 60.0) * (double(frames) /
+   sampleRate_)`.
 
 The MI.OUT collection and the registry read the system table (§4.5) rather than `Project`; the collection
 reads its Game Boy pointers rather than `dynamic_cast` each system every block.
@@ -176,7 +177,7 @@ capture armed, so the mix drifts. Fixing the defect is its own commit with its r
 ### 3.3 `rp.dsp.kernel`
 
 A B1-only node with no ports, first in every document (§4.2). Its `process()` is today's kernel stage
-(`Engine.cpp:158-207`), reached through a host interface onto the Engine:
+(`Engine::runKernelStage`), reached through a host interface onto the Engine:
 
 - skip everything while no kernel is loaded (`dspActive_`), leaving the staging vectors as they are (today
   they keep growing until a kernel loads; copied, not fixed);

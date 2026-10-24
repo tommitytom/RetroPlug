@@ -90,8 +90,9 @@ public:
     AudioRouting routing() const { return routing_; }
     const HostShape& shape() const { return shape_; }
     std::size_t  systemCount() const { return systems_.size(); }
-    // The core of `id`, for the control-thread readers that may touch a core only while no audio thread
-    // runs (the debug facet, the per-channel render's layout). Null for an unknown id.
+    // The core of `id` in the model, null for an unknown id: the invoker's presence check before a replace
+    // or remove. The control-thread readers (the debug facet, the per-channel render) go through
+    // Engine::findSystem, the running plan's table, instead.
     SystemBase*  find(SystemId id) const;
     // Every core, in slot order (a sample-rate change re-rates them, quiescent only).
     std::vector<SystemBase*> cores() const;

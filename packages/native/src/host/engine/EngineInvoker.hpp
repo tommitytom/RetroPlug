@@ -64,11 +64,13 @@ public:
 
     // consumer: apply every queued command (the block thread, or the control thread while quiescent).
     void drainInto(Engine& engine);
-    // control thread: free the plans the audio thread handed back, and the cores only they held. Returns
-    // how many plans it freed.
+    // control thread: free the plans the audio thread handed back, and the cores only they held, and report
+    // what the block thread could only count (leaked plans, faults, oversized blocks). Returns how many plans
+    // it freed.
     std::uint32_t reclaimReleased();
-    // after the audio thread is joined: DISCARD what is still queued (its payloads freed, never applied).
-    // Teardown only: drainInto APPLIES a pending command; this drops it.
+    // after the audio thread is joined: adopt every queued plan, applying its SyncTap trailer (the rest of the
+    // same edit), and DISCARD every other queued command (its payload freed, never applied). Teardown only:
+    // drainInto APPLIES a pending command; this drops it.
     void freePending();
 
 private:

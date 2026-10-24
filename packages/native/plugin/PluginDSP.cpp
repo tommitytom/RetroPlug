@@ -264,6 +264,13 @@ protected:
 
     // --- audio lifecycle: DPF owns the audio thread and calls run(), so the plugin drives the Engine
     // directly here (mirrors AudioDriverRpcService's loop, minus the spawned thread). ---
+    //
+    // activate and sampleRateChanged plan graphs, so they assume DPF calls them on the control thread, as it
+    // does for CLAP, VST3 and AU. JACK re-runs deactivate/activate from its buffer-size callback, and VST2
+    // resumes from processReplacing a plugin its host has not activated. Both are no-ops in practice: an
+    // earlier activate planned the shape (setHostShape returns at once), a block within the plan's maximum
+    // leaves setMaxBlockFrames nothing to do, and DPF skips an unchanged rate. Only a VST2 host that
+    // processes before it ever activates would plan here first. The hazard predates the graph engine.
     void activate() override {
         // Hand the Engine to the DPF audio thread: from here every control-plane edit is push-only,
         // drained by run() each block. (Set BEFORE the host starts calling run(); the quiescent path

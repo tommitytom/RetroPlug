@@ -255,11 +255,12 @@ a gigabyte.
   the core**: a routing flip must not reset a playing game the way `setRegion` does. The plan's swap
   command carries a `SyncTap` trailer for every add / replace / remove / set-routing, dispatched in the
   same pop right after the plan is adopted, so the arming lands with the wiring, against the plan just
-  adopted. It records `{ SystemId, prevMode }`
-  (`Engine::armedTap_`) for what it armed and restores that first on every run (even when the wanted
-  mode is unchanged; each run resets the capture streams), so the CLI / render path, which
-  legitimately sets `channelExportMode` at construct and never selects a split routing, is never
-  disturbed. The translator wires tap ports only when the mode it computes for the core (the
+  adopted. It records `{ SystemId, core, prevMode }` (`Engine::armedTap_`) for what it armed and
+  restores that first on every run (even when the wanted mode is unchanged; each run resets the
+  capture streams). The core pointer is compared, never followed: a NES replaced under its same id is
+  a different core, so it counts as gone and is not handed the old core's mode. The CLI / render
+  path, which legitimately sets `channelExportMode` at construct and never selects a split routing, is
+  never disturbed. The translator wires tap ports only when the mode it computes for the core (the
   routing's arm, else the build mode) is the one those ports need, so the wiring and the armed tap
   agree by the time the NES runs. Deliberately NOT a `ConfigField` / `applyRoleConfig` entry: routing
   is the single owner in a live host.
