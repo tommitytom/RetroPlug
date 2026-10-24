@@ -9,6 +9,7 @@ import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "../../src/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { registerDspRoles } from "../../src/dspRoles";
+import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
 import { gbRom, lsdjRom } from "./fixtures";
 
@@ -17,6 +18,7 @@ function newStore() {
   const reg = new RoleRegistry();
   registerCoreRoles(reg); // sameboy system role
   registerDspRoles(reg); // lsdj-sync (with the seed hook) + mgb
+  registerLsdjAssetsRole(reg);
   registerRomProviders(reg); // LSDj/mGB identity → feature roles
   return { be, store: new SystemsStore(be, () => {}, reg) };
 }
@@ -59,5 +61,17 @@ test("embedded mGB is never seeded (its role has no load-time hook)", () => {
   const id = store.loadMgb();
   expect(id).toBeTruthy();
   const spec = be.constructCalls[be.constructCalls.length - 1];
+  expect(spec.sramBytes).toBe(undefined);
+});
+
+test("duplicating an LSDj system seeds the clone from the savestate only (no battery re-seed)", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/song.gb", lsdjRom());
+  const id = store.addSystem("/roms/song.gb")!;
+  const dup = store.duplicateSystem(id);
+  expect(dup).toBeTruthy();
+  const spec = be.constructCalls[be.constructCalls.length - 1];
+  // A seeded battery would cold-reseed the clone and drop the restored state.
+  expect(spec.stateBytes != null).toBeTruthy();
   expect(spec.sramBytes).toBe(undefined);
 });

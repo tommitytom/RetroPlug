@@ -5,8 +5,8 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";
-import { buildAppRegistry } from "../../src/appHost";
-import { projectKernelStructure } from "../../src/kernelProjection";
+import { buildAppRegistry, syncDspFromStore } from "../../src/appHost";
+import type { DspRuntimeClient } from "../../src/dspRuntime";
 
 function newProject() {
   const be = new MockBackend("/cfg");
@@ -16,10 +16,15 @@ function newProject() {
 test("setMidiRouting re-drives the kernel with the new mode", () => {
   const project = newProject();
   const pushed: unknown[] = [];
-  project.setOnSystemsChange(() => {
-    const routing = projectKernelStructure(project.systems.view(), project.settings().midiRouting).project?.[0];
-    pushed.push(routing?.config.mode);
-  });
+  const dsp: DspRuntimeClient = {
+    compileScript: () => new Uint8Array(0),
+    loadKernel: () => true,
+    setSystems: (struct) => {
+      pushed.push(struct.project?.[0]?.config.mode);
+      return true;
+    },
+  };
+  project.setOnSystemsChange(() => void syncDspFromStore(project, dsp));
   expect(project.setMidiRouting("oneChannelPerInstance")).toBeTruthy();
   expect(pushed).toEqual(["oneChannelPerInstance"]);
 });

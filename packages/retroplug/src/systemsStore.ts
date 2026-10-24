@@ -270,8 +270,8 @@ export class SystemsStore {
     const savPath = src.embeddedRom ? null : resolveSavPath(src.romPath, suffix, "");
     const systemRole = src.roles.find((r) => r.kind === src.core);
     const newId = allocSystemId();
-    // Through the load-time role hooks, as rebuildInPlace is: the savestate was captured running the
-    // EFFECTIVE ROM (e.g. with asset overrides folded in), so the clone has to boot that image too.
+    // Through the load-time role hooks, as rebuildInPlace is: the clone boots the effective ROM its role
+    // config describes (asset overrides folded in), the image the source's savestate expects.
     const spec = this.applyConstructHooks({
       romPath: src.romPath,
       platform: src.platform,

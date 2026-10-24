@@ -289,6 +289,7 @@ test("Duplicate boots the clone from the patched ROM, not the base one", () => {
   store.setRoleConfig(id, "bliptoaster-assets", { settings: { theme: 11 } });
   const src = store.reloadSystem(id)!;
   expect(constructedSettings(be)!.theme).toBe(11);
+  const srcRom = be.constructCalls[be.constructCalls.length - 1].romBytes;
 
   // The clone boots from the source's savestate, which was captured running the PATCHED ROM; booting it
   // under the base image would run that state against code and data it was never captured with.
@@ -296,5 +297,7 @@ test("Duplicate boots the clone from the patched ROM, not the base one", () => {
   expect(dup).toBeTruthy();
   const call = be.constructCalls[be.constructCalls.length - 1];
   expect(call.stateBytes != null).toBeTruthy();
+  expect(call.romBytes != null).toBeTruthy();
+  expect(Array.from(call.romBytes!)).toEqual(Array.from(srcRom!));
   expect(constructedSettings(be)!.theme).toBe(11);
 });
