@@ -1,0 +1,353 @@
+{
+ "cases": {
+  "nes-44100-1024": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "fd9fb6e8",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 66150,
+     "lanes": [
+      "6be0c2a5 0",
+      "6be0c2a5 0"
+     ]
+    },
+    {
+     "frames": 26460,
+     "lanes": [
+      "b14de715 0.09807",
+      "b14de715 0.09807"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "nes-44100-199": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "814968c1",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 66150,
+     "lanes": [
+      "6be0c2a5 0",
+      "6be0c2a5 0"
+     ]
+    },
+    {
+     "frames": 26460,
+     "lanes": [
+      "b14de715 0.09807",
+      "b14de715 0.09807"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "nes-44100-512": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "ccb3a07b",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 66150,
+     "lanes": [
+      "6be0c2a5 0",
+      "6be0c2a5 0"
+     ]
+    },
+    {
+     "frames": 26460,
+     "lanes": [
+      "b14de715 0.09807",
+      "b14de715 0.09807"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "nes-44100-64": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "ccb3a07b",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 66150,
+     "lanes": [
+      "6be0c2a5 0",
+      "6be0c2a5 0"
+     ]
+    },
+    {
+     "frames": 26460,
+     "lanes": [
+      "b14de715 0.09807",
+      "b14de715 0.09807"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "nes-44100-8192": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "fd9fb6e8",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 66150,
+     "lanes": [
+      "6be0c2a5 0",
+      "6be0c2a5 0"
+     ]
+    },
+    {
+     "frames": 26460,
+     "lanes": [
+      "b14de715 0.09807",
+      "b14de715 0.09807"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "nes-44100-cycle": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "fd9fb6e8",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 66150,
+     "lanes": [
+      "6be0c2a5 0",
+      "6be0c2a5 0"
+     ]
+    },
+    {
+     "frames": 26460,
+     "lanes": [
+      "b14de715 0.09807",
+      "b14de715 0.09807"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "nes-48000-1024": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "fd9fb6e8",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "a79a21c5 0",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "4117e503 0.09810",
+      "4117e503 0.09810"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "nes-48000-199": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "ccb3a07b",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "a79a21c5 0",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "4117e503 0.09810",
+      "4117e503 0.09810"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "nes-48000-512": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "ccb3a07b",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "a79a21c5 0",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "4117e503 0.09810",
+      "4117e503 0.09810"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "nes-48000-64": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "fd9fb6e8",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "a79a21c5 0",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "4117e503 0.09810",
+      "4117e503 0.09810"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "nes-48000-8192": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "fd9fb6e8",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "a79a21c5 0",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "4117e503 0.09810",
+      "4117e503 0.09810"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "nes-48000-cycle": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "fd9fb6e8",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "a79a21c5 0",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "4117e503 0.09810",
+      "4117e503 0.09810"
+     ]
+    }
+   ],
+   "sram": {}
+  }
+ },
+ "target": "linux-x64-gnu13"
+}
