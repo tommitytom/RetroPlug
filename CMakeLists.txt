@@ -238,6 +238,17 @@ if(WIN32)
         REQUIRED)
     set(_sbs_src "${CMAKE_SOURCE_DIR}/packages/native/src/system/sameboy/SameBoySystem.cpp")
     set(_sbs_obj "${CMAKE_BINARY_DIR}/sameboy-clang/SameBoySystem.cpp.obj")
+    # A custom command gets no header scan, so it rebuilds on the headers listed here and nothing else. A
+    # stale object is not a slow build but a crash: change a class layout or a vtable (SystemBase's virtuals)
+    # and the MSVC objects agree on the new one while this one keeps the old, every slot after the change
+    # off by one. These are the directories its includes reach (the boot-ROM headers come with
+    # sameboy_bootroms); one it starts including from belongs here too.
+    file(GLOB _sbs_headers CONFIGURE_DEPENDS
+        "${CMAKE_SOURCE_DIR}/packages/native/src/system/*.hpp"
+        "${CMAKE_SOURCE_DIR}/packages/native/src/system/sameboy/*.hpp"
+        "${CMAKE_SOURCE_DIR}/packages/native/src/transport/*.hpp"
+        "${CMAKE_SOURCE_DIR}/packages/native/src/util/*.hpp"
+        "${CMAKE_SOURCE_DIR}/deps/sameboy/Core/*.h")
     add_custom_command(
         OUTPUT "${_sbs_obj}"
         COMMAND "${RP_CLANG_CL}" /nologo /c /MT /O2 /Ob2 /DNDEBUG /EHsc /std:c++20 /Zc:__cplusplus
@@ -250,7 +261,7 @@ if(WIN32)
             "-I${CMAKE_BINARY_DIR}/generated"
             "-I${CMAKE_BINARY_DIR}/_deps/reflectcpp-src/include"
             "/Fo${_sbs_obj}" "${_sbs_src}"
-        DEPENDS "${_sbs_src}" "${CMAKE_SOURCE_DIR}/packages/native/src/util/Determinism.hpp" sameboy_bootroms
+        DEPENDS "${_sbs_src}" ${_sbs_headers} sameboy_bootroms
         COMMENT "clang-cl (sameboy) SameBoySystem.cpp"
         VERBATIM)
     add_library(retroplug-samebsys STATIC "${_sbs_obj}")
