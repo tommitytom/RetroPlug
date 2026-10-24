@@ -354,14 +354,19 @@ P paramReading(rp_control_queue& q, double v) {
 TEST_CASE("appended ports and params are reached by index, after the reflected ones", "[graph][node]") {
     Made m{rp::node_type<Mixed>()};
     make(m, R"({"aux":2})");
-    const std::string layout = m.node->vt->layout(m.node);
+    const rp_settings settings{R"({"aux":2})", 9, RP_SETTINGS_JSON};
+    rp_error err{};
+    std::string layout(rp::node_type<Mixed>()->layout_for(&settings, nullptr, 0, &err), '\0');
+    REQUIRE(!layout.empty());
+    std::string text(layout.size() + 1, '\0');
+    REQUIRE(rp::node_type<Mixed>()->layout_for(&settings, text.data(), text.size(), &err) == layout.size());
+    layout = text.c_str();
     // inputs first (reflected, then appended), then outputs (reflected, then appended)
     const auto at = [&](const char* id) { return layout.find(std::string("\"id\":\"") + id + "\""); };
     CHECK(at("in") < at("midi"));
     CHECK(at("midi") < at("aux1"));
     CHECK(at("aux2") < at("out"));
     CHECK(at("out") < at("tap"));
-    CHECK(m.node->vt->layout(m.node) == m.node->vt->layout(m.node));  // cached: the same pointer every call
 
     constexpr std::uint32_t kFrames = 4;
     float in[kFrames] = {1, 1, 1, 1}, aux1[kFrames] = {2, 2, 2, 2}, aux2[kFrames] = {3, 3, 3, 3};

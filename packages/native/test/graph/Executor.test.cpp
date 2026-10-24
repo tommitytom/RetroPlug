@@ -74,7 +74,7 @@ void rawFinish(rp_node* n, const rp_process*) {
 const rp_step_interface kStep{&rawPrepare, &rawStep, &rawFinish};
 
 // Entries the executor never calls are left null in this test.
-const rp_node_vtable kVtable{nullptr, nullptr, nullptr, nullptr, &rawProcess, nullptr, nullptr, nullptr, nullptr};
+const rp_node_vtable kVtable{nullptr, nullptr, nullptr, &rawProcess, nullptr, nullptr, nullptr, nullptr};
 
 struct OneOutput {
     float        samples[16]{};

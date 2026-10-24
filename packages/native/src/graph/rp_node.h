@@ -193,11 +193,6 @@ enum {
 };
 
 typedef struct rp_node_vtable {
-    /* [control] Resolved layout JSON (ports, params, exclusive groups) for the settings the instance was
-     * created with. An instance's layout is fixed for its life: the host reads it once, so a settings
-     * change that would alter it must answer RP_PREPARE_REBUILD, never SWAP. The string is owned by the
-     * node and stays valid until destroy. */
-    const char* (*layout)(rp_node* node);
     /* [control] Must preserve state: a sample-rate or block-size change re-activates, never resets. */
     bool (*activate)(rp_node* node, double sample_rate, uint32_t max_frames, rp_error* err);
     /* [control] */
@@ -230,6 +225,13 @@ typedef struct rp_node_type {
     const char* id;
     /* [control] The type descriptor JSON; valid for the life of the package. */
     const char* (*descriptor)(void);
+    /* [control] The resolved layout JSON (ports, params, exclusive groups) a node of this type has with
+     * these settings: a function of the settings alone, so the host can validate a whole document before
+     * it creates anything, and an instance's layout for its life (a settings change that would alter it
+     * is a rebuild, never a swap). Writes it NUL-terminated into out[0..capacity) when it fits and returns
+     * its length without the NUL, so a caller whose buffer is too small learns the size and asks again.
+     * Returns 0, with err filled, for settings it refuses. */
+    size_t (*layout_for)(const rp_settings* settings, char* out, size_t capacity, rp_error* err);
     /* [control] Size and alignment of one instance for these settings. */
     bool (*query_memory)(const rp_settings* settings, rp_memory_req* out, rp_error* err);
     /* [control] Construct into host-supplied memory. Returns null (and fills err) on failure. */

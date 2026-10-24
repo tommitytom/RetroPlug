@@ -35,6 +35,14 @@ struct Tapped {
     }
 };
 
+// Counts its constructions: a document the planner refuses must not have created one.
+struct Counted {
+    static constexpr const char* id = "rp.test.counted";
+    static inline int made = 0;
+    Counted() { ++made; }
+    void process(const rp::Block&) noexcept {}
+};
+
 // A coupled member with an audio input, so one member can be wired into another.
 struct LinkedListener {
     static constexpr const char* id = "rp.test.linked-listener";
@@ -56,9 +64,11 @@ rp_node* failingCreate(const rp_host*, void*, const rp_settings*, rp_error* err)
 }
 
 const rp_package* plannerPackage() {
-    static const rp_node_type failing{"rp.test.failing", &failingDescriptor, rp::node_type<test::Sink>()->query_memory,
-                                      &failingCreate, rp::node_type<test::Sink>()->destroy};
-    static const rp_node_type* const kTypes[] = {rp::node_type<Tapped>(), rp::node_type<LinkedListener>(), &failing};
+    static const rp_node_type failing{"rp.test.failing", &failingDescriptor, rp::node_type<test::Sink>()->layout_for,
+                                      rp::node_type<test::Sink>()->query_memory, &failingCreate,
+                                      rp::node_type<test::Sink>()->destroy};
+    static const rp_node_type* const kTypes[] = {rp::node_type<Tapped>(), rp::node_type<LinkedListener>(), &failing,
+                                                 rp::node_type<Counted>()};
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.planner"})",
                                      static_cast<std::uint32_t>(std::size(kTypes)), kTypes};
     return &kPackage;
@@ -209,7 +219,23 @@ TEST_CASE("settings errors come back from the node with its reason", "[graph][pl
     CHECK(r.errors[0].message.find("channels") != std::string::npos);
 }
 
-TEST_CASE("a document rejected late, after reconcile, changes nothing and leaks nothing", "[graph][planner]") {
+TEST_CASE("a document refused by a layout check creates no instance", "[graph][planner]") {
+    PlannerRig rig;
+    const int before = Counted::made;
+    // Every check that needs a layout runs on the types' layouts, before reconcile: a wire to a port the
+    // type does not have, a cycle, an exclusive group broken, a channel mismatch.
+    CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"c","type":"rp.test.counted"},{"id":"s","type":"rp.test.sink"}],
+                                      "wires":[{"from":"c.nope","to":"s.in"}]})")) == "unknown-port");
+    CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"c","type":"rp.test.counted"},{"id":"x","type":"rp.test.through"},
+                                               {"id":"y","type":"rp.test.through"}],
+                                      "wires":[{"from":"x.out","to":"y.in"},{"from":"y.out","to":"x.in"}]})")) == "cycle");
+    CHECK(Counted::made == before);
+    // A document that plans does create it.
+    REQUIRE(rig.set(R"({"nodes":[{"id":"c","type":"rp.test.counted"}],"wires":[]})").ok);
+    CHECK(Counted::made == before + 1);
+}
+
+TEST_CASE("a refused document changes nothing and leaks nothing", "[graph][planner]") {
     GraphRig rig;  // (the ASan build is what checks "leaks nothing")
     REQUIRE(rig.set(R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":0.5}},
                                   {"id":"wide","type":"rp.test.source","settings":{"channels":1}},

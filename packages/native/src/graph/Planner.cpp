@@ -28,6 +28,7 @@ struct NodePlan {
     bool                       fresh = false;
     void*                      prepared = nullptr;
     std::string                settings;
+    Layout                     layout;    // the type's layout_for these settings: the instance's, once it exists
     std::vector<int>           inPorts;   // layout port indices of non-output ports, in order
     std::vector<int>           outPorts;  // layout port indices of output ports, in order
     std::vector<int>           ordinal;   // layout port index -> input or output ordinal
@@ -59,8 +60,10 @@ public:
         // Nothing may escape setGraph: an allocation failure (a huge maxFrames, say) is a refused plan,
         // rolled back like any other.
         try {
-            if (structure() && reconcile() && params() && wires() && groups() && order() && channels() &&
-                exclusive() && resources()) {
+            // Every check that needs a layout runs on the types' layouts before any instance exists, so a
+            // document refused here creates nothing.
+            if (structure() && params() && wires() && groups() && order() && channels() && exclusive() &&
+                resources() && reconcile() && linkedSteps()) {
                 build();
             }
         } catch (const std::bad_alloc&) {
@@ -110,14 +113,41 @@ private:
                 error(n.id, "", "capability",
                       "node type " + q(n.type) + " needs " + (entry->descriptor.heap ? "a heap" : "threads") +
                           ", which the Pico target does not provide");
-            index_.emplace(n.id, static_cast<int>(nodes_.size()));
             NodePlan p;
             p.doc = &n;
             p.entry = entry;
             p.settings = n.settings ? canonicalJson(*n.settings) : std::string("{}");
+            if (!typeLayout(p)) continue;
+            index_.emplace(n.id, static_cast<int>(nodes_.size()));
+            for (std::size_t i = 0; i < p.layout.ports.size(); ++i) {
+                const bool isOut = p.layout.ports[i].dir == PortDir::Out;
+                auto& list = isOut ? p.outPorts : p.inPorts;
+                p.ordinal.push_back(static_cast<int>(list.size()));
+                list.push_back(static_cast<int>(i));
+            }
+            out_.layouts[p.doc->id] = layoutJson(p.layout);
             nodes_.push_back(std::move(p));
         }
         return out_.errors.empty();
+    }
+
+    // The node type's layout for these settings, asked of the type (no instance needed).
+    bool typeLayout(NodePlan& p) {
+        const rp_settings s{p.settings.data(), p.settings.size(), RP_SETTINGS_JSON};
+        rp_error err{};
+        std::string text(256, '\0');
+        std::size_t n = p.entry->type->layout_for(&s, text.data(), text.size(), &err);
+        if (n >= text.size()) {  // too long for the first guess: it said how long, so ask once more
+            text.assign(n + 1, '\0');
+            n = p.entry->type->layout_for(&s, text.data(), text.size(), &err);
+        }
+        if (n == 0 || n >= text.size())
+            return error(p.doc->id, "", "settings-invalid", errorText(err, "the node refused its settings"));
+        text.resize(n);
+        auto layout = parseLayout(text);
+        if (!layout) return error(p.doc->id, "", "layout-invalid", layout.error().what());
+        p.layout = std::move(*layout);
+        return true;
     }
 
     // ---- 2. reconcile instances -------------------------------------------------------------------------
@@ -152,12 +182,7 @@ private:
             return nullptr;  // ~Instance frees the memory (node is null, so nothing to destroy)
         }
         inst->settings = p.settings;
-        auto layout = parseLayout(inst->node->vt->layout(inst->node));
-        if (!layout) {
-            error(p.doc->id, "", "layout-invalid", layout.error().what());
-            return nullptr;
-        }
-        inst->layout = std::move(*layout);
+        inst->layout = p.layout;
         for (const auto& param : inst->layout.params)
             inst->params.push_back(std::make_unique<StreamStore>(kStreamChanges, param.def));
         for (const auto& port : inst->layout.ports) {
@@ -182,6 +207,11 @@ private:
             const bool sameType = it != in_.live->end() && it->second->entry == p.entry;
             if (sameType && it->second->settings == p.settings) {
                 p.inst = it->second;
+            } else if (sameType && layoutJson(it->second->layout) != layoutJson(p.layout)) {
+                // A layout change is always a rebuild, and the type already said so: the live instance is
+                // not asked anything.
+                p.inst = create(p);
+                p.fresh = true;
             } else if (sameType) {
                 const rp_settings s{p.settings.data(), p.settings.size(), RP_SETTINGS_JSON};
                 rp_error err{};
@@ -213,14 +243,6 @@ private:
                 p.inst = create(p);
                 p.fresh = true;
             }
-            if (!p.inst) continue;
-            for (std::size_t i = 0; i < p.inst->layout.ports.size(); ++i) {
-                const bool isOut = p.inst->layout.ports[i].dir == PortDir::Out;
-                auto& list = isOut ? p.outPorts : p.inPorts;
-                p.ordinal.push_back(static_cast<int>(list.size()));
-                list.push_back(static_cast<int>(i));
-            }
-            out_.layouts[p.doc->id] = layoutJson(p.inst->layout);
         }
         return out_.errors.empty();
     }
@@ -233,7 +255,7 @@ private:
             const auto& p = nodes_[n];
             if (!p.doc->params) continue;
             for (const auto& [id, value] : *p.doc->params) {
-                const auto& ps = p.inst->layout.params;
+                const auto& ps = p.layout.params;
                 const auto it = std::find_if(ps.begin(), ps.end(), [&](const ParamDesc& d) { return d.id == id; });
                 if (it == ps.end()) {
                     error(p.doc->id, id, "unknown-param", "node " + q(p.doc->id) + " has no param " + q(id));
@@ -292,9 +314,9 @@ private:
             }
             const NodePlan& src = nodes_[fi->second];
             const NodePlan& dst = nodes_[ti->second];
-            const PortDesc* sp = findPort(src.inst->layout, from->port);
-            const PortDesc* dp = findPort(dst.inst->layout, to->port);
-            const ParamDesc* dparam = dp ? nullptr : findParam(dst.inst->layout, to->port);
+            const PortDesc* sp = findPort(src.layout, from->port);
+            const PortDesc* dp = findPort(dst.layout, to->port);
+            const ParamDesc* dparam = dp ? nullptr : findParam(dst.layout, to->port);
             if (!sp) {
                 error(src.doc->id, std::string(from->port), "unknown-port", q(w.from) + " is not a port");
                 continue;
@@ -346,14 +368,14 @@ private:
             }
             DataWire dw;
             dw.from = fi->second;
-            dw.fromPort = static_cast<int>(sp - src.inst->layout.ports.data());
+            dw.fromPort = static_cast<int>(sp - src.layout.ports.data());
             dw.to = ti->second;
             dw.feedback = feedback;
             dw.kind = sp->kind;
             dw.key = w.from + "->" + w.to;
             auto& taken = dp ? inputWire_[dw.to] : paramWire_[dw.to];
-            const int slot = dp ? static_cast<int>(dp - dst.inst->layout.ports.data())
-                                : static_cast<int>(dparam - dst.inst->layout.params.data());
+            const int slot = dp ? static_cast<int>(dp - dst.layout.ports.data())
+                                : static_cast<int>(dparam - dst.layout.params.data());
             if (taken.count(slot)) {
                 error(dst.doc->id, std::string(to->port), "input-taken",
                       q(w.to) + " already has a wire; combine signals with an explicit node (+, merge)");
@@ -394,14 +416,20 @@ private:
             members[it->second].push_back(static_cast<int>(n));
             nodes_[n].group = it->second;
         }
-        for (const auto& g : members) {
+        groupMembers_ = std::move(members);
+        return out_.errors.empty();
+    }
+
+    // An interface is the instance's to report, so this one check runs after reconcile; a refusal here
+    // rolls back the instances it made, like a create or activate that fails.
+    bool linkedSteps() {
+        for (const auto& g : groupMembers_) {
             if (g.size() < 2) continue;
             for (int n : g)
                 if (!nodes_[n].inst->node->vt->get_interface(nodes_[n].inst->node, RP_STEP_INTERFACE))
                     error(nodes_[n].doc->id, "", "link-without-step",
                           "node " + q(nodes_[n].doc->id) + " is linked but does not implement " RP_STEP_INTERFACE);
         }
-        groupMembers_ = std::move(members);
         return out_.errors.empty();
     }
 
@@ -485,7 +513,7 @@ private:
     Resolved resolve(int node, int port) {
         Resolved& r = resolved_[node][port];
         if (r.ok || r.state == Resolved::State::Failed) return r;
-        const PortDesc& d = nodes_[node].inst->layout.ports[port];
+        const PortDesc& d = nodes_[node].layout.ports[port];
         const std::string& id = nodes_[node].doc->id;
         auto fail = [&](const char* code, std::string message) {
             r.state = Resolved::State::Failed;
@@ -501,11 +529,11 @@ private:
                 out = {d.channels.count, d.channels.layout, true};
                 break;
             case ChannelSpec::Mode::Match: {
-                const PortDesc* other = findPort(nodes_[node].inst->layout, d.channels.match);
+                const PortDesc* other = findPort(nodes_[node].layout, d.channels.match);
                 if (!other || other->kind != PortKind::Audio)
                     return fail("channel-match",
                                 q(d.id) + " matches " + q(d.channels.match) + ", which is not an audio port");
-                out = resolve(node, static_cast<int>(other - nodes_[node].inst->layout.ports.data()));
+                out = resolve(node, static_cast<int>(other - nodes_[node].layout.ports.data()));
                 break;
             }
             case ChannelSpec::Mode::Any: {
@@ -535,11 +563,11 @@ private:
 
     bool channels() {
         resolved_.resize(nodes_.size());
-        for (std::size_t n = 0; n < nodes_.size(); ++n) resolved_[n].resize(nodes_[n].inst->layout.ports.size());
+        for (std::size_t n = 0; n < nodes_.size(); ++n) resolved_[n].resize(nodes_[n].layout.ports.size());
         for (const auto& g : groupMembers_)
             for (int n : g)
-                for (std::size_t p = 0; p < nodes_[n].inst->layout.ports.size(); ++p)
-                    if (nodes_[n].inst->layout.ports[p].kind == PortKind::Audio) resolve(n, static_cast<int>(p));
+                for (std::size_t p = 0; p < nodes_[n].layout.ports.size(); ++p)
+                    if (nodes_[n].layout.ports[p].kind == PortKind::Audio) resolve(n, static_cast<int>(p));
         if (!out_.errors.empty()) return false;
         for (const auto& w : wires_) {
             if (w.kind != PortKind::Audio) continue;
@@ -547,7 +575,7 @@ private:
             const Resolved& d = resolved_[w.to][w.toPort];
             if (!compatible(s, d)) {
                 const auto describe = [](const Resolved& r) { return r.layout + " (" + std::to_string(r.count) + ")"; };
-                error(nodes_[w.to].doc->id, nodes_[w.to].inst->layout.ports[w.toPort].id, "channel-mismatch",
+                error(nodes_[w.to].doc->id, nodes_[w.to].layout.ports[w.toPort].id, "channel-mismatch",
                       w.key + ": the output is " + describe(s) + ", the input wants " + describe(d) +
                           "; convert explicitly (join, split, downmix, relabel)");
             }
@@ -565,7 +593,7 @@ private:
 
     bool exclusive() {
         for (std::size_t n = 0; n < nodes_.size(); ++n) {
-            const Layout& l = nodes_[n].inst->layout;
+            const Layout& l = nodes_[n].layout;
             for (const auto& group : l.exclusive) {
                 std::vector<std::string> used;  // the first connected port matching each member
                 for (const auto& pattern : group)
@@ -592,12 +620,12 @@ private:
             const auto& p = nodes_[n];
             if (!p.doc->resources) continue;
             for (const auto& [portId, ref] : *p.doc->resources) {
-                const PortDesc* d = findPort(p.inst->layout, portId);
+                const PortDesc* d = findPort(p.layout, portId);
                 if (!d || d->kind != PortKind::Resource || d->dir != PortDir::In) {
                     error(p.doc->id, portId, "resource-port", q(p.doc->id + "." + portId) + " is not a resource input");
                     continue;
                 }
-                const int port = static_cast<int>(d - p.inst->layout.ports.data());
+                const int port = static_cast<int>(d - p.layout.ports.data());
                 if (wireInto(static_cast<int>(n), port)) {
                     error(p.doc->id, portId, "input-taken", q(p.doc->id + "." + portId) + " is both wired and bound");
                     continue;

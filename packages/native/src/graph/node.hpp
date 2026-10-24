@@ -590,8 +590,25 @@ template <class T>
 Instance<T>* self(rp_node* n) noexcept { return static_cast<Instance<T>*>(n); }
 
 template <class T>
-const char* layoutFn(rp_node* n) noexcept {
-    return self<T>(n)->layoutJson.c_str();
+std::size_t layoutForFn(const rp_settings* s, char* out, std::size_t capacity, rp_error* err) {
+    try {
+        auto parsed = parseSettings<T>(s);
+        if (!parsed) {
+            copyError(err, parsed.error().what());
+            return 0;
+        }
+        const std::string json = graph::layoutJson(layoutFor<T>(*parsed));
+        if (out && json.size() < capacity) {
+            std::memcpy(out, json.data(), json.size());
+            out[json.size()] = '\0';
+        }
+        return json.size();
+    } catch (const std::exception& e) {
+        copyError(err, e.what());
+    } catch (...) {
+        copyError(err, "settings threw");
+    }
+    return 0;
 }
 
 template <class T>
@@ -658,7 +675,8 @@ rp_status processFn(rp_node* n, const rp_process* p) noexcept {
 }
 
 // Reads the instance's current settings (for needs_rebuild). That is safe because a host never prepares
-// while a commit for the same instance may be in flight - GraphHost waits for adoption before it plans.
+// while a commit for the same instance may be in flight - GraphHost waits for any published commit to
+// be adopted before it plans.
 template <class T>
 rp_prepare_result prepareFn(rp_node* n, const rp_settings* s, void** prepared, rp_error* err) {
     using S = typename SettingsOf<T>::type;
@@ -734,9 +752,9 @@ const void* interfaceFn(rp_node*, const char* id) noexcept {
 
 template <class T>
 const rp_node_vtable* vtable() {
-    static constexpr rp_node_vtable kVtable{&layoutFn<T>,       &activateFn<T>, &deactivateFn<T>,
-                                            &portsChangedFn<T>, &processFn<T>,  &prepareFn<T>,
-                                            &commitFn<T>,       &releaseFn<T>,  &interfaceFn<T>};
+    static constexpr rp_node_vtable kVtable{&activateFn<T>, &deactivateFn<T>, &portsChangedFn<T>,
+                                            &processFn<T>,  &prepareFn<T>,    &commitFn<T>,
+                                            &releaseFn<T>,  &interfaceFn<T>};
     return &kVtable;
 }
 
@@ -848,8 +866,8 @@ void destroyFn(rp_node* n) {
 template <class T>
 const rp_node_type* node_type() {
     static_assert(detail::checkHooks<T>());
-    static constexpr rp_node_type kType{T::id, &detail::descriptorFn<T>, &detail::queryMemoryFn<T>,
-                                        &detail::createFn<T>, &detail::destroyFn<T>};
+    static constexpr rp_node_type kType{T::id, &detail::descriptorFn<T>, &detail::layoutForFn<T>,
+                                        &detail::queryMemoryFn<T>, &detail::createFn<T>, &detail::destroyFn<T>};
     return &kType;
 }
 

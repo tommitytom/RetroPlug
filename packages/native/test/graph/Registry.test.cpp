@@ -28,12 +28,13 @@ const char* nullDescriptor() { return nullptr; }
 const char* sourceDescriptor() { return R"({"id":"rp.test.source"})"; }
 
 bool noMemory(const rp_settings*, rp_memory_req*, rp_error*) { return false; }
+std::size_t noLayout(const rp_settings*, char*, std::size_t, rp_error*) { return 0; }
 rp_node* noCreate(const rp_host*, void*, const rp_settings*, rp_error*) { return nullptr; }
 void noDestroy(rp_node*) {}
 
 // A node type whose functions are stubs: these tests only register types, never build them.
 rp_node_type typeWith(const char* id, const char* (*descriptor)()) {
-    return rp_node_type{id, descriptor, &noMemory, &noCreate, &noDestroy};
+    return rp_node_type{id, descriptor, &noLayout, &noMemory, &noCreate, &noDestroy};
 }
 
 std::string refusal(NodeRegistry& reg, std::initializer_list<const rp_node_type*> types,
@@ -133,6 +134,9 @@ TEST_CASE("addPackage checks everything the host will later call or read", "[gra
     rp_node_type noDestroyFn = typeWith("rp.test.x", &goodDescriptor);
     noDestroyFn.destroy = nullptr;
     CHECK(refusal(reg, {&noDestroyFn}) == "node type \"rp.test.x\": destroy is null");
+    rp_node_type noLayoutFn = typeWith("rp.test.x", &goodDescriptor);
+    noLayoutFn.layout_for = nullptr;
+    CHECK(refusal(reg, {&noLayoutFn}) == "node type \"rp.test.x\": layout_for is null");
     rp_node_type noQuery = typeWith("rp.test.x", &goodDescriptor);
     noQuery.query_memory = nullptr;
     CHECK(refusal(reg, {&noQuery}) == "node type \"rp.test.x\": query_memory is null");

@@ -54,6 +54,7 @@ bool NodeRegistry::addPackage(const rp_package* package, std::string* error) {
         if (!type->id || !*type->id) return fail(at + " has no id");
         const std::string where = "node type " + q(type->id);
         for (const auto& [fn, name] : {std::pair{type->descriptor != nullptr, "descriptor"},
+                                       std::pair{type->layout_for != nullptr, "layout_for"},
                                        std::pair{type->query_memory != nullptr, "query_memory"},
                                        std::pair{type->create != nullptr, "create"},
                                        std::pair{type->destroy != nullptr, "destroy"}})
