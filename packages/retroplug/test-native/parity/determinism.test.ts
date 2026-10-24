@@ -65,5 +65,5 @@ test("two smsggdj plays render identical audio", () => {
   };
   const a = play();
   expect(laneSounds(a, 0), "the song plays").toBeTruthy();
-  expect(compareAudio(a, play())).toEqual([]);
+  expect(compareAudio(a, play()), "needs RETROPLUG_DETERMINISTIC=1 (the runner sets it for parity/ files)").toEqual([]);
 });
