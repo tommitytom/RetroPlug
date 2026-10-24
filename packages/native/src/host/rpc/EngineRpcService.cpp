@@ -409,10 +409,11 @@ double EngineRpcService::sampleRate() const {
 }
 
 bool EngineRpcService::setSampleRate(double sr) {
-    // Harness use is to pick the render rate BEFORE building a system, so require an empty engine: it keeps
-    // this off the audio thread (a system-free engine has none) and makes the render rate unambiguous.
+    // Harness use is to pick the render rate BEFORE building a system, so require an empty engine with no
+    // audio thread running (the CLI's driver runs one with no systems): the graph re-activates on THIS
+    // thread, and the render rate is unambiguous.
     // (Engine::setSampleRate itself does re-rate live cores — that path is exercised by the plugin.)
-    if (sr <= 0.0 || engine_.systemCount() != 0) return false;
+    if (sr <= 0.0 || invoker_.audioThreadOwns() || engine_.systemCount() != 0) return false;
     engine_.setSampleRate(sr);
     return true;
 }

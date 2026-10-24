@@ -73,7 +73,7 @@ class Translator {
 public:
     using Publish = std::function<bool(const std::string& documentJson, std::shared_ptr<const SystemTable> table,
                                        bool rearmsTap)>;
-    Translator(Publish publish, std::function<void(SystemBase*)> released);
+    Translator(Publish publishFn, std::function<void(SystemBase*)> released);
     ~Translator();  // frees any core still parked
     Translator(const Translator&) = delete;
     Translator& operator=(const Translator&) = delete;

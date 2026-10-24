@@ -106,69 +106,66 @@ void SnapshotRegistry::publishSystem(SystemBase& system, std::uint32_t frames, d
     const std::uint64_t interval = sampleRate > 0.0
         ? static_cast<std::uint64_t>(kStateIntervalSec * sampleRate)
         : 0;
-    SystemBase* sys = &system;
-    {
-        Slot* s = find(sys->id());
-        if (!s) return;   // e.g. a system built before this registry existed / pool was full
+    Slot* s = find(system.id());
+    if (!s) return;   // e.g. a system built before this registry existed / pool was full
 
-        // Frame every block (cheap): copy the core's latest published frame into the owned triple.
-        if (s->frame) {
-            if (FrameBufferTriple* fb = sys->framebuffer()) {
-                const std::uint32_t px = s->width * s->height;
-                if (fb->readInto(s->frame->writeSlot(), px))
-                    s->frame->publish();
-            }
+    // Frame every block (cheap): copy the core's latest published frame into the owned triple.
+    if (s->frame) {
+        if (FrameBufferTriple* fb = system.framebuffer()) {
+            const std::uint32_t px = s->width * s->height;
+            if (fb->readInto(s->frame->writeSlot(), px))
+                s->frame->publish();
         }
+    }
 
-        // WRAM every block (cheap, ~KB): copy the live core's work RAM into the owned triple. The read
-        // is safe here: publishSystem is the tail of processBlock on the block thread, which owns the core.
-        // This is what makes a per-frame runtime overlay (e.g. LSDj playback position) possible, vs the
-        // coarse savestate below. The slot carries a length prefix + headroom, so a live model switch that
-        // RESIZES the region (SameBoy DMG 8 KB ↔ CGB 32 KB) republishes at its NEW size instead of freezing;
-        // only a region that would overflow the capacity is skipped.
-        if (s->ram) {
-            rp::MemoryAccessor ram = sys->getMemory(rp::MemoryType::Ram, rp::AccessType::Read);
-            if (ram.valid() && ram.size() + kRamLenPrefix <= s->ram->size())
-                writeSized(*s->ram, ram.data(), ram.size());
+    // WRAM every block (cheap, ~KB): copy the live core's work RAM into the owned triple. The read
+    // is safe here: publishSystem is the tail of processBlock on the block thread, which owns the core.
+    // This is what makes a per-frame runtime overlay (e.g. LSDj playback position) possible, vs the
+    // coarse savestate below. The slot carries a length prefix + headroom, so a live model switch that
+    // RESIZES the region (SameBoy DMG 8 KB ↔ CGB 32 KB) republishes at its NEW size instead of freezing;
+    // only a region that would overflow the capacity is skipped.
+    if (s->ram) {
+        rp::MemoryAccessor ram = system.getMemory(rp::MemoryType::Ram, rp::AccessType::Read);
+        if (ram.valid() && ram.size() + kRamLenPrefix <= s->ram->size())
+            writeSized(*s->ram, ram.data(), ram.size());
+    }
+
+    // State + SRAM on the coarse interval — the core only republishes its savestate every ~0.5s,
+    // so per-block copies would be redundant. Matches publishStateSnapshot's cadence.
+    s->sampleAccum += frames;
+    if (interval == 0 || s->sampleAccum < interval) return;
+    s->sampleAccum = 0;
+
+    if (s->state && system.readStateSnapshot(publishScratch_) && !publishScratch_.empty()) {
+        // Republish the fresh savestate. The slot carries headroom (prefix + capacity), so a
+        // grown Mesen savestate still fits; only a capture that would overflow it is skipped —
+        // NOT the old exact-size (==) match, which froze every variable-size republish.
+        if (publishScratch_.size() + kStateLenPrefix <= s->state->size())
+            writeSized(*s->state, publishScratch_.data(), publishScratch_.size());
+        // SameBoy SRAM slice. The offset comes from the region table the core refreshed alongside
+        // THIS blob, never from a claim-time cache: a model switch rebuilds the core, and an HLE-SGB
+        // state carries a ~74 KB section ahead of the cart RAM, so a cached offset would slice the
+        // wrong bytes and hand them to the TS auto-save mirror as the user's battery. The size is
+        // compared for EQUALITY, not fit: this triple has no length prefix, so a changed size cannot
+        // be represented and a partial write would publish half a battery. (It cannot change — the
+        // cart header fixes it — but the guard says so rather than relying on it silently.)
+        const auto& reg = system.stateRegions()[static_cast<std::size_t>(rp::MemoryType::Sram)];
+        if (s->sram && !s->sramFromCore && reg.size == s->sram->size() &&
+            static_cast<std::size_t>(reg.offset) + reg.size <= publishScratch_.size()) {
+            std::memcpy(s->sram->writeSlot(), publishScratch_.data() + reg.offset, reg.size);
+            s->sram->publish();
         }
+    }
 
-        // State + SRAM on the coarse interval — the core only republishes its savestate every ~0.5s,
-        // so per-block copies would be redundant. Matches publishStateSnapshot's cadence.
-        s->sampleAccum += frames;
-        if (interval == 0 || s->sampleAccum < interval) return;
-        s->sampleAccum = 0;
-
-        if (s->state && sys->readStateSnapshot(publishScratch_) && !publishScratch_.empty()) {
-            // Republish the fresh savestate. The slot carries headroom (prefix + capacity), so a
-            // grown Mesen savestate still fits; only a capture that would overflow it is skipped —
-            // NOT the old exact-size (==) match, which froze every variable-size republish.
-            if (publishScratch_.size() + kStateLenPrefix <= s->state->size())
-                writeSized(*s->state, publishScratch_.data(), publishScratch_.size());
-            // SameBoy SRAM slice. The offset comes from the region table the core refreshed alongside
-            // THIS blob, never from a claim-time cache: a model switch rebuilds the core, and an HLE-SGB
-            // state carries a ~74 KB section ahead of the cart RAM, so a cached offset would slice the
-            // wrong bytes and hand them to the TS auto-save mirror as the user's battery. The size is
-            // compared for EQUALITY, not fit: this triple has no length prefix, so a changed size cannot
-            // be represented and a partial write would publish half a battery. (It cannot change — the
-            // cart header fixes it — but the guard says so rather than relying on it silently.)
-            const auto& reg = sys->stateRegions()[static_cast<std::size_t>(rp::MemoryType::Sram)];
-            if (s->sram && !s->sramFromCore && reg.size == s->sram->size() &&
-                static_cast<std::size_t>(reg.offset) + reg.size <= publishScratch_.size()) {
-                std::memcpy(s->sram->writeSlot(), publishScratch_.data() + reg.offset, reg.size);
-                s->sram->publish();
-            }
-        }
-
-        // Core-sourced SRAM (Mesen): read the live battery straight off the core — safe here, the block
-        // thread owns it and every system has finished its block (publishSystem is the tail of processBlock,
-        // like captureStateSnapshot). SRAM size is fixed for a cart, so a mismatch just skips. Independent
-        // of the savestate read above (a no-savestate core could still carry a battery).
-        if (s->sram && s->sramFromCore) {
-            sramScratch_ = sys->saveSramBytes();
-            if (sramScratch_.size() == s->sram->size()) {
-                std::memcpy(s->sram->writeSlot(), sramScratch_.data(), sramScratch_.size());
-                s->sram->publish();
-            }
+    // Core-sourced SRAM (Mesen): read the live battery straight off the core — safe here, the block
+    // thread owns it and every system has finished its block (publishSystem is the tail of processBlock,
+    // like captureStateSnapshot). SRAM size is fixed for a cart, so a mismatch just skips. Independent
+    // of the savestate read above (a no-savestate core could still carry a battery).
+    if (s->sram && s->sramFromCore) {
+        sramScratch_ = system.saveSramBytes();
+        if (sramScratch_.size() == s->sram->size()) {
+            std::memcpy(s->sram->writeSlot(), sramScratch_.data(), sramScratch_.size());
+            s->sram->publish();
         }
     }
 }

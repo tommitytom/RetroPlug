@@ -82,9 +82,9 @@ struct Doc {
 
 }  // namespace
 
-Translator::Translator(Publish publish, std::function<void(SystemBase*)> released)
-    : publish_(std::move(publish)), released_(std::move(released)) {
-    this->publish(false);  // the empty project: the kernel and the host's outputs
+Translator::Translator(Publish publishFn, std::function<void(SystemBase*)> released)
+    : publish_(std::move(publishFn)), released_(std::move(released)) {
+    publish(false);  // the empty project: the kernel and the host's outputs
 }
 
 Translator::~Translator() {

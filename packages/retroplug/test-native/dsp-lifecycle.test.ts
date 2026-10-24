@@ -1,10 +1,10 @@
 // Concurrent core lifecycle through the queue: add + remove a system WHILE the background audio
-// thread plays. The control thread builds + activates the SameBoySystem off-thread and ships the raw
-// pointer via the command ring; the audio thread does an alloc-free adopt/remove into the Project and
-// hands removed cores back through the release ring; the control thread drains + deletes them. Under
-// the sanitizers (tools/run-sanitizer.sh) this proves the handoff is race-free (TSan) and
-// leak/UAF-free (ASan). Here we assert the deterministic effects: systemCount 1→2→1 + one released
-// core freed, plus a coarse energy check that the concurrently-added core actually renders.
+// thread plays. The control thread builds + activates the SameBoySystem off-thread and plans it in (or
+// out) as a graph; the audio thread adopts each plan between blocks and hands the plan it replaced back
+// through the release ring; the control thread reclaims those plans, freeing each core only they held.
+// Under the sanitizers (tools/run-sanitizer.sh) this proves the handoff is race-free (TSan) and
+// leak/UAF-free (ASan). Here we assert the deterministic effects: systemCount 1→2→1 + the removed core
+// freed (its snapshot slot gone), plus a coarse energy check that the concurrently-added core renders.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
@@ -49,20 +49,24 @@ test("add + remove a system while the audio thread plays, via the command + rele
   audio.stageMidiIn(NOTE); // the single mGB sounds
   const oneSys = energyWindow(120);
 
-  // --- ADD a second mGB while running → built on the control thread, adopted on the audio thread ---
+  // --- ADD a second mGB while running → built on the control thread, planned in on the audio thread ---
   const b = 2;
   expect(be.constructSystem(MGB, b)).toBeTruthy();
-  audio.sleepMs(30); // let the audio thread apply the AddSystem command
+  audio.sleepMs(30); // let the audio thread adopt the plan that adds it
   expect(audio.systemCount()).toBe(2);
   expect(dsp.setSystems(routingMgb([a, b]))).toBeTruthy();
   audio.stageMidiIn(NOTE); // SendToAll → both mGBs
   const twoSys = energyWindow(120);
 
-  // --- REMOVE the first while running → erased on the audio thread, handed back for delete ---
+  // --- REMOVE the first while running → planned out on the audio thread, freed with its old plan ---
   expect(be.removeSystem(a)).toBeTruthy();
   audio.sleepMs(30);
   expect(audio.systemCount()).toBe(1);
-  expect(audio.drainReleased()).toBe(1); // the removed core, freed on the control thread
+  expect(be.readState(a) !== null, "a's slot before the reclaim").toBeTruthy(); // its old plan still holds it
+  // Plans freed, not cores: at least the one that last ran `a`, and with it `a` and its snapshot slot.
+  expect(audio.drainReleased()).toBeGreaterThanOrEqual(1);
+  expect(be.readState(a)).toBe(null);
+  expect(be.readState(b) !== null, "b's slot").toBeTruthy();
   expect(dsp.setSystems(routingMgb([b]))).toBeTruthy();
   audio.stageMidiIn(NOTE);
   const afterRemove = energyWindow(120);

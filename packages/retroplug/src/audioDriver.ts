@@ -191,11 +191,12 @@ export interface AudioDriver {
   sleepMs(ms: number): boolean;
   /** Monotonic capture snapshot; diff two of these for a windowed RMS = sqrt(Δenergy / Δframes). */
   audioCaptured(): { energy: number; frames: number };
-  /** Live count of systems in the Project — safe to read while the audio thread runs (the audio
-   *  thread publishes it after each add/remove applied from the command queue). */
+  /** Live count of systems in the running plan - safe to read while the audio thread runs (the audio
+   *  thread publishes it after each block's drain has adopted the latest plan). */
   systemCount(): number;
-  /** Delete every core the audio thread released (via removeSystem while running), returning the
-   *  count freed — the control-thread end of the ownership handoff. */
+  /** Free every plan the audio thread has handed back, and with each the cores only it held (a system
+   *  removed or replaced while running), returning the count of PLANS freed, not cores: one plan can
+   *  free several cores, or none. The control-thread end of the ownership handoff. */
   drainReleased(): number;
 }
 

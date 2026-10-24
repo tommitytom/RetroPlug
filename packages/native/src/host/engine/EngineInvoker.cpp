@@ -1,12 +1,10 @@
 #include "host/engine/EngineInvoker.hpp"
 
-#include <cstdio>
 #include <utility>
 
 #include "system/SystemBase.hpp"  // complete type for unique_ptr<SystemBase>
 
 #include "host/engine/Engine.hpp"
-#include "host/engine/SnapshotRegistry.hpp"
 #include "host/graph/Translator.hpp"
 
 // --- producer half (control thread): pack + push, then flush inline unless the audio thread drains ---

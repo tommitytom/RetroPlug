@@ -1,6 +1,5 @@
 #include "host/engine/Engine.hpp"
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
@@ -30,6 +29,10 @@ namespace {
 const std::vector<DspRuntime::ButtonIn> kNoButtons;
 const std::vector<DspRuntime::KeyIn>    kNoKeys;
 
+// The table before the first plan. At namespace scope, not function-local: currentTable() may first run on
+// the audio thread, which must not take a static's init guard or register its destructor.
+const rp::host::SystemTable kNoSystems;
+
 DspCommand syncTapFor(rp::host::AudioRouting routing) {
     DspCommand c;
     c.kind = DspCommand::Kind::SyncTap;
@@ -51,8 +54,6 @@ struct Engine::Graph {
     std::unique_ptr<rp::graph::GraphHost>  host;
     std::unique_ptr<rp::host::Translator>  translator;
     std::uint32_t                          maxFrames = 8192;  // the matrix's largest block (B0 section 4)
-    bool                                   tracing = false;   // this block's sync trace, for the kernel stage
-    std::vector<float*>                    lanes;             // processBlockPer* lane list (control thread)
 };
 
 Engine::Engine(double sampleRate) : sampleRate_(sampleRate) {
@@ -118,7 +119,7 @@ std::size_t Engine::reclaim() { return graph_->host->reclaim(); }
 void Engine::discardPending() { graph_->host->discardPending(); }
 
 void Engine::setMaxBlockFrames(std::uint32_t frames) {
-    if (!graph_ || frames <= graph_->maxFrames) return;
+    if (frames <= graph_->maxFrames) return;
     std::string why;
     if (graph_->host->reactivate(sampleRate_, frames, &why)) graph_->maxFrames = frames;
     else std::fprintf(stderr, "[Engine] could not grow the block size to %u: %s\n", static_cast<unsigned>(frames), why.c_str());
@@ -134,9 +135,8 @@ void Engine::setSampleRate(double sr) {
 }
 
 const rp::host::SystemTable& Engine::currentTable() const {
-    static const rp::host::SystemTable kEmpty;
     const auto* t = static_cast<const rp::host::SystemTable*>(graph_->host->hostData());
-    return t ? *t : kEmpty;
+    return t ? *t : kNoSystems;
 }
 
 void Engine::onHostCommand(void* ctx, const rp::graph::HostCommand& cmd, const void*, bool discard) {
@@ -267,8 +267,7 @@ void Engine::setPpq(double ppq) { ppq_ = ppq < 0.0 ? 0.0 : ppq; }
 // then hand its output to the cores, all of serialIn, then coreMidi, then coreBytes, then buttons, each in
 // emission order. findSystem reads the running plan's table.
 void Engine::runKernelStage(std::uint32_t frames) {
-    if (!dspActive_) return;
-    {
+    if (dspActive_) {
 #ifdef RETROPLUG_PROFILE
         dsp_.spanBegin(DSP_SPAN_KERNEL);  // the whole DSP-kernel stage (marshal + JS + sink fan-out)
 #endif
@@ -325,8 +324,16 @@ void Engine::runKernelStage(std::uint32_t frames) {
 
 // The translator's host shape decides who goes where: the caller set it before rendering.
 void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size_t numOutputs) {
+    // Longer than the plan's buffers: the GraphHost would refuse it, so nothing runs, and the tail must not
+    // either (no MI.OUT gather of a log the cores never cleared, no publish, no ppq advance). A host that
+    // reported its block size (setMaxBlockFrames) never gets here.
+    if (frames > graph_->maxFrames) {
+        for (std::size_t c = 0; c < numOutputs; ++c)
+            if (outputs[c]) std::memset(outputs[c], 0, frames * sizeof(float));
+        return;
+    }
     blockTracing_ = syncTrace_.beginBlock(frames, sampleRate_, bpm_, ppq_, transport_);
-    const rp_transport transport{sampleRate_, bpm_, ppq_, transport_ ? RP_TRANSPORT_PLAYING : 0u};
+    const rp_transport transport{sampleRate_, bpm_, ppq_, transport_ ? std::uint32_t{RP_TRANSPORT_PLAYING} : 0u};
     // The kernel stage, every system, the mixing and the host outputs (the host drained before this).
     graph_->host->run(frames, transport, outputs, static_cast<std::uint32_t>(numOutputs));
 #ifdef RETROPLUG_PROFILE

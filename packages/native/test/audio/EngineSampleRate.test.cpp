@@ -7,6 +7,8 @@
 //
 // Run via `pnpm test:plugin`.
 
+#include <algorithm>
+#include <cmath>
 #include <memory>
 #include <vector>
 
@@ -53,11 +55,17 @@ TEST_CASE("Engine::setSampleRate re-rates already-live systems", "[audio][sample
     CHECK(raw->sampleRate_ == 48000.0);
     CHECK(eng.sampleRate() == 48000.0);
 
-    // A second change also propagates (not a one-shot), and the core still renders a block.
+    // A second change also propagates (not a one-shot), and the core still renders after it.
     eng.setSampleRate(96000.0);
     CHECK(raw->sampleRate_ == 96000.0);
+    // About half a second at the new rate: the boot ROM's chime reaches the output.
     std::vector<float> l(512), r(512);
-    eng.processBlock(512, l.data(), r.data());
+    float peak = 0.0f;
+    for (int b = 0; b < 100; ++b) {
+        eng.processBlock(512, l.data(), r.data());
+        for (float x : l) peak = std::max(peak, std::abs(x));
+    }
+    CHECK(peak > 0.01f);
 }
 
 TEST_CASE("Engine::setSampleRate on an empty project is a harmless no-op", "[audio][samplerate][engine]") {
