@@ -97,7 +97,7 @@ function runCase(
   const lanes: Float32Array[][] = [];
   const midi: MidiOutEntry[] = [];
   for (const seg of c.segments) {
-    const r = rig.render(c.outputs, unstimulated ? { blocks: seg.blocks } : seg);
+    const r = rig.render(c.outputs, unstimulated ? { blocks: seg.blocks, shape: seg.shape } : seg);
     segments.push(r.digest);
     midi.push(...r.midiOut);
     if (keepLanes) lanes.push(r.lanes);

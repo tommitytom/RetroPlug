@@ -19,6 +19,12 @@ export interface Segment {
   transport?: { at: number; playing?: boolean; bpm?: number; ppq?: number }[];
   /** A store edit made after this segment renders and before the next one does. */
   after?: (rig: Rig) => void;
+  /** Render through renderAudioPerSystem (`perSystem`) or renderAudioPerChannel (`perChannel`, the system in
+   *  that project slot) instead of renderBlocks: `ms` of audio in those calls' own 1024-frame blocks, two
+   *  lanes (L, R) per system or per stream. `blocks` must be empty, and the segment's MIDI is staged first,
+   *  all of it at frame 0 through stageMidiIn, as the render library stages it. No controller traffic or
+   *  transport. These are the output shapes renderBlocks does not reach. */
+  shape?: { perSystem: true; ms: number } | { perChannel: number; ms: number };
 }
 
 /** `total` frames in blocks of `size` (the last one short). */
@@ -46,6 +52,8 @@ export class Rig {
   /** system id -> project slot, for the whole case: updated by each render with the systems live then and
    *  never pruned, so MIDI out from a system an `after` hook removed or replaced keeps its last known slot. */
   private readonly slots = new Map<number, number>();
+  /** The rate the last reset set: a shape segment turns its `ms` into frames as the render calls do. */
+  private sampleRate = 48000;
 
   /** Where this process keeps its ROM copies: under its OWN config dir (the alone-run child gets another). */
   private romDir(): string {
@@ -79,6 +87,7 @@ export class Rig {
     if (audio.systemCount() !== 0) throw new Error(`${audio.systemCount()} system(s) survived the reset`);
     this.blockBase = 0;
     this.slots.clear();
+    this.sampleRate = sampleRate;
   }
 
   /** A fresh copy of the ROM `src`, and of nothing else, in this file's temp dir, so a case never writes a
@@ -125,6 +134,7 @@ export class Rig {
 
   /** Render one segment at `outputs` lanes; returns its digest, its MIDI out, and the lanes themselves. */
   render(outputs: 2 | 4 | 6 | 8, seg: Segment): { digest: SegmentDigest; midiOut: MidiOutEntry[]; lanes: Float32Array[] } {
+    if (seg.shape) return this.renderShape(seg, seg.shape);
     const starts: number[] = [];
     let total = 0;
     const blocks: RenderBlock[] = seg.blocks.map((frames) => {
@@ -167,5 +177,32 @@ export class Rig {
     }));
     this.blockBase += blocks.length;
     return { digest: { frames: total, lanes: r.lanes.map((l) => laneDigest(l, 0, total)) }, midiOut, lanes: r.lanes };
+  }
+
+  private renderShape(seg: Segment, shape: NonNullable<Segment["shape"]>): { digest: SegmentDigest; midiOut: MidiOutEntry[]; lanes: Float32Array[] } {
+    if (seg.blocks.length || seg.controller?.length || seg.transport?.length)
+      throw new Error("a shape segment renders its own blocks and takes no controller traffic or transport");
+    for (const m of [...(seg.midi ?? [])].sort((x, y) => x.at - y.at))
+      if (!this.audio.stageMidiIn(m.bytes)) throw new Error(`stageMidiIn refused ${m.bytes}`);
+    this.project.systems.view().forEach((v, i) => this.slots.set(v.id, i));
+    // The frame count the render call computes, by the same double arithmetic (EngineRpcService.cpp).
+    const total = Math.floor((shape.ms * this.sampleRate) / 1000);
+    const interleaved = "perSystem" in shape ? this.audio.renderAudioPerSystem(shape.ms) : this.audio.renderAudioPerChannel(this.id(shape.perChannel), shape.ms);
+    if (!interleaved.length) throw new Error("the render call returned nothing (no systems, or not exactly one for perChannel)");
+    const lanes: Float32Array[] = [];
+    for (const buf of interleaved) {
+      if (buf.length !== total * 2) throw new Error(`a render returned ${buf.length / 2} frames, expected ${total}`);
+      const l = new Float32Array(total);
+      const r = new Float32Array(total);
+      for (let f = 0; f < total; f++) {
+        l[f] = buf[2 * f];
+        r[f] = buf[2 * f + 1];
+      }
+      lanes.push(l, r);
+    }
+    // These calls hand back their MIDI out without block indices: it is all tagged with the segment's first.
+    const midiOut = this.audio.drainMidiOut().map((m) => ({ block: this.blockBase, slot: this.slots.get(m.system) ?? -1, frame: m.frame, data: m.data }));
+    this.blockBase += Math.ceil(total / 1024);
+    return { digest: { frames: total, lanes: lanes.map((l) => laneDigest(l, 0, total)) }, midiOut, lanes };
   }
 }
