@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <cstdlib>
 #include <new>
 #include <span>
@@ -159,6 +160,13 @@ std::string graphDoc(bool swapped, rp::graph::ResourceTable::Id buf, rp::graph::
     return R"({"nodes":[)" + nodes + R"(],"wires":[)" + wires + "]}";
 }
 
+std::atomic<int> hostCommandsSeen{0};
+
+// Allocates and frees nothing, as a handler running on the audio thread must not.
+void countCommand(void*, const rp::graph::HostCommand&, const void*, bool) {
+    hostCommandsSeen.fetch_add(1, std::memory_order_relaxed);
+}
+
 struct Measured {
     int allocations = 0, freed = 0;
 };
@@ -198,4 +206,20 @@ TEST_CASE("the block path never allocates or frees", "[graph][noalloc]") {
     CHECK(m.freed == 0);
     rig.host->setAudioThreadOwns(false);
     CHECK(rp::peer_as<QuietLinked>(rig.host->node("la"))->peerCount == 2);  // the peer change was adopted
+
+    // A host command, and two commit-free plans queued behind it, all applied inside the measured blocks.
+    // The same document again changes nothing, so neither plan commits settings and neither waits.
+    rig.host->setHostCommandHandler(&countCommand, nullptr);
+    rig.host->setAudioThreadOwns(true);
+    const std::uint8_t payload = 1;
+    REQUIRE(rig.host->pushHostCommand(&payload, sizeof payload));
+    REQUIRE(rig.host->setGraph(*rp::graph::parseGraphDocument(graphDoc(true, buf, rec)), std::make_shared<const int>(1)).ok);
+    REQUIRE(rig.host->setGraph(*rp::graph::parseGraphDocument(graphDoc(true, buf, rec)), std::make_shared<const int>(2)).ok);
+    REQUIRE(rig.host->pushHostCommand(&payload, sizeof payload));
+    m = measure(rig, 4);
+    CHECK(m.allocations == 0);
+    CHECK(m.freed == 0);
+    CHECK(hostCommandsSeen.load() == 2);
+    CHECK(*static_cast<const int*>(rig.host->hostData()) == 2);
+    rig.host->setAudioThreadOwns(false);
 }

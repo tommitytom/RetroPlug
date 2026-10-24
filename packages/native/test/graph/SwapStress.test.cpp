@@ -1,14 +1,16 @@
 // A real audio thread runs blocks while the control thread swaps plans, sets params and reclaims. Under
 // ThreadSanitizer (build-tsan/) this is the race check for the command ring and the release ring; in a
 // normal build it checks that a system's own output and state survive constant edits around it. The
-// adoption handshake itself (setGraph never planning while a swap is in flight) has its own deterministic
-// tests below (setGraph waits while a swap is queued, and while one is being adopted), since a race window
-// that narrow is not something a stress run can be relied on to hit.
+// adoption handshake itself (setGraph waiting only while a published plan still carries a settings commit)
+// has its own deterministic tests below (it waits while a commit is queued, and while one is being
+// adopted), since a race window that narrow is not something a stress run can be relied on to hit.
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
 #include <chrono>
+#include <cstring>
 #include <iterator>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -154,12 +156,16 @@ TEST_CASE("setGraph plans again at once while the plans in flight carry no setti
     REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.sink"}],"wires":[]})").ok);
     rig.host->setAudioThreadOwns(true);
     // Nothing drains these, so all three sit in the ring at once; none commits settings, so none waits.
-    REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.sink"},{"id":"b","type":"rp.test.sink"}],"wires":[]})").ok);
-    REQUIRE(rig.set(R"({"nodes":[{"id":"b","type":"rp.test.sink"}],"wires":[]})").ok);
-    REQUIRE(rig.set(R"({"nodes":[],"wires":[]})").ok);
-    rig.run();  // one drain adopts all three, in order
-    CHECK(rig.host->node("a") == nullptr);
-    CHECK(rig.host->node("b") == nullptr);
+    const auto withData = [&](const char* json, int data) {
+        return rig.host->setGraph(*rp::graph::parseGraphDocument(json), std::make_shared<const int>(data));
+    };
+    REQUIRE(withData(R"({"nodes":[{"id":"a","type":"rp.test.sink"},{"id":"b","type":"rp.test.sink"}],"wires":[]})", 1).ok);
+    REQUIRE(withData(R"({"nodes":[{"id":"b","type":"rp.test.sink"}],"wires":[]})", 2).ok);
+    REQUIRE(withData(R"({"nodes":[],"wires":[]})", 3).ok);
+    CHECK(rig.host->hostData() == nullptr);  // nothing adopted yet
+    rig.run();  // one drain adopts all three, in order, so the last is the one running
+    REQUIRE(rig.host->hostData() != nullptr);
+    CHECK(*static_cast<const int*>(rig.host->hostData()) == 3);
     CHECK(rig.host->reclaim() == 3);  // the first plan and the two adopted in passing
     rig.host->setAudioThreadOwns(false);
 }
@@ -227,4 +233,69 @@ TEST_CASE("setGraph also waits while a plan is being adopted", "[graph][swap]") 
     CHECK(rig.set(R"({"nodes":[],"wires":[]})").ok);
     rig.run();
     rig.host->setAudioThreadOwns(false);
+}
+
+namespace {
+
+// Each applied host command must see the host data of the plan it was pushed behind.
+struct CommandAudit {
+    std::atomic<int> applied{0};
+    std::atomic<int> discarded{0};
+    std::atomic<int> mismatched{0};
+};
+
+void audit(void* ctx, const rp::graph::HostCommand& c, const void* hostData, bool discard) {
+    auto* a = static_cast<CommandAudit*>(ctx);
+    int i = -1;
+    std::memcpy(&i, c.bytes, sizeof i);
+    if (!hostData || *static_cast<const int*>(hostData) != i) a->mismatched.fetch_add(1, std::memory_order_relaxed);
+    (discard ? a->discarded : a->applied).fetch_add(1, std::memory_order_relaxed);
+}
+
+}  // namespace
+
+TEST_CASE("host commands under a running audio thread each see their own plan's host data", "[graph][swap][stress]") {
+    GraphRig rig;
+    CommandAudit counts;
+    rig.host->setHostCommandHandler(&audit, &counts);
+    REQUIRE(rig.set(R"({"nodes":[],"wires":[]})").ok);
+    rig.host->setAudioThreadOwns(true);
+
+    constexpr int kRounds = 2500;
+    int           pushed = 0;
+    std::vector<std::weak_ptr<const int>> data;  // each plan's host data, freed with the plan
+    {
+        AudioThread audio(*rig.host);
+        // The ring can be momentarily full while the audio thread is between blocks: retry, it is draining.
+        const auto retry = [&](auto&& attempt) {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            while (!attempt())
+                if (std::chrono::steady_clock::now() > deadline) return false;
+                else std::this_thread::yield();
+            return true;
+        };
+        for (int i = 0; i < kRounds; ++i) {
+            const auto doc = *rp::graph::parseGraphDocument(i % 2 ? R"({"nodes":[{"id":"s","type":"rp.test.sink"}],"wires":[]})"
+                                                                    : R"({"nodes":[],"wires":[]})");
+            auto hostData = std::make_shared<const int>(i);
+            data.push_back(hostData);
+            if (!retry([&] { return rig.host->setGraph(doc, hostData).ok; })) break;
+            if (!retry([&] { return rig.host->pushHostCommand(&i, sizeof i); })) break;
+            ++pushed;
+            hostData.reset();
+            if (i % 16 == 0) rig.host->reclaim();
+        }
+        audio.stop();
+    }
+    rig.host->discardPending();  // what the stopped audio thread never reached
+    rig.host->reclaim();
+
+    CHECK(pushed == kRounds);
+    CHECK(counts.mismatched.load() == 0);
+    CHECK(counts.applied.load() + counts.discarded.load() == pushed);
+    CHECK(rig.host->leakedPlans() == 0);
+    // Every plan but the one still running has been destroyed, and its host data with it.
+    int alive = 0;
+    for (const auto& d : data) alive += d.expired() ? 0 : 1;
+    CHECK(alive == 1);
 }

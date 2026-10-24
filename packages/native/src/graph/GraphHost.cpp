@@ -114,10 +114,15 @@ SetGraphResult GraphHost::setGraph(std::string_view documentJson) {
 SetGraphResult GraphHost::setGraph(const GraphDocument& document, std::shared_ptr<const void> hostData) {
     SetGraphResult result;
     // The host's outputs are one set of buffers: a second writer would overwrite the first.
-    const auto outs = std::count_if(document.nodes.begin(), document.nodes.end(),
-                                    [](const NodeDoc& n) { return n.type == kAudioOut; });
-    if (outs > 1) {
-        result.errors.push_back({"", "", "audio-out-twice", "a graph has at most one rp.host.audio-out"});
+    const NodeDoc* firstOut = nullptr;
+    for (const NodeDoc& n : document.nodes) {
+        if (n.type != kAudioOut) continue;
+        if (!firstOut) {
+            firstOut = &n;
+            continue;
+        }
+        result.errors.push_back({n.id, "", "audio-out-twice",
+                                 "a graph has at most one rp.host.audio-out (first is " + firstOut->id + ")"});
         return result;
     }
     if (!waitForCommits()) {
@@ -241,8 +246,9 @@ void GraphHost::drainCommands(bool discard) {
                 break;
         }
     }
-    // Hand the replaced plan back only after every command in this drain has been applied, so a param
-    // write queued behind a swap can never land in memory the control thread is already freeing.
+    // The last replaced plan is handed back only after the drain. One replaced mid-drain is released
+    // safely too: a command pushed after swap k can only reach plan k's instances, and plan k is still held
+    // as current or replaced until the swap after it.
     if (replaced && !released_.tryPush(replaced)) leakedPlans_.fetch_add(1, std::memory_order_relaxed);
 }
 

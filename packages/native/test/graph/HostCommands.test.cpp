@@ -78,11 +78,27 @@ TEST_CASE("discardPending adopts queued plans and discards queued host commands"
     rig.host->setAudioThreadOwns(false);
     REQUIRE(seen.size() == 1);
     CHECK((seen[0].cmd == 'r' && seen[0].data == 7 && seen[0].discard));
-    CHECK(rig.host->node("s") != nullptr);
+    CHECK(*static_cast<const int*>(rig.host->hostData()) == 7);  // the queued plan was adopted
 }
 
 TEST_CASE("a document gets at most one rp.host.audio-out", "[graph][host-commands]") {
     GraphRig rig;
     const auto r = rig.set(R"({"nodes":[{"id":"o1","type":"rp.host.audio-out"},{"id":"o2","type":"rp.host.audio-out"}],"wires":[]})");
     CHECK(GraphRig::codes(r) == "audio-out-twice");
+    REQUIRE(r.errors.size() == 1);
+    CHECK(r.errors[0].nodeId == "o2");  // the second one is the one refused
+}
+
+TEST_CASE("plans queued in one drain all come back through the release ring", "[graph][host-commands]") {
+    GraphRig rig;
+    REQUIRE(rig.set(R"({"nodes":[],"wires":[]})").ok);
+    rig.host->setAudioThreadOwns(true);
+    // A sleeping plugin keeps publishing; none carries a settings commit, so none waits. More than the old
+    // 64-deep release ring, fewer than the command ring holds.
+    constexpr int kPlans = 100;
+    for (int i = 0; i < kPlans; ++i) REQUIRE(rig.set(R"({"nodes":[{"id":"s","type":"rp.test.sink"}],"wires":[]})").ok);
+    rig.run();  // one drain adopts them all
+    CHECK(rig.host->leakedPlans() == 0);
+    CHECK(rig.host->reclaim() == static_cast<std::size_t>(kPlans));  // the first plan and all but the last queued
+    rig.host->setAudioThreadOwns(false);
 }

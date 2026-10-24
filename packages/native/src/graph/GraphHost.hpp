@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include "graph/GraphDocument.hpp"
@@ -20,7 +21,7 @@
 
 namespace rp::graph {
 
-// A host service a node asks for by id (rp_host.get_interface), offered by whoever embeds the GraphHost.
+// A host service a node asks for by id (rp_host.get_interface), offered by whoever embeds the GraphHost. [any]
 using HostInterfaceFn = const void* (*)(void* ctx, const char* id);
 
 struct HostConfig {
@@ -42,12 +43,18 @@ struct rp_host_audio_buffers {
 };
 
 // An embedder's command, carried on the ring in push order with plan swaps and params, and handed back to
-// the embedder's handler at drain with the host data of the plan current at that point. Opaque here.
+// the embedder's handler at drain with the host data of the plan current at that point. Opaque here: the
+// payload is trivially copyable, at most kHostCommandBytes, aligned no more than alignof(std::max_align_t),
+// and is copied in by memcpy, so the handler reads it back by memcpy too.
 constexpr std::size_t kHostCommandBytes = 48;
 struct HostCommand {
     alignas(std::max_align_t) std::byte bytes[kHostCommandBytes];
 };
-// `discard`: the GraphHost is being destroyed with the command unapplied, so free what it owns instead.
+static_assert(sizeof(HostCommand) == kHostCommandBytes, "the payload is exactly kHostCommandBytes");
+// Runs on the audio thread at drain [audio], or on the control thread during a quiescent inline flush and in
+// discardPending. It must not block, and must not call back into the GraphHost: a setGraph from a quiescent
+// flush would nest a drain and a reclaim, which can free the plan whose host data it was handed.
+// `discard`: the command was dropped unapplied (discardPending or teardown), so free what it owns instead.
 using HostCommandHandler = void (*)(void* ctx, const HostCommand& command, const void* hostData, bool discard);
 
 constexpr std::uint32_t kMaxBlockFrames = 1u << 16;
@@ -64,7 +71,7 @@ struct SetGraphResult {
 // Owns a running graph: the live node instances, the wire-owned feedback buffers, and the plan the audio
 // thread is executing. Mirrors the engine's existing threading contract (spec/01 section 7):
 //
-//   - every control -> audio change is a POD command on ONE SPSC ring (a plan swap, a live param value);
+//   - every control -> audio change is a POD command on ONE SPSC ring (a plan swap, a live param value, an embedder's host command);
 //   - the audio thread never frees: a replaced plan goes back on the release ring and is destroyed by
 //     reclaim() on the control thread (and with it any instance it alone kept alive);
 //   - audioThreadOwns decides who drains. While false the control thread flushes inline after every push,
@@ -90,6 +97,7 @@ public:
     // Queue an embedder command behind everything pushed so far. False when the ring is full or `size`
     // exceeds kHostCommandBytes. Flushes inline while quiescent, as every push does.
     bool pushHostCommand(const void* data, std::size_t size);
+    // Call before setAudioThreadOwns(true): it writes plain members that drain() reads.
     void setHostCommandHandler(HostCommandHandler handler, void* ctx);
     // A live param change, clamped to the param's resolved range (and rounded for int, enum and bool, as a
     // document value is) and applied at `frame` of the next block. False for an unknown node or param, a
@@ -114,7 +122,9 @@ public:
     bool          isFaulted(std::string_view id) const;
     std::size_t   instanceCount() const { return live_.size(); }
     // Replaced plans the audio thread could not hand back (the release ring was full) and so leaked
-    // rather than free on its own thread. Never expected; reclaim() logs it when it happens.
+    // rather than free on its own thread. Cannot happen while released_ is as deep as the command ring:
+    // setGraph reclaims before every publish, so fewer plans than the ring holds are ever released between
+    // reclaims. Kept as a counter in case that sizing is ever broken; reclaim() logs it.
     std::uint32_t leakedPlans() const { return leakedPlans_.load(std::memory_order_relaxed); }
 
     // ---- audio thread (or the control thread while quiescent) ----------------------------------------
@@ -143,6 +153,7 @@ private:
         double            value = 0.0;
         HostCommand       host{};
     };
+    static_assert(std::is_trivially_copyable_v<Command>, "the ring copies a Command as bytes");
 
     bool        push(const Command& c);
     void        drainCommands(bool discard);
@@ -159,7 +170,8 @@ private:
     HostConfig                                            config_;
     rp_host                                               host_{};
     SpscRing<Command, 256>                                commands_;
-    SpscRing<PlanStorage*, 64>                            released_;
+    // As deep as the command ring: a drain can adopt every queued swap and release all but the last.
+    SpscRing<PlanStorage*, decltype(commands_)::kCapacity> released_;
     std::atomic<bool>                                     audioOwns_{false};
     // Published plans carrying a settings commit that the audio thread has not finished adopting.
     std::atomic<std::uint32_t>                            commitsInFlight_{0};
