@@ -10,8 +10,8 @@
 
 #include <atomic>
 #include <cstdint>
-#include <memory>
 #include <cstdlib>
+#include <memory>
 #include <new>
 #include <span>
 #include <string>

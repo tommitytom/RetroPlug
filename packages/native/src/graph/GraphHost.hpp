@@ -71,7 +71,8 @@ struct SetGraphResult {
 // Owns a running graph: the live node instances, the wire-owned feedback buffers, and the plan the audio
 // thread is executing. Mirrors the engine's existing threading contract (spec/01 section 7):
 //
-//   - every control -> audio change is a POD command on ONE SPSC ring (a plan swap, a live param value, an embedder's host command);
+//   - every control -> audio change is a POD command on ONE SPSC ring (a plan swap, a live param value,
+//     an embedder's host command);
 //   - the audio thread never frees: a replaced plan goes back on the release ring and is destroyed by
 //     reclaim() on the control thread (and with it any instance it alone kept alive);
 //   - audioThreadOwns decides who drains. While false the control thread flushes inline after every push,
@@ -122,9 +123,10 @@ public:
     bool          isFaulted(std::string_view id) const;
     std::size_t   instanceCount() const { return live_.size(); }
     // Replaced plans the audio thread could not hand back (the release ring was full) and so leaked
-    // rather than free on its own thread. Cannot happen while released_ is as deep as the command ring:
-    // setGraph reclaims before every publish, so fewer plans than the ring holds are ever released between
-    // reclaims. Kept as a counter in case that sizing is ever broken; reclaim() logs it.
+    // rather than free on its own thread. Cannot happen while released_ is twice the command ring: setGraph
+    // reclaims before every publish, so between two reclaims the audio thread releases at most the ring's
+    // usable depth plus one (the plan current when the queue was filled). Kept as a counter in case that
+    // sizing is ever broken; reclaim() logs it.
     std::uint32_t leakedPlans() const { return leakedPlans_.load(std::memory_order_relaxed); }
 
     // ---- audio thread (or the control thread while quiescent) ----------------------------------------
@@ -170,8 +172,9 @@ private:
     HostConfig                                            config_;
     rp_host                                               host_{};
     SpscRing<Command, 256>                                commands_;
-    // As deep as the command ring: a drain can adopt every queued swap and release all but the last.
-    SpscRing<PlanStorage*, decltype(commands_)::kCapacity> released_;
+    // Deeper than the command ring: a drain can adopt every queued swap and release all but the last, on
+    // top of the plan they replaced (see leakedPlans()).
+    SpscRing<PlanStorage*, 2 * decltype(commands_)::kCapacity> released_;
     std::atomic<bool>                                     audioOwns_{false};
     // Published plans carrying a settings commit that the audio thread has not finished adopting.
     std::atomic<std::uint32_t>                            commitsInFlight_{0};

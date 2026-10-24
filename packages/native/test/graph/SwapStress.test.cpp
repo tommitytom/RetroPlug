@@ -57,9 +57,13 @@ public:
     ~AudioThread() { stop(); }
     // Stops and joins, then hands the drain back to the control thread.
     void stop() {
+        halt();
+        host_.setAudioThreadOwns(false);
+    }
+    // Stops and joins but keeps the drain with the (now stopped) audio thread, so pushes queue unapplied.
+    void halt() {
         running_.store(false, std::memory_order_release);
         if (thread_.joinable()) thread_.join();
-        host_.setAudioThreadOwns(false);
     }
     int  blocks() const { return blocks_.load(); }
     bool wrong() const { return wrong_.load(); }
@@ -262,6 +266,7 @@ TEST_CASE("host commands under a running audio thread each see their own plan's 
     rig.host->setAudioThreadOwns(true);
 
     constexpr int kRounds = 2500;
+    constexpr int kTail   = 8;  // pushed after the audio thread halts, so teardown discards them
     int           pushed = 0;
     std::vector<std::weak_ptr<const int>> data;  // each plan's host data, freed with the plan
     {
@@ -285,13 +290,22 @@ TEST_CASE("host commands under a running audio thread each see their own plan's 
             hostData.reset();
             if (i % 16 == 0) rig.host->reclaim();
         }
-        audio.stop();
+        audio.halt();
+        for (int i = kRounds; i < kRounds + kTail; ++i) {
+            auto hostData = std::make_shared<const int>(i);
+            data.push_back(hostData);
+            if (!rig.host->setGraph(*rp::graph::parseGraphDocument(R"({"nodes":[],"wires":[]})"), hostData).ok) break;
+            if (!rig.host->pushHostCommand(&i, sizeof i)) break;
+            ++pushed;
+        }
+        rig.host->discardPending();  // what the halted audio thread never reached
+        rig.host->setAudioThreadOwns(false);
     }
-    rig.host->discardPending();  // what the stopped audio thread never reached
     rig.host->reclaim();
 
-    CHECK(pushed == kRounds);
+    CHECK(pushed == kRounds + kTail);
     CHECK(counts.mismatched.load() == 0);
+    CHECK(counts.discarded.load() >= kTail);  // plus any the audio thread had not reached when it halted
     CHECK(counts.applied.load() + counts.discarded.load() == pushed);
     CHECK(rig.host->leakedPlans() == 0);
     // Every plan but the one still running has been destroyed, and its host data with it.
