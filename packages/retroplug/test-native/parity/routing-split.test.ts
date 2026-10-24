@@ -17,7 +17,7 @@ for (const outputs of [2, 4, 8] as const) {
   cases.push(single(`nes-pinSplit-o${outputs}`, "pinSplit", outputs, [0, 1], (rig) => rig.add(ROMS.bliptoaster), [0, 1, 2, 3]));
   cases.push(single(`nes-stereoPinSplit-o${outputs}`, "stereoPinSplit", outputs, outputs === 8 ? range(4) : [0, 1], (rig) => rig.add(ROMS.bliptoaster), [0, 1, 2, 3]));
 }
-// A Game Boy under PinSplit has no pins (the `pins && !nes` fallback in syncSplitPlan): Stereo, bit-identical.
+// A Game Boy under PinSplit has no pins (the translator splits pins only on a NES): Stereo, bit-identical.
 cases.push(single("gb-pinSplit-o8", "pinSplit", 8, [0, 1], (rig) => mgb(rig), [0, 1, 2, 3]));
 // Splits are single-system: with two, the project renders as Stereo.
 cases.push({

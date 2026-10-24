@@ -893,9 +893,9 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
     a.transportBpm.store(static_cast<float>(bpm), std::memory_order_relaxed);
     a.svc.engine.setBpm(bpm);            // 120 free-run until an external clock master appears
     a.svc.engine.setTransport(playing);  // then locks to its tempo + start/stop
-    // Multi-out: render into the N planar channel buffers; the Engine zeroes + routes each system to its
-    // pair per audioRouting (MultiOutRouter/ChannelSplitRouter). N=2 collapses every mode to the stereo mix
-    // (identical to the old 2-arg path). N=4/6/8 spreads stems across the device's pairs.
+    // Multi-out: render into the N planar channel buffers; the Engine zeroes them, and the plan routes each
+    // system to its pair per audioRouting (the translator wires the N-channel host shape). N=2 collapses
+    // every mode to the stereo mix. N=4/6/8 spreads stems across the device's pairs.
     a.svc.engine.processBlock(static_cast<std::uint32_t>(frames), a.audioPtrs.data(), static_cast<std::size_t>(N));
 
     // Kernel MIDI-out (LSDj MI.OUT / Master Sync / passthrough) → the RtMidi out port, then clear the block's

@@ -60,8 +60,8 @@ interface RoleHeaderCaps {
 }
 
 // TS owns the system-id counter (native never allocates). Module-scoped so it's ONE id space per
-// control-plane JS context — which is 1:1 with the native Project in every host (a plugin instance has
-// its own JS context + Project; a native test file shares one host + Project across its cases). Ids are
+// control-plane JS context, which is 1:1 with the native Engine in every host (a plugin instance has
+// its own JS context + Engine; a native test file shares one host + Engine across its cases). Ids are
 // opaque handles; the snapshot registry uses 0 as its free-slot sentinel, so they start at 1.
 let nextSystemId = 1;
 function allocSystemId(): number {

@@ -11,9 +11,9 @@ class QueuedInvoker;
 
 // Test/dev harness control: spins the background audio thread that OWNS the Engine while it runs,
 // draining the invoker into it each block and publishing observation (energy/frames/count) for the
-// control thread. Start/stop just flip the invoker's ownership bit (audioThreadOwns) — while owned,
-// mutation RPCs push-only; when quiescent, the invoker flushes each push inline. Only the threaded
-// host mounts this (the plugin drives run()/pluginProcessBlock directly).
+// control thread. Start/stop flip the invoker's ownership bit (audioThreadOwns) around the thread:
+// while owned, mutation RPCs push-only; when quiescent, the invoker flushes each push inline. Only the
+// threaded host mounts this (the plugin drives the Engine from DPF's run() directly).
 class AudioDriverRpcService {
 public:
     AudioDriverRpcService(Engine& engine, QueuedInvoker& invoker);
@@ -32,7 +32,7 @@ private:
     void audioLoop();  // the background audio thread body
 
     Engine&        engine_;
-    QueuedInvoker& invoker_;   // the one mutation path; its audioThreadOwns bit is the run condition
+    QueuedInvoker& invoker_;   // the one mutation path; its audioThreadOwns bit says who drains
 
     static constexpr std::uint32_t kBlockSize = 1024;
     std::thread                audioThread_;

@@ -182,8 +182,8 @@ struct Add {
         else processAudio(b);
     }
 
-    // out = 0 + in1 + in2 + ... in input order: exactly the sum today's routers produce into a zeroed bus
-    // (starting from zero, not from a copy of in1, which differs when in1 holds -0.0).
+    // out = 0 + in1 + in2 + ... in input order: exactly what summing each input in order into a zeroed bus
+    // produces (starting from zero, not from a copy of in1, which differs when in1 holds -0.0).
     void processAudio(const rp::Block& b) noexcept {
         const rp_audio_view& out = b.output(0).u.audio;
         for (std::uint32_t c = 0; c < out.channel_count; ++c) {
@@ -355,8 +355,8 @@ struct Downmix {
         const rp_audio_view& out = b.output(0).u.audio;
         const std::uint32_t n = b.frames();
         if (!toStereo) {
-            // Anything -> mono is an equal sum, no scaling (so stereo -> mono is L + R, as today's 1 Ch /
-            // Inst bus is), from any layout, 5.1 included.
+            // Anything -> mono is an equal sum, no scaling (so stereo -> mono is L + R, as the 1 Ch / Inst
+            // routing's bus is), from any layout, 5.1 included.
             std::memcpy(out.channels[0], in.channels[0], n * sizeof(float));
             for (std::uint32_t c = 1; c < in.channel_count; ++c)
                 for (std::uint32_t i = 0; i < n; ++i) out.channels[0][i] += in.channels[c][i];

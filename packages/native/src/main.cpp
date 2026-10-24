@@ -1,7 +1,7 @@
 // retroplug-host — a minimal txiki/QuickJS host that runs a TS test
-// bundle over a real `Backend`. It binds `globalThis[Symbol.for("plugin")].__rpcSend` to a
-// BackendRpcService (fs/config/codec) — the same namespace the future plugin host uses, so
-// one TS adapter (realBackend.ts) serves both. Emulator-free: no Project/SystemBase.
+// bundle over a real `Backend`. It binds `globalThis[Symbol.for("plugin")].__rpcSend` to the
+// whole backend RPC surface (every facet, over HostServices' Engine and cores) - the same
+// namespace the plugin host uses, so one TS adapter (realBackend.ts) serves both.
 //
 // The harness (packages/retroplug/testing/harness.ts) self-reports
 // TAP via console.log (txiki's console -> stdout, left untouched) and sets the process exit

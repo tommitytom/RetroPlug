@@ -113,15 +113,15 @@ export interface AudioDriver {
   pressButton(id: number, button: number, down: boolean): boolean;
   /** Debug: write a system's latest framebuffer to `path` as an RGB24 PNG. */
   screenshot(id: number, path: string): boolean;
-  /** Advance the block runner `ms` and return the mixed stereo output, interleaved L,R,L,R…. */
+  /** Render `ms` through the engine and return the mixed stereo output, interleaved L,R,L,R…. */
   renderAudio(ms: number): Float32Array;
-  /** Advance the block runner `ms` and return EACH live system's own interleaved-stereo output, in
-   *  Project-slot order — the per-system isolation that proves LSDj link-cable sync (a follower sounds
+  /** Render `ms` through the engine and return EACH live system's own interleaved-stereo output, in
+   *  slot order: the per-system isolation that proves LSDj link-cable sync (a follower sounds
    *  only when it actually synced; a healthy two-system mix can't show that). Empty when no systems. */
   renderAudioPerSystem(ms: number): Float32Array[];
-  /** Advance the block runner `ms` and return system `id`'s per-channel output — one interleaved-stereo
+  /** Render `ms` through the engine and return system `id`'s per-channel output: one interleaved-stereo
    *  buffer per stream in its `channelLayout()` (Game Boy = 4: Pulse 1, Pulse 2, Wave, Noise). Empty
-   *  unless the project holds exactly ONE system (the split router isolates a single core's channels). */
+   *  unless the project holds exactly ONE system (the PerChannel shape fans a single core's channels). */
   renderAudioPerChannel(id: number, ms: number): Float32Array[];
   /** Compile an LSDJ sample kit from source audio files into a 16 KB kit bank (resample to the GB rate +
    *  effects + 4-bit pack, per-sample in parallel natively). A per-sample load failure leaves that slot

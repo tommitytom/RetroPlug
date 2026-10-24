@@ -1,4 +1,4 @@
-// The MIDI routing decision (pure port of Project::dispatchMidi). Locks each mode's
+// The MIDI routing decision (midiRouting.ts, run by the kernel's midi-routing role). Locks each mode's
 // target selection, the system/SysEx broadcast override, the MidiChannelToInstance
 // channel rewrite, the edge cases (n=0/1, size-0), and the routeBlock fan-out.
 import { test, expect } from "../../testing/harness";

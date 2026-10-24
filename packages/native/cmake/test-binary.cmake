@@ -10,7 +10,7 @@
 # the include path, and any fixture paths baked in as defines.
 #
 #   retroplug_add_test_binary(NAME     retroplug-audio-test
-#                             SOURCES  test/audio/ChannelStreams.test.cpp ...
+#                             SOURCES  test/audio/SameBoyStems.test.cpp ...
 #                             LIBS     retroplug-backend
 #                             INCLUDES ${RP_QUICKJS_INCLUDE}
 #                             DEFS     RP_MGB_ROM_PATH="...")

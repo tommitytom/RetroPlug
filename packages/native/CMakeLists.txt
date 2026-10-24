@@ -9,8 +9,8 @@
 #   cmake/bundles.cmake       the embedded control-plane + React-UI bytecode
 #   cmake/deps.cmake          rtmidi / serial / portaudio, and the retroplug-cli N8 facets
 #   cmake/plugin.cmake        dpf_add_plugin + per-platform packaging
-#   cmake/graph.cmake         the node-graph engine's libraries (not linked by any host yet)
-#   cmake/tests.cmake         the eleven native test binaries
+#   cmake/graph.cmake         the node-graph libraries the engine runs on
+#   cmake/tests.cmake         the twelve native test binaries
 #   cmake/warnings.cmake      /W4 /WX on our own targets (MSVC)
 #
 # They are include()d, not add_subdirectory()'d, which matters: include() keeps the CURRENT
@@ -138,7 +138,7 @@ add_library(retroplug-backend STATIC
     src/host/rpc/AudioDriverRpcService.cpp  # background audio thread + observation atomics
     src/host/engine/Engine.cpp              # the engine: the graph + DspRuntime + the staged MIDI, runs blocks
     src/host/engine/SnapshotRegistry.cpp    # owned id-keyed frame/state/SRAM store — the control plane's one read door
-    src/host/engine/EngineInvoker.cpp       # Direct/Queued invokers — the only threading-aware layer
+    src/host/engine/EngineInvoker.cpp       # QueuedInvoker - the one mutation path to the Engine
     src/host/graph/SystemNodes.cpp          # the cores as rp.sameboy.gb / rp.mesen.* nodes
     src/host/graph/KernelNode.cpp           # the kernel stage as rp.dsp.kernel
     src/host/graph/Translator.cpp           # the structural calls as graph documents
@@ -442,10 +442,10 @@ set_target_properties(retroplug-ui-test PROPERTIES
 # The embedded bundle must exist before the test binary compiles it.
 add_dependencies(retroplug-ui-test retroplug-ui-bundle)
 
-# The node-graph engine's libraries (docs/modular-graph-design.md). Nothing links them yet.
+# The node-graph libraries (docs/modular-graph-design.md); retroplug-backend links them, as the engine runs on them.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/graph.cmake)
 
-# The eleven native test binaries (EXCLUDE_FROM_ALL; built by name).
+# The twelve native test binaries (EXCLUDE_FROM_ALL; built by name).
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/tests.cmake)
 
 # /W4 /WX on our own targets (MSVC), with per-number suppressions for what we do not own.

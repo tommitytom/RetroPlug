@@ -2,7 +2,7 @@
 // (a genuine Game Boy core), not a stub. constructSystem boots the core; readState/readSram
 // return real savestate/SRAM. Assertions are structural (real bytes are non-empty but not a
 // fixed value) and on returned id handles, never absolute ids: every case in a file shares one
-// native Project process, but a fresh SystemsStore starts empty (it tracks its own list).
+// native engine per process, but a fresh SystemsStore starts empty (it tracks its own list).
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { SystemsStore } from "../src/systemsStore";

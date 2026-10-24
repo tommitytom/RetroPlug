@@ -75,19 +75,19 @@ public:
     std::optional<std::uint8_t>  readCpuByte(std::uint32_t addr) const override;
     std::uint64_t                stepInstruction() override;
 
-    // The SystemBase per-block triad (see base for the contract). The runner
-    // (runUnit) round-robins stepIfBelowTarget across a link group's members so
-    // GB_run() interleaves and serial bits ferry mid-block; a standalone system
-    // is the degenerate 1-member case of the same triad.
+    // The SystemBase per-block triad (see base for the contract). A coupled link
+    // group's members step round-robin (the executor's coupled group) so GB_run()
+    // interleaves and serial bits ferry mid-block; an unlinked system is the
+    // 1-member case of the same triad, driven by its own node.
     ExpSmoother& gainSmoother() noexcept { return gainSmoother_; }
     void prepareForBlock(const AudioBlockInfo& info) override;
     bool stepIfBelowTarget(std::uint32_t framesNeeded) override;
     void finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) override;
 
     // The Game Boy's four sound channels as separate stereo streams (Pulse 1,
-    // Pulse 2, Wave, Noise, in GB_channel_t order). Inert until a split router
-    // asks for them: on the default path the router still reports one stream, so
-    // finishBlock keeps receiving the 2-lane mix. See the per-channel tap below.
+    // Pulse 2, Wave, Noise, in GB_channel_t order). Inert until the plan wires the
+    // node's ch1..ch4 ports: with only mix wired, finishBlock keeps receiving the
+    // 2-lane mix. See the per-channel tap below.
     std::vector<ChannelStream> channelLayout() const override;
 
     // Set the per-system gain target (dB). Smoothed at audio rate inside
@@ -171,8 +171,8 @@ public:
     // Per-channel audio tap: one interleaved-stereo accumulator per GB channel
     // (Pulse 1, Pulse 2, Wave, Noise), filled every block from the SameBoy
     // per-channel callback alongside stereoAccum_ and sized/zeroed with it in
-    // prepareForBlock. Consumed by finishBlock only when a split router hands us
-    // >= 8 lanes; otherwise carried along at negligible cost.
+    // prepareForBlock. Consumed by finishBlock only when the node hands us 8 lanes
+    // (its stem ports are wired); otherwise carried along at negligible cost.
     static constexpr std::size_t kAudioChannelCount = 4;
     std::array<std::vector<float>, kAudioChannelCount> chanAccum_;
 

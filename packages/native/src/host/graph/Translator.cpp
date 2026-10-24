@@ -242,13 +242,13 @@ std::string Translator::documentJson() const {
 
     std::vector<std::uint32_t> buses;
     if (shape_.kind == HostShape::Kind::PerSystem) {
-        // PerSystemRouter: slot i's mix on channels 2i and 2i + 1.
+        // PerSystem: slot i's mix on channels 2i and 2i + 1.
         for (std::size_t i = 0; i < systems_.size(); ++i) {
             d.wire(sysNode(systems_[i].id) + ".mix", outPort(static_cast<std::uint32_t>(2 * i), 2));
             buses.push_back(2);
         }
     } else if (shape_.kind == HostShape::Kind::PerChannel) {
-        // PerChannelRouter: one system's stream s on channels 2s and 2s + 1; a mono stream fills only 2s.
+        // PerChannel: one system's stream s on channels 2s and 2s + 1; a mono stream fills only 2s.
         if (systems_.size() == 1) {
             const System& s = systems_[0];
             const auto streams = streamsOf(s.kind, nesMode(s));
@@ -272,7 +272,7 @@ std::string Translator::documentJson() const {
         };
         const bool pins = routing_ == AudioRouting::PinSplit || routing_ == AudioRouting::StereoPinSplit;
         const bool split = pins || routing_ == AudioRouting::ChannelSplit;
-        // syncSplitPlan's lane plan: one system, the pin splits only on a NES, and room for its lanes.
+        // A split holds for one system, the pin splits only on a NES, and only with room for its lanes.
         bool splitValid = split && systems_.size() == 1 && !(pins && systems_[0].kind != SystemKind::MesenNes);
         std::vector<Stream> streams;
         std::size_t stride = 2;
@@ -284,8 +284,8 @@ std::string Translator::documentJson() const {
             splitValid = stride * streams.size() <= n;
         }
         if (splitValid) {
-            // ChannelSplitRouter: stream k on lane (stride * k) mod n and, for a stereo stream, the next. A
-            // mono stream on a pair (StereoPinSplit) fills both lanes, as processBlock's mirror copy does.
+            // The split: stream k on lane (stride * k) mod n and, for a stereo stream, the next. A mono
+            // stream on a pair (StereoPinSplit) fills both lanes.
             const System& s = systems_[0];
             for (std::size_t k = 0; k < streams.size(); ++k) {
                 const std::size_t l = (stride * k) % n;
@@ -300,7 +300,7 @@ std::string Translator::documentJson() const {
                 }
             }
         } else {
-            // MultiOutRouter, every split that fell back included: each system's L then R, in sum order.
+            // Multi-out placement, every split that fell back included: each system's L then R, in sum order.
             for (std::size_t i : order) {
                 const System& s = systems_[i];
                 const auto [lo, ro] = d.halves(sysNode(s.id) + ".mix", "split-" + std::to_string(s.id));

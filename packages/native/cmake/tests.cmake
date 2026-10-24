@@ -45,10 +45,10 @@ retroplug_add_test_binary(
 # the NES split routings through a real Engine, and each backend's block triad. Links retroplug-backend,
 # which PUBLIC-brings retroplug-core (the cores) and the Engine.
 #
-# The ROM defines: mGB's boot chime supplies real signal for the SameBoyStems + ChannelSplit fidelity
-# tests, and a ch1 note in the BlipToaster ROM does the same for the NES pin test. smsggdj ships in
-# both cartridge shapes because the SMS and GG builds differ in visible geometry and video config, so
-# both are needed to guard the overscan setup. resources/ never ships (release.yml packages build/bin
+# The ROM defines: mGB's boot chime supplies real signal for the SameBoyStems fidelity tests, and a ch1
+# note in the BlipToaster ROM does the same for the NES pin test. smsggdj ships in both cartridge shapes
+# because the SMS and GG builds differ in visible geometry and video config, so both are needed to guard
+# the overscan setup. resources/ never ships (release.yml packages build/bin
 # plus the license bundle), so these are test-only.
 retroplug_add_test_binary(
     NAME     retroplug-audio-test
@@ -75,7 +75,7 @@ retroplug_add_test_binary(
              RP_GG_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.gg")
 
 # Guards B1's graph engine (docs/modular-graph-phase-b1-design.md): each system node renders exactly what
-# its core renders driven directly, and the translator builds today's routing as wiring. Every core in it
+# its core renders driven directly, and the translator builds the routing modes as wiring. Every core in it
 # powers on in a fixed state (test/engine-graph/Deterministic.cpp), so two identical cores agree.
 retroplug_add_test_binary(
     NAME     retroplug-engine-graph-test

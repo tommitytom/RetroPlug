@@ -2,7 +2,7 @@
 // Mesen core off the RT thread via the deterministic renderAudio pull path under a MIDI workload, and
 // reports the same per-block allocation + per-stage timing metrics. The point of comparison: on the
 // handheld the NES core "struggles" far more than SameBoy, and this pins down WHERE — the Mesen core
-// step (CPU+PPU+APU, the DSP_SPAN_APU "apu-render" span wraps runBlock for every core, Mesen included) vs
+// step (CPU+PPU+APU, the DSP_SPAN_APU "apu-render" span wraps the plan's systems, Mesen included) vs
 // the JS kernel (marshal + js-call). One real NES system driven by host MIDI (the nes-n8-midi role).
 //
 // The counters/spans exist only in a RETROPLUG_PROFILE host (built by tools/run-profile.sh); under the

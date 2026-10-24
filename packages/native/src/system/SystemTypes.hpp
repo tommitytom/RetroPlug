@@ -13,7 +13,7 @@ enum class SystemKind : std::uint32_t {
 };
 
 // One output stream a system can emit (SystemBase::channelLayout()). The default layout is a single
-// stereo "Mix" stream (today's behaviour); a backend that can split its audio (e.g. a Game Boy's four
+// stereo "Mix" stream (the default path); a backend that can split its audio (e.g. a Game Boy's four
 // APU channels) reports one entry per stream. `name` must be a stable string (a static literal or a
 // backend-owned buffer). A stereo stream occupies two lanes, a mono stream one.
 struct ChannelStream {

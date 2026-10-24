@@ -379,7 +379,7 @@ TEST_CASE("a NES node with its mix connected renders the mix even when the tap i
     REQUIRE(rig.set(R"({"nodes":[{"id":"nes","type":"rp.mesen.nes","settings":{"core":)" + std::to_string(token) +
                     R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2,1]}}],
                         "wires":[{"from":"nes.mix","to":"out.out.1-2"},{"from":"nes.pins.pulse","to":"out.out.3"}]})").ok);
-    // Two lanes only, as today's narrow-host path: the connected pin is written as silence.
+    // Two lanes only, as on the narrow-host path: the connected pin is written as silence.
     Direct d({direct.get()}, 3, {{0, 1}});
     CHECK(compare(rig, d, 3.0, afterBoot(*direct, *graphCore)) == "");
     CHECK(sounds(d));

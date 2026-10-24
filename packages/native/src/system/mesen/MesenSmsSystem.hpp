@@ -38,8 +38,8 @@ public:
     void onDeactivate() override;
     void onSampleRateChanged(double sampleRate) override;
 
-    // SystemBase per-block triad (see base for the contract); the runner
-    // (runUnit) drives these directly. SMS is a degenerate 1-member unit:
+    // SystemBase per-block triad (see base for the contract); the engine's
+    // system node drives these directly. An SMS is never linked, so
     // stepIfBelowTarget runs the whole block once and returns false.
     void prepareForBlock(const AudioBlockInfo& info) override;
     bool stepIfBelowTarget(std::uint32_t framesNeeded) override;

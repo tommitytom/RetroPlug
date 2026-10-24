@@ -59,7 +59,7 @@ public:
     std::vector<rfl::Bytestring> renderAudioPerSystem(double ms);
     // Per-channel audio for ONE system: each of its channelLayout() streams as its own interleaved-stereo
     // PCM (Game Boy = 4: Pulse 1/Pulse 2/Wave/Noise). Single-system only (empty if systemCount() != 1 or
-    // `id` is unknown) — the per-channel router keys off streamIndex, not slot. Marshals to Uint8Array[].
+    // `id` is unknown) - the PerChannel shape keys off the stream, not the slot. Marshals to Uint8Array[].
     std::vector<rfl::Bytestring> renderAudioPerChannel(std::uint32_t id, double ms);
     // Compile an LSDJ sample kit from source audio files → a 16 KB kit bank (harness/tooling only; the
     // plugin never binds this). Resample (r8brain) + effects + 4-bit nibble-pack per sample, fanned across

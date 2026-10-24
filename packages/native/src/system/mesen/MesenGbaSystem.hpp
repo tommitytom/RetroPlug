@@ -32,8 +32,8 @@ public:
     void onDeactivate() override;
     void onSampleRateChanged(double sampleRate) override;
 
-    // SystemBase per-block triad (see base for the contract); the runner
-    // (runUnit) drives these directly. GBA is a degenerate 1-member unit:
+    // SystemBase per-block triad (see base for the contract); the engine's
+    // system node drives these directly. A GBA is never linked, so
     // stepIfBelowTarget runs the whole block once and returns false; finishBlock
     // drains/sums the audio and publishes snapshots.
     void prepareForBlock(const AudioBlockInfo& info) override;

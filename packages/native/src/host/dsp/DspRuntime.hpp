@@ -50,7 +50,7 @@ enum DspSpanLabel : std::uint32_t {
     DSP_SPAN_KERNEL    = 0,   // Engine: the whole DSP-kernel stage (marshal + JS + sink fan-out)
     DSP_SPAN_MARSHAL   = 1,   // DspRuntime: C→JS input marshalling
     DSP_SPAN_JSCALL    = 2,   // DspRuntime: the JS_Call into the kernel's processBlock
-    DSP_SPAN_APU       = 3,   // Engine: the SameBoy core/APU render (runBlock)
+    DSP_SPAN_APU       = 3,   // Engine: the plan's systems after the kernel stage (core/APU render)
     DSP_SPAN_PUBLISH   = 4,   // Engine: the state pump to the control plane (per-block frame copy +
                               //   the coarse-interval savestate/SRAM republish — spiky, timer-gated)
     DSP_SPAN_ROLE_BASE = 16,  // JS kernel interns role kinds (mgb, midi-routing, …) from here up
@@ -129,7 +129,7 @@ public:
     // the bound sinks fill serialIn_/midiOut_/buttonOut_ (all cleared at the top of the call). A
     // no-op (empty output) when no kernel is loaded. `serialOut` carries the raw bytes each core
     // emitted on its serial port LAST block (LSDj MI.OUT — one-block latency; the caller gathers them
-    // after runBlock), fanned to `ctx.serialOut` for the addressed system.
+    // after the plan runs), fanned to `ctx.serialOut` for the addressed system.
     // `controllerIn` is control-surface traffic, deliberately separate from `midi` (see
     // Engine::stageControllerMidi). Defaulted so the harness and tests that never bind a surface are
     // unchanged; the kernel substitutes its own stable empty array when the property is absent.

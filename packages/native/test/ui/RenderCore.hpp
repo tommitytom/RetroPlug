@@ -9,7 +9,7 @@
 // software, so lv_snapshot_take gives the rendered frame and the lv_binding_js comp_map lets us assert
 // on the rendered widgets.
 //
-// This class knows NOTHING about any backend — no Project, no RPC, no command queue. A harness composes
+// This class knows NOTHING about any backend - no Engine, no RPC, no command queue. A harness composes
 // it with a backend (which binds `__rpcSend` into `engine().host()` and evals a UI bundle). One
 // RenderCore owns one lv_display + one JS runtime; construct one per test case.
 //

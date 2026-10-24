@@ -617,7 +617,7 @@ void SameBoySystem::writeAudioSample(int16_t left, int16_t right) {
     // internal-clock master (SC=0x81) and are dormant in external-clock mode — and it can't be batched:
     // the OUT bit must be sampled full-duplex as the GB shifts it during GB_run, which only the
     // per-sample hook sees. Serial IN (mGB / LSDJ KEYBD scancodes) is delivered separately, per byte,
-    // by the slave pump in stepIfBelowTarget. Bypassed when a link peer exists (LinkGroup owns that).
+    // by the slave pump in stepIfBelowTarget. Bypassed when a link peer exists (the cable owns that).
     if (linkPeers_.empty() && serialOutEnabled_ && gb_) {
         const auto sc = gb_->io_registers[GB_IO_SC];
         if ((sc & 0x81) == 0x80) {
@@ -704,10 +704,10 @@ bool SameBoySystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
 void SameBoySystem::finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) {
     if (!activated_ || !gb_) return;
 
-    // The mixed stereo stream (laneCount == 2) is the default path. A split router
-    // instead hands us 8 lanes to fan the four GB channels into their own stereo
-    // pairs (stream k -> outs[2k]/outs[2k+1]); channelLayout() reports those 4
-    // streams and the runner sizes the lanes from the router's streamCount.
+    // The mixed stereo stream (laneCount == 2) is the default path. With its stem
+    // ports wired, the node instead hands us 8 lanes to fan the four GB channels
+    // into their own stereo pairs (stream k -> outs[2k]/outs[2k+1]), in
+    // channelLayout() order.
     assert(laneCount == 2 || laneCount == 2 * kAudioChannelCount);
 
     const std::uint32_t frames = info.frames;
@@ -756,10 +756,10 @@ void SameBoySystem::finishBlock(const AudioBlockInfo& info, float* const* outs, 
     publishStateSnapshot(frames, sampleRate_);
 }
 
-// onProcess is no longer overridden here: the runner (runUnit) drives the triad
-// directly for every unit, skipping linked systems via isLinked() and driving
-// them through their LinkGroup, so no self-bail lives here anymore. The base
-// SystemBase::onProcess remains as a fused convenience entry for direct callers.
+// onProcess is not overridden here: the engine's system node drives the triad
+// directly, and a linked Game Boy is stepped by its coupled group, so no
+// self-bail lives here. The base SystemBase::onProcess remains as a fused
+// convenience entry for direct callers.
 
 rp::MemoryAccessor SameBoySystem::getMemory(rp::MemoryType type, rp::AccessType access) {
     if (!gb_) return rp::MemoryAccessor{};

@@ -48,7 +48,7 @@ test("audio levels: Mesen NES 2A03 pins (n8-midi, stereoModPins)", () => {
 
   // Only the two 2A03 pins are asserted. The third term is the lumped Expansion output, which is
   // genuinely silent on a cart with no expansion chip - asserting it would fail on the fixture rather
-  // than on the router.
+  // than on the routing.
   expect(peaks[0], `${PINS[0]} pin`).toBeGreaterThan(AUDIBLE);
   expect(peaks[1], `${PINS[1]} pin`).toBeGreaterThan(AUDIBLE);
 });

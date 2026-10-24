@@ -277,7 +277,7 @@ protected:
     void deactivate() override {
         // DPF guarantees no run() during/after deactivate, so the ring has a single accessor again. Take
         // the Engine back, apply any commands the last block didn't drain (no lost mutation), and reclaim
-        // cores the audio thread released just before stopping (freeing each snapshot slot).
+        // the plans the audio thread handed back, freeing each core only they held (and its snapshot slot).
         svc_.invoker.setAudioThreadOwns(false);
         svc_.invoker.drainInto(svc_.engine);
         svc_.invoker.reclaimReleased();

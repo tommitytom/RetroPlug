@@ -82,7 +82,7 @@ private:
         std::unique_ptr<MemorySnapshotTriple> ram;            // work RAM (WRAM), republished every block
         // NOTE: the SRAM slice offset is deliberately NOT cached here. It moves when the core is rebuilt
         // under a different SameBoy model (an HLE-SGB state carries a ~74 KB section ahead of the cart
-        // RAM), so publishAll re-reads it from the region table published alongside each blob.
+        // RAM), so publishSystem re-reads it from the region table published alongside each blob.
         bool                                  sramFromCore = false; // SRAM published live (saveSramBytes), not sliced
         std::uint64_t                         sampleAccum = 0;    // samples since the last state/sram publish
     };
@@ -106,7 +106,7 @@ private:
 
     // Write [len:4 LE][payload] into a triple's next slot and publish it (prefix + len must fit the
     // triple; callers check). The one place the len-prefixed slot layout is written — the state slot
-    // (claim + publishAll) and the WRAM slot (claim + every-block publishAll) share it.
+    // (claim + publishSystem) and the WRAM slot (claim + every-block publishSystem) share it.
     static void writeSized(MemorySnapshotTriple& triple, const std::uint8_t* payload, std::size_t len);
 
     std::array<Slot, kMaxSlots> slots_;

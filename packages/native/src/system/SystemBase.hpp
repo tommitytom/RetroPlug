@@ -54,20 +54,19 @@ public:
     // -- Per-block audio lockstep -------------------------------------------
     //
     // Every system advances through a 3-phase triad: prepareForBlock →
-    // stepIfBelowTarget (looped until it returns false) → finishBlock. A link
-    // group round-robins stepIfBelowTarget across its members so serial bits
-    // ferry mid-block; a standalone system (or a Mesen backend) is the
-    // degenerate 1-member unit. The runner (system/BlockRunner.cpp's runUnit())
-    // drives these three directly for EVERY unit — singleton or link group; it
-    // does not route singletons through onProcess().
+    // stepIfBelowTarget (looped until it returns false) → finishBlock. A coupled
+    // link group's members step round-robin (the executor's coupled group over
+    // rp.step/1) so serial bits ferry mid-block; an unlinked system is the
+    // 1-member case. The engine's system nodes (host/graph/SystemNodes.cpp) drive
+    // these three directly; nothing on the engine's path calls onProcess().
     //
     // Output contract: `outs` is `laneCount` planar buffers the system must SUM
     // into, not overwrite, so multiple systems can mix into one destination. The
     // CALLER zeroes the buffers. `laneCount` is 2 for the default single stereo
     // stream (`outs[0]`/`outs[1]` = L/R); a backend that reports a wider
     // channelLayout() receives `2 * streamCount` lanes (stream k → `outs[2k]` /
-    // `outs[2k+1]`) and must branch on `laneCount` — the router the runner built
-    // is the authority for how many lanes arrive.
+    // `outs[2k+1]`) and must branch on `laneCount` - the system node, from the
+    // ports the plan wired, is the authority for how many lanes arrive.
     //
     // Defaults are inert (no-op / "done") so trivial backends and test doubles
     // need not implement them.
@@ -77,10 +76,10 @@ public:
                              std::size_t /*laneCount*/) {}
 
     // The output streams this system can emit. Default = one stereo "Mix" stream
-    // (the mixed console output), i.e. today's behaviour. A backend that can split
-    // its audio reports one entry per stream; that layout only takes effect under
-    // a router built to split it (finishBlock still receives whatever laneCount
-    // the router sized), so reporting a wide layout is inert on the default path.
+    // (the mixed console output). A backend that can split its audio reports one
+    // entry per stream; that layout only takes effect when the plan wires the
+    // node's stream ports (finishBlock still receives whatever laneCount the node
+    // hands it), so reporting a wide layout is inert on the default path.
     virtual std::vector<ChannelStream> channelLayout() const { return {{"Mix", true}}; }
 
     // Fused single-system convenience entry: prepare → step-to-done → finish.
@@ -341,7 +340,7 @@ public:
     // skipped, and the SRAM slice would read the wrong bytes straight into the user's .sav.
     //
     // NOT thread-safe, and deliberately not atomic. There are exactly two legal readers: the block
-    // thread in SnapshotRegistry::publishAll (same thread as the writer, later in the same block), and
+    // thread in SnapshotRegistry::publishSystem (same thread as the writer, later in the same block), and
     // SnapshotRegistry::claim on the control thread BEFORE the system is handed to the audio thread.
     // A third caller from any other thread would be a silent data race.
     const StateRegionTable& stateRegions() const { return stateRegions_; }

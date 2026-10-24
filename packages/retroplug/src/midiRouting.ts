@@ -1,10 +1,7 @@
-// The MIDI routing decision — a pure port of native's Project::dispatchMidi
-// (packages/native/src/project/Project.hpp). Given a block's MIDI events + the project's
-// routing mode + system count, it decides which system(s) each event lands on and
-// applies the MidiChannelToInstance channel rewrite. No emulator, no audio thread, no
-// retained state — pure decision logic (doc-06 Tier-1). This is the canonical routing
-// the app will eventually run; today it's the reference / conformance oracle
-// (the live per-block execution waits on the doc-04 scriptable runtime + RT-safety).
+// The MIDI routing decision. Given a block's MIDI events + the project's routing mode + system
+// count, it decides which system(s) each event lands on and applies the MidiChannelToInstance
+// channel rewrite. The DSP kernel's midi-routing role (dspRoles.ts) runs it every block. No
+// emulator, no audio thread, no retained state: pure decision logic (doc-06 Tier-1).
 
 import { MidiRouting, MIDI_ROUTING_VALUES } from "./settingsEnums";
 export { MidiRouting, MIDI_ROUTING_VALUES };

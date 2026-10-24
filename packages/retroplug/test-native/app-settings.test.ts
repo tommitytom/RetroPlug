@@ -2,7 +2,7 @@
 // the crisp proof — a -90 dB edit silences a ringing mGB and 0 dB restores it, so applySystemSetting
 // reaches the running emulator (not the old no-op stub). Then the "sameboy" system-role config
 // (highpass live, model via restart) dispatches through applyRoleConfig without breaking playback.
-// One test / one mGB system: whole-mix RMS needs a single system in the shared native Project.
+// One test / one mGB system: whole-mix RMS needs a single system in the shared native engine.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";

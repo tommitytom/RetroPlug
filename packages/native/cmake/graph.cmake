@@ -2,7 +2,7 @@
 # CURRENT directory scope, so ${CMAKE_CURRENT_SOURCE_DIR} still means packages/native/ here.
 #
 # --- the node-graph engine (docs/modular-graph-design.md) -------------------------------------------
-# Phase A builds these and tests them; nothing in the shipping build links them yet.
+# retroplug-backend links them: the engine (src/host/engine/Engine.cpp) runs every block on a GraphHost.
 #
 # retroplug-graph-exec: the no-heap executor. No heap, no exceptions and no dependencies beyond libc's
 # memcpy / memset (it is C++20 over the C ABI in graph/rp_node.h), which is what lets the same code run a

@@ -148,9 +148,9 @@ export interface Backend {
    *  system mixes into, or (modes 3..5, single system only) one system's channels fanned across the
    *  outs: a Game Boy's 4 stereo channels over the 4 pairs, a NES's 5 mono core channels over outs 1..5,
    *  a NES's 3 mono pins over outs 1..3, or those same 3 pins over a PAIR each (outs 1/2, 3/4, 5/6,
-   *  mirrored L=R). The one project-level setting that reaches native audio (the Engine resolves a lane
-   *  plan per mode + system count and picks MultiOutRouter / ChannelSplitRouter from it). Returns false
-   *  on an out-of-range mode. */
+   *  mirrored L=R). The one project-level setting that reaches native audio (the translator wires the
+   *  graph for the mode + system count, falling back to Stereo where a split does not apply). Returns
+   *  false on an out-of-range mode. */
   setAudioRouting(mode: number): boolean;
 
   // --- Live emulator input ------------------------------------------------

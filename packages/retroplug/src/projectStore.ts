@@ -451,7 +451,7 @@ export class ProjectStore {
   }
   setAudioRouting(v: AudioRouting): boolean {
     if (!this.setEnumSetting("audioRouting", v)) return false;
-    this.pushAudioRouting(); // the one project setting that reaches native audio (the MultiOutRouter)
+    this.pushAudioRouting(); // the one project setting that reaches native audio (the graph's output wiring)
     return true;
   }
   setZoom(n: number): boolean {
@@ -685,7 +685,7 @@ export class ProjectStore {
   }
 
   /** Push the current audio-routing mode to native — the one project setting that drives native audio
-   *  (the block runner's MultiOutRouter). Converts the string value to native's AudioRouting integer.
+   *  (the translator rewires the graph's outputs). Converts the string value to native's AudioRouting integer.
    *  Called on set / load / reset so native tracks the TS value. */
   private pushAudioRouting(): void {
     this.backend.setAudioRouting(audioRoutingToIndex(this.projectSettings.audioRouting));

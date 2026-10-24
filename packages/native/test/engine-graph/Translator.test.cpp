@@ -1,7 +1,8 @@
-// The translator (docs/modular-graph-phase-b1-design.md section 4): today's structural calls as documents.
-// Each host channel must be fed what today's router adds into it, in today's order, and systems must run
-// in runBlock's order. The documents are captured, not planned, so most systems here are stand-ins that
-// report a kind; the link-group cases need real Game Boys (the link group is SameBoy config).
+// The translator (docs/modular-graph-phase-b1-design.md section 4): the structural calls as documents.
+// Each host channel must be fed what the routers before B1 added into it, in their order, and systems must
+// run in the order that engine stepped them (unlinked by slot, then each link group). The documents are
+// captured, not planned, so most systems here are stand-ins that report a kind; the link-group cases need
+// real Game Boys (the link group is SameBoy config).
 //
 // Run via `pnpm test:plugin`.
 
@@ -259,7 +260,7 @@ TEST_CASE("add, replace, remove and setRouting re-arm the NES tap; a link group 
     CHECK(r.rearms == std::vector<bool>{false, true, true, true, true, false, false, true});
 }
 
-TEST_CASE("every host lane of a lone NES is fed as today's split routers feed it", "[engine-graph][translator]") {
+TEST_CASE("every host lane of a lone NES is fed as the split routers fed it", "[engine-graph][translator]") {
     // The tables are the rules the split routers held before the flip, not the translator's own: stream k lands on
     // lane (stride * k) mod N with stride 1 for mono streams (2 under StereoPinSplit, which mirrors the mono
     // stem onto both lanes of its pair), the core's streams in channelLayout order, and unused lanes stay empty.

@@ -1,9 +1,9 @@
 // Port of legacy test/ts/gb/lsdj/sync_pattern.test.ts: LSDj link-cable sync, proven
 // with PER-SYSTEM audio (the new renderAudioPerSystem RPC). Two LSDj instances in the same link group,
-// both authored SYNC=LSDJ, START on the leader only. Link sync is pure GB serial ferrying in the
-// block runner's LinkGroup (no DSP kernel needed), so the follower produces audio ONLY when it
-// actually synced to the leader — and, being the same song under the same clock, its level tracks the
-// leader's. A healthy-looking two-system MIX can't show this; isolated per-system RMS can.
+// both authored SYNC=LSDJ, START on the leader only. Link sync is pure GB serial ferrying over the
+// cable the translator wires between them (no DSP kernel needed), so the follower produces audio ONLY
+// when it actually synced to the leader, and, being the same song under the same clock, its level
+// tracks the leader's. A healthy-looking two-system MIX can't show this; isolated per-system RMS can.
 // (lsdj-sync-negative.test.ts is the control: SYNC=None → the follower stays silent.)
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
@@ -48,7 +48,7 @@ test("LSDj link-cable sync: the follower plays in lockstep with the leader (per-
   const leader = 1, follower = 2;
   expect(construct(be, leader, "Lsdj")).toBeTruthy();
   expect(construct(be, follower, "Lsdj")).toBeTruthy(); // same one-note SYNC=LSDJ song
-  // Put both in link group 1 → the block runner rebuilds the LinkGroup and ferries serial bits.
+  // Put both in link group 1 → the translator wires the cable and the pair steps as one coupled group.
   expect(be.applyRoleConfig(leader, "sameboy", { linkGroupId: 1 })).toBeTruthy();
   expect(be.applyRoleConfig(follower, "sameboy", { linkGroupId: 1 })).toBeTruthy();
 

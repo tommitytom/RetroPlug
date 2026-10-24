@@ -43,7 +43,7 @@ struct SystemNode {
     SystemNode() = default;
     SystemNode(const SystemNode&) = delete;
     SystemNode& operator=(const SystemNode&) = delete;
-    // Destroyed at reclaim, on the control thread, once no plan runs it: today's reclaimReleased order.
+    // Destroyed at reclaim, on the control thread, once no plan runs it: the snapshot slot first, then the core.
     ~SystemNode() {
         if (!core) return;
         if (cores) cores->released(cores->ctx, core);
@@ -79,7 +79,7 @@ struct SystemNode {
         return AudioBlockInfo{b.frames(), t.sample_rate, t.tempo, t.ppq, (t.flags & RP_TRANSPORT_PLAYING) != 0};
     }
 
-    // An unlinked system: prepare, step until it has the block, finish - runUnit for one member.
+    // An unlinked system: prepare, step until it has the block, finish - a coupled group of one.
     void process(const rp::Block& b) noexcept {
         prepare(b);
         while (core->stepIfBelowTarget(b.frames())) {
@@ -89,8 +89,8 @@ struct SystemNode {
     void prepare(const rp::Block& b) noexcept { core->prepareForBlock(info(b)); }
     bool step(std::uint32_t target) noexcept { return !core->stepIfBelowTarget(target); }
 
-    // finishBlock adds into its lanes, so they start at zero, as today's zeroed bus does. Every other
-    // connected output is written too (the ABI's rule), as silence.
+    // finishBlock adds into its lanes, so they start at zero. Every other connected output is written too
+    // (the ABI's rule), as silence.
     void finish(const rp::Block& b) noexcept {
         std::array<float*, 2 * kMaxOutputs> lanes{};
         const std::size_t n = static_cast<Self*>(this)->lanes(b, lanes);
@@ -161,8 +161,8 @@ struct Nes : SystemNode<Nes, MesenNesSystem> {
     }
 
     // With mix connected, the mix (2 lanes), whether or not the tap is armed: the narrow-host defect's
-    // path. Otherwise the armed mode's streams, each mono stream's two lanes one buffer, as
-    // ChannelSplitRouter hands a mono stream today (the NES writes only lane 2k).
+    // path. Otherwise the armed mode's streams, each mono stream's two lanes pointed at its one port
+    // buffer (the NES writes only lane 2k).
     std::size_t lanes(const rp::Block& b, std::array<float*, 2 * kMaxOutputs>& out) const {
         bool tap = false;
         for (std::uint32_t o = kPinsFirst; o < 1 + std::size(kNesTaps); ++o) tap = tap || connected[o];

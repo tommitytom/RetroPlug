@@ -87,7 +87,7 @@ test("NES renders its stereo-mod pins (renderAudioPerChannel): Pulse rings, TND/
   expect(pulse > expansion * 4).toBeTruthy();
 
   // The pins are MONO: each interleaved-stereo buffer's right lane is silent (finishBlock writes only the
-  // left lane of each stream; the router zeroes the right).
+  // left lane of each stream, and the PerChannel shape wires a mono stream to that channel alone).
   play.forEach((b) => expect(rightRms(b) < 1e-6).toBeTruthy());
 
   // Unknown system id → no streams (the null-return path).

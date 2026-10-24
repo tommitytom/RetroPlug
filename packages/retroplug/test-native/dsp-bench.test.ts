@@ -7,7 +7,7 @@
 // tools/run-profile.sh). Under the default host the counters report enabled:false and this
 // test SKIPS (so the normal `pnpm test:native` sweep stays fast, and says the case did not run
 // rather than printing a green tick for it). One test per file (the
-// native Project/Engine is shared per host process).
+// native Engine is shared per host process).
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";

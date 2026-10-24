@@ -26,7 +26,7 @@ runSession((s) => {
   if (!romPath) throw new Error("usage: analyze-lsdj-sync.js <lsdjRom> [outPrefix]");
   const prefix = outPrefix || "/tmp/lsdj-sync-pattern";
 
-  // Link-cable sync is pure GB serial ferrying in the block runner — construct both cores directly,
+  // Link-cable sync is pure GB serial ferrying over the link cable: construct both cores directly,
   // link them, and drive; no DSP kernel needed.
   const construct = (id: number, sync: SongSettings["syncMode"]) => s.backend.constructSystem({
     romPath, platform: "gb", core: "sameboy", embeddedRom: "",

@@ -29,8 +29,10 @@ public:
     explicit QueuedInvoker(Engine& engine) : engine_(&engine) {}
 
     // Drain ownership. Set true BEFORE spawning/activating the audio thread (pushes become push-only);
-    // set false AFTER joining it (pushes apply inline again, and whatever is queued applies now). Written
-    // on the control thread only; read by the control thread and the audio loop (its run condition).
+    // set false AFTER joining it. Clearing it applies whatever is still queued there and then, on the
+    // CALLER's thread, and every push after applies inline again, which is the contract a new host must
+    // keep: stop the audio thread, then clear the bit. Written and read on the control thread only (it
+    // gates the render RPCs and the driver's reads); the audio thread just drains.
     void setAudioThreadOwns(bool owns);
     bool audioThreadOwns() const { return audioThreadOwns_.load(std::memory_order_acquire); }
 

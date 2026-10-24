@@ -323,8 +323,9 @@ The control is the half that matters: without it the positive test passes on any
 that happen to make noise.
 
 If link sync is genuinely broken, the follower's per-system RMS stays at 0 in
-the positive test — look at [LinkGroup.cpp](../packages/native/src/system/sameboy/LinkGroup.cpp) and the
-`serialStart` / `serialEnd` callbacks in `SameBoySystem.cpp`. `renderAudioPerSystem`
+the positive test - look at `linkGroups` in [Translator.cpp](../packages/native/src/host/graph/Translator.cpp)
+(which Game Boys share a cable), `set_peers` in [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)
+(the cable itself), and the `serialStart` / `serialEnd` callbacks in `SameBoySystem.cpp`. `renderAudioPerSystem`
 isolates each instance's audio (the canonical way to tell synced playback from a
 healthy-looking mix of two desynced instances).
 

@@ -13,8 +13,8 @@ constexpr std::size_t typeIndex(rp::MemoryType t) {
 } // namespace
 
 void SystemBase::onProcess(const AudioBlockInfo& info, float* const* outs) {
-    // The degenerate 1-member unit: drive the triad to the block target, then
-    // finish. Identical to a link group of size one (system/BlockRunner.cpp).
+    // Drive the triad to the block target, then finish: what an unlinked
+    // system's node does each block (host/graph/SystemNodes.cpp).
     prepareForBlock(info);
     while (stepIfBelowTarget(info.frames)) {}
     finishBlock(info, outs, 2); // the convenience entry is stereo (one Mix stream = two lanes)

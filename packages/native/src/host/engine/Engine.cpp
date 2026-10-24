@@ -148,7 +148,7 @@ void Engine::onHostCommand(void* ctx, const rp::graph::HostCommand& cmd, const v
         static_cast<Engine*>(ctx)->applyCommand(c);
         return;
     }
-    switch (c.kind) {  // teardown: free what it owns, as QueuedInvoker::freePending does
+    switch (c.kind) {  // dropped at teardown (QueuedInvoker::freePending): free what it owns, never apply it
         case DspCommand::Kind::SetSystems:      delete c.setSystems.json; break;
         case DspCommand::Kind::LoadKernel:      delete c.loadKernel.bytecode; break;
         case DspCommand::Kind::WriteRam:        delete c.writeRam.bytes; break;
@@ -158,8 +158,8 @@ void Engine::onHostCommand(void* ctx, const rp::graph::HostCommand& cmd, const v
     }
 }
 
-// QueuedInvoker::drainInto's switch for every kind graph mode still queues, plus SyncTap. The structural
-// kinds never arrive here: the translator turns them into plans.
+// Every kind that rides the ring, SyncTap included. Structure never arrives here: the translator turns it
+// into plans.
 void Engine::applyCommand(DspCommand& cmd) {
     switch (cmd.kind) {
         case DspCommand::Kind::SetSystems:

@@ -75,7 +75,7 @@ test("readRam publishes live WRAM per block on the emulator facet, and drives th
 
 // Regression: a live SameBoy model switch RESIZES the WRAM region (CGB 32K ↔ DMG 8K). The snapshot slot
 // carries a length prefix + headroom instead of being pinned to the construct-time size, so readRam tracks
-// the new size every block. (Before the fix, publishAll only republished on an EXACT size match, so any
+// the new size every block. (Before the fix, the registry only republished on an EXACT size match, so any
 // resize froze readRam at the pre-switch snapshot forever.) MODEL_VALUES index 1 = "dmgB", 9 = "cgbC".
 test("readRam tracks a live model switch that resizes WRAM (CGB 32K → DMG 8K), never freezing", () => {
   const be = createRealBackend();

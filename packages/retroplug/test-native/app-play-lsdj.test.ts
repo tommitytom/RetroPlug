@@ -4,7 +4,7 @@
 // This is dsp-lsdj-midisync.test.ts's proof, but driven THROUGH the stores: setRoleConfig(mode)
 // on a feature role re-projects the structure (syncDspFromStore) and pushes it, so flipping the
 // store's role config is what makes an armed LSDj sing. Whole-mix RMS on a single system = that
-// system's audio. (One test per file: whole-mix RMS needs an isolated native Project.)
+// system's audio. (One test per file: whole-mix RMS needs an isolated native engine.)
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";

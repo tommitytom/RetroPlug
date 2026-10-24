@@ -36,8 +36,8 @@ public:
     void onDeactivate() override;
     void onSampleRateChanged(double sampleRate) override;
 
-    // SystemBase per-block triad (see base for the contract); the runner
-    // (runUnit) drives these directly. NES is a degenerate 1-member unit:
+    // SystemBase per-block triad (see base for the contract); the engine's
+    // system node drives these directly. A NES is never linked, so
     // stepIfBelowTarget runs the whole block once and returns false; finishBlock
     // drains/sums the audio and publishes snapshots.
     void prepareForBlock(const AudioBlockInfo& info) override;
@@ -122,7 +122,7 @@ public:
     // The cartridge sound chip's level as a percentage (100 = unity), applied to every expansion channel
     // Mesen mixes. Live - the mixer re-reads its volume scalars each buffer.
     void setExpansionVolume(std::uint32_t percent);
-    // Arm/disarm the per-channel tap AFTER construct, so a plugin routing change (Engine::syncSplitPlan)
+    // Arm/disarm the per-channel tap AFTER construct, so a plugin routing change (Engine::syncTap)
     // can reach the split modes without rebuilding the core the way setRegion does — a routing flip must
     // not reset a playing game. Same modes as MesenNesConfig::channelExportMode (0 = off/Mix, 1 = pins,
     // 3 = 5 individual mono); channelLayout() follows it. Value-guarded, and pre-onActivate it only records

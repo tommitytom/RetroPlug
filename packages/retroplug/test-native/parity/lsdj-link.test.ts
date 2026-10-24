@@ -1,8 +1,9 @@
 // Two LSDj on one link cable, both SYNC=LSDJ: START on the first makes it the leader, and the follower
 // plays only once the cable's clock reaches it. Each on its own pair, so the follower's sync shows. Linked
-// cores step in lockstep (LinkGroup round-robins them until both reach the block boundary), so the
-// boundary is part of what the follower hears: the scene runs in every host block size blocks.ts renders,
-// and the follower's lanes differ in each, ahead of B1 rewriting LinkGroup.
+// cores step in lockstep (their coupled group round-robins them until both reach the block boundary), so
+// the boundary is part of what the follower hears: the scene runs in every host block size blocks.ts
+// renders, and the follower's lanes differ in each. Recorded before B1 moved that stepping onto the graph
+// executor, which holds it to the bit.
 import { runGroup, type ParityCase } from "./group";
 import { SPLITS } from "./blocks";
 import { blocks, lsdj, lsdjCase, songSav, SR, tap } from "./lsdj";

@@ -2,8 +2,8 @@
 // a NES's 5 mono core channels), PinSplit and StereoPinSplit (a NES's 3 output pins, mono or a pair
 // each). A split needs its lanes. A Game Boy on a host too narrow for it, and any two-system project,
 // fall back to Stereo (bit-identical to it). A single NES on a narrow host does NOT: KNOWN DEFECT,
-// recorded as it is. Engine::syncSplitPlan arms the NES capture tap before processBlock checks the lane
-// budget, so the mix path then drifts (added latency grows ~49 ms per second, measured at 48 kHz in
+// recorded as it is. The engine's SyncTap arms the NES capture tap whatever the lane budget, while the
+// translator, finding no room, wires the mix, so the mix path then drifts (added latency grows ~49 ms per second, measured at 48 kHz in
 // 512-frame blocks: about 25 frames per block, so it scales with the block rate). The plugin always passes
 // 8 outputs and cannot hit it; the SDL standalone (2 channels by default) and 2-lane renders can.
 // The cases are routing-split.test.ts and routing-split-expansion.test.ts.

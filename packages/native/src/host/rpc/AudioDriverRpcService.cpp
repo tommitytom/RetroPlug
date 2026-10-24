@@ -26,16 +26,16 @@ AudioDriverRpcService::~AudioDriverRpcService() {
     running_.store(false, std::memory_order_release);
     if (audioThread_.joinable()) audioThread_.join();
     if (invoker_.audioThreadOwns()) {
-        invoker_.freePending();             // teardown: DISCARD what is still queued, never apply it
+        invoker_.freePending();             // teardown: adopt the queued plans, DISCARD the queued edits
         invoker_.setAudioThreadOwns(false);
     }
     invoker_.reclaimReleased(); // plans (and the cores only they held) the audio thread handed back
 }
 
 void AudioDriverRpcService::audioLoop() {
-    // Audio-thread-local: the control thread reaches the loop only through the invoker's command ring
-    // and its audioThreadOwns bit. drainInto applies every queued edit (structure + transport) INTO the
-    // Engine before the block; the live count is republished each iteration.
+    // Audio-thread-local: the control thread reaches the loop only through the one command ring and
+    // running_. drainInto adopts every queued plan and applies every queued edit before the block; the
+    // live count is republished each iteration.
     std::vector<float> l(kBlockSize), r(kBlockSize);
     double energy = 0.0;
     std::uint64_t frames = 0;
@@ -73,8 +73,9 @@ bool AudioDriverRpcService::stopAudio() {
     if (!invoker_.audioThreadOwns()) return false;
     running_.store(false, std::memory_order_release);  // the loop exits after its current iteration
     if (audioThread_.joinable()) audioThread_.join();
-    // Single accessor again: hand the engine back, which APPLIES any commands the last block didn't drain
-    // (no lost mutation), then reclaim released plans. From here every push applies inline again.
+    // Single accessor again: clearing the bit hands the engine back and APPLIES, on this thread, whatever
+    // the last block didn't drain (no lost mutation); then reclaim the plans handed back. From here every
+    // push applies inline again.
     invoker_.setAudioThreadOwns(false);
     invoker_.drainInto(engine_);
     invoker_.reclaimReleased();
@@ -93,17 +94,17 @@ bool AudioDriverRpcService::sleepMs(double ms) {
 }
 
 std::uint32_t AudioDriverRpcService::systemCount() {
-    // While the audio thread owns the Engine, read its per-block republished count (reading the plan
-    // directly would race it). Quiescent, the control thread owns the Engine + the ring is flushed, so
-    // read it live.
+    // While the audio thread owns the Engine, read its per-block republished count (reading the running
+    // plan's table directly would race the swap). Quiescent, the control thread owns the Engine and the
+    // ring is flushed, so read it live.
     return invoker_.audioThreadOwns()
         ? liveSystemCount_.load(std::memory_order_acquire)
         : static_cast<std::uint32_t>(engine_.systemCount());
 }
 
 std::uint32_t AudioDriverRpcService::drainReleased() {
-    // Control-thread consumer of the release ring: free each plan the audio thread handed back, and with
-    // it every core only that plan held (each freeing its snapshot slot). Safe because the audio thread
-    // runs a newer plan by then.
+    // Control-thread consumer of the GraphHost's release ring: free each plan the audio thread handed
+    // back, and with it every core only that plan held (each freeing its snapshot slot), returning how
+    // many PLANS. Safe because the audio thread runs a newer plan by then.
     return invoker_.reclaimReleased();
 }

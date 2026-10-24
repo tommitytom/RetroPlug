@@ -5,7 +5,7 @@
 // pushes it; a staged MIDI chord — routed by the projected midi-routing role and serialized by
 // the `mgb` role — makes the core sing. Same proof as audio-render.test.ts, but reached via the
 // stores instead of a hand-written setSystems, so it exercises the real store→projection→DSP path
-// a host will drive. (One test per file: whole-mix RMS needs an isolated native Project.)
+// a host will drive. (One test per file: whole-mix RMS needs an isolated native engine.)
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";

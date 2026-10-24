@@ -1,10 +1,10 @@
-// The audio-routing seam: the project's `audioRouting` mode now reaches native (the block runner's
-// MultiOutRouter), through the same command path as setBpm/setTransport. This proves the seam is
-// wired end-to-end — the RPC is accepted for the three valid modes, rejected out of range, and
+// The audio-routing seam: the project's `audioRouting` mode now reaches native (the translator rewires
+// the graph's outputs), through the same invoker as setBpm/setTransport. This proves the seam is
+// wired end-to-end - the RPC is accepted for the valid modes, rejected out of range, and
 // playback survives a mode switch (a single system still lands on its pair). Per-pair SEPARATION
 // needs the plugin's 8 outputs + a multi-out capture and is the user's / a DAW fixture's check;
 // the test-host render is stereo, so every mode collapses to one pair here. (One test per file:
-// whole-mix RMS needs an isolated native Project.)
+// whole-mix RMS needs an isolated native engine.)
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
@@ -42,7 +42,7 @@ test("audioRouting reaches native and playback survives a mode switch", () => {
   // The seam: valid modes accepted (Stereo / TwoPerInstance / OnePerInstance / ChannelSplit / PinSplit /
   // StereoPinSplit), out of range rejected. (Per-lane SEPARATION for the split modes is a native-Catch2
   // render check — this test-host capture is stereo, so it can only prove acceptance here; see
-  // ChannelSplit.test.cpp and NesSplitRouting.test.cpp.)
+  // Translator.test.cpp and NesSplitRouting.test.cpp.)
   expect(be.setAudioRouting(0)).toBeTruthy();
   expect(be.setAudioRouting(1)).toBeTruthy();
   expect(be.setAudioRouting(2)).toBeTruthy();

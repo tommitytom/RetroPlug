@@ -84,7 +84,7 @@ public:
     bool replace(SystemId id, std::unique_ptr<SystemBase> core);  // keeps id's slot; false if id is absent
     bool remove(SystemId id);
     bool setRouting(AudioRouting mode);
-    bool setLinkGroup(SystemId id, std::uint8_t group);  // a no-op when unchanged, as today
+    bool setLinkGroup(SystemId id, std::uint8_t group);  // a no-op when unchanged
     bool setShape(HostShape shape);                        // a no-op when unchanged
 
     AudioRouting routing() const { return routing_; }
@@ -121,7 +121,7 @@ private:
     // appearance) with its members by slot. Indices into systems_.
     std::vector<std::size_t>              sumOrder() const;
     std::vector<std::vector<std::size_t>> linkGroups() const;
-    // The export mode a NES has once today's syncSplitPlan has armed or restored it.
+    // The export mode a NES has once the engine's SyncTap has armed or restored it.
     std::uint32_t                         nesMode(const System& s) const;
 
     Publish                                            publish_;
