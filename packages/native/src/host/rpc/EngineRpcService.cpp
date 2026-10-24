@@ -439,9 +439,7 @@ bool EngineRpcService::stageMidiIn(std::vector<std::uint8_t> bytes) {
 }
 
 bool EngineRpcService::stageControllerIn(std::vector<std::uint8_t> bytes) {
-    if (bytes.empty() || bytes.size() > 4) return false;  // a pad press is 3 bytes; the ring carries 4 inline
-    invoker_.stageControllerMidi(std::move(bytes));
-    return true;
+    return invoker_.stageControllerMidi(std::move(bytes));  // a pad press is 3 bytes; the ring carries 4 inline
 }
 
 bool EngineRpcService::setSerialOutCapture(std::uint32_t id, bool on) {

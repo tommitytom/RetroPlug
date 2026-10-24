@@ -71,14 +71,17 @@ void QueuedInvoker::stageMidi(std::vector<std::uint8_t> bytes) {
     maybeFlush();
 }
 
-void QueuedInvoker::stageControllerMidi(std::vector<std::uint8_t> bytes) {
+bool QueuedInvoker::stageControllerMidi(std::vector<std::uint8_t> bytes) {
+    // Inline-only: drainInto reads `len` bytes out of the 4-byte slot, so a longer message would read past it.
+    if (bytes.empty() || bytes.size() > 4) return false;
     DspCommand c;
     c.kind = DspCommand::Kind::StageControllerMidi;
     c.stageMidi.ext = nullptr;
     c.stageMidi.len = static_cast<std::uint8_t>(bytes.size());
-    for (std::size_t i = 0; i < bytes.size() && i < 4; ++i) c.stageMidi.data[i] = bytes[i];
+    for (std::size_t i = 0; i < bytes.size(); ++i) c.stageMidi.data[i] = bytes[i];
     commands_.tryPush(c);
     maybeFlush();
+    return true;
 }
 
 void QueuedInvoker::stageSystemMidi(SystemId id, std::vector<std::uint8_t> bytes) {

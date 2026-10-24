@@ -71,6 +71,7 @@ retroplug_add_test_binary(
              test/audio/MesenBlockOps.test.cpp         # the shared drain tail blanks a short ring
              test/audio/NesTeardown.test.cpp           # the NES twin of SMS's construct/destruct guard
              test/audio/SameBoyModels.test.cpp         # every SameBoyModel (incl. SGB variants) boots + renders
+             test/audio/EngineInvoker.test.cpp         # the command ring's inline slot + teardown payload frees
     LIBS     retroplug-backend                         # Engine + retroplug-core (SystemBase + BlockRunner + routers + sameboy)
     INCLUDES ${RP_QUICKJS_INCLUDE}                     # quickjs.h (via Engine.hpp → DspRuntime.hpp)
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"

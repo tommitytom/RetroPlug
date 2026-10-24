@@ -46,8 +46,9 @@ public:
     // Any length: a channel message rides the command inline, a longer run (SysEx) as an owning payload.
     void stageMidi(std::vector<std::uint8_t> bytes);
     // Control-surface traffic (a pad press), kept out of the musical stream. Inline-only (4 bytes),
-    // which a Note/CC press fits inside; a surface's sysex never comes this way.
-    void stageControllerMidi(std::vector<std::uint8_t> bytes);
+    // which a Note/CC press fits inside; a surface's sysex never comes this way. False, with nothing
+    // staged, for an empty message or one longer than 4 bytes.
+    bool stageControllerMidi(std::vector<std::uint8_t> bytes);
     // MIDI for ONE system, bypassing the routing kernel entirely (see DspCommand::stageSystemMidi).
     // Inline-only (4 bytes): this carries control messages, never a SysEx run.
     void stageSystemMidi(SystemId id, std::vector<std::uint8_t> bytes);
