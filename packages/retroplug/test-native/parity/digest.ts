@@ -53,7 +53,7 @@ export function laneDigest(lane: Float32Array, from: number, to: number): string
   return `${hex8(fnv1a(bytes))} ${rms4(lane, from, to)}`;
 }
 
-// Encoding: per message (block, slot, frame, data length) as little-endian u32, then the data bytes; FNV-1a over all.
+/** Encoding: per message (block, slot, frame, data length) as little-endian u32, then the data bytes; FNV-1a over all. */
 export function midiDigest(entries: MidiOutEntry[]): { count: number; fnv: string } {
   let h = FNV_OFFSET;
   const word = new Uint8Array(4);
@@ -68,7 +68,7 @@ export function midiDigest(entries: MidiOutEntry[]): { count: number; fnv: strin
   return { count: entries.length, fnv: hex8(h) };
 }
 
-// Encoding: the length, plus FNV-1a over the bytes.
+/** Encoding: the length, plus FNV-1a over the bytes. */
 export function bytesDigest(bytes: Uint8Array): { length: number; fnv: string } {
   return { length: bytes.length, fnv: hex8(fnv1a(bytes)) };
 }
@@ -126,7 +126,7 @@ export function compareAudio(expected: CaseDigest, actual: CaseDigest): string[]
         return [
           `segment ${s} (frames ${start}..${start + e.frames}), lane ${l}: ` +
             `expected ${describe(e.lanes[l])}, got ${describe(a.lanes[l])}` +
-            (silent ? " (both silent: the sign of zero or a NaN payload differs)" : ""),
+            (silent ? " (both silent: only the sign of a zero differs)" : ""),
         ];
       }
     start += e.frames;

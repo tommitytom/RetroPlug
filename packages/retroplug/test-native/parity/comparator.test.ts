@@ -136,5 +136,5 @@ test("two silent lanes that differ say so", () => {
   const b = withSegs([{ frames: 2, lanes: [laneDigest(neg, 0, 2)] }]);
   const p = compareDigests(a, b, { audio: true });
   expect(p.length).toBe(1);
-  expect(p[0].endsWith(" (both silent: the sign of zero or a NaN payload differs)"), p[0]).toBeTruthy();
+  expect(p[0].endsWith(" (both silent: only the sign of a zero differs)"), p[0]).toBeTruthy();
 });
