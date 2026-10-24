@@ -53,18 +53,26 @@ void* allocate(std::size_t n, std::size_t align) {
     if (!p) throw std::bad_alloc();
     return p;
 }
+
+void* allocateOrNull(std::size_t n, std::size_t align) noexcept {
+    if (forbid) violations.fetch_add(1, std::memory_order_relaxed);
+    return rawAlloc(n, align);
+}
 }  // namespace
 
+// Every form is replaced, nothrow ones included: a form left to the runtime allocates through it (the
+// planner's aligned nothrow new, under ASan), and the replaced delete then frees what it never allocated.
 void* operator new(std::size_t n) { return allocate(n, alignof(std::max_align_t)); }
 void* operator new[](std::size_t n) { return allocate(n, alignof(std::max_align_t)); }
 void* operator new(std::size_t n, std::align_val_t a) { return allocate(n, static_cast<std::size_t>(a)); }
 void* operator new[](std::size_t n, std::align_val_t a) { return allocate(n, static_cast<std::size_t>(a)); }
-void* operator new(std::size_t n, const std::nothrow_t&) noexcept {
-    try {
-        return allocate(n, alignof(std::max_align_t));
-    } catch (...) {
-        return nullptr;
-    }
+void* operator new(std::size_t n, const std::nothrow_t&) noexcept { return allocateOrNull(n, alignof(std::max_align_t)); }
+void* operator new[](std::size_t n, const std::nothrow_t&) noexcept { return allocateOrNull(n, alignof(std::max_align_t)); }
+void* operator new(std::size_t n, std::align_val_t a, const std::nothrow_t&) noexcept {
+    return allocateOrNull(n, static_cast<std::size_t>(a));
+}
+void* operator new[](std::size_t n, std::align_val_t a, const std::nothrow_t&) noexcept {
+    return allocateOrNull(n, static_cast<std::size_t>(a));
 }
 void operator delete(void* p) noexcept { rawFree(p); }
 void operator delete[](void* p) noexcept { rawFree(p); }
@@ -73,6 +81,11 @@ void operator delete[](void* p, std::size_t) noexcept { rawFree(p); }
 void operator delete(void* p, std::align_val_t) noexcept { rawFree(p); }
 void operator delete[](void* p, std::align_val_t) noexcept { rawFree(p); }
 void operator delete(void* p, std::size_t, std::align_val_t) noexcept { rawFree(p); }
+void operator delete[](void* p, std::size_t, std::align_val_t) noexcept { rawFree(p); }
+void operator delete(void* p, const std::nothrow_t&) noexcept { rawFree(p); }
+void operator delete[](void* p, const std::nothrow_t&) noexcept { rawFree(p); }
+void operator delete(void* p, std::align_val_t, const std::nothrow_t&) noexcept { rawFree(p); }
+void operator delete[](void* p, std::align_val_t, const std::nothrow_t&) noexcept { rawFree(p); }
 
 using rp::graph::test::GraphRig;
 
