@@ -10,6 +10,7 @@
 //
 //   retroplug-host [--test] <bundle.js>
 
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -17,6 +18,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 #include "dpfjs/host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
@@ -46,6 +48,14 @@ JSValue jsExit(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (argc >= 1) JS_ToInt32(ctx, &code, argv[0]);
     g_exit.code = code;
     g_exit.set = true;
+    return JS_UNDEFINED;
+}
+
+// Set by globalThis.__rp_keepAlive(): the test awaits work that outlasts the bounded spin in main().
+bool g_keepAlive = false;
+
+JSValue jsKeepAlive(JSContext*, JSValueConst, int, JSValueConst*) {
+    g_keepAlive = true;
     return JS_UNDEFINED;
 }
 
@@ -116,6 +126,7 @@ int main(int argc, char** argv) try {
         JS_SetPropertyStr(ctx, tjsObj, "exit", JS_NewCFunction(ctx, jsExit, "exit", 1));
         JS_FreeValue(ctx, tjsObj);
     }
+    JS_SetPropertyStr(ctx, global, "__rp_keepAlive", JS_NewCFunction(ctx, jsKeepAlive, "__rp_keepAlive", 0));
 
     JS_FreeValue(ctx, global);
 
@@ -129,6 +140,15 @@ int main(int argc, char** argv) try {
     // Drive the job loop until the harness's microtask + tests run and call tjs.exit
     // (ES modules evaluate async in QuickJS, so the module body itself runs here). Bounded.
     for (int i = 0; i < 20000 && !g_exit.set; ++i) host.pump();
+
+    // A test that awaits real work - a parity recording runs each case alone in a child process - says so
+    // with __rp_keepAlive(), and is pumped until it exits, bounded by the wall clock. Asking is required:
+    // txiki keeps a handle of its own alive, so "the loop still has work" would also hold a hung test.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(30);
+    while (g_keepAlive && !g_exit.set && std::chrono::steady_clock::now() < deadline) {
+        host.pump();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
 
     if (!g_exit.set) {
         std::fprintf(stderr, "tests did not complete (tjs.exit never called)\n");

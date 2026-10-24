@@ -114,6 +114,9 @@ async function runOne({ file, slug }) {
         __REPO_RESOURCES_DIR__: JSON.stringify(REPO_RESOURCES_DIR),
         __RISA_SRC__: JSON.stringify(RISA_SRC),
         __DSP_KERNEL_BUNDLE__: JSON.stringify(DSP_KERNEL_BUNDLE),
+        // The parity suite's baselines live beside its cases; a recording re-runs its own bundle per case.
+        __PARITY_DIR__: JSON.stringify(join(TEST_DIR, "parity").replaceAll("\\", "/")),
+        __SELF_BUNDLE__: JSON.stringify(outFile.replaceAll("\\", "/")),
       },
     });
   } catch (e) {
