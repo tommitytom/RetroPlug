@@ -279,6 +279,19 @@ std::size_t GraphHost::reclaim() {
                      static_cast<unsigned>(leaked - leaksReported_));
         leaksReported_ = leaked;
     }
+    // A fault likewise: the executor only flags the node and counts it. Each faulted node still in the graph
+    // is named once; one already gone (replaced or removed since) is in the count alone.
+    if (const auto faults = faultCount(); faults != faultsReported_) {
+        std::string names;
+        for (auto& [id, inst] : live_) {
+            if (inst->faultReported || !inst->faulted.load(std::memory_order_relaxed)) continue;
+            inst->faultReported = true;
+            names += (names.empty() ? "" : ", ") + id;
+        }
+        std::fprintf(stderr, "[graph] %u node(s) faulted, bypassed from now on%s%s\n",
+                     static_cast<unsigned>(faults - faultsReported_), names.empty() ? "" : ": ", names.c_str());
+        faultsReported_ = faults;
+    }
     return n;
 }
 

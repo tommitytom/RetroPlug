@@ -53,7 +53,7 @@ struct Engine::Graph {
     rp::host::EngineKernel                 kernel{};
     std::unique_ptr<rp::graph::GraphHost>  host;
     std::unique_ptr<rp::host::Translator>  translator;
-    std::uint32_t                          maxFrames = 8192;  // the matrix's largest block (B0 section 4)
+    std::uint32_t                          maxFrames = kDefaultMaxBlockFrames;
 };
 
 Engine::Engine(double sampleRate) : sampleRate_(sampleRate) {
@@ -114,7 +114,17 @@ void Engine::drainCommands() { graph_->host->drain(); }
 
 void Engine::setAudioThreadOwns(bool owns) { graph_->host->setAudioThreadOwns(owns); }
 
-std::size_t Engine::reclaim() { return graph_->host->reclaim(); }
+std::size_t Engine::reclaim() {
+    const std::size_t n = graph_->host->reclaim();
+    // The block thread only counts a block too long to run (it must not log); say so here, once per new one.
+    if (const auto seen = oversizedBlocks_.load(std::memory_order_acquire); seen != oversizedReported_) {
+        std::fprintf(stderr, "[engine] %u block(s) longer than the plan's %u frames rendered silence (the last was %u frames)\n",
+                     static_cast<unsigned>(seen - oversizedReported_), static_cast<unsigned>(graph_->maxFrames),
+                     static_cast<unsigned>(oversizedFrames_.load(std::memory_order_relaxed)));
+        oversizedReported_ = seen;
+    }
+    return n;
+}
 
 void Engine::discardPending() { graph_->host->discardPending(); }
 
@@ -139,13 +149,16 @@ const rp::host::SystemTable& Engine::currentTable() const {
     return t ? *t : kNoSystems;
 }
 
-void Engine::onHostCommand(void* ctx, const rp::graph::HostCommand& cmd, const void*, bool discard) {
+void Engine::onHostCommand(void* ctx, const rp::graph::HostCommand& cmd, const void* hostData, bool discard) {
     static_assert(sizeof(DspCommand) <= rp::graph::kHostCommandBytes, "a DspCommand rides the ring as a HostCommand");
     static_assert(std::is_trivially_copyable_v<DspCommand>, "a DspCommand is copied as bytes");
     DspCommand c;
     std::memcpy(&c, cmd.bytes, sizeof c);
     if (!discard) {
-        static_cast<Engine*>(ctx)->applyCommand(c);
+        // Against the table it was handed, the plan current at this point of the drain, never through
+        // currentTable(): a handler must not call back into the GraphHost.
+        const auto* table = static_cast<const rp::host::SystemTable*>(hostData);
+        static_cast<Engine*>(ctx)->applyCommand(c, table ? *table : kNoSystems);
         return;
     }
     switch (c.kind) {  // dropped at teardown (QueuedInvoker::freePending): free what it owns, never apply it
@@ -158,9 +171,13 @@ void Engine::onHostCommand(void* ctx, const rp::graph::HostCommand& cmd, const v
     }
 }
 
-// Every kind that rides the ring, SyncTap included. Structure never arrives here: the translator turns it
-// into plans.
-void Engine::applyCommand(DspCommand& cmd) {
+// Every kind that rides the ring, SyncTap included, a per-system one aimed at the core `table` names. Structure
+// never arrives here: the translator turns it into plans.
+void Engine::applyCommand(DspCommand& cmd, const rp::host::SystemTable& table) {
+    auto core = [&](std::uint32_t id) -> SystemBase* {
+        const auto* e = table.find(id);
+        return e ? e->core : nullptr;
+    };
     switch (cmd.kind) {
         case DspCommand::Kind::SetSystems:
             setSystems(std::vector<std::uint8_t>(cmd.setSystems.json->begin(), cmd.setSystems.json->end()));
@@ -183,39 +200,39 @@ void Engine::applyCommand(DspCommand& cmd) {
             break;
         case DspCommand::Kind::StageSystemMidi:
             if (cmd.stageSystemMidi.ext) {
-                stageSystemMidi(cmd.stageSystemMidi.id, cmd.stageSystemMidi.ext->data(), cmd.stageSystemMidi.ext->size());
+                stageSystemMidi(core(cmd.stageSystemMidi.id), cmd.stageSystemMidi.ext->data(), cmd.stageSystemMidi.ext->size());
                 delete cmd.stageSystemMidi.ext;
             } else {
-                stageSystemMidi(cmd.stageSystemMidi.id, cmd.stageSystemMidi.data, cmd.stageSystemMidi.len);
+                stageSystemMidi(core(cmd.stageSystemMidi.id), cmd.stageSystemMidi.data, cmd.stageSystemMidi.len);
             }
             break;
         case DspCommand::Kind::SetBpm:          setBpm(cmd.setBpm.value); break;
         case DspCommand::Kind::SetTransport:    setTransport(cmd.setTransport.value); break;
         case DspCommand::Kind::SetPpq:          setPpq(cmd.setPpq.value); break;
         case DspCommand::Kind::SetConfigField:
-            applyConfigField(cmd.setConfigField.id, cmd.setConfigField.field, cmd.setConfigField.value);
+            applyConfigField(core(cmd.setConfigField.id), cmd.setConfigField.field, cmd.setConfigField.value);
             break;
         case DspCommand::Kind::PressButton:
-            pressButton(cmd.pressButton.id, cmd.pressButton.button, cmd.pressButton.down);
+            if (SystemBase* sys = core(cmd.pressButton.id))
+                sys->pressButton(cmd.pressButton.button, cmd.pressButton.down);  // spread across the block in onProcess
             break;
         case DspCommand::Kind::WriteRam:
-            writeRam(cmd.writeRam.id, cmd.writeRam.offset, *cmd.writeRam.bytes);
+            writeRam(core(cmd.writeRam.id), cmd.writeRam.offset, *cmd.writeRam.bytes);
             delete cmd.writeRam.bytes;
             break;
         case DspCommand::Kind::SyncTap:
-            syncTap(static_cast<rp::host::AudioRouting>(cmd.syncTap.routing));
+            syncTap(static_cast<rp::host::AudioRouting>(cmd.syncTap.routing), table);
             break;
         default:
             break;
     }
 }
 
-// The NES tap arming at every structural change, against the plan just adopted (design section 3.2):
+// The NES tap arming at every structural change, against `table`, the plan just adopted (design section 3.2):
 // restore whatever was armed, then arm the mode the routing wants. It runs even when the wanted mode is
 // unchanged, and each run resets the capture streams. A core that has gone (removed, or replaced under
 // its id or a new one) is not restored, and its record is dropped.
-void Engine::syncTap(rp::host::AudioRouting routing) {
-    const rp::host::SystemTable& table = currentTable();
+void Engine::syncTap(rp::host::AudioRouting routing, const rp::host::SystemTable& table) {
     if (armedTap_.active) {
         if (const auto* e = table.find(armedTap_.id); e && e->nes == armedTap_.core)
             e->nes->setChannelExportMode(armedTap_.prevMode);
@@ -324,12 +341,18 @@ void Engine::runKernelStage(std::uint32_t frames) {
 
 // The translator's host shape decides who goes where: the caller set it before rendering.
 void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size_t numOutputs) {
+    // An empty block runs nothing, and the tail must not either: the cores never ran, so the MI.OUT gather
+    // would collect the last block's log a second time. There are no frames to silence.
+    if (frames == 0) return;
     // Longer than the plan's buffers: the GraphHost would refuse it, so nothing runs, and the tail must not
     // either (no MI.OUT gather of a log the cores never cleared, no publish, no ppq advance). A host that
-    // reported its block size (setMaxBlockFrames) never gets here.
+    // reported its block size (setMaxBlockFrames) never gets here; one that did not is counted, for
+    // reclaim() to report on the control thread.
     if (frames > graph_->maxFrames) {
         for (std::size_t c = 0; c < numOutputs; ++c)
             if (outputs[c]) std::memset(outputs[c], 0, frames * sizeof(float));
+        oversizedFrames_.store(frames, std::memory_order_relaxed);
+        oversizedBlocks_.fetch_add(1, std::memory_order_release);
         return;
     }
     blockTracing_ = syncTrace_.beginBlock(frames, sampleRate_, bpm_, ppq_, transport_);
@@ -379,10 +402,8 @@ std::size_t Engine::ramSize(SystemId id) {
     return registry_.ramSize(id);     // published copy, like readRam - no live core
 }
 
-bool Engine::writeRam(SystemId id, std::uint32_t offset, const std::vector<std::uint8_t>& bytes) {
-    if (bytes.empty()) return false;
-    SystemBase* sys = findSystem(id);
-    if (!sys) return false;
+bool Engine::writeRam(SystemBase* sys, std::uint32_t offset, const std::vector<std::uint8_t>& bytes) {
+    if (bytes.empty() || !sys) return false;
     // ReadWrite, so a backend with a read-only RAM view reports failure rather than silently dropping
     // the poke into a copy nobody reads.
     auto acc = sys->getMemory(rp::MemoryType::Ram, rp::AccessType::ReadWrite);
@@ -436,17 +457,8 @@ EngineFrame Engine::getFrame(SystemId id) {
     return out;
 }
 
-bool Engine::pressButton(SystemId id, std::uint8_t button, bool down) {
-    SystemBase* sys = findSystem(id);
-    if (!sys) return false;
-    sys->pressButton(button, down);  // spread across the block in onProcess
-    return true;
-}
-
-bool Engine::stageSystemMidi(SystemId id, const std::uint8_t* bytes, std::size_t len) {
-    if (!bytes || len == 0) return false;
-    SystemBase* sys = findSystem(id);
-    if (!sys) return false;
+bool Engine::stageSystemMidi(SystemBase* sys, const std::uint8_t* bytes, std::size_t len) {
+    if (!bytes || len == 0 || !sys) return false;
     // Frame 0: a knob has no musical position, exactly as stageControllerMidi argues for a pad press.
     //
     // pushCoreBytes, not onMidi, and the difference is load-bearing: onMidi is the MIDI-FRAMED door, and the
@@ -470,8 +482,7 @@ bool Engine::stageSystemMidi(SystemId id, const std::uint8_t* bytes, std::size_t
     return true;
 }
 
-void Engine::applyConfigField(SystemId id, std::uint8_t field, double value) {
-    SystemBase* sys = findSystem(id);
+void Engine::applyConfigField(SystemBase* sys, std::uint8_t field, double value) {
     if (!sys) return;
 
     // The two UNIVERSAL settings apply to every backend through the base interface — they must run

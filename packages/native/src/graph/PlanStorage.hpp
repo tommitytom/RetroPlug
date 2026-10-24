@@ -56,6 +56,7 @@ struct Instance {
     // Set by the executor (audio thread) when the node faults; it survives every later plan swap, which
     // is what keeps a wedged node bypassed. Read by GraphHost::isFaulted on the control thread.
     std::atomic<bool>                         faulted{false};
+    bool                                      faultReported = false;  // control side: GraphHost::reclaim named it
 
     Instance() = default;
     Instance(const Instance&) = delete;

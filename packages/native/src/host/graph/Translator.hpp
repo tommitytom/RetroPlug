@@ -85,7 +85,7 @@ public:
     bool remove(SystemId id);
     bool setRouting(AudioRouting mode);
     bool setLinkGroup(SystemId id, std::uint8_t group);  // a no-op when unchanged
-    bool setShape(HostShape shape);                        // a no-op when unchanged
+    bool setShape(HostShape shape);                        // a no-op when unchanged; false for Multi(0)
 
     AudioRouting routing() const { return routing_; }
     const HostShape& shape() const { return shape_; }

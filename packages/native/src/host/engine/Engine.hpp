@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -50,9 +51,14 @@ struct EngineFrame {
 // kernel, the staged MIDI and the snapshot registry. Structure reaches it through the translator on the
 // control thread, which plans each change as a graph document; every other edit is a command on the
 // GraphHost's one ring, applied at the next drain. A removed core is freed on the control thread, with
-// the plan that last ran it. No atomics: transport and ppq are set per block by whoever drives it.
+// the plan that last ran it. Transport and ppq are plain members, set per block by whoever drives it; the
+// only atomics count the blocks too long to run, which the audio thread may not log.
 class Engine {
 public:
+    // The block size the plan starts at, the matrix's largest (B0 section 4). A render never grows it, so
+    // its blocks must fit; a host grows it to its own maximum with setMaxBlockFrames.
+    static constexpr std::uint32_t kDefaultMaxBlockFrames = 8192;
+
     explicit Engine(double sampleRate = 44100.0);
     ~Engine();
 
@@ -132,7 +138,7 @@ public:
     void processBlock(std::uint32_t frames, float* const* outputs, std::size_t numOutputs);
     void processBlock(std::uint32_t frames, float* outL, float* outR);
 
-    // --- live-state reads / direct mutation (valid only on the Engine's owning thread) ---
+    // --- live-state reads (valid only on the Engine's owning thread; a mutation arrives as a command) ---
     std::optional<std::vector<std::uint8_t>> readState(SystemId id);
     std::optional<std::vector<std::uint8_t>> readSram(SystemId id);
     // Work RAM (WRAM), from the registry's per-block published copy — safe while the audio thread runs,
@@ -144,23 +150,6 @@ public:
     // The system's latest video frame (raw XRGB8888). Reads the concurrent FrameBufferTriple, so it is
     // safe while the audio thread writes; width/height are 0 (published false) for an unknown system.
     EngineFrame getFrame(SystemId id);
-    bool pressButton(SystemId id, std::uint8_t button, bool down);
-    // Hand `len` MIDI bytes straight to ONE system's ingress, skipping the routing kernel. For CONTROL
-    // traffic the UI aims at a specific cart (a settings knob), which must not depend on how the project
-    // routes musical MIDI. False when there is no such system. See DspCommand::stageSystemMidi.
-    bool stageSystemMidi(SystemId id, const std::uint8_t* bytes, std::size_t len);
-
-    // Audio-thread: poke bytes into a system's work RAM. `offset` indexes the SAME region readRam
-    // returns, so read-modify-write round-trips without a coordinate conversion. Applied between
-    // blocks via the invoker, never from the calling thread - which is what separates it from the
-    // debug facet's writeCpu (a live-core write, valid only when the audio thread is stopped).
-    //
-    // Deliberately unguarded beyond bounds: writing a running core's RAM CAN confuse it, because the
-    // emulated program has its own invariants over those bytes. That is the point of the feature.
-    bool writeRam(SystemId id, std::uint32_t offset, const std::vector<std::uint8_t>& bytes);
-    // Apply a live config edit to a system (SameBoy-only cast today). Value-guarded per field so a
-    // whole-config re-send only acts on what changed (no spurious model restart).
-    void applyConfigField(SystemId id, std::uint8_t field, double value);
 
     // The owned snapshot store the control plane reads through. Claim a slot at build, release it
     // when the core is deleted; processBlock publishes into it.
@@ -171,9 +160,10 @@ public:
     bool pushCommand(const DspCommand& c);          // control thread: false when the ring is full
     void drainCommands();                           // the block thread (or the control thread, quiescent)
     void setAudioThreadOwns(bool owns);
-    std::size_t reclaim();                          // control thread
+    // Control thread. Also where the blocks processBlock refused as too long are reported, once per new one.
+    std::size_t reclaim();
     void discardPending();                          // teardown, the audio thread stopped
-    // Grow the plan's block size to a host's maximum (never below 8192, the matrix's largest). Quiescent.
+    // Grow the plan's block size to a host's maximum (never below kDefaultMaxBlockFrames). Quiescent.
     void setMaxBlockFrames(std::uint32_t frames);
     // Re-arm the NES tap for an edit that re-arms without a plan (a remove or replace of an id already gone):
     // a SyncTap behind everything pushed so far. A plan's own SyncTap rides in its swap. Control thread.
@@ -181,13 +171,33 @@ public:
 
 private:
     struct Graph;
-    // The running plan's systems (an empty table before the first plan).
+    // The running plan's systems (an empty table before the first plan), for everything but the host-command
+    // handler: the kernel stage and the tail on the block thread, and the control thread's readers. The
+    // handler is handed its plan's table instead, and threads that through.
     const rp::host::SystemTable& currentTable() const;
     void runKernelStage(std::uint32_t frames);     // rp.dsp.kernel's body
-    void applyCommand(DspCommand& c);
-    void syncTap(rp::host::AudioRouting routing);
+    void applyCommand(DspCommand& c, const rp::host::SystemTable& table);
+    void syncTap(rp::host::AudioRouting routing, const rp::host::SystemTable& table);
     static const void* graphInterface(void* ctx, const char* id);
     static void onHostCommand(void* ctx, const rp::graph::HostCommand& cmd, const void* hostData, bool discard);
+
+    // --- the per-system commands, applied by applyCommand to the core its table names (false, or nothing,
+    // when it names none) ---
+    // Hand `len` MIDI bytes straight to ONE system's ingress, skipping the routing kernel. For CONTROL
+    // traffic the UI aims at a specific cart (a settings knob), which must not depend on how the project
+    // routes musical MIDI. See DspCommand::stageSystemMidi.
+    bool stageSystemMidi(SystemBase* sys, const std::uint8_t* bytes, std::size_t len);
+    // Poke bytes into a system's work RAM. `offset` indexes the SAME region readRam returns, so
+    // read-modify-write round-trips without a coordinate conversion. Applied between blocks via the
+    // invoker, never from the calling thread - which is what separates it from the debug facet's writeCpu
+    // (a live-core write, valid only when the audio thread is stopped).
+    //
+    // Deliberately unguarded beyond bounds: writing a running core's RAM CAN confuse it, because the
+    // emulated program has its own invariants over those bytes. That is the point of the feature.
+    bool writeRam(SystemBase* sys, std::uint32_t offset, const std::vector<std::uint8_t>& bytes);
+    // Apply a live config edit to a system. Value-guarded per field so a whole-config re-send only acts on
+    // what changed (no spurious model restart).
+    void applyConfigField(SystemBase* sys, std::uint8_t field, double value);
 
     // The NES tap syncTap() armed, and what its export mode was BEFORE we touched it. Restored before
     // every re-resolve so leaving a split mode (or gaining a second system) puts the core back exactly as
@@ -224,6 +234,12 @@ private:
     // Optional external mirror of the core-bytes stream (set by the standalone to reach a physical N8);
     // null in every other host. Called on the audio thread, so the target must be RT-safe (N8Link is).
     std::function<void(std::uint32_t, const std::uint8_t*, std::size_t, bool)> coreByteSink_;
+
+    // Blocks processBlock refused as longer than the plan's buffers, and the length of the last one: counted
+    // on the block thread, reported by reclaim() on the control thread (oversizedReported_ is its side).
+    std::atomic<std::uint32_t> oversizedBlocks_{0};
+    std::atomic<std::uint32_t> oversizedFrames_{0};
+    std::uint32_t              oversizedReported_ = 0;
 
     // Last, so it goes first: its system nodes release their snapshot slots into registry_ as they go.
     std::unique_ptr<Graph> graph_;

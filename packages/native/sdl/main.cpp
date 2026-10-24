@@ -1214,7 +1214,9 @@ void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels, 
     a.reqOutputDevice = device;
     a.svc.engine.setSampleRate(sampleRate); // re-rate live cores (safe — audio stopped)
     openAudio(a);                       // opens a real stream, or leaves it muted (numOutputs still sized)
-    a.svc.invoker.setHostShape({rp::host::HostShape::Kind::Multi, static_cast<std::uint32_t>(a.numOutputs)});
+    if (!a.svc.invoker.setHostShape({rp::host::HostShape::Kind::Multi, static_cast<std::uint32_t>(a.numOutputs)}))
+        std::fprintf(stderr, "[retroplug-sdl] the %d-output host shape did not plan; the outputs keep the shape before it\n",
+                     a.numOutputs);
     a.svc.engine.setMaxBlockFrames(static_cast<std::uint32_t>(a.reqBlockSize));
     a.svc.invoker.setAudioThreadOwns(true);
     startAudio(a);                      // Pa_StartStream, or start the headless fallback pump
@@ -1652,7 +1654,9 @@ int main(int argc, char** argv) {
 
     // Hand the Engine to the audio thread (control-plane edits become push-only, drained per block) then start
     // it. Mirrors PluginDSP::activate. startAudio runs the PortAudio stream, or the fallback pump when muted.
-    app.svc.invoker.setHostShape({rp::host::HostShape::Kind::Multi, static_cast<std::uint32_t>(app.numOutputs)});
+    if (!app.svc.invoker.setHostShape({rp::host::HostShape::Kind::Multi, static_cast<std::uint32_t>(app.numOutputs)}))
+        std::fprintf(stderr, "[retroplug-sdl] the %d-output host shape did not plan; the outputs keep the shape before it\n",
+                     app.numOutputs);
     app.svc.engine.setMaxBlockFrames(static_cast<std::uint32_t>(app.reqBlockSize));
     app.svc.invoker.setAudioThreadOwns(true);
 #if defined(__linux__)
@@ -1714,9 +1718,13 @@ int main(int argc, char** argv) {
     // channel count — proves the N-channel device open + planar multi-out render + interleave stride.
     if (const char* env = std::getenv("RETROPLUG_SDL_TEST_MULTIOUT")) {
         const int ch = std::atoi(env);
-        reconfigureAudio(app, app.reqSampleRate, app.reqBlockSize, ch, app.reqHostApi, app.reqOutputDevice);
-        std::fprintf(stderr, "[retroplug-sdl] post-multiout: numOutputs=%d planarBufs=%zu stream=%s\n",
-                     app.numOutputs, app.audioPlanar.size(), app.audioStream ? "open" : "muted");
+        if (ch > 0) {
+            reconfigureAudio(app, app.reqSampleRate, app.reqBlockSize, ch, app.reqHostApi, app.reqOutputDevice);
+            std::fprintf(stderr, "[retroplug-sdl] post-multiout: numOutputs=%d planarBufs=%zu stream=%s\n",
+                         app.numOutputs, app.audioPlanar.size(), app.audioStream ? "open" : "muted");
+        } else {
+            std::fprintf(stderr, "[retroplug-sdl] RETROPLUG_SDL_TEST_MULTIOUT=%s ignored: not a channel count\n", env);
+        }
     }
 
     // Test hook: exercise the window resize path (SDL window + LVGL display/buffer + texture) headlessly,

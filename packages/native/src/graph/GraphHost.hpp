@@ -124,6 +124,7 @@ public:
     // size, the old plan keeps running, and a node that will not come back either is bypassed as faulted.
     bool reactivate(double sampleRate, std::uint32_t maxFrames, std::string* error = nullptr);
     rp_node*      node(std::string_view id) const;
+    // Nodes faulted so far, each counted once. reclaim() logs new ones, naming each still in the graph.
     std::uint32_t faultCount() const { return faults_.load(std::memory_order_relaxed); }
     // Has this node faulted (and so been bypassed since)? False for an unknown id.
     bool          isFaulted(std::string_view id) const;
@@ -174,14 +175,18 @@ private:
     bool        publish(PlanOutcome& outcome, const GraphDocument& document, const HostCommand* trailer = nullptr);
     void        markFaulted(Instance& inst);
 
+    // Named rather than read back off commands_: a decltype of a non-static member inside the class body
+    // has been fragile under MSVC.
+    static constexpr std::size_t kCommandCapacity = 256;
+
     const NodeRegistry&                                   registry_;
     ResourceTable&                                        resources_;
     HostConfig                                            config_;
     rp_host                                               host_{};
-    SpscRing<Command, 256>                                commands_;
+    SpscRing<Command, kCommandCapacity>                   commands_;
     // Deeper than the command ring: a drain can adopt every queued swap and release all but the last, on
     // top of the plan they replaced (see leakedPlans()).
-    SpscRing<PlanStorage*, 2 * decltype(commands_)::kCapacity> released_;
+    SpscRing<PlanStorage*, 2 * kCommandCapacity>          released_;
     std::atomic<bool>                                     audioOwns_{false};
     // Published plans carrying a settings commit that the audio thread has not finished adopting.
     std::atomic<std::uint32_t>                            commitsInFlight_{0};
@@ -190,6 +195,7 @@ private:
     std::atomic<std::uint32_t>                            faults_{0};
     std::atomic<std::uint32_t>                            leakedPlans_{0};
     std::uint32_t                                         leaksReported_ = 0;  // control side
+    std::uint32_t                                         faultsReported_ = 0; // control side
     PlanStorage*                                          current_ = nullptr;  // audio side
     GraphDocument                                         document_;           // control side: last published
     std::shared_ptr<const void>                           hostData_;           // control side: its host data

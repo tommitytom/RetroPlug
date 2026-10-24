@@ -304,7 +304,10 @@ change that does not plan leaves the model as it was.
   | `PerSystem` | `renderAudioPerSystem` | slot i's mix on channels `2i`, `2i + 1` |
   | `PerChannel` | `renderAudioPerChannel` (one system) | stream s on channels `2s`, `2s + 1`; a mono stream fills only `2s` |
 
-  The render RPCs set their shape before rendering and refuse while the audio thread owns the engine.
+  The render RPCs set their shape before rendering and refuse while the audio thread owns the engine,
+  or when `setHostShape` answers that the shape did not plan (`PerSystem` past 32 systems, the most
+  buses `rp.host.audio-out` takes), since the shape before it would still be running. `Multi(0)` is
+  refused outright: its placement is modulo the channel count.
 - **Cores.** The translator parks each core it is handed under a fresh token, which goes in its
   node's settings (`{ "core": <token> }`); the node takes it on first activation through the host
   service `rp.host.cores/1` ([HostServices.hpp](../packages/native/src/host/graph/HostServices.hpp))

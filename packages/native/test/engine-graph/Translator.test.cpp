@@ -232,6 +232,21 @@ TEST_CASE("PerSystem and PerChannel lay the shapes the render calls want", "[eng
     CHECK(r.buses() == std::vector<std::uint32_t>(10, 1));
 }
 
+TEST_CASE("a Multi shape with no channels is refused before a document is built", "[engine-graph][translator]") {
+    // Every placement is modulo the channel count, so building one would divide by zero.
+    Rig r;
+    REQUIRE(r.t.add(gb(1)));
+    REQUIRE(r.t.add(gb(2)));
+    for (AudioRouting mode : {AudioRouting::Stereo, AudioRouting::TwoPerInstance, AudioRouting::OnePerInstance}) {
+        REQUIRE(r.t.setRouting(mode));
+        const std::size_t built = r.docs.size();
+        CHECK_FALSE(r.t.setShape({HostShape::Kind::Multi, 0}));
+        CHECK(r.docs.size() == built);
+        CHECK(r.t.shape() == HostShape{HostShape::Kind::Multi, 2});
+    }
+    CHECK(r.t.setShape({HostShape::Kind::Multi, 1}));  // one channel is a host shape
+}
+
 TEST_CASE("replace keeps the slot; a refused plan leaves the model as it was", "[engine-graph][translator]") {
     Rig r;
     REQUIRE(r.t.add(gb(1)));

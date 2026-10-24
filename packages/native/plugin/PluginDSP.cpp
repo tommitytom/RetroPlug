@@ -268,7 +268,11 @@ protected:
         // Hand the Engine to the DPF audio thread: from here every control-plane edit is push-only,
         // drained by run() each block. (Set BEFORE the host starts calling run(); the quiescent path
         // flushed every push, so the command ring is empty at this handoff.) Then report PDC latency.
-        svc_.invoker.setHostShape({rp::host::HostShape::Kind::Multi, DISTRHO_PLUGIN_NUM_OUTPUTS});
+        // A shape that does not plan keeps the one before it (outs 1/2 only, before the first activate);
+        // the engine has logged why.
+        if (!svc_.invoker.setHostShape({rp::host::HostShape::Kind::Multi, DISTRHO_PLUGIN_NUM_OUTPUTS}))
+            d_stderr("[retroplug] the %u-output host shape did not plan; the outputs keep the shape before it",
+                     static_cast<unsigned>(DISTRHO_PLUGIN_NUM_OUTPUTS));
         svc_.engine.setMaxBlockFrames(getBufferSize());
         svc_.invoker.setAudioThreadOwns(true);
         updateLatency();

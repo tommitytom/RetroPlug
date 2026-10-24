@@ -199,9 +199,9 @@ Structural calls never ride the ring as commands. `adoptSystem` / `replaceSystem
 against the plan just adopted
 ([10-multichannel-audio-out.md](10-multichannel-audio-out.md) section 4). The `LinkGroup` config field
 goes both ways: the field reaches the core as a command, and the translator rewires the cable.
-`setHostShape` goes to the translator alone. A change that does not plan (a refused document, or a
-full ring) leaves the translator's model as it was, and a core that was handed in is freed with its
-registry slot.
+`setHostShape` goes to the translator alone, and answers whether its shape planned. A change that does
+not plan (a refused document, or a full ring) leaves the translator's model as it was, and a core that
+was handed in is freed with its registry slot.
 
 The handler (`Engine::onHostCommand` → `applyCommand`) switches on `DspCommand::Kind`, applies each
 command and deletes its owning payload. The block drivers (the plugin's `run()`, the test host's

@@ -245,7 +245,8 @@ bool EngineRpcService::stageSystemMidi(std::uint32_t id, std::vector<std::uint8_
 rfl::Bytestring EngineRpcService::renderAudio(double ms) {
     // This thread calls processBlock itself, which only the Engine's owning thread may do.
     if (ms <= 0.0 || invoker_.audioThreadOwns()) return {};
-    invoker_.setHostShape({rp::host::HostShape::Kind::Multi, 2});
+    // A shape that does not plan leaves the last one running, which these buffers do not match.
+    if (!invoker_.setHostShape({rp::host::HostShape::Kind::Multi, 2})) return {};
     scratchL_.resize(kBlockSize);  // idempotent — no per-call realloc after the first
     scratchR_.resize(kBlockSize);
 
@@ -272,7 +273,9 @@ std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerSystem(double ms) {
     if (ms <= 0.0 || invoker_.audioThreadOwns()) return result;  // as renderAudio
     const std::size_t n = engine_.systemCount();
     if (n == 0) return result;
-    invoker_.setHostShape({rp::host::HostShape::Kind::PerSystem, 0});
+    // More systems than rp.host.audio-out has buses for (32) do not plan, and rendering anyway would fill
+    // these lanes from the previous shape's wiring.
+    if (!invoker_.setHostShape({rp::host::HostShape::Kind::PerSystem, 0})) return result;
 
     // One persistent L/R block buffer per system; the PerSystem shape routes each core into its own pair,
     // so linked systems interleave exactly as they do in the mixed path.
@@ -319,7 +322,7 @@ std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerChannel(std::uint32
     // The target's output streams (Game Boy = 4 stereo: Pulse 1/Pulse 2/Wave/Noise; default = 1 "Mix").
     const std::size_t n = sys->channelLayout().size();
     if (n == 0) return result;
-    invoker_.setHostShape({rp::host::HostShape::Kind::PerChannel, 0});
+    if (!invoker_.setHostShape({rp::host::HostShape::Kind::PerChannel, 0})) return result;  // as renderAudio
 
     // One persistent L/R block buffer per stream; the PerChannel shape routes each stream into its own pair.
     std::vector<std::vector<float>> bl(n, std::vector<float>(kBlockSize));
@@ -479,7 +482,9 @@ std::vector<RpcMidiOut> EngineRpcService::drainMidiOut() {
 
 namespace {
 
-constexpr std::uint32_t kMaxRenderBlockFrames = 8192;
+// The plan's own block size: a render never grows it (Engine::setMaxBlockFrames), so a longer block would
+// render silence.
+constexpr std::uint32_t kMaxRenderBlockFrames = Engine::kDefaultMaxBlockFrames;
 
 // Why renderBlocks refuses `req`, or empty. Checked whole before anything renders, so a refused request
 // leaves the Engine exactly as it was.
@@ -523,7 +528,10 @@ RpcRenderBlocksResult EngineRpcService::renderBlocks(RpcRenderBlocksRequest req)
     result.error = renderBlocksRefusal(req);
     if (!result.error.empty()) return result;
 
-    invoker_.setHostShape({rp::host::HostShape::Kind::Multi, req.outputs});
+    if (!invoker_.setHostShape({rp::host::HostShape::Kind::Multi, req.outputs})) {
+        result.error = "the graph did not plan for " + std::to_string(req.outputs) + " outputs";
+        return result;
+    }
     std::uint64_t total = 0;
     for (const RpcRenderBlock& b : req.blocks) total += b.frames;
     // Whole-run planar lanes, zero-filled; each block renders straight into its slice of the result.

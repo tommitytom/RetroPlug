@@ -11,7 +11,7 @@
 
 bool QueuedInvoker::push(const DspCommand& c) { return engine_->pushCommand(c); }
 
-void QueuedInvoker::setHostShape(rp::host::HostShape shape) { engine_->translator().setShape(shape); }
+bool QueuedInvoker::setHostShape(rp::host::HostShape shape) { return engine_->translator().setShape(shape); }
 
 // Add, replace, remove and set-routing re-arm the NES tap. One that plans carries its SyncTap in the plan's
 // swap; one refused changes nothing, so it re-arms nothing either. An id already gone plans nothing, and

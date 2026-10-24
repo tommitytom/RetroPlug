@@ -57,8 +57,10 @@ public:
     void applyConfigField(SystemId id, std::uint8_t field, double value);
     void pressButton(SystemId id, std::uint8_t button, bool down);
     void writeRam(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes);
-    // The output shape the next blocks render into. The render calls set it before they render.
-    void setHostShape(rp::host::HostShape shape);
+    // The output shape the next blocks render into. The render calls set it before they render. True when
+    // it is planned (or already current); false when it does not plan (more systems than the host's outputs
+    // have buses for, say), and the shape before it keeps running, so a caller must not render as if it held.
+    bool setHostShape(rp::host::HostShape shape);
 
     // consumer: apply every queued command (the block thread, or the control thread while quiescent).
     void drainInto(Engine& engine);

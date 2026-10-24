@@ -175,6 +175,8 @@ bool Translator::setLinkGroup(SystemId id, std::uint8_t group) {
 }
 
 bool Translator::setShape(HostShape shape) {
+    // Multi places systems modulo its channel count, so it needs at least one.
+    if (shape.kind == HostShape::Kind::Multi && shape.channels == 0) return false;
     if (shape == shape_) return true;
     const HostShape old = shape_;
     shape_ = shape;

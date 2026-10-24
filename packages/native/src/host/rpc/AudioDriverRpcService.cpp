@@ -3,6 +3,7 @@
 #include "host/graph/Translator.hpp"
 
 #include <chrono>
+#include <cstdio>
 #include <memory>
 #include <vector>
 
@@ -62,7 +63,8 @@ bool AudioDriverRpcService::startAudio() {
     // The quiescent path applied every push, so the ring is empty and the plan current: this live read is
     // accurate, and it's the last one before the audio thread takes over the count.
     liveSystemCount_.store(static_cast<std::uint32_t>(engine_.systemCount()), std::memory_order_relaxed);
-    invoker_.setHostShape({rp::host::HostShape::Kind::Multi, 2});  // the loop's stereo pair
+    if (!invoker_.setHostShape({rp::host::HostShape::Kind::Multi, 2}))  // the loop's stereo pair
+        std::fprintf(stderr, "[audio-driver] the stereo host shape did not plan; the loop keeps the shape before it\n");
     invoker_.setAudioThreadOwns(true);  // pushes become push-only BEFORE the thread spawns
     running_.store(true, std::memory_order_release);
     audioThread_ = std::thread([this] { audioLoop(); });
