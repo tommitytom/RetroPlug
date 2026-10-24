@@ -259,9 +259,10 @@ bool MesenGbaSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
     // 2 frames per 1024-sample block.
     //
     // Bounded, but be clear about what the bound is worth. The loop unit is a whole VIDEO FRAME, so a
-    // 1024-sample block needs 2 iterations and a cap of a few more is the only sane shape - SMS's
-    // instruction budget of 80000 would be ~22 minutes of emulated time here, decoration rather than a
-    // backstop. And the genuinely unbounded loop is not this one: GbaConsole::RunFrame is itself
+    // 1024-sample block needs 2 iterations and a cap of a few more is the only sane shape - an
+    // instruction budget like the flat 80000 SMS once used would be ~22 minutes of emulated time here,
+    // decoration rather than a backstop (SMS now derives its budget from the block, still counting
+    // instructions). And the genuinely unbounded loop is not this one: GbaConsole::RunFrame is itself
     // `while (frameCount == newCount) _cpu->Exec()`, inside the vendored core, where nothing we write
     // can reach it.
     //

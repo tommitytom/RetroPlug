@@ -286,7 +286,7 @@ JACK server + per-tag config dir / display / logs), which is also what makes the
 individual `reaper:*` scripts safe to run in parallel.
 
 **The parity baseline** (`pnpm test:native parity`, [spec/06-build-test.md](spec/06-build-test.md)) holds the
-engine's output to the BIT: 153 store-driven cases, each hashed per lane per segment plus MIDI out, SRAM
+engine's output to the BIT: 158 store-driven cases, each hashed per lane per segment plus MIDI out, SRAM
 and work RAM, against `test-native/parity/baseline/*.json`. Every other audio test asserts levels, which a
 refactor can move without failing one; this one fails on a single changed bit, so treat a parity failure as a
 real change to the audio, never as noise. Exact audio is compared only on `linux-x64-gnu13` (this devcontainer
@@ -298,7 +298,9 @@ fixed state (`RETROPLUG_DETERMINISTIC=1`, which the runner sets for `parity/` on
 scanline was the last source); mGB ignores MIDI for its first ~1.5 s, so a case sends nothing before
 `BOOT_MS`; and a second instance of one ROM path gets a fresh `-2.sav` battery slot, so two systems that each
 need a battery each need their own copy (`rig.rom(src, prefix)`). Four engine defects are pinned on purpose (design section 2.5 of [docs/modular-graph-phase-b0-design.md](docs/modular-graph-phase-b0-design.md)); fixing one is its own change with a re-record. The fixture groups need
-`RETROPLUG_RESOURCES_DIR` pointed at the sibling resources tree.
+`RETROPLUG_RESOURCES_DIR` pointed at the sibling resources tree, and CI runs only the 131 fixture-free cases
+(every MIDI-out, controller-in, link-cable, LSDj, risa and GBA case is fixture-only), so a Phase B step is
+accepted only on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`.
 
 **`retroplug-cli` as a consumer's whole test harness** (`pnpm test:cli-ts`):
 `retroplug-cli test <dir>` strips and runs a directory of `.ts` tests, and `run <session.ts>` does one

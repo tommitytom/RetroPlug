@@ -56,12 +56,14 @@ constexpr std::uint64_t kCoarseCycles = 19088;
 // by a whole coarse window.
 constexpr std::uint32_t kFineSamples = 64;
 
-// Backstop for the audio thread: the most instructions one block may execute.
-// MesenGbaSystem's loop has no cap at all; a ROM that stops producing audio
-// would spin it forever. DERIVED from the block, as MesenNesSystem's is: a flat
-// 80000 covered a 512-frame block ten times over but cut an 8192-frame block
-// short (a DAW buffer, and Reaper's render at a JACK period of 8192), so the core
-// fell behind the host clock and the tail of every block came out blank.
+// Backstop for the audio thread: the most instructions one block may execute,
+// so a ROM that stops producing audio cannot spin the loop forever. (GBA's loop
+// is bounded differently: MesenGbaSystem caps it by a count of VIDEO FRAMES,
+// since each of its iterations is a whole frame.) DERIVED from the block, as
+// MesenNesSystem's is: a flat 80000 covered a 512-frame block ten times over but
+// cut an 8192-frame block short (a DAW buffer, and Reaper's render at a JACK
+// period of 8192), so the core fell behind the host clock and the tail of every
+// block came out blank.
 // framesNeeded/sampleRate seconds is that many T-states at masterRate; a Z80
 // instruction is at least 4 of them; x8 is the slack.
 std::uint64_t smsInstructionBudget(std::uint32_t framesNeeded, std::uint64_t masterRate, double sampleRate) {

@@ -1,7 +1,8 @@
 // The parity rig: the app's own control plane (bootSession, the boot path the CLI and the render worker
 // share), reset to a known state before each case, and a render call that plays a segment through
 // renderBlocks. Cases drive it through the stores, as the UI does, so a case survives Phase B: B2 deletes
-// the backend calls the stores make today, not the stores. This is the one file B2 and B3 edit.
+// the backend calls the stores make today, not the stores. With bootSession, this is the one file B2 and
+// B3 edit (render-blocks.test.ts aside: it tests renderBlocks itself through direct backend calls).
 import { bootSession, type Session } from "../../src/bootSession";
 import type { RenderBlock } from "../../src/audioDriver";
 import { laneDigest, type MidiOutEntry, type SegmentDigest } from "./digest";

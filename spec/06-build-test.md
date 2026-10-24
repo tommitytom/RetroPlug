@@ -112,7 +112,7 @@ The `reaper:*` tiers are parallel too, by a different mechanism — see
 ### The parity baseline (`test-native/parity/`)
 
 Exact output, not levels. Every other audio test asserts RMS, peaks or timing tolerances, which a
-refactor can move without failing one. The parity suite renders 153 scripted cases on the real
+refactor can move without failing one. The parity suite renders 158 scripted cases on the real
 engine and records, per case, a hash of every output lane of every segment, the kernel's MIDI out, and
 each system's SRAM and work RAM at the end; one changed bit fails it. It is the gate Phase B of the
 modular graph engine is held to ([docs/modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md)).
@@ -121,7 +121,9 @@ modular graph engine is held to ([docs/modular-graph-phase-b0-design.md](../docs
   underneath. [parity/rig.ts](../packages/retroplug/test-native/parity/rig.ts) boots the app's own control
   plane and resets it before each case; [parity/scenes.ts](../packages/retroplug/test-native/parity/scenes.ts)
   holds the systems and stimuli the groups share; each `parity/<group>.test.ts` is a table of cases.
-- **Scenes use `rig.press` and `rig.writeFile`** for input and files, so B2 and B3 only edit `rig.ts`.
+- **Scenes use `rig.press` and `rig.writeFile`** for input and files, so B2 and B3 only edit `rig.ts` and
+  `bootSession` (plus `render-blocks.test.ts`, which tests `renderBlocks` itself through direct backend
+  calls).
 - **Rendering goes through `renderBlocks`**, a harness-facet driver call that repeats `PluginDSP::run`'s
   order for every host block: stage MIDI at its frame, drain the command ring, apply transport,
   `processBlock` at 2/4/6/8 lanes, take the MIDI out.
@@ -166,7 +168,10 @@ modular graph engine is held to ([docs/modular-graph-phase-b0-design.md](../docs
   decoded notes depend on the host sample rate. Details in design section 2.5
   ([modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md)).
 - LSDj, risa, nanoloop and the controller cases need the sibling fixtures (`RETROPLUG_RESOURCES_DIR`), so
-  those groups skip in CI, counted in the skip baseline.
+  those groups skip in CI, counted in the skip baseline. CI therefore runs only the 131 fixture-free cases
+  (every MIDI-out, controller-in, link-cable, LSDj, risa and GBA case is fixture-only), so a Phase B step is
+  accepted only on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`
+  (`RP_FAIL_ON_SKIP=1 RETROPLUG_RESOURCES_DIR=<resources> pnpm test:native parity`).
 
 | Tier | Backend under test | Command | Runner | Test dir |
 |---|---|---|---|---|

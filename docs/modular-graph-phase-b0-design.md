@@ -35,7 +35,10 @@ partitioning), is made with no TS change at all: a parity break in B1 can only b
 
 Float results are only bit-stable on one compiler and architecture (r8brain uses SIMD intrinsics;
 arm64 fuses multiply-adds), so audio is compared exactly on the baseline's target only (§5.2). Other
-platforms are covered by construction: the same float operations in the same order give the same bits.
+platforms are covered only in part: each must agree with itself and its integer state is held to the
+baseline, but their audio bits rest on an argument, that the same float operations in the same order give
+the same bits. The argument is weaker than it sounds: a B1 change can move where the compiler fuses
+multiply-adds on arm64 while x64 stays bit-identical, and nothing here would see it.
 
 ## 2. Components
 
@@ -44,9 +47,12 @@ platforms are covered by construction: the same float operations in the same ord
 `RETROPLUG_DETERMINISTIC=1` in the environment, read once per process
 (`packages/native/src/util/Determinism.hpp`):
 
-- SameBoy: `GB_random_set_enabled(false)` before `GB_init`. `GB_random()` then returns 0, so power-on
-  WRAM, HRAM, OAM and wave RAM are zero rather than seeded from `time(NULL)`. The flag is a
-  process-global static, which suits a switch that covers the whole process.
+- SameBoy: `GB_random_seed(0)` and `GB_random_set_enabled(false)` before `GB_init`. `GB_random()` then
+  returns 0, so power-on WRAM, HRAM, OAM and wave RAM are zero rather than seeded from `time(NULL)`; the
+  seed is pinned as well because `GB_random32()` returns the seed itself even with the generator off (the
+  SGB intro reads it). Both are process-global statics, so `SameBoySystem` applies them once per process,
+  behind a function-local static (`static const bool applied = (GB_random_seed(0),
+  GB_random_set_enabled(false), true)`), which suits a switch that covers the whole process.
 - Mesen NES: `NesConfig::RamPowerOnState = RamState::AllZeros` (the default is `Random`).
 - Mesen SMS / GG: `SmsConfig::RandomizeVdpStartScanline = false`, a field B0 adds to the vendored Mesen
   (default true, so stock behaviour is unchanged). `SmsVdp::Init` otherwise starts the VDP at a random
@@ -97,7 +103,9 @@ required: txiki keeps a handle of its own alive, so "the loop still has work" wo
 `test-native/parity/rig.ts` is the app's own control plane (`bootSession()`, the boot path the CLI and
 the render worker share) with a `render(outputs, segment)` over `renderBlocks`. A case written against the
 stores survives every step, since B2 deletes the backend calls the stores make today but not the stores.
-B2 and B3 edit only `bootSession` and this file.
+B2 and B3 edit only `bootSession` and this file, with one exception: `render-blocks.test.ts` tests
+`renderBlocks` itself, so it calls backend methods directly (`constructSystem`, `dsp.setSystems`,
+`setSerialOutCapture`) and moves with the Backend surface too.
 
 Before each case it calls `newProject()`, deletes every ROM copy, reloads the kernel, stops the transport
 at ppq 0 and 120 bpm, sets the case's sample rate, drains the MIDI out, and asserts no system survived.
@@ -183,8 +191,9 @@ The `midiOut` case pins what is captured today (at 48 kHz); fixing it is its own
 In-repo ROMs cover most of it: `mGB.gb` (and the embedded build), `bliptoaster.nes` and its MMC5 / N163 /
 S5B / VRC6 / VRC7 builds, and smsggdj for SMS and GG. LSDj, risa (2.3.0 with `let_go.srm`) and nanoloop
 (GBA) are sibling fixtures under `RETROPLUG_RESOURCES_DIR`; those groups skip in CI, counted in the skip
-baseline. 153 cases in the 20 group files (counted over `baseline/*.json`; the suite is 23 test files with `determinism`, `render-blocks` and `comparator`); the parity suite is about 94 s of CPU against 175 s for the rest of
-`test:native`, its slowest file about 8 s.
+baseline. 158 cases in the 20 group files, 131 of them fixture-free (counted over `baseline/*.json`; the
+suite is 23 test files with `determinism`, `render-blocks` and `comparator`); the parity suite is about
+104 s of CPU against 177 s for the rest of `test:native`, its slowest file (`lsdj-link`) about 10 s.
 
 | File(s) | Cases | Covers |
 |---|---|---|
@@ -217,6 +226,18 @@ Recording today's engine fixes these requirements for B1, all following from §1
 - An edit lands before the next `processBlock`, wherever it is drained.
 - MIDI out keeps today's one-block latency and frame handling through whatever replaces the kernel's
   MI.OUT and master-clock paths.
+- **Work RAM is output too.** A core runs until it has produced its block's samples and stops a little
+  past the boundary, so its end-of-case work RAM pins that run-ahead, which depends on the partition:
+  `blocks-sms` at 44.1 kHz has one audio digest across its six partitions but five work-RAM digests (three
+  at 48 kHz). A B1 change that leaves every lane identical can therefore still fail on work RAM, and that
+  is a real change to emulated state (the core stopped somewhere else), not noise to relax.
+
+**Accepting a B step.** CI runs only the 131 fixture-free cases. Every MIDI-out, controller-in,
+link-cable, LSDj, risa and GBA case needs a sibling fixture and skips there (the `link` group's mGBs never
+drive the cable, so the cable is exercised only by `lsdj-link`), so a green CI is not a parity pass. Each of
+B1 to B3 is accepted only on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`, so a fixture that
+went missing fails rather than skips: `RP_FAIL_ON_SKIP=1 RETROPLUG_RESOURCES_DIR=<the resources tree>
+pnpm test:native parity`.
 
 ## 5. The baseline files
 
@@ -252,8 +273,14 @@ processes. Keys sorted, one value per line, so a re-record diffs line by line:
   baseline, since those are integer emulation output. The test name says which check ran
   (`<case> (deterministic here; audio baseline is linux-x64-gnu13)`). The skip baseline therefore never sees
   a platform-dependent skip, and the rig is exercised on every CI platform; it does cost those jobs a
-  second render of each case. Should MIDI out or work RAM ever differ across platforms, that is a finding
-  in its own right.
+  second render of each case (an estimated +3 min on macos-14's 3 vCPUs, +1.5 min on arm64).
+- **These off-target checks have never run.** The branch is unpushed, so no arm64, macOS or Windows job
+  has yet compared MIDI out, SRAM or work RAM against the x64 baseline. Integer state is less
+  platform-free than it looks: work RAM depends on how many samples each core ran ahead (§4), and those
+  counts are computed partly in floating point (resampling ratios, per-block cycle targets), so a platform
+  whose float timing differs (fused multiply-adds on arm64, say) could stop a core elsewhere and disagree. Should MIDI out or work RAM differ, that is a
+  finding in its own right, and the remedy is per-target integer entries (recorded on that target and
+  compared there), not relaxing the check.
 - **Moving the target** (CI's linux-x64 image moving to a new compiler, say) is one commit: `PARITY_TARGET`
   in `parity/group.ts` set to the new host's `buildTarget()`, every group re-recorded unfiltered on that
   host with the fixtures present, and CI's runner image moved with it (its `RP_PARITY_REQUIRE_TARGET` step
@@ -342,8 +369,32 @@ The implementation plan's tasks, each verified before the next:
 ## 9. Not in B0
 
 - The plugin's own layer (`PluginDSP::run`'s event conversion, CC automation, master gain), per §7.
-- The SDL standalone and the offline `RenderHost` call the same `Engine::processBlock`, so they share the
-  matrix's coverage; they get no case of their own.
+- The offline `RenderHost` renders through `renderAudio` (2 lanes, 1024-frame blocks, MIDI staged at frame
+  0 between renders), which §6 ties to `renderBlocks` bit for bit at that shape. The SDL standalone shares
+  the matrix's coverage only approximately: it drains the command ring BEFORE staging, and stages all MIDI
+  at frame 0, where `renderBlocks` (like the plugin) stages each event at its frame and drains after.
+  Neither gets a case of its own.
 - Exact audio on arm64, macOS and Windows: those targets get the determinism and integer-state checks of
-  §5.2, and the by-construction argument of §1 for the audio bits.
+  §5.2 (never yet run), and §1's argument for the audio bits, which a B1 change to multiply-add fusion on
+  arm64 could break unseen.
 - Fixing the Arduinoboy block-size defect, the narrow-host NES split defect, the LSDj master-sync defect at >= 48 kHz, or the MI.OUT sample-rate dependence (§2.5).
+
+Regression classes the suite would not catch, so a B step that touches one needs its own check:
+
+- **Sample rates other than 44.1 and 48 kHz.** Every case runs at one of the two; a change that shows only
+  at 88.2 or 96 kHz (a resampler ratio, the SMS budget's arithmetic) passes.
+- **6 output lanes.** `renderBlocks` accepts 2, 4, 6 or 8, and no case uses 6.
+- **Blocks over 8192 frames.** `renderBlocks` refuses them, so 8192 is the largest block the matrix holds.
+- **The block partition with several systems live.** The routing, MIDI-routing, edit and split groups and
+  the mGB `link` cases all run in 512-frame blocks; only `lsdj-link` (fixture-only) varies the partition
+  with two systems live.
+- **Unsorted staging.** The plugin's CC automation stages its frame-0 CCs AFTER the block's host events,
+  which can sit at later frames, so the plugin hands the engine unsorted input; `renderBlocks` refuses
+  unsorted input (§2.2), so no case pins what today's engine does with it. A B1 event queue that sorted by
+  frame would change automation and pass.
+- **DAW locates.** The plugin never calls `setPpq` (the engine advances its own ppq from bpm and
+  transport), so the locate and loop-wrap cases of `sync-sms` and `risa` exercise the harness / CLI path,
+  not a DAW's; what a DAW's loop wrap does in the plugin is not pinned.
+- **Edits made in `after` hooks.** The stimulus guard (§5.3) strips MIDI, controller traffic and
+  transport but keeps the hooks, so an edit that changed nothing would record without complaint. Review
+  confirmed that each hook in the matrix changes the segment after it; nothing enforces that for a new one.

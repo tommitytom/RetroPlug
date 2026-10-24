@@ -9,7 +9,7 @@ change to, so Phase B can move the engine onto the graph and prove it changed no
 
 **Architecture:** Per [docs/modular-graph-phase-b0-design.md](modular-graph-phase-b0-design.md). A
 determinism switch powers cores on in a fixed state; a `renderBlocks` driver call renders scripted host
-blocks as the plugin does; a rig over the app's own control plane drives 153 cases through the stores; a
+blocks as the plugin does; a rig over the app's own control plane drives 158 cases through the stores; a
 group runner records `test-native/parity/baseline/<group>.json` and checks against it, refusing to record
 silence, an ignored stimulus, or a case that depends on the cases before it. Three engine and store bugs
 are fixed first so the baseline holds correct behaviour.
@@ -49,6 +49,11 @@ The plan's code blocks are the prototype's. Review during execution changed the 
 - Tasks 8-14: NES noise sounds in the split cases, routing slots have distinct gains, a block list every partition shares carries an edge note, sync-sms wraps off the tick grid with 44.1 kHz / 8192-frame cases, and the narrow-host NES split defect is recorded.
 - Tasks 15-16: master sync is split into 44.1 kHz and a recorded 48 kHz defect, MI.MAP is clocked with the transport, the controller's rows have distinct notes, START is pressed on GBA, and the MI.OUT defect is recorded.
 - Task 17: the skip baseline has seven entries.
+- Final review: `rig.rom` copies no battery (a stray fixture `.sav` had shadowed risa's `let_go.srm`, so
+  risa was re-recorded); an unfiltered recording on `PARITY_TARGET` re-labels a baseline recorded
+  elsewhere; `RP_PARITY_DUMP` writes every checked case; a group without the `RP_PARITY_ONLY` case passes
+  with a note; a failure carries the actual digest as one line of JSON; `lsdj-link` runs in every block
+  size `blocks-*` uses. 158 cases, 131 of them fixture-free.
 
 The committed code, not this plan, is authoritative.
 

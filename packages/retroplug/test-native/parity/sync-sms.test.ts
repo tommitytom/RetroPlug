@@ -27,9 +27,10 @@ function transportCase(machine: "sms" | "gg", sr: number, size: number | null): 
       ...smsStart(sr, blocks),
       { blocks: blocks(frames(sr, 1500)), transport: [{ at: 0, bpm: 120, ppq: 0, playing: true }, { at: frames(sr, 900), bpm: WRAP_BPM }] },
       { blocks: blocks(frames(sr, 500)), transport: [{ at: 0, playing: false }] },
-      // A loop wrap, as a DAW does it while playing: a short block that ends at the loop end, then a locate
-      // back to the loop start at the next block's start, still playing. The short block also starts the
-      // transport after the stop segment above.
+      // A loop wrap while playing: a short block that ends at the loop end, then a locate (setPpq) back to
+      // the loop start at the next block's start, still playing. The short block also starts the transport
+      // after the stop segment above. Only the harness / CLI path locates like this: the plugin never calls
+      // setPpq (the engine advances its own ppq), so this is not what a DAW's loop wrap does in the plugin.
       {
         blocks: [WRAP_BLOCK, ...blocks(frames(sr, 1500))],
         transport: [{ at: 0, ppq: wrapStart, bpm: WRAP_BPM, playing: true }, { at: WRAP_BLOCK, ppq: 0 }],
