@@ -15,6 +15,9 @@
 #include "host/engine/SnapshotRegistry.hpp"
 
 struct AudioRouter;  // BlockRunner.hpp — the per-block bus-placement policy (used by ref below)
+struct DspCommand;
+namespace rp::graph { struct HostCommand; }
+namespace rp::host { class Translator; struct SystemTable; }
 
 // A per-system config field a control-plane edit applies to the live core (SameBoy today). Carried
 // as a double across the command ring: gain in dB; a bool as 0/1; an enum/int as its integer value.
@@ -51,6 +54,7 @@ struct EngineFrame {
 class Engine {
 public:
     explicit Engine(double sampleRate = 44100.0);
+    ~Engine();
 
     double sampleRate() const { return sampleRate_; }
 
@@ -91,7 +95,7 @@ public:
     // already-live core so a host sample-rate change re-rates them in place (SameBoy GB_set_sample_rate,
     // Mesen resampler). Safe to call with cores live only when the audio thread isn't draining — the plugin
     // calls it from DPF's sampleRateChanged, which fires only while deactivated; the CLI, before any build.
-    void setSampleRate(double sr) { sampleRate_ = sr; project_.onSampleRateChanged(sr); }
+    void setSampleRate(double sr);
 
     // The kernel's host-MIDI-out sink for this block (filled by processBlock's DSP stage, cleared at
     // the top of the next). The plugin drains this to the DAW after processBlock; nothing else reads it.
@@ -176,7 +180,30 @@ public:
     // when the core is deleted; processBlock publishes into it.
     SnapshotRegistry& registry() { return registry_; }
 
+    // --- graph mode (RETROPLUG_GRAPH_ENGINE=1, read once per process; docs/modular-graph-phase-b1-design.md) ---
+    // processBlock runs a GraphHost; structure goes through the translator (control thread) and every
+    // other command rides the GraphHost's one ring (QueuedInvoker routes them).
+    bool graphMode() const { return graph_ != nullptr; }
+    rp::host::Translator& translator();             // control thread
+    bool pushCommand(const DspCommand& c);          // control thread: false when the ring is full
+    void drainCommands();                           // the block thread (or the control thread, quiescent)
+    void setAudioThreadOwns(bool owns);
+    std::size_t reclaim();                          // control thread
+    void discardPending();                          // teardown, the audio thread stopped
+    // Grow the plan's block size to a host's maximum (never below 8192, the matrix's largest). Quiescent.
+    void setMaxBlockFrames(std::uint32_t frames);
+
 private:
+    struct Graph;
+    // The running plan's systems (an empty table before the first plan).
+    const rp::host::SystemTable& currentTable() const;
+    void processBlockGraph(std::uint32_t frames, float* const* outputs, std::size_t numOutputs);
+    void runKernelStage(std::uint32_t frames);     // rp.dsp.kernel's body: today's kernel stage
+    void applyCommand(DspCommand& c);
+    void syncTap(AudioRouting routing);
+    static const void* graphInterface(void* ctx, const char* id);
+    static void onHostCommand(void* ctx, const rp::graph::HostCommand& cmd, const void* hostData, bool discard);
+
     // Shared per-block core: run the kernel (if active) + fan its sinks to the cores, render every
     // system through `router`, publish snapshots, advance the ppq clock. Both processBlock overloads
     // and processBlockPerSystem funnel through here; the caller zeroes the router's destination buffers
@@ -233,10 +260,14 @@ private:
     bool   transport_ = false;
     double ppq_       = 0.0;
     bool   controllerConnected_ = false;  // a control surface is bound (set per block by the host)
+    bool   blockTracing_ = false;         // this block's syncTrace_.beginBlock answer, for the kernel stage
     HostSyncTrace syncTrace_;  // inert unless RETROPLUG_SYNC_TRACE is set
     // Optional external mirror of the core-bytes stream (set by the standalone to reach a physical N8);
     // null in every other host. Called on the audio thread, so the target must be RT-safe (N8Link is).
     std::function<void(std::uint32_t, const std::uint8_t*, std::size_t, bool)> coreByteSink_;
 
     AudioRouting audioRouting_ = AudioRouting::Stereo;  // output-pair placement; Stereo = all → pair 0
+
+    // Last, so it goes first: its system nodes release their snapshot slots into registry_ as they go.
+    std::unique_ptr<Graph> graph_;  // null unless graph mode
 };

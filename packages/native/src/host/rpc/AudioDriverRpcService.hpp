@@ -36,6 +36,10 @@ private:
 
     static constexpr std::uint32_t kBlockSize = 1024;
     std::thread                audioThread_;
+    // The loop's own run condition. The invoker's ownership bit is cleared only once the thread has
+    // joined (its contract): clearing it hands the GraphHost back and applies what is queued, which the
+    // audio thread must not still be doing.
+    std::atomic<bool>          running_{false};
     std::atomic<double>        capturedEnergy_{0.0};
     std::atomic<std::uint64_t> capturedFrames_{0};
     std::atomic<std::uint32_t> liveSystemCount_{0};

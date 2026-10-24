@@ -60,6 +60,7 @@ extern "C" {
 #include "dpfjs/LvglJsEngine.hpp"            // LVGL display layer over the shared txiki host
 #include "dpfjs/host/TjsHostRuntime.hpp"     // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
+#include "host/graph/Translator.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "host/input/GamepadManager.hpp"     // SDL controller poll (shared UI-thread input)
@@ -1213,6 +1214,8 @@ void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels, 
     a.reqOutputDevice = device;
     a.svc.engine.setSampleRate(sampleRate); // re-rate live cores (safe — audio stopped)
     openAudio(a);                       // opens a real stream, or leaves it muted (numOutputs still sized)
+    a.svc.invoker.setHostShape({rp::host::HostShape::Kind::Multi, static_cast<std::uint32_t>(a.numOutputs)});
+    a.svc.engine.setMaxBlockFrames(static_cast<std::uint32_t>(a.reqBlockSize));
     a.svc.invoker.setAudioThreadOwns(true);
     startAudio(a);                      // Pa_StartStream, or start the headless fallback pump
     saveAudioConfig(a);
@@ -1649,6 +1652,8 @@ int main(int argc, char** argv) {
 
     // Hand the Engine to the audio thread (control-plane edits become push-only, drained per block) then start
     // it. Mirrors PluginDSP::activate. startAudio runs the PortAudio stream, or the fallback pump when muted.
+    app.svc.invoker.setHostShape({rp::host::HostShape::Kind::Multi, static_cast<std::uint32_t>(app.numOutputs)});
+    app.svc.engine.setMaxBlockFrames(static_cast<std::uint32_t>(app.reqBlockSize));
     app.svc.invoker.setAudioThreadOwns(true);
 #if defined(__linux__)
     pinUiThreadAwayFromAudioCore(); // keep the 60 fps UI/emulator work off the audio thread's core

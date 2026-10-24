@@ -1,5 +1,7 @@
 #include "host/rpc/EngineRpcService.hpp"
 
+#include "host/graph/Translator.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -243,6 +245,7 @@ bool EngineRpcService::stageSystemMidi(std::uint32_t id, std::vector<std::uint8_
 rfl::Bytestring EngineRpcService::renderAudio(double ms) {
     // This thread calls processBlock itself, which only the Engine's owning thread may do.
     if (ms <= 0.0 || invoker_.audioThreadOwns()) return {};
+    invoker_.setHostShape({rp::host::HostShape::Kind::Multi, 2});
     scratchL_.resize(kBlockSize);  // idempotent — no per-call realloc after the first
     scratchR_.resize(kBlockSize);
 
@@ -265,9 +268,11 @@ rfl::Bytestring EngineRpcService::renderAudio(double ms) {
 }
 
 std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerSystem(double ms) {
-    const std::size_t n = engine_.systemCount();
     std::vector<rfl::Bytestring> result;
-    if (ms <= 0.0 || n == 0 || invoker_.audioThreadOwns()) return result;  // as renderAudio
+    if (ms <= 0.0 || invoker_.audioThreadOwns()) return result;  // as renderAudio
+    const std::size_t n = engine_.systemCount();
+    if (n == 0) return result;
+    invoker_.setHostShape({rp::host::HostShape::Kind::PerSystem, 0});
 
     // One persistent L/R block buffer per system; the Engine routes each core into its own pair
     // (PerSystemRouter) so linked systems interleave exactly as they do in the mixed path.
@@ -313,6 +318,7 @@ std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerChannel(std::uint32
     // The target's output streams (Game Boy = 4 stereo: Pulse 1/Pulse 2/Wave/Noise; default = 1 "Mix").
     const std::size_t n = sys->channelLayout().size();
     if (n == 0) return result;
+    invoker_.setHostShape({rp::host::HostShape::Kind::PerChannel, 0});
 
     // One persistent L/R block buffer per stream; the Engine routes each stream into its own pair.
     std::vector<std::vector<float>> bl(n, std::vector<float>(kBlockSize));
@@ -514,6 +520,7 @@ RpcRenderBlocksResult EngineRpcService::renderBlocks(RpcRenderBlocksRequest req)
     result.error = renderBlocksRefusal(req);
     if (!result.error.empty()) return result;
 
+    invoker_.setHostShape({rp::host::HostShape::Kind::Multi, req.outputs});
     std::uint64_t total = 0;
     for (const RpcRenderBlock& b : req.blocks) total += b.frames;
     // Whole-run planar lanes, zero-filled; each block renders straight into its slice of the result.

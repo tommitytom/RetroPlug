@@ -104,15 +104,18 @@ bool SnapshotRegistry::claim(SystemId id, SystemBase& sys) {
 }
 
 void SnapshotRegistry::publishAll(const Project& project, std::uint32_t frames, double sampleRate) {
+    for (const auto& up : project.systems())
+        if (up) publishSystem(*up, frames, sampleRate);
+}
+
+void SnapshotRegistry::publishSystem(SystemBase& system, std::uint32_t frames, double sampleRate) {
     const std::uint64_t interval = sampleRate > 0.0
         ? static_cast<std::uint64_t>(kStateIntervalSec * sampleRate)
         : 0;
-
-    for (const auto& up : project.systems()) {
-        SystemBase* sys = up.get();
-        if (!sys) continue;
+    SystemBase* sys = &system;
+    {
         Slot* s = find(sys->id());
-        if (!s) continue;   // e.g. a system built before this registry existed / pool was full
+        if (!s) return;   // e.g. a system built before this registry existed / pool was full
 
         // Frame every block (cheap): copy the core's latest published frame into the owned triple.
         if (s->frame) {
@@ -138,7 +141,7 @@ void SnapshotRegistry::publishAll(const Project& project, std::uint32_t frames, 
         // State + SRAM on the coarse interval — the core only republishes its savestate every ~0.5s,
         // so per-block copies would be redundant. Matches publishStateSnapshot's cadence.
         s->sampleAccum += frames;
-        if (interval == 0 || s->sampleAccum < interval) continue;
+        if (interval == 0 || s->sampleAccum < interval) return;
         s->sampleAccum = 0;
 
         if (s->state && sys->readStateSnapshot(publishScratch_) && !publishScratch_.empty()) {

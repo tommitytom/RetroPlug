@@ -15,6 +15,7 @@
 class Engine;
 class SystemBase;
 class SnapshotRegistry;
+namespace rp::host { struct HostShape; }
 
 // The ONE mutation path to the Engine — there is no Direct/Queued fork. Every control-plane edit is
 // packed into a POD DspCommand and pushed onto the SPSC command ring. Who DRAINS the ring is the only
@@ -34,7 +35,7 @@ public:
     // Drain ownership. Set true BEFORE spawning/activating the audio thread (pushes become push-only);
     // set false AFTER joining it (pushes flush inline again). Written on the control thread only; read
     // by the control thread (the flush decision) and the audio loop (its run condition).
-    void setAudioThreadOwns(bool owns) { audioThreadOwns_.store(owns, std::memory_order_release); }
+    void setAudioThreadOwns(bool owns);
     bool audioThreadOwns() const { return audioThreadOwns_.load(std::memory_order_acquire); }
 
     // producer (control thread): pack + push, then flush inline unless the audio thread owns the drain.
@@ -59,6 +60,9 @@ public:
     void applyConfigField(SystemId id, std::uint8_t field, double value);
     void pressButton(SystemId id, std::uint8_t button, bool down);
     void writeRam(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes);
+    // Graph mode: the output shape the next blocks render into (a no-op in today's engine, which picks
+    // its router per call). The render calls set it before they render.
+    void setHostShape(rp::host::HostShape shape);
 
     // consumer: apply every queued command INTO the Engine. Called by the audio loop each block (audio
     // thread) and by the inline flush (control thread).
@@ -74,7 +78,12 @@ private:
     void handBackReleased(SystemBase* sys);      // audio thread → release ring
     std::unique_ptr<SystemBase> popReleased();   // control thread ← release ring
     void flush();                                // control-thread inline: drainInto(engine_) + reclaimReleased()
-    void maybeFlush() { if (!audioThreadOwns()) flush(); }
+    // Graph mode's GraphHost flushes its own pushes inline, so there is nothing for this to do there.
+    void maybeFlush() { if (!graph() && !audioThreadOwns()) flush(); }
+    // Graph mode routes structure to the translator and every other command onto the GraphHost's ring.
+    bool graph() const;
+    bool push(const DspCommand& c);
+    void syncTap();
 
     SpscRing<DspCommand, 256> commands_;   // control → audio
     SpscRing<DspEvent, 256>   released_;    // audio  → control (raw SystemBase* to delete)

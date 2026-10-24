@@ -25,6 +25,9 @@ struct DspCommand {
         SetBpm = 7, SetTransport = 8, SetConfigField = 9, PressButton = 10,
         SetAudioRouting = 11, SetPpq = 12, StageControllerMidi = 13, WriteRam = 14,
         StageSystemMidi = 15,
+        // Graph mode only (docs/modular-graph-phase-b1-design.md section 3.2): the NES tap arming
+        // syncSplitPlan does today, pushed right behind the plan of every call that runs it.
+        SyncTap = 16,
     };
 
     Kind kind = Kind::None;
@@ -54,6 +57,7 @@ struct DspCommand {
         // the whole message (audio thread deletes) and `len` is 0 - the same shape as stageMidi, because a
         // settings message is a SysEx and a rig block does not fit in four bytes.
         struct { std::uint32_t id; std::uint8_t data[4]; std::uint8_t len; std::vector<std::uint8_t>* ext; } stageSystemMidi;
+        struct { std::uint8_t routing; } syncTap;                 // the AudioRouting it arms for
     };
 
     DspCommand() : kind(Kind::None), stageMidi{{0, 0, 0, 0}, 0, nullptr} {}

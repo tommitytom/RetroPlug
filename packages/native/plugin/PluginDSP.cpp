@@ -25,6 +25,7 @@
 #include "PluginShared.hpp"     // SharedDSP handoff to the editor
 #include "LastGoodState.hpp"   // keeps a failed project serialization from reporting "empty"
 
+#include "host/graph/Translator.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "Version.hpp"                    // single source of truth for the plugin version
@@ -267,6 +268,8 @@ protected:
         // Hand the Engine to the DPF audio thread: from here every control-plane edit is push-only,
         // drained by run() each block. (Set BEFORE the host starts calling run(); the quiescent path
         // flushed every push, so the command ring is empty at this handoff.) Then report PDC latency.
+        svc_.invoker.setHostShape({rp::host::HostShape::Kind::Multi, DISTRHO_PLUGIN_NUM_OUTPUTS});
+        svc_.engine.setMaxBlockFrames(getBufferSize());
         svc_.invoker.setAudioThreadOwns(true);
         updateLatency();
         updateParameterMap();

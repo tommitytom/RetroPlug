@@ -52,6 +52,8 @@ public:
     // Copy each live system's latest frame (every block) + savestate/SRAM (on a coarse interval)
     // into its slot. Runs at the end of Engine::processBlock, on the block-driving thread.
     void publishAll(const Project& project, std::uint32_t frames, double sampleRate);
+    // The same for one system; publishAll is this for each system in slot order.
+    void publishSystem(SystemBase& system, std::uint32_t frames, double sampleRate);
 
     // Control-thread reads of the OWNED copies.
     struct Frame {
