@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -19,13 +20,35 @@
 
 namespace rp::graph {
 
+// A host service a node asks for by id (rp_host.get_interface), offered by whoever embeds the GraphHost.
+using HostInterfaceFn = const void* (*)(void* ctx, const char* id);
+
 struct HostConfig {
     double        sampleRate = 48000.0;
     std::uint32_t maxFrames = 1024;
     Target        target = Target::Desktop;
-    // How long setGraph waits for a stalled audio thread to adopt the previous plan before answering busy.
+    // How long setGraph waits for a stalled audio thread to adopt a published settings commit before
+    // answering busy.
     std::uint32_t adoptionTimeoutMs = 2000;
+    // The embedder's own host services; GraphHost answers its own ids (rp.host.audio-buffers/1) first.
+    HostInterfaceFn interfaces = nullptr;
+    void*           interfacesCtx = nullptr;
 };
+
+// The host's output buffers for this block, which rp.host.audio-out copies into. [audio]
+#define RP_HOST_AUDIO_BUFFERS_INTERFACE "rp.host.audio-buffers/1"
+struct rp_host_audio_buffers {
+    float* const* (*outputs)(const rp_host* host, std::uint32_t* count);
+};
+
+// An embedder's command, carried on the ring in push order with plan swaps and params, and handed back to
+// the embedder's handler at drain with the host data of the plan current at that point. Opaque here.
+constexpr std::size_t kHostCommandBytes = 48;
+struct HostCommand {
+    alignas(std::max_align_t) std::byte bytes[kHostCommandBytes];
+};
+// `discard`: the GraphHost is being destroyed with the command unapplied, so free what it owns instead.
+using HostCommandHandler = void (*)(void* ctx, const HostCommand& command, const void* hostData, bool discard);
 
 constexpr std::uint32_t kMaxBlockFrames = 1u << 16;
 
@@ -47,9 +70,10 @@ struct SetGraphResult {
 //   - audioThreadOwns decides who drains. While false the control thread flushes inline after every push,
 //     so the ring is empty at every handoff.
 //
-// It never plans while a swap is in flight: setGraph first waits (about one block while audio runs, up to
-// a timeout if it has stalled) for the audio thread to adopt the previous plan, so the planner never reads
-// node state the audio thread is writing.
+// It never plans while a published settings commit is unadopted: setGraph first waits (about one block
+// while audio runs, up to a timeout if it has stalled) for the audio thread to adopt it, so the planner
+// never asks a node to prepare settings while its last commit may be running. A plan with no commit needs
+// no wait, so several can sit in the ring at once, adopted in order in one drain.
 class GraphHost {
 public:
     // Throws std::invalid_argument for a config checkConfig refuses.
@@ -60,13 +84,22 @@ public:
 
     // ---- control thread ------------------------------------------------------------------------------
     SetGraphResult setGraph(std::string_view documentJson);
-    SetGraphResult setGraph(const GraphDocument& document);
+    // `hostData` rides with the plan: the handler and hostData() see the one of the plan current at the
+    // time, and it is freed with that plan on reclaim (control thread).
+    SetGraphResult setGraph(const GraphDocument& document, std::shared_ptr<const void> hostData = nullptr);
+    // Queue an embedder command behind everything pushed so far. False when the ring is full or `size`
+    // exceeds kHostCommandBytes. Flushes inline while quiescent, as every push does.
+    bool pushHostCommand(const void* data, std::size_t size);
+    void setHostCommandHandler(HostCommandHandler handler, void* ctx);
     // A live param change, clamped to the param's resolved range (and rounded for int, enum and bool, as a
     // document value is) and applied at `frame` of the next block. False for an unknown node or param, a
     // NaN value, or a param a wire drives.
     bool setParam(std::string_view nodeId, std::string_view paramId, double value, std::uint32_t frame = 0);
     // Set true BEFORE the audio thread starts calling processBlock, false AFTER it has stopped.
     void setAudioThreadOwns(bool owns);
+    // Teardown, once the audio thread has stopped and before setAudioThreadOwns(false) would apply what is
+    // left: adopt every queued plan and hand every queued host command back as discarded.
+    void discardPending();
     bool audioThreadOwns() const { return audioOwns_.load(std::memory_order_acquire); }
     // Destroy plans the audio thread has handed back. Returns how many.
     std::size_t reclaim();
@@ -85,32 +118,38 @@ public:
     std::uint32_t leakedPlans() const { return leakedPlans_.load(std::memory_order_relaxed); }
 
     // ---- audio thread (or the control thread while quiescent) ----------------------------------------
-    // Drain commands (adopting a new plan if one is waiting), then run one block. Every host output starts
-    // the block silent; rp.host.audio-out writes the buses it has. A block longer than the running plan's
-    // buffers is refused (nothing runs, the outputs stay silent) rather than overrun them.
+    // Apply every queued command in order: plan swaps, params and host commands.
+    void drain();
+    // Run one block of the current plan. Every host output starts the block silent; rp.host.audio-out
+    // writes the buses it has. A block longer than the running plan's buffers is refused (nothing runs,
+    // the outputs stay silent) rather than overrun them.
+    void run(std::uint32_t frames, const rp_transport& transport, float* const* outputs = nullptr,
+             std::uint32_t outputCount = 0);
+    // drain() then run().
     void processBlock(std::uint32_t frames, const rp_transport& transport, float* const* outputs = nullptr,
                       std::uint32_t outputCount = 0);
-
-    // Read by host-implemented nodes during processBlock.
-    float* const* hostOutputs() const { return hostOutputs_; }
-    std::uint32_t hostOutputCount() const { return hostOutputCount_; }
+    // The running plan's host data (null before the first plan, or for a plan given none).
+    const void* hostData() const;
 
     const HostConfig& config() const { return config_; }
 
 private:
     struct Command {
-        enum class Kind : std::uint8_t { SwapPlan, SetParam };
+        enum class Kind : std::uint8_t { SwapPlan, SetParam, Host };
         Kind              kind = Kind::SwapPlan;
         PlanStorage*      plan = nullptr;
         rp_control_queue* queue = nullptr;
         std::uint32_t     frame = 0;
         double            value = 0.0;
+        HostCommand       host{};
     };
 
     bool        push(const Command& c);
-    void        drain();
+    void        drainCommands(bool discard);
     void        flushIfQuiescent();
-    bool        waitForAdoption();
+    bool        waitForCommits();
+    static const void* hostInterface(const rp_host* host, const char* id);
+    static float* const* audioBuffers(const rp_host* host, std::uint32_t* count);
     PlanOutcome planDocument(const GraphDocument& document, double sampleRate, std::uint32_t maxFrames);
     bool        publish(PlanOutcome& outcome, const GraphDocument& document);
     void        markFaulted(Instance& inst);
@@ -122,7 +161,10 @@ private:
     SpscRing<Command, 256>                                commands_;
     SpscRing<PlanStorage*, 64>                            released_;
     std::atomic<bool>                                     audioOwns_{false};
-    std::atomic<bool>                                     swapInFlight_{false};
+    // Published plans carrying a settings commit that the audio thread has not finished adopting.
+    std::atomic<std::uint32_t>                            commitsInFlight_{0};
+    HostCommandHandler                                    hostHandler_ = nullptr;
+    void*                                                 hostHandlerCtx_ = nullptr;
     std::atomic<std::uint32_t>                            faults_{0};
     std::atomic<std::uint32_t>                            leakedPlans_{0};
     std::uint32_t                                         leaksReported_ = 0;  // control side

@@ -109,6 +109,8 @@ struct PlanStorage {
     std::vector<rp_control_queue*>              controlsToRoll;
     std::vector<FeedbackCopy>                   feedback;
     PlanView                                    view;
+    // The embedder's data for this plan (GraphHost::setGraph), freed with it on the control thread.
+    std::shared_ptr<const void>                 hostData;
 
     // Applied by the audio thread when it adopts the plan, before the first block.
     struct SettingsCommit {

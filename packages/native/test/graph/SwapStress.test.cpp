@@ -149,18 +149,32 @@ TEST_CASE("plan swaps under a running audio thread keep a node's output and stat
     CHECK(rig.node<Sink>("ks").controlEnd == 201.0);  // and the param value survived it
 }
 
-TEST_CASE("setGraph waits for the audio thread to adopt the last plan before planning again", "[graph][swap]") {
+TEST_CASE("setGraph plans again at once while the plans in flight carry no settings commit", "[graph][swap]") {
     GraphRig rig({48000.0, 64, rp::graph::Target::Desktop, 50});  // a 50 ms adoption timeout
     REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.sink"}],"wires":[]})").ok);
     rig.host->setAudioThreadOwns(true);
+    // Nothing drains these, so all three sit in the ring at once; none commits settings, so none waits.
     REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.sink"},{"id":"b","type":"rp.test.sink"}],"wires":[]})").ok);
-    // Nothing has drained the swap, so the next plan must not be made: the last one is still in flight.
-    const auto busy = rig.set(R"({"nodes":[],"wires":[]})");
-    CHECK(GraphRig::codes(busy) == "busy");
-    rig.run();  // the audio thread's next block adopts it
+    REQUIRE(rig.set(R"({"nodes":[{"id":"b","type":"rp.test.sink"}],"wires":[]})").ok);
+    REQUIRE(rig.set(R"({"nodes":[],"wires":[]})").ok);
+    rig.run();  // one drain adopts all three, in order
+    CHECK(rig.host->node("a") == nullptr);
+    CHECK(rig.host->node("b") == nullptr);
+    CHECK(rig.host->reclaim() == 3);  // the first plan and the two adopted in passing
+    rig.host->setAudioThreadOwns(false);
+}
+
+TEST_CASE("setGraph waits while a published settings commit is unadopted", "[graph][swap]") {
+    GraphRig rig({48000.0, 64, rp::graph::Target::Desktop, 50});
+    REQUIRE(rig.registry.addPackage(stressPackage()));
+    REQUIRE(rig.set(R"({"nodes":[{"id":"t","type":"rp.test.tunable","settings":{"level":1}}],"wires":[]})").ok);
+    rig.host->setAudioThreadOwns(true);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"t","type":"rp.test.tunable","settings":{"level":2}}],"wires":[]})").ok);  // a live swap
+    // Its commit has not run, so the planner may not ask the node to prepare again.
+    CHECK(GraphRig::codes(rig.set(R"({"nodes":[],"wires":[]})")) == "busy");
+    rig.run();  // the audio thread adopts it
     CHECK(rig.set(R"({"nodes":[],"wires":[]})").ok);
     rig.run();
-    CHECK(rig.host->reclaim() >= 1);  // the last plan was adopted: the one it replaced came back
     rig.host->setAudioThreadOwns(false);
 }
 

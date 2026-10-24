@@ -57,8 +57,12 @@ struct AudioOut {
     std::array<std::uint32_t, kMaxBuses> firstChannel{};
     std::uint32_t                        busCount = 0;
     const rp_host*                       host = nullptr;
+    const rp_host_audio_buffers*         buffers = nullptr;
 
-    void bind_host(const rp_host* h) noexcept { host = h; }
+    void bind_host(const rp_host* h) noexcept {
+        host = h;
+        buffers = static_cast<const rp_host_audio_buffers*>(h->get_interface(h, RP_HOST_AUDIO_BUFFERS_INTERFACE));
+    }
 
     void on_settings(const Settings& s) noexcept {
         busCount = 0;
@@ -70,9 +74,9 @@ struct AudioOut {
     }
 
     void process(const rp::Block& b) noexcept {
-        const auto* gh = static_cast<const GraphHost*>(host->ctx);
-        float* const* outs = gh->hostOutputs();
-        const std::uint32_t outCount = gh->hostOutputCount();
+        if (!buffers) return;
+        std::uint32_t outCount = 0;
+        float* const* outs = buffers->outputs(host, &outCount);
         for (std::uint32_t i = 0; i < busCount && i < b.raw.input_count; ++i) {
             const rp_audio_view& in = b.input(i).u.audio;
             for (std::uint32_t c = 0; c < in.channel_count; ++c) {

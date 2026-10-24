@@ -29,10 +29,23 @@ void hostFree(void*, void* ptr) { ::operator delete(ptr); }
 
 void hostLog(void*, int, const char* message) { std::fprintf(stderr, "[graph] %s\n", message); }
 
-// No optional host services yet; this is where they will be offered by id.
-const void* hostInterface(const rp_host*, const char*) { return nullptr; }
+constexpr const char* kAudioOut = "rp.host.audio-out";
 
 }  // namespace
+
+// GraphHost's own services first, then the embedder's.
+const void* GraphHost::hostInterface(const rp_host* host, const char* id) {
+    static constexpr rp_host_audio_buffers kAudioBuffers{&GraphHost::audioBuffers};
+    if (std::strcmp(id, RP_HOST_AUDIO_BUFFERS_INTERFACE) == 0) return &kAudioBuffers;
+    const auto* self = static_cast<const GraphHost*>(host->ctx);
+    return self->config_.interfaces ? self->config_.interfaces(self->config_.interfacesCtx, id) : nullptr;
+}
+
+float* const* GraphHost::audioBuffers(const rp_host* host, std::uint32_t* count) {
+    const auto* self = static_cast<const GraphHost*>(host->ctx);
+    *count = self->hostOutputCount_;
+    return self->hostOutputs_;
+}
 
 std::optional<std::string> checkConfig(double sampleRate, std::uint32_t maxFrames) {
     if (!(sampleRate > 0.0) || !std::isfinite(sampleRate)) return "the sample rate must be a positive number";
@@ -45,14 +58,15 @@ std::optional<std::string> checkConfig(double sampleRate, std::uint32_t maxFrame
 GraphHost::GraphHost(const NodeRegistry& registry, ResourceTable& resources, HostConfig config)
     : registry_(registry), resources_(resources), config_(config) {
     if (auto why = checkConfig(config.sampleRate, config.maxFrames)) throw std::invalid_argument(*why);
-    host_ = rp_host{RP_ABI_VERSION, this, &hostAlloc, &hostFree, &hostLog, &hostInterface};
+    host_ = rp_host{RP_ABI_VERSION, this, &hostAlloc, &hostFree, &hostLog, &GraphHost::hostInterface};
 }
 
 GraphHost::~GraphHost() {
     assert(!audioThreadOwns() && "destroy a GraphHost only after its audio thread has stopped");
     // The audio thread has stopped (setAudioThreadOwns(false) is the caller's job): adopt anything still
-    // queued so every plan is in exactly one place, then free them all here, on the control thread.
-    drain();
+    // queued so every plan is in exactly one place, then free them all here, on the control thread. Host
+    // commands still queued are discarded, not applied.
+    drainCommands(true);
     reclaim();
     delete current_;
     current_ = nullptr;
@@ -77,10 +91,10 @@ void GraphHost::setAudioThreadOwns(bool owns) {
     if (!owns) flushIfQuiescent();
 }
 
-bool GraphHost::waitForAdoption() {
+bool GraphHost::waitForCommits() {
     if (!audioThreadOwns()) return true;  // inline flush already adopted it
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(config_.adoptionTimeoutMs);
-    while (swapInFlight_.load(std::memory_order_acquire)) {
+    while (commitsInFlight_.load(std::memory_order_acquire) > 0) {
         if (std::chrono::steady_clock::now() > deadline) return false;
         std::this_thread::sleep_for(std::chrono::microseconds(200));
     }
@@ -97,10 +111,17 @@ SetGraphResult GraphHost::setGraph(std::string_view documentJson) {
     return setGraph(*doc);
 }
 
-SetGraphResult GraphHost::setGraph(const GraphDocument& document) {
+SetGraphResult GraphHost::setGraph(const GraphDocument& document, std::shared_ptr<const void> hostData) {
     SetGraphResult result;
-    if (!waitForAdoption()) {
-        result.errors.push_back({"", "", "busy", "the audio thread has not adopted the previous plan"});
+    // The host's outputs are one set of buffers: a second writer would overwrite the first.
+    const auto outs = std::count_if(document.nodes.begin(), document.nodes.end(),
+                                    [](const NodeDoc& n) { return n.type == kAudioOut; });
+    if (outs > 1) {
+        result.errors.push_back({"", "", "audio-out-twice", "a graph has at most one rp.host.audio-out"});
+        return result;
+    }
+    if (!waitForCommits()) {
+        result.errors.push_back({"", "", "busy", "the audio thread has not adopted a published settings change"});
         return result;
     }
     reclaim();
@@ -110,12 +131,26 @@ SetGraphResult GraphHost::setGraph(const GraphDocument& document) {
         result.errors = std::move(outcome.errors);
         return result;
     }
+    outcome.storage->hostData = std::move(hostData);
     if (!publish(outcome, document)) {
         result.errors.push_back({"", "", "busy", "the command ring is full"});
         return result;
     }
     result.ok = true;
     return result;
+}
+
+bool GraphHost::pushHostCommand(const void* data, std::size_t size) {
+    if (size > kHostCommandBytes) return false;
+    Command c;
+    c.kind = Command::Kind::Host;
+    std::memcpy(c.host.bytes, data, size);
+    return push(c);
+}
+
+void GraphHost::setHostCommandHandler(HostCommandHandler handler, void* ctx) {
+    hostHandler_ = handler;
+    hostHandlerCtx_ = ctx;
 }
 
 PlanOutcome GraphHost::planDocument(const GraphDocument& document, double sampleRate, std::uint32_t maxFrames) {
@@ -137,12 +172,13 @@ PlanOutcome GraphHost::planDocument(const GraphDocument& document, double sample
 // Hand a successful plan to the audio thread. False, with the plan freed unpublished, if the ring is full.
 bool GraphHost::publish(PlanOutcome& outcome, const GraphDocument& document) {
     PlanStorage* storage = outcome.storage.release();
-    swapInFlight_.store(true, std::memory_order_release);
+    const bool commits = !storage->commits.empty();
+    if (commits) commitsInFlight_.fetch_add(1, std::memory_order_acq_rel);
     Command c;
     c.kind = Command::Kind::SwapPlan;
     c.plan = storage;
     if (!commands_.tryPush(c)) {
-        swapInFlight_.store(false, std::memory_order_release);
+        if (commits) commitsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
         delete storage;  // never published: frees its prepared settings and pins
         return false;
     }
@@ -181,7 +217,11 @@ bool GraphHost::setParam(std::string_view nodeId, std::string_view paramId, doub
     return false;
 }
 
-void GraphHost::drain() {
+void GraphHost::drain() { drainCommands(false); }
+
+void GraphHost::discardPending() { drainCommands(true); }
+
+void GraphHost::drainCommands(bool discard) {
     PlanStorage* replaced = nullptr;
     Command c;
     while (commands_.tryPop(c)) {
@@ -191,10 +231,13 @@ void GraphHost::drain() {
                 if (replaced && !released_.tryPush(replaced)) leakedPlans_.fetch_add(1, std::memory_order_relaxed);
                 replaced = current_;
                 current_ = c.plan;
-                swapInFlight_.store(false, std::memory_order_release);
+                if (!c.plan->commits.empty()) commitsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
                 break;
             case Command::Kind::SetParam:
                 pushControl(*c.queue, c.frame, c.value);
+                break;
+            case Command::Kind::Host:
+                if (hostHandler_) hostHandler_(hostHandlerCtx_, c.host, current_ ? current_->hostData.get() : nullptr, discard);
                 break;
         }
     }
@@ -282,9 +325,16 @@ rp_node* GraphHost::node(std::string_view id) const {
     return it == live_.end() ? nullptr : it->second->node;
 }
 
+const void* GraphHost::hostData() const { return current_ ? current_->hostData.get() : nullptr; }
+
 void GraphHost::processBlock(std::uint32_t frames, const rp_transport& transport, float* const* outputs,
                              std::uint32_t outputCount) {
     drain();
+    run(frames, transport, outputs, outputCount);
+}
+
+void GraphHost::run(std::uint32_t frames, const rp_transport& transport, float* const* outputs,
+                    std::uint32_t outputCount) {
     // Silence first, so channels no bus covers (or every channel, before the first plan or in a refused
     // block) never carry what the host left in its buffers, which a DAW often aliases to the inputs.
     if (outputs)
