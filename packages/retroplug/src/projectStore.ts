@@ -142,20 +142,19 @@ export class ProjectStore {
     );
   }
 
-  /** Install the hook fired whenever the systems structure changes — a user edit, or a load / new
-   *  (the quiet rebuild path notifies at the end of commit/newProject) — or a setting the kernel
-   *  projection reads changes (MIDI routing, the controller). A host wires this to project
-   *  the store and push it to the DSP runtime; set it AFTER the runtime exists, since the first
-   *  mutation fires it. */
+  /** Install the hook fired whenever the systems structure changes (a user edit, or a load / new; the quiet
+   *  rebuild path notifies at the end of commit/newProject), or when a setting the kernel projection reads
+   *  changes (MIDI routing, the controller). A host wires this to project the store and push it to the DSP
+   *  runtime; set it AFTER the runtime exists, since the first mutation fires it. */
   setOnSystemsChange(fn: () => void): void {
     this.onSystemsChange = fn;
   }
 
   /** Install a hook fired on ANY project-state change — settings edits (setLayout / setZoom / …) and
-   *  dirty transitions (mutation, save, export, new, load). Distinct from setOnSystemsChange, which
-   *  fires on a systems-structure change or a kernel-projected setting change (MIDI routing, the
-   *  controller), and drives the DSP projection. A UI multiplexer wires
-   *  this to re-render the settings / dirty views, which would otherwise never be notified. */
+   *  dirty transitions (mutation, save, export, new, load). Distinct from setOnSystemsChange, which fires on
+   *  a systems-structure change or a kernel-projected setting change (MIDI routing, the controller), and
+   *  drives the DSP projection. A UI multiplexer wires this to re-render the settings / dirty views, which
+   *  would otherwise never be notified. */
   setOnChange(fn: () => void): void {
     this.onChangeCb = fn;
   }
@@ -466,9 +465,8 @@ export class ProjectStore {
    *
    *  Like setMidiRouting, and unlike the other setting writers, this re-drives the KERNEL, not just the title
    *  bar: the kernel projection reads these settings (kernelProjection synthesizes the controller role from
-   *  them), so a change that never reached
-   *  setSystems would leave the audio thread running the previous app. `appConfig` merges rather than
-   *  replaces, so a menu row can set one knob without knowing the others. */
+   *  them), so a change that never reached setSystems would leave the audio thread running the previous app.
+   *  `appConfig` merges rather than replaces, so a menu row can set one knob without knowing the others. */
   setController(patch: Partial<ControllerSettings>): void {
     const current = this.projectSettings.controller;
     this.projectSettings = {
