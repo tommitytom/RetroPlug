@@ -1,0 +1,156 @@
+{
+ "cases": {
+  "gain-mid-note": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "0178ae29",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "c74e5d0d 0.01011",
+      "0cfb7fd9 0.009602"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "90fd1513 0.1186",
+      "40b9ce09 0.1186"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "37248f90 0.02032",
+      "37248f90 0.02032"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "291af140 0.03732",
+      "291af140 0.03732"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "nes-apu-latency-live": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "2b9daa53",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "a79a21c5 0",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "4117e503 0.09810",
+      "4117e503 0.09810"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "164394b1 0.1014",
+      "164394b1 0.1014"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "sameboy-highpass-live": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "b709c68c",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "c74e5d0d 0.01011",
+      "0cfb7fd9 0.009602"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "90fd1513 0.1186",
+      "40b9ce09 0.1186"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "e1c5a133 0.2373",
+      "e1c5a133 0.2373"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "vrc6-expansion-volume-live": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "7eb5c01e",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "a79a21c5 0",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 52800,
+     "lanes": [
+      "6c0ae6c7 0.1514",
+      "6c0ae6c7 0.1514"
+     ]
+    },
+    {
+     "frames": 52800,
+     "lanes": [
+      "1e7ebeed 0.1106",
+      "1e7ebeed 0.1106"
+     ]
+    }
+   ],
+   "sram": {}
+  }
+ },
+ "target": "linux-x64-gnu13"
+}
