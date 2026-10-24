@@ -152,7 +152,7 @@ either, and 2048 plays louder than 1024. The existing test passes only because `
 A fifth defect is recorded as it is, not fixed (§1): **a single NES under a split routing on a host
 narrower than the split needs does not fall back to Stereo.** `Engine::syncSplitPlan` arms the NES capture
 tap before `processBlock` checks the lane budget, so the mix path then drifts (added latency grows about
-49 ms per second). A Game Boy and two-system projects do fall back, bit-identical to Stereo. The plugin
+49 ms per second, measured at 48 kHz in 512-frame blocks, where it is about 25 frames per block, so it scales with the block rate). A Game Boy and two-system projects do fall back, bit-identical to Stereo. The plugin
 always passes 8 outputs and cannot hit it; the SDL standalone (2 channels by default) and 2-lane renders
 can. The baseline pins `nes-channelSplit-o2/o4`, `nes-pinSplit-o2` and `nes-stereoPinSplit-o2/o4` as they
 are; fixing it is its own change with a re-record.
@@ -162,18 +162,18 @@ are; fixing it is its own change with a re-record.
 In-repo ROMs cover most of it: `mGB.gb` (and the embedded build), `bliptoaster.nes` and its MMC5 / N163 /
 S5B / VRC6 / VRC7 builds, and smsggdj for SMS and GG. LSDj, risa (2.3.0 with `let_go.srm`) and nanoloop
 (GBA) are sibling fixtures under `RETROPLUG_RESOURCES_DIR`; those groups skip in CI, counted in the skip
-baseline. 149 cases in 20 group files; the parity suite is about 94 s of CPU against 175 s for the rest of
+baseline. 131 cases in the 14 group files recorded so far (counted over `baseline/*.json`; the fixture groups still to land add the rest); the parity suite is about 94 s of CPU against 175 s for the rest of
 `test:native`, its slowest file about 8 s.
 
 | File(s) | Cases | Covers |
 |---|---|---|
-| `blocks-{mgb,nes,sms,gg}` | each system × {44.1, 48 kHz} × blocks of {64, 199, 512, 1024, 8192} and a cycle of all of them | partitioning, MIDI inside blocks and on block edges (the mgb and nes cases) |
+| `blocks-{mgb,nes,sms,gg}` | each system × {44.1, 48 kHz} × blocks of {64, 199, 512, 1024, 8192} and a cycle of all of them | partitioning, MIDI inside blocks; the mgb and nes cases end with one trailing segment, the same irregular block list for every partition, whose note starts on a block's first frame and ends on a later block's last (edge events are delivered; not an off-by-one pin) |
 | `routing-{stereo,twoPerInstance,onePerInstance}` | outputs {2,4,8} × {1,2,3,5} systems, mixed mGB / BlipToaster / VRC6 | summation order, OnePerInstance's mono association, more systems than pairs |
-| `routing-split`, `routing-split-expansion` | ChannelSplit (GB stems, NES core channels), PinSplit, StereoPinSplit × {2,4,8}; each expansion build under PinSplit and ChannelSplit; a split with two systems | lane plans, the fall-back to Stereo |
+| `routing-split`, `routing-split-expansion` | ChannelSplit (GB stems, NES core channels), PinSplit, StereoPinSplit × {2,4,8}; each expansion build under PinSplit and ChannelSplit; a split with two systems | lane plans, the fall-back to Stereo for a Game Boy and for two systems (a single NES on a narrow host is the recorded defect, §2.5) |
 | `midi-routing` | the 4 modes over 3 systems on separate pairs, notes on all 16 channels with ties, a SysEx; a mid-run mode switch | the routing role; fix 1 |
 | `link` | two linked mGBs, a third unlinked, a link made and broken mid-run | how linked systems render (a linked mGB hears no MIDI: its serial port is the cable, and it never drives it, so lockstep stepping is not observable here: `lsdj-link` covers it) |
 | `edits-live`, `edits-structure` | gain through a held note, live role knobs; reset, duplicate, add, remove, replace mid-run, a split losing and regaining its single system, a pin split left | edit timing, per-frame gain smoothing, the tap restore; fix 2 is covered by its unit test in `test/systems/bliptoaster-assets.test.ts`, not by this case (duplicate-mid-run duplicates an mGB, which has no construct hooks) |
-| `sync-sms` | smsggdj SYNC IN24 on SMS and GG: start, bpm change, stop, locate, a short block at a loop wrap | transport-driven sync |
+| `sync-sms` | smsggdj SYNC IN24 on SMS and GG: start, bpm change, stop, locate, a short block at a loop wrap whose end is off the 24-PPQN tick grid (so its locate shows); at 48 kHz / 512 and at 44.1 kHz / 8192-frame blocks | transport-driven sync |
 | `lsdj-sync` *(fixture)* | SYNC=MIDI at divisors 1/2/4/8 and with autoStart; Arduinoboy at 1024 and 512 | lsdj-sync's clock modes; the Arduinoboy defect |
 | `lsdj-modes` *(fixture)* | off, keyboard, midiMap, keyboardMidi, midiPassthrough (raw clocks into SYNC=MIDI), midiOut (play / stop / play), masterSync | every other lsdj-sync mode; MI.OUT and master clock as MIDI out |
 | `lsdj-link` *(fixture)* | leader and follower on one cable | link-cable sync |
@@ -310,4 +310,4 @@ The implementation plan's tasks, each verified before the next:
   matrix's coverage; they get no case of their own.
 - Exact audio on arm64, macOS and Windows: those targets get the determinism and integer-state checks of
   §5.2, and the by-construction argument of §1 for the audio bits.
-- Fixing the Arduinoboy block-size defect (§2.5).
+- Fixing the Arduinoboy block-size defect, or the narrow-host NES split defect (§2.5).

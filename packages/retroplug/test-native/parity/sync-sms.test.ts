@@ -7,7 +7,10 @@ import { even } from "./rig";
 import { frames, smsggdj, smsStart } from "./scenes";
 
 const WRAP_BPM = 140;
-const LOOP_END_PPQ = 4;
+// The loop end is OFF the 24-PPQN tick grid (a tick every 1/24 quarter): smsggdj sees only counter deltas, so
+// with the end on the grid a tick lands at the next block's frame 0 whether ppq is relocated or not, and the
+// locate would be invisible. Off the grid, a wrap shows through the tick phase.
+const LOOP_END_PPQ = 4 + 1 / 48;
 const WRAP_BLOCK = 300;
 
 function transportCase(machine: "sms" | "gg", sr: number, size: number | null): ParityCase {
@@ -25,7 +28,8 @@ function transportCase(machine: "sms" | "gg", sr: number, size: number | null): 
       { blocks: blocks(frames(sr, 1500)), transport: [{ at: 0, bpm: 120, ppq: 0, playing: true }, { at: frames(sr, 900), bpm: WRAP_BPM }] },
       { blocks: blocks(frames(sr, 500)), transport: [{ at: 0, playing: false }] },
       // A loop wrap, as a DAW does it while playing: a short block that ends at the loop end, then a locate
-      // back to the loop start at the next block's start, still playing.
+      // back to the loop start at the next block's start, still playing. The short block also starts the
+      // transport after the stop segment above.
       {
         blocks: [WRAP_BLOCK, ...blocks(frames(sr, 1500))],
         transport: [{ at: 0, ppq: wrapStart, bpm: WRAP_BPM, playing: true }, { at: WRAP_BLOCK, ppq: 0 }],
