@@ -65,8 +65,9 @@ GraphHost::~GraphHost() {
     assert(!audioThreadOwns() && "destroy a GraphHost only after its audio thread has stopped");
     // The audio thread has stopped (setAudioThreadOwns(false) is the caller's job): adopt anything still
     // queued so every plan is in exactly one place, then free them all here, on the control thread. Host
-    // commands still queued are discarded, not applied.
-    drainCommands(true);
+    // commands still queued, trailers included, are discarded, not applied: the embedder may be part way
+    // through destroying itself.
+    drainCommands(true, false);
     reclaim();
     delete current_;
     current_ = nullptr;
@@ -234,7 +235,7 @@ void GraphHost::drain() { drainCommands(false); }
 
 void GraphHost::discardPending() { drainCommands(true); }
 
-void GraphHost::drainCommands(bool discard) {
+void GraphHost::drainCommands(bool discard, bool applyTrailers) {
     PlanStorage* replaced = nullptr;
     Command c;
     while (commands_.tryPop(c)) {
@@ -247,7 +248,9 @@ void GraphHost::drainCommands(bool discard) {
                 if (!c.plan->commits.empty()) commitsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
                 // The rest of the same edit, against the plan it rode in with. Applied under discard too:
                 // the plan is adopted either way, and its trailer is what keeps the embedder in step with it.
-                if (c.trailer && hostHandler_) hostHandler_(hostHandlerCtx_, c.host, current_->hostData.get(), false);
+                // Only the destructor hands it back as discarded.
+                if (c.trailer && hostHandler_)
+                    hostHandler_(hostHandlerCtx_, c.host, current_->hostData.get(), !applyTrailers);
                 break;
             case Command::Kind::SetParam:
                 pushControl(*c.queue, c.frame, c.value);

@@ -55,7 +55,8 @@ static_assert(sizeof(HostCommand) == kHostCommandBytes, "the payload is exactly 
 // discardPending. It must not block, and must not call back into the GraphHost: a setGraph from a quiescent
 // flush would nest a drain and a reclaim, which can free the plan whose host data it was handed.
 // `discard`: the command was dropped unapplied (discardPending or teardown), so free what it owns instead.
-// A plan's trailer (setGraph) is never discarded: it is applied with its plan, which is always adopted.
+// A plan's trailer (setGraph) is applied with its plan, which is always adopted, even in discardPending; only
+// the GraphHost's own destructor hands it back as discarded.
 using HostCommandHandler = void (*)(void* ctx, const HostCommand& command, const void* hostData, bool discard);
 
 constexpr std::uint32_t kMaxBlockFrames = 1u << 16;
@@ -164,7 +165,7 @@ private:
     static_assert(std::is_trivially_copyable_v<Command>, "the ring copies a Command as bytes");
 
     bool        push(const Command& c);
-    void        drainCommands(bool discard);
+    void        drainCommands(bool discard, bool applyTrailers = true);
     void        flushIfQuiescent();
     bool        waitForCommits();
     static const void* hostInterface(const rp_host* host, const char* id);
