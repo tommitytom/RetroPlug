@@ -10,8 +10,12 @@ class SystemBase;
 namespace rp::host {
 
 // The core handoff (docs/modular-graph-phase-b1-design.md section 4.6). The translator parks each built
-// core under a token that goes in the system node's settings; the node takes it when first activated and
-// owns it from then on. [control]
+// core under a token that goes in the system node's settings; the node takes it when first activated (not
+// when created) and owns it from then on. [control]
+//
+// A core belongs to one node id for life: take hands a token out once, so the same token under a new node
+// id finds nothing and that node fails to activate. A plan refused after its node took a core (a later node
+// failed, or the token named the wrong kind of core) has already released and freed that core.
 #define RP_HOST_CORES_INTERFACE "rp.host.cores/1"
 struct HostCores {
     void* ctx;

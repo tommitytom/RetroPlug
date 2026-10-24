@@ -62,7 +62,10 @@ struct SystemNode {
         if (!cores) return false;
         SystemBase* built = cores->take(cores->ctx, token);
         core = dynamic_cast<Core*>(built);
-        if (!core) delete built;  // a token naming another kind of core is a translator bug
+        if (!core && built) {  // a token naming another kind of core is a translator bug
+            cores->released(cores->ctx, built);  // the engine keeps a snapshot slot for it, as for any core
+            delete built;
+        }
         return core != nullptr;
     }
 
