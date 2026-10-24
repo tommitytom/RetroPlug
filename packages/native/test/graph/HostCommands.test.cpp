@@ -102,3 +102,16 @@ TEST_CASE("plans queued in one drain all come back through the release ring", "[
     CHECK(rig.host->reclaim() == static_cast<std::size_t>(kPlans));  // the first plan and all but the last queued
     rig.host->setAudioThreadOwns(false);
 }
+
+TEST_CASE("re-activation keeps the plan's host data", "[graph][host-commands][swap]") {
+    GraphRig rig;
+    REQUIRE(setWith(rig, R"({"nodes":[{"id":"s","type":"rp.test.sink"}],"wires":[]})", 5).ok);
+    rig.run(64, 1);
+    const void* before = rig.host->hostData();
+    REQUIRE(before != nullptr);
+    REQUIRE(rig.host->reactivate(96000.0, 64));
+    rig.run(64, 1);
+    CHECK(rig.host->hostData() == before);
+    REQUIRE(rig.host->hostData() != nullptr);
+    CHECK(*static_cast<const int*>(rig.host->hostData()) == 5);
+}

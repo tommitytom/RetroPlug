@@ -177,6 +177,7 @@ PlanOutcome GraphHost::planDocument(const GraphDocument& document, double sample
 // Hand a successful plan to the audio thread. False, with the plan freed unpublished, if the ring is full.
 bool GraphHost::publish(PlanOutcome& outcome, const GraphDocument& document) {
     PlanStorage* storage = outcome.storage.release();
+    const std::shared_ptr<const void> hostData = storage->hostData;
     const bool commits = !storage->commits.empty();
     if (commits) commitsInFlight_.fetch_add(1, std::memory_order_acq_rel);
     Command c;
@@ -189,6 +190,7 @@ bool GraphHost::publish(PlanOutcome& outcome, const GraphDocument& document) {
     }
     // Published: the plan will be adopted, so the control-side records can move on.
     document_ = document;
+    hostData_ = hostData;
     live_ = std::move(outcome.instances);
     feedback_ = std::move(outcome.feedback);
     for (auto& f : outcome.onPublished) f();
@@ -313,7 +315,9 @@ bool GraphHost::reactivate(double sampleRate, std::uint32_t maxFrames, std::stri
         backToOld(*inst);
         return fail(why);
     }
-    // Quiescent, so the command ring is empty and publishing cannot be refused.
+    // Quiescent, so the command ring is empty and publishing cannot be refused. The replan carries the
+    // host data the document was set with: a rate change must not strip the engine's tables from the plan.
+    outcome.storage->hostData = hostData_;
     [[maybe_unused]] const bool published = publish(outcome, document);
     assert(published);
     config_.sampleRate = sampleRate;

@@ -185,6 +185,7 @@ private:
     std::uint32_t                                         leaksReported_ = 0;  // control side
     PlanStorage*                                          current_ = nullptr;  // audio side
     GraphDocument                                         document_;           // control side: last published
+    std::shared_ptr<const void>                           hostData_;           // control side: its host data
     std::map<std::string, std::shared_ptr<Instance>>      live_;               // control side
     std::map<std::string, std::shared_ptr<FeedbackFront>> feedback_;           // control side
     float* const*                                         hostOutputs_ = nullptr;
