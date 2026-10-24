@@ -6,7 +6,6 @@ import { bootSession, type Session } from "../../src/bootSession";
 import type { RenderBlock } from "../../src/audioDriver";
 import { laneDigest, type MidiOutEntry, type SegmentDigest } from "./digest";
 
-declare const __CONFIG_DIR__: string;
 declare const __DSP_KERNEL_BUNDLE__: string;
 
 /** One run of host blocks. Events are placed by ABSOLUTE frame within the segment and land in the block
@@ -39,13 +38,20 @@ export function cycle(total: number, sizes: number[]): number[] {
   return out;
 }
 
-const ROM_DIR = `${__CONFIG_DIR__}/parity-roms`;
 const swapExt = (path: string, ext: string): string => path.replace(/\.[^./]+$/, "") + ext;
 
 export class Rig {
   readonly session: Session = bootSession();
   /** Blocks rendered since the last reset: the MIDI-out block index counts from the start of the case. */
   private blockBase = 0;
+  /** system id -> project slot, for the whole case: updated by each render with the systems live then and
+   *  never pruned, so MIDI out from a system an `after` hook removed or replaced keeps its last known slot. */
+  private readonly slots = new Map<number, number>();
+
+  /** Where this process keeps its ROM copies: under its OWN config dir (the alone-run child gets another). */
+  private romDir(): string {
+    return `${this.session.backend.configDir()}/parity-roms`;
+  }
 
   get project() {
     return this.session.project;
@@ -59,10 +65,13 @@ export class Rig {
    *  case (a leftover "-2.sav" would be adopted by the next duplicate). */
   reset(sampleRate: number): void {
     this.project.newProject();
-    for (const name of this.session.backend.listDir(ROM_DIR))
-      if (!name.endsWith("/")) this.session.backend.deleteFile(`${ROM_DIR}/${name}`);
+    const romDir = this.romDir();
+    for (const name of this.session.backend.listDir(romDir))
+      if (!name.endsWith("/")) this.session.backend.deleteFile(`${romDir}/${name}`);
     const { dsp, audio } = this.session;
-    if (!dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)) throw new Error("the kernel did not reload");
+    // Reload the kernel so no script state survives from the last case. (The RPC always answers true, so
+    // there is no result worth checking; a script that failed to compile would fail the case's own render.)
+    dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!);
     audio.setTransport(false);
     audio.setPpq(0);
     audio.setBpm(120);
@@ -70,23 +79,36 @@ export class Rig {
     audio.drainMidiOut();
     if (audio.systemCount() !== 0) throw new Error(`${audio.systemCount()} system(s) survived the reset`);
     this.blockBase = 0;
+    this.slots.clear();
   }
 
   /** A fresh copy of `src` (and of the battery beside it, if any) in this file's temp dir, so a case
    *  never writes a committed .sav and always starts from the same battery. `prefix` names the copy apart
    *  from others of the same ROM: a second instance of one path gets the "-2.sav" battery slot, which a
-   *  case cannot seed in advance, so two systems that each need a battery each need their own copy. */
+   *  case cannot seed in advance, so two systems that each need a battery each need their own copy. The
+   *  .sms and .gg smsggdj builds share one battery stem ("smsggdj_v0_45.sav"), so a case mixing them needs
+   *  prefixes too. `prefix` is a file-name prefix, never a path: the reset wipes files only. */
   rom(src: string, prefix = ""): string {
-    const backend = this.session.backend;
-    const dst = `${ROM_DIR}/${prefix}${src.slice(src.lastIndexOf("/") + 1)}`;
-    const bytes = backend.readFile(src);
+    if (prefix.includes("/")) throw new Error(`rom prefix "${prefix}" must not contain "/"`);
+    const dst = `${this.romDir()}/${prefix}${src.slice(src.lastIndexOf("/") + 1)}`;
+    const bytes = this.session.backend.readFile(src);
     if (!bytes) throw new Error(`cannot read ${src}`);
-    backend.writeFile(dst, bytes);
+    this.writeFile(dst, bytes);
     for (const ext of [".sav", ".srm"]) {
-      const battery = backend.readFile(swapExt(src, ext));
-      if (battery) backend.writeFile(swapExt(dst, ext), battery);
+      const battery = this.session.backend.readFile(swapExt(src, ext));
+      if (battery) this.writeFile(swapExt(dst, ext), battery);
     }
     return dst;
+  }
+
+  /** Write a file through the backend; throws when the write fails. */
+  writeFile(path: string, bytes: Uint8Array): void {
+    if (!this.session.backend.writeFile(path, bytes)) throw new Error(`cannot write ${path}`);
+  }
+
+  /** Press or release `button` on the system in project slot `slot`. */
+  press(slot: number, button: number, down: boolean): void {
+    this.audio.pressButton(this.id(slot), button, down);
   }
 
   /** Add a ROM (copied first) as a new system; throws if it does not build. */
@@ -122,19 +144,26 @@ export class Rig {
       const b = blockAt(m.at);
       (blocks[b].midi ??= []).push({ frame: m.at - starts[b], bytes: m.bytes });
     }
-    for (const c of seg.controller ?? []) (blocks[blockAt(c.at)].controller ??= []).push(c.bytes);
-    for (const t of seg.transport ?? []) {
-      const blk = blocks[blockAt(t.at)];
-      if (t.playing !== undefined) blk.playing = t.playing;
-      if (t.bpm !== undefined) blk.bpm = t.bpm;
-      if (t.ppq !== undefined) blk.ppq = t.ppq;
+    for (const c of [...(seg.controller ?? [])].sort((x, y) => x.at - y.at)) (blocks[blockAt(c.at)].controller ??= []).push(c.bytes);
+    // Transport applies at the start of the block holding its frame, so one block can only carry one value
+    // per field: two different values (play then stop inside one big block) would silently keep the last.
+    for (const t of [...(seg.transport ?? [])].sort((x, y) => x.at - y.at)) {
+      const b = blockAt(t.at);
+      const blk = blocks[b];
+      for (const field of ["playing", "bpm", "ppq"] as const) {
+        const v = t[field];
+        if (v === undefined) continue;
+        if (blk[field] !== undefined && blk[field] !== v)
+          throw new Error(`block ${b} gets two different values for transport ${field} (${blk[field]} then ${v}): split the blocks`);
+        Object.assign(blk, { [field]: v });
+      }
     }
 
-    const slotOf = new Map(this.project.systems.view().map((v, i) => [v.id, i]));
+    this.project.systems.view().forEach((v, i) => this.slots.set(v.id, i));
     const r = this.audio.renderBlocks(outputs, blocks);
     const midiOut = r.midiOut.map((m) => ({
       block: this.blockBase + m.block,
-      slot: slotOf.get(m.system) ?? -1,
+      slot: this.slots.get(m.system) ?? -1,
       frame: m.frame,
       data: m.data,
     }));

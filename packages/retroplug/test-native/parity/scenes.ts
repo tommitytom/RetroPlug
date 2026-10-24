@@ -1,6 +1,6 @@
 // The systems and stimuli the parity groups share: how each in-repo ROM is brought up through the
-// stores and made to sound. Each helper takes the case's sample rate and a block splitter, so the same
-// scene can be rendered in any host block size.
+// stores and made to sound. The stimulus helpers (`phrase`, `smsStart`) take the case's sample rate, and
+// `smsStart` a block splitter, so the same scene can be rendered in any host block size.
 import type { Rig, Segment } from "./rig";
 import { buildSmsMetronomeSav, pokeMetronomeIntoWram, SMS_SYNC_IN24, SMS_SYNC_OFF, WRAM_BASE } from "../smsSyncSong";
 
@@ -50,7 +50,8 @@ export function phrase(sampleRate: number, channels: number[], startMs = 0): { a
   return out.sort((a, b) => a.at - b.at);
 }
 
-/** mGB (the embedded build): a phrase on its two pulse voices and the wave voice. */
+/** mGB (the embedded build), loaded through the stores. MGB_CHANNELS are its two pulse voices and the wave
+ *  voice, the channels a case plays a phrase on. */
 export function mgb(rig: Rig): number {
   const id = rig.project.systems.loadMgb();
   if (id == null) throw new Error("mGB did not build");
@@ -70,25 +71,23 @@ export function mgbFile(rig: Rig): number {
 export const BOOT_MS = 1500;
 export const NES_CHANNELS = [0, 1, 2, 3];
 
-/** smsggdj, booted with the metronome song in its working memory and started.
- *
- *  The cart does not autoload a song (smsSyncSong.ts has why), so the battery supplies only the options
- *  block (the SYNC mode) and the song is poked into work RAM after the 3 s boot; PAUSE then starts it. With
- *  `sync` off it free-runs; with it on (IN24) it waits for the host transport, which sms-sync turns into
- *  its clock. Returns the boot segments; the case renders its own after them. */
 export const SMS_BOOT_MS = 3000;
 const PAUSE = 7;
 
+/** smsggdj as a new system, its battery seeding the options block (the SYNC mode). The cart does not
+ *  autoload a song (smsSyncSong.ts has why), so `smsStart` pokes it in. With `sync` off the song free-runs;
+ *  with it on (IN24) it waits for the host transport, which sms-sync turns into its clock. */
 export function smsggdj(rig: Rig, machine: "sms" | "gg", sync: boolean): number {
   const rom = rig.rom(machine === "sms" ? ROMS.sms : ROMS.gg);
-  rig.session.backend.writeFile(rom.replace(/\.[^./]+$/, ".sav"), buildSmsMetronomeSav(sync ? SMS_SYNC_IN24 : SMS_SYNC_OFF));
+  rig.writeFile(rom.replace(/\.[^./]+$/, ".sav"), buildSmsMetronomeSav(sync ? SMS_SYNC_IN24 : SMS_SYNC_OFF));
   const id = rig.project.systems.addSystem(rom);
   if (id == null) throw new Error(`smsggdj (${machine}) did not build`);
   if (sync) rig.project.systems.setRoleConfig(id, "sms-sync", { machine });
   return id;
 }
 
-/** The segments that take a just-added smsggdj from power-on to playing: boot, poke the song, PAUSE. */
+/** The segments that take a just-added smsggdj from power-on to playing: boot (3 s), poke the metronome
+ *  song into work RAM, PAUSE. They are the boot segments; the case renders its own after them. */
 export function smsStart(sampleRate: number, blocks: Blocks, slot = 0): Segment[] {
   return [
     {
@@ -97,10 +96,10 @@ export function smsStart(sampleRate: number, blocks: Blocks, slot = 0): Segment[
         const id = rig.id(slot);
         const caps = { writeCpu: (_: number, addr: number, v: number) => rig.project.systems.writeRam(id, addr - WRAM_BASE, Uint8Array.of(v)) };
         if (pokeMetronomeIntoWram(caps, id) === 0) throw new Error("the metronome song did not differ from a blank one");
-        rig.audio.pressButton(id, PAUSE, true);
+        rig.press(slot, PAUSE, true);
       },
     },
-    { blocks: blocks(frames(sampleRate, 100)), after: (rig) => void rig.audio.pressButton(rig.id(slot), PAUSE, false) },
+    { blocks: blocks(frames(sampleRate, 100)), after: (rig) => rig.press(slot, PAUSE, false) },
     { blocks: blocks(frames(sampleRate, 100)) },
   ];
 }

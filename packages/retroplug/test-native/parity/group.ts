@@ -27,13 +27,15 @@ declare const __rp_keepAlive: () => void;
 interface ByteStream {
   getReader(): { read(): Promise<{ done: boolean; value?: Uint8Array }> };
 }
+declare function setTimeout(fn: () => void, ms: number): number;
+declare function clearTimeout(id: number): void;
 declare const tjs: {
   exePath: string;
   env: Record<string, string>;
   spawn(
     args: string[],
     options?: { env?: Record<string, string>; stdout?: "inherit" | "pipe" | "ignore"; stderr?: "inherit" | "pipe" | "ignore" },
-  ): { wait(): Promise<{ exit_status: number; term_signal: string | null }>; stdout: ByteStream | null; stderr: ByteStream | null };
+  ): { wait(): Promise<{ exit_status: number; term_signal: string | null }>; kill(signal: string): void; stdout: ByteStream | null; stderr: ByteStream | null };
 };
 
 export interface ParityCase {
@@ -55,6 +57,13 @@ interface Baseline {
   cases: Record<string, CaseDigest>;
 }
 
+/** The one target whose float output the committed baselines hold (design sections 1 and 5.2). A recording
+ *  only ever happens on it, and never re-labels a baseline recorded on another. */
+const PARITY_TARGET = "linux-x64-gnu13";
+
+/** How long a recording waits for one case's alone-run before killing it. */
+const ALONE_TIMEOUT_MS = 10 * 60 * 1000;
+
 const env = tjs.env;
 const UPDATE = env.RP_PARITY_UPDATE === "1";
 const ONLY = env.RP_PARITY_ONLY || "";
@@ -63,6 +72,7 @@ const DUMP = env.RP_PARITY_DUMP || "";
 
 const text = new TextDecoder();
 const bytes = (s: string) => new TextEncoder().encode(s);
+const isSkip = (e: unknown): boolean => typeof e === "object" && e !== null && (e as { rpSkip?: unknown }).rpSkip === true;
 
 /** Run one case from a reset, returning its digest and (when asked) its lanes per segment. `unstimulated`
  *  drops every segment's MIDI, controller traffic and transport, for the check that they matter. */
@@ -146,22 +156,34 @@ async function drain(stream: ByteStream | null, sink: Uint8Array[]): Promise<voi
 
 /** Run case `name` alone in a fresh host process and return its digest, so a recording can prove a
  *  case's hashes do not depend on the cases before it. */
+let aloneRuns = 0;
+
 async function runAlone(rig: Rig, name: string): Promise<CaseDigest> {
   __rp_keepAlive(); // the child outlasts the host's bounded pump
   const emit = `${__CONFIG_DIR__}/parity-alone.json`;
   rig.session.backend.deleteFile(emit);
+  // The child gets its OWN config dir, so it shares no disk with this process: a case that reads a file an
+  // earlier case wrote (a ROM copy, a battery) then differs alone, and is refused as order-dependent. Nothing
+  // removes it here: the test runner deletes this process's whole temp dir, subdirectories included.
+  const childConfig = `${__CONFIG_DIR__}/alone-${++aloneRuns}`;
   const child = tjs.spawn([tjs.exePath, __SELF_BUNDLE__], {
-    env: { ...env, RP_PARITY_UPDATE: "", RP_PARITY_ONLY: name, RP_PARITY_EMIT: emit },
+    env: { ...env, RETROPLUG_USER_CONFIG_DIR: childConfig, RP_PARITY_UPDATE: "", RP_PARITY_ONLY: name, RP_PARITY_EMIT: emit },
     stdout: "pipe",
     stderr: "pipe",
   });
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    child.kill("SIGKILL");
+  }, ALONE_TIMEOUT_MS);
   const chunks: Uint8Array[] = [];
   const [, , status] = await Promise.all([drain(child.stdout, chunks), drain(child.stderr, chunks), child.wait()]);
+  clearTimeout(timer);
   const written = rig.session.backend.readFile(emit);
-  if (status.exit_status !== 0 || !written) {
-    const output = chunks.map((c) => text.decode(c)).join("");
-    throw new Error(`running ${name} alone failed (exit ${status.exit_status}):\n${output}`);
-  }
+  const output = () => chunks.map((c) => text.decode(c)).join("");
+  if (timedOut) throw new Error(`running ${name} alone timed out after ${ALONE_TIMEOUT_MS / 1000}s and was killed:\n${output()}`);
+  if (status.exit_status !== 0 || !written)
+    throw new Error(`running ${name} alone failed (exit ${status.exit_status}, signal ${status.term_signal ?? "none"}):\n${output()}`);
   return JSON.parse(text.decode(written)) as CaseDigest;
 }
 
@@ -178,6 +200,8 @@ export function runGroup(group: string, cases: ParityCase[]): void {
   const host = rig.audio.buildTarget();
   const raw = rig.session.backend.readFile(file);
   const baseline: Baseline | null = raw ? (JSON.parse(text.decode(raw)) as Baseline) : null;
+  // What a recording must be on: the file's own target, or the one target for a file not yet written.
+  const recordTarget = baseline?.target ?? PARITY_TARGET;
   const target = baseline?.target ?? host;
   const onTarget = target === host;
   const missing = (c: ParityCase) => (c.needs ?? []).find((p) => !rig.session.backend.fileExists(p));
@@ -202,15 +226,26 @@ export function runGroup(group: string, cases: ParityCase[]): void {
       if (absent) skip(`needs ${absent}`);
       try {
         if (UPDATE) {
-          if (!onTarget) throw new Error(`the baseline was recorded on ${target}; this host is ${host}, so it cannot re-record it`);
+          if (host !== recordTarget) throw new Error(`the baseline target is ${recordTarget}; this host is ${host}, so it cannot record it`);
           const { digest } = runCase(rig, c, false);
           const silent = c.audible.filter((l) => !laneSounds(digest, l));
           if (silent.length) throw new Error(`lane(s) ${silent.join(", ")} never sound: refusing to record silence`);
           // A stimulus the systems ignore (MIDI sent before a cart finished booting, say) would record
           // nothing but the boot.
           const stimulated = c.segments.some((s) => s.midi?.length || s.controller?.length || s.transport?.length);
-          if (stimulated && compareDigests(digest, runCase(rig, c, false, true).digest, { audio: true }).length === 0)
-            throw new Error("its MIDI, controller traffic and transport change nothing: refusing to record a stimulus no system hears");
+          if (stimulated) {
+            // An unstimulated run that THROWS (an `after` hook asserting stimulated state) proves the stimulus
+            // changed something.
+            let same = false;
+            try {
+              same = compareDigests(digest, runCase(rig, c, false, true).digest, { audio: true }).length === 0;
+            } catch {
+              same = false;
+            }
+            if (same) throw new Error("its MIDI, controller traffic and transport change nothing: refusing to record a stimulus no system hears");
+          }
+          // A filtered recording (ONLY) runs the case first in its process, so it is the alone-run by
+          // construction; the next unfiltered check is what compares it to the group order.
           if (!ONLY) {
             const alone = await runAlone(rig, c.name);
             const differs = compareDigests(digest, alone, { audio: true });
@@ -233,7 +268,7 @@ export function runGroup(group: string, cases: ParityCase[]): void {
           throw new Error(problems.join("\n") + where);
         }
       } catch (e) {
-        failed++;
+        if (!isSkip(e)) failed++;
         throw e;
       }
     });
@@ -242,13 +277,18 @@ export function runGroup(group: string, cases: ParityCase[]): void {
   // Last: write the recording, or check the baseline holds no case the table has dropped.
   test(UPDATE ? `${group}: write the baseline` : `${group}: the baseline holds only these cases`, () => {
     if (UPDATE) {
+      if (host !== recordTarget) throw new Error(`the baseline target is ${recordTarget}; this host is ${host}, so nothing was written`);
       if (failed) throw new Error(`${failed} case(s) failed, so nothing was written`);
+      if (Object.keys(recorded).length === 0) {
+        console.log(`# ${group}: nothing was recorded (every case skipped), so the baseline file was left as it was`);
+        return;
+      }
       // A filtered recording replaces only its case. An unfiltered one drops entries for cases no longer in
       // the table, but a case skipped for a missing fixture keeps the entry it had.
       const kept: Record<string, CaseDigest> = ONLY ? { ...(baseline?.cases ?? {}) } : {};
       if (!ONLY) for (const n of names) if (!(n in recorded) && baseline?.cases[n]) kept[n] = baseline.cases[n];
       Object.assign(kept, recorded);
-      expect(rig.session.backend.writeFile(file, bytes(stableJson({ target: host, cases: kept })))).toBeTruthy();
+      expect(rig.session.backend.writeFileAtomic(file, bytes(stableJson({ target: recordTarget, cases: kept })))).toBeTruthy();
       return;
     }
     if (ONLY || !baseline) return;
