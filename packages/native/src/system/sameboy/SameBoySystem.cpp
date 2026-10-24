@@ -28,6 +28,7 @@ extern "C" {
 #include "system/sameboy/bootroms/mgb_boot_fast.h"
 #include "system/sameboy/bootroms/sgb_boot_fast.h"
 #include "system/sameboy/bootroms/sgb2_boot_fast.h"
+#include "util/Determinism.hpp"
 #include "util/Gain.hpp"
 
 namespace {
@@ -222,6 +223,8 @@ void SameBoySystem::onActivate(double sampleRate) {
     // unconditionally — SameBoy's documented "provided allocators" contract
     // (gb.h). No-op on Linux, where the C and C++ layouts are identical.
     gb_ = GB_alloc();
+    // Before GB_init, whose reset is what fills RAM from the generator. Process-global, like the switch.
+    if (rp::deterministic()) GB_random_set_enabled(false);
     GB_init(gb_, toSameBoyModel(config_.model));
     GB_set_user_data(gb_, this);
 

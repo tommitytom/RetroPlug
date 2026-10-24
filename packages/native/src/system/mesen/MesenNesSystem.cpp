@@ -10,6 +10,7 @@
 #include "system/mesen/MesenAudioDevice.hpp"
 #include "system/mesen/MesenVideoDevice.hpp"
 #include "system/mesen/MesenNesDebugSession.hpp"
+#include "util/Determinism.hpp"
 #include "system/mesen/NesEverdriveFifo.hpp"
 #include "system/mesen/roles/NesN8FifoRole.hpp"
 
@@ -116,6 +117,7 @@ void configureNes(Emulator& emu, std::uint32_t region, bool removeSpriteLimit,
     // 0 = the documented chip behaviour, 1 = match the Everdrive N8's FPGA cores.
     cfg.Sunsoft5bNoiseEnabled = (s5bNoise == 0);
     cfg.Mmc5PulsePhaseReset   = (mmc5PhaseReset == 0);
+    if (rp::deterministic()) cfg.RamPowerOnState = RamState::AllZeros;  // the parity harness only
     settings->SetNesConfig(cfg);
 }
 

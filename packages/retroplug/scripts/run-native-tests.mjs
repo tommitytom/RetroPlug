@@ -122,9 +122,12 @@ async function runOne({ file, slug }) {
     return false;
   }
 
+  // The parity suite hashes exact output, so its cores power on in a fixed state (util/Determinism.hpp).
+  // Every other file keeps the random power-on the app has.
+  const parity = slug.startsWith("parity/") ? { RETROPLUG_DETERMINISTIC: "1" } : {};
   const run = await spawnBuffered(HOST, [outFile], {
     cwd: PKG,
-    env: { ...process.env, RETROPLUG_USER_CONFIG_DIR: cfgDir },
+    env: { ...process.env, ...parity, RETROPLUG_USER_CONFIG_DIR: cfgDir },
   });
   flush(slug, run.output);
   rmSync(cfgDir, { recursive: true, force: true });
