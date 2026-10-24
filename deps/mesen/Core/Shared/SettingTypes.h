@@ -728,6 +728,12 @@ struct SmsConfig
 	// set it. See MesenSmsSystem's configureSms for why RetroPlug sets it false.
 	bool FmMutesPsg = true;
 
+	// RetroPlug: whether the VDP powers on at a random scanline, as Mesen does so a game that seeds an RNG
+	// from boot timing varies (see SmsVdp::Init). The one power-on randomness RamPowerOnState does not
+	// cover; RetroPlug's parity harness (RETROPLUG_DETERMINISTIC) turns it off, which starts at scanline 0.
+	// Defaults true, so stock behaviour is unchanged for anything that does not set it.
+	bool RandomizeVdpStartScanline = true;
+
 	OverscanDimensions NtscOverscan = {};
 	OverscanDimensions PalOverscan = {};
 	OverscanDimensions GameGearOverscan = {};

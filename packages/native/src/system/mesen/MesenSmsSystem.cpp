@@ -39,6 +39,7 @@
 #include "util/Gain.hpp"
 #include "system/mesen/MesenBlockOps.hpp"
 #include "system/mesen/MesenBoot.hpp"
+#include "util/Determinism.hpp"
 
 namespace {
 
@@ -112,6 +113,8 @@ void configureSms(Emulator& emu, bool gameGear, bool enableFm) {
     // larger), which feeds stateSnapshotSize() and every Duplicate; and two
     // runs of the same ROM diverge, so no byte-identity guard can be written.
     cfg.RamPowerOnState = RamState::AllZeros;
+    // The VDP's random start scanline is the other power-on randomness; only the parity harness fixes it.
+    cfg.RandomizeVdpStartScanline = !rp::deterministic();
 
     // The VDP always emits 256x240 and BaseVideoFilter subtracts the overscan
     // below. Mesen defaults all three to {}, so without this SMS shows 24 black
