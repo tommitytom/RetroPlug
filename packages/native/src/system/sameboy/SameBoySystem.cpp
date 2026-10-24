@@ -223,8 +223,13 @@ void SameBoySystem::onActivate(double sampleRate) {
     // unconditionally — SameBoy's documented "provided allocators" contract
     // (gb.h). No-op on Linux, where the C and C++ layouts are identical.
     gb_ = GB_alloc();
-    // Before GB_init, whose reset is what fills RAM from the generator. Process-global, like the switch.
-    if (rp::deterministic()) GB_random_set_enabled(false);
+    // Before GB_init, whose reset is what fills RAM from the generator. Process-global, like the switch, so it
+    // is applied once: seeding 0 as well, because GB_random32() returns the seed itself (the SGB intro reads
+    // it) even with the generator off.
+    if (rp::deterministic()) {
+        static const bool applied = (GB_random_seed(0), GB_random_set_enabled(false), true);
+        (void)applied;
+    }
     GB_init(gb_, toSameBoyModel(config_.model));
     GB_set_user_data(gb_, this);
 

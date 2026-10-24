@@ -244,13 +244,13 @@ if(WIN32)
             "/FI${CMAKE_BINARY_DIR}/sameboy-clang/sameboy_version.h"
             # GB_DISABLE_* MUST match the sameboy core or GB_gameboy_t's layout diverges.
             -DGB_DISABLE_TIMEKEEPING -DGB_DISABLE_DEBUGGER
-            -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DNOGDI
+            -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DNOGDI -D_CRT_SECURE_NO_WARNINGS
             "-I${CMAKE_SOURCE_DIR}/packages/native/src"
             "-I${CMAKE_SOURCE_DIR}/deps/sameboy/Core"
             "-I${CMAKE_BINARY_DIR}/generated"
             "-I${CMAKE_BINARY_DIR}/_deps/reflectcpp-src/include"
             "/Fo${_sbs_obj}" "${_sbs_src}"
-        DEPENDS "${_sbs_src}" sameboy_bootroms
+        DEPENDS "${_sbs_src}" "${CMAKE_SOURCE_DIR}/packages/native/src/util/Determinism.hpp" sameboy_bootroms
         COMMENT "clang-cl (sameboy) SameBoySystem.cpp"
         VERBATIM)
     add_library(retroplug-samebsys STATIC "${_sbs_obj}")

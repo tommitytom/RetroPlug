@@ -9,10 +9,12 @@ declare const __REPO_RESOURCES_DIR__: string;
 
 const session = bootSession();
 
-function bootAndReadRam(load: () => number | null): Uint8Array {
+// ms is how long the core runs before RAM is read: the NES ROM clears most of its RAM within a few ms, so the
+// NES case reads almost at once, while the randomised power-on image is still mostly there.
+function bootAndReadRam(load: () => number | null, ms = 100): Uint8Array {
   const id = load();
   expect(typeof id, "the system builds").toBe("number");
-  session.audio.renderAudio(100);
+  session.audio.renderAudio(ms);
   const ram = session.project.systems.readRam(id as number);
   expect(ram != null, "work RAM is published").toBeTruthy();
   session.project.systems.removeSystem(id as number);
@@ -31,13 +33,13 @@ test("two SameBoy boots power on with identical work RAM", () => {
   const a = bootAndReadRam(() => session.project.systems.loadMgb());
   const b = bootAndReadRam(() => session.project.systems.loadMgb());
   expect(a.length).toBeGreaterThan(0);
-  expect(bytesDiffering(a, b)).toBe(0);
+  expect(bytesDiffering(a, b), "needs RETROPLUG_DETERMINISTIC=1 (the runner sets it for parity/ files)").toBe(0);
 });
 
 test("two Mesen NES boots power on with identical work RAM", () => {
   const nes = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
-  const a = bootAndReadRam(() => session.project.systems.addSystem(nes));
-  const b = bootAndReadRam(() => session.project.systems.addSystem(nes));
+  const a = bootAndReadRam(() => session.project.systems.addSystem(nes), 1);
+  const b = bootAndReadRam(() => session.project.systems.addSystem(nes), 1);
   expect(a.length).toBeGreaterThan(0);
-  expect(bytesDiffering(a, b)).toBe(0);
+  expect(bytesDiffering(a, b), "needs RETROPLUG_DETERMINISTIC=1 (the runner sets it for parity/ files)").toBe(0);
 });
