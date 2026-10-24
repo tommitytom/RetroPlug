@@ -2,8 +2,8 @@
 
 This is the canonical description of how RetroPlug runs: the threads, the
 seams between them, and who owns what. Every other spec doc references this one for the
-command ring, the snapshot registry, the release ring, and the threading model — it defines
-those concepts once, here.
+command ring, the graph the engine runs on, the snapshot registry, the release ring, and the
+threading model; it defines those concepts once, here.
 
 The whole architecture serves one thesis: **native owns bytes and cores; TypeScript owns
 meaning.** Native (C++) owns the emulator cores, their raw bytes, the real-time audio thread,
@@ -47,7 +47,7 @@ UI-harness copy.
 
 The DPF plugin is a special case worth calling out: **its editor runs on the same QuickJS
 context as its control plane**, not a separate RPC bridge. The DSP side owns a plugin-lifetime
-[`TjsHostRuntime`](../packages/native/plugin/PluginDSP.cpp#L38) with `__rpcSend`
+[`TjsHostRuntime`](../packages/native/plugin/PluginDSP.cpp) with `__rpcSend`
 already bound (in `bootControlPlane`). The UI side reaches it through
 [`SharedDSP`](../packages/native/plugin/PluginShared.hpp) —
 `getPluginInstancePointer()` → `getSharedDSP()` → `LvglJsEngine::useExternalHost()` —
@@ -77,54 +77,57 @@ glance:
 Each host mounts only the facets it should expose (the plugin channel omits `debug`/`harness`/
 `driver`; the CLI + test host mount the full union via `registerAllBackendRpc`). The plugin does
 not use the `driver` facet — DPF owns its audio thread and drives `engine_` + `invoker_`
-**directly** from C++ (`activate`/`deactivate`/`run`, [`PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp#L134)).
+**directly** from C++ (`activate`/`deactivate`/`run`, [`PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp)).
 
 ---
 
 ## 2. Control plane vs audio thread
 
-Two worlds, and they **never touch each other's memory directly**. All control→audio mutation
+Two worlds, and they **never touch each other's memory directly**. All control→audio change
 goes through the command ring; all audio→control observation goes through the snapshot registry
 (reads) and the release ring (ownership handback).
 
 | | **Control plane** (main / UI thread) | **Audio thread** (DPF `run()` / spawned `audioThread_`) |
 |---|---|---|
-| QuickJS runtime | control-plane txiki host ([`TjsHostRuntime`](../packages/native/plugin/PluginDSP.cpp#L38)) | bare DSP context ([`DspRuntime`](../packages/native/src/host/dsp/DspRuntime.hpp), owned by `Engine::dsp_`) |
-| Owns | the RPC services + their facets, the TS stores, the editor | the live [`Engine`](../packages/native/src/host/engine/Engine.hpp) + its `Project` of cores + the DSP kernel, **while running** |
-| Does | issues mutation *requests*; reads snapshots by id; frees released cores | drains the command ring; renders each block; publishes snapshots |
-| Never | dereferences a live `SystemBase`, walks `Project`, frees an audio-owned core | allocates, frees a core, or blocks |
+| QuickJS runtime | control-plane txiki host ([`TjsHostRuntime`](../packages/native/plugin/PluginDSP.cpp)) | bare DSP context ([`DspRuntime`](../packages/native/src/host/dsp/DspRuntime.hpp), owned by `Engine::dsp_`) |
+| Owns | the RPC services + their facets, the TS stores, the editor, the translator's model | the live [`Engine`](../packages/native/src/host/engine/Engine.hpp): the running plan (its system nodes, each owning its core) + the DSP kernel, **while running** |
+| Does | issues mutation *requests*; plans structure into graph documents; reads snapshots by id; frees replaced plans and the cores only they held | drains the command ring, adopting plans in order; runs the plan each block; publishes snapshots |
+| Never | dereferences a live `SystemBase` while audio runs; frees a core a running plan holds | builds or frees a core or a plan, or blocks |
 
-The `Engine` itself is **single-threaded and thread-unaware** — it holds no locks and knows
-nothing about who is calling it. Thread-safety is entirely a property of the two rings and the
-registry that surround it. One control-thread-written bit,
-[`QueuedInvoker::audioThreadOwns_`](../packages/native/src/host/engine/EngineInvoker.hpp#L73),
-decides which world currently owns the `Engine`, and therefore who drains the command ring.
+The `Engine` itself is **single-threaded and thread-unaware**: it holds no locks and knows
+nothing about who is calling it. Thread-safety is entirely a property of the two rings (both
+inside the Engine's [`GraphHost`](../packages/native/src/graph/GraphHost.hpp)) and the registry
+that surround it. One control-thread-written bit,
+[`QueuedInvoker::audioThreadOwns_`](../packages/native/src/host/engine/EngineInvoker.hpp),
+forwarded to `GraphHost::setAudioThreadOwns`, decides which world currently owns the `Engine`,
+and therefore who drains the command ring.
 
 ### The seam map
 
 ```
                          CONTROL PLANE  (main / UI thread)
-                    txiki QuickJS · RPC facets · TS stores · editor
+            txiki QuickJS · RPC facets · TS stores · editor · translator
                          │                    ▲                    ▲
-          push mutation  │                    │ read by id         │ free released core
-                         ▼                    │ (owned copy)       │
+   push plan / command   │                    │ read by id         │ free the replaced plan
+                         ▼                    │ (owned copy)       │ (+ cores only it held)
         ┌────────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
         │  command ring          │  │  SnapshotRegistry    │  │  release ring        │
-        │  SpscRing<DspCommand>   │  │  frame/state/SRAM    │  │  SpscRing<DspEvent>   │
-        │  QueuedInvoker          │  │  (owned triple-bufs) │  │  (raw SystemBase*)    │
+        │  GraphHost: plan       │  │  frame/state/SRAM    │  │  GraphHost: the      │
+        │  swaps + DspCommands,  │  │  (owned triple-bufs) │  │  replaced plans      │
+        │  in push order         │  │                      │  │  (PlanStorage*)      │
         └────────────────────────┘  └──────────────────────┘  └──────────────────────┘
                          │                    ▲                    ▲
-             drain block │       publish end-of-block │           │ hand back displaced/removed
+             drain block │                    │ publish per block  │ hand back the replaced plan
                          ▼                    │                    │
                          AUDIO THREAD  (DPF run() / spawned audioThread_)
-                    bare DSP QuickJS · Engine · Project cores · BlockRunner
+          bare DSP QuickJS · Engine · GraphHost plan: kernel · system nodes · mixing
 ```
 
 Three primitives, three directions:
 
-- **command ring** — control → audio, the ONE mutation path (§3).
+- **command ring**: control → audio, the ONE mutation path; it carries plans and commands in push order (§3).
 - **SnapshotRegistry** — audio → control, the ONE read door (§4).
-- **release ring** — audio → control, ownership handback so the audio thread never frees (§5).
+- **release ring**: audio → control, a replaced plan handed back so the audio thread never frees (§5).
 
 All three are built on the shared-core transport primitives:
 [`SpscRing`](../packages/native/src/transport/SpscRing.hpp),
@@ -135,54 +138,77 @@ All three are built on the shared-core transport primitives:
 
 ## 3. The command ring — the ONE mutation path
 
-Every control-plane edit — add/remove/replace a system, load kernel bytecode, stage MIDI, set
-bpm/transport/routing, apply a config field, press a button — is packed into a POD
-[`DspCommand`](../packages/native/src/host/engine/DspCommand.hpp) and pushed onto a single
-`SpscRing<DspCommand, 256>` inside [`QueuedInvoker`](../packages/native/src/host/engine/EngineInvoker.hpp).
+Every control-plane edit goes through the one
+[`QueuedInvoker`](../packages/native/src/host/engine/EngineInvoker.hpp) and lands on ONE ring: the
+`SpscRing<Command, 256>` inside the Engine's [`GraphHost`](../packages/native/src/graph/GraphHost.hpp)
+([modular-graph-phase-b1-design.md](../docs/modular-graph-phase-b1-design.md) section 5). The
+invoker sends an edit one of two ways:
+
+- **Structure** (add / replace / remove a system, the routing mode, a Game Boy's link group, the
+  host's output shape) goes to the Engine's
+  [`Translator`](../packages/native/src/host/graph/Translator.hpp) on the control thread. The
+  translator updates its model (the ordered system list, the link groups, the routing mode, the host
+  shape), builds a graph document and its `SystemTable`, and calls `GraphHost::setGraph`, which plans
+  the document on the control thread (every layout checked before any instance is created, every new
+  instance created and activated) and pushes the plan onto the ring as a plan swap.
+- **Everything else** (load kernel bytecode, set the kernel's systems JSON, stage MIDI, controller
+  MIDI or one system's MIDI, set bpm / transport / ppq, apply a config field, press a button, write
+  RAM) is packed into a POD [`DspCommand`](../packages/native/src/host/engine/DspCommand.hpp) and
+  pushed onto the same ring as an opaque host command (`GraphHost::pushHostCommand`).
+
+At drain the ring is applied **in push order**: a plan swap adopts its plan, and a host command goes
+to the Engine's handler, which applies it against the `SystemTable` of the plan current at that
+point. A command pushed after a structural edit therefore sees the new systems and one pushed before
+it sees the old, even when both plans are adopted in the same drain. `setGraph` waits only while a
+published plan still carries a settings commit, which none of the engine's nodes produce, so it
+never blocks: several plans can sit in the ring at once and adopt in order in one drain.
 
 **There is no Direct/Queued fork.** An earlier design had two invoker classes (one for the
-quiescent case, one for the running case); they were collapsed into this single path. The header
-states it plainly: *"The ONE mutation path to the Engine — there is no Direct/Queued fork"*
-([`EngineInvoker.hpp:19-27`](../packages/native/src/host/engine/EngineInvoker.hpp#L19)).
+quiescent case, one for the running case); they were collapsed into this single path.
 
 The only variable is **who drains the ring**, decided by `audioThreadOwns_`:
 
 - **Running (audio thread owns the Engine):** the producer only pushes. The block driver drains
-  the ring at the top of every block ([`drainInto`](../packages/native/src/host/engine/EngineInvoker.cpp#L106))
-  and applies each command into the `Engine` before rendering.
-- **Quiescent (control thread owns the Engine):** every push flushes **inline** — `maybeFlush()`
-  runs `flush()` = `drainInto(engine_) + reclaimReleased()` immediately after the push
-  ([`EngineInvoker.hpp:67`](../packages/native/src/host/engine/EngineInvoker.hpp#L67),
-  [`.cpp:154-160`](../packages/native/src/host/engine/EngineInvoker.cpp#L154)). The same thread is
-  both producer and consumer, so the SPSC invariant holds trivially, and a quiescent
-  `removeSystem` deletes the core synchronously — exactly as a direct call would.
+  the ring at the top of every block (`QueuedInvoker::drainInto` → `Engine::drainCommands` →
+  `GraphHost::drain`) and applies each plan and command before rendering.
+- **Quiescent (control thread owns the Engine):** every push flushes **inline**: the GraphHost
+  drains and reclaims right after the push, so a plan is adopted and a command applied before the
+  call returns. The same thread is both producer and consumer, so the SPSC invariant holds
+  trivially, and a quiescent `removeSystem` frees the core synchronously (the plan it replaced is
+  reclaimed in the same flush), exactly as a direct call would.
 
 The key consequence: because the quiescent path flushes on **every** push, **the ring is empty
-at the moment ownership is handed to the audio thread**. That is what makes the handoff clean —
-the plugin's `activate()` / the test host's `startAudio` just set the bit
-([`PluginDSP.cpp:134`](../packages/native/plugin/PluginDSP.cpp#L134),
-[`AudioDriverRpcService.cpp`](../packages/native/src/host/rpc/AudioDriverRpcService.cpp)),
-with no ring to flush.
+at the moment ownership is handed to the audio thread**. That is what makes the handoff clean:
+the plugin's `activate()` / the test host's `startAudio` set the host shape (the plugin its block
+size too) and then just set the bit ([`PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp),
+[`AudioDriverRpcService.cpp`](../packages/native/src/host/rpc/AudioDriverRpcService.cpp)), with no
+ring to flush.
 
 ### Producers and the drain
 
-Producer methods pack a command and push (then `maybeFlush`). Lightweight commands are pure POD:
-`stageMidi`, `setBpm`, `setTransport`, `setAudioRouting`, `applyConfigField`, `pressButton` —
-if the ring is full they are simply dropped (a lost edge, never a leak). Heavy commands carry an
-**owning heap payload**: `setSystems`/`loadKernel` box a `new`-ed buffer (deleted on drain or, if
-the push fails, immediately); `adoptSystem`/`replaceSystem` push a raw owning `SystemBase*` and
-`release()` the `unique_ptr` on success, or free the build and its registry slot on a full ring
-([`EngineInvoker.cpp:13-102`](../packages/native/src/host/engine/EngineInvoker.cpp#L13)).
+Producer methods pack a command and push. Lightweight commands are pure POD: `stageMidi` (a message
+of up to 4 bytes rides inline), `stageControllerMidi`, `setBpm`, `setTransport`, `setPpq`,
+`applyConfigField`, `pressButton`; if the ring is full they are simply dropped (a lost edge, never a
+leak). Heavy commands carry an **owning heap payload**: `setSystems` / `loadKernel` / `writeRam`, and
+a `stageMidi` / `stageSystemMidi` longer than 4 bytes, box a `new`-ed buffer (deleted after apply or,
+if the push fails, immediately).
 
-The consumer `drainInto(Engine&)` switches on `DspCommand::Kind` and applies each command. System
-lifecycle is done as **alloc-free pointer swaps into the pre-reserved `Project`**: `AddSystem` →
-`adoptSystem`; `ReplaceSystem`/`RemoveSystem` → swap/erase, then hand the displaced core back
-through the release ring ([`.cpp:136-152`](../packages/native/src/host/engine/EngineInvoker.cpp#L136)).
-The two block drivers ([the plugin's `run()`](../packages/native/plugin/PluginDSP.cpp#L152)
-and [`audioLoop`](../packages/native/src/host/rpc/AudioDriverRpcService.cpp#L32)) share a shape —
-`drainInto` the command ring, then `Engine::processBlock` — differing only in how transport arrives:
-`run()` sets bpm/playing directly from the DAW's `TimePosition`, while `audioLoop`
-receives them as drained `SetBpm`/`SetTransport` ring commands.
+Structural calls never ride the ring as commands. `adoptSystem` / `replaceSystem` / `removeSystem` /
+`setAudioRouting` go to the translator, and the plan's swap command carries a `SyncTap` trailer
+(dispatched in the same pop, right after the plan is adopted), which arms or restores the NES channel tap
+against the plan just adopted
+([10-multichannel-audio-out.md](10-multichannel-audio-out.md) section 4). The `LinkGroup` config field
+goes both ways: the field reaches the core as a command, and the translator rewires the cable.
+`setHostShape` goes to the translator alone. A change that does not plan (a refused document, or a
+full ring) leaves the translator's model as it was, and a core that was handed in is freed with its
+registry slot.
+
+The handler (`Engine::onHostCommand` → `applyCommand`) switches on `DspCommand::Kind`, applies each
+command and deletes its owning payload. The block drivers (the plugin's `run()`, the test host's
+`audioLoop`, and the harness's `renderBlocks`) share a shape: `drainInto` the ring, then
+`Engine::processBlock`. They differ only in how transport arrives: `run()` sets bpm/playing directly
+from the DAW's `TimePosition` after the drain (so the host's values win over queued ones), while
+`audioLoop` receives them as drained `SetBpm`/`SetTransport` commands.
 
 ---
 
@@ -192,82 +218,90 @@ receives them as drained `SetBpm`/`SetTransport` ring commands.
 plane observes a system's video frame, savestate, and SRAM **without ever touching a live core**.
 It is an owned, id-keyed store of tear-free triple-buffers. The audio thread copies each live
 core's already-published snapshot into a **registry-owned** buffer at the end of every block
-(`publishAll`); the control plane reads those owned copies by id (`readFrame`/`readState`/
-`readSram`) and never walks `Project` or dereferences a `SystemBase`. That severance is the whole
+(`publishSystem`, for each of the running plan's systems in slot order); the control plane reads
+those owned copies by id (`readFrame`/`readState`/`readSram`) and never walks the plan's systems
+or dereferences a `SystemBase`. That severance is the whole
 point — reads are decoupled from the DSP structure and are safe while the audio thread renders.
 
 This closes a historical bug class where reads were guarded by an `audioRunning_` flag and went
-silently dead in the running plugin; the registry is the fix — reads route through
-[`Engine::readState`/`readSram`/`screenshot`/`getFrame`](../packages/native/src/host/engine/Engine.cpp#L108),
-each of which "never walks Project / the live core".
+silently dead in the running plugin; the registry is the fix: reads route through
+[`Engine::readState`/`readSram`/`screenshot`/`getFrame`](../packages/native/src/host/engine/Engine.cpp),
+each of which reads the registry's owned copy, never the live core.
 
 **Structure.** A fixed-address `std::array<Slot, 64> slots_`. Each `Slot` holds an **atomic `id`**
 (0 = free, so the block thread scans by id with no rehash), a `FrameBufferTriple`, and two
 `MemorySnapshotTriple`s (savestate + SRAM), plus the SRAM slice offset and a sample accumulator.
 
-**Threading contract** ([`SnapshotRegistry.hpp:27-34`](../packages/native/src/host/engine/SnapshotRegistry.hpp#L27)):
-`claim`/`readFrame`/`readState`/`readSram`/`release` run on the **control thread**; `publishAll`
+**Threading contract** (the header comment of
+[`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp)):
+`claim`/`readFrame`/`readState`/`readSram`/`release` run on the **control thread**; `publishSystem`
 runs on **whichever thread drives the block** (audio thread while running, control thread on the
 pull-path render). Buffers are allocated at `claim` (control thread, before handoff) and freed at
-`release` (control thread, after the audio thread dropped the system) — **never on the audio
+`release` (control thread, once no running plan holds the system): **never on the audio
 thread**. Two ordering rules make this race-free:
 
 - **Publish the slot LAST.** `claim` sizes the frame buffer, seeds state+SRAM from the live
   savestate, and only then does `id.store(..., release)` — so the block thread can't match a
-  half-built slot ([`SnapshotRegistry.cpp:64`](../packages/native/src/host/engine/SnapshotRegistry.cpp#L64)).
+  half-built slot.
   Seeding at claim means a read *right after construct*, before any block renders, returns real
   bytes.
 - **Clear the id FIRST.** `release` does `id.store(0, release)` before freeing the buffers, so a
-  stray block-thread scan can never match a slot that is being torn down
-  ([`SnapshotRegistry.cpp:140-147`](../packages/native/src/host/engine/SnapshotRegistry.cpp#L140)).
-  `release` only runs once the system is already out of `project.systems()`, so it can't race an
-  in-flight `publishAll`.
+  stray block-thread scan can never match a slot that is being torn down. `release` runs only
+  when a system node destroys its core at reclaim, once no running plan holds the system, so it
+  can't race an in-flight `publishSystem`.
 
-**Publish cadence.** `publishAll` copies each system's frame **every block** (cheap), and copies
+**Publish cadence.** `publishSystem` copies a system's frame **every block** (cheap), and copies
 its savestate+SRAM on a **coarse 0.5 s interval** (`kStateIntervalSec`, matching the core's own
-snapshot cadence) via a per-slot sample accumulator ([`.cpp:68-106`](../packages/native/src/host/engine/SnapshotRegistry.cpp#L68)).
-It only writes a slot whose system is still in `project.systems()` — exactly the window before
-that system's release.
+snapshot cadence) via a per-slot sample accumulator. `processBlock` calls it only for the systems
+of the running plan's `SystemTable`, which is exactly the window before each system's release.
 
 > The registry currently double-copies: from the core's own tear-free triple into the registry's
 > owned buffer. That second copy exists only because the shared `SystemBase` cannot yet publish
 > straight into the registry; collapsing it is a pending refactor
-> ([`SnapshotRegistry.hpp:22-25`](../packages/native/src/host/engine/SnapshotRegistry.hpp#L22)). It is
+> (the header comment of [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp)). It is
 > a documented redundancy, not a bug — see [07-remaining-work.md](07-remaining-work.md).
 
 ---
 
 ## 5. The release ring — ownership handback
 
-The audio thread **cannot free a core** — `delete` is not real-time-safe. So when a lifecycle
-command displaces or removes a system, the audio thread hands the raw `SystemBase*` back to the
-control thread through a second SPSC ring, `SpscRing<DspEvent, 256> released_`
-([`DspEvent`](../packages/native/src/host/engine/DspEvent.hpp) carries a single
-`Kind::SystemReleased{ SystemBase* }`).
+The audio thread **cannot free a core**, or anything else a plan holds: `delete` is not
+real-time-safe. Ownership therefore runs through the plan. The GraphHost holds the live node
+instances, each running plan holds the instances it runs, and each **system node owns its core**
+(`SystemNode<T>` in [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)). When the
+audio thread adopts a plan it hands the one it replaced back to the control thread through the
+GraphHost's second SPSC ring, `SpscRing<PlanStorage*, 512> released_` (twice the command ring; the last plan a drain replaces
+only once that whole drain is applied). `GraphHost::reclaim()` destroys it there, and a system node
+that nothing else holds goes with it. There is no separate ring for cores.
 
-The protocol is symmetric with construction:
+A core's life, end to end:
 
 | Direction | Trigger | Mechanism |
 |---|---|---|
-| **add → adopt** | control builds a core, seeds its registry slot, pushes it | `drainInto` → `Engine::adoptSystem` swaps it into the pre-reserved `Project` |
-| **remove/replace → release** | audio thread erases/swaps the core | `handBackReleased(sys.release())` → push onto the release ring |
-| **drain → free** | control thread reclaims | `reclaimReleased()`: `popReleased()` → `registry_->release(id)` → `unique_ptr` deletes at scope end |
+| **build → park** | control builds and activates a core (`factory.build`), claims its registry slot, hands it to the invoker | `Translator::add` / `replace` parks it under a fresh token and puts `{ "core": <token> }` in its node's settings |
+| **plan → take** | `setGraph` plans the document on the control thread | the new node's first `activate` takes the core through the host service `rp.host.cores/1` and owns it from then on |
+| **adopt → hand back** | the audio thread drains the plan swap | the replaced plan is pushed onto the release ring, the last one of a drain only after every command of that drain is applied |
+| **reclaim → free** | the control thread reclaims | `reclaim()` deletes each released plan; a node only that plan held destroys its core: `registry.release(id)` first, then `delete` |
 
-`reclaimReleased` ([`EngineInvoker.cpp:162-169`](../packages/native/src/host/engine/EngineInvoker.cpp#L162))
-frees each released core's snapshot slot **before** the core is deleted, and returns the count
-freed. It runs as part of the inline flush (quiescent) and is exposed on the wire as
-`drainReleased` for the test host to pump while running.
+A token never repeats, so even a reused system id with a new core plans as a new instance. A core
+no node ever took (a refused plan, or a replace whose target has gone) is freed by the translator
+itself, releasing its slot the same way.
 
-**Leak, don't block.** If the release ring is full (256 undrained releases), the audio thread
-**leaks the core rather than block or free in the render loop** — it logs and moves on
-([`EngineInvoker.cpp:198-208`](../packages/native/src/host/engine/EngineInvoker.cpp#L198)). In
-practice any host drains far more often than that. Never trading real-time safety for a free is
-the deliberate invariant.
+`reclaim` runs at every `setGraph`, in every inline flush (quiescent), and at the hosts' stop and
+deactivate points; it returns the number of plans freed and is exposed on the wire as
+`drainReleased` (`QueuedInvoker::reclaimReleased`) for the test host to pump while running. A
+removed core is freed at the first of those after the audio thread has moved past it.
 
-On teardown, `freePending()` ([`.cpp:178-196`](../packages/native/src/host/engine/EngineInvoker.cpp#L178))
-runs once the audio thread is joined (single accessor again) and **discards** un-applied command
-payloads — built-but-never-adopted cores (and their claimed slots), plus config/bytecode blobs.
-This is the teardown counterpart to `drainInto`, which *applies* pending commands.
+**Leak, don't block.** If the release ring is full (512 unreclaimed plans; `setGraph` reclaims before every publish, so a drain cannot outrun it), the audio thread
+**leaks the plan rather than block or free in the render loop**: it only counts the leak (it must
+not log), and the next `reclaim()` reports it. In practice any host reclaims far more often than
+that. Never trading real-time safety for a free is the deliberate invariant.
+
+On teardown, `freePending()` (`GraphHost::discardPending`) runs once the audio thread is joined
+(single accessor again): it adopts every queued plan and hands every queued command back
+**discarded**, freeing its payload (config/bytecode blobs, a RAM write's bytes, a long MIDI message)
+without applying it. This is the teardown counterpart to `drainInto`, which *applies* pending
+commands.
 
 ---
 
@@ -277,7 +311,7 @@ The host runs **two** QuickJS runtimes that are never shared:
 
 | | **Control-plane runtime** | **DSP context** |
 |---|---|---|
-| Type | txiki full host ([`TjsHostRuntime`](../packages/native/plugin/PluginDSP.cpp#L38)) | bare QuickJS, no txiki ([`DspRuntime`](../packages/native/src/host/dsp/DspRuntime.hpp)) |
+| Type | txiki full host ([`TjsHostRuntime`](../packages/native/plugin/PluginDSP.cpp)) | bare QuickJS, no txiki ([`DspRuntime`](../packages/native/src/host/dsp/DspRuntime.hpp)) |
 | Owner | the host (plugin / test host / UI harness) | `Engine::dsp_` |
 | Runs | the TS control-plane bundle: stores, `Backend` adapter, `__rp_*` globals, editor | the DSP role kernel [`dspKernel.ts`](../packages/retroplug/src/dspKernel.ts), compiled to bytecode |
 | Thread | control plane only | whichever thread drives the block |
@@ -299,13 +333,16 @@ guard to the current thread with `JS_UpdateStackTop(rt_)` before entering JS, or
 different stack throws a spurious overflow
 ([`DspRuntime.cpp:97-102`](../packages/native/src/host/dsp/DspRuntime.cpp#L97)).
 
-`Engine::processBlock` wires it in: if the kernel is active it builds a `BlockInfo` at the
-block-start ppq, calls `dsp_.processBlock(...)`, fans the `serialIn_`/`buttonOut_` sinks to the
-addressed cores, then zeroes the outputs, runs `runBlock` (the shared
-[`BlockRunner`](../packages/native/src/system/BlockRunner.hpp) + `MultiOutRouter`), and calls
-`registry_.publishAll(...)` — the one place every driver funnels the block
-([`Engine.cpp:74-100`](../packages/native/src/host/engine/Engine.cpp#L74)). The kernel's host MIDI-out
-is drained by the plugin after the block and written to the DAW.
+`Engine::processBlock` wires it in as the plan's first step. The `rp.dsp.kernel` node
+([KernelNode.cpp](../packages/native/src/host/graph/KernelNode.cpp)) runs the Engine's kernel
+stage: if a kernel is loaded it builds a `BlockInfo` at the block-start ppq, calls
+`dsp_.processBlock(...)`, and fans the kernel's sinks (`serialIn_`, `coreMidi_`, `coreBytes_`,
+`buttonOut_`) to the addressed cores by id through the running plan's `SystemTable`. The plan then
+runs the system nodes, the mixing nodes and `rp.host.audio-out`, and `processBlock` finishes with
+the MI.OUT collection and `registry_.publishSystem(...)` for each system: the one place every
+driver funnels the block ([`Engine.cpp`](../packages/native/src/host/engine/Engine.cpp); the full
+order is in [02-native-host.md](02-native-host.md)). The kernel's host MIDI-out is drained by the
+plugin after the block and written to the DAW.
 
 ---
 
@@ -315,41 +352,47 @@ The load-bearing rules. Breaking any one of them reintroduces a data race, a use
 lost mutation.
 
 1. **The control plane and the audio thread never touch each other's memory directly.** All
-   control→audio mutation is a `DspCommand` on the command ring; all audio→control observation is
-   a registry read or a release-ring handback. Nothing else crosses.
+   control→audio change is a plan or a `DspCommand` on the one command ring, applied in push order;
+   a command is applied against the plan current at its position in the ring. All audio→control
+   observation is a registry read or a release-ring handback. Nothing else crosses.
 
 2. **`audioThreadOwns_` is the single source of truth for who owns the `Engine`.** It is written
-   only on the control thread — set true **before** the audio thread starts, cleared **after** it
-   is joined. Read by the control thread (the flush decision) and the audio loop (its run
-   condition). The `Engine` holds no locks; this bit is the entire concurrency contract.
+   only on the control thread: set true **before** the audio thread starts, cleared **after** it
+   is joined. The invoker forwards it to the GraphHost, which reads it for the flush decision. The
+   test host's audio loop runs on its own `running_` flag, and the bit is cleared only once that
+   thread has joined, because clearing it hands the GraphHost back and applies whatever is queued.
+   The `Engine` holds no locks; this bit is the entire concurrency contract.
 
 3. **The command ring is empty at every ownership handoff.** The quiescent path flushes on every
-   push, so activation/`startAudio` never has a backlog to drain — it just flips the bit.
-   Deactivation flips the bit back, then `drainInto` applies any commands the last block left
-   undrained (no lost mutation) and `reclaimReleased` frees any cores released just before stop.
+   push, so activation/`startAudio` never has a backlog to drain; it sets the host shape and flips
+   the bit. Deactivation flips the bit back, which flushes at once: whatever the last block left
+   undrained is applied (no lost mutation), and the plans replaced just before stop are reclaimed
+   with the cores only they held. The hosts' `drainInto` + `reclaimReleased` after it find nothing
+   left.
 
-4. **The audio thread never allocates and never frees.** Cores are built and seeded on the
-   control thread before handoff; displaced/removed cores go back through the release ring and are
-   deleted on the control thread. Lifecycle inside a block is alloc-free pointer swaps into the
-   pre-reserved `Project`.
+4. **The audio thread never builds or frees a core or a plan.** Cores are built, activated and
+   seeded on the control thread before handoff, and every node of a plan is created and activated
+   there by the planner. A replaced plan goes back through the release ring and is destroyed, with
+   any core only it held, on the control thread. Adopting a plan inside a block is a pointer swap.
 
-5. **Leak before you block or free in the render loop.** A full release ring leaks a core rather
-   than free it on the audio thread — real-time safety is never traded for a deallocation.
+5. **Leak before you block or free in the render loop.** A full release ring leaks a plan (and the
+   cores only it held) rather than free it on the audio thread: real-time safety is never traded for
+   a deallocation.
 
-6. **The SnapshotRegistry is the only read path.** Reads never walk `Project` or dereference a
-   live `SystemBase`. Slot buffers are allocated at `claim` and freed at `release`, both on the
-   control thread, both outside the window in which the audio thread publishes to that slot.
-   `claim` publishes the slot id last; `release` clears it first.
+6. **The SnapshotRegistry is the only read path.** Reads never walk the plan's systems or
+   dereference a live `SystemBase`. Slot buffers are allocated at `claim` and freed at `release`,
+   both on the control thread, both outside the window in which the audio thread publishes to that
+   slot. `claim` publishes the slot id last; `release` clears it first.
 
 7. **A JSValue never crosses out of the DSP context.** The DSP kernel communicates only through
    system-addressed byte sinks. Its runtime is separate from the control-plane runtime and is
    re-anchored to the calling thread on every entry.
 
 8. **TypeScript owns identity and orchestration; native never mints or decides.** System ids are
-   allocated by TS and passed into `constructSystem` — native returns "did it build", never an id
-   ([`EngineRpcService.cpp:71-85`](../packages/native/src/host/rpc/EngineRpcService.cpp#L71)).
+   allocated by TS and passed into `constructSystem`; native returns "did it build", never an id
+   ([`EngineRpcService.cpp`](../packages/native/src/host/rpc/EngineRpcService.cpp)).
    Duplicate and reload are TS orchestration over `constructSystem`-with-state plus registry reads,
-   not native methods ([`EngineRpcService.cpp:87-90`](../packages/native/src/host/rpc/EngineRpcService.cpp#L87)).
+   not native methods.
    Cores are built bare (no default roles baked into C++); feature behaviour lives in the TS kernel.
 
 ### Not yet built / deferred
@@ -368,10 +411,13 @@ lost mutation.
 | File | Role |
 |---|---|
 | [`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp) | mounts the capability facets onto an RPC server over the shared service instances |
-| [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp) | `QueuedInvoker` — the command ring + release-ring drain, `audioThreadOwns_` |
-| [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) | the id-keyed read door; claim/publishAll/read/release |
-| [`DspEvent.hpp`](../packages/native/src/host/engine/DspEvent.hpp) | the release-ring event (`SystemReleased`) |
-| [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) | the single-threaded live-project owner; `processBlock` wiring |
+| [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp) | `QueuedInvoker`: the one mutation path (structure to the translator, every other edit onto the ring), the `SyncTap` push, `audioThreadOwns_` |
+| [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp) | the POD command the ring carries as an opaque host command |
+| [`GraphHost.hpp`](../packages/native/src/graph/GraphHost.hpp) / [`.cpp`](../packages/native/src/graph/GraphHost.cpp) | the one command ring, the release ring of plans, `setGraph` / `drain` / `run` / `reclaim` |
+| [`Translator.hpp`](../packages/native/src/host/graph/Translator.hpp) / [`.cpp`](../packages/native/src/host/graph/Translator.cpp) | the control-side model: every structural edit as a graph document + its `SystemTable` |
+| [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) / [`KernelNode.cpp`](../packages/native/src/host/graph/KernelNode.cpp) / [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp) | the cores as nodes (each owning its core), the kernel stage as a node, and the host services they ask for |
+| [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) | the id-keyed read door; claim/publishSystem/read/release |
+| [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) | the single-threaded owner of the graph, the DSP kernel and the registry; `processBlock`, the command handler, `SyncTap` |
 | [`DspRuntime.hpp`](../packages/native/src/host/dsp/DspRuntime.hpp) / [`.cpp`](../packages/native/src/host/dsp/DspRuntime.cpp) | the bare DSP QuickJS context + byte-sink thunks |
 | [`PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp) | plugin control-plane bring-up + the `run()` block driver |
 | [`PluginShared.hpp`](../packages/native/plugin/PluginShared.hpp) | the in-process editor↔control-plane handoff |

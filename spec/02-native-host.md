@@ -7,14 +7,15 @@ native makes no policy decisions.
 
 [01-architecture.md](01-architecture.md) is the canonical reference for the cross-cutting
 runtime concepts this doc leans on — the three hosts over one Backend RPC surface (its
-capability facets), the control-plane / audio-thread split, the command ring, the snapshot read
-door, and the release ring. This doc references those by name and goes deeper on the C++
-mechanics: the method tables, the `QueuedInvoker` internals, the `SnapshotRegistry` slot
-machinery, the core backends, and the bare DSP runtime.
+capability facets), the control-plane / audio-thread split, the command ring, the graph the
+engine runs on, the snapshot read door, and the release ring. This doc references those by name and
+goes deeper on the C++ mechanics: the method tables, the `Engine`'s block, the translator, the
+`QueuedInvoker` internals, the `SnapshotRegistry` slot machinery, the core backends, and the bare
+DSP runtime.
 
 Everything below lives under [`packages/native/`](../packages/native).
 The `Engine` + RPC surface compiles into one static library,
-[`retroplug-backend`](../packages/native/CMakeLists.txt#L77), which both the DPF plugin and the
+[`retroplug-backend`](../packages/native/CMakeLists.txt), which both the DPF plugin and the
 two test hosts link — so all three drive the *same* `Engine` over the *same* RPC surface.
 
 ## The composition root: the RPC services + facets
@@ -23,7 +24,7 @@ two test hosts link — so all three drive the *same* `Engine` over the *same* R
 > the Node addon, the test host, the render host and the UI test harness - and the parts they share are
 > in [`src/host/`](../packages/native/src/host/):
 >
-> - `HostServices.hpp` - the graph itself (Engine, SystemFactory + core backends, the one QueuedInvoker,
+> - `HostServices.hpp` - the service graph itself (Engine, SystemFactory + core backends, the one QueuedInvoker,
 >   `HostRpcService`, `EngineRpcService`). Codec-agnostic, which is what lets the Node addon share it.
 >   It deliberately STOPS there: `DebugRpcService` and `AudioDriverRpcService` are declared by the hosts
 >   that mount them, because `~AudioDriverRpcService` clears the invoker's `audioThreadOwns` bit and
@@ -38,10 +39,10 @@ two test hosts link — so all three drive the *same* `Engine` over the *same* R
 
 
 There is **no single facade object**. A host composes a shared
-[`Engine`](../packages/native/src/host/engine/Engine.hpp#L35), a
+[`Engine`](../packages/native/src/host/engine/Engine.hpp), a
 [`SystemFactory`](../packages/native/src/system/SystemFactory.hpp) (populated by
 [`registerCoreBackends`](../packages/native/src/system/CoreBackends.cpp#L9)), and the ONE
-[`QueuedInvoker`](../packages/native/src/host/engine/EngineInvoker.hpp#L28), plus a handful of
+[`QueuedInvoker`](../packages/native/src/host/engine/EngineInvoker.hpp), plus a handful of
 stateless service instances that hold references to them:
 
 | Service | Concern | Header |
@@ -49,7 +50,7 @@ stateless service instances that hold references to them:
 | `HostRpcService` | filesystem / config / zip (pure, stateless) | [`HostRpcService.hpp`](../packages/native/src/host/rpc/HostRpcService.hpp) |
 | `EngineRpcService` | emulator lifecycle / reads / kernel / MIDI / transport / render + profile | [`EngineRpcService.hpp`](../packages/native/src/host/rpc/EngineRpcService.hpp) |
 | `DebugRpcService` | live-core inspection / stepping / breakpoints (CLI only — [09-cli-debugging.md](09-cli-debugging.md)) | [`DebugRpcService.hpp`](../packages/native/src/host/rpc/DebugRpcService.hpp) |
-| `AudioDriverRpcService` | background audio thread + observation atomics (test host only) | [`AudioDriverRpcService.hpp`](../packages/native/src/host/rpc/AudioDriverRpcService.hpp#L17) |
+| `AudioDriverRpcService` | background audio thread + observation atomics (test host only) | [`AudioDriverRpcService.hpp`](../packages/native/src/host/rpc/AudioDriverRpcService.hpp) |
 
 Each service's methods are mounted onto the rpcpp server as one or more **capability facets** by
 the `register*Rpc` functions in
@@ -72,9 +73,8 @@ All three hosts compose the services, mount their facets on an rpcpp server over
 `globalThis[Symbol.for("plugin")].__rpcSend` — the exact namespace the TS
 `realBackend.ts` adapter targets. The bind is the same shape across hosts:
 
-- **DPF plugin** — [`PluginDSP::bootControlPlane`](../packages/native/plugin/PluginDSP.cpp#L163)
-  brings up a plugin-lifetime txiki runtime, binds `__rpcSend`
-  ([`:171-185`](../packages/native/plugin/PluginDSP.cpp#L171)), sets the
+- **DPF plugin**: [`PluginDSP::bootControlPlane`](../packages/native/plugin/PluginDSP.cpp)
+  brings up a plugin-lifetime txiki runtime, binds `__rpcSend`, sets the
   sample rate **before** the bundle composes (systems bake SR at construct), evals the embedded
   control-plane bytecode, then pumps until `__rp_ready`. The editor
   ([`PluginUI.cpp`](../packages/native/plugin/PluginUI.cpp))
@@ -82,11 +82,11 @@ All three hosts compose the services, mount their facets on an rpcpp server over
   ([`SharedDSP`](../packages/native/plugin/PluginShared.hpp#L19)),
   so the UI reaches the backend through the already-bound `__rpcSend` — no second RPC bridge.
   The UI and window-geometry seams are 03's topic.
-- **Native test host** — [`main.cpp:84-97`](../packages/native/src/main.cpp#L84) binds
+- **Native test host**: [`main.cpp:84-97`](../packages/native/src/main.cpp#L84) binds
   the same namespace, installs a `globalThis.tjs.exit` hook that records the exit code, evals a TS
   bundle, and pumps the job loop until the harness reports TAP. This is the
   `test:native` runner (`retroplug-host`).
-- **Headless UI-test host** — [`UiHarness`](../packages/native/test/ui/UiHarness.hpp#L26)
+- **Headless UI-test host**: [`UiHarness`](../packages/native/test/ui/UiHarness.hpp#L26)
   is the plugin's control-plane bring-up **minus the audio thread, plus a display**. Because
   there is no audio thread, its
   [`advance(ms)`](../packages/native/test/ui/UiHarness.hpp#L44) explicitly
@@ -133,26 +133,26 @@ Every mutation here routes through the `QueuedInvoker`; every read routes throug
 
 | Method | Signature | Behaviour |
 |---|---|---|
-| `constructSystem` | `(BackendConstructSpec) → bool` | TS-owned `spec.id`; `factory_.build` → `registry().claim` → `invoker_.replaceSystem`/`adoptSystem`. Returns "did it build" ([`:71`](../packages/native/src/host/rpc/EngineRpcService.cpp#L71)) |
-| `removeSystem` | `(uint32 id) → bool` | `invoker_.removeSystem`; no threading branch ([`:92`](../packages/native/src/host/rpc/EngineRpcService.cpp#L92)) |
-| `applySystemSetting` | `(uint32 id, string key, double value) → bool` | `gainDb` / `reloadOnRomChange` → a `ConfigField` ([`:99`](../packages/native/src/host/rpc/EngineRpcService.cpp#L99)) |
-| `applyRoleConfig` | `(uint32 id, string kind, string config) → bool` | `kind=="sameboy"` only; decodes the whole role config, pushes Model/Highpass/LinkGroup/FastBoot ([`:111`](../packages/native/src/host/rpc/EngineRpcService.cpp#L111)) |
-| `readState` | `(uint32 id) → optional<Bytestring>` | published savestate from the registry ([`:126`](../packages/native/src/host/rpc/EngineRpcService.cpp#L126)) |
+| `constructSystem` | `(BackendConstructSpec) → bool` | TS-owned `spec.id`; `factory_.build` → `registry().claim` → `invoker_.replaceSystem`/`adoptSystem` (to the translator). Returns "did it build" |
+| `removeSystem` | `(uint32 id) → bool` | `invoker_.removeSystem` (to the translator); no threading branch |
+| `applySystemSetting` | `(uint32 id, string key, double value) → bool` | `gainDb` / `reloadOnRomChange` → a `ConfigField` |
+| `applyRoleConfig` | `(uint32 id, string kind, string config) → bool` | `kind=="sameboy"` only; decodes the whole role config, pushes Model/Highpass/LinkGroup/FastBoot |
+| `readState` | `(uint32 id) → optional<Bytestring>` | published savestate from the registry |
 | `readSram` | `(uint32 id) → optional<Bytestring>` | SRAM sliced from the published savestate |
 | `screenshot` | `(uint32 id, string path) → bool` | encodes the registry frame to PNG |
-| `getFrame` | `(uint32 id) → RpcFrame` | registry frame, raw XRGB8888 ([`:145`](../packages/native/src/host/rpc/EngineRpcService.cpp#L145)) |
-| `compileScript` | `(string source) → optional<Bytestring>` | `dsp::compileToBytecode` on a throwaway context ([`:158`](../packages/native/src/host/rpc/EngineRpcService.cpp#L158)) |
+| `getFrame` | `(uint32 id) → RpcFrame` | registry frame, raw XRGB8888 |
+| `compileScript` | `(string source) → optional<Bytestring>` | `dsp::compileToBytecode` on a throwaway context |
 | `dspLoadKernel` | `(vector<uint8> bytecode) → bool` | `invoker_.loadKernel` (hot-swap) |
 | `dspSetSystems` | `(string json) → bool` | `invoker_.setSystems` |
 | `pressButton` | `(uint32 id, uint32 button, bool down) → bool` | joypad transition → the addressed core |
-| `renderAudio` | `(double ms) → Bytestring` | synchronous pull render, interleaved f32 L/R ([`:182`](../packages/native/src/host/rpc/EngineRpcService.cpp#L182)) |
+| `renderAudio` | `(double ms) → Bytestring` | synchronous pull render, interleaved f32 L/R, in the host shape `Multi(2)`; empty while the audio thread owns the engine (as are `renderAudioPerSystem` / `renderAudioPerChannel`, which set `PerSystem` / `PerChannel`) |
 | `setTransport` / `setBpm` | `→ bool` | queued transport ops |
-| `setAudioRouting` | `(uint32 mode) → bool` | gated `mode ≤ 5` (Stereo / TwoPerInstance / OnePerInstance / ChannelSplit / PinSplit / StereoPinSplit) ([`:321`](../packages/native/src/host/rpc/EngineRpcService.cpp#L321)) |
+| `setAudioRouting` | `(uint32 mode) → bool` | gated `mode ≤ 5` (Stereo / TwoPerInstance / OnePerInstance / ChannelSplit / PinSplit / StereoPinSplit); the translator rewires |
 | `stageMidiIn` | `(vector<uint8> bytes) → bool` | ≤ 4 bytes (one MIDI message) |
 
 `duplicate` and `reload` are **not** native methods — they are TS orchestration over
 `constructSystem`-with-state plus the registry reads
-([`EngineRpcService.cpp:87`](../packages/native/src/host/rpc/EngineRpcService.cpp#L87)):
+([`EngineRpcService.cpp`](../packages/native/src/host/rpc/EngineRpcService.cpp)):
 duplicate pulls a source savestate and builds a seeded core; reload pulls SRAM and cold-boots
 the ROM with `replaceId`. This is the thesis in miniature — native offers the primitives, TS
 composes the meaning.
@@ -161,21 +161,22 @@ composes the meaning.
 
 The plugin drives the audio thread through DPF's `run()`; only the threaded test host mounts
 this service, which spins a background thread that OWNS the `Engine` while it runs
-([`AudioDriverRpcService.hpp:17`](../packages/native/src/host/rpc/AudioDriverRpcService.hpp#L17)).
+([`AudioDriverRpcService.hpp`](../packages/native/src/host/rpc/AudioDriverRpcService.hpp)).
 
 | Method | Signature | Behaviour |
 |---|---|---|
-| `startAudio` | `→ bool` | sets `audioThreadOwns(true)` **before** spawning `audioThread_` ([`:55`](../packages/native/src/host/rpc/AudioDriverRpcService.cpp#L55)) |
-| `stopAudio` | `→ bool` | clears the bit, joins, then `drainInto` + `reclaimReleased` ([`:67`](../packages/native/src/host/rpc/AudioDriverRpcService.cpp#L67)) |
-| `audioCaptured` | `→ AudioCaptured{energy, frames}` | monotonic atomics for a windowed RMS ([`:78`](../packages/native/src/host/rpc/AudioDriverRpcService.cpp#L78)) |
+| `startAudio` | `→ bool` | sets the host shape `Multi(2)` and `audioThreadOwns(true)` **before** spawning `audioThread_` |
+| `stopAudio` | `→ bool` | stops the loop (`running_`), joins, THEN clears the bit (which applies whatever is queued), then `drainInto` + `reclaimReleased` |
+| `audioCaptured` | `→ AudioCaptured{energy, frames}` | monotonic atomics for a windowed RMS |
 | `sleepMs` | `(double) → bool` | |
-| `systemCount` | `→ uint32` | republished atomic while running; live read when quiescent ([`:89`](../packages/native/src/host/rpc/AudioDriverRpcService.cpp#L89)) |
-| `drainReleased` | `→ uint32` | control-thread reclaim of released cores ([`:98`](../packages/native/src/host/rpc/AudioDriverRpcService.cpp#L98)) |
+| `systemCount` | `→ uint32` | republished atomic while running; live read when quiescent |
+| `drainReleased` | `→ uint32` | control-thread reclaim of replaced plans, and the cores only they held |
 
-The loop ([`audioLoop`](../packages/native/src/host/rpc/AudioDriverRpcService.cpp#L32)) runs
-`while (audioThreadOwns())`: `drainInto` → republish the live count → `processBlock(1024,…)` →
-accumulate energy/frames → sleep 200 µs (faster than real time, so a short `sleepMs` window
-still yields plenty of audio).
+The loop ([`audioLoop`](../packages/native/src/host/rpc/AudioDriverRpcService.cpp)) runs
+`while (running_)`, its own flag rather than the ownership bit: `drainInto` → republish the live
+count → `processBlock(1024,…)` → accumulate energy/frames → sleep 200 µs (faster than real time,
+so a short `sleepMs` window still yields plenty of audio). The bit is cleared only once the thread
+has joined, because clearing it hands the GraphHost back and applies what is queued.
 
 ### `BackendConstructSpec` (the construct DTO)
 
@@ -197,94 +198,179 @@ DTO worth spelling out — it mirrors the TS `ConstructSpec`:
 ## `Engine` + `QueuedInvoker`: the mutation path
 
 The command-ring model, the `audioThreadOwns_` bit, and the release-ring ownership handoff
-are defined canonically in [01-architecture.md](01-architecture.md). Here is the C++.
+are defined canonically in [01-architecture.md](01-architecture.md). Here is the C++. The design
+these follow is [modular-graph-phase-b1-design.md](../docs/modular-graph-phase-b1-design.md).
 
 ### `Engine`
 
-[`Engine`](../packages/native/src/host/engine/Engine.hpp#L35) is the single-threaded,
-thread-unaware owner of the live [`Project`](../packages/native/src/project/Project.hpp) of
-cores plus the DSP kernel. Every op runs "now, on the calling thread"; it holds **no
-atomics** — transport and the ppq clock are plain members mutated only by whichever thread
-owns it (the pull path or the audio loop, never concurrently). Removed or displaced cores are
-**returned** to the caller, never freed on a hot path.
+[`Engine`](../packages/native/src/host/engine/Engine.hpp) is single-threaded and thread-unaware.
+It owns the DSP kernel (`DspRuntime`) and its staging vectors (`pendingMidi_`,
+`pendingControllerMidi_`, `pendingSerialOut_`), the snapshot registry, the transport fields, and the
+graph the systems run on: a `NodeRegistry` holding the node packages (`rp.core`, `rp.host`,
+`rp.sameboy`, `rp.mesen`, `rp.dsp`), a `ResourceTable`, the
+[`GraphHost`](../packages/native/src/graph/GraphHost.hpp) running the plan, and the
+[`Translator`](../packages/native/src/host/graph/Translator.hpp) that plans structure. Every op runs
+"now, on the calling thread"; it holds **no atomics**: transport and the ppq clock are plain members
+mutated only by whichever thread owns it (the pull path or the audio loop, never concurrently). A
+removed or displaced core is never freed on a hot path: it leaves with the plan that last ran it.
 
-Its per-block driver [`Engine::processBlock`](../packages/native/src/host/engine/Engine.cpp#L74)
-is the one place every host funnels a block. In order:
+Its per-block driver `Engine::processBlock(frames, outputs, n)` is the one place every host funnels a
+block. The host has already drained the ring (`drainInto` → `Engine::drainCommands` →
+`GraphHost::drain`: plan swaps and commands applied in push order). Then, in order:
 
-1. If a kernel is active, build a `BlockInfo` at the **block-start** `ppq_`, run
-   `dsp_.processBlock(...)`, and fan the kernel's system-addressed sinks to the cores
-   **before** `onProcess`: `serialIn_` → `pushSerialIn`, `buttonOut_` → `pressButton`.
-2. Zero every output channel (systems *sum* into their router-assigned bus).
-3. `runBlock(info, project_, MultiOutRouter(outputs, numOutputs, audioRouting_))` — the shared
-   [`BlockRunner`](../packages/native/src/system/BlockRunner.hpp) advances every core one block
-   and the `MultiOutRouter` places each system's audio into its output pair.
-4. [`registry_.publishAll(...)`](../packages/native/src/host/engine/Engine.cpp#L97) — copy every
-   core's freshly-published frame/state/SRAM into the owned snapshot store.
-5. Advance `ppq_` only if transport is running (so the kernel's `walkTicks` and the cores see
-   the same block-start ppq).
+1. `syncTrace_.beginBlock(...)` (inert unless `RETROPLUG_SYNC_TRACE` is set).
+2. `GraphHost::run(frames, transport, outputs, n)`: silence every host output, then run the plan:
+   1. **`rp.dsp.kernel`** ([KernelNode.cpp](../packages/native/src/host/graph/KernelNode.cpp)),
+      always the plan's first step, runs the Engine's kernel stage. If a kernel is loaded, build a
+      `BlockInfo` at the **block-start** `ppq_`, run `dsp_.processBlock(...)` over the staged MIDI,
+      the staged controller MIDI and last block's serial out, clear the three, and fan the kernel's
+      sinks to the cores by id through the plan's `SystemTable`, in this order: all of `serialIn_` →
+      `pushSerialIn`, then `coreMidi_` → `onMidi` (a message over 4 bytes goes down the raw byte path
+      instead), then `coreBytes_` → `pushCoreBytes` (mirrored to `coreByteSink_` first), then
+      `buttonOut_` → `pressButton`. An unknown id is skipped.
+   2. **The system nodes** ([SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp):
+      `rp.sameboy.gb`, `rp.mesen.nes`, `rp.mesen.gba`, `rp.mesen.sms`), each a `SystemNode<T>` over a
+      core's `prepareForBlock` / `stepIfBelowTarget` / `finishBlock`. An unlinked system is one
+      `process()` call. Linked Game Boys run as one coupled group over `rp.step/1`, round-robin:
+      prepare every member in order, then passes of one step per member until none is below the
+      block's target, then finish each, so their serial cable stays in instruction lockstep. The
+      node zeroes the buffers it hands `finishBlock` (which adds into them) and sets the lane count
+      from which of its outputs are connected
+      ([10-multichannel-audio-out.md](10-multichannel-audio-out.md) section 1).
+   3. **The mixing nodes**, `rp.core.split` and `rp.core.add`: the routing, as wiring (below).
+   4. **`rp.host.audio-out`**, which copies its buses into the host's buffers (it reaches them
+      through `rp_host.get_interface("rp.host.audio-buffers/1")`).
+3. The MI.OUT collection: while a kernel is loaded, each Game Boy's serial-out bytes, systems in
+   slot order with each byte's frame dropped, into `pendingSerialOut_` for the kernel's next block
+   (one-block latency: the kernel runs first, and each SameBoy clears its log in `prepareForBlock`).
+4. `registry_.publishSystem(...)` for each system of the plan, in slot order: copy its
+   freshly-published frame/state/SRAM into the owned snapshot store.
+5. `syncTrace_.endBlock()`, then advance `ppq_` only if transport is running (so the kernel's
+   `walkTicks` and the cores see the same block-start ppq).
 
-Live config edits land in
-[`Engine::applyConfigField`](../packages/native/src/host/engine/Engine.cpp#L152) — a SameBoy-only
-`dynamic_cast` today, **value-guarded per field** so a whole-config re-send only acts on what
-changed (a `Model` change triggers `restartEmulator()` + a link-group rebuild; an unchanged one
-no-ops, avoiding a spurious restart that would nuke a restored savestate). NES/GBA gain/reload
-generalise to a base virtual when those backends grow live knobs.
+Live config edits land in `Engine::applyConfigField`, dispatched by the core's concrete type and
+**value-guarded per field** so a whole-config re-send only acts on what changed (a `Model` change
+triggers `restartEmulator()` in place, and the cable needs no rewiring because `linkPeers_` holds
+the systems, which survive it; an unchanged one no-ops, avoiding a spurious restart that would nuke
+a restored savestate). It applies at drain against the plan current at that point, finding the core
+by id in that plan's `SystemTable`. `Engine::setSampleRate` re-rates every live core in slot order,
+then re-activates the graph's buffers at the new rate; `Engine::setMaxBlockFrames` grows the plan's
+block size to a host's maximum (never below 8192, the largest block the parity matrix holds), and the
+plugin and the SDL standalone call it before handing the engine over.
+
+### The translator
+
+[`Translator`](../packages/native/src/host/graph/Translator.hpp) is control-side. It keeps the
+model: the ordered system list, each Game Boy's link group, the routing mode
+(`rp::host::AudioRouting`) and the host shape. After every change it builds a graph document and
+its `SystemTable` (a slot-ordered list of `{ id, SystemBase*, SameBoySystem*, MesenNesSystem* }`,
+[SystemTable.hpp](../packages/native/src/host/graph/SystemTable.hpp)) and hands both to
+`GraphHost::setGraph`, which computes every node's layout from the document (`layout_for` on each
+node type), runs every layout check, and only then creates and activates the new instances. The
+table rides with the plan, so the audio thread's lookups always match the plan that is running. A
+change that does not plan leaves the model as it was.
+
+- **The model.** `add` appends a system; `replace` keeps the slot and takes the new id (a new core
+  is always a new node); `remove` erases, so later slots shift down. Link groups are Game Boys only,
+  bucketed by nonzero link-group id in slot order, a group of fewer than two dissolved.
+- **Document order.** `rp.dsp.kernel` first, then the unlinked systems by slot, then the link groups
+  in order of first appearance (members by slot, one `link` wire chaining each member to the next),
+  then the mixing nodes, then `rp.host.audio-out`. The planner breaks ties by document order, so
+  this is also the order the plan runs in. Node ids are `kernel`, `sys-<id>` and names derived from
+  them, never from position, so a system keeps its instance across edits.
+- **Routing as wiring.** For each host channel the translator lists the contributions in the order
+  they sum: unlinked systems by slot, then the link groups by first appearance, L before R within a
+  system. One contribution is wired straight to `audio-out`; several go through one mono
+  `rp.core.add` in that order (chained past its 16 inputs, the first add's output as the next one's
+  first input). A system's stereo output reaches mono lanes through `rp.core.split`. For the system
+  at slot i on N host channels:
+
+  | Mode | Wiring |
+  |---|---|
+  | Stereo, and every split that falls back | L to channel 0, R to channel 1 |
+  | TwoPerInstance | L to `(2i) mod N`, R to `(2i + 1) mod N` |
+  | OnePerInstance | L and R both to `i mod N` |
+  | ChannelSplit / PinSplit / StereoPinSplit, valid | stream k to lane `(stride·k) mod N` and, for a stereo stream, the next; StereoPinSplit's mono stream is wired to both lanes of its pair |
+
+  A split is valid with exactly one system, the pin splits only on a NES, and `stride × streams ≤ N`;
+  an invalid split falls back to Stereo wiring
+  ([10-multichannel-audio-out.md](10-multichannel-audio-out.md) section 4).
+- **Host shapes** (`rp::host::HostShape`), set through `QueuedInvoker::setHostShape` before the blocks
+  that use them. A shape change is a rewire: every instance is reused, so no core notices.
+
+  | Shape | Set by | Channels |
+  |---|---|---|
+  | `Multi(n)` | the plugin (8, at `activate`), the SDL standalone (its device's channel count), `AudioDriverRpcService` and `renderAudio` (2), `renderBlocks` (its `outputs`) | the routing above |
+  | `PerSystem` | `renderAudioPerSystem` | slot i's mix on channels `2i`, `2i + 1` |
+  | `PerChannel` | `renderAudioPerChannel` (one system) | stream s on channels `2s`, `2s + 1`; a mono stream fills only `2s` |
+
+  The render RPCs set their shape before rendering and refuse while the audio thread owns the engine.
+- **Cores.** The translator parks each core it is handed under a fresh token, which goes in its
+  node's settings (`{ "core": <token> }`); the node takes it on first activation through the host
+  service `rp.host.cores/1` ([HostServices.hpp](../packages/native/src/host/graph/HostServices.hpp))
+  and owns it from then on. A core it never hands on is freed by the translator, its snapshot slot
+  released first.
 
 ### `QueuedInvoker`
 
-[`QueuedInvoker`](../packages/native/src/host/engine/EngineInvoker.hpp#L28) (in the files
-`EngineInvoker.{hpp,cpp}`) is **the one mutation path — there is no Direct/Queued fork**
-([`:19`](../packages/native/src/host/engine/EngineInvoker.hpp#L19)). Every control-plane edit
-packs into a POD [`DspCommand`](../packages/native/src/host/engine/DspCommand.hpp#L19) and pushes
-onto an `SpscRing<DspCommand, 256>`. The single control-thread bit `audioThreadOwns_` decides
-who drains: while the audio thread owns the `Engine` it drains each block and the producer just
-pushes; otherwise `maybeFlush()` flushes **inline** right after each push (same thread is
-producer and consumer). Because the quiescent path flushes every push, the ring is empty at the
-ownership handoff, so the plugin's `activate()` / the test host's `startAudio` take over cleanly.
+[`QueuedInvoker`](../packages/native/src/host/engine/EngineInvoker.hpp) (in the files
+`EngineInvoker.{hpp,cpp}`) is **the one mutation path; there is no Direct/Queued fork**. Structure
+(add / replace / remove, the routing mode, a Game Boy's link group, the host shape) goes to the
+translator. Every other edit packs into a POD
+[`DspCommand`](../packages/native/src/host/engine/DspCommand.hpp) and pushes onto the GraphHost's
+one `SpscRing<Command, 256>` as an opaque host command, behind any plan already there. The single
+control-thread bit `audioThreadOwns_` (forwarded to `GraphHost::setAudioThreadOwns`) decides who
+drains: while the audio thread owns the `Engine` it drains each block and the producer just pushes;
+otherwise the GraphHost flushes **inline** right after each push (`drain` + `reclaim`; the same
+thread is producer and consumer). Because the quiescent path flushes every push, the ring is empty
+at the ownership handoff, so the plugin's `activate()` / the test host's `startAudio` take over
+cleanly.
 
-`DspCommand` is a `Kind` tag plus a union of POD payloads
-([`DspCommand.hpp:19-43`](../packages/native/src/host/engine/DspCommand.hpp#L19)):
+`DspCommand` is a `Kind` tag plus a union of POD payloads, small enough to ride the ring as a
+`HostCommand`:
 
 | Kind | Payload | Ownership |
 |---|---|---|
-| `SetSystems` | `string* json` | owning — audio thread `delete`s after apply |
-| `LoadKernel` | `vector<uint8>* bytecode` | owning — audio thread `delete`s after apply |
-| `StageMidi` | `uint8 data[4]`, `len` | inline (a MIDI message fits in 4 bytes) |
-| `AddSystem` | `SystemBase* sys` | owning — adopted into the pre-reserved `Project` |
-| `ReplaceSystem` | `SystemBase* sys`, `id` | owning — swapped for `id`; displaced core handed back |
-| `RemoveSystem` | `id` | inline — removed core handed back |
-| `SetBpm` / `SetTransport` | `double` / `bool` | inline |
+| `SetSystems` | `string* json` | owning: the audio thread `delete`s after apply |
+| `LoadKernel` | `vector<uint8>* bytecode` | owning: the audio thread `delete`s after apply |
+| `StageMidi` | `uint8 data[4]`, `len`, or `vector<uint8>* ext` | inline for a message of up to 4 bytes; a longer one (a SysEx) owning |
+| `StageControllerMidi` | `uint8 data[4]`, `len` | inline only; a message over 4 bytes is refused before it is pushed |
+| `StageSystemMidi` | `id`, `data[4]` / `len` or `ext` | as `StageMidi`, delivered to one system's ingress, never through the kernel |
+| `SetBpm` / `SetTransport` / `SetPpq` | `double` / `bool` / `double` | inline |
 | `SetConfigField` | `id`, `field`, `value` | inline |
 | `PressButton` | `id`, `button`, `down` | inline |
-| `SetAudioRouting` | `mode` | inline |
+| `WriteRam` | `id`, `offset`, `vector<uint8>* bytes` | owning |
+| `SyncTap` | `routing` | inline; rides in the plan's swap command as a trailer for every add / replace / remove / set-routing (standalone only when the target id is already gone) |
 
-Heavy, rare payloads (systems, kernel bytecode, systems-JSON) cross as raw **owning**
-pointers — the accepted non-RT-on-rare-op pattern. The consumer
-[`drainInto`](../packages/native/src/host/engine/EngineInvoker.cpp#L106) switches over the kind,
-applies each into the `Engine`, and `delete`s owning payloads after apply. Lifecycle kinds are
-alloc-free pointer swaps into the pre-reserved `Project`: `AddSystem` → `adoptSystem`;
-`ReplaceSystem` / `RemoveSystem` → `handBackReleased(...release())`.
+Heavy, rare payloads (systems JSON, kernel bytecode, RAM writes, long MIDI) cross as raw **owning**
+pointers: the accepted non-RT-on-rare-op pattern. At drain the GraphHost hands each host command
+to `Engine::onHostCommand`, which applies it (`applyCommand`) against the `SystemTable` of the plan
+current at that point, and `delete`s owning payloads after apply. `SyncTap` is the NES channel-tap
+arming: restore whatever `armedTap_` armed, then, when the routing is a split mode over a single NES,
+arm the export mode it needs (either pin split 1, `ChannelSplit` 3), recording what it replaced. It
+runs on every structural change, even when the wanted mode is unchanged, and each run resets the
+capture streams; it rides the plan's swap, so no block runs between the two. `armedTap_` holds the core pointer as well as the id, so a NES replaced under its same id is treated as gone and the old core's mode is not restored onto the new one. The `LinkGroup`
+config field is the one field that is also structure: the invoker pushes it to the core AND hands
+it to the translator, which rewires the cable.
 
-**Ownership handoff.** The audio thread cannot `delete` (non-RT). Displaced/removed cores go
-back through a second ring, `SpscRing<DspEvent, 256> released_`
-([`DspEvent.hpp`](../packages/native/src/host/engine/DspEvent.hpp)); the control thread drains it
-in [`reclaimReleased`](../packages/native/src/host/engine/EngineInvoker.cpp#L162):
-`popReleased()` → `registry_->release(id)` (free the snapshot slot) → the `unique_ptr` deletes
-at scope end. Producer edge cases are handled without blocking or freeing in render: a **full
-command ring** on an `adopt`/`replace` lets the `unique_ptr` delete the build and frees its
-just-claimed slot ([`:18`](../packages/native/src/host/engine/EngineInvoker.cpp#L18)); a **full
-release ring** logs and **leaks rather than block/free** in the render loop
-([`:203`](../packages/native/src/host/engine/EngineInvoker.cpp#L203)); a full ring on an inline
-POD command drops a lost edge, not a leak.
-[`freePending`](../packages/native/src/host/engine/EngineInvoker.cpp#L178) (teardown only, ring
-single-accessor) discards un-applied payloads, freeing built-but-unadopted systems and their
-claimed slots.
+**Ownership handoff.** A displaced or removed core leaves with the plan that last ran it, and is
+freed on the control thread when that plan is reclaimed (`reclaimReleased` → `GraphHost::reclaim`):
+the node destroying it releases the snapshot slot first, then deletes the core
+([01-architecture.md](01-architecture.md) section 5). Producer edge cases are handled without
+blocking or freeing in render: a **full ring** on an inline POD command drops a lost edge, not a
+leak; on an owning payload the producer deletes it; a plan the ring cannot take is freed
+unpublished (with the core its new node had taken) and `setGraph` answers busy, so the translator
+rolls its model back. A **full release ring** leaks a plan rather than block or free in the render
+loop. [`freePending`](../packages/native/src/host/engine/EngineInvoker.cpp) (teardown only, ring
+single-accessor) discards what is still queued: it adopts the queued plans and frees the queued
+commands' payloads unapplied.
 
-The two block drivers are the same shape: the plugin's
-[`run()`](../packages/native/plugin/PluginDSP.cpp#L152) (`drainInto` → set bpm/transport direct
-→ `processBlock`), and `audioLoop` for the test host. The plugin's
-[`activate` / `deactivate`](../packages/native/plugin/PluginDSP.cpp#L134) flip the
-ownership bit around DPF's lifecycle, draining and reclaiming on the way out.
+The block drivers are the same shape: the plugin's
+[`run()`](../packages/native/plugin/PluginDSP.cpp) (stage the DAW's MIDI → `drainInto` → set
+bpm/transport direct → `processBlock`), `audioLoop` for the test host, and `renderBlocks` for the
+harness. The plugin's [`activate` / `deactivate`](../packages/native/plugin/PluginDSP.cpp) flip the
+ownership bit around DPF's lifecycle (`activate` first sets the host shape and the block size),
+draining and reclaiming on the way out.
 
 ## `SnapshotRegistry`: the read door
 
@@ -292,47 +378,42 @@ The read-door doctrine — the control plane observes cores only through owned c
 live `SystemBase` — is in [01-architecture.md](01-architecture.md). This is the store's
 internals.
 
-[`SnapshotRegistry`](../packages/native/src/host/engine/SnapshotRegistry.hpp#L35) is a
-fixed-address `std::array<Slot, 64>`
-([`:79`](../packages/native/src/host/engine/SnapshotRegistry.hpp#L79)). Each
-[`Slot`](../packages/native/src/host/engine/SnapshotRegistry.hpp#L66) carries an **atomic `id`**
+[`SnapshotRegistry`](../packages/native/src/host/engine/SnapshotRegistry.hpp) is a
+fixed-address `std::array<Slot, 64>`. Each `Slot` carries an **atomic `id`**
 (0 = free, so the block thread scans by id with no rehash), `width`/`height`, three owned
 triple-buffers (`FrameBufferTriple frame`, `MemorySnapshotTriple state`, `MemorySnapshotTriple
 sram`), a `sramOffset`, and a `sampleAccum`. Buffers are allocated at claim and freed at
-release — both on the **control thread**, never the audio thread. `publishAll` only ever writes
-a slot whose system is still in `project.systems()`, which is exactly the window before its
-release, so a published-to slot is never concurrently freed.
+release, both on the **control thread**, never the audio thread. `publishSystem` is only ever
+called for a system of the running plan, which is exactly the window before its release, so a
+published-to slot is never concurrently freed.
 
 The ordering guarantees are the load-bearing detail:
 
-- **`claim(id, sys)`** ([`:22`](../packages/native/src/host/engine/SnapshotRegistry.cpp#L22)) —
-  grab a free slot (a full pool fails the construct, logged), reset it, size `frame` from the
+- **`claim(id, sys)`**: grab a free slot (a full pool fails the construct, logged), reset it, size `frame` from the
   core's framebuffer (left **unpublished** — no frame rendered yet), and **seed** `state` from
   `sys.saveStateBytes()` + slice `sram` from `stateRegions()[Sram]`, publishing both. Then
-  `id.store(..., release)` **LAST** ([`:64`](../packages/native/src/host/engine/SnapshotRegistry.cpp#L64))
-  — the slot becomes visible only after its buffers are ready. Seeding is why a read right after
+  `id.store(..., release)` **LAST**: the slot becomes visible only after its buffers are ready.
+  Seeding is why a read right after
   `constructSystem` returns real bytes with no block yet rendered. `claim` requires the core to
   already have `enableStateSnapshot()`'d (for `stateRegions()`).
-- **`publishAll(project, frames, sampleRate)`**
-  ([`:68`](../packages/native/src/host/engine/SnapshotRegistry.cpp#L68)) — for each system,
-  `find(id)`; copy the framebuffer **every block** (cheap); on the coarse interval
-  (`kStateIntervalSec = 0.5`, matching the core's own snapshot cadence via `sampleAccum`)
-  `readStateSnapshot` into `state` and slice `sram` at `sramOffset`, publishing both.
-- **`release(id)`** ([`:140`](../packages/native/src/host/engine/SnapshotRegistry.cpp#L140)) —
-  clear `id` **FIRST** ([`:147`](../packages/native/src/host/engine/SnapshotRegistry.cpp#L147)) so
-  a stray block-thread scan can't match, THEN free the buffers. Idempotent; only runs once the
-  system is out of `project.systems()`.
+- **`publishSystem(system, frames, sampleRate)`**, which `processBlock` calls for each of the
+  running plan's systems in slot order: `find(id)`; copy the framebuffer **every block** (cheap); on
+  the coarse interval (`kStateIntervalSec = 0.5`, matching the core's own snapshot cadence via
+  `sampleAccum`) `readStateSnapshot` into `state` and slice `sram` out of it, publishing both.
+- **`release(id)`**: clear `id` **FIRST** so a stray block-thread scan can't match, THEN free the
+  buffers. Idempotent; it runs when a system node destroys its core at reclaim, once no running
+  plan holds the system.
 
 Reads (`readFrame` / `readState` / `readSram`) copy out of the published triple by id and
 return `published: false` for an unknown, non-video, or not-yet-rendered slot. The
 `Engine`'s read methods
-([`readState`/`readSram`/`screenshot`/`getFrame`](../packages/native/src/host/engine/Engine.cpp#L108))
-route straight here — they never walk `Project` or dereference a live core, which is the fix
-for the historical live-read bug class where reads were guarded off in the running plugin.
+([`readState`/`readSram`/`screenshot`/`getFrame`](../packages/native/src/host/engine/Engine.cpp))
+route straight here: they never walk the plan's systems or dereference a live core, which is the
+fix for the historical live-read bug class where reads were guarded off in the running plugin.
 
 The registry deliberately **double-copies** from each core's own tear-free triple, because the
-shared `SystemBase` can't yet publish straight into the registry
-([`SnapshotRegistry.hpp:23`](../packages/native/src/host/engine/SnapshotRegistry.hpp#L23));
+shared `SystemBase` can't yet publish straight into the registry (the header comment of
+[`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp));
 collapsing that second copy is a pending refactor ([07-remaining-work.md](07-remaining-work.md)).
 
 ## The core backends: `SystemFactory` + `SameBoyBackend` / `MesenBackend`
@@ -350,9 +431,9 @@ blob** whose schema is owned by TS and decoded only by the matching backend. A
 [`SystemBackend::build`](../packages/native/src/system/SystemFactory.hpp#L29) runs on the
 control thread (heavy, non-RT) and returns an **already-`onActivate`'d** system or nullptr. The
 wire→build mapping is
-[`toBuildSpec`](../packages/native/src/host/rpc/EngineRpcService.cpp#L52): `core` defaults
+[`toBuildSpec`](../packages/native/src/host/rpc/EngineRpcService.cpp): `core` defaults
 from `platform` via
-[`defaultCoreFor`](../packages/native/src/host/rpc/EngineRpcService.cpp#L43) (nes/gba → mesen,
+[`defaultCoreFor`](../packages/native/src/host/rpc/EngineRpcService.cpp) (nes/gba → mesen,
 else sameboy); zip-import seed bytes win over on-disk paths; `settings` passes through unchanged.
 
 ### `SameBoyBackend`
@@ -437,20 +518,22 @@ are the same `qjs`.
 ## Wrapped shared-core classes
 
 The host links the shared core through
-[`retroplug-core`](../packages/native/CMakeLists.txt#L23) (the static lib that
+[`retroplug-core`](../packages/native/CMakeLists.txt) (the static lib that
 compiles the shared sources under [`packages/native/src`](../packages/native/src) once) and wraps
 its **runtime** classes:
 
 | Shared class | Host use |
 |---|---|
-| [`SystemBase`](../packages/native/src/system/SystemBase.hpp) | the abstract core; owned as `unique_ptr<SystemBase>` in the `Project`; drives `onActivate`/`onProcess`/`framebuffer`/`saveStateBytes`/`readStateSnapshot`/`stateRegions`/`enableStateSnapshot`/`pressButton`/`pushSerialIn` |
-| [`SameBoySystem`](../packages/native/src/system/sameboy/SameBoySystem.hpp) | the GB core; the live-apply `dynamic_cast` target for `applyConfigField` |
-| [`MesenNesSystem` / `MesenGbaSystem`](../packages/native/src/system/mesen) | the NES + GBA cores |
-| [`Project`](../packages/native/src/project/Project.hpp) | the live-systems container — **runtime methods only** (`reserve`/`adoptSystem`/`removeSystemAndRelease`/`swapSystem`/`findSystem`/`systems`/`rebuildLinkGroups`); the LSDj-persistence path is TS-owned |
-| [`BlockRunner`](../packages/native/src/system/BlockRunner.hpp) | `runBlock` + `MultiOutRouter` — the per-block audio driver |
-| [`LinkGroup`](../packages/native/src/system/sameboy/LinkGroup.cpp) | serial link lockstep, rebuilt on every adopt/replace |
+| [`SystemBase`](../packages/native/src/system/SystemBase.hpp) | the abstract core; owned by its system node in the running plan (`SystemNode<T>`, [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)); drives `onActivate`/`onProcess`/`framebuffer`/`saveStateBytes`/`readStateSnapshot`/`stateRegions`/`enableStateSnapshot`/`pressButton`/`pushSerialIn` |
+| [`SameBoySystem`](../packages/native/src/system/sameboy/SameBoySystem.hpp) | the GB core; the live-apply `dynamic_cast` target for `applyConfigField`; its `linkPeers_` are the serial cable, set by its node's `rp.link/1` `set_peers` (the other members of its coupled group, in member order) |
+| [`MesenNesSystem` / `MesenGbaSystem` / `MesenSmsSystem`](../packages/native/src/system/mesen) | the NES, GBA and SMS/GG cores; the NES is the `SyncTap` target |
 | the LSDj kit/sample pipeline (`KitCompiler` / `KitUtil` / `SampleCache` / `Effects`), `util/MinizZip`, `EmbeddedRoms` | backing kit patching, `zip`/`unzip`, and embedded-ROM resolution |
 | `SpscRing` / `FrameBufferTriple` / `MemorySnapshotTriple` | the transport **primitives** the command/release rings and the snapshot registry are built on |
+
+The graph the engine runs on is not in `retroplug-core`: the executor, planner and
+[`GraphHost`](../packages/native/src/graph/GraphHost.hpp), with the `rp.core` mixing nodes and the
+`rp.host` I/O nodes, are the `retroplug-graph` / `retroplug-graph-exec` libs (`src/graph/`), and
+the engine's own nodes and translator (`src/host/graph/`) compile into `retroplug-backend`.
 
 ROM classification (the old C++ `RomSniffer`) and the LSDj sav codec are TS-owned — neither is in
 the C++ tree.
@@ -460,11 +543,12 @@ The txiki host `TjsHostRuntime` comes from
 
 ## Build & identity
 
-The [`retroplug-backend`](../packages/native/CMakeLists.txt#L77) static lib wraps
-[`retroplug-core`](../packages/native/CMakeLists.txt#L23) with the `Engine`, the RPC services,
-the DSP runtime, and the txiki host, and is PIC (it links into the shared plugin module). The
-test host `retroplug-host` is that lib + `main.cpp`; the DPF plugin is
-[`dpf_add_plugin(retroplug TARGETS clap vst3 vst2 au jack)`](../packages/native/CMakeLists.txt#L232)
+The [`retroplug-backend`](../packages/native/CMakeLists.txt) static lib wraps
+[`retroplug-core`](../packages/native/CMakeLists.txt) with the `Engine` (and links
+`retroplug-graph`, the graph it runs on), the RPC services, the DSP runtime, and the txiki host,
+and is PIC (it links into the shared plugin module). The test host `retroplug-host` is that lib +
+`main.cpp`; the DPF plugin is
+[`dpf_add_plugin(retroplug TARGETS clap vst3 vst2 au jack)`](../packages/native/CMakeLists.txt)
 (AU is macOS-only). The control-plane and UI bytecode bundles are built by
 `tools/build-controlplane.js` + `tools/build-ui.js` piped through `tjsc`, and are
 **derived — never committed**. [06-build-test.md](06-build-test.md) is the full build/verify
@@ -477,7 +561,7 @@ Plugin identity: name `RetroPlug`, CLAP id
 IS_SYNTH, HAS_UI (the React/LVGL editor, 480×432, user-resizable), FILE_BROWSER, MIDI in+out,
 TIMEPOS, STATE + FULL_STATE, and DIRECT_ACCESS (the in-process editor↔DSP handoff). Master gain
 is one automatable parameter applied post-render across all 8 channels
-([`PluginDSP.cpp:154-158`](../packages/native/plugin/PluginDSP.cpp#L154)).
+([`PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp)).
 
 ## Not yet built / deferred
 
@@ -486,10 +570,10 @@ is one automatable parameter applied post-render across all 8 channels
   memory streaming to the UI is ever needed, that arming seam must be built.
 - **Live `applyConfigField` for Mesen.** NES/GBA role knobs (Region / Remove Sprite Limit) apply
   **at construct**, not live — the `dynamic_cast` in
-  [`Engine::applyConfigField`](../packages/native/src/host/engine/Engine.cpp#L152) is SameBoy-only,
+  [`Engine::applyConfigField`](../packages/native/src/host/engine/Engine.cpp) is SameBoy-only,
   so changing a Mesen knob rebuilds the system rather than nudging the running core.
-- **Per-block buttons/keys into the kernel.** `Engine::processBlock` passes `kNoButtons` /
-  `kNoKeys` today ([`Engine.cpp:20`](../packages/native/src/host/engine/Engine.cpp#L20)); the
+- **Per-block buttons/keys into the kernel.** The kernel stage passes `kNoButtons` /
+  `kNoKeys` today ([`Engine.cpp`](../packages/native/src/host/engine/Engine.cpp)); the
   kernel's button/key input arrays are wired but not yet fed (this blocks the raw LSDj Keyboard
   mode — [07-remaining-work.md](07-remaining-work.md)).
 - **The snapshot double-copy collapse** (§`SnapshotRegistry`) is a documented redundancy, not a
@@ -499,8 +583,10 @@ is one automatable parameter applied post-render across all 8 channels
 
 - [`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp) — mounts the capability facets onto a server; the single source of truth for the wire surface.
 - [`CoreBackends.cpp`](../packages/native/src/system/CoreBackends.cpp) — registers the `sameboy` / `mesen` backends into the `SystemFactory`.
-- [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) — the single-threaded owner of the `Project` + DSP kernel.
-- [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp) — `QueuedInvoker`, the one mutation path; [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp) / [`DspEvent.hpp`](../packages/native/src/host/engine/DspEvent.hpp).
+- [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp): the single-threaded owner of the graph, the DSP kernel and the registry; `processBlock`, the command handler, `SyncTap`.
+- [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp): `QueuedInvoker`, the one mutation path; [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp).
+- [`host/graph/`](../packages/native/src/host/graph): [`Translator.hpp`](../packages/native/src/host/graph/Translator.hpp) / [`.cpp`](../packages/native/src/host/graph/Translator.cpp) (structure as documents, routing as wiring, host shapes), [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) (the cores as nodes), [`KernelNode.cpp`](../packages/native/src/host/graph/KernelNode.cpp) (the kernel stage as a node), [`SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp), [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp).
+- [`GraphHost.hpp`](../packages/native/src/graph/GraphHost.hpp) / [`.cpp`](../packages/native/src/graph/GraphHost.cpp), [`rp_node.h`](../packages/native/src/graph/rp_node.h): the one ring, plan swap and reclaim; the node ABI (`layout_for` per type).
 - [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) — the owned read door.
 - [`SystemFactory.hpp`](../packages/native/src/system/SystemFactory.hpp), [`SameBoyBackend.cpp`](../packages/native/src/system/sameboy/SameBoyBackend.cpp), [`MesenBackend.cpp`](../packages/native/src/system/mesen/MesenBackend.cpp) — the build path.
 - [`DspRuntime.hpp`](../packages/native/src/host/dsp/DspRuntime.hpp) / [`.cpp`](../packages/native/src/host/dsp/DspRuntime.cpp), [`ScriptCompiler.hpp`](../packages/native/src/host/dsp/ScriptCompiler.hpp) — the bare DSP context runner + compiler.

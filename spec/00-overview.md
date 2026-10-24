@@ -49,8 +49,9 @@ facets ([01-architecture.md](01-architecture.md)), each host mounting the subset
 is allowed to expose. Each binds `globalThis[Symbol.for("plugin")].__rpcSend`, and one
 TypeScript adapter ([realBackend.ts](../packages/retroplug/src/realBackend.ts))
 targets exactly that namespace — so the control-plane code is identical across all
-three. The threading model, command ring, snapshot registry and release ring that
-these hosts share are defined canonically in [01-architecture.md](01-architecture.md).
+three. The threading model, the command ring, the graph the engine runs on, the
+snapshot registry and the release ring that these hosts share are defined
+canonically in [01-architecture.md](01-architecture.md).
 
 | Host | Entry point | Role |
 |---|---|---|
@@ -88,12 +89,12 @@ system routed to one pair by its audio routing.
 |---|---|---|
 | [`packages/native/`](../packages/native) | The C++ host: the RPC services + their facets, `Engine`, `SystemFactory`/backends, the command/snapshot/release seams, the DSP-kernel runner, the DPF plugin, and both test hosts. | The sole native tree. |
 | [`packages/retroplug/`](../packages/retroplug) | The TypeScript control plane and React/LVGL UI: the `Backend` interface, the stores (Systems/Project/Recent/UserConfig/Bindings), roles + the DSP kernel, and the UI. | The sole control-plane + UI tree. |
-| [`packages/native/src/`](../packages/native/src) | The **shared core**, compiled into the `retroplug-core` static lib and linked by the host: `SystemBase`, `SameBoySystem`, `Mesen{Nes,Gba}System`, `Project`, `BlockRunner`, `LinkGroup`, the LSDj kit/sample pipeline, and the transport *primitives* (`SpscRing`, `FrameBufferTriple`, `MemorySnapshotTriple`). ROM classification and the LSDj sav codec are TS-owned. | Shared across the host + CLI + test binaries. |
+| [`packages/native/src/`](../packages/native/src) | The **shared core**, compiled into the `retroplug-core` static lib and linked by the host: `SystemBase`, `SameBoySystem`, `Mesen{Nes,Gba,Sms}System`, the LSDj kit/sample pipeline, and the transport *primitives* (`SpscRing`, `FrameBufferTriple`, `MemorySnapshotTriple`). The node-graph executor and planner (`src/graph/`) are their own libs, `retroplug-graph-exec` and `retroplug-graph`. ROM classification and the LSDj sav codec are TS-owned. | Shared across the host + CLI + test binaries. |
 
-The host uses `Project`'s runtime methods only (adopt/remove/swap/rebuild link
-groups); the LSDj-persistence path is TS-owned. `retroplug-core` is a neutral static
-lib in the native tree; `retroplug-backend` wraps it with the `Engine` + RPC surface,
-and every host (plugin, `retroplug-host`, `retroplug-cli`) links that.
+The LSDj-persistence path is TS-owned. `retroplug-core` is a neutral static lib in the
+native tree; `retroplug-backend` wraps it with the `Engine` (which runs the systems on
+`retroplug-graph`, through its own nodes and translator in `src/host/graph/`) + RPC
+surface, and every host (plugin, `retroplug-host`, `retroplug-cli`) links that.
 
 ## Component map
 
@@ -112,30 +113,31 @@ and every host (plugin, `retroplug-host`, `retroplug-cli`) links that.
  │ Backend RPC facets  (C++ services, per RPC server)            │
  │   HostRpcService · EngineRpcService · AudioDriverRpcService · DebugRpcService │
  └──────┬───────────────────────────────────────────▲────────────┘
-        │ command ring (QueuedInvoker,               │ SnapshotRegistry (reads)
-        │ control → audio, one mutation path)        │ + release ring (ownership handback)
+        │ QueuedInvoker: structure → translator →    │ SnapshotRegistry (reads)
+        │ plan; edits → commands; ONE ring           │ + release ring (replaced plans)
         ▼                                            │
  ┌───────────────────────────────────────────────────────────────┐
  │ audio thread  (DPF run() / spawned audioThread_)              │
- │   Engine ─► Project of cores  (SameBoy · MesenNes · MesenGba) │
+ │   Engine ─► GraphHost plan: kernel · system nodes · mixing    │
  │   DSP role kernel  (bare QuickJS, no txiki, dspKernel.ts)     │
  └───────────────────────────────────────────────────────────────┘
 ```
 
 The control plane and the audio thread **never touch each other's memory
-directly**: every control→audio mutation goes through the command ring, and every
-audio→control observation goes through the snapshot registry (reads) plus the
-release ring (ownership handback). Native runs **two QuickJS runtimes** — the
-control-plane one (txiki, full host) and the bare DSP-kernel one (byte-only, on
-the audio thread) — never shared. All of this is specified in
+directly**: every control→audio change goes through the one command ring (a plan the
+translator built from a structural edit, or a command), and every audio→control
+observation goes through the snapshot registry (reads) plus the release ring (a
+replaced plan, and the cores only it held, handed back to be freed). Native runs
+**two QuickJS runtimes**, never shared: the control-plane one (txiki, full host) and
+the bare DSP-kernel one (byte-only, on the audio thread). All of this is specified in
 [01-architecture.md](01-architecture.md).
 
 ## Where to go next
 
 | Doc | Scope |
 |---|---|
-| [01-architecture.md](01-architecture.md) | The canonical runtime architecture: three hosts over one Backend RPC surface (the capability facets); control plane vs audio thread; the command ring, snapshot registry, release ring; the two QuickJS runtimes; threading/ownership invariants. |
-| [02-native-host.md](02-native-host.md) | `packages/native/`: the full RPC surface, `Engine`/`EngineInvoker`, `SnapshotRegistry` internals, `SystemFactory` + backends, the DSP runtime and script compiler. |
+| [01-architecture.md](01-architecture.md) | The canonical runtime architecture: three hosts over one Backend RPC surface (the capability facets); control plane vs audio thread; the command ring, the graph the engine runs on, snapshot registry, release ring; the two QuickJS runtimes; threading/ownership invariants. |
+| [02-native-host.md](02-native-host.md) | `packages/native/`: the full RPC surface, `Engine`/`EngineInvoker` and the translator, `SnapshotRegistry` internals, `SystemFactory` + backends, the DSP runtime and script compiler. |
 | [03-ts-layer.md](03-ts-layer.md) | `packages/retroplug/`: the `Backend` interface, the stores, the control-plane composition, the `__rp_*` UI↔native hooks, and the React/LVGL UI. |
 | [04-roles-dsp-kernel.md](04-roles-dsp-kernel.md) | The role model: system-role vs feature-role, the role registry, and the DSP kernel's per-system pipelines and byte-sink ABI. |
 | [05-data-persistence.md](05-data-persistence.md) | The project model + `.rplg`, DPF get/setState + autoload, config models, forward-tolerant reads + version stamps, the LSDj sav codec, SRAM auto-save. |
@@ -147,5 +149,6 @@ the audio thread) — never shared. All of this is specified in
 - [`packages/native/src/host/rpc/BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp) — where the RPC facets are mounted onto a server; the C++ surface the three hosts share.
 - [`packages/retroplug/src/backend.ts`](../packages/retroplug/src/backend.ts) — the TypeScript side of that contract.
 - [`packages/retroplug/src/realBackend.ts`](../packages/retroplug/src/realBackend.ts) — the adapter that binds `Symbol.for("plugin").__rpcSend`.
-- [`packages/native/src/host/engine/Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) — the single-threaded owner of the live `Project` of cores.
+- [`packages/native/src/host/engine/Engine.hpp`](../packages/native/src/host/engine/Engine.hpp): the single-threaded owner of the graph the cores run on, the DSP kernel and the snapshot registry.
+- [`packages/native/src/host/graph/Translator.hpp`](../packages/native/src/host/graph/Translator.hpp): the control-side model that turns every structural edit into a graph document.
 - [`packages/retroplug/src/dspKernel.ts`](../packages/retroplug/src/dspKernel.ts) — the TS DSP role kernel run as bytecode on the audio thread.

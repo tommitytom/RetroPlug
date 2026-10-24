@@ -1,6 +1,7 @@
 # Design: Phase B1, native runs on the executor
 
-**Date:** 2026-10-24 · **Branch:** `feature/modularize` · **Status:** design approved, not yet built
+**Date:** 2026-10-24 · **Branch:** `feature/modularize` · **Status:** built
+([modular-graph-phase-b1-plan.md](modular-graph-phase-b1-plan.md)); B2 and B3 not yet built.
 
 Phase B of [the modular graph design](modular-graph-design.md) (§8) moves the engine onto the graph. B0
 ([modular-graph-phase-b0-design.md](modular-graph-phase-b0-design.md)) recorded today's engine bit for
@@ -26,7 +27,7 @@ moves the audio side: emulators, the link cable, mixing and the host outputs.
 | Validate before creating (§8 open decision)? | **A type-level `layout_for(settings)`** on `rp_node_type`, replacing the instance's `layout()` (§6). |
 | How does B1 land? | **Beside today's engine**, chosen once per process by `RETROPLUG_GRAPH_ENGINE=1`; the last commit flips the default and deletes the old path and the switch (§9). |
 | How does the kernel reach the host and the cores? | **As today.** The kernel node runs today's kernel stage line for line: it reads the engine's staged MIDI and fans its output into the cores by id. MIDI nodes and system input ports come in B3 (§2.3). |
-| How is the NES channel tap armed? | **By today's code**, run by a command pushed right behind each structural plan; the wiring only sets the lane count (§3.2). §6.5 of the main design maps it to `ports_changed`, which cannot copy today's re-arming, so that move is left for later. |
+| How is the NES channel tap armed? | **By today's code**, run as a `SyncTap` trailer that rides in each structural plan's swap command; the wiring only sets the lane count (§3.2). §6.5 of the main design maps it to `ports_changed`, which cannot copy today's re-arming, so that move is left for later. |
 | Does `setGraph` wait for the previous plan? | **Only while a published plan still carries a settings commit**, which B1 never produces, so in B1 it never blocks (§5.2). |
 
 ## 2. The block
@@ -35,7 +36,7 @@ moves the audio side: emulators, the link cable, mixing and the host outputs.
 
 `Engine::processBlock(frames, outputs, n)` in graph mode:
 
-1. The host has already called `engine.drain()` where it calls `drainInto` today (§5.3): plan swaps, params
+1. The host has already called `invoker.drainInto(engine)` where it does today (§5.3): plan swaps, params
    and engine commands applied in push order.
 2. `syncTrace_.beginBlock(...)`.
 3. `GraphHost::run(frames, transport, outputs, n)`: silence the host outputs, then the plan:
@@ -118,24 +119,35 @@ One adapter template over today's `SystemBase` subclasses, giving four types: `r
 - **Settings:** `{ "core": <token> }` only (§4.6). The core's own build config (ROM, model, region, roles)
   stays where it is today: built on the control thread by the backend factory before the node exists.
 - **Config fields** (gain, model, highpass, fast boot, serial-out capture, the display knobs, the NES knobs)
-  stay today's `SetConfigField` command, applied at drain through the system table. The node knows its `T`,
-  so the per-kind `dynamic_cast` switch in `applyConfigField` becomes a per-type function. **LinkGroup** is
+  stay today's `SetConfigField` command, applied at drain to the core the running plan's table names.
+  `applyConfigField` keeps its per-kind switch until B2 deletes `ConfigField` with the role-config commands;
+  the work that cast every block (the MI.OUT collection, the tap) reads the table's typed pointers instead.
+  **LinkGroup** is
   the exception: the translator intercepts it and rewires (§4.1); the value still reaches the core's
   `config_` too, so anything reading it there is unchanged. A **Model** change still restarts the emulator
   in place on the audio thread; `restartEmulator` leaves `linkPeers_` alone, so no rewire is needed.
-- **Sample rate:** `activate` does nothing to the core (the factory activated it at build, at the engine's
-  rate). `Engine::setSampleRate` calls each core's `onSampleRateChanged` in slot order, as
+- **Sample rate:** a node's first `activate` takes its core (§4.6); later ones do nothing to it (the factory
+  activated it at build, at the engine's rate). `Engine::setSampleRate` calls each core's `onSampleRateChanged` in slot order, as
   `Project::onSampleRateChanged` does today, then `GraphHost::reactivate` for the graph's buffers, so the
   cores see exactly today's calls.
 
 ### 3.2 The NES tap
 
 Arming stays today's code. `syncSplitPlan`'s arming half (restore whatever `armedTap_` armed, then arm the
-mode the routing wants, recording what it replaced) moves into a `SyncTap` command that the translator
-pushes right behind the plan of every call that runs `syncSplitPlan` today: add, replace, remove and
-set-routing. The ring keeps the two adjacent (one producer pushes both), so the arming lands at the same
-drain position as today, against the system table of the plan just adopted. A target that has gone is not
-found and its record is dropped, as today.
+mode the routing wants, recording what it replaced) moves into a `SyncTap` that rides in the plan's
+own swap command: `GraphHost::setGraph(document, hostData, trailer)` carries it as a trailer in the same
+ring slot, and the drain dispatches it right after the plan is adopted, in the same pop, against the new
+plan's system table. No block can run between the two, and a full ring refuses both halves together.
+`Translator::Publish` carries a `rearmsTap` flag: true for add, replace, remove and set-routing (a same-mode
+set included), false for the link-group field, a host-shape change and the constructor's empty plan. A remove
+or replace of an id that is already gone publishes nothing, so it pushes a standalone `SyncTap`, as
+`syncSplitPlan` ran for those too. `discardPending` still applies a trailer with its plan, since the plan is
+adopted; only the GraphHost's destructor hands queued trailers back as discarded.
+
+The armed-tap record (`armedTap_`) holds the core pointer as well as the id, so a NES replaced under its
+SAME id is treated as gone: the old core's saved export mode is not restored onto the fresh core, which is
+what the engine before B1 did (its `replaceSystem` cleared the record explicitly for that case). A target
+that has gone is not found and its record is dropped, as today.
 
 `ports_changed` would have been the cast-free form (§6.5 of the main design), but it cannot copy today:
 `syncSplitPlan` restores and re-arms on every structural edit even when the wanted mode is unchanged
@@ -280,7 +292,8 @@ adopted in one drain.
 - The RPC layer builds and activates a core as today (`factory.build`, control thread) and claims its
   snapshot slot as today, then hands it to the translator.
 - The translator parks it under a fresh token and puts `{ "core": <token> }` in the node's settings;
-  `create` takes the core through a host interface (`rp.host.cores/1`). A token never repeats, so even a
+  the node takes the core at its first `activate`, through a host interface (`rp.host.cores/1`). A token
+  never repeats, so even a
   reused system id with a new core plans as a new instance.
 - The node owns the core. Its destroy, which runs at reclaim on the control thread once no running plan
   holds it, releases the snapshot slot and then deletes the core: today's `reclaimReleased` order.
@@ -296,7 +309,7 @@ pushed before sees the old.
 
 | Today's command | In B1 |
 |---|---|
-| AddSystem, ReplaceSystem, RemoveSystem, SetAudioRouting | `setGraph` (the translator), then a `Host` `SyncTap` (§3.2) |
+| AddSystem, ReplaceSystem, RemoveSystem, SetAudioRouting | `setGraph` (the translator), with the `SyncTap` as the swap's trailer (§3.2) |
 | SetConfigField (LinkGroup) | `setGraph`, plus the field to the core |
 | SetConfigField (the rest), PressButton, WriteRam, StageSystemMidi | `Host`, applied to the core by id |
 | StageMidi, StageControllerMidi, SetBpm, SetTransport, SetPpq, SetSystems, LoadKernel | `Host`, applied to the Engine |
@@ -321,15 +334,22 @@ first-out ring with any number of structural commands per drain. The wait would 
 CLAP plugin active when the host stops processing it (Bitwig's plugin sleep does), so every edit after the
 first would have stalled the control thread for the 2 s timeout and then been dropped.
 
-Capacity is today's: 256 commands, now shared by plans and commands, and 64 released plans. An overflow
+Capacity: 256 commands, now shared by plans and commands, and a release ring of twice that (512). Because
+`setGraph` reclaims before every publish, a drain that adopts every queued plan can release at most the
+ring's usable depth plus one between two reclaims; a 64-slot ring leaked the overflow, cores included, when
+a host stopped processing while edits continued. An overflow
 is counted, where today's full ring drops silently.
 
 ### 5.3 Drain points and reclaim
 
-- Hosts call `engine.drain()` wherever they call `invoker.drainInto(engine)` today: the plugin after
-  staging and before setting bpm and transport, SDL first, `renderBlocks` after staging. A host's bpm and
-  transport set after the drain therefore still win over queued ones. `GraphHost` splits `processBlock`
-  into `drain()` and `run()` (its `processBlock` keeps doing both for Phase A's tests).
+- Hosts keep calling `invoker.drainInto(engine)` where they do today, which now drains the GraphHost's
+  ring (`Engine::drainCommands`): the plugin after staging and before setting bpm and transport, SDL first,
+  `renderBlocks` after staging. A host's bpm and transport set after the drain therefore still win over
+  queued ones. `GraphHost` splits `processBlock` into `drain()` and `run()` (its `processBlock` keeps doing
+  both for Phase A's tests).
+- Clearing the invoker's ownership bit now hands the GraphHost back, which applies whatever is queued, so
+  it is cleared only once the audio thread has stopped: the plugin's `deactivate` and SDL's stream stop
+  already did so, and `AudioDriverRpcService`'s loop, which ran on that bit, gets a run flag of its own.
 - With no audio thread, every push still flushes inline (`setGraph` adopts at once, a command applies at
   once). This is how the parity rig runs.
 - `reclaim()` runs at every `setGraph` and at the hosts' existing stop and deactivate points. Today's
@@ -346,7 +366,9 @@ is counted, where today's full ring drops silently.
   port kinds, one wire per input, channel counts, exclusive groups, one `audio-out`) before it creates
   anything. Phase A's late refusal, which built instances and tore them down, goes. A failing `create` or
   `activate` (a bad core token, a core that will not activate) still rolls back.
-- The C++/TS conformance test compares `layout_for` across the two layers.
+- The C++/TS conformance goldens are unchanged: a descriptor is the layout for default settings, which
+  `layout_for` gives as well. A golden for a settings-dependent layout waits for the first TS node whose
+  layout depends on its settings.
 
 ## 7. Why the output stays bit-identical
 
@@ -358,7 +380,7 @@ is counted, where today's full ring drops silently.
   `v·g` is `-0.0`, and adding `±0` to a sum that started from `+0` never changes it. `add` then sums in
   today's order, from `+0`.
 - **Same timing.** Plans and commands keep their push order in one ring and land at the same drain
-  positions; the tap arms in the command right behind its plan, with today's restore and re-arm; host
+  positions; the tap arms as a trailer in its plan's swap, with today's restore and re-arm; host
   blocks are never split; staged MIDI and the kernel's I/O do not pass through a queue at all.
 - **What is not identical: arm64.** Today `lane += v·g` writes straight into the shared bus, which GCC and
   Apple clang fuse into one multiply-add with a single rounding on arm64. B1 multiplies into the node's
@@ -376,7 +398,7 @@ is counted, where today's full ring drops silently.
   a linked pair of mGBs, across the B0 block partitions; lane counts per connected mask.
 - **The translator**: documents for every routing mode and host shape against explicit expected wiring
   tables (not against `BlockRunner`, which is deleted), plan order with the kernel first, chained adds past
-  16 inputs, slot shifts on remove, and the `SyncTap` pushed behind exactly the four calls that run
+  16 inputs, slot shifts on remove, and the `SyncTap` riding the swap of exactly the four calls that run
   `syncSplitPlan` today, with today's arm and restore sequence (including a redundant re-arm).
 - **Parity** under `RETROPLUG_GRAPH_ENGINE=1` is the progress meter while the steps land.
 - **Acceptance** (B0 §4): parity with the fixtures present and `RP_FAIL_ON_SKIP=1`
@@ -404,7 +426,7 @@ Then, behind the switch:
 4. `SystemNode<T>` and its tests.
 5. `rp.dsp.kernel`.
 6. The translator and its tests.
-7. The Engine in graph mode, `engine.drain()` at every host's drain point, the shapes in the render RPCs.
+7. The Engine in graph mode, the shapes in the render RPCs and hosts, and the audio driver's run flag.
 8. The flip: graph mode becomes the only path. Deleted with it: the routers, `BlockRunner`, `LinkGroup`,
    native `AudioRouting`, `Project` (the translator's model replaces its list, the system table its
    lookups), the dead `OfflineRender`, `syncSplitPlan`'s lane plan (`splitPlan_`; the arming half lives
@@ -425,3 +447,23 @@ Then, behind the switch:
   linked Game Boy's unread serial queue.
 - How B2 hands cores to TS-built documents: B1's core token is a translator detail, and B2 decides whether
   it survives.
+
+## 11. Found while building
+
+- **Release ring too shallow.** It had 64 slots against a 256-slot command ring that the narrowed wait lets
+  fill. It is now twice the command ring.
+- **reactivate dropped the plan's host data.** After any sample-rate or block-size change the system table
+  was null, so kernel fan-out and publishing silently stopped. It now keeps it.
+- **SyncTap was a separate push from its plan.** With the audio thread owning, one block could run new wiring
+  with the old tap mode, and a full ring could drop it. It now rides the swap. A replace of an absent id also
+  re-arms, and a same-id NES replace no longer inherits the old core's export mode (a B1 regression against
+  pre-B1 `replaceSystem`).
+- **Destruction order.** `Engine::Graph` and the test rig destroyed the GraphHost after the core handoff its
+  nodes call into from their destructors. The host is now declared after them.
+- **SmsPsg had no destructor.** About 48 KB leaked per SMS core freed. Fixed in the in-tree `deps/mesen`.
+- **The graph tests' allocator replacement missed the nothrow new/delete forms**, so ASan reported a
+  mismatch. They are replaced too.
+- **A block larger than the plan's maxFrames ran the engine tail** (duplicate MI.OUT, publish, ppq advance)
+  for cores that never ran. It now runs nothing.
+- **Several tests passed whatever the code did:** the linked-pair node test, the SMS node case, and the
+  rollback test after validate-first planning. They now fail under the defects they name.

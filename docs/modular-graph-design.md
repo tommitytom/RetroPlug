@@ -997,6 +997,9 @@ doc's §0 has the table, and its §4 the requirements recording today's engine f
   as already claimed: the MIDI-routing layer wires into nodes extensions insert, so it needs `collect`'s
   output first (a second, cheap `collect` pass, or a claims check over the merged graph).
 
+B1 is built: [modular-graph-phase-b1-design.md](modular-graph-phase-b1-design.md), executed from
+[modular-graph-phase-b1-plan.md](modular-graph-phase-b1-plan.md).
+
 ### Phase C: nodes own their knowledge
 
 - Console-specific code moves into each node; every `dynamic_cast` in §6.5 goes.

@@ -19,8 +19,8 @@ Things a user could reasonably expect that aren't wired yet. None block shipping
 MidiMap, KeyboardMidi, MidiPassthrough, MidiOut (ArduinoboyMaster), and MasterSync all ship
 ([dspRoles.ts](../packages/retroplug/src/dspRoles.ts)). Raw Keyboard emits nothing because it needs
 the per-block **`keys` feed** that the live `Engine` path doesn't marshal yet —
-`Engine::runBlockWithRouter` passes the empty
-`kNoButtons`/`kNoKeys` ([Engine.cpp:163](../packages/native/src/host/engine/Engine.cpp#L163)),
+`Engine::processBlock` passes the empty
+`kNoButtons`/`kNoKeys` ([Engine.cpp](../packages/native/src/host/engine/Engine.cpp)),
 so the kernel's `buttons`/`keys` ABI is present but unfed. Feeding host keys/buttons per block unblocks
 this mode. (See [04-roles-dsp-kernel.md](04-roles-dsp-kernel.md).)
 

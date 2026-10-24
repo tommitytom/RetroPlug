@@ -96,7 +96,7 @@ the behaviour is a control-plane app selected by the controller settings.
 
 - Code: `src/host/launchpad/` (`LaunchpadHost`, `LaunchpadLink`, `LaunchpadScanner`, `RtMidiPort`),
   with the TS side in `src/launchpad/`.
-- **Prove a change:** `retroplug-launchpad-test` (one of the nine `pnpm test:plugin` binaries),
+- **Prove a change:** `retroplug-launchpad-test` (one of the ten `pnpm test:plugin` binaries),
   `pnpm test:native lsdj-launchpad`, `pnpm test launchpad`, and `tools/run-launchpad-loopback.sh`
   for the port seam.
 - Deeper: [docs/launchpad-plan.md](../docs/launchpad-plan.md).
@@ -151,21 +151,35 @@ build. Distribution is the standing objection to it replacing the CLI.
 - Code: `packages/native/node/`.
 - **Prove a change:** `pnpm test:node`.
 
-## The node graph (Phase A)
+## The node graph (Phases A and B1)
 
 ### `graph/` - the node-graph engine's foundations
 
-The contracts and engine the modular rewrite builds on, ahead of the engine moving onto them: the C ABI
-every node implements (`graph/rp_node.h`, CLAP-style, host-supplied memory), the no-heap executor, the
-C++ planner and `GraphHost` (one command ring, one release ring, state kept across plan swaps), the C++
-authoring layer (`graph/node.hpp`: a plain struct becomes a node through reflect-cpp), the `rp.core`
-package (`+`, merge, join, split, downmix, relabel, delay, constant, buffer player and recorder), and the
-TS `defineNode` / `defineExtension` contract, held byte for byte to the C++ descriptors by shared golden
-files. It is built and tested but **not wired into the engine**: nothing in the shipping build calls it
-yet. That is Phase B of [docs/modular-graph-design.md](../docs/modular-graph-design.md).
+The contracts and engine the modular rewrite builds on: the C ABI every node implements
+(`graph/rp_node.h`, CLAP-style, host-supplied memory; a node type answers `layout_for(settings)`, so
+the planner computes every layout from the document and runs every layout check before it creates any
+instance), the no-heap executor, the C++ planner and `GraphHost` (one command ring carrying plan swaps,
+params and the embedder's own commands in push order; one release ring; state kept across plan swaps),
+the C++ authoring layer (`graph/node.hpp`: a plain struct becomes a node through reflect-cpp), the
+`rp.core` package (`+`, merge, join, split, downmix, relabel, delay, constant, buffer player and
+recorder), and the TS `defineNode` / `defineExtension` contract, held byte for byte to the C++
+descriptors by shared golden files.
 
-- Code: `packages/native/src/graph/` (C++), `packages/retroplug/src/graph/` (TS).
-- **Prove a change:** `pnpm test:plugin graph` (the `retroplug-graph-test` binary), `pnpm test graph`,
-  and the ThreadSanitizer build of `retroplug-graph-test` (`build-tsan/`, as in Task 9 of
-  [docs/modular-graph-phase-a-plan.md](../docs/modular-graph-phase-a-plan.md)).
+**The native engine runs on it** (Phase B1,
+[docs/modular-graph-phase-b1-design.md](../docs/modular-graph-phase-b1-design.md)):
+`Engine::processBlock` runs a `GraphHost` plan of the engine's own nodes, `rp.dsp.kernel` (today's
+kernel stage, first in every plan) and one system node per core (`rp.sameboy.gb`, `rp.mesen.nes`,
+`rp.mesen.gba`, `rp.mesen.sms`), mixed by `rp.core.split` / `rp.core.add` into `rp.host.audio-out`.
+A control-side translator turns every structural edit (add / replace / remove, the routing mode, a
+link group, the host shape) into a document; every other edit rides the one ring as a command
+([01-architecture.md](01-architecture.md), [02-native-host.md](02-native-host.md)). TS does not
+build graphs yet: handing it the graph and dissolving the kernel are B2 and B3 of
+[docs/modular-graph-design.md](../docs/modular-graph-design.md) section 8.
+
+- Code: `packages/native/src/graph/` (C++), `packages/native/src/host/graph/` (the engine's nodes and
+  translator), `packages/retroplug/src/graph/` (TS).
+- **Prove a change:** `pnpm test:plugin graph` (a substring filter, so both `retroplug-graph-test`
+  and `retroplug-engine-graph-test`), `pnpm test graph`, `pnpm test:native parity` for anything the
+  engine renders, and the ThreadSanitizer build of `retroplug-graph-test` (`build-tsan/`, as in
+  Task 9 of [docs/modular-graph-phase-a-plan.md](../docs/modular-graph-phase-a-plan.md)).
 - Deeper: [docs/modular-graph-design.md](../docs/modular-graph-design.md).

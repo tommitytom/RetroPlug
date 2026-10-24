@@ -31,8 +31,8 @@ All defined in [packages/native/CMakeLists.txt](../packages/native/CMakeLists.tx
 
 | Target | Kind | Produces | In `ALL`? |
 |---|---|---|---|
-| `retroplug-core` | static lib | The shared emulator / Project / kit-codec core. | yes (via consumers) |
-| `retroplug-backend` | static lib | `retroplug-core` + the Engine, the RPC services, the DSP runtime, and the shared txiki host. Composed by every host. | yes (via consumers) |
+| `retroplug-core` | static lib | The shared emulator / kit-codec core. | yes (via consumers) |
+| `retroplug-backend` | static lib | `retroplug-core` + `retroplug-graph` (the graph executor and planner, [packages/native/cmake/graph.cmake](../packages/native/cmake/graph.cmake)) + the Engine and its graph nodes and translator, the RPC services, the DSP runtime, and the shared txiki host. Composed by every host. | yes (via consumers) |
 | `retroplug` | umbrella plugin | `dpf_add_plugin(retroplug TARGETS clap vst3 vst2 au jack)` — the per-format DPF variants (`retroplug-clap`/`-vst3`/`-vst2`/`-au`/`-jack`). AU is macOS-only. | yes |
 | `retroplug-jack` | DPF variant | `build/bin/retroplug` — the **standalone binary**. | yes |
 | `retroplug-sdl` | executable | `build/bin/retroplug-sdl` — the SDL2 standalone ([sdl-standalone.md](../docs/sdl-standalone.md)). Shipped in the CI artifact, deliberately **not** in releases. | yes |
@@ -43,7 +43,7 @@ All defined in [packages/native/CMakeLists.txt](../packages/native/CMakeLists.tx
 | `retroplug-cp-bundle` / `-ui-bundle` / `-cli-bundle` / `-ts-stripper-bundle` / `-render-worker-bundle` / `-cli-sdk-assets` | custom | `build/native/*bundle_data.c` — control-plane / React-UI / CLI / TS-stripper / render-worker bytecode and the CLI SDK assets, embedded in their consumers. | cp: yes; rest: via dependents |
 | `retroplug-example-session` | custom | The CLI example sessions under `build/cli/`. | yes |
 | `retroplug-render-host-test` | executable | Drives the offline `RenderHost` directly ([11-ui-rendering.md](11-ui-rendering.md)). `EXCLUDE_FROM_ALL`. | no |
-| `retroplug-plugin-test` / `-dynparams-test` / `-classid-test` / `-audio-test` / `-watcher-test` / `-midi-test` / `-launchpad-test` / `-lottie-test` / `-graph-test` | executable | The nine Catch2 binaries `pnpm test:plugin` builds and runs. `EXCLUDE_FROM_ALL`. | no |
+| `retroplug-plugin-test` / `-dynparams-test` / `-classid-test` / `-audio-test` / `-watcher-test` / `-midi-test` / `-launchpad-test` / `-lottie-test` / `-graph-test` / `-engine-graph-test` | executable | The ten Catch2 binaries `pnpm test:plugin` builds and runs. `EXCLUDE_FROM_ALL`. | no |
 | `retroplug-n8-test` / `-n8-hwtest` | executable | Everdrive N8 protocol checks; `-hwtest` needs the physical console. `EXCLUDE_FROM_ALL`. | no |
 
 The plugin's identity is vendor-owned (not the DPF example namespace):
@@ -112,7 +112,7 @@ The `reaper:*` tiers are parallel too, by a different mechanism — see
 ### The parity baseline (`test-native/parity/`)
 
 Exact output, not levels. Every other audio test asserts RMS, peaks or timing tolerances, which a
-refactor can move without failing one. The parity suite renders 158 scripted cases on the real
+refactor can move without failing one. The parity suite renders 167 scripted cases on the real
 engine and records, per case, a hash of every output lane of every segment, the kernel's MIDI out, and
 each system's SRAM and work RAM at the end; one changed bit fails it. It is the gate Phase B of the
 modular graph engine is held to ([docs/modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md)).
@@ -126,7 +126,9 @@ modular graph engine is held to ([docs/modular-graph-phase-b0-design.md](../docs
   calls).
 - **Rendering goes through `renderBlocks`**, a harness-facet driver call that repeats `PluginDSP::run`'s
   order for every host block: stage MIDI at its frame, drain the command ring, apply transport,
-  `processBlock` at 2/4/6/8 lanes, take the MIDI out.
+  `processBlock` at 2/4/6/8 lanes (the host shape `Multi(outputs)`), take the MIDI out. The
+  `render-shapes` group covers the other two shapes, `renderAudioPerSystem` and
+  `renderAudioPerChannel`.
 - **Cores power on in a fixed state.** The runner sets `RETROPLUG_DETERMINISTIC=1` for `parity/` files
   only ([util/Determinism.hpp](../packages/native/src/util/Determinism.hpp)): SameBoy's power-on randomness
   off, Mesen NES RAM all zeros, the SMS VDP starting at scanline 0. The app keeps the random power-on.
@@ -168,7 +170,7 @@ modular graph engine is held to ([docs/modular-graph-phase-b0-design.md](../docs
   decoded notes depend on the host sample rate. Details in design section 2.5
   ([modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md)).
 - LSDj, risa, nanoloop and the controller cases need the sibling fixtures (`RETROPLUG_RESOURCES_DIR`), so
-  those groups skip in CI, counted in the skip baseline. CI therefore runs only the 131 fixture-free cases
+  those groups skip in CI, counted in the skip baseline. CI therefore runs only the 140 fixture-free cases
   (every MIDI-out, controller-in, link-cable, LSDj, risa and GBA case is fixture-only), so a Phase B step is
   accepted only on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`
   (`RP_FAIL_ON_SKIP=1 RETROPLUG_RESOURCES_DIR=<resources> pnpm test:native parity`).
@@ -176,9 +178,9 @@ modular graph engine is held to ([docs/modular-graph-phase-b0-design.md](../docs
 | Tier | Backend under test | Command | Runner | Test dir |
 |---|---|---|---|---|
 | **mock TS** | [`testing/mockBackend.ts`](../packages/retroplug/testing/mockBackend.ts) (in-memory, no native, no emulator) | `pnpm test` | [run-tests.mjs](../packages/retroplug/scripts/run-tests.mjs) on the `tjs` binary | `test/` |
-| **real host** | the real Backend RPC surface (fs/config/codec + a live `SameBoySystem` in a real `Project`, real DSP kernel) | `pnpm test:native` | [run-native-tests.mjs](../packages/retroplug/scripts/run-native-tests.mjs) on `retroplug-host` | `test-native/` |
+| **real host** | the real Backend RPC surface (fs/config/codec + a live `SameBoySystem` on the real engine graph, real DSP kernel) | `pnpm test:native` | [run-native-tests.mjs](../packages/retroplug/scripts/run-native-tests.mjs) on `retroplug-host` | `test-native/` |
 | **LVGL React UI** | the real UI bundle on a software LVGL display driven by `UiHarness` | `pnpm test:ui` | [run-ui-tests.mjs](../packages/retroplug/scripts/run-ui-tests.mjs) on `retroplug-ui-test` | `test-ui/` |
-| **C++ unit** | native classes directly, no TS in the loop | `pnpm test:plugin` | [run-plugin-tests.mjs](../packages/retroplug/scripts/run-plugin-tests.mjs) over nine Catch2 binaries | `packages/native/test/` |
+| **C++ unit** | native classes directly, no TS in the loop | `pnpm test:plugin` | [run-plugin-tests.mjs](../packages/retroplug/scripts/run-plugin-tests.mjs) over ten Catch2 binaries | `packages/native/test/` |
 
 Each pnpm script first builds its runner via `cmake-build.js` (mock → `tjs-cli`; native →
 `retroplug-host`; UI → `retroplug-ui-test`), so a `pnpm test*`
@@ -201,7 +203,7 @@ Root [package.json](../package.json). Each builds its CMake target(s) first, the
 | `test` | `tjs-cli` | Mock-backend TS suite. |
 | `test:native` | `retroplug-host` | Real-host suite. |
 | `test:ui` | `retroplug-ui-test` | LVGL React UI suite. |
-| `test:plugin` | nine Catch2 binaries (`-plugin-test`, `-dynparams-test`, `-classid-test`, `-audio-test`, `-watcher-test`, `-midi-test`, `-launchpad-test`, `-lottie-test`, `-graph-test`) | Pure-C++ unit checks (no TS runner; exit code is pass/fail): the per-context routing behind PluginUI's `__rp_*` window hooks ([ContextTargets.hpp](../packages/native/plugin/ContextTargets.hpp), proven on two live `JSContext`s so concurrent instances never cross-route), DPF's dynamic-parameter diff classifier, the class-id counter sync that keeps the DAW-hosted editor from rendering blank, the per-channel audio split, the efsw file watcher, MIDI in/out, the Launchpad scanner, the Lottie decoder, and the node-graph engine's foundations (`retroplug-graph-test`). |
+| `test:plugin` | ten Catch2 binaries (`-plugin-test`, `-dynparams-test`, `-classid-test`, `-audio-test`, `-watcher-test`, `-midi-test`, `-launchpad-test`, `-lottie-test`, `-graph-test`, `-engine-graph-test`) | Pure-C++ unit checks (no TS runner; exit code is pass/fail): the per-context routing behind PluginUI's `__rp_*` window hooks ([ContextTargets.hpp](../packages/native/plugin/ContextTargets.hpp), proven on two live `JSContext`s so concurrent instances never cross-route), DPF's dynamic-parameter diff classifier, the class-id counter sync that keeps the DAW-hosted editor from rendering blank, the per-channel audio split, the efsw file watcher, MIDI in/out, the Launchpad scanner, the Lottie decoder, the node-graph engine's foundations (`retroplug-graph-test`), and the engine on that graph: each system node rendering what its core renders driven directly, bit for bit, and the translator's wiring for every routing mode and host shape (`retroplug-engine-graph-test`). |
 | `screenshot` | `retroplug-jack` | Boots the standalone headlessly → `/tmp/retroplug.png`. |
 | `sdl:smoke` | `retroplug-sdl` | Headless SDL-standalone boot + shutdown; needs no display server or audio server. In CI. |
 | `sdl:pipewire` | `retroplug-sdl` | Stands up a private PipeWire server and asserts WHICH output device the PortAudio backend opens. Not in CI (the runners have no PipeWire). |
@@ -250,9 +252,10 @@ nested `deps/dpf.js` submodule, consumed through this seam:
 4. **Use of `${DPFJS_PATH}`** — the backend compiles the shared txiki host `TjsHostRuntime.cpp` and includes the txiki/QuickJS headers; the plugin embeds the generic `dpf-widgets/generic/LVGL.cpp` and links `dpfjs::core` + `lvgl-js-native` + `tjs`. All in [packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt).
 5. **React resolution** — the UI ([ui/main.tsx](../packages/retroplug/ui/main.tsx)) is bundled by the shared [tools/build-ui.js](../tools/build-ui.js), which resolves `react`/`react-reconciler`/`lvgljs-ui` from dpf.js's own pnpm workspace under `deps/dpf.js/deps/lv_binding_js/node_modules`.
 
-The shared C++ core — `Project`, `SystemBase`, the SameBoy/Mesen systems, the LSDj kit codec, the
-transport primitives — is compiled once into the `retroplug-core` static lib and PUBLIC-linked by
-[the backend](../packages/native/CMakeLists.txt). See [01-architecture.md](01-architecture.md)
+The shared C++ core (`SystemBase`, the SameBoy/Mesen systems, the LSDj kit codec, the
+transport primitives) is compiled once into the `retroplug-core` static lib and PUBLIC-linked by
+[the backend](../packages/native/CMakeLists.txt), beside `retroplug-graph`, the graph the engine
+runs on. See [01-architecture.md](01-architecture.md)
 for the "shared core" boundary.
 
 ## The headless verification loop — which command proves which change
@@ -264,10 +267,10 @@ Pick the cheapest tier that actually exercises the code you touched. Trust-but-v
 |---|---|---|
 | **Application-layer logic** — stores, project model, path/sibling/suffix resolution, config schemas, routing, recent, kit selection | `pnpm test [slug]` | Runs the real TS against the mock backend on `tjs`. No emulator, ~instant. The canonical first stop for anything in `packages/retroplug/src` that doesn't need a live core. |
 | **The engine's output, bit for bit**: routing, block handling, MIDI staging, sync, anything Phase B moves | `pnpm test:native parity` | The parity baseline: one changed bit in any lane, MIDI byte or RAM byte fails, which RMS-based tests never see. |
-| **DSP behaviour / cores / the command-ring & snapshot seam** — role kernel, byte-sinks, MIDI/serial, transport, actual emulator output | `pnpm test:native [slug]` | Runs the **real** Backend RPC surface with a live `SameBoySystem`, real `Project`, and the compiled DSP kernel. Can read emulator state and branch on it. This is the tier that proves audio actually flows. |
+| **DSP behaviour / cores / the command-ring & snapshot seam**: role kernel, byte-sinks, MIDI/serial, transport, actual emulator output | `pnpm test:native [slug]` | Runs the **real** Backend RPC surface with a live `SameBoySystem` on the real engine graph, and the compiled DSP kernel. Can read emulator state and branch on it. This is the tier that proves audio actually flows. |
 | **React/LVGL UI** — App/SystemGrid/tiles/Menu, input, layout | `pnpm test:ui [slug]` | Boots the real UI bundle on a software LVGL display and asserts on the live widget tree (structure, not just pixels). |
 | **Anything you want to eyeball** in the standalone | `pnpm screenshot` → Read `/tmp/retroplug.png` | Runs the JACK standalone under Xvfb + dummy jackd and dumps the LVGL screen. Drive input mid-run with `tools/standalone-key.sh` using `RETROPLUG_WINDOW_NAME="RetroPlug"`. |
-| **The audio-thread / control-thread seam** — `QueuedInvoker`, the command ring, `SnapshotRegistry` publish/read, the release-ring ownership handoff | `tools/run-sanitizer.sh thread` and `… address` | Builds `retroplug-host` instrumented into `build-tsan/` / `build-asan/` (the load-bearing `build/` is untouched) and reruns the audio-thread native tests under TSan / ASan. `thread` proves the seam is race-free; `address` proves the cross-thread `new`/`delete` handoff (add→adopt, remove→release→`drainReleased` delete) has no use-after-free or leak. Both are expected to need **no** new suppressions. |
+| **The audio-thread / control-thread seam**: `QueuedInvoker`, the command ring, plan swaps, `SnapshotRegistry` publish/read, the release-ring ownership handoff | `tools/run-sanitizer.sh thread` and `… address` | Builds `retroplug-host` instrumented into `build-tsan/` / `build-asan/` (the load-bearing `build/` is untouched) and reruns the audio-thread native tests under TSan / ASan. `thread` proves the seam is race-free; `address` proves the cross-thread ownership handoff (build → park → a node takes the core; remove → the replaced plan handed back → freed with its cores at `reclaim` / `drainReleased`) has no use-after-free or leak. Both are expected to need **no** new suppressions. |
 | **DPF wrapper / plugin-format / state-restore behaviour** | `pnpm validate` | `clap-validator` + `pluginval` against the `.clap`/`.vst3`. Catches ABI / state-restore / threading regressions in the format adapters. |
 | **End-to-end inside a real DAW** | `pnpm reaper:mgb-smoke` | Instantiates `retroplug.vst3` in headless Reaper 7.x, plays mGB, renders audio. The first proof the plugin works in a host (not just the harness, which bypasses DPF). |
 
