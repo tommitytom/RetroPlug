@@ -53,8 +53,8 @@ struct PlanOutcome {
 // A node's rp_error text, bounded (a node may leave it unterminated) and never empty.
 std::string errorText(const rp_error& err, const char* fallback);
 
-// The five planner passes (docs/modular-graph-design.md section 5.2): validate, reconcile instances,
-// order, check cycles, assign buffers. Runs on the control thread and may allocate; never touches a
+// The planner passes (docs/modular-graph-design.md section 5.2): validate the document on the types'
+// layouts, order and check cycles, then reconcile instances, then assign buffers. Runs on the control thread and may allocate; never touches a
 // node the audio thread is running except through the ABI's control-thread calls. A failed plan has no
 // effect: instances it created are destroyed and settings it prepared are released before it returns.
 PlanOutcome plan(const PlanInput& in);

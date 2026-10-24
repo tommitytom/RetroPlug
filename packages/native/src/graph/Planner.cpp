@@ -95,7 +95,7 @@ private:
         return false;
     }
 
-    // ---- 1. structure ---------------------------------------------------------------------------------
+    // ---- structure ---------------------------------------------------------------------------------
 
     bool structure() {
         for (const auto& n : in_.doc->nodes) {
@@ -141,8 +141,9 @@ private:
             text.assign(n + 1, '\0');
             n = p.entry->type->layout_for(&s, text.data(), text.size(), &err);
         }
-        if (n == 0 || n >= text.size())
-            return error(p.doc->id, "", "settings-invalid", errorText(err, "the node refused its settings"));
+        if (n == 0) return error(p.doc->id, "", "settings-invalid", errorText(err, "the node refused its settings"));
+        if (n >= text.size())
+            return error(p.doc->id, "", "node-contract", "layout_for answered a length it then would not fit");
         text.resize(n);
         auto layout = parseLayout(text);
         if (!layout) return error(p.doc->id, "", "layout-invalid", layout.error().what());
@@ -150,7 +151,7 @@ private:
         return true;
     }
 
-    // ---- 2. reconcile instances -------------------------------------------------------------------------
+    // ---- reconcile instances -------------------------------------------------------------------------
 
     std::shared_ptr<Instance> create(NodePlan& p) {
         const rp_settings s{p.settings.data(), p.settings.size(), RP_SETTINGS_JSON};
@@ -205,9 +206,10 @@ private:
         for (auto& p : nodes_) {
             const auto it = in_.live->find(p.doc->id);
             const bool sameType = it != in_.live->end() && it->second->entry == p.entry;
-            if (sameType && it->second->settings == p.settings) {
+            const bool sameLayout = sameType && layoutJson(it->second->layout) == out_.layouts[p.doc->id];
+            if (sameType && sameLayout && it->second->settings == p.settings) {
                 p.inst = it->second;
-            } else if (sameType && layoutJson(it->second->layout) != layoutJson(p.layout)) {
+            } else if (sameType && !sameLayout) {
                 // A layout change is always a rebuild, and the type already said so: the live instance is
                 // not asked anything.
                 p.inst = create(p);
@@ -433,7 +435,7 @@ private:
         return out_.errors.empty();
     }
 
-    // ---- 3 + 4. order and cycles ------------------------------------------------------------------------
+    // ---- order and cycles ------------------------------------------------------------------------
 
     bool order() {
         const int g = static_cast<int>(groupMembers_.size());
@@ -662,7 +664,7 @@ private:
         return out_.errors.empty();
     }
 
-    // ---- 5. buffers and the flat plan ---------------------------------------------------------------------
+    // ---- buffers and the flat plan ---------------------------------------------------------------------
 
     float* const* channelArray(PlanStorage& s, std::vector<float*> pointers) {
         auto arr = std::make_unique<float*[]>(std::max<std::size_t>(pointers.size(), 1));

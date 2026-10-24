@@ -63,12 +63,37 @@ rp_node* failingCreate(const rp_host*, void*, const rp_settings*, rp_error* err)
     return nullptr;
 }
 
+// rp.test.source whose nodes count their prepare_settings calls (then let the real one answer), so a call
+// made for a change the planner already knows is a rebuild shows up as a count.
+int g_prepareCalls = 0;
+decltype(rp_node_vtable::prepare_settings) g_realPrepare = nullptr;
+const char* countingDescriptor() { return R"({"id":"rp.test.counting"})"; }
+rp_prepare_result countingPrepare(rp_node* n, const rp_settings* s, void** prepared, rp_error* err) {
+    ++g_prepareCalls;
+    return g_realPrepare(n, s, prepared, err);
+}
+rp_node* countingCreate(const rp_host* host, void* memory, const rp_settings* s, rp_error* err) {
+    rp_node* n = rp::node_type<test::Source>()->create(host, memory, s, err);
+    if (!n) return nullptr;
+    static const rp_node_vtable vt = [&] {
+        rp_node_vtable v = *n->vt;
+        g_realPrepare = v.prepare_settings;
+        v.prepare_settings = &countingPrepare;
+        return v;
+    }();
+    n->vt = &vt;
+    return n;
+}
+
 const rp_package* plannerPackage() {
     static const rp_node_type failing{"rp.test.failing", &failingDescriptor, rp::node_type<test::Sink>()->layout_for,
                                       rp::node_type<test::Sink>()->query_memory, &failingCreate,
                                       rp::node_type<test::Sink>()->destroy};
+    static const rp_node_type counting{"rp.test.counting", &countingDescriptor, rp::node_type<test::Source>()->layout_for,
+                                       rp::node_type<test::Source>()->query_memory, &countingCreate,
+                                       rp::node_type<test::Source>()->destroy};
     static const rp_node_type* const kTypes[] = {rp::node_type<Tapped>(), rp::node_type<LinkedListener>(), &failing,
-                                                 rp::node_type<Counted>()};
+                                                 rp::node_type<Counted>(), &counting};
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.planner"})",
                                      static_cast<std::uint32_t>(std::size(kTypes)), kTypes};
     return &kPackage;
@@ -229,6 +254,13 @@ TEST_CASE("a document refused by a layout check creates no instance", "[graph][p
     CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"c","type":"rp.test.counted"},{"id":"x","type":"rp.test.through"},
                                                {"id":"y","type":"rp.test.through"}],
                                       "wires":[{"from":"x.out","to":"y.in"},{"from":"y.out","to":"x.in"}]})")) == "cycle");
+    CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"c","type":"rp.test.counted"},{"id":"t","type":"rp.test.tapped"},
+                                               {"id":"s1","type":"rp.test.sink"},{"id":"s2","type":"rp.test.sink"}],
+                                      "wires":[{"from":"t.pins.a","to":"s1.in"},{"from":"t.channels.x","to":"s2.in"}]})")) == "exclusive-ports");
+    CHECK(GraphRig::codes(rig.set(R"({"nodes":[{"id":"c","type":"rp.test.counted"},
+                                               {"id":"src","type":"rp.test.source","settings":{"channels":1}},
+                                               {"id":"t","type":"rp.test.through"}],
+                                      "wires":[{"from":"src.out","to":"t.in"}]})")) == "channel-mismatch");
     CHECK(Counted::made == before);
     // A document that plans does create it.
     REQUIRE(rig.set(R"({"nodes":[{"id":"c","type":"rp.test.counted"}],"wires":[]})").ok);
@@ -244,19 +276,34 @@ TEST_CASE("a refused document changes nothing and leaks nothing", "[graph][plann
     rig.run();
     rp_node* const wide = rig.host->node("wide");
     const auto before = rig.host->instanceCount();
-    // A value swap (prepared), a layout change (rebuilt) and a new node, then a cycle at the order pass.
+    // A value swap (prepared), a layout change (rebuilt) and new nodes, then a refusal that only the
+    // coupled-group check can make, after reconcile has done all of that: it all rolls back.
     const auto r = rig.set(R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":0.25}},
                                          {"id":"wide","type":"rp.test.source","settings":{"channels":2}},
                                          {"id":"out","type":"rp.host.audio-out"},{"id":"new","type":"rp.test.sink"},
-                                         {"id":"x","type":"rp.test.through"},{"id":"y","type":"rp.test.through"}],
-                               "wires":[{"from":"src.out","to":"out.out.1-2"},{"from":"x.out","to":"y.in"},
-                                        {"from":"y.out","to":"x.in"}]})");
-    REQUIRE(GraphRig::codes(r) == "cycle");
+                                         {"id":"a","type":"rp.test.linked"},{"id":"b","type":"rp.test.nostep"}],
+                               "wires":[{"from":"src.out","to":"out.out.1-2"},{"from":"a.link","to":"b.link"}]})");
+    REQUIRE(GraphRig::codes(r) == "link-without-step");
     CHECK(rig.host->instanceCount() == before);
     CHECK(rig.host->node("wide") == wide);
     CHECK(rig.node<test::Source>("src").value == 0.5f);
     rig.run();
     CHECK(rig.outs[0][0] == 0.5f);
+}
+
+TEST_CASE("a layout change rebuilds without asking the live instance", "[graph][planner]") {
+    PlannerRig rig;
+    const auto doc = [](const char* settings) {
+        return std::string(R"({"nodes":[{"id":"c","type":"rp.test.counting","settings":)") + settings + R"(}],"wires":[]})";
+    };
+    REQUIRE(rig.set(doc(R"({"channels":2})")).ok);
+    rp_node* const first = rig.host->node("c");
+    g_prepareCalls = 0;
+    REQUIRE(rig.set(doc(R"({"channels":4})")).ok);
+    CHECK(rig.host->node("c") != first);
+    CHECK(g_prepareCalls == 0);
+    REQUIRE(rig.set(doc(R"({"channels":4,"value":0.5})")).ok);
+    CHECK(g_prepareCalls == 1);
 }
 
 TEST_CASE("a rejected document leaves the running graph untouched", "[graph][planner]") {

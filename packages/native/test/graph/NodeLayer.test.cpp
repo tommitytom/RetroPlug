@@ -354,10 +354,14 @@ P paramReading(rp_control_queue& q, double v) {
 TEST_CASE("appended ports and params are reached by index, after the reflected ones", "[graph][node]") {
     Made m{rp::node_type<Mixed>()};
     make(m, R"({"aux":2})");
-    const rp_settings settings{R"({"aux":2})", 9, RP_SETTINGS_JSON};
+    const rp_settings settings = json(R"({"aux":2})");
     rp_error err{};
     std::string layout(rp::node_type<Mixed>()->layout_for(&settings, nullptr, 0, &err), '\0');
     REQUIRE(!layout.empty());
+    // A buffer exactly the layout's length has no room for the NUL: nothing is written, the length returns.
+    std::string exact(layout.size(), 'x');
+    CHECK(rp::node_type<Mixed>()->layout_for(&settings, exact.data(), exact.size(), &err) == layout.size());
+    CHECK(exact == std::string(layout.size(), 'x'));
     std::string text(layout.size() + 1, '\0');
     REQUIRE(rp::node_type<Mixed>()->layout_for(&settings, text.data(), text.size(), &err) == layout.size());
     layout = text.c_str();
