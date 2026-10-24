@@ -146,7 +146,11 @@ modular graph engine is held to ([docs/modular-graph-phase-b0-design.md](../docs
   re-run alone in a fresh process (it would depend on the cases before it); for a case whose `audible`
   lanes are silent after its first (boot) segment; and for a case whose MIDI, controller traffic and
   transport change nothing (a stimulus sent before a cart finished booting records only the boot).
-  The alone-run child gets its own config dir, so it shares no disk state with the run being checked.
+  The alone-run child gets its own config dir, so it shares no disk state with the run being checked. A
+  filtered recording (`RP_PARITY_ONLY`) skips the alone-run check: its case runs first in its process, so it
+  is alone by construction, and the next unfiltered check compares it with the group order.
+  `RP_PARITY_ONLY` can be given to the whole suite (`RP_PARITY_ONLY=<case> pnpm test:native parity`): every
+  group without that case runs nothing and passes with a note.
   `RP_PARITY_DUMP=<dir>` writes every case a check runs, passing or failing, to `<dir>/<group>/<case>/`:
   its lanes as float WAVs and its MIDI out as JSON, so the same run at an older commit (where the case still
   passes) gives the files to compare against. An

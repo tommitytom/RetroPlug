@@ -3,7 +3,7 @@
 // why; the env switches:
 //   RP_PARITY_UPDATE=1     record instead of compare (only on PARITY_TARGET; one there over a baseline
 //                          recorded elsewhere re-labels it, which must be unfiltered with no case skipped)
-//   RP_PARITY_ONLY=<case>  run just that case
+//   RP_PARITY_ONLY=<case>  run just that case (a group without it runs nothing and passes, with a note)
 //   RP_PARITY_DUMP=<dir>   write every case a check runs (passing or not) to <dir>/<group>/<case>/: its lanes
 //                          as float WAVs and its MIDI out as JSON, so a run at an older commit, where the case
 //                          still passes, writes the same files to compare against
@@ -200,7 +200,12 @@ export function runGroup(group: string, cases: ParityCase[]): void {
     if (names.has(c.name)) throw new Error(`case "${c.name}" is listed twice in ${group}`);
     names.add(c.name);
   }
-  if (ONLY && !names.has(ONLY)) throw new Error(`RP_PARITY_ONLY=${ONLY}: no such case in ${group}`);
+  // RP_PARITY_ONLY names one case of one group, and `pnpm test:native parity` runs every group: the others
+  // register no case and pass, saying so (a throw here failed every group but one).
+  if (ONLY && !names.has(ONLY)) {
+    test(`${group}: no case selected`, () => console.log(`# ${group}: RP_PARITY_ONLY=${ONLY} is not in this group`));
+    return;
+  }
 
   const rig = new Rig();
   const file = `${__PARITY_DIR__}/baseline/${group}.json`;

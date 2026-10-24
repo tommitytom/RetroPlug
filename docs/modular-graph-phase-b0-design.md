@@ -264,8 +264,9 @@ A fixture case with its fixture absent skips with a counted reason on every targ
 
 ### 5.3 Re-recording
 
-`RP_PARITY_UPDATE=1 pnpm test:native parity/<group>` re-records; `RP_PARITY_ONLY=<case>` narrows a group to
-one case. A recording is refused, case by case, and the file is then left untouched:
+`RP_PARITY_UPDATE=1 pnpm test:native parity/<group>` re-records; `RP_PARITY_ONLY=<case>` narrows a check or
+a recording to one case, and every group without that case runs nothing and passes with a note, so it can
+be given to the whole suite. A recording is refused, case by case, and the file is then left untouched:
 
 - on any host but `PARITY_TARGET`. On it, a recording over a baseline labelled with another target
   re-labels it (moving the target, §5.2), and a re-label keeps no digest from the old target: it is refused
@@ -276,10 +277,13 @@ one case. A recording is refused, case by case, and the file is then left untouc
   and an identical digest means no system heard the stimulus (MIDI sent before a cart finished booting
   records only the boot, which is exactly what the first draft of the mGB cases did);
 - when it depends on the cases before it: each case is re-run alone in a fresh host process (the bundle
-  spawns itself with `RP_PARITY_EMIT`), and its digest must match the group run's.
+  spawns itself with `RP_PARITY_EMIT`), and its digest must match the group run's. A filtered recording
+  skips this check: its one case runs first in its process, so it is alone by construction, and the next
+  unfiltered check is what compares it with the group order.
 
-A fixture case skipped during a recording keeps its entry (a re-label refuses instead). Entries for cases no longer in a group's table
-are dropped on an unfiltered recording, and an unfiltered check fails while any remain.
+A fixture case skipped during a recording keeps its entry (a re-label refuses instead). Entries for cases
+no longer in a group's table are dropped on an unfiltered recording, and an unfiltered check fails while
+any remain.
 
 ### 5.4 Failure reports
 
