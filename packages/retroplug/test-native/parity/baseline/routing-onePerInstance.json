@@ -1,0 +1,501 @@
+{
+ "cases": {
+  "onePerInstance-o2-n1": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "4fa3d6ff 0.01958",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "979bb0b3 0.2373",
+      "e89205c5 0"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "onePerInstance-o2-n2": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    },
+    "1": {
+     "fnv": "ccb3a07b",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "4fa3d6ff 0.01958",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "979bb0b3 0.2373",
+      "8c3cad16 0.1962"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "onePerInstance-o2-n3": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    },
+    "1": {
+     "fnv": "ccb3a07b",
+     "length": 2048
+    },
+    "2": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "9ee66aef 0.03917",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "9ae4db84 0.4745",
+      "8c3cad16 0.1962"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "onePerInstance-o2-n5": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    },
+    "1": {
+     "fnv": "ccb3a07b",
+     "length": 2048
+    },
+    "2": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    },
+    "3": {
+     "fnv": "9e167bb6",
+     "length": 2048
+    },
+    "4": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "122fc408 0.05875",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "ae9dcd9a 0.7118",
+      "f1b905a6 0.3765"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "onePerInstance-o4-n1": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "4fa3d6ff 0.01958",
+      "a79a21c5 0",
+      "a79a21c5 0",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "979bb0b3 0.2373",
+      "e89205c5 0",
+      "e89205c5 0",
+      "e89205c5 0"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "onePerInstance-o4-n2": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    },
+    "1": {
+     "fnv": "ccb3a07b",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "4fa3d6ff 0.01958",
+      "a79a21c5 0",
+      "a79a21c5 0",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "979bb0b3 0.2373",
+      "8c3cad16 0.1962",
+      "e89205c5 0",
+      "e89205c5 0"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "onePerInstance-o4-n3": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    },
+    "1": {
+     "fnv": "ccb3a07b",
+     "length": 2048
+    },
+    "2": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "4fa3d6ff 0.01958",
+      "a79a21c5 0",
+      "4fa3d6ff 0.01958",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "979bb0b3 0.2373",
+      "8c3cad16 0.1962",
+      "979bb0b3 0.2373",
+      "e89205c5 0"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "onePerInstance-o4-n5": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    },
+    "1": {
+     "fnv": "ccb3a07b",
+     "length": 2048
+    },
+    "2": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    },
+    "3": {
+     "fnv": "9e167bb6",
+     "length": 2048
+    },
+    "4": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "9ee66aef 0.03917",
+      "a79a21c5 0",
+      "4fa3d6ff 0.01958",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "9ae4db84 0.4745",
+      "8c3cad16 0.1962",
+      "979bb0b3 0.2373",
+      "13a06b5b 0.1959"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "onePerInstance-o8-n1": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "4fa3d6ff 0.01958",
+      "a79a21c5 0",
+      "a79a21c5 0",
+      "a79a21c5 0",
+      "a79a21c5 0",
+      "a79a21c5 0",
+      "a79a21c5 0",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "979bb0b3 0.2373",
+      "e89205c5 0",
+      "e89205c5 0",
+      "e89205c5 0",
+      "e89205c5 0",
+      "e89205c5 0",
+      "e89205c5 0",
+      "e89205c5 0"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "onePerInstance-o8-n2": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    },
+    "1": {
+     "fnv": "ccb3a07b",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "4fa3d6ff 0.01958",
+      "a79a21c5 0",
+      "a79a21c5 0",
+      "a79a21c5 0",
+      "a79a21c5 0",
+      "a79a21c5 0",
+      "a79a21c5 0",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "979bb0b3 0.2373",
+      "8c3cad16 0.1962",
+      "e89205c5 0",
+      "e89205c5 0",
+      "e89205c5 0",
+      "e89205c5 0",
+      "e89205c5 0",
+      "e89205c5 0"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "onePerInstance-o8-n3": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    },
+    "1": {
+     "fnv": "ccb3a07b",
+     "length": 2048
+    },
+    "2": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "4fa3d6ff 0.01958",
+      "a79a21c5 0",
+      "4fa3d6ff 0.01958",
+      "a79a21c5 0",
+      "a79a21c5 0",
+      "a79a21c5 0",
+      "a79a21c5 0",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "979bb0b3 0.2373",
+      "8c3cad16 0.1962",
+      "979bb0b3 0.2373",
+      "e89205c5 0",
+      "e89205c5 0",
+      "e89205c5 0",
+      "e89205c5 0",
+      "e89205c5 0"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "onePerInstance-o8-n5": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    },
+    "1": {
+     "fnv": "ccb3a07b",
+     "length": 2048
+    },
+    "2": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    },
+    "3": {
+     "fnv": "9e167bb6",
+     "length": 2048
+    },
+    "4": {
+     "fnv": "1fd7d42c",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "4fa3d6ff 0.01958",
+      "a79a21c5 0",
+      "4fa3d6ff 0.01958",
+      "a79a21c5 0",
+      "4fa3d6ff 0.01958",
+      "a79a21c5 0",
+      "a79a21c5 0",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "979bb0b3 0.2373",
+      "8c3cad16 0.1962",
+      "979bb0b3 0.2373",
+      "13a06b5b 0.1959",
+      "979bb0b3 0.2373",
+      "e89205c5 0",
+      "e89205c5 0",
+      "e89205c5 0"
+     ]
+    }
+   ],
+   "sram": {}
+  }
+ },
+ "target": "linux-x64-gnu13"
+}
