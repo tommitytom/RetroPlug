@@ -1,6 +1,7 @@
 // risa (NES / MMC5) following the host transport: the risa-sync role turns it into risa's arm / start /
-// 24-PPQN clock / stop byte stream on the N8 FIFO. The same transport script as sync-sms, and risa
-// under PinSplit. Needs the sibling risa fixtures, so these skip in CI.
+// 24-PPQN clock / stop byte stream on the N8 FIFO. A transport script like sync-sms's (start, bpm change,
+// stop, a loop wrap), and risa under PinSplit. Unlike sync-sms, the wrap here sits ON the tick grid: risa's
+// arm carries the position, so the locate is still observed. Needs the sibling risa fixtures, so these skip in CI.
 import { runGroup, type ParityCase } from "./group";
 import { even, type Rig } from "./rig";
 import { frames, ROMS } from "./scenes";
@@ -35,7 +36,8 @@ const cases: ParityCase[] = [
     needs: [ROMS.risa, ROMS.risaSong],
     sampleRate: SR,
     outputs: 4,
-    // let_go sounds on the TND pin only: its pulse and MMC5 voices are silent over this stretch.
+    // 3 mono pins in 4 lanes, so lane 3 is unused; only the TND pin (lane 1) sounds for this song (let_go):
+    // its pulse and MMC5 voices are silent over this stretch.
     audible: [1],
     setup: (rig) => {
       risa(rig);

@@ -8,8 +8,10 @@ import { frames, ROMS } from "./scenes";
 const SR = 48000;
 const blocks = (n: number) => even(n, 512);
 
+const START = 7;
+
 const cases: ParityCase[] = (["stereo", "twoPerInstance"] as const).map((mode) => ({
-  name: `boot-${mode}`,
+  name: mode === "stereo" ? "boot-stereo" : "boot-twoPerInstance-start",
   needs: [ROMS.nanoloop],
   sampleRate: SR,
   outputs: 4 as const,
@@ -18,7 +20,15 @@ const cases: ParityCase[] = (["stereo", "twoPerInstance"] as const).map((mode) =
     rig.add(ROMS.nanoloop);
     rig.project.setAudioRouting(mode);
   },
-  segments: [{ blocks: blocks(frames(SR, 2000)) }, { blocks: blocks(frames(SR, 1000)) }],
+  // The second case presses START after boot (and releases it a segment later), so GBA input is covered.
+  segments:
+    mode === "stereo"
+      ? [{ blocks: blocks(frames(SR, 2000)) }, { blocks: blocks(frames(SR, 1000)) }]
+      : [
+          { blocks: blocks(frames(SR, 2000)), after: (rig) => rig.press(0, START, true) },
+          { blocks: blocks(frames(SR, 1000)), after: (rig) => rig.press(0, START, false) },
+          { blocks: blocks(frames(SR, 500)) },
+        ],
 }));
 
 runGroup("gba", cases);

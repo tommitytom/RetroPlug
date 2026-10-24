@@ -144,10 +144,12 @@ fails first, before anything is recorded:
    Found by the matrix's silence guard; covered by a new Catch2 case on a NOP-spin ROM.
 
 A fourth defect was found and is recorded as it is, not fixed (§1): **Arduinoboy MIDI sync plays only
-when every host block carries a clock tick.** At 120 bpm and divisor 1 that needs blocks of 1024 frames or
-more, so at 128 to 768 (ordinary DAW buffers) LSDj never starts, a divisor of 4 never starts at 1024
-either, and 2048 plays louder than 1024. The existing test passes only because `renderAudio` always uses
-1024-frame blocks. The baseline pins the silent cases; fixing it is its own change with a re-record.
+when host blocks carry clock ticks.** The threshold is a tick's length: at 120 bpm and divisor 1 a tick is
+about 1000 frames (1000-frame blocks play), so at 128 to 768 (ordinary DAW buffers) LSDj never starts, a
+divisor of 4 never starts at 1024 either, and 2048 plays louder than 1024. "Every block carries a tick" is
+necessary but not sufficient: divisor 4 at 4096 frames is silent while divisors 4 and 8 at 8192 play, so a
+fix built only on that model may be incomplete. The existing test passes only because `renderAudio` always
+uses 1024-frame blocks. The baseline pins the silent cases; fixing it is its own change with a re-record.
 
 A fifth defect is recorded as it is, not fixed (§1): **a single NES under a split routing on a host
 narrower than the split needs does not fall back to Stereo.** `Engine::syncSplitPlan` arms the NES capture
@@ -157,12 +159,24 @@ always passes 8 outputs and cannot hit it; the SDL standalone (2 channels by def
 can. The baseline pins `nes-channelSplit-o2/o4`, `nes-pinSplit-o2` and `nes-stereoPinSplit-o2/o4` as they
 are; fixing it is its own change with a re-record.
 
+A sixth defect is recorded as it is, not fixed (§1): **LSDj master sync is broken at 48 kHz and above while
+serial-out capture is armed.** Measured: at 48 kHz in 512-frame blocks all 17 captured MIDI messages fall
+inside the boot segment (boot noise) and nothing follows START, and the render is silent, while mode `off`
+plays at 48 kHz. At 44.1 kHz in 1024-frame blocks it works as `test-native/lsdj-mastersync.test.ts` expects:
+start, about 51 clocks/s (77 messages in the 1.5 s after the first START) and audio. The baseline records
+`masterSync-44100` (audible) and `masterSync-48000` (silent); fixing it is its own change with a re-record.
+
+A seventh defect is recorded as it is, not fixed (§1): **MI.OUT decoding depends on the host sample rate.**
+Measured: the decoded NoteOns are 0x52-0x6D plus program changes the song never sends at 48 kHz, and
+0x69-0x6D at 44.1 kHz; neither matches the song's N values (48-72), so the capture is partly an artefact.
+The `midiOut` case pins what is captured today (at 48 kHz); fixing it is its own change with a re-record.
+
 ## 3. The case matrix
 
 In-repo ROMs cover most of it: `mGB.gb` (and the embedded build), `bliptoaster.nes` and its MMC5 / N163 /
 S5B / VRC6 / VRC7 builds, and smsggdj for SMS and GG. LSDj, risa (2.3.0 with `let_go.srm`) and nanoloop
 (GBA) are sibling fixtures under `RETROPLUG_RESOURCES_DIR`; those groups skip in CI, counted in the skip
-baseline. 131 cases in the 14 group files recorded so far (counted over `baseline/*.json`; the fixture groups still to land add the rest); the parity suite is about 94 s of CPU against 175 s for the rest of
+baseline. 153 cases in the 20 group files (counted over `baseline/*.json`; the suite is 23 test files with `determinism`, `render-blocks` and `comparator`); the parity suite is about 94 s of CPU against 175 s for the rest of
 `test:native`, its slowest file about 8 s.
 
 | File(s) | Cases | Covers |
@@ -174,12 +188,12 @@ baseline. 131 cases in the 14 group files recorded so far (counted over `baselin
 | `link` | two linked mGBs, a third unlinked, a link made and broken mid-run | how linked systems render (a linked mGB hears no MIDI: its serial port is the cable, and it never drives it, so lockstep stepping is not observable here: `lsdj-link` covers it) |
 | `edits-live`, `edits-structure` | gain through a held note, live role knobs; reset, duplicate, add, remove, replace mid-run, a split losing and regaining its single system, a pin split left | edit timing, per-frame gain smoothing, the tap restore; fix 2 is covered by its unit test in `test/systems/bliptoaster-assets.test.ts`, not by this case (duplicate-mid-run duplicates an mGB, which has no construct hooks) |
 | `sync-sms` | smsggdj SYNC IN24 on SMS and GG: start, bpm change, stop, locate, a short block at a loop wrap whose end is off the 24-PPQN tick grid (so its locate shows); at 48 kHz / 512 and at 44.1 kHz / 8192-frame blocks | transport-driven sync |
-| `lsdj-sync` *(fixture)* | SYNC=MIDI at divisors 1/2/4/8 and with autoStart; Arduinoboy at 1024 and 512 | lsdj-sync's clock modes; the Arduinoboy defect |
-| `lsdj-modes` *(fixture)* | off, keyboard, midiMap, keyboardMidi, midiPassthrough (raw clocks into SYNC=MIDI), midiOut (play / stop / play), masterSync | every other lsdj-sync mode; MI.OUT and master clock as MIDI out |
+| `lsdj-sync` *(fixture)* | SYNC=MIDI at divisors 1/2/4/8 and with autoStart; Arduinoboy at 1024 (divisors 1 and 4) and 512, ending with a transport stop | lsdj-sync's clock modes; the Arduinoboy defect |
+| `lsdj-modes` *(fixture)* | off, keyboard (inert: the role emits nothing), midiMap (clocked by the transport), keyboardMidi, midiPassthrough (raw clocks into a dense SYNC=MIDI song), midiOut (play / stop / play; the sample-rate defect), masterSync at 44.1 kHz (works) and 48 kHz (the defect) | every other lsdj-sync mode; MI.OUT and master clock as MIDI out |
 | `lsdj-link` *(fixture)* | leader and follower on one cable | link-cable sync |
 | `risa` *(fixture)* | the transport script, also under PinSplit | risa-sync |
-| `gba` *(fixture)* | nanoloop booting under two routings (silent until played) | the GBA core at all |
-| `controller` *(fixture)* | pad presses launching rows on an Arduinoboy LSDj in MIDIMAP | the Launchpad role, controller-in |
+| `gba` *(fixture)* | nanoloop booting under Stereo, and under TwoPerInstance with START pressed (silent until played) | the GBA core at all |
+| `controller` *(fixture)* | pad presses launching distinct rows on an Arduinoboy LSDj in MIDIMAP, transport running | the Launchpad role, controller-in |
 
 Plus `determinism`, `render-blocks` and `comparator`, the harness's own tests (§6).
 
@@ -310,4 +324,4 @@ The implementation plan's tasks, each verified before the next:
   matrix's coverage; they get no case of their own.
 - Exact audio on arm64, macOS and Windows: those targets get the determinism and integer-state checks of
   §5.2, and the by-construction argument of §1 for the audio bits.
-- Fixing the Arduinoboy block-size defect, or the narrow-host NES split defect (§2.5).
+- Fixing the Arduinoboy block-size defect, the narrow-host NES split defect, the LSDj master-sync defect at >= 48 kHz, or the MI.OUT sample-rate dependence (§2.5).

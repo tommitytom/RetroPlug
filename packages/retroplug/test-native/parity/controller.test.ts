@@ -7,14 +7,18 @@ import { frames, ROMS } from "./scenes";
 import { savFrom, type SavInput } from "../../src/lsdjSav";
 import { padIndex } from "../../src/launchpad";
 
-// 16 contiguous rows, each one single-phrase chain, so every row a pad shows is playable.
+// 16 contiguous rows, each one single-phrase chain, row r playing note 1 + r (as ADVANCE_SONG in
+// test-native/lsdj-midimap.test.ts does), so pressing a different row is audible.
 const SONG: SavInput = {
   workingSong: {
     formatVersion: 22,
     settings: { syncMode: "MidiMap", tempo: 128 },
-    rows: Array.from({ length: 16 }, () => ({ chains: [0, 0, 0, 0] })),
-    chains: [{ phrases: [0] }],
-    phrases: [{ notes: Array.from({ length: 16 }, () => 1), instruments: Array.from({ length: 16 }, () => 0) }],
+    rows: Array.from({ length: 16 }, (_, r) => ({ chains: [r] })),
+    chains: Array.from({ length: 16 }, (_, r) => ({ phrases: [r] })),
+    phrases: Array.from({ length: 16 }, (_, r) => ({
+      notes: Array.from({ length: 16 }, () => 1 + r),
+      instruments: Array.from({ length: 16 }, () => 0),
+    })),
     instruments: [{ type: "pulse", panning: "LeftRight", adsr: { initialLevel: 8, attackSpeed: 8 } }],
   },
 } as SavInput;
@@ -38,6 +42,8 @@ const cases: ParityCase[] = [
       boot(),
       {
         blocks: blocks(frames(SR, 2000)),
+        // MI.MAP's clock only runs with the transport, so a launched row would freeze on its first step.
+        transport: [{ at: 0, bpm: 120, ppq: 0, playing: true }],
         controller: [
           { at: 0, bytes: press(6) },
           { at: frames(SR, 100), bytes: release(6) },

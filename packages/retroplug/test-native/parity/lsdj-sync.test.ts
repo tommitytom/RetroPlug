@@ -24,17 +24,19 @@ cases.push(
 // The Arduinoboy protocol: the cart sits in SYNC=LSDJ as a slave, the transport sends start / stop, and
 // note 24 enables the clock (note 25 disables it).
 //
-// KNOWN DEFECT, recorded as it is: LSDj plays only when EVERY host block carries at least one clock tick.
-// At 120 bpm and divisor 1 (24 PPQN, a tick per ~1000 frames) that needs blocks of 1024 frames or more,
-// so at 128 to 768 (ordinary DAW buffers) LSDj never starts, a divisor of 4 never starts at 1024 either,
-// and 2048 plays louder than 1024. The silent cases pin that; fixing it is its own change, with a
+// KNOWN DEFECT, recorded as it is: LSDj plays only when host blocks carry clock ticks. At 120 bpm and
+// divisor 1 (24 PPQN) a tick is ~1000 frames long, and the threshold is that tick's length (1000-frame
+// blocks play), so at 128 to 768 (ordinary DAW buffers) LSDj never starts, a divisor of 4 never starts at
+// 1024 either, and 2048 plays louder than 1024. "Every block carries a tick" is necessary but not
+// sufficient: divisor 4 at 4096 frames is silent while divisors 4 and 8 at 8192 play, so a fix built only
+// on that model may be incomplete. The silent cases pin all this; fixing it is its own change, with a
 // deliberate re-record of these cases.
 const arduinoboy = (bs: number): ParityCase["segments"] => {
   const b = (ms: number) => even(frames(SR, ms), bs);
   return [
     { blocks: b(1000), transport: [{ at: 0, bpm: 120, ppq: 0, playing: true }] },
     { blocks: b(2000), midi: [{ at: 0, bytes: [0x90, 24, 100] }] },
-    { blocks: b(500), midi: [{ at: 0, bytes: [0x90, 25, 100] }] },
+    { blocks: b(500), midi: [{ at: 0, bytes: [0x90, 25, 100] }], transport: [{ at: 0, playing: false }] },
   ];
 };
 for (const d of [1, 4])

@@ -73,13 +73,13 @@ export function lsdj(rig: Rig, rom: string, sav: Uint8Array, config: Record<stri
   return id;
 }
 
-export const boot = (): Segment => ({ blocks: blocks(frames(SR, LSDJ_BOOT_MS)) });
+export const boot = (rate = SR, size = 512): Segment => ({ blocks: even(frames(rate, LSDJ_BOOT_MS), size) });
 
 /** Press START on `slot` after this segment, and release it after the next (an 80 ms tap). */
-export function tap(slot = 0): Segment[] {
+export function tap(slot = 0, rate = SR, size = 512): Segment[] {
   return [
-    { blocks: blocks(frames(SR, 10)), after: (rig) => rig.press(slot, START, true) },
-    { blocks: blocks(frames(SR, 80)), after: (rig) => rig.press(slot, START, false) },
+    { blocks: even(frames(rate, 10), size), after: (rig) => rig.press(slot, START, true) },
+    { blocks: even(frames(rate, 80), size), after: (rig) => rig.press(slot, START, false) },
   ];
 }
 
@@ -90,14 +90,16 @@ export function lsdjCase(
   segments: Segment[],
   outputs: 2 | 4 = 2,
   audible: number[] = outputs === 2 ? [0, 1] : [0, 1, 2, 3],
+  rate = SR,
+  size = 512,
 ): ParityCase {
   return {
     name,
     needs: [rom],
-    sampleRate: SR,
+    sampleRate: rate,
     outputs,
     audible,
     setup: (rig) => void setup(rig),
-    segments: [boot(), ...segments],
+    segments: [boot(rate, size), ...segments],
   };
 }

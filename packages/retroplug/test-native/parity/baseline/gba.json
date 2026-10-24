@@ -38,14 +38,14 @@
     }
    }
   },
-  "boot-twoPerInstance": {
+  "boot-twoPerInstance-start": {
    "midiOut": {
     "count": 0,
     "fnv": "811c9dc5"
    },
    "ram": {
     "0": {
-     "fnv": "7fb8a79a",
+     "fnv": "73132d37",
      "length": 32768
     }
    },
@@ -63,9 +63,18 @@
      "frames": 48000,
      "lanes": [
       "f5caf5c5 0",
-      "f5caf5c5 0",
+      "53cc6bc6 0.0001299",
       "f5caf5c5 0",
       "f5caf5c5 0"
+     ]
+    },
+    {
+     "frames": 24000,
+     "lanes": [
+      "7e4bc9c5 0",
+      "7e4bc9c5 0",
+      "7e4bc9c5 0",
+      "7e4bc9c5 0"
      ]
     }
    ],
