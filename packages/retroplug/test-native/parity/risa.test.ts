@@ -36,9 +36,9 @@ const cases: ParityCase[] = [
     needs: [ROMS.risa, ROMS.risaSong],
     sampleRate: SR,
     outputs: 4,
-    // 3 mono pins in 4 lanes, so lane 3 is unused; only the TND pin (lane 1) sounds for this song (let_go):
-    // its pulse and MMC5 voices are silent over this stretch.
-    audible: [1],
+    // 3 mono pins in 4 lanes (Pulse, TND, Expansion), so lane 3 is unused. let_go sounds on all three pins
+    // over this stretch: the APU pulses, the TND pin and the MMC5 expansion.
+    audible: [0, 1, 2],
     setup: (rig) => {
       risa(rig);
       rig.project.setAudioRouting("pinSplit");

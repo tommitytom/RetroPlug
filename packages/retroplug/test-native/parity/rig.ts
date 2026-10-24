@@ -38,8 +38,6 @@ export function cycle(total: number, sizes: number[]): number[] {
   return out;
 }
 
-const swapExt = (path: string, ext: string): string => path.replace(/\.[^./]+$/, "") + ext;
-
 export class Rig {
   readonly session: Session = bootSession();
   /** Blocks rendered since the last reset: the MIDI-out block index counts from the start of the case. */
@@ -82,22 +80,21 @@ export class Rig {
     this.slots.clear();
   }
 
-  /** A fresh copy of `src` (and of the battery beside it, if any) in this file's temp dir, so a case
-   *  never writes a committed .sav and always starts from the same battery. `prefix` names the copy apart
-   *  from others of the same ROM: a second instance of one path gets the "-2.sav" battery slot, which a
-   *  case cannot seed in advance, so two systems that each need a battery each need their own copy. The
-   *  .sms and .gg smsggdj builds share one battery stem ("smsggdj_v0_45.sav"), so a case mixing them needs
-   *  prefixes too. `prefix` is a file-name prefix, never a path: the reset wipes files only. */
+  /** A fresh copy of the ROM `src`, and of nothing else, in this file's temp dir, so a case never writes a
+   *  committed .sav. No battery beside `src` is copied: a fixture tree can hold stray, untracked ones (a
+   *  .sav an earlier session flushed beside the ROM), and the store prefers .sav over .srm, so a copied
+   *  stray would shadow the battery a case writes and the baseline would depend on it. A case that needs a
+   *  battery writes it next to the copy (smsggdj, lsdj and risa do). `prefix` names the copy apart from
+   *  others of the same ROM: a second instance of one path gets the "-2.sav" battery slot, which a case
+   *  cannot seed in advance, so two systems that each need a battery each need their own copy. The .sms and
+   *  .gg smsggdj builds share one battery stem ("smsggdj_v0_45.sav"), so a case mixing them needs prefixes
+   *  too. `prefix` is a file-name prefix, never a path: the reset wipes files only. */
   rom(src: string, prefix = ""): string {
     if (prefix.includes("/")) throw new Error(`rom prefix "${prefix}" must not contain "/"`);
     const dst = `${this.romDir()}/${prefix}${src.slice(src.lastIndexOf("/") + 1)}`;
     const bytes = this.session.backend.readFile(src);
     if (!bytes) throw new Error(`cannot read ${src}`);
     this.writeFile(dst, bytes);
-    for (const ext of [".sav", ".srm"]) {
-      const battery = this.session.backend.readFile(swapExt(src, ext));
-      if (battery) this.writeFile(swapExt(dst, ext), battery);
-    }
     return dst;
   }
 

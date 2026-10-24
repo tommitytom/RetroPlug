@@ -103,8 +103,12 @@ Before each case it calls `newProject()`, deletes every ROM copy, reloads the ke
 at ppq 0 and 120 bpm, sets the case's sample rate, drains the MIDI out, and asserts no system survived.
 
 ROMs are copied into the file's temp dir before they load (`rig.rom`), so a case never writes a
-committed `.sav` (battery flush on teardown would rewrite `resources/roms/smsggdj_v0_45.sav`) and always
-starts from the same battery. A second instance of one ROM path gets a fresh `-2.sav` battery slot, which
+committed `.sav` (battery flush on teardown would rewrite `resources/roms/smsggdj_v0_45.sav`). Only the
+ROM is copied, never a battery beside it: the developer's fixture tree holds stray, untracked batteries,
+and the store prefers `.sav` over `.srm`, so a copied stray `risa-2.3.0-pal.sav` once shadowed the
+`let_go.srm` the risa scene writes, and the risa baseline held the stray's song rather than let_go's. A
+case that needs a battery writes it beside the copy (smsggdj, LSDj and risa do), so every battery a case
+boots with is one it states. A second instance of one ROM path gets a fresh `-2.sav` battery slot, which
 a case cannot seed in advance, so two systems that each need a battery each get their own copy
 (`rig.rom(src, prefix)`).
 
