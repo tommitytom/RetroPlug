@@ -17,8 +17,8 @@ struct DspCommand {
         SetBpm = 7, SetTransport = 8, SetConfigField = 9, PressButton = 10,
         SetPpq = 12, StageControllerMidi = 13, WriteRam = 14,
         StageSystemMidi = 15,
-        // The NES tap arming every structural change does (design section 3.2), pushed right behind
-        // its plan.
+        // The NES tap arming every structural change does (design section 3.2): carried in its plan's
+        // swap, or alone for an edit that plans nothing (a remove or replace of an id already gone).
         SyncTap = 16,
     };
 

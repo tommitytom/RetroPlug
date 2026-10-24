@@ -13,25 +13,22 @@
 
 bool QueuedInvoker::push(const DspCommand& c) { return engine_->pushCommand(c); }
 
-void QueuedInvoker::syncTap() {
-    DspCommand c;
-    c.kind = DspCommand::Kind::SyncTap;
-    c.syncTap = { static_cast<std::uint8_t>(engine_->translator().routing()) };
-    push(c);
-}
-
 void QueuedInvoker::setHostShape(rp::host::HostShape shape) { engine_->translator().setShape(shape); }
 
-void QueuedInvoker::adoptSystem(std::unique_ptr<SystemBase> sys) {
-    if (engine_->translator().add(std::move(sys))) syncTap();
-}
+// Add, replace, remove and set-routing re-arm the NES tap. One that plans carries its SyncTap in the plan's
+// swap; one refused changes nothing, so it re-arms nothing either. An id already gone plans nothing, and
+// re-arms all the same.
+void QueuedInvoker::adoptSystem(std::unique_ptr<SystemBase> sys) { engine_->translator().add(std::move(sys)); }
 
 void QueuedInvoker::replaceSystem(SystemId id, std::unique_ptr<SystemBase> sys) {
-    if (engine_->translator().replace(id, std::move(sys))) syncTap();
+    const bool present = engine_->translator().find(id) != nullptr;
+    engine_->translator().replace(id, std::move(sys));  // absent: the core is freed, never adopted
+    if (!present) engine_->pushSyncTap();
 }
 
 void QueuedInvoker::removeSystem(SystemId id) {
-    if (engine_->translator().remove(id)) syncTap();
+    if (engine_->translator().find(id)) engine_->translator().remove(id);
+    else engine_->pushSyncTap();
 }
 
 void QueuedInvoker::loadKernel(std::vector<std::uint8_t> bytecode) {
@@ -117,7 +114,7 @@ void QueuedInvoker::setPpq(double ppq) {
 }
 
 void QueuedInvoker::setAudioRouting(std::uint8_t mode) {
-    if (engine_->translator().setRouting(static_cast<rp::host::AudioRouting>(mode))) syncTap();
+    engine_->translator().setRouting(static_cast<rp::host::AudioRouting>(mode));
 }
 
 void QueuedInvoker::applyConfigField(SystemId id, std::uint8_t field, double value) {

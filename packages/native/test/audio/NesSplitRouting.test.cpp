@@ -27,6 +27,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "host/engine/DspCommand.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "host/graph/Translator.hpp"
@@ -61,13 +62,14 @@ std::vector<std::uint8_t> readRom() {
 
 // A booted NES, adopted the way a host adopts one: constructed with the DEFAULT (Mix) export mode, so
 // anything per-channel the Engine later reports had to be armed live.
-std::unique_ptr<MesenNesSystem> buildNes(SystemId id) {
+std::unique_ptr<MesenNesSystem> buildNes(SystemId id, std::uint32_t exportMode = 0) {
     MesenNesConfig cfg;
     cfg.romPath = RP_BLIPTOASTER_ROM_PATH;
+    cfg.channelExportMode = exportMode;
     auto sys = std::make_unique<MesenNesSystem>(id, cfg, readRom());
     sys->onActivate(kSampleRate);
     REQUIRE(sys->activated());
-    REQUIRE(sys->channelExportMode() == 0);  // constructed as a plain Mix system
+    REQUIRE(sys->channelExportMode() == exportMode);  // 0: constructed as a plain Mix system
     return sys;
 }
 
@@ -284,4 +286,72 @@ TEST_CASE("A second system disarms the NES tap and falls back to Stereo",
     rig.inv.removeSystem(2);
     CHECK(nes->channelExportMode() == 1);
     CHECK(nes->channelLayout().size() == 3);
+}
+
+TEST_CASE("A remove or replace of an id already gone still re-arms the NES tap",
+          "[audio][channelsplit][nes]") {
+    NesRig rig(8);
+    Engine& eng = rig.eng;
+    rig.inv.adoptSystem(buildNes(1));
+    rig.route(AudioRouting::PinSplit);
+    auto* nes = dynamic_cast<MesenNesSystem*>(eng.findSystem(1));
+    REQUIRE(nes != nullptr);
+    REQUIRE(nes->channelExportMode() == 1);
+
+    // Knock the tap off the mode the routing wants, behind the engine's back: only a re-arm (restore, then
+    // arm again, resetting the capture streams) puts it back. Every remove and replace has re-armed, even
+    // one whose target is already gone, and each plans nothing here.
+    nes->setChannelExportMode(2);
+    rig.inv.removeSystem(99);
+    CHECK(nes->channelExportMode() == 1);
+
+    nes->setChannelExportMode(2);
+    rig.inv.replaceSystem(98, buildNes(98));  // the core is freed, never adopted
+    CHECK(nes->channelExportMode() == 1);
+    CHECK(eng.systemCount() == 1);
+}
+
+TEST_CASE("A NES replaced under its own id is armed afresh, never restored to the old core's mode",
+          "[audio][channelsplit][nes]") {
+    NesRig rig(8);
+    Engine& eng = rig.eng;
+    rig.inv.adoptSystem(buildNes(1, 2));     // built with the pins + mix-reference tap
+    rig.route(AudioRouting::ChannelSplit);  // armed to 3, remembering 2
+    REQUIRE(dynamic_cast<MesenNesSystem*>(eng.findSystem(1))->channelExportMode() == 3);
+
+    rig.inv.replaceSystem(1, buildNes(1));  // a fresh core, built as plain Mix, under the same id
+    auto* fresh = dynamic_cast<MesenNesSystem*>(eng.findSystem(1));
+    REQUIRE(fresh != nullptr);
+    CHECK(fresh->channelExportMode() == 3);
+    // Leaving the split puts back what THIS core was built with: the old core's 2 left with it.
+    rig.route(AudioRouting::Stereo);
+    CHECK(fresh->channelExportMode() == 0);
+}
+
+TEST_CASE("A routing edit's plan and its tap arming take one ring slot, so they land together",
+          "[audio][channelsplit][nes]") {
+    NesRig rig(8);
+    Engine& eng = rig.eng;
+    rig.inv.adoptSystem(buildNes(1));
+    auto* nes = dynamic_cast<MesenNesSystem*>(eng.findSystem(1));
+    REQUIRE(nes != nullptr);
+
+    // The test thread is the audio thread from here: pushes only queue, and drainCommands applies them.
+    rig.inv.setAudioThreadOwns(true);
+    DspCommand bpm;
+    bpm.kind = DspCommand::Kind::SetBpm;
+    bpm.setBpm = { 120.0 };
+    std::size_t depth = 0;
+    while (eng.pushCommand(bpm)) ++depth;
+    eng.drainCommands();
+    for (std::size_t i = 0; i + 1 < depth; ++i) REQUIRE(eng.pushCommand(bpm));
+
+    // One slot left. Were the arming a command of its own it would be dropped here, and the pin wiring
+    // would run against an unarmed tap.
+    rig.route(AudioRouting::PinSplit);
+    CHECK_FALSE(eng.pushCommand(bpm));
+    eng.drainCommands();
+    CHECK(nes->channelExportMode() == 1);
+    CHECK(nes->channelLayout().size() == 3);
+    rig.inv.setAudioThreadOwns(false);
 }

@@ -111,7 +111,8 @@ SetGraphResult GraphHost::setGraph(std::string_view documentJson) {
     return setGraph(*doc);
 }
 
-SetGraphResult GraphHost::setGraph(const GraphDocument& document, std::shared_ptr<const void> hostData) {
+SetGraphResult GraphHost::setGraph(const GraphDocument& document, std::shared_ptr<const void> hostData,
+                                   const HostCommand* trailer) {
     SetGraphResult result;
     // The host's outputs are one set of buffers: a second writer would overwrite the first.
     const NodeDoc* firstOut = nullptr;
@@ -137,7 +138,7 @@ SetGraphResult GraphHost::setGraph(const GraphDocument& document, std::shared_pt
         return result;
     }
     outcome.storage->hostData = std::move(hostData);
-    if (!publish(outcome, document)) {
+    if (!publish(outcome, document, trailer)) {
         result.errors.push_back({"", "", "busy", "the command ring is full"});
         return result;
     }
@@ -174,8 +175,9 @@ PlanOutcome GraphHost::planDocument(const GraphDocument& document, double sample
     return plan(in);
 }
 
-// Hand a successful plan to the audio thread. False, with the plan freed unpublished, if the ring is full.
-bool GraphHost::publish(PlanOutcome& outcome, const GraphDocument& document) {
+// Hand a successful plan to the audio thread, its trailer in the same command. False, with the plan freed
+// unpublished and the trailer never applied, if the ring is full.
+bool GraphHost::publish(PlanOutcome& outcome, const GraphDocument& document, const HostCommand* trailer) {
     PlanStorage* storage = outcome.storage.release();
     const std::shared_ptr<const void> hostData = storage->hostData;
     const bool commits = !storage->commits.empty();
@@ -183,6 +185,10 @@ bool GraphHost::publish(PlanOutcome& outcome, const GraphDocument& document) {
     Command c;
     c.kind = Command::Kind::SwapPlan;
     c.plan = storage;
+    if (trailer) {
+        c.trailer = true;
+        c.host = *trailer;
+    }
     if (!commands_.tryPush(c)) {
         if (commits) commitsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
         delete storage;  // never published: frees its prepared settings and pins
@@ -239,6 +245,9 @@ void GraphHost::drainCommands(bool discard) {
                 replaced = current_;
                 current_ = c.plan;
                 if (!c.plan->commits.empty()) commitsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
+                // The rest of the same edit, against the plan it rode in with. Applied under discard too:
+                // the plan is adopted either way, and its trailer is what keeps the embedder in step with it.
+                if (c.trailer && hostHandler_) hostHandler_(hostHandlerCtx_, c.host, current_->hostData.get(), false);
                 break;
             case Command::Kind::SetParam:
                 pushControl(*c.queue, c.frame, c.value);

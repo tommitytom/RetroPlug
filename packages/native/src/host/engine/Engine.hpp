@@ -14,6 +14,7 @@
 #include "host/engine/SnapshotRegistry.hpp"
 
 class SystemBase;
+class MesenNesSystem;
 struct DspCommand;
 namespace rp::graph { struct HostCommand; }
 namespace rp::host { class Translator; struct SystemTable; enum class AudioRouting : std::uint8_t; }
@@ -174,6 +175,9 @@ public:
     void discardPending();                          // teardown, the audio thread stopped
     // Grow the plan's block size to a host's maximum (never below 8192, the matrix's largest). Quiescent.
     void setMaxBlockFrames(std::uint32_t frames);
+    // Re-arm the NES tap for an edit that re-arms without a plan (a remove or replace of an id already gone):
+    // a SyncTap behind everything pushed so far. A plan's own SyncTap rides in its swap. Control thread.
+    bool pushSyncTap();
 
 private:
     struct Graph;
@@ -188,11 +192,13 @@ private:
     // The NES tap syncTap() armed, and what its export mode was BEFORE we touched it. Restored before
     // every re-resolve so leaving a split mode (or gaining a second system) puts the core back exactly as
     // found. Scoped to what WE armed on purpose: the CLI / RenderHost set channelExportMode at construct
-    // through the mesen role blob and never select a split routing, so they are never disturbed.
+    // through the mesen role blob and never select a split routing, so they are never disturbed. `core`
+    // is compared, never followed: a fresh core replaced in under the same id is not the one armed.
     struct ArmedTap {
-        bool          active   = false;
-        SystemId      id       = 0;
-        std::uint32_t prevMode = 0;
+        bool                  active   = false;
+        SystemId              id       = 0;
+        const MesenNesSystem* core     = nullptr;
+        std::uint32_t         prevMode = 0;
     };
     ArmedTap armedTap_;
 

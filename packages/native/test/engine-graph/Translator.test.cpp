@@ -49,10 +49,12 @@ std::unique_ptr<SystemBase> linkedMgb(SystemId id, std::uint8_t group) {
 
 struct Rig {
     std::vector<std::string> docs;
+    std::vector<bool>        rearms;  // each document's rearmsTap
     std::vector<SystemId>    released;
     bool                     accept = true;
-    Translator               t{[this](const std::string& json, std::shared_ptr<const rp::host::SystemTable>) {
+    Translator               t{[this](const std::string& json, std::shared_ptr<const rp::host::SystemTable>, bool rearmsTap) {
                      docs.push_back(json);
+                     rearms.push_back(rearmsTap);
                      return accept;
                  },
                  [this](SystemBase* core) { released.push_back(core->id()); }};
@@ -241,6 +243,20 @@ TEST_CASE("replace keeps the slot; a refused plan leaves the model as it was", "
     CHECK_FALSE(r.t.add(gb(7)));
     CHECK(r.released == std::vector<SystemId>{6, 7});
     CHECK(r.t.systemCount() == 2);
+}
+
+TEST_CASE("add, replace, remove and setRouting re-arm the NES tap; a link group and the host shape do not",
+          "[engine-graph][translator]") {
+    // The engine's SyncTap rides the plans flagged here, so this is the list of edits that re-arm.
+    Rig r;
+    REQUIRE(r.t.add(gb(1)));
+    REQUIRE(r.t.add(gb(2)));
+    REQUIRE(r.t.replace(2, nes(3)));
+    REQUIRE(r.t.setRouting(AudioRouting::Stereo));  // the mode it already had: republished, and re-arms
+    REQUIRE(r.t.setLinkGroup(1, 1));
+    REQUIRE(r.t.setShape({HostShape::Kind::Multi, 8}));
+    REQUIRE(r.t.remove(3));
+    CHECK(r.rearms == std::vector<bool>{false, true, true, true, true, false, false, true});
 }
 
 TEST_CASE("every host lane of a lone NES is fed as today's split routers feed it", "[engine-graph][translator]") {

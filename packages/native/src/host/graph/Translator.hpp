@@ -63,13 +63,16 @@ struct HostShape {
 // Turns the structural calls into graph documents (section 4). Control thread only. It holds the
 // ordered system list, each Game Boy's link group, the routing mode and the host shape, and
 // after every change it builds the document and its system table and hands both to `publish` (the
-// engine's GraphHost::setGraph), which answers whether the document planned.
+// engine's GraphHost::setGraph), which answers whether the document planned. `rearmsTap` is true for the
+// edits that re-arm the NES tap (add, replace, remove and setRouting, a same-mode one included), whose
+// plan carries the engine's SyncTap; false for a link group, the host shape and the empty first plan.
 //
 // A built core is parked here under a token until the system node created for it takes it (take()). A
 // core it frees itself (one never adopted) goes through `released` first, as a node's destroy does.
 class Translator {
 public:
-    using Publish = std::function<bool(const std::string& documentJson, std::shared_ptr<const SystemTable> table)>;
+    using Publish = std::function<bool(const std::string& documentJson, std::shared_ptr<const SystemTable> table,
+                                       bool rearmsTap)>;
     Translator(Publish publish, std::function<void(SystemBase*)> released);
     ~Translator();  // frees any core still parked
     Translator(const Translator&) = delete;
@@ -112,7 +115,7 @@ private:
 
     System entryFor(std::unique_ptr<SystemBase> core);
     void   unpark(std::uint64_t token);  // free a parked core the plan never took
-    bool   publish();
+    bool   publish(bool rearmsTap);
 
     // The order systems are summed and stepped in: unlinked by slot, then each link group (by first
     // appearance) with its members by slot. Indices into systems_.

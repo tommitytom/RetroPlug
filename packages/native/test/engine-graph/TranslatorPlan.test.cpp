@@ -84,7 +84,7 @@ struct PlanRig {
         config.interfacesCtx = this;
         host = std::make_unique<rp::graph::GraphHost>(registry, resources, config);
         tr = std::make_unique<Translator>(
-            [this](const std::string& json, std::shared_ptr<const rp::host::SystemTable> table) {
+            [this](const std::string& json, std::shared_ptr<const rp::host::SystemTable> table, bool) {
                 auto doc = rp::graph::parseGraphDocument(json);
                 if (!doc) {
                     refusals.push_back("parse: " + doc.error().what());

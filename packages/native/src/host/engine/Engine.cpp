@@ -30,6 +30,13 @@ namespace {
 const std::vector<DspRuntime::ButtonIn> kNoButtons;
 const std::vector<DspRuntime::KeyIn>    kNoKeys;
 
+DspCommand syncTapFor(rp::host::AudioRouting routing) {
+    DspCommand c;
+    c.kind = DspCommand::Kind::SyncTap;
+    c.syncTap = { static_cast<std::uint8_t>(routing) };
+    return c;
+}
+
 } // namespace
 
 // The Engine's graph: the node packages, the GraphHost running the plan, and the translator that turns
@@ -65,13 +72,20 @@ Engine::Engine(double sampleRate) : sampleRate_(sampleRate) {
     graph_->host = std::make_unique<rp::graph::GraphHost>(graph_->registry, graph_->resources, config);
     graph_->host->setHostCommandHandler(&Engine::onHostCommand, this);
     graph_->translator = std::make_unique<rp::host::Translator>(
-        [this](const std::string& json, std::shared_ptr<const rp::host::SystemTable> table) {
+        [this](const std::string& json, std::shared_ptr<const rp::host::SystemTable> table, bool rearmsTap) {
             auto doc = rp::graph::parseGraphDocument(json);
             if (!doc) {
                 std::fprintf(stderr, "[engine] the translator built a document that does not parse: %s\n", doc.error().what().c_str());
                 return false;
             }
-            const auto result = graph_->host->setGraph(*doc, std::move(table));
+            // An edit that re-arms the NES tap carries its SyncTap in the plan's swap, so the wiring and the
+            // tap land in one drain or not at all. routing() already holds the mode this edit set.
+            rp::graph::HostCommand trailer{};
+            if (rearmsTap) {
+                const DspCommand c = syncTapFor(graph_->translator->routing());
+                std::memcpy(trailer.bytes, &c, sizeof c);
+            }
+            const auto result = graph_->host->setGraph(*doc, std::move(table), rearmsTap ? &trailer : nullptr);
             for (const auto& e : result.errors)
                 std::fprintf(stderr, "[engine] a graph was refused (%s) at %s.%s: %s\n", e.code.c_str(), e.nodeId.c_str(),
                              e.port.c_str(), e.message.c_str());
@@ -92,6 +106,8 @@ const void* Engine::graphInterface(void* ctx, const char* id) {
 rp::host::Translator& Engine::translator() { return *graph_->translator; }
 
 bool Engine::pushCommand(const DspCommand& c) { return graph_->host->pushHostCommand(&c, sizeof c); }
+
+bool Engine::pushSyncTap() { return pushCommand(syncTapFor(graph_->translator->routing())); }
 
 void Engine::drainCommands() { graph_->host->drain(); }
 
@@ -196,12 +212,13 @@ void Engine::applyCommand(DspCommand& cmd) {
 
 // The NES tap arming at every structural change, against the plan just adopted (design section 3.2):
 // restore whatever was armed, then arm the mode the routing wants. It runs even when the wanted mode is
-// unchanged, and each run resets the capture streams. A core that has gone (removed, or replaced under a
-// new id) is not found, and its record is dropped.
+// unchanged, and each run resets the capture streams. A core that has gone (removed, or replaced under
+// its id or a new one) is not restored, and its record is dropped.
 void Engine::syncTap(rp::host::AudioRouting routing) {
     const rp::host::SystemTable& table = currentTable();
     if (armedTap_.active) {
-        if (const auto* e = table.find(armedTap_.id); e && e->nes) e->nes->setChannelExportMode(armedTap_.prevMode);
+        if (const auto* e = table.find(armedTap_.id); e && e->nes == armedTap_.core)
+            e->nes->setChannelExportMode(armedTap_.prevMode);
         armedTap_ = {};
     }
     using rp::host::AudioRouting;
@@ -212,7 +229,7 @@ void Engine::syncTap(rp::host::AudioRouting routing) {
     if (!nes) return;
     const std::uint32_t want = pins ? 1u : 3u;
     if (nes->channelExportMode() != want) {
-        armedTap_ = { true, nes->id(), nes->channelExportMode() };
+        armedTap_ = { true, nes->id(), nes, nes->channelExportMode() };
         nes->setChannelExportMode(want);
     }
 }

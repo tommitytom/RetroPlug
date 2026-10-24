@@ -84,7 +84,7 @@ struct Doc {
 
 Translator::Translator(Publish publish, std::function<void(SystemBase*)> released)
     : publish_(std::move(publish)), released_(std::move(released)) {
-    this->publish();  // the empty project: the kernel and the host's outputs
+    this->publish(false);  // the empty project: the kernel and the host's outputs
 }
 
 Translator::~Translator() {
@@ -122,7 +122,7 @@ SystemBase* Translator::take(std::uint64_t token) {
 bool Translator::add(std::unique_ptr<SystemBase> core) {
     if (!core) return false;
     systems_.push_back(entryFor(std::move(core)));
-    if (publish()) return true;
+    if (publish(true)) return true;
     const std::uint64_t token = systems_.back().token;
     systems_.pop_back();
     unpark(token);
@@ -139,7 +139,7 @@ bool Translator::replace(SystemId id, std::unique_ptr<SystemBase> core) {
     }
     const System old = *it;
     *it = entryFor(std::move(core));
-    if (publish()) return true;
+    if (publish(true)) return true;
     const std::uint64_t token = it->token;
     *it = old;
     unpark(token);
@@ -151,7 +151,7 @@ bool Translator::remove(SystemId id) {
     if (it == systems_.end()) return true;
     const System old = *it;
     const auto at = systems_.erase(it);
-    if (publish()) return true;
+    if (publish(true)) return true;
     systems_.insert(at, old);
     return false;
 }
@@ -159,7 +159,7 @@ bool Translator::remove(SystemId id) {
 bool Translator::setRouting(AudioRouting mode) {
     const AudioRouting old = routing_;
     routing_ = mode;
-    if (publish()) return true;
+    if (publish(true)) return true;
     routing_ = old;
     return false;
 }
@@ -169,7 +169,7 @@ bool Translator::setLinkGroup(SystemId id, std::uint8_t group) {
     if (it == systems_.end() || it->kind != SystemKind::SameBoy || it->linkGroup == group) return true;
     const std::uint8_t old = it->linkGroup;
     it->linkGroup = group;
-    if (publish()) return true;
+    if (publish(false)) return true;
     it->linkGroup = old;
     return false;
 }
@@ -178,7 +178,7 @@ bool Translator::setShape(HostShape shape) {
     if (shape == shape_) return true;
     const HostShape old = shape_;
     shape_ = shape;
-    if (publish()) return true;
+    if (publish(false)) return true;
     shape_ = old;
     return false;
 }
@@ -353,6 +353,8 @@ SystemTable Translator::table() const {
     return t;
 }
 
-bool Translator::publish() { return publish_(documentJson(), std::make_shared<const SystemTable>(table())); }
+bool Translator::publish(bool rearmsTap) {
+    return publish_(documentJson(), std::make_shared<const SystemTable>(table()), rearmsTap);
+}
 
 }  // namespace rp::host

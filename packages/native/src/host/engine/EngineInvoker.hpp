@@ -69,8 +69,6 @@ public:
 
 private:
     bool push(const DspCommand& c);
-    // The NES tap arming every structural change does, pushed right behind its plan.
-    void syncTap();
 
     Engine*           engine_ = nullptr;
     std::atomic<bool> audioThreadOwns_{false};

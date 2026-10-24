@@ -55,6 +55,7 @@ static_assert(sizeof(HostCommand) == kHostCommandBytes, "the payload is exactly 
 // discardPending. It must not block, and must not call back into the GraphHost: a setGraph from a quiescent
 // flush would nest a drain and a reclaim, which can free the plan whose host data it was handed.
 // `discard`: the command was dropped unapplied (discardPending or teardown), so free what it owns instead.
+// A plan's trailer (setGraph) is never discarded: it is applied with its plan, which is always adopted.
 using HostCommandHandler = void (*)(void* ctx, const HostCommand& command, const void* hostData, bool discard);
 
 constexpr std::uint32_t kMaxBlockFrames = 1u << 16;
@@ -93,8 +94,11 @@ public:
     // ---- control thread ------------------------------------------------------------------------------
     SetGraphResult setGraph(std::string_view documentJson);
     // `hostData` rides with the plan: the handler and hostData() see the one of the plan current at the
-    // time, and it is freed with that plan on reclaim (control thread).
-    SetGraphResult setGraph(const GraphDocument& document, std::shared_ptr<const void> hostData = nullptr);
+    // time, and it is freed with that plan on reclaim (control thread). `trailer`, a host command, rides in
+    // the plan's own swap: the handler gets it in the same pop that adopts the plan, with that plan's host
+    // data, so no drain ever runs a block between the two, and a refused setGraph applies neither.
+    SetGraphResult setGraph(const GraphDocument& document, std::shared_ptr<const void> hostData = nullptr,
+                            const HostCommand* trailer = nullptr);
     // Queue an embedder command behind everything pushed so far. False when the ring is full or `size`
     // exceeds kHostCommandBytes. Flushes inline while quiescent, as every push does.
     bool pushHostCommand(const void* data, std::size_t size);
@@ -107,7 +111,8 @@ public:
     // Set true BEFORE the audio thread starts calling processBlock, false AFTER it has stopped.
     void setAudioThreadOwns(bool owns);
     // Teardown, once the audio thread has stopped and before setAudioThreadOwns(false) would apply what is
-    // left: adopt every queued plan and hand every queued host command back as discarded.
+    // left: adopt every queued plan (applying its trailer, the rest of the same edit) and hand every queued
+    // host command back as discarded.
     void discardPending();
     bool audioThreadOwns() const { return audioOwns_.load(std::memory_order_acquire); }
     // Destroy plans the audio thread has handed back. Returns how many.
@@ -149,11 +154,12 @@ private:
     struct Command {
         enum class Kind : std::uint8_t { SwapPlan, SetParam, Host };
         Kind              kind = Kind::SwapPlan;
+        bool              trailer = false;  // SwapPlan: `host` is the plan's trailer
         PlanStorage*      plan = nullptr;
         rp_control_queue* queue = nullptr;
         std::uint32_t     frame = 0;
         double            value = 0.0;
-        HostCommand       host{};
+        HostCommand       host{};           // Host: the command; SwapPlan: the trailer, if any
     };
     static_assert(std::is_trivially_copyable_v<Command>, "the ring copies a Command as bytes");
 
@@ -164,7 +170,7 @@ private:
     static const void* hostInterface(const rp_host* host, const char* id);
     static float* const* audioBuffers(const rp_host* host, std::uint32_t* count);
     PlanOutcome planDocument(const GraphDocument& document, double sampleRate, std::uint32_t maxFrames);
-    bool        publish(PlanOutcome& outcome, const GraphDocument& document);
+    bool        publish(PlanOutcome& outcome, const GraphDocument& document, const HostCommand* trailer = nullptr);
     void        markFaulted(Instance& inst);
 
     const NodeRegistry&                                   registry_;
