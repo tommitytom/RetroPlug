@@ -135,9 +135,14 @@ modular graph engine is held to ([docs/modular-graph-phase-b0-design.md](../docs
   must agree with itself, and its MIDI out, SRAM and work RAM are still held to the baseline. CI's
   linux-x64 `test:native` step sets `RP_PARITY_REQUIRE_TARGET=1`: there a host that is not the baseline's
   target FAILS instead of falling back, so exact checking cannot fade out after a toolchain change.
-  Bumping `PARITY_TARGET` in `parity/group.ts` and re-recording is the deliberate way to move it.
+  Moving the target is one commit: set `PARITY_TARGET` in `parity/group.ts` to the new host's
+  `buildTarget()`, re-record every group unfiltered on that host with the fixtures present (each baseline
+  naming the old target is re-labelled with every digest recorded fresh; a re-label is refused under
+  `RP_PARITY_ONLY` or when any case skips, so no old-target digest survives), and move CI's linux-x64
+  runner image to that toolchain in the same commit, since its `RP_PARITY_REQUIRE_TARGET` step fails on
+  any other.
 - **Re-record** with `RP_PARITY_UPDATE=1 pnpm test:native parity/<group>` (`RP_PARITY_ONLY=<case>` for one
-  case). A recording is refused: off the baseline's target; for a case whose hashes change when it is
+  case). A recording is refused: on any host but `PARITY_TARGET`; for a case whose hashes change when it is
   re-run alone in a fresh process (it would depend on the cases before it); for a case whose `audible`
   lanes are silent after its first (boot) segment; and for a case whose MIDI, controller traffic and
   transport change nothing (a stimulus sent before a cart finished booting records only the boot).

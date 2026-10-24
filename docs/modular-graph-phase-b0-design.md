@@ -254,6 +254,11 @@ processes. Keys sorted, one value per line, so a re-record diffs line by line:
   a platform-dependent skip, and the rig is exercised on every CI platform; it does cost those jobs a
   second render of each case. Should MIDI out or work RAM ever differ across platforms, that is a finding
   in its own right.
+- **Moving the target** (CI's linux-x64 image moving to a new compiler, say) is one commit: `PARITY_TARGET`
+  in `parity/group.ts` set to the new host's `buildTarget()`, every group re-recorded unfiltered on that
+  host with the fixtures present, and CI's runner image moved with it (its `RP_PARITY_REQUIRE_TARGET` step
+  fails on any other target). A recording on `PARITY_TARGET` over a baseline labelled with another target
+  re-labels it, recording every digest fresh.
 
 A fixture case with its fixture absent skips with a counted reason on every target, as today.
 
@@ -262,7 +267,9 @@ A fixture case with its fixture absent skips with a counted reason on every targ
 `RP_PARITY_UPDATE=1 pnpm test:native parity/<group>` re-records; `RP_PARITY_ONLY=<case>` narrows a group to
 one case. A recording is refused, case by case, and the file is then left untouched:
 
-- off the baseline's target;
+- on any host but `PARITY_TARGET`. On it, a recording over a baseline labelled with another target
+  re-labels it (moving the target, §5.2), and a re-label keeps no digest from the old target: it is refused
+  under `RP_PARITY_ONLY`, and when any case skips;
 - when a case's `audible` lanes are silent after its first segment (the boot: a boot chime is not what a
   case means by "sounds"). A case whose recorded behaviour IS silence lists no lanes and says why;
 - when its MIDI, controller traffic and transport change nothing: the case is also run with them stripped,
@@ -271,7 +278,7 @@ one case. A recording is refused, case by case, and the file is then left untouc
 - when it depends on the cases before it: each case is re-run alone in a fresh host process (the bundle
   spawns itself with `RP_PARITY_EMIT`), and its digest must match the group run's.
 
-A fixture case skipped during a recording keeps its entry. Entries for cases no longer in a group's table
+A fixture case skipped during a recording keeps its entry (a re-label refuses instead). Entries for cases no longer in a group's table
 are dropped on an unfiltered recording, and an unfiltered check fails while any remain.
 
 ### 5.4 Failure reports

@@ -1,7 +1,8 @@
 // One parity group: its cases run in order through one Rig, each as its own test(), compared against (or
 // recorded into) test-native/parity/baseline/<group>.json. docs/modular-graph-phase-b0-design.md has the
 // why; the env switches:
-//   RP_PARITY_UPDATE=1     record instead of compare (refused off the baseline's target)
+//   RP_PARITY_UPDATE=1     record instead of compare (only on PARITY_TARGET; one there over a baseline
+//                          recorded elsewhere re-labels it, which must be unfiltered with no case skipped)
 //   RP_PARITY_ONLY=<case>  run just that case
 //   RP_PARITY_DUMP=<dir>   on a mismatch, write the case's lanes as float WAVs and its MIDI out as JSON
 //   RP_PARITY_REQUIRE_TARGET=1  in check mode, fail every case when this host is not the baseline's target
@@ -60,7 +61,9 @@ interface Baseline {
 }
 
 /** The one target whose float output the committed baselines hold (design sections 1 and 5.2). A recording
- *  only ever happens on it, and never re-labels a baseline recorded on another. */
+ *  only ever happens on it. Moving it is one change: set this to the new host's buildTarget(), re-record
+ *  every group unfiltered on that host with the fixtures present (each baseline naming the old target is
+ *  re-labelled, every digest recorded fresh), and move CI's linux-x64 image to it in the same commit. */
 const PARITY_TARGET = "linux-x64-gnu13";
 
 /** How long a recording waits for one case's alone-run before killing it. */
@@ -203,8 +206,16 @@ export function runGroup(group: string, cases: ParityCase[]): void {
   const host = rig.audio.buildTarget();
   const raw = rig.session.backend.readFile(file);
   const baseline: Baseline | null = raw ? (JSON.parse(text.decode(raw)) as Baseline) : null;
-  // What a recording must be on: the file's own target, or the one target for a file not yet written.
-  const recordTarget = baseline?.target ?? PARITY_TARGET;
+  // A recording happens only on PARITY_TARGET. One over a baseline recorded on another target RE-LABELS it,
+  // and a re-label keeps no digest from the old target: it must record every case, so it is refused when
+  // filtered (here) or when any case skipped (at the write).
+  const relabelFrom = baseline && baseline.target !== PARITY_TARGET ? baseline.target : null;
+  const recordRefusal =
+    host !== PARITY_TARGET
+      ? `this host is ${host}, and a recording only happens on PARITY_TARGET (${PARITY_TARGET}, parity/group.ts)`
+      : relabelFrom && ONLY
+        ? `the baseline was recorded on ${relabelFrom}: re-labelling it to ${PARITY_TARGET} records every case fresh, so run it without RP_PARITY_ONLY`
+        : null;
   const target = baseline?.target ?? host;
   const onTarget = target === host;
   const missing = (c: ParityCase) => (c.needs ?? []).find((p) => !rig.session.backend.fileExists(p));
@@ -220,16 +231,20 @@ export function runGroup(group: string, cases: ParityCase[]): void {
 
   const recorded: Record<string, CaseDigest> = {};
   let failed = 0;
+  const skipped: string[] = [];
   const selected = cases.filter((c) => !ONLY || c.name === ONLY);
 
   for (const c of selected) {
     const label = UPDATE ? `${c.name} (recording)` : onTarget ? c.name : `${c.name} (deterministic here; audio baseline is ${target})`;
     test(label, async () => {
       const absent = missing(c);
-      if (absent) skip(`needs ${absent}`);
+      if (absent) {
+        skipped.push(c.name);
+        skip(`needs ${absent}`);
+      }
       try {
         if (UPDATE) {
-          if (host !== recordTarget) throw new Error(`the baseline target is ${recordTarget}; this host is ${host}, so it cannot record it`);
+          if (recordRefusal) throw new Error(recordRefusal);
           const { digest } = runCase(rig, c, false);
           const silent = c.audible.filter((l) => !laneSounds(digest, l));
           if (silent.length) throw new Error(`lane(s) ${silent.join(", ")} never sound: refusing to record silence`);
@@ -260,7 +275,12 @@ export function runGroup(group: string, cases: ParityCase[]): void {
 
         if (REQUIRE_TARGET && !onTarget)
           throw new Error(
-            `this host is ${host} but the baseline was recorded on ${target}, so exact audio would not be compared: re-record on ${target} or bump PARITY_TARGET and re-record`,
+            `this host is ${host} but the baseline was recorded on ${target}, so exact audio would not be compared: ` +
+              (host === PARITY_TARGET
+                ? `PARITY_TARGET already names this host, so re-record this group unfiltered with the fixtures present to re-label it`
+                : `run on ${target}, or move the target (PARITY_TARGET in parity/group.ts set to ${host}, every group re-recorded ` +
+                  `unfiltered on it with the fixtures present, and CI's linux-x64 image moved in the same commit)`) +
+              ` (spec/06-build-test.md)`,
           );
         const expected = baseline?.cases[c.name];
         if (!expected) throw new Error(`no baseline entry: record it with RP_PARITY_UPDATE=1 pnpm test:native parity/${group}`);
@@ -284,18 +304,24 @@ export function runGroup(group: string, cases: ParityCase[]): void {
   // Last: write the recording, or check the baseline holds no case the table has dropped.
   test(UPDATE ? `${group}: write the baseline` : `${group}: the baseline holds only these cases`, () => {
     if (UPDATE) {
-      if (host !== recordTarget) throw new Error(`the baseline target is ${recordTarget}; this host is ${host}, so nothing was written`);
+      if (recordRefusal) throw new Error(`${recordRefusal}, so nothing was written`);
       if (failed) throw new Error(`${failed} case(s) failed, so nothing was written`);
+      if (relabelFrom && skipped.length)
+        throw new Error(
+          `re-labelling ${group} from ${relabelFrom} to ${PARITY_TARGET} must record every case, and ${skipped.join(", ")} skipped ` +
+            `(a missing fixture), so nothing was written: a kept entry would carry ${relabelFrom}'s digests under ${PARITY_TARGET}`,
+        );
       if (Object.keys(recorded).length === 0) {
         console.log(`# ${group}: nothing was recorded (every case skipped), so the baseline file was left as it was`);
         return;
       }
       // A filtered recording replaces only its case. An unfiltered one drops entries for cases no longer in
-      // the table, but a case skipped for a missing fixture keeps the entry it had.
+      // the table, but a case skipped for a missing fixture keeps the entry it had (never in a re-label,
+      // which refused above if anything skipped).
       const kept: Record<string, CaseDigest> = ONLY ? { ...(baseline?.cases ?? {}) } : {};
       if (!ONLY) for (const n of names) if (!(n in recorded) && baseline?.cases[n]) kept[n] = baseline.cases[n];
       Object.assign(kept, recorded);
-      expect(rig.session.backend.writeFileAtomic(file, bytes(stableJson({ target: recordTarget, cases: kept })))).toBeTruthy();
+      expect(rig.session.backend.writeFileAtomic(file, bytes(stableJson({ target: PARITY_TARGET, cases: kept })))).toBeTruthy();
       return;
     }
     if (ONLY || !baseline) return;
