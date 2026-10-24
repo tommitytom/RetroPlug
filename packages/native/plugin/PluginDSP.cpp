@@ -335,9 +335,9 @@ protected:
             svc_.engine.stageMidi(0, std::vector<std::uint8_t>(cc, cc + 3));
         }
 
-        // One audio block: drain control-thread structural edits on the audio thread → set transport
-        // (direct — we're the audio thread) → render into the output channels (the plugin's 4 stereo
-        // pairs; routed per audioRouting by the Engine's MultiOutRouter).
+        // One audio block: drain control-thread edits on the audio thread, set transport (direct: we're
+        // the audio thread), render into the output channels (the plugin's 4 stereo pairs, laid out by the
+        // translator's Multi(8) shape and the project's routing).
         svc_.invoker.drainInto(svc_.engine);
         svc_.engine.setBpm(bpm);
         svc_.engine.setTransport(playing);

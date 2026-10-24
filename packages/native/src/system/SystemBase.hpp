@@ -32,9 +32,9 @@ struct CoreTransportStats {
     std::uint64_t txDepth      = 0;  // sent by the core, not yet drained by the host
 };
 
-// Polymorphic runtime representation of one emulator instance. Owned by the
-// DSP thread inside Project. Concrete subclasses: SameBoySystem, MesenNesSystem
-// (NES), MesenGbaSystem.
+// Polymorphic runtime representation of one emulator instance. Owned by its
+// system node in the engine's graph (host/graph/SystemNodes.cpp). Concrete
+// subclasses: SameBoySystem, MesenNesSystem (NES), MesenGbaSystem, MesenSmsSystem.
 class SystemBase {
 public:
     explicit SystemBase(SystemId id) : id_(id) {}
@@ -83,14 +83,8 @@ public:
     // the router sized), so reporting a wide layout is inert on the default path.
     virtual std::vector<ChannelStream> channelLayout() const { return {{"Mix", true}}; }
 
-    // True when this system is advanced as part of a multi-member link unit —
-    // its block is stepped by the group's round-robin, so it must NOT be driven
-    // standalone. Default false; SameBoySystem returns true when it has linked
-    // peers.
-    virtual bool isLinked() const { return false; }
-
     // Fused single-system convenience entry: prepare → step-to-done → finish.
-    // NOT on the runner's hot path (runUnit drives the triad directly) — this is
+    // NOT on the engine's path (its system nodes drive the triad directly); this is
     // for direct callers and test doubles that want to advance one system in one
     // call. Defined out-of-line in SystemBase.cpp. Backends implement the triad,
     // not this.

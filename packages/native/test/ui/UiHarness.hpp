@@ -56,7 +56,7 @@ private:
     // harness, debugger, or background thread). Declaration order is load-bearing.
     Engine           engine_;
     SystemFactory    factory_;
-    QueuedInvoker    invoker_{engine_, engine_.registry()};
+    QueuedInvoker    invoker_{engine_};
     HostRpcService   host_;
     EngineRpcService engineSvc_{engine_, factory_, invoker_};
 

@@ -3,15 +3,15 @@
 //
 // The load-bearing thing here is the LIVE ARM. MesenNesSystem only reports per-channel streams once
 // NesSoundMixer::SetChannelCapture has run, and that used to happen at construct only (from the "mesen"
-// role's channelExportMode) — so selecting a split mode in the plugin would have silently rendered a
-// plain stereo mix. Engine::syncSplitPlan arms the tap for the mode being entered without rebuilding the
+// role's channelExportMode), so selecting a split mode in the plugin would have silently rendered a
+// plain stereo mix. The engine's SyncTap arms the tap for the mode being entered without rebuilding the
 // core (a routing flip must not reset a playing game), and restores what it found on the way out so the
-// CLI / render path — which DOES set channelExportMode at construct and never selects a split routing —
+// CLI / render path (which DOES set channelExportMode at construct and never selects a split routing)
 // is left alone. Every assertion below is really about that: a non-silent lane 2 (Expansion) or lane 4
 // (DMC) can only exist if the tap armed after construct.
 //
-// Lane arithmetic itself (stride, budget, gating) is EngineChannelSplit.test.cpp's fake-system job, and
-// pin fidelity (Sum(pins) == the mix) is NesStems.test.cpp's; neither is re-litigated here.
+// Lane arithmetic itself (stride, budget, gating) is the translator's (test/engine-graph/Translator.test.cpp),
+// and pin fidelity (Sum(pins) == the mix) is NesStems.test.cpp's; neither is re-litigated here.
 //
 // Drives bliptoaster with a ch1 note (-> APU Pulse1), which is the only way it makes sound.
 //
@@ -28,7 +28,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "host/engine/Engine.hpp"
-#include "system/AudioRouting.hpp"
+#include "host/engine/EngineInvoker.hpp"
+#include "host/graph/Translator.hpp"
 #include "system/SystemBase.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
@@ -127,13 +128,24 @@ void driveAndMeasure(Engine& eng, SystemId id, Lanes& lanes, std::size_t numOutp
 
 constexpr float kSignal = 1.0e-4f;  // "this lane carried audio"; a routed NES stem is orders above it
 
+// An engine rendering into `outputs` host channels, edited the way the hosts edit it: through the invoker.
+struct NesRig {
+    Engine        eng{kSampleRate};
+    QueuedInvoker inv{eng};
+    explicit NesRig(std::uint32_t outputs) { inv.setHostShape({rp::host::HostShape::Kind::Multi, outputs}); }
+    void route(rp::host::AudioRouting mode) { inv.setAudioRouting(static_cast<std::uint8_t>(mode)); }
+};
+
+using rp::host::AudioRouting;
+
 } // namespace
 
 TEST_CASE("Engine PinSplit arms a real NES tap live and fans 3 mono pins across outs 0..2",
           "[audio][channelsplit][nes]") {
-    Engine eng(kSampleRate);
-    eng.adoptSystem(buildNes(1));
-    eng.setAudioRouting(AudioRouting::PinSplit);
+    NesRig rig(8);
+    Engine& eng = rig.eng;
+    rig.inv.adoptSystem(buildNes(1));
+    rig.route(AudioRouting::PinSplit);
 
     // The arm happened on the routing change, against an already-booted core — no rebuild, no reset.
     auto* nes = dynamic_cast<MesenNesSystem*>(eng.findSystem(1));
@@ -156,9 +168,10 @@ TEST_CASE("Engine PinSplit arms a real NES tap live and fans 3 mono pins across 
 
 TEST_CASE("Engine StereoPinSplit gives each pin its own PAIR, mirrored L=R",
           "[audio][channelsplit][nes]") {
-    Engine eng(kSampleRate);
-    eng.adoptSystem(buildNes(1));
-    eng.setAudioRouting(AudioRouting::StereoPinSplit);
+    NesRig rig(8);
+    Engine& eng = rig.eng;
+    rig.inv.adoptSystem(buildNes(1));
+    rig.route(AudioRouting::StereoPinSplit);
 
     // Same tap as PinSplit — the modes differ only in how many lanes the three streams spread over.
     auto* nes = dynamic_cast<MesenNesSystem*>(eng.findSystem(1));
@@ -186,14 +199,15 @@ TEST_CASE("Engine StereoPinSplit gives each pin its own PAIR, mirrored L=R",
 TEST_CASE("StereoPinSplit needs 6 lanes, so a narrow host falls back rather than truncating",
           "[audio][channelsplit][nes]") {
     // The SDL 4-channel case: mono Pins (3 lanes) fits, the pair-per-pin layout does not.
-    Engine eng(kSampleRate);
-    eng.adoptSystem(buildNes(1));
-    eng.setAudioRouting(AudioRouting::StereoPinSplit);
+    NesRig rig(4);
+    Engine& eng = rig.eng;
+    rig.inv.adoptSystem(buildNes(1));
+    rig.route(AudioRouting::StereoPinSplit);
 
     Lanes lanes;
     driveAndMeasure(eng, 1, lanes, 4);  // only 4 lanes offered — 6 needed
 
-    // MultiOutRouter → the plain mixed stereo into pair 0, and pair 1 silent.
+    // Stereo wiring: the plain mixed stereo into pair 0, and pair 1 silent.
     CHECK(lanes.peak[0] > kSignal);
     CHECK(lanes.peak[2] == 0.0f);
     CHECK(lanes.peak[3] == 0.0f);
@@ -201,9 +215,10 @@ TEST_CASE("StereoPinSplit needs 6 lanes, so a narrow host falls back rather than
 
 TEST_CASE("Engine ChannelSplit on a real NES fans 5 mono core channels across outs 0..4",
           "[audio][channelsplit][nes]") {
-    Engine eng(kSampleRate);
-    eng.adoptSystem(buildNes(1));
-    eng.setAudioRouting(AudioRouting::ChannelSplit);
+    NesRig rig(8);
+    Engine& eng = rig.eng;
+    rig.inv.adoptSystem(buildNes(1));
+    rig.route(AudioRouting::ChannelSplit);
 
     auto* nes = dynamic_cast<MesenNesSystem*>(eng.findSystem(1));
     REQUIRE(nes != nullptr);
@@ -222,19 +237,20 @@ TEST_CASE("Engine ChannelSplit on a real NES fans 5 mono core channels across ou
 
 TEST_CASE("Leaving a split routing restores the NES tap and the plain stereo mix",
           "[audio][channelsplit][nes]") {
-    Engine eng(kSampleRate);
-    eng.adoptSystem(buildNes(1));
+    NesRig rig(8);
+    Engine& eng = rig.eng;
+    rig.inv.adoptSystem(buildNes(1));
     auto* nes = dynamic_cast<MesenNesSystem*>(eng.findSystem(1));
     REQUIRE(nes != nullptr);
 
     // Round-trip every split mode. Each leaves the core exactly as it was found, so a user flipping
     // through the Audio Routing cycler can't strand the tap armed (which would leave the mix path
     // draining capture streams forever).
-    eng.setAudioRouting(AudioRouting::PinSplit);
+    rig.route(AudioRouting::PinSplit);
     CHECK(nes->channelExportMode() == 1);
-    eng.setAudioRouting(AudioRouting::ChannelSplit);
+    rig.route(AudioRouting::ChannelSplit);
     CHECK(nes->channelExportMode() == 3);
-    eng.setAudioRouting(AudioRouting::Stereo);
+    rig.route(AudioRouting::Stereo);
     CHECK(nes->channelExportMode() == 0);
     CHECK(nes->channelLayout().size() == 1);  // back to the single stereo "Mix" stream
 
@@ -246,11 +262,12 @@ TEST_CASE("Leaving a split routing restores the NES tap and the plain stereo mix
         CHECK(lanes.peak[L] == 0.0f);
 }
 
-TEST_CASE("A second system disarms the NES tap and falls back to the per-instance router",
+TEST_CASE("A second system disarms the NES tap and falls back to Stereo",
           "[audio][channelsplit][nes]") {
-    Engine eng(kSampleRate);
-    eng.adoptSystem(buildNes(1));
-    eng.setAudioRouting(AudioRouting::PinSplit);
+    NesRig rig(8);
+    Engine& eng = rig.eng;
+    rig.inv.adoptSystem(buildNes(1));
+    rig.route(AudioRouting::PinSplit);
 
     auto* nes = dynamic_cast<MesenNesSystem*>(eng.findSystem(1));
     REQUIRE(nes != nullptr);
@@ -258,13 +275,13 @@ TEST_CASE("A second system disarms the NES tap and falls back to the per-instanc
 
     // The splits are single-system-only, so adopting a peer must retire the plan AND the tap it needed —
     // otherwise the mix path would keep draining capture streams nothing reads.
-    eng.adoptSystem(buildNes(2));
+    rig.inv.adoptSystem(buildNes(2));
     CHECK(nes->channelExportMode() == 0);
     CHECK(nes->channelLayout().size() == 1);
 
     // Removing the peer re-enters the split, re-arming from scratch: the plan tracks the system set, not
     // just the last setAudioRouting call.
-    eng.removeSystem(2);
+    rig.inv.removeSystem(2);
     CHECK(nes->channelExportMode() == 1);
     CHECK(nes->channelLayout().size() == 3);
 }

@@ -8,12 +8,47 @@
 #include <vector>
 
 #include "host/graph/SystemTable.hpp"
-#include "system/AudioRouting.hpp"
 #include "system/SystemTypes.hpp"
 
 class SystemBase;
 
 namespace rp::host {
+
+// How per-system audio fans out across the 8 plugin output channels. The
+// plugin always declares 8 outputs (DISTRHO_PLUGIN_NUM_OUTPUTS); modes
+// pick which of those get written, the rest are zero.
+//   Stereo          all systems sum into outs 0/1; outs 2..7 silent.
+//   TwoPerInstance  system i writes to outs (2i % 8)/(2i % 8 + 1).
+//   OnePerInstance  system i writes a mono mix to out (i % 8).
+//   ChannelSplit    ONE system fans its per-channel streams across the outputs
+//                   (a Game Boy's 4 STEREO channels -> outs 0/1,2/3,4/5,6/7; a
+//                   NES's 5 MONO core channels -> outs 0..4).
+//   PinSplit        ONE NES fans its three 2A03 output-pin streams (Pulse | TND
+//                   | lumped Expansion) across outs 0..2, mono. NES-only: any
+//                   other single system falls back to Stereo.
+//   StereoPinSplit  the same three pins, but each on its OWN stereo PAIR (outs
+//                   0/1, 2/3, 4/5) with the mono stem mirrored into both lanes.
+//                   Six lanes instead of three, and the reason to spend them is
+//                   the DAW: every pin arrives as a normal centred stereo track,
+//                   so hosts that can only bus/FX whole stereo pairs can treat
+//                   each pin separately. Under PinSplit the pins share pairs
+//                   (Pulse on L of track 1, TND on its R), which those hosts
+//                   cannot pull apart. NES-only, like PinSplit.
+//
+// All three split modes are single-system only; any other project, and a single
+// system the host is too narrow for, falls back to Stereo.
+//
+// Modes 0..2 fan MANY systems across the fixed pairs; modes 3..5 split ONE system's
+// channels (a pair per stream, or a lane per mono stream). The routing value is owned
+// by TS and pushed through the SetAudioRouting RPC; the translator wires it.
+enum class AudioRouting : std::uint8_t {
+    Stereo         = 0,
+    TwoPerInstance = 1,
+    OnePerInstance = 2,
+    ChannelSplit   = 3,
+    PinSplit       = 4,
+    StereoPinSplit = 5,
+};
 
 // The output shape a document is built for (docs/modular-graph-phase-b1-design.md section 4.4): the host's
 // own outputs routed by the project's mode (Multi), each system on its own pair (PerSystem), or one
@@ -25,8 +60,8 @@ struct HostShape {
     bool operator==(const HostShape&) const = default;
 };
 
-// Turns today's structural calls into graph documents (section 4). Control thread only. It mirrors
-// Project: the ordered system list, each Game Boy's link group, the routing mode and the host shape, and
+// Turns the structural calls into graph documents (section 4). Control thread only. It holds the
+// ordered system list, each Game Boy's link group, the routing mode and the host shape, and
 // after every change it builds the document and its system table and hands both to `publish` (the
 // engine's GraphHost::setGraph), which answers whether the document planned.
 //

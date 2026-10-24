@@ -20,7 +20,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "system/BlockRunner.hpp"
 #include "system/SystemTypes.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
@@ -60,6 +59,15 @@ std::unique_ptr<MesenNesSystem> buildNes(std::uint32_t channelExportMode) {
     return sys;
 }
 
+// The block triad driven directly, as the engine's system node drives it: prepare, step until the block
+// is produced, finish into `lanes` (which the caller zeroed).
+void runBlock(SystemBase& s, const AudioBlockInfo& info, float* const* lanes, std::size_t laneCount) {
+    s.prepareForBlock(info);
+    while (s.stepIfBelowTarget(info.frames)) {
+    }
+    s.finishBlock(info, lanes, laneCount);
+}
+
 ::MidiEvent noteOnCh1() {
     ::MidiEvent e;
     e.frame = 0;
@@ -74,16 +82,15 @@ std::unique_ptr<MesenNesSystem> buildNes(std::uint32_t channelExportMode) {
 
 TEST_CASE("NES stereo-mod pins reconstruct the mixed output", "[audio][nes]") {
     // Mode 2 reports 4 streams: [0] Pulse, [1] TND, [2] Expansion, [3] MixRef (the mix through the SAME
-    // path). Drive the whole thing through a PerChannelRouter (the real finishBlock split branch) so all 4
-    // are drained identically, then assert Σ(pins) == the reference per sample.
+    // path). Drive all four through the real finishBlock split branch so they are drained identically, then
+    // assert Σ(pins) == the reference per sample.
     auto sys = buildNes(/*channelExportMode=*/2);
     REQUIRE(sys->channelLayout().size() == 4);
 
     std::array<std::vector<float>, 8> lane;   // 4 streams × 2 lanes (mono → R unused)
     for (auto& v : lane) v.assign(kFrames, 0.0f);
-    float* splitL[4] = {lane[0].data(), lane[2].data(), lane[4].data(), lane[6].data()};
-    float* splitR[4] = {lane[1].data(), lane[3].data(), lane[5].data(), lane[7].data()};
-    PerChannelRouter router(splitL, splitR, 4);
+    float* lanes[8] = {lane[0].data(), lane[1].data(), lane[2].data(), lane[3].data(),
+                       lane[4].data(), lane[5].data(), lane[6].data(), lane[7].data()};
 
     std::vector<std::unique_ptr<SystemBase>> holder;
     holder.push_back(std::move(sys));
@@ -97,7 +104,7 @@ TEST_CASE("NES stereo-mod pins reconstruct the mixed output", "[audio][nes]") {
     auto driveBlock = [&](bool sendNote) {
         for (auto& v : lane) std::fill(v.begin(), v.end(), 0.0f);
         if (sendNote) m->onMidi(&note, 1);
-        runUnit(info, &m, 1, holder, router);
+        runBlock(*m, info, lanes, 8);
     };
 
     // Boot; prime the note near the end (n8-midi drops the first MIDI message).

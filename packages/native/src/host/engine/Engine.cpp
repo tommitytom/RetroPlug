@@ -7,7 +7,6 @@
 
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"   // AudioBlockInfo, SystemId
-#include "system/BlockRunner.hpp"   // runBlock + MultiOutRouter
 #include "system/sameboy/SameBoySystem.hpp"  // live-apply cast target (model/highpass/gain/…)
 #include "system/mesen/MesenNesSystem.hpp"    // live-apply cast target (NES region / sprite limit)
 
@@ -23,7 +22,6 @@
 #include "host/graph/SystemNodes.hpp"
 #include "host/graph/SystemTable.hpp"
 #include "host/graph/Translator.hpp"
-#include "util/GraphEngine.hpp"
 
 namespace {
 
@@ -34,10 +32,10 @@ const std::vector<DspRuntime::KeyIn>    kNoKeys;
 
 } // namespace
 
-// Graph mode's half of the Engine: the node packages, the GraphHost running the plan, and the translator
-// that turns structure into its documents. Destroyed first (graph_ is the Engine's last member), the
-// translator before the host it plans for, and the host (whose system nodes call cores->released from their
-// destructors) before the core handoff and the kernel interface those nodes call into.
+// The Engine's graph: the node packages, the GraphHost running the plan, and the translator that turns
+// structure into its documents. Destroyed first (graph_ is the Engine's last member), the translator before
+// the host it plans for, and the host (whose system nodes call cores->released from their destructors)
+// before the core handoff and the kernel interface those nodes call into.
 struct Engine::Graph {
     rp::graph::NodeRegistry                registry;
     rp::graph::ResourceTable               resources;
@@ -51,12 +49,6 @@ struct Engine::Graph {
 };
 
 Engine::Engine(double sampleRate) : sampleRate_(sampleRate) {
-    // Pre-reserve so adoptSystem/swapSystem never reallocate systems_ when the audio thread owns
-    // the Project (production reserves the same way).
-    project_.reserve(16);
-    if (!rp::graphEngine()) return;
-    static const bool announced = (std::fprintf(stderr, "[engine] RETROPLUG_GRAPH_ENGINE=1: running on the graph executor\n"), true);
-    (void)announced;
     graph_ = std::make_unique<Graph>();
     for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), rp::host::sameboyPackage(),
                                 rp::host::mesenPackage(), rp::host::dspPackage()})
@@ -118,11 +110,7 @@ void Engine::setMaxBlockFrames(std::uint32_t frames) {
 
 void Engine::setSampleRate(double sr) {
     sampleRate_ = sr;
-    if (!graph_) {
-        project_.onSampleRateChanged(sr);
-        return;
-    }
-    // Project::onSampleRateChanged's calls, in slot order; then the plan's buffers at the new rate.
+    // Every live core re-rated in place, in slot order; then the plan's buffers at the new rate.
     for (SystemBase* core : graph_->translator->cores()) core->onSampleRateChanged(sr);
     std::string why;
     if (!graph_->host->reactivate(sr, graph_->maxFrames, &why))
@@ -199,22 +187,24 @@ void Engine::applyCommand(DspCommand& cmd) {
             delete cmd.writeRam.bytes;
             break;
         case DspCommand::Kind::SyncTap:
-            syncTap(static_cast<AudioRouting>(cmd.syncTap.routing));
+            syncTap(static_cast<rp::host::AudioRouting>(cmd.syncTap.routing));
             break;
         default:
             break;
     }
 }
 
-// syncSplitPlan's arming half, against the plan just adopted (design section 3.2): restore whatever was
-// armed, then arm the mode the routing wants. A core that has gone (removed, or replaced under a new id)
-// is not found, and its record is dropped, as removeSystem and replaceSystem drop it today.
-void Engine::syncTap(AudioRouting routing) {
+// The NES tap arming at every structural change, against the plan just adopted (design section 3.2):
+// restore whatever was armed, then arm the mode the routing wants. It runs even when the wanted mode is
+// unchanged, and each run resets the capture streams. A core that has gone (removed, or replaced under a
+// new id) is not found, and its record is dropped.
+void Engine::syncTap(rp::host::AudioRouting routing) {
     const rp::host::SystemTable& table = currentTable();
     if (armedTap_.active) {
         if (const auto* e = table.find(armedTap_.id); e && e->nes) e->nes->setChannelExportMode(armedTap_.prevMode);
         armedTap_ = {};
     }
+    using rp::host::AudioRouting;
     const bool pins  = routing == AudioRouting::PinSplit || routing == AudioRouting::StereoPinSplit;
     const bool split = pins || routing == AudioRouting::ChannelSplit;
     if (!split || table.slots.size() != 1) return;
@@ -227,40 +217,9 @@ void Engine::syncTap(AudioRouting routing) {
     }
 }
 
-void Engine::adoptSystem(std::unique_ptr<SystemBase> sys) {
-    project_.adoptSystem(sys.release());  // Project takes ownership of the raw pointer
-    project_.rebuildLinkGroups();
-    syncSplitPlan();  // the system set decides whether a split routing is live at all
-}
-
-std::unique_ptr<SystemBase> Engine::removeSystem(SystemId id) {
-    auto removed = std::unique_ptr<SystemBase>(project_.removeSystemAndRelease(id));  // does its own rebuild
-    // Drop the arm record FIRST if it named the departing core — it is the caller's to delete now, and
-    // syncSplitPlan must not chase a pointer through a Project that no longer holds it.
-    if (armedTap_.active && armedTap_.id == id) armedTap_ = {};
-    syncSplitPlan();
-    return removed;
-}
-
-std::unique_ptr<SystemBase> Engine::replaceSystem(SystemId id, std::unique_ptr<SystemBase> sys) {
-    // swapSystem returns the displaced core, or the incoming one unchanged if id wasn't found
-    // (then it was never adopted) — either way it's the leftover for the caller to dispose.
-    SystemBase* old = project_.swapSystem(id, sys.release());
-    project_.rebuildLinkGroups();
-    // Same reasoning as removeSystem: the core we armed is gone, so forget it rather than restoring a
-    // mode onto the FRESH system that inherited its id (which arrived with its own construct-time value).
-    if (armedTap_.active && armedTap_.id == id) armedTap_ = {};
-    syncSplitPlan();
-    return std::unique_ptr<SystemBase>(old);
-}
-
-std::size_t Engine::systemCount() const {
-    // Graph mode: the running plan's systems - the block thread's view, or the control thread's while quiescent.
-    return graph_ ? currentTable().slots.size() : project_.systems().size();
-}
+std::size_t Engine::systemCount() const { return currentTable().slots.size(); }
 
 SystemBase* Engine::findSystem(SystemId id) {
-    if (!graph_) return project_.findSystem(id);
     const auto* e = currentTable().find(id);
     return e ? e->core : nullptr;
 }
@@ -287,72 +246,9 @@ void Engine::stageControllerMidi(std::vector<std::uint8_t> bytes) {
 void Engine::setBpm(double bpm) { bpm_ = bpm; }
 void Engine::setTransport(bool playing) { transport_ = playing; }
 void Engine::setPpq(double ppq) { ppq_ = ppq < 0.0 ? 0.0 : ppq; }
-void Engine::setAudioRouting(AudioRouting mode) {
-    audioRouting_ = mode;
-    syncSplitPlan();
-}
-
-void Engine::syncSplitPlan() {
-    splitPlan_ = {};
-
-    // Put back whatever we last armed, before deciding anything — so every transition (mode change,
-    // second system added, ROM replaced) starts from the core's own construct-time state. A system that
-    // has since gone is simply not found and the record is dropped.
-    if (armedTap_.active) {
-        if (auto* prev = dynamic_cast<MesenNesSystem*>(project_.findSystem(armedTap_.id)))
-            prev->setChannelExportMode(armedTap_.prevMode);
-        armedTap_ = {};
-    }
-
-    const bool pins  = audioRouting_ == AudioRouting::PinSplit || audioRouting_ == AudioRouting::StereoPinSplit;
-    const bool split = pins || audioRouting_ == AudioRouting::ChannelSplit;
-    if (!split || systemCount() != 1) return;  // multi-system / non-split → MultiOutRouter
-
-    SystemBase* sys = project_.systems().front().get();
-    if (!sys) return;
-
-    // Pins are a 2A03 property — nothing else has output pins to split. A GB (or any other console)
-    // asked for them falls back to Stereo rather than silently rendering something else.
-    auto* nes = dynamic_cast<MesenNesSystem*>(sys);
-    if (pins && !nes) return;
-
-    // Arm the NES tap for the mode being entered (a GB already reports its 4 channels unconditionally),
-    // remembering what it was so the restore above can undo exactly this. Both pin modes tap the SAME
-    // three streams — they differ only in how many lanes those streams are spread over.
-    if (nes) {
-        const std::uint32_t want = pins ? 1u   // StereoModPins: Pulse | TND | lumped Expansion
-                                        : 3u;  // IndividualMono: the 5 core channels
-        if (nes->channelExportMode() != want) {
-            armedTap_ = { true, nes->id(), nes->channelExportMode() };
-            nes->setChannelExportMode(want);
-        }
-    }
-
-    // Read the layout ONCE, now that the tap reflects the mode (channelLayout() follows it). A layout is
-    // all-stereo (GB) or all-mono (NES); a mixed one has no sensible packing, so treat it as stereo and
-    // let the lane budget decide — the only mixed case would be a future backend, and it stays inert
-    // rather than mis-routing.
-    const std::vector<ChannelStream> layout = sys->channelLayout();
-    if (layout.empty()) return;
-    const bool allMono = std::none_of(layout.begin(), layout.end(),
-                                      [](const ChannelStream& s) { return s.stereo; });
-
-    // Mono streams normally pack one per lane, EXCEPT under StereoPinSplit, which deliberately spends a
-    // whole pair on each so every pin lands as its own DAW track (see AudioRouting.hpp). That is the one
-    // case where the backend's L-only write has to be mirrored across the pair afterwards.
-    const bool pairPerMono = allMono && audioRouting_ == AudioRouting::StereoPinSplit;
-
-    splitPlan_.valid            = true;
-    splitPlan_.nStreams         = static_cast<std::uint32_t>(layout.size());
-    splitPlan_.laneStride       = (allMono && !pairPerMono) ? 1u : 2u;
-    splitPlan_.lanesNeeded      = splitPlan_.laneStride * layout.size();
-    splitPlan_.mirrorMonoToPair = pairPerMono;
-}
-
-// The DSP kernel stage: run the kernel (if one is loaded), then hand its output to the cores, all of
-// serialIn, then coreMidi, then coreBytes, then buttons, each in emission order. Today's engine runs it
-// first in runBlockWithRouter; graph mode runs it as rp.dsp.kernel, the plan's first step, where
-// findSystem reads the running plan's table.
+// The DSP kernel stage, run by rp.dsp.kernel as the plan's first step: run the kernel (if one is loaded),
+// then hand its output to the cores, all of serialIn, then coreMidi, then coreBytes, then buttons, each in
+// emission order. findSystem reads the running plan's table.
 void Engine::runKernelStage(std::uint32_t frames) {
     if (!dspActive_) return;
     {
@@ -405,42 +301,31 @@ void Engine::runKernelStage(std::uint32_t frames) {
         dsp_.spanEnd();  // dsp-kernel
 #endif
     }
+#ifdef RETROPLUG_PROFILE
+    dsp_.spanBegin(DSP_SPAN_APU);  // the plan's systems after this step (ended in processBlock)
+#endif
 }
 
-// Run the kernel (if active) + fan its system-addressed sinks to the cores BEFORE onProcess
-// (delivered this block); `dInfo`/`AudioBlockInfo` are both built at the block-start `ppq_`, and
-// `ppq_` advances only after, so the kernel's walkTicks and the cores see the same block-start ppq.
-void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router) {
-    // Diagnostic only, and off unless RETROPLUG_SYNC_TRACE names a file: capture what the HOST reports
-    // this block, so a DAW-only sync fault can be read back afterwards (see HostSyncTrace).
+// The translator's host shape decides who goes where: the caller set it before rendering.
+void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size_t numOutputs) {
     blockTracing_ = syncTrace_.beginBlock(frames, sampleRate_, bpm_, ppq_, transport_);
-    runKernelStage(frames);
-    AudioBlockInfo info{ frames, sampleRate_, bpm_, ppq_, transport_ };
+    const rp_transport transport{sampleRate_, bpm_, ppq_, transport_ ? RP_TRANSPORT_PLAYING : 0u};
+    // The kernel stage, every system, the mixing and the host outputs (the host drained before this).
+    graph_->host->run(frames, transport, outputs, static_cast<std::uint32_t>(numOutputs));
 #ifdef RETROPLUG_PROFILE
-    dsp_.spanBegin(DSP_SPAN_APU);  // the SameBoy core/APU render (dominates audio-thread wall-time)
+    dsp_.spanEnd();  // apu-render, begun at the end of the kernel stage
 #endif
-    runBlock(info, project_, router);
-#ifdef RETROPLUG_PROFILE
-    dsp_.spanEnd();  // apu-render
-#endif
-    // Gather the raw serial-out bytes the SameBoy cores emitted THIS block (LSDj MI.OUT capture, armed
-    // via ConfigField::SerialOutCapture) into pendingSerialOut_, for the kernel to decode next block.
-    // Cheap no-op when nothing captured (an unarmed system's serialOutLog_ is empty). Only standalone
-    // systems capture (the writeAudioSample gate is linkPeers_.empty()); a linked system's log stays empty.
-    if (dspActive_) {
-        for (const auto& sys : project_.systems()) {
-            auto* sb = dynamic_cast<SameBoySystem*>(sys.get());
-            if (!sb || sb->serialOutLog_.empty()) continue;
-            for (const auto& entry : sb->serialOutLog_)
-                pendingSerialOut_.push_back({ sb->id(), entry.second });
+    const rp::host::SystemTable& table = currentTable();
+    // MI.OUT: in slot order with each byte's frame dropped, for the kernel's next block.
+    if (dspActive_)
+        for (const auto& e : table.slots) {
+            if (!e.sameboy || e.sameboy->serialOutLog_.empty()) continue;
+            for (const auto& entry : e.sameboy->serialOutLog_) pendingSerialOut_.push_back({ e.id, entry.second });
         }
-    }
-    // Copy each core's freshly-published frame/state/SRAM into the owned registry the control plane
-    // reads through — the one place every driver funnels the block, so it covers all of them.
 #ifdef RETROPLUG_PROFILE
     dsp_.spanBegin(DSP_SPAN_PUBLISH);  // the audio->control-plane state pump (per-block frame + timed savestate)
 #endif
-    registry_.publishAll(project_, frames, sampleRate_);
+    for (const auto& e : table.slots) registry_.publishSystem(*e.core, frames, sampleRate_);
 #ifdef RETROPLUG_PROFILE
     dsp_.spanEnd();  // state-publish
 #endif
@@ -449,106 +334,13 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
         ppq_ += (bpm_ / 60.0) * (static_cast<double>(frames) / sampleRate_);
 }
 
-void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size_t numOutputs) {
-    if (graph_) {
-        processBlockGraph(frames, outputs, numOutputs);
-        return;
-    }
-    // Caller owns the buffers; systems SUM into their router-assigned bus, so zero every channel
-    // first. MultiOutRouter places each system per audioRouting_ (Stereo = all → pair 0; with 2
-    // channels every mode collapses to that one pair).
-    for (std::size_t c = 0; c < numOutputs; ++c)
-        std::fill_n(outputs[c], frames, 0.0f);
-
-    // A split routing: one system fans its per-channel streams across the outputs (a Game Boy's 4 stereo
-    // channels → outs 0/1,2/3,4/5,6/7; a NES's 5 mono core channels → outs 0..4, or its 3 pins → outs
-    // 0..2). syncSplitPlan() already resolved the stream count + lane stride and gated on a single system
-    // — a lone system has no link peers, so that IS the "unlinked" condition; any other project leaves
-    // the plan invalid and falls through to MultiOutRouter, the wide layout inert (the load-bearing
-    // correctness rule: the split is Engine/router-driven, never an always-on system trait). A single
-    // system with no split of its own reports 1 stereo stream → collapses to Stereo (pair 0). The lane
-    // budget is checked HERE, not there, because only the caller knows how wide this host actually is.
-    if (splitPlan_.valid && splitPlan_.lanesNeeded <= numOutputs) {
-        ChannelSplitRouter router(outputs, numOutputs, splitPlan_.nStreams, splitPlan_.laneStride);
-        runBlockWithRouter(frames, router);
-        // StereoPinSplit: each mono pin got a whole pair, and a mono backend writes only the L lane
-        // (MesenNesSystem::finishBlock fills outs[2k]). Mirror it so the pin arrives as a normal centred
-        // stereo track. A COPY, not a sum: the split is single-system and the R lanes are still exactly
-        // the zero filled in above. Deliberately here and not in the backend — the CLI's
-        // renderAudioPerChannel also hands it distinct L/R buffers but wants R left silent, so a
-        // backend-side "fill both lanes" would corrupt the per-channel WAV export.
-        if (splitPlan_.mirrorMonoToPair)
-            for (std::uint32_t k = 0; k < splitPlan_.nStreams; ++k)
-                std::copy_n(outputs[2 * k], frames, outputs[2 * k + 1]);
-        return;
-    }
-
-    MultiOutRouter router(outputs, numOutputs, audioRouting_);
-    runBlockWithRouter(frames, router);
-}
-
-// Stereo convenience (the CLI render + the test-host audio loop): one pair, everyone mixed.
 void Engine::processBlock(std::uint32_t frames, float* outL, float* outR) {
     float* outs[2] = { outL, outR };
     processBlock(frames, outs, 2);
 }
 
-// Graph mode: the shape (rp::host::HostShape) decides who goes where; the RPC set it before rendering, so
-// these only lay the pairs out as one channel list.
-void Engine::processBlockGraph(std::uint32_t frames, float* const* outputs, std::size_t numOutputs) {
-    blockTracing_ = syncTrace_.beginBlock(frames, sampleRate_, bpm_, ppq_, transport_);
-    const rp_transport transport{sampleRate_, bpm_, ppq_, transport_ ? RP_TRANSPORT_PLAYING : 0u};
-    // The kernel stage, every system, the mixing and the host outputs (the host drained before this).
-    graph_->host->run(frames, transport, outputs, static_cast<std::uint32_t>(numOutputs));
-    const rp::host::SystemTable& table = currentTable();
-    // MI.OUT: as runBlockWithRouter gathers it, in slot order with each byte's frame dropped.
-    if (dspActive_)
-        for (const auto& e : table.slots) {
-            if (!e.sameboy || e.sameboy->serialOutLog_.empty()) continue;
-            for (const auto& entry : e.sameboy->serialOutLog_) pendingSerialOut_.push_back({ e.id, entry.second });
-        }
-    for (const auto& e : table.slots) registry_.publishSystem(*e.core, frames, sampleRate_);
-    if (blockTracing_) syncTrace_.endBlock();
-    if (transport_)
-        ppq_ += (bpm_ / 60.0) * (static_cast<double>(frames) / sampleRate_);
-}
-
-void Engine::processBlockPerSystem(std::uint32_t frames, float* const* ls, float* const* rs, std::size_t nSystems) {
-    if (graph_) {
-        graph_->lanes.clear();
-        for (std::size_t i = 0; i < nSystems; ++i) graph_->lanes.insert(graph_->lanes.end(), {ls[i], rs[i]});
-        processBlockGraph(frames, graph_->lanes.data(), graph_->lanes.size());
-        return;
-    }
-    // Each slot writes into its own L/R pair; zero them first (systems SUM in, like the mixed path).
-    for (std::size_t i = 0; i < nSystems; ++i) {
-        std::fill_n(ls[i], frames, 0.0f);
-        std::fill_n(rs[i], frames, 0.0f);
-    }
-    PerSystemRouter router(ls, rs);
-    runBlockWithRouter(frames, router);
-}
-
-void Engine::processBlockPerChannel(std::uint32_t frames, float* const* ls, float* const* rs, std::size_t nStreams) {
-    if (graph_) {
-        graph_->lanes.clear();
-        for (std::size_t i = 0; i < nStreams; ++i) graph_->lanes.insert(graph_->lanes.end(), {ls[i], rs[i]});
-        processBlockGraph(frames, graph_->lanes.data(), graph_->lanes.size());
-        return;
-    }
-    // Each stream writes into its own L/R pair; zero them first (systems SUM in, like the mixed path).
-    // PerChannelRouter keys off streamIndex, not slot — correct only for a single-system project (the
-    // RPC enforces that); runBlockWithRouter still drives the kernel/serial pipeline so MIDI reaches the core.
-    for (std::size_t i = 0; i < nStreams; ++i) {
-        std::fill_n(ls[i], frames, 0.0f);
-        std::fill_n(rs[i], frames, 0.0f);
-    }
-    PerChannelRouter router(ls, rs, static_cast<std::uint32_t>(nStreams));
-    runBlockWithRouter(frames, router);
-}
-
 std::optional<std::vector<std::uint8_t>> Engine::readState(SystemId id) {
-    return registry_.readState(id);   // the owned published copy — never walks Project / the live core
+    return registry_.readState(id);   // the owned published copy, never the live core
 }
 
 std::optional<std::vector<std::uint8_t>> Engine::readSram(SystemId id) {
@@ -556,11 +348,11 @@ std::optional<std::vector<std::uint8_t>> Engine::readSram(SystemId id) {
 }
 
 std::optional<std::vector<std::uint8_t>> Engine::readRam(SystemId id) {
-    return registry_.readRam(id);     // the owned per-block WRAM copy — never walks Project / the live core
+    return registry_.readRam(id);     // the owned per-block WRAM copy, never the live core
 }
 
 std::size_t Engine::ramSize(SystemId id) {
-    return registry_.ramSize(id);     // published copy, like readRam - no Project walk, no live core
+    return registry_.ramSize(id);     // published copy, like readRam - no live core
 }
 
 bool Engine::writeRam(SystemId id, std::uint32_t offset, const std::vector<std::uint8_t>& bytes) {
@@ -710,7 +502,7 @@ void Engine::applyConfigField(SystemId id, std::uint8_t field, double value) {
                 sb->config_.model = m;
                 sb->restartEmulator();  // rebuilds gb_, clears the savestate (a new model can't restore an
                                         // old one), and re-arms the state snapshot onto the new model
-                if (!graph_) project_.rebuildLinkGroups();  // graph mode: linkPeers_ hold systems, which survive
+                // linkPeers_ hold the systems, which survive the restart, so the cable needs no rewiring
             }
             break;
         }
@@ -726,7 +518,7 @@ void Engine::applyConfigField(SystemId id, std::uint8_t field, double value) {
             const auto g = static_cast<std::uint8_t>(static_cast<std::uint32_t>(value));
             if (sb->config_.linkGroupId != g) {
                 sb->config_.linkGroupId = g;
-                if (!graph_) project_.rebuildLinkGroups();  // graph mode: the translator rewires the cable
+                // the translator rewires the cable (QueuedInvoker::applyConfigField)
             }
             break;
         }

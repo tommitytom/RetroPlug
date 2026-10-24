@@ -3,7 +3,7 @@
 // SameBoy's GB_set_sample_rate, Mesen's resampler — not just bake the new rate into cores built afterwards.
 // Regression guard for the wiring that was missing: Engine::setSampleRate only updated its own scalar, so a
 // loaded project kept rendering at its construct-time rate after the host switched (wrong pitch/tempo).
-// Uses a fake system that records the rates it is handed, so the propagation is asserted directly.
+// Drives a real Game Boy through the engine and reads the rate its core holds.
 //
 // Run via `pnpm test:plugin`.
 
@@ -13,47 +13,51 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "host/engine/Engine.hpp"
-#include "system/SystemBase.hpp"
+#include "host/engine/EngineInvoker.hpp"
+#include "system/sameboy/SameBoyConfig.hpp"
+#include "system/sameboy/SameBoySystem.hpp"
+
+#ifndef RP_MGB_ROM_PATH
+#error "RP_MGB_ROM_PATH must be defined (path to resources/roms/mGB.gb)"
+#endif
 
 namespace {
 
-// Records every rate it is activated / re-rated at, so the test can assert the Engine drove it.
-class RateSpySystem final : public SystemBase {
-public:
-    explicit RateSpySystem(SystemId id) : SystemBase(id) {}
-    SystemKind kind() const override { return SystemKind::SameBoy; }
-    void onActivate(double sr) override { activatedAt = sr; }
-    void onSampleRateChanged(double sr) override { rates.push_back(sr); }
-    std::vector<ChannelStream> channelLayout() const override { return {{"Mix", true}}; }
-    void finishBlock(const AudioBlockInfo&, float* const*, std::size_t) override {}
-
-    double              activatedAt = 0.0;
-    std::vector<double> rates; // every onSampleRateChanged rate, in order
-};
+std::vector<std::uint8_t> readRom() {
+    std::vector<std::uint8_t> bytes;
+    if (std::FILE* f = std::fopen(RP_MGB_ROM_PATH, "rb")) {
+        std::fseek(f, 0, SEEK_END);
+        bytes.resize(static_cast<std::size_t>(std::ftell(f)));
+        std::fseek(f, 0, SEEK_SET);
+        if (std::fread(bytes.data(), 1, bytes.size(), f) != bytes.size()) bytes.clear();
+        std::fclose(f);
+    }
+    return bytes;
+}
 
 } // namespace
 
 TEST_CASE("Engine::setSampleRate re-rates already-live systems", "[audio][samplerate][engine]") {
-    Engine eng(44100.0);
+    Engine        eng(44100.0);
+    QueuedInvoker inv(eng);
 
-    auto sys = std::make_unique<RateSpySystem>(1);
-    sys->onActivate(eng.sampleRate()); // built at the engine's current rate, as the factory does
-    RateSpySystem* raw = sys.get();
-    eng.adoptSystem(std::move(sys));
-
-    REQUIRE(raw->activatedAt == 44100.0);
-    REQUIRE(raw->rates.empty());
+    auto sys = std::make_unique<SameBoySystem>(1, SameBoyConfig{}, readRom());
+    sys->onActivate(eng.sampleRate());  // built at the engine's current rate, as the factory does
+    SameBoySystem* raw = sys.get();
+    inv.adoptSystem(std::move(sys));
+    REQUIRE(eng.findSystem(1) == raw);
+    REQUIRE(raw->sampleRate_ == 44100.0);
 
     // A host sample-rate change (via DPF sampleRateChanged) must reach the live core.
     eng.setSampleRate(48000.0);
-    REQUIRE(raw->rates.size() == 1);
-    CHECK(raw->rates.back() == 48000.0);
+    CHECK(raw->sampleRate_ == 48000.0);
     CHECK(eng.sampleRate() == 48000.0);
 
-    // A second change also propagates (not a one-shot).
+    // A second change also propagates (not a one-shot), and the core still renders a block.
     eng.setSampleRate(96000.0);
-    REQUIRE(raw->rates.size() == 2);
-    CHECK(raw->rates.back() == 96000.0);
+    CHECK(raw->sampleRate_ == 96000.0);
+    std::vector<float> l(512), r(512);
+    eng.processBlock(512, l.data(), r.data());
 }
 
 TEST_CASE("Engine::setSampleRate on an empty project is a harmless no-op", "[audio][samplerate][engine]") {

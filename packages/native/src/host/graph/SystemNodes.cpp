@@ -133,7 +133,7 @@ struct GameBoy : SystemNode<GameBoy, SameBoySystem> {
         return 8;
     }
 
-    // The coupled group's other members, in member order: what rebuildLinkGroups puts in linkPeers_.
+    // The coupled group's other members, in member order: the cable the serial callbacks read and write.
     // linkPeers_ reserves 8, so a cable of up to 9 Game Boys never allocates here.
     void set_peers(std::span<rp_node* const> peers) noexcept {
         core->linkPeers_.clear();

@@ -12,12 +12,11 @@
 #include "transport/MemorySnapshotTriple.hpp"
 
 class SystemBase;
-class Project;
 
 // The control plane's ONE door to a system's video frame / savestate / SRAM — an owned, id-keyed
 // snapshot store. The DSP thread copies each live core's already-published snapshot into a
-// registry-OWNED buffer (publishAll, at the end of each block); the control plane reads those owned
-// copies by id (readFrame/readState/readSram) without ever walking Project or dereferencing a live
+// registry-OWNED buffer (publishSystem, at the end of each block); the control plane reads those owned
+// copies by id (readFrame/readState/readSram) without ever walking the systems or dereferencing a live
 // SystemBase. That severs the control plane from the cores: reads never touch the DSP's structure.
 //
 // (The DSP still copies from each core's own tear-free triple, because the shared SystemBase can't
@@ -25,12 +24,12 @@ class Project;
 // straight into the registry the second copy collapses; the read-side contract here is unaffected.)
 //
 // Threading: claim()/readFrame()/readState()/readSram()/release() run on the control thread;
-// publishAll() on whichever thread drives the block (the audio thread while running, the control
+// publishSystem() on whichever thread drives the block (the audio thread while running, the control
 // thread in a direct render). Slots live in a fixed-address array so the block thread can scan them
 // by id without a rehash; each slot's id is atomic. Buffers are allocated at claim (control thread,
 // before the system is handed off) and freed at release (control thread, after the audio thread has
-// dropped the system) — never on the audio thread. publishAll only ever writes a slot whose system
-// is still in project.systems(), which is exactly the window before its release, so a published-to
+// dropped the system), never on the audio thread. publishSystem only ever writes a slot whose system
+// is still in the running plan, which is exactly the window before its release, so a published-to
 // slot is never concurrently freed.
 //
 // That allocation rule is why the state slot is sized to a CEILING rather than to the live savestate:
@@ -51,8 +50,7 @@ public:
 
     // Copy each live system's latest frame (every block) + savestate/SRAM (on a coarse interval)
     // into its slot. Runs at the end of Engine::processBlock, on the block-driving thread.
-    void publishAll(const Project& project, std::uint32_t frames, double sampleRate);
-    // The same for one system; publishAll is this for each system in slot order.
+    // One system's; the engine calls it for each of the running plan's systems, in slot order.
     void publishSystem(SystemBase& system, std::uint32_t frames, double sampleRate);
 
     // Control-thread reads of the OWNED copies.
@@ -97,7 +95,7 @@ private:
     static constexpr std::size_t kMaxSramBytes   = 4 * 1024 * 1024;  // sanity bound on one battery image
     static constexpr std::size_t kMaxRamBytes    = 64 * 1024;        // WRAM cap: fits GB 8/32 KB + NES 2 KB; a larger region (GBA EWRAM) is skipped → readRam null
 
-    // Generous: RetroPlug never approaches this, but tests share one Project across a file's cases
+    // Generous: RetroPlug never approaches this, but tests share one engine across a file's cases
     // so slots accumulate. A full pool fails the construct (logged) rather than corrupting.
     static constexpr std::size_t kMaxSlots         = 64;
     static constexpr double      kStateIntervalSec = 0.5;              // matches the core's own snapshot cadence

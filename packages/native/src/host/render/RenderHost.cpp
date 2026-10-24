@@ -222,7 +222,7 @@ RenderHost::Result RenderHost::run(const std::string& jobJson, RenderedFn onRend
     Engine engine;
     SystemFactory factory;
     registerCoreBackends(factory);
-    QueuedInvoker invoker{engine, engine.registry()};
+    QueuedInvoker invoker{engine};
     HostRpcService hostSvc;
     EngineRpcService engineSvc{engine, factory, invoker};
     DebugRpcService debugSvc{engine};

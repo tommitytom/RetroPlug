@@ -7,17 +7,16 @@
 #include <string>
 #include <vector>
 
-#include "project/Project.hpp"
-#include "system/AudioRouting.hpp"
+#include "system/SystemTypes.hpp"
 
 #include "host/dsp/DspRuntime.hpp"
 #include "host/engine/HostSyncTrace.hpp"
 #include "host/engine/SnapshotRegistry.hpp"
 
-struct AudioRouter;  // BlockRunner.hpp — the per-block bus-placement policy (used by ref below)
+class SystemBase;
 struct DspCommand;
 namespace rp::graph { struct HostCommand; }
-namespace rp::host { class Translator; struct SystemTable; }
+namespace rp::host { class Translator; struct SystemTable; enum class AudioRouting : std::uint8_t; }
 
 // A per-system config field a control-plane edit applies to the live core (SameBoy today). Carried
 // as a double across the command ring: gain in dB; a bool as 0/1; an enum/int as its integer value.
@@ -46,11 +45,11 @@ struct EngineFrame {
     std::vector<std::uint8_t> data;
 };
 
-// The single-threaded core of the host: owns the Project of live systems and the DSP
-// role kernel, and knows nothing about audio threads, queues, or RPC. Every op runs "now, on the
-// calling thread." Removed/displaced cores are RETURNED to the caller (who deletes them, or routes
-// them back across a thread) — the Engine never frees on a hot path. No atomics: transport + ppq
-// are passed per block by whoever drives it (the synchronous pull path or the audio loop).
+// The core of the host: the graph the systems run on (docs/modular-graph-phase-b1-design.md), the DSP role
+// kernel, the staged MIDI and the snapshot registry. Structure reaches it through the translator on the
+// control thread, which plans each change as a graph document; every other edit is a command on the
+// GraphHost's one ring, applied at the next drain. A removed core is freed on the control thread, with
+// the plan that last ran it. No atomics: transport and ppq are set per block by whoever drives it.
 class Engine {
 public:
     explicit Engine(double sampleRate = 44100.0);
@@ -58,11 +57,8 @@ public:
 
     double sampleRate() const { return sampleRate_; }
 
-    // --- structure (alloc-free swaps vs the pre-reserved Project; `sys` was built off-thread) ---
-    // (ids are TS-owned now — the store allocates and passes them in; native never mints one.)
-    void adoptSystem(std::unique_ptr<SystemBase> sys);                                        // + rebuild
-    std::unique_ptr<SystemBase> removeSystem(SystemId id);                                    // returns removed
-    std::unique_ptr<SystemBase> replaceSystem(SystemId id, std::unique_ptr<SystemBase> sys);  // returns displaced
+    // --- the running plan's systems: the block thread's view, or the control thread's while no audio
+    // thread runs (structure itself goes through translator()) ---
     std::size_t systemCount() const;
     SystemBase* findSystem(SystemId id);   // borrowed (non-owning)
 
@@ -88,8 +84,6 @@ public:
     // Move the host playhead. A DAW does this on every locate: stop-and-rewind, a loop wrap,
     // or a click in the timeline. Roles see it as a ppqStart discontinuity in the next block.
     void setPpq(double ppq);
-    // Which output pairs each system routes to (Stereo = all → pair 0). Plain member, like transport.
-    void setAudioRouting(AudioRouting mode);
 
     // Host sample rate. Used at construct for new cores (findable via sampleRate()) AND pushed to every
     // already-live core so a host sample-rate change re-rates them in place (SameBoy GB_set_sample_rate,
@@ -130,21 +124,12 @@ public:
     std::vector<DspTraceSpan> dspTrace() const { return dsp_.traceSpans(); }
     std::vector<std::string>  dspTraceNames() const { return dsp_.traceNames(); }
 
-    // --- per block: run kernel → fan sinks to cores → route to the outputs → advance the ppq clock ---
-    // Multi-out core: `outputs` is a flat array of `numOutputs` planar channels; each system routes
-    // into its pair per audioRouting_ (via MultiOutRouter). The plugin passes its 8 channels; the
-    // stereo overload below passes 2 (any routing mode collapses to one pair with 2 channels).
+    // --- per block: the plan (the kernel stage, every system, the mixing, the host outputs), then the
+    // MI.OUT collection, the snapshot publish and the ppq advance. `outputs` is a flat array of
+    // `numOutputs` planar channels laid out as the translator's host shape says (the plugin's 8, a
+    // render's pairs); the caller has drained the ring first. ---
     void processBlock(std::uint32_t frames, float* const* outputs, std::size_t numOutputs);
     void processBlock(std::uint32_t frames, float* outL, float* outR);
-    // Per-system isolation: each system renders into its OWN L/R pair (ls[i]/rs[i] for slot i in
-    // Project::systems() order) via PerSystemRouter, ignoring audioRouting_. Proves LSDj link-cable
-    // sync — a follower sounds only when it actually synced (a healthy 2-system mix can't show that).
-    void processBlockPerSystem(std::uint32_t frames, float* const* ls, float* const* rs, std::size_t nSystems);
-    // Per-channel isolation for ONE system: its channelLayout() streams each render into their own L/R
-    // pair (ls[k]/rs[k] for stream k) via PerChannelRouter. Since that router keys off streamIndex (not
-    // slot), this is only correct for a single-system project — the RPC gates on systemCount() == 1. The
-    // full kernel/serial/snapshot pipeline still runs, so MIDI-driven audio (e.g. mGB) sounds.
-    void processBlockPerChannel(std::uint32_t frames, float* const* ls, float* const* rs, std::size_t nStreams);
 
     // --- live-state reads / direct mutation (valid only on the Engine's owning thread) ---
     std::optional<std::vector<std::uint8_t>> readState(SystemId id);
@@ -180,10 +165,7 @@ public:
     // when the core is deleted; processBlock publishes into it.
     SnapshotRegistry& registry() { return registry_; }
 
-    // --- graph mode (RETROPLUG_GRAPH_ENGINE=1, read once per process; docs/modular-graph-phase-b1-design.md) ---
-    // processBlock runs a GraphHost; structure goes through the translator (control thread) and every
-    // other command rides the GraphHost's one ring (QueuedInvoker routes them).
-    bool graphMode() const { return graph_ != nullptr; }
+    // --- the graph: QueuedInvoker routes structure to the translator and every other command onto the ring ---
     rp::host::Translator& translator();             // control thread
     bool pushCommand(const DspCommand& c);          // control thread: false when the ring is full
     void drainCommands();                           // the block thread (or the control thread, quiescent)
@@ -197,44 +179,16 @@ private:
     struct Graph;
     // The running plan's systems (an empty table before the first plan).
     const rp::host::SystemTable& currentTable() const;
-    void processBlockGraph(std::uint32_t frames, float* const* outputs, std::size_t numOutputs);
-    void runKernelStage(std::uint32_t frames);     // rp.dsp.kernel's body: today's kernel stage
+    void runKernelStage(std::uint32_t frames);     // rp.dsp.kernel's body
     void applyCommand(DspCommand& c);
-    void syncTap(AudioRouting routing);
+    void syncTap(rp::host::AudioRouting routing);
     static const void* graphInterface(void* ctx, const char* id);
     static void onHostCommand(void* ctx, const rp::graph::HostCommand& cmd, const void* hostData, bool discard);
 
-    // Shared per-block core: run the kernel (if active) + fan its sinks to the cores, render every
-    // system through `router`, publish snapshots, advance the ppq clock. Both processBlock overloads
-    // and processBlockPerSystem funnel through here; the caller zeroes the router's destination buffers
-    // first (they differ per router — the flat multi-out array vs the per-system pairs).
-    void runBlockWithRouter(std::uint32_t frames, const AudioRouter& router);
-
-    // Re-resolve splitPlan_ (and arm/disarm any NES per-channel tap it needs) from the CURRENT routing
-    // mode + system set. Called on every edge that can change either: setAudioRouting and the three
-    // structural ops. Deliberately NOT called per block — channelLayout() returns a std::vector, and the
-    // audio thread must not allocate to answer "how many lanes".
-    void syncSplitPlan();
-
-    // The resolved lane assignment for a split routing (see AudioRouting.hpp). Invalid => processBlock
-    // uses the MultiOutRouter. lanesNeeded is checked against the host's actual output count per block,
-    // so a narrow device (an SDL 4-channel pick) still falls back to Stereo on its own.
-    struct SplitPlan {
-        bool          valid       = false;
-        std::uint32_t nStreams    = 0;
-        std::size_t   laneStride  = 2;  // 2 = a stereo pair per stream, 1 = one mono lane per stream
-        std::size_t   lanesNeeded = 0;
-        // A MONO layout given a full pair per stream (StereoPinSplit): the backend fills only the L lane,
-        // so processBlock mirrors it into the R one afterwards. False for a genuinely stereo layout (the
-        // GB writes both lanes itself) and for mono packing (l and r are the same buffer).
-        bool          mirrorMonoToPair = false;
-    };
-    SplitPlan splitPlan_;
-
-    // The NES tap syncSplitPlan() armed, and what its export mode was BEFORE we touched it. Restored
-    // before every re-resolve so leaving a split mode (or gaining a second system) puts the core back
-    // exactly as found. Scoped to what WE armed on purpose: the CLI / RenderHost set channelExportMode at
-    // construct through the mesen role blob and never select a split routing, so they are never disturbed.
+    // The NES tap syncTap() armed, and what its export mode was BEFORE we touched it. Restored before
+    // every re-resolve so leaving a split mode (or gaining a second system) puts the core back exactly as
+    // found. Scoped to what WE armed on purpose: the CLI / RenderHost set channelExportMode at construct
+    // through the mesen role blob and never select a split routing, so they are never disturbed.
     struct ArmedTap {
         bool          active   = false;
         SystemId      id       = 0;
@@ -242,16 +196,15 @@ private:
     };
     ArmedTap armedTap_;
 
-    Project          project_;
     SnapshotRegistry registry_;
     DspRuntime dsp_;
     double     sampleRate_;
     bool       dspActive_ = false;                 // a kernel is loaded → run the per-block DSP stage
     std::vector<DspRuntime::MidiIn> pendingMidi_;  // staged host MIDI, consumed on the next block
     std::vector<DspRuntime::MidiIn> pendingControllerMidi_;  // staged control-surface traffic, likewise
-    // Raw serial-out bytes each core emitted LAST block (LSDj MI.OUT), gathered after runBlock and fed
-    // to the kernel on the next block (one-block latency — the kernel runs before runBlock, and each
-    // SameBoy clears its serialOutLog_ in prepareForBlock).
+    // Raw serial-out bytes each core emitted LAST block (LSDj MI.OUT), gathered after the plan runs and fed
+    // to the kernel on the next block (one-block latency: the kernel runs first, and each SameBoy clears
+    // its serialOutLog_ in prepareForBlock).
     std::vector<DspRuntime::SerialOut> pendingSerialOut_;
 
     // Simulated host transport, driven per block. Continuous ppq clock (the pull path and the audio
@@ -266,8 +219,6 @@ private:
     // null in every other host. Called on the audio thread, so the target must be RT-safe (N8Link is).
     std::function<void(std::uint32_t, const std::uint8_t*, std::size_t, bool)> coreByteSink_;
 
-    AudioRouting audioRouting_ = AudioRouting::Stereo;  // output-pair placement; Stereo = all → pair 0
-
     // Last, so it goes first: its system nodes release their snapshot slots into registry_ as they go.
-    std::unique_ptr<Graph> graph_;  // null unless graph mode
+    std::unique_ptr<Graph> graph_;
 };

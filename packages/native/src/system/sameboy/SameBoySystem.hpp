@@ -90,11 +90,6 @@ public:
     // finishBlock keeps receiving the 2-lane mix. See the per-channel tap below.
     std::vector<ChannelStream> channelLayout() const override;
 
-    // Linked iff this system shares a nonzero linkGroupId with surviving peers
-    // (linkPeers_ populated by Project::rebuildLinkGroups). The runner skips
-    // linked systems in its singleton pass and drives them via their LinkGroup.
-    bool isLinked() const override { return !linkPeers_.empty(); }
-
     // Set the per-system gain target (dB). Smoothed at audio rate inside
     // finishBlock so live edits don't click. Not realtime-safe to call from
     // the audio thread, but a simple atomic store would make it so if needed.
@@ -198,11 +193,12 @@ public:
     // Mirrors the old code's "10 ms at sampleRate" default.
     std::uint32_t buttonSpacingSamples_ = 0;
 
-    // Serial-link state. Empty => standalone (no linking). Populated by
-    // Project::rebuildLinkGroups when this system shares a nonzero
-    // SameBoyConfig::linkGroupId with one or more peers. Pointers are owned
-    // by Project; lifetime matches the linked peers' lifetimes inside the
-    // same Project. See LinkGroup.hpp for the runtime stepping policy.
+    // Serial-link state. Empty => standalone (no linking). Set by the system
+    // node's set_peers (host/graph/SystemNodes.cpp) when this system shares a
+    // nonzero SameBoyConfig::linkGroupId with one or more peers: the other
+    // members of its coupled group, which the graph steps in lockstep. Each
+    // peer's core is owned by its own node, which outlives the plan that
+    // pairs them.
     std::vector<SameBoySystem*> linkPeers_;
     bool                        bitToSend_ = false;
 

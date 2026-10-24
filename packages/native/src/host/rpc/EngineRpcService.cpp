@@ -104,8 +104,8 @@ bool EngineRpcService::constructSystem(BackendConstructSpec spec) {
 // findSystem walks + the last live-core clone/cloneFromState reliance from this layer.
 
 bool EngineRpcService::removeSystem(std::uint32_t id) {
-    // No threading branch: quiescent → direct erase; running → enqueue for the audio thread, which
-    // hands the core back through the release ring for the control thread to delete (drainReleased).
+    // No threading branch: the translator plans the system out. Quiescent, the plan applies at once and
+    // the core is freed; running, the core leaves with the plan it last ran in, freed at reclaim.
     invoker_.removeSystem(id);
     return true;
 }
@@ -274,22 +274,23 @@ std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerSystem(double ms) {
     if (n == 0) return result;
     invoker_.setHostShape({rp::host::HostShape::Kind::PerSystem, 0});
 
-    // One persistent L/R block buffer per system; the Engine routes each core into its own pair
-    // (PerSystemRouter) so linked systems interleave exactly as they do in the mixed path.
+    // One persistent L/R block buffer per system; the PerSystem shape routes each core into its own pair,
+    // so linked systems interleave exactly as they do in the mixed path.
     std::vector<std::vector<float>> bl(n, std::vector<float>(kBlockSize));
     std::vector<std::vector<float>> br(n, std::vector<float>(kBlockSize));
-    std::vector<float*> ls(n), rs(n);
+    std::vector<float*> ls(n), rs(n), lanes;  // lanes: the pairs as one channel list (L0, R0, L1, R1, …)
     std::vector<std::vector<float>> out(n);  // per system: interleaved L,R,L,R…
     const std::uint64_t total = static_cast<std::uint64_t>(ms * engine_.sampleRate() / 1000.0);
     for (std::size_t i = 0; i < n; ++i) {
         ls[i] = bl[i].data();
         rs[i] = br[i].data();
+        lanes.insert(lanes.end(), {ls[i], rs[i]});
         out[i].reserve(total * 2);
     }
 
     for (std::uint64_t s = 0; s < total; s += kBlockSize) {
         const auto frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(kBlockSize, total - s));
-        engine_.processBlockPerSystem(frames, ls.data(), rs.data(), n);
+        engine_.processBlock(frames, lanes.data(), lanes.size());
         accumulateMidiOut();  // gather this block's kernel MIDI-out before the next block clears it
         for (std::size_t i = 0; i < n; ++i)
             for (std::uint32_t f = 0; f < frames; ++f) {
@@ -309,8 +310,8 @@ std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerSystem(double ms) {
 std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerChannel(std::uint32_t id, double ms) {
     std::vector<rfl::Bytestring> result;
     if (invoker_.audioThreadOwns()) return result;  // as renderAudio
-    // Single-system only: PerChannelRouter fans by stream index, not slot, so a second system's streams
-    // would collide into these buffers. The mixed/per-system paths are the multi-system routes.
+    // Single-system only: the PerChannel shape fans one system's streams, so a second system's would collide
+    // into these buffers. The mixed/per-system paths are the multi-system routes.
     if (ms <= 0.0 || engine_.systemCount() != 1) return result;
     SystemBase* sys = engine_.findSystem(id);
     if (sys == nullptr) return result;
@@ -320,21 +321,22 @@ std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerChannel(std::uint32
     if (n == 0) return result;
     invoker_.setHostShape({rp::host::HostShape::Kind::PerChannel, 0});
 
-    // One persistent L/R block buffer per stream; the Engine routes each stream into its own pair.
+    // One persistent L/R block buffer per stream; the PerChannel shape routes each stream into its own pair.
     std::vector<std::vector<float>> bl(n, std::vector<float>(kBlockSize));
     std::vector<std::vector<float>> br(n, std::vector<float>(kBlockSize));
-    std::vector<float*> ls(n), rs(n);
+    std::vector<float*> ls(n), rs(n), lanes;  // lanes: the pairs as one channel list (L0, R0, L1, R1, …)
     std::vector<std::vector<float>> out(n);  // per stream: interleaved L,R,L,R…
     const std::uint64_t total = static_cast<std::uint64_t>(ms * engine_.sampleRate() / 1000.0);
     for (std::size_t i = 0; i < n; ++i) {
         ls[i] = bl[i].data();
         rs[i] = br[i].data();
+        lanes.insert(lanes.end(), {ls[i], rs[i]});
         out[i].reserve(total * 2);
     }
 
     for (std::uint64_t s = 0; s < total; s += kBlockSize) {
         const auto frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(kBlockSize, total - s));
-        engine_.processBlockPerChannel(frames, ls.data(), rs.data(), n);
+        engine_.processBlock(frames, lanes.data(), lanes.size());
         accumulateMidiOut();  // gather this block's kernel MIDI-out before the next block clears it
         for (std::size_t i = 0; i < n; ++i)
             for (std::uint32_t f = 0; f < frames; ++f) {
@@ -433,7 +435,7 @@ bool EngineRpcService::setBpm(double bpm) {
 
 bool EngineRpcService::setAudioRouting(std::uint32_t mode) {
     if (mode > 5) return false;  // Stereo / TwoPerInstance / OnePerInstance / ChannelSplit / PinSplit / StereoPinSplit
-    invoker_.setAudioRouting(static_cast<std::uint8_t>(mode));  // → the Engine's router (Multi-out / channel-split)
+    invoker_.setAudioRouting(static_cast<std::uint8_t>(mode));  // → the translator, which wires it
     return true;
 }
 

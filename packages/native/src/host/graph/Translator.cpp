@@ -133,7 +133,7 @@ bool Translator::replace(SystemId id, std::unique_ptr<SystemBase> core) {
     if (!core) return false;
     const auto it = std::find_if(systems_.begin(), systems_.end(), [&](const System& s) { return s.id == id; });
     if (it == systems_.end()) {
-        // Never adopted, as Project::swapSystem hands back a core whose target is gone.
+        // Its target is gone, so it is never adopted.
         if (released_) released_(core.get());
         return false;
     }
@@ -195,8 +195,7 @@ std::vector<SystemBase*> Translator::cores() const {
     return out;
 }
 
-// Project::rebuildLinkGroups: Game Boys with a nonzero group, bucketed in slot order, groups of fewer than
-// two dissolved.
+// Game Boys with a nonzero link group, bucketed in slot order; a group of fewer than two is dissolved.
 std::vector<std::vector<std::size_t>> Translator::linkGroups() const {
     std::vector<std::pair<std::uint8_t, std::vector<std::size_t>>> groups;
     for (std::size_t i = 0; i < systems_.size(); ++i) {

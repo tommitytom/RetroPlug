@@ -126,8 +126,8 @@ void loadBootRomHandler(GB_gameboy_t* gb, GB_boot_rom_t /*type*/) {
 // Serial-link bit ferrying. When this system has no peers the callbacks are
 // effectively no-ops (return true => idle high). With peers, every received
 // bit is broadcast to all peers and the next-bit-to-read comes from the first
-// peer. See LinkGroup.hpp for the lockstep stepping policy that pairs with
-// these callbacks.
+// peer. The graph steps a linked group in lockstep (the executor's coupled
+// group over rp.step/1), which is what pairs with these callbacks.
 void serialStart(GB_gameboy_t* gb, bool bit_received) {
     SameBoySystem& s = self(gb);
     s.serialBitReceived(bit_received);
@@ -747,8 +747,7 @@ void SameBoySystem::finishBlock(const AudioBlockInfo& info, float* const* outs, 
 
     audioFrameCount_ = 0;
 
-    // Clear this block's MIDI so the next block starts empty. midiOut_ is
-    // drained by PluginDSP after Project::onProcess returns.
+    // Clear this block's MIDI so the next block starts empty.
     pendingMidi_.clear();
 
     // Tear-free memory snapshots for any UI subscriptions. Done AFTER role

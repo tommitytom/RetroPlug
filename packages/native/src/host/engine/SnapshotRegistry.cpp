@@ -3,7 +3,6 @@
 #include <cstdio>
 #include <cstring>
 
-#include "project/Project.hpp"
 #include "system/SystemBase.hpp"
 #include "system/MemoryType.hpp"   // rp::MemoryType::Sram
 
@@ -45,7 +44,7 @@ bool SnapshotRegistry::claim(SystemId id, SystemBase& sys) {
     s->sampleAccum = 0;
 
     // Frame: sized from the core's framebuffer (absent → non-video system). Left UNpublished — the
-    // core hasn't rendered yet, so getFrame reports published:false until publishAll copies frame 1.
+    // core hasn't rendered yet, so getFrame reports published:false until publishSystem copies frame 1.
     if (FrameBufferTriple* fb = sys.framebuffer()) {
         s->width = fb->width();
         s->height = fb->height();
@@ -86,7 +85,7 @@ bool SnapshotRegistry::claim(SystemId id, SystemBase& sys) {
     }
 
     // WRAM (work RAM): seed from the live core's region so a read right after construct works. Published
-    // EVERY block by publishAll (unlike the coarse savestate/SRAM) so a runtime overlay sees per-frame
+    // EVERY block by publishSystem (unlike the coarse savestate/SRAM) so a runtime overlay sees per-frame
     // playback state. getMemory here is on the control thread before the handoff — safe, like
     // saveStateBytes above. The slot carries a length prefix + max-WRAM capacity (NOT sized to the live
     // region) so a live model switch that RESIZES the region — SameBoy DMG 8 KB ↔ CGB 32 KB — republishes
@@ -101,11 +100,6 @@ bool SnapshotRegistry::claim(SystemId id, SystemBase& sys) {
 
     s->id.store(id, std::memory_order_release);   // publish the slot LAST — the block thread may now match it
     return true;
-}
-
-void SnapshotRegistry::publishAll(const Project& project, std::uint32_t frames, double sampleRate) {
-    for (const auto& up : project.systems())
-        if (up) publishSystem(*up, frames, sampleRate);
 }
 
 void SnapshotRegistry::publishSystem(SystemBase& system, std::uint32_t frames, double sampleRate) {
@@ -127,7 +121,7 @@ void SnapshotRegistry::publishSystem(SystemBase& system, std::uint32_t frames, d
         }
 
         // WRAM every block (cheap, ~KB): copy the live core's work RAM into the owned triple. The read
-        // is safe here — publishAll is the tail of processBlock on the block thread, which owns the core.
+        // is safe here: publishSystem is the tail of processBlock on the block thread, which owns the core.
         // This is what makes a per-frame runtime overlay (e.g. LSDj playback position) possible, vs the
         // coarse savestate below. The slot carries a length prefix + headroom, so a live model switch that
         // RESIZES the region (SameBoy DMG 8 KB ↔ CGB 32 KB) republishes at its NEW size instead of freezing;
@@ -166,7 +160,7 @@ void SnapshotRegistry::publishSystem(SystemBase& system, std::uint32_t frames, d
         }
 
         // Core-sourced SRAM (Mesen): read the live battery straight off the core — safe here, the block
-        // thread owns it and every system has finished its block (publishAll is the tail of processBlock,
+        // thread owns it and every system has finished its block (publishSystem is the tail of processBlock,
         // like captureStateSnapshot). SRAM size is fixed for a cart, so a mismatch just skips. Independent
         // of the savestate read above (a no-savestate core could still carry a battery).
         if (s->sram && s->sramFromCore) {
@@ -247,8 +241,8 @@ void SnapshotRegistry::release(SystemId id) {
     Slot* s = find(id);
     if (!s) return;
     // Clear the id FIRST so a stray block-thread scan can't match this slot, then free the buffers.
-    // release only runs once the system is out of project.systems() (audio no longer publishes to
-    // it), so this can't race an in-flight publishAll.
+    // release only runs once the system is out of the running plan (audio no longer publishes to
+    // it), so this can't race an in-flight publishSystem.
     s->id.store(0, std::memory_order_release);
     s->frame.reset();
     s->state.reset();

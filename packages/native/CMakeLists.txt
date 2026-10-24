@@ -29,7 +29,7 @@ set(RP_QUICKJS_INCLUDE "${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs
 # The shape shared by every native test binary (see the file for why).
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/test-binary.cmake)
 
-# --- retroplug-core: the shared emulator/Project core, as a neutrally-named static lib. Extracted out of
+# --- retroplug-core: the shared emulator core, as a neutrally-named static lib. Extracted out of
 # packages/native/cli (which also compiled the CLI-only HarnessRpcService) so the host links ONLY the
 # shared core, never a CLI RPC surface it doesn't use. The legacy `retroplug-cli-core` is now a thin
 # wrapper = HarnessRpcService.cpp + this lib. Deliberately txiki/QuickJS-free (harness-schema-dump links it
@@ -43,7 +43,6 @@ else()
 endif()
 
 add_library(retroplug-core STATIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/project/Project.cpp
     # Console-neutral kit pipeline: the async compiler + decoded-audio cache are
     # codec-agnostic (KitCodec.hpp). Per-console packing lives in a codec (LSDj
     # below; risa NES-DPCM planned).
@@ -64,9 +63,6 @@ add_library(retroplug-core STATIC
     # Same rule: fsyncPath needs <windows.h> (FlushFileBuffers), so it stays out of line too.
     ${CMAKE_CURRENT_SOURCE_DIR}/src/util/FileSync.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/SystemBase.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/BlockRunner.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/OfflineRender.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/sameboy/LinkGroup.cpp
     ${_rpcore_sbs}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenNesSystem.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenGlobalInit.cpp
@@ -97,7 +93,7 @@ target_link_libraries(retroplug-core PUBLIC
     enkiTS    # used by KitCompiler for per-sample parallel compile
     miniaudio # header-only audio decoder used by SampleCache
     miniz     # used by projectConfigToZip for --save-rplg
-    mgb-rom   # embedded mGB ROM (Project.cpp re-supplies it on load)
+    mgb-rom   # embedded mGB ROM (SameBoyBackend supplies it on load)
     # Windows: SameBoySystem.cpp lives in this clang-cl-compiled lib (see root CMakeLists).
     $<$<BOOL:${WIN32}>:retroplug-samebsys>
 )
@@ -140,12 +136,12 @@ add_library(retroplug-backend STATIC
     src/host/rpc/EngineRpcService.cpp       # emulator surface over Engine + Invoker + Factory
     src/host/rpc/DebugRpcService.cpp        # live-core inspection over Engine (CLI-only facet)
     src/host/rpc/AudioDriverRpcService.cpp  # background audio thread + observation atomics
-    src/host/engine/Engine.cpp              # single-threaded core: owns Project + DspRuntime, runs blocks
+    src/host/engine/Engine.cpp              # the engine: the graph + DspRuntime + the staged MIDI, runs blocks
     src/host/engine/SnapshotRegistry.cpp    # owned id-keyed frame/state/SRAM store — the control plane's one read door
     src/host/engine/EngineInvoker.cpp       # Direct/Queued invokers — the only threading-aware layer
-    src/host/graph/SystemNodes.cpp          # graph mode: today's cores as rp.sameboy.gb / rp.mesen.* nodes
-    src/host/graph/KernelNode.cpp           # graph mode: today's kernel stage as rp.dsp.kernel
-    src/host/graph/Translator.cpp           # graph mode: today's structural calls as graph documents
+    src/host/graph/SystemNodes.cpp          # the cores as rp.sameboy.gb / rp.mesen.* nodes
+    src/host/graph/KernelNode.cpp           # the kernel stage as rp.dsp.kernel
+    src/host/graph/Translator.cpp           # the structural calls as graph documents
     src/system/SystemFactory.cpp            # backend-agnostic build registry (the one build path)
     src/system/CoreBackends.cpp             # registerCoreBackends: mounts sameboy + mesen on a factory
     src/system/sameboy/SameBoyBackend.cpp   # SameBoy builder — the only place SameBoyConfig is constructed
@@ -166,7 +162,7 @@ target_include_directories(retroplug-backend PUBLIC
     # txiki.js / QuickJS runtime headers (tjs.h + internal private.h; quickjs.h transitive).
     ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/src
     ${RP_QUICKJS_INCLUDE}
-    # (packages/native/src for the Project/SystemBase headers + util/MinizZip.hpp, and the
+    # (packages/native/src for the SystemBase headers + util/MinizZip.hpp, and the
     #  miniz header dir, arrive PUBLIC from retroplug-core above.)
 )
 
@@ -175,8 +171,8 @@ find_package(Threads REQUIRED)  # efsw-static needs pthreads on Linux (its CMake
 
 
 target_link_libraries(retroplug-backend PUBLIC
-    retroplug-core      # Project + SystemBase + SameBoy/Mesen; PUBLIC-brings rpcpp + miniz
-    retroplug-graph     # the graph executor, planner and GraphHost the engine runs on in graph mode
+    retroplug-core      # SystemBase + SameBoy/Mesen; PUBLIC-brings rpcpp + miniz
+    retroplug-graph     # the graph executor, planner and GraphHost the engine runs on
     tjs                 # txiki.js/QuickJS runtime (transitively brings qjs + libuv)
     efsw-static         # NativeFileWatcher's filesystem watcher (PUBLIC-brings efsw/efsw.hpp include dir)
     Threads::Threads

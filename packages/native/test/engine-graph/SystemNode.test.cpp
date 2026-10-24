@@ -143,7 +143,8 @@ struct Lanes {
     }
 };
 
-// Drive `direct` the way runUnit drives one unit, into `laneMap` (host channel per lane; a mono stream's
+// Drive `direct` the way the engine before B1 drove one unit (prepare every member, step them round-robin
+// until none is below, finish each), into `laneMap` (host channel per lane; a mono stream's
 // two lanes share one), and compare with what the graph wrote to the host's channels.
 struct Direct {
     std::vector<SystemBase*> members;  // in member order
@@ -224,7 +225,7 @@ TEST_CASE("a lone Game Boy node renders its core's mix and stems bit for bit", "
     }
 }
 
-TEST_CASE("a linked pair of Game Boys steps in runUnit's lockstep", "[engine-graph][system-node]") {
+TEST_CASE("a linked pair of Game Boys steps in lockstep, member by member", "[engine-graph][system-node]") {
     // Lockstep itself (members stepping round-robin so a cable byte crosses at its true instant) is only
     // observable with LSDj, which drives the cable: that is the fixture-only lsdj-link parity group. mGB is
     // an external-clock slave and never does, so what is pinned here is the wiring and its one audible
@@ -245,11 +246,9 @@ TEST_CASE("a linked pair of Game Boys steps in runUnit's lockstep", "[engine-gra
     SameBoySystem* const graph2 = g2.get();
     const auto t1 = rig.park(std::move(g1)), t2 = rig.park(std::move(g2));
     REQUIRE(rig.set(doc(t1, t2, true)).ok);
-    // The document's link wire put each graph core's peer list where rebuildLinkGroups does.
+    // The document's link wire filled each graph core's peer list with the other.
     CHECK(graph1->linkPeers_ == std::vector<SameBoySystem*>{graph2});
     CHECK(graph2->linkPeers_ == std::vector<SameBoySystem*>{graph1});
-    CHECK(graph1->isLinked());
-    CHECK(graph2->isLinked());
     Direct d({d1.get(), d2.get()}, 4, {{0, 1}, {2, 3}});
     CHECK(compare(rig, d, 4.0, sendAt({d1.get(), d2.get(), graph1, graph2}, 2.0)) == "");
     CHECK(sounds(d));
@@ -258,7 +257,6 @@ TEST_CASE("a linked pair of Game Boys steps in runUnit's lockstep", "[engine-gra
     REQUIRE(rig.set(doc(t1, t2, false)).ok);
     CHECK(graph1->linkPeers_.empty());
     CHECK(graph2->linkPeers_.empty());
-    CHECK_FALSE(graph1->isLinked());
 
     // The note is the observable difference: a linked pair ignores it, an unlinked core plays it.
     auto x1 = mgb(1), x2 = mgb(2), lone = mgb(3);

@@ -18,6 +18,7 @@
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
 
+using rp::host::AudioRouting;
 using rp::host::HostShape;
 using rp::host::Translator;
 using rp::host::test::readFile;
@@ -243,7 +244,7 @@ TEST_CASE("replace keeps the slot; a refused plan leaves the model as it was", "
 }
 
 TEST_CASE("every host lane of a lone NES is fed as today's split routers feed it", "[engine-graph][translator]") {
-    // The tables come from AudioRouting.hpp and ChannelSplitRouter, not from the translator: stream k lands on
+    // The tables are the rules the split routers held before the flip, not the translator's own: stream k lands on
     // lane (stride * k) mod N with stride 1 for mono streams (2 under StereoPinSplit, which mirrors the mono
     // stem onto both lanes of its pair), the core's streams in channelLayout order, and unused lanes stay empty.
     Rig r;

@@ -26,7 +26,7 @@ struct SystemEntry {
 struct SystemTable {
     std::vector<SystemEntry> slots;
 
-    // A linear scan in slot order, as Project::findSystem does.
+    // A linear scan in slot order: the kernel's outputs name a system by id.
     const SystemEntry* find(SystemId id) const {
         for (const auto& e : slots)
             if (e.id == id) return &e;

@@ -26,6 +26,7 @@
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
 
+using rp::host::AudioRouting;
 using rp::host::HostShape;
 using rp::host::Translator;
 using rp::host::test::readFile;

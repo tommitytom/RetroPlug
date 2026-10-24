@@ -86,9 +86,9 @@ struct SameBoyConfig {
     // Per-system trim, dB. Smoothed at audio rate inside SameBoySystem::mixInto.
     float                     gainDb   = 0.0f;
     // Serial-link group. 0 = standalone (default). Same nonzero id on multiple
-    // systems puts them in the same LinkGroup so their serial ports are
-    // ferried bit-for-bit and they step in instruction-level lockstep. See
-    // src/system/sameboy/LinkGroup.hpp.
+    // systems links them on one cable: their serial ports are ferried
+    // bit-for-bit and they step in instruction-level lockstep, as one coupled
+    // group of the graph (host/graph/Translator.cpp wires it).
     std::uint8_t              linkGroupId = 0;
     std::string               romPath;    // absolute path; populated at bootstrap or load
     // Loose-battery disambiguator. 0 => this system owns the plain sibling

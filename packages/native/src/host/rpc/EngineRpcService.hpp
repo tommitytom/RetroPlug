@@ -54,7 +54,7 @@ public:
     // it belongs to, however the project routes musical MIDI. Up to 4 bytes (a channel message).
     bool            stageSystemMidi(std::uint32_t id, std::vector<std::uint8_t> bytes);
     rfl::Bytestring renderAudio(double ms);
-    // Per-system audio: each live system's interleaved-stereo PCM, in Project-slot order (marshals to
+    // Per-system audio: each live system's interleaved-stereo PCM, in slot order (marshals to
     // Uint8Array[]). Isolates each core so LSDj link-cable sync is provable (a follower's own RMS).
     std::vector<rfl::Bytestring> renderAudioPerSystem(double ms);
     // Per-channel audio for ONE system: each of its channelLayout() streams as its own interleaved-stereo

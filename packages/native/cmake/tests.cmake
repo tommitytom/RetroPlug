@@ -4,8 +4,8 @@
 # a child scope and re-roots that variable, which is the trap this split is avoiding.)
 #
 # --- native test binaries ---------------------------------------------------------------------------
-# Eleven Catch2 binaries, all EXCLUDE_FROM_ALL and built BY NAME (nothing reads BUILD_TESTING):
-# `pnpm test:plugin` builds and runs nine of them, `pnpm test:n8` the tenth, and the eleventh needs a
+# Twelve Catch2 binaries, all EXCLUDE_FROM_ALL and built BY NAME (nothing reads BUILD_TESTING):
+# `pnpm test:plugin` builds and runs ten of them, `pnpm test:n8` the eleventh, and the twelfth needs a
 # real console on a USB port. The shared shape lives in retroplug_add_test_binary() — see
 # cmake/test-binary.cmake; what is written out here is only what differs per test.
 
@@ -41,11 +41,9 @@ retroplug_add_test_binary(
     LIBS     retroplug-backend                          # TjsHostRuntime (+ txiki, quickjs) + ClassIdSpace.hpp
     INCLUDES ${RP_QUICKJS_INCLUDE})                     # quickjs.h
 
-# Guards the per-channel audio path: the host seam (runUnit stream loop + AudioRouter::streamCount +
-# lane-counted finishBlock, over a fake SystemBase) AND the real SameBoy per-channel tap
-# (ChannelStreams + SameBoyStems), plus the ChannelSplit plugin router + its Engine gating
-# (spec/10 step 4). Links retroplug-backend, which PUBLIC-brings retroplug-core → BlockRunner +
-# routers + the sameboy core, so the Engine gating test can build an Engine.
+# Guards the cores' audio paths: the real SameBoy and NES per-channel taps (lane-counted finishBlock),
+# the NES split routings through a real Engine, and each backend's block triad. Links retroplug-backend,
+# which PUBLIC-brings retroplug-core (the cores) and the Engine.
 #
 # The ROM defines: mGB's boot chime supplies real signal for the SameBoyStems + ChannelSplit fidelity
 # tests, and a ch1 note in the BlipToaster ROM does the same for the NES pin test. smsggdj ships in
@@ -54,10 +52,7 @@ retroplug_add_test_binary(
 # plus the license bundle), so these are test-only.
 retroplug_add_test_binary(
     NAME     retroplug-audio-test
-    SOURCES  test/audio/ChannelStreams.test.cpp
-             test/audio/SameBoyStems.test.cpp
-             test/audio/ChannelSplit.test.cpp
-             test/audio/EngineChannelSplit.test.cpp
+    SOURCES  test/audio/SameBoyStems.test.cpp
              test/audio/EngineSampleRate.test.cpp      # host sample-rate change re-rates live cores
              test/audio/SameBoySerialTiming.test.cpp   # host MIDI-in keeps its intra-block sample offset over serial
              test/audio/NesApuLatency.test.cpp         # runtime NES APU flush window (live apuLatencyMs knob)
@@ -72,7 +67,7 @@ retroplug_add_test_binary(
              test/audio/NesTeardown.test.cpp           # the NES twin of SMS's construct/destruct guard
              test/audio/SameBoyModels.test.cpp         # every SameBoyModel (incl. SGB variants) boots + renders
              test/audio/EngineInvoker.test.cpp         # the command ring's inline slot + teardown payload frees
-    LIBS     retroplug-backend                         # Engine + retroplug-core (SystemBase + BlockRunner + routers + sameboy)
+    LIBS     retroplug-backend                         # Engine + retroplug-core (SystemBase + the cores)
     INCLUDES ${RP_QUICKJS_INCLUDE}                     # quickjs.h (via Engine.hpp → DspRuntime.hpp)
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
              RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"

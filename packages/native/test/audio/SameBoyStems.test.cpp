@@ -3,7 +3,7 @@
 // to the mixed stereo output the plugin ships, in the same highpass mode the user selected — the
 // Phase-2 fidelity claim of spec/10. Drives a real mGB ROM (the DMG boot chime supplies real
 // multi-channel signal, so a dead tap can't pass) and checks the raw captured accumulators directly,
-// then exercises the real 8-lane finishBlock split through a PerChannelRouter.
+// then exercises the real 8-lane finishBlock split, the lanes the engine's Game Boy node hands it.
 //
 // Run via `pnpm test:plugin`.
 
@@ -17,7 +17,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "system/BlockRunner.hpp"
 #include "system/SystemTypes.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
@@ -55,6 +54,15 @@ std::unique_ptr<SameBoySystem> buildMgb(SameBoyHighpass hp) {
     auto sys = std::make_unique<SameBoySystem>(1, cfg, readRom());
     sys->onActivate(kSampleRate);
     return sys;
+}
+
+// The block triad driven directly, as the engine's system node drives it: prepare, step until the block
+// is produced, finish into `lanes` (which the caller zeroed).
+void runBlock(SystemBase& s, const AudioBlockInfo& info, float* const* lanes, std::size_t laneCount) {
+    s.prepareForBlock(info);
+    while (s.stepIfBelowTarget(info.frames)) {
+    }
+    s.finishBlock(info, lanes, laneCount);
 }
 
 AudioBlockInfo blockInfo() {
@@ -105,8 +113,8 @@ TEST_CASE("SameBoy per-channel stems sum back to the mixed output", "[audio][sam
 
 TEST_CASE("SameBoy reports 4 stereo streams and the 8-lane split sums to the mix", "[audio][sameboy]") {
     // Two identical instances driven identically are deterministic (the same property the CLI byte-for-byte
-    // render relies on): A fans its 4 channels across 8 lanes via a PerChannelRouter (the real finishBlock
-    // split branch); B renders the plain mix. A's summed lane-pairs must equal B's mix.
+    // render relies on): A fans its 4 channels across 8 lanes (the real finishBlock split branch); B renders
+    // the plain mix. A's summed lane-pairs must equal B's mix.
     std::vector<std::unique_ptr<SystemBase>> sysA, sysB;
     sysA.push_back(buildMgb(SameBoyHighpass::Off));
     sysB.push_back(buildMgb(SameBoyHighpass::Off));
@@ -118,22 +126,19 @@ TEST_CASE("SameBoy reports 4 stereo streams and the 8-lane split sums to the mix
     for (auto& v : lane) v.assign(kFrames, 0.0f);
     std::vector<float> mixL(kFrames, 0.0f), mixR(kFrames, 0.0f);
 
-    float* splitL[4] = {lane[0].data(), lane[2].data(), lane[4].data(), lane[6].data()};
-    float* splitR[4] = {lane[1].data(), lane[3].data(), lane[5].data(), lane[7].data()};
-    PerChannelRouter routerA(splitL, splitR, 4);
-    StereoRouter routerB(mixL.data(), mixR.data());
+    float* lanesA[8] = {lane[0].data(), lane[1].data(), lane[2].data(), lane[3].data(),
+                        lane[4].data(), lane[5].data(), lane[6].data(), lane[7].data()};
+    float* lanesB[2] = {mixL.data(), mixR.data()};
 
     AudioBlockInfo info = blockInfo();
-    SystemBase* mA = sysA[0].get();
-    SystemBase* mB = sysB[0].get();
 
     float peak = 0.0f;
     for (int blk = 0; blk < kBlocks; ++blk) {
         for (auto& v : lane) std::fill(v.begin(), v.end(), 0.0f);
         std::fill(mixL.begin(), mixL.end(), 0.0f);
         std::fill(mixR.begin(), mixR.end(), 0.0f);
-        runUnit(info, &mA, 1, sysA, routerA);
-        runUnit(info, &mB, 1, sysB, routerB);
+        runBlock(*sysA[0], info, lanesA, 8);
+        runBlock(*sysB[0], info, lanesB, 2);
         for (std::uint32_t i = 0; i < kFrames; ++i) {
             const float sumL = lane[0][i] + lane[2][i] + lane[4][i] + lane[6][i];
             const float sumR = lane[1][i] + lane[3][i] + lane[5][i] + lane[7][i];

@@ -28,7 +28,7 @@
 struct HostServices {
     Engine                engine;
     SystemFactory         factory;
-    QueuedInvoker         invoker{engine, engine.registry()};
+    QueuedInvoker         invoker{engine};
     HostRpcService        host;
     EngineRpcService      engineSvc{engine, factory, invoker};
 
