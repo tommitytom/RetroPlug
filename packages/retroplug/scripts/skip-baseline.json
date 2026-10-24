@@ -132,6 +132,34 @@
    "skipped": 1,
    "total": 1
   },
+  "parity/controller": {
+   "skipped": 1,
+   "total": 2
+  },
+  "parity/gba": {
+   "skipped": 2,
+   "total": 3
+  },
+  "parity/lsdj-link": {
+   "skipped": 1,
+   "total": 2
+  },
+  "parity/lsdj-modes": {
+   "skipped": 8,
+   "total": 9
+  },
+  "parity/lsdj-sync": {
+   "skipped": 8,
+   "total": 9
+  },
+  "parity/render-blocks": {
+   "skipped": 1,
+   "total": 8
+  },
+  "parity/risa": {
+   "skipped": 2,
+   "total": 3
+  },
   "risa-220-layout": {
    "skipped": 1,
    "total": 1
