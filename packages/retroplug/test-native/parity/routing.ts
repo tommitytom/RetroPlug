@@ -40,6 +40,9 @@ export function routingCases(mode: AudioRouting): ParityCase[] {
         audible: routedLanes(mode, outputs, count),
         setup: (rig) => {
           for (let i = 0; i < count; i++) BY_SLOT[i](rig);
+          // Slots 0, 2 and 4 are all mGB and render bit-identical audio, so a misroute or a reordered sum
+          // among them would be invisible. A distinct gain per slot tells every slot apart.
+          for (let i = 0; i < count; i++) rig.project.systems.setGain(rig.id(i), -i);
           rig.project.setAudioRouting(mode);
         },
         // sendToAll: every system hears the phrase, mGB on its voices 0..3 and the NES on its channels 0..3.

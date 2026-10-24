@@ -149,6 +149,14 @@ more, so at 128 to 768 (ordinary DAW buffers) LSDj never starts, a divisor of 4 
 either, and 2048 plays louder than 1024. The existing test passes only because `renderAudio` always uses
 1024-frame blocks. The baseline pins the silent cases; fixing it is its own change with a re-record.
 
+A fifth defect is recorded as it is, not fixed (§1): **a single NES under a split routing on a host
+narrower than the split needs does not fall back to Stereo.** `Engine::syncSplitPlan` arms the NES capture
+tap before `processBlock` checks the lane budget, so the mix path then drifts (added latency grows about
+49 ms per second). A Game Boy and two-system projects do fall back, bit-identical to Stereo. The plugin
+always passes 8 outputs and cannot hit it; the SDL standalone (2 channels by default) and 2-lane renders
+can. The baseline pins `nes-channelSplit-o2/o4`, `nes-pinSplit-o2` and `nes-stereoPinSplit-o2/o4` as they
+are; fixing it is its own change with a re-record.
+
 ## 3. The case matrix
 
 In-repo ROMs cover most of it: `mGB.gb` (and the embedded build), `bliptoaster.nes` and its MMC5 / N163 /
@@ -159,12 +167,12 @@ baseline. 149 cases in 20 group files; the parity suite is about 94 s of CPU aga
 
 | File(s) | Cases | Covers |
 |---|---|---|
-| `blocks-{mgb,nes,sms,gg}` | each system × {44.1, 48 kHz} × blocks of {64, 199, 512, 1024, 8192} and a cycle of all of them | partitioning, resampler carry, MIDI inside blocks |
+| `blocks-{mgb,nes,sms,gg}` | each system × {44.1, 48 kHz} × blocks of {64, 199, 512, 1024, 8192} and a cycle of all of them | partitioning, MIDI inside blocks and on block edges (the mgb and nes cases) |
 | `routing-{stereo,twoPerInstance,onePerInstance}` | outputs {2,4,8} × {1,2,3,5} systems, mixed mGB / BlipToaster / VRC6 | summation order, OnePerInstance's mono association, more systems than pairs |
 | `routing-split`, `routing-split-expansion` | ChannelSplit (GB stems, NES core channels), PinSplit, StereoPinSplit × {2,4,8}; each expansion build under PinSplit and ChannelSplit; a split with two systems | lane plans, the fall-back to Stereo |
 | `midi-routing` | the 4 modes over 3 systems on separate pairs, notes on all 16 channels with ties, a SysEx; a mid-run mode switch | the routing role; fix 1 |
-| `link` | two linked mGBs, a third unlinked, a link made and broken mid-run | the link group as one stepping unit (a linked mGB hears no MIDI: its serial port is the cable) |
-| `edits-live`, `edits-structure` | gain through a held note, live role knobs; reset, duplicate, add, remove, replace mid-run, a split losing and regaining its single system, a pin split left | edit timing, per-frame gain smoothing, the tap restore; fix 2 |
+| `link` | two linked mGBs, a third unlinked, a link made and broken mid-run | how linked systems render (a linked mGB hears no MIDI: its serial port is the cable, and it never drives it, so lockstep stepping is not observable here: `lsdj-link` covers it) |
+| `edits-live`, `edits-structure` | gain through a held note, live role knobs; reset, duplicate, add, remove, replace mid-run, a split losing and regaining its single system, a pin split left | edit timing, per-frame gain smoothing, the tap restore; fix 2 is covered by its unit test in `test/systems/bliptoaster-assets.test.ts`, not by this case (duplicate-mid-run duplicates an mGB, which has no construct hooks) |
 | `sync-sms` | smsggdj SYNC IN24 on SMS and GG: start, bpm change, stop, locate, a short block at a loop wrap | transport-driven sync |
 | `lsdj-sync` *(fixture)* | SYNC=MIDI at divisors 1/2/4/8 and with autoStart; Arduinoboy at 1024 and 512 | lsdj-sync's clock modes; the Arduinoboy defect |
 | `lsdj-modes` *(fixture)* | off, keyboard, midiMap, keyboardMidi, midiPassthrough (raw clocks into SYNC=MIDI), midiOut (play / stop / play), masterSync | every other lsdj-sync mode; MI.OUT and master clock as MIDI out |
@@ -179,9 +187,10 @@ Plus `determinism`, `render-blocks` and `comparator`, the harness's own tests (�
 
 Recording today's engine fixes these requirements for B1, all following from §1's strictness:
 
-- **A host block is rendered as one block, never split.** SameBoy drops overproduced samples per block,
-  Mesen carries its resampler leftovers, and Arduinoboy sync depends on whether a block carries a tick,
-  so splitting a block changes the output. `GraphHost`'s `maxFrames` therefore comes from the host's
+- **A host block is rendered as one block, never split.** SameBoy drops overproduced samples per block
+  and Arduinoboy sync depends on whether a block carries a tick, so splitting a block changes the
+  output. (Mesen's audio proved partition-invariant: `blocks-{nes,sms,gg}` audio is bit-identical across
+  the six patterns at each rate, and only end-of-case work RAM differs.) `GraphHost`'s `maxFrames` therefore comes from the host's
   maximum block size (8192 in the matrix).
 - MIDI staged at one frame keeps its staging order; the executor's event queues must not reorder ties.
 - An edit lands before the next `processBlock`, wherever it is drained.

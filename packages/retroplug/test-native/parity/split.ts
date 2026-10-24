@@ -1,6 +1,10 @@
 // One system's channels fanned across the host's outputs: ChannelSplit (a Game Boy's 4 stereo channels,
 // a NES's 5 mono core channels), PinSplit and StereoPinSplit (a NES's 3 output pins, mono or a pair
-// each). A split needs its lanes: a host too narrow for it, or a second system, falls back to Stereo.
+// each). A split needs its lanes. A Game Boy on a host too narrow for it, and any two-system project,
+// fall back to Stereo (bit-identical to it). A single NES on a narrow host does NOT: KNOWN DEFECT,
+// recorded as it is. Engine::syncSplitPlan arms the NES capture tap before processBlock checks the lane
+// budget, so the mix path then drifts (added latency grows ~49 ms per second). The plugin always passes
+// 8 outputs and cannot hit it; the SDL standalone (2 channels by default) and 2-lane renders can.
 // The cases are routing-split.test.ts and routing-split-expansion.test.ts.
 import type { ParityCase } from "./group";
 import { even, type Rig } from "./rig";
@@ -14,8 +18,15 @@ const blocks = (n: number) => even(n, 512);
 /** Boot, then a phrase on `channels` (16 channels' worth of phrase runs just over a second). */
 export const splitSegments = (channels: number[]): ParityCase["segments"] => [
   { blocks: blocks(frames(SR, BOOT_MS)) },
-  { blocks: blocks(frames(SR, channels.length > 4 ? 1100 : 600)), midi: phrase(SR, channels) },
+  { blocks: blocks(frames(SR, channels.length > 4 ? 1100 : 600)), midi: withNoise(phrase(SR, channels)) },
 ];
+
+/** phrase() gives channel index 3 keys 69/81/74, and BlipToaster's noise voice answers keys 36..67, so the
+ *  NES noise channel would never sound. One in-range noise note at irregular frames puts it on ChannelSplit's
+ *  lane 3 and in the TND pin. */
+function withNoise(midi: { at: number; bytes: number[] }[]): { at: number; bytes: number[] }[] {
+  return [...midi, { at: frames(SR, 17) + 5, bytes: [0x93, 48, 100] }, { at: frames(SR, 317) + 3, bytes: [0x83, 48, 0] }].sort((a, b) => a.at - b.at);
+}
 
 /** One system under `mode`. */
 export function single(
