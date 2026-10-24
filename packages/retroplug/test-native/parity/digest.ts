@@ -53,6 +53,7 @@ export function laneDigest(lane: Float32Array, from: number, to: number): string
   return `${hex8(fnv1a(bytes))} ${rms4(lane, from, to)}`;
 }
 
+// Encoding: per message (block, slot, frame, data length) as little-endian u32, then the data bytes; FNV-1a over all.
 export function midiDigest(entries: MidiOutEntry[]): { count: number; fnv: string } {
   let h = FNV_OFFSET;
   const word = new Uint8Array(4);
@@ -67,14 +68,16 @@ export function midiDigest(entries: MidiOutEntry[]): { count: number; fnv: strin
   return { count: entries.length, fnv: hex8(h) };
 }
 
+// Encoding: the length, plus FNV-1a over the bytes.
 export function bytesDigest(bytes: Uint8Array): { length: number; fnv: string } {
   return { length: bytes.length, fnv: hex8(fnv1a(bytes)) };
 }
 
 /** Is `lane` audible in the case after its first segment? The first is where systems boot, and a boot
- *  chime is not what a case means by "this lane sounds". A one-segment case is judged on that segment. */
+ *  chime is not what a case means by "this lane sounds". Only the segments after it are judged, with no
+ *  fallback: a case whose only segment is the boot has nothing to judge, so no lane sounds in it. */
 export function laneSounds(d: CaseDigest, lane: number): boolean {
-  const judged = d.segments.length > 1 ? d.segments.slice(1) : d.segments;
+  const judged = d.segments.slice(1);
   return judged.some((s) => s.lanes[lane] !== undefined && !s.lanes[lane].endsWith(" 0"));
 }
 
@@ -95,7 +98,7 @@ export function compareDigests(expected: CaseDigest, actual: CaseDigest, opts: {
         `got ${actual.midiOut.count} hashing ${actual.midiOut.fnv}`,
     );
   for (const [label, key] of [["SRAM", "sram"], ["work RAM", "ram"]] as const) {
-    const slots = [...new Set([...Object.keys(expected[key]), ...Object.keys(actual[key])])].sort();
+    const slots = [...new Set([...Object.keys(expected[key]), ...Object.keys(actual[key])])].sort((a, b) => Number(a) - Number(b));
     for (const slot of slots) {
       const e = expected[key][slot];
       const a = actual[key][slot];
@@ -118,17 +121,22 @@ export function compareAudio(expected: CaseDigest, actual: CaseDigest): string[]
     if (e.frames !== a.frames || e.lanes.length !== a.lanes.length)
       return [`segment ${s}: expected ${e.frames} frames x ${e.lanes.length} lanes, got ${a.frames} x ${a.lanes.length}`];
     for (let l = 0; l < e.lanes.length; l++)
-      if (e.lanes[l] !== a.lanes[l])
+      if (e.lanes[l].split(" ")[0] !== a.lanes[l].split(" ")[0]) {
+        const silent = e.lanes[l].split(" ")[1] === "0" && a.lanes[l].split(" ")[1] === "0";
         return [
           `segment ${s} (frames ${start}..${start + e.frames}), lane ${l}: ` +
-            `expected ${describe(e.lanes[l])}, got ${describe(a.lanes[l])}`,
+            `expected ${describe(e.lanes[l])}, got ${describe(a.lanes[l])}` +
+            (silent ? " (both silent: the sign of zero or a NaN payload differs)" : ""),
         ];
+      }
     start += e.frames;
   }
   return [];
 }
 
-/** JSON with every object's keys sorted, one value per line: a re-record diffs line by line. */
+/** JSON with every object's keys sorted, one value per line: a re-record diffs line by line. Integer-like
+ *  keys (the slot keys) come out in numeric order ahead of the rest, as the language orders them; the
+ *  result is still deterministic. */
 export function stableJson(v: unknown): string {
   const sort = (x: unknown): unknown =>
     Array.isArray(x)
