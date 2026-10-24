@@ -136,8 +136,9 @@ fails first, before anything is recorded:
    roles fold their overrides into the ROM in memory at construct time, so a duplicate booted the
    unpatched base ROM under a savestate captured from the patched one. It now runs the hooks, as
    `rebuildInPlace` does (the LSDj seed hook leaves a savestate-seeded spec alone).
-3. **SMS truncated host blocks longer than about 4600 frames.** Its per-block instruction backstop was a
-   flat 80000, which an 8192-frame block of dense code exceeds (Reaper renders at a JACK period of 8192),
+3. **SMS truncated long host blocks.** Its per-block instruction backstop was a flat 80000, which about
+   3900 to 4300 frames of the densest code (4-T-state instructions) reach at 44.1 / 48 kHz, so 4096-frame
+   DAW buffers could already be cut short, and an 8192-frame block of dense code always was (Reaper renders at a JACK period of 8192),
    so the core fell behind the host clock and each block's tail was blank; smsggdj booted in 8192-frame
    blocks never started its song. The budget is now derived from the block, as `MesenNesSystem`'s is.
    Found by the matrix's silence guard; covered by a new Catch2 case on a NOP-spin ROM.

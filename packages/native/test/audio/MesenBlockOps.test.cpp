@@ -5,9 +5,10 @@
 // so a ring that came up short left the tail of the block holding the PREVIOUS block's samples, and the
 // loop summed those into the output. A stale echo where the caller expects silence.
 //
-// Reachable today only on SMS, whose step loop can give up at kInstructionBudget; NES and GBA loop until
-// the ring is full. It becomes reachable on both the moment they gain a bound, which is where this
-// refactor is going - hence pinning it now, directly, rather than hoping a core test wanders into it.
+// A backstop-only path on SMS and NES: their step loops run until the ring is full and give up only at
+// smsInstructionBudget / nesInstructionBudget, both derived from the block with ~8x slack over the shortest
+// instruction (GBA's loop is bounded by a video-frame count instead). Hence pinning it directly, rather
+// than hoping a core test wanders into it.
 
 #include <cstdint>
 #include <vector>

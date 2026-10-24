@@ -27,6 +27,7 @@
 //
 // Run via `pnpm test:plugin`.
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -505,7 +506,7 @@ TEST_CASE("SMS renders a whole 8192-frame block of the densest code", "[sms]") {
     // 8192 is a DAW buffer too (Reaper renders at a JACK period of 8192). A flat 80000-instruction
     // backstop covered a 512-frame block ten times over but cut an 8192-frame block of NOPs short, so the
     // core fell behind the host clock and each block's tail came out blank.
-    auto build = [](SystemId id) {
+    auto buildNop = [](SystemId id) {
         MesenSmsConfig cfg;
         cfg.gameGear = false;
         cfg.enableFm = false;
@@ -516,15 +517,19 @@ TEST_CASE("SMS renders a whole 8192-frame block of the densest code", "[sms]") {
     };
     std::vector<float> reference, got;
     {
-        auto sys = build(500);
+        auto sys = buildNop(500);
         REQUIRE(sys->activated());
         runInto(*sys, 1024, 32, reference);
     }
     {
-        auto sys = build(501);
+        auto sys = buildNop(501);
         REQUIRE(sys->activated());
         runInto(*sys, 8192, 4, got);
     }
+    float refPeak = 0.0f;
+    for (float v : reference) refPeak = std::max(refPeak, std::abs(v));
+    INFO("refPeak = " << refPeak);
+    REQUIRE(refPeak > 0.01f);   // two silent streams must not pass
     REQUIRE(got.size() == reference.size());
     std::size_t firstDiff = SIZE_MAX;
     for (std::size_t i = 0; i < got.size(); ++i) {

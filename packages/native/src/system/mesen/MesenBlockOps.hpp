@@ -18,9 +18,9 @@
  *  and summed those into the output: a stale echo rather than the silence the caller expects. Zeroing the
  *  unfilled tail is the whole fix, and it only costs anything in the case that was broken.
  *
- *  Reachable today only on SMS, which is the one core whose step loop can give up before the target
- *  (kInstructionBudget); NES and GBA loop until the ring is full. It becomes reachable on those two the
- *  moment they gain a bound, which is exactly what this refactor is heading towards. */
+ *  A short ring is a backstop-only path on SMS and NES: their step loops loop until the ring is full and
+ *  give up only at smsInstructionBudget / nesInstructionBudget, both derived from the block with ~8x slack
+ *  over the shortest instruction. GBA's loop is bounded by a video-frame count instead. */
 inline void sumStereoWithGain(MesenAudioDevice& device,
                               std::vector<float>& scratch,
                               float* const*       outs,

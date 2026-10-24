@@ -118,6 +118,7 @@ Three phases, not two. Unlike NES it separates **stepping cadence** (per instruc
 // and under SmsPsg's own 20000-T auto-flush so the cadence stays host-owned.
 static constexpr std::uint64_t kCoarseCycles = 19088;
 static constexpr std::uint64_t kInstructionBudget = 80000;   // RT-thread backstop, see H7
+// NOTE: now derived per block (smsInstructionBudget); the flat cap truncated long host blocks.
 
 void MesenSmsSystem::prepareForBlock(const AudioBlockInfo& info) {
     // ... device / thread-id boilerplate as MesenNesSystem::prepareForBlock ...
@@ -140,7 +141,7 @@ bool MesenSmsSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
     // Degenerate 1-member unit: run the whole block and report done (false), matching
     // MesenNesSystem. If SMS ever gains a link group, invert to one Exec per call so
     // BlockRunner's round-robin at BlockRunner.cpp:40-44 can interleave members.
-    std::uint64_t budget = kInstructionBudget;
+    std::uint64_t budget = kInstructionBudget;   // now smsInstructionBudget(...), derived per block
     while (audioDevice_->availableFrames() < framesNeeded && budget-- > 0) {
         // Intra-block sample position from the EMULATED CLOCK, not the ring depth.
         // The ring lags by up to one flush; the cycle counter never does. This is
@@ -402,7 +403,7 @@ coarse 256smp + predictive tail    maxAbs=530  rmsErr=21.9
 
 **H6 - savestate divergence (cosmetic but confusing).** The Exec-driven path and `RunFrame` produce byte-identical *audio* but differ in exactly one savestate field: `SmsFmAudio::_prevMasterClock`, lagging by one instruction (12-13 T) when the final flush emitted 0 samples so `MixAudio` did not run. Proven to be the only divergence. *Handled:* assert audio equality, never savestate equality across stepping models.
 
-**H7 - unbounded `while` on the RT thread.** GBA's loop (`MesenGbaSystem.cpp:262-264`) has no cap and no `audioRunning` guard. *Handled:* the `budget` counter. At ~1000 instructions per 64 samples, a 512-frame block is ~8000 instructions; a budget of ~10x that is a safe backstop.
+**H7 - unbounded `while` on the RT thread.** GBA's loop (`MesenGbaSystem.cpp:262-264`) has no cap and no `audioRunning` guard. *Handled:* the `budget` counter. At ~1000 instructions per 64 samples, a 512-frame block is ~8000 instructions; a budget of ~10x that is a safe backstop. (Superseded: the budget is now derived per block, `smsInstructionBudget`, because the flat cap truncated long host blocks.)
 
 **H11 - a coarse window wider than the block starves the step loop entirely, and no analysis in this
 document predicted it.** Found by measuring the shipped loop rather than reasoning about it. The
