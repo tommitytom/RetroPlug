@@ -116,10 +116,11 @@ public:
     void fileDropped(const std::string& pathsNewlineJoined, std::int32_t x, std::int32_t y);
 
     // Called by the __rp_tagTestId JS trampoline (UI ref hook).
-    void recordTestId(const std::string& name, lv_obj_t* obj) { testIds_[name] = obj; }
+    void recordTestId(const std::string& name, lv_obj_t* obj);
 
 private:
     void installTestIdHook();  // adds globalThis.__rp_tagTestId
+    static void onTaggedDelete(lv_event_t* e);  // drops a deleted widget's testIds
 
     std::uint32_t width_;
     std::uint32_t height_;

@@ -261,6 +261,23 @@ lv_obj_t* RenderCore::findByTextContaining(const std::string& substr) const {
     return nullptr;
 }
 
+// A tag must die with its widget. findByTestId only checks that the recorded POINTER is in the live tree, and
+// LVGL hands a freed object's memory to the next widget it creates - so an unmounted tile's id answered for
+// whatever reused the address (on Windows' heap: the start menu's 1px separator, and new-project-guard failed).
+// Re-tagging the same widget replaces its callback rather than stacking another.
+void RenderCore::recordTestId(const std::string& name, lv_obj_t* obj) {
+    testIds_[name] = obj;
+    lv_obj_remove_event_cb_with_user_data(obj, onTaggedDelete, this);
+    lv_obj_add_event_cb(obj, onTaggedDelete, LV_EVENT_DELETE, this);
+}
+
+void RenderCore::onTaggedDelete(lv_event_t* e) {
+    auto*     self = static_cast<RenderCore*>(lv_event_get_user_data(e));
+    lv_obj_t* obj  = lv_event_get_target_obj(e);
+    // Only the entries still naming THIS object: the id may already have moved to a remounted widget.
+    std::erase_if(self->testIds_, [obj](const auto& kv) { return kv.second == obj; });
+}
+
 lv_obj_t* RenderCore::findByTestId(const std::string& name) const {
     auto it = testIds_.find(name);
     if (it == testIds_.end()) return nullptr;
