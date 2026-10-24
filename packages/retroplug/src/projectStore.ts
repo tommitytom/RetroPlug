@@ -442,7 +442,11 @@ export class ProjectStore {
     return this.setEnumSetting("layout", v);
   }
   setMidiRouting(v: MidiRouting): boolean {
-    return this.setEnumSetting("midiRouting", v);
+    if (!this.setEnumSetting("midiRouting", v)) return false;
+    // The kernel's midi-routing role is synthesized from this setting at projection time, so re-project:
+    // otherwise the audio thread keeps routing by the old mode until an unrelated structural edit.
+    this.onSystemsChange();
+    return true;
   }
   setAudioRouting(v: AudioRouting): boolean {
     if (!this.setEnumSetting("audioRouting", v)) return false;

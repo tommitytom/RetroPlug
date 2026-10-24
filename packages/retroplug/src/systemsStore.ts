@@ -270,7 +270,9 @@ export class SystemsStore {
     const savPath = src.embeddedRom ? null : resolveSavPath(src.romPath, suffix, "");
     const systemRole = src.roles.find((r) => r.kind === src.core);
     const newId = allocSystemId();
-    const ok = this.backend.constructSystem({
+    // Through the load-time role hooks, as rebuildInPlace is: the savestate was captured running the
+    // EFFECTIVE ROM (e.g. with asset overrides folded in), so the clone has to boot that image too.
+    const spec = this.applyConstructHooks({
       romPath: src.romPath,
       platform: src.platform,
       core: src.core,
@@ -279,7 +281,8 @@ export class SystemsStore {
       statePath: null,
       stateBytes: state,
       settings: systemRole ? JSON.stringify(roleConfigForNative(systemRole.kind, systemRole.config)) : undefined,
-    }, newId);
+    }, src.roles);
+    const ok = this.backend.constructSystem(spec, newId);
     if (!ok) {
       console.warn(`[systems] duplicateSystem(${id}) failed (construct returned false) — no instance added`);
       return null;

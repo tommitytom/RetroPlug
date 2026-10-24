@@ -281,3 +281,20 @@ test("Remove Override reverts the next construct to the base ROM (no romBytes)",
   store.reloadSystem(id2);
   expect(be.constructCalls[be.constructCalls.length - 1].romBytes).toBe(undefined);
 });
+
+test("Duplicate boots the clone from the patched ROM, not the base one", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/synth.nes", blipToasterRom());
+  const id = store.addSystem("/roms/synth.nes")!;
+  store.setRoleConfig(id, "bliptoaster-assets", { settings: { theme: 11 } });
+  const src = store.reloadSystem(id)!;
+  expect(constructedSettings(be)!.theme).toBe(11);
+
+  // The clone boots from the source's savestate, which was captured running the PATCHED ROM; booting it
+  // under the base image would run that state against code and data it was never captured with.
+  const dup = store.duplicateSystem(src);
+  expect(dup).toBeTruthy();
+  const call = be.constructCalls[be.constructCalls.length - 1];
+  expect(call.stateBytes != null).toBeTruthy();
+  expect(constructedSettings(be)!.theme).toBe(11);
+});
