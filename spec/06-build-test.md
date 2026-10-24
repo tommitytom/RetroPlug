@@ -147,7 +147,9 @@ modular graph engine is held to ([docs/modular-graph-phase-b0-design.md](../docs
   lanes are silent after its first (boot) segment; and for a case whose MIDI, controller traffic and
   transport change nothing (a stimulus sent before a cart finished booting records only the boot).
   The alone-run child gets its own config dir, so it shares no disk state with the run being checked.
-  `RP_PARITY_DUMP=<dir>` writes a failing case's lanes as float WAVs and its MIDI out as JSON. An
+  `RP_PARITY_DUMP=<dir>` writes every case a check runs, passing or failing, to `<dir>/<group>/<case>/`:
+  its lanes as float WAVs and its MIDI out as JSON, so the same run at an older commit (where the case still
+  passes) gives the files to compare against. An
   intentional audio change re-records the groups it moves in the same commit, and that diff is the record
   of what moved.
 - **Recorded defects.** The baseline pins four engine defects on purpose; fixing each is its own change

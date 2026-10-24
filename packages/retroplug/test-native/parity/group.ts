@@ -4,7 +4,9 @@
 //   RP_PARITY_UPDATE=1     record instead of compare (only on PARITY_TARGET; one there over a baseline
 //                          recorded elsewhere re-labels it, which must be unfiltered with no case skipped)
 //   RP_PARITY_ONLY=<case>  run just that case
-//   RP_PARITY_DUMP=<dir>   on a mismatch, write the case's lanes as float WAVs and its MIDI out as JSON
+//   RP_PARITY_DUMP=<dir>   write every case a check runs (passing or not) to <dir>/<group>/<case>/: its lanes
+//                          as float WAVs and its MIDI out as JSON, so a run at an older commit, where the case
+//                          still passes, writes the same files to compare against
 //   RP_PARITY_REQUIRE_TARGET=1  in check mode, fail every case when this host is not the baseline's target
 //                          (CI's target job sets it, so exact audio checking cannot silently fade out)
 //   RP_PARITY_EMIT=<file>  internal: the child a recording spawns to run one case alone writes its digest here
@@ -135,7 +137,6 @@ function floatWav(lane: Float32Array, sampleRate: number): Uint8Array {
 
 function dump(rig: Rig, group: string, c: ParityCase, lanes: Float32Array[][], midi: MidiOutEntry[]): string {
   const dir = `${DUMP}/${group}/${c.name}`;
-  const backend = rig.session.backend;
   const outputs = lanes[0]?.length ?? 0;
   for (let l = 0; l < outputs; l++) {
     const whole = new Float32Array(lanes.reduce((n, seg) => n + seg[l].length, 0));
@@ -144,9 +145,9 @@ function dump(rig: Rig, group: string, c: ParityCase, lanes: Float32Array[][], m
       whole.set(seg[l], at);
       at += seg[l].length;
     }
-    backend.writeFile(`${dir}/lane${l}.wav`, floatWav(whole, c.sampleRate ?? 48000));
+    rig.writeFile(`${dir}/lane${l}.wav`, floatWav(whole, c.sampleRate ?? 48000));
   }
-  backend.writeFile(`${dir}/midi-out.json`, bytes(stableJson(midi.map((m) => ({ ...m, data: Array.from(m.data) })))));
+  rig.writeFile(`${dir}/midi-out.json`, bytes(stableJson(midi.map((m) => ({ ...m, data: Array.from(m.data) })))));
   return dir;
 }
 
@@ -285,13 +286,14 @@ export function runGroup(group: string, cases: ParityCase[]): void {
         const expected = baseline?.cases[c.name];
         if (!expected) throw new Error(`no baseline entry: record it with RP_PARITY_UPDATE=1 pnpm test:native parity/${group}`);
         const run = runCase(rig, c, DUMP !== "");
+        const dumped = DUMP ? dump(rig, group, c, run.lanes, run.midi) : "";
         const problems = onTarget ? compareDigests(expected, run.digest, { audio: true }) : [];
         if (!onTarget) {
           problems.push(...compareDigests(expected, run.digest, { audio: false }));
           problems.push(...compareAudio(run.digest, runCase(rig, c, false).digest).map((p) => `not deterministic here: ${p}`));
         }
         if (problems.length) {
-          const where = DUMP ? `\nlanes and MIDI out written to ${dump(rig, group, c, run.lanes, run.midi)}` : "";
+          const where = dumped ? `\nlanes and MIDI out written to ${dumped}` : "";
           throw new Error(problems.join("\n") + where);
         }
       } catch (e) {

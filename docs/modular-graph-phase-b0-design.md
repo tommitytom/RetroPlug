@@ -284,8 +284,10 @@ are dropped on an unfiltered recording, and an unfiltered check fails while any 
 ### 5.4 Failure reports
 
 One failing `test()` per case, naming the first segment and lane that differ with the expected and actual
-hash and RMS, plus the MIDI, SRAM and work-RAM verdicts. With `RP_PARITY_DUMP=<dir>` the case's lanes are
-also written as 32-bit float WAVs and its MIDI out as JSON, for comparison against a run at an older commit.
+hash and RMS, plus the MIDI, SRAM and work-RAM verdicts. With `RP_PARITY_DUMP=<dir>` every case a check
+runs, passing or failing, writes its lanes as 32-bit float WAVs and its MIDI out as JSON to
+`<dir>/<group>/<case>/` (a failure names the path). Passing cases are written too because that is what the
+comparison needs: a run at an older commit, where the case still passes, writes the same files.
 
 ## 6. Proving the harness
 
