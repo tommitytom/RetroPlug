@@ -138,13 +138,15 @@ function floatWav(lane: Float32Array, sampleRate: number): Uint8Array {
 
 function dump(rig: Rig, group: string, c: ParityCase, lanes: Float32Array[][], midi: MidiOutEntry[]): string {
   const dir = `${DUMP}/${group}/${c.name}`;
-  const outputs = lanes[0]?.length ?? 0;
+  const outputs = lanes.reduce((n, seg) => Math.max(n, seg.length), 0);
   for (let l = 0; l < outputs; l++) {
-    const whole = new Float32Array(lanes.reduce((n, seg) => n + seg[l].length, 0));
+    // A segment with fewer lanes than the widest contributes silence of its own length to the missing ones.
+    const lenOf = (seg: Float32Array[]): number => seg[l]?.length ?? seg[0]?.length ?? 0;
+    const whole = new Float32Array(lanes.reduce((n, seg) => n + lenOf(seg), 0));
     let at = 0;
     for (const seg of lanes) {
-      whole.set(seg[l], at);
-      at += seg[l].length;
+      if (seg[l]) whole.set(seg[l], at);
+      at += lenOf(seg);
     }
     rig.writeFile(`${dir}/lane${l}.wav`, floatWav(whole, c.sampleRate ?? 48000));
   }

@@ -72,6 +72,43 @@
    ],
    "sram": {}
   },
+  "perChannel-nes-individualMono-role": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "b2d98f2b",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "a79a21c5 0",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "36edabd6 0.3048",
+      "e89205c5 0",
+      "fb3959c6 0.3043",
+      "e89205c5 0",
+      "25f0a10e 0.2349",
+      "e89205c5 0",
+      "3c76ff13 0.2477",
+      "e89205c5 0",
+      "e89205c5 0",
+      "e89205c5 0"
+     ]
+    }
+   ],
+   "sram": {}
+  },
   "perChannel-nes-mix": {
    "midiOut": {
     "count": 0,
@@ -163,6 +200,39 @@
       "e89205c5 0",
       "e89205c5 0",
       "2eb37cb1 0.1151",
+      "e89205c5 0"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "perChannel-nes-stereoModPins-role": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "b2d98f2b",
+     "length": 2048
+    }
+   },
+   "segments": [
+    {
+     "frames": 72000,
+     "lanes": [
+      "a79a21c5 0",
+      "a79a21c5 0"
+     ]
+    },
+    {
+     "frames": 28800,
+     "lanes": [
+      "58ab85a8 0.07686",
+      "e89205c5 0",
+      "3f56b316 0.08540",
+      "e89205c5 0",
+      "e89205c5 0",
       "e89205c5 0"
      ]
     }

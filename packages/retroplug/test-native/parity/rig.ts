@@ -1,13 +1,17 @@
 // The parity rig: the app's own control plane (bootSession, the boot path the CLI and the render worker
 // share), reset to a known state before each case, and a render call that plays a segment through
-// renderBlocks. Cases drive it through the stores, as the UI does, so a case survives Phase B: B2 deletes
-// the backend calls the stores make today, not the stores. With bootSession, this is the one file B2 and
-// B3 edit (render-blocks.test.ts aside: it tests renderBlocks itself through direct backend calls).
+// renderBlocks or, for a shape segment, through renderAudioPerSystem / renderAudioPerChannel. Cases drive
+// it through the stores, as the UI does, so a case survives Phase B: B2 deletes the backend calls the
+// stores make today, not the stores. With bootSession, this is the one file B2 and B3 edit (render-blocks.test.ts
+// aside: it tests renderBlocks itself through direct backend calls).
 import { bootSession, type Session } from "../../src/bootSession";
 import type { RenderBlock } from "../../src/audioDriver";
 import { laneDigest, type MidiOutEntry, type SegmentDigest } from "./digest";
 
 declare const __DSP_KERNEL_BUNDLE__: string;
+
+/** EngineRpcService's kBlockSize: the block the shape render calls use. */
+const SHAPE_BLOCK = 1024;
 
 /** One run of host blocks. Events are placed by ABSOLUTE frame within the segment and land in the block
  *  that contains them; transport changes apply at the start of the block containing their frame. */
@@ -22,8 +26,8 @@ export interface Segment {
   /** Render through renderAudioPerSystem (`perSystem`) or renderAudioPerChannel (`perChannel`, the system in
    *  that project slot) instead of renderBlocks: `ms` of audio in those calls' own 1024-frame blocks, two
    *  lanes (L, R) per system or per stream. `blocks` must be empty, and the segment's MIDI is staged first,
-   *  all of it at frame 0 through stageMidiIn, as the render library stages it. No controller traffic or
-   *  transport. These are the output shapes renderBlocks does not reach. */
+   *  all of it at frame 0 through stageMidiIn, as the CLI timeline stages it between renderAudio calls. No
+   *  controller traffic or transport. These are the output shapes renderBlocks does not reach. */
   shape?: { perSystem: true; ms: number } | { perChannel: number; ms: number };
 }
 
@@ -182,13 +186,18 @@ export class Rig {
   private renderShape(seg: Segment, shape: NonNullable<Segment["shape"]>): { digest: SegmentDigest; midiOut: MidiOutEntry[]; lanes: Float32Array[] } {
     if (seg.blocks.length || seg.controller?.length || seg.transport?.length)
       throw new Error("a shape segment renders its own blocks and takes no controller traffic or transport");
-    for (const m of [...(seg.midi ?? [])].sort((x, y) => x.at - y.at))
-      if (!this.audio.stageMidiIn(m.bytes)) throw new Error(`stageMidiIn refused ${m.bytes}`);
+    if (!(shape.ms > 0)) throw new Error(`a shape segment needs ms > 0, got ${shape.ms}`);
+    if (this.audio.systemCount() === 0) throw new Error("a shape segment needs at least one system");
+    const perChannelId = "perChannel" in shape ? this.id(shape.perChannel) : -1;
+    if ("perChannel" in shape && this.audio.systemCount() !== 1) throw new Error("perChannel needs exactly one system");
+    const midi = [...(seg.midi ?? [])].sort((x, y) => x.at - y.at);
+    for (const m of midi) if (m.at !== 0) throw new Error(`a shape segment stages all its MIDI at frame 0, got an event at ${m.at}`);
+    for (const m of midi) if (!this.audio.stageMidiIn(m.bytes)) throw new Error(`stageMidiIn refused ${m.bytes}`);
     this.project.systems.view().forEach((v, i) => this.slots.set(v.id, i));
     // The frame count the render call computes, by the same double arithmetic (EngineRpcService.cpp).
     const total = Math.floor((shape.ms * this.sampleRate) / 1000);
-    const interleaved = "perSystem" in shape ? this.audio.renderAudioPerSystem(shape.ms) : this.audio.renderAudioPerChannel(this.id(shape.perChannel), shape.ms);
-    if (!interleaved.length) throw new Error("the render call returned nothing (no systems, or not exactly one for perChannel)");
+    const interleaved = "perSystem" in shape ? this.audio.renderAudioPerSystem(shape.ms) : this.audio.renderAudioPerChannel(perChannelId, shape.ms);
+    if (!interleaved.length) throw new Error("the render call returned nothing (the audio thread owns the engine)");
     const lanes: Float32Array[] = [];
     for (const buf of interleaved) {
       if (buf.length !== total * 2) throw new Error(`a render returned ${buf.length / 2} frames, expected ${total}`);
@@ -201,8 +210,10 @@ export class Rig {
       lanes.push(l, r);
     }
     // These calls hand back their MIDI out without block indices: it is all tagged with the segment's first.
+    // So a shape segment's MIDI out records ORDER only: a message that moved by a whole block at the same
+    // in-block frame would hash the same.
     const midiOut = this.audio.drainMidiOut().map((m) => ({ block: this.blockBase, slot: this.slots.get(m.system) ?? -1, frame: m.frame, data: m.data }));
-    this.blockBase += Math.ceil(total / 1024);
+    this.blockBase += Math.ceil(total / SHAPE_BLOCK);
     return { digest: { frames: total, lanes: lanes.map((l) => laneDigest(l, 0, total)) }, midiOut, lanes };
   }
 }

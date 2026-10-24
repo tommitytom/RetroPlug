@@ -1,10 +1,11 @@
-// The two output shapes renderBlocks does not reach: renderAudioPerSystem (each system on its own pair) and
-// renderAudioPerChannel (one system's streams, a pair each), which the render library's exports use. Each
-// case boots through renderBlocks, then renders one shape segment with held notes staged at frame 0.
+// The two output shapes renderBlocks does not reach: renderAudioPerSystem (each system on its own pair; the
+// CLI analyze session and the SDK use it) and renderAudioPerChannel (one system's streams, a pair each; the
+// render library's exports use it). Each case boots through renderBlocks, then renders one shape segment
+// with held notes staged at frame 0.
 import { runGroup, type ParityCase } from "./group";
 import { even, type Rig } from "./rig";
 import { BOOT_MS, frames, mgb, mgbFile, ROMS } from "./scenes";
-import type { AudioRouting } from "../../src/settingsEnums";
+import type { AudioRouting, ChannelExportMode } from "../../src/settingsEnums";
 
 const SR = 48000;
 const boot = { blocks: even(frames(SR, BOOT_MS), 512) };
@@ -20,6 +21,12 @@ function perChannel(name: string, audible: number[], setup: (rig: Rig) => void):
 const nesUnder = (mode: AudioRouting) => (rig: Rig) => {
   rig.add(ROMS.bliptoaster);
   rig.project.setAudioRouting(mode);
+};
+
+const roleMode = (mode: ChannelExportMode) => (rig: Rig) => {
+  const id = rig.add(ROMS.bliptoaster);
+  if (!rig.project.systems.setRoleConfig(id, "mesen", { channelExportMode: mode })) throw new Error(`setRoleConfig refused ${mode}`);
+  if (rig.project.systems.reloadSystem(id) == null) throw new Error("the reload did not build");
 };
 
 const cases: ParityCase[] = [
@@ -56,12 +63,11 @@ const cases: ParityCase[] = [
   perChannel("perChannel-nes-pins", [0, 2], nesUnder("pinSplit")),
   // ChannelSplit arms mode 3: the five core channels, mono (DMC silent: nothing plays a sample).
   perChannel("perChannel-nes-channels", [0, 2, 4, 6], nesUnder("channelSplit")),
-  // Mode 2 (pins plus the reference mix) is a build-time choice: the mesen role, then a reload builds it.
-  perChannel("perChannel-nes-pinsPlusRef", [0, 2, 6], (rig) => {
-    const id = rig.add(ROMS.bliptoaster);
-    rig.project.systems.setRoleConfig(id, "mesen", { channelExportMode: "pinsPlusRef" });
-    if (rig.project.systems.reloadSystem(id) == null) throw new Error("the reload did not build");
-  }),
+  // Mode 2 (pins plus the reference mix) is the one routing cannot reach; the mesen role builds any mode, as
+  // the render library and the CLI export sessions do: arm at build time, default Stereo routing.
+  perChannel("perChannel-nes-pinsPlusRef", [0, 2, 6], roleMode("pinsPlusRef")),
+  perChannel("perChannel-nes-stereoModPins-role", [0, 2], roleMode("stereoModPins")),
+  perChannel("perChannel-nes-individualMono-role", [0, 2, 4, 6], roleMode("individualMono")),
 ];
 
 runGroup("render-shapes", cases);
