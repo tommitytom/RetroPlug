@@ -266,6 +266,7 @@ void QueuedInvoker::freePending() {
             case DspCommand::Kind::LoadKernel:    delete cmd.loadKernel.bytecode; break;
             case DspCommand::Kind::WriteRam:      delete cmd.writeRam.bytes; break;
             case DspCommand::Kind::StageMidi:     delete cmd.stageMidi.ext; break;  // null for an inline message
+            case DspCommand::Kind::StageSystemMidi: delete cmd.stageSystemMidi.ext; break;  // likewise
             case DspCommand::Kind::AddSystem:     // built but never adopted → free its slot too
                 if (registry_) registry_->release(cmd.addSystem.sys->id());
                 delete cmd.addSystem.sys; break;
