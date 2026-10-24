@@ -241,7 +241,8 @@ bool EngineRpcService::stageSystemMidi(std::uint32_t id, std::vector<std::uint8_
 }
 
 rfl::Bytestring EngineRpcService::renderAudio(double ms) {
-    if (ms <= 0.0) return {};
+    // This thread calls processBlock itself, which only the Engine's owning thread may do.
+    if (ms <= 0.0 || invoker_.audioThreadOwns()) return {};
     scratchL_.resize(kBlockSize);  // idempotent — no per-call realloc after the first
     scratchR_.resize(kBlockSize);
 
@@ -266,7 +267,7 @@ rfl::Bytestring EngineRpcService::renderAudio(double ms) {
 std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerSystem(double ms) {
     const std::size_t n = engine_.systemCount();
     std::vector<rfl::Bytestring> result;
-    if (ms <= 0.0 || n == 0) return result;
+    if (ms <= 0.0 || n == 0 || invoker_.audioThreadOwns()) return result;  // as renderAudio
 
     // One persistent L/R block buffer per system; the Engine routes each core into its own pair
     // (PerSystemRouter) so linked systems interleave exactly as they do in the mixed path.
@@ -302,6 +303,7 @@ std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerSystem(double ms) {
 
 std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerChannel(std::uint32_t id, double ms) {
     std::vector<rfl::Bytestring> result;
+    if (invoker_.audioThreadOwns()) return result;  // as renderAudio
     // Single-system only: PerChannelRouter fans by stream index, not slot, so a second system's streams
     // would collide into these buffers. The mixed/per-system paths are the multi-system routes.
     if (ms <= 0.0 || engine_.systemCount() != 1) return result;
