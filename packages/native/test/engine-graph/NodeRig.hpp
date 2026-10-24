@@ -33,11 +33,12 @@ inline std::vector<std::uint8_t> readFile(const char* path) {
 struct NodeRig {
     rp::graph::NodeRegistry                              registry;
     rp::graph::ResourceTable                             resources;
-    std::unique_ptr<rp::graph::GraphHost>                host;
     std::map<std::uint64_t, std::unique_ptr<SystemBase>> parked;
     std::uint64_t                                        nextToken = 1;
     std::vector<SystemId>                                released;  // ids whose node freed its core
     HostCores                                            cores{this, &take, &release};
+    // Last, so it is destroyed first: its nodes free their cores through `cores` into `released`.
+    std::unique_ptr<rp::graph::GraphHost>                host;
 
     explicit NodeRig(double sampleRate) {
         for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), sameboyPackage(), mesenPackage()})
