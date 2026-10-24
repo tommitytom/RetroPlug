@@ -32,6 +32,7 @@ private:
 
 public:
 	SmsPsg(Emulator* emu, SmsConsole* console);
+	~SmsPsg();
 
 	SmsPsgState& GetState() { return _state; }
 

@@ -28,6 +28,15 @@ SmsPsg::SmsPsg(Emulator* emu, SmsConsole* console)
 	blip_set_rates(_rightChannel, _console->GetMasterClockRate(), SmsPsg::SampleRate);
 }
 
+SmsPsg::~SmsPsg()
+{
+	delete[] _soundBuffer;
+	_soundBuffer = nullptr;
+
+	blip_delete(_leftChannel);
+	blip_delete(_rightChannel);
+}
+
 void SmsPsg::SetRegion(ConsoleRegion region)
 {
 	blip_clear(_leftChannel);
