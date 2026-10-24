@@ -56,10 +56,18 @@ constexpr std::uint64_t kCoarseCycles = 19088;
 // by a whole coarse window.
 constexpr std::uint32_t kFineSamples = 64;
 
-// Backstop for the audio thread. MesenGbaSystem's loop has no cap at all; a
-// ROM that stops producing audio would spin it forever. ~8000 instructions
-// covers a 512-frame block, so this is ~10x headroom.
-constexpr std::uint64_t kInstructionBudget = 80000;
+// Backstop for the audio thread: the most instructions one block may execute.
+// MesenGbaSystem's loop has no cap at all; a ROM that stops producing audio
+// would spin it forever. DERIVED from the block, as MesenNesSystem's is: a flat
+// 80000 covered a 512-frame block ten times over but cut an 8192-frame block
+// short (a DAW buffer, and Reaper's render at a JACK period of 8192), so the core
+// fell behind the host clock and the tail of every block came out blank.
+// framesNeeded/sampleRate seconds is that many T-states at masterRate; a Z80
+// instruction is at least 4 of them; x8 is the slack.
+std::uint64_t smsInstructionBudget(std::uint32_t framesNeeded, std::uint64_t masterRate, double sampleRate) {
+    const double cycles = double(framesNeeded) * double(masterRate) / (sampleRate > 0.0 ? sampleRate : 44100.0);
+    return static_cast<std::uint64_t>(cycles * 2.0) + 1024;
+}
 
 // Mesen's SmsConfig defaults are the .NET UI's problem, not the core's, so a
 // headless host inherits several zero-values that are silently wrong. Every
@@ -470,7 +478,7 @@ bool MesenSmsSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
         (static_cast<std::uint64_t>(framesNeeded) * masterRate_) /
             static_cast<std::uint64_t>(sampleRate_ > 0.0 ? sampleRate_ : 1.0));
 
-    std::uint64_t budget = kInstructionBudget;
+    std::uint64_t budget = smsInstructionBudget(framesNeeded, masterRate_, sampleRate_);
     while (audioDevice_->availableFrames() < framesNeeded && budget-- > 0) {
         // Release any sync level whose offset the emulated clock has reached, BEFORE the instruction
         // retires, so a level scheduled for sample N is on the port for the very next IN.

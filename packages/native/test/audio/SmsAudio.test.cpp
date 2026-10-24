@@ -102,6 +102,17 @@ std::vector<std::uint8_t> psgToneRom() {
     return rom;
 }
 
+// The tone ROM again, but spinning on NOPs. A Z80 instruction can be as short as 4 T-states, so this is
+// the densest code a block can hold, and the step loop's per-block instruction backstop has to cover a
+// whole block of it.
+std::vector<std::uint8_t> psgToneNopRom() {
+    std::vector<std::uint8_t> rom = psgToneRom();
+    for (int i = 12; i < 28; ++i) rom[i] = 0x00;  // 16 NOPs over the `jr -2` spin
+    rom[28] = 0x18;                               // jr -18: back to the first NOP
+    rom[29] = 0xEE;
+    return rom;
+}
+
 // A 32 KB ROM that copies both controller ports into work RAM forever, so a test can see exactly
 // what the emulated CPU sees. $C000 <- port $DC (pad bits), $C001 <- port $DD (TR/TL/TH, the sync
 // lines). Reading the emulator's own device state instead would prove nothing: the question is
@@ -488,6 +499,39 @@ TEST_CASE("SMS audio is invariant to the host block size", "[sms]") {
         INFO("firstDiff = " << (firstDiff == SIZE_MAX ? std::string("NONE") : std::to_string(firstDiff)));
         CHECK(firstDiff == SIZE_MAX);
     }
+}
+
+TEST_CASE("SMS renders a whole 8192-frame block of the densest code", "[sms]") {
+    // 8192 is a DAW buffer too (Reaper renders at a JACK period of 8192). A flat 80000-instruction
+    // backstop covered a 512-frame block ten times over but cut an 8192-frame block of NOPs short, so the
+    // core fell behind the host clock and each block's tail came out blank.
+    auto build = [](SystemId id) {
+        MesenSmsConfig cfg;
+        cfg.gameGear = false;
+        cfg.enableFm = false;
+        cfg.romPath  = "psg-tone-nop.sms";
+        auto sys = std::make_unique<MesenSmsSystem>(id, cfg, psgToneNopRom());
+        sys->onActivate(kSampleRate);
+        return sys;
+    };
+    std::vector<float> reference, got;
+    {
+        auto sys = build(500);
+        REQUIRE(sys->activated());
+        runInto(*sys, 1024, 32, reference);
+    }
+    {
+        auto sys = build(501);
+        REQUIRE(sys->activated());
+        runInto(*sys, 8192, 4, got);
+    }
+    REQUIRE(got.size() == reference.size());
+    std::size_t firstDiff = SIZE_MAX;
+    for (std::size_t i = 0; i < got.size(); ++i) {
+        if (got[i] != reference[i]) { firstDiff = i; break; }
+    }
+    INFO("firstDiff = " << (firstDiff == SIZE_MAX ? std::string("NONE") : std::to_string(firstDiff)));
+    CHECK(firstDiff == SIZE_MAX);
 }
 
 TEST_CASE("SMS gate metric tracks the audio ring", "[sms]") {
