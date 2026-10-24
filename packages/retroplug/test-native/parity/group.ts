@@ -4,6 +4,8 @@
 //   RP_PARITY_UPDATE=1     record instead of compare (refused off the baseline's target)
 //   RP_PARITY_ONLY=<case>  run just that case
 //   RP_PARITY_DUMP=<dir>   on a mismatch, write the case's lanes as float WAVs and its MIDI out as JSON
+//   RP_PARITY_REQUIRE_TARGET=1  in check mode, fail every case when this host is not the baseline's target
+//                          (CI's target job sets it, so exact audio checking cannot silently fade out)
 //   RP_PARITY_EMIT=<file>  internal: the child a recording spawns to run one case alone writes its digest here
 import { test, expect, skip } from "../../testing/harness";
 import { Rig, type Segment } from "./rig";
@@ -69,6 +71,7 @@ const UPDATE = env.RP_PARITY_UPDATE === "1";
 const ONLY = env.RP_PARITY_ONLY || "";
 const EMIT = env.RP_PARITY_EMIT || "";
 const DUMP = env.RP_PARITY_DUMP || "";
+const REQUIRE_TARGET = env.RP_PARITY_REQUIRE_TARGET === "1";
 
 const text = new TextDecoder();
 const bytes = (s: string) => new TextEncoder().encode(s);
@@ -255,6 +258,10 @@ export function runGroup(group: string, cases: ParityCase[]): void {
           return;
         }
 
+        if (REQUIRE_TARGET && !onTarget)
+          throw new Error(
+            `this host is ${host} but the baseline was recorded on ${target}, so exact audio would not be compared: re-record on ${target} or bump PARITY_TARGET and re-record`,
+          );
         const expected = baseline?.cases[c.name];
         if (!expected) throw new Error(`no baseline entry: record it with RP_PARITY_UPDATE=1 pnpm test:native parity/${group}`);
         const run = runCase(rig, c, DUMP !== "");

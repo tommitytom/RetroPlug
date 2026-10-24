@@ -81,6 +81,9 @@ jobs:
         run: pnpm test
 
       - name: Native tests (real host + emulator cores)
+        # This job is the parity baseline's target: exact audio checking must run here, not fall back.
+        env:
+          RP_PARITY_REQUIRE_TARGET: "1"
         run: pnpm test:native
 
       - name: Plugin unit tests (Catch2)
