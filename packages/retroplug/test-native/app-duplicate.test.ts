@@ -1,6 +1,6 @@
 // Duplicate works WHILE the audio thread runs — now as TS orchestration. The store pulls the source's
 // savestate from the registry (readState — a tear-free control-thread read, safe while the audio thread
-// steps the core) and builds an INDEPENDENT clone via constructSystem-with-state, whose queued adopt
+// steps the core) and builds an INDEPENDENT clone via buildCore-with-state, whose queued adopt
 // lands on the audio thread. (The old native duplicateSystem cloned the live core + bailed with
 // `if (audioRunning_) return null`; there is no native duplicate method anymore.) This starts the
 // background audio thread, lets it publish a snapshot, duplicates through the store, and asserts a second
@@ -35,7 +35,7 @@ test("duplicate (TS orchestration) clones off the state snapshot while the audio
   expect(audio.startAudio()).toBeTruthy();
   audio.sleepMs(50); // let the audio thread publish at least one tear-free state snapshot
 
-  // The store reads readState(id) (safe while running) + constructSystem-with-state; the adopt is queued.
+  // The store reads readState(id) (safe while running) + buildCore-with-state; the adopt is queued.
   const dupId = project.systems.duplicateSystem(id);
   expect(dupId != null).toBeTruthy();
   expect(dupId === id).toBeFalsy(); // a fresh id, not the source

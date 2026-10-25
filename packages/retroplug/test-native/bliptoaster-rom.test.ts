@@ -50,7 +50,7 @@ test("the COMMITTED resources/roms ROM is detected, and its role set is attached
   console.log(`[bliptoaster-rom] vendored ROM detected: ${BLIPTOASTER_MARKER} v${info.semver.join(".")}`);
 });
 
-test("constructSystem romBytes boots a BlipToaster (Mesen) system over a nonexistent romPath", () => {
+test("buildCore romBytes boots a BlipToaster (Mesen) system over a nonexistent romPath", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
 

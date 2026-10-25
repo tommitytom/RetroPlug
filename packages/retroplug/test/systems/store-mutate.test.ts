@@ -35,8 +35,8 @@ test("duplicate: appends a clone with a fresh suffix + concrete auto-save path",
   expect(v[1].romPath).toBe("/roms/a.gb"); // clone carries the source ROM
   expect(v[1].savSuffix).toBe(2); // 0 owned -> 2
   expect(store.focused()).toBe(a); // duplicate doesn't steal focus
-  // Duplicate is TS orchestration now: readState(src) → constructSystem seeded with those bytes + the
-  // clone's own auto-save path. No bespoke backend method — it lands as a construct call.
+  // Duplicate is TS orchestration now: readState(src) → buildCore seeded with those bytes + the
+  // clone's own auto-save path. No bespoke backend method: it lands as a build call.
   const call = be.buildCalls[be.buildCalls.length - 1];
   expect(call.romPath).toBe("/roms/a.gb");
   expect(call.savPath).toBe("/roms/a-2.sav");

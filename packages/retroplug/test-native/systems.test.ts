@@ -1,5 +1,5 @@
 // SystemsStore lifecycle over the REAL native Backend — now backed by a real SameBoySystem
-// (a genuine Game Boy core), not a stub. constructSystem boots the core; readState/readSram
+// (a genuine Game Boy core), not a stub. buildCore boots the core; readState/readSram
 // return real savestate/SRAM. Assertions are structural (real bytes are non-empty but not a
 // fixed value) and on returned id handles, never absolute ids: every case in a file shares one
 // native engine per process, but a fresh SystemsStore starts empty (it tracks its own list).

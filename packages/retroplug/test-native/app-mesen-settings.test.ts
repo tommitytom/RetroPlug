@@ -21,7 +21,7 @@ test("a NES core boots with a non-default region seeded from its role config (co
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const audio = createAudioDriver();
 
-  // adopt a saved NES system whose mesen role carries region PAL (2) → constructSystem forwards it as
+  // adopt a saved NES system whose mesen role carries region PAL (2) → buildCore forwards it as
   // the settings blob → MesenBackend decodes it → configureNes applies it before LoadRom.
   project.systems.adopt({ romPath: NES, roles: [{ kind: "mesen", config: { region: "pal", removeSpriteLimit: false } }] });
   const v = project.systems.view()[0];

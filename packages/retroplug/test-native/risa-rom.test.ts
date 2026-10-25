@@ -19,7 +19,7 @@ const graph = directGraph();
 declare const __RISA_SRC__: string;
 const RISA_ROM = __RISA_SRC__ + "/build/risa-pal.nes";
 
-test("constructSystem romBytes boots a NES (Mesen) system over a nonexistent romPath", () => {
+test("buildCore romBytes boots a NES (Mesen) system over a nonexistent romPath", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
   if (!be.fileExists(RISA_ROM)) skip(`risa-rom romBytes: no ROM at ${RISA_ROM}`);

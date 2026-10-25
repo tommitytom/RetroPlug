@@ -1,5 +1,5 @@
 // The video-frame path, end to end through the native backend: construct a real system via the STORES
-// (loadMgb → constructSystem), advance the core with renderAudio, then read its framebuffer back over
+// (loadMgb → buildCore), advance the core with renderAudio, then read its framebuffer back over
 // the new getFrame RPC. Proves the per-system FrameBufferTriple escapes to TS as raw XRGB8888 pixels —
 // the data an EmulatorTile blits into an LVGL Canvas. (Frames are produced by the core rendering vblanks
 // during processBlock, independent of the DSP kernel, so no kernel is wired here.)

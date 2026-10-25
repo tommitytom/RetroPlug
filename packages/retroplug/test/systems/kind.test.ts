@@ -1,4 +1,4 @@
-// The store classifies a ROM (platform.ts) and passes that platform + core to constructSystem, so native
+// The store classifies a ROM (platform.ts) and passes that platform + core to buildCore, so native
 // routes it to the right backend (sameboy / mesen-nes / mesen-gba). Embedded ROMs are always SameBoy.
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
@@ -10,7 +10,7 @@ function makeStore() {
   return { be, store: new SystemsStore(be) };
 }
 
-test("constructSystem carries the classified platform and core for each backend", () => {
+test("buildCore carries the classified platform and core for each backend", () => {
   const cases: Array<[string, Uint8Array, string, string]> = [
     ["/roms/a.gb", gbRom(), "gb", "sameboy"],
     ["/roms/a.nes", nesRom(), "nes", "mesen"],

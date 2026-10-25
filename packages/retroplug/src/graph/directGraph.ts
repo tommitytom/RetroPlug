@@ -1,8 +1,11 @@
 // Structure for the callers that build systems without stores (docs/modular-graph-phase-b2-design.md section
 // 2.4): the native tests, the CLI's analysis sessions and the offset tools. It keeps the systems list the B1
 // translator kept (add appends, replace keeps the slot, remove shifts later slots down) and publishes after each
-// call. Use one per process, directGraph(), or one sharing a session's EngineGraph: two publishers with separate
-// models would each drop the other's systems from the document.
+// call. Use one per process, directGraph(): two publishers with separate EngineGraphs would each drop the other's
+// systems from the document. Sharing a session's EngineGraph (so the session's render calls render what this
+// places) does not merge the two models either: each publish replaces the graph's model with the publisher's own
+// systems. It is safe only while the session's stores place nothing, the two publishing in turn, as
+// test-native/parity/render-blocks.test.ts and cli/sessions/analyze-lsdj-sync.ts do.
 import { createRealBackend } from "../realBackend";
 import type { AudioRouting } from "../settingsEnums";
 import type { ConstructSpec, EmulatorBackend } from "../backend";

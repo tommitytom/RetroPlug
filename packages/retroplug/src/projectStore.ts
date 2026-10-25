@@ -132,16 +132,16 @@ export class ProjectStore {
   private holdGraph = false; // a load's adopts: the graph is published once they are all built
 
   /** The engine's graph this project publishes (docs/modular-graph-phase-b2-design.md section 2.2). Share it
-   *  with anything else that publishes to the same engine (a DirectGraph, the render calls' shapes). */
+   *  with anything else that publishes to the same engine: the render calls' shapes, and a DirectGraph only
+   *  while the stores place nothing (graph/directGraph.ts). */
   readonly graph: EngineGraph;
 
   constructor(
     private readonly backend: ControlPlaneBackend,
     private readonly recent: RecentStore,
     registry?: RoleRegistry,
-    graph?: EngineGraph,
   ) {
-    this.graph = graph ?? new EngineGraph(backend);
+    this.graph = new EngineGraph(backend);
     // Any user mutation of the systems list marks the project dirty and re-drives the DSP.
     this.systems = new SystemsStore(
       backend,
@@ -471,7 +471,7 @@ export class ProjectStore {
   }
   setAudioRouting(v: AudioRouting): boolean {
     if (!this.setEnumSetting("audioRouting", v)) return false;
-    this.pushAudioRouting(); // the one project setting that reaches native audio (the graph's output wiring)
+    this.publishRouting(); // the one project setting that reaches native audio (the graph's output wiring)
     return true;
   }
   setZoom(n: number): boolean {
@@ -501,7 +501,7 @@ export class ProjectStore {
   newProject(): void {
     this.systems.clear();
     this.projectSettings = { ...DEFAULT_SETTINGS };
-    this.pushAudioRouting(); // reset native routing to the default
+    this.publishRouting(); // place nothing, at the default routing
     this.path = "";
     this.projectName = "";
     this.dirty = false;
@@ -693,7 +693,7 @@ export class ProjectStore {
       // publish that throws here is logged, so the load's own error is the one that propagates.
       this.holdGraph = false;
       try {
-        this.pushAudioRouting();
+        this.publishRouting();
       } catch (pe) {
         console.warn(`[project] placing the systems a failed load adopted threw: ${String(pe)}`);
       }
@@ -702,7 +702,7 @@ export class ProjectStore {
       this.holdGraph = false;
     }
     this.projectSettings = { ...DEFAULT_SETTINGS, ...cfg.settings };
-    this.pushAudioRouting(); // place the loaded systems, with the loaded project's routing
+    this.publishRouting(); // place the loaded systems, with the loaded project's routing
     this.projectName = cfg.name ?? ""; // only a name the user gave the project is stored; blank = unnamed
     this.songRequest = null; // a request parked against the previous cart cannot apply to this one
     this.recentPending = false;
@@ -721,10 +721,10 @@ export class ProjectStore {
     return true;
   }
 
-  /** Publish the graph for the current audio-routing mode — the one project setting that drives native audio
-   *  (it decides the graph's output wiring). Called on set / load / reset, every one re-arming the NES tap,
+  /** Publish the whole graph: the systems as they stand, wired by the current audio-routing mode (the one
+   *  project setting that drives native audio). Called on set / load / reset, every one re-arming the NES tap,
    *  as a routing change always has, even to the mode already set. */
-  private pushAudioRouting(): void {
+  private publishRouting(): void {
     this.publishGraph(true);
   }
 

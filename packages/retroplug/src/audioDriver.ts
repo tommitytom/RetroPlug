@@ -214,7 +214,11 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
   const ints = (b: Uint8Array | number[]): number[] => Array.from(b);
   const STEREO: HostShape = { kind: "multi", channels: 2 };
   const RENDER_BLOCKS_OUTPUTS: readonly number[] = [2, 4, 6, 8];
-  // While this driver's audio thread runs, the render calls refuse natively, so they leave the graph alone.
+  // While this driver's audio thread runs, the render calls refuse natively, so they leave the graph alone. The
+  // flag is this driver's own (B1's native render calls checked the engine's audioThreadOwns instead): with a
+  // second driver on the same graph, or a raw startAudio RPC, it reads false while a thread runs, and a render
+  // call swaps the live plan's shape, for the blocks between its document and the restore, before native refuses
+  // the render itself.
   let running = false;
   const shaped = <T>(shape: HostShape, render: () => T, refused: () => T): T => {
     if (!graph || running) return render();

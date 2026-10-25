@@ -1,4 +1,4 @@
-// Chunk B: adopting a saved system passes its backend "system"-role config to constructSystem as the
+// Chunk B: adopting a saved system passes its backend "system"-role config to buildCore as the
 // `settings` blob, so native applies a non-default model/highpass AT construct (not via a
 // savestate-nuking restart). A fresh add sends no blob — the backend defaults already match the role
 // schema. The store stays generic: it forwards whichever role's kind === the backend kind.

@@ -364,7 +364,7 @@ test("CLI patch realizes a mixed manifest (build + .kit + rename + palette + fon
 
 // The romBytes construct channel that powers the non-destructive LSDj asset overrides (lsdj-assets role):
 // native must load TS-supplied effective ROM bytes INSTEAD of slurping romPath, and boot them.
-test("constructSystem romBytes loads a patched effective ROM (over the on-disk romPath) and boots", () => {
+test("buildCore romBytes loads a patched effective ROM (over the on-disk romPath) and boots", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
   if (!be.fileExists(LSDJ) || !be.fileExists(KIT_FILE)) skip(`lsdj-rom romBytes: ROM/kit not found`);

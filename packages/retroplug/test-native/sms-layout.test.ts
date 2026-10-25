@@ -93,7 +93,7 @@ test("echo_mode is where the symbols say - changing that byte changes the sound"
       { romPath: ROM, platform: "sms", core: "mesen", embeddedRom: "", savPath: null, statePath: null, sramBytes: sav, settings: JSON.stringify({ enableFm: false }) },
       1,
     ),
-    "constructSystem (a false here is Mesen refusing the ROM, not a layout problem)",
+    "buildCore (a false here is Mesen refusing the ROM, not a layout problem)",
   ).toBeTruthy();
   console.log(`[sms-layout] booted after ${bootCart(be, audio, 1, layout.booted)} ms`); // splash + config_load + song_new
   for (const w of smsggdjIntegration.liveLoad!(be.readFile(ROM)!, sav, 0)!) expect(be.writeRam(1, w.offset, w.bytes)).toBeTruthy();
@@ -172,7 +172,7 @@ test("a load under a RUNNING transport rebases eng_len onto the new song", () =>
       { romPath: ROM, platform: "sms", core: "mesen", embeddedRom: "", savPath: null, statePath: null, sramBytes: sav, settings: JSON.stringify({ enableFm: false }) },
       5,
     ),
-    "constructSystem (a false here is Mesen refusing the ROM, not a layout problem)",
+    "buildCore (a false here is Mesen refusing the ROM, not a layout problem)",
   ).toBeTruthy();
   bootCart(be, audio, 5, layout.booted);
 
@@ -215,7 +215,7 @@ test("song_name and song_edited land where the symbols say", () => {
       { romPath: ROM, platform: "sms", core: "mesen", embeddedRom: "", savPath: null, statePath: null, sramBytes: sav, settings: JSON.stringify({ enableFm: false }) },
       6,
     ),
-    "constructSystem (a false here is Mesen refusing the ROM, not a layout problem)",
+    "buildCore (a false here is Mesen refusing the ROM, not a layout problem)",
   ).toBeTruthy();
   bootCart(be, audio, 6, layout.booted);
   for (const w of smsggdjIntegration.liveLoad!(be.readFile(ROM)!, sav, 0)!) expect(be.writeRam(6, w.offset, w.bytes)).toBeTruthy();

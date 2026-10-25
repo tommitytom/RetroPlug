@@ -909,10 +909,10 @@ export class SystemsStore {
     return id;
   }
 
-  // Arm/disarm native serial-out capture (LSDj MI.OUT) for a system from its lsdj-sync mode. Both
-  // LSDj→host MIDI-out modes need it: MidiOut (SYNC=MI.OUT) and MasterSync (SYNC=LSDJ). Called wherever
-  // a core is (re)built (committed/adopt — a fresh core defaults to unarmed) and when the mode changes
-  // (setRoleConfig). A no-op for a non-LSDj system (no lsdj-sync role → nothing to arm).
+  // Arm/disarm native serial-out capture (LSDj MI.OUT) for a running system from its lsdj-sync mode. Both
+  // LSDj→host MIDI-out modes need it: MidiOut (SYNC=MI.OUT) and MasterSync (SYNC=LSDJ). Called only when the
+  // mode changes (setRoleConfig): a core that is built or rebuilt carries its capture in the build spec instead
+  // (applyConstructHooks). A no-op for a non-LSDj system (no lsdj-sync role → nothing to arm).
   private syncSerialOutCapture(id: number): void {
     const roles = findById(this.entries, id)?.roles;
     if (!roles?.some((r) => r.kind === "lsdj-sync")) return;

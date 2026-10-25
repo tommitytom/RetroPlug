@@ -32,7 +32,9 @@ export interface Session {
 
 /** Stand up the control plane the way every host does: build the registry, compose the
  *  store graph over the real backend, then load the DSP kernel BEFORE installing the store→DSP
- *  projection hook (the first systems mutation fires the hook, which needs the kernel already loaded). */
+ *  projection hook (the first systems mutation fires the hook, which needs the kernel already loaded).
+ *  One session per process: each owns an EngineGraph over the process's one native engine, so a second
+ *  session's first edit publishes a graph without the first's systems, which frees their cores. */
 export function bootSession(): Session {
   const backend = createRealBackend();
   const registry = buildAppRegistry();
