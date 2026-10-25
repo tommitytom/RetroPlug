@@ -160,7 +160,8 @@ A fourth defect was found and is recorded as it is, not fixed (§1): **Arduinobo
 when host blocks carry clock ticks.** The threshold is a tick's length: at 120 bpm and divisor 1 a tick is
 about 1000 frames (1000-frame blocks play), so at 128 to 768 (ordinary DAW buffers) LSDj never starts, a
 divisor of 4 never starts at 1024 either, and 2048 plays louder than 1024. "Every block carries a tick" is
-necessary but not sufficient: divisor 4 at 4096 frames is silent while divisors 4 and 8 at 8192 play, so a
+neither necessary (the ragged `fl` split of the tiny-block parity plays with six of its seven blocks carrying
+none) nor sufficient: divisor 4 at 4096 frames is silent while divisors 4 and 8 at 8192 play, so a
 fix built only on that model may be incomplete. The existing test passes only because `renderAudio` always
 uses 1024-frame blocks. The baseline pins the silent cases; fixing it is its own change with a re-record.
 

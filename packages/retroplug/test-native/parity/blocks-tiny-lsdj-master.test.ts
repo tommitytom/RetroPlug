@@ -22,7 +22,9 @@ import { frames, ROMS, type Blocks } from "./scenes";
  *  (NoteOn, 0xFA, clocks, 0xFC) every few blocks. At 44.1 kHz that is 10497 MIDI messages in `1`, 316 in `fl`
  *  and 894 in `fl256`, against 101 in 1024-frame blocks (lsdj-modes' masterSync-44100). At 48 kHz LSDj never
  *  plays (lsdj-modes' masterSync-48000, the rate defect), so those cases are silent and their MIDI out is the
- *  decoded flood alone. Fixing the decoder is its own change, with a deliberate re-record of these cases. */
+ *  decoded flood alone. Fixing the decoder is its own change, with a deliberate re-record of these cases, and
+ *  it may move lsdj-modes' masterSync-44100 and masterSync-48000 as well: the same threshold decides their boot
+ *  noise (the 16-byte test that lets a run open before START). */
 function masterSync(sr: number, split: string, blocks: Blocks): ParityCase {
   return lsdjCase(
     `masterSync-${sr}-${split}`,

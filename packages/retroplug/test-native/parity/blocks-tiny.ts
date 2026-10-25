@@ -1,10 +1,11 @@
 // Host blocks the rest of the matrix never runs: 1-frame blocks, and the ragged splits FL Studio hands a
 // plugin. FL splits a host buffer at every automation and tempo point, so one buffer can arrive as blocks of
 // 256, 33 or 1 frame, and an event's frame is an offset inside the block it lands in. Recorded on the engine
-// before B3a moved the kernel's I/O onto wires (docs/modular-graph-phase-b3a-design.md sections 6 and 7.1),
+// before B3a moves the kernel's I/O onto wires (docs/modular-graph-phase-b3a-design.md sections 6 and 7.1),
 // so B3a is held to it bit for bit. A case renders all of itself, boot included, in one TINY_SPLITS entry,
-// and places its MIDI, its automation CCs and its transport points on block edges: a block's first frame,
-// its last, and a 1-frame block's only frame, which is both.
+// and its edge segment places MIDI, automation CCs and (in the sync groups) transport points on block edges: a
+// block's first frame, its last, and a 1-frame block's only frame, which is both. The phrase segment's MIDI is
+// the shared one and lands inside blocks.
 //
 // The mgb and nes cases are here (blocks-tiny-mgb.test.ts, blocks-tiny-nes.test.ts); the scenes whose timing
 // is a sync protocol, which need the sibling fixtures, are blocks-tiny-lsdj.test.ts and blocks-tiny-risa.test.ts.
@@ -73,8 +74,9 @@ export class Edges {
     return this.first(i) + this.blocks[i] - 1;
   }
 
-  /** The first frame of the first 1-frame block at or after frame `from`. */
-  oneFrameAt(from: number): number {
+  /** The first frame of the next 1-frame block at or after frame `from`: `from` is a floor, not the point (in
+   *  `fl` the first 1-frame block at or after frame 300 starts at frame 4395, 92 ms in). */
+  nextOneFrame(from: number): number {
     return this.first(this.next(from, ONE));
   }
 }
@@ -94,22 +96,28 @@ const DUTY_RAMP = [0, 40, 80, 120, 80, 40, 0, 120];
 
 /** 700 ms of notes and automation CCs on block edges, each event at the next block of a kind after a point in
  *  the segment (in the 1-frame split every block is of every kind, so each lands on the next frame):
- *  - a note and an automation CC in a 1-frame block, the note first, as the plugin stages a tie (the host's
- *    events, then each moved parameter's CC at frame 0);
+ *  - a note and an automation CC on one frame of a 1-frame block, the note first, as the plugin stages them (the
+ *    host's events, then each moved parameter's CC at frame 0);
  *  - automation at a big block's frame 0, and a note-on on its last frame (a buffer-sized block in `fl256`;
- *    in `1` the same frame, so the CC comes first there);
+ *    in `1` the same frame, so the CC comes first there. Both orders of a CC and a note on one frame are
+ *    deliberate, and the sort is stable, so each is kept as listed);
  *  - an automation ramp, a CC at frame 0 of each of up to 32 consecutive blocks, which is what a host that
  *    splits at every automation point delivers (in `1`, a CC on each of 32 frames in a row);
  *  - a CC in a 1-frame block, and a note-off on the next block's first frame;
  *  - automation at a small block's first frame (2 to 7 frames), a note-off on its last;
  *  - a note-on in a 1-frame block, its note-off on the last frame of the next buffer-sized block;
- *  - a roll on the noise voice (channel 3): a note at the first frame of the next block every 1.5 ms.
+ *  - a roll on the noise voice (channel 3): a note at the first frame of the next block every 1.5 ms, the keys
+ *    alternating by the index of the 1.5 ms grid step, not of the note emitted, so where steps share a block the
+ *    sequence repeats a key (in `fl` and `fl256`).
+ *  Collisions, kept on purpose: in the 44.1 kHz `fl` cases the ramp is only 3 CCs and its third shares the big
+ *  block's frame 0 with that block's automation CC; and the roll's last note-on lands on the frame of the note-offs
+ *  (a zero-length note).
  *  Each of them is heard: removing any one changes the case's digest. Moving one by a frame mostly is not:
  *  mGB takes a lone message at its own pace, and a lone note-on moved by a frame changes BlipToaster's output
  *  only once every ~67 frames at 48 kHz. In the 1-frame split a frame is what one block of latency moves an
  *  event by, so the ramp and the roll are dense on purpose, and mGB hears the segment moved: every event of it
  *  moved by one frame, either way, changes its digest. BlipToaster does not, so on its path a block of latency
- *  is pinned by the ragged splits, where most blocks are far longer than a frame. */
+ *  is pinned by the ragged splits, where most frames sit in blocks far longer than one frame. */
 function edgeSegment(sr: number, split: Blocks, system: TinySystem): Segment {
   const e = new Edges(split(frames(sr, 700)));
   const ms = (t: number) => frames(sr, t);

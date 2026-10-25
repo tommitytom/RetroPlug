@@ -318,7 +318,9 @@ Before any B3a code exists, new parity groups are recorded on today's merged eng
 - the scenes whose timing is protocol-sensitive: mGB and BlipToaster NES (fixture-free, so CI runs them),
   LSDj MIDI sync, Arduinoboy and MI.OUT, and risa host sync (fixture-only);
 - LSDj master sync in the same splits, at 44.1 and 48 kHz, recorded with its defect pinned: in small blocks its
-  decoder reads a stopped LSDj's idle flood as clocks ([B0 design §2.5](modular-graph-phase-b0-design.md)).
+  decoder reads a stopped LSDj's idle flood as clocks ([B0 design §2.5](modular-graph-phase-b0-design.md)). The
+  fix lands right after B3a and before B3b, on its own, re-recording these cases and possibly lsdj-modes'
+  masterSync-44100 / masterSync-48000, whose boot noise the same threshold decides.
 
 Segments are kept short, since 1-frame blocks multiply the block count. B3a is accepted on strict parity: every
 group, with the fixtures present and `RP_FAIL_ON_SKIP=1`.

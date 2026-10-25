@@ -21,8 +21,8 @@ function midiSync(split: string, blocks: Blocks): ParityCase {
     (rig) => lsdj(rig, ROMS.lsdj, denseSongSav("Midi"), { mode: "midiSync", tempoDivisor: 1 }),
     [
       ...tap(0, SR, blocks),
-      { blocks: play.blocks, transport: [{ at: 0, bpm: 120, ppq: 0, playing: true }, { at: play.oneFrameAt(frames(SR, 1000)), bpm: 140 }] },
-      { blocks: stop.blocks, transport: [{ at: stop.oneFrameAt(frames(SR, 50)), playing: false }] },
+      { blocks: play.blocks, transport: [{ at: 0, bpm: 120, ppq: 0, playing: true }, { at: play.nextOneFrame(frames(SR, 1000)), bpm: 140 }] },
+      { blocks: stop.blocks, transport: [{ at: stop.nextOneFrame(frames(SR, 50)), playing: false }] },
     ],
     2,
     [0, 1],
@@ -45,7 +45,7 @@ function arduinoboy(split: string, blocks: Blocks): ParityCase {
   const end = new Edges(blocks(frames(SR, 500)));
   const playNote = run.first(run.next(0, BIG, BUFFER, ANY));
   const stopNote = end.last(end.next(frames(SR, 100), BUFFER, ANY));
-  const stop = end.oneFrameAt(stopNote + frames(SR, 200));
+  const stop = end.nextOneFrame(stopNote + frames(SR, 200));
   return lsdjCase(
     `midiSyncArduinoboy-${split}`,
     ROMS.arduinoboy,

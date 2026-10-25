@@ -4,7 +4,9 @@
 // after a wrap starts with the locate. The risa-sync role clocks risa at each tick's own frame, so its clocks
 // land on block edges throughout, and the arm it sends on a locate flushes the FIFO. Mesen's audio is
 // partition-invariant (blocks.ts), so these lanes pin the bytes the role sent and when, not the partition.
-// Needs the sibling risa fixtures, so these skip in CI.
+// A transport point one block late is invisible in `transport-1` (one block late is one frame
+// late, which goes unheard there) and caught in `fl` and `fl256`: the same blind spot as the NES cases in
+// blocks-tiny.ts. Needs the sibling risa fixtures, so these skip in CI.
 import { runGroup, type ParityCase } from "./group";
 import { Edges, TINY_SPLITS } from "./blocks-tiny";
 import { frames, risa, RISA_BOOT_MS, ROMS, type Blocks } from "./scenes";
@@ -24,10 +26,10 @@ function transport(split: string, blocks: Blocks): ParityCase {
     setup: (rig) => void risa(rig),
     segments: [
       { blocks: blocks(frames(SR, RISA_BOOT_MS)) },
-      { blocks: play.blocks, transport: [{ at: 0, bpm: 120, ppq: 0, playing: true }, { at: play.oneFrameAt(frames(SR, 900)), bpm: 140 }] },
-      { blocks: stop.blocks, transport: [{ at: stop.oneFrameAt(0), playing: false }] },
+      { blocks: play.blocks, transport: [{ at: 0, bpm: 120, ppq: 0, playing: true }, { at: play.nextOneFrame(frames(SR, 900)), bpm: 140 }] },
+      { blocks: stop.blocks, transport: [{ at: stop.nextOneFrame(0), playing: false }] },
       // Playing again from ppq 4, then the wrap: a locate back to the loop start on a 1-frame block.
-      { blocks: wrap.blocks, transport: [{ at: 0, ppq: 4, playing: true }, { at: wrap.oneFrameAt(300), ppq: 0 }] },
+      { blocks: wrap.blocks, transport: [{ at: 0, ppq: 4, playing: true }, { at: wrap.nextOneFrame(300) /* ~92 ms in under `fl` */, ppq: 0 }] },
     ],
   };
 }
