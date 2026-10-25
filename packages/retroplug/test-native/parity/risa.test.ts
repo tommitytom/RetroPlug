@@ -3,23 +3,11 @@
 // stop, a loop wrap), and risa under PinSplit. Unlike sync-sms, the wrap here sits ON the tick grid: risa's
 // arm carries the position, so the locate is still observed. Needs the sibling risa fixtures, so these skip in CI.
 import { runGroup, type ParityCase } from "./group";
-import { even, type Rig } from "./rig";
-import { frames, ROMS } from "./scenes";
+import { even } from "./rig";
+import { frames, risa, RISA_BOOT_MS, ROMS } from "./scenes";
 
 const SR = 48000;
 const blocks = (n: number) => even(n, 512);
-/** risa materializes the song into working RAM while it boots, transport off. */
-const RISA_BOOT_MS = 2500;
-
-function risa(rig: Rig): number {
-  const copy = rig.rom(ROMS.risa);
-  const song = rig.session.backend.readFile(ROMS.risaSong);
-  if (!song) throw new Error(`cannot read ${ROMS.risaSong}`);
-  rig.writeFile(copy.replace(/\.[^./]+$/, ".srm"), song);
-  const id = rig.project.systems.addSystem(copy);
-  if (id == null) throw new Error("risa did not build");
-  return id;
-}
 
 const transport: ParityCase["segments"] = [
   { blocks: blocks(frames(SR, RISA_BOOT_MS)) },

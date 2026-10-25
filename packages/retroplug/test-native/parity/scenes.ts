@@ -103,3 +103,18 @@ export function smsStart(sampleRate: number, blocks: Blocks, slot = 0): Segment[
     { blocks: blocks(frames(sampleRate, 100)) },
   ];
 }
+
+/** risa materializes the song into working RAM while it boots, transport off. */
+export const RISA_BOOT_MS = 2500;
+
+/** risa 2.3.0 with let_go as its battery (written beside the copy as .srm), as a new system. The risa-sync
+ *  role attaches to it, so the host transport drives it. */
+export function risa(rig: Rig): number {
+  const copy = rig.rom(ROMS.risa);
+  const song = rig.session.backend.readFile(ROMS.risaSong);
+  if (!song) throw new Error(`cannot read ${ROMS.risaSong}`);
+  rig.writeFile(copy.replace(/\.[^./]+$/, ".srm"), song);
+  const id = rig.project.systems.addSystem(copy);
+  if (id == null) throw new Error("risa did not build");
+  return id;
+}

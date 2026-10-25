@@ -1,0 +1,584 @@
+{
+ "cases": {
+  "midiOut-1": {
+   "midiOut": {
+    "count": 38,
+    "fnv": "3efc872d"
+   },
+   "ram": {
+    "0": {
+     "fnv": "e5b0806a",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 288000,
+     "lanes": [
+      "9abf23b7 0.003835",
+      "9abf23b7 0.003835"
+     ]
+    },
+    {
+     "frames": 480,
+     "lanes": [
+      "1681a3c5 0",
+      "1681a3c5 0"
+     ]
+    },
+    {
+     "frames": 3840,
+     "lanes": [
+      "dab129ae 0.03852",
+      "dab129ae 0.03852"
+     ]
+    },
+    {
+     "frames": 96000,
+     "lanes": [
+      "fa9f1f22 0.02836",
+      "fa9f1f22 0.02836"
+     ]
+    },
+    {
+     "frames": 480,
+     "lanes": [
+      "734c94cf 0.03485",
+      "734c94cf 0.03485"
+     ]
+    },
+    {
+     "frames": 3840,
+     "lanes": [
+      "dc005b6b 0.02504",
+      "dc005b6b 0.02504"
+     ]
+    },
+    {
+     "frames": 19200,
+     "lanes": [
+      "6ad58dc5 0",
+      "6ad58dc5 0"
+     ]
+    },
+    {
+     "frames": 480,
+     "lanes": [
+      "1681a3c5 0",
+      "1681a3c5 0"
+     ]
+    },
+    {
+     "frames": 3840,
+     "lanes": [
+      "1275e555 0.03868",
+      "1275e555 0.03868"
+     ]
+    },
+    {
+     "frames": 48000,
+     "lanes": [
+      "4acf8b91 0.03680",
+      "4acf8b91 0.03680"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "90c41ed5",
+     "length": 131072
+    }
+   }
+  },
+  "midiOut-fl": {
+   "midiOut": {
+    "count": 38,
+    "fnv": "a401bbe7"
+   },
+   "ram": {
+    "0": {
+     "fnv": "49240d8a",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 288000,
+     "lanes": [
+      "dea33dd7 0.003835",
+      "dea33dd7 0.003835"
+     ]
+    },
+    {
+     "frames": 480,
+     "lanes": [
+      "1681a3c5 0",
+      "1681a3c5 0"
+     ]
+    },
+    {
+     "frames": 3840,
+     "lanes": [
+      "26446d46 0.03844",
+      "26446d46 0.03844"
+     ]
+    },
+    {
+     "frames": 96000,
+     "lanes": [
+      "e83e6d4c 0.02836",
+      "e83e6d4c 0.02836"
+     ]
+    },
+    {
+     "frames": 480,
+     "lanes": [
+      "c4d18131 0.03615",
+      "c4d18131 0.03615"
+     ]
+    },
+    {
+     "frames": 3840,
+     "lanes": [
+      "64c824c3 0.02508",
+      "64c824c3 0.02508"
+     ]
+    },
+    {
+     "frames": 19200,
+     "lanes": [
+      "6ad58dc5 0",
+      "6ad58dc5 0"
+     ]
+    },
+    {
+     "frames": 480,
+     "lanes": [
+      "1681a3c5 0",
+      "1681a3c5 0"
+     ]
+    },
+    {
+     "frames": 3840,
+     "lanes": [
+      "c8bb9565 0.03863",
+      "c8bb9565 0.03863"
+     ]
+    },
+    {
+     "frames": 48000,
+     "lanes": [
+      "175b0af8 0.03680",
+      "175b0af8 0.03680"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "90c41ed5",
+     "length": 131072
+    }
+   }
+  },
+  "midiOut-fl256": {
+   "midiOut": {
+    "count": 38,
+    "fnv": "71157011"
+   },
+   "ram": {
+    "0": {
+     "fnv": "f0613a11",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 288000,
+     "lanes": [
+      "377be6a8 0.003835",
+      "377be6a8 0.003835"
+     ]
+    },
+    {
+     "frames": 480,
+     "lanes": [
+      "1681a3c5 0",
+      "1681a3c5 0"
+     ]
+    },
+    {
+     "frames": 3840,
+     "lanes": [
+      "6de4cbc5 0.03842",
+      "6de4cbc5 0.03842"
+     ]
+    },
+    {
+     "frames": 96000,
+     "lanes": [
+      "8228afa3 0.02835",
+      "8228afa3 0.02835"
+     ]
+    },
+    {
+     "frames": 480,
+     "lanes": [
+      "e73554de 0.03774",
+      "e73554de 0.03774"
+     ]
+    },
+    {
+     "frames": 3840,
+     "lanes": [
+      "31639830 0.02509",
+      "31639830 0.02509"
+     ]
+    },
+    {
+     "frames": 19200,
+     "lanes": [
+      "6ad58dc5 0",
+      "6ad58dc5 0"
+     ]
+    },
+    {
+     "frames": 480,
+     "lanes": [
+      "1681a3c5 0",
+      "1681a3c5 0"
+     ]
+    },
+    {
+     "frames": 3840,
+     "lanes": [
+      "2d57700a 0.03862",
+      "2d57700a 0.03862"
+     ]
+    },
+    {
+     "frames": 48000,
+     "lanes": [
+      "e62a56dd 0.03680",
+      "e62a56dd 0.03680"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "90c41ed5",
+     "length": 131072
+    }
+   }
+  },
+  "midiSync-1": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "423b97cb",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 288000,
+     "lanes": [
+      "9abf23b7 0.003835",
+      "9abf23b7 0.003835"
+     ]
+    },
+    {
+     "frames": 480,
+     "lanes": [
+      "1681a3c5 0",
+      "1681a3c5 0"
+     ]
+    },
+    {
+     "frames": 3840,
+     "lanes": [
+      "5f74cdc5 0",
+      "5f74cdc5 0"
+     ]
+    },
+    {
+     "frames": 96000,
+     "lanes": [
+      "988c706f 0.02983",
+      "988c706f 0.02983"
+     ]
+    },
+    {
+     "frames": 24000,
+     "lanes": [
+      "5921141b 0.02102",
+      "5921141b 0.02102"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "9a3c7109",
+     "length": 131072
+    }
+   }
+  },
+  "midiSync-fl": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "47137d64",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 288000,
+     "lanes": [
+      "dea33dd7 0.003835",
+      "dea33dd7 0.003835"
+     ]
+    },
+    {
+     "frames": 480,
+     "lanes": [
+      "1681a3c5 0",
+      "1681a3c5 0"
+     ]
+    },
+    {
+     "frames": 3840,
+     "lanes": [
+      "5f74cdc5 0",
+      "5f74cdc5 0"
+     ]
+    },
+    {
+     "frames": 96000,
+     "lanes": [
+      "86b389de 0.02980",
+      "86b389de 0.02980"
+     ]
+    },
+    {
+     "frames": 24000,
+     "lanes": [
+      "8b89722f 0.02715",
+      "8b89722f 0.02715"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "9a3c7109",
+     "length": 131072
+    }
+   }
+  },
+  "midiSync-fl256": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "5cdb6128",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 288000,
+     "lanes": [
+      "377be6a8 0.003835",
+      "377be6a8 0.003835"
+     ]
+    },
+    {
+     "frames": 480,
+     "lanes": [
+      "1681a3c5 0",
+      "1681a3c5 0"
+     ]
+    },
+    {
+     "frames": 3840,
+     "lanes": [
+      "5f74cdc5 0",
+      "5f74cdc5 0"
+     ]
+    },
+    {
+     "frames": 96000,
+     "lanes": [
+      "3a1e64dd 0.02980",
+      "3a1e64dd 0.02980"
+     ]
+    },
+    {
+     "frames": 24000,
+     "lanes": [
+      "694bb9ad 0.02124",
+      "694bb9ad 0.02124"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "9a3c7109",
+     "length": 131072
+    }
+   }
+  },
+  "midiSyncArduinoboy-1": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "ee48094b",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 288000,
+     "lanes": [
+      "9abf23b7 0.003835",
+      "9abf23b7 0.003835"
+     ]
+    },
+    {
+     "frames": 48000,
+     "lanes": [
+      "f5caf5c5 0",
+      "f5caf5c5 0"
+     ]
+    },
+    {
+     "frames": 96000,
+     "lanes": [
+      "53b94dc5 0",
+      "53b94dc5 0"
+     ]
+    },
+    {
+     "frames": 24000,
+     "lanes": [
+      "7e4bc9c5 0",
+      "7e4bc9c5 0"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "7fae94f3",
+     "length": 131072
+    }
+   }
+  },
+  "midiSyncArduinoboy-fl": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "b3cfd215",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 288000,
+     "lanes": [
+      "dea33dd7 0.003835",
+      "dea33dd7 0.003835"
+     ]
+    },
+    {
+     "frames": 48000,
+     "lanes": [
+      "f5caf5c5 0",
+      "f5caf5c5 0"
+     ]
+    },
+    {
+     "frames": 96000,
+     "lanes": [
+      "a11d4bdb 0.03821",
+      "a11d4bdb 0.03821"
+     ]
+    },
+    {
+     "frames": 24000,
+     "lanes": [
+      "991631db 0.02953",
+      "991631db 0.02953"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "7fae94f3",
+     "length": 131072
+    }
+   }
+  },
+  "midiSyncArduinoboy-fl256": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "7cb8be6f",
+     "length": 32768
+    }
+   },
+   "segments": [
+    {
+     "frames": 288000,
+     "lanes": [
+      "377be6a8 0.003835",
+      "377be6a8 0.003835"
+     ]
+    },
+    {
+     "frames": 48000,
+     "lanes": [
+      "f5caf5c5 0",
+      "f5caf5c5 0"
+     ]
+    },
+    {
+     "frames": 96000,
+     "lanes": [
+      "53b94dc5 0",
+      "53b94dc5 0"
+     ]
+    },
+    {
+     "frames": 24000,
+     "lanes": [
+      "7e4bc9c5 0",
+      "7e4bc9c5 0"
+     ]
+    }
+   ],
+   "sram": {
+    "0": {
+     "fnv": "7fae94f3",
+     "length": 131072
+    }
+   }
+  }
+ },
+ "target": "linux-x64-gnu13"
+}
