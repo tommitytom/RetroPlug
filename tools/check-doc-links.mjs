@@ -26,6 +26,10 @@
 //
 // Scope: tracked `*.md` outside deps/ (vendored docs are not ours to fix). http(s)/mailto and
 // bare `#fragment` links are skipped: resolving those needs the network or a heading parser.
+// Fenced code blocks are skipped too: nothing inside one renders as a link, and an implementation
+// plan quotes C++ lambdas like `[](SystemBase*) {}` and diffs of other docs whose relative links
+// only resolve from the file being diffed. The fence rule is CommonMark's, so a longer fence can
+// carry shorter ones inside it, and an unclosed fence runs to the end of the file.
 
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
@@ -57,7 +61,22 @@ const warnings = [];
 for (const file of files) {
     const lines = readFileSync(file, "utf8").split("\n");
 
+    // The open fence as { ch, len }, or null outside one.
+    let fence = null;
+
     lines.forEach((line, i) => {
+        const run = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+        if (fence) {
+            // A closer is the same character, at least as long, with nothing after it but space.
+            if (run && run[1][0] === fence.ch && run[1].length >= fence.len && run[2].trim() === "") fence = null;
+            return;
+        }
+        // A backtick fence's info string cannot contain a backtick, or the line is an inline span.
+        if (run && !(run[1][0] === "`" && run[2].includes("`"))) {
+            fence = { ch: run[1][0], len: run[1].length };
+            return;
+        }
+
         for (const m of line.matchAll(/\[([^\]]*)\]\(([^)\s]+)\)/g)) {
             const [, text, href] = m;
             if (/^(https?:|mailto:|#)/.test(href)) continue;
