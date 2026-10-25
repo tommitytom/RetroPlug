@@ -1,8 +1,8 @@
 // The engine's side of graphs TS builds (docs/modular-graph-phase-b2-design.md section 2.5): a built core parks
 // under its id until a document's system node takes it, a document's system nodes and its slots must name the
 // same systems, the tap re-arm rides the swap, a refused document leaves its cores parked, and a core no
-// published document placed is freed. Driven on a quiescent Engine, so every plan applies as it is published,
-// except where a test owns the drain itself.
+// published document placed is freed; and a build spec reaches the core under the field names TS sends. Driven
+// on a quiescent Engine, so every plan applies as it is published, except where a test owns the drain itself.
 //
 // Run via `pnpm test:plugin engine-graph`.
 
@@ -12,12 +12,16 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <quickjs.h>
 
 #include "GraphDocs.hpp"
 #include "NodeRig.hpp"
+#include "TypedRpcServer.h"
+#include "codecs/QuickJSCodec.h"
 #include "host/engine/DspCommand.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
+#include "host/rpc/BackendRpcRegistration.hpp"
 #include "host/rpc/EngineRpcService.hpp"
 #include "system/CoreBackends.hpp"
 #include "system/SystemFactory.hpp"
@@ -25,6 +29,7 @@
 #include "system/mesen/MesenNesSystem.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
+#include "transports/QuickJSTransport.h"
 
 using rp::host::test::readFile;
 
@@ -327,6 +332,56 @@ TEST_CASE("buildCore and setGraph over the RPC layer", "[engine-graph][b2]") {
     CHECK(placed.ok);
     CHECK(placed.errors.empty());
     CHECK(e.findSystem(5) != nullptr);
+}
+
+TEST_CASE("a build spec's serialOutCapture crosses the wire under the name TS sends", "[engine-graph][b2]") {
+    // A loaded LSDj in a MIDI-out mode captures serial out only through this flag, and reflect-cpp skips a
+    // field it does not know, so a name that drifted between realBackend.ts's specParams and
+    // BackendConstructSpec would drop it with nothing failing. The spec is decoded as every host decodes it: a
+    // live JS object, through rpcpp's QuickJS codec, into the registered buildCore.
+    struct Js {
+        JSRuntime* rt  = JS_NewRuntime();
+        JSContext* ctx = JS_NewContext(rt);
+        ~Js() {
+            JS_FreeContext(ctx);
+            JS_FreeRuntime(rt);
+        }
+    } js;  // first, so it outlives the server holding its context
+
+    Engine           e(kRate);
+    SystemFactory    factory;
+    registerCoreBackends(factory);
+    QueuedInvoker    invoker(e);
+    EngineRpcService rpc(e, factory, invoker);
+    rpcpp::QuickJSTransport                                   transport(js.ctx, [](JSContext*, JSValue) {});
+    rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec> server(transport, rpcpp::QuickJSCodec{js.ctx});
+    registerEmulatorRpc(server, rpc);
+
+    // The call specParams makes for an embedded mGB, `extra` appended to the spec. True when it built.
+    const auto buildCore = [&](SystemId id, const std::string& extra) {
+        const std::string src = "({jsonrpc: '2.0', id: 1, method: 'buildCore', params: [{id: " + std::to_string(id) +
+                                ", romPath: '', platform: 'gb', core: 'sameboy', embeddedRom: 'mgb'" + extra + "}]})";
+        JSValue message = JS_Eval(js.ctx, src.c_str(), src.size(), "<buildCore>", JS_EVAL_TYPE_GLOBAL);
+        std::optional<rpcpp::QuickJSOut> reply;
+        if (!JS_IsException(message)) reply = server.processMessage(message);
+        JS_FreeValue(js.ctx, message);
+        if (!reply) return false;
+        JSValue answer = reply->materialize(js.ctx);
+        JSValue result = JS_GetPropertyStr(js.ctx, answer, "result");
+        const bool built = JS_IsObject(result);
+        JS_FreeValue(js.ctx, result);
+        JS_FreeValue(js.ctx, answer);
+        return built;
+    };
+    REQUIRE(buildCore(1, ", serialOutCapture: true"));
+    REQUIRE(buildCore(2, ""));
+    REQUIRE(e.setGraph(request({{1, kGb}, {2, kGb}})).ok);
+    const auto* armed = dynamic_cast<const SameBoySystem*>(e.findSystem(1));
+    const auto* bare = dynamic_cast<const SameBoySystem*>(e.findSystem(2));
+    REQUIRE(armed != nullptr);
+    REQUIRE(bare != nullptr);
+    CHECK(armed->serialOutCaptureEnabled());
+    CHECK_FALSE(bare->serialOutCaptureEnabled());
 }
 
 TEST_CASE("a render into buffers the planned graph does not write is refused", "[engine-graph][b2]") {
