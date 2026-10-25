@@ -2,9 +2,10 @@
 // built for every model in a matrix of system sets, routings and host shapes (written by
 // packages/native/test/engine-graph/TranslatorGoldens.test.cpp while it existed). Node order, wire order and
 // settings must all agree: document order is plan order on ties, and wire order is each add's input order.
-// Once the translator is deleted, buildGraph is the record: an intentional change to the document it writes
-// rewrites this file's documents from buildGraph itself, and says why in its commit. Not every golden document
-// plans: the thirty-three systems under perSystem give rp.host.audio-out 33 buses, past the 32 it takes.
+// Once the translator is deleted, buildGraph is the record and nothing generates golden/build-graph.json: an
+// intentional change to the document it writes rewrites the file's documents by hand (a short script mapping
+// each case's model through buildGraph), and says why in its commit. Not every golden document plans: the
+// thirty-three systems under perSystem give rp.host.audio-out 33 buses, past the 32 it takes.
 import { test, expect } from "../../testing/harness";
 import { canonicalJson } from "../../src/graph/canonicalJson";
 import { buildGraph, type GraphModel, type TapArm } from "../../src/graph/buildGraph";

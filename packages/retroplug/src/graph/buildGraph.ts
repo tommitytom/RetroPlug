@@ -8,7 +8,8 @@ import type { GraphDocument, NodeDoc, WireDoc } from "./graphDocument";
 export type SystemNodeType = "rp.sameboy.gb" | "rp.mesen.nes" | "rp.mesen.gba" | "rp.mesen.sms";
 
 /** The output shape a document is built for: the host's own outputs routed by the project's mode (multi),
- *  each system on its own pair (perSystem), or one system's streams on a pair each (perChannel). */
+ *  each system on its own pair (perSystem), or one system's streams on a pair each (perChannel). A multi
+ *  shape's `channels` is a positive integer: every placement is modulo it. */
 export type HostShape = { kind: "multi"; channels: number } | { kind: "perSystem" } | { kind: "perChannel" };
 
 export interface GraphSystem {
@@ -29,7 +30,8 @@ export interface GraphModel {
   shape: HostShape;
 }
 
-/** The NES tap a lone NES under a split routing has armed: its pins (1) or its five channels (3). */
+/** The NES tap the engine arms for a lone NES under a split routing: its pins (1) or its five channels (3).
+ *  (The engine skips the arm when the core is already in that mode.) */
 export interface TapArm {
   id: number;
   mode: 1 | 3;
@@ -101,13 +103,14 @@ function tapArmOf(model: GraphModel): TapArm | null {
 }
 
 /** The export mode a NES has once the engine's SyncTap has armed or restored it. */
-function nesMode(model: GraphModel, s: GraphSystem): number {
-  const arm = tapArmOf(model);
+function nesMode(arm: TapArm | null, s: GraphSystem): number {
   return arm && arm.id === s.id ? arm.mode : s.exportMode;
 }
 
 export function buildGraph(model: GraphModel): BuiltGraph {
   const { systems, routing, shape } = model;
+  // One decision for the wiring and the arm returned with it, so the two always agree.
+  const tapArm = tapArmOf(model);
   const nodes: NodeDoc[] = [];
   const wires: WireDoc[] = [];
   const wire = (from: string, to: string) => wires.push({ from, to });
@@ -133,10 +136,10 @@ export function buildGraph(model: GraphModel): BuiltGraph {
       buses.push(2);
     });
   } else if (shape.kind === "perChannel") {
-    // One system's stream s on channels 2s and 2s + 1; a mono stream fills only 2s.
+    // One system's stream k on channels 2k and 2k + 1; a mono stream fills only 2k.
     if (systems.length === 1) {
       const s = systems[0];
-      streamsOf(s.type, nesMode(model, s)).forEach((stream, k) => {
+      streamsOf(s.type, nesMode(tapArm, s)).forEach((stream, k) => {
         if (stream.stereo) {
           wire(`${sysNode(s.id)}.${stream.port}`, outPort(2 * k, 2));
           buses.push(2);
@@ -157,7 +160,7 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     let streams: Stream[] = [];
     let stride = 2;
     if (splitValid) {
-      streams = streamsOf(systems[0].type, nesMode(model, systems[0]));
+      streams = streamsOf(systems[0].type, nesMode(tapArm, systems[0]));
       const allMono = streams.every((s) => !s.stereo);
       const pairPerMono = allMono && routing === "stereoPinSplit";
       stride = allMono && !pairPerMono ? 1 : 2;
@@ -220,5 +223,5 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     }
   }
   nodes.push({ id: "out", type: "rp.host.audio-out", settings: { buses } });
-  return { document: { nodes, wires }, slots: systems.map((s) => s.id), tapArm: tapArmOf(model) };
+  return { document: { nodes, wires }, slots: systems.map((s) => s.id), tapArm };
 }
