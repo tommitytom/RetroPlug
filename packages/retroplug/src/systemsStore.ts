@@ -1,7 +1,7 @@
 // SystemsStore: the live systems list as the app owns it. TS is the source of truth
 // for order, ids-as-handles, focus, and dirty; the Backend is a narrow emulator-
-// lifecycle service (build / clone / reload / drop) that takes CONCRETE paths TS has
-// already resolved. All the orchestration lives here: classify a ROM (TS-side, from
+// lifecycle service (build a core, and place what has been built) that takes CONCRETE
+// paths TS has already resolved. All the orchestration lives here: classify a ROM (TS-side, from
 // its header), disambiguate a sav suffix against the live list, resolve a paired-sav
 // override, pick a sibling ROM, and apply the load/add/replace + focus rules.
 //

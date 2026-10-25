@@ -110,7 +110,9 @@ Engine::Engine(double sampleRate) : sampleRate_(sampleRate) {
     for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), rp::host::sameboyPackage(),
                                 rp::host::mesenPackage(), rp::host::dspPackage()})
         graph_->registry.addPackage(p);
-    graph_->cores = {this, [](void* ctx, std::uint64_t token) { return static_cast<Engine*>(ctx)->takeCore(token); },
+    // rp.host.cores/1, whose tokens are system ids here: buildCore parks a core under its id, and a system node's
+    // settings name it as {"core": <id>}.
+    graph_->cores = {this, [](void* ctx, std::uint64_t id) { return static_cast<Engine*>(ctx)->takeCore(id); },
                      [](void* ctx, SystemBase* core) {
                          auto* self = static_cast<Engine*>(ctx);
                          const SystemId id = core->id();
@@ -132,7 +134,12 @@ Engine::Engine(double sampleRate) : sampleRate_(sampleRate) {
     config.interfacesCtx = this;
     graph_->host = std::make_unique<rp::graph::GraphHost>(graph_->registry, graph_->resources, config);
     graph_->host->setHostCommandHandler(&Engine::onHostCommand, this);
-    setGraph({kEmptyDocument, {}});
+    // The plan every engine starts from. Refused, nothing runs, the kernel included, until a document TS sends
+    // plans: logged, so a node type renamed in its package cannot leave an engine silent without a word.
+    if (const GraphResult empty = setGraph({kEmptyDocument, {}}); !empty.ok)
+        for (const auto& e : empty.errors)
+            std::fprintf(stderr, "[engine] the empty graph was refused (%s) at %s%s%s: %s\n", e.code.c_str(),
+                         e.nodeId.c_str(), e.port.empty() ? "" : ".", e.port.c_str(), e.message.c_str());
 }
 
 Engine::~Engine() = default;
@@ -146,10 +153,10 @@ const void* Engine::graphInterface(void* ctx, const char* id) {
 
 bool Engine::pushCommand(const DspCommand& c) { return graph_->host->pushHostCommand(&c, sizeof c); }
 
-// rp.host.cores/1: a system node's settings name its core by system id.
-SystemBase* Engine::takeCore(std::uint64_t token) {
-    if (token > UINT32_MAX) return nullptr;
-    const auto it = parked_.find(static_cast<SystemId>(token));
+// rp.host.cores/1's take: the core parked under the system id a node's settings name.
+SystemBase* Engine::takeCore(std::uint64_t id) {
+    if (id > UINT32_MAX) return nullptr;
+    const auto it = parked_.find(static_cast<SystemId>(id));
     if (it == parked_.end()) return nullptr;
     SystemBase* core = it->second.release();
     parked_.erase(it);

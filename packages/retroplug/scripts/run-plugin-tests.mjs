@@ -8,8 +8,9 @@
 // Lottie rasterization behind the <Lottie> component (retroplug-lottie-test),
 // the MIDI device-selection policy (retroplug-midi-test), the control-surface
 // device link (retroplug-launchpad-test), the node-graph engine's foundations
-// (retroplug-graph-test), and the engine on the graph: its system nodes and
-// translator (retroplug-engine-graph-test).
+// (retroplug-graph-test), and the engine on the graph: its system nodes, the
+// documents TS sends it, and buildGraph's goldens planned on it
+// (retroplug-engine-graph-test).
 //
 // A tiny runner (rather than chaining `build/bin/foo && …` in package.json) so
 // the suite is cross-platform: it appends `.exe` on Windows and spawns each

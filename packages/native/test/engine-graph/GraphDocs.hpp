@@ -51,7 +51,8 @@ inline std::string sys(const DocSystem& s) {
 
 }  // namespace docs_detail
 
-// The Stereo routing at a `channels`-wide host: every system's L summed into channel 0, its R into 1.
+// The Stereo routing at a `channels`-wide host: every system's L summed into channel 0, its R into 1. One
+// rp.core.add per side, never chained as buildGraph chains them past 16 inputs, so 16 systems at most.
 inline std::string stereoDocument(const std::vector<DocSystem>& systems, std::uint32_t channels = 2) {
     using namespace docs_detail;
     std::vector<std::string> nodes{node("kernel", "rp.dsp.kernel")}, wires;
@@ -105,14 +106,16 @@ inline std::string nesSplitDocument(SystemId id, const std::string& split) {
     return document(nodes, wires);
 }
 
-// A request for `document` placing `slots`. With `armMode` it re-arms the NES tap, arming `armId` to it
-// (0 restores only).
+// A request for `document` placing `slots`, with no tap re-arm.
 inline Engine::GraphRequest graphRequest(std::string document, std::vector<SystemId> slots) {
     Engine::GraphRequest r;
     r.document = std::move(document);
     r.slots = std::move(slots);
     return r;
 }
+// `r`, re-arming the NES tap: restore, then arm `armId` to `armMode`, or restore only when `armMode` is 0. The
+// arm is read off the mode, so this cannot ask for an arm to mode 0, which the engine refuses
+// (EngineGraph.test.cpp's own arming() can).
 inline Engine::GraphRequest rearming(Engine::GraphRequest r, SystemId armId = 0, std::uint32_t armMode = 0) {
     r.rearmTap = true;
     r.arm = armMode != 0;

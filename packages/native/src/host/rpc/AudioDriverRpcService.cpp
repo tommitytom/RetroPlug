@@ -1,6 +1,5 @@
 #include "host/rpc/AudioDriverRpcService.hpp"
 
-
 #include <chrono>
 #include <cstdio>
 #include <memory>

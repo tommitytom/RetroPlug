@@ -74,10 +74,8 @@ TEST_CASE("a parked core is placed by the document that names it", "[engine-grap
     Engine e(kRate);
     REQUIRE(e.parkCore(mgb(1)));
     REQUIRE(e.parkCore(mgb(2)));
-    auto r = request({{2, kGb}, {1, kGb}});
     // Four host channels, so the width read back is this document's, not the stereo pair of the first plan.
-    const std::string stereo = R"("buses":[1,1])";
-    r.document.replace(r.document.find(stereo), stereo.size(), R"("buses":[1,1,1,1])");
+    const auto r = rp::host::test::graphRequest(rp::host::test::stereoDocument({{2, kGb}, {1, kGb}}, 4), {2, 1});
     const auto result = e.setGraph(r);
     REQUIRE(result.ok);
     CHECK(e.systemCount() == 2);

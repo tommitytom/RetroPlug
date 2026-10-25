@@ -208,7 +208,7 @@ private:
     void runKernelStage(std::uint32_t frames);     // rp.dsp.kernel's body
     void applyCommand(DspCommand& c, const rp::host::SystemTable& table);
     void syncTap(bool arm, SystemId id, std::uint32_t mode, const rp::host::SystemTable& table);
-    SystemBase* takeCore(std::uint64_t token);
+    SystemBase* takeCore(std::uint64_t id);
     static const void* graphInterface(void* ctx, const char* id);
     static void onHostCommand(void* ctx, const rp::graph::HostCommand& cmd, const void* hostData, bool discard);
 

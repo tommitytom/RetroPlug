@@ -23,8 +23,8 @@ struct HostCores {
     // The core parked under `token`, now the caller's; null if none is (taken already, or never parked).
     SystemBase* (*take)(void* ctx, std::uint64_t token);
     // A system node is giving up its core: release what the engine keeps for it (its snapshot slot), or take
-    // the core back (parked again under its token). True when the host took it back: the node must not
-    // delete it.
+    // the core back, parked again for a later document's node to take. True when the host took it back: the
+    // node must not delete it.
     bool (*released)(void* ctx, SystemBase* core);
 };
 

@@ -18,8 +18,8 @@ struct DspCommand {
         SetPpq = 12, StageControllerMidi = 13, WriteRam = 14,
         StageSystemMidi = 15,
         // The NES tap arming every structural change does (docs/modular-graph-phase-b1-design.md section
-        // 3.2): restore whatever is armed, then arm `id` to `mode` if `arm`. Carried in its plan's swap, or
-        // alone for an edit that plans nothing (a remove or replace of an id already gone).
+        // 3.2): restore whatever is armed, then arm `id` to `mode` if `arm`. Only ever the trailer of a
+        // setGraph's swap, so it lands with the plan it was made for.
         SyncTap = 16,
     };
 

@@ -146,7 +146,6 @@ export interface Backend {
    *  kernel's `ctx.serialOut` for the Arduinoboy decoder. SameBoy-only (a no-op on other cores). */
   setSerialOutCapture(id: number, on: boolean): boolean;
 
-
   // --- Live emulator input ------------------------------------------------
   // The UI→DSP direction for game input: a joypad button transition on the focused system. Native queues
   // it to the core's audio-thread button sink, so it applies live while the instance plays.
