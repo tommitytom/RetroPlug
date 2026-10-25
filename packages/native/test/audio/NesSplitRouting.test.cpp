@@ -150,7 +150,7 @@ TEST_CASE("Engine PinSplit arms a real NES tap live and fans 3 mono pins across 
     rig.park(buildNes(1));
     rig.place(rearming(graphRequest(nesSplitDocument(1, "pins"), {1}), 1, 1));
 
-    // The arm rode the plan's swap, against an already-booted core — no rebuild, no reset.
+    // The arm rode the plan's swap, against an already-booted core - no rebuild, no reset.
     auto* nes = dynamic_cast<MesenNesSystem*>(eng.findSystem(1));
     REQUIRE(nes != nullptr);
     CHECK(nes->channelExportMode() == 1);           // StereoModPins
@@ -278,7 +278,7 @@ TEST_CASE("A second system disarms the NES tap and falls back to Stereo",
     REQUIRE(nes != nullptr);
     REQUIRE(nes->channelExportMode() == 1);
 
-    // The splits are single-system-only, so adding a peer must retire the wiring AND the tap it needed —
+    // The splits are single-system-only, so adding a peer must retire the wiring AND the tap it needed:
     // otherwise the mix path would keep draining capture streams nothing reads. TS sends a restore only.
     rig.park(buildNes(2));
     rig.place(rearming(graphRequest(stereoDocument({{1, kNesType}, {2, kNesType}}, 8), {1, 2})));

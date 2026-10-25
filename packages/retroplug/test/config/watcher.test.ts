@@ -102,7 +102,7 @@ test("pump: a changed ROM is ignored when reloadOnRomChange is off", () => {
   systems.addSystem("/proj/a.gb"); // reloadOnRomChange defaults false
   be.emitFileChange("/proj/a.gb");
   expect(fw.pump().romReloaded).toEqual([]);
-  expect(be.buildCalls.length).toBe(1); // only the initial add — no reload construct
+  expect(be.buildCalls.length).toBe(1); // only the initial add - no reload construct
 });
 
 test("pump: an unrelated path (recent.json) is ignored", () => {

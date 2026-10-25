@@ -222,7 +222,7 @@ test("a settings-patched ROM boots, and the core comes up in the theme the block
   expect(pal[0]).toBe(0x0f);
   expect(pal[1]).toBe(0x2a);
   console.log(`[bliptoaster-rom] settings --theme 11 -> the core boots with $3F00/$3F01 = 0F/2A`);
-  expect(graph.remove(44)).toBeTruthy(); // renderAudio drives EVERY live system — see frameOf below
+  expect(graph.remove(44)).toBeTruthy(); // renderAudio drives EVERY live system - see frameOf below
 });
 
 // The committed resources ROM is a real artifact predating the two screen fields, so it is the honest fixture

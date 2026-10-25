@@ -11,7 +11,8 @@ declare const __RESOURCES_DIR__: string;
 
 const session = bootSession();
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4), through
-// the session's own graph: the stores publish to it too, so each sees the documents the other sent.
+// the session's own graph, so the session's renders run what this places. The two models are not merged: this
+// is safe only because the session's stores place nothing here and the two publish in turn (see directGraph.ts).
 const graph = new DirectGraph(session.backend, session.project.graph);
 const { project, audio, backend: be, dsp } = session;
 

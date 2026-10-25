@@ -7,7 +7,7 @@
 //   __rp_loadProjectB64(b64)    — DPF setState: load an in-memory chunk (base64 of the .rplg zip)
 //   __rp_saveProjectB64()       — DPF getState: export the project as a base64 .rplg chunk
 //   __rp_newProject()           — DPF setState(""): reset to an empty project
-//   __rp_setHostOutputs(n)      — the host's output channel count: the graph's multi(n) shape
+//   __rp_setHostOutputs(n)      - the host's output channel count: the graph's multi(n) shape
 //   __rp_ready                  — set true once composition + kernel load succeeded
 //
 // The C++ boundary stays string-only: base64 is done HERE (DPF state is NUL-terminated UTF-8; the

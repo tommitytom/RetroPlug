@@ -305,7 +305,7 @@ export class SystemsStore {
     }, src.roles);
     const built = this.backend.buildCore(spec, newId);
     if (!built) {
-      console.warn(`[systems] duplicateSystem(${id}) failed (the core did not build) — no instance added`);
+      console.warn(`[systems] duplicateSystem(${id}) failed (the core did not build) - no instance added`);
       return null;
     }
     this.entries = appendEntry(this.entries, {

@@ -75,9 +75,9 @@ export class MockBackend implements Backend {
   readonly log: string[] = [];
 
   // --- emulator-lifecycle bookkeeping (mock-only) -------------------------
-  // (no id counter — TS owns ids and passes them to buildCore.)
+  // (no id counter - TS owns ids and passes them to buildCore.)
   private systems = new Map<number, MockSystem>();
-  /** Every buildCore call, in order, with the id it built under — lets tests assert the CONCRETE paths
+  /** Every buildCore call, in order, with the id it built under - lets tests assert the CONCRETE paths
    *  TS resolved (savPath/statePath) and the seeds it carried. Duplicate and reload are TS orchestration
    *  over buildCore, so they land here too (with stateBytes/sramBytes), not in a dedicated log. */
   readonly buildCalls: (ConstructSpec & { id: number })[] = [];
@@ -340,7 +340,7 @@ export class MockBackend implements Backend {
     return fmt === "unknown" ? sega : !sega || fmt === "sms" || fmt === "gg";
   }
 
-  // duplicate + reload are TS orchestration (SystemsStore) over readState/readSram + buildCore — the mock has
+  // duplicate + reload are TS orchestration (SystemsStore) over readState/readSram + buildCore - the mock has
   // no bespoke method; those store paths land as buildCalls (restoredFromBytes).
 
   readState(id: number): Uint8Array | null {

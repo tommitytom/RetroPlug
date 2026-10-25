@@ -681,7 +681,7 @@ export class ProjectStore {
         const sram = blobs.get(sramKey(i));
         const state = blobs.get(stateKey(i));
         // A savestate is the complete machine snapshot (it already contains the battery-backed SRAM), so
-        // boot from it ALONE — also seeding sramBytes cold-reseeds the battery and drops the restored
+        // boot from it ALONE - also seeding sramBytes cold-reseeds the battery and drops the restored
         // runtime state (e.g. an LSDj armed in "wait for MIDI"). The sram blob only seeds a system that
         // has no savestate (a thin load, or a battery-only export).
         const sysBlobs = state ? { stateBytes: state } : sram ? { sramBytes: sram } : undefined;
