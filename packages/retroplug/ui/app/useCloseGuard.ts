@@ -13,36 +13,27 @@ import { useCallback, useEffect, useState } from "react";
 import type { AppStores } from "../../src/appStores";
 import { hasUnsavedChanges } from "../../src/unsavedChanges";
 import { saveProjectInteractive } from "./saveProjectInteractive";
+import { unsavedRows } from "./unsavedRows";
+import type { Overlay } from "./overlay";
+import { native } from "../host/nativeHooks";
+import type { MenuTree } from "../screens/menu/menuTree";
+import { button } from "../screens/menu/menuItems";
 
-export interface CloseGuard {
-  /** True while the unsaved-changes prompt is showing. */
-  active: boolean;
-  /** Save everything (dirty SRAM + the project), then quit. Opens Save-As when the project has no path
-   *  yet; a cancelled Save-As keeps the prompt open. */
-  onSave: () => void;
-  /** Quit without saving. */
-  onDiscard: () => void;
-  /** Dismiss the prompt and stay open. */
-  onCancel: () => void;
-}
-
-function quitWindow(): void {
-  (globalThis as { __rp_quitWindow?: () => void }).__rp_quitWindow?.();
-}
+/** The unsaved-changes prompt as an overlay: Save & Quit / Discard & Quit / Cancel (= onClose). */
+export type CloseGuard = Overlay;
 
 export function useCloseGuard(stores: AppStores): CloseGuard {
   const [active, setActive] = useState(false);
 
   // Install the native close-request hook: veto (and show the prompt) only when something is unsaved.
   useEffect(() => {
-    const g = globalThis as { __rp_onCloseRequested?: () => boolean };
-    g.__rp_onCloseRequested = (): boolean => {
+    native.__rp_onCloseRequested = (): boolean => {
       if (!hasUnsavedChanges(stores.backend, stores.project)) return false; // clean → let it close
       setActive(true);
       return true; // veto: the overlay renders next frame
     };
     return () => {
-      delete g.__rp_onCloseRequested;
+      delete native.__rp_onCloseRequested;
     };
   }, [stores]);
 
@@ -50,16 +41,30 @@ export function useCloseGuard(stores: AppStores): CloseGuard {
 
   const onDiscard = useCallback(() => {
     setActive(false);
-    quitWindow();
+    native.__rp_quitWindow?.();
   }, []);
 
   const onSave = useCallback(() => {
     void (async () => {
       if (!(await saveProjectInteractive(stores))) return; // Save-As cancelled → keep the prompt open
       setActive(false);
-      quitWindow();
+      native.__rp_quitWindow?.();
     })();
   }, [stores]);
 
-  return { active, onSave, onDiscard, onCancel };
+  // It leads with WHAT is unsaved (the project file + each dirty battery's target .sav, greyed and
+  // nav-skipped). Built each render rather than latched when the prompt opened, so a battery the cart
+  // writes while it's up shows on the next render.
+  const tree: MenuTree | null = active
+    ? {
+        title: "Unsaved changes",
+        items: [
+          ...unsavedRows(stores.backend, stores.project),
+          button("close-save", "Save & Quit", onSave),
+          button("close-discard", "Discard & Quit", onDiscard),
+          button("close-cancel", "Cancel", onCancel),
+        ],
+      }
+    : null;
+  return { tree, onClose: onCancel };
 }

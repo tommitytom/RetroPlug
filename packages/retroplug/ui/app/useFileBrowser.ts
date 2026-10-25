@@ -3,7 +3,7 @@
 // above everything, and settles the promise on pick / cancel. The current directory is the module-level
 // last-dir (so reopening resumes there); navigate() advances it and bumps a local counter to re-render.
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import type { AppStores } from "../../src/appStores";
 import {
@@ -15,32 +15,23 @@ import {
   setLastBrowseDir,
 } from "../../src/fileBrowser";
 import { buildFileBrowserMenu } from "../screens/menu/fileBrowserMenu";
-import type { MenuTree } from "../screens/menu/menuTree";
+import type { Overlay } from "./overlay";
+import { useRerenderOn } from "../hooks/useRerender";
+import { native } from "../host/nativeHooks";
 
-export interface FileBrowserOverlay {
-  /** True while a browse is open (App gates Esc + game input on this, like the modals). */
-  active: boolean;
-  /** The overlay tree to render, or null. */
-  tree: MenuTree | null;
-  /** Esc / B — cancel the browse (resolves null). */
-  onClose: () => void;
-}
+/** The browse as an overlay; onClose (Esc / B) cancels it (resolves null). */
+export type FileBrowserOverlay = Overlay;
 
 export function useFileBrowser(stores: AppStores): FileBrowserOverlay {
-  const [, bump] = useState(0);
-  useEffect(() => subscribeFileBrowser(() => bump((n) => n + 1)), []);
+  const rerender = useRerenderOn(subscribeFileBrowser);
 
   // Install the in-app browser as the __rp_openFileBrowser hook, overriding any native host browser. This is
   // the cross-bundle seam: realBackend (control-plane bundle) calls the global hook and awaits
   // __rp_onFileBrowserResult; here (UI bundle) we open the React overlay and hand the pick back. Saving the
   // prior native hook lets the useNativeFileDialogs toggle delegate to the OS dialog later (step 2).
   useEffect(() => {
-    const g = globalThis as {
-      __rp_openFileBrowser?: (t: string, p: string, s: boolean, d: string, sd: string, dir: boolean) => void;
-      __rp_onFileBrowserResult?: (path: string | null) => void;
-    };
-    const nativeHook = g.__rp_openFileBrowser;
-    g.__rp_openFileBrowser = (title, patterns, saving, defaultName, startDir, directory) => {
+    const nativeHook = native.__rp_openFileBrowser;
+    native.__rp_openFileBrowser = (title, patterns, saving, defaultName, startDir, directory) => {
       // Default: the host's OS dialog. It falls through to the in-app overlay both when the user has opted
       // out and when the host binds no native hook at all (no desktop dialog helper), so this is safe
       // everywhere - a helper-less host just keeps the browser it always had.
@@ -56,23 +47,23 @@ export function useFileBrowser(stores: AppStores): FileBrowserOverlay {
         defaultName,
         startDir,
         directory: !!directory,
-      }).then((path) => g.__rp_onFileBrowserResult?.(path ?? null));
+      }).then((path) => native.__rp_onFileBrowserResult?.(path ?? null));
     };
     return () => {
-      g.__rp_openFileBrowser = nativeHook;
+      native.__rp_openFileBrowser = nativeHook;
     };
   }, [stores]);
 
   const req = getFileBrowserRequest();
-  if (!req) return { active: false, tree: null, onClose: () => {} };
+  if (!req) return { tree: null, onClose: () => {} };
 
   const dir = getLastBrowseDir(stores.backend.configDir());
   const tree = buildFileBrowserMenu((d) => stores.backend.listDir(d), req.opts, dir, {
     navigate: (d) => {
       setLastBrowseDir(d);
-      bump((n) => n + 1); // re-render → rebuild the tree for the new dir
+      rerender(); // rebuild the tree for the new dir
     },
     pick: (path) => resolveFileBrowser(path),
   });
-  return { active: true, tree, onClose: () => resolveFileBrowser(null) };
+  return { tree, onClose: () => resolveFileBrowser(null) };
 }

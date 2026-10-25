@@ -114,6 +114,15 @@ export type ChannelExportMode = (typeof CHANNEL_EXPORT_VALUES)[number];
 export const FIFO_PROFILE_VALUES = ["instant", "hardware"] as const;
 export type FifoProfile = (typeof FIFO_PROFILE_VALUES)[number];
 
+// BlipToaster's reliable link (src/transport/N8ReliableLink.hpp): MIDI to a ROM that advertises it (SIG capability
+// bit 0) goes out framed and is re-sent when an NTSC DMC-DMA halt loses a byte, exactly as on a physical N8.
+//   "auto" - on whenever the ROM advertises it. The DEFAULT: the emulator should lose and recover bytes the way
+//            the cartridge does, not be quietly better than it.
+//   "off"  - raw MIDI, unframed - for tests that drive the protocol (or a malformed stream) by hand.
+// Construct-time (the FIFO role is built when the core activates), so an edit needs setRoleConfig + reset.
+export const N8_LINK_VALUES = ["auto", "off"] as const;
+export type N8LinkMode = (typeof N8_LINK_VALUES)[number];
+
 // LSDj sync mode (LsdjSyncMode 0..8). The lsdj-sync DSP role switches on these members, and the
 // serial-out capture gate / host-sync latency compare against MidiOut/MasterSync/MidiSync/…
 export const LSDJ_MODE_VALUES = [
@@ -158,6 +167,7 @@ const ROLE_NATIVE_ENUMS: Record<string, Record<string, readonly string[]>> = {
     s5bNoise: CARTRIDGE_ACCURACY_VALUES,
     mmc5PhaseReset: CARTRIDGE_ACCURACY_VALUES,
     fifo: FIFO_PROFILE_VALUES,
+    n8Link: N8_LINK_VALUES,
   },
 };
 

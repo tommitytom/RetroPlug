@@ -32,6 +32,7 @@ test("the LSDj overlay is hidden by default and toggles on/off with backtick", (
   ui.advance(300); // a frame tick drives useLsdjRuntime to read + decode WRAM
   ui.pump(10);
   expect(ui.findByTestId("lsdj-overlay") != null).toBeTruthy();
+  expect(ui.findByTextContaining("v9.4.2") != null).toBeTruthy(); // the decoded readout, not just the strip
 
   // Backtick again hides it.
   ui.tapKey(BACKTICK);

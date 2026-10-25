@@ -519,12 +519,12 @@ State this explicitly so the numbers above are judgeable.
 | **`PerChannelRouter` / `renderAudioPerChannel` size N from `channelLayout()`** | `BlockRunner.hpp:96-105`, `EngineRpcService.cpp:271-312`. |
 | **`SnapshotRegistry::claim` is fully generic** | `SnapshotRegistry.cpp:32-90` - frame slot from `framebuffer()`, state slot from `stateSnapshotCapacity()`, SRAM published live from `saveSramBytes()` when `stateRegions()` is empty (the Mesen path). |
 | **The tracker/DSP/persistence spine is platform-blind** | Zero platform literals in `src/tracker/`, `dspKernel.ts`, `kernelProjection.ts`, `midiRouting.ts`, `projectPaths.ts`, `projectBinaries.ts`, `recentSerialization.ts`, `unsavedChanges.ts`, the CLI, the store graph. |
-| **`validSplits` degrades correctly** | `ui/lvgl/render.ts:108-113` pushes `channels` only for sameboy-core or NES, `pins` only for NES; an unknown platform lands on `["mix"]`. |
+| **`validSplits` degrades correctly** | `ui/host/render.ts:123-128` pushes `channels` only for sameboy-core or NES, `pins` only for NES; an unknown platform lands on `["mix"]`. |
 | **`src/render/types.ts:12` already has `"other"`** | A genuinely different `Platform` union from `platform.ts:15`; the render library will not crash without a case. |
 | **Persistence is additive** | Adding `"sms"` and `"gg"` to `platformSchema` (`projectConfig.ts:91`) needs no `K_PROJECT` bump (currently 3 at `:199`) and no `migrate.ts` step. `projectConfig.ts:91` is the only platform enum in any versioned root. |
 | **CI YAML needs zero change** | `build.yml` / `release.yml` run `./build.sh` and package a fixed artifact list; neither enumerates systems, cores, platforms or test names. (Coverage is a different matter, Tier 1 item 17.) |
-| **A battery-less system is an already-tested shape** | `detectBattery` (`systemsStore.ts:622`), `SystemView.battery` gating Save-SRAM rows (`menuDefs.ts:478`), the savestate fallback (`ui/lvgl/render.ts:61`), the recents-label drop (`projectStore.ts:180`), `test/systems/battery.test.ts`. |
-| **UI is otherwise platform-free** | Grepping all of `packages/retroplug/ui/`: the only platform literals are `lvgl/render.ts:108-111` and `menuDefs.ts:456-457`. |
+| **A battery-less system is an already-tested shape** | `detectBattery` (`systemsStore.ts:622`), `SystemView.battery` gating Save-SRAM rows (`menuDefs.ts:478`), the savestate fallback (`ui/host/render.ts:82`), the recents-label drop (`projectStore.ts:180`), `test/systems/battery.test.ts`. |
+| **UI is otherwise platform-free** | Grepping all of `packages/retroplug/ui/`: the only platform literals are `host/render.ts:125-126` and `menuDefs.ts:456-457`. |
 | **`run-native-tests.mjs` has no test manifest** | No registration row needed; `__REPO_RESOURCES_DIR__` is already injected at `run-native-tests.mjs:109`. |
 | **No extension collision** | No other console claims `.sms`/`.gg` in the `TryLoadRom` chain (`Emulator.cpp:566-572`); `Gameboy.h:74` is `.gb/.gbc/.gbx/.gbs`, `SnesConsole.h:75` has `.gb/.gbc` but not `.gg`. |
 | **`GameGearPanningReg` is not a second silence trap** | Defaults `0xFF` (`SmsTypes.h:165`), all channels both sides. |

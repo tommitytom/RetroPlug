@@ -6,17 +6,11 @@ import { useState } from "react";
 
 import type { AppStores } from "../../src/appStores";
 import type { SystemView } from "../../src/systemsStore";
-import type { MenuTree } from "../screens/menu/menuTree";
 import { planImport, buildImportModal, applyImport, type ImportPending } from "./songImport";
 import { savEditWouldDiscard } from "../../src/tracker";
+import type { Overlay } from "./overlay";
 
-export interface SongImport {
-  /** The overlay to render (null = nothing showing). */
-  modal: MenuTree | null;
-  /** True while the overlay is up (App gates Esc + game input on this). */
-  active: boolean;
-  /** Esc / dismiss - clears the overlay. */
-  onClose: () => void;
+export interface SongImport extends Overlay {
   /** Begin an import: validate `source` against `sys`'s console, then show the picker (or an error notice). */
   begin: (sys: SystemView, source: Uint8Array) => void;
 }
@@ -71,6 +65,6 @@ export function useSongImport(stores: AppStores): SongImport {
     setPending(null);
   };
 
-  const modal = pending ? buildImportModal(pending, { toggle, toggleAll, apply, onClose }) : null;
-  return { modal, active: pending !== null, onClose, begin };
+  const tree = pending ? buildImportModal(pending, { toggle, toggleAll, apply, onClose }) : null;
+  return { tree, onClose, begin };
 }

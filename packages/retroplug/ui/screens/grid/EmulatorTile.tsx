@@ -6,30 +6,19 @@
 // tile is dimmed by a translucent black overlay — the lvgl-js way, since opacity on a Canvas is dropped
 // (only Image widgets route it) and opacity units are 0..1 floats (0.5 = LV_OPA_50).
 
-import { useRef, useState } from "react";
-import { Canvas, Text } from "lvgljs-ui";
+import { useCallback, useRef } from "react";
+import { EAlignType, Text } from "lvgljs-ui";
 
 import { useStores } from "../../stores/useStores";
 import { useNativeEvent } from "../../lvgl/useNativeEvent";
+import { useFrameSampled } from "../../lvgl/useFramePoll";
 import { Box } from "../../lvgl/Box";
+import { PixelCanvas } from "../../lvgl/PixelCanvas";
+import type { CanvasHandle } from "../../lvgl/lv";
 import { tagTestId } from "../../lvgl/StableSlot";
 import { LsdjOverlay } from "./LsdjOverlay";
 import { RisaOverlay } from "./RisaOverlay";
-import { getRenderJobs, cancelRender, dismissRenderJob, pickActiveRenderJob, renderBadgeLabel, type RenderJobStatus } from "../../lvgl/render";
-
-// lv_image.h's inner-align enum: CONTAIN (13) fits the frame inside the tile keeping aspect; COVER (14)
-// fills the tile and crops the overflow. This was 14. A GB tile is exactly 160x144 * zoom so the two
-// coincide there, but a NES frame (256x240) in a GB-shaped tile was being cropped top and bottom.
-const LV_IMAGE_ALIGN_CONTAIN = 13;
-const LV_ALIGN_CENTER = 0x09;
-const LV_ALIGN_BOTTOM_MID = 0x05;
-
-// lvgljs-ui's Canvas type doesn't expose a ref prop; cast to reach setBuffer.
-const CanvasAny = Canvas as any;
-
-interface CanvasHandle {
-  setBuffer(buffer: ArrayBuffer, width: number, height: number): void;
-}
+import { getRenderJobs, cancelRender, dismissRenderJob, pickActiveRenderJob, renderBadgeLabel, type RenderJobStatus } from "../../host/render";
 
 export function EmulatorTile({
   systemId,
@@ -54,25 +43,19 @@ export function EmulatorTile({
   const { backend } = useStores();
   const canvasRef = useRef<CanvasHandle | null>(null);
 
-  // The active background render badge for this system (or null). Updated only when its LABEL changes (so
-  // once a second while rendering) rather than on every per-frame poll.
-  const [renderJob, setRenderJob] = useState<RenderJobStatus | null>(null);
-  const renderKey = useRef("");
-
-  useNativeEvent("frame", () => {
-    // Background-render badge: poll this system's jobs, auto-dismiss the finished ones, and surface the
-    // active render (or a lingering error). getRenderJobs() is inert (empty) in the headless harness.
+  // The active background render badge for this system (or null): poll this system's jobs, auto-dismiss the
+  // finished ones, and surface the active render (or a lingering error). Re-renders only when the LABEL
+  // changes (so once a second while rendering). getRenderJobs() is inert (empty) in the headless harness.
+  const sampleRenderJob = useCallback((): RenderJobStatus | null => {
     const jobs = getRenderJobs();
     for (const j of jobs)
       if (j.systemId === systemId && (j.state === "done" || j.state === "cancelled"))
         dismissRenderJob(j.id); // the render finished (file written) — drop the job, vanish the badge
-    const active = pickActiveRenderJob(jobs, systemId);
-    const key = active ? `${active.id}:${renderBadgeLabel(active)}` : "";
-    if (key !== renderKey.current) {
-      renderKey.current = key;
-      setRenderJob(active);
-    }
+    return pickActiveRenderJob(jobs, systemId);
+  }, [systemId]);
+  const renderJob = useFrameSampled(sampleRenderJob, renderJobKey);
 
+  useNativeEvent("frame", () => {
     const frame = backend.getFrame(systemId);
     if (!frame || !frame.published) return;
     const canvas = canvasRef.current;
@@ -89,11 +72,11 @@ export function EmulatorTile({
 
   return (
     <Box onClick={onFocus} style={{ width, height, "background-color": "#000000" }}>
-      <CanvasAny ref={canvasRef} nearestNeighbor={true} innerAlign={LV_IMAGE_ALIGN_CONTAIN} style={{ width, height, "border-width": 0 }} />
+      <PixelCanvas canvasRef={canvasRef} width={width} height={height} />
       {dim && (
         <Box
           innerRef={dimTestId ? tagTestId(dimTestId) : undefined}
-          align={{ type: LV_ALIGN_CENTER, pos: [0, 0] }}
+          align={{ type: EAlignType.ALIGN_CENTER, pos: [0, 0] }}
           style={{ width, height, "background-color": "#000000", "background-opacity": 0.5 }}
         />
       )}
@@ -111,7 +94,7 @@ export function EmulatorTile({
         // framebuffer child in by 2px. As an overlay the 2px stroke lands on the tile's outer ring,
         // painted over the Canvas edge (a couple of rim pixels), so the picture never moves.
         <Box
-          align={{ type: LV_ALIGN_CENTER, pos: [0, 0] }}
+          align={{ type: EAlignType.ALIGN_CENTER, pos: [0, 0] }}
           style={{ width, height, "background-opacity": 0, "border-width": 2, "border-color": "#4a86e8" }}
         />
       )}
@@ -120,7 +103,7 @@ export function EmulatorTile({
         // rendering to cancel; tap an error to dismiss. (The click also bubbles to focus the tile — harmless.)
         <Box
           onClick={() => (renderJob.state === "rendering" ? cancelRender(renderJob.id) : dismissRenderJob(renderJob.id))}
-          align={{ type: LV_ALIGN_BOTTOM_MID, pos: [0, 0] }}
+          align={{ type: EAlignType.ALIGN_BOTTOM_MID, pos: [0, 0] }}
           style={{
             width,
             height: renderBarH(height),
@@ -135,6 +118,11 @@ export function EmulatorTile({
       )}
     </Box>
   );
+}
+
+/** The badge's dedupe signature: "" for no badge, so an idle tile never re-renders for it. */
+function renderJobKey(job: RenderJobStatus | null): string {
+  return job ? `${job.id}:${renderBadgeLabel(job)}` : "";
 }
 
 /** The render badge bar height / font, scaled to the tile (kept readable on a small tile). */

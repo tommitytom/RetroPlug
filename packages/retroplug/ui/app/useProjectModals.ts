@@ -6,7 +6,7 @@
 // guarded operations the menu drives (ctx.newProject / ctx.loadProject).
 //
 // Load outcomes arrive AFTER the file dialog closes (the menu is gone by then), so they surface as a
-// full-window overlay — App renders `modal` above everything, exactly like the close-guard prompt. The
+// full-window overlay - App renders its tree above everything, exactly like the close-guard prompt. The
 // overlay is a plain MenuTree (data), rebuilt each render from the pending state, so its handlers never
 // go stale. Mirrors useCloseGuard's Save/Discard/Cancel flow via the shared saveProjectInteractive.
 //
@@ -20,35 +20,12 @@ import { useRef, useState } from "react";
 
 import type { AppStores } from "../../src/appStores";
 import type { LoadOutcome } from "../../src/projectStore";
-import type { MissingFile } from "../../src/projectMissing";
 import { hasUnsavedChanges } from "../../src/unsavedChanges";
-import { basename } from "../../src/pathUtil";
-import { SAV_PATTERNS } from "../../src/savPaths";
-import { saveProjectInteractive } from "./saveProjectInteractive";
-import { unsavedRows } from "./unsavedRows";
-import { useNativeEvent } from "./useNativeEvent";
-import type { MenuItem, MenuTree } from "../screens/menu/menuTree";
+import { useNativeEvent } from "../lvgl/useNativeEvent";
+import type { Overlay } from "./overlay";
+import { buildProjectModal, type PendingModal } from "./projectModals";
 
-const ROM_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes", "*.sms", "*.gg"];
-const SRAM_PATTERNS = SAV_PATTERNS; // .sav / .srm battery saves
-
-// One overlay at a time: a discard confirm before a destructive New/Load, an OK notice, or the relink
-// prompt for a project that loaded with files missing.
-type PendingModal =
-  | { kind: "confirm"; proceed: () => void }
-  | { kind: "notice"; title: string; body: string }
-  | { kind: "relink"; missing: MissingFile[] }
-  // A recent SONG row's load, when the cart it lands on holds uncommitted working-song work. The row asked
-  // to open song X; silently destroying song Y on the way is not what was agreed to.
-  | { kind: "songDiscard"; song: string; working: string };
-
-export interface ProjectModals {
-  /** The overlay to render (null = nothing showing). */
-  modal: MenuTree | null;
-  /** True while an overlay is up (App gates Esc + game input on this). */
-  active: boolean;
-  /** Esc / dismiss — cancels a pending relink's load, then clears the overlay. */
-  onClose: () => void;
+export interface ProjectModals extends Overlay {
   /** Start a new project, guarding unsaved changes first. */
   newProject: () => void;
   /** Load `path`, guarding unsaved changes first and surfacing the outcome. `song` (a recent row's) is
@@ -152,68 +129,6 @@ export function useProjectModals(stores: AppStores): ProjectModals {
     settleSong();
   };
 
-  const modal = pending ? buildModal(pending, stores, handleOutcome, onClose, proceedSong) : null;
-  return { modal, active: pending !== null, onClose, newProject, loadProject, loadRomAsProject };
-}
-
-// Build the overlay tree for `pending`. Every button uses keepOpen (the overlay owns dismissal itself),
-// mirroring the close-guard tree in App.tsx.
-function buildModal(
-  pending: PendingModal,
-  stores: AppStores,
-  handleOutcome: (o: LoadOutcome) => void,
-  onClose: () => void,
-  proceedSong: () => void,
-): MenuTree {
-  const btn = (id: string, label: string, onSelect: () => void): MenuItem => ({ id, label, kind: "action", keepOpen: true, onSelect });
-
-  if (pending.kind === "confirm") {
-    const { proceed } = pending;
-    // Leads with WHAT is unsaved (the project file + each dirty battery's target .sav), greyed and skipped
-    // by nav, so the user can see what Save writes / Don't Save throws away. Same block as the close guard.
-    return {
-      title: "Unsaved changes",
-      items: [
-        ...unsavedRows(stores.backend, stores.project),
-        btn("discard-save", "Save", () => void saveProjectInteractive(stores).then((saved) => saved && proceed())),
-        btn("discard-nosave", "Don't Save", proceed),
-        btn("discard-cancel", "Cancel", onClose),
-      ],
-    };
-  }
-
-  if (pending.kind === "songDiscard") {
-    const { song, working } = pending;
-    // No "save first" here (unlike the Songs menu): the cart has only just booted, so this is a plain
-    // proceed-or-cancel. Cancel leaves the project loaded showing whatever song the cart came up on.
-    return {
-      title: "Unsaved song",
-      items: [
-        btn("song-discard-what", `"${working}" has unsaved changes`, () => {}),
-        btn("song-discard-go", `Discard & load "${song}"`, proceedSong),
-        btn("song-discard-cancel", "Keep current song", onClose),
-      ],
-    };
-  }
-
-  if (pending.kind === "notice") {
-    return {
-      title: pending.title,
-      items: [btn("notice-body", pending.body, () => {}), btn("notice-ok", "OK", onClose)],
-    };
-  }
-
-  // relink: one "Locate …" per missing file (the store auto-resolves folder-mates, so one pick often
-  // clears the rest), then Cancel.
-  const items = pending.missing.map((m, i) =>
-    btn(`relink-${i}`, `Locate ${basename(m.path) || m.itemKind}...`, () =>
-      void stores.backend
-        .openFileBrowser({ title: `Locate ${basename(m.path) || m.itemKind}`, patterns: m.itemKind === "rom" ? ROM_PATTERNS : SRAM_PATTERNS })
-        .then((p) => {
-          if (p) handleOutcome(stores.project.relink(m, p));
-        }),
-    ),
-  );
-  items.push(btn("relink-cancel", "Cancel", onClose));
-  return { title: "Missing files", items };
+  const tree = pending ? buildProjectModal(pending, stores, { handleOutcome, onClose, proceedSong }) : null;
+  return { tree, onClose, newProject, loadProject, loadRomAsProject };
 }

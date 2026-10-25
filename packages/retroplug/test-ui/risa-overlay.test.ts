@@ -29,6 +29,7 @@ test("the risa overlay is hidden by default and toggles on/off with backtick", (
   ui.advance(300); // a frame tick drives useRisaRuntime to read + decode RAM
   ui.pump(10);
   expect(ui.findByTestId("risa-overlay") != null).toBeTruthy();
+  expect(ui.findByTextContaining("v2.2.1") != null).toBeTruthy(); // the decoded readout, not just the strip
 
   // Backtick again hides it.
   ui.tapKey(BACKTICK);

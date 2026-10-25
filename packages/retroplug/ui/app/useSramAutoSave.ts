@@ -15,7 +15,7 @@ import { useRef } from "react";
 
 import type { AppStores } from "../../src/appStores";
 import { SramAutoSaver } from "../../src/sramAutoSave";
-import { useFrameDivider } from "./useFramePoll";
+import { useFrameDivider } from "../lvgl/useFramePoll";
 
 // ~2 s at 60 fps. Deliberately slower than useSongWatch's 0.5 s: that polls a header-only name parse,
 // whereas a battery check can reach sramSignature's full encodeSong(decodeSong(...)) round-trip. The raw

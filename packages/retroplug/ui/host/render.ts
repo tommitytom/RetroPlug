@@ -8,6 +8,7 @@ import type { SplitMode, OnExists } from "../../src/render";
 import { resolveSongCatalog } from "../../src/tracker";
 import { stem } from "../../src/pathUtil";
 import { resolveSavPath } from "../../src/savPaths";
+import { native } from "./nativeHooks";
 
 /** The backend methods startSystemRender needs — all on the plugin's control-plane channel (host +
  *  emulator facets), so it accepts either Backend or the narrower ControlPlaneBackend structurally. */
@@ -27,15 +28,6 @@ export interface RenderJobStatus {
   message: string; // error detail (state === "error")
 }
 
-interface RenderHooks {
-  __rp_startRender?: (systemId: number, specJson: string) => number;
-  __rp_cancelRender?: (jobId: number) => void;
-  __rp_dismissRenderJob?: (jobId: number) => void;
-  __rp_getRenderJobs?: () => RenderJobStatus[];
-}
-
-const hooks = globalThis as RenderHooks;
-
 /** The render-menu selections carried into a render (from the persisted userConfig.render). */
 export interface RenderRequest {
   split: SplitMode;
@@ -51,7 +43,7 @@ export interface RenderRequest {
  *  matching the CLI). Returns the job id, or null if it couldn't start (no on-disk ROM, or the hook is absent
  *  in the headless harness). */
 export function startSystemRender(backend: RenderBackend, sys: SystemView, req: RenderRequest, outPath: string): number | null {
-  if (!hooks.__rp_startRender || !sys.romPath) return null;
+  if (!native.__rp_startRender || !sys.romPath) return null;
   const spec: Record<string, unknown> = { rom: sys.romPath, out: outPath, split: req.split };
   if (req.sampleRate !== undefined) spec.sampleRate = req.sampleRate;
   if (req.maxDurationMs !== undefined) spec.maxDurationMs = req.maxDurationMs;
@@ -95,7 +87,7 @@ export function startSystemRender(backend: RenderBackend, sys: SystemView, req: 
     }
   }
 
-  const id = hooks.__rp_startRender(sys.id, JSON.stringify(spec));
+  const id = native.__rp_startRender(sys.id, JSON.stringify(spec));
   return id > 0 ? id : null;
 }
 
@@ -113,17 +105,17 @@ export function renderBaseName(backend: Pick<RenderBackend, "readSram">, sys: Sy
 
 /** Request cancellation of a running render (cooperative — aborts at the next chunk). */
 export function cancelRender(jobId: number): void {
-  hooks.__rp_cancelRender?.(jobId);
+  native.__rp_cancelRender?.(jobId);
 }
 
 /** Drop a finished job (the tile dismisses a completed/errored badge). */
 export function dismissRenderJob(jobId: number): void {
-  hooks.__rp_dismissRenderJob?.(jobId);
+  native.__rp_dismissRenderJob?.(jobId);
 }
 
 /** This editor's background render jobs (for the per-frame tile poll). Empty in the headless harness. */
 export function getRenderJobs(): RenderJobStatus[] {
-  return hooks.__rp_getRenderJobs?.() ?? [];
+  return native.__rp_getRenderJobs?.() ?? [];
 }
 
 /** The split modes valid for a system's platform: mix always; channels on GB/NES; pins on NES only. Used to

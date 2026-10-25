@@ -9,6 +9,7 @@
 // is absent in a DAW / JACK standalone / the headless harness (hasMidiConfig() is false → the submenu hidden).
 
 import { createSubscribable } from "./subscribable";
+import { native } from "../../host/nativeHooks";
 
 /** The input selection meaning "every hardware port at once" - an explicit choice, not the default.
  *  Opening every device turns out to be a surprising thing to do by default: anything plugged in becomes a
@@ -27,20 +28,14 @@ const notify = createSubscribable();
 const emit = notify.emit;
 export const subscribeMidi = notify.subscribe;
 
-type MidiGlobals = {
-  __rp_getMidiConfig?: () => Partial<MidiConfig>;
-  __rp_setMidiInput?: (name: string) => void;
-  __rp_setMidiOutput?: (name: string) => void;
-};
-
 /** Whether the SDL host exposes the MIDI-device seam (standalone only). Gates the whole submenu. */
 export function hasMidiConfig(): boolean {
-  return typeof (globalThis as MidiGlobals).__rp_getMidiConfig === "function";
+  return typeof native.__rp_getMidiConfig === "function";
 }
 
 /** The live device lists + current selection, read fresh each render (no draft; picks apply immediately). */
 export function getMidiConfig(): MidiConfig | null {
-  const fn = (globalThis as MidiGlobals).__rp_getMidiConfig;
+  const fn = native.__rp_getMidiConfig;
   if (typeof fn !== "function") return null;
   const c = fn() ?? {};
   return {
@@ -53,14 +48,13 @@ export function getMidiConfig(): MidiConfig | null {
 
 /** Choose the input device by name ("" = All Devices). Applies + persists natively, then repaints the label. */
 export function setMidiInput(name: string): void {
-  (globalThis as MidiGlobals).__rp_setMidiInput?.(name);
+  native.__rp_setMidiInput?.(name);
   emit();
 }
 
 /** Choose the output device by name ("" = None). Applies + persists natively, then repaints the label. */
 export function setMidiOutput(name: string): void {
-  (globalThis as MidiGlobals).__rp_setMidiOutput?.(name);
+  native.__rp_setMidiOutput?.(name);
   emit();
 }
-
 

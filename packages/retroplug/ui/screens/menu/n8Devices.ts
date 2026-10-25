@@ -13,6 +13,8 @@
 // projectExpVolForN8 / setN8ExpVol at the bottom.
 import type { SystemView } from "../../../src/systemsStore";
 import { createSubscribable } from "./subscribable";
+import { native } from "../../host/nativeHooks";
+import { roleConfig } from "../../../src/systemRoles";
 
 export interface N8Port {
   port: string; // OS serial port name (/dev/ttyACM0, COM3, ...)
@@ -33,23 +35,15 @@ const notify = createSubscribable();
 const emit = notify.emit;
 export const subscribeN8 = notify.subscribe;
 
-type N8Globals = {
-  __rp_getN8Config?: () => Partial<N8Config>;
-  __rp_setN8Port?: (name: string) => void;
-  __rp_connectN8?: (enabled: boolean) => void;
-  __rp_setN8Lookahead?: (ms: number) => void;
-  __rp_setN8ExpVol?: (v: number) => void;
-};
-
 /** Whether the host exposes the N8 seam (SDL standalone or DAW plugin). Necessary but not sufficient for the
  *  submenu: menuDefs only renders it when a physical N8 is actually detected (n8Detected over getN8Config). */
 export function hasN8(): boolean {
-  return typeof (globalThis as N8Globals).__rp_getN8Config === "function";
+  return typeof native.__rp_getN8Config === "function";
 }
 
 /** The live serial ports + current N8 link state, read fresh each render. */
 export function getN8Config(): N8Config | null {
-  const fn = (globalThis as N8Globals).__rp_getN8Config;
+  const fn = native.__rp_getN8Config;
   if (typeof fn !== "function") return null;
   const c = fn() ?? {};
   const ports = Array.isArray(c.ports)
@@ -68,19 +62,19 @@ export function getN8Config(): N8Config | null {
 
 /** Choose the serial port by name. Applies + persists natively, then repaints the labels. */
 export function setN8Port(name: string): void {
-  (globalThis as N8Globals).__rp_setN8Port?.(name);
+  native.__rp_setN8Port?.(name);
   emit();
 }
 
 /** Toggle streaming to the N8 (open/close the serial link). Applies + persists natively. */
 export function connectN8(enabled: boolean): void {
-  (globalThis as N8Globals).__rp_connectN8?.(enabled);
+  native.__rp_connectN8?.(enabled);
   emit();
 }
 
 /** Set the timed-release lookahead latency (ms). Applies + persists natively. */
 export function setN8Lookahead(ms: number): void {
-  (globalThis as N8Globals).__rp_setN8Lookahead?.(ms);
+  native.__rp_setN8Lookahead?.(ms);
   emit();
 }
 
@@ -96,7 +90,7 @@ export function expVolToN8(percent: number): number {
  *  the spot when the link is up, and again on every connect. NOT persisted here: the level belongs to the
  *  NES system's `expansionVolume` knob, in the project. */
 export function setN8ExpVol(v: number): void {
-  (globalThis as N8Globals).__rp_setN8ExpVol?.(v);
+  native.__rp_setN8ExpVol?.(v);
 }
 
 /** The N8 master_vol a project asks for: the focused NES system's "Expansion Volume" (else the first NES
@@ -108,9 +102,8 @@ export function projectExpVolForN8(systems: SystemView[]): number {
   const nes = systems.filter((s) => s.platform === "nes");
   if (nes.length === 0) return -1;
   const sys = nes.find((s) => s.focused) ?? nes[0];
-  const cfg = sys.roles.find((r) => r.kind === "mesen")?.config as Record<string, unknown> | undefined;
+  const cfg = roleConfig(sys.roles, "mesen");
   const percent = typeof cfg?.expansionVolume === "number" ? cfg.expansionVolume : 100;
   return expVolToN8(percent);
 }
-
 

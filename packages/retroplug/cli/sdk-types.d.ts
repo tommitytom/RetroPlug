@@ -162,6 +162,10 @@ export interface CoreTransportStats {
   droppedBytes: number;
   wirePending: number;
   txDepth: number;
+  /** BlipToaster's reliable link (NES; 0 when off): frames sent, and frames re-sent because the ROM's ack showed them
+   *  lost - on NTSC, the bytes a DMC-DMA halt took that the link recovered. */
+  linkFrames: number;
+  linkResent: number;
 }
 
 export interface DebugEvent {

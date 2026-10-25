@@ -1,6 +1,6 @@
 // The Songs menu's "import from a .sav" feature: validate a source save against the loaded cart's console,
 // then a checkbox picker imports the chosen songs. Covers the console-agnostic hook helpers (planImport /
-// buildImportModal / applyImport in ui/lvgl/songImport) plus the per-console SongCatalog validation +
+// buildImportModal / applyImport in ui/app/songImport) plus the per-console SongCatalog validation +
 // subset import, driven through the composed stores like the other menu tests.
 //
 // The write cycle (applyImport) is asserted against the last constructCall's sramBytes — the bytes handed
@@ -9,7 +9,7 @@
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
-import { planImport, buildImportModal, applyImport, type PickState, type ImportPending } from "../../ui/lvgl/songImport";
+import { planImport, buildImportModal, applyImport, type PickState, type ImportPending } from "../../ui/app/songImport";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import type { SystemView } from "../../src/systemsStore";
@@ -134,6 +134,8 @@ test("buildImportModal renders ASCII checkbox rows, an Import(N) button, and the
   const nt = buildImportModal(notice, handlers);
   expect(nt.title).toBe("Cannot import");
   expect(findItem(nt.items, "import-notice-ok")?.label).toBe("OK");
+  // The body is a statement, not an option: disabled, so the cursor starts on OK and Enter dismisses.
+  expect(findItem(nt.items, "import-notice-body")?.disabled).toBe(true);
 });
 
 // --- applyImport (the write cycle) ----------------------------------------------------------------------

@@ -17,7 +17,7 @@ improving one improves both.
 ## The shape
 
 ```
-System > Render menu ─▶ startSystemRender (ui/lvgl/render.ts)
+System > Render menu ─▶ startSystemRender (ui/host/render.ts)
    │  browseThen → out path      │  snapshot live SRAM/savestate → temp file
    ▼                             ▼
 __rp_startRender(sysId, specJson)  ──▶  PluginUI  ──▶  RenderJobRegistry (process-global)
@@ -75,7 +75,7 @@ so concurrent core construction can't race.
 - **Hooks** (bound in `installWindowSizeHooks`, per-context routed): `__rp_startRender(sysId, specJson)`,
   `__rp_cancelRender(jobId)`, `__rp_dismissRenderJob(jobId)`, `__rp_getRenderJobs()`. See
   [03-ts-layer.md](03-ts-layer.md) for the `__rp_*` pattern.
-- **`ui/lvgl/render.ts`** — `startSystemRender` snapshots the live `readSram`/`readState` to a temp file
+- **`ui/host/render.ts`** — `startSystemRender` snapshots the live `readSram`/`readState` to a temp file
   under `configDir` and calls `__rp_startRender`; `pickActiveRenderJob` selects a tile's badge job and
   `renderBadgeLabel` writes its text. Inert in the headless harness (no hooks bound).
 - **The instance's CONFIGURATION rides along** — `spec.roles` (the live system's roles, configs included)

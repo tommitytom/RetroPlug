@@ -11,7 +11,7 @@ import { Render } from "lvgljs-ui";
 import { StoreProvider } from "./stores/StoreProvider";
 import { FocusProvider } from "./lvgl/FocusProvider";
 import { App } from "./App";
-import type { AppStores } from "../src/appStores";
+import { native, pluginNamespace } from "./host/nativeHooks";
 import { gridContentSize, resolveZoom, SystemLayout } from "./screens/grid/layout";
 
 function Root() {
@@ -37,8 +37,7 @@ function unmountUI() {
 // instead of the 480×432 default. Returns null for an empty project (the start menu keeps the default) or
 // when there's no control plane (the headless harness) — the native side leaves the default size then.
 function initialWindowSize(): { width: number; height: number } | null {
-  const ns = (globalThis as Record<symbol, unknown>)[Symbol.for("plugin")] as { stores?: AppStores } | undefined;
-  const stores = ns?.stores;
+  const stores = pluginNamespace()?.stores;
   if (!stores) return null;
   const count = stores.project.systems.view().length;
   if (count === 0) return null;
@@ -48,7 +47,6 @@ function initialWindowSize(): { width: number; height: number } | null {
   return { width, height };
 }
 
-(globalThis as unknown as { __rp_mountUI?: () => void }).__rp_mountUI = mountUI;
-(globalThis as unknown as { __rp_unmountUI?: () => void }).__rp_unmountUI = unmountUI;
-(globalThis as unknown as { __rp_initialWindowSize?: () => { width: number; height: number } | null }).__rp_initialWindowSize =
-  initialWindowSize;
+native.__rp_mountUI = mountUI;
+native.__rp_unmountUI = unmountUI;
+native.__rp_initialWindowSize = initialWindowSize;

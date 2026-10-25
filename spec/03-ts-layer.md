@@ -217,7 +217,7 @@ row rather than rewriting one: `recordSong(name)` adds it (a known song - the So
 names what it just loaded, no need to wait on a battery snapshot), and `recordCurrentSong()` is
 `recordSong` over `currentSong()` - the signal for a load RetroPlug didn't make, i.e. the user
 picking a song on LSDj's / risa's own file screen. Nothing else can see that, so the UI polls it:
-[`useSongWatch`](../packages/retroplug/ui/lvgl/useSongWatch.ts) calls `recordCurrentSong()` every
+[`useSongWatch`](../packages/retroplug/ui/app/useSongWatch.ts) calls `recordCurrentSong()` every
 ~30 render frames. No memo is needed - `RecentStore.add` no-ops (no write, no notify) while the
 answer is unchanged. Editor-driven like the file watcher: a DAW instance with its editor closed
 records nothing until it's opened.
@@ -347,9 +347,9 @@ harness**:
 | Hook | Owner | Purpose |
 |---|---|---|
 | `__rp_openFileBrowser` / `__rp_onFileBrowserResult` | [realBackend.ts](../packages/retroplug/src/realBackend.ts) | The async file dialog |
-| `__rp_setWindowSize` / `__rp_isWindowSizeControlled` | [useWindowSize.ts:43-51](../packages/retroplug/ui/lvgl/useWindowSize.ts#L43) | Fit-to-grid resize / tiling-WM detection |
+| `__rp_setWindowSize` / `__rp_isWindowSizeControlled` | [useWindowSize.ts:42-50](../packages/retroplug/ui/lvgl/useWindowSize.ts#L42) | Fit-to-grid resize / tiling-WM detection |
 | `__rp_mountUI` / `__rp_unmountUI` | [main.tsx:31-32](../packages/retroplug/ui/main.tsx#L31) | Render/teardown across window close/reopen |
-| `__rp_tagTestId` | [StableSlot.tsx:20](../packages/retroplug/ui/lvgl/StableSlot.tsx#L20) | Test-only widget tagging (inert in production) |
+| `__rp_tagTestId` | [StableSlot.tsx:21](../packages/retroplug/ui/lvgl/StableSlot.tsx#L21) | Test-only widget tagging (inert in production) |
 
 ---
 
@@ -390,10 +390,10 @@ change unless a tiling WM owns geometry (`isWindowSizeControlled()`). It drives
 `<SystemGrid>`.
 
 **The unsaved-changes prompts.** Two of them - the standalone's close guard
-([`useCloseGuard`](../packages/retroplug/ui/lvgl/useCloseGuard.ts), rendered by App) and the
-New / Load discard confirm ([`useProjectModals`](../packages/retroplug/ui/lvgl/useProjectModals.ts))
+([`useCloseGuard`](../packages/retroplug/ui/app/useCloseGuard.ts), rendered by App) and the
+New / Load discard confirm ([`useProjectModals`](../packages/retroplug/ui/app/useProjectModals.ts))
 - both lead with WHAT is unsaved before their buttons:
-[`unsavedRows`](../packages/retroplug/ui/lvgl/unsavedRows.ts) maps
+[`unsavedRows`](../packages/retroplug/ui/app/unsavedRows.ts) maps
 `unsavedChanges(backend, project)` ([src/unsavedChanges.ts](../packages/retroplug/src/unsavedChanges.ts))
 to one `disabled` row per item - `"Project: song.rplg"` / `"Project: (not saved yet)"`,
 `"Battery: lsdj.sav"` (+ `" (new file)"` when the target doesn't exist yet) - closed by a
@@ -425,7 +425,7 @@ position lands the new widget at the *end* of the LVGL child list.
 [`StableSlot.tsx`](../packages/retroplug/ui/lvgl/StableSlot.tsx) is the workaround: a
 fixed-position wrapper View whose position never changes, whose *single* child swaps — where
 `appendChild` lands correctly. Its `tagTestId`
-([StableSlot.tsx:20](../packages/retroplug/ui/lvgl/StableSlot.tsx#L20)) tags a
+([StableSlot.tsx:21](../packages/retroplug/ui/lvgl/StableSlot.tsx#L21)) tags a
 widget's native uid for the test harness and is inert in production.
 
 ### The menu — [`screens/menu/`](../packages/retroplug/ui/screens/menu)
@@ -475,7 +475,7 @@ widget's native uid for the test harness and is inert in production.
   tree renderer. The focus highlight is React state driven **only** by explicit nav / click /
   rebuild — never by LVGL `onFocus` events — so there's nothing for stray focus events to
   corrupt. It flattens depth-first into open submenus and **re-keys the inner scrollable View
-  on `visibleKey`** ([Menu.tsx:207](../packages/retroplug/ui/screens/menu/Menu.tsx#L207))
+  on `visibleKey`** ([Menu.tsx:590](../packages/retroplug/ui/screens/menu/Menu.tsx#L590))
   — the same append workaround, forcing a full remount so every row mounts in JSX order.
   `useFocusGroup` claims the keypad; Enter → activate, Up/Down move the cursor, Left/Right →
   `onCycle(±1)`.
@@ -498,15 +498,33 @@ widget's native uid for the test harness and is inert in production.
 - [`useWindowSize.ts`](../packages/retroplug/ui/lvgl/useWindowSize.ts) — the live window
   size reactive to `"resize"`; `requestWindowSize` / `isWindowSizeControlled` are the TS side of
   the `__rp_*` native window seam.
+- [`lv.ts`](../packages/retroplug/ui/lvgl/lv.ts) - typed `ViewEx` / `TextEx` / `CanvasEx`: the one
+  place the lvgljs-ui components are cast, behind prop types for what native accepts. Plus
+  [`PixelCanvas.tsx`](../packages/retroplug/ui/lvgl/PixelCanvas.tsx) (a crisp, aspect-kept frame
+  canvas) and [`StableSlot.tsx`](../packages/retroplug/ui/lvgl/StableSlot.tsx).
+- [`useFramePoll.ts`](../packages/retroplug/ui/lvgl/useFramePoll.ts) - the frame-clocked polls:
+  every-N-frames, versioned native status, and per-frame sampling deduped on a display signature.
+
+The rest of `ui/` outside `screens/` is split by what it depends on:
+[`ui/hooks/`](../packages/retroplug/ui/hooks) holds plain React helpers with no LVGL in them
+(`useStateRef`, `useForceUpdate` / `useRerenderOn`);
+[`ui/host/`](../packages/retroplug/ui/host) is the native editor seam - `nativeHooks.ts` types
+every `__rp_*` hook once, beside the render-job and open-path seams; and
+[`ui/app/`](../packages/retroplug/ui/app) holds the app's own flows - the full-window overlays
+(`overlay.ts` + the close guard, project modals, file browser and song import hooks), the
+unsaved-changes rows, the interactive save, and the background watchers (song, SRAM auto-save,
+N8 SD job, Launchpad scan).
 
 ### Game input — [`ui/input/useGameInput.ts`](../packages/retroplug/ui/input/useGameInput.ts)
 
 Resolves each `"key"` bus code to a Game Boy button via `buildKeyToButton(bindings.keyboard)`
 ([keyCodes.ts](../packages/retroplug/src/keyCodes.ts)) and fires
-`backend.pressButton(focusedId, button, down)`. A `targetsRef` (dpf code → routed system id)
-does OS auto-repeat suppression and release-to-original-target, so a held button never sticks
-on the wrong (or a removed) instance. Releases are always processed — opening a menu mid-hold
-can't strand a key down.
+`backend.pressButton(focusedId, button, down)`. The gamepad twin is `useGamepadInput`. Both route
+through `useHeldRouting` ([useHeldInput.ts](../packages/retroplug/ui/input/useHeldInput.ts)): a
+slot → routed-system map that drops OS auto-repeat and sends each release to the system its press
+went to, so a held button never sticks on the wrong (or a removed) instance. Releases are always
+processed, so opening a menu mid-hold can't strand a key down. Pinned by
+[game-input.test.ts](../packages/retroplug/test-ui/game-input.test.ts).
 
 ---
 
@@ -560,5 +578,5 @@ broader remaining feature gaps live in **doc 07**; this list is only the TS-laye
 | Config stores | [`src/recentStore.ts`](../packages/retroplug/src/recentStore.ts) · [`src/userConfigStore.ts`](../packages/retroplug/src/userConfigStore.ts) · [`src/bindingsStore.ts`](../packages/retroplug/src/bindingsStore.ts) |
 | Services | [`src/fileSelection.ts`](../packages/retroplug/src/fileSelection.ts) · [`src/fileWatcher.ts`](../packages/retroplug/src/fileWatcher.ts) · [`src/sramAutoSave.ts`](../packages/retroplug/src/sramAutoSave.ts) |
 | Composition | [`src/pluginControlPlane.ts`](../packages/retroplug/src/pluginControlPlane.ts) · [`src/appStores.ts`](../packages/retroplug/src/appStores.ts) · [`src/appHost.ts`](../packages/retroplug/src/appHost.ts) |
-| UI | [`ui/main.tsx`](../packages/retroplug/ui/main.tsx) · [`ui/App.tsx`](../packages/retroplug/ui/App.tsx) · [`ui/screens/grid/`](../packages/retroplug/ui/screens/grid) · [`ui/screens/menu/`](../packages/retroplug/ui/screens/menu) · [`ui/lvgl/`](../packages/retroplug/ui/lvgl) |
+| UI | [`ui/main.tsx`](../packages/retroplug/ui/main.tsx) · [`ui/App.tsx`](../packages/retroplug/ui/App.tsx) · [`ui/screens/grid/`](../packages/retroplug/ui/screens/grid) · [`ui/screens/menu/`](../packages/retroplug/ui/screens/menu) · [`ui/lvgl/`](../packages/retroplug/ui/lvgl) · [`ui/app/`](../packages/retroplug/ui/app) · [`ui/host/`](../packages/retroplug/ui/host) · [`ui/hooks/`](../packages/retroplug/ui/hooks) |
 | DSP client (doc 04) | [`src/dspRuntime.ts`](../packages/retroplug/src/dspRuntime.ts) · [`src/kernelProjection.ts`](../packages/retroplug/src/kernelProjection.ts) |

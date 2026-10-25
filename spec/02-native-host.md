@@ -231,8 +231,10 @@ block. The host has already drained the ring (`drainInto` → `Engine::drainComm
       the staged controller MIDI and last block's serial out, clear the three, and fan the kernel's
       sinks to the cores by id through the plan's `SystemTable`, in this order: all of `serialIn_` →
       `pushSerialIn`, then `coreMidi_` → `onMidi` (a message over 4 bytes goes down the raw byte path
-      instead), then `coreBytes_` → `pushCoreBytes` (mirrored to `coreByteSink_` first), then
-      `buttonOut_` → `pressButton`. An unknown id is skipped.
+      instead), then `coreBytes_` → `pushCoreBytes`, then `buttonOut_` → `pressButton`. An unknown id
+      is skipped. What the cart system (`Engine::cartSystemId`: the table's first NES in slot order)
+      gets of `coreMidi_` and `coreBytes_` is mirrored to `coreByteSink_` first, for a physical N8
+      (a message staged straight at it, `StageSystemMidi`, too).
    2. **The system nodes** ([SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp):
       `rp.sameboy.gb`, `rp.mesen.nes`, `rp.mesen.gba`, `rp.mesen.sms`), each a `SystemNode<T>` over a
       core's `prepareForBlock` / `stepIfBelowTarget` / `finishBlock`. An unlinked system is one

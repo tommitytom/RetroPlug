@@ -7,6 +7,7 @@
 import type { FileBrowserOpts } from "../../../src/backend";
 import { matchesPatterns } from "../../../src/fileBrowser";
 import type { MenuItem, MenuTree } from "./menuTree";
+import { button, infoRow, separator } from "./menuItems";
 
 export interface FileBrowserActions {
   navigate: (dir: string) => void; // enter a directory (App re-renders with the new dir)
@@ -43,8 +44,8 @@ export function buildFileBrowserMenu(
 
   // Folder-pick mode: a row that selects the CURRENT directory. Navigate into subdirs, then choose here.
   if (opts.directory) {
-    items.push({ id: "fb-choose-dir", label: `[Choose this folder]`, kind: "action", keepOpen: true, onSelect: () => h.pick(dir) });
-    items.push({ id: "fb-sep-dir", label: "", kind: "separator" });
+    items.push(button("fb-choose-dir", "[Choose this folder]", () => h.pick(dir)));
+    items.push(separator("fb-sep-dir"));
   }
 
   // Save mode: a filename prompt (pre-filled with the suggested default) at the top. Confirm → pick the path.
@@ -65,25 +66,25 @@ export function buildFileBrowserMenu(
         },
       },
     });
-    items.push({ id: "fb-sep-save", label: "", kind: "separator" });
+    items.push(separator("fb-sep-save"));
   }
 
   // Parent nav (unless at the filesystem root).
   if (dir !== "/")
-    items.push({ id: "fb-up", label: "..", kind: "action", keepOpen: true, onSelect: () => h.navigate(parentDir(dir)) });
+    items.push(button("fb-up", "..", () => h.navigate(parentDir(dir))));
 
   // Directories — navigate into.
   for (const d of dirs) {
     const name = d.slice(0, -1);
-    items.push({ id: `fb-d-${name}`, label: `${name}/`, kind: "action", keepOpen: true, onSelect: () => h.navigate(joinPath(dir, d)) });
+    items.push(button(`fb-d-${name}`, `${name}/`, () => h.navigate(joinPath(dir, d))));
   }
 
   // Files — pick to open (or overwrite in save mode).
   for (const f of files)
-    items.push({ id: `fb-f-${f}`, label: f, kind: "action", keepOpen: true, onSelect: () => h.pick(joinPath(dir, f)) });
+    items.push(button(`fb-f-${f}`, f, () => h.pick(joinPath(dir, f))));
 
   if (!opts.directory && dirs.length === 0 && files.length === 0)
-    items.push({ id: "fb-empty", label: opts.saving ? "(empty)" : "(no matching files)", kind: "action", keepOpen: true, disabled: true });
+    items.push(infoRow("fb-empty", opts.saving ? "(empty)" : "(no matching files)"));
 
   return { title: `${opts.title}: ${dir}`, items };
 }

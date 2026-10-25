@@ -7,22 +7,18 @@
 // re-renders on toggle via useSyncExternalStore, without threading a prop through the grid.
 import { useSyncExternalStore } from "react";
 
+import { createSubscribable } from "../menu/subscribable";
+
 let visible = false;
-const listeners = new Set<() => void>();
+const notify = createSubscribable();
 
 /** Flip the overlay on/off (called from App's key handler). Notifies every mounted overlay. */
 export function toggleLsdjDebug(): void {
   visible = !visible;
-  for (const l of listeners) l();
+  notify.emit();
 }
 
 /** Whether the LSDj debug overlay is currently shown. Reactive — a component reading this re-renders on toggle. */
 export function useLsdjDebugVisible(): boolean {
-  return useSyncExternalStore(
-    (cb) => {
-      listeners.add(cb);
-      return () => listeners.delete(cb);
-    },
-    () => visible,
-  );
+  return useSyncExternalStore(notify.subscribe, () => visible);
 }

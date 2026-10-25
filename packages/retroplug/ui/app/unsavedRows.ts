@@ -10,6 +10,7 @@ import type { ProjectStore } from "../../src/projectStore";
 import { unsavedChanges, type UnsavedItem } from "../../src/unsavedChanges";
 import { basename } from "../../src/pathUtil";
 import type { MenuItem } from "../screens/menu/menuTree";
+import { infoRow, separator } from "../screens/menu/menuItems";
 
 /** The row text for one unsaved item: "Project: song.rplg" / "Project: (not saved yet)" /
  *  "Battery: lsdj.sav" / "Battery: lsdj-2.sav (new file)". */
@@ -23,13 +24,7 @@ export function unsavedLabel(item: UnsavedItem): string {
 export function unsavedRows(backend: ControlPlaneBackend, project: ProjectStore): MenuItem[] {
   const items = unsavedChanges(backend, project);
   if (items.length === 0) return [];
-  const rows: MenuItem[] = items.map((item, i) => ({
-    id: `unsaved-${i}`,
-    label: unsavedLabel(item),
-    kind: "action",
-    disabled: true, // greyed + skipped by nav: a readout, not a choice
-    onSelect: () => {},
-  }));
-  rows.push({ id: "unsaved-sep", label: "", kind: "separator" });
+  const rows = items.map((item, i) => infoRow(`unsaved-${i}`, unsavedLabel(item))); // a readout, not a choice
+  rows.push(separator("unsaved-sep"));
   return rows;
 }

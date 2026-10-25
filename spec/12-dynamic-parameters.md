@@ -214,12 +214,9 @@ Reset All Controllers, CC123 All Notes Off) - automating a panic message is acti
 instrument (OPLL has only one), and the S5B envelope and noise generator are chip-wide. A `shared`
 flag on the CC spec emits one un-prefixed lane addressed on the first channel that owns it.
 
-**The vibrato/tremolo LFO, by contrast, is genuinely per-voice.** `lfo_tick()` in the ROM walks
-`st = 0..CH_COUNT-1` reading `_lfoRate[st]` / `_lfoShape[st]` / `_lfoPhase[st]`, so every expansion
-voice has its own - "FM 3 LFO Shape" is a real control. That same loop dips expansion volume through
-`exp_trem()` (including the VRC6 sawtooth, whose accumulator base *is* its amplitude), which is why
-tremolo depth belongs on the expansion voices too. Only the poly channel differs: it has one shared
-LFO for the whole chord (`_polyLfo*`), and it is one lane because it is one channel.
+**There is no LFO lane.** BlipToaster dropped its software vibrato/tremolo LFO (2026-10-22): CC76-79
+do nothing, and CC1, an alias of its vibrato depth, is unassigned on the VRC7 FM and S5B voices.
+Vibrato and tremolo are the DAW's to play, as pitch bend and CC7, so no table carries those CCs.
 
 **Which BlipToaster build.** Only one expansion chip can be active at a time, so each is a separate
 `.nes` with its own CC set. The ROM provider records it as `chip` on the system's `bliptoaster` role,

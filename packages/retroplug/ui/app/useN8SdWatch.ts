@@ -6,7 +6,7 @@
 // the N8 SD seam (the headless harness).
 
 import { getN8SdStatus } from "../screens/menu/n8SdOps";
-import { useVersionedPoll } from "./useFramePoll";
+import { useVersionedPoll } from "../lvgl/useFramePoll";
 
 // ~10 Hz at 60 fps - smooth enough for a progress bar and to catch "done" promptly, cheap enough to run
 // forever (one small hook call, no re-render unless the version changed).

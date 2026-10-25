@@ -92,9 +92,10 @@ import {
   type TrackerIntegration,
 } from "../../../src/tracker";
 import type { HostBackend, ControlPlaneBackend } from "../../../src/backend";
-import { openPath } from "../../lvgl/openPath";
-import { startSystemRender, renderBaseName, validSplits, formatDuration } from "../../lvgl/render";
-import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
+import { openPath } from "../../host/openPath";
+import { native } from "../../host/nativeHooks";
+import { startSystemRender, renderBaseName, validSplits, formatDuration } from "../../host/render";
+import { saveProjectInteractive } from "../../app/saveProjectInteractive";
 import { flushDirtySram } from "../../../src/sramAutoSave";
 import { hasUnsavedChanges } from "../../../src/unsavedChanges";
 import type { FileBrowserOpts } from "../../../src/backend";
@@ -112,6 +113,8 @@ import { ControllerRegistry, registerControllerApps, QUANTISE_VALUES, type Quant
 import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "../../../src/settingsEnums";
 import { controllerSyncOverride } from "../../../src/kernelProjection";
 import type { MenuAction, MenuItem, MenuTree } from "./menuTree";
+import { roleConfig } from "../../../src/systemRoles";
+import { action, actionCycler, button, cycleInt, cycler, infoRow, separator, submenu } from "./menuItems";
 
 /** Everything a builder reads (current values) + mutates through (the stores). Rebuilt each render. */
 export interface MenuContext {
@@ -143,7 +146,7 @@ export interface MenuContext {
  *  __rp_isStandalone; a DAW-hosted editor and the headless harness leave it undefined. Gates the "Exit"
  *  row — a DAW owns the plugin window, so it must not offer to quit. */
 function isStandalone(): boolean {
-  return (globalThis as { __rp_isStandalone?: boolean }).__rp_isStandalone === true;
+  return native.__rp_isStandalone === true;
 }
 
 // Standalone audio device config (the SDL host's sample-rate / block-size, for the Audio submenu). The
@@ -181,9 +184,9 @@ function blockLatencyMs(frames: number, sampleRate: number): string {
 function midiClockChildren(t: NonNullable<ReturnType<typeof getTransport>>): MenuItem[] {
   if (t.external) {
     return [
-      action("inst-clock-source", "Source: External MIDI clock", () => {}, true),
-      action("inst-clock-transport", `Transport: ${t.playing ? "Playing" : "Stopped"}`, () => {}, true),
-      action("inst-clock-tempo", `Tempo: ${Math.round(t.bpm)} BPM`, () => {}, true),
+      infoRow("inst-clock-source", "Source: External MIDI clock"),
+      infoRow("inst-clock-transport", `Transport: ${t.playing ? "Playing" : "Stopped"}`),
+      infoRow("inst-clock-tempo", `Tempo: ${Math.round(t.bpm)} BPM`),
     ];
   }
   const step = (delta: number) => setClockBpm(t.localBpm + delta);
@@ -208,7 +211,7 @@ function midiClockRow(): MenuItem[] {
   if (!t) return [];
   const state = t.playing ? `${Math.round(t.bpm)} BPM` : "Stopped";
   return [
-    sep("inst-sep-transport"),
+    separator("inst-sep-transport"),
     submenu("inst-clock", `MIDI Clock: ${state}`, midiClockChildren(t)),
   ];
 }
@@ -244,11 +247,11 @@ function audioSettingsChildren(): MenuItem[] {
     cycler("audio-block", "Block Size", AUDIO_BLOCKS.map((b) => `${b} (${blockLatencyMs(b, cfg.sampleRate)})`), blockIdx,
            (n) => setAudioDraft({ blockSize: AUDIO_BLOCKS[n] })),
     cycler("audio-channels", "Out Channels", AUDIO_CHANNEL_NAMES, chIdx, (n) => setAudioDraft({ outChannels: AUDIO_CHANNELS[n] })),
-    sep("audio-sep-apply"),
+    separator("audio-sep-apply"),
     // Commit the staged rate/block/channels/driver/device to the device. Greyed (inert) until a pending change.
     // keepOpen: stay in the Audio submenu after applying (it re-seeds the draft, so Apply just greys out) rather
     // than closing the whole menu — you often tweak several settings in a row.
-    { ...action("audio-apply", "Apply", () => applyAudioDraft(), !dirty), keepOpen: true },
+    button("audio-apply", "Apply", () => applyAudioDraft(), !dirty),
   ];
 }
 
@@ -328,10 +331,10 @@ function midiSettingsChildren(): MenuItem[] {
     // pair - those ports cannot be reopened, and a connected device is already found.
     ...(hasLaunchpadScan()
       ? [
-          sep("midi-sep-surface"),
+          separator("midi-sep-surface"),
           action("midi-scan", "Scan for Control Surface", () => void startLaunchpadScan(),
             !!scan?.busy || !!lpcfg?.connected),
-          action("midi-scan-status", `Control Surface: ${launchpadScanLabel(scan, lpcfg)}`, () => {}, true),
+          infoRow("midi-scan-status", `Control Surface: ${launchpadScanLabel(scan, lpcfg)}`),
           action("midi-scan-forget", "Forget Control Surface", () => forgetLaunchpad(),
             !lpcfg?.selectedInput || !!lpcfg?.connected),
         ]
@@ -454,7 +457,7 @@ function launchpadMenuChildren(ctx: MenuContext, cfg: LaunchpadConfig): MenuItem
     cycler("lp-output", "Output Device", out.names, out.index, (n) =>
       setLaunchpadPorts(cfg.selectedInput, portAt(cfg.outputs, n, cfg.selectedOutput))),
     action("lp-connect", cfg.enabled ? "Disconnect" : "Connect", () => connectLaunchpad(!cfg.enabled, cfg)),
-    action("lp-status", `Status: ${launchpadStatus(cfg)}`, () => {}, true), // read-only
+    infoRow("lp-status", `Status: ${launchpadStatus(cfg)}`), // read-only
     // What the controller is doing to the cart's sync role, and why. Shown rather than applied silently:
     // the override does not touch the saved project (it happens at projection time), so without a row here
     // the LSDj submenu would go on reporting the user's own setting while the kernel ran a different one.
@@ -465,9 +468,9 @@ function launchpadMenuChildren(ctx: MenuContext, cfg: LaunchpadConfig): MenuItem
     // the setting mid-session leaves it wherever the first press landed, with no way back until playback
     // stops (measured in test-native/lsdj-sync-toggle).
     ...(syncOverride
-      ? [action("lp-cart-sync", cartSyncLabel(syncOverride.mode, cartSync), () => {}, true)]
+      ? [infoRow("lp-cart-sync", cartSyncLabel(syncOverride.mode, cartSync))]
       : []),
-    sep("lp-sep-app"),
+    separator("lp-sep-app"),
     // Project scope from here down: these ride the .rplg, and each edit re-pushes the kernel structure.
     cycler("lp-enabled", "Use in Project", OFF_ON, controller.enabled ? 1 : 0, (n) =>
       project.setController({ enabled: n === 1 })),
@@ -516,8 +519,8 @@ function n8MenuChildren(ctx: MenuContext, cfg: N8Config): MenuItem[] {
     cycler("n8-port", "Port", names, index, (n) => setN8Port(portName(n))),
     action("n8-connect", cfg.enabled ? "Disconnect" : "Connect", () => connectN8(!cfg.enabled), busy),
     cycler("n8-lookahead", "Lookahead", N8_LOOKAHEADS.map((m) => `${m} ms`), laIdx, (n) => setN8Lookahead(N8_LOOKAHEADS[n])),
-    sep("n8-sep-status"),
-    action("n8-status", `Status: ${status}`, () => {}, true),  // read-only streaming status row
+    separator("n8-sep-status"),
+    infoRow("n8-status", `Status: ${status}`),  // read-only streaming status row
   ];
 
   // The SD-card ops (Load ROM / Dump / Restore SRAM) borrow the streaming link's serial port, so they only make
@@ -529,14 +532,14 @@ function n8MenuChildren(ctx: MenuContext, cfg: N8Config): MenuItem[] {
     // Each op browses a local file then kicks off the native worker. Load ROM needs the cart at its menu;
     // Dump/Restore act on the running game's battery (see n8SdOps.ts / N8Host).
     items.push(
-      sep("n8-sep-sd"),
+      separator("n8-sep-sd"),
       action("n8-load-rom", "Load ROM to N8...", () =>
         browseThen(ctx, { title: "Load ROM to N8", patterns: ROM_PATTERNS }, n8LoadRom), busy),
       action("n8-dump-sram", "Dump SRAM to file...", () =>
         browseThen(ctx, { title: "Dump N8 SRAM", patterns: ["*.srm", "*.sav"], saving: true, defaultName: "n8.srm" }, n8DumpSram), busy),
       action("n8-restore-sram", "Restore SRAM from file...", () =>
         browseThen(ctx, { title: "Restore N8 SRAM", patterns: ["*.srm", "*.sav"] }, n8RestoreSram), busy),
-      action("n8-sd-status", `SD: ${n8SdLabel(sd)}`, () => {}, true),  // read-only SD-op status row
+      infoRow("n8-sd-status", `SD: ${n8SdLabel(sd)}`),  // read-only SD-op status row
     );
   }
   return items;
@@ -601,43 +604,12 @@ const LOAD_PATTERNS = ["*.rplg", "*.rplg.zip"]; // load/locate accept either on-
 const STATE_PATTERNS = ["*.ss?"]; // slot-numbered savestates (.ss0..ss9), matching legacy
 const SRAM_PATTERNS = SAV_PATTERNS; // .sav / .srm — battery saves (some NES/risa carts use .srm)
 
-/** Wrap `current` within [min, max]: +1 past max → min, -1 below min → max. */
-function cycleInt(current: number, min: number, max: number, dir: 1 | -1): number {
-  if (dir > 0) return current >= max ? min : current + 1;
-  return current <= min ? max : current - 1;
-}
-
 const SPLIT_LABELS: Record<SplitMode, string> = { mix: "Mix", channels: "Channels", pins: "Pins" };
-
-// --- item helpers -------------------------------------------------------------------------------------
-function action(id: string, label: string, onSelect: () => void, disabled = false): MenuItem {
-  // Only attach `disabled` when set, so every enabled action stays byte-identical (toEqual-stable in tests).
-  return disabled ? { id, label, kind: "action", onSelect, disabled } : { id, label, kind: "action", onSelect };
-}
-function submenu(id: string, label: string, children: MenuItem[]): MenuItem {
-  return { id, label, kind: "submenu", children };
-}
-function sep(id: string): MenuItem {
-  return { id, label: "", kind: "separator" };
-}
-
-/** An inline action-cycler row: one line carrying its own verb list (`[0] TR-606   <  Export...  >`) instead
- *  of a submenu holding one leaf per verb. Left/Right pick the verb, Enter runs it — so a row's actions cost
- *  no extra level of menu. The showing verb is Menu.tsx's state; this only supplies the list. */
-function actionCycler(id: string, label: string, actions: MenuAction[]): MenuItem {
-  return { id, label, kind: "actionCycler", actions };
-}
 
 /** "Save Project", with a trailing " *" when the project or any battery SRAM is unsaved (the same signal the
  *  close guard asks). The star is the file's established "modified" marker (cf. the asset-override rows). */
 function saveProjectLabel(ctx: MenuContext): string {
   return `Save Project${hasUnsavedChanges(ctx.stores.backend, ctx.stores.project) ? " *" : ""}`;
-}
-
-/** A value-cycler row: label shows `prefix: names[current]`, Enter/Right step forward, Left back. */
-function cycler(id: string, prefix: string, names: string[], current: number, apply: (next: number) => void): MenuItem {
-  const step = (dir: 1 | -1) => apply(cycleInt(current, 0, names.length - 1, dir));
-  return { id, label: `${prefix}: ${names[current] ?? "?"}`, kind: "cycler", keepOpen: true, onSelect: () => step(1), onCycle: step };
 }
 
 /** The shared "Load…" leaf (start + instance): browse a ROM/sav (resolve-only), then apply the pick behind
@@ -672,7 +644,7 @@ function sameboyConfig(sys: SystemView): {
   dmgPalette: SameBoyDmgPalette;
   lightTemperature: number;
 } {
-  const c = (sys.roles.find((r) => r.kind === "sameboy")?.config ?? {}) as Record<string, unknown>;
+  const c = roleConfig(sys.roles, "sameboy") ?? {};
   return {
     model: typeof c.model === "string" ? (c.model as SameBoyModel) : "cgbC",
     highpass: typeof c.highpass === "string" ? (c.highpass as SameBoyHighpass) : "accurate",
@@ -716,7 +688,7 @@ function mesenConfig(sys: SystemView): {
   expansionVolume: number;
   enableFm: boolean;
 } {
-  const c = (sys.roles.find((r) => r.kind === "mesen")?.config ?? {}) as Record<string, unknown>;
+  const c = roleConfig(sys.roles, "mesen") ?? {};
   return {
     region: typeof c.region === "string" ? (c.region as ConsoleRegion) : "auto",
     removeSpriteLimit: c.removeSpriteLimit === true,
@@ -793,7 +765,7 @@ function renderSubmenu(ctx: MenuContext, sys: SystemView): MenuItem {
     cycler("sys-render-ifexists", "If Exists", ["Overwrite", "Rename"], onExistsIdx, (n) =>
       userConfig.setRenderOnExists(RENDER_ON_EXISTS[n]),
     ),
-    sep("sys-render-sep-opts"),
+    separator("sys-render-sep-opts"),
     cycler("sys-render-split", "Split", splits.map((s) => SPLIT_LABELS[s]), splits.indexOf(split), (n) =>
       userConfig.setRenderSplit(splits[n]),
     ),
@@ -810,7 +782,7 @@ function renderSubmenu(ctx: MenuContext, sys: SystemView): MenuItem {
       onCycle: (dir) => setMaxDur(dir),
       onCoarseStep: (dir) => setMaxDur(dir * 30),
     },
-    sep("sys-render-sep"),
+    separator("sys-render-sep"),
     // Render: no dialog. Writes to <dir>/<name>.wav (the render lib trims .wav to a prefix for splits).
     action(
       "sys-render-go",
@@ -834,7 +806,7 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   const items: MenuItem[] = [action("sys-reset", "Reset", () => void systems.reset(sys.id))];
   if (sys.romPath) items.push(renderSubmenu(ctx, sys));
   items.push(
-    sep("sys-sep-reset"),
+    separator("sys-sep-reset"),
     cycler("sys-reload", "Reload on ROM Change", OFF_ON, sys.settings.reloadOnRomChange ? 1 : 0, (n) =>
       systems.setReloadOnRomChange(sys.id, n === 1),
     ),
@@ -851,7 +823,7 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
     // only on the models where the core will actually use it: it gates colour correction and light
     // temperature on GB_is_cgb and the DMG palette on the negation, so exactly one of the two groups
     // applies to any given model. See isDmgModel.
-    items.push(sep("sys-sep-display"));
+    items.push(separator("sys-sep-display"));
     if (isDmgModel(cfg.model)) {
       items.push(
         cycler("sys-dmg-palette", "DMG Palette", DMG_PALETTE_NAMES, Math.max(0, DMG_PALETTE_VALUES.indexOf(cfg.dmgPalette)), (n) =>
@@ -907,7 +879,7 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   const noSave = !sys.battery;
   // The instance's own sibling .sav name (suffix-aware) — the sensible default target for its fresh save.
   const sramName = sys.savSuffix >= 2 ? `${romStem}-${sys.savSuffix}.sav` : `${romStem}.sav`;
-  items.push(sep("sys-sep-state"));
+  items.push(separator("sys-sep-state"));
   // Swap the ROM in place but keep the running battery SRAM (e.g. an LSDj version bump that keeps the song).
   // ROM-only browser; distinct from "Replace Instance", which cold-boots a fresh sav. Sits just above the
   // New/Load SRAM rows.
@@ -997,11 +969,9 @@ function trackerVersionSupported(t: TrackerIntegration, be: HostBackend, romPath
   return !rom || t.isVersionSupported(rom); // unreadable ROM -> can't disprove support; leave the submenu live
 }
 
-// A system's whole `*-assets` role config, and the override list out of it (console-agnostic — the generic rows
-// only read type/slot/name/erase; the file-actions read the typed list for their console-specific fields).
-const roleConfigFor = (sys: SystemView, role: string): Record<string, unknown> | undefined =>
-  sys.roles.find((r) => r.kind === role)?.config;
-const overridesFor = (sys: SystemView, role: string): AssetOverride[] => readAssetOverrides(roleConfigFor(sys, role));
+// The override list out of a system's `*-assets` role config (console-agnostic: the generic rows only read
+// type/slot/name/erase; the file-actions read the typed list for their console-specific fields).
+const overridesFor = (sys: SystemView, role: string): AssetOverride[] => readAssetOverrides(roleConfig(sys.roles, role));
 
 // Persist an override list + rebuild so onConstruct re-patches the effective ROM. setRoleConfig merges at the
 // top level, so this leaves any sibling key (BlipToaster's baked `settings`) alone.
@@ -1078,7 +1048,7 @@ function assetMenu(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): Menu
     const children: MenuItem[] = [];
     if (type.addable) {
       children.push(action(`${spec.id}-${type.kind}-add`, "Add...", () => addAsset(spec, ctx, sys, type)));
-      children.push(sep(`${spec.id}-${type.kind}-add-sep`));
+      children.push(separator(`${spec.id}-${type.kind}-add-sep`));
     }
     children.push(...rows.map((row) => assetRow(spec, ctx, sys, type, row)));
     return submenu(`${spec.id}-${type.kind}s`, type.title, children);
@@ -1109,7 +1079,7 @@ function bakeRom(
   const base = sys.romPath ? ctx.stores.backend.readFile(sys.romPath) : null;
   if (!base) return null;
   const skipped: string[] = [];
-  const bytes = spec.catalog.applyRoleConfig(base, roleConfigFor(sys, spec.catalog.assetRole), ctx.stores.backend, (ov, message) => {
+  const bytes = spec.catalog.applyRoleConfig(base, roleConfig(sys.roles, spec.catalog.assetRole), ctx.stores.backend, (ov, message) => {
     skipped.push(`${ov.type} ${ov.slot}`);
     // The row label is what the overlay shows; the REASON ("cannot read /kits/moved.rkit") has nowhere to
     // go in one line of red text, and it is the half that says what to do about it. The role modules used
@@ -1159,13 +1129,13 @@ function exportPatchedRom(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView
 // The two bake rows, greyed when there's nothing to bake. Both live at the tracker submenu's root (they're
 // whole-ROM ops, not per-asset-type), below the asset submenus.
 function romPatchRows(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): MenuItem[] {
-  const config = roleConfigFor(sys, spec.catalog.assetRole);
+  const config = roleConfig(sys.roles, spec.catalog.assetRole);
   // The catalog decides what counts as a pending edit: for most consoles that is a non-empty override list, but
   // BlipToaster also pins the cart's baked settings, and a bake that ignored those would grey the rows out with
   // real changes waiting (and then write an image missing them).
   const none = !(spec.catalog.hasEdits ? spec.catalog.hasEdits(config) : readAssetOverrides(config).length > 0);
   return [
-    sep(`${spec.id}-patch-sep`),
+    separator(`${spec.id}-patch-sep`),
     {
       id: `${spec.id}-patch-rom`,
       label: "Patch ROM in Place",
@@ -1202,7 +1172,7 @@ const readLsdjRom = (be: HostBackend, romPath: string): LsdjRom | null => {
 
 // --- LSDj asset file actions (Export/Replace own the .kit/.lsdpal/.png formats) -----------------------
 const lsdjOverrides = (sys: SystemView): LsdjAssetOverride[] =>
-  readOverrides(sys.roles.find((r) => r.kind === "lsdj-assets")?.config);
+  readOverrides(roleConfig(sys.roles, "lsdj-assets"));
 
 // Export asset `type`/`slot` to a picked file: the override bytes if replaced (already the file format), else
 // the base ROM's asset read straight out via the pure-TS module.
@@ -1304,7 +1274,7 @@ const readLinked = (be: HostBackend, path: string | undefined): Uint8Array | nul
   path ? be.readFile(path) : null;
 
 const ritOverrides = (sys: SystemView, role: string): RisaAssetOverride[] =>
-  readRisaOverrides(sys.roles.find((r) => r.kind === role)?.config);
+  readRisaOverrides(roleConfig(sys.roles, role));
 
 // Export theme/font/kit `slot` to a picked file: the override's data if replaced, else the base ROM's asset.
 function exportRitAsset(
@@ -1383,7 +1353,7 @@ const risaAssetSpec: AssetMenuSpec = {
 
 /** The baked-settings fields this PROJECT pins (not the ROM's own bytes) — only what the user has changed. */
 const readBlipToasterSettings = (sys: SystemView): BlipToasterSettingsPatch =>
-  readBlipToasterSettingsConfig(sys.roles.find((r) => r.kind === "bliptoaster-assets")?.config);
+  readBlipToasterSettingsConfig(roleConfig(sys.roles, "bliptoaster-assets"));
 
 const readBlipToasterRomFor = (be: HostBackend, romPath: string): BlipToasterRom | null => {
   const bytes = romPath ? be.readFile(romPath) : null;
@@ -1472,7 +1442,7 @@ function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] 
     // boot. Offered only once something IS pinned - with nothing pinned the rows show the ROM's bytes already.
     ...(Object.keys(pinned).length
       ? [
-          sep("bliptoaster-set-apply-sep"),
+          separator("bliptoaster-set-apply-sep"),
           action("bliptoaster-set-reset", "Reset to ROM Defaults", () => {
             ctx.stores.project.systems.setRoleConfig(sys.id, "bliptoaster-assets", { settings: {} });
             ctx.stores.project.systems.reloadSystem(sys.id);
@@ -1490,7 +1460,7 @@ function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] 
 function blipToasterExtras(ctx: MenuContext, sys: SystemView): MenuItem[] {
   const rows = blipToasterSettingsRows(ctx, sys);
   if (rows.length === 0) return [];
-  return [...rows, sep("bliptoaster-settings-sep")];
+  return [...rows, separator("bliptoaster-settings-sep")];
 }
 
 // --- LSDj Songs submenu (the SAV's 32 saved-song slots: export / replace / delete / add) ---------------
@@ -1632,7 +1602,7 @@ function loadGuard(
   const saveRow = ((): MenuItem => {
     if (!spec.commitWorking || !(spec.canCommitWorking?.(sav) ?? true)) {
       // Not offerable: no such op, or the catalog can't take it (full). Say why rather than fail on click.
-      return action(`${idp}-save-unavailable`, "Save Working Song & Load (no free slot)", () => {}, true);
+      return infoRow(`${idp}-save-unavailable`, "Save Working Song & Load (no free slot)");
     }
     if (!spec.workingNeedsName?.(sav)) {
       return action(`${idp}-save`, "Save Working Song & Load", () => void saveAndLoad());
@@ -1658,8 +1628,8 @@ function loadGuard(
   })();
 
   return submenu(idp, "Load...", [
-    action(`${idp}-warn`, `"${workingLabel}" has unsaved changes`, () => {}, true),
-    sep(`${idp}-warn-sep`),
+    infoRow(`${idp}-warn`, `"${workingLabel}" has unsaved changes`),
+    separator(`${idp}-warn-sep`),
     saveRow,
     action(`${idp}-discard`, "Discard & Load", doLoad),
   ]);
@@ -1771,7 +1741,7 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
     });
     return submenu(`${spec.id}-song-${s.index}`, `[${s.index}] ${name}`, items);
   });
-  const body = rows.length ? rows : [action(`${spec.id}-song-none`, "(no saved songs)", () => {}, true)];
+  const body = rows.length ? rows : [infoRow(`${spec.id}-song-none`, "(no saved songs)")];
   // The live working song, surfaced as a synthetic top row when (and only when) it holds work no saved slot
   // has (`discards`, the same content-level question the load guard asks). That covers both a cart whose song
   // lives only in working memory and the far commoner "loaded a song and edited it" state; a working song
@@ -1806,7 +1776,7 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
       wItems.push(action(`${spec.id}-song-working-export`, "Export...", () => spec.exportWorking!(ctx, sys, wName)));
     // "(unsaved)" is what separates this row from the identically-named slot row below it when the song is
     // linked - without it the two read as two songs rather than one song and its uncommitted edits.
-    workingRows.push(submenu(`${spec.id}-song-working`, `[working] ${wName} (unsaved)`, wItems), sep(`${spec.id}-song-working-sep`));
+    workingRows.push(submenu(`${spec.id}-song-working`, `[working] ${wName} (unsaved)`, wItems), separator(`${spec.id}-song-working-sep`));
   }
   // Add reaches the battery too, so it reboots as well - the file picker it opens makes that easy to
   // forget. Confirm BEFORE browsing: cancelling in the picker then costs nothing, and a prompt after the
@@ -1828,7 +1798,7 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
         },
       }
     : action(`${spec.id}-song-add`, "Add...", () => spec.addSong(ctx, sys));
-  return submenu(`${spec.id}-songs`, "Songs", [...workingRows, addRow, sep(`${spec.id}-song-add-sep`), ...body]);
+  return submenu(`${spec.id}-songs`, "Songs", [...workingRows, addRow, separator(`${spec.id}-song-add-sep`), ...body]);
 }
 
 // The throw→null wrapper for risa's catalog ops used by its file actions (LSDj's ops return null directly;
@@ -2022,7 +1992,7 @@ function trackerChildren(t: TrackerIntegration, ctx: MenuContext, sys: SystemVie
 // not yet unified (risa has no sync knobs).
 function lsdjExtras(ctx: MenuContext, sys: SystemView): MenuItem[] {
   const systems = ctx.stores.project.systems;
-  const cfg = sys.roles.find((r) => r.kind === "lsdj-sync")?.config ?? {};
+  const cfg = roleConfig(sys.roles, "lsdj-sync") ?? {};
   const mode = typeof cfg.mode === "string" ? (cfg.mode as LsdjSyncMode) : "midiSync";
   const divisor = typeof cfg.tempoDivisor === "number" ? cfg.tempoDivisor : 1;
   const autoStart = cfg.autoStart === true;
@@ -2039,7 +2009,7 @@ function lsdjExtras(ctx: MenuContext, sys: SystemView): MenuItem[] {
     // The HD player: song + all four chains + all four phrases on one full-window screen, in the cart's
     // own font and palette. The cart keeps playing and stays playable underneath; Esc returns to the grid.
     action("lsdj-hd", "HD Player", () => ctx.openLsdjHd(sys.id)),
-    sep("lsdj-assets-sep"),
+    separator("lsdj-assets-sep"),
   ];
 }
 
@@ -2070,7 +2040,7 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
       browseThen(ctx, { title: "Export Zip", patterns: ZIP_PATTERNS, saving: true, defaultName: "project.rplg.zip" }, (p) => project.export(p)),
     ));
   }
-  items.push(sep("proj-sep0"));
+  items.push(separator("proj-sep0"));
   // The project's own name - blank until the user types one here, and only then persisted in the .rplg.
   // Blank shows what the recents entry / titles fall back to: the name derived from the systems (the primary
   // cart's sav/rom stem). Clearing the field restores that fallback.
@@ -2097,7 +2067,7 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
   items.push(
     cycler("proj-layout", "Layout", LAYOUT_NAMES, Math.max(0, LAYOUT_VALUES.indexOf(ctx.settings.layout)), (n) => project.setLayout(LAYOUT_VALUES[n])),
     { id: "proj-zoom", label: `Zoom: ${ctx.settings.zoom === 0 ? "Default" : `${ctx.settings.zoom}x`}`, kind: "cycler", keepOpen: true, onSelect: () => project.setZoom(cycleInt(ctx.settings.zoom, 0, 6, 1)), onCycle: (dir) => project.setZoom(cycleInt(ctx.settings.zoom, 0, 6, dir)) },
-    sep("proj-sep1"),
+    separator("proj-sep1"),
     cycler("proj-midi", "MIDI Routing", MIDI_ROUTING_NAMES, Math.max(0, MIDI_ROUTING_VALUES.indexOf(ctx.settings.midiRouting)), (n) => project.setMidiRouting(MIDI_ROUTING_VALUES[n])),
     // The split modes are single-system-only (and Pins NES-only), so the cycler offers a filtered list
     // and steps through THAT — not a prefix of the full table, since dropping Pins while keeping
@@ -2228,16 +2198,16 @@ function bindingsChildren(ctx: MenuContext, channel: BindingsChannel): MenuItem[
 
   return [
     cycler(`${idp}-profile`, "Profile", profiles, Math.max(0, profiles.indexOf(activeName)), (n) => setActive(profiles[n])),
-    sep(`${idp}-sep-top`),
+    separator(`${idp}-sep-top`),
     ...captureRows,
-    sep(`${idp}-sep-actions`),
+    separator(`${idp}-sep-actions`),
     ...actionRows,
-    sep(`${idp}-sep-reset`),
+    separator(`${idp}-sep-reset`),
     // This channel only — the GB buttons AND the app actions — preserving the profile's OTHER channel.
     action(`${idp}-reset`, `Reset ${label} to Defaults`, () =>
       write((m) => ({ ...withChannel(m, defaultBindingMap()[channel]), [actionsKey]: defaultBindingMap()[actionsKey] })),
     ),
-    sep(`${idp}-sep-mgmt`),
+    separator(`${idp}-sep-mgmt`),
     { id: `${idp}-new`, label: "New Profile...", kind: "prompt", keepOpen: true, prompt: { title: "New profile name:", filter: isValidProfileChar, onConfirm: newProfile } },
     { id: `${idp}-rename`, label: "Rename...", kind: "prompt", keepOpen: true, prompt: { title: `Rename "${activeName}" to:`, initial: activeName, filter: isValidProfileChar, onConfirm: renameActive } },
     submenu(`${idp}-delete`, "Delete Profile", deleteChildren),
@@ -2267,11 +2237,11 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
   ];
   return [
     ...deviceRows,
-    ...(deviceRows.length ? [sep("set-sep-devices")] : []),
+    ...(deviceRows.length ? [separator("set-sep-devices")] : []),
     // The input-binding editors sit right below the device pickers, with their own separator under them.
     submenu("set-keybindings", "Keyboard Bindings", bindingsChildren(ctx, "keyboard")),
     submenu("set-gamepad-bindings", "Gamepad Bindings", bindingsChildren(ctx, "gamepad")),
-    sep("set-sep-bindings"),
+    separator("set-sep-bindings"),
     cycler("set-sram", "SRAM Auto-Save", SRAM_AUTO_SAVES.map((m) => SRAM_AUTO_SAVE_LABELS[m] ?? m), sramIdx, (n) => userConfig.setSramAutoSave(SRAM_AUTO_SAVES[n])),
     { id: "set-defzoom", label: `Default Zoom: ${ctx.userConfig.defaultZoom}x`, kind: "cycler", keepOpen: true, onSelect: () => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, 1)), onCycle: (dir) => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, dir)) },
     renderDirItem,
@@ -2390,25 +2360,25 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       // rather than buried in Settings, but there's nothing to show without the device.
       ...(tracker || n8Here || lpHere
         ? [
-            sep("inst-sep-tracker"),
+            separator("inst-sep-tracker"),
             ...(tracker
               ? [
                   trackerVersionSupported(tracker, ctx.stores.backend, sys.romPath)
                     ? submenu(`inst-${tracker.id}`, tracker.label, trackerChildren(tracker, ctx, sys))
-                    : action(`inst-${tracker.id}`, `${tracker.label} (Unsupported Version)`, () => {}, true),
+                    : infoRow(`inst-${tracker.id}`, `${tracker.label} (Unsupported Version)`),
                 ]
               : []),
             ...(lpHere ? [submenu("inst-launchpad", "Launchpad", launchpadMenuChildren(ctx, lpcfg!))] : []),
             ...(n8Here ? [submenu("inst-n8", "N8 Pro", n8MenuChildren(ctx, n8cfg!))] : []),
           ]
         : []),
-      sep("inst-sep-top"),
+      separator("inst-sep-top"),
       submenu("inst-system", "System", systemChildren(ctx, sys)),
       submenu("inst-project", "Project", projectChildren(ctx)),
       submenu("inst-settings", "Settings", settingsChildren(ctx)),
       // The host-transport readout fences itself and sits BETWEEN the two groups, belonging to neither.
       ...midiClockRow(),
-      sep("inst-sep1"),
+      separator("inst-sep1"),
       action("inst-add", "Add Instance", () => void ctx.stores.fileSelection.browseAdd(sys.id)),
       action("inst-dup", "Duplicate Instance", () => {
         const id = systems.duplicateSystem(sys.id);
@@ -2425,13 +2395,13 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       // always-"Off" row, so gate it on the core too — not just on having a peer.
       ...(multi && sys.core === "sameboy"
         ? [
-            sep("inst-sep-link"),
+            separator("inst-sep-link"),
             cycler("inst-link", "Link Group", LINK_GROUP_NAMES, sameboyConfig(sys).linkGroupId, (n) =>
               systems.setRoleConfig(sys.id, "sameboy", { linkGroupId: n }),
             ),
           ]
         : []),
-      ...(isStandalone() ? [sep("inst-sep-exit"), action("inst-exit", "Exit RetroPlug", () => ctx.requestExit())] : []),
+      ...(isStandalone() ? [separator("inst-sep-exit"), action("inst-exit", "Exit RetroPlug", () => ctx.requestExit())] : []),
       // Deferred: About panel.
     ],
   };
@@ -2449,11 +2419,11 @@ export function buildStartMenu(ctx: MenuContext): MenuTree {
       // N8 Pro (physical NES) in its own fenced block, mirroring the instance menu's tracker block. The
       // streaming + SD ops don't need a loaded system, so it belongs here too (configure/connect the cart, or
       // load a ROM onto it, before opening anything in RetroPlug). Only when a cart is actually detected.
-      ...(n8Here ? [sep("start-sep-n8"), submenu("start-n8", "N8 Pro", n8MenuChildren(ctx, n8cfg!))] : []),
-      sep("start-sep0"),
+      ...(n8Here ? [separator("start-sep-n8"), submenu("start-n8", "N8 Pro", n8MenuChildren(ctx, n8cfg!))] : []),
+      separator("start-sep0"),
       submenu("start-project", "Project", projectChildren(ctx)),
       submenu("start-settings", "Settings", settingsChildren(ctx)),
-      ...(isStandalone() ? [sep("start-sep-exit"), action("start-exit", "Exit RetroPlug", () => ctx.requestExit())] : []),
+      ...(isStandalone() ? [separator("start-sep-exit"), action("start-exit", "Exit RetroPlug", () => ctx.requestExit())] : []),
       // Deferred: About panel.
     ],
   };

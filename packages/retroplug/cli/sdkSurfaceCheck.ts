@@ -88,7 +88,7 @@ export function sdkSurfaceCheck(): void {
 
   // The transport readouts (spec/09).
   const stats: CoreTransportStats = s.backend.getCoreTransportStats(id);
-  void (stats.rxDepth + stats.rxCapacity + stats.droppedBytes + stats.wirePending + stats.txDepth);
+  void (stats.rxDepth + stats.rxCapacity + stats.droppedBytes + stats.wirePending + stats.txDepth + stats.linkFrames + stats.linkResent);
 
   // Passive break capture, and the shape of one hit.
   const batch: BreakHitBatch = s.backend.drainBreakHits(id);

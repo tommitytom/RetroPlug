@@ -12,7 +12,7 @@
 // opened again.
 
 import type { AppStores } from "../../src/appStores";
-import { useFrameDivider } from "./useFramePoll";
+import { useFrameDivider } from "../lvgl/useFramePoll";
 
 // ~0.5 s at 60 fps. Fast enough that the row is there by the time the user reopens the menu, slow enough
 // that the battery read never shows up in a profile.

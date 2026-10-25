@@ -50,3 +50,8 @@ packages/retroplug/.test-timings/
 
 # macOS Finder metadata
 .DS_Store
+
+# Worktrees accidentally created inside the repo root. Temporary: remove these
+# entries once the worktrees are cleaned up.
+/cuttlefish/
+/walleye/
