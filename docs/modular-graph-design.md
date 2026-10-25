@@ -1,6 +1,6 @@
 # Design: the modular node-graph engine
 
-**Date:** 2026-10-23 · **Branch:** `feature/modularize` · **Status:** Phase A built (`packages/native/src/graph/`, `packages/retroplug/src/graph/`); Phases B to E not yet built.
+**Date:** 2026-10-23 · **Branch:** `feature/modularize` · **Status:** Phase A built (`packages/native/src/graph/`, `packages/retroplug/src/graph/`); Phase B0 to B2 built (B3 and Phases C to E not yet built).
 
 RetroPlug's long-term direction is a modular system in the spirit of Reaktor: emulated consoles (and
 the real hardware they can drive) appear as nodes in a graph alongside DSP effects and routing nodes.
@@ -585,9 +585,12 @@ planner can batch consecutive script nodes into one call. Not built until measur
 }
 ```
 
-TS sends the **whole document** on every change with one RPC call, `setGraph(doc)`. Graphs are tens of
-nodes, so size is a non-issue, and whole-document sends keep planning deterministic; the planner diffs
-against the running graph by node id.
+TS sends the **whole document** on every change with one RPC call, `setGraph(doc)`. Whole-document sends
+keep planning deterministic, and the planner diffs against the running graph by node id. Today's projects
+are tens of nodes; the long-term goal is user-built synths of thousands, which §12 measures (at about 1,000
+nodes a structural edit plans in about 10 to 14 ms) and lists the levers for. A patch form of `setGraph`,
+applied to native's stored copy of the last document, would save the transfer and the parse but not the
+planning, which is where the time goes. Live params never send a document.
 
 `setGraph` returns `{ ok, errors[], layouts }`. Each error is `{ nodeId, port?, code, message }`;
 `layouts` are each instance's ports and params as its settings resolve them, so TS can show and check
@@ -903,8 +906,8 @@ single system, pins need a NES) so behaviour is unchanged.
 
 | Stays or arrives | Goes |
 |---|---|
-| `setGraph(doc)` | `constructSystem`, `removeSystem` |
-| `putResource(type, bytes)` -> handle, `releaseResource(handle)` | `setAudioRouting` |
+| `setGraph(doc)` (built in B2: [modular-graph-phase-b2-design.md](modular-graph-phase-b2-design.md)) | `constructSystem`, `removeSystem` (gone in B2; building a core stays a native call, `buildCore`, until Phase C) |
+| `putResource(type, bytes)` -> handle, `releaseResource(handle)` | `setAudioRouting` (gone in B2) |
 | capability calls (memory, SRAM, state, ROM info) addressed by node id | `applyRoleConfig` |
 | `setParam(node, param, value)` | `setSerialOutCapture` |
 | snapshot reads (unchanged) | `dspSetSystems`, kernel loading |
@@ -999,6 +1002,14 @@ doc's §0 has the table, and its §4 the requirements recording today's engine f
 
 B1 is built: [modular-graph-phase-b1-design.md](modular-graph-phase-b1-design.md), executed from
 [modular-graph-phase-b1-plan.md](modular-graph-phase-b1-plan.md).
+
+B2 is built: [modular-graph-phase-b2-design.md](modular-graph-phase-b2-design.md), executed from
+[modular-graph-phase-b2-plan.md](modular-graph-phase-b2-plan.md). TS owns the graph's structure:
+`buildGraph` writes the document, the stores send one per edit, and the translator, `removeSystem` and
+`setAudioRouting` are gone. Two things moved out of B2 as designed: the role-config commands
+(`applySystemSetting`, `applyRoleConfig`, `ConfigField`) stay until Phase C, where the live knobs become
+node params, and the kernel commands stay until B3 deletes the kernel. Building a core stays a native call
+(`buildCore`) until Phase C, when system nodes build their own from settings and resources.
 
 ### Phase C: nodes own their knowledge
 
@@ -1131,3 +1142,21 @@ here so it is not lost.
 - **Script-node call overhead** versus today's single kernel call; measured with the profiling harness
   before batching is built.
 - **Surround to the DAW** depends on DPF port groups (§3.6).
+- **Large graphs.** The goal past chiptune is user-built synths and music apps, so graphs of thousands of
+  nodes. Measured in B2 (`retroplug-graph-test "[bench]"`, a Release build on a Ryzen 9 9950X; cold plans
+  every instance anew, an edit changes one node of the same document):
+
+  | Shape | Nodes | Cold plan | One-node edit |
+  |---|---|---|---|
+  | chain | 1,000 | 11 ms | 9 ms |
+  | chain | 10,000 | 172 ms | 160 ms |
+  | wide fan | 1,000 | 14 ms | 13 ms |
+  | wide fan | 10,000 | 331 ms | 333 ms |
+
+  The cost grows faster than the graph (ten times the nodes, 16 to 24 times the time), and an edit costs
+  what a cold plan does, so planning dominates, not instance creation or the document. The levers, in the
+  order they would bite: every plan allocates fresh audio buffers (reused by lifetime within a plan, never
+  across plans: pool them); the output-lifetime pass scans every wire per output port (index the wires once
+  per plan); every node's settings are re-parsed per edit, for its layout and the reuse compare (cache by
+  settings text); and only then the document itself (a patch form of `setGraph`). None is needed at today's
+  sizes; they are recorded here so the graph-editing project starts from them.

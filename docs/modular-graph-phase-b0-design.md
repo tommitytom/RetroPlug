@@ -1,7 +1,7 @@
 # Design: Phase B0, the parity baseline
 
 **Date:** 2026-10-24 · **Branch:** `feature/modularize` · **Status:** built
-([modular-graph-phase-b0-plan.md](modular-graph-phase-b0-plan.md)); B1 to B3 not yet built.
+([modular-graph-phase-b0-plan.md](modular-graph-phase-b0-plan.md)); B1 and B2 built, B3 not yet built.
 
 Phase B of [the modular graph design](modular-graph-design.md) (§8) moves the engine onto the graph,
 and its parity target is bit-identical audio in every routing mode, MIDI routing mode and sync mode.
@@ -19,7 +19,7 @@ Phase B is four sub-projects. Each lands working and is checked bit for bit agai
 |---|---|---|---|
 | **B0. Parity baseline** (this doc) | Determinism switch, `renderBlocks`, a store-driven case matrix with committed hashes of today's engine; three bugs fixed first (§2.5) | Only the fixes | Nothing |
 | **B1. Native runs on the executor** | Cores as system nodes, linked GBs as a coupled group, the kernel as one node, today's routing modes as wiring a native translator builds from the existing calls; the two open decisions of §8 settled. TS untouched | Nothing | The routers, `BlockRunner`, `LinkGroup`, `AudioRouting` |
-| **B2. TS owns the graph** | `buildGraph`, the stores call `setGraph`, the Backend surface switch (§7.5) | Nothing | The B1 translator; the construct / remove / routing / role-config / kernel commands |
+| **B2. TS owns the graph** | `buildGraph`, the stores call `setGraph`, the Backend surface switch (§7.5) | Nothing | The B1 translator; the remove and routing RPCs, with construct becoming `buildCore` (the role-config commands moved to Phase C and the kernel commands to B3: [modular-graph-phase-b2-design.md](modular-graph-phase-b2-design.md) §0) |
 | **B3. The kernel dissolves** | The script-node runtime, the DSP roles as TS nodes, MIDI routing as a node, marker roles as extensions | Nothing | The DSP kernel and its bundle |
 
 B1 comes before B2 so the riskiest change, the executor swap (float order, event order, block

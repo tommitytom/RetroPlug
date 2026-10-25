@@ -37,8 +37,9 @@ The rules below are the parts that don't fit those.
   `-watcher-test` / `-dynparams-test` / `-midi-test` / `-launchpad-test` / `-lottie-test` /
   `-graph-test` / `-engine-graph-test`) as `Catch2::Catch2WithMain`. `retroplug-engine-graph-test`
   holds the engine's graph to the cores it wraps: each system node renders what its core renders
-  driven directly, bit for bit, and the translator's document for every routing mode and host shape
-  matches an explicit wiring table. `retroplug-dynparams-test` is the odd one out: it
+  driven directly, bit for bit, and the engine places, re-arms and frees what the graph documents TS
+  builds say (the wiring itself is `buildGraph`'s, held by `pnpm test graph` to explicit tables and to
+  the B1 translator's goldens). `retroplug-dynparams-test` is the odd one out: it
   compiles DPF's format-neutral core (`DistrhoPlugin.cpp`) plus its OWN `DistrhoPluginInfo.h`,
   building no plugin format at all, to drive `PluginExporter::reinitParameters` over a toy plugin.
 - **`deps/sameboy` is patched at configure — a dirty working tree there is

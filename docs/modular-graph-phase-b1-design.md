@@ -1,7 +1,8 @@
 # Design: Phase B1, native runs on the executor
 
 **Date:** 2026-10-24 · **Branch:** `feature/modularize` · **Status:** built
-([modular-graph-phase-b1-plan.md](modular-graph-phase-b1-plan.md)); B2 and B3 not yet built.
+([modular-graph-phase-b1-plan.md](modular-graph-phase-b1-plan.md)); B2 built
+([modular-graph-phase-b2-design.md](modular-graph-phase-b2-design.md)), B3 not yet built.
 
 Phase B of [the modular graph design](modular-graph-design.md) (§8) moves the engine onto the graph. B0
 ([modular-graph-phase-b0-design.md](modular-graph-phase-b0-design.md)) recorded today's engine bit for
@@ -447,7 +448,7 @@ Then, behind the switch:
   (`setChannelExportMode`, SameBoy's restart and lazy buffer growth, the payload frees), or the growth of a
   linked Game Boy's unread serial queue.
 - How B2 hands cores to TS-built documents: B1's core token is a translator detail, and B2 decides whether
-  it survives.
+  it survives. (It did not: a core is named by its system id, [modular-graph-phase-b2-design.md](modular-graph-phase-b2-design.md) §2.5.)
 
 ## 11. Found while building
 

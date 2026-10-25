@@ -45,9 +45,9 @@ The methods, grouped by concern:
 |---|---|---|
 | **Filesystem** | `readFile` · `writeFile` · `writeFileAtomic` · `fileExists` · `rename` · `listDir` · `deleteFile` · `drainChangedPaths` · `setWatchedRoms` | `std::filesystem` bytes; atomic temp+rename; a generic non-recursive readdir; the pull-drain of the native efsw file watcher + the ROM-set registration that feeds it |
 | **Paths** | `canonicalize` · `readFilePrefix` · `configDir` | `weakly_canonical` (the dedupe key); a header-only prefix read (ROM sniff without marshalling MBs); the per-OS config dir |
-| **Emulator lifecycle** | `constructSystem(spec, id)` · `removeSystem(id)` | Build/activate a core under a **TS-allocated id**; drop one. No `duplicate`/`reload` primitive — those are TS orchestration |
+| **Emulator lifecycle** | `buildCore(spec, id)` · `setGraph(request)` | Build/activate a core under a **TS-allocated id** and park it; plan a graph document TS built (which cores run, in what order and wired how). No `remove`/`duplicate`/`reload` primitive: those are TS orchestration over the two |
 | **File dialog** | `openFileBrowser(opts)` → `Promise` | Open the OS browser, resolve the picked path (the one async method) |
-| **Live config** | `applySystemSetting(id,key,value)` · `applyRoleConfig(id,kind,config)` · `setAudioRouting(mode)` | Apply the two universal settings + a **system-role**'s knobs to the live core; set the block runner's output routing |
+| **Live config** | `applySystemSetting(id,key,value)` · `applyRoleConfig(id,kind,config)` | Apply the two universal settings + a **system-role**'s knobs to the live core (the audio routing is the graph's wiring, not a call) |
 | **Live input** | `pressButton(id,button,down)` | Queue a joypad edge to the core's audio-thread button sink |
 | **Live reads** | `readState(id)` · `readSram(id)` · `getFrame(id)` | Pull the latest tear-free snapshot from the `SnapshotRegistry` (see doc 01) — never touches a live core |
 | **Byte codecs** | `zip(entries)` · `unzip(bytes)` | miniz deflate/inflate — the only native part of `.rplg` framing (TS assembles every entry) |
@@ -66,7 +66,7 @@ set of RPC facets is bound behind `__rpcSend` (see doc 01/02).
 
 ### `ConstructSpec` — the resolved-paths-only build request
 
-`constructSystem` takes a `ConstructSpec`
+`buildCore` takes a `ConstructSpec`
 ([backend.ts:205](../packages/retroplug/src/backend.ts#L205)) in which **TS has
 already resolved every path, suffix, sibling, and classification** — *native never sees a
 suffix, never looks for a sibling, never classifies.*
@@ -76,7 +76,7 @@ suffix, never looks for a sibling, never classifies.*
 | `romPath` / `embeddedRom` | The ROM file to slurp, or a binary-baked marker (e.g. `"mgb"`) with `romPath = ""` |
 | `platform` / `core` | What the ROM targets + which factory builds it — TS classifies via [`platform.ts`](../packages/retroplug/src/platform.ts) |
 | `savPath` / `statePath` | The exact battery file (load-from + auto-save-to) and savestate to boot from, or `null` |
-| `replaceId?` | When set, swap this existing id **in place**; otherwise append |
+| `serialOutCapture?` | Arm a Game Boy's LSDj MI.OUT capture before the core first runs |
 | `sramBytes?` / `stateBytes?` | Seed bytes (zip-import blob, carried battery, role-synthesized sav) that override what native reads from disk; `savPath` stays the auto-save target |
 | `settings?` | The system-role config as JSON, applied **at construct** so a restored savestate isn't nuked by a post-build restart |
 
@@ -114,7 +114,7 @@ roles }`); the private state is `entries`, `focusedId`, and `dirty`
 - **TS owns the system-id counter.** `allocSystemId()` increments a module-scoped
   `nextSystemId` ([systemsStore.ts:37](../packages/retroplug/src/systemsStore.ts#L37)) —
   *"native never allocates."* Ids are opaque handles, one id space per control-plane JS
-  context (1:1 with the native `Project`), and start at **1** because the snapshot registry
+  context (1:1 with the native `Engine`), and start at **1** because the snapshot registry
   uses 0 as its free-slot sentinel.
 - **`classifyRom`** ([systemsStore.ts:48](../packages/retroplug/src/systemsStore.ts#L48))
   is the one place ROM bytes enter TS — and just the `ROM_SNIFF_LEN` (0x134) header prefix.
@@ -126,16 +126,24 @@ roles }`); the private state is `entries`, `focusedId`, and `dirty`
   a feature-role's config stays pure TS.
 - **`duplicateSystem`** ([systemsStore.ts:170](../packages/retroplug/src/systemsStore.ts#L170))
   is TS orchestration with **no native duplicate method**: it pulls `readState(id)` (state
-  includes SRAM), then `constructSystem` seeded with those `stateBytes` under a fresh
+  includes SRAM), then `buildCore` seeded with those `stateBytes` under a fresh
   `allocSystemId()`, and appends.
+- **The graph.** Every edit that changes what runs ends by publishing the engine's graph once
+  (`setOnGraphChange` → `ProjectStore.publishGraph` → `EngineGraph.publish`,
+  [engineGraph.ts](../packages/retroplug/src/engineGraph.ts)): the whole document, built by
+  [`buildGraph`](../packages/retroplug/src/graph/buildGraph.ts) from the entries in list order, each
+  entry's `built` facts (what `buildCore` reported, with its live link group) and the project's audio
+  routing, with a NES tap re-arm when the edit built or dropped a core. A `SystemsStore` used without a
+  `ProjectStore` publishes its systems itself, at the default stereo routing. An unchanged document is
+  not sent ([modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md)).
 
 ### The reconstruct-in-place idiom
 
 The control plane **reconstructs** a core rather than live-injecting into it (no `GB_reset`, no
 in-place SRAM clear). The private `rebuildInPlace(id, seed)`
 ([systemsStore.ts:233](../packages/retroplug/src/systemsStore.ts#L233)) is the shared
-body: it captures the source spec, builds a fresh core under a **new id** that swaps the old
-one (`replaceId: id`), and preserves identity + focus
+body: it captures the source spec, builds a fresh core under a **new id** that takes the old
+one's slot, and preserves identity + focus
 (`replaceById(entries, id, {...src, id: newId})`; `if (focusedId === id) focusedId = newId`).
 The `seed` overrides what native would read from disk — `sramBytes` = cold-boot battery,
 `stateBytes` = boot-from-savestate — while `savPath` stays the auto-save target. Five public
@@ -150,7 +158,9 @@ operations are thin wrappers over it:
 | `newSram` | a blank `new Uint8Array(0x20000)` battery |
 
 A separate **project-load rebuild seam** is deliberately quiet (no dirty/onChange, since a
-load isn't a user edit): `clear()` tears every system down; `adopt(config, blobs?)`
+load isn't a user edit): `clear()` tears every system down and publishes the empty graph;
+`adopt(config, blobs?)` (which publishes the graph that places it, except inside a project load,
+which publishes once its systems are all built)
 ([systemsStore.ts:374](../packages/retroplug/src/systemsStore.ts#L374)) reconstructs
 one system preserving its **exact** `savSuffix`/`savPath`, with `blobs` seeding SRAM/state on
 a zip import. Default roles are derived before the build from a `ROLE_HEADER_LEN` (0x150)
@@ -179,7 +189,7 @@ refuses a **newer** schema stamp (`{kind:"incompatible"}`), absolutizes paths, s
 missing files, and holds `pendingLoad` for `relink` or `commit`
 ([projectStore.ts:236](../packages/retroplug/src/projectStore.ts#L236)).
 `setAudioRouting` is the **only** project setting that also reaches native audio, via
-`pushAudioRouting()` → `backend.setAudioRouting`
+`pushAudioRouting()` → `publishGraph`, as the wiring of the graph the project publishes
 ([projectStore.ts:278](../packages/retroplug/src/projectStore.ts#L278)).
 
 The project **name** is two-tier. `name()` is the project's own name - blank unless the user

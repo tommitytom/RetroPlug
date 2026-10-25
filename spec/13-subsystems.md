@@ -151,7 +151,7 @@ build. Distribution is the standing objection to it replacing the CLI.
 - Code: `packages/native/node/`.
 - **Prove a change:** `pnpm test:node`.
 
-## The node graph (Phases A and B1)
+## The node graph (Phases A, B1 and B2)
 
 ### `graph/` - the node-graph engine's foundations
 
@@ -170,16 +170,20 @@ descriptors by shared golden files.
 `Engine::processBlock` runs a `GraphHost` plan of the engine's own nodes, `rp.dsp.kernel` (today's
 kernel stage, first in every plan) and one system node per core (`rp.sameboy.gb`, `rp.mesen.nes`,
 `rp.mesen.gba`, `rp.mesen.sms`), mixed by `rp.core.split` / `rp.core.add` into `rp.host.audio-out`.
-A control-side translator turns every structural edit (add / replace / remove, the routing mode, a
-link group, the host shape) into a document; every other edit rides the one ring as a command
-([01-architecture.md](01-architecture.md), [02-native-host.md](02-native-host.md)). TS does not
-build graphs yet: handing it the graph and dissolving the kernel are B2 and B3 of
-[docs/modular-graph-design.md](../docs/modular-graph-design.md) section 8.
+**TS builds the graph** (Phase B2,
+[docs/modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md)): the stores publish one
+whole document per structural edit through `EngineGraph` (`buildGraph` writes it from the systems, the
+routing and the host shape), native builds each core with `buildCore` and plans the document with
+`setGraph`, and every other edit rides the one ring as a command
+([01-architecture.md](01-architecture.md), [02-native-host.md](02-native-host.md)). Dissolving the
+kernel is B3 of [docs/modular-graph-design.md](../docs/modular-graph-design.md) section 8.
 
-- Code: `packages/native/src/graph/` (C++), `packages/native/src/host/graph/` (the engine's nodes and
-  translator), `packages/retroplug/src/graph/` (TS).
+- Code: `packages/native/src/graph/` (C++), `packages/native/src/host/graph/` (the engine's nodes),
+  `packages/retroplug/src/graph/` (TS: the node and extension contracts, `buildGraph`, `DirectGraph`) and
+  `packages/retroplug/src/engineGraph.ts`.
 - **Prove a change:** `pnpm test:plugin graph` (a substring filter, so both `retroplug-graph-test`
   and `retroplug-engine-graph-test`), `pnpm test graph`, `pnpm test:native parity` for anything the
   engine renders, and the ThreadSanitizer build of `retroplug-graph-test` (`build-tsan/`, as in
-  Task 9 of [docs/modular-graph-phase-a-plan.md](../docs/modular-graph-phase-a-plan.md)).
+  Task 9 of [docs/modular-graph-phase-a-plan.md](../docs/modular-graph-phase-a-plan.md)). How the
+  planner scales: `build/bin/retroplug-graph-test "[bench]"`.
 - Deeper: [docs/modular-graph-design.md](../docs/modular-graph-design.md).

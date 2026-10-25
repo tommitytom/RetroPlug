@@ -1,6 +1,7 @@
 # Design: Phase B2, TS owns the graph
 
-**Date:** 2026-10-24 · **Branch:** `feature/modularize` · **Status:** designed; not yet built.
+**Date:** 2026-10-24 · **Branch:** `feature/modularize` · **Status:** built
+([modular-graph-phase-b2-plan.md](modular-graph-phase-b2-plan.md)); B3 not yet built.
 
 Phase B of [the modular graph design](modular-graph-design.md) (§8) moves the engine onto the graph. B1
 ([modular-graph-phase-b1-design.md](modular-graph-phase-b1-design.md)) made `Engine::processBlock` run a
@@ -98,7 +99,8 @@ The `SystemsStore` and `ProjectStore` derive the model from what they already ho
 order (append, replace in place, remove shifts later ones down, which is exactly the translator's slot
 model), each entry's built facts (§2.5), each Game Boy's `linkGroupId`, and `projectSettings.audioRouting`.
 They call `EngineGraph.publish` once at the end of each edit, before the `onSystemsChange` hook that pushes
-the kernel structure. §3 lists the edits.
+the kernel structure. §3 lists the edits. A `SystemsStore` used without a `ProjectStore` publishes its systems
+itself, through an `EngineGraph` of its own, at the default stereo routing.
 
 Each entry gains a transient `built: { type, exportMode, linkGroup }`, filled from `buildCore`'s answer and
 never persisted. A live link-group edit (`setRoleConfig` on the `sameboy` role) updates `built.linkGroup` to
@@ -112,18 +114,24 @@ a system list with B1's model rules and publishes after each call through its ow
 
 ```ts
 class DirectGraph {
-  constructor(backend: ControlPlaneBackend);
-  add(spec: ConstructSpec, id: number): boolean;                  // appends
+  constructor(backend: DirectBackend, graph?: EngineGraph);         // share a session's graph to mix with its stores
+  add(spec: ConstructSpec, id: number): boolean;                   // appends
   replace(oldId: number, spec: ConstructSpec, id: number): boolean; // keeps oldId's slot
-  remove(id: number): boolean;                                     // later slots shift down
+  remove(id: number): boolean;                                      // later slots shift down
   setRouting(routing: AudioRouting): boolean;
-  setLinkGroup(id: number, group: number): boolean;                // also sends the field to the core
-  readonly graph: EngineGraph;                                     // for setShape / withShape
+  applyRoleConfig(id: number, kind: string, config: Record<string, unknown>): boolean; // a sameboy link group rewires
+  ids(): number[];
+  readonly graph: EngineGraph;                                      // for setShape / withShape
 }
+directGraph(): DirectGraph;                                         // the process's one, over the real backend
 ```
 
-Every call but `setLinkGroup` re-arms the tap, as its native counterpart did. A file uses either the stores
-or a `DirectGraph`, never both: two publishers would overwrite each other's documents.
+Every call but `applyRoleConfig` re-arms the tap, as its native counterpart did (a remove or replace of an id
+already gone included). `applyRoleConfig` forwards the config to the core and, for a `sameboy` config, takes
+its link group as native decodes it (absent is 0) and republishes. The callers keep one `DirectGraph` per
+process (`directGraph()`), since the probe helper and the file using it would otherwise drop each other's
+systems; a file that also uses a session's stores shares the session's `EngineGraph`, so each publisher sees
+the documents the other sent.
 
 ### 2.5 Native: `buildCore` and `setGraph`
 
@@ -183,8 +191,10 @@ command after its plan. The live call remains for an `lsdj-sync` mode change on 
 - **A load publishes its clear first**, then the new systems. Today the old cores are freed before the new
   ones are built; doing both in one plan would hold 2N cores at once, and the snapshot registry has 64
   slots, which 32 systems would fill.
-- **The quiet adopt stays quiet.** `adopt` builds without publishing; the load's own publish places every
-  adopted system at once, and the serial flags are already inside their cores.
+- **`adopt` places its core, as it always did** (before B2 its `constructSystem` placed the core at once).
+  It publishes but stays quiet otherwise (no dirty, no kernel push). A project load holds those publishes
+  back and places every adopted system with one publish of the loaded routing; the serial flags are
+  already inside their cores.
 - **`inheritLinkGroup`** (Add Instance, Duplicate) is two `setRoleConfig` edits, each with its own link plan,
   as today.
 
@@ -255,8 +265,10 @@ record, every read, `pressButton`, `stageSystemMidi` and `writeRam`.
 **Changes:**
 
 - `Engine::setSampleRate` re-rates the cores of the running plan's table, in slot order;
-- the native tests that drive structure through the invoker (`test/audio/EngineInvoker.test.cpp`,
-  `NesSplitRouting.test.cpp`) drive it through `setGraph` requests instead;
+- the native tests that drove structure through the invoker drive it through `setGraph` requests, with
+  documents spelled as `buildGraph` writes them (`test/engine-graph/GraphDocs.hpp`): `NesSplitRouting`
+  (the tap's arms, restores and lane packing, now one request each) and `EngineSampleRate`; the invoker
+  test's host-shape case became `EngineGraph.test.cpp`'s render-guard case;
 - the mock backend records `buildCore` calls (the recorder renamed in the 25 `pnpm test` files that read it)
   and every `setGraph` request, so pure tests can assert the wiring;
 - `buildCore` and `setGraph` sit on the control-plane facet `constructSystem` lives on today.
@@ -354,3 +366,27 @@ Each step its own commit, with parity unchanged:
 - The four scale levers of §7.4: recorded, built when a large graph needs them.
 - Rolling the store back when a document is refused: as today, the store keeps its model and the refusal is
   logged.
+
+## 10. Found while building
+
+- **A bare `SystemsStore` drove native structure.** Before B2 every store edit reached native through its own
+  calls, so 24 `pnpm test` files and many native tests build systems with a `SystemsStore` and no
+  `ProjectStore`. Only the `ProjectStore` installed the publish hook, so those systems were built and never
+  placed. A `SystemsStore` on its own now publishes at the default stereo routing (§2.3).
+- **`adopt` placed its core.** The design kept it quiet, but before B2 its `constructSystem` placed the core
+  at once, and twelve callers (the render library, two CLI sessions, native tests and authoring scripts)
+  relied on it. It publishes again, and a project load holds the publishes back to keep one plan (§3).
+- **Two cores under one id.** The second test in `dsp-risa-sync` and in `dsp-risa-sync-locate` built a core
+  under id 1 while the first test's was still live, which before B2 quietly ran both under one id (each
+  claimed a snapshot slot under it). `buildCore` refuses a live id, so the tests now remove their systems,
+  as AGENTS.md asks of every test file.
+- **A raw call the migration missed.** `dsp-sms-sync` removed its system through a second backend named
+  `be2`, which the mechanical move to `DirectGraph` did not match; the old call reached the translator, so
+  the system stayed in the document and played into the next case.
+- **The mock had to answer before a core is placed.** Native claims a built core's snapshot slot at the
+  build, so its reads answer at once; the mock now treats a built core as live until a published document
+  drops it.
+- **Planning dominates at scale.** The benchmark (§7.4) measured about 10 to 14 ms per edit at 1,000 nodes
+  and 160 to 330 ms at 10,000, with a one-node edit costing what a cold plan does. The numbers and the
+  levers are in the main design's §12.
+

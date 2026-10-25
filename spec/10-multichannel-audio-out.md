@@ -7,8 +7,9 @@ packing) are all in. The one open piece is the per-mapper expansion sub-channels
 This doc describes outputting the *individual console sound channels* of a single emulator instance
 instead of its mixed stereo — 8 outputs for a Game Boy (a stereo pair per channel), and 5 mono
 channels / the hardware "stereo-mod" pins for an NES. It builds on
-[02-native-host.md](02-native-host.md) (the `Engine`, the system nodes and the translator that wires
-each system's streams to the host's lanes, and the Backend RPC surface it extends), [05-data-persistence.md](05-data-persistence.md) (the project-level
+[02-native-host.md](02-native-host.md) (the `Engine`, the system nodes, the graph documents
+[`buildGraph.ts`](../packages/retroplug/src/graph/buildGraph.ts) builds to wire each system's streams to
+the host's lanes, and the Backend RPC surface it extends), [05-data-persistence.md](05-data-persistence.md) (the project-level
 `audioRouting` setting it adds a value to), and [09-cli-debugging.md](09-cli-debugging.md) (the CLI
 render + WAV path it extends).
 
@@ -74,7 +75,7 @@ stream port on the default path, so a wide `outs` is **structurally impossible**
 ### The load-bearing correctness rule (do not skip)
 
 **The split must be mode-driven, never an intrinsic always-on system trait.** `channelLayout()` is
-*inert* unless the translator wires a system's stream ports, which it does only for a valid split
+*inert* unless the graph wires a system's stream ports, which it does only for a valid split
 mode or the per-channel render shape. If a system handed its stems to lanes meant for the mix,
 `finishBlock` would sum four *pre-highpass* stems into pair 0 and silently replace the shipped
 highpassed, gain-smoothed mix. So the authority is the wiring: the node sets the lane count from
@@ -83,8 +84,8 @@ per-channel).
 
 Two placement layers, mutually exclusive in the 8-lane budget:
 
-1. **Per-system** (`AudioRouting::Stereo / TwoPerInstance / OnePerInstance`, `rp::host::AudioRouting`
-   in [Translator.hpp](../packages/native/src/host/graph/Translator.hpp)): fans *many* systems across
+1. **Per-system** (`stereo` / `twoPerInstance` / `onePerInstance`, the TS `AudioRouting` in
+   [settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)): fans *many* systems across
    the 8 fixed lanes, each system's `mix` only.
 2. **Per-channel** (`ChannelSplit` / `PinSplit` / `StereoPinSplit`): fans *one* system's streams
    across lanes. Two realizations:
@@ -94,8 +95,8 @@ Two placement layers, mutually exclusive in the 8-lane budget:
    - **CLI**: the `PerChannel` host shape, which wires each stream to its own pair (the system
      decides count/width); it serves GB 4-stereo *and* NES 5-mono / pins.
 
-`ChannelSplit` / `PinSplit` / `StereoPinSplit` are the 4th, 5th and 6th `AudioRouting` values, all gated
-to `systemCount() == 1`, **not** a combination with the per-instance modes. Do not generalize the
+`channelSplit` / `pinSplit` / `stereoPinSplit` are the 4th, 5th and 6th `AudioRouting` values, all gated
+to a single system, **not** a combination with the per-instance modes. Do not generalize the
 per-channel wiring to many systems.
 
 ## 2. Game Boy design (the primary case: 1 GB → 8 outputs)
@@ -214,10 +215,10 @@ Three project-level `AudioRouting` values, all **single-system**. Menu rows: `Ch
 vocabulary — same concept, same words. The old `Channels (1 GB)` label meant "one Game Boy" and read as
 a gigabyte.
 
-- **Native enum:** `AudioRouting::ChannelSplit = 3`, `PinSplit = 4`, `StereoPinSplit = 5`
-  (`rp::host::AudioRouting`, [Translator.hpp](../packages/native/src/host/graph/Translator.hpp)). TS mirrors them as
-  `channelSplit` / `pinSplit` / `stereoPinSplit` (additive to the persisted enum → no `K_PROJECT` bump,
-  no migration step).
+- **The values:** `channelSplit`, `pinSplit` and `stereoPinSplit`, the 4th to 6th `AudioRouting` values
+  ([settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)). They never cross to native as values,
+  only as the wiring of the graph TS builds (additive to the persisted enum → no `K_PROJECT` bump, no
+  migration step).
 - **Why two pin modes.** They tap the *same* three streams and differ only in lanes spent. `Pins` packs
   them 3-across (Pulse on out 1, TND on out 2, Expansion on out 3), which is tightest and works on a
   4-channel interface — but the plugin's outputs are four stereo PAIRS, so out 1 and out 2 arrive as the
@@ -225,7 +226,7 @@ a gigabyte.
   Pulse and TND separately. `Stereo Pins` spends a pair on each pin (out 1/2, 3/4, 5/6) with the mono
   stem mirrored L=R, so every pin is an ordinary centred stereo track. Six lanes instead of three, bought
   deliberately for DAW ergonomics.
-- **Wiring:** the translator wires the one system's stream ports to the host's lanes by a **lane
+- **Wiring:** `buildGraph` wires the one system's stream ports to the host's lanes by a **lane
   stride** taken from the layout:
   - **stride 2, stereo streams:** stream *k* → lanes 2k and 2k+1, through an `rp.core.split` of the
     stream's stereo port. GB channel *k* → plugin stereo pair *k* over the 8 DPF lanes.
@@ -241,9 +242,9 @@ a gigabyte.
 
   `GraphHost::run` silences every host output before the plan runs, so unused lanes are silent for
   free.
-- **Lane plan (in the document, not per block).** The translator works the lane plan out when it
-  builds the document, on the control thread, at every edge that can change it (set-routing, add /
-  replace / remove, a host-shape change), so the audio thread never counts streams. A split is wired
+- **Lane plan (in the document, not per block).** `buildGraph` works the lane plan out when it
+  builds the document, on the control thread, for every document the stores publish, so the audio
+  thread never counts streams. A split is wired
   only when `stride × streams` fits the host's channels, so a narrow host (an SDL 4-channel pick)
   still carries `Pins` (3 lanes) and falls back to Stereo wiring for `Channels` (5) and `Stereo Pins`
   (6) on its own.
@@ -252,19 +253,20 @@ a gigabyte.
   **construct-only** (from the "mesen" role's `channelExportMode`), so a split mode would have silently
   rendered a plain stereo mix. The `SyncTap` command arms it live via
   `MesenNesSystem::setChannelExportMode` (either pin mode → 1, `ChannelSplit` → 3) **without rebuilding
-  the core**: a routing flip must not reset a playing game the way `setRegion` does. The plan's swap
-  command carries a `SyncTap` trailer for every add / replace / remove / set-routing, dispatched in the
-  same pop right after the plan is adopted, so the arming lands with the wiring, against the plan just
-  adopted. It records `{ SystemId, core, prevMode }` (`Engine::armedTap_`) for what it armed and
+  the core**: a routing flip must not reset a playing game the way `setRegion` does. TS sends a re-arm
+  on every edit that builds or drops a core and on every routing change (`buildGraph`'s `tapArm` names
+  the NES and the mode), and the plan's swap command carries it as a `SyncTap` trailer, dispatched in
+  the same pop right after the plan is adopted, so the arming lands with the wiring, against the plan
+  just adopted. It records `{ SystemId, core, prevMode }` (`Engine::armedTap_`) for what it armed and
   restores that first on every run (even when the wanted mode is unchanged; each run resets the
-  capture streams). The core pointer is compared, never followed: a NES replaced under its same id is
-  a different core, so it counts as gone and is not handed the old core's mode. The CLI / render
-  path, which legitimately sets `channelExportMode` at construct and never selects a split routing, is
-  never disturbed. The translator wires tap ports only when the mode it computes for the core (the
-  routing's arm, else the build mode) is the one those ports need, so the wiring and the armed tap
-  agree by the time the NES runs. Deliberately NOT a `ConfigField` / `applyRoleConfig` entry: routing
+  capture streams). The core pointer is compared, never followed: a core that has gone counts as gone
+  and its mode is never handed to another. The CLI / render path, which legitimately sets
+  `channelExportMode` at construct and never selects a split routing, is never disturbed. `buildGraph`
+  wires tap ports only when the mode it computes for the core (the routing's arm, else the export mode
+  `buildCore` reported) is the one those ports need, so the wiring and the armed tap agree by the time
+  the NES runs. Deliberately NOT a `ConfigField` / `applyRoleConfig` entry: routing
   is the single owner in a live host.
-- **Gating (authority in native).** The translator wires a split **only** when the routing is a split
+- **Gating (authority in `buildGraph`).** It wires a split **only** when the routing is a split
   mode and there is exactly one system; both pin modes additionally require it to be a NES, since
   nothing else has output pins. Otherwise it wires the per-system routing (as Stereo) and the layout
   is inert. A multi-instance project can never mis-route. (On a host too narrow for the split, the
@@ -273,10 +275,8 @@ a gigabyte.
   [modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md).) The TS UI mirrors this gating purely for UX
   (`validAudioRoutings` in [menuDefs.ts](../packages/retroplug/ui/screens/menu/menuDefs.ts), whose
   predicate mirrors `validSplits`).
-- **RPC/command:** the guard in `EngineRpcService::setAudioRouting`
-  ([EngineRpcService.cpp](../packages/native/src/host/rpc/EngineRpcService.cpp)) is `mode > 5`; the
-  value goes through `QueuedInvoker::setAudioRouting` to the translator, which rewires, and then the
-  `SyncTap` riding its plan.
+- **The edit:** `ProjectStore.setAudioRouting` refuses an unknown value, then publishes the graph with
+  the new wiring and a re-arm, the `SyncTap` riding its plan.
 - **Port labels: generic (decision).** Keep the static `Out 1..4 L/R` labels with a documented mapping
   (GB: Out1 = Pulse1, Out2 = Pulse2, Out3 = Wave, Out4 = Noise. NES `Channels`: lanes 1..5 =
   Square1/Square2/Triangle/Noise/DMC. NES `Pins`: lanes 1..3 = Pulse/TND/Expansion. NES `Stereo Pins`:
@@ -348,11 +348,12 @@ One native pull-path RPC feeds all three export shapes; the WAV writer needs no 
 TS-owned **project setting** (not per-system role-config), consistent with the existing `audioRouting`:
 
 - `projectConfig.ts` — widen the `audioRouting` clamp `clampedInt(0, 2, 0)` → `clampedInt(0, 3, 0)`.
-- `projectStore.ts` — `SETTING_MAX.audioRouting` `2` → `3`; the `setAudioRouting → pushAudioRouting →
-  backend.setAudioRouting` flow is reused as-is.
+- `projectStore.ts`: `SETTING_MAX.audioRouting` `2` → `3`; the `setAudioRouting → pushAudioRouting`
+  flow is reused as-is (it now publishes the graph, docs/modular-graph-phase-b2-design.md).
 - `menuDefs.ts` — add an `AUDIO_ROUTING_NAMES` entry (e.g. `"Channels (1 GB)"`); the cycler is unchanged.
   The UI hides/disables the row when `> 1` system.
-- Native — `AudioRouting::ChannelSplit = 3` + the widened RPC guard.
+- Native: at the time, `AudioRouting::ChannelSplit = 3` + a widened RPC guard; since B2 nothing, the
+  value being TS wiring.
 
 **Migration:** additive (a new enum value + a widened clamp) — an older project simply never carried
 value 3 and zod `.default()`/clamp fills it, so **no** raw `migrate.ts` step and **no** version bump
@@ -432,13 +433,13 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
    separation — Noise stays silent while the pulse voices ring); the summed 8-ch export matches the
    mixed render within ~5 int16 LSB.
 4. **Plugin GB option - DONE.** `AudioRouting::ChannelSplit = 3` + its flat-lane wiring (stream *k* →
-   outs 2k/2k+1, §4), which the translator builds **only** for a split of a single system (otherwise
+   outs 2k/2k+1, §4), which the graph builder builds **only** for a split of a single system (otherwise
    the per-instance routing, so the split stays inert and a multi-instance project can't mis-route),
    widened RPC guard (`mode > 3`), and
    the §7 TS widenings (clamp `0..3`, `SETTING_MAX`, the "Channels (1 GB)" cycler name gated to a single
    system: UX only, native is authority). Guards: `SameBoyStems.test.cpp` in `retroplug-audio-test` (the
-   real 8-lane split on a real mGB; summed pairs == the mixed render), the translator's ChannelSplit
-   case in `retroplug-engine-graph-test` (one Game Boy's stems on 8 lanes, a narrow host falling back),
+   real 8-lane split on a real mGB; summed pairs == the mixed render), `buildGraph`'s ChannelSplit
+   case in `pnpm test graph` (one Game Boy's stems on 8 lanes, a narrow host falling back),
    and the `routing-split` parity group (including a two-system project falling back);
    `app-audio-routing.test.ts` accepts mode 3. Per-pair separation in a real DAW (an 8-channel bus via `RETROPLUG_AUTOLOAD_PROJECT`)
    is the manual confirmation — no headless harness captures the plugin's 8 audio outs yet.
@@ -477,15 +478,15 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
    the wiring so the CLI export keeps its silent R) because the plugin's outputs are stereo PAIRS: under
    the packed `Pins` layout, Pulse and TND share one DAW track and hosts that only bus whole pairs cannot
    separate them.
-   The translator works the lane plan out when it builds the document, rather than the audio thread
+   The graph builder works the lane plan out when it builds the document, rather than the audio thread
    counting a `channelLayout()` vector every block, and the `SyncTap` command arms the NES tap
    **live**: `channelExportMode` was construct-only, so without it a split mode silently rendered the
    plain mix. It restores what it armed on the way out, leaving the CLI/render construct-time path
    untouched. Guards: `NesSplitRouting.test.cpp` (a real Mesen core through the Engine: the arm, the
    3- and 5-lane fan-outs, the round-trip restore, and the fall-back when a second system arrives;
    every case fails if the arming is removed), including the pair-per-pin layout, asserted as
-   bit-identical lanes within each pair, which fails if the mirror is dropped; plus the translator's
-   NES split case in `retroplug-engine-graph-test` (channels and pins mono-packed, pins on pairs, and
-   the fall-back on a narrow host or a second system).
+   bit-identical lanes within each pair, which fails if the mirror is dropped; plus `buildGraph`'s
+   NES split cases in `pnpm test graph` (channels and pins mono-packed, pins on pairs, and the
+   fall-back on a narrow host or a second system).
 8. **Follow-ons** (decisions permitting) — upstream-vs-diff for the SameBoy patch; the NES separation
    pot; EPSM; mode-aware plugin port relabeling; stereo-per-stem for the NES (needs > 8 ports).

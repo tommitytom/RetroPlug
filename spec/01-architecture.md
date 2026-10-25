@@ -90,7 +90,7 @@ goes through the command ring; all audio→control observation goes through the 
 | | **Control plane** (main / UI thread) | **Audio thread** (DPF `run()` / spawned `audioThread_`) |
 |---|---|---|
 | QuickJS runtime | control-plane txiki host ([`TjsHostRuntime`](../packages/native/plugin/PluginDSP.cpp)) | bare DSP context ([`DspRuntime`](../packages/native/src/host/dsp/DspRuntime.hpp), owned by `Engine::dsp_`) |
-| Owns | the RPC services + their facets, the TS stores, the editor, the translator's model | the live [`Engine`](../packages/native/src/host/engine/Engine.hpp): the running plan (its system nodes, each owning its core) + the DSP kernel, **while running** |
+| Owns | the RPC services + their facets, the TS stores and the graph they publish (`EngineGraph`), the editor | the live [`Engine`](../packages/native/src/host/engine/Engine.hpp): the running plan (its system nodes, each owning its core) + the DSP kernel, **while running** |
 | Does | issues mutation *requests*; plans structure into graph documents; reads snapshots by id; frees replaced plans and the cores only they held | drains the command ring, adopting plans in order; runs the plan each block; publishes snapshots |
 | Never | dereferences a live `SystemBase` while audio runs; frees a core a running plan holds | builds or frees a core or a plan, or blocks |
 
@@ -106,7 +106,7 @@ and therefore who drains the command ring.
 
 ```
                          CONTROL PLANE  (main / UI thread)
-            txiki QuickJS · RPC facets · TS stores · editor · translator
+            txiki QuickJS · RPC facets · TS stores + EngineGraph · editor
                          │                    ▲                    ▲
    push plan / command   │                    │ read by id         │ free the replaced plan
                          ▼                    │ (owned copy)       │ (+ cores only it held)
@@ -144,13 +144,16 @@ Every control-plane edit goes through the one
 ([modular-graph-phase-b1-design.md](../docs/modular-graph-phase-b1-design.md) section 5). The
 invoker sends an edit one of two ways:
 
-- **Structure** (add / replace / remove a system, the routing mode, a Game Boy's link group, the
-  host's output shape) goes to the Engine's
-  [`Translator`](../packages/native/src/host/graph/Translator.hpp) on the control thread. The
-  translator updates its model (the ordered system list, the link groups, the routing mode, the host
-  shape), builds a graph document and its `SystemTable`, and calls `GraphHost::setGraph`, which plans
-  the document on the control thread (every layout checked before any instance is created, every new
-  instance created and activated) and pushes the plan onto the ring as a plan swap.
+- **Structure** (which systems run, in what order and wired how, a Game Boy's link cable, the host's
+  output shape) is a graph document TS builds
+  ([modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md)). The stores call
+  [`EngineGraph.publish`](../packages/retroplug/src/engineGraph.ts) once at the end of every
+  structural edit; it builds the document with
+  [`buildGraph`](../packages/retroplug/src/graph/buildGraph.ts) and sends it with the `setGraph` RPC.
+  `Engine::setGraph` builds the plan's `SystemTable` from the request's slots and the cores `buildCore`
+  parked, and calls `GraphHost::setGraph`, which plans the document on the control thread (every
+  layout checked before any instance is created, every new instance created and activated) and pushes
+  the plan onto the ring as a plan swap.
 - **Everything else** (load kernel bytecode, set the kernel's systems JSON, stage MIDI, controller
   MIDI or one system's MIDI, set bpm / transport / ppq, apply a config field, press a button, write
   RAM) is packed into a POD [`DspCommand`](../packages/native/src/host/engine/DspCommand.hpp) and
@@ -174,15 +177,16 @@ The only variable is **who drains the ring**, decided by `audioThreadOwns_`:
 - **Quiescent (control thread owns the Engine):** every push flushes **inline**: the GraphHost
   drains and reclaims right after the push, so a plan is adopted and a command applied before the
   call returns. The same thread is both producer and consumer, so the SPSC invariant holds
-  trivially, and a quiescent `removeSystem` frees the core synchronously (the plan it replaced is
-  reclaimed in the same flush), exactly as a direct call would.
+  trivially, and a quiescent remove (a document without the system) frees the core synchronously (the
+  plan it replaced is reclaimed in the same flush), exactly as a direct call would.
 
 The key consequence: because the quiescent path flushes on **every** push, **the ring is empty
 at the moment ownership is handed to the audio thread**. That is what makes the handoff clean:
-the plugin's `activate()` / the test host's `startAudio` set the host shape (the plugin its block
-size too) and then just set the bit ([`PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp),
+the plugin's `activate()` sets its block size and the test host's `startAudio` nothing at all, and
+then each just sets the bit ([`PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp),
 [`AudioDriverRpcService.cpp`](../packages/native/src/host/rpc/AudioDriverRpcService.cpp)), with no
-ring to flush.
+ring to flush. The host shape is the control plane's: TS built the running graph for the host's
+outputs before the handoff.
 
 ### Producers and the drain
 
@@ -193,15 +197,16 @@ leak). Heavy commands carry an **owning heap payload**: `setSystems` / `loadKern
 a `stageMidi` / `stageSystemMidi` longer than 4 bytes, box a `new`-ed buffer (deleted after apply or,
 if the push fails, immediately).
 
-Structural calls never ride the ring as commands. `adoptSystem` / `replaceSystem` / `removeSystem` /
-`setAudioRouting` go to the translator, and the plan's swap command carries a `SyncTap` trailer
-(dispatched in the same pop, right after the plan is adopted), which arms or restores the NES channel tap
-against the plan just adopted
+Structure never rides the ring as a command. A `setGraph` request carries a `tap` when its edit
+re-arms the NES channel tap (every edit that builds or drops a core, and every routing change, even to
+the mode already set), and the plan's swap command carries it as a `SyncTap` trailer (dispatched in the
+same pop, right after the plan is adopted), which restores whatever is armed and then arms the tap the
+request names against the plan just adopted
 ([10-multichannel-audio-out.md](10-multichannel-audio-out.md) section 4). The `LinkGroup` config field
-goes both ways: the field reaches the core as a command, and the translator rewires the cable.
-`setHostShape` goes to the translator alone, and answers whether its shape planned. A change that does
-not plan (a refused document, or a full ring) leaves the translator's model as it was, and a core that
-was handed in is freed with its registry slot.
+goes both ways: the field reaches the core as a command, and the store republishes the graph with the
+cable. A document that does not plan (refused, or a full ring) changes nothing: the store keeps its
+model, and a core parked for it waits for the next document that plans, which frees it unless it
+places it.
 
 The handler (`Engine::onHostCommand` → `applyCommand`) switches on `DspCommand::Kind`, applies each
 command and deletes its owning payload. The block drivers (the plugin's `run()`, the test host's
@@ -278,14 +283,15 @@ A core's life, end to end:
 
 | Direction | Trigger | Mechanism |
 |---|---|---|
-| **build → park** | control builds and activates a core (`factory.build`), claims its registry slot, hands it to the invoker | `Translator::add` / `replace` parks it under a fresh token and puts `{ "core": <token> }` in its node's settings |
+| **build → park** | `buildCore` builds and activates a core (`factory.build`) and claims its registry slot | `Engine::parkCore` parks it under its system id; the document TS sends names it as `{ "core": <id> }` in its node's settings |
 | **plan → take** | `setGraph` plans the document on the control thread | the new node's first `activate` takes the core through the host service `rp.host.cores/1` and owns it from then on |
 | **adopt → hand back** | the audio thread drains the plan swap | the replaced plan is pushed onto the release ring, the last one of a drain only after every command of that drain is applied |
 | **reclaim → free** | the control thread reclaims | `reclaim()` deletes each released plan; a node only that plan held destroys its core: `registry.release(id)` first, then `delete` |
 
-A token never repeats, so even a reused system id with a new core plans as a new instance. A core
-no node ever took (a refused plan, or a replace whose target has gone) is freed by the translator
-itself, releasing its slot the same way.
+TS never reuses a system id, and `buildCore` refuses an id that is still live (parked, or held by a node
+of any plan not yet reclaimed), so a new core always plans as a new instance. A core no published
+document placed is freed by the engine once a document plans without it, releasing its slot the same
+way.
 
 `reclaim` runs at every `setGraph`, in every inline flush (quiescent), and at the hosts' stop and
 deactivate points; it returns the number of plans freed and is exposed on the wire as
@@ -388,11 +394,12 @@ lost mutation.
    system-addressed byte sinks. Its runtime is separate from the control-plane runtime and is
    re-anchored to the calling thread on every entry.
 
-8. **TypeScript owns identity and orchestration; native never mints or decides.** System ids are
-   allocated by TS and passed into `constructSystem`; native returns "did it build", never an id
-   ([`EngineRpcService.cpp`](../packages/native/src/host/rpc/EngineRpcService.cpp)).
-   Duplicate and reload are TS orchestration over `constructSystem`-with-state plus registry reads,
-   not native methods.
+8. **TypeScript owns identity, orchestration and structure; native never mints or decides.** System
+   ids are allocated by TS and passed into `buildCore`; native returns what it built, never an id
+   ([`EngineRpcService.cpp`](../packages/native/src/host/rpc/EngineRpcService.cpp)). Which systems
+   run, in what order and wired how is the graph document TS builds and sends with `setGraph`.
+   Duplicate, reload and remove are TS orchestration over `buildCore`-with-state, registry reads and
+   the documents the stores publish, not native methods.
    Cores are built bare (no default roles baked into C++); feature behaviour lives in the TS kernel.
 
 ### Not yet built / deferred
@@ -411,13 +418,13 @@ lost mutation.
 | File | Role |
 |---|---|
 | [`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp) | mounts the capability facets onto an RPC server over the shared service instances |
-| [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp) | `QueuedInvoker`: the one mutation path (structure to the translator, every other edit onto the ring), the `SyncTap` push, `audioThreadOwns_` |
+| [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp) | `QueuedInvoker`: every edit but structure onto the ring, `audioThreadOwns_` |
 | [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp) | the POD command the ring carries as an opaque host command |
 | [`GraphHost.hpp`](../packages/native/src/graph/GraphHost.hpp) / [`.cpp`](../packages/native/src/graph/GraphHost.cpp) | the one command ring, the release ring of plans, `setGraph` / `drain` / `run` / `reclaim` |
-| [`Translator.hpp`](../packages/native/src/host/graph/Translator.hpp) / [`.cpp`](../packages/native/src/host/graph/Translator.cpp) | the control-side model: every structural edit as a graph document + its `SystemTable` |
+| [`buildGraph.ts`](../packages/retroplug/src/graph/buildGraph.ts) / [`engineGraph.ts`](../packages/retroplug/src/engineGraph.ts) | the engine's graph as TS builds it from the stores, and the one publisher of it per context |
 | [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) / [`KernelNode.cpp`](../packages/native/src/host/graph/KernelNode.cpp) / [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp) | the cores as nodes (each owning its core), the kernel stage as a node, and the host services they ask for |
 | [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) | the id-keyed read door; claim/publishSystem/read/release |
-| [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) | the single-threaded owner of the graph, the DSP kernel and the registry; `processBlock`, the command handler, `SyncTap` |
+| [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) | the single-threaded owner of the graph, the DSP kernel and the registry; `parkCore` / `setGraph`, `processBlock`, the command handler, `SyncTap` |
 | [`DspRuntime.hpp`](../packages/native/src/host/dsp/DspRuntime.hpp) / [`.cpp`](../packages/native/src/host/dsp/DspRuntime.cpp) | the bare DSP QuickJS context + byte-sink thunks |
 | [`PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp) | plugin control-plane bring-up + the `run()` block driver |
 | [`PluginShared.hpp`](../packages/native/plugin/PluginShared.hpp) | the in-process editor↔control-plane handoff |
