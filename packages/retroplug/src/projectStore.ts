@@ -475,7 +475,7 @@ export class ProjectStore {
     return true;
   }
   setZoom(n: number): boolean {
-    if (n < 0 || n > ZOOM_MAX) return false; // out of range → reject (native does)
+    if (n < 0 || n > ZOOM_MAX) return false; // out of range → reject
     this.projectSettings = { ...this.projectSettings, zoom: n };
     this.markDirty();
     return true;
@@ -722,7 +722,7 @@ export class ProjectStore {
   }
 
   private setEnumSetting(key: "layout" | "midiRouting" | "audioRouting", value: string): boolean {
-    if (!(SETTING_VALUES[key] as readonly string[]).includes(value)) return false; // unknown → reject (native does)
+    if (!(SETTING_VALUES[key] as readonly string[]).includes(value)) return false; // unknown → reject
     this.projectSettings = { ...this.projectSettings, [key]: value } as ProjectSettings;
     this.markDirty();
     return true;

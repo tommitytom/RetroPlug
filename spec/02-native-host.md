@@ -151,7 +151,7 @@ themselves and refuse while the audio thread owns the engine. Every read routes 
 | `pressButton` | `(uint32 id, uint32 button, bool down) → bool` | joypad transition → the addressed core |
 | `renderAudio` | `(double ms) → Bytestring` | synchronous pull render, interleaved f32 L/R, into a graph TS built for 2 host channels; empty while the audio thread owns the engine or the running graph writes another width (as are `renderAudioPerSystem` / `renderAudioPerChannel`, for 2 channels per system or stream) |
 | `setTransport` / `setBpm` | `→ bool` | queued transport ops |
-| `stageMidiIn` | `(vector<uint8> bytes) → bool` | ≤ 4 bytes (one MIDI message) |
+| `stageMidiIn` | `(vector<uint8> bytes) → bool` | any non-empty length: a channel message, a SysEx, or several messages as one run |
 
 `duplicate`, `reload` and `remove` are **not** native methods: they are TS orchestration over
 `buildCore`-with-state, the registry reads and the documents the stores publish
