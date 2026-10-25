@@ -20,7 +20,7 @@ import type { SystemEntry } from "../../src/systemsList";
 const identity = (p: string) => p;
 
 function sys(id: number, romPath: string, savPath = "", savSuffix = 0, embeddedRom = ""): SystemEntry {
-  return { id, platform: "gb", core: "sameboy", romPath, savPath, savSuffix, embeddedRom, battery: false, settings: { gainDb: 0, reloadOnRomChange: false }, roles: [] };
+  return { id, platform: "gb", core: "sameboy", romPath, savPath, savSuffix, embeddedRom, battery: false, settings: { gainDb: 0, reloadOnRomChange: false }, roles: [], built: { type: "rp.sameboy.gb", exportMode: 0, linkGroup: 0 } };
 }
 
 test("schema: checkVersion + parseProjectVersion", () => {

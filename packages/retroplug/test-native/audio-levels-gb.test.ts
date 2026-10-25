@@ -20,7 +20,7 @@ test("audio levels: SameBoy (mGB)", () => {
   const be = createRealBackend();
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const dsp = createDspRuntime();
-  const audio = createAudioDriver();
+  const audio = createAudioDriver(project.graph);
   dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!);
   project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
   const id = project.systems.loadMgb()!;

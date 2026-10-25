@@ -372,8 +372,8 @@ test("instance menu Replace Instance swaps the anchored instance in place", asyn
   expect(view.length).toBe(2); // in place — no add/remove
   expect(view[0].romPath).toBe("/roms/c.gb"); // the anchored slot now holds the new ROM
   expect(view.find((s) => s.id === otherId)?.romPath).toBe("/roms/b.gb"); // the other instance is untouched
-  const spec = be.constructCalls[be.constructCalls.length - 1];
-  expect(spec.replaceId).toBe(anchoredId); // swapped the anchored id, not the focused tile
+  const spec = be.buildCalls[be.buildCalls.length - 1];
+  expect(be.replacedBy(spec)).toBe(anchoredId); // swapped the anchored id, not the focused tile
 });
 
 test("instance menu Duplicate inherits + promotes the link group", () => {
@@ -638,8 +638,8 @@ test("system Swap ROM... opens a ROM-only browser and swaps in place, keeping th
 
   const last = be.fileBrowserCalls[be.fileBrowserCalls.length - 1];
   expect(last.patterns.includes("*.sav")).toBeFalsy(); // ROM-only browser (a .sav pick would fight "keep SRAM")
-  const call = be.constructCalls[be.constructCalls.length - 1];
-  expect(call.replaceId).toBe(id); // swapped in place
+  const call = be.buildCalls[be.buildCalls.length - 1];
+  expect(be.replacedBy(call)).toBe(id); // swapped in place
   expect(call.romPath).toBe("/roms/new.gb");
   expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(id)); // the live battery carried into the new ROM
 });
@@ -669,8 +669,8 @@ test("system Load State... reconstructs the system from the picked savestate", a
   findItem(items, "sys-loadstate")!.onSelect!();
   await flush();
 
-  const call = be.constructCalls[be.constructCalls.length - 1];
-  expect(call.replaceId).toBe(id); // in-place replace
+  const call = be.buildCalls[be.buildCalls.length - 1];
+  expect(be.replacedBy(call)).toBe(id); // in-place replace
   expect(new Uint8Array(call.stateBytes!)).toEqual(stateBytesFor(999)); // the file's bytes seeded the core
 });
 
@@ -768,8 +768,8 @@ test("system Load SRAM... cold-boots the system with the picked file's SRAM", as
   findItem(items, "sys-loadsram")!.onSelect!();
   await flush();
 
-  const call = be.constructCalls[be.constructCalls.length - 1];
-  expect(call.replaceId).toBe(id);
+  const call = be.buildCalls[be.buildCalls.length - 1];
+  expect(be.replacedBy(call)).toBe(id);
   expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(999));
   expect(stores.project.systems.view()[0].savPath).toBe("/in/x.sav"); // auto-save target repointed to the load
 });
@@ -786,8 +786,8 @@ test("system New SRAM... opens a save dialog, boots blank, and repoints to the c
   const last = be.fileBrowserCalls[be.fileBrowserCalls.length - 1];
   expect(last.saving).toBe(true); // a save (create) dialog, not an open
   expect(last.patterns.includes("*.sav")).toBeTruthy();
-  const call = be.constructCalls[be.constructCalls.length - 1];
-  expect(call.replaceId).toBe(id); // in-place replace
+  const call = be.buildCalls[be.buildCalls.length - 1];
+  expect(be.replacedBy(call)).toBe(id); // in-place replace
   const seed = new Uint8Array(call.sramBytes!);
   expect(seed.length).toBe(0x20000); // native truncates/zero-pads to the cart's real battery size
   expect(seed.every((b) => b === 0)).toBeTruthy(); // blank battery
@@ -808,8 +808,8 @@ test("system Reset reboots carrying the live battery, no dialog", () => {
   findItem(items, "sys-reset")!.onSelect!();
 
   expect(be.fileBrowserCalls.length).toBe(0); // pathless — no browser opens
-  const call = be.constructCalls[be.constructCalls.length - 1];
-  expect(call.replaceId).toBe(id); // in-place replace
+  const call = be.buildCalls[be.buildCalls.length - 1];
+  expect(be.replacedBy(call)).toBe(id); // in-place replace
   expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(id)); // the live battery carried forward
 });
 

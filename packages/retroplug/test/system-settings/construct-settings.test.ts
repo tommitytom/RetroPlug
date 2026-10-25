@@ -24,7 +24,7 @@ test("adopt forwards the saved sameboy role config as the construct-time setting
   const roles = [{ kind: "sameboy", config: { model: "dmgB", highpass: "removeDcOffset", linkGroupId: 0, fastBoot: true } }];
   store.adopt({ romPath: "/roms/a.gb", roles });
 
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.settings != null).toBeTruthy();
   expect(JSON.parse(spec.settings!)).toEqual({ model: 1, highpass: 2, linkGroupId: 0, fastBoot: true }); // native-encoded blob
 });
@@ -38,7 +38,7 @@ test("adopt forwards the saved mesen (NES) role config as the construct-time set
   const roles = [{ kind: "mesen", config: { region: "pal", removeSpriteLimit: true } }];
   store.adopt({ romPath: "/roms/a.nes", roles });
 
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.settings != null).toBeTruthy();
   expect(JSON.parse(spec.settings!)).toEqual({ region: 2, removeSpriteLimit: true }); // native-encoded blob
 });
@@ -48,6 +48,6 @@ test("a fresh add sends no settings blob (backend defaults suffice)", () => {
   be.seed("/roms/b.gb", gbRom());
 
   store.addSystem("/roms/b.gb"); // fresh construct — defaultRoles run AFTER construct, so no blob
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.settings).toBe(undefined);
 });

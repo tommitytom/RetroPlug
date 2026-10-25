@@ -73,6 +73,7 @@ test("the risa-sync role in the DSP kernel is the sole clock that makes risa 2.3
   expect(neg < 0.001).toBeTruthy(); // transport running but unclocked -> silent
   expect(pos > 0.001).toBeTruthy(); // the kernel's byte stream advances risa -> audible
   expect(pos > neg).toBeTruthy();
+  graph.remove(id); // a live system is emulated by every later test in this file
 });
 
 test("stopping the transport stops risa, and restarting it plays again", () => {
@@ -106,4 +107,5 @@ test("stopping the transport stops risa, and restarting it plays again", () => {
   expect(play > 0.001).toBeTruthy();
   expect(stopped < 0.001).toBeTruthy(); // FC really stopped it, rather than just muting the host
   expect(again > 0.001).toBeTruthy(); // and the re-arm brought it back
+  graph.remove(id); // a live system is emulated by every later test in this file
 });

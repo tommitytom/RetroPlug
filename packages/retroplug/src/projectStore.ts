@@ -15,6 +15,7 @@
 
 import type { ControlPlaneBackend, ZipEntry } from "./backend";
 import { SystemsStore } from "./systemsStore";
+import { EngineGraph } from "./engineGraph";
 import type { SystemEntry } from "./systemsList";
 import type { RoleRegistry } from "./systemRoles";
 import type { RecentStore } from "./recentStore";
@@ -45,7 +46,6 @@ import {
   LAYOUT_VALUES,
   MIDI_ROUTING_VALUES,
   AUDIO_ROUTING_VALUES,
-  audioRoutingToIndex,
 } from "./settingsEnums";
 import { scanMissingFiles, autoFindSiblings, relinkInConfig, type MissingFile } from "./projectMissing";
 import { PROJECT_JSON, sramKey, stateKey, partitionEntries } from "./projectBinaries";
@@ -129,8 +129,19 @@ export class ProjectStore {
   private controllerReaderCache: LsdjReader | null = null;
   private onSystemsChange: () => void = () => {};
   private onChangeCb: () => void = () => {};
+  private holdGraph = false; // a load's adopts: the graph is published once they are all built
 
-  constructor(private readonly backend: ControlPlaneBackend, private readonly recent: RecentStore, registry?: RoleRegistry) {
+  /** The engine's graph this project publishes (docs/modular-graph-phase-b2-design.md section 2.2). Share it
+   *  with anything else that publishes to the same engine (a DirectGraph, the render calls' shapes). */
+  readonly graph: EngineGraph;
+
+  constructor(
+    private readonly backend: ControlPlaneBackend,
+    private readonly recent: RecentStore,
+    registry?: RoleRegistry,
+    graph?: EngineGraph,
+  ) {
+    this.graph = graph ?? new EngineGraph(backend);
     // Any user mutation of the systems list marks the project dirty and re-drives the DSP.
     this.systems = new SystemsStore(
       backend,
@@ -140,6 +151,15 @@ export class ProjectStore {
       },
       registry,
     );
+    this.systems.setOnGraphChange((rearmTap) => this.publishGraph(rearmTap));
+  }
+
+  // Publish the engine's graph for the systems and the audio routing as they stand: the systems store calls
+  // this at the end of every structural edit. `rearmTap` re-arms the NES tap, as every edit that builds or
+  // drops a core does. A load holds it back while it adopts (holdGraph), then publishes once.
+  private publishGraph(rearmTap: boolean): boolean {
+    if (this.holdGraph) return true;
+    return this.graph.publish(this.systems.graphSystems(), this.projectSettings.audioRouting, { rearmTap });
   }
 
   /** Install the hook fired whenever the systems structure changes (a user edit, or a load / new; the quiet
@@ -654,18 +674,24 @@ export class ProjectStore {
   // system's SRAM/savestate blobs (export only) seed its emulator via adopt.
   private commit(cfg: ProjectConfig, path: string, blobs: Map<string, Uint8Array>): LoadOutcome {
     this.systems.clear();
-    cfg.systems.forEach((s, i) => {
-      const sram = blobs.get(sramKey(i));
-      const state = blobs.get(stateKey(i));
-      // A savestate is the complete machine snapshot (it already contains the battery-backed SRAM), so
-      // boot from it ALONE — also seeding sramBytes cold-reseeds the battery and drops the restored
-      // runtime state (e.g. an LSDj armed in "wait for MIDI"). The sram blob only seeds a system that
-      // has no savestate (a thin load, or a battery-only export).
-      const sysBlobs = state ? { stateBytes: state } : sram ? { sramBytes: sram } : undefined;
-      this.systems.adopt(s, sysBlobs);
-    });
+    // Built one by one, placed together: the graph is published once, with the loaded routing.
+    this.holdGraph = true;
+    try {
+      cfg.systems.forEach((s, i) => {
+        const sram = blobs.get(sramKey(i));
+        const state = blobs.get(stateKey(i));
+        // A savestate is the complete machine snapshot (it already contains the battery-backed SRAM), so
+        // boot from it ALONE — also seeding sramBytes cold-reseeds the battery and drops the restored
+        // runtime state (e.g. an LSDj armed in "wait for MIDI"). The sram blob only seeds a system that
+        // has no savestate (a thin load, or a battery-only export).
+        const sysBlobs = state ? { stateBytes: state } : sram ? { sramBytes: sram } : undefined;
+        this.systems.adopt(s, sysBlobs);
+      });
+    } finally {
+      this.holdGraph = false;
+    }
     this.projectSettings = { ...DEFAULT_SETTINGS, ...cfg.settings };
-    this.pushAudioRouting(); // apply the loaded project's routing to native audio
+    this.pushAudioRouting(); // place the loaded systems, with the loaded project's routing
     this.projectName = cfg.name ?? ""; // only a name the user gave the project is stored; blank = unnamed
     this.songRequest = null; // a request parked against the previous cart cannot apply to this one
     this.recentPending = false;
@@ -684,11 +710,11 @@ export class ProjectStore {
     return true;
   }
 
-  /** Push the current audio-routing mode to native — the one project setting that drives native audio
-   *  (the translator rewires the graph's outputs). Converts the string value to native's AudioRouting integer.
-   *  Called on set / load / reset so native tracks the TS value. */
+  /** Publish the graph for the current audio-routing mode — the one project setting that drives native audio
+   *  (it decides the graph's output wiring). Called on set / load / reset, every one re-arming the NES tap,
+   *  as a routing change always has, even to the mode already set. */
   private pushAudioRouting(): void {
-    this.backend.setAudioRouting(audioRoutingToIndex(this.projectSettings.audioRouting));
+    this.publishGraph(true);
   }
 
   private markDirty(): void {

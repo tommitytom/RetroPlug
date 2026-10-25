@@ -88,24 +88,24 @@ function smsSongsMenu(ram: Parameters<typeof smsggdjRam>[0]) {
 
 test("Songs > Load on a running smsggdj cart loads right there, live - no reboot, no wait", () => {
   const m = smsSongsMenu({ booted: true });
-  const builds = m.be.constructCalls.length;
+  const builds = m.be.buildCalls.length;
   const load = m.load(1);
   expect(load.kind).toBe("action"); // a clean working song: no guard
   load.onSelect!();
   expect(m.working()).toEqual(block(2)); // BETA, this very call
   expect(m.stores.project.hasSongRequest()).toBe(false); // settled inline
-  expect(m.be.constructCalls.length).toBe(builds); // no cold boot
+  expect(m.be.buildCalls.length).toBe(builds); // no cold boot
 });
 
 test("Songs > Load on an smsggdj cart that is still booting parks the request and settles it later", () => {
   // Before: the live load declined (rightly - the boot would have erased it), and the menu fell back to
   // the cold-boot path, which on v0.45 boots BLANK. Now the row is a request the frame tick settles.
   const m = smsSongsMenu({ booted: false });
-  const builds = m.be.constructCalls.length;
+  const builds = m.be.buildCalls.length;
   m.load(1).onSelect!();
   expect(m.stores.project.hasSongRequest()).toBe(true);
   expect(m.writes()).toBe(0); // not a byte into a booting cart
-  expect(m.be.constructCalls.length).toBe(builds); // and no cold boot either
+  expect(m.be.buildCalls.length).toBe(builds); // and no cold boot either
   expect(m.working()).toEqual(new Uint8Array(SMDJ4_BLOCK_LEN));
 
   expect(m.stores.project.settleSong()).toBe("waiting"); // the tick, while the cart boots

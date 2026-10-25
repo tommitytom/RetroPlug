@@ -165,7 +165,7 @@ for (const m of MACHINES) {
     expect(idle < 0.001).toBeTruthy(); // ...and makes no sound
     expect(playing > 0.001).toBeTruthy(); // the ROM's own clock plays it
     expect(playRows > 0).toBeTruthy(); // and its sequencer runs
-    expect(be2.removeSystem(id)).toBeTruthy(); // leave the mix silent for the next case
+    expect(graph.remove(id)).toBeTruthy(); // leave the mix silent for the next case
   });
 
   test(`${m.machine.toUpperCase()}: GUARD B: the sms-sync role in the DSP kernel is the sole clock that makes smsggdj play`, () => {

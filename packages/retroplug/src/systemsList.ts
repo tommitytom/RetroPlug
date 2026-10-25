@@ -12,6 +12,7 @@ import { siblingSavPath, siblingRomCandidates } from "./savPaths";
 import type { Platform, Core } from "./platform";
 import type { CommonSettings } from "./systemSettings";
 import type { RoleInstance } from "./systemRoles";
+import type { BuiltCore } from "./backend";
 
 /** The per-system record TS owns. `savSuffix` + `savPath` (an override, `""` when the
  *  natural sibling is used) are the persistent identity. `platform` (what the ROM is) and
@@ -29,6 +30,10 @@ export interface SystemEntry {
   battery: boolean; // derived (not serialized): the cart has battery-backed save memory
   settings: CommonSettings;
   roles: RoleInstance[];
+  /** What buildCore reported for the core now running this entry (not serialized): the node type it is
+   *  placed as, the export mode it was built with, and its link group, kept in step with each live
+   *  link-group edit. The graph is built from these. */
+  built: BuiltCore;
 }
 
 /** The live system with `id`, or undefined. */

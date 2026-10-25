@@ -98,6 +98,7 @@ test("a stop, a rewind and a mid-song jump each land risa on the row the arm nam
     console.log(`[risa-sync-locate] ppq=${ppq} want=${JSON.stringify(want(ppq))} got=${JSON.stringify(got)}`);
     expect(got).toEqual(want(ppq));
   }
+  graph.remove(id); // a live system is emulated by every later test in this file
 });
 
 test("the beat grid still holds on a run that follows a stop and rewind", () => {
@@ -161,4 +162,5 @@ test("the beat grid still holds on a run that follows a stop and rewind", () => 
   for (let i = 1; i < Math.min(first.length, second.length); i++) {
     expect(Math.abs(second[i] - first[i]) < 18).toBeTruthy();
   }
+  graph.remove(id); // a live system is emulated by every later test in this file
 });

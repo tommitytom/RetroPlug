@@ -43,7 +43,7 @@ test("LSDj link-cable sync control: the follower stays silent without SYNC=LSDJ"
   const be = createRealBackend();
   if (!be.fileExists(LSDJ)) skip(`lsdj-sync-negative: LSDj ROM not found at ${LSDJ}`);
 
-  const audio = createAudioDriver();
+  const audio = createAudioDriver(graph.graph);
 
   const leader = 1, follower = 2;
   expect(construct(leader, "None")).toBeTruthy();

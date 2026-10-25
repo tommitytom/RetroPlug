@@ -93,7 +93,7 @@ test("Patch ROM in Place bakes the overrides into the ROM on disk and clears the
   const kids = lsdjKids(be, stores, "/roms/bake.gb");
   stores.project.systems.setRoleConfig(stores.project.systems.view()[0].id, "lsdj-assets", { overrides: [NEON] });
   const base = be.readFile("/roms/bake.gb")!;
-  const constructs = be.constructCalls.length;
+  const constructs = be.buildCalls.length;
 
   const row = findItem(kids(), "lsdj-patch-rom")!;
   expect(row.prompt!.confirm).toBeTruthy(); // an irreversible write always confirms
@@ -111,7 +111,7 @@ test("Patch ROM in Place bakes the overrides into the ROM on disk and clears the
   // was evicted; without that it would still be parsing the pre-patch bytes).
   expect(findItem(submenuChildren(kids(), "lsdj-palettes"), "lsdj-palette-1")?.label).toBe("[1] NEON");
   // No cold boot: the effective ROM is byte-identical to what the core is already running.
-  expect(be.constructCalls.length).toBe(constructs);
+  expect(be.buildCalls.length).toBe(constructs);
 });
 
 test("the baked ROM is byte-identical to the image construct was already handing the core", () => {
@@ -121,7 +121,7 @@ test("the baked ROM is byte-identical to the image construct was already handing
   const id = stores.project.systems.view()[0].id;
   stores.project.systems.setRoleConfig(id, "lsdj-assets", { overrides: [NEON] });
   stores.project.systems.reloadSystem(id); // construct folds the override in -> the EFFECTIVE image
-  const effective = new Uint8Array(be.constructCalls[be.constructCalls.length - 1].romBytes!);
+  const effective = new Uint8Array(be.buildCalls[be.buildCalls.length - 1].romBytes!);
 
   findItem(kids(), "lsdj-patch-rom")!.prompt!.onConfirm("");
 
@@ -217,7 +217,7 @@ test("BlipToaster's bake carries the pinned SETTINGS too, and a settings pin alo
   // Bake must be the image construct hands the core - settings included, or the .nes on disk would boot
   // differently from the project that wrote it.
   stores.project.systems.reloadSystem(stores.project.systems.view()[0].id);
-  const effective = new Uint8Array(be.constructCalls[be.constructCalls.length - 1].romBytes!);
+  const effective = new Uint8Array(be.buildCalls[be.buildCalls.length - 1].romBytes!);
   expect(findItem(kids(), "bliptoaster-patch-rom")!.prompt!.onConfirm("")).toBe(null);
   expect(sameBytes(be.readFile("/roms/bake-bt.nes")!, effective)).toBe(true);
 

@@ -72,7 +72,7 @@ test("a lsdprjKit override patches the effective ROM's kit at construct (via rel
   store.setRoleConfig(id, "lsdj-assets", { overrides: [{ type: "kit", slot: 0, name: "DRUMS", path: "/p.lsdprj", lsdprjKit: 0 }] });
   store.reloadSystem(id);
 
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.romBytes != null).toBeTruthy();
   const patched = LsdjRom.fromBytes(spec.romBytes!);
   expect(patched.kit(0).valid).toBeTruthy();

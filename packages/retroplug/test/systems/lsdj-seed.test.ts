@@ -31,7 +31,7 @@ test("a fresh LSDj cart with no sav is seeded an empty sav at construct", () => 
   // The lsdj-sync role attached (LSDj identity), and its hook seeded sramBytes before the build.
   expect(store.view()[0].roles.map((r) => r.kind).includes("lsdj-sync")).toBeTruthy();
   expect(be.log.includes("savFromJson")).toBeTruthy();
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.sramBytes != null && spec.sramBytes.byteLength > 0).toBeTruthy();
 });
 
@@ -41,7 +41,7 @@ test("an LSDj cart with an existing .sav on disk is NOT re-seeded (never clobber
   be.seed("/roms/song.sav", "real battery"); // native will load this — the hook must stand down
   const id = store.addSystem("/roms/song.gb");
   expect(id).toBeTruthy();
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.sramBytes).toBe(undefined);
   expect(be.log.includes("savFromJson")).toBeFalsy();
 });
@@ -52,7 +52,7 @@ test("a non-LSDj GB cart is never seeded (no lsdj-sync role → no hook)", () =>
   const id = store.addSystem("/roms/zelda.gb");
   expect(id).toBeTruthy();
   expect(store.view()[0].roles.map((r) => r.kind).includes("lsdj-sync")).toBeFalsy();
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.sramBytes).toBe(undefined);
 });
 
@@ -60,7 +60,7 @@ test("embedded mGB is never seeded (its role has no load-time hook)", () => {
   const { be, store } = newStore();
   const id = store.loadMgb();
   expect(id).toBeTruthy();
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.sramBytes).toBe(undefined);
 });
 
@@ -70,7 +70,7 @@ test("duplicating an LSDj system seeds the clone from the savestate only (no bat
   const id = store.addSystem("/roms/song.gb")!;
   const dup = store.duplicateSystem(id);
   expect(dup).toBeTruthy();
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   // A seeded battery would cold-reseed the clone and drop the restored state.
   expect(spec.stateBytes != null).toBeTruthy();
   expect(spec.sramBytes).toBe(undefined);

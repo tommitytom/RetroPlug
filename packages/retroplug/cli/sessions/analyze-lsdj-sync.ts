@@ -7,10 +7,7 @@
 import { runSession, hostArgs } from "../session";
 import { encodeWav } from "../wav";
 import { savFrom, type SongSettings } from "../../src/lsdjSav";
-import { directGraph } from "../../src/graph/directGraph";
-
-// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
-const graph = directGraph();
+import { DirectGraph } from "../../src/graph/directGraph";
 
 const START = 7; // GameboyButton::Start
 
@@ -29,6 +26,9 @@ runSession((s) => {
   const [romPath, outPrefix] = hostArgs();
   if (!romPath) throw new Error("usage: analyze-lsdj-sync.js <lsdjRom> [outPrefix]");
   const prefix = outPrefix || "/tmp/lsdj-sync-pattern";
+  // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4), on the
+  // session's EngineGraph: the session renders through it, so a graph of its own would leave it no systems.
+  const graph = new DirectGraph(s.backend, s.project.graph);
 
   // Link-cable sync is pure GB serial ferrying over the link cable: construct both cores directly,
   // link them, and drive; no DSP kernel needed.

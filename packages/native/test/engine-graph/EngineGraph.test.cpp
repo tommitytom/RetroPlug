@@ -84,6 +84,21 @@ std::string stereoDoc(const std::vector<Sys>& systems) {
     return R"({"nodes":[)" + nodes + R"(],"wires":[)" + wires + "]}";
 }
 
+// What buildGraph writes for the perSystem shape: slot i's mix on host channels 2i and 2i + 1.
+std::string perSystemDoc(const std::vector<Sys>& systems) {
+    std::string nodes = R"({"id":"kernel","type":"rp.dsp.kernel"})";
+    std::string wires, buses;
+    for (std::size_t i = 0; i < systems.size(); ++i) {
+        const std::string id = std::to_string(systems[i].id);
+        nodes += R"(,{"id":"sys-)" + id + R"(","type":")" + systems[i].type + R"(","settings":{"core":)" + id + "}}";
+        wires += std::string(i ? "," : "") + R"({"from":"sys-)" + id + R"(.mix","to":"out.out.)" + std::to_string(2 * i + 1) +
+                 "-" + std::to_string(2 * i + 2) + "\"}";
+        buses += std::string(i ? "," : "") + "2";
+    }
+    nodes += R"(,{"id":"out","type":"rp.host.audio-out","settings":{"buses":[)" + buses + "]}}";
+    return R"({"nodes":[)" + nodes + R"(],"wires":[)" + wires + "]}";
+}
+
 Engine::GraphRequest request(const std::vector<Sys>& systems) {
     Engine::GraphRequest r;
     r.document = stereoDoc(systems);
@@ -364,4 +379,29 @@ TEST_CASE("buildCore and setGraph over the RPC layer", "[engine-graph][b2]") {
     CHECK(placed.ok);
     CHECK(placed.errors.empty());
     CHECK(e.findSystem(5) != nullptr);
+}
+
+TEST_CASE("a render into buffers the planned graph does not write is refused", "[engine-graph][b2]") {
+    // TS sets the shape a render call needs before it makes the call; the render calls only check it.
+    Engine           e(kRate);
+    SystemFactory    factory;
+    QueuedInvoker    inv(e);
+    EngineRpcService svc(e, factory, inv);
+    REQUIRE(e.parkCore(mgb(1)));
+    REQUIRE(e.parkCore(mgb(2)));
+    REQUIRE(e.setGraph(request({{1, kGb}, {2, kGb}})).ok);
+    CHECK(e.hostWidth() == 2);
+    CHECK_FALSE(svc.renderAudio(10.0).empty());
+    CHECK(svc.renderAudioPerSystem(10.0).empty());  // 4 lanes wanted, 2 planned
+    RpcRenderBlocksRequest blocks{4, {RpcRenderBlock{256, {}, {}, std::nullopt, std::nullopt, std::nullopt}}};
+    CHECK_FALSE(svc.renderBlocks(blocks).error.empty());
+
+    Engine::GraphRequest perSystem;
+    perSystem.document = perSystemDoc({{1, kGb}, {2, kGb}});
+    perSystem.slots = {1, 2};
+    REQUIRE(e.setGraph(perSystem).ok);
+    CHECK(e.hostWidth() == 4);
+    CHECK(svc.renderAudioPerSystem(10.0).size() == 2);
+    CHECK(svc.renderAudio(10.0).empty());
+    CHECK(svc.renderBlocks(blocks).error.empty());
 }

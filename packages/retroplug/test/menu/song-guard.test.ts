@@ -90,7 +90,7 @@ test("Save & Load commits the working song to its own slot FIRST, then loads - i
   dirty[0x100] ^= 0xff;
   const edited = dirty.slice(0, 0x8000);
   const { be, songRow, savOnDisk } = cart(dirty);
-  const writesBefore = be.constructCalls.length;
+  const writesBefore = be.buildCalls.length;
 
   findItem(findItem(songRow(1), "lsdj-song-1-load")!.children!, "lsdj-song-1-load-save")!.onSelect!();
 
@@ -103,7 +103,7 @@ test("Save & Load commits the working song to its own slot FIRST, then loads - i
   expect(lsdjSongCatalog.workingName(out)).toBe("INTRO");
   // ONE cold boot, not two: save+load is a single byte-op, so the second half can't run against a stale
   // system id (loadSram allocates a new one every rebuild).
-  expect(be.constructCalls.length - writesBefore).toBe(1);
+  expect(be.buildCalls.length - writesBefore).toBe(1);
 });
 
 test("Replace confirms before touching a saved slot", () => {
@@ -151,7 +151,7 @@ test("the name prompt refuses an empty name and keeps itself open", () => {
 test("the name prompt commits under the typed name, then loads - still one cold boot", () => {
   const { be, songRow, savOnDisk } = cart(unlinkedDirtySav());
   const edited = unlinkedDirtySav().slice(0, 0x8000);
-  const writesBefore = be.constructCalls.length;
+  const writesBefore = be.buildCalls.length;
   const save = findItem(findItem(songRow(1), "lsdj-song-1-load")!.children!, "lsdj-song-1-load-save")!;
 
   expect(save.prompt!.onConfirm("my song!")).toBe(null); // null closes the overlay = success
@@ -162,7 +162,7 @@ test("the name prompt commits under the typed name, then loads - still one cold 
   expect(lsdjSongCatalog.list(out).length).toBe(3); // a new slot, the two originals untouched
   expect([...decompressSlot(out, 2)!]).toEqual([...edited]); // the work survived
   expect(lsdjSongCatalog.workingName(out)).toBe("INTRO"); // and the picked song is loaded
-  expect(be.constructCalls.length - writesBefore).toBe(1);
+  expect(be.buildCalls.length - writesBefore).toBe(1);
 });
 
 test("a full catalog offers no save, and says why instead of failing on click", () => {

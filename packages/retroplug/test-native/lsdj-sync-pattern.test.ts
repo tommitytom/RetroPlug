@@ -47,7 +47,7 @@ test("LSDj link-cable sync: the follower plays in lockstep with the leader (per-
   const be = createRealBackend();
   if (!be.fileExists(LSDJ)) skip(`lsdj-sync-pattern: LSDj ROM not found at ${LSDJ}`);
 
-  const audio = createAudioDriver();
+  const audio = createAudioDriver(graph.graph);
 
   const leader = 1, follower = 2;
   expect(construct(leader, "Lsdj")).toBeTruthy();

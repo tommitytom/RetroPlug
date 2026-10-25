@@ -7,6 +7,7 @@
 //   __rp_loadProjectB64(b64)    — DPF setState: load an in-memory chunk (base64 of the .rplg zip)
 //   __rp_saveProjectB64()       — DPF getState: export the project as a base64 .rplg chunk
 //   __rp_newProject()           — DPF setState(""): reset to an empty project
+//   __rp_setHostOutputs(n)      — the host's output channel count: the graph's multi(n) shape
 //   __rp_ready                  — set true once composition + kernel load succeeded
 //
 // The C++ boundary stays string-only: base64 is done HERE (DPF state is NUL-terminated UTF-8; the
@@ -86,6 +87,11 @@ g.__rp_saveProjectB64 = (): string => {
 };
 
 g.__rp_newProject = (): void => project.newProject();
+
+// The host's output channels (the plugin's fixed 8, the standalone's device width), which the graph's output
+// wiring is built for: the host calls it once the control plane is up and again whenever the count changes.
+// "true" when the shape planned.
+g.__rp_setHostOutputs = (n: string | number): string => String(project.graph.setShape({ kind: "multi", channels: Number(n) }));
 
 // Drive the file watcher from the UI idle loop (PluginUI::uiIdle, throttled). Drains native's changed
 // paths and reacts; a no-op when nothing changed. Returns void — the host ignores the result.

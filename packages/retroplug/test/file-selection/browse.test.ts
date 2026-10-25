@@ -70,7 +70,7 @@ test("browseAdd: an unpaired .sav awaits a 2nd ROM-only browser and pairs the re
   expect(out.kind).toBe("added");
   expect(be.fileBrowserCalls.length).toBe(2); // opened a 2nd browser
   expect(be.fileBrowserCalls[1].patterns.includes("*.sav")).toBeFalsy(); // ROM-only
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.romPath).toBe("/roms/thegame.gb"); // paired with the chosen ROM
   expect(spec.savPath).toBe("/saves/orphan.sav"); // the picked save crossed as the override
 });
@@ -92,7 +92,7 @@ test("browseAdd: a cancelled 2nd browser yields cancelled", async () => {
   expect(out).toEqual({ kind: "cancelled" });
 });
 
-test("browseReplace: swaps the target instance in place (replaceId), leaving the list length", async () => {
+test("browseReplace: swaps the target instance in place, leaving the list length", async () => {
   const { be, fs, systems } = newFs();
   be.seed("/roms/a.gb", gbRom());
   be.seed("/roms/b.gb", gbRom());
@@ -101,8 +101,8 @@ test("browseReplace: swaps the target instance in place (replaceId), leaving the
   const out = await fs.browseReplace(id);
   expect(out.kind).toBe("replaced");
   expect(systems.view().length).toBe(1); // in place — not appended
-  const spec = be.constructCalls[be.constructCalls.length - 1];
-  expect(spec.replaceId).toBe(id); // swapped the target id
+  const spec = be.buildCalls[be.buildCalls.length - 1];
+  expect(systems.view().map((s) => s.id)).toEqual([spec.id]); // built in the replaced system's slot
   expect(spec.romPath).toBe("/roms/b.gb");
 });
 
@@ -115,8 +115,8 @@ test("browseReplace: an unpaired .sav pairs via the 2nd browser before replacing
   be.queueBrowse("/saves/orphan.sav", "/roms/thegame.gb");
   const out = await fs.browseReplace(id);
   expect(out.kind).toBe("replaced");
-  const spec = be.constructCalls[be.constructCalls.length - 1];
-  expect(spec.replaceId).toBe(id);
+  const spec = be.buildCalls[be.buildCalls.length - 1];
+  expect(systems.view().map((s) => s.id)).toEqual([spec.id]); // built in the replaced system's slot
   expect(spec.romPath).toBe("/roms/thegame.gb");
   expect(spec.savPath).toBe("/saves/orphan.sav"); // paired save crossed as the override
 });
@@ -142,8 +142,8 @@ test("browseSwap: opens a ROM-only browser and swaps in place, carrying the live
   expect(out.kind).toBe("swapped");
   expect(systems.view().length).toBe(1); // in place — not appended
   expect(be.fileBrowserCalls[be.fileBrowserCalls.length - 1].patterns.includes("*.sav")).toBeFalsy(); // ROM-only
-  const spec = be.constructCalls[be.constructCalls.length - 1];
-  expect(spec.replaceId).toBe(id); // swapped the target id
+  const spec = be.buildCalls[be.buildCalls.length - 1];
+  expect(systems.view().map((s) => s.id)).toEqual([spec.id]); // built in the replaced system's slot
   expect(spec.romPath).toBe("/roms/b.gb");
   expect(new Uint8Array(spec.sramBytes!)).toEqual(sramBytesFor(id)); // the old battery crossed into the new cart
 });

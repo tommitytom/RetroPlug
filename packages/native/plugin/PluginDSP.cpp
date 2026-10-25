@@ -265,21 +265,17 @@ protected:
     // --- audio lifecycle: DPF owns the audio thread and calls run(), so the plugin drives the Engine
     // directly here (mirrors AudioDriverRpcService's loop, minus the spawned thread). ---
     //
-    // activate and sampleRateChanged plan graphs, so they assume DPF calls them on the control thread, as it
-    // does for CLAP, VST3 and AU. JACK re-runs deactivate/activate from its buffer-size callback, and VST2
-    // resumes from processReplacing a plugin its host has not activated. Both are no-ops in practice: an
-    // earlier activate planned the shape (setHostShape returns at once), a block within the plan's maximum
-    // leaves setMaxBlockFrames nothing to do, and DPF skips an unchanged rate. Only a VST2 host that
-    // processes before it ever activates would plan here first. The hazard predates the graph engine.
+    // activate and sampleRateChanged can re-activate the graph, so they assume DPF calls them on the control
+    // thread, as it does for CLAP, VST3 and AU. JACK re-runs deactivate/activate from its buffer-size
+    // callback, and VST2 resumes from processReplacing a plugin its host has not activated. Both are no-ops in
+    // practice: a block within the plan's maximum leaves setMaxBlockFrames nothing to do, and DPF skips an
+    // unchanged rate. Only a VST2 host that processes before it ever activates, with a block larger than the
+    // default maximum, would re-activate here first. The hazard predates the graph engine. (The output shape
+    // is no longer set here: the control plane builds the graph for the plugin's outputs at boot.)
     void activate() override {
         // Hand the Engine to the DPF audio thread: from here every control-plane edit is push-only,
         // drained by run() each block. (Set BEFORE the host starts calling run(); the quiescent path
         // flushed every push, so the command ring is empty at this handoff.) Then report PDC latency.
-        // A shape that does not plan keeps the one before it (outs 1/2 only, before the first activate);
-        // the engine has logged why.
-        if (!svc_.invoker.setHostShape({rp::host::HostShape::Kind::Multi, DISTRHO_PLUGIN_NUM_OUTPUTS}))
-            d_stderr("[retroplug] the %u-output host shape did not plan; the outputs keep the shape before it",
-                     static_cast<unsigned>(DISTRHO_PLUGIN_NUM_OUTPUTS));
         svc_.engine.setMaxBlockFrames(getBufferSize());
         svc_.invoker.setAudioThreadOwns(true);
         updateLatency();
@@ -410,6 +406,9 @@ private:
         for (int i = 0; i < 1000 && !readReady(); ++i) host_.pump();
         jsReady_ = readReady();
         if (!jsReady_) { d_stderr("[retroplug] control plane not ready"); return; }
+        // The graph's output wiring is built for the plugin's fixed outputs (the control plane owns it).
+        if (callGlobal("__rp_setHostOutputs", std::to_string(DISTRHO_PLUGIN_NUM_OUTPUTS).c_str()) != "true")
+            d_stderr("[retroplug] the %u-output host shape did not plan", static_cast<unsigned>(DISTRHO_PLUGIN_NUM_OUTPUTS));
 
         // Publish the host so an editor can attach its LVGL display to this same context.
         shared_.host = &host_;

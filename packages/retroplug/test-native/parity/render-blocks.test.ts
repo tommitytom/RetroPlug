@@ -5,14 +5,14 @@ import { test, expect, skip } from "../../testing/harness";
 import { bootSession } from "../../src/bootSession";
 import { savFrom, type SavInput } from "../../src/lsdjSav";
 import type { RenderBlock } from "../../src/audioDriver";
-import { directGraph } from "../../src/graph/directGraph";
-
-// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
-const graph = directGraph();
+import { DirectGraph } from "../../src/graph/directGraph";
 
 declare const __RESOURCES_DIR__: string;
 
 const session = bootSession();
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4), through
+// the session's own graph: the stores publish to it too, so each sees the documents the other sent.
+const graph = new DirectGraph(session.backend, session.project.graph);
 const { project, audio, backend: be, dsp } = session;
 
 const CHORD = [

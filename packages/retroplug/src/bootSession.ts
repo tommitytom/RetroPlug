@@ -39,7 +39,8 @@ export function bootSession(): Session {
   const recent = new RecentStore(backend);
   const project = new ProjectStore(backend, recent, registry);
   const dsp = createDspRuntime();
-  const audio = createAudioDriver();
+  // The render calls set their host shape on the project's graph (docs/modular-graph-phase-b2-design.md 4).
+  const audio = createAudioDriver(project.graph);
 
   dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!);
   project.setOnSystemsChange(() => syncDspFromStore(project, dsp));

@@ -82,6 +82,15 @@ SystemBuildSpec toBuildSpec(const BackendConstructSpec& spec) {
 EngineRpcService::EngineRpcService(Engine& engine, SystemFactory& factory, QueuedInvoker& invoker)
     : engine_(engine), factory_(factory), invoker_(invoker) {}
 
+// Whether the planned graph writes exactly `channels` host channels: TS sets the shape a render call needs
+// before making it, and a render into buffers of another width would fill them from the wrong wiring.
+bool EngineRpcService::rendersInto(std::size_t channels) const {
+    if (engine_.hostWidth() == channels) return true;
+    std::fprintf(stderr, "[engine] a render into %zu channels was refused: the planned graph writes %u\n", channels,
+                 static_cast<unsigned>(engine_.hostWidth()));
+    return false;
+}
+
 // Out-of-line so unique_ptr<KitCompiler> can destroy a complete type (fwd-declared in the header).
 EngineRpcService::~EngineRpcService() = default;
 
@@ -294,8 +303,7 @@ bool EngineRpcService::stageSystemMidi(std::uint32_t id, std::vector<std::uint8_
 rfl::Bytestring EngineRpcService::renderAudio(double ms) {
     // This thread calls processBlock itself, which only the Engine's owning thread may do.
     if (ms <= 0.0 || invoker_.audioThreadOwns()) return {};
-    // A shape that does not plan leaves the last one running, which these buffers do not match.
-    if (!invoker_.setHostShape({rp::host::HostShape::Kind::Multi, 2})) return {};
+    if (!rendersInto(2)) return {};
     scratchL_.resize(kBlockSize);  // idempotent — no per-call realloc after the first
     scratchR_.resize(kBlockSize);
 
@@ -322,9 +330,7 @@ std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerSystem(double ms) {
     if (ms <= 0.0 || invoker_.audioThreadOwns()) return result;  // as renderAudio
     const std::size_t n = engine_.systemCount();
     if (n == 0) return result;
-    // More systems than rp.host.audio-out has buses for (32) do not plan, and rendering anyway would fill
-    // these lanes from the previous shape's wiring.
-    if (!invoker_.setHostShape({rp::host::HostShape::Kind::PerSystem, 0})) return result;
+    if (!rendersInto(2 * n)) return result;
 
     // One persistent L/R block buffer per system; the PerSystem shape routes each core into its own pair,
     // so linked systems interleave exactly as they do in the mixed path.
@@ -371,7 +377,7 @@ std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerChannel(std::uint32
     // The target's output streams (Game Boy = 4 stereo: Pulse 1/Pulse 2/Wave/Noise; default = 1 "Mix").
     const std::size_t n = sys->channelLayout().size();
     if (n == 0) return result;
-    if (!invoker_.setHostShape({rp::host::HostShape::Kind::PerChannel, 0})) return result;  // as renderAudio
+    if (!rendersInto(2 * n)) return result;
 
     // One persistent L/R block buffer per stream; the PerChannel shape routes each stream into its own pair.
     std::vector<std::vector<float>> bl(n, std::vector<float>(kBlockSize));
@@ -577,8 +583,10 @@ RpcRenderBlocksResult EngineRpcService::renderBlocks(RpcRenderBlocksRequest req)
     result.error = renderBlocksRefusal(req);
     if (!result.error.empty()) return result;
 
-    if (!invoker_.setHostShape({rp::host::HostShape::Kind::Multi, req.outputs})) {
-        result.error = "the graph did not plan for " + std::to_string(req.outputs) + " outputs";
+    // The graph TS published must be built for these lanes (docs/modular-graph-phase-b2-design.md section 4).
+    if (engine_.hostWidth() != req.outputs) {
+        result.error = "the planned graph writes " + std::to_string(engine_.hostWidth()) + " host channels, not " +
+                       std::to_string(req.outputs);
         return result;
     }
     std::uint64_t total = 0;

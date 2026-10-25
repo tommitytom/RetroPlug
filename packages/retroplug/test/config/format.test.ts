@@ -14,7 +14,7 @@ import { buildConfig, parseConfig, serializeConfig, DEFAULT_SETTINGS } from "../
 import type { SystemEntry } from "../../src/systemsList";
 
 const identity = (p: string) => p;
-const sys: SystemEntry = { id: 1, platform: "gb", core: "sameboy", romPath: "/roms/a.gb", savPath: "", savSuffix: 0, embeddedRom: "", battery: false, settings: { gainDb: 0, reloadOnRomChange: false }, roles: [] };
+const sys: SystemEntry = { id: 1, platform: "gb", core: "sameboy", romPath: "/roms/a.gb", savPath: "", savSuffix: 0, embeddedRom: "", battery: false, settings: { gainDb: 0, reloadOnRomChange: false }, roles: [], built: { type: "rp.sameboy.gb", exportMode: 0, linkGroup: 0 } };
 const projectJson = () => serializeConfig(buildConfig(DEFAULT_SETTINGS, [sys]), "", identity);
 
 test("stringifyConfig: 2-space indent, one field per line, trailing newline", () => {

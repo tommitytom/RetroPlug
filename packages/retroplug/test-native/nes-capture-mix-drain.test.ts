@@ -36,7 +36,7 @@ test("NES per-channel capture survives a MIX-path drain (renderAudio) then plays
 
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const dsp = createDspRuntime();
-  const audio = createAudioDriver();
+  const audio = createAudioDriver(project.graph);
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
   project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
 

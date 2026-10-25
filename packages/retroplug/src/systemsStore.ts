@@ -11,6 +11,8 @@
 // (PluginDSP.cpp:406-458), with every path derived by the pure kernels.
 
 import type { ConstructSpec, ControlPlaneBackend, HostBackend } from "./backend";
+import type { GraphSystem } from "./graph/buildGraph";
+import { EngineGraph } from "./engineGraph";
 import { detectPlatform, romHasBattery, ROM_SNIFF_LEN, SEGA_SNIFF_LEN, defaultCoreFor, type Platform, type Core } from "./platform";
 
 import { resolveSavPath, siblingSavPath, siblingRplgPath, nextFreeSavSuffix, siblingSavCandidates } from "./savPaths";
@@ -116,6 +118,13 @@ export class SystemsStore {
   private focusedId = 0;
   private dirty = false;
   private onFocusChange: () => void = () => {};
+  // A store on its own publishes its systems at the default (stereo) routing through a graph of its own;
+  // the ProjectStore that owns one replaces this with its own publish, which adds the project's routing.
+  private ownGraph: EngineGraph | null = null;
+  private onGraphChange: (rearmTap: boolean) => void = (rearmTap) => {
+    this.ownGraph ??= new EngineGraph(this.backend);
+    this.ownGraph.publish(this.graphSystems(), "stereo", { rearmTap });
+  };
   // Whether a core teardown writes the battery to disk first. Off only for an offline render.
   private batteryFlush = true;
 
@@ -146,6 +155,10 @@ export class SystemsStore {
   systems(): SystemEntry[] {
     return this.entries.slice();
   }
+  /** The systems as the engine's graph places them, in slot order (graph/buildGraph.ts). */
+  graphSystems(): GraphSystem[] {
+    return this.entries.map((e) => ({ id: e.id, ...e.built }));
+  }
   focused(): number {
     return this.focusedId;
   }
@@ -163,6 +176,14 @@ export class SystemsStore {
    *  re-projecting the DSP (distinct from the structural onChange). */
   setOnFocusChange(fn: () => void): void {
     this.onFocusChange = fn;
+  }
+
+  /** Install the hook that publishes the engine's graph (the ProjectStore's, which adds the routing; without
+   *  one the store publishes its systems at the default stereo routing itself). Called
+   *  once at the end of every edit that changes what the graph places, BEFORE the structural onChange that
+   *  pushes the kernel: `rearmTap` for an edit that builds or drops a core, which re-arms the NES tap. */
+  setOnGraphChange(fn: (rearmTap: boolean) => void): void {
+    this.onGraphChange = fn;
   }
 
   /** Turn the before-teardown battery flush off for this store. For a throwaway headless session — an
@@ -226,7 +247,7 @@ export class SystemsStore {
     const prev = findById(this.entries, id);
     if (!prev) return null;
     this.flushBeforeDrop(prev);
-    const built = this.construct(romPath, "", this.replacementSuffix(id, romPath), opts?.explicitSav, id);
+    const built = this.construct(romPath, "", this.replacementSuffix(id, romPath), opts?.explicitSav);
     if (!built) return null;
     this.entries = replaceById(this.entries, id, built.entry);
     if (this.focusedId === id) this.focusedId = built.id;
@@ -247,7 +268,7 @@ export class SystemsStore {
     if (!prev) return null;
     const sramBytes = this.backend.readSram(id) ?? undefined;
     this.flushBeforeDrop(prev); // the OLD cart's sav — the carried battery lands on the new ROM's
-    const built = this.construct(romPath, "", this.replacementSuffix(id, romPath), undefined, id, sramBytes);
+    const built = this.construct(romPath, "", this.replacementSuffix(id, romPath), undefined, sramBytes);
     if (!built) return null;
     this.entries = replaceById(this.entries, id, built.entry);
     if (this.focusedId === id) this.focusedId = built.id;
@@ -282,9 +303,9 @@ export class SystemsStore {
       stateBytes: state,
       settings: systemRole ? JSON.stringify(roleConfigForNative(systemRole.kind, systemRole.config)) : undefined,
     }, src.roles);
-    const ok = this.backend.constructSystem(spec, newId);
-    if (!ok) {
-      console.warn(`[systems] duplicateSystem(${id}) failed (construct returned false) — no instance added`);
+    const built = this.backend.buildCore(spec, newId);
+    if (!built) {
+      console.warn(`[systems] duplicateSystem(${id}) failed (the core did not build) — no instance added`);
       return null;
     }
     this.entries = appendEntry(this.entries, {
@@ -298,6 +319,7 @@ export class SystemsStore {
       battery: src.battery, // same ROM as the source
       settings: { ...src.settings },
       roles: src.roles.map((r) => ({ kind: r.kind, config: { ...r.config } })),
+      built,
     });
     return this.committed(newId);
   }
@@ -307,16 +329,16 @@ export class SystemsStore {
     const e = findById(this.entries, id);
     if (!e) return false;
     this.flushBeforeDrop(e);
-    this.backend.removeSystem(id);
     this.entries = removeById(this.entries, id);
     this.focusedId = nextFocusAfterRemove(this.entries, id, this.focusedId);
+    this.onGraphChange(true);
     this.markDirty();
     return true;
   }
 
   /** Rebuild a system's ROM from disk, carrying its battery SRAM forward, swapping in place with a new
    *  id and preserving identity + focus. Orchestrated in TS: pull SRAM from the registry, then cold-boot
-   *  the ROM with it (no savestate) via a replaceId construct. No native reload method. */
+   *  the ROM with it (no savestate) into the same slot. No native reload method. */
   reloadSystem(id: number): number | null {
     const prev = findById(this.entries, id);
     if (!prev) return null;
@@ -325,7 +347,7 @@ export class SystemsStore {
   }
 
   /** Reconstruct system `id` in place from seed bytes: capture the source's spec, build a fresh core
-   *  under a new id that swaps the old one (replaceId), and keep identity + focus. The seed (sramBytes
+   *  under a new id that takes the old one's slot, and keep identity + focus. The seed (sramBytes
    *  = cold-boot battery, stateBytes = boot from savestate) overrides what native would read from disk.
    *  `savPathOverride` repoints the auto-save target (New SRAM…); omitted, the system keeps its own. The
    *  shared body of reload / loadState / loadSram / newSramAs — the in-place twin of duplicateSystem
@@ -351,12 +373,11 @@ export class SystemsStore {
       statePath: null,
       sramBytes: seed.sramBytes,
       stateBytes: seed.stateBytes,
-      replaceId: id,
       settings: systemRole ? JSON.stringify(roleConfigForNative(systemRole.kind, systemRole.config)) : undefined,
     }, src.roles);
-    const ok = this.backend.constructSystem(spec, newId);
-    if (!ok) return null;
-    this.entries = replaceById(this.entries, id, { ...src, id: newId, savPath: override });
+    const built = this.backend.buildCore(spec, newId);
+    if (!built) return null;
+    this.entries = replaceById(this.entries, id, { ...src, id: newId, savPath: override, built });
     if (this.focusedId === id) this.focusedId = newId;
     return this.committed(newId);
   }
@@ -507,7 +528,14 @@ export class SystemsStore {
     if (rt?.category === "system") this.backend.applyRoleConfig(id, roleKind, roleConfigForNative(roleKind, config));
     const roles = e.roles.slice();
     roles[idx] = { kind: roleKind, config };
-    this.entries = replaceById(this.entries, id, { ...e, roles });
+    // A Game Boy's link group is the one system-role field that is also wiring: the cable follows it.
+    const linkGroupId = (config as { linkGroupId?: unknown }).linkGroupId;
+    const built =
+      roleKind === "sameboy" && e.built.type === "rp.sameboy.gb"
+        ? { ...e.built, linkGroup: typeof linkGroupId === "number" ? linkGroupId : 0 }
+        : e.built;
+    this.entries = replaceById(this.entries, id, { ...e, roles, built });
+    if (built !== e.built) this.onGraphChange(false);
     // A feature role stays pure TS, EXCEPT lsdj-sync's serial-out capture gate — arm/disarm it on a
     // MIDIOUT mode change (the decoder itself runs in the kernel via the re-projection below).
     if (roleKind === "lsdj-sync") this.syncSerialOutCapture(id);
@@ -546,14 +574,15 @@ export class SystemsStore {
   // clear()/adopt() are QUIET: no dirty/onChange, since a load isn't a user edit
   // (the ProjectStore sets dirty explicitly around load/new).
 
-  /** Tear down every system + reset the list/focus (for `new` + before a load). */
+  /** Tear down every system + reset the list/focus (for `new` + before a load). Publishes the empty graph
+   *  (a load builds its systems only after their predecessors are gone, so it never holds both), but no
+   *  onChange: the caller notifies once it is done. */
   clear(): void {
-    for (const e of this.entries) {
-      this.flushBeforeDrop(e);
-      this.backend.removeSystem(e.id);
-    }
+    const had = this.entries.length > 0;
+    for (const e of this.entries) this.flushBeforeDrop(e);
     this.entries = [];
     this.focusedId = 0;
+    if (had) this.onGraphChange(true);
   }
 
   /** Reconstruct one system from a serialized config entry, preserving its EXACT
@@ -563,11 +592,12 @@ export class SystemsStore {
    *  of from disk; `savPath` stays the auto-save target.
    *
    *  QUIET ON PURPOSE: unlike every other mutation this does NOT markDirty(), so the
-   *  store→DSP projection does not run. A project load adopts N systems and then fires
-   *  ONE onSystemsChange (see projectStore.load), rather than re-projecting N times.
-   *  A standalone caller must therefore trigger a sync itself - any markDirty-ing call
-   *  (e.g. setRoleConfig) will do - or the system boots and renders VIDEO while the DSP
-   *  knows nothing about it and it produces NO AUDIO. */
+   *  store→DSP projection does not run. It does publish the graph, so the core runs at once
+   *  (a project load holds that back and publishes once its systems are all built; see
+   *  projectStore.load). A project load adopts N systems and then fires ONE onSystemsChange,
+   *  rather than re-projecting N times. A standalone caller must therefore trigger a sync
+   *  itself - any markDirty-ing call (e.g. setRoleConfig) will do - or the system boots and
+   *  renders VIDEO while the DSP knows nothing about it and it produces NO AUDIO. */
   adopt(
     config: {
       core?: Core; // persisted since the v2 project schema (else auto-derived from platform)
@@ -617,14 +647,15 @@ export class SystemsStore {
       stateBytes: blobs?.stateBytes,
       settings: systemRole ? JSON.stringify(roleConfigForNative(systemRole.kind, systemRole.config)) : undefined,
     }, roles);
-    if (!this.backend.constructSystem(spec, id)) return null;
+    const built = this.backend.buildCore(spec, id); // a loaded system already in MIDIOUT mode is built capturing
+    if (!built) return null;
     // Stored settings/roles win; a config that omits them re-attaches defaults.
     const settings = commonSettingsSchema.parse(config.settings ?? {}) as CommonSettings;
     const wasEmpty = this.entries.length === 0;
     const battery = this.detectBattery(romPath, embeddedRom, platform);
-    this.entries = appendEntry(this.entries, { id, platform, core, romPath, savPath: override, savSuffix, embeddedRom, battery, settings, roles });
+    this.entries = appendEntry(this.entries, { id, platform, core, romPath, savPath: override, savSuffix, embeddedRom, battery, settings, roles, built });
     if (wasEmpty) this.focusedId = id;
-    this.syncSerialOutCapture(id); // a loaded project may carry a system already in MIDIOUT mode
+    this.onGraphChange(true);
     return id;
   }
 
@@ -634,7 +665,7 @@ export class SystemsStore {
   private loadInPlace(romPath: string, embeddedRom: string, explicitSav?: string): number | null {
     const empty = this.entries.length === 0;
     const target = empty ? undefined : this.effectiveFocus();
-    const built = this.construct(romPath, embeddedRom, this.replacementSuffix(target, romPath), explicitSav, target);
+    const built = this.construct(romPath, embeddedRom, this.replacementSuffix(target, romPath), explicitSav);
     if (!built) return null;
     this.entries = empty
       ? appendEntry(this.entries, built.entry)
@@ -650,7 +681,6 @@ export class SystemsStore {
     embeddedRom: string,
     suffix: number,
     explicitSav: string | undefined,
-    replaceId?: number,
     sramBytes?: Uint8Array, // seed the cold-boot battery (swap-ROM-preserve-SRAM); undefined = native reads from disk
   ): { id: number; entry: SystemEntry } | null {
     let platform: Platform;
@@ -674,11 +704,9 @@ export class SystemsStore {
     // Roles are known before the build (a pure function of core/platform/header), so a role's
     // load-time hook can seed the spec — e.g. an empty LSDj sav — before the core is instantiated.
     const roles = this.defaultRoles(core, platform, romPath, embeddedRom);
-    const spec = this.applyConstructHooks(
-      { romPath, platform, core, embeddedRom, savPath, statePath: null, replaceId, sramBytes },
-      roles,
-    );
-    if (!this.backend.constructSystem(spec, id)) return null;
+    const spec = this.applyConstructHooks({ romPath, platform, core, embeddedRom, savPath, statePath: null, sramBytes }, roles);
+    const built = this.backend.buildCore(spec, id);
+    if (!built) return null;
     return {
       id,
       entry: {
@@ -692,6 +720,7 @@ export class SystemsStore {
         battery: this.detectBattery(romPath, embeddedRom, platform),
         settings: { ...DEFAULT_COMMON_SETTINGS },
         roles,
+        built,
       },
     };
   }
@@ -815,13 +844,14 @@ export class SystemsStore {
   // Additive by contract — a hook returns the spec unchanged when the data it would seed is present.
   // The backend satisfies ConstructCaps structurally (savFromJson + fileExists), so it's the caps arg.
   private applyConstructHooks(spec: ConstructSpec, roles: RoleInstance[]): ConstructSpec {
-    if (!this.registry) return spec;
     let s = spec;
-    for (const r of roles) {
-      const rt = this.registry.roleType(r.kind);
-      if (rt?.onConstruct) s = rt.onConstruct(s, this.backend, r.config);
-    }
-    return s;
+    if (this.registry)
+      for (const r of roles) {
+        const rt = this.registry.roleType(r.kind);
+        if (rt?.onConstruct) s = rt.onConstruct(s, this.backend, r.config);
+      }
+    // A core is built with its serial-out capture already armed, so no command has to chase it.
+    return serialOutCaptureFor(roles) ? { ...s, serialOutCapture: true } : s;
   }
 
   // Write a system's live battery to its own `.sav` before its core is destroyed. Every teardown path
@@ -869,9 +899,10 @@ export class SystemsStore {
     this.onChange();
   }
 
-  // Finish a successful mutation: mark dirty + notify, return the id.
+  // Finish a successful mutation that built a core: publish the graph that places it, mark dirty + notify,
+  // return the id.
   private committed(id: number): number {
-    this.syncSerialOutCapture(id); // a freshly (re)built core defaults to unarmed — re-establish the gate
+    this.onGraphChange(true);
     this.markDirty();
     return id;
   }
@@ -881,9 +912,15 @@ export class SystemsStore {
   // a core is (re)built (committed/adopt — a fresh core defaults to unarmed) and when the mode changes
   // (setRoleConfig). A no-op for a non-LSDj system (no lsdj-sync role → nothing to arm).
   private syncSerialOutCapture(id: number): void {
-    const lsdj = findById(this.entries, id)?.roles.find((r) => r.kind === "lsdj-sync");
-    if (!lsdj) return;
-    const mode = (lsdj.config as { mode?: LsdjSyncMode }).mode;
-    this.backend.setSerialOutCapture(id, mode === LsdjSyncMode.MidiOut || mode === LsdjSyncMode.MasterSync);
+    const roles = findById(this.entries, id)?.roles;
+    if (!roles?.some((r) => r.kind === "lsdj-sync")) return;
+    this.backend.setSerialOutCapture(id, serialOutCaptureFor(roles));
   }
+}
+
+// Whether a system with these roles captures its serial out: both LSDj-to-host MIDI-out modes need it,
+// MidiOut (SYNC=MI.OUT) and MasterSync (SYNC=LSDJ).
+function serialOutCaptureFor(roles: RoleInstance[]): boolean {
+  const mode = (roles.find((r) => r.kind === "lsdj-sync")?.config as { mode?: LsdjSyncMode } | undefined)?.mode;
+  return mode === LsdjSyncMode.MidiOut || mode === LsdjSyncMode.MasterSync;
 }

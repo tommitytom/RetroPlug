@@ -385,6 +385,14 @@ std::string callGlobal(TjsHostRuntime& host, const char* name, const char* arg) 
 
 bool hasGlobalFunction(JSContext* ctx, const char* name) { return jsHasGlobalFunction(ctx, name); }
 
+// Tell the control plane how many output channels the device has: it builds the graph's output wiring for
+// that many. Before the audio thread takes the Engine, so the plan it publishes applies at once.
+void setHostOutputs(AppState& a) {
+    if (callGlobal(a.host, "__rp_setHostOutputs", std::to_string(a.numOutputs).c_str()) != "true")
+        std::fprintf(stderr, "[retroplug-sdl] the %d-output host shape did not plan; the outputs keep the shape before it\n",
+                     a.numOutputs);
+}
+
 // ---- __rp_* window hooks (PluginUI's window-op seam, single-instance) ------------------------------
 // The UI optional-chains these, so anything we omit is simply inert. We provide the handful a handheld
 // standalone needs; the render-job hooks are left to a later milestone.
@@ -1214,9 +1222,7 @@ void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels, 
     a.reqOutputDevice = device;
     a.svc.engine.setSampleRate(sampleRate); // re-rate live cores (safe — audio stopped)
     openAudio(a);                       // opens a real stream, or leaves it muted (numOutputs still sized)
-    if (!a.svc.invoker.setHostShape({rp::host::HostShape::Kind::Multi, static_cast<std::uint32_t>(a.numOutputs)}))
-        std::fprintf(stderr, "[retroplug-sdl] the %d-output host shape did not plan; the outputs keep the shape before it\n",
-                     a.numOutputs);
+    setHostOutputs(a);
     a.svc.engine.setMaxBlockFrames(static_cast<std::uint32_t>(a.reqBlockSize));
     a.svc.invoker.setAudioThreadOwns(true);
     startAudio(a);                      // Pa_StartStream, or start the headless fallback pump
@@ -1654,9 +1660,7 @@ int main(int argc, char** argv) {
 
     // Hand the Engine to the audio thread (control-plane edits become push-only, drained per block) then start
     // it. Mirrors PluginDSP::activate. startAudio runs the PortAudio stream, or the fallback pump when muted.
-    if (!app.svc.invoker.setHostShape({rp::host::HostShape::Kind::Multi, static_cast<std::uint32_t>(app.numOutputs)}))
-        std::fprintf(stderr, "[retroplug-sdl] the %d-output host shape did not plan; the outputs keep the shape before it\n",
-                     app.numOutputs);
+    setHostOutputs(app);
     app.svc.engine.setMaxBlockFrames(static_cast<std::uint32_t>(app.reqBlockSize));
     app.svc.invoker.setAudioThreadOwns(true);
 #if defined(__linux__)

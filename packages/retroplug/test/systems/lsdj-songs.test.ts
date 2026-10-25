@@ -136,7 +136,7 @@ test("Delete via the store path hands native the edited SAV (song removed)", () 
 
   mutate(be, store, id, "/roms/song.gb", (sav) => deleteSongInSav(sav, 0));
 
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.sramBytes != null).toBeTruthy(); // rebuilt from the edited SRAM
   expect(decompressSlot(spec.sramBytes!, 0)).toBe(null); // AAA deleted
   expect(listProjects(spec.sramBytes!).map((p) => p.slot)).toEqual([3]); // BBB kept
@@ -151,7 +151,7 @@ test("Move (reorder) via the store path swaps the songs' slots end-to-end", () =
 
   mutate(be, store, id, "/roms/song.gb", (sav) => moveSongInSav(sav, 0, 1)); // Move Down on position 0
 
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(listProjects(spec.sramBytes!).map((p) => `${p.slot}:${p.name}`)).toEqual(["0:BBB", "3:AAA"]);
   expect(listProjects(be.readFile("/roms/song.sav")!).map((p) => `${p.slot}:${p.name}`)).toEqual(["0:BBB", "3:AAA"]); // + on disk
 });
@@ -165,7 +165,7 @@ test("Load via the store path boots from the loaded song; other slot untouched",
 
   mutate(be, store, id, "/roms/song.gb", (sav) => loadSongToWorking(sav, 3)); // load BBB
 
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   deepEqual([...spec.sramBytes!.subarray(0, 0x8000)], [...decompressSlot(seed, 3)!], "working memory = slot 3, byte-exact");
   expect(spec.sramBytes![0x8140]).toBe(3);
   deepEqual([...decompressSlot(spec.sramBytes!, 0)!], [...decompressSlot(seed, 0)!], "slot 0 untouched");
@@ -180,7 +180,7 @@ test("Add a .lsdsng via the store path lands it in the first free slot", () => {
   const file = encodeLsdsngRaw("ADD", 7, songWithSentinel(120, 0x44));
   mutate(be, store, id, "/roms/song.gb", (sav) => addLsdsngToSav(sav, file));
 
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(listProjects(spec.sramBytes!).map((p) => p.slot)).toEqual([0, 1, 3]); // slot 1 filled
   deepEqual([...decompressSlot(spec.sramBytes!, 1)!], [...songWithSentinel(120, 0x44)], "added song byte-exact");
   // Boots into the newly-added song (working memory + active project), not the old one.

@@ -12,7 +12,7 @@ const graph = directGraph();
 const MGB: ConstructSpec = { romPath: "", platform: "gb", core: "sameboy", embeddedRom: "mgb", savPath: null, statePath: null };
 
 test("renderAudio, renderAudioPerSystem and renderAudioPerChannel refuse while the audio thread runs", () => {
-  const audio = createAudioDriver();
+  const audio = createAudioDriver(graph.graph);
   expect(graph.add(MGB, 1)).toBeTruthy();
 
   expect(audio.startAudio()).toBeTruthy();

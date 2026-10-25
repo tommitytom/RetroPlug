@@ -50,13 +50,13 @@ test("dropping a .lsdsng + a .lsdprj adds both songs in ONE reboot; kits ride ov
   be.seed("/s/a.lsdsng", encodeLsdsngRaw("AAA", 1, aSong));
   be.seed("/s/b.lsdprj", encodeLsdprj({ name: "BBB", version: 2, songBytes: bSong, kitBanks: [buildKitBank("DRUMS", [{ name: "BD", bytes: Uint8Array.of(1, 2, 3, 4) }])] }));
 
-  const before = be.constructCalls.length;
+  const before = be.buildCalls.length;
   const sys = store.view().find((s) => s.id === id)!;
   expect(importSongFiles(be, store, sys, ["/s/a.lsdsng", "/s/b.lsdprj"])).toBeTruthy();
 
   // Exactly one rebuild for the whole batch.
-  expect(be.constructCalls.length - before).toBe(1);
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  expect(be.buildCalls.length - before).toBe(1);
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   const sav = spec.sramBytes!;
   expect(listProjects(sav).map((p) => p.slot)).toEqual([0, 1]); // both songs present
   deepEqual([...decompressSlot(sav, 0)!], [...aSong], ".lsdsng byte-exact in slot 0");
@@ -74,9 +74,9 @@ test("importSongFiles is a no-op (no write) for an empty / all-bad list", () => 
   be.seed("/roms/song.gb", lsdjRom1M());
   const id = store.addSystem("/roms/song.gb")!;
   be.setSram(id, savFrom({}));
-  const before = be.constructCalls.length;
+  const before = be.buildCalls.length;
   const sys = store.view().find((s) => s.id === id)!;
   expect(importSongFiles(be, store, sys, [])).toBe(false);
   expect(importSongFiles(be, store, sys, ["/nope.lsdsng"])).toBe(false); // unreadable
-  expect(be.constructCalls.length).toBe(before); // never rebooted
+  expect(be.buildCalls.length).toBe(before); // never rebooted
 });

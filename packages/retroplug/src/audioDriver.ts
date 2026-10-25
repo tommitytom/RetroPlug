@@ -6,6 +6,8 @@
 
 
 import { makeCall } from "./rpcClient";
+import type { EngineGraph } from "./engineGraph";
+import type { HostShape } from "./graph/buildGraph";
 
 /** DSP-runtime allocation counters (spec/08-profiling.md). Fields are DELTAS since the last
  *  dspResetAllocStats(); `enabled` is false unless the host was built with RETROPLUG_PROFILE.
@@ -200,30 +202,58 @@ export interface AudioDriver {
   drainReleased(): number;
 }
 
-/** Build an audio driver backed by the native host. Throws if no RPC surface is bound. */
-export function createAudioDriver(): AudioDriver {
+/** Build an audio driver backed by the native host. Throws if no RPC surface is bound.
+ *
+ *  `graph` is the engine's graph whoever builds the systems publishes (docs/modular-graph-phase-b2-design.md
+ *  section 4): each render call renders into the buffers of one host shape, so it sets that shape for the
+ *  call and puts the one before it back, and startAudio sets the stereo pair its loop renders. Without one
+ *  the calls render whatever shape is planned, and native refuses buffers that do not match it. */
+export function createAudioDriver(graph?: EngineGraph): AudioDriver {
   const call = makeCall();
 
   const ints = (b: Uint8Array | number[]): number[] => Array.from(b);
+  const STEREO: HostShape = { kind: "multi", channels: 2 };
+  // While this driver's audio thread runs, the render calls refuse natively, so they leave the graph alone.
+  let running = false;
+  const shaped = <T>(shape: HostShape, render: () => T, refused: () => T): T => {
+    if (!graph || running) return render();
+    const out = graph.withShape(shape, render);
+    return out === null ? refused() : out;
+  };
 
   return {
     pressButton: (id, button, down) => call("pressButton", id, button, down) as boolean,
     screenshot: (id, path) => call("screenshot", id, path) as boolean,
-    renderAudio: (ms) => {
-      const bytes = call("renderAudio", ms) as Uint8Array;
-      // Raw interleaved f32; slice() copies to a fresh 4-byte-aligned ArrayBuffer at offset 0.
-      return new Float32Array(bytes.slice().buffer);
-    },
-    renderAudioPerSystem: (ms) => {
-      const bufs = call("renderAudioPerSystem", ms) as Uint8Array[];
-      // One interleaved-f32 buffer per system; slice() 4-byte-aligns each like the mixed path above.
-      return bufs.map((b) => new Float32Array(b.slice().buffer));
-    },
-    renderAudioPerChannel: (id, ms) => {
-      const bufs = (call("renderAudioPerChannel", id, ms) as Uint8Array[] | null) ?? [];
-      // One interleaved-f32 buffer per channel stream; slice() 4-byte-aligns each.
-      return bufs.map((b) => new Float32Array(b.slice().buffer));
-    },
+    renderAudio: (ms) =>
+      shaped(
+        STEREO,
+        () => {
+          const bytes = call("renderAudio", ms) as Uint8Array;
+          // Raw interleaved f32; slice() copies to a fresh 4-byte-aligned ArrayBuffer at offset 0.
+          return new Float32Array(bytes.slice().buffer);
+        },
+        () => new Float32Array(0),
+      ),
+    renderAudioPerSystem: (ms) =>
+      shaped(
+        { kind: "perSystem" },
+        () => {
+          const bufs = call("renderAudioPerSystem", ms) as Uint8Array[];
+          // One interleaved-f32 buffer per system; slice() 4-byte-aligns each like the mixed path above.
+          return bufs.map((b) => new Float32Array(b.slice().buffer));
+        },
+        () => [],
+      ),
+    renderAudioPerChannel: (id, ms) =>
+      shaped(
+        { kind: "perChannel" },
+        () => {
+          const bufs = (call("renderAudioPerChannel", id, ms) as Uint8Array[] | null) ?? [];
+          // One interleaved-f32 buffer per channel stream; slice() 4-byte-aligns each.
+          return bufs.map((b) => new Float32Array(b.slice().buffer));
+        },
+        () => [],
+      ),
     compileKit: (spec) => call("compileKit", spec) as Uint8Array, // the 16 KB kit bank, straight through
     compileDmc: (spec) => call("compileDmc", spec) as Uint8Array, // the 8 KB risa DMC kit bank
     sampleRate: () => call("sampleRate") as number,
@@ -235,28 +265,10 @@ export function createAudioDriver(): AudioDriver {
     stageControllerIn: (bytes) => call("stageControllerIn", ints(bytes)) as boolean,
     drainMidiOut: () =>
       (call("drainMidiOut") as { system: number; frame: number; data: Uint8Array }[] | null) ?? [],
-    renderBlocks: (outputs, blocks) => {
-      // Every field is sent, absent ones as null/[]: the native struct has no field defaults.
-      const req = {
-        outputs,
-        blocks: blocks.map((b) => ({
-          frames: b.frames,
-          midi: (b.midi ?? []).map((m) => ({ frame: m.frame, bytes: Array.from(m.bytes) })),
-          controller: (b.controller ?? []).map((c) => Array.from(c)),
-          playing: b.playing ?? null,
-          bpm: b.bpm ?? null,
-          ppq: b.ppq ?? null,
-        })),
-      };
-      const r = call("renderBlocks", req) as {
-        error: string;
-        lanes: Uint8Array[];
-        midiOut: { block: number; system: number; frame: number; data: Uint8Array }[];
-      };
-      if (r.error) throw new Error(`renderBlocks: ${r.error}`);
-      // slice() copies each lane to a fresh 4-byte-aligned buffer, as renderAudio does.
-      return { lanes: r.lanes.map((l) => new Float32Array(l.slice().buffer)), midiOut: r.midiOut };
-    },
+    renderBlocks: (outputs, blocks) =>
+      shaped({ kind: "multi", channels: outputs }, () => renderBlocks(outputs, blocks), () => {
+        throw new Error(`renderBlocks: the ${outputs}-output host shape did not plan`);
+      }),
     buildTarget: () => call("buildTarget") as string,
     dspAllocStats: () => call("dspAllocStats") as DspAllocStats,
     dspResetAllocStats: (disableAutoGc) => call("dspResetAllocStats", disableAutoGc) as boolean,
@@ -264,11 +276,43 @@ export function createAudioDriver(): AudioDriver {
     dspTraceReset: (arm) => call("dspTraceReset", arm) as boolean,
     dspTrace: () => call("dspTrace") as DspTraceSpan[],
     dspTraceNames: () => call("dspTraceNames") as string[],
-    startAudio: () => call("startAudio") as boolean,
-    stopAudio: () => call("stopAudio") as boolean,
+    startAudio: () => {
+      if (graph && !running && !graph.setShape(STEREO)) return false;
+      const ok = call("startAudio") as boolean;
+      if (ok) running = true;
+      return ok;
+    },
+    stopAudio: () => {
+      const ok = call("stopAudio") as boolean;
+      if (ok) running = false;
+      return ok;
+    },
     sleepMs: (ms) => call("sleepMs", ms) as boolean,
     audioCaptured: () => call("audioCaptured") as { energy: number; frames: number },
     systemCount: () => call("systemCount") as number,
     drainReleased: () => call("drainReleased") as number,
   };
+
+  function renderBlocks(outputs: number, blocks: RenderBlock[]): RenderBlocksResult {
+    // Every field is sent, absent ones as null/[]: the native struct has no field defaults.
+    const req = {
+      outputs,
+      blocks: blocks.map((b) => ({
+        frames: b.frames,
+        midi: (b.midi ?? []).map((m) => ({ frame: m.frame, bytes: Array.from(m.bytes) })),
+        controller: (b.controller ?? []).map((c) => Array.from(c)),
+        playing: b.playing ?? null,
+        bpm: b.bpm ?? null,
+        ppq: b.ppq ?? null,
+      })),
+    };
+    const r = call("renderBlocks", req) as {
+      error: string;
+      lanes: Uint8Array[];
+      midiOut: { block: number; system: number; frame: number; data: Uint8Array }[];
+    };
+    if (r.error) throw new Error(`renderBlocks: ${r.error}`);
+    // slice() copies each lane to a fresh 4-byte-aligned buffer, as renderAudio does.
+    return { lanes: r.lanes.map((l) => new Float32Array(l.slice().buffer)), midiOut: r.midiOut };
+  }
 }

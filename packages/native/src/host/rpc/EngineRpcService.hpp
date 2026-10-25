@@ -117,6 +117,7 @@ public:
     std::vector<std::string>  dspTraceNames();
 
 private:
+    bool rendersInto(std::size_t channels) const;
     // Append the kernel's per-block MIDI-out (Engine::midiOut(), cleared each block) to accumMidiOut_.
     // Called after each processBlock in the render loops so drainMidiOut() sees the whole window.
     void accumulateMidiOut();

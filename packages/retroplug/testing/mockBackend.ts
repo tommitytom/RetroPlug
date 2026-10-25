@@ -84,8 +84,6 @@ export class MockBackend implements Backend {
   readonly buildCalls: (ConstructSpec & { id: number })[] = [];
   /** Every setGraph request, in order: the documents TS published, their slots and their tap re-arms. */
   readonly graphRequests: SetGraphRequest[] = [];
-  /** Cores buildCore built that no published document has placed yet. */
-  private parked = new Map<number, MockSystem>();
   // NOTE: duplicate/reload no longer hit the backend — they are TS orchestration over constructSystem,
   // so their effect shows up in constructCalls (with stateBytes/sramBytes + replaceId), not a dedicated log.
 
@@ -304,28 +302,39 @@ export class MockBackend implements Backend {
     return true;
   }
 
+  // A built core is live from the build on, as native's is (its snapshot slot is claimed at the build, so its
+  // reads answer before any document places it).
   buildCore(spec: ConstructSpec, id: number): BuiltCore | null {
     this.log.push("buildCore");
     this.buildCalls.push({ ...spec, id });
-    if (!this.buildable(spec) || this.systems.has(id) || this.parked.has(id)) return null;
-    this.parked.set(id, mockSystem(spec));
+    if (!this.buildable(spec) || this.systems.has(id)) return null;
+    this.systems.set(id, mockSystem(spec));
     return { type: nodeTypeFor(spec), exportMode: settingsNumber(spec, "channelExportMode"), linkGroup: settingsNumber(spec, "linkGroupId") };
   }
 
+  // The slots become the live systems: every core the document does not place goes, whether it ran in the
+  // last document or was never placed, as native frees them.
   setGraph(request: SetGraphRequest): SetGraphResult {
     this.log.push("setGraph");
     this.graphRequests.push(request);
-    // The slots become the live systems: a parked core is placed, a live one the document drops goes, and a
-    // core still parked once the document is published is freed, as native does.
     const live = new Map<number, MockSystem>();
     for (const id of request.slots) {
-      const sys = this.systems.get(id) ?? this.parked.get(id);
+      const sys = this.systems.get(id);
       if (!sys) return { ok: false, errors: [{ nodeId: `sys-${id}`, port: "", code: "unknown-core", message: `no core is built under id ${id}` }] };
       live.set(id, sys);
     }
     this.systems = live;
-    this.parked.clear();
     return { ok: true, errors: [] };
+  }
+
+  /** The system the build `call` displaced from its slot: the id that held that slot in the document before
+   *  the first one placing `call.id`. Undefined for a build that was appended, or never placed. */
+  replacedBy(call: { id: number }): number | undefined {
+    const at = this.graphRequests.findIndex((r) => r.slots.includes(call.id));
+    if (at <= 0) return undefined;
+    const slot = this.graphRequests[at].slots.indexOf(call.id);
+    const before = this.graphRequests[at - 1].slots[slot];
+    return before !== undefined && !this.graphRequests[at].slots.includes(before) ? before : undefined;
   }
 
   // Build only when a real ROM is available: an embedded marker, TS-supplied effective ROM bytes (romBytes

@@ -34,7 +34,7 @@ test("add: passes native a concrete resolved savPath (the suffix-0 sibling)", ()
   const { be, store } = newStore();
   be.seed("/roms/a.gb", gbRom());
   store.addSystem("/roms/a.gb");
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.romPath).toBe("/roms/a.gb");
   expect(spec.embeddedRom).toBe("");
   expect(spec.savPath).toBe("/roms/a.gb".replace(".gb", ".sav")); // /roms/a.sav
@@ -49,7 +49,7 @@ test("add: disambiguates the sav suffix against the live list (0, then 2, then 3
   store.addSystem("/roms/a.gb"); // 0,2 owned -> 3
   expect(store.view().map((v) => v.savSuffix)).toEqual([0, 2, 3]);
   // concrete savPaths the store handed native
-  expect(be.constructCalls.map((c) => c.savPath)).toEqual([
+  expect(be.buildCalls.map((c) => c.savPath)).toEqual([
     "/roms/a.sav",
     "/roms/a-2.sav",
     "/roms/a-3.sav",
@@ -72,7 +72,7 @@ test("add: an unknown or absent ROM is a no-op (rejected before construct)", () 
   expect(store.addSystem("/roms/missing.gb")).toBe(null); // not on disk at all
   expect(store.view().length).toBe(0);
   expect(changes()).toBe(0);
-  expect(be.log.includes("constructSystem")).toBeFalsy(); // never reached native
+  expect(be.log.includes("buildCore")).toBeFalsy(); // never reached native
 });
 
 test("focusNext: cycles focus forward/back through the instances in grid order, wrapping", () => {

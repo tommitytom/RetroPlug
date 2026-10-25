@@ -138,5 +138,5 @@ test("Remove Override drops the override end-to-end (reload reverts the effectiv
   expect(findItem(palettes, "lsdj-palette-1")?.label).toBe("[1] ABCD"); // back to the base name (no *)
   expect(actionsOf(palettes, "lsdj-palette-1").some((a) => a.id === "lsdj-palette-1-remove")).toBe(false);
   // The last construct carries the base ROM (no override-patched romBytes).
-  expect(be.constructCalls[be.constructCalls.length - 1].romBytes).toBe(undefined);
+  expect(be.buildCalls[be.buildCalls.length - 1].romBytes).toBe(undefined);
 });

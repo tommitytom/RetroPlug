@@ -45,7 +45,7 @@ test("a BlipToaster system attaches an empty bliptoaster-assets role and constru
   const id = store.addSystem("/roms/synth.nes");
   expect(id).toBeTruthy();
   expect(store.view()[0].roles.map((r) => r.kind).includes("bliptoaster-assets")).toBeTruthy();
-  expect(be.constructCalls[be.constructCalls.length - 1].romBytes).toBe(undefined); // no overrides → base ROM
+  expect(be.buildCalls[be.buildCalls.length - 1].romBytes).toBe(undefined); // no overrides → base ROM
 });
 
 // ── The baked rig settings (the same role config, a sibling key to `overrides`) ────────────────────────
@@ -54,7 +54,7 @@ test("a BlipToaster system attaches an empty bliptoaster-assets role and constru
 
 /** The effective ROM's decoded settings after the latest construct (null when construct got no romBytes). */
 function constructedSettings(be: MockBackend) {
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   return spec.romBytes ? BlipToasterRom.fromBytes(spec.romBytes).settings() : null;
 }
 
@@ -83,7 +83,7 @@ test("settings and asset overrides ride the same config and are both applied", (
   });
   store.reloadSystem(id);
 
-  const patched = BlipToasterRom.fromBytes(be.constructCalls[be.constructCalls.length - 1].romBytes!);
+  const patched = BlipToasterRom.fromBytes(be.buildCalls[be.buildCalls.length - 1].romBytes!);
   expect(patched.settings()).toEqual({ baseChannel: 3, ppu: false, velCurve: true, theme: 0, font: 0 });
   expect(decodeThemeFromRom(patched.getTheme(0)!.recordBytes, patched.getTheme(0)!.nameBytes).name).toBe("NEON");
 });
@@ -94,7 +94,7 @@ test("a settings field written on its own still triggers the patch (an empty ove
   const id = store.addSystem("/roms/synth.nes")!;
   store.setRoleConfig(id, "bliptoaster-assets", { settings: { ppu: false } });
   store.reloadSystem(id);
-  expect(be.constructCalls[be.constructCalls.length - 1].romBytes != null).toBeTruthy();
+  expect(be.buildCalls[be.buildCalls.length - 1].romBytes != null).toBeTruthy();
   expect(constructedSettings(be)!.ppu).toBe(false);
 });
 
@@ -108,7 +108,7 @@ test("clearing the settings patch reverts the next construct to the base ROM (no
 
   store.setRoleConfig(id2, "bliptoaster-assets", { settings: {} });
   store.reloadSystem(id2);
-  expect(be.constructCalls[be.constructCalls.length - 1].romBytes).toBe(undefined); // nothing pinned → base ROM
+  expect(be.buildCalls[be.buildCalls.length - 1].romBytes).toBe(undefined); // nothing pinned → base ROM
 });
 
 test("a ROM with no readable settings block takes the asset overrides and ignores the settings patch", () => {
@@ -123,7 +123,7 @@ test("a ROM with no readable settings block takes the asset overrides and ignore
   });
   store.reloadSystem(id);
 
-  const patched = BlipToasterRom.fromBytes(be.constructCalls[be.constructCalls.length - 1].romBytes!);
+  const patched = BlipToasterRom.fromBytes(be.buildCalls[be.buildCalls.length - 1].romBytes!);
   expect(patched.hasSettings).toBe(false);
   expect(patched.settings()).toBe(null);
   expect(decodeThemeFromRom(patched.getTheme(0)!.recordBytes, patched.getTheme(0)!.nameBytes).name).toBe("NEON");
@@ -142,7 +142,7 @@ test("a settings block stamped a format this build does not read is left entirel
 
   // Half-writing a layout we do not know would be worse than doing nothing, so construct hands over an
   // untouched image rather than a partly-patched one.
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect([...(spec.romBytes ?? before)]).toEqual([...before]);
 });
 
@@ -156,7 +156,7 @@ test("a theme override is stored INLINE (no path) and applied to the effective R
   store.setRoleConfig(id, "bliptoaster-assets", { overrides: [override] });
   store.reloadSystem(id);
 
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.romBytes != null).toBeTruthy();
   expect((override as Record<string, unknown>).path).toBe(undefined); // inline — no file link
 
@@ -178,7 +178,7 @@ test("a kit override LINKS a .rkit bank by path and splices it into the effectiv
   store.setRoleConfig(id, "bliptoaster-assets", { overrides: [{ type: "kit", slot: 0, name: "DRUMS", path: "/kits/drums.rkit" }] });
   store.reloadSystem(id);
 
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.romBytes != null).toBeTruthy();
   const patched = BlipToasterRom.fromBytes(spec.romBytes!);
   expect([...patched.getKitBank(0)!]).toEqual([...bank]); // bank spliced verbatim
@@ -197,7 +197,7 @@ test("a banking ROM takes a kit override into a high slot; the base kit is prese
   store.setRoleConfig(id, "bliptoaster-assets", { overrides: [{ type: "kit", slot: 5, name: "HATS", path: "/kits/hats.rkit" }] });
   store.reloadSystem(id);
 
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.romBytes != null).toBeTruthy();
   const patched = BlipToasterRom.fromBytes(spec.romBytes!);
   expect([...patched.getKitBank(5)!]).toEqual([...bank]); // spliced into bank 5
@@ -216,7 +216,7 @@ test("a font override LINKS a .chr file by path and applies it to the effective 
   store.setRoleConfig(id, "bliptoaster-assets", { overrides: [{ type: "font", slot: 0, name: "new", path: "/fonts/new.chr" }] });
   store.reloadSystem(id);
 
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.romBytes != null).toBeTruthy();
   expect([...BlipToasterRom.fromBytes(spec.romBytes!).getChrFontSlot(0)!]).toEqual([...bank]);
   expect([...be.readFile("/roms/synth.nes")!]).toEqual([...base]);
@@ -231,7 +231,7 @@ test("a wrong-size .chr font override is skipped (leaves the base font intact)",
   store.setRoleConfig(id, "bliptoaster-assets", { overrides: [{ type: "font", slot: 0, name: "bad", path: "/fonts/bad.chr" }] });
   store.reloadSystem(id);
 
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   const slot0 = BlipToasterRom.fromBytes(spec.romBytes ?? be.readFile("/roms/synth.nes")!).getChrFontSlot(0)!;
   expect(slot0[0]).toBe((0 * 7 + 3) & 0xff); // base font pattern, not 0x00-filled by a bad override
 });
@@ -246,7 +246,7 @@ test("an erase kit override empties the base kit slot in the effective ROM", () 
   store.setRoleConfig(id, "bliptoaster-assets", { overrides: [{ type: "kit", slot: 0, name: "", erase: true }] });
   store.reloadSystem(id);
 
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.romBytes != null).toBeTruthy();
   expect(BlipToasterRom.fromBytes(spec.romBytes!).isKitPopulated(0)).toBe(false); // cleared
   expect([...be.readFile("/roms/synth.nes")!]).toEqual([...base]);
@@ -261,7 +261,7 @@ test("a wrong-size .rkit kit override is skipped (leaves the base kit intact)", 
   store.setRoleConfig(id, "bliptoaster-assets", { overrides: [{ type: "kit", slot: 0, name: "bad", path: "/kits/bad.rkit" }] });
   store.reloadSystem(id);
 
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   const patched = BlipToasterRom.fromBytes(spec.romBytes ?? be.readFile("/roms/synth.nes")!);
   expect(patched.isKitPopulated(0)).toBe(true); // base kit intact, not zeroed by a bad override
 });
@@ -275,11 +275,11 @@ test("Remove Override reverts the next construct to the base ROM (no romBytes)",
   be.seed("/kits/drums.rkit", populatedBank(0x22));
   store.setRoleConfig(id, "bliptoaster-assets", { overrides: [{ type: "kit", slot: 0, name: "DRUMS", path: "/kits/drums.rkit" }] });
   const id2 = store.reloadSystem(id)!; // reload swaps the id in place
-  expect(be.constructCalls[be.constructCalls.length - 1].romBytes != null).toBeTruthy();
+  expect(be.buildCalls[be.buildCalls.length - 1].romBytes != null).toBeTruthy();
 
   store.setRoleConfig(id2, "bliptoaster-assets", { overrides: [] });
   store.reloadSystem(id2);
-  expect(be.constructCalls[be.constructCalls.length - 1].romBytes).toBe(undefined);
+  expect(be.buildCalls[be.buildCalls.length - 1].romBytes).toBe(undefined);
 });
 
 test("Duplicate boots the clone from the patched ROM, not the base one", () => {
@@ -289,13 +289,13 @@ test("Duplicate boots the clone from the patched ROM, not the base one", () => {
   store.setRoleConfig(id, "bliptoaster-assets", { settings: { theme: 11 } });
   const src = store.reloadSystem(id)!;
   expect(constructedSettings(be)!.theme).toBe(11);
-  const srcRom = be.constructCalls[be.constructCalls.length - 1].romBytes;
+  const srcRom = be.buildCalls[be.buildCalls.length - 1].romBytes;
 
   // The clone boots from the source's savestate, which was captured running the PATCHED ROM; booting it
   // under the base image would run that state against code and data it was never captured with.
   const dup = store.duplicateSystem(src);
   expect(dup).toBeTruthy();
-  const call = be.constructCalls[be.constructCalls.length - 1];
+  const call = be.buildCalls[be.buildCalls.length - 1];
   expect(call.stateBytes != null).toBeTruthy();
   expect(call.romBytes != null).toBeTruthy();
   expect(Array.from(call.romBytes!)).toEqual(Array.from(srcRom!));

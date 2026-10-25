@@ -158,8 +158,8 @@ test("Delete confirms then removes the song end-to-end (readSram -> op -> loadSr
 
   // The op wrote the edited catalog back and cold-booted the core from it: the last construct carries a
   // 4-song catalog (DBZ gone).
-  const spec = be.constructCalls[be.constructCalls.length - 1];
-  expect(spec.replaceId).toBe(id);
+  const spec = be.buildCalls[be.buildCalls.length - 1];
+  expect(be.replacedBy(spec)).toBe(id);
   expect(listSongs(new Uint8Array(spec.sramBytes!)).map((s) => s.name)).toEqual(["HOU8", "HOU", "DBZ2-F", "FUNK0"]);
 });
 
@@ -170,7 +170,7 @@ test("Move Down reorders the catalog end-to-end", () => {
   const songRows = submenuChildren(submenuChildren(items(), "inst-risa"), "risa-songs");
 
   findItem(submenuChildren(songRows, "risa-song-0"), "risa-song-0-down")!.onSelect!(); // HOU8 down one
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(listSongs(new Uint8Array(spec.sramBytes!)).map((s) => s.name)).toEqual(["HOU", "HOU8", "DBZ", "DBZ2-F", "FUNK0"]);
 });
 
@@ -197,8 +197,8 @@ test("Load expands the selected song into working memory end-to-end (current-lay
   // The cold-booted core carries a battery whose working song (banks 0-3) is the expanded BLUMARBL, and
   // whose catalog (banks 4-7) is unchanged. The one byte that differs from a bare record expansion is the
   // 'current entry' link at 0x3E94, which Load stamps with the slot it came from (0), as the cart does.
-  const spec = be.constructCalls[be.constructCalls.length - 1];
-  expect(spec.replaceId).toBe(id);
+  const spec = be.buildCalls[be.buildCalls.length - 1];
+  expect(be.replacedBy(spec)).toBe(id);
   const out = new Uint8Array(spec.sramBytes!);
   const expected = expandRecordToWorking(recordBytesAt(battery, CURRENT_LAYOUT, 0)!);
   expect(out.slice(0, 0x8000).every((b, i) => (i === 0x3e94 ? b === 0 : b === expected[i]))).toBe(true);
@@ -210,10 +210,10 @@ test("Load is a safe no-op on a legacy-layout catalog (no cold-boot)", () => {
   const stores = composeAppStores({ backend: be });
   const { items } = risaSystem(be, stores); // seeds the legacy multi_legacy catalog
   const songRows = submenuChildren(submenuChildren(items(), "inst-risa"), "risa-songs");
-  const before = be.constructCalls.length;
+  const before = be.buildCalls.length;
 
   findItem(submenuChildren(songRows, "risa-song-0"), "risa-song-0-load")!.onSelect!();
-  expect(be.constructCalls.length).toBe(before); // loadSongToWorkingInSav returned null -> mutateSavBytes no-op
+  expect(be.buildCalls.length).toBe(before); // loadSongToWorkingInSav returned null -> mutateSavBytes no-op
 });
 
 // A distinct romPath from the header-prefix risaRom() the Songs tests use — the asset inventory is memoised
@@ -305,8 +305,8 @@ test("Delete on a base kit records an erase override and empties the effective s
   // The erase override drops the slot from the effective list AND the reload handed native a patched ROM
   // whose slot 0 is unpopulated. (reloadSystem swaps the id, so re-query the sole system by index.)
   expect(kits().some((k) => k.id === "risa-kit-0")).toBe(false);
-  const spec = be.constructCalls[be.constructCalls.length - 1];
-  expect(spec.replaceId).toBe(id);
+  const spec = be.buildCalls[be.buildCalls.length - 1];
+  expect(be.replacedBy(spec)).toBe(id);
   expect(RisaRom.fromBytes(spec.romBytes!).isKitPopulated(0)).toBe(false);
 });
 
@@ -359,8 +359,8 @@ test("an unlinked working song whose NAME matches a slot offers to overwrite it,
 
   // Taking it writes the working song over slot 0 and links there: one song, not two.
   overwrite.onSelect!();
-  const spec = be.constructCalls[be.constructCalls.length - 1];
-  expect(spec.replaceId).toBe(id);
+  const spec = be.buildCalls[be.buildCalls.length - 1];
+  expect(be.replacedBy(spec)).toBe(id);
   const out = new Uint8Array(spec.sramBytes!);
   expect(listSongs(out).map((s) => s.name)).toEqual(["BLUMARBL"]);
   expect(risaSongCatalog.workingSongDirty!(out)).toBe(false); // committed, so the row drops
@@ -389,8 +389,8 @@ test("Save to Catalog promotes the working song end-to-end (readSram -> op -> co
 
   findItem(workingRow(items), "risa-song-working-save")!.onSelect!();
 
-  const spec = be.constructCalls[be.constructCalls.length - 1];
-  expect(spec.replaceId).toBe(id);
+  const spec = be.buildCalls[be.buildCalls.length - 1];
+  expect(be.replacedBy(spec)).toBe(id);
   expect(listSongs(new Uint8Array(spec.sramBytes!)).map((s) => s.name)).toEqual(["BLUMARBL"]); // now a real slot
 });
 
@@ -429,13 +429,13 @@ test("risa Save & Load commits the working song then loads, in one cold boot", (
   const stores = composeAppStores({ backend: be });
   const { items, id } = risaSystem(be, stores, unsavedWorkingBattery());
   const before = risaSongCatalog.list(be.readSram(id)!).length;
-  const writesBefore = be.constructCalls.length;
+  const writesBefore = be.buildCalls.length;
 
   const load = findItem(submenuChildren(submenuChildren(submenuChildren(items(), "inst-risa"), "risa-songs"), "risa-song-0"), "risa-song-0-load")!;
   findItem(load.children!, "risa-song-0-load-save")!.onSelect!();
 
-  const out = new Uint8Array(be.constructCalls[be.constructCalls.length - 1].sramBytes!);
+  const out = new Uint8Array(be.buildCalls[be.buildCalls.length - 1].sramBytes!);
   expect(risaSongCatalog.list(out).length).toBe(before + 1); // the working song became a new slot
   expect(risaSongCatalog.workingSongDirty!(out)).toBe(false); // nothing left uncommitted
-  expect(be.constructCalls.length - writesBefore).toBe(1); // save+load is ONE byte-op
+  expect(be.buildCalls.length - writesBefore).toBe(1); // save+load is ONE byte-op
 });

@@ -75,8 +75,8 @@ test("the LSDj song menu offers Move Up/Down (disabled at the ends) and swaps sp
 
   // Move Down on the first row (position 0) → swaps slots 0 and 3 → [0] BBB, [3] AAA.
   findItem(submenuChildren(songs(), "lsdj-song-0"), "lsdj-song-0-down")!.onSelect!();
-  const spec = be.constructCalls[be.constructCalls.length - 1];
-  expect(spec.replaceId).toBe(id);
+  const spec = be.buildCalls[be.buildCalls.length - 1];
+  expect(be.replacedBy(spec)).toBe(id);
   expect(listProjects(spec.sramBytes!).map((p) => `${p.slot}:${p.name}`)).toEqual(["0:BBB", "3:AAA"]);
 });
 
@@ -105,8 +105,8 @@ test("a LINKED, edited LSDj working song gets the [working] row, offering Save C
 
   // Save Changes writes the edit into slot 0 and leaves the song count alone.
   findItem(w, "lsdj-song-working-save")!.onSelect!();
-  const spec = be.constructCalls[be.constructCalls.length - 1];
-  expect(spec.replaceId).toBe(id);
+  const spec = be.buildCalls[be.buildCalls.length - 1];
+  expect(be.replacedBy(spec)).toBe(id);
   expect(listProjects(spec.sramBytes!).map((p) => `${p.slot}:${p.name}`)).toEqual(["0:AAA", "3:BBB"]);
   expect(decompressSlot(spec.sramBytes!, 0)![0x100]).toBe(edited[0x100]); // the edit really landed
 });

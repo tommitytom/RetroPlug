@@ -22,7 +22,7 @@ test("audio levels: Mesen NES 2A03 pins (n8-midi, stereoModPins)", () => {
   if (!be.fileExists(NES)) skip(`no ROM at ${NES}`);
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const dsp = createDspRuntime();
-  const audio = createAudioDriver();
+  const audio = createAudioDriver(project.graph);
   dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!);
   project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
   project.systems.adopt({

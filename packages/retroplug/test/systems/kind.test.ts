@@ -20,7 +20,7 @@ test("constructSystem carries the classified platform and core for each backend"
     const { be, store } = makeStore();
     be.seed(path, bytes);
     expect(store.addSystem(path) != null).toBeTruthy();
-    const spec = be.constructCalls[be.constructCalls.length - 1];
+    const spec = be.buildCalls[be.buildCalls.length - 1];
     expect(spec.platform).toBe(platform);
     expect(spec.core).toBe(core);
   }
@@ -29,7 +29,7 @@ test("constructSystem carries the classified platform and core for each backend"
 test("embedded mGB constructs as sameboy", () => {
   const { be, store } = makeStore();
   store.loadMgb();
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.platform).toBe("gb");
   expect(spec.core).toBe("sameboy");
 });

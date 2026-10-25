@@ -33,7 +33,7 @@ test("mGB renders as four isolated Game Boy channels (renderAudioPerChannel)", (
   const recent = new RecentStore(be);
   const project = new ProjectStore(be, recent, registry);
   const dsp = createDspRuntime();
-  const audio = createAudioDriver();
+  const audio = createAudioDriver(project.graph);
 
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
   project.setOnSystemsChange(() => syncDspFromStore(project, dsp));

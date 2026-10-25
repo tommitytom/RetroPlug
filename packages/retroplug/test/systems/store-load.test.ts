@@ -41,7 +41,7 @@ test("load: defers to a sibling <rom>.rplg and builds nothing", () => {
   const r = store.loadRom("/roms/a.gb");
   expect(r).toEqual({ deferredProject: "/roms/a.rplg" });
   expect(store.view().length).toBe(0);
-  expect(be.log.includes("constructSystem")).toBeFalsy();
+  expect(be.log.includes("buildCore")).toBeFalsy();
 });
 
 test("load: a paired save does NOT defer, and pins the different file as the savPath", () => {
@@ -50,7 +50,7 @@ test("load: a paired save does NOT defer, and pins the different file as the sav
   be.seed("/roms/a.rplg", "project bytes"); // present, but the paired save wins
   const r = store.loadRom("/roms/a.gb", { explicitSav: "/saves/mine.sav" });
   expect("system" in (r as object)).toBeTruthy();
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.savPath).toBe("/saves/mine.sav"); // a genuinely different file -> override
 });
 
@@ -58,7 +58,7 @@ test("load: a paired save equal to the natural sibling is NOT an override", () =
   const { be, store } = newStore();
   be.seed("/roms/a.gb", gbRom());
   store.loadRom("/roms/a.gb", { explicitSav: "/roms/a.sav" }); // == the suffix-0 sibling
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.savPath).toBe("/roms/a.sav"); // resolves to the sibling either way, no override pinned
   expect(store.view()[0].savSuffix).toBe(0);
 });
@@ -73,7 +73,7 @@ test("loadMgb: builds the embedded ROM (sameboy, no file, no header read)", () =
   expect(v[0].embedded).toBeTruthy();
   expect(v[0].romPath).toBe("");
   expect(v[0].missing).toBeFalsy(); // embedded is never missing
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.embeddedRom).toBe("mgb");
   expect(spec.romPath).toBe("");
   expect(spec.savPath).toBe(null);

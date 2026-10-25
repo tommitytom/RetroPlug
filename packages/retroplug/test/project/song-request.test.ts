@@ -238,10 +238,10 @@ test("LSDj settles synchronously - its working song is the battery, ready from t
   expect(project.save("/proj/lsdj.rplg")).toBeTruthy();
   expect(recent.view().map((v) => v.song)).toEqual(["GRUB"]); // recorded at once: no readiness to wait for
 
-  const builds = be.constructCalls.length;
+  const builds = be.buildCalls.length;
   project.requestSong({ name: "INTRO", confirmed: false });
   expect(project.settleSong()).toBe("loaded"); // this very call
-  expect(be.constructCalls.length).toBe(builds + 1); // the cold-boot spine: one rebuild from the written .sav
+  expect(be.buildCalls.length).toBe(builds + 1); // the cold-boot spine: one rebuild from the written .sav
   expect(lsdjSongCatalog.workingName(be.readFile("/roms/lsdj.sav")!)).toBe("INTRO");
   expect(recent.view().map((v) => v.song)).toEqual(["INTRO", "GRUB"]);
 });

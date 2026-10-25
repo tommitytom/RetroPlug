@@ -48,7 +48,7 @@ test("an LSDj system attaches an empty lsdj-assets role and constructs with no r
   const id = store.addSystem("/roms/song.gb");
   expect(id).toBeTruthy();
   expect(store.view()[0].roles.map((r) => r.kind).includes("lsdj-assets")).toBeTruthy();
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.romBytes).toBe(undefined); // no overrides → base ROM loaded from romPath
 });
 
@@ -67,7 +67,7 @@ test("replacing a kit records an override and reload hands native the patched ef
   expect(store.reloadSystem(id)).toBeTruthy();
 
   // The reload constructed with a patched effective ROM (romBytes), NOT by touching romPath.
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.romBytes != null).toBeTruthy();
   const patched = LsdjRom.fromBytes(spec.romBytes!);
   expect(patched.kit(0).name()).toBe("NEWK");
@@ -92,7 +92,7 @@ test("a palette override is stored INLINE (colorSets, no file path) and applied 
 
   store.setRoleConfig(id, "lsdj-assets", { overrides: [override] });
   store.reloadSystem(id);
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.romBytes != null).toBeTruthy();
   expect((override as Record<string, unknown>).path).toBe(undefined); // inline — no path stored
 
@@ -113,7 +113,7 @@ test("a kit erase override empties a base-valid kit slot in the effective ROM (D
   store.setRoleConfig(id, "lsdj-assets", { overrides: [{ type: "kit", slot: 0, name: "", erase: true }] });
   store.reloadSystem(id);
 
-  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.romBytes != null).toBeTruthy();
   const patched = LsdjRom.fromBytes(spec.romBytes!);
   expect(patched.kit(0).valid).toBe(false); // the slot is now empty
@@ -129,10 +129,10 @@ test("Remove Override reverts the next construct to the base ROM (no romBytes)",
   be.seed("/kits/new.kit", bank);
   store.setRoleConfig(id, "lsdj-assets", { overrides: [{ type: "kit", slot: 0, name: "NEWK", path: "/kits/new.kit" }] });
   const id2 = store.reloadSystem(id)!; // reload swaps the id in place
-  expect(be.constructCalls[be.constructCalls.length - 1].romBytes != null).toBeTruthy();
+  expect(be.buildCalls[be.buildCalls.length - 1].romBytes != null).toBeTruthy();
 
   // Remove the override (menu's "Remove Override") → next construct is the base ROM again.
   store.setRoleConfig(id2, "lsdj-assets", { overrides: [] });
   store.reloadSystem(id2);
-  expect(be.constructCalls[be.constructCalls.length - 1].romBytes).toBe(undefined);
+  expect(be.buildCalls[be.buildCalls.length - 1].romBytes).toBe(undefined);
 });

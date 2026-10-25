@@ -41,7 +41,7 @@ test("NES renders its stereo-mod pins (renderAudioPerChannel): Pulse rings, TND/
 
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const dsp = createDspRuntime();
-  const audio = createAudioDriver();
+  const audio = createAudioDriver(project.graph);
 
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
   project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
