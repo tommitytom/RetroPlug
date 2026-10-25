@@ -329,6 +329,32 @@ TEST_CASE("A replacing NES is armed afresh, never restored to the replaced core'
     CHECK(fresh->channelExportMode() == 0);
 }
 
+TEST_CASE("A NES parked again under the armed one's id is restored to its own mode, not the old core's",
+          "[audio][channelsplit][nes]") {
+    // TS builds every core under a new id, but the engine takes a raw caller's: a document that drops the armed
+    // NES without a re-arm leaves the tap's record of it behind, and the next re-arm finds a core under its id.
+    NesRig rig;
+    Engine& eng = rig.eng;
+    rig.park(buildNes(1, 2));  // built with the pins + mix-reference tap
+    rig.place(rearming(graphRequest(nesSplitDocument(1, "channels"), {1}), 1, 3));  // armed to 3, remembering 2
+    REQUIRE(dynamic_cast<MesenNesSystem*>(eng.findSystem(1))->channelExportMode() == 3);
+
+    // Built while the armed core is alive, so it cannot be given that core's address, the one thing the record
+    // compares.
+    auto replacement = buildNes(1);
+    rig.place(graphRequest(stereoDocument({}, 8), {}));  // dropped, no re-arm
+    eng.reclaim();
+    REQUIRE_FALSE(eng.coreLive(1));
+    rig.park(std::move(replacement));
+    rig.place(rearming(graphRequest(nesSplitDocument(1, "channels"), {1}), 1, 3));
+    auto* fresh = dynamic_cast<MesenNesSystem*>(eng.findSystem(1));
+    REQUIRE(fresh != nullptr);
+    CHECK(fresh->channelExportMode() == 3);
+    // Leaving the split puts back what this core was built with, not the 2 its predecessor was.
+    rig.place(rearming(graphRequest(stereoDocument({{1, kNesType}}, 8), {1})));
+    CHECK(fresh->channelExportMode() == 0);
+}
+
 TEST_CASE("A routing edit's plan and its tap arming take one ring slot, so they land together",
           "[audio][channelsplit][nes]") {
     NesRig rig;

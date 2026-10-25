@@ -6,6 +6,7 @@
 // intentional change to the document it writes rewrites the file's documents by hand (a short script mapping
 // each case's model through buildGraph), and says why in its commit. Not every golden document plans: the
 // thirty-three systems under perSystem give rp.host.audio-out 33 buses, past the 32 it takes.
+// packages/native/test/engine-graph/BuildGraphGoldens.test.cpp plans every other one on the engine.
 import { test, expect } from "../../testing/harness";
 import { canonicalJson } from "../../src/graph/canonicalJson";
 import { buildGraph, type GraphModel, type TapArm } from "../../src/graph/buildGraph";
