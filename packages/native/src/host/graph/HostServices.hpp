@@ -14,15 +14,18 @@ namespace rp::host {
 // when created) and owns it from then on. [control]
 //
 // A core belongs to one node id for life: take hands a token out once, so the same token under a new node
-// id finds nothing and that node fails to activate. A plan refused after its node took a core (a later node
-// failed, or the token named the wrong kind of core) has already released and freed that core.
+// id finds nothing and that node fails to activate. A node that gives its core up (destroyed once no plan
+// runs it, or unwound with a plan refused after it took the core, or handed the wrong kind of core) says so
+// through `released`, and frees the core unless the host took it back.
 #define RP_HOST_CORES_INTERFACE "rp.host.cores/1"
 struct HostCores {
     void* ctx;
     // The core parked under `token`, now the caller's; null if none is (taken already, or never parked).
     SystemBase* (*take)(void* ctx, std::uint64_t token);
-    // A system node is destroying its core: release what the engine keeps for it (its snapshot slot).
-    void (*released)(void* ctx, SystemBase* core);
+    // A system node is giving up its core: release what the engine keeps for it (its snapshot slot), or take
+    // the core back (parked again under its token). True when the host took it back: the node must not
+    // delete it.
+    bool (*released)(void* ctx, SystemBase* core);
 };
 
 // The engine's kernel stage (section 3.3), run by rp.dsp.kernel as the plan's first step. [audio]

@@ -43,10 +43,11 @@ struct SystemNode {
     SystemNode() = default;
     SystemNode(const SystemNode&) = delete;
     SystemNode& operator=(const SystemNode&) = delete;
-    // Destroyed at reclaim, on the control thread, once no plan runs it: the snapshot slot first, then the core.
+    // Destroyed on the control thread, at reclaim once no plan runs it or as a refused plan is unwound: the
+    // snapshot slot first, then the core, unless the host took the core back.
     ~SystemNode() {
         if (!core) return;
-        if (cores) cores->released(cores->ctx, core);
+        if (cores && cores->released(cores->ctx, core)) return;
         delete core;
     }
 
@@ -62,10 +63,9 @@ struct SystemNode {
         if (!cores) return false;
         SystemBase* built = cores->take(cores->ctx, token);
         core = dynamic_cast<Core*>(built);
-        if (!core && built) {  // a token naming another kind of core is a translator bug
-            cores->released(cores->ctx, built);  // the engine keeps a snapshot slot for it, as for any core
-            delete built;
-        }
+        // A token naming another kind of core is a host bug (Engine::setGraph checks the kinds before it
+        // plans). The engine keeps a snapshot slot for it, as for any core, or takes it back.
+        if (!core && built && !cores->released(cores->ctx, built)) delete built;
         return core != nullptr;
     }
 

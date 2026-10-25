@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -94,9 +95,10 @@ public:
     void setPpq(double ppq);
 
     // Host sample rate. Used at construct for new cores (findable via sampleRate()) AND pushed to every
-    // already-live core so a host sample-rate change re-rates them in place (SameBoy GB_set_sample_rate,
-    // Mesen resampler). Safe to call with cores live only when the audio thread isn't draining — the plugin
-    // calls it from DPF's sampleRateChanged, which fires only while deactivated; the CLI, before any build.
+    // already-live core, the running plan's and the parked ones, so a host sample-rate change re-rates them
+    // in place (SameBoy GB_set_sample_rate, Mesen resampler). Safe to call with cores live only when the
+    // audio thread isn't draining: the plugin calls it from DPF's sampleRateChanged, which fires only while
+    // deactivated; the CLI, before any build.
     void setSampleRate(double sr);
 
     // The kernel's host-MIDI-out sink for this block (filled by processBlock's DSP stage, cleared at
@@ -171,8 +173,10 @@ public:
     bool pushSyncTap();
 
     // --- graphs TS builds (docs/modular-graph-phase-b2-design.md section 2.5), control thread ---
-    // Park a built core under its id until the system node a document names it in takes it. False, with the
-    // core freed, when a core under that id is still live (parked, or held by a node of any plan).
+    // Park a built core under its id until the system node a document names it in takes it, claiming its
+    // snapshot slot (seeded from the core, so a read right after the build works with no block run). False,
+    // with the core freed and the registry untouched, when the id is 0 or a core under it is still live
+    // (parked, or held by a node of any plan); false, with the core freed, when the snapshot pool is full.
     bool parkCore(std::unique_ptr<SystemBase> core);
     bool coreLive(SystemId id) const { return liveCores_.count(id) != 0; }
     struct GraphRequest {
@@ -191,7 +195,10 @@ public:
         std::vector<GraphError> errors;
     };
     // Plan `request` and publish it with its system table (built from the slots and the live cores) and its
-    // SyncTap. Once it has published, a core still parked is one no document placed, and is freed.
+    // SyncTap. Refused before planning when a system node's type is not its core's, or the tap arms a mode
+    // other than 1 to 3 or a system not in the slots. Refused at all, every core stays where it was: one a
+    // node of the refused plan took goes back to parked. Once it has published, a core still parked is one
+    // no document placed, and is freed.
     GraphResult setGraph(const GraphRequest& request);
     // The host channels the last published plan writes (the sum of its rp.host.audio-out buses). Control thread.
     std::uint32_t hostWidth() const { return hostWidth_; }
@@ -274,6 +281,10 @@ private:
     std::map<SystemId, std::unique_ptr<SystemBase>> parked_;
     std::map<SystemId, SystemBase*>                 liveCores_;
     std::uint32_t                                   hostWidth_ = 2;
+    // While setGraph plans (inSetGraph_), the ids takeCore hands out of parked_: a node of that plan which
+    // gives its core up again, the plan refused, puts it back in parked_ rather than freeing it.
+    bool                                            inSetGraph_ = false;
+    std::set<SystemId>                              takenInSetGraph_;
 
     // Last, so it goes first: its system nodes release their snapshot slots into registry_ (and leave
     // liveCores_) as they go.

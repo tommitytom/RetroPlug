@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <optional>
+#include <utility>
 
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"   // AudioBlockInfo, SystemId
@@ -36,6 +37,7 @@ const std::vector<DspRuntime::KeyIn>    kNoKeys;
 // the audio thread, which must not take a static's init guard or register its destructor.
 const rp::host::SystemTable kNoSystems;
 
+// `mode` is one the caller has checked: 0 to 3, so it fits the command's byte.
 DspCommand syncTapCommand(bool arm, SystemId id, std::uint32_t mode) {
     DspCommand c;
     c.kind = DspCommand::Kind::SyncTap;
@@ -53,11 +55,11 @@ DspCommand syncTapFor(rp::host::AudioRouting routing, const rp::host::SystemTabl
     return syncTapCommand(true, table.slots.front().id, pins ? 1u : 3u);
 }
 
-constexpr const char* kSystemNodeTypes[] = {"rp.sameboy.gb", "rp.mesen.nes", "rp.mesen.gba", "rp.mesen.sms"};
-
+// A system node is a node of one of the two system packages: every type in them adapts a core.
 bool isSystemNodeType(const std::string& type) {
-    for (const char* t : kSystemNodeTypes)
-        if (type == t) return true;
+    for (const rp_package* p : {rp::host::sameboyPackage(), rp::host::mesenPackage()})
+        for (std::uint32_t k = 0; k < p->node_type_count; ++k)
+            if (type == p->node_types[k]->id) return true;
     return false;
 }
 
@@ -68,19 +70,24 @@ std::optional<SystemId> coreIdOf(const rp::graph::NodeDoc& n) {
     if (!object || object->size() != 1) return std::nullopt;
     const auto core = object->get("core");
     if (!core) return std::nullopt;
-    const auto id = core->to_int();
+    const auto id = core->to_int64();
     if (!id || *id <= 0 || *id > static_cast<std::int64_t>(UINT32_MAX)) return std::nullopt;
     return static_cast<SystemId>(*id);
 }
 
+// The channels an rp.host.audio-out writes when its settings name no buses: its default buses, {2, 2, 2, 2}
+// (AudioOutSettings in graph/HostNodes.cpp).
+constexpr std::uint32_t kDefaultHostWidth = 8;
+
 // The host channels a document's rp.host.audio-out writes: the sum of its buses.
 std::uint32_t hostWidthOf(const rp::graph::GraphDocument& doc) {
     for (const auto& n : doc.nodes) {
-        if (n.type != "rp.host.audio-out" || !n.settings) continue;
+        if (n.type != "rp.host.audio-out") continue;
+        if (!n.settings) return kDefaultHostWidth;
         const auto object = n.settings->to_object();
         if (!object) return 0;
         const auto buses = object->get("buses");
-        if (!buses) return 0;
+        if (!buses) return kDefaultHostWidth;
         const auto array = buses->to_array();
         if (!array) return 0;
         std::uint32_t width = 0;
@@ -115,8 +122,16 @@ Engine::Engine(double sampleRate) : sampleRate_(sampleRate) {
     graph_->cores = {this, [](void* ctx, std::uint64_t token) { return static_cast<Engine*>(ctx)->takeCore(token); },
                      [](void* ctx, SystemBase* core) {
                          auto* self = static_cast<Engine*>(ctx);
-                         self->registry_.release(core->id());
-                         self->liveCores_.erase(core->id());
+                         const SystemId id = core->id();
+                         // A node of a plan setGraph is refusing, giving back the core it took in that call:
+                         // parked again, still live, its snapshot slot kept, for a corrected document to place.
+                         if (self->inSetGraph_ && self->takenInSetGraph_.erase(id) != 0) {
+                             self->parked_[id].reset(core);
+                             return true;
+                         }
+                         self->registry_.release(id);
+                         self->liveCores_.erase(id);
+                         return false;
                      }};
     graph_->kernel = {this, [](void* ctx, std::uint32_t frames) { static_cast<Engine*>(ctx)->runKernelStage(frames); }};
     rp::graph::HostConfig config;
@@ -174,6 +189,7 @@ SystemBase* Engine::takeCore(std::uint64_t token) {
     if (token <= UINT32_MAX && it != parked_.end()) {
         SystemBase* core = it->second.release();
         parked_.erase(it);
+        if (inSetGraph_) takenInSetGraph_.insert(core->id());
         return core;
     }
     return graph_->translator->take(token);
@@ -181,11 +197,17 @@ SystemBase* Engine::takeCore(std::uint64_t token) {
 
 bool Engine::parkCore(std::unique_ptr<SystemBase> core) {
     const SystemId id = core->id();
-    if (coreLive(id)) {
-        std::fprintf(stderr, "[engine] a core was built under id %u, which is still live; it is dropped\n", static_cast<unsigned>(id));
-        registry_.release(id);
+    if (id == 0) {  // the snapshot registry's free-slot id
+        std::fprintf(stderr, "[engine] a core was built under id 0, which is no system id; it is dropped\n");
         return false;
     }
+    // Checked before the claim: the registry finds a slot by id, first match, so a second slot under a live
+    // id, released again, would free the live core's.
+    if (coreLive(id)) {
+        std::fprintf(stderr, "[engine] a core was built under id %u, which is still live; it is dropped\n", static_cast<unsigned>(id));
+        return false;
+    }
+    if (!registry_.claim(id, *core)) return false;  // pool full
     liveCores_[id] = core.get();
     parked_[id] = std::move(core);
     return true;
@@ -197,16 +219,20 @@ Engine::GraphResult Engine::setGraph(const GraphRequest& request) {
         out.errors.push_back({node, "", code, std::move(message)});
         return out;
     };
+    // The cores of plans the audio thread has handed back are freed first, so the checks below see them gone.
+    graph_->host->reclaim();
     auto doc = rp::graph::parseGraphDocument(request.document);
     if (!doc) return refuse("", "document", std::string("not a graph document: ") + doc.error().what());
 
     // The system nodes and the slots name the same systems, each node as sys-<id> with {"core": <id>}.
+    std::vector<std::pair<SystemId, const rp::graph::NodeDoc*>> systemNodes;
     std::vector<SystemId> named;
     for (const auto& n : doc->nodes) {
         if (!isSystemNodeType(n.type)) continue;
         const auto id = coreIdOf(n);
         if (!id || n.id != "sys-" + std::to_string(*id))
             return refuse(n.id, "slots", "a system node is sys-<id>, its settings {\"core\": <id>}");
+        systemNodes.emplace_back(*id, &n);
         named.push_back(*id);
     }
     std::vector<SystemId> slots = request.slots;
@@ -215,21 +241,57 @@ Engine::GraphResult Engine::setGraph(const GraphRequest& request) {
     if (std::adjacent_find(slots.begin(), slots.end()) != slots.end() || slots != named)
         return refuse("", "slots", "the slots and the document's system nodes name different systems");
 
-    auto table = std::make_shared<rp::host::SystemTable>();
-    for (const SystemId id : request.slots) {
+    // Each names a live core, and is the type that core is placed as: a node of another type would take the
+    // core, find it the wrong kind, and give it up.
+    for (const auto& [id, n] : systemNodes) {
         const auto it = liveCores_.find(id);
         if (it == liveCores_.end())
-            return refuse("sys-" + std::to_string(id), "unknown-core", "no core is built under id " + std::to_string(id));
-        table->slots.push_back(
-            {id, it->second, dynamic_cast<SameBoySystem*>(it->second), dynamic_cast<MesenNesSystem*>(it->second)});
+            return refuse(n->id, "unknown-core", "no core is built under id " + std::to_string(id));
+        const char* type = rp::host::systemNodeType(it->second->kind());
+        if (n->type != type)
+            return refuse(n->id, "core-type", "the core under id " + std::to_string(id) + " is placed as " + type +
+                                                  ", not " + n->type);
+    }
+
+    // The tap arms one of the NES's export modes (1 to 3), on one of the document's systems.
+    if (request.rearmTap && request.arm) {
+        if (request.armMode < 1 || request.armMode > 3)
+            return refuse("", "tap", "the tap arms mode 1, 2 or 3, not " + std::to_string(request.armMode));
+        if (std::find(request.slots.begin(), request.slots.end(), request.armId) == request.slots.end())
+            return refuse("", "tap", "the tap arms system " + std::to_string(request.armId) + ", which is not in the slots");
+    }
+
+    auto table = std::make_shared<rp::host::SystemTable>();
+    for (const SystemId id : request.slots) {
+        SystemBase* core = liveCores_.at(id);
+        table->slots.push_back({id, core, dynamic_cast<SameBoySystem*>(core), dynamic_cast<MesenNesSystem*>(core)});
     }
 
     rp::graph::HostCommand trailer{};
     if (request.rearmTap) {
-        const DspCommand c = syncTapCommand(request.arm, request.armId, request.armMode);
+        const DspCommand c = syncTapCommand(request.arm, request.armId, request.arm ? request.armMode : 0);
         std::memcpy(trailer.bytes, &c, sizeof c);
     }
-    const auto result = graph_->host->setGraph(*doc, std::move(table), request.rearmTap ? &trailer : nullptr);
+    // The nodes the planner makes take their cores out of parked_. If the plan is then refused (a later node
+    // fails to activate, the ring has no room for its swap), those nodes are destroyed before the host's
+    // setGraph returns, and each puts its core back (the cores lambda). A core only an older plan held, freed
+    // by a reclaim in there, was not taken here, so it is freed as usual.
+    struct InSetGraph {
+        Engine& e;
+        explicit InSetGraph(Engine& engine) : e(engine) {
+            e.takenInSetGraph_.clear();
+            e.inSetGraph_ = true;
+        }
+        ~InSetGraph() {
+            e.inSetGraph_ = false;
+            e.takenInSetGraph_.clear();
+        }
+    };
+    rp::graph::SetGraphResult result;
+    {
+        const InSetGraph window(*this);
+        result = graph_->host->setGraph(*doc, std::move(table), request.rearmTap ? &trailer : nullptr);
+    }
     for (const auto& e : result.errors) out.errors.push_back({e.nodeId, e.port, e.code, e.message});
     if (!result.ok) return out;
     out.ok = true;
@@ -271,9 +333,11 @@ void Engine::setMaxBlockFrames(std::uint32_t frames) {
 
 void Engine::setSampleRate(double sr) {
     sampleRate_ = sr;
-    // Every live core re-rated in place, in the running plan's slot order; then the plan's buffers at the new
-    // rate. Quiescent, so the running plan is the one last published.
+    // Every live core re-rated in place: the running plan's in slot order, then the parked ones a later
+    // document places; then the plan's buffers at the new rate. Quiescent, so the running plan is the one
+    // last published.
     for (const auto& e : currentTable().slots) e.core->onSampleRateChanged(sr);
+    for (const auto& [id, core] : parked_) core->onSampleRateChanged(sr);
     std::string why;
     if (!graph_->host->reactivate(sr, graph_->maxFrames, &why))
         std::fprintf(stderr, "[Engine] could not re-activate the graph at %g Hz: %s\n", sr, why.c_str());

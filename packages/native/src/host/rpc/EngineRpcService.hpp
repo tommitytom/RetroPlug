@@ -29,7 +29,7 @@ public:
     // (duplicate + reload live in the TS SystemsStore as constructSystem-with-state orchestration.)
     bool constructSystem(BackendConstructSpec spec);   // TS-owned id in spec.id; returns "did it build"
     // Build a core and park it under spec.id for the next document to place (spec.replaceId is not read):
-    // the core's facts, or null when it did not build or a core under that id is still live.
+    // the core's facts, or null when the id is 0, the core did not build, or a core under that id is still live.
     std::optional<RpcBuiltCore> buildCore(BackendConstructSpec spec);
     // Plan a document TS built (docs/modular-graph-phase-b2-design.md section 2.5).
     RpcSetGraphResult           setGraph(RpcSetGraphRequest request);

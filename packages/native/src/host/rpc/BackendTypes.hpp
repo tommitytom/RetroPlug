@@ -123,7 +123,8 @@ struct RpcBuiltCore {
 };
 
 // setGraph: a document TS built, its systems in slot order, and the NES tap re-arm its edit makes. `tap`
-// present re-arms (restore, then arm `tap.arm` if it is there); absent, the plan touches no tap.
+// present re-arms (restore, then arm `tap.arm` if it is there); absent, the plan touches no tap. An arm names
+// one of the slots and an export mode of 1 to 3, or the engine refuses the document ("tap").
 struct RpcTapArm { std::uint32_t id; std::uint32_t mode; };
 struct RpcTapRequest { std::optional<RpcTapArm> arm; };
 struct RpcSetGraphRequest {

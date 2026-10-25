@@ -68,7 +68,10 @@ struct NodeRig {
         p.erase(it);
         return core;
     }
-    static void release(void* ctx, SystemBase* core) { static_cast<NodeRig*>(ctx)->released.push_back(core->id()); }
+    static bool release(void* ctx, SystemBase* core) {
+        static_cast<NodeRig*>(ctx)->released.push_back(core->id());
+        return false;
+    }
 };
 
 }  // namespace rp::host::test

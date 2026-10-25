@@ -102,9 +102,13 @@ bool EngineRpcService::constructSystem(BackendConstructSpec spec) {
 }
 
 std::optional<RpcBuiltCore> EngineRpcService::buildCore(BackendConstructSpec spec) {
+    const SystemId id = spec.id;
+    if (id == 0) {  // the snapshot registry's free-slot id, so never a system's
+        std::fprintf(stderr, "[engine] buildCore: 0 is not a system id\n");
+        return std::nullopt;
+    }
     // A core in a plan the audio thread has already handed back is freed first, so the id check sees it gone.
     invoker_.reclaimReleased();
-    const SystemId id = spec.id;
     if (engine_.coreLive(id)) {
         std::fprintf(stderr, "[engine] buildCore: system %u is still live\n", static_cast<unsigned>(id));
         return std::nullopt;
@@ -113,12 +117,11 @@ std::optional<RpcBuiltCore> EngineRpcService::buildCore(BackendConstructSpec spe
     if (!sys) return std::nullopt;  // unknown backend / unreadable or unrecognised ROM
     if (spec.serialOutCapture.value_or(false))
         if (auto* sb = dynamic_cast<SameBoySystem*>(sys.get())) sb->setSerialOutCapture(true);
-    // Seed the snapshot slot from the just-built core, so a read right after the build works with no block run.
-    if (!engine_.registry().claim(id, *sys)) return std::nullopt;  // pool full
     RpcBuiltCore facts{rp::host::systemNodeType(sys->kind()), 0, 0};
     if (auto* nes = dynamic_cast<MesenNesSystem*>(sys.get())) facts.exportMode = nes->channelExportMode();
     if (auto* sb = dynamic_cast<SameBoySystem*>(sys.get())) facts.linkGroup = sb->config_.linkGroupId;
-    if (!engine_.parkCore(std::move(sys))) return std::nullopt;
+    // Parking claims the core's snapshot slot, seeded from it, so a read right after the build works.
+    if (!engine_.parkCore(std::move(sys))) return std::nullopt;  // the snapshot pool is full
     return facts;
 }
 

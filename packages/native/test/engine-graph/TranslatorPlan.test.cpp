@@ -70,7 +70,7 @@ struct PlanRig {
                                     rp::host::mesenPackage(), rp::host::dspPackage()})
             registry.addPackage(p);
         cores = {this, [](void* ctx, std::uint64_t token) { return static_cast<PlanRig*>(ctx)->tr->take(token); },
-                 [](void*, SystemBase*) {}};
+                 [](void*, SystemBase*) { return false; }};
         kernel = {this, [](void* ctx, std::uint32_t) { ++static_cast<PlanRig*>(ctx)->kernelRuns; }};
         rp::graph::HostConfig config;
         config.sampleRate = kRate;

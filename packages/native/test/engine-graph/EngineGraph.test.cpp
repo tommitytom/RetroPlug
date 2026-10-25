@@ -1,18 +1,25 @@
 // The engine's side of graphs TS builds (docs/modular-graph-phase-b2-design.md section 2.5): a built core parks
 // under its id until a document's system node takes it, a document's system nodes and its slots must name the
-// same systems, the system table follows the slots, the tap re-arm rides the swap, and a core no published
-// document placed is freed. Driven on a quiescent Engine, so every plan applies as it is published.
+// same systems, the tap re-arm rides the swap, a refused document leaves its cores parked, and a core no
+// published document placed is freed. Driven on a quiescent Engine, so every plan applies as it is published,
+// except where a test owns the drain itself.
 //
 // Run via `pnpm test:plugin engine-graph`.
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "NodeRig.hpp"
+#include "host/engine/DspCommand.hpp"
 #include "host/engine/Engine.hpp"
+#include "host/engine/EngineInvoker.hpp"
+#include "host/rpc/EngineRpcService.hpp"
+#include "system/CoreBackends.hpp"
+#include "system/SystemFactory.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
@@ -38,12 +45,6 @@ std::unique_ptr<SystemBase> bliptoaster(SystemId id) {
     auto s = std::make_unique<MesenNesSystem>(id, cfg, readFile(RP_BLIPTOASTER_ROM_PATH));
     s->onActivate(kRate);
     return s;
-}
-
-// Build a core, claim its snapshot slot and park it, as buildCore does.
-bool park(Engine& e, std::unique_ptr<SystemBase> core) {
-    if (!e.registry().claim(core->id(), *core)) return false;
-    return e.parkCore(std::move(core));
 }
 
 struct Sys {
@@ -90,45 +91,66 @@ Engine::GraphRequest request(const std::vector<Sys>& systems) {
     return r;
 }
 
+// `r`, re-arming the tap to `mode` on `id`.
+Engine::GraphRequest arming(Engine::GraphRequest r, SystemId id, std::uint32_t mode) {
+    r.rearmTap = true;
+    r.arm = true;
+    r.armId = id;
+    r.armMode = mode;
+    return r;
+}
+
 const char* const kGb = "rp.sameboy.gb";
 const char* const kNes = "rp.mesen.nes";
 
 }  // namespace
 
-TEST_CASE("a parked core is placed by the document that names it, in slot order", "[engine-graph][b2]") {
+TEST_CASE("a parked core is placed by the document that names it", "[engine-graph][b2]") {
     Engine e(kRate);
-    REQUIRE(park(e, mgb(1)));
-    REQUIRE(park(e, mgb(2)));
+    REQUIRE(e.parkCore(mgb(1)));
+    REQUIRE(e.parkCore(mgb(2)));
     auto r = request({{2, kGb}, {1, kGb}});
+    // Four host channels, so the width read back is this document's, not the stereo pair of the first plan.
+    const std::string stereo = R"("buses":[1,1])";
+    r.document.replace(r.document.find(stereo), stereo.size(), R"("buses":[1,1,1,1])");
     const auto result = e.setGraph(r);
     REQUIRE(result.ok);
     CHECK(e.systemCount() == 2);
     CHECK(e.findSystem(1) != nullptr);
     CHECK(e.findSystem(2) != nullptr);
     CHECK(e.coreLive(1));
+    CHECK(e.hostWidth() == 4);
     // Rendering runs the plan: the table the tail walks is the slots'.
-    std::vector<float> l(256), rr(256);
-    e.processBlock(256, l.data(), rr.data());
-    CHECK(e.hostWidth() == 2);
+    std::vector<float> lanes(4 * 256);
+    float* outs[4] = {&lanes[0], &lanes[256], &lanes[512], &lanes[768]};
+    e.processBlock(256, outs, 4);
 }
 
 TEST_CASE("a core under an id still live is refused", "[engine-graph][b2]") {
     Engine e(kRate);
-    REQUIRE(park(e, mgb(1)));
-    CHECK_FALSE(e.parkCore(mgb(1)));  // parked
+    REQUIRE(e.parkCore(mgb(1)));
+    const std::size_t ram = e.ramSize(1);
+    REQUIRE(ram > 0);
+    // The live core keeps its snapshot slot: a refused park never touches the registry. A refused NES, its
+    // work RAM a quarter of the Game Boy's, would show if its slot answered in place of the live core's.
+    CHECK_FALSE(e.parkCore(bliptoaster(1)));  // parked
+    CHECK(e.ramSize(1) == ram);
+    CHECK_FALSE(e.parkCore(mgb(1)));
+    CHECK(e.ramSize(1) == ram);
     REQUIRE(e.setGraph(request({{1, kGb}})).ok);
-    CHECK_FALSE(e.parkCore(mgb(1)));  // held by a node
+    CHECK_FALSE(e.parkCore(bliptoaster(1)));  // held by a node
+    CHECK(e.ramSize(1) == ram);
     // Once a document drops it and the plan that ran it is reclaimed, the id is free again.
     REQUIRE(e.setGraph(request({})).ok);
     e.reclaim();
     CHECK_FALSE(e.coreLive(1));
-    CHECK(park(e, mgb(1)));
+    CHECK(e.parkCore(mgb(1)));
 }
 
 TEST_CASE("the slots and the system nodes must name the same systems", "[engine-graph][b2]") {
     Engine e(kRate);
-    REQUIRE(park(e, mgb(1)));
-    REQUIRE(park(e, mgb(2)));
+    REQUIRE(e.parkCore(mgb(1)));
+    REQUIRE(e.parkCore(mgb(2)));
 
     auto missing = request({{1, kGb}, {2, kGb}});
     missing.slots = {1};
@@ -159,20 +181,21 @@ TEST_CASE("the slots and the system nodes must name the same systems", "[engine-
 
 TEST_CASE("a published document frees every parked core it does not place", "[engine-graph][b2]") {
     Engine e(kRate);
-    REQUIRE(park(e, mgb(1)));
-    REQUIRE(park(e, mgb(2)));
+    REQUIRE(e.parkCore(mgb(1)));
+    REQUIRE(e.parkCore(mgb(2)));
     REQUIRE(e.setGraph(request({{1, kGb}})).ok);
     CHECK(e.coreLive(1));
     CHECK_FALSE(e.coreLive(2));
     // Its snapshot slot went with it, so the id builds again.
-    CHECK(park(e, mgb(2)));
+    CHECK(e.ramSize(2) == 0);
+    CHECK(e.parkCore(mgb(2)));
 }
 
 TEST_CASE("a refused document leaves the running plan and the parked cores alone", "[engine-graph][b2]") {
     Engine e(kRate);
-    REQUIRE(park(e, mgb(1)));
+    REQUIRE(e.parkCore(mgb(1)));
     REQUIRE(e.setGraph(request({{1, kGb}})).ok);
-    REQUIRE(park(e, mgb(2)));
+    REQUIRE(e.parkCore(mgb(2)));
     auto bad = request({{1, kGb}, {2, kGb}});
     bad.document.replace(bad.document.find("rp.core.add"), 11, "rp.core.nope");
     CHECK_FALSE(e.setGraph(bad).ok);
@@ -182,16 +205,11 @@ TEST_CASE("a refused document leaves the running plan and the parked cores alone
 
 TEST_CASE("the tap re-arm rides the swap: restore, then arm", "[engine-graph][b2]") {
     Engine e(kRate);
-    REQUIRE(park(e, bliptoaster(1)));
+    REQUIRE(e.parkCore(bliptoaster(1)));
     auto* nes = dynamic_cast<MesenNesSystem*>(e.findSystem(1));
     CHECK(nes == nullptr);  // parked, not yet placed
 
-    auto armPins = request({{1, kNes}});
-    armPins.rearmTap = true;
-    armPins.arm = true;
-    armPins.armId = 1;
-    armPins.armMode = 1;
-    REQUIRE(e.setGraph(armPins).ok);
+    REQUIRE(e.setGraph(arming(request({{1, kNes}}), 1, 1)).ok);
     nes = dynamic_cast<MesenNesSystem*>(e.findSystem(1));
     REQUIRE(nes != nullptr);
     CHECK(nes->channelExportMode() == 1);
@@ -207,11 +225,7 @@ TEST_CASE("the tap re-arm rides the swap: restore, then arm", "[engine-graph][b2
     CHECK(nes->channelExportMode() == 0);
 
     // Channels, then a re-arm to the same mode, which restores and arms again.
-    auto armChannels = request({{1, kNes}});
-    armChannels.rearmTap = true;
-    armChannels.arm = true;
-    armChannels.armId = 1;
-    armChannels.armMode = 3;
+    const auto armChannels = arming(request({{1, kNes}}), 1, 3);
     REQUIRE(e.setGraph(armChannels).ok);
     CHECK(nes->channelExportMode() == 3);
     REQUIRE(e.setGraph(armChannels).ok);
@@ -224,9 +238,130 @@ TEST_CASE("a sample-rate change re-rates the running plan's cores", "[engine-gra
     Engine e(kRate);
     auto core = mgb(1);
     auto* raw = static_cast<SameBoySystem*>(core.get());
-    REQUIRE(park(e, std::move(core)));
+    REQUIRE(e.parkCore(std::move(core)));
     REQUIRE(e.setGraph(request({{1, kGb}})).ok);
     REQUIRE(raw->sampleRate_ == kRate);
     e.setSampleRate(44100.0);
     CHECK(raw->sampleRate_ == 44100.0);
+}
+
+TEST_CASE("a parked core follows a sample-rate change", "[engine-graph][b2]") {
+    Engine e(kRate);
+    auto core = mgb(1);
+    auto* raw = static_cast<SameBoySystem*>(core.get());
+    REQUIRE(e.parkCore(std::move(core)));
+    e.setSampleRate(44100.0);
+    CHECK(raw->sampleRate_ == 44100.0);
+}
+
+TEST_CASE("a document refused after its nodes took their cores leaves them parked", "[engine-graph][b2]") {
+    Engine e(kRate);
+    REQUIRE(e.parkCore(mgb(1)));
+    // The test thread is the audio thread from here: a push only queues, so the ring fills, and the plan's
+    // swap finds no room after its node took core 1.
+    e.setAudioThreadOwns(true);
+    DspCommand bpm;
+    bpm.kind = DspCommand::Kind::SetBpm;
+    bpm.setBpm = {120.0};
+    while (e.pushCommand(bpm)) {
+    }
+    const auto refused = e.setGraph(request({{1, kGb}}));
+    CHECK_FALSE(refused.ok);
+    REQUIRE(refused.errors.size() == 1);
+    CHECK(refused.errors[0].code == "busy");
+    CHECK(e.coreLive(1));
+    CHECK(e.ramSize(1) > 0);
+
+    // With the ring drained, the same document places it.
+    e.drainCommands();
+    REQUIRE(e.setGraph(request({{1, kGb}})).ok);
+    e.drainCommands();
+    CHECK(e.findSystem(1) != nullptr);
+    e.setAudioThreadOwns(false);
+}
+
+TEST_CASE("a system node of another type than its core is refused before anything is built", "[engine-graph][b2]") {
+    Engine e(kRate);
+    REQUIRE(e.parkCore(mgb(1)));
+    const auto result = e.setGraph(request({{1, kNes}}));
+    CHECK_FALSE(result.ok);
+    REQUIRE(result.errors.size() == 1);
+    CHECK(result.errors[0].code == "core-type");
+    CHECK(result.errors[0].nodeId == "sys-1");
+    CHECK(e.coreLive(1));
+    REQUIRE(e.setGraph(request({{1, kGb}})).ok);
+    CHECK(e.findSystem(1) != nullptr);
+}
+
+TEST_CASE("bad tap requests are refused", "[engine-graph][b2]") {
+    Engine e(kRate);
+    REQUIRE(e.parkCore(bliptoaster(1)));
+    // 257 is mode 1 once narrowed to the command's byte.
+    for (const std::uint32_t mode : {0u, 4u, 7u, 257u}) {
+        const auto result = e.setGraph(arming(request({{1, kNes}}), 1, mode));
+        CHECK_FALSE(result.ok);
+        REQUIRE(result.errors.size() == 1);
+        CHECK(result.errors[0].code == "tap");
+    }
+    CHECK(e.setGraph(arming(request({{1, kNes}}), 2, 1)).errors.at(0).code == "tap");  // not in the slots
+    CHECK(e.systemCount() == 0);
+    CHECK(e.coreLive(1));
+}
+
+TEST_CASE("an id above INT32_MAX is read whole, one above UINT32_MAX is refused", "[engine-graph][b2]") {
+    Engine e(kRate);
+    constexpr SystemId kHigh = 3000000000u;
+    REQUIRE(e.parkCore(mgb(kHigh)));
+    REQUIRE(e.setGraph(request({{kHigh, kGb}})).ok);
+    CHECK(e.findSystem(kHigh) != nullptr);
+
+    auto over = request({});
+    over.document = R"({"nodes":[{"id":"sys-4294967296","type":"rp.sameboy.gb","settings":{"core":4294967296}}],"wires":[]})";
+    CHECK(e.setGraph(over).errors.at(0).code == "slots");
+}
+
+TEST_CASE("an audio-out with no buses of its own is its default eight channels wide", "[engine-graph][b2]") {
+    Engine e(kRate);
+    REQUIRE(e.parkCore(mgb(1)));
+    auto r = request({{1, kGb}});
+    r.document = R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":{"core":1}},)"
+                 R"({"id":"out","type":"rp.host.audio-out"}],"wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})";
+    REQUIRE(e.setGraph(r).ok);
+    CHECK(e.hostWidth() == 8);
+}
+
+TEST_CASE("buildCore and setGraph over the RPC layer", "[engine-graph][b2]") {
+    Engine           e(kRate);
+    SystemFactory    factory;
+    registerCoreBackends(factory);
+    QueuedInvoker    invoker(e);
+    EngineRpcService rpc(e, factory, invoker);
+
+    BackendConstructSpec spec{};
+    spec.id = 5;
+    spec.romPath = "";
+    spec.embeddedRom = "mgb";
+    spec.platform = "gb";
+    spec.core = "sameboy";
+    spec.settings = R"({"linkGroupId":3})";
+    const auto built = rpc.buildCore(spec);
+    REQUIRE(built.has_value());
+    CHECK(built->type == "rp.sameboy.gb");
+    CHECK(built->exportMode == 0);
+    CHECK(built->linkGroup == 3);
+    CHECK(e.coreLive(5));
+    CHECK(e.ramSize(5) > 0);
+    CHECK_FALSE(rpc.buildCore(spec).has_value());  // still live
+    CHECK(e.ramSize(5) > 0);
+
+    // 0 is the snapshot registry's free-slot id.
+    spec.id = 0;
+    CHECK_FALSE(rpc.buildCore(spec).has_value());
+    CHECK_FALSE(e.coreLive(0));
+
+    RpcSetGraphRequest graph{stereoDoc({{5, kGb}}), {5}, std::nullopt};
+    const auto placed = rpc.setGraph(graph);
+    CHECK(placed.ok);
+    CHECK(placed.errors.empty());
+    CHECK(e.findSystem(5) != nullptr);
 }
