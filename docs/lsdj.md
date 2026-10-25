@@ -56,14 +56,18 @@ if (!be.fileExists(LSDJ)) skip(`LSDj ROM not found at ${LSDJ}`);
 const graph = directGraph();                             // builds, places and wires this file's systems
 const audio = createAudioDriver(graph.graph);            // renders through the graph that places them
 
-graph.add({ romPath: LSDJ, platform: "gb", core: "sameboy",
-            embeddedRom: "", savPath: null, statePath: null, sramBytes: sav }, 1);
-graph.applyRoleConfig(1, "sameboy", { linkGroupId: 1 }); // link-cable group: the graph wires the cable
+const spec = { romPath: LSDJ, platform: "gb", core: "sameboy",
+               embeddedRom: "", savPath: null, statePath: null, sramBytes: sav } as const;
+graph.add(spec, 1);                                      // the leader
+graph.add(spec, 2);                                      // the follower: the same SYNC=LSDJ song
+graph.applyRoleConfig(1, "sameboy", { linkGroupId: 1 }); // link group 1: a group of one is no cable yet
+graph.applyRoleConfig(2, "sameboy", { linkGroupId: 1 }); // the second member: the graph wires the cable
 
 audio.renderAudio(6000);                                 // MILLISECONDS of emulated audio, not frames
-audio.pressButton(1, 7 /* Start */, true);
+audio.pressButton(1, 7 /* Start */, true);               // START on the leader only
 audio.renderAudio(120);
 audio.pressButton(1, 7, false);
+const [leader, follower] = audio.renderAudioPerSystem(4000); // slot order; the follower plays only if synced
 ```
 
 Two things to get right, both of which have cost this suite a 10x factor:

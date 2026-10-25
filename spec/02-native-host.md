@@ -193,7 +193,7 @@ DTO worth spelling out — it mirrors the TS `ConstructSpec`:
 | `core` | `optional<string>` | `"sameboy"` / `"mesen"` — the factory registry key |
 | `savPath` / `statePath` | `optional<string>` | on-disk seed paths |
 | `sramBytes` / `stateBytes` | `optional<Bytestring>` | zip-import seed bytes (win over the on-disk paths) |
-| `romBytes` | `optional<Bytestring>` | ROM bytes to load instead of reading `romPath` (a patched image, e.g. LSDj asset overrides; SameBoy only), `romPath` still travelling for the watcher and `.sav` resolution |
+| `romBytes` | `optional<Bytestring>` | ROM bytes to load instead of reading `romPath` (a patched image, e.g. LSDj asset overrides; honoured by SameBoy and by Mesen's NES, GBA and SMS / Game Gear), `romPath` still travelling for the watcher and `.sav` resolution |
 | `settings` | `optional<string>` | the backend "system"-role config JSON, decoded only by the matching backend |
 | `serialOutCapture` | `optional<bool>` | arm a Game Boy's serial-out capture (LSDj MI.OUT) before its first block; ignored by every other core |
 

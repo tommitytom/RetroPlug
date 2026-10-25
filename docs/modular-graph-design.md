@@ -589,9 +589,9 @@ TS sends the **whole document** on every change with one RPC call, `setGraph(doc
 keep planning deterministic, and the planner diffs against the running graph by node id. Today's projects
 are tens of nodes; the long-term goal is user-built synths of thousands, which §12 measures (at about 1,000
 nodes a one-node edit parses and plans in about 9 to 13 ms) and says where the time goes. A patch form of
-`setGraph`, applied to native's stored copy of the last document, would save the transfer and the parse
-(about 10 ms at 10,000 nodes, 4 to 7 percent of an edit) but not the planning, which is where the time goes.
-Live params never send a document.
+`setGraph`, applied to native's stored copy of the last document, would save the transfer and the native
+parse (about 10 ms at 10,000 nodes) and, with the TS side keeping each node's checked canonical text, most of
+`toGraphJson` (about 105 ms at that size, §12), but not the planning. Live params never send a document.
 
 `setGraph` returns `{ ok, errors[], layouts }`. Each error is `{ nodeId, port?, code, message }`;
 `layouts` are each instance's ports and params as its settings resolve them, so TS can show and check
@@ -1186,12 +1186,13 @@ here so it is not lost.
      within a plan and never across plans: about 2 ms (under 1%) of the fan's edit, about 7 ms when its pages
      are new, and next to nothing in the chain, which needs only a couple. That is at the bench's 1,024-frame
      blocks (4 KB buffers). The engine plans at 8,192 frames (32 KB): with the same timers allocating buffers
-     that size, the fan's edit spends about 10 ms on them, and about 50 ms when the pages are new (the first
-     plan that needs them, or after the allocator handed them back), so in the engine they rank ahead of the
-     parse, and on new pages ahead of everything but `order()` and `structure()`. Pooling them across plans
-     removes it.
+     that size, the fan's edit spends about 10 ms on them, level with the parse, and about 50 ms when the
+     pages are new (the first plan that needs them, or after the allocator handed them back). Then they are
+     the largest part of `assignOutputs` (item 3), behind only `order()` and `structure()` with
+     `reconcile()`. Pooling them across plans removes it.
   5. **The document parse.** About 10 to 11 ms at 10,000 nodes: 7% of the chain's edit, 4% of the fan's. A
-     patch form of `setGraph` would save it and the transfer, and none of the planning.
+     patch form of `setGraph` would save it and the transfer and, with the TS side keeping each node's
+     checked canonical text, most of `toGraphJson` (below), but none of the planning.
 
   The table is the planner alone: not `Engine::setGraph`'s own work (the slot and system-node checks, the
   system table, freeing parked cores), and not TS. On the TS side `EngineGraph` sends what `buildGraph` and
@@ -1199,7 +1200,9 @@ here so it is not lost.
   those cost about 7 ms and 105 ms under QuickJS (medians of 7, a one-off script run by `retroplug-cli`, not
   committed): `toGraphJson`'s checks about 40 ms and its canonical JSON about 59 ms, where a plain
   `JSON.stringify` of the same document takes about 9 ms. So at that size the TS side costs about what the
-  chain's native plan does, plus the RPC hop, and `toGraphJson` is a cost of its own. The bench's nodes
+  chain's native plan does, plus the RPC hop, and `toGraphJson` is a cost of its own. `EngineGraph` pays it
+  on every publish, even one its dedupe then skips: it builds and serialises the whole document before
+  comparing it with the last one that planned (`engineGraph.ts`). The bench's nodes
   have two-key settings, no params, no control, event or feedback wires and no coupled groups; real nodes
   with bigger layouts pay more per node in the JSON round trips. None of this is needed at today's sizes;
   it is recorded here so the graph-editing project starts from it.
