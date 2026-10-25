@@ -41,12 +41,21 @@ struct FeedbackCopy {
     rp_control_queue* frontControl = nullptr;
 };
 
+// An output queue, emptied after every block once what it dropped is published: the queue's `dropped` count is
+// added to `drops`, its producing instance's counter, and to the plan's total, then starts again from 0. `drops` is
+// null for the scratch queue unconnected outputs share, whose drops lose nothing a reader would have seen.
+struct OutputQueue {
+    rp_queue*                   queue = nullptr;
+    std::atomic<std::uint32_t>* drops = nullptr;  // written only by the thread running the block
+};
+
 struct PlanView {
     std::span<PlanStep>                steps;
-    std::span<rp_queue* const>         queuesToClear;   // every output queue, emptied after the block
+    std::span<const OutputQueue>       queuesToClear;   // every output queue, emptied after the block
     std::span<rp_control_queue* const> controlsToRoll;  // every control output + param stream
     std::span<const FeedbackCopy>      feedback;
     std::atomic<std::uint32_t>*        faults = nullptr;  // bumped once per node that faults
+    std::atomic<std::uint32_t>*        drops = nullptr;   // bumped by every message a full output queue drops
 };
 
 }  // namespace rp::graph

@@ -36,6 +36,7 @@ struct PlanInput {
     std::uint32_t                                                maxFrames = 1024;
     Target                                                       target = Target::Desktop;
     std::atomic<std::uint32_t>*                                  faults = nullptr;
+    std::atomic<std::uint32_t>*                                  drops = nullptr;
     // True when no audio thread is running the current plan, so the planner may read buffers it uses.
     bool                                                         quiescent = true;
 };

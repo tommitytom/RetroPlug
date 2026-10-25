@@ -24,8 +24,9 @@
 //   using Settings = SomeNamedStruct;                     reflect-cpp-readable, in a NAMED namespace (its
 //                                                         JSON Schema $defs key comes from the type name)
 //   static std::optional<std::string> validate(const Settings&);      reject settings with a reason
-//   static void adjust_layout(rp::graph::Layout&, const Settings&);   patch reflected specs, append ports
-//                                                         or params; never remove or reorder reflected ones
+//   static void adjust_layout(rp::graph::Layout&, const Settings&);   patch reflected specs (a queue's capacity
+//                                                         among them), append ports or params; never remove or
+//                                                         reorder reflected ones
 //   static bool needs_rebuild(const Settings& from, const Settings& to);
 //   static std::size_t extra_memory(const Settings&);     host-supplied tail memory (max_align_t aligned)
 //   void attach(std::span<std::byte>) noexcept;           receives it, at create
@@ -133,19 +134,36 @@ struct audio_out {
     float* operator[](std::uint32_t c) const { return channels[c]; }
 };
 
-template <graph::PortKind Kind>
+// An events or bytes port's queue capacity (graph::QueueCapacity): the most messages, and payload bytes, one block
+// carries. A part left 0 takes the default (graph::kDefaultQueueMessages / kDefaultQueueBytes). It rides on the
+// port's type, rp::bytes_out::sized<rp::capacity{.bytes = 65536}>, or adjust_layout sets it from settings. A wire
+// carries its source's queue, so an output's capacity is what bounds a wire; an input's is in its descriptor only.
+struct capacity {
+    std::uint32_t messages = 0;
+    std::uint32_t bytes = 0;
+};
+
+template <graph::PortKind Kind, capacity C = capacity{}>
 struct queue_in {
-    static constexpr auto rp_kind = Kind;
-    static constexpr auto rp_dir  = graph::PortDir::In;
+    static_assert(C.messages <= graph::kMaxQueueMessages && C.bytes <= graph::kMaxQueueBytes,
+                  "a queue capacity is at most graph::kMaxQueueMessages messages and graph::kMaxQueueBytes bytes");
+    static constexpr auto     rp_kind = Kind;
+    static constexpr auto     rp_dir  = graph::PortDir::In;
+    static constexpr capacity rp_capacity = C;
+    template <capacity N> using sized = queue_in<Kind, N>;
     const rp_queue* queue = nullptr;
     std::span<const rp_message> messages() const { return {queue->items, queue->count}; }
     std::span<const std::uint8_t> data(const rp_message& m) const { return graph::messageData(*queue, m); }
 };
 
-template <graph::PortKind Kind>
+template <graph::PortKind Kind, capacity C = capacity{}>
 struct queue_out {
-    static constexpr auto rp_kind = Kind;
-    static constexpr auto rp_dir  = graph::PortDir::Out;
+    static_assert(C.messages <= graph::kMaxQueueMessages && C.bytes <= graph::kMaxQueueBytes,
+                  "a queue capacity is at most graph::kMaxQueueMessages messages and graph::kMaxQueueBytes bytes");
+    static constexpr auto     rp_kind = Kind;
+    static constexpr auto     rp_dir  = graph::PortDir::Out;
+    static constexpr capacity rp_capacity = C;
+    template <capacity N> using sized = queue_out<Kind, N>;
     rp_queue* queue = nullptr;
     bool push(std::uint32_t frame, std::span<const std::uint8_t> data, std::uint32_t flags = 0) const {
         return graph::pushMessage(*queue, frame, data, flags);
@@ -376,6 +394,10 @@ graph::PortDesc portDesc() {
     if constexpr (requires { typename P::rp_channels; }) d.channels = ChannelSpecOf<typename P::rp_channels>::get();
     if constexpr (requires { P::rp_resource_type(); }) d.resourceType = std::string(P::rp_resource_type());
     if constexpr (requires { P::rp_write; }) d.write = P::rp_write;
+    if constexpr (requires { P::rp_capacity; }) {
+        if constexpr (P::rp_capacity.messages != 0) d.capacity.messages = P::rp_capacity.messages;
+        if constexpr (P::rp_capacity.bytes != 0) d.capacity.bytes = P::rp_capacity.bytes;
+    }
     return d;
 }
 
@@ -451,6 +473,9 @@ graph::Layout layoutFor([[maybe_unused]] const typename SettingsOf<T>::type& set
     std::stable_partition(l.ports.begin(), l.ports.end(),
                           [](const graph::PortDesc& p) { return p.dir != graph::PortDir::Out; });
     checkReflectedPrefix(reflected, l);
+    // A capacity adjust_layout set from settings is refused here, so it is the settings that are invalid.
+    for (const auto& p : l.ports)
+        if (auto why = graph::checkCapacity(p)) throw std::invalid_argument(*why);
     return l;
 }
 

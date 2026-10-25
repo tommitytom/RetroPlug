@@ -1,5 +1,6 @@
 // The executor alone, over nodes written directly against the C ABI (no authoring layer, no planner): a
-// hand-built PlanView proves the block walk, coupled-group lockstep, feedback and fault bypass.
+// hand-built PlanView proves the block walk, coupled-group lockstep, feedback, fault bypass and how a full
+// queue's drops are published.
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -269,7 +270,7 @@ TEST_CASE("feedback moves one block on; output queues and control streams reset"
     copy.kind = RP_PORT_EVENTS;
     copy.backQueue = &back;
     copy.frontQueue = &front;
-    rp_queue* clear[] = {&back};
+    OutputQueue clear[] = {{&back, nullptr}};
     rp_control_queue* roll[] = {&control};
     PlanView view;
     view.feedback = std::span<const FeedbackCopy>(&copy, 1);
@@ -359,4 +360,33 @@ TEST_CASE("queues drop, and count, what does not fit", "[graph][executor]") {
     CHECK(q.items[1].frame == 0);
     CHECK_FALSE(pushMessage(q, 3, std::span<const std::uint8_t>()));  // items full
     CHECK(q.dropped == 2);
+}
+
+TEST_CASE("a full output queue's drops are published to its producer and the plan, then counted afresh",
+          "[graph][executor]") {
+    rp_message items[1]{}, scratchItems[1]{};
+    std::uint8_t bytes[4]{}, scratchBytes[4]{};
+    rp_queue out{items, 0, 1, bytes, 0, 4, 0};
+    rp_queue scratch{scratchItems, 0, 1, scratchBytes, 0, 4, 0};
+    std::atomic<std::uint32_t> producer{0}, total{0};
+    // The scratch queue unconnected outputs share has no counter: what it drops, nothing would have read.
+    OutputQueue clear[] = {{&out, &producer}, {&scratch, nullptr}};
+    PlanView view;
+    view.queuesToClear = clear;
+    view.drops = &total;
+
+    const std::uint8_t note[] = {0x90, 60, 100};
+    for (int i = 0; i < 3; ++i) pushMessage(out, 0, note);
+    for (int i = 0; i < 2; ++i) pushMessage(scratch, 0, note);
+    runBlock(view, 16, kTransport);
+    CHECK(producer.load() == 2);
+    CHECK(total.load() == 2);
+    CHECK(out.dropped == 0);  // published, so the next block's count starts from nothing
+    CHECK(out.count == 0);
+    CHECK(scratch.dropped == 0);
+
+    for (int i = 0; i < 2; ++i) pushMessage(out, 0, note);
+    runBlock(view, 16, kTransport);
+    CHECK(producer.load() == 3);
+    CHECK(total.load() == 3);
 }

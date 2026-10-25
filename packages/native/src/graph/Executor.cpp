@@ -113,6 +113,18 @@ void moveFeedback(const FeedbackCopy& f, std::uint32_t frames) {
     }
 }
 
+// A queue's `dropped` is written by whoever pushes and read here, both on the thread running the block; what it
+// counted moves into atomics the control thread may read, and the queue's own count starts again.
+void publishDrops(const PlanView& plan, const OutputQueue& o) {
+    rp_queue& q = *o.queue;
+    if (q.dropped == 0) return;
+    if (o.drops) {
+        o.drops->fetch_add(q.dropped, std::memory_order_relaxed);
+        if (plan.drops) plan.drops->fetch_add(q.dropped, std::memory_order_relaxed);
+    }
+    q.dropped = 0;
+}
+
 }  // namespace
 
 void runBlock(const PlanView& plan, std::uint32_t frames, const rp_transport& transport) {
@@ -133,7 +145,10 @@ void runBlock(const PlanView& plan, std::uint32_t frames, const rp_transport& tr
         }
     }
     for (const auto& f : plan.feedback) moveFeedback(f, frames);
-    for (rp_queue* q : plan.queuesToClear) clearQueue(*q);
+    for (const OutputQueue& o : plan.queuesToClear) {
+        publishDrops(plan, o);
+        clearQueue(*o.queue);
+    }
     for (rp_control_queue* c : plan.controlsToRoll) rollControl(*c);
 }
 

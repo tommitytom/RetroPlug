@@ -130,3 +130,56 @@ TEST_CASE("a descriptor's requires flags are exact", "[graph][descriptor]") {
     CHECK(d->name == "x");
     CHECK(d->settingsSchema == R"({"type":"object"})");
 }
+
+namespace {
+std::string capacityReason(const char* kind, const char* capacity) {
+    return layoutReason(
+        (std::string(R"({"ports":[{"id":"q","dir":"out","kind":")") + kind + R"(","capacity":)" + capacity + "}]}").c_str());
+}
+}  // namespace
+
+TEST_CASE("an events or bytes port may declare its queue capacity, either part, up to the caps", "[graph][descriptor]") {
+    const auto l = parseLayout(R"({"ports":[{"id":"m","dir":"in","kind":"events","capacity":{"messages":2}},)"
+                               R"({"id":"s","dir":"out","kind":"bytes","capacity":{"messages":4,"bytes":65536}},)"
+                               R"({"id":"b","dir":"out","kind":"bytes","capacity":{"bytes":1}},)"
+                               R"({"id":"d","dir":"out","kind":"events"}]})");
+    REQUIRE(l);
+    CHECK(l->ports[0].capacity.messageCount() == 2);
+    CHECK(l->ports[0].capacity.byteCount() == kDefaultQueueBytes);  // the part left undeclared
+    CHECK(l->ports[1].capacity.byteCount() == 65536);
+    CHECK(l->ports[2].capacity.messageCount() == kDefaultQueueMessages);
+    CHECK_FALSE(l->ports[3].capacity.messages);
+    CHECK(l->ports[3].capacity.messageCount() == 256);  // today's numbers
+    CHECK(l->ports[3].capacity.byteCount() == 4096);
+    // Spelt back as declared: a part is written only when it was given, so an undeclared port writes nothing.
+    CHECK(parseLayout(layoutJson(*l)));
+    CHECK(layoutJson(*parseLayout(layoutJson(*l))) == layoutJson(*l));
+    CHECK(layoutJson(*l).find(R"({"capacity":{"bytes":65536,"messages":4},"dir":"out","id":"s","kind":"bytes"})") != std::string::npos);
+    CHECK(layoutJson(*l).find(R"({"dir":"out","id":"d","kind":"events"})") != std::string::npos);
+    CHECK(capacityReason("events", R"({"messages":1048576,"bytes":16777216})") == "parsed");  // the caps themselves
+}
+
+TEST_CASE("a queue capacity is refused past its cap, empty, fractional, misspelt or on another kind", "[graph][descriptor]") {
+    CHECK(capacityReason("events", R"({"messages":1048577})") ==
+          R"(port "q": "capacity.messages" must be a whole number from 1 to 1048576)");
+    CHECK(capacityReason("bytes", R"({"bytes":16777217})") ==
+          R"(port "q": "capacity.bytes" must be a whole number from 1 to 16777216)");
+    CHECK(capacityReason("events", R"({"messages":0})").find("from 1 to 1048576") != std::string::npos);
+    CHECK(capacityReason("events", R"({"messages":2.5})").find("whole number") != std::string::npos);
+    CHECK(capacityReason("events", R"({"messages":"2"})").find("whole number") != std::string::npos);
+    CHECK(capacityReason("events", R"({"bytes":-1})").find("from 1 to 16777216") != std::string::npos);
+    CHECK(capacityReason("events", "{}") == R"(port "q": "capacity" needs "messages", "bytes" or both)");
+    CHECK(capacityReason("events", "8") == R"(port "q": "capacity" must be an object)");
+    CHECK(capacityReason("events", R"({"mesages":2})") == R"(port "q" capacity: unknown field "mesages")");
+    CHECK(capacityReason("control", R"({"messages":2})") == R"(port "q": only events and bytes ports have "capacity")");
+    CHECK(layoutReason(R"({"ports":[{"id":"a","dir":"in","kind":"audio","channels":{"any":true},"capacity":{"messages":2}}]})") ==
+          R"(port "a": only events and bytes ports have "capacity")");
+    // The C++ layer asks the same of a layout it builds, so a capacity adjust_layout set is checked like a parsed one.
+    PortDesc p{"q", PortDir::Out, PortKind::Events, {}, {}, false};
+    CHECK_FALSE(checkCapacity(p));
+    p.capacity.messages = kMaxQueueMessages + 1;
+    CHECK(checkCapacity(p) == std::optional<std::string>(R"(port "q": "capacity.messages" must be a whole number from 1 to 1048576)"));
+    p.capacity.messages = 2;
+    p.kind = PortKind::Audio;
+    CHECK(checkCapacity(p) == std::optional<std::string>(R"(port "q": only events and bytes ports have "capacity")"));
+}

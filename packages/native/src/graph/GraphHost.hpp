@@ -130,6 +130,13 @@ public:
     std::uint32_t faultCount() const { return faults_.load(std::memory_order_relaxed); }
     // Has this node faulted (and so been bypassed since)? False for an unknown id.
     bool          isFaulted(std::string_view id) const;
+    // Messages dropped so far because an output queue was full (each holds what its port declares, the
+    // defaults otherwise), as published by the thread that runs blocks at the end of each one: the queues'
+    // own counts are only ever touched there. An unconnected output's are not counted, since nothing reads
+    // it. reclaim() names each node still in the graph the first time its outputs drop.
+    std::uint32_t droppedMessages() const { return drops_.load(std::memory_order_relaxed); }
+    // The same for one node's outputs, over the life of its instance; 0 for an unknown id.
+    std::uint32_t droppedMessages(std::string_view id) const;
     std::size_t   instanceCount() const { return live_.size(); }
     // Replaced plans the audio thread could not hand back (the release ring was full) and so leaked
     // rather than free on its own thread. Cannot happen while released_ is twice the command ring: setGraph
@@ -196,9 +203,11 @@ private:
     HostCommandHandler                                    hostHandler_ = nullptr;
     void*                                                 hostHandlerCtx_ = nullptr;
     std::atomic<std::uint32_t>                            faults_{0};
+    std::atomic<std::uint32_t>                            drops_{0};
     std::atomic<std::uint32_t>                            leakedPlans_{0};
     std::uint32_t                                         leaksReported_ = 0;  // control side
     std::uint32_t                                         faultsReported_ = 0; // control side
+    std::uint32_t                                         dropsReported_ = 0;  // control side
     PlanStorage*                                          current_ = nullptr;  // audio side
     GraphDocument                                         document_;           // control side: last published
     std::shared_ptr<const void>                           hostData_;           // control side: its host data

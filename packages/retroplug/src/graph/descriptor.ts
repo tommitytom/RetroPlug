@@ -33,6 +33,17 @@ export type ChannelSpec =
   | { match: string; any?: never; count?: never; layout?: never }
   | { count: number; layout: string; any?: never; match?: never };
 
+/** An events or bytes port's queue: the most messages, and the most payload bytes, one block carries (a push
+ *  past either is dropped and counted). A port declares either part or both; one it leaves out takes the
+ *  default, 256 messages and 4096 bytes, and neither may pass 1 Mi messages or 16 MiB. A wire carries its
+ *  source's queue (an output queue, or a feedback wire's front, sized from the source too), so where a wire's
+ *  two ends declare different capacities the source's wins, and an input's own capacity bounds nothing. The twin
+ *  of QueueCapacity in Descriptor.hpp. */
+export interface QueueCapacity {
+  messages?: number;
+  bytes?: number;
+}
+
 export interface PortDesc {
   id: string;
   dir: PortDir;
@@ -40,6 +51,7 @@ export interface PortDesc {
   channels?: ChannelSpec;   // audio only
   resourceType?: string;    // resource only
   access?: "write";         // a resource input that writes the resource
+  capacity?: QueueCapacity; // events / bytes only
 }
 
 export type ParamDesc =

@@ -69,6 +69,11 @@ struct Instance {
     // is what keeps a wedged node bypassed. Read by GraphHost::isFaulted on the control thread.
     std::atomic<bool>                         faulted{false};
     bool                                      faultReported = false;  // control side: GraphHost::reclaim named it
+    // Messages this instance's full output queues have dropped: added by the executor after each block, from
+    // the queues' own counts, which only the thread running the block touches. Read by
+    // GraphHost::droppedMessages on the control thread.
+    std::atomic<std::uint32_t>                drops{0};
+    bool                                      dropsReported = false;  // control side: GraphHost::reclaim named it
 
     Instance() = default;
     Instance(const Instance&) = delete;
@@ -88,8 +93,8 @@ struct FeedbackFront {
     std::unique_ptr<StreamStore> stream;
 };
 
-constexpr std::uint32_t kQueueItems = 256;
-constexpr std::uint32_t kQueueBytes = 4096;
+// Events and bytes queues are sized by their ports (QueueCapacity, Descriptor.hpp); every control stream holds this
+// many changes a block.
 constexpr std::uint32_t kStreamChanges = 64;
 
 struct PlanStorage {
@@ -120,7 +125,7 @@ struct PlanStorage {
     std::vector<std::vector<rp_port_view>>      outputViews;
     std::vector<std::vector<rp_control_queue*>> paramViews;
     std::vector<PlanStep>                       steps;
-    std::vector<rp_queue*>                      queuesToClear;
+    std::vector<OutputQueue>                    queuesToClear;
     std::vector<rp_control_queue*>              controlsToRoll;
     std::vector<FeedbackCopy>                   feedback;
     PlanView                                    view;

@@ -104,7 +104,8 @@ typedef struct rp_message {
 
 /* A fixed-capacity, frame-ordered queue. Never grows: a push that does not fit is dropped and counted in
  * `dropped`, which is written on the audio thread; a host reads it there (or while quiescent) and
- * publishes it, never directly from the control thread. */
+ * publishes it, never directly from the control thread. An output queue holds what its port declares in the
+ * node's layout ("capacity"), and its count is published and started again after every block. */
 typedef struct rp_queue {
     rp_message* items;
     uint32_t    count;

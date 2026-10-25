@@ -13,7 +13,7 @@
 // carries brings its own toJSONSchema, so a bundle holding just a node's create/process need not hold zod.
 import type { z } from "zod";
 import { plainId, wellFormed } from "./descriptor";
-import type { ChannelSpec, Layout, ParamDesc, PortDesc, TypeDescriptor } from "./descriptor";
+import type { ChannelSpec, Layout, ParamDesc, PortDesc, QueueCapacity, TypeDescriptor } from "./descriptor";
 
 // ---- ports ------------------------------------------------------------------------------------------------
 
@@ -27,7 +27,8 @@ type OutputChannels = MatchChannels | FixedChannels;
 type PortSpec =
   | { dir: "in"; kind: "audio"; channels: ChannelSpec }
   | { dir: "out"; kind: "audio"; channels: OutputChannels }
-  | { dir: "in" | "out"; kind: "events" | "bytes" | "control" }
+  | { dir: "in" | "out"; kind: "events" | "bytes"; capacity?: QueueCapacity }
+  | { dir: "in" | "out"; kind: "control" }
   | { dir: "in"; kind: "resource"; resourceType: string; access?: "write" }
   | { dir: "out"; kind: "resource"; resourceType: string }
   | { dir: "link"; kind: "link" };
@@ -44,13 +45,18 @@ export const audio = {
   in: (spec: ChannelSpec = channels.any()): PortSpec => ({ dir: "in", kind: "audio", channels: spec }),
   out: (spec: OutputChannels): PortSpec => ({ dir: "out", kind: "audio", channels: spec }),
 };
+// An events or bytes port, with the queue capacity it declares if any (QueueCapacity: an output's bounds what a
+// wire from it carries; an input's is recorded in its descriptor only).
+const queue = (dir: "in" | "out", kind: "events" | "bytes", capacity?: QueueCapacity): PortSpec =>
+  capacity === undefined ? { dir, kind } : { dir, kind, capacity };
+
 export const events = {
-  in: (): PortSpec => ({ dir: "in", kind: "events" }),
-  out: (): PortSpec => ({ dir: "out", kind: "events" }),
+  in: (capacity?: QueueCapacity): PortSpec => queue("in", "events", capacity),
+  out: (capacity?: QueueCapacity): PortSpec => queue("out", "events", capacity),
 };
 export const bytes = {
-  in: (): PortSpec => ({ dir: "in", kind: "bytes" }),
-  out: (): PortSpec => ({ dir: "out", kind: "bytes" }),
+  in: (capacity?: QueueCapacity): PortSpec => queue("in", "bytes", capacity),
+  out: (capacity?: QueueCapacity): PortSpec => queue("out", "bytes", capacity),
 };
 export const control = {
   in: (): PortSpec => ({ dir: "in", kind: "control" }),
@@ -170,6 +176,9 @@ export interface DefinedNode<S> extends NodeDefinition<S> {
 }
 
 const MAX_CHANNELS = 4294967295;
+// The most a queue port may declare: kMaxQueueMessages / kMaxQueueBytes in Descriptor.hpp.
+const MAX_QUEUE_MESSAGES = 1048576;
+const MAX_QUEUE_BYTES = 16777216;
 const q = (s: string): string => JSON.stringify(s);
 
 /** How many channels a layout name means (mono 1, stereo 2, 5.1 6, 7.1 8, discrete(n) n); null for "any"
@@ -227,6 +236,26 @@ function checkPort(node: string, p: PortDesc): void {
   } else if (p.resourceType !== undefined || p.access !== undefined) {
     throw new Error(`${where}: only resource ports have resourceType or access`);
   }
+  if (p.capacity !== undefined) {
+    if (p.kind !== "events" && p.kind !== "bytes") throw new Error(`${where}: only events and bytes ports have capacity`);
+    checkCapacity(where, p.capacity);
+  }
+}
+
+// A queue capacity, as parseCapacity in Descriptor.cpp checks it: messages, bytes or both, nothing else, each a
+// whole number from 1 to its cap. An undefined part is no part, as canonicalJson spells it.
+function checkCapacity(where: string, c: unknown): void {
+  if (typeof c !== "object" || c === null || Array.isArray(c)) throw new Error(`${where}: capacity must be an object`);
+  const parts = c as Record<string, unknown>;
+  const given = Object.keys(parts).filter((k) => parts[k] !== undefined);
+  const stray = given.find((k) => k !== "messages" && k !== "bytes");
+  if (stray !== undefined) throw new Error(`${where}: capacity: unknown field ${q(stray)}`);
+  if (given.length === 0) throw new Error(`${where}: capacity needs messages, bytes or both`);
+  for (const [key, max] of [["messages", MAX_QUEUE_MESSAGES], ["bytes", MAX_QUEUE_BYTES]] as const) {
+    const v = parts[key];
+    if (v !== undefined && (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > max))
+      throw new Error(`${where}: capacity.${key} must be a whole number from 1 to ${max}`);
+  }
 }
 
 // One param's own shape, as parseParam in Descriptor.cpp checks it.
@@ -260,7 +289,16 @@ function copyPort(id: string, spec: PortSpec): PortDesc {
   if ("channels" in spec && spec.channels !== undefined) p.channels = { ...spec.channels } as ChannelSpec;
   if ("resourceType" in spec && spec.resourceType !== undefined) p.resourceType = spec.resourceType;
   if ("access" in spec && spec.access !== undefined) p.access = spec.access;
+  if ("capacity" in spec && spec.capacity !== undefined) p.capacity = copyCapacity(spec.capacity);
   return p;
+}
+
+// Only the parts given: an undefined one is no part, which is how canonicalJson (and so C++) reads it.
+function copyCapacity(c: QueueCapacity): QueueCapacity {
+  if (typeof c !== "object" || c === null || Array.isArray(c)) return c;  // checkPort refuses it
+  const copy: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(c)) if (value !== undefined) copy[key] = value;
+  return copy as QueueCapacity;
 }
 
 // Field by field, as C++ writes a param back out: only the fields its type has (a stray one would be

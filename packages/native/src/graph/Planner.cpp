@@ -62,6 +62,11 @@ int outputOrdinal(const Layout& l, const PortDesc* port) {
     return kNone;
 }
 
+// Is this queue laid out for that capacity?
+bool laidOutFor(const QueueStore& q, const QueueCapacity& c) {
+    return q.queue.capacity == c.messageCount() && q.queue.bytes_capacity == c.byteCount();
+}
+
 // A value means what it meant: the same type, range and enum labels (a name, unit or default may change).
 bool sameValues(const ParamDesc& a, const ParamDesc& b) {
     return a.type == b.type && a.min == b.min && a.max == b.max && a.values == b.values;
@@ -729,15 +734,20 @@ private:
         return raw;
     }
 
-    // The wire's front buffer. An existing one is reused when it still fits (same kind and channels, and
-    // for audio at least maxFrames long), which is what carries the block in flight through a swap. An
-    // audio front that has grown too short (the host's block size went up) is replaced by a longer one,
-    // never trusted past its end. The in-flight frames are copied across only while quiescent: the audio
-    // thread writes the old front every block, so with it running the new front starts silent instead.
+    // The wire's front buffer. An existing one is reused when it still fits (same kind and channels, a queue
+    // of the capacity its source declares, and for audio at least maxFrames long), which is what carries the
+    // block in flight through a swap. An audio front that has grown too short (the host's block size went up)
+    // is replaced by a longer one, never trusted past its end. The in-flight frames are copied across only
+    // while quiescent: the audio thread writes the old front every block, so with it running the new front
+    // starts silent instead. A queue front whose source's capacity changed starts empty, as a front whose
+    // channel count changed starts silent.
     std::shared_ptr<FeedbackFront> front(const DataWire& w, std::uint32_t channelCount) {
+        // A front is filled from its source's queue, so it is sized as that queue is, whatever the input declares.
+        const QueueCapacity& capacity = nodes_[w.from].layout.ports[w.fromPort].capacity;
         const auto it = in_.feedback->find(w.key);
         const FeedbackFront* old = it != in_.feedback->end() ? it->second.get() : nullptr;
-        const bool sameShape = old && old->kind == w.kind && old->channels == channelCount;
+        const bool sameShape = old && old->kind == w.kind && old->channels == channelCount &&
+                               (!old->queue || laidOutFor(*old->queue, capacity));
         if (sameShape && (w.kind != PortKind::Audio || old->frames >= in_.maxFrames)) return it->second;
         auto f = std::make_shared<FeedbackFront>();
         f->kind = w.kind;
@@ -753,7 +763,7 @@ private:
         } else if (w.kind == PortKind::Control) {
             f->stream = std::make_unique<StreamStore>(kStreamChanges, 0.0);
         } else {
-            f->queue = std::make_unique<QueueStore>(kQueueItems, kQueueBytes);
+            f->queue = std::make_unique<QueueStore>(capacity.messageCount(), capacity.byteCount());
         }
         return f;
     }
@@ -810,9 +820,11 @@ private:
                             if (lastReader == kNone) {
                                 v.u.queue = &st.scratchQueue->queue;
                             } else {
-                                st.queues.push_back(std::make_unique<QueueStore>(kQueueItems, kQueueBytes));
+                                // Sized as the port declares; what it drops is charged to this instance.
+                                st.queues.push_back(
+                                    std::make_unique<QueueStore>(d.capacity.messageCount(), d.capacity.byteCount()));
                                 v.u.queue = &st.queues.back()->queue;
-                                st.queuesToClear.push_back(v.u.queue);
+                                st.queuesToClear.push_back({v.u.queue, &p.inst->drops});
                             }
                             break;
                         case PortKind::Control:
@@ -1026,9 +1038,11 @@ private:
         std::fill_n(st.silence.get(), in_.maxFrames, 0.0f);
         std::fill_n(st.scratch.get(), in_.maxFrames, 0.0f);
         st.emptyQueue = std::make_unique<QueueStore>(0, 0);
-        st.scratchQueue = std::make_unique<QueueStore>(kQueueItems, kQueueBytes);
+        // Every unconnected output shares it, at the default size. Nothing reads it, so nothing it drops is lost
+        // and none of that is counted.
+        st.scratchQueue = std::make_unique<QueueStore>(kDefaultQueueMessages, kDefaultQueueBytes);
         st.emptyStream = std::make_unique<StreamStore>(0, 0.0);
-        st.queuesToClear.push_back(&st.scratchQueue->queue);
+        st.queuesToClear.push_back({&st.scratchQueue->queue, nullptr});
 
         st.inputViews.resize(nodes_.size());
         st.outputViews.resize(nodes_.size());
@@ -1043,7 +1057,7 @@ private:
         flattenSteps(st);
         scheduleAdoption(st);
 
-        st.view = PlanView{st.steps, st.queuesToClear, st.controlsToRoll, st.feedback, in_.faults};
+        st.view = PlanView{st.steps, st.queuesToClear, st.controlsToRoll, st.feedback, in_.faults, in_.drops};
         for (const auto& p : nodes_) out_.instances[p.doc->id] = p.inst;
         out_.feedback = std::move(fronts);
         out_.storage = std::move(s);

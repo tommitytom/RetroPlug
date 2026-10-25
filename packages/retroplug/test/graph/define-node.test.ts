@@ -1,7 +1,7 @@
 // defineNode: a TS node declares the same contract a C++ node does.
 import { test, expect } from "../../testing/harness";
 import { z } from "zod";
-import { audio, channels, control, defineNode, events, param, resource } from "../../src/graph/defineNode";
+import { audio, bytes, channels, control, defineNode, events, param, resource } from "../../src/graph/defineNode";
 
 const noop = () => ({ process() {} });
 
@@ -129,6 +129,46 @@ test("port shapes are checked as the C++ parser checks them", () => {
   expect(shaped({ dir: "in", kind: "audio", channels: { count: 4294967296, layout: "discrete(4294967296)" } })).toThrow("whole channel count");
   expect(shaped({ dir: "in", kind: "resource" })).toThrow("resourceType");
   expect(shaped({ dir: "sideways", kind: "events" })).toThrow("unknown dir");
+});
+
+test("an events or bytes port declares its queue capacity, either part, as C++ writes it", () => {
+  const n = defineNode({
+    id: "rp.test.capacity",
+    ports: {
+      midi: events.in({ messages: 512 }),
+      sysex: bytes.out({ messages: 4, bytes: 65536 }),
+      serial: bytes.out({ bytes: 1 }),
+      notes: events.out(),
+    },
+    create: noop,
+  });
+  expect(n.descriptor().ports).toEqual([
+    { id: "midi", dir: "in", kind: "events", capacity: { messages: 512 } },
+    { id: "sysex", dir: "out", kind: "bytes", capacity: { messages: 4, bytes: 65536 } },
+    { id: "serial", dir: "out", kind: "bytes", capacity: { bytes: 1 } },
+    { id: "notes", dir: "out", kind: "events" },
+  ]);
+  const port = (spec: unknown) => () => defineNode({ id: "rp.test.cap", ports: { q: spec as never }, create: noop }).descriptor();
+  // the caps themselves; an undefined part is no part, as canonicalJson (and so C++) sees it
+  expect(port(events.out({ messages: 1048576, bytes: 16777216 }))().ports[0].capacity).toEqual({ messages: 1048576, bytes: 16777216 });
+  expect(port(events.out({ messages: 2, bytes: undefined }))().ports[0]).toEqual({ id: "q", dir: "out", kind: "events", capacity: { messages: 2 } });
+});
+
+test("a queue capacity is refused where Descriptor.cpp refuses it", () => {
+  const port = (spec: unknown) => () => defineNode({ id: "rp.test.cap", ports: { q: spec as never }, create: noop }).descriptor();
+  expect(port(events.out({ messages: 1048577 }))).toThrow('port "q": capacity.messages must be a whole number from 1 to 1048576');
+  expect(port(bytes.in({ bytes: 16777217 }))).toThrow('port "q": capacity.bytes must be a whole number from 1 to 16777216');
+  expect(port(events.out({ messages: 0 }))).toThrow("from 1 to 1048576");
+  expect(port(events.out({ messages: 2.5 }))).toThrow("whole number");
+  expect(port(events.out({ bytes: -1 }))).toThrow("from 1 to 16777216");
+  expect(port({ dir: "out", kind: "events", capacity: { messages: "2" } })).toThrow("whole number");
+  expect(port(events.out({}))).toThrow("capacity needs messages, bytes or both");
+  expect(port(events.out({ messages: undefined }))).toThrow("capacity needs messages, bytes or both");
+  expect(port({ dir: "out", kind: "events", capacity: 8 })).toThrow("capacity must be an object");
+  expect(port({ dir: "out", kind: "events", capacity: [2] })).toThrow("capacity must be an object");
+  expect(port({ dir: "out", kind: "events", capacity: { mesages: 2 } })).toThrow('capacity: unknown field "mesages"');
+  expect(port({ dir: "out", kind: "control", capacity: { messages: 2 } })).toThrow("only events and bytes ports have capacity");
+  expect(port({ dir: "in", kind: "audio", channels: { any: true }, capacity: { messages: 2 } })).toThrow("only events and bytes ports have capacity");
 });
 
 test("ids are plain, unambiguous and keep their order", () => {

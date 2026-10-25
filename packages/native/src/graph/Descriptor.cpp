@@ -53,6 +53,13 @@ rfl::Generic portGeneric(const PortDesc& p) {
         put(o, "resourceType", rfl::Generic(p.resourceType));
         if (p.write) put(o, "access", rfl::Generic(std::string("write")));
     }
+    // As declared: a part left undeclared is written as nothing, so a port that declares none writes no field.
+    if ((p.kind == PortKind::Events || p.kind == PortKind::Bytes) && (p.capacity.messages || p.capacity.bytes)) {
+        Object c;
+        if (p.capacity.messages) put(c, "messages", rfl::Generic(static_cast<std::int64_t>(*p.capacity.messages)));
+        if (p.capacity.bytes) put(c, "bytes", rfl::Generic(static_cast<std::int64_t>(*p.capacity.bytes)));
+        put(o, "capacity", rfl::Generic(std::move(c)));
+    }
     return rfl::Generic(std::move(o));
 }
 
@@ -203,6 +210,32 @@ rfl::Result<ChannelSpec> parseChannels(const rfl::Generic& g, const std::string&
     return ChannelSpec::fixed(static_cast<std::uint32_t>(count), *layoutName);
 }
 
+std::string capacityRange(const std::string& where, std::string_view part, std::uint32_t max) {
+    return where + ": \"capacity." + std::string(part) + "\" must be a whole number from 1 to " + std::to_string(max);
+}
+
+const char* const kNoQueue = ": only events and bytes ports have \"capacity\"";
+
+// A queue port's capacity: messages, bytes or both, each a whole number from 1 to its cap.
+rfl::Result<QueueCapacity> parseCapacity(const rfl::Generic& g, const std::string& where) {
+    auto o = g.to_object();
+    if (!o) return fail(where + ": \"capacity\" must be an object");
+    if (auto bad = unknownField(*o, {"messages", "bytes"}, where + " capacity")) return fail(*bad);
+    QueueCapacity c;
+    for (const bool bytes : {false, true}) {
+        const std::string_view part = bytes ? "bytes" : "messages";
+        const std::uint32_t max = bytes ? kMaxQueueBytes : kMaxQueueMessages;
+        const auto* v = field(*o, part);
+        if (!v) continue;
+        const auto n = v->to_double();
+        if (!n || !(*n >= 1.0 && *n <= static_cast<double>(max) && *n == std::floor(*n)))
+            return fail(capacityRange(where, part, max));
+        (bytes ? c.bytes : c.messages) = static_cast<std::uint32_t>(*n);
+    }
+    if (!c.messages && !c.bytes) return fail(where + ": \"capacity\" needs \"messages\", \"bytes\" or both");
+    return c;
+}
+
 // A port or param id: a plain id (it is quoted in messages and compared as a string) with no '*', which
 // would make an exclusive-group pattern ambiguous.
 std::optional<std::string> checkMemberId(const std::string& id, const std::string& at) {
@@ -215,7 +248,8 @@ rfl::Result<PortDesc> parsePort(const rfl::Generic& g, std::size_t index) {
     const std::string at = "port #" + std::to_string(index);
     auto o = g.to_object();
     if (!o) return fail(at + " must be an object");
-    if (auto bad = unknownField(*o, {"id", "dir", "kind", "channels", "resourceType", "access"}, at)) return fail(*bad);
+    if (auto bad = unknownField(*o, {"id", "dir", "kind", "channels", "resourceType", "access", "capacity"}, at))
+        return fail(*bad);
     PortDesc p;
     auto id = reqString(*o, "id", at);
     if (!id) return fail(id.error().what());
@@ -258,6 +292,13 @@ rfl::Result<PortDesc> parsePort(const rfl::Generic& g, std::size_t index) {
         if (p.write && p.dir != PortDir::In) return fail(where + ": only a resource input may have access \"write\"");
     } else if (hasType || hasAccess) {
         return fail(where + ": only resource ports have \"resourceType\" or \"access\"");
+    }
+
+    if (const auto* cap = field(*o, "capacity")) {
+        if (p.kind != PortKind::Events && p.kind != PortKind::Bytes) return fail(where + kNoQueue);
+        auto c = parseCapacity(*cap, where);
+        if (!c) return fail(c.error().what());
+        p.capacity = *c;
     }
     return p;
 }
@@ -504,6 +545,17 @@ const ParamDesc* findParam(const Layout& layout, std::string_view id) {
     for (const auto& p : layout.params)
         if (p.id == id) return &p;
     return nullptr;
+}
+
+std::optional<std::string> checkCapacity(const PortDesc& port) {
+    const QueueCapacity& c = port.capacity;
+    if (!c.messages && !c.bytes) return std::nullopt;
+    const std::string where = "port " + q(port.id);
+    if (port.kind != PortKind::Events && port.kind != PortKind::Bytes) return where + kNoQueue;
+    if (c.messages && (*c.messages < 1 || *c.messages > kMaxQueueMessages))
+        return capacityRange(where, "messages", kMaxQueueMessages);
+    if (c.bytes && (*c.bytes < 1 || *c.bytes > kMaxQueueBytes)) return capacityRange(where, "bytes", kMaxQueueBytes);
+    return std::nullopt;
 }
 
 bool isPlainId(std::string_view s) {

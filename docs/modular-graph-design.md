@@ -456,6 +456,12 @@ An enum param is `{ "id": "mode", "type": "enum", "values": ["off", "midi-sync",
 "midi-sync" }`; a resource port is `{ "id": "sample", "dir": "in", "kind": "resource", "resourceType":
 "audio-buffer" }`; a fixed audio port is `"channels": { "count": 2, "layout": "stereo" }`.
 
+An events or bytes port may declare its queue's capacity, `"capacity": { "messages": 1024, "bytes": 65536 }`,
+either part or both: a part it leaves out takes the default (256 messages, 4096 bytes), and neither may pass
+1 Mi messages or 16 MiB, so a typo cannot allocate gigabytes. A wire carries its source's queue, and a feedback
+wire's front is sized from the source too, so where a wire's two ends declare different capacities **the
+source's wins**; an input's own capacity bounds nothing.
+
 The descriptor is emitted in one canonical spelling (keys sorted, no whitespace, numbers and strings exactly
 as JSON.stringify writes them), so its ports, params and metadata are **byte-stable**: across compilers,
 and between a C++ node and a TS node of the same declared shape (§10). The one exception is a node's
@@ -622,8 +628,8 @@ C++, on the control thread, five passes:
    connected set; link wires are undirected).
 4. **Cycles.** Only feedback wires may close a loop (§3.3).
 5. **Assign buffers.** Each output port gets a buffer: audio (channels x max frames); events, bytes and
-   control (fixed-capacity queues: Phase A gives every queue of a kind one default capacity; per-port
-   hints in the descriptor come when a node needs more); resource (a handle
+   control (fixed-capacity queues: an events or bytes queue holds what its port declares, §4.6, and a
+   control stream a fixed number of changes); resource (a handle
    slot). Buffers are reused by lifetime; feedback wires get persistent double buffers owned by the wire, so they carry over to the next plan
    (§5.3). Every input
    reads straight from its single source's buffer.
@@ -706,11 +712,13 @@ No heap, no exceptions, the same code on every target. Per block:
 3. Reset event, bytes and control queues.
 4. Publish snapshots through the `SnapshotRegistry` (via `rp.snapshot/1`).
 
-Queues are fixed-capacity; an overflow drops and bumps a counter TS can read (Phase A keeps the count on
-each queue, and the call that reports it arrives with the TS surface in Phase B; the same never-allocate
-policy as today's full ring). Events stay frame-stamped; v1 uses the host's block size with no
-sub-blocking. v1 is single-threaded; the plan records dependencies, so running independent branches in
-parallel (enkiTS) can come later without changing the plan format.
+Queues are fixed-capacity; an overflow drops and bumps a counter (the same never-allocate policy as
+today's full ring). The count lives on each queue, which only the block's thread touches; after each block
+the executor moves it into atomics charged to the queue's producer, which the host reads on the control
+thread (`GraphHost::droppedMessages`) and names in its log. The TS call over it arrives with the TS
+surface. Events stay frame-stamped; v1 uses the host's block size with no sub-blocking. v1 is
+single-threaded; the plan records dependencies, so running independent branches in parallel (enkiTS) can
+come later without changing the plan format.
 
 ### 5.6 Library targets
 

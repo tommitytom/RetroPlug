@@ -15,7 +15,8 @@ constexpr std::uint32_t kMaxGroupPassesPerFrame = 4096;
 // Runs one block of a plan. No heap, no exceptions, no locks: the same code drives the audio thread,
 // offline renders and the Pico. It walks the steps in order (a coupled group runs prepare, a round-robin
 // step until every member reaches the block, then finish), then moves feedback data one block on, then
-// empties output queues and rolls control streams for the next block.
+// publishes what each output queue dropped (OutputQueue), empties the queues and rolls control streams for
+// the next block.
 //
 // A node that faults (process returns RP_FAULT, step returns RP_STEP_FAULT, or its group exceeds the pass
 // bound) is bypassed from then on: its outputs are silenced every block (audio zeroed, queues emptied,

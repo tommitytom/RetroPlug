@@ -176,6 +176,7 @@ PlanOutcome GraphHost::planDocument(const GraphDocument& document, double sample
     in.maxFrames = maxFrames;
     in.target = config_.target;
     in.faults = &faults_;
+    in.drops = &drops_;
     in.quiescent = !audioThreadOwns();
     return plan(in);
 }
@@ -297,6 +298,20 @@ std::size_t GraphHost::reclaim() {
                      static_cast<unsigned>(faults - faultsReported_), names.empty() ? "" : ": ", names.c_str());
         faultsReported_ = faults;
     }
+    // Drops too, but a queue that overflows once may overflow every block, so a node is named the first time
+    // its outputs drop and is in the count alone after that.
+    if (const auto drops = droppedMessages(); drops != dropsReported_) {
+        std::string names;
+        for (auto& [id, inst] : live_) {
+            if (inst->dropsReported || inst->drops.load(std::memory_order_relaxed) == 0) continue;
+            inst->dropsReported = true;
+            names += (names.empty() ? "" : ", ") + id;
+        }
+        if (!names.empty())
+            std::fprintf(stderr, "[graph] full output queues have dropped %u message(s) so far; first drops from: %s\n",
+                         static_cast<unsigned>(drops), names.c_str());
+        dropsReported_ = drops;
+    }
     return n;
 }
 
@@ -358,6 +373,11 @@ bool GraphHost::reactivate(double sampleRate, std::uint32_t maxFrames, std::stri
 bool GraphHost::isFaulted(std::string_view id) const {
     const auto it = live_.find(std::string(id));
     return it != live_.end() && it->second->faulted.load(std::memory_order_relaxed);
+}
+
+std::uint32_t GraphHost::droppedMessages(std::string_view id) const {
+    const auto it = live_.find(std::string(id));
+    return it == live_.end() ? 0 : it->second->drops.load(std::memory_order_relaxed);
 }
 
 rp_node* GraphHost::node(std::string_view id) const {

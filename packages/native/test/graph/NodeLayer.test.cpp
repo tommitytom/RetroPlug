@@ -86,8 +86,9 @@ namespace {
 enum class SyncSource { Off, MidiSync, N8Fifo };
 
 // The second conformance node: every port kind and direction, every channel spec, every param type, an
-// int with a unit, a bool defaulting to true, extreme number spellings, appended ports and an exclusive
-// group, metadata and capability flags. Its TS twin is in conformance.test.ts.
+// int with a unit, a bool defaulting to true, extreme number spellings, queue capacities (messages, bytes and
+// both, on inputs and outputs), appended ports and an exclusive group, metadata and capability flags. Its TS
+// twin is in conformance.test.ts.
 struct KitchenSink {
     static constexpr const char* id = "rp.test.kitchen-sink";
     static constexpr const char* name = "Kitchen Sink";
@@ -95,22 +96,22 @@ struct KitchenSink {
     static constexpr const char* version = "2.1.0";
     static constexpr bool heap = true;
     struct {
-        rp::audio_in<rp::any>                in;
-        rp::audio_in<rp::channels<2, "any">> side;
-        rp::events_in                        midi;
-        rp::bytes_in                         serial;
-        rp::control_in                       mod;
-        rp::link                             peer;
-        rp::resource_in<"audio-buffer">      sample;
-        rp::resource_write<"audio-buffer">   target;
+        rp::audio_in<rp::any>                               in;
+        rp::audio_in<rp::channels<2, "any">>                side;
+        rp::events_in::sized<rp::capacity{.messages = 512}> midi;
+        rp::bytes_in::sized<rp::capacity{.bytes = 8192}>    serial;
+        rp::control_in                                      mod;
+        rp::link                                            peer;
+        rp::resource_in<"audio-buffer">                     sample;
+        rp::resource_write<"audio-buffer">                  target;
     } inputs;
     struct {
-        rp::audio_out<rp::match<"in">>          out;
-        rp::audio_out<rp::channels<6, "5.1">>   surround;
-        rp::events_out                          notes;
-        rp::bytes_out                           serialOut;
-        rp::control_out                         level;
-        rp::resource_out<"audio-buffer">        buffer;
+        rp::audio_out<rp::match<"in">>                                     out;
+        rp::audio_out<rp::channels<6, "5.1">>                              surround;
+        rp::events_out::sized<rp::capacity{.messages = 1024}>              notes;
+        rp::bytes_out::sized<rp::capacity{.messages = 64, .bytes = 65536}> serialOut;
+        rp::control_out                                                    level;
+        rp::resource_out<"audio-buffer">                                   buffer;
     } outputs;
     struct {
         rp::float_param<"Tiny", rp::range{0, 1e-7, 1e-7}>      tiny;
