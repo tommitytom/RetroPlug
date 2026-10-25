@@ -92,6 +92,10 @@ void GraphHost::setAudioThreadOwns(bool owns) {
     if (!owns) flushIfQuiescent();
 }
 
+// Only plans that await adoption count: a commit to a type whose prepare is stateless never holds the planner
+// back, since that prepare reads nothing the commit writes. Such commits queue on the ring, one per edit, and
+// are applied in push order, so a host that stops calling process while the plugin stays active (CLAP's
+// stop_processing) does not hold each edit for the timeout and then refuse it.
 bool GraphHost::waitForCommits() {
     if (!audioThreadOwns()) return true;  // inline flush already adopted it
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(config_.adoptionTimeoutMs);
@@ -181,8 +185,8 @@ PlanOutcome GraphHost::planDocument(const GraphDocument& document, double sample
 bool GraphHost::publish(PlanOutcome& outcome, const GraphDocument& document, const HostCommand* trailer) {
     PlanStorage* storage = outcome.storage.release();
     const std::shared_ptr<const void> hostData = storage->hostData;
-    const bool commits = !storage->commits.empty();
-    if (commits) commitsInFlight_.fetch_add(1, std::memory_order_acq_rel);
+    const bool awaited = storage->awaitsAdoption;
+    if (awaited) commitsInFlight_.fetch_add(1, std::memory_order_acq_rel);
     Command c;
     c.kind = Command::Kind::SwapPlan;
     c.plan = storage;
@@ -191,7 +195,7 @@ bool GraphHost::publish(PlanOutcome& outcome, const GraphDocument& document, con
         c.host = *trailer;
     }
     if (!commands_.tryPush(c)) {
-        if (commits) commitsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
+        if (awaited) commitsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
         delete storage;  // never published: frees its prepared settings and pins
         return false;
     }
@@ -212,10 +216,11 @@ void GraphHost::markFaulted(Instance& inst) {
 bool GraphHost::setParam(std::string_view nodeId, std::string_view paramId, double value, std::uint32_t frame) {
     const auto it = live_.find(std::string(nodeId));
     if (it == live_.end()) return false;
-    const auto& params = it->second->layout.params;
+    const PortState& ports = *it->second->ports;
+    const auto& params = ports.layout.params;
     for (std::size_t k = 0; k < params.size(); ++k) {
         if (params[k].id != paramId) continue;
-        const auto& wired = it->second->wiredParams;
+        const auto& wired = ports.wiredParams;
         if (value != value || (k < wired.size() && wired[k])) return false;
         const ParamDesc& d = params[k];
         double v = std::clamp(value, d.min, d.max);
@@ -223,7 +228,7 @@ bool GraphHost::setParam(std::string_view nodeId, std::string_view paramId, doub
         else if (d.type == ParamType::Bool) v = v >= 0.5 ? 1.0 : 0.0;
         Command c;
         c.kind = Command::Kind::SetParam;
-        c.queue = &it->second->params[k]->queue;
+        c.queue = &ports.params[k]->queue;
         c.frame = frame;
         c.value = v;
         return push(c);
@@ -245,7 +250,7 @@ void GraphHost::drainCommands(bool discard, bool applyTrailers) {
                 if (replaced && !released_.tryPush(replaced)) leakedPlans_.fetch_add(1, std::memory_order_relaxed);
                 replaced = current_;
                 current_ = c.plan;
-                if (!c.plan->commits.empty()) commitsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
+                if (c.plan->awaitsAdoption) commitsInFlight_.fetch_sub(1, std::memory_order_acq_rel);
                 // The rest of the same edit, against the plan it rode in with. Applied under discard too:
                 // the plan is adopted either way, and its trailer is what keeps the embedder in step with it.
                 // Only the destructor hands it back as discarded.

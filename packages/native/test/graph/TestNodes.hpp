@@ -1,13 +1,14 @@
 #pragma once
 
 // Test-only node types for the graph-core tests: sources and sinks to observe a graph, a coupled pair,
-// a node that faults, and nodes that exist only to trip planner checks. Tests reach a node's state with
-// rp::peer_as<T>(host.node("id")) while quiescent.
+// a node that faults, a node that reshapes, and nodes that exist only to trip planner checks. Tests reach a
+// node's state with rp::peer_as<T>(host.node("id")) while quiescent.
 
 #include <array>
 #include <cstdint>
 #include <iterator>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -179,10 +180,89 @@ struct Through {
     }
 };
 
+// Ports and params named by its settings, so a settings change can alter its layout, and it keeps its
+// instance through one (it reshapes); its prepare reads nothing but the new settings (stateless). Each block
+// it pushes [0x90, the port's first letter, blocks] on every events output, records each input's message
+// count and each knob's value by the port's first letter, and on its first block sets every level to 5.
+// `blocks` is the state a rebuild would lose. Allocates nothing on the audio thread.
+struct ShapeSettings {
+    std::vector<std::string> ins;     // events inputs
+    std::vector<std::string> outs;    // events outputs
+    std::vector<std::string> levels;  // control outputs
+    std::vector<std::string> knobs;   // float params, 0 to 100
+    std::string              tag = "a";
+};
+
+struct Shape {
+    static constexpr const char* id = "rp.test.shape";
+    static constexpr bool reshapes = true;
+    static constexpr bool stateless_prepare = true;
+    using Settings = ShapeSettings;
+
+    static std::optional<std::string> validate(const Settings& s) {
+        if (s.tag.empty()) return "tag must not be empty";
+        return std::nullopt;
+    }
+    static void adjust_layout(Layout& l, const Settings& s) {
+        const auto port = [&](const std::string& id, PortDir dir, PortKind kind) {
+            PortDesc p;
+            p.id = id;
+            p.dir = dir;
+            p.kind = kind;
+            l.ports.push_back(p);
+        };
+        for (const auto& id : s.ins) port(id, PortDir::In, PortKind::Events);
+        for (const auto& id : s.outs) port(id, PortDir::Out, PortKind::Events);
+        for (const auto& id : s.levels) port(id, PortDir::Out, PortKind::Control);
+        for (const auto& id : s.knobs) l.params.push_back({id, id, ParamType::Float, 0.0, 100.0, 0.0, {}, {}});
+    }
+    static std::uint8_t letter(const std::string& id) { return static_cast<std::uint8_t>(id[0] & 0x7f); }
+
+    const Settings*                settings = nullptr;
+    std::uint32_t                  blocks = 0;
+    char                           ranWith = 0;     // the tag the last block ran with
+    std::uint32_t                  ranOutputs = 0;  // and how many outputs it was handed
+    std::array<std::uint32_t, 128> received{};      // the last block's messages per input, by first letter
+    std::array<double, 128>        knobs{};         // the last block's value per knob, by first letter
+    std::array<char, 16>           committed{};     // each settings' tag, in the order on_settings saw them
+    std::uint32_t                  commits = 0;
+    std::array<std::uint8_t, 16>   mask{};
+    std::uint32_t                  maskSize = 0;
+    std::uint32_t                  maskCalls = 0;
+    char                           maskedWith = 0;  // the tag in force when the last mask arrived
+
+    void on_settings(const Settings& s) noexcept {
+        settings = &s;
+        if (commits < committed.size()) committed[commits] = s.tag[0];
+        ++commits;
+    }
+    void ports_changed(std::span<const std::uint8_t> connected) noexcept {
+        maskSize = static_cast<std::uint32_t>(connected.size());
+        for (std::size_t i = 0; i < connected.size() && i < mask.size(); ++i) mask[i] = connected[i];
+        ++maskCalls;
+        maskedWith = settings->tag[0];
+    }
+    void process(const rp::Block& b) noexcept {
+        const Settings& s = *settings;
+        ranWith = s.tag[0];
+        ranOutputs = b.raw.output_count;
+        for (std::uint32_t i = 0; i < s.ins.size(); ++i) received[letter(s.ins[i])] = b.input(i).u.queue->count;
+        for (std::uint32_t o = 0; o < s.outs.size(); ++o) {
+            const std::uint8_t m[3] = {0x90, letter(s.outs[o]), static_cast<std::uint8_t>(blocks & 0x7f)};
+            graph::pushMessage(*b.output(o).u.queue, 0, m);
+        }
+        if (blocks == 0)
+            for (std::uint32_t c = 0; c < s.levels.size(); ++c)
+                graph::pushControl(*b.output(static_cast<std::uint32_t>(s.outs.size()) + c).u.control, 0, 5.0);
+        for (std::uint32_t k = 0; k < s.knobs.size(); ++k) knobs[letter(s.knobs[k])] = b.param(k).start;
+        ++blocks;
+    }
+};
+
 inline const rp_package* testPackage() {
     static const rp_node_type* const kTypes[] = {
-        rp::node_type<Source>(), rp::node_type<Sink>(),  rp::node_type<Linked>(), rp::node_type<NoStep>(),
-        rp::node_type<Faulty>(), rp::node_type<Heavy>(), rp::node_type<Through>(),
+        rp::node_type<Source>(), rp::node_type<Sink>(),  rp::node_type<Linked>(),  rp::node_type<NoStep>(),
+        rp::node_type<Faulty>(), rp::node_type<Heavy>(), rp::node_type<Through>(), rp::node_type<Shape>(),
     };
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test","version":"1.0.0"})",
                                      static_cast<std::uint32_t>(std::size(kTypes)), kTypes};

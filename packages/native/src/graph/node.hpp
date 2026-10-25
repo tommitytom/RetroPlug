@@ -38,6 +38,14 @@
 //       -> rp.step/1 (all three or none; step returns bool - true once the block is produced - or an rp_step_result)
 //   void set_peers(std::span<rp_node* const>) noexcept    -> rp.link/1   (the span lives for the call)
 //   static constexpr const char *name, *category, *version;  static constexpr bool heap, threads;
+//   static constexpr bool reshapes;                       keep the instance through a settings change that alters
+//                                                         its layout (ports or params adjust_layout appends): prepare
+//                                                         answers RP_PREPARE_RESHAPE, the planner rebinds the ports
+//                                                         by id, and on_settings sees the new settings at the swap.
+//                                                         Default false: such a change rebuilds
+//   static constexpr bool stateless_prepare;              prepare reads nothing a commit writes, so setGraph never
+//                                                         waits for this node's commits (RP_TYPE_STATELESS_PREPARE);
+//                                                         rules out needs_rebuild, which reads the current settings
 //
 // process(const rp::Block&) is required, noexcept, and returns void or rp_status. Exceptions never cross
 // the ABI: every control-thread entry catches, and every audio-thread entry is noexcept.
@@ -334,6 +342,13 @@ struct NoPorts {};
 template <class T> struct SettingsOf { using type = NoSettings; };
 template <class T> requires requires { typename T::Settings; } struct SettingsOf<T> { using type = typename T::Settings; };
 
+template <class T> constexpr bool reshapesOf() {
+    if constexpr (requires { T::reshapes; }) return T::reshapes; else return false;
+}
+template <class T> constexpr bool statelessPrepareOf() {
+    if constexpr (requires { T::stateless_prepare; }) return T::stateless_prepare; else return false;
+}
+
 template <class T> auto& inputsOf(T& t) { if constexpr (requires { t.inputs; }) return t.inputs; else { static NoPorts none; return none; } }
 template <class T> auto& outputsOf(T& t) { if constexpr (requires { t.outputs; }) return t.outputs; else { static NoPorts none; return none; } }
 template <class T> auto& paramsOf(T& t) { if constexpr (requires { t.params; }) return t.params; else { static NoPorts none; return none; } }
@@ -488,9 +503,12 @@ constexpr bool checkHooks() {
     if constexpr (requires { requires kIsFunction<decltype(&T::adjust_layout)>; })
         static_assert(requires(graph::Layout& l, const S& s) { T::adjust_layout(l, s); },
                       "adjust_layout must be `static void adjust_layout(rp::graph::Layout&, const Settings&)`");
-    if constexpr (requires { requires kIsFunction<decltype(&T::needs_rebuild)>; })
+    if constexpr (requires { requires kIsFunction<decltype(&T::needs_rebuild)>; }) {
         static_assert(requires(const S& s) { { T::needs_rebuild(s, s) } -> std::same_as<bool>; },
                       "needs_rebuild must be `static bool needs_rebuild(const Settings&, const Settings&)`");
+        static_assert(!statelessPrepareOf<T>(),
+                      "a stateless_prepare node cannot have needs_rebuild, which reads its current settings");
+    }
     if constexpr (requires { requires kIsFunction<decltype(&T::extra_memory)>; })
         static_assert(requires(const S& s) { { T::extra_memory(s) } -> std::same_as<std::size_t>; },
                       "extra_memory must be `static std::size_t extra_memory(const Settings&)`");
@@ -534,7 +552,7 @@ template <class T>
 struct Instance : rp_node {
     T                             node;
     typename SettingsOf<T>::type* settings = nullptr;
-    std::string                   layoutJson;  // fixed for the instance's life: a layout change is a rebuild
+    std::string                   layoutJson;  // as created: its layout for life unless it reshapes
     std::span<std::byte>          extra;
 };
 
@@ -674,9 +692,11 @@ rp_status processFn(rp_node* n, const rp_process* p) noexcept {
     }
 }
 
-// Reads the instance's current settings (for needs_rebuild). That is safe because a host never prepares
-// while a commit for the same instance may be in flight - GraphHost waits for any published commit to
-// be adopted before it plans.
+// Compares against the instance's extra memory and, unless it reshapes, its layout, neither of which changes
+// after create; a node that reshapes never compares layouts, since the planner takes a reshape that keeps the
+// layout as a swap. Only needs_rebuild reads the instance's current settings, which is safe because a host never
+// prepares while a commit for the same instance may be in flight - GraphHost waits for any published commit to
+// be adopted before it plans - unless the type is stateless_prepare, which is why that rules needs_rebuild out.
 template <class T>
 rp_prepare_result prepareFn(rp_node* n, const rp_settings* s, void** prepared, rp_error* err) {
     using S = typename SettingsOf<T>::type;
@@ -687,13 +707,15 @@ rp_prepare_result prepareFn(rp_node* n, const rp_settings* s, void** prepared, r
             return RP_PREPARE_INVALID;
         }
         auto* inst = self<T>(n);
-        bool rebuild = graph::layoutJson(layoutFor<T>(*parsed)) != inst->layoutJson ||
-                       extraBytes<T>(*parsed) != inst->extra.size();
+        bool rebuild = extraBytes<T>(*parsed) != inst->extra.size();
+        if constexpr (!reshapesOf<T>())
+            rebuild = rebuild || graph::layoutJson(layoutFor<T>(*parsed)) != inst->layoutJson;
         if constexpr (requires(const S& a) { T::needs_rebuild(a, a); })
             rebuild = rebuild || T::needs_rebuild(*inst->settings, *parsed);
         if (rebuild) return RP_PREPARE_REBUILD;
         *prepared = new S(std::move(*parsed));
-        return RP_PREPARE_SWAP;
+        if constexpr (reshapesOf<T>()) return RP_PREPARE_RESHAPE;
+        else return RP_PREPARE_SWAP;
     } catch (const std::exception& e) {
         copyError(err, e.what());
         return RP_PREPARE_INVALID;
@@ -763,6 +785,11 @@ template <class T> constexpr const char* categoryOf() { if constexpr (requires {
 template <class T> constexpr const char* versionOf() { if constexpr (requires { T::version; }) return T::version; else return "1.0.0"; }
 template <class T> constexpr bool heapOf() { if constexpr (requires { T::heap; }) return T::heap; else return false; }
 template <class T> constexpr bool threadsOf() { if constexpr (requires { T::threads; }) return T::threads; else return false; }
+template <class T> constexpr std::uint32_t typeFlags() {
+    std::uint32_t flags = 0;
+    if constexpr (statelessPrepareOf<T>()) flags |= RP_TYPE_STATELESS_PREPARE;
+    return flags;
+}
 
 // An empty descriptor when building it throws (adjust_layout on default settings, say), which the registry
 // refuses with a reason rather than letting the exception reach it.
@@ -867,7 +894,8 @@ template <class T>
 const rp_node_type* node_type() {
     static_assert(detail::checkHooks<T>());
     static constexpr rp_node_type kType{T::id, &detail::descriptorFn<T>, &detail::layoutForFn<T>,
-                                        &detail::queryMemoryFn<T>, &detail::createFn<T>, &detail::destroyFn<T>};
+                                        &detail::queryMemoryFn<T>, &detail::createFn<T>, &detail::destroyFn<T>,
+                                        detail::typeFlags<T>()};
     return &kType;
 }
 

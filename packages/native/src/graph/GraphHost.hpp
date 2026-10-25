@@ -28,8 +28,8 @@ struct HostConfig {
     double        sampleRate = 48000.0;
     std::uint32_t maxFrames = 1024;
     Target        target = Target::Desktop;
-    // How long setGraph waits for a stalled audio thread to adopt a published settings commit before
-    // answering busy.
+    // How long setGraph waits for a stalled audio thread to adopt a published settings commit (to a node whose
+    // prepare reads its current settings) before answering busy.
     std::uint32_t adoptionTimeoutMs = 2000;
     // The embedder's own host services; GraphHost answers its own ids (rp.host.audio-buffers/1) first.
     HostInterfaceFn interfaces = nullptr;
@@ -80,10 +80,12 @@ struct SetGraphResult {
 //   - audioThreadOwns decides who drains. While false the control thread flushes inline after every push,
 //     so the ring is empty at every handoff.
 //
-// It never plans while a published settings commit is unadopted: setGraph first waits (about one block
-// while audio runs, up to a timeout if it has stalled) for the audio thread to adopt it, so the planner
-// never asks a node to prepare settings while its last commit may be running. A plan with no commit needs
-// no wait, so several can sit in the ring at once, adopted in order in one drain.
+// It never plans while a published settings commit to a node whose prepare reads its current settings is
+// unadopted: setGraph first waits (about one block while audio runs, up to a timeout if it has stalled) for
+// the audio thread to adopt it, so the planner never asks such a node to prepare settings while its last
+// commit may be running. A plan with no such commit (none at all, or only commits to types that declare
+// RP_TYPE_STATELESS_PREPARE) needs no wait, so several can sit in the ring at once, adopted in order in one
+// drain.
 class GraphHost {
 public:
     // Throws std::invalid_argument for a config checkConfig refuses.
@@ -188,7 +190,8 @@ private:
     // top of the plan they replaced (see leakedPlans()).
     SpscRing<PlanStorage*, 2 * kCommandCapacity>          released_;
     std::atomic<bool>                                     audioOwns_{false};
-    // Published plans carrying a settings commit that the audio thread has not finished adopting.
+    // Published plans that await adoption (PlanStorage::awaitsAdoption) and that the audio thread has not
+    // finished adopting.
     std::atomic<std::uint32_t>                            commitsInFlight_{0};
     HostCommandHandler                                    hostHandler_ = nullptr;
     void*                                                 hostHandlerCtx_ = nullptr;

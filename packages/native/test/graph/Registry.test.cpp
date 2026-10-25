@@ -34,7 +34,7 @@ void noDestroy(rp_node*) {}
 
 // A node type whose functions are stubs: these tests only register types, never build them.
 rp_node_type typeWith(const char* id, const char* (*descriptor)()) {
-    return rp_node_type{id, descriptor, &noLayout, &noMemory, &noCreate, &noDestroy};
+    return rp_node_type{id, descriptor, &noLayout, &noMemory, &noCreate, &noDestroy, 0u};
 }
 
 std::string refusal(NodeRegistry& reg, std::initializer_list<const rp_node_type*> types,
@@ -92,7 +92,7 @@ TEST_CASE("a package registers every node type it lists", "[graph][registry]") {
     CHECK(std::string(reg.find("rp.test.n3")->type->id) == "rp.test.n3");
     CHECK(reg.find("rp.test.source") == e);
     CHECK(e->descriptor.id == "rp.test.source");
-    CHECK(reg.size() == 7 + kNumbered.size());
+    CHECK(reg.size() == 8 + kNumbered.size());
 }
 
 TEST_CASE("a bad package registers nothing and says why", "[graph][registry]") {

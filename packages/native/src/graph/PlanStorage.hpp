@@ -33,8 +33,25 @@ struct QueueStore {
     QueueStore(std::uint32_t itemCapacity, std::uint32_t byteCapacity);
 };
 
-// One live node instance. Its streams (params, control outputs) and resource output slots belong to the
-// instance, not to any plan, so a swap that reuses the instance keeps every value they hold.
+// What an instance holds for ONE layout: the layout, the streams (params, control outputs) and resource
+// output slots laid out by it, and the control side's records of what it last sent them. They belong to the
+// instance, not to any plan, so a swap that reuses the instance keeps every value they hold. A reshape gives
+// the instance a new PortState, built on the control thread while the running plan still uses the old one:
+// each stream and slot whose param or port persists by id is shared into it, never copied, and the rest are
+// new. Every plan holds the PortState of each instance it runs, so the old one outlives the plan that uses it.
+struct PortState {
+    Layout                                     layout;
+    std::vector<std::shared_ptr<StreamStore>>  params;           // one per layout param
+    std::vector<std::shared_ptr<StreamStore>>  controlOutputs;   // per output ordinal; null unless control
+    std::vector<std::shared_ptr<rp_resource*>> resourceOutputs;  // per output ordinal; null unless resource
+    // Control side only.
+    std::map<std::string, double>              appliedParams;    // document values already sent
+    std::vector<std::uint8_t>                  wiredParams;      // per param: driven by a wire, so setParam is refused
+    std::vector<std::uint8_t>                  lastMask;
+    bool                                       maskSent = false;
+};
+
+// One live node instance.
 struct Instance {
     std::string                               id;
     const NodeRegistry::Entry*                entry = nullptr;
@@ -42,14 +59,9 @@ struct Instance {
     void*                                     memory = nullptr;
     std::size_t                               align = 0;
     std::string                               settings;  // canonical JSON as the control thread last applied it
-    Layout                                    layout;
-    std::vector<std::unique_ptr<StreamStore>> params;           // one per layout param
-    std::vector<std::unique_ptr<StreamStore>> controlOutputs;   // per output ordinal; null unless control
-    std::vector<std::unique_ptr<rp_resource*>> resourceOutputs; // per output ordinal; null unless resource
-    std::map<std::string, double>             appliedParams;    // document values already sent
-    std::vector<std::uint8_t>                 wiredParams;      // per param: driven by a wire, so setParam is refused
-    std::vector<std::uint8_t>                 lastMask;
-    bool                                      maskSent = false;
+    // Control side: the ports of the last published plan, which a reshape replaces once its plan is published.
+    // The audio thread never reads this; it reaches the streams through the plan it runs.
+    std::shared_ptr<PortState>                ports;
     std::vector<rp_node*>                     lastPeers;
     bool                                      peersSent = false;
     bool                                      active = false;
@@ -84,8 +96,10 @@ struct PlanStorage {
     // Every buffer in the plan is this many frames long; the block driver refuses a longer block.
     std::uint32_t                               maxFrames = 0;
 
-    // Ownership: every instance and feedback buffer the plan references stays alive until the plan does.
+    // Ownership: every instance, port state and feedback buffer the plan references stays alive until the
+    // plan does.
     std::vector<std::shared_ptr<Instance>>      instances;
+    std::vector<std::shared_ptr<PortState>>     ports;  // the one each instance was planned with
     std::vector<std::shared_ptr<FeedbackFront>> feedbackFronts;
     ResourceTable*                              resources = nullptr;
     std::vector<ResourceTable::Id>              pins;
@@ -137,13 +151,16 @@ struct PlanStorage {
     std::vector<PortsChanged>   portsChanged;
     std::vector<Peers>          peers;
     std::vector<ParamSet>       paramSets;
+    // A commit here goes to a node whose prepare may read its current settings (a type without
+    // RP_TYPE_STATELESS_PREPARE), so the host must not plan again until this plan has been adopted.
+    bool                        awaitsAdoption = false;
 
     PlanStorage() = default;
     PlanStorage(const PlanStorage&) = delete;
     PlanStorage& operator=(const PlanStorage&) = delete;
     // Control thread: frees settings objects (the replaced ones if committed, the unused prepared ones if
-    // not), then drops its instances (destroying those it alone kept, while its buffers and pins still
-    // exist), then its resource pins. Feedback buffers go with their last owner.
+    // not), then drops its instances (destroying those it alone kept, while its buffers, port states and pins
+    // still exist), then its resource pins. Port states and feedback buffers go with their last owner.
     ~PlanStorage();
 
     // Audio thread, at adoption: commit settings, tell nodes their peers and connected outputs, apply

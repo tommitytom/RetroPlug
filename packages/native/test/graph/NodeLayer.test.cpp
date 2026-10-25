@@ -163,6 +163,26 @@ TEST_CASE("settings changes are swapped live unless the layout changes", "[graph
     CHECK(std::string(err.message).find("channels") != std::string::npos);
 }
 
+TEST_CASE("a node that reshapes answers reshape for a layout change, and a stateless one says so in its type",
+          "[graph][node][reshape]") {
+    Made m{rp::node_type<test::Shape>()};
+    make(m, R"({"outs":["b"]})");
+    rp_error err{};
+    void* prepared = nullptr;
+    rp_settings wider = json(R"({"outs":["a","b"]})");
+    REQUIRE(m.node->vt->prepare_settings(m.node, &wider, &prepared, &err) == RP_PREPARE_RESHAPE);
+    m.node->vt->release_settings(m.node, prepared);
+    // It never compares layouts, so a change that keeps its layout is a reshape too, which the planner swaps.
+    rp_settings retagged = json(R"({"outs":["b"],"tag":"c"})");
+    REQUIRE(m.node->vt->prepare_settings(m.node, &retagged, &prepared, &err) == RP_PREPARE_RESHAPE);
+    m.node->vt->release_settings(m.node, prepared);
+    rp_settings bad = json(R"({"tag":""})");
+    CHECK(m.node->vt->prepare_settings(m.node, &bad, &prepared, &err) == RP_PREPARE_INVALID);
+
+    CHECK(rp::node_type<test::Shape>()->flags == RP_TYPE_STATELESS_PREPARE);
+    CHECK(rp::node_type<test::Source>()->flags == 0u);  // by default prepare may read the current settings
+}
+
 namespace {
 
 struct PickySettings {

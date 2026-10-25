@@ -199,8 +199,8 @@ retroplug_add_test_binary(
 
 # Guards the node-graph engine (docs/modular-graph-design.md, Phase A): the executor over raw C-ABI
 # nodes, the canonical JSON C++ and TS share, descriptors, the C++ authoring layer, the planner's
-# validation codes, plan swaps that keep node state, the rp.core nodes, and a no-heap check of the block
-# path. Self-contained: no core, no txiki, no backend.
+# validation codes, plan swaps that keep node state, a node reshaped across a layout change, the rp.core
+# nodes, and a no-heap check of the block path. Self-contained: no core, no txiki, no backend.
 retroplug_add_test_binary(
     NAME     retroplug-graph-test
     SOURCES  test/graph/Executor.test.cpp
@@ -214,6 +214,7 @@ retroplug_add_test_binary(
              test/graph/NoAlloc.test.cpp
              test/graph/SwapStress.test.cpp
              test/graph/HostCommands.test.cpp
+             test/graph/Reshape.test.cpp
              test/graph/PlannerBench.test.cpp         # hidden: run with "[bench]"
     LIBS     retroplug-graph
              Threads::Threads                          # SwapStress runs a real audio thread

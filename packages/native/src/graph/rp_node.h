@@ -187,9 +187,15 @@ typedef struct rp_process {
 
 typedef uint32_t rp_prepare_result;
 enum {
-    RP_PREPARE_SWAP    = 0u, /* *prepared is ready to commit on the audio thread */
-    RP_PREPARE_REBUILD = 1u, /* the change needs a fresh instance (a new ROM, a layout change) */
-    RP_PREPARE_INVALID = 2u  /* rejected; err holds the reason */
+    RP_PREPARE_SWAP    = 0u, /* *prepared is ready to commit on the audio thread; the layout is unchanged */
+    RP_PREPARE_REBUILD = 1u, /* the change needs a fresh instance (a new ROM, a layout it cannot reshape to) */
+    RP_PREPARE_INVALID = 2u, /* rejected; err holds the reason */
+    /* Keep this instance, with the layout layout_for gives the new settings: the host binds the new plan's
+     * ports to it by id, carries over by id what its params and control outputs hold, and commits *prepared
+     * at the swap, so the first block on the new ports runs with the new settings. With the layout
+     * unchanged it is a swap, so a prepare that cannot see the current layout may answer it for every
+     * change it can keep. */
+    RP_PREPARE_RESHAPE = 3u
 };
 
 typedef struct rp_node_vtable {
@@ -198,15 +204,19 @@ typedef struct rp_node_vtable {
     /* [control] */
     void (*deactivate)(rp_node* node);
     /* [audio] The connected-output mask changed at a plan swap; connected[i] is 0 or 1 per output. The
-     * array is valid only during the call: copy what you keep. Not called again until the mask changes. */
+     * array is valid only during the call: copy what you keep. Not called again until the mask changes,
+     * or a reshape changes the node's layout: that always brings one, after its commit_settings, sized by
+     * the new layout. */
     void (*ports_changed)(rp_node* node, const uint8_t* connected, uint32_t output_count);
     /* [audio] One block. Must write every frame of every CONNECTED audio output (unconnected ones get a
      * shared scratch buffer, so skipping them is safe, and is what the connected mask is for). Return
      * RP_FAULT to be bypassed from then on. */
     rp_status (*process)(rp_node* node, const rp_process* block);
-    /* [control] Validate new settings and decide swap versus rebuild. A host never calls this while a
-     * commit_settings for the same node may still be in flight, so the node may read its current
-     * settings here (to compare against). */
+    /* [control] Validate new settings and decide how this instance takes them: a swap (its layout
+     * unchanged), a reshape or a rebuild. Asked for every settings change, whether or not the layout
+     * changed. Unless the type declares RP_TYPE_STATELESS_PREPARE, a host never calls this while a
+     * commit_settings for the same node may still be in flight, so the node may read its current settings
+     * here (to compare against). */
     rp_prepare_result (*prepare_settings)(rp_node* node, const rp_settings* settings, void** prepared,
                                           rp_error* err);
     /* [audio] Swap in a prepared settings object; hand the previous one back through *old. */
@@ -221,16 +231,25 @@ struct rp_node {
     const rp_node_vtable* vt;
 };
 
+/* rp_node_type.flags: promises a type makes the host, fixed for the life of the package. */
+enum {
+    /* Its prepare_settings reads nothing commit_settings writes (the instance's current settings among
+     * them), so the host may prepare again while an earlier commit for the same instance is in flight:
+     * setGraph need not wait for the audio thread to adopt it. */
+    RP_TYPE_STATELESS_PREPARE = 1u << 0
+};
+
 typedef struct rp_node_type {
     const char* id;
     /* [control] The type descriptor JSON; valid for the life of the package. */
     const char* (*descriptor)(void);
     /* [control] The resolved layout JSON (ports, params, exclusive groups) a node of this type has with
      * these settings: a function of the settings alone, so the host can validate a whole document before
-     * it creates anything, and an instance's layout for its life (a settings change that would alter it
-     * is a rebuild, never a swap). Writes it NUL-terminated into out[0..capacity) when it fits and returns
-     * its length without the NUL, so a caller whose buffer is too small learns the size and asks again.
-     * Returns 0, with err filled, for settings it refuses. */
+     * it creates anything. It is an instance's layout until a settings change alters it, which the
+     * instance then takes as a rebuild or a reshape (prepare_settings), never a swap. Writes it
+     * NUL-terminated into out[0..capacity) when it fits and returns its length without the NUL, so a
+     * caller whose buffer is too small learns the size and asks again. Returns 0, with err filled, for
+     * settings it refuses. */
     size_t (*layout_for)(const rp_settings* settings, char* out, size_t capacity, rp_error* err);
     /* [control] Size and alignment of one instance for these settings. */
     bool (*query_memory)(const rp_settings* settings, rp_memory_req* out, rp_error* err);
@@ -238,6 +257,7 @@ typedef struct rp_node_type {
     rp_node* (*create)(const rp_host* host, void* memory, const rp_settings* settings, rp_error* err);
     /* [control] Destruct. The host frees the memory afterwards. */
     void (*destroy)(rp_node* node);
+    uint32_t flags; /* RP_TYPE_*; 0 promises nothing */
 } rp_node_type;
 
 typedef struct rp_package {

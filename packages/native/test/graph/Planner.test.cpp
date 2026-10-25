@@ -63,8 +63,8 @@ rp_node* failingCreate(const rp_host*, void*, const rp_settings*, rp_error* err)
     return nullptr;
 }
 
-// rp.test.source whose nodes count their prepare_settings calls (then let the real one answer), so a call
-// made for a change the planner already knows is a rebuild shows up as a count.
+// rp.test.source whose nodes count their prepare_settings calls (then let the real one answer), so which
+// changes the planner asks the live instance about shows up as a count.
 int g_prepareCalls = 0;
 decltype(rp_node_vtable::prepare_settings) g_realPrepare = nullptr;
 const char* countingDescriptor() { return R"({"id":"rp.test.counting"})"; }
@@ -88,10 +88,10 @@ rp_node* countingCreate(const rp_host* host, void* memory, const rp_settings* s,
 const rp_package* plannerPackage() {
     static const rp_node_type failing{"rp.test.failing", &failingDescriptor, rp::node_type<test::Sink>()->layout_for,
                                       rp::node_type<test::Sink>()->query_memory, &failingCreate,
-                                      rp::node_type<test::Sink>()->destroy};
+                                      rp::node_type<test::Sink>()->destroy, 0u};
     static const rp_node_type counting{"rp.test.counting", &countingDescriptor, rp::node_type<test::Source>()->layout_for,
                                        rp::node_type<test::Source>()->query_memory, &countingCreate,
-                                       rp::node_type<test::Source>()->destroy};
+                                       rp::node_type<test::Source>()->destroy, 0u};
     static const rp_node_type* const kTypes[] = {rp::node_type<Tapped>(), rp::node_type<LinkedListener>(), &failing,
                                                  rp::node_type<Counted>(), &counting};
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.planner"})",
@@ -291,7 +291,7 @@ TEST_CASE("a refused document changes nothing and leaks nothing", "[graph][plann
     CHECK(rig.outs[0][0] == 0.5f);
 }
 
-TEST_CASE("a layout change rebuilds without asking the live instance", "[graph][planner]") {
+TEST_CASE("every settings change asks the live instance, a layout change included", "[graph][planner]") {
     PlannerRig rig;
     const auto doc = [](const char* settings) {
         return std::string(R"({"nodes":[{"id":"c","type":"rp.test.counting","settings":)") + settings + R"(}],"wires":[]})";
@@ -299,11 +299,14 @@ TEST_CASE("a layout change rebuilds without asking the live instance", "[graph][
     REQUIRE(rig.set(doc(R"({"channels":2})")).ok);
     rp_node* const first = rig.host->node("c");
     g_prepareCalls = 0;
+    // Only the instance knows whether it can reshape; this one answers rebuild, so it is rebuilt.
     REQUIRE(rig.set(doc(R"({"channels":4})")).ok);
     CHECK(rig.host->node("c") != first);
-    CHECK(g_prepareCalls == 0);
-    REQUIRE(rig.set(doc(R"({"channels":4,"value":0.5})")).ok);
     CHECK(g_prepareCalls == 1);
+    REQUIRE(rig.set(doc(R"({"channels":4,"value":0.5})")).ok);
+    CHECK(g_prepareCalls == 2);
+    REQUIRE(rig.set(doc(R"({"channels":4,"value":0.5})")).ok);
+    CHECK(g_prepareCalls == 2);  // no change, nothing to ask
 }
 
 TEST_CASE("a rejected document leaves the running graph untouched", "[graph][planner]") {

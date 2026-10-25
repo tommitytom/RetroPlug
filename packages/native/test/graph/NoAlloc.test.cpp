@@ -116,9 +116,10 @@ const rp_package* noAllocPackage() {
     return &kPackage;
 }
 
-// Every rp.core node, a feedback wire of each kind, a coupled pair and the host output. The `swapped`
-// form changes a setting in place (a live swap), a param value, a coupled group's members, and connects an
-// output that was not (so ports_changed fires), and adds fresh instances and a feedback wire.
+// Every rp.core node, a feedback wire of each kind, a coupled pair, a reshaping node and the host output. The
+// `swapped` form changes a setting in place (a live swap), a param value, a coupled group's members, and
+// connects an output that was not (so ports_changed fires), reshapes a node (a param it adds gets a document
+// value), and adds fresh instances and a feedback wire.
 std::string graphDoc(bool swapped, rp::graph::ResourceTable::Id buf, rp::graph::ResourceTable::Id rec) {
     const std::string b = std::to_string(buf), r = std::to_string(rec);
     std::string nodes = R"({"id":"src","type":"rp.test.source"},
@@ -139,6 +140,11 @@ std::string graphDoc(bool swapped, rp::graph::ResourceTable::Id buf, rp::graph::
         {"id":"x","type":"rp.test.through"},{"id":"y","type":"rp.test.through"},
         {"id":"rec","type":"rp.core.buffer-recorder","resources":{"target":"res:)" + r + R"("}},
         {"id":"la","type":"rp.test.quiet-linked"},{"id":"lb","type":"rp.test.quiet-linked"},{"id":"ls","type":"rp.test.sink"},
+        {"id":"sh","type":"rp.test.shape","settings":)" +
+        (swapped ? R"({"ins":["p","q"],"outs":["a","b"],"levels":["K","L"],"knobs":["g","h"],"tag":"b"},)"
+                   R"("params":{"g":5})"
+                 : R"({"ins":["q"],"outs":["b"],"levels":["L"],"knobs":["h"]})") + R"(},
+        {"id":"shs","type":"rp.test.sink"},{"id":"shl","type":"rp.test.sink"},
         {"id":"out","type":"rp.host.audio-out"})";
     std::string wires = R"({"from":"p.out","to":"d.in"},{"from":"p.out","to":"sum.in1"},{"from":"d.out","to":"sum.in2"},
         {"from":"sum.out","to":"split.in"},{"from":"sum.out","to":"dm.in"},
@@ -148,7 +154,8 @@ std::string graphDoc(bool swapped, rp::graph::ResourceTable::Id buf, rp::graph::
         {"from":"k.out","to":"addc.in1"},{"from":"k2.out","to":"addc.in2"},{"from":"addc.out","to":"cs.control","feedback":true},
         {"from":"src.events","to":"mg.in1"},{"from":"mg.out","to":"es.events"},
         {"from":"x.out","to":"y.in"},{"from":"y.out","to":"out.out.5-6"},{"from":"y.out","to":"x.in","feedback":true},
-        {"from":"la.link","to":"lb.link"},{"from":"la.out","to":"ls.in"})";
+        {"from":"la.link","to":"lb.link"},{"from":"la.out","to":"ls.in"},
+        {"from":"src.events","to":"sh.q"},{"from":"sh.b","to":"shs.events"},{"from":"sh.L","to":"shl.control"})";
     if (swapped) {
         nodes += R"(,{"id":"rl2","type":"rp.core.relabel","settings":{"channels":2,"layout":"stereo"}},{"id":"s2","type":"rp.test.sink"},
             {"id":"p2","type":"rp.core.buffer-player"},{"id":"s3","type":"rp.test.sink"},{"id":"fbs","type":"rp.test.sink"},
@@ -206,6 +213,7 @@ TEST_CASE("the block path never allocates or frees", "[graph][noalloc]") {
     CHECK(m.freed == 0);
     rig.host->setAudioThreadOwns(false);
     CHECK(rp::peer_as<QuietLinked>(rig.host->node("la"))->peerCount == 2);  // the peer change was adopted
+    CHECK(rp::peer_as<rp::graph::test::Shape>(rig.host->node("sh"))->ranOutputs == 4);  // and the reshape
 
     // A host command, and two commit-free plans queued behind it, all applied inside the measured blocks.
     // The same document again changes nothing, so neither plan commits settings and neither waits.

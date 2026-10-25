@@ -25,6 +25,7 @@ struct NodePlan {
     const NodeDoc*             doc = nullptr;
     const NodeRegistry::Entry* entry = nullptr;
     std::shared_ptr<Instance>  inst;
+    std::shared_ptr<PortState> ports;     // the instance's for `layout`: its current ones, or a reshape's new ones
     bool                       fresh = false;
     void*                      prepared = nullptr;
     std::string                settings;
@@ -51,6 +52,55 @@ struct Resolved {
     bool          ok = false;
     State         state = State::Unvisited;  // meaningful until ok
 };
+
+int outputOrdinal(const Layout& l, const PortDesc* port) {
+    int o = 0;
+    for (const auto& p : l.ports) {
+        if (&p == port) return o;
+        if (p.dir == PortDir::Out) ++o;
+    }
+    return kNone;
+}
+
+// A value means what it meant: the same type, range and enum labels (a name, unit or default may change).
+bool sameValues(const ParamDesc& a, const ParamDesc& b) {
+    return a.type == b.type && a.min == b.min && a.max == b.max && a.values == b.values;
+}
+
+// An instance's ports for a layout. A reshape passes the instance's current ones as `carry`, which lends every
+// stream and slot whose param or port persists by id (a param whose values mean the same, a control or resource
+// output of the same kind and type), with the document value last sent to it; the rest start afresh. Lent, never
+// copied: the running plan keeps writing them while this one is built, and this thread only takes addresses.
+std::shared_ptr<PortState> portState(const Layout& layout, const PortState* carry) {
+    auto st = std::make_shared<PortState>();
+    st->layout = layout;
+    for (const auto& param : layout.params) {
+        const ParamDesc* was = carry ? findParam(carry->layout, param.id) : nullptr;
+        if (was && sameValues(*was, param)) {
+            st->params.push_back(carry->params[static_cast<std::size_t>(was - carry->layout.params.data())]);
+            const auto applied = carry->appliedParams.find(param.id);
+            if (applied != carry->appliedParams.end()) st->appliedParams.insert(*applied);
+        } else {
+            st->params.push_back(std::make_shared<StreamStore>(kStreamChanges, param.def));
+        }
+    }
+    for (const auto& port : layout.ports) {
+        if (port.dir != PortDir::Out) continue;
+        const PortDesc* was = carry ? findPort(carry->layout, port.id) : nullptr;
+        const bool kept =
+            was && was->dir == PortDir::Out && was->kind == port.kind && was->resourceType == port.resourceType;
+        const auto o = static_cast<std::size_t>(kept ? outputOrdinal(carry->layout, was) : 0);
+        std::shared_ptr<StreamStore>  control;
+        std::shared_ptr<rp_resource*> resource;
+        if (port.kind == PortKind::Control)
+            control = kept ? carry->controlOutputs[o] : std::make_shared<StreamStore>(kStreamChanges, 0.0);
+        else if (port.kind == PortKind::Resource)
+            resource = kept ? carry->resourceOutputs[o] : std::make_shared<rp_resource*>(nullptr);
+        st->controlOutputs.push_back(std::move(control));
+        st->resourceOutputs.push_back(std::move(resource));
+    }
+    return st;
+}
 
 class Builder {
 public:
@@ -183,17 +233,7 @@ private:
             return nullptr;  // ~Instance frees the memory (node is null, so nothing to destroy)
         }
         inst->settings = p.settings;
-        inst->layout = p.layout;
-        for (const auto& param : inst->layout.params)
-            inst->params.push_back(std::make_unique<StreamStore>(kStreamChanges, param.def));
-        for (const auto& port : inst->layout.ports) {
-            if (port.dir != PortDir::Out) continue;
-            inst->controlOutputs.push_back(port.kind == PortKind::Control
-                                               ? std::make_unique<StreamStore>(kStreamChanges, 0.0)
-                                               : nullptr);
-            inst->resourceOutputs.push_back(
-                port.kind == PortKind::Resource ? std::make_unique<rp_resource*>(nullptr) : nullptr);
-        }
+        inst->ports = portState(p.layout, nullptr);  // a fresh instance is no one else's until it is published
         if (!inst->node->vt->activate(inst->node, in_.sampleRate, in_.maxFrames, &err)) {
             error(p.doc->id, "", "activate-failed", errorText(err, "the node could not be activated"));
             return nullptr;
@@ -202,35 +242,53 @@ private:
         return inst;
     }
 
+    void createFresh(NodePlan& p) {
+        p.inst = create(p);
+        p.fresh = true;
+        if (p.inst) p.ports = p.inst->ports;
+    }
+
+    // A same-type node whose settings changed is asked how it takes them, whether or not its layout moved: only
+    // the instance knows whether it can keep up with a new layout.
     bool reconcile() {
         for (auto& p : nodes_) {
             const auto it = in_.live->find(p.doc->id);
-            const bool sameType = it != in_.live->end() && it->second->entry == p.entry;
-            const bool sameLayout = sameType && layoutJson(it->second->layout) == out_.layouts.at(p.doc->id);
-            if (sameType && sameLayout && it->second->settings == p.settings) {
-                p.inst = it->second;
-            } else if (sameType && !sameLayout) {
-                // A layout change is always a rebuild, and the type already said so: the live instance is
-                // not asked anything.
-                p.inst = create(p);
-                p.fresh = true;
-            } else if (sameType) {
+            if (it == in_.live->end() || it->second->entry != p.entry) {
+                createFresh(p);
+                continue;
+            }
+            const std::shared_ptr<Instance>& live = it->second;
+            const bool sameLayout = layoutJson(live->ports->layout) == out_.layouts.at(p.doc->id);
+            if (sameLayout && live->settings == p.settings) {
+                p.inst = live;
+                p.ports = live->ports;
+            } else {
                 const rp_settings s{p.settings.data(), p.settings.size(), RP_SETTINGS_JSON};
                 rp_error err{};
-                const rp_prepare_result result =
-                    it->second->node->vt->prepare_settings(it->second->node, &s, &p.prepared, &err);
+                const rp_prepare_result result = live->node->vt->prepare_settings(live->node, &s, &p.prepared, &err);
                 switch (result) {
                     case RP_PREPARE_SWAP:
+                    case RP_PREPARE_RESHAPE:
                         if (!p.prepared) {
-                            error(p.doc->id, "", "node-contract", "prepare_settings chose a swap but prepared nothing");
-                            break;
+                            error(p.doc->id, "", "node-contract",
+                                  "prepare_settings kept the instance but prepared nothing");
+                        } else if (result == RP_PREPARE_SWAP && !sameLayout) {
+                            // The instance's ports are laid out by the layout it has; only a reshape moves them.
+                            live->node->vt->release_settings(live->node, p.prepared);
+                            p.prepared = nullptr;
+                            error(p.doc->id, "", "node-contract",
+                                  "prepare_settings chose a swap for a change to the node's layout, which needs a "
+                                  "reshape or a rebuild");
+                        } else {
+                            // Kept. A reshape gets ports for its new layout; one that leaves the layout as it
+                            // was is a swap, and keeps the ports it has.
+                            p.inst = live;
+                            p.ports = sameLayout ? live->ports : portState(p.layout, live->ports.get());
                         }
-                        p.inst = it->second;
                         break;
                     case RP_PREPARE_REBUILD:
                         p.prepared = nullptr;
-                        p.inst = create(p);
-                        p.fresh = true;
+                        createFresh(p);
                         break;
                     case RP_PREPARE_INVALID:
                         error(p.doc->id, "", "settings-invalid", errorText(err, "the node refused its settings"));
@@ -241,9 +299,6 @@ private:
                               "prepare_settings returned " + std::to_string(result) + ", which is not a result");
                         break;
                 }
-            } else {
-                p.inst = create(p);
-                p.fresh = true;
             }
         }
         return out_.errors.empty();
@@ -728,7 +783,7 @@ private:
                 auto& views = st.outputViews[n];
                 for (std::size_t o = 0; o < p.outPorts.size(); ++o) {
                     const int port = p.outPorts[o];
-                    const PortDesc& d = p.inst->layout.ports[port];
+                    const PortDesc& d = p.layout.ports[port];
                     rp_port_view v{};
                     v.kind = static_cast<std::uint32_t>(d.kind);
                     int lastReader = kNone;
@@ -761,11 +816,11 @@ private:
                             }
                             break;
                         case PortKind::Control:
-                            v.u.control = &p.inst->controlOutputs[o]->queue;
+                            v.u.control = &p.ports->controlOutputs[o]->queue;
                             st.controlsToRoll.push_back(v.u.control);
                             break;
                         case PortKind::Resource:
-                            v.u.resource = p.inst->resourceOutputs[o].get();
+                            v.u.resource = p.ports->resourceOutputs[o].get();
                             break;
                         case PortKind::Link:
                             break;
@@ -819,7 +874,7 @@ private:
             NodePlan& p = nodes_[n];
             auto& views = st.inputViews[n];
             for (const int port : p.inPorts) {
-                const PortDesc& d = p.inst->layout.ports[port];
+                const PortDesc& d = p.layout.ports[port];
                 rp_port_view v{};
                 v.kind = static_cast<std::uint32_t>(d.kind);
                 const DataWire* w = wireInto(static_cast<int>(n), port);
@@ -861,8 +916,8 @@ private:
                 views.push_back(v);
             }
             auto& pv = st.paramViews[n];
-            for (std::size_t k = 0; k < p.inst->layout.params.size(); ++k) {
-                rp_control_queue* q = &p.inst->params[k]->queue;
+            for (std::size_t k = 0; k < p.layout.params.size(); ++k) {
+                rp_control_queue* q = &p.ports->params[k]->queue;
                 st.controlsToRoll.push_back(q);
                 const auto it = paramWire_[n].find(static_cast<int>(k));
                 if (it != paramWire_[n].end()) {
@@ -905,31 +960,39 @@ private:
         const std::size_t count = nodes_.size();
         for (std::size_t n = 0; n < count; ++n) {
             NodePlan& p = nodes_[n];
-            const std::shared_ptr<Instance> inst = p.inst;
+            const std::shared_ptr<Instance>  inst = p.inst;
+            const std::shared_ptr<PortState> ports = p.ports;
+            // A reshape's ports become the instance's once its plan is published. That is the whole switch: the
+            // audio thread reaches ports only through the plan it runs, and this plan holds the new ones while
+            // the one it replaces holds the old ones until it is reclaimed.
+            if (ports != inst->ports) out_.onPublished.push_back([inst, ports] { inst->ports = ports; });
             if (p.prepared) {
                 st.commits.push_back({inst->node, p.prepared, nullptr, false});
                 p.prepared = nullptr;  // the plan owns it now
+                if (!(p.entry->type->flags & RP_TYPE_STATELESS_PREPARE)) st.awaitsAdoption = true;
                 const std::string settings = p.settings;
                 out_.onPublished.push_back([inst, settings] { inst->settings = settings; });
             }
+            // New ports have sent no mask, so a reshape always brings one: its outputs' ordinals may all have
+            // moved, whatever the mask's bytes are.
             std::vector<std::uint8_t> mask;
             for (int port : p.outPorts) mask.push_back(connectedOutput(static_cast<int>(n), port) ? 1 : 0);
-            if (!inst->maskSent || inst->lastMask != mask) {
+            if (!ports->maskSent || ports->lastMask != mask) {
                 st.portsChanged.push_back({inst->node, mask});
-                out_.onPublished.push_back([inst, mask] {
-                    inst->lastMask = mask;
-                    inst->maskSent = true;
+                out_.onPublished.push_back([ports, mask] {
+                    ports->lastMask = mask;
+                    ports->maskSent = true;
                 });
             }
-            std::vector<std::uint8_t> wired(inst->layout.params.size(), 0);
+            std::vector<std::uint8_t> wired(ports->layout.params.size(), 0);
             for (const auto& [k, w] : paramWire_[n]) wired[static_cast<std::size_t>(k)] = 1;
-            if (inst->wiredParams != wired) out_.onPublished.push_back([inst, wired] { inst->wiredParams = wired; });
+            if (ports->wiredParams != wired) out_.onPublished.push_back([ports, wired] { ports->wiredParams = wired; });
             for (const auto& [k, value] : paramValues_[n]) {
-                const std::string& id = inst->layout.params[k].id;
-                const auto it = inst->appliedParams.find(id);
-                if (p.fresh || it == inst->appliedParams.end() || it->second != value) {
-                    st.paramSets.push_back({&inst->params[k]->queue, value});
-                    out_.onPublished.push_back([inst, id, value] { inst->appliedParams[id] = value; });
+                const std::string& id = ports->layout.params[k].id;
+                const auto it = ports->appliedParams.find(id);
+                if (p.fresh || it == ports->appliedParams.end() || it->second != value) {
+                    st.paramSets.push_back({&ports->params[k]->queue, value});
+                    out_.onPublished.push_back([ports, id, value] { ports->appliedParams[id] = value; });
                 }
             }
         }
@@ -970,7 +1033,10 @@ private:
         st.inputViews.resize(nodes_.size());
         st.outputViews.resize(nodes_.size());
         st.paramViews.resize(nodes_.size());
-        for (const auto& p : nodes_) st.instances.push_back(p.inst);
+        for (const auto& p : nodes_) {
+            st.instances.push_back(p.inst);
+            st.ports.push_back(p.ports);
+        }
         assignOutputs(st);
         auto fronts = feedbackFronts(st);
         assignInputs(st, fronts);

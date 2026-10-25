@@ -1,9 +1,10 @@
-// A real audio thread runs blocks while the control thread swaps plans, sets params and reclaims. Under
-// ThreadSanitizer (build-tsan/) this is the race check for the command ring and the release ring; in a
-// normal build it checks that a system's own output and state survive constant edits around it. The
-// adoption handshake itself (setGraph waiting only while a published plan still carries a settings commit)
-// has its own deterministic tests below (it waits while a commit is queued, and while one is being
-// adopted), since a race window that narrow is not something a stress run can be relied on to hit.
+// A real audio thread runs blocks while the control thread swaps plans, reshapes a node, sets params and
+// reclaims. Under ThreadSanitizer (build-tsan/) this is the race check for the command ring, the release ring
+// and a reshape's new streams; in a normal build it checks that a system's own output and state survive
+// constant edits around it. The adoption handshake itself (setGraph waiting only while a published plan still
+// carries a settings commit) has its own deterministic tests below (it waits while a commit is queued, and
+// while one is being adopted), since a race window that narrow is not something a stress run can be relied
+// on to hit.
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
@@ -19,6 +20,7 @@
 
 using rp::graph::GraphHost;
 using rp::graph::test::GraphRig;
+using rp::graph::test::Shape;
 using rp::graph::test::Sink;
 using rp::graph::test::Source;
 
@@ -153,6 +155,71 @@ TEST_CASE("plan swaps under a running audio thread keep a node's output and stat
     CHECK(settled);
     CHECK(rig.node<Tunable>("tun").level == 201.0f);  // the last LIVE settings swap landed
     CHECK(rig.node<Sink>("ks").controlEnd == 201.0);  // and the param value survived it
+}
+
+namespace {
+
+// Variants of a reshaping node: ports and a knob added and dropped before and after the wired ones, a new tag,
+// and a feedback wire out of it on odd variants.
+std::string reshapeDoc(int variant) {
+    std::string outs = variant % 3 ? R"("a","b")" : R"("b")";
+    if (variant % 2) outs += R"(,"c")";
+    std::string wires = R"({"from":"src.out","to":"out.out.1-2"},{"from":"x.b","to":"s.events"},)"
+                        R"({"from":"src.events","to":"x.q"},{"from":"x.L","to":"ls.control"})";
+    if (variant % 2) wires += R"(,{"from":"x.b","to":"fs.events","feedback":true})";
+    const std::string ins = variant % 5 ? R"(["p","q"])" : R"(["q"])";
+    const std::string levels = variant % 4 ? R"(["L"])" : R"(["K","L"])";
+    const std::string knobs = variant % 4 ? R"(["g","h"])" : R"(["h"])";
+    return R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":0.5}},)"
+           R"({"id":"out","type":"rp.host.audio-out"},{"id":"x","type":"rp.test.shape","settings":{"ins":)" + ins +
+           R"(,"outs":[)" + outs + R"(],"levels":)" + levels + R"(,"knobs":)" + knobs + R"(,"tag":")" +
+           std::to_string(variant % 7) + R"("}},{"id":"s","type":"rp.test.sink"},{"id":"fs","type":"rp.test.sink"},)"
+           R"({"id":"ls","type":"rp.test.sink"}],"wires":[)" + wires + "]}";
+}
+
+}  // namespace
+
+TEST_CASE("reshapes under a running audio thread keep the instance, its state and its streams",
+          "[graph][swap][stress][reshape]") {
+    GraphRig rig;
+    REQUIRE(rig.set(reshapeDoc(0)).ok);
+    rp_node* const x = rig.host->node("x");
+    rig.host->setAudioThreadOwns(true);
+
+    std::string failures;
+    bool settled = false;
+    {
+        AudioThread audio(*rig.host);
+        // A stateless prepare's commits never make setGraph wait, so it can fill the ring faster than the audio
+        // thread drains it: retry, it is draining.
+        const auto retry = [&](auto&& attempt) {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            while (!attempt())
+                if (std::chrono::steady_clock::now() > deadline) return false;
+                else std::this_thread::yield();
+            return true;
+        };
+        for (int i = 1; i <= 200; ++i) {
+            if (!retry([&] { return rig.set(reshapeDoc(i)).ok; })) failures += "set " + std::to_string(i) + "; ";
+            if (!retry([&] { return rig.host->setParam("x", "h", static_cast<double>(i % 100)); }))
+                failures += "param " + std::to_string(i) + "; ";
+            rig.host->reclaim();
+        }
+        if (!retry([&] { return rig.host->setParam("x", "h", 99.0); })) failures += "param 99; ";
+        if (!retry([&] { return rig.set(reshapeDoc(201)).ok; })) failures += "set 201; ";
+        settled = audio.waitBlocks(4);
+        audio.stop();
+        CHECK(failures.empty());
+        CHECK_FALSE(audio.wrong());
+        CHECK(rig.host->node("x") == x);  // never rebuilt...
+        CHECK(rig.node<Shape>("x").blocks == static_cast<std::uint32_t>(audio.blocks()));  // ...and ran every block
+    }
+
+    CHECK(settled);
+    CHECK(rig.node<Shape>("x").ranWith == '5');           // variant 201's tag
+    CHECK(rig.node<Shape>("x").knobs['h'] == 99.0);       // h's stream survived every reshape
+    CHECK(rig.node<Sink>("ls").controlStart == 5.0);      // and so did L's
+    CHECK(rig.node<Sink>("s").eventBytes[0] == 'b');
 }
 
 TEST_CASE("setGraph plans again at once while the plans in flight carry no settings commit", "[graph][swap]") {
