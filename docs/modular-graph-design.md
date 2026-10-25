@@ -1016,6 +1016,12 @@ moved out of B2 as designed: the role-config commands
 node params, and the kernel commands stay until B3 deletes the kernel. Building a core stays a native call
 (`buildCore`) until Phase C, when system nodes build their own from settings and resources.
 
+B3 is split in two. B3a ([modular-graph-phase-b3a-design.md](modular-graph-phase-b3a-design.md), designed) makes
+the kernel's input and output real wires (host I/O nodes, input ports on every system node, the Game Boy's
+`serialOut`) and runs today's kernel unchanged as one node in the new script-node runtime. B3b splits that node
+into one protocol node per role, moves `kernelProjection` into `buildGraph`, takes zod out of the bundle and
+deletes the kernel.
+
 ### Phase C: nodes own their knowledge
 
 - Console-specific code moves into each node; every `dynamic_cast` in §6.5 goes.
