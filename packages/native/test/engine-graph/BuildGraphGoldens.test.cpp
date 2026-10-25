@@ -8,8 +8,9 @@
 // The cores are real: a system node takes its core by its concrete class, so a stand-in reporting only its
 // kind is refused when the node activates. Each is built as the case's model says (a Game Boy's link group, a
 // NES's export mode), and the case's tap arm rides the request, so each NES must end in the mode it armed, or
-// the one it was built in. The thirty-three systems under perSystem give rp.host.audio-out 33 buses, past the
-// 32 it takes: those are refused instead.
+// the one it was built in. Each plan then runs one block, which must fault no node: a document can plan and
+// still wedge a linked group or a node's process. The thirty-three systems under perSystem give
+// rp.host.audio-out 33 buses, past the 32 it takes: those are refused instead.
 //
 // Run via `pnpm test:plugin engine-graph`.
 
@@ -41,7 +42,8 @@ using rp::host::test::readFile;
 
 namespace {
 
-constexpr double kRate = 48000.0;
+constexpr double        kRate = 48000.0;
+constexpr std::uint32_t kBlockFrames = 256;
 
 // A golden case, as build-graph-goldens.test.ts reads it; the model's routing is what built the document, and
 // nothing here needs it.
@@ -168,6 +170,12 @@ std::optional<std::string> plan(const GoldenCase& c, const std::string& document
             return "NES " + std::to_string(id) + " is in mode " + std::to_string(nes->channelExportMode()) +
                    ", not " + std::to_string(want);
     }
+    // One block, into as many channels as the plan writes.
+    std::vector<std::vector<float>> lanes(e.hostWidth(), std::vector<float>(kBlockFrames, 0.0f));
+    std::vector<float*>             outs;
+    for (auto& lane : lanes) outs.push_back(lane.data());
+    e.processBlock(kBlockFrames, outs.data(), outs.size());
+    if (e.faultCount() != 0) return std::to_string(e.faultCount()) + " node(s) faulted in its first block";
     return std::nullopt;
 }
 

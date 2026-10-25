@@ -198,6 +198,10 @@ public:
     GraphResult setGraph(const GraphRequest& request);
     // The host channels the last published plan writes (the sum of its rp.host.audio-out buses). Control thread.
     std::uint32_t hostWidth() const { return hostWidth_; }
+    // Nodes faulted so far, each counted once and bypassed from then on (GraphHost::faultCount). An atomic the
+    // block thread bumps relaxed: any thread may read it, a control-thread read may lag a running audio thread,
+    // and on a quiescent engine, whose blocks run on the caller's thread, it is exact once processBlock returns.
+    std::uint32_t faultCount() const;
 
 private:
     struct Graph;
@@ -234,7 +238,10 @@ private:
     // every re-resolve so leaving a split mode (or gaining a second system) puts the core back exactly as
     // found. Scoped to what WE armed on purpose: the CLI / RenderHost set channelExportMode at construct
     // through the mesen role blob and never select a split routing, so they are never disturbed. `core`
-    // is compared, never followed: a fresh core replaced in under the same id is not the one armed.
+    // is compared, never followed: a fresh core replaced in under the same id is not the one armed. It is
+    // compared by address, so a core allocated where the armed one was freed defeats it; TS never gets there,
+    // since buildCore refuses a live id, the stores' id counter only goes up, and every TS edit that drops a
+    // core re-arms, which drops this record with it.
     struct ArmedTap {
         bool                  active   = false;
         SystemId              id       = 0;

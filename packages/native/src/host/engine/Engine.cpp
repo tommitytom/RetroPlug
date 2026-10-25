@@ -293,6 +293,8 @@ std::size_t Engine::reclaim() {
 
 void Engine::discardPending() { graph_->host->discardPending(); }
 
+std::uint32_t Engine::faultCount() const { return graph_->host->faultCount(); }
+
 void Engine::setMaxBlockFrames(std::uint32_t frames) {
     if (frames <= graph_->maxFrames) return;
     std::string why;
