@@ -2,8 +2,9 @@
 // the scenes): SYNC=MIDI following the host clock, each tick at its own frame; the Arduinoboy protocol, its
 // clocks at a block's frame 0, its play / stop notes, 0xFA and 0xFC on the transport's edges; MI.OUT, LSDj's
 // serial out decoded into host MIDI out a block later, so the recorded block indices pin that one-block latency
-// at every block size here. Master sync, with a known defect pinned, is blocks-tiny-lsdj-master.test.ts. Tempo and transport points after a segment's start sit on 1-frame blocks,
-// where FL puts them (it splits a buffer at each one), and the sync notes on block edges. Needs the sibling LSDj
+// at every block size here. Master sync, with a known defect pinned, is blocks-tiny-lsdj-master.test.ts. Tempo
+// and transport points after a segment's start sit on 1-frame blocks, where FL puts them (it splits a buffer
+// at each one), and the sync notes on block edges. Needs the sibling LSDj
 // ROMs, so these skip in CI.
 import { runGroup, type ParityCase } from "./group";
 import { ANY, BIG, BUFFER, Edges, TINY_SPLITS } from "./blocks-tiny";
@@ -31,9 +32,10 @@ function midiSync(split: string, blocks: Blocks): ParityCase {
   );
 }
 
-/** lsdj-sync's Arduinoboy scene: the transport starts, note 24 (play) arrives in a 1-frame block, then note 25
- *  (stop) on a buffer-sized block's last frame, which ends the clocks, and 200 ms later the transport stop on
- *  a 1-frame block.
+/** lsdj-sync's Arduinoboy scene: the transport starts, note 24 (play) arrives, then note 25 (stop), which
+ *  ends the clocks, and 200 ms after it the transport stop on a 1-frame block. Each note sits on the first
+ *  frame of a block: the 4096-frame one in `fl`, a buffer-sized one in `fl256`, the next frame in `1`. So a
+ *  one-block delay of either note is caught in `fl` only; `1` and `fl256` are the silent defect cases below.
  *
  *  KNOWN DEFECT, recorded as it is (lsdj-sync.test.ts, design section 2.5 of modular-graph-phase-b0-design.md):
  *  Arduinoboy MIDI sync plays only under some partitions. In 1-frame blocks, and in `fl256` (no block over 256
@@ -44,7 +46,7 @@ function arduinoboy(split: string, blocks: Blocks): ParityCase {
   const run = new Edges(blocks(frames(SR, 2000)));
   const end = new Edges(blocks(frames(SR, 500)));
   const playNote = run.first(run.next(0, BIG, BUFFER, ANY));
-  const stopNote = end.last(end.next(frames(SR, 100), BUFFER, ANY));
+  const stopNote = end.first(end.next(frames(SR, 100), BIG, BUFFER, ANY));
   const stop = end.nextOneFrame(stopNote + frames(SR, 200));
   return lsdjCase(
     `midiSyncArduinoboy-${split}`,

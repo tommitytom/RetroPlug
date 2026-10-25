@@ -1,6 +1,7 @@
 // The systems and stimuli the parity groups share: how each in-repo ROM, and the sibling-fixture risa scene,
-// is brought up through the stores and made to sound. The stimulus helpers (`phrase`, `smsStart`) take the case's sample rate, and
-// `smsStart` a block splitter, so the same scene can be rendered in any host block size.
+// is brought up through the stores and made to sound. The stimulus helpers (`phrase`,
+// `smsStart`) take the case's sample rate, and `smsStart` a block splitter, so the same scene can be rendered in
+// any host block size.
 import type { Rig, Segment } from "./rig";
 import { buildSmsMetronomeSav, pokeMetronomeIntoWram, SMS_SYNC_IN24, SMS_SYNC_OFF, WRAM_BASE } from "../smsSyncSong";
 

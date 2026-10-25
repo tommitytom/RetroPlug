@@ -49,14 +49,13 @@ const cases: ParityCase[] = [
     ...tap(),
     play(2000),
   ]),
-  // LSDj as the clock master, captured as MIDI out: start, clocks, the idle-flood stop. The 16-bytes-per-block
-  // threshold also decides this case's boot noise, and it is the eighth defect in design section 2.5 of
-  // modular-graph-phase-b0-design.md; fixing it may move this case and masterSync-48000 (blocks-tiny-lsdj-master
-  // pins it in small blocks). The RATE is the
-  // cause of the defect (48 kHz at 1024 frames is also broken; 44.1 kHz at 512 plays). 1024 frames is chosen
-  // separately: at 512 the boot-time bytes stay under the decoder's 16-bytes-per-block flood threshold and
-  // open a run that never closes before START, so the real run gets no NoteOn / 0xFA. At 44.1 kHz in 1024
-  // it works (about 51 clocks/s, and it plays).
+  // LSDj as the clock master, captured as MIDI out: start, clocks, the idle-flood stop. The RATE is the cause of
+  // the 48 kHz defect (the sixth in design section 2.5 of modular-graph-phase-b0-design.md: 48 kHz at 1024 frames
+  // is also broken; 44.1 kHz at 512 plays). 1024 frames is chosen separately: at 512 the boot-time bytes stay
+  // under the decoder's 16-bytes-per-block flood threshold and open a run that never closes before START, so
+  // the real run gets no NoteOn / 0xFA. At 44.1 kHz in 1024 it works (about 51 clocks/s, and it plays). That
+  // threshold is the eighth defect there; fixing it may move this case and masterSync-48000 (blocks-tiny-lsdj-master
+  // pins it in small blocks).
   lsdjCase(
     "masterSync-44100",
     ROMS.lsdj,
