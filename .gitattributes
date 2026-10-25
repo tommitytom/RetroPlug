@@ -9,3 +9,6 @@
 *.hpp   diff
 *.h     diff
 *.md    diff
+
+# Goldens compared line for line on every platform: a Windows checkout must not turn them CRLF.
+packages/retroplug/test/graph/golden/*.json text eol=lf

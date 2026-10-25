@@ -7,6 +7,7 @@
 // This test fails when the translator's output drifts from the committed file; RP_GOLDENS_UPDATE=1 rewrites
 // it instead. Run via `pnpm test:plugin engine-graph`.
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
@@ -83,6 +84,7 @@ const char* const kSms = "rp.mesen.sms";
 
 std::vector<Set> sets() {
     std::vector<Sys> seventeen(17, Sys{kGb});
+    std::vector<Sys> thirtyThree(33, Sys{kGb});
     return {
         {"empty", {}},
         {"gb", {{kGb}}},
@@ -99,6 +101,11 @@ std::vector<Set> sets() {
         {"nine-mixed", {{kGb}, {kNes}, {kGba}, {kSms}, {kGb, 1}, {kGb, 1}, {kGb}, {kNes, 0, 3}, {kGb}}},
         {"seventeen", seventeen},
         {"sparse-ids", {{kGb, 0, 0, 3}, {kNes, 0, 0, 7}, {kGb, 0, 0, 12}}},
+        {"lone-nes-id-4", {{kNes, 0, 0, 4}}},
+        {"lone-gb-id-2", {{kGb, 0, 0, 2}}},
+        {"groups-by-first-appearance", {{kGb, 2}, {kGb, 1}, {kGb, 2}, {kGb, 1}}},
+        {"three-member-group", {{kGb, 1}, {kGb, 1}, {kGb, 1}}},
+        {"thirty-three", thirtyThree},
     };
 }
 
@@ -118,14 +125,17 @@ struct Shape {
     const char* json;   // the TS HostShape
     const char* label;  // for the case name
 };
-const Shape kShapes[] = {{{HostShape::Kind::Multi, 2}, R"({"channels":2,"kind":"multi"})", "multi2"},
+const Shape kShapes[] = {{{HostShape::Kind::Multi, 1}, R"({"channels":1,"kind":"multi"})", "multi1"},
+                         {{HostShape::Kind::Multi, 2}, R"({"channels":2,"kind":"multi"})", "multi2"},
                          {{HostShape::Kind::Multi, 4}, R"({"channels":4,"kind":"multi"})", "multi4"},
                          {{HostShape::Kind::Multi, 6}, R"({"channels":6,"kind":"multi"})", "multi6"},
                          {{HostShape::Kind::Multi, 8}, R"({"channels":8,"kind":"multi"})", "multi8"},
                          {{HostShape::Kind::PerSystem, 0}, R"({"kind":"perSystem"})", "perSystem"},
                          {{HostShape::Kind::PerChannel, 0}, R"({"kind":"perChannel"})", "perChannel"}};
 
-// What Engine::syncTap arms for this routing and table: the pins (1) or the channels (3) of a lone NES.
+// The arm Engine::syncTap wants for this routing and table: the pins (1) or the channels (3) of a lone NES
+// (syncTap then skips the call when the core is already in that mode). kind() stands in for the table's nes
+// pointer, since a StandIn is not a MesenNesSystem.
 std::string tapArm(AudioRouting routing, const rp::host::SystemTable& table) {
     const bool pins = routing == AudioRouting::PinSplit || routing == AudioRouting::StereoPinSplit;
     const bool split = pins || routing == AudioRouting::ChannelSplit;
@@ -134,13 +144,16 @@ std::string tapArm(AudioRouting routing, const rp::host::SystemTable& table) {
 }
 
 // The document with each core token replaced by its system's id, the form buildGraph writes. Tokens are
-// handed out in slot order from 1, and each appears exactly once, as {"core":<token>}.
+// handed out in slot order from 1, and each appears exactly once, as {"core":<token>}; ids rise in slot order
+// from at least 1, so no id is below its token, and replacing from the highest token down never rewrites a
+// replacement.
 std::string normalized(std::string doc, const std::vector<SystemId>& ids) {
     for (std::size_t k = ids.size(); k-- > 0;) {
         const std::string from = R"({"core":)" + std::to_string(k + 1) + "}";
         const std::string to = R"({"core":)" + std::to_string(ids[k]) + "}";
         const auto at = doc.find(from);
         REQUIRE(at != std::string::npos);
+        REQUIRE(doc.find(from, at + 1) == std::string::npos);
         doc.replace(at, from.size(), to);
     }
     auto canonical = rp::graph::canonicalizeJson(doc);
@@ -202,10 +215,31 @@ TEST_CASE("the translator's documents match the goldens buildGraph is held to", 
         std::FILE* f = std::fopen(RP_TRANSLATOR_GOLDENS_PATH, "wb");
         REQUIRE(f);
         REQUIRE(std::fwrite(text.data(), 1, text.size(), f) == text.size());
-        std::fclose(f);
+        REQUIRE(std::fclose(f) == 0);
         SUCCEED("rewrote " RP_TRANSLATOR_GOLDENS_PATH);
         return;
     }
     const auto bytes = readFile(RP_TRANSLATOR_GOLDENS_PATH);
-    REQUIRE(std::string(bytes.begin(), bytes.end()) == text);
+    std::vector<std::string> want, got;
+    auto lines = [](const std::string& s, std::vector<std::string>& out) {
+        std::size_t at = 0;
+        while (at < s.size()) {
+            std::size_t end = s.find('\n', at);
+            if (end == std::string::npos) end = s.size();
+            std::string line = s.substr(at, end - at);
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            out.push_back(std::move(line));
+            at = end + 1;
+        }
+    };
+    lines(std::string(bytes.begin(), bytes.end()), want);
+    lines(text, got);
+    for (std::size_t i = 0; i < std::max(want.size(), got.size()); ++i) {
+        const std::string w = i < want.size() ? want[i] : "<missing>";
+        const std::string g = i < got.size() ? got[i] : "<missing>";
+        INFO("golden line " << i + 1 << " differs (RP_GOLDENS_UPDATE=1 rewrites the file)");
+        INFO("committed: " << w.substr(0, 300));
+        INFO("generated: " << g.substr(0, 300));
+        REQUIRE(w == g);
+    }
 }
