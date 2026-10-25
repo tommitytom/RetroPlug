@@ -104,8 +104,9 @@ required: txiki keeps a handle of its own alive, so "the loop still has work" wo
 the render worker share) with a `render(outputs, segment)` over `renderBlocks`. A case written against the
 stores survives every step, since B2 deletes the backend calls the stores make today but not the stores.
 B2 and B3 edit only `bootSession` and this file, with one exception: `render-blocks.test.ts` tests
-`renderBlocks` itself, so it calls backend methods directly (`constructSystem`, `dsp.setSystems`,
-`setSerialOutCapture`) and moves with the Backend surface too.
+`renderBlocks` itself, so it calls backend methods directly (`dsp.setSystems`, `setSerialOutCapture`) and
+moves with the Backend surface too. Since B2 it builds its systems through a `DirectGraph` sharing the
+session's graph, where it called `constructSystem` before.
 
 Before each case it calls `newProject()`, deletes every ROM copy, reloads the kernel, stops the transport
 at ppq 0 and 120 bpm, sets the case's sample rate, drains the MIDI out, and asserts no system survived.

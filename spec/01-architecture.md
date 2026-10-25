@@ -138,26 +138,27 @@ All three are built on the shared-core transport primitives:
 
 ## 3. The command ring — the ONE mutation path
 
-Every control-plane edit goes through the one
-[`QueuedInvoker`](../packages/native/src/host/engine/EngineInvoker.hpp) and lands on ONE ring: the
-`SpscRing<Command, 256>` inside the Engine's [`GraphHost`](../packages/native/src/graph/GraphHost.hpp)
-([modular-graph-phase-b1-design.md](../docs/modular-graph-phase-b1-design.md) section 5). The
-invoker sends an edit one of two ways:
+Every control-plane edit lands on ONE ring: the `SpscRing<Command, 256>` inside the Engine's
+[`GraphHost`](../packages/native/src/graph/GraphHost.hpp)
+([modular-graph-phase-b1-design.md](../docs/modular-graph-phase-b1-design.md) section 5). An edit
+arrives one of two ways:
 
 - **Structure** (which systems run, in what order and wired how, a Game Boy's link cable, the host's
   output shape) is a graph document TS builds
   ([modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md)). The stores call
   [`EngineGraph.publish`](../packages/retroplug/src/engineGraph.ts) once at the end of every
   structural edit; it builds the document with
-  [`buildGraph`](../packages/retroplug/src/graph/buildGraph.ts) and sends it with the `setGraph` RPC.
-  `Engine::setGraph` builds the plan's `SystemTable` from the request's slots and the cores `buildCore`
-  parked, and calls `GraphHost::setGraph`, which plans the document on the control thread (every
-  layout checked before any instance is created, every new instance created and activated) and pushes
-  the plan onto the ring as a plan swap.
+  [`buildGraph`](../packages/retroplug/src/graph/buildGraph.ts) and sends it with the `setGraph` RPC,
+  which `EngineRpcService::setGraph` hands straight to `Engine::setGraph`, not through the invoker.
+  `Engine::setGraph` builds the plan's `SystemTable` from the request's slots and the live cores
+  (parked by `buildCore`, or placed by an earlier plan), and calls `GraphHost::setGraph`, which plans
+  the document on the control thread (every layout checked before any instance is created, every new
+  instance created and activated) and pushes the plan onto the ring as a plan swap.
 - **Everything else** (load kernel bytecode, set the kernel's systems JSON, stage MIDI, controller
   MIDI or one system's MIDI, set bpm / transport / ppq, apply a config field, press a button, write
-  RAM) is packed into a POD [`DspCommand`](../packages/native/src/host/engine/DspCommand.hpp) and
-  pushed onto the same ring as an opaque host command (`GraphHost::pushHostCommand`).
+  RAM) goes through the one [`QueuedInvoker`](../packages/native/src/host/engine/EngineInvoker.hpp),
+  which packs it into a POD [`DspCommand`](../packages/native/src/host/engine/DspCommand.hpp) and
+  pushes it onto the same ring as an opaque host command (`GraphHost::pushHostCommand`).
 
 At drain the ring is applied **in push order**: a plan swap adopts its plan, and a host command goes
 to the Engine's handler, which applies it against the `SystemTable` of the plan current at that
@@ -206,8 +207,9 @@ request names against the plan just adopted
 goes both ways: the field reaches the core as a command, and the store republishes the graph with the
 cable. A document that does not plan (refused, or a full ring) changes nothing: a core a node of the
 refused plan had taken goes back to parked, and the store keeps its model. A core parked for it waits
-for the next document that plans, which frees it unless it places it; the next document is sent even
-if it matches the running one, so the next publish can be that document.
+for the next document that plans, which frees it unless it places it. The store's next publish is sent
+even when its document matches the running one, so the refused document sent again places those cores
+once it plans.
 
 The handler (`Engine::onHostCommand` → `applyCommand`) switches on `DspCommand::Kind`, applies each
 command and deletes its owning payload. The block drivers (the plugin's `run()`, the test host's
@@ -289,8 +291,9 @@ A core's life, end to end:
 | **adopt → hand back** | the audio thread drains the plan swap | the replaced plan is pushed onto the release ring, the last one of a drain only after every command of that drain is applied |
 | **reclaim → free** | the control thread reclaims | `reclaim()` deletes each released plan; a node only that plan held destroys its core: `registry.release(id)` first, then `delete` |
 
-TS never reuses a system id, and `buildCore` refuses an id that is still live (parked, or held by a node
-of any plan not yet reclaimed), so a new core always plans as a new instance. A core no published
+The stores never reuse a system id (a `DirectGraph` caller may, once the old core is gone), and
+`buildCore` refuses an id that is still live (parked, or held by a node of any plan not yet
+reclaimed), so a new core always plans as a new instance. A core no published
 document placed is freed by the engine once a document plans without it, releasing its slot the same
 way.
 
@@ -371,8 +374,9 @@ lost mutation.
    The `Engine` holds no locks; this bit is the entire concurrency contract.
 
 3. **The command ring is empty at every ownership handoff.** The quiescent path flushes on every
-   push, so activation/`startAudio` never has a backlog to drain; it sets the host shape and flips
-   the bit. Deactivation flips the bit back, which flushes at once: whatever the last block left
+   push, so activation/`startAudio` never has a backlog to drain: activation sets the block size
+   (`startAudio` nothing) and flips the bit, and the host shape is already the graph TS published.
+   Deactivation flips the bit back, which flushes at once: whatever the last block left
    undrained is applied (no lost mutation), and the plans replaced just before stop are reclaimed
    with the cores only they held. The hosts' `drainInto` + `reclaimReleased` after it find nothing
    left.
@@ -422,7 +426,7 @@ lost mutation.
 | [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp) | `QueuedInvoker`: every edit but structure onto the ring, `audioThreadOwns_` |
 | [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp) | the POD command the ring carries as an opaque host command |
 | [`GraphHost.hpp`](../packages/native/src/graph/GraphHost.hpp) / [`.cpp`](../packages/native/src/graph/GraphHost.cpp) | the one command ring, the release ring of plans, `setGraph` / `drain` / `run` / `reclaim` |
-| [`buildGraph.ts`](../packages/retroplug/src/graph/buildGraph.ts) / [`engineGraph.ts`](../packages/retroplug/src/engineGraph.ts) | the engine's graph as TS builds it from the stores, and the one publisher of it per context |
+| [`buildGraph.ts`](../packages/retroplug/src/graph/buildGraph.ts) / [`engineGraph.ts`](../packages/retroplug/src/engineGraph.ts) | the engine's graph as TS builds it from the stores, and its publisher (the `ProjectStore`'s, or a `DirectGraph`'s or bare `SystemsStore`'s own) |
 | [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) / [`KernelNode.cpp`](../packages/native/src/host/graph/KernelNode.cpp) / [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp) | the cores as nodes (each owning its core), the kernel stage as a node, and the host services they ask for |
 | [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) | the id-keyed read door; claim/publishSystem/read/release |
 | [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) | the single-threaded owner of the graph, the DSP kernel and the registry; `parkCore` / `setGraph`, `processBlock`, the command handler, `SyncTap` |

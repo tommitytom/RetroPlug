@@ -59,7 +59,6 @@ const audio = createAudioDriver(graph.graph);            // renders through the 
 graph.add({ romPath: LSDJ, platform: "gb", core: "sameboy",
             embeddedRom: "", savPath: null, statePath: null, sramBytes: sav }, 1);
 graph.applyRoleConfig(1, "sameboy", { linkGroupId: 1 }); // link-cable group: the graph wires the cable
-be.applyRoleConfig(1, "lsdj-sync", { mode: "MidiSyncArduinoboy" });
 
 audio.renderAudio(6000);                                 // MILLISECONDS of emulated audio, not frames
 audio.pressButton(1, 7 /* Start */, true);
@@ -83,17 +82,21 @@ The two config surfaces are distinct and easy to confuse:
 
 - **In-sav `settings.syncMode`** — what the PROJECT screen shows: `"None"`, `"Lsdj"`, `"Midi"`,
   `"Keyboard"`, `"AnalogIn"`, `"AnalogOut"`. Part of the song data.
-- **The `lsdj-sync` role config** — RetroPlug's own behaviour: `"MidiSync"`, `"MidiMap"`,
-  `"KeyboardMidi"`, `"MidiPassthrough"`, `"MidiSyncArduinoboy"`, `"ArduinoboyMaster"`, `"MasterSync"`
-  ([dspRoles.ts](../packages/retroplug/src/dspRoles.ts)). Applied with `applyRoleConfig`.
+- **The `lsdj-sync` role config**: RetroPlug's own behaviour, its `mode` one of `"off"`, `"midiSync"`,
+  `"midiSyncArduinoboy"`, `"midiMap"`, `"keyboard"`, `"keyboardMidi"`, `"midiPassthrough"`, `"midiOut"`,
+  `"masterSync"` (`LSDJ_MODE_VALUES` in [settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts), run
+  by [dspRoles.ts](../packages/retroplug/src/dspRoles.ts)). A feature role: it is set with the store's
+  `setRoleConfig` and read by the DSP kernel, while native's `applyRoleConfig` takes only the `sameboy` and
+  `mesen` system roles (any other kind returns false).
 
 The rest of the native-tier surface these tests use:
 `audio.renderAudioPerSystem(ms)` (per-system buffers in slot order — the thing that proves link
 sync, where a mixed buffer cannot), `audio.setTransport(bool)` / `audio.setBpm(n)` (simulated host
-transport -> the role's MIDI clock), `be.drainMidiOut(id)` / `be.drainSerialOut(id)` (role MIDI-out
-and raw GB serial-out capture), `be.readMemory(id, region)` (WRAM/SRAM reads), and
-`graph.remove(id)` ([directGraph.ts](../packages/retroplug/src/graph/directGraph.ts)). The backend
-calls are declared in
+transport -> the role's MIDI clock), `audio.drainMidiOut()` (the MIDI the kernel's roles sent since the
+last drain, each message with its system and frame, LSDj's MI.OUT among them, decoded from the captured
+serial out), `be.readMemory(id, region)` (WRAM/SRAM reads), and `graph.remove(id)`
+([directGraph.ts](../packages/retroplug/src/graph/directGraph.ts)). The `audio` calls are declared in
+[audioDriver.ts](../packages/retroplug/src/audioDriver.ts) and `readMemory` in
 [backend.ts](../packages/retroplug/src/backend.ts); never call `audio.startAudio()` in a test — the
 suite runs in the single-threaded direct-render regime.
 

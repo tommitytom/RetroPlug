@@ -122,7 +122,8 @@ One adapter template over today's `SystemBase` subclasses, giving four types: `r
   stays where it is today: built on the control thread by the backend factory before the node exists.
 - **Config fields** (gain, model, highpass, fast boot, serial-out capture, the display knobs, the NES knobs)
   stay today's `SetConfigField` command, applied at drain to the core the running plan's table names.
-  `applyConfigField` keeps its per-kind switch until B2 deletes `ConfigField` with the role-config commands;
+  `applyConfigField` keeps its per-kind switch until B2 deletes `ConfigField` with the role-config commands
+  (moved to Phase C and B3: [modular-graph-phase-b2-design.md](modular-graph-phase-b2-design.md) §0);
   the work that cast every block (the MI.OUT collection, the tap) reads the table's typed pointers instead.
   **LinkGroup** is
   the exception: the translator intercepts it and rewires (§4.1); the value still reaches the core's
@@ -443,7 +444,8 @@ Then, behind the switch:
   the protocol nodes and the queue-order decision (§2.3).
 - `rp.host.audio-in`, and so reading host inputs before the outputs are silenced (owed by §8): nothing reads
   an input yet.
-- Deleting `ConfigField` / `applyConfigField` and the kernel commands: B2, when TS sends documents.
+- Deleting `ConfigField` / `applyConfigField` and the kernel commands: B2, when TS sends documents. (Moved
+  to Phase C and B3: [modular-graph-phase-b2-design.md](modular-graph-phase-b2-design.md) §0.)
 - Fixing any of B0's four recorded defects, the audio-thread allocations B1 carries over
   (`setChannelExportMode`, SameBoy's restart and lazy buffer growth, the payload frees), or the growth of a
   linked Game Boy's unread serial queue.

@@ -56,10 +56,10 @@ The methods, grouped by concern:
 The real adapter [`src/realBackend.ts`](../packages/retroplug/src/realBackend.ts)'s
 `createRealBackend()` resolves `globalThis[Symbol.for("plugin")].__rpcSend` and wraps it in
 a self-contained synchronous JSON-RPC `call()`
-([realBackend.ts:65](../packages/retroplug/src/realBackend.ts#L65)). Binary rides as
+([rpcClient.ts:28](../packages/retroplug/src/rpcClient.ts#L28)). Binary rides as
 `Uint8Array` in both directions (the QuickJS codec decodes a typed byte param straight into
 `rfl::Bytestring`), so nothing is base64'd or number-array'd on this path. `specParams`
-([realBackend.ts:79](../packages/retroplug/src/realBackend.ts#L79)) omits null path
+([realBackend.ts:65](../packages/retroplug/src/realBackend.ts#L65)) omits null path
 fields (so native reads `nullopt`, not `""`) and attaches seed bytes only when present.
 This same adapter serves all three hosts — the difference is only which
 set of RPC facets is bound behind `__rpcSend` (see doc 01/02).
@@ -67,7 +67,7 @@ set of RPC facets is bound behind `__rpcSend` (see doc 01/02).
 ### `ConstructSpec` — the resolved-paths-only build request
 
 `buildCore` takes a `ConstructSpec`
-([backend.ts:205](../packages/retroplug/src/backend.ts#L205)) in which **TS has
+([backend.ts:744](../packages/retroplug/src/backend.ts#L744)) in which **TS has
 already resolved every path, suffix, sibling, and classification** — *native never sees a
 suffix, never looks for a sibling, never classifies.*
 
@@ -82,7 +82,7 @@ suffix, never looks for a sibling, never classifies.*
 
 `openFileBrowser` is the odd one out and does **not** ride the RPC bridge: it uses the
 UI-direct hooks `__rp_openFileBrowser` / `__rp_onFileBrowserResult` on the shared context
-([realBackend.ts:27-51](../packages/retroplug/src/realBackend.ts#L27)), with a
+([realBackend.ts:32-55](../packages/retroplug/src/realBackend.ts#L32)), with a
 single module-level `pendingBrowse` slot (one dialog at a time). Where the hook is absent
 (the headless UI harness), a browse resolves `null` — inert, like the other `__rp_*` seams.
 
@@ -104,27 +104,28 @@ tracks order, never knows which system is focused, and never decides the project
 ### SystemsStore — [`src/systemsStore.ts`](../packages/retroplug/src/systemsStore.ts)
 
 The live systems list. `SystemEntry[]`
-([systemsList.ts:21](../packages/retroplug/src/systemsList.ts#L21)) is the persistent
+([systemsList.ts:22](../packages/retroplug/src/systemsList.ts#L22)) is the persistent
 model (`{ id, platform, core, romPath, savPath override, savSuffix, embeddedRom, settings,
-roles }`); the private state is `entries`, `focusedId`, and `dirty`
-([systemsStore.ts:73-76](../packages/retroplug/src/systemsStore.ts#L73)). `view()`
-([systemsStore.ts:85](../packages/retroplug/src/systemsStore.ts#L85)) projects a
+roles }`, plus the derived `battery` and `built` facts, never serialized); the private state is
+`entries`, `focusedId`, and `dirty`
+([systemsStore.ts:117-119](../packages/retroplug/src/systemsStore.ts#L117)). `view()`
+([systemsStore.ts:138](../packages/retroplug/src/systemsStore.ts#L138)) projects a
 `SystemView[]` for the UI, computing the live `focused` and `missing` flags each call.
 
 - **TS owns the system-id counter.** `allocSystemId()` increments a module-scoped
-  `nextSystemId` ([systemsStore.ts:37](../packages/retroplug/src/systemsStore.ts#L37)) —
+  `nextSystemId` ([systemsStore.ts:68](../packages/retroplug/src/systemsStore.ts#L68)):
   *"native never allocates."* Ids are opaque handles, one id space per control-plane JS
   context (1:1 with the native `Engine`), and start at **1** because the snapshot registry
   uses 0 as its free-slot sentinel.
-- **`classifyRom`** ([systemsStore.ts:48](../packages/retroplug/src/systemsStore.ts#L48))
+- **`classifyRom`** ([systemsStore.ts:87](../packages/retroplug/src/systemsStore.ts#L87))
   is the one place ROM bytes enter TS — and just the `ROM_SNIFF_LEN` (0x134) header prefix.
 - **Mutators through `Backend`:** `addSystem` (append), `loadRom` (replace focused, or defer
   to a sibling `<rom>.rplg`), `loadMgb` (embedded), `replaceSystem`, `removeSystem`, plus the
   per-system `setGain` / `setReloadOnRomChange` (→ `applySystemSetting`) and `setRoleConfig`
-  ([systemsStore.ts:329](../packages/retroplug/src/systemsStore.ts#L329)) — where
+  ([systemsStore.ts:520](../packages/retroplug/src/systemsStore.ts#L520)), where
   **only a `"system"`-category role's config crosses to the live core** (`applyRoleConfig`);
   a feature-role's config stays pure TS.
-- **`duplicateSystem`** ([systemsStore.ts:170](../packages/retroplug/src/systemsStore.ts#L170))
+- **`duplicateSystem`** ([systemsStore.ts:282](../packages/retroplug/src/systemsStore.ts#L282))
   is TS orchestration with **no native duplicate method**: it pulls `readState(id)` (state
   includes SRAM), then `buildCore` seeded with those `stateBytes` under a fresh
   `allocSystemId()`, and appends.
@@ -143,7 +144,7 @@ roles }`); the private state is `entries`, `focusedId`, and `dirty`
 
 The control plane **reconstructs** a core rather than live-injecting into it (no `GB_reset`, no
 in-place SRAM clear). The private `rebuildInPlace(id, seed)`
-([systemsStore.ts:233](../packages/retroplug/src/systemsStore.ts#L233)) is the shared
+([systemsStore.ts:355](../packages/retroplug/src/systemsStore.ts#L355)) is the shared
 body: it captures the source spec, builds a fresh core under a **new id** that takes the old
 one's slot, and preserves identity + focus
 (`replaceById(entries, id, {...src, id: newId})`; `if (focusedId === id) focusedId = newId`).
@@ -160,10 +161,11 @@ operations are thin wrappers over it:
 | `newSram` | a blank `new Uint8Array(0x20000)` battery |
 
 A separate **project-load rebuild seam** is deliberately quiet (no dirty/onChange, since a
-load isn't a user edit): `clear()` tears every system down and publishes the empty graph;
+load isn't a user edit): `clear()` tears every system down and, when it had any, publishes the
+empty graph;
 `adopt(config, blobs?)` (which publishes the graph that places it, except inside a project load,
 which publishes once its systems are all built)
-([systemsStore.ts:374](../packages/retroplug/src/systemsStore.ts#L374)) reconstructs
+([systemsStore.ts:601](../packages/retroplug/src/systemsStore.ts#L601)) reconstructs
 one system preserving its **exact** `savSuffix`/`savPath`, with `blobs` seeding SRAM/state on
 a zip import. Default roles are derived before the build from a `ROLE_HEADER_LEN` (0x150)
 header prefix via `defaultRoles`, and each role's `onConstruct` hook folds over the spec
@@ -173,9 +175,9 @@ header prefix via `defaultRoles`, and each role's `onConstruct` hook folds over 
 
 The top-level source of truth. It **owns** the `SystemsStore` (wiring its `onChange` →
 `markDirty` + `onSystemsChange`,
-[projectStore.ts:60](../packages/retroplug/src/projectStore.ts#L60)), the project
-settings (`ProjectSettings` = `{ layout, midiRouting, audioRouting, zoom }`,
-[projectConfig.ts:20](../packages/retroplug/src/projectConfig.ts#L20)), the
+[projectStore.ts:146](../packages/retroplug/src/projectStore.ts#L146)), the project
+settings (`ProjectSettings` = `{ layout, midiRouting, audioRouting, zoom, controller }`,
+[projectConfig.ts:37](../packages/retroplug/src/projectConfig.ts#L37)), the
 `currentPath`, `dirty`, and a `pendingLoad` latch. It exposes **three** change signals:
 `setOnSystemsChange` (structural — drives DSP re-projection), `setOnChange` (any state —
 settings/dirty), and the transient focus signal via `systems.setOnFocusChange` (re-renders
@@ -189,10 +191,11 @@ chunk), and `load(path)` (routes by **extension**: a `.rplg` is always thin JSON
 is PKZIP; a `.rplg` that isn't pure JSON errors — never loaded as a zip). The load lifecycle
 refuses a **newer** schema stamp (`{kind:"incompatible"}`), absolutizes paths, scans for
 missing files, and holds `pendingLoad` for `relink` or `commit`
-([projectStore.ts:236](../packages/retroplug/src/projectStore.ts#L236)).
+([`beginLoad`, projectStore.ts:660](../packages/retroplug/src/projectStore.ts#L660); [`commit`,
+:675](../packages/retroplug/src/projectStore.ts#L675)).
 `setAudioRouting` is the **only** project setting that also reaches native audio, via
-`pushAudioRouting()` → `publishGraph`, as the wiring of the graph the project publishes
-([projectStore.ts:278](../packages/retroplug/src/projectStore.ts#L278)).
+`publishRouting()` → `publishGraph`, as the wiring of the graph the project publishes
+([projectStore.ts:472](../packages/retroplug/src/projectStore.ts#L472)).
 
 The project **name** is two-tier. `name()` is the project's own name - blank unless the user
 typed one under `Project` > `Name` (`setName`, which marks the project dirty), and the ONLY

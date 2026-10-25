@@ -596,7 +596,10 @@ Live params never send a document.
 `setGraph` returns `{ ok, errors[], layouts }`. Each error is `{ nodeId, port?, code, message }`;
 `layouts` are each instance's ports and params as its settings resolve them, so TS can show and check
 them (channel counts the planner infers from wiring, `any` and `match`, are not reported yet). **A failed plan
-changes nothing**: the running plan continues, so a bad edit can never glitch the audio.
+changes nothing**: the running plan continues, so a bad edit can never glitch the audio. B2 built a subset:
+the RPC is `setGraph({ document, slots, tap? })` and returns `{ ok, errors[] }`, where `slots` names the
+systems the document places, in slot order, and `tap` carries the NES tap re-arm
+([modular-graph-phase-b2-design.md](modular-graph-phase-b2-design.md) §2.5); `layouts` is not sent back.
 
 ### 5.2 The planner
 
@@ -909,9 +912,9 @@ single system, pins need a NES) so behaviour is unchanged.
 |---|---|
 | `setGraph(doc)` (built in B2: [modular-graph-phase-b2-design.md](modular-graph-phase-b2-design.md)) | `constructSystem`, `removeSystem` (gone in B2; building a core stays a native call, `buildCore`, until Phase C) |
 | `putResource(type, bytes)` -> handle, `releaseResource(handle)` | `setAudioRouting` (gone in B2) |
-| capability calls (memory, SRAM, state, ROM info) addressed by node id | `applyRoleConfig` |
-| `setParam(node, param, value)` | `setSerialOutCapture` |
-| snapshot reads (unchanged) | `dspSetSystems`, kernel loading |
+| capability calls (memory, SRAM, state, ROM info) addressed by node id | `applyRoleConfig` (Phase C) |
+| `setParam(node, param, value)` | `setSerialOutCapture` (Phase C) |
+| snapshot reads (unchanged) | `dspSetSystems`, kernel loading (B3) |
 | host I/O, transport (unchanged) | |
 
 Duplicate and reload become "a new node id whose settings point at a state-seed resource": the same
@@ -1006,8 +1009,9 @@ B1 is built: [modular-graph-phase-b1-design.md](modular-graph-phase-b1-design.md
 
 B2 is built: [modular-graph-phase-b2-design.md](modular-graph-phase-b2-design.md), executed from
 [modular-graph-phase-b2-plan.md](modular-graph-phase-b2-plan.md). TS owns the graph's structure:
-`buildGraph` writes the document, the stores send one per edit, and the translator, `removeSystem` and
-`setAudioRouting` are gone. Two things moved out of B2 as designed: the role-config commands
+`buildGraph` writes the document, the stores send one per edit, and the translator, `constructSystem` (now
+`buildCore`, which builds without placing), `removeSystem` and `setAudioRouting` are gone. Two things
+moved out of B2 as designed: the role-config commands
 (`applySystemSetting`, `applyRoleConfig`, `ConfigField`) stay until Phase C, where the live knobs become
 node params, and the kernel commands stay until B3 deletes the kernel. Building a core stays a native call
 (`buildCore`) until Phase C, when system nodes build their own from settings and resources.
@@ -1145,12 +1149,12 @@ here so it is not lost.
 - **Surround to the DAW** depends on DPF port groups (§3.6).
 - **Large graphs.** The goal past chiptune is user-built synths and music apps, so graphs of thousands of
   nodes. Measured in B2 with `build/bin/retroplug-graph-test "[bench]"`, a Release build on a Ryzen 9 9950X:
-  native `setGraph` in a quiescent host, the document's parse timed apart from the plan (`GraphHost::setGraph`
-  on the parsed document: plan, publish, adopt, and free the plan it replaced). A chain feeds each delay into
+  the planner's `GraphHost::setGraph` on a bare graph rig in a quiescent host, the document's parse timed
+  apart from the plan (plan, publish, adopt, and free the plan it replaced). A chain feeds each delay into
   the next; a wide fan sums every delay through a tree of 16-input adds. A cold plan builds every instance
-  anew (the median of 3 fresh rigs); an edit gives one delay another ring, so it alone rebuilds (the median of
-  5 edits, each checked to have rebuilt that delay and kept the others). Node counts are the ones the bench
-  prints:
+  anew (the median of 3 fresh rigs); an edit gives one delay another ring, so it alone rebuilds (the median
+  of 5 edits, each checked to have rebuilt that delay, kept the first delay's instance and left the instance
+  count unchanged). Node counts are the ones the bench prints:
 
   | Shape | Nodes | Wires | Cold: parse | Cold: plan | Edit: parse | Edit: plan |
   |---|---|---|---|---|---|---|
@@ -1162,28 +1166,40 @@ here so it is not lost.
   The plan grows faster than the graph (ten times the nodes, 16 to 26 times the time). A one-node edit costs
   about what a cold plan does: with the reuse the bench asserts, that puts the time in planning, not in
   creating instances. It does not by itself rule the document out, since both parse it, which is why the
-  parse is timed apart: about 10 ms at 10,000 nodes, 4 to 7 percent of an edit. A per-phase profile of the
-  10,000-node edit (chain about 153 ms, fan about 320 ms) puts the costs in the order they bite:
+  parse is timed apart: about 10 ms at 10,000 nodes, 4 to 7 percent of an edit. Timers around each planner
+  pass, in a local build of the bench not committed, put the 10,000-node edit's costs (chain about 156 ms,
+  fan about 319 ms in that run, parse included) in the order they bite:
 
   1. **The planner's `order()`.** Kahn's algorithm picks the next ready group by scanning every group at
-     every step, quadratic in the node count: 39 ms (25%) of the chain's edit, 154 ms (48%) of the fan's. A
+     every step, quadratic in the node count: 36 ms (23%) of the chain's edit, 154 ms (48%) of the fan's. A
      min-heap keyed by document order fixes it.
   2. **`structure()` and `reconcile()`.** Per-node JSON round trips: the settings canonicalized, the type's
      `layout_for` answer parsed (`parseLayout`) and written back out (`layoutJson`), and the live instance's
-     layout written again for the reuse compare. 66 ms (43%) of the chain's edit, 90 ms (28%) of the fan's.
+     layout written again for the reuse compare. 68 ms (44%) of the chain's edit, 91 ms (29%) of the fan's.
      Caching the layout by type and settings text would skip most of them.
-  3. **`assignOutputs`.** Each output port scans every wire for its last reader (about 21 ms of the chain's
-     edit); in the fan each group also scans every buffer's last use, a second quadratic pass, and the fresh
-     buffers are allocated here: 42 ms of the fan's edit. Indexing the wires, and the buffers by the group
-     that frees them, once per plan removes both scans.
-  4. **Fresh audio buffers.** Every plan allocates its 4 KB buffers anew, reused by lifetime within a plan
-     and never across plans: at most about 6% (the fan), next to nothing in the chain. Pooling them across
-     plans removes it.
+  3. **`assignOutputs`.** Each output port scans every wire for its last reader, all of the chain's 21 ms
+     (14%); in the fan each group also scans every buffer's last use, a second quadratic pass, and the fresh
+     buffers are allocated here too: 37 ms (12%) of the fan's edit, the buffers' share of it in item 4.
+     Indexing the wires, and the buffers by the group that frees them, once per plan removes both scans. (The
+     rest of the plan's build, its inputs and steps, adds another 13 to 16 ms.)
+  4. **Fresh audio buffers.** Every plan allocates its buffers anew and zero-fills them, reused by lifetime
+     within a plan and never across plans: about 2 ms (under 1%) of the fan's edit, about 7 ms when its pages
+     are new, and next to nothing in the chain, which needs only a couple. That is at the bench's 1,024-frame
+     blocks (4 KB buffers). The engine plans at 8,192 frames (32 KB): with the same timers allocating buffers
+     that size, the fan's edit spends about 10 ms on them, and about 50 ms when the pages are new (the first
+     plan that needs them, or after the allocator handed them back), so in the engine they rank ahead of the
+     parse, and on new pages ahead of everything but `order()` and `structure()`. Pooling them across plans
+     removes it.
   5. **The document parse.** About 10 to 11 ms at 10,000 nodes: 7% of the chain's edit, 4% of the fan's. A
      patch form of `setGraph` would save it and the transfer, and none of the planning.
 
-  The table is native `setGraph` alone: TS `buildGraph` and `JSON.stringify` of a 10,000-node document cost
-  about another 13 ms under QuickJS (about 8% of the chain's edit), plus the RPC hop. The bench's nodes have
-  two-key settings, no params, no control, event or feedback wires and no coupled groups; real nodes with
-  bigger layouts pay more per node in the JSON round trips. None of this is needed at today's sizes; it is
-  recorded here so the graph-editing project starts from it.
+  The table is the planner alone: not `Engine::setGraph`'s own work (the slot and system-node checks, the
+  system table, freeing parked cores), and not TS. On the TS side `EngineGraph` sends what `buildGraph` and
+  `toGraphJson` write, and for a 10,030-node document (4,700 unlinked Game Boys under stereo, 14,728 wires)
+  those cost about 7 ms and 105 ms under QuickJS (medians of 7, a one-off script run by `retroplug-cli`, not
+  committed): `toGraphJson`'s checks about 40 ms and its canonical JSON about 59 ms, where a plain
+  `JSON.stringify` of the same document takes about 9 ms. So at that size the TS side costs about what the
+  chain's native plan does, plus the RPC hop, and `toGraphJson` is a cost of its own. The bench's nodes
+  have two-key settings, no params, no control, event or feedback wires and no coupled groups; real nodes
+  with bigger layouts pay more per node in the JSON round trips. None of this is needed at today's sizes;
+  it is recorded here so the graph-editing project starts from it.

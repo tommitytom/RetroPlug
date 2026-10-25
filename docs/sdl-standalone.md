@@ -107,9 +107,10 @@ re-opened live via the `__rp_setAudioConfig` seam (`sr, bs, ch, driver` — see 
 Default **2** is
 byte-identical to the old 2-arg stereo path (zero regression); 4/6/8 opens that many device channels so the
 project's **Audio Routing** modes (`2-Ch/Inst`, `1-Ch/Inst`, `Channels`, and NES-only `Pins` / `Stereo Pins`) fan real stems
-to a multichannel interface. No routing plumbing was needed: `audioRouting` already reaches the SDL Engine
-via the existing `setAudioRouting` RPC, and the SDL host sets the translator's `Multi(N)` host shape to the
-device's channel count, so the translator wires each mode across those N channels as the graph's routing
+to a multichannel interface. No routing plumbing was needed: `audioRouting` is wiring in the graph the
+control plane publishes, and the SDL host reports the device's channel count through
+`__rp_setHostOutputs(N)` (at startup, and in `reconfigureAudio` once the device reopens), so `buildGraph`
+wires each mode across those N channels
 (with only 2, every mode collapses to pair 0, which is why it was inert before). The lane budget is
 checked against the device's ACTUAL channel count, so a 4-channel pick still carries a NES's 3 mono `Pins`
 lanes and falls back to stereo for its 5 `Channels` ones (and for `Stereo Pins`, which wants 6). Low priority — matters only on

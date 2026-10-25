@@ -350,8 +350,10 @@ One native pull-path RPC feeds all three export shapes; the WAV writer needs no 
 TS-owned **project setting** (not per-system role-config), consistent with the existing `audioRouting`:
 
 - `projectConfig.ts` — widen the `audioRouting` clamp `clampedInt(0, 2, 0)` → `clampedInt(0, 3, 0)`.
-- `projectStore.ts`: `SETTING_MAX.audioRouting` `2` → `3`; the `setAudioRouting → pushAudioRouting`
-  flow is reused as-is (it now publishes the graph, docs/modular-graph-phase-b2-design.md).
+- `projectStore.ts`: `SETTING_MAX.audioRouting` `2` → `3` at the time (the routings are strings now,
+  checked against `SETTING_VALUES`); the `setAudioRouting` flow was reused as-is, and is now
+  `setAudioRouting → publishRouting → publishGraph`, publishing the graph
+  (docs/modular-graph-phase-b2-design.md).
 - `menuDefs.ts` — add an `AUDIO_ROUTING_NAMES` entry (e.g. `"Channels (1 GB)"`); the cycler is unchanged.
   The UI hides/disables the row when `> 1` system.
 - Native: at the time, `AudioRouting::ChannelSplit = 3` + a widened RPC guard; since B2 nothing, the

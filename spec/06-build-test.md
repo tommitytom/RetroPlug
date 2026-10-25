@@ -122,11 +122,13 @@ modular graph engine is held to ([docs/modular-graph-phase-b0-design.md](../docs
   plane and resets it before each case; [parity/scenes.ts](../packages/retroplug/test-native/parity/scenes.ts)
   holds the systems and stimuli the groups share; each `parity/<group>.test.ts` is a table of cases.
 - **Scenes use `rig.press` and `rig.writeFile`** for input and files, so B2 and B3 only edit `rig.ts` and
-  `bootSession` (plus `render-blocks.test.ts`, which tests `renderBlocks` itself through direct backend
-  calls).
+  `bootSession` (plus `render-blocks.test.ts`, which tests `renderBlocks` itself: it builds its systems
+  through a `DirectGraph` sharing the session's graph, and calls `dsp.setSystems` and
+  `setSerialOutCapture` directly).
 - **Rendering goes through `renderBlocks`**, a harness-facet driver call that repeats `PluginDSP::run`'s
   order for every host block: stage MIDI at its frame, drain the command ring, apply transport,
-  `processBlock` at 2/4/6/8 lanes (the host shape `Multi(outputs)`), take the MIDI out. The
+  `processBlock` at 2/4/6/8 lanes (the host shape `multi(outputs)`, which TS's audio driver sets around
+  the call with `withShape`), take the MIDI out. The
   `render-shapes` group covers the other two shapes, `renderAudioPerSystem` and
   `renderAudioPerChannel`.
 - **Cores power on in a fixed state.** The runner sets `RETROPLUG_DETERMINISTIC=1` for `parity/` files

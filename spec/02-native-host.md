@@ -128,15 +128,16 @@ does.
 
 ### `EngineRpcService` — emulator / kernel / MIDI / transport
 
-Every mutation here routes through the `QueuedInvoker`; every read routes through the
-`SnapshotRegistry`. No method walks a live core.
+Every mutation here except `buildCore` and `setGraph` (which call `Engine::parkCore` /
+`Engine::setGraph` directly on the control thread) routes through the `QueuedInvoker`; every read
+routes through the `SnapshotRegistry`. No method walks a live core.
 
 | Method | Signature | Behaviour |
 |---|---|---|
 | `buildCore` | `(BackendConstructSpec) → optional<RpcBuiltCore>` | TS-owned `spec.id`; `factory_.build` → `Engine::parkCore`, which claims the registry slot. Returns the core's node type, export mode and link group, or null (below) |
 | `setGraph` | `(RpcSetGraphRequest) → RpcSetGraphResult` | a graph document TS built, its slots and its tap re-arm → `Engine::setGraph` (below) |
 | `applySystemSetting` | `(uint32 id, string key, double value) → bool` | `gainDb` / `reloadOnRomChange` → a `ConfigField` |
-| `applyRoleConfig` | `(uint32 id, string kind, string config) → bool` | `kind=="sameboy"` only; decodes the whole role config, pushes Model/Highpass/LinkGroup/FastBoot |
+| `applyRoleConfig` | `(uint32 id, string kind, string config) → bool` | `kind` `"sameboy"` or `"mesen"`, false for any other; decodes the whole role config and pushes each field as a `ConfigField` (sameboy: Model/Highpass/LinkGroup/FastBoot/ColorCorrection/DmgPalette/LightTemperature; mesen: NesRegion/NesRemoveSpriteLimit/NesApuLatencyMs/NesS5bNoise/NesMmc5PhaseReset/NesExpansionVolume) |
 | `readState` | `(uint32 id) → optional<Bytestring>` | published savestate from the registry |
 | `readSram` | `(uint32 id) → optional<Bytestring>` | SRAM sliced from the published savestate |
 | `screenshot` | `(uint32 id, string path) → bool` | encodes the registry frame to PNG |
@@ -165,7 +166,7 @@ this service, which spins a background thread that OWNS the `Engine` while it ru
 
 | Method | Signature | Behaviour |
 |---|---|---|
-| `startAudio` | `→ bool` | sets the host shape `Multi(2)` and `audioThreadOwns(true)` **before** spawning `audioThread_` |
+| `startAudio` | `→ bool` | sets `audioThreadOwns(true)` **before** spawning `audioThread_` (the stereo shape is TS's: the audio driver sets `multi(2)` first) |
 | `stopAudio` | `→ bool` | stops the loop (`running_`), joins, THEN clears the bit (which applies whatever is queued), then `drainInto` + `reclaimReleased` |
 | `audioCaptured` | `→ AudioCaptured{energy, frames}` | monotonic atomics for a windowed RMS |
 | `sleepMs` | `(double) → bool` | |
@@ -180,7 +181,7 @@ has joined, because clearing it hands the GraphHost back and applies what is que
 
 ### `BackendConstructSpec` (the construct DTO)
 
-[`BackendConstructSpec`](../packages/native/src/host/rpc/BackendTypes.hpp#L29) is the one
+[`BackendConstructSpec`](../packages/native/src/host/rpc/BackendTypes.hpp#L96) is the one
 DTO worth spelling out — it mirrors the TS `ConstructSpec`:
 
 | Field | Type | Meaning |
@@ -188,12 +189,13 @@ DTO worth spelling out — it mirrors the TS `ConstructSpec`:
 | `id` | `uint32` | **TS owns the id counter**; native never allocates one |
 | `romPath` | `string` | `""` when embedded |
 | `embeddedRom` | `string` | marker, e.g. `"mgb"` (`""` when file-backed) |
-| `platform` | `optional<string>` | `"gb"` / `"nes"` / `"gba"` — which system a multi-platform core builds |
+| `platform` | `optional<string>` | `"gb"` / `"nes"` / `"gba"` / `"sms"` / `"gg"`: which system a multi-platform core builds |
 | `core` | `optional<string>` | `"sameboy"` / `"mesen"` — the factory registry key |
 | `savPath` / `statePath` | `optional<string>` | on-disk seed paths |
-| `replaceId` | `optional<uint32>` | swap in place of an existing system (reload) |
 | `sramBytes` / `stateBytes` | `optional<Bytestring>` | zip-import seed bytes (win over the on-disk paths) |
+| `romBytes` | `optional<Bytestring>` | ROM bytes to load instead of reading `romPath` (a patched image, e.g. LSDj asset overrides; SameBoy only), `romPath` still travelling for the watcher and `.sav` resolution |
 | `settings` | `optional<string>` | the backend "system"-role config JSON, decoded only by the matching backend |
+| `serialOutCapture` | `optional<bool>` | arm a Game Boy's serial-out capture (LSDj MI.OUT) before its first block; ignored by every other core |
 
 ## `Engine` + `QueuedInvoker`: the mutation path
 
@@ -601,7 +603,7 @@ is one automatable parameter applied post-render across all 8 channels
 - [`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp) — mounts the capability facets onto a server; the single source of truth for the wire surface.
 - [`CoreBackends.cpp`](../packages/native/src/system/CoreBackends.cpp) — registers the `sameboy` / `mesen` backends into the `SystemFactory`.
 - [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp): the single-threaded owner of the graph, the DSP kernel and the registry; `processBlock`, the command handler, `SyncTap`.
-- [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp): `QueuedInvoker`, the one mutation path; [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp).
+- [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp): `QueuedInvoker`, the one command path; [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp).
 - [`host/graph/`](../packages/native/src/host/graph): [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) (the cores as nodes), [`KernelNode.cpp`](../packages/native/src/host/graph/KernelNode.cpp) (the kernel stage as a node), [`SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp), [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp).
 - [`GraphHost.hpp`](../packages/native/src/graph/GraphHost.hpp) / [`.cpp`](../packages/native/src/graph/GraphHost.cpp), [`rp_node.h`](../packages/native/src/graph/rp_node.h): the one ring, plan swap and reclaim; the node ABI (`layout_for` per type).
 - [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) — the owned read door.
