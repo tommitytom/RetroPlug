@@ -19,8 +19,8 @@ namespace rp::host {
 
 // Named, so its JSON Schema $defs key is the same under every compiler.
 struct SystemNodeSettings {
-    // The token the translator parked this node's built core under (section 4.6). A new core is a new
-    // token, so it is always a new instance.
+    // The system id buildCore parked this node's core under (docs/modular-graph-phase-b2-design.md section
+    // 2.5). A new core is a new id, so it is always a new instance.
     std::uint64_t core = 0;
 };
 
@@ -63,7 +63,7 @@ struct SystemNode {
         if (!cores) return false;
         SystemBase* built = cores->take(cores->ctx, token);
         core = dynamic_cast<Core*>(built);
-        // A token naming another kind of core is a host bug (Engine::setGraph checks the kinds before it
+        // An id naming another kind of core is a host bug (Engine::setGraph checks the kinds before it
         // plans). The engine keeps a snapshot slot for it, as for any core, or takes it back.
         if (!core && built && !cores->released(cores->ctx, built)) delete built;
         return core != nullptr;

@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <memory>
 #include <string>
 #include <vector>
 
@@ -11,14 +10,11 @@
 #include "host/engine/DspCommand.hpp"
 
 class Engine;
-class SystemBase;
-namespace rp::host { struct HostShape; }
 
-// The ONE mutation path to the Engine. Structure (add / replace / remove, the routing mode, a Game Boy's
-// link group, the host's output shape) goes to the Engine's translator, which plans it as a graph
-// document; every other edit is packed into a POD DspCommand and pushed onto the GraphHost's one ring
-// (docs/modular-graph-phase-b1-design.md section 5), so all of them keep their push order. Who DRAINS the
-// ring is the only mode, held in `audioThreadOwns_`:
+// The ONE command path to the Engine. Structure arrives as graph documents TS builds (Engine::setGraph,
+// docs/modular-graph-phase-b2-design.md); every other edit is packed into a POD DspCommand and pushed
+// onto the GraphHost's one ring (docs/modular-graph-phase-b1-design.md section 5), in push order with the
+// plans. Who DRAINS the ring is the only mode, held in `audioThreadOwns_`:
 //   - while the audio thread owns the Engine (running), it drains each block; the producer just pushes.
 //   - otherwise every push applies inline (the GraphHost flushes as it is pushed onto), so the ring is
 //     empty at the moment the audio thread takes ownership, and the handoff is clean.
@@ -37,9 +33,6 @@ public:
     bool audioThreadOwns() const { return audioThreadOwns_.load(std::memory_order_acquire); }
 
     // producer (control thread)
-    void adoptSystem(std::unique_ptr<SystemBase> sys);
-    void replaceSystem(SystemId id, std::unique_ptr<SystemBase> sys);
-    void removeSystem(SystemId id);
     void loadKernel(std::vector<std::uint8_t> bytecode);
     void setSystems(std::string json);
     // Any length: a channel message rides the command inline, a longer run (SysEx) as an owning payload.
@@ -53,14 +46,9 @@ public:
     void setBpm(double bpm);
     void setTransport(bool playing);
     void setPpq(double ppq);
-    void setAudioRouting(std::uint8_t mode);
     void applyConfigField(SystemId id, std::uint8_t field, double value);
     void pressButton(SystemId id, std::uint8_t button, bool down);
     void writeRam(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes);
-    // The output shape the next blocks render into. The render calls set it before they render. True when
-    // it is planned (or already current); false when it does not plan (more systems than the host's outputs
-    // have buses for, say), and the shape before it keeps running, so a caller must not render as if it held.
-    bool setHostShape(rp::host::HostShape shape);
 
     // consumer: apply every queued command (the block thread, or the control thread while quiescent).
     void drainInto(Engine& engine);

@@ -66,7 +66,6 @@ const specParams = (spec: ConstructSpec, id: number): Record<string, unknown> =>
   const p: Record<string, unknown> = { id, romPath: spec.romPath, platform: spec.platform, core: spec.core, embeddedRom: spec.embeddedRom };
   if (spec.savPath != null) p.savPath = spec.savPath;
   if (spec.statePath != null) p.statePath = spec.statePath;
-  if (spec.replaceId !== undefined) p.replaceId = spec.replaceId;
   if (spec.romBytes) p.romBytes = spec.romBytes;
   if (spec.sramBytes) p.sramBytes = spec.sramBytes;
   if (spec.stateBytes) p.stateBytes = spec.stateBytes;
@@ -107,15 +106,12 @@ export function createHostClient(): HostBackend {
 export function createEmulatorClient(): EmulatorBackend {
   const call = makeCall();
   return {
-    constructSystem: (spec: ConstructSpec, id: number) => call("constructSystem", specParams(spec, id)) as boolean,
-    removeSystem: (id) => call("removeSystem", id) as boolean,
     buildCore: (spec: ConstructSpec, id: number) => (call("buildCore", specParams(spec, id)) as BuiltCore | null) ?? null,
     setGraph: (request: SetGraphRequest) => call("setGraph", request) as SetGraphResult,
     applySystemSetting: (id, key, value) =>
       call("applySystemSetting", id, key, typeof value === "boolean" ? (value ? 1 : 0) : value) as boolean,
     applyRoleConfig: (id, kind, config) => call("applyRoleConfig", id, kind, JSON.stringify(config)) as boolean,
     setSerialOutCapture: (id, on) => call("setSerialOutCapture", id, on) as boolean,
-    setAudioRouting: (mode) => call("setAudioRouting", mode) as boolean,
     pressButton: (id, button, down) => call("pressButton", id, button, down) as boolean,
     stageSystemMidi: (id, bytes) => call("stageSystemMidi", id, bytes) as boolean,
     readState: (id) => bytesOrNull(call("readState", id)),

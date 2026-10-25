@@ -2,32 +2,11 @@
 
 #include <utility>
 
-#include "system/SystemBase.hpp"  // complete type for unique_ptr<SystemBase>
-
 #include "host/engine/Engine.hpp"
-#include "host/graph/Translator.hpp"
 
 // --- producer half (control thread): pack + push, then flush inline unless the audio thread drains ---
 
 bool QueuedInvoker::push(const DspCommand& c) { return engine_->pushCommand(c); }
-
-bool QueuedInvoker::setHostShape(rp::host::HostShape shape) { return engine_->translator().setShape(shape); }
-
-// Add, replace, remove and set-routing re-arm the NES tap. One that plans carries its SyncTap in the plan's
-// swap; one refused changes nothing, so it re-arms nothing either. An id already gone plans nothing, and
-// re-arms all the same.
-void QueuedInvoker::adoptSystem(std::unique_ptr<SystemBase> sys) { engine_->translator().add(std::move(sys)); }
-
-void QueuedInvoker::replaceSystem(SystemId id, std::unique_ptr<SystemBase> sys) {
-    const bool present = engine_->translator().find(id) != nullptr;
-    engine_->translator().replace(id, std::move(sys));  // absent: the core is freed, never adopted
-    if (!present) engine_->pushSyncTap();
-}
-
-void QueuedInvoker::removeSystem(SystemId id) {
-    if (engine_->translator().find(id)) engine_->translator().remove(id);
-    else engine_->pushSyncTap();
-}
 
 void QueuedInvoker::loadKernel(std::vector<std::uint8_t> bytecode) {
     DspCommand c;
@@ -111,18 +90,11 @@ void QueuedInvoker::setPpq(double ppq) {
     push(c);
 }
 
-void QueuedInvoker::setAudioRouting(std::uint8_t mode) {
-    engine_->translator().setRouting(static_cast<rp::host::AudioRouting>(mode));
-}
-
 void QueuedInvoker::applyConfigField(SystemId id, std::uint8_t field, double value) {
     DspCommand c;
     c.kind = DspCommand::Kind::SetConfigField;
     c.setConfigField = { static_cast<std::uint32_t>(id), field, value };
     push(c);  // no heap payload: dropped on a full ring
-    // The cable is wiring: the core's field changes, and the translator rewires.
-    if (static_cast<ConfigField>(field) == ConfigField::LinkGroup)
-        engine_->translator().setLinkGroup(id, static_cast<std::uint8_t>(static_cast<std::uint32_t>(value)));
 }
 
 void QueuedInvoker::pressButton(SystemId id, std::uint8_t button, bool down) {

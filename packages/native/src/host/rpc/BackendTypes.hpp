@@ -101,7 +101,6 @@ struct BackendConstructSpec {
     std::optional<std::string>               core;      // TS Core ("sameboy"/"mesen"); the factory registry key. Absent → defaultCoreFor(platform)
     std::optional<std::string>               savPath;
     std::optional<std::string>               statePath;
-    std::optional<std::uint32_t>             replaceId;
     std::optional<rfl::Bytestring> sramBytes;
     std::optional<rfl::Bytestring> stateBytes;
     // Effective ROM bytes to load INSTEAD of slurping romPath — a TS-supplied patched image (e.g. LSDj

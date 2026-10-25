@@ -10,7 +10,7 @@
 // user-initiated) cross as raw OWNING pointers: the audio thread applies then `delete`s them, the
 // accepted non-RT-on-rare-op pattern. StageMidi is inline for a channel message (fits in 4 bytes); a
 // longer one (SysEx, or several messages staged as one run) crosses as an owning `ext` vector, the same
-// rare-op pattern. Structure never comes this way: the translator plans it.
+// rare-op pattern. Structure never comes this way: TS sends it as graph documents.
 struct DspCommand {
     enum class Kind : std::uint8_t {
         None = 0, SetSystems = 1, LoadKernel = 2, StageMidi = 3,

@@ -20,7 +20,7 @@ class SystemBase;
 class MesenNesSystem;
 struct DspCommand;
 namespace rp::graph { struct HostCommand; }
-namespace rp::host { class Translator; struct SystemTable; enum class AudioRouting : std::uint8_t; }
+namespace rp::host { struct SystemTable; }
 
 // A per-system config field a control-plane edit applies to the live core (SameBoy today). Carried
 // as a double across the command ring: gain in dB; a bool as 0/1; an enum/int as its integer value.
@@ -50,9 +50,9 @@ struct EngineFrame {
 };
 
 // The core of the host: the graph the systems run on (docs/modular-graph-phase-b1-design.md), the DSP role
-// kernel, the staged MIDI and the snapshot registry. Structure reaches it through the translator on the
-// control thread, which plans each change as a graph document; every other edit is a command on the
-// GraphHost's one ring, applied at the next drain. A removed core is freed on the control thread, with
+// kernel, the staged MIDI and the snapshot registry. Structure reaches it as graph documents TS builds
+// (docs/modular-graph-phase-b2-design.md), planned on the control thread; every other edit is a command on
+// the GraphHost's one ring, applied at the next drain. A removed core is freed on the control thread, with
 // the plan that last ran it. Transport and ppq are plain members, set per block by whoever drives it; the
 // only atomics count the blocks too long to run, which the audio thread may not log.
 class Engine {
@@ -67,7 +67,7 @@ public:
     double sampleRate() const { return sampleRate_; }
 
     // --- the running plan's systems: the block thread's view, or the control thread's while no audio
-    // thread runs (structure itself goes through translator()) ---
+    // thread runs (structure itself arrives through setGraph) ---
     std::size_t systemCount() const;
     SystemBase* findSystem(SystemId id);   // borrowed (non-owning)
 
@@ -136,8 +136,8 @@ public:
 
     // --- per block: the plan (the kernel stage, every system, the mixing, the host outputs), then the
     // MI.OUT collection, the snapshot publish and the ppq advance. `outputs` is a flat array of
-    // `numOutputs` planar channels laid out as the translator's host shape says (the plugin's 8, a
-    // render's pairs); the caller has drained the ring first. ---
+    // `numOutputs` planar channels laid out as the graph's host shape says (the plugin's 8, a render's
+    // pairs); the caller has drained the ring first. ---
     void processBlock(std::uint32_t frames, float* const* outputs, std::size_t numOutputs);
     void processBlock(std::uint32_t frames, float* outL, float* outR);
 
@@ -158,8 +158,7 @@ public:
     // when the core is deleted; processBlock publishes into it.
     SnapshotRegistry& registry() { return registry_; }
 
-    // --- the graph: QueuedInvoker routes structure to the translator and every other command onto the ring ---
-    rp::host::Translator& translator();             // control thread
+    // --- the ring: QueuedInvoker pushes every command onto it ---
     bool pushCommand(const DspCommand& c);          // control thread: false when the ring is full
     void drainCommands();                           // the block thread (or the control thread, quiescent)
     void setAudioThreadOwns(bool owns);
@@ -168,9 +167,6 @@ public:
     void discardPending();                          // teardown, the audio thread stopped
     // Grow the plan's block size to a host's maximum (never below kDefaultMaxBlockFrames). Quiescent.
     void setMaxBlockFrames(std::uint32_t frames);
-    // Re-arm the NES tap for an edit that re-arms without a plan (a remove or replace of an id already gone):
-    // a SyncTap behind everything pushed so far. A plan's own SyncTap rides in its swap. Control thread.
-    bool pushSyncTap();
 
     // --- graphs TS builds (docs/modular-graph-phase-b2-design.md section 2.5), control thread ---
     // Park a built core under its id until the system node a document names it in takes it, claiming its

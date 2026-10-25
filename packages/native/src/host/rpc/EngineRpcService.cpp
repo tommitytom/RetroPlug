@@ -1,7 +1,5 @@
 #include "host/rpc/EngineRpcService.hpp"
 
-#include "host/graph/Translator.hpp"
-
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -94,22 +92,6 @@ bool EngineRpcService::rendersInto(std::size_t channels) const {
 // Out-of-line so unique_ptr<KitCompiler> can destroy a complete type (fwd-declared in the header).
 EngineRpcService::~EngineRpcService() = default;
 
-bool EngineRpcService::constructSystem(BackendConstructSpec spec) {
-    // TS owns the id counter and passes it in; the build (control thread) can fail (bad ROM), the
-    // queued adopt can't — so this returns "did it build", never an id.
-    const SystemId id = spec.id;
-    auto sys = factory_.build(id, toBuildSpec(spec), engine_.sampleRate());
-    if (!sys) return false;  // unknown backend / unreadable or non-SameBoy ROM
-
-    // Seed the snapshot slot from the just-built core (control thread) BEFORE handoff, so a read
-    // right after construct works with no block rendered.
-    if (!engine_.registry().claim(id, *sys)) return false;  // pool full
-
-    if (spec.replaceId) invoker_.replaceSystem(*spec.replaceId, std::move(sys));
-    else                invoker_.adoptSystem(std::move(sys));
-    return true;
-}
-
 std::optional<RpcBuiltCore> EngineRpcService::buildCore(BackendConstructSpec spec) {
     const SystemId id = spec.id;
     if (id == 0) {  // the snapshot registry's free-slot id, so never a system's
@@ -156,17 +138,10 @@ RpcSetGraphResult EngineRpcService::setGraph(RpcSetGraphRequest request) {
     return out;
 }
 
-// duplicate + reload are TS orchestration now (SystemsStore over the registry reads + constructSystem-
-// with-state): duplicate pulls the source savestate and builds a seeded core; reload pulls SRAM and
-// cold-boots the ROM with replaceId. Native has no bespoke method for either — that deletes the
-// findSystem walks + the last live-core clone/cloneFromState reliance from this layer.
-
-bool EngineRpcService::removeSystem(std::uint32_t id) {
-    // No threading branch: the translator plans the system out. Quiescent, the plan applies at once and
-    // the core is freed; running, the core leaves with the plan it last ran in, freed at reclaim.
-    invoker_.removeSystem(id);
-    return true;
-}
+// duplicate, reload and remove are TS orchestration (SystemsStore over the registry reads + buildCore, and
+// the documents it publishes): duplicate pulls the source savestate and builds a seeded core; reload pulls
+// SRAM and cold-boots the ROM into the same slot; remove publishes a document without it. Native has no
+// bespoke method for any of them.
 
 bool EngineRpcService::applySystemSetting(std::uint32_t id, std::string key, double value) {
     // A universal per-system setting → the live core, pushed through the invoker (flushed inline when
@@ -489,12 +464,6 @@ bool EngineRpcService::setPpq(double ppq) {
 bool EngineRpcService::setBpm(double bpm) {
     if (bpm <= 0.0) return false;
     invoker_.setBpm(bpm);
-    return true;
-}
-
-bool EngineRpcService::setAudioRouting(std::uint32_t mode) {
-    if (mode > 5) return false;  // Stereo / TwoPerInstance / OnePerInstance / ChannelSplit / PinSplit / StereoPinSplit
-    invoker_.setAudioRouting(static_cast<std::uint8_t>(mode));  // → the translator, which wires it
     return true;
 }
 

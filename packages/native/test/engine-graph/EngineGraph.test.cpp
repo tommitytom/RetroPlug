@@ -13,6 +13,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "GraphDocs.hpp"
 #include "NodeRig.hpp"
 #include "host/engine/DspCommand.hpp"
 #include "host/engine/Engine.hpp"
@@ -47,63 +48,12 @@ std::unique_ptr<SystemBase> bliptoaster(SystemId id) {
     return s;
 }
 
-struct Sys {
-    SystemId    id;
-    const char* type;
-};
+using rp::host::test::DocSystem;
 
-// What buildGraph writes for these systems summed to a stereo pair.
-std::string stereoDoc(const std::vector<Sys>& systems) {
-    std::string nodes = R"({"id":"kernel","type":"rp.dsp.kernel"})";
-    std::string wires;
-    std::string left, right;
-    for (const Sys& s : systems) {
-        const std::string id = std::to_string(s.id);
-        nodes += R"(,{"id":"sys-)" + id + R"(","type":")" + s.type + R"(","settings":{"core":)" + id + "}}";
-    }
-    for (const Sys& s : systems) {
-        const std::string id = std::to_string(s.id);
-        nodes += R"(,{"id":"split-)" + id + R"(","type":"rp.core.split"})";
-        wires += std::string(wires.empty() ? "" : ",") + R"({"from":"sys-)" + id + R"(.mix","to":"split-)" + id + R"(.in"})";
-    }
-    for (std::size_t c = 0; c < 2 && !systems.empty(); ++c) {
-        const std::string half = c ? "out2" : "out1";
-        const std::string out = R"("out.out.)" + std::to_string(c + 1) + "\"";
-        if (systems.size() == 1) {
-            wires += R"(,{"from":"split-)" + std::to_string(systems[0].id) + "." + half + R"(","to":)" + out + "}";
-            continue;
-        }
-        const std::string lane = "lane-" + std::to_string(c);
-        nodes += R"(,{"id":")" + lane + R"(","type":"rp.core.add","settings":{"inputs":)" + std::to_string(systems.size()) + "}}";
-        for (std::size_t k = 0; k < systems.size(); ++k)
-            wires += R"(,{"from":"split-)" + std::to_string(systems[k].id) + "." + half + R"(","to":")" + lane + ".in" +
-                     std::to_string(k + 1) + "\"}";
-        wires += R"(,{"from":")" + lane + R"(.out","to":)" + out + "}";
-    }
-    nodes += R"(,{"id":"out","type":"rp.host.audio-out","settings":{"buses":[1,1]}})";
-    return R"({"nodes":[)" + nodes + R"(],"wires":[)" + wires + "]}";
-}
-
-// What buildGraph writes for the perSystem shape: slot i's mix on host channels 2i and 2i + 1.
-std::string perSystemDoc(const std::vector<Sys>& systems) {
-    std::string nodes = R"({"id":"kernel","type":"rp.dsp.kernel"})";
-    std::string wires, buses;
-    for (std::size_t i = 0; i < systems.size(); ++i) {
-        const std::string id = std::to_string(systems[i].id);
-        nodes += R"(,{"id":"sys-)" + id + R"(","type":")" + systems[i].type + R"(","settings":{"core":)" + id + "}}";
-        wires += std::string(i ? "," : "") + R"({"from":"sys-)" + id + R"(.mix","to":"out.out.)" + std::to_string(2 * i + 1) +
-                 "-" + std::to_string(2 * i + 2) + "\"}";
-        buses += std::string(i ? "," : "") + "2";
-    }
-    nodes += R"(,{"id":"out","type":"rp.host.audio-out","settings":{"buses":[)" + buses + "]}}";
-    return R"({"nodes":[)" + nodes + R"(],"wires":[)" + wires + "]}";
-}
-
-Engine::GraphRequest request(const std::vector<Sys>& systems) {
-    Engine::GraphRequest r;
-    r.document = stereoDoc(systems);
-    for (const Sys& s : systems) r.slots.push_back(s.id);
-    return r;
+Engine::GraphRequest request(const std::vector<DocSystem>& systems) {
+    std::vector<SystemId> slots;
+    for (const DocSystem& s : systems) slots.push_back(s.id);
+    return rp::host::test::graphRequest(rp::host::test::stereoDocument(systems), slots);
 }
 
 // `r`, re-arming the tap to `mode` on `id`.
@@ -115,8 +65,8 @@ Engine::GraphRequest arming(Engine::GraphRequest r, SystemId id, std::uint32_t m
     return r;
 }
 
-const char* const kGb = "rp.sameboy.gb";
-const char* const kNes = "rp.mesen.nes";
+const char* const kGb = rp::host::test::kGbType;
+const char* const kNes = rp::host::test::kNesType;
 
 }  // namespace
 
@@ -374,7 +324,7 @@ TEST_CASE("buildCore and setGraph over the RPC layer", "[engine-graph][b2]") {
     CHECK_FALSE(rpc.buildCore(spec).has_value());
     CHECK_FALSE(e.coreLive(0));
 
-    RpcSetGraphRequest graph{stereoDoc({{5, kGb}}), {5}, std::nullopt};
+    RpcSetGraphRequest graph{rp::host::test::stereoDocument({{5, kGb}}), {5}, std::nullopt};
     const auto placed = rpc.setGraph(graph);
     CHECK(placed.ok);
     CHECK(placed.errors.empty());
@@ -396,10 +346,7 @@ TEST_CASE("a render into buffers the planned graph does not write is refused", "
     RpcRenderBlocksRequest blocks{4, {RpcRenderBlock{256, {}, {}, std::nullopt, std::nullopt, std::nullopt}}};
     CHECK_FALSE(svc.renderBlocks(blocks).error.empty());
 
-    Engine::GraphRequest perSystem;
-    perSystem.document = perSystemDoc({{1, kGb}, {2, kGb}});
-    perSystem.slots = {1, 2};
-    REQUIRE(e.setGraph(perSystem).ok);
+    REQUIRE(e.setGraph(rp::host::test::graphRequest(rp::host::test::perSystemDocument({{1, kGb}, {2, kGb}}), {1, 2})).ok);
     CHECK(e.hostWidth() == 4);
     CHECK(svc.renderAudioPerSystem(10.0).size() == 2);
     CHECK(svc.renderAudio(10.0).empty());

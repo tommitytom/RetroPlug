@@ -95,32 +95,21 @@ export interface Backend {
 
   // --- Emulator lifecycle -------------------------------------------------
   //
-  // The narrow native service: build / clone / reload / drop an emulator. It takes
+  // The narrow native service: build an emulator core, and place what has been built. It takes
   // CONCRETE, already-resolved paths — TS does every bit of derivation (suffix math,
   // sibling paths, the paired-sav override, classification, pairing) with the pure
   // kernels and hands native only finished paths. Native never sees a suffix, never
   // looks for a sibling, never classifies. No ROM/SRAM bytes cross for construction:
-  // native slurps the paths it's given.
+  // native slurps the paths it's given. Which cores run, in what order and wired how is
+  // the graph TS builds (graph/buildGraph.ts); duplicate, reload and remove are TS
+  // orchestration over these two calls (SystemsStore), with no native method of their own.
 
-  /** Build + activate an emulator from a spec under the TS-allocated `id` (TS owns the id counter;
-   *  native never mints one). Returns whether it BUILT — true on success, false on an I/O failure
-   *  (unreadable ROM / unknown format / pool full). With `replaceId` the instance swaps that id in
-   *  place; otherwise it is appended. The adopt is fire-and-forget, so there's no id to return. */
-  constructSystem(spec: ConstructSpec, id: number): boolean;
-
-  // duplicate + reload are TS orchestration over constructSystem-with-state (SystemsStore): the store
-  // pulls the source's savestate/SRAM from the registry and builds a seeded/replaceId core — native has
-  // no bespoke method for either.
-
-  /** Drop system `id`. Returns false when it isn't present. */
-  removeSystem(id: number): boolean;
-
-  /** Build + activate an emulator core from a spec under the TS-allocated `id`, and park it for the next
-   *  graph document to place (docs/modular-graph-phase-b2-design.md section 2.5). Nothing runs it until a
-   *  `setGraph` document names it as `sys-<id>`; a document published without it frees it. Returns what the
-   *  core must be placed as, or null when it did not build (an unreadable ROM, an unknown format, a full
-   *  snapshot registry) or a core under `id` is still live. `spec.replaceId` is not read: the document
-   *  says what a core replaces. */
+  /** Build + activate an emulator core from a spec under the TS-allocated `id` (TS owns the id counter;
+   *  native never mints one), and park it for the next graph document to place
+   *  (docs/modular-graph-phase-b2-design.md section 2.5). Nothing runs it until a `setGraph` document
+   *  names it as `sys-<id>`; a document published without it frees it. Returns what the core must be
+   *  placed as, or null when it did not build (an unreadable ROM, an unknown format, a full snapshot
+   *  registry) or a core under `id` is still live. */
   buildCore(spec: ConstructSpec, id: number): BuiltCore | null;
 
   /** Plan and publish a graph document TS built (graph/buildGraph.ts): the engine's systems, their wiring
@@ -157,15 +146,6 @@ export interface Backend {
    *  kernel's `ctx.serialOut` for the Arduinoboy decoder. SameBoy-only (a no-op on other cores). */
   setSerialOutCapture(id: number, on: boolean): boolean;
 
-  /** Set the project's audio-output routing (0 Stereo / 1 TwoPerInstance / 2 OnePerInstance /
-   *  3 ChannelSplit / 4 PinSplit / 5 StereoPinSplit) — which of the plugin's 4 stereo output pairs each
-   *  system mixes into, or (modes 3..5, single system only) one system's channels fanned across the
-   *  outs: a Game Boy's 4 stereo channels over the 4 pairs, a NES's 5 mono core channels over outs 1..5,
-   *  a NES's 3 mono pins over outs 1..3, or those same 3 pins over a PAIR each (outs 1/2, 3/4, 5/6,
-   *  mirrored L=R). The one project-level setting that reaches native audio (the translator wires the
-   *  graph for the mode + system count, falling back to Stereo where a split does not apply). Returns
-   *  false on an out-of-range mode. */
-  setAudioRouting(mode: number): boolean;
 
   // --- Live emulator input ------------------------------------------------
   // The UI→DSP direction for game input: a joypad button transition on the focused system. Native queues
@@ -408,8 +388,8 @@ export type HostBackend = Pick<
 /** Emulator lifecycle / live config / input / snapshot reads — bound by the plugin, UI, CLI, test host. */
 export type EmulatorBackend = Pick<
   Backend,
-  | "constructSystem" | "removeSystem" | "buildCore" | "setGraph" | "applySystemSetting" | "applyRoleConfig" | "setSerialOutCapture"
-  | "setAudioRouting" | "pressButton" | "stageSystemMidi" | "readState" | "readSram" | "readRam" | "writeRam" | "getFrame"
+  | "buildCore" | "setGraph" | "applySystemSetting" | "applyRoleConfig" | "setSerialOutCapture"
+  | "pressButton" | "stageSystemMidi" | "readState" | "readSram" | "readRam" | "writeRam" | "getFrame"
 >;
 
 /** Live-core inspection / stepping / breakpoints / profiler — the CLI-only debug facet (spec/09). */
@@ -778,9 +758,6 @@ export interface ConstructSpec {
   /** Exact savestate file to boot from. `null` = cold boot (the systems domain
    *  always passes null; present for the later Project domain). */
   statePath: string | null;
-  /** When set, swap this existing SystemId in place (load / replace); otherwise the
-   *  new system is appended. */
-  replaceId?: number;
   /** Effective ROM bytes to load INSTEAD of slurping `romPath` — a load-time role's patched image (e.g.
    *  LSDj asset overrides applied non-destructively). `romPath` still travels (for the ROM watcher and
    *  `.sav` resolution); only the loaded bytes differ. Honoured by both SameBoy (GB) and Mesen (NES/GBA).

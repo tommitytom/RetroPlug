@@ -25,7 +25,6 @@
 #include "PluginShared.hpp"     // SharedDSP handoff to the editor
 #include "LastGoodState.hpp"   // keeps a failed project serialization from reporting "empty"
 
-#include "host/graph/Translator.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "Version.hpp"                    // single source of truth for the plugin version
@@ -344,7 +343,7 @@ protected:
 
         // One audio block: drain control-thread edits on the audio thread, set transport (direct: we're
         // the audio thread), render into the output channels (the plugin's 4 stereo pairs, laid out by the
-        // translator's Multi(8) shape and the project's routing).
+        // graph TS builds for 8 outputs and the project's routing).
         svc_.invoker.drainInto(svc_.engine);
         svc_.engine.setBpm(bpm);
         svc_.engine.setTransport(playing);

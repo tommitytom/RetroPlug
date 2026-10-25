@@ -24,7 +24,6 @@
 #include "host/graph/KernelNode.hpp"
 #include "host/graph/SystemNodes.hpp"
 #include "host/graph/SystemTable.hpp"
-#include "host/graph/Translator.hpp"
 
 namespace {
 
@@ -45,15 +44,9 @@ DspCommand syncTapCommand(bool arm, SystemId id, std::uint32_t mode) {
     return c;
 }
 
-// What the translator's routing arms against `table`, the systems of the plan it rides with: the pins (1) or
-// the five channels (3) of a lone NES under a split routing; a restore only otherwise.
-DspCommand syncTapFor(rp::host::AudioRouting routing, const rp::host::SystemTable& table) {
-    using rp::host::AudioRouting;
-    const bool pins  = routing == AudioRouting::PinSplit || routing == AudioRouting::StereoPinSplit;
-    const bool split = pins || routing == AudioRouting::ChannelSplit;
-    if (!split || table.slots.size() != 1 || !table.slots.front().nes) return syncTapCommand(false, 0, 0);
-    return syncTapCommand(true, table.slots.front().id, pins ? 1u : 3u);
-}
+// The graph before the first document TS sends: the kernel and the host's stereo pair.
+constexpr const char* kEmptyDocument =
+    R"({"nodes":[{"id":"kernel","type":"rp.dsp.kernel"},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[1,1]}}],"wires":[]})";
 
 // A system node is a node of one of the two system packages: every type in them adapts a core.
 bool isSystemNodeType(const std::string& type) {
@@ -100,9 +93,8 @@ std::uint32_t hostWidthOf(const rp::graph::GraphDocument& doc) {
 
 } // namespace
 
-// The Engine's graph: the node packages, the GraphHost running the plan, and the translator that turns
-// structure into its documents. Destroyed first (graph_ is the Engine's last member), the translator before
-// the host it plans for, and the host (whose system nodes call cores->released from their destructors)
+// The Engine's graph: the node packages and the GraphHost running the plan. Destroyed first (graph_ is the
+// Engine's last member), and the host (whose system nodes call cores->released from their destructors)
 // before the core handoff and the kernel interface those nodes call into.
 struct Engine::Graph {
     rp::graph::NodeRegistry                registry;
@@ -110,7 +102,6 @@ struct Engine::Graph {
     rp::host::HostCores                    cores{};
     rp::host::EngineKernel                 kernel{};
     std::unique_ptr<rp::graph::GraphHost>  host;
-    std::unique_ptr<rp::host::Translator>  translator;
     std::uint32_t                          maxFrames = kDefaultMaxBlockFrames;
 };
 
@@ -141,28 +132,7 @@ Engine::Engine(double sampleRate) : sampleRate_(sampleRate) {
     config.interfacesCtx = this;
     graph_->host = std::make_unique<rp::graph::GraphHost>(graph_->registry, graph_->resources, config);
     graph_->host->setHostCommandHandler(&Engine::onHostCommand, this);
-    graph_->translator = std::make_unique<rp::host::Translator>(
-        [this](const std::string& json, std::shared_ptr<const rp::host::SystemTable> table, bool rearmsTap) {
-            auto doc = rp::graph::parseGraphDocument(json);
-            if (!doc) {
-                std::fprintf(stderr, "[engine] the translator built a document that does not parse: %s\n", doc.error().what().c_str());
-                return false;
-            }
-            // An edit that re-arms the NES tap carries its SyncTap in the plan's swap, so the wiring and the
-            // tap land in one drain or not at all. routing() already holds the mode this edit set.
-            rp::graph::HostCommand trailer{};
-            if (rearmsTap) {
-                const DspCommand c = syncTapFor(graph_->translator->routing(), *table);
-                std::memcpy(trailer.bytes, &c, sizeof c);
-            }
-            const auto result = graph_->host->setGraph(*doc, std::move(table), rearmsTap ? &trailer : nullptr);
-            for (const auto& e : result.errors)
-                std::fprintf(stderr, "[engine] a graph was refused (%s) at %s.%s: %s\n", e.code.c_str(), e.nodeId.c_str(),
-                             e.port.c_str(), e.message.c_str());
-            if (result.ok) hostWidth_ = hostWidthOf(*doc);
-            return result.ok;
-        },
-        [this](SystemBase* core) { registry_.release(core->id()); });
+    setGraph({kEmptyDocument, {}});
 }
 
 Engine::~Engine() = default;
@@ -174,25 +144,17 @@ const void* Engine::graphInterface(void* ctx, const char* id) {
     return nullptr;
 }
 
-rp::host::Translator& Engine::translator() { return *graph_->translator; }
-
 bool Engine::pushCommand(const DspCommand& c) { return graph_->host->pushHostCommand(&c, sizeof c); }
 
-bool Engine::pushSyncTap() {
-    // Behind every plan already pushed, so the table it is applied against is the last one published: the
-    // translator's own.
-    return pushCommand(syncTapFor(graph_->translator->routing(), graph_->translator->table()));
-}
-
+// rp.host.cores/1: a system node's settings name its core by system id.
 SystemBase* Engine::takeCore(std::uint64_t token) {
+    if (token > UINT32_MAX) return nullptr;
     const auto it = parked_.find(static_cast<SystemId>(token));
-    if (token <= UINT32_MAX && it != parked_.end()) {
-        SystemBase* core = it->second.release();
-        parked_.erase(it);
-        if (inSetGraph_) takenInSetGraph_.insert(core->id());
-        return core;
-    }
-    return graph_->translator->take(token);
+    if (it == parked_.end()) return nullptr;
+    SystemBase* core = it->second.release();
+    parked_.erase(it);
+    if (inSetGraph_) takenInSetGraph_.insert(core->id());
+    return core;
 }
 
 bool Engine::parkCore(std::unique_ptr<SystemBase> core) {
@@ -371,7 +333,7 @@ void Engine::onHostCommand(void* ctx, const rp::graph::HostCommand& cmd, const v
 }
 
 // Every kind that rides the ring, SyncTap included, a per-system one aimed at the core `table` names. Structure
-// never arrives here: the translator turns it into plans.
+// never arrives here: TS sends it as graph documents.
 void Engine::applyCommand(DspCommand& cmd, const rp::host::SystemTable& table) {
     auto core = [&](std::uint32_t id) -> SystemBase* {
         const auto* e = table.find(id);
@@ -535,7 +497,7 @@ void Engine::runKernelStage(std::uint32_t frames) {
 #endif
 }
 
-// The translator's host shape decides who goes where: the caller set it before rendering.
+// The graph TS published decides who goes where: it built it for the host's outputs.
 void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size_t numOutputs) {
     // An empty block runs nothing, and the tail must not either: the cores never ran, so the MI.OUT gather
     // would collect the last block's log a second time. There are no frames to silence.
@@ -749,7 +711,7 @@ void Engine::applyConfigField(SystemBase* sys, std::uint8_t field, double value)
             const auto g = static_cast<std::uint8_t>(static_cast<std::uint32_t>(value));
             if (sb->config_.linkGroupId != g) {
                 sb->config_.linkGroupId = g;
-                // the translator rewires the cable (QueuedInvoker::applyConfigField)
+                // the cable is wiring: TS republishes the graph with the group (graph/buildGraph.ts)
             }
             break;
         }

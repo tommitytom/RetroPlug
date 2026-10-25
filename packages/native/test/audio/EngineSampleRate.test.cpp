@@ -14,8 +14,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "../engine-graph/GraphDocs.hpp"
 #include "host/engine/Engine.hpp"
-#include "host/engine/EngineInvoker.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
 
@@ -40,13 +40,14 @@ std::vector<std::uint8_t> readRom() {
 } // namespace
 
 TEST_CASE("Engine::setSampleRate re-rates already-live systems", "[audio][samplerate][engine]") {
-    Engine        eng(44100.0);
-    QueuedInvoker inv(eng);
+    Engine eng(44100.0);
 
     auto sys = std::make_unique<SameBoySystem>(1, SameBoyConfig{}, readRom());
     sys->onActivate(eng.sampleRate());  // built at the engine's current rate, as the factory does
     SameBoySystem* raw = sys.get();
-    inv.adoptSystem(std::move(sys));
+    REQUIRE(eng.parkCore(std::move(sys)));
+    using namespace rp::host::test;
+    REQUIRE(eng.setGraph(graphRequest(stereoDocument({{1, kGbType}}), {1})).ok);
     REQUIRE(eng.findSystem(1) == raw);
     REQUIRE(raw->sampleRate_ == 44100.0);
 

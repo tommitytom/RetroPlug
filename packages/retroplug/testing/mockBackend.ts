@@ -75,17 +75,14 @@ export class MockBackend implements Backend {
   readonly log: string[] = [];
 
   // --- emulator-lifecycle bookkeeping (mock-only) -------------------------
-  // (no id counter — TS owns ids and passes them to constructSystem.)
+  // (no id counter — TS owns ids and passes them to buildCore.)
   private systems = new Map<number, MockSystem>();
-  /** Every ConstructSpec passed to constructSystem, in order — lets tests assert
-   *  the CONCRETE paths TS resolved (savPath/statePath/replaceId). */
-  readonly constructCalls: ConstructSpec[] = [];
-  /** Every buildCore call, in order, with the id it built under. */
+  /** Every buildCore call, in order, with the id it built under — lets tests assert the CONCRETE paths
+   *  TS resolved (savPath/statePath) and the seeds it carried. Duplicate and reload are TS orchestration
+   *  over buildCore, so they land here too (with stateBytes/sramBytes), not in a dedicated log. */
   readonly buildCalls: (ConstructSpec & { id: number })[] = [];
   /** Every setGraph request, in order: the documents TS published, their slots and their tap re-arms. */
   readonly graphRequests: SetGraphRequest[] = [];
-  // NOTE: duplicate/reload no longer hit the backend — they are TS orchestration over constructSystem,
-  // so their effect shows up in constructCalls (with stateBytes/sramBytes + replaceId), not a dedicated log.
 
   // --- file-dialog bookkeeping (mock-only) --------------------------------
   /** Opts passed to each openFileBrowser call, in order — lets tests assert which
@@ -98,7 +95,6 @@ export class MockBackend implements Backend {
   readonly applySettingCalls: { id: number; key: string; value: number | boolean }[] = [];
   readonly applyRoleCalls: { id: number; kind: string; config: Record<string, unknown> }[] = [];
   readonly serialOutCaptureCalls: { id: number; on: boolean }[] = [];
-  readonly audioRoutingCalls: number[] = [];
   readonly pressButtonCalls: { id: number; button: number; down: boolean }[] = [];
   /** Control MIDI aimed at one system (backend.stageSystemMidi), in call order. */
   readonly stageSystemMidiCalls: { id: number; bytes: number[] }[] = [];
@@ -293,15 +289,6 @@ export class MockBackend implements Backend {
 
   // --- Emulator lifecycle -------------------------------------------------
 
-  constructSystem(spec: ConstructSpec, id: number): boolean {
-    this.log.push("constructSystem");
-    this.constructCalls.push(spec);
-    if (!this.buildable(spec)) return false;
-    if (spec.replaceId !== undefined) this.systems.delete(spec.replaceId); // swap in place
-    this.systems.set(id, mockSystem(spec)); // TS owns the id counter; the mock just records under the given id
-    return true;
-  }
-
   // A built core is live from the build on, as native's is (its snapshot slot is claimed at the build, so its
   // reads answer before any document places it).
   buildCore(spec: ConstructSpec, id: number): BuiltCore | null {
@@ -353,8 +340,8 @@ export class MockBackend implements Backend {
     return fmt === "unknown" ? sega : !sega || fmt === "sms" || fmt === "gg";
   }
 
-  // duplicate + reload are TS orchestration (SystemsStore) over readState/readSram + constructSystem —
-  // the mock has no bespoke method; those store paths land as constructCalls (restoredFromBytes).
+  // duplicate + reload are TS orchestration (SystemsStore) over readState/readSram + buildCore — the mock has
+  // no bespoke method; those store paths land as buildCalls (restoredFromBytes).
 
   readState(id: number): Uint8Array | null {
     this.log.push("readState");
@@ -621,11 +608,6 @@ export class MockBackend implements Backend {
     return { width, height, rgba };
   }
 
-  removeSystem(id: number): boolean {
-    this.log.push("removeSystem");
-    return this.systems.delete(id);
-  }
-
   openFileBrowser(opts: FileBrowserOpts): Promise<string | null> {
     this.log.push("openFileBrowser");
     this.fileBrowserCalls.push(opts);
@@ -648,12 +630,6 @@ export class MockBackend implements Backend {
     this.log.push("setSerialOutCapture");
     this.serialOutCaptureCalls.push({ id, on });
     return true;
-  }
-
-  setAudioRouting(mode: number): boolean {
-    this.log.push("setAudioRouting");
-    this.audioRoutingCalls.push(mode);
-    return mode >= 0 && mode <= 3; // 0 Stereo / 1 TwoPerInstance / 2 OnePerInstance / 3 ChannelSplit
   }
 
   pressButton(id: number, button: number, down: boolean): boolean {

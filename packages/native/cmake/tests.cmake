@@ -74,23 +74,20 @@ retroplug_add_test_binary(
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
              RP_GG_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.gg")
 
-# Guards B1's graph engine (docs/modular-graph-phase-b1-design.md): each system node renders exactly what
-# its core renders driven directly, and the translator builds the routing modes as wiring. Every core in it
-# powers on in a fixed state (test/engine-graph/Deterministic.cpp), so two identical cores agree.
+# Guards the engine's graph (docs/modular-graph-phase-b1-design.md, -b2-design.md): each system node renders
+# exactly what its core renders driven directly, and the engine places, re-arms and frees what the documents
+# TS builds say. Every core in it powers on in a fixed state (test/engine-graph/Deterministic.cpp), so two
+# identical cores agree.
 retroplug_add_test_binary(
     NAME     retroplug-engine-graph-test
     SOURCES  test/engine-graph/Deterministic.cpp
              test/engine-graph/SystemNode.test.cpp
-             test/engine-graph/Translator.test.cpp
-             test/engine-graph/TranslatorPlan.test.cpp
-             test/engine-graph/TranslatorGoldens.test.cpp
              test/engine-graph/EngineGraph.test.cpp
     LIBS     retroplug-backend
     INCLUDES ${RP_QUICKJS_INCLUDE}
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
              RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
-             RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
-             RP_TRANSLATOR_GOLDENS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/test/graph/golden/build-graph.json")
+             RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms")
 
 # Guards the native file watcher (NativeFileWatcher over efsw): config.json + bindings/ recursive
 # detection, registered-ROM parent-dir watches, and the unregistered-file filter.

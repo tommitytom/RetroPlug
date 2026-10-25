@@ -60,7 +60,6 @@ extern "C" {
 #include "dpfjs/LvglJsEngine.hpp"            // LVGL display layer over the shared txiki host
 #include "dpfjs/host/TjsHostRuntime.hpp"     // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
-#include "host/graph/Translator.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "host/input/GamepadManager.hpp"     // SDL controller poll (shared UI-thread input)
@@ -902,7 +901,7 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
     a.svc.engine.setBpm(bpm);            // 120 free-run until an external clock master appears
     a.svc.engine.setTransport(playing);  // then locks to its tempo + start/stop
     // Multi-out: render into the N planar channel buffers; the Engine zeroes them, and the plan routes each
-    // system to its pair per audioRouting (the translator wires the N-channel host shape). N=2 collapses
+    // system to its pair per audioRouting (TS builds the graph for the N-channel host shape). N=2 collapses
     // every mode to the stereo mix. N=4/6/8 spreads stems across the device's pairs.
     a.svc.engine.processBlock(static_cast<std::uint32_t>(frames), a.audioPtrs.data(), static_cast<std::size_t>(N));
 

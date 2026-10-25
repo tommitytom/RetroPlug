@@ -26,14 +26,12 @@ public:
     ~EngineRpcService();   // out-of-line: kitCompiler_ holds a fwd-declared KitCompiler
 
     // --- emulator lifecycle / reads ---
-    // (duplicate + reload live in the TS SystemsStore as constructSystem-with-state orchestration.)
-    bool constructSystem(BackendConstructSpec spec);   // TS-owned id in spec.id; returns "did it build"
-    // Build a core and park it under spec.id for the next document to place (spec.replaceId is not read):
-    // the core's facts, or null when the id is 0, the core did not build, or a core under that id is still live.
+    // (duplicate, reload and remove live in the TS SystemsStore as buildCore + setGraph orchestration.)
+    // Build a core and park it under spec.id (TS owns the id counter) for the next document to place: the
+    // core's facts, or null when the id is 0, the core did not build, or a core under that id is still live.
     std::optional<RpcBuiltCore> buildCore(BackendConstructSpec spec);
     // Plan a document TS built (docs/modular-graph-phase-b2-design.md section 2.5).
     RpcSetGraphResult           setGraph(RpcSetGraphRequest request);
-    bool removeSystem(std::uint32_t id);
     bool applySystemSetting(std::uint32_t id, std::string key, double value);
     bool applyRoleConfig(std::uint32_t id, std::string kind, std::string config);
     std::optional<rfl::Bytestring> readState(std::uint32_t id);
@@ -82,7 +80,6 @@ public:
     bool            setTransport(bool running);
     bool            setPpq(double ppq);
     bool            setBpm(double bpm);
-    bool            setAudioRouting(std::uint32_t mode);
     bool            stageMidiIn(std::vector<std::uint8_t> bytes);
     // The control-surface twin: staged as `controllerIn` rather than musical MIDI, so a headless test
     // can drive a Launchpad app without a Launchpad. Harness-facet only, like stageMidiIn.

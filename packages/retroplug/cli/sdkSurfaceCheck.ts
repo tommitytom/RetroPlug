@@ -51,7 +51,7 @@ type Exact<A, B, Msg extends string> =
 
 // Values: the NAME sets, two-way, so the declaration can neither omit an export nor invent one. This is
 // deliberately not a comparison of the types behind those names, because the declaration is a curated
-// NARROWER view on purpose - its `Backend` omits 25 methods a ROM author has no use for - so neither
+// NARROWER view on purpose - its `Backend` omits 24 methods a ROM author has no use for - so neither
 // direction of a type-level namespace comparison can hold, and demanding one would only pressure the
 // declaration into growing surface nobody wants. A missing or invented NAME is always a defect, and it
 // is the drift that has actually shipped: `deleteFile` / `listDir` / `rename` were implemented and

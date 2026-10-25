@@ -88,7 +88,7 @@ struct SameBoyConfig {
     // Serial-link group. 0 = standalone (default). Same nonzero id on multiple
     // systems links them on one cable: their serial ports are ferried
     // bit-for-bit and they step in instruction-level lockstep, as one coupled
-    // group of the graph (host/graph/Translator.cpp wires it).
+    // group of the graph (packages/retroplug/src/graph/buildGraph.ts wires it).
     std::uint8_t              linkGroupId = 0;
     std::string               romPath;    // absolute path; populated at bootstrap or load
     // Loose-battery disambiguator. 0 => this system owns the plain sibling

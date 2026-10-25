@@ -2,8 +2,8 @@
 // index-ordered value tuple whose position EQUALS the native enum integer — the tuple feeds
 // `z.enum(...)` (configSchema.enumField), indexes the menu cyclers' display-name arrays, and drives
 // the string<->int conversion at the native/kernel boundary. TS carries the strings everywhere;
-// native (SetAudioRouting, the reflect-cpp role structs) stays numeric, so the boundary encoders here
-// (`roleConfigForNative`, `audioRoutingToIndex`) map back to the ints native decodes.
+// native (the reflect-cpp role structs) stays numeric, so the boundary encoder here
+// (`roleConfigForNative`) maps back to the ints native decodes.
 //
 // A LEAF module: it imports nothing, so the schema, the domain modules (layout/midiRouting/dspRoles),
 // the stores, the menu, and the project migration can all share these values without an import cycle.
@@ -42,15 +42,15 @@ export const MidiRouting = {
   MidiChannelToInstance: "midiChannelToInstance",
 } as const satisfies Record<string, MidiRouting>;
 
-// Audio output-pair placement. Crosses to native's AudioRouting enum by index via `audioRoutingToIndex`
-// (Stereo=0 … StereoPinSplit=5). The three split modes are single-system-only (the menu gates them via
-// `validAudioRoutings`; native re-checks systemCount()==1 and is the authority):
+// Audio output-pair placement. Never crosses to native as a value: graph/buildGraph.ts turns it into the
+// graph's output wiring. The three split modes are single-system-only (the menu gates them via
+// `validAudioRoutings`; buildGraph re-checks the system count and is the authority):
 //   channelSplit    one system's channels — a Game Boy's 4 STEREO channels across the 8 outs, or a NES's
 //                   5 MONO core channels across outs 1..5.
 //   pinSplit        a NES's three 2A03 output pins (Pulse | TND | Expansion) across outs 1..3, mono.
 //   stereoPinSplit  the same three pins, one PAIR each (outs 1/2, 3/4, 5/6), mirrored L=R — so every pin
 //                   is a normal stereo track in a DAW that can only bus/FX whole pairs.
-// Both pin modes are NES-only; native falls back to Stereo for any other console.
+// Both pin modes are NES-only; buildGraph falls back to Stereo for any other console.
 export const AUDIO_ROUTING_VALUES = ["stereo", "twoPerInstance", "onePerInstance", "channelSplit", "pinSplit", "stereoPinSplit"] as const;
 export type AudioRouting = (typeof AUDIO_ROUTING_VALUES)[number];
 
@@ -141,11 +141,6 @@ export const LsdjSyncMode = {
 } as const satisfies Record<string, LsdjSyncMode>;
 
 // --- native boundary encoders ----------------------------------------------
-
-/** The native AudioRouting integer for a routing value (index == enum ordinal). */
-export function audioRoutingToIndex(v: AudioRouting): number {
-  return AUDIO_ROUTING_VALUES.indexOf(v);
-}
 
 // Which fields of a native-facing role config are string enums, and their value tuples. Only the two
 // "system"-category roles cross to native's reflect-cpp structs (SameBoyRoleConfig / MesenNesRoleConfig);

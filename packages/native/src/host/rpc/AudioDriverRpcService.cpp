@@ -1,6 +1,5 @@
 #include "host/rpc/AudioDriverRpcService.hpp"
 
-#include "host/graph/Translator.hpp"
 
 #include <chrono>
 #include <cstdio>
