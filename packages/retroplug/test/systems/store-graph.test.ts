@@ -10,7 +10,8 @@ import { SystemsStore } from "../../src/systemsStore";
 import { DirectGraph } from "../../src/graph/directGraph";
 import { buildGraph, type HostShape } from "../../src/graph/buildGraph";
 import { toGraphJson } from "../../src/graph/graphDocument";
-import { buildAppRegistry } from "../../src/appHost";
+import { buildAppRegistry, syncDspFromStore } from "../../src/appHost";
+import type { DspRuntimeClient } from "../../src/dspRuntime";
 import { LsdjSyncMode, type AudioRouting } from "../../src/settingsEnums";
 import type { EngineGraph } from "../../src/engineGraph";
 import type { ConstructSpec, SetGraphResult } from "../../src/backend";
@@ -196,6 +197,17 @@ test("a load that throws partway places what it adopted, and the edits after it 
     if (++builds === 2) throw new Error("the build RPC died"); // as an RPC error reply throws
     return buildCore(spec, id);
   };
+  // The kernel, as a host wires it: each push records the systems it was given.
+  const kernel: number[][] = [];
+  const dsp: DspRuntimeClient = {
+    compileScript: () => new Uint8Array(0),
+    loadKernel: () => true,
+    setSystems: (struct) => {
+      kernel.push(struct.systems.map((sys) => sys.id));
+      return true;
+    },
+  };
+  p.setOnSystemsChange(() => void syncDspFromStore(p, dsp));
   const n = be.graphRequests.length;
   expect(() => p.loadBytes(bytes, "/")).toThrow("the build RPC died");
   be.buildCore = buildCore;
@@ -206,6 +218,7 @@ test("a load that throws partway places what it adopted, and the edits after it 
     { slots: [], tap: {} },
     { slots: adopted, tap: {} },
   ]);
+  expect(kernel).toEqual([adopted]); // and pushed to the kernel, which held the previous project's systems
   const answered = answers(be);
   // A render's shape round trip rebuilds that model, so the core stays placed under the store.
   expect(p.graph.withShape({ kind: "perSystem" }, () => true)).toBe(true);

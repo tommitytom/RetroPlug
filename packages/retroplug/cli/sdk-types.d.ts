@@ -447,9 +447,9 @@ export interface Session {
   dsp: unknown;
 }
 
-/** Stand up the control plane the way every host does (backend + stores + DSP kernel loaded). One session per
- *  process: every session drives the process's one engine, and a second session's first edit frees the systems
- *  the first one built. */
+/** Stand up the control plane the way every host does (backend + stores + DSP kernel loaded). One session at a
+ *  time: every session drives the process's one engine, so a new session's first edit frees the systems earlier
+ *  sessions built. */
 export declare function bootSession(): Session;
 
 /** The session's argument vector — everything after the session `.js` on the CLI
