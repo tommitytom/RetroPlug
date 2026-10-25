@@ -347,3 +347,11 @@ test("DirectGraph republishes the model a refused edit put back, which frees the
   expect(g.ids()).toEqual([1, 2]);
   expect(alive(be, 2)).toBe(true);
 });
+
+test("buildCore refuses id 0 and builds nothing, as native does", () => {
+  const { be } = project();
+  const spec = { romPath: "/roms/a.gb" } as ConstructSpec;
+  expect(be.buildCore(spec, 0)).toBe(null);
+  expect(be.setGraph({ document: "{}", slots: [0], tap: {} } as never).ok).toBe(false); // no core under 0
+  expect(be.buildCore(spec, 1) != null).toBeTruthy(); // the same spec builds under a real id
+});

@@ -294,7 +294,7 @@ export class MockBackend implements Backend {
   buildCore(spec: ConstructSpec, id: number): BuiltCore | null {
     this.log.push("buildCore");
     this.buildCalls.push({ ...spec, id });
-    if (!this.buildable(spec) || this.systems.has(id)) return null;
+    if (id === 0 || !this.buildable(spec) || this.systems.has(id)) return null; // 0 is the snapshot registry's free-slot id, as native refuses it
     this.systems.set(id, mockSystem(spec));
     return { type: nodeTypeFor(spec), exportMode: settingsNumber(spec, "channelExportMode"), linkGroup: settingsNumber(spec, "linkGroupId") };
   }
