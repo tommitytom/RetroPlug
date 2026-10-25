@@ -187,6 +187,22 @@ Measured: the decoded NoteOns are 0x52-0x6D plus program changes the song never 
 0x69-0x6D at 44.1 kHz; neither matches the song's N values (48-72), so the capture is partly an artefact.
 The `midiOut` case pins what is captured today (at 48 kHz); fixing it is its own change with a re-record.
 
+An eighth defect is recorded as it is, not fixed (§1): **in small host blocks LSDj master sync decodes a
+stopped LSDj as clocks.** The decoder (`arduinoboyMasterSyncBlock`, `lsdjArduinoboy.ts`) calls a block that
+carries more than 16 serial-out bytes (`MASTER_SYNC_IDLE_FLOOD`) the stopped LSDj's idle flood, which it drops,
+with one 0xFC on the play-to-stop edge. A stopped LSDj sends about 5000 bytes a second, so whether a block
+passes 16 depends on the block's length, not on LSDj. No 1-frame block does: every byte of the flood is decoded
+as a clock, before the first START and after the stop, no 0xFC is ever sent, and the run the boot's bytes open
+never closes, so START gets no NoteOn / 0xFA. In the FL-style splits (`blocks-tiny.ts`) the flood's blocks fall
+on both sides of the threshold, so a stopped LSDj opens and closes a run (NoteOn, 0xFA, clocks, 0xFC) every few
+blocks. Measured on `lsdj-modes`' master-sync scene at 44.1 kHz: 10497 MIDI messages in 1-frame blocks, 316 in
+`fl` and 894 in `fl256`, against 101 in 1024-frame blocks (`masterSync-44100`). The same threshold decides the
+boot noise the sixth defect's two cases record (and is why `masterSync-44100` uses 1024-frame blocks), so a fix
+may move them too.
+The baseline pins `blocks-tiny-lsdj`'s `masterSync-44100-{1,fl,fl256}` (audible) and
+`masterSync-48000-{1,fl,fl256}` (silent, the sixth defect, so their 42861, 1000 and 3373 messages are the flood
+alone); fixing it is its own change with a re-record.
+
 ## 3. The case matrix
 
 In-repo ROMs cover most of it: `mGB.gb` (and the embedded build), `bliptoaster.nes` and its MMC5 / N163 /

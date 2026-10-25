@@ -316,7 +316,9 @@ Before any B3a code exists, new parity groups are recorded on today's merged eng
 - **1-frame blocks** and **FL-style ragged splits** (a repeating list such as `[33, 1, 222, 1, 7, 4096, 2]`),
   with MIDI and automation CCs landing on block edges, on the first and last frame of a 1-frame block;
 - the scenes whose timing is protocol-sensitive: mGB and BlipToaster NES (fixture-free, so CI runs them),
-  LSDj MIDI sync, Arduinoboy and MI.OUT, and risa host sync (fixture-only).
+  LSDj MIDI sync, Arduinoboy and MI.OUT, and risa host sync (fixture-only);
+- LSDj master sync in the same splits, at 44.1 and 48 kHz, recorded with its defect pinned: in small blocks its
+  decoder reads a stopped LSDj's idle flood as clocks ([B0 design §2.5](modular-graph-phase-b0-design.md)).
 
 Segments are kept short, since 1-frame blocks multiply the block count. B3a is accepted on strict parity: every
 group, with the fixtures present and `RP_FAIL_ON_SKIP=1`.

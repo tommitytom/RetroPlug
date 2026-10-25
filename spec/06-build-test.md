@@ -164,12 +164,13 @@ modular graph engine is held to ([docs/modular-graph-phase-b0-design.md](../docs
   passes) gives the files to compare against. An
   intentional audio change re-records the groups it moves in the same commit, and that diff is the record
   of what moved.
-- **Recorded defects.** The baseline pins four engine defects on purpose; fixing each is its own change
+- **Recorded defects.** The baseline pins five engine defects on purpose; fixing each is its own change
   with a deliberate re-record: Arduinoboy MIDI sync is silent unless every host block carries a clock
   tick (and not even then in every configuration); a single NES under a split routing on a host narrower
   than the split arms the capture tap and drifts (~25 frames per block at 48 kHz / 512, about 49 ms per
   second); LSDj master sync is broken at 48 kHz and above while serial-out capture is armed; MI.OUT's
-  decoded notes depend on the host sample rate. Details in design section 2.5
+  decoded notes depend on the host sample rate; in small host blocks master sync decodes a stopped LSDj's
+  idle flood as clocks. Details in design section 2.5
   ([modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md)).
 - LSDj, risa, nanoloop and the controller cases need the sibling fixtures (`RETROPLUG_RESOURCES_DIR`), so
   those groups skip in CI, counted in the skip baseline. CI therefore runs only the 140 fixture-free cases
