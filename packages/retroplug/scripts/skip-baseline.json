@@ -137,8 +137,12 @@
    "total": 1
   },
   "parity/blocks-tiny-lsdj": {
-   "skipped": 15,
-   "total": 16
+   "skipped": 9,
+   "total": 10
+  },
+  "parity/blocks-tiny-lsdj-master": {
+   "skipped": 6,
+   "total": 7
   },
   "parity/blocks-tiny-risa": {
    "skipped": 3,
