@@ -11,6 +11,8 @@ import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
+import type { SetGraphResult } from "../src/backend";
+import type { AudioRouting } from "../src/settingsEnums";
 
 declare const __DSP_KERNEL_BUNDLE__: string;
 
@@ -28,6 +30,14 @@ const rms = (a: Float32Array): number => {
 
 test("audioRouting reaches native and playback survives a mode switch", () => {
   const be = createRealBackend();
+  // What the engine answered each published document: setAudioRouting is true whatever the publish did.
+  const answers: SetGraphResult[] = [];
+  const setGraph = be.setGraph;
+  be.setGraph = (request) => {
+    const result = setGraph(request);
+    answers.push(result);
+    return result;
+  };
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const dsp = createDspRuntime();
   const audio = createAudioDriver();
@@ -40,11 +50,20 @@ test("audioRouting reaches native and playback survives a mode switch", () => {
 
   // The seam, through the store (the real UI path: the menu cycler calls this): every mode plans, and an
   // unknown one is refused before it reaches native. ChannelSplit on this GB fans its stems, which the
-  // stereo host is too narrow for, so it falls back to Stereo; the pin splits are inert on a GB.
+  // stereo host is too narrow for, so it falls back to Stereo; the pin splits are inert on a GB. A routing
+  // change is always sent (it re-arms the NES tap), so each mode is answered exactly once.
+  const plans = (mode: AudioRouting): void => {
+    const n = answers.length;
+    expect(project.setAudioRouting(mode), mode).toBeTruthy();
+    expect(answers.length, mode).toBe(n + 1);
+    expect(answers[n].ok, `${mode} planned`).toBe(true);
+  };
   for (const mode of ["stereo", "twoPerInstance", "onePerInstance", "channelSplit", "pinSplit", "stereoPinSplit"] as const)
-    expect(project.setAudioRouting(mode)).toBeTruthy();
+    plans(mode);
+  const sent = answers.length;
   expect(project.setAudioRouting("bogus" as never)).toBeFalsy();
-  expect(project.setAudioRouting("twoPerInstance")).toBeTruthy();
+  expect(answers.length, "bogus").toBe(sent);
+  plans("twoPerInstance");
 
   // Playback survives the switch: under TwoPerInstance the single system routes to its own pair
   // (slot 0 → pair 0), which the stereo capture still hears.

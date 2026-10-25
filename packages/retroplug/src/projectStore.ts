@@ -687,6 +687,17 @@ export class ProjectStore {
         const sysBlobs = state ? { stateBytes: state } : sram ? { sramBytes: sram } : undefined;
         this.systems.adopt(s, sysBlobs);
       });
+    } catch (e) {
+      // The systems adopted before the throw are built and listed, so place them as the final publish would:
+      // a graph left at the clear's would free their cores under the store, and refuse every later edit. A
+      // publish that throws here is logged, so the load's own error is the one that propagates.
+      this.holdGraph = false;
+      try {
+        this.pushAudioRouting();
+      } catch (pe) {
+        console.warn(`[project] placing the systems a failed load adopted threw: ${String(pe)}`);
+      }
+      throw e;
     } finally {
       this.holdGraph = false;
     }

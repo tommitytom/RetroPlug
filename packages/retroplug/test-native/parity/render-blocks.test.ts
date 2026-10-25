@@ -68,7 +68,23 @@ test("one system under Stereo routing lands on the first pair of an 8-lane host"
 
 test("it refuses what a host never sends", () => {
   project.newProject();
-  expect(() => audio.renderBlocks(3 as 2, [{ frames: 64 }])).toThrow("outputs must be 2, 4, 6 or 8");
+  // An output count native never renders is refused as native refuses it, before the shape is touched: no
+  // throwaway document is published for it.
+  const setGraph = be.setGraph;
+  let published = 0;
+  be.setGraph = (request) => {
+    published++;
+    return setGraph(request);
+  };
+  try {
+    for (const outputs of [3, 10, 0, 2.5]) {
+      const render = () => audio.renderBlocks(outputs as 2, [{ frames: 64 }]);
+      expect(render, `${outputs} outputs`).toThrow("outputs must be 2, 4, 6 or 8");
+    }
+  } finally {
+    be.setGraph = setGraph;
+  }
+  expect(published).toBe(0);
   expect(() => audio.renderBlocks(2, [{ frames: 0 }])).toThrow("block 0: frames must be 1..8192");
   expect(() => audio.renderBlocks(2, [{ frames: 64 }, { frames: 8193 }])).toThrow("block 1: frames must be 1..8192");
   expect(() => audio.renderBlocks(2, [{ frames: 64, midi: [{ frame: 64, bytes: [0x90, 60, 1] }] }])).toThrow(

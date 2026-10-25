@@ -528,14 +528,14 @@ export class SystemsStore {
     if (rt?.category === "system") this.backend.applyRoleConfig(id, roleKind, roleConfigForNative(roleKind, config));
     const roles = e.roles.slice();
     roles[idx] = { kind: roleKind, config };
-    // A Game Boy's link group is the one system-role field that is also wiring: the cable follows it.
+    // A Game Boy's link group is the one system-role field that is also wiring: the cable follows it, so only a
+    // change of its value publishes (a model or palette edit leaves the document as it was).
     const linkGroupId = (config as { linkGroupId?: unknown }).linkGroupId;
-    const built =
-      roleKind === "sameboy" && e.built.type === "rp.sameboy.gb"
-        ? { ...e.built, linkGroup: typeof linkGroupId === "number" ? linkGroupId : 0 }
-        : e.built;
+    const linkGroup = typeof linkGroupId === "number" ? linkGroupId : 0;
+    const rewired = roleKind === "sameboy" && e.built.type === "rp.sameboy.gb" && linkGroup !== e.built.linkGroup;
+    const built = rewired ? { ...e.built, linkGroup } : e.built;
     this.entries = replaceById(this.entries, id, { ...e, roles, built });
-    if (built !== e.built) this.onGraphChange(false);
+    if (rewired) this.onGraphChange(false);
     // A feature role stays pure TS, EXCEPT lsdj-sync's serial-out capture gate — arm/disarm it on a
     // MIDIOUT mode change (the decoder itself runs in the kernel via the re-projection below).
     if (roleKind === "lsdj-sync") this.syncSerialOutCapture(id);
@@ -647,12 +647,13 @@ export class SystemsStore {
       stateBytes: blobs?.stateBytes,
       settings: systemRole ? JSON.stringify(roleConfigForNative(systemRole.kind, systemRole.config)) : undefined,
     }, roles);
+    // Stored settings/roles win; a config that omits them re-attaches defaults. Parsed, like the battery read,
+    // before the build, so a throw here leaves no core behind.
+    const settings = commonSettingsSchema.parse(config.settings ?? {}) as CommonSettings;
+    const battery = this.detectBattery(romPath, embeddedRom, platform);
     const built = this.backend.buildCore(spec, id); // a loaded system already in MIDIOUT mode is built capturing
     if (!built) return null;
-    // Stored settings/roles win; a config that omits them re-attaches defaults.
-    const settings = commonSettingsSchema.parse(config.settings ?? {}) as CommonSettings;
     const wasEmpty = this.entries.length === 0;
-    const battery = this.detectBattery(romPath, embeddedRom, platform);
     this.entries = appendEntry(this.entries, { id, platform, core, romPath, savPath: override, savSuffix, embeddedRom, battery, settings, roles, built });
     if (wasEmpty) this.focusedId = id;
     this.onGraphChange(true);
@@ -705,6 +706,7 @@ export class SystemsStore {
     // load-time hook can seed the spec — e.g. an empty LSDj sav — before the core is instantiated.
     const roles = this.defaultRoles(core, platform, romPath, embeddedRom);
     const spec = this.applyConstructHooks({ romPath, platform, core, embeddedRom, savPath, statePath: null, sramBytes }, roles);
+    const battery = this.detectBattery(romPath, embeddedRom, platform); // before the build: a throw leaves no core
     const built = this.backend.buildCore(spec, id);
     if (!built) return null;
     return {
@@ -717,7 +719,7 @@ export class SystemsStore {
         savPath: override,
         savSuffix: suffix,
         embeddedRom,
-        battery: this.detectBattery(romPath, embeddedRom, platform),
+        battery,
         settings: { ...DEFAULT_COMMON_SETTINGS },
         roles,
         built,

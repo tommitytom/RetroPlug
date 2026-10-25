@@ -84,6 +84,10 @@
    "skipped": 1,
    "total": 1
   },
+  "lsdj-midiout-build-flag": {
+   "skipped": 2,
+   "total": 2
+  },
   "lsdj-old-drift": {
    "skipped": 2,
    "total": 2

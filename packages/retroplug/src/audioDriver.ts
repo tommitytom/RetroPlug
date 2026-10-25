@@ -213,6 +213,7 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
 
   const ints = (b: Uint8Array | number[]): number[] => Array.from(b);
   const STEREO: HostShape = { kind: "multi", channels: 2 };
+  const RENDER_BLOCKS_OUTPUTS: readonly number[] = [2, 4, 6, 8];
   // While this driver's audio thread runs, the render calls refuse natively, so they leave the graph alone.
   let running = false;
   const shaped = <T>(shape: HostShape, render: () => T, refused: () => T): T => {
@@ -265,10 +266,14 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
     stageControllerIn: (bytes) => call("stageControllerIn", ints(bytes)) as boolean,
     drainMidiOut: () =>
       (call("drainMidiOut") as { system: number; frame: number; data: Uint8Array }[] | null) ?? [],
-    renderBlocks: (outputs, blocks) =>
-      shaped({ kind: "multi", channels: outputs }, () => renderBlocks(outputs, blocks), () => {
+    renderBlocks: (outputs, blocks) => {
+      // Refused here as native refuses it (renderBlocksRefusal), before the shape is touched: a count native
+      // never renders would otherwise plan a throwaway document, or fail as a shape that did not plan.
+      if (!RENDER_BLOCKS_OUTPUTS.includes(outputs)) throw new Error("renderBlocks: outputs must be 2, 4, 6 or 8");
+      return shaped({ kind: "multi", channels: outputs }, () => renderBlocks(outputs, blocks), () => {
         throw new Error(`renderBlocks: the ${outputs}-output host shape did not plan`);
-      }),
+      });
+    },
     buildTarget: () => call("buildTarget") as string,
     dspAllocStats: () => call("dspAllocStats") as DspAllocStats,
     dspResetAllocStats: (disableAutoGc) => call("dspResetAllocStats", disableAutoGc) as boolean,
