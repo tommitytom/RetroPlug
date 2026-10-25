@@ -11,6 +11,10 @@ import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry } from "../src/appHost";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
 declare const __REPO_RESOURCES_DIR__: string;
@@ -98,10 +102,10 @@ function buildsWithoutCore(rom: string, platform: string): void {
     statePath: null,
   };
   const id = 900 + platform.length; // outside the store's allocator, distinct per case
-  expect(be.constructSystem(spec as never, id)).toBeTruthy();
+  expect(graph.add(spec as never, id)).toBeTruthy();
   createAudioDriver().renderAudio(500);
   expect(be.getFrame(id)?.published ?? false).toBeTruthy(); // a real core, not a nullptr swallowed
-  expect(be.removeSystem(id)).toBeTruthy();
+  expect(graph.remove(id)).toBeTruthy();
 }
 
 test("a wire spec that omits `core` still reaches the right backend, for every platform", () => {

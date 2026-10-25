@@ -8,6 +8,10 @@ import type { Session } from "../cli/session";
 import { risaRomTool } from "../cli/sessions/risa-rom";
 import { RisaRom, bankToModel, decodeThemeFromRom } from "../src/risa/rom";
 import { encodeWav } from "../cli/wav";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __RISA_SRC__: string;
 const RISA_ROM = __RISA_SRC__ + "/build/risa-pal.nes";
@@ -48,7 +52,7 @@ test("risa-rom build-kit writes a bootable .rkit that import-kit places into a R
   expect(patched.isKitPopulated(0)).toBe(true);
   expect(patched.kits().some((k) => k.slot === 0 && k.name === "MYDR")).toBe(true);
 
-  expect(be.constructSystem({ romPath: rom, platform: "nes", core: "mesen", embeddedRom: "", savPath: null, statePath: null }, 30)).toBeTruthy();
+  expect(graph.add({ romPath: rom, platform: "nes", core: "mesen", embeddedRom: "", savPath: null, statePath: null }, 30)).toBeTruthy();
   audio.renderAudio(300);
   expect(be.getFrame(30) != null).toBeTruthy();
   console.log(`[risa-rom] build-kit → .rkit (8KB) → import-kit slot 0 (MYDR/BD); ROM boots`);
@@ -128,7 +132,7 @@ test("risa-rom patch realizes a mixed manifest (build kit + import theme + impor
   const rom = RisaRom.fromBytes(be.readFile("/tmp/rp-pt-out.nes")!);
   expect(rom.kits().some((k) => k.slot === 1 && k.name === "PT")).toBeTruthy();
 
-  expect(be.constructSystem({ romPath: "/tmp/rp-pt-out.nes", platform: "nes", core: "mesen", embeddedRom: "", savPath: null, statePath: null }, 31)).toBeTruthy();
+  expect(graph.add({ romPath: "/tmp/rp-pt-out.nes", platform: "nes", core: "mesen", embeddedRom: "", savPath: null, statePath: null }, 31)).toBeTruthy();
   audio.renderAudio(300);
   expect(be.getFrame(31) != null).toBeTruthy();
   console.log(`[risa-rom] patch: built kit 1 + theme 3 + font 2; patched ROM boots`);

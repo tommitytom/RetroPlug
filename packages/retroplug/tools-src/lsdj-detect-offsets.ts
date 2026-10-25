@@ -15,6 +15,10 @@ import { createAudioDriver } from "../src/audioDriver";
 import { savFrom } from "../src/lsdjSav";
 import { MemoryRegion } from "../src/backend";
 import { detectDriftLayout, type DetectDriver, type DriftLayoutResult } from "../src/lsdj/runtime/detect";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __CORPUS_DIR__: string;
 declare const __FILTER__: string; // comma-separated filename substrings; "" = all
@@ -53,8 +57,8 @@ const audio = createAudioDriver();
 const driver: DetectDriver = {
   readFilePrefix: (p, n) => be.readFilePrefix(p, n),
   construct: (id, romPath, sram) =>
-    be.constructSystem({ romPath, platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null, sramBytes: sram }, id),
-  remove: (id) => void be.removeSystem(id),
+    graph.add({ romPath, platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null, sramBytes: sram }, id),
+  remove: (id) => void graph.remove(id),
   readWram: (id) => be.readMemory(id, MemoryRegion.Ram),
   press: (id, button, down) => audio.pressButton(id, button, down),
   render: (ms) => void audio.renderAudio(ms),

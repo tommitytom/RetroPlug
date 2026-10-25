@@ -22,6 +22,10 @@ import {
   SMS_SYNC_OFF,
   SMS_SYNC_IN24,
 } from "./smsSyncSong";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
@@ -117,7 +121,7 @@ function boot(syncMode: number, m: Machine) {
   const be = createRealBackend();
   const audio = createAudioDriver();
   const id = nextSystemId++;
-  const ok = be.constructSystem({
+  const ok = graph.add({
     romPath: m.rom,
     platform: m.platform,
     core: "mesen",
@@ -210,7 +214,7 @@ for (const m of MACHINES) {
     expect(pos > 0.001).toBeTruthy(); // the kernel's level stream advances smsggdj -> audible
     expect(Math.abs(posRows - 24) <= 2).toBeTruthy(); // ~24 rows: one clock stream at the DAW's tempo
     expect(syncState(be, id)?.wait).toBe(0); // WAIT -> PLAY, flipped by the role's first clock
-    expect(be.removeSystem(id)).toBeTruthy();
+    expect(graph.remove(id)).toBeTruthy();
   });
 
   test(`${m.machine.toUpperCase()}: stopping the DAW transport stops the song, and restarting it resumes`, () => {
@@ -246,6 +250,6 @@ for (const m of MACHINES) {
     expect(stopped < play / 10).toBeTruthy(); // what is left is a held note, not a running song
     expect(againRows > 0).toBeTruthy(); // clocks resume -> so does the song
     expect(again > play / 2).toBeTruthy();
-    expect(be.removeSystem(id)).toBeTruthy();
+    expect(graph.remove(id)).toBeTruthy();
   });
 }

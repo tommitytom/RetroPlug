@@ -26,6 +26,10 @@ import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";
 import { LsdjReader, type LsdjState, CHANNELS, type ChannelName } from "../src/lsdj/runtime";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
 declare const __DSP_KERNEL_BUNDLE__: string;
@@ -122,7 +126,7 @@ export class LsdjProbe {
     // A fresh id per probe: every test in this file shares ONE native host process, so reusing an id
     // would collide with the cart a previous test left running (TS owns system identity - doc-01).
     const id = nextSystemId++;
-    if (!be.constructSystem({
+    if (!graph.add({
       romPath: rom, platform: "gb", core: "sameboy", embeddedRom: "",
       savPath: null, statePath: null, sramBytes: savFrom(opts.song),
     }, id)) return null;
@@ -146,7 +150,7 @@ export class LsdjProbe {
   close(): void {
     if (this.closed) return;
     this.closed = true;
-    this.be.removeSystem(this.id);
+    graph.remove(this.id);
   }
 
   /** Close every probe built so far. Call it at the TOP of each test rather than the bottom: a test

@@ -10,6 +10,10 @@ import { createAudioDriver } from "../src/audioDriver";
 import { decodeSav, savFrom } from "../src/lsdjSav";
 import { MemoryRegion } from "../src/backend";
 import { LsdjReader } from "../src/lsdj/runtime";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
 const DIR = __RESOURCES_DIR__ + "/roms/lsdj";
@@ -46,7 +50,7 @@ for (const slug of ["lsdj5_0_3", "lsdj6_9_0"]) {
     const audio = createAudioDriver();
     const id = 1;
     const fmt = decodeSav(be.readFilePrefix(SAV, 0x20000)!).workingSong.formatVersion;
-    expect(be.constructSystem({ romPath: ROM, platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null, sramBytes: detectionSong(fmt) }, id)).toBeTruthy();
+    expect(graph.add({ romPath: ROM, platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null, sramBytes: detectionSong(fmt) }, id)).toBeTruthy();
     const decode = () => reader.read(be.readMemory(id, MemoryRegion.Ram)!);
     const chord = (dir: number) => { audio.pressButton(id, SELECT, true); audio.renderAudio(200); audio.pressButton(id, dir, true); audio.renderAudio(90); audio.pressButton(id, dir, false); audio.renderAudio(40); audio.pressButton(id, SELECT, false); audio.renderAudio(150); };
 
@@ -70,6 +74,6 @@ for (const slug of ["lsdj5_0_3", "lsdj6_9_0"]) {
     console.log(`[${slug}] CHAIN cursor row ${before.row} → ${after.row}`);
     expect(after.row).toBe(before.row + 1);
 
-    be.removeSystem(id);
+    graph.remove(id);
   });
 }

@@ -9,6 +9,10 @@ import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SongSettings } from "../src/lsdjSav";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
 
@@ -27,8 +31,8 @@ const songSav = (sync: SongSettings["syncMode"]) => savFrom({
   },
 });
 
-const construct = (be: ReturnType<typeof createRealBackend>, id: number, sync: SongSettings["syncMode"]) =>
-  be.constructSystem({
+const construct = (id: number, sync: SongSettings["syncMode"]) =>
+  graph.add({
     romPath: LSDJ, platform: "gb", core: "sameboy", embeddedRom: "",
     savPath: null, statePath: null, sramBytes: songSav(sync),
   }, id);
@@ -46,11 +50,11 @@ test("LSDj link-cable sync: the follower plays in lockstep with the leader (per-
   const audio = createAudioDriver();
 
   const leader = 1, follower = 2;
-  expect(construct(be, leader, "Lsdj")).toBeTruthy();
-  expect(construct(be, follower, "Lsdj")).toBeTruthy(); // same one-note SYNC=LSDJ song
+  expect(construct(leader, "Lsdj")).toBeTruthy();
+  expect(construct(follower, "Lsdj")).toBeTruthy(); // same one-note SYNC=LSDJ song
   // Put both in link group 1 → the translator wires the cable and the pair steps as one coupled group.
-  expect(be.applyRoleConfig(leader, "sameboy", { linkGroupId: 1 })).toBeTruthy();
-  expect(be.applyRoleConfig(follower, "sameboy", { linkGroupId: 1 })).toBeTruthy();
+  expect(graph.applyRoleConfig(leader, "sameboy", { linkGroupId: 1 })).toBeTruthy();
+  expect(graph.applyRoleConfig(follower, "sameboy", { linkGroupId: 1 })).toBeTruthy();
 
   audio.renderAudio(6000); // valid savs skip the self-test; still need a few s to the song screen
 

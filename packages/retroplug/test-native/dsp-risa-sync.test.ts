@@ -11,6 +11,10 @@ import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { isRisaSyncRom, risaMarkerVersion } from "../src/risa";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __DSP_KERNEL_BUNDLE__: string;
 
@@ -41,7 +45,7 @@ test("the risa-sync role in the DSP kernel is the sole clock that makes risa 2.3
   const audio = createAudioDriver();
 
   const id = 1; // TS owns the id counter; this direct-backend test picks its own (fresh host per file)
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: ROM_230,
     platform: "nes",
     core: "mesen",
@@ -78,7 +82,7 @@ test("stopping the transport stops risa, and restarting it plays again", () => {
   const dsp = createDspRuntime();
   const audio = createAudioDriver();
   const id = 1;
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: ROM_230, platform: "nes", core: "mesen", embeddedRom: "", savPath: LETGO, statePath: null,
   }, id)).toBeTruthy();
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();

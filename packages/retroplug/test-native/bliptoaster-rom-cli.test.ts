@@ -11,6 +11,10 @@ import { blipToasterRomTool } from "../cli/sessions/bliptoaster-rom";
 import { BlipToasterRom } from "../src/bliptoaster/rom";
 import { bankToModel, isBankPopulated, decodeThemeFromRom } from "../src/risa/rom";
 import { encodeWav } from "../cli/wav";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 // The base build (FME-7, taken for kit banking alone — no expansion audio): 16 switchable kit banks, 16 baked
 // themes, 4 CHR fonts. Built by a bare `make` in the bliptoaster checkout; these legs SKIP cleanly if absent.
@@ -82,7 +86,7 @@ test("bliptoaster-rom import-kit replaces one bank and leaves the other 15 byte-
   }
   expect([...be.readFile(BLIPTOASTER_ROM)!]).toEqual([...base.bytes()]); // source untouched
 
-  expect(be.constructSystem({ romPath: nes, platform: "nes", core: "mesen", embeddedRom: "", savPath: null, statePath: null }, 40)).toBeTruthy();
+  expect(graph.add({ romPath: nes, platform: "nes", core: "mesen", embeddedRom: "", savPath: null, statePath: null }, 40)).toBeTruthy();
   audio.renderAudio(300);
   expect(be.getFrame(40) != null).toBeTruthy();
   console.log(`[bliptoaster-rom] import-kit replaced bank ${SLOT} (${before} -> HATS); patched ROM boots`);
@@ -211,14 +215,14 @@ test("a settings-patched ROM boots, and the core comes up in the theme the block
   const nes = copyRom(be, "/tmp/rp-em-setboot.nes");
   blipToasterRomTool.run(s, ["settings", nes, "--theme", "11"]); // MTRX: bg $0F, text $2A
 
-  expect(be.constructSystem({ romPath: nes, platform: "nes", core: "mesen", embeddedRom: "", savPath: null, statePath: null }, 44)).toBeTruthy();
+  expect(graph.add({ romPath: nes, platform: "nes", core: "mesen", embeddedRom: "", savPath: null, statePath: null }, 44)).toBeTruthy();
   audio.renderAudio(1000); // ~1 s: past the ROM's boot, so the palette has been written
   // The proof that the byte reached the hardware, not just the file: $3F00/$3F01 hold theme 11's two roles.
   const pal = be.getPpuState(44).paletteRam;
   expect(pal[0]).toBe(0x0f);
   expect(pal[1]).toBe(0x2a);
   console.log(`[bliptoaster-rom] settings --theme 11 -> the core boots with $3F00/$3F01 = 0F/2A`);
-  expect(be.removeSystem(44)).toBeTruthy(); // renderAudio drives EVERY live system — see frameOf below
+  expect(graph.remove(44)).toBeTruthy(); // renderAudio drives EVERY live system — see frameOf below
 });
 
 // The committed resources ROM is a real artifact predating the two screen fields, so it is the honest fixture
@@ -273,12 +277,12 @@ test("a ROM predating the screen fields is reported as not reading them, and ref
 // cost 24 s and 31 s for 2 s of audio apiece, because they were dragging their predecessors along.
 // Removed, they are a few seconds each. The pixels are copied out first, so the frame outlives the core.
 function frameOf(be: ReturnType<typeof createRealBackend>, audio: ReturnType<typeof createAudioDriver>, rom: string, id: number): Uint8Array {
-  expect(be.constructSystem({ romPath: rom, platform: "nes", core: "mesen", embeddedRom: "", savPath: null, statePath: null }, id)).toBeTruthy();
+  expect(graph.add({ romPath: rom, platform: "nes", core: "mesen", embeddedRom: "", savPath: null, statePath: null }, id)).toBeTruthy();
   audio.renderAudio(2000); // ~2 s: past boot and the first drawn page
   const frame = be.getFrame(id);
   expect(frame != null && frame.published).toBeTruthy();
   const pixels = new Uint8Array(frame!.pixels);
-  expect(be.removeSystem(id)).toBeTruthy();
+  expect(graph.remove(id)).toBeTruthy();
   return pixels;
 }
 
@@ -323,9 +327,9 @@ test("bliptoaster-rom patch realizes a mixed manifest (build kit + import theme 
   const rom = BlipToasterRom.fromBytes(be.readFile("/tmp/rp-em-pt-out.nes")!);
   expect(rom.kits().some((k) => k.slot === 4 && k.name === "PT")).toBeTruthy();
 
-  expect(be.constructSystem({ romPath: "/tmp/rp-em-pt-out.nes", platform: "nes", core: "mesen", embeddedRom: "", savPath: null, statePath: null }, 41)).toBeTruthy();
+  expect(graph.add({ romPath: "/tmp/rp-em-pt-out.nes", platform: "nes", core: "mesen", embeddedRom: "", savPath: null, statePath: null }, 41)).toBeTruthy();
   audio.renderAudio(300);
   expect(be.getFrame(41) != null).toBeTruthy();
   console.log(`[bliptoaster-rom] patch: built kit 4 + theme 0 + font 0; patched ROM boots`);
-  expect(be.removeSystem(41)).toBeTruthy();
+  expect(graph.remove(41)).toBeTruthy();
 });

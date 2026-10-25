@@ -7,6 +7,10 @@
 import { runSession, hostArgs } from "../session";
 import { encodeWav } from "../wav";
 import { savFrom, type SongSettings } from "../../src/lsdjSav";
+import { directGraph } from "../../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 const START = 7; // GameboyButton::Start
 
@@ -28,13 +32,13 @@ runSession((s) => {
 
   // Link-cable sync is pure GB serial ferrying over the link cable: construct both cores directly,
   // link them, and drive; no DSP kernel needed.
-  const construct = (id: number, sync: SongSettings["syncMode"]) => s.backend.constructSystem({
+  const construct = (id: number, sync: SongSettings["syncMode"]) => graph.add({
     romPath, platform: "gb", core: "sameboy", embeddedRom: "",
     savPath: null, statePath: null, sramBytes: songSav(sync),
   }, id);
   if (!construct(1, "Lsdj") || !construct(2, "Lsdj")) throw new Error("construct failed");
-  s.backend.applyRoleConfig(1, "sameboy", { linkGroupId: 1 });
-  s.backend.applyRoleConfig(2, "sameboy", { linkGroupId: 1 });
+  graph.applyRoleConfig(1, "sameboy", { linkGroupId: 1 });
+  graph.applyRoleConfig(2, "sameboy", { linkGroupId: 1 });
 
   s.audio.renderAudio(6000); // reach the song screen from the savs
   s.audio.pressButton(1, START, true); // START on the leader only

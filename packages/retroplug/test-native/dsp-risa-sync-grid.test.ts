@@ -11,6 +11,10 @@ import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { buildRisaMetronomeSav } from "./risaSyncSong";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __DSP_KERNEL_BUNDLE__: string;
 
@@ -60,7 +64,7 @@ test("host sync puts one risa hit on every DAW beat, at the DAW's tempo", () => 
   const dsp = createDspRuntime();
   const audio = createAudioDriver();
   const id = 1;
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: ROM_230, platform: "nes", core: "mesen", embeddedRom: "",
     savPath: null, statePath: null, sramBytes: buildRisaMetronomeSav(),
   }, id)).toBeTruthy();

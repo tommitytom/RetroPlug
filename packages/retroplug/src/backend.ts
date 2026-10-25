@@ -18,6 +18,7 @@
 // belongs in the application layer, not here.
 
 import type { Platform, Core } from "./platform";
+import type { SystemNodeType, TapArm } from "./graph/buildGraph";
 
 export interface Backend {
   // --- Filesystem ---------------------------------------------------------
@@ -113,6 +114,19 @@ export interface Backend {
 
   /** Drop system `id`. Returns false when it isn't present. */
   removeSystem(id: number): boolean;
+
+  /** Build + activate an emulator core from a spec under the TS-allocated `id`, and park it for the next
+   *  graph document to place (docs/modular-graph-phase-b2-design.md section 2.5). Nothing runs it until a
+   *  `setGraph` document names it as `sys-<id>`; a document published without it frees it. Returns what the
+   *  core must be placed as, or null when it did not build (an unreadable ROM, an unknown format, a full
+   *  snapshot registry) or a core under `id` is still live. `spec.replaceId` is not read: the document
+   *  says what a core replaces. */
+  buildCore(spec: ConstructSpec, id: number): BuiltCore | null;
+
+  /** Plan and publish a graph document TS built (graph/buildGraph.ts): the engine's systems, their wiring
+   *  and the host's outputs, with the systems in slot order and the NES tap re-arm its edit makes. A
+   *  refused document changes nothing; its errors name the node at fault. */
+  setGraph(request: SetGraphRequest): SetGraphResult;
 
   // --- File dialog --------------------------------------------------------
 
@@ -394,7 +408,7 @@ export type HostBackend = Pick<
 /** Emulator lifecycle / live config / input / snapshot reads — bound by the plugin, UI, CLI, test host. */
 export type EmulatorBackend = Pick<
   Backend,
-  | "constructSystem" | "removeSystem" | "applySystemSetting" | "applyRoleConfig" | "setSerialOutCapture"
+  | "constructSystem" | "removeSystem" | "buildCore" | "setGraph" | "applySystemSetting" | "applyRoleConfig" | "setSerialOutCapture"
   | "setAudioRouting" | "pressButton" | "stageSystemMidi" | "readState" | "readSram" | "readRam" | "writeRam" | "getFrame"
 >;
 
@@ -699,6 +713,34 @@ export const MemoryRegion = {
   ExtWorkRam: 8,
 } as const;
 
+/** What `buildCore` built: the node type its core is placed as, and the two values the graph needs, as the
+ *  core decoded them (a NES's channel export mode, a Game Boy's link group; 0 for every other core). */
+export interface BuiltCore {
+  type: SystemNodeType;
+  exportMode: number;
+  linkGroup: number;
+}
+
+/** A graph document for `setGraph`: `toGraphJson`'s text, its systems in slot order, and `tap` when the edit
+ *  re-arms the NES tap (restore whatever is armed, then arm `tap.arm` if given). */
+export interface SetGraphRequest {
+  document: string;
+  slots: number[];
+  tap?: { arm?: TapArm };
+}
+
+export interface GraphError {
+  nodeId: string;
+  port: string;
+  code: string;
+  message: string;
+}
+
+export interface SetGraphResult {
+  ok: boolean;
+  errors: GraphError[];
+}
+
 /** Presentation for an OS file dialog: its title + the glob patterns to show. */
 export interface FileBrowserOpts {
   title: string;
@@ -751,6 +793,9 @@ export interface ConstructSpec {
   /** Seed savestate bytes (a zip-import blob or a duplicate's captured state). When set, native
    *  boots from these instead of reading `statePath`. Rides as a Uint8Array (rfl::Bytestring). */
   stateBytes?: Uint8Array;
+  /** Arm a Game Boy's serial-out capture (LSDj MI.OUT) before the core first runs, as setSerialOutCapture
+   *  would on a running one. Omitted (off) for every system without an lsdj-sync role in a capturing mode. */
+  serialOutCapture?: boolean;
   /** The system's backend ("system"-role) config as JSON, so a loaded non-default setting
    *  (SameBoy model/highpass/…) is applied at CONSTRUCT rather than via a post-build restart
    *  that would nuke the just-restored savestate. Omitted for a fresh build (backend defaults

@@ -9,6 +9,10 @@ import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { MemoryRegion } from "../src/backend";
 import { LsdjReader } from "../src/lsdj/runtime";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
 const ROM = __RESOURCES_DIR__ + "/roms/lsdj/lsdj6_9_0.gb";
@@ -22,7 +26,7 @@ test("ported legacy offsets: v6.9.0 resolves the 232-block and its SONG cursor i
   if (!be.fileExists(ROM) || !be.fileExists(SAV)) skip(`lsdj-legacy-offsets: v6.9.0 ROM/sav not found`);
   const audio = createAudioDriver();
   const id = 1;
-  expect(be.constructSystem({ romPath: ROM, platform: "gb", core: "sameboy", embeddedRom: "", savPath: SAV, statePath: null }, id)).toBeTruthy();
+  expect(graph.add({ romPath: ROM, platform: "gb", core: "sameboy", embeddedRom: "", savPath: SAV, statePath: null }, id)).toBeTruthy();
 
   const reader = LsdjReader.fromHeader(be.readFilePrefix(ROM, 0x150)!);
   expect(reader.supported).toBeTruthy();

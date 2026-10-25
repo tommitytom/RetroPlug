@@ -13,6 +13,10 @@ import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import { BlipToasterRom } from "../src/bliptoaster/rom";
 import { blipToasterInfo, isBlipToasterRomHeader, BLIPTOASTER_MARKER } from "../src/bliptoaster/romDetect";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __REPO_RESOURCES_DIR__: string;
 // The COMMITTED ROM, so every leg below runs everywhere — no fixture guard, no skip.
@@ -52,7 +56,7 @@ test("constructSystem romBytes boots a BlipToaster (Mesen) system over a nonexis
 
   const bytes = be.readFile(BLIPTOASTER_ROM)!;
   // romPath points at nothing; only romBytes can boot this. (Pre-fix Mesen slurps the path -> nullptr.)
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: "/definitely/not/here/nope.nes", platform: "nes", core: "mesen", embeddedRom: "",
     savPath: null, statePath: null, romBytes: bytes,
   }, 11)).toBeTruthy();
@@ -79,7 +83,7 @@ test("a kit + font patched into the ROM in memory boots (the on-disk .nes is unt
   rom.setChrFontSlot(0, font);
   const effective = rom.bytes();
 
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: BLIPTOASTER_ROM, platform: "nes", core: "mesen", embeddedRom: "",
     savPath: null, statePath: null, romBytes: effective,
   }, 12)).toBeTruthy();
@@ -103,7 +107,7 @@ test("the baked theme sets the background palette; a theme override changes it",
   // re-stage that first ran this test). The claim is that the PPU palette follows the baked record,
   // which is what comparing the two asserts — and it stays true of any build.
   const bakedTheme = BlipToasterRom.fromBytes(base).getTheme(0)!;
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: BLIPTOASTER_ROM, platform: "nes", core: "mesen", embeddedRom: "",
     savPath: null, statePath: null, romBytes: base,
   }, 13)).toBeTruthy();
@@ -120,7 +124,7 @@ test("the baked theme sets the background palette; a theme override changes it",
   rec[1] = 0x11; // text
   rom.setTheme(0, rec, t.nameBytes);
 
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: BLIPTOASTER_ROM, platform: "nes", core: "mesen", embeddedRom: "",
     savPath: null, statePath: null, romBytes: rom.bytes(),
   }, 14)).toBeTruthy();

@@ -21,6 +21,10 @@ import { SMSGGDJ_SYMBOLS } from "../src/smsggdj/runtime/symbols.generated";
 import { commonSongEditedOffset } from "../src/smsggdj/runtime/layout";
 import { smsggdjSongCatalog } from "../src/tracker/smsggdjSongCatalog";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF } from "./smsSyncSong";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __REPO_RESOURCES_DIR__: string;
 
@@ -66,7 +70,7 @@ test("a freshly booted cart is clean, and a keypress on the SONG grid makes it d
 
   const audio = createAudioDriver();
   expect(
-    be.constructSystem(
+    graph.add(
       {
         romPath: ROM, platform: "sms", core: "mesen", embeddedRom: "",
         savPath: null, statePath: null, sramBytes: sav, settings: JSON.stringify({ enableFm: false }),
@@ -101,5 +105,5 @@ test("a freshly booted cart is clean, and a keypress on the SONG grid makes it d
   expect(typed[edited]).toBe(1);
   expect(smsggdjSongCatalog.workingSongDirty!(be.readSram(id)!, typed)).toBe(true);
 
-  expect(be.removeSystem(id)).toBeTruthy();
+  expect(graph.remove(id)).toBeTruthy();
 });

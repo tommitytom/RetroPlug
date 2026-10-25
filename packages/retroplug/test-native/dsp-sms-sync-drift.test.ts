@@ -34,6 +34,10 @@ import {
   SMS_SYNC_IN24,
   SMS_ROWS_PER_BEAT,
 } from "./smsSyncSong";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
@@ -114,7 +118,7 @@ for (const m of MACHINES) {
     const sr = audio.sampleRate();
 
     expect(
-      be.constructSystem(
+      graph.add(
         {
           romPath: m.rom,
           platform: m.platform,
@@ -218,6 +222,6 @@ for (const m of MACHINES) {
     expect(be.writeFile(wav, encodeWav(pcm, sr, 2))).toBeTruthy();
     console.log(`[sms-drift ${m.machine}] wrote ${wav} (analyze: tools/reaper-timing-analyze.py ${wav} --drift)`);
 
-    expect(be.removeSystem(1)).toBeTruthy();
+    expect(graph.remove(1)).toBeTruthy();
   });
 }

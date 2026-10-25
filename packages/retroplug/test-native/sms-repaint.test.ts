@@ -20,6 +20,10 @@ import { buildSav } from "../src/smsggdj/codec/sav";
 import { smsggdjIntegration } from "../src/tracker/trackerIntegration";
 import { resolveSmsggdjLayout } from "../src/smsggdj/runtime/layout";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF, P_SONG } from "./smsSyncSong";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __REPO_RESOURCES_DIR__: string;
 
@@ -72,7 +76,7 @@ test("a live song load repaints the cart's screen, without the user touching any
 
   const audio = createAudioDriver();
   expect(
-    be.constructSystem(
+    graph.add(
       { romPath: ROM, platform: "sms", core: "mesen", embeddedRom: "", savPath: null, statePath: null, sramBytes: sav, settings: JSON.stringify({ enableFm: false }) },
       id,
     ),
@@ -114,5 +118,5 @@ test("a live song load repaints the cart's screen, without the user touching any
   // was doing all the work - which is the whole bug, so both halves are asserted.
   expect(byLoad > 500).toBeTruthy();
   expect(byNudge < 100).toBeTruthy();
-  expect(be.removeSystem(id)).toBeTruthy();
+  expect(graph.remove(id)).toBeTruthy();
 });

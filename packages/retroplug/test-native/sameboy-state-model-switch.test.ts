@@ -18,6 +18,10 @@ import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";
 import { MemoryRegion } from "../src/backend";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
 const LSDJ = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_4_2.gb";
@@ -49,8 +53,8 @@ const eq = (a: Uint8Array, b: Uint8Array): boolean => {
 
 /** Build a system on an explicit model. `settings` is the native SameBoyRoleConfig (integer fields),
  *  applied AT CONSTRUCT - which is what sizes the snapshot slot for that model. */
-const buildOn = (be: ReturnType<typeof createRealBackend>, id: number, model: number): boolean =>
-  be.constructSystem({
+const buildOn = (id: number, model: number): boolean =>
+  graph.add({
     romPath: LSDJ, platform: "gb", core: "sameboy", embeddedRom: "",
     savPath: null, statePath: null, sramBytes: savFrom(SONG),
     settings: JSON.stringify({ model }),
@@ -65,7 +69,7 @@ test("readState tracks a live model switch that GROWS the savestate (dmgB â†’ cg
   requireRom(be, "state-model-grow");
   const audio = createAudioDriver();
   const id = 101;
-  expect(buildOn(be, id, DMG_B)).toBeTruthy();
+  expect(buildOn(id, DMG_B)).toBeTruthy();
 
   audio.renderAudio(2000);
   const dmgState = be.readState(id)!;
@@ -73,7 +77,7 @@ test("readState tracks a live model switch that GROWS the savestate (dmgB â†’ cg
   expect(be.readRam(id)!.length).toBe(DMG_WRAM); // corroborates the core really booted as DMG
 
   // Switch UP: the CGB core's savestate is exactly RAM_VRAM_DELTA larger than the DMG one it replaces.
-  expect(be.applyRoleConfig(id, "sameboy", { model: CGB_C })).toBeTruthy();
+  expect(graph.applyRoleConfig(id, "sameboy", { model: CGB_C })).toBeTruthy();
   audio.renderAudio(2000);
 
   const cgbState = be.readState(id)!;
@@ -90,7 +94,7 @@ test("readState tracks a live model switch that GROWS the savestate (dmgB â†’ cg
   audio.renderAudio(1600); // past the 0.5s publish interval, with the cart running
   expect(eq(be.readState(id)!, cgbState)).toBeFalsy();
 
-  be.removeSystem(id);
+  graph.remove(id);
 });
 
 test("readSram stays correct across a switch that MOVES the SRAM offset (dmgB â†’ sgb)", () => {
@@ -98,7 +102,7 @@ test("readSram stays correct across a switch that MOVES the SRAM offset (dmgB â†
   requireRom(be, "state-model-sgb");
   const audio = createAudioDriver();
   const id = 102;
-  expect(buildOn(be, id, DMG_B)).toBeTruthy();
+  expect(buildOn(id, DMG_B)).toBeTruthy();
 
   audio.renderAudio(2000);
   const dmgState = be.readState(id)!;
@@ -109,7 +113,7 @@ test("readSram stays correct across a switch that MOVES the SRAM offset (dmgB â†
   // DMG<->CGB switch this genuinely MOVES Sram.offset. A fix that only widened the slot (without
   // re-reading the region table) would slice here at the stale, too-low offset and hand the SRAM
   // auto-save mirror the SGB section's bytes as if they were the battery.
-  expect(be.applyRoleConfig(id, "sameboy", { model: SGB })).toBeTruthy();
+  expect(graph.applyRoleConfig(id, "sameboy", { model: SGB })).toBeTruthy();
   audio.renderAudio(2000);
 
   const sgbState = be.readState(id)!;
@@ -121,7 +125,7 @@ test("readSram stays correct across a switch that MOVES the SRAM offset (dmgB â†
   expect(sgbSram.length).toBe(dmgSram.length); // cart-derived, so it never moves with the model
   expect(eq(sgbSram, be.readMemory(id, MemoryRegion.Sram)!)).toBeTruthy();
 
-  be.removeSystem(id);
+  graph.remove(id);
 });
 
 // Anti-rot: hardcodes no size at all. Switching INTO a model must be indistinguishable from being BUILT
@@ -134,16 +138,16 @@ test("a switched-into model publishes the same state size as one constructed on 
   let id = 110;
 
   const live = id++;
-  expect(buildOn(be, live, DMG_B)).toBeTruthy(); // start on the SMALLEST family, so every switch grows
+  expect(buildOn(live, DMG_B)).toBeTruthy(); // start on the SMALLEST family, so every switch grows
 
   for (const m of models) {
     const fresh = id++;
-    expect(buildOn(be, fresh, m)).toBeTruthy();
+    expect(buildOn(fresh, m)).toBeTruthy();
     audio.renderAudio(1600);
     const built = be.readState(fresh)!.length;
-    be.removeSystem(fresh); // a live system is emulated by every later renderAudio in this file
+    graph.remove(fresh); // a live system is emulated by every later renderAudio in this file
 
-    expect(be.applyRoleConfig(live, "sameboy", { model: m })).toBeTruthy();
+    expect(graph.applyRoleConfig(live, "sameboy", { model: m })).toBeTruthy();
     audio.renderAudio(1600);
     const switched = be.readState(live)!.length;
 
@@ -151,5 +155,5 @@ test("a switched-into model publishes the same state size as one constructed on 
     expect(switched).toBe(built);
   }
 
-  be.removeSystem(live);
+  graph.remove(live);
 });

@@ -16,6 +16,10 @@ import { buildSav, readSongBlock, SMDJ4_BLOCK_LEN } from "../src/smsggdj/codec/s
 import { smsggdjIntegration } from "../src/tracker/trackerIntegration";
 import { resolveSmsggdjLayout } from "../src/smsggdj/runtime/layout";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF, P_PHRASES, STEPS_PER_PHRASE, SMS_ROWS_PER_BEAT } from "./smsSyncSong";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __REPO_RESOURCES_DIR__: string;
 
@@ -61,7 +65,7 @@ test("a song decoded from a .sav loads into a PLAYING cart in one call", () => {
 
   const audio = createAudioDriver();
   expect(
-    be.constructSystem(
+    graph.add(
       {
         romPath: ROM, platform: "sms", core: "mesen", embeddedRom: "",
         savPath: null, statePath: null, sramBytes: sav,
@@ -117,5 +121,5 @@ test("a song decoded from a .sav loads into a PLAYING cart in one call", () => {
   expect(after > 0.001).toBeTruthy();
   expect(((stepC - stepB + PHRASE_STEPS) % PHRASE_STEPS) > 0).toBeTruthy(); // sequencer still advancing
 
-  expect(be.removeSystem(1)).toBeTruthy();
+  expect(graph.remove(1)).toBeTruthy();
 });

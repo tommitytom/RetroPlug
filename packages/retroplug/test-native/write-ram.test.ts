@@ -14,6 +14,10 @@
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __REPO_RESOURCES_DIR__: string;
 
@@ -27,7 +31,7 @@ function boot(): { be: ReturnType<typeof createRealBackend>; audio: ReturnType<t
   const audio = createAudioDriver();
   const id = nextId++;
   expect(
-    be.constructSystem(
+    graph.add(
       {
         romPath: ROM, platform: "sms", core: "mesen", embeddedRom: "",
         savPath: null, statePath: null, settings: JSON.stringify({ enableFm: false }),
@@ -58,7 +62,7 @@ test("a poke lands in the same region readRam serves, at the same offset", () =>
   // ...and nothing either side moved, so the offset is exact rather than approximately right.
   expect(after[offset - 1]).toBe(before[offset - 1]);
   expect(after[offset + payload.length]).toBe(before[offset + payload.length]);
-  expect(be.removeSystem(id)).toBeTruthy();
+  expect(graph.remove(id)).toBeTruthy();
 });
 
 test("a bulk poke the size of a song block lands whole", () => {
@@ -81,7 +85,7 @@ test("a bulk poke the size of a song block lands whole", () => {
   }
   console.log(`[write-ram] 6912-byte poke: firstBad=${firstBad}`);
   expect(firstBad).toBe(-1);
-  expect(be.removeSystem(id)).toBeTruthy();
+  expect(graph.remove(id)).toBeTruthy();
 });
 
 test("it works while the core is RUNNING - which writeCpu cannot promise", () => {
@@ -102,7 +106,7 @@ test("it works while the core is RUNNING - which writeCpu cannot promise", () =>
   }
   console.log(`[write-ram] ${landed}/8 pokes observed while running`);
   expect(landed).toBe(8);
-  expect(be.removeSystem(id)).toBeTruthy();
+  expect(graph.remove(id)).toBeTruthy();
 });
 
 test("bounds are the one thing it refuses", () => {
@@ -121,7 +125,7 @@ test("bounds are the one thing it refuses", () => {
   // asked for 6,912 bytes has no use for the first 300.
   audio.renderAudio(20);
   expect(be.readRam(id)![WRAM_LEN - 1]).toBe(0x99);
-  expect(be.removeSystem(id)).toBeTruthy();
+  expect(graph.remove(id)).toBeTruthy();
 });
 
 test("a poke to a system that does not exist is refused, and says so", () => {

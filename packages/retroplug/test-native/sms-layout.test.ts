@@ -31,6 +31,10 @@ import { resolveSmsggdjLayout } from "../src/smsggdj/runtime/layout";
 import { identifySmsggdjVersion } from "../src/smsggdj/romDetect";
 import { buildSav, SMDJ4_BLOCK_LEN, songLengthRows } from "../src/smsggdj/codec/sav";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF, P_SONG } from "./smsSyncSong";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __REPO_RESOURCES_DIR__: string;
 
@@ -85,7 +89,7 @@ test("echo_mode is where the symbols say - changing that byte changes the sound"
   const sav = buildSav([{ block, name: "ECHOTEST", echo: echoOff }], 32 * 1024, buildConfigBlock(SMS_SYNC_OFF))!;
   const audio = createAudioDriver();
   expect(
-    be.constructSystem(
+    graph.add(
       { romPath: ROM, platform: "sms", core: "mesen", embeddedRom: "", savPath: null, statePath: null, sramBytes: sav, settings: JSON.stringify({ enableFm: false }) },
       1,
     ),
@@ -141,7 +145,7 @@ test("echo_mode is where the symbols say - changing that byte changes the sound"
   expect(both[2] < 0xf, "mode 2: T3 is audible too").toBeTruthy();
 
   expect(be.readRam(1)![layout.echo], "echo_mode reads back on the region readRam serves").toBe(2);
-  expect(be.removeSystem(1)).toBeTruthy();
+  expect(graph.remove(1)).toBeTruthy();
 });
 
 test("a load under a RUNNING transport rebases eng_len onto the new song", () => {
@@ -164,7 +168,7 @@ test("a load under a RUNNING transport rebases eng_len onto the new song", () =>
   const sav = buildSav([{ block: long, name: "LONG" }, { block: short, name: "SHORT" }], 32 * 1024, buildConfigBlock(SMS_SYNC_OFF))!;
   const audio = createAudioDriver();
   expect(
-    be.constructSystem(
+    graph.add(
       { romPath: ROM, platform: "sms", core: "mesen", embeddedRom: "", savPath: null, statePath: null, sramBytes: sav, settings: JSON.stringify({ enableFm: false }) },
       5,
     ),
@@ -197,7 +201,7 @@ test("a load under a RUNNING transport rebases eng_len onto the new song", () =>
   // The negative control: with no RAM passed, liveLoad assumes stopped and emits no rebase at all - so a
   // regression that dropped the play_state check would show up as this set being identical.
   expect(smsggdjIntegration.liveLoad!(rom, sav, 1)!.some((w) => w.offset === layout.engLen)).toBe(false);
-  expect(be.removeSystem(5)).toBeTruthy();
+  expect(graph.remove(5)).toBeTruthy();
 });
 
 test("song_name and song_edited land where the symbols say", () => {
@@ -207,7 +211,7 @@ test("song_name and song_edited land where the symbols say", () => {
   const sav = buildSav([{ block: buildMetronomeBlock(), name: "ECHOTEST", echo: echoOn }], 32 * 1024, buildConfigBlock(SMS_SYNC_OFF))!;
   const audio = createAudioDriver();
   expect(
-    be.constructSystem(
+    graph.add(
       { romPath: ROM, platform: "sms", core: "mesen", embeddedRom: "", savPath: null, statePath: null, sramBytes: sav, settings: JSON.stringify({ enableFm: false }) },
       6,
     ),
@@ -230,5 +234,5 @@ test("song_name and song_edited land where the symbols say", () => {
   // The block still leads work RAM - the assumption the generator asserts, re-checked against the core.
   expect(layout.song, "the song block still leads work RAM").toBe(0);
   expect(ram.length >= SMDJ4_BLOCK_LEN, "readRam serves at least a whole song block").toBeTruthy();
-  expect(be.removeSystem(6)).toBeTruthy();
+  expect(graph.remove(6)).toBeTruthy();
 });

@@ -14,6 +14,10 @@ import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
 declare const __DSP_KERNEL_BUNDLE__: string;
@@ -50,7 +54,7 @@ test("Master Sync (mode 8): a stock LSDj in SYNC=LSDj clocks the host â€” byteâ†
   const audio = createAudioDriver();
 
   const id = 1;
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: LSDJ,
     platform: "gb",
     core: "sameboy",

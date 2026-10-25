@@ -11,6 +11,10 @@
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __REPO_RESOURCES_DIR__: string;
 const ROM = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
@@ -36,8 +40,8 @@ test("stageSystemMidi reaches the system it names, and only that one", () => {
   const audio = createAudioDriver();
   if (!be.fileExists(ROM)) skip(`stageSystemMidi: no ROM at ${ROM}`);
   const spec = { romPath: ROM, platform: "nes" as const, core: "mesen" as const, embeddedRom: "", savPath: null, statePath: null };
-  expect(be.constructSystem(spec, 1)).toBeTruthy();
-  expect(be.constructSystem(spec, 2)).toBeTruthy();
+  expect(graph.add(spec, 1)).toBeTruthy();
+  expect(graph.add(spec, 2)).toBeTruthy();
 
   // Same ROM, same start, no input: the two cores run in lockstep, so any later difference is the message's doing.
   audio.renderAudio(WARMUP_MS);
@@ -62,6 +66,6 @@ test("stageSystemMidi reaches the system it names, and only that one", () => {
   expect(be.stageSystemMidi(1, [])).toBe(false);
   expect(be.stageSystemMidi(0xdead, sxSettings(3))).toBeTruthy(); // queued optimistically; no such system
 
-  be.removeSystem(1);
-  be.removeSystem(2);
+  graph.remove(1);
+  graph.remove(2);
 });

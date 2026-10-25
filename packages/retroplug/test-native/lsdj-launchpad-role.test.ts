@@ -16,6 +16,10 @@ import { LsdjReader } from "../src/lsdj/runtime";
 import { SongSchema } from "../src/lsdj/model";
 import { songRowTicks } from "../src/lsdj/playback";
 import { padIndex } from "../src/launchpad";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
 declare const __DSP_KERNEL_BUNDLE__: string;
@@ -49,7 +53,7 @@ test("a pad press on the controller stream launches a row on a real cart", () =>
   const dsp = createDspRuntime();
   const audio = createAudioDriver();
 
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: ABOY, platform: "gb", core: "sameboy", embeddedRom: "",
     savPath: null, statePath: null, sramBytes: savFrom(SONG),
   }, SYSTEM)).toBeTruthy();
@@ -100,7 +104,7 @@ test("the same bytes on the MUSICAL stream launch a different row, which is why 
   const id = 2;
   const dsp = createDspRuntime();
   const audio = createAudioDriver();
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: ABOY, platform: "gb", core: "sameboy", embeddedRom: "",
     savPath: null, statePath: null, sramBytes: savFrom({
       workingSong: { ...songJson, rows: Array.from({ length: 64 }, () => ({ chains: [0, 0, 0, 0] })) },

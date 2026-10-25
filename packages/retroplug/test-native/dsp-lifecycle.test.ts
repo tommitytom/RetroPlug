@@ -10,6 +10,10 @@ import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import type { ConstructSpec } from "../src/backend";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __DSP_KERNEL_BUNDLE__: string;
 
@@ -31,7 +35,7 @@ test("add + remove a system while the audio thread plays, via the command + rele
   // --- setup (quiescent): one mGB + the kernel routing so notes can reach it ---
   // TS owns the id counter now; a test calling the backend directly picks its own (fresh host per file).
   const a = 1;
-  expect(be.constructSystem(MGB, a)).toBeTruthy();
+  expect(graph.add(MGB, a)).toBeTruthy();
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
   expect(dsp.setSystems(routingMgb([a]))).toBeTruthy();
 
@@ -51,7 +55,7 @@ test("add + remove a system while the audio thread plays, via the command + rele
 
   // --- ADD a second mGB while running → built on the control thread, planned in on the audio thread ---
   const b = 2;
-  expect(be.constructSystem(MGB, b)).toBeTruthy();
+  expect(graph.add(MGB, b)).toBeTruthy();
   audio.sleepMs(30); // let the audio thread adopt the plan that adds it
   expect(audio.systemCount()).toBe(2);
   expect(dsp.setSystems(routingMgb([a, b]))).toBeTruthy();
@@ -59,7 +63,7 @@ test("add + remove a system while the audio thread plays, via the command + rele
   const twoSys = energyWindow(120);
 
   // --- REMOVE the first while running → planned out on the audio thread, freed with its old plan ---
-  expect(be.removeSystem(a)).toBeTruthy();
+  expect(graph.remove(a)).toBeTruthy();
   audio.sleepMs(30);
   expect(audio.systemCount()).toBe(1);
   expect(be.readState(a) !== null, "a's slot before the reclaim").toBeTruthy(); // its old plan still holds it

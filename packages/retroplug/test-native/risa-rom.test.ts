@@ -11,6 +11,10 @@ import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { rom as risaRom } from "../src/risa";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __RISA_SRC__: string;
 const RISA_ROM = __RISA_SRC__ + "/build/risa-pal.nes";
@@ -22,7 +26,7 @@ test("constructSystem romBytes boots a NES (Mesen) system over a nonexistent rom
 
   const bytes = be.readFile(RISA_ROM)!;
   // romPath points at nothing; only romBytes can boot this. (Pre-fix Mesen slurps the path -> nullptr.)
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: "/definitely/not/here/nope.nes", platform: "nes", core: "mesen", embeddedRom: "",
     savPath: null, statePath: null, romBytes: bytes,
   }, 11)).toBeTruthy();
@@ -51,7 +55,7 @@ test("a theme + font patched into the ROM in memory boots (the on-disk .nes is u
   rom.setChrFontSlot(0, font);
   const effective = rom.bytes();
 
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: RISA_ROM, platform: "nes", core: "mesen", embeddedRom: "",
     savPath: null, statePath: null, romBytes: effective,
   }, 12)).toBeTruthy();

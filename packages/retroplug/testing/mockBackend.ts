@@ -4,7 +4,7 @@
 // "disk". This is what lets the whole application layer be tested with `tjs run`
 // and nothing else.
 
-import type { ApuState, ApuSquareState, Backend, BreakHitBatch, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CoreTransportStats, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
+import type { ApuState, ApuSquareState, Backend, BreakHitBatch, BuiltCore, SetGraphRequest, SetGraphResult, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CoreTransportStats, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
 import { detectPlatform } from "../src/platform";
 import { savFromJson } from "../src/lsdj";
 
@@ -41,6 +41,31 @@ interface MockSystem {
   restoredFromBytes: boolean;
 }
 
+function mockSystem(spec: ConstructSpec): MockSystem {
+  return {
+    romPath: spec.romPath,
+    embeddedRom: spec.embeddedRom,
+    savPath: spec.savPath,
+    statePath: spec.statePath,
+    restoredFromBytes: spec.sramBytes !== undefined || spec.stateBytes !== undefined,
+  };
+}
+
+// The node type native places a core of this platform as.
+function nodeTypeFor(spec: ConstructSpec): BuiltCore["type"] {
+  if (spec.embeddedRom || spec.platform === "gb") return "rp.sameboy.gb";
+  if (spec.platform === "nes") return "rp.mesen.nes";
+  if (spec.platform === "gba") return "rp.mesen.gba";
+  return "rp.mesen.sms";
+}
+
+// A number field of the construct-time settings blob, as native decodes it (0 when absent).
+function settingsNumber(spec: ConstructSpec, key: string): number {
+  if (!spec.settings) return 0;
+  const v = (JSON.parse(spec.settings) as Record<string, unknown>)[key];
+  return typeof v === "number" ? v : 0;
+}
+
 export class MockBackend implements Backend {
   private files = new Map<string, Uint8Array>();
   private dir: string;
@@ -55,6 +80,12 @@ export class MockBackend implements Backend {
   /** Every ConstructSpec passed to constructSystem, in order — lets tests assert
    *  the CONCRETE paths TS resolved (savPath/statePath/replaceId). */
   readonly constructCalls: ConstructSpec[] = [];
+  /** Every buildCore call, in order, with the id it built under. */
+  readonly buildCalls: (ConstructSpec & { id: number })[] = [];
+  /** Every setGraph request, in order: the documents TS published, their slots and their tap re-arms. */
+  readonly graphRequests: SetGraphRequest[] = [];
+  /** Cores buildCore built that no published document has placed yet. */
+  private parked = new Map<number, MockSystem>();
   // NOTE: duplicate/reload no longer hit the backend — they are TS orchestration over constructSystem,
   // so their effect shows up in constructCalls (with stateBytes/sramBytes + replaceId), not a dedicated log.
 
@@ -267,29 +298,50 @@ export class MockBackend implements Backend {
   constructSystem(spec: ConstructSpec, id: number): boolean {
     this.log.push("constructSystem");
     this.constructCalls.push(spec);
-    // Build only when a real ROM is available: an embedded marker, TS-supplied effective ROM bytes
-    // (romBytes wins, as native does), or the on-disk romPath — classified to a known format.
-    //
-    // The SMS/GG carve-out mirrors MesenBackend's gate, and has to: the Sega magic is optional, so
-    // headerless homebrew reaches construct with bytes that classify as "unknown". Native accepts those
-    // (rejecting only bytes that are positively another platform), and a stricter mock would fail every
-    // headerless-ROM store test against a backend that would really have built it.
-    if (!spec.embeddedRom) {
-      const bytes = spec.romBytes ?? this.files.get(this.canonicalize(spec.romPath));
-      if (!bytes) return false;
-      const fmt = detectPlatform(bytes);
-      const sega = spec.platform === "sms" || spec.platform === "gg";
-      if (fmt === "unknown" ? !sega : sega && fmt !== "sms" && fmt !== "gg") return false;
-    }
+    if (!this.buildable(spec)) return false;
     if (spec.replaceId !== undefined) this.systems.delete(spec.replaceId); // swap in place
-    this.systems.set(id, {  // TS owns the id counter; the mock just records under the given id
-      romPath: spec.romPath,
-      embeddedRom: spec.embeddedRom,
-      savPath: spec.savPath,
-      statePath: spec.statePath,
-      restoredFromBytes: spec.sramBytes !== undefined || spec.stateBytes !== undefined,
-    });
+    this.systems.set(id, mockSystem(spec)); // TS owns the id counter; the mock just records under the given id
     return true;
+  }
+
+  buildCore(spec: ConstructSpec, id: number): BuiltCore | null {
+    this.log.push("buildCore");
+    this.buildCalls.push({ ...spec, id });
+    if (!this.buildable(spec) || this.systems.has(id) || this.parked.has(id)) return null;
+    this.parked.set(id, mockSystem(spec));
+    return { type: nodeTypeFor(spec), exportMode: settingsNumber(spec, "channelExportMode"), linkGroup: settingsNumber(spec, "linkGroupId") };
+  }
+
+  setGraph(request: SetGraphRequest): SetGraphResult {
+    this.log.push("setGraph");
+    this.graphRequests.push(request);
+    // The slots become the live systems: a parked core is placed, a live one the document drops goes, and a
+    // core still parked once the document is published is freed, as native does.
+    const live = new Map<number, MockSystem>();
+    for (const id of request.slots) {
+      const sys = this.systems.get(id) ?? this.parked.get(id);
+      if (!sys) return { ok: false, errors: [{ nodeId: `sys-${id}`, port: "", code: "unknown-core", message: `no core is built under id ${id}` }] };
+      live.set(id, sys);
+    }
+    this.systems = live;
+    this.parked.clear();
+    return { ok: true, errors: [] };
+  }
+
+  // Build only when a real ROM is available: an embedded marker, TS-supplied effective ROM bytes (romBytes
+  // wins, as native does), or the on-disk romPath, classified to a known format.
+  //
+  // The SMS/GG carve-out mirrors MesenBackend's gate, and has to: the Sega magic is optional, so headerless
+  // homebrew reaches construct with bytes that classify as "unknown". Native accepts those (rejecting only
+  // bytes that are positively another platform), and a stricter mock would fail every headerless-ROM store
+  // test against a backend that would really have built it.
+  private buildable(spec: ConstructSpec): boolean {
+    if (spec.embeddedRom) return true;
+    const bytes = spec.romBytes ?? this.files.get(this.canonicalize(spec.romPath));
+    if (!bytes) return false;
+    const fmt = detectPlatform(bytes);
+    const sega = spec.platform === "sms" || spec.platform === "gg";
+    return fmt === "unknown" ? sega : !sega || fmt === "sms" || fmt === "gg";
   }
 
   // duplicate + reload are TS orchestration (SystemsStore) over readState/readSram + constructSystem —

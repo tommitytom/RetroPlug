@@ -11,6 +11,10 @@ import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
 declare const __DSP_KERNEL_BUNDLE__: string;
@@ -53,7 +57,7 @@ test("the TS lsdj-sync role in the DSP kernel is the sole clock that makes an ar
   // Real LSDj, authored SYNC=MIDI song, constructed bare (no C++ roles) so the kernel is the only clock.
   const sav = savFrom(SYNC_MIDI_SONG);
   const id = 1; // TS owns the id counter; this direct-backend test picks its own (fresh host per file)
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: LSDJ,
     platform: "gb",
     core: "sameboy",

@@ -17,6 +17,10 @@ import { detectDriftLayout } from "../src/lsdj/runtime/detect";
 import type { DetectDriver } from "../src/lsdj/runtime/detect";
 import { legacyOffsets } from "../src/lsdj/runtime/legacyOffsets.generated";
 import { driftShifts } from "../src/lsdj/runtime/driftShifts.generated";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
 const DIR = __RESOURCES_DIR__ + "/roms/lsdj";
@@ -64,8 +68,8 @@ test("detectDriftLayout: full screen/tempo/cursor layout on real cores; cross-ch
   const audio = createAudioDriver();
   const driver: DetectDriver = {
     readFilePrefix: (p, n) => be.readFilePrefix(p, n),
-    construct: (id, romPath, sram) => be.constructSystem({ romPath, platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null, sramBytes: sram }, id),
-    remove: (id) => { be.removeSystem(id); },
+    construct: (id, romPath, sram) => graph.add({ romPath, platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null, sramBytes: sram }, id),
+    remove: (id) => { graph.remove(id); },
     readWram: (id) => be.readMemory(id, MemoryRegion.Ram),
     press: (id, button, down) => audio.pressButton(id, button, down),
     render: (ms) => audio.renderAudio(ms),

@@ -29,6 +29,10 @@ import { resolveSmsggdjLayout } from "../src/smsggdj/runtime/layout";
 import { identifySmsggdjVersion } from "../src/smsggdj/romDetect";
 import { smsggdjIntegration } from "../src/tracker/trackerIntegration";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF } from "./smsSyncSong";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __REPO_RESOURCES_DIR__: string;
 
@@ -72,10 +76,10 @@ function chord(audio: ReturnType<typeof createAudioDriver>, id: number, hold: nu
   audio.renderAudio(GAP_MS);
 }
 
-function boot(be: ReturnType<typeof createRealBackend>, id: number, romPath: string, platform: Platform, sram: Uint8Array) {
+function boot(id: number, romPath: string, platform: Platform, sram: Uint8Array) {
   const audio = createAudioDriver();
   expect(
-    be.constructSystem(
+    graph.add(
       {
         romPath, platform, core: "mesen", embeddedRom: "",
         savPath: null, statePath: null, sramBytes: sram,
@@ -100,7 +104,7 @@ test("the cart's own probe finds 32K of working SRAM, and reads the host's direc
     32 * 1024,
     buildConfigBlock(SMS_SYNC_OFF),
   )!;
-  const audio = boot(be, id, ROM, "sms", sav);
+  const audio = boot(id, ROM, "sms", sav);
 
   // sram_detect ran during that boot. It is a real readback of the emulated cart RAM - it writes a probe
   // into the SRAM window in bank 0 and bank 1 and requires them to differ - so a nonzero sram_slots is
@@ -122,7 +126,7 @@ test("the cart's own probe finds 32K of working SRAM, and reads the host's direc
   const after = be.readSram(id)!;
   expect(after.length).toBe(32 * 1024);
   expect(after).toEqual(sav);
-  expect(be.removeSystem(id)).toBeTruthy();
+  expect(graph.remove(id)).toBeTruthy();
 });
 
 test("a save made INSIDE the cart comes back out through readSram, and the TS codec reads it", () => {
@@ -131,7 +135,7 @@ test("a save made INSIDE the cart comes back out through readSram, and the TS co
   const id = 41;
   // A blank battery, so the save has to build the SMDJ4 structure from nothing rather than edit one the
   // host laid out - the case where a wrong write would be invisible to a codec round-trip test.
-  const audio = boot(be, id, ROM, "sms", new Uint8Array(32 * 1024));
+  const audio = boot(id, ROM, "sms", new Uint8Array(32 * 1024));
   chord(audio, id, BTN_2, BTN_DOWN); // -> FILES
   expect(be.readRam(id)![SYM.file_count]).toBe(0);
 
@@ -152,7 +156,7 @@ test("a save made INSIDE the cart comes back out through readSram, and the TS co
   const block = readSongBlock(saved, 0);
   expect(block != null).toBeTruthy();
   expect(block!.length).toBe(SMDJ4_BLOCK_LEN);
-  expect(be.removeSystem(id)).toBeTruthy();
+  expect(graph.remove(id)).toBeTruthy();
 });
 
 test("a live song load works on the Game Gear flavor, on the SMS-derived layout", () => {
@@ -166,7 +170,7 @@ test("a live song load works on the Game Gear flavor, on the SMS-derived layout"
   const layout = resolveSmsggdjLayout("0.45")!;
 
   const sav = buildSav([{ block: buildMetronomeBlock(), name: "GGSONG" }], 32 * 1024, buildConfigBlock(SMS_SYNC_OFF))!;
-  const audio = boot(be, id, GG_ROM, "gg", sav);
+  const audio = boot(id, GG_ROM, "gg", sav);
   const booted = be.readRam(id)!;
   expect(booted[SYM.sram_ok]).toBe(1); // the GG cart has its battery too
   expect(booted[SYM.sram_slots]).toBe(SRAM_SLOTS_32K);
@@ -195,5 +199,5 @@ test("a live song load works on the Game Gear flavor, on the SMS-derived layout"
   for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i]));
   console.log(`[gg] loaded "${name}", eng_len=${ram[layout.engLen]}, peak=${peak.toFixed(4)}`);
   expect(peak > 0.01).toBeTruthy(); // and it is audibly playing the loaded song
-  expect(be.removeSystem(id)).toBeTruthy();
+  expect(graph.remove(id)).toBeTruthy();
 });

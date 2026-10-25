@@ -27,6 +27,10 @@ import { SMSGGDJ_SYMBOLS } from "../src/smsggdj/runtime/symbols.generated";
 import { smsggdjIntegration } from "../src/tracker/trackerIntegration";
 import { smsggdjSongCatalog } from "../src/tracker/smsggdjSongCatalog";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF } from "./smsSyncSong";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __REPO_RESOURCES_DIR__: string;
 
@@ -55,9 +59,9 @@ const nameField = (ram: Uint8Array): Uint8Array => ram.subarray(layout.name, lay
 /** The hunt's invariant: every byte of the name field is a terminator or printable ASCII. */
 const nameFieldClean = (ram: Uint8Array): boolean => nameField(ram).every((c) => c === 0 || (c >= 0x20 && c <= 0x7e));
 
-function construct(be: Backend, id: number, rom: { path: string; platform: Platform }, sav: Uint8Array): void {
+function construct(id: number, rom: { path: string; platform: Platform }, sav: Uint8Array): void {
   expect(
-    be.constructSystem(
+    graph.add(
       { romPath: rom.path, platform: rom.platform, core: "mesen", embeddedRom: "", savPath: null, statePath: null, sramBytes: sav, settings: JSON.stringify({ enableFm: false }) },
       id,
     ),
@@ -112,7 +116,7 @@ for (const rom of ROMS) {
     const id = 60;
     const sav = buildSav([{ block: buildMetronomeBlock(), name: "ALPHA" }], 32 * 1024, buildConfigBlock(SMS_SYNC_OFF))!;
     const audio = createAudioDriver();
-    construct(be, id, rom, sav);
+    construct(id, rom, sav);
 
     // Frame 0: readable, and the boot's. This is the snapshot a project load used to act on.
     const frame0 = be.readRam(id)!;
@@ -139,7 +143,7 @@ for (const rom of ROMS) {
     expect(f2 - f1 >= 20 && f2 - f1 <= 40).toBeTruthy(); // ~30 frames in 500 ms, either region
     expect(smsggdjSongCatalog.workingName(be.readSram(id)!, be.readRam(id)!)).toBe(null); // song_new's blank song, no name
     expect(smsggdjSongCatalog.workingSongDirty!(be.readSram(id)!, be.readRam(id)!)).toBe(false);
-    expect(be.removeSystem(id)).toBeTruthy();
+    expect(graph.remove(id)).toBeTruthy();
   });
 
   test(`[${tag}] a song written before the latch is erased by the boot; one written after it stays`, () => {
@@ -148,7 +152,7 @@ for (const rom of ROMS) {
     const id = 61;
     const sav = buildSav([{ block: buildMetronomeBlock(), name: "ALPHA" }], 32 * 1024, buildConfigBlock(SMS_SYNC_OFF))!;
     const audio = createAudioDriver();
-    construct(be, id, rom, sav);
+    construct(id, rom, sav);
     const writes = smsggdjIntegration.liveLoad!(be.readFile(rom.path)!, sav, 0)!;
     const wanted = writes.find((w) => w.offset === layout.song)!.bytes;
     const pool = (ram: Uint8Array) => ram.subarray(layout.phrasePool, layout.phrasePool + layout.phrasePoolLen);
@@ -182,7 +186,7 @@ for (const rom of ROMS) {
       expect(nameFieldClean(ram)).toBe(true);
     });
     expect(smsggdjSongCatalog.workingName(be.readSram(id)!, be.readRam(id)!)).toBe("ALPHA");
-    expect(be.removeSystem(id)).toBeTruthy();
+    expect(graph.remove(id)).toBeTruthy();
   });
 
   test(`[${tag}] the name field stays a name through the cart's own FILES save + load, and a live load`, () => {
@@ -192,7 +196,7 @@ for (const rom of ROMS) {
     // Boot BLANK (no directory), so the cart's own save has to build the SMDJ4 structure and copy the
     // name out of work RAM into the entry - the path where a snapshot could catch it half-copied.
     const audio = createAudioDriver();
-    construct(be, id, rom, new Uint8Array(32 * 1024));
+    construct(id, rom, new Uint8Array(32 * 1024));
     const anomalies: string[] = [];
     expect(bootSampled(be, audio, id, anomalies) > 0).toBeTruthy();
 
@@ -237,6 +241,6 @@ for (const rom of ROMS) {
     sample(be, audio, id, 1000, see);
     expect(smsggdjSongCatalog.workingSongDirty!(be.readSram(id)!, be.readRam(id)!)).toBe(false); // the cart's own copy, clean
     console.log(`[${tag}] ${samples} post-boot snapshots through FILES save + live load, all clean`);
-    expect(be.removeSystem(id)).toBeTruthy();
+    expect(graph.remove(id)).toBeTruthy();
   });
 }

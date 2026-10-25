@@ -8,6 +8,10 @@ import { createAudioDriver } from "../src/audioDriver";
 import { RisaRom, bankToModel, isBankPopulated, dpcmDecode, assembleKitBank } from "../src/risa/rom";
 import { applyOverridesToRom, type RisaAssetOverride } from "../src/risaAssetsRole";
 import { encodeWav } from "../cli/wav";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __RISA_SRC__: string;
 const RISA_ROM = __RISA_SRC__ + "/build/risa-pal.nes";
@@ -74,7 +78,7 @@ test("a compiled DMC kit splices into a real risa ROM (bank + mirror) and the RO
 
   // The patched image boots (also exercises the Mesen romBytes path), on-disk ROM untouched.
   const base = be.readFile(RISA_ROM)!;
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: RISA_ROM, platform: "nes", core: "mesen", embeddedRom: "",
     savPath: null, statePath: null, romBytes: rom.bytes(),
   }, 21)).toBeTruthy();
@@ -138,7 +142,7 @@ test("the risa-assets kit override links a pre-built .rkit at construct (offline
   expect(rom.kits().some((k) => k.slot === 0 && k.name === "DRUMS")).toBe(true); // mirror-consistent
 
   // Mesen boots from the patched bytes (the romBytes channel); on-disk .nes + .rkit unchanged.
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: RISA_ROM, platform: "nes", core: "mesen", embeddedRom: "",
     savPath: null, statePath: null, romBytes: patched,
   }, 22)).toBeTruthy();

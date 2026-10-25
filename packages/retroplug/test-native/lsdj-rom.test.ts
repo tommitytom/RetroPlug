@@ -11,6 +11,10 @@ import { KitView, decodeNibbles } from "../src/lsdj/rom/kit";
 import { KIT_LOOKUP, BANK_SIZE, ROM_SIZE } from "../src/lsdj/rom/constants";
 import { buildKitBank, sampleBytesFromBank, kitSampleSpace } from "../src/lsdj/rom";
 import { encodeWav } from "../cli/wav";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
 const LSDJ = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_4_2.gb";
@@ -88,7 +92,7 @@ test("LsdjRom reads real kit/palette/font assets and round-trips a surgical kit-
 
   // The patched ROM still boots on a real SameBoy core.
   const audio = createAudioDriver();
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: OUT, platform: "gb", core: "sameboy", embeddedRom: "",
     savPath: null, statePath: null,
   }, 1)).toBeTruthy();
@@ -159,7 +163,7 @@ test("import-sample splice: compile one sample + rebuild a kit around the existi
   expect([...re.rawSampleBytes(1)]).toEqual(originalSlot1);
 
   // The patched ROM still boots on a real core.
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: out, platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null,
   }, 2)).toBeTruthy();
   audio.renderAudio(300);
@@ -255,7 +259,7 @@ test("import a real .png font (main + extended) via the native codec; ROM boots;
 
   // The patched ROM boots on a real core.
   expect(be.writeFileAtomic(OUT, rom.bytes())).toBeTruthy();
-  expect(be.constructSystem({ romPath: OUT, platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null }, 3)).toBeTruthy();
+  expect(graph.add({ romPath: OUT, platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null }, 3)).toBeTruthy();
   audio.renderAudio(300);
   expect(be.getFrame(3) != null).toBeTruthy();
   console.log(`[lsdj-rom] font-file: 7.png (main) + BLSD.png (extended gfx) import, round-trip stable, ROM boots`);
@@ -281,7 +285,7 @@ test("import a real .lsdpal palette (colours + name) and a real .kit bank; both 
   expect(rom.kit(20).sampleCount() > 0).toBeTruthy();
 
   expect(be.writeFileAtomic(OUT, rom.bytes())).toBeTruthy();
-  expect(be.constructSystem({ romPath: OUT, platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null }, 4)).toBeTruthy();
+  expect(graph.add({ romPath: OUT, platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null }, 4)).toBeTruthy();
   audio.renderAudio(300);
   expect(be.getFrame(4) != null).toBeTruthy();
   console.log(`[lsdj-rom] pal/kit-file: 0D-BLOO.lsdpal + DONK.kit import byte-identical, ROM boots`);
@@ -316,7 +320,7 @@ test("CLI build-kit writes a bootable .kit that import-kit places into a ROM", (
   expect(rom.kit(20).name()).toBe("MYDR");
   expect(rom.kit(20).sampleName(0)).toBe("BD-"); // the native compiler pads a short name to 3 chars with '-'
 
-  expect(be.constructSystem({ romPath: "/tmp/rp-bk.gb", platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null }, 5)).toBeTruthy();
+  expect(graph.add({ romPath: "/tmp/rp-bk.gb", platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null }, 5)).toBeTruthy();
   audio.renderAudio(300);
   expect(be.getFrame(5) != null).toBeTruthy();
   console.log(`[lsdj-rom] build-kit → .kit (16KB) → import-kit slot 20 (MYDR/BD), ROM boots`);
@@ -352,7 +356,7 @@ test("CLI patch realizes a mixed manifest (build + .kit + rename + palette + fon
   expect(rom.palettes()[1].name).toBe("BLOO"); // .lsdpal
   expect(rom.palettes()[0].color(0, 0)).toEqual({ r: 255, g: 0, b: 0 }); // colour set
 
-  expect(be.constructSystem({ romPath: "/tmp/rp-ap-out.gb", platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null }, 6)).toBeTruthy();
+  expect(graph.add({ romPath: "/tmp/rp-ap-out.gb", platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null }, 6)).toBeTruthy();
   audio.renderAudio(300);
   expect(be.getFrame(6) != null).toBeTruthy();
   console.log(`[lsdj-rom] patch: build+import+rename+palette+font manifest realized, ROM boots`);
@@ -370,7 +374,7 @@ test("constructSystem romBytes loads a patched effective ROM (over the on-disk r
   const effective = patched.bytes();
 
   // Construct with romPath = the STOCK ROM but romBytes = the patched image; native must honour romBytes.
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: LSDJ, platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null, romBytes: effective,
   }, 7)).toBeTruthy();
   audio.renderAudio(300);

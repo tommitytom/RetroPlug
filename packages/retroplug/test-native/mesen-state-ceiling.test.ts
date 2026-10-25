@@ -18,6 +18,10 @@
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
 declare const __REPO_RESOURCES_DIR__: string;
@@ -36,7 +40,7 @@ test("GBA: the published savestate tracks the running core, never freezing on th
   if (!be.fileExists(GBA)) skip(`mesen-state-ceiling GBA leg: no GBA ROM at ${GBA}`);
   const audio = createAudioDriver();
   const id = 801;
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: GBA, platform: "gba", core: "mesen", embeddedRom: "",
     savPath: null, statePath: null,
   }, id)).toBeTruthy();
@@ -54,14 +58,14 @@ test("GBA: the published savestate tracks the running core, never freezing on th
   expect(eq(warm, boot)).toBeFalsy();            // a frozen slot hands back the identical blob
   expect(warm.length > boot.length).toBeTruthy(); // ...and a populated console deflates worse than a blank one
 
-  be.removeSystem(id);
+  graph.remove(id);
 });
 
 test("NES: the published savestate tracks the running core", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
   const id = 802;
-  expect(be.constructSystem({
+  expect(graph.add({
     romPath: NES, platform: "nes", core: "mesen", embeddedRom: "",
     savPath: null, statePath: null,
   }, id)).toBeTruthy();
@@ -75,5 +79,5 @@ test("NES: the published savestate tracks the running core", () => {
   console.log(`[mesen-state-ceiling] nes boot=${boot.length} warm=${warm.length}`);
   expect(eq(warm, boot)).toBeFalsy();
 
-  be.removeSystem(id);
+  graph.remove(id);
 });

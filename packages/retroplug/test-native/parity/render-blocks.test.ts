@@ -5,6 +5,10 @@ import { test, expect, skip } from "../../testing/harness";
 import { bootSession } from "../../src/bootSession";
 import { savFrom, type SavInput } from "../../src/lsdjSav";
 import type { RenderBlock } from "../../src/audioDriver";
+import { directGraph } from "../../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
 
@@ -160,7 +164,7 @@ test("MIDI out through renderBlocks is what renderAudio + drainMidiOut yields, t
   const scene = (render: (ms: number) => Msg[]): Msg[] => {
     project.newProject();
     expect(
-      be.constructSystem(
+      graph.add(
         { romPath: ABOY, platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null, sramBytes: savFrom(MIDIOUT_SONG) },
         id,
       ),
@@ -185,7 +189,7 @@ test("MIDI out through renderBlocks is what renderAudio + drainMidiOut yields, t
     out.push(...render(300));
     tap();
     out.push(...render(1500));
-    be.removeSystem(id);
+    graph.remove(id);
     project.newProject();
     return out;
   };

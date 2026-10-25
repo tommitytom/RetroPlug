@@ -2,16 +2,18 @@
 // the background audio thread owns it, they must refuse (as renderBlocks does) rather than render
 // concurrently with it; once the thread has stopped they render again.
 import { test, expect } from "../testing/harness";
-import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import type { ConstructSpec } from "../src/backend";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 const MGB: ConstructSpec = { romPath: "", platform: "gb", core: "sameboy", embeddedRom: "mgb", savPath: null, statePath: null };
 
 test("renderAudio, renderAudioPerSystem and renderAudioPerChannel refuse while the audio thread runs", () => {
-  const be = createRealBackend();
   const audio = createAudioDriver();
-  expect(be.constructSystem(MGB, 1)).toBeTruthy();
+  expect(graph.add(MGB, 1)).toBeTruthy();
 
   expect(audio.startAudio()).toBeTruthy();
   expect(audio.renderAudio(20).length).toBe(0);
@@ -22,5 +24,5 @@ test("renderAudio, renderAudioPerSystem and renderAudioPerChannel refuse while t
   expect(audio.renderAudio(20).length).toBeGreaterThan(0);
   expect(audio.renderAudioPerSystem(20).length).toBe(1);
   expect(audio.renderAudioPerChannel(1, 20).length).toBe(4);
-  be.removeSystem(1);
+  graph.remove(1);
 });

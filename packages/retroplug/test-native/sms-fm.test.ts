@@ -31,6 +31,10 @@ import {
   SMS_ROWS_PER_BEAT,
   SMS_SYNC_OFF,
 } from "./smsSyncSong";
+import { directGraph } from "../src/graph/directGraph";
+
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
 
 declare const __REPO_RESOURCES_DIR__: string;
 const ROM = __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.sms";
@@ -89,7 +93,7 @@ function play(voices: Voices, enableFm: boolean, cartFm: number): number {
   const block = songBlock(voices);
 
   expect(
-    be.constructSystem(
+    graph.add(
       {
         romPath: ROM,
         platform: "sms",
@@ -114,7 +118,7 @@ function play(voices: Voices, enableFm: boolean, cartFm: number): number {
   audio.pressButton(id, PAUSE, false);
   audio.renderAudio(500);
   const level = rms(audio.renderAudio(2500));
-  expect(be.removeSystem(id)).toBeTruthy();
+  expect(graph.remove(id)).toBeTruthy();
   return level;
 }
 
