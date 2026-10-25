@@ -133,7 +133,7 @@ Every mutation here routes through the `QueuedInvoker`; every read routes throug
 
 | Method | Signature | Behaviour |
 |---|---|---|
-| `buildCore` | `(BackendConstructSpec) → optional<RpcBuiltCore>` | TS-owned `spec.id`; `factory_.build` → `registry().claim` → `Engine::parkCore`. Returns the core's node type, export mode and link group, or null (below) |
+| `buildCore` | `(BackendConstructSpec) → optional<RpcBuiltCore>` | TS-owned `spec.id`; `factory_.build` → `Engine::parkCore`, which claims the registry slot. Returns the core's node type, export mode and link group, or null (below) |
 | `setGraph` | `(RpcSetGraphRequest) → RpcSetGraphResult` | a graph document TS built, its slots and its tap re-arm → `Engine::setGraph` (below) |
 | `applySystemSetting` | `(uint32 id, string key, double value) → bool` | `gainDb` / `reloadOnRomChange` → a `ConfigField` |
 | `applyRoleConfig` | `(uint32 id, string kind, string config) → bool` | `kind=="sameboy"` only; decodes the whole role config, pushes Model/Highpass/LinkGroup/FastBoot |
@@ -253,10 +253,11 @@ Live config edits land in `Engine::applyConfigField`, dispatched by the core's c
 triggers `restartEmulator()` in place, and the cable needs no rewiring because `linkPeers_` holds
 the systems, which survive it; an unchanged one no-ops, avoiding a spurious restart that would nuke
 a restored savestate). It applies at drain against the plan current at that point, finding the core
-by id in that plan's `SystemTable`. `Engine::setSampleRate` re-rates the running plan's cores in slot order,
-then re-activates the graph's buffers at the new rate; `Engine::setMaxBlockFrames` grows the plan's
-block size to a host's maximum (never below 8192, the largest block the parity matrix holds), and the
-plugin and the SDL standalone call it before handing the engine over.
+by id in that plan's `SystemTable`. `Engine::setSampleRate` re-rates the running plan's cores in slot
+order, then the parked ones, then re-activates the graph's buffers at the new rate;
+`Engine::setMaxBlockFrames` grows the plan's block size to a host's maximum (never below 8192, the
+largest block the parity matrix holds), and the plugin and the SDL standalone call it before handing
+the engine over.
 
 ### Graph requests
 
@@ -265,21 +266,25 @@ Structure arrives as a graph document TS builds
 [modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md)), in two calls:
 
 - **`buildCore(spec)`** builds and activates a core on the control thread (`factory.build`), arms a Game
-  Boy's serial-out capture if the spec asks, claims its snapshot slot, and parks it under its system id
-  (`Engine::parkCore`). It answers with the node type the core is placed as and the two values the graph
-  needs as the core decoded them (a NES's export mode, a Game Boy's link group), or null. It refuses an
-  id that is still live: parked, or held by a node of any plan not yet reclaimed (it reclaims first, so
-  with no audio thread running every removed core is already gone).
+  Boy's serial-out capture if the spec asks, and parks it under its system id with `Engine::parkCore`,
+  which claims its snapshot slot (after checking the id is not live: the registry finds a slot by id, first
+  match). It answers with the node type the core is placed as and the two values the graph needs as the
+  core decoded them (a NES's export mode, a Game Boy's link group), or null. It refuses id 0 (the
+  registry's free-slot id) and an id that is still live: parked, or held by a node of any plan not yet
+  reclaimed (it reclaims first, so with no audio thread running every removed core is already gone).
 - **`setGraph({ document, slots, tap? })`** (`Engine::setGraph`) checks that the document's system nodes
-  and the slots name the same systems, each node `sys-<id>` with settings `{ "core": <id> }`; builds the
-  plan's `SystemTable` (a slot-ordered list of `{ id, SystemBase*, SameBoySystem*, MesenNesSystem* }`,
+  and the slots name the same systems, each node `sys-<id>` with settings `{ "core": <id> }`, of the node
+  type its core is placed as, and that a tap arm names one of the slots and a mode from 1 to 3 (any of
+  these refuses the document before anything is built); builds the plan's `SystemTable` (a slot-ordered
+  list of `{ id, SystemBase*, SameBoySystem*, MesenNesSystem* }`,
   [SystemTable.hpp](../packages/native/src/host/graph/SystemTable.hpp)) from the slots and the live cores;
   turns `tap` into the swap's `SyncTap` trailer; and hands both to `GraphHost::setGraph`, which computes
   every node's layout from the document (`layout_for` on each node type), runs every layout check, and
   only then creates and activates the new instances. The table rides with the plan, so the audio
   thread's lookups always match the plan that is running. Once a document has published, a core still
   parked is one no document placed, and is freed with its snapshot slot. A refused document changes
-  nothing.
+  nothing: a core a node of the refused plan had taken goes back to parked, for a corrected document to
+  place.
 
 The document `buildGraph` writes:
 
@@ -371,9 +376,9 @@ the node destroying it releases the snapshot slot first, then deletes the core
 ([01-architecture.md](01-architecture.md) section 5). Producer edge cases are handled without
 blocking or freeing in render: a **full ring** on an inline POD command drops a lost edge, not a
 leak; on an owning payload the producer deletes it; a plan the ring cannot take is freed
-unpublished (with the core its new node had taken) and `setGraph` answers busy, so the store keeps
-its model and logs the refusal. A **full release ring** leaks a plan rather than block or free in the render
-loop. [`freePending`](../packages/native/src/host/engine/EngineInvoker.cpp) (teardown only, ring
+unpublished (each core its new nodes had taken going back to parked) and `setGraph` answers busy, so
+the store keeps its model, the refusal is logged, and the next document is sent even if unchanged. A
+**full release ring** leaks a plan rather than block or free in the render loop. [`freePending`](../packages/native/src/host/engine/EngineInvoker.cpp) (teardown only, ring
 single-accessor) discards what is still queued: it adopts the queued plans and frees the queued
 commands' payloads unapplied.
 
@@ -401,7 +406,7 @@ published-to slot is never concurrently freed.
 
 The ordering guarantees are the load-bearing detail:
 
-- **`claim(id, sys)`**: grab a free slot (a full pool fails the construct, logged), reset it, size `frame` from the
+- **`claim(id, sys)`**: grab a free slot (a full pool fails the build, logged), reset it, size `frame` from the
   core's framebuffer (left **unpublished** — no frame rendered yet), and **seed** `state` from
   `sys.saveStateBytes()` + slice `sram` from `stateRegions()[Sram]`, publishing both. Then
   `id.store(..., release)` **LAST**: the slot becomes visible only after its buffers are ready.

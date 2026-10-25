@@ -27,7 +27,8 @@ or one with `pnpm test:native <slug>` (slash or dash form, and a directory prefi
 under it).
 
 There is no `emu` harness object — that was the legacy build's. The native tier composes the real
-backend directly. The pattern, from
+backend directly, with a `DirectGraph` for the structure (it builds each core and publishes the graph that
+places and wires it). The pattern, from
 [lsdj-sync-pattern.test.ts](../packages/retroplug/test-native/lsdj-sync-pattern.test.ts):
 
 ```ts
@@ -35,6 +36,7 @@ import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SongSettings } from "../src/lsdjSav";
+import { directGraph } from "../src/graph/directGraph";
 
 declare const __RESOURCES_DIR__: string;            // injected; never a path literal
 const LSDJ = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_4_2.gb";
@@ -51,11 +53,12 @@ const sav = savFrom({
 
 const be = createRealBackend();
 if (!be.fileExists(LSDJ)) skip(`LSDj ROM not found at ${LSDJ}`);
-const audio = createAudioDriver();
+const graph = directGraph();                             // builds, places and wires this file's systems
+const audio = createAudioDriver(graph.graph);            // renders through the graph that places them
 
-be.constructSystem({ romPath: LSDJ, platform: "gb", core: "sameboy",
-                     embeddedRom: "", savPath: null, statePath: null, sramBytes: sav }, 1);
-be.applyRoleConfig(1, "sameboy", { linkGroupId: 1 });   // link-cable group
+graph.add({ romPath: LSDJ, platform: "gb", core: "sameboy",
+            embeddedRom: "", savPath: null, statePath: null, sramBytes: sav }, 1);
+graph.applyRoleConfig(1, "sameboy", { linkGroupId: 1 }); // link-cable group: the graph wires the cable
 be.applyRoleConfig(1, "lsdj-sync", { mode: "MidiSyncArduinoboy" });
 
 audio.renderAudio(6000);                                 // MILLISECONDS of emulated audio, not frames
@@ -67,7 +70,7 @@ audio.pressButton(1, 7, false);
 Two things to get right, both of which have cost this suite a 10x factor:
 
 - **`renderAudio(ms)` takes MILLISECONDS.** `renderAudio(44100)` is 44 seconds of emulated audio.
-- **Remove a system once you have read its state** (`be.removeSystem(id)`). `renderAudio` advances
+- **Remove a system once you have read its state** (`graph.remove(id)`). `renderAudio` advances
   every live system in the host process, so a file that boots and abandons cores gets quadratically
   slower.
 
@@ -89,7 +92,8 @@ The rest of the native-tier surface these tests use:
 sync, where a mixed buffer cannot), `audio.setTransport(bool)` / `audio.setBpm(n)` (simulated host
 transport -> the role's MIDI clock), `be.drainMidiOut(id)` / `be.drainSerialOut(id)` (role MIDI-out
 and raw GB serial-out capture), `be.readMemory(id, region)` (WRAM/SRAM reads), and
-`be.removeSystem(id)`. All of it is declared in
+`graph.remove(id)` ([directGraph.ts](../packages/retroplug/src/graph/directGraph.ts)). The backend
+calls are declared in
 [backend.ts](../packages/retroplug/src/backend.ts); never call `audio.startAudio()` in a test — the
 suite runs in the single-threaded direct-render regime.
 

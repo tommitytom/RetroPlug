@@ -294,8 +294,10 @@ One native pull-path RPC feeds all three export shapes; the WAV writer needs no 
   (`channelLayout()`, the widened `finishBlock`, the system node's lane count) plus the SameBoy/Mesen
   taps. `renderAudioPerChannel` is a thin RPC over that seam.
 - **RPC:** `EngineRpcService::renderAudioPerChannel(id, ms)`, modelled line-for-line on the existing
-  `renderAudioPerSystem`: allocate per-**stream** block buffers, set the `PerChannel` host shape (each
-  stream on its own pair, the sibling of `renderAudioPerSystem`'s `PerSystem`), drive the same
+  `renderAudioPerSystem`: allocate per-**stream** block buffers, render through the `PerChannel` host
+  shape that TS's audio wrapper sets around the call with `withShape` (each stream on its own pair, the
+  sibling of `renderAudioPerSystem`'s `PerSystem`; the render guard refuses the call when the planned
+  graph does not write two lanes per stream), drive the same
   `Engine::processBlock` loop, and return `std::vector<rfl::Bytestring>`; for GB, 4 stereo-interleaved
   buffers (the source of truth); for NES, 5+ mono
   (stems) or 2–3 mono (pins + lumped expansion). Use the **synchronous control-thread pull** path (like

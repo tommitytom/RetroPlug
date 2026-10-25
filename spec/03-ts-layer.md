@@ -135,7 +135,9 @@ roles }`); the private state is `entries`, `focusedId`, and `dirty`
   entry's `built` facts (what `buildCore` reported, with its live link group) and the project's audio
   routing, with a NES tap re-arm when the edit built or dropped a core. A `SystemsStore` used without a
   `ProjectStore` publishes its systems itself, at the default stereo routing. An unchanged document is
-  not sent ([modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md)).
+  not sent unless it re-arms or the last one did not plan; a refused one leaves the store's model as it
+  is, and is logged ([modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md)
+  section 2.2).
 
 ### The reconstruct-in-place idiom
 

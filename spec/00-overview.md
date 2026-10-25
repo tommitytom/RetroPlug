@@ -39,7 +39,7 @@ Two consequences show up everywhere and are worth stating once here:
   writing already-patched memory regions into the core — it has no DSP-kernel
   component.) See [04-roles-dsp-kernel.md](04-roles-dsp-kernel.md).
 - **TS owns the system-id counter and orchestration.** Native never mints an id;
-  `duplicate`/`reload` are TS orchestration over a `constructSystem`-with-state
+  `duplicate`/`reload` are TS orchestration over a `buildCore`-with-state
   call plus snapshot reads, not native methods. See [03-ts-layer.md](03-ts-layer.md).
 
 ## The three hosts

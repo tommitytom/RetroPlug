@@ -204,9 +204,10 @@ same pop, right after the plan is adopted), which restores whatever is armed and
 request names against the plan just adopted
 ([10-multichannel-audio-out.md](10-multichannel-audio-out.md) section 4). The `LinkGroup` config field
 goes both ways: the field reaches the core as a command, and the store republishes the graph with the
-cable. A document that does not plan (refused, or a full ring) changes nothing: the store keeps its
-model, and a core parked for it waits for the next document that plans, which frees it unless it
-places it.
+cable. A document that does not plan (refused, or a full ring) changes nothing: a core a node of the
+refused plan had taken goes back to parked, and the store keeps its model. A core parked for it waits
+for the next document that plans, which frees it unless it places it; the next document is sent even
+if it matches the running one, so the next publish can be that document.
 
 The handler (`Engine::onHostCommand` → `applyCommand`) switches on `DspCommand::Kind`, applies each
 command and deletes its owning payload. The block drivers (the plugin's `run()`, the test host's
@@ -283,7 +284,7 @@ A core's life, end to end:
 
 | Direction | Trigger | Mechanism |
 |---|---|---|
-| **build → park** | `buildCore` builds and activates a core (`factory.build`) and claims its registry slot | `Engine::parkCore` parks it under its system id; the document TS sends names it as `{ "core": <id> }` in its node's settings |
+| **build → park** | `buildCore` builds and activates a core (`factory.build`) | `Engine::parkCore` claims its registry slot and parks it under its system id; the document TS sends names it as `{ "core": <id> }` in its node's settings |
 | **plan → take** | `setGraph` plans the document on the control thread | the new node's first `activate` takes the core through the host service `rp.host.cores/1` and owns it from then on |
 | **adopt → hand back** | the audio thread drains the plan swap | the replaced plan is pushed onto the release ring, the last one of a drain only after every command of that drain is applied |
 | **reclaim → free** | the control thread reclaims | `reclaim()` deletes each released plan; a node only that plan held destroys its core: `registry.release(id)` first, then `delete` |

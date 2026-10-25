@@ -37,9 +37,11 @@ The rules below are the parts that don't fit those.
   `-watcher-test` / `-dynparams-test` / `-midi-test` / `-launchpad-test` / `-lottie-test` /
   `-graph-test` / `-engine-graph-test`) as `Catch2::Catch2WithMain`. `retroplug-engine-graph-test`
   holds the engine's graph to the cores it wraps: each system node renders what its core renders
-  driven directly, bit for bit, and the engine places, re-arms and frees what the graph documents TS
-  builds say (the wiring itself is `buildGraph`'s, held by `pnpm test graph` to explicit tables and to
-  the B1 translator's goldens). `retroplug-dynparams-test` is the odd one out: it
+  driven directly, bit for bit; the engine places, re-arms and frees what the graph documents TS
+  builds say; and every document in `buildGraph`'s goldens, handed to the engine with real cores, plans
+  and runs a block with no node faulting (the 33-system `perSystem` ones are refused, as they must be;
+  the wiring itself is `buildGraph`'s, held by `pnpm test graph` to explicit tables and to the B1
+  translator's goldens). `retroplug-dynparams-test` is the odd one out: it
   compiles DPF's format-neutral core (`DistrhoPlugin.cpp`) plus its OWN `DistrhoPluginInfo.h`,
   building no plugin format at all, to drive `PluginExporter::reinitParameters` over a toy plugin.
 - **`deps/sameboy` is patched at configure — a dirty working tree there is
@@ -240,9 +242,11 @@ clock, raising `--jobs` will do nothing. Two traps put it there, both of which c
   seconds of emulated audio, not one. Every honest call in the suite is a plain 50–6000.
 - **A constructed system that is never removed is still emulated by every later test in that
   file** — `renderAudio` advances ALL live systems in the host process, so per-file cost grows
-  with the square of the boots. Call `be.removeSystem(id)` (or `LsdjProbe.closeAll()`, which
-  the probe-based files call at the TOP of each test so an early return still cleans up) once
-  a core's state has been read. A file whose realtime factor DEGRADES case by case has this.
+  with the square of the boots. Remove each system once its state has been read:
+  `s.project.systems.removeSystem(id)` for one the stores built, `graph.remove(id)` for one a
+  `DirectGraph` placed (or `LsdjProbe.closeAll()`, which the probe-based files call at the TOP of
+  each test so an early return still cleans up). A file whose realtime factor DEGRADES case by
+  case has this.
 
 The headless loop (the only path — legacy is gone) is documented in
 [spec/06-build-test.md](spec/06-build-test.md): `pnpm test` (pure-TS mock),

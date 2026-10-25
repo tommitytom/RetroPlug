@@ -588,9 +588,10 @@ planner can batch consecutive script nodes into one call. Not built until measur
 TS sends the **whole document** on every change with one RPC call, `setGraph(doc)`. Whole-document sends
 keep planning deterministic, and the planner diffs against the running graph by node id. Today's projects
 are tens of nodes; the long-term goal is user-built synths of thousands, which §12 measures (at about 1,000
-nodes a structural edit plans in about 10 to 14 ms) and lists the levers for. A patch form of `setGraph`,
-applied to native's stored copy of the last document, would save the transfer and the parse but not the
-planning, which is where the time goes. Live params never send a document.
+nodes a one-node edit parses and plans in about 9 to 13 ms) and says where the time goes. A patch form of
+`setGraph`, applied to native's stored copy of the last document, would save the transfer and the parse
+(about 10 ms at 10,000 nodes, 4 to 7 percent of an edit) but not the planning, which is where the time goes.
+Live params never send a document.
 
 `setGraph` returns `{ ok, errors[], layouts }`. Each error is `{ nodeId, port?, code, message }`;
 `layouts` are each instance's ports and params as its settings resolve them, so TS can show and check
@@ -1143,20 +1144,46 @@ here so it is not lost.
   before batching is built.
 - **Surround to the DAW** depends on DPF port groups (§3.6).
 - **Large graphs.** The goal past chiptune is user-built synths and music apps, so graphs of thousands of
-  nodes. Measured in B2 (`retroplug-graph-test "[bench]"`, a Release build on a Ryzen 9 9950X; cold plans
-  every instance anew, an edit changes one node of the same document):
+  nodes. Measured in B2 with `build/bin/retroplug-graph-test "[bench]"`, a Release build on a Ryzen 9 9950X:
+  native `setGraph` in a quiescent host, the document's parse timed apart from the plan (`GraphHost::setGraph`
+  on the parsed document: plan, publish, adopt, and free the plan it replaced). A chain feeds each delay into
+  the next; a wide fan sums every delay through a tree of 16-input adds. A cold plan builds every instance
+  anew (the median of 3 fresh rigs); an edit gives one delay another ring, so it alone rebuilds (the median of
+  5 edits, each checked to have rebuilt that delay and kept the others). Node counts are the ones the bench
+  prints:
 
-  | Shape | Nodes | Cold plan | One-node edit |
-  |---|---|---|---|
-  | chain | 1,000 | 11 ms | 9 ms |
-  | chain | 10,000 | 172 ms | 160 ms |
-  | wide fan | 1,000 | 14 ms | 13 ms |
-  | wide fan | 10,000 | 331 ms | 333 ms |
+  | Shape | Nodes | Wires | Cold: parse | Cold: plan | Edit: parse | Edit: plan |
+  |---|---|---|---|---|---|---|
+  | chain | 1,001 | 1,000 | 1.0 ms | 9.1 ms | 1.0 ms | 7.8 ms |
+  | chain | 10,001 | 10,000 | 9.7 ms | 150 ms | 10.0 ms | 141 ms |
+  | wide fan | 1,069 | 1,068 | 1.0 ms | 12.6 ms | 1.0 ms | 11.7 ms |
+  | wide fan | 10,670 | 10,669 | 9.9 ms | 308 ms | 11.1 ms | 303 ms |
 
-  The cost grows faster than the graph (ten times the nodes, 16 to 24 times the time), and an edit costs
-  what a cold plan does, so planning dominates, not instance creation or the document. The levers, in the
-  order they would bite: every plan allocates fresh audio buffers (reused by lifetime within a plan, never
-  across plans: pool them); the output-lifetime pass scans every wire per output port (index the wires once
-  per plan); every node's settings are re-parsed per edit, for its layout and the reuse compare (cache by
-  settings text); and only then the document itself (a patch form of `setGraph`). None is needed at today's
-  sizes; they are recorded here so the graph-editing project starts from them.
+  The plan grows faster than the graph (ten times the nodes, 16 to 26 times the time). A one-node edit costs
+  about what a cold plan does: with the reuse the bench asserts, that puts the time in planning, not in
+  creating instances. It does not by itself rule the document out, since both parse it, which is why the
+  parse is timed apart: about 10 ms at 10,000 nodes, 4 to 7 percent of an edit. A per-phase profile of the
+  10,000-node edit (chain about 153 ms, fan about 320 ms) puts the costs in the order they bite:
+
+  1. **The planner's `order()`.** Kahn's algorithm picks the next ready group by scanning every group at
+     every step, quadratic in the node count: 39 ms (25%) of the chain's edit, 154 ms (48%) of the fan's. A
+     min-heap keyed by document order fixes it.
+  2. **`structure()` and `reconcile()`.** Per-node JSON round trips: the settings canonicalized, the type's
+     `layout_for` answer parsed (`parseLayout`) and written back out (`layoutJson`), and the live instance's
+     layout written again for the reuse compare. 66 ms (43%) of the chain's edit, 90 ms (28%) of the fan's.
+     Caching the layout by type and settings text would skip most of them.
+  3. **`assignOutputs`.** Each output port scans every wire for its last reader (about 21 ms of the chain's
+     edit); in the fan each group also scans every buffer's last use, a second quadratic pass, and the fresh
+     buffers are allocated here: 42 ms of the fan's edit. Indexing the wires, and the buffers by the group
+     that frees them, once per plan removes both scans.
+  4. **Fresh audio buffers.** Every plan allocates its 4 KB buffers anew, reused by lifetime within a plan
+     and never across plans: at most about 6% (the fan), next to nothing in the chain. Pooling them across
+     plans removes it.
+  5. **The document parse.** About 10 to 11 ms at 10,000 nodes: 7% of the chain's edit, 4% of the fan's. A
+     patch form of `setGraph` would save it and the transfer, and none of the planning.
+
+  The table is native `setGraph` alone: TS `buildGraph` and `JSON.stringify` of a 10,000-node document cost
+  about another 13 ms under QuickJS (about 8% of the chain's edit), plus the RPC hop. The bench's nodes have
+  two-key settings, no params, no control, event or feedback wires and no coupled groups; real nodes with
+  bigger layouts pay more per node in the JSON round trips. None of this is needed at today's sizes; it is
+  recorded here so the graph-editing project starts from it.
