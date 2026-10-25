@@ -193,6 +193,7 @@ retroplug_add_test_binary(
              test/graph/NoAlloc.test.cpp
              test/graph/SwapStress.test.cpp
              test/graph/HostCommands.test.cpp
+             test/graph/PlannerBench.test.cpp         # hidden: run with "[bench]"
     LIBS     retroplug-graph
              Threads::Threads                          # SwapStress runs a real audio thread
     DEFS     RP_GRAPH_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/graph/golden")
