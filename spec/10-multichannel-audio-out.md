@@ -417,7 +417,7 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
    `PerChannel` render shape. No emulator change, no behaviour change; the default path stays
    byte-identical (`retroplug-engine-graph-test` holds each system node's mix and stems to a direct
    prepare / step / finish run of its core, bit for bit). (The plugin-facing
-   `AudioRouting::ChannelSplit` and its wiring belong to the plugin GB option below, not here; an
+   `channelSplit` routing and its wiring belong to the plugin GB option below, not here; an
    earlier draft of this list misattributed them.)
 2. **SameBoy GB tap - DONE.** The tracked `apu.c`/`apu.h` patch adds a per-channel sample callback that
    emits the four `channel_output` stems, each highpassed per-stem in the active mode via its own
@@ -436,16 +436,18 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
    the interleave/deinterleave helpers) and `app-play-mgb-channels.test.ts` (RPC shape + real channel
    separation — Noise stays silent while the pulse voices ring); the summed 8-ch export matches the
    mixed render within ~5 int16 LSB.
-4. **Plugin GB option - DONE.** `AudioRouting::ChannelSplit = 3` + its flat-lane wiring (stream *k* →
-   outs 2k/2k+1, §4), which the graph builder builds **only** for a split of a single system (otherwise
+4. **Plugin GB option - DONE.** The `channelSplit` routing + its flat-lane wiring (stream *k* →
+   outs 2k/2k+1, §4), which `buildGraph` wires **only** for a split of a single system (otherwise
    the per-instance routing, so the split stays inert and a multi-instance project can't mis-route),
-   widened RPC guard (`mode > 3`), and
-   the §7 TS widenings (clamp `0..3`, `SETTING_MAX`, the "Channels (1 GB)" cycler name gated to a single
-   system: UX only, native is authority). Guards: `SameBoyStems.test.cpp` in `retroplug-audio-test` (the
+   and the §7 TS changes (the menu row gated to a single system: UX only, `buildGraph` is the
+   authority). It first shipped as a native enum value behind a widened RPC guard; both are gone. A
+   routing is a string now, validated in TS against `AUDIO_ROUTING_VALUES`
+   ([settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)), and native sees only the wiring
+   `buildGraph` makes of it. Guards: `SameBoyStems.test.cpp` in `retroplug-audio-test` (the
    real 8-lane split on a real mGB; summed pairs == the mixed render), `buildGraph`'s ChannelSplit
    case in `pnpm test graph` (one Game Boy's stems on 8 lanes, a narrow host falling back),
    and the `routing-split` parity group (including a two-system project falling back);
-   `app-audio-routing.test.ts` accepts mode 3. Per-pair separation in a real DAW (an 8-channel bus via `RETROPLUG_AUTOLOAD_PROJECT`)
+   `app-audio-routing.test.ts` plans every routing and refuses an unknown one. Per-pair separation in a real DAW (an 8-channel bus via `RETROPLUG_AUTOLOAD_PROJECT`)
    is the manual confirmation — no headless harness captures the plugin's 8 audio outs yet.
 5. **NES stereo-mod pins - DONE (the flagship faithful mode).** A direct (vendored, no patch harness)
    `NesSoundMixer` edit taps the two 2A03 output pins — **Pulse** (`squareVolume`) and **TND**
@@ -475,8 +477,8 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
 7. **NES in the plugin - DONE (mono-lane packing).** The split wiring takes a lane stride: 2 keeps
    the GB pair-per-stream layout byte-identical, 1 gives a mono stream one lane, so the NES's 5 core
    channels fit lanes 0..4 and its 3 pins lanes 0..2 without widening
-   `DISTRHO_PLUGIN_NUM_OUTPUTS`. `AudioRouting::PinSplit = 4` and `StereoPinSplit = 5` are the NES-only
-   pin modes (both fall back to Stereo on any other console); `ChannelSplit` now means "this system's
+   `DISTRHO_PLUGIN_NUM_OUTPUTS`. `pinSplit` and `stereoPinSplit` are the NES-only pin modes (`buildGraph`
+   falls back to Stereo for both on any other console); `channelSplit` now means "this system's
    channels", GB or NES. Menu rows are `Channels`, `Pins` and `Stereo Pins` (`validAudioRoutings`),
    replacing the mis-read `Channels (1 GB)`. `Stereo Pins` spends a whole pair per pin (mirrored L=R, by
    the wiring so the CLI export keeps its silent R) because the plugin's outputs are stereo PAIRS: under

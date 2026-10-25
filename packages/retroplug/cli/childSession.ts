@@ -3,8 +3,11 @@
 // Both need this rather than importing the session into their own process, and for the same reason: the
 // dispatcher has ALREADY booted a control plane for the tool itself (cli/cli.ts calls runSession /
 // runLongSession before handing over), so a session file that calls bootSession() again would be the
-// second control plane over one native Engine. That does not work - the two ProjectStores fight over
-// system ids, and addSystem starts returning null.
+// second control plane over one native Engine. That does not work: each publishes the engine's whole
+// graph through its own EngineGraph, so either one's next edit publishes a graph without the other's
+// systems, which frees their cores (src/bootSession.ts). The dispatcher and the SDK are also separate
+// bundles with a system-id counter each, so the session's buildCore is refused any id that a core the tool
+// built still holds.
 //
 // Spawning also gives `test` the per-file isolation it needs anyway: a fresh Engine per file, and a fresh
 // config dir so runs never cross-contaminate.

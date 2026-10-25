@@ -70,7 +70,7 @@ glance:
 | Service | Facet(s) | Concern | Thread |
 |---|---|---|---|
 | [`HostRpcService`](../packages/native/src/host/rpc/HostRpcService.hpp) | `host` | filesystem, config dir, zip/unzip — stateless, pure | control |
-| [`EngineRpcService`](../packages/native/src/host/rpc/EngineRpcService.hpp) | `emulator` + `dsp-kernel` + `harness` | construct/remove systems, reads, kernel load, MIDI, transport, render/profile | control (pushes mutations) |
+| [`EngineRpcService`](../packages/native/src/host/rpc/EngineRpcService.hpp) | `emulator` + `dsp-kernel` + `harness` | build cores and place them (`buildCore` / `setGraph`), reads, kernel load, MIDI, transport, render/profile | control (pushes mutations) |
 | [`DebugRpcService`](../packages/native/src/host/rpc/DebugRpcService.hpp) | `debug` | live-core inspection / stepping / breakpoints (CLI only — [09-cli-debugging.md](09-cli-debugging.md)) | control |
 | [`AudioDriverRpcService`](../packages/native/src/host/rpc/AudioDriverRpcService.hpp) | `driver` | background audio thread (`startAudio`/`stopAudio`/`audioCaptured`/`drainReleased`) | control; owns `audioThread_` (**test host only**) |
 
@@ -254,9 +254,10 @@ thread**. Two ordering rules make this race-free:
   Seeding at claim means a read *right after construct*, before any block renders, returns real
   bytes.
 - **Clear the id FIRST.** `release` does `id.store(0, release)` before freeing the buffers, so a
-  stray block-thread scan can never match a slot that is being torn down. `release` runs only
-  when a system node destroys its core at reclaim, once no running plan holds the system, so it
-  can't race an in-flight `publishSystem`.
+  stray block-thread scan can never match a slot that is being torn down. `release` runs when a
+  system node destroys its core at reclaim, once no running plan holds the system, and for each
+  core still parked once a `setGraph` plans, which no running plan ever held. Neither can race an
+  in-flight `publishSystem`.
 
 **Publish cadence.** `publishSystem` copies a system's frame **every block** (cheap), and copies
 its savestate+SRAM on a **coarse 0.5 s interval** (`kStateIntervalSec`, matching the core's own

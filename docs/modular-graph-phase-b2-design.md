@@ -316,8 +316,8 @@ consumer sending raw `constructSystem` RPCs through the Node addon would break; 
 this repo, so the change notes it. One `bootSession` at a time per process: each session owns an
 `EngineGraph` over the process's one engine, so a second session's first edit publishes a graph without
 the first session's systems and frees their cores, where B1's one native translator kept both. BlipToaster
-boots a session per test and never interleaves two, so it is unaffected; the shipped SDK types say so on
-`bootSession`.
+boots a session per test and never interleaves two, so it is unaffected; so is NESVJ, the other CLI SDK
+consumer (its own repo), whose sessions do the same. The shipped SDK types say so on `bootSession`.
 
 ## 7. Verification
 

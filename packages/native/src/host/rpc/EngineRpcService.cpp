@@ -129,12 +129,9 @@ RpcSetGraphResult EngineRpcService::setGraph(RpcSetGraphRequest request) {
         }
     }
     const Engine::GraphResult result = engine_.setGraph(r);
+    // The errors travel back in the result, and EngineGraph (every TS publisher's path) logs them.
     RpcSetGraphResult out{result.ok, {}};
-    for (const auto& e : result.errors) {
-        std::fprintf(stderr, "[engine] a graph was refused (%s) at %s.%s: %s\n", e.code.c_str(), e.nodeId.c_str(),
-                     e.port.c_str(), e.message.c_str());
-        out.errors.push_back({e.nodeId, e.port, e.code, e.message});
-    }
+    for (const auto& e : result.errors) out.errors.push_back({e.nodeId, e.port, e.code, e.message});
     return out;
 }
 

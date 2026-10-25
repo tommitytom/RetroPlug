@@ -128,9 +128,12 @@ does.
 
 ### `EngineRpcService` — emulator / kernel / MIDI / transport
 
-Every mutation here except `buildCore` and `setGraph` (which call `Engine::parkCore` /
-`Engine::setGraph` directly on the control thread) routes through the `QueuedInvoker`; every read
-routes through the `SnapshotRegistry`. No method walks a live core.
+Every mutation here routes through the `QueuedInvoker` except three, which call the `Engine`
+directly on the control thread: `buildCore` and `setGraph` (`Engine::parkCore` / `Engine::setGraph`),
+and `setSampleRate` (`Engine::setSampleRate`, so it refuses while the audio thread owns the engine or
+the running plan holds a system). The render calls drive `processBlock` on the calling thread
+themselves and refuse while the audio thread owns the engine. Every read routes through the
+`SnapshotRegistry`. No method walks a live core.
 
 | Method | Signature | Behaviour |
 |---|---|---|

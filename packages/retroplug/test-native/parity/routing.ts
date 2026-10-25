@@ -18,7 +18,7 @@ const BY_SLOT: ((rig: Rig) => unknown)[] = [
   (rig) => mgbFile(rig),
 ];
 
-/** The lanes the multi-out wiring feeds for `count` systems (the translator's placement, Translator.cpp). */
+/** The lanes the multi-out wiring feeds for `count` systems (buildGraph's placement, graph/buildGraph.ts). */
 export function routedLanes(mode: AudioRouting, outputs: number, count: number): number[] {
   const lanes = new Set<number>();
   for (let i = 0; i < count; i++) {
