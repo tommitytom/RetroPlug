@@ -191,10 +191,15 @@ enum {
     RP_PREPARE_REBUILD = 1u, /* the change needs a fresh instance (a new ROM, a layout it cannot reshape to) */
     RP_PREPARE_INVALID = 2u, /* rejected; err holds the reason */
     /* Keep this instance, with the layout layout_for gives the new settings: the host binds the new plan's
-     * ports to it by id, carries over by id what its params and control outputs hold, and commits *prepared
-     * at the swap, so the first block on the new ports runs with the new settings. With the layout
-     * unchanged it is a swap, so a prepare that cannot see the current layout may answer it for every
-     * change it can keep. */
+     * ports to it by id, and commits *prepared at the swap, so the first block on the new ports runs with
+     * the new settings. What a param, a control output or a resource output slot holds carries over when
+     * its id persists and it means the same: a param of the same type, range and enum labels (its name,
+     * unit or default may change), an output of the same kind and resource type. The rest start afresh: a
+     * param at its default, with its document value (if the document gives one) sent again, a control
+     * output at 0, a resource slot empty. commit_settings runs on the audio thread and cannot allocate, so
+     * anything the node sizes by its layout (per-port state, say) is built here, in *prepared. With the
+     * layout unchanged it is a swap, so a prepare that cannot see the current layout may answer it for
+     * every change it can keep. */
     RP_PREPARE_RESHAPE = 3u
 };
 
@@ -231,11 +236,19 @@ struct rp_node {
     const rp_node_vtable* vt;
 };
 
-/* rp_node_type.flags: promises a type makes the host, fixed for the life of the package. */
+/* rp_node_type.flags: promises a type makes the host, fixed for the life of the package. Every bit is a
+ * relaxation: it lets the host skip a precaution, and a host that ignores it is only more cautious. So a
+ * host ignores the bits it does not know (NodeRegistry registers a type whatever its flags hold), and a
+ * pack built against a newer header still loads on an older host. A promise no host could safely ignore
+ * needs a new RP_ABI_VERSION, not a bit. */
 enum {
     /* Its prepare_settings reads nothing commit_settings writes (the instance's current settings among
-     * them), so the host may prepare again while an earlier commit for the same instance is in flight:
-     * setGraph need not wait for the audio thread to adopt it. */
+     * them) and writes nothing commit_settings reads (what a commit needs travels in *prepared), and its
+     * answer depends only on the new settings and on what create fixed. The host may then prepare again
+     * while an earlier commit for the same instance is in flight, so setGraph need not wait for the audio
+     * thread to adopt it. The host judges each change against the last PUBLISHED plan, which the audio
+     * thread may not have committed yet, so an answer that read the committed settings would compare with
+     * the wrong ones. */
     RP_TYPE_STATELESS_PREPARE = 1u << 0
 };
 

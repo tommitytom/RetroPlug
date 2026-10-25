@@ -161,6 +161,12 @@ TEST_CASE("addPackage checks everything the host will later call or read", "[gra
     CHECK(reg.size() == 0);
     CHECK(refusal(reg, {&good}, R"({"id":"a","id":"b"})") == "registered");  // the last "id" wins, as in JSON.parse
     CHECK(reg.find("rp.test.good")->package == "b");
+
+    // Every flags bit is a relaxation, so a type setting bits this host does not know still registers.
+    NodeRegistry newer;
+    rp_node_type future = typeWith("rp.test.good", &goodDescriptor);
+    future.flags = ~0u;
+    CHECK(refusal(newer, {&future}) == "registered");
 }
 
 TEST_CASE("endpoints split at the first dot; resource refs parse", "[graph][document]") {

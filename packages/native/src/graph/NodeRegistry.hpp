@@ -29,7 +29,8 @@ public:
     // mismatch; a manifest that is not a JSON object with a plain "id" (see isPlainId); a package id
     // already registered; a null node type, or one missing its id or any of its functions; a descriptor
     // that is null, empty (a C++ node whose default layout could not be built) or does not parse; a
-    // descriptor whose id is not the node type's; and a type id registered already or listed twice.
+    // descriptor whose id is not the node type's; and a type id registered already or listed twice. Never for
+    // its flags: every bit is a relaxation (rp_node.h), so one this host does not know is ignored.
     bool addPackage(const rp_package* package, std::string* error = nullptr);
 
     const Entry* find(std::string_view typeId) const;

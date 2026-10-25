@@ -2,9 +2,9 @@
 // reclaims. Under ThreadSanitizer (build-tsan/) this is the race check for the command ring, the release ring
 // and a reshape's new streams; in a normal build it checks that a system's own output and state survive
 // constant edits around it. The adoption handshake itself (setGraph waiting only while a published plan still
-// carries a settings commit) has its own deterministic tests below (it waits while a commit is queued, and
-// while one is being adopted), since a race window that narrow is not something a stress run can be relied
-// on to hit.
+// carries a settings commit to a type without RP_TYPE_STATELESS_PREPARE) has its own deterministic tests below
+// (it waits while a commit is queued, and while one is being adopted), since a race window that narrow is not
+// something a stress run can be relied on to hit.
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>

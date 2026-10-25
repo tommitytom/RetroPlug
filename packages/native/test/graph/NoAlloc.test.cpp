@@ -213,7 +213,9 @@ TEST_CASE("the block path never allocates or frees", "[graph][noalloc]") {
     CHECK(m.freed == 0);
     rig.host->setAudioThreadOwns(false);
     CHECK(rp::peer_as<QuietLinked>(rig.host->node("la"))->peerCount == 2);  // the peer change was adopted
-    CHECK(rp::peer_as<rp::graph::test::Shape>(rig.host->node("sh"))->ranOutputs == 4);  // and the reshape
+    const auto& sh = *rp::peer_as<rp::graph::test::Shape>(rig.host->node("sh"));
+    CHECK(sh.ranOutputs == 4);    // and the reshape...
+    CHECK(sh.knobs['g'] == 5.0);  // ...with the document value of the param it added
 
     // A host command, and two commit-free plans queued behind it, all applied inside the measured blocks.
     // The same document again changes nothing, so neither plan commits settings and neither waits.

@@ -503,12 +503,10 @@ constexpr bool checkHooks() {
     if constexpr (requires { requires kIsFunction<decltype(&T::adjust_layout)>; })
         static_assert(requires(graph::Layout& l, const S& s) { T::adjust_layout(l, s); },
                       "adjust_layout must be `static void adjust_layout(rp::graph::Layout&, const Settings&)`");
-    if constexpr (requires { requires kIsFunction<decltype(&T::needs_rebuild)>; }) {
+    // stateless_prepare against needs_rebuild is checked in prepareFn, where it is called.
+    if constexpr (requires { requires kIsFunction<decltype(&T::needs_rebuild)>; })
         static_assert(requires(const S& s) { { T::needs_rebuild(s, s) } -> std::same_as<bool>; },
                       "needs_rebuild must be `static bool needs_rebuild(const Settings&, const Settings&)`");
-        static_assert(!statelessPrepareOf<T>(),
-                      "a stateless_prepare node cannot have needs_rebuild, which reads its current settings");
-    }
     if constexpr (requires { requires kIsFunction<decltype(&T::extra_memory)>; })
         static_assert(requires(const S& s) { { T::extra_memory(s) } -> std::same_as<std::size_t>; },
                       "extra_memory must be `static std::size_t extra_memory(const Settings&)`");
@@ -697,6 +695,8 @@ rp_status processFn(rp_node* n, const rp_process* p) noexcept {
 // layout as a swap. Only needs_rebuild reads the instance's current settings, which is safe because a host never
 // prepares while a commit for the same instance may be in flight - GraphHost waits for any published commit to
 // be adopted before it plans - unless the type is stateless_prepare, which is why that rules needs_rebuild out.
+// The rule is asserted on the call itself, so no form of needs_rebuild this would call (a template, an overload
+// set, a callable static member) slips past it.
 template <class T>
 rp_prepare_result prepareFn(rp_node* n, const rp_settings* s, void** prepared, rp_error* err) {
     using S = typename SettingsOf<T>::type;
@@ -710,8 +710,11 @@ rp_prepare_result prepareFn(rp_node* n, const rp_settings* s, void** prepared, r
         bool rebuild = extraBytes<T>(*parsed) != inst->extra.size();
         if constexpr (!reshapesOf<T>())
             rebuild = rebuild || graph::layoutJson(layoutFor<T>(*parsed)) != inst->layoutJson;
-        if constexpr (requires(const S& a) { T::needs_rebuild(a, a); })
+        if constexpr (requires(const S& a) { T::needs_rebuild(a, a); }) {
+            static_assert(!statelessPrepareOf<T>(),
+                          "a stateless_prepare node cannot have needs_rebuild, which reads its current settings");
             rebuild = rebuild || T::needs_rebuild(*inst->settings, *parsed);
+        }
         if (rebuild) return RP_PREPARE_REBUILD;
         *prepared = new S(std::move(*parsed));
         if constexpr (reshapesOf<T>()) return RP_PREPARE_RESHAPE;
