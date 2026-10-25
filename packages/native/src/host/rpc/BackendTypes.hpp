@@ -105,7 +105,7 @@ struct BackendConstructSpec {
     std::optional<rfl::Bytestring> stateBytes;
     // Effective ROM bytes to load INSTEAD of slurping romPath — a TS-supplied patched image (e.g. LSDj
     // asset overrides applied non-destructively at construct). romPath still travels for the watcher +
-    // .sav resolution; only the loaded bytes differ. Honoured by the SameBoy backend (GB-only feature).
+    // .sav resolution; only the loaded bytes differ. Honoured by SameBoy and by Mesen's NES, GBA and SMS / GG.
     std::optional<rfl::Bytestring> romBytes;
     std::optional<std::string>               settings;  // backend "system"-role config JSON (construct-time)
     // Arm a Game Boy's serial-out capture (LSDj MI.OUT) before the core first runs, as a later
