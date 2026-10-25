@@ -17,8 +17,9 @@ struct DspCommand {
         SetBpm = 7, SetTransport = 8, SetConfigField = 9, PressButton = 10,
         SetPpq = 12, StageControllerMidi = 13, WriteRam = 14,
         StageSystemMidi = 15,
-        // The NES tap arming every structural change does (design section 3.2): carried in its plan's
-        // swap, or alone for an edit that plans nothing (a remove or replace of an id already gone).
+        // The NES tap arming every structural change does (docs/modular-graph-phase-b1-design.md section
+        // 3.2): restore whatever is armed, then arm `id` to `mode` if `arm`. Carried in its plan's swap, or
+        // alone for an edit that plans nothing (a remove or replace of an id already gone).
         SyncTap = 16,
     };
 
@@ -45,7 +46,7 @@ struct DspCommand {
         // the whole message (audio thread deletes) and `len` is 0 - the same shape as stageMidi, because a
         // settings message is a SysEx and a rig block does not fit in four bytes.
         struct { std::uint32_t id; std::uint8_t data[4]; std::uint8_t len; std::vector<std::uint8_t>* ext; } stageSystemMidi;
-        struct { std::uint8_t routing; } syncTap;                 // the rp::host::AudioRouting it arms for
+        struct { bool arm; std::uint8_t mode; std::uint32_t id; } syncTap;  // what it arms after the restore
     };
 
     DspCommand() : kind(Kind::None), stageMidi{{0, 0, 0, 0}, 0, nullptr} {}

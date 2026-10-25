@@ -109,4 +109,27 @@ struct BackendConstructSpec {
     // .sav resolution; only the loaded bytes differ. Honoured by the SameBoy backend (GB-only feature).
     std::optional<rfl::Bytestring> romBytes;
     std::optional<std::string>               settings;  // backend "system"-role config JSON (construct-time)
+    // Arm a Game Boy's serial-out capture (LSDj MI.OUT) before the core first runs, as a later
+    // setSerialOutCapture would. Ignored by every other core.
+    std::optional<bool>                      serialOutCapture;
 };
+
+// buildCore's answer (docs/modular-graph-phase-b2-design.md section 2.5): the node type the built core is
+// placed as, and the two values the graph needs, as the core decoded them.
+struct RpcBuiltCore {
+    std::string   type;        // rp.sameboy.gb / rp.mesen.nes / rp.mesen.gba / rp.mesen.sms
+    std::uint32_t exportMode;  // NES only: the channel export mode it was built with (0 otherwise)
+    std::uint32_t linkGroup;   // Game Boys only: its link group (0 otherwise)
+};
+
+// setGraph: a document TS built, its systems in slot order, and the NES tap re-arm its edit makes. `tap`
+// present re-arms (restore, then arm `tap.arm` if it is there); absent, the plan touches no tap.
+struct RpcTapArm { std::uint32_t id; std::uint32_t mode; };
+struct RpcTapRequest { std::optional<RpcTapArm> arm; };
+struct RpcSetGraphRequest {
+    std::string                  document;
+    std::vector<std::uint32_t>   slots;
+    std::optional<RpcTapRequest> tap;
+};
+struct RpcGraphError { std::string nodeId; std::string port; std::string code; std::string message; };
+struct RpcSetGraphResult { bool ok; std::vector<RpcGraphError> errors; };

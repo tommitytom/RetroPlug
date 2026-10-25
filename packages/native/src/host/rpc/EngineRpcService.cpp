@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstddef>
 #include <fstream>
 #include <iterator>
@@ -22,6 +23,8 @@
 #include "system/SystemTypes.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
+#include "system/mesen/MesenNesSystem.hpp"
+#include "host/graph/SystemNodes.hpp"
 
 #include "kit/KitCompiler.hpp"       // rp::kit::KitCompiler (generic, compileKit) — heavy, so only in this TU
 #include "lsdj/LsdjKitCodec.hpp"     // rp::lsdj::LsdjKitCodec (the LSDJ nibble/16KB-bank codec)
@@ -96,6 +99,49 @@ bool EngineRpcService::constructSystem(BackendConstructSpec spec) {
     if (spec.replaceId) invoker_.replaceSystem(*spec.replaceId, std::move(sys));
     else                invoker_.adoptSystem(std::move(sys));
     return true;
+}
+
+std::optional<RpcBuiltCore> EngineRpcService::buildCore(BackendConstructSpec spec) {
+    // A core in a plan the audio thread has already handed back is freed first, so the id check sees it gone.
+    invoker_.reclaimReleased();
+    const SystemId id = spec.id;
+    if (engine_.coreLive(id)) {
+        std::fprintf(stderr, "[engine] buildCore: system %u is still live\n", static_cast<unsigned>(id));
+        return std::nullopt;
+    }
+    auto sys = factory_.build(id, toBuildSpec(spec), engine_.sampleRate());
+    if (!sys) return std::nullopt;  // unknown backend / unreadable or unrecognised ROM
+    if (spec.serialOutCapture.value_or(false))
+        if (auto* sb = dynamic_cast<SameBoySystem*>(sys.get())) sb->setSerialOutCapture(true);
+    // Seed the snapshot slot from the just-built core, so a read right after the build works with no block run.
+    if (!engine_.registry().claim(id, *sys)) return std::nullopt;  // pool full
+    RpcBuiltCore facts{rp::host::systemNodeType(sys->kind()), 0, 0};
+    if (auto* nes = dynamic_cast<MesenNesSystem*>(sys.get())) facts.exportMode = nes->channelExportMode();
+    if (auto* sb = dynamic_cast<SameBoySystem*>(sys.get())) facts.linkGroup = sb->config_.linkGroupId;
+    if (!engine_.parkCore(std::move(sys))) return std::nullopt;
+    return facts;
+}
+
+RpcSetGraphResult EngineRpcService::setGraph(RpcSetGraphRequest request) {
+    Engine::GraphRequest r;
+    r.document = std::move(request.document);
+    r.slots.assign(request.slots.begin(), request.slots.end());
+    if (request.tap) {
+        r.rearmTap = true;
+        if (request.tap->arm) {
+            r.arm = true;
+            r.armId = request.tap->arm->id;
+            r.armMode = request.tap->arm->mode;
+        }
+    }
+    const Engine::GraphResult result = engine_.setGraph(r);
+    RpcSetGraphResult out{result.ok, {}};
+    for (const auto& e : result.errors) {
+        std::fprintf(stderr, "[engine] a graph was refused (%s) at %s.%s: %s\n", e.code.c_str(), e.nodeId.c_str(),
+                     e.port.c_str(), e.message.c_str());
+        out.errors.push_back({e.nodeId, e.port, e.code, e.message});
+    }
+    return out;
 }
 
 // duplicate + reload are TS orchestration now (SystemsStore over the registry reads + constructSystem-

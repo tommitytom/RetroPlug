@@ -1,8 +1,11 @@
 #include "host/engine/Engine.hpp"
 
+#include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <optional>
 
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"   // AudioBlockInfo, SystemId
@@ -33,11 +36,59 @@ const std::vector<DspRuntime::KeyIn>    kNoKeys;
 // the audio thread, which must not take a static's init guard or register its destructor.
 const rp::host::SystemTable kNoSystems;
 
-DspCommand syncTapFor(rp::host::AudioRouting routing) {
+DspCommand syncTapCommand(bool arm, SystemId id, std::uint32_t mode) {
     DspCommand c;
     c.kind = DspCommand::Kind::SyncTap;
-    c.syncTap = { static_cast<std::uint8_t>(routing) };
+    c.syncTap = { arm, static_cast<std::uint8_t>(mode), static_cast<std::uint32_t>(id) };
     return c;
+}
+
+// What the translator's routing arms against `table`, the systems of the plan it rides with: the pins (1) or
+// the five channels (3) of a lone NES under a split routing; a restore only otherwise.
+DspCommand syncTapFor(rp::host::AudioRouting routing, const rp::host::SystemTable& table) {
+    using rp::host::AudioRouting;
+    const bool pins  = routing == AudioRouting::PinSplit || routing == AudioRouting::StereoPinSplit;
+    const bool split = pins || routing == AudioRouting::ChannelSplit;
+    if (!split || table.slots.size() != 1 || !table.slots.front().nes) return syncTapCommand(false, 0, 0);
+    return syncTapCommand(true, table.slots.front().id, pins ? 1u : 3u);
+}
+
+constexpr const char* kSystemNodeTypes[] = {"rp.sameboy.gb", "rp.mesen.nes", "rp.mesen.gba", "rp.mesen.sms"};
+
+bool isSystemNodeType(const std::string& type) {
+    for (const char* t : kSystemNodeTypes)
+        if (type == t) return true;
+    return false;
+}
+
+// The id a system node's settings name its core by, {"core": <id>}; nullopt for anything else.
+std::optional<SystemId> coreIdOf(const rp::graph::NodeDoc& n) {
+    if (!n.settings) return std::nullopt;
+    const auto object = n.settings->to_object();
+    if (!object || object->size() != 1) return std::nullopt;
+    const auto core = object->get("core");
+    if (!core) return std::nullopt;
+    const auto id = core->to_int();
+    if (!id || *id <= 0 || *id > static_cast<std::int64_t>(UINT32_MAX)) return std::nullopt;
+    return static_cast<SystemId>(*id);
+}
+
+// The host channels a document's rp.host.audio-out writes: the sum of its buses.
+std::uint32_t hostWidthOf(const rp::graph::GraphDocument& doc) {
+    for (const auto& n : doc.nodes) {
+        if (n.type != "rp.host.audio-out" || !n.settings) continue;
+        const auto object = n.settings->to_object();
+        if (!object) return 0;
+        const auto buses = object->get("buses");
+        if (!buses) return 0;
+        const auto array = buses->to_array();
+        if (!array) return 0;
+        std::uint32_t width = 0;
+        for (const auto& b : *array)
+            if (const auto v = b.to_int()) width += static_cast<std::uint32_t>(*v);
+        return width;
+    }
+    return 0;
 }
 
 } // namespace
@@ -61,9 +112,12 @@ Engine::Engine(double sampleRate) : sampleRate_(sampleRate) {
     for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), rp::host::sameboyPackage(),
                                 rp::host::mesenPackage(), rp::host::dspPackage()})
         graph_->registry.addPackage(p);
-    graph_->cores = {this,
-                     [](void* ctx, std::uint64_t token) { return static_cast<Engine*>(ctx)->graph_->translator->take(token); },
-                     [](void* ctx, SystemBase* core) { static_cast<Engine*>(ctx)->registry_.release(core->id()); }};
+    graph_->cores = {this, [](void* ctx, std::uint64_t token) { return static_cast<Engine*>(ctx)->takeCore(token); },
+                     [](void* ctx, SystemBase* core) {
+                         auto* self = static_cast<Engine*>(ctx);
+                         self->registry_.release(core->id());
+                         self->liveCores_.erase(core->id());
+                     }};
     graph_->kernel = {this, [](void* ctx, std::uint32_t frames) { static_cast<Engine*>(ctx)->runKernelStage(frames); }};
     rp::graph::HostConfig config;
     config.sampleRate = sampleRate;
@@ -83,13 +137,14 @@ Engine::Engine(double sampleRate) : sampleRate_(sampleRate) {
             // tap land in one drain or not at all. routing() already holds the mode this edit set.
             rp::graph::HostCommand trailer{};
             if (rearmsTap) {
-                const DspCommand c = syncTapFor(graph_->translator->routing());
+                const DspCommand c = syncTapFor(graph_->translator->routing(), *table);
                 std::memcpy(trailer.bytes, &c, sizeof c);
             }
             const auto result = graph_->host->setGraph(*doc, std::move(table), rearmsTap ? &trailer : nullptr);
             for (const auto& e : result.errors)
                 std::fprintf(stderr, "[engine] a graph was refused (%s) at %s.%s: %s\n", e.code.c_str(), e.nodeId.c_str(),
                              e.port.c_str(), e.message.c_str());
+            if (result.ok) hostWidth_ = hostWidthOf(*doc);
             return result.ok;
         },
         [this](SystemBase* core) { registry_.release(core->id()); });
@@ -108,7 +163,86 @@ rp::host::Translator& Engine::translator() { return *graph_->translator; }
 
 bool Engine::pushCommand(const DspCommand& c) { return graph_->host->pushHostCommand(&c, sizeof c); }
 
-bool Engine::pushSyncTap() { return pushCommand(syncTapFor(graph_->translator->routing())); }
+bool Engine::pushSyncTap() {
+    // Behind every plan already pushed, so the table it is applied against is the last one published: the
+    // translator's own.
+    return pushCommand(syncTapFor(graph_->translator->routing(), graph_->translator->table()));
+}
+
+SystemBase* Engine::takeCore(std::uint64_t token) {
+    const auto it = parked_.find(static_cast<SystemId>(token));
+    if (token <= UINT32_MAX && it != parked_.end()) {
+        SystemBase* core = it->second.release();
+        parked_.erase(it);
+        return core;
+    }
+    return graph_->translator->take(token);
+}
+
+bool Engine::parkCore(std::unique_ptr<SystemBase> core) {
+    const SystemId id = core->id();
+    if (coreLive(id)) {
+        std::fprintf(stderr, "[engine] a core was built under id %u, which is still live; it is dropped\n", static_cast<unsigned>(id));
+        registry_.release(id);
+        return false;
+    }
+    liveCores_[id] = core.get();
+    parked_[id] = std::move(core);
+    return true;
+}
+
+Engine::GraphResult Engine::setGraph(const GraphRequest& request) {
+    GraphResult out;
+    auto refuse = [&](const std::string& node, const char* code, std::string message) {
+        out.errors.push_back({node, "", code, std::move(message)});
+        return out;
+    };
+    auto doc = rp::graph::parseGraphDocument(request.document);
+    if (!doc) return refuse("", "document", std::string("not a graph document: ") + doc.error().what());
+
+    // The system nodes and the slots name the same systems, each node as sys-<id> with {"core": <id>}.
+    std::vector<SystemId> named;
+    for (const auto& n : doc->nodes) {
+        if (!isSystemNodeType(n.type)) continue;
+        const auto id = coreIdOf(n);
+        if (!id || n.id != "sys-" + std::to_string(*id))
+            return refuse(n.id, "slots", "a system node is sys-<id>, its settings {\"core\": <id>}");
+        named.push_back(*id);
+    }
+    std::vector<SystemId> slots = request.slots;
+    std::sort(named.begin(), named.end());
+    std::sort(slots.begin(), slots.end());
+    if (std::adjacent_find(slots.begin(), slots.end()) != slots.end() || slots != named)
+        return refuse("", "slots", "the slots and the document's system nodes name different systems");
+
+    auto table = std::make_shared<rp::host::SystemTable>();
+    for (const SystemId id : request.slots) {
+        const auto it = liveCores_.find(id);
+        if (it == liveCores_.end())
+            return refuse("sys-" + std::to_string(id), "unknown-core", "no core is built under id " + std::to_string(id));
+        table->slots.push_back(
+            {id, it->second, dynamic_cast<SameBoySystem*>(it->second), dynamic_cast<MesenNesSystem*>(it->second)});
+    }
+
+    rp::graph::HostCommand trailer{};
+    if (request.rearmTap) {
+        const DspCommand c = syncTapCommand(request.arm, request.armId, request.armMode);
+        std::memcpy(trailer.bytes, &c, sizeof c);
+    }
+    const auto result = graph_->host->setGraph(*doc, std::move(table), request.rearmTap ? &trailer : nullptr);
+    for (const auto& e : result.errors) out.errors.push_back({e.nodeId, e.port, e.code, e.message});
+    if (!result.ok) return out;
+    out.ok = true;
+    hostWidth_ = hostWidthOf(*doc);
+    // Each node the document names took its core when it was activated: a core still parked is one no
+    // document placed.
+    for (auto& [id, core] : parked_) {
+        registry_.release(id);
+        liveCores_.erase(id);
+    }
+    parked_.clear();
+    return out;
+}
 
 void Engine::drainCommands() { graph_->host->drain(); }
 
@@ -137,8 +271,9 @@ void Engine::setMaxBlockFrames(std::uint32_t frames) {
 
 void Engine::setSampleRate(double sr) {
     sampleRate_ = sr;
-    // Every live core re-rated in place, in slot order; then the plan's buffers at the new rate.
-    for (SystemBase* core : graph_->translator->cores()) core->onSampleRateChanged(sr);
+    // Every live core re-rated in place, in the running plan's slot order; then the plan's buffers at the new
+    // rate. Quiescent, so the running plan is the one last published.
+    for (const auto& e : currentTable().slots) e.core->onSampleRateChanged(sr);
     std::string why;
     if (!graph_->host->reactivate(sr, graph_->maxFrames, &why))
         std::fprintf(stderr, "[Engine] could not re-activate the graph at %g Hz: %s\n", sr, why.c_str());
@@ -221,7 +356,7 @@ void Engine::applyCommand(DspCommand& cmd, const rp::host::SystemTable& table) {
             delete cmd.writeRam.bytes;
             break;
         case DspCommand::Kind::SyncTap:
-            syncTap(static_cast<rp::host::AudioRouting>(cmd.syncTap.routing), table);
+            syncTap(cmd.syncTap.arm, cmd.syncTap.id, cmd.syncTap.mode, table);
             break;
         default:
             break;
@@ -229,25 +364,22 @@ void Engine::applyCommand(DspCommand& cmd, const rp::host::SystemTable& table) {
 }
 
 // The NES tap arming at every structural change, against `table`, the plan just adopted (design section 3.2):
-// restore whatever was armed, then arm the mode the routing wants. It runs even when the wanted mode is
+// restore whatever was armed, then arm `id` to `mode` if `arm`. It runs even when the wanted mode is
 // unchanged, and each run resets the capture streams. A core that has gone (removed, or replaced under
 // its id or a new one) is not restored, and its record is dropped.
-void Engine::syncTap(rp::host::AudioRouting routing, const rp::host::SystemTable& table) {
+void Engine::syncTap(bool arm, SystemId id, std::uint32_t mode, const rp::host::SystemTable& table) {
     if (armedTap_.active) {
         if (const auto* e = table.find(armedTap_.id); e && e->nes == armedTap_.core)
             e->nes->setChannelExportMode(armedTap_.prevMode);
         armedTap_ = {};
     }
-    using rp::host::AudioRouting;
-    const bool pins  = routing == AudioRouting::PinSplit || routing == AudioRouting::StereoPinSplit;
-    const bool split = pins || routing == AudioRouting::ChannelSplit;
-    if (!split || table.slots.size() != 1) return;
-    MesenNesSystem* nes = table.slots.front().nes;
+    if (!arm) return;
+    const auto* e = table.find(id);
+    MesenNesSystem* nes = e ? e->nes : nullptr;
     if (!nes) return;
-    const std::uint32_t want = pins ? 1u : 3u;
-    if (nes->channelExportMode() != want) {
+    if (nes->channelExportMode() != mode) {
         armedTap_ = { true, nes->id(), nes, nes->channelExportMode() };
-        nes->setChannelExportMode(want);
+        nes->setChannelExportMode(mode);
     }
 }
 

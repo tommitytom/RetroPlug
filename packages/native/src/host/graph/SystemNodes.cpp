@@ -193,6 +193,16 @@ struct Sms : SystemNode<Sms, MesenSmsSystem> {
 
 }  // namespace
 
+const char* systemNodeType(SystemKind kind) {
+    switch (kind) {
+        case SystemKind::SameBoy: return GameBoy::id;
+        case SystemKind::MesenNes: return Nes::id;
+        case SystemKind::MesenGba: return Gba::id;
+        case SystemKind::MesenSms: return Sms::id;
+    }
+    return "";
+}
+
 const rp_package* sameboyPackage() {
     static const rp_node_type* const kTypes[] = {rp::node_type<GameBoy>()};
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.sameboy","version":"1.0.0"})",

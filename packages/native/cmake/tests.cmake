@@ -84,6 +84,7 @@ retroplug_add_test_binary(
              test/engine-graph/Translator.test.cpp
              test/engine-graph/TranslatorPlan.test.cpp
              test/engine-graph/TranslatorGoldens.test.cpp
+             test/engine-graph/EngineGraph.test.cpp
     LIBS     retroplug-backend
     INCLUDES ${RP_QUICKJS_INCLUDE}
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
