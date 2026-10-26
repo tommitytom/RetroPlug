@@ -48,13 +48,23 @@ struct ScriptAllocations {
 //     audio thread frees nothing native. What a released instance leaves in cycles is collected by a GC at two
 //     points no block is running: the reclaim that ends a quiescent operation which released some (the Engine's
 //     after every setGraph: one GC however many went), and the audio thread handing the runtime back
-//     (setAudioThreadOwns(false)). Never by a block: QuickJS's own threshold GC is the only one that may run there.
+//     (setAudioThreadOwns(false)). Never by a block, so while an audio thread owns the runtime (a live session) those
+//     cycles wait for QuickJS's own threshold GC, which runs inside whichever block's JS allocates past it, or for
+//     the audio thread to hand the runtime back.
 //
-// The audio runtime's JS stack is held to kAudioStackBytes, well inside a host audio thread's (512 KiB is a macOS
-// secondary thread's default, which a DAW's audio thread may have; no host here sizes one: PortAudio's and the render
-// jobs' threads take the platform default), and every call into it from the block thread is held to a deadline
-// (setCallDeadline): one that runs past it is stopped (QuickJS's interrupt, which JS cannot catch), counted as a
-// throw and faulted, faultOnThrow or not, since the next call would hang the audio thread as long again.
+// Both runtimes' JS stacks are held to kStackBytes, under the smallest thread that may enter one: 512 KiB is a macOS
+// secondary thread's default, which a DAW's audio or control thread may have and a render job's std::thread does
+// (no host here sizes its threads), so 256 KiB leaves the caller's frames half. Loading the production bundle needs
+// 4 KiB of it; the test bundle with its toys, planned (zod's parse, refusal and JSON schema), 40 KiB, 64 under
+// TSan and 96 under ASan.
+//
+// Every call into the audio runtime from the block thread is held to a deadline (setCallDeadline) of the calling
+// thread's CPU time, so a stall that is not the node's (preemption, a stopped process, a debugger or a VM pause) never
+// trips it. A call that runs past it is stopped (QuickJS's interrupt, which JS cannot catch) and counted as a throw.
+// A node with faultOnThrow then faults; one without runs again next block (design section 4.5), and faults only if
+// its next call is stopped too, so a node that hangs is bypassed within two deadlines and one that ran long once is
+// not. A call that runs to its end starts the count again. A deadline fault is a fault like any other: it latches on
+// the instance and outlives reshapes, and only a rebuild (or the node removed and added again) clears it.
 //
 // Every type declares RP_TYPE_STATELESS_PREPARE: its prepare_settings reads the settings it is handed, the
 // definition and what the instance was created with, never anything a commit writes. A type that reshapes answers
@@ -114,8 +124,8 @@ public:
     // Set true BEFORE an audio thread starts running blocks, false AFTER it has stopped: false releases every
     // queued instance there and then, and collects what they left.
     void setAudioThreadOwns(bool owns);
-    // How long one call into the audio runtime may run before it is stopped (kDefaultCallDeadline until set). Set it
-    // before an audio thread runs blocks.
+    // How much of the calling thread's CPU time one call into the audio runtime may use before it is stopped
+    // (kDefaultCallDeadline until set). Set it before an audio thread runs blocks.
     void setCallDeadline(std::chrono::milliseconds limit);
     static constexpr std::chrono::milliseconds kDefaultCallDeadline{2000};
     // Delete the records the block thread has released, and log the first throw once. While quiescent, also collect
@@ -133,7 +143,7 @@ public:
     // At the end of every block that ran the graph: the promise jobs its JS queued, at most kJobsPerBlock of them.
     void endBlock();
     static constexpr int kJobsPerBlock = 256;
-    static constexpr std::size_t kAudioStackBytes = 256 * 1024;
+    static constexpr std::size_t kStackBytes = 256 * 1024;  // each runtime's JS stack (the class comment)
 
     // ---- any thread ------------------------------------------------------------------------------------------
     // Throws caught in a script node (process, and its create, onSettings, portsChanged and activate) and in the
@@ -190,10 +200,11 @@ private:
     std::uint32_t              leaksReported_ = 0;
     bool                       garbage_ = false;  // an instance released since the last collect (whoever releases)
 
-    // The call deadline: its length (set on the control thread), and while a call runs, when it ends (steady clock
-    // nanoseconds, 0 for none) and whether the interrupt stopped it (the block thread's).
+    // The call deadline: its length in CPU nanoseconds (set on the control thread), and while a call runs (armed_), the
+    // thread's CPU time at the first poll in it (-1 until then) and whether the interrupt stopped it (the block thread's).
     std::atomic<std::int64_t>  callDeadlineNs_{std::chrono::nanoseconds(kDefaultCallDeadline).count()};
-    std::int64_t               deadline_ = 0;
+    bool                       armed_ = false;
+    std::int64_t               cpuStart_ = -1;
     bool                       interrupted_ = false;
 
     std::atomic<std::uint32_t> throws_{0};

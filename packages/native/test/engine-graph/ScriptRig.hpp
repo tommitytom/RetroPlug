@@ -8,7 +8,8 @@
 // Two probes are bound into both of the script host's contexts, so a toy can say what ran where: `__probe(tag)`
 // records the tag and the calling thread, and `__token(tag)` returns an object that records "released <tag>" and the
 // thread that frees it, which is the thread that released the instance holding it. `__audioSide` says which context
-// a bundle is running in, for a toy that would tell the two apart.
+// a bundle is running in, for a toy that would tell the two apart, and `__sleep(ms)` takes the calling thread off the
+// CPU for that long, as a preemption, a stopped process or a paused VM would.
 
 #include <chrono>
 #include <cstdint>
@@ -100,6 +101,13 @@ inline JSValue probeFn(JSContext* ctx, JSValueConst, int argc, JSValueConst* arg
     return JS_UNDEFINED;
 }
 
+inline JSValue sleepFn(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    std::int32_t ms = 0;
+    if (argc > 0 && JS_ToInt32(ctx, &ms, argv[0]) < 0) return JS_EXCEPTION;
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+    return JS_UNDEFINED;
+}
+
 inline JSValue tokenFn(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int audioSide, JSValueConst* data) {
     ProbeLog* log = logOf(ctx, data[0]);
     JSValue token = JS_NewObjectClass(ctx, log->tokenClass[audioSide]);
@@ -129,6 +137,7 @@ inline void bindProbes(void* user, JSContext* ctx, bool audioSide) {
     JS_SetPropertyStr(ctx, global, "__probe", JS_NewCFunctionData(ctx, &probeFn, 1, 0, 1, &data));
     JS_SetPropertyStr(ctx, global, "__token", JS_NewCFunctionData(ctx, &tokenFn, 1, audioSide ? 1 : 0, 1, &data));
     JS_SetPropertyStr(ctx, global, "__audioSide", JS_NewBool(ctx, audioSide));
+    JS_SetPropertyStr(ctx, global, "__sleep", JS_NewCFunction(ctx, &sleepFn, "__sleep", 1));
     JS_FreeValue(ctx, global);
     JS_FreeValue(ctx, data);
 }

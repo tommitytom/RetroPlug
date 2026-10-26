@@ -14,6 +14,12 @@
 #include <malloc.h>
 #endif
 
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <time.h>
+#endif
+
 extern "C" {
 #include "quickjs.h"
 }
@@ -138,8 +144,22 @@ void eraseMessage(rp_queue& q, std::uint32_t i) {
     q.bytes_used -= gone.size;
 }
 
-std::int64_t steadyNs() {
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+// The calling thread's CPU time, in nanoseconds (0 where it cannot be read): what the call deadline measures, so a
+// stall that is not the node's own (the thread preempted, the process stopped, a debugger or a VM pausing it, the
+// machine asleep) costs it nothing. Windows counts it in clock ticks (about 16 ms), far finer than a deadline.
+std::int64_t threadCpuNs() {
+#if defined(_WIN32)
+    FILETIME created{}, exited{}, kernel{}, user{};
+    if (!::GetThreadTimes(::GetCurrentThread(), &created, &exited, &kernel, &user)) return 0;
+    const auto ns = [](const FILETIME& f) {
+        return static_cast<std::int64_t>((static_cast<std::uint64_t>(f.dwHighDateTime) << 32) | f.dwLowDateTime) * 100;
+    };
+    return ns(kernel) + ns(user);
+#else
+    timespec t{};
+    if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t) != 0) return 0;
+    return static_cast<std::int64_t>(t.tv_sec) * 1000000000 + static_cast<std::int64_t>(t.tv_nsec);
+#endif
 }
 
 bool sameObject(JSValueConst a, JSValueConst b) {
@@ -259,7 +279,8 @@ struct ScriptHost::Instance {
     Instance*               backlogNext = nullptr;  // the control thread's: the next record in the release backlog
     // The block thread's.
     State                   state = State::Pending;
-    bool                    faultNext = false;  // a hook threw under faultOnThrow (or was stopped): fault at the next block
+    bool                    faultNext = false;  // a hook threw under faultOnThrow, or expired twice in a row: fault next block
+    std::uint8_t            expiries = 0;       // its calls the deadline stopped in a row (expiryFaults)
     Settings*               settings = nullptr;
     std::unique_ptr<Layout> layout;
     JSValue                 object = JS_UNDEFINED;  // the NodeInstance its definition's create returned
@@ -290,18 +311,23 @@ struct ScriptHost::Glue {
     static JSAtom    atom(ScriptHost& h, Atom a) { return h.atoms_[a]; }
 
     // ---- the call deadline ---------------------------------------------------------------------------------------
-    // While one lives, what the block thread runs in the audio runtime may run until the deadline, and the interrupt
-    // handler stops it after: QuickJS throws an uncatchable error, which the call returns as a throw. A nested one keeps
-    // the outer's deadline when that is sooner, and hands it back.
+    // While one lives, what the block thread runs in the audio runtime may use the deadline's worth of the thread's CPU
+    // time, and the interrupt handler stops it after: QuickJS throws an uncatchable error, which the call returns as a
+    // throw. Arming one reads no clock: the handler takes the baseline at its first poll inside the call and compares at
+    // the later ones, so a call too short to reach a poll costs nothing (and one that does goes uncounted for up to
+    // 10000 polls, far under any deadline). One made inside another's call is part of that call, and its budget.
     struct Deadline {
-        ScriptHost&  h;
-        std::int64_t outer;
-        explicit Deadline(ScriptHost& host) : h(host), outer(host.deadline_) {
-            const std::int64_t mine = steadyNs() + h.callDeadlineNs_.load(std::memory_order_relaxed);
-            h.deadline_ = outer != 0 ? std::min(outer, mine) : mine;
+        ScriptHost& h;
+        bool        nested;
+        explicit Deadline(ScriptHost& host) : h(host), nested(host.armed_) {
+            if (nested) return;
+            h.armed_ = true;
+            h.cpuStart_ = -1;
             h.interrupted_ = false;
         }
-        ~Deadline() { h.deadline_ = outer; }
+        ~Deadline() {
+            if (!nested) h.armed_ = false;
+        }
         Deadline(const Deadline&) = delete;
         Deadline& operator=(const Deadline&) = delete;
     };
@@ -309,9 +335,29 @@ struct ScriptHost::Glue {
     // QuickJS asks once every 10000 of its polls (at each call and each jump back in a loop) whether to stop.
     static int interrupt(JSRuntime*, void* opaque) {
         auto& h = *static_cast<ScriptHost*>(opaque);
-        if (h.deadline_ == 0 || steadyNs() < h.deadline_) return 0;
+        if (!h.armed_) return 0;
+        const std::int64_t now = threadCpuNs();
+        if (h.cpuStart_ < 0) {
+            h.cpuStart_ = now;
+            return 0;
+        }
+        if (now - h.cpuStart_ < h.callDeadlineNs_.load(std::memory_order_relaxed)) return 0;
         h.interrupted_ = true;
         return 1;
+    }
+
+    // After one of a node's calls: whether the deadline stopping it faults the node. Under faultOnThrow the first expiry
+    // does; without, only a second in a row (design section 4.5: one throw and the next block runs again), and a call
+    // that ran to its end clears the count. So a node that hangs still faults within two deadlines, and one long call
+    // costs a block rather than the session, which a fault would: it outlives a reshape.
+    static bool expiryFaults(const ScriptHost& h, Instance& in) {
+        if (!h.interrupted_) {
+            in.expiries = 0;
+            return false;
+        }
+        if (in.type->faultOnThrow) return true;
+        if (in.expiries < 2) ++in.expiries;
+        return in.expiries >= 2;
     }
 
     // ---- the audio runtime's allocator: the platform's, counted ------------------------------------------------
@@ -447,7 +493,7 @@ struct ScriptHost::Glue {
         JSValue mask = JS_NewArray(ctx);
         for (std::uint32_t i = 0; i < count; ++i) JS_SetPropertyUint32(ctx, mask, i, JS_NewBool(ctx, connected[i] != 0));
         JSValue result = JS_IsException(mask) ? JS_EXCEPTION : JS_Call(ctx, in.portsChanged, in.object, 1, &mask);
-        if (JS_IsException(result)) hookThrew(h, in, "portsChanged");
+        hookDone(h, in, JS_IsException(result), "portsChanged");
         JS_FreeValue(ctx, result);
         JS_FreeValue(ctx, mask);
     }
@@ -463,10 +509,10 @@ struct ScriptHost::Glue {
         // Every audio port's copies first, the inputs' samples in them: a node may read views it kept from a block
         // before, so the copy cannot wait for it to ask.
         if (!readyAudio(ctx, in, *block)) {  // out of memory in JS, so the block cannot run
-            const bool stopped = h.interrupted_;
+            const bool expired = expiryFaults(h, in);
             recordThrow(h, in, "process");
             silenceAudio(in, *block);
-            return in.type->faultOnThrow || stopped ? RP_FAULT : RP_OK;
+            return in.type->faultOnThrow || expired ? RP_FAULT : RP_OK;
         }
         in.running = block;
         JS_SetProperty(ctx, in.block, atom(h, kFrames), JS_NewUint32(ctx, block->frames));
@@ -477,10 +523,10 @@ struct ScriptHost::Glue {
         JS_SetProperty(ctx, in.transport, atom(h, kPlaying), JS_NewBool(ctx, (t.flags & RP_TRANSPORT_PLAYING) != 0));
         JSValue result = JS_Call(ctx, in.process, in.object, 1, &in.block);
         in.running = nullptr;
-        const bool threw = JS_IsException(result), stopped = h.interrupted_;
+        const bool threw = JS_IsException(result), expired = expiryFaults(h, in);
         if (threw) recordThrow(h, in, "process");  // first: the copy out may meet a detached buffer, which throws too
         copyAudioOut(ctx, in, *block);             // what it wrote up to a throw stands, as its sends do
-        if (threw) return in.type->faultOnThrow || stopped ? RP_FAULT : RP_OK;
+        if (threw) return in.type->faultOnThrow || expired ? RP_FAULT : RP_OK;
         bool fault = false;
         if (JS_IsString(result)) {
             const JSAtom said = JS_ValueToAtom(ctx, result);
@@ -536,7 +582,7 @@ struct ScriptHost::Glue {
         const Deadline call(h);
         JSValue settings = JS_ParseJSON(ctx, next->json.c_str(), next->json.size(), "<settings>");
         JSValue result = JS_IsException(settings) ? JS_EXCEPTION : JS_Call(ctx, in.onSettings, in.object, 1, &settings);
-        if (JS_IsException(result)) hookThrew(h, in, "onSettings");
+        hookDone(h, in, JS_IsException(result), "onSettings");
         JS_FreeValue(ctx, result);
         JS_FreeValue(ctx, settings);
     }
@@ -616,8 +662,13 @@ struct ScriptHost::Glue {
         JSValueConst args[2] = {JS_NewFloat64(ctx, in.sampleRate), JS_NewUint32(ctx, in.maxFrames)};
         JSValue result = JS_Call(ctx, in.activate, in.object, 2, args);
         bool ok = true;
-        if (JS_IsException(result)) recordThrow(h, in, "activate");
-        else ok = !(JS_IsBool(result) && !JS_ToBool(ctx, result));
+        if (JS_IsException(result)) {
+            if (expiryFaults(h, in)) in.faultNext = true;
+            recordThrow(h, in, "activate");
+        } else {
+            in.expiries = 0;
+            ok = !(JS_IsBool(result) && !JS_ToBool(ctx, result));
+        }
         JS_FreeValue(ctx, result);
         return ok;
     }
@@ -647,7 +698,7 @@ struct ScriptHost::Glue {
                     add(" in ");
                     add(where);
                 }
-                add(", and was stopped: ");
+                add(" (CPU time), and was stopped: ");
             } else if (type) {
                 add(" threw in ");
                 add(where);
@@ -661,12 +712,14 @@ struct ScriptHost::Glue {
         JS_FreeValue(ctx, thrown);
     }
 
-    // A throw in a hook that runs at a plan swap (onSettings, portsChanged): counted, and under faultOnThrow, or when the
-    // deadline stopped it, the node faults at its next block, since it may hold half of what the hook would have set.
-    static void hookThrew(ScriptHost& h, Instance& in, const char* where) {
-        const bool stopped = h.interrupted_;
+    // After a hook that runs at a plan swap (onSettings, portsChanged): a throw is counted, and under faultOnThrow, or
+    // when it is the deadline's second expiry in a row (expiryFaults), the node faults at its next block, since it may
+    // hold half of what the hook would have set.
+    static void hookDone(ScriptHost& h, Instance& in, bool threw, const char* where) {
+        const bool expired = expiryFaults(h, in);
+        if (!threw) return;
         recordThrow(h, in, where);
-        if (in.type->faultOnThrow || stopped) in.faultNext = true;
+        if (in.type->faultOnThrow || expired) in.faultNext = true;
     }
 
     static void bindLayout(JSContext* ctx, Layout& l) {
@@ -701,14 +754,16 @@ struct ScriptHost::Glue {
         return (port.side == Side::Output ? b.outputs : b.inputs)[port.index].u.audio;
     }
 
-    // The samples of one copy, or null when it has none: never made, or detached by JS (a view's buffer transferred
-    // away), which clears the exception that says so.
-    static float* samples(JSContext* ctx, JSValueConst buffer) {
+    // The samples of one copy, or null when it has none that holds `frames`: never made, detached by JS (a view's
+    // buffer transferred away), which clears the exception that says so, or shorter than the block. A copy is never
+    // made shorter, and JS cannot shrink one it did not make resizable, so the last is a guard: such a copy is refused
+    // as a detached one is (an output's channel silent, the copy made again next block).
+    static float* samples(JSContext* ctx, JSValueConst buffer, std::uint32_t frames) {
         if (JS_IsUndefined(buffer)) return nullptr;
         std::size_t size = 0;
         std::uint8_t* data = JS_GetArrayBuffer(ctx, &size, buffer);
         if (!data) clearException(ctx);
-        return reinterpret_cast<float*>(data);
+        return data && size >= std::size_t(frames) * sizeof(float) ? reinterpret_cast<float*>(data) : nullptr;
     }
 
     // Every audio port's copies, readied for this block: made the first time a channel runs, and again when a larger
@@ -736,7 +791,7 @@ struct ScriptHost::Glue {
             }
             const std::uint32_t count = std::min<std::uint32_t>(v.channel_count, static_cast<std::uint32_t>(p.buffers.size()));
             for (std::uint32_t c = 0; c < count; ++c) {
-                float* data = samples(ctx, p.buffers[c]);
+                float* data = samples(ctx, p.buffers[c], b.frames);
                 const bool fresh = !data;
                 if (fresh) {
                     JS_FreeValue(ctx, p.buffers[c]);
@@ -744,7 +799,7 @@ struct ScriptHost::Glue {
                     JSValue made = JS_NewArrayBufferCopy(ctx, nullptr, std::size_t(p.bufferFrames) * sizeof(float));
                     if (JS_IsException(made)) return false;
                     p.buffers[c] = made;
-                    if (!(data = samples(ctx, made))) return false;
+                    if (!(data = samples(ctx, made, b.frames))) return false;
                 }
                 if (fresh || c >= p.viewCount || p.viewFrames != b.frames) {
                     // All three arguments: the constructor reads offset and length whatever argc says.
@@ -776,7 +831,7 @@ struct ScriptHost::Glue {
             const rp_audio_view& v = audioView(b, port);
             const std::uint32_t count = std::min<std::uint32_t>(v.channel_count, static_cast<std::uint32_t>(p.buffers.size()));
             for (std::uint32_t c = 0; c < count; ++c) {
-                const float* data = samples(ctx, p.buffers[c]);
+                const float* data = samples(ctx, p.buffers[c], b.frames);
                 if (data) std::memcpy(v.channels[c], data, std::size_t(b.frames) * sizeof(float));
                 else std::memset(v.channels[c], 0, std::size_t(b.frames) * sizeof(float));
             }
@@ -1036,8 +1091,10 @@ ScriptHost::ScriptHost(Binder binder, void* user) {
     audioRt_ = JS_NewRuntime2(&counted, &counters_);  // QuickJS copies the functions and keeps the opaque
     audio_ = JS_NewContext(audioRt_);
     JS_SetContextOpaque(audio_, this);
-    // What the block thread runs here: held to an audio thread's stack, and to the call deadline.
-    JS_SetMaxStackSize(audioRt_, kAudioStackBytes);
+    // Both runtimes' JS stacks, inside the smallest thread that enters either (the class comment), and what the block
+    // thread runs held to the call deadline.
+    JS_SetMaxStackSize(controlRt_, kStackBytes);
+    JS_SetMaxStackSize(audioRt_, kStackBytes);
     JS_SetInterruptHandler(audioRt_, &Glue::interrupt, this);
 
     // The Block object: one per instance, its methods on the class prototype, the instance its opaque.
@@ -1087,14 +1144,6 @@ bool ScriptHost::load(std::span<const Chunk> chunks, std::string* error) {
         if (error) *error = std::move(why);
         return false;
     };
-    // The bundle's top level and every definition's descriptor (zod's walk of its settings schema) run on the
-    // constructing thread, a control thread's stack and deeper than any block's JS: the audio side's limit is lifted
-    // for them, and is back when load returns.
-    struct Stack {
-        JSRuntime* rt;
-        ~Stack() { JS_SetMaxStackSize(rt, kAudioStackBytes); }
-    } restored{audioRt_};
-    JS_SetMaxStackSize(audioRt_, JS_DEFAULT_STACK_SIZE);
     for (const bool audioSide : {false, true}) {
         JSContext* ctx = audioSide ? audio_ : control_;
         JS_UpdateStackTop(audioSide ? audioRt_ : controlRt_);

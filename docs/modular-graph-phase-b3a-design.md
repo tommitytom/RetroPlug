@@ -135,6 +135,21 @@ and the kernel's ports declare large ones (sized in the plan from the largest me
 margin), within the plan's 64 MiB queue budget. Drops are counted per queue and exposed to tests; parity and
 the suites require zero.
 
+### 2.7 The call deadline
+
+A script node's JS runs on the audio thread, so one that never returns would hang the host. Every call into the
+audio runtime (`process`, the hooks, `create`, the block's promise jobs) is held to a deadline, 2 s by default, of
+the **calling thread's CPU time** (`CLOCK_THREAD_CPUTIME_ID`, `GetThreadTimes` on Windows), never wall time: a
+stall that is not the node's own (the thread preempted under load, Ctrl-Z on `retroplug-cli render`, a debugger or
+a VM pause, the machine asleep) costs it nothing. QuickJS's interrupt handler takes the baseline at its first poll
+inside the call and compares at the later ones (it is asked every 10000 polls), so arming the deadline reads no
+clock. A call that runs past it is stopped, which JS cannot catch, and counted as a throw. A node with
+`faultOnThrow` then faults. One without follows section 4.5 (the next block runs again) and faults only when its
+next call is stopped too, so a real infinite loop is bypassed within about two deadlines while one long call costs
+a block; a call that runs to its end starts the count again. A deadline fault is a fault like any other: it latches
+on the instance and outlives reshapes, so only a rebuild, or the node removed and added again, clears it. Both
+runtimes' JS stacks are held to 256 KiB, under a 512 KiB macOS secondary thread (a render job's, or a DAW's).
+
 ## 3. Ports and host I/O
 
 ### 3.1 System node inputs
@@ -264,6 +279,13 @@ Today a JS exception in `processBlock` is dropped: the sink calls made before it
 `processBlock` again. The kernel node keeps that rule: it catches per block, keeps what was pushed, counts the
 throw and logs the first one, and runs the next block. It does not return `RP_FAULT`, whose latch would turn a
 transient error into MIDI that stays dead until a rebuild. B3b's protocol nodes may opt into the latch.
+
+The call deadline (section 2.7) keeps the rule. Its expiry is a throw like this one, so a kernel without
+`faultOnThrow` runs again after one, and faults only on a second in a row, which a node that has hung for good
+reaches within two deadlines. It counts the thread's CPU time, so a stall that is not the kernel's own never trips
+it. This matters more for the kernel than for any node: it reshapes on every system added or removed, and a fault
+outlives reshapes (only a rebuild or a remove-and-add clears it), so a spurious one would drop MIDI routing for the
+rest of the session.
 
 ## 5. The TS side
 

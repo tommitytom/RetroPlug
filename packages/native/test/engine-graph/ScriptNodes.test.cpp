@@ -1076,14 +1076,108 @@ TEST_CASE("releases past the ring wait in the control thread's backlog, a destro
     rig.setAudioThreadOwns(false);
 }
 
-TEST_CASE("a script node that runs past the call deadline is stopped, counted and faulted; one that recurses without end throws",
+// Runs for ever on every block, or on the odd ones, after its send: no try can catch what stops it.
+const char* const kSpinners = R"JS(
+const spinner = (id, extra) => rp.defineNode({
+  id, ...extra,
+  settings: rp.z.object({ spinOn: rp.z.enum(["every", "odd"]).default("every") }),
+  ports: { out: rp.events.out() },
+  create: ({ settings }) => {
+    let n = 0;
+    return {
+      process(b) {
+        b.send("out", 0, [++n]);
+        if (settings.spinOn === "every" || n % 2 === 1) for (;;) { try { while (true) {} } catch (e) {} }
+      },
+    };
+  },
+});
+rp.register([spinner("rp.toy.spinner", {}), spinner("rp.toy.strict-spinner", { faultOnThrow: true })]);
+)JS";
+
+TEST_CASE("a script node held off the CPU past the call deadline is not stopped: the deadline counts its own CPU time",
+          "[script][deadline][off-cpu]") {
+    ScriptRig rig(R"JS(
+rp.register([rp.defineNode({
+  id: "rp.toy.stalled",  // no faultOnThrow, as the kernel
+  ports: { out: rp.events.out() },
+  create: () => {
+    let n = 0;
+    const work = () => { let x = 0; for (let i = 0; i < 50000; ++i) x += i; return x; };  // polls; a few ms of CPU at most
+    return {
+      process(b) {
+        work();
+        if (++n === 4) __sleep(150);  // preempted, stopped (Ctrl-Z on a render) or a paused VM, for 150 ms
+        work();
+        b.send("out", 0, [0x90, 60, 100]);
+      },
+    };
+  },
+})]);
+)JS");
+    rig.scripts.setCallDeadline(std::chrono::milliseconds(100));
+    REQUIRE(rig.set(doc(node("k", "rp.toy.stalled") + "," + node("p", "rp.test.probe"), wire("k.out", "p.events"))).ok);
+    rig.run(64, 3);
+    const auto start = std::chrono::steady_clock::now();
+    rig.run();  // the stall: half again the deadline of wall time, next to none of CPU
+    CHECK(std::chrono::steady_clock::now() - start >= std::chrono::milliseconds(150));
+    CHECK(rig.node<Probe>("p").events.size() == 1);
+    rig.run();
+    CHECK(rig.scripts.throwCount() == 0);
+    CHECK_FALSE(rig.host->isFaulted("k"));
+    CHECK(rig.node<Probe>("p").events.size() == 1);
+}
+
+TEST_CASE("a script node without faultOnThrow that runs past the call deadline is counted once and faulted on the second "
+          "expiry in a row",
+          "[script][deadline][streak]") {
+    ScriptRig rig(kSpinners);
+    rig.scripts.setCallDeadline(std::chrono::milliseconds(50));
+    REQUIRE(rig.set(doc(node("s", "rp.toy.spinner") + "," + node("p", "rp.test.probe"), wire("s.out", "p.events"))).ok);
+    rig.run();
+    CHECK(rig.scripts.throwCount() == 1);
+    CHECK_FALSE(rig.host->isFaulted("s"));  // design 4.5: the next block runs again
+    REQUIRE(rig.node<Probe>("p").events.size() == 1);  // what it sent before it hung stands
+    rig.run();
+    CHECK(rig.scripts.throwCount() == 2);
+    CHECK(rig.host->isFaulted("s"));  // hung again: bypassed, within two deadlines
+    CHECK(rig.node<Probe>("p").events.empty());
+    rig.run();
+    CHECK(rig.scripts.throwCount() == 2);
+    rig.reclaim();
+    INFO(rig.scripts.firstThrow());
+    CHECK(rig.scripts.firstThrow().find("rp.toy.spinner ran past the 50 ms call deadline in process (CPU time), and was stopped") == 0);
+}
+
+TEST_CASE("a script node with faultOnThrow that runs past the call deadline faults on the first expiry", "[script][deadline][strict]") {
+    ScriptRig rig(kSpinners);
+    rig.scripts.setCallDeadline(std::chrono::milliseconds(50));
+    REQUIRE(rig.set(doc(node("s", "rp.toy.strict-spinner") + "," + node("p", "rp.test.probe"), wire("s.out", "p.events"))).ok);
+    rig.run();
+    CHECK(rig.scripts.throwCount() == 1);
+    CHECK(rig.host->isFaulted("s"));
+    CHECK(rig.node<Probe>("p").events.empty());
+}
+
+TEST_CASE("a call that runs to its end between two expiries starts the count again", "[script][deadline][reset]") {
+    ScriptRig rig(kSpinners);
+    rig.scripts.setCallDeadline(std::chrono::milliseconds(50));
+    REQUIRE(rig.set(doc(node("s", "rp.toy.spinner", R"({"spinOn":"odd"})") + "," + node("p", "rp.test.probe"), wire("s.out", "p.events")))
+                .ok);
+    for (int b = 1; b <= 6; ++b) {
+        rig.run();
+        INFO("block " << b);
+        CHECK(rig.scripts.throwCount() == static_cast<std::uint32_t>((b + 1) / 2));  // every odd block stopped
+        CHECK_FALSE(rig.host->isFaulted("s"));
+        CHECK(rig.node<Probe>("p").events.size() == 1);
+    }
+}
+
+TEST_CASE("an endless recursion in a script node throws and it runs on, and a promise reaction that never returns is stopped at "
+          "its block's end",
           "[script][deadline]") {
     ScriptRig rig(R"JS(
 rp.register([rp.defineNode({
-  id: "rp.toy.spin",   // a try cannot catch what stops it
-  ports: { out: rp.events.out() },
-  create: () => ({ process(b) { b.send("out", 0, [1]); for (;;) { try { while (true) {} } catch (e) {} } } }),
-}), rp.defineNode({
   id: "rp.toy.deep",
   ports: { out: rp.events.out() },
   create: () => { const down = (n) => down(n + 1) + 1; return { process(b) { b.send("out", 0, [2]); down(0); } }; },
@@ -1097,25 +1191,18 @@ rp.register([rp.defineNode({
 })]);
 )JS");
     rig.scripts.setCallDeadline(std::chrono::milliseconds(50));
-    REQUIRE(rig.set(doc(node("s", "rp.toy.spin") + "," + node("d", "rp.toy.deep") + "," + node("j", "rp.toy.slowjob") + "," +
-                            node("ps", "rp.test.probe") + "," + node("pd", "rp.test.probe"),
-                        wire("s.out", "ps.events") + "," + wire("d.out", "pd.events")))
-                .ok);
-    const auto start = std::chrono::steady_clock::now();
+    REQUIRE(rig.set(doc(node("j", "rp.toy.slowjob"), "")).ok);
     rig.run();
-    CHECK(std::chrono::steady_clock::now() - start < std::chrono::seconds(5));
-    CHECK(rig.host->isFaulted("s"));  // bypassed: running it again would hang as long
-    CHECK(rig.node<Probe>("ps").events.empty());
-    CHECK_FALSE(rig.host->isFaulted("d"));  // a stack overflow is an ordinary throw: counted, and it runs on
-    CHECK(rig.node<Probe>("pd").events.size() == 1);
-    CHECK(rig.scripts.throwCount() == 3);  // and the reaction, stopped at the block's end
-    CHECK_FALSE(rig.host->isFaulted("j"));
-    rig.run(64, 3);
-    CHECK(rig.scripts.throwCount() == 6);
-    CHECK(rig.node<Probe>("pd").events.size() == 1);
+    CHECK(rig.scripts.throwCount() == 1);
+    CHECK_FALSE(rig.host->isFaulted("j"));  // a job is no one node's
     rig.reclaim();
     INFO(rig.scripts.firstThrow());
-    CHECK(rig.scripts.firstThrow().find("rp.toy.spin ran past the 50 ms call deadline in process") == 0);
+    CHECK(rig.scripts.firstThrow().find("a promise job ran past the 50 ms call deadline (CPU time), and was stopped") == 0);
+    REQUIRE(rig.set(doc(node("d", "rp.toy.deep") + "," + node("p", "rp.test.probe"), wire("d.out", "p.events"))).ok);
+    rig.run(64, 3);
+    CHECK(rig.scripts.throwCount() == 4);  // a stack overflow is an ordinary throw: counted, and it runs on
+    CHECK_FALSE(rig.host->isFaulted("d"));
+    CHECK(rig.node<Probe>("p").events.size() == 1);
 }
 
 TEST_CASE("an audio thread runs script nodes while the control thread plans, reshapes, rebuilds and reclaims them",
