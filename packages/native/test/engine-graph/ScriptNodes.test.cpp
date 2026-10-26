@@ -5,7 +5,9 @@
 // a reshape or swapped or rebuilt, where their instances are made and released, a throw, the block path's
 // allocations, and a running audio thread under all of it. The embedded production bundle and an Engine built
 // around a toy bundle close it. A RETROPLUG_PROFILE build (build-prof/, which tools/run-profile.sh configures) adds the
-// trace window's cases, [profile]: a span JS leaves open, and a label past the bound.
+// trace window's cases, [profile]: a span JS leaves open, a setter JS hangs on a marshalled message and one on a
+// marshalled control stream, the profile calls refused while an audio thread owns the runtime, and a label past the
+// bound.
 //
 // Run via `pnpm test:plugin engine-graph`; the profile cases, build-prof/bin/retroplug-engine-graph-test "[profile]".
 
@@ -14,6 +16,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -954,6 +957,121 @@ rp.register([rp.defineNode({
     CHECK(rig.scripts.throwCount() == 0);  // the node caught them
 }
 
+// Hangs a trap, in its first block, on what the block path fills for it: a setter that throws on a message's frame, on
+// a control change's value or on the control stream's start, or a message frozen whole. Its second block reads that
+// input under a catch, its third uncaught, and its fourth not at all; each says whether an exception is pending, and
+// sends its block's number, when it gets that far. rp.toy.trap-transport hangs one on the transport, which the host
+// writes before every process call, and sends; rp.toy.asker, after it, says whether an exception is pending.
+const char* const kTrap = R"JS(
+rp.register([rp.defineNode({
+  id: "rp.toy.trap",
+  settings: rp.z.object({ on: rp.z.string().default("message") }),
+  ports: { in: rp.events.in(), level: rp.control.in(), out: rp.events.out() },
+  create: ({ settings: { on } }) => {
+    let n = 0;
+    const read = (b) => (on === "message" || on === "frozen" ? b.messages("in") : b.control("level"));
+    const thrower = { set() { throw new Error("trapped"); } };
+    return {
+      process(b) {
+        ++n;
+        if (n === 1) {
+          if (on === "message") Object.defineProperty(b.messages("in")[0], "frame", thrower);
+          else if (on === "frozen") Object.freeze(b.messages("in")[0]);
+          else if (on === "change") Object.defineProperty(b.control("level").changes[0], "value", thrower);
+          else Object.defineProperty(b.control("level"), "start", thrower);
+        } else if (n === 2) {
+          try { read(b); __probe("read"); } catch (e) { __probe("caught " + e.name); }
+        } else if (n === 3) {
+          read(b);
+          __probe("read");
+        }
+        __probe(__pending() ? "pending" : "clear");
+        __probe(b.send("out", 0, [n]) ? "sent" : "refused");
+      },
+    };
+  },
+}), rp.defineNode({
+  id: "rp.toy.trap-transport",
+  ports: { out: rp.events.out() },
+  create: () => {
+    let armed = false;
+    return {
+      process(b) {
+        if (!armed) Object.defineProperty(b.transport, "tempo", { set() { throw new Error("trapped"); } });
+        armed = true;
+        b.send("out", 0, [1]);
+      },
+    };
+  },
+}), rp.defineNode({
+  id: "rp.toy.asker",
+  ports: { in: rp.events.in() },
+  create: () => ({ process(b) { b.messages("in"); __probe(__pending() ? "pending" : "clear"); } }),
+})]);
+)JS";
+
+std::vector<std::string> tagsOf(rp::host::test::ProbeLog& log) {
+    const std::lock_guard<std::mutex> lock(log.mutex);
+    std::vector<std::string> tags;
+    for (const auto& [tag, thread] : log.calls) tags.push_back(tag);
+    return tags;
+}
+
+TEST_CASE("a write the block path makes onto what a script node holds that fails is the node's throw, and leaves nothing "
+          "pending",
+          "[script][trap]") {
+    struct Case {
+        const char* on;
+        const char* thrown;
+    };
+    for (const Case& c : {Case{"message", "Error"}, Case{"frozen", "TypeError"}, Case{"change", "Error"}, Case{"start", "Error"}}) {
+        INFO(c.on);
+        ScriptRig rig(kTrap);
+        REQUIRE(rig.set(doc(node("feed", "rp.test.feed") + "," + node("k", "rp.core.constant", "", R"({"value":0.5})") + "," +
+                                node("t", "rp.toy.trap", std::string(R"({"on":")") + c.on + "\"}") + "," + node("p", "rp.test.probe"),
+                            wire("feed.midi", "t.in") + "," + wire("k.out", "t.level") + "," + wire("t.out", "p.events")))
+                    .ok);
+        auto& feed = rig.node<Feed>("feed");
+        const auto& probe = rig.node<Probe>("p");
+        for (int n = 1; n <= 4; ++n) {
+            INFO("block " << n);
+            if (n < 4) feed.next[Feed::Midi] = {{static_cast<std::uint32_t>(n), bytes({0x90, 60, 100})}};
+            if (n > 1) REQUIRE(rig.host->setParam("k", "value", 0.1 * n, 10));  // a change for the fill to write
+            rig.run();
+            // Sent, but by the third block, whose read the node does not catch: its throw ends the call first.
+            CHECK(probe.events.size() == (n == 3 ? 0u : 1u));
+            if (n != 3 && !probe.events.empty()) CHECK(probe.events[0].data == bytes({n}));
+            CHECK(rig.scripts.throwCount() == (n < 3 ? 0u : 1u));
+        }
+        const std::vector<std::string> said{
+            "clear", "sent", std::string("caught ") + c.thrown, "clear", "sent", "clear", "sent"};
+        CHECK(tagsOf(rig.log) == said);
+        CHECK_FALSE(rig.host->isFaulted("t"));
+        rig.reclaim();
+        INFO(rig.scripts.firstThrow());
+        CHECK(rig.scripts.firstThrow().find(std::string("rp.toy.trap threw in process: ") + c.thrown) == 0);
+    }
+}
+
+TEST_CASE("a write onto a script node's transport that fails is a throw in its process, which then does not run",
+          "[script][trap]") {
+    ScriptRig rig(kTrap);
+    REQUIRE(rig.set(doc(node("t", "rp.toy.trap-transport") + "," + node("a", "rp.toy.asker") + "," + node("p", "rp.test.probe"),
+                        wire("t.out", "a.in") + "," + wire("t.out", "p.events")))
+                .ok);
+    for (int n = 1; n <= 3; ++n) {
+        INFO("block " << n);
+        rig.run();
+        CHECK(rig.node<Probe>("p").events.size() == (n == 1 ? 1u : 0u));  // its first block only
+        CHECK(rig.scripts.throwCount() == static_cast<std::uint32_t>(n - 1));
+    }
+    CHECK(tagsOf(rig.log) == std::vector<std::string>{"clear", "clear", "clear"});
+    CHECK_FALSE(rig.host->isFaulted("t"));
+    rig.reclaim();
+    INFO(rig.scripts.firstThrow());
+    CHECK(rig.scripts.firstThrow().find("rp.toy.trap-transport threw in process: Error: trapped") == 0);
+}
+
 TEST_CASE("a script node's create and onSettings receive its settings as their JSON form", "[script][settings]") {
     ScriptRig rig(R"JS(
 rp.register([rp.defineNode({
@@ -1339,7 +1457,8 @@ TEST_CASE("what the bundle's load leaves in cycles is collected by the first qui
     host.reclaim();  // no instance released yet: the load's cycles alone
     const auto first = host.audioAllocations();
     CHECK(first.frees > loaded.frees);
-    host.reclaim();  // nothing left for it to find: a pass that frees nothing (the count cannot say none ran)
+    // No GC runs (nothing released since); the count alone could not tell that from a pass that freed nothing.
+    host.reclaim();
     CHECK(host.audioAllocations().frees == first.frees);
 }
 
@@ -1347,8 +1466,8 @@ TEST_CASE("what the bundle's load leaves in cycles is collected by the first qui
 namespace {
 
 // Spans its JS leaves open, or closes past: a throw inside a role's span, a hang inside one the deadline stops, more
-// spanEnds than spanBegins (then a span after them, which is still the call's), and a span a promise job opens and
-// closes, outside any process call.
+// spanEnds than spanBegins (then a span after them, which is still the call's), setters that close and open spans as
+// the host fills a message or a control stream, and a span a promise job opens and closes, outside any process call.
 const char* const kSpanners = R"JS(
 rp.register([
   rp.defineNode({ id: "rp.toy.span-throw", ports: { out: rp.events.out() },
@@ -1370,6 +1489,24 @@ rp.register([
                           Object.defineProperty(ms[0], "frame", { set() { spanEnd(); spanBegin(20); }, get() { return 0; } });
                         }
                         spanBegin(20);
+                        spanEnd();
+                      },
+                    };
+                  } }),
+  rp.defineNode({ id: "rp.toy.span-control-setter", ports: { level: rp.control.in(), out: rp.events.out() },
+                  create: () => {
+                    let armed = false;
+                    const setter = { set() { spanEnd(); spanBegin(21); }, get() { return 0; } };
+                    return {
+                      process(b) {
+                        const level = b.control("level");
+                        if (level.changes.length && !armed) {
+                          armed = true;
+                          Object.defineProperty(level, "start", setter);
+                          Object.defineProperty(level.changes[0], "frame", setter);
+                          Object.defineProperty(level.changes[0], "value", setter);
+                        }
+                        spanBegin(21);
                         spanEnd();
                       },
                     };
@@ -1466,15 +1603,53 @@ TEST_CASE("a setter JS hangs on a marshalled message closes no span of the host'
     rig.scripts.traceReset(false);
 }
 
-TEST_CASE("the profile calls refuse while an audio thread owns the runtime", "[script][profile][trace]") {
+TEST_CASE("a setter JS hangs on a marshalled control stream closes no span of the host's", "[script][profile][trace]") {
     ScriptRig rig(kSpanners);
+    REQUIRE(rig.set(doc(node("k", "rp.core.constant", "", R"({"value":0.5})") + "," + node("s", "rp.toy.span-control-setter"),
+                        wire("k.out", "s.level")))
+                .ok);
+    rig.scripts.traceReset(true);
+    for (int i = 0; i < 3; ++i) {
+        if (i > 0) REQUIRE(rig.host->setParam("k", "value", 0.1 * i, 10));  // a change, so the fill writes onto the setters
+        rig.run(64, 1);  // the second and third blocks' fill runs the setters the first block's process hung
+    }
+    const auto kernel = spansOf(rig.scripts, rp::host::DSP_SPAN_KERNEL);
+    const auto call = spansOf(rig.scripts, rp::host::DSP_SPAN_JSCALL);
+    const auto role = spansOf(rig.scripts, 21);
+    CHECK(kernel.size() == 3);
+    CHECK(call.size() == 3);
+    CHECK(role.size() == 3);  // each block's own, none of the setters'
+    CHECK(spansOf(rig.scripts, rp::host::DSP_SPAN_MARSHAL).size() == 6);  // the transport's, and the stream's each block
+    CHECK(nested(call, kernel));
+    CHECK(nested(role, call));
+    std::size_t inside = 0;
+    for (const auto& m : spansOf(rig.scripts, rp::host::DSP_SPAN_MARSHAL)) inside += nested({m}, call) ? 1 : 0;
+    CHECK(inside == 3);
+    CHECK(rig.scripts.throwCount() == 0);
+    rig.scripts.traceReset(false);
+}
+
+TEST_CASE("the profile calls refuse while an audio thread owns the runtime, and the trace reads read nothing",
+          "[script][profile][trace]") {
+    ScriptRig rig(kSpanners);
+    REQUIRE(rig.set(doc(node("s", "rp.toy.span-overclose"), "")).ok);
+    REQUIRE(rig.scripts.traceReset(true));
+    rig.run();
+    const auto spans = rig.scripts.traceSpans();
+    const auto names = rig.scripts.traceNames();
+    REQUIRE_FALSE(spans.empty());
+    REQUIRE_FALSE(names.empty());  // the fixed labels, named as the host is made
     rig.scripts.setAudioThreadOwns(true);
     CHECK_FALSE(rig.scripts.resetAllocStats(true));
     CHECK_FALSE(rig.scripts.runGc().enabled);
-    CHECK_FALSE(rig.scripts.traceReset(true));
-    CHECK_FALSE(rig.scripts.traceArmed());
+    CHECK_FALSE(rig.scripts.traceReset(false));
+    CHECK(rig.scripts.traceArmed());  // the refused reset left the window as it was
     CHECK(rig.scripts.traceSpans().empty());
+    CHECK(rig.scripts.traceNames().empty());
+    CHECK(rig.scripts.allocStats().enabled);  // which never refuses: a benchmark reads enabled to know a profile host
     rig.scripts.setAudioThreadOwns(false);
+    CHECK(rig.scripts.traceSpans().size() == spans.size());  // there all along
+    CHECK(rig.scripts.traceNames() == names);
     CHECK(rig.scripts.resetAllocStats(false));
     CHECK(rig.scripts.runGc().enabled);
     CHECK(rig.scripts.traceReset(false));

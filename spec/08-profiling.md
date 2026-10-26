@@ -37,7 +37,7 @@ goes unmeasured.
 
 ## 3. What the per-block path allocates today
 
-The kernel header comments claim "no per-block allocation" ([dspKernel.ts:56](../packages/retroplug/src/dspKernel.ts#L56)).
+The kernel header comments claim "no per-block allocation" ([dspKernel.ts:83](../packages/retroplug/src/dspKernel.ts#L83)).
 That holds **only for the top-level reused `Block` struct**; in practice two layers allocate every
 block, and the harness should expose this on day one.
 
@@ -45,23 +45,23 @@ block, and the harness should expose this on day one.
 refilled in place, its payloads copied into one JS-owned buffer:
 [ScriptHost.cpp](../packages/native/src/host/script/ScriptHost.cpp) `fillMessages`), so a node written
 with indexed loops allocates nothing per block once warm: a message's `data` view is made again only when
-its place in the payload buffer moves, and the pool and the buffer grow only past their largest block. The kernel node then builds the kernel's `BlockInput`
-afresh every block ([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts) `blockInput`): an
-`input` object and its transport fields; a `midiIn` array (per event an object and a `data` array of
-numbers); `buttons`/`keys` arrays **created even when empty**; and a `{ system, byte }` object per MI.OUT
-byte. The whole graph is freed after the call, so this is per-block garbage, and it grows with the
-block's message count.
+its place in the payload buffer moves, and the pool and the buffer grow only past their largest block.
+The kernel node then builds the kernel's `BlockInput` afresh every block
+([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts) `blockInput`): an `input` object and its
+transport fields; a `midiIn` array (per event an object and a `data` array of numbers); `buttons`/`keys`
+arrays **created even when empty**; and a `{ system, byte }` object per MI.OUT byte. The whole graph is
+freed after the call, so this is per-block garbage, and it grows with the block's message count.
 
-**The TS kernel** ([dspKernel.ts:220-266](../packages/retroplug/src/dspKernel.ts#L220)) adds
-per block:
+**The TS kernel** ([dspKernel.ts](../packages/retroplug/src/dspKernel.ts), as it was before the pass
+below; the code these rows name is gone) added per block:
 
 | Site | Allocates |
 |---|---|
-| `const routed = new Map()` ([:220](../packages/retroplug/src/dspKernel.ts#L220)) | 1 Map every block |
-| `keys.filter()` / `buttons.filter()` ([:232-233](../packages/retroplug/src/dspKernel.ts#L232)) | 2 arrays **per system** (even when empty) |
-| `makeCtx(...)` object + 4 sink closures ([:252-266](../packages/retroplug/src/dspKernel.ts#L252)) | 1 `SystemCtx` + 4 closures **per system × per pipeline stage** |
-| `routeBlock` inboxes + per-target event objects ([midiRouting.ts:68-73](../packages/retroplug/src/midiRouting.ts#L68)) | array graph + 1 `{frame,data}` per routed event |
-| `mgb` role `forEach` closures ([dspRoles.ts:23](../packages/retroplug/src/dspRoles.ts#L23)) | 2 nested arrow closures per call |
+| `const routed = new Map()` (dspKernel.ts) | 1 Map every block |
+| `keys.filter()` / `buttons.filter()` (dspKernel.ts) | 2 arrays **per system** (even when empty) |
+| `makeCtx(...)` object + 4 sink closures (dspKernel.ts) | 1 `SystemCtx` + 4 closures **per system × per pipeline stage** |
+| `routeBlock` inboxes + per-target event objects (midiRouting.ts) | array graph + 1 `{frame,data}` per routed event |
+| `mgb` role `forEach` closures (dspRoles.ts) | 2 nested arrow closures per call |
 
 The mGB **sink** path itself is clean: the kernel node's `pushSerialIn` appends the byte to the system's
 reused run (an array kept across blocks) and sends each run of same-frame bytes as one message straight onto
@@ -153,7 +153,7 @@ top-N is what fits an agent's context and yields a trustworthy diff.
 
 mGB is 4 monophonic voices + a poly voice (MIDI ch1→PU1, ch2→PU2, ch3→WAV, ch4→NOISE, ch5→POLY), fed raw
 MIDI-over-serial; the `mgb` role forwards every byte verbatim
-([dspRoles.ts:23](../packages/retroplug/src/dspRoles.ts#L23)). It responds to note on/off
+([dspRoles.ts:29](../packages/retroplug/src/dspRoles.ts#L29)). It responds to note on/off
 (velocity 0 = note-off), a handful of CCs (pulse-width, envelope, sweep, PB-range, preset, pan, sustain),
 pitch bend, and program change (1–15 = preset). Profiles:
 
@@ -246,7 +246,10 @@ past `renderAudio`'s 1024-frame block).
   regime) and surfaced in [audioDriver.ts](../packages/retroplug/src/audioDriver.ts). The calls that act on
   the windows are quiescent only: while an audio thread owns the runtime, `dspResetAllocStats` and
   `dspTraceReset` answer false and `dspRunGc` a result with `enabled` false (the first refusal said once on
-  stderr), and `dspTrace` / `dspTraceNames` read nothing.
+  stderr), and `dspTrace` / `dspTraceNames` read nothing; `dspAllocStats` never refuses (a benchmark reads its
+  `enabled` to know a profile host). So a trace armed before `startAudio` cannot be reset until `stopAudio`,
+  and meanwhile it records every block, its span list growing, which allocates on the audio thread (only a
+  profile host can arm one, and only through the harness facet).
 - **The seeded-MIDI benchmark** [test-native/dsp-bench.test.ts](../packages/retroplug/test-native/dsp-bench.test.ts):
   a mulberry32 generator for Profiles A/B/C, the block-stepped `stageMidiIn` + `renderAudio(BLOCK_MS)`
   loop (warmup window discarded), one JSON metrics line. Env knobs `RP_BENCH_{PROFILE,CORES,BLOCKS,WARMUP,SEED}`.
@@ -267,9 +270,10 @@ modes are out.
   **bit-identical run-to-run** (only `xRT`/`gcMs` wall-clock vary). First measured result (Profile A, 1
   mGB core, 2000 blocks): **~171 allocs/block**, `freesPerBlock` ≈ allocs (balanced churn),
   `liveHeapDelta` ≈ 0 (not a leak), `maxBlockAllocs` 279.
-- The profile build's own unit checks are the Catch2 `[profile]` cases of `retroplug-engine-graph-test` (spans JS leaves
-  open or closes past, a setter hung on a marshalled message, a label past the bound, the calls refused while the audio
-  thread runs). Nothing else runs them: `tools/run-profile.sh unit`, or by hand
+- The profile build's own unit checks are the Catch2 `[profile]` cases of `retroplug-engine-graph-test`
+  (spans JS leaves open or closes past, a setter hung on a marshalled message and one on a marshalled
+  control stream, a label past the bound, the calls refused while the audio thread runs and the trace
+  reads reading nothing then). Nothing else runs them: `tools/run-profile.sh unit`, or by hand
   `cmake --build build-prof --target retroplug-engine-graph-test -j$(nproc)` then
   `build-prof/bin/retroplug-engine-graph-test "[profile]"`.
 - **Optimization pass (done):** hoisting the per-block ctx/closures/filters/routing-Map to `setSystems`

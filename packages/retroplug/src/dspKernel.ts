@@ -3,13 +3,14 @@
 // each system's pipeline of translators/sources reads its inputs and writes frame-tagged sinks.
 // This is doc-06's "translators are scripts" model expressed as plain TS behaviours over a
 // per-system context, so it runs and is fully testable under the mock (txiki) suite with ZERO C++.
-// How the audio thread eventually executes this (a bare QuickJS context) is a separate, later
-// concern that changes none of this code.
+// On the audio thread it runs as the script node `rp.dsp.kernel` (script/kernelNode.ts), in the
+// script host's audio runtime.
 
 import type { MidiEvent } from "./midiRouting";
 import { isSystemStage, type RoleInstance, type RoleRegistry } from "./systemRoles";
 
-/** Per-block transport/timing context (mirrors native AudioBlockInfo / DspBlockInfo). */
+/** Per-block transport/timing context. On the audio thread the kernel node (script/kernelNode.ts)
+ *  builds it each block from its Block's frames and transport. */
 export interface BlockInfo {
   frames: number;
   sampleRate: number;
@@ -22,7 +23,8 @@ export interface BlockInfo {
    *  THEN plugs the device in, so the controller role needs a false -> true edge to take the device (enter
    *  Programmer mode and repaint) at the moment it appears. Re-pushing the structure would not serve either
    *  - project stage state deliberately survives `setSystems`, so the session is not rebuilt. Optional
-   *  because native only sends it when true; absent reads as false. */
+   *  because the kernel node sets it only when true (from its `controllerConnected` input); absent reads
+   *  as false. */
   controllerConnected?: boolean;
 }
 
@@ -43,8 +45,9 @@ export interface KeyEvent {
 }
 
 /** One raw serial-out byte a core emitted on its serial port (LSDj MI.OUT), targeted at a system.
- *  Native gathers these AFTER rendering a block and feeds them to the NEXT block (one-block latency);
- *  the kernel fans them per-system into `ctx.serialOut` for the mode-7 decoder. */
+ *  A Game Boy node's `serialOut` reaches the kernel node over a feedback wire, so a block's bytes
+ *  arrive in the NEXT block (one-block latency); the kernel fans them per-system into `ctx.serialOut`
+ *  for the mode-7 decoder. */
 export interface SerialOutEvent {
   system: number;
   byte: number;
@@ -97,8 +100,9 @@ export interface Sinks {
 
 /** Where a behaviour's sinks go. The kernel forwards each ctx sink call to the injected target,
  *  scoped by system id. In tests/txiki the default `CollectingSink` gathers them into a `Sinks`
- *  object the assertions read; natively the target's methods ARE the bound C thunks, so bytes cross
- *  as scalars with no intermediate JS arrays. `reset` (optional) clears per-block state. */
+ *  object the assertions read; on the audio thread the kernel node's target sends each call onto its
+ *  output ports (script/kernelNode.ts: a system's serial-in bytes as runs, its host MIDI out behind a
+ *  4-byte system tag in an array it reuses). `reset` (optional) clears per-block state. */
 export interface SinkTarget {
   pushSerialIn(system: number, frame: number, byte: number): void;
   emitMidiOut(system: number, frame: number, data: number[]): void;
@@ -155,8 +159,9 @@ export interface SystemCtx {
   midi: MidiEvent[];
   keys: KeyEvent[];
   buttons: ButtonEvent[];
-  /** The raw serial-out bytes this system emitted LAST block (LSDj MI.OUT), in order — the mode-7
-   *  Arduinoboy decoder's input. Empty unless native has serial-out capture armed for this system. */
+  /** The raw serial-out bytes this system emitted LAST block (LSDj MI.OUT), in order: the mode-7
+   *  Arduinoboy decoder's input. Empty unless the system's core has serial-out capture armed and the
+   *  kernel node has its `serialOut` input (a Game Boy). */
   serialOut: number[];
   block: BlockInfo;
   state: Record<string, unknown>;
@@ -211,8 +216,9 @@ export interface ProjectCtx {
 export type ProjectBehavior = (ctx: ProjectCtx) => void;
 
 /** Per-role runtime-tracing hooks (spec/08-profiling.md Tier B), injected into the kernel only under a
- *  profile host (the bundle builds one iff the native `spanBegin` thunk is bound). `begin`/`end` bracket a
- *  stage's wall-time span (label = interned role id); `name` registers a label id → role kind once. */
+ *  profile host (the kernel node builds one iff the script host bound the `spanBegin` global, which only
+ *  a profile build does). `begin`/`end` bracket a stage's wall-time span (label = interned role id);
+ *  `name` registers a label id → role kind once. */
 export interface DspTracer {
   name(label: number, kind: string): void;
   begin(label: number): void;
@@ -310,9 +316,9 @@ export class DspKernel {
   private readonly inboxes: MidiEvent[][] = [];
   private projectStages: ProjectStage[] = [];
   // Per-role runtime tracing (spec/08-profiling.md Tier B). `tracer` exists only under a profile host;
-  // `traceOn` is flipped by the host (__setTrace → setTracing) so per-stage span calls happen ONLY while
-  // armed — the non-traced path stays byte-identical (deterministic alloc counts). Kinds are interned to
-  // stable ids from ROLE_BASE (16; the native stages own 0..4).
+  // `traceOn` is set by the kernel node each block (setTracing(traceArmed())) so per-stage span calls
+  // happen ONLY while armed: the non-traced path stays byte-identical (deterministic alloc counts). Kinds
+  // are interned to stable ids from ROLE_BASE (16; the host's fixed labels own 0..4, ScriptHost.hpp).
   private traceOn = false;
   private readonly traceLabels = new Map<string, number>();
   private nextLabel = 16;
@@ -331,7 +337,8 @@ export class DspKernel {
     systems: [],
     project: [],
   };
-  // Returned from processBlock: the collecting sink's Sinks, else a stable empty (native ignores it).
+  // Returned from processBlock: the collecting sink's Sinks, else a stable empty (which the kernel node
+  // ignores).
   private readonly result: Sinks;
 
   constructor(
@@ -342,7 +349,8 @@ export class DspKernel {
     this.result = sink instanceof CollectingSink ? sink.sinks : emptySinks();
   }
 
-  /** Host hook (profile build only): arm/disarm per-role span emission for a trace window. */
+  /** The kernel node's hook (profile build only): arm/disarm per-role span emission for a trace
+   *  window. */
   setTracing(on: boolean): void {
     this.traceOn = on;
   }
@@ -421,7 +429,8 @@ export class DspKernel {
     b.tempo = dyn.tempo;
     b.ppqStart = dyn.ppqStart;
     b.transport = dyn.transport;
-    b.controllerConnected = dyn.controllerConnected === true; // absent = no device (native omits it when false)
+    // Absent = no device: the kernel node omits it when false.
+    b.controllerConnected = dyn.controllerConnected === true;
     b.midiIn = dyn.midiIn;
     b.buttons = dyn.buttons;
     b.keys = dyn.keys;
@@ -461,7 +470,7 @@ export class DspKernel {
 
     // Project scope: routing fans the global midiIn into the positional persistent inboxes. The
     // `if (this.traceOn)` guard is false on the non-traced path (production/mock/alloc window) → the hot
-    // path is byte-identical; only a trace window pays the span-thunk crossings (spec/08-profiling.md).
+    // path is byte-identical; only a trace window pays the span-global calls (spec/08-profiling.md).
     const project = this.projectStages;
     const controllerIn = dyn.controllerIn ?? NO_CONTROLLER_IN;
     for (let i = 0; i < project.length; i++) {

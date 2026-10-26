@@ -13,34 +13,37 @@ Verified against real Reaper in both formats (`pnpm reaper:params` / `reaper:par
 BlipToaster build (`reaper:params-vrc7`). Sections 1-5 below describe the design as built; section 9
 records where the build diverged from the original plan and why.
 
-## 1. Why this does not work today
+## 1. Why upstream DPF could not do it
 
-Four facts, all in DPF:
+Four facts, all in DPF as it stood before the fork's changes (section 4); each link shows where that code
+stands in the fork now:
 
 1. **Count is frozen at construction.** [DistrhoPlugin.cpp:43-59](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPlugin.cpp#L43-L59)
-   does `new Parameter[parameterCount]` once. RetroPlug passes `1`
-   ([PluginDSP.cpp:79](../packages/native/plugin/PluginDSP.cpp#L79)).
+   does `new Parameter[parameterCount]` once. RetroPlug passed `1` (its constructor,
+   [PluginDSP.cpp:137](../packages/native/plugin/PluginDSP.cpp#L137), now declares the fixed pool,
+   `kParameterCount`).
 2. **`initParameter` is called exactly once per index**, in the `PluginExporter` constructor
-   ([DistrhoPluginInternal.hpp:362](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginInternal.hpp#L362)).
-   There is no re-init path.
+   ([DistrhoPluginInternal.hpp:406](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginInternal.hpp#L406)).
+   There was no re-init path (the fork adds `reinitParameters`).
 3. **Nothing can mutate a `Parameter` afterwards.** `pData` is private with only `PluginExporter` as
-   friend ([DistrhoPlugin.hpp:423-424](../deps/dpf.js/deps/dpf/distrho/DistrhoPlugin.hpp#L423-L424)),
+   friend ([DistrhoPlugin.hpp:457-458](../deps/dpf.js/deps/dpf/distrho/DistrhoPlugin.hpp#L457-L458)),
    and the `PluginExporter::getParameter*` accessors are not virtual.
 4. **No backend ever signals a parameter-list change.** VST3 calls `restart_component` with only
    `V3_RESTART_PARAM_VALUES_CHANGED` / `V3_RESTART_LATENCY_CHANGED`
-   ([DistrhoPluginVST3.cpp:1150](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginVST3.cpp#L1150),
-   [:2100](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginVST3.cpp#L2100)), never
+   ([DistrhoPluginVST3.cpp:1172](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginVST3.cpp#L1172),
+   [:2163](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginVST3.cpp#L2163)), never
    `V3_RESTART_PARAM_TITLES_CHANGED`. CLAP sends only
    `CLAP_PARAM_RESCAN_VALUES|CLAP_PARAM_RESCAN_TEXT`
-   ([DistrhoPluginCLAP.cpp:1750](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginCLAP.cpp#L1750)).
+   ([DistrhoPluginCLAP.cpp:1804](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginCLAP.cpp#L1804)).
+   The fork adds both signals.
 
 The good news, and what makes this a small feature: **both backends already read the descriptor live
 on every host query.** CLAP `getParameterInfo`
-([DistrhoPluginCLAP.cpp:1145](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginCLAP.cpp#L1145)) and
+([DistrhoPluginCLAP.cpp:1158](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginCLAP.cpp#L1158)) and
 VST3 `getParameterInfo`
-([DistrhoPluginVST3.cpp:1781](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginVST3.cpp#L1781)) both
+([DistrhoPluginVST3.cpp:1733](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginVST3.cpp#L1733)) both
 call `fPlugin.getParameterName(index)` at query time. Only the mutation path and the invalidation
-signal are missing.
+signal were missing.
 
 ## 2. What the formats actually allow
 
@@ -77,8 +80,8 @@ Reasons, in order of weight:
 - Both formats can do descriptor changes **live**; neither can change the count without deactivating
   (CLAP) or reloading the component (VST3).
 - **DPF's state save/restore is keyed by parameter symbol** in both backends
-  ([CLAP:1716](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginCLAP.cpp#L1716),
-  [VST3:1104](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginVST3.cpp#L1104)). Stable symbols are
+  ([CLAP:1770](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginCLAP.cpp#L1770),
+  [VST3:1126](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginVST3.cpp#L1126)). Stable symbols are
   what make a saved DAW project round-trip. CLAP additionally puts the symbol in `info->module`, and
   `clap_id` is the parameter index, so both must stay put.
 - Unused slots being *hidden* rather than *absent* is the behaviour the feature actually wants.
@@ -117,7 +120,7 @@ with a much worse user experience. If it is ever needed, it is a follow-up, not 
 ### 3.3 Threading and RT safety
 
 The audio thread reads `hints` and `ranges` during parameter-change handling
-([DistrhoPluginVST3.cpp:722-743](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginVST3.cpp#L722-L743)).
+([DistrhoPluginVST3.cpp:729-760](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginVST3.cpp#L729-L760)).
 It never reads the name strings. That split drives two rules:
 
 1. **`hints` and `ranges` are immutable for the life of the instance.** This is what makes the
@@ -134,7 +137,7 @@ main-thread, so there is no reader to race with.
 
 CLAP already has the deferral machinery: `fHostExtensions.threadCheck->is_main_thread()`,
 `fHost->request_callback()` and `clap_plugin_on_main_thread` -> `PluginCLAP::onMainThread()`. The
-latency path at [DistrhoPluginCLAP.cpp:1408-1450](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginCLAP.cpp#L1408-L1450)
+latency path at [DistrhoPluginCLAP.cpp:1424-1466](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginCLAP.cpp#L1424-L1466)
 is the exact pattern to copy: do it now if already on the main thread, otherwise set a flag and
 request a callback.
 
@@ -150,7 +153,7 @@ change.
 DISTRHO_PLUGIN_WANT_DIRECT_ACCESS == 0`
 ([DistrhoPluginVST.hpp:30-34](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginVST.hpp#L30-L34)).
 RetroPlug sets `DISTRHO_PLUGIN_WANT_DIRECT_ACCESS 1`
-([DistrhoPluginInfo.h:50](../packages/native/plugin/DistrhoPluginInfo.h#L50)), so it is 0 and there
+([DistrhoPluginInfo.h:56](../packages/native/plugin/DistrhoPluginInfo.h#L56)), so it is 0 and there
 is a single `PluginExporter` answering both the component and the controller.
 
 In separate-controller mode the controller is a **different plugin instance** that never sees the ROM
@@ -166,18 +169,19 @@ other DPF plugin is bit-identical.
 
 | File | Change |
 |---|---|
-| [DistrhoPluginChecks.h](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginChecks.h) | `#define DISTRHO_PLUGIN_WANT_DYNAMIC_PARAMETERS 0` default, next to the existing `DISTRHO_PLUGIN_WANT_PARAMETER_VALUE_CHANGE_REQUEST` at [:76-78](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginChecks.h#L76-L78). |
-| [DistrhoPlugin.hpp](../deps/dpf.js/deps/dpf/distrho/DistrhoPlugin.hpp) | `bool canUpdateParameterInfo() const noexcept;` + `bool requestParameterInfoUpdate() noexcept;`, modelled on `canRequestParameterValueChanges` / `requestParameterValueChange` at [:153](../deps/dpf.js/deps/dpf/distrho/DistrhoPlugin.hpp#L153) and [:162](../deps/dpf.js/deps/dpf/distrho/DistrhoPlugin.hpp#L162). Doc comment states the fixed-pool contract. |
+| [DistrhoPluginChecks.h](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginChecks.h) | `#define DISTRHO_PLUGIN_WANT_DYNAMIC_PARAMETERS 0` default, next to the existing `DISTRHO_PLUGIN_WANT_PARAMETER_VALUE_CHANGE_REQUEST` at [:80-82](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginChecks.h#L80-L82). |
+| [DistrhoPlugin.hpp](../deps/dpf.js/deps/dpf/distrho/DistrhoPlugin.hpp) | `bool canUpdateParameterInfo() const noexcept;` + `bool requestParameterInfoUpdate() noexcept;`, modelled on `canRequestParameterValueChanges` / `requestParameterValueChange` at [:187](../deps/dpf.js/deps/dpf/distrho/DistrhoPlugin.hpp#L187) and [:196](../deps/dpf.js/deps/dpf/distrho/DistrhoPlugin.hpp#L196). Doc comment states the fixed-pool contract. |
 | [DistrhoPlugin.cpp](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPlugin.cpp) | Two-line forwarders into `pData`. |
-| [DistrhoPluginInternal.hpp](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginInternal.hpp) | `typedef bool (*parameterInfoChangedFunc)(void* ptr);` alongside [:48-50](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginInternal.hpp#L48-L50); the callback field + `std::atomic<bool>` hidden side array in `PrivateData`; a **defaulted trailing** 5th `PluginExporter` ctor param at [:331-333](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginInternal.hpp#L331-L333); and `reinitParameters()` returning the change mask. |
+| [DistrhoPluginInternal.hpp](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginInternal.hpp) | `typedef bool (*parameterInfoChangedFunc)(void* ptr);` alongside [:52-54](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginInternal.hpp#L52-L54); the callback field + `std::atomic<bool>` hidden side array in `PrivateData`; a **defaulted trailing** 5th `PluginExporter` ctor param at [:368-372](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginInternal.hpp#L368-L372); and `reinitParameters()` returning the change mask. |
 | [DistrhoPluginCLAP.cpp](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginCLAP.cpp) | Thunk + main-thread deferral copying the latency pattern; `onMainThread()` flush; `rescan(CLAP_PARAM_RESCAN_INFO\|CLAP_PARAM_RESCAN_TEXT)`; map the hidden state to `CLAP_PARAM_IS_HIDDEN` in `getParameterInfo`. |
 | [DistrhoPluginVST3.cpp](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginVST3.cpp) | Thunk + latched flag flushed on the next main-thread entry; `restart_component(V3_RESTART_PARAM_TITLES_CHANGED)`; map the hidden state to `V3_PARAM_IS_HIDDEN` in `get_parameter_info`; the separate-controller `#error` guard. |
 | Other backends | **No edit.** The defaulted ctor param means LV2 / VST2 / AU / JACK / Carla / the two static exporters compile untouched, which keeps upstream merges clean. |
 
-`kParameterIsHidden` is currently honoured **only** by the LV2 ttl exporter
+`kParameterIsHidden` was honoured **only** by the LV2 ttl exporter
 ([DistrhoPluginLV2export.cpp:964](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginLV2export.cpp#L964)).
-Mapping it in CLAP and VST3 is a small standalone improvement and can land as its own commit before
-the dynamic part, since it is useful with or without this feature.
+Mapping it in CLAP and VST3 ([DistrhoPluginCLAP.cpp:1187](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginCLAP.cpp#L1187),
+[DistrhoPluginVST3.cpp:1823](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginVST3.cpp#L1823)) is a small standalone improvement,
+so it landed as its own commit before the dynamic part, since it is useful with or without this feature.
 
 LV2 is not fixable and should be documented as such: its control ports are baked into the static
 `.ttl` at build time. LV2 builds get the generic pool names.
@@ -254,17 +258,18 @@ Only source 2 costs a deeper read, so `readRoleHeader`
 this is a BlipToaster ROM with no tag. Sega still always takes its deep read (smsggdj's marker is at
 `$3640`); no other NES cart pays one. One read at construct, not on the classify path.
 
-**The seam.** `PluginDSP` polls a new `__rp_parameterMapJson` global exactly where it already polls
-`__rp_syncLatencyMs` in `updateLatency()`
-([PluginDSP.cpp:347-351](../packages/native/plugin/PluginDSP.cpp#L347-L351)) - that is, after
-`setState` and on `activate`. If the JSON differs from the cached copy it stores the new descriptors
+**The seam.** `PluginDSP` polls a new `__rp_parameterMapJson` global in `updateParameterMap()`
+([PluginDSP.cpp:484-513](../packages/native/plugin/PluginDSP.cpp#L484-L513)), called right after
+`updateLatency()` polls `__rp_syncLatencyMs`
+([PluginDSP.cpp:472-476](../packages/native/plugin/PluginDSP.cpp#L472-L476)) - that is, after
+`setState` and on `activate` - and from the editor's idle (section 9). If the JSON differs from the cached copy it stores the new descriptors
 and calls `requestParameterInfoUpdate()`. `initParameter` then reads from that cached copy, which is
 what makes the DPF re-declare/diff loop work.
 
-**Writing values.** A DAW parameter write in `setParameterValue` becomes a synthesised CC event
-pushed into the engine alongside the real MIDI in `run()`
-([PluginDSP.cpp:182-186](../packages/native/plugin/PluginDSP.cpp#L182-L186)). Values arrive on the
-audio thread already, so this is the existing path with a different source.
+**Writing values.** A DAW parameter write in `setParameterValue` is stored, and `run()` turns each
+claimed slot whose value moved into a synthesised CC at frame 0, staged into the engine after the
+real MIDI ([PluginDSP.cpp:330-351](../packages/native/plugin/PluginDSP.cpp#L330-L351)). Values
+arrive on the audio thread already, so this is the existing path with a different source.
 
 **Persistence.** Parameter *values* are host-owned and symbol-keyed, so they need nothing from us.
 The map is derived from the project (role + ROM), so it also needs nothing. A **user-editable**

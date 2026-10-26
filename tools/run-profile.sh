@@ -36,8 +36,10 @@ cmake -B "$builddir" \
     -DRETROPLUG_PROFILE=ON \
     -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ >/dev/null
 
-echo "==> building retroplug-host (profiling)"
-cmake --build "$builddir" -j"$(nproc)" --target retroplug-host
+build_host() {  # every mode but unit runs the host
+    echo "==> building retroplug-host (profiling)"
+    cmake --build "$builddir" -j"$(nproc)" --target retroplug-host
+}
 
 run_native() {  # $1 = host binary the runner launches (RETROPLUG_HOST)
     RETROPLUG_HOST="$1" node packages/retroplug/scripts/run-native-tests.mjs "$slug"
@@ -45,6 +47,7 @@ run_native() {  # $1 = host binary the runner launches (RETROPLUG_HOST)
 
 case "$mode" in
     stats)
+        build_host
         echo "==> running '$slug' (in-process allocation counters)"
         run_native "$host"
         ;;
@@ -54,6 +57,7 @@ case "$mode" in
         "$repo/$builddir/bin/retroplug-engine-graph-test" "[profile]"
         ;;
     trace)
+        build_host
         : "${RP_BENCH_TRACE_BLOCKS:=64}"
         export RP_BENCH_TRACE=1 RP_BENCH_TRACE_BLOCKS
         out="$repo/$builddir/trace.json"
@@ -71,6 +75,7 @@ case "$mode" in
         ;;
     dhat|callgrind|massif)
         command -v valgrind >/dev/null || { echo "!! valgrind not installed" >&2; exit 2; }
+        build_host
         out="$repo/$builddir/valgrind"
         mkdir -p "$out"
         : "${RP_BENCH_BLOCKS:=200}"   # keep valgrind runs tractable unless overridden

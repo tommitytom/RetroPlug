@@ -105,14 +105,17 @@ the render worker share) with a `render(outputs, segment)` over `renderBlocks`. 
 stores survives every step, since B2 deletes the backend calls the stores make today but not the stores.
 B2 and B3 edit only `bootSession` and this file, with one exception: `render-blocks.test.ts` tests
 `renderBlocks` itself, so it calls backend methods directly (`setSerialOutCapture`, and before B3a
-`dsp.setSystems`) and
-moves with the Backend surface too. Since B2 it builds its systems through a `DirectGraph` sharing the
-session's graph, where it called `constructSystem` before, and since B3a it gives the kernel its MIDI routing and
-pipeline through that graph too (`setProjectStages`, `setPipeline`), where it called `dsp.setSystems`.
+`dsp.setSystems`) and moves with the Backend surface too. Since B2 it builds its systems through a
+`DirectGraph` sharing the session's graph, where it called `constructSystem` before, and since B3a it
+gives the kernel its MIDI routing and pipeline through that graph too (`setProjectStages`,
+`setPipeline`), where it called `dsp.setSystems`.
 
-Before each case it calls `newProject()`, deletes every ROM copy, reloads the kernel (since B3a the new project
-leaves the kernel node fresh instead, its structure naming no system), stops the transport
-at ppq 0 and 120 bpm, sets the case's sample rate, drains the MIDI out, and asserts no system survived.
+Before each case it calls `newProject()`, deletes every ROM copy, stops the transport at ppq 0 and 120
+bpm, sets the case's sample rate, drains the MIDI out, and asserts no system survived. Before B3a it
+reloaded the kernel too; since B3a the new project does that part: `buildGraph` always places `kernel`,
+so the new project reshapes it to a structure naming no system, which prunes every system's clock and
+role scratch and keeps the project stages' state up to the new stage count, as `DspKernel.setSystems`
+does.
 
 ROMs are copied into the file's temp dir before they load (`rig.rom`), so a case never writes a
 committed `.sav` (battery flush on teardown would rewrite `resources/roms/smsggdj_v0_45.sav`). Only the
@@ -233,7 +236,7 @@ suite is 23 test files with `determinism`, `render-blocks` and `comparator`); th
 | `controller` *(fixture)* | pad presses launching distinct rows on an Arduinoboy LSDj in MIDIMAP, transport running | the Launchpad role, controller-in |
 
 Plus `determinism`, `render-blocks` and `comparator`, the harness's own tests (§6). B3a added the five
-`blocks-tiny-*` groups (1-frame blocks and FL-style ragged splits) and `host-midi-order`
+`blocks-tiny-*` groups (1-frame blocks and FL-style ragged splits) and the `host-midi-order` file
 ([modular-graph-phase-b3a-design.md](modular-graph-phase-b3a-design.md) §7.1, §7.2).
 
 ## 4. What B0 hands B1

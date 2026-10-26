@@ -142,7 +142,10 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // A throw in process is caught, counted and the block's output up to it stands: the node runs again next block
 // (design section 4.5), unless its definition says faultOnThrow, when it faults (RP_FAULT, the executor's latch); a
 // faultOnThrow node whose onSettings or portsChanged threw faults at its next block, since it may hold half of what
-// the hook set. Returning "fault" faults it too. The first throw's message is kept, and logged by reclaim.
+// the hook set. Returning "fault" faults it too. The first throw's message is kept, and logged by reclaim. A write the
+// block path makes onto what the node holds that fails (a setter the node hung there threw, or it froze the object) is
+// the node's throw too: messages() and control() throw it, and on the Block object or its transport, written before
+// process is called, it is a throw in process whose block does not run (its audio outputs silent).
 //
 // Settings reach the audio side as their JSON form: the control side's parseSettings checks them, and what it
 // returns crosses as JSON (the two runtimes share no value), so a transform's result that JSON cannot hold (a Map, a
@@ -211,8 +214,10 @@ public:
     static constexpr std::size_t kStackBytes = 256 * 1024;  // each runtime's JS stack (the class comment)
 
     // ---- any thread ------------------------------------------------------------------------------------------
-    // Throws caught in a script node (process, and its create, onSettings, portsChanged and activate) and in the
-    // promise jobs their blocks queued, so far.
+    // Throws caught in a script node (process, and its create, onSettings, portsChanged and activate) so far, and the
+    // jobs their blocks queued that failed: a queueMicrotask callback that threw, or a job the deadline stopped or JS
+    // ran out of memory in. A promise reaction's own throw only rejects its promise, which is the node's to handle, so
+    // it is not counted.
     std::uint32_t     throwCount() const { return throws_.load(std::memory_order_relaxed); }
     ScriptAllocations audioAllocations() const;
     // JS instances created and not yet released.
@@ -222,14 +227,19 @@ public:
 
     // ---- profiling (spec/08-profiling.md): real only in a RETROPLUG_PROFILE build --------------------------------
     // The allocation window, opened by resetAllocStats, which can pin the audio runtime's auto-GC off from then on (so
-    // a window collects nothing); runGc runs and times one collection there. Quiescent: no audio thread runs blocks.
+    // a window collects nothing); runGc runs and times one collection there. allocStats never refuses (a benchmark
+    // reads its `enabled` to know a profile host), and read on another thread while blocks run lags them.
     DspAllocStats allocStats() const;
-    // Each refuses, doing nothing, while an audio thread owns the runtime (setAudioThreadOwns): resetAllocStats and
-    // traceReset return false, runGc a result with enabled false, and the trace reads nothing; said once on stderr.
+    // These refuse, doing nothing, while an audio thread owns the runtime (setAudioThreadOwns): resetAllocStats and
+    // traceReset return false and runGc a result with enabled false (the first refusal said once on stderr), and the
+    // trace reads, traceSpans and traceNames, return nothing, silently. The check is sound because these and
+    // setAudioThreadOwns are called on the same control thread: an audio thread starts only after that thread has set
+    // it true, which it cannot do while inside one of these.
     bool          resetAllocStats(bool disableAutoGc);
     DspGcResult   runGc();
     // The trace window. traceReset clears it and arms (or disarms) it, quiescent, as are the reads; the block thread
-    // records, and only while it is armed. spanBegin and spanEnd bracket a span; spanSince records one from `t0`, a
+    // records, and only while it is armed, so a window armed before an audio thread starts records (and grows) until
+    // that thread hands the runtime back. spanBegin and spanEnd bracket a span; spanSince records one from `t0`, a
     // traceNow(), to now. lastProcessEnd() is when the last script node's process span ended, on traceNow's clock.
     // traceName names a label below kDspSpanLabels, and ignores one past it.
     void                      spanBegin(std::uint32_t label);
@@ -314,11 +324,13 @@ private:
 
     // Profiling (kept by a profile build only; a handful of zeros otherwise). The allocation window: the counts and
     // live heap it opened at, the counts the current block began at, and the blocks it has run, with the worst one's
-    // allocations.
-    ScriptAllocations windowStart_{};
-    std::int64_t      windowLiveBytes_ = 0;
-    ScriptAllocations blockStart_{};
-    std::uint64_t     windowBlocks_ = 0, maxBlockAllocs_ = 0, maxBlockBytes_ = 0;
+    // allocations. Those three are written by endBlock on the block thread, or zeroed by resetAllocStats while no
+    // audio thread runs, so one writer at a time; atomic for allocStats, which does not refuse and may read them from
+    // another thread while blocks run.
+    ScriptAllocations          windowStart_{};
+    std::int64_t               windowLiveBytes_ = 0;
+    ScriptAllocations          blockStart_{};
+    std::atomic<std::uint64_t> windowBlocks_{0}, maxBlockAllocs_{0}, maxBlockBytes_{0};
     // The trace window: its clock's start (steady_clock nanoseconds), the spans open as {label, t0} and those closed.
     // While a process call's JS runs, jsSpanFloor_ is the open spans' count with its js-call span the last of them:
     // JS's own spans stand above it, and none is JS's while it is kNoJsSpans.

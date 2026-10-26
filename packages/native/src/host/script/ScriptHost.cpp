@@ -185,6 +185,13 @@ void bump(std::atomic<std::uint64_t>& c, std::uint64_t by = 1) {
     c.store(c.load(std::memory_order_relaxed) + by, std::memory_order_relaxed);
 }
 
+#ifdef RETROPLUG_PROFILE
+// The same for a running maximum: c raised to `to` when it is below.
+void bumpMax(std::atomic<std::uint64_t>& c, std::uint64_t to) {
+    if (to > c.load(std::memory_order_relaxed)) c.store(to, std::memory_order_relaxed);
+}
+#endif
+
 // The trace window's spans on the block path (spec/08-profiling.md): compiled out of every build but a profile one.
 inline void traceBegin([[maybe_unused]] ScriptHost& h, [[maybe_unused]] std::uint32_t label) {
 #ifdef RETROPLUG_PROFILE
@@ -540,21 +547,12 @@ struct ScriptHost::Glue {
         ++in.blockStamp;
         // Every audio port's copies first, the inputs' samples in them: a node may read views it kept from a block
         // before, so the copy cannot wait for it to ask.
-        if (!readyAudio(ctx, in, *block)) {  // out of memory in JS, so the block cannot run
-            const bool expired = expiryFaults(h, in);
-            recordThrow(h, in, "process");
-            silenceAudio(in, *block);
-            traceEnd(h);  // marshal
-            processSpanEnd(h);
-            return in.type->faultOnThrow || expired ? RP_FAULT : RP_OK;
-        }
+        if (!readyAudio(ctx, in, *block)) return cannotRun(h, in, *block);  // out of memory in JS
         in.running = block;
-        JS_SetProperty(ctx, in.block, atom(h, kFrames), JS_NewUint32(ctx, block->frames));
-        const rp_transport& t = *block->transport;
-        JS_SetProperty(ctx, in.transport, atom(h, kSampleRate), JS_NewFloat64(ctx, t.sample_rate));
-        JS_SetProperty(ctx, in.transport, atom(h, kTempo), JS_NewFloat64(ctx, t.tempo));
-        JS_SetProperty(ctx, in.transport, atom(h, kPpq), JS_NewFloat64(ctx, t.ppq));
-        JS_SetProperty(ctx, in.transport, atom(h, kPlaying), JS_NewBool(ctx, (t.flags & RP_TRANSPORT_PLAYING) != 0));
+        if (!fillBlock(h, ctx, in, *block)) {
+            in.running = nullptr;
+            return cannotRun(h, in, *block);
+        }
         traceEnd(h);
         jsCallBegin(h);
         JSValue result = JS_Call(ctx, in.process, in.object, 1, &in.block);
@@ -574,6 +572,29 @@ struct ScriptHost::Glue {
         JS_FreeValue(ctx, result);
         processSpanEnd(h);
         return fault ? RP_FAULT : RP_OK;
+    }
+
+    // A block whose marshalling failed before its process could be called, with the exception pending: JS out of
+    // memory, or a write onto what the node holds refused (fillBlock). Counted as a throw in process, its audio outputs
+    // silent, and faulted as such a throw would fault it.
+    static rp_status cannotRun(ScriptHost& h, Instance& in, const rp_process& block) {
+        const bool expired = expiryFaults(h, in);
+        recordThrow(h, in, "process");
+        silenceAudio(in, block);
+        traceEnd(h);  // marshal
+        processSpanEnd(h);
+        return in.type->faultOnThrow || expired ? RP_FAULT : RP_OK;
+    }
+
+    // The block's length and transport, onto the Block object and its transport. False, with the exception pending, when
+    // a write fails: a setter the node hung on one threw, or it froze one.
+    static bool fillBlock(ScriptHost& h, JSContext* ctx, Instance& in, const rp_process& block) {
+        const rp_transport& t = *block.transport;
+        return JS_SetProperty(ctx, in.block, atom(h, kFrames), JS_NewUint32(ctx, block.frames)) >= 0 &&
+               JS_SetProperty(ctx, in.transport, atom(h, kSampleRate), JS_NewFloat64(ctx, t.sample_rate)) >= 0 &&
+               JS_SetProperty(ctx, in.transport, atom(h, kTempo), JS_NewFloat64(ctx, t.tempo)) >= 0 &&
+               JS_SetProperty(ctx, in.transport, atom(h, kPpq), JS_NewFloat64(ctx, t.ppq)) >= 0 &&
+               JS_SetProperty(ctx, in.transport, atom(h, kPlaying), JS_NewBool(ctx, (t.flags & RP_TRANSPORT_PLAYING) != 0)) >= 0;
     }
 
     // A process call's js-call span (a profile build), which the spans its JS opens stand inside: opened with the trace
@@ -597,24 +618,22 @@ struct ScriptHost::Glue {
     }
 
     // Around the host writing onto objects JS holds (a setter JS defined there runs): the spans that setter's JS opens or
-    // closes record nothing, as outside a process call, so it cannot close the marshal span the host has open. lift()
-    // restores the floor early, before the host closes that span; the destructor does it on every other way out.
+    // closes record nothing, as outside a process call, so it cannot close the marshal span the host has open. The
+    // floor comes back as the fence goes out of scope, on every way out; the host's own span calls never read it, so
+    // where in that scope the host closes its span does not matter.
     struct JsSpanFence {
         ScriptHost&       h;
         const std::size_t saved;
-        mutable bool      lifted = false;
         explicit JsSpanFence(ScriptHost& host) : h(host), saved(host.jsSpanFloor_) {
 #ifdef RETROPLUG_PROFILE
             h.jsSpanFloor_ = kNoJsSpans;
 #endif
         }
-        void lift() const {
+        ~JsSpanFence() {
 #ifdef RETROPLUG_PROFILE
-            if (!lifted) h.jsSpanFloor_ = saved;
+            h.jsSpanFloor_ = saved;
 #endif
-            lifted = true;
         }
-        ~JsSpanFence() { lift(); }
         JsSpanFence(const JsSpanFence&) = delete;
         JsSpanFence& operator=(const JsSpanFence&) = delete;
     };
@@ -977,10 +996,10 @@ struct ScriptHost::Glue {
     }
 
     // The message objects of `array`, element i made (into pool) when it has never been; JS_EXCEPTION, with it pending,
-    // when JS is out of memory.
+    // when JS is out of memory or the read or write there fails (a getter or setter JS hung on Array.prototype).
     static JSValue element(JSContext* ctx, PortJs& p, std::uint32_t i) {
         JSValue e = JS_GetPropertyUint32(ctx, p.pool, i);
-        if (JS_IsObject(e)) return e;
+        if (JS_IsObject(e) || JS_IsException(e)) return e;
         JS_FreeValue(ctx, e);
         e = JS_NewObject(ctx);
         if (JS_IsException(e)) return e;
@@ -991,7 +1010,7 @@ struct ScriptHost::Glue {
         return e;
     }
 
-    // A fresh array (or object) into *slot; false, with the exception pending, when JS is out of memory.
+    // A fresh value into *slot; false, with the exception pending, when JS is out of memory.
     static bool make(JSValue* slot, JSValue made) {
         if (JS_IsException(made)) return false;
         *slot = made;
@@ -1012,11 +1031,37 @@ struct ScriptHost::Glue {
         return same;
     }
 
+    // One message's frame, data and flags onto its element. False, with the exception pending, when JS is out of memory
+    // or a read or write there fails.
+    static bool fillMessage(ScriptHost& h, JSContext* ctx, const PortJs& p, JSValueConst e, const rp_message& m) {
+        if (JS_SetProperty(ctx, e, atom(h, kFrame), JS_NewUint32(ctx, m.frame)) < 0) return false;
+        JSValue data = JS_GetProperty(ctx, e, atom(h, kData));
+        if (JS_IsException(data)) return false;
+        const bool same = viewing(ctx, data, p.payload, m.offset, m.size);
+        JS_FreeValue(ctx, data);
+        if (!same) {
+            JSValueConst args[3] = {p.payload, JS_NewUint32(ctx, m.offset), JS_NewUint32(ctx, m.size)};
+            JSValue view = JS_NewTypedArray(ctx, 3, args, JS_TYPED_ARRAY_UINT8);
+            if (JS_IsException(view) || JS_SetProperty(ctx, e, atom(h, kData), view) < 0) return false;
+        }
+        return JS_SetProperty(ctx, e, atom(h, kFlags), JS_NewUint32(ctx, m.flags)) >= 0;
+    }
+
     // An events or bytes input as a reused Message[]: the payloads copied into one JS-owned buffer (grown, never
     // shrunk), each message's data a Uint8Array over its bytes there, made again only when its place moves. False, with
-    // the exception pending, when JS is out of memory.
+    // the exception pending, when JS is out of memory or a write onto what the node holds fails (a setter it hung on a
+    // message threw, or it froze the array or a message), which messages() then throws as the node's.
     static bool fillMessages(ScriptHost& h, JSContext* ctx, PortJs& p, const rp_queue& q) {
-        if (JS_IsUndefined(p.value) && !(make(&p.pool, JS_NewArray(ctx)) && make(&p.value, JS_NewArray(ctx)))) return false;
+        if (JS_IsUndefined(p.value)) {
+            JSValue pool = JS_NewArray(ctx), value = JS_NewArray(ctx);
+            if (JS_IsException(pool) || JS_IsException(value)) {
+                JS_FreeValue(ctx, pool);
+                JS_FreeValue(ctx, value);
+                return false;
+            }
+            p.pool = pool;
+            p.value = value;
+        }
         if (q.count > 0 && q.bytes_capacity > 0) {
             std::size_t room = 0;
             std::uint8_t* bytes = JS_IsUndefined(p.payload) ? nullptr : JS_GetArrayBuffer(ctx, &room, p.payload);
@@ -1033,47 +1078,45 @@ struct ScriptHost::Glue {
             if (bytes && q.bytes_used) std::memcpy(bytes, q.bytes, q.bytes_used);
         }
         for (std::uint32_t i = 0; i < q.count; ++i) {
-            const rp_message& m = q.items[i];
             JSValue e = element(ctx, p, i);
             if (JS_IsException(e)) return false;
-            JS_SetProperty(ctx, e, atom(h, kFrame), JS_NewUint32(ctx, m.frame));
-            JSValue data = JS_GetProperty(ctx, e, atom(h, kData));
-            if (!viewing(ctx, data, p.payload, m.offset, m.size)) {
-                JSValueConst args[3] = {p.payload, JS_NewUint32(ctx, m.offset), JS_NewUint32(ctx, m.size)};
-                JSValue view = JS_NewTypedArray(ctx, 3, args, JS_TYPED_ARRAY_UINT8);
-                if (JS_IsException(view)) {
-                    JS_FreeValue(ctx, data);
-                    JS_FreeValue(ctx, e);
-                    return false;
-                }
-                JS_SetProperty(ctx, e, atom(h, kData), view);
+            if (!fillMessage(h, ctx, p, e, q.items[i])) {
+                JS_FreeValue(ctx, e);
+                return false;
             }
-            JS_FreeValue(ctx, data);
-            JS_SetProperty(ctx, e, atom(h, kFlags), JS_NewUint32(ctx, m.flags));
-            JS_SetPropertyUint32(ctx, p.value, i, e);
+            if (JS_SetPropertyUint32(ctx, p.value, i, e) < 0) return false;  // which takes e, set or not
         }
-        JS_SetProperty(ctx, p.value, atom(h, kLength), JS_NewUint32(ctx, q.count));
-        return true;
+        return JS_SetProperty(ctx, p.value, atom(h, kLength), JS_NewUint32(ctx, q.count)) >= 0;
     }
 
     // A control input or a param as a reused { start, changes }. False, with the exception pending, when JS is out of
-    // memory.
+    // memory or a write onto what the node holds fails (a setter it hung on the stream or a change threw, or it froze
+    // one), which control() then throws as the node's.
     static bool fillControl(ScriptHost& h, JSContext* ctx, PortJs& p, const rp_control_queue& q) {
         if (JS_IsUndefined(p.value)) {
-            if (!(make(&p.items, JS_NewArray(ctx)) && make(&p.pool, JS_NewArray(ctx)) && make(&p.value, JS_NewObject(ctx))))
+            JSValue items = JS_NewArray(ctx), pool = JS_NewArray(ctx), value = JS_NewObject(ctx);
+            const bool made = !JS_IsException(items) && !JS_IsException(pool) && !JS_IsException(value) &&
+                              JS_SetProperty(ctx, value, atom(h, kChanges), JS_DupValue(ctx, items)) >= 0;
+            if (!made) {  // all made again next time
+                for (JSValue v : {items, pool, value}) JS_FreeValue(ctx, v);
                 return false;
-            JS_SetProperty(ctx, p.value, atom(h, kChanges), JS_DupValue(ctx, p.items));
+            }
+            p.items = items;
+            p.pool = pool;
+            p.value = value;
         }
-        JS_SetProperty(ctx, p.value, atom(h, kStart), JS_NewFloat64(ctx, q.start));
+        if (JS_SetProperty(ctx, p.value, atom(h, kStart), JS_NewFloat64(ctx, q.start)) < 0) return false;
         for (std::uint32_t i = 0; i < q.count; ++i) {
             JSValue e = element(ctx, p, i);
             if (JS_IsException(e)) return false;
-            JS_SetProperty(ctx, e, atom(h, kFrame), JS_NewUint32(ctx, q.changes[i].frame));
-            JS_SetProperty(ctx, e, atom(h, kValue), JS_NewFloat64(ctx, q.changes[i].value));
-            JS_SetPropertyUint32(ctx, p.items, i, e);
+            if (JS_SetProperty(ctx, e, atom(h, kFrame), JS_NewUint32(ctx, q.changes[i].frame)) < 0 ||
+                JS_SetProperty(ctx, e, atom(h, kValue), JS_NewFloat64(ctx, q.changes[i].value)) < 0) {
+                JS_FreeValue(ctx, e);
+                return false;
+            }
+            if (JS_SetPropertyUint32(ctx, p.items, i, e) < 0) return false;  // which takes e, set or not
         }
-        JS_SetProperty(ctx, p.items, atom(h, kLength), JS_NewUint32(ctx, q.count));
-        return true;
+        return JS_SetProperty(ctx, p.items, atom(h, kLength), JS_NewUint32(ctx, q.count)) >= 0;
     }
 
     // block.messages(port): an events or bytes input.
@@ -1088,7 +1131,6 @@ struct ScriptHost::Glue {
             traceBegin(hostOf(ctx), DSP_SPAN_MARSHAL);
             const JsSpanFence fence(hostOf(ctx));
             const bool filled = fillMessages(hostOf(ctx), ctx, *p, *in->running->inputs[found->index].u.queue);
-            fence.lift();
             traceEnd(hostOf(ctx));
             if (!filled) return JS_EXCEPTION;
             p->stamp = in->blockStamp;
@@ -1110,7 +1152,6 @@ struct ScriptHost::Glue {
             traceBegin(hostOf(ctx), DSP_SPAN_MARSHAL);
             const JsSpanFence fence(hostOf(ctx));
             const bool filled = fillControl(hostOf(ctx), ctx, *p, q);
-            fence.lift();
             traceEnd(hostOf(ctx));
             if (!filled) return JS_EXCEPTION;
             p->stamp = in->blockStamp;
@@ -1435,16 +1476,16 @@ void ScriptHost::beginBlock() {
 
 // The promise jobs the block's JS queued (its process calls, and whatever the adoption before it ran), bounded so a
 // reaction that queues another every time cannot hold the block, and held to one call deadline. A job that fails (a
-// reaction's own throw only rejects its promise: this is the deadline, or JS out of memory) is counted as a node's
-// throw is, and one the deadline stopped leaves the rest for the next block's end.
+// queueMicrotask callback that threw, the deadline, or JS out of memory: a promise reaction's own throw only rejects
+// its promise) is counted as a node's throw is, and one the deadline stopped leaves the rest for the next block's end.
 void ScriptHost::endBlock() {
     if (JS_IsJobPending(audioRt_)) runAudioJobs();
 #ifdef RETROPLUG_PROFILE
     // The allocation window's per-block counts, the promise jobs included.
     const ScriptAllocations now = audioAllocations();
-    ++windowBlocks_;
-    maxBlockAllocs_ = std::max(maxBlockAllocs_, now.allocs - blockStart_.allocs);
-    maxBlockBytes_ = std::max(maxBlockBytes_, now.bytes - blockStart_.bytes);
+    bump(windowBlocks_);
+    bumpMax(maxBlockAllocs_, now.allocs - blockStart_.allocs);
+    bumpMax(maxBlockBytes_, now.bytes - blockStart_.bytes);
 #endif
 }
 
@@ -1562,9 +1603,9 @@ DspAllocStats ScriptHost::allocStats() const {
     s.allocBytes = now.bytes - windowStart_.bytes;
     s.liveBytesDelta = counters_.liveBytes.load(std::memory_order_relaxed) - windowLiveBytes_;
     s.peakBytes = counters_.peakBytes.load(std::memory_order_relaxed);
-    s.blockCount = windowBlocks_;
-    s.maxBlockAllocCalls = maxBlockAllocs_;
-    s.maxBlockAllocBytes = maxBlockBytes_;
+    s.blockCount = windowBlocks_.load(std::memory_order_relaxed);
+    s.maxBlockAllocCalls = maxBlockAllocs_.load(std::memory_order_relaxed);
+    s.maxBlockAllocBytes = maxBlockBytes_.load(std::memory_order_relaxed);
     return s;
 }
 
@@ -1582,7 +1623,9 @@ bool ScriptHost::resetAllocStats(bool disableAutoGc) {
     if (refuseWhileOwned("the allocation window")) return false;
     windowStart_ = audioAllocations();
     windowLiveBytes_ = counters_.liveBytes.load(std::memory_order_relaxed);
-    windowBlocks_ = maxBlockAllocs_ = maxBlockBytes_ = 0;
+    windowBlocks_.store(0, std::memory_order_relaxed);
+    maxBlockAllocs_.store(0, std::memory_order_relaxed);
+    maxBlockBytes_.store(0, std::memory_order_relaxed);
     // QuickJS checks its threshold only as it makes an object, so SIZE_MAX means a collection never starts by itself.
     if (disableAutoGc) JS_SetGCThreshold(audioRt_, static_cast<std::size_t>(-1));
     return true;

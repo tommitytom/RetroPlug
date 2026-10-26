@@ -153,8 +153,9 @@ public:
 
     // --- profiling the audio runtime (spec/08-profiling.md): the script host's allocation window, its GC pass and
     // its trace window, which holds the engine's own stages too (the plan after its script nodes, the state publish).
-    // Quiescent only (the renderAudio pull path); a struct with enabled false, or nothing, except in a
-    // RETROPLUG_PROFILE build ---
+    // Quiescent (the renderAudio pull path): while the audio thread runs, resetDspAllocStats and dspTraceReset return
+    // false, dspRunGc a result with enabled false, and dspTrace and dspTraceNames nothing, as they do in any build
+    // but a RETROPLUG_PROFILE one; dspAllocStats never refuses, and is enabled false only off-profile ---
     rp::host::DspAllocStats             dspAllocStats() const;
     bool                                resetDspAllocStats(bool disableAutoGc);
     rp::host::DspGcResult               dspRunGc();

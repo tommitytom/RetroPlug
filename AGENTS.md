@@ -44,10 +44,11 @@ The rules below are the parts that don't fit those.
   creation and release on the block thread, throws; the DSP kernel, now the script node `rp.dsp.kernel`, sends
   exactly the digests it was recorded sending while the old kernel stage still ran beside it and matched it; and
   every document in `buildGraph`'s goldens, handed to the engine with real cores, plans and runs a block with no
-  node faulting, no script node throwing and no message dropped (the 33-system `perSystem` ones are refused, as they must be; the wiring itself is
-  `buildGraph`'s, held by `pnpm test graph` to explicit tables and to the B1 translator's goldens). A hidden
-  bench times a script node per block at 1, 64 and 512 frames (`build/bin/retroplug-engine-graph-test
-  "[bench]"`), and a profile build adds four `[profile]` cases (`tools/run-profile.sh unit`).
+  node faulting, no script node throwing and no message dropped (the 33-system `perSystem` ones are refused,
+  as they must be; the wiring itself is `buildGraph`'s, held by `pnpm test graph` to explicit tables and to
+  the B1 translator's goldens). A hidden bench times a script node per block at 1, 64 and 512 frames
+  (`build/bin/retroplug-engine-graph-test "[bench]"`), and a profile build adds five `[profile]` cases
+  (`tools/run-profile.sh unit`).
   `retroplug-dynparams-test` is the odd one out: it compiles DPF's format-neutral core (`DistrhoPlugin.cpp`)
   plus its OWN `DistrhoPluginInfo.h`, building no plugin format at all, to drive
   `PluginExporter::reinitParameters` over a toy plugin.
@@ -226,8 +227,8 @@ broken tree but is not.
 `testing/harness.ts`, and by the CLI SDK) reports the case as TAP `ok N - name # SKIP reason`
 rather than as a pass — the convention it replaced was a `console.log("# SKIP ...")` plus a bare
 `return`, which printed `ok` and counted as coverage. It THROWS, so it works from inside a helper
-or a loop; call it only from a test body, since an exception raised in a DSP kernel callback is
-flattened to a boolean natively and would vanish. Which files may skip is pinned by
+or a loop; call it only from code the test body runs or awaits, since any `catch` between it and
+the harness swallows it (which is why `toThrow` re-throws a skip). Which files may skip is pinned by
 `packages/retroplug/scripts/skip-baseline.json` — generated with the sibling fixture trees ABSENT,
 so it records CI's worst case and a dev box that owns the fixtures simply skips less. A file that
 starts skipping, skips more than its entry, or loses cases fails the run. Regenerate with

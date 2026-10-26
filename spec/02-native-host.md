@@ -79,17 +79,17 @@ All three hosts compose the services, mount their facets on an rpcpp server over
   control-plane bytecode, then pumps until `__rp_ready`. The editor
   ([`PluginUI.cpp`](../packages/native/plugin/PluginUI.cpp))
   attaches its LVGL display to that *same* context via the in-process handoff
-  ([`SharedDSP`](../packages/native/plugin/PluginShared.hpp#L19)),
+  ([`SharedDSP`](../packages/native/plugin/PluginShared.hpp#L21)),
   so the UI reaches the backend through the already-bound `__rpcSend` — no second RPC bridge.
   The UI and window-geometry seams are 03's topic.
-- **Native test host**: [`main.cpp:84-97`](../packages/native/src/main.cpp#L84) binds
+- **Native test host**: [`main.cpp:107-141`](../packages/native/src/main.cpp#L107) binds
   the same namespace, installs a `globalThis.tjs.exit` hook that records the exit code, evals a TS
   bundle, and pumps the job loop until the harness reports TAP. This is the
   `test:native` runner (`retroplug-host`).
-- **Headless UI-test host**: [`UiHarness`](../packages/native/test/ui/UiHarness.hpp#L26)
+- **Headless UI-test host**: [`UiHarness`](../packages/native/test/ui/UiHarness.hpp#L30)
   is the plugin's control-plane bring-up **minus the audio thread, plus a display**. Because
   there is no audio thread, its
-  [`advance(ms)`](../packages/native/test/ui/UiHarness.hpp#L44) explicitly
+  [`advance(ms)`](../packages/native/test/ui/UiHarness.hpp#L48) explicitly
   calls `renderAudio(ms)` to push frames into the registry the UI reads.
 
 ## The RPC surface
@@ -109,15 +109,15 @@ see [05-data-persistence.md](05-data-persistence.md).)
 |---|---|---|
 | `readFile` | `(string path) → optional<Bytestring>` | whole file |
 | `readFilePrefix` | `(string, uint32 length) → optional<Bytestring>` | first N bytes (ROM sniffing) |
-| `writeFile` | `(string, Bytestring) → bool` | creates parent dirs on demand ([`:81`](../packages/native/src/host/rpc/HostRpcService.cpp#L81)) |
-| `writeFileAtomic` | `(string, Bytestring) → bool` | tmp + rename ([`:94`](../packages/native/src/host/rpc/HostRpcService.cpp#L94)) |
+| `writeFile` | `(string, Bytestring) → bool` | creates parent dirs on demand ([`:89`](../packages/native/src/host/rpc/HostRpcService.cpp#L89)) |
+| `writeFileAtomic` | `(string, Bytestring) → bool` | tmp + rename ([`:106`](../packages/native/src/host/rpc/HostRpcService.cpp#L106)) |
 | `fileExists` / `rename` / `deleteFile` | `→ bool` | |
 | `listDir` | `(string dir) → vector<string>` | filenames only |
-| `drainChangedPaths` | `→ vector<string>` | pull-drain of the efsw watcher (`NativeFileWatcher`); empty until a host calls `enableWatching` (the plugin does; this test host / CLI don't) ([`:155`](../packages/native/src/host/rpc/HostRpcService.cpp#L155)) |
+| `drainChangedPaths` | `→ vector<string>` | pull-drain of the efsw watcher (`NativeFileWatcher`); empty until a host calls `enableWatching` (the plugin does; this test host / CLI don't) ([`:197`](../packages/native/src/host/rpc/HostRpcService.cpp#L197)) |
 | `setWatchedRoms` | `(vector<string>) → bool` | register the ROM files to watch (parent dirs); recomputed by TS on every systems-list change. Config dir + `bindings/` are always watched |
 | `canonicalize` | `(string) → string` | `weakly_canonical`, falls back to input |
 | `configDir` | `→ string` | per-OS config path, computed in this TU (no config-persistence link) ([`:23`](../packages/native/src/host/rpc/HostRpcService.cpp#L23)) |
-| `zip` | `(vector<BackendZipInput>) → Bytestring` | miniz, no-copy add ([`:147`](../packages/native/src/host/rpc/HostRpcService.cpp#L147)) |
+| `zip` | `(vector<BackendZipInput>) → Bytestring` | miniz, no-copy add ([`:226`](../packages/native/src/host/rpc/HostRpcService.cpp#L226)) |
 | `unzip` | `(Bytestring) → vector<BackendZipEntry>` | |
 
 `configDir` is computed per-OS directly in this service, so the host links no config-persistence
@@ -128,11 +128,14 @@ does.
 
 ### `EngineRpcService`: emulator / MIDI / transport
 
-Every mutation here routes through the `QueuedInvoker` except three, which call the `Engine`
+Every mutation here routes through the `QueuedInvoker` except these, which call the `Engine`
 directly on the control thread: `buildCore` and `setGraph` (`Engine::parkCore` / `Engine::setGraph`),
-and `setSampleRate` (`Engine::setSampleRate`, so it refuses while the audio thread owns the engine or
-the running plan holds a system). The render calls drive `processBlock` on the calling thread
-themselves and refuse while the audio thread owns the engine. Every read routes through the
+`setSampleRate` (`Engine::setSampleRate`, so it refuses while the audio thread owns the engine or the
+running plan holds a system), the render calls, and the profile calls `dspResetAllocStats`,
+`dspRunGc` and `dspTraceReset` (which the script host refuses while the audio thread owns its
+runtime). The render calls drive `processBlock` on the calling thread themselves and refuse while the
+audio thread owns the engine; `renderBlocks` also stages each block's MIDI and sets its transport on
+the `Engine` itself, once it has drained the ring. Every read of a core's state routes through the
 `SnapshotRegistry`. No method walks a live core.
 
 | Method | Signature | Behaviour |
@@ -402,8 +405,9 @@ The document `buildGraph` writes:
   reaches it over a feedback wire, which orders nothing). The planner breaks ties by document order, so
   this is also the order the plan runs in. Node ids are `midi-in`, `controller-in`, `kernel`, `cart`,
   `midi-out`, `controller-out`, `out`, `sys-<id>` and names derived from a system id (`split-<id>`,
-  `stem-<id>-<k>`) or a host channel (`lane-<c>`), never from position, so a system keeps its instance across edits. Link groups are Game Boys only, bucketed by nonzero
-  link-group id in slot order, a group of fewer than two dissolved.
+  `stem-<id>-<k>`) or a host channel (`lane-<c>`), never from position, so a system keeps its instance
+  across edits. Link groups are Game Boys only, bucketed by nonzero link-group id in slot order, a
+  group of fewer than two dissolved.
 - **The kernel.** Its settings are the structure: `{ project, systems: [{ id, pipeline, serialOut }] }`,
   the systems in slot order (positional MIDI routing reads it), each pipeline the roles the kernel runs
   for that system, `serialOut` true for a Game Boy. Its wires: `midi-in.midi`, `controller-in.midi` and
@@ -563,7 +567,7 @@ Every backend consumes a backend-agnostic
 [`SystemBuildSpec`](../packages/native/src/system/SystemFactory.hpp) — `core`,
 `platform`, `romPath`/`embeddedRom`, `sram`/`savestate` seed bytes, and an **opaque `settings`
 blob** whose schema is owned by TS and decoded only by the matching backend. A
-[`SystemBackend::build`](../packages/native/src/system/SystemFactory.hpp#L29) runs on the
+[`SystemBackend::build`](../packages/native/src/system/SystemFactory.hpp#L33) runs on the
 control thread (heavy, non-RT) and returns an **already-`onActivate`'d** system or nullptr. The
 wire→build mapping is
 [`toBuildSpec`](../packages/native/src/host/rpc/EngineRpcService.cpp): `core` defaults
@@ -573,16 +577,16 @@ else sameboy); zip-import seed bytes win over on-disk paths; `settings` passes t
 
 ### `SameBoyBackend`
 
-[`SameBoyBackend::build`](../packages/native/src/system/sameboy/SameBoyBackend.cpp#L42) resolves the
+[`SameBoyBackend::build`](../packages/native/src/system/sameboy/SameBoyBackend.cpp#L35) resolves the
 ROM (an embedded marker via `rp::embeddedRom` is SameBoy by fiat; a file-backed ROM is slurped
 and gated on `detectRomFormat == RomFormat::Gb`, so a non-GB file is rejected). It builds a
 `SameBoyConfig`, then decodes the opaque `settings` blob into a
 [`SameBoyRoleConfig`](../packages/native/src/system/sameboy/SameBoyBackend.hpp#L18) and applies
 model / highpass / linkGroupId / fastBoot **at construct**
-([`:71-74`](../packages/native/src/system/sameboy/SameBoyBackend.cpp#L71)) — before `onActivate`, so a
+([`:69-72`](../packages/native/src/system/sameboy/SameBoyBackend.cpp#L69)): before `onActivate`, so a
 loaded non-default model doesn't trigger a post-build restart that would nuke the just-restored
 savestate. The shared build sequence
-[`buildSameBoy`](../packages/native/src/system/sameboy/SameBoyBackend.cpp#L31) is the critical seam:
+[`buildSameBoy`](../packages/native/src/system/sameboy/SameBoyBackend.cpp#L24) is the critical seam:
 
 ```cpp
 auto sys = std::make_unique<SameBoySystem>(id, std::move(cfg), std::move(romBytes));
@@ -594,18 +598,18 @@ The cores are built **bare** — no feature behaviour is baked into C++. The DSP
 (LSDj sync, mGB, Arduinoboy) run in the TS DSP kernel; kit-patch instead runs on the UI thread
 (writing patched memory regions into the core), not in the kernel. See 04. The system-role config
 schema (`SameBoyRoleConfig` field names) mirrors TS's
-`coreRoles.ts`; [`decodeSameBoyRoleConfig`](../packages/native/src/system/sameboy/SameBoyBackend.cpp#L26)
+`coreRoles.ts`; [`decodeSameBoyRoleConfig`](../packages/native/src/system/sameboy/SameBoyBackend.cpp#L19)
 reads with `rfl::DefaultIfMissing` (forward-tolerant) and is the single JSON decode point,
 shared by live `applyRoleConfig` and the construct blob. The role model is 04's topic.
 
 ### `MesenBackend`
 
-[`MesenBackend::build`](../packages/native/src/system/mesen/MesenBackend.cpp#L24) is one backend
+[`MesenBackend::build`](../packages/native/src/system/mesen/MesenBackend.cpp#L43) is one backend
 serving two platforms. It slurps the ROM and dispatches on `spec.platform`: `"nes"` gates
 `RomFormat::Nes` and builds a `MesenNesSystem`; `"gba"` gates `RomFormat::Gba` and builds a
 `MesenGbaSystem` (empty `biosPath` → HLE boot ROM). A mislabelled ROM or an unserved platform
 returns nullptr. Both call `onActivate` then `enableStateSnapshot`
-([`MesenBackend.cpp:32`](../packages/native/src/system/mesen/MesenBackend.cpp#L32)), so NES/GBA
+([`MesenBackend.cpp:25-27`](../packages/native/src/system/mesen/MesenBackend.cpp#L25)), so NES/GBA
 cores publish a tear-free savestate for the registry / Duplicate just like SameBoy. The `settings`
 blob carries the NES role-config (Region / Remove Sprite Limit / channel-export mode).
 
@@ -622,16 +626,17 @@ JS value: a control-side one that only checks settings and lays out a node's por
 audio-side one that holds every instance and runs `process`.
 
 - **The bundle.** Both run the script-node bundle
-  ([`bundle.ts`](../packages/retroplug/src/script/bundle.ts)), esbuilt to a global-code IIFE and compiled to bytecode at build time by the `retroplug-script-bundle`
-  target ([bundles.cmake](../packages/native/cmake/bundles.cmake)), whose derived C array is compiled
-  into `retroplug-backend`: every Engine loads it at construction, so every host has the same node
-  types with no boot call. The bundle appends its `defineNode` results to the global `__rp_scriptNodes`
+  ([`bundle.ts`](../packages/retroplug/src/script/bundle.ts)), esbuilt to a global-code IIFE and
+  compiled to bytecode at build time by the `retroplug-script-bundle` target
+  ([bundles.cmake](../packages/native/cmake/bundles.cmake)), whose derived C array is compiled into
+  `retroplug-backend`: every Engine loads it at construction, so every host has the same node types
+  with no boot call. The bundle appends its `defineNode` results to the global `__rp_scriptNodes`
   ([register.ts](../packages/retroplug/src/script/register.ts)); the host reads that list in both
   runtimes, requires the same id and descriptor at each index, and registers one `rp_node_type` per
-  definition in the package `rp.script`, all served by the same functions, each type telling itself apart
-  by its `ctx`. A bundle that does not load, or one definition that cannot be read, registers no type,
-  logged, and every document naming one is refused (`unknown-type`); a second load is refused. The native
-  tests build an Engine with toy bundles of their own instead.
+  definition in the package `rp.script`, all served by the same functions, each type telling itself
+  apart by its `ctx`. A bundle that does not load, or one definition that cannot be read, registers no
+  type, logged, and every document naming one is refused (`unknown-type`); a second load is refused.
+  The native tests build an Engine with toy bundles of their own instead.
 - **Settings and layout** (control side, the planning thread). `layout_for` and `prepare_settings` run
   the definition's `parseSettings` and its `layout` on the settings alone, so the planner can check a
   whole document before it creates anything. Every script type declares `RP_TYPE_STATELESS_PREPARE`,
@@ -672,14 +677,19 @@ audio-side one that holds every instance and runs `process`.
   again next block; a definition that says `faultOnThrow`, or a `process` that returns `"fault"`,
   faults instead (bypassed from then on), and a `faultOnThrow` node whose `onSettings` or
   `portsChanged` threw faults at its next block. Throws in `create`, `onSettings`, `portsChanged` and
-  `activate`, and a promise job stopped by the deadline or out of memory, are counted too
-  (`Engine::scriptThrows()`; a promise reaction's own throw only rejects its promise); the first one's
-  text is kept on the block thread in a fixed buffer and logged once by `reclaim`.
-- **The call deadline.** Every call the block thread makes into a node's JS (and `endBlock`'s
-  promise jobs, together) is held to a deadline of the calling thread's CPU time (2 s by default,
-  `setCallDeadline`), so a stall that is not the node's own never trips it. A call that runs past it is stopped and counted as a throw: a `faultOnThrow` node faults,
-  any other runs again and faults only if its next call is stopped too. Both runtimes' JS stacks are
-  held to 256 KiB, under a macOS secondary thread's 512 KiB.
+  `activate`, and a job that fails (a `queueMicrotask` callback that threw, or a job stopped by the
+  deadline or out of memory), are counted too (`Engine::scriptThrows()`; a promise reaction's own throw
+  only rejects its promise); the first one's text is kept on the block thread in a fixed buffer and
+  logged once by `reclaim`. A write the block path makes onto what a node holds that fails (a setter
+  the node hung there threw, or it froze the object) is the node's throw too: `messages()` and
+  `control()` throw it, and on the `Block` or its transport, written before `process` is called, it is
+  a throw in `process` whose block does not run.
+- **The call deadline.** Every call the block thread makes into a node's JS (and `endBlock`'s promise
+  jobs, together) is held to a deadline of the calling thread's CPU time (2 s by default,
+  `setCallDeadline`), so a stall that is not the node's own never trips it. A call that runs past it is
+  stopped and counted as a throw: a `faultOnThrow` node faults, any other runs again and faults only if
+  its next call is stopped too. Both runtimes' JS stacks are held to 256 KiB, under a macOS secondary
+  thread's 512 KiB.
 
 Every entry into a runtime re-anchors with `JS_UpdateStackTop` because the driving thread differs
 (the control thread on the pull path, the audio thread while running), and QuickJS's stack-overflow
@@ -735,7 +745,7 @@ by `tools/build-session.js` (`retroplug-script-bundle`); all are **derived, neve
 Plugin identity: name `RetroPlug`, CLAP id
 `net.tommitytom.retroplug`, `UNIQUE_ID RPlg` / `BRAND Tmtt`,
 **0 inputs / 8 outputs = four stereo pairs `out_1..4`**
-([`DistrhoPluginInfo.h:13`](../packages/native/plugin/DistrhoPluginInfo.h#L13)),
+([`DistrhoPluginInfo.h:10-11`](../packages/native/plugin/DistrhoPluginInfo.h#L10)),
 IS_SYNTH, HAS_UI (the React/LVGL editor, 480×432, user-resizable), FILE_BROWSER, MIDI in+out,
 TIMEPOS, STATE + FULL_STATE, and DIRECT_ACCESS (the in-process editor↔DSP handoff). Master gain
 is one automatable parameter applied post-render across all 8 channels
@@ -746,10 +756,6 @@ is one automatable parameter applied post-render across all 8 channels
 - **Live memory-region subscription.** There is no live "watch RAM" streaming path
   (`enableMemorySnapshot(type)`). Reads are one-shot through the registry read door; if live
   memory streaming to the UI is ever needed, that arming seam must be built.
-- **Live `applyConfigField` for Mesen.** NES/GBA role knobs (Region / Remove Sprite Limit) apply
-  **at construct**, not live — the `dynamic_cast` in
-  [`Engine::applyConfigField`](../packages/native/src/host/engine/Engine.cpp) is SameBoy-only,
-  so changing a Mesen knob rebuilds the system rather than nudging the running core.
 - **Per-block buttons/keys into the kernel.** The kernel node hands its kernel empty `buttons` and
   `keys` arrays every block ([`kernelNode.ts`](../packages/retroplug/src/script/kernelNode.ts)): it has
   no input port for them, and no host feeds them yet (this blocks the raw LSDj Keyboard mode,

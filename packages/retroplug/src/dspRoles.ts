@@ -40,7 +40,7 @@ const mgb = forwardMidiToSerial;
 
 // Forward every routed host-MIDI message straight to the core's onMidi (the emitCoreMidi sink). The
 // NES twin of `mgb`: a core with no serial port (Mesen) receives MIDI here instead of over serial.
-// The whole message goes as one event — the native NesN8MidiRole iterates the bytes into its FIFO.
+// The whole message goes as one event: the NES core's NesN8FifoRole iterates the bytes into its FIFO.
 const forwardMidiToCore: SystemBehavior = (c) => {
   const midi = c.midi;
   for (let i = 0; i < midi.length; i++) {
@@ -170,9 +170,10 @@ const keyboardMidi: SystemBehavior = (c) => {
   }
 };
 
-// ArduinoboyMaster / MIDIOUT (mode 7, == the native ArduinoboyMaster role): LSDj is a serial SLAVE that
-// emits the Arduinoboy MI.OUT protocol on its serial-out port. Native captures the raw bytes and hands
-// them back as ctx.serialOut (one-block latency); we strip the flag-gated framing + decode the byte
+// ArduinoboyMaster / MIDIOUT (mode 7, the old native ArduinoboyMaster role's port): LSDj is a serial
+// SLAVE that emits the Arduinoboy MI.OUT protocol on its serial-out port. The core captures the raw
+// bytes, and its Game Boy node's `serialOut`, a feedback wire into the kernel node, hands them back as
+// ctx.serialOut (one-block latency); we strip the flag-gated framing + decode the byte
 // protocol into host MIDI (emitMidiOut). Frame 0 — the protocol carries no intra-block timing, and the
 // downstream drain/DAW timestamps by block. Decoder state (pending command, partial framing bits)
 // persists across blocks in ctx.state.

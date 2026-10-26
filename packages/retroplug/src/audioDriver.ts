@@ -179,16 +179,22 @@ export interface AudioDriver {
   // --- audio-runtime allocation/GC profiling (spec/08-profiling.md; real only in a RETROPLUG_PROFILE host) ---
   /** Snapshot the audio JS runtime's allocation counters (deltas since the last reset). */
   dspAllocStats(): DspAllocStats;
-  /** Open a fresh measurement window; `disableAutoGc` pins QuickJS auto-GC off for determinism. */
+  /** Open a fresh measurement window; `disableAutoGc` pins QuickJS auto-GC off for determinism. False, doing
+   *  nothing, when refused (the background audio thread running) or on a host that is not a profile build. */
   dspResetAllocStats(disableAutoGc: boolean): boolean;
-  /** Run + time a self-driven cycle-collection pass; freedBytes ~0 proves no reference cycles. */
+  /** Run + time a self-driven cycle-collection pass; freedBytes ~0 proves no reference cycles. `enabled`
+   *  false when refused (the audio thread running) or off-profile. */
   dspRunGc(): DspGcResult;
   /** Open (arm=true) / close (arm=false) a runtime-trace window; while armed, every script node's process,
-   *  the engine's stages and the kernel's roles record nested wall-time spans. */
+   *  the engine's stages and the kernel's roles record nested wall-time spans. False, doing nothing, when
+   *  refused (the audio thread running: a window armed before startAudio records until stopAudio) or
+   *  off-profile. */
   dspTraceReset(arm: boolean): boolean;
-  /** Drain the recorded spans (µs, relative to the window base) — nest by containment for a flame. */
+  /** The recorded spans (µs, relative to the window base), nested by containment for a flame; a read leaves
+   *  them, dspTraceReset clears them. Empty while the audio thread runs, and off-profile. */
   dspTrace(): DspTraceSpan[];
-  /** The span label table: `dspTraceNames()[span.label]` is the stage/role name. */
+  /** The span label table: `dspTraceNames()[span.label]` is the stage/role name. Empty while the audio
+   *  thread runs, and off-profile. */
   dspTraceNames(): string[];
 
   // --- background audio thread (threaded mode) ---

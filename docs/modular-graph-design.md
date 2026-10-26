@@ -581,7 +581,7 @@ export const lsdjSync = defineNode({
   are the node's own: B3a's script host copies an audio input's samples into JS-owned buffers before `process`
   and an output's out after it, one copy per channel each way, rather than hand JS views of the plan's buffers,
   which a node could keep, transfer or edit past the buffer's life
-  ([B3a §2.3](modular-graph-phase-b3a-design.md)); a resource accessor holds to the same rule. Phase A's
+  ([B3a §2.3](modular-graph-phase-b3a-design.md)); a resource accessor will hold to the same rule. Phase A's
   `Block` and `NodeInstance` types carry audio, messages and control. B3a's script-node runtime added the
   settings hook, `onSettings(settings)`, run on the block thread at the plan swap that kept the instance
   through a settings change, before the first block that runs with them. It carries no rebuild decision:
@@ -1073,10 +1073,11 @@ doc's §0 has the table, and its §4 the requirements recording today's engine f
 - Settled in Phase A, owed by the host that adopts it: call `GraphHost::reclaim()` from an idle tick (a
   removed node and its resource pins otherwise linger until the next `setGraph`); expect `setGraph` to
   block the control thread up to its adoption timeout while the audio thread is stalled (since B3a only
-  behind a commit to a type without `RP_TYPE_STATELESS_PREPARE`, §4.3); refuse a second
-  `rp.host.audio-out` (Phase A lets the last one win); give host nodes their buffers through
-  `rp_host.get_interface` rather than the `ctx` cast Phase A's `rp.host.audio-out` uses; and read the
-  host's inputs before `processBlock` silences its outputs, since a DAW often hands both as one buffer.
+  behind a commit to a type without `RP_TYPE_STATELESS_PREPARE`, §4.3); and read the host's inputs
+  before `processBlock` silences its outputs, since a DAW often hands both as one buffer. Two more it
+  owed are paid: a second `rp.host.audio-out` is refused (`audio-out-twice`, where Phase A let the last
+  one win), and `rp.host.audio-out` takes its buffers through `rp_host.get_interface` rather than the
+  `ctx` cast Phase A gave it.
 - Two decisions Phase A leaves open, both cheap now and costly once Phase B builds on them:
   - **One ring or two.** `GraphHost` has its own command and release rings. The engine's ring also
     carries commands (RAM writes, state loads) that name nodes. Either give `GraphHost`'s `Command` a

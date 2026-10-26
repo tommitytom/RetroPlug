@@ -74,9 +74,9 @@ export class Rig {
 
   /** Back to a known state: no systems, default project settings, the transport stopped at ppq 0 and 120
    *  bpm, `sampleRate`, nothing pending, and no ROM copies left from the last case (a leftover "-2.sav" would
-   *  be adopted by the next duplicate). The new project leaves the kernel node as a fresh one: the structure
-   *  it publishes names no system (so every system's state is pruned) and only the default MIDI routing,
-   *  which keeps no state, so a controller session's state goes with its stage. */
+   *  be adopted by the next duplicate). The new project reshapes the kernel node, which buildGraph always
+   *  places: the structure it publishes names no system (so every system's state is pruned) and only the
+   *  default MIDI routing, which keeps no state, so a controller session's state goes with its stage. */
   reset(sampleRate: number): void {
     this.project.newProject();
     const romDir = this.romDir();

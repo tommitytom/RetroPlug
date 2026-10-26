@@ -55,9 +55,9 @@ to read a few hundred bytes of it.
 
 ### MIDI **out** is capped at 4 bytes
 
-MIDI **in** takes every size (`PluginDSP.cpp:300` reads `dataExt` when a message outgrows the inline
+MIDI **in** takes every size (`PluginDSP.cpp:319` reads `dataExt` when a message outgrows the inline
 `data[4]`), so a DAW can upload an N163 wave the way the CLI does. The **out** path drops anything
-longer: `PluginDSP.cpp:344` skips events over `MidiEvent::kDataSize`. Lifting it is not a one-line
+longer: `PluginDSP.cpp:363` skips events over `MidiEvent::kDataSize`. Lifting it is not a one-line
 change - the plugin never sets `dataExt`, so simply removing the guard is a null dereference in
 DPF's VST3 writer. It also buys little: VST2 drops messages over 4 bytes itself, CLAP drops over 3,
 and VST3 drops SysEx regardless, so the payoff exists only on the JACK standalone.
@@ -165,6 +165,10 @@ staging). What is left, in order:
   - A Game Boy that clocks its serial port itself, a CGB on its fast clock, can send more in a block past
     about 12000 frames (6000 in double speed) than its fixed `serialOut` holds; the rest is dropped and
     counted ([SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp) `kSerialOutCapacity`).
+  - The kernel node's `midiOut` is sized for a decoded MI.OUT stream at its densest up to 8192-frame
+    blocks (1024 messages, a captured byte every 8 frames), while `serialOut` is sized for 65536: in a
+    larger block the decoded stream can pass 1024 messages, and the rest is dropped and counted
+    ([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts) `KERNEL_MIDI_OUT`).
   - `retroplug-engine-graph-test` replaces the global `operator new` with a counting allocator
     ([CountingAllocator.cpp](../packages/native/test/graph/CountingAllocator.cpp)) that allocates through
     `_aligned_malloc` on Windows, so a core or QuickJS freeing what `new` made with `free()` would crash

@@ -28,7 +28,7 @@ and **parses** it back. The model lives in
 **"Thin"** means the model carries no binary blobs (ROM/SRAM/savestate/kit
 bytes are never in the config) and omits any field sitting at its default —
 `buildConfig` drops zero-gain, non-overridden savPath, and default settings so a
-fresh/uncustomized project stays terse ([projectConfig.ts:135](../packages/retroplug/src/projectConfig.ts#L135)).
+fresh/uncustomized project stays terse ([projectConfig.ts:290](../packages/retroplug/src/projectConfig.ts#L290)).
 `core` is deliberately **not stored**: it is re-derived from `platform` on load
 (nes/gba → mesen, else sameboy), mirroring how the runtime kind was always
 re-sniffed rather than trusted from disk. Omitted rich fields restore to native
@@ -50,7 +50,7 @@ blob key contract is the pure module
 | **EXPORT** | `.rplg.zip` | PKZIP archive | `export(path)` | the same `project.json` + one entry per live system's SRAM/savestate blob |
 
 Blob entries are keyed by config **index**, not id: `systems/{i}/sram` and
-`systems/{i}/state` ([projectBinaries.ts:17](../packages/retroplug/src/projectBinaries.ts#L17)).
+`systems/{i}/state` ([projectBinaries.ts:18-19](../packages/retroplug/src/projectBinaries.ts#L18)).
 The store's `systems()` order matches `buildConfig`'s, so index `i` addresses
 both alike. On export, TS gathers each blob through the snapshot read door
 (`backend.readState` / `backend.readSram` — see [01-architecture.md](01-architecture.md)),
@@ -96,14 +96,14 @@ framing happen entirely in TypeScript.
 | `RETROPLUG_AUTOLOAD_PROJECT=path` | `__rp_loadProjectPath(path)` | headless seed (reaper `-renderproject`): load a project FILE from disk via `load()` — a thin `.rplg` or an export `.rplg.zip` |
 
 State is a single `"project"` key, host-readable + host-writable
-([PluginDSP.cpp:103](../packages/native/plugin/PluginDSP.cpp#L103)).
+([PluginDSP.cpp:240](../packages/native/plugin/PluginDSP.cpp#L240)).
 The C++ boundary stays **string-only**: base64 is done in JS
 ([pluginControlPlane.ts](../packages/retroplug/src/pluginControlPlane.ts))
 because a DPF state chunk is NUL-terminated UTF-8 while the export archive it
 carries is binary PKZIP. `exportBytes()` produces the chunk with paths left **absolute**
 (`baseDir=""`) and none of the recents/currentPath/dirty side-effects a host
 `save`/`export` has, so `loadBytes` round-trips it with no rebase
-([projectStore.ts:162](../packages/retroplug/src/projectStore.ts#L162)).
+([projectStore.ts:616](../packages/retroplug/src/projectStore.ts#L616)).
 
 **State-source decisions.** In a **DAW**, the host chunk is authoritative: the
 DAW persists `getState()` in its project and replays it via `setState()` on
@@ -324,7 +324,7 @@ plane; the file-watch side ("watcher = C++, policy = TS") is covered in
 - [projectStore.ts](../packages/retroplug/src/projectStore.ts) — save/export/load, the missing-scan + relink lifecycle, `exportBytes`/`loadBytes`.
 - [projectBinaries.ts](../packages/retroplug/src/projectBinaries.ts) / [projectPaths.ts](../packages/retroplug/src/projectPaths.ts) — blob-key contract; path rebasing.
 - [pluginControlPlane.ts](../packages/retroplug/src/pluginControlPlane.ts) — the `__rp_saveProjectB64`/`__rp_loadProjectB64`/`__rp_loadProjectPath` surface + base64.
-- [PluginDSP.cpp:103](../packages/native/plugin/PluginDSP.cpp#L103) — DPF `initState`/`getState`/`setState` + `RETROPLUG_AUTOLOAD_PROJECT`.
+- [PluginDSP.cpp:240](../packages/native/plugin/PluginDSP.cpp#L240) - DPF `initState`/`getState`/`setState` + `RETROPLUG_AUTOLOAD_PROJECT`.
 - [userConfig.ts](../packages/retroplug/src/userConfig.ts) / [userConfigSerialization.ts](../packages/retroplug/src/userConfigSerialization.ts), [recentSerialization.ts](../packages/retroplug/src/recentSerialization.ts), [bindingSerialization.ts](../packages/retroplug/src/bindingSerialization.ts) — the config models + on-disk codecs.
 - [configSchema.ts](../packages/retroplug/src/configSchema.ts) — the clamp/default zod builders (TS forward-tolerance).
 - [migrate.ts](../packages/retroplug/src/migrate.ts) + [projectConfig.ts](../packages/retroplug/src/projectConfig.ts) — the raw-JSON migration framework + the version constants / `checkVersion` / `parseProjectVersion` (TS is the single source of truth; native does no version check).

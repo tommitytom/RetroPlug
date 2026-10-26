@@ -48,9 +48,8 @@ function isSkip(e: unknown): e is SkipError {
  *  while the case carried on to its assertions. `return skip(...)` also type-checks anywhere, since
  *  `never` is assignable to every return type.
  *
- *  Two limits. Call it only from a test body: an exception raised inside a DSP kernel callback is
- *  flattened to a boolean by the native runtime and would vanish. And any `catch` between the call and
- *  the harness swallows it - which is exactly why `toThrow` below re-throws it. */
+ *  One limit: any `catch` between the call and the harness swallows it - which is exactly why `toThrow`
+ *  below re-throws it - so call it only from code the test body runs or awaits. */
 export function skip(reason: string): never {
   const e = new Error(`SKIP: ${reason}`) as SkipError;
   e.rpSkip = true;

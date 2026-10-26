@@ -78,10 +78,10 @@ the shim and its record. The JS instance behind it lives in the script host:
   QuickJS's own threshold collection, inside whichever block's JS allocates past it. The first reclaim after the
   bundle's load collects what the load left in cycles too (about 144 KiB of the production bundle's).
 
-So JS runs on one thread at a time, as it did. Creating an instance allocates in QuickJS on the block thread, as the
-old `SetSystems` command, applied on the audio thread, did; so do parsing its settings there, the mask array
-`portsChanged` receives and the frees of a release. They happen only at swaps and releases, which is accepted, though
-a heavy `create` is an xrun source.
+So the audio runtime runs on one thread at a time, as it did (the control-side runtime runs on the planning thread,
+§2.2). Creating an instance allocates in QuickJS on the block thread, as the old `SetSystems` command, applied on the
+audio thread, did; so do parsing its settings there, the mask array `portsChanged` receives and the frees of a
+release. They happen only at swaps and releases, which is accepted, though a heavy `create` is an xrun source.
 
 ### 2.2 One control-side runtime for validation
 
@@ -123,6 +123,11 @@ place or an array it edits reaches only its own copy, never a buffer another nod
 has freed. Handing JS views of the plan's buffers and detaching them before a buffer is freed cannot be made sound: a
 kept array, `transfer()` and an edited array each outran the tracking (§10). What a block hands out is good for that
 call only.
+
+What a block refills is the node's to hold, so a write onto it can fail: a setter the node hung there throws, or it
+froze the object. That is the node's throw. `messages()` and `control()` throw it rather than hand back a half-written
+value with the exception left pending, and a failed write onto the `Block` or its transport, made before `process` is
+called, is a throw in `process` whose block does not run (§10).
 
 **Outputs** go out through `send` and `emit`, which write the plan's queue or control stream for the port directly,
 with no intermediate JS array; a `send` that does not fit returns false, and the queue counts the drop (§2.6). Ports
@@ -300,7 +305,7 @@ the feedback wire from it keeps its front across every plan swap (§2.6).
 |---|---|---|
 | `rp.host.midi-in` | out `midi` (events; 2048 messages, 64 KiB) | `pendingMidi_` handed to the kernel |
 | `rp.host.midi-out` | in `midi` (events) | `DspRuntime::midiOut_`; feeds `Engine::midiOut()` |
-| `rp.host.controller-in` | out `midi` (events; 1024 messages, 16 KiB), out `connected` (control) | `pendingControllerMidi_` and the per-block `controllerConnected` flag |
+| `rp.host.controller-in` | out `midi` (events; 1024 messages, 16 KiB), out `connected` (control) | `pendingControllerMidi_` and the per-block `controllerConnected` flag handed to the kernel |
 | `rp.host.controller-out` | in `midi` (events) | `DspRuntime::controllerOut_`; feeds `Engine::controllerOut()` |
 
 They are the package `rp.host.io` ([HostIoNodes.hpp](../packages/native/src/host/graph/HostIoNodes.hpp)), each over
@@ -396,7 +401,9 @@ one, besides the sync roles' own bytes) and exactly its bytes, so a SysEx the ho
 whole and the one place host MIDI is dropped is that edge. The rest come from what the whole `test:native` suite sends
 through them in one block, measured with the fixtures (parity included, 2.2 million kernel blocks up to 8192 frames):
 each has room for 16 times that or more, messages and bytes, and the MIDI out is sized instead for a decoded MI.OUT
-stream at its densest (a captured byte every 8 frames: 1024 in 8192):
+stream at its densest (a captured byte every 8 frames: 1024 in 8192). That sizing stops at 8192-frame blocks, where
+§3.2 sizes `serialOut` for 65536: in a larger block a decoded MI.OUT stream can pass 1024 messages, and what does not
+fit is dropped and counted:
 
 | Output | Messages | Bytes |
 |---|---|---|
@@ -423,8 +430,9 @@ another frame comes, and when `processBlock` returns or throws), which the syste
 that frame, as the old fan-out applied them; `emitCoreMidi` on `sys-<id>.midi`, `pushCoreBytes` on `sys-<id>.bytes`
 (flush as the flag), `pressButton` on `sys-<id>.buttons` at frame 0, `emitMidiOut` on `midiOut` (§4.4),
 `emitControllerOut` on `controllerOut` at frame 0. A system sink call for an id with no ports (an unknown id) is
-dropped, as the old fan-out skipped an id it could not find; `emitMidiOut` sends for any id, tagged with it. A count of the runs it
-holds lets a block that holds none skip the run bookkeeping, which the bench caught costing every block (§10).
+dropped, as the old fan-out skipped an id it could not find; `emitMidiOut` sends for any id, tagged with it. A count
+of the runs it holds lets a block that holds none skip the run bookkeeping, which the bench caught costing every block
+(§10).
 
 ### 4.3 Structure changes
 
@@ -483,8 +491,8 @@ The kernel runs before the systems because its wires say so, not because it is l
 on purpose and were re-recorded from `buildGraph` (every model gains an empty structure; the audio part of every
 document is unchanged); the native goldens test plans every distinct document among them on an Engine with the
 embedded kernel and runs a block of each, but for the 33-system `perSystem` ones, refused as they must be (more buses
-than `rp.host.audio-out` takes). B2's remark that two slot orders can build one document no longer holds, since the kernel lists its systems
-in slot order; `EngineGraph`'s dedupe key keeps the slots all the same.
+than `rp.host.audio-out` takes). B2's remark that two slot orders can build one document no longer holds, since the
+kernel lists its systems in slot order; `EngineGraph`'s dedupe key keeps the slots all the same.
 
 ### 5.2 The stores
 
@@ -565,15 +573,15 @@ transport points on block edges, on the first and last frame of a block and in 1
 - `blocks-tiny-lsdj` (LSDj MIDI sync, Arduinoboy and MI.OUT), `blocks-tiny-lsdj-master` (LSDj master sync, in a
   file of its own so the two run in parallel, 59e4b183) and `blocks-tiny-risa` (risa host sync), all fixture-only.
 
-The Arduinoboy cases also show that defect ([B0 design §2.5](modular-graph-phase-b0-design.md)) is not "every block
-carries a tick": it stays silent in `1` and `fl256` and plays in `fl`, where six blocks of seven carry almost none. Its play
-and stop notes sit on a block's first frame, so a one-block delay of either is caught in `fl` (59e4b183, 22ae5cc4).
-LSDj master sync was recorded in the same splits, at 44.1 and 48 kHz, with its defect pinned (955299e2, B0's
+The Arduinoboy cases also show the Arduinoboy defect ([B0 design §2.5](modular-graph-phase-b0-design.md)) is not "every
+block carries a tick": it stays silent in `1` and `fl256` and plays in `fl`, where six blocks of seven carry almost
+none. Its play and stop notes sit on a block's first frame, so a one-block delay of either is caught in `fl` (59e4b183,
+22ae5cc4). LSDj master sync was recorded in the same splits, at 44.1 and 48 kHz, with its defect pinned (955299e2, B0's
 eighth): in small blocks its decoder reads a stopped LSDj's idle flood as clocks (§10). The pinned cases are
 `blocks-tiny-lsdj-master`'s `masterSync-44100-{1,fl,fl256}`, which play and stop, and `masterSync-48000-{1,fl,fl256}`,
 silent (B0's sixth defect), so their messages are the flood alone. The fix, right after B3a and before B3b, re-records
-these cases, and possibly `lsdj-modes`' `masterSync-44100` and `masterSync-48000`, whose boot noise the same
-threshold decides.
+these cases, and possibly `lsdj-modes`' `masterSync-44100` and `masterSync-48000`, whose boot noise the same threshold
+decides.
 
 Segments are short, since 1-frame blocks multiply the block count. B3a is held to strict parity: every
 group, with the fixtures present and `RP_FAIL_ON_SKIP=1`, and every commit of B3a held it bit for bit.
@@ -596,12 +604,13 @@ behaviour. `nes-core-bytes` sends a 60 KiB SysEx and requires it to reach the NE
 - Toy TS nodes ([ScriptNodes.test.cpp](../packages/native/test/engine-graph/ScriptNodes.test.cpp)): input and output
   marshalling, sends past capacity refused and counted, layouts from the control-side runtime, a reshaping node kept
   and a non-reshaping one swapped or rebuilt, creation at adoption and release at reclaim on the block thread (the
-  release ring, its backlog and the 16 a block), a throw's count and the latch, the warm block path allocating nothing
+  release ring, its backlog and the 16 a block), a throw's count and the latch, a failed write onto what a node holds
+  (a setter it hung there, or an object it froze) counted as its throw, the warm block path allocating nothing
   native; the JS-owned audio copies against a node that keeps its array across swaps, transfers its buffer, writes
   an input in place or edits the array; promise jobs run and bounded per block; the call deadline on CPU time, once
   counted and twice faulted; a second load and a bundle that differs between the runtimes refused; two Engines on two
   threads; and ThreadSanitizer runs a plan's script nodes on an audio thread while the control thread plans,
-  reshapes, rebuilds and reclaims them. A profile build adds four `[profile]` cases on the trace window and the
+  reshapes, rebuilds and reclaims them. A profile build adds five `[profile]` cases on the trace window and the
   calls it refuses while an audio thread runs (spec/08).
 - The kernel node ([KernelNode.test.cpp](../packages/native/test/engine-graph/KernelNode.test.cpp)), in a plan with the
   host I/O nodes: host MIDI under every routing, every LSDj sync mode, risa and smsggdj host sync, a controller
@@ -634,18 +643,17 @@ every 8 frames; no core on either side:
 | 64 frames | 5.01 to 5.08 us | 7.69 to 7.92 us | about 1.55 | 81 |
 | 512 frames | 24.5 to 25.5 us | 39.5 to 40.7 us | about 1.6 | 431 |
 
-So the node takes about 1.4 to 1.65 times the stage's time, rising with the block size: over the three runs the ratio
-was 1.36 to 1.37 at 1 frame, 1.53 to 1.57 at 64 and 1.59 to 1.62 at 512, ranges narrower than the run-to-run spread (a
-fourth run gave 1.39, 1.53 and 1.65), and the 512-frame rows move 2 to 3% from run to run. The
-plan's native nodes take 0.033, 0.050 and 0.16 us of the node's figures, and allocate nothing native; the stage made
-0, 0.15 and 1.16 native allocations a block, and its JS allocations went unmeasured (its runtime counted them only in
-a profile build). The gap is per message: the `Message` arrays refilled, then the kernel's own `BlockInput` copy of
-them, and one send per output. Idle MI.OUT bytes are nearly all of what the node reads in the larger blocks: at 512
-frames the two Game Boys send it 128 a block against about one host message, and the node's JS allocations grow with
-them. Capture is armed only for an LSDj in a MIDI-out mode, so the table is the worst case. The bench also caught the
-kernel node's serial-in runs costing every block, held or not: a count of the runs it holds (9c3c10f9) took its
-1-frame block from 2.91 to 2.92 us down to the table's 2.68 to 2.74, in an A/B on the same tree. The numbers decide
-B3b's granularity (§9).
+So the node takes about 1.35 to 1.6 times the stage's time (a fourth run reached 1.65), rising with the block size: over
+the three runs the ratio was 1.36 to 1.37 at 1 frame, 1.53 to 1.57 at 64 and 1.59 to 1.62 at 512, ranges narrower than
+the run-to-run spread (the fourth gave 1.39, 1.53 and 1.65), and the 512-frame rows move 2 to 3% from run to run. The
+plan's native nodes take 0.033, 0.050 and 0.16 us of the node's figures, and allocate nothing native; the stage made 0,
+0.15 and 1.16 native allocations a block, and its JS allocations went unmeasured (its runtime counted them only in a
+profile build). The gap is per message: the `Message` arrays refilled, then the kernel's own `BlockInput` copy of them,
+and one send per output. Idle MI.OUT bytes are nearly all of what the node reads in the larger blocks: at 512 frames the
+two Game Boys send it 128 a block against about one host message, and the node's JS allocations grow with them. Capture
+is armed only for an LSDj in a MIDI-out mode, so the table is the worst case. The bench also caught the kernel node's
+serial-in runs costing every block, held or not: a count of the runs it holds (9c3c10f9) took its 1-frame block from
+2.91 to 2.92 us down to the table's 2.68 to 2.74, in an A/B on the same tree. The numbers decide B3b's granularity (§9).
 
 ### 7.5 Acceptance
 
@@ -677,7 +685,8 @@ executed task by task with review, each task's review fixes following its commit
 8. Delete the fan-out, the RPCs and the native kernel node, after moving the runtime's profiling onto the script host
    (e3de2e46, b7963b0d; 45bb10c6 and 822ff3eb).
 9. The docs.
-10. The acceptance run.
+10. The acceptance run, on the final tree: every suite, strict parity with the fixtures present, the Reaper leg, the
+    sanitizers and the consumer suites.
 
 ## 9. Left for B3b
 
@@ -697,7 +706,7 @@ needed.
 - **Wire a Game Boy's `serialOut` only into a node that decodes MI.OUT**, so a Game Boy without one pays nothing for
   an armed capture's idle bytes.
 - `kernelProjection`'s special cases (the synthesized `midi-routing` and Launchpad stages, the forced
-  `lsdj-sync` mode for MI.MAP) moved into `buildGraph`.
+  `lsdj-sync` mode for MI.MAP) to move into `buildGraph`.
 - A per-product script-node bundle with no zod in it.
 - How several stages' outputs merge into one system input: each core must still get all its MIDI before all its
   bytes (the NES FIFO, §3.1), and `rp.core.merge`'s output is default-sized, so merging the kernel's large wires needs
@@ -753,9 +762,9 @@ Before B3b starts, the LSDj master-sync fix lands on its own (§10).
   stage's output, counted the frames it raised, and parity held bit for bit.
 - **Duplicate ids are refused.** The old kernel took a structure naming one system id twice without a word; the kernel
   node's settings refuse it ("two systems have the same id"), as they refuse an id outside 1 to 2^32 - 1.
-- **The bench's numbers** (§7.4): a script call costs about 0.09 to 0.18 us whatever the node count or block size,
-  the kernel node about 1.4 to 1.65 times the old kernel stage, the gap per message, and idle MI.OUT bytes most of what
-  the larger blocks carry. One node per role is affordable; batching is not needed (§9).
+- **The bench's numbers** (§7.4): a script call costs about 0.09 to 0.18 us whatever the node count or block size, the
+  kernel node about 1.35 to 1.6 times the old kernel stage (a fourth run reached 1.65), the gap per message, and idle
+  MI.OUT bytes most of what the larger blocks carry. One node per role is affordable; batching is not needed (§9).
 - **The bench caught a cost every block paid.** Sending serial-in as runs (below) put a clear over every system at the
   top of the kernel node's `process` and a send of every run in its `finally`, though nearly every small block holds
   none. A count of the runs held gates both (9c3c10f9), which took about 0.2 us off a 1-frame block, and sends exactly
@@ -792,6 +801,11 @@ Before B3b starts, the LSDj master-sync fix lands on its own (§10).
   Each port may declare about 32 MiB, so a plan's queues are held to a 64 MiB budget (§2.6).
 - **The bundle's load left about 144 KiB of cycles** in the audio runtime, waiting for QuickJS's threshold collection
   inside a block (45bb10c6); the first quiescent reclaim collects them now (§2.1).
+- **A failed write in a marshal fill was swallowed.** `fillMessages` and `fillControl` ignored what each
+  `JS_SetProperty` returned, so a setter a node hung on a message (or a message it froze) left an exception pending
+  while `messages()` returned: the throw went uncounted, and stayed pending for whatever asked QuickJS next. A failed
+  write now ends the fill as running out of memory did, and the host's writes onto the `Block` and its transport
+  before `process` go the same way (§2.3).
 - **The TS stripper does not build outside the repo.** `retroplug-ts-stripper-bundle` fails in a build directory
   outside the source tree: [build-ts-stripper.mjs](../tools/build-ts-stripper.mjs) sets no `absWorkingDir`, unlike
   `build-ui.js`, so esbuild resolves its `typescript-5` alias against the build's working directory. Pre-existing, and

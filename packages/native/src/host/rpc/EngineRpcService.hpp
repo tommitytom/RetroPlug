@@ -107,7 +107,9 @@ public:
 
     // --- profiling the audio runtime (spec/08-profiling.md): the script host's allocation window, GC pass and trace
     // window, reached directly through the Engine (the quiescent renderAudio pull path owns it: the benchmark never
-    // starts the audio thread). enabled false, or empty, off-profile ---
+    // starts the audio thread). dspResetAllocStats and dspTraceReset return false, dspRunGc enabled false and the
+    // trace reads empty when refused (the audio thread running) or on a host that is not a profile build;
+    // dspAllocStats never refuses, and is enabled false only off-profile ---
     rp::host::DspAllocStats             dspAllocStats();
     bool                                dspResetAllocStats(bool disableAutoGc);
     rp::host::DspGcResult               dspRunGc();
