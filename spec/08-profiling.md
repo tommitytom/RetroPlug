@@ -259,6 +259,11 @@ modes are out.
   **bit-identical run-to-run** (only `xRT`/`gcMs` wall-clock vary). First measured result (Profile A, 1
   mGB core, 2000 blocks): **~171 allocs/block**, `freesPerBlock` ≈ allocs (balanced churn),
   `liveHeapDelta` ≈ 0 (not a leak), `maxBlockAllocs` 279.
+- The profile build's own unit checks are the Catch2 `[profile]` cases of `retroplug-engine-graph-test` (spans JS leaves
+  open or closes past, a setter hung on a marshalled message, a label past the bound, the calls refused while the audio
+  thread runs). Nothing else runs them: `tools/run-profile.sh unit`, or by hand
+  `cmake --build build-prof --target retroplug-engine-graph-test -j$(nproc)` then
+  `build-prof/bin/retroplug-engine-graph-test "[profile]"`.
 - **Optimization pass (done):** hoisting the per-block ctx/closures/filters/routing-Map to `setSystems`
   (§3) cut Profile A to **~32 allocs/block** (−81%), **~2.3 KB/block** (−79%), `maxBlockAllocs` 279 → 60,
   behaviour-identical (41-file mock + 25-file native suites green).

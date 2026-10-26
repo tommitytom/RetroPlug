@@ -596,6 +596,29 @@ struct ScriptHost::Glue {
 #endif
     }
 
+    // Around the host writing onto objects JS holds (a setter JS defined there runs): the spans that setter's JS opens or
+    // closes record nothing, as outside a process call, so it cannot close the marshal span the host has open. lift()
+    // restores the floor early, before the host closes that span; the destructor does it on every other way out.
+    struct JsSpanFence {
+        ScriptHost&       h;
+        const std::size_t saved;
+        mutable bool      lifted = false;
+        explicit JsSpanFence(ScriptHost& host) : h(host), saved(host.jsSpanFloor_) {
+#ifdef RETROPLUG_PROFILE
+            h.jsSpanFloor_ = kNoJsSpans;
+#endif
+        }
+        void lift() const {
+#ifdef RETROPLUG_PROFILE
+            if (!lifted) h.jsSpanFloor_ = saved;
+#endif
+            lifted = true;
+        }
+        ~JsSpanFence() { lift(); }
+        JsSpanFence(const JsSpanFence&) = delete;
+        JsSpanFence& operator=(const JsSpanFence&) = delete;
+    };
+
     // The end of a process call's dsp-kernel span (a profile build), where apu-render starts if no script node runs
     // after it.
     static void processSpanEnd([[maybe_unused]] ScriptHost& h) {
@@ -1063,7 +1086,9 @@ struct ScriptHost::Glue {
         if (!p) return JS_EXCEPTION;
         if (p->stamp != in->blockStamp) {
             traceBegin(hostOf(ctx), DSP_SPAN_MARSHAL);
+            const JsSpanFence fence(hostOf(ctx));
             const bool filled = fillMessages(hostOf(ctx), ctx, *p, *in->running->inputs[found->index].u.queue);
+            fence.lift();
             traceEnd(hostOf(ctx));
             if (!filled) return JS_EXCEPTION;
             p->stamp = in->blockStamp;
@@ -1083,7 +1108,9 @@ struct ScriptHost::Glue {
             const rp_control_queue& q =
                 found->side == Side::Param ? *in->running->params[found->index] : *in->running->inputs[found->index].u.control;
             traceBegin(hostOf(ctx), DSP_SPAN_MARSHAL);
+            const JsSpanFence fence(hostOf(ctx));
             const bool filled = fillControl(hostOf(ctx), ctx, *p, q);
+            fence.lift();
             traceEnd(hostOf(ctx));
             if (!filled) return JS_EXCEPTION;
             p->stamp = in->blockStamp;
@@ -1541,17 +1568,28 @@ DspAllocStats ScriptHost::allocStats() const {
     return s;
 }
 
-void ScriptHost::resetAllocStats(bool disableAutoGc) {
-    assert(!audioOwns_.load(std::memory_order_acquire) && "the allocation window opens only while no audio thread runs blocks");
+bool ScriptHost::refuseWhileOwned(const char* what) {
+    if (!audioOwns_.load(std::memory_order_acquire)) return false;
+    if (!ownedRefusalLogged_) {
+        std::fprintf(stderr, "[script] %s refused: an audio thread is running blocks (profile with the audio stopped; said once)\n",
+                     what);
+        ownedRefusalLogged_ = true;
+    }
+    return true;
+}
+
+bool ScriptHost::resetAllocStats(bool disableAutoGc) {
+    if (refuseWhileOwned("the allocation window")) return false;
     windowStart_ = audioAllocations();
     windowLiveBytes_ = counters_.liveBytes.load(std::memory_order_relaxed);
     windowBlocks_ = maxBlockAllocs_ = maxBlockBytes_ = 0;
     // QuickJS checks its threshold only as it makes an object, so SIZE_MAX means a collection never starts by itself.
     if (disableAutoGc) JS_SetGCThreshold(audioRt_, static_cast<std::size_t>(-1));
+    return true;
 }
 
 DspGcResult ScriptHost::runGc() {
-    assert(!audioOwns_.load(std::memory_order_acquire) && "a GC pass runs only while no audio thread runs blocks");
+    if (refuseWhileOwned("a GC pass")) return {};  // enabled false
     JS_UpdateStackTop(audioRt_);
     const std::int64_t before = counters_.liveBytes.load(std::memory_order_relaxed);
     const auto t0 = std::chrono::steady_clock::now();
@@ -1593,23 +1631,35 @@ void ScriptHost::traceName(std::uint32_t label, const std::string& name) {
     traceNames_[label] = name;
 }
 
-void ScriptHost::traceReset(bool arm) {
+bool ScriptHost::traceReset(bool arm) {
+    if (refuseWhileOwned("the trace window")) return false;
     traceStack_.clear();
     traceSpans_.clear();
     traceStartNs_ = steadyNs();
     lastProcessEnd_ = 0.0;
     traceArmed_ = arm;
+    return true;
+}
+
+std::vector<DspTraceSpan> ScriptHost::traceSpans() const {
+    return audioOwns_.load(std::memory_order_acquire) ? std::vector<DspTraceSpan>{} : traceSpans_;
+}
+
+std::vector<std::string> ScriptHost::traceNames() const {
+    return audioOwns_.load(std::memory_order_acquire) ? std::vector<std::string>{} : traceNames_;
 }
 #else
 DspAllocStats ScriptHost::allocStats() const { return {}; }  // enabled false
-void          ScriptHost::resetAllocStats(bool) {}
+bool          ScriptHost::resetAllocStats(bool) { return false; }
 DspGcResult   ScriptHost::runGc() { return {}; }
 double        ScriptHost::traceNow() const { return 0.0; }
 void          ScriptHost::spanBegin(std::uint32_t) {}
 void          ScriptHost::spanEnd() {}
 void          ScriptHost::spanSince(std::uint32_t, double) {}
 void          ScriptHost::traceName(std::uint32_t, const std::string&) {}
-void          ScriptHost::traceReset(bool) {}
+bool          ScriptHost::traceReset(bool) { return false; }
+std::vector<DspTraceSpan> ScriptHost::traceSpans() const { return {}; }
+std::vector<std::string>  ScriptHost::traceNames() const { return {}; }
 #endif
 
 }  // namespace rp::host

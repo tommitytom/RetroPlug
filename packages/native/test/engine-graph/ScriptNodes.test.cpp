@@ -1339,7 +1339,7 @@ TEST_CASE("what the bundle's load leaves in cycles is collected by the first qui
     host.reclaim();  // no instance released yet: the load's cycles alone
     const auto first = host.audioAllocations();
     CHECK(first.frees > loaded.frees);
-    host.reclaim();  // nothing left to collect: no GC runs
+    host.reclaim();  // nothing left for it to find: a pass that frees nothing (the count cannot say none ran)
     CHECK(host.audioAllocations().frees == first.frees);
 }
 
@@ -1359,6 +1359,21 @@ rp.register([
                   create: () => ({
                     process() { spanBegin(18); for (let i = 0; i < 4; ++i) spanEnd(); spanBegin(18); spanEnd(); },
                   }) }),
+  rp.defineNode({ id: "rp.toy.span-setter", ports: { in: rp.events.in(), out: rp.events.out() },
+                  create: () => {
+                    let armed = false;
+                    return {
+                      process(b) {
+                        const ms = b.messages("in");
+                        if (ms.length && !armed) {
+                          armed = true;
+                          Object.defineProperty(ms[0], "frame", { set() { spanEnd(); spanBegin(20); }, get() { return 0; } });
+                        }
+                        spanBegin(20);
+                        spanEnd();
+                      },
+                    };
+                  } }),
   rp.defineNode({ id: "rp.toy.span-job", ports: { out: rp.events.out() },
                   create: () => ({ process() { Promise.resolve().then(() => { spanBegin(19); spanEnd(); }); } }) }),
 ]);
@@ -1424,6 +1439,45 @@ TEST_CASE("a span a script node's JS leaves open is closed as its process call r
         CHECK(nested(role, call));
         rig.scripts.traceReset(false);
     }
+}
+
+TEST_CASE("a setter JS hangs on a marshalled message closes no span of the host's", "[script][profile][trace]") {
+    ScriptRig rig(kSpanners);
+    REQUIRE(rig.set(doc(node("feed", "rp.test.feed") + "," + node("s", "rp.toy.span-setter"), wire("feed.midi", "s.in"))).ok);
+    auto& feed = rig.node<Feed>("feed");
+    rig.scripts.traceReset(true);
+    for (int i = 0; i < 3; ++i) {
+        feed.next[Feed::Midi] = {{0, bytes({0x90, 60, 100})}};
+        rig.run(64, 1);  // the second and third blocks' fill runs the setter the first block's process hung on the element
+    }
+    const auto kernel = spansOf(rig.scripts, rp::host::DSP_SPAN_KERNEL);
+    const auto call = spansOf(rig.scripts, rp::host::DSP_SPAN_JSCALL);
+    const auto role = spansOf(rig.scripts, 20);
+    CHECK(kernel.size() == 3);
+    CHECK(call.size() == 3);
+    CHECK(role.size() == 3);  // each block's own, none of the setter's
+    CHECK(spansOf(rig.scripts, rp::host::DSP_SPAN_MARSHAL).size() == 6);  // the transport's, and the messages' each block
+    CHECK(nested(call, kernel));
+    CHECK(nested(role, call));
+    // The transport's marshal comes before the call; each block's messages marshal stands inside it.
+    std::size_t inside = 0;
+    for (const auto& m : spansOf(rig.scripts, rp::host::DSP_SPAN_MARSHAL)) inside += nested({m}, call) ? 1 : 0;
+    CHECK(inside == 3);
+    rig.scripts.traceReset(false);
+}
+
+TEST_CASE("the profile calls refuse while an audio thread owns the runtime", "[script][profile][trace]") {
+    ScriptRig rig(kSpanners);
+    rig.scripts.setAudioThreadOwns(true);
+    CHECK_FALSE(rig.scripts.resetAllocStats(true));
+    CHECK_FALSE(rig.scripts.runGc().enabled);
+    CHECK_FALSE(rig.scripts.traceReset(true));
+    CHECK_FALSE(rig.scripts.traceArmed());
+    CHECK(rig.scripts.traceSpans().empty());
+    rig.scripts.setAudioThreadOwns(false);
+    CHECK(rig.scripts.resetAllocStats(false));
+    CHECK(rig.scripts.runGc().enabled);
+    CHECK(rig.scripts.traceReset(false));
 }
 
 TEST_CASE("a trace label past the bound is refused with a RangeError, whole, and leaves the names as they were",

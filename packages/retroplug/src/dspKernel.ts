@@ -312,7 +312,7 @@ export class DspKernel {
   // Per-role runtime tracing (spec/08-profiling.md Tier B). `tracer` exists only under a profile host;
   // `traceOn` is flipped by the host (__setTrace → setTracing) so per-stage span calls happen ONLY while
   // armed — the non-traced path stays byte-identical (deterministic alloc counts). Kinds are interned to
-  // stable ids from ROLE_BASE (16; native pipeline stages own 0..3).
+  // stable ids from ROLE_BASE (16; the native stages own 0..4).
   private traceOn = false;
   private readonly traceLabels = new Map<string, number>();
   private nextLabel = 16;

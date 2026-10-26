@@ -3,7 +3,7 @@
 # build, and optionally under valgrind for allocation-site / CPU attribution.
 #
 #   tools/run-profile.sh [mode] [slug]
-#     mode: stats (default) | trace | dhat | callgrind | massif
+#     mode: stats (default) | trace | unit | dhat | callgrind | massif
 #     slug: the test-native file to run (default: dsp-bench)
 #
 # Uses a SEPARATE build-prof/ dir (RelWithDebInfo + -DRETROPLUG_PROFILE=ON): the bare-QuickJS counting
@@ -13,6 +13,7 @@
 #   stats     — in-process allocation counters; prints one JSON metrics line (deterministic, fast).
 #   trace     — per-role runtime spans (spec/08 Tier B) → build-prof/trace.json (Chrome trace-event JSON;
 #               load in ui.perfetto.dev or speedscope). Knob: RP_BENCH_TRACE_BLOCKS (default 64).
+#   unit      - the [profile] Catch2 cases of retroplug-engine-graph-test (spans, refusals), built here.
 #   dhat      — valgrind DHAT allocation census → build-prof/valgrind/dhat.out.json (load in the viewer).
 #   callgrind — deterministic instruction counts → callgrind_annotate top-N.
 #   massif    — heap size over time → ms_print.
@@ -46,6 +47,11 @@ case "$mode" in
     stats)
         echo "==> running '$slug' (in-process allocation counters)"
         run_native "$host"
+        ;;
+    unit)
+        echo "==> building + running the [profile] cases of retroplug-engine-graph-test"
+        cmake --build "$builddir" -j"$(nproc)" --target retroplug-engine-graph-test
+        "$repo/$builddir/bin/retroplug-engine-graph-test" "[profile]"
         ;;
     trace)
         : "${RP_BENCH_TRACE_BLOCKS:=64}"
@@ -88,5 +94,5 @@ case "$mode" in
             massif)    ms_print "$out/massif.out" | head -60 ;;
         esac
         ;;
-    *) echo "usage: $0 <stats|trace|dhat|callgrind|massif> [slug]" >&2; exit 2 ;;
+    *) echo "usage: $0 <stats|trace|unit|dhat|callgrind|massif> [slug]" >&2; exit 2 ;;
 esac

@@ -101,7 +101,8 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 //     audio thread frees nothing native. What a released instance leaves in cycles is collected by a GC at two
 //     points no block is running: the reclaim that ends a quiescent operation which released some (the Engine's
 //     after every setGraph: one GC however many went), and the audio thread handing the runtime back
-//     (setAudioThreadOwns(false)). The first of them takes what the bundle's load left in cycles too. Never by a
+//     (setAudioThreadOwns(false)). The first reclaim after the load (the top of the first setGraph) takes what the bundle's
+//     load left in cycles too, whether or not an instance released anything. Never by a
 //     block, so while an audio thread owns the runtime (a live session) those cycles wait for QuickJS's own threshold
 //     GC, which runs inside whichever block's JS allocates past it, or for the audio thread to hand the runtime back.
 //
@@ -191,7 +192,8 @@ public:
     void setCallDeadline(std::chrono::milliseconds limit);
     static constexpr std::chrono::milliseconds kDefaultCallDeadline{2000};
     // Delete the records the block thread has released, and log the first throw once. While quiescent, also collect
-    // what instances released since the last left in cycles: call it after an operation that may release some.
+    // what instances released since the last left in cycles, and, the first time after the load, what the bundle's load
+    // left (whether or not anything was released): call it after an operation that may release some.
     void reclaim();
     // The first throw's type and message ("" until one), once the block thread has kept it.
     std::string firstThrow() const;
@@ -222,7 +224,9 @@ public:
     // The allocation window, opened by resetAllocStats, which can pin the audio runtime's auto-GC off from then on (so
     // a window collects nothing); runGc runs and times one collection there. Quiescent: no audio thread runs blocks.
     DspAllocStats allocStats() const;
-    void          resetAllocStats(bool disableAutoGc);
+    // Each refuses, doing nothing, while an audio thread owns the runtime (setAudioThreadOwns): resetAllocStats and
+    // traceReset return false, runGc a result with enabled false, and the trace reads nothing; said once on stderr.
+    bool          resetAllocStats(bool disableAutoGc);
     DspGcResult   runGc();
     // The trace window. traceReset clears it and arms (or disarms) it, quiescent, as are the reads; the block thread
     // records, and only while it is armed. spanBegin and spanEnd bracket a span; spanSince records one from `t0`, a
@@ -234,10 +238,10 @@ public:
     double                    traceNow() const;
     double                    lastProcessEnd() const { return lastProcessEnd_; }
     void                      traceName(std::uint32_t label, const std::string& name);
-    void                      traceReset(bool arm);
+    bool                      traceReset(bool arm);
     bool                      traceArmed() const { return traceArmed_; }
-    std::vector<DspTraceSpan> traceSpans() const { return traceSpans_; }
-    std::vector<std::string>  traceNames() const { return traceNames_; }
+    std::vector<DspTraceSpan> traceSpans() const;
+    std::vector<std::string>  traceNames() const;
 
     // Defined in ScriptHost.cpp: a script type, and one instance's record.
     struct Type;
@@ -300,6 +304,8 @@ private:
     std::atomic<std::uint32_t> live_{0};
     std::atomic<std::uint32_t> jobsCutShort_{0};
     bool                       jobsLogged_ = false;
+    bool                       ownedRefusalLogged_ = false;
+    bool                       refuseWhileOwned(const char* what);
     // The first throw, kept by the block thread in a fixed buffer (it allocates nothing native there): claimed
     // 0 -> 1, written, then published 1 -> 2.
     std::atomic<int>           firstThrowState_{0};

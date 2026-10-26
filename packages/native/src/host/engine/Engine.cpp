@@ -388,9 +388,9 @@ std::uint32_t Engine::droppedMessages() const {
 std::uint32_t Engine::scriptThrows() const { return graph_->script.throwCount(); }
 
 rp::host::DspAllocStats Engine::dspAllocStats() const { return graph_->script.allocStats(); }
-void Engine::resetDspAllocStats(bool disableAutoGc) { graph_->script.resetAllocStats(disableAutoGc); }
+bool Engine::resetDspAllocStats(bool disableAutoGc) { return graph_->script.resetAllocStats(disableAutoGc); }
 rp::host::DspGcResult Engine::dspRunGc() { return graph_->script.runGc(); }
-void Engine::dspTraceReset(bool arm) { graph_->script.traceReset(arm); }
+bool Engine::dspTraceReset(bool arm) { return graph_->script.traceReset(arm); }
 std::vector<rp::host::DspTraceSpan> Engine::dspTrace() const { return graph_->script.traceSpans(); }
 std::vector<std::string> Engine::dspTraceNames() const { return graph_->script.traceNames(); }
 

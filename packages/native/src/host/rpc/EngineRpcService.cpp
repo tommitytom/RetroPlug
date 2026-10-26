@@ -627,15 +627,13 @@ std::string EngineRpcService::buildTarget() const {
 rp::host::DspAllocStats EngineRpcService::dspAllocStats() { return engine_.dspAllocStats(); }
 
 bool EngineRpcService::dspResetAllocStats(bool disableAutoGc) {
-    engine_.resetDspAllocStats(disableAutoGc);
-    return true;
+    return engine_.resetDspAllocStats(disableAutoGc);  // false: refused (an audio thread owns the runtime), or not a profile build
 }
 
 rp::host::DspGcResult EngineRpcService::dspRunGc() { return engine_.dspRunGc(); }
 
 bool EngineRpcService::dspTraceReset(bool arm) {
-    engine_.dspTraceReset(arm);
-    return true;
+    return engine_.dspTraceReset(arm);
 }
 
 std::vector<rp::host::DspTraceSpan> EngineRpcService::dspTrace() { return engine_.dspTrace(); }

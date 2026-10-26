@@ -156,9 +156,9 @@ public:
     // Quiescent only (the renderAudio pull path); a struct with enabled false, or nothing, except in a
     // RETROPLUG_PROFILE build ---
     rp::host::DspAllocStats             dspAllocStats() const;
-    void                                resetDspAllocStats(bool disableAutoGc);
+    bool                                resetDspAllocStats(bool disableAutoGc);
     rp::host::DspGcResult               dspRunGc();
-    void                                dspTraceReset(bool arm);
+    bool                                dspTraceReset(bool arm);
     std::vector<rp::host::DspTraceSpan> dspTrace() const;
     std::vector<std::string>            dspTraceNames() const;
 
