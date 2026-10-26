@@ -10,8 +10,8 @@ runtime concepts this doc leans on — the three hosts over one Backend RPC surf
 capability facets), the control-plane / audio-thread split, the command ring, the graph the
 engine runs on, the snapshot read door, and the release ring. This doc references those by name and
 goes deeper on the C++ mechanics: the method tables, the `Engine`'s block, its graph requests, the
-`QueuedInvoker` internals, the `SnapshotRegistry` slot machinery, the core backends, and the bare
-DSP runtime.
+`QueuedInvoker` internals, the `SnapshotRegistry` slot machinery, the core backends, and the script
+host the TS nodes run in.
 
 Everything below lives under [`packages/native/`](../packages/native).
 The `Engine` + RPC surface compiles into one static library,
@@ -48,7 +48,7 @@ stateless service instances that hold references to them:
 | Service | Concern | Header |
 |---|---|---|
 | `HostRpcService` | filesystem / config / zip (pure, stateless) | [`HostRpcService.hpp`](../packages/native/src/host/rpc/HostRpcService.hpp) |
-| `EngineRpcService` | emulator lifecycle / reads / kernel / MIDI / transport / render + profile | [`EngineRpcService.hpp`](../packages/native/src/host/rpc/EngineRpcService.hpp) |
+| `EngineRpcService` | emulator lifecycle / reads / MIDI / transport / render + profile | [`EngineRpcService.hpp`](../packages/native/src/host/rpc/EngineRpcService.hpp) |
 | `DebugRpcService` | live-core inspection / stepping / breakpoints (CLI only — [09-cli-debugging.md](09-cli-debugging.md)) | [`DebugRpcService.hpp`](../packages/native/src/host/rpc/DebugRpcService.hpp) |
 | `AudioDriverRpcService` | background audio thread + observation atomics (test host only) | [`AudioDriverRpcService.hpp`](../packages/native/src/host/rpc/AudioDriverRpcService.hpp) |
 
@@ -126,7 +126,7 @@ base64 composition also happen in TS; native exposes only the stateless `zip`/`u
 The LSDj sav codec is likewise pure TS now — it used to live here as `savFromJson` and no longer
 does.
 
-### `EngineRpcService` — emulator / kernel / MIDI / transport
+### `EngineRpcService`: emulator / MIDI / transport
 
 Every mutation here routes through the `QueuedInvoker` except three, which call the `Engine`
 directly on the control thread: `buildCore` and `setGraph` (`Engine::parkCore` / `Engine::setGraph`),
@@ -148,7 +148,17 @@ themselves and refuse while the audio thread owns the engine. Every read routes 
 | `pressButton` | `(uint32 id, uint32 button, bool down) → bool` | joypad transition → the addressed core |
 | `renderAudio` | `(double ms) → Bytestring` | synchronous pull render, interleaved f32 L/R, into a graph TS built for 2 host channels; empty while the audio thread owns the engine or the running graph writes another width (as are `renderAudioPerSystem` / `renderAudioPerChannel`, for 2 channels per system or stream) |
 | `setTransport` / `setBpm` | `→ bool` | queued transport ops |
-| `stageMidiIn` | `(vector<uint8> bytes) → bool` | any non-empty length: a channel message, a SysEx, or several messages as one run |
+| `stageMidiIn` | `(vector<uint8> bytes, uint32 frame) → bool` | any non-empty length: a channel message, a SysEx, or several messages as one run, at intra-block `frame` (TS defaults it to 0, and refuses one that is not an integer from 0 to 1023 before sending, since rpcpp would truncate it); false for a frame past `renderAudio`'s 1024-frame block |
+| `drainMidiOut` | `→ vector<RpcMidiOut>` | the host MIDI out (`Engine::midiOut`, which `rp.host.midi-out` fills each block) gathered over the `renderAudio*` renders since the last drain, each message with its system and frame (`renderBlocks` returns its own) |
+| `droppedMessages` | `→ uint32` | messages dropped so far (`Engine::droppedMessages`): by the plan's full output queues, and by `rp.host.midi-out` for a message too short to name its system; never reset, and it wraps, so a test compares two reads |
+
+The table is a selection. The facets
+([`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp)) hold 19
+`host` methods, 13 `emulator`, 22 `harness` (the renders, transport and sample rate, staged MIDI in and
+MIDI out, `droppedMessages`, `buildTarget`, the kit compiles and the audio runtime's profiling calls),
+27 `debug` and
+6 `driver`: 87 in the union. There is no kernel call: the DSP kernel is a script node every Engine
+embeds, and its structure is its settings in the documents `setGraph` plans.
 
 `duplicate`, `reload` and `remove` are **not** native methods: they are TS orchestration over
 `buildCore`-with-state, the registry reads and the documents the stores publish
@@ -206,24 +216,36 @@ these follow is [modular-graph-phase-b1-design.md](../docs/modular-graph-phase-b
 ### `Engine`
 
 [`Engine`](../packages/native/src/host/engine/Engine.hpp) is single-threaded and thread-unaware.
-It owns the staged host MIDI (`pendingMidi_`, `pendingControllerMidi_`: flat arenas, allocation-free
-while a block stages what its input nodes carry), the host outputs the plan fills (`midiOut_`,
-`controllerOut_`), the snapshot registry, the transport fields, and the graph the systems run on: the
-`ScriptHost` its script nodes (the DSP kernel among them) run in, a `NodeRegistry` holding the node
-packages (`rp.core`, `rp.host`, `rp.sameboy`, `rp.mesen`, `rp.host.io`, `rp.n8`, `rp.script`), a
-`ResourceTable`, the
+It owns the staged host MIDI (`pendingMidi_`, `pendingControllerMidi_`: flat arenas, each message a
+frame and a place in one byte buffer, reserved at construction for what the input nodes carry in a
+block, so staging allocates nothing until a block stages more), the host outputs the plan fills
+(`midiOut_`, `controllerOut_`, which still allocate one vector per message on the block thread), the
+snapshot registry, the transport fields, and the graph the systems run on: the `ScriptHost` its script
+nodes (the DSP kernel among them) run in, a `NodeRegistry` holding the node packages (`rp.core`,
+`rp.host`, `rp.sameboy`, `rp.mesen`, `rp.host.io`, `rp.n8`, `rp.script`), a `ResourceTable`, the
 [`GraphHost`](../packages/native/src/graph/GraphHost.hpp) running the plan, the cores `buildCore`
-parked until a document places them, and every live core by id. Every op runs
-"now, on the calling thread"; it holds **no atomics**: transport and the ppq clock are plain members
-mutated only by whichever thread owns it (the pull path or the audio loop, never concurrently). A
-removed or displaced core is never freed on a hot path: it leaves with the plan that last ran it.
+parked until a document places them, and every live core by id. Every op runs "now, on the calling
+thread"; it holds **no locks**: transport and the ppq clock are plain members mutated only by
+whichever thread owns it (the pull path or the audio loop, never concurrently). The Engine's own
+atomics are block-thread tallies the control thread reads (blocks too long to run and the last one's
+length, `rp.host.midi-out`'s drops); the GraphHost and script host it owns add their fault, drop and
+throw counts, their audio-ownership flags, the in-flight commit count and the call deadline. A removed
+or displaced core is never freed on a hot path: it leaves with the plan that last ran it.
 
 Its per-block driver `Engine::processBlock(frames, outputs, n)` is the one place every host funnels a
 block. The host has already drained the ring (`drainInto` → `Engine::drainCommands` →
-`GraphHost::drain`: plan swaps and commands applied in push order). Then, in order:
+`GraphHost::drain`: plan swaps and commands applied in push order, a staged message landing in the
+staging). Then, in order:
 
-1. `syncTrace_.beginBlock(...)` (inert unless `RETROPLUG_SYNC_TRACE` is set).
-2. `GraphHost::run(frames, transport, outputs, n)`: silence every host output, then run the plan:
+1. `ScriptHost::beginBlock()`: release the script instances whose shims the control thread destroyed
+   since the last block (up to 16 a block), before any of this block's JS runs. An empty block stops
+   here; so does one longer than the plan's buffers, which renders silence, drops what was staged for
+   it and is counted, for `reclaim` to report (a host avoids it by calling `setMaxBlockFrames` with its
+   buffer size, as the plugin's `activate()` does).
+2. `syncTrace_.beginBlock(...)` (inert unless `RETROPLUG_SYNC_TRACE` is set), and `midiOut_` /
+   `controllerOut_` cleared for the plan's output nodes to fill.
+3. `GraphHost::run(frames, transport, outputs, n)`: silence every host output, then run the plan, in
+   the planner's order (topological, ties broken by document order):
    1. **The host inputs and the kernel.** `rp.host.midi-in` and `rp.host.controller-in` take what the
       hosts staged (the host MIDI stable-sorted by frame). The DSP kernel, the script node
       `rp.dsp.kernel` ([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts), run by the
@@ -231,26 +253,34 @@ block. The host has already drained the ring (`drainInto` → `Engine::drainComm
       the **block-start** `ppq_` and each Game Boy's `serialOut` of last block (a feedback wire), and
       sends each system's `serialIn`, `midi`, `bytes` and `buttons` on wires to that system node's
       inputs, its host MIDI out to `rp.host.midi-out` and its control-surface out to
-      `rp.host.controller-out`. `rp.n8.cart-mirror`, wired from the first NES in slot order, hands what
-      that system gets to `coreByteSink_` for a physical N8 (a message staged straight at it,
-      `StageSystemMidi`, too).
+      `rp.host.controller-out`.
    2. **The system nodes** ([SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp):
       `rp.sameboy.gb`, `rp.mesen.nes`, `rp.mesen.gba`, `rp.mesen.sms`), each a `SystemNode<T>` over a
-      core's `prepareForBlock` / `stepIfBelowTarget` / `finishBlock`. An unlinked system is one
-      `process()` call. Linked Game Boys run as one coupled group over `rp.step/1`, round-robin:
-      prepare every member in order, then passes of one step per member until none is below the
-      block's target, then finish each, so their serial cable stays in instruction lockstep. The
-      node zeroes the buffers it hands `finishBlock` (which adds into them) and sets the lane count
-      from which of its outputs are connected
-      ([10-multichannel-audio-out.md](10-multichannel-audio-out.md) section 1).
-   3. **The mixing nodes**, `rp.core.split` and `rp.core.add`: the routing, as wiring (below).
-   4. **`rp.host.audio-out`**, which copies its buses into the host's buffers (it reaches them
+      core's `prepareForBlock` / `stepIfBelowTarget` / `finishBlock`. Each applies its inputs first
+      (below), then runs its core. An unlinked system is one `process()` call. Linked Game Boys run as
+      one coupled group over `rp.step/1`, round-robin: prepare every member in order, then passes of
+      one step per member until none is below the block's target, then finish each, so their serial
+      cable stays in instruction lockstep. The node zeroes the buffers it hands `finishBlock` (which
+      adds into them) and sets the lane count from which of its outputs are connected
+      ([10-multichannel-audio-out.md](10-multichannel-audio-out.md) section 1); a Game Boy then writes
+      its `serialOut`.
+   3. **The kernel's other outputs.** `rp.n8.cart-mirror`, wired from the first NES in slot order,
+      hands what that system was sent to `coreByteSink_` for a physical N8 (a message staged straight
+      at it, `StageSystemMidi`, reaches the sink too, at drain); `rp.host.midi-out` appends to
+      `midiOut_`, which the plugin drains to the DAW after the block (the SDL standalone to its MIDI out
+      port); `rp.host.controller-out` appends
+      to `controllerOut_`, which the SDL standalone drains to the Launchpad link.
+   4. **The mixing nodes**, `rp.core.split` and `rp.core.add`: the routing, as wiring (below).
+   5. **`rp.host.audio-out`**, which copies its buses into the host's buffers (it reaches them
       through `rp_host.get_interface("rp.host.audio-buffers/1")`).
-3. What was staged and no node of the plan took (a plan with no `rp.host.midi-in` or
-   `controller-in`) is dropped, not carried into the next block.
-4. `registry_.publishSystem(...)` for each system of the plan, in slot order: copy its
+4. `ScriptHost::endBlock()`: the promise jobs the block's script nodes queued, at most 256 (the rest
+   wait for the next block's end), then, in a profile build, the allocation window's block counts; a
+   profile build closes the block's `apu-render` span just before ([08-profiling.md](08-profiling.md)).
+   What was staged and no node of the plan took (a plan with no `rp.host.midi-in` or `controller-in`)
+   is dropped, not carried into the next block.
+5. `registry_.publishSystem(...)` for each system of the plan, in slot order: copy its
    freshly-published frame/state/SRAM into the owned snapshot store.
-5. `syncTrace_.endBlock()`, then advance `ppq_` only if transport is running (so the kernel's
+6. `syncTrace_.endBlock()`, then advance `ppq_` only if transport is running (so the kernel's
    `walkTicks` and the cores see the same block-start ppq).
 
 Live config edits land in `Engine::applyConfigField`, dispatched by the core's concrete type and
@@ -263,6 +293,74 @@ order, then the parked ones, then re-activates the graph's buffers at the new ra
 `Engine::setMaxBlockFrames` grows the plan's block size to a host's maximum (never below 8192, the
 largest block the parity matrix holds), and the plugin and the SDL standalone call it before handing
 the engine over.
+
+### Host I/O, the system nodes' inputs and queue capacities
+
+The kernel's input and output are wires the planner sees
+([modular-graph-phase-b3a-design.md](../docs/modular-graph-phase-b3a-design.md) section 3). The host
+I/O nodes ([HostIoNodes.hpp](../packages/native/src/host/graph/HostIoNodes.hpp)) reach the engine
+through its host service `rp.engine.host-io/1`
+([HostServices.hpp](../packages/native/src/host/graph/HostServices.hpp)) and do not activate without
+it:
+
+| Node | Ports | Does |
+|---|---|---|
+| `rp.host.midi-in` | out `midi` (events: 2048 messages, 64 KiB) | takes the staged host MIDI, stable-sorted by frame without allocating: the plugin stages two runs in frame order (a block's DAW events, then each moved automation slot's CC at frame 0), which it merges onto its queue, a tie to the earlier run; more runs are sorted in place first, by insertion |
+| `rp.host.midi-out` | in `midi` | each message is the emitting system's id, 4 bytes little-endian, then the MIDI; it lands in `Engine::midiOut` tagged with that system (a message shorter than the prefix is dropped, and counted in `Engine::droppedMessages`) |
+| `rp.host.controller-in` | out `midi` (events: 1024 messages, 16 KiB), out `connected` (control) | takes the staged control-surface traffic, all at frame 0; `connected` is 1 while a surface is attached, from frame 0 of the block (a change at frame 0 on the block the flag flips, since a control output's start is the last block's end) |
+| `rp.host.controller-out` | in `midi` | appends each message to `Engine::controllerOut` |
+| `rp.n8.cart-mirror` | in `midi` (events), in `bytes` | settings `{"system": <id>}`; hands the core-byte sink every MIDI message, then every byte message with its flush flag, in queue order, skipping empty ones; nothing while no sink is set |
+
+An input node takes everything staged whether or not its output is wired, so `Engine::setGraph`
+refuses (`midi-in`, `controller-in`) a document with a second of either. It refuses (`cart-mirror`) a
+second cart mirror too, or one whose `system` is not one of the slots' NES systems, reading the settings
+with the node's own reader (`cartMirrorSystem`). The system it names goes into the plan's `SystemTable`, and
+`Engine::cartMirrorSystemId()` reads it off the running plan: while it is non-zero the plugin and the
+SDL standalone stop forwarding their raw host MIDI (the DAW's, or the standalone's MIDI input) to the
+cart (it would arrive twice, the second copy unrouted), and a `StageSystemMidi` aimed at that system
+reaches the cart too. The node's settings
+change nothing it does, so it prepares statelessly and a change is a swap.
+
+Every system node has four inputs, mapped onto core calls `SystemBase` already has. It applies them
+at the top of its `prepare` (where `process` starts too, and which a linked group runs for every member
+before any of them steps), each in queue order, the inputs in this order:
+
+| Input | Kind | Core call |
+|---|---|---|
+| `serialIn` | bytes | `pushSerialIn(frame, byte)`, one call per byte, at its message's frame (the kernel node sends a run of same-frame bytes as one message) |
+| `midi` | events | `onMidi`; a message longer than a `MidiEvent` holds goes down `pushCoreBytes`, unframed |
+| `bytes` | bytes | `pushCoreBytes(frame, data, size, flush)`, the flush flag riding `RP_MESSAGE_FLUSH` (and each message handed to the sync trace) |
+| `buttons` | events | `pressButton(button, down)`, from a 2-byte payload `[button, down]` |
+
+The order shows only on the NES, where MIDI and bytes land in the same FIFO: a flushed byte message
+discards the MIDI queued ahead of it. A Game Boy's `midi` input has no effect (SameBoy's `onMidi`
+queues into a list nothing reads); mGB and LSDj hear MIDI through `serialIn`. The Game Boy also has a
+`serialOut` output (bytes): after `finishBlock`, while it is connected, the node copies the bytes its
+core captured on the serial port this block, each a message at frame 0 (the core clears its log at
+its next `prepareForBlock`). Capture runs only while armed (the build-time `serialOutCapture` flag, or
+`setSerialOutCapture`; TS arms it for LSDj's two MIDI-out modes), and then takes a byte every 8 frames
+while the Game Boy holds the port for an external clock, idle bytes included. The port's capacity is
+fixed at 8256 messages and 8256 bytes, a byte every 8 frames over the largest block a host can run
+(65536 frames) with slack, so the feedback wire to the kernel keeps its front across every swap; a CGB
+clocking the port itself on its fast clock can outrun it in a very long block, and what does not fit is
+dropped and counted.
+
+An events or bytes output may declare its queue's capacity (`rp::bytes_out::sized<rp::capacity{...}>` in
+C++, `events.out(capacity)` / `bytes.out(capacity)` in TS), by default 256 messages and 4096 bytes, at
+most 1 Mi messages and 16 MiB. A wire carries its source's queue, so an input declares none (both parsers
+refuse one, and an input has no `sized`): the outputs that do are the host inputs above, the Game Boy's
+`serialOut`, and each of the kernel's outputs
+([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts): per system `serialIn` 4096 messages /
+64 KiB, `midi` 4096 / 64 KiB, `bytes` 256 / 1 KiB, `buttons` 64 / 128 B; `midiOut` 1024 / 8 KiB,
+`controllerOut` 256 / 4 KiB). The two that pass host MIDI on, `serialIn` and `midi`, hold at least what
+`rp.host.midi-in`'s output holds, so the one place host MIDI is dropped is that edge; the rest are sized
+from what the suites send through them in one block, with margin. Queues are allocated per plan, a plan's
+events and bytes queues held to a budget of 64 MiB (`kPlanQueueBudget`; a document past it is refused,
+`queue-budget`), and an unwired output writes a shared scratch queue of the default size, whose drops go
+uncounted. A push that does not fit is dropped and counted on its queue; after each block the executor
+adds the counts to the producing instance's atomic and the GraphHost's, `GraphHost::reclaim` names a node
+the first time its outputs drop, and `Engine::droppedMessages()` (the harness RPC `droppedMessages`) reads
+the total, which the parity rig and the native goldens run hold at zero.
 
 ### Graph requests
 
@@ -277,11 +375,14 @@ Structure arrives as a graph document TS builds
   core decoded them (a NES's export mode, a Game Boy's link group), or null. It refuses id 0 (the
   registry's free-slot id) and an id that is still live: parked, or held by a node of any plan not yet
   reclaimed (it reclaims first, so with no audio thread running every removed core is already gone).
-- **`setGraph({ document, slots, tap? })`** (`Engine::setGraph`) checks that the document's system nodes
-  and the slots name the same systems, each node `sys-<id>` with settings `{ "core": <id> }`, of the node
-  type its core is placed as, and that a tap arm names one of the slots and a mode from 1 to 3 (any of
-  these refuses the document before anything is built); builds the plan's `SystemTable` (a slot-ordered
-  list of `{ id, SystemBase*, SameBoySystem*, MesenNesSystem* }`,
+- **`setGraph({ document, slots, tap? })`** (`Engine::setGraph`) first reclaims what the audio thread
+  handed back (the GraphHost's plans, the script host's released instances), then checks that the
+  document's system nodes and the slots name the same systems, each node `sys-<id>` with settings
+  `{ "core": <id> }`, of the node type its core is placed as, that a tap arm names one of the slots and
+  a mode from 1 to 3, that there is at most one `rp.host.midi-in` and one `rp.host.controller-in`, and at
+  most one `rp.n8.cart-mirror`, naming one of the slots' NES systems (any of these refuses the document
+  before anything is built); builds the plan's `SystemTable` (a slot-ordered list of
+  `{ id, SystemBase*, MesenNesSystem* }`, the NES pointer for the channel tap, plus the system the cart mirrors,
   [SystemTable.hpp](../packages/native/src/host/graph/SystemTable.hpp)) from the slots and the live cores;
   turns `tap` into the swap's `SyncTap` trailer; and hands both to `GraphHost::setGraph`, which computes
   every node's layout from the document (`layout_for` on each node type), runs every layout check, and
@@ -293,12 +394,26 @@ Structure arrives as a graph document TS builds
 
 The document `buildGraph` writes:
 
-- **Order.** `rp.dsp.kernel` first, then the unlinked systems by slot, then the link groups in order of
-  first appearance (members by slot, one `link` wire chaining each member to the next), then the mixing
-  nodes, then `rp.host.audio-out`. The planner breaks ties by document order, so this is also the order
-  the plan runs in. Node ids are `kernel`, `sys-<id>` and names derived from them, never from position,
-  so a system keeps its instance across edits. Link groups are Game Boys only, bucketed by nonzero
+- **Order.** `rp.host.midi-in`, `rp.host.controller-in` and the kernel node, then the unlinked systems
+  by slot, then the link groups in order of first appearance (members by slot, one `link` wire chaining
+  each member to the next), then `rp.n8.cart-mirror` when there is a NES, `rp.host.midi-out` and
+  `rp.host.controller-out`, then the mixing nodes, then `rp.host.audio-out`. The kernel runs before the
+  systems because they read its outputs, not because of where it is listed (a Game Boy's `serialOut`
+  reaches it over a feedback wire, which orders nothing). The planner breaks ties by document order, so
+  this is also the order the plan runs in. Node ids are `midi-in`, `controller-in`, `kernel`, `cart`,
+  `midi-out`, `controller-out`, `out`, `sys-<id>` and names derived from a system id (`split-<id>`,
+  `stem-<id>-<k>`) or a host channel (`lane-<c>`), never from position, so a system keeps its instance across edits. Link groups are Game Boys only, bucketed by nonzero
   link-group id in slot order, a group of fewer than two dissolved.
+- **The kernel.** Its settings are the structure: `{ project, systems: [{ id, pipeline, serialOut }] }`,
+  the systems in slot order (positional MIDI routing reads it), each pipeline the roles the kernel runs
+  for that system, `serialOut` true for a Game Boy. Its wires: `midi-in.midi`, `controller-in.midi` and
+  `controller-in.connected` to its `midiIn`, `controllerIn` and `controllerConnected`; its
+  `sys-<id>.serialIn` / `.midi` / `.bytes` / `.buttons` to the system node's input of the same name; each
+  Game Boy's `serialOut` back to its `sys-<id>.serialOut` as a feedback wire (MI.OUT's one block of
+  latency); the first NES's `sys-<id>.midi` and `.bytes` to the cart mirror as well; its `midiOut` and
+  `controllerOut` to `midi-out` and `controller-out`. Its ports are named by system id, so a structure
+  change reshapes it: the instance is kept and a surviving system's wires stay bound
+  ([04-roles-dsp-kernel.md](04-roles-dsp-kernel.md)).
 - **Routing as wiring.** For each host channel it lists the contributions in the order they sum:
   unlinked systems by slot, then the link groups by first appearance, L before R within a system. One
   contribution is wired straight to `audio-out`; several go through one mono `rp.core.add` in that order
@@ -351,21 +466,19 @@ cleanly.
 
 | Kind | Payload | Ownership |
 |---|---|---|
-| `SetSystems` | `string* json` | owning: the audio thread `delete`s after apply |
-| `LoadKernel` | `vector<uint8>* bytecode` | owning: the audio thread `delete`s after apply |
-| `StageMidi` | `uint8 data[4]`, `len`, or `vector<uint8>* ext` | inline for a message of up to 4 bytes; a longer one (a SysEx) owning |
+| `StageMidi` | `uint8 data[4]`, `len`, or `vector<uint8>* ext`, `frame` | inline for a message of up to 4 bytes; a longer one (a SysEx) owning; applied into the engine's staging, which `rp.host.midi-in` takes |
 | `StageControllerMidi` | `uint8 data[4]`, `len` | inline only; a message over 4 bytes is refused before it is pushed |
-| `StageSystemMidi` | `id`, `data[4]` / `len` or `ext` | as `StageMidi`, delivered to one system's ingress, never through the kernel |
+| `StageSystemMidi` | `id`, `data[4]` / `len` or `ext` | as `StageMidi`, delivered at drain to one system's ingress (and to the cart when the plan's cart mirror names that system), never through the kernel |
 | `SetBpm` / `SetTransport` / `SetPpq` | `double` / `bool` / `double` | inline |
 | `SetConfigField` | `id`, `field`, `value` | inline |
 | `PressButton` | `id`, `button`, `down` | inline |
 | `WriteRam` | `id`, `offset`, `vector<uint8>* bytes` | owning |
 | `SyncTap` | `arm`, `mode`, `id` | inline; rides in the plan's swap command as a trailer for every `setGraph` request carrying a `tap` |
 
-Heavy, rare payloads (systems JSON, kernel bytecode, RAM writes, long MIDI) cross as raw **owning**
-pointers: the accepted non-RT-on-rare-op pattern. At drain the GraphHost hands each host command
-to `Engine::onHostCommand`, which applies it (`applyCommand`) against the `SystemTable` of the plan
-current at that point, and `delete`s owning payloads after apply. `SyncTap` is the NES channel-tap
+Heavy, rare payloads (RAM writes, long MIDI) cross as raw **owning** pointers: the accepted
+non-RT-on-rare-op pattern. At drain the GraphHost hands each host command to `Engine::onHostCommand`,
+which applies it (`applyCommand`) against the `SystemTable` of the plan current at that point, and
+`delete`s owning payloads after apply. `SyncTap` is the NES channel-tap
 arming: restore whatever `armedTap_` armed, then, when the request names an arm, set that NES to its
 export mode (either pin split 1, `ChannelSplit` 3, as `buildGraph` decides for a split routing over a
 single NES), recording what it replaced. TS sends it on every edit that builds or drops a core and on
@@ -504,21 +617,76 @@ runs as a script node ([`kernelNode.ts`](../packages/retroplug/src/script/kernel
 doc covers the C++ runtime under it (docs/modular-graph-phase-b3a-design.md section 2).
 
 [`ScriptHost`](../packages/native/src/host/script/ScriptHost.hpp) owns **two bare QuickJS
-runtimes** (no txiki; see [01-architecture.md](01-architecture.md)), one per Engine, both loaded at
-construction with the script-node bundle embedded as bytecode
-([`bundle.ts`](../packages/retroplug/src/script/bundle.ts)): a control-side one that only validates
-settings and gives a node's ports, and the audio-side one that holds every instance and runs
-`process`. Each script type is an `rp_node_type` of the package `rp.script`, its instances native
-shims the planner creates and destroys like any node's. A node reads its inputs and writes its
-outputs through one reused `Block` object, straight from and into the plan's queues, so **a `JSValue`
-never crosses out**. The **drift-exact PPQ tick clock lives entirely in the JS kernel**
-(`walkTicks`); native passes only the block's transport in. Every entry into a runtime re-anchors
-with `JS_UpdateStackTop` because the driving thread differs (the control thread on the pull path,
-the audio thread while running), and QuickJS's stack-overflow guard is calibrated against the
-thread that last entered it. A profile build profiles the audio runtime there
-([08-profiling.md](08-profiling.md)).
+runtimes** (no txiki; see [01-architecture.md](01-architecture.md)), one pair per Engine, sharing no
+JS value: a control-side one that only checks settings and lays out a node's ports, and the
+audio-side one that holds every instance and runs `process`.
 
-[`ScriptCompiler`](../packages/native/src/host/dsp/ScriptCompiler.hpp#L17) (`dsp::compileToBytecode`)
+- **The bundle.** Both run the script-node bundle
+  ([`bundle.ts`](../packages/retroplug/src/script/bundle.ts)), esbuilt to a global-code IIFE and compiled to bytecode at build time by the `retroplug-script-bundle`
+  target ([bundles.cmake](../packages/native/cmake/bundles.cmake)), whose derived C array is compiled
+  into `retroplug-backend`: every Engine loads it at construction, so every host has the same node
+  types with no boot call. The bundle appends its `defineNode` results to the global `__rp_scriptNodes`
+  ([register.ts](../packages/retroplug/src/script/register.ts)); the host reads that list in both
+  runtimes, requires the same id and descriptor at each index, and registers one `rp_node_type` per
+  definition in the package `rp.script`, all served by the same functions, each type telling itself apart
+  by its `ctx`. A bundle that does not load, or one definition that cannot be read, registers no type,
+  logged, and every document naming one is refused (`unknown-type`); a second load is refused. The native
+  tests build an Engine with toy bundles of their own instead.
+- **Settings and layout** (control side, the planning thread). `layout_for` and `prepare_settings` run
+  the definition's `parseSettings` and its `layout` on the settings alone, so the planner can check a
+  whole document before it creates anything. Every script type declares `RP_TYPE_STATELESS_PREPARE`,
+  since that prepare reads nothing a commit writes, so `setGraph` never waits on a script node's
+  commit. A definition that `reshapes` answers `RP_PREPARE_RESHAPE` for every change it accepts (the
+  planner keeps the instance, binds the new plan's ports to it by id, and commits the settings at the
+  swap); one that does not answers `RP_PREPARE_SWAP` while its layout is the one it was created with,
+  and `RP_PREPARE_REBUILD` once it moves.
+- **Instances.** A shim's `create` and `activate` run on the control thread and only allocate the shim
+  and its record. Its JS instance is made on the block thread at the first call the shim gets there,
+  which is the `ports_changed` the planner sends every fresh instance when its plan is adopted, so
+  before that plan's first `process`; the definition's `create` gets `{ settings, sampleRate,
+  maxFrames }`, the settings in the JSON form the control side's `parseSettings` returned (the audio
+  side never runs the schema). A commit hands the
+  instance its new settings through its `onSettings` (and, for a reshape, its new layout). A live
+  instance is re-activated only while quiescent. The shim's `destroy` (control thread) hands the record
+  to the script host: with no audio thread running it is released there and then; otherwise it is
+  queued on a 256-slot SPSC ring (a control-side backlog behind it) that `beginBlock` drains at the
+  top of later blocks, 16 a block, freeing the JS state on the block thread, and the record comes back
+  on a second ring for `reclaim` (control thread) to delete, so the audio thread frees nothing native.
+  What released instances, and the bundle's load, leave in cycles is collected while no block runs: at
+  the reclaim that ends a quiescent operation (the Engine's after every `setGraph`) and when the audio
+  thread hands the runtime back.
+- **The block.** A node's `process` gets one `Block` object, the same every block: `messages(port)` a
+  reused array whose payloads are copied into one JS-owned buffer per port, `control(id)` a reused
+  `{ start, changes }`, `audio(port)` a reused `Float32Array[]` over the instance's own JS-owned copy of
+  each channel (an input's samples copied in before `process`, an output's copied out after it, one
+  copy per channel per block; the buffers made when the port first runs and again only for a larger
+  block or one JS gave away), and `send` / `emit` writing the plan's output queues directly, a send past
+  a queue's capacity refused and counted. No plan memory reaches JS, so nothing a node keeps, transfers
+  or writes can reach a buffer another node reads or a plan the control thread frees. Ports are found
+  through atoms made when the instance or its new layout is bound, so a warm block allocates nothing
+  native, and a node written with indexed loops nothing in JS either. So **a `JSValue` never crosses
+  out**. The promise jobs a block's JS queues run at its end (`endBlock`), at most 256. The
+  **drift-exact PPQ tick clock lives entirely in the JS kernel** (`walkTicks`); native passes only the
+  block's transport in.
+- **A throw** in `process` is caught and counted, the block's output up to it stands, and the node runs
+  again next block; a definition that says `faultOnThrow`, or a `process` that returns `"fault"`,
+  faults instead (bypassed from then on), and a `faultOnThrow` node whose `onSettings` or
+  `portsChanged` threw faults at its next block. Throws in `create`, `onSettings`, `portsChanged` and
+  `activate`, and a promise job stopped by the deadline or out of memory, are counted too
+  (`Engine::scriptThrows()`; a promise reaction's own throw only rejects its promise); the first one's
+  text is kept on the block thread in a fixed buffer and logged once by `reclaim`.
+- **The call deadline.** Every call the block thread makes into a node's JS (and `endBlock`'s
+  promise jobs, together) is held to a deadline of the calling thread's CPU time (2 s by default,
+  `setCallDeadline`), so a stall that is not the node's own never trips it. A call that runs past it is stopped and counted as a throw: a `faultOnThrow` node faults,
+  any other runs again and faults only if its next call is stopped too. Both runtimes' JS stacks are
+  held to 256 KiB, under a macOS secondary thread's 512 KiB.
+
+Every entry into a runtime re-anchors with `JS_UpdateStackTop` because the driving thread differs
+(the control thread on the pull path, the audio thread while running), and QuickJS's stack-overflow
+guard is calibrated against the thread that last entered it. A profile build profiles the audio
+runtime there ([08-profiling.md](08-profiling.md)).
+
+[`ScriptCompiler`](../packages/native/src/host/dsp/ScriptCompiler.hpp#L18) (`dsp::compileToBytecode`)
 compiles a script to QuickJS bytecode on a **transient, bare context**: the engine-graph tests use
 it to build their toy script nodes. The bytecode is version-locked to this exact qjs-ng build, which
 is fine because the compiler and the script host are the same `qjs`.
@@ -540,8 +708,10 @@ its **runtime** classes:
 
 The graph the engine runs on is not in `retroplug-core`: the executor, planner and
 [`GraphHost`](../packages/native/src/graph/GraphHost.hpp), with the `rp.core` mixing nodes and the
-`rp.host` I/O nodes, are the `retroplug-graph` / `retroplug-graph-exec` libs (`src/graph/`), and
-the engine's own nodes (`src/host/graph/`) compile into `retroplug-backend`.
+`rp.host` package's `rp.host.audio-out`, are the `retroplug-graph` / `retroplug-graph-exec` libs
+(`src/graph/`), and the engine's own nodes (`src/host/graph/`: the system nodes, the host MIDI and
+control-surface I/O, the cart mirror) and the script host (`src/host/script/`) compile into
+`retroplug-backend`.
 
 ROM classification (the old C++ `RomSniffer`) and the LSDj sav codec are TS-owned — neither is in
 the C++ tree.
@@ -553,14 +723,14 @@ The txiki host `TjsHostRuntime` comes from
 
 The [`retroplug-backend`](../packages/native/CMakeLists.txt) static lib wraps
 [`retroplug-core`](../packages/native/CMakeLists.txt) with the `Engine` (and links
-`retroplug-graph`, the graph it runs on), the RPC services, the DSP runtime, and the txiki host,
-and is PIC (it links into the shared plugin module). The test host `retroplug-host` is that lib +
-`main.cpp`; the DPF plugin is
+`retroplug-graph`, the graph it runs on), the RPC services, the script host with its embedded
+script-node bundle, and the txiki host, and is PIC (it links into the shared plugin module). The
+test host `retroplug-host` is that lib + `main.cpp`; the DPF plugin is
 [`dpf_add_plugin(retroplug TARGETS clap vst3 vst2 au jack)`](../packages/native/CMakeLists.txt)
 (AU is macOS-only). The control-plane and UI bytecode bundles are built by
-`tools/build-controlplane.js` + `tools/build-ui.js` piped through `tjsc`, and are
-**derived — never committed**. [06-build-test.md](06-build-test.md) is the full build/verify
-story.
+`tools/build-controlplane.js` + `tools/build-ui.js` piped through `tjsc`, and the script-node bundle
+by `tools/build-session.js` (`retroplug-script-bundle`); all are **derived, never committed**.
+[06-build-test.md](06-build-test.md) is the full build/verify story.
 
 Plugin identity: name `RetroPlug`, CLAP id
 `net.tommitytom.retroplug`, `UNIQUE_ID RPlg` / `BRAND Tmtt`,
@@ -580,10 +750,10 @@ is one automatable parameter applied post-render across all 8 channels
   **at construct**, not live — the `dynamic_cast` in
   [`Engine::applyConfigField`](../packages/native/src/host/engine/Engine.cpp) is SameBoy-only,
   so changing a Mesen knob rebuilds the system rather than nudging the running core.
-- **Per-block buttons/keys into the kernel.** The kernel stage passes `kNoButtons` /
-  `kNoKeys` today ([`Engine.cpp`](../packages/native/src/host/engine/Engine.cpp)); the
-  kernel's button/key input arrays are wired but not yet fed (this blocks the raw LSDj Keyboard
-  mode — [07-remaining-work.md](07-remaining-work.md)).
+- **Per-block buttons/keys into the kernel.** The kernel node hands its kernel empty `buttons` and
+  `keys` arrays every block ([`kernelNode.ts`](../packages/retroplug/src/script/kernelNode.ts)): it has
+  no input port for them, and no host feeds them yet (this blocks the raw LSDj Keyboard mode,
+  [07-remaining-work.md](07-remaining-work.md)).
 - **The snapshot double-copy collapse** (§`SnapshotRegistry`) is a documented redundancy, not a
   bug — a pending refactor, see [07-remaining-work.md](07-remaining-work.md).
 
@@ -591,13 +761,13 @@ is one automatable parameter applied post-render across all 8 channels
 
 - [`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp) — mounts the capability facets onto a server; the single source of truth for the wire surface.
 - [`CoreBackends.cpp`](../packages/native/src/system/CoreBackends.cpp) — registers the `sameboy` / `mesen` backends into the `SystemFactory`.
-- [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp): the single-threaded owner of the graph, the DSP kernel and the registry; `processBlock`, the command handler, `SyncTap`.
+- [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp): the single-threaded owner of the graph (with its script host), the staged host MIDI, the host outputs and the registry; `processBlock`, `setGraph`, the command handler, `SyncTap`.
 - [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp): `QueuedInvoker`, the one command path; [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp).
 - [`host/graph/`](../packages/native/src/host/graph): [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) (the cores as nodes), [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) (the host I/O nodes and the cart mirror), [`SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp), [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp).
 - [`GraphHost.hpp`](../packages/native/src/graph/GraphHost.hpp) / [`.cpp`](../packages/native/src/graph/GraphHost.cpp), [`rp_node.h`](../packages/native/src/graph/rp_node.h): the one ring, plan swap and reclaim; the node ABI (`layout_for` per type).
 - [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) — the owned read door.
 - [`SystemFactory.hpp`](../packages/native/src/system/SystemFactory.hpp), [`SameBoyBackend.cpp`](../packages/native/src/system/sameboy/SameBoyBackend.cpp), [`MesenBackend.cpp`](../packages/native/src/system/mesen/MesenBackend.cpp) — the build path.
-- [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp), [`ScriptCompiler.hpp`](../packages/native/src/host/dsp/ScriptCompiler.hpp): the script-node runtime + the tests' compiler.
+- [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp), [`ScriptCompiler.hpp`](../packages/native/src/host/dsp/ScriptCompiler.hpp): the script-node runtime + the tests' compiler; [`src/script/`](../packages/retroplug/src/script) (`bundle.ts`, `register.ts`, `kernelNode.ts`): the bundle every Engine embeds, how it registers its nodes, and the DSP kernel as a script node.
 - [`HostRpcService.cpp`](../packages/native/src/host/rpc/HostRpcService.cpp), [`EngineRpcService.cpp`](../packages/native/src/host/rpc/EngineRpcService.cpp), [`DebugRpcService.cpp`](../packages/native/src/host/rpc/DebugRpcService.cpp), [`AudioDriverRpcService.cpp`](../packages/native/src/host/rpc/AudioDriverRpcService.cpp) — the RPC services behind the facets.
 - [`plugin/PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp), [`plugin/PluginShared.hpp`](../packages/native/plugin/PluginShared.hpp), [`src/main.cpp`](../packages/native/src/main.cpp), [`test/ui/UiHarness.hpp`](../packages/native/test/ui/UiHarness.hpp) — the three hosts.
 - [`CMakeLists.txt`](../packages/native/CMakeLists.txt), [`plugin/DistrhoPluginInfo.h`](../packages/native/plugin/DistrhoPluginInfo.h) — build wiring + plugin identity.

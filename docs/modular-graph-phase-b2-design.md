@@ -1,7 +1,8 @@
 # Design: Phase B2, TS owns the graph
 
 **Date:** 2026-10-24 · **Branch:** `feature/modularize` · **Status:** built
-([modular-graph-phase-b2-plan.md](modular-graph-phase-b2-plan.md)); B3 not yet built.
+([modular-graph-phase-b2-plan.md](modular-graph-phase-b2-plan.md)); B3a built
+([modular-graph-phase-b3a-design.md](modular-graph-phase-b3a-design.md)), B3b not yet built.
 
 Phase B of [the modular graph design](modular-graph-design.md) (§8) moves the engine onto the graph. B1
 ([modular-graph-phase-b1-design.md](modular-graph-phase-b1-design.md)) made `Engine::processBlock` run a
@@ -17,8 +18,9 @@ the output must stay bit-identical against the B0 baseline.
 B0 §0 has the four-step table. B2 as designed here differs from that table in what it deletes: the
 role-config commands (`applySystemSetting`, `applyRoleConfig`, `ConfigField`) stay until Phase C, when
 nodes own their knowledge and those fields become node params, and the kernel commands (`dspLoadKernel`,
-`dspSetSystems`) stay until B3 deletes the kernel itself. B2 hands TS the graph's **structure**: which
-systems exist and in what order, the audio-routing wiring, the link cables, and the host's output shape.
+`dspSetSystems`) stay until B3 deletes the kernel itself (B3a deleted them, with `compileScript`). B2 hands TS the
+graph's **structure**: which systems exist and in what order, the audio-routing wiring, the link cables, and the
+host's output shape.
 
 ## 1. Decisions taken
 
@@ -416,7 +418,7 @@ Each step its own commit, with parity unchanged:
   its gain is touched. B2 keeps the behaviour exactly; the fix is its own commit afterwards, with a
   re-record if a baseline moves.
 - Node params for the live knobs and the end of `ConfigField`: Phase C.
-- The kernel commands, the kernel node and the script-node runtime: B3.
+- The kernel commands, the kernel node and the script-node runtime: B3 (built in B3a).
 - System nodes building their own cores from settings and resources (`putResource`), and duplicate or
   reload as a node with a state-seed resource: Phase C, with the knobs.
 - The planner costs of §7.4 (the main design's §12): recorded, fixed when a large graph needs them.

@@ -37,13 +37,20 @@ The rules below are the parts that don't fit those.
   `-watcher-test` / `-dynparams-test` / `-midi-test` / `-launchpad-test` / `-lottie-test` /
   `-graph-test` / `-engine-graph-test`) as `Catch2::Catch2WithMain`. `retroplug-engine-graph-test`
   holds the engine's graph to the cores it wraps: each system node renders what its core renders
-  driven directly, bit for bit; the engine places, re-arms and frees what the graph documents TS
-  builds say; and every document in `buildGraph`'s goldens, handed to the engine with real cores, plans
-  and runs a block with no node faulting (the 33-system `perSystem` ones are refused, as they must be;
-  the wiring itself is `buildGraph`'s, held by `pnpm test graph` to explicit tables and to the B1
-  translator's goldens). `retroplug-dynparams-test` is the odd one out: it
-  compiles DPF's format-neutral core (`DistrhoPlugin.cpp`) plus its OWN `DistrhoPluginInfo.h`,
-  building no plugin format at all, to drive `PluginExporter::reinitParameters` over a toy plugin.
+  driven directly, bit for bit, its inputs included; the engine places, re-arms and frees what the graph
+  documents TS builds say; the host I/O nodes and the N8 cart mirror move what the hosts stage and drain;
+  TS nodes run behind the C ABI in the script host (B3a,
+  [docs/modular-graph-phase-b3a-design.md](docs/modular-graph-phase-b3a-design.md)): marshalling, reshape,
+  creation and release on the block thread, throws; the DSP kernel, now the script node `rp.dsp.kernel`, sends
+  exactly the digests it was recorded sending while the old kernel stage still ran beside it and matched it; and
+  every document in `buildGraph`'s goldens, handed to the engine with real cores, plans and runs a block with no
+  node faulting, no script node throwing and no message dropped (the 33-system `perSystem` ones are refused, as they must be; the wiring itself is
+  `buildGraph`'s, held by `pnpm test graph` to explicit tables and to the B1 translator's goldens). A hidden
+  bench times a script node per block at 1, 64 and 512 frames (`build/bin/retroplug-engine-graph-test
+  "[bench]"`), and a profile build adds four `[profile]` cases (`tools/run-profile.sh unit`).
+  `retroplug-dynparams-test` is the odd one out: it compiles DPF's format-neutral core (`DistrhoPlugin.cpp`)
+  plus its OWN `DistrhoPluginInfo.h`, building no plugin format at all, to drive
+  `PluginExporter::reinitParameters` over a toy plugin.
 - **`deps/sameboy` is patched at configure — a dirty working tree there is
   EXPECTED, not stray changes.** The per-channel (4-stem) Game Boy audio tap lives
   in `Core/apu.{c,h}` and ships as a tracked patch
@@ -295,21 +302,24 @@ JACK server + per-tag config dir / display / logs), which is also what makes the
 individual `reaper:*` scripts safe to run in parallel.
 
 **The parity baseline** (`pnpm test:native parity`, [spec/06-build-test.md](spec/06-build-test.md)) holds the
-engine's output to the BIT: 167 store-driven cases, each hashed per lane per segment plus MIDI out, SRAM
+engine's output to the BIT: 197 store-driven cases in 26 groups, 1-frame blocks and FL-style ragged splits among
+them (the `blocks-tiny-*` groups B3a recorded first), each hashed per lane per segment plus MIDI out, SRAM
 and work RAM, against `test-native/parity/baseline/*.json`. Every other audio test asserts levels, which a
 refactor can move without failing one; this one fails on a single changed bit, so treat a parity failure as a
 real change to the audio, never as noise. Exact audio is compared only on `linux-x64-gnu13` (this devcontainer
 and CI's linux-x64 job); elsewhere a case must agree with itself and its integer state is still compared (CI's linux-x64 step sets `RP_PARITY_REQUIRE_TARGET=1`, so there a foreign host fails instead). An
 INTENTIONAL audio change re-records the groups it moves in the same commit (`RP_PARITY_UPDATE=1 pnpm
-test:native parity/<group>`), and the baseline diff is the record of what moved; recording refuses silence,
+test:native parity/<group>`, one group by its full name; a prefix covering several takes the DASH form,
+`parity-blocks-tiny` for the five `blocks-tiny-*` groups, since `parity/blocks-tiny` matches nothing), and the
+baseline diff is the record of what moved; recording refuses silence,
 order-dependent cases and an ignored stimulus. Three traps, all met building it: cores must power on in a
 fixed state (`RETROPLUG_DETERMINISTIC=1`, which the runner sets for `parity/` only; the SMS VDP's random start
 scanline was the last source); mGB ignores MIDI for its first ~1.5 s, so a case sends nothing before
 `BOOT_MS`; and a second instance of one ROM path gets a fresh `-2.sav` battery slot, so two systems that each
-need a battery each need their own copy (`rig.rom(src, prefix)`). Four engine defects are pinned on purpose (design section 2.5 of [docs/modular-graph-phase-b0-design.md](docs/modular-graph-phase-b0-design.md)); fixing one is its own change with a re-record. The fixture groups need
-`RETROPLUG_RESOURCES_DIR` pointed at the sibling resources tree, and CI runs only the 140 fixture-free cases
-(every MIDI-out, controller-in, link-cable, LSDj, risa and GBA case is fixture-only), so a Phase B step is
-accepted only on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`.
+need a battery each need their own copy (`rig.rom(src, prefix)`). Five engine defects are pinned on purpose (design section 2.5 of [docs/modular-graph-phase-b0-design.md](docs/modular-graph-phase-b0-design.md)); fixing one is its own change with a re-record, and the next due is LSDj master sync reading a stopped LSDj as clocks in small blocks, to be fixed right after B3a and before B3b. The fixture groups need
+`RETROPLUG_RESOURCES_DIR` pointed at the sibling resources tree, and CI runs only the 152 fixture-free cases
+(every LSDj case, its MIDI-out and link-cable ones among them, and every controller-in, risa and GBA case is
+fixture-only), so a Phase B step is accepted only on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`.
 
 **`retroplug-cli` as a consumer's whole test harness** (`pnpm test:cli-ts`):
 `retroplug-cli test <dir>` strips and runs a directory of `.ts` tests, and `run <session.ts>` does one

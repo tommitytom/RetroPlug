@@ -167,23 +167,32 @@ descriptors by shared golden files.
 
 **The native engine runs on it** (Phase B1,
 [docs/modular-graph-phase-b1-design.md](../docs/modular-graph-phase-b1-design.md)):
-`Engine::processBlock` runs a `GraphHost` plan of the engine's own nodes, `rp.dsp.kernel` (today's
-kernel stage, first in every plan) and one system node per core (`rp.sameboy.gb`, `rp.mesen.nes`,
-`rp.mesen.gba`, `rp.mesen.sms`), mixed by `rp.core.split` / `rp.core.add` into `rp.host.audio-out`.
+`Engine::processBlock` runs a `GraphHost` plan of the engine's own nodes: the host I/O nodes
+(`rp.host.midi-in`, `-midi-out`, `-controller-in`, `-controller-out`), the DSP kernel, one system node per
+core (`rp.sameboy.gb`, `rp.mesen.nes`, `rp.mesen.gba`, `rp.mesen.sms`) and, with a NES, the
+`rp.n8.cart-mirror` that feeds a physical N8, mixed by `rp.core.split` / `rp.core.add` into
+`rp.host.audio-out`.
 **TS builds the graph** (Phase B2,
 [docs/modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md)): the stores publish one
 whole document per structural edit through `EngineGraph` (`buildGraph` writes it from the systems, the
 routing and the host shape), native builds each core with `buildCore` and plans the document with
 `setGraph`, and every other edit rides the one ring as a command
-([01-architecture.md](01-architecture.md), [02-native-host.md](02-native-host.md)). Dissolving the
-kernel is B3 of [docs/modular-graph-design.md](../docs/modular-graph-design.md) section 8.
+([01-architecture.md](01-architecture.md), [02-native-host.md](02-native-host.md)). **The kernel is a
+script node** (Phase B3a,
+[docs/modular-graph-phase-b3a-design.md](../docs/modular-graph-phase-b3a-design.md)): `rp.dsp.kernel` is
+a TS node run by the script host every Engine embeds, its settings the kernel's structure (published
+with the graph), its inputs and outputs wires from the host I/O nodes and to every system node's inputs,
+and each Game Boy's `serialOut` coming back on a feedback wire. Splitting it into one protocol node per
+role is B3b ([07-remaining-work.md](07-remaining-work.md) section 5).
 
 - Code: `packages/native/src/graph/` (C++), `packages/native/src/host/graph/` (the engine's nodes),
-  `packages/retroplug/src/graph/` (TS: the node and extension contracts, `buildGraph`, `DirectGraph`) and
-  `packages/retroplug/src/engineGraph.ts`.
+  `packages/native/src/host/script/` (the script host), `packages/retroplug/src/graph/` (TS: the node and
+  extension contracts, `buildGraph`, `DirectGraph`), `packages/retroplug/src/script/` (the script-node
+  bundle and the kernel node) and `packages/retroplug/src/engineGraph.ts`.
 - **Prove a change:** `pnpm test:plugin graph` (a substring filter, so both `retroplug-graph-test`
   and `retroplug-engine-graph-test`), `pnpm test graph`, `pnpm test:native parity` for anything the
   engine renders, and the ThreadSanitizer build of `retroplug-graph-test` (`build-tsan/`, as in
   Task 9 of [docs/modular-graph-phase-a-plan.md](../docs/modular-graph-phase-a-plan.md)). How the
-  planner scales: `build/bin/retroplug-graph-test "[bench]"`.
+  planner scales: `build/bin/retroplug-graph-test "[bench]"`; what a script node costs a block:
+  `build/bin/retroplug-engine-graph-test "[bench]"`.
 - Deeper: [docs/modular-graph-design.md](../docs/modular-graph-design.md).

@@ -1,6 +1,6 @@
 # Design: the modular node-graph engine
 
-**Date:** 2026-10-23 · **Branch:** `feature/modularize` · **Status:** Phase A built (`packages/native/src/graph/`, `packages/retroplug/src/graph/`); Phase B0 to B2 built (B3 and Phases C to E not yet built).
+**Date:** 2026-10-23 · **Branch:** `feature/modularize` · **Status:** Phase A built (`packages/native/src/graph/`, `packages/retroplug/src/graph/`); Phase B0 to B3a built (B3b and Phases C to E not yet built).
 
 RetroPlug's long-term direction is a modular system in the spirit of Reaktor: emulated consoles (and
 the real hardware they can drive) appear as nodes in a graph alongside DSP effects and routing nodes.
@@ -310,7 +310,10 @@ Three mechanisms, each for a different kind of dynamism:
    instead of producing silence.
 2. **Counts chosen by the user come from settings** (an 8-input `+`, a 4-way splitter). Changing the
    setting means a re-layout and a replan; the planner rejects wires to ports that no longer exist, and
-   the document's owner (today the graph builder, later the modular UI) removes them.
+   the document's owner (today the graph builder, later the modular UI) removes them. A node that can keep
+   its state through the new layout reshapes rather than rebuilds (`RP_PREPARE_RESHAPE`, §4.3): the instance
+   is kept and its ports are rebound by id, as the DSP kernel node is whenever a system comes or goes
+   ([B3a §2.4](modular-graph-phase-b3a-design.md)).
 3. **Inferred channel counts** (`any` / `match`, §3.4) for the DSP library.
 
 ### 3.6 Host bus layout
@@ -332,7 +335,7 @@ as the same C structures. The shape follows CLAP: a small core table, plus optio
 by versioned string id. Statically linked packages are registered through the same entry point as
 downloaded ones, so there is one loading path.
 
-A sketch (names not final):
+A sketch, abridged from [rp_node.h](../packages/native/src/graph/rp_node.h), which is the reference:
 
 ```c
 #define RP_ABI_VERSION 1
@@ -356,24 +359,32 @@ struct rp_host {   // host services; grows through get_interface, never by resha
 
 typedef uint32_t rp_status;  // RP_OK / RP_FAULT: fixed-width, since an enum's size is not portable
 
-typedef struct rp_settings { const uint8_t* data; size_t size; uint32_t encoding; } rp_settings; // JSON on desktop
+typedef struct rp_settings { const char* data; size_t size; uint32_t encoding; } rp_settings; // JSON on desktop
 
+// Every type-level call but destroy is handed the type it is made through, so one set of functions can serve
+// several types, each telling itself apart by its ctx (the script host serves every TS node type so).
 typedef struct rp_node_type {
     const char* id;
-    const char* descriptor_json;
-    bool     (*query_memory)(const rp_settings*, rp_memory_req* out, rp_error* err);  // size + align
-    rp_node* (*create)(const struct rp_host*, void* memory, const rp_settings*, rp_error* err);
-    void     (*destroy)(rp_node*);
+    const char* (*descriptor)(const struct rp_node_type*);                       // control
+    size_t   (*layout_for)(const struct rp_node_type*, const rp_settings*, char* out, size_t capacity,
+                           rp_error* err);     // control: the layout these settings give, before any instance
+    bool     (*query_memory)(const struct rp_node_type*, const rp_settings*, rp_memory_req* out,
+                             rp_error* err);   // control: size + align
+    rp_node* (*create)(const struct rp_node_type*, const struct rp_host*, void* memory, const rp_settings*,
+                       rp_error* err);         // control
+    void     (*destroy)(rp_node*);                                               // control
+    uint32_t flags;  // RP_TYPE_*: promises the type makes the host (RP_TYPE_STATELESS_PREPARE, §4.3)
+    void*    ctx;    // the type's own data, for functions that serve several types; null otherwise
 } rp_node_type;
 
+// rp_prepare_result, like rp_status, is a uint32_t with named constants: RP_PREPARE_SWAP, RP_PREPARE_REBUILD,
+// RP_PREPARE_INVALID, RP_PREPARE_RESHAPE (§4.3)
 typedef struct rp_node_vtable {
-    bool        (*layout)(rp_node*, rp_layout_writer*);                    // control
-    bool        (*activate)(rp_node*, double sample_rate, uint32_t max_frames); // control
+    bool        (*activate)(rp_node*, double sample_rate, uint32_t max_frames, rp_error*); // control
     void        (*deactivate)(rp_node*);                                   // control
-    void        (*ports_changed)(rp_node*, const rp_connection_mask*);     // audio, alloc-free
+    void        (*ports_changed)(rp_node*, const uint8_t* connected, uint32_t output_count); // audio, alloc-free
     rp_status   (*process)(rp_node*, const rp_process*);                   // audio, alloc-free
-    // (rp_prepare_result, like rp_status, is a uint32_t with named constants)
-    void*       (*prepare_settings)(rp_node*, const rp_settings*, rp_error*); // control
+    rp_prepare_result (*prepare_settings)(rp_node*, const rp_settings*, void** prepared, rp_error*); // control
     void        (*commit_settings)(rp_node*, void* prepared, void** old);  // audio, pointer swap
     void        (*release_settings)(rp_node*, void* old);                  // control
     const void* (*get_interface)(rp_node*, const char* id);                // any
@@ -396,12 +407,31 @@ control thread; on the Pico it is a slice of a static arena. A node that needs a
 
 | Call | Thread | Purpose |
 |---|---|---|
-| `layout` | control | resolved ports, params and exclusive groups, after settings are applied |
+| `layout_for` (on the type) | control | resolved ports, params and exclusive groups for a settings object, before any instance exists |
 | `activate` / `deactivate` | control | sample rate, maximum block size; must preserve state (§5.3) |
-| `ports_changed` | audio | connected-output mask changed at a plan swap |
+| `ports_changed` | audio | connected-output mask changed at a plan swap, or a reshape changed the layout |
 | `process` | audio | one block; no allocation, no exceptions |
 | `prepare_settings` / `commit_settings` / `release_settings` | control / audio / control | the settings swap |
 | `get_interface` | any | optional interfaces |
+
+**How an instance takes new settings.** The planner asks `prepare_settings` on every settings change, whether or not
+the layout moved, and it answers one of four results: **swap** (`RP_PREPARE_SWAP`: the layout is unchanged, and the
+prepared object commits at the plan swap), **reshape** (`RP_PREPARE_RESHAPE`: keep this instance with the layout
+`layout_for` gives the new settings; the planner rebinds its ports by id, carries over by id what its params,
+control outputs and resource slots hold, and commits at the swap, §5.3), **rebuild** (`RP_PREPARE_REBUILD`: a fresh
+instance, a new ROM say) or **invalid**. A swap for a changed layout is a `node-contract` error (before B3a it was a
+silent rebuild), and a reshape that leaves the layout as it was is a swap. A reshape that changes the layout always
+brings a `ports_changed`, after its `commit_settings`, so the node has the settings the mask belongs to.
+
+**What a commit holds back.** Unless a type declares `RP_TYPE_STATELESS_PREPARE` in `rp_node_type.flags`, the host
+never calls its `prepare_settings` while a `commit_settings` for the same node may still be in flight, so the node
+may read its current settings there to compare against; `setGraph` waits for such a commit to be adopted first
+(§5.3). A type that declares the flag promises its prepare reads nothing a commit writes, so its commits never
+make `setGraph` wait. Every script type declares it ([B3a §2.4](modular-graph-phase-b3a-design.md)); a C++ node does
+with `static constexpr bool stateless_prepare`, which rules out `needs_rebuild`. The wait is global: one commit to a
+type without the flag holds back an edit that touches only nodes with it (a gate per instance is possible later). And
+a `node.hpp` node without `needs_rebuild` already prepares statelessly, so for C++ nodes the flag could be derived
+rather than declared.
 
 **Ports and params are resolved per instance**, because a `+`'s input count or a mixer's width depend on
 its settings. The type descriptor shows the defaults (for documentation and future UIs). Everything is
@@ -540,25 +570,39 @@ export const lsdjSync = defineNode({
   objects, so **zod leaves the audio-thread bundle**: `defineNode` imports zod's types only, and the
   descriptor's schema comes from the definition's own schema object (`toJSONSchema({ io: "input" })`, the
   shape a document may write: defaulted fields optional, as reflect-cpp's `DefaultIfMissing` says too).
-  Today ~568 KB of the 638 KB DSP-kernel bundle is zod; removing it is also a hard requirement for
-  MicroQuickJS on the Pico. `defineNode` alone no longer pulls zod in, but a node module that builds its
-  `z.object(...)` at top level still does, so the Phase B runtime has to keep schemas out of the audio
-  bundle (a separate settings module per node, or a schema built lazily on the control plane). Every settings field needs a default, since the descriptor describes the
-  layout for default settings (a C++ node has `S{}`).
+  The script-node bundle B3a built, which both of an Engine's script runtimes load, is about 660 KB, 567 KB
+  of it zod (the kernel node's settings schema and `dspRoles.ts` pull it in); removing it is also a hard
+  requirement for MicroQuickJS on the Pico. `defineNode` alone no longer pulls zod in, but a node module that
+  builds its `z.object(...)` at top level still does, so B3b's bundle has to keep schemas out of the audio
+  side (a separate settings module per node, or a schema built lazily on the control plane). Every settings
+  field needs a default, since the descriptor describes the layout for default settings (a C++ node has `S{}`).
 - A TS node sees an audio port as an array of `Float32Array`s, an events port as a frame-ordered array,
-  a resource port as a handle with typed accessors (a `Float32Array` view for an audio buffer). Phase A's
-  `Block` and `NodeInstance` types carry audio, messages and control; the resource accessor, link peers
-  and a settings-swap hook (`onSettings`, with a rebuild decision) are added with the script-node runtime
-  in Phase B.
+  a resource port as a handle with typed accessors (an audio buffer's samples as a `Float32Array`). The arrays
+  are the node's own: B3a's script host copies an audio input's samples into JS-owned buffers before `process`
+  and an output's out after it, one copy per channel each way, rather than hand JS views of the plan's buffers,
+  which a node could keep, transfer or edit past the buffer's life
+  ([B3a §2.3](modular-graph-phase-b3a-design.md)); a resource accessor holds to the same rule. Phase A's
+  `Block` and `NodeInstance` types carry audio, messages and control. B3a's script-node runtime added the
+  settings hook, `onSettings(settings)`, run on the block thread at the plan swap that kept the instance
+  through a settings change, before the first block that runs with them. It carries no rebuild decision:
+  under `RP_TYPE_STATELESS_PREPARE` the host decides on the control thread, from the layout the new settings
+  give and the definition's `reshapes` (a reshaping type keeps its instance through every change its settings
+  accept; any other is swapped while its layout holds and rebuilt when it moves, §4.3). A definition may also
+  say `faultOnThrow`, so a throw in `process` faults the node rather than being counted and run again next
+  block (a throw in `onSettings` or `portsChanged` faults it at its next block), and `startValue(stream)` reads
+  a control's value at frame 0 (its start, or a change at frame 0, since a node cannot set an output's start).
+  The resource accessor and link peers are still to come.
 
 ### 4.9 The script-node runtime
 
-The host wraps each TS node instance in the C table. One script runtime per engine holds every TS node
-(as one context holds every role today), and each node's `process` calls into it.
+The host wraps each TS node instance in the C table. One script runtime per engine holds every TS node,
+and each node's `process` calls into it. On the desktop that is B3a's script host
+([ScriptHost.hpp](../packages/native/src/host/script/ScriptHost.hpp), [B3a §2](modular-graph-phase-b3a-design.md)),
+with a second, control-side runtime that answers `layout_for` and `prepare_settings` and holds no instance.
 
 | Platform | Script runtime |
 |---|---|
-| Desktop (plugin, standalone, CLI, SDL, Node) | bare QuickJS, the evolution of today's `DspRuntime` |
+| Desktop (plugin, standalone, CLI, SDL, Node) | bare QuickJS, the script host that replaced `DspRuntime` |
 | Web | the browser's own JS engine, in the AudioWorklet |
 | Pico | MicroQuickJS, under the existing `check:portable` rules |
 
@@ -566,9 +610,14 @@ The host wraps each TS node instance in the C table. One script runtime per engi
 about 5%. Fine for event-rate work (sync, MIDI, sequencing) and light audio; heavy DSP belongs in C++.
 In the browser the same node runs under a JIT and is far faster.
 
-**Per-node call overhead.** One JS call per TS node per block replaces today's single `processBlock`
-call. If profiling (the [spec/08](../spec/08-profiling.md) harness) shows the marshalling matters, the
-planner can batch consecutive script nodes into one call. Not built until measured.
+**Per-node call overhead.** One JS call per TS node per block replaces the kernel's single `processBlock`
+call. Measured in B3a ([B3a §7.4](modular-graph-phase-b3a-design.md), a Release build at 44.1 kHz, where a 1-frame
+block has 22.7 us): a script node's call costs about 0.09 us with nothing to pass and 0.18 us with one message in and
+out, marshalling included, flat in node count and block size, with nothing allocated per block for a node written
+with indexed loops. An audio port adds one copy per channel each way. One node per role is therefore affordable even
+at 1-frame blocks, and batching consecutive script nodes into one call is not needed: it would matter only at
+hundreds of script nodes on 1-frame blocks (1,000 empty nodes take about 90 us a block), which is the Reaktor-scale
+case to revisit then. What a node costs beyond that is what its own JS does.
 
 ---
 
@@ -679,15 +728,23 @@ those are. Seven rules keep it that way:
    front the audio thread is filling). Quiescent, a capacity change carries the block across, counting
    what the new capacity cannot hold as the source's drops.
 5. **Script-node state lives with the instance** in the script runtime, so `lsdj.sync`'s clock phase
-   survives an edit exactly as a core's state does.
+   survives an edit exactly as a core's state does, and a reshape keeps it through a change of layout.
 6. **Streams that hold a value belong to the instance too.** A param's stream and every control output
    stream (and every resource output slot) are owned by the instance, not the plan, so a constant node's
-   output keeps its value through a swap instead of reading 0 until its knob next moves. Only data with no
-   meaning beyond one block (audio buffers, events and bytes queues) is plan-owned.
-7. **The control thread never plans while a swap is in flight.** `setGraph` first waits for the audio
-   thread to adopt the previous plan (about one block while audio runs; it gives up with a `busy` error
-   after a timeout if the audio thread has stalled), so planning never reads node state (a node's current
-   settings) that the audio thread is in the middle of committing.
+   output keeps its value through a swap instead of reading 0 until its knob next moves. They live in the
+   instance's `PortState` for its layout, which each plan holds; a reshape builds a new one for the new
+   layout and shares into it, by id, every stream and slot whose param or port persists (a param of the same
+   type, range and labels, an output of the same kind and resource type), so those keep their values too, and
+   the rest start afresh. Only data with no meaning beyond one block (audio buffers, events and bytes queues)
+   is plan-owned.
+7. **The control thread never plans while a commit it could race is in flight.** When a published plan
+   carries a settings commit to a node whose prepare reads its current settings, `setGraph` first waits for
+   the audio thread to adopt it (about one block while audio runs; it gives up with a `busy` error after a
+   timeout if the audio thread has stalled), so planning never reads node state that the audio thread is in
+   the middle of committing. A commit to a type that declares `RP_TYPE_STATELESS_PREPARE` (§4.3), as every
+   script type does, never waits: such plans queue on the command ring and are adopted in push order, so
+   while no block runs the ring (255 usable slots, shared with params and the engine's commands) bounds the
+   edits, and once it is full `setGraph` answers `busy` ([B3a §10](modular-graph-phase-b3a-design.md)).
 
 Audio *routing* can still click when a mode change moves a stream to different outputs mid-block, as it
 does today; a short fade at swaps is a possible later refinement. The cores never notice either way.
@@ -919,13 +976,23 @@ single system, pins need a NES) so behaviour is unchanged.
 
 ### 7.4 The DSP kernel dissolves
 
-- `dspKernel.ts`'s per-system pipelines become individual TS nodes in the script runtime.
+In two steps. B3a ([modular-graph-phase-b3a-design.md](modular-graph-phase-b3a-design.md)) built the first:
+
+- `DspRuntime` evolved into the script-node runtime, the script host (§4.9), and the kernel-loading commands
+  went: the kernel bundle is embedded in every Engine and loaded at construction.
+- The kernel runs, unchanged, as one TS node, `rp.dsp.kernel`, whose settings are its structure.
 - The sink thunks (`pushSerialIn`, `emitCoreMidi`, `pushCoreBytes`, `pressButton`, `emitMidiOut`,
-  `emitControllerOut`) become ordinary output ports, and the per-block input object becomes input ports.
+  `emitControllerOut`) became that node's output ports, wired to each system node's `serialIn`, `midi`, `bytes`
+  and `buttons` inputs and to `rp.host.midi-out` / `controller-out`, and the per-block input object is built
+  from its input ports, fed by `rp.host.midi-in` / `controller-in` and each Game Boy's `serialOut`.
+
+B3b does the rest:
+
+- `dspKernel.ts`'s per-system pipelines become individual TS nodes in the script runtime, one per role.
 - `kernelProjection.ts`'s special cases (synthesized `midi-routing` and Launchpad stages, the forced
   `lsdj-sync` mode for MI.MAP) become graph-builder logic.
-- The single 638 KB kernel bundle becomes a per-product **script-node bundle** with no zod in it.
-- `DspRuntime` evolves into the script-node runtime (§4.9); the kernel-loading commands go.
+- The one script-node bundle (about 660 KB, most of it zod) becomes a per-product **script-node bundle** with no zod
+  in it.
 
 ### 7.5 The Backend surface
 
@@ -935,7 +1002,7 @@ single system, pins need a NES) so behaviour is unchanged.
 | `putResource(type, bytes)` -> handle, `releaseResource(handle)` | `setAudioRouting` (gone in B2) |
 | capability calls (memory, SRAM, state, ROM info) addressed by node id | `applyRoleConfig` (Phase C) |
 | `setParam(node, param, value)` | `setSerialOutCapture` (Phase C) |
-| snapshot reads (unchanged) | `dspSetSystems`, kernel loading (B3) |
+| snapshot reads (unchanged) | `dspSetSystems`, kernel loading (gone in B3a: the kernel's structure is its node's settings in the document, and every Engine embeds its bundle) |
 | host I/O, transport (unchanged) | |
 
 Duplicate and reload become "a new node id whose settings point at a state-seed resource": the same
@@ -1005,7 +1072,8 @@ doc's §0 has the table, and its §4 the requirements recording today's engine f
   config / kernel commands; the DSP kernel.
 - Settled in Phase A, owed by the host that adopts it: call `GraphHost::reclaim()` from an idle tick (a
   removed node and its resource pins otherwise linger until the next `setGraph`); expect `setGraph` to
-  block the control thread up to its adoption timeout while the audio thread is stalled; refuse a second
+  block the control thread up to its adoption timeout while the audio thread is stalled (since B3a only
+  behind a commit to a type without `RP_TYPE_STATELESS_PREPARE`, §4.3); refuse a second
   `rp.host.audio-out` (Phase A lets the last one win); give host nodes their buffers through
   `rp_host.get_interface` rather than the `ctx` cast Phase A's `rp.host.audio-out` uses; and read the
   host's inputs before `processBlock` silences its outputs, since a DAW often hands both as one buffer.
@@ -1034,14 +1102,16 @@ B2 is built: [modular-graph-phase-b2-design.md](modular-graph-phase-b2-design.md
 `buildCore`, which builds without placing), `removeSystem` and `setAudioRouting` are gone. Two things
 moved out of B2 as designed: the role-config commands
 (`applySystemSetting`, `applyRoleConfig`, `ConfigField`) stay until Phase C, where the live knobs become
-node params, and the kernel commands stay until B3 deletes the kernel. Building a core stays a native call
-(`buildCore`) until Phase C, when system nodes build their own from settings and resources.
+node params, and the kernel commands stay until B3 deletes the kernel (B3a deleted them). Building a core
+stays a native call (`buildCore`) until Phase C, when system nodes build their own from settings and resources.
 
-B3 is split in two. B3a ([modular-graph-phase-b3a-design.md](modular-graph-phase-b3a-design.md), designed) makes
-the kernel's input and output real wires (host I/O nodes, input ports on every system node, the Game Boy's
-`serialOut`) and runs today's kernel unchanged as one node in the new script-node runtime. B3b splits that node
-into one protocol node per role, moves `kernelProjection` into `buildGraph`, takes zod out of the bundle and
-deletes the kernel.
+B3 is split in two. B3a is built ([modular-graph-phase-b3a-design.md](modular-graph-phase-b3a-design.md)): the
+kernel's input and output are real wires (host I/O nodes, input ports on every system node, the Game Boy's
+`serialOut`), and the kernel runs unchanged as one node, `rp.dsp.kernel`, in the new script-node runtime, with its
+structure as its settings; the sealed kernel, its fan-out, the kernel RPCs and the native kernel node are gone. B3b
+is next: it splits that node into one protocol node per role, moves `kernelProjection` into `buildGraph`, takes zod
+out of the bundle and deletes the kernel. Between the two, LSDj master sync's stopped-LSDj detector, which B3a's
+tiny-block parity groups pinned as a defect, is fixed as its own change, before B3b ports the decoder (B3a §10).
 
 ### Phase C: nodes own their knowledge
 
@@ -1171,8 +1241,8 @@ here so it is not lost.
   package's rule; the exact peer topology is confirmed in Phase B against the existing link tests.
 - **Bit-identical parity** relies on summing order and frame offsets matching the current engine; any
   deviation is documented in Phase B.
-- **Script-node call overhead** versus today's single kernel call; measured with the profiling harness
-  before batching is built.
+- **Script-node call overhead** versus the kernel's single call: measured in B3a (§4.9), about 0.09 to 0.18 us
+  a node per block, so batching is not needed below hundreds of script nodes on 1-frame blocks.
 - **Surround to the DAW** depends on DPF port groups (§3.6).
 - **Large graphs.** The goal past chiptune is user-built synths and music apps, so graphs of thousands of
   nodes. Measured in B2 with `build/bin/retroplug-graph-test "[bench]"`, a Release build on a Ryzen 9 9950X:

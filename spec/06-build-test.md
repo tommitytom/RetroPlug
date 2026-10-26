@@ -32,7 +32,7 @@ All defined in [packages/native/CMakeLists.txt](../packages/native/CMakeLists.tx
 | Target | Kind | Produces | In `ALL`? |
 |---|---|---|---|
 | `retroplug-core` | static lib | The shared emulator / kit-codec core. | yes (via consumers) |
-| `retroplug-backend` | static lib | `retroplug-core` + `retroplug-graph` (the graph executor and planner, [packages/native/cmake/graph.cmake](../packages/native/cmake/graph.cmake)) + the Engine and its graph nodes, the RPC services, the DSP runtime, and the shared txiki host. Composed by every host. | yes (via consumers) |
+| `retroplug-backend` | static lib | `retroplug-core` + `retroplug-graph` (the graph executor and planner, [packages/native/cmake/graph.cmake](../packages/native/cmake/graph.cmake)) + the Engine and its graph nodes, the RPC services, the script host with its embedded script-node bundle, and the shared txiki host. Composed by every host. | yes (via consumers) |
 | `retroplug` | umbrella plugin | `dpf_add_plugin(retroplug TARGETS clap vst3 vst2 au jack)` — the per-format DPF variants (`retroplug-clap`/`-vst3`/`-vst2`/`-au`/`-jack`). AU is macOS-only. | yes |
 | `retroplug-jack` | DPF variant | `build/bin/retroplug` — the **standalone binary**. | yes |
 | `retroplug-sdl` | executable | `build/bin/retroplug-sdl` — the SDL2 standalone ([sdl-standalone.md](../docs/sdl-standalone.md)). Shipped in the CI artifact, deliberately **not** in releases. | yes |
@@ -40,7 +40,7 @@ All defined in [packages/native/CMakeLists.txt](../packages/native/CMakeLists.tx
 | `retroplug-host` | executable | `build/bin/retroplug-host` — the real-Backend test host that evals a TS bundle over `__rpcSend`. | yes |
 | `retroplug-ui-test` | executable | `build/bin/retroplug-ui-test` — boots the real React UI on a headless software LVGL display via `UiHarness`. | yes |
 | `retroplug-node` | shared module | The N-API addon — the same backend behind `require()`. Gated on `RETROPLUG_NODE_ADDON=ON` (needs `node_api.h`). | opt-in |
-| `retroplug-cp-bundle` / `-ui-bundle` / `-cli-bundle` / `-ts-stripper-bundle` / `-render-worker-bundle` / `-cli-sdk-assets` | custom | `build/native/*bundle_data.c` — control-plane / React-UI / CLI / TS-stripper / render-worker bytecode and the CLI SDK assets, embedded in their consumers. | cp: yes; rest: via dependents |
+| `retroplug-cp-bundle` / `-ui-bundle` / `-cli-bundle` / `-ts-stripper-bundle` / `-render-worker-bundle` / `-script-bundle` / `-script-test-bundle` / `-cli-sdk-assets` | custom | `build/native/*bundle_data.c`: control-plane / React-UI / CLI / TS-stripper / render-worker / script-node bytecode (the script nodes every Engine loads, [packages/native/cmake/bundles.cmake](../packages/native/cmake/bundles.cmake); the test twin's toy nodes, embedded in `retroplug-engine-graph-test` alone) and the CLI SDK assets, embedded in their consumers. | cp: yes; rest: via dependents |
 | `retroplug-example-session` | custom | The CLI example sessions under `build/cli/`. | yes |
 | `retroplug-render-host-test` | executable | Drives the offline `RenderHost` directly ([11-ui-rendering.md](11-ui-rendering.md)). `EXCLUDE_FROM_ALL`. | no |
 | `retroplug-plugin-test` / `-dynparams-test` / `-classid-test` / `-audio-test` / `-watcher-test` / `-midi-test` / `-launchpad-test` / `-lottie-test` / `-graph-test` / `-engine-graph-test` | executable | The ten Catch2 binaries `pnpm test:plugin` builds and runs. `EXCLUDE_FROM_ALL`. | no |
@@ -65,8 +65,10 @@ Three of the C++ hosts (see [01-architecture.md](01-architecture.md)) each back 
 tier; `test:plugin` is a fourth tier with no TS runner at all.
 The TS runners live in `packages/retroplug/scripts/`; every runner discovers
 `*.test.ts` files, bundles each with esbuild (es2020, one process per file), and reports TAP with
-a nonzero exit on failure. Slugs accept slash or dash form and a directory prefix runs everything
-under it (e.g. `pnpm test paths` or `paths-rebase`).
+a nonzero exit on failure. Slugs accept slash or dash form, and a prefix runs everything under it (e.g.
+`pnpm test paths` or `paths-rebase`): in slash form a prefix must be a whole directory, while in dash form it may
+end at any dash, so `parity-blocks-tiny` runs the five `parity/blocks-tiny-*` files and `parity/blocks-tiny`
+matches nothing.
 
 ### Skips are reported, and ratcheted
 
@@ -112,25 +114,44 @@ The `reaper:*` tiers are parallel too, by a different mechanism — see
 ### The parity baseline (`test-native/parity/`)
 
 Exact output, not levels. Every other audio test asserts RMS, peaks or timing tolerances, which a
-refactor can move without failing one. The parity suite renders 167 scripted cases on the real
-engine and records, per case, a hash of every output lane of every segment, the kernel's MIDI out, and
+refactor can move without failing one. The parity suite renders 197 scripted cases in 26 groups on the
+real engine and records, per case, a hash of every output lane of every segment, the host MIDI out, and
 each system's SRAM and work RAM at the end; one changed bit fails it. It is the gate Phase B of the
 modular graph engine is held to ([docs/modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md)).
+The suite is 30 files: a file per group, and four with no baseline of their own (`comparator`,
+`determinism`, `host-midi-order` and `render-blocks`).
 
 - **Cases are driven through the stores**, as the UI drives them, so they survive the engine moving
   underneath. [parity/rig.ts](../packages/retroplug/test-native/parity/rig.ts) boots the app's own control
   plane and resets it before each case; [parity/scenes.ts](../packages/retroplug/test-native/parity/scenes.ts)
   holds the systems and stimuli the groups share; each `parity/<group>.test.ts` is a table of cases.
-- **Scenes use `rig.press` and `rig.writeFile`** for input and files, so B2 and B3 only edit `rig.ts` and
-  `bootSession` (plus `render-blocks.test.ts`, which tests `renderBlocks` itself: it builds its systems
-  through a `DirectGraph` sharing the session's graph, and calls `dsp.setSystems` and
-  `setSerialOutCapture` directly).
+- **Scenes use `rig.press` and `rig.writeFile`** for input and files, so a change to the engine under them
+  edits only `rig.ts` and `bootSession` (plus `render-blocks.test.ts`, which tests `renderBlocks` itself:
+  it builds its systems, their DSP pipelines and the project's stages through a `DirectGraph` sharing the
+  session's graph, with `setPipeline` and `setProjectStages`, and calls `setSerialOutCapture` directly).
 - **Rendering goes through `renderBlocks`**, a harness-facet driver call that repeats `PluginDSP::run`'s
   order for every host block: stage MIDI at its frame, drain the command ring, apply transport,
   `processBlock` at 2/4/6/8 lanes (the host shape `multi(outputs)`, which TS's audio driver sets around
   the call with `withShape`), take the MIDI out. The
   `render-shapes` group covers the other two shapes, `renderAudioPerSystem` and
-  `renderAudioPerChannel`.
+  `renderAudioPerChannel`. The rig fails any render after which the graph has dropped a message on a
+  full queue (`audio.droppedMessages()`, the engine's count), so every case runs with nothing dropped.
+- **Block sizes.** The `blocks-*` groups render the same scenes in 64, 199, 512, 1024 and 8192-frame
+  blocks and a mixed cycle; the mGB and NES cases end with an edge segment of irregular blocks, a 7-frame
+  one among them. The five `blocks-tiny-*` groups
+  ([parity/blocks-tiny.ts](../packages/retroplug/test-native/parity/blocks-tiny.ts)) take the partitions
+  a splitting host hands a plugin: 1-frame blocks, the ragged cycle `[33, 1, 222, 1, 7, 4096, 2]` (`fl`)
+  and FL Studio's own shape, a 256-frame buffer split inside at automation points (`fl256`), each at
+  44.1 and 48 kHz for mGB and BlipToaster (fixture-free), with notes and automation CCs on a block's first
+  and last frame and on a 1-frame block's only one; and, from the sibling fixtures, LSDj's MIDI sync,
+  Arduinoboy, MI.OUT and master sync (master sync in `blocks-tiny-lsdj-master`, so the two LSDj files run in
+  parallel) and risa's host sync in the same partitions, their tempo and transport points on 1-frame blocks.
+  `host-midi-order` pins the one behaviour B3a changed on purpose
+  ([modular-graph-phase-b3a-design.md](../docs/modular-graph-phase-b3a-design.md) section 3.4): host MIDI
+  staged out of frame order, as the plugin stages a block (the DAW's notes, then each moved automation
+  slot's CC at frame 0), renders on mGB and BlipToaster exactly as the same messages staged in frame order
+  do, since `rp.host.midi-in` stable-sorts the staging. `renderBlocks` refuses unsorted MIDI, so it stages
+  through `stageMidiIn`.
 - **Cores power on in a fixed state.** The runner sets `RETROPLUG_DETERMINISTIC=1` for `parity/` files
   only ([util/Determinism.hpp](../packages/native/src/util/Determinism.hpp)): SameBoy's power-on randomness
   off, Mesen NES RAM all zeros, the SMS VDP starting at scanline 0. The app keeps the random power-on.
@@ -148,9 +169,10 @@ modular graph engine is held to ([docs/modular-graph-phase-b0-design.md](../docs
   runner image to that toolchain in the same commit, since its `RP_PARITY_REQUIRE_TARGET` step fails on
   any other.
 - **Re-record** with `RP_PARITY_UPDATE=1 pnpm test:native parity/<group>` (`RP_PARITY_ONLY=<case>` for one
-  case). A recording is refused: on any host but `PARITY_TARGET`; for a case whose hashes change when it is
-  re-run alone in a fresh process (it would depend on the cases before it); for a case whose `audible`
-  lanes are silent after its first (boot) segment; and for a case whose MIDI, controller traffic and
+  case; several groups by a dash prefix, `parity-blocks-tiny`). A recording is refused: on any host but
+  `PARITY_TARGET`; for a case whose hashes change when it is re-run alone in a fresh process (it would
+  depend on the cases before it); for a case whose `audible` lanes are silent after its first (boot)
+  segment; and for a case whose MIDI, controller traffic and
   transport change nothing (a stimulus sent before a cart finished booting records only the boot).
   The alone-run child gets its own config dir, so it shares no disk state with the run being checked. A
   filtered recording (`RP_PARITY_ONLY`) skips the alone-run check: its case runs first in its process, so it
@@ -165,23 +187,24 @@ modular graph engine is held to ([docs/modular-graph-phase-b0-design.md](../docs
   intentional audio change re-records the groups it moves in the same commit, and that diff is the record
   of what moved.
 - **Recorded defects.** The baseline pins five engine defects on purpose; fixing each is its own change
-  with a deliberate re-record: Arduinoboy MIDI sync is silent unless every host block carries a clock
-  tick (and not even then in every configuration); a single NES under a split routing on a host narrower
-  than the split arms the capture tap and drifts (~25 frames per block at 48 kHz / 512, about 49 ms per
+  with a deliberate re-record: Arduinoboy MIDI sync plays only in some host block partitions (at divisor
+  1 silent at 128 to 768 frames, in 1-frame blocks and in `fl256`, playing in `fl`, most of whose blocks
+  carry almost no clock tick; at divisor 4 silent at 1024 too); a single NES under a split routing on a host narrower than the split arms the capture tap and drifts (~25 frames per block at 48 kHz / 512, about 49 ms per
   second); LSDj master sync is broken at 48 kHz and above while serial-out capture is armed; MI.OUT's
   decoded notes depend on the host sample rate; in small host blocks master sync decodes a stopped LSDj's
   idle flood as clocks. Details in design section 2.5
   ([modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md)).
 - LSDj, risa, nanoloop and the controller cases need the sibling fixtures (`RETROPLUG_RESOURCES_DIR`), so
-  those groups skip in CI, counted in the skip baseline. CI therefore runs only the 140 fixture-free cases
-  (every MIDI-out, controller-in, link-cable, LSDj, risa and GBA case is fixture-only), so a Phase B step is
+  those groups skip in CI, counted in the skip baseline. CI therefore runs only the 152 fixture-free cases
+  (every MIDI-out, controller-in, LSDj, risa and GBA case is fixture-only, LSDj's link-cable cases among
+  them: 45 of the 197 skip without the fixtures, and one `render-blocks` case besides), so a Phase B step is
   accepted only on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`
   (`RP_FAIL_ON_SKIP=1 RETROPLUG_RESOURCES_DIR=<resources> pnpm test:native parity`).
 
 | Tier | Backend under test | Command | Runner | Test dir |
 |---|---|---|---|---|
 | **mock TS** | [`testing/mockBackend.ts`](../packages/retroplug/testing/mockBackend.ts) (in-memory, no native, no emulator) | `pnpm test` | [run-tests.mjs](../packages/retroplug/scripts/run-tests.mjs) on the `tjs` binary | `test/` |
-| **real host** | the real Backend RPC surface (fs/config/codec + a live `SameBoySystem` on the real engine graph, real DSP kernel) | `pnpm test:native` | [run-native-tests.mjs](../packages/retroplug/scripts/run-native-tests.mjs) on `retroplug-host` | `test-native/` |
+| **real host** | the real Backend RPC surface (fs/config/codec + a live `SameBoySystem` on the real engine graph, the DSP kernel running as its script node) | `pnpm test:native` | [run-native-tests.mjs](../packages/retroplug/scripts/run-native-tests.mjs) on `retroplug-host` | `test-native/` |
 | **LVGL React UI** | the real UI bundle on a software LVGL display driven by `UiHarness` | `pnpm test:ui` | [run-ui-tests.mjs](../packages/retroplug/scripts/run-ui-tests.mjs) on `retroplug-ui-test` | `test-ui/` |
 | **C++ unit** | native classes directly, no TS in the loop | `pnpm test:plugin` | [run-plugin-tests.mjs](../packages/retroplug/scripts/run-plugin-tests.mjs) over ten Catch2 binaries | `packages/native/test/` |
 
@@ -205,7 +228,7 @@ Root [package.json](../package.json). Each builds its CMake target(s) first, the
 | `test` | `tjs-cli` | Mock-backend TS suite. |
 | `test:native` | `retroplug-host` | Real-host suite. |
 | `test:ui` | `retroplug-ui-test` | LVGL React UI suite. |
-| `test:plugin` | ten Catch2 binaries (`-plugin-test`, `-dynparams-test`, `-classid-test`, `-audio-test`, `-watcher-test`, `-midi-test`, `-launchpad-test`, `-lottie-test`, `-graph-test`, `-engine-graph-test`) | Pure-C++ unit checks (no TS runner; exit code is pass/fail): the per-context routing behind PluginUI's `__rp_*` window hooks ([ContextTargets.hpp](../packages/native/plugin/ContextTargets.hpp), proven on two live `JSContext`s so concurrent instances never cross-route), DPF's dynamic-parameter diff classifier, the class-id counter sync that keeps the DAW-hosted editor from rendering blank, the per-channel audio split, the efsw file watcher, MIDI in/out, the Launchpad scanner, the Lottie decoder, the node-graph engine's foundations (`retroplug-graph-test`), and the engine on that graph: each system node rendering what its core renders driven directly, bit for bit, the engine placing, re-arming and freeing what the documents TS builds say, and every document in `buildGraph`'s goldens planned on the engine with real cores and run for a block with no node faulting (`Engine::faultCount`), the 33-system `perSystem` ones refused for having more buses than `rp.host.audio-out` takes (`retroplug-engine-graph-test`). |
+| `test:plugin` | ten Catch2 binaries (`-plugin-test`, `-dynparams-test`, `-classid-test`, `-audio-test`, `-watcher-test`, `-midi-test`, `-launchpad-test`, `-lottie-test`, `-graph-test`, `-engine-graph-test`) | Pure-C++ unit checks (no TS runner; exit code is pass/fail): the per-context routing behind PluginUI's `__rp_*` window hooks ([ContextTargets.hpp](../packages/native/plugin/ContextTargets.hpp), proven on two live `JSContext`s so concurrent instances never cross-route), DPF's dynamic-parameter diff classifier, the class-id counter sync that keeps the DAW-hosted editor from rendering blank, the per-channel audio split, the efsw file watcher, MIDI in/out, the Launchpad scanner, the Lottie decoder, the node-graph engine's foundations (`retroplug-graph-test`), and the engine on that graph (`retroplug-engine-graph-test`): each system node rendering what its core renders driven directly, bit for bit, its inputs included; the engine placing, re-arming and freeing what the documents TS builds say; the host I/O nodes and `rp.n8.cart-mirror` moving what the hosts stage and drain (the staging sorted and taken with no allocation); TS nodes behind the C ABI in the script host (marshalling, the JS-owned audio copies, promise jobs, reshape, creation at adoption and release at reclaim, a throw's count, the CPU-time call deadline, an audio thread running them while the control thread replans; a profile build adds four `[profile]` cases, which `tools/run-profile.sh unit` runs); the kernel node held to the digests of what it sent when it was recorded, block by block, a Game Boy's serial input hashed byte by byte so the runs of same-frame bytes it now sends kept every recorded value, and a block that fills `rp.host.midi-in` reaching an mGB and a NES whole; and every document in `buildGraph`'s goldens planned on the engine with real cores and run for a block with no node faulting (`Engine::faultCount`), no script node throwing and no message dropped, the 33-system `perSystem` ones refused for having more buses than `rp.host.audio-out` takes. A hidden bench in it, `ScriptBench`, times a script node per block at 1, 64 and 512 frames (`build/bin/retroplug-engine-graph-test "[bench]"`). |
 | `screenshot` | `retroplug-jack` | Boots the standalone headlessly → `/tmp/retroplug.png`. |
 | `sdl:smoke` | `retroplug-sdl` | Headless SDL-standalone boot + shutdown; needs no display server or audio server. In CI. |
 | `sdl:pipewire` | `retroplug-sdl` | Stands up a private PipeWire server and asserts WHICH output device the PortAudio backend opens. Not in CI (the runners have no PipeWire). |
@@ -269,7 +292,7 @@ Pick the cheapest tier that actually exercises the code you touched. Trust-but-v
 |---|---|---|
 | **Application-layer logic** — stores, project model, path/sibling/suffix resolution, config schemas, routing, recent, kit selection | `pnpm test [slug]` | Runs the real TS against the mock backend on `tjs`. No emulator, ~instant. The canonical first stop for anything in `packages/retroplug/src` that doesn't need a live core. |
 | **The engine's output, bit for bit**: routing, block handling, MIDI staging, sync, anything Phase B moves | `pnpm test:native parity` | The parity baseline: one changed bit in any lane, MIDI byte or RAM byte fails, which RMS-based tests never see. |
-| **DSP behaviour / cores / the command-ring & snapshot seam**: role kernel, byte-sinks, MIDI/serial, transport, actual emulator output | `pnpm test:native [slug]` | Runs the **real** Backend RPC surface with a live `SameBoySystem` on the real engine graph, and the compiled DSP kernel. Can read emulator state and branch on it. This is the tier that proves audio actually flows. |
+| **DSP behaviour / cores / the command-ring & snapshot seam**: role kernel, the kernel node's wires, MIDI/serial, transport, actual emulator output | `pnpm test:native [slug]` | Runs the **real** Backend RPC surface with a live `SameBoySystem` on the real engine graph, the DSP kernel running as the script node every Engine embeds. Can read emulator state and branch on it. This is the tier that proves audio actually flows. |
 | **React/LVGL UI** — App/SystemGrid/tiles/Menu, input, layout | `pnpm test:ui [slug]` | Boots the real UI bundle on a software LVGL display and asserts on the live widget tree (structure, not just pixels). |
 | **Anything you want to eyeball** in the standalone | `pnpm screenshot` → Read `/tmp/retroplug.png` | Runs the JACK standalone under Xvfb + dummy jackd and dumps the LVGL screen. Drive input mid-run with `tools/standalone-key.sh` using `RETROPLUG_WINDOW_NAME="RetroPlug"`. |
 | **The audio-thread / control-thread seam**: `QueuedInvoker`, the command ring, plan swaps, `SnapshotRegistry` publish/read, the release-ring ownership handoff | `tools/run-sanitizer.sh thread` and `… address` | Builds `retroplug-host` instrumented into `build-tsan/` / `build-asan/` (the load-bearing `build/` is untouched) and reruns the audio-thread native tests under TSan / ASan. `thread` proves the seam is race-free; `address` proves the cross-thread ownership handoff (build → park → a node takes the core; remove → the replaced plan handed back → freed with its cores at `reclaim` / `drainReleased`) has no use-after-free or leak. Both are expected to need **no** new suppressions. |
@@ -284,7 +307,7 @@ directly: `tools/run-sanitizer.sh <thread|address> [slug]`. It configures a sepa
 drives it via `run-native-tests.mjs` with `RETROPLUG_HOST` pointed at the instrumented
 binary. Default slugs are `dsp-threaded` + `dsp-lifecycle`. Thread mode reuses the Catch2 seqlock
 suppression file ([tsan.supp](../packages/native/test/sanitizer/tsan.supp)); a clean run **is** the
-proof that the QuickJS DSP context + cores are touched only by the audio thread. Any finding aborts
+proof that the script host's audio runtime + cores are touched only by the audio thread. Any finding aborts
 the host → nonzero exit.
 
 ## Build gotchas

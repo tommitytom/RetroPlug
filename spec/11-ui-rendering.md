@@ -36,8 +36,9 @@ Host-neutral TypeScript, consumed by **both** the CLI `render` command and the b
 
 - `render.ts` — `runRenderJob(ctx, opts, hooks)`: builds the system, resolves the length (LSDj HFF
   auto-detect via NR52, or a fixed duration), streams per-chunk PCM to WAV (mix / channels / pins).
-- `types.ts` — `RenderOpts` (the request), `RenderContext` (`{ backend, project, dsp, audio }` — the CLI's
-  `Session` satisfies it structurally), `RenderHooks` (`onRendered` / `isCancelled` / `log` / `warn`, all
+- `types.ts`: `RenderOpts` (the request), `RenderContext` (`{ backend, project, audio }`: the CLI's
+  `Session` satisfies it structurally, and the system's DSP roles reach the kernel node in the graph its
+  `project` publishes), `RenderHooks` (`onRendered` / `isCancelled` / `log` / `warn`, all
   optional so the CLI passes none), `RenderCancelled`.
 - `wav.ts` — the streaming RIFF/PCM16 codec (moved from `cli/wav.ts`, which now re-exports it).
 - `worker.ts` — the background session entry (below).

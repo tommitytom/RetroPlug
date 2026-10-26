@@ -2,7 +2,8 @@
 
 **Date:** 2026-10-24 · **Branch:** `feature/modularize` · **Status:** built
 ([modular-graph-phase-b1-plan.md](modular-graph-phase-b1-plan.md)); B2 built
-([modular-graph-phase-b2-design.md](modular-graph-phase-b2-design.md)), B3 not yet built.
+([modular-graph-phase-b2-design.md](modular-graph-phase-b2-design.md)) and B3a built
+([modular-graph-phase-b3a-design.md](modular-graph-phase-b3a-design.md)), B3b not yet built.
 
 Phase B of [the modular graph design](modular-graph-design.md) (§8) moves the engine onto the graph. B0
 ([modular-graph-phase-b0-design.md](modular-graph-phase-b0-design.md)) recorded today's engine bit for
@@ -192,7 +193,8 @@ A B1-only node with no ports, first in every document (§4.2). Its `process()` i
 
 `midiOut_` and `controllerOut_` stay in `DspRuntime` for the hosts to drain, as today. The kernel's
 position is a hidden dependency (it writes into cores the planner cannot see it touch), so a translator
-test pins that it is the plan's first step. B3 replaces the node.
+test pins that it is the plan's first step. B3 replaces the node (B3a did: `rp.dsp.kernel` is now a script node
+whose wires order it before the systems, [modular-graph-phase-b3a-design.md](modular-graph-phase-b3a-design.md) §4).
 
 ### 3.4 Host and core nodes
 

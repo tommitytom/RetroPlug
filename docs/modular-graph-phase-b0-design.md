@@ -1,7 +1,7 @@
 # Design: Phase B0, the parity baseline
 
 **Date:** 2026-10-24 · **Branch:** `feature/modularize` · **Status:** built
-([modular-graph-phase-b0-plan.md](modular-graph-phase-b0-plan.md)); B1 and B2 built, B3 not yet built.
+([modular-graph-phase-b0-plan.md](modular-graph-phase-b0-plan.md)); B1, B2 and B3a built, B3b not yet built.
 
 Phase B of [the modular graph design](modular-graph-design.md) (§8) moves the engine onto the graph,
 and its parity target is bit-identical audio in every routing mode, MIDI routing mode and sync mode.
@@ -104,11 +104,14 @@ required: txiki keeps a handle of its own alive, so "the loop still has work" wo
 the render worker share) with a `render(outputs, segment)` over `renderBlocks`. A case written against the
 stores survives every step, since B2 deletes the backend calls the stores make today but not the stores.
 B2 and B3 edit only `bootSession` and this file, with one exception: `render-blocks.test.ts` tests
-`renderBlocks` itself, so it calls backend methods directly (`dsp.setSystems`, `setSerialOutCapture`) and
+`renderBlocks` itself, so it calls backend methods directly (`setSerialOutCapture`, and before B3a
+`dsp.setSystems`) and
 moves with the Backend surface too. Since B2 it builds its systems through a `DirectGraph` sharing the
-session's graph, where it called `constructSystem` before.
+session's graph, where it called `constructSystem` before, and since B3a it gives the kernel its MIDI routing and
+pipeline through that graph too (`setProjectStages`, `setPipeline`), where it called `dsp.setSystems`.
 
-Before each case it calls `newProject()`, deletes every ROM copy, reloads the kernel, stops the transport
+Before each case it calls `newProject()`, deletes every ROM copy, reloads the kernel (since B3a the new project
+leaves the kernel node fresh instead, its structure naming no system), stops the transport
 at ppq 0 and 120 bpm, sets the case's sample rate, drains the MIDI out, and asserts no system survived.
 
 ROMs are copied into the file's temp dir before they load (`rig.rom`), so a case never writes a
@@ -161,7 +164,7 @@ when host blocks carry clock ticks.** The threshold is a tick's length: at 120 b
 about 1000 frames (1000-frame blocks play), so at 128 to 768 (ordinary DAW buffers) LSDj never starts, a
 divisor of 4 never starts at 1024 either, and 2048 plays louder than 1024. "Every block carries a tick" is
 neither necessary (the ragged `fl` split of the tiny-block parity plays with six of its seven blocks carrying
-none) nor sufficient: divisor 4 at 4096 frames is silent while divisors 4 and 8 at 8192 play, so a
+almost none) nor sufficient: divisor 4 at 4096 frames is silent while divisors 4 and 8 at 8192 play, so a
 fix built only on that model may be incomplete. The existing test passes only because `renderAudio` always
 uses 1024-frame blocks. The baseline pins the silent cases; fixing it is its own change with a re-record.
 
@@ -200,7 +203,7 @@ blocks. Measured on `lsdj-modes`' master-sync scene at 44.1 kHz: 10497 MIDI mess
 `fl` and 894 in `fl256`, against 101 in 1024-frame blocks (`masterSync-44100`). The same threshold decides the
 boot noise the sixth defect's two cases record (and is why `masterSync-44100` uses 1024-frame blocks), so a fix
 may move them too.
-The baseline pins `blocks-tiny-lsdj`'s `masterSync-44100-{1,fl,fl256}` (audible) and
+The baseline pins `blocks-tiny-lsdj-master`'s `masterSync-44100-{1,fl,fl256}` (audible) and
 `masterSync-48000-{1,fl,fl256}` (silent, the sixth defect, so their 42861, 1000 and 3373 messages are the flood
 alone); fixing it is its own change with a re-record.
 
@@ -229,7 +232,9 @@ suite is 23 test files with `determinism`, `render-blocks` and `comparator`); th
 | `gba` *(fixture)* | nanoloop booting under Stereo, and under TwoPerInstance with START pressed (silent until played) | the GBA core at all |
 | `controller` *(fixture)* | pad presses launching distinct rows on an Arduinoboy LSDj in MIDIMAP, transport running | the Launchpad role, controller-in |
 
-Plus `determinism`, `render-blocks` and `comparator`, the harness's own tests (§6).
+Plus `determinism`, `render-blocks` and `comparator`, the harness's own tests (§6). B3a added the five
+`blocks-tiny-*` groups (1-frame blocks and FL-style ragged splits) and `host-midi-order`
+([modular-graph-phase-b3a-design.md](modular-graph-phase-b3a-design.md) §7.1, §7.2).
 
 ## 4. What B0 hands B1
 

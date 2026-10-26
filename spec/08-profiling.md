@@ -3,13 +3,13 @@
 **Status: built** (compile-guarded behind `RETROPLUG_PROFILE`; run with `pnpm profile`). A
 benchmark harness that measures what the DSP-thread **JavaScript runtime** does — allocations and garbage
 collection — under an mGB + heavy-MIDI workload. The runtime model it profiles is
-[01-architecture.md](01-architecture.md) (two QuickJS runtimes, the audio thread) and
+[01-architecture.md](01-architecture.md) (the QuickJS runtimes, the audio thread) and
 [04-roles-dsp-kernel.md](04-roles-dsp-kernel.md) (the DSP role kernel this exercises).
 
 ## 1. The question
 
-The DSP kernel runs per audio block in a **bare QuickJS-ng 0.15.1** context on the audio thread
-([04-roles-dsp-kernel.md](04-roles-dsp-kernel.md) "Running as a script node"). We want to know
+The DSP kernel runs per audio block as a script node, in the script host's **bare QuickJS-ng 0.15.1**
+audio runtime ([04-roles-dsp-kernel.md](04-roles-dsp-kernel.md) "Running as a script node"). We want to know
 what that runtime costs per block — specifically its **allocation behaviour** — so the RT audio path can
 be driven toward the ideal of *zero steady-state allocation*, and so a regression is caught
 automatically. The workload of interest is **mGB** (the GB MIDI synth, the simplest DSP path — a role
@@ -41,15 +41,16 @@ The kernel header comments claim "no per-block allocation" ([dspKernel.ts:56](..
 That holds **only for the top-level reused `Block` struct**; in practice two layers allocate every
 block, and the harness should expose this on day one.
 
-**Native marshalling** (the native kernel stage's, before the kernel became a script node) rebuilt a fresh
-JS object graph each block: an `input` object + 5 props; a `midiIn` array (per event: an object + a
-nested `data` array + a JS int per byte); and `buttons`/`keys` arrays **created even when empty**. The
-whole graph was freed after the call → per-block garbage. The script host marshals with reused objects
-instead (a port's `Message[]` refilled in place, its payloads copied into one JS-owned buffer:
-[ScriptHost.cpp](../packages/native/src/host/script/ScriptHost.cpp) `fillMessages`), so an indexed-loop
-node allocates nothing per block; the kernel node then builds the kernel's `BlockInput` afresh
-([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts) `blockInput`), field for field as the
-native marshalling did, which is where that row's churn now is.
+**Marshalling.** The script host hands a node its inputs through reused objects (a port's `Message[]`
+refilled in place, its payloads copied into one JS-owned buffer:
+[ScriptHost.cpp](../packages/native/src/host/script/ScriptHost.cpp) `fillMessages`), so a node written
+with indexed loops allocates nothing per block once warm: a message's `data` view is made again only when
+its place in the payload buffer moves, and the pool and the buffer grow only past their largest block. The kernel node then builds the kernel's `BlockInput`
+afresh every block ([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts) `blockInput`): an
+`input` object and its transport fields; a `midiIn` array (per event an object and a `data` array of
+numbers); `buttons`/`keys` arrays **created even when empty**; and a `{ system, byte }` object per MI.OUT
+byte. The whole graph is freed after the call, so this is per-block garbage, and it grows with the
+block's message count.
 
 **The TS kernel** ([dspKernel.ts:220-266](../packages/retroplug/src/dspKernel.ts#L220)) adds
 per block:
@@ -62,25 +63,26 @@ per block:
 | `routeBlock` inboxes + per-target event objects ([midiRouting.ts:68-73](../packages/retroplug/src/midiRouting.ts#L68)) | array graph + 1 `{frame,data}` per routed event |
 | `mgb` role `forEach` closures ([dspRoles.ts:23](../packages/retroplug/src/dspRoles.ts#L23)) | 2 nested arrow closures per call |
 
-The mGB **sink** path itself is clean: the kernel node's `pushSerialIn` writes the byte into a reused
-one-byte view and sends it straight onto the plan's queue, with no JS allocation, but everything upstream
-churns.
+The mGB **sink** path itself is clean: the kernel node's `pushSerialIn` appends the byte to the system's
+reused run (an array kept across blocks) and sends each run of same-frame bytes as one message straight onto
+the plan's queue, so it allocates nothing once the run has grown, but everything upstream churns.
 
 **The TS-kernel rows are now optimized away** (the "hoist the ctx/closures/filters/routing-Map out of the
 per-block path" pass): the per-system `SystemCtx` + its sink closures, the routed inboxes, and the
-per-system key/button lists are built **once** at `setSystems` and mutated in place each block
+per-system key/button lists are built **once** at `setSystems` (`DspKernel.setSystems`, which the kernel
+node calls at create and from `onSettings`) and mutated in place each block
 ([dspKernel.ts](../packages/retroplug/src/dspKernel.ts) `slots`/`buildCtx`,
 `routeBlockInto` in [midiRouting.ts](../packages/retroplug/src/midiRouting.ts), and an
 indexed-loop `mgb`). That cut Profile A from **~171 to ~32 allocs/block** (−81%). The residual per-block
-churn is now the **native marshalling** row (the C→JS input object graph — a separate, deferred pass) plus
-QuickJS per-call internals.
+churn is now the kernel node's `BlockInput` copy (the marshalling row above) plus QuickJS per-call
+internals.
 
 ## 4. Approach
 
 ### 4a. Drive the real code path **off** the real-time thread
 
 There is already a deterministic, device-free pull-render path:
-[`EngineRpcService::renderAudio(ms)`](../packages/native/src/host/rpc/EngineRpcService.cpp#L182) loops
+[`EngineRpcService::renderAudio(ms)`](../packages/native/src/host/rpc/EngineRpcService.cpp#L258) loops
 `Engine::processBlock` in 1024-frame blocks synchronously on the **calling** thread — no audio device, no
 RT scheduling, fully repeatable. It is exposed to TS as `createAudioDriver().renderAudio`
 ([audioDriver.ts](../packages/retroplug/src/audioDriver.ts)). Profile **this**, not a live
@@ -163,22 +165,23 @@ pitch bend, and program change (1–15 = preset). Profiles:
   find the cliff (not musical).
 
 Two cost levers: **MIDI density** stresses the *kernel/routing* path specifically (what we care about);
-**system count** (4–8 cores in `setSystems`) is the *dominant* total-thread-cost multiplier because the
+**system count** (4–8 cores in the graph) is the *dominant* total-thread-cost multiplier because the
 per-sample APU cost is MIDI-independent. A realistic heavy run combines both.
 
 **Injection:** `audioDriver.stageMidiIn(bytes)` → `EngineRpcService::stageMidiIn`
-([:221](../packages/native/src/host/rpc/EngineRpcService.cpp#L221)) → `Engine::stageMidi` →
-`pendingMidi_` at frame 0, consumed on the next `processBlock`
-([Engine.cpp:63-78](../packages/native/src/host/engine/Engine.cpp#L63)). **Determinism recipe:** fixed SR
+([:450](../packages/native/src/host/rpc/EngineRpcService.cpp#L450)) → `Engine::stageMidi`
+([Engine.cpp:579](../packages/native/src/host/engine/Engine.cpp#L579)) → `pendingMidi_` at frame 0, which
+the plan's `rp.host.midi-in` takes, sorted by frame, at the top of the next `processBlock`.
+**Determinism recipe:** fixed SR
 44100 / block 1024 (23.22 ms); `setBpm`/`setTransport` once; a **seeded PRNG** (mulberry32 — never
 `Math.random`) pre-generates the whole `{block, msg[]}` schedule; loop `renderAudio(blockMs)` one block
 at a time, staging each block's events first; a `renderAudio(1500)` warm-up (mGB is silent until firmware
 init) is discarded. Gate on RMS band + wall-time, not exact samples.
 
-**Limitation to note:** `stageMidiIn` hardcodes frame 0 and `renderAudio` consumes the whole pending
-batch on its first block, so delivery is **block-quantized** (23.2 ms grid) — fine for mGB (the serial
-fan ignores sub-block frame anyway). True sub-block jitter would need a one-arg `frame` addition to
-`stageMidiIn` → `Engine::stageMidi` (the `MidiIn.frame` plumbing already exists).
+**Limitation to note:** the bench stages every message at frame 0 and `renderAudio` takes the whole
+staging on its first block, so delivery is **block-quantized** (23.2 ms grid), which is fine for mGB.
+Sub-block placement is `stageMidiIn(bytes, frame)`, a frame inside the next block (the RPC refuses one
+past `renderAudio`'s 1024-frame block).
 
 ## 6. Methodology
 
@@ -194,7 +197,7 @@ fan ignores sub-block frame anyway). True sub-block jitter would need a one-arg 
   A separate live / SCHED_FIFO run answers *"does it still fit `bufferSize/sampleRate`"* — median / p99 /
   **max** block wall-time and xrun count — the only questions the off-RT harness structurally cannot
   answer. The threaded free-run path already exists (`startAudio` →
-  [`AudioDriverRpcService::audioLoop`](../packages/native/src/host/rpc/AudioDriverRpcService.cpp#L32),
+  [`AudioDriverRpcService::audioLoop`](../packages/native/src/host/rpc/AudioDriverRpcService.cpp#L34),
   validated under `tools/run-sanitizer.sh`), but its ~200 µs/block pacing is non-deterministic
   → use it for the race/soak/deadline run, not for allocation counts.
 - **CI gates (exit-code walls):** RealtimeSanitizer exit == 0; `allocs_per_block == 0` (or ≤ a pinned
@@ -226,8 +229,7 @@ fan ignores sub-block frame anyway). True sub-block jitter would need a one-arg 
   `endBlock`: native aggregation → no per-block RPC), and `allocStats()` /
   `resetAllocStats(disableAutoGc)` (pins `JS_SetGCThreshold(SIZE_MAX)`) / `runGc()` (timed `JS_RunGC`).
   The window, the live and peak heap and the block bracket are behind `#ifdef RETROPLUG_PROFILE`; the
-  `#else` path returns `enabled:false`. (Until the kernel became a script node they were the native kernel
-  stage's runtime's, bracketed per kernel call.)
+  `#else` path returns `enabled:false`.
 - **The trace window** (Tier B), on the same runtime: `traceReset(arm)` opens a window of nested wall-time
   spans, recorded only while armed. Every script node's process is a `dsp-kernel` span holding `marshal`
   (its audio copies in and the transport) and `js-call` (its JS, inside which each input it reads is a
@@ -236,17 +238,23 @@ fan ignores sub-block frame anyway). True sub-block jitter would need a one-arg 
   `apu-render` (the plan from where its script nodes end) and `state-publish`. JS's spans record only
   inside its process call's `js-call`: its `spanEnd` never closes one of the host's, and a span it leaves open (a
   throw, or the call deadline, which skips every `finally`) the host closes as the call returns. A label is
-  below `kDspSpanLabels` (1024); `traceName` throws a `RangeError` past it. `dspTraceReset` / `dspTrace` /
-  `dspTraceNames` read it, and `tools/run-profile.sh trace` writes it as Chrome trace-event JSON.
+  below `kDspSpanLabels` (1024); `traceName` throws a `RangeError` past it. The promise jobs a block's JS queued
+  sit in no span: they run in `endBlock`, after `apu-render` closes and before `state-publish`. `dspTraceReset` /
+  `dspTrace` / `dspTraceNames` read it, and `tools/run-profile.sh trace` writes it as Chrome trace-event JSON.
 - **Introspection RPCs** — `dspAllocStats` / `dspResetAllocStats` / `dspRunGc` on the harness facet
   (`Engine` → `EngineRpcService`, reached directly through `engine_` in the quiescent `renderAudio`
-  regime) and surfaced in [audioDriver.ts](../packages/retroplug/src/audioDriver.ts).
+  regime) and surfaced in [audioDriver.ts](../packages/retroplug/src/audioDriver.ts). The calls that act on
+  the windows are quiescent only: while an audio thread owns the runtime, `dspResetAllocStats` and
+  `dspTraceReset` answer false and `dspRunGc` a result with `enabled` false (the first refusal said once on
+  stderr), and `dspTrace` / `dspTraceNames` read nothing.
 - **The seeded-MIDI benchmark** [test-native/dsp-bench.test.ts](../packages/retroplug/test-native/dsp-bench.test.ts):
   a mulberry32 generator for Profiles A/B/C, the block-stepped `stageMidiIn` + `renderAudio(BLOCK_MS)`
   loop (warmup window discarded), one JSON metrics line. Env knobs `RP_BENCH_{PROFILE,CORES,BLOCKS,WARMUP,SEED}`.
-  No-ops (warns) under a non-profile host so the normal sweep stays green.
+  Skips (a counted `skip`) under a non-profile host so the normal sweep stays fast and green;
+  [test-native/nes-bench.test.ts](../packages/retroplug/test-native/nes-bench.test.ts) is its NES twin, on
+  the Mesen core and the `nes-n8-midi` role, and does the same.
 - **Build knob + scripts** — `RETROPLUG_PROFILE` ([CMakeLists.txt](../CMakeLists.txt), mirrors
-  `RETROPLUG_SANITIZE`), `tools/run-profile.sh [stats|dhat|callgrind|massif]` (separate
+  `RETROPLUG_SANITIZE`), `tools/run-profile.sh [stats|trace|unit|dhat|callgrind|massif]` (separate
   `build-prof/` RelWithDebInfo dir), and `pnpm profile`.
 
 **Deferred:** a committed baseline + CI threshold gate, and a RealtimeSanitizer build variant, are not
@@ -273,12 +281,16 @@ modes are out.
   (removing them left it unchanged). It is a **fixed, one-time setup structure** (the zod-based role
   registry built at kernel load) that production's auto-GC collects once early and never regenerates — not
   an unbounded audio-thread hazard. The real steady-state RT cost was the malloc/free churn, now ~5×
-  lower; further reduction means the native marshalling row (§3), a separate pass. On the script host the
-  load's cycles (about 144 KiB of the production bundle's) go at the first quiescent reclaim (the first
-  `setGraph`'s), so the end-of-window `runGc` reads what the window itself left in cycles: 0 bytes, in
-  dsp-bench and nes-bench alike.
-- **Ship path clean:** dsp-bench no-ops under the default host; the full `pnpm test:native`
-  sweep (25 files) + `pnpm test` (41) stay green; the default `build/` and shipped plugin never
+  lower; further reduction means the marshalling row (§3), a separate pass.
+- **On the script host.** With the kernel running as the `rp.dsp.kernel` script node, the same run
+  (Profile A, 1 mGB core, 2000 blocks, a `build-prof` host) measures **33.81 allocs/block**, ~2.1 KB/block,
+  `maxBlockAllocs` 62; nes-bench, its twin on the Mesen core, 20.14, ~1.3 KB and 44. The bundle's load leaves
+  about 144 KiB of cycles in the audio runtime, which the first quiescent reclaim (the first `setGraph`'s)
+  collects, so the end-of-window `runGc` reads what the window itself left in cycles: 0 bytes, in dsp-bench and
+  nes-bench alike. `allocsPerBlock` is the stable metric: the byte counts are bytes requested, which move with the
+  heap's layout.
+- **Ship path clean:** dsp-bench skips under the default host; the full `pnpm test:native`
+  sweep and `pnpm test` stay green; the default `build/` and shipped plugin never
   define `RETROPLUG_PROFILE` (zero overhead).
 - `tools/run-profile.sh callgrind|dhat|massif` attributes the churn to the marshalling +
   `makeCtx` closures + `routeBlock` (filtered top-N text / DHAT JSON).
@@ -288,11 +300,11 @@ modes are out.
 Native ([packages/native/src/](../packages/native/src/)):
 - [ScriptHost.cpp](../packages/native/src/host/script/ScriptHost.cpp): the script-node runtime, its
   per-block C→JS marshalling, and **where the allocator instrumentation and the trace window live**.
-- [Engine.cpp](../packages/native/src/host/engine/Engine.cpp#L74) — `processBlock` + `stageMidi` + the
-  serial-in fan.
-- [EngineRpcService.cpp](../packages/native/src/host/rpc/EngineRpcService.cpp#L182) — `renderAudio`
+- [Engine.cpp](../packages/native/src/host/engine/Engine.cpp#L594): `processBlock` (the plan, with the
+  `apu-render` and `state-publish` spans) + `stageMidi`.
+- [EngineRpcService.cpp](../packages/native/src/host/rpc/EngineRpcService.cpp#L258): `renderAudio`
   (deterministic off-RT loop) + `stageMidiIn`; where introspection RPCs register.
-- [AudioDriverRpcService.cpp](../packages/native/src/host/rpc/AudioDriverRpcService.cpp#L32) — the
+- [AudioDriverRpcService.cpp](../packages/native/src/host/rpc/AudioDriverRpcService.cpp#L34): the
   threaded free-run (RT/soak path).
 - QuickJS-ng vendored at `deps/dpf.js/deps/lv_binding_js/deps/txiki/deps/quickjs/quickjs.{h,c}` —
   `JSMallocFunctions` / `JS_NewRuntime2` / `JS_ComputeMemoryUsage` / `JS_SetGCThreshold` / `JS_RunGC`.
@@ -300,7 +312,7 @@ Native ([packages/native/src/](../packages/native/src/)):
 TypeScript ([packages/retroplug/](../packages/retroplug/)):
 - [src/audioDriver.ts](../packages/retroplug/src/audioDriver.ts) — `renderAudio` /
   `stageMidiIn` / `setBpm` / `setTransport` (the bench's injection surface).
-- [src/dspKernel.ts](../packages/retroplug/src/dspKernel.ts) / [src/midiRouting.ts](../packages/retroplug/src/midiRouting.ts) / [src/dspRoles.ts](../packages/retroplug/src/dspRoles.ts) — the per-block allocation sites (§3).
+- [src/script/kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts) / [src/dspKernel.ts](../packages/retroplug/src/dspKernel.ts) / [src/midiRouting.ts](../packages/retroplug/src/midiRouting.ts) / [src/dspRoles.ts](../packages/retroplug/src/dspRoles.ts): the per-block allocation sites (§3), the kernel node's `blockInput` and its role tracer among them.
 - [test-native/audio-render.test.ts](../packages/retroplug/test-native/audio-render.test.ts) —
   the setup template to copy.
 - [scripts/run-native-tests.mjs](../packages/retroplug/scripts/run-native-tests.mjs) — how a

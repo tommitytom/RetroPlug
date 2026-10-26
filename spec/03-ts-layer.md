@@ -23,8 +23,8 @@ it:
   `pluginControlPlane.ts` / `appStores.ts` / `appHost.ts`, and the React/LVGL `ui/` tree.
 
 Roles and the DSP role kernel are their own subject — **doc 04** covers them end to end;
-this doc summarises them and links across. For the threading model — the command ring,
-the `SnapshotRegistry` read door, the release ring, the two QuickJS runtimes — see
+this doc summarises them and links across. For the threading model (the command ring,
+the `SnapshotRegistry` read door, the release ring, the QuickJS runtimes), see
 **doc 01**; the seams below reference those concepts, they don't re-explain them.
 
 ---
@@ -67,7 +67,7 @@ set of RPC facets is bound behind `__rpcSend` (see doc 01/02).
 ### `ConstructSpec` — the resolved-paths-only build request
 
 `buildCore` takes a `ConstructSpec`
-([backend.ts:744](../packages/retroplug/src/backend.ts#L744)) in which **TS has
+([backend.ts:748](../packages/retroplug/src/backend.ts#L748)) in which **TS has
 already resolved every path, suffix, sibling, and classification** — *native never sees a
 suffix, never looks for a sibling, never classifies.*
 
@@ -109,7 +109,7 @@ model (`{ id, platform, core, romPath, savPath override, savSuffix, embeddedRom,
 roles }`, plus the derived `battery` and `built` facts, never serialized); the private state is
 `entries`, `focusedId`, and `dirty`
 ([systemsStore.ts:117-119](../packages/retroplug/src/systemsStore.ts#L117)). `view()`
-([systemsStore.ts:138](../packages/retroplug/src/systemsStore.ts#L138)) projects a
+([systemsStore.ts:139](../packages/retroplug/src/systemsStore.ts#L139)) projects a
 `SystemView[]` for the UI, computing the live `focused` and `missing` flags each call.
 
 - **TS owns the system-id counter.** `allocSystemId()` increments a module-scoped
@@ -122,29 +122,35 @@ roles }`, plus the derived `battery` and `built` facts, never serialized); the p
 - **Mutators through `Backend`:** `addSystem` (append), `loadRom` (replace focused, or defer
   to a sibling `<rom>.rplg`), `loadMgb` (embedded), `replaceSystem`, `removeSystem`, plus the
   per-system `setGain` / `setReloadOnRomChange` (→ `applySystemSetting`) and `setRoleConfig`
-  ([systemsStore.ts:520](../packages/retroplug/src/systemsStore.ts#L520)), where
+  ([systemsStore.ts:536](../packages/retroplug/src/systemsStore.ts#L536)), where
   **only a `"system"`-category role's config crosses to the live core** (`applyRoleConfig`);
-  a feature-role's config stays pure TS.
-- **`duplicateSystem`** ([systemsStore.ts:282](../packages/retroplug/src/systemsStore.ts#L282))
+  a feature-role's config stays pure TS, but for `lsdj-sync`, whose mode arms or disarms the Game Boy's
+  serial-out capture (`setSerialOutCapture`).
+- **`duplicateSystem`** ([systemsStore.ts:298](../packages/retroplug/src/systemsStore.ts#L298))
   is TS orchestration with **no native duplicate method**: it pulls `readState(id)` (state
   includes SRAM), then `buildCore` seeded with those `stateBytes` under a fresh
   `allocSystemId()`, and appends.
-- **The graph.** Every edit that changes what runs ends by publishing the engine's graph once
-  (`setOnGraphChange` → `ProjectStore.publishGraph` → `EngineGraph.publish`,
-  [engineGraph.ts](../packages/retroplug/src/engineGraph.ts)): the whole document, built by
-  [`buildGraph`](../packages/retroplug/src/graph/buildGraph.ts) from the entries in list order, each
-  entry's `built` facts (what `buildCore` reported, with its live link group) and the project's audio
-  routing, with a NES tap re-arm when the edit built or dropped a core. A `SystemsStore` used without a
-  `ProjectStore` publishes its systems itself, at the default stereo routing. An unchanged document is
-  not sent unless it re-arms or the last one did not plan; a refused one leaves the store's model as it
-  is, and is logged ([modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md)
-  section 2.2).
+- **The graph.** Every edit that changes what runs, or what the DSP kernel runs for a system, ends by
+  publishing the engine's graph once (`setOnGraphChange` → `ProjectStore.publishGraph` →
+  `EngineGraph.publish`, [engineGraph.ts](../packages/retroplug/src/engineGraph.ts)): the whole
+  document, built by [`buildGraph`](../packages/retroplug/src/graph/buildGraph.ts) from the entries in
+  list order, each entry's `built` facts (what `buildCore` reported, with its live link group) and its
+  kernel pipeline (`graphSystems`: its roles the kernel runs, or every role for a store without a
+  registry), the project's audio routing and
+  the kernel's project stages, with a NES tap re-arm when the edit built or dropped a core. So a
+  `setRoleConfig` on a role the kernel runs publishes, one on a role it does not run (a model, a
+  palette, an asset override) changes no document, and one on a system role publishes only when it
+  moves a Game Boy's link group. A
+  `SystemsStore` used without a `ProjectStore` publishes its systems itself, at the default stereo
+  routing and with no project stages (so no MIDI is routed). An unchanged document is not sent unless it
+  re-arms or the last one did not plan; a refused one leaves the store's model as it is, and is logged
+  ([modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md) section 2.2).
 
 ### The reconstruct-in-place idiom
 
 The control plane **reconstructs** a core rather than live-injecting into it (no `GB_reset`, no
 in-place SRAM clear). The private `rebuildInPlace(id, seed)`
-([systemsStore.ts:355](../packages/retroplug/src/systemsStore.ts#L355)) is the shared
+([systemsStore.ts:371](../packages/retroplug/src/systemsStore.ts#L371)) is the shared
 body: it captures the source spec, builds a fresh core under a **new id** that takes the old
 one's slot, and preserves identity + focus
 (`replaceById(entries, id, {...src, id: newId})`; `if (focusedId === id) focusedId = newId`).
@@ -165,7 +171,7 @@ load isn't a user edit): `clear()` tears every system down and, when it had any,
 empty graph;
 `adopt(config, blobs?)` (which publishes the graph that places it, except inside a project load,
 which publishes once its systems are all built)
-([systemsStore.ts:601](../packages/retroplug/src/systemsStore.ts#L601)) reconstructs
+([systemsStore.ts:616](../packages/retroplug/src/systemsStore.ts#L616)) reconstructs
 one system preserving its **exact** `savSuffix`/`savPath`, with `blobs` seeding SRAM/state on
 a zip import. Default roles are derived before the build from a `ROLE_HEADER_LEN` (0x150)
 header prefix via `defaultRoles`, and each role's `onConstruct` hook folds over the spec
@@ -174,14 +180,14 @@ header prefix via `defaultRoles`, and each role's `onConstruct` hook folds over 
 ### ProjectStore — [`src/projectStore.ts`](../packages/retroplug/src/projectStore.ts)
 
 The top-level source of truth. It **owns** the `SystemsStore` (wiring its `onChange` →
-`markDirty` + `onSystemsChange`,
-[projectStore.ts:146](../packages/retroplug/src/projectStore.ts#L146)), the project
+`markDirty` + `onSystemsChange`, and its graph hook to `publishGraph`,
+[projectStore.ts:148](../packages/retroplug/src/projectStore.ts#L148)), the project
 settings (`ProjectSettings` = `{ layout, midiRouting, audioRouting, zoom, controller }`,
 [projectConfig.ts:37](../packages/retroplug/src/projectConfig.ts#L37)), the
 `currentPath`, `dirty`, and a `pendingLoad` latch. It exposes **three** change signals:
-`setOnSystemsChange` (structural — drives DSP re-projection), `setOnChange` (any state —
-settings/dirty), and the transient focus signal via `systems.setOnFocusChange` (re-renders
-tiles without dirtying or re-projecting).
+`setOnSystemsChange` (structural, or a setting the kernel's structure reads: the UI and the
+plugin's watched ROMs observe it), `setOnChange` (any state: settings, dirty), and the transient focus
+signal via `systems.setOnFocusChange` (re-renders tiles without dirtying or publishing the graph).
 
 Project I/O is doc 05's territory, but the store surface is: `newProject`, `save(path)` (a
 thin `.rplg` — raw JSON, paths only), `export(path)` (an export `.rplg.zip` — PKZIP of
@@ -191,11 +197,20 @@ chunk), and `load(path)` (routes by **extension**: a `.rplg` is always thin JSON
 is PKZIP; a `.rplg` that isn't pure JSON errors — never loaded as a zip). The load lifecycle
 refuses a **newer** schema stamp (`{kind:"incompatible"}`), absolutizes paths, scans for
 missing files, and holds `pendingLoad` for `relink` or `commit`
-([`beginLoad`, projectStore.ts:660](../packages/retroplug/src/projectStore.ts#L660); [`commit`,
-:675](../packages/retroplug/src/projectStore.ts#L675)).
-`setAudioRouting` is the **only** project setting that also reaches native audio, via
-`publishRouting()` → `publishGraph`, as the wiring of the graph the project publishes
-([projectStore.ts:472](../packages/retroplug/src/projectStore.ts#L472)).
+([`beginLoad`, projectStore.ts:704](../packages/retroplug/src/projectStore.ts#L704); [`commit`,
+:719](../packages/retroplug/src/projectStore.ts#L719)).
+Three project settings reach the engine, each through the graph the project publishes
+([`publishGraph`, projectStore.ts:165](../packages/retroplug/src/projectStore.ts#L165)):
+`setAudioRouting` as its wiring (`publishRouting()`, which re-arms the NES tap), and `setMidiRouting`
+and `setController` as the DSP kernel's structure. `publishGraph` runs
+[`projectKernelStructure`](../packages/retroplug/src/kernelProjection.ts) over the systems'
+pipelines, the MIDI routing and the controller (with the song-timing table it reads from the
+controller cart's battery here, on the control plane), and publishes `{ systems, routing, project }`:
+each system with its projected pipeline, and the synthesized `midi-routing` and Launchpad stages as
+the project's. `refreshControllerSong` publishes too, when its poll finds the controller cart's song
+moved or a new start anchor. A load holds the publishes back while it adopts and publishes once; a
+load that throws partway publishes what it adopted before rethrowing, and every exit of a load tells the
+structure's observers (`onSystemsChange`) once.
 
 The project **name** is two-tier. `name()` is the project's own name - blank unless the user
 typed one under `Project` > `Name` (`setName`, which marks the project dirty), and the ONLY
@@ -221,6 +236,40 @@ picking a song on LSDj's / risa's own file screen. Nothing else can see that, so
 ~30 render frames. No memo is needed - `RecentStore.add` no-ops (no write, no notify) while the
 answer is unchanged. Editor-driven like the file watcher: a DAW instance with its editor closed
 records nothing until it's opened.
+
+### The engine's graph: `buildGraph`, `EngineGraph`, `DirectGraph`
+
+[`buildGraph`](../packages/retroplug/src/graph/buildGraph.ts) is a pure function from the model
+(`{ systems, routing, project, shape }`) to the document `setGraph` plans
+([modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md) section 2.1; the node
+order, the routing as wiring and the host shapes are in [02-native-host.md](02-native-host.md)).
+Besides the system nodes and their mixing it places the DSP kernel between the host's I/O and the
+systems ([modular-graph-phase-b3a-design.md](../docs/modular-graph-phase-b3a-design.md) section 5.1):
+
+- `midi-in` (`rp.host.midi-in`) and `controller-in` (`rp.host.controller-in`), wired to the kernel's
+  `midiIn`, `controllerIn` and `controllerConnected`;
+- `kernel` (`rp.dsp.kernel`), its settings the structure: `{ project, systems: { id, pipeline,
+  serialOut }[] }`, the systems in slot order, `serialOut` true for a Game Boy;
+- each `kernel.sys-<id>.serialIn` / `.midi` / `.bytes` / `.buttons` wired to that system node's input
+  of the same name, and each Game Boy's `sys-<id>.serialOut` back to `kernel.sys-<id>.serialOut` as a
+  feedback wire, so MI.OUT reaches the kernel a block after the core sent it;
+- `cart` (`rp.n8.cart-mirror`, settings `{ system }`), wired from the kernel's `midi` and `bytes`
+  outputs for the first NES in slot order, when there is one;
+- `midi-out` (`rp.host.midi-out`) and `controller-out` (`rp.host.controller-out`), fed from the
+  kernel's `midiOut` and `controllerOut`.
+
+[`EngineGraph`](../packages/retroplug/src/engineGraph.ts) is one control-plane context's publisher:
+`publish({ systems, routing, project }, { rearmTap })` makes that its model, builds the document at
+its host shape and sends it, skipping the send when the document's canonical text and slots match the
+last one that planned, so an edit that changes nothing sends nothing (a re-arm is sent all the same,
+and after a refusal the next document is sent even if unchanged).
+[`DirectGraph`](../packages/retroplug/src/graph/directGraph.ts) is the publisher for callers with no
+stores (the native tests, the CLI's `analyze-lsdj-sync` session and the `lsdj-detect-offsets` tool;
+one per process, `directGraph()`). Its `add` / `replace` / `remove` keep its systems list in slot order (add
+appends, replace keeps the slot, remove shifts later slots down), a system it adds or replaces has an
+empty pipeline, and the kernel's structure is two calls of its own, each a publish:
+`setPipeline(id, roles)` and `setProjectStages(stages)`. Until `setProjectStages` names a
+`midi-routing` stage, no host MIDI is routed to any system.
 
 ### RecentStore — [`src/recentStore.ts`](../packages/retroplug/src/recentStore.ts)
 
@@ -295,7 +344,8 @@ host builds the *same* graph the *same* way.
 evaluated once by the plugin host in its txiki context. It composes the whole store graph through
 `composeAppStores()` (backend + registry + recent + userConfig + bindings + project +
 fileSelection). It loads no kernel: the DSP kernel is a script node every Engine has, and the
-graph the project publishes carries its structure.
+graph the project publishes carries its structure. Its structure hook (`setOnSystemsChange`) refreshes
+the watched ROMs and re-renders the editor.
 
 It then exposes the **string-only C++→JS surface** for project I/O — the plugin drives these
 directly with no further RPC:
@@ -306,7 +356,7 @@ directly with no further RPC:
 | `__rp_loadProjectB64(b64)` | DPF `setState`: load an in-memory chunk (empty chunk = no-op) |
 | `__rp_saveProjectB64()` | DPF `getState`: export the project as a base64 `.rplg` chunk |
 | `__rp_newProject()` | DPF `setState("")`: reset to an empty project |
-| `__rp_ready` | Set true once composition + kernel load succeeded |
+| `__rp_ready` | Set true at the end of the bundle's top level, once composition has run |
 
 Base64 is done **here** in runtime-independent code, not native, because DPF state is NUL-terminated UTF-8 while a `.rplg` is binary PKZIP — the
 C++ boundary stays string-only.
@@ -317,8 +367,8 @@ C++ boundary stays string-only.
 backend?, notify? })` builds the full graph — `registry, recent, userConfig, bindings,
 project, fileSelection` — so every host constructs it identically. Change notification is
 injected as one `notify(channel)` where `StoreChannel = "project" | "systems" | "recent" |
-"userConfig" | "bindings"`. It wires the project's two signals plus focus
-but **does not** wire the DSP (that stays the control plane's job).
+"userConfig" | "bindings"`. It wires the project's two signals plus focus;
+the DSP kernel needs no wiring, since the project publishes its structure with the graph.
 
 **Every host composes through here, and the plugin runs exactly ONE graph.**
 `pluginControlPlane.ts` calls `composeAppStores` at construct and publishes the result on the
@@ -540,11 +590,12 @@ Two concepts touched throughout this doc belong fully to **doc 04**:
   runs as the script node [`src/script/kernelNode.ts`](../packages/retroplug/src/script/kernelNode.ts),
   in the bundle every Engine embeds, inside the script host's **bare QuickJS audio context**: the
   distinct runtime, never shared with the control-plane runtime.
-  [`kernelProjection.ts`](../packages/retroplug/src/kernelProjection.ts) turns a `SystemView[]` +
-  `midiRouting` into the kernel structure, which `buildGraph` makes the kernel node's settings.
+  [`kernelProjection.ts`](../packages/retroplug/src/kernelProjection.ts) turns the systems' pipelines,
+  the `midiRouting` and the controller settings into the kernel structure, which
+  `ProjectStore.publishGraph` publishes and `buildGraph` makes the kernel node's settings.
 
-Doc 04 covers the byte-sink ABI, the per-system pipelines, the drift-exact PPQ clock in JS,
-and how the kernel runs on the bare context.
+Doc 04 covers the kernel node's ports, the per-system pipelines, the drift-exact PPQ clock in JS,
+and how the kernel runs in the script host.
 
 ---
 

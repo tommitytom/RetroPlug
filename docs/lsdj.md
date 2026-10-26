@@ -93,6 +93,17 @@ The two config surfaces are distinct and easy to confuse:
   `setRoleConfig` and read by the DSP kernel, while native's `applyRoleConfig` takes only the `sameboy` and
   `mesen` system roles (any other kind returns false).
 
+A test that builds through a `DirectGraph` has no store, so it hands the kernel its roles itself: a
+system's DSP roles are its pipeline and the MIDI routing is a project stage, each call a publish of the
+graph that carries them to the kernel. Until a project stage routes it, no host MIDI reaches any system.
+From [lsdj-mastersync.test.ts](../packages/retroplug/test-native/lsdj-mastersync.test.ts):
+
+```ts
+graph.setProjectStages([{ kind: "midi-routing", config: { mode: "sendToAll" } }]); // host MIDI to every system
+graph.setPipeline(id, [{ kind: "lsdj-sync", config: { mode: "masterSync" } }]);    // what the kernel runs for `id`
+be.setSerialOutCapture(id, true); // the store arms it for midiOut / masterSync; a DirectGraph caller does it itself
+```
+
 The rest of the native-tier surface these tests use:
 `audio.renderAudioPerSystem(ms)` (per-system buffers in slot order — the thing that proves link
 sync, where a mixed buffer cannot), `audio.setTransport(bool)` / `audio.setBpm(n)` (simulated host

@@ -2,10 +2,12 @@
 
 The port is complete: the legacy build is gone, the transitional target suffix is dropped, and the
 plugin identity is the canonical `RetroPlug`. What is left is **feature work, not migration** — a
-short list of gaps, deferred features, one pending refactor, and a code-comment cleanup backlog.
-This is the authoritative inventory; the other docs note a gap in a line and point here.
+short list of gaps, deferred features, one pending refactor, a code-comment cleanup backlog, and the
+node-graph engine's next steps (section 5). This is the authoritative inventory; the other docs note a
+gap in a line and point here.
 
-The runtime architecture is [01-architecture.md](01-architecture.md); nothing below changes it.
+The runtime architecture is [01-architecture.md](01-architecture.md); nothing below but section 5
+changes it.
 
 ---
 
@@ -18,11 +20,12 @@ Things a user could reasonably expect that aren't wired yet. None block shipping
 `lsdj-sync` implements every sync mode except raw **Keyboard**: MidiSync, MidiSyncArduinoboy,
 MidiMap, KeyboardMidi, MidiPassthrough, MidiOut (ArduinoboyMaster), and MasterSync all ship
 ([dspRoles.ts](../packages/retroplug/src/dspRoles.ts)). Raw Keyboard emits nothing because it needs
-the per-block **`keys` feed** that the live `Engine` path doesn't marshal yet —
-`Engine::processBlock` passes the empty
-`kNoButtons`/`kNoKeys` ([Engine.cpp](../packages/native/src/host/engine/Engine.cpp)),
-so the kernel's `buttons`/`keys` ABI is present but unfed. Feeding host keys/buttons per block unblocks
-this mode. (See [04-roles-dsp-kernel.md](04-roles-dsp-kernel.md).)
+the per-block **`keys` feed**, which nothing supplies yet: the kernel node hands the kernel empty
+`buttons` and `keys` arrays every block
+([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts), `blockInput`), so the kernel's
+`buttons`/`keys` inputs are present but unfed. Feeding host keys/buttons per block (a port on the kernel
+node, or on the protocol node that replaces it) unblocks this mode. (See
+[04-roles-dsp-kernel.md](04-roles-dsp-kernel.md).)
 
 ### NES per-mapper expansion sub-channels (multichannel audio)
 
@@ -108,3 +111,65 @@ swept as their feature lands or when touched. Known ones:
 Not cleanup (intentional domain terms that read like TODOs): `deferredProject` in
 [systemsStore.ts](../packages/retroplug/src/systemsStore.ts) and `kind: "deferred"` in
 `fileSelection.ts` are the sibling-`.rplg` load-handoff concept, not incomplete work.
+
+---
+
+## 5. The node-graph engine: after B3a
+
+Phase B of [modular-graph-design.md](../docs/modular-graph-design.md) moves the engine onto the graph in
+steps, each held bit for bit to the parity baseline ([06-build-test.md](06-build-test.md)). B3a
+([modular-graph-phase-b3a-design.md](../docs/modular-graph-phase-b3a-design.md)) is built: the kernel's
+input and output are real wires (host I/O nodes, `serialIn` / `midi` / `bytes` / `buttons` inputs on
+every system node, the Game Boy's `serialOut`, `rp.n8.cart-mirror`), the kernel runs unchanged as one TS
+node, `rp.dsp.kernel`, in the script host every Engine embeds, and the sealed native kernel node, its
+fan-out, the `dspSetSystems` / `dspLoadKernel` / `compileScript` RPCs and the boot-time kernel load are
+gone. Staging host MIDI allocates nothing within the room reserved at construction (one flat arena per
+staging). What is left, in order:
+
+- **The master-sync fix, before B3b.** The eighth item of design section 2.5 of
+  [modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md), the last of its five recorded
+  defects: LSDj master sync's decoder
+  ([lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts), `arduinoboyMasterSyncBlock`) calls a
+  block carrying more than `MASTER_SYNC_IDLE_FLOOD` (16) serial-out bytes a stopped LSDj's idle flood, so
+  what it decodes depends on the host block's length: in small blocks a stopped LSDj's flood reads as
+  clocks, and a fast tempo in long blocks could pass 16 and read as stopped. The fix needs a window across
+  blocks, trading spurious clocks at the stop edge against a few milliseconds of clock latency. It is its
+  own change and re-records exactly the cases it moves (`blocks-tiny-lsdj-master`'s six `masterSync-*`, and
+  possibly `lsdj-modes`' `masterSync-44100` and `masterSync-48000`, whose boot noise the same threshold
+  decides), and it lands before B3b ports the decoder into a protocol node.
+- **B3b.** One protocol node per role (`mgb.midi`, `lsdj.sync`, `risa.sync`, `sms.sync`,
+  `n8.midi-to-fifo`, the MIDI routing, the Launchpad controller), each with its own ports;
+  `kernelProjection`'s special cases (the synthesized `midi-routing` and Launchpad stages, the forced
+  `lsdj-sync` mode for MI.MAP) moved into `buildGraph`; a script-node bundle with no zod in it (the
+  kernel's settings schema and `dspRoles.ts` carry it today); then the kernel node and `DspKernel`
+  deleted. How several stages' outputs merge into one system input is B3b's to decide; a system input
+  must keep "all MIDI, then all bytes" per core, and `rp.core.merge`'s output queue is the default size,
+  so merging large wires needs a merge whose output capacity its settings give.
+- **Found while building B3a, left as they are:**
+  - `rp.host.midi-out` and `rp.host.controller-out` append one `std::vector` per message to the engine's
+    host outputs (`Engine::midiOut_` / `controllerOut_`, the `rp.engine.host-io/1` service in
+    [Engine.cpp](../packages/native/src/host/engine/Engine.cpp)), an allocation on the block thread for
+    every message out; a flat arena, as the staging has, would remove it.
+  - The script node `Block` ([defineNode.ts](../packages/retroplug/src/graph/defineNode.ts)) has no
+    resource accessor and no link peers yet.
+  - With commits to script nodes never making `setGraph` wait (their prepare is stateless), the
+    GraphHost's command ring (256 slots, 255 usable, shared with params and the engine's commands) is what
+    bounds edits while no block runs: a host that stops calling `process` while the plugin stays active
+    queues one plan per edit, each holding its buffers, and once the ring is full `setGraph` answers busy.
+    The publisher keeps its model, so the next publish sends its document even if unchanged and the latest
+    model lands. Coalescing queued, unadopted plans is the alternative, should it bite.
+  - The adoption wait itself is global: one commit to a type without `RP_TYPE_STATELESS_PREPARE` holds back
+    an edit that touches only stateless nodes (a gate per instance is possible). And every `node.hpp` node
+    without `needs_rebuild` already prepares statelessly, so for C++ nodes the flag could be derived rather
+    than declared.
+  - A Game Boy that clocks its serial port itself, a CGB on its fast clock, can send more in a block past
+    about 12000 frames (6000 in double speed) than its fixed `serialOut` holds; the rest is dropped and
+    counted ([SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp) `kSerialOutCapacity`).
+  - `retroplug-engine-graph-test` replaces the global `operator new` with a counting allocator
+    ([CountingAllocator.cpp](../packages/native/test/graph/CountingAllocator.cpp)) that allocates through
+    `_aligned_malloc` on Windows, so a core or QuickJS freeing what `new` made with `free()` would crash
+    there; no Windows CI run has exercised it yet.
+  - `retroplug-ts-stripper-bundle` fails in a build directory outside the repository:
+    [tools/build-ts-stripper.mjs](../tools/build-ts-stripper.mjs) runs in the binary dir and sets no
+    esbuild `absWorkingDir`, so its `typescript-5` alias resolves from there (unlike
+    [tools/build-ui.js](../tools/build-ui.js), which sets it to the repo root).
