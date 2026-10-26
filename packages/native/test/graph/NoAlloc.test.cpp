@@ -276,3 +276,33 @@ TEST_CASE("an allocation the planner cannot make is a refused plan, not an excep
     REQUIRE(rig.set(big).ok);  // with the memory to hand, the same document plans
     CHECK(BigQueue::alive == 1);
 }
+
+TEST_CASE("an allocation that fails after a settings swap was prepared releases the swap", "[graph][noalloc]") {
+    GraphRig rig;
+    REQUIRE(rig.registry.addPackage(noAllocPackage()));
+    // The source is reused with a new value, a live swap: its prepared settings are the plan's to commit or release.
+    auto doc = [](const char* value, bool big) {
+        return std::string(R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":)") + value +
+               R"(}},{"id":"s","type":"rp.test.sink"})" +
+               (big ? R"(,{"id":"q","type":"rp.test.big-queue"},{"id":"qs","type":"rp.test.sink"})" : "") +
+               R"(],"wires":[{"from":"src.events","to":"s.events"})" +
+               (big ? R"(,{"from":"q.out","to":"qs.events"})" : "") + "]}";
+    };
+    const auto value = [&] { return rp::peer_as<rp::graph::test::Source>(rig.host->node("src"))->value; };
+    REQUIRE(rig.set(doc("0.5", false)).ok);
+    rig.run();
+
+    // The allocation fails in build(), after reconcile prepared the swap and before the plan took it over. The swap is
+    // released (an ASan run of this binary sees it neither leak nor freed twice) and the old value runs on.
+    rp::graph::SetGraphResult r;
+    refuseFrom = std::size_t{8} << 20;
+    CHECK_NOTHROW(r = rig.set(doc("0.25", true)));
+    refuseFrom = SIZE_MAX;
+    CHECK(GraphRig::codes(r) == "out-of-memory");
+    rig.run();
+    CHECK(value() == 0.5f);
+
+    REQUIRE(rig.set(doc("0.25", true)).ok);  // prepared afresh, and committed
+    rig.run();
+    CHECK(value() == 0.25f);
+}

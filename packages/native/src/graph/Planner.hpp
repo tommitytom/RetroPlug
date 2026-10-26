@@ -56,8 +56,9 @@ struct PlanOutcome {
 // wired output and the front of each feedback wire (a default queue, 256 messages and 4 KiB, is 8 KiB). A port may
 // declare about 32 MiB, so this is what bounds what one document can have the planner allocate: a document past it
 // is refused ("queue-budget", naming the node and port whose queue crossed it) before any instance is made. Not
-// counted: the one default-size scratch queue every unconnected output shares. Around a swap the old plan's queues
-// are alive beside the new one's.
+// counted: the one default-size scratch queue every unconnected output shares. It bounds one plan, not memory: around
+// a swap the old plan's queues are alive beside the new one's, and while the audio thread is not adopting, up to
+// GraphHost's kCommandCapacity published plans can queue on the command ring, each holding queues of its own.
 constexpr std::size_t kPlanQueueBudget = std::size_t{64} << 20;  // 64 MiB
 
 // A node's rp_error text, bounded (a node may leave it unterminated) and never empty.
