@@ -715,10 +715,11 @@ rp_status processFn(rp_node* n, const rp_process* p) noexcept {
 // Compares against the instance's extra memory and, unless it reshapes, its layout, neither of which changes
 // after create; a node that reshapes never compares layouts, since the planner takes a reshape that keeps the
 // layout as a swap. Only needs_rebuild reads the instance's current settings, which is safe because a host never
-// prepares while a commit for the same instance may be in flight - GraphHost waits for any published commit to
-// be adopted before it plans - unless the type is stateless_prepare, which is why that rules needs_rebuild out.
-// The rule is asserted on the call itself, so no form of needs_rebuild this would call (a template, an overload
-// set, a callable static member) slips past it.
+// prepares while a commit for the same instance may be in flight: GraphHost waits for a published commit to be
+// adopted before it plans, but only for commits from types without RP_TYPE_STATELESS_PREPARE (awaitsAdoption). A C++
+// node without stateless_prepare is such a type; a stateless_prepare type (every script node) is not waited for,
+// which is why that flag rules needs_rebuild out. The rule is asserted on the call itself, so no form of
+// needs_rebuild this would call (a template, an overload set, a callable static member) slips past it.
 template <class T>
 rp_prepare_result prepareFn(rp_node* n, const rp_settings* s, void** prepared, rp_error* err) {
     using S = typename SettingsOf<T>::type;
