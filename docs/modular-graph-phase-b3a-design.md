@@ -283,7 +283,9 @@ Today a JS exception in `processBlock` is dropped: the sink calls made before it
 throw and logs the first one, and runs the next block. It does not return `RP_FAULT`, whose latch would turn a
 transient error into MIDI that stays dead until a rebuild. B3b's protocol nodes may opt into the latch.
 
-The call deadline (section 2.7) keeps the rule. Its expiry is a throw like this one, so a kernel without
+The call deadline (section 2.7) keeps the rule, but for the serial-in runs the kernel still held: a call the
+deadline stops runs no `finally`, so those bytes are cleared at the next `process` instead of sent (what it had
+already sent stands). Its expiry is a throw like this one, so a kernel without
 `faultOnThrow` runs again after one, and faults only on a second in a row, which a node that has hung for good
 reaches within two deadlines. It counts the thread's CPU time, so a stall that is not the kernel's own never trips
 it. This matters more for the kernel than for any node: it reshapes on every system added or removed, and a fault

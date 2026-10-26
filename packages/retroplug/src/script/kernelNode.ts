@@ -28,16 +28,16 @@ const FLUSH = 1;
 // What each output carries in one block, at most (design section 2.6): today's sink vectors are unbounded, and a
 // queue drops what does not fit. The two that pass host MIDI on, serial in (mGB, lsdj-sync's passthrough) and core
 // MIDI (nes-n8-midi), each hold at least what rp.host.midi-in's output holds (kHostMidiInMessages and
-// kHostMidiInBytes, host/graph/HostIoNodes.hpp: 2048 messages, 32 KiB), so the one place host MIDI is dropped is that
-// edge. Core MIDI takes a message for each forwarded one; serial in a run of same-frame bytes to a message, so at most
-// one for each forwarded message, plus the sync roles' own bytes. Both have room for 4096 messages and 64 KiB.
-// The rest are sized from the most the suites send through them in one block. Measured over test:native with the
-// fixtures (parity included, 2.2 million kernel blocks up to 8192 frames): per system, 18 serial-in bytes, 8 core-MIDI
-// messages holding 4096 bytes (the largest message 512), 11 core-byte messages holding 11 bytes, 1 button press; 14
-// host MIDI-out messages holding 70 bytes with their prefixes; 5 control-surface messages holding 206 bytes (in one).
-// dsp-bench's densest profile, skipped there, sends 13 messages of 39 bytes a block. Each of these has room for 16
-// times the messages or more, and the bytes as well, but for the MIDI out's (a decoded MI.OUT stream at its densest,
-// a captured byte every 8 frames: 1024 in 8192). A queue costs 16 bytes a message plus its bytes, per plan: a system's
+// kHostMidiInBytes, host/graph/HostIoNodes.hpp), so the one place host MIDI is dropped is that edge. Core MIDI takes a
+// message for each forwarded one; serial in a run of same-frame bytes to a message, so at most one for each forwarded
+// message, plus the sync roles' own bytes. Both have room for 4096 messages and 64 KiB. (The most the suites sent
+// through them in one block, measured over test:native with the fixtures, parity included, 2.2 million kernel blocks
+// up to 8192 frames: per system, 18 serial-in bytes and 8 core-MIDI messages holding 4096 bytes, the largest 512.)
+// The rest are sized from the same measurement: per system, 11 core-byte messages holding 11 bytes, 1 button press;
+// 14 host MIDI-out messages holding 70 bytes with their prefixes; 5 control-surface messages holding 206 bytes (in
+// one). dsp-bench's densest profile, skipped there, sends 13 messages of 39 bytes a block. Each of these has room for
+// 16 times the messages or more, and the bytes as well, but for the MIDI out's (a decoded MI.OUT stream at its
+// densest, a captured byte every 8 frames: 1024 in 8192). A queue costs 16 bytes a message plus its bytes, per plan: a system's
 // four take 262 KiB, nearly all of it the two that pass host MIDI on, so 33 systems take 8.4 MiB of the plan's 64 MiB
 // queue budget.
 export const KERNEL_SERIAL_IN: QueueCapacity = { messages: 4096, bytes: 65536 };
@@ -77,7 +77,8 @@ interface SystemPorts {
   /** Its MI.OUT input, for a system with a serialOut. */
   serialOut: string | null;
   /** The serial-in bytes not yet sent: consecutive pushSerialIn calls at runFrame, sent as one message. Empty
-   *  between blocks; reused, so it allocates nothing once grown. */
+   *  from each block's end, or from the next process when the deadline stopped the call; reused, so it allocates
+   *  nothing once grown. */
   run: number[];
   runFrame: number;
 }
