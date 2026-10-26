@@ -1113,8 +1113,9 @@ kernel's input and output are real wires (host I/O nodes, input ports on every s
 `serialOut`), and the kernel runs unchanged as one node, `rp.dsp.kernel`, in the new script-node runtime, with its
 structure as its settings; the sealed kernel, its fan-out, the kernel RPCs and the native kernel node are gone. B3b
 is next: it splits that node into one protocol node per role, moves `kernelProjection` into `buildGraph`, takes zod
-out of the bundle and deletes the kernel. Between the two, LSDj master sync's stopped-LSDj detector, which B3a's
-tiny-block parity groups pinned as a defect, is fixed as its own change, before B3b ports the decoder (B3a §10).
+out of the bundle and deletes the kernel. Between the two, LSDj master sync was fixed as its own change, before B3b
+ports the decoder ([lsdj-master-sync-fix-design.md](lsdj-master-sync-fix-design.md)): its stopped-LSDj detector, which
+B3a's tiny-block parity groups pinned as a defect, turned out to be reading the core's own clocking of a stopped LSDj.
 
 ### Phase C: nodes own their knowledge
 

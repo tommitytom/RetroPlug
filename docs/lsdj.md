@@ -101,7 +101,7 @@ From [lsdj-mastersync.test.ts](../packages/retroplug/test-native/lsdj-mastersync
 ```ts
 graph.setProjectStages([{ kind: "midi-routing", config: { mode: "sendToAll" } }]); // host MIDI to every system
 graph.setPipeline(id, [{ kind: "lsdj-sync", config: { mode: "masterSync" } }]);    // what the kernel runs for `id`
-be.setSerialOutCapture(id, true); // the store arms it for midiOut / masterSync; a DirectGraph caller does it itself
+be.setSerialOutCapture(id, "listen"); // the store sets it ("drive" for midiOut, "listen" for masterSync); a DirectGraph caller does it itself
 ```
 
 The rest of the native-tier surface these tests use:
@@ -573,13 +573,15 @@ mode selected" indicator on the aboy build. Read the SYNC field text (or the
 
 ### Master mode (MI.OUT) verification
 
-A role opts into serial-out capture via `RomRole::wantsSerialOut()`;
-`LsdjSyncRole` enables it when its config is `ArduinoboyMaster`. From a TS test,
-drain the captured bytes with `be.drainSerialOut(id)` (raw GB serial-out — ground
-truth) and `be.drainMidiOut(id)` (the decoder's MIDI output).
+Serial-out capture is a mode the store sets from the `lsdj-sync` mode (`serialOutCaptureFor` in
+[systemsStore.ts](../packages/retroplug/src/systemsStore.ts)): `drive` for MI.OUT, `listen` for master sync.
+The captured bytes reach the DSP kernel over the Game Boy node's `serialOut` wire, each at the frame its
+core completed it, and `audio.drainMidiOut()` returns what the decoders made of them.
 See [lsdj-midiout.test.ts](../packages/retroplug/test-native/lsdj-midiout.test.ts),
 which authors SYNC=MI.OUT with `N` commands, plays, and asserts a transport START, a clock
-stream and NoteOns come back out as host MIDI.
+stream and NoteOns come back out as host MIDI, and
+[lsdj-mastersync.test.ts](../packages/retroplug/test-native/lsdj-mastersync.test.ts), which holds master
+sync to one story (start, clocks, stop, start again) in three block splits at 44.1 and 48 kHz.
 
 ### Synthetic external-clock serial (subtle but load-bearing)
 
@@ -596,7 +598,7 @@ play that role:
   (SameBoy's serial bit callbacks fire only as internal-clock master):
 
   ```cpp
-  if (linkPeers_.empty() && serialOutEnabled_ && gb_) {
+  if (linkPeers_.empty() && serialOutCapture_ == SerialOutCapture::Drive && gb_) {
       const auto sc = gb_->io_registers[GB_IO_SC];
       if ((sc & 0x81) == 0x80) {
           const bool outBit = (gb_->io_registers[GB_IO_SB] & 0x80) != 0;
@@ -605,6 +607,13 @@ play that role:
       }
   }
   ```
+
+  **Drive only, never master sync.** A stopped stock LSDj in SYNC=LSDj also waits on an external clock,
+  for another master. Clocked, it takes the idle `0xFF` bytes for a master's clock, turns slave and
+  ignores START, and every bit clocked is captured: the "idle flood" (one bit a frame, about 5000 bytes a
+  second) master sync once had to detect, and what kept it silent at 48 kHz. So master sync's capture
+  listens, taking only the bytes LSDj clocks out itself (`serialStart`, internal clock), and its decoder's
+  stop is a 200 ms silence ([lsdj-master-sync-fix-design.md](lsdj-master-sync-fix-design.md)).
 
 - **Serial-IN delivery (mGB, LSDJ KEYBD)** lives in `stepIfBelowTarget`, a
   per-byte slave pump: while `SC=0x80` and the FIFO is non-empty, it pops a byte

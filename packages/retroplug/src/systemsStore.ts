@@ -10,7 +10,7 @@
 // duplicateSystem / reload orchestration and the DSP list handlers
 // (PluginDSP.cpp:406-458), with every path derived by the pure kernels.
 
-import type { ConstructSpec, ControlPlaneBackend, HostBackend } from "./backend";
+import type { ConstructSpec, ControlPlaneBackend, HostBackend, SerialOutCapture } from "./backend";
 import type { GraphSystem } from "./graph/buildGraph";
 import { EngineGraph } from "./engineGraph";
 import { detectPlatform, romHasBattery, ROM_SNIFF_LEN, SEGA_SNIFF_LEN, defaultCoreFor, type Platform, type Core } from "./platform";
@@ -868,7 +868,8 @@ export class SystemsStore {
         if (rt?.onConstruct) s = rt.onConstruct(s, this.backend, r.config);
       }
     // A core is built with its serial-out capture already armed, so no command has to chase it.
-    return serialOutCaptureFor(roles) ? { ...s, serialOutCapture: true } : s;
+    const capture = serialOutCaptureFor(roles);
+    return capture ? { ...s, serialOutCapture: capture } : s;
   }
 
   // Write a system's live battery to its own `.sav` before its core is destroyed. Every teardown path
@@ -924,10 +925,9 @@ export class SystemsStore {
     return id;
   }
 
-  // Arm/disarm native serial-out capture (LSDj MI.OUT) for a running system from its lsdj-sync mode. Both
-  // LSDj→host MIDI-out modes need it: MidiOut (SYNC=MI.OUT) and MasterSync (SYNC=LSDJ). Called only when the
-  // mode changes (setRoleConfig): a core that is built or rebuilt carries its capture in the build spec instead
-  // (applyConstructHooks). A no-op for a non-LSDj system (no lsdj-sync role → nothing to arm).
+  // Set native serial-out capture for a running system from its lsdj-sync mode (serialOutCaptureFor). Called
+  // only when the mode changes (setRoleConfig): a core that is built or rebuilt carries its capture in the build
+  // spec instead (applyConstructHooks). A no-op for a non-LSDj system (no lsdj-sync role → nothing to arm).
   private syncSerialOutCapture(id: number): void {
     const roles = findById(this.entries, id)?.roles;
     if (!roles?.some((r) => r.kind === "lsdj-sync")) return;
@@ -935,9 +935,12 @@ export class SystemsStore {
   }
 }
 
-// Whether a system with these roles captures its serial out: both LSDj-to-host MIDI-out modes need it,
-// MidiOut (SYNC=MI.OUT) and MasterSync (SYNC=LSDJ).
-function serialOutCaptureFor(roles: RoleInstance[]): boolean {
+// How a system with these roles captures its serial out: both LSDj-to-host MIDI-out modes need it. MidiOut
+// (SYNC=MI.OUT) drives, playing the Arduinoboy that clocks LSDj as the serial slave; MasterSync (SYNC=LSDJ) only
+// listens to the clock LSDj sends as the master. Null for no capture.
+function serialOutCaptureFor(roles: RoleInstance[]): SerialOutCapture | null {
   const mode = (roles.find((r) => r.kind === "lsdj-sync")?.config as { mode?: LsdjSyncMode } | undefined)?.mode;
-  return mode === LsdjSyncMode.MidiOut || mode === LsdjSyncMode.MasterSync;
+  if (mode === LsdjSyncMode.MidiOut) return "drive";
+  if (mode === LsdjSyncMode.MasterSync) return "listen";
+  return null;
 }

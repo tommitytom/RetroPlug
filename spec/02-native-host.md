@@ -208,7 +208,7 @@ DTO worth spelling out — it mirrors the TS `ConstructSpec`:
 | `sramBytes` / `stateBytes` | `optional<Bytestring>` | zip-import seed bytes (win over the on-disk paths) |
 | `romBytes` | `optional<Bytestring>` | ROM bytes to load instead of reading `romPath` (a patched image, e.g. LSDj asset overrides; honoured by SameBoy and by Mesen's NES, GBA and SMS / Game Gear), `romPath` still travelling for the watcher and `.sav` resolution |
 | `settings` | `optional<string>` | the backend "system"-role config JSON, decoded only by the matching backend |
-| `serialOutCapture` | `optional<bool>` | arm a Game Boy's serial-out capture (LSDj MI.OUT) before its first block; ignored by every other core |
+| `serialOutCapture` | `optional<string>` | arm a Game Boy's serial-out capture before its first block: `"drive"` (LSDj MI.OUT) or `"listen"` (master sync); any other name refuses the build; ignored by every other core |
 
 ## `Engine` + `QueuedInvoker`: the mutation path
 
@@ -339,10 +339,15 @@ The order shows only on the NES, where MIDI and bytes land in the same FIFO: a f
 discards the MIDI queued ahead of it. A Game Boy's `midi` input has no effect (SameBoy's `onMidi`
 queues into a list nothing reads); mGB and LSDj hear MIDI through `serialIn`. The Game Boy also has a
 `serialOut` output (bytes): after `finishBlock`, while it is connected, the node copies the bytes its
-core captured on the serial port this block, each a message at frame 0 (the core clears its log at
-its next `prepareForBlock`). Capture runs only while armed (the build-time `serialOutCapture` flag, or
-`setSerialOutCapture`; TS arms it for LSDj's two MIDI-out modes), and then takes a byte every 8 frames
-while the Game Boy holds the port for an external clock, idle bytes included. The port's capacity is
+core captured on the serial port this block, each a message at the frame the core completed it, a byte
+completed past the block's end at its last frame (the core clears its log at its next
+`prepareForBlock`). Capture runs only while armed (the build-time `serialOutCapture`, or
+`setSerialOutCapture`; TS arms it for LSDj's two MIDI-out modes), in one of two modes
+(`SerialOutCapture`): `listen` takes the bytes the Game Boy clocks out itself (LSDj as master sync's
+master), and `drive` also clocks a transfer waiting on an external clock, a bit an audio frame, taking a
+byte every 8 frames while the Game Boy holds the port for one, idle bytes included (the Arduinoboy's part
+in MI.OUT). Only MI.OUT drives: a stopped LSDj master waits on an external clock for another master, and
+clocked, it turns slave and ignores START. The port's capacity is
 fixed at 8256 messages and 8256 bytes, a byte every 8 frames over the largest block a host can run
 (65536 frames) with slack, so the feedback wire to the kernel keeps its front across every swap; a CGB
 clocking the port itself on its fast clock can outrun it in a very long block, and what does not fit is

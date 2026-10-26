@@ -47,9 +47,9 @@ function playMidiOut(build: (spec: ConstructSpec) => ConstructSpec): MidiOutRun 
   let spec: ConstructSpec | null = null;
   let liveArms = 0;
   be.buildCore = (s, id) => buildCore((spec = build(s)), id);
-  be.setSerialOutCapture = (id, on) => {
+  be.setSerialOutCapture = (id, mode) => {
     liveArms++;
-    return setSerialOutCapture(id, on);
+    return setSerialOutCapture(id, mode);
   };
   let id: number | null = null;
   try {
@@ -76,7 +76,7 @@ function playMidiOut(build: (spec: ConstructSpec) => ConstructSpec): MidiOutRun 
 test("an adopted LSDj in MIDI-out mode is built capturing, and its NoteOns reach the host", () => {
   if (!be.fileExists(ABOY)) skip(`lsdj-midiout-build-flag: aboy LSDj ROM not found at ${ABOY}`);
   const run = playMidiOut((spec) => spec);
-  expect(run.spec.serialOutCapture, "the build flag").toBe(true);
+  expect(run.spec.serialOutCapture, "the build flag").toBe("drive");
   expect(run.liveArms, "setSerialOutCapture calls").toBe(0);
   console.log(`[lsdj-midiout-build-flag] built capturing: ${run.noteOns} NoteOns`);
   expect(run.noteOns).toBeGreaterThan(0);

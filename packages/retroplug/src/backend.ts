@@ -141,10 +141,11 @@ export interface Backend {
    *  failure. */
   applyRoleConfig(id: number, kind: string, config: Record<string, unknown>): boolean;
 
-  /** Arm/disarm capture of a system's outgoing serial bytes (LSDj MI.OUT). The store calls this when a
-   *  system's `lsdj-sync` mode is (or leaves) MIDIOUT — armed, native feeds the raw bytes to the DSP
-   *  kernel's `ctx.serialOut` for the Arduinoboy decoder. SameBoy-only (a no-op on other cores). */
-  setSerialOutCapture(id: number, on: boolean): boolean;
+  /** Set capture of a system's outgoing serial bytes (SerialOutCapture), or null for off. The store calls this when
+   *  a system's `lsdj-sync` mode changes: armed, native feeds the raw bytes to the DSP kernel's `ctx.serialOut` for
+   *  the MI.OUT and master-sync decoders. False for a mode native does not know. SameBoy-only (a no-op on other
+   *  cores). */
+  setSerialOutCapture(id: number, mode: SerialOutCapture | null): boolean;
 
   // --- Live emulator input ------------------------------------------------
   // The UI→DSP direction for game input: a joypad button transition on the focused system. Native queues
@@ -742,6 +743,12 @@ export interface FileBrowserOpts {
   directory?: boolean;
 }
 
+/** What a Game Boy's serial-out capture does. `listen`: capture the bytes it clocks out itself (LSDj as master sync's
+ *  master). `drive`: that, and clock a transfer waiting on an external clock, capturing its bytes too (the
+ *  Arduinoboy's part in LSDj MI.OUT). Only MI.OUT may drive: a stopped LSDj master, clocked, takes the idle bytes for
+ *  another master's clock and stops answering START (docs/lsdj-master-sync-fix-design.md). */
+export type SerialOutCapture = "listen" | "drive";
+
 /** What TS hands the native builder: concrete paths only — everything is resolved
  *  TS-side before the call. `savPath`/`statePath` are the exact files to load-from +
  *  auto-save-to / boot-from, or `null` for fresh / cold. */
@@ -774,9 +781,9 @@ export interface ConstructSpec {
   /** Seed savestate bytes (a zip-import blob or a duplicate's captured state). When set, native
    *  boots from these instead of reading `statePath`. Rides as a Uint8Array (rfl::Bytestring). */
   stateBytes?: Uint8Array;
-  /** Arm a Game Boy's serial-out capture (LSDj MI.OUT) before the core first runs, as setSerialOutCapture
-   *  would on a running one. Omitted (off) for every system without an lsdj-sync role in a capturing mode. */
-  serialOutCapture?: boolean;
+  /** Arm a Game Boy's serial-out capture before the core first runs, as setSerialOutCapture would on a running
+   *  one. Omitted (off) for every system without an lsdj-sync role in a capturing mode. */
+  serialOutCapture?: SerialOutCapture;
   /** The system's backend ("system"-role) config as JSON, so a loaded non-default setting
    *  (SameBoy model/highpass/…) is applied at CONSTRUCT rather than via a post-build restart
    *  that would nuke the just-restored savestate. Omitted for a fresh build (backend defaults

@@ -174,7 +174,7 @@ Order stableOrder(const std::vector<std::uint32_t>& frames) {
 // wired to the mirror's bytes input: the core-byte sink sees every byte the port carries. The Game Boy's core.
 SameBoySystem* serialOutToCart(Engine& e) {
     auto core = mgb(1);
-    core->setSerialOutCapture(true);
+    core->setSerialOutCapture(SerialOutCapture::Drive);
     SameBoySystem* const gb = core.get();
     REQUIRE(e.parkCore(std::move(core)));
     REQUIRE(e.parkCore(bliptoaster(2)));
@@ -768,7 +768,7 @@ TEST_CASE("a system node's bytes input reaches the engine's sync trace while it 
         std::vector<std::string> lines;
         Engine e(kRate);
         auto core = mgb(1);
-        core->setSerialOutCapture(true);
+        core->setSerialOutCapture(SerialOutCapture::Drive);
         SameBoySystem* const gb = core.get();
         REQUIRE(e.parkCore(std::move(core)));
         REQUIRE(e.parkCore(bliptoaster(2)));

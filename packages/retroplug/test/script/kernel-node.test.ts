@@ -113,6 +113,22 @@ test("each sink call goes onto its system's port in emission order, host MIDI ou
   expect(order).toEqual(["sys-2.midi", "midiOut", "sys-4.bytes", "sys-1.serialIn"]);
 });
 
+test("a Game Boy's serial-out bytes reach the kernel at their frames: master sync times its stop from the byte", () => {
+  // A run's one byte at frame 0 or at frame 1000 of a 1024-frame block: the 0xFC goes out in the first block that
+  // starts more than 200 ms (8820 frames) after the byte, which only the frame the node hands across can tell.
+  const stopsIn = (frame: number) => {
+    const node = create(settings({ systems: [{ id: 3, pipeline: [{ kind: "lsdj-sync", config: { mode: "masterSync" } }], serialOut: true }] }));
+    for (let b = 0; b < 16; b++) {
+      const { block, sent } = blockOf(1024, true, b === 0 ? { "sys-3.serialOut": [{ frame, data: [5] }] } : {});
+      node.process(block);
+      if (sent.some((s) => s.port === "midiOut" && s.data[s.data.length - 1] === 0xfc)) return b;
+    }
+    return -1;
+  };
+  expect(stopsIn(0)).toBe(8); // the byte 1024 frames before block 0's start: 1024 + 8 * 1024 > 8820
+  expect(stopsIn(1000)).toBe(9); // 24 frames before it: 24 + 9 * 1024 > 8820
+});
+
 test("a system's serial-in bytes go a run of same-frame bytes to a message, each run sent before the next frame's", () => {
   const node = create(
     settings({

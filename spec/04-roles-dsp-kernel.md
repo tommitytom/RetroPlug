@@ -162,7 +162,7 @@ behaviours over the per-system context:
 | Role | Scope | Behaviour |
 |---|---|---|
 | `mgb` | system | forward every host-MIDI byte verbatim into the system's serial input |
-| `lsdj-sync` | system | dispatches on `config.mode` (LsdjSyncMode): MidiSync (24-PPQN `0xF8` clock, `tempoDivisor`-subdivided), MidiSyncArduinoboy (note-driven play/divisor + `0xFA`/`0xFC` transport bookends), MidiMap (row bytes + `0xFE`), KeyboardMidi (PS/2 scancodes), MidiPassthrough (raw bytes → serial), MidiOut (ArduinoboyMaster: emulator serial-out → decode → `emitMidiOut`), MasterSync (LSDj self-clock → host MIDI); Off/Keyboard emit nothing. Keeps cross-block scratch via `ctx.state`. Has the `lsdjSeedSav` `onConstruct` hook |
+| `lsdj-sync` | system | dispatches on `config.mode` (LsdjSyncMode): MidiSync (24-PPQN `0xF8` clock, `tempoDivisor`-subdivided), MidiSyncArduinoboy (note-driven play/divisor + `0xFA`/`0xFC` transport bookends), MidiMap (row bytes + `0xFE`), KeyboardMidi (PS/2 scancodes), MidiPassthrough (raw bytes → serial), MidiOut (ArduinoboyMaster: emulator serial-out → decode → `emitMidiOut`), MasterSync (LSDj self-clock → host MIDI: a `0xF8` per byte, the first of a run after the song-row NoteOn and `0xFA`, and `0xFC` once 200 ms pass with no byte, timed on the bytes' frames); Off/Keyboard emit nothing. Keeps cross-block scratch via `ctx.state`. Has the `lsdjSeedSav` `onConstruct` hook |
 | `midi-routing` | project | fans the block's global `midiIn` into per-system inboxes, reusing the pure `routeBlock` decision ([midiRouting.ts](../packages/retroplug/src/midiRouting.ts)) |
 
 ## Which config reaches the live core
@@ -188,8 +188,9 @@ role the kernel runs, publishes the graph (`setOnGraphChange` → `ProjectStore.
 kernel node's settings hold the whole `KernelStructure` (the role's config rides inside them); then
 `markDirty` fires the systems `onChange` → the project's `onSystemsChange`
 ([projectStore.ts:210](../packages/retroplug/src/projectStore.ts#L210)) for the structure's
-observers. The core is never told, with one exception: an `lsdj-sync` mode change arms or disarms the
-Game Boy's serial-out capture (`setSerialOutCapture`), which the two MIDI-out modes decode.
+observers. The core is never told, with one exception: an `lsdj-sync` mode change sets the Game Boy's
+serial-out capture (`setSerialOutCapture`), which the two MIDI-out modes decode: `drive` for MI.OUT, where
+the core plays the Arduinoboy that clocks LSDj, and `listen` for master sync, where LSDj clocks itself.
 
 ## The DSP kernel
 
@@ -203,7 +204,7 @@ reads its inputs and writes frame-tagged sinks.
 | Type | Arrives | Contents |
 |---|---|---|
 | `KernelStructure` | at each structure change, via `setSystems`: the kernel node's settings (below) | `{ project?: RoleInstance[], systems: { id, pipeline: RoleInstance[] }[] }` |
-| `BlockInput` | every block, via `processBlock`, built by the kernel node from its inputs | `BlockInfo` (`frames`, `sampleRate`, `tempo`, `ppqStart`, `transport`, `controllerConnected`) + `midiIn` (global), `serialOut` (each Game Boy's MI.OUT bytes of last block), `controllerIn`, `buttons`, `keys` |
+| `BlockInput` | every block, via `processBlock`, built by the kernel node from its inputs | `BlockInfo` (`frames`, `sampleRate`, `tempo`, `ppqStart`, `transport`, `controllerConnected`) + `midiIn` (global), `serialOut` (each Game Boy's MI.OUT bytes of last block, each with its frame in that block), `controllerIn`, `buttons`, `keys` |
 
 **System order is authoritative**: positional MIDI routing maps a channel to a system by its index in
 `systems`, so the list defines both the set and the order. `DspKernel` keeps ONE persistent `Block`
@@ -338,7 +339,8 @@ control's value from frame 0 is non-zero (`startValue`: its start, or a change a
 `rp.host.controller-in` signals a flip); `midiIn`, and `controllerIn` when a surface sent something,
 copied from their ports as `{ frame, data }` with `data` a plain array (a role may keep one across
 blocks); each Game Boy's `serialOut` bytes, concatenated in the order the settings list the systems
-(slot order) and tagged with its id; and empty `buttons` and `keys` (no host feeds them yet). Its
+(slot order) and tagged with its id and each byte's frame in last block; and empty `buttons` and `keys`
+(no host feeds them yet). Its
 `SinkTarget` sends each sink call onto a port, in emission order:
 
 | Sink call | Port |

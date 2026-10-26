@@ -108,9 +108,9 @@ struct BackendConstructSpec {
     // .sav resolution; only the loaded bytes differ. Honoured by SameBoy and by Mesen's NES, GBA and SMS / GG.
     std::optional<rfl::Bytestring> romBytes;
     std::optional<std::string>               settings;  // backend "system"-role config JSON (construct-time)
-    // Arm a Game Boy's serial-out capture (LSDj MI.OUT) before the core first runs, as a later
-    // setSerialOutCapture would. Ignored by every other core.
-    std::optional<bool>                      serialOutCapture;
+    // Arm a Game Boy's serial-out capture before the core first runs, as a later setSerialOutCapture
+    // would: "drive" (LSDj MI.OUT) or "listen" (master sync), absent for off. Ignored by every other core.
+    std::optional<std::string>               serialOutCapture;
 };
 
 // buildCore's answer (docs/modular-graph-phase-b2-design.md section 2.5): the node type the built core is

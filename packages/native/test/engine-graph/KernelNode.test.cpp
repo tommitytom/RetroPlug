@@ -9,7 +9,9 @@
 // sorts it and its output taken as a frame-ordered queue carries it, and found them equal from c323c7a8, where the node
 // was proven equal, to e3de2e46, the last commit before the stage's deletion. The values are the node's output in
 // those comparisons: the B3a prototype recorded them from the same cases, and they hold here as recorded. So a changed
-// value is a change to what the kernel does: a deliberate one is re-recorded from the values a failing case prints.
+// value is a change to what the kernel does: a deliberate one is re-recorded from the values a failing case prints. One
+// was: the LSDj modes case, when master sync's stop became a silence rather than a flood
+// (docs/lsdj-master-sync-fix-design.md).
 //
 // A serial input is counted and hashed byte by byte, each byte as the one-byte message (its frame, flags 0, one byte)
 // the node sent when the values were recorded: it now sends a run of same-frame bytes as one message, which the system
@@ -543,16 +545,15 @@ TEST_CASE("the kernel node drives each LSDj sync mode, MI.OUT and master sync am
     rig.block({.ppq = 0.0, .playing = true, .midi = {{200, on(0, 31)}, {200, on(0, 7)}}});
     BlockIn playing{.frames = 1024, .ppq = 1024.0 / kBeat, .playing = true};
     rig.run(playing, 30);
-    // MI.OUT: framed protocol bytes, a frame split over two captured bytes; master sync: a run, a quiet block, then a
-    // stopped LSDj's idle flood, then a run again (a playing LSDj's bytes a few hundred frames apart, its flood's 8).
-    Bytes flood;
-    for (int i = 0; i < 40; ++i) flood.push_back(static_cast<std::uint8_t>(i & 0x7f));
+    // MI.OUT: framed protocol bytes, a frame split over two captured bytes; master sync: a run (a playing LSDj's bytes
+    // a few hundred frames apart), a stopped LSDj's silence, whose 200 ms (8820 frames) pass in the ninth quiet block
+    // and send its stop, then a run again.
     playing.ppq = 31 * 1024.0 / kBeat;
     for (auto captured : {std::vector<Captured>{{7, {framed(0x7d), framed(0x7f), framed(0x70), framed(0x69), 0x7f}},
                                                 {8, {5, 5, 5}, 300}},
                           {{7, {0x80, framed(0x74), framed(64)}}, {8, {}}},
-                          {{8, flood}},
-                          {{8, flood}, {7, {framed(0x7e)}}},
+                          {}, {}, {}, {}, {}, {}, {},
+                          {{7, {framed(0x7e)}}},
                           {{8, {7}}}}) {
         playing.serialOut = captured;
         rig.block(playing);
@@ -567,7 +568,7 @@ TEST_CASE("the kernel node drives each LSDj sync mode, MI.OUT and master sync am
     }
     rig.block({.ppq = fast.ppq, .tempo = 174.0, .playing = false, .midi = {{0, on(0, 25)}, {0, on(0, 26)}}});
     rig.run({.frames = 2048, .ppq = fast.ppq}, 2);
-    rig.matches({251, 0, 0, 4, 15, 0, 0x0a10ec5906e1dd97ULL});  // the buttons: autoStart's START press and release
+    rig.matches({269, 0, 0, 4, 16, 0, 0xef0d11f87eff9493ULL});  // the buttons: autoStart's START press and release
     rig.finish();
 }
 

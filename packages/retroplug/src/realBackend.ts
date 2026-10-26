@@ -70,7 +70,7 @@ const specParams = (spec: ConstructSpec, id: number): Record<string, unknown> =>
   if (spec.sramBytes) p.sramBytes = spec.sramBytes;
   if (spec.stateBytes) p.stateBytes = spec.stateBytes;
   if (spec.settings != null) p.settings = spec.settings;
-  if (spec.serialOutCapture) p.serialOutCapture = true;
+  if (spec.serialOutCapture) p.serialOutCapture = spec.serialOutCapture;
   return p;
 };
 
@@ -111,7 +111,7 @@ export function createEmulatorClient(): EmulatorBackend {
     applySystemSetting: (id, key, value) =>
       call("applySystemSetting", id, key, typeof value === "boolean" ? (value ? 1 : 0) : value) as boolean,
     applyRoleConfig: (id, kind, config) => call("applyRoleConfig", id, kind, JSON.stringify(config)) as boolean,
-    setSerialOutCapture: (id, on) => call("setSerialOutCapture", id, on) as boolean,
+    setSerialOutCapture: (id, mode) => call("setSerialOutCapture", id, mode) as boolean,
     pressButton: (id, button, down) => call("pressButton", id, button, down) as boolean,
     stageSystemMidi: (id, bytes) => call("stageSystemMidi", id, bytes) as boolean,
     readState: (id) => bytesOrNull(call("readState", id)),

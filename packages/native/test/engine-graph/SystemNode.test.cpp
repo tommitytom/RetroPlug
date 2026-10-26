@@ -684,7 +684,7 @@ TEST_CASE("the Game Boy's serialOut carries what its core captured this block, e
     // it: the core clears it at its next prepareForBlock.
     NodeRig rig(kRate);
     auto core = mgb(1);
-    core->setSerialOutCapture(true);
+    core->setSerialOutCapture(SerialOutCapture::Drive);
     SameBoySystem* const gb = core.get();
     REQUIRE(rig.set(R"({"nodes":[{"id":"gb","type":"rp.sameboy.gb","settings":{"core":)" + std::to_string(rig.park(std::move(core))) +
                     R"(}},{"id":"probe","type":"rp.test.probe"},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
@@ -710,6 +710,29 @@ TEST_CASE("the Game Boy's serialOut carries what its core captured this block, e
         captured += log.size();
     }
     CHECK(captured > 0);
+}
+
+TEST_CASE("a Game Boy whose capture listens is never clocked: mGB, waiting on an external clock, sends nothing",
+          "[engine-graph][system-node][inputs]") {
+    // Listen captures only the bytes a Game Boy clocks out itself (master sync's LSDj). mGB holds its port in
+    // external-clock receive, which Drive clocks a bit an audio frame (the case above); listening, nothing clocks it.
+    NodeRig rig(kRate);
+    auto core = mgb(1);
+    core->setSerialOutCapture(SerialOutCapture::Listen);
+    SameBoySystem* const gb = core.get();
+    REQUIRE(rig.set(R"({"nodes":[{"id":"gb","type":"rp.sameboy.gb","settings":{"core":)" + std::to_string(rig.park(std::move(core))) +
+                    R"(}},{"id":"probe","type":"rp.test.probe"},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                        "wires":[{"from":"gb.mix","to":"out.out.1-2"},{"from":"gb.serialOut","to":"probe.bytes"}]})")
+                .ok);
+    Probe& probe = rig.node<Probe>("probe");
+    Lanes graph(2);
+    const rp_transport t{kRate, 120.0, 0.0, 0};
+    for (std::size_t b = 0; b < 160; ++b) {
+        rig.host->processBlock(kBlocks[b % kBlocks.size()], t, graph.ptrs.data(), 2);
+        INFO("block " << b);
+        CHECK(gb->serialOutLog_.empty());
+        CHECK(probe.bytes.empty());
+    }
 }
 
 TEST_CASE("a system node records what its bytes input feeds the core in the engine's sync trace", "[engine-graph][system-node][inputs]") {

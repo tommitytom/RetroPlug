@@ -124,19 +124,12 @@ every system node, the Game Boy's `serialOut`, `rp.n8.cart-mirror`), the kernel 
 node, `rp.dsp.kernel`, in the script host every Engine embeds, and the sealed native kernel node, its
 fan-out, the `dspSetSystems` / `dspLoadKernel` / `compileScript` RPCs and the boot-time kernel load are
 gone. Staging host MIDI allocates nothing within the room reserved at construction (one flat arena per
-staging). What is left, in order:
+staging). After it, LSDj master sync was fixed on its own
+([lsdj-master-sync-fix-design.md](../docs/lsdj-master-sync-fix-design.md)): a Game Boy's serial-out capture is
+a mode, `listen` for master sync and `drive` for MI.OUT, and the decoder sends a clock per byte and a stop after a
+200 ms silence timed on the bytes' frames, which fixed B0's sixth and eighth recorded defects and let a stopped LSDj
+start again. What is left, in order:
 
-- **The master-sync fix, before B3b.** The eighth item of design section 2.5 of
-  [modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md), the last of its five recorded
-  defects: LSDj master sync's decoder
-  ([lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts), `arduinoboyMasterSyncBlock`) calls a
-  block carrying more than `MASTER_SYNC_IDLE_FLOOD` (16) serial-out bytes a stopped LSDj's idle flood, so
-  what it decodes depends on the host block's length: in small blocks a stopped LSDj's flood reads as
-  clocks, and a fast tempo in long blocks could pass 16 and read as stopped. The fix needs a window across
-  blocks, trading spurious clocks at the stop edge against a few milliseconds of clock latency. It is its
-  own change and re-records exactly the cases it moves (`blocks-tiny-lsdj-master`'s six `masterSync-*`, and
-  possibly `lsdj-modes`' `masterSync-44100` and `masterSync-48000`, whose boot noise the same threshold
-  decides), and it lands before B3b ports the decoder into a protocol node.
 - **B3b.** One protocol node per role (`mgb.midi`, `lsdj.sync`, `risa.sync`, `sms.sync`,
   `n8.midi-to-fifo`, the MIDI routing, the Launchpad controller), each with its own ports;
   `kernelProjection`'s special cases (the synthesized `midi-routing` and Launchpad stages, the forced

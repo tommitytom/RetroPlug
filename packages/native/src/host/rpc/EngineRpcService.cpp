@@ -74,6 +74,16 @@ SystemBuildSpec toBuildSpec(const BackendConstructSpec& spec) {
     return out;
 }
 
+// A serial-out capture mode as TS names it on the wire (ConstructSpec.serialOutCapture, setSerialOutCapture): absent is
+// off, and an unknown name is no mode at all.
+std::optional<SerialOutCapture> serialOutCaptureMode(const std::optional<std::string>& name) {
+    if (!name) return SerialOutCapture::Off;
+    if (*name == "listen") return SerialOutCapture::Listen;
+    if (*name == "drive") return SerialOutCapture::Drive;
+    std::fprintf(stderr, "[engine] \"%s\" is not a serial-out capture mode\n", name->c_str());
+    return std::nullopt;
+}
+
 } // namespace
 
 EngineRpcService::EngineRpcService(Engine& engine, SystemFactory& factory, QueuedInvoker& invoker)
@@ -103,10 +113,11 @@ std::optional<RpcBuiltCore> EngineRpcService::buildCore(BackendConstructSpec spe
         std::fprintf(stderr, "[engine] buildCore: system %u is still live\n", static_cast<unsigned>(id));
         return std::nullopt;
     }
+    const std::optional<SerialOutCapture> capture = serialOutCaptureMode(spec.serialOutCapture);
+    if (!capture) return std::nullopt;
     auto sys = factory_.build(id, toBuildSpec(spec), engine_.sampleRate());
     if (!sys) return std::nullopt;  // unknown backend / unreadable or unrecognised ROM
-    if (spec.serialOutCapture.value_or(false))
-        if (auto* sb = dynamic_cast<SameBoySystem*>(sys.get())) sb->setSerialOutCapture(true);
+    if (auto* sb = dynamic_cast<SameBoySystem*>(sys.get())) sb->setSerialOutCapture(*capture);
     RpcBuiltCore facts{rp::host::systemNodeType(sys->kind()), 0, 0};
     if (auto* nes = dynamic_cast<MesenNesSystem*>(sys.get())) facts.exportMode = nes->channelExportMode();
     if (auto* sb = dynamic_cast<SameBoySystem*>(sys.get())) facts.linkGroup = sb->config_.linkGroupId;
@@ -460,10 +471,12 @@ bool EngineRpcService::stageControllerIn(std::vector<std::uint8_t> bytes) {
     return invoker_.stageControllerMidi(std::move(bytes));  // a pad press is 3 bytes; the ring carries 4 inline
 }
 
-bool EngineRpcService::setSerialOutCapture(std::uint32_t id, bool on) {
-    // Control-plane arm/disarm through the invoker's config path (SameBoy-only in Engine::applyConfigField;
-    // a no-op on a Mesen/GBA system). The store gates existence on its own list — accept optimistically.
-    invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::SerialOutCapture), on ? 1.0 : 0.0);
+bool EngineRpcService::setSerialOutCapture(std::uint32_t id, std::optional<std::string> mode) {
+    // Control-plane, through the invoker's config path (SameBoy-only in Engine::applyConfigField; a no-op on a
+    // Mesen/GBA system). The store gates existence on its own list, so a known mode is accepted optimistically.
+    const std::optional<SerialOutCapture> capture = serialOutCaptureMode(mode);
+    if (!capture) return false;
+    invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::SerialOutCapture), static_cast<double>(*capture));
     return true;
 }
 

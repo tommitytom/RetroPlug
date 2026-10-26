@@ -151,34 +151,42 @@ export function arduinoboyDecodeSerialOut(bytes: number[], state: ArduinoboyStat
 // transport bookends the firmware sends: a song-row NoteOn + 0xFA on the first byte of a run, 0xFC when
 // the stream goes idle (LSDj stopped).
 
-// The play↔stop discriminator is byte DENSITY, not presence. A PLAYING LSDj master clocks one byte per
-// MIDI tick — sparse, ~1-2 bytes/block even at fast tempos (24 PPQN → tens of clocks/sec). A STOPPED
-// master doesn't go silent: it floods a continuous link handshake (~100+ bytes/block, thousands/sec).
-// So a block with more than this many bytes is the idle flood (LSDj stopped), not tempo clocking — the
-// empirical resolution of the old "SYNC=LSDJ is a ~4500 bytes/sec stream" folklore (that was LSDj idle).
-const MASTER_SYNC_IDLE_FLOOD = 16;
+// LSDj's clock is the bytes it clocks out itself, which the core captures in its `listen` mode, never `drive`: a
+// stopped LSDj master waits on an external clock for another master, and clocked, it turns slave and ignores START
+// (docs/lsdj-master-sync-fix-design.md). So every byte is a clock, and a stopped LSDj goes quiet, which makes the
+// firmware's stop a silence. A playing master clocks one byte per 24-PPQN tick, 62.5 ms apart at LSDj's slowest tempo
+// (40 BPM), so a silence this long is a stop: about three times that gap. It is measured on the bytes' own frames, so
+// where the 0xFC lands does not depend on how the host cuts its blocks.
+const MASTER_SYNC_STOP_MS = 200;
 
-/** Cross-block Master Sync state (persisted in the role's `ctx.state`). */
+/** Cross-block Master Sync state (the lsdj-sync stage's `masterSync` sub-object, dropped whenever the mode is not
+ *  master sync, so coming back starts clean). */
 export interface MasterSyncState {
-  started?: boolean; // a run is in progress (0xFA sent; 0xFC pending on the play→stop transition)
+  started?: boolean; // a run is in progress (0xFA sent; 0xFC pending on the silence that ends it)
   channel?: number; // MIDI channel for the song-row NoteOn (default 0)
+  lastAt?: number; // the run's newest byte: frames from the current block's start (negative: an earlier block)
+  lastFrames?: number; // the last call's block length: where this call's bytes, from that block, sit
 }
 
-/** Decode one block's worth of Master Sync serial-out bytes into host MIDI. Call once per block with the
- *  system's `ctx.serialOut`: a sparse block is tempo clocking; a flooded block is LSDj's stopped-idle
- *  handshake (→ one 0xFC on the play→stop edge); an empty block is a between-tick gap (nothing to do). */
-export function arduinoboyMasterSyncBlock(bytes: number[], state: MasterSyncState, emit: MidiEmit): void {
+/** The block a Master Sync call runs in: its length and rate. */
+export interface MasterSyncBlock {
+  frames: number;
+  sampleRate: number;
+}
+
+/** Decode the Master Sync serial-out bytes that reached this block into host MIDI. Call once per block with the
+ *  system's `ctx.serialOut` and `ctx.serialOutFrames`, which are LAST block's bytes at their frames in it (the
+ *  feedback wire's one block), and this block's length and rate. Each byte is a tempo clock, the first of a run
+ *  opened with LSDj's song row; a run ends with one 0xFC once MASTER_SYNC_STOP_MS pass with no byte. */
+export function arduinoboyMasterSyncBlock(
+  bytes: number[],
+  frames: number[],
+  block: MasterSyncBlock,
+  state: MasterSyncState,
+  emit: MidiEmit,
+): void {
   const ch = state.channel ?? 0;
-
-  if (bytes.length > MASTER_SYNC_IDLE_FLOOD) {
-    // Idle flood → LSDj has stopped. Emit a single transport stop on the play→stop edge and drop the noise.
-    if (state.started) {
-      emit([0xfc]);
-      state.started = false;
-    }
-    return;
-  }
-
+  const from = state.lastFrames ?? block.frames; // the length of the block these bytes came from
   for (let i = 0; i < bytes.length; i++) {
     if (!state.started) {
       // First tick of a run: the byte value is LSDj's song row → NoteOn, then transport start, then this
@@ -188,5 +196,14 @@ export function arduinoboyMasterSyncBlock(bytes: number[], state: MasterSyncStat
       emit([0xfa]);
     }
     emit([0xf8]); // one MIDI clock per tempo byte
+    state.lastAt = frames[i] - from;
   }
+  // Every byte before this block's start is known: a run whose newest byte lies further back than the stop's
+  // silence has ended.
+  if (state.started && -(state.lastAt ?? 0) > Math.round((block.sampleRate * MASTER_SYNC_STOP_MS) / 1000)) {
+    emit([0xfc]);
+    state.started = false;
+  }
+  if (state.started) state.lastAt = (state.lastAt ?? 0) - block.frames;
+  state.lastFrames = block.frames;
 }

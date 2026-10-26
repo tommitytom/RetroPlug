@@ -323,14 +323,22 @@ test("an adopt outside a load places its core at once", () => {
   expect(since(be, 0)).toEqual([{ slots: [id], tap: {} }]);
 });
 
-test("a system in an LSDj MIDI-out mode is built capturing its serial out", () => {
+test("a system in an LSDj MIDI-out mode is built capturing its serial out: MI.OUT drives, master sync listens", () => {
   const { be, sys } = project();
-  const id = sys.addSystem("/roms/lsdj.gb")!;
-  expect(be.buildCalls[be.buildCalls.length - 1].serialOutCapture).toBe(undefined); // midiSync by default
+  let id = sys.addSystem("/roms/lsdj.gb")!;
+  const lastBuild = () => be.buildCalls[be.buildCalls.length - 1].serialOutCapture;
+  const lastLive = () => be.serialOutCaptureCalls[be.serialOutCaptureCalls.length - 1];
+  expect(lastBuild()).toBe(undefined); // midiSync by default
   sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MidiOut });
-  expect(be.serialOutCaptureCalls[be.serialOutCaptureCalls.length - 1]).toEqual({ id, on: true }); // live
-  sys.reset(id); // a rebuild: the new core is armed at the build
-  expect(be.buildCalls[be.buildCalls.length - 1].serialOutCapture).toBe(true);
+  expect(lastLive()).toEqual({ id, mode: "drive" }); // live
+  id = sys.reset(id)!; // a rebuild, under a new id: the new core is armed at the build
+  expect(lastBuild()).toBe("drive");
+  sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MasterSync });
+  expect(lastLive()).toEqual({ id, mode: "listen" });
+  id = sys.reset(id)!;
+  expect(lastBuild()).toBe("listen");
+  sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MidiSync });
+  expect(lastLive()).toEqual({ id, mode: null });
 });
 
 test("a systems store on its own publishes its systems at the stereo routing", () => {

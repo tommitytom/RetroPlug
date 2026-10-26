@@ -18,6 +18,14 @@
 struct GB_gameboy_s;
 using GB_gameboy_t_fwd = GB_gameboy_s;
 
+// What serial-out capture does (setSerialOutCapture). Listen: capture the bits the Game Boy clocks out itself, an
+// internal-clock transfer (SC=0x81), which is how LSDj as master sync's master sends its clock. Drive: that, and
+// clock a transfer waiting on an external clock (SC=0x80) one bit an audio frame, capturing its bits too: the
+// Arduinoboy's part in MI.OUT, where LSDj is the serial slave. Drive clocks whatever waits, so it is for MI.OUT only:
+// a stopped LSDj in SYNC=LSDj waits on an external clock for another master, and clocked, it takes the idle bytes
+// for that master's clock and stops answering START (docs/lsdj-master-sync-fix-design.md).
+enum class SerialOutCapture : std::uint8_t { Off = 0, Listen = 1, Drive = 2 };
+
 class SameBoySystem final : public SystemBase {
 public:
     // Construct from a config + ROM bytes. The ROM data is moved in (the
@@ -146,13 +154,15 @@ public:
     bool serialBitFromPeer() const;
     void serialBroadcastBit() const;
 
-    // True when serial-out capture is armed. The per-bit serial callback reads
-    // this to decide whether to accumulate LSDJ's outgoing bytes.
-    bool serialOutCaptureEnabled() const { return serialOutEnabled_; }
-    // Arm/disarm serial-out capture. The host drives the gate through this
-    // (e.g. when a system's TS lsdj-sync mode is MIDIOUT). Stays armed across a
-    // model-change restart (onActivate no longer clears it).
-    void setSerialOutCapture(bool on) { serialOutEnabled_ = on; }
+    // True when serial-out capture is armed, in either mode. The per-bit serial
+    // callback reads this to decide whether to accumulate LSDJ's outgoing bytes.
+    bool serialOutCaptureEnabled() const { return serialOutCapture_ != SerialOutCapture::Off; }
+    SerialOutCapture serialOutCapture() const { return serialOutCapture_; }
+    // Set serial-out capture's mode. The host drives it through this (the TS
+    // store picks it from a system's lsdj-sync mode: Drive for MI.OUT, Listen for
+    // master sync). Stays set across a model-change restart (onActivate no
+    // longer clears it).
+    void setSerialOutCapture(SerialOutCapture mode) { serialOutCapture_ = mode; }
     void captureSerialOutBit(bool bit);
 
     // TODO: Not a fan of the public vars
@@ -226,15 +236,13 @@ public:
     // host to drain (LSDJ MI.OUT → host MIDI).
     std::uint8_t serialOutByte_ = 0;
     int          serialOutBits_ = 0;
-    bool         serialOutEnabled_ = false; // armed via setSerialOutCapture()
+    SerialOutCapture serialOutCapture_ = SerialOutCapture::Off; // set via setSerialOutCapture()
 
-    // Diagnostic raw-byte log. Every completed serial-out byte while
-    // serialOutEnabled_ is also appended here keyed by the in-block
-    // sample offset at byte-completion time (approximated by
-    // audioFrameCount_). The CLI drains this per block into a per-system
-    // raw byte log so master-mode verification has ground truth even
-    // when the byte→MIDI decoder doesn't yet translate a given LSDJ
-    // output value. Cleared at block boundaries inside prepareForBlock.
+    // Every serial-out byte completed while capture is armed, keyed by the
+    // in-block sample offset at byte-completion time (audioFrameCount_, which
+    // can run past the block by the core's overshoot). The Game Boy node's
+    // serialOut port carries it each block (host/graph/SystemNodes.cpp).
+    // Cleared at block boundaries inside prepareForBlock.
     std::vector<std::pair<std::uint32_t, std::uint8_t>> serialOutLog_;
 
 private:

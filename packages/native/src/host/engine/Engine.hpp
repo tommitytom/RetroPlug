@@ -30,7 +30,7 @@ enum class ConfigField : std::uint8_t {
     Gain = 0, ReloadOnRomChange = 1,
     Model = 2, Highpass = 3, LinkGroup = 4, FastBoot = 5,     // SameBoy
     NesRegion = 6, NesRemoveSpriteLimit = 7,                  // Mesen (NES)
-    SerialOutCapture = 8,                                     // SameBoy (LSDj MI.OUT)
+    SerialOutCapture = 8,                                     // SameBoy (LSDj MI.OUT, master sync): a SerialOutCapture
     NesApuLatencyMs = 9,                                      // Mesen (NES) — APU flush window as latency (ms)
     // SameBoy display group — all live (they land on the next rendered frame), all routed through
     // SameBoySystem::applyDisplayConfig.

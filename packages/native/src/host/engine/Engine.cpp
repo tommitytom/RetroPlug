@@ -830,9 +830,13 @@ void Engine::applyConfigField(SystemBase* sys, std::uint8_t field, double value)
         case ConfigField::FastBoot:
             sb->setFastBoot(value != 0.0);  // deferred to the next restart
             break;
-        case ConfigField::SerialOutCapture:
-            sb->setSerialOutCapture(value != 0.0);  // live — arms LSDj MI.OUT serial-out capture
+        case ConfigField::SerialOutCapture: {
+            // Live: the capture mode (LSDj MI.OUT or master sync) as its SerialOutCapture value. Out of range is off.
+            const auto mode = static_cast<std::uint32_t>(value);
+            sb->setSerialOutCapture(mode <= static_cast<std::uint32_t>(SerialOutCapture::Drive) ? static_cast<SerialOutCapture>(mode)
+                                                                                              : SerialOutCapture::Off);
             break;
+        }
         // The display group. Each is value-guarded like the knobs above (the store re-sends the whole
         // role config on every edit, so an unguarded apply would re-push all five on every keystroke)
         // and then re-pushes the group, which is a handful of cheap core setters.

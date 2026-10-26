@@ -168,48 +168,100 @@ test("the kernel hands a system stage its own serial-out bytes, each byte's fram
   expect(seen).toEqual([{ bytes: [0x10, 0x11], frames: [3, 900] }, { bytes: [], frames: [] }]);
 });
 
-// --- Master Sync (mode 8, SYNC=LSDJ): each captured byte → one MIDI clock -------------------------
+// --- Master Sync (mode 8, SYNC=LSDJ): each byte a clock, a silence the stop ------------------------------------
 
-// Run per-block serial-out through a fresh master-sync decoder; each element is one block's bytes.
-function masterSync(blocks: number[][]): number[][] {
-  const out: number[][] = [];
+const RATE = 44100;
+/** MASTER_SYNC_STOP_MS (200 ms) at RATE. */
+const STOP_FRAMES = 8820;
+const START = [0xfa];
+const STOP = [0xfc];
+const CLOCK = [0xf8];
+const row = (r: number): number[] => [0x90, r, 0x7f];
+const clocksOf = (n: number): number[][] => Array.from({ length: n }, () => CLOCK);
+
+/** A byte timeline: [absolute frame, byte], ascending. */
+type Timeline = [number, number][];
+/** A playing LSDj's clock bytes at tempo 128, 860 frames apart at 44.1 kHz: `n` of `byte`, the first at `at`. */
+const clocks = (at: number, n: number, byte = 9): Timeline => Array.from({ length: n }, (_, i): [number, number] => [at + i * 860, byte]);
+
+/** `total` frames in blocks of `size` (the last one short). */
+const even = (size: number) => (total: number): number[] => {
+  const out: number[] = [];
+  for (let at = 0; at < total; at += size) out.push(Math.min(size, total - at));
+  return out;
+};
+/** `total` frames in blocks cycling through `sizes` (the last one short). */
+const cycle = (sizes: number[]) => (total: number): number[] => {
+  const out: number[] = [];
+  for (let at = 0, i = 0; at < total; i++) {
+    out.push(Math.min(sizes[i % sizes.length], total - at));
+    at += out[out.length - 1];
+  }
+  return out;
+};
+// The FL-style splits the parity matrix runs (test-native/parity/blocks-tiny.ts): ragged, and a 256-frame buffer
+// split at automation points.
+const FL_RAGGED = [33, 1, 222, 1, 7, 4096, 2];
+const FL_BUFFER = [256, 33, 1, 222, 255, 1, 1, 255, 7, 249];
+
+/** Decode `timeline` in the blocks `split` cuts `total` frames into, fed as the feedback wire feeds the decoder: a
+ *  block's bytes reach it with the next block, at their frames in the block that produced them. Each message with the
+ *  index of the block it went out in. */
+function masterSync(timeline: Timeline, split: (total: number) => number[], total: number, rate = RATE): { block: number; data: number[] }[] {
+  const out: { block: number; data: number[] }[] = [];
   const state: MasterSyncState = {};
-  for (const b of blocks) arduinoboyMasterSyncBlock(b, state, (d) => out.push(d));
+  let start = 0;
+  let next = 0;
+  let bytes: number[] = [];
+  let frames: number[] = [];
+  split(total).forEach((n, block) => {
+    arduinoboyMasterSyncBlock(bytes, frames, { frames: n, sampleRate: rate }, state, (data) => out.push({ block, data }));
+    bytes = [];
+    frames = [];
+    for (; next < timeline.length && timeline[next][0] < start + n; next++) {
+      frames.push(timeline[next][0] - start);
+      bytes.push(timeline[next][1]);
+    }
+    start += n;
+  });
   return out;
 }
+const sent = (out: { data: number[] }[]): number[][] => out.map((m) => m.data);
 
-test("MasterSync: first byte → NoteOn(row) + start then a clock; the rest of the block → clocks", () => {
-  expect(masterSync([[5, 5, 5]])).toEqual([[0x90, 5, 0x7f], [0xfa], [0xf8], [0xf8], [0xf8]]);
+test("MasterSync: every byte is a clock, and the first opens the run with the song-row NoteOn and 0xFA", () => {
+  expect(sent(masterSync(clocks(100, 3, 5), even(1024), 4096))).toEqual([row(5), START, CLOCK, CLOCK, CLOCK]);
 });
 
-test("MasterSync: clocks continue across blocks without re-announcing the start", () => {
-  // First byte announces the run; later blocks are clock-only (one 0xF8 per byte).
-  expect(masterSync([[9], [9], [9]])).toEqual([[0x90, 9, 0x7f], [0xfa], [0xf8], [0xf8], [0xf8]]);
+test("MasterSync: a silence longer than 200 ms closes the run with one 0xFC, a shorter one does not", () => {
+  // 8000 frames between the first two bytes, then 21900 before a third, then the end.
+  const out = sent(masterSync([[100, 9], [8100, 9], [30000, 7]], even(1024), 50000));
+  expect(out).toEqual([row(9), START, CLOCK, CLOCK, STOP, row(7), START, CLOCK, STOP]);
 });
 
-test("MasterSync: empty (between-tick) blocks emit nothing", () => {
-  expect(masterSync([[], [], []])).toEqual([]);
+test("MasterSync: before any byte, and while stopped, nothing is sent", () => {
+  expect(sent(masterSync([], even(1024), 20000))).toEqual([]);
+  expect(sent(masterSync([[100, 9]], even(1024), 40000))).toEqual([row(9), START, CLOCK, STOP]);
 });
 
-// A flooded block (> the idle threshold) is LSDj's stopped-idle link handshake, not tempo clocking.
-const flood = (): number[] => Array.from({ length: 40 }, (_, i) => i & 0x7f);
-
-test("MasterSync: a flooded block after a run → exactly one transport stop (0xFC), no clocks", () => {
-  const out = masterSync([[3], flood(), flood()]);
-  expect(out.slice(0, 3)).toEqual([[0x90, 3, 0x7f], [0xfa], [0xf8]]); // start bookend + first clock
-  expect(out.filter((m) => m[0] === 0xf8).length).toBe(1); // the flood emits NO clocks
-  expect(out.filter((m) => m[0] === 0xfc).length).toBe(1); // one stop, not one per flooded block
-  expect(out[out.length - 1]).toEqual([0xfc]);
+test("MasterSync: the 0xFC goes out in the first block that starts more than 200 ms after the last byte", () => {
+  const stopBlock = (out: { block: number; data: number[] }[]) => out.find((m) => m.data[0] === 0xfc)?.block;
+  // A byte at frame 100: the stop is due after frame 100 + STOP_FRAMES = 8920.
+  expect(stopBlock(masterSync([[100, 9]], even(1024), 20000))).toBe(Math.floor((100 + STOP_FRAMES) / 1024) + 1); // 9216
+  expect(stopBlock(masterSync([[100, 9]], even(1), 10000))).toBe(100 + STOP_FRAMES + 1);
 });
 
-test("MasterSync: a flood before any run emits nothing (idle at rest, never started)", () => {
-  expect(masterSync([flood(), flood()])).toEqual([]);
+test("MasterSync: the silence is time, so 10000 frames is a stop at 44.1 kHz and not at 96 kHz", () => {
+  const timeline: Timeline = [[100, 1], [10100, 1]];
+  expect(sent(masterSync(timeline, even(1024), 12000, 44100))).toEqual([row(1), START, CLOCK, STOP, row(1), START, CLOCK]);
+  expect(sent(masterSync(timeline, even(1024), 12000, 96000))).toEqual([row(1), START, CLOCK, CLOCK]);
 });
 
-test("MasterSync: after a flood stop, a new tempo byte restarts the run with a fresh NoteOn + start", () => {
-  const out = masterSync([[3], flood(), [7]]);
-  const fc = out.findIndex((m) => m[0] === 0xfc);
-  expect(out.slice(fc + 1)).toEqual([[0x90, 7, 0x7f], [0xfa], [0xf8]]);
+test("MasterSync: one timeline decodes to the same messages however the host cuts its blocks", () => {
+  // A run of 80 clocks, LSDj stopped for about a second, a run of 40, and LSDj stopped again.
+  const timeline: Timeline = [...clocks(5000, 80), ...clocks(120000, 40, 3)];
+  const expected = [row(9), START, ...clocksOf(80), STOP, row(3), START, ...clocksOf(40), STOP];
+  for (const split of [even(1), cycle(FL_RAGGED), cycle(FL_BUFFER), even(1024), even(8192)])
+    expect(sent(masterSync(timeline, split, 170000))).toEqual(expected);
 });
 
 test("lsdj-sync mode 8: kernel fans serialOut to the master-sync role → clock + start MIDI", () => {
@@ -221,6 +273,21 @@ test("lsdj-sync mode 8: kernel fans serialOut to the master-sync role → clock 
     systems: [{ id: 1, pipeline: [{ kind: "lsdj-sync", config: { mode: "masterSync" } }] }],
   });
   const out = k.processBlock({ ...baseDyn(), serialOut: [{ system: 1, frame: 0, byte: 5 }, { system: 1, frame: 900, byte: 6 }] });
-  expect(out.midiOut.map((m) => m.data)).toEqual([[0x90, 5, 0x7f], [0xfa], [0xf8], [0xf8]]);
-  expect(out.serialIn.length).toBe(0); // master sync is a pure decoder — no serial-in
+  expect(out.midiOut.map((m) => m.data)).toEqual([row(5), START, CLOCK, CLOCK]);
+  expect(out.serialIn.length).toBe(0); // master sync is a pure decoder: no serial-in
+});
+
+test("lsdj-sync: leaving master sync drops its state, so coming back opens a fresh run", () => {
+  const reg = new RoleRegistry();
+  registerDspRoles(reg);
+  const k = new DspKernel(reg);
+  const mode = (m: string) => k.setSystems({ systems: [{ id: 1, pipeline: [{ kind: "lsdj-sync", config: { mode: m } }] }] });
+  const run = (serialOut: BlockInput["serialOut"]) => k.processBlock({ ...baseDyn(), serialOut }).midiOut.map((m) => m.data);
+  mode("masterSync");
+  expect(run([{ system: 1, frame: 100, byte: 5 }])).toEqual([row(5), START, CLOCK]); // a run opens
+  mode("off");
+  run([]);
+  mode("masterSync");
+  // Kept, the stale open run would swallow this run's NoteOn and 0xFA.
+  expect(run([{ system: 1, frame: 0, byte: 7 }])).toEqual([row(7), START, CLOCK]);
 });

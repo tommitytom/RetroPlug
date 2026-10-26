@@ -1,7 +1,8 @@
 # Phase B3a: real ports and the script-node runtime
 
 **Date:** 2026-10-25 · **Branch:** `feature/modularize` · **Status:** built (5002c4b4 to 1ed9a283, then the branch
-review's cleanup, §8); B3b not yet built, and the LSDj master-sync fix comes before it (§10).
+review's cleanup, §8); the LSDj master-sync fix landed after it ([lsdj-master-sync-fix-design.md](lsdj-master-sync-fix-design.md),
+§10); B3b not yet built.
 
 Phase B of [modular-graph-design.md](modular-graph-design.md) moves the engine onto the graph in steps,
 each held bit for bit to the B0 parity baseline ([modular-graph-phase-b0-design.md](modular-graph-phase-b0-design.md)).
@@ -599,9 +600,9 @@ none. Its play and stop notes sit on a block's first frame, so a one-block delay
 22ae5cc4). LSDj master sync was recorded in the same splits, at 44.1 and 48 kHz, with its defect pinned (955299e2, B0's
 eighth): in small blocks its decoder reads a stopped LSDj's idle flood as clocks (§10). The pinned cases are
 `blocks-tiny-lsdj-master`'s `masterSync-44100-{1,fl,fl256}`, which play and stop, and `masterSync-48000-{1,fl,fl256}`,
-silent (B0's sixth defect), so their messages are the flood alone. The fix, right after B3a and before B3b, re-records
-these cases, and possibly `lsdj-modes`' `masterSync-44100` and `masterSync-48000`, whose boot noise the same threshold
-decides.
+silent (B0's sixth defect), so their messages are the flood alone. The fix, right after B3a and before B3b, re-recorded
+these cases and `lsdj-modes`' two: the flood was the core clocking a stopped LSDj, which also caused the sixth defect,
+so every master-sync case now plays and sends the same 85 messages ([lsdj-master-sync-fix-design.md](lsdj-master-sync-fix-design.md)).
 
 Segments are short, since 1-frame blocks multiply the block count. B3a is held to strict parity: every
 group, with the fixtures present and `RP_FAIL_ON_SKIP=1`, and every commit of B3a held it bit for bit.
@@ -745,7 +746,7 @@ needed.
 - The `apu-render` span starts where the last script node's `process` ended, which is right while every script node
   runs before the systems, as in B3a; a protocol node placed after a system would need it revisited.
 
-Before B3b starts, the LSDj master-sync fix lands on its own (§10).
+Before B3b started, the LSDj master-sync fix landed on its own (§10).
 
 ## 10. Found while building
 
@@ -777,10 +778,11 @@ Before B3b starts, the LSDj master-sync fix lands on its own (§10).
   bytes (`MASTER_SYNC_IDLE_FLOOD`) the stopped LSDj's idle flood. A stopped LSDj sends a few thousand bytes a second,
   so no block of fewer than about 150 frames at 44.1 kHz ever holds 16, and the handshake decodes as clocks: 10497
   MIDI messages in 1-frame blocks against 101 in 1024-frame ones; and at a fast tempo an 8192-frame block can pass 16
-  while LSDj plays and read as stopped. It is pinned as it is (§7.1). By the user's decision it is fixed right after
-  B3a, before B3b ports the decoder, as its own change re-recording exactly the cases it moves (`lsdj-modes`'
-  `masterSync-44100` and `masterSync-48000` may move too, since the same threshold decides their boot noise). The fix
-  needs a window across blocks, trading spurious clocks at the stop edge against a few milliseconds of clock latency.
+  while LSDj plays and read as stopped. It was pinned as it was (§7.1) and, by the user's decision, fixed right after
+  B3a, before B3b ports the decoder, as its own change ([lsdj-master-sync-fix-design.md](lsdj-master-sync-fix-design.md)).
+  Building that fix found the flood was not LSDj's: the core clocked a stopped LSDj master's wait for another
+  master, which turned it slave, flooded its port and kept it from starting again (and, at 48 kHz, from ever playing,
+  B0's sixth defect). Master sync now only listens, and its stop is a 200 ms silence timed on the bytes' frames.
 - **The NES path cannot see one block of delay at 1-frame blocks.** BlipToaster's output does not change when every
   event of the edge segment moves by one frame (a lone note-on moved by a frame changes it about once every 67 frames
   at 48 kHz), and in 1-frame blocks a frame is exactly one block of latency, so `blocks-tiny-nes`' `1` cases are blind

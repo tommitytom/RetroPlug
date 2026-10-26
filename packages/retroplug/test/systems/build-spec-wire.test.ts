@@ -37,20 +37,25 @@ const spec = (extra: Partial<ConstructSpec> = {}): ConstructSpec => ({
   ...extra,
 });
 
-test("buildCore carries serialOutCapture under that exact key", () => {
+test("buildCore carries serialOutCapture under that exact key, each mode as its name", () => {
   const { sent, client } = recording();
-  client.buildCore(spec({ serialOutCapture: true }), 7);
-  expect(sent.length).toBe(1);
-  expect(sent[0].method).toBe("buildCore");
-  const params = sent[0].params[0] as Record<string, unknown>;
-  expect(params.id).toBe(7);
-  expect(params.serialOutCapture).toBe(true);
+  client.buildCore(spec({ serialOutCapture: "drive" }), 7);
+  client.buildCore(spec({ serialOutCapture: "listen" }), 8);
+  expect(sent.map((r) => r.method)).toEqual(["buildCore", "buildCore"]);
+  const params = sent.map((r) => r.params[0] as Record<string, unknown>);
+  expect(params.map((p) => [p.id, p.serialOutCapture])).toEqual([[7, "drive"], [8, "listen"]]);
 });
 
-test("buildCore does not arm the capture for a spec without the flag", () => {
+test("buildCore does not arm the capture for a spec without the field", () => {
   const { sent, client } = recording();
   client.buildCore(spec(), 7);
-  client.buildCore(spec({ serialOutCapture: false }), 8);
-  expect(sent.length).toBe(2);
-  for (const r of sent) expect((r.params[0] as Record<string, unknown>).serialOutCapture ?? false).toBe(false);
+  expect(sent.length).toBe(1);
+  expect("serialOutCapture" in (sent[0].params[0] as Record<string, unknown>)).toBe(false);
+});
+
+test("setSerialOutCapture carries the mode, and null for off", () => {
+  const { sent, client } = recording();
+  client.setSerialOutCapture(3, "listen");
+  client.setSerialOutCapture(3, null);
+  expect(sent.map((r) => [r.method, ...r.params])).toEqual([["setSerialOutCapture", 3, "listen"], ["setSerialOutCapture", 3, null]]);
 });

@@ -317,7 +317,7 @@ order-dependent cases and an ignored stimulus. Three traps, all met building it:
 fixed state (`RETROPLUG_DETERMINISTIC=1`, which the runner sets for `parity/` only; the SMS VDP's random start
 scanline was the last source); mGB ignores MIDI for its first ~1.5 s, so a case sends nothing before
 `BOOT_MS`; and a second instance of one ROM path gets a fresh `-2.sav` battery slot, so two systems that each
-need a battery each need their own copy (`rig.rom(src, prefix)`). Five engine defects are pinned on purpose (design section 2.5 of [docs/modular-graph-phase-b0-design.md](docs/modular-graph-phase-b0-design.md)); fixing one is its own change with a re-record, and the next due is LSDj master sync reading a stopped LSDj as clocks in small blocks, to be fixed right after B3a and before B3b. The fixture groups need
+need a battery each need their own copy (`rig.rom(src, prefix)`). Three engine defects are pinned on purpose (design section 2.5 of [docs/modular-graph-phase-b0-design.md](docs/modular-graph-phase-b0-design.md)); fixing one is its own change with a re-record, as the LSDj master-sync fix was ([docs/lsdj-master-sync-fix-design.md](docs/lsdj-master-sync-fix-design.md)). The fixture groups need
 `RETROPLUG_RESOURCES_DIR` pointed at the sibling resources tree, and CI runs only the 152 fixture-free cases
 (every LSDj case, its MIDI-out and link-cable ones among them, and every controller-in, risa and GBA case is
 fixture-only), so a Phase B step is accepted only on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`.

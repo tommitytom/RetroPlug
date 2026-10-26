@@ -186,14 +186,14 @@ The suite is 30 files: a file per group, and four with no baseline of their own 
   passes) gives the files to compare against. An
   intentional audio change re-records the groups it moves in the same commit, and that diff is the record
   of what moved.
-- **Recorded defects.** The baseline pins five engine defects on purpose; fixing each is its own change
+- **Recorded defects.** The baseline pins three engine defects on purpose; fixing each is its own change
   with a deliberate re-record: Arduinoboy MIDI sync plays only in some host block partitions (at divisor
   1 silent at 128 to 768 frames, in 1-frame blocks and in `fl256`, playing in `fl`, most of whose blocks
   carry almost no clock tick; at divisor 4 silent at 1024 too); a single NES under a split routing on a host narrower than the split arms the capture tap and drifts (~25 frames per block at 48 kHz / 512, about 49 ms per
-  second); LSDj master sync is broken at 48 kHz and above while serial-out capture is armed; MI.OUT's
-  decoded notes depend on the host sample rate; in small host blocks master sync decodes a stopped LSDj's
-  idle flood as clocks. Details in design section 2.5
-  ([modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md)).
+  second); MI.OUT's decoded notes depend on the host sample rate. Details in design section 2.5
+  ([modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md)). Two more were pinned and
+  fixed together: LSDj master sync silent at 48 kHz, and its decoder reading a stopped LSDj as clocks in small
+  blocks ([lsdj-master-sync-fix-design.md](../docs/lsdj-master-sync-fix-design.md)).
 - LSDj, risa, nanoloop and the controller cases need the sibling fixtures (`RETROPLUG_RESOURCES_DIR`), so
   those groups skip in CI, counted in the skip baseline. CI therefore runs only the 152 fixture-free cases
   (every MIDI-out, controller-in, LSDj, risa and GBA case is fixture-only, LSDj's link-cable cases among

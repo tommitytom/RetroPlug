@@ -179,36 +179,34 @@ always passes 8 outputs and cannot hit it; the SDL standalone (2 channels by def
 can. The baseline pins `nes-channelSplit-o2/o4`, `nes-pinSplit-o2` and `nes-stereoPinSplit-o2/o4` as they
 are; fixing it is its own change with a re-record.
 
-A sixth defect is recorded as it is, not fixed (§1): **LSDj master sync is broken at 48 kHz and above while
-serial-out capture is armed.** The RATE is the cause: 48 kHz at 1024 frames is also broken, and 44.1 kHz at 512
-plays. Measured at 48 kHz in 512-frame blocks: all 17 captured MIDI messages fall inside the boot segment
-(boot noise) and nothing follows START, and the render is silent, while mode `off` plays at 48 kHz. The
-cases use 1024 frames at 44.1 kHz for a separate reason: at 512 the boot-time bytes stay under the decoder's
-16-bytes-per-block flood threshold and open a run that never closes before START, so the real run gets no
-NoteOn / 0xFA. At 44.1 kHz in 1024-frame blocks it works as `test-native/lsdj-mastersync.test.ts` expects:
-start, about 51 clocks/s (77 messages in the 1.5 s after the first START) and audio. The baseline records
-`masterSync-44100` (audible) and `masterSync-48000` (silent); fixing it is its own change with a re-record.
+A sixth defect was recorded as it was (§1), and has since been fixed: **LSDj master sync was broken at 48 kHz and
+above while serial-out capture was armed.** Measured at 48 kHz in 512-frame blocks: all 17 captured MIDI messages
+fell inside the boot segment and nothing followed START, and the render was silent, while mode `off` played at 48
+kHz; 44.1 kHz in 1024-frame blocks worked. The cause, found while fixing the eighth defect
+([lsdj-master-sync-fix-design.md](lsdj-master-sync-fix-design.md)): with capture armed, the core clocked any transfer
+waiting on an external clock, one bit per audio frame, which MI.OUT needs and master sync does not. A stopped LSDj
+master waits on one for another master, so, clocked, it turned slave: it flooded its port with the bits we clocked
+(the eighth defect's "idle flood") and ignored START, from boot at 48 kHz and from the first stop at 44.1 kHz.
+Master sync now only listens (capture's `listen` mode, MI.OUT keeping `drive`), and `masterSync-48000` plays,
+re-recorded with the eighth defect's fix.
 
 A seventh defect is recorded as it is, not fixed (§1): **MI.OUT decoding depends on the host sample rate.**
 Measured: the decoded NoteOns are 0x52-0x6D plus program changes the song never sends at 48 kHz, and
 0x69-0x6D at 44.1 kHz; neither matches the song's N values (48-72), so the capture is partly an artefact.
-The `midiOut` case pins what is captured today (at 48 kHz); fixing it is its own change with a re-record.
+The `midiOut` case pins what is captured today (at 48 kHz); fixing it is its own change with a re-record. A
+likely cause, unconfirmed: MI.OUT's capture clocks LSDj one bit per audio frame, so its bit rate is the host's
+sample rate ([lsdj-master-sync-fix-design.md](lsdj-master-sync-fix-design.md) section 2).
 
-An eighth defect is recorded as it is, not fixed (§1): **in small host blocks LSDj master sync decodes a
-stopped LSDj as clocks.** The decoder (`arduinoboyMasterSyncBlock`, `lsdjArduinoboy.ts`) calls a block that
-carries more than 16 serial-out bytes (`MASTER_SYNC_IDLE_FLOOD`) the stopped LSDj's idle flood, which it drops,
-with one 0xFC on the play-to-stop edge. A stopped LSDj sends about 5000 bytes a second, so whether a block
-passes 16 depends on the block's length, not on LSDj. No 1-frame block does: every byte of the flood is decoded
-as a clock, before the first START and after the stop, no 0xFC is ever sent, and the run the boot's bytes open
-never closes, so START gets no NoteOn / 0xFA. In the FL-style splits (`blocks-tiny.ts`) the flood's blocks fall
-on both sides of the threshold, so a stopped LSDj opens and closes a run (NoteOn, 0xFA, clocks, 0xFC) every few
-blocks. Measured on `lsdj-modes`' master-sync scene at 44.1 kHz: 10497 MIDI messages in 1-frame blocks, 316 in
-`fl` and 894 in `fl256`, against 101 in 1024-frame blocks (`masterSync-44100`). The same threshold decides the
-boot noise the sixth defect's two cases record (and is why `masterSync-44100` uses 1024-frame blocks), so a fix
-may move them too.
-The baseline pins `blocks-tiny-lsdj-master`'s `masterSync-44100-{1,fl,fl256}` (audible) and
-`masterSync-48000-{1,fl,fl256}` (silent, the sixth defect, so their 42861, 1000 and 3373 messages are the flood
-alone); fixing it is its own change with a re-record.
+An eighth defect was recorded as it was (§1), and has since been fixed: **in small host blocks LSDj master sync
+decoded a stopped LSDj as clocks.** The decoder (`arduinoboyMasterSyncBlock`, `lsdjArduinoboy.ts`) took a block
+carrying more than 16 serial-out bytes (`MASTER_SYNC_IDLE_FLOOD`) for a stopped LSDj's idle flood, dropped it, and
+sent one 0xFC, so what it decoded depended on the block's length, not on LSDj: on `lsdj-modes`' master-sync scene at
+44.1 kHz, 10497 MIDI messages in 1-frame blocks, 316 in `fl` and 894 in `fl256`, against 101 in 1024-frame blocks
+(`masterSync-44100`). The flood was the sixth defect's clocking, so the fix
+([lsdj-master-sync-fix-design.md](lsdj-master-sync-fix-design.md)) removed it at its source and gave the decoder the
+firmware's stop, a 200 ms silence timed on the bytes' own frames. Every master-sync case, `blocks-tiny-lsdj-master`'s
+six and `lsdj-modes`' two, now sends the same 85 messages at both rates and in every split: the song-row NoteOn,
+0xFA, 82 clocks and one 0xFC.
 
 ## 3. The case matrix
 
@@ -229,7 +227,7 @@ suite is 23 test files with `determinism`, `render-blocks` and `comparator`); th
 | `edits-live`, `edits-structure` | gain through a held note, live role knobs; reset, duplicate, add, remove, replace mid-run, a split losing and regaining its single system, a pin split left | edit timing, per-frame gain smoothing, the tap restore; fix 2 is covered by its unit test in `test/systems/bliptoaster-assets.test.ts`, not by this case (duplicate-mid-run duplicates an mGB, which has no construct hooks) |
 | `sync-sms` | smsggdj SYNC IN24 on SMS and GG: start, bpm change, stop, locate, a short block at a loop wrap whose end is off the 24-PPQN tick grid (so its locate shows); at 48 kHz / 512 and at 44.1 kHz / 8192-frame blocks | transport-driven sync |
 | `lsdj-sync` *(fixture)* | SYNC=MIDI at divisors 1/2/4/8 and with autoStart; Arduinoboy at 1024 (divisors 1 and 4) and 512, ending with a transport stop | lsdj-sync's clock modes; the Arduinoboy defect |
-| `lsdj-modes` *(fixture)* | off, keyboard (inert: the role emits nothing), midiMap (clocked by the transport), keyboardMidi, midiPassthrough (raw clocks into a dense SYNC=MIDI song), midiOut (play / stop / play; the sample-rate defect), masterSync at 44.1 kHz (works) and 48 kHz (the defect) | every other lsdj-sync mode; MI.OUT and master clock as MIDI out |
+| `lsdj-modes` *(fixture)* | off, keyboard (inert: the role emits nothing), midiMap (clocked by the transport), keyboardMidi, midiPassthrough (raw clocks into a dense SYNC=MIDI song), midiOut (play / stop / play; the sample-rate defect), masterSync at 44.1 and 48 kHz (the 48 kHz one pinned the sixth defect until the master-sync fix) | every other lsdj-sync mode; MI.OUT and master clock as MIDI out |
 | `lsdj-link` *(fixture)* | leader and follower on one cable, in blocks of 512 and of every other size `blocks-*` uses (64, 199, 1024, 8192 and the cycle) | link-cable sync; lockstep stepping across partitions (the follower's lanes differ in each) |
 | `risa` *(fixture)* | the transport script, also under PinSplit | risa-sync |
 | `gba` *(fixture)* | nanoloop booting under Stereo, and under TwoPerInstance with START pressed (silent until played) | the GBA core at all |

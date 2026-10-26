@@ -283,7 +283,7 @@ void SameBoySystem::onActivate(double sampleRate) {
 
     // Reset the serial shift-register state so a re-activation (e.g. a
     // model-change restart, which routes through onDeactivate→onActivate)
-    // doesn't carry over half-shifted bytes. Serial-out capture is armed
+    // doesn't carry over half-shifted bytes. Serial-out capture's mode is set
     // separately by the host via setSerialOutCapture.
     serialIn_.clear();
     serialBitsRemaining_ = 0;
@@ -618,7 +618,9 @@ void SameBoySystem::writeAudioSample(int16_t left, int16_t right) {
     // the OUT bit must be sampled full-duplex as the GB shifts it during GB_run, which only the
     // per-sample hook sees. Serial IN (mGB / LSDJ KEYBD scancodes) is delivered separately, per byte,
     // by the slave pump in stepIfBelowTarget. Bypassed when a link peer exists (the cable owns that).
-    if (linkPeers_.empty() && serialOutEnabled_ && gb_) {
+    // Drive only: master sync listens, since clocking a stopped LSDj master's wait for another master
+    // makes it a slave that ignores START (SerialOutCapture).
+    if (linkPeers_.empty() && serialOutCapture_ == SerialOutCapture::Drive && gb_) {
         const auto sc = gb_->io_registers[GB_IO_SC];
         if ((sc & 0x81) == 0x80) {
             const bool outBit = (gb_->io_registers[GB_IO_SB] & 0x80) != 0;

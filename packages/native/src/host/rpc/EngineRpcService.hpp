@@ -85,9 +85,10 @@ public:
     // The control-surface twin: staged as `controllerIn` rather than musical MIDI, so a headless test
     // can drive a Launchpad app without a Launchpad. Harness-facet only, like stageMidiIn.
     bool            stageControllerIn(std::vector<std::uint8_t> bytes);
-    // Arm/disarm a SameBoy's serial-out capture (LSDj MI.OUT). Control-plane, via the invoker's config
-    // path (ConfigField::SerialOutCapture) — the TS store calls it when a system's lsdj-sync mode is MIDIOUT.
-    bool            setSerialOutCapture(std::uint32_t id, bool on);
+    // Set a SameBoy's serial-out capture: "drive" (LSDj MI.OUT), "listen" (master sync), or absent for off;
+    // false for any other string. Control-plane, via the invoker's config path (ConfigField::SerialOutCapture):
+    // the TS store calls it when a system's lsdj-sync mode changes.
+    bool            setSerialOutCapture(std::uint32_t id, std::optional<std::string> mode);
     // Drain the MIDI-out the kernel emitted (LSDj MI.OUT decoder), accumulated across renderAudio blocks
     // since the last drain. For headless tests; the plugin drains Engine::midiOut() to the DAW directly.
     std::vector<RpcMidiOut> drainMidiOut();

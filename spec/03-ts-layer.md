@@ -76,7 +76,7 @@ suffix, never looks for a sibling, never classifies.*
 | `romPath` / `embeddedRom` | The ROM file to slurp, or a binary-baked marker (e.g. `"mgb"`) with `romPath = ""` |
 | `platform` / `core` | What the ROM targets + which factory builds it — TS classifies via [`platform.ts`](../packages/retroplug/src/platform.ts) |
 | `savPath` / `statePath` | The exact battery file (load-from + auto-save-to) and savestate to boot from, or `null` |
-| `serialOutCapture?` | Arm a Game Boy's LSDj MI.OUT capture before the core first runs |
+| `serialOutCapture?` | Arm a Game Boy's serial-out capture before the core first runs: `"drive"` (LSDj MI.OUT) or `"listen"` (master sync) |
 | `sramBytes?` / `stateBytes?` | Seed bytes (zip-import blob, carried battery, role-synthesized sav) that override what native reads from disk; `savPath` stays the auto-save target |
 | `settings?` | The system-role config as JSON, applied **at construct** so a restored savestate isn't nuked by a post-build restart |
 
@@ -124,8 +124,8 @@ roles }`, plus the derived `battery` and `built` facts, never serialized); the p
   per-system `setGain` / `setReloadOnRomChange` (→ `applySystemSetting`) and `setRoleConfig`
   ([systemsStore.ts:536](../packages/retroplug/src/systemsStore.ts#L536)), where
   **only a `"system"`-category role's config crosses to the live core** (`applyRoleConfig`);
-  a feature-role's config stays pure TS, but for `lsdj-sync`, whose mode arms or disarms the Game Boy's
-  serial-out capture (`setSerialOutCapture`).
+  a feature-role's config stays pure TS, but for `lsdj-sync`, whose mode sets the Game Boy's serial-out
+  capture (`setSerialOutCapture`: `"drive"` for MI.OUT, `"listen"` for master sync, null otherwise).
 - **`duplicateSystem`** ([systemsStore.ts:298](../packages/retroplug/src/systemsStore.ts#L298))
   is TS orchestration with **no native duplicate method**: it pulls `readState(id)` (state
   includes SRAM), then `buildCore` seeded with those `stateBytes` under a fresh

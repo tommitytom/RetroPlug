@@ -71,7 +71,7 @@ test("MIDIOUT (mode 7): a real LSDj in SYNC=MI.OUT emits Arduinoboy MIDI the ker
   expect(graph.setPipeline(id, lsdjSync(MIDIOUT))).toBeTruthy();
 
   // Arm serial-out capture (what the store does when a system's lsdj-sync mode is MIDIOUT).
-  expect(be.setSerialOutCapture(id, true)).toBeTruthy();
+  expect(be.setSerialOutCapture(id, "drive")).toBeTruthy();
 
   audio.renderAudio(6000); // reach the song screen
   audio.drainMidiOut(); // discard any boot-time noise

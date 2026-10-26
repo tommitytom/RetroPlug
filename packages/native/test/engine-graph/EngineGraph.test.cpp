@@ -335,9 +335,10 @@ TEST_CASE("buildCore and setGraph over the RPC layer", "[engine-graph][b2]") {
 }
 
 TEST_CASE("a build spec's serialOutCapture crosses the wire under the name TS sends", "[engine-graph][b2]") {
-    // A loaded LSDj in a MIDI-out mode captures serial out only through this flag, and reflect-cpp skips a
+    // A loaded LSDj in a MIDI-out mode captures serial out only through this field, and reflect-cpp skips a
     // field it does not know, so a name that drifted between realBackend.ts's specParams and
-    // BackendConstructSpec would drop it with nothing failing. The spec is decoded as every host decodes it: a
+    // BackendConstructSpec would drop it with nothing failing. Each mode arrives as itself, and a name that is no
+    // mode refuses the build rather than building a core that captures nothing. The spec is decoded as every host decodes it: a
     // live JS object, through rpcpp's QuickJS codec, into the registered buildCore.
     struct Js {
         JSRuntime* rt  = JS_NewRuntime();
@@ -373,15 +374,44 @@ TEST_CASE("a build spec's serialOutCapture crosses the wire under the name TS se
         JS_FreeValue(js.ctx, answer);
         return built;
     };
-    REQUIRE(buildCore(1, ", serialOutCapture: true"));
-    REQUIRE(buildCore(2, ""));
-    REQUIRE(e.setGraph(request({{1, kGb}, {2, kGb}})).ok);
-    const auto* armed = dynamic_cast<const SameBoySystem*>(e.findSystem(1));
-    const auto* bare = dynamic_cast<const SameBoySystem*>(e.findSystem(2));
-    REQUIRE(armed != nullptr);
-    REQUIRE(bare != nullptr);
-    CHECK(armed->serialOutCaptureEnabled());
-    CHECK_FALSE(bare->serialOutCaptureEnabled());
+    REQUIRE(buildCore(1, ", serialOutCapture: 'drive'"));
+    REQUIRE(buildCore(2, ", serialOutCapture: 'listen'"));
+    REQUIRE(buildCore(3, ""));
+    CHECK_FALSE(buildCore(4, ", serialOutCapture: 'loud'"));
+    REQUIRE(e.setGraph(request({{1, kGb}, {2, kGb}, {3, kGb}})).ok);
+    const auto mode = [&](SystemId id) {
+        const auto* sb = dynamic_cast<const SameBoySystem*>(e.findSystem(id));
+        REQUIRE(sb != nullptr);
+        return sb->serialOutCapture();
+    };
+    CHECK(mode(1) == SerialOutCapture::Drive);
+    CHECK(mode(2) == SerialOutCapture::Listen);
+    CHECK(mode(3) == SerialOutCapture::Off);
+    CHECK_FALSE(e.coreLive(4));
+
+    // The live call takes the same names, and null for off; a name that is no mode is refused and changes nothing.
+    const auto setCapture = [&](SystemId id, const std::string& name) {
+        const std::string src = "({jsonrpc: '2.0', id: 2, method: 'setSerialOutCapture', params: [" + std::to_string(id) + ", " +
+                                name + "]})";
+        JSValue message = JS_Eval(js.ctx, src.c_str(), src.size(), "<setSerialOutCapture>", JS_EVAL_TYPE_GLOBAL);
+        std::optional<rpcpp::QuickJSOut> reply;
+        if (!JS_IsException(message)) reply = server.processMessage(message);
+        JS_FreeValue(js.ctx, message);
+        if (!reply) return false;
+        JSValue answer = reply->materialize(js.ctx);
+        JSValue result = JS_GetPropertyStr(js.ctx, answer, "result");
+        const bool accepted = JS_IsBool(result) && JS_ToBool(js.ctx, result);
+        JS_FreeValue(js.ctx, result);
+        JS_FreeValue(js.ctx, answer);
+        invoker.drainInto(e);
+        return accepted;
+    };
+    CHECK(setCapture(3, "'listen'"));
+    CHECK(mode(3) == SerialOutCapture::Listen);
+    CHECK_FALSE(setCapture(3, "'loud'"));
+    CHECK(mode(3) == SerialOutCapture::Listen);
+    CHECK(setCapture(1, "null"));
+    CHECK(mode(1) == SerialOutCapture::Off);
 }
 
 TEST_CASE("a render into buffers the planned graph does not write is refused", "[engine-graph][b2]") {

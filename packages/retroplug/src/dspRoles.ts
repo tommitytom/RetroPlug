@@ -184,18 +184,24 @@ const arduinoboyMaster: SystemBehavior = (c) => {
 };
 
 // Master Sync (mode 8, == Arduinoboy firmware Mode 2, SYNC=LSDJ): LSDj self-clocks as the serial master
-// and streams one byte per MIDI-clock tick out its link port; we turn each captured byte into a 0xF8
-// clock (+ a song-row NoteOn/0xFA at run start, 0xFC on idle), so the host follows LSDj's tempo. Unlike
-// mode 7 this runs EVERY block — an empty serial-out block is how the idle stop is detected.
+// and streams one byte per MIDI-clock tick out its link port, which the core captures by listening (never
+// driving its clock); we turn each byte into a 0xF8 clock (+ a song-row NoteOn/0xFA at run start) and a
+// 200 ms silence into one 0xFC, so the host follows LSDj's tempo. Unlike mode 7 this runs EVERY block: a
+// block with no bytes is how the silence passes. Its state is a sub-object the dispatcher drops whenever
+// the mode is not master sync.
 const masterSync: SystemBehavior = (c) => {
-  const st = c.state as MasterSyncState;
-  arduinoboyMasterSyncBlock(c.serialOut, st, (data) => c.emitMidiOut(0, data));
+  const st = c.state as { masterSync?: MasterSyncState };
+  arduinoboyMasterSyncBlock(c.serialOut, c.serialOutFrames, c.block, (st.masterSync ??= {}), (data) => c.emitMidiOut(0, data));
 };
 
 // lsdj-sync: dispatch on the configured mode (LsdjSyncMode). Off(0)/Keyboard(4) emit nothing here — 4
 // needs the host `keys` feed (a later phase). MidiSync's 0xF8 stream carries no 0xFA; the START-arm that
 // begins LSDj is a user action, not part of the clock (only Arduinoboy mode bookends with 0xFA/0xFC).
 const lsdjSync: SystemBehavior = (c) => {
+  // A stage's state survives a config change, so master sync's would go stale while another mode runs: dropped
+  // here, coming back starts clean rather than from a stale run or a stale last byte.
+  const held = c.state as { masterSync?: MasterSyncState };
+  if (held.masterSync !== undefined && c.config.mode !== LsdjSyncMode.MasterSync) held.masterSync = undefined;
   switch (c.config.mode as LsdjSyncMode) {
     case LsdjSyncMode.MidiSync: { // MidiSync
       // Optional auto-arm (autoStart): SYNC=MIDI LSDj only follows the clock once START has parked it in

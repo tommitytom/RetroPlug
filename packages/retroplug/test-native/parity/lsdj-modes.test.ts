@@ -49,13 +49,11 @@ const cases: ParityCase[] = [
     ...tap(),
     play(2000),
   ]),
-  // LSDj as the clock master, captured as MIDI out: start, clocks, the idle-flood stop. The RATE is the cause of
-  // the 48 kHz defect (the sixth in design section 2.5 of modular-graph-phase-b0-design.md: 48 kHz at 1024 frames
-  // is also broken; 44.1 kHz at 512 plays). 1024 frames is chosen separately: at 512 the boot-time bytes stay
-  // under the decoder's 16-bytes-per-block flood threshold and open a run that never closes before START, so
-  // the real run gets no NoteOn / 0xFA. At 44.1 kHz in 1024 it works (about 51 clocks/s, and it plays). That
-  // threshold is the eighth defect there; fixing it may move this case and masterSync-48000 (blocks-tiny-lsdj-master
-  // pins it in small blocks).
+  // LSDj as the clock master, captured as MIDI out: start, clocks (about 51 a second), and the stop a 200 ms
+  // silence sends. The core only listens to the bytes LSDj clocks out itself (docs/lsdj-master-sync-fix-design.md);
+  // until it did, it clocked a stopped LSDj into a slave, which kept this mode from playing at 48 kHz (the sixth
+  // defect in design section 2.5 of modular-graph-phase-b0-design.md), and its decoder counted bytes per block (the
+  // eighth). The two cases keep the block sizes they were recorded with: 1024 frames here, 512 at 48 kHz.
   lsdjCase(
     "masterSync-44100",
     ROMS.lsdj,
@@ -66,10 +64,7 @@ const cases: ParityCase[] = [
     44100,
     by1024,
   ),
-  // KNOWN DEFECT, recorded as it is (design section 2.5): at 48 kHz and above, with serial-out capture armed,
-  // master sync is broken: the only MIDI out is boot noise and nothing follows START, and it is silent
-  // (mode off plays at 48 kHz).
-  lsdjCase("masterSync-48000", ROMS.lsdj, (rig) => lsdj(rig, ROMS.lsdj, songSav("Lsdj"), { mode: "masterSync" }), [...tap(), play(1500), ...tap(), play(1200)], 2, []),
+  lsdjCase("masterSync-48000", ROMS.lsdj, (rig) => lsdj(rig, ROMS.lsdj, songSav("Lsdj"), { mode: "masterSync" }), [...tap(), play(1500), ...tap(), play(1200)]),
 ];
 
 runGroup("lsdj-modes", cases);
