@@ -1,8 +1,9 @@
-// The DSP kernel as a script node (docs/modular-graph-phase-b3a-design.md section 4): today's DspKernel, with a
-// registry of the DSP roles alone (no core roles, no ROM providers), behind defineNode. Its settings are the kernel's structure plus one fact per system, whether it has a serialOut (a Game
-// Boy); its ports follow from them and are named by system id, so a structure change is a reshape: the instance is
-// kept, a surviving system's wires stay bound to its ports, and setSystems keeps today's rules (each surviving id's
-// clock and role scratch, every project stage's state; a removed id pruned).
+// The DSP kernel as a script node (docs/modular-graph-phase-b3a-design.md section 4): the DspKernel (src/dspKernel.ts),
+// with a registry of the DSP roles alone (no core roles, no ROM providers), behind defineNode. Its settings are the
+// kernel's structure plus one fact per system, whether it has a serialOut (a Game Boy); its ports follow from them and
+// are named by system id, so a structure change is a reshape: the instance is kept, a surviving system's wires stay
+// bound to its ports, and setSystems keeps its rules (each surviving id's clock and role scratch, every project
+// stage's state; a removed id pruned).
 //
 // Each block builds the BlockInput the native kernel stage built before it (packages/native, deleted after the flip),
 // field for field and afresh, and the kernel's sink calls go onto the output ports in emission order: each straight,
@@ -21,9 +22,9 @@ export const KERNEL_NODE_TYPE = "rp.dsp.kernel";
 /** RP_MESSAGE_FLUSH (graph/rp_node.h): a bytes message the device takes only after dropping what it still holds. */
 const FLUSH = 1;
 
-// What each output carries in one block, at most (design section 2.6): today's sink vectors are unbounded, and a
-// queue drops what does not fit. The two that pass host MIDI on, serial in (mGB, lsdj-sync's passthrough) and core
-// MIDI (nes-n8-midi), each hold at least what rp.host.midi-in's output holds (kHostMidiInMessages and
+// What each output carries in one block, at most (design section 2.6): the kernel stage's sink vectors were unbounded,
+// and a queue drops what does not fit. The two that pass host MIDI on, serial in (mGB, lsdj-sync's passthrough) and
+// core MIDI (nes-n8-midi), each hold at least what rp.host.midi-in's output holds (kHostMidiInMessages and
 // kHostMidiInBytes, host/graph/HostIoNodes.hpp), so the one place host MIDI is dropped is that edge. Core MIDI takes a
 // message for each forwarded one; serial in a run of same-frame bytes to a message, so at most one for each forwarded
 // message, plus the sync roles' own bytes. Both have room for 4096 messages and 64 KiB: twice rp.host.midi-in's
@@ -106,8 +107,8 @@ const traced = typeof spanBegin === "function" && typeof traceArmed === "functio
 const registry = new RoleRegistry();
 registerDspRoles(registry);
 
-// An events or bytes input as today's marshalling hands it to the kernel: fresh {frame, data} objects, `data` a plain
-// array of numbers (a role may keep a reference across blocks, and may rely on what an array is).
+// An events or bytes input as the kernel stage's marshalling handed it to the kernel: fresh {frame, data} objects,
+// `data` a plain array of numbers (a role may keep a reference across blocks, and may rely on what an array is).
 function midiEvents(messages: readonly Message[]): MidiEvent[] {
   const out: MidiEvent[] = [];
   for (let i = 0; i < messages.length; i++) {
@@ -121,7 +122,7 @@ function midiEvents(messages: readonly Message[]): MidiEvent[] {
 
 // The block's input, built as the native kernel stage built it: the transport, controllerConnected only when true,
 // midiIn, empty buttons and keys (no host feeds them yet), every system's MI.OUT bytes from last block in slot order,
-// and controllerIn only when a surface sent something. Fresh every block, as today.
+// and controllerIn only when a surface sent something. Fresh every block, as the stage's was.
 function blockInput(b: Block, systems: readonly SystemPorts[]): BlockInput {
   const t = b.transport;
   const input = {
@@ -197,7 +198,8 @@ export const kernelNode = defineNode<KernelSettings>({
     };
 
     // Each kernel sink call onto its port, in emission order; a call naming a system with no ports is dropped, as
-    // today's fan-out skips an id it cannot find. Values convert as the thunks convert them (each byte & 0xff).
+    // the kernel stage's fan-out skipped an id it could not find. Values convert as its thunks converted them (each
+    // byte & 0xff).
     const sink: SinkTarget = {
       // A run of bytes at one frame goes as one message, which the system node applies a byte at a time at its frame,
       // as it applied a message a byte: a byte at another frame sends the run before it, and process sends the rest.
@@ -217,7 +219,8 @@ export const kernelNode = defineNode<KernelSettings>({
         const p = byId.get(system);
         if (p) block!.send(p.bytes, frame, data, flush ? FLUSH : 0);
       },
-      // At frame 0, whatever the call says: the core takes a role's press with no frame (today's fan-out).
+      // At frame 0, whatever the call says: the core takes a role's press with no frame (as the kernel stage's fan-out
+      // gave it).
       pressButton: (system, _frame, button, down) => {
         const p = byId.get(system);
         if (!p) return;
@@ -245,8 +248,9 @@ export const kernelNode = defineNode<KernelSettings>({
 
     return {
       // A throw goes to the script host, which counts it and runs this again next block: what the kernel sent
-      // before it stands, as today, its held runs included. A call the deadline stops skips the finally, so a run it
-      // left (held is still above 0) is cleared here rather than sent in a block it was not pushed in.
+      // before it stands, as it stood under the kernel stage, its held runs included. A call the deadline stops skips
+      // the finally, so a run it left (held is still above 0) is cleared here rather than sent in a block it was not
+      // pushed in.
       process(b) {
         block = b;
         if (held > 0) {

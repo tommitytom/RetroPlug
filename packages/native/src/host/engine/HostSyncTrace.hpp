@@ -20,10 +20,10 @@
 // It records BOTH halves of the seam, because either can be the culprit: the host's transport/ppq
 // (does the DAW rewind? does ppq jump? does the transport flag drop at all?) and the bytes the
 // risa-sync role derived from it (is the arm packet where we think, is the clock stream continuous?).
-// A block's bytes are recorded as they reach the cores: the kernel stage's in its emission order, and those a
-// system node's `bytes` input feeds (rp.engine.sync-trace/1) as each node runs, so across systems that part is in
-// plan order, one system's bytes after another's. Each byte keeps its frame, and the order across systems is
-// diagnostic only: nothing reads it.
+// A block's bytes are recorded as they reach the cores: those a system node's `bytes` input feeds
+// (rp.engine.sync-trace/1), as each node runs, so across systems they are in plan order, one system's bytes after
+// another's (the kernel stage the kernel node replaced recorded the bytes it pushed in its emission order). Each byte
+// keeps its frame, and the order across systems is diagnostic only: nothing reads it.
 //
 // Written INCREMENTALLY by a background thread, not at exit. A DAW is under no obligation to unwind
 // cleanly - it can _exit, be killed, or unload a sandboxed plugin host - and a trace that only lands
@@ -87,8 +87,8 @@ public:
         return true;
     }
 
-    // Audio thread: record one byte the kernel stage or a system node's bytes input pushed to a core this block,
-    // with its intra-block frame.
+    // Audio thread: record one byte a system node's bytes input pushed to a core this block, with its intra-block
+    // frame.
     void byte(std::uint32_t frame, std::uint8_t value) {
         if (path_.empty()) return;
         Record& r = records_[committed_.load(std::memory_order_relaxed) % kRingSize];

@@ -552,8 +552,8 @@ RpcRenderBlocksResult EngineRpcService::renderBlocks(RpcRenderBlocksRequest req)
         // then transport, then the block itself. Not modelled: the plugin's CC-automation stage and its
         // MIDI-out size filter. ppq (a locate) and controller have no PluginDSP::run counterpart (the
         // plugin never calls setPpq, which would double-count; controller traffic is the SDL standalone's).
-        for (RpcBlockMidi& m : blk.midi) engine_.stageMidi(m.frame, std::move(m.bytes));
-        for (auto& c : blk.controller) engine_.stageControllerMidi(std::move(c));
+        for (const RpcBlockMidi& m : blk.midi) engine_.stageMidi(m.frame, m.bytes);  // copied into the staging
+        for (const auto& c : blk.controller) engine_.stageControllerMidi(c);
         invoker_.drainInto(engine_);
         if (blk.bpm) engine_.setBpm(*blk.bpm);
         if (blk.playing) engine_.setTransport(*blk.playing);

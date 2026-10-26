@@ -261,6 +261,78 @@ TEST_CASE("the engine stages host MIDI, and rp.host.midi-in sorts and pushes it,
     }
 }
 
+TEST_CASE("the engine stages all rp.host.midi-in carries in a block, and it takes it, without allocating or dropping",
+          "[engine-graph][host-io]") {
+    // kHostMidiInMessages messages holding kHostMidiInBytes bytes: what the staging is reserved for at construction,
+    // and what midi-in's output holds, to the message and the byte. Each is tagged with its index, for midi-out.
+    constexpr std::uint32_t kSize = rp::host::kHostMidiInBytes / rp::host::kHostMidiInMessages;
+    static_assert(kSize * rp::host::kHostMidiInMessages == rp::host::kHostMidiInBytes && kSize > 4);
+    std::vector<std::vector<std::uint8_t>> staged;
+    for (std::uint32_t i = 0; i < rp::host::kHostMidiInMessages; ++i) {
+        std::vector<std::uint8_t> sysex(kSize - 4, static_cast<std::uint8_t>(i & 0x7f));
+        sysex.front() = 0xF0;
+        sysex.back() = 0xF7;
+        staged.push_back(tagged(i, sysex));
+    }
+    const auto stage = [&](Engine& e) {
+        for (std::uint32_t i = 0; i < staged.size(); ++i) e.stageMidi(i * 64 / rp::host::kHostMidiInMessages, staged[i]);
+    };
+    float l[64], r[64];
+    float* outs[2] = {l, r};
+
+    Engine e(kRate);
+    REQUIRE(e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in")}, {})).ok);
+    rp::test::beginCountingAllocations();
+    stage(e);
+    e.processBlock(64, outs, 2);
+    const auto counted = rp::test::endCountingAllocations();
+    CHECK(counted.allocations == 0);
+    CHECK(counted.frees == 0);
+    CHECK(e.droppedMessages() == 0);
+
+    // And it is all handed on: the same staging, through midi-out, arrives whole, in order.
+    REQUIRE(e.setGraph(midiInToOut()).ok);
+    stage(e);
+    e.processBlock(64, outs, 2);
+    CHECK(e.droppedMessages() == 0);
+    const auto out = midiOut(e);
+    REQUIRE(out.size() == rp::host::kHostMidiInMessages);
+    for (std::uint32_t i = 0; i < out.size(); ++i) {
+        INFO("message " << i);
+        const std::vector<std::uint8_t> midi(staged[i].begin() + 4, staged[i].end());  // the tag stripped
+        REQUIRE(out[i] == Out{i, i * 64 / rp::host::kHostMidiInMessages, midi});
+    }
+}
+
+TEST_CASE("a plan holding rp.host.controller-in takes the control surface's staging without allocating",
+          "[engine-graph][host-io]") {
+    const std::vector<std::vector<std::uint8_t>> staged{{0x90, 11, 127}, {0x80, 11, 0}, {0xB0, 104, 127},
+                                                        {0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x0E, 0x01, 0xF7}};
+    float l[64], r[64];
+    float* outs[2] = {l, r};
+    Engine e(kRate);
+    REQUIRE(e.setGraph(hostIoOnly({docNode("controller-in", "rp.host.controller-in")}, {})).ok);
+    // No warm-up, as for midi-in: the staging holds what controller-in carries in a block from the engine's
+    // construction.
+    rp::test::beginCountingAllocations();
+    for (const auto& m : staged) e.stageControllerMidi(m);
+    e.setControllerConnected(true);
+    e.processBlock(64, outs, 2);
+    const auto counted = rp::test::endCountingAllocations();
+    CHECK(counted.allocations == 0);
+    CHECK(counted.frees == 0);
+    CHECK(e.droppedMessages() == 0);
+
+    // And what it takes is what was staged: through a plan that hands it on to controller-out, it arrives whole.
+    REQUIRE(e.setGraph(hostIoOnly({docNode("controller-in", "rp.host.controller-in"),
+                                   docNode("controller-out", "rp.host.controller-out")},
+                                  {docWire("controller-in.midi", "controller-out.midi")}))
+                .ok);
+    for (const auto& m : staged) e.stageControllerMidi(m);
+    e.processBlock(64, outs, 2);
+    CHECK(e.controllerOut() == staged);
+}
+
 TEST_CASE("rp.host.midi-in hands on the staging in frame order, ties in the order they were staged",
           "[engine-graph][host-io]") {
     Engine e(kRate);
@@ -317,6 +389,7 @@ TEST_CASE("host MIDI staged through the command ring is drained and taken withou
     e.processBlock(64, outs, 2);
     const auto counted = rp::test::endCountingAllocations();
     CHECK(counted.allocations == 0);
+    CHECK(counted.frees == 0);  // and nothing the ring carried owns memory the drain lets go of
 
     // And it was taken: a plan reading midi-in's output gets the next block's messages, and those alone.
     REQUIRE(e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("midi-out", "rp.host.midi-out")},
@@ -492,7 +565,8 @@ TEST_CASE("rp.n8.cart-mirror hands the cart every MIDI message, then every byte 
                         "wires":[{"from":"feed.midi","to":"cart.midi"},{"from":"feed.bytes","to":"cart.bytes"}]})")
                 .ok);
     Feed& feed = rig.node<Feed>("feed");
-    feed.next[Feed::Midi] = {{3, {0x90, 1, 100}}, {8, {}}, {8, {0x80, 1, 0}}};  // the empty one is skipped, as today
+    // The empty one is skipped, as the kernel stage the kernel node replaced skipped it.
+    feed.next[Feed::Midi] = {{3, {0x90, 1, 100}}, {8, {}}, {8, {0x80, 1, 0}}};
     feed.next[Feed::Bytes] = {{1, {0xF2, 0, 0}, RP_MESSAGE_FLUSH}, {5, {0xF8}}};
     rig.host->processBlock(64, rp_transport{kRate, 120.0, 0.0, 0});
     REQUIRE(rig.cart.size() == 4);

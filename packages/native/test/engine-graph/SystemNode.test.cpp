@@ -582,7 +582,7 @@ TEST_CASE("a system node's inputs reach its core as the calls they map to, bit f
 
 TEST_CASE("a system node skips an empty midi or bytes message and a short buttons payload, and takes what follows",
           "[engine-graph][system-node][inputs]") {
-    // As the kernel stage skips them: nothing reaches the core for the message skipped, and the input's later
+    // As the kernel stage skipped them: nothing reaches the core for the message skipped, and the input's later
     // messages still do. `heard` as above.
     std::uint64_t heard = kNever;
 

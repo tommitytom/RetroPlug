@@ -186,9 +186,9 @@ export class Rig {
   }
 
   /** Every message a case staged, and every one the kernel sent, reached the node it was wired to: a full queue on
-   *  any wire of the graph counts a drop, and a case that dropped one renders what today's unbounded staging did
-   *  not. The engine's count is cumulative over the file, so a case is held to the drops since its reset, and one
-   *  case's drop fails that case alone. */
+   *  any wire of the graph counts a drop, and a case that dropped one renders what the unbounded staging the
+   *  baseline was recorded with did not. The engine's count is cumulative over the file, so a case is held to the
+   *  drops since its reset, and one case's drop fails that case alone. */
   private noneDropped(): void {
     const dropped = this.audio.droppedMessages() - this.droppedAtReset;
     if (dropped !== 0) throw new Error(`${dropped} message(s) dropped on a full queue of the graph`);

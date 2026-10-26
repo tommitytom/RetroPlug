@@ -218,7 +218,7 @@ RenderHost::Result RenderHost::run(const std::string& jobJson, RenderedFn onRend
 
     // The Engine service graph — one per host (mirrors cli/main.cpp), minus TjsHostRuntime. No audio thread
     // is started, so the QueuedInvoker flushes inline on this thread. registerAllBackendRpc mounts the full
-    // surface the worker's control plane calls (host fs, emulator, dsp-kernel, harness render, debug readCpu).
+    // surface the worker's control plane calls (host fs, emulator, harness render, debug readCpu).
     Engine engine;
     SystemFactory factory;
     registerCoreBackends(factory);

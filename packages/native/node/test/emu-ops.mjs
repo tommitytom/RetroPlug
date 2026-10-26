@@ -27,7 +27,7 @@ export function peak(f32) {
  * Boot the control plane and drive both cores. `sdk` is the built SDK bundle's namespace; `nesRom`
  * is a path to a NES ROM. Returns [label, value] pairs in a fixed order.
  *
- * Coverage: bootSession (backend + registry + stores + DSP kernel load), the embedded Game Boy core,
+ * Coverage: bootSession (backend + registry + stores), the embedded Game Boy core,
  * an on-disk NES ROM through the Mesen core, audio rendering, snapshot reads (binary out) and the
  * debug facet's struct-heavy APU read.
  */

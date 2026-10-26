@@ -1,6 +1,6 @@
 // The `render` tool's song-selection flags extended to risa (NES) savs: --list-songs lists the RSAV catalog,
 // --song-index promotes a saved song to the working banks before the render, and the risa play gesture
-// (SELECT+START) makes it audible. Drives the shared render library over a real backend + DSP runtime
+// (SELECT+START) makes it audible. Drives the shared render library over a real backend + engine
 // (mirrors test-native/app-play-nes-channels.test.ts). Gated on the built risa ROM — SKIPs when absent.
 //
 // The two long-song legs live in sibling files (risa-render-hff / risa-render-region) so they render

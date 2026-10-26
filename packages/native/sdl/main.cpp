@@ -878,19 +878,19 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
         // (BlockInput.controllerIn), which is the whole reason that stream exists.
         if (sysex) continue;
         // Everything left (notes / CC / ...) is staged as host MIDI in.
-        a.svc.engine.stageMidi(0, std::move(m.bytes));
+        a.svc.engine.stageMidi(0, m.bytes);
         a.midiStaged.fetch_add(1, std::memory_order_relaxed);
     }
     a.clockSync.advance(frames);
 
     // Control-surface traffic, on its own stream. Same shape as the MIDI drain above (the vectors were
-    // allocated on the backend's callback thread and are MOVED here, so this allocates nothing), but staged
-    // as controllerIn rather than musical MIDI - a pad NoteOn must reach the controller app's quantiser and
-    // nothing else. The connected flag rides the block so the role can take the device the moment one shows
-    // up (it enters Programmer mode and repaints on that edge).
+    // allocated on the backend's callback thread, and the engine copies each into its staging arena, which
+    // allocates nothing), but staged as controllerIn rather than musical MIDI - a pad NoteOn must reach the
+    // controller app's quantiser and nothing else. The connected flag rides the block so the role can take
+    // the device the moment one shows up (it enters Programmer mode and repaints on that edge).
     a.launchpadHost.link().drainInput(a.launchpadScratch);
-    for (auto& m : a.launchpadScratch)
-        if (!m.empty()) a.svc.engine.stageControllerMidi(std::move(m));
+    for (const auto& m : a.launchpadScratch)
+        if (!m.empty()) a.svc.engine.stageControllerMidi(m);
     a.svc.engine.setControllerConnected(a.launchpadHost.link().isConnected());
 
     // Fold in the menu's play/stop + tempo, then publish what the transport ended up being (see AppState).

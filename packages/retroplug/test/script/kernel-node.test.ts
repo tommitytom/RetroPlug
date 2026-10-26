@@ -135,7 +135,7 @@ test("a system's serial-in bytes go a run of same-frame bytes to a message, each
   expect(at("sys-2.serialIn")).toEqual([[9, 30], [200, 1], [0, 0xfa]]);
 });
 
-test("the runs a throw leaves are sent, as today keeps what the kernel pushed before one", () => {
+test("the runs a throw leaves are sent, as the kernel stage kept what the kernel pushed before one", () => {
   // No shipped role throws on what the kernel accepts, so Math.ceil throws for the one value the second system's
   // clock reaches when it first syncs, at ppq 10.5 (tick 252), after the first has forwarded its MIDI.
   const node = create(
@@ -211,7 +211,7 @@ test("a stopped call's runs are cleared before the next block starts its own, ho
   ]);
 });
 
-test("controllerIn is in the block's input only when the surface sent something, as today's marshalling", () => {
+test("controllerIn is in the block's input only when the surface sent something, as the kernel stage's marshalling had it", () => {
   const inputs: BlockInput[] = [];
   const processBlock = DspKernel.prototype.processBlock;
   DspKernel.prototype.processBlock = function (this: DspKernel, input: BlockInput) {

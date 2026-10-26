@@ -230,10 +230,13 @@ fan ignores sub-block frame anyway). True sub-block jitter would need a one-arg 
   stage's runtime's, bracketed per kernel call.)
 - **The trace window** (Tier B), on the same runtime: `traceReset(arm)` opens a window of nested wall-time
   spans, recorded only while armed. Every script node's process is a `dsp-kernel` span holding `marshal`
-  (its block's transport) and `js-call` (its JS, inside which each input it reads is a `marshal` span and
-  the kernel node's roles add one each through the audio context's `spanBegin` / `spanEnd` /
-  `traceName` / `traceArmed` globals, bound only in a profile build); the Engine adds `apu-render` (the
-  plan from where its script nodes end) and `state-publish`. `dspTraceReset` / `dspTrace` /
+  (its audio copies in and the transport) and `js-call` (its JS, inside which each input it reads is a
+  `marshal` span and the kernel node's roles add one each through the audio context's `spanBegin` /
+  `spanEnd` / `traceName` / `traceArmed` globals, bound only in a profile build); the Engine adds
+  `apu-render` (the plan from where its script nodes end) and `state-publish`. JS's spans record only
+  inside its process call's `js-call`: its `spanEnd` never closes one of the host's, and a span it leaves open (a
+  throw, or the call deadline, which skips every `finally`) the host closes as the call returns. A label is
+  below `kDspSpanLabels` (1024); `traceName` throws a `RangeError` past it. `dspTraceReset` / `dspTrace` /
   `dspTraceNames` read it, and `tools/run-profile.sh trace` writes it as Chrome trace-event JSON.
 - **Introspection RPCs** — `dspAllocStats` / `dspResetAllocStats` / `dspRunGc` on the harness facet
   (`Engine` → `EngineRpcService`, reached directly through `engine_` in the quiescent `renderAudio`
@@ -265,7 +268,10 @@ modes are out.
   (removing them left it unchanged). It is a **fixed, one-time setup structure** (the zod-based role
   registry built at kernel load) that production's auto-GC collects once early and never regenerates — not
   an unbounded audio-thread hazard. The real steady-state RT cost was the malloc/free churn, now ~5×
-  lower; further reduction means the native marshalling row (§3), a separate pass.
+  lower; further reduction means the native marshalling row (§3), a separate pass. On the script host the
+  load's cycles (about 144 KiB of the production bundle's) go at the first quiescent reclaim (the first
+  `setGraph`'s), so the end-of-window `runGc` reads what the window itself left in cycles: 0 bytes, in
+  dsp-bench and nes-bench alike.
 - **Ship path clean:** dsp-bench no-ops under the default host; the full `pnpm test:native`
   sweep (25 files) + `pnpm test` (41) stay green; the default `build/` and shipped plugin never
   define `RETROPLUG_PROFILE` (zero overhead).

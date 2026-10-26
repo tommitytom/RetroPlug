@@ -168,7 +168,10 @@ test("dsp-bench: DSP kernel per-block allocation under an mGB + MIDI workload", 
   const wallMs = nowMs() - t0;
 
   const s = audio.dspAllocStats();
-  const gc = audio.dspRunGc(); // one self-driven cycle pass — freedBytes ~0 proves no cycle accumulation
+  // One self-driven cycle pass. Auto-GC was pinned off for the window, and the bundle's load left its cycles to the
+  // first setGraph's reclaim, which collected them before the window opened: what this frees, the window's blocks
+  // left in cycles, so freedBytes ~0 says they accumulate none.
+  const gc = audio.dspRunGc();
 
   const bc = s.blockCount || 1;
   const round = (x: number): number => Math.round(x * 100) / 100;

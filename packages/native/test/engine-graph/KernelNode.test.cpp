@@ -4,11 +4,12 @@
 //
 // Each case is held to what the node sent when it was recorded: the messages of each kind, and a digest of all of them
 // (per block, per system and port, each message's frame, flags and bytes in order; the host MIDI out with its system
-// tags in emission order; the control-surface out). The values were recorded while the kernel stage the node replaced
-// still ran beside it, and these cases compared the two block by block and found them equal (15f56ebb to 9217a026,
-// against the kernel stage fed the staging sorted as rp.host.midi-in sorts it, its output as a frame-ordered queue
-// carries it). So a changed value is a change to what the kernel does: a deliberate one is re-recorded from the values
-// a failing case prints.
+// tags in emission order; the control-surface out). Until the kernel stage the node replaced was deleted, these cases
+// ran the two side by side and compared them block by block, the kernel stage fed the staging sorted as rp.host.midi-in
+// sorts it and its output taken as a frame-ordered queue carries it, and found them equal from c323c7a8, where the node
+// was proven equal, to e3de2e46, the last commit before the stage's deletion. The values are the node's output in
+// those comparisons: the B3a prototype recorded them from the same cases, and they hold here as recorded. So a changed
+// value is a change to what the kernel does: a deliberate one is re-recorded from the values a failing case prints.
 //
 // A serial input is counted and hashed byte by byte, each byte as the one-byte message (its frame, flags 0, one byte)
 // the node sent when the values were recorded: it now sends a run of same-frame bytes as one message, which the system
@@ -212,7 +213,9 @@ struct KernelRig {
     };
     std::vector<Out>                  midiOut;
     std::vector<Bytes>                controllerOut;
-    rp::host::EngineHostIo            hostIo{this, &takeMidi, &takeController, &isConnected, &recordMidiOut, &recordControllerOut, &noCart};
+    std::uint32_t                     dropped = 0;  // host MIDI out too short to name its system
+    rp::host::EngineHostIo            hostIo{this, &takeMidi, &takeController, &isConnected, &recordMidiOut, &recordControllerOut,
+                                             &noCart, &countDropped};
     std::unique_ptr<rp::graph::GraphHost> host;
     rp_node*                          kernel = nullptr;
     int                               blocks = 0;
@@ -386,6 +389,7 @@ struct KernelRig {
         of(ctx).controllerOut.emplace_back(data, data + size);
     }
     static void noCart(void*, std::uint32_t, const std::uint8_t*, std::size_t, bool) {}
+    static void countDropped(void* ctx) { ++of(ctx).dropped; }
 
     // True before an audio thread starts running blocks, false after it has stopped, as the Engine does.
     void setAudioThreadOwns(bool owns) {
@@ -403,6 +407,7 @@ struct KernelRig {
     // Nothing dropped, nothing faulted, and `throws` caught in all.
     void finish(std::uint32_t throws = 0) {
         CHECK(host->droppedMessages() == 0);
+        CHECK(dropped == 0);
         CHECK_FALSE(host->isFaulted("kernel"));
         CHECK(scripts.throwCount() == throws);
     }

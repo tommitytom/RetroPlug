@@ -67,7 +67,7 @@ test("a poke lands in the same region readRam serves, at the same offset", () =>
 
 test("a bulk poke the size of a song block lands whole", () => {
   // The case the union-of-PODs command ring cannot carry inline, and the reason this rides an owning
-  // heap payload like setSystems and loadKernel do. 6,912 bytes is an smsggdj song.
+  // heap payload, as a long staged MIDI message does. 6,912 bytes is an smsggdj song.
   const be0 = createRealBackend();
   if (!be0.fileExists(ROM)) return;
   const { be, audio, id } = boot();

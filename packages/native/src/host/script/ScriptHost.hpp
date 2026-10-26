@@ -69,13 +69,18 @@ struct DspTraceSpan {
 // The fixed span labels; the kernel node interns its role kinds from DSP_SPAN_ROLE_BASE up.
 enum DspSpanLabel : std::uint32_t {
     DSP_SPAN_KERNEL    = 0,   // ScriptHost: a script node's process call (the DSP kernel's, in every document TS builds)
-    DSP_SPAN_MARSHAL   = 1,   // ScriptHost: its inputs made JS values (the block's transport, each input it reads)
+    DSP_SPAN_MARSHAL   = 1,   // ScriptHost: its inputs made JS values (the audio copies in and the transport, then
+                              //   each input it reads)
     DSP_SPAN_JSCALL    = 2,   // ScriptHost: the JS_Call into its process
     DSP_SPAN_APU       = 3,   // Engine: the plan after its script nodes (the cores, the mixing, the host outputs)
     DSP_SPAN_PUBLISH   = 4,   // Engine: the state pump to the control plane (the per-block frame copy, and the timed
                               //   savestate and SRAM republish, so spiky)
     DSP_SPAN_ROLE_BASE = 16,
 };
+
+// Every label a trace names is below this: the fixed ones, then the kernel node's, one per DSP role kind it registers
+// (a handful), well short of it. traceName refuses a label past it, so no label JS hands it can size the name table.
+inline constexpr std::uint32_t kDspSpanLabels = 1024;
 
 // The script host (docs/modular-graph-phase-b3a-design.md section 2): every TS node one Engine runs, behind the
 // same C ABI as a native node. A bundle registers its node definitions (defineNode results, appended to the global
@@ -96,9 +101,9 @@ enum DspSpanLabel : std::uint32_t {
 //     audio thread frees nothing native. What a released instance leaves in cycles is collected by a GC at two
 //     points no block is running: the reclaim that ends a quiescent operation which released some (the Engine's
 //     after every setGraph: one GC however many went), and the audio thread handing the runtime back
-//     (setAudioThreadOwns(false)). Never by a block, so while an audio thread owns the runtime (a live session) those
-//     cycles wait for QuickJS's own threshold GC, which runs inside whichever block's JS allocates past it, or for
-//     the audio thread to hand the runtime back.
+//     (setAudioThreadOwns(false)). The first of them takes what the bundle's load left in cycles too. Never by a
+//     block, so while an audio thread owns the runtime (a live session) those cycles wait for QuickJS's own threshold
+//     GC, which runs inside whichever block's JS allocates past it, or for the audio thread to hand the runtime back.
 //
 // Both runtimes' JS stacks are held to kStackBytes, under the smallest thread that may enter one: 512 KiB is a macOS
 // secondary thread's default, which a DAW's audio or control thread may have and a render job's std::thread does
@@ -145,9 +150,12 @@ enum DspSpanLabel : std::uint32_t {
 //
 // A profile build (RETROPLUG_PROFILE, spec/08-profiling.md) profiles the audio runtime: its allocator keeps the live
 // and peak heap, an allocation window counts per block, and a trace window records nested wall-time spans. Every
-// script node's process is a dsp-kernel span, holding a marshal span for the block's transport and a js-call span for
-// its JS, inside which each input it reads is a marshal span too; the audio context's globals spanBegin(label),
-// spanEnd(), traceName(label, name) and traceArmed() let the JS add its own (the kernel node's roles).
+// script node's process is a dsp-kernel span, holding a marshal span for the audio copies in and the transport and a
+// js-call span for its JS, inside which each input it reads is a marshal span too; the audio context's globals
+// spanBegin(label), spanEnd(), traceName(label, name) and traceArmed() let the JS add its own (the kernel node's
+// roles). JS's spans nest inside the js-call span of the process call running, and record nothing outside one: its
+// spanEnd never closes a span the host opened, and what it leaves open (a throw, or the deadline, which skips every
+// finally) the host closes as the call returns, so js-call and dsp-kernel always close their own.
 class ScriptHost {
 public:
     using Chunk = std::span<const std::uint8_t>;
@@ -219,6 +227,7 @@ public:
     // The trace window. traceReset clears it and arms (or disarms) it, quiescent, as are the reads; the block thread
     // records, and only while it is armed. spanBegin and spanEnd bracket a span; spanSince records one from `t0`, a
     // traceNow(), to now. lastProcessEnd() is when the last script node's process span ended, on traceNow's clock.
+    // traceName names a label below kDspSpanLabels, and ignores one past it.
     void                      spanBegin(std::uint32_t label);
     void                      spanEnd();
     void                      spanSince(std::uint32_t label, double t0);
@@ -247,7 +256,8 @@ private:
     void retire(Instance* in);      // control thread: a destroyed shim's record
     void releaseQueued();           // quiescent: everything queued, released and deleted
     void drainReleased();           // control thread: the records handed back, deleted, and the backlog moved on
-    void collect();                 // quiescent: a GC of the audio runtime, when a release has left garbage since the last
+    void collect();                 // quiescent: a GC of the audio runtime, when the load or a release has left
+                                    //   garbage since the last
     void drainControlJobs();        // control thread: the promise jobs a call into the control context queued
     void runAudioJobs();            // the block thread: endBlock's promise jobs
     void freeTypes();
@@ -277,7 +287,7 @@ private:
     Instance*                  backlogTail_ = nullptr;
     std::atomic<std::uint32_t> leakedRecords_{0};
     std::uint32_t              leaksReported_ = 0;
-    bool                       garbage_ = false;  // an instance released since the last collect (whoever releases)
+    bool                       garbage_ = false;  // the load, or a release, since the last collect (whoever releases)
 
     // The call deadline: its length in CPU nanoseconds (set on the control thread), and while a call runs (armed_), the
     // thread's CPU time at the first poll in it (-1 until then) and whether the interrupt stopped it (the block thread's).
@@ -304,9 +314,13 @@ private:
     ScriptAllocations blockStart_{};
     std::uint64_t     windowBlocks_ = 0, maxBlockAllocs_ = 0, maxBlockBytes_ = 0;
     // The trace window: its clock's start (steady_clock nanoseconds), the spans open as {label, t0} and those closed.
+    // While a process call's JS runs, jsSpanFloor_ is the open spans' count with its js-call span the last of them:
+    // JS's own spans stand above it, and none is JS's while it is kNoJsSpans.
+    static constexpr std::size_t                  kNoJsSpans = static_cast<std::size_t>(-1);
     bool                                          traceArmed_ = false;
     std::uint64_t                                 traceStartNs_ = 0;
     double                                        lastProcessEnd_ = 0.0;
+    std::size_t                                   jsSpanFloor_ = kNoJsSpans;
     std::vector<std::pair<std::uint32_t, double>> traceStack_;
     std::vector<DspTraceSpan>                     traceSpans_;
     std::vector<std::string>                      traceNames_;

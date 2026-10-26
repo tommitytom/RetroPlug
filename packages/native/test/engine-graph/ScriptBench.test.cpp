@@ -12,8 +12,9 @@
 // kernel a block after the core clocked it out (a feedback wire, as buildGraph wires it). No core runs: the plan's
 // system stand-ins count what reaches their inputs. The plan's native nodes alone (the same document with no kernel)
 // are timed too, so the kernel node's own share shows. (While the kernel stage the node replaced still existed,
-// 9c3c10f9, this table timed it too, over the same blocks: the node took about 1.4 to 1.65 times as long, with the
-// same JS allocations.)
+// 9c3c10f9, this table timed it too, over the same blocks: in three runs the node took 1.36 to 1.62 times as long,
+// and where the stage made 0, 0.15 and 1.16 native allocations a block at 1, 64 and 512 frames, the node's plan made
+// none. The stage's JS allocations went unmeasured: its runtime counted them only in a RETROPLUG_PROFILE build.)
 //
 // Each figure is a median of kRuns runs; a kernel run times the node, then its plan with no kernel, over the same
 // blocks. Allocations are per block over every run: JS from the script host's audio runtime, native on the calling
@@ -289,8 +290,10 @@ struct KernelBench {
     rp::graph::ResourceTable resources;
     // The engine's host I/O, standing in: what is staged for the block, and the host outputs counted.
     const std::vector<Staged>* staged = nullptr;
-    std::uint64_t              midiOut = 0, controllerOut = 0;
-    rp::host::EngineHostIo hostIo{this, &takeMidi, &takeNothing, &disconnected, &countMidiOut, &countControllerOut, &noCart};
+    // dropped: a host MIDI-out message too short to name its system.
+    std::uint64_t              midiOut = 0, controllerOut = 0, dropped = 0;
+    rp::host::EngineHostIo hostIo{this, &takeMidi, &takeNothing, &disconnected, &countMidiOut, &countControllerOut, &noCart,
+                                  &countDropped};
     std::unique_ptr<rp::graph::GraphHost> host;
 
     // `kernel`: false for the plan's native nodes alone.
@@ -361,6 +364,7 @@ struct KernelBench {
     static void countMidiOut(void* ctx, std::uint32_t, std::uint32_t, const std::uint8_t*, std::size_t) { ++of(ctx).midiOut; }
     static void countControllerOut(void* ctx, const std::uint8_t*, std::size_t) { ++of(ctx).controllerOut; }
     static void noCart(void*, std::uint32_t, const std::uint8_t*, std::size_t, bool) {}
+    static void countDropped(void* ctx) { ++of(ctx).dropped; }
 };
 
 struct KernelRow {
@@ -431,6 +435,7 @@ KernelRows timeKernel(std::uint32_t frames) {
     CHECK(rows.delivered.buttons == 0);       // or presses a button
     CHECK(bench.midiOut == 0);                // or sends host MIDI out
     CHECK(bench.host->droppedMessages() == 0);
+    CHECK(bench.dropped == 0);
     CHECK(bench.scripts.throwCount() == 0);
     CHECK(bench.scripts.liveInstances() == 1);
     rows.blocks = k;

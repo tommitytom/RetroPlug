@@ -556,9 +556,9 @@ struct ScriptHost::Glue {
         JS_SetProperty(ctx, in.transport, atom(h, kPpq), JS_NewFloat64(ctx, t.ppq));
         JS_SetProperty(ctx, in.transport, atom(h, kPlaying), JS_NewBool(ctx, (t.flags & RP_TRANSPORT_PLAYING) != 0));
         traceEnd(h);
-        traceBegin(h, DSP_SPAN_JSCALL);
+        jsCallBegin(h);
         JSValue result = JS_Call(ctx, in.process, in.object, 1, &in.block);
-        traceEnd(h);
+        jsCallEnd(h);
         in.running = nullptr;
         const bool threw = JS_IsException(result), expired = expiryFaults(h, in);
         if (threw) recordThrow(h, in, "process");  // first: the copy out may meet a detached buffer, which throws too
@@ -574,6 +574,26 @@ struct ScriptHost::Glue {
         JS_FreeValue(ctx, result);
         processSpanEnd(h);
         return fault ? RP_FAULT : RP_OK;
+    }
+
+    // A process call's js-call span (a profile build), which the spans its JS opens stand inside: opened with the trace
+    // stack's depth there kept as their floor, and closed as the call returns, with every span the JS left open above
+    // it first, whatever happened in JS (a throw, or the deadline, which skips every finally, can leave a role's open).
+    // So a span JS leaves open never closes js-call or dsp-kernel for it.
+    static void jsCallBegin([[maybe_unused]] ScriptHost& h) {
+#ifdef RETROPLUG_PROFILE
+        if (!h.traceArmed_) return;
+        h.spanBegin(DSP_SPAN_JSCALL);
+        h.jsSpanFloor_ = h.traceStack_.size();
+#endif
+    }
+    static void jsCallEnd([[maybe_unused]] ScriptHost& h) {
+#ifdef RETROPLUG_PROFILE
+        if (!h.traceArmed_) return;
+        const std::size_t floor = h.jsSpanFloor_;
+        h.jsSpanFloor_ = kNoJsSpans;
+        while (!h.traceStack_.empty() && h.traceStack_.size() >= floor) h.spanEnd();  // JS's, then js-call
+#endif
     }
 
     // The end of a process call's dsp-kernel span (a profile build), where apu-render starts if no script node runs
@@ -1138,21 +1158,29 @@ struct ScriptHost::Glue {
 
 #ifdef RETROPLUG_PROFILE
     // ---- the trace window's globals, in the audio context of a profile build -------------------------------------
+    // A span JS opens stands inside its process call's js-call span (jsCallBegin), and one opened outside a process
+    // call records nothing, as an unarmed window records nothing: spanEnd closes only a span JS opened.
     static JSValue spanBegin(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
         std::uint32_t label = 0;
         if (argc < 1) return JS_ThrowTypeError(ctx, "spanBegin takes a label");
         if (JS_ToUint32(ctx, &label, argv[0]) < 0) return JS_EXCEPTION;
-        hostOf(ctx).spanBegin(label);
+        ScriptHost& h = hostOf(ctx);
+        if (h.jsSpanFloor_ != kNoJsSpans) h.spanBegin(label);
         return JS_UNDEFINED;
     }
     static JSValue spanEnd(JSContext* ctx, JSValueConst, int, JSValueConst*) {
-        hostOf(ctx).spanEnd();
+        ScriptHost& h = hostOf(ctx);
+        if (h.jsSpanFloor_ != kNoJsSpans && h.traceStack_.size() > h.jsSpanFloor_) h.spanEnd();
         return JS_UNDEFINED;
     }
     static JSValue traceName(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-        std::uint32_t label = 0;
+        double at = 0.0;
         if (argc < 2) return JS_ThrowTypeError(ctx, "traceName takes a label and a name");
-        if (JS_ToUint32(ctx, &label, argv[0]) < 0) return JS_EXCEPTION;
+        if (JS_ToFloat64(ctx, &at, argv[0]) < 0) return JS_EXCEPTION;
+        // Read whole, so a label past the bound is refused rather than wrapped onto one below it.
+        if (!(at >= 0.0 && at < kDspSpanLabels))
+            return JS_ThrowRangeError(ctx, "a trace label is from 0 to %u", static_cast<unsigned>(kDspSpanLabels - 1));
+        const auto label = static_cast<std::uint32_t>(at);
         const char* name = JS_ToCString(ctx, argv[1]);
         if (!name) return JS_EXCEPTION;
         hostOf(ctx).traceName(label, name);
@@ -1255,6 +1283,9 @@ bool ScriptHost::load(std::span<const Chunk> chunks, std::string* error) {
         // What the bundle's top level queued runs now, in this context's runtime: no block has begun.
         runJobs(audioSide ? audioRt_ : controlRt_, kJobsPerBlock, [](JSContext* c) { clearException(c); });
     }
+    // What the load leaves in cycles in the audio runtime, its top level's and the descriptors' below (about 144 KiB of
+    // the production bundle's), goes at the first quiescent reclaim, rather than waiting for a block's threshold GC.
+    garbage_ = true;
     // The definitions, in the same order in both contexts (the same bundle ran in each).
     JSValue lists[2];
     for (const bool audioSide : {false, true}) {
@@ -1511,6 +1542,7 @@ DspAllocStats ScriptHost::allocStats() const {
 }
 
 void ScriptHost::resetAllocStats(bool disableAutoGc) {
+    assert(!audioOwns_.load(std::memory_order_acquire) && "the allocation window opens only while no audio thread runs blocks");
     windowStart_ = audioAllocations();
     windowLiveBytes_ = counters_.liveBytes.load(std::memory_order_relaxed);
     windowBlocks_ = maxBlockAllocs_ = maxBlockBytes_ = 0;
@@ -1519,6 +1551,7 @@ void ScriptHost::resetAllocStats(bool disableAutoGc) {
 }
 
 DspGcResult ScriptHost::runGc() {
+    assert(!audioOwns_.load(std::memory_order_acquire) && "a GC pass runs only while no audio thread runs blocks");
     JS_UpdateStackTop(audioRt_);
     const std::int64_t before = counters_.liveBytes.load(std::memory_order_relaxed);
     const auto t0 = std::chrono::steady_clock::now();
@@ -1555,7 +1588,8 @@ void ScriptHost::spanSince(std::uint32_t label, double t0) {
 }
 
 void ScriptHost::traceName(std::uint32_t label, const std::string& name) {
-    if (traceNames_.size() <= label) traceNames_.resize(label + 1);
+    if (label >= kDspSpanLabels) return;
+    if (traceNames_.size() <= label) traceNames_.resize(std::size_t{label} + 1);
     traceNames_[label] = name;
 }
 

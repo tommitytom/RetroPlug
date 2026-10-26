@@ -4,10 +4,12 @@
 // through Block, what they send, the control-side context laying their ports out from settings, a node kept across
 // a reshape or swapped or rebuilt, where their instances are made and released, a throw, the block path's
 // allocations, and a running audio thread under all of it. The embedded production bundle and an Engine built
-// around a toy bundle close it.
+// around a toy bundle close it. A RETROPLUG_PROFILE build (build-prof/, which tools/run-profile.sh configures) adds the
+// trace window's cases, [profile]: a span JS leaves open, and a label past the bound.
 //
-// Run via `pnpm test:plugin engine-graph`.
+// Run via `pnpm test:plugin engine-graph`; the profile cases, build-prof/bin/retroplug-engine-graph-test "[profile]".
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -1328,3 +1330,114 @@ rp.register([rp.defineNode({ id: "rp.toy.badcreate", ports: { out: rp.events.out
     e.reclaim();
     // The Engine goes at the end of the test, its last plan's script node with it, after the GraphHost that holds it.
 }
+
+TEST_CASE("what the bundle's load leaves in cycles is collected by the first quiescent reclaim, once", "[script][gc]") {
+    ScriptHost host;
+    const ScriptHost::Chunk bundle = ScriptHost::embeddedBundle();
+    REQUIRE(host.load({&bundle, 1}));
+    const auto loaded = host.audioAllocations();
+    host.reclaim();  // no instance released yet: the load's cycles alone
+    const auto first = host.audioAllocations();
+    CHECK(first.frees > loaded.frees);
+    host.reclaim();  // nothing left to collect: no GC runs
+    CHECK(host.audioAllocations().frees == first.frees);
+}
+
+#ifdef RETROPLUG_PROFILE
+namespace {
+
+// Spans its JS leaves open, or closes past: a throw inside a role's span, a hang inside one the deadline stops, more
+// spanEnds than spanBegins (then a span after them, which is still the call's), and a span a promise job opens and
+// closes, outside any process call.
+const char* const kSpanners = R"JS(
+rp.register([
+  rp.defineNode({ id: "rp.toy.span-throw", ports: { out: rp.events.out() },
+                  create: () => ({ process() { spanBegin(16); throw new Error("mid-span"); } }) }),
+  rp.defineNode({ id: "rp.toy.span-hang", ports: { out: rp.events.out() },
+                  create: () => ({ process() { spanBegin(17); for (;;) {} } }) }),
+  rp.defineNode({ id: "rp.toy.span-overclose", ports: { out: rp.events.out() },
+                  create: () => ({
+                    process() { spanBegin(18); for (let i = 0; i < 4; ++i) spanEnd(); spanBegin(18); spanEnd(); },
+                  }) }),
+  rp.defineNode({ id: "rp.toy.span-job", ports: { out: rp.events.out() },
+                  create: () => ({ process() { Promise.resolve().then(() => { spanBegin(19); spanEnd(); }); } }) }),
+]);
+)JS";
+
+// A label past the bound, refused whole (never wrapped onto one below it), and the last one there is.
+const char* const kNamer = R"JS(
+rp.register([rp.defineNode({
+  id: "rp.toy.namer",
+  ports: { out: rp.events.out() },
+  create: () => ({
+    process() {
+      for (const label of [1024, 4294967295, 4294967296 + 3, -1, NaN, 1e300]) {
+        try { traceName(label, "past"); __probe("named"); }
+        catch (e) { __probe(e instanceof RangeError ? "refused" : "threw " + e); }
+      }
+      traceName(1023, "last");
+    },
+  }),
+})]);
+)JS";
+
+std::vector<rp::host::DspTraceSpan> spansOf(const ScriptHost& h, std::uint32_t label) {
+    std::vector<rp::host::DspTraceSpan> out;
+    for (const auto& s : h.traceSpans())
+        if (s.label == label) out.push_back(s);
+    return out;
+}
+
+// Each of `inner` inside one of `outer`.
+bool nested(const std::vector<rp::host::DspTraceSpan>& inner, const std::vector<rp::host::DspTraceSpan>& outer) {
+    return std::all_of(inner.begin(), inner.end(), [&](const auto& i) {
+        return std::any_of(outer.begin(), outer.end(), [&](const auto& o) { return o.t0 <= i.t0 && i.t1 <= o.t1; });
+    });
+}
+
+}  // namespace
+
+TEST_CASE("a span a script node's JS leaves open is closed as its process call returns, and JS closes none of the host's",
+          "[script][profile][trace]") {
+    struct Case {
+        const char*   type;
+        std::uint32_t label;
+        std::size_t   calls, roleSpans;  // over 3 blocks
+    };
+    // The hang is stopped twice, and faulted by the second (no faultOnThrow), so its third block makes no call.
+    for (const Case& c : {Case{"rp.toy.span-throw", 16, 3, 3}, Case{"rp.toy.span-hang", 17, 2, 2},
+                          Case{"rp.toy.span-overclose", 18, 3, 6}, Case{"rp.toy.span-job", 19, 3, 0}}) {
+        INFO(c.type);
+        ScriptRig rig(kSpanners);
+        rig.scripts.setCallDeadline(std::chrono::milliseconds(50));
+        REQUIRE(rig.set(doc(node("s", c.type), "")).ok);
+        rig.scripts.traceReset(true);
+        rig.run(64, 3);
+        const auto kernel = spansOf(rig.scripts, rp::host::DSP_SPAN_KERNEL);
+        const auto call = spansOf(rig.scripts, rp::host::DSP_SPAN_JSCALL);
+        const auto role = spansOf(rig.scripts, c.label);
+        CHECK(kernel.size() == c.calls);
+        CHECK(call.size() == c.calls);
+        CHECK(spansOf(rig.scripts, rp::host::DSP_SPAN_MARSHAL).size() == c.calls);  // the transport's: it reads no input
+        CHECK(role.size() == c.roleSpans);
+        CHECK(nested(call, kernel));
+        CHECK(nested(role, call));
+        rig.scripts.traceReset(false);
+    }
+}
+
+TEST_CASE("a trace label past the bound is refused with a RangeError, whole, and leaves the names as they were",
+          "[script][profile][trace]") {
+    ScriptRig rig(kNamer);
+    REQUIRE(rig.set(doc(node("n", "rp.toy.namer"), "")).ok);
+    rig.run();
+    CHECK(rig.log.count("refused") == 6);
+    CHECK(rig.log.count("named") == 0);
+    CHECK(rig.scripts.throwCount() == 0);
+    const auto names = rig.scripts.traceNames();
+    REQUIRE(names.size() == rp::host::kDspSpanLabels);
+    CHECK(names[rp::host::kDspSpanLabels - 1] == "last");
+    CHECK(names[rp::host::DSP_SPAN_APU] == "apu-render");  // not renamed by a label that wraps onto it
+    CHECK(std::find(names.begin(), names.end(), "past") == names.end());
+}
+#endif
