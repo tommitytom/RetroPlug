@@ -177,6 +177,39 @@ test("a run a stopped call left is never sent in a later block", () => {
   expect(next.sent).toEqual([]);
 });
 
+test("a stopped call's runs are cleared before the next block starts its own, however many it sent first", () => {
+  // The stand-in stop throws on the second system's serial in alone, so the call ends with the first's run sent and
+  // the second's held. The next block pushes on both at that frame, where a held byte left uncleared would go out
+  // ahead of its own; its runs at the first frame go out at the frame change, the rest at its end, and the blocks
+  // after it start from none held.
+  const mgb = { pipeline: [{ kind: "mgb", config: {} }] };
+  const node = create(settings({ project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }], systems: [{ id: 1, ...mgb }, { id: 2, ...mgb }] }));
+  const stopped = blockOf(1024, false, { midiIn: [{ frame: 4, data: [0x90, 60, 100] }] });
+  const send = stopped.block.send;
+  stopped.block.send = (port, frame, data, flags) => {
+    if (port === "sys-2.serialIn") throw new Error("stopped");
+    return send(port, frame, data, flags);
+  };
+  expect(() => node.process(stopped.block)).toThrow("stopped");
+  expect(stopped.sent).toEqual([{ port: "sys-1.serialIn", frame: 4, data: [0x90, 60, 100], flags: 0 }]);
+  const runs = (midiIn: { frame: number; data: number[] }[]) => {
+    const b = blockOf(1024, false, { midiIn });
+    node.process(b.block);
+    return b.sent.map((s) => [s.port, s.frame, ...s.data]);
+  };
+  expect(runs([{ frame: 4, data: [0x80, 60, 0] }, { frame: 7, data: [0x90, 62, 100] }])).toEqual([
+    ["sys-1.serialIn", 4, 0x80, 60, 0],
+    ["sys-2.serialIn", 4, 0x80, 60, 0],
+    ["sys-1.serialIn", 7, 0x90, 62, 100],
+    ["sys-2.serialIn", 7, 0x90, 62, 100],
+  ]);
+  expect(runs([])).toEqual([]);
+  expect(runs([{ frame: 2, data: [0x80, 62, 0] }])).toEqual([
+    ["sys-1.serialIn", 2, 0x80, 62, 0],
+    ["sys-2.serialIn", 2, 0x80, 62, 0],
+  ]);
+});
+
 test("controllerIn is in the block's input only when the surface sent something, as today's marshalling", () => {
   const inputs: BlockInput[] = [];
   const processBlock = DspKernel.prototype.processBlock;

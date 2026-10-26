@@ -186,6 +186,10 @@ export const kernelNode = defineNode<KernelSettings>({
     let block: Block | null = null; // the block being processed, which every sink call sends on
     const press = new Uint8Array(2);
     const tagged: number[] = [];
+    // At least the number of non-empty runs, so a block that holds none skips the run bookkeeping: raised before a
+    // byte starts a run, and set to 0 only once every run is empty. A run sent at a frame change is refilled by the
+    // same call, so it stands; a call stopped or thrown part way can leave it too high, never too low.
+    let held = 0;
 
     const sendRun = (p: SystemPorts) => {
       block!.send(p.serialIn, p.runFrame, p.run);
@@ -193,6 +197,7 @@ export const kernelNode = defineNode<KernelSettings>({
     };
     const sendRuns = () => {
       for (let s = 0; s < systems.length; s++) if (systems[s].run.length > 0) sendRun(systems[s]);
+      held = 0;
     };
 
     // Each kernel sink call onto its port, in emission order; a call naming a system with no ports is dropped, as
@@ -203,7 +208,8 @@ export const kernelNode = defineNode<KernelSettings>({
       pushSerialIn: (system, frame, byte) => {
         const p = byId.get(system);
         if (!p) return;
-        if (p.run.length > 0 && frame !== p.runFrame) sendRun(p);
+        if (p.run.length === 0) ++held;
+        else if (frame !== p.runFrame) sendRun(p);
         p.runFrame = frame;
         p.run.push(byte & 0xff);
       },
@@ -244,20 +250,24 @@ export const kernelNode = defineNode<KernelSettings>({
     return {
       // A throw goes to the script host, which counts it and runs this again next block: what the kernel sent
       // before it stands, as today, its held runs included. A call the deadline stops skips the finally, so a run it
-      // left is cleared here rather than sent in a block it was not pushed in.
+      // left (held is still above 0) is cleared here rather than sent in a block it was not pushed in.
       process(b) {
         block = b;
-        for (let s = 0; s < systems.length; s++) systems[s].run.length = 0;
+        if (held > 0) {
+          for (let s = 0; s < systems.length; s++) systems[s].run.length = 0;
+          held = 0;
+        }
         if (tracer) kernel.setTracing(traceArmed());
         try {
           kernel.processBlock(blockInput(b, systems));
         } finally {
-          sendRuns();
+          if (held > 0) sendRuns();
         }
       },
       // Between blocks. The new ports' runs start empty, so no byte crosses a reshape onto another port.
       onSettings(next) {
         systems = portsOf(next);
+        held = 0;
         byId = new Map(systems.map((s) => [s.id, s]));
         kernel.setSystems(next);
       },
