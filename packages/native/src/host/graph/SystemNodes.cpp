@@ -172,8 +172,8 @@ struct SystemNode {
 // frames of it). Fixed rather than sized from the plan's block size, so a feedback wire from it keeps its front
 // across every plan swap. A Game Boy that clocks the port itself (internal clock, SC=0x81) shifts at its serial
 // rate instead, and a CGB on its fast clock (32768 bytes a second, about 0.7 a frame at 48 kHz, twice that in
-// double speed) can outrun this in a block past about 12000 frames: what does not fit is dropped and counted
-// (GraphHost::droppedMessages), never lost silently.
+// double speed) can outrun this in a block past about 12000 frames (about 6000 in double speed): what does not
+// fit is dropped and counted (GraphHost::droppedMessages), never lost silently.
 constexpr rp::capacity kSerialOutCapacity{.messages = 8256, .bytes = 8256};
 
 struct GameBoy : SystemNode<GameBoy, SameBoySystem> {
