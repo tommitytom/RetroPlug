@@ -736,7 +736,9 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
     // either (no publish, no ppq advance). A host that reported its block size (setMaxBlockFrames) never gets
     // here; one that did not is counted, for reclaim() to report on the control thread. What was staged for the
     // block goes with it, as a block that ran would leave none of it: no input node took it, and a host whose
-    // every block is too long would otherwise grow the staging without end.
+    // every block is too long would otherwise grow the staging without end. A host that reaches this loses that
+    // block's staged MIDI: its note-offs, and the plugin's automation CCs, which it does not resend until the value
+    // changes. A host avoids it by calling setMaxBlockFrames with its buffer size, as the plugin's activate() does.
     if (frames > graph_->maxFrames) {
         for (std::size_t c = 0; c < numOutputs; ++c)
             if (outputs[c]) std::memset(outputs[c], 0, frames * sizeof(float));

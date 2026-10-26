@@ -753,7 +753,18 @@ export class ProjectStore {
       this.holdGraph = false;
     }
     this.projectSettings = { ...DEFAULT_SETTINGS, ...cfg.settings };
-    this.publishRouting(); // place the loaded systems, with the loaded project's routing
+    try {
+      this.publishRouting(); // place the loaded systems, with the loaded project's routing
+    } catch (e) {
+      // Every system is adopted by now, so the observers hear of them as the rebuild's failure path tells them:
+      // once, here, as the success path below is not reached.
+      try {
+        this.onSystemsChange();
+      } catch (se) {
+        console.warn(`[project] notifying the observers of the systems a failed load adopted threw: ${String(se)}`);
+      }
+      throw e;
+    }
     this.projectName = cfg.name ?? ""; // only a name the user gave the project is stored; blank = unnamed
     this.songRequest = null; // a request parked against the previous cart cannot apply to this one
     this.recentPending = false;

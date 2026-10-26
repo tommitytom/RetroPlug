@@ -151,8 +151,8 @@ export interface AudioDriver {
    *  stages a block (its notes, then each moved automation slot's CC at frame 0): the engine's MIDI input sorts
    *  them by frame, keeping the staging order on a tie. False, nothing staged, for an empty array or a frame that is
    *  not an integer from 0 to 1023. The frame is where the message lands when that block renders at least 1024
-   *  frames (renderAudio's first block is the lesser of 1024 frames and the whole render); a block shorter than
-   *  `frame`, a renderBlocks one included, is the caller's to avoid. */
+   *  frames (renderAudio's first block is the lesser of 1024 frames and the whole render); a block of
+   *  `frame` frames or fewer, a renderBlocks one included, is the caller's to avoid. */
   stageMidiIn(bytes: Uint8Array | number[], frame?: number): boolean;
   /** Stage one CONTROL-SURFACE message (a Launchpad pad press), delivered to the kernel as
    *  `controllerIn` rather than as musical MIDI - so a headless test can drive a controller app with
@@ -222,7 +222,8 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
   const ints = (b: Uint8Array | number[]): number[] => Array.from(b);
   const STEREO: HostShape = { kind: "multi", channels: 2 };
   const RENDER_BLOCKS_OUTPUTS: readonly number[] = [2, 4, 6, 8];
-  // renderAudio's block (EngineRpcService::kBlockSize): a staged message's frame is below it.
+  // renderAudio's block: a staged message's frame is below it. Copies kBlockSize (1024), declared in
+  // packages/native/src/host/rpc/EngineRpcService.hpp, with nothing tying the two.
   const STAGE_FRAMES = 1024;
   // While this driver's audio thread runs, the render calls refuse natively, so they leave the graph alone. The
   // flag is this driver's own (B1's native render calls checked the engine's audioThreadOwns instead): with a

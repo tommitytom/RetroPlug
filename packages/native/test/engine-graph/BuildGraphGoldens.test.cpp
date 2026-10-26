@@ -10,8 +10,8 @@
 // kind is refused when the node activates. Each is built as the case's model says (a Game Boy's link group, a
 // NES's export mode), and the case's tap arm rides the request, so each NES must end in the mode it armed, or
 // the one it was built in. Each plan then runs one block, which must fault no node, throw in no script node and
-// drop no message: a document can plan and still wedge a linked group or a node's process, and the kernel catches
-// its own throws rather than faulting. The thirty-three systems under perSystem give rp.host.audio-out 33 buses,
+// drop no message: a document can plan and still wedge a linked group or a node's process, and the script host
+// catches a script node's throw, counts it and runs the node again next block, rather than faulting. The thirty-three systems under perSystem give rp.host.audio-out 33 buses,
 // past the 32 it takes: those are refused instead.
 //
 // Run via `pnpm test:plugin engine-graph`.
@@ -178,7 +178,8 @@ std::optional<std::string> plan(const GoldenCase& c, const std::string& document
     for (auto& lane : lanes) outs.push_back(lane.data());
     e.processBlock(kBlockFrames, outs.data(), outs.size());
     if (e.faultCount() != 0) return std::to_string(e.faultCount()) + " node(s) faulted in its first block";
-    // The kernel catches its own throw and runs again the next block (design section 4.5), so a fault cannot show one.
+    // The script host catches a script node's throw, counts it and runs the node again next block (design section 4.5),
+    // so a fault cannot show one.
     if (e.scriptThrows() != 0) return std::to_string(e.scriptThrows()) + " script node throw(s) in its first block";
     if (e.droppedMessages() != 0) return std::to_string(e.droppedMessages()) + " message(s) dropped in its first block";
     return std::nullopt;

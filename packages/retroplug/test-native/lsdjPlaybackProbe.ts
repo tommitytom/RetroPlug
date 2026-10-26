@@ -127,7 +127,7 @@ export class LsdjProbe {
     if (!graph.add({
       romPath: rom, platform: "gb", core: "sameboy", embeddedRom: "",
       savPath: null, statePath: null, sramBytes: savFrom(opts.song),
-    }, id)) return null;
+    }, id)) throw new Error(`LsdjProbe: the graph did not place system ${id}`);
 
     const structure: KernelStructure = opts.structure
       ? opts.structure(id)
@@ -137,13 +137,17 @@ export class LsdjProbe {
         };
     // The structure's project stages, and the pipeline it gives this cart. The stages are dropped first, which
     // prunes their state, so a controller session never carries over from the previous probe: each probe's kernel
-    // starts as a fresh one would. A probe still open (a test can build a second while the first is live) loses its
-    // pipeline, as it did when each probe loaded a kernel of its own and pushed it a structure naming only its own
-    // cart: under sendToAll it would otherwise hear every byte staged at the new one.
-    for (const other of liveProbes)
-      if (!other.closed && !graph.setPipeline(other.id, [])) return null;
-    if (!graph.setProjectStages([]) || !graph.setProjectStages(structure.project ?? [])) return null;
-    if (!graph.setPipeline(id, structure.systems.find((s) => s.id === id)?.pipeline ?? [])) return null;
+    // starts as a fresh one would. Every OTHER system the graph holds loses its pipeline, whether or not a probe
+    // owns it (a test can place one through the shared directGraph() and never remove it): as when each probe
+    // loaded a kernel of its own and pushed it a structure naming only its own cart, under sendToAll it would
+    // otherwise hear every byte staged at the new one. A graph call that fails throws, so it never reads as a
+    // skipped test.
+    for (const other of graph.ids())
+      if (other !== id && !graph.setPipeline(other, [])) throw new Error(`LsdjProbe: could not clear system ${other}'s pipeline`);
+    if (!graph.setProjectStages([]) || !graph.setProjectStages(structure.project ?? []))
+      throw new Error("LsdjProbe: the graph refused the project stages");
+    if (!graph.setPipeline(id, structure.systems.find((s) => s.id === id)?.pipeline ?? []))
+      throw new Error(`LsdjProbe: the graph refused system ${id}'s pipeline`);
 
     const probe = new LsdjProbe(be, audio, reader, id);
     liveProbes.push(probe);

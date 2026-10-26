@@ -3,7 +3,8 @@
 // role list + per-system pipelines. This is the one seam that turns "what the app has" into
 // "what the DSP runs", which the ProjectStore publishes with the graph as the kernel node's
 // settings (docs/modular-graph-phase-b3a-design.md section 5.2). Pure and registry-free: the
-// systems store hands it only the roles the kernel runs (SystemsStore.graphSystems), and the
+// systems store hands it only the roles the kernel runs when it has a registry (SystemsStore.graphSystems; a store
+// without one, as in tests, hands it every role), and the
 // kernel self-guards scope all the same (dspKernel.ts - a pipeline stage whose roleType is
 // missing / project-scope / has no `dsp` is skipped).
 
