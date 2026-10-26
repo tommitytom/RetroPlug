@@ -146,10 +146,19 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // block path makes onto what the node holds that fails (a setter the node hung there threw or ran past the deadline, or
 // it froze the object) is the node's throw too: messages() and control() throw it, and on its audio views, the Block
 // object or its transport, written before process is called, it is a throw in process whose block does not run (its
-// audio outputs silent). Only the node's own setters can run there: every node shares the one realm, so the host makes
-// each property it will write, and each new slot of an array, the object's own data property (a define, which never
-// walks the prototype chain), and its later writes find it there, never an accessor another node (or the bundle) hung on
-// Object.prototype or Array.prototype.
+// audio outputs silent). Every node shares the one realm, so the host keeps its writes, and its reads of a node's
+// methods, off the prototypes they all share. Each field it fills it makes the object's own data property when it makes
+// the object (a define, which never walks the prototype chain), and each slot of an array it writes as the slot is at
+// that write: set when it is the array's own, defined when it is not (never made, or taken back by the node with a
+// shift, a splice or a shorter length). So only the node's own setters run there, never an accessor another node (or
+// the bundle) hung on Object.prototype or Array.prototype, with one gap: a field the node deletes is set again, which
+// walks the chain, as does the host's read of a message's data the node deleted (asking at every field write would cost
+// a script call about 14%). It reads process and the hooks from the object create returned and the prototypes it
+// inherits them through, short of Object.prototype, so it neither runs nor adopts a getter or a function another put
+// there; and it freezes the Block prototype every node reaches, with its methods (and, in a profile build, binds the
+// trace globals read-only and frozen), so no node replaces one for another. That is the host's part only: what nodes can
+// do to each other through the realm they share (an accessor on a prototype another's own code reads through, a global
+// it calls) it does not cover, and one context per node is what would close that (spec/07-remaining-work.md).
 //
 // Settings reach the audio side as their JSON form: the control side's parseSettings checks them, and what it
 // returns crosses as JSON (the two runtimes share no value), so a transform's result that JSON cannot hold (a Map, a
@@ -287,7 +296,8 @@ private:
     JSRuntime*                   audioRt_ = nullptr;
     JSContext*                   audio_ = nullptr;
     std::uint32_t                blockClass_ = 0;  // the JSClassID of the Block object, in the audio runtime
-    std::array<std::uint32_t, 16> atoms_{};        // JSAtoms the block path names properties by, in the audio runtime
+    std::array<std::uint32_t, 24> atoms_{};        // JSAtoms the block thread names properties by, in the audio runtime
+    const void*                  objectProto_ = nullptr;  // the audio context's Object.prototype, by address
 
     std::vector<std::unique_ptr<Type>> types_;
     std::vector<const rp_node_type*>   typeList_;

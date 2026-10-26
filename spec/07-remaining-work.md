@@ -145,6 +145,14 @@ staging). What is left, in order:
   deleted. How several stages' outputs merge into one system input is B3b's to decide; a system input
   must keep "all MIDI, then all bytes" per core, and `rp.core.merge`'s output queue is the default size,
   so merging large wires needs a merge whose output capacity its settings give.
+- **One QuickJS context per script node, decided before user-written nodes.** Every script node runs in
+  the audio runtime's one context, so they share a realm: the script host keeps its own writes and its
+  reads of a node's methods off the shared prototypes ([02-native-host.md](02-native-host.md)), but one
+  node's code can still change what another's reads through (an accessor on `Object.prototype` or
+  `Array.prototype`, a global, a definition in `__rp_scriptNodes`), and a field a node deletes puts the
+  host's next write of it back on the chain. A context per node in the same runtime (its own intrinsics
+  and prototypes) closes all of it, at a per-context memory cost; decide it before nodes users write
+  (Phase C, the Reaktor-scale aim).
 - **Found while building B3a, left as they are:**
   - `rp.host.midi-out` and `rp.host.controller-out` append one `std::vector` per message to the engine's
     host outputs (`Engine::midiOut_` / `controllerOut_`, the `rp.engine.host-io/1` service in

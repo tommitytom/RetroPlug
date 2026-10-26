@@ -683,11 +683,21 @@ audio-side one that holds every instance and runs `process`.
   logged once by `reclaim`. A write the block path makes onto what a node holds that fails (a setter
   the node hung there threw or ran past the deadline, or it froze the object) is the node's throw too:
   `messages()` and `control()` throw it, and on its audio views, the `Block` or its transport, written
-  before `process` is called, it is a throw in `process` whose block does not run. Only the node's own
-  setters can run there: every node shares one realm, so the host makes each property it will write,
-  and each new array slot, the object's own data property (a define, which never walks the prototype
-  chain), and none of its writes reaches an accessor another node (or the bundle) hung on
-  `Object.prototype` or `Array.prototype`.
+  before `process` is called, it is a throw in `process` whose block does not run. Every node shares
+  one realm, so the host keeps its writes, and its reads of a node's methods, off the shared
+  prototypes: each field it fills is the object's own data property from when it makes the object (a
+  define, which never walks the prototype chain), and each array slot is set when it is the array's
+  own at that write and defined when it is not (never made, or taken back by a shift, a splice or a
+  shorter length). So only the node's own setters run there, never an accessor another node (or the
+  bundle) hung on `Object.prototype` or `Array.prototype`, with one gap: a field the node deletes is
+  set again, which walks the chain, as does the read of a message's `data` it deleted (asking at every
+  field write would cost a script call about 14%). `process` and the hooks are read from what `create`
+  returned and the prototypes it inherits them through, short of `Object.prototype`, so none is run or
+  adopted from there; and the `Block` prototype every node reaches is frozen with its methods (a
+  profile build binds the trace globals read-only and frozen too), so no node replaces one for
+  another. That is the host's part only: what nodes can do to each other through the shared realm (an
+  accessor on a prototype another's own code reads through, a global it calls) is left to one context
+  per node ([07-remaining-work.md](07-remaining-work.md)).
 - **The call deadline.** Every call the block thread makes into a node's JS (and `endBlock`'s promise
   jobs, together) is held to a deadline of the calling thread's CPU time (2 s by default,
   `setCallDeadline`), so a stall that is not the node's own never trips it. A call that runs past it is

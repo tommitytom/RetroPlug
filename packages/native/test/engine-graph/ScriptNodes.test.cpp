@@ -3,7 +3,8 @@
 // exposes (ScriptRig.hpp), are planned and run beside the graph tests' C++ sources and sinks: what reaches them
 // through Block, what they send, the control-side context laying their ports out from settings, a node kept across
 // a reshape or swapped or rebuilt, where their instances are made and released, a throw (a refused write onto what a
-// node holds among them, while the setters one hangs on the shared prototypes charge no other), the block path's
+// node holds among them, while the accessors one hangs on the shared prototypes charge no other, a method only
+// Object.prototype holds is adopted by none, and none replaces a method of the frozen Block prototype), the block path's
 // allocations, and a running audio thread under all of it. The embedded production bundle and an Engine built
 // around a toy bundle close it. A RETROPLUG_PROFILE build (build-prof/, which tools/run-profile.sh configures) adds the
 // trace window's cases, [profile]: a span JS leaves open, a setter JS hangs on a marshalled message and one on a
@@ -1078,30 +1079,48 @@ trapAudio("rp.toy.trap-audio", {}), trapAudio("rp.toy.strict-trap-audio", { faul
 
 // The one realm every script node shares. rp.toy.polluter, in its first block, hangs a getter and a setter that throw
 // (saying so first) on Array.prototype's first indices and on Object.prototype for every name the host writes onto
-// what it makes, as a node, or the bundle, may; then shows each took, on a fresh object or array. rp.toy.tidy, planned
-// after it, does nothing a node should not: it passes its messages and control changes on, scales its audio by its
-// param, reads its transport and says whether an exception is pending. It calls no builtin that keeps an array of its
-// own, as JSON.stringify does: QuickJS pushes onto one through the prototype chain, so the traps would meet the node's
-// own call, which is no write of the host's.
+// what it makes, as a node, or the bundle, may; then shows each took, on a fresh object or array. Its settings add the
+// names the host reads a node's methods by: hooks "throw" traps them too, and hooks "adopt" makes each a function on
+// Object.prototype that says it ran. rp.toy.tidy, planned after it, does nothing a node should not: it passes its
+// messages and control changes on, scales its audio by its param and its block's number, reads its transport and says
+// whether an exception is pending and how many views it got; with shrink "arrays" it takes back every array it was
+// handed once it has read it, every block, draining its messages with shift and emptying its changes and both views
+// arrays (a zero length, a splice). It calls no builtin that keeps an array of its own, as JSON.stringify does: QuickJS
+// pushes onto one through the prototype chain, so the traps would meet the node's own call, which is no write of the
+// host's. rp.toy.hollow's create returns no process; rp.toy.classy's returns a class instance, its process and
+// portsChanged on its class's prototype and its onSettings on its base class's. rp.toy.vandal, in its first block,
+// tries every way to replace, remove or shadow a method on the Block prototype every node shares (and on the trace
+// globals, in a profile build), and says whether all of it stood.
 const char* const kRealm = R"JS(
+class Base { onSettings(s) { __probe("classy onSettings " + s.tag); } }
+class Classy extends Base {
+  process() { __probe("classy process"); }
+  portsChanged(connected) { __probe("classy ports " + connected.join(",")); }
+}
 rp.register([rp.defineNode({
   id: "rp.toy.polluter",
+  settings: rp.z.object({ hooks: rp.z.enum(["none", "throw", "adopt"]).default("none") }),
   ports: { out: rp.events.out() },
-  create: () => {
+  create: ({ settings: { hooks } }) => {
     let quiet = false, done = false;
     const trap = (name) => ({
       configurable: true,
       get() { if (!quiet) __probe("got " + name); throw new Error("polluted " + name); },
       set(v) { if (!quiet) __probe("set " + name); throw new Error("polluted " + name); },
     });
+    const adopted = (name) => ({ configurable: true, writable: true, value: function () { __probe("adopted " + name); } });
     // "value" last: Object.defineProperty reads a descriptor's value through the prototype chain.
     const names = ["frames", "transport", "sampleRate", "tempo", "ppq", "playing", "frame", "data", "flags", "start",
                    "changes", "settings", "maxFrames", "value"];
+    const methods = ["process", "onSettings", "portsChanged", "activate"];
+    if (hooks === "throw") names.unshift(...methods);
     return {
       process() {
         if (done) return;
         done = true;
         for (let i = 0; i < 8; ++i) Object.defineProperty(Array.prototype, i, trap("[" + i + "]"));
+        if (hooks === "adopt")
+          for (let k = 0; k < methods.length; ++k) Object.defineProperty(Object.prototype, methods[k], adopted(methods[k]));
         for (let k = 0; k < names.length; ++k) Object.defineProperty(Object.prototype, names[k], trap(names[k]));
         quiet = true;
         let took = 0;
@@ -1114,24 +1133,79 @@ rp.register([rp.defineNode({
   },
 }), rp.defineNode({
   id: "rp.toy.tidy",
+  settings: rp.z.object({ shrink: rp.z.enum(["none", "arrays"]).default("none"), tag: rp.z.number().default(0) }),
   ports: { in: rp.events.in(), level: rp.control.in(), audioIn: rp.audio.in(), out: rp.events.out({ messages: 16 }),
            audioOut: rp.audio.out(rp.channels.match("audioIn")), changes: rp.control.out() },
   params: { gain: rp.param.float({ name: "Gain", min: 0, max: 4, default: 0.5 }) },
   create: ({ settings, sampleRate, maxFrames }) => {
     __probe("created " + sampleRate + " " + maxFrames + " " + typeof settings);
+    const shrink = settings.shrink === "arrays";
+    let n = 0;
     return {
       process(b) {
+        ++n;
         const ms = b.messages("in");
-        for (let i = 0; i < ms.length; ++i) b.send("out", ms[i].frame, ms[i].data, ms[i].flags);
+        if (shrink) while (ms.length > 0) { const m = ms.shift(); b.send("out", m.frame, m.data, m.flags); }
+        else for (let i = 0; i < ms.length; ++i) b.send("out", ms[i].frame, ms[i].data, ms[i].flags);
         const changes = b.control("level").changes;
         for (let k = 0; k < changes.length; ++k) b.emit("changes", changes[k].frame, changes[k].value);
-        const g = b.control("gain").start;
+        const g = b.control("gain").start * n;
         const ins = b.audio("audioIn"), outs = b.audio("audioOut");
         for (let c = 0; c < outs.length; ++c) { const i = ins[c], o = outs[c]; for (let f = 0; f < b.frames; ++f) o[f] = i[f] * g; }
         const t = b.transport;
-        __probe((__pending() ? "pending " : "clear ") + t.sampleRate + " " + t.tempo + " " + t.playing);
+        __probe((__pending() ? "pending " : "clear ") + t.sampleRate + " " + t.tempo + " " + t.playing + " " + ins.length + "/" +
+                outs.length);
+        if (shrink) {
+          changes.length = 0;
+          ins.splice(0, ins.length);
+          outs.length = 0;
+        }
       },
       portsChanged(connected) { __probe("ports " + connected.join(",")); },
+    };
+  },
+}), rp.defineNode({
+  id: "rp.toy.hollow",
+  ports: { out: rp.events.out() },
+  create: () => ({}),
+}), rp.defineNode({
+  id: "rp.toy.classy",
+  settings: rp.z.object({ tag: rp.z.number().default(0) }),
+  ports: { out: rp.events.out() },
+  create: () => new Classy(),
+}), rp.defineNode({
+  id: "rp.toy.vandal",
+  ports: { out: rp.events.out() },
+  create: () => {
+    let done = false;
+    return {
+      process(b) {
+        if (done) return;
+        done = true;
+        const spy = function () { __probe("spied"); return []; };
+        const attempt = (f) => { try { f(); } catch (e) {} };
+        const shared = [[Object.getPrototypeOf(b), ["messages", "send", "control", "emit", "audio"]]];
+        if (typeof spanBegin === "function") shared.push([globalThis, ["spanBegin", "spanEnd", "traceName", "traceArmed"]]);
+        let intact = true;
+        for (let s = 0; s < shared.length; ++s) {
+          const owner = shared[s][0], names = shared[s][1];
+          for (let k = 0; k < names.length; ++k) {
+            const name = names[k], kept = owner[name];
+            attempt(() => { owner[name] = spy; });
+            attempt(() => Object.defineProperty(owner, name, { value: spy }));
+            attempt(() => Object.defineProperty(owner, name, { get: () => spy }));
+            attempt(() => { delete owner[name]; });
+            attempt(() => Object.defineProperty(kept, "call", { value: spy }));
+            attempt(() => Object.setPrototypeOf(kept, { call: spy }));
+            intact = intact && owner[name] === kept && Object.isFrozen(kept);
+          }
+        }
+        const proto = Object.getPrototypeOf(b);
+        attempt(() => Object.setPrototypeOf(proto, { messages: spy }));
+        attempt(() => Object.defineProperty(proto, "extra", { value: spy }));
+        intact = intact && Object.isFrozen(proto) && Object.getPrototypeOf(proto) === Object.prototype && !("extra" in proto);
+        __probe(intact ? "intact" : "vandalized");
+      },
     };
   },
 })]);
@@ -1142,6 +1216,57 @@ std::vector<std::string> tagsOf(rp::host::test::ProbeLog& log) {
     std::vector<std::string> tags;
     for (const auto& call : log.calls) tags.push_back(call.first);
     return tags;
+}
+
+// The tags a polluter's accessor, an adopted method or a vandal's spy says when it runs, and a pending exception.
+std::vector<std::string> trapsHit(rp::host::test::ProbeLog& log) {
+    std::vector<std::string> hit;
+    for (const auto& tag : tagsOf(log))
+        for (const char* said : {"got ", "set ", "adopted ", "spied", "pending"})
+            if (tag.rfind(said, 0) == 0) hit.push_back(tag);
+    return hit;
+}
+
+// rp.toy.tidy, with these settings, beside `first`, fed by a feed, a constant and a source, its outputs into a probe and
+// a sink.
+std::string tidyDoc(const std::string& first, const std::string& settings) {
+    const std::string nodes = first + "," + node("feed", "rp.test.feed") + "," +
+                              node("k", "rp.core.constant", "", R"({"value":0.5})") + "," + node("src", "rp.test.source") + "," +
+                              node("t", "rp.toy.tidy", settings) + "," + node("p", "rp.test.probe") + "," + node("sink", "rp.test.sink");
+    const std::string wires = wire("feed.midi", "t.in") + "," + wire("k.out", "t.level") + "," + wire("src.out", "t.audioIn") + "," +
+                              wire("t.out", "p.events") + "," + wire("t.changes", "p.control") + "," + wire("t.audioOut", "sink.in");
+    return doc(nodes, wires);
+}
+
+// That document planned, `first` planned alone and run a block already (so the realm is as it left it before the tidy
+// node is made), and four blocks of alternating length run, so every block makes the views again: each block's messages,
+// its control change and its audio (the source's 1, by the gain param's default and the block's number) reach the tidy
+// node's outputs whole, and nothing is charged to it.
+void runTidy(ScriptRig& rig, const std::string& first, const std::string& settings) {
+    REQUIRE(rig.set(tidyDoc(first, settings)).ok);
+    CHECK(rig.log.count("created 48000 256 object") == 1);
+    CHECK(rig.log.count("ports true,true,true") == 1);
+    auto& feed = rig.node<Feed>("feed");
+    const auto& probe = rig.node<Probe>("p");
+    const auto& sink = rig.node<gt::Sink>("sink");
+    // Its messages array and their pool grow over the first two blocks, and the fourth has no message.
+    const std::uint32_t counts[] = {3, 5, 1, 0};
+    const std::uint32_t frames[] = {64, 32, 64, 32};
+    for (int n = 0; n < 4; ++n) {
+        INFO("block " << n + 1);
+        std::vector<rp::host::test::Message> sent;
+        for (std::uint32_t i = 0; i < counts[n]; ++i) sent.push_back({i, bytes({0x90, static_cast<int>(60 + i), 100})});
+        feed.next[Feed::Midi] = sent;
+        if (n > 0) REQUIRE(rig.host->setParam("k", "value", 0.25 * n, 10));
+        rig.run(frames[n]);
+        CHECK(rig.scripts.throwCount() == 0);
+        CHECK_FALSE(rig.host->isFaulted("t"));
+        CHECK(probe.events == sent);
+        CHECK(probe.controlChanges == std::vector<double>{n == 0 ? 0.5 : 0.25 * n});
+        CHECK(sink.first[0] == 0.5f * static_cast<float>(n + 1));
+        CHECK(sink.last[1] == 0.5f * static_cast<float>(n + 1));
+    }
+    CHECK(rig.log.count("clear 48000 120 false 2/2") == 4);
 }
 
 }  // namespace
@@ -1268,50 +1393,70 @@ TEST_CASE("a refused write onto a script node's audio views is a throw in its pr
     }
 }
 
-TEST_CASE("the setters a script node hangs on the shared prototypes run for none of the host's writes, so a node beside it "
-          "runs uncharged",
+TEST_CASE("the accessors a script node hangs on the shared prototypes run for none of the host's writes, so a node beside it "
+          "runs uncharged, even one that takes back every array it is handed",
           "[script][trap][realm]") {
-    ScriptRig rig(kRealm);
-    REQUIRE(rig.set(doc(node("x", "rp.toy.polluter"), "")).ok);
-    rig.run();
-    REQUIRE(rig.log.count("polluted 22") == 1);  // every trap took
-    // The tidy node is made after, in the realm as the polluter left it, and so is everything it is handed.
-    const std::string nodes = node("x", "rp.toy.polluter") + "," + node("feed", "rp.test.feed") + "," +
-                              node("k", "rp.core.constant", "", R"({"value":0.5})") + "," + node("src", "rp.test.source") + "," +
-                              node("t", "rp.toy.tidy") + "," + node("p", "rp.test.probe") + "," + node("sink", "rp.test.sink");
-    const std::string wires = wire("feed.midi", "t.in") + "," + wire("k.out", "t.level") + "," + wire("src.out", "t.audioIn") + "," +
-                              wire("t.out", "p.events") + "," + wire("t.changes", "p.control") + "," + wire("t.audioOut", "sink.in");
-    REQUIRE(rig.set(doc(nodes, wires)).ok);
-    CHECK(rig.log.count("created 48000 256 object") == 1);
-    CHECK(rig.log.count("ports true,true,true") == 1);
-    auto& feed = rig.node<Feed>("feed");
-    const auto& probe = rig.node<Probe>("p");
-    const auto& sink = rig.node<gt::Sink>("sink");
-    // Its messages array and their pool grow over the first two blocks, its views are made again on the third and the
-    // fourth, and the fourth has no message.
-    const std::uint32_t counts[] = {3, 5, 1, 0};
-    const std::uint32_t frames[] = {64, 64, 32, 64};
-    for (int n = 0; n < 4; ++n) {
-        INFO("block " << n + 1);
-        std::vector<rp::host::test::Message> sent;
-        for (std::uint32_t i = 0; i < counts[n]; ++i) sent.push_back({i, bytes({0x90, static_cast<int>(60 + i), 100})});
-        feed.next[Feed::Midi] = sent;
-        if (n > 0) REQUIRE(rig.host->setParam("k", "value", 0.25 * n, 10));
-        rig.run(frames[n]);
-        CHECK(rig.scripts.throwCount() == 0);
-        CHECK_FALSE(rig.host->isFaulted("t"));
-        CHECK(probe.events == sent);
-        REQUIRE(probe.controlChanges.size() == 1);
-        CHECK(probe.controlChanges[0] == (n == 0 ? 0.5 : 0.25 * n));
-        CHECK(sink.first[0] == 0.5f);  // the source's 1, by the gain param's default
-        CHECK(sink.last[1] == 0.5f);
+    // With "arrays", every block's fill writes onto slots the tidy node took away (a shift, a zero length, a splice).
+    for (const char* shrink : {"none", "arrays"}) {
+        INFO("shrink " << shrink);
+        ScriptRig rig(kRealm);
+        REQUIRE(rig.set(doc(node("x", "rp.toy.polluter"), "")).ok);
+        rig.run();
+        REQUIRE(rig.log.count("polluted 22") == 1);  // every trap took
+        runTidy(rig, node("x", "rp.toy.polluter"), std::string(R"({"shrink":")") + shrink + "\"}");
+        CHECK(trapsHit(rig.log).empty());  // none ran, for the host or the tidy node, and nothing was left pending
     }
-    CHECK(rig.log.count("clear 48000 120 false") == 4);
-    // None of the polluter's accessors ran, for the host or for the tidy node, and nothing was left pending.
-    std::vector<std::string> hit;
-    for (const auto& tag : tagsOf(rig.log))
-        if (tag.rfind("got ", 0) == 0 || tag.rfind("set ", 0) == 0 || tag.rfind("pending", 0) == 0) hit.push_back(tag);
-    CHECK(hit.empty());
+}
+
+TEST_CASE("the host reads a script node's process and hooks from what its create returned, short of Object.prototype: a "
+          "getter there that throws fails no create, and a function there is adopted by no node",
+          "[script][trap][realm][hooks]") {
+    ScriptRig rig(kRealm);
+    SECTION("a getter that throws") {
+        const std::string polluter = node("x", "rp.toy.polluter", R"({"hooks":"throw"})");
+        REQUIRE(rig.set(doc(polluter, "")).ok);
+        rig.run();
+        REQUIRE(rig.log.count("polluted 26") == 1);
+        runTidy(rig, polluter, "");  // the tidy node has no onSettings and no activate of its own
+        CHECK(trapsHit(rig.log).empty());
+    }
+    SECTION("a function") {
+        const std::string polluter = node("x", "rp.toy.polluter", R"({"hooks":"adopt"})");
+        REQUIRE(rig.set(doc(polluter, "")).ok);
+        rig.run();
+        REQUIRE(rig.log.count("polluted 22") == 1);
+        runTidy(rig, polluter, "");
+        // The tidy node swapped to new settings (it has no onSettings to run), and the hollow and classy nodes made.
+        const auto beside = [&](const char* classy) {
+            return tidyDoc(polluter + "," + node("h", "rp.toy.hollow") + "," + node("c", "rp.toy.classy", classy), R"({"tag":1})");
+        };
+        REQUIRE(rig.set(beside("")).ok);
+        rig.run(64, 2);
+        CHECK(rig.host->isFaulted("h"));  // nothing to run: its create failed
+        CHECK_FALSE(rig.host->isFaulted("t"));
+        CHECK_FALSE(rig.host->isFaulted("c"));
+        CHECK(rig.log.count("classy process") == 2);  // its methods are found on its classes' prototypes
+        CHECK(rig.log.count("classy ports false") == 1);
+        std::string why;
+        CHECK(rig.host->reactivate(44100.0, 256, &why));  // neither the tidy node nor the classy one has an activate to run
+        INFO(why);
+        REQUIRE(rig.set(beside(R"({"tag":2})")).ok);  // a swap: the classy node's onSettings is its base class's
+        CHECK(rig.log.count("classy onSettings 2") == 1);
+        CHECK(rig.scripts.throwCount() == 1);
+        rig.reclaim();
+        CHECK(rig.scripts.firstThrow() == "rp.toy.hollow threw in create: TypeError: create returned no process function");
+        CHECK(trapsHit(rig.log).empty());
+    }
+}
+
+TEST_CASE("the Block prototype every script node shares, and its methods, are frozen, so no node replaces one for another",
+          "[script][trap][realm][block]") {
+    ScriptRig rig(kRealm);
+    REQUIRE(rig.set(doc(node("v", "rp.toy.vandal"), "")).ok);
+    rig.run();
+    CHECK(rig.log.count("intact") == 1);  // in a profile build, the trace globals too
+    runTidy(rig, node("v", "rp.toy.vandal"), "");  // its messages, control, audio, send and emit are the host's
+    CHECK(trapsHit(rig.log).empty());
 }
 
 TEST_CASE("a script node's create and onSettings receive its settings as their JSON form", "[script][settings]") {
