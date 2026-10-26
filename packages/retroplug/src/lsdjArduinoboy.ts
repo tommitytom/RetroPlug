@@ -187,7 +187,16 @@ export function arduinoboyMasterSyncBlock(
 ): void {
   const ch = state.channel ?? 0;
   const from = state.lastFrames ?? block.frames; // the length of the block these bytes came from
+  const stop = Math.round((block.sampleRate * MASTER_SYNC_STOP_MS) / 1000);
   for (let i = 0; i < bytes.length; i++) {
+    const at = frames[i] - from;
+    // A silence can end inside this call, with no block start between its 200 ms mark and the byte that ends it.
+    // Checked only at a block start, the restart would carry on the old run (no 0xFC, no fresh NoteOn and 0xFA), so
+    // the output would depend on the block split.
+    if (state.started && at - (state.lastAt ?? 0) > stop) {
+      emit([0xfc]);
+      state.started = false;
+    }
     if (!state.started) {
       // First tick of a run: the byte value is LSDj's song row → NoteOn, then transport start, then this
       // byte's own clock tick (the firmware sends NoteOn + 0xFA before the first 0xF8).
@@ -196,11 +205,11 @@ export function arduinoboyMasterSyncBlock(
       emit([0xfa]);
     }
     emit([0xf8]); // one MIDI clock per tempo byte
-    state.lastAt = frames[i] - from;
+    state.lastAt = at;
   }
   // Every byte before this block's start is known: a run whose newest byte lies further back than the stop's
   // silence has ended.
-  if (state.started && -(state.lastAt ?? 0) > Math.round((block.sampleRate * MASTER_SYNC_STOP_MS) / 1000)) {
+  if (state.started && -(state.lastAt ?? 0) > stop) {
     emit([0xfc]);
     state.started = false;
   }

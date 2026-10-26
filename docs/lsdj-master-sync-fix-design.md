@@ -82,9 +82,12 @@ the role passes `c.serialOut`, `c.serialOutFrames` and `c.block`.
   the configured channel, default 0) and 0xFA.
 - **The stop.** Positions are frames from the current block's start. This call's bytes came from the previous block,
   so a byte sits at `frame - lastFrames`; `lastFrames` is the previous call's block length, taken to equal the current
-  one on the first call. Every byte before the current block's start is then known, so once a run is open and its
-  newest byte lies more than `MASTER_SYNC_STOP_MS` before that start, the decoder sends 0xFC and closes the run. At
-  the end of a call the stored position shifts back by `block.frames`.
+  one on the first call. The rule is checked in two places. Before each byte: a byte more than `MASTER_SYNC_STOP_MS`
+  after the one before it ends the open run first, with 0xFC, and then opens a fresh one. A silence can end inside one
+  call, with no block start between its 200 ms mark and the byte that ends it, so without this check the restart would
+  carry on the old run in some splits and not others. At each block start: every byte before it is then known, so a
+  run whose newest byte lies more than `MASTER_SYNC_STOP_MS` back has ended, which catches a silence no byte has ended
+  yet. At the end of a call the stored position shifts back by `block.frames`.
 - **State** is the run, the newest byte's position and `lastFrames`, plain fields (no per-block allocation), in a
   `masterSync` sub-object of the lsdj-sync stage's state that the dispatcher drops whenever the mode is not master
   sync.
@@ -110,7 +113,9 @@ with the fixtures present and `RP_FAIL_ON_SKIP=1`.
   short of it not; a byte after the stop opening a fresh run; the 0xFC landing in the first block that starts more
   than 200 ms after the last byte; the silence in time, not frames (one length is a stop at one rate and not at
   another); leaving master sync and coming back starting clean. And one timeline cut into 1-frame, `FL_RAGGED`,
-  `FL_BUFFER`, 1024- and 8192-frame blocks decoding to the identical message sequence.
+  `FL_BUFFER`, 1024- and 8192-frame blocks decoding to the identical message sequence, and a second whose silences end
+  inside one call (no 4096- or 8192-frame block start between a silence's 200 ms mark and the byte that ends it), cut
+  the same ways and into 4096-frame blocks, likewise.
 - **Kernel.** A kernel-level case shows `SerialOutEvent` frames reaching `ctx.serialOutFrames`;
   [kernel-node.test.ts](../packages/retroplug/test/script/kernel-node.test.ts) shows `blockInput` handing the frames
   to the decoder.

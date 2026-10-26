@@ -264,6 +264,15 @@ test("MasterSync: one timeline decodes to the same messages however the host cut
     expect(sent(masterSync(timeline, split, 170000))).toEqual(expected);
 });
 
+test("MasterSync: a silence that ends inside one call still stops the run, however the host cuts its blocks", () => {
+  // The silence before frame 18100 passes 200 ms at frame 16920, and no 4096- or 8192-frame block starts between
+  // that and the byte that ends it, so the byte reaches the decoder in the same call as the silence's end.
+  const timeline: Timeline = [[100, 1], [8100, 1], [18100, 2], [40000, 3]];
+  const expected = [row(1), START, CLOCK, CLOCK, STOP, row(2), START, CLOCK, STOP, row(3), START, CLOCK, STOP];
+  for (const split of [even(1), cycle(FL_RAGGED), cycle(FL_BUFFER), even(1024), even(4096), even(8192)])
+    expect(sent(masterSync(timeline, split, 60000))).toEqual(expected);
+});
+
 test("lsdj-sync mode 8: kernel fans serialOut to the master-sync role → clock + start MIDI", () => {
   const reg = new RoleRegistry();
   registerDspRoles(reg);
