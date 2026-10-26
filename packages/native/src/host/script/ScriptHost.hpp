@@ -141,7 +141,7 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 //
 // A throw in process is caught, counted and the block's output up to it stands: the node runs again next block
 // (design section 4.5), unless its definition says faultOnThrow, when it faults (RP_FAULT, the executor's latch); a
-// faultOnThrow node whose onSettings or portsChanged threw faults at its next block, since it may hold half of what
+// faultOnThrow node whose onSettings, portsChanged or activate threw faults next block, since it may hold half of what
 // the hook set. Returning "fault" faults it too. The first throw's message is kept, and logged by reclaim. A write the
 // block path makes onto what the node holds that fails (a setter the node hung there threw or ran past the deadline, or
 // it froze the object) is the node's throw too: messages() and control() throw it, and on its audio views, the Block

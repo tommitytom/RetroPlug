@@ -654,9 +654,9 @@ export class MockBackend implements Backend {
   // --- test helpers (not part of Backend) ---------------------------------
 
   /** The DSP kernel's settings (its structure: the project stages, each system's pipeline in slot order) in the
-   *  graph document setGraph was sent `back` requests ago (0 = the last), or undefined when none was sent. */
-  kernelSettings(back = 0): MockKernelSettings | undefined {
-    const request = this.graphRequests[this.graphRequests.length - 1 - back];
+   *  last graph document setGraph was sent, or undefined when none was sent. */
+  kernelSettings(): MockKernelSettings | undefined {
+    const request = this.graphRequests[this.graphRequests.length - 1];
     if (!request) return undefined;
     const doc = JSON.parse(request.document) as { nodes: { id: string; settings?: unknown }[] };
     return doc.nodes.find((n) => n.id === "kernel")?.settings as MockKernelSettings | undefined;

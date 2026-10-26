@@ -1623,6 +1623,39 @@ TEST_CASE("faultOnThrow covers a script node's onSettings and portsChanged: a re
     }
 }
 
+TEST_CASE("faultOnThrow covers a script node's activate: a re-activation whose activate threw faults it at its next "
+          "block, and without it the throw is counted and it runs on",
+          "[script][fault-on-throw][activate]") {
+    ScriptRig rig(R"JS(
+const touchy = (id, extra) => rp.defineNode({
+  id, ...extra,
+  ports: { out: rp.events.out() },
+  create: () => ({
+    process(b) { b.send("out", 0, [1]); },
+    activate(sampleRate) { if (sampleRate === 44100) throw new Error("not at 44100"); },
+  }),
+});
+rp.register([touchy("rp.toy.touchy", { faultOnThrow: true }), touchy("rp.toy.unfazed", {})]);
+)JS");
+    REQUIRE(rig.set(doc(node("t", "rp.toy.touchy") + "," + node("u", "rp.toy.unfazed") + "," +
+                            node("pt", "rp.test.probe") + "," + node("pu", "rp.test.probe"),
+                        wire("t.out", "pt.events") + "," + wire("u.out", "pu.events")))
+                .ok);
+    rig.run();
+    REQUIRE(rig.node<Probe>("pt").events.size() == 1);
+    std::string why;
+    const bool reactivated = rig.host->reactivate(44100.0, 256, &why);
+    INFO(why);
+    CHECK(reactivated);  // a throw is no refusal: the re-activation stands
+    CHECK(rig.scripts.throwCount() == 2);
+    rig.run(64, 2);
+    CHECK(rig.host->isFaulted("t"));
+    CHECK(rig.node<Probe>("pt").events.empty());
+    CHECK_FALSE(rig.host->isFaulted("u"));
+    CHECK(rig.node<Probe>("pu").events.size() == 1);
+    CHECK(rig.scripts.throwCount() == 2);
+}
+
 TEST_CASE("a released script instance's cycles are collected when it is released quiescent and when the audio thread hands the "
           "runtime back, never by a block",
           "[script][gc]") {
@@ -1726,7 +1759,9 @@ rp.register([rp.defineNode({
   ports: { out: rp.events.out() },
   create: () => {
     let n = 0;
-    const work = () => { let x = 0; for (let i = 0; i < 50000; ++i) x += i; return x; };  // polls; a few ms of CPU at most
+    // Past the 10000 polls between two of the deadline's checks, so each loop holds one; a few ms of CPU at most, far
+    // under the deadline even under a sanitizer.
+    const work = () => { let x = 0; for (let i = 0; i < 15000; ++i) x += i; return x; };
     return {
       process(b) {
         work();

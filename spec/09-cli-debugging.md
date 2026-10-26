@@ -44,8 +44,9 @@ TS session at build time; the binary runs the JS). See the CLI scaffold in
 [packages/retroplug/cli/](../packages/retroplug/cli).
 
 - **Session runtime** — [cli/session.ts](../packages/retroplug/cli/session.ts): `bootSession()`
-  wires the store graph over `createRealBackend()` (loading the DSP kernel before the `onSystemsChange`
-  hook), and `runSession(main)` runs the body and reports the exit code. `hostArgs()` reads the session's
+  wires the store graph over `createRealBackend()` (the DSP kernel needs no boot step: it is a script
+  node every Engine has, and the project's graph carries its structure), and `runSession(main)` runs the
+  body and reports the exit code. `hostArgs()` reads the session's
   argv (hung off the `Symbol.for("plugin")` namespace — `tjs.args` is a read-only txiki accessor).
 - **Event scripting** — [cli/timeline.ts](../packages/retroplug/cli/timeline.ts): a fluent,
   typed `Timeline` (`midi`/`sysex`/`note`/`press`/`tap`/`bpm`/`transport`/`screenshot` at absolute ms)

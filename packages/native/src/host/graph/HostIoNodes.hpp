@@ -37,9 +37,9 @@ std::optional<std::uint32_t> cartMirrorSystem(std::string_view settings);
 
 // rp.host.midi-in's output: room for a dense block of DAW MIDI, the frame-0 CCs of moved automation and a large
 // SysEx (a sample or wave upload to a NES build, which the staging has always taken whole), with margin. The kernel's
-// sys-<id>.midi and serialIn outputs hold as many bytes (src/script/kernelNode.ts KERNEL_CORE_MIDI and
-// KERNEL_SERIAL_IN), so what passes here reaches the system. A message past it is dropped and counted
-// (GraphHost::droppedMessages).
+// sys-<id>.midi and serialIn outputs hold as many bytes and 8 KiB more for a role's own (src/script/kernelNode.ts
+// KERNEL_CORE_MIDI and KERNEL_SERIAL_IN), so what passes here reaches the system. A message past it is dropped and
+// counted (GraphHost::droppedMessages).
 inline constexpr std::uint32_t kHostMidiInMessages = 2048;
 inline constexpr std::uint32_t kHostMidiInBytes = 65536;
 // rp.host.controller-in's: a Launchpad's pad traffic and its replies.

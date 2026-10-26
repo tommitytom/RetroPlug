@@ -6,7 +6,8 @@
 # The embedded JS bytecode bundles: the control plane, the React UI, and the script nodes (with a test-only twin).
 
 # --- control-plane bundle: pluginControlPlane.ts → bytecode C array (mirrors ui-regenerate). The DPF
-# plugin evals this at construct to compose the stores + DSP kernel. Derived; never committed.
+# plugin evals this at construct to compose the stores (the DSP kernel is a script node, in the script-node
+# bundle below). Derived; never committed.
 set(CP_BUNDLE_JS "${CMAKE_BINARY_DIR}/native/cp-bundle.js")
 set(CP_BUNDLE_C  "${CMAKE_BINARY_DIR}/native/cp-bundle_data.c")
 set_source_files_properties(${CP_BUNDLE_C} PROPERTIES GENERATED TRUE)  # produced before the plugin compiles

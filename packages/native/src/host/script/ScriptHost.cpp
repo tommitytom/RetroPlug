@@ -879,14 +879,10 @@ struct ScriptHost::Glue {
         const Deadline call(h);
         JSValueConst args[2] = {JS_NewFloat64(ctx, in.sampleRate), JS_NewUint32(ctx, in.maxFrames)};
         JSValue result = JS_Call(ctx, in.activate, in.object, 2, args);
-        bool ok = true;
-        if (JS_IsException(result)) {
-            if (expiryFaults(h, in)) in.faultNext = true;
-            recordThrow(h, in, "activate");
-        } else {
-            in.expiries = 0;
-            ok = !(JS_IsBool(result) && !JS_ToBool(ctx, result));
-        }
+        // A throw is no refusal (the re-activation stands): it is a hook's throw, faulting the node as hookDone says.
+        const bool threw = JS_IsException(result);
+        hookDone(h, in, threw, "activate");
+        const bool ok = threw || !(JS_IsBool(result) && !JS_ToBool(ctx, result));
         JS_FreeValue(ctx, result);
         return ok;
     }
@@ -930,9 +926,9 @@ struct ScriptHost::Glue {
         JS_FreeValue(ctx, thrown);
     }
 
-    // After a hook that runs at a plan swap (onSettings, portsChanged): a throw is counted, and under faultOnThrow, or
-    // when it is the deadline's second expiry in a row (expiryFaults), the node faults at its next block, since it may
-    // hold half of what the hook would have set.
+    // After a hook (onSettings and portsChanged at a plan swap, activate at a re-activation): a throw is counted, and
+    // under faultOnThrow, or when it is the deadline's second expiry in a row (expiryFaults), the node faults at its
+    // next block, since it may hold half of what the hook would have set.
     static void hookDone(ScriptHost& h, Instance& in, bool threw, const char* where) {
         const bool expired = expiryFaults(h, in);
         if (!threw) return;

@@ -144,15 +144,25 @@ staging). What is left, in order:
   kernel's settings schema and `dspRoles.ts` carry it today); then the kernel node and `DspKernel`
   deleted. How several stages' outputs merge into one system input is B3b's to decide; a system input
   must keep "all MIDI, then all bytes" per core, and `rp.core.merge`'s output queue is the default size,
-  so merging large wires needs a merge whose output capacity its settings give.
+  so merging large wires needs a merge whose output capacity its settings give. A port per protocol also
+  ends the private 4-byte system prefix on host MIDI out (`rp.host.midi-out` takes the id from its
+  wiring instead), and with it the one port's reliance on every role sending its host MIDI out at frame 0.
+  A Game Boy's `serialOut` is to be wired only into a node that decodes MI.OUT, so one without pays
+  nothing for an armed capture's idle bytes. And a profile build's `apu-render` span starts where the
+  last script node's `process` ended, which is right only while every script node runs before the
+  systems: a protocol node placed after a system needs it revisited.
 - **One QuickJS context per script node, decided before user-written nodes.** Every script node runs in
   the audio runtime's one context, so they share a realm: the script host keeps its own writes and its
   reads of a node's methods off the shared prototypes ([02-native-host.md](02-native-host.md)), but one
   node's code can still change what another's reads through (an accessor on `Object.prototype` or
   `Array.prototype`, a global, a definition in `__rp_scriptNodes`), and a field a node deletes puts the
-  host's next write of it back on the chain. A context per node in the same runtime (its own intrinsics
-  and prototypes) closes all of it, at a per-context memory cost; decide it before nodes users write
-  (Phase C, the Reaktor-scale aim).
+  host's next write of it back on the chain. Promise jobs are charged to no node either:
+  `ScriptHost::runAudioJobs` runs every node's at the block's end under one deadline and counts a failed
+  one as nobody's throw, so a node that queues a never-ending reaction every block burns a full deadline
+  (2 s of CPU) every block and is never bypassed, as a `process` that hangs would be. A context per node
+  in the same runtime (its own intrinsics and prototypes) closes all of it, at a per-context memory cost,
+  and names the node a job ran in (`JS_ExecutePendingJob` reports the job's context); decide it before
+  nodes users write (Phase C, the Reaktor-scale aim).
 - **Found while building B3a, left as they are:**
   - `rp.host.midi-out` and `rp.host.controller-out` append one `std::vector` per message to the engine's
     host outputs (`Engine::midiOut_` / `controllerOut_`, the `rp.engine.host-io/1` service in
@@ -177,6 +187,17 @@ staging). What is left, in order:
     blocks (1024 messages, a captured byte every 8 frames), while `serialOut` is sized for 65536: in a
     larger block the decoded stream can pass 1024 messages, and the rest is dropped and counted
     ([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts) `KERNEL_MIDI_OUT`).
+  - `rp.host.midi-in`'s sort at the source merges two frame runs in linear time, which is what real
+    plugin hosts stage (the DAW's events, then the automation CCs at frame 0); a staging of three or more
+    runs falls back to an in-place insertion sort, quadratic in what was staged, on the block thread. The
+    staging has no count cap either (past its reserved room it grows), so a host that stages a great many
+    messages out of order pays for every one, though the input node's queue keeps 2048
+    ([Engine.cpp](../packages/native/src/host/engine/Engine.cpp) `Staging::takeSortedInto`). A cap at what
+    the input node carries, or a merge of k runs, would bound it.
+  - A feedback source whose queue capacity changes while an audio thread runs gets a fresh, empty front:
+    the block in flight is lost, and `droppedMessages` never counts it, since the carry and its count run
+    only while quiescent ([Planner.cpp](../packages/native/src/graph/Planner.cpp) `front`). No port changes
+    its capacity live today: the Game Boy's `serialOut`, the one feedback source, is fixed.
   - `retroplug-engine-graph-test` replaces the global `operator new` with a counting allocator
     ([CountingAllocator.cpp](../packages/native/test/graph/CountingAllocator.cpp)) that allocates through
     `_aligned_malloc` on Windows, so a core or QuickJS freeing what `new` made with `free()` would crash

@@ -129,6 +129,31 @@ export function startValue(stream: ControlStream): number {
   return value;
 }
 
+// ---- the host contract ------------------------------------------------------------------------------------
+// What the script host (packages/native/src/host/script/ScriptHost.cpp) does around a node that the types below
+// cannot say (docs/modular-graph-phase-b3a-design.md section 2):
+//
+// - One realm for every node. Every instance of every script type lives in one QuickJS context, so a global one
+//   node's code sets, or an accessor it hangs on a shared prototype, is there for every node. The host keeps its
+//   own writes off them: each field it fills is the object's own, from when it made the object. The Block prototype is
+//   frozen with its methods, so assigning over one (`block.send = f`) throws in strict code, where
+//   Object.defineProperty on the node's own Block still works. The one gap: a field deleted from an object the
+//   block hands out is set again through the prototype chain.
+// - process and the hooks are read once, from what create returned (and the prototypes it inherits them through,
+//   short of Object.prototype): assigning another one later does nothing.
+// - portsChanged runs once on every fresh instance, when the plan that made it is adopted, before its first
+//   process; then again whenever a later plan reshapes it or changes which of its outputs are wired.
+// - send and emit: a frame earlier than the port's last one this block is raised to it, and none is range-checked.
+//   A frame past the block goes on as given, and a negative one wraps through ToUint32 (-1 is 4294967295), raising
+//   every later one on that port this block to it. A send that does not fit returns false and is dropped, and
+//   counted; an emit onto a full stream overwrites its last change and returns false. A port the layout does not
+//   have, or not of the method's kind, throws a TypeError.
+// - Promise reactions and queueMicrotask callbacks run at the end of the block, after every node's process: at
+//   most 256 a block (the rest at the next block's end), under one call deadline between them. Every Block method
+//   throws inside one, as in a hook: a block exists only during its node's process call. A reaction's own throw
+//   only rejects its promise and is not counted; a queueMicrotask callback's is counted as a throw, charged to no
+//   node, so it never faults one.
+//
 // What a block hands out (the arrays, the views, the message objects) is valid only during the process call it is
 // handed to: the same objects are refilled for the next block, or made again, so read them through the block every
 // block and copy what you keep.
@@ -160,7 +185,9 @@ export interface NodeInstance<S = unknown> {
    *  counted and the next block runs again, unless the definition says faultOnThrow. */
   process(block: Block): void | "fault";
   /** A new sample rate or block size (the host re-activates without resetting): resize anything sized from
-   *  CreateContext's maxFrames. Return false if the node cannot run at these. */
+   *  CreateContext's maxFrames. Return false if the node cannot run at these. Called only on a live instance, while
+   *  no audio thread runs blocks (a fresh one reads both from CreateContext). A throw is no refusal: it is counted,
+   *  and under faultOnThrow faults the node at its next block. */
   activate?(sampleRate: number, maxFrames: number): boolean | void;
   /** Called when the connected-output set changes at a plan swap; connected[i] follows output order. A throw is
    *  counted, and under faultOnThrow faults the node at its next block. */
@@ -200,8 +227,9 @@ export interface NodeDefinition<S> {
    *  settings): the planner rebinds its ports by id, and onSettings receives the new settings at the swap.
    *  Without it, such a change creates a new instance. */
   reshapes?: true;
-  /** A throw in process faults the node (bypassed from then on, as returning "fault" does) rather than being
-   *  counted and run again next block; so does one in onSettings or portsChanged, at its next block. */
+  /** A throw in process faults the node (bypassed from then on, as returning "fault" does) rather than letting it
+   *  run again next block, and is counted all the same; so does one in onSettings, portsChanged or activate, at its
+   *  next block. */
   faultOnThrow?: true;
   /** Runs on the thread that runs blocks, when the plan holding the node is adopted, not when the document is
    *  planned: a document naming the node plans whatever create will do, and a create that throws (or returns no
@@ -210,7 +238,8 @@ export interface NodeDefinition<S> {
 }
 
 export interface DefinedNode<S> extends NodeDefinition<S> {
-  /** Settings checked on the control plane: defaults filled, errors thrown with zod's message. */
+  /** Settings checked on the control plane: defaults filled, and a refusal thrown as zod's first issue on one line
+   *  (`field: why`), not zod's own message. */
   parseSettings(raw: unknown): S;
   /** The resolved layout for these (already-parsed) settings. */
   layout(settings: S): Layout;

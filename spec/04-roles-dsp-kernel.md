@@ -107,7 +107,7 @@ ROM-gated), transforming the resolved `ConstructSpec`. It sees only a narrow `Co
 itself.
 
 The one hook today is LSDj's empty-sav seed
-([dspRoles.ts:311](../packages/retroplug/src/dspRoles.ts#L311)): a fresh LSDj cart with no
+([dspRoles.ts:312](../packages/retroplug/src/dspRoles.ts#L312)): a fresh LSDj cart with no
 save data runs a 12–15 s cartridge self-test on boot. When nothing else will seed the battery (no
 savestate, no SRAM blob, no on-disk `.sav` for native to load) the hook hands it a valid empty sav
 via `savFromJson("{}")` so LSDj boots straight to the song screen. It is additive — the spec is
@@ -211,7 +211,7 @@ view and overwrites its dynamic fields each block — no per-block allocation.
 
 ### Execution order
 
-[`DspKernel.processBlock`](../packages/retroplug/src/dspKernel.ts#L417):
+[`DspKernel.processBlock`](../packages/retroplug/src/dspKernel.ts#L425):
 
 1. **The per-system inputs**: this block's `keys`, `buttons` and `serialOut` are fanned to their
    systems, one pass each, into per-system lists kept across blocks and cleared in place.
@@ -232,7 +232,7 @@ system being added); a project stage past the new count is dropped.
 ### The sinks
 
 A behaviour never carries a `sys` argument; it writes through a per-system `SystemCtx`
-([dspKernel.ts:153](../packages/retroplug/src/dspKernel.ts#L153)) whose sinks are scoped to
+([dspKernel.ts:157](../packages/retroplug/src/dspKernel.ts#L157)) whose sinks are scoped to
 the system id. The kernel forwards each call to an injected `SinkTarget`:
 
 | Sink | Signature (on `SystemCtx`) | Direction |
@@ -245,7 +245,7 @@ the system id. The kernel forwards each call to an injected `SinkTarget`:
 | `eachTick` | `(resolution, cb)` | walk the PPQ ticks in this block (see below) |
 | `setNextTick` | `(tick)` | force the tick this system's next `eachTick` starts from |
 
-`SinkTarget` ([dspKernel.ts:102](../packages/retroplug/src/dspKernel.ts#L102)) is the
+`SinkTarget` ([dspKernel.ts:106](../packages/retroplug/src/dspKernel.ts#L106)) is the
 system-addressed form: `pushSerialIn(system, frame, byte)`, `emitCoreMidi(system, frame, data)`,
 `pushCoreBytes(system, frame, data, flush?)`, `emitMidiOut(system, frame, data)`,
 `pressButton(system, frame, button, down)`, optional `emitControllerOut(data)` and `reset()`. A
@@ -259,7 +259,7 @@ the system nodes' inputs and the host's outputs. (Role-generated `pressButton` i
 ### The drift-exact PPQ clock — in JS
 
 The tick clock lives **entirely in the kernel**; native owns no `nextTick`/`eachTick` primitive.
-[`walkTicks`](../packages/retroplug/src/dspKernel.ts#L235) is a faithful TS twin of native
+[`walkTicks`](../packages/retroplug/src/dspKernel.ts#L241) is a faithful TS twin of native
 `PpqUtil::eachTick`: it walks the ticks at `resolution` ticks/quarter that fall in this block, calling
 `cb(tick, offsetSamples)` for each. The caller-owned `nextTick` persists across blocks (the kernel
 stores it per system id), so the clock is drift-free at block edges — each tick fires exactly once,
@@ -320,11 +320,11 @@ the one system node with that output.
 `rp.host.controller-in` and each Game Boy's `serialOut` (a feedback wire, so the kernel reads last
 block's MI.OUT), each `sys-<id>.*` output to that system node's input of the same name, and `midiOut`
 and `controllerOut` to the host's output nodes. Each output declares its queue's capacity: `serialIn`
-and `midi` 4096 messages / 64 KiB, at least what `rp.host.midi-in`'s output holds, so a SysEx the host
-stages whole reaches the system whole and host MIDI is dropped only at that edge; the rest sized from
-the most the suites send through them in one block, with room to spare: `bytes` 256 / 1 KiB, `buttons`
-64 / 128 bytes, `midiOut` 1024 / 8 KiB, `controllerOut` 256 / 4 KiB. A send past one is dropped and
-counted (`Engine::droppedMessages`).
+and `midi` 4096 messages / 72 KiB, what `rp.host.midi-in`'s output holds with 8 KiB more for a role's own
+bytes, so a SysEx the host stages whole reaches the system whole and host MIDI is dropped only at that
+edge; the rest sized from the most the suites send through them in one block, with room to spare:
+`bytes` 256 / 1 KiB, `buttons` 64 / 128 bytes, `midiOut` 1024 / 8 KiB, `controllerOut` 256 / 4 KiB. A
+send past one is dropped and counted (`Engine::droppedMessages`).
 
 **A structure change reshapes it.** The definition declares `reshapes`, so a settings change keeps
 the instance even when it changes the ports: the planner binds the new plan's ports to it by id (a

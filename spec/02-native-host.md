@@ -354,16 +354,17 @@ most 1 Mi messages and 16 MiB. A wire carries its source's queue, so an input de
 refuse one, and an input has no `sized`): the outputs that do are the host inputs above, the Game Boy's
 `serialOut`, and each of the kernel's outputs
 ([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts): per system `serialIn` 4096 messages /
-64 KiB, `midi` 4096 / 64 KiB, `bytes` 256 / 1 KiB, `buttons` 64 / 128 B; `midiOut` 1024 / 8 KiB,
-`controllerOut` 256 / 4 KiB). The two that pass host MIDI on, `serialIn` and `midi`, hold at least what
-`rp.host.midi-in`'s output holds, so the one place host MIDI is dropped is that edge; the rest are sized
-from what the suites send through them in one block, with margin. Queues are allocated per plan, a plan's
-events and bytes queues held to a budget of 64 MiB (`kPlanQueueBudget`; a document past it is refused,
-`queue-budget`), and an unwired output writes a shared scratch queue of the default size, whose drops go
-uncounted. A push that does not fit is dropped and counted on its queue; after each block the executor
-adds the counts to the producing instance's atomic and the GraphHost's, `GraphHost::reclaim` names a node
-the first time its outputs drop, and `Engine::droppedMessages()` (the harness RPC `droppedMessages`) reads
-the total, which the parity rig and the native goldens run hold at zero.
+72 KiB, `midi` 4096 / 72 KiB, `bytes` 256 / 1 KiB, `buttons` 64 / 128 B; `midiOut` 1024 / 8 KiB,
+`controllerOut` 256 / 4 KiB). The two that pass host MIDI on, `serialIn` and `midi`, hold what
+`rp.host.midi-in`'s output holds and room for a role's own bytes besides, so the one place host MIDI is
+dropped is that edge; the rest are sized from what the suites send through them in one block, with
+margin. Queues are allocated per plan, a plan's events and bytes queues held to a budget of 64 MiB
+(`kPlanQueueBudget`; a document past it is refused, `queue-budget`), and an unwired output writes a
+shared scratch queue of the default size, whose drops go uncounted. A push that does not fit is dropped
+and counted on its queue; after each block the executor adds the counts to the producing instance's
+atomic and the GraphHost's, `GraphHost::reclaim` names a node the first time its outputs drop, and
+`Engine::droppedMessages()` (the harness RPC `droppedMessages`) reads the total, which the parity rig and
+the native goldens run hold at zero.
 
 ### Graph requests
 
@@ -675,34 +676,33 @@ audio-side one that holds every instance and runs `process`.
   block's transport in.
 - **A throw** in `process` is caught and counted, the block's output up to it stands, and the node runs
   again next block; a definition that says `faultOnThrow`, or a `process` that returns `"fault"`,
-  faults instead (bypassed from then on), and a `faultOnThrow` node whose `onSettings` or
-  `portsChanged` threw faults at its next block. Throws in `create`, `onSettings`, `portsChanged` and
-  `activate`, and a job that fails (a `queueMicrotask` callback that threw, or a job stopped by the
-  deadline or out of memory), are counted too (`Engine::scriptThrows()`; a promise reaction's own throw
-  only rejects its promise); the first one's text is kept on the block thread in a fixed buffer and
-  logged once by `reclaim`. A write the block path makes onto what a node holds that fails (a setter
-  the node hung there threw or ran past the deadline, or it froze the object) is the node's throw too:
-  `messages()` and `control()` throw it, and on its audio views, the `Block` or its transport, written
-  before `process` is called, it is a throw in `process` whose block does not run. Every node shares
-  one realm, so the host keeps its writes, and its reads of a node's methods, off the shared
-  prototypes: each field it fills is the object's own data property from when it makes the object (a
-  define, which never walks the prototype chain), and each array slot is set when it is the array's
+  faults instead (bypassed from then on), and a `faultOnThrow` node whose `onSettings`,
+  `portsChanged` or `activate` threw faults at its next block. Throws in `create`, `onSettings`,
+  `portsChanged` and `activate`, and a job that fails (a `queueMicrotask` callback that threw, or a job
+  stopped by the deadline or out of memory), are counted too (`Engine::scriptThrows()`; a promise
+  reaction's own throw only rejects its promise); the first one's text is kept on the block thread in a
+  fixed buffer and logged once by `reclaim`. A write the block path makes onto what a node holds that
+  fails (a setter the node hung there threw or ran past the deadline, or it froze the object) is the
+  node's throw too: `messages()` and `control()` throw it, and on its audio views, the `Block` or its
+  transport, written before `process` is called, it is a throw in `process` whose block does not run.
+  Every node shares one realm, so the host keeps its writes, and its reads of a node's methods, off the
+  shared prototypes: each field it fills is the object's own data property from when it makes the object
+  (a define, which never walks the prototype chain), and each array slot is set when it is the array's
   own at that write and defined when it is not (never made, or taken back by a shift, a splice or a
   shorter length). So only the node's own setters run there, never an accessor another node (or the
-  bundle) hung on `Object.prototype` or `Array.prototype`, with one gap: a field the node deletes is
-  set again, which walks the chain, as does the read of a message's `data` it deleted (asking at every
-  field write would cost each script call about 12 ns a block, 14% of an empty pass-through's).
-  `process` and the hooks are read from what `create` returned and the prototypes it inherits them
-  through, short of `Object.prototype`, so none is run or adopted from there. A Proxy on the way
-  answers as JS reads one (its `get` trap, or its target's chain), so a wrapper or a test double
-  works; a chain longer than `ScriptHost::kMethodHops` (1024) plain objects, or one that cycles back
-  through a Proxy, fails the `create` rather than holding the block thread. The `Block` prototype
-  every node reaches is frozen with its methods (a profile build binds the trace globals read-only
-  and frozen too), so no node replaces one for another: assigning one on a node's own `Block`
-  (`block.send = f`) throws in the strict bundle, where `Object.defineProperty` on it still works.
-  That is the host's part only: what nodes can do to each other through the shared realm (an
-  accessor on a prototype another's own code reads through, a global it calls) is left to one context
-  per node ([07-remaining-work.md](07-remaining-work.md)).
+  bundle) hung on `Object.prototype` or `Array.prototype`, with one gap: a field the node deletes is set
+  again, which walks the chain, as does the read of a message's `data` it deleted (asking at every field
+  write would cost each script call about 12 ns a block, 14% of an empty pass-through's). `process` and
+  the hooks are read from what `create` returned and the prototypes it inherits them through, short of
+  `Object.prototype`, so none is run or adopted from there. A Proxy on the way answers as JS reads one
+  (its `get` trap, or its target's chain), so a wrapper or a test double works; a chain longer than
+  `ScriptHost::kMethodHops` (1024) plain objects, or one that cycles back through a Proxy, fails the
+  `create` rather than holding the block thread. The `Block` prototype every node reaches is frozen with
+  its methods (a profile build binds the trace globals read-only and frozen too), so no node replaces one
+  for another: assigning one on a node's own `Block` (`block.send = f`) throws in the strict bundle,
+  where `Object.defineProperty` on it still works. That is the host's part only: what nodes can do to
+  each other through the shared realm (an accessor on a prototype another's own code reads through, a
+  global it calls) is left to one context per node ([07-remaining-work.md](07-remaining-work.md)).
 - **The call deadline.** Every call the block thread makes into a node's JS (and `endBlock`'s promise
   jobs, together) is held to a deadline of the calling thread's CPU time (2 s by default,
   `setCallDeadline`), so a stall that is not the node's own never trips it. A call that runs past it is

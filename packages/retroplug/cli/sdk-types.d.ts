@@ -431,6 +431,9 @@ export interface AudioDriver {
   stageMidiIn(bytes: Uint8Array | number[], frame?: number): boolean;
   /** Drain the MIDI-out the DSP kernel emitted since the last drain (each entry is one message). */
   drainMidiOut(): { system: number; frame: number; data: Uint8Array }[];
+  /** Messages the engine's graph has dropped so far, a full queue on one of its wires each (cumulative, never
+   *  reset): what a test holds to zero to know nothing it staged was lost on the way to a core. */
+  droppedMessages(): number;
   /** Enqueue a button transition (down = press/release); a press+release around a short render is a tap. */
   pressButton(id: number, button: number, down: boolean): boolean;
   /** Write a system's latest framebuffer to `path` as an RGB24 PNG. */

@@ -27,8 +27,9 @@ const FLUSH = 1;
 // core MIDI (nes-n8-midi), each hold at least what rp.host.midi-in's output holds (kHostMidiInMessages and
 // kHostMidiInBytes, host/graph/HostIoNodes.hpp), so the one place host MIDI is dropped is that edge. Core MIDI takes a
 // message for each forwarded one; serial in a run of same-frame bytes to a message, so at most one for each forwarded
-// message, plus the sync roles' own bytes. Both have room for 4096 messages and 64 KiB: twice rp.host.midi-in's
-// messages and exactly its bytes, so a SysEx the host stages whole (a sample upload to a NES build) reaches the
+// message, plus the sync roles' own bytes. Both have room for 4096 messages and 72 KiB: twice rp.host.midi-in's
+// messages, and its bytes with 8 KiB more for a role's own (a sync role's clock and row bytes, in a block whose
+// forwarded MIDI fills rp.host.midi-in), so a SysEx the host stages whole (a sample upload to a NES build) reaches the
 // system whole. (The most the suites sent through them in one block, measured over test:native with the fixtures,
 // parity included, 2.2 million kernel blocks up to 8192 frames: per system, 18 serial-in bytes and 8 core-MIDI messages
 // holding 4096 bytes, the largest 512.)
@@ -36,11 +37,11 @@ const FLUSH = 1;
 // 14 host MIDI-out messages holding 70 bytes with their prefixes; 5 control-surface messages holding 206 bytes (in
 // one). dsp-bench's densest profile, skipped there, sends 13 messages of 39 bytes a block. Each of these has room for
 // 16 times the messages or more, and the bytes as well, but for the MIDI out's (a decoded MI.OUT stream at its
-// densest, a captured byte every 8 frames: 1024 in 8192). A queue costs 16 bytes a message plus its bytes, per plan: a system's
-// four take 262 KiB, nearly all of it the two that pass host MIDI on, so 33 systems take 8.4 MiB of the plan's 64 MiB
-// queue budget.
-export const KERNEL_SERIAL_IN: QueueCapacity = { messages: 4096, bytes: 65536 };
-export const KERNEL_CORE_MIDI: QueueCapacity = { messages: 4096, bytes: 65536 };
+// densest, a captured byte every 8 frames: 1024 in 8192). A queue costs 16 bytes a message plus its bytes, per plan:
+// a system's four take 278 KiB, nearly all of it the two that pass host MIDI on, so 33 systems take 9.0 MiB of the
+// plan's 64 MiB queue budget.
+export const KERNEL_SERIAL_IN: QueueCapacity = { messages: 4096, bytes: 73728 };
+export const KERNEL_CORE_MIDI: QueueCapacity = { messages: 4096, bytes: 73728 };
 export const KERNEL_CORE_BYTES: QueueCapacity = { messages: 256, bytes: 1024 };
 export const KERNEL_BUTTONS: QueueCapacity = { messages: 64, bytes: 128 };
 export const KERNEL_MIDI_OUT: QueueCapacity = { messages: 1024, bytes: 8192 };

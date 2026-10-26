@@ -572,7 +572,7 @@ template <class T>
 struct Instance : rp_node {
     T                             node;
     typename SettingsOf<T>::type* settings = nullptr;
-    std::string                   layoutJson;  // as created: its layout for life unless it reshapes
+    std::string                   layoutJson;  // as created, which prepare compares against; empty if it reshapes
     std::span<std::byte>          extra;
 };
 
@@ -877,8 +877,11 @@ rp_node* createFn(const rp_node_type*, [[maybe_unused]] const rp_host* host, voi
             copyError(err, parsed.error().what());
             return nullptr;
         }
-        // Everything that can throw on the node's behalf (adjust_layout) runs before the instance exists.
-        std::string layout = graph::layoutJson(layoutFor<T>(*parsed));
+        // Everything that can throw on the node's behalf (adjust_layout) runs before the instance exists. Only a node
+        // that does not reshape keeps its layout, for prepare to compare against.
+        std::string layout;
+        if constexpr (reshapesOf<T>()) (void)layoutFor<T>(*parsed);
+        else layout = graph::layoutJson(layoutFor<T>(*parsed));
         const std::size_t extra = extraBytes<T>(*parsed);
         inst = new (memory) Instance<T>{};
         inst->vt = vtable<T>();

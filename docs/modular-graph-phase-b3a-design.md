@@ -1,7 +1,7 @@
 # Phase B3a: real ports and the script-node runtime
 
-**Date:** 2026-10-25 · **Branch:** `feature/modularize` · **Status:** built (5002c4b4 to 822ff3eb, §8); B3b not yet
-built, and the LSDj master-sync fix comes before it (§10).
+**Date:** 2026-10-25 · **Branch:** `feature/modularize` · **Status:** built (5002c4b4 to 1ed9a283, then the branch
+review's cleanup, §8); B3b not yet built, and the LSDj master-sync fix comes before it (§10).
 
 Phase B of [modular-graph-design.md](modular-graph-design.md) moves the engine onto the graph in steps,
 each held bit for bit to the B0 parity baseline ([modular-graph-phase-b0-design.md](modular-graph-phase-b0-design.md)).
@@ -246,15 +246,15 @@ descriptor may declare its capacity, `"capacity": { "messages": n, "bytes": n }`
 too, so an input declares none: both parsers refuse a capacity on an input, and the C++ layer gives an input no
 `sized`. The outputs that declare one are `rp.host.midi-in`'s and `rp.host.controller-in`'s (§3.3), every kernel
 output (§4.1) and the Game Boy's `serialOut` (§3.2), which also sizes the MI.OUT feedback front and so stays fixed.
-The kernel's two outputs that pass host MIDI on, each system's `serialIn` and `midi`, hold at least what
-`rp.host.midi-in`'s output holds, so the one place host MIDI is dropped is that edge; the rest are sized from the most
-the tests send through them in one block, with margin.
+The kernel's two outputs that pass host MIDI on, each system's `serialIn` and `midi`, hold what `rp.host.midi-in`'s
+output holds and room for a role's own bytes besides, so the one place host MIDI is dropped is that edge; the rest are
+sized from the most the tests send through them in one block, with margin.
 
 Queues are allocated per plan, two plans' worth during a swap (more while published plans wait unadopted, §10), and
 B3a replans on every structure edit. A plan's events and bytes queues (each wired output's, each feedback front) are
 held to a budget of 64 MiB of message items and bytes (`kPlanQueueBudget`): a document past it is refused
 (`queue-budget`) before any instance is made, and an allocation the planner still cannot make refuses the plan
-(`out-of-memory`). The kernel's queues take 262 KiB a system (§4.1), 8.4 MiB at 33 systems. An output with no wire
+(`out-of-memory`). The kernel's queues take 278 KiB a system (§4.1), 9.0 MiB at 33 systems. An output with no wire
 writes one shared scratch queue of the default size, whatever its port declares, and its drops go uncounted, since
 nothing reads it. Control streams keep 64 changes a block, and the overwrite a full one makes is counted only on the
 stream itself, never in the drops below. Drops are
@@ -415,8 +415,9 @@ Ports are named by system id, never position, so a reshape (§2.4) binds a survi
 same wires. The two outputs that pass host MIDI on, `serialIn` (mGB, `lsdj-sync`'s passthrough) and `midi`
 (`nes-n8-midi`), hold at least what `rp.host.midi-in`'s output holds (2048 messages, 64 KiB): twice its messages (a
 forwarded message is one message on `midi`, and at most one on `serialIn`, which sends a run of same-frame bytes as
-one, besides the sync roles' own bytes) and exactly its bytes, so a SysEx the host stages whole reaches the system
-whole and the one place host MIDI is dropped is that edge. The rest come from what the whole `test:native` suite sends
+one, besides the sync roles' own bytes) and its bytes with 8 KiB more, for a role's own bytes (a sync role's clocks)
+in a block whose forwarded MIDI fills `rp.host.midi-in`, so a SysEx the host stages whole reaches the system whole and
+the one place host MIDI is dropped is that edge. The rest come from what the whole `test:native` suite sends
 through them in one block, measured with the fixtures (parity included, 2.2 million kernel blocks up to 8192 frames):
 each has room for 16 times that or more, messages and bytes, and the MIDI out is sized instead for a decoded MI.OUT
 stream at its densest (a captured byte every 8 frames: 1024 in 8192). That sizing stops at 8192-frame blocks, where
@@ -425,15 +426,15 @@ fit is dropped and counted:
 
 | Output | Messages | Bytes |
 |---|---|---|
-| `sys-<id>.serialIn` | 4096 | 64 KiB, `rp.host.midi-in`'s |
-| `sys-<id>.midi` | 4096 | 64 KiB, `rp.host.midi-in`'s |
+| `sys-<id>.serialIn` | 4096 | 72 KiB, `rp.host.midi-in`'s and 8 KiB |
+| `sys-<id>.midi` | 4096 | 72 KiB, `rp.host.midi-in`'s and 8 KiB |
 | `sys-<id>.bytes` | 256 | 1 KiB |
 | `sys-<id>.buttons` | 64 | 128 |
 | `midiOut` | 1024 | 8 KiB |
 | `controllerOut` | 256 | 4 KiB |
 
-At 16 bytes a message plus its bytes, that is 262 KiB of queues per system per plan, nearly all of it the two that
-pass host MIDI on (8.4 MiB at 33 systems, of the plan's 64 MiB budget, §2.6), with 32 KiB more for the kernel's own
+At 16 bytes a message plus its bytes, that is 278 KiB of queues per system per plan, nearly all of it the two that
+pass host MIDI on (9.0 MiB at 33 systems, of the plan's 64 MiB budget, §2.6), with 32 KiB more for the kernel's own
 two outputs and 96 KiB for `rp.host.midi-in`'s.
 
 ### 4.2 Per block
@@ -541,7 +542,8 @@ before it sends (rpcpp would truncate it), and the RPC refuses one past `renderA
 
 ### 5.4 What went
 
-The `dspSetSystems`, `dspLoadKernel` and `compileScript` RPCs (the facets' union went from 90 methods to 87);
+The `dspSetSystems`, `dspLoadKernel` and `compileScript` RPCs (the facets' union went from 89 methods to 87: those
+three gone, and the harness's `droppedMessages` added, §2.6);
 `DspRuntime` whole (the kernel's context, its sinks and thunks), `dspRuntime.ts`, `dspKernelBundle.ts` and
 `__DSP_KERNEL_BUNDLE__`; the CLI session's `dsp` client and its SDK declaration; native's `KernelNode` and
 `rp.engine.kernel/1`, `runKernelStage` and its fan-out, `Engine::loadKernel` / `setSystems`, the `SetSystems` and
@@ -706,8 +708,15 @@ executed task by task with review, each task's review fixes following its commit
    the deletion, while both existed.
 8. Delete the fan-out, the RPCs and the native kernel node, after moving the runtime's profiling onto the script host
    (e3de2e46, b7963b0d; 45bb10c6 and 822ff3eb).
-9. The docs.
-10. The acceptance run, on the final tree: every suite, strict parity with the fixtures present, the Reaper leg, the
+9. The docs (33a49a91; 4f74b62d: the comments the deletion left behind).
+10. The marshalling and realm fixes a review of the script host found (2150de4c, d014d99c, 78d1cc02 and 1ed9a283): a
+    failed write in a marshal fill is the node's throw, the host defines what it writes onto and asks an array whether
+    a slot is its own, it reads a node's methods short of `Object.prototype` through a bounded walk, and the `Block`
+    prototype is frozen (§2.3, §10).
+11. The branch review's cleanup: the host contract a node author needs, written into `defineNode.ts`; `activate`
+    faulting under `faultOnThrow`, as the other hooks do; byte headroom on the kernel's two outputs that pass host
+    MIDI on (§4.1); and the docs it found stale.
+12. The acceptance run, on the final tree: every suite, strict parity with the fixtures present, the Reaper leg, the
     sanitizers and the consumer suites.
 
 ## 9. Left for B3b

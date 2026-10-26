@@ -261,6 +261,28 @@ test("a load whose final publish throws still tells the observers once", () => {
   expect(notified).toBe(1);
 });
 
+test("a load whose clear's publish throws still tells the observers once", () => {
+  const { be, p, sys } = project();
+  sys.addSystem("/roms/a.gb");
+  sys.addSystem("/roms/b.gb");
+  const bytes = p.exportBytes()!;
+  const setGraph = be.setGraph.bind(be);
+  let calls = 0;
+  // The clear drops the previous project's systems and publishes the emptied graph, which dies, as an RPC would.
+  be.setGraph = (...args) => {
+    if (++calls === 1) throw new Error("the setGraph RPC died");
+    return setGraph(...args);
+  };
+  let notified = 0;
+  p.setOnSystemsChange(() => notified++);
+  expect(() => p.loadBytes(bytes, "/")).toThrow("the setGraph RPC died");
+  be.setGraph = setGraph;
+  expect(sys.systems().length).toBe(0);
+  expect(notified).toBe(1);
+  // The failed load placed what it listed, nothing: the clear's document, sent again.
+  expect(be.kernelSettings()?.systems).toEqual([]);
+});
+
 test("an adopt whose settings do not parse throws before it builds a core", () => {
   const { be, sys } = project();
   expect(() => sys.adopt({ romPath: "/roms/a.gb", settings: "loud" as never })).toThrow();

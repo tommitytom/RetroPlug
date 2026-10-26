@@ -2,7 +2,7 @@
 
 // A GraphHost carrying the system node packages, the host I/O nodes and the test nodes (TestNodes.hpp), with
 // stand-ins for the engine's services: a test parks a built core, plans a document naming its token, and the node
-// created for it takes it; what the host I/O nodes and the sync trace would hand the engine is recorded instead.
+// created for it takes it; what the cart mirror and the sync trace would hand the engine is recorded instead.
 
 #include <cstdio>
 #include <map>
@@ -35,9 +35,8 @@ inline std::vector<std::uint8_t> readFile(const char* path) {
     return bytes;
 }
 
-// One call a node made on the engine's host I/O or sync trace.
+// One call a node made on the engine's cart sink or sync trace.
 struct HostCall {
-    std::uint32_t             system = 0;
     std::uint32_t             frame = 0;
     std::vector<std::uint8_t> data;
     bool                      flush = false;
@@ -50,13 +49,13 @@ struct NodeRig {
     std::uint64_t                                        nextToken = 1;
     std::vector<SystemId>                                released;  // ids whose node freed its core
     HostCores                                            cores{this, &take, &release};
-    // The host I/O stand-in: nothing is ever staged, `connected` is the control surface, and every output call is
-    // recorded, a drop counted.
+    // The host I/O stand-in: nothing is ever staged, `connected` is the control surface, and the cart's calls are
+    // recorded. The host MIDI out, the control-surface out and a drop go nowhere, since no test reads them off this rig
+    // (HostIo.test.cpp reads them off an Engine), but the nodes call each, so each is wired.
     bool                                                 connected = false;
-    std::vector<HostCall>                                midiOut, controllerOut, cart, traced;
-    std::uint32_t                                        dropped = 0;
-    EngineHostIo                                         hostIo{this, &takeNothing, &takeNothing, &isConnected, &recordMidiOut,
-                                                                &recordControllerOut, &recordCart, &countDropped};
+    std::vector<HostCall>                                cart, traced;
+    EngineHostIo                                         hostIo{this, &takeNothing, &takeNothing, &isConnected, &ignoreMidiOut,
+                                                                &ignoreControllerOut, &recordCart, &ignoreDropped};
     EngineSyncTrace                                      trace{this, &recordTrace};
     // Last, so it is destroyed first: its nodes free their cores through `cores` into `released`.
     std::unique_ptr<rp::graph::GraphHost>                host;
@@ -110,18 +109,14 @@ struct NodeRig {
     static std::vector<std::uint8_t> bytesOf(const std::uint8_t* data, std::size_t size) { return {data, data + size}; }
     static void takeNothing(void*, rp_queue*) {}
     static bool isConnected(void* ctx) { return static_cast<NodeRig*>(ctx)->connected; }
-    static void recordMidiOut(void* ctx, std::uint32_t system, std::uint32_t frame, const std::uint8_t* data, std::size_t size) {
-        static_cast<NodeRig*>(ctx)->midiOut.push_back({system, frame, bytesOf(data, size), false});
-    }
-    static void recordControllerOut(void* ctx, const std::uint8_t* data, std::size_t size) {
-        static_cast<NodeRig*>(ctx)->controllerOut.push_back({0, 0, bytesOf(data, size), false});
-    }
+    static void ignoreMidiOut(void*, std::uint32_t, std::uint32_t, const std::uint8_t*, std::size_t) {}
+    static void ignoreControllerOut(void*, const std::uint8_t*, std::size_t) {}
     static void recordCart(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush) {
-        static_cast<NodeRig*>(ctx)->cart.push_back({0, frame, bytesOf(data, size), flush});
+        static_cast<NodeRig*>(ctx)->cart.push_back({frame, bytesOf(data, size), flush});
     }
-    static void countDropped(void* ctx) { ++static_cast<NodeRig*>(ctx)->dropped; }
+    static void ignoreDropped(void*) {}
     static void recordTrace(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size) {
-        static_cast<NodeRig*>(ctx)->traced.push_back({0, frame, bytesOf(data, size), false});
+        static_cast<NodeRig*>(ctx)->traced.push_back({frame, bytesOf(data, size), false});
     }
 };
 

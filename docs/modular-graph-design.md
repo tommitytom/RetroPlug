@@ -588,9 +588,10 @@ export const lsdjSync = defineNode({
   under `RP_TYPE_STATELESS_PREPARE` the host decides on the control thread, from the layout the new settings
   give and the definition's `reshapes` (a reshaping type keeps its instance through every change its settings
   accept; any other is swapped while its layout holds and rebuilt when it moves, §4.3). A definition may also
-  say `faultOnThrow`, so a throw in `process` faults the node rather than being counted and run again next
-  block (a throw in `onSettings` or `portsChanged` faults it at its next block), and `startValue(stream)` reads
-  a control's value at frame 0 (its start, or a change at frame 0, since a node cannot set an output's start).
+  say `faultOnThrow`, so a throw in `process` faults the node, counted, rather than being run again next
+  block (a throw in `onSettings`, `portsChanged` or `activate` faults it at its next block), and
+  `startValue(stream)` reads a control's value at frame 0 (its start, or a change at frame 0, since a node
+  cannot set an output's start).
   The resource accessor and link peers are still to come.
 
 ### 4.9 The script-node runtime
@@ -785,10 +786,11 @@ host reads on the control thread (`GraphHost::droppedMessages`) and names in its
 shared scratch queue of unconnected outputs, since nothing reads what it drops, and control streams, whose
 own `dropped` only accumulates (a full stream keeps its end value right, §9) and is not reported. The
 counts are 32-bit and wrap rather than saturate, which keeps the executor's add one wait-free `fetch_add`;
-what reads them compares or subtracts, which a wrap leaves right. The TS call over them arrives with the
-TS surface. Events stay frame-stamped; v1 uses the host's block size with no sub-blocking. v1 is
-single-threaded; the plan records dependencies, so running independent branches in parallel (enkiTS) can
-come later without changing the plan format.
+what reads them compares or subtracts, which a wrap leaves right. TS reads them through the harness facet's
+`droppedMessages` (`audio.droppedMessages()`, B3a), which adds what `rp.host.midi-out` drops. Events stay
+frame-stamped; v1 uses the host's block size with no sub-blocking. v1 is single-threaded; the plan records
+dependencies, so running independent branches in parallel (enkiTS) can come later without changing the plan
+format.
 
 ### 5.6 Library targets
 

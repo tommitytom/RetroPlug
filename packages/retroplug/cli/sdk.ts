@@ -1,6 +1,6 @@
 // The public authoring surface of the retroplug-cli test SDK: one barrel that re-exports everything a
 // ROM developer needs to drive a system and assert on its state. tools/build-cli-sdk.mjs esbuilds this
-// into a single self-contained ESM (retroplug-cli.js, DSP kernel baked in) plus a rolled-up
+// into a single self-contained ESM (retroplug-cli.js; the DSP kernel is the binary's own) plus a rolled-up
 // retroplug-cli.d.ts, shipped to consumer repos (e.g. bliptoaster) so they author tests with only esbuild
 // (bundle) + tsc (typecheck) — no copy of this package's src/ tree.
 //

@@ -298,7 +298,9 @@ instead of 2N + 1. Parity cannot see that, and it is better behaviour.
 
 **Stays:** `applySystemSetting`, `applyRoleConfig`, `ConfigField`, `setSerialOutCapture` (live mode changes),
 `compileScript`, `dspLoadKernel`, `dspSetSystems`, `rp.dsp.kernel` (first in every document), the armed-tap
-record, every read, `pressButton`, `stageSystemMidi` and `writeRam`.
+record, every read, `pressButton`, `stageSystemMidi` and `writeRam`. (B3a later deleted the `compileScript`,
+`dspLoadKernel` and `dspSetSystems` RPCs, and made `rp.dsp.kernel` a script node its wires order:
+[B3a §5.4](modular-graph-phase-b3a-design.md).)
 
 **Changes:**
 
@@ -381,8 +383,9 @@ parse), are in the main design's §12, with what the TS side adds.
 
 - Parity with the fixtures present and `RP_FAIL_ON_SKIP=1`
   (`RP_FAIL_ON_SKIP=1 RETROPLUG_RESOURCES_DIR=<resources> pnpm test:native parity`), and once without the
-  fixtures (the 140 cases CI runs). The rig changed only in `bootSession` (`rig.ts` needed nothing), as
-  B0 promised; `render-blocks.test.ts` moved to a `DirectGraph` sharing the session's graph.
+  fixtures (the 140 cases CI ran then; B3a's two fixture-free tiny-block groups made it 152). The rig changed
+  only in `bootSession` (`rig.ts` needed nothing), as B0 promised; `render-blocks.test.ts` moved to a
+  `DirectGraph` sharing the session's graph.
 - All of `pnpm test:native`, `pnpm test`, `pnpm test:plugin`, `pnpm test:node` and `tsc`; the host
   ThreadSanitizer and AddressSanitizer passes.
 - `reaper:editor-reopen`, `reaper:editor-autoload`, `reaper:two-instances-load`, `reaper:params` and

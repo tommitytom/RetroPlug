@@ -717,10 +717,11 @@ export class ProjectStore {
   // Rebuild the systems from a resolved config + adopt the settings; mark clean. Each
   // system's SRAM/savestate blobs (export only) seed its emulator via adopt.
   private commit(cfg: ProjectConfig, path: string, blobs: Map<string, Uint8Array>): LoadOutcome {
-    this.systems.clear();
-    // Built one by one, placed together: the graph is published once, with the loaded routing.
-    this.holdGraph = true;
     try {
+      // The clear publishes the emptied graph itself, which can throw too, so it is inside the try as well.
+      this.systems.clear();
+      // Built one by one, placed together: the graph is published once, with the loaded routing.
+      this.holdGraph = true;
       cfg.systems.forEach((s, i) => {
         const sram = blobs.get(sramKey(i));
         const state = blobs.get(stateKey(i));
@@ -734,9 +735,10 @@ export class ProjectStore {
     } catch (e) {
       // The systems adopted before the throw are built and listed, so place them as the final publish would, with
       // their kernel pipelines: a graph left at the clear's would free their cores under the store, and refuse
-      // every later edit. Then tell the structure's observers, which the quiet clear and adopts have not: the UI
-      // would keep the previous project's tiles, and the plugin would watch that project's ROMs. Either step's throw
-      // is logged, so the load's own error is the one that propagates.
+      // every later edit. (A throw in the clear's own publish lists none, and this places none, as it tried to.)
+      // Then tell the structure's observers, which the quiet clear and adopts have not: the UI would keep the
+      // previous project's tiles, and the plugin would watch that project's ROMs. Either step's throw is logged, so
+      // the load's own error is the one that propagates.
       this.holdGraph = false;
       try {
         this.publishRouting();
