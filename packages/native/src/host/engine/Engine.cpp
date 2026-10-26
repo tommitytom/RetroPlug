@@ -377,6 +377,7 @@ Engine::GraphResult Engine::setGraph(const GraphRequest& request) {
         const InSetGraph window(*this);
         result = graph_->host->setGraph(*doc, std::move(table), request.rearmTap ? &trailer : nullptr);
     }
+    graph_->script.reclaim();  // a quiescent swap released its script nodes in there: what they left in cycles goes now
     for (const auto& e : result.errors) out.errors.push_back({e.nodeId, e.port, e.code, e.message});
     if (!result.ok) return out;
     out.ok = true;

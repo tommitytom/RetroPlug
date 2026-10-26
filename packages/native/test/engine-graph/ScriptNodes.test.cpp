@@ -9,9 +9,11 @@
 // Run via `pnpm test:plugin engine-graph`.
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -44,6 +46,25 @@ std::vector<std::uint8_t> bytes(std::initializer_list<int> b) {
     std::vector<std::uint8_t> v;
     for (int x : b) v.push_back(static_cast<std::uint8_t>(x));
     return v;
+}
+
+std::vector<std::uint8_t> pattern(std::size_t n, int seed) {
+    std::vector<std::uint8_t> v(n);
+    for (std::size_t i = 0; i < n; ++i) v[i] = static_cast<std::uint8_t>((i * 7 + seed) & 0xff);
+    return v;
+}
+
+// Every byte of `s` part of a whole UTF-8 sequence: none cut short.
+bool wholeUtf8(std::string_view s) {
+    for (std::size_t i = 0; i < s.size();) {
+        const auto lead = static_cast<unsigned char>(s[i]);
+        const std::size_t n = lead < 0x80 ? 1 : (lead >> 5) == 0x6 ? 2 : (lead >> 4) == 0xe ? 3 : (lead >> 3) == 0x1e ? 4 : 0;
+        if (n == 0 || i + n > s.size()) return false;
+        for (std::size_t k = 1; k < n; ++k)
+            if ((static_cast<unsigned char>(s[i + k]) & 0xc0) != 0x80) return false;
+        i += n;
+    }
+    return true;
 }
 
 // Events and bytes straight through, counting the sends its 4-message output refuses.
@@ -258,6 +279,43 @@ rp.defineNode({
   create: () => ({ process(b) { const s = globalThis.stashed; if (s) for (let i = 0; i < s.length; ++i) s[i] = 9; } }),
 }),
 ]);
+)JS";
+
+// One node twice, the first faulting on a throw: its onSettings refuses settings that say fail "settings", and its
+// portsChanged throws once settings that say fail "ports" are its.
+const char* const kBrittle = R"JS(
+const brittle = (id, extra) => rp.defineNode({
+  id, ...extra, reshapes: true,
+  settings: rp.z.object({ fail: rp.z.enum(["none", "settings", "ports"]).default("none"),
+                          outs: rp.z.number().int().min(1).max(2).default(1) }),
+  ports: (s) => (s.outs === 1 ? { out1: rp.events.out() } : { out1: rp.events.out(), out2: rp.events.out() }),
+  create: ({ settings }) => {
+    let fail = settings.fail;
+    return {
+      process(b) { b.send("out1", 0, [1]); },
+      onSettings(s) { if (s.fail === "settings") throw new Error("cannot take these"); fail = s.fail; },
+      portsChanged() { if (fail === "ports") throw new Error("cannot rewire"); },
+    };
+  },
+});
+rp.register([brittle("rp.toy.brittle", { faultOnThrow: true }), brittle("rp.toy.sturdy", {})]);
+)JS";
+
+// A message far longer than any buffer it is kept in, of two- and three-byte characters after `pad` ASCII letters: its
+// ports refuse settings that say refuse, and its process throws it.
+const char* const kWordy = R"JS(
+const wordy = (pad) => "x".repeat(pad) + "\u00e9\u20ac".repeat(200);
+rp.register([rp.defineNode({
+  id: "rp.toy.wordy",
+  settings: rp.z.object({ pad: rp.z.number().int().min(0).max(2).default(0), refuse: rp.z.boolean().default(false) }),
+  ports: (s) => { if (s.refuse) throw new Error(wordy(s.pad)); return { out: rp.events.out() }; },
+  create: ({ settings }) => ({ process() { throw new Error(wordy(settings.pad)); } }),
+})]);
+)JS";
+
+// Nothing to do: for tests that need instances and nothing else.
+const char* const kIdle = R"JS(
+rp.register([rp.defineNode({ id: "rp.toy.idle", ports: { out: rp.events.out() }, create: () => ({ process() {} }) })]);
 )JS";
 
 }  // namespace
@@ -740,6 +798,326 @@ rp.register([rp.defineNode({
     rig.reclaim();  // says so, once
 }
 
+TEST_CASE("a script node's payloads grow their buffer when a block's outgrow it, and one JS detached is replaced",
+          "[script][payload]") {
+    ScriptRig rig(R"JS(
+rp.register([rp.defineNode({
+  id: "rp.toy.bpass",
+  ports: { in: rp.bytes.in(), out: rp.bytes.out({ messages: 16, bytes: 8192 }) },
+  create: () => ({
+    process(b) {
+      const ms = b.messages("in");
+      for (let i = 0; i < ms.length; ++i) {
+        b.send("out", ms[i].frame, ms[i].data, ms[i].flags);
+        if (ms[i].data.length === 7) ms[i].data.buffer.transfer();  // the payload buffer, detached
+      }
+    },
+  }),
+})]);
+)JS");
+    REQUIRE(rig.set(doc(node("feed", "rp.test.feed") + "," + node("p", "rp.toy.bpass") + "," + node("probe", "rp.test.probe"),
+                        wire("feed.bytes", "p.in") + "," + wire("p.out", "probe.bytes")))
+                .ok);
+    auto& feed = rig.node<Feed>("feed");
+    const auto& probe = rig.node<Probe>("probe");
+    feed.next[Feed::Bytes] = {{1, pattern(100, 1), 0}, {2, pattern(100, 2), 0}};
+    rig.run();
+    REQUIRE(probe.bytes.size() == 2);
+    feed.next[Feed::Bytes] = {{3, pattern(3000, 3), 0}, {4, pattern(5, 4), 0}};  // past the first block's 256-byte buffer
+    rig.run();
+    REQUIRE(probe.bytes.size() == 2);
+    CHECK(probe.bytes[0].data == pattern(3000, 3));
+    CHECK(probe.bytes[1].data == pattern(5, 4));
+    feed.next[Feed::Bytes] = {{0, pattern(7, 5), 0}};
+    rig.run();
+    feed.next[Feed::Bytes] = {{0, pattern(9, 6), 0}, {1, pattern(11, 7), 0}};
+    rig.run();
+    REQUIRE(probe.bytes.size() == 2);
+    CHECK(probe.bytes[0].data == pattern(9, 6));
+    CHECK(probe.bytes[1].data == pattern(11, 7));
+    CHECK(rig.scripts.throwCount() == 0);
+}
+
+TEST_CASE("a script node whose create throws faults at its first block, and is released", "[script][create]") {
+    ScriptRig rig(R"JS(
+rp.register([rp.defineNode({ id: "rp.toy.badcreate", ports: { out: rp.events.out() }, create: () => { throw new Error("no"); } })]);
+)JS");
+    REQUIRE(rig.set(doc(node("b", "rp.toy.badcreate"), "")).ok);  // planned: create is lazy, so nothing has failed yet
+    rig.run(64, 2);
+    CHECK(rig.host->isFaulted("b"));
+    CHECK(rig.scripts.throwCount() == 1);
+    CHECK(rig.scripts.liveInstances() == 0);
+    REQUIRE(rig.set(doc("", "")).ok);
+    rig.reclaim();
+    CHECK(rig.scripts.firstThrow() == "rp.toy.badcreate threw in create: Error: no");
+}
+
+TEST_CASE("a re-activation reaches a live script node's activate, a refusal rolls back, and portsChanged hears its outputs",
+          "[script][activate]") {
+    ScriptRig rig(R"JS(
+rp.register([rp.defineNode({
+  id: "rp.toy.act",
+  ports: { out: rp.events.out() },
+  create: ({ sampleRate, maxFrames }) => {
+    __probe("create " + sampleRate + "/" + maxFrames);
+    return {
+      process(b) {},
+      activate(sr, mf) { __probe("activate " + sr + "/" + mf); return mf <= 512; },
+      portsChanged(c) { __probe("ports " + c.join(",")); },
+    };
+  },
+})]);
+)JS");
+    REQUIRE(rig.set(doc(node("a", "rp.toy.act") + "," + node("p", "rp.test.probe"), wire("a.out", "p.events"))).ok);
+    rig.run();
+    CHECK(rig.log.count("create 48000/256") == 1);
+    CHECK(rig.log.count("ports true") == 1);
+    std::string why;
+    CHECK(rig.host->reactivate(44100.0, 512, &why));
+    CHECK(rig.log.count("activate 44100/512") == 1);
+    CHECK_FALSE(rig.host->reactivate(48000.0, 1024, &why));
+    INFO(why);
+    CHECK(rig.log.count("activate 48000/1024") == 1);
+    CHECK(rig.log.count("activate 44100/512") == 2);  // back on the old
+    REQUIRE(rig.set(doc(node("a", "rp.toy.act"), "")).ok);  // its output unwired
+    rig.run();
+    CHECK(rig.log.count("ports false") == 1);
+    CHECK(rig.scripts.throwCount() == 0);
+}
+
+TEST_CASE("a script host loads one bundle: a second load is refused, and the first one's types stay registered",
+          "[script][load]") {
+    ScriptRig rig(kPass);
+    const std::vector<std::uint8_t> again = rp::host::test::compileToys(kCounters);
+    const ScriptHost::Chunk chunk = again;
+    std::string error;
+    CHECK_FALSE(rig.scripts.load({&chunk, 1}, &error));
+    CHECK(error == "a script host loads one bundle");
+    CHECK(rig.scripts.package()->node_type_count == 2);  // the test bundle's echo, and pass
+    REQUIRE(rig.set(doc(node("feed", "rp.test.feed") + "," + node("pass", "rp.toy.pass") + "," + node("probe", "rp.test.probe"),
+                        wire("feed.midi", "pass.in") + "," + wire("pass.out", "probe.events")))
+                .ok);
+    rig.node<Feed>("feed").next[Feed::Midi] = {{2, bytes({0x90, 1, 2})}};
+    rig.run();
+    REQUIRE(rig.node<Probe>("probe").events.size() == 1);
+    CHECK(rig.node<Probe>("probe").events[0].data == bytes({0x90, 1, 2}));
+}
+
+TEST_CASE("a bundle whose definition differs between the two contexts is refused, and one bad definition refuses the package",
+          "[script][load][two-faced]") {
+    rp::host::test::ProbeLog log;
+    ScriptHost host(&rp::host::test::bindProbes, &log);
+    const std::vector<std::uint8_t> toys = rp::host::test::compileToys(R"JS(
+rp.register([rp.defineNode({
+  id: "rp.toy.twofaced",
+  ports: __audioSide ? { out: rp.events.out() } : { out: rp.events.out(), more: rp.events.out() },
+  create: () => ({ process() {} }),
+})]);
+)JS");
+    const ScriptHost::Chunk chunks[] = {rp::host::test::scriptTestBundle(), toys};
+    std::string error;
+    CHECK_FALSE(host.load(chunks, &error));
+    INFO(error);
+    CHECK(error.find("rp.toy.twofaced") != std::string::npos);
+    CHECK(error.find("descriptor") != std::string::npos);
+    CHECK(host.package()->node_type_count == 0);  // the test bundle's own echo goes with it
+}
+
+TEST_CASE("a send whose data throws while it is read leaves nothing of that message in the queue", "[script][send]") {
+    ScriptRig rig(R"JS(
+rp.register([rp.defineNode({
+  id: "rp.toy.liar",
+  ports: { out: rp.events.out() },
+  create: () => ({
+    process(b) {
+      // A note-on whose velocity cannot be read: half of it, zeros after, would be a note-off.
+      const torn = { length: 3, 0: 0x90, 1: 60, get 2() { throw new Error("no velocity"); } };
+      try { b.send("out", 0, torn); } catch (e) {}
+      // One whose read sends another first, so its reservation is no longer the queue's last message.
+      const nested = { length: 3, 0: 0x90, get 1() { b.send("out", 1, [0xb0, 1, 2]); throw new Error("no note"); }, 2: 9 };
+      try { b.send("out", 2, nested); } catch (e) {}
+      b.send("out", 3, [0x80, 60, 0]);
+    },
+  }),
+})]);
+)JS");
+    REQUIRE(rig.set(doc(node("l", "rp.toy.liar") + "," + node("p", "rp.test.probe"), wire("l.out", "p.events"))).ok);
+    rig.run();
+    const auto& events = rig.node<Probe>("p").events;
+    REQUIRE(events.size() == 2);
+    CHECK(events[0].data == bytes({0xb0, 1, 2}));
+    CHECK(events[0].frame == 2);  // sent behind the reservation at frame 2, so moved up to it
+    CHECK(events[1].data == bytes({0x80, 60, 0}));
+    CHECK(events[1].frame == 3);
+    CHECK(rig.scripts.throwCount() == 0);  // the node caught them
+}
+
+TEST_CASE("a script node's create and onSettings receive its settings as their JSON form", "[script][settings]") {
+    ScriptRig rig(R"JS(
+rp.register([rp.defineNode({
+  id: "rp.toy.transformed",
+  settings: rp.z.object({
+    name: rp.z.string().default("abc").transform((s) => s.length),                // a number: JSON keeps it
+    tags: rp.z.array(rp.z.string()).default(["a"]).transform((t) => new Set(t)),  // a Set: JSON makes it {}
+  }),
+  ports: { out: rp.events.out() },
+  create: ({ settings }) => {
+    __probe("create " + JSON.stringify(settings) + " " + (settings.tags instanceof Set));
+    return { process() {}, onSettings: (s) => __probe("onSettings " + JSON.stringify(s)) };
+  },
+})]);
+)JS");
+    REQUIRE(rig.set(doc(node("t", "rp.toy.transformed"), "")).ok);
+    CHECK(rig.log.count(R"(create {"name":3,"tags":{}} false)") == 1);
+    REQUIRE(rig.set(doc(node("t", "rp.toy.transformed", R"({"name":"hello"})"), "")).ok);  // a swap
+    CHECK(rig.log.count(R"(onSettings {"name":5,"tags":{}})") == 1);
+}
+
+TEST_CASE("faultOnThrow covers a script node's onSettings and portsChanged: a reshape whose hook threw faults it at its next "
+          "block",
+          "[script][fault-on-throw]") {
+    for (const char* hook : {"settings", "ports"}) {
+        INFO("fail " << hook);
+        ScriptRig rig(kBrittle);
+        const auto graph = [](const std::string& settings) {
+            return doc(node("b", "rp.toy.brittle", settings) + "," + node("s", "rp.toy.sturdy", settings) + "," +
+                           node("pb", "rp.test.probe") + "," + node("ps", "rp.test.probe"),
+                       wire("b.out1", "pb.events") + "," + wire("s.out1", "ps.events"));
+        };
+        REQUIRE(rig.set(graph("")).ok);
+        rig.run();
+        REQUIRE(rig.node<Probe>("pb").events.size() == 1);
+        rp_node* const kept = rig.host->node("b");
+        // A reshape: onSettings at the commit, then portsChanged for the new layout.
+        REQUIRE(rig.set(graph(std::string(R"({"outs":2,"fail":")") + hook + "\"}")).ok);
+        CHECK(rig.host->node("b") == kept);
+        rig.run(64, 2);
+        CHECK(rig.host->isFaulted("b"));
+        CHECK(rig.node<Probe>("pb").events.empty());
+        CHECK_FALSE(rig.host->isFaulted("s"));  // counted, and it runs on
+        CHECK(rig.node<Probe>("ps").events.size() == 1);
+        CHECK(rig.scripts.throwCount() == 2);
+    }
+}
+
+TEST_CASE("a released script instance's cycles are collected when it is released quiescent and when the audio thread hands the "
+          "runtime back, never by a block",
+          "[script][gc]") {
+    ScriptRig rig(R"JS(
+rp.register([rp.defineNode({
+  id: "rp.toy.cyclic",
+  settings: rp.z.object({ tag: rp.z.string().default("cyclic") }),
+  ports: { out: rp.events.out() },
+  create: ({ settings }) => { const self = { t: __token(settings.tag), n: 0, process(b) { self.n++; } }; return self; },
+})]);
+)JS");
+    REQUIRE(rig.set(doc(node("c", "rp.toy.cyclic"), "")).ok);
+    rig.run(64, 2);
+    REQUIRE(rig.set(doc("", "")).ok);  // quiescent: released here, and its cycle collected
+    CHECK(rig.log.count("released cyclic") == 1);
+
+    rig.setAudioThreadOwns(true);  // this thread plays the audio thread
+    REQUIRE(rig.set(doc(node("c", "rp.toy.cyclic", R"({"tag":"owned"})"), "")).ok);
+    rig.run(64, 2);
+    REQUIRE(rig.set(doc("", "")).ok);
+    rig.block();        // adopts the empty plan, handing back the one that held c
+    rig.reclaim();      // frees it, queueing c's release
+    rig.run(64, 200);   // the first releases it, and none collects its cycle
+    CHECK(rig.scripts.liveInstances() == 0);
+    CHECK(rig.log.count("released owned") == 0);
+    rig.setAudioThreadOwns(false);
+    CHECK(rig.log.count("released owned") == 1);
+}
+
+TEST_CASE("a long non-ASCII message is cut at a character, never inside one", "[script][utf8]") {
+    // After 0, 1 or 2 ASCII letters, one cut by bytes would land inside a character whatever a buffer holds.
+    for (int pad = 0; pad <= 2; ++pad) {
+        INFO("pad " << pad);
+        ScriptRig rig(kWordy);
+        const auto refused = rig.set(doc(node("w", "rp.toy.wordy", R"({"refuse":true,"pad":)" + std::to_string(pad) + "}"), ""));
+        REQUIRE(ScriptRig::codes(refused) == "settings-invalid");
+        CHECK(refused.errors[0].message.size() > 200);
+        CHECK(wholeUtf8(refused.errors[0].message));
+        REQUIRE(rig.set(doc(node("w", "rp.toy.wordy", R"({"pad":)" + std::to_string(pad) + "}"), "")).ok);
+        rig.run();
+        const std::string first = rig.scripts.firstThrow();
+        CHECK(first.size() > 400);
+        CHECK(wholeUtf8(first));
+    }
+}
+
+TEST_CASE("releases past the ring wait in the control thread's backlog, a destroy allocates nothing, and a block releases a "
+          "bounded number",
+          "[script][backlog]") {
+    ScriptRig rig(kIdle);
+    std::string nodes;
+    for (int i = 0; i < 300; ++i) nodes += (i ? "," : "") + node("n" + std::to_string(i), "rp.toy.idle");
+    rig.setAudioThreadOwns(true);  // this thread plays the audio thread
+    REQUIRE(rig.set(doc(nodes, "")).ok);
+    rig.block();
+    REQUIRE(rig.scripts.liveInstances() == 300);
+    REQUIRE(rig.set(doc("", "")).ok);
+    rig.block();  // adopts the empty plan, handing back the 300
+    rp::test::beginCountingAllocations();
+    rig.reclaim();  // frees that plan: 300 destroys, 255 into the ring (a slot short of its 256) and 45 into the backlog
+    const auto destroys = rp::test::endCountingAllocations();
+    CHECK(destroys.allocations == 0);  // a destroy runs in a destructor, so it may not throw bad_alloc
+    constexpr std::uint32_t kPer = ScriptHost::kReleasesPerBlock;
+    rig.block();
+    CHECK(rig.scripts.liveInstances() == 300 - kPer);
+    for (std::uint32_t b = 1; b < (255 + kPer - 1) / kPer; ++b) rig.block();
+    CHECK(rig.scripts.liveInstances() == 45);  // the ring drained: the backlog waits for the control thread
+    rig.block();
+    CHECK(rig.scripts.liveInstances() == 45);
+    rig.reclaim();  // deletes the records the blocks handed back, and moves the backlog into the ring
+    for (int b = 0; b < 8 && rig.scripts.liveInstances() > 0; ++b) rig.block();
+    CHECK(rig.scripts.liveInstances() == 0);
+    rig.reclaim();
+    rig.setAudioThreadOwns(false);
+}
+
+TEST_CASE("a script node that runs past the call deadline is stopped, counted and faulted; one that recurses without end throws",
+          "[script][deadline]") {
+    ScriptRig rig(R"JS(
+rp.register([rp.defineNode({
+  id: "rp.toy.spin",   // a try cannot catch what stops it
+  ports: { out: rp.events.out() },
+  create: () => ({ process(b) { b.send("out", 0, [1]); for (;;) { try { while (true) {} } catch (e) {} } } }),
+}), rp.defineNode({
+  id: "rp.toy.deep",
+  ports: { out: rp.events.out() },
+  create: () => { const down = (n) => down(n + 1) + 1; return { process(b) { b.send("out", 0, [2]); down(0); } }; },
+}), rp.defineNode({
+  id: "rp.toy.slowjob",  // a promise reaction that never returns, once
+  ports: { out: rp.events.out() },
+  create: () => {
+    let queued = false;
+    return { process(b) { if (!queued) { queued = true; Promise.resolve().then(() => { for (;;) {} }); } } };
+  },
+})]);
+)JS");
+    rig.scripts.setCallDeadline(std::chrono::milliseconds(50));
+    REQUIRE(rig.set(doc(node("s", "rp.toy.spin") + "," + node("d", "rp.toy.deep") + "," + node("j", "rp.toy.slowjob") + "," +
+                            node("ps", "rp.test.probe") + "," + node("pd", "rp.test.probe"),
+                        wire("s.out", "ps.events") + "," + wire("d.out", "pd.events")))
+                .ok);
+    const auto start = std::chrono::steady_clock::now();
+    rig.run();
+    CHECK(std::chrono::steady_clock::now() - start < std::chrono::seconds(5));
+    CHECK(rig.host->isFaulted("s"));  // bypassed: running it again would hang as long
+    CHECK(rig.node<Probe>("ps").events.empty());
+    CHECK_FALSE(rig.host->isFaulted("d"));  // a stack overflow is an ordinary throw: counted, and it runs on
+    CHECK(rig.node<Probe>("pd").events.size() == 1);
+    CHECK(rig.scripts.throwCount() == 3);  // and the reaction, stopped at the block's end
+    CHECK_FALSE(rig.host->isFaulted("j"));
+    rig.run(64, 3);
+    CHECK(rig.scripts.throwCount() == 6);
+    CHECK(rig.node<Probe>("pd").events.size() == 1);
+    rig.reclaim();
+    INFO(rig.scripts.firstThrow());
+    CHECK(rig.scripts.firstThrow().find("rp.toy.spin ran past the 50 ms call deadline in process") == 0);
+}
+
 TEST_CASE("an audio thread runs script nodes while the control thread plans, reshapes, rebuilds and reclaims them",
           "[script][stress]") {
     ScriptRig rig(std::string(kCounters) + kGain);
@@ -812,4 +1190,52 @@ TEST_CASE("an Engine runs the script types of the bundle it is built with, and c
     // The embedded bundle's types, in an Engine built the usual way: a document naming a toy type is refused.
     Engine plain;
     CHECK_FALSE(plain.setGraph(request).ok);
+}
+
+TEST_CASE("two Engines run script nodes on two threads at once, each in its own runtimes", "[script][two-engines]") {
+    const std::vector<std::uint8_t> toys = rp::host::test::compileToys(kThrowers);
+    const ScriptHost::Chunk chunks[] = {rp::host::test::scriptTestBundle(), toys};
+    std::atomic<int> failures{0};
+    auto run = [&] {
+        for (int round = 0; round < 3; ++round) {
+            Engine e(48000.0, chunks);
+            Engine::GraphRequest request;
+            request.document = doc(node("t", "rp.toy.thrower") + "," + node("q", "rp.toy.quitter") + "," +
+                                       node("out", "rp.host.audio-out", R"({"buses":[1,1]})"),
+                                   "");
+            if (!e.setGraph(request).ok) ++failures;
+            std::vector<float> l(256), r(256);
+            for (int i = 0; i < 20; ++i) e.processBlock(256, l.data(), r.data());
+            if (e.scriptThrows() != 10) ++failures;
+        }
+    };
+    std::thread a(run), b(run);
+    a.join();
+    b.join();
+    CHECK(failures.load() == 0);
+}
+
+TEST_CASE("an Engine torn down with plans still queued creates their script nodes there, then releases them", "[script][teardown]") {
+    const std::vector<std::uint8_t> toys = rp::host::test::compileToys(std::string(kThrowers) + R"JS(
+rp.register([rp.defineNode({ id: "rp.toy.badcreate", ports: { out: rp.events.out() }, create: () => { throw new Error("no"); } }),
+             rp.defineNode({ id: "rp.toy.cyclic", ports: { out: rp.events.out() },
+                             create: () => { const self = { big: new Float64Array(1 << 16), process(b) { self.big[0]++; } }; return self; } })]);
+)JS");
+    const ScriptHost::Chunk chunks[] = {rp::host::test::scriptTestBundle(), toys};
+    Engine e(48000.0, chunks);
+    e.setAudioThreadOwns(true);  // an audio thread that stops before it runs a block
+    Engine::GraphRequest first, second;
+    first.document = doc(node("t", "rp.toy.thrower") + "," + node("bad", "rp.toy.badcreate") + "," +
+                             node("out", "rp.host.audio-out", R"({"buses":[1,1]})"),
+                         "");
+    second.document = doc(node("c", "rp.toy.cyclic") + "," + node("out", "rp.host.audio-out", R"({"buses":[1,1]})"), "");
+    REQUIRE(e.setGraph(first).ok);
+    REQUIRE(e.setGraph(second).ok);  // queued behind it: a plan of fresh instances waits for no adoption
+    // The teardown a driver does once its audio thread has stopped (AudioDriverRpcService's destructor): every queued
+    // plan adopted here, on this thread, so their script nodes are created here, and the plans replaced released.
+    e.discardPending();
+    CHECK(e.scriptThrows() == 1);  // bad's create ran
+    e.setAudioThreadOwns(false);
+    e.reclaim();
+    // The Engine goes at the end of the test, its last plan's script node with it, after the GraphHost that holds it.
 }

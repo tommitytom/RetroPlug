@@ -7,7 +7,8 @@
 //
 // Two probes are bound into both of the script host's contexts, so a toy can say what ran where: `__probe(tag)`
 // records the tag and the calling thread, and `__token(tag)` returns an object that records "released <tag>" and the
-// thread that frees it, which is the thread that released the instance holding it.
+// thread that frees it, which is the thread that released the instance holding it. `__audioSide` says which context
+// a bundle is running in, for a toy that would tell the two apart.
 
 #include <chrono>
 #include <cstdint>
@@ -127,6 +128,7 @@ inline void bindProbes(void* user, JSContext* ctx, bool audioSide) {
     JSValue global = JS_GetGlobalObject(ctx);
     JS_SetPropertyStr(ctx, global, "__probe", JS_NewCFunctionData(ctx, &probeFn, 1, 0, 1, &data));
     JS_SetPropertyStr(ctx, global, "__token", JS_NewCFunctionData(ctx, &tokenFn, 1, audioSide ? 1 : 0, 1, &data));
+    JS_SetPropertyStr(ctx, global, "__audioSide", JS_NewBool(ctx, audioSide));
     JS_FreeValue(ctx, global);
     JS_FreeValue(ctx, data);
 }
@@ -165,7 +167,12 @@ struct ScriptRig {
         host.reset();
     }
 
-    graph::SetGraphResult set(const std::string& json) { return host->setGraph(json); }
+    // As the Engine's setGraph: the script host's reclaim after it, which collects what a quiescent swap released.
+    graph::SetGraphResult set(const std::string& json) {
+        auto r = host->setGraph(json);
+        scripts.reclaim();
+        return r;
+    }
 
     // One block, as an Engine runs it: the script host's releases, the graph's drain and block, then the promise jobs
     // the block queued.

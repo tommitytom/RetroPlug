@@ -38,6 +38,8 @@
 extern "C" {
 #endif
 
+/* Still 1 though rp_node_type has changed shape (its type-level calls take the type, and it gained ctx): ABI v1
+ * has never shipped, so no pack was built against the old one. */
 #define RP_ABI_VERSION 1u
 
 /* The symbol a downloaded pack exports (an rp_package_entry_fn), and the visibility it needs. */

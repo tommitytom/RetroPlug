@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -44,11 +45,20 @@ enum Atom : std::size_t {
 constexpr const char* kAtomNames[kAtomCount] = {"frames", "transport", "sampleRate", "tempo", "ppq",     "playing", "frame",
                                                 "data",   "flags",     "start",      "changes", "value", "length",  "fault"};
 
+// `text` into out[0..capacity), NUL-terminated, cut where it does not fit at the end of a character: a cut by bytes
+// alone can land inside a UTF-8 sequence, and leave text a reader refuses. The bytes written, the NUL not counted.
+std::size_t copyText(char* out, std::size_t capacity, std::string_view text) {
+    if (capacity == 0) return 0;
+    std::size_t n = std::min(text.size(), capacity - 1);
+    if (n < text.size())
+        while (n > 0 && (static_cast<unsigned char>(text[n]) & 0xc0) == 0x80) --n;  // text[n], the first byte left out
+    std::memcpy(out, text.data(), n);
+    out[n] = '\0';
+    return n;
+}
+
 void copyError(rp_error* err, std::string_view what) {
-    if (!err) return;
-    const std::size_t n = std::min(what.size(), sizeof err->message - 1);
-    std::memcpy(err->message, what.data(), n);
-    err->message[n] = '\0';
+    if (err) copyText(err->message, sizeof err->message, what);
 }
 
 void clearException(JSContext* ctx) { JS_FreeValue(ctx, JS_GetException(ctx)); }
@@ -57,9 +67,10 @@ void clearException(JSContext* ctx) { JS_FreeValue(ctx, JS_GetException(ctx)); }
 // when `messageOnly` (a settings refusal is the definition's own words), else "Name: message".
 void describe(JSContext* ctx, JSValueConst thrown, bool messageOnly, char* out, std::size_t capacity) {
     JSValue message = messageOnly && JS_IsError(thrown) ? JS_GetPropertyStr(ctx, thrown, "message") : JS_UNDEFINED;
-    const char* text = JS_ToCString(ctx, JS_IsString(message) ? message : thrown);
+    std::size_t length = 0;
+    const char* text = JS_ToCStringLen(ctx, &length, JS_IsString(message) ? message : thrown);
     if (!text) clearException(ctx);
-    std::snprintf(out, capacity, "%s", text ? text : "a value with no text");
+    copyText(out, capacity, text ? std::string_view(text, length) : std::string_view("a value with no text"));
     if (text) JS_FreeCString(ctx, text);
     JS_FreeValue(ctx, message);
 }
@@ -111,6 +122,24 @@ bool runJobs(JSRuntime* rt, int bound, OnThrow&& onThrow) {
         if (r < 0) onThrow(ctx);
     }
     return !JS_IsJobPending(rt);
+}
+
+// Message i taken back out of q with its payload, as if it had never been pushed: the messages after it, and their
+// payloads, move down. A queue's payloads lie in push order, so theirs follow its.
+void eraseMessage(rp_queue& q, std::uint32_t i) {
+    const rp_message gone = q.items[i];
+    const std::uint32_t after = gone.offset + gone.size;
+    std::memmove(q.bytes + gone.offset, q.bytes + after, q.bytes_used - after);
+    for (std::uint32_t k = i + 1; k < q.count; ++k) {
+        q.items[k - 1] = q.items[k];
+        q.items[k - 1].offset -= gone.size;
+    }
+    --q.count;
+    q.bytes_used -= gone.size;
+}
+
+std::int64_t steadyNs() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
 bool sameObject(JSValueConst a, JSValueConst b) {
@@ -227,9 +256,10 @@ struct ScriptHost::Instance {
     // quiescent, and read by the block thread after.
     double                  sampleRate = 48000.0;
     std::uint32_t           maxFrames = 1024;
-    std::atomic<bool>       activateLater{false};  // a re-activation the block thread applies before its next block
+    Instance*               backlogNext = nullptr;  // the control thread's: the next record in the release backlog
     // The block thread's.
     State                   state = State::Pending;
+    bool                    faultNext = false;  // a hook threw under faultOnThrow (or was stopped): fault at the next block
     Settings*               settings = nullptr;
     std::unique_ptr<Layout> layout;
     JSValue                 object = JS_UNDEFINED;  // the NodeInstance its definition's create returned
@@ -258,6 +288,31 @@ struct ScriptHost::Glue {
     static Instance& instanceOf(rp_node* n) { return *static_cast<Shim*>(n)->in; }
     static ScriptHost& hostOf(JSContext* ctx) { return *static_cast<ScriptHost*>(JS_GetContextOpaque(ctx)); }
     static JSAtom    atom(ScriptHost& h, Atom a) { return h.atoms_[a]; }
+
+    // ---- the call deadline ---------------------------------------------------------------------------------------
+    // While one lives, what the block thread runs in the audio runtime may run until the deadline, and the interrupt
+    // handler stops it after: QuickJS throws an uncatchable error, which the call returns as a throw. A nested one keeps
+    // the outer's deadline when that is sooner, and hands it back.
+    struct Deadline {
+        ScriptHost&  h;
+        std::int64_t outer;
+        explicit Deadline(ScriptHost& host) : h(host), outer(host.deadline_) {
+            const std::int64_t mine = steadyNs() + h.callDeadlineNs_.load(std::memory_order_relaxed);
+            h.deadline_ = outer != 0 ? std::min(outer, mine) : mine;
+            h.interrupted_ = false;
+        }
+        ~Deadline() { h.deadline_ = outer; }
+        Deadline(const Deadline&) = delete;
+        Deadline& operator=(const Deadline&) = delete;
+    };
+
+    // QuickJS asks once every 10000 of its polls (at each call and each jump back in a loop) whether to stop.
+    static int interrupt(JSRuntime*, void* opaque) {
+        auto& h = *static_cast<ScriptHost*>(opaque);
+        if (h.deadline_ == 0 || steadyNs() < h.deadline_) return 0;
+        h.interrupted_ = true;
+        return 1;
+    }
 
     // ---- the audio runtime's allocator: the platform's, counted ------------------------------------------------
     static void* jsCalloc(void* opaque, std::size_t count, std::size_t size) {
@@ -365,19 +420,16 @@ struct ScriptHost::Glue {
     }
 
     // ---- the instance --------------------------------------------------------------------------------------------
-    // The control thread, on a fresh shim (whose JS instance is made later, with these values) or, for a live one,
-    // while quiescent (GraphHost::reactivate), when its activate runs at once. Were an audio thread to own the blocks
-    // then, the instance would hear it before its next block instead.
+    // The control thread, on a fresh shim (whose JS instance is made later, with these values, before a plan holding
+    // it is published), or on a live one while quiescent (GraphHost::reactivate, which refuses while an audio thread
+    // runs blocks), when its activate runs at once: this thread is the block thread then.
     static bool activate(rp_node* n, double sampleRate, std::uint32_t maxFrames, rp_error* err) {
         Instance& in = instanceOf(n);
         in.sampleRate = sampleRate;
         in.maxFrames = maxFrames;
         if (in.state != Instance::State::Live) return true;
         ScriptHost& h = *in.type->host;
-        if (h.audioOwns_.load(std::memory_order_acquire)) {
-            in.activateLater.store(true, std::memory_order_release);
-            return true;
-        }
+        assert(!h.audioOwns_.load(std::memory_order_acquire) && "a live script node is re-activated only while quiescent");
         if (callActivate(h, in)) return true;
         copyError(err, "activate refused these settings");
         return false;
@@ -391,10 +443,11 @@ struct ScriptHost::Glue {
         if (!ensureLive(h, in)) return;
         JSContext* ctx = h.audio_;
         if (!JS_IsFunction(ctx, in.portsChanged)) return;
+        const Deadline call(h);
         JSValue mask = JS_NewArray(ctx);
         for (std::uint32_t i = 0; i < count; ++i) JS_SetPropertyUint32(ctx, mask, i, JS_NewBool(ctx, connected[i] != 0));
-        JSValue result = JS_Call(ctx, in.portsChanged, in.object, 1, &mask);
-        if (JS_IsException(result)) recordThrow(h, in, "portsChanged");
+        JSValue result = JS_IsException(mask) ? JS_EXCEPTION : JS_Call(ctx, in.portsChanged, in.object, 1, &mask);
+        if (JS_IsException(result)) hookThrew(h, in, "portsChanged");
         JS_FreeValue(ctx, result);
         JS_FreeValue(ctx, mask);
     }
@@ -402,19 +455,18 @@ struct ScriptHost::Glue {
     static rp_status process(rp_node* n, const rp_process* block) {
         Instance& in = instanceOf(n);
         ScriptHost& h = *in.type->host;
-        if (!ensureLive(h, in)) return RP_FAULT;
+        if (!ensureLive(h, in) || in.faultNext) return RP_FAULT;
         JSContext* ctx = h.audio_;
-        if (in.activateLater.load(std::memory_order_acquire)) {
-            in.activateLater.store(false, std::memory_order_relaxed);
-            callActivate(h, in);
-        }
+        // The whole block, not just the call: a node may hang a setter on what the block path fills in.
+        const Deadline call(h);
         ++in.blockStamp;
         // Every audio port's copies first, the inputs' samples in them: a node may read views it kept from a block
         // before, so the copy cannot wait for it to ask.
-        if (!readyAudio(ctx, in, *block)) {
-            recordThrow(h, in, "process");  // out of memory in JS, so the block cannot run
+        if (!readyAudio(ctx, in, *block)) {  // out of memory in JS, so the block cannot run
+            const bool stopped = h.interrupted_;
+            recordThrow(h, in, "process");
             silenceAudio(in, *block);
-            return in.type->faultOnThrow ? RP_FAULT : RP_OK;
+            return in.type->faultOnThrow || stopped ? RP_FAULT : RP_OK;
         }
         in.running = block;
         JS_SetProperty(ctx, in.block, atom(h, kFrames), JS_NewUint32(ctx, block->frames));
@@ -425,10 +477,10 @@ struct ScriptHost::Glue {
         JS_SetProperty(ctx, in.transport, atom(h, kPlaying), JS_NewBool(ctx, (t.flags & RP_TRANSPORT_PLAYING) != 0));
         JSValue result = JS_Call(ctx, in.process, in.object, 1, &in.block);
         in.running = nullptr;
-        const bool threw = JS_IsException(result);
+        const bool threw = JS_IsException(result), stopped = h.interrupted_;
         if (threw) recordThrow(h, in, "process");  // first: the copy out may meet a detached buffer, which throws too
         copyAudioOut(ctx, in, *block);             // what it wrote up to a throw stands, as its sends do
-        if (threw) return in.type->faultOnThrow ? RP_FAULT : RP_OK;
+        if (threw) return in.type->faultOnThrow || stopped ? RP_FAULT : RP_OK;
         bool fault = false;
         if (JS_IsString(result)) {
             const JSAtom said = JS_ValueToAtom(ctx, result);
@@ -481,9 +533,10 @@ struct ScriptHost::Glue {
         in.settings = next;
         *old = prev;
         if (!live || !JS_IsFunction(ctx, in.onSettings)) return;
+        const Deadline call(h);
         JSValue settings = JS_ParseJSON(ctx, next->json.c_str(), next->json.size(), "<settings>");
         JSValue result = JS_IsException(settings) ? JS_EXCEPTION : JS_Call(ctx, in.onSettings, in.object, 1, &settings);
-        if (JS_IsException(result)) recordThrow(h, in, "onSettings");
+        if (JS_IsException(result)) hookThrew(h, in, "onSettings");
         JS_FreeValue(ctx, result);
         JS_FreeValue(ctx, settings);
     }
@@ -509,11 +562,18 @@ struct ScriptHost::Glue {
         JSContext* ctx = h.audio_;
         JS_UpdateStackTop(h.audioRt_);
         bindLayout(ctx, *in.layout);
-        JSValue cc = JS_NewObject(ctx);
-        JS_SetPropertyStr(ctx, cc, "settings", JS_ParseJSON(ctx, in.settings->json.c_str(), in.settings->json.size(), "<settings>"));
-        JS_SetPropertyStr(ctx, cc, "sampleRate", JS_NewFloat64(ctx, in.sampleRate));
-        JS_SetPropertyStr(ctx, cc, "maxFrames", JS_NewUint32(ctx, in.maxFrames));
-        JSValue object = callMethod(ctx, in.type->audio, "create", 1, &cc);
+        const Deadline call(h);
+        // The settings as the control side's parseSettings returned them, in their JSON form (the class comment).
+        JSValue settings = JS_ParseJSON(ctx, in.settings->json.c_str(), in.settings->json.size(), "<settings>");
+        JSValue cc = JS_IsException(settings) ? JS_EXCEPTION : JS_NewObject(ctx);
+        if (!JS_IsException(cc)) {
+            JS_SetPropertyStr(ctx, cc, "settings", settings);
+            JS_SetPropertyStr(ctx, cc, "sampleRate", JS_NewFloat64(ctx, in.sampleRate));
+            JS_SetPropertyStr(ctx, cc, "maxFrames", JS_NewUint32(ctx, in.maxFrames));
+        } else {
+            JS_FreeValue(ctx, settings);
+        }
+        JSValue object = JS_IsException(cc) ? JS_EXCEPTION : callMethod(ctx, in.type->audio, "create", 1, &cc);
         JS_FreeValue(ctx, cc);
         if (JS_IsException(object)) {
             recordThrow(h, in, "create");
@@ -552,6 +612,7 @@ struct ScriptHost::Glue {
         JSContext* ctx = h.audio_;
         if (!JS_IsFunction(ctx, in.activate)) return true;
         JS_UpdateStackTop(h.audioRt_);
+        const Deadline call(h);
         JSValueConst args[2] = {JS_NewFloat64(ctx, in.sampleRate), JS_NewUint32(ctx, in.maxFrames)};
         JSValue result = JS_Call(ctx, in.activate, in.object, 2, args);
         bool ok = true;
@@ -561,7 +622,8 @@ struct ScriptHost::Glue {
         return ok;
     }
 
-    // Counted, and the first one kept for reclaim to log; the exception is cleared.
+    // Counted, and the first one kept for reclaim to log; the exception is cleared. A call the deadline stopped counts
+    // as a throw, and says so.
     static void recordThrow(ScriptHost& h, Instance& in, const char* where) { recordThrow(h, in.type->id.c_str(), where); }
     // `type` null: no one node's (a promise job).
     static void recordThrow(ScriptHost& h, const char* type, const char* where) {
@@ -570,13 +632,41 @@ struct ScriptHost::Glue {
         h.throws_.fetch_add(1, std::memory_order_relaxed);
         int unclaimed = 0;
         if (h.firstThrowState_.compare_exchange_strong(unclaimed, 1, std::memory_order_acq_rel)) {
-            const int n = type ? std::snprintf(h.firstThrow_, sizeof h.firstThrow_, "%s threw in %s: ", type, where)
-                               : std::snprintf(h.firstThrow_, sizeof h.firstThrow_, "%s threw: ", where);
-            if (n > 0 && static_cast<std::size_t>(n) < sizeof h.firstThrow_)
-                describe(ctx, thrown, false, h.firstThrow_ + n, sizeof h.firstThrow_ - static_cast<std::size_t>(n));
+            char* const out = h.firstThrow_;
+            std::size_t n = 0;
+            const auto add = [&](std::string_view text) { n += copyText(out + n, sizeof h.firstThrow_ - n, text); };
+            add(type ? type : where);
+            if (h.interrupted_) {
+                char ms[24];
+                std::snprintf(ms, sizeof ms, "%lld",
+                              static_cast<long long>(h.callDeadlineNs_.load(std::memory_order_relaxed) / 1000000));
+                add(" ran past the ");
+                add(ms);
+                add(" ms call deadline");
+                if (type) {
+                    add(" in ");
+                    add(where);
+                }
+                add(", and was stopped: ");
+            } else if (type) {
+                add(" threw in ");
+                add(where);
+                add(": ");
+            } else {
+                add(" threw: ");
+            }
+            describe(ctx, thrown, false, out + n, sizeof h.firstThrow_ - n);
             h.firstThrowState_.store(2, std::memory_order_release);
         }
         JS_FreeValue(ctx, thrown);
+    }
+
+    // A throw in a hook that runs at a plan swap (onSettings, portsChanged): counted, and under faultOnThrow, or when the
+    // deadline stopped it, the node faults at its next block, since it may hold half of what the hook would have set.
+    static void hookThrew(ScriptHost& h, Instance& in, const char* where) {
+        const bool stopped = h.interrupted_;
+        recordThrow(h, in, where);
+        if (in.type->faultOnThrow || stopped) in.faultNext = true;
     }
 
     static void bindLayout(JSContext* ctx, Layout& l) {
@@ -738,14 +828,26 @@ struct ScriptHost::Glue {
         return nullptr;
     }
 
-    // The message objects of `array`, element i made (into pool) when it has never been.
+    // The message objects of `array`, element i made (into pool) when it has never been; JS_EXCEPTION, with it pending,
+    // when JS is out of memory.
     static JSValue element(JSContext* ctx, PortJs& p, std::uint32_t i) {
         JSValue e = JS_GetPropertyUint32(ctx, p.pool, i);
         if (JS_IsObject(e)) return e;
         JS_FreeValue(ctx, e);
         e = JS_NewObject(ctx);
-        JS_SetPropertyUint32(ctx, p.pool, i, JS_DupValue(ctx, e));
+        if (JS_IsException(e)) return e;
+        if (JS_SetPropertyUint32(ctx, p.pool, i, JS_DupValue(ctx, e)) < 0) {
+            JS_FreeValue(ctx, e);
+            return JS_EXCEPTION;
+        }
         return e;
+    }
+
+    // A fresh array (or object) into *slot; false, with the exception pending, when JS is out of memory.
+    static bool make(JSValue* slot, JSValue made) {
+        if (JS_IsException(made)) return false;
+        *slot = made;
+        return true;
     }
 
     // Does `view` already look at [offset, offset + size) of `buffer`?
@@ -763,12 +865,10 @@ struct ScriptHost::Glue {
     }
 
     // An events or bytes input as a reused Message[]: the payloads copied into one JS-owned buffer (grown, never
-    // shrunk), each message's data a Uint8Array over its bytes there, made again only when its place moves.
-    static void fillMessages(ScriptHost& h, JSContext* ctx, PortJs& p, const rp_queue& q) {
-        if (JS_IsUndefined(p.value)) {
-            p.value = JS_NewArray(ctx);
-            p.pool = JS_NewArray(ctx);
-        }
+    // shrunk), each message's data a Uint8Array over its bytes there, made again only when its place moves. False, with
+    // the exception pending, when JS is out of memory.
+    static bool fillMessages(ScriptHost& h, JSContext* ctx, PortJs& p, const rp_queue& q) {
+        if (JS_IsUndefined(p.value) && !(make(&p.pool, JS_NewArray(ctx)) && make(&p.value, JS_NewArray(ctx)))) return false;
         if (q.count > 0 && q.bytes_capacity > 0) {
             std::size_t room = 0;
             std::uint8_t* bytes = JS_IsUndefined(p.payload) ? nullptr : JS_GetArrayBuffer(ctx, &room, p.payload);
@@ -778,7 +878,8 @@ struct ScriptHost::Glue {
                 const std::size_t size =
                     std::min<std::size_t>(q.bytes_capacity, std::max<std::size_t>({q.bytes_used, room * 2, 256}));
                 JS_FreeValue(ctx, p.payload);
-                p.payload = JS_NewArrayBufferCopy(ctx, q.bytes, std::max<std::size_t>(size, 1));
+                p.payload = JS_UNDEFINED;
+                if (!make(&p.payload, JS_NewArrayBufferCopy(ctx, q.bytes, std::max<std::size_t>(size, 1)))) return false;
                 bytes = JS_GetArrayBuffer(ctx, &room, p.payload);
             }
             if (bytes && q.bytes_used) std::memcpy(bytes, q.bytes, q.bytes_used);
@@ -786,36 +887,45 @@ struct ScriptHost::Glue {
         for (std::uint32_t i = 0; i < q.count; ++i) {
             const rp_message& m = q.items[i];
             JSValue e = element(ctx, p, i);
+            if (JS_IsException(e)) return false;
             JS_SetProperty(ctx, e, atom(h, kFrame), JS_NewUint32(ctx, m.frame));
             JSValue data = JS_GetProperty(ctx, e, atom(h, kData));
             if (!viewing(ctx, data, p.payload, m.offset, m.size)) {
                 JSValueConst args[3] = {p.payload, JS_NewUint32(ctx, m.offset), JS_NewUint32(ctx, m.size)};
-                JS_SetProperty(ctx, e, atom(h, kData), JS_NewTypedArray(ctx, 3, args, JS_TYPED_ARRAY_UINT8));
+                JSValue view = JS_NewTypedArray(ctx, 3, args, JS_TYPED_ARRAY_UINT8);
+                if (JS_IsException(view)) {
+                    JS_FreeValue(ctx, data);
+                    JS_FreeValue(ctx, e);
+                    return false;
+                }
+                JS_SetProperty(ctx, e, atom(h, kData), view);
             }
             JS_FreeValue(ctx, data);
             JS_SetProperty(ctx, e, atom(h, kFlags), JS_NewUint32(ctx, m.flags));
             JS_SetPropertyUint32(ctx, p.value, i, e);
         }
         JS_SetProperty(ctx, p.value, atom(h, kLength), JS_NewUint32(ctx, q.count));
+        return true;
     }
 
-    // A control input or a param as a reused { start, changes }.
-    static void fillControl(ScriptHost& h, JSContext* ctx, PortJs& p, const rp_control_queue& q) {
+    // A control input or a param as a reused { start, changes }. False, with the exception pending, when JS is out of
+    // memory.
+    static bool fillControl(ScriptHost& h, JSContext* ctx, PortJs& p, const rp_control_queue& q) {
         if (JS_IsUndefined(p.value)) {
-            p.value = JS_NewObject(ctx);
-            p.items = JS_NewArray(ctx);
-            p.pool = JS_NewArray(ctx);
-            JS_SetProperty(ctx, p.value, atom(h, kStart), JS_NewFloat64(ctx, q.start));
+            if (!(make(&p.items, JS_NewArray(ctx)) && make(&p.pool, JS_NewArray(ctx)) && make(&p.value, JS_NewObject(ctx))))
+                return false;
             JS_SetProperty(ctx, p.value, atom(h, kChanges), JS_DupValue(ctx, p.items));
         }
         JS_SetProperty(ctx, p.value, atom(h, kStart), JS_NewFloat64(ctx, q.start));
         for (std::uint32_t i = 0; i < q.count; ++i) {
             JSValue e = element(ctx, p, i);
+            if (JS_IsException(e)) return false;
             JS_SetProperty(ctx, e, atom(h, kFrame), JS_NewUint32(ctx, q.changes[i].frame));
             JS_SetProperty(ctx, e, atom(h, kValue), JS_NewFloat64(ctx, q.changes[i].value));
             JS_SetPropertyUint32(ctx, p.items, i, e);
         }
         JS_SetProperty(ctx, p.items, atom(h, kLength), JS_NewUint32(ctx, q.count));
+        return true;
     }
 
     // block.messages(port): an events or bytes input.
@@ -827,7 +937,7 @@ struct ScriptHost::Glue {
                        : nullptr;
         if (!p) return JS_EXCEPTION;
         if (p->stamp != in->blockStamp) {
-            fillMessages(hostOf(ctx), ctx, *p, *in->running->inputs[found->index].u.queue);
+            if (!fillMessages(hostOf(ctx), ctx, *p, *in->running->inputs[found->index].u.queue)) return JS_EXCEPTION;
             p->stamp = in->blockStamp;
         }
         return JS_DupValue(ctx, p->value);
@@ -844,7 +954,7 @@ struct ScriptHost::Glue {
         if (p->stamp != in->blockStamp) {
             const rp_control_queue& q =
                 found->side == Side::Param ? *in->running->params[found->index] : *in->running->inputs[found->index].u.control;
-            fillControl(hostOf(ctx), ctx, *p, q);
+            if (!fillControl(hostOf(ctx), ctx, *p, q)) return JS_EXCEPTION;
             p->stamp = in->blockStamp;
         }
         return JS_DupValue(ctx, p->value);
@@ -884,13 +994,17 @@ struct ScriptHost::Glue {
         if (length < 0 || length > static_cast<std::int64_t>(UINT32_MAX)) return JS_ThrowRangeError(ctx, "the data is too long");
         std::uint8_t* at = nullptr;
         if (!graph::reserveMessage(q, frame, static_cast<std::size_t>(length), flags, &at)) return JS_NewBool(ctx, false);
+        // Where it is: a getter may send onto the same queue before it returns, so it need not stay the last message
+        // (its bytes stay where they are, the arena being fixed).
+        const std::uint32_t reserved = q.count - 1;
         for (std::int64_t i = 0; i < length; ++i) {
             JSValue v = JS_GetPropertyUint32(ctx, argv[2], static_cast<std::uint32_t>(i));
             std::int32_t b = 0;
-            const bool ok = JS_ToInt32(ctx, &b, v) == 0;
+            const bool ok = !JS_IsException(v) && JS_ToInt32(ctx, &b, v) == 0;
             JS_FreeValue(ctx, v);
-            if (!ok) {  // a node's bug, and it throws: the message keeps the bytes read so far, then zeros
-                std::memset(at + i, 0, static_cast<std::size_t>(length - i));
+            if (!ok) {  // a node's bug, and it throws: the message is taken back out, so no part of it goes (half a
+                        // note-on, zeros after, would be a note-off)
+                eraseMessage(q, reserved);
                 return JS_EXCEPTION;
             }
             at[i] = static_cast<std::uint8_t>(b & 0xff);
@@ -922,6 +1036,9 @@ ScriptHost::ScriptHost(Binder binder, void* user) {
     audioRt_ = JS_NewRuntime2(&counted, &counters_);  // QuickJS copies the functions and keeps the opaque
     audio_ = JS_NewContext(audioRt_);
     JS_SetContextOpaque(audio_, this);
+    // What the block thread runs here: held to an audio thread's stack, and to the call deadline.
+    JS_SetMaxStackSize(audioRt_, kAudioStackBytes);
+    JS_SetInterruptHandler(audioRt_, &Glue::interrupt, this);
 
     // The Block object: one per instance, its methods on the class prototype, the instance its opaque.
     JS_NewClassID(audioRt_, &blockClass_);
@@ -959,12 +1076,25 @@ ScriptHost::~ScriptHost() {
 ScriptHost::Chunk ScriptHost::embeddedBundle() { return {rp_script_bundle, rp_script_bundle_size}; }
 
 bool ScriptHost::load(std::span<const Chunk> chunks, std::string* error) {
+    // Refused without touching what a first load registered: a registry may hold its types already.
+    if (loaded_) {
+        if (error) *error = "a script host loads one bundle";
+        return false;
+    }
+    loaded_ = true;
     auto fail = [&](std::string why) {
         freeTypes();
         if (error) *error = std::move(why);
         return false;
     };
-    if (!types_.empty()) return fail("a script host loads one bundle");
+    // The bundle's top level and every definition's descriptor (zod's walk of its settings schema) run on the
+    // constructing thread, a control thread's stack and deeper than any block's JS: the audio side's limit is lifted
+    // for them, and is back when load returns.
+    struct Stack {
+        JSRuntime* rt;
+        ~Stack() { JS_SetMaxStackSize(rt, kAudioStackBytes); }
+    } restored{audioRt_};
+    JS_SetMaxStackSize(audioRt_, JS_DEFAULT_STACK_SIZE);
     for (const bool audioSide : {false, true}) {
         JSContext* ctx = audioSide ? audio_ : control_;
         JS_UpdateStackTop(audioSide ? audioRt_ : controlRt_);
@@ -1019,12 +1149,21 @@ bool ScriptHost::load(std::span<const Chunk> chunks, std::string* error) {
         const bool same = audioText && type.id == audioText;
         if (audioText) JS_FreeCString(audio_, audioText);
         JS_FreeValue(audio_, audioId);
-        if (!same) return fail(at + " (" + type.id + ") is not the same in both contexts");
+        if (!same) return fail(at + " (" + type.id + ") is not the same in both contexts: its id differs");
         JSValue d = callMethod(control_, type.control, "descriptor", 0, nullptr);
         const bool described = !JS_IsException(d) && stringify(control_, d, type.descriptor);
         JS_FreeValue(control_, d);
         drainControlJobs();
         if (!described) return fail(type.id + ": its descriptor: " + exceptionText(control_, true));
+        // The audio side's must be the same: the control side lays out and checks what the audio side then runs.
+        std::string audioDescriptor;
+        JSValue ad = callMethod(audio_, type.audio, "descriptor", 0, nullptr);
+        const bool audioDescribed = !JS_IsException(ad) && stringify(audio_, ad, audioDescriptor);
+        JS_FreeValue(audio_, ad);
+        if (!audioDescribed) return fail(type.id + ": its descriptor, in the audio context: " + exceptionText(audio_, true));
+        if (audioDescriptor != type.descriptor)
+            return fail(at + " (" + type.id + ") is not the same in both contexts: its descriptor differs, so the bundle "
+                             "defines it by which context it runs in");
         for (const auto& [flag, key] : {std::pair{&type.reshapes, "reshapes"}, std::pair{&type.faultOnThrow, "faultOnThrow"}}) {
             JSValue v = JS_GetPropertyStr(control_, type.control, key);
             *flag = JS_IsBool(v) && JS_ToBool(control_, v);
@@ -1033,6 +1172,7 @@ bool ScriptHost::load(std::span<const Chunk> chunks, std::string* error) {
         type.abi = rp_node_type{type.id.c_str(), &Glue::descriptor, &Glue::layoutFor, &Glue::queryMemory,
                                 &Glue::create, &Glue::destroy, RP_TYPE_STATELESS_PREPARE, &type};
     }
+    runJobs(audioRt_, kJobsPerBlock, [](JSContext* c) { clearException(c); });  // what the descriptors queued there
     typeList_.clear();
     for (const auto& t : types_) typeList_.push_back(&t->abi);
     package_ = rp_package{RP_ABI_VERSION, kPackageManifest, static_cast<std::uint32_t>(typeList_.size()), typeList_.data()};
@@ -1051,45 +1191,75 @@ void ScriptHost::freeTypes() {
 
 void ScriptHost::setAudioThreadOwns(bool owns) {
     audioOwns_.store(owns, std::memory_order_release);
-    if (!owns) releaseQueued();
+    if (owns) return;
+    releaseQueued();
+    collect();  // the runtime is this thread's again: what the audio thread's releases left in cycles goes now
 }
 
-// A destroyed shim's record: released there and then while no audio thread runs blocks, else queued for the next.
+void ScriptHost::setCallDeadline(std::chrono::milliseconds limit) {
+    callDeadlineNs_.store(std::chrono::nanoseconds(limit).count(), std::memory_order_relaxed);
+}
+
+// A destroyed shim's record: released there and then while no audio thread runs blocks (what it leaves in cycles
+// waits for the reclaim that ends the operation, so a plan of hundreds going costs one GC, not one each), else queued
+// for a later block. Allocates nothing: it runs in a destructor (a plan's), where a bad_alloc would end the process.
 void ScriptHost::retire(Instance* in) {
-    reclaim();
+    drainReleased();
     if (!audioOwns_.load(std::memory_order_acquire)) {
         releaseJs(*in);
         delete in;
         return;
     }
-    if (!backlog_.empty() || !releases_.tryPush(in)) backlog_.push_back(in);
+    if (!backlogHead_ && releases_.tryPush(in)) return;
+    in->backlogNext = nullptr;
+    (backlogTail_ ? backlogTail_->backlogNext : backlogHead_) = in;
+    backlogTail_ = in;
 }
 
 void ScriptHost::beginBlock() {
     Instance* in = nullptr;
-    while (releases_.tryPop(in)) {
+    for (std::uint32_t n = 0; n < kReleasesPerBlock && releases_.tryPop(in); ++n) {
         releaseJs(*in);
         if (!released_.tryPush(in)) leakedRecords_.fetch_add(1, std::memory_order_relaxed);
     }
 }
 
 // The promise jobs the block's JS queued (its process calls, and whatever the adoption before it ran), bounded so a
-// reaction that queues another every time cannot hold the block; a throw in one is counted as a node's is.
+// reaction that queues another every time cannot hold the block, and held to one call deadline. A job that fails (a
+// reaction's own throw only rejects its promise: this is the deadline, or JS out of memory) is counted as a node's
+// throw is, and one the deadline stopped leaves the rest for the next block's end.
 void ScriptHost::endBlock() {
     if (!JS_IsJobPending(audioRt_)) return;
     JS_UpdateStackTop(audioRt_);
-    if (!runJobs(audioRt_, kJobsPerBlock, [this](JSContext*) { Glue::recordThrow(*this, nullptr, "a promise job"); }))
-        jobsCutShort_.fetch_add(1, std::memory_order_relaxed);
+    const Glue::Deadline call(*this);
+    for (int n = 0; n < kJobsPerBlock; ++n) {
+        JSContext* ctx = nullptr;
+        const int r = JS_ExecutePendingJob(audioRt_, &ctx);
+        if (r == 0) return;
+        if (r > 0) continue;
+        Glue::recordThrow(*this, nullptr, "a promise job");
+        if (interrupted_) break;
+    }
+    if (JS_IsJobPending(audioRt_)) jobsCutShort_.fetch_add(1, std::memory_order_relaxed);
 }
 
 void ScriptHost::drainControlJobs() {
     if (JS_IsJobPending(controlRt_)) runJobs(controlRt_, kJobsPerBlock, [](JSContext* ctx) { clearException(ctx); });
 }
 
-void ScriptHost::reclaim() {
+void ScriptHost::drainReleased() {
     Instance* in = nullptr;
     while (released_.tryPop(in)) delete in;
-    while (!backlog_.empty() && releases_.tryPush(backlog_.front())) backlog_.erase(backlog_.begin());
+    while (backlogHead_) {  // the next read first: once pushed, a record is the block thread's until it comes back
+        Instance* next = backlogHead_->backlogNext;
+        if (!releases_.tryPush(backlogHead_)) break;
+        backlogHead_ = next;
+    }
+    if (!backlogHead_) backlogTail_ = nullptr;
+}
+
+void ScriptHost::reclaim() {
+    drainReleased();
     if (const auto leaked = leakedRecords_.load(std::memory_order_relaxed); leaked != leaksReported_) {
         std::fprintf(stderr, "[script] the release ring back was full: %u instance record(s) leaked rather than freed on the audio thread\n",
                      static_cast<unsigned>(leaked - leaksReported_));
@@ -1102,29 +1272,44 @@ void ScriptHost::reclaim() {
         jobsLogged_ = true;
     }
     if (!firstThrowLogged_ && firstThrowState_.load(std::memory_order_acquire) == 2) {
-        std::fprintf(stderr, "[script] %s (a throw is counted, and the node runs again next block; later ones are counted only)\n",
+        std::fprintf(stderr, "[script] %s (a throw is counted, and the node runs on unless it faults on one; later ones are "
+                             "counted only)\n",
                      firstThrow_);
         firstThrowLogged_ = true;
     }
+    if (!audioOwns_.load(std::memory_order_acquire)) collect();  // quiescent: what this thread's releases left in cycles
 }
 
 std::string ScriptHost::firstThrow() const {
     return firstThrowState_.load(std::memory_order_acquire) == 2 ? std::string(firstThrow_) : std::string();
 }
 
-// Quiescent: everything queued for the block thread is released here, and every record deleted.
+// Quiescent: everything queued for the block thread is released here, in the order it was queued, and every record
+// deleted.
 void ScriptHost::releaseQueued() {
     Instance* in = nullptr;
     while (releases_.tryPop(in)) {
         releaseJs(*in);
         delete in;
     }
-    for (Instance* b : backlog_) {
+    for (Instance* b = backlogHead_; b;) {
+        Instance* next = b->backlogNext;
         releaseJs(*b);
         delete b;
+        b = next;
     }
-    backlog_.clear();
+    backlogHead_ = backlogTail_ = nullptr;
     while (released_.tryPop(in)) delete in;
+}
+
+// Quiescent only, and never by a block: a GC's cost is the whole heap's, which a block cannot afford. QuickJS's own
+// threshold GC may still run inside one when JS allocates past it; this is what keeps a released instance's cycles
+// from waiting for that.
+void ScriptHost::collect() {
+    if (!garbage_) return;
+    garbage_ = false;
+    JS_UpdateStackTop(audioRt_);
+    JS_RunGC(audioRt_);
 }
 
 void ScriptHost::releaseJs(Instance& in) {
@@ -1138,6 +1323,7 @@ void ScriptHost::releaseJs(Instance& in) {
     }
     if (in.state == Instance::State::Live) live_.fetch_sub(1, std::memory_order_relaxed);
     in.state = Instance::State::Released;
+    garbage_ = true;
 }
 
 ScriptAllocations ScriptHost::audioAllocations() const {

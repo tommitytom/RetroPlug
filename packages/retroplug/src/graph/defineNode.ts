@@ -141,7 +141,9 @@ export interface Block {
 }
 
 // Every hook runs on the thread that runs blocks, never on the control thread: the script host holds every
-// instance in one runtime that only that thread enters (docs/modular-graph-phase-b3a-design.md section 2.1).
+// instance in one runtime that only that thread enters (docs/modular-graph-phase-b3a-design.md section 2.1). Each
+// call is held to a deadline (2 s unless the host sets another): one that runs past it is stopped, which no try
+// can catch, counted as a throw, and the node faulted, since the next call would hang the audio thread as long.
 export interface NodeInstance<S = unknown> {
   /** Return "fault" to be bypassed from now on (the executor silences this node and counts it). A throw is
    *  counted and the next block runs again, unless the definition says faultOnThrow. */
@@ -149,14 +151,20 @@ export interface NodeInstance<S = unknown> {
   /** A new sample rate or block size (the host re-activates without resetting): resize anything sized from
    *  CreateContext's maxFrames. Return false if the node cannot run at these. */
   activate?(sampleRate: number, maxFrames: number): boolean | void;
-  /** Called when the connected-output set changes at a plan swap; connected[i] follows output order. */
+  /** Called when the connected-output set changes at a plan swap; connected[i] follows output order. A throw is
+   *  counted, and under faultOnThrow faults the node at its next block. */
   portsChanged?(connected: readonly boolean[]): void;
   /** New settings, already checked, at the plan swap that kept this instance through a settings change (a swap,
-   *  or a reshape when the definition reshapes), before the first block that runs with them. */
+   *  or a reshape when the definition reshapes), before the first block that runs with them. In their JSON form,
+   *  as CreateContext's settings are. A throw is counted, and under faultOnThrow faults the node at its next block. */
   onSettings?(settings: S): void;
 }
 
 export interface CreateContext<S> {
+  /** What parseSettings returned, in its JSON form: the settings are checked on the control side and cross to
+   *  the runtime that runs the node as JSON (the two share no value), so a transform whose result JSON cannot
+   *  hold (a Map, a Set, a Date, undefined) arrives as JSON spells it. The node's side never runs the schema,
+   *  so it needs no zod and does no checking at a plan swap. */
   settings: S;
   sampleRate: number;
   maxFrames: number;
@@ -182,8 +190,11 @@ export interface NodeDefinition<S> {
    *  Without it, such a change creates a new instance. */
   reshapes?: true;
   /** A throw in process faults the node (bypassed from then on, as returning "fault" does) rather than being
-   *  counted and run again next block. */
+   *  counted and run again next block; so does one in onSettings or portsChanged, at its next block. */
   faultOnThrow?: true;
+  /** Runs on the thread that runs blocks, when the plan holding the node is adopted, not when the document is
+   *  planned: a document naming the node plans whatever create will do, and a create that throws (or returns no
+   *  process) surfaces as the node faulting at its first block, the throw counted and kept. */
   create(ctx: CreateContext<S>): NodeInstance<S>;
 }
 

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -42,8 +43,18 @@ struct ScriptAllocations {
 //     and only allocate the shim; the JS instance is created on the block thread at the first call the shim gets
 //     there, which is the ports_changed the planner sends every fresh instance when its plan is adopted, so before
 //     that plan's first process. A shim's destroy (control thread) queues the instance's release, which beginBlock
-//     performs at the start of the next block, or does it there and then while no audio thread runs; the record it
-//     frees then goes back to the control thread to be deleted (reclaim), so the audio thread frees nothing native.
+//     performs at the start of a later block (at most kReleasesPerBlock a block), or does it there and then while no
+//     audio thread runs; the record it frees then goes back to the control thread to be deleted (reclaim), so the
+//     audio thread frees nothing native. What a released instance leaves in cycles is collected by a GC at two
+//     points no block is running: the reclaim that ends a quiescent operation which released some (the Engine's
+//     after every setGraph: one GC however many went), and the audio thread handing the runtime back
+//     (setAudioThreadOwns(false)). Never by a block: QuickJS's own threshold GC is the only one that may run there.
+//
+// The audio runtime's JS stack is held to kAudioStackBytes, well inside a host audio thread's (512 KiB is a macOS
+// secondary thread's default, which a DAW's audio thread may have; no host here sizes one: PortAudio's and the render
+// jobs' threads take the platform default), and every call into it from the block thread is held to a deadline
+// (setCallDeadline): one that runs past it is stopped (QuickJS's interrupt, which JS cannot catch), counted as a
+// throw and faulted, faultOnThrow or not, since the next call would hang the audio thread as long again.
 //
 // Every type declares RP_TYPE_STATELESS_PREPARE: its prepare_settings reads the settings it is handed, the
 // definition and what the instance was created with, never anything a commit writes. A type that reshapes answers
@@ -65,8 +76,14 @@ struct ScriptAllocations {
 // reaction that queues another every time cannot hold the block: the rest wait for the next block's end.
 //
 // A throw in process is caught, counted and the block's output up to it stands: the node runs again next block
-// (design section 4.5), unless its definition says faultOnThrow, when it faults (RP_FAULT, the executor's latch).
-// Returning "fault" faults it too. The first throw's message is kept, and logged by reclaim.
+// (design section 4.5), unless its definition says faultOnThrow, when it faults (RP_FAULT, the executor's latch); a
+// faultOnThrow node whose onSettings or portsChanged threw faults at its next block, since it may hold half of what
+// the hook set. Returning "fault" faults it too. The first throw's message is kept, and logged by reclaim.
+//
+// Settings reach the audio side as their JSON form: the control side's parseSettings checks them, and what it
+// returns crosses as JSON (the two runtimes share no value), so a transform's result that JSON cannot hold (a Map, a
+// Date, undefined) arrives as JSON spells it. The audio side never runs the schema: it needs no zod (which B3b takes
+// out of the bundle) and does no validation work at a swap.
 class ScriptHost {
 public:
     using Chunk = std::span<const std::uint8_t>;
@@ -86,26 +103,37 @@ public:
 
     // ---- control thread ------------------------------------------------------------------------------
     // Run a bundle (global-code bytecode, in chunks run in order) in both contexts, then read the definitions it
-    // registered. Once, before anything plans with the package. False, with a reason, when a chunk fails to load
-    // or a definition cannot be read; the package then has no types, so every document naming one is refused
-    // (unknown-type).
+    // registered. Once, before anything plans with the package: a second call is refused, and leaves what the first
+    // registered as it is. False, with a reason, when a chunk fails to load or a definition cannot be read or is not
+    // the same in both contexts (its id or its descriptor differs: a bundle that branches on which context it runs
+    // in). One bad definition refuses the whole package: it then has no types, so every document naming any of the
+    // bundle's is refused (unknown-type).
     bool load(std::span<const Chunk> chunks, std::string* error = nullptr);
     // The script node types, for NodeRegistry::addPackage; valid for the host's life (empty before a load).
     const rp_package* package() const { return &package_; }
     // Set true BEFORE an audio thread starts running blocks, false AFTER it has stopped: false releases every
-    // queued instance there and then.
+    // queued instance there and then, and collects what they left.
     void setAudioThreadOwns(bool owns);
-    // Delete the records the block thread has released, and log the first throw once.
+    // How long one call into the audio runtime may run before it is stopped (kDefaultCallDeadline until set). Set it
+    // before an audio thread runs blocks.
+    void setCallDeadline(std::chrono::milliseconds limit);
+    static constexpr std::chrono::milliseconds kDefaultCallDeadline{2000};
+    // Delete the records the block thread has released, and log the first throw once. While quiescent, also collect
+    // what instances released since the last left in cycles: call it after an operation that may release some.
     void reclaim();
     // The first throw's type and message ("" until one), once the block thread has kept it.
     std::string firstThrow() const;
 
     // ---- the thread that runs blocks ---------------------------------------------------------------------
-    // At the top of every block, before the graph runs: release what destroy queued.
+    // At the top of every block, before the graph runs: release what destroy queued, at most kReleasesPerBlock (a
+    // release frees an instance's whole JS state, which for a large node is a great many objects: a plan of hundreds
+    // going at once is spread over blocks, and a full ring still drains in 16).
     void beginBlock();
+    static constexpr std::uint32_t kReleasesPerBlock = 16;
     // At the end of every block that ran the graph: the promise jobs its JS queued, at most kJobsPerBlock of them.
     void endBlock();
     static constexpr int kJobsPerBlock = 256;
+    static constexpr std::size_t kAudioStackBytes = 256 * 1024;
 
     // ---- any thread ------------------------------------------------------------------------------------------
     // Throws caught in a script node (process, and its create, onSettings, portsChanged and activate) and in the
@@ -130,6 +158,8 @@ private:
     void releaseJs(Instance& in);   // the block thread, or quiescent
     void retire(Instance* in);      // control thread: a destroyed shim's record
     void releaseQueued();           // quiescent: everything queued, released and deleted
+    void drainReleased();           // control thread: the records handed back, deleted, and the backlog moved on
+    void collect();                 // quiescent: a GC of the audio runtime, when a release has left garbage since the last
     void drainControlJobs();        // control thread: the promise jobs a call into the control context queued
     void freeTypes();
 
@@ -145,16 +175,26 @@ private:
     std::vector<std::unique_ptr<Type>> types_;
     std::vector<const rp_node_type*>   typeList_;
     rp_package                         package_{};
+    bool                               loaded_ = false;  // load has been called
 
     std::atomic<bool>          audioOwns_{false};
-    // destroy -> the block thread, and the released records back. A full release ring spills into backlog_ (the
-    // control thread's), pushed on at the next destroy or reclaim; the way back, twice as deep, is drained by every
+    // destroy -> the block thread, and the released records back. A full release ring spills into the backlog (the
+    // control thread's: a list threaded through the records themselves, so a destroy, which runs in a destructor,
+    // allocates nothing), pushed on at the next destroy or reclaim; the way back, twice as deep, is drained by every
     // destroy and reclaim, and a record it cannot take is counted and leaked rather than freed on the audio thread.
     SpscRing<Instance*, 256>   releases_;
     SpscRing<Instance*, 512>   released_;
-    std::vector<Instance*>     backlog_;
+    Instance*                  backlogHead_ = nullptr;
+    Instance*                  backlogTail_ = nullptr;
     std::atomic<std::uint32_t> leakedRecords_{0};
     std::uint32_t              leaksReported_ = 0;
+    bool                       garbage_ = false;  // an instance released since the last collect (whoever releases)
+
+    // The call deadline: its length (set on the control thread), and while a call runs, when it ends (steady clock
+    // nanoseconds, 0 for none) and whether the interrupt stopped it (the block thread's).
+    std::atomic<std::int64_t>  callDeadlineNs_{std::chrono::nanoseconds(kDefaultCallDeadline).count()};
+    std::int64_t               deadline_ = 0;
+    bool                       interrupted_ = false;
 
     std::atomic<std::uint32_t> throws_{0};
     std::atomic<std::uint32_t> live_{0};
