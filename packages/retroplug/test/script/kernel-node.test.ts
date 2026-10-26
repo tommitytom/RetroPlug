@@ -3,6 +3,7 @@
 // does, block for block, is held natively, against DspRuntime (packages/native/test/engine-graph/KernelNode.test.cpp).
 import { test, expect } from "../../testing/harness";
 import type { Block, ControlStream, Message } from "../../src/graph/defineNode";
+import { DspKernel, type BlockInput } from "../../src/dspKernel";
 import { KERNEL_NODE_TYPE, kernelNode, type KernelSettings } from "../../src/script/kernelNode";
 
 const portsOf = (settings: unknown) => kernelNode.layout(kernelNode.parseSettings(settings)).ports.map((p) => `${p.dir} ${p.kind} ${p.id}`);
@@ -77,7 +78,9 @@ function blockOf(
 }
 
 const settings = (s: unknown): KernelSettings => kernelNode.parseSettings(s);
-const create = (s: KernelSettings) => kernelNode.create({ settings: s, sampleRate: 44100, maxFrames: 1024 });
+// The largest block the file drives: a quarter at 120 bpm.
+const MAX_FRAMES = 22050;
+const create = (s: KernelSettings) => kernelNode.create({ settings: s, sampleRate: 44100, maxFrames: MAX_FRAMES });
 
 test("each sink call goes onto its system's port in emission order, host MIDI out behind its system's id", () => {
   const node = create(
@@ -97,15 +100,99 @@ test("each sink call goes onto its system's port in emission order, host MIDI ou
   });
   node.process(block);
   const at = (port: string) => sent.filter((s) => s.port === port).map((s) => [s.frame, ...s.data, s.flags]);
-  expect(at("sys-1.serialIn")).toEqual([[4, 0x90, 0], [4, 60, 0], [4, 100, 0]]);
+  expect(at("sys-1.serialIn")).toEqual([[4, 0x90, 60, 100, 0]]); // a run of same-frame bytes as one message
   expect(at("sys-2.midi")).toEqual([[4, 0x90, 60, 100, 0]]);
   const id = [4, 3, 2, 1]; // 0x01020304, little-endian
   expect(at("midiOut")).toEqual([[0, ...id, 0x90, 5, 0x7f, 0], [0, ...id, 0xfa, 0], [0, ...id, 0xf8, 0], [0, ...id, 0xf8, 0]]);
   // risa's arm flushes the FIFO; START and the first clock follow it.
   expect(at("sys-4.bytes").slice(0, 2)).toEqual([[0, 0xf9, 0x52, 0, 0, 0, 1], [0, 0xfa, 0]]);
-  // Systems run in slot order, so their ports fill in that order.
+  // Systems run in slot order, so their ports fill in that order, but for a serial-in run, held until a byte at
+  // another frame or the block's end (each port is its own queue, so no reader sees the order across them).
   const order = sent.map((s) => s.port).filter((p, i, all) => all.indexOf(p) === i);
-  expect(order).toEqual(["sys-1.serialIn", "sys-2.midi", "midiOut", "sys-4.bytes"]);
+  expect(order).toEqual(["sys-2.midi", "midiOut", "sys-4.bytes", "sys-1.serialIn"]);
+});
+
+test("a system's serial-in bytes go a run of same-frame bytes to a message, each run sent before the next frame's", () => {
+  const node = create(
+    settings({
+      project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
+      systems: [
+        { id: 1, pipeline: [{ kind: "mgb", config: {} }], serialOut: true },
+        { id: 2, pipeline: [{ kind: "lsdj-sync", config: { mode: "midiSyncArduinoboy" } }], serialOut: true },
+      ],
+    }),
+  );
+  // mGB: two messages at one frame are one run, one at the next frame another. Arduinoboy, on the transport's rise:
+  // each note's row byte at its frame, then START at frame 0, a run of its own, which the queue raises to the last
+  // row's frame as it raised the byte alone.
+  const { block, sent } = blockOf(1024, true, {
+    midiIn: [{ frame: 9, data: [0x90, 60, 100] }, { frame: 9, data: [0xb0, 1, 64] }, { frame: 10, data: [0x80, 60, 0] }, { frame: 200, data: [0x90, 31, 100] }],
+  });
+  node.process(block);
+  const at = (port: string) => sent.filter((s) => s.port === port).map((s) => [s.frame, ...s.data]);
+  expect(at("sys-1.serialIn")).toEqual([[9, 0x90, 60, 100, 0xb0, 1, 64], [10, 0x80, 60, 0], [200, 0x90, 31, 100]]);
+  expect(at("sys-2.serialIn")).toEqual([[9, 30], [200, 1], [0, 0xfa]]);
+});
+
+test("the runs a throw leaves are sent, as today keeps what the kernel pushed before one", () => {
+  // No shipped role throws on what the kernel accepts, so Math.ceil throws for the one value the second system's
+  // clock reaches when it first syncs, at ppq 10.5 (tick 252), after the first has forwarded its MIDI.
+  const node = create(
+    settings({
+      project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
+      systems: [
+        { id: 1, pipeline: [{ kind: "mgb", config: {} }] },
+        { id: 2, pipeline: [{ kind: "lsdj-sync", config: { mode: "midiSync" } }] },
+      ],
+    }),
+  );
+  const { block, sent } = blockOf(1024, true, { midiIn: [{ frame: 4, data: [0x90, 60, 100] }] });
+  block.transport.ppq = 10.5;
+  const ceil = Math.ceil;
+  Math.ceil = (x: number) => {
+    if (x === 252) throw new Error("injected");
+    return ceil(x);
+  };
+  try {
+    expect(() => node.process(block)).toThrow("injected");
+  } finally {
+    Math.ceil = ceil;
+  }
+  expect(sent).toEqual([{ port: "sys-1.serialIn", frame: 4, data: [0x90, 60, 100], flags: 0 }]);
+});
+
+test("a run a stopped call left is never sent in a later block", () => {
+  // The deadline's stop skips the finally that sends the runs. A send that throws stands in for it here: the run is
+  // still held when the call ends.
+  const node = create(
+    settings({ project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }], systems: [{ id: 1, pipeline: [{ kind: "mgb", config: {} }] }] }),
+  );
+  const stopped = blockOf(1024, false, { midiIn: [{ frame: 4, data: [0x90, 60, 100] }] });
+  stopped.block.send = () => {
+    throw new Error("stopped");
+  };
+  expect(() => node.process(stopped.block)).toThrow("stopped");
+  const next = blockOf(1024, false, {});
+  node.process(next.block);
+  expect(next.sent).toEqual([]);
+});
+
+test("controllerIn is in the block's input only when the surface sent something, as today's marshalling", () => {
+  const inputs: BlockInput[] = [];
+  const processBlock = DspKernel.prototype.processBlock;
+  DspKernel.prototype.processBlock = function (this: DspKernel, input: BlockInput) {
+    inputs.push(input);
+    return processBlock.call(this, input);
+  };
+  try {
+    const node = create(settings({}));
+    node.process(blockOf(1024, false, {}).block);
+    node.process(blockOf(1024, false, { controllerIn: [{ frame: 0, data: [0x90, 81, 127] }, { frame: 0, data: [0x80, 81, 0] }] }).block);
+  } finally {
+    DspKernel.prototype.processBlock = processBlock;
+  }
+  expect("controllerIn" in inputs[0]).toBe(false);
+  expect(inputs[1].controllerIn).toEqual([{ frame: 0, data: [0x90, 81, 127] }, { frame: 0, data: [0x80, 81, 0] }]);
 });
 
 test("a role's press goes out at frame 0, and a surface counts as attached when it is from frame 0", () => {
@@ -139,7 +226,8 @@ test("a structure change keeps a survivor's clock as it moves, and a removed id 
     node.process(b.block);
     return b.sent;
   };
-  expect(run().filter((s) => s.port === "sys-1.serialIn").length).toBe(24);
+  const clocks = (sent: Sent[]) => sent.filter((s) => s.port === "sys-1.serialIn").flatMap((s) => s.data).length;
+  expect(clocks(run())).toBe(24);
   node.onSettings!(
     settings({
       systems: [
@@ -150,7 +238,7 @@ test("a structure change keeps a survivor's clock as it moves, and a removed id 
   );
   // The clock goes on (ppq stays 0, so a fresh one would resync and send the same 24; one that kept its counter is
   // past this quarter and sends none).
-  expect(run().filter((s) => s.port === "sys-1.serialIn").length).toBe(0);
+  expect(clocks(run())).toBe(0);
   node.onSettings!(settings({ systems: [] }));
   expect(run()).toEqual([]);
 });

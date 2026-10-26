@@ -2,17 +2,24 @@
 // The same blocks are driven through today's DspRuntime, loaded with today's kernel bundle (src/dspKernelBundle.ts,
 // embedded here alone), and through the kernel node of the production script bundle in a plan, fed by the host I/O
 // nodes and a stand-in for the Game Boys' serialOut, its every output read back by probes. Every sink output is
-// compared exactly, block by block: per system and port, the frame, bytes, flush flag and order of each message;
-// the host MIDI out with its system tags in emission order; the control-surface out.
+// compared exactly, block by block: per system and port, the frame, bytes, flush flag and order of each message (of
+// each byte, on a serial input); the host MIDI out with its system tags in emission order; the control-surface out.
 //
 // Two differences are the design's, and each is applied to today's side rather than allowed for in the comparison:
 //   - host MIDI reaches the node through rp.host.midi-in, which stable-sorts it by frame (section 3.4), so today's
 //     kernel is fed the sorted staging;
 //   - a queue is frame-ordered: a message pushed earlier than the last one on its port is carried at that one's frame
-//     (graph/Queue.hpp pushMessage), so today's output is compared as a wire would carry it. Only LSDj's Arduinoboy
-//     and MI.MAP modes emit out of order (a row byte at its note's frame, then transport bytes and clocks at frame 0),
-//     to SameBoy's serial queue, which releases only its front byte, so a raised frame changes nothing it does. The
-//     rig counts the messages raised, and each case says whether it expects any.
+//     (graph/Queue.hpp pushMessage). Only LSDj's Arduinoboy and MI.MAP modes emit out of order (a row byte at its
+//     note's frame, then transport bytes and clocks at frame 0), to a Game Boy's serial input, which SameBoy queues
+//     and releases only its front byte from, so a raised frame changes nothing it does. So that port of today's is
+//     compared as a wire would carry it, and every other port exactly as today sent it: a raise anywhere else would
+//     change what a core does (a NES's or an SMS's FIFO, which NesN8FifoRole and SmsSyncRole stable-sort by frame
+//     today, takes a raised byte later). The rig counts the raised bytes by port, and each case says where it expects
+//     them.
+//
+// A serial input is compared as the bytes the system node applies, each at its message's frame, in order: the node
+// sends a run of same-frame bytes as one message, where today pushes a byte at a time, and where its runs break is its
+// own choice. Every other port is compared message for message.
 //
 // Last, the node runs on an audio thread while the control thread reshapes it, for the thread sanitizer.
 //
@@ -23,7 +30,9 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <thread>
 #include <utility>
@@ -155,6 +164,14 @@ std::string text(const std::vector<Message>& ms) {
     return s;
 }
 
+// A serial input's messages as the system node applies them: each byte at its message's frame, in order.
+std::vector<Message> serialBytes(const std::vector<Message>& ms) {
+    std::vector<Message> out;
+    for (const Message& m : ms)
+        for (const std::uint8_t b : m.data) out.push_back({m.frame, {b}, m.flags});
+    return out;
+}
+
 // ---- the rig ---------------------------------------------------------------------------------------------------
 
 struct KernelRig {
@@ -179,11 +196,12 @@ struct KernelRig {
     std::unique_ptr<rp::graph::GraphHost> host;
     rp_node*                          kernel = nullptr;
     int                               blocks = 0;
-    // What the comparisons covered: messages compared, by kind, and messages whose frame the queue raised.
+    // What the comparisons covered: serial-in bytes and messages of each other kind compared, and by port, the
+    // serial-in bytes of today's whose frame a queue raises.
     struct {
         int serialIn = 0, midi = 0, bytes = 0, buttons = 0, midiOut = 0, controllerOut = 0;
     } seen;
-    int raised = 0;
+    std::map<std::string, int> raised;
 
     // `inject`: JS run after both bundles, in both runtimes.
     explicit KernelRig(Structure s, const std::string& inject = "") : structure(std::move(s)) {
@@ -324,14 +342,20 @@ struct KernelRig {
         }
     }
 
-    // Today's messages for one port, as a frame-ordered queue carries them.
-    std::vector<Message> carried(std::vector<Message> ms) {
+    // Today's bytes for a Game Boy's serial input, as a frame-ordered queue carries them.
+    std::vector<Message> carried(std::vector<Message> ms, const std::string& port) {
         for (std::size_t i = 1; i < ms.size(); ++i)
             if (ms[i].frame < ms[i - 1].frame) {
                 ms[i].frame = ms[i - 1].frame;
-                ++raised;
+                ++raised[port];
             }
         return ms;
+    }
+    // The ports whose frames a queue raised.
+    std::set<std::string> raisedAt() const {
+        std::set<std::string> at;
+        for (const auto& [port, count] : raised) at.insert(port);
+        return at;
     }
 
     void compare() {
@@ -350,12 +374,13 @@ struct KernelRig {
                     CHECK(e.frame == 0);  // the kernel presses at frame 0, and the core takes a press with no frame
                     buttons.push_back({0, {static_cast<std::uint8_t>(e.button), static_cast<std::uint8_t>(e.down ? 1 : 0)}, 0});
                 }
-            const Probe& in = node<Probe>("in-" + std::to_string(s.id));
-            const Probe& io = node<Probe>("io-" + std::to_string(s.id));
-            CHECK(text(in.bytes) == text(carried(serialIn)));
-            CHECK(text(in.events) == text(carried(midi)));
-            CHECK(text(io.bytes) == text(carried(bytes)));
-            CHECK(text(io.events) == text(carried(buttons)));
+            const std::string id = std::to_string(s.id);
+            const Probe& in = node<Probe>("in-" + id);
+            const Probe& io = node<Probe>("io-" + id);
+            CHECK(text(serialBytes(in.bytes)) == text(s.serialOut ? carried(serialIn, "sys-" + id + ".serialIn") : serialIn));
+            CHECK(text(in.events) == text(midi));
+            CHECK(text(io.bytes) == text(bytes));
+            CHECK(text(io.events) == text(buttons));
             seen.serialIn += static_cast<int>(serialIn.size());
             seen.midi += static_cast<int>(midi.size());
             seen.bytes += static_cast<int>(bytes.size());
@@ -381,7 +406,7 @@ struct KernelRig {
             got.push_back({m.frame, m.data, 0});
             gotSystems.push_back(m.system);
         }
-        CHECK(text(got) == text(carried(expected)));
+        CHECK(text(got) == text(expected));
         CHECK(gotSystems == expectedSystems);
         CHECK(controllerOut == today.controllerOut_);
         seen.midiOut += static_cast<int>(expected.size());
@@ -468,7 +493,61 @@ TEST_CASE("the kernel node hands every system the host MIDI today's kernel hands
     }
     CHECK(rig.seen.serialIn > 100);
     CHECK(rig.seen.midi > 30);
-    CHECK(rig.raised == 0);
+    CHECK(rig.raisedAt().empty());
+    rig.finish();
+}
+
+TEST_CASE("the kernel node forwards a block that fills rp.host.midi-in, all of it, to a Game Boy's serial port and a NES",
+          "[engine-graph][kernel-node]") {
+    // The one place host MIDI is dropped is rp.host.midi-in's output: every output the kernel forwards it on holds at
+    // least as much. So a block that fills it to the message and the byte (two dense curves, a CC and a pitch bend,
+    // notes, and a SysEx, a wave upload, taking the rest of the bytes) reaches mGB's serial input byte for byte and the
+    // NES's MIDI message for message.
+    using rp::host::kHostMidiInBytes;
+    using rp::host::kHostMidiInMessages;
+    constexpr std::uint32_t kFrames = 8192;
+    const std::uint32_t sysExAt = kHostMidiInMessages / 2;
+    const std::uint32_t sysExBytes = kHostMidiInBytes - (kHostMidiInMessages - 1) * 3;
+    REQUIRE(sysExBytes > 3);
+    std::vector<std::pair<std::uint32_t, Bytes>> midi;
+    for (std::uint32_t i = 0; i < kHostMidiInMessages; ++i) {
+        const std::uint32_t frame = i * kFrames / kHostMidiInMessages;
+        const int v = static_cast<int>(i & 0x7f);
+        if (i == sysExAt) {
+            Bytes sysEx(sysExBytes);
+            for (std::uint32_t j = 0; j < sysExBytes; ++j) sysEx[j] = static_cast<std::uint8_t>(j & 0x7f);
+            sysEx.front() = 0xF0;
+            sysEx.back() = 0xF7;
+            midi.push_back({frame, std::move(sysEx)});
+            continue;
+        }
+        switch (i % 4) {
+            case 0: midi.push_back({frame, cc(0, 1, v)}); break;
+            case 1: midi.push_back({frame, {0xE1, static_cast<std::uint8_t>(v), static_cast<std::uint8_t>((i >> 7) & 0x7f)}}); break;
+            case 2: midi.push_back({frame, on(2, 36 + v % 48)}); break;
+            default: midi.push_back({frame, off(2, 36 + (v - 1) % 48)}); break;
+        }
+    }
+    std::vector<Message> bytes, messages;
+    for (const auto& [frame, data] : midi) {
+        for (const std::uint8_t b : data) bytes.push_back({frame, {b}, 0});
+        messages.push_back({frame, data, 0});
+    }
+    REQUIRE(messages.size() == kHostMidiInMessages);
+    REQUIRE(bytes.size() == kHostMidiInBytes);
+
+    KernelRig rig({{routing("sendToAll")}, {gameBoy(1, kMgb), nes(2, {kNesMidi})}});
+    rig.block({.frames = kFrames, .midi = midi});
+    const std::vector<Message> serialIn = serialBytes(rig.node<Probe>("in-1").bytes);
+    const std::vector<Message>& nesMidi = rig.node<Probe>("in-2").events;
+    CHECK(rig.host->droppedMessages("midi-in") == 0);
+    CHECK(rig.host->droppedMessages("kernel") == 0);
+    CHECK(serialIn.size() == bytes.size());
+    CHECK(rig.node<Probe>("in-1").bytes.size() == messages.size());  // a run for each message, each at its own frame
+    CHECK(nesMidi.size() == messages.size());
+    CHECK(text(serialIn) == text(bytes));
+    CHECK(text(nesMidi) == text(messages));
+    CHECK(rig.raisedAt().empty());
     rig.finish();
 }
 
@@ -513,7 +592,8 @@ TEST_CASE("the kernel node drives each LSDj sync mode as today's kernel does, MI
     CHECK(rig.seen.serialIn > 200);
     CHECK(rig.seen.buttons > 0);  // autoStart's START press and release
     CHECK(rig.seen.midiOut > 10);
-    CHECK(rig.raised > 0);  // Arduinoboy's transport bytes and clocks, MI.MAP's clocks, behind a row byte
+    // Arduinoboy's transport bytes and clocks, and MI.MAP's clocks, behind a row byte: on those two alone.
+    CHECK(rig.raisedAt() == std::set<std::string>{"sys-3.serialIn", "sys-4.serialIn"});
     rig.finish();
 }
 
@@ -537,7 +617,7 @@ TEST_CASE("the kernel node drives risa and smsggdj host sync, and a NES's host M
     }
     CHECK(rig.seen.bytes > 50);
     CHECK(rig.seen.midi > 0);
-    CHECK(rig.raised == 0);
+    CHECK(rig.raisedAt().empty());
     rig.finish();
 }
 
@@ -577,6 +657,7 @@ TEST_CASE("the kernel node runs a controller session as today's kernel does: its
     CHECK(rig.seen.controllerOut > 20);
     CHECK(rig.seen.serialIn > 100);
     CHECK(rig.seen.midiOut > 40);
+    CHECK(rig.raisedAt().empty());
     rig.finish();
 }
 
@@ -603,7 +684,7 @@ TEST_CASE("the kernel node keeps today's state across structure changes: survivo
     play.midi.clear();
     // A block is a little over one tick at 24 PPQN, so a playing clock sends at least one every block.
     const auto clocks = [&](std::uint32_t id) {
-        const auto& sent = rig.node<Probe>("in-" + std::to_string(id)).bytes;
+        const auto sent = serialBytes(rig.node<Probe>("in-" + std::to_string(id)).bytes);
         return std::count_if(sent.begin(), sent.end(), [](const Message& m) { return m.data == Bytes{0xF8}; });
     };
     CHECK(clocks(3) > 0);
@@ -630,6 +711,7 @@ TEST_CASE("the kernel node keeps today's state across structure changes: survivo
     step(1);
     CHECK(rig.seen.serialIn > 50);
     CHECK(rig.seen.bytes > 10);
+    CHECK(rig.raisedAt() == std::set<std::string>{"sys-3.serialIn"});  // Arduinoboy's clocks behind a row byte
     rig.finish();
 }
 
@@ -650,6 +732,7 @@ TEST_CASE("a throw in the kernel node's roles keeps what was sent before it and 
     CHECK(rig.scripts.throwCount() == 1);
     rig.run({.ppq = 10.5 + 1024.0 / kBeat, .playing = true, .midi = {{4, on(0, 64)}}}, 3);
     CHECK(rig.seen.serialIn > 0);
+    CHECK(rig.raisedAt().empty());
     rig.finish(1);
 }
 

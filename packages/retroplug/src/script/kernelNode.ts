@@ -6,8 +6,9 @@
 // clock and role scratch, every project stage's state; a removed id pruned).
 //
 // Each block builds the BlockInput DspRuntime::processBlock builds today, field for field and afresh, and the
-// kernel's sink calls go straight onto the output ports in emission order, where today's sink thunks append to
-// vectors the engine fans out to the cores.
+// kernel's sink calls go onto the output ports in emission order, where today's sink thunks append to vectors the
+// engine fans out to the cores: each straight, but for a system's serial-in bytes, which go a run of same-frame bytes
+// to a message.
 import { z } from "zod";
 import { bytes, control, defineNode, events, startValue, type Block, type Message, type PortSpec } from "../graph/defineNode";
 import type { QueueCapacity } from "../graph/descriptor";
@@ -24,17 +25,23 @@ export const KERNEL_NODE_TYPE = "rp.dsp.kernel-script";
 /** RP_MESSAGE_FLUSH (graph/rp_node.h): a bytes message the device takes only after dropping what it still holds. */
 const FLUSH = 1;
 
-// What each output carries in one block, at most (design section 2.6): today's sink vectors are unbounded, so these
-// are sized from the most the suites send through them in one block. Measured over test:native with the fixtures
-// (parity included, 2.2 million kernel blocks up to 8192 frames): per system, 18 serial-in bytes, 8 core-MIDI
+// What each output carries in one block, at most (design section 2.6): today's sink vectors are unbounded, and a
+// queue drops what does not fit. The two that pass host MIDI on, serial in (mGB, lsdj-sync's passthrough) and core
+// MIDI (nes-n8-midi), each hold at least what rp.host.midi-in's output holds (kHostMidiInMessages and
+// kHostMidiInBytes, host/graph/HostIoNodes.hpp: 2048 messages, 32 KiB), so the one place host MIDI is dropped is that
+// edge. Core MIDI takes a message for each forwarded one; serial in a run of same-frame bytes to a message, so at most
+// one for each forwarded message, plus the sync roles' own bytes. Both have room for 4096 messages and 64 KiB.
+// The rest are sized from the most the suites send through them in one block. Measured over test:native with the
+// fixtures (parity included, 2.2 million kernel blocks up to 8192 frames): per system, 18 serial-in bytes, 8 core-MIDI
 // messages holding 4096 bytes (the largest message 512), 11 core-byte messages holding 11 bytes, 1 button press; 14
 // host MIDI-out messages holding 70 bytes with their prefixes; 5 control-surface messages holding 206 bytes (in one).
-// dsp-bench's densest profile, skipped there, sends 13 messages of 39 bytes a block. Each output has room for 16
-// times the messages or more, and the bytes as well, but for core MIDI's (4 times the most measured, 32 of the largest
-// message) and the MIDI out's (a decoded MI.OUT stream at its densest, a captured byte every 8 frames: 1024 in 8192).
-// A queue costs 16 bytes a message plus its bytes, per plan.
-export const KERNEL_SERIAL_IN: QueueCapacity = { messages: 1024, bytes: 1024 };
-export const KERNEL_CORE_MIDI: QueueCapacity = { messages: 512, bytes: 16384 };
+// dsp-bench's densest profile, skipped there, sends 13 messages of 39 bytes a block. Each of these has room for 16
+// times the messages or more, and the bytes as well, but for the MIDI out's (a decoded MI.OUT stream at its densest,
+// a captured byte every 8 frames: 1024 in 8192). A queue costs 16 bytes a message plus its bytes, per plan: a system's
+// four take 262 KiB, nearly all of it the two that pass host MIDI on, so 33 systems take 8.4 MiB of the plan's 64 MiB
+// queue budget.
+export const KERNEL_SERIAL_IN: QueueCapacity = { messages: 4096, bytes: 65536 };
+export const KERNEL_CORE_MIDI: QueueCapacity = { messages: 4096, bytes: 65536 };
 export const KERNEL_CORE_BYTES: QueueCapacity = { messages: 256, bytes: 1024 };
 export const KERNEL_BUTTONS: QueueCapacity = { messages: 64, bytes: 128 };
 export const KERNEL_MIDI_OUT: QueueCapacity = { messages: 1024, bytes: 8192 };
@@ -60,7 +67,7 @@ const settings = z.object({
 
 export type KernelSettings = z.infer<typeof settings>;
 
-/** One system's port ids, made once per settings so a sink call builds no string. */
+/** One system's port ids, made once per settings so a sink call builds no string, and its serial-in run. */
 interface SystemPorts {
   id: number;
   serialIn: string;
@@ -69,6 +76,10 @@ interface SystemPorts {
   buttons: string;
   /** Its MI.OUT input, for a system with a serialOut. */
   serialOut: string | null;
+  /** The serial-in bytes not yet sent: consecutive pushSerialIn calls at runFrame, sent as one message. Empty
+   *  between blocks; reused, so it allocates nothing once grown. */
+  run: number[];
+  runFrame: number;
 }
 
 const portsOf = (s: KernelSettings): SystemPorts[] =>
@@ -79,6 +90,8 @@ const portsOf = (s: KernelSettings): SystemPorts[] =>
     bytes: `sys-${id}.bytes`,
     buttons: `sys-${id}.buttons`,
     serialOut: serialOut ? `sys-${id}.serialOut` : null,
+    run: [],
+    runFrame: 0,
   }));
 
 // The per-role tracing thunks a profile build binds (spec/08-profiling.md Tier B; Engine.cpp, into the script host's
@@ -160,6 +173,7 @@ export const kernelNode = defineNode<KernelSettings>({
       p[sys.bytes] = bytes.out(KERNEL_CORE_BYTES);
       p[sys.buttons] = events.out(KERNEL_BUTTONS);
     }
+    // Relies on all host MIDI out being at frame 0 today, or later systems' are raised (B3b: a port per protocol).
     p.midiOut = events.out(KERNEL_MIDI_OUT);
     p.controllerOut = events.out(KERNEL_CONTROLLER_OUT);
     return p;
@@ -168,18 +182,28 @@ export const kernelNode = defineNode<KernelSettings>({
     let systems = portsOf(initial);
     let byId = new Map(systems.map((s) => [s.id, s]));
     let block: Block | null = null; // the block being processed, which every sink call sends on
-    const one = new Uint8Array(1);
     const press = new Uint8Array(2);
     const tagged: number[] = [];
+
+    const sendRun = (p: SystemPorts) => {
+      block!.send(p.serialIn, p.runFrame, p.run);
+      p.run.length = 0;
+    };
+    const sendRuns = () => {
+      for (let s = 0; s < systems.length; s++) if (systems[s].run.length > 0) sendRun(systems[s]);
+    };
 
     // Each kernel sink call onto its port, in emission order; a call naming a system with no ports is dropped, as
     // today's fan-out skips an id it cannot find. Values convert as the thunks convert them (each byte & 0xff).
     const sink: SinkTarget = {
+      // A run of bytes at one frame goes as one message, which the system node applies a byte at a time at its frame,
+      // as it applied a message a byte: a byte at another frame sends the run before it, and process sends the rest.
       pushSerialIn: (system, frame, byte) => {
         const p = byId.get(system);
         if (!p) return;
-        one[0] = byte;
-        block!.send(p.serialIn, frame, one);
+        if (p.run.length > 0 && frame !== p.runFrame) sendRun(p);
+        p.runFrame = frame;
+        p.run.push(byte & 0xff);
       },
       emitCoreMidi: (system, frame, data) => {
         const p = byId.get(system);
@@ -217,12 +241,19 @@ export const kernelNode = defineNode<KernelSettings>({
 
     return {
       // A throw goes to the script host, which counts it and runs this again next block: what the kernel sent
-      // before it stands, as today.
+      // before it stands, as today, its held runs included. A call the deadline stops skips the finally, so a run it
+      // left is cleared here rather than sent in a block it was not pushed in.
       process(b) {
         block = b;
+        for (let s = 0; s < systems.length; s++) systems[s].run.length = 0;
         if (tracer) kernel.setTracing(traceArmed());
-        kernel.processBlock(blockInput(b, systems));
+        try {
+          kernel.processBlock(blockInput(b, systems));
+        } finally {
+          sendRuns();
+        }
       },
+      // Between blocks. The new ports' runs start empty, so no byte crosses a reshape onto another port.
       onSettings(next) {
         systems = portsOf(next);
         byId = new Map(systems.map((s) => [s.id, s]));

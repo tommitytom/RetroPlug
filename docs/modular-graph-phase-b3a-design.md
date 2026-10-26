@@ -131,9 +131,10 @@ A plan queue holds 256 messages and 4 KB today (`kQueueItems` / `kQueueBytes`), 
 Today's staging vectors are unbounded, so a large SysEx or a burst of tracker sync bytes that passes today
 would be dropped on a wire. So an output port's descriptor may declare its capacity (items and bytes), with
 today's numbers as the default (an input declares none: a wire carries its source's queue); the host I/O nodes
-and the kernel's ports declare large ones (sized in the plan from the largest message the tests send, with
-margin), within the plan's 64 MiB queue budget. Drops are counted per queue and exposed to tests; parity and
-the suites require zero.
+and the kernel's ports declare large ones, within the plan's 64 MiB queue budget. The kernel's two outputs that
+pass host MIDI on, each system's `serialIn` and `midi`, hold at least what `rp.host.midi-in`'s output holds, so
+the one place host MIDI is dropped is that edge; the rest are sized from the most the tests send through them
+in one block, with margin. Drops are counted per queue and exposed to tests; parity and the suites require zero.
 
 ### 2.7 The call deadline
 
@@ -158,7 +159,7 @@ Every system node gains four inputs, mapped onto core calls `SystemBase` already
 
 | Port | Kind | Core call |
 |---|---|---|
-| `serialIn` | bytes | `pushSerialIn(frame, byte)`, one call per byte |
+| `serialIn` | bytes | `pushSerialIn(frame, byte)`, one call per byte, at its message's frame |
 | `midi` | events | `onMidi`, with today's rule: a message longer than a `MidiEvent`'s inline data goes down `pushCoreBytes` |
 | `bytes` | bytes | `pushCoreBytes(frame, data, size, flush)`, the flush flag riding `RP_MESSAGE_FLUSH` |
 | `buttons` | events | `pressButton(button, down)`, a 2-byte payload `[button, down]` |
@@ -253,10 +254,12 @@ same wires.
 transport and `controllerConnected`, `midiIn` from its port, `controllerIn` from its port, `serialOut` by
 concatenating each system's `sys-<id>.serialOut` input in slot order (today's array), and the still-unfed
 `buttons` / `keys` as today's empty arrays. It calls `DspKernel.processBlock` with a `SinkTarget` whose methods
-push into the output ports: `pushSerialIn` one byte per message on `sys-<id>.serialIn`, `emitCoreMidi` on
-`sys-<id>.midi`, `pushCoreBytes` on `sys-<id>.bytes` (flush as the flag), `pressButton` on `sys-<id>.buttons`
-at frame 0, `emitMidiOut` on `midiOut` (§4.4), `emitControllerOut` on `controllerOut` at frame 0. A sink call for
-an id with no port (an unknown id) is dropped, as today's fan-out skips an id it cannot find.
+push into the output ports: `pushSerialIn` on `sys-<id>.serialIn`, a run of consecutive bytes at one frame to a
+message (sent when a byte at another frame comes, and when `processBlock` returns or throws), which the system
+node applies a byte at a time at that frame, as today; `emitCoreMidi` on `sys-<id>.midi`, `pushCoreBytes` on
+`sys-<id>.bytes` (flush as the flag), `pressButton` on `sys-<id>.buttons` at frame 0, `emitMidiOut` on `midiOut`
+(§4.4), `emitControllerOut` on `controllerOut` at frame 0. A sink call for an id with no port (an unknown id) is
+dropped, as today's fan-out skips an id it cannot find.
 
 ### 4.3 Structure changes
 
