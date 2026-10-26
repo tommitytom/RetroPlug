@@ -135,9 +135,13 @@ export class LsdjProbe {
           project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
           systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode: opts.mode ?? "midiPassthrough" } }] }],
         };
-    // The structure's project stages, and the pipeline it gives this cart (the probe places no other system). The
-    // stages are dropped first, which prunes their state, so a controller session never carries over from the
-    // previous probe: each probe's kernel starts as a fresh one would.
+    // The structure's project stages, and the pipeline it gives this cart. The stages are dropped first, which
+    // prunes their state, so a controller session never carries over from the previous probe: each probe's kernel
+    // starts as a fresh one would. A probe still open (a test can build a second while the first is live) loses its
+    // pipeline, as it did when each probe loaded a kernel of its own and pushed it a structure naming only its own
+    // cart: under sendToAll it would otherwise hear every byte staged at the new one.
+    for (const other of liveProbes)
+      if (!other.closed && !graph.setPipeline(other.id, [])) return null;
     if (!graph.setProjectStages([]) || !graph.setProjectStages(structure.project ?? [])) return null;
     if (!graph.setPipeline(id, structure.systems.find((s) => s.id === id)?.pipeline ?? [])) return null;
 

@@ -19,10 +19,11 @@ namespace rp::host {
 //                           control surface is attached, from frame 0 of the block
 //   rp.host.controller-out  in midi: appended to Engine::controllerOut
 //
-// The host keeps staging and draining as it does; each input node takes what is staged at the top of its block.
-// An input node owns its staging whether or not its output is wired: the engine hands the kernel stage none of it
-// while the plan holds the node, and an unwired output goes nowhere. So a document holds one rp.host.midi-in and
-// one rp.host.controller-in at most (Engine::setGraph refuses a second), and a plan holding one should wire it.
+// The host keeps staging and draining as it does; each input node takes what is staged at the top of its block, and a
+// plan without one drops what it would have taken at the block's end. An input node owns its staging whether or not
+// its output is wired: it takes everything staged, and an unwired output goes nowhere. So a document holds one
+// rp.host.midi-in and one rp.host.controller-in at most (Engine::setGraph refuses a second), and a plan holding one
+// should wire it.
 const rp_package* hostIoPackage();
 
 // rp.n8.cart-mirror (section 3.5), {"system": <id>}: everything on its midi input, then everything on its bytes

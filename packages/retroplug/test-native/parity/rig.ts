@@ -56,6 +56,9 @@ export class Rig {
   private readonly slots = new Map<number, number>();
   /** The rate the last reset set: a shape segment turns its `ms` into frames as the render calls do. */
   private sampleRate = 48000;
+  /** The engine's dropped-message count at the last reset: the count is cumulative over the file, so a case's own
+   *  drops are what it has added since. */
+  private droppedAtReset = 0;
 
   /** Where this process keeps its ROM copies: under its OWN config dir (the alone-run child gets another). */
   private romDir(): string {
@@ -89,6 +92,7 @@ export class Rig {
     this.blockBase = 0;
     this.slots.clear();
     this.sampleRate = sampleRate;
+    this.droppedAtReset = audio.droppedMessages();
   }
 
   /** A fresh copy of the ROM `src`, and of nothing else, in this file's temp dir, so a case never writes a
@@ -183,9 +187,10 @@ export class Rig {
 
   /** Every message a case staged, and every one the kernel sent, reached the node it was wired to: a full queue on
    *  any wire of the graph counts a drop, and a case that dropped one renders what today's unbounded staging did
-   *  not. (The count is the engine's, cumulative over the file.) */
+   *  not. The engine's count is cumulative over the file, so a case is held to the drops since its reset, and one
+   *  case's drop fails that case alone. */
   private noneDropped(): void {
-    const dropped = this.audio.droppedMessages();
+    const dropped = this.audio.droppedMessages() - this.droppedAtReset;
     if (dropped !== 0) throw new Error(`${dropped} message(s) dropped on a full queue of the graph`);
   }
 

@@ -30,7 +30,7 @@ import {
   nextFocusAfterRemove,
 } from "./systemsList";
 import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettingsSchema } from "./systemSettings";
-import type { RoleRegistry, RoleInstance } from "./systemRoles";
+import { isSystemStage, type RoleRegistry, type RoleInstance } from "./systemRoles";
 import { blipToasterChip, needsChipLabelScan, BLIPTOASTER_CHIP_SCAN_LEN } from "./bliptoaster/romDetect";
 import { roleConfigForNative, LsdjSyncMode } from "./settingsEnums";
 
@@ -164,14 +164,16 @@ export class SystemsStore {
 
   /** `roles`, in order, without those the DSP kernel does not run: the core's config role and the features with no
    *  DSP behaviour (asset overrides, a ROM's facts). The kernel skips those itself, but in the graph's document they
-   *  would make every model, palette or asset edit a new document. Without a registry, every role (it has none). */
+   *  would make every model, palette or asset edit a new document. */
   private kernelPipeline(roles: RoleInstance[]): RoleInstance[] {
-    return this.registry ? roles.filter((r) => this.runsInKernel(r.kind)) : roles.slice();
+    return roles.filter((r) => this.runsInKernel(r.kind));
   }
 
+  // Whether the kernel runs a role of `kind`, by the kernel's own test (isSystemStage). A store without a registry
+  // cannot tell, so it hands the kernel every role it holds (a loaded project's), for the kernel's registry to
+  // decide, and an edit to any of them publishes.
   private runsInKernel(kind: string): boolean {
-    const rt = this.registry?.roleType(kind);
-    return rt !== undefined && rt.scope === "system" && rt.dsp !== undefined;
+    return this.registry ? isSystemStage(this.registry.roleType(kind)) : true;
   }
   focused(): number {
     return this.focusedId;

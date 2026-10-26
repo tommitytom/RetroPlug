@@ -48,9 +48,13 @@ test("a 5-byte SysEx followed by a note in the same run arrives in order: the no
   expect(run.period).toBe(ref.period);
 });
 
-test("stageMidiIn refuses only an empty message, and Timeline turns a refusal into an error", () => {
+test("stageMidiIn refuses an empty message or a frame outside the block, and Timeline turns a refusal into an error", () => {
   const s = bootSession();
   expect(s.audio.stageMidiIn([])).toBe(false);
   expect(s.audio.stageMidiIn([0xf0, 0x7d, 0x42, 0x01, 0x00, 1, 2, 3, 4, 5, 6, 7, 8, 0xf7])).toBe(true);
+  // Any length, at any frame of the render's first 1024; nothing else, whatever the RPC would truncate it to.
+  expect(s.audio.stageMidiIn([0xf8], 1023)).toBe(true);
+  for (const frame of [1024, -1, 1.5, NaN, -Infinity, 2 ** 32 + 5])
+    expect(s.audio.stageMidiIn([0xf8], frame), `frame ${frame}`).toBe(false);
   expect(() => new Timeline().midi(0, [])).toThrow("non-empty");
 });

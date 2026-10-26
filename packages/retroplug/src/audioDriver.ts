@@ -149,8 +149,10 @@ export interface AudioDriver {
    *  one run - the kernel's midi-routing behaviour fans a channel message to its system(s) and broadcasts a longer
    *  run unchanged; with no routing role it reaches none. Messages may be staged out of frame order, as a plugin
    *  stages a block (its notes, then each moved automation slot's CC at frame 0): the engine's MIDI input sorts
-   *  them by frame, keeping the staging order on a tie. False for an empty array, or a frame past renderAudio's
-   *  1024-frame block (a renderBlocks block that is shorter than `frame` is the caller's to avoid). */
+   *  them by frame, keeping the staging order on a tie. False, nothing staged, for an empty array or a frame that is
+   *  not an integer from 0 to 1023. The frame is where the message lands when that block renders at least 1024
+   *  frames (renderAudio's first block is the lesser of 1024 frames and the whole render); a block shorter than
+   *  `frame`, a renderBlocks one included, is the caller's to avoid. */
   stageMidiIn(bytes: Uint8Array | number[], frame?: number): boolean;
   /** Stage one CONTROL-SURFACE message (a Launchpad pad press), delivered to the kernel as
    *  `controllerIn` rather than as musical MIDI - so a headless test can drive a controller app with
@@ -220,6 +222,8 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
   const ints = (b: Uint8Array | number[]): number[] => Array.from(b);
   const STEREO: HostShape = { kind: "multi", channels: 2 };
   const RENDER_BLOCKS_OUTPUTS: readonly number[] = [2, 4, 6, 8];
+  // renderAudio's block (EngineRpcService::kBlockSize): a staged message's frame is below it.
+  const STAGE_FRAMES = 1024;
   // While this driver's audio thread runs, the render calls refuse natively, so they leave the graph alone. The
   // flag is this driver's own (B1's native render calls checked the engine's audioThreadOwns instead): with a
   // second driver on the same graph, or a raw startAudio RPC, it reads false while a thread runs, and a render
@@ -272,7 +276,13 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
     setTransport: (running) => call("setTransport", running) as boolean,
     setPpq: (ppq) => call("setPpq", ppq) as boolean,
     setBpm: (bpm) => call("setBpm", bpm) as boolean,
-    stageMidiIn: (bytes, frame = 0) => call("stageMidiIn", ints(bytes), frame) as boolean,
+    // A bad frame is refused here, as native refuses one at 1024 or past: the RPC reads a frame as an integer,
+    // truncated to its low 32 bits (1.5 is 1, NaN and -Infinity are 0, 2^32 + 5 is 5), so native cannot tell those
+    // from a good one.
+    stageMidiIn: (bytes, frame = 0) =>
+      Number.isInteger(frame) && frame >= 0 && frame < STAGE_FRAMES
+        ? (call("stageMidiIn", ints(bytes), frame) as boolean)
+        : false,
     stageControllerIn: (bytes) => call("stageControllerIn", ints(bytes)) as boolean,
     drainMidiOut: () =>
       (call("drainMidiOut") as { system: number; frame: number; data: Uint8Array }[] | null) ?? [],

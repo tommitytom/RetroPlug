@@ -423,8 +423,12 @@ export interface AudioDriver {
   renderAudioPerChannel(id: number, ms: number): Float32Array[];
   /** Stage global host-MIDI bytes for the kernel's next render - any non-empty length: a channel message
    *  (fanned to systems by routing), a whole SysEx, or several messages as one run (broadcast unchanged,
-   *  delivered to the N8 FIFO byte-for-byte, in order). False only for an empty array. */
-  stageMidiIn(bytes: Uint8Array | number[]): boolean;
+   *  delivered to the N8 FIFO byte-for-byte, in order) - at `frame` inside the render's first block (0 when
+   *  omitted). Staged out of frame order, messages still arrive in it (a tie in staging order). False, nothing
+   *  staged, for an empty array or a frame that is not an integer from 0 to 1023. The frame is where the message
+   *  lands when that block renders at least 1024 frames (a render's first block is the lesser of 1024 frames and
+   *  the whole render). */
+  stageMidiIn(bytes: Uint8Array | number[], frame?: number): boolean;
   /** Drain the MIDI-out the DSP kernel emitted since the last drain (each entry is one message). */
   drainMidiOut(): { system: number; frame: number; data: Uint8Array }[];
   /** Enqueue a button transition (down = press/release); a press+release around a short render is a tap. */

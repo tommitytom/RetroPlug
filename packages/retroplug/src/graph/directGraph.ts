@@ -2,11 +2,12 @@
 // 2.4): the native tests, the CLI's analysis sessions and the offset tools. It keeps the systems list the B1
 // translator kept (add appends, replace keeps the slot, remove shifts later slots down), and the DSP kernel's
 // structure (docs/modular-graph-phase-b3a-design.md section 5.3): each system's pipeline, empty until set, and the
-// project stages, none until set (so no MIDI is routed to any system). It publishes after each call. Use one per process, directGraph(): two publishers with separate EngineGraphs would each drop the other's
-// systems from the document. Sharing a session's EngineGraph (so the session's render calls render what this
-// places) does not merge the two models either: each publish replaces the graph's model with the publisher's own
-// systems. It is safe only while the session's stores place nothing, the two publishing in turn, as
-// test-native/parity/render-blocks.test.ts and cli/sessions/analyze-lsdj-sync.ts do.
+// project stages, none until set (so no MIDI is routed to any system). It publishes after each call. Use one per
+// process, directGraph(): two publishers with separate EngineGraphs would each drop the other's systems from the
+// document. Sharing a session's EngineGraph (so the session's render calls render what this places) does not merge
+// the two models either: each publish replaces the graph's model with the publisher's own systems. It is safe only
+// while the session's stores place nothing, the two publishing in turn, as test-native/parity/render-blocks.test.ts
+// and cli/sessions/analyze-lsdj-sync.ts do.
 import { createRealBackend } from "../realBackend";
 import type { AudioRouting } from "../settingsEnums";
 import type { RoleInstance } from "../systemRoles";

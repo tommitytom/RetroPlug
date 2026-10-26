@@ -1,9 +1,10 @@
 // The engine's host I/O nodes and the cart mirror (docs/modular-graph-phase-b3a-design.md sections 3.3 to 3.5): what
-// the hosts stage reaches a plan through rp.host.midi-in and controller-in (and a plan with neither drops it), what a
-// plan sends reaches the buffers the hosts drain through rp.host.midi-out and controller-out, rp.n8.cart-mirror feeds
-// the engine's core-byte sink, the Game Boy's serialOut carries MI.OUT, and a full queue's drops reach the engine and
-// the harness RPC. A document holds one midi-in, one controller-in and one cart mirror at most, the mirror naming a
-// NES. Driven on a quiescent Engine, and on a NodeRig where a node's calls on the engine are what is checked.
+// the hosts stage reaches a plan through rp.host.midi-in and controller-in (a plan without one drops what it would
+// take, and a block too long to run drops it all), what a plan sends reaches the buffers the hosts drain through
+// rp.host.midi-out and controller-out, rp.n8.cart-mirror feeds the engine's core-byte sink, the Game Boy's serialOut
+// carries MI.OUT, and a full queue's drops reach the engine and the harness RPC. A document holds one midi-in, one
+// controller-in and one cart mirror at most, the mirror naming a NES. Driven on a quiescent Engine, and on a NodeRig
+// where a node's calls on the engine are what is checked.
 //
 // Run via `pnpm test:plugin engine-graph`.
 
@@ -138,6 +139,14 @@ std::size_t firstDifference(const std::vector<float>& a, const std::vector<float
 Engine::GraphRequest midiInToOut() {
     return hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("midi-out", "rp.host.midi-out")},
                       {docWire("midi-in.midi", "midi-out.midi")});
+}
+
+// All four host I/O nodes, each input wired to its output: what midi-in and controller-in hand on lands in
+// Engine::midiOut and controllerOut.
+Engine::GraphRequest hostIoLoop() {
+    return hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("midi-out", "rp.host.midi-out"),
+                       docNode("controller-in", "rp.host.controller-in"), docNode("controller-out", "rp.host.controller-out")},
+                      {docWire("midi-in.midi", "midi-out.midi"), docWire("controller-in.midi", "controller-out.midi")});
 }
 
 // (frame, staging index) pairs, in the order a block's messages arrive.
@@ -311,10 +320,7 @@ TEST_CASE("each block's host buffers start empty, and a plan with no input node 
     // neither drops it at that block's end rather than carrying it into a later one.
     const auto controllerOut = [](const Engine& e) { return e.controllerOut(); };
     using Bytes = std::vector<std::vector<std::uint8_t>>;
-    const auto io = hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("midi-out", "rp.host.midi-out"),
-                                docNode("controller-in", "rp.host.controller-in"),
-                                docNode("controller-out", "rp.host.controller-out")},
-                               {docWire("midi-in.midi", "midi-out.midi"), docWire("controller-in.midi", "controller-out.midi")});
+    const auto io = hostIoLoop();
 
     SECTION("with the host I/O nodes") {
         Engine e(kRate);
@@ -349,8 +355,19 @@ TEST_CASE("each block's host buffers start empty, and a plan with no input node 
         e.stageMidi(4, tagged(5, {0xF8}));
         e.stageControllerMidi({0x90, 11, 127});
         block(e);
-        CHECK(midiOut(e).empty());
         CHECK(controllerOut(e) == Bytes{{0x90, 11, 127}});
+        REQUIRE(e.setGraph(io).ok);
+        block(e);
+        CHECK(midiOut(e).empty());
+        CHECK(controllerOut(e).empty());
+    }
+    SECTION("with midi-in alone, it takes the host MIDI and the control surface's is dropped") {
+        Engine e(kRate);
+        REQUIRE(e.setGraph(midiInToOut()).ok);
+        e.stageMidi(4, tagged(5, {0xF8}));
+        e.stageControllerMidi({0x90, 11, 127});
+        block(e);
+        CHECK(midiOut(e) == std::vector<Out>{{5, 4, {0xF8}}});
         REQUIRE(e.setGraph(io).ok);
         block(e);
         CHECK(midiOut(e).empty());
@@ -368,6 +385,27 @@ TEST_CASE("each block's host buffers start empty, and a plan with no input node 
         block(e);
         CHECK(midiOut(e).empty());
     }
+}
+
+TEST_CASE("a block too long to run drops what was staged for it, without allocating", "[engine-graph][host-io]") {
+    // A block past the plan's buffers runs nothing, its input nodes included, so what the hosts staged for it goes with
+    // it, as a block that ran would leave none of it: a host whose every block is too long would otherwise grow the
+    // staging without end, and hand the next block that runs messages at another block's frames.
+    Engine e(kRate);
+    REQUIRE(e.setGraph(hostIoLoop()).ok);
+    constexpr std::uint32_t kLong = Engine::kDefaultMaxBlockFrames + 1;
+    std::vector<float> l(kLong), r(kLong);
+    float* outs[2] = {l.data(), r.data()};
+    e.stageMidi(4, tagged(5, {0xF8}));
+    e.stageControllerMidi({0x90, 11, 127});
+    rp::test::beginCountingAllocations();
+    e.processBlock(kLong, outs, 2);
+    const auto counted = rp::test::endCountingAllocations();
+    CHECK(counted.allocations == 0);
+    CHECK(counted.frees == 2);  // the two staged messages' own bytes
+    block(e);
+    CHECK(midiOut(e).empty());
+    CHECK(e.controllerOut().empty());
 }
 
 TEST_CASE("a document holds one rp.host.midi-in and one rp.host.controller-in at most, as it holds one cart mirror",

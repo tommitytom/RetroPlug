@@ -381,7 +381,7 @@ Engine::GraphResult Engine::setGraph(const GraphRequest& request) {
     auto table = std::make_shared<rp::host::SystemTable>();
     for (const SystemId id : request.slots) {
         SystemBase* core = liveCores_.at(id);
-        table->slots.push_back({id, core, dynamic_cast<SameBoySystem*>(core), dynamic_cast<MesenNesSystem*>(core)});
+        table->slots.push_back({id, core, dynamic_cast<MesenNesSystem*>(core)});
     }
     // The host I/O nodes the kernel stage defers to, one of each at most: each takes everything staged, wired or not,
     // so a second would take it from the first whenever it ran first. And the one system a physical N8 can mirror.
@@ -734,10 +734,14 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
     if (frames == 0) return;
     // Longer than the plan's buffers: the GraphHost would refuse it, so nothing runs, and the tail must not
     // either (no publish, no ppq advance). A host that reported its block size (setMaxBlockFrames) never gets
-    // here; one that did not is counted, for reclaim() to report on the control thread.
+    // here; one that did not is counted, for reclaim() to report on the control thread. What was staged for the
+    // block goes with it, as a block that ran would leave none of it: no input node took it, and a host whose
+    // every block is too long would otherwise grow the staging without end.
     if (frames > graph_->maxFrames) {
         for (std::size_t c = 0; c < numOutputs; ++c)
             if (outputs[c]) std::memset(outputs[c], 0, frames * sizeof(float));
+        pendingMidi_.clear();
+        pendingControllerMidi_.clear();
         oversizedFrames_.store(frames, std::memory_order_relaxed);
         oversizedBlocks_.fetch_add(1, std::memory_order_release);
         return;

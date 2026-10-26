@@ -734,12 +734,19 @@ export class ProjectStore {
     } catch (e) {
       // The systems adopted before the throw are built and listed, so place them as the final publish would, with
       // their kernel pipelines: a graph left at the clear's would free their cores under the store, and refuse
-      // every later edit. Its throw is logged, so the load's own error is the one that propagates.
+      // every later edit. Then tell the structure's observers, which the quiet clear and adopts have not: the UI
+      // would keep the previous project's tiles, and the plugin would watch that project's ROMs. Either step's throw
+      // is logged, so the load's own error is the one that propagates.
       this.holdGraph = false;
       try {
         this.publishRouting();
       } catch (pe) {
         console.warn(`[project] placing the systems a failed load adopted threw: ${String(pe)}`);
+      }
+      try {
+        this.onSystemsChange();
+      } catch (se) {
+        console.warn(`[project] notifying the observers of the systems a failed load adopted threw: ${String(se)}`);
       }
       throw e;
     } finally {

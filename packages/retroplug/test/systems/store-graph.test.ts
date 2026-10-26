@@ -14,11 +14,13 @@ import { buildGraph, type HostShape } from "../../src/graph/buildGraph";
 import { toGraphJson } from "../../src/graph/graphDocument";
 import { canonicalJson } from "../../src/graph/canonicalJson";
 import { buildAppRegistry } from "../../src/appHost";
-import { LsdjSyncMode, type AudioRouting } from "../../src/settingsEnums";
+import { LsdjSyncMode, MidiRouting, type AudioRouting } from "../../src/settingsEnums";
 import type { RoleInstance } from "../../src/systemRoles";
 import type { EngineGraph } from "../../src/engineGraph";
 import type { ConstructSpec, SetGraphResult } from "../../src/backend";
-import { gbRom, lsdjRom, nesRom } from "./fixtures";
+import { DspKernel } from "../../src/dspKernel";
+import { z, clampedInt } from "../../src/configSchema";
+import { blipToasterRom, gbRom, lsdjRom, nesRom } from "./fixtures";
 
 function project() {
   const be = new MockBackend("/cfg");
@@ -207,10 +209,15 @@ test("a load that throws partway places what it adopted, and the edits after it 
     return buildCore(spec, id);
   };
   const n = be.graphRequests.length;
+  let notified = 0;
+  p.setOnSystemsChange(() => notified++);
   expect(() => p.loadBytes(bytes, "/")).toThrow("the build RPC died");
   be.buildCore = buildCore;
   const adopted = sys.systems().map((e) => e.id);
   expect(adopted.length).toBe(1);
+  // The structure's observers hear of it (the UI's tiles, the plugin's watched ROMs): the clear and the adopts are
+  // quiet, so this is the one notification of the load.
+  expect(notified).toBe(1);
   // The clear, then the system built before the throw, placed with the re-arm a load's own publish carries.
   expect(since(be, n)).toEqual([
     { slots: [], tap: {} },
@@ -329,6 +336,86 @@ test("a controller session rides the document as a project stage, with the sync 
   p.setController({ enabled: false });
   expect(be.kernelSettings()!.project).toEqual(canon([SEND_TO_ALL]));
   expect(be.kernelSettings()!.systems[0].pipeline[0].config.mode).toBe(LsdjSyncMode.MidiSync);
+});
+
+test("a load hands the kernel its project's MIDI routing and controller in the one publish that places its systems", () => {
+  // The settings are assigned after the adopts and before that publish. The plugin's setState is a load, so a
+  // publish that read the settings before them would route by the previous project's until the next edit.
+  const { be, p, sys } = project();
+  sys.addSystem("/roms/lsdj.gb");
+  p.setMidiRouting(MidiRouting.MidiChannelToInstance);
+  p.setController({ enabled: true, app: "lsdj-midimap", target: "system", systemId: 0 });
+  const bytes = p.exportBytes()!;
+  p.newProject();
+  expect(be.kernelSettings()!.project).toEqual(canon([SEND_TO_ALL]));
+  const n = be.graphRequests.length;
+  expect(p.loadBytes(bytes, "/").kind).toBe("loaded");
+  expect(since(be, n)).toEqual([{ slots: sys.systems().map((e) => e.id), tap: {} }]); // an empty clear sends nothing
+  const kernel = be.kernelSettings()!;
+  expect(kernel.project.map((r) => r.kind)).toEqual(["midi-routing", "launchpad"]);
+  expect(kernel.project[0].config).toEqual({ mode: MidiRouting.MidiChannelToInstance });
+  expect(kernel.systems[0].pipeline[0].config.mode).toBe("midiMap"); // the controller's cart, in the mode it needs
+});
+
+test("an asset-role edit publishes nothing: the kernel runs no asset role, so the document carries none", () => {
+  const { be, p, sys } = project();
+  be.seed("/roms/bt.nes", blipToasterRom());
+  const lsdj = sys.addSystem("/roms/lsdj.gb")!;
+  const bt = sys.addSystem("/roms/bt.nes")!;
+  const roles = sys.view().map((v) => v.roles.map((r) => r.kind));
+  expect(roles[0].includes("lsdj-assets")).toBe(true);
+  expect(roles[1].includes("bliptoaster-assets")).toBe(true);
+  const publishes = countPublishes(p.graph);
+  const n = be.graphRequests.length;
+  const overrides = [{ type: "kit", slot: 0, name: "NEWK", path: "/kits/new.kit" }];
+  expect(sys.setRoleConfig(lsdj, "lsdj-assets", { overrides })).toBe(true);
+  expect(sys.setRoleConfig(bt, "bliptoaster-assets", { settings: { theme: 7 } })).toBe(true);
+  expect(publishes.n).toBe(0); // not even a document for the dedupe to drop
+  expect(since(be, n)).toEqual([]);
+  // The edit is kept on the system, for the reload that applies it.
+  expect(sys.view()[0].roles.find((r) => r.kind === "lsdj-assets")?.config.overrides).toEqual(overrides);
+});
+
+test("a DSP role registered with no scope runs in the kernel: the pipeline carries it, and its edit publishes", () => {
+  // RoleType.scope is optional and defaults to "system", so the store and the kernel must both read it that way: a
+  // store that wanted it spelled out would hand the kernel nothing, and the role would never run.
+  const registry = buildAppRegistry();
+  let ran = 0;
+  registry.registerRole({
+    kind: "probe",
+    category: "feature",
+    schema: z.object({ level: clampedInt(0, 10, 1) }),
+    dsp: () => void ran++,
+  });
+  registry.registerRomProvider(({ platform }) => (platform === "gb" ? [{ kind: "probe", config: {} }] : []));
+  const be = new MockBackend("/cfg");
+  be.seed("/roms/a.gb", gbRom());
+  const p = new ProjectStore(be, new RecentStore(be), registry);
+  const id = p.systems.addSystem("/roms/a.gb")!;
+  expect(be.kernelSettings()!.systems[0].pipeline).toEqual(canon([{ kind: "probe", config: { level: 1 } }]));
+  const n = be.graphRequests.length;
+  expect(p.systems.setRoleConfig(id, "probe", { level: 3 })).toBe(true);
+  expect(since(be, n)).toEqual([{ slots: [id] }]);
+  // And the kernel, handed the structure that document carries, runs it.
+  const kernel = new DspKernel(registry);
+  kernel.setSystems(be.kernelSettings()!);
+  const block = { frames: 64, sampleRate: 48000, tempo: 120, ppqStart: 0, transport: false };
+  kernel.processBlock({ ...block, midiIn: [], buttons: [], keys: [], serialOut: [] });
+  expect(ran).toBe(1);
+});
+
+test("a systems store without a registry hands the kernel every role it holds, and an edit to one publishes", () => {
+  // It cannot tell which roles the kernel runs, so the kernel's own registry decides; the document it publishes
+  // carries them all, and so must a publish after an edit.
+  const be = new MockBackend("/cfg");
+  be.seed("/roms/a.gb", gbRom());
+  const sys = new SystemsStore(be);
+  const id = sys.adopt({ romPath: "/roms/a.gb", roles: [{ kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiSync } }] })!;
+  expect(be.kernelSettings()!.systems[0].pipeline).toEqual(canon([{ kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiSync } }]));
+  const n = be.graphRequests.length;
+  expect(sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MidiOut })).toBe(true);
+  expect(since(be, n)).toEqual([{ slots: [id] }]);
+  expect(be.kernelSettings()!.systems[0].pipeline).toEqual(canon([{ kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiOut } }]));
 });
 
 const MGB: ConstructSpec = { romPath: "", platform: "gb", core: "sameboy", embeddedRom: "mgb", savPath: null, statePath: null };

@@ -7,7 +7,7 @@
 // concern that changes none of this code.
 
 import type { MidiEvent } from "./midiRouting";
-import type { RoleInstance, RoleRegistry } from "./systemRoles";
+import { isSystemStage, type RoleInstance, type RoleRegistry } from "./systemRoles";
 
 /** Per-block transport/timing context (mirrors native AudioBlockInfo / DspBlockInfo). */
 export interface BlockInfo {
@@ -398,7 +398,7 @@ export class DspKernel {
       const slot: SystemSlot = { id: sys.id, inbox: [], keys: [], buttons: [], serialOut: [], stages: [] };
       sys.pipeline.forEach((stage, stageIndex) => {
         const rt = this.registry.roleType(stage.kind);
-        if (!rt || rt.scope === "project" || !rt.dsp) return;
+        if (!isSystemStage(rt)) return;
         slot.stages.push({
           dsp: rt.dsp as SystemBehavior,
           ctx: this.buildCtx(sys.id, stageIndex, stage.config, slot),

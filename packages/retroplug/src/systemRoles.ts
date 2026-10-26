@@ -76,6 +76,13 @@ export interface RoleType {
   ui?: unknown;
 }
 
+/** Whether the DSP kernel runs `rt` as a stage of a system's pipeline: a role with a `dsp` behaviour whose scope is
+ *  not "project" (no scope at all is "system"). The kernel's own test (dspKernel.ts setSystems), and the systems
+ *  store's for what it hands the kernel, so the two cannot disagree about a role. */
+export function isSystemStage(rt: RoleType | undefined): rt is RoleType {
+  return rt !== undefined && rt.scope !== "project" && rt.dsp !== undefined;
+}
+
 /** The narrow Backend slice a load-time `onConstruct` hook may use: synthesize an LSDj SRAM image, check
  *  whether native will find a real sav on disk, read the base ROM (to patch it), and decode a PNG (for an
  *  LSDj font override). The full `Backend` satisfies this structurally, so the store passes itself. */
