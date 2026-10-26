@@ -425,7 +425,7 @@ TEST_CASE("a core of the wrong kind under a node's token is refused and released
 }
 
 // ---- inputs ----------------------------------------------------------------------------------------------------
-// Each is the core call it maps to, made before the core runs, as the kernel stage makes it today. The graph core
+// Each is the core call it maps to, made before the core runs, as the kernel stage made it before. The graph core
 // hears its input through the node (a feed node's output wired to the input of the same name), the direct core
 // through the call itself.
 
@@ -556,7 +556,7 @@ TEST_CASE("a system node's inputs reach its core as the calls they map to, bit f
     }
     SECTION("in fan-out order: midi before bytes, so a flushed message drops the MIDI queued ahead of it") {
         // The one order a core can show: on the NES both land in the N8 FIFO. serialIn goes first and buttons last,
-        // as the kernel stage fans them out, but no core takes two of those in one queue.
+        // as the kernel stage fanned them out, but no core takes two of those in one queue.
         NodeRig rig(kRate);
         auto direct = nes(1, 0), control = nes(1, 0);
         REQUIRE(rig.set(fedDocument("rp.mesen.nes", rig.park(nes(1, 0)), {"midi", "bytes"})).ok);
@@ -711,7 +711,7 @@ TEST_CASE("the Game Boy's serialOut carries what its core captured this block, a
 }
 
 TEST_CASE("a system node records what its bytes input feeds the core in the engine's sync trace", "[engine-graph][system-node][inputs]") {
-    // As the kernel stage records its core-bytes sink: the bytes input only, an empty message skipped, and a long
+    // As the kernel stage recorded its core-bytes sink: the bytes input only, an empty message skipped, and a long
     // MIDI message (which also goes down the core's byte path) not at all.
     NodeRig rig(kRate);
     REQUIRE(rig.set(fedDocument("rp.mesen.nes", rig.park(nes(1, 0)), {"midi", "bytes"})).ok);

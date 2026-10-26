@@ -121,9 +121,10 @@ struct SystemNode {
     }
     void writeQueues() noexcept {}
 
-    // Each input in queue order, the inputs in the order the kernel stage fans its sinks out: serialIn, midi,
-    // bytes, buttons. The order matters on the NES, where MIDI and bytes land in the same FIFO (a flushed byte
-    // message drops the MIDI queued ahead of it). Before prepareForBlock, as the kernel stage runs before the core.
+    // Each input in queue order, the inputs in the order the kernel stage the kernel node replaced fanned its sinks
+    // out: serialIn, midi, bytes, buttons. The order matters on the NES, where MIDI and bytes land in the same FIFO
+    // (a flushed byte message drops the MIDI queued ahead of it). Before prepareForBlock, as that stage ran before
+    // the core.
     void applyInputs() noexcept {
         auto& in = static_cast<Self*>(this)->inputs;
         for (const rp_message& m : in.serialIn.messages())
@@ -207,9 +208,9 @@ struct GameBoy : SystemNode<GameBoy, SameBoySystem> {
         return 8;
     }
 
-    // MI.OUT (design section 3.2): the bytes the core captured on its serial port this block, each at frame 0, as
-    // the engine's gather hands them to the kernel today, without their frames. Copied, not drained: that gather
-    // reads the same log after the plan has run, and the core clears it at its next prepareForBlock.
+    // MI.OUT (design section 3.2): the bytes the core captured on its serial port this block, each at frame 0, as the
+    // engine's gather once handed them to the kernel, without their frames. Copied, not drained: the core clears the
+    // log at its next prepareForBlock.
     void writeQueues() noexcept {
         if (!connected[kSerialOut]) return;
         for (const auto& entry : core->serialOutLog_) outputs.serialOut.push(0, std::span<const std::uint8_t>(&entry.second, 1));

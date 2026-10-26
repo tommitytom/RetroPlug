@@ -1257,7 +1257,7 @@ TEST_CASE("the embedded script bundle loads, and registers the production script
     REQUIRE(bundle.size() > 0);
     REQUIRE(host.load({&bundle, 1}, &error));
     CHECK(error.empty());
-    // The DSP kernel (KernelNode.test.cpp holds it to the kernel stage it replaced).
+    // The DSP kernel (KernelNode.test.cpp holds it to what it was recorded sending).
     REQUIRE(host.package()->node_type_count == 1);
     CHECK(std::string(host.package()->node_types[0]->id) == "rp.dsp.kernel");
     CHECK(host.package()->abi_version == RP_ABI_VERSION);

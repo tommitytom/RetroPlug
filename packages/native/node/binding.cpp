@@ -15,7 +15,7 @@
 // async, which is why this is an in-process addon and not rpcpp's shipped stdio client.)
 //
 // Scope: the WHOLE backend surface, exactly as the CLI mounts it (registerAllBackendRpc) - host,
-// emulator, dsp-kernel, debug and audio-driver facets over one Engine. So a Node process can boot the
+// emulator, harness, debug and audio-driver facets over one Engine. So a Node process can boot the
 // real control plane (bootSession) and drive the emulator cores.
 
 #include <exception>

@@ -102,7 +102,6 @@ swept as their feature lands or when touched. Known ones:
 
 | Location | Marker |
 |---|---|
-| [host/dsp/DspRuntime.cpp](../packages/native/src/host/dsp/DspRuntime.cpp) | the GB serial pump is a plain FIFO; intra-block frame timing not yet modelled |
 | [host/engine/Engine.cpp](../packages/native/src/host/engine/Engine.cpp) | `fastBoot` takes effect on the next restart, not live |
 | [systemRoles.ts:13,59](../packages/retroplug/src/systemRoles.ts#L13) | names kit-patch as the motivating example for the deferred `ui` descriptor. The descriptor is still unbuilt, but kit patching shipped without it - `lsdj-assets` is a no-DSP role that compiles on the control plane through the `compileKit` RPC - so the example needs replacing, not the entry |
 

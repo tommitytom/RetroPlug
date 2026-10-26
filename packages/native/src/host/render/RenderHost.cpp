@@ -239,7 +239,7 @@ RenderHost::Result RenderHost::run(const std::string& jobJson, RenderedFn onRend
     };
 
     // QuickJS's stack-overflow guard is calibrated to the runtime's creating thread. RenderHost is created
-    // and driven on the same (worker) thread, but re-anchor before entering JS to be safe (see DspRuntime).
+    // and driven on the same (worker) thread, but re-anchor before entering JS to be safe (as ScriptHost does).
     JS_UpdateStackTop(rt_);
 
     // globalThis[Symbol.for("plugin")] = { __rpcSend, args: [jobJson] } — the worker reads args[0].

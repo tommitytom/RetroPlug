@@ -1,7 +1,7 @@
 // The DPF plugin's DSP half. It hosts the SAME control-plane runtime the test host does —
 // TjsHostRuntime + the backend service graph + the __rpcSend bridge on Symbol.for("plugin") — evals
-// the embedded control-plane bundle (which composes the stores + DSP kernel and defines the __rp_*
-// globals), and drives the Engine per audio block from DPF's run(). The editor is PluginUI.cpp
+// the embedded control-plane bundle (which composes the stores and defines the __rp_* globals),
+// and drives the Engine per audio block from DPF's run(). The editor is PluginUI.cpp
 // (DISTRHO_PLUGIN_HAS_UI 1) and shares this graph rather than composing its own; get/setState and the
 // RETROPLUG_AUTOLOAD_PROJECT hook go through the JS project globals (base64 done in JS).
 #include "DistrhoPlugin.hpp"
@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -301,9 +302,10 @@ protected:
         const bool playing = tp.playing;
 
         // Host MIDI in → stage directly on the audio thread (bypasses the ring; safe because run() owns
-        // the Engine while active). Every size: DPF keeps a message longer than the inline data[4] (a
-        // SysEx) in dataExt, and the Engine's core-MIDI sink hands those to the core's raw byte path
-        // (the NES N8 FIFO), so a DAW can upload a wave to the N163 build the same way the CLI does.
+        // the Engine while active), copied into the Engine's staging with no allocation. Every size: DPF
+        // keeps a message longer than the inline data[4] (a SysEx) in dataExt, and a system node hands
+        // one to the core's raw byte path (the NES N8 FIFO), so a DAW can upload a wave to the N163 build
+        // the same way the CLI does.
         //
         // A connected physical N8 gets this raw stream only when no emulated NES system is there to mirror
         // (Engine::cartMirrorSystemId, the plan's rp.n8.cart-mirror): with one, the cart gets that system's kernel
@@ -322,7 +324,7 @@ protected:
             // e.frame preserves the DAW's intra-block timing (the N8Link scheduler releases on it).
             if (rawToCart && !(e.size == 1 && bytes[0] >= 0xF8))
                 n8Host_.link().push(e.frame, bytes, e.size, getSampleRate());
-            svc_.engine.stageMidi(e.frame, std::vector<std::uint8_t>(bytes, bytes + e.size));
+            svc_.engine.stageMidi(e.frame, std::span<const std::uint8_t>(bytes, e.size));
         }
 
         // DAW automation → MIDI CC. A claimed slot emits at the head of the block whenever its value
@@ -345,7 +347,7 @@ protected:
                 static_cast<std::uint8_t>(iv),
             };
             if (rawToCart) n8Host_.link().push(0, cc, 3, getSampleRate());   // else it reaches the cart via the kernel
-            svc_.engine.stageMidi(0, std::vector<std::uint8_t>(cc, cc + 3));
+            svc_.engine.stageMidi(0, std::span<const std::uint8_t>(cc));
         }
 
         // One audio block: drain control-thread edits on the audio thread, set transport (direct: we're
@@ -384,13 +386,13 @@ private:
 
         transport_ = std::make_unique<rpcpp::QuickJSTransport>(ctx, [](JSContext*, JSValue) {});
         server_    = std::make_unique<PluginRpcServer>(*transport_, rpcpp::QuickJSCodec{ctx});
-        // The plugin control plane composes the stores (fs + emulator) and loads the DSP kernel. It
-        // drives audio per block in C++ (never the renderAudio harness), never debugs the live core,
-        // and never spawns the background audio-driver thread — so those facets are NOT on this channel.
+        // The plugin control plane composes the stores (fs + emulator); the DSP kernel is a script node
+        // every Engine has. It drives audio per block in C++ (never the renderAudio harness), never debugs
+        // the live core, and never spawns the background audio-driver thread, so those facets are NOT on
+        // this channel.
         // The editor reuses this same context/channel, so it inherits exactly this surface.
         registerHostRpc(*server_, svc_.host);
         registerEmulatorRpc(*server_, svc_.engineSvc);
-        registerDspKernelRpc(*server_, svc_.engineSvc);
         server_->addDiscoveryMethod();
 
         // globalThis[Symbol.for("plugin")] = { __rpcSend } — the namespace realBackend.ts targets.
@@ -406,7 +408,7 @@ private:
         // Systems bake the sample rate at construct — set it BEFORE the bundle composes / autoloads.
         svc_.engine.setSampleRate(getSampleRate());
 
-        // Eval the control-plane bundle (composes stores + kernel, defines the __rp_* globals), then
+        // Eval the control-plane bundle (composes the stores, defines the __rp_* globals), then
         // pump until it signals ready (the composition is synchronous; a bounded pump covers module eval).
         host_.evalModuleBytecode(rp_cp_bundle, rp_cp_bundle_size);
         for (int i = 0; i < 1000 && !readReady(); ++i) host_.pump();

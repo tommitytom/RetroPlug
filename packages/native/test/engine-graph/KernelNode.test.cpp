@@ -1,26 +1,19 @@
-// The DSP kernel as a script node (docs/modular-graph-phase-b3a-design.md section 4), held to the kernel stage it
-// replaced ("today's" below: the engine runs it no more, but its DspRuntime stays until the kernel stage is deleted).
-// The same blocks are driven through today's DspRuntime, loaded with today's kernel bundle (src/dspKernelBundle.ts,
-// embedded here alone), and through the kernel node of the production script bundle in a plan, fed by the host I/O
-// nodes and a stand-in for the Game Boys' serialOut, its every output read back by probes. Every sink output is
-// compared exactly, block by block: per system and port, the frame, bytes, flush flag and order of each message (of
-// each byte, on a serial input); the host MIDI out with its system tags in emission order; the control-surface out.
+// The DSP kernel as a script node (docs/modular-graph-phase-b3a-design.md section 4): the kernel node of the
+// production script bundle in a plan, fed by the host I/O nodes and a stand-in for the Game Boys' serialOut, its every
+// output read back by probes, block by block.
 //
-// Two differences are the design's, and each is applied to today's side rather than allowed for in the comparison:
-//   - host MIDI reaches the node through rp.host.midi-in, which stable-sorts it by frame (section 3.4), so today's
-//     kernel is fed the sorted staging;
-//   - a queue is frame-ordered: a message pushed earlier than the last one on its port is carried at that one's frame
-//     (graph/Queue.hpp pushMessage). Only LSDj's Arduinoboy and MI.MAP modes emit out of order (a row byte at its
-//     note's frame, then transport bytes and clocks at frame 0), to a Game Boy's serial input, which SameBoy queues
-//     and releases only its front byte from, so a raised frame changes nothing it does. So that port of today's is
-//     compared as a wire would carry it, and every other port exactly as today sent it: a raise anywhere else would
-//     change what a core does (a NES's or an SMS's FIFO, which NesN8FifoRole and SmsSyncRole stable-sort by frame
-//     today, takes a raised byte later). The rig counts the raised bytes by port, and each case says where it expects
-//     them.
+// Each case is held to what the node sent when it was recorded: the messages of each kind, and a digest of all of them
+// (per block, per system and port, each message's frame, flags and bytes in order; the host MIDI out with its system
+// tags in emission order; the control-surface out). The values were recorded while the kernel stage the node replaced
+// still ran beside it, and these cases compared the two block by block and found them equal (15f56ebb to 9217a026,
+// against the kernel stage fed the staging sorted as rp.host.midi-in sorts it, its output as a frame-ordered queue
+// carries it). So a changed value is a change to what the kernel does: a deliberate one is re-recorded from the values
+// a failing case prints.
 //
-// A serial input is compared as the bytes the system node applies, each at its message's frame, in order: the node
-// sends a run of same-frame bytes as one message, where today pushes a byte at a time, and where its runs break is its
-// own choice. Every other port is compared message for message.
+// A serial input is counted and hashed byte by byte, each byte as the one-byte message (its frame, flags 0, one byte)
+// the node sent when the values were recorded: it now sends a run of same-frame bytes as one message, which the system
+// node applies byte by byte at its frame, so where a run breaks, which no core can see, moves no value. Every other
+// port is hashed message for message.
 //
 // Last, the node runs on an audio thread while the control thread reshapes it, for the thread sanitizer.
 //
@@ -31,9 +24,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
-#include <map>
 #include <memory>
-#include <set>
 #include <string>
 #include <thread>
 #include <utility>
@@ -46,17 +37,10 @@
 #include "graph/HostNodes.hpp"
 #include "graph/Queue.hpp"
 #include "graph/nodes/CoreNodes.hpp"
-#include "host/dsp/DspRuntime.hpp"
 #include "host/dsp/ScriptCompiler.hpp"
 #include "host/graph/HostIoNodes.hpp"
 #include "host/graph/HostServices.hpp"
 #include "host/script/ScriptHost.hpp"
-
-// Today's kernel bundle (cmake/bundles.cmake, retroplug-dsp-kernel-bundle).
-extern "C" {
-extern const std::uint8_t  rp_dsp_kernel_bundle[];
-extern const std::uint32_t rp_dsp_kernel_bundle_size;
-}
 
 using rp::host::ScriptHost;
 using rp::host::test::Feed;
@@ -87,7 +71,8 @@ struct Structure {
     std::vector<System> systems;
 };
 
-// The system roles as the stores parse them: dead bytes to the kernel, carried as it carries them today.
+// The system roles as the stores parsed them when these cases were written: the kernel skips them (the stores no longer
+// hand it a role with no DSP behaviour).
 const Role kSameBoy{"sameboy", R"({"model":"cgbC","highpass":"accurate","linkGroupId":0,"fastBoot":true,)"
                                R"("colorCorrection":"disabled","dmgPalette":"grey","lightTemperature":0})"};
 const Role kMesen{"mesen", R"({"region":"auto","removeSpriteLimit":false,"enableFm":true,"apuLatencyMs":1.4,"s5bNoise":"n8",)"
@@ -116,14 +101,13 @@ std::string rolesJson(const std::vector<Role>& roles) {
     return s + "]";
 }
 
-// Today's KernelStructure (what syncDspFromStore pushes), or the kernel node's settings, which add serialOut.
-std::string structureJson(const Structure& s, bool settings) {
+// The kernel node's settings: the kernel's structure, each system's serialOut.
+std::string settingsJson(const Structure& s) {
     std::string out = R"({"project":)" + rolesJson(s.project) + R"(,"systems":[)";
     for (std::size_t i = 0; i < s.systems.size(); ++i) {
         const System& sys = s.systems[i];
-        out += (i ? "," : "") + std::string(R"({"id":)") + std::to_string(sys.id) + R"(,"pipeline":)" + rolesJson(sys.pipeline);
-        if (settings) out += std::string(R"(,"serialOut":)") + (sys.serialOut ? "true" : "false");
-        out += "}";
+        out += (i ? "," : "") + std::string(R"({"id":)") + std::to_string(sys.id) + R"(,"pipeline":)" + rolesJson(sys.pipeline) +
+               R"(,"serialOut":)" + (sys.serialOut ? "true" : "false") + "}";
     }
     return out + "]}";
 }
@@ -147,6 +131,42 @@ Bytes on(int channel, int key, int velocity = 100) {
 Bytes off(int channel, int key) { return {static_cast<std::uint8_t>(0x80 | channel), static_cast<std::uint8_t>(key), 0}; }
 Bytes cc(int channel, int number, int value) {
     return {static_cast<std::uint8_t>(0xB0 | channel), static_cast<std::uint8_t>(number), static_cast<std::uint8_t>(value)};
+}
+
+// What a case's node sent, over every block: the messages of each kind, and their digest.
+struct Sent {
+    int           serialIn = 0, midi = 0, bytes = 0, buttons = 0, midiOut = 0, controllerOut = 0;
+    std::uint64_t digest = 0;
+    bool operator==(const Sent&) const = default;
+};
+
+// FNV-1a, 64 bits, over every field the node sent, lengths included.
+struct Digest {
+    std::uint64_t h = 0xcbf29ce484222325ULL;
+    void byte(std::uint8_t b) { h = (h ^ b) * 0x100000001b3ULL; }
+    void u32(std::uint32_t v) {
+        for (int i = 0; i < 4; ++i) byte(static_cast<std::uint8_t>(v >> (8 * i)));
+    }
+    void data(const Bytes& d) {
+        u32(static_cast<std::uint32_t>(d.size()));
+        for (const std::uint8_t b : d) byte(b);
+    }
+    void messages(const std::vector<Message>& ms) {
+        u32(static_cast<std::uint32_t>(ms.size()));
+        for (const Message& m : ms) {
+            u32(m.frame);
+            u32(m.flags);
+            data(m.data);
+        }
+    }
+};
+
+// As the recorded values are written, so a failing case prints what to re-record.
+std::string text(const Sent& s) {
+    char b[160];
+    std::snprintf(b, sizeof b, "{%d, %d, %d, %d, %d, %d, 0x%016llxULL}", s.serialIn, s.midi, s.bytes, s.buttons, s.midiOut,
+                  s.controllerOut, static_cast<unsigned long long>(s.digest));
+    return b;
 }
 
 // A message list as text, so a failed comparison shows both sides.
@@ -176,8 +196,7 @@ std::vector<Message> serialBytes(const std::vector<Message>& ms) {
 // ---- the rig ---------------------------------------------------------------------------------------------------
 
 struct KernelRig {
-    Structure  structure;
-    DspRuntime today;
+    Structure structure;
     // Before the graph, so it is destroyed after it: the kernel's shim hands its instance back to it.
     ScriptHost                        scripts;
     rp::graph::NodeRegistry           registry;
@@ -197,23 +216,17 @@ struct KernelRig {
     std::unique_ptr<rp::graph::GraphHost> host;
     rp_node*                          kernel = nullptr;
     int                               blocks = 0;
-    // What the comparisons covered: serial-in bytes and messages of each other kind compared, and by port, the
-    // serial-in bytes of today's whose frame a queue raises.
-    struct {
-        int serialIn = 0, midi = 0, bytes = 0, buttons = 0, midiOut = 0, controllerOut = 0;
-    } seen;
-    std::map<std::string, int> raised;
+    Sent                              sent;
+    Digest                            digest;
 
-    // `inject`: JS run after both bundles, in both runtimes.
+    // `inject`: JS run after the bundle, in both of the script host's runtimes.
     explicit KernelRig(Structure s, const std::string& inject = "") : structure(std::move(s)) {
-        REQUIRE(today.loadKernel(Bytes(rp_dsp_kernel_bundle, rp_dsp_kernel_bundle + rp_dsp_kernel_bundle_size)));
         std::vector<ScriptHost::Chunk> chunks{ScriptHost::embeddedBundle()};
         Bytes injected;
         if (!inject.empty()) {
             const auto bc = dsp::compileToBytecode(inject);
             REQUIRE(bc.has_value());
             injected = *bc;
-            REQUIRE(today.loadKernel(injected));
             chunks.emplace_back(injected);
         }
         std::string error;
@@ -237,8 +250,8 @@ struct KernelRig {
     }
     ~KernelRig() { host.reset(); }
 
-    // A structure change, as the stores push one: to today's kernel through setSystems, to the node as its settings,
-    // which reshape it (the instance kept) whenever its ports move.
+    // A structure change, as the stores publish one: the node's settings, which reshape it (the instance kept) whenever
+    // its ports move.
     void restructure(Structure next) {
         structure = std::move(next);
         plan();
@@ -246,8 +259,6 @@ struct KernelRig {
     }
 
     void plan() {
-        const std::string json = structureJson(structure, false);
-        REQUIRE(today.setSystems(Bytes(json.begin(), json.end())));
         const auto r = host->setGraph(document());
         for (const auto& e : r.errors) UNSCOPED_INFO(e.code << " at " << e.nodeId << "." << e.port << ": " << e.message);
         REQUIRE(r.ok);
@@ -263,7 +274,7 @@ struct KernelRig {
             return R"({"from":")" + from + R"(","to":")" + to + "\"}";
         };
         std::vector<std::string> nodes{node("midi-in", "rp.host.midi-in"), node("controller-in", "rp.host.controller-in"),
-                                       node("kernel", kKernel, structureJson(structure, true)),
+                                       node("kernel", kKernel, settingsJson(structure)),
                                        node("midi-out", "rp.host.midi-out"), node("controller-out", "rp.host.controller-out")};
         std::vector<std::string> wires{wire("midi-in.midi", "kernel.midiIn"), wire("controller-in.midi", "kernel.controllerIn"),
                                        wire("controller-in.connected", "kernel.controllerConnected"),
@@ -295,27 +306,10 @@ struct KernelRig {
         return *t;
     }
 
-    // One block through both, then every output compared.
+    // One block: what the host staged, each Game Boy's MI.OUT a byte a message at frame 0 as its serialOut carries it,
+    // then the block as the engine runs it (the host outputs cleared first, as the engine clears them), and every
+    // output recorded.
     void block(const BlockIn& in) {
-        // Today: the staging sorted as rp.host.midi-in sorts it, last block's MI.OUT in slot order, no buttons or
-        // keys, and the host outputs cleared first (the engine clears them, at the top of its block).
-        std::vector<DspRuntime::MidiIn> midi;
-        for (const auto& [frame, data] : in.midi) midi.push_back({frame, data});
-        std::stable_sort(midi.begin(), midi.end(), [](const auto& a, const auto& b) { return a.frame < b.frame; });
-        std::vector<DspRuntime::SerialOut> serialOut;
-        for (const System& s : structure.systems)
-            for (const auto& [id, captured] : in.serialOut)
-                if (id == s.id)
-                    for (const std::uint8_t b : captured) serialOut.push_back({id, b});
-        std::vector<DspRuntime::MidiIn> controller;
-        for (const Bytes& c : in.controller) controller.push_back({0, c});
-        today.midiOut_.clear();
-        today.controllerOut_.clear();
-        today.processBlock(midi, {}, {}, serialOut, controller,
-                           DspRuntime::BlockInfo{in.frames, kRate, in.tempo, in.ppq, in.playing, in.connected});
-
-        // The node: what the host staged, each Game Boy's MI.OUT a byte a message at frame 0 as its serialOut carries
-        // it, then one block as the engine runs it.
         stagedMidi = in.midi;
         stagedController = in.controller;
         connected = in.connected;
@@ -330,7 +324,7 @@ struct KernelRig {
         controllerOut.clear();
         scripts.beginBlock();
         host->processBlock(in.frames, rp_transport{kRate, in.tempo, in.ppq, in.playing ? std::uint32_t{RP_TRANSPORT_PLAYING} : 0u});
-        compare();
+        record(in.frames);
         ++blocks;
     }
     void run(BlockIn in, int count) {
@@ -343,75 +337,32 @@ struct KernelRig {
         }
     }
 
-    // Today's bytes for a Game Boy's serial input, as a frame-ordered queue carries them.
-    std::vector<Message> carried(std::vector<Message> ms, const std::string& port) {
-        for (std::size_t i = 1; i < ms.size(); ++i)
-            if (ms[i].frame < ms[i - 1].frame) {
-                ms[i].frame = ms[i - 1].frame;
-                ++raised[port];
-            }
-        return ms;
-    }
-    // The ports whose frames a queue raised.
-    std::set<std::string> raisedAt() const {
-        std::set<std::string> at;
-        for (const auto& [port, count] : raised) at.insert(port);
-        return at;
-    }
-
-    void compare() {
-        INFO("block " << blocks);
+    // The block's outputs into the digest: each system's four, in structure order, then the host's two.
+    void record(std::uint32_t frames) {
+        digest.u32(static_cast<std::uint32_t>(blocks));
+        digest.u32(frames);
         for (const System& s : structure.systems) {
-            INFO("system " << s.id);
-            std::vector<Message> serialIn, midi, bytes, buttons;
-            for (const auto& e : today.serialIn_)
-                if (e.system == s.id) serialIn.push_back({e.frame, {e.byte}, 0});
-            for (const auto& e : today.coreMidi_)
-                if (e.system == s.id) midi.push_back({e.frame, e.data, 0});
-            for (const auto& e : today.coreBytes_)
-                if (e.system == s.id) bytes.push_back({e.frame, e.data, e.flush ? std::uint32_t{RP_MESSAGE_FLUSH} : 0u});
-            for (const auto& e : today.buttonOut_)
-                if (e.system == s.id) {
-                    CHECK(e.frame == 0);  // the kernel presses at frame 0, and the core takes a press with no frame
-                    buttons.push_back({0, {static_cast<std::uint8_t>(e.button), static_cast<std::uint8_t>(e.down ? 1 : 0)}, 0});
-                }
-            const std::string id = std::to_string(s.id);
-            const Probe& in = node<Probe>("in-" + id);
-            const Probe& io = node<Probe>("io-" + id);
-            CHECK(text(serialBytes(in.bytes)) == text(s.serialOut ? carried(serialIn, "sys-" + id + ".serialIn") : serialIn));
-            CHECK(text(in.events) == text(midi));
-            CHECK(text(io.bytes) == text(bytes));
-            CHECK(text(io.events) == text(buttons));
-            seen.serialIn += static_cast<int>(serialIn.size());
-            seen.midi += static_cast<int>(midi.size());
-            seen.bytes += static_cast<int>(bytes.size());
-            seen.buttons += static_cast<int>(buttons.size());
+            digest.u32(s.id);
+            const Probe& in = node<Probe>("in-" + std::to_string(s.id));
+            const Probe& io = node<Probe>("io-" + std::to_string(s.id));
+            const std::vector<Message> serialIn = serialBytes(in.bytes);  // a byte a message, as when recorded
+            for (const auto* ms : {&serialIn, &in.events, &io.bytes, &io.events}) digest.messages(*ms);
+            sent.serialIn += static_cast<int>(serialIn.size());
+            sent.midi += static_cast<int>(in.events.size());
+            sent.bytes += static_cast<int>(io.bytes.size());
+            sent.buttons += static_cast<int>(io.events.size());
         }
-        // Today addressed no system outside the structure, so nothing above went unread.
-        const auto known = [&](std::uint32_t id) {
-            return std::any_of(structure.systems.begin(), structure.systems.end(), [&](const System& s) { return s.id == id; });
-        };
-        for (const auto& e : today.serialIn_) CHECK(known(e.system));
-        for (const auto& e : today.coreMidi_) CHECK(known(e.system));
-        for (const auto& e : today.coreBytes_) CHECK(known(e.system));
-        for (const auto& e : today.buttonOut_) CHECK(known(e.system));
-
-        // One port for every system's host MIDI out, in emission order, the system its prefix's.
-        std::vector<Message> expected, got;
-        std::vector<std::uint32_t> expectedSystems, gotSystems;
-        for (const auto& m : today.midiOut_) {
-            expected.push_back({m.frame, m.data, 0});
-            expectedSystems.push_back(m.system);
-        }
+        digest.u32(static_cast<std::uint32_t>(midiOut.size()));
         for (const Out& m : midiOut) {
-            got.push_back({m.frame, m.data, 0});
-            gotSystems.push_back(m.system);
+            digest.u32(m.system);
+            digest.u32(m.frame);
+            digest.data(m.data);
         }
-        CHECK(text(got) == text(expected));
-        CHECK(gotSystems == expectedSystems);
-        CHECK(controllerOut == today.controllerOut_);
-        seen.midiOut += static_cast<int>(expected.size());
-        seen.controllerOut += static_cast<int>(today.controllerOut_.size());
+        digest.u32(static_cast<std::uint32_t>(controllerOut.size()));
+        for (const Bytes& c : controllerOut) digest.data(c);
+        sent.midiOut += static_cast<int>(midiOut.size());
+        sent.controllerOut += static_cast<int>(controllerOut.size());
+        sent.digest = digest.h;
     }
 
     // ---- the host I/O stand-in -----------------------------------------------------------------------------------
@@ -441,6 +392,12 @@ struct KernelRig {
         if (owns) scripts.setAudioThreadOwns(true);
         host->setAudioThreadOwns(owns);
         if (!owns) scripts.setAudioThreadOwns(false);
+    }
+
+    // What the case sent is what it sent when recorded.
+    void matches(const Sent& recorded) {
+        INFO("sent " << text(sent) << ", recorded " << text(recorded));
+        CHECK(sent == recorded);
     }
 
     // Nothing dropped, nothing faulted, and `throws` caught in all.
@@ -475,12 +432,19 @@ Bytes pad(int x, int y, int velocity = 100) {
 
 }  // namespace
 
-TEST_CASE("the kernel node hands every system the host MIDI today's kernel hands it, under every routing",
-          "[engine-graph][kernel-node]") {
+TEST_CASE("the kernel node hands every system its host MIDI, under every routing", "[engine-graph][kernel-node]") {
     // mGB forwards each byte to its serial port, the NES each message to its FIFO, a SysEx (longer than a MidiEvent)
     // included. The plugin stages a block's DAW events, then a moved automation slot's CC at frame 0.
     KernelRig rig({{routing("sendToAll")}, {gameBoy(1, kMgb), nes(2, {kNesMidi})}});
     rig.block({.midi = {{100, on(0, 60)}, {300, on(1, 62)}, {0, cc(0, 7, 100)}}});
+    // In frame order (rp.host.midi-in's sort), to both: each byte to mGB's serial port, each message to the NES.
+    std::vector<Message> bytes, messages;
+    for (const auto& [frame, m] : std::vector<std::pair<std::uint32_t, Bytes>>{{0, cc(0, 7, 100)}, {100, on(0, 60)}, {300, on(1, 62)}}) {
+        for (const std::uint8_t b : m) bytes.push_back({frame, {b}, 0});
+        messages.push_back({frame, m, 0});
+    }
+    CHECK(serialBytes(rig.node<Probe>("in-1").bytes) == bytes);
+    CHECK(rig.node<Probe>("in-2").events == messages);
     rig.block({.midi = {{5, off(0, 60)}, {5, on(0, 64)}, {5, on(2, 67)}, {1023, off(1, 62)}}});
     rig.block({.midi = {{10, {0xF0, 0x7D, 1, 2, 3, 4, 5, 6, 7, 0xF7}}, {0, {0xF8}}, {10, {0xFA}}}});
     for (std::uint32_t frames : {1u, 1u, 33u, 1u, 222u, 1u, 7u, 4096u, 2u})
@@ -492,9 +456,7 @@ TEST_CASE("the kernel node hands every system the host MIDI today's kernel hands
         rig.restructure({{routing(mode)}, {gameBoy(1, kMgb), nes(2, {kNesMidi})}});
         for (int ch = 0; ch < 8; ++ch) rig.block({.frames = 512, .midi = {{static_cast<std::uint32_t>(ch * 50), on(ch, 50 + ch)}}});
     }
-    CHECK(rig.seen.serialIn > 100);
-    CHECK(rig.seen.midi > 30);
-    CHECK(rig.raisedAt().empty());
+    rig.matches({123, 40, 0, 0, 0, 0, 0xf64c0bc85842f369ULL});
     rig.finish();
 }
 
@@ -548,12 +510,10 @@ TEST_CASE("the kernel node forwards a block that fills rp.host.midi-in, all of i
     CHECK(nesMidi.size() == messages.size());
     CHECK(text(serialIn) == text(bytes));
     CHECK(text(nesMidi) == text(messages));
-    CHECK(rig.raisedAt().empty());
     rig.finish();
 }
 
-TEST_CASE("the kernel node drives each LSDj sync mode as today's kernel does, MI.OUT and master sync among them",
-          "[engine-graph][kernel-node]") {
+TEST_CASE("the kernel node drives each LSDj sync mode, MI.OUT and master sync among them", "[engine-graph][kernel-node]") {
     KernelRig rig({{routing("sendToAll")},
                    {gameBoy(1, lsdj("midiSync", 1, true)), gameBoy(2, lsdj("midiSync", 2)), gameBoy(3, lsdj("midiSyncArduinoboy", 1, true)),
                     gameBoy(4, lsdj("midiMap")), gameBoy(5, lsdj("keyboardMidi")), gameBoy(6, lsdj("midiPassthrough")),
@@ -562,7 +522,8 @@ TEST_CASE("the kernel node drives each LSDj sync mode as today's kernel does, MI
     rig.block({.midi = {{0, on(0, 5)}, {40, on(0, 24)}, {41, on(0, 40)}, {90, on(0, 48)}, {91, on(1, 9)}}});
     rig.block({.midi = {{3, off(0, 5)}, {3, off(1, 9)}, {700, on(0, 72)}, {701, on(0, 27)}}});
     // The transport starts with a row note in the block: the Arduinoboy START and the clocks go out at frame 0 after
-    // the row byte (raised to its frame on the wire), and MI.MAP's clocks after its row.
+    // the row byte, and MI.MAP's clocks after its row, each raised to the row byte's frame on the wire (a frame-ordered
+    // queue), which SameBoy's serial queue, releasing only its front byte, cannot tell.
     rig.block({.ppq = 0.0, .playing = true, .midi = {{200, on(0, 31)}, {200, on(0, 7)}}});
     BlockIn playing{.frames = 1024, .ppq = 1024.0 / kBeat, .playing = true};
     rig.run(playing, 30);
@@ -590,16 +551,11 @@ TEST_CASE("the kernel node drives each LSDj sync mode as today's kernel does, MI
     }
     rig.block({.ppq = fast.ppq, .tempo = 174.0, .playing = false, .midi = {{0, on(0, 25)}, {0, on(0, 26)}}});
     rig.run({.frames = 2048, .ppq = fast.ppq}, 2);
-    CHECK(rig.seen.serialIn > 200);
-    CHECK(rig.seen.buttons > 0);  // autoStart's START press and release
-    CHECK(rig.seen.midiOut > 10);
-    // Arduinoboy's transport bytes and clocks, and MI.MAP's clocks, behind a row byte: on those two alone.
-    CHECK(rig.raisedAt() == std::set<std::string>{"sys-3.serialIn", "sys-4.serialIn"});
+    rig.matches({251, 0, 0, 4, 15, 0, 0x0a10ec5906e1dd97ULL});  // the buttons: autoStart's START press and release
     rig.finish();
 }
 
-TEST_CASE("the kernel node drives risa and smsggdj host sync, and a NES's host MIDI, as today's kernel does",
-          "[engine-graph][kernel-node]") {
+TEST_CASE("the kernel node drives risa and smsggdj host sync, and a NES's host MIDI", "[engine-graph][kernel-node]") {
     KernelRig rig({{routing("sendToAll")}, {nes(1, {kNesMidi, kRisa}), nes(2, {sms("sms")}), nes(3, {sms("gg")})}});
     rig.block({.midi = {{12, on(0, 60)}, {500, off(0, 60)}}});
     // A start partway into a phrase (an arm and START, flushing), clocks, a seek (a re-arm), an exact loop back to
@@ -616,14 +572,11 @@ TEST_CASE("the kernel node drives risa and smsggdj host sync, and a NES's host M
         rig.block(again);
         again.ppq += again.tempo / 60.0 * frames / kRate;
     }
-    CHECK(rig.seen.bytes > 50);
-    CHECK(rig.seen.midi > 0);
-    CHECK(rig.raisedAt().empty());
+    rig.matches({0, 3, 64, 0, 0, 0, 0x3db831405226989bULL});
     rig.finish();
 }
 
-TEST_CASE("the kernel node runs a controller session as today's kernel does: its surface, its launches, its LEDs",
-          "[engine-graph][kernel-node]") {
+TEST_CASE("the kernel node runs a controller session: its surface, its launches, its LEDs", "[engine-graph][kernel-node]") {
     // A Launchpad driving an emulated cart in MI.MAP (whose clock and launches go to its serial port), beside a
     // Game Boy decoding MI.OUT, so project-stage and system-stage host MIDI out interleave on one port.
     const auto structure = [](const std::string& target) {
@@ -655,14 +608,11 @@ TEST_CASE("the kernel node runs a controller session as today's kernel does: its
         play.controller.clear();
         play.ppq += 1024.0 / kBeat;
     }
-    CHECK(rig.seen.controllerOut > 20);
-    CHECK(rig.seen.serialIn > 100);
-    CHECK(rig.seen.midiOut > 40);
-    CHECK(rig.raisedAt().empty());
+    rig.matches({161, 0, 0, 0, 80, 35, 0x097e9ae8508f0a25ULL});
     rig.finish();
 }
 
-TEST_CASE("the kernel node keeps today's state across structure changes: survivors go on, a removed id is pruned",
+TEST_CASE("the kernel node keeps its state across structure changes: survivors go on, a removed id is pruned",
           "[engine-graph][kernel-node]") {
     // Every change moves the node's ports, so each is a reshape: the instance is kept (the rig checks) and setSystems
     // runs at the swap. A clock that survives does not restart; an id removed and added again starts afresh.
@@ -710,15 +660,13 @@ TEST_CASE("the kernel node keeps today's state across structure changes: survivo
     rig.restructure({first.project, {first.systems[1]}});
     play.midi = {{0, on(0, 65)}};
     step(1);
-    CHECK(rig.seen.serialIn > 50);
-    CHECK(rig.seen.bytes > 10);
-    CHECK(rig.raisedAt() == std::set<std::string>{"sys-3.serialIn"});  // Arduinoboy's clocks behind a row byte
+    rig.matches({57, 5, 18, 0, 0, 0, 0xd28fffd230a8c468ULL});
     rig.finish();
 }
 
-TEST_CASE("a throw in the kernel node's roles keeps what was sent before it and runs the next block, as today",
+TEST_CASE("a throw in the kernel node's roles keeps what was sent before it and runs the next block",
           "[engine-graph][kernel-node]") {
-    // No shipped role throws on what the kernel accepts, so the throw is injected: run after both bundles, in both
+    // No shipped role throws on what the kernel accepts, so the throw is injected: run after the bundle, in both
     // runtimes, Math.ceil throws for one value, which walkTicks reaches when the second system's clock first syncs,
     // at ppq 10.5 (tick 252). The first system has forwarded its MIDI by then; the third never runs that block.
     const std::string inject = R"JS(
@@ -732,15 +680,14 @@ TEST_CASE("a throw in the kernel node's roles keeps what was sent before it and 
     rig.block({.ppq = 10.5, .playing = true, .midi = {{4, on(0, 62)}}});
     CHECK(rig.scripts.throwCount() == 1);
     rig.run({.ppq = 10.5 + 1024.0 / kBeat, .playing = true, .midi = {{4, on(0, 64)}}}, 3);
-    CHECK(rig.seen.serialIn > 0);
-    CHECK(rig.raisedAt().empty());
+    rig.matches({18, 0, 0, 0, 0, 0, 0x420d378cfb9af0faULL});
     rig.finish(1);
 }
 
 TEST_CASE("the kernel node reshapes under a running audio thread, its instance kept through every structure change",
           "[engine-graph][kernel-node][stress]") {
-    // Today's kernel is not run here: this is the threading of the real node, its settings committed and setSystems
-    // run on the audio thread at each swap, while the control thread plans the next and reclaims the last.
+    // The threading of the real node, its settings committed and setSystems run on the audio thread at each swap, while
+    // the control thread plans the next and reclaims the last.
     const std::vector<Structure> structures{
         {{routing("sendToAll")}, {gameBoy(1, lsdj("midiSync")), nes(2, {kNesMidi, kRisa})}},
         {{routing("sendToAll"), launchpad("system", 1, "bar")}, {gameBoy(1, lsdj("midiMap")), nes(2, {kNesMidi, kRisa}), gameBoy(3, kMgb)}},

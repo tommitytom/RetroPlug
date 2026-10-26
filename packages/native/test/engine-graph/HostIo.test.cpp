@@ -238,24 +238,26 @@ TEST_CASE("rp.host.midi-in hands a NES its staged MIDI in frame order, ties in s
     CHECK(firstDifference(viaMidiIn, swapped) != SIZE_MAX);
 }
 
-TEST_CASE("rp.host.midi-in sorts and pushes the staged MIDI without allocating", "[engine-graph][host-io]") {
-    // Both of its paths: the merge of two runs (the plugin's staging: its DAW events, then automation's CCs at frame
-    // 0), and the sort it falls back to for more.
+TEST_CASE("the engine stages host MIDI, and rp.host.midi-in sorts and pushes it, without allocating", "[engine-graph][host-io]") {
+    // Both of midi-in's paths: the merge of two runs (the plugin's staging: its DAW events, then automation's CCs at
+    // frame 0), and the sort it falls back to for more.
     Engine e(kRate);
     REQUIRE(e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in")}, {})).ok);
+    const std::vector<std::uint8_t> note = noteOn(60), sysex{0xF0, 0x7D, 1, 2, 3, 4, 5, 6, 7, 0xF7};
     float l[64], r[64];
     float* outs[2] = {l, r};
     for (const auto& frames : {std::vector<std::uint32_t>{100, 300, 0, 0}, std::vector<std::uint32_t>{100, 300, 0, 100, 0}}) {
         INFO(frames.size() << " staged");
-        for (const std::uint32_t frame : frames) e.stageMidi(frame, noteOn(60));
-        // No warm-up: a path that allocates on its first call is caught too.
+        // No warm-up: a staging or a path that allocates on its first call is caught too. The staging holds what
+        // midi-in carries in a block from the engine's construction.
         rp::test::beginCountingAllocations();
+        for (const std::uint32_t frame : frames) e.stageMidi(frame, note);
+        e.stageMidi(7, sysex);
+        e.stageControllerMidi(note);  // no controller-in: dropped at the block's end
         e.processBlock(64, outs, 2);
         const auto counted = rp::test::endCountingAllocations();
         CHECK(counted.allocations == 0);
-        // The staged messages' own bytes, freed as the staging is cleared: each staged message owns its bytes
-        // (DspRuntime::MidiIn).
-        CHECK(counted.frees == static_cast<int>(frames.size()));
+        CHECK(counted.frees == 0);
     }
 }
 
@@ -297,6 +299,35 @@ TEST_CASE("rp.host.midi-in's order is std::stable_sort's by frame, for any stagi
         REQUIRE(midiInOrder(e, frames) == stableOrder(frames));
     }
     CHECK(e.droppedMessages() == 0);
+}
+
+TEST_CASE("host MIDI staged through the command ring is drained and taken without allocating on the block thread",
+          "[engine-graph][host-io]") {
+    // The ring carries a channel message inline: drained on the block thread, its bytes are copied into the staging.
+    Engine        e(kRate);
+    QueuedInvoker invoker(e);
+    REQUIRE(e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in")}, {})).ok);
+    float l[64], r[64];
+    float* outs[2] = {l, r};
+    invoker.setAudioThreadOwns(true);  // pushes queue for the block thread, which this thread is now
+    for (const std::uint32_t frame : {9u, 3u, 0u}) invoker.stageMidi(noteOn(60), frame);
+    REQUIRE(invoker.stageControllerMidi({0x90, 11, 127}));
+    rp::test::beginCountingAllocations();
+    invoker.drainInto(e);
+    e.processBlock(64, outs, 2);
+    const auto counted = rp::test::endCountingAllocations();
+    CHECK(counted.allocations == 0);
+
+    // And it was taken: a plan reading midi-in's output gets the next block's messages, and those alone.
+    REQUIRE(e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("midi-out", "rp.host.midi-out")},
+                                  {docWire("midi-in.midi", "midi-out.midi")}))
+                .ok);
+    invoker.stageMidi(tagged(4, {0xF8}), 5);
+    invoker.stageMidi(tagged(4, {0xFA}), 2);
+    invoker.drainInto(e);
+    e.processBlock(64, outs, 2);
+    invoker.setAudioThreadOwns(false);
+    CHECK(midiOut(e) == std::vector<Out>{{4, 2, {0xFA}}, {4, 5, {0xF8}}});
 }
 
 TEST_CASE("rp.host.midi-out lands each message in Engine::midiOut, tagged with the system its prefix names",
@@ -402,7 +433,7 @@ TEST_CASE("a block too long to run drops what was staged for it, without allocat
     e.processBlock(kLong, outs, 2);
     const auto counted = rp::test::endCountingAllocations();
     CHECK(counted.allocations == 0);
-    CHECK(counted.frees == 2);  // the two staged messages' own bytes
+    CHECK(counted.frees == 0);  // the staging is cleared, keeping its capacity: no message owns its bytes
     block(e);
     CHECK(midiOut(e).empty());
     CHECK(e.controllerOut().empty());

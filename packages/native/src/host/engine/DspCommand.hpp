@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <string>
 #include <vector>
 
 // A control-thread → audio-thread command for the engine, carried on the GraphHost's one ring as an
@@ -13,7 +12,7 @@
 // rare-op pattern. Structure never comes this way: TS sends it as graph documents.
 struct DspCommand {
     enum class Kind : std::uint8_t {
-        None = 0, SetSystems = 1, LoadKernel = 2, StageMidi = 3,
+        None = 0, StageMidi = 3,
         SetBpm = 7, SetTransport = 8, SetConfigField = 9, PressButton = 10,
         SetPpq = 12, StageControllerMidi = 13, WriteRam = 14,
         StageSystemMidi = 15,
@@ -25,8 +24,6 @@ struct DspCommand {
 
     Kind kind = Kind::None;
     union {
-        struct { std::string* json; } setSystems;                 // owning; audio thread deletes
-        struct { std::vector<std::uint8_t>* bytecode; } loadKernel; // owning; audio thread deletes
         // `len` bytes inline when the message fits; else `ext` OWNS the whole message (audio thread deletes)
         // and `len` is 0. `frame` places it in the next block. Also carries StageControllerMidi, which never uses
         // `ext` (a pad press is 3 bytes) and is always at frame 0.
@@ -37,8 +34,7 @@ struct DspCommand {
         struct { std::uint32_t id; std::uint8_t button; bool down; } pressButton; // joypad transition → core
         struct { double value; } setPpq;                         // host playhead jump (locate)
         // Host poke into a core's work RAM. Owning payload (a song block is ~7 KB, far past what the
-        // union can hold inline), freed by the audio thread after applying - the same rare-op pattern
-        // setSystems and loadKernel use.
+        // union can hold inline), freed by the audio thread after applying - the rare-op pattern above.
         struct { std::uint32_t id; std::uint32_t offset; std::vector<std::uint8_t>* bytes; } writeRam;
         // MIDI aimed at ONE system, delivered straight to its ingress and NEVER through the routing kernel.
         // That is the whole point: a menu knob has to reach the cart whose menu it is, whatever the project's

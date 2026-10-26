@@ -15,7 +15,7 @@ and system structure without interpreting either.
 This doc covers the role model and the DSP kernel end to end. For the runtime plumbing the kernel
 rides on — the command ring, the two QuickJS runtimes, the audio-thread ownership model — see
 [01-architecture.md](01-architecture.md); this doc references those concepts rather than
-re-explaining them. For the C++ `DspRuntime` runner that executes the kernel bytecode, see
+re-explaining them. For the C++ script host the kernel node runs in, see
 [02-native-host.md](02-native-host.md).
 
 ## The two role kinds
@@ -184,8 +184,9 @@ a spurious model restart).
 
 A **feature**-role config edit takes a different path: `setRoleConfig` updates TS state and calls
 `markDirty`, which fires the systems `onChange` → the project's `onSystemsChange`
-([projectStore.ts:62](../packages/retroplug/src/projectStore.ts#L62)) → `syncDspFromStore`,
-re-pushing the whole `KernelStructure` (its config rides inside the JSON). The core is never told. (A
+([projectStore.ts:62](../packages/retroplug/src/projectStore.ts#L62)) → the project publishes its
+graph, the kernel node's settings holding the whole `KernelStructure` (its config rides inside the
+JSON). The core is never told. (A
 menu/UI to *trigger* an LSDj-mode edit live is still a gap — see
 [07-remaining-work.md](07-remaining-work.md).)
 
@@ -262,40 +263,29 @@ is the single seam that turns "what the app has" into "what the DSP runs":
 
 It is pure and **registry-free** — the kernel self-guards scope, so a system's backend `sameboy` role
 projects through as dead bytes without needing to be filtered here.
-[`syncDspFromStore`](../packages/retroplug/src/appHost.ts#L32) wraps this and pushes the
-result to the DSP runtime; it is installed on `ProjectStore.onSystemsChange`, so every structural edit
-(and every feature-role config edit) re-drives the kernel.
+`ProjectStore.publishGraph` passes the result to `buildGraph`, which makes it the kernel node's
+settings, so every structural edit (and every edit to a role the kernel runs) re-drives the kernel.
 
-## Running on the bare DSP context
+## Running as a script node
 
-The kernel runs inside a **second, bare QuickJS context** (`DspRuntime`, no txiki) on the audio
-thread — distinct from the control-plane runtime; see [01-architecture.md](01-architecture.md) for the
-two-runtimes model. Three artifacts bridge control plane to that context:
+The kernel runs as the script node `rp.dsp.kernel`
+([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts), docs/modular-graph-phase-b3a-design.md
+section 4) inside the script host's **bare QuickJS audio context** (no txiki) on the audio thread,
+distinct from the control-plane runtime; see [01-architecture.md](01-architecture.md) for the
+two-runtimes model and [02-native-host.md](02-native-host.md) for the script host.
 
-**Control-plane client** —
-[dspRuntime.ts](../packages/retroplug/src/dspRuntime.ts). `createDspRuntime()` returns a
-`DspRuntimeClient` with `compileScript(source) → bytecode`, `loadKernel(bytecode)`, and
-`setSystems(struct)`. It rides the same `globalThis[Symbol.for("plugin")].__rpcSend` channel as
-`realBackend`, but is a **distinct capability from `Backend`** (it never joins that interface, so the
-mock stays clean). The seam is bytes only: the kernel crosses as QuickJS **bytecode**, the structure
-as a **JSON string** (`dspSetSystems`); a JS object never crosses. (Bytecode input crosses as a plain
-`number[]` because reflect-cpp's byte reader rejects a typed array.)
+**The bundle** ([script/bundle.ts](../packages/retroplug/src/script/bundle.ts)) is esbuilt to one
+IIFE, compiled to bytecode at build time and embedded in every native binary, so every Engine has the
+kernel node with no boot call. The node builds its **own** registry (**`dspRoles` only**: no core
+roles, no ROM providers).
 
-**Bare-context entry** —
-[dspKernelBundle.ts](../packages/retroplug/src/dspKernelBundle.ts). esbuild bundles this
-into one IIFE; native compiles it to bytecode. It builds its **own** registry (**`dspRoles` only** —
-no core roles, no ROM providers), wires the host-bound `pushSerialIn`/`emitMidiOut`/`pressButton`
-global thunks into a `SinkTarget`, and exposes the two globals native calls: `setSystems(json)` (once
-per structure change) and `processBlock(input)` (once per audio block).
-
-**Native runner** — `DspRuntime` (C++, see [02-native-host.md](02-native-host.md)) loads the bytecode
-(`loadKernel` = `JS_ReadObject` + `JS_EvalFunction`; re-loading hot-swaps the kernel), binds the three
-sink thunks, and drives `processBlock` per block.
-[`Engine::processBlock`](../packages/native/src/host/engine/Engine.cpp#L74) wires it in: when the DSP
-stage is active it builds a `BlockInfo` at the block-start `ppq_`, runs the kernel, then fans the
-system-addressed sinks to cores — `serialIn_` → each addressed core's serial FIFO, `buttonOut_` →
-`pressButton` — before the block renders. The kernel's host `midiOut_` is drained by the plugin after
-the block.
+**Its settings** are the kernel's structure (`KernelStructure`, plus whether each system has a
+`serialOut`), and a structure change reshapes it: the instance is kept and `setSystems` keeps each
+surviving id's state. **Its ports** are per system, named by id: it reads `midiIn`, `controllerIn`,
+`controllerConnected` and each Game Boy's `serialOut` of last block, builds the kernel's `BlockInput`
+at the block-start ppq, and its `SinkTarget` sends each sink call on the addressed system's
+`serialIn` / `midi` / `bytes` / `buttons` output (wired to that system node's input of the same name),
+or on `midiOut` / `controllerOut` (to the host output nodes).
 
 **Two registries, one kernel.** The control-plane registry (core + DSP + ROM providers) drives the
 stores and derives roles; the bare bundle's registry holds only the DSP behaviours. This is safe
@@ -304,8 +294,7 @@ system projects (including its `sameboy` system-role) is interpreted identically
 bundle knows that kind.
 
 **Plugin wiring.** [pluginControlPlane.ts](../packages/retroplug/src/pluginControlPlane.ts)
-composes it: `dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__))` (the bundle injected as a build
-define), then `project.setOnSystemsChange(() => syncDspFromStore(project, dsp))`.
+loads no kernel: the graph the project publishes carries the kernel node and its structure.
 
 ## Not yet built / deferred
 
@@ -345,17 +334,17 @@ TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
   sink ABI, `walkTicks`.
 - [kernelProjection.ts](../packages/retroplug/src/kernelProjection.ts) — store →
   `KernelStructure`.
-- [dspRuntime.ts](../packages/retroplug/src/dspRuntime.ts) /
-  [dspKernelBundle.ts](../packages/retroplug/src/dspKernelBundle.ts) — the DSP-context
-  client + bare-context entry.
-- [appHost.ts](../packages/retroplug/src/appHost.ts) — `buildAppRegistry` +
-  `syncDspFromStore`.
+- [script/kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts) /
+  [script/bundle.ts](../packages/retroplug/src/script/bundle.ts): the kernel as a script node, and
+  the bundle every Engine embeds.
+- [appHost.ts](../packages/retroplug/src/appHost.ts): `buildAppRegistry`.
 
 Native ([packages/native/src/](../packages/native/src/)):
 
-- [DspRuntime.hpp](../packages/native/src/host/dsp/DspRuntime.hpp) /
-  [DspRuntime.cpp](../packages/native/src/host/dsp/DspRuntime.cpp) — the bare-context runner + sink
-  thunks.
-- [Engine.cpp](../packages/native/src/host/engine/Engine.cpp#L74) — per-block wiring + sink-to-core fan.
-- [EngineRpcService.cpp](../packages/native/src/host/rpc/EngineRpcService.cpp#L111) — `applyRoleConfig`
-  (system-role only), `compileScript` / `dspLoadKernel` / `dspSetSystems`.
+- [ScriptHost.hpp](../packages/native/src/host/script/ScriptHost.hpp) /
+  [ScriptHost.cpp](../packages/native/src/host/script/ScriptHost.cpp): the script-node runtime the
+  kernel node runs in.
+- [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp): each system node's inputs,
+  applied before its core runs.
+- [EngineRpcService.cpp](../packages/native/src/host/rpc/EngineRpcService.cpp#L111): `applyRoleConfig`
+  (system-role only).

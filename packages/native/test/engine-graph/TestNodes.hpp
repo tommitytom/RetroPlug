@@ -20,6 +20,7 @@ struct Message {
     std::uint32_t             frame = 0;
     std::vector<std::uint8_t> data;
     std::uint32_t             flags = 0;  // RP_MESSAGE_*
+    bool operator==(const Message&) const = default;
 };
 
 // Pushes what the test queued in `next` for each output on its next block, in order, then forgets it. The outputs

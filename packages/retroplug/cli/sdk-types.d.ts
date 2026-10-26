@@ -444,7 +444,7 @@ export interface AudioDriver {
 
 // ─── The composition root a session drives (bootSession()). ──────────────────────────────────────────
 
-/** Everything a session drives: the wired control plane over the real backend. `registry`/`recent`/`dsp`
+/** Everything a session drives: the wired control plane over the real backend. `registry`/`recent`
  *  are wired for you and rarely touched directly in a ROM test. */
 export interface Session {
   backend: Backend;
@@ -452,7 +452,6 @@ export interface Session {
   audio: AudioDriver;
   registry: unknown;
   recent: unknown;
-  dsp: unknown;
 }
 
 /** Stand up the control plane the way every host does (backend + stores; the DSP kernel is built into the engine).

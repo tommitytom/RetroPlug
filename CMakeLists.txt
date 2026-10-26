@@ -58,7 +58,7 @@ endif()
 
 # Optional DSP-thread profiling instrumentation (spec/08-profiling.md). Like RETROPLUG_SANITIZE, use a
 # SEPARATE build dir (build-prof/, via tools/run-profile.sh) — never the load-bearing build/.
-# Activates the bare-QuickJS counting allocator + the dsp* profiling RPCs (DspRuntime.cpp guards on the
+# Activates the script host's audio-runtime profiling + the dsp* profiling RPCs (ScriptHost.cpp guards on the
 # RETROPLUG_PROFILE macro), and adds -g globally so valgrind (DHAT/Callgrind) attributes into quickjs.c.
 # Set here, before the dep subdirectories, so deps + src all get -g. The default build/ and the shipped
 # plugin never define this, so they carry zero profiling overhead.

@@ -9,7 +9,7 @@ collection — under an mGB + heavy-MIDI workload. The runtime model it profiles
 ## 1. The question
 
 The DSP kernel runs per audio block in a **bare QuickJS-ng 0.15.1** context on the audio thread
-([04-roles-dsp-kernel.md](04-roles-dsp-kernel.md) "Running on the bare DSP context"). We want to know
+([04-roles-dsp-kernel.md](04-roles-dsp-kernel.md) "Running as a script node"). We want to know
 what that runtime costs per block — specifically its **allocation behaviour** — so the RT audio path can
 be driven toward the ideal of *zero steady-state allocation*, and so a regression is caught
 automatically. The workload of interest is **mGB** (the GB MIDI synth, the simplest DSP path — a role
@@ -41,10 +41,15 @@ The kernel header comments claim "no per-block allocation" ([dspKernel.ts:56](..
 That holds **only for the top-level reused `Block` struct**; in practice two layers allocate every
 block, and the harness should expose this on day one.
 
-**Native marshalling** ([DspRuntime.cpp:135-202](../packages/native/src/host/dsp/DspRuntime.cpp#L135))
-rebuilds a fresh JS object graph each block: an `input` object + 5 props; a `midiIn` array (per event: an
-object + a nested `data` array + a JS int per byte); and `buttons`/`keys` arrays **created even when
-empty**. The whole graph is freed after the call → per-block garbage.
+**Native marshalling** (the native kernel stage's, before the kernel became a script node) rebuilt a fresh
+JS object graph each block: an `input` object + 5 props; a `midiIn` array (per event: an object + a
+nested `data` array + a JS int per byte); and `buttons`/`keys` arrays **created even when empty**. The
+whole graph was freed after the call → per-block garbage. The script host marshals with reused objects
+instead (a port's `Message[]` refilled in place, its payloads copied into one JS-owned buffer:
+[ScriptHost.cpp](../packages/native/src/host/script/ScriptHost.cpp) `fillMessages`), so an indexed-loop
+node allocates nothing per block; the kernel node then builds the kernel's `BlockInput` afresh
+([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts) `blockInput`), field for field as the
+native marshalling did, which is where that row's churn now is.
 
 **The TS kernel** ([dspKernel.ts:220-266](../packages/retroplug/src/dspKernel.ts#L220)) adds
 per block:
@@ -57,11 +62,9 @@ per block:
 | `routeBlock` inboxes + per-target event objects ([midiRouting.ts:68-73](../packages/retroplug/src/midiRouting.ts#L68)) | array graph + 1 `{frame,data}` per routed event |
 | `mgb` role `forEach` closures ([dspRoles.ts:23](../packages/retroplug/src/dspRoles.ts#L23)) | 2 nested arrow closures per call |
 
-The mGB **sink** path itself is clean — `pushSerialIn` crosses scalars via the C thunk
-([DspRuntime.cpp:17-29](../packages/native/src/host/dsp/DspRuntime.cpp#L17)) with no JS allocation, and
-`serialIn_` is a cleared-not-freed member vector — but everything upstream churns. (`emitMidiOut`
-[DspRuntime.cpp:32-56](../packages/native/src/host/dsp/DspRuntime.cpp#L32), which *does* allocate per
-call, is unused by mGB.)
+The mGB **sink** path itself is clean: the kernel node's `pushSerialIn` writes the byte into a reused
+one-byte view and sends it straight onto the plan's queue, with no JS allocation, but everything upstream
+churns.
 
 **The TS-kernel rows are now optimized away** (the "hoist the ctx/closures/filters/routing-Map out of the
 per-block path" pass): the per-system `SystemCtx` + its sink closures, the routed inboxes, and the
@@ -87,21 +90,22 @@ clock is what makes allocation and instruction counts **deterministic** (identic
 the property an agent/CI needs to tell a real regression from noise.
 
 The benchmark is a new `test-native/*.test.ts` run under `pnpm test:native` (which builds
-`retroplug-host` and injects the real compiled kernel as `__DSP_KERNEL_BUNDLE__` —
-[06-build-test.md](06-build-test.md)); copy [test-native/audio-render.test.ts](../packages/retroplug/test-native/audio-render.test.ts).
-Shape: `setSystems({ midi-routing + mgb })`, then per block *stage this block's MIDI →
-`renderAudio(oneBlock)`*. `renderAudio` also runs the SameBoy APU (C++), which dominates **wall-time** but
+`retroplug-host`, whose every Engine embeds the kernel node: [06-build-test.md](06-build-test.md)); copy
+[test-native/audio-render.test.ts](../packages/retroplug/test-native/audio-render.test.ts).
+Shape: a `mgb` pipeline per system and a `midi-routing` project stage (`DirectGraph.setPipeline` /
+`setProjectStages`), then per block *stage this block's MIDI → `renderAudio(oneBlock)`*. `renderAudio` also runs the SameBoy APU (C++), which dominates **wall-time** but
 contributes **zero JS heap** — so the JS allocation counts stay cleanly isolated even though wall-time
 does not.
 
 ### 4b. Primary signal: instrument QuickJS's own allocator (in-process, deterministic)
 
 The direct, deterministic answer to "what does the JS runtime allocate per block" is to count every
-allocation the DSP runtime makes. The DSP context ctor currently calls `JS_NewRuntime`
-([DspRuntime.cpp](../packages/native/src/host/dsp/DspRuntime.cpp) — binds 3 CFunctions after it); swap
-to **`JS_NewRuntime2(&mf, &stats)`** with a counting `JSMallocFunctions` wrapper (quickjs-ng shape:
-`js_calloc/js_malloc/js_free/js_realloc/js_malloc_usable_size`, `quickjs.h:451-457`). The wrapper bumps
-cumulative `alloc_calls`/`alloc_bytes`/`free_calls` + live/peak and delegates to libc.
+allocation the audio runtime makes. The script host makes it with **`JS_NewRuntime2(&mf, &counters)`**
+and a counting `JSMallocFunctions` wrapper (quickjs-ng shape:
+`js_calloc/js_malloc/js_free/js_realloc/js_malloc_usable_size`, `quickjs.h:451-457`;
+[ScriptHost.cpp](../packages/native/src/host/script/ScriptHost.cpp)). The wrapper bumps cumulative
+allocation, realloc and free calls and the bytes asked for (in every build: the native tests read them),
+and, in a profile build, the live and peak heap in usable bytes, and delegates to libc.
 
 - **Critical:** `js_malloc_usable_size` **must return the real platform usable size**
   (`malloc_usable_size`), or QuickJS's internal byte accounting and GC-threshold math break.
@@ -215,12 +219,22 @@ fan ignores sub-block frame anyway). True sub-block jitter would need a one-arg 
 
 ## 8. What was built
 
-- **Native allocator instrumentation** ([DspRuntime.hpp/.cpp](../packages/native/src/host/dsp/DspRuntime.cpp)):
-  a counting `JSMallocFunctions` installed via `JS_NewRuntime2` (the opaque is a `DspAllocCounters`
-  member; `js_malloc_usable_size` returns the real platform size so QuickJS's own accounting stays
-  valid), a per-`processBlock` allocation bracket (native aggregation → no per-block RPC), and
-  `allocStats()` / `resetAllocStats(disableAutoGc)` (pins `JS_SetGCThreshold(SIZE_MAX)`) / `runGc()`
-  (timed `JS_RunGC`). All behind `#ifdef RETROPLUG_PROFILE`; the `#else` path returns `enabled:false`.
+- **Native allocator instrumentation**, on the script host's audio runtime
+  ([ScriptHost.hpp/.cpp](../packages/native/src/host/script/ScriptHost.cpp)): the counting
+  `JSMallocFunctions` installed via `JS_NewRuntime2` (`js_malloc_usable_size` returns the real platform
+  size so QuickJS's own accounting stays valid), a per-Engine-block allocation bracket (`beginBlock` to
+  `endBlock`: native aggregation → no per-block RPC), and `allocStats()` /
+  `resetAllocStats(disableAutoGc)` (pins `JS_SetGCThreshold(SIZE_MAX)`) / `runGc()` (timed `JS_RunGC`).
+  The window, the live and peak heap and the block bracket are behind `#ifdef RETROPLUG_PROFILE`; the
+  `#else` path returns `enabled:false`. (Until the kernel became a script node they were the native kernel
+  stage's runtime's, bracketed per kernel call.)
+- **The trace window** (Tier B), on the same runtime: `traceReset(arm)` opens a window of nested wall-time
+  spans, recorded only while armed. Every script node's process is a `dsp-kernel` span holding `marshal`
+  (its block's transport) and `js-call` (its JS, inside which each input it reads is a `marshal` span and
+  the kernel node's roles add one each through the audio context's `spanBegin` / `spanEnd` /
+  `traceName` / `traceArmed` globals, bound only in a profile build); the Engine adds `apu-render` (the
+  plan from where its script nodes end) and `state-publish`. `dspTraceReset` / `dspTrace` /
+  `dspTraceNames` read it, and `tools/run-profile.sh trace` writes it as Chrome trace-event JSON.
 - **Introspection RPCs** — `dspAllocStats` / `dspResetAllocStats` / `dspRunGc` on the harness facet
   (`Engine` → `EngineRpcService`, reached directly through `engine_` in the quiescent `renderAudio`
   regime) and surfaced in [audioDriver.ts](../packages/retroplug/src/audioDriver.ts).
@@ -261,8 +275,8 @@ modes are out.
 ## 10. Key files
 
 Native ([packages/native/src/](../packages/native/src/)):
-- [DspRuntime.cpp](../packages/native/src/host/dsp/DspRuntime.cpp) — the bare QuickJS runner + sink
-  thunks + per-block C→JS marshalling; **where the allocator instrumentation goes**.
+- [ScriptHost.cpp](../packages/native/src/host/script/ScriptHost.cpp): the script-node runtime, its
+  per-block C→JS marshalling, and **where the allocator instrumentation and the trace window live**.
 - [Engine.cpp](../packages/native/src/host/engine/Engine.cpp#L74) — `processBlock` + `stageMidi` + the
   serial-in fan.
 - [EngineRpcService.cpp](../packages/native/src/host/rpc/EngineRpcService.cpp#L182) — `renderAudio`

@@ -70,7 +70,6 @@ retroplug_add_test_binary(
              test/audio/SameBoyModels.test.cpp         # every SameBoyModel (incl. SGB variants) boots + renders
              test/audio/EngineInvoker.test.cpp         # the command ring's inline slot + teardown payload frees
     LIBS     retroplug-backend                         # Engine + retroplug-core (SystemBase + the cores)
-    INCLUDES ${RP_QUICKJS_INCLUDE}                     # quickjs.h (via Engine.hpp → DspRuntime.hpp)
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
              RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
@@ -79,12 +78,11 @@ retroplug_add_test_binary(
 # Guards the engine's graph (docs/modular-graph-phase-b1-design.md, -b2-design.md, -b3a-design.md): each system
 # node renders exactly what its core renders driven directly, its inputs included, the engine places, re-arms and
 # frees what the documents TS builds say, the host I/O nodes and the cart mirror move what the hosts stage and
-# drain, TS nodes run behind the C ABI in the script host, the kernel script node does what today's kernel stage
-# does, and every document in buildGraph's goldens plans on it. A hidden bench times a script node per block.
+# drain, TS nodes run behind the C ABI in the script host, the kernel script node sends what it was recorded sending,
+# and every document in buildGraph's goldens plans on it. A hidden bench times a script node per block.
 # Every core in it powers on in a fixed state (test/engine-graph/Deterministic.cpp), so two identical cores agree.
 # CountingAllocator.cpp is shared with retroplug-graph-test, for the no-allocation checks. The script tests' bundle
-# (the authoring layer for their toy nodes) and today's DSP kernel bundle (the kernel node is held to it) are
-# embedded here alone: cmake/bundles.cmake, retroplug-script-test-bundle and retroplug-dsp-kernel-bundle.
+# (the authoring layer for their toy nodes) is embedded here alone: cmake/bundles.cmake, retroplug-script-test-bundle.
 retroplug_add_test_binary(
     NAME     retroplug-engine-graph-test
     SOURCES  test/engine-graph/Deterministic.cpp
@@ -97,7 +95,6 @@ retroplug_add_test_binary(
              test/engine-graph/BuildGraphGoldens.test.cpp
              test/graph/CountingAllocator.cpp          # replaces operator new / delete for this binary
              ${SCRIPT_TEST_BUNDLE_C}                    # rp_script_test_bundle
-             ${DSP_KERNEL_BUNDLE_C}                     # rp_dsp_kernel_bundle
     LIBS     retroplug-backend
     INCLUDES ${RP_QUICKJS_INCLUDE}
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
@@ -105,7 +102,7 @@ retroplug_add_test_binary(
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
              RP_BUILD_GRAPH_GOLDENS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/test/graph/golden/build-graph.json"
              RP_BUILD_TYPE="$<CONFIG>")                 # the bench prints the configuration it was built in
-add_dependencies(retroplug-engine-graph-test retroplug-script-test-bundle retroplug-dsp-kernel-bundle)  # the embedded bytecode first
+add_dependencies(retroplug-engine-graph-test retroplug-script-test-bundle)  # the embedded bytecode first
 
 # Guards the native file watcher (NativeFileWatcher over efsw): config.json + bindings/ recursive
 # detection, registered-ROM parent-dir watches, and the unregistered-file filter.

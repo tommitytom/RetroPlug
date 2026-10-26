@@ -16,7 +16,7 @@ class SystemFactory;
 class QueuedInvoker;
 namespace rp::kit { class KitCompiler; }  // fwd: lazy, kept out of the header (enkiTS/r8brain heavy)
 
-// The emulator surface (lifecycle / reads / DSP kernel / MIDI / transport) as a THIN RPC layer over
+// The emulator surface (lifecycle / reads / MIDI / transport / profiling) as a THIN RPC layer over
 // (SystemFactory + Engine + the one Invoker). No threading branches: every mutation just pushes onto
 // the invoker (which flushes inline when quiescent, or hands to the audio thread when it owns the
 // Engine); reads come from the snapshot registry, so they need no guard.
@@ -45,11 +45,6 @@ public:
 
     // (Live-core debug/inspection — getApuState/readCpu/breakpoints/trace/profiler/… — moved to
     // DebugRpcService; only the CLI binds that facet.)
-
-    // --- DSP-side JS runtime (the role kernel) ---
-    std::optional<rfl::Bytestring> compileScript(std::string source);
-    bool dspLoadKernel(std::vector<std::uint8_t> bytecode);
-    bool dspSetSystems(std::string json);
 
     // --- audio render / input drive / transport ---
     bool            pressButton(std::uint32_t id, std::uint32_t button, bool down);

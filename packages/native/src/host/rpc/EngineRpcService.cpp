@@ -13,7 +13,6 @@
 #include "host/engine/EngineInvoker.hpp"
 #include "system/mesen/MesenBackend.hpp"
 #include "system/sameboy/SameBoyBackend.hpp"
-#include "host/dsp/ScriptCompiler.hpp"
 #include "system/SystemFactory.hpp"
 
 #include "EmbeddedRoms.hpp"
@@ -236,22 +235,6 @@ RpcFrame EngineRpcService::getFrame(std::uint32_t id) {
         out.data.assign(p, p + f.data.size());
     }
     return out;
-}
-
-std::optional<rfl::Bytestring> EngineRpcService::compileScript(std::string source) {
-    auto bytecode = dsp::compileToBytecode(source);
-    if (!bytecode) return std::nullopt;
-    return toBytestring(*bytecode);
-}
-
-bool EngineRpcService::dspLoadKernel(std::vector<std::uint8_t> bytecode) {
-    invoker_.loadKernel(std::move(bytecode));
-    return true;  // applied now (direct) or on the audio thread; the DSP stage goes active there
-}
-
-bool EngineRpcService::dspSetSystems(std::string json) {
-    invoker_.setSystems(std::move(json));
-    return true;
 }
 
 bool EngineRpcService::pressButton(std::uint32_t id, std::uint32_t button, bool down) {
@@ -522,9 +505,9 @@ std::string renderBlocksRefusal(const RpcRenderBlocksRequest& req) {
             if (m.frame >= blk.frames)
                 return at + "MIDI at frame " + std::to_string(m.frame) + " is outside a " + std::to_string(blk.frames) + "-frame block";
             // A DAW delivers events frame-sorted, so unsorted input is left out of the baseline. (The plugin
-            // itself appends automation CCs at frame 0 after later host events and the kernel does not
-            // sort, so unsorted input IS a real plugin path; it is deliberately not recorded.) Ties keep
-            // their list order.
+            // itself appends automation CCs at frame 0 after later host events, which rp.host.midi-in sorts
+            // into place, so unsorted input IS a real plugin path, held by parity/host-midi-order; it is
+            // deliberately not recorded.) Ties keep their list order.
             if (m.frame < last)
                 return at + "MIDI frames go backwards (" + std::to_string(m.frame) + " after " + std::to_string(last) + ")";
             last = m.frame;

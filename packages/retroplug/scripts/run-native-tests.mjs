@@ -13,7 +13,7 @@ import { readdirSync, mkdirSync, existsSync, mkdtempSync, rmSync } from "node:fs
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, relative } from "node:path";
 import { tmpdir } from "node:os";
-import { build, buildSync } from "esbuild";
+import { build } from "esbuild";
 import { runPool, spawnBuffered, resolveJobs, stripRunnerFlags, flush, parseTap } from "./lib/testPool.mjs";
 import { checkSkipBaseline } from "./lib/skipBaseline.mjs";
 
@@ -48,20 +48,6 @@ if (!existsSync(HOST)) {
 
 const jobs = resolveJobs();
 const filter = stripRunnerFlags()[0];
-
-// Build the DSP role kernel once as a self-contained IIFE and inject its SOURCE into every test
-// (like __RESOURCES_DIR__ below). A test compiles+loads it into the native DSP runtime — the real
-// per-block program — instead of authoring an ad-hoc translator string.
-const DSP_KERNEL_BUNDLE = buildSync({
-  entryPoints: [join(PKG, "src/dspKernelBundle.ts")],
-  bundle: true,
-  format: "iife",
-  platform: "neutral",
-  mainFields: ["module", "main"],
-  target: "es2020",
-  write: false,
-  define: { "process.env.NODE_ENV": '"production"' },
-}).outputFiles[0].text;
 
 function walk(dir, out = []) {
   if (!existsSync(dir)) return out;
@@ -113,7 +99,6 @@ async function runOne({ file, slug }) {
         __RESOURCES_DIR__: JSON.stringify(RESOURCES_DIR),
         __REPO_RESOURCES_DIR__: JSON.stringify(REPO_RESOURCES_DIR),
         __RISA_SRC__: JSON.stringify(RISA_SRC),
-        __DSP_KERNEL_BUNDLE__: JSON.stringify(DSP_KERNEL_BUNDLE),
         // The parity suite's baselines live beside its cases; a recording re-runs its own bundle per case.
         __PARITY_DIR__: JSON.stringify(join(TEST_DIR, "parity").replaceAll("\\", "/")),
         __SELF_BUNDLE__: JSON.stringify(outFile.replaceAll("\\", "/")),

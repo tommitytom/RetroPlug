@@ -1,14 +1,12 @@
-// The DSP kernel as a script node (docs/modular-graph-phase-b3a-design.md section 4): today's DspKernel, with the
-// registry the kernel bundle builds (dspKernelBundle.ts: the DSP roles, no core roles, no ROM providers), behind
-// defineNode. Its settings are the kernel's structure plus one fact per system, whether it has a serialOut (a Game
+// The DSP kernel as a script node (docs/modular-graph-phase-b3a-design.md section 4): today's DspKernel, with a
+// registry of the DSP roles alone (no core roles, no ROM providers), behind defineNode. Its settings are the kernel's structure plus one fact per system, whether it has a serialOut (a Game
 // Boy); its ports follow from them and are named by system id, so a structure change is a reshape: the instance is
 // kept, a surviving system's wires stay bound to its ports, and setSystems keeps today's rules (each surviving id's
 // clock and role scratch, every project stage's state; a removed id pruned).
 //
-// Each block builds the BlockInput DspRuntime::processBlock builds today, field for field and afresh, and the
-// kernel's sink calls go onto the output ports in emission order, where today's sink thunks append to vectors the
-// engine fans out to the cores: each straight, but for a system's serial-in bytes, which go a run of same-frame bytes
-// to a message.
+// Each block builds the BlockInput the native kernel stage built before it (packages/native, deleted after the flip),
+// field for field and afresh, and the kernel's sink calls go onto the output ports in emission order: each straight,
+// but for a system's serial-in bytes, which go a run of same-frame bytes to a message.
 import { z } from "zod";
 import { bytes, control, defineNode, events, startValue, type Block, type Message, type PortSpec } from "../graph/defineNode";
 import type { QueueCapacity } from "../graph/descriptor";
@@ -17,8 +15,7 @@ import type { MidiEvent } from "../midiRouting";
 import { RoleRegistry } from "../systemRoles";
 import { registerDspRoles } from "../dspRoles";
 
-/** The kernel node's type id, which the native kernel stage's node held before it: the engine registers that node no
- *  more. A document that names it with no settings plans as an empty kernel. */
+/** The kernel node's type id. A document that names it with no settings plans as an empty kernel. */
 export const KERNEL_NODE_TYPE = "rp.dsp.kernel";
 
 /** RP_MESSAGE_FLUSH (graph/rp_node.h): a bytes message the device takes only after dropping what it still holds. */
@@ -105,8 +102,7 @@ declare function traceName(label: number, kind: string): void;
 declare function traceArmed(): boolean;
 const traced = typeof spanBegin === "function" && typeof traceArmed === "function";
 
-// The DSP roles alone, as the kernel bundle registers them: a behaviour keeps its state in the kernel's scratch
-// bags, so every instance can share them.
+// The DSP roles alone: a behaviour keeps its state in the kernel's scratch bags, so every instance can share them.
 const registry = new RoleRegistry();
 registerDspRoles(registry);
 
@@ -123,7 +119,7 @@ function midiEvents(messages: readonly Message[]): MidiEvent[] {
   return out;
 }
 
-// The block's input, built as DspRuntime::processBlock builds it: the transport, controllerConnected only when true,
+// The block's input, built as the native kernel stage built it: the transport, controllerConnected only when true,
 // midiIn, empty buttons and keys (no host feeds them yet), every system's MI.OUT bytes from last block in slot order,
 // and controllerIn only when a surface sent something. Fresh every block, as today.
 function blockInput(b: Block, systems: readonly SystemPorts[]): BlockInput {

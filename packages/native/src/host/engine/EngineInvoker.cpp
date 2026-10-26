@@ -8,20 +8,6 @@
 
 bool QueuedInvoker::push(const DspCommand& c) { return engine_->pushCommand(c); }
 
-void QueuedInvoker::loadKernel(std::vector<std::uint8_t> bytecode) {
-    DspCommand c;
-    c.kind = DspCommand::Kind::LoadKernel;
-    c.loadKernel.bytecode = new std::vector<std::uint8_t>(std::move(bytecode));
-    if (!push(c)) delete c.loadKernel.bytecode;
-}
-
-void QueuedInvoker::setSystems(std::string json) {
-    DspCommand c;
-    c.kind = DspCommand::Kind::SetSystems;
-    c.setSystems.json = new std::string(std::move(json));
-    if (!push(c)) delete c.setSystems.json;
-}
-
 void QueuedInvoker::stageMidi(std::vector<std::uint8_t> bytes, std::uint32_t frame) {
     if (bytes.empty()) return;
     DspCommand c;

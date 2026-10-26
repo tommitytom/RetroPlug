@@ -19,7 +19,7 @@ it:
   `projectStore.ts`, `recentStore.ts`, `userConfigStore.ts`, `bindingsStore.ts`, plus the
   store-adjacent services `fileSelection.ts`, `fileWatcher.ts`, `sramAutoSave.ts`.
 - **Runtime / host seams** — `backend.ts` / `realBackend.ts` (control-plane RPC),
-  `dspRuntime.ts` (the DSP-context client), the composition roots
+  `audioDriver.ts` (the harness's render and profiling client), the composition roots
   `pluginControlPlane.ts` / `appStores.ts` / `appHost.ts`, and the React/LVGL `ui/` tree.
 
 Roles and the DSP role kernel are their own subject — **doc 04** covers them end to end;
@@ -294,9 +294,8 @@ host builds the *same* graph the *same* way.
 [`src/pluginControlPlane.ts`](../packages/retroplug/src/pluginControlPlane.ts) is
 evaluated once by the plugin host in its txiki context. It composes the whole store graph through
 `composeAppStores()` (backend + registry + recent + userConfig + bindings + project +
-fileSelection) plus `createDspRuntime()`, loads the DSP
-kernel (`dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__))`), and
-wires `project.setOnSystemsChange(() => syncDspFromStore(project, dsp))`.
+fileSelection). It loads no kernel: the DSP kernel is a script node every Engine has, and the
+graph the project publishes carries its structure.
 
 It then exposes the **string-only C++→JS surface** for project I/O — the plugin drives these
 directly with no further RPC:
@@ -333,9 +332,7 @@ and reopening the editor in a DAW showed the start menu instead of the loaded pr
 
 [`src/appHost.ts`](../packages/retroplug/src/appHost.ts) holds the wiring every host
 reuses: `buildAppRegistry()` assembles the control-plane role registry (core roles + DSP
-feature behaviours + ROM providers — see doc 04), and `syncDspFromStore(project, dsp)`
-([appHost.ts:32](../packages/retroplug/src/appHost.ts#L32)) projects the live systems
-into a kernel structure and pushes it — the callback installed on `onSystemsChange`.
+feature behaviours + ROM providers, see doc 04).
 
 ### The `__rp_*` UI↔native direct-hook pattern
 
@@ -540,13 +537,11 @@ Two concepts touched throughout this doc belong fully to **doc 04**:
   roles to a system by ROM identity ([`romProviders.ts`](../packages/retroplug/src/romProviders.ts),
   the TS twin of the native `RomSniffer`).
 - **The DSP role kernel.** [`src/dspKernel.ts`](../packages/retroplug/src/dspKernel.ts)
-  is compiled to bytecode and run inside a **second, bare QuickJS context** on the audio
-  thread — the distinct **DSP runtime**, never shared with the control-plane runtime.
-  [`src/dspRuntime.ts`](../packages/retroplug/src/dspRuntime.ts) is the control-plane
-  client that compiles/loads the kernel and pushes the system structure (as a JSON string) over
-  the same `__rpcSend` channel; it is a **distinct capability from `Backend`** so the mock
-  stays clean. [`kernelProjection.ts`](../packages/retroplug/src/kernelProjection.ts)
-  turns a `SystemView[]` + `midiRouting` into the kernel structure `syncDspFromStore` pushes.
+  runs as the script node [`src/script/kernelNode.ts`](../packages/retroplug/src/script/kernelNode.ts),
+  in the bundle every Engine embeds, inside the script host's **bare QuickJS audio context**: the
+  distinct runtime, never shared with the control-plane runtime.
+  [`kernelProjection.ts`](../packages/retroplug/src/kernelProjection.ts) turns a `SystemView[]` +
+  `midiRouting` into the kernel structure, which `buildGraph` makes the kernel node's settings.
 
 Doc 04 covers the byte-sink ABI, the per-system pipelines, the drift-exact PPQ clock in JS,
 and how the kernel runs on the bare context.
@@ -579,4 +574,4 @@ broader remaining feature gaps live in **doc 07**; this list is only the TS-laye
 | Services | [`src/fileSelection.ts`](../packages/retroplug/src/fileSelection.ts) · [`src/fileWatcher.ts`](../packages/retroplug/src/fileWatcher.ts) · [`src/sramAutoSave.ts`](../packages/retroplug/src/sramAutoSave.ts) |
 | Composition | [`src/pluginControlPlane.ts`](../packages/retroplug/src/pluginControlPlane.ts) · [`src/appStores.ts`](../packages/retroplug/src/appStores.ts) · [`src/appHost.ts`](../packages/retroplug/src/appHost.ts) |
 | UI | [`ui/main.tsx`](../packages/retroplug/ui/main.tsx) · [`ui/App.tsx`](../packages/retroplug/ui/App.tsx) · [`ui/screens/grid/`](../packages/retroplug/ui/screens/grid) · [`ui/screens/menu/`](../packages/retroplug/ui/screens/menu) · [`ui/lvgl/`](../packages/retroplug/ui/lvgl) · [`ui/app/`](../packages/retroplug/ui/app) · [`ui/host/`](../packages/retroplug/ui/host) · [`ui/hooks/`](../packages/retroplug/ui/hooks) |
-| DSP client (doc 04) | [`src/dspRuntime.ts`](../packages/retroplug/src/dspRuntime.ts) · [`src/kernelProjection.ts`](../packages/retroplug/src/kernelProjection.ts) |
+| DSP kernel (doc 04) | [`src/script/kernelNode.ts`](../packages/retroplug/src/script/kernelNode.ts) · [`src/kernelProjection.ts`](../packages/retroplug/src/kernelProjection.ts) |

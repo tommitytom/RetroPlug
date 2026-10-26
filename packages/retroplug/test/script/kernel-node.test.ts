@@ -1,6 +1,7 @@
 // The DSP kernel as a script node (src/script/kernelNode.ts): its settings, the ports they give, and where each of the
-// kernel's sink calls goes, over a stand-in for the script host's Block. That it does exactly what today's kernel
-// does, block for block, is held natively, against DspRuntime (packages/native/test/engine-graph/KernelNode.test.cpp).
+// kernel's sink calls goes, over a stand-in for the script host's Block. What it sends, block for block, is held
+// natively, to what it sent while the kernel stage it replaced ran beside it (packages/native/test/engine-graph/
+// KernelNode.test.cpp).
 import { test, expect } from "../../testing/harness";
 import type { Block, ControlStream, Message } from "../../src/graph/defineNode";
 import { DspKernel, type BlockInput } from "../../src/dspKernel";

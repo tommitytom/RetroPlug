@@ -6,20 +6,19 @@
 // Two tables. The first is the fixed cost of a script node's process call, marshalling included: chains of 1, 4, 16
 // and 64 trivial TS nodes (an events pass-through written with indexed loops) between a native source and sink, the
 // source sending nothing or one message a block. A node's cost is the chain's less the source wired straight to the
-// sink, over the node count. The second holds the kernel node in a plan against the kernel stage it replaced
-// (DspRuntime::processBlock and Engine::runKernelStage's fan-out), both driven as KernelNode.test.cpp drives them,
+// sink, over the node count. The second times the kernel node in a plan, driven as KernelNode.test.cpp drives it,
 // over one structure and input: mGB, an LSDj in MIDI sync and a NES on nes-n8-midi, every host message to all three,
 // the transport playing, a steady MIDI stream, and each Game Boy's MI.OUT as its system node carries it, reaching the
-// kernel a block after the core clocked it out (a feedback wire, as buildGraph wires it). Neither side runs a core:
-// today's fan-out counts each message where it would hand it to the core, and the plan's system stand-ins count what
-// reaches their inputs. The plan's native nodes alone (the same document with no kernel) are timed too, so the kernel
-// node's own share shows.
+// kernel a block after the core clocked it out (a feedback wire, as buildGraph wires it). No core runs: the plan's
+// system stand-ins count what reaches their inputs. The plan's native nodes alone (the same document with no kernel)
+// are timed too, so the kernel node's own share shows. (While the kernel stage the node replaced still existed,
+// 9c3c10f9, this table timed it too, over the same blocks: the node took about 1.4 to 1.65 times as long, with the
+// same JS allocations.)
 //
-// Each figure is a median of kRuns runs; a kernel run times today's stage, then the node over the same blocks.
-// Allocations are per block over every run: JS from the script host's audio runtime (today's runtime counts only in a
-// RETROPLUG_PROFILE build), native on the calling thread (CountingAllocator). It asserts that the work was done, never
-// a time: the messages came through, and each system took as many from the kernel node as from today's stage, a count
-// per input (serial in in bytes), not their frames, values or order, which KernelNode.test.cpp holds equal.
+// Each figure is a median of kRuns runs; a kernel run times the node, then its plan with no kernel, over the same
+// blocks. Allocations are per block over every run: JS from the script host's audio runtime, native on the calling
+// thread (CountingAllocator). It asserts that the work was done, never a time: the messages came through, counted per
+// system and input (serial in in bytes), and none reached a system in the plan with no kernel.
 //
 // Hidden from the normal run. Run it on its own: build/bin/retroplug-engine-graph-test "[bench]"
 
@@ -42,16 +41,9 @@
 #include "graph/HostNodes.hpp"
 #include "graph/Queue.hpp"
 #include "graph/nodes/CoreNodes.hpp"
-#include "host/dsp/DspRuntime.hpp"
 #include "host/graph/HostIoNodes.hpp"
 #include "host/graph/HostServices.hpp"
 #include "host/script/ScriptHost.hpp"
-
-// Today's kernel bundle (cmake/bundles.cmake, retroplug-dsp-kernel-bundle).
-extern "C" {
-extern const std::uint8_t  rp_dsp_kernel_bundle[];
-extern const std::uint32_t rp_dsp_kernel_bundle_size;
-}
 
 using rp::host::ScriptAllocations;
 using rp::host::ScriptHost;
@@ -89,22 +81,17 @@ double percentOfBudget(double us) { return 100.0 * us / kBudgetUs; }
 
 // What a stretch of blocks allocated, per block.
 struct Allocations {
-    bool   counted = true;  // false: the JS runtime does not count (today's, off-profile)
     double js = 0.0;        // JS allocations and reallocations
     double jsBytes = 0.0;
     double native = 0.0;    // operator new, on the calling thread
 };
 
 Allocations scriptDelta(const ScriptAllocations& a, const ScriptAllocations& b, int native, double blocks) {
-    return {true, static_cast<double>(b.allocs + b.reallocs - a.allocs - a.reallocs) / blocks,
+    return {static_cast<double>(b.allocs + b.reallocs - a.allocs - a.reallocs) / blocks,
             static_cast<double>(b.bytes - a.bytes) / blocks, native / blocks};
 }
 
-void printAllocations(const Allocations& a) {
-    if (a.counted) std::printf(" | %9.2f %9.1f", a.js, a.jsBytes);
-    else std::printf(" | %9s %9s", "n/a", "n/a");
-    std::printf(" %9.2f", a.native);
-}
+void printAllocations(const Allocations& a) { std::printf(" | %9.2f %9.1f %9.2f", a.js, a.jsBytes, a.native); }
 
 // ---- trivial nodes in a chain -----------------------------------------------------------------------------------
 
@@ -192,8 +179,9 @@ ChainRow timeChain(bool message, int n, std::uint32_t frames) {
 // A run, by block size: a few seconds of audio but at 1 frame, and enough blocks to time there.
 int kernelBlocks(std::uint32_t frames) { return frames == 1 ? 32768 : frames == 64 ? 8192 : 2048; }
 
-// kernelProjection's structure for the three: each pipeline holds only the roles with a DSP behaviour, the project
-// MIDI routing sending every message to all of them. The node's settings add which systems have a serialOut.
+// kernelProjection's structure for the three, as the kernel node's settings: each pipeline holds only the roles with a
+// DSP behaviour, the project MIDI routing sending every message to all of them, and each system says whether it has a
+// serialOut.
 struct BenchSystem {
     std::uint32_t id;
     const char*   pipeline;
@@ -206,14 +194,11 @@ const BenchSystem kSystems[] = {
 };
 constexpr std::size_t kSystemCount = std::size(kSystems);
 
-std::string structureJson(bool settings) {
+std::string settingsJson() {
     std::string out = R"({"project":[{"kind":"midi-routing","config":{"mode":"sendToAll"}}],"systems":[)";
-    for (std::size_t i = 0; i < kSystemCount; ++i) {
+    for (std::size_t i = 0; i < kSystemCount; ++i)
         out += (i ? "," : "") + std::string(R"({"id":)") + std::to_string(kSystems[i].id) + R"(,"pipeline":)" +
-               kSystems[i].pipeline;
-        if (settings) out += std::string(R"(,"serialOut":)") + (kSystems[i].gameBoy ? "true" : "false");
-        out += "}";
-    }
+               kSystems[i].pipeline + R"(,"serialOut":)" + (kSystems[i].gameBoy ? "true" : "false") + "}";
     return out + "]}";
 }
 
@@ -227,8 +212,14 @@ Bytes hostMessage(std::uint64_t m) {
     return {static_cast<std::uint8_t>(0x80 | channel), key, 0};
 }
 
+// One staged host message.
+struct Staged {
+    std::uint32_t frame = 0;
+    Bytes         data;
+};
+
 // Block k's staged host MIDI, frame-ordered, as the engine stages it.
-void stage(std::uint64_t k, std::uint32_t frames, std::vector<DspRuntime::MidiIn>& out) {
+void stage(std::uint64_t k, std::uint32_t frames, std::vector<Staged>& out) {
     out.clear();
     const std::uint64_t start = k * frames, end = start + frames;
     for (std::uint64_t m = (start + kMidiEvery - 1) / kMidiEvery; m * kMidiEvery < end; ++m)
@@ -261,7 +252,7 @@ struct SystemInputs {
     Counts counts;
     void process(const rp::Block&) noexcept {
         // Serial-in in bytes: the kernel node sends a run of same-frame bytes as one message, which the system node
-        // applies a byte at a time, and today's stage holds one entry a byte, so bytes are what both sides count.
+        // applies a byte at a time, so a byte is what a core takes.
         for (const rp_message& m : inputs.serialIn.messages()) counts.serialIn += m.size;
         counts.midi += inputs.midi.messages().size();
         counts.bytes += inputs.bytes.messages().size();
@@ -289,28 +280,21 @@ const rp_package* benchPackage() {
     return &kPackage;
 }
 
-// Today's kernel and the kernel node, each fed the same blocks.
+// The kernel node in its plan, or that plan with no kernel.
 struct KernelBench {
     std::uint32_t frames;
-    DspRuntime    today;
     // Before the graph, so it is destroyed after it: the kernel's shim hands its instance back to it.
     ScriptHost               scripts;
     rp::graph::NodeRegistry  registry;
     rp::graph::ResourceTable resources;
     // The engine's host I/O, standing in: what is staged for the block, and the host outputs counted.
-    const std::vector<DspRuntime::MidiIn>* staged = nullptr;
-    std::uint64_t                          midiOut = 0, controllerOut = 0;
+    const std::vector<Staged>* staged = nullptr;
+    std::uint64_t              midiOut = 0, controllerOut = 0;
     rp::host::EngineHostIo hostIo{this, &takeMidi, &takeNothing, &disconnected, &countMidiOut, &countControllerOut, &noCart};
     std::unique_ptr<rp::graph::GraphHost> host;
-    // Today's side: the MI.OUT the engine gathered for the block, and what the fan-out handed each core.
-    std::vector<DspRuntime::SerialOut> serialOut;
-    Counts                             todayCounts[kSystemCount];
 
     // `kernel`: false for the plan's native nodes alone.
     KernelBench(std::uint32_t blockFrames, bool kernel) : frames(blockFrames) {
-        REQUIRE(today.loadKernel(Bytes(rp_dsp_kernel_bundle, rp_dsp_kernel_bundle + rp_dsp_kernel_bundle_size)));
-        const std::string structure = structureJson(false);
-        REQUIRE(today.setSystems(Bytes(structure.begin(), structure.end())));
         const std::vector<ScriptHost::Chunk> chunks{ScriptHost::embeddedBundle()};
         std::string error;
         const bool loaded = scripts.load(chunks, &error);
@@ -330,7 +314,6 @@ struct KernelBench {
         const auto r = host->setGraph(document(kernel));
         for (const auto& e : r.errors) UNSCOPED_INFO(e.code << " at " << e.nodeId << "." << e.port << ": " << e.message);
         REQUIRE(r.ok);
-        serialOut.reserve(2 * kMaxFrames);
     }
     ~KernelBench() { host.reset(); }
 
@@ -341,7 +324,7 @@ struct KernelBench {
                                        node("midi-out", "rp.host.midi-out"), node("controller-out", "rp.host.controller-out")};
         std::vector<std::string> wires;
         if (kernel) {
-            nodes.push_back(node("kernel", "rp.dsp.kernel", structureJson(true)));
+            nodes.push_back(node("kernel", "rp.dsp.kernel", settingsJson()));
             wires = {wire("midi-in.midi", "kernel.midiIn"), wire("controller-in.midi", "kernel.controllerIn"),
                      wire("controller-in.connected", "kernel.controllerConnected"), wire("kernel.midiOut", "midi-out.midi"),
                      wire("kernel.controllerOut", "controller-out.midi")};
@@ -357,39 +340,8 @@ struct KernelBench {
         return graphJson(nodes, wires);
     }
 
-    // ---- today: DspRuntime::processBlock and runKernelStage's fan-out --------------------------------------------
-    void todayBlock(std::uint64_t k, const std::vector<DspRuntime::MidiIn>& midi) {
-        const std::uint64_t at = k * frames;
-        // Last block's MI.OUT, as the engine gathers it and the plan's feedback wire carries it.
-        serialOut.clear();
-        for (const BenchSystem& s : kSystems)
-            if (s.gameBoy && k > 0)
-                for (std::uint32_t n = clocked(at - frames, frames); n > 0; --n) serialOut.push_back({s.id, kIdle[0]});
-        today.midiOut_.clear();  // the engine clears the host outputs at the top of its block
-        today.controllerOut_.clear();
-        today.processBlock(midi, kNoButtons, kNoKeys, serialOut, kNoMidi,
-                           DspRuntime::BlockInfo{frames, kRate, kTempo, ppqAt(at), true, false});
-        midiOut += today.midiOut_.size();
-        controllerOut += today.controllerOut_.size();
-        // The fan-out, each core call a count: serial-in, then core MIDI, then core bytes, then buttons, each in
-        // emission order, the system found by id.
-        for (const auto& e : today.serialIn_)
-            if (Counts* c = todayFor(e.system)) ++c->serialIn;
-        for (const auto& e : today.coreMidi_)
-            if (Counts* c = e.data.empty() ? nullptr : todayFor(e.system)) ++c->midi;
-        for (const auto& e : today.coreBytes_)
-            if (Counts* c = e.data.empty() ? nullptr : todayFor(e.system)) ++c->bytes;
-        for (const auto& e : today.buttonOut_)
-            if (Counts* c = todayFor(e.system)) ++c->buttons;
-    }
-    Counts* todayFor(std::uint32_t id) {
-        for (std::size_t i = 0; i < kSystemCount; ++i)
-            if (kSystems[i].id == id) return &todayCounts[i];
-        return nullptr;
-    }
-
-    // ---- the node, in its plan, as the engine runs a block -------------------------------------------------------
-    void nodeBlock(std::uint64_t k, const std::vector<DspRuntime::MidiIn>& midi) {
+    // ---- the plan, as the engine runs a block ------------------------------------------------------------------
+    void block(std::uint64_t k, const std::vector<Staged>& midi) {
         staged = &midi;
         scripts.beginBlock();
         host->processBlock(frames, rp_transport{kRate, kTempo, ppqAt(k * frames), RP_TRANSPORT_PLAYING});
@@ -409,10 +361,6 @@ struct KernelBench {
     static void countMidiOut(void* ctx, std::uint32_t, std::uint32_t, const std::uint8_t*, std::size_t) { ++of(ctx).midiOut; }
     static void countControllerOut(void* ctx, const std::uint8_t*, std::size_t) { ++of(ctx).controllerOut; }
     static void noCart(void*, std::uint32_t, const std::uint8_t*, std::size_t, bool) {}
-
-    inline static const std::vector<DspRuntime::MidiIn>     kNoMidi{};
-    inline static const std::vector<DspRuntime::ButtonIn>   kNoButtons{};
-    inline static const std::vector<DspRuntime::KeyIn>      kNoKeys{};
 };
 
 struct KernelRow {
@@ -421,7 +369,7 @@ struct KernelRow {
 };
 
 struct KernelRows {
-    KernelRow     today, node, plan;  // plan: the node's plan with no kernel in it
+    KernelRow     node, plan;  // plan: the node's plan with no kernel in it
     Counts        delivered;          // to every system, by input, over every block run
     std::uint64_t blocks = 0;         // run, warm-up included
 };
@@ -431,7 +379,7 @@ KernelRows timeKernel(std::uint32_t frames) {
     KernelRows rows;
     KernelBench bench(frames, true), plan(frames, false);
     // Block k's staging, for the run's blocks, made before the run.
-    std::vector<std::vector<DspRuntime::MidiIn>> staged(static_cast<std::size_t>(std::max(blocks, kWarm)));
+    std::vector<std::vector<Staged>> staged(static_cast<std::size_t>(std::max(blocks, kWarm)));
     const auto prepare = [&](std::uint64_t first, int count) {
         for (int i = 0; i < count; ++i) stage(first + static_cast<std::uint64_t>(i), frames, staged[static_cast<std::size_t>(i)]);
     };
@@ -444,59 +392,44 @@ KernelRows timeKernel(std::uint32_t frames) {
         native += rp::test::endCountingAllocations().allocations;
         return us;
     };
-    const auto todayBlock = [&](std::uint64_t k, const auto& midi) { bench.todayBlock(k, midi); };
-    const auto nodeBlock = [&](std::uint64_t k, const auto& midi) { bench.nodeBlock(k, midi); };
-    const auto planBlock = [&](std::uint64_t k, const auto& midi) { plan.nodeBlock(k, midi); };
+    const auto nodeBlock = [&](std::uint64_t k, const auto& midi) { bench.block(k, midi); };
+    const auto planBlock = [&](std::uint64_t k, const auto& midi) { plan.block(k, midi); };
 
     int ignored = 0;
     prepare(0, kWarm);
-    runSide(todayBlock, 0, kWarm, ignored);
     runSide(nodeBlock, 0, kWarm, ignored);
     runSide(planBlock, 0, kWarm, ignored);
 
-    std::vector<double> todayUs, nodeUs, planUs;
-    int nativeToday = 0, nativeNode = 0, nativePlan = 0;
-    bench.today.resetAllocStats(false);  // a window for today's runtime, which counts only in a profile build
+    std::vector<double> nodeUs, planUs;
+    int nativeNode = 0, nativePlan = 0;
     const ScriptAllocations nodeBefore = bench.scripts.audioAllocations(), planBefore = plan.scripts.audioAllocations();
     std::uint64_t k = kWarm;
     for (int run = 0; run < kRuns; ++run, k += static_cast<std::uint64_t>(blocks)) {
         prepare(k, blocks);
-        todayUs.push_back(runSide(todayBlock, k, blocks, nativeToday));
         nodeUs.push_back(runSide(nodeBlock, k, blocks, nativeNode));
         planUs.push_back(runSide(planBlock, k, blocks, nativePlan));
     }
     const double measured = double{kRuns} * blocks;
-    rows.today.us = median(todayUs);
-    const DspAllocStats stats = bench.today.allocStats();
-    if (stats.enabled) {
-        REQUIRE(stats.blockCount == static_cast<std::uint64_t>(measured));
-        rows.today.allocations = {true, static_cast<double>(stats.allocCalls + stats.reallocCalls) / measured,
-                                  static_cast<double>(stats.allocBytes) / measured, nativeToday / measured};
-    } else {
-        rows.today.allocations = {false, 0.0, 0.0, nativeToday / measured};
-    }
     rows.node = {median(nodeUs), scriptDelta(nodeBefore, bench.scripts.audioAllocations(), nativeNode, measured)};
     rows.plan = {median(planUs), scriptDelta(planBefore, plan.scripts.audioAllocations(), nativePlan, measured)};
 
-    // Each system took as many from the kernel node as from today's stage, input by input (serial in in bytes):
-    // counts, not frames, values or order, which KernelNode.test.cpp holds equal block by block. Nothing here sends
-    // core bytes or presses a button, so those two are 0 on both sides.
+    // The kernel handed every system its messages, input by input (serial in in bytes), and with no kernel nothing
+    // reached any. Nothing here sends core bytes or presses a button, so those two are 0.
     for (std::size_t i = 0; i < kSystemCount; ++i) {
         INFO("system " << kSystems[i].id);
-        const Counts got = bench.nodeCounts(i), expected = bench.todayCounts[i];
-        CHECK(got == expected);
+        const Counts got = bench.nodeCounts(i);
         rows.delivered.serialIn += got.serialIn;
         rows.delivered.midi += got.midi;
         rows.delivered.bytes += got.bytes;
         rows.delivered.buttons += got.buttons;
         CHECK(plan.nodeCounts(i) == Counts{});
     }
-    CHECK(bench.todayCounts[0].serialIn > 0);  // mGB: the host MIDI, in bytes
-    CHECK(bench.todayCounts[1].serialIn > 0);  // the LSDj: its clocks
-    CHECK(bench.todayCounts[2].midi > 0);      // the NES: the host MIDI
-    CHECK(rows.delivered.bytes == 0);          // nothing here sends core bytes
-    CHECK(rows.delivered.buttons == 0);        // or presses a button
-    CHECK(bench.midiOut == 0);                 // or sends host MIDI out
+    CHECK(bench.nodeCounts(0).serialIn > 0);  // mGB: the host MIDI, in bytes
+    CHECK(bench.nodeCounts(1).serialIn > 0);  // the LSDj: its clocks
+    CHECK(bench.nodeCounts(2).midi > 0);      // the NES: the host MIDI
+    CHECK(rows.delivered.bytes == 0);         // nothing here sends core bytes
+    CHECK(rows.delivered.buttons == 0);       // or presses a button
+    CHECK(bench.midiOut == 0);                // or sends host MIDI out
     CHECK(bench.host->droppedMessages() == 0);
     CHECK(bench.scripts.throwCount() == 0);
     CHECK(bench.scripts.liveInstances() == 1);
@@ -535,30 +468,27 @@ void chainTable() {
 }
 
 void kernelTable() {
-    std::printf("\nthe kernel node against today's kernel stage: mGB, an LSDj in MIDI sync and a NES on nes-n8-midi, routing "
-                "sendToAll; playing at %.0f bpm; a host message every %llu frames; each Game Boy's MI.OUT a byte every 8 "
-                "frames\n",
+    std::printf("\nthe kernel node: mGB, an LSDj in MIDI sync and a NES on nes-n8-midi, routing sendToAll; playing at %.0f "
+                "bpm; a host message every %llu frames; each Game Boy's MI.OUT a byte every 8 frames\n",
                 kTempo, static_cast<unsigned long long>(kMidiEvery));
-    std::printf("today: DspRuntime::processBlock + runKernelStage's fan-out; node: its plan (the host I/O nodes, the kernel "
-                "node, each Game Boy's serialOut, a stand-in for each system's inputs); plan: that plan with no kernel\n");
-    std::printf("no core runs on either side; today's runtime counts JS allocations only in a RETROPLUG_PROFILE build\n");
+    std::printf("node: its plan (the host I/O nodes, the kernel node, each Game Boy's serialOut, a stand-in for each "
+                "system's inputs); plan: that plan with no kernel; no core runs\n");
     std::printf("%6s  %-20s %6s | %9s %9s %9s | %9s %9s %9s\n", "frames", "path", "blocks", "us/block", "%1-frame", "%own",
                 "JS allocs", "JS bytes", "native");
     for (const std::uint32_t frames : kBlockSizes) {
         const KernelRows rows = timeKernel(frames);
         const int blocks = kernelBlocks(frames);
-        for (const auto& [path, row] : {std::pair{"today's kernel stage", rows.today}, std::pair{"kernel node, plan", rows.node},
-                                        std::pair{"plan, no kernel", rows.plan}}) {
+        for (const auto& [path, row] : {std::pair{"kernel node, plan", rows.node}, std::pair{"plan, no kernel", rows.plan}}) {
             std::printf("%6u  %-20s %6d", frames, path, blocks);
             printTime(row.us, frames);
             printAllocations(row.allocations);
             std::printf("\n");
         }
         const auto count = [](std::uint64_t n) { return static_cast<unsigned long long>(n); };
-        std::printf("%6s  node / today %.2f; the kernel node alone (node - plan) %.3f us; delivered in %llu blocks: %llu "
-                    "serial-in bytes, %llu MIDI messages, %llu core-byte messages, %llu button presses\n",
-                    "", rows.node.us / rows.today.us, rows.node.us - rows.plan.us, count(rows.blocks), count(rows.delivered.serialIn),
-                    count(rows.delivered.midi), count(rows.delivered.bytes), count(rows.delivered.buttons));
+        std::printf("%6s  the kernel node alone (node - plan) %.3f us; delivered in %llu blocks: %llu serial-in bytes, %llu MIDI "
+                    "messages, %llu core-byte messages, %llu button presses\n",
+                    "", rows.node.us - rows.plan.us, count(rows.blocks), count(rows.delivered.serialIn), count(rows.delivered.midi),
+                    count(rows.delivered.bytes), count(rows.delivered.buttons));
     }
 }
 

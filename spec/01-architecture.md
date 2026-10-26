@@ -70,7 +70,7 @@ glance:
 | Service | Facet(s) | Concern | Thread |
 |---|---|---|---|
 | [`HostRpcService`](../packages/native/src/host/rpc/HostRpcService.hpp) | `host` | filesystem, config dir, zip/unzip — stateless, pure | control |
-| [`EngineRpcService`](../packages/native/src/host/rpc/EngineRpcService.hpp) | `emulator` + `dsp-kernel` + `harness` | build cores and place them (`buildCore` / `setGraph`), reads, kernel load, MIDI, transport, render/profile | control (pushes mutations) |
+| [`EngineRpcService`](../packages/native/src/host/rpc/EngineRpcService.hpp) | `emulator` + `harness` | build cores and place them (`buildCore` / `setGraph`), reads, MIDI, transport, render/profile | control (pushes mutations) |
 | [`DebugRpcService`](../packages/native/src/host/rpc/DebugRpcService.hpp) | `debug` | live-core inspection / stepping / breakpoints (CLI only — [09-cli-debugging.md](09-cli-debugging.md)) | control |
 | [`AudioDriverRpcService`](../packages/native/src/host/rpc/AudioDriverRpcService.hpp) | `driver` | background audio thread (`startAudio`/`stopAudio`/`audioCaptured`/`drainReleased`) | control; owns `audioThread_` (**test host only**) |
 
@@ -89,7 +89,7 @@ goes through the command ring; all audio→control observation goes through the 
 
 | | **Control plane** (main / UI thread) | **Audio thread** (DPF `run()` / spawned `audioThread_`) |
 |---|---|---|
-| QuickJS runtime | control-plane txiki host ([`TjsHostRuntime`](../packages/native/plugin/PluginDSP.cpp)) | bare DSP context ([`DspRuntime`](../packages/native/src/host/dsp/DspRuntime.hpp), owned by `Engine::dsp_`) |
+| QuickJS runtime | control-plane txiki host ([`TjsHostRuntime`](../packages/native/plugin/PluginDSP.cpp)) | the script host's bare audio context ([`ScriptHost`](../packages/native/src/host/script/ScriptHost.hpp), owned by the Engine's graph) |
 | Owns | the RPC services + their facets, the TS stores and the graph they publish (`EngineGraph`), the editor | the live [`Engine`](../packages/native/src/host/engine/Engine.hpp): the running plan (its system nodes, each owning its core) + the DSP kernel, **while running** |
 | Does | issues mutation *requests*; plans structure into graph documents; reads snapshots by id; frees replaced plans and the cores only they held | drains the command ring, adopting plans in order; runs the plan each block; publishes snapshots |
 | Never | dereferences a live `SystemBase` while audio runs; frees a core a running plan holds | builds or frees a core or a plan, or blocks |
@@ -322,38 +322,32 @@ The host runs **two** QuickJS runtimes that are never shared:
 
 | | **Control-plane runtime** | **DSP context** |
 |---|---|---|
-| Type | txiki full host ([`TjsHostRuntime`](../packages/native/plugin/PluginDSP.cpp)) | bare QuickJS, no txiki ([`DspRuntime`](../packages/native/src/host/dsp/DspRuntime.hpp)) |
-| Owner | the host (plugin / test host / UI harness) | `Engine::dsp_` |
-| Runs | the TS control-plane bundle: stores, `Backend` adapter, `__rp_*` globals, editor | the DSP role kernel [`dspKernel.ts`](../packages/retroplug/src/dspKernel.ts), compiled to bytecode |
+| Type | txiki full host ([`TjsHostRuntime`](../packages/native/plugin/PluginDSP.cpp)) | bare QuickJS, no txiki ([`ScriptHost`](../packages/native/src/host/script/ScriptHost.hpp)) |
+| Owner | the host (plugin / test host / UI harness) | the Engine's graph |
+| Runs | the TS control-plane bundle: stores, `Backend` adapter, `__rp_*` globals, editor | the script nodes, the DSP role kernel [`dspKernel.ts`](../packages/retroplug/src/dspKernel.ts) among them, from a bundle embedded as bytecode |
 | Thread | control plane only | whichever thread drives the block |
 | Data | full JS objects over `__rpcSend` | **bytes only** — a JSValue never crosses out |
 
-The **DSP context** is a deliberately minimal runner. Native loads the kernel as bytecode
-(`JS_ReadObject` + `JS_EvalFunction`; re-loading hot-swaps it), pushes the system structure once
-via a global `setSystems(json)`, and calls a global `processBlock(input)` per block. The kernel
-drives three bound C-function sink thunks, all **system-addressed** so one context serves every
-system: `pushSerialIn(system, frame, byte)`, `emitMidiOut(system, frame, [bytes])`,
-`pressButton(system, frame, button, down)`. Native is "a dumb, role-agnostic runner … fed only
-by bytes" — it owns no role logic. In particular, **the drift-exact PPQ tick clock lives entirely
-in JS** (`walkTicks`); native no longer owns any `nextTick`/`eachTick` primitive. The kernel, its
-byte-sink ABI, and the role model are specified in [04-roles-dsp-kernel.md](04-roles-dsp-kernel.md).
+The **audio context** is the [script host](../packages/native/src/host/script/ScriptHost.hpp)'s
+(docs/modular-graph-phase-b3a-design.md section 2): every Engine loads the embedded script-node
+bundle into it (and into a second, control-side context that only validates settings) at
+construction, and each script node of the plan is a native shim whose JS instance lives there. The
+DSP kernel is one: the `rp.dsp.kernel` node ([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts)),
+its structure its settings, its inputs and outputs real wires from the host I/O nodes and to each
+system node's inputs. Native owns no role logic; in particular, **the drift-exact PPQ tick clock
+lives entirely in JS** (`walkTicks`). The kernel and the role model are specified in
+[04-roles-dsp-kernel.md](04-roles-dsp-kernel.md).
 
-The DSP context runs on **both** threads over its lifetime — the control thread on the pull-path
-`renderAudio`, the audio thread once running — so every entry re-anchors QuickJS's stack-overflow
-guard to the current thread with `JS_UpdateStackTop(rt_)` before entering JS, or a call from a
-different stack throws a spurious overflow
-([`DspRuntime.cpp:97-102`](../packages/native/src/host/dsp/DspRuntime.cpp#L97)).
+The audio context runs on **both** threads over its lifetime (the control thread on the pull-path
+`renderAudio`, the audio thread once running), so every entry re-anchors QuickJS's stack-overflow
+guard to the current thread with `JS_UpdateStackTop` before entering JS, or a call from a
+different stack throws a spurious overflow.
 
-`Engine::processBlock` wires it in as the plan's first step. The `rp.dsp.kernel` node
-([KernelNode.cpp](../packages/native/src/host/graph/KernelNode.cpp)) runs the Engine's kernel
-stage: if a kernel is loaded it builds a `BlockInfo` at the block-start ppq, calls
-`dsp_.processBlock(...)`, and fans the kernel's sinks (`serialIn_`, `coreMidi_`, `coreBytes_`,
-`buttonOut_`) to the addressed cores by id through the running plan's `SystemTable`. The plan then
-runs the system nodes, the mixing nodes and `rp.host.audio-out`, and `processBlock` finishes with
-the MI.OUT collection and `registry_.publishSystem(...)` for each system: the one place every
-driver funnels the block ([`Engine.cpp`](../packages/native/src/host/engine/Engine.cpp); the full
-order is in [02-native-host.md](02-native-host.md)). The kernel's host MIDI-out is drained by the
-plugin after the block and written to the DAW.
+`Engine::processBlock` runs the plan: the host I/O nodes, the kernel node, the system nodes, the
+mixing nodes and `rp.host.audio-out`, then `registry_.publishSystem(...)` for each system: the one
+place every driver funnels the block ([`Engine.cpp`](../packages/native/src/host/engine/Engine.cpp);
+the full order is in [02-native-host.md](02-native-host.md)). The kernel's host MIDI-out, through
+`rp.host.midi-out`, is drained by the plugin after the block and written to the DAW.
 
 ---
 
@@ -428,10 +422,10 @@ lost mutation.
 | [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp) | the POD command the ring carries as an opaque host command |
 | [`GraphHost.hpp`](../packages/native/src/graph/GraphHost.hpp) / [`.cpp`](../packages/native/src/graph/GraphHost.cpp) | the one command ring, the release ring of plans, `setGraph` / `drain` / `run` / `reclaim` |
 | [`buildGraph.ts`](../packages/retroplug/src/graph/buildGraph.ts) / [`engineGraph.ts`](../packages/retroplug/src/engineGraph.ts) | the engine's graph as TS builds it from the stores, and its publisher (the `ProjectStore`'s, or a `DirectGraph`'s or bare `SystemsStore`'s own) |
-| [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) / [`KernelNode.cpp`](../packages/native/src/host/graph/KernelNode.cpp) / [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp) | the cores as nodes (each owning its core), the kernel stage as a node, and the host services they ask for |
+| [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) / [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) / [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp) | the cores as nodes (each owning its core), the host I/O nodes and the cart mirror, and the host services they ask for |
 | [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) | the id-keyed read door; claim/publishSystem/read/release |
 | [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) | the single-threaded owner of the graph, the DSP kernel and the registry; `parkCore` / `setGraph`, `processBlock`, the command handler, `SyncTap` |
-| [`DspRuntime.hpp`](../packages/native/src/host/dsp/DspRuntime.hpp) / [`.cpp`](../packages/native/src/host/dsp/DspRuntime.cpp) | the bare DSP QuickJS context + byte-sink thunks |
+| [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp) | the script-node runtime: TS nodes behind the C ABI in two bare QuickJS contexts, and the audio runtime's profiling |
 | [`PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp) | plugin control-plane bring-up + the `run()` block driver |
 | [`PluginShared.hpp`](../packages/native/plugin/PluginShared.hpp) | the in-process editor↔control-plane handoff |
 | [`main.cpp`](../packages/native/src/main.cpp) | the standalone / native test host |

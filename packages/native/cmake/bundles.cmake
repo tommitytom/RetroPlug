@@ -87,21 +87,3 @@ add_custom_target(retroplug-script-test-bundle
 if(TARGET ${_TJSC_DEP})
   add_dependencies(retroplug-script-test-bundle ${_TJSC_DEP})
 endif()
-
-# Today's DSP kernel bundle (src/dspKernelBundle.ts, which the control plane compiles and loads into the engine's
-# DspRuntime at boot), by the same recipe, embedded only in retroplug-engine-graph-test (cmake/tests.cmake): the
-# kernel script node is held to it there, block by block, while both exist. rp_dsp_kernel_bundle[] + _size.
-set(DSP_KERNEL_BUNDLE_JS "${CMAKE_BINARY_DIR}/native/dsp-kernel-bundle.js")
-set(DSP_KERNEL_BUNDLE_C  "${CMAKE_BINARY_DIR}/native/dsp-kernel-bundle_data.c")
-set_source_files_properties(${DSP_KERNEL_BUNDLE_C} PROPERTIES GENERATED TRUE)
-add_custom_target(retroplug-dsp-kernel-bundle
-    BYPRODUCTS ${DSP_KERNEL_BUNDLE_JS} ${DSP_KERNEL_BUNDLE_C} ${DSP_KERNEL_BUNDLE_C}.new
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
-            ${CMAKE_SOURCE_DIR}/packages/retroplug/src/dspKernelBundle.ts ${DSP_KERNEL_BUNDLE_JS} iife
-    COMMAND ${_TJSC_COMMAND} -s -p rp_ -o ${DSP_KERNEL_BUNDLE_C}.new ${DSP_KERNEL_BUNDLE_JS}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${DSP_KERNEL_BUNDLE_C}.new ${DSP_KERNEL_BUNDLE_C}
-    COMMENT "Bundling today's DSP kernel for the kernel node's equivalence test (esbuild iife + global-code bytecode)"
-    VERBATIM)
-if(TARGET ${_TJSC_DEP})
-  add_dependencies(retroplug-dsp-kernel-bundle ${_TJSC_DEP})
-endif()

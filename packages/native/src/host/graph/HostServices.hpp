@@ -1,7 +1,6 @@
 #pragma once
 
-// The engine services the engine's nodes ask the host for through rp_host.get_interface. B3 dissolves the
-// kernel, and with it rp.engine.kernel/1.
+// The engine services the engine's nodes ask the host for through rp_host.get_interface.
 
 #include <cstddef>
 #include <cstdint>
@@ -31,19 +30,11 @@ struct HostCores {
     bool (*released)(void* ctx, SystemBase* core);
 };
 
-// The engine's kernel stage (section 3.3), run by the native kernel node (KernelNode.hpp), which no engine registers
-// since the script kernel took its type id. [audio]
-#define RP_ENGINE_KERNEL_INTERFACE "rp.engine.kernel/1"
-struct EngineKernel {
-    void* ctx;
-    void (*run)(void* ctx, std::uint32_t frames);
-};
-
 // The engine's host I/O (docs/modular-graph-phase-b3a-design.md section 3.3), for the rp.host I/O nodes and the cart
 // mirror: the hosts stage what they receive through the engine and drain what it sends after each block, and these
 // move it between that staging and the plan's queues. [audio], though not allocation-free: midiOut and controllerOut
-// each append one std::vector per message to the buffers the hosts drain, as today's kernel sinks do. A flat staging
-// arena, as the staged host MIDI becomes later, is the fix.
+// each append one std::vector per message to the buffers the hosts drain, as the kernel stage's sinks did. A flat
+// arena, as the staged host MIDI's is (Engine::Staging), is the fix.
 #define RP_ENGINE_HOST_IO_INTERFACE "rp.engine.host-io/1"
 struct EngineHostIo {
     void* ctx;
@@ -65,9 +56,9 @@ struct EngineHostIo {
 };
 
 // The engine's sync trace (HostSyncTrace): a system node records the bytes its `bytes` input feeds the core's byte
-// device, as the kernel stage records its core-bytes sink, so across systems a block's bytes are in plan order, one
-// system's after another's, where the kernel stage's are in its emission order. The trace is a diagnostic, and
-// nothing reads that order. Nothing while the trace is off. [audio]
+// device, so across systems a block's bytes are in plan order, one system's after another's, where the kernel
+// stage's were in its emission order. The trace is a diagnostic, and nothing reads that order. Nothing while the
+// trace is off. [audio]
 #define RP_ENGINE_SYNC_TRACE_INTERFACE "rp.engine.sync-trace/1"
 struct EngineSyncTrace {
     void* ctx;

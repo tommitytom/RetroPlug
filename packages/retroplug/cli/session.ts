@@ -1,7 +1,7 @@
 // The CLI session runtime: the small composition root a session script boots against, plus
 // the runSession() wrapper that reports the process exit code. This is the TS-authored ergonomics layer
 // — a session imports { runSession } from here, and gets the whole control-plane API
-// (backend / project / dsp / audio) already wired the way the plugin and native tests wire it.
+// (backend / project / audio) already wired the way the plugin and native tests wire it.
 //
 // Authored in TS, esbuild-bundled to JS (tools/build-session.js), then run on the standalone
 // retroplug-cli binary (no Node at runtime). The binary provides the Backend over

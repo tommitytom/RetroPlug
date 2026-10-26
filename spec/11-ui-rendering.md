@@ -47,7 +47,7 @@ thin `parseRenderArgs → runRenderJob` wrapper (`--list-songs` stays CLI-only).
 
 ## RenderHost — the offline render environment (`packages/native/src/host/render/RenderHost.*`)
 
-A self-contained headless render: a **bare QuickJS** runtime (the `DspRuntime` pattern — raw
+A self-contained headless render: a **bare QuickJS** runtime (the script host's pattern: raw
 `JS_NewRuntime`, **no txiki / libuv**) + its **own** `Engine` + the in-process RPC bridge, running
 `worker.ts` compiled to **global-code bytecode** (`rp_render_worker_bundle`, esbuilt to an IIFE + `tjsc`
 without `-m`, embedded in `retroplug-backend`). It reproduces the CLI's `main()` service graph minus

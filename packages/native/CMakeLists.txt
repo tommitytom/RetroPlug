@@ -129,25 +129,23 @@ endif()
 
 # retroplug-backend: the Backend as a static library — everything except a host
 # entry point, so both the test host (retroplug-host) and the DPF plugin compose the SAME
-# Engine/Backend/DspRuntime. Includes + links are PUBLIC so consumers inherit them.
+# Engine/Backend/ScriptHost. Includes + links are PUBLIC so consumers inherit them.
 add_library(retroplug-backend STATIC
     src/host/rpc/HostRpcService.cpp         # fs / config / zip (+ opt-in efsw file watcher)
     src/host/rpc/NativeFileWatcher.cpp      # efsw watcher behind drainChangedPaths / setWatchedRoms
     src/host/rpc/EngineRpcService.cpp       # emulator surface over Engine + Invoker + Factory
     src/host/rpc/DebugRpcService.cpp        # live-core inspection over Engine (CLI-only facet)
     src/host/rpc/AudioDriverRpcService.cpp  # background audio thread + observation atomics
-    src/host/engine/Engine.cpp              # the engine: the graph + DspRuntime + the staged MIDI, runs blocks
+    src/host/engine/Engine.cpp              # the engine: the graph + the script host + the staged MIDI, runs blocks
     src/host/engine/SnapshotRegistry.cpp    # owned id-keyed frame/state/SRAM store — the control plane's one read door
     src/host/engine/EngineInvoker.cpp       # QueuedInvoker - the one mutation path to the Engine
     src/host/graph/SystemNodes.cpp          # the cores as rp.sameboy.gb / rp.mesen.* nodes
-    src/host/graph/KernelNode.cpp           # the kernel stage as rp.dsp.kernel
     src/host/graph/HostIoNodes.cpp          # rp.host.midi-in / -out, controller-in / -out, rp.n8.cart-mirror
     src/system/SystemFactory.cpp            # backend-agnostic build registry (the one build path)
     src/system/CoreBackends.cpp             # registerCoreBackends: mounts sameboy + mesen on a factory
     src/system/sameboy/SameBoyBackend.cpp   # SameBoy builder — the only place SameBoyConfig is constructed
     src/system/mesen/MesenBackend.cpp       # Mesen builder — NES + GBA (HLE BIOS), dispatched on platform
-    src/host/dsp/ScriptCompiler.cpp         # bare-QuickJS bytecode compiler (DSP-side JS runtime)
-    src/host/dsp/DspRuntime.cpp             # second bare QuickJS context — runs translator scripts
+    src/host/dsp/ScriptCompiler.cpp         # bare-QuickJS bytecode compiler (the engine-graph tests' toy nodes)
     src/host/script/ScriptHost.cpp          # the script-node runtime: TS nodes behind the C ABI, two bare contexts
     src/host/render/RenderHost.cpp          # bare-QuickJS render host (own Engine, runs the worker bundle)
     src/host/render/RenderJobRegistry.cpp   # background render jobs — one worker thread each, cancellable

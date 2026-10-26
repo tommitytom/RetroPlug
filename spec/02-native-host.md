@@ -55,7 +55,7 @@ stateless service instances that hold references to them:
 Each service's methods are mounted onto the rpcpp server as one or more **capability facets** by
 the `register*Rpc` functions in
 [`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp) (host,
-emulator, dsp-kernel, harness, debug, driver — `registerAllBackendRpc` mounts the full union).
+emulator, harness, debug, driver: `registerAllBackendRpc` mounts the full union).
 Registration is **cross-object** (`addMethod<&Service::m>(instance)`) and the **method name IS
 the wire name** — rpcpp derives each identifier from the member pointer — so the C++ signatures
 must match the TypeScript `Backend` surface field-for-field ([03-ts-layer.md](03-ts-layer.md)
@@ -145,9 +145,6 @@ themselves and refuse while the audio thread owns the engine. Every read routes 
 | `readSram` | `(uint32 id) → optional<Bytestring>` | SRAM sliced from the published savestate |
 | `screenshot` | `(uint32 id, string path) → bool` | encodes the registry frame to PNG |
 | `getFrame` | `(uint32 id) → RpcFrame` | registry frame, raw XRGB8888 |
-| `compileScript` | `(string source) → optional<Bytestring>` | `dsp::compileToBytecode` on a throwaway context |
-| `dspLoadKernel` | `(vector<uint8> bytecode) → bool` | `invoker_.loadKernel` (hot-swap) |
-| `dspSetSystems` | `(string json) → bool` | `invoker_.setSystems` |
 | `pressButton` | `(uint32 id, uint32 button, bool down) → bool` | joypad transition → the addressed core |
 | `renderAudio` | `(double ms) → Bytestring` | synchronous pull render, interleaved f32 L/R, into a graph TS built for 2 host channels; empty while the audio thread owns the engine or the running graph writes another width (as are `renderAudioPerSystem` / `renderAudioPerChannel`, for 2 channels per system or stream) |
 | `setTransport` / `setBpm` | `→ bool` | queued transport ops |
@@ -209,10 +206,12 @@ these follow is [modular-graph-phase-b1-design.md](../docs/modular-graph-phase-b
 ### `Engine`
 
 [`Engine`](../packages/native/src/host/engine/Engine.hpp) is single-threaded and thread-unaware.
-It owns the DSP kernel (`DspRuntime`) and its staging vectors (`pendingMidi_`,
-`pendingControllerMidi_`, `pendingSerialOut_`), the snapshot registry, the transport fields, and the
-graph the systems run on: a `NodeRegistry` holding the node packages (`rp.core`, `rp.host`,
-`rp.sameboy`, `rp.mesen`, `rp.dsp`), a `ResourceTable`, the
+It owns the staged host MIDI (`pendingMidi_`, `pendingControllerMidi_`: flat arenas, allocation-free
+while a block stages what its input nodes carry), the host outputs the plan fills (`midiOut_`,
+`controllerOut_`), the snapshot registry, the transport fields, and the graph the systems run on: the
+`ScriptHost` its script nodes (the DSP kernel among them) run in, a `NodeRegistry` holding the node
+packages (`rp.core`, `rp.host`, `rp.sameboy`, `rp.mesen`, `rp.host.io`, `rp.n8`, `rp.script`), a
+`ResourceTable`, the
 [`GraphHost`](../packages/native/src/graph/GraphHost.hpp) running the plan, the cores `buildCore`
 parked until a document places them, and every live core by id. Every op runs
 "now, on the calling thread"; it holds **no atomics**: transport and the ppq clock are plain members
@@ -225,16 +224,16 @@ block. The host has already drained the ring (`drainInto` → `Engine::drainComm
 
 1. `syncTrace_.beginBlock(...)` (inert unless `RETROPLUG_SYNC_TRACE` is set).
 2. `GraphHost::run(frames, transport, outputs, n)`: silence every host output, then run the plan:
-   1. **`rp.dsp.kernel`** ([KernelNode.cpp](../packages/native/src/host/graph/KernelNode.cpp)),
-      always the plan's first step, runs the Engine's kernel stage. If a kernel is loaded, build a
-      `BlockInfo` at the **block-start** `ppq_`, run `dsp_.processBlock(...)` over the staged MIDI,
-      the staged controller MIDI and last block's serial out, clear the three, and fan the kernel's
-      sinks to the cores by id through the plan's `SystemTable`, in this order: all of `serialIn_` →
-      `pushSerialIn`, then `coreMidi_` → `onMidi` (a message over 4 bytes goes down the raw byte path
-      instead), then `coreBytes_` → `pushCoreBytes`, then `buttonOut_` → `pressButton`. An unknown id
-      is skipped. What the cart system (`Engine::cartSystemId`: the table's first NES in slot order)
-      gets of `coreMidi_` and `coreBytes_` is mirrored to `coreByteSink_` first, for a physical N8
-      (a message staged straight at it, `StageSystemMidi`, too).
+   1. **The host inputs and the kernel.** `rp.host.midi-in` and `rp.host.controller-in` take what the
+      hosts staged (the host MIDI stable-sorted by frame). The DSP kernel, the script node
+      `rp.dsp.kernel` ([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts), run by the
+      [script host](../packages/native/src/host/script/ScriptHost.hpp)), reads them, the transport at
+      the **block-start** `ppq_` and each Game Boy's `serialOut` of last block (a feedback wire), and
+      sends each system's `serialIn`, `midi`, `bytes` and `buttons` on wires to that system node's
+      inputs, its host MIDI out to `rp.host.midi-out` and its control-surface out to
+      `rp.host.controller-out`. `rp.n8.cart-mirror`, wired from the first NES in slot order, hands what
+      that system gets to `coreByteSink_` for a physical N8 (a message staged straight at it,
+      `StageSystemMidi`, too).
    2. **The system nodes** ([SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp):
       `rp.sameboy.gb`, `rp.mesen.nes`, `rp.mesen.gba`, `rp.mesen.sms`), each a `SystemNode<T>` over a
       core's `prepareForBlock` / `stepIfBelowTarget` / `finishBlock`. An unlinked system is one
@@ -247,9 +246,8 @@ block. The host has already drained the ring (`drainInto` → `Engine::drainComm
    3. **The mixing nodes**, `rp.core.split` and `rp.core.add`: the routing, as wiring (below).
    4. **`rp.host.audio-out`**, which copies its buses into the host's buffers (it reaches them
       through `rp_host.get_interface("rp.host.audio-buffers/1")`).
-3. The MI.OUT collection: while a kernel is loaded, each Game Boy's serial-out bytes, systems in
-   slot order with each byte's frame dropped, into `pendingSerialOut_` for the kernel's next block
-   (one-block latency: the kernel runs first, and each SameBoy clears its log in `prepareForBlock`).
+3. What was staged and no node of the plan took (a plan with no `rp.host.midi-in` or
+   `controller-in`) is dropped, not carried into the next block.
 4. `registry_.publishSystem(...)` for each system of the plan, in slot order: copy its
    freshly-published frame/state/SRAM into the owned snapshot store.
 5. `syncTrace_.endBlock()`, then advance `ppq_` only if transport is running (so the kernel's
@@ -498,46 +496,32 @@ returns nullptr. Both call `onActivate` then `enableStateSnapshot`
 cores publish a tear-free savestate for the registry / Duplicate just like SameBoy. The `settings`
 blob carries the NES role-config (Region / Remove Sprite Limit / channel-export mode).
 
-## `DspRuntime` + `ScriptCompiler`: the bare DSP kernel runner
+## `ScriptHost` + `ScriptCompiler`: the script-node runtime
 
-Native runs the TypeScript DSP role kernel but understands nothing about roles — it is "a
-dumb, role-agnostic runner … fed only by bytes." The kernel itself
-([`dspKernel.ts`](../packages/retroplug/src/dspKernel.ts)) and its behaviour are
-04's topic; this doc covers the C++ runner.
+Native runs the TypeScript DSP role kernel but understands nothing about roles. The kernel itself
+([`dspKernel.ts`](../packages/retroplug/src/dspKernel.ts)) and its behaviour are 04's topic; it
+runs as a script node ([`kernelNode.ts`](../packages/retroplug/src/script/kernelNode.ts)), and this
+doc covers the C++ runtime under it (docs/modular-graph-phase-b3a-design.md section 2).
 
-[`DspRuntime`](../packages/native/src/host/dsp/DspRuntime.hpp#L28) owns a **second, bare
-QuickJS context** (no txiki — one of the two runtimes; see
-[01-architecture.md](01-architecture.md)), held by `Engine::dsp_`. The kernel bundle defines two
-globals when evaluated — `setSystems(json)` (the rarely-changing system structure, parsed once)
-and `processBlock(input)` (run one block) — and calls three bound C sink thunks as it runs, all
-**system-addressed** so one context drives every system
-([`DspRuntime.cpp`](../packages/native/src/host/dsp/DspRuntime.cpp)):
-
-| Thunk | Fills | Fanned to |
-|---|---|---|
-| [`pushSerialIn(system, frame, byte)`](../packages/native/src/host/dsp/DspRuntime.cpp#L17) | `serialIn_` | the addressed core's serial FIFO |
-| [`emitMidiOut(system, frame, [bytes])`](../packages/native/src/host/dsp/DspRuntime.cpp#L32) | `midiOut_` | the host (DAW) after the block |
-| [`pressButton(system, frame, button, down)`](../packages/native/src/host/dsp/DspRuntime.cpp#L60) | `buttonOut_` | the addressed core's joypad |
-
-**A `JSValue` never crosses out** — the runner reads back only these byte-addressed vectors,
-cleared at the top of each `processBlock`. The `DspRuntime` is set as the context opaque, so
-each thunk reaches its collector via `JS_GetContextOpaque`. The **drift-exact PPQ tick clock
-lives entirely in the JS kernel** (`walkTicks`) — native owns no `nextTick` / `eachTick`
-primitive; it only passes `BlockInfo { frames, sampleRate, tempo, ppqStart, transport }` in.
-
-`loadKernel` is `JS_ReadObject` + `JS_EvalFunction` on the bytecode, which runs the top-level
-code that defines the globals; re-loading hot-swaps the kernel. Every entry point re-anchors
-with [`JS_UpdateStackTop(rt_)`](../packages/native/src/host/dsp/DspRuntime.cpp#L102) because
-the driving thread differs (the control thread on the pull path, the audio thread while
-running), and QuickJS's stack-overflow guard is calibrated against the thread that created the
-runtime — without the re-anchor a call from a different stack throws a spurious overflow.
+[`ScriptHost`](../packages/native/src/host/script/ScriptHost.hpp) owns **two bare QuickJS
+runtimes** (no txiki; see [01-architecture.md](01-architecture.md)), one per Engine, both loaded at
+construction with the script-node bundle embedded as bytecode
+([`bundle.ts`](../packages/retroplug/src/script/bundle.ts)): a control-side one that only validates
+settings and gives a node's ports, and the audio-side one that holds every instance and runs
+`process`. Each script type is an `rp_node_type` of the package `rp.script`, its instances native
+shims the planner creates and destroys like any node's. A node reads its inputs and writes its
+outputs through one reused `Block` object, straight from and into the plan's queues, so **a `JSValue`
+never crosses out**. The **drift-exact PPQ tick clock lives entirely in the JS kernel**
+(`walkTicks`); native passes only the block's transport in. Every entry into a runtime re-anchors
+with `JS_UpdateStackTop` because the driving thread differs (the control thread on the pull path,
+the audio thread while running), and QuickJS's stack-overflow guard is calibrated against the
+thread that last entered it. A profile build profiles the audio runtime there
+([08-profiling.md](08-profiling.md)).
 
 [`ScriptCompiler`](../packages/native/src/host/dsp/ScriptCompiler.hpp#L17) (`dsp::compileToBytecode`)
-compiles a script to QuickJS bytecode on a **transient, bare context — deliberately not the
-`DspRuntime`'s** — so the DSP side is proven never to re-parse source: bytecode is the only
-thing that crosses into the DSP heap. It backs the `compileScript` RPC. The bytecode is
-version-locked to this exact qjs-ng build, which is fine because the compiler and DSP contexts
-are the same `qjs`.
+compiles a script to QuickJS bytecode on a **transient, bare context**: the engine-graph tests use
+it to build their toy script nodes. The bytecode is version-locked to this exact qjs-ng build, which
+is fine because the compiler and the script host are the same `qjs`.
 
 ## Wrapped shared-core classes
 
@@ -609,11 +593,11 @@ is one automatable parameter applied post-render across all 8 channels
 - [`CoreBackends.cpp`](../packages/native/src/system/CoreBackends.cpp) — registers the `sameboy` / `mesen` backends into the `SystemFactory`.
 - [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp): the single-threaded owner of the graph, the DSP kernel and the registry; `processBlock`, the command handler, `SyncTap`.
 - [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp): `QueuedInvoker`, the one command path; [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp).
-- [`host/graph/`](../packages/native/src/host/graph): [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) (the cores as nodes), [`KernelNode.cpp`](../packages/native/src/host/graph/KernelNode.cpp) (the kernel stage as a node), [`SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp), [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp).
+- [`host/graph/`](../packages/native/src/host/graph): [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) (the cores as nodes), [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) (the host I/O nodes and the cart mirror), [`SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp), [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp).
 - [`GraphHost.hpp`](../packages/native/src/graph/GraphHost.hpp) / [`.cpp`](../packages/native/src/graph/GraphHost.cpp), [`rp_node.h`](../packages/native/src/graph/rp_node.h): the one ring, plan swap and reclaim; the node ABI (`layout_for` per type).
 - [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) — the owned read door.
 - [`SystemFactory.hpp`](../packages/native/src/system/SystemFactory.hpp), [`SameBoyBackend.cpp`](../packages/native/src/system/sameboy/SameBoyBackend.cpp), [`MesenBackend.cpp`](../packages/native/src/system/mesen/MesenBackend.cpp) — the build path.
-- [`DspRuntime.hpp`](../packages/native/src/host/dsp/DspRuntime.hpp) / [`.cpp`](../packages/native/src/host/dsp/DspRuntime.cpp), [`ScriptCompiler.hpp`](../packages/native/src/host/dsp/ScriptCompiler.hpp) — the bare DSP context runner + compiler.
+- [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp), [`ScriptCompiler.hpp`](../packages/native/src/host/dsp/ScriptCompiler.hpp): the script-node runtime + the tests' compiler.
 - [`HostRpcService.cpp`](../packages/native/src/host/rpc/HostRpcService.cpp), [`EngineRpcService.cpp`](../packages/native/src/host/rpc/EngineRpcService.cpp), [`DebugRpcService.cpp`](../packages/native/src/host/rpc/DebugRpcService.cpp), [`AudioDriverRpcService.cpp`](../packages/native/src/host/rpc/AudioDriverRpcService.cpp) — the RPC services behind the facets.
 - [`plugin/PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp), [`plugin/PluginShared.hpp`](../packages/native/plugin/PluginShared.hpp), [`src/main.cpp`](../packages/native/src/main.cpp), [`test/ui/UiHarness.hpp`](../packages/native/test/ui/UiHarness.hpp) — the three hosts.
 - [`CMakeLists.txt`](../packages/native/CMakeLists.txt), [`plugin/DistrhoPluginInfo.h`](../packages/native/plugin/DistrhoPluginInfo.h) — build wiring + plugin identity.

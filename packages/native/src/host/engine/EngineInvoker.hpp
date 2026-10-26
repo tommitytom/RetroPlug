@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <string>
 #include <vector>
 
 #include "system/SystemTypes.hpp"  // SystemId
@@ -33,8 +32,6 @@ public:
     bool audioThreadOwns() const { return audioThreadOwns_.load(std::memory_order_acquire); }
 
     // producer (control thread)
-    void loadKernel(std::vector<std::uint8_t> bytecode);
-    void setSystems(std::string json);
     // Any length: a channel message rides the command inline, a longer run (SysEx) as an owning payload. `frame`
     // places it in the next block, which it must be inside.
     void stageMidi(std::vector<std::uint8_t> bytes, std::uint32_t frame = 0);

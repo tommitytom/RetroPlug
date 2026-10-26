@@ -192,9 +192,8 @@ needs only the `tjs` binary and esbuild, which is what lets the whole applicatio
 systems / paths / recent / config / SRAM / kits) be tested without an emulator in the loop.
 
 The native and UI runners each hand every test a fresh temp dir as `RETROPLUG_USER_CONFIG_DIR`
-(isolated real disk). The native runner also injects the compiled DSP role kernel source
-(`__DSP_KERNEL_BUNDLE__`) and the resources dirs so tests can load the real per-block program and
-locate ROMs by absolute path. The UI runner aliases `import ... from "ui-harness"` to the build's
+(isolated real disk). The native runner also injects the resources dirs so tests can locate ROMs by
+absolute path; the DSP role kernel needs no injection, since every Engine embeds it as a script node. The UI runner aliases `import ... from "ui-harness"` to the build's
 own [test-ui/uiHarness.ts](../packages/retroplug/test-ui/uiHarness.ts).
 
 ## pnpm scripts

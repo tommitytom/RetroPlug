@@ -1,8 +1,8 @@
-// The synchronous JSON-RPC channel every TS client reaches the native host through, which realBackend,
-// dspRuntime and audioDriver each carried their own copy of - resolveSend character-for-character in all
-// three, and the caller itself character-for-character in two.
+// The synchronous JSON-RPC channel every TS client reaches the native host through, which realBackend and
+// audioDriver (and a client of the native DSP runtime, since deleted) each carried their own copy of -
+// resolveSend character-for-character in all three, and the caller itself character-for-character in two.
 //
-// Synchronous is the whole point, and it is why this is not a promise-based client: the DSP kernel and the
+// Synchronous is the whole point, and it is why this is not a promise-based client: the stores and the
 // audio driver are driven from code that cannot await, and the native side answers inline
 // (QuickJSTransport returns the reply value from the same call). See spec/02-native-host.md.
 export type RpcSend = (request: unknown) => unknown;

@@ -13,7 +13,7 @@
 
 #include "system/SystemTypes.hpp"
 
-#include "host/dsp/DspRuntime.hpp"
+#include "graph/rp_node.h"  // rp_queue
 #include "host/engine/HostSyncTrace.hpp"
 #include "host/engine/SnapshotRegistry.hpp"
 #include "host/script/ScriptHost.hpp"
@@ -41,6 +41,13 @@ enum class ConfigField : std::uint8_t {
     NesExpansionVolume = 15,
 };
 
+// One message of the host MIDI out (Engine::midiOut), tagged with the system that emitted it.
+struct EngineMidiOut {
+    std::uint32_t             system = 0;
+    std::uint32_t             frame = 0;
+    std::vector<std::uint8_t> data;
+};
+
 // One system's video frame, read from its lock-free FrameBufferTriple. `data` is raw XRGB8888
 // (little-endian B,G,R,X), width*height*4 bytes — the LVGL Canvas's native format, so no transcode.
 // `published` is false (and `data` empty) until the core has rendered its first frame.
@@ -51,8 +58,8 @@ struct EngineFrame {
     std::vector<std::uint8_t> data;
 };
 
-// The core of the host: the graph the systems run on (docs/modular-graph-phase-b1-design.md), the DSP role
-// kernel, the script host its TS nodes run in (docs/modular-graph-phase-b3a-design.md section 2), the staged MIDI and
+// The core of the host: the graph the systems run on (docs/modular-graph-phase-b1-design.md), the script host its TS
+// nodes run in, the DSP kernel among them (docs/modular-graph-phase-b3a-design.md sections 2 and 4), the staged MIDI and
 // the snapshot registry. Structure reaches it as graph documents TS builds
 // (docs/modular-graph-phase-b2-design.md), planned on the control thread; every other edit is a command on
 // the GraphHost's one ring, applied at the next drain. A removed core is freed on the control thread, with
@@ -77,21 +84,21 @@ public:
     std::size_t systemCount() const;
     SystemBase* findSystem(SystemId id);   // borrowed (non-owning)
 
-    // --- the kernel stage's DspRuntime: no plan runs it since the kernel became the script node rp.dsp.kernel, whose
-    // structure is its settings in the document; it goes with the kernel stage ---
-    bool loadKernel(const std::vector<std::uint8_t>& bytecode);   // sets the per-block DSP stage active
-    bool setSystems(const std::vector<std::uint8_t>& json);
-
     // --- host input, taken by the plan's rp.host.midi-in / controller-in at the top of the next block (dropped at
-    // its end by a plan with neither) ---
-    void stageMidi(std::uint32_t frame, std::vector<std::uint8_t> bytes);  // delivered on the next processBlock, at intra-block `frame`
-    void stageMidi(std::vector<std::uint8_t> bytes) { stageMidi(0, std::move(bytes)); }  // frame-0 convenience
+    // its end by a plan with neither). The bytes are copied into the engine's staging, which allocates nothing while a
+    // block stages no more than those nodes carry (HostIoNodes.hpp) ---
+    // Delivered on the next processBlock, at intra-block `frame`.
+    void stageMidi(std::uint32_t frame, std::span<const std::uint8_t> bytes);
+    void stageMidi(std::uint32_t frame, const std::vector<std::uint8_t>& bytes) {
+        stageMidi(frame, std::span<const std::uint8_t>(bytes));
+    }
 
     // Stage traffic from a CONTROL SURFACE (a Launchpad), delivered on the next processBlock as the kernel's
     // `controllerIn` - a separate stream from stageMidi, and separate for a reason: a pad press is a NoteOn,
     // and a translator like LSDj's MidiMap reads a NoteOn as a row launch. A surface sharing the musical
     // stream would fire every launch twice, once through the controller app and once raw.
-    void stageControllerMidi(std::vector<std::uint8_t> bytes);
+    void stageControllerMidi(std::span<const std::uint8_t> bytes);
+    void stageControllerMidi(const std::vector<std::uint8_t>& bytes) { stageControllerMidi(std::span<const std::uint8_t>(bytes)); }
 
     // Whether a control surface is attached. Plain member, like transport: the host sets it each block from
     // its device link, and the kernel's controller role takes the device on the false->true edge.
@@ -115,14 +122,14 @@ public:
     // the system that emitted it. Cleared at the top of each block that runs: a 0-frame block, or one longer than the
     // plan's buffers, runs nothing and keeps the previous contents. The plugin drains this to the DAW after
     // processBlock; nothing else reads it.
-    const std::vector<DspRuntime::MidiOut>& midiOut() const { return dsp_.midiOut_; }
-    void clearMidiOut() { dsp_.midiOut_.clear(); }
+    const std::vector<EngineMidiOut>& midiOut() const { return midiOut_; }
+    void clearMidiOut() { midiOut_.clear(); }
 
     // The CONTROL-SURFACE out of this block (LED traffic), from the plan's rp.host.controller-out, likewise. Not
     // system-addressed - the device is a project-scope peripheral, not something a system owns. The standalone
     // drains this to the Launchpad link; every other host leaves it empty because nothing binds a controller.
-    const std::vector<std::vector<std::uint8_t>>& controllerOut() const { return dsp_.controllerOut_; }
-    void clearControllerOut() { dsp_.controllerOut_.clear(); }
+    const std::vector<std::vector<std::uint8_t>>& controllerOut() const { return controllerOut_; }
+    void clearControllerOut() { controllerOut_.clear(); }
 
     // The physical-N8 mirror: invoked on the audio thread, once per message, with what the cart system
     // (cartMirrorSystemId, below) is fed - the kernel's MIDI and bytes for it, through the plan's rp.n8.cart-mirror,
@@ -133,11 +140,6 @@ public:
                                             std::size_t size, bool flush)> sink) {
         coreByteSink_ = std::move(sink);
     }
-
-    // The kernel stage's choice of the system a physical N8 mirrors: the first NES system in the running plan's slot
-    // order, while a kernel is loaded and a sink is set. Nothing reads it since the cart mirror became a node TS places
-    // (cartMirrorSystemId); it goes with the kernel stage.
-    SystemId cartSystemId() const;
 
     // The emulated system a connected physical N8 MIRRORS (0 = none): the one the running plan's rp.n8.cart-mirror
     // names, which TS wires from the first NES in slot order (docs/modular-graph-phase-b3a-design.md section 3.5).
@@ -238,13 +240,34 @@ public:
 
 private:
     struct Graph;
+    // Host MIDI staged for the next block: each message's frame and its place in one flat arena of bytes. Both keep
+    // their capacity, reserved at construction for what the input node taking them carries in a block, so staging
+    // allocates nothing until a block stages more.
+    struct Staging {
+        struct Message {
+            std::uint32_t frame = 0, offset = 0, size = 0;
+        };
+        std::vector<Message>      messages;
+        std::vector<std::uint8_t> bytes;
+
+        Staging(std::size_t messageRoom, std::size_t byteRoom);
+        void add(std::uint32_t frame, std::span<const std::uint8_t> data);
+        // In frame order, keeping the staging order of messages on the same frame (design section 3.4).
+        void sortByFrame();
+        // Onto `out`, in order, then cleared.
+        void takeInto(rp_queue& out);
+        // Onto `out` in sortByFrame's order, then cleared, without moving the plugin's two runs (Engine.cpp).
+        void takeSortedInto(rp_queue& out);
+        void clear();
+
+    private:
+        void push(rp_queue& out, const Message& m) const;
+    };
+
     // The running plan's systems (an empty table before the first plan), for everything but the host-command
-    // handler: the kernel stage and the tail on the block thread, and the control thread's readers. The
-    // handler is handed its plan's table instead, and threads that through.
+    // handler: the tail on the block thread, and the control thread's readers. The handler is handed its plan's
+    // table instead, and threads that through.
     const rp::host::SystemTable& currentTable() const;
-    void runKernelStage(std::uint32_t frames);     // rp.dsp.kernel's body
-    // cartSystemId against `table`: the host-command handler's, which must not read currentTable().
-    SystemId cartSystemId(const rp::host::SystemTable& table) const;
     void applyCommand(DspCommand& c, const rp::host::SystemTable& table);
     void syncTap(bool arm, SystemId id, std::uint32_t mode, const rp::host::SystemTable& table);
     SystemBase* takeCore(std::uint64_t id);
@@ -287,13 +310,16 @@ private:
     ArmedTap armedTap_;
 
     SnapshotRegistry registry_;
-    DspRuntime dsp_;
-    double     sampleRate_;
-    bool       dspActive_ = false;                 // a kernel is loaded → run the per-block DSP stage
-    // Staged host MIDI, consumed on the next block by the plan's rp.host.midi-in (its one, which takes it whether or
-    // not its output is wired), or the unreachable kernel stage.
-    std::vector<DspRuntime::MidiIn> pendingMidi_;
-    std::vector<DspRuntime::MidiIn> pendingControllerMidi_;  // staged control-surface traffic, likewise (controller-in)
+    double           sampleRate_;
+    // Staged host MIDI, taken on the next block by the plan's rp.host.midi-in (its one, which takes it whether or not
+    // its output is wired), and the staged control-surface traffic, by its rp.host.controller-in; what neither takes
+    // is dropped at the block's end.
+    Staging pendingMidi_;
+    Staging pendingControllerMidi_;
+    // This block's host MIDI out and control-surface out, which the plan's rp.host.midi-out and controller-out append
+    // to; cleared at the top of each block.
+    std::vector<EngineMidiOut>             midiOut_;
+    std::vector<std::vector<std::uint8_t>> controllerOut_;
 
     // Simulated host transport, driven per block. Continuous ppq clock (the pull path and the audio
     // loop share it; they never run concurrently). Plain — mutated only by the owning thread.
@@ -301,7 +327,7 @@ private:
     bool   transport_ = false;
     double ppq_       = 0.0;
     bool   controllerConnected_ = false;  // a control surface is bound (set per block by the host)
-    bool   blockTracing_ = false;         // this block's syncTrace_.beginBlock answer, for the kernel stage and system nodes
+    bool   blockTracing_ = false;         // this block's syncTrace_.beginBlock answer, for the system nodes
     HostSyncTrace syncTrace_;  // inert unless RETROPLUG_SYNC_TRACE is set
     // Optional external mirror of what the cart system is fed (set by the plugin and the standalone to reach a
     // physical N8); null in every other host. Called on the audio thread, so the target must be RT-safe (N8Link is).

@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-// Match quickjs.h's opaque tags so this header stays QuickJS-free (mirrors DspRuntime.hpp).
+// Match quickjs.h's opaque tags so this header stays QuickJS-free (as ScriptHost.hpp does).
 struct JSRuntime;
 struct JSContext;
 

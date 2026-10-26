@@ -91,8 +91,8 @@ struct ControllerOut : HostIoNode {
     }
 };
 
-// What the cart mirror's system's FIFO is fed, in the order the kernel stage feeds it today: its MIDI, then its
-// bytes, each in queue order. An empty message is skipped, as the kernel stage skips it.
+// What the cart mirror's system's FIFO is fed, in the order the kernel stage the kernel node replaced fed it: its MIDI,
+// then its bytes, each in queue order. An empty message is skipped, as that stage skipped it.
 struct CartMirror : HostIoNode {
     static constexpr const char* id = "rp.n8.cart-mirror";
     static constexpr const char* name = "N8 Cart Mirror";

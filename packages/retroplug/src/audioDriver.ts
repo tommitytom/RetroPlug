@@ -1,7 +1,7 @@
 // The control-plane driver for the native audio-render path: send MIDI into a real core and
 // capture its rendered audio. Distinct from `Backend` (in production the HOST drives audio per
 // block, not the store), so it stays off that interface — over the same
-// globalThis[Symbol.for("plugin")].__rpcSend channel realBackend/dspRuntime use. A dev/test
+// globalThis[Symbol.for("plugin")].__rpcSend channel realBackend uses. A dev/test
 // facade for driving the emulator headlessly.
 
 

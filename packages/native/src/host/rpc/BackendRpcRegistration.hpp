@@ -53,14 +53,6 @@ void registerEmulatorRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::setSerialOutCapture>(e);
 }
 
-// --- dsp-kernel: the role kernel (3) ---
-template <class Server>
-void registerDspKernelRpc(Server& s, EngineRpcService& e) {
-    s.template addMethod<&EngineRpcService::compileScript>(e);
-    s.template addMethod<&EngineRpcService::dspLoadKernel>(e);
-    s.template addMethod<&EngineRpcService::dspSetSystems>(e);
-}
-
 // --- harness: audio render / transport / MIDI + DSP profiling + kit compile + graph drops (22; CLI + tests only) ---
 template <class Server>
 void registerHarnessRpc(Server& s, EngineRpcService& e) {
@@ -131,14 +123,13 @@ void registerDriverRpc(Server& s, AudioDriverRpcService& d) {
     s.template addMethod<&AudioDriverRpcService::drainReleased>(d);
 }
 
-// The full union (90 methods) + discovery - every facet mounted. Hosts that expose the whole surface
+// The full union (87 methods) + discovery - every facet mounted. Hosts that expose the whole surface
 // (the CLI + test host) use this; scoped hosts call the individual register functions they're allowed to.
 template <class Server>
 void registerAllBackendRpc(Server& s, HostRpcService& host, EngineRpcService& engine,
                            DebugRpcService& debug, AudioDriverRpcService& driver) {
     registerHostRpc(s, host);
     registerEmulatorRpc(s, engine);
-    registerDspKernelRpc(s, engine);
     registerHarnessRpc(s, engine);
     registerDebugRpc(s, debug);
     registerDriverRpc(s, driver);
