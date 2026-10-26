@@ -149,17 +149,16 @@ public:
     // system table, as findSystem does).
     SystemId cartMirrorSystemId() const;
 
-    // --- DSP-runtime allocation/GC profiling (spec/08-profiling.md) ---
-    // Forward to the bare JS runtime's counters. Valid only on the Engine's owning thread (the
-    // renderAudio pull path); no-op / enabled=false in a non-RETROPLUG_PROFILE build.
-    DspAllocStats dspAllocStats() const { return dsp_.allocStats(); }
-    void          resetDspAllocStats(bool disableAutoGc) { dsp_.resetAllocStats(disableAutoGc); }
-    DspGcResult   dspRunGc() { return dsp_.runGc(); }
-
-    // --- per-role runtime tracing (spec/08-profiling.md Tier B) ---
-    void                      dspTraceReset(bool arm) { dsp_.traceReset(arm); }
-    std::vector<DspTraceSpan> dspTrace() const { return dsp_.traceSpans(); }
-    std::vector<std::string>  dspTraceNames() const { return dsp_.traceNames(); }
+    // --- profiling the audio runtime (spec/08-profiling.md): the script host's allocation window, its GC pass and
+    // its trace window, which holds the engine's own stages too (the plan after its script nodes, the state publish).
+    // Quiescent only (the renderAudio pull path); a struct with enabled false, or nothing, but in a RETROPLUG_PROFILE
+    // build ---
+    rp::host::DspAllocStats             dspAllocStats() const;
+    void                                resetDspAllocStats(bool disableAutoGc);
+    rp::host::DspGcResult               dspRunGc();
+    void                                dspTraceReset(bool arm);
+    std::vector<rp::host::DspTraceSpan> dspTrace() const;
+    std::vector<std::string>            dspTraceNames() const;
 
     // --- per block: the plan (the host inputs, the kernel, every system, the mixing, the host outputs), then the
     // snapshot publish and the ppq advance. `outputs` is a flat array of

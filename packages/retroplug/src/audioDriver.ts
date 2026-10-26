@@ -9,8 +9,9 @@ import { makeCall } from "./rpcClient";
 import type { EngineGraph } from "./engineGraph";
 import type { HostShape } from "./graph/buildGraph";
 
-/** DSP-runtime allocation counters (spec/08-profiling.md). Fields are DELTAS since the last
- *  dspResetAllocStats(); `enabled` is false unless the host was built with RETROPLUG_PROFILE.
+/** The allocation counters of the script host's audio runtime, the JS the audio thread runs
+ *  (spec/08-profiling.md). Fields are DELTAS since the last dspResetAllocStats() (`blockCount` and the
+ *  max-block pair count engine blocks); `enabled` is false unless the host was built with RETROPLUG_PROFILE.
  *  Mirrors the native DspAllocStats struct field-for-field (reflect-cpp names). */
 export interface DspAllocStats {
   enabled: boolean;
@@ -175,15 +176,15 @@ export interface AudioDriver {
    *  reset): what a test holds to zero to know nothing it staged was lost on the way to a core. */
   droppedMessages(): number;
 
-  // --- DSP-runtime allocation/GC profiling (spec/08-profiling.md; real only in a RETROPLUG_PROFILE host) ---
-  /** Snapshot the DSP JS runtime's allocation counters (deltas since the last reset). */
+  // --- audio-runtime allocation/GC profiling (spec/08-profiling.md; real only in a RETROPLUG_PROFILE host) ---
+  /** Snapshot the audio JS runtime's allocation counters (deltas since the last reset). */
   dspAllocStats(): DspAllocStats;
   /** Open a fresh measurement window; `disableAutoGc` pins QuickJS auto-GC off for determinism. */
   dspResetAllocStats(disableAutoGc: boolean): boolean;
   /** Run + time a self-driven cycle-collection pass; freedBytes ~0 proves no reference cycles. */
   dspRunGc(): DspGcResult;
-  /** Open (arm=true) / close (arm=false) a per-role runtime-trace window; while armed, the DSP kernel
-   *  + native pipeline record nested wall-time spans. Also flips the kernel's in-JS trace flag. */
+  /** Open (arm=true) / close (arm=false) a runtime-trace window; while armed, every script node's process,
+   *  the engine's stages and the kernel's roles record nested wall-time spans. */
   dspTraceReset(arm: boolean): boolean;
   /** Drain the recorded spans (µs, relative to the window base) — nest by containment for a flame. */
   dspTrace(): DspTraceSpan[];

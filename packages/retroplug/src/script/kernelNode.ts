@@ -96,9 +96,9 @@ const portsOf = (s: KernelSettings): SystemPorts[] =>
     runFrame: 0,
   }));
 
-// The per-role tracing thunks a profile build binds (spec/08-profiling.md Tier B; Engine.cpp, into the script host's
-// audio context), the kernel bundle's three and traceArmed, the trace window's state, read each block in place of
-// the bundle's __setTrace. `typeof` is safe on an unbound global, which is every other build.
+// The trace window's globals a profile build binds into the script host's audio context (spec/08-profiling.md Tier
+// B; ScriptHost.cpp): a span per role, and traceArmed, the window's state, read each block. `typeof` is safe on an
+// unbound global, which is every other build.
 declare function spanBegin(label: number): void;
 declare function spanEnd(): void;
 declare function traceName(label: number, kind: string): void;

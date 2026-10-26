@@ -185,6 +185,18 @@ void bump(std::atomic<std::uint64_t>& c, std::uint64_t by = 1) {
     c.store(c.load(std::memory_order_relaxed) + by, std::memory_order_relaxed);
 }
 
+// The trace window's spans on the block path (spec/08-profiling.md): compiled out of every build but a profile one.
+inline void traceBegin([[maybe_unused]] ScriptHost& h, [[maybe_unused]] std::uint32_t label) {
+#ifdef RETROPLUG_PROFILE
+    h.spanBegin(label);
+#endif
+}
+inline void traceEnd([[maybe_unused]] ScriptHost& h) {
+#ifdef RETROPLUG_PROFILE
+    h.spanEnd();
+#endif
+}
+
 enum class Side : std::uint8_t { Input, Output, Param };
 
 // One port or param of a layout, by the index of its view on its side of rp_process (inputs, outputs or params).
@@ -361,26 +373,41 @@ struct ScriptHost::Glue {
     }
 
     // ---- the audio runtime's allocator: the platform's, counted ------------------------------------------------
+#ifdef RETROPLUG_PROFILE
+    // A profile build keeps the live heap and its peak too, in usable bytes, as QuickJS's own accounting (jsUsable)
+    // reads a block.
+    static void grew(Counters& c, std::int64_t by) {
+        const std::int64_t live = c.liveBytes.load(std::memory_order_relaxed) + by;
+        c.liveBytes.store(live, std::memory_order_relaxed);
+        if (live > static_cast<std::int64_t>(c.peakBytes.load(std::memory_order_relaxed)))
+            c.peakBytes.store(static_cast<std::uint64_t>(live), std::memory_order_relaxed);
+    }
+#endif
+    static void allocated(Counters& c, [[maybe_unused]] void* p, std::size_t size) {
+        bump(c.allocs);
+        bump(c.bytes, size);
+#ifdef RETROPLUG_PROFILE
+        grew(c, static_cast<std::int64_t>(usableSize(p)));
+#endif
+    }
     static void* jsCalloc(void* opaque, std::size_t count, std::size_t size) {
         void* p = std::calloc(count, size);
-        if (p) {
-            auto& c = *static_cast<Counters*>(opaque);
-            bump(c.allocs);
-            bump(c.bytes, count * size);
-        }
+        if (p) allocated(*static_cast<Counters*>(opaque), p, count * size);
         return p;
     }
     static void* jsMalloc(void* opaque, std::size_t size) {
         void* p = std::malloc(size);
-        if (p) {
-            auto& c = *static_cast<Counters*>(opaque);
-            bump(c.allocs);
-            bump(c.bytes, size);
-        }
+        if (p) allocated(*static_cast<Counters*>(opaque), p, size);
         return p;
     }
     static void jsFree(void* opaque, void* p) {
-        if (p) bump(static_cast<Counters*>(opaque)->frees);
+        if (p) {
+            auto& c = *static_cast<Counters*>(opaque);
+            bump(c.frees);
+#ifdef RETROPLUG_PROFILE
+            grew(c, -static_cast<std::int64_t>(usableSize(p)));
+#endif
+        }
         std::free(p);
     }
     static void* jsRealloc(void* opaque, void* p, std::size_t size) {
@@ -390,6 +417,9 @@ struct ScriptHost::Glue {
             auto& c = *static_cast<Counters*>(opaque);
             bump(c.reallocs);
             if (size > before) bump(c.bytes, size - before);
+#ifdef RETROPLUG_PROFILE
+            grew(c, static_cast<std::int64_t>(q ? usableSize(q) : 0) - static_cast<std::int64_t>(before));
+#endif
         }
         return q;
     }
@@ -405,7 +435,7 @@ struct ScriptHost::Glue {
         }
         ScriptHost& h = *t.host;
         JSContext* ctx = h.control_;
-        JS_UpdateStackTop(h.controlRt_);  // re-anchor the stack guard for the calling thread (see DspRuntime)
+        JS_UpdateStackTop(h.controlRt_);  // QuickJS guards the stack from where it was last entered: re-anchor it here
         const std::string text = s && s->data && s->size ? std::string(s->data, s->size) : std::string("{}");
         JSValue raw = JS_ParseJSON(ctx, text.c_str(), text.size(), "<settings>");
         JSValue parsed = JS_IsException(raw) ? JS_EXCEPTION : callMethod(ctx, t.control, "parseSettings", 1, &raw);
@@ -505,6 +535,8 @@ struct ScriptHost::Glue {
         JSContext* ctx = h.audio_;
         // The whole block, not just the call: a node may hang a setter on what the block path fills in.
         const Deadline call(h);
+        traceBegin(h, DSP_SPAN_KERNEL);
+        traceBegin(h, DSP_SPAN_MARSHAL);
         ++in.blockStamp;
         // Every audio port's copies first, the inputs' samples in them: a node may read views it kept from a block
         // before, so the copy cannot wait for it to ask.
@@ -512,6 +544,8 @@ struct ScriptHost::Glue {
             const bool expired = expiryFaults(h, in);
             recordThrow(h, in, "process");
             silenceAudio(in, *block);
+            traceEnd(h);  // marshal
+            processSpanEnd(h);
             return in.type->faultOnThrow || expired ? RP_FAULT : RP_OK;
         }
         in.running = block;
@@ -521,20 +555,36 @@ struct ScriptHost::Glue {
         JS_SetProperty(ctx, in.transport, atom(h, kTempo), JS_NewFloat64(ctx, t.tempo));
         JS_SetProperty(ctx, in.transport, atom(h, kPpq), JS_NewFloat64(ctx, t.ppq));
         JS_SetProperty(ctx, in.transport, atom(h, kPlaying), JS_NewBool(ctx, (t.flags & RP_TRANSPORT_PLAYING) != 0));
+        traceEnd(h);
+        traceBegin(h, DSP_SPAN_JSCALL);
         JSValue result = JS_Call(ctx, in.process, in.object, 1, &in.block);
+        traceEnd(h);
         in.running = nullptr;
         const bool threw = JS_IsException(result), expired = expiryFaults(h, in);
         if (threw) recordThrow(h, in, "process");  // first: the copy out may meet a detached buffer, which throws too
         copyAudioOut(ctx, in, *block);             // what it wrote up to a throw stands, as its sends do
-        if (threw) return in.type->faultOnThrow || expired ? RP_FAULT : RP_OK;
         bool fault = false;
-        if (JS_IsString(result)) {
+        if (threw) {
+            fault = in.type->faultOnThrow || expired;
+        } else if (JS_IsString(result)) {
             const JSAtom said = JS_ValueToAtom(ctx, result);
             fault = said == atom(h, kFault);
             JS_FreeAtom(ctx, said);
         }
         JS_FreeValue(ctx, result);
+        processSpanEnd(h);
         return fault ? RP_FAULT : RP_OK;
+    }
+
+    // The end of a process call's dsp-kernel span (a profile build), where apu-render starts if no script node runs
+    // after it.
+    static void processSpanEnd([[maybe_unused]] ScriptHost& h) {
+#ifdef RETROPLUG_PROFILE
+        if (h.traceArmed_) {
+            h.spanEnd();  // dsp-kernel
+            h.lastProcessEnd_ = h.traceNow();
+        }
+#endif
     }
 
     static rp_prepare_result prepare(rp_node* n, const rp_settings* s, void** prepared, rp_error* err) {
@@ -992,7 +1042,10 @@ struct ScriptHost::Glue {
                        : nullptr;
         if (!p) return JS_EXCEPTION;
         if (p->stamp != in->blockStamp) {
-            if (!fillMessages(hostOf(ctx), ctx, *p, *in->running->inputs[found->index].u.queue)) return JS_EXCEPTION;
+            traceBegin(hostOf(ctx), DSP_SPAN_MARSHAL);
+            const bool filled = fillMessages(hostOf(ctx), ctx, *p, *in->running->inputs[found->index].u.queue);
+            traceEnd(hostOf(ctx));
+            if (!filled) return JS_EXCEPTION;
             p->stamp = in->blockStamp;
         }
         return JS_DupValue(ctx, p->value);
@@ -1009,7 +1062,10 @@ struct ScriptHost::Glue {
         if (p->stamp != in->blockStamp) {
             const rp_control_queue& q =
                 found->side == Side::Param ? *in->running->params[found->index] : *in->running->inputs[found->index].u.control;
-            if (!fillControl(hostOf(ctx), ctx, *p, q)) return JS_EXCEPTION;
+            traceBegin(hostOf(ctx), DSP_SPAN_MARSHAL);
+            const bool filled = fillControl(hostOf(ctx), ctx, *p, q);
+            traceEnd(hostOf(ctx));
+            if (!filled) return JS_EXCEPTION;
             p->stamp = in->blockStamp;
         }
         return JS_DupValue(ctx, p->value);
@@ -1079,6 +1135,34 @@ struct ScriptHost::Glue {
         if (JS_ToUint32(ctx, &frame, argv[1]) < 0 || JS_ToFloat64(ctx, &value, argv[2]) < 0) return JS_EXCEPTION;
         return JS_NewBool(ctx, graph::pushControl(*in->running->outputs[found->index].u.control, frame, value));
     }
+
+#ifdef RETROPLUG_PROFILE
+    // ---- the trace window's globals, in the audio context of a profile build -------------------------------------
+    static JSValue spanBegin(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+        std::uint32_t label = 0;
+        if (argc < 1) return JS_ThrowTypeError(ctx, "spanBegin takes a label");
+        if (JS_ToUint32(ctx, &label, argv[0]) < 0) return JS_EXCEPTION;
+        hostOf(ctx).spanBegin(label);
+        return JS_UNDEFINED;
+    }
+    static JSValue spanEnd(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+        hostOf(ctx).spanEnd();
+        return JS_UNDEFINED;
+    }
+    static JSValue traceName(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+        std::uint32_t label = 0;
+        if (argc < 2) return JS_ThrowTypeError(ctx, "traceName takes a label and a name");
+        if (JS_ToUint32(ctx, &label, argv[0]) < 0) return JS_EXCEPTION;
+        const char* name = JS_ToCString(ctx, argv[1]);
+        if (!name) return JS_EXCEPTION;
+        hostOf(ctx).traceName(label, name);
+        JS_FreeCString(ctx, name);
+        return JS_UNDEFINED;
+    }
+    static JSValue traceArmed(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+        return JS_NewBool(ctx, hostOf(ctx).traceArmed());
+    }
+#endif
 };
 
 // ---- ScriptHost ------------------------------------------------------------------------------------------------
@@ -1111,6 +1195,21 @@ ScriptHost::ScriptHost(Binder binder, void* user) {
     JS_SetClassProto(audio_, blockClass_, proto);
     static_assert(kAtomCount <= std::tuple_size_v<decltype(atoms_)>, "atoms_ holds every block-path atom");
     for (std::size_t a = 0; a < kAtomCount; ++a) atoms_[a] = JS_NewAtom(audio_, kAtomNames[a]);
+
+#ifdef RETROPLUG_PROFILE
+    // The trace window's globals, which only a profile build binds (so a script tests `typeof spanBegin`), and the
+    // fixed labels' names.
+    JSValue global = JS_GetGlobalObject(audio_);
+    JS_SetPropertyStr(audio_, global, "spanBegin", JS_NewCFunction(audio_, &Glue::spanBegin, "spanBegin", 1));
+    JS_SetPropertyStr(audio_, global, "spanEnd", JS_NewCFunction(audio_, &Glue::spanEnd, "spanEnd", 0));
+    JS_SetPropertyStr(audio_, global, "traceName", JS_NewCFunction(audio_, &Glue::traceName, "traceName", 2));
+    JS_SetPropertyStr(audio_, global, "traceArmed", JS_NewCFunction(audio_, &Glue::traceArmed, "traceArmed", 0));
+    JS_FreeValue(audio_, global);
+    for (const auto& [label, name] : {std::pair{DSP_SPAN_KERNEL, "dsp-kernel"}, std::pair{DSP_SPAN_MARSHAL, "marshal"},
+                                      std::pair{DSP_SPAN_JSCALL, "js-call"}, std::pair{DSP_SPAN_APU, "apu-render"},
+                                      std::pair{DSP_SPAN_PUBLISH, "state-publish"}})
+        traceName(label, name);
+#endif
 
     if (binder) {
         binder(user, control_, false);
@@ -1266,6 +1365,9 @@ void ScriptHost::retire(Instance* in) {
 }
 
 void ScriptHost::beginBlock() {
+#ifdef RETROPLUG_PROFILE
+    blockStart_ = audioAllocations();
+#endif
     Instance* in = nullptr;
     for (std::uint32_t n = 0; n < kReleasesPerBlock && releases_.tryPop(in); ++n) {
         releaseJs(*in);
@@ -1278,7 +1380,17 @@ void ScriptHost::beginBlock() {
 // reaction's own throw only rejects its promise: this is the deadline, or JS out of memory) is counted as a node's
 // throw is, and one the deadline stopped leaves the rest for the next block's end.
 void ScriptHost::endBlock() {
-    if (!JS_IsJobPending(audioRt_)) return;
+    if (JS_IsJobPending(audioRt_)) runAudioJobs();
+#ifdef RETROPLUG_PROFILE
+    // The allocation window's per-block counts, the promise jobs included.
+    const ScriptAllocations now = audioAllocations();
+    ++windowBlocks_;
+    maxBlockAllocs_ = std::max(maxBlockAllocs_, now.allocs - blockStart_.allocs);
+    maxBlockBytes_ = std::max(maxBlockBytes_, now.bytes - blockStart_.bytes);
+#endif
+}
+
+void ScriptHost::runAudioJobs() {
     JS_UpdateStackTop(audioRt_);
     const Glue::Deadline call(*this);
     for (int n = 0; n < kJobsPerBlock; ++n) {
@@ -1379,5 +1491,91 @@ ScriptAllocations ScriptHost::audioAllocations() const {
     return {counters_.allocs.load(std::memory_order_relaxed), counters_.reallocs.load(std::memory_order_relaxed),
             counters_.frees.load(std::memory_order_relaxed), counters_.bytes.load(std::memory_order_relaxed)};
 }
+
+// ---- profiling (spec/08-profiling.md) ----------------------------------------------------------------------------
+#ifdef RETROPLUG_PROFILE
+DspAllocStats ScriptHost::allocStats() const {
+    const ScriptAllocations now = audioAllocations();
+    DspAllocStats s;
+    s.enabled = true;
+    s.allocCalls = now.allocs - windowStart_.allocs;
+    s.reallocCalls = now.reallocs - windowStart_.reallocs;
+    s.freeCalls = now.frees - windowStart_.frees;
+    s.allocBytes = now.bytes - windowStart_.bytes;
+    s.liveBytesDelta = counters_.liveBytes.load(std::memory_order_relaxed) - windowLiveBytes_;
+    s.peakBytes = counters_.peakBytes.load(std::memory_order_relaxed);
+    s.blockCount = windowBlocks_;
+    s.maxBlockAllocCalls = maxBlockAllocs_;
+    s.maxBlockAllocBytes = maxBlockBytes_;
+    return s;
+}
+
+void ScriptHost::resetAllocStats(bool disableAutoGc) {
+    windowStart_ = audioAllocations();
+    windowLiveBytes_ = counters_.liveBytes.load(std::memory_order_relaxed);
+    windowBlocks_ = maxBlockAllocs_ = maxBlockBytes_ = 0;
+    // QuickJS checks its threshold only as it makes an object, so SIZE_MAX means a collection never starts by itself.
+    if (disableAutoGc) JS_SetGCThreshold(audioRt_, static_cast<std::size_t>(-1));
+}
+
+DspGcResult ScriptHost::runGc() {
+    JS_UpdateStackTop(audioRt_);
+    const std::int64_t before = counters_.liveBytes.load(std::memory_order_relaxed);
+    const auto t0 = std::chrono::steady_clock::now();
+    JS_RunGC(audioRt_);
+    DspGcResult r;
+    r.enabled = true;
+    r.ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    r.freedBytes = before - counters_.liveBytes.load(std::memory_order_relaxed);  // the cycles collected
+    return r;
+}
+
+namespace {
+std::uint64_t steadyNs() {
+    return static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+}  // namespace
+
+double ScriptHost::traceNow() const { return static_cast<double>(steadyNs() - traceStartNs_) / 1000.0; }
+
+void ScriptHost::spanBegin(std::uint32_t label) {
+    if (traceArmed_) traceStack_.emplace_back(label, traceNow());
+}
+
+void ScriptHost::spanEnd() {
+    if (!traceArmed_ || traceStack_.empty()) return;
+    const auto [label, t0] = traceStack_.back();
+    traceStack_.pop_back();
+    traceSpans_.push_back({label, t0, traceNow()});
+}
+
+void ScriptHost::spanSince(std::uint32_t label, double t0) {
+    if (traceArmed_) traceSpans_.push_back({label, t0, traceNow()});
+}
+
+void ScriptHost::traceName(std::uint32_t label, const std::string& name) {
+    if (traceNames_.size() <= label) traceNames_.resize(label + 1);
+    traceNames_[label] = name;
+}
+
+void ScriptHost::traceReset(bool arm) {
+    traceStack_.clear();
+    traceSpans_.clear();
+    traceStartNs_ = steadyNs();
+    lastProcessEnd_ = 0.0;
+    traceArmed_ = arm;
+}
+#else
+DspAllocStats ScriptHost::allocStats() const { return {}; }  // enabled false
+void          ScriptHost::resetAllocStats(bool) {}
+DspGcResult   ScriptHost::runGc() { return {}; }
+double        ScriptHost::traceNow() const { return 0.0; }
+void          ScriptHost::spanBegin(std::uint32_t) {}
+void          ScriptHost::spanEnd() {}
+void          ScriptHost::spanSince(std::uint32_t, double) {}
+void          ScriptHost::traceName(std::uint32_t, const std::string&) {}
+void          ScriptHost::traceReset(bool) {}
+#endif
 
 }  // namespace rp::host

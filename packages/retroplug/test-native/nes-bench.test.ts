@@ -2,8 +2,8 @@
 // Mesen core off the RT thread via the deterministic renderAudio pull path under a MIDI workload, and
 // reports the same per-block allocation + per-stage timing metrics. The point of comparison: on the
 // handheld the NES core "struggles" far more than SameBoy, and this pins down WHERE — the Mesen core
-// step (CPU+PPU+APU, the DSP_SPAN_APU "apu-render" span wraps the plan's systems, Mesen included) vs
-// the JS kernel (marshal + js-call). One real NES system driven by host MIDI (the nes-n8-midi role).
+// step (CPU+PPU+APU: the "apu-render" span is the plan after the kernel node, Mesen included) vs the
+// kernel node ("dsp-kernel": marshal + js-call). One real NES system driven by host MIDI (the nes-n8-midi role).
 //
 // The counters/spans exist only in a RETROPLUG_PROFILE host (built by tools/run-profile.sh); under the
 // default host this SKIPS (so the normal test:native sweep stays fast, and says the case did not run
@@ -148,10 +148,6 @@ test("nes-bench: Mesen core per-block cost + JS allocation under a NES + MIDI wo
   const wallMs = nowMs() - t0;
 
   const s = audio.dspAllocStats();
-  // The counters read the native DSP runtime's QuickJS heap, which no plan runs since the kernel became a script
-  // node (the script host's own heap has no window counters yet), so a profile host measures nothing here.
-  if (s.blockCount === 0)
-    skip("nes-bench: the allocation counters read the native DSP runtime, which the kernel no longer runs in");
   const gc = audio.dspRunGc();
 
   const bc = s.blockCount || 1;

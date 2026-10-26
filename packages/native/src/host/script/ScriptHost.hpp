@@ -8,12 +8,13 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "graph/rp_node.h"
 #include "transport/SpscRing.hpp"
 
-// Forward-declared so quickjs.h stays out of this header (DspRuntime does the same); these match quickjs.h's tags.
+// Forward-declared so quickjs.h stays out of this header; these match quickjs.h's tags.
 struct JSRuntime;
 struct JSContext;
 
@@ -27,6 +28,53 @@ struct ScriptAllocations {
     std::uint64_t reallocs = 0;
     std::uint64_t frees = 0;
     std::uint64_t bytes = 0;     // asked for, by allocs and growing reallocs
+};
+
+// ---- profiling the audio runtime (spec/08-profiling.md) ---------------------------------------------------------
+// Real only in a RETROPLUG_PROFILE build; in any other every field is 0 and `enabled` false. They cross the harness
+// RPCs (dspAllocStats, dspRunGc, dspTrace) as they are, so their field names are what packages/retroplug/src/
+// audioDriver.ts reads. "dsp" is the DSP (audio) thread, whose JS the script host's audio runtime runs.
+
+// The allocation window: what the audio runtime did since the last resetAllocStats(). `liveBytesDelta` is the net
+// change of its live heap (flat ~0: refcount churn; rising: a leak). The block counts are per Engine block, each
+// measured from its beginBlock to its endBlock, so a benchmark reads them once per window.
+struct DspAllocStats {
+    bool          enabled            = false;
+    std::uint64_t allocCalls         = 0;
+    std::uint64_t reallocCalls       = 0;
+    std::uint64_t freeCalls          = 0;
+    std::uint64_t allocBytes         = 0;   // asked for, by allocs and growing reallocs, in the window
+    std::int64_t  liveBytesDelta     = 0;   // usable bytes
+    std::uint64_t peakBytes          = 0;   // the live heap's all-time peak, usable bytes (informational)
+    std::uint64_t blockCount         = 0;
+    std::uint64_t maxBlockAllocCalls = 0;   // the worst single block (the tail)
+    std::uint64_t maxBlockAllocBytes = 0;
+};
+
+// One self-driven collection pass (JS_RunGC): `freedBytes` ~0 proves the runtime accumulates no reference cycles.
+struct DspGcResult {
+    bool         enabled    = false;
+    double       ms         = 0.0;
+    std::int64_t freedBytes = 0;
+};
+
+// One span of the trace window: `t0` and `t1` in microseconds from the window's start (traceReset), `label` an index
+// into traceNames().
+struct DspTraceSpan {
+    std::uint32_t label = 0;
+    double        t0    = 0.0;
+    double        t1    = 0.0;
+};
+
+// The fixed span labels; the kernel node interns its role kinds from DSP_SPAN_ROLE_BASE up.
+enum DspSpanLabel : std::uint32_t {
+    DSP_SPAN_KERNEL    = 0,   // ScriptHost: a script node's process call (the DSP kernel's, in every document TS builds)
+    DSP_SPAN_MARSHAL   = 1,   // ScriptHost: its inputs made JS values (the block's transport, each input it reads)
+    DSP_SPAN_JSCALL    = 2,   // ScriptHost: the JS_Call into its process
+    DSP_SPAN_APU       = 3,   // Engine: the plan after its script nodes (the cores, the mixing, the host outputs)
+    DSP_SPAN_PUBLISH   = 4,   // Engine: the state pump to the control plane (the per-block frame copy, and the timed
+                              //   savestate and SRAM republish, so spiky)
+    DSP_SPAN_ROLE_BASE = 16,
 };
 
 // The script host (docs/modular-graph-phase-b3a-design.md section 2): every TS node one Engine runs, behind the
@@ -94,6 +142,12 @@ struct ScriptAllocations {
 // returns crosses as JSON (the two runtimes share no value), so a transform's result that JSON cannot hold (a Map, a
 // Date, undefined) arrives as JSON spells it. The audio side never runs the schema: it needs no zod (which B3b takes
 // out of the bundle) and does no validation work at a swap.
+//
+// A profile build (RETROPLUG_PROFILE, spec/08-profiling.md) profiles the audio runtime: its allocator keeps the live
+// and peak heap, an allocation window counts per block, and a trace window records nested wall-time spans. Every
+// script node's process is a dsp-kernel span, holding a marshal span for the block's transport and a js-call span for
+// its JS, inside which each input it reads is a marshal span too; the audio context's globals spanBegin(label),
+// spanEnd(), traceName(label, name) and traceArmed() let the JS add its own (the kernel node's roles).
 class ScriptHost {
 public:
     using Chunk = std::span<const std::uint8_t>;
@@ -140,7 +194,8 @@ public:
     // going at once is spread over blocks, and a full ring still drains in 16).
     void beginBlock();
     static constexpr std::uint32_t kReleasesPerBlock = 16;
-    // At the end of every block that ran the graph: the promise jobs its JS queued, at most kJobsPerBlock of them.
+    // At the end of every block that ran the graph: the promise jobs its JS queued, at most kJobsPerBlock of them,
+    // then the allocation window's per-block counts (a profile build).
     void endBlock();
     static constexpr int kJobsPerBlock = 256;
     static constexpr std::size_t kStackBytes = 256 * 1024;  // each runtime's JS stack (the class comment)
@@ -155,6 +210,26 @@ public:
     // Blocks whose promise jobs outran kJobsPerBlock, leaving some for the next block; reclaim says so once.
     std::uint32_t     jobsCutShort() const { return jobsCutShort_.load(std::memory_order_relaxed); }
 
+    // ---- profiling (spec/08-profiling.md): real only in a RETROPLUG_PROFILE build --------------------------------
+    // The allocation window, opened by resetAllocStats, which can pin the audio runtime's auto-GC off from then on (so
+    // a window collects nothing); runGc runs and times one collection there. Quiescent: no audio thread runs blocks.
+    DspAllocStats allocStats() const;
+    void          resetAllocStats(bool disableAutoGc);
+    DspGcResult   runGc();
+    // The trace window. traceReset clears it and arms (or disarms) it, quiescent, as are the reads; the block thread
+    // records, and only while it is armed. spanBegin and spanEnd bracket a span; spanSince records one from `t0`, a
+    // traceNow(), to now. lastProcessEnd() is when the last script node's process span ended, on traceNow's clock.
+    void                      spanBegin(std::uint32_t label);
+    void                      spanEnd();
+    void                      spanSince(std::uint32_t label, double t0);
+    double                    traceNow() const;
+    double                    lastProcessEnd() const { return lastProcessEnd_; }
+    void                      traceName(std::uint32_t label, const std::string& name);
+    void                      traceReset(bool arm);
+    bool                      traceArmed() const { return traceArmed_; }
+    std::vector<DspTraceSpan> traceSpans() const { return traceSpans_; }
+    std::vector<std::string>  traceNames() const { return traceNames_; }
+
     // Defined in ScriptHost.cpp: a script type, and one instance's record.
     struct Type;
     struct Instance;
@@ -163,6 +238,9 @@ private:
     struct Glue;  // the ABI tables, the Block object's methods and the audio runtime's allocator
     struct Counters {
         std::atomic<std::uint64_t> allocs{0}, reallocs{0}, frees{0}, bytes{0};
+        // The live heap and its peak, in usable bytes: kept by a profile build only.
+        std::atomic<std::int64_t>  liveBytes{0};
+        std::atomic<std::uint64_t> peakBytes{0};
     };
 
     void releaseJs(Instance& in);   // the block thread, or quiescent
@@ -171,6 +249,7 @@ private:
     void drainReleased();           // control thread: the records handed back, deleted, and the backlog moved on
     void collect();                 // quiescent: a GC of the audio runtime, when a release has left garbage since the last
     void drainControlJobs();        // control thread: the promise jobs a call into the control context queued
+    void runAudioJobs();            // the block thread: endBlock's promise jobs
     void freeTypes();
 
     // counters_ is the audio runtime's allocator opaque, so it is declared (and made) before it.
@@ -216,6 +295,21 @@ private:
     std::atomic<int>           firstThrowState_{0};
     char                       firstThrow_[512] = {};
     bool                       firstThrowLogged_ = false;
+
+    // Profiling (kept by a profile build only; a handful of zeros otherwise). The allocation window: the counts and
+    // live heap it opened at, the counts the current block began at, and the blocks it has run, with the worst one's
+    // allocations.
+    ScriptAllocations windowStart_{};
+    std::int64_t      windowLiveBytes_ = 0;
+    ScriptAllocations blockStart_{};
+    std::uint64_t     windowBlocks_ = 0, maxBlockAllocs_ = 0, maxBlockBytes_ = 0;
+    // The trace window: its clock's start (steady_clock nanoseconds), the spans open as {label, t0} and those closed.
+    bool                                          traceArmed_ = false;
+    std::uint64_t                                 traceStartNs_ = 0;
+    double                                        lastProcessEnd_ = 0.0;
+    std::vector<std::pair<std::uint32_t, double>> traceStack_;
+    std::vector<DspTraceSpan>                     traceSpans_;
+    std::vector<std::string>                      traceNames_;
 };
 
 }  // namespace rp::host

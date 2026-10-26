@@ -9,7 +9,7 @@
 #include <rfl/Bytestring.hpp>
 
 #include "host/rpc/BackendTypes.hpp"
-#include "host/dsp/DspRuntime.hpp"  // DspAllocStats / DspGcResult (lean header, no quickjs types)
+#include "host/script/ScriptHost.hpp"  // DspAllocStats / DspGcResult / DspTraceSpan (no quickjs types)
 
 class Engine;
 class SystemFactory;
@@ -110,17 +110,15 @@ public:
     // run to none. Never reset: compare two reads.
     std::uint32_t           droppedMessages() const;
 
-    // --- DSP-runtime allocation/GC profiling (spec/08-profiling.md) ---
-    // Reads/GC on the DSP JS runtime, reached directly through the Engine (the quiescent renderAudio
-    // pull path owns it — the benchmark never starts the audio thread). enabled=false off-profile.
-    DspAllocStats dspAllocStats();
-    bool          dspResetAllocStats(bool disableAutoGc);
-    DspGcResult   dspRunGc();
-
-    // --- per-role runtime tracing (spec/08-profiling.md Tier B; enabled off-profile returns empty) ---
-    bool                      dspTraceReset(bool arm);
-    std::vector<DspTraceSpan> dspTrace();
-    std::vector<std::string>  dspTraceNames();
+    // --- profiling the audio runtime (spec/08-profiling.md): the script host's allocation window, GC pass and trace
+    // window, reached directly through the Engine (the quiescent renderAudio pull path owns it: the benchmark never
+    // starts the audio thread). enabled false, or empty, off-profile ---
+    rp::host::DspAllocStats             dspAllocStats();
+    bool                                dspResetAllocStats(bool disableAutoGc);
+    rp::host::DspGcResult               dspRunGc();
+    bool                                dspTraceReset(bool arm);
+    std::vector<rp::host::DspTraceSpan> dspTrace();
+    std::vector<std::string>            dspTraceNames();
 
 private:
     bool rendersInto(std::size_t channels) const;

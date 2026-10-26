@@ -641,19 +641,19 @@ std::string EngineRpcService::buildTarget() const {
 
 // Direct engine_ access (not the invoker): the benchmark drives the synchronous renderAudio pull path
 // and never startAudio, so the control thread owns the Engine here — same regime as readState.
-DspAllocStats EngineRpcService::dspAllocStats() { return engine_.dspAllocStats(); }
+rp::host::DspAllocStats EngineRpcService::dspAllocStats() { return engine_.dspAllocStats(); }
 
 bool EngineRpcService::dspResetAllocStats(bool disableAutoGc) {
     engine_.resetDspAllocStats(disableAutoGc);
     return true;
 }
 
-DspGcResult EngineRpcService::dspRunGc() { return engine_.dspRunGc(); }
+rp::host::DspGcResult EngineRpcService::dspRunGc() { return engine_.dspRunGc(); }
 
 bool EngineRpcService::dspTraceReset(bool arm) {
     engine_.dspTraceReset(arm);
     return true;
 }
 
-std::vector<DspTraceSpan> EngineRpcService::dspTrace() { return engine_.dspTrace(); }
-std::vector<std::string>  EngineRpcService::dspTraceNames() { return engine_.dspTraceNames(); }
+std::vector<rp::host::DspTraceSpan> EngineRpcService::dspTrace() { return engine_.dspTrace(); }
+std::vector<std::string>            EngineRpcService::dspTraceNames() { return engine_.dspTraceNames(); }
