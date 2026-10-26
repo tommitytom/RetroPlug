@@ -75,6 +75,18 @@ instance and never runs `process`; the two contexts share no JS values, only the
   nothing), a control port as `{ start, changes }`.
 - **Outputs** go out through push functions bound once per instance, which write straight into the plan's
   `rp_queue` for that port, as today's sink thunks append to vectors. No intermediate JS array per block.
+- **Audio** is copied in and out of JS-owned buffers: each audio port has its own Float32Array per channel,
+  owned by the instance and sized to the block maximum, made the first time the port runs and again only when
+  a larger block is activated or the node gives one away (`buffer.transfer()`). An input's samples are copied
+  into them before `process`, an output's copied out after it, one `memcpy` per channel per block, and the
+  views JS is handed are made again only when the block's length moves, so a steady block still allocates
+  nothing. Plan memory never reaches JS: a view a node keeps across a plan swap, a buffer it transfers away, an
+  input it writes in place or an array it edits can reach only its own copy, never a buffer another node reads
+  or a plan the control thread has freed. Handing JS views of the plan's buffers and detaching them before a
+  buffer is freed cannot be made sound: a kept array, `transfer()` and an edited array each outran the tracking.
+- **Promise jobs** a block's JS queues run at the end of that block, at most 256 of them, so a reaction that
+  queues another every time cannot hold the audio thread; the rest wait for the next block's end, and a block
+  that leaves some is counted and said once. The control context drains its own after each call into it.
 - **The block's transport** (frames, sample rate, tempo, ppq at block start, playing) comes from `rp_process`.
   The Engine builds it from the same fields it builds today's `DspBlockInfo` from, so the kernel sees the same
   numbers.

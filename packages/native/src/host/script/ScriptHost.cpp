@@ -100,6 +100,19 @@ bool stringify(JSContext* ctx, JSValueConst value, std::string& out) {
     return text != nullptr;
 }
 
+// The promise jobs pending in rt, at most `bound` of them, `onThrow` called for each that throws (with its exception
+// pending, for it to take). True when none is left.
+template <class OnThrow>
+bool runJobs(JSRuntime* rt, int bound, OnThrow&& onThrow) {
+    for (int n = 0; n < bound; ++n) {
+        JSContext* ctx = nullptr;
+        const int r = JS_ExecutePendingJob(rt, &ctx);
+        if (r == 0) return true;
+        if (r < 0) onThrow(ctx);
+    }
+    return !JS_IsJobPending(rt);
+}
+
 bool sameObject(JSValueConst a, JSValueConst b) {
     return JS_IsObject(a) && JS_IsObject(b) && JS_VALUE_GET_PTR(a) == JS_VALUE_GET_PTR(b);
 }
@@ -133,7 +146,7 @@ struct Port {
     std::uint32_t index = 0;
 };
 
-// One port's JS state while its layout is the instance's: made on the block thread the first time JS asks for it,
+// One port's JS state while its layout is the instance's: made on the block thread the first time it is needed,
 // refilled at most once a block, freed there with the layout. Its native parts are sized on the control thread, so
 // the block thread only ever writes into them.
 struct PortJs {
@@ -143,8 +156,14 @@ struct PortJs {
     JSValue       items = JS_UNDEFINED;    // control: the stream's changes array
     JSValue       payload = JS_UNDEFINED;  // messages: the JS-owned ArrayBuffer the block's payloads are copied into
     std::uint64_t stamp = 0;               // the block it was filled for
-    std::vector<const float*> channels;    // audio: the buffer each view is over (null: none); kMaxChannels long
-    std::uint32_t viewFrames = 0;          // audio: the views' length
+    // audio: the instance's own copy of each channel, a JS-owned ArrayBuffer of bufferFrames floats (undefined until
+    // the port first runs with that channel), which a block's samples are copied into before process (an input) or out
+    // of after it (an output); value holds a view of the first viewFrames of each of the first viewCount. Never read
+    // back from value, which JS may change. kMaxChannels long.
+    std::vector<JSValue> buffers;
+    std::uint32_t bufferFrames = 0;
+    std::uint32_t viewFrames = 0;
+    std::uint32_t viewCount = 0;
 };
 
 // The layout an instance runs with: its ports by id, and their JS state.
@@ -180,7 +199,7 @@ std::unique_ptr<Layout> buildLayout(const std::string& json, std::string& why) {
         l->ports.push_back({parsed->params[k].id, PortKind::Control, Side::Param, static_cast<std::uint32_t>(k)});
     l->js.resize(l->ports.size());
     for (std::size_t i = 0; i < l->ports.size(); ++i)
-        if (l->ports[i].kind == PortKind::Audio) l->js[i].channels.assign(graph::kMaxChannels, nullptr);
+        if (l->ports[i].kind == PortKind::Audio) l->js[i].buffers.assign(graph::kMaxChannels, JS_UNDEFINED);
     return l;
 }
 
@@ -295,6 +314,7 @@ struct ScriptHost::Glue {
         JS_FreeValue(ctx, lay);
         JS_FreeValue(ctx, parsed);
         JS_FreeValue(ctx, raw);
+        h.drainControlJobs();
         return ok;
     }
 
@@ -370,7 +390,6 @@ struct ScriptHost::Glue {
         ScriptHost& h = *in.type->host;
         if (!ensureLive(h, in)) return;
         JSContext* ctx = h.audio_;
-        detachViews(ctx, *in.layout);
         if (!JS_IsFunction(ctx, in.portsChanged)) return;
         JSValue mask = JS_NewArray(ctx);
         for (std::uint32_t i = 0; i < count; ++i) JS_SetPropertyUint32(ctx, mask, i, JS_NewBool(ctx, connected[i] != 0));
@@ -390,6 +409,13 @@ struct ScriptHost::Glue {
             callActivate(h, in);
         }
         ++in.blockStamp;
+        // Every audio port's copies first, the inputs' samples in them: a node may read views it kept from a block
+        // before, so the copy cannot wait for it to ask.
+        if (!readyAudio(ctx, in, *block)) {
+            recordThrow(h, in, "process");  // out of memory in JS, so the block cannot run
+            silenceAudio(in, *block);
+            return in.type->faultOnThrow ? RP_FAULT : RP_OK;
+        }
         in.running = block;
         JS_SetProperty(ctx, in.block, atom(h, kFrames), JS_NewUint32(ctx, block->frames));
         const rp_transport& t = *block->transport;
@@ -399,10 +425,10 @@ struct ScriptHost::Glue {
         JS_SetProperty(ctx, in.transport, atom(h, kPlaying), JS_NewBool(ctx, (t.flags & RP_TRANSPORT_PLAYING) != 0));
         JSValue result = JS_Call(ctx, in.process, in.object, 1, &in.block);
         in.running = nullptr;
-        if (JS_IsException(result)) {
-            recordThrow(h, in, "process");
-            return in.type->faultOnThrow ? RP_FAULT : RP_OK;
-        }
+        const bool threw = JS_IsException(result);
+        if (threw) recordThrow(h, in, "process");  // first: the copy out may meet a detached buffer, which throws too
+        copyAudioOut(ctx, in, *block);             // what it wrote up to a throw stands, as its sends do
+        if (threw) return in.type->faultOnThrow ? RP_FAULT : RP_OK;
         bool fault = false;
         if (JS_IsString(result)) {
             const JSAtom said = JS_ValueToAtom(ctx, result);
@@ -452,7 +478,6 @@ struct ScriptHost::Glue {
                 prev->layout = std::move(next->layout);
             }
         }
-        detachViews(ctx, *in.layout);
         in.settings = next;
         *old = prev;
         if (!live || !JS_IsFunction(ctx, in.onSettings)) return;
@@ -537,13 +562,16 @@ struct ScriptHost::Glue {
     }
 
     // Counted, and the first one kept for reclaim to log; the exception is cleared.
-    static void recordThrow(ScriptHost& h, Instance& in, const char* where) {
+    static void recordThrow(ScriptHost& h, Instance& in, const char* where) { recordThrow(h, in.type->id.c_str(), where); }
+    // `type` null: no one node's (a promise job).
+    static void recordThrow(ScriptHost& h, const char* type, const char* where) {
         JSContext* ctx = h.audio_;
         JSValue thrown = JS_GetException(ctx);
         h.throws_.fetch_add(1, std::memory_order_relaxed);
         int unclaimed = 0;
         if (h.firstThrowState_.compare_exchange_strong(unclaimed, 1, std::memory_order_acq_rel)) {
-            const int n = std::snprintf(h.firstThrow_, sizeof h.firstThrow_, "%s threw in %s: ", in.type->id.c_str(), where);
+            const int n = type ? std::snprintf(h.firstThrow_, sizeof h.firstThrow_, "%s threw in %s: ", type, where)
+                               : std::snprintf(h.firstThrow_, sizeof h.firstThrow_, "%s threw: ", where);
             if (n > 0 && static_cast<std::size_t>(n) < sizeof h.firstThrow_)
                 describe(ctx, thrown, false, h.firstThrow_ + n, sizeof h.firstThrow_ - static_cast<std::size_t>(n));
             h.firstThrowState_.store(2, std::memory_order_release);
@@ -557,43 +585,123 @@ struct ScriptHost::Glue {
         l.bound = true;
     }
 
-    // What a view JS may still hold looks at nothing now: its buffer belongs to a plan that may be freed before the
-    // view is handed out again (a swap, or the instance's release). The next block makes new ones.
-    static void detachViews(JSContext* ctx, Layout& l) {
-        for (auto& p : l.js) {
-            if (p.channels.empty() || JS_IsUndefined(p.value)) continue;
-            for (std::uint32_t c = 0; c < p.channels.size(); ++c)
-                if (p.channels[c]) {
-                    detachView(ctx, p.value, c);
-                    p.channels[c] = nullptr;
-                }
-            p.stamp = 0;
-        }
-    }
-
-    static void detachView(JSContext* ctx, JSValueConst views, std::uint32_t c) {
-        JSValue view = JS_GetPropertyUint32(ctx, views, c);
-        if (JS_GetTypedArrayType(view) >= 0) {
-            JSValue buffer = JS_GetTypedArrayBuffer(ctx, view, nullptr, nullptr, nullptr);
-            if (JS_IsException(buffer)) clearException(ctx);
-            else JS_DetachArrayBuffer(ctx, buffer);
-            JS_FreeValue(ctx, buffer);
-        }
-        JS_FreeValue(ctx, view);
-    }
-
+    // Its JS let go of: what JS still holds of it (an array, a view, a copy's buffer) is JS's own memory, and stays
+    // good for as long as JS holds it, but nothing reads or fills it again.
     static void freeLayoutJs(JSContext* ctx, Layout& l) {
-        detachViews(ctx, l);
         for (auto& p : l.js) {
             for (JSValue* v : {&p.value, &p.pool, &p.items, &p.payload}) {
                 JS_FreeValue(ctx, *v);
                 *v = JS_UNDEFINED;
             }
+            for (JSValue& b : p.buffers) {
+                JS_FreeValue(ctx, b);
+                b = JS_UNDEFINED;
+            }
+            p.bufferFrames = p.viewFrames = p.viewCount = 0;
             if (p.atom != JS_ATOM_NULL) JS_FreeAtom(ctx, p.atom);
             p.atom = JS_ATOM_NULL;
             p.stamp = 0;
         }
         l.bound = false;
+    }
+
+    // ---- audio: the instance's own copies ------------------------------------------------------------------------
+    // The plan's view of an audio port this block.
+    static const rp_audio_view& audioView(const rp_process& b, const Port& port) {
+        return (port.side == Side::Output ? b.outputs : b.inputs)[port.index].u.audio;
+    }
+
+    // The samples of one copy, or null when it has none: never made, or detached by JS (a view's buffer transferred
+    // away), which clears the exception that says so.
+    static float* samples(JSContext* ctx, JSValueConst buffer) {
+        if (JS_IsUndefined(buffer)) return nullptr;
+        std::size_t size = 0;
+        std::uint8_t* data = JS_GetArrayBuffer(ctx, &size, buffer);
+        if (!data) clearException(ctx);
+        return reinterpret_cast<float*>(data);
+    }
+
+    // Every audio port's copies, readied for this block: made the first time a channel runs, and again when a larger
+    // block than they hold is activated or JS has transferred one away (so a steady block allocates nothing), each
+    // view made again only when its copy is or the block's length moves, and an input's samples copied in. False,
+    // with the exception pending, when JS is out of memory.
+    static bool readyAudio(JSContext* ctx, Instance& in, const rp_process& b) {
+        Layout& l = *in.layout;
+        for (std::size_t i = 0; i < l.ports.size(); ++i) {
+            if (l.ports[i].kind != PortKind::Audio) continue;
+            PortJs& p = l.js[i];
+            const rp_audio_view& v = audioView(b, l.ports[i]);
+            if (JS_IsUndefined(p.value)) {
+                JSValue views = JS_NewArray(ctx);
+                if (JS_IsException(views)) return false;
+                p.value = views;
+            }
+            const std::uint32_t want = std::max(in.maxFrames, b.frames);
+            if (p.bufferFrames < want) {  // a block longer than the copies: all of them made again, at the new size
+                for (JSValue& c : p.buffers) {
+                    JS_FreeValue(ctx, c);
+                    c = JS_UNDEFINED;
+                }
+                p.bufferFrames = want;
+            }
+            const std::uint32_t count = std::min<std::uint32_t>(v.channel_count, static_cast<std::uint32_t>(p.buffers.size()));
+            for (std::uint32_t c = 0; c < count; ++c) {
+                float* data = samples(ctx, p.buffers[c]);
+                const bool fresh = !data;
+                if (fresh) {
+                    JS_FreeValue(ctx, p.buffers[c]);
+                    p.buffers[c] = JS_UNDEFINED;
+                    JSValue made = JS_NewArrayBufferCopy(ctx, nullptr, std::size_t(p.bufferFrames) * sizeof(float));
+                    if (JS_IsException(made)) return false;
+                    p.buffers[c] = made;
+                    if (!(data = samples(ctx, made))) return false;
+                }
+                if (fresh || c >= p.viewCount || p.viewFrames != b.frames) {
+                    // All three arguments: the constructor reads offset and length whatever argc says.
+                    JSValueConst args[3] = {p.buffers[c], JS_NewUint32(ctx, 0), JS_NewUint32(ctx, b.frames)};
+                    JSValue view = JS_NewTypedArray(ctx, 3, args, JS_TYPED_ARRAY_FLOAT32);
+                    if (JS_IsException(view)) return false;
+                    // Refused only by an array JS has frozen, which is the node's to answer for: its views stay as they are.
+                    if (JS_SetPropertyUint32(ctx, p.value, c, view) < 0) clearException(ctx);
+                }
+                if (l.ports[i].side == Side::Input) std::memcpy(data, v.channels[c], std::size_t(b.frames) * sizeof(float));
+            }
+            if (count != p.viewCount || p.viewFrames != b.frames) {
+                if (JS_SetProperty(ctx, p.value, atom(hostOf(ctx), kLength), JS_NewUint32(ctx, count)) < 0) clearException(ctx);
+                p.viewCount = count;
+                p.viewFrames = b.frames;
+            }
+        }
+        return true;
+    }
+
+    // Every audio output's copies, out into the plan's buffers: a copy JS has transferred away during the block leaves
+    // its channel silent (and is made again next block).
+    static void copyAudioOut(JSContext* ctx, Instance& in, const rp_process& b) {
+        const Layout& l = *in.layout;
+        for (std::size_t i = 0; i < l.ports.size(); ++i) {
+            const Port& port = l.ports[i];
+            if (port.kind != PortKind::Audio || port.side != Side::Output) continue;
+            const PortJs& p = l.js[i];
+            const rp_audio_view& v = audioView(b, port);
+            const std::uint32_t count = std::min<std::uint32_t>(v.channel_count, static_cast<std::uint32_t>(p.buffers.size()));
+            for (std::uint32_t c = 0; c < count; ++c) {
+                const float* data = samples(ctx, p.buffers[c]);
+                if (data) std::memcpy(v.channels[c], data, std::size_t(b.frames) * sizeof(float));
+                else std::memset(v.channels[c], 0, std::size_t(b.frames) * sizeof(float));
+            }
+        }
+    }
+
+    // A block that could not run: its audio outputs silent.
+    static void silenceAudio(Instance& in, const rp_process& b) {
+        const Layout& l = *in.layout;
+        for (std::size_t i = 0; i < l.ports.size(); ++i) {
+            const Port& port = l.ports[i];
+            if (port.kind != PortKind::Audio || port.side != Side::Output) continue;
+            const rp_audio_view& v = audioView(b, port);
+            for (std::uint32_t c = 0; c < v.channel_count; ++c) std::memset(v.channels[c], 0, std::size_t(b.frames) * sizeof(float));
+        }
     }
 
     // ---- the Block object ----------------------------------------------------------------------------------------
@@ -710,31 +818,6 @@ struct ScriptHost::Glue {
         JS_SetProperty(ctx, p.items, atom(h, kLength), JS_NewUint32(ctx, q.count));
     }
 
-    // An audio port as a reused Float32Array[], one view per channel straight over the plan's buffer (no copy), made
-    // again only when the buffer or the block's length moves; a replaced view is detached first.
-    static void fillAudio(ScriptHost& h, JSContext* ctx, PortJs& p, const rp_audio_view& v, std::uint32_t frames) {
-        if (JS_IsUndefined(p.value)) p.value = JS_NewArray(ctx);
-        const std::uint32_t count = std::min<std::uint32_t>(v.channel_count, static_cast<std::uint32_t>(p.channels.size()));
-        for (std::uint32_t c = 0; c < count; ++c) {
-            const float* buffer = v.channels[c];
-            if (p.channels[c] == buffer && p.viewFrames == frames) continue;
-            if (p.channels[c]) detachView(ctx, p.value, c);
-            JSValue ab = JS_NewArrayBuffer(ctx, reinterpret_cast<std::uint8_t*>(const_cast<float*>(buffer)),
-                                           std::size_t(frames) * sizeof(float), nullptr, nullptr, false);
-            // All three arguments: the constructor reads offset and length whatever argc says.
-            JSValueConst args[3] = {ab, JS_NewUint32(ctx, 0), JS_NewUint32(ctx, frames)};
-            JS_SetPropertyUint32(ctx, p.value, c, JS_NewTypedArray(ctx, 3, args, JS_TYPED_ARRAY_FLOAT32));
-            JS_FreeValue(ctx, ab);
-            p.channels[c] = buffer;
-        }
-        for (std::uint32_t c = count; c < p.channels.size() && p.channels[c]; ++c) {
-            detachView(ctx, p.value, c);
-            p.channels[c] = nullptr;
-        }
-        p.viewFrames = frames;
-        JS_SetProperty(ctx, p.value, atom(h, kLength), JS_NewUint32(ctx, count));
-    }
-
     // block.messages(port): an events or bytes input.
     static JSValue messages(JSContext* ctx, JSValueConst self, int argc, JSValueConst* argv) {
         Instance* in = running(ctx, self);
@@ -767,18 +850,13 @@ struct ScriptHost::Glue {
         return JS_DupValue(ctx, p->value);
     }
 
-    // block.audio(port): an audio input or output.
+    // block.audio(port): an audio input or output, as the views of the instance's own copies process readied.
     static JSValue audio(JSContext* ctx, JSValueConst self, int argc, JSValueConst* argv) {
         Instance* in = running(ctx, self);
         const Port* found = nullptr;
         PortJs* p = in ? lookup(ctx, *in, argc ? argv[0] : JS_UNDEFINED, kInputs | kOutputs, {PortKind::Audio}, "audio port", &found)
                        : nullptr;
         if (!p) return JS_EXCEPTION;
-        if (p->stamp != in->blockStamp) {
-            const rp_port_view& v = found->side == Side::Output ? in->running->outputs[found->index] : in->running->inputs[found->index];
-            fillAudio(hostOf(ctx), ctx, *p, v.u.audio, in->running->frames);
-            p->stamp = in->blockStamp;
-        }
         return JS_DupValue(ctx, p->value);
     }
 
@@ -896,6 +974,8 @@ bool ScriptHost::load(std::span<const Chunk> chunks, std::string* error) {
             if (JS_IsException(result)) return fail("chunk " + std::to_string(i) + ": " + exceptionText(ctx, false));
             JS_FreeValue(ctx, result);
         }
+        // What the bundle's top level queued runs now, in this context's runtime: no block has begun.
+        runJobs(audioSide ? audioRt_ : controlRt_, kJobsPerBlock, [](JSContext* c) { clearException(c); });
     }
     // The definitions, in the same order in both contexts (the same bundle ran in each).
     JSValue lists[2];
@@ -943,6 +1023,7 @@ bool ScriptHost::load(std::span<const Chunk> chunks, std::string* error) {
         JSValue d = callMethod(control_, type.control, "descriptor", 0, nullptr);
         const bool described = !JS_IsException(d) && stringify(control_, d, type.descriptor);
         JS_FreeValue(control_, d);
+        drainControlJobs();
         if (!described) return fail(type.id + ": its descriptor: " + exceptionText(control_, true));
         for (const auto& [flag, key] : {std::pair{&type.reshapes, "reshapes"}, std::pair{&type.faultOnThrow, "faultOnThrow"}}) {
             JSValue v = JS_GetPropertyStr(control_, type.control, key);
@@ -992,6 +1073,19 @@ void ScriptHost::beginBlock() {
     }
 }
 
+// The promise jobs the block's JS queued (its process calls, and whatever the adoption before it ran), bounded so a
+// reaction that queues another every time cannot hold the block; a throw in one is counted as a node's is.
+void ScriptHost::endBlock() {
+    if (!JS_IsJobPending(audioRt_)) return;
+    JS_UpdateStackTop(audioRt_);
+    if (!runJobs(audioRt_, kJobsPerBlock, [this](JSContext*) { Glue::recordThrow(*this, nullptr, "a promise job"); }))
+        jobsCutShort_.fetch_add(1, std::memory_order_relaxed);
+}
+
+void ScriptHost::drainControlJobs() {
+    if (JS_IsJobPending(controlRt_)) runJobs(controlRt_, kJobsPerBlock, [](JSContext* ctx) { clearException(ctx); });
+}
+
 void ScriptHost::reclaim() {
     Instance* in = nullptr;
     while (released_.tryPop(in)) delete in;
@@ -1000,6 +1094,12 @@ void ScriptHost::reclaim() {
         std::fprintf(stderr, "[script] the release ring back was full: %u instance record(s) leaked rather than freed on the audio thread\n",
                      static_cast<unsigned>(leaked - leaksReported_));
         leaksReported_ = leaked;
+    }
+    if (!jobsLogged_ && jobsCutShort() > 0) {
+        std::fprintf(stderr, "[script] a block's promise jobs outran the %d a block runs; the rest ran at the next block's end "
+                             "(said once; jobsCutShort() counts them)\n",
+                     kJobsPerBlock);
+        jobsLogged_ = true;
     }
     if (!firstThrowLogged_ && firstThrowState_.load(std::memory_order_acquire) == 2) {
         std::fprintf(stderr, "[script] %s (a throw is counted, and the node runs again next block; later ones are counted only)\n",

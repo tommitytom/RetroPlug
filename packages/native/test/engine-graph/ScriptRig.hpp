@@ -167,10 +167,12 @@ struct ScriptRig {
 
     graph::SetGraphResult set(const std::string& json) { return host->setGraph(json); }
 
-    // One block, as an Engine runs it: the script host's releases, then the graph's drain and block.
+    // One block, as an Engine runs it: the script host's releases, the graph's drain and block, then the promise jobs
+    // the block queued.
     void block(std::uint32_t frames = 64) {
         scripts.beginBlock();
         host->processBlock(frames, transport, outPointers.data(), static_cast<std::uint32_t>(outPointers.size()));
+        scripts.endBlock();
     }
     void run(std::uint32_t frames = 64, int blocks = 1) {
         for (int i = 0; i < blocks; ++i) block(frames);

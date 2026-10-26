@@ -67,7 +67,7 @@ rp.register([rp.defineNode({
 })]);
 )JS";
 
-// Audio scaled in place, over views of the plan's buffers, by a param and a control input, whose changes it emits.
+// Audio scaled, through the views of its own copies, by a param and a control input, whose changes it emits.
 const char* const kGain = R"JS(
 rp.register([rp.defineNode({
   id: "rp.toy.gain",
@@ -185,6 +185,81 @@ rp.register([rp.defineNode({
 })]);
 )JS";
 
+// What a node may do with the audio it is handed, none of which may reach anything but its own copy: keep the
+// Float32Array[] across blocks and plans, transfer a view's buffer away, write an input in place, swap the array's
+// element for one of its own, or keep a view in module state past its instance's release.
+const char* const kAudioHazards = R"JS(
+globalThis.stashed = null;
+rp.register([
+rp.defineNode({
+  id: "rp.toy.cacher",   // the array from its first block, every block after
+  ports: { in: rp.audio.in(), out: rp.audio.out(rp.channels.match("in")) },
+  create: () => {
+    let outs = null;
+    return {
+      process(b) {
+        if (!outs) outs = b.audio("out");
+        const o = outs[0];
+        for (let f = 0; f < b.frames; ++f) o[f] = 0.25;
+      },
+    };
+  },
+}),
+rp.defineNode({
+  id: "rp.toy.transfer",  // length 0: its output's buffer transferred away once, at its length; n: to n bytes, every block
+  settings: rp.z.object({ length: rp.z.number().int().min(0).default(0) }),
+  ports: { out: rp.audio.out(rp.channels.stereo()) },
+  create: ({ settings }) => {
+    let taken = null;
+    return {
+      process(b) {
+        const o = b.audio("out")[0];
+        if (settings.length > 0) return void o.buffer.transfer(settings.length);
+        if (!taken) return void new Float32Array((taken = o.buffer.transfer())).fill(1);
+        for (let f = 0; f < b.frames; ++f) o[f] = 0.25;
+        new Float32Array(taken)[0] = 1;  // what it took is its own memory now
+      },
+    };
+  },
+}),
+rp.defineNode({
+  id: "rp.toy.scribbler",  // writes its input in place, and sends on what it reads back
+  ports: { in: rp.audio.in(), out: rp.audio.out(rp.channels.stereo()) },
+  create: () => ({
+    process(b) {
+      const ins = b.audio("in"), o = b.audio("out")[0];
+      for (let c = 0; c < ins.length; ++c) for (let f = 0; f < b.frames; ++f) ins[c][f] = 0.5;
+      for (let f = 0; f < b.frames; ++f) o[f] = ins.length ? ins[0][f] : -1;
+    },
+  }),
+}),
+rp.defineNode({
+  id: "rp.toy.mutator",   // swaps the array's element for one of its own, and goes on writing the one it was handed
+  ports: { in: rp.audio.in(), out: rp.audio.out(rp.channels.match("in")) },
+  create: () => {
+    let kept = null;
+    return {
+      process(b) {
+        const outs = b.audio("out");
+        if (!kept) { kept = outs[0]; outs[0] = new Float32Array(b.frames); }
+        for (let f = 0; f < b.frames; ++f) kept[f] = 0.75;
+      },
+    };
+  },
+}),
+rp.defineNode({
+  id: "rp.toy.stasher",   // keeps a view of its output in module state
+  ports: { out: rp.audio.out(rp.channels.stereo()) },
+  create: () => ({ process(b) { globalThis.stashed = b.audio("out")[0]; } }),
+}),
+rp.defineNode({
+  id: "rp.toy.user",      // writes through the module-level stash, whoever made it
+  ports: { out: rp.events.out() },
+  create: () => ({ process(b) { const s = globalThis.stashed; if (s) for (let i = 0; i < s.length; ++i) s[i] = 9; } }),
+}),
+]);
+)JS";
+
 }  // namespace
 
 TEST_CASE("a script node's messages arrive in order with their flags, and a send past capacity is refused and counted",
@@ -226,8 +301,8 @@ TEST_CASE("a script node's messages arrive in order with their flags, and a send
     CHECK(rig.scripts.throwCount() == 0);
 }
 
-TEST_CASE("a script node reads a param and a control stream, emits control, and writes audio through views of the plan's "
-          "buffers",
+TEST_CASE("a script node reads a param and a control stream, emits control, and writes audio through views of its own "
+          "copies",
           "[script]") {
     ScriptRig rig(kGain);
     REQUIRE(rig.set(doc(node("src", "rp.test.source") + "," + node("k", "rp.core.constant", "", R"({"value":0.5})") + "," +
@@ -496,6 +571,173 @@ TEST_CASE("the script block path allocates nothing native once warm, and what it
     rig.setAudioThreadOwns(false);
     CHECK(rig.node<gt::Sink>("extra").eventCount == 1);
     CHECK(rig.scripts.throwCount() == 0);
+}
+
+TEST_CASE("a script node that keeps its audio array across blocks writes its own copy, whatever plan it runs in",
+          "[script][audio-copy][cache]") {
+    ScriptRig rig(kAudioHazards);
+    const std::string base = node("src", "rp.test.source") + "," + node("c", "rp.toy.cacher") + "," + node("sink", "rp.test.sink");
+    const std::string wires = wire("src.out", "c.in") + "," + wire("c.out", "sink.in");
+    REQUIRE(rig.set(doc(base, wires)).ok);
+    rig.run(64, 2);
+    const auto& sink = rig.node<gt::Sink>("sink");
+    CHECK(sink.first[0] == 0.25f);
+    rp_node* const kept = rig.host->node("c");
+    // An unrelated node: c is kept and its connected outputs do not move, so nothing tells it of the swap, which frees
+    // the plan its first blocks ran in.
+    REQUIRE(rig.set(doc(base + "," + node("other", "rp.test.sink"), wires)).ok);
+    REQUIRE(rig.host->node("c") == kept);
+    rig.run(64, 2);
+    CHECK(sink.first[0] == 0.25f);
+    CHECK(sink.last[0] == 0.25f);
+    CHECK(sink.first[1] == 0.0f);  // a channel it never writes holds silence, not what the plan's buffer last held
+    // A re-activation re-plans every buffer too, here at a larger block than the copies were made for.
+    std::string why;
+    REQUIRE(rig.host->reactivate(44100.0, 512, &why));
+    REQUIRE(rig.host->node("c") == kept);
+    rig.run(64, 2);
+    CHECK(sink.first[0] == 0.25f);
+    rig.run(200);  // a longer block: its views are made again, in the array it keeps
+    CHECK(sink.last[0] == 0.25f);
+    CHECK(rig.scripts.throwCount() == 0);
+}
+
+TEST_CASE("a script node that transfers its output's buffer away takes only its own copy: that block is silent, and the next "
+          "block's copy is made again",
+          "[script][audio-copy][transfer]") {
+    for (const int length : {0, 8}) {
+        INFO("transferred to " << (length ? std::to_string(length) + " bytes" : std::string("its own length")));
+        ScriptRig rig(kAudioHazards);
+        const auto graph = [&](const std::string& extra) {
+            return doc(node("t", "rp.toy.transfer", R"({"length":)" + std::to_string(length) + "}") + "," +
+                           node("sink", "rp.test.sink") + extra,
+                       wire("t.out", "sink.in"));
+        };
+        REQUIRE(rig.set(graph("")).ok);
+        rig.run();
+        const auto& sink = rig.node<gt::Sink>("sink");
+        CHECK(sink.first[0] == 0.0f);  // what it gave away is not the plan's to read
+        REQUIRE(rig.set(graph("," + node("x", "rp.test.sink"))).ok);  // a swap, freeing the plan it first ran in
+        rig.run(64, 2);
+        CHECK(sink.first[0] == (length ? 0.0f : 0.25f));
+        CHECK(sink.last[0] == (length ? 0.0f : 0.25f));
+        CHECK(rig.scripts.throwCount() == 0);
+    }
+}
+
+TEST_CASE("a script node's audio inputs are its own copies: writing one reaches neither its source nor the plan's silence",
+          "[script][audio-copy][inplace]") {
+    ScriptRig rig(kAudioHazards);
+    // Unconnected, s's input is the one silent buffer every unconnected input of the plan reads, sink's after it.
+    REQUIRE(rig.set(doc(node("s", "rp.toy.scribbler") + "," + node("sink", "rp.test.sink") + "," + node("own", "rp.test.sink"),
+                        wire("s.out", "own.in")))
+                .ok);
+    rig.run(64, 2);
+    CHECK(rig.node<gt::Sink>("sink").first[0] == 0.0f);
+    CHECK(rig.node<gt::Sink>("sink").last[0] == 0.0f);
+    CHECK(rig.node<gt::Sink>("own").first[0] == 0.5f);  // its copy holds what it wrote
+    // Wired, its input is the source's output, which `after` reads after it.
+    REQUIRE(rig.set(doc(node("src", "rp.test.source") + "," + node("s", "rp.toy.scribbler") + "," + node("after", "rp.test.sink") +
+                            "," + node("own", "rp.test.sink"),
+                        wire("src.out", "s.in") + "," + wire("src.out", "after.in") + "," + wire("s.out", "own.in")))
+                .ok);
+    rig.run(64, 2);
+    CHECK(rig.node<gt::Sink>("after").first[0] == 1.0f);
+    CHECK(rig.node<gt::Sink>("after").last[1] == 1.0f);
+    CHECK(rig.node<gt::Sink>("own").first[0] == 0.5f);
+    CHECK(rig.scripts.throwCount() == 0);
+}
+
+TEST_CASE("a script node that swaps its audio array's element for its own goes on writing the copy it was handed",
+          "[script][audio-copy][mutate]") {
+    ScriptRig rig(kAudioHazards);
+    const std::string nodes = node("src", "rp.test.source") + "," + node("m", "rp.toy.mutator") + "," + node("sink", "rp.test.sink");
+    const std::string wires = wire("src.out", "m.in") + "," + wire("m.out", "sink.in");
+    REQUIRE(rig.set(doc(nodes, wires)).ok);
+    rig.run(64, 2);
+    CHECK(rig.node<gt::Sink>("sink").first[0] == 0.75f);
+    REQUIRE(rig.set(doc(nodes + "," + node("x", "rp.test.sink"), wires)).ok);  // the plan it first ran in, freed
+    rig.run(64, 2);
+    CHECK(rig.node<gt::Sink>("sink").first[0] == 0.75f);
+    CHECK(rig.scripts.throwCount() == 0);
+}
+
+TEST_CASE("a view a script node keeps in module state outlives its instance as its own memory, which nothing reads",
+          "[script][audio-copy][stash]") {
+    ScriptRig rig(kAudioHazards);
+    REQUIRE(rig.set(doc(node("s", "rp.toy.stasher") + "," + node("sink", "rp.test.sink") + "," + node("u", "rp.toy.user"),
+                        wire("s.out", "sink.in")))
+                .ok);
+    rig.run(64, 2);
+    REQUIRE(rig.set(doc(node("u", "rp.toy.user") + "," + node("src", "rp.test.source") + "," + node("sink", "rp.test.sink"),
+                        wire("src.out", "sink.in")))
+                .ok);  // s goes, and its plan with it
+    rig.run(64, 3);    // u writes through what s kept
+    CHECK(rig.node<gt::Sink>("sink").first[0] == 1.0f);
+    CHECK(rig.node<gt::Sink>("sink").last[1] == 1.0f);
+    CHECK(rig.scripts.throwCount() == 0);
+}
+
+TEST_CASE("a promise reaction a script node queues runs at the end of its block, and its memory is given back", "[script][jobs]") {
+    ScriptRig rig(R"JS(
+rp.register([rp.defineNode({
+  id: "rp.toy.async",
+  ports: { reactions: rp.control.out() },
+  create: () => {
+    let ran = 0;
+    return {
+      process(b) {
+        b.emit("reactions", 0, ran);
+        Promise.resolve(1).then(() => { ++ran; });
+      },
+    };
+  },
+})]);
+)JS");
+    REQUIRE(rig.set(doc(node("a", "rp.toy.async") + "," + node("p", "rp.test.probe"), wire("a.reactions", "p.control"))).ok);
+    rig.run(64, 4);
+    CHECK(rig.node<Probe>("p").controlAtZero == 3.0);  // each block sees every reaction the blocks before it queued
+    const auto before = rig.scripts.audioAllocations();
+    rig.run(64, 1000);
+    const auto after = rig.scripts.audioAllocations();
+    CHECK(rig.node<Probe>("p").controlAtZero == 1003.0);
+    const auto held = static_cast<std::int64_t>(after.allocs - before.allocs) - static_cast<std::int64_t>(after.frees - before.frees);
+    INFO("1000 blocks: " << after.allocs - before.allocs << " allocations, " << after.frees - before.frees << " frees");
+    CHECK(held <= 16);  // what a reaction allocates is freed once it has run: nothing grows with the blocks
+    CHECK(rig.scripts.throwCount() == 0);
+}
+
+TEST_CASE("promise reactions that queue another every time run a bounded number a block, the rest at the next block's end",
+          "[script][jobs]") {
+    ScriptRig rig(R"JS(
+rp.register([rp.defineNode({
+  id: "rp.toy.chain",
+  ports: { links: rp.control.out() },
+  create: () => {
+    let links = 0, started = false;
+    const link = () => { ++links; Promise.resolve().then(link); };
+    return {
+      process(b) {
+        b.emit("links", 0, links);
+        if (!started) { started = true; link(); Promise.resolve().then(() => { throw new Error("a rejection, not a throw"); }); }
+      },
+    };
+  },
+})]);
+)JS");
+    REQUIRE(rig.set(doc(node("c", "rp.toy.chain") + "," + node("p", "rp.test.probe"), wire("c.links", "p.control"))).ok);
+    rig.run();
+    CHECK(rig.node<Probe>("p").controlAtZero == 0.0);
+    CHECK(rig.scripts.jobsCutShort() == 1);
+    rig.run();
+    // The link process ran, then the block's 256 jobs: 255 more links and the reaction that threw, which rejects its
+    // promise rather than failing the job.
+    CHECK(rig.node<Probe>("p").controlAtZero == 1.0 + (ScriptHost::kJobsPerBlock - 1));
+    rig.run();
+    CHECK(rig.node<Probe>("p").controlAtZero == 1.0 + (ScriptHost::kJobsPerBlock - 1) + ScriptHost::kJobsPerBlock);
+    CHECK(rig.scripts.jobsCutShort() == 3);
+    CHECK(rig.scripts.throwCount() == 0);
+    rig.reclaim();  // says so, once
 }
 
 TEST_CASE("an audio thread runs script nodes while the control thread plans, reshapes, rebuilds and reclaims them",

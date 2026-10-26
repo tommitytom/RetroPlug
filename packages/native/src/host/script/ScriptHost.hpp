@@ -52,11 +52,17 @@ struct ScriptAllocations {
 //
 // A node's process gets one Block object, the same every block (Phase A's Block, packages/retroplug/src/graph/
 // defineNode.ts): messages(port) is a reused Message[] whose payloads are copied into one JS-owned buffer per port,
-// control(id) a reused { start, changes }, audio(port) Float32Array views straight over the plan's channel buffers
-// (made again only when a buffer or the block's length moves, and detached before what they look at can be freed),
-// and send and emit write the plan's output queues directly. Ports are found by id through atoms made when the
-// instance, or the layout it reshapes to, is bound, so a warm block allocates nothing native, and a node written
-// with indexed loops nothing in JS either. What a block hands out is good for that process call: keep copies.
+// control(id) a reused { start, changes }, audio(port) a reused Float32Array[] over the instance's own JS-owned copy
+// of each channel, which an input's samples are copied into before process and an output's copied out of after it
+// (made when the port first runs and again only when a larger block or JS outgrows them, each view again only when the
+// block's length moves), and send and emit write the plan's output queues directly. No plan memory ever reaches JS,
+// so nothing a node keeps, transfers or writes can reach a buffer another node reads or a plan the control thread
+// frees. Ports are found by id through atoms made when the instance, or the layout it reshapes to, is bound, so a warm
+// block allocates nothing native, and a node written with indexed loops nothing in JS either. What a block hands out
+// is good for that process call: keep copies.
+//
+// The promise jobs a block's JS queues run at the end of the block (endBlock), at most kJobsPerBlock of them, so a
+// reaction that queues another every time cannot hold the block: the rest wait for the next block's end.
 //
 // A throw in process is caught, counted and the block's output up to it stands: the node runs again next block
 // (design section 4.5), unless its definition says faultOnThrow, when it faults (RP_FAULT, the executor's latch).
@@ -97,13 +103,19 @@ public:
     // ---- the thread that runs blocks ---------------------------------------------------------------------
     // At the top of every block, before the graph runs: release what destroy queued.
     void beginBlock();
+    // At the end of every block that ran the graph: the promise jobs its JS queued, at most kJobsPerBlock of them.
+    void endBlock();
+    static constexpr int kJobsPerBlock = 256;
 
     // ---- any thread ------------------------------------------------------------------------------------------
-    // Throws caught in a script node (process, and its create, onSettings, portsChanged and activate), so far.
+    // Throws caught in a script node (process, and its create, onSettings, portsChanged and activate) and in the
+    // promise jobs their blocks queued, so far.
     std::uint32_t     throwCount() const { return throws_.load(std::memory_order_relaxed); }
     ScriptAllocations audioAllocations() const;
     // JS instances created and not yet released.
     std::uint32_t     liveInstances() const { return live_.load(std::memory_order_relaxed); }
+    // Blocks whose promise jobs outran kJobsPerBlock, leaving some for the next block; reclaim says so once.
+    std::uint32_t     jobsCutShort() const { return jobsCutShort_.load(std::memory_order_relaxed); }
 
     // Defined in ScriptHost.cpp: a script type, and one instance's record.
     struct Type;
@@ -118,6 +130,7 @@ private:
     void releaseJs(Instance& in);   // the block thread, or quiescent
     void retire(Instance* in);      // control thread: a destroyed shim's record
     void releaseQueued();           // quiescent: everything queued, released and deleted
+    void drainControlJobs();        // control thread: the promise jobs a call into the control context queued
     void freeTypes();
 
     // counters_ is the audio runtime's allocator opaque, so it is declared (and made) before it.
@@ -145,6 +158,8 @@ private:
 
     std::atomic<std::uint32_t> throws_{0};
     std::atomic<std::uint32_t> live_{0};
+    std::atomic<std::uint32_t> jobsCutShort_{0};
+    bool                       jobsLogged_ = false;
     // The first throw, kept by the block thread in a fixed buffer (it allocates nothing native there): claimed
     // 0 -> 1, written, then published 1 -> 2.
     std::atomic<int>           firstThrowState_{0};

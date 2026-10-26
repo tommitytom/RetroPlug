@@ -692,6 +692,7 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
     const rp_transport transport{sampleRate_, bpm_, ppq_, transport_ ? std::uint32_t{RP_TRANSPORT_PLAYING} : 0u};
     // The kernel stage, every system, the mixing and the host outputs (the host drained before this).
     graph_->host->run(frames, transport, outputs, static_cast<std::uint32_t>(numOutputs));
+    graph_->script.endBlock();  // the promise jobs the block's script nodes queued
 #ifdef RETROPLUG_PROFILE
     dsp_.spanEnd();  // apu-render, begun at the end of the kernel stage
 #endif

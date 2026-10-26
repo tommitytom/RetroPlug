@@ -106,6 +106,7 @@ export interface Transport {
 
 export interface Message {
   frame: number;
+  /** A view into a buffer the next block overwrites: copy the bytes to keep them past this process call. */
   data: Uint8Array;
   /** On a bytes port, bit 0 = flush barrier. */
   flags: number;
@@ -118,12 +119,18 @@ export interface ControlStream {
   changes: readonly { frame: number; value: number }[];
 }
 
+// What a block hands out (the arrays, the views, the message objects) is valid only during the process call it is
+// handed to: the same objects are refilled for the next block, or made again, so read them through the block every
+// block and copy what you keep.
 export interface Block {
   frames: number;
   transport: Transport;
-  /** Audio ports: one Float32Array per channel. */
+  /** Audio ports: one Float32Array per channel, `frames` long. They view the node's own copy of each channel,
+   *  never the buffers other nodes read: an input's samples are copied in before process and an output's copied
+   *  out after it, so writing an input changes only this node's copy. Valid only during this call: a later block
+   *  may hand out new views (when its length moves, say), and only the ones it hands out are read. */
   audio(port: string): Float32Array[];
-  /** Events / bytes inputs. */
+  /** Events / bytes inputs. Each message's `data` is overwritten next block. */
   messages(port: string): readonly Message[];
   /** Events / bytes outputs. False when the fixed-capacity queue is full (the message is dropped). */
   send(port: string, frame: number, data: ArrayLike<number>, flags?: number): boolean;
