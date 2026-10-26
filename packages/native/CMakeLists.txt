@@ -141,6 +141,7 @@ add_library(retroplug-backend STATIC
     src/host/engine/EngineInvoker.cpp       # QueuedInvoker - the one mutation path to the Engine
     src/host/graph/SystemNodes.cpp          # the cores as rp.sameboy.gb / rp.mesen.* nodes
     src/host/graph/KernelNode.cpp           # the kernel stage as rp.dsp.kernel
+    src/host/graph/HostIoNodes.cpp          # rp.host.midi-in / -out, controller-in / -out, rp.n8.cart-mirror
     src/system/SystemFactory.cpp            # backend-agnostic build registry (the one build path)
     src/system/CoreBackends.cpp             # registerCoreBackends: mounts sameboy + mesen on a factory
     src/system/sameboy/SameBoyBackend.cpp   # SameBoy builder — the only place SameBoyConfig is constructed

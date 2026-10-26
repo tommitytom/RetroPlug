@@ -2,7 +2,8 @@
 
 // Graph documents for native tests, spelled the way packages/retroplug/src/graph/buildGraph.ts writes them
 // (node ids, document order, buses), so a test drives the Engine with what TS would send. Only the shapes the
-// tests need: systems summed to a stereo pair, each system on its own pair, and a lone NES split.
+// tests need: systems summed to a stereo pair (with a test's own nodes and wires added, the host I/O nodes
+// buildGraph does not place yet among them), each system on its own pair, and a lone NES split.
 
 #include <cstdint>
 #include <string>
@@ -51,11 +52,26 @@ inline std::string sys(const DocSystem& s) {
 
 }  // namespace docs_detail
 
+// One node, or one wire, as a document spells it, for DocExtras.
+inline std::string docNode(const std::string& id, const std::string& type, const std::string& settings = "") {
+    return docs_detail::node(id, type, settings);
+}
+inline std::string docWire(const std::string& from, const std::string& to) { return docs_detail::wire(from, to); }
+
+// What a test adds to a document: nodes after the systems (the host I/O nodes, a cart mirror) and wires after the
+// routing's; and whether the document keeps the kernel node every buildGraph document starts with.
+struct DocExtras {
+    std::vector<std::string> nodes;
+    std::vector<std::string> wires;
+    bool                     kernel = true;
+};
+
 // The Stereo routing at a `channels`-wide host: every system's L summed into channel 0, its R into 1. One
 // rp.core.add per side, never chained as buildGraph chains them past 16 inputs, so 16 systems at most.
-inline std::string stereoDocument(const std::vector<DocSystem>& systems, std::uint32_t channels = 2) {
+inline std::string stereoDocument(const std::vector<DocSystem>& systems, const DocExtras& extras, std::uint32_t channels = 2) {
     using namespace docs_detail;
-    std::vector<std::string> nodes{node("kernel", "rp.dsp.kernel")}, wires;
+    std::vector<std::string> nodes, wires;
+    if (extras.kernel) nodes.push_back(node("kernel", "rp.dsp.kernel"));
     for (const DocSystem& s : systems) nodes.push_back(sys(s));
     for (const DocSystem& s : systems) {
         const std::string split = "split-" + std::to_string(s.id);
@@ -74,8 +90,13 @@ inline std::string stereoDocument(const std::vector<DocSystem>& systems, std::ui
             wires.push_back(wire("split-" + std::to_string(systems[k].id) + half, lane + ".in" + std::to_string(k + 1)));
         wires.push_back(wire(lane + ".out", out(c, 1)));
     }
+    nodes.insert(nodes.end(), extras.nodes.begin(), extras.nodes.end());
+    wires.insert(wires.end(), extras.wires.begin(), extras.wires.end());
     nodes.push_back(node("out", "rp.host.audio-out", buses(std::vector<std::uint32_t>(channels, 1))));
     return document(nodes, wires);
+}
+inline std::string stereoDocument(const std::vector<DocSystem>& systems, std::uint32_t channels = 2) {
+    return stereoDocument(systems, DocExtras{}, channels);
 }
 
 // The perSystem shape: slot i's mix on host channels 2i and 2i + 1.

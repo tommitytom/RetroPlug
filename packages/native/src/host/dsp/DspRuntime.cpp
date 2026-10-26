@@ -335,12 +335,12 @@ void DspRuntime::processBlock(const std::vector<MidiIn>& midi,
                               const std::vector<SerialOut>& serialOut,
                               const std::vector<MidiIn>& controllerIn,
                               const BlockInfo& block) {
+    // midiOut_ and controllerOut_ are the Engine's to clear, at the top of its block (the host outputs the graph's
+    // rp.host.midi-out and controller-out append to as well).
     serialIn_.clear();
-    midiOut_.clear();
     coreMidi_.clear();
     coreBytes_.clear();
     buttonOut_.clear();
-    controllerOut_.clear();
     if (!loaded_) return;
     JS_UpdateStackTop(rt_);  // re-anchor for the calling thread (see loadKernel)
     JSContext* ctx = ctx_;

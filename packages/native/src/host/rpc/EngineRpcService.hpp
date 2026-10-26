@@ -100,6 +100,9 @@ public:
     // The target this binary was built for, "<os>-<arch>-<compiler><major>" (linux-x64-gnu13): which
     // parity baseline its float output can be compared against. MSVC reports the full _MSC_VER (msvc1951).
     std::string             buildTarget() const;
+    // Messages the graph's full output queues have dropped so far (Engine::droppedMessages), so a test can hold a
+    // run to none. Never reset: compare two reads.
+    std::uint32_t           droppedMessages() const;
 
     // --- DSP-runtime allocation/GC profiling (spec/08-profiling.md) ---
     // Reads/GC on the DSP JS runtime, reached directly through the Engine (the quiescent renderAudio

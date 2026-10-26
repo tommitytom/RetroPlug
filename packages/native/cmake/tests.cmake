@@ -76,16 +76,20 @@ retroplug_add_test_binary(
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
              RP_GG_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.gg")
 
-# Guards the engine's graph (docs/modular-graph-phase-b1-design.md, -b2-design.md): each system node renders
-# exactly what its core renders driven directly, the engine places, re-arms and frees what the documents TS
-# builds say, and every document in buildGraph's goldens plans on it. Every core in it powers on in a fixed
-# state (test/engine-graph/Deterministic.cpp), so two identical cores agree.
+# Guards the engine's graph (docs/modular-graph-phase-b1-design.md, -b2-design.md, -b3a-design.md): each system
+# node renders exactly what its core renders driven directly, its inputs included, the engine places, re-arms and
+# frees what the documents TS builds say, the host I/O nodes and the cart mirror move what the hosts stage and
+# drain, and every document in buildGraph's goldens plans on it. Every core in it powers on in a fixed state
+# (test/engine-graph/Deterministic.cpp), so two identical cores agree. CountingAllocator.cpp is shared with
+# retroplug-graph-test, for the host MIDI-in's no-allocation check.
 retroplug_add_test_binary(
     NAME     retroplug-engine-graph-test
     SOURCES  test/engine-graph/Deterministic.cpp
              test/engine-graph/SystemNode.test.cpp
              test/engine-graph/EngineGraph.test.cpp
+             test/engine-graph/HostIo.test.cpp
              test/engine-graph/BuildGraphGoldens.test.cpp
+             test/graph/CountingAllocator.cpp          # replaces operator new / delete for this binary
     LIBS     retroplug-backend
     INCLUDES ${RP_QUICKJS_INCLUDE}
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
@@ -213,6 +217,7 @@ retroplug_add_test_binary(
              test/graph/Execution.test.cpp
              test/graph/CoreNodes.test.cpp
              test/graph/NoAlloc.test.cpp
+             test/graph/CountingAllocator.cpp         # replaces operator new / delete for this binary
              test/graph/SwapStress.test.cpp
              test/graph/HostCommands.test.cpp
              test/graph/Reshape.test.cpp

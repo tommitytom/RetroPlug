@@ -126,7 +126,8 @@ public:
     bool setSystems(const std::vector<std::uint8_t>& json);
 
     // Run one block: build the JS input (block info + dynamic events), call the global `processBlock`;
-    // the bound sinks fill serialIn_/midiOut_/buttonOut_ (all cleared at the top of the call). A
+    // the bound sinks fill serialIn_/midiOut_/buttonOut_ (cleared at the top of the call, but for midiOut_ and
+    // controllerOut_, which the Engine clears at the top of its block). A
     // no-op (empty output) when no kernel is loaded. `serialOut` carries the raw bytes each core
     // emitted on its serial port LAST block (LSDj MI.OUT — one-block latency; the caller gathers them
     // after the plan runs), fanned to `ctx.serialOut` for the addressed system.
@@ -169,8 +170,10 @@ public:
     std::vector<std::string>  traceNames() const;
 
     // --- public for the bound C-function thunks only (the SameBoySystem idiom) ---
-    // The DspRuntime is the context opaque, so the sink thunks reach these. All three are cleared at
-    // the top of each processBlock; the caller reads them after the call and fans them to cores.
+    // The DspRuntime is the context opaque, so the sink thunks reach these. The core-addressed ones are cleared at
+    // the top of each processBlock; the caller reads them after the call and fans them to cores. midiOut_ and
+    // controllerOut_ are the host's outputs, cleared by the Engine at the top of its block, so the graph's host
+    // output nodes can append to them after the kernel.
     std::vector<SerialIn>  serialIn_;   // pushSerialIn sink
     std::vector<MidiOut>   midiOut_;    // emitMidiOut sink (host MIDI-out → DAW)
     std::vector<CoreMidi>  coreMidi_;   // emitCoreMidi sink (MIDI-in → the core's onMidi)

@@ -14,6 +14,7 @@
 #include "system/mesen/MesenNesSystem.hpp"
 #include "system/mesen/MesenSmsSystem.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
+#include "transport/MidiTypes.hpp"
 
 namespace rp::host {
 
@@ -28,14 +29,24 @@ namespace {
 
 constexpr std::size_t kMaxOutputs = 16;
 
-// What every system node shares: the core handoff, the connected-output mask, and prepare / step / finish
-// mapped one to one onto the core's block triad. `Self` supplies finish's lanes.
+// The inputs every system node has (docs/modular-graph-phase-b3a-design.md section 3.1), each mapped onto the core
+// call SystemBase already has. A type declares them in its `inputs`, under these names.
+//
+//   serialIn  bytes   pushSerialIn(frame, byte), one call per byte
+//   midi      events  onMidi; a message longer than a MidiEvent holds goes down pushCoreBytes, unframed
+//   bytes     bytes   pushCoreBytes(frame, data, size, flush), the flush flag riding RP_MESSAGE_FLUSH
+//   buttons   events  pressButton(button, down), from a 2-byte payload [button, down]
+
+// What every system node shares: the core handoff, the connected-output mask, its inputs, and prepare / step /
+// finish mapped one to one onto the core's block triad. `Self` supplies finish's lanes, and may write output
+// queues after the core has run (writeQueues).
 template <class Self, class Core>
 struct SystemNode {
     using Settings = SystemNodeSettings;
     static bool needs_rebuild(const Settings& a, const Settings& b) { return a.core != b.core; }
 
     const HostCores*                       cores = nullptr;
+    const EngineSyncTrace*                 trace = nullptr;  // null when the host keeps none
     std::uint64_t                          token = 0;
     Core*                                  core = nullptr;  // owned
     std::array<std::uint8_t, kMaxOutputs>  connected{};
@@ -53,6 +64,7 @@ struct SystemNode {
 
     void bind_host(const rp_host* h) noexcept {
         cores = static_cast<const HostCores*>(h->get_interface(h, RP_HOST_CORES_INTERFACE));
+        trace = static_cast<const EngineSyncTrace*>(h->get_interface(h, RP_ENGINE_SYNC_TRACE_INTERFACE));
     }
     void on_settings(const Settings& s) noexcept { token = s.core; }
 
@@ -86,20 +98,62 @@ struct SystemNode {
         }
         finish(b);
     }
-    void prepare(const rp::Block& b) noexcept { core->prepareForBlock(info(b)); }
+    // The inputs are applied here, where process starts too: a linked Game Boy's coupled group prepares every member
+    // (rp.step/1) before any of them steps, and never calls process.
+    void prepare(const rp::Block& b) noexcept {
+        applyInputs();
+        core->prepareForBlock(info(b));
+    }
     bool step(std::uint32_t target) noexcept { return !core->stepIfBelowTarget(target); }
 
-    // finishBlock adds into its lanes, so they start at zero. Every other connected output is written too
+    // finishBlock adds into its lanes, so they start at zero. Every other connected audio output is written too
     // (the ABI's rule), as silence.
     void finish(const rp::Block& b) noexcept {
         std::array<float*, 2 * kMaxOutputs> lanes{};
         const std::size_t n = static_cast<Self*>(this)->lanes(b, lanes);
         for (std::uint32_t o = 0; o < b.raw.output_count && o < connected.size(); ++o)
-            if (connected[o])
+            if (connected[o] && b.output(o).kind == RP_PORT_AUDIO)
                 for (std::uint32_t c = 0; c < b.output(o).u.audio.channel_count; ++c)
                     std::memset(b.output(o).u.audio.channels[c], 0, b.frames() * sizeof(float));
         for (std::size_t l = 0; l < n; ++l) std::memset(lanes[l], 0, b.frames() * sizeof(float));
         core->finishBlock(info(b), lanes.data(), n);
+        static_cast<Self*>(this)->writeQueues();
+    }
+    void writeQueues() noexcept {}
+
+    // Each input in queue order, the inputs in the order the kernel stage fans its sinks out: serialIn, midi,
+    // bytes, buttons. The order matters on the NES, where MIDI and bytes land in the same FIFO (a flushed byte
+    // message drops the MIDI queued ahead of it). Before prepareForBlock, as the kernel stage runs before the core.
+    void applyInputs() noexcept {
+        auto& in = static_cast<Self*>(this)->inputs;
+        for (const rp_message& m : in.serialIn.messages())
+            for (const std::uint8_t byte : in.serialIn.data(m)) core->pushSerialIn(m.frame, byte);
+        for (const rp_message& m : in.midi.messages()) {
+            const auto data = in.midi.data(m);
+            if (data.empty()) continue;
+            // Longer than a MidiEvent holds (a SysEx, or several messages staged as one run): the core's raw byte
+            // path, unframed and uncapped. A core with no byte device (SameBoy's mGB speaks 3-byte messages only)
+            // ignores it, which also keeps a dangling MidiEvent::dataExt out of SameBoy's queued copy.
+            if (data.size() > ::MidiEvent::kDataSize) {
+                core->pushCoreBytes(m.frame, data.data(), data.size(), false);
+                continue;
+            }
+            ::MidiEvent ev{};
+            ev.frame = m.frame;
+            ev.size = static_cast<std::uint32_t>(data.size());
+            for (std::size_t j = 0; j < data.size(); ++j) ev.data[j] = data[j];
+            core->onMidi(&ev, 1);
+        }
+        for (const rp_message& m : in.bytes.messages()) {
+            const auto data = in.bytes.data(m);
+            if (data.empty()) continue;
+            if (trace) trace->bytes(trace->ctx, m.frame, data.data(), data.size());
+            core->pushCoreBytes(m.frame, data.data(), data.size(), (m.flags & RP_MESSAGE_FLUSH) != 0);
+        }
+        for (const rp_message& m : in.buttons.messages()) {
+            const auto data = in.buttons.data(m);
+            if (data.size() >= 2) core->pressButton(data[0], data[1] != 0);
+        }
     }
 
     // The stereo mix as lanes 0 and 1.
@@ -110,18 +164,31 @@ struct SystemNode {
     }
 };
 
+// The Game Boy's serialOut: a byte a message, at most one every eight frames while MI.OUT capture clocks the port
+// (SameBoySystem::writeAudioSample), so this carries blocks up to 32768 frames. Fixed, so a feedback wire from it
+// keeps its front across every plan swap.
+constexpr rp::capacity kSerialOutCapacity{.messages = 4096, .bytes = 4096};
+
 struct GameBoy : SystemNode<GameBoy, SameBoySystem> {
     static constexpr const char* id = "rp.sameboy.gb";
     static constexpr const char* name = "Game Boy";
     static constexpr const char* category = "system";
-    struct { rp::link link; } inputs;
     struct {
-        rp::audio_out<rp::stereo> mix;
-        rp::audio_out<rp::stereo> ch1;
-        rp::audio_out<rp::stereo> ch2;
-        rp::audio_out<rp::stereo> ch3;
-        rp::audio_out<rp::stereo> ch4;
+        rp::link      link;
+        rp::bytes_in  serialIn;
+        rp::events_in midi;
+        rp::bytes_in  bytes;
+        rp::events_in buttons;
+    } inputs;
+    struct {
+        rp::audio_out<rp::stereo>                mix;
+        rp::audio_out<rp::stereo>                ch1;
+        rp::audio_out<rp::stereo>                ch2;
+        rp::audio_out<rp::stereo>                ch3;
+        rp::audio_out<rp::stereo>                ch4;
+        rp::bytes_out::sized<kSerialOutCapacity> serialOut;
     } outputs;
+    static constexpr std::uint32_t kSerialOut = 5;  // its output index
 
     // The four stems (8 lanes) once any is connected, else the mix (2): finishBlock's two lane counts.
     std::size_t lanes(const rp::Block& b, std::array<float*, 2 * kMaxOutputs>& out) const {
@@ -131,6 +198,14 @@ struct GameBoy : SystemNode<GameBoy, SameBoySystem> {
             out[2 * k + 1] = b.output(1 + k).u.audio.channels[1];
         }
         return 8;
+    }
+
+    // MI.OUT (design section 3.2): the bytes the core captured on its serial port this block, each at frame 0, as
+    // the engine's gather hands them to the kernel today, without their frames. Copied, not drained: that gather
+    // reads the same log after the plan has run, and the core clears it at its next prepareForBlock.
+    void writeQueues() noexcept {
+        if (!connected[kSerialOut]) return;
+        for (const auto& entry : core->serialOutLog_) outputs.serialOut.push(0, std::span<const std::uint8_t>(&entry.second, 1));
     }
 
     // The coupled group's other members, in member order: the cable the serial callbacks read and write.
@@ -152,6 +227,12 @@ struct Nes : SystemNode<Nes, MesenNesSystem> {
     static constexpr const char* id = "rp.mesen.nes";
     static constexpr const char* name = "NES";
     static constexpr const char* category = "system";
+    struct {
+        rp::bytes_in  serialIn;
+        rp::events_in midi;
+        rp::bytes_in  bytes;
+        rp::events_in buttons;
+    } inputs;
     struct { rp::audio_out<rp::stereo> mix; } outputs;
 
     static void adjust_layout(rp::graph::Layout& l, const Settings&) {
@@ -179,6 +260,12 @@ struct Gba : SystemNode<Gba, MesenGbaSystem> {
     static constexpr const char* id = "rp.mesen.gba";
     static constexpr const char* name = "Game Boy Advance";
     static constexpr const char* category = "system";
+    struct {
+        rp::bytes_in  serialIn;
+        rp::events_in midi;
+        rp::bytes_in  bytes;
+        rp::events_in buttons;
+    } inputs;
     struct { rp::audio_out<rp::stereo> mix; } outputs;
     std::size_t lanes(const rp::Block& b, std::array<float*, 2 * kMaxOutputs>& out) const { return mixLanes(b, out); }
 };
@@ -187,6 +274,12 @@ struct Sms : SystemNode<Sms, MesenSmsSystem> {
     static constexpr const char* id = "rp.mesen.sms";
     static constexpr const char* name = "Master System / Game Gear";
     static constexpr const char* category = "system";
+    struct {
+        rp::bytes_in  serialIn;
+        rp::events_in midi;
+        rp::bytes_in  bytes;
+        rp::events_in buttons;
+    } inputs;
     struct { rp::audio_out<rp::stereo> mix; } outputs;
     std::size_t lanes(const rp::Block& b, std::array<float*, 2 * kMaxOutputs>& out) const { return mixLanes(b, out); }
 };

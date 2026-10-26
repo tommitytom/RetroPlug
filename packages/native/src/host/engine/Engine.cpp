@@ -18,8 +18,10 @@
 
 #include "graph/GraphHost.hpp"
 #include "graph/HostNodes.hpp"
+#include "graph/Queue.hpp"
 #include "graph/nodes/CoreNodes.hpp"
 #include "host/engine/DspCommand.hpp"
+#include "host/graph/HostIoNodes.hpp"
 #include "host/graph/HostServices.hpp"
 #include "host/graph/KernelNode.hpp"
 #include "host/graph/SystemNodes.hpp"
@@ -31,6 +33,8 @@ namespace {
 // doesn't yet feed the kernel per-block buttons/keys.
 const std::vector<DspRuntime::ButtonIn> kNoButtons;
 const std::vector<DspRuntime::KeyIn>    kNoKeys;
+// What the kernel stage is handed of the staged MIDI while a host I/O node of the plan takes it.
+const std::vector<DspRuntime::MidiIn>   kNoMidi;
 
 // The table before the first plan. At namespace scope, not function-local: currentTable() may first run on
 // the audio thread, which must not take a static's init guard or register its destructor.
@@ -56,16 +60,32 @@ bool isSystemNodeType(const std::string& type) {
     return false;
 }
 
-// The id a system node's settings name its core by, {"core": <id>}; nullopt for anything else.
-std::optional<SystemId> coreIdOf(const rp::graph::NodeDoc& n) {
+// The system id a node's settings hold as their one field, `key`: a system node's {"core": <id>}, a cart mirror's
+// {"system": <id>}; nullopt for anything else.
+std::optional<SystemId> idSetting(const rp::graph::NodeDoc& n, const char* key) {
     if (!n.settings) return std::nullopt;
     const auto object = n.settings->to_object();
     if (!object || object->size() != 1) return std::nullopt;
-    const auto core = object->get("core");
-    if (!core) return std::nullopt;
-    const auto id = core->to_int64();
+    const auto value = object->get(key);
+    if (!value) return std::nullopt;
+    const auto id = value->to_int64();
     if (!id || *id <= 0 || *id > static_cast<std::int64_t>(UINT32_MAX)) return std::nullopt;
     return static_cast<SystemId>(*id);
+}
+std::optional<SystemId> coreIdOf(const rp::graph::NodeDoc& n) { return idSetting(n, "core"); }
+
+// Staged MIDI in frame order, keeping the staging order of messages on the same frame (design section 3.4). An
+// insertion sort, which swaps the messages (moving the vectors that hold their bytes) and so allocates nothing; the
+// staging is nearly sorted (a block's DAW events in order, then its automation CCs at frame 0), and short.
+void sortByFrame(std::vector<DspRuntime::MidiIn>& staged) {
+    for (std::size_t i = 1; i < staged.size(); ++i)
+        for (std::size_t j = i; j > 0 && staged[j].frame < staged[j - 1].frame; --j) std::swap(staged[j], staged[j - 1]);
+}
+
+// Onto a queue, then cleared (keeping its capacity).
+void pushStaged(std::vector<DspRuntime::MidiIn>& staged, rp_queue& out) {
+    for (const auto& m : staged) rp::graph::pushMessage(out, m.frame, m.data);
+    staged.clear();
 }
 
 // The channels an rp.host.audio-out writes when its settings name no buses: its default buses, {2, 2, 2, 2}
@@ -95,12 +115,14 @@ std::uint32_t hostWidthOf(const rp::graph::GraphDocument& doc) {
 
 // The Engine's graph: the node packages and the GraphHost running the plan. Destroyed first (graph_ is the
 // Engine's last member), and the host (whose system nodes call cores->released from their destructors)
-// before the core handoff and the kernel interface those nodes call into.
+// before the core handoff and the engine services (the kernel stage, the host I/O, the sync trace) its nodes call into.
 struct Engine::Graph {
     rp::graph::NodeRegistry                registry;
     rp::graph::ResourceTable               resources;
     rp::host::HostCores                    cores{};
     rp::host::EngineKernel                 kernel{};
+    rp::host::EngineHostIo                 hostIo{};
+    rp::host::EngineSyncTrace              syncTrace{};
     std::unique_ptr<rp::graph::GraphHost>  host;
     std::uint32_t                          maxFrames = kDefaultMaxBlockFrames;
 };
@@ -108,7 +130,8 @@ struct Engine::Graph {
 Engine::Engine(double sampleRate) : sampleRate_(sampleRate) {
     graph_ = std::make_unique<Graph>();
     for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), rp::host::sameboyPackage(),
-                                rp::host::mesenPackage(), rp::host::dspPackage()})
+                                rp::host::mesenPackage(), rp::host::dspPackage(), rp::host::hostIoPackage(),
+                                rp::host::n8Package()})
         graph_->registry.addPackage(p);
     // rp.host.cores/1, whose tokens are system ids here: buildCore parks a core under its id, and a system node's
     // settings name it as {"core": <id>}.
@@ -127,6 +150,30 @@ Engine::Engine(double sampleRate) : sampleRate_(sampleRate) {
                          return false;
                      }};
     graph_->kernel = {this, [](void* ctx, std::uint32_t frames) { static_cast<Engine*>(ctx)->runKernelStage(frames); }};
+    // rp.engine.host-io/1: the staging the hosts fill and the buffers they drain, on the block thread.
+    graph_->hostIo = {
+        this,
+        [](void* ctx, rp_queue* out) {
+            auto* self = static_cast<Engine*>(ctx);
+            sortByFrame(self->pendingMidi_);
+            pushStaged(self->pendingMidi_, *out);
+        },
+        [](void* ctx, rp_queue* out) { pushStaged(static_cast<Engine*>(ctx)->pendingControllerMidi_, *out); },
+        [](void* ctx) { return static_cast<Engine*>(ctx)->controllerConnected_; },
+        [](void* ctx, std::uint32_t system, std::uint32_t frame, const std::uint8_t* data, std::size_t size) {
+            static_cast<Engine*>(ctx)->dsp_.midiOut_.push_back({system, frame, std::vector<std::uint8_t>(data, data + size)});
+        },
+        [](void* ctx, const std::uint8_t* data, std::size_t size) {
+            static_cast<Engine*>(ctx)->dsp_.controllerOut_.emplace_back(data, data + size);
+        },
+        [](void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush) {
+            if (const auto& sink = static_cast<Engine*>(ctx)->coreByteSink_) sink(frame, data, size, flush);
+        }};
+    graph_->syncTrace = {this, [](void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size) {
+                             auto* self = static_cast<Engine*>(ctx);
+                             if (!self->blockTracing_) return;
+                             for (std::size_t i = 0; i < size; ++i) self->syncTrace_.byte(frame, data[i]);
+                         }};
     rp::graph::HostConfig config;
     config.sampleRate = sampleRate;
     config.maxFrames = graph_->maxFrames;
@@ -148,6 +195,8 @@ const void* Engine::graphInterface(void* ctx, const char* id) {
     auto* self = static_cast<Engine*>(ctx);
     if (std::strcmp(id, RP_HOST_CORES_INTERFACE) == 0) return &self->graph_->cores;
     if (std::strcmp(id, RP_ENGINE_KERNEL_INTERFACE) == 0) return &self->graph_->kernel;
+    if (std::strcmp(id, RP_ENGINE_HOST_IO_INTERFACE) == 0) return &self->graph_->hostIo;
+    if (std::strcmp(id, RP_ENGINE_SYNC_TRACE_INTERFACE) == 0) return &self->graph_->syncTrace;
     return nullptr;
 }
 
@@ -235,6 +284,18 @@ Engine::GraphResult Engine::setGraph(const GraphRequest& request) {
         SystemBase* core = liveCores_.at(id);
         table->slots.push_back({id, core, dynamic_cast<SameBoySystem*>(core), dynamic_cast<MesenNesSystem*>(core)});
     }
+    // The host I/O nodes the kernel stage defers to, and the one system a physical N8 can mirror, of the document's.
+    for (const auto& n : doc->nodes) {
+        if (n.type == "rp.host.midi-in") table->takesHostMidi = true;
+        if (n.type == "rp.host.controller-in") table->takesControllerMidi = true;
+        if (n.type != "rp.n8.cart-mirror") continue;
+        if (table->cartMirror != 0)
+            return refuse(n.id, "cart-mirror", "a document has one rp.n8.cart-mirror at most: there is one cart to mirror to");
+        const auto id = idSetting(n, "system");
+        if (!id || std::find(request.slots.begin(), request.slots.end(), *id) == request.slots.end())
+            return refuse(n.id, "cart-mirror", "a cart mirror's settings are {\"system\": <id>}, naming one of the slots");
+        table->cartMirror = *id;
+    }
 
     rp::graph::HostCommand trailer{};
     if (request.rearmTap) {
@@ -294,6 +355,8 @@ std::size_t Engine::reclaim() {
 void Engine::discardPending() { graph_->host->discardPending(); }
 
 std::uint32_t Engine::faultCount() const { return graph_->host->faultCount(); }
+
+std::uint32_t Engine::droppedMessages() const { return graph_->host->droppedMessages(); }
 
 void Engine::setMaxBlockFrames(std::uint32_t frames) {
     if (frames <= graph_->maxFrames) return;
@@ -463,18 +526,23 @@ SystemId Engine::cartSystemId(const rp::host::SystemTable& table) const {
     return 0;
 }
 
+SystemId Engine::cartMirrorSystemId() const { return currentTable().cartMirror; }
+
 // The DSP kernel stage, run by rp.dsp.kernel as the plan's first step: run the kernel (if one is loaded),
 // then hand its output to the cores, all of serialIn, then coreMidi, then coreBytes, then buttons, each in
-// emission order. findSystem reads the running plan's table.
+// emission order. findSystem reads the running plan's table. A plan holding rp.host.midi-in (controller-in)
+// takes the staged host (control-surface) MIDI itself, so the kernel gets none of it.
 void Engine::runKernelStage(std::uint32_t frames) {
     if (dspActive_) {
 #ifdef RETROPLUG_PROFILE
         dsp_.spanBegin(DSP_SPAN_KERNEL);  // the whole DSP-kernel stage (marshal + JS + sink fan-out)
 #endif
+        const rp::host::SystemTable& table = currentTable();
         const DspRuntime::BlockInfo dInfo{ frames, sampleRate_, bpm_, ppq_, transport_, controllerConnected_ };
-        dsp_.processBlock(pendingMidi_, kNoButtons, kNoKeys, pendingSerialOut_, pendingControllerMidi_, dInfo);
-        pendingMidi_.clear();       // staged host MIDI consumed this block
-        pendingControllerMidi_.clear();
+        dsp_.processBlock(table.takesHostMidi ? kNoMidi : pendingMidi_, kNoButtons, kNoKeys, pendingSerialOut_,
+                          table.takesControllerMidi ? kNoMidi : pendingControllerMidi_, dInfo);
+        if (!table.takesHostMidi) pendingMidi_.clear();  // staged host MIDI consumed this block
+        if (!table.takesControllerMidi) pendingControllerMidi_.clear();
         pendingSerialOut_.clear();  // last block's serial-out consumed by the kernel this block
         const SystemId cart = cartSystemId();   // the system a physical N8 mirrors (0 = none)
         // serial-in sink → the addressed system's serial FIFO.
@@ -543,6 +611,10 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
         return;
     }
     blockTracing_ = syncTrace_.beginBlock(frames, sampleRate_, bpm_, ppq_, transport_);
+    // The block's host outputs start empty here rather than in the kernel, so the kernel stage and the
+    // rp.host.midi-out / controller-out nodes both append to them, in plan order.
+    dsp_.midiOut_.clear();
+    dsp_.controllerOut_.clear();
     const rp_transport transport{sampleRate_, bpm_, ppq_, transport_ ? std::uint32_t{RP_TRANSPORT_PLAYING} : 0u};
     // The kernel stage, every system, the mixing and the host outputs (the host drained before this).
     graph_->host->run(frames, transport, outputs, static_cast<std::uint32_t>(numOutputs));

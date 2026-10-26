@@ -61,7 +61,7 @@ void registerDspKernelRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::dspSetSystems>(e);
 }
 
-// --- harness: audio render / transport / MIDI + DSP profiling + kit compile (21; CLI + tests only) ---
+// --- harness: audio render / transport / MIDI + DSP profiling + kit compile + graph drops (22; CLI + tests only) ---
 template <class Server>
 void registerHarnessRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::renderAudio>(e);
@@ -79,6 +79,7 @@ void registerHarnessRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::drainMidiOut>(e);
     s.template addMethod<&EngineRpcService::renderBlocks>(e);
     s.template addMethod<&EngineRpcService::buildTarget>(e);
+    s.template addMethod<&EngineRpcService::droppedMessages>(e);
     s.template addMethod<&EngineRpcService::dspAllocStats>(e);
     s.template addMethod<&EngineRpcService::dspResetAllocStats>(e);
     s.template addMethod<&EngineRpcService::dspRunGc>(e);
@@ -130,7 +131,7 @@ void registerDriverRpc(Server& s, AudioDriverRpcService& d) {
     s.template addMethod<&AudioDriverRpcService::drainReleased>(d);
 }
 
-// The full union (89 methods) + discovery - every facet mounted. Hosts that expose the whole surface
+// The full union (90 methods) + discovery - every facet mounted. Hosts that expose the whole surface
 // (the CLI + test host) use this; scoped hosts call the individual register functions they're allowed to.
 template <class Server>
 void registerAllBackendRpc(Server& s, HostRpcService& host, EngineRpcService& engine,

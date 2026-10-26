@@ -3,7 +3,10 @@
 // The engine services the engine's nodes ask the host for through rp_host.get_interface. B3 dissolves the
 // kernel, and with it rp.engine.kernel/1.
 
+#include <cstddef>
 #include <cstdint>
+
+#include "graph/rp_node.h"
 
 class SystemBase;
 
@@ -33,6 +36,34 @@ struct HostCores {
 struct EngineKernel {
     void* ctx;
     void (*run)(void* ctx, std::uint32_t frames);
+};
+
+// The engine's host I/O (docs/modular-graph-phase-b3a-design.md section 3.3), for the rp.host I/O nodes and the cart
+// mirror: the hosts stage what they receive through the engine and drain what it sends after each block, and these
+// move it between that staging and the plan's queues. [audio]
+#define RP_ENGINE_HOST_IO_INTERFACE "rp.engine.host-io/1"
+struct EngineHostIo {
+    void* ctx;
+    // Push the host MIDI staged since the last take onto `out`, stable-sorted by frame, and clear the staging.
+    void (*takeMidi)(void* ctx, rp_queue* out);
+    // The same for the control-surface MIDI, every message at frame 0.
+    void (*takeControllerMidi)(void* ctx, rp_queue* out);
+    // Whether a control surface is attached this block.
+    bool (*controllerConnected)(void* ctx);
+    // Append one message to the host MIDI out (Engine::midiOut), as `system` emitted it.
+    void (*midiOut)(void* ctx, std::uint32_t system, std::uint32_t frame, const std::uint8_t* data, std::size_t size);
+    // Append one message to the control-surface out (Engine::controllerOut).
+    void (*controllerOut)(void* ctx, const std::uint8_t* data, std::size_t size);
+    // Hand one message to the physical N8 the engine feeds (Engine::setCoreByteSink); nothing while none is set.
+    void (*cartBytes)(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush);
+};
+
+// The engine's sync trace (HostSyncTrace): a system node records the bytes its `bytes` input feeds the core's byte
+// device, as the kernel stage records its core-bytes sink. Nothing while the trace is off. [audio]
+#define RP_ENGINE_SYNC_TRACE_INTERFACE "rp.engine.sync-trace/1"
+struct EngineSyncTrace {
+    void* ctx;
+    void (*bytes)(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size);
 };
 
 }  // namespace rp::host

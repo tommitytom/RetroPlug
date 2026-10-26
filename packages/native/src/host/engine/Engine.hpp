@@ -101,14 +101,16 @@ public:
     // deactivated; the CLI, before any build.
     void setSampleRate(double sr);
 
-    // The kernel's host-MIDI-out sink for this block (filled by processBlock's DSP stage, cleared at
-    // the top of the next). The plugin drains this to the DAW after processBlock; nothing else reads it.
+    // The host MIDI out of this block: what the kernel stage's sink and any rp.host.midi-out appended, in plan
+    // order, each tagged with the system that emitted it. Cleared at the top of each block. The plugin drains this
+    // to the DAW after processBlock; nothing else reads it.
     const std::vector<DspRuntime::MidiOut>& midiOut() const { return dsp_.midiOut_; }
     void clearMidiOut() { dsp_.midiOut_.clear(); }
 
-    // The kernel's CONTROL-SURFACE sink for this block (LED traffic). Not system-addressed - the device is a
-    // project-scope peripheral, not something a system owns. The standalone drains this to the Launchpad
-    // link; every other host leaves it empty because nothing binds a controller.
+    // The CONTROL-SURFACE out of this block (LED traffic), from the kernel stage's sink and any
+    // rp.host.controller-out, likewise. Not system-addressed - the device is a project-scope peripheral, not
+    // something a system owns. The standalone drains this to the Launchpad link; every other host leaves it empty
+    // because nothing binds a controller.
     const std::vector<std::vector<std::uint8_t>>& controllerOut() const { return dsp_.controllerOut_; }
     void clearControllerOut() { dsp_.controllerOut_.clear(); }
 
@@ -129,6 +131,11 @@ public:
     // forward. The block thread, or the control thread while no audio thread runs (it reads the running plan's
     // system table, as findSystem does).
     SystemId cartSystemId() const;
+
+    // The system the running plan's rp.n8.cart-mirror names (0 when it has none): what cartSystemId will read once
+    // the hosts are switched to the mirror node TS places (docs/modular-graph-phase-b3a-design.md section 3.5). The
+    // block thread, or the control thread while no audio thread runs, as cartSystemId.
+    SystemId cartMirrorSystemId() const;
 
     // --- DSP-runtime allocation/GC profiling (spec/08-profiling.md) ---
     // Forward to the bare JS runtime's counters. Valid only on the Engine's owning thread (the
@@ -210,6 +217,9 @@ public:
     // block thread bumps relaxed: any thread may read it, a control-thread read may lag a running audio thread,
     // and on a quiescent engine, whose blocks run on the caller's thread, it is exact once processBlock returns.
     std::uint32_t faultCount() const;
+    // Messages the plan's full output queues have dropped so far (GraphHost::droppedMessages), each counted by the
+    // block thread at the end of its block: any thread may read it, as faultCount.
+    std::uint32_t droppedMessages() const;
 
 private:
     struct Graph;
@@ -265,11 +275,12 @@ private:
     DspRuntime dsp_;
     double     sampleRate_;
     bool       dspActive_ = false;                 // a kernel is loaded → run the per-block DSP stage
-    std::vector<DspRuntime::MidiIn> pendingMidi_;  // staged host MIDI, consumed on the next block
-    std::vector<DspRuntime::MidiIn> pendingControllerMidi_;  // staged control-surface traffic, likewise
+    // Staged host MIDI, consumed on the next block: by the kernel stage, or by the plan's rp.host.midi-in.
+    std::vector<DspRuntime::MidiIn> pendingMidi_;
+    std::vector<DspRuntime::MidiIn> pendingControllerMidi_;  // staged control-surface traffic, likewise (controller-in)
     // Raw serial-out bytes each core emitted LAST block (LSDj MI.OUT), gathered after the plan runs and fed
     // to the kernel on the next block (one-block latency: the kernel runs first, and each SameBoy clears
-    // its serialOutLog_ in prepareForBlock).
+    // its serialOutLog_ in prepareForBlock). A Game Boy node's serialOut port copies the same log, leaving it here.
     std::vector<DspRuntime::SerialOut> pendingSerialOut_;
 
     // Simulated host transport, driven per block. Continuous ppq clock (the pull path and the audio
@@ -278,7 +289,7 @@ private:
     bool   transport_ = false;
     double ppq_       = 0.0;
     bool   controllerConnected_ = false;  // a control surface is bound (set per block by the host)
-    bool   blockTracing_ = false;         // this block's syncTrace_.beginBlock answer, for the kernel stage
+    bool   blockTracing_ = false;         // this block's syncTrace_.beginBlock answer, for the kernel stage and system nodes
     HostSyncTrace syncTrace_;  // inert unless RETROPLUG_SYNC_TRACE is set
     // Optional external mirror of what the cart system is fed (set by the plugin and the standalone to reach a
     // physical N8); null in every other host. Called on the audio thread, so the target must be RT-safe (N8Link is).

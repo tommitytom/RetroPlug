@@ -593,6 +593,8 @@ RpcRenderBlocksResult EngineRpcService::renderBlocks(RpcRenderBlocksRequest req)
     return result;
 }
 
+std::uint32_t EngineRpcService::droppedMessages() const { return engine_.droppedMessages(); }
+
 // "<os>-<arch>-<compiler><major>", from the compiler's own macros so each slice of a universal binary
 // names itself (a CMake variable would name the configure host).
 #define RP_STR2(x) #x

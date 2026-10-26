@@ -1,96 +1,18 @@
 // The no-heap claim: once a plan is built, the block path - draining commands, adopting a plan, running
 // every core node, feedback copies, a coupled group and the host output - performs no allocation and frees
-// nothing. Global operator new and delete are replaced for this binary; while `forbid` is set on a thread,
-// any allocation or free on that thread is counted. The same hook refuses allocations from `refuseFrom` bytes
+// nothing. CountingAllocator.cpp replaces global operator new and delete for this binary, and counts what the
+// measured blocks allocate and free. The same allocator refuses allocations from refuseAllocationsFrom's size
 // up, which is how the planner's out-of-memory path is driven.
 #include <catch2/catch_test_macros.hpp>
 
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic ignored "-Wmismatched-new-delete"  // these replacements pair aligned_alloc with free on purpose
-#endif
-
 #include <atomic>
 #include <cstdint>
-#include <cstdlib>
 #include <memory>
-#include <new>
 #include <span>
 #include <string>
-#if defined(_WIN32)
-#include <malloc.h>
-#endif
 
+#include "CountingAllocator.hpp"
 #include "GraphRig.hpp"
-
-namespace {
-thread_local bool forbid = false;
-thread_local std::size_t refuseFrom = SIZE_MAX;  // an allocation of at least this many bytes fails
-std::atomic<int>  violations{0};  // allocations while forbidden
-std::atomic<int>  frees{0};       // frees while forbidden
-
-// Every block is allocated over-aligned through one pair of calls, so any delete form can free any new
-// form - the platform's aligned allocator does not mix with plain free on Windows.
-void* rawAlloc(std::size_t n, std::size_t align) {
-    if (align < alignof(std::max_align_t)) align = alignof(std::max_align_t);
-    if (n > SIZE_MAX - align) return nullptr;  // rounding up would wrap
-    const std::size_t size = (n ? n : 1) + align - 1;
-#if defined(_WIN32)
-    return _aligned_malloc(size, align);
-#else
-    return std::aligned_alloc(align, size / align * align);
-#endif
-}
-
-void rawFree(void* p) noexcept {
-    if (forbid && p) frees.fetch_add(1, std::memory_order_relaxed);
-#if defined(_WIN32)
-    _aligned_free(p);
-#else
-    std::free(p);
-#endif
-}
-
-void* allocate(std::size_t n, std::size_t align) {
-    if (forbid) violations.fetch_add(1, std::memory_order_relaxed);
-    if (n >= refuseFrom) throw std::bad_alloc();
-    void* p = rawAlloc(n, align);
-    if (!p) throw std::bad_alloc();
-    return p;
-}
-
-void* allocateOrNull(std::size_t n, std::size_t align) noexcept {
-    if (forbid) violations.fetch_add(1, std::memory_order_relaxed);
-    if (n >= refuseFrom) return nullptr;
-    return rawAlloc(n, align);
-}
-}  // namespace
-
-// Every form is replaced, nothrow ones included: a form left to the runtime allocates through it (the
-// planner's aligned nothrow new, under ASan), and the replaced delete then frees what it never allocated.
-void* operator new(std::size_t n) { return allocate(n, alignof(std::max_align_t)); }
-void* operator new[](std::size_t n) { return allocate(n, alignof(std::max_align_t)); }
-void* operator new(std::size_t n, std::align_val_t a) { return allocate(n, static_cast<std::size_t>(a)); }
-void* operator new[](std::size_t n, std::align_val_t a) { return allocate(n, static_cast<std::size_t>(a)); }
-void* operator new(std::size_t n, const std::nothrow_t&) noexcept { return allocateOrNull(n, alignof(std::max_align_t)); }
-void* operator new[](std::size_t n, const std::nothrow_t&) noexcept { return allocateOrNull(n, alignof(std::max_align_t)); }
-void* operator new(std::size_t n, std::align_val_t a, const std::nothrow_t&) noexcept {
-    return allocateOrNull(n, static_cast<std::size_t>(a));
-}
-void* operator new[](std::size_t n, std::align_val_t a, const std::nothrow_t&) noexcept {
-    return allocateOrNull(n, static_cast<std::size_t>(a));
-}
-void operator delete(void* p) noexcept { rawFree(p); }
-void operator delete[](void* p) noexcept { rawFree(p); }
-void operator delete(void* p, std::size_t) noexcept { rawFree(p); }
-void operator delete[](void* p, std::size_t) noexcept { rawFree(p); }
-void operator delete(void* p, std::align_val_t) noexcept { rawFree(p); }
-void operator delete[](void* p, std::align_val_t) noexcept { rawFree(p); }
-void operator delete(void* p, std::size_t, std::align_val_t) noexcept { rawFree(p); }
-void operator delete[](void* p, std::size_t, std::align_val_t) noexcept { rawFree(p); }
-void operator delete(void* p, const std::nothrow_t&) noexcept { rawFree(p); }
-void operator delete[](void* p, const std::nothrow_t&) noexcept { rawFree(p); }
-void operator delete(void* p, std::align_val_t, const std::nothrow_t&) noexcept { rawFree(p); }
-void operator delete[](void* p, std::align_val_t, const std::nothrow_t&) noexcept { rawFree(p); }
 
 using rp::graph::test::GraphRig;
 
@@ -190,17 +112,10 @@ void countCommand(void*, const rp::graph::HostCommand&, const void*, bool) {
     hostCommandsSeen.fetch_add(1, std::memory_order_relaxed);
 }
 
-struct Measured {
-    int allocations = 0, freed = 0;
-};
-
-Measured measure(GraphRig& rig, int blocks) {
-    violations = 0;
-    frees = 0;
-    forbid = true;
+rp::test::AllocationCount measure(GraphRig& rig, int blocks) {
+    rp::test::beginCountingAllocations();
     rig.run(64, blocks);
-    forbid = false;
-    return {violations.load(), frees.load()};
+    return rp::test::endCountingAllocations();
 }
 
 }  // namespace
@@ -216,7 +131,7 @@ TEST_CASE("the block path never allocates or frees", "[graph][noalloc]") {
     // No warm-up: a node that allocates lazily on its first block is caught too.
     auto m = measure(rig, 2);
     CHECK(m.allocations == 0);
-    CHECK(m.freed == 0);
+    CHECK(m.frees == 0);
 
     // A swap is queued (the audio thread "owns" the drain), so the measured blocks also adopt a plan.
     rig.host->setAudioThreadOwns(true);
@@ -226,7 +141,7 @@ TEST_CASE("the block path never allocates or frees", "[graph][noalloc]") {
     REQUIRE(rig.host->setParam("k", "value", 0.75, 5));
     m = measure(rig, 8);
     CHECK(m.allocations == 0);
-    CHECK(m.freed == 0);
+    CHECK(m.frees == 0);
     rig.host->setAudioThreadOwns(false);
     CHECK(rp::peer_as<QuietLinked>(rig.host->node("la"))->peerCount == 2);  // the peer change was adopted
     const auto& sh = *rp::peer_as<rp::graph::test::Shape>(rig.host->node("sh"));
@@ -244,7 +159,7 @@ TEST_CASE("the block path never allocates or frees", "[graph][noalloc]") {
     REQUIRE(rig.host->pushHostCommand(&payload, sizeof payload));
     m = measure(rig, 4);
     CHECK(m.allocations == 0);
-    CHECK(m.freed == 0);
+    CHECK(m.frees == 0);
     CHECK(hostCommandsSeen.load() == 2);
     CHECK(*static_cast<const int*>(rig.host->hostData()) == 2);
     rig.host->setAudioThreadOwns(false);
@@ -263,9 +178,9 @@ TEST_CASE("an allocation the planner cannot make is a refused plan, not an excep
 
     // Within the plan's queue budget, but more than this thread may have: refused, with what it made undone.
     rp::graph::SetGraphResult r;
-    refuseFrom = std::size_t{8} << 20;
+    rp::test::refuseAllocationsFrom(std::size_t{8} << 20);
     CHECK_NOTHROW(r = rig.set(big));
-    refuseFrom = SIZE_MAX;
+    rp::test::refuseAllocationsFrom(SIZE_MAX);
     CHECK_FALSE(r.ok);
     CHECK(GraphRig::codes(r) == "out-of-memory");
     CHECK(BigQueue::alive == 0);
@@ -295,9 +210,9 @@ TEST_CASE("an allocation that fails after a settings swap was prepared releases 
     // The allocation fails in build(), after reconcile prepared the swap and before the plan took it over. The swap is
     // released (an ASan run of this binary sees it neither leak nor freed twice) and the old value runs on.
     rp::graph::SetGraphResult r;
-    refuseFrom = std::size_t{8} << 20;
+    rp::test::refuseAllocationsFrom(std::size_t{8} << 20);
     CHECK_NOTHROW(r = rig.set(doc("0.25", true)));
-    refuseFrom = SIZE_MAX;
+    rp::test::refuseAllocationsFrom(SIZE_MAX);
     CHECK(GraphRig::codes(r) == "out-of-memory");
     rig.run();
     CHECK(value() == 0.5f);
