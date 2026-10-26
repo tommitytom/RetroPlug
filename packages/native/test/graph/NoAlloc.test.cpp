@@ -1,7 +1,8 @@
 // The no-heap claim: once a plan is built, the block path - draining commands, adopting a plan, running
 // every core node, feedback copies, a coupled group and the host output - performs no allocation and frees
 // nothing. Global operator new and delete are replaced for this binary; while `forbid` is set on a thread,
-// any allocation or free on that thread is counted.
+// any allocation or free on that thread is counted. The same hook refuses allocations from `refuseFrom` bytes
+// up, which is how the planner's out-of-memory path is driven.
 #include <catch2/catch_test_macros.hpp>
 
 #if defined(__GNUC__) && !defined(__clang__)
@@ -23,6 +24,7 @@
 
 namespace {
 thread_local bool forbid = false;
+thread_local std::size_t refuseFrom = SIZE_MAX;  // an allocation of at least this many bytes fails
 std::atomic<int>  violations{0};  // allocations while forbidden
 std::atomic<int>  frees{0};       // frees while forbidden
 
@@ -50,6 +52,7 @@ void rawFree(void* p) noexcept {
 
 void* allocate(std::size_t n, std::size_t align) {
     if (forbid) violations.fetch_add(1, std::memory_order_relaxed);
+    if (n >= refuseFrom) throw std::bad_alloc();
     void* p = rawAlloc(n, align);
     if (!p) throw std::bad_alloc();
     return p;
@@ -57,6 +60,7 @@ void* allocate(std::size_t n, std::size_t align) {
 
 void* allocateOrNull(std::size_t n, std::size_t align) noexcept {
     if (forbid) violations.fetch_add(1, std::memory_order_relaxed);
+    if (n >= refuseFrom) return nullptr;
     return rawAlloc(n, align);
 }
 }  // namespace
@@ -110,9 +114,21 @@ struct QuietLinked {
     void process(const rp::Block&) noexcept {}
 };
 
+// An output at the caps, whose queue needs 16 MiB of message items. Counts its live instances.
+struct BigQueue {
+    static constexpr const char* id = "rp.test.big-queue";
+    static inline int alive = 0;
+    struct { rp::events_out::sized<rp::capacity{.messages = rp::graph::kMaxQueueMessages}> out; } outputs;
+    BigQueue() { ++alive; }
+    ~BigQueue() { --alive; }
+    BigQueue(const BigQueue&) = delete;
+    BigQueue& operator=(const BigQueue&) = delete;
+    void process(const rp::Block&) noexcept {}
+};
+
 const rp_package* noAllocPackage() {
-    static const rp_node_type* const kTypes[] = {rp::node_type<QuietLinked>()};
-    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.noalloc"})", 1, kTypes};
+    static const rp_node_type* const kTypes[] = {rp::node_type<QuietLinked>(), rp::node_type<BigQueue>()};
+    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.noalloc"})", 2, kTypes};
     return &kPackage;
 }
 
@@ -232,4 +248,31 @@ TEST_CASE("the block path never allocates or frees", "[graph][noalloc]") {
     CHECK(hostCommandsSeen.load() == 2);
     CHECK(*static_cast<const int*>(rig.host->hostData()) == 2);
     rig.host->setAudioThreadOwns(false);
+}
+
+TEST_CASE("an allocation the planner cannot make is a refused plan, not an exception", "[graph][noalloc]") {
+    GraphRig rig;
+    REQUIRE(rig.registry.addPackage(noAllocPackage()));
+    const std::string small = R"({"nodes":[{"id":"src","type":"rp.test.source"},{"id":"s","type":"rp.test.sink"}],)"
+                              R"("wires":[{"from":"src.events","to":"s.events"}]})";
+    const std::string big = R"({"nodes":[{"id":"src","type":"rp.test.source"},{"id":"s","type":"rp.test.sink"},)"
+                            R"({"id":"q","type":"rp.test.big-queue"},{"id":"qs","type":"rp.test.sink"}],)"
+                            R"("wires":[{"from":"src.events","to":"s.events"},{"from":"q.out","to":"qs.events"}]})";
+    REQUIRE(rig.set(small).ok);
+    rig.run();
+
+    // Within the plan's queue budget, but more than this thread may have: refused, with what it made undone.
+    rp::graph::SetGraphResult r;
+    refuseFrom = std::size_t{8} << 20;
+    CHECK_NOTHROW(r = rig.set(big));
+    refuseFrom = SIZE_MAX;
+    CHECK_FALSE(r.ok);
+    CHECK(GraphRig::codes(r) == "out-of-memory");
+    CHECK(BigQueue::alive == 0);
+    CHECK(rig.host->instanceCount() == 2);
+    rig.run();
+    CHECK(rp::peer_as<rp::graph::test::Sink>(rig.host->node("s"))->eventCount == 1);  // the old plan runs on
+
+    REQUIRE(rig.set(big).ok);  // with the memory to hand, the same document plans
+    CHECK(BigQueue::alive == 1);
 }

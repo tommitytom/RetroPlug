@@ -117,9 +117,10 @@ contexts per Engine load it in the meantime, which costs memory, not per-block t
 
 A plan queue holds 256 messages and 4 KB today (`kQueueItems` / `kQueueBytes`), and drops what does not fit.
 Today's staging vectors are unbounded, so a large SysEx or a burst of tracker sync bytes that passes today
-would be dropped on a wire. So a port's descriptor may declare its capacity (items and bytes), with today's
-numbers as the default; the host I/O nodes and the kernel's ports declare large ones (sized in the plan from
-the largest message the tests send, with margin). Drops are counted per queue and exposed to tests; parity and
+would be dropped on a wire. So an output port's descriptor may declare its capacity (items and bytes), with
+today's numbers as the default (an input declares none: a wire carries its source's queue); the host I/O nodes
+and the kernel's ports declare large ones (sized in the plan from the largest message the tests send, with
+margin), within the plan's 64 MiB queue budget. Drops are counted per queue and exposed to tests; parity and
 the suites require zero.
 
 ## 3. Ports and host I/O

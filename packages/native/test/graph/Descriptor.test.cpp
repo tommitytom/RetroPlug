@@ -138,8 +138,9 @@ std::string capacityReason(const char* kind, const char* capacity) {
 }
 }  // namespace
 
-TEST_CASE("an events or bytes port may declare its queue capacity, either part, up to the caps", "[graph][descriptor]") {
-    const auto l = parseLayout(R"({"ports":[{"id":"m","dir":"in","kind":"events","capacity":{"messages":2}},)"
+TEST_CASE("an events or bytes output may declare its queue capacity, either part, up to the caps",
+          "[graph][descriptor]") {
+    const auto l = parseLayout(R"({"ports":[{"id":"m","dir":"out","kind":"events","capacity":{"messages":2}},)"
                                R"({"id":"s","dir":"out","kind":"bytes","capacity":{"messages":4,"bytes":65536}},)"
                                R"({"id":"b","dir":"out","kind":"bytes","capacity":{"bytes":1}},)"
                                R"({"id":"d","dir":"out","kind":"events"}]})");
@@ -182,4 +183,20 @@ TEST_CASE("a queue capacity is refused past its cap, empty, fractional, misspelt
     p.capacity.messages = 2;
     p.kind = PortKind::Audio;
     CHECK(checkCapacity(p) == std::optional<std::string>(R"(port "q": only events and bytes ports have "capacity")"));
+}
+
+TEST_CASE("an input's capacity is refused: a wire carries its source's queue", "[graph][descriptor]") {
+    // Worded as defineNode.ts words it after the port.
+    const std::string why = R"(port "m": only an output declares a capacity: a wire carries its source's queue)";
+    CHECK(layoutReason(R"({"ports":[{"id":"m","dir":"in","kind":"events","capacity":{"messages":512}}]})") == why);
+    CHECK(layoutReason(R"({"ports":[{"id":"m","dir":"in","kind":"bytes","capacity":{"bytes":8192}}]})") == why);
+    // A kind with no queue is refused as that first, input or not.
+    CHECK(layoutReason(R"({"ports":[{"id":"m","dir":"in","kind":"control","capacity":{"messages":2}}]})") ==
+          R"(port "m": only events and bytes ports have "capacity")");
+    CHECK(layoutReason(R"({"ports":[{"id":"m","dir":"in","kind":"events"}]})") == "parsed");
+    // And the C++ layer's check of the layouts it builds, as adjust_layout may set one.
+    PortDesc p{"m", PortDir::In, PortKind::Events, {}, {}, false};
+    CHECK_FALSE(checkCapacity(p));
+    p.capacity.messages = 512;
+    CHECK(checkCapacity(p) == std::optional<std::string>(why));
 }

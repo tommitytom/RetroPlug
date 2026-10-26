@@ -22,7 +22,7 @@ namespace rp::graph {
 struct StreamStore {
     rp_control_queue               queue{};
     std::vector<rp_control_change> changes;
-    StreamStore(std::uint32_t capacity, double start);
+    StreamStore(std::uint32_t maxChanges, double start);
 };
 
 // A fixed-capacity events / bytes queue with a stable address.

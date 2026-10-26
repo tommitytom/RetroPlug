@@ -5,10 +5,10 @@
 
 namespace rp::graph {
 
-StreamStore::StreamStore(std::uint32_t capacity, double start) : changes(capacity) {
+StreamStore::StreamStore(std::uint32_t maxChanges, double start) : changes(maxChanges) {
     queue.start = start;
     queue.changes = changes.data();
-    queue.capacity = capacity;
+    queue.capacity = maxChanges;
 }
 
 QueueStore::QueueStore(std::uint32_t itemCapacity, std::uint32_t byteCapacity)

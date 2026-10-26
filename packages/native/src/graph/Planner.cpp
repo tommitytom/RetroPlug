@@ -9,6 +9,7 @@
 #include <set>
 
 #include "graph/CanonicalJson.hpp"
+#include "graph/Queue.hpp"
 
 namespace rp::graph {
 
@@ -67,6 +68,11 @@ bool laidOutFor(const QueueStore& q, const QueueCapacity& c) {
     return q.queue.capacity == c.messageCount() && q.queue.bytes_capacity == c.byteCount();
 }
 
+// What a queue of that capacity takes: its message items and its payload bytes.
+std::size_t queueMemory(const QueueCapacity& c) {
+    return std::size_t{c.messageCount()} * sizeof(rp_message) + c.byteCount();
+}
+
 // A value means what it meant: the same type, range and enum labels (a name, unit or default may change).
 bool sameValues(const ParamDesc& a, const ParamDesc& b) {
     return a.type == b.type && a.min == b.min && a.max == b.max && a.values == b.values;
@@ -110,19 +116,21 @@ std::shared_ptr<PortState> portState(const Layout& layout, const PortState* carr
 class Builder {
 public:
     explicit Builder(const PlanInput& in) : in_(in) {}
+    Builder(const Builder&) = delete;
+    Builder& operator=(const Builder&) = delete;
+    // An allocation failure leaves run() by its exception (plan() reports it), so what it prepared is released here.
+    ~Builder() { releasePrepared(); }
 
     PlanOutcome run() {
-        // Nothing may escape setGraph: an allocation failure (a huge maxFrames, say) is a refused plan,
-        // rolled back like any other.
         try {
             // Every check that needs a layout runs on the types' layouts before any instance exists, so a
             // document refused here creates nothing.
             if (structure() && params() && wires() && groups() && order() && channels() && exclusive() &&
-                resources() && reconcile() && linkedSteps()) {
+                resources() && queueBudget() && reconcile() && linkedSteps()) {
                 build();
             }
         } catch (const std::bad_alloc&) {
-            error("", "", "out-of-memory", "planning ran out of memory");
+            throw;  // plan() refuses it, once this Builder and all it took are freed
         } catch (const std::exception& e) {
             error("", "", "internal", std::string("planning failed: ") + e.what());
         }
@@ -203,6 +211,33 @@ private:
         auto layout = parseLayout(text);
         if (!layout) return error(p.doc->id, "", "layout-invalid", layout.error().what());
         p.layout = std::move(*layout);
+        return true;
+    }
+
+    // ---- queue memory -------------------------------------------------------------------------------
+
+    // Every queue the plan will hold, against kPlanQueueBudget: the queue of each wired events or bytes output (one,
+    // however many wires it feeds) and the front of each feedback wire, sized as its source's queue. A document past
+    // it is refused here, on the types' layouts, so it creates nothing.
+    bool queueBudget() {
+        std::size_t total = 0;
+        std::set<std::pair<int, int>> counted;  // outputs whose queue is in `total`
+        for (const auto& w : wires_) {
+            if (w.kind != PortKind::Events && w.kind != PortKind::Bytes) continue;
+            const std::string& id = nodes_[w.from].doc->id;
+            const PortDesc& port = nodes_[w.from].layout.ports[w.fromPort];
+            auto charge = [&](const std::string& queue) {
+                total += queueMemory(port.capacity);
+                if (total <= kPlanQueueBudget) return true;
+                return error(id, port.id, "queue-budget",
+                             queue + " takes the plan's events and bytes queues to " + std::to_string(total) +
+                                 " bytes, past their " + std::to_string(kPlanQueueBudget >> 20) +
+                                 " MiB budget; declare smaller capacities");
+            };
+            if (counted.emplace(w.from, w.fromPort).second && !charge("the queue of " + q(id + "." + port.id)))
+                return false;
+            if (w.feedback && !charge("the feedback front of " + q(w.key))) return false;
+        }
         return true;
     }
 
@@ -736,19 +771,23 @@ private:
 
     // The wire's front buffer. An existing one is reused when it still fits (same kind and channels, a queue
     // of the capacity its source declares, and for audio at least maxFrames long), which is what carries the
-    // block in flight through a swap. An audio front that has grown too short (the host's block size went up)
-    // is replaced by a longer one, never trusted past its end. The in-flight frames are copied across only
-    // while quiescent: the audio thread writes the old front every block, so with it running the new front
-    // starts silent instead. A queue front whose source's capacity changed starts empty, as a front whose
-    // channel count changed starts silent.
+    // block in flight through a swap. One that no longer fits is replaced, and what it holds is carried into
+    // the new one only while quiescent: the audio thread writes the old front every block, so with it running
+    // the control thread must not read it, and the new front starts silent or empty instead. Carried, an audio
+    // front that has grown too short (the host's block size went up) keeps its frames, and a queue front whose
+    // source's capacity changed keeps its messages, those the new capacity cannot hold counted as the source's
+    // drops. A front whose channel count changed always starts silent: its frames are for other channels.
     std::shared_ptr<FeedbackFront> front(const DataWire& w, std::uint32_t channelCount) {
-        // A front is filled from its source's queue, so it is sized as that queue is, whatever the input declares.
+        // A front is filled from its source's queue, so it is sized as that queue is.
         const QueueCapacity& capacity = nodes_[w.from].layout.ports[w.fromPort].capacity;
         const auto it = in_.feedback->find(w.key);
         const FeedbackFront* old = it != in_.feedback->end() ? it->second.get() : nullptr;
-        const bool sameShape = old && old->kind == w.kind && old->channels == channelCount &&
-                               (!old->queue || laidOutFor(*old->queue, capacity));
-        if (sameShape && (w.kind != PortKind::Audio || old->frames >= in_.maxFrames)) return it->second;
+        // What the old front holds still means the same: the same kind of data, in as many channels.
+        const bool sameData = old && old->kind == w.kind && old->channels == channelCount;
+        if (sameData && (!old->queue || laidOutFor(*old->queue, capacity)) &&
+            (w.kind != PortKind::Audio || old->frames >= in_.maxFrames))
+            return it->second;
+        const bool carry = sameData && in_.quiescent;
         auto f = std::make_shared<FeedbackFront>();
         f->kind = w.kind;
         f->channels = channelCount;
@@ -757,15 +796,32 @@ private:
             f->samples.assign(static_cast<std::size_t>(channelCount) * in_.maxFrames, 0.0f);
             for (std::uint32_t c = 0; c < channelCount; ++c)
                 f->pointers.push_back(f->samples.data() + std::size_t(c) * in_.maxFrames);
-            if (sameShape && in_.quiescent)
+            if (carry)
                 for (std::uint32_t c = 0; c < channelCount; ++c)
                     std::copy_n(old->pointers[c], std::min(old->frames, in_.maxFrames), f->pointers[c]);
         } else if (w.kind == PortKind::Control) {
             f->stream = std::make_unique<StreamStore>(kStreamChanges, 0.0);
         } else {
             f->queue = std::make_unique<QueueStore>(capacity.messageCount(), capacity.byteCount());
+            if (carry) carryMessages(*old->queue, *f->queue, w);
         }
         return f;
+    }
+
+    // A queue front's messages, onto its replacement. Those that do not fit are dropped as any full queue drops
+    // them, and charged to the wire's source (the instance its id names in this plan) when the plan is published:
+    // a refused plan keeps the old front, messages and all.
+    void carryMessages(const QueueStore& from, QueueStore& to, const DataWire& w) {
+        appendQueue(to.queue, from.queue);
+        const std::uint32_t lost = to.queue.dropped;
+        to.queue.dropped = 0;  // a front's own count is never published
+        if (lost == 0) return;
+        const std::shared_ptr<Instance> source = nodes_[w.from].inst;
+        std::atomic<std::uint32_t>* const total = in_.drops;
+        out_.onPublished.push_back([source, total, lost] {
+            source->drops.fetch_add(lost, std::memory_order_relaxed);
+            if (total) total->fetch_add(lost, std::memory_order_release);  // released after it, as the executor's is
+        });
     }
 
     // Producer side: every output's view, with audio buffers reused by lifetime.
@@ -1065,12 +1121,16 @@ private:
 
     // ---- failure ------------------------------------------------------------------------------------------
 
-    void rollback() {
+    void releasePrepared() {
         for (auto& p : nodes_)
             if (p.prepared && p.inst) {
                 p.inst->node->vt->release_settings(p.inst->node, p.prepared);
                 p.prepared = nullptr;
             }
+    }
+
+    void rollback() {
+        releasePrepared();
         out_.storage.reset();
         out_.instances.clear();
         out_.feedback.clear();
@@ -1085,6 +1145,17 @@ std::string errorText(const rp_error& err, const char* fallback) {
     return n ? std::string(err.message, n) : std::string(fallback);
 }
 
-PlanOutcome plan(const PlanInput& in) { return Builder(in).run(); }
+// Nothing may escape setGraph: an allocation failure (a huge maxFrames, queues within the budget the machine still
+// cannot back) is a refused plan, rolled back like any other. Caught here, outside the Builder, so everything it
+// took is freed before the refusal is spelt, and that spelling's own few bytes can be had.
+PlanOutcome plan(const PlanInput& in) {
+    try {
+        return Builder(in).run();
+    } catch (const std::bad_alloc&) {
+        PlanOutcome refused;
+        refused.errors.push_back({"", "", "out-of-memory", "planning ran out of memory"});
+        return refused;
+    }
+}
 
 }  // namespace rp::graph

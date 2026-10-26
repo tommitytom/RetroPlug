@@ -126,16 +126,22 @@ public:
     // size, the old plan keeps running, and a node that will not come back either is bypassed as faulted.
     bool reactivate(double sampleRate, std::uint32_t maxFrames, std::string* error = nullptr);
     rp_node*      node(std::string_view id) const;
-    // Nodes faulted so far, each counted once. reclaim() logs new ones, naming each still in the graph.
-    std::uint32_t faultCount() const { return faults_.load(std::memory_order_relaxed); }
+    // Nodes faulted so far, each counted once. reclaim() logs new ones, naming each still in the graph. Acquired:
+    // the executor releases the count after the node's flag, so every flag it counts is visible after reading it.
+    std::uint32_t faultCount() const { return faults_.load(std::memory_order_acquire); }
     // Has this node faulted (and so been bypassed since)? False for an unknown id.
     bool          isFaulted(std::string_view id) const;
-    // Messages dropped so far because an output queue was full (each holds what its port declares, the
-    // defaults otherwise), as published by the thread that runs blocks at the end of each one: the queues'
-    // own counts are only ever touched there. An unconnected output's are not counted, since nothing reads
-    // it. reclaim() names each node still in the graph the first time its outputs drop.
-    std::uint32_t droppedMessages() const { return drops_.load(std::memory_order_relaxed); }
-    // The same for one node's outputs, over the life of its instance; 0 for an unknown id.
+    // Messages dropped so far because an events or bytes output queue was full (each holds what its port
+    // declares, the defaults otherwise), as published by the thread that runs blocks at the end of each one: the
+    // queues' own counts are only ever touched there. An unconnected output's are not counted, since nothing reads
+    // it, nor is a control stream's (a full stream keeps its end value right, and counts in its own `dropped`).
+    // reclaim() names each node still in the graph the first time its outputs drop. Acquired, as faultCount is:
+    // a node's count read after it includes the node's share of what it read. The counts are 32-bit and wrap,
+    // rather than saturate: the executor's add stays one wait-free fetch_add, and what reads them compares or
+    // subtracts (reclaim's "new since", a test's "this many more"), which a wrap leaves right.
+    std::uint32_t droppedMessages() const { return drops_.load(std::memory_order_acquire); }
+    // The same for one node's outputs, over the life of its instance; 0 for an unknown id. It wraps as the total
+    // does.
     std::uint32_t droppedMessages(std::string_view id) const;
     std::size_t   instanceCount() const { return live_.size(); }
     // Replaced plans the audio thread could not hand back (the release ring was full) and so leaked

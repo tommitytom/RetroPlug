@@ -38,10 +38,11 @@ void silenceOutputs(const rp_process& p, std::uint32_t frames) {
     }
 }
 
-// Flag the node (once) and count it.
+// Flag the node (once) and count it. The count is released after the flag, so a reader that acquires the count
+// (GraphHost::reclaim, naming what faulted) sees every flag the count includes, on a weakly ordered CPU too.
 void markFaulted(const PlanView& plan, PlanStep& s) {
     if (!s.faulted->exchange(true, std::memory_order_relaxed) && plan.faults)
-        plan.faults->fetch_add(1, std::memory_order_relaxed);
+        plan.faults->fetch_add(1, std::memory_order_release);
 }
 
 bool isFaulted(const PlanStep& s) { return s.faulted->load(std::memory_order_relaxed); }
@@ -114,13 +115,15 @@ void moveFeedback(const FeedbackCopy& f, std::uint32_t frames) {
 }
 
 // A queue's `dropped` is written by whoever pushes and read here, both on the thread running the block; what it
-// counted moves into atomics the control thread may read, and the queue's own count starts again.
+// counted moves into atomics the control thread may read, and the queue's own count starts again. The total is
+// released after the producer's count, as a fault's is after its flag, so a reader that acquires the total sees
+// the producer's share of it.
 void publishDrops(const PlanView& plan, const OutputQueue& o) {
     rp_queue& q = *o.queue;
     if (q.dropped == 0) return;
     if (o.drops) {
         o.drops->fetch_add(q.dropped, std::memory_order_relaxed);
-        if (plan.drops) plan.drops->fetch_add(q.dropped, std::memory_order_relaxed);
+        if (plan.drops) plan.drops->fetch_add(q.dropped, std::memory_order_release);
     }
     q.dropped = 0;
 }

@@ -211,7 +211,7 @@ bool GraphHost::publish(PlanOutcome& outcome, const GraphDocument& document, con
 }
 
 void GraphHost::markFaulted(Instance& inst) {
-    if (!inst.faulted.exchange(true, std::memory_order_relaxed)) faults_.fetch_add(1, std::memory_order_relaxed);
+    if (!inst.faulted.exchange(true, std::memory_order_relaxed)) faults_.fetch_add(1, std::memory_order_release);
 }
 
 bool GraphHost::setParam(std::string_view nodeId, std::string_view paramId, double value, std::uint32_t frame) {
@@ -286,7 +286,8 @@ std::size_t GraphHost::reclaim() {
         leaksReported_ = leaked;
     }
     // A fault likewise: the executor only flags the node and counts it. Each faulted node still in the graph
-    // is named once; one already gone (replaced or removed since) is in the count alone.
+    // is named once; one already gone (replaced or removed since) is in the count alone. The count is read
+    // first, acquiring what the executor released with it, so no flag it includes is missed below.
     if (const auto faults = faultCount(); faults != faultsReported_) {
         std::string names;
         for (auto& [id, inst] : live_) {
@@ -298,8 +299,8 @@ std::size_t GraphHost::reclaim() {
                      static_cast<unsigned>(faults - faultsReported_), names.empty() ? "" : ": ", names.c_str());
         faultsReported_ = faults;
     }
-    // Drops too, but a queue that overflows once may overflow every block, so a node is named the first time
-    // its outputs drop and is in the count alone after that.
+    // Drops too, read in the same order, but a queue that overflows once may overflow every block, so a node is
+    // named the first time its outputs drop and is in the count alone after that.
     if (const auto drops = droppedMessages(); drops != dropsReported_) {
         std::string names;
         for (auto& [id, inst] : live_) {

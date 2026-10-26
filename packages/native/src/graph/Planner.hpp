@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -51,6 +52,14 @@ struct PlanOutcome {
     std::vector<std::function<void()>>                    onPublished;
 };
 
+// The most memory one plan's events and bytes queues may take, message items plus payload bytes: the queue of each
+// wired output and the front of each feedback wire (a default queue, 256 messages and 4 KiB, is 8 KiB). A port may
+// declare about 32 MiB, so this is what bounds what one document can have the planner allocate: a document past it
+// is refused ("queue-budget", naming the node and port whose queue crossed it) before any instance is made. Not
+// counted: the one default-size scratch queue every unconnected output shares. Around a swap the old plan's queues
+// are alive beside the new one's.
+constexpr std::size_t kPlanQueueBudget = std::size_t{64} << 20;  // 64 MiB
+
 // A node's rp_error text, bounded (a node may leave it unterminated) and never empty.
 std::string errorText(const rp_error& err, const char* fallback);
 
@@ -60,7 +69,7 @@ std::string errorText(const rp_error& err, const char* fallback);
 // control-thread calls. A reshaped instance gets a new PortState, sharing by id the streams it keeps, which
 // becomes the instance's only when the plan is published; the old one stays as the running plan uses it. A
 // failed plan has no effect: instances it created are destroyed and settings it prepared are released before
-// it returns.
+// it returns. Nothing escapes it: an allocation that fails is a refused plan ("out-of-memory").
 PlanOutcome plan(const PlanInput& in);
 
 }  // namespace rp::graph

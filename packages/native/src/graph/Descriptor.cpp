@@ -215,6 +215,8 @@ std::string capacityRange(const std::string& where, std::string_view part, std::
 }
 
 const char* const kNoQueue = ": only events and bytes ports have \"capacity\"";
+// Worded as defineNode.ts words it: an input reads its source's queue, so a capacity there would bound nothing.
+const char* const kInputCapacity = ": only an output declares a capacity: a wire carries its source's queue";
 
 // A queue port's capacity: messages, bytes or both, each a whole number from 1 to its cap.
 rfl::Result<QueueCapacity> parseCapacity(const rfl::Generic& g, const std::string& where) {
@@ -296,6 +298,7 @@ rfl::Result<PortDesc> parsePort(const rfl::Generic& g, std::size_t index) {
 
     if (const auto* cap = field(*o, "capacity")) {
         if (p.kind != PortKind::Events && p.kind != PortKind::Bytes) return fail(where + kNoQueue);
+        if (p.dir != PortDir::Out) return fail(where + kInputCapacity);
         auto c = parseCapacity(*cap, where);
         if (!c) return fail(c.error().what());
         p.capacity = *c;
@@ -552,6 +555,7 @@ std::optional<std::string> checkCapacity(const PortDesc& port) {
     if (!c.messages && !c.bytes) return std::nullopt;
     const std::string where = "port " + q(port.id);
     if (port.kind != PortKind::Events && port.kind != PortKind::Bytes) return where + kNoQueue;
+    if (port.dir != PortDir::Out) return where + kInputCapacity;
     if (c.messages && (*c.messages < 1 || *c.messages > kMaxQueueMessages))
         return capacityRange(where, "messages", kMaxQueueMessages);
     if (c.bytes && (*c.bytes < 1 || *c.bytes > kMaxQueueBytes)) return capacityRange(where, "bytes", kMaxQueueBytes);

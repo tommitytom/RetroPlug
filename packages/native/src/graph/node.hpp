@@ -134,23 +134,20 @@ struct audio_out {
     float* operator[](std::uint32_t c) const { return channels[c]; }
 };
 
-// An events or bytes port's queue capacity (graph::QueueCapacity): the most messages, and payload bytes, one block
+// An events or bytes output's queue capacity (graph::QueueCapacity): the most messages, and payload bytes, one block
 // carries. A part left 0 takes the default (graph::kDefaultQueueMessages / kDefaultQueueBytes). It rides on the
 // port's type, rp::bytes_out::sized<rp::capacity{.bytes = 65536}>, or adjust_layout sets it from settings. A wire
-// carries its source's queue, so an output's capacity is what bounds a wire; an input's is in its descriptor only.
+// carries its source's queue, so only an output has one: an input has no `sized` (naming it is a compile error),
+// and a capacity adjust_layout sets on one is refused with the node's settings.
 struct capacity {
     std::uint32_t messages = 0;
     std::uint32_t bytes = 0;
 };
 
-template <graph::PortKind Kind, capacity C = capacity{}>
+template <graph::PortKind Kind>
 struct queue_in {
-    static_assert(C.messages <= graph::kMaxQueueMessages && C.bytes <= graph::kMaxQueueBytes,
-                  "a queue capacity is at most graph::kMaxQueueMessages messages and graph::kMaxQueueBytes bytes");
-    static constexpr auto     rp_kind = Kind;
-    static constexpr auto     rp_dir  = graph::PortDir::In;
-    static constexpr capacity rp_capacity = C;
-    template <capacity N> using sized = queue_in<Kind, N>;
+    static constexpr auto rp_kind = Kind;
+    static constexpr auto rp_dir  = graph::PortDir::In;
     const rp_queue* queue = nullptr;
     std::span<const rp_message> messages() const { return {queue->items, queue->count}; }
     std::span<const std::uint8_t> data(const rp_message& m) const { return graph::messageData(*queue, m); }
@@ -631,7 +628,7 @@ template <class T>
 Instance<T>* self(rp_node* n) noexcept { return static_cast<Instance<T>*>(n); }
 
 template <class T>
-std::size_t layoutForFn(const rp_settings* s, char* out, std::size_t capacity, rp_error* err) {
+std::size_t layoutForFn(const rp_settings* s, char* out, std::size_t outSize, rp_error* err) {
     try {
         auto parsed = parseSettings<T>(s);
         if (!parsed) {
@@ -639,7 +636,7 @@ std::size_t layoutForFn(const rp_settings* s, char* out, std::size_t capacity, r
             return 0;
         }
         const std::string json = graph::layoutJson(layoutFor<T>(*parsed));
-        if (out && json.size() < capacity) {
+        if (out && json.size() < outSize) {
             std::memcpy(out, json.data(), json.size());
             out[json.size()] = '\0';
         }

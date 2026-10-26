@@ -27,7 +27,8 @@ type OutputChannels = MatchChannels | FixedChannels;
 type PortSpec =
   | { dir: "in"; kind: "audio"; channels: ChannelSpec }
   | { dir: "out"; kind: "audio"; channels: OutputChannels }
-  | { dir: "in" | "out"; kind: "events" | "bytes"; capacity?: QueueCapacity }
+  | { dir: "in"; kind: "events" | "bytes" }
+  | { dir: "out"; kind: "events" | "bytes"; capacity?: QueueCapacity }
   | { dir: "in" | "out"; kind: "control" }
   | { dir: "in"; kind: "resource"; resourceType: string; access?: "write" }
   | { dir: "out"; kind: "resource"; resourceType: string }
@@ -45,18 +46,18 @@ export const audio = {
   in: (spec: ChannelSpec = channels.any()): PortSpec => ({ dir: "in", kind: "audio", channels: spec }),
   out: (spec: OutputChannels): PortSpec => ({ dir: "out", kind: "audio", channels: spec }),
 };
-// An events or bytes port, with the queue capacity it declares if any (QueueCapacity: an output's bounds what a
-// wire from it carries; an input's is recorded in its descriptor only).
-const queue = (dir: "in" | "out", kind: "events" | "bytes", capacity?: QueueCapacity): PortSpec =>
-  capacity === undefined ? { dir, kind } : { dir, kind, capacity };
+// An events or bytes output, with the queue capacity it declares if any (QueueCapacity). An input takes none: it
+// reads its source's queue, so a capacity there would bound nothing.
+const queueOut = (kind: "events" | "bytes", capacity?: QueueCapacity): PortSpec =>
+  capacity === undefined ? { dir: "out", kind } : { dir: "out", kind, capacity };
 
 export const events = {
-  in: (capacity?: QueueCapacity): PortSpec => queue("in", "events", capacity),
-  out: (capacity?: QueueCapacity): PortSpec => queue("out", "events", capacity),
+  in: (): PortSpec => ({ dir: "in", kind: "events" }),
+  out: (capacity?: QueueCapacity): PortSpec => queueOut("events", capacity),
 };
 export const bytes = {
-  in: (capacity?: QueueCapacity): PortSpec => queue("in", "bytes", capacity),
-  out: (capacity?: QueueCapacity): PortSpec => queue("out", "bytes", capacity),
+  in: (): PortSpec => ({ dir: "in", kind: "bytes" }),
+  out: (capacity?: QueueCapacity): PortSpec => queueOut("bytes", capacity),
 };
 export const control = {
   in: (): PortSpec => ({ dir: "in", kind: "control" }),
@@ -238,6 +239,8 @@ function checkPort(node: string, p: PortDesc): void {
   }
   if (p.capacity !== undefined) {
     if (p.kind !== "events" && p.kind !== "bytes") throw new Error(`${where}: only events and bytes ports have capacity`);
+    // Worded as Descriptor.cpp words it after the port.
+    if (p.dir !== "out") throw new Error(`${where}: only an output declares a capacity: a wire carries its source's queue`);
     checkCapacity(where, p.capacity);
   }
 }

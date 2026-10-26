@@ -131,11 +131,11 @@ test("port shapes are checked as the C++ parser checks them", () => {
   expect(shaped({ dir: "sideways", kind: "events" })).toThrow("unknown dir");
 });
 
-test("an events or bytes port declares its queue capacity, either part, as C++ writes it", () => {
+test("an events or bytes output declares its queue capacity, either part, as C++ writes it", () => {
   const n = defineNode({
     id: "rp.test.capacity",
     ports: {
-      midi: events.in({ messages: 512 }),
+      midi: events.in(),
       sysex: bytes.out({ messages: 4, bytes: 65536 }),
       serial: bytes.out({ bytes: 1 }),
       notes: events.out(),
@@ -143,7 +143,7 @@ test("an events or bytes port declares its queue capacity, either part, as C++ w
     create: noop,
   });
   expect(n.descriptor().ports).toEqual([
-    { id: "midi", dir: "in", kind: "events", capacity: { messages: 512 } },
+    { id: "midi", dir: "in", kind: "events" },
     { id: "sysex", dir: "out", kind: "bytes", capacity: { messages: 4, bytes: 65536 } },
     { id: "serial", dir: "out", kind: "bytes", capacity: { bytes: 1 } },
     { id: "notes", dir: "out", kind: "events" },
@@ -157,7 +157,7 @@ test("an events or bytes port declares its queue capacity, either part, as C++ w
 test("a queue capacity is refused where Descriptor.cpp refuses it", () => {
   const port = (spec: unknown) => () => defineNode({ id: "rp.test.cap", ports: { q: spec as never }, create: noop }).descriptor();
   expect(port(events.out({ messages: 1048577 }))).toThrow('port "q": capacity.messages must be a whole number from 1 to 1048576');
-  expect(port(bytes.in({ bytes: 16777217 }))).toThrow('port "q": capacity.bytes must be a whole number from 1 to 16777216');
+  expect(port(bytes.out({ bytes: 16777217 }))).toThrow('port "q": capacity.bytes must be a whole number from 1 to 16777216');
   expect(port(events.out({ messages: 0 }))).toThrow("from 1 to 1048576");
   expect(port(events.out({ messages: 2.5 }))).toThrow("whole number");
   expect(port(events.out({ bytes: -1 }))).toThrow("from 1 to 16777216");
@@ -169,6 +169,33 @@ test("a queue capacity is refused where Descriptor.cpp refuses it", () => {
   expect(port({ dir: "out", kind: "events", capacity: { mesages: 2 } })).toThrow('capacity: unknown field "mesages"');
   expect(port({ dir: "out", kind: "control", capacity: { messages: 2 } })).toThrow("only events and bytes ports have capacity");
   expect(port({ dir: "in", kind: "audio", channels: { any: true }, capacity: { messages: 2 } })).toThrow("only events and bytes ports have capacity");
+});
+
+test("an input's capacity is refused: a wire carries its source's queue", () => {
+  const port = (spec: unknown) => () => defineNode({ id: "rp.test.cap", ports: { q: spec as never }, create: noop }).descriptor();
+  // Worded as Descriptor.cpp words it after the port.
+  const why = `port "q": only an output declares a capacity: a wire carries its source's queue`;
+  expect(port({ dir: "in", kind: "events", capacity: { messages: 512 } })).toThrow(why);
+  expect(port({ dir: "in", kind: "bytes", capacity: { bytes: 8192 } })).toThrow(why);
+  expect(port({ dir: "in", kind: "control", capacity: { messages: 2 } })).toThrow("only events and bytes ports have capacity");
+  expect(port(events.in())().ports[0]).toEqual({ id: "q", dir: "in", kind: "events" });
+  // @ts-expect-error an input takes no capacity, so naming one does not type-check
+  expect(port(bytes.in({ bytes: 8192 }))().ports[0]).toEqual({ id: "q", dir: "in", kind: "bytes" });
+});
+
+test("a capacity a ports function computes from settings is checked as each layout is made", () => {
+  const n = defineNode({
+    id: "rp.test.sized",
+    settings: z.object({ messages: z.number().int().default(256) }),
+    ports: (s) => ({ out: events.out({ messages: s.messages }) }),
+    create: noop,
+  });
+  expect(n.descriptor().ports[0].capacity).toEqual({ messages: 256 });
+  expect(n.layout(n.parseSettings({ messages: 1048576 })).ports[0].capacity).toEqual({ messages: 1048576 });
+  expect(() => n.layout(n.parseSettings({ messages: 1048577 }))).toThrow(
+    'rp.test.sized: port "out": capacity.messages must be a whole number from 1 to 1048576',
+  );
+  expect(() => n.layout(n.parseSettings({ messages: 0 }))).toThrow("from 1 to 1048576");
 });
 
 test("ids are plain, unambiguous and keep their order", () => {

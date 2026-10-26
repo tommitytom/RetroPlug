@@ -456,11 +456,11 @@ An enum param is `{ "id": "mode", "type": "enum", "values": ["off", "midi-sync",
 "midi-sync" }`; a resource port is `{ "id": "sample", "dir": "in", "kind": "resource", "resourceType":
 "audio-buffer" }`; a fixed audio port is `"channels": { "count": 2, "layout": "stereo" }`.
 
-An events or bytes port may declare its queue's capacity, `"capacity": { "messages": 1024, "bytes": 65536 }`,
+An events or bytes output may declare its queue's capacity, `"capacity": { "messages": 1024, "bytes": 65536 }`,
 either part or both: a part it leaves out takes the default (256 messages, 4096 bytes), and neither may pass
-1 Mi messages or 16 MiB, so a typo cannot allocate gigabytes. A wire carries its source's queue, and a feedback
-wire's front is sized from the source too, so where a wire's two ends declare different capacities **the
-source's wins**; an input's own capacity bounds nothing.
+1 Mi messages or 16 MiB, so a typo cannot allocate gigabytes. Only an output: a wire carries its source's queue,
+and a feedback wire's front is sized from the source too, so a capacity on an input would bound nothing, and
+both parsers (and the C++ layer, which gives an input no `sized`) refuse one rather than ignore it.
 
 The descriptor is emitted in one canonical spelling (keys sorted, no whitespace, numbers and strings exactly
 as JSON.stringify writes them), so its ports, params and metadata are **byte-stable**: across compilers,
@@ -628,11 +628,17 @@ C++, on the control thread, five passes:
    connected set; link wires are undirected).
 4. **Cycles.** Only feedback wires may close a loop (§3.3).
 5. **Assign buffers.** Each output port gets a buffer: audio (channels x max frames); events, bytes and
-   control (fixed-capacity queues: an events or bytes queue holds what its port declares, §4.6, and a
-   control stream a fixed number of changes); resource (a handle
+   control (fixed-capacity queues: a wired events or bytes output's queue holds what its port declares,
+   §4.6, and a control stream a fixed number of changes); resource (a handle
    slot). Buffers are reused by lifetime; feedback wires get persistent double buffers owned by the wire, so they carry over to the next plan
    (§5.3). Every input
-   reads straight from its single source's buffer.
+   reads straight from its single source's buffer. An output nothing is wired to writes a scratch buffer
+   the plan's unconnected outputs share, and for events and bytes that is one queue at the default size,
+   whatever the port declares: nothing reads it. A plan's events and bytes queues (each wired output's,
+   each feedback front) are held to a budget of 64 MiB of message items and bytes (`kPlanQueueBudget`), so
+   the caps on one port do not leave a document unbounded; a document past it is refused (`queue-budget`,
+   naming the port whose queue crossed it) before any instance is made, and an allocation the planner
+   still cannot make refuses the plan (`out-of-memory`) rather than throwing.
 
 The output is an **immutable plan**: a flat list of steps with port bindings already resolved, the buffer
 pool, the pinned resources, and the nodes to release.
@@ -668,7 +674,10 @@ those are. Seven rules keep it that way:
    resetting, as `onSampleRateChanged` does today. Reset is its own explicit action, never a side effect.
 4. **Feedback buffers belong to the wire, not the plan.** If a feedback wire exists in both plans, the
    new plan points at the same buffer, so an edit never drops the block of data in flight (LSDj's MI.OUT
-   bytes).
+   bytes), with two exceptions: a change of channel count starts the front silent, and a change of its
+   source's queue capacity while the audio thread runs starts it empty (the control thread may not read a
+   front the audio thread is filling). Quiescent, a capacity change carries the block across, counting
+   what the new capacity cannot hold as the source's drops.
 5. **Script-node state lives with the instance** in the script runtime, so `lsdj.sync`'s clock phase
    survives an edit exactly as a core's state does.
 6. **Streams that hold a value belong to the instance too.** A param's stream and every control output
@@ -713,10 +722,14 @@ No heap, no exceptions, the same code on every target. Per block:
 4. Publish snapshots through the `SnapshotRegistry` (via `rp.snapshot/1`).
 
 Queues are fixed-capacity; an overflow drops and bumps a counter (the same never-allocate policy as
-today's full ring). The count lives on each queue, which only the block's thread touches; after each block
-the executor moves it into atomics charged to the queue's producer, which the host reads on the control
-thread (`GraphHost::droppedMessages`) and names in its log. The TS call over it arrives with the TS
-surface. Events stay frame-stamped; v1 uses the host's block size with no sub-blocking. v1 is
+today's full ring). An events or bytes queue's count lives on the queue, which only the block's thread
+touches; after each block the executor moves it into atomics charged to the queue's producer, which the
+host reads on the control thread (`GraphHost::droppedMessages`) and names in its log. Not counted: the
+shared scratch queue of unconnected outputs, since nothing reads what it drops, and control streams, whose
+own `dropped` only accumulates (a full stream keeps its end value right, §9) and is not reported. The
+counts are 32-bit and wrap rather than saturate, which keeps the executor's add one wait-free `fetch_add`;
+what reads them compares or subtracts, which a wrap leaves right. The TS call over them arrives with the
+TS surface. Events stay frame-stamped; v1 uses the host's block size with no sub-blocking. v1 is
 single-threaded; the plan records dependencies, so running independent branches in parallel (enkiTS) can
 come later without changing the plan format.
 
