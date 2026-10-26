@@ -80,7 +80,7 @@ retroplug_add_test_binary(
 # node renders exactly what its core renders driven directly, its inputs included, the engine places, re-arms and
 # frees what the documents TS builds say, the host I/O nodes and the cart mirror move what the hosts stage and
 # drain, TS nodes run behind the C ABI in the script host, the kernel script node does what today's kernel stage
-# does, and every document in buildGraph's goldens plans on it.
+# does, and every document in buildGraph's goldens plans on it. A hidden bench times a script node per block.
 # Every core in it powers on in a fixed state (test/engine-graph/Deterministic.cpp), so two identical cores agree.
 # CountingAllocator.cpp is shared with retroplug-graph-test, for the no-allocation checks. The script tests' bundle
 # (the authoring layer for their toy nodes) and today's DSP kernel bundle (the kernel node is held to it) are
@@ -93,6 +93,7 @@ retroplug_add_test_binary(
              test/engine-graph/HostIo.test.cpp
              test/engine-graph/ScriptNodes.test.cpp
              test/engine-graph/KernelNode.test.cpp
+             test/engine-graph/ScriptBench.test.cpp    # hidden: run with "[bench]"
              test/engine-graph/BuildGraphGoldens.test.cpp
              test/graph/CountingAllocator.cpp          # replaces operator new / delete for this binary
              ${SCRIPT_TEST_BUNDLE_C}                    # rp_script_test_bundle

@@ -154,7 +154,7 @@ struct ScriptRig {
     rp_transport                          transport{48000.0, 120.0, 0.0, 0};
 
     // The test bundle, then `toys` (JS source; empty for none).
-    explicit ScriptRig(const std::string& toys = "", std::uint32_t maxFrames = 256) {
+    explicit ScriptRig(const std::string& toys = "", std::uint32_t maxFrames = 256, double sampleRate = 48000.0) {
         std::vector<std::uint8_t> toyBytecode;
         std::vector<ScriptHost::Chunk> chunks{scriptTestBundle()};
         if (!toys.empty()) {
@@ -166,7 +166,8 @@ struct ScriptRig {
         for (const rp_package* p : {graph::corePackage(), graph::hostPackage(), graph::test::testPackage(),
                                     test::testPackage(), scripts.package()})
             if (!registry.addPackage(p, &error)) throw std::runtime_error("a package is refused: " + error);
-        host = std::make_unique<graph::GraphHost>(registry, resources, graph::HostConfig{48000.0, maxFrames});
+        host = std::make_unique<graph::GraphHost>(registry, resources, graph::HostConfig{sampleRate, maxFrames});
+        transport.sample_rate = sampleRate;
         outs.assign(8, std::vector<float>(maxFrames, 0.0f));
         for (auto& o : outs) outPointers.push_back(o.data());
     }
