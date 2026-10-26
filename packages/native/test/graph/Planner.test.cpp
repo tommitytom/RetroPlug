@@ -57,8 +57,8 @@ struct LinkedListener {
 };
 
 // A pack whose create fails after query_memory succeeded (a ROM that will not load, say).
-const char* failingDescriptor() { return R"({"id":"rp.test.failing"})"; }
-rp_node* failingCreate(const rp_host*, void*, const rp_settings*, rp_error* err) {
+const char* failingDescriptor(const rp_node_type*) { return R"({"id":"rp.test.failing"})"; }
+rp_node* failingCreate(const rp_node_type*, const rp_host*, void*, const rp_settings*, rp_error* err) {
     std::strcpy(err->message, "no ROM loaded");
     return nullptr;
 }
@@ -67,13 +67,13 @@ rp_node* failingCreate(const rp_host*, void*, const rp_settings*, rp_error* err)
 // changes the planner asks the live instance about shows up as a count.
 int g_prepareCalls = 0;
 decltype(rp_node_vtable::prepare_settings) g_realPrepare = nullptr;
-const char* countingDescriptor() { return R"({"id":"rp.test.counting"})"; }
+const char* countingDescriptor(const rp_node_type*) { return R"({"id":"rp.test.counting"})"; }
 rp_prepare_result countingPrepare(rp_node* n, const rp_settings* s, void** prepared, rp_error* err) {
     ++g_prepareCalls;
     return g_realPrepare(n, s, prepared, err);
 }
-rp_node* countingCreate(const rp_host* host, void* memory, const rp_settings* s, rp_error* err) {
-    rp_node* n = rp::node_type<test::Source>()->create(host, memory, s, err);
+rp_node* countingCreate(const rp_node_type* type, const rp_host* host, void* memory, const rp_settings* s, rp_error* err) {
+    rp_node* n = rp::node_type<test::Source>()->create(type, host, memory, s, err);
     if (!n) return nullptr;
     static const rp_node_vtable vt = [&] {
         rp_node_vtable v = *n->vt;
@@ -99,8 +99,43 @@ const rp_package* plannerPackage() {
     return &kPackage;
 }
 
+// Two node types served by ONE set of functions, as the script host serves every type a bundle defines: each
+// type-level call is handed the type it was made through, and each type's ctx says which one it is.
+struct SharedType {
+    const char* descriptor;
+    float       value;
+};
+const SharedType kSharedA{R"({"id":"rp.test.shared-a"})", 2.0f};
+const SharedType kSharedB{R"({"id":"rp.test.shared-b"})", 3.0f};
+const SharedType& sharedOf(const rp_node_type* type) { return *static_cast<const SharedType*>(type->ctx); }
+const char* sharedDescriptor(const rp_node_type* type) { return sharedOf(type).descriptor; }
+std::size_t sharedLayout(const rp_node_type* type, const rp_settings* s, char* out, std::size_t capacity, rp_error* err) {
+    return rp::node_type<test::Source>()->layout_for(type, s, out, capacity, err);
+}
+bool sharedMemory(const rp_node_type* type, const rp_settings* s, rp_memory_req* out, rp_error* err) {
+    return rp::node_type<test::Source>()->query_memory(type, s, out, err);
+}
+rp_node* sharedCreate(const rp_node_type* type, const rp_host* host, void* memory, const rp_settings* s, rp_error* err) {
+    rp_node* n = rp::node_type<test::Source>()->create(type, host, memory, s, err);
+    if (n) rp::peer_as<test::Source>(n)->value = sharedOf(type).value;
+    return n;
+}
+
+const rp_package* sharedPackage() {
+    static const rp_node_type a{"rp.test.shared-a", &sharedDescriptor, &sharedLayout, &sharedMemory, &sharedCreate,
+                                rp::node_type<test::Source>()->destroy, 0u, const_cast<SharedType*>(&kSharedA)};
+    static const rp_node_type b{"rp.test.shared-b", &sharedDescriptor, &sharedLayout, &sharedMemory, &sharedCreate,
+                                rp::node_type<test::Source>()->destroy, 0u, const_cast<SharedType*>(&kSharedB)};
+    static const rp_node_type* const kTypes[] = {&a, &b};
+    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.shared"})", 2, kTypes};
+    return &kPackage;
+}
+
 struct PlannerRig : GraphRig {
-    PlannerRig() { registry.addPackage(plannerPackage()); }
+    PlannerRig() {
+        registry.addPackage(plannerPackage());
+        registry.addPackage(sharedPackage());
+    }
 };
 
 }  // namespace
@@ -199,6 +234,18 @@ TEST_CASE("a node is told which outputs are connected, on the first plan and on 
     rig.run();
     CHECK(rig.node<Tapped>("t").mask == std::array<std::uint8_t, 4>{0, 0, 0, 1});
     CHECK(rig.node<Tapped>("t").maskCalls == 2);
+}
+
+TEST_CASE("one set of type functions serves several types, each call handed its own", "[graph][planner]") {
+    PlannerRig rig;
+    REQUIRE(rig.registry.find("rp.test.shared-a"));
+    CHECK(rig.registry.find("rp.test.shared-b")->descriptor.id == "rp.test.shared-b");
+    REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.shared-a"},{"id":"b","type":"rp.test.shared-b"},
+                                  {"id":"out","type":"rp.host.audio-out"}],
+                         "wires":[{"from":"a.out","to":"out.out.1-2"},{"from":"b.out","to":"out.out.3-4"}]})").ok);
+    rig.run();
+    CHECK(rig.outs[0][0] == 2.0f);
+    CHECK(rig.outs[2][0] == 3.0f);
 }
 
 TEST_CASE("a node whose create fails is reported, and its memory is freed", "[graph][planner]") {

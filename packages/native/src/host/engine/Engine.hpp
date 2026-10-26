@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -15,6 +16,7 @@
 #include "host/dsp/DspRuntime.hpp"
 #include "host/engine/HostSyncTrace.hpp"
 #include "host/engine/SnapshotRegistry.hpp"
+#include "host/script/ScriptHost.hpp"
 
 class SystemBase;
 class MesenNesSystem;
@@ -50,7 +52,8 @@ struct EngineFrame {
 };
 
 // The core of the host: the graph the systems run on (docs/modular-graph-phase-b1-design.md), the DSP role
-// kernel, the staged MIDI and the snapshot registry. Structure reaches it as graph documents TS builds
+// kernel, the script host its TS nodes run in (docs/modular-graph-phase-b3a-design.md section 2), the staged MIDI and
+// the snapshot registry. Structure reaches it as graph documents TS builds
 // (docs/modular-graph-phase-b2-design.md), planned on the control thread; every other edit is a command on
 // the GraphHost's one ring, applied at the next drain. A removed core is freed on the control thread, with
 // the plan that last ran it. Transport and ppq are plain members, set per block by whoever drives it; the
@@ -62,6 +65,9 @@ public:
     static constexpr std::uint32_t kDefaultMaxBlockFrames = 8192;
 
     explicit Engine(double sampleRate = 44100.0);
+    // With the script nodes of `scriptBundle` (its chunks, run in order) in place of the embedded bundle's: a test's
+    // toy nodes.
+    Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> scriptBundle);
     ~Engine();
 
     double sampleRate() const { return sampleRate_; }
@@ -223,6 +229,8 @@ public:
     // block thread at the end of its block, and by rp.host.midi-out, a message too short to carry the system id that
     // names its sender, counted as it is dropped. Any thread may read it, as faultCount. Wraps, as the graph's does.
     std::uint32_t droppedMessages() const;
+    // Throws caught in the script nodes so far (ScriptHost::throwCount): any thread, as faultCount.
+    std::uint32_t scriptThrows() const;
 
 private:
     struct Graph;

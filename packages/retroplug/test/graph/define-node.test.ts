@@ -1,6 +1,7 @@
 // defineNode: a TS node declares the same contract a C++ node does.
 import { test, expect } from "../../testing/harness";
 import { z } from "zod";
+import { canonicalJson } from "../../src/graph/canonicalJson";
 import { audio, bytes, channels, control, defineNode, events, param, resource } from "../../src/graph/defineNode";
 
 const noop = () => ({ process() {} });
@@ -61,6 +62,24 @@ test("settings are a JSON object or nothing, and every field needs a default", (
   expect(() => defineNode({ id: "rp.test.nodefault", settings: z.object({ rom: z.string() }), ports: {}, create: noop })).toThrow(
     "needs a default",
   );
+});
+
+test("refused settings say which field and why, in one line a planner error can carry", () => {
+  const n = defineNode({
+    id: "rp.test.refused",
+    settings: z.object({ outs: z.number().int().min(1).max(4).default(2), name: z.string().default("a") }),
+    ports: {},
+    create: noop,
+  });
+  expect(() => n.parseSettings({ outs: 9 })).toThrow(`node type "rp.test.refused": settings: outs: Too big: expected number to be <=4`);
+  expect(() => n.parseSettings({ name: 5 })).toThrow("settings: name: ");
+  let message = "";
+  try {
+    n.parseSettings({ outs: 0, name: 5 });
+  } catch (e) {
+    message = (e as Error).message;
+  }
+  expect(message.includes("\n")).toBe(false);
 });
 
 test("duplicate ids and bad enum defaults are rejected", () => {
@@ -222,6 +241,40 @@ test("metadata, params and settings are typed and readable as C++ reads them", (
   expect(meta({ ports: { in: { dir: "in", kind: "audio", channels: { any: true, count: undefined } } } })().ports[0].channels).toEqual({ any: true, count: undefined });
   expect(meta({ ports: { r: resource.in("audio buffer") } })).toThrow("resourceType");
   expect(() => defineNode({ id: "rp.test.rootless", settings: z.number() as never, ports: {}, create: noop })).toThrow("needs a default (");
+});
+
+test("how the script host runs a node is the definition's, never its descriptor's", () => {
+  const settings = z.object({ outs: z.number().int().min(1).max(4).default(1) });
+  const ports = (s: { outs: number }) => Object.fromEntries(Array.from({ length: s.outs }, (_, i) => [`out${i + 1}`, events.out()]));
+  const kept = defineNode({
+    id: "rp.test.kept",
+    reshapes: true,
+    faultOnThrow: true,
+    settings,
+    ports,
+    create: ({ settings: first }) => {
+      let outs = first.outs;
+      return {
+        process() {},
+        // The new settings, already checked, typed as the definition's.
+        onSettings(next) {
+          outs = next.outs;
+        },
+        portsChanged() {
+          void outs;
+        },
+      };
+    },
+  });
+  expect(kept.reshapes).toBe(true);
+  expect(kept.faultOnThrow).toBe(true);
+  const plain = defineNode({ id: "rp.test.kept", settings, ports, create: noop });
+  expect(plain.reshapes).toBe(undefined);
+  expect(plain.faultOnThrow).toBe(undefined);
+  expect(canonicalJson(kept.descriptor())).toBe(canonicalJson(plain.descriptor()));
+  // Given, each is true: the host reads it as given, so a false would read as a promise it does not make.
+  expect(() => defineNode({ id: "rp.test.x", ports: {}, create: noop, reshapes: false } as never)).toThrow("reshapes is true or absent");
+  expect(() => defineNode({ id: "rp.test.x", ports: {}, create: noop, faultOnThrow: 1 } as never)).toThrow("faultOnThrow is true or absent");
 });
 
 test("a returned descriptor is the caller's own copy", () => {

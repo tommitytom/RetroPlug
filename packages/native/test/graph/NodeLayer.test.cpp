@@ -67,10 +67,10 @@ void make(Made& m, const char* settings) {
     rp_settings s = json(settings);
     rp_memory_req req{};
     rp_error err{};
-    REQUIRE(m.type->query_memory(&s, &req, &err));
+    REQUIRE(m.type->query_memory(m.type, &s, &req, &err));
     m.align = req.align;
     m.memory = ::operator new(req.size, std::align_val_t(req.align));
-    m.node = m.type->create(nullptr, m.memory, &s, &err);
+    m.node = m.type->create(m.type, nullptr, m.memory, &s, &err);
     INFO(err.message);
     REQUIRE(m.node);
 }
@@ -78,7 +78,7 @@ void make(Made& m, const char* settings) {
 }  // namespace
 
 TEST_CASE("a C++ node's descriptor matches the shared golden byte for byte", "[graph][node]") {
-    CHECK(std::string(rp::node_type<Gain>()->descriptor()) == readFile(RP_GRAPH_GOLDEN_DIR "/rp.test.gain.descriptor.json"));
+    CHECK(std::string(rp::node_type<Gain>()->descriptor(rp::node_type<Gain>())) == readFile(RP_GRAPH_GOLDEN_DIR "/rp.test.gain.descriptor.json"));
 }
 
 namespace {
@@ -139,14 +139,14 @@ static_assert(!Sizable<rp::events_in> && !Sizable<rp::bytes_in>);
 }  // namespace
 
 TEST_CASE("every descriptor feature matches the shared golden byte for byte", "[graph][node]") {
-    const std::string mine = rp::node_type<KitchenSink>()->descriptor();
+    const std::string mine = rp::node_type<KitchenSink>()->descriptor(rp::node_type<KitchenSink>());
     CHECK(mine == readFile(RP_GRAPH_GOLDEN_DIR "/rp.test.kitchen-sink.descriptor.json"));
     REQUIRE(parseDescriptor(mine));  // and the strict parser accepts it unchanged
     CHECK(descriptorJson(*parseDescriptor(mine)) == mine);
 }
 
 TEST_CASE("enum labels are the enumerator names in kebab-case", "[graph][node]") {
-    const std::string d = rp::node_type<Gain>()->descriptor();
+    const std::string d = rp::node_type<Gain>()->descriptor(rp::node_type<Gain>());
     CHECK(d.find(R"("values":["off","midi-sync","high-pass-tpdf"])") != std::string::npos);
     CHECK(d.find(R"("default":"midi-sync")") != std::string::npos);
 }
@@ -228,10 +228,10 @@ TEST_CASE("validate rejects settings with a reason", "[graph][node]") {
     rp_settings s = json(R"({"voices":12})");
     rp_memory_req req{};
     rp_error err{};
-    CHECK_FALSE(t->query_memory(&s, &req, &err));
+    CHECK_FALSE(t->query_memory(t, &s, &req, &err));
     CHECK(std::string(err.message) == "voices must be 8 or fewer, got 12");
     rp_settings ok = json(R"({"voices":8})");
-    CHECK(t->query_memory(&ok, &req, &err));
+    CHECK(t->query_memory(t, &ok, &req, &err));
 }
 
 TEST_CASE("optional interfaces appear only when the node implements them", "[graph][node]") {
@@ -251,8 +251,8 @@ TEST_CASE("extra memory is sized by settings and handed to the node", "[graph][n
     rp_settings large = json(R"({"length":1000})");
     rp_memory_req a{}, b{};
     rp_error err{};
-    REQUIRE(t->query_memory(&small, &a, &err));
-    REQUIRE(t->query_memory(&large, &b, &err));
+    REQUIRE(t->query_memory(t, &small, &a, &err));
+    REQUIRE(t->query_memory(t, &large, &b, &err));
     CHECK(b.size - a.size == 990 * sizeof(float));
     Made m{t};
     make(m, R"({"length":10})");
@@ -385,14 +385,14 @@ TEST_CASE("appended ports and params are reached by index, after the reflected o
     make(m, R"({"aux":2})");
     const rp_settings settings = json(R"({"aux":2})");
     rp_error err{};
-    std::string layout(rp::node_type<Mixed>()->layout_for(&settings, nullptr, 0, &err), '\0');
+    std::string layout(rp::node_type<Mixed>()->layout_for(rp::node_type<Mixed>(), &settings, nullptr, 0, &err), '\0');
     REQUIRE(!layout.empty());
     // A buffer exactly the layout's length has no room for the NUL: nothing is written, the length returns.
     std::string exact(layout.size(), 'x');
-    CHECK(rp::node_type<Mixed>()->layout_for(&settings, exact.data(), exact.size(), &err) == layout.size());
+    CHECK(rp::node_type<Mixed>()->layout_for(rp::node_type<Mixed>(), &settings, exact.data(), exact.size(), &err) == layout.size());
     CHECK(exact == std::string(layout.size(), 'x'));
     std::string text(layout.size() + 1, '\0');
-    REQUIRE(rp::node_type<Mixed>()->layout_for(&settings, text.data(), text.size(), &err) == layout.size());
+    REQUIRE(rp::node_type<Mixed>()->layout_for(rp::node_type<Mixed>(), &settings, text.data(), text.size(), &err) == layout.size());
     layout = text.c_str();
     // inputs first (reflected, then appended), then outputs (reflected, then appended)
     const auto at = [&](const char* id) { return layout.find(std::string("\"id\":\"") + id + "\""); };
@@ -438,13 +438,13 @@ TEST_CASE("appended ports and params are reached by index, after the reflected o
 
 TEST_CASE("adjust_layout cannot move or drop a reflected port", "[graph][node]") {
     const rp_node_type* t = rp::node_type<Shuffler>();
-    CHECK(std::string(t->descriptor()).find(R"("id":"rp.test.shuffler")") != std::string::npos);
+    CHECK(std::string(t->descriptor(t)).find(R"("id":"rp.test.shuffler")") != std::string::npos);
     rp_settings drop = json(R"({"drop":true})");
     rp_memory_req req{};
     rp_error err{};
-    REQUIRE(t->query_memory(&drop, &req, &err));
+    REQUIRE(t->query_memory(t, &drop, &req, &err));
     void* memory = ::operator new(req.size, std::align_val_t(req.align));
-    CHECK(t->create(nullptr, memory, &drop, &err) == nullptr);
+    CHECK(t->create(t, nullptr, memory, &drop, &err) == nullptr);
     CHECK(std::string(err.message).find("adjust_layout") != std::string::npos);
     ::operator delete(memory, std::align_val_t(req.align));
 
@@ -455,7 +455,7 @@ TEST_CASE("adjust_layout cannot move or drop a reflected port", "[graph][node]")
     CHECK(m.node->vt->prepare_settings(m.node, &drop, &prepared, &err) == RP_PREPARE_INVALID);
     CHECK(std::string(err.message).find("\"a\"") != std::string::npos);
 
-    CHECK(std::string(rp::node_type<Unbuildable>()->descriptor()).empty());  // the registry refuses it
+    CHECK(std::string(rp::node_type<Unbuildable>()->descriptor(rp::node_type<Unbuildable>())).empty());  // the registry refuses it
 
     Made relabeller{rp::node_type<Relabeller>()};
     make(relabeller, "{}");
@@ -489,15 +489,15 @@ TEST_CASE("a settings-less node still refuses what is not a JSON object", "[grap
     rp_memory_req req{};
     rp_error err{};
     rp_settings empty{nullptr, 0, RP_SETTINGS_JSON};
-    CHECK(t->query_memory(&empty, &req, &err));
+    CHECK(t->query_memory(t, &empty, &req, &err));
     rp_settings object = json("{}");
-    CHECK(t->query_memory(&object, &req, &err));
+    CHECK(t->query_memory(t, &object, &req, &err));
     rp_settings array = json("[1]");
-    CHECK_FALSE(t->query_memory(&array, &req, &err));
+    CHECK_FALSE(t->query_memory(t, &array, &req, &err));
     rp_settings garbage = json("not json");
-    CHECK_FALSE(t->query_memory(&garbage, &req, &err));
+    CHECK_FALSE(t->query_memory(t, &garbage, &req, &err));
     rp_settings other{"{}", 2, 7};
-    CHECK_FALSE(t->query_memory(&other, &req, &err));
+    CHECK_FALSE(t->query_memory(t, &other, &req, &err));
     CHECK(std::string(err.message).find("encoding") != std::string::npos);
 }
 
@@ -558,7 +558,7 @@ struct Rich {
 }  // namespace
 
 TEST_CASE("settings schemas carry defaults, ranges and descriptions, and ranges are enforced", "[graph][node]") {
-    const std::string d = rp::node_type<Rich>()->descriptor();
+    const std::string d = rp::node_type<Rich>()->descriptor(rp::node_type<Rich>());
     CHECK(d.find(R"("default":2)") != std::string::npos);
     CHECK(d.find(R"("minimum":20)") != std::string::npos);
     CHECK(d.find(R"("maximum":100)") != std::string::npos);
@@ -572,6 +572,6 @@ TEST_CASE("settings schemas carry defaults, ranges and descriptions, and ranges 
     rp_settings low = json(R"({"rate":5})");
     rp_memory_req req{};
     rp_error err{};
-    CHECK_FALSE(m.type->query_memory(&low, &req, &err));
+    CHECK_FALSE(m.type->query_memory(m.type, &low, &req, &err));
     CHECK(std::string(err.message).find("20") != std::string::npos);
 }

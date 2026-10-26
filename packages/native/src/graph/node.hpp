@@ -628,7 +628,7 @@ template <class T>
 Instance<T>* self(rp_node* n) noexcept { return static_cast<Instance<T>*>(n); }
 
 template <class T>
-std::size_t layoutForFn(const rp_settings* s, char* out, std::size_t outSize, rp_error* err) {
+std::size_t layoutForFn(const rp_node_type*, const rp_settings* s, char* out, std::size_t outSize, rp_error* err) {
     try {
         auto parsed = parseSettings<T>(s);
         if (!parsed) {
@@ -819,7 +819,7 @@ template <class T> constexpr std::uint32_t typeFlags() {
 // An empty descriptor when building it throws (adjust_layout on default settings, say), which the registry
 // refuses with a reason rather than letting the exception reach it.
 template <class T>
-const char* descriptorFn() {
+const char* descriptorFn(const rp_node_type*) {
     static const std::string kJson = []() -> std::string {
         try {
             using S = typename SettingsOf<T>::type;
@@ -841,7 +841,7 @@ const char* descriptorFn() {
 }
 
 template <class T>
-bool queryMemoryFn(const rp_settings* s, rp_memory_req* out, rp_error* err) {
+bool queryMemoryFn(const rp_node_type*, const rp_settings* s, rp_memory_req* out, rp_error* err) {
     try {
         auto parsed = parseSettings<T>(s);
         if (!parsed) {
@@ -866,7 +866,8 @@ bool queryMemoryFn(const rp_settings* s, rp_memory_req* out, rp_error* err) {
 }
 
 template <class T>
-rp_node* createFn([[maybe_unused]] const rp_host* host, void* memory, const rp_settings* s, rp_error* err) {
+rp_node* createFn(const rp_node_type*, [[maybe_unused]] const rp_host* host, void* memory, const rp_settings* s,
+                  rp_error* err) {
     using S = typename SettingsOf<T>::type;
     Instance<T>* inst = nullptr;
     try {

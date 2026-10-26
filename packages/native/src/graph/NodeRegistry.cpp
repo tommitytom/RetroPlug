@@ -59,7 +59,7 @@ bool NodeRegistry::addPackage(const rp_package* package, std::string* error) {
                                        std::pair{type->create != nullptr, "create"},
                                        std::pair{type->destroy != nullptr, "destroy"}})
             if (!fn) return fail(where + ": " + name + " is null");
-        const char* json = type->descriptor();
+        const char* json = type->descriptor(type);
         if (!json) return fail(where + ": descriptor() returned null");
         if (!*json) return fail(where + " produced no descriptor (building its default layout or settings schema failed)");
         auto descriptor = parseDescriptor(json);

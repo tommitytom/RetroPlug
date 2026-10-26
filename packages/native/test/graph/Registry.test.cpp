@@ -21,19 +21,19 @@ using namespace rp::graph;
 
 namespace {
 
-const char* goodDescriptor() { return R"({"id":"rp.test.good"})"; }
-const char* badDescriptor() { return "{not json"; }
-const char* liarDescriptor() { return R"({"id":"rp.test.other","ports":[],"params":[]})"; }
-const char* nullDescriptor() { return nullptr; }
-const char* sourceDescriptor() { return R"({"id":"rp.test.source"})"; }
+const char* goodDescriptor(const rp_node_type*) { return R"({"id":"rp.test.good"})"; }
+const char* badDescriptor(const rp_node_type*) { return "{not json"; }
+const char* liarDescriptor(const rp_node_type*) { return R"({"id":"rp.test.other","ports":[],"params":[]})"; }
+const char* nullDescriptor(const rp_node_type*) { return nullptr; }
+const char* sourceDescriptor(const rp_node_type*) { return R"({"id":"rp.test.source"})"; }
 
-bool noMemory(const rp_settings*, rp_memory_req*, rp_error*) { return false; }
-std::size_t noLayout(const rp_settings*, char*, std::size_t, rp_error*) { return 0; }
-rp_node* noCreate(const rp_host*, void*, const rp_settings*, rp_error*) { return nullptr; }
+bool noMemory(const rp_node_type*, const rp_settings*, rp_memory_req*, rp_error*) { return false; }
+std::size_t noLayout(const rp_node_type*, const rp_settings*, char*, std::size_t, rp_error*) { return 0; }
+rp_node* noCreate(const rp_node_type*, const rp_host*, void*, const rp_settings*, rp_error*) { return nullptr; }
 void noDestroy(rp_node*) {}
 
 // A node type whose functions are stubs: these tests only register types, never build them.
-rp_node_type typeWith(const char* id, const char* (*descriptor)()) {
+rp_node_type typeWith(const char* id, const char* (*descriptor)(const rp_node_type*)) {
     return rp_node_type{id, descriptor, &noLayout, &noMemory, &noCreate, &noDestroy, 0u};
 }
 
@@ -48,13 +48,13 @@ std::string refusal(NodeRegistry& reg, std::initializer_list<const rp_node_type*
 // rp.test.n0 ... rp.test.n63, each with a descriptor function of its own (a C function pointer cannot
 // capture which one it is).
 template <std::size_t N>
-const char* numberedDescriptor() {
+const char* numberedDescriptor(const rp_node_type*) {
     static const std::string json = R"({"id":"rp.test.n)" + std::to_string(N) + R"("})";
     return json.c_str();
 }
 
 template <std::size_t... N>
-constexpr std::array<const char* (*)(), sizeof...(N)> numberedDescriptors(std::index_sequence<N...>) {
+constexpr std::array<const char* (*)(const rp_node_type*), sizeof...(N)> numberedDescriptors(std::index_sequence<N...>) {
     return {&numberedDescriptor<N>...};
 }
 

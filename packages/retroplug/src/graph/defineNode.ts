@@ -133,14 +133,20 @@ export interface Block {
   emit(port: string, frame: number, value: number): boolean;
 }
 
-export interface NodeInstance {
-  /** Return "fault" to be bypassed from now on (the executor silences this node and counts it). */
+// Every hook runs on the thread that runs blocks, never on the control thread: the script host holds every
+// instance in one runtime that only that thread enters (docs/modular-graph-phase-b3a-design.md section 2.1).
+export interface NodeInstance<S = unknown> {
+  /** Return "fault" to be bypassed from now on (the executor silences this node and counts it). A throw is
+   *  counted and the next block runs again, unless the definition says faultOnThrow. */
   process(block: Block): void | "fault";
   /** A new sample rate or block size (the host re-activates without resetting): resize anything sized from
    *  CreateContext's maxFrames. Return false if the node cannot run at these. */
   activate?(sampleRate: number, maxFrames: number): boolean | void;
   /** Called when the connected-output set changes at a plan swap; connected[i] follows output order. */
   portsChanged?(connected: readonly boolean[]): void;
+  /** New settings, already checked, at the plan swap that kept this instance through a settings change (a swap,
+   *  or a reshape when the definition reshapes), before the first block that runs with them. */
+  onSettings?(settings: S): void;
 }
 
 export interface CreateContext<S> {
@@ -164,7 +170,14 @@ export interface NodeDefinition<S> {
   ports: PortMap | ((settings: S) => PortMap);
   params?: ParamMap | ((settings: S) => ParamMap);
   exclusive?: string[][];
-  create(ctx: CreateContext<S>): NodeInstance;
+  /** Keep the instance through a settings change that alters its layout (ports or params that follow its
+   *  settings): the planner rebinds its ports by id, and onSettings receives the new settings at the swap.
+   *  Without it, such a change creates a new instance. */
+  reshapes?: true;
+  /** A throw in process faults the node (bypassed from then on, as returning "fault" does) rather than being
+   *  counted and run again next block. */
+  faultOnThrow?: true;
+  create(ctx: CreateContext<S>): NodeInstance<S>;
 }
 
 export interface DefinedNode<S> extends NodeDefinition<S> {
@@ -329,6 +342,9 @@ function checkMetadata<S>(def: NodeDefinition<S>): void {
     const v = def.requires?.[key];
     if (v !== undefined && typeof v !== "boolean") throw new Error(`node type ${q(def.id)}: requires.${key} must be true or false`);
   }
+  // Read by the script host as given, so a false would be a promise in a form it does not read.
+  for (const key of ["reshapes", "faultOnThrow"] as const)
+    if (def[key] !== undefined && def[key] !== true) throw new Error(`node type ${q(def.id)}: ${key} is true or absent`);
 }
 
 // Every string (and key) in a JSON value is one C++ can read.
@@ -402,21 +418,26 @@ export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): D
   if (!plainId(def.id))
     throw new Error(`node type id ${q(String(def.id))} must be non-empty, with no whitespace, control characters or lone surrogates`);
   checkMetadata(def);
+  // The first issue, on one line, as `field: why`: what the planner reports (settings-invalid) and a node's
+  // rp_error can carry, where zod's own message is every issue as indented JSON.
+  const firstIssue = (error: z.ZodError): string => {
+    const issue = error.issues[0];
+    return `${issue?.path.length ? `${issue.path.join(".")}: ` : ""}${issue?.message ?? "invalid"}`;
+  };
   // Settings arrive as JSON: an object, or nothing at all (the defaults), never another value, as in C++.
   const parseSettings = (raw: unknown): S => {
     const given = raw === undefined ? {} : raw;
     if (typeof given !== "object" || given === null || Array.isArray(given))
       throw new Error(`node type ${q(def.id)}: settings must be a JSON object`);
-    return def.settings ? def.settings.parse(given) : ({} as S);
+    if (!def.settings) return {} as S;
+    const parsed = def.settings.safeParse(given);
+    if (!parsed.success) throw new Error(`node type ${q(def.id)}: settings: ${firstIssue(parsed.error)}`);
+    return parsed.data;
   };
   // The descriptor describes the layout for default settings, so every field needs one (C++ has S{}).
   if (def.settings) {
     const defaults = def.settings.safeParse({});
-    if (!defaults.success) {
-      const issue = defaults.error.issues[0];
-      const at = issue?.path.length ? `${issue.path.join(".")}: ` : "";
-      throw new Error(`node type ${q(def.id)}: every settings field needs a default (${at}${issue?.message})`);
-    }
+    if (!defaults.success) throw new Error(`node type ${q(def.id)}: every settings field needs a default (${firstIssue(defaults.error)})`);
   }
   return {
     ...def,

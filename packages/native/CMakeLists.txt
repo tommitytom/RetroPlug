@@ -6,7 +6,7 @@
 #
 #   cmake/test-binary.cmake   retroplug_add_test_binary() — the shape every test binary shares
 #   cmake/node-addon.cmake    retroplug-node, the N-API host (opt-in)
-#   cmake/bundles.cmake       the embedded control-plane + React-UI bytecode
+#   cmake/bundles.cmake       the embedded control-plane, React-UI and script-node bytecode
 #   cmake/deps.cmake          rtmidi / serial / portaudio, and the retroplug-cli N8 facets
 #   cmake/plugin.cmake        dpf_add_plugin + per-platform packaging
 #   cmake/graph.cmake         the node-graph libraries the engine runs on
@@ -148,6 +148,7 @@ add_library(retroplug-backend STATIC
     src/system/mesen/MesenBackend.cpp       # Mesen builder — NES + GBA (HLE BIOS), dispatched on platform
     src/host/dsp/ScriptCompiler.cpp         # bare-QuickJS bytecode compiler (DSP-side JS runtime)
     src/host/dsp/DspRuntime.cpp             # second bare QuickJS context — runs translator scripts
+    src/host/script/ScriptHost.cpp          # the script-node runtime: TS nodes behind the C ABI, two bare contexts
     src/host/render/RenderHost.cpp          # bare-QuickJS render host (own Engine, runs the worker bundle)
     src/host/render/RenderJobRegistry.cpp   # background render jobs — one worker thread each, cancellable
     ${RENDER_WORKER_BUNDLE_C}               # embedded render-worker bytecode (rp_render_worker_bundle)
@@ -337,7 +338,7 @@ add_custom_target(retroplug-example-session ALL
     COMMENT "Bundling CLI example sessions (esbuild)"
     VERBATIM)
 
-# The embedded control-plane + React-UI bytecode bundles.
+# The embedded control-plane, React-UI and script-node bytecode bundles.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bundles.cmake)
 
 # rtmidi / serial / portaudio, and the retroplug-cli N8 transport facets built on them.

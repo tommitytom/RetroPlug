@@ -204,7 +204,7 @@ TEST_CASE("core settings are validated with a reason", "[graph][core]") {
 }
 
 TEST_CASE("core settings schemas name their structs the same under every compiler", "[graph][core]") {
-    const std::string add = corePackage()->node_types[0]->descriptor();
+    const std::string add = corePackage()->node_types[0]->descriptor(corePackage()->node_types[0]);
     CHECK(add.find(R"("$ref":"#/$defs/rp__graph__core__AddSettings")") != std::string::npos);
     CHECK(add.find("anonymous") == std::string::npos);
 }

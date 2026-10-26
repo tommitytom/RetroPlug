@@ -12,18 +12,29 @@
 // (an audio-thread counter; the host publishes it rather than letting the control thread read it live).
 namespace rp::graph {
 
-// Append one message (events or bytes). Frames must be non-decreasing within a block; a message whose
-// frame is earlier than the last one is clamped up to it, so readers can always walk the queue in order.
-inline bool pushMessage(rp_queue& q, std::uint32_t frame, std::span<const std::uint8_t> data,
-                        std::uint32_t flags = 0) {
-    if (q.count >= q.capacity || q.bytes_used + data.size() > q.bytes_capacity) {
+// Append one message of `size` payload bytes, which the caller then writes at *payload: pushMessage for a payload
+// that is not in one piece yet (a script node's array of numbers). False, the message dropped and counted, when it
+// does not fit. Frames as pushMessage.
+inline bool reserveMessage(rp_queue& q, std::uint32_t frame, std::size_t size, std::uint32_t flags,
+                           std::uint8_t** payload) {
+    if (q.count >= q.capacity || q.bytes_used + size > q.bytes_capacity) {
         ++q.dropped;
         return false;
     }
     if (q.count > 0 && frame < q.items[q.count - 1].frame) frame = q.items[q.count - 1].frame;
-    if (!data.empty()) std::memcpy(q.bytes + q.bytes_used, data.data(), data.size());
-    q.items[q.count++] = rp_message{frame, static_cast<std::uint32_t>(data.size()), q.bytes_used, flags};
-    q.bytes_used += static_cast<std::uint32_t>(data.size());
+    *payload = q.bytes + q.bytes_used;
+    q.items[q.count++] = rp_message{frame, static_cast<std::uint32_t>(size), q.bytes_used, flags};
+    q.bytes_used += static_cast<std::uint32_t>(size);
+    return true;
+}
+
+// Append one message (events or bytes). Frames must be non-decreasing within a block; a message whose
+// frame is earlier than the last one is clamped up to it, so readers can always walk the queue in order.
+inline bool pushMessage(rp_queue& q, std::uint32_t frame, std::span<const std::uint8_t> data,
+                        std::uint32_t flags = 0) {
+    std::uint8_t* at = nullptr;
+    if (!reserveMessage(q, frame, data.size(), flags, &at)) return false;
+    if (!data.empty()) std::memcpy(at, data.data(), data.size());
     return true;
 }
 

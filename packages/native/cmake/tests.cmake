@@ -79,23 +79,27 @@ retroplug_add_test_binary(
 # Guards the engine's graph (docs/modular-graph-phase-b1-design.md, -b2-design.md, -b3a-design.md): each system
 # node renders exactly what its core renders driven directly, its inputs included, the engine places, re-arms and
 # frees what the documents TS builds say, the host I/O nodes and the cart mirror move what the hosts stage and
-# drain, and every document in buildGraph's goldens plans on it. Every core in it powers on in a fixed state
-# (test/engine-graph/Deterministic.cpp), so two identical cores agree. CountingAllocator.cpp is shared with
-# retroplug-graph-test, for the host MIDI-in's no-allocation check.
+# drain, TS nodes run behind the C ABI in the script host, and every document in buildGraph's goldens plans on it.
+# Every core in it powers on in a fixed state (test/engine-graph/Deterministic.cpp), so two identical cores agree.
+# CountingAllocator.cpp is shared with retroplug-graph-test, for the no-allocation checks. The script tests' bundle
+# (the authoring layer for their toy nodes) is embedded here alone: cmake/bundles.cmake, retroplug-script-test-bundle.
 retroplug_add_test_binary(
     NAME     retroplug-engine-graph-test
     SOURCES  test/engine-graph/Deterministic.cpp
              test/engine-graph/SystemNode.test.cpp
              test/engine-graph/EngineGraph.test.cpp
              test/engine-graph/HostIo.test.cpp
+             test/engine-graph/ScriptNodes.test.cpp
              test/engine-graph/BuildGraphGoldens.test.cpp
              test/graph/CountingAllocator.cpp          # replaces operator new / delete for this binary
+             ${SCRIPT_TEST_BUNDLE_C}                    # rp_script_test_bundle
     LIBS     retroplug-backend
     INCLUDES ${RP_QUICKJS_INCLUDE}
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
              RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
              RP_BUILD_GRAPH_GOLDENS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/test/graph/golden/build-graph.json")
+add_dependencies(retroplug-engine-graph-test retroplug-script-test-bundle)  # the embedded bytecode must exist first
 
 # Guards the native file watcher (NativeFileWatcher over efsw): config.json + bindings/ recursive
 # detection, registered-ROM parent-dir watches, and the unregistered-file filter.

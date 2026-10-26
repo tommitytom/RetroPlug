@@ -17,6 +17,10 @@
  * query_memory, create, destroy - may run concurrently for different instances, and any lazy one-time
  * setup a pack does there must be thread-safe (std::call_once, a function-local static).
  *
+ * Every type-level call but destroy is handed the rp_node_type it was made through, so one set of functions
+ * can serve several types, each telling itself apart by its ctx (the host's script types are served so: one
+ * type per definition a bundle registers, all behind the same functions).
+ *
  * Every rp_node_vtable entry is required: a node with nothing to do supplies a no-op. get_interface may
  * return null for every id.
  *
@@ -255,10 +259,11 @@ enum {
     RP_TYPE_STATELESS_PREPARE = 1u << 0
 };
 
-typedef struct rp_node_type {
+typedef struct rp_node_type rp_node_type;
+struct rp_node_type {
     const char* id;
     /* [control] The type descriptor JSON; valid for the life of the package. */
-    const char* (*descriptor)(void);
+    const char* (*descriptor)(const rp_node_type* type);
     /* [control] The resolved layout JSON (ports, params, exclusive groups) a node of this type has with
      * these settings: a function of the settings alone, so the host can validate a whole document before
      * it creates anything. It is an instance's layout until a settings change alters it, which the
@@ -266,15 +271,20 @@ typedef struct rp_node_type {
      * NUL-terminated into out[0..capacity) when it fits and returns its length without the NUL, so a
      * caller whose buffer is too small learns the size and asks again. Returns 0, with err filled, for
      * settings it refuses. */
-    size_t (*layout_for)(const rp_settings* settings, char* out, size_t capacity, rp_error* err);
+    size_t (*layout_for)(const rp_node_type* type, const rp_settings* settings, char* out, size_t capacity,
+                         rp_error* err);
     /* [control] Size and alignment of one instance for these settings. */
-    bool (*query_memory)(const rp_settings* settings, rp_memory_req* out, rp_error* err);
+    bool (*query_memory)(const rp_node_type* type, const rp_settings* settings, rp_memory_req* out, rp_error* err);
     /* [control] Construct into host-supplied memory. Returns null (and fills err) on failure. */
-    rp_node* (*create)(const rp_host* host, void* memory, const rp_settings* settings, rp_error* err);
+    rp_node* (*create)(const rp_node_type* type, const rp_host* host, void* memory, const rp_settings* settings,
+                       rp_error* err);
     /* [control] Destruct. The host frees the memory afterwards. */
     void (*destroy)(rp_node* node);
     uint32_t flags; /* RP_TYPE_*; 0 promises nothing */
-} rp_node_type;
+    /* The type's own data, for functions that serve several types; null when a type has functions of its own.
+     * The host never reads it. */
+    void* ctx;
+};
 
 typedef struct rp_package {
     uint32_t                   abi_version;

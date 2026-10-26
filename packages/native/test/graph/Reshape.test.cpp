@@ -35,9 +35,9 @@ rp_prepare_result alwaysSwap(rp_node*, const rp_settings*, void** prepared, rp_e
     *prepared = new test::SourceSettings{};
     return RP_PREPARE_SWAP;
 }
-const char* swapperDescriptor() { return R"({"id":"rp.test.swapper"})"; }
-rp_node* swapperCreate(const rp_host* host, void* memory, const rp_settings* s, rp_error* err) {
-    rp_node* n = rp::node_type<Source>()->create(host, memory, s, err);
+const char* swapperDescriptor(const rp_node_type*) { return R"({"id":"rp.test.swapper"})"; }
+rp_node* swapperCreate(const rp_node_type* type, const rp_host* host, void* memory, const rp_settings* s, rp_error* err) {
+    rp_node* n = rp::node_type<Source>()->create(type, host, memory, s, err);
     if (!n) return nullptr;
     static const rp_node_vtable vt = [&] {
         rp_node_vtable v = *n->vt;

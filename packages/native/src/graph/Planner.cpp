@@ -199,10 +199,10 @@ private:
         const rp_settings s{p.settings.data(), p.settings.size(), RP_SETTINGS_JSON};
         rp_error err{};
         std::string text(256, '\0');
-        std::size_t n = p.entry->type->layout_for(&s, text.data(), text.size(), &err);
+        std::size_t n = p.entry->type->layout_for(p.entry->type, &s, text.data(), text.size(), &err);
         if (n >= text.size()) {  // too long for the first guess: it said how long, so ask once more
             text.assign(n + 1, '\0');
-            n = p.entry->type->layout_for(&s, text.data(), text.size(), &err);
+            n = p.entry->type->layout_for(p.entry->type, &s, text.data(), text.size(), &err);
         }
         if (n == 0) return error(p.doc->id, "", "settings-invalid", errorText(err, "the node refused its settings"));
         if (n >= text.size())
@@ -247,7 +247,7 @@ private:
         const rp_settings s{p.settings.data(), p.settings.size(), RP_SETTINGS_JSON};
         rp_error err{};
         rp_memory_req req{};
-        if (!p.entry->type->query_memory(&s, &req, &err)) {
+        if (!p.entry->type->query_memory(p.entry->type, &s, &req, &err)) {
             error(p.doc->id, "", "settings-invalid", errorText(err, "the node refused its settings"));
             return nullptr;
         }
@@ -267,7 +267,7 @@ private:
                   "could not allocate the " + std::to_string(req.size) + " bytes the node asked for");
             return nullptr;
         }
-        inst->node = p.entry->type->create(in_.host, inst->memory, &s, &err);
+        inst->node = p.entry->type->create(p.entry->type, in_.host, inst->memory, &s, &err);
         if (!inst->node) {
             error(p.doc->id, "", "create-failed", errorText(err, "the node could not be created"));
             return nullptr;  // ~Instance frees the memory (node is null, so nothing to destroy)

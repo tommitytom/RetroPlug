@@ -6,6 +6,8 @@
 #include <cstdio>
 #include <cstring>
 #include <optional>
+#include <span>
+#include <string>
 #include <utility>
 
 #include "system/SystemBase.hpp"
@@ -133,12 +135,21 @@ std::uint32_t hostWidthOf(const rp::graph::GraphDocument& doc) {
     return 0;
 }
 
+// The embedded script-node bundle (src/script/bundle.ts) every Engine loads unless it is built with another.
+std::span<const rp::host::ScriptHost::Chunk> embeddedScripts() {
+    static const rp::host::ScriptHost::Chunk chunks[] = {rp::host::ScriptHost::embeddedBundle()};
+    return chunks;
+}
+
 } // namespace
 
-// The Engine's graph: the node packages and the GraphHost running the plan. Destroyed first (graph_ is the
-// Engine's last member), and the host (whose system nodes call cores->released from their destructors)
-// before the core handoff and the engine services (the kernel stage, the host I/O, the sync trace) its nodes call into.
+// The Engine's graph: the script host, the node packages and the GraphHost running the plan. Destroyed first (graph_ is
+// the Engine's last member), and the host (whose system nodes call cores->released from their destructors)
+// before the core handoff and the engine services (the kernel stage, the host I/O, the sync trace) its nodes call into,
+// and before the script host its script nodes release their instances through.
 struct Engine::Graph {
+    // First, so it goes last: the script nodes the host destroys hand their instances back to it.
+    rp::host::ScriptHost                   script;
     rp::graph::NodeRegistry                registry;
     rp::graph::ResourceTable               resources;
     rp::host::HostCores                    cores{};
@@ -149,12 +160,21 @@ struct Engine::Graph {
     std::uint32_t                          maxFrames = kDefaultMaxBlockFrames;
 };
 
-Engine::Engine(double sampleRate) : sampleRate_(sampleRate) {
+Engine::Engine(double sampleRate) : Engine(sampleRate, embeddedScripts()) {}
+
+Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> scriptBundle) : sampleRate_(sampleRate) {
     graph_ = std::make_unique<Graph>();
+    // The script node types first: the bundle runs in both of the script host's contexts, and its definitions become
+    // one more package. One that will not load registers no type, so a document naming one is refused (unknown-type).
+    std::string why;
+    if (!graph_->script.load(scriptBundle, &why))
+        std::fprintf(stderr, "[engine] the script-node bundle did not load (%s); no script node type is registered\n", why.c_str());
     for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), rp::host::sameboyPackage(),
                                 rp::host::mesenPackage(), rp::host::dspPackage(), rp::host::hostIoPackage(),
                                 rp::host::n8Package()})
         graph_->registry.addPackage(p);
+    if (!graph_->registry.addPackage(graph_->script.package(), &why))
+        std::fprintf(stderr, "[engine] the script node types were refused (%s); none is registered\n", why.c_str());
     // rp.host.cores/1, whose tokens are system ids here: buildCore parks a core under its id, and a system node's
     // settings name it as {"core": <id>}.
     graph_->cores = {this, [](void* ctx, std::uint64_t id) { return static_cast<Engine*>(ctx)->takeCore(id); },
@@ -258,6 +278,7 @@ Engine::GraphResult Engine::setGraph(const GraphRequest& request) {
     };
     // The cores of plans the audio thread has handed back are freed first, so the checks below see them gone.
     graph_->host->reclaim();
+    graph_->script.reclaim();
     auto doc = rp::graph::parseGraphDocument(request.document);
     if (!doc) return refuse("", "document", std::string("not a graph document: ") + doc.error().what());
 
@@ -372,10 +393,17 @@ Engine::GraphResult Engine::setGraph(const GraphRequest& request) {
 
 void Engine::drainCommands() { graph_->host->drain(); }
 
-void Engine::setAudioThreadOwns(bool owns) { graph_->host->setAudioThreadOwns(owns); }
+// The script host knows first that an audio thread will run blocks, and last that it has stopped: between the two, a
+// destroyed script node's release waits for the block thread.
+void Engine::setAudioThreadOwns(bool owns) {
+    if (owns) graph_->script.setAudioThreadOwns(true);
+    graph_->host->setAudioThreadOwns(owns);
+    if (!owns) graph_->script.setAudioThreadOwns(false);
+}
 
 std::size_t Engine::reclaim() {
     const std::size_t n = graph_->host->reclaim();
+    graph_->script.reclaim();  // the script instances the block thread released since, and the first throw, once
     // The block thread only counts a block too long to run (it must not log); say so here, once per new one.
     if (const auto seen = oversizedBlocks_.load(std::memory_order_acquire); seen != oversizedReported_) {
         std::fprintf(stderr, "[engine] %u block(s) longer than the plan's %u frames rendered silence (the last was %u frames)\n",
@@ -399,6 +427,8 @@ std::uint32_t Engine::faultCount() const { return graph_->host->faultCount(); }
 std::uint32_t Engine::droppedMessages() const {
     return graph_->host->droppedMessages() + hostIoDrops_.load(std::memory_order_relaxed);
 }
+
+std::uint32_t Engine::scriptThrows() const { return graph_->script.throwCount(); }
 
 void Engine::setMaxBlockFrames(std::uint32_t frames) {
     if (frames <= graph_->maxFrames) return;
@@ -638,6 +668,8 @@ void Engine::runKernelStage(std::uint32_t frames) {
 
 // The graph TS published decides who goes where: it built it for the host's outputs.
 void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size_t numOutputs) {
+    // What the control thread's destroyed script nodes left to release, before any of the block's JS runs.
+    graph_->script.beginBlock();
     // An empty block runs nothing, and the tail must not either: the cores never ran, so the MI.OUT gather
     // would collect the last block's log a second time. There are no frames to silence.
     if (frames == 0) return;

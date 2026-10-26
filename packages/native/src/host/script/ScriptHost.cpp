@@ -1,0 +1,1048 @@
+#include "host/script/ScriptHost.hpp"
+
+#include <algorithm>
+#include <cassert>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string_view>
+
+#if defined(__APPLE__)
+#include <malloc/malloc.h>
+#elif defined(_WIN32) || defined(__linux__) || defined(__GLIBC__)
+#include <malloc.h>
+#endif
+
+extern "C" {
+#include "quickjs.h"
+}
+
+#include "graph/Descriptor.hpp"
+#include "graph/Queue.hpp"
+
+// The production script-node bundle: src/script/bundle.ts, esbuilt to a global-code IIFE and tjsc'd to bytecode as a
+// C array (packages/native/cmake/bundles.cmake, retroplug-script-bundle).
+extern "C" {
+extern const std::uint8_t  rp_script_bundle[];
+extern const std::uint32_t rp_script_bundle_size;
+}
+
+namespace rp::host {
+
+namespace {
+
+using graph::PortKind;
+
+constexpr const char* kNodesGlobal = "__rp_scriptNodes";  // packages/retroplug/src/script/register.ts
+constexpr const char* kPackageManifest = R"({"id":"rp.script"})";
+
+// The property names the block path reads and writes, as atoms made once, so naming one allocates nothing.
+enum Atom : std::size_t {
+    kFrames, kTransport, kSampleRate, kTempo, kPpq, kPlaying, kFrame, kData, kFlags, kStart, kChanges, kValue,
+    kLength, kFault, kAtomCount
+};
+constexpr const char* kAtomNames[kAtomCount] = {"frames", "transport", "sampleRate", "tempo", "ppq",     "playing", "frame",
+                                                "data",   "flags",     "start",      "changes", "value", "length",  "fault"};
+
+void copyError(rp_error* err, std::string_view what) {
+    if (!err) return;
+    const std::size_t n = std::min(what.size(), sizeof err->message - 1);
+    std::memcpy(err->message, what.data(), n);
+    err->message[n] = '\0';
+}
+
+void clearException(JSContext* ctx) { JS_FreeValue(ctx, JS_GetException(ctx)); }
+
+// A thrown value as text, into a fixed buffer (the block thread allocates nothing native): an Error's message alone
+// when `messageOnly` (a settings refusal is the definition's own words), else "Name: message".
+void describe(JSContext* ctx, JSValueConst thrown, bool messageOnly, char* out, std::size_t capacity) {
+    JSValue message = messageOnly && JS_IsError(thrown) ? JS_GetPropertyStr(ctx, thrown, "message") : JS_UNDEFINED;
+    const char* text = JS_ToCString(ctx, JS_IsString(message) ? message : thrown);
+    if (!text) clearException(ctx);
+    std::snprintf(out, capacity, "%s", text ? text : "a value with no text");
+    if (text) JS_FreeCString(ctx, text);
+    JS_FreeValue(ctx, message);
+}
+
+// The pending exception, described (control thread: it may allocate).
+std::string exceptionText(JSContext* ctx, bool messageOnly) {
+    JSValue thrown = JS_GetException(ctx);
+    char text[sizeof(rp_error::message)];
+    describe(ctx, thrown, messageOnly, text, sizeof text);
+    JS_FreeValue(ctx, thrown);
+    return text;
+}
+
+// obj[name](...args), with obj as this.
+JSValue callMethod(JSContext* ctx, JSValueConst obj, const char* name, int argc, JSValueConst* argv) {
+    JSValue fn = JS_GetPropertyStr(ctx, obj, name);
+    if (!JS_IsFunction(ctx, fn)) {
+        JS_FreeValue(ctx, fn);
+        return JS_ThrowTypeError(ctx, "the definition has no %s", name);
+    }
+    JSValue result = JS_Call(ctx, fn, obj, argc, argv);
+    JS_FreeValue(ctx, fn);
+    return result;
+}
+
+// JSON.stringify(value) into out; false with the exception pending when it has no JSON form.
+bool stringify(JSContext* ctx, JSValueConst value, std::string& out) {
+    JSValue json = JS_JSONStringify(ctx, value, JS_UNDEFINED, JS_UNDEFINED);
+    if (JS_IsException(json)) return false;
+    std::size_t n = 0;
+    const char* text = JS_IsString(json) ? JS_ToCStringLen(ctx, &n, json) : nullptr;
+    if (text) {
+        out.assign(text, n);
+        JS_FreeCString(ctx, text);
+    }
+    JS_FreeValue(ctx, json);
+    if (!text) JS_ThrowTypeError(ctx, "the value has no JSON form");
+    return text != nullptr;
+}
+
+bool sameObject(JSValueConst a, JSValueConst b) {
+    return JS_IsObject(a) && JS_IsObject(b) && JS_VALUE_GET_PTR(a) == JS_VALUE_GET_PTR(b);
+}
+
+std::size_t usableSize(const void* p) {
+#if defined(__APPLE__)
+    return malloc_size(p);
+#elif defined(_WIN32)
+    return _msize(const_cast<void*>(p));
+#elif defined(__linux__) || defined(__GLIBC__)
+    return malloc_usable_size(const_cast<void*>(p));
+#else
+    (void)p;
+    return 0;
+#endif
+}
+
+// One writer (the thread running blocks, or the control thread while quiescent), so a plain increment, kept atomic
+// for the readers on other threads.
+void bump(std::atomic<std::uint64_t>& c, std::uint64_t by = 1) {
+    c.store(c.load(std::memory_order_relaxed) + by, std::memory_order_relaxed);
+}
+
+enum class Side : std::uint8_t { Input, Output, Param };
+
+// One port or param of a layout, by the index of its view on its side of rp_process (inputs, outputs or params).
+struct Port {
+    std::string   id;
+    PortKind      kind = PortKind::Events;
+    Side          side = Side::Input;
+    std::uint32_t index = 0;
+};
+
+// One port's JS state while its layout is the instance's: made on the block thread the first time JS asks for it,
+// refilled at most once a block, freed there with the layout. Its native parts are sized on the control thread, so
+// the block thread only ever writes into them.
+struct PortJs {
+    JSAtom        atom = JS_ATOM_NULL;     // the id, so a lookup allocates nothing
+    JSValue       value = JS_UNDEFINED;    // what JS is handed: a Message[], a ControlStream or a Float32Array[]
+    JSValue       pool = JS_UNDEFINED;     // messages and changes: every element made, so a shorter block frees none
+    JSValue       items = JS_UNDEFINED;    // control: the stream's changes array
+    JSValue       payload = JS_UNDEFINED;  // messages: the JS-owned ArrayBuffer the block's payloads are copied into
+    std::uint64_t stamp = 0;               // the block it was filled for
+    std::vector<const float*> channels;    // audio: the buffer each view is over (null: none); kMaxChannels long
+    std::uint32_t viewFrames = 0;          // audio: the views' length
+};
+
+// The layout an instance runs with: its ports by id, and their JS state.
+struct Layout {
+    std::string         json;
+    std::vector<Port>   ports;  // inputs and outputs in layout order, then the params
+    std::vector<PortJs> js;     // one per port
+    bool                bound = false;  // its atoms made (block thread)
+};
+
+// What prepare_settings prepares and commit_settings swaps: the settings the definition accepted, as JSON, and, from a
+// type that reshapes, the layout they give. An instance's current settings never hold a layout: a commit moves it
+// into the instance, or hands it back unused, with the replaced settings, to the control thread.
+struct Settings {
+    std::string             json;
+    std::unique_ptr<Layout> layout;
+};
+
+std::unique_ptr<Layout> buildLayout(const std::string& json, std::string& why) {
+    auto parsed = graph::parseLayout(json);
+    if (!parsed) {
+        why = std::string("the definition's layout does not parse: ") + parsed.error().what();
+        return nullptr;
+    }
+    auto l = std::make_unique<Layout>();
+    l->json = json;
+    std::uint32_t in = 0, out = 0;
+    for (const auto& p : parsed->ports) {
+        const bool output = p.dir == graph::PortDir::Out;
+        l->ports.push_back({p.id, p.kind, output ? Side::Output : Side::Input, output ? out++ : in++});
+    }
+    for (std::size_t k = 0; k < parsed->params.size(); ++k)
+        l->ports.push_back({parsed->params[k].id, PortKind::Control, Side::Param, static_cast<std::uint32_t>(k)});
+    l->js.resize(l->ports.size());
+    for (std::size_t i = 0; i < l->ports.size(); ++i)
+        if (l->ports[i].kind == PortKind::Audio) l->js[i].channels.assign(graph::kMaxChannels, nullptr);
+    return l;
+}
+
+}  // namespace
+
+struct ScriptHost::Type {
+    rp_node_type abi{};
+    ScriptHost*  host = nullptr;
+    std::string  id;
+    std::string  descriptor;
+    bool         reshapes = false;
+    bool         faultOnThrow = false;
+    JSValue      control = JS_UNDEFINED;  // the definition, in the control context
+    JSValue      audio = JS_UNDEFINED;    // and in the audio context
+};
+
+// One script node instance, behind its shim. Allocated by create and deleted on the control thread; its JS state is
+// made and freed on the block thread.
+struct ScriptHost::Instance {
+    enum class State : std::uint8_t { Pending, Live, Failed, Released };
+
+    Type*                   type = nullptr;
+    std::string             createdLayout;  // the layout it was created with, which prepare compares against
+    // Written by create and activate on the control thread, before a plan holding the instance is published or while
+    // quiescent, and read by the block thread after.
+    double                  sampleRate = 48000.0;
+    std::uint32_t           maxFrames = 1024;
+    std::atomic<bool>       activateLater{false};  // a re-activation the block thread applies before its next block
+    // The block thread's.
+    State                   state = State::Pending;
+    Settings*               settings = nullptr;
+    std::unique_ptr<Layout> layout;
+    JSValue                 object = JS_UNDEFINED;  // the NodeInstance its definition's create returned
+    JSValue                 process = JS_UNDEFINED, onSettings = JS_UNDEFINED, portsChanged = JS_UNDEFINED,
+                            activate = JS_UNDEFINED;
+    JSValue                 block = JS_UNDEFINED;   // the one Block object it is handed, every block
+    JSValue                 transport = JS_UNDEFINED;
+    const rp_process*       running = nullptr;      // during its process call
+    std::uint64_t           blockStamp = 0;
+
+    ~Instance() { delete settings; }
+};
+
+namespace {
+
+// The rp_node a script node is to the planner: a pointer to its record, which outlives it until its release.
+struct Shim : rp_node {
+    ScriptHost::Instance* in = nullptr;
+};
+
+}  // namespace
+
+// Everything the ABI tables, the Block object's methods and the runtime's allocator reach the host through.
+struct ScriptHost::Glue {
+    static Type&     typeOf(const rp_node_type* t) { return *static_cast<Type*>(t->ctx); }
+    static Instance& instanceOf(rp_node* n) { return *static_cast<Shim*>(n)->in; }
+    static ScriptHost& hostOf(JSContext* ctx) { return *static_cast<ScriptHost*>(JS_GetContextOpaque(ctx)); }
+    static JSAtom    atom(ScriptHost& h, Atom a) { return h.atoms_[a]; }
+
+    // ---- the audio runtime's allocator: the platform's, counted ------------------------------------------------
+    static void* jsCalloc(void* opaque, std::size_t count, std::size_t size) {
+        void* p = std::calloc(count, size);
+        if (p) {
+            auto& c = *static_cast<Counters*>(opaque);
+            bump(c.allocs);
+            bump(c.bytes, count * size);
+        }
+        return p;
+    }
+    static void* jsMalloc(void* opaque, std::size_t size) {
+        void* p = std::malloc(size);
+        if (p) {
+            auto& c = *static_cast<Counters*>(opaque);
+            bump(c.allocs);
+            bump(c.bytes, size);
+        }
+        return p;
+    }
+    static void jsFree(void* opaque, void* p) {
+        if (p) bump(static_cast<Counters*>(opaque)->frees);
+        std::free(p);
+    }
+    static void* jsRealloc(void* opaque, void* p, std::size_t size) {
+        const std::size_t before = p ? usableSize(p) : 0;
+        void* q = std::realloc(p, size);
+        if (q || size == 0) {
+            auto& c = *static_cast<Counters*>(opaque);
+            bump(c.reallocs);
+            if (size > before) bump(c.bytes, size - before);
+        }
+        return q;
+    }
+    static std::size_t jsUsable(const void* p) { return usableSize(p); }
+
+    // ---- the control side: what a definition says of a settings object --------------------------------------
+    // The settings the definition's parseSettings accepted and the layout they give, both as JSON; or false, with
+    // its reason in err.
+    static bool check(Type& t, const rp_settings* s, std::string& settings, std::string& layout, rp_error* err) {
+        if (s && s->encoding != RP_SETTINGS_JSON) {
+            copyError(err, "settings encoding " + std::to_string(s->encoding) + " is not supported; a script node reads JSON");
+            return false;
+        }
+        ScriptHost& h = *t.host;
+        JSContext* ctx = h.control_;
+        JS_UpdateStackTop(h.controlRt_);  // re-anchor the stack guard for the calling thread (see DspRuntime)
+        const std::string text = s && s->data && s->size ? std::string(s->data, s->size) : std::string("{}");
+        JSValue raw = JS_ParseJSON(ctx, text.c_str(), text.size(), "<settings>");
+        JSValue parsed = JS_IsException(raw) ? JS_EXCEPTION : callMethod(ctx, t.control, "parseSettings", 1, &raw);
+        JSValue lay = JS_IsException(parsed) ? JS_EXCEPTION : callMethod(ctx, t.control, "layout", 1, &parsed);
+        const bool ok = !JS_IsException(lay) && stringify(ctx, parsed, settings) && stringify(ctx, lay, layout);
+        if (!ok) copyError(err, exceptionText(ctx, true));
+        JS_FreeValue(ctx, lay);
+        JS_FreeValue(ctx, parsed);
+        JS_FreeValue(ctx, raw);
+        return ok;
+    }
+
+    // ---- the type ----------------------------------------------------------------------------------------------
+    static const char* descriptor(const rp_node_type* t) { return typeOf(t).descriptor.c_str(); }
+
+    static std::size_t layoutFor(const rp_node_type* t, const rp_settings* s, char* out, std::size_t capacity,
+                                 rp_error* err) {
+        std::string settings, layout;
+        if (!check(typeOf(t), s, settings, layout, err)) return 0;
+        if (out && layout.size() < capacity) {
+            std::memcpy(out, layout.data(), layout.size());
+            out[layout.size()] = '\0';
+        }
+        return layout.size();
+    }
+
+    static bool queryMemory(const rp_node_type*, const rp_settings*, rp_memory_req* out, rp_error*) {
+        out->size = sizeof(Shim);
+        out->align = alignof(Shim);
+        return true;
+    }
+
+    // Only the shim and its record: the JS instance waits for the block thread.
+    static rp_node* create(const rp_node_type* t, const rp_host*, void* memory, const rp_settings* s, rp_error* err) {
+        Type& type = typeOf(t);
+        std::string settings, layout, why;
+        if (!check(type, s, settings, layout, err)) return nullptr;
+        auto in = std::make_unique<Instance>();
+        in->layout = buildLayout(layout, why);
+        if (!in->layout) {
+            copyError(err, why);
+            return nullptr;
+        }
+        in->type = &type;
+        in->createdLayout = layout;
+        in->settings = new Settings{std::move(settings), nullptr};
+        auto* shim = new (memory) Shim{};
+        shim->vt = &kVtable;
+        shim->in = in.release();
+        return shim;
+    }
+
+    static void destroy(rp_node* n) {
+        auto* shim = static_cast<Shim*>(n);
+        shim->in->type->host->retire(shim->in);
+        shim->~Shim();
+    }
+
+    // ---- the instance --------------------------------------------------------------------------------------------
+    // The control thread, on a fresh shim (whose JS instance is made later, with these values) or, for a live one,
+    // while quiescent (GraphHost::reactivate), when its activate runs at once. Were an audio thread to own the blocks
+    // then, the instance would hear it before its next block instead.
+    static bool activate(rp_node* n, double sampleRate, std::uint32_t maxFrames, rp_error* err) {
+        Instance& in = instanceOf(n);
+        in.sampleRate = sampleRate;
+        in.maxFrames = maxFrames;
+        if (in.state != Instance::State::Live) return true;
+        ScriptHost& h = *in.type->host;
+        if (h.audioOwns_.load(std::memory_order_acquire)) {
+            in.activateLater.store(true, std::memory_order_release);
+            return true;
+        }
+        if (callActivate(h, in)) return true;
+        copyError(err, "activate refused these settings");
+        return false;
+    }
+
+    static void deactivate(rp_node*) {}
+
+    static void portsChanged(rp_node* n, const std::uint8_t* connected, std::uint32_t count) {
+        Instance& in = instanceOf(n);
+        ScriptHost& h = *in.type->host;
+        if (!ensureLive(h, in)) return;
+        JSContext* ctx = h.audio_;
+        detachViews(ctx, *in.layout);
+        if (!JS_IsFunction(ctx, in.portsChanged)) return;
+        JSValue mask = JS_NewArray(ctx);
+        for (std::uint32_t i = 0; i < count; ++i) JS_SetPropertyUint32(ctx, mask, i, JS_NewBool(ctx, connected[i] != 0));
+        JSValue result = JS_Call(ctx, in.portsChanged, in.object, 1, &mask);
+        if (JS_IsException(result)) recordThrow(h, in, "portsChanged");
+        JS_FreeValue(ctx, result);
+        JS_FreeValue(ctx, mask);
+    }
+
+    static rp_status process(rp_node* n, const rp_process* block) {
+        Instance& in = instanceOf(n);
+        ScriptHost& h = *in.type->host;
+        if (!ensureLive(h, in)) return RP_FAULT;
+        JSContext* ctx = h.audio_;
+        if (in.activateLater.load(std::memory_order_acquire)) {
+            in.activateLater.store(false, std::memory_order_relaxed);
+            callActivate(h, in);
+        }
+        ++in.blockStamp;
+        in.running = block;
+        JS_SetProperty(ctx, in.block, atom(h, kFrames), JS_NewUint32(ctx, block->frames));
+        const rp_transport& t = *block->transport;
+        JS_SetProperty(ctx, in.transport, atom(h, kSampleRate), JS_NewFloat64(ctx, t.sample_rate));
+        JS_SetProperty(ctx, in.transport, atom(h, kTempo), JS_NewFloat64(ctx, t.tempo));
+        JS_SetProperty(ctx, in.transport, atom(h, kPpq), JS_NewFloat64(ctx, t.ppq));
+        JS_SetProperty(ctx, in.transport, atom(h, kPlaying), JS_NewBool(ctx, (t.flags & RP_TRANSPORT_PLAYING) != 0));
+        JSValue result = JS_Call(ctx, in.process, in.object, 1, &in.block);
+        in.running = nullptr;
+        if (JS_IsException(result)) {
+            recordThrow(h, in, "process");
+            return in.type->faultOnThrow ? RP_FAULT : RP_OK;
+        }
+        bool fault = false;
+        if (JS_IsString(result)) {
+            const JSAtom said = JS_ValueToAtom(ctx, result);
+            fault = said == atom(h, kFault);
+            JS_FreeAtom(ctx, said);
+        }
+        JS_FreeValue(ctx, result);
+        return fault ? RP_FAULT : RP_OK;
+    }
+
+    static rp_prepare_result prepare(rp_node* n, const rp_settings* s, void** prepared, rp_error* err) {
+        Instance& in = instanceOf(n);
+        Type& t = *in.type;
+        std::string settings, layout, why;
+        if (!check(t, s, settings, layout, err)) return RP_PREPARE_INVALID;
+        if (!t.reshapes && layout != in.createdLayout) return RP_PREPARE_REBUILD;
+        auto next = std::make_unique<Settings>();
+        next->json = std::move(settings);
+        if (t.reshapes) {
+            next->layout = buildLayout(layout, why);
+            if (!next->layout) {
+                copyError(err, why);
+                return RP_PREPARE_INVALID;
+            }
+        }
+        *prepared = next.release();
+        return t.reshapes ? RP_PREPARE_RESHAPE : RP_PREPARE_SWAP;
+    }
+
+    // The block thread, at the swap. A reshape's layout replaces the instance's when it differs (and is handed back
+    // unused when it does not); either way what goes back in *old is the replaced settings, holding the layout that
+    // is no longer the instance's, its JS state freed.
+    static void commit(rp_node* n, void* prepared, void** old) {
+        Instance& in = instanceOf(n);
+        ScriptHost& h = *in.type->host;
+        auto* next = static_cast<Settings*>(prepared);
+        Settings* prev = in.settings;
+        const bool live = ensureLive(h, in);  // a fresh instance is made from the settings it was created with first
+        JSContext* ctx = h.audio_;
+        if (next->layout) {
+            if (next->layout->json != in.layout->json) {
+                freeLayoutJs(ctx, *in.layout);
+                prev->layout = std::move(in.layout);
+                in.layout = std::move(next->layout);
+                bindLayout(ctx, *in.layout);
+            } else {
+                prev->layout = std::move(next->layout);
+            }
+        }
+        detachViews(ctx, *in.layout);
+        in.settings = next;
+        *old = prev;
+        if (!live || !JS_IsFunction(ctx, in.onSettings)) return;
+        JSValue settings = JS_ParseJSON(ctx, next->json.c_str(), next->json.size(), "<settings>");
+        JSValue result = JS_IsException(settings) ? JS_EXCEPTION : JS_Call(ctx, in.onSettings, in.object, 1, &settings);
+        if (JS_IsException(result)) recordThrow(h, in, "onSettings");
+        JS_FreeValue(ctx, result);
+        JS_FreeValue(ctx, settings);
+    }
+
+    // The control thread: what a commit handed back, or a prepared object never committed. No JS state in either.
+    static void release(rp_node*, void* old) { delete static_cast<Settings*>(old); }
+
+    static const void* getInterface(rp_node*, const char*) { return nullptr; }
+
+    static constexpr rp_node_vtable kVtable{&activate, &deactivate, &portsChanged, &process,
+                                            &prepare,  &commit,     &release,      &getInterface};
+
+    // ---- the block thread: an instance's JS ------------------------------------------------------------------------
+    static bool ensureLive(ScriptHost& h, Instance& in) {
+        if (in.state == Instance::State::Pending) createJs(h, in);
+        else JS_UpdateStackTop(h.audioRt_);
+        return in.state == Instance::State::Live;
+    }
+
+    // The definition's create, with the instance's current settings: it fails (and the node faults) when create
+    // throws or returns no process.
+    static void createJs(ScriptHost& h, Instance& in) {
+        JSContext* ctx = h.audio_;
+        JS_UpdateStackTop(h.audioRt_);
+        bindLayout(ctx, *in.layout);
+        JSValue cc = JS_NewObject(ctx);
+        JS_SetPropertyStr(ctx, cc, "settings", JS_ParseJSON(ctx, in.settings->json.c_str(), in.settings->json.size(), "<settings>"));
+        JS_SetPropertyStr(ctx, cc, "sampleRate", JS_NewFloat64(ctx, in.sampleRate));
+        JS_SetPropertyStr(ctx, cc, "maxFrames", JS_NewUint32(ctx, in.maxFrames));
+        JSValue object = callMethod(ctx, in.type->audio, "create", 1, &cc);
+        JS_FreeValue(ctx, cc);
+        if (JS_IsException(object)) {
+            recordThrow(h, in, "create");
+            in.state = Instance::State::Failed;
+            return;
+        }
+        JSValue process = JS_IsObject(object) ? JS_GetPropertyStr(ctx, object, "process") : JS_UNDEFINED;
+        if (!JS_IsFunction(ctx, process)) {
+            JS_FreeValue(ctx, process);
+            JS_FreeValue(ctx, object);
+            JS_ThrowTypeError(ctx, "create returned no process function");
+            recordThrow(h, in, "create");
+            in.state = Instance::State::Failed;
+            return;
+        }
+        auto hook = [&](const char* name) {
+            JSValue fn = JS_GetPropertyStr(ctx, object, name);
+            if (JS_IsFunction(ctx, fn)) return fn;
+            JS_FreeValue(ctx, fn);
+            return JS_UNDEFINED;
+        };
+        in.object = object;
+        in.process = process;
+        in.onSettings = hook("onSettings");
+        in.portsChanged = hook("portsChanged");
+        in.activate = hook("activate");
+        in.block = JS_NewObjectClass(ctx, h.blockClass_);
+        JS_SetOpaque(in.block, &in);
+        in.transport = JS_NewObject(ctx);
+        JS_SetProperty(ctx, in.block, atom(h, kTransport), JS_DupValue(ctx, in.transport));
+        in.state = Instance::State::Live;
+        h.live_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    static bool callActivate(ScriptHost& h, Instance& in) {
+        JSContext* ctx = h.audio_;
+        if (!JS_IsFunction(ctx, in.activate)) return true;
+        JS_UpdateStackTop(h.audioRt_);
+        JSValueConst args[2] = {JS_NewFloat64(ctx, in.sampleRate), JS_NewUint32(ctx, in.maxFrames)};
+        JSValue result = JS_Call(ctx, in.activate, in.object, 2, args);
+        bool ok = true;
+        if (JS_IsException(result)) recordThrow(h, in, "activate");
+        else ok = !(JS_IsBool(result) && !JS_ToBool(ctx, result));
+        JS_FreeValue(ctx, result);
+        return ok;
+    }
+
+    // Counted, and the first one kept for reclaim to log; the exception is cleared.
+    static void recordThrow(ScriptHost& h, Instance& in, const char* where) {
+        JSContext* ctx = h.audio_;
+        JSValue thrown = JS_GetException(ctx);
+        h.throws_.fetch_add(1, std::memory_order_relaxed);
+        int unclaimed = 0;
+        if (h.firstThrowState_.compare_exchange_strong(unclaimed, 1, std::memory_order_acq_rel)) {
+            const int n = std::snprintf(h.firstThrow_, sizeof h.firstThrow_, "%s threw in %s: ", in.type->id.c_str(), where);
+            if (n > 0 && static_cast<std::size_t>(n) < sizeof h.firstThrow_)
+                describe(ctx, thrown, false, h.firstThrow_ + n, sizeof h.firstThrow_ - static_cast<std::size_t>(n));
+            h.firstThrowState_.store(2, std::memory_order_release);
+        }
+        JS_FreeValue(ctx, thrown);
+    }
+
+    static void bindLayout(JSContext* ctx, Layout& l) {
+        if (l.bound) return;
+        for (std::size_t i = 0; i < l.ports.size(); ++i) l.js[i].atom = JS_NewAtomLen(ctx, l.ports[i].id.data(), l.ports[i].id.size());
+        l.bound = true;
+    }
+
+    // What a view JS may still hold looks at nothing now: its buffer belongs to a plan that may be freed before the
+    // view is handed out again (a swap, or the instance's release). The next block makes new ones.
+    static void detachViews(JSContext* ctx, Layout& l) {
+        for (auto& p : l.js) {
+            if (p.channels.empty() || JS_IsUndefined(p.value)) continue;
+            for (std::uint32_t c = 0; c < p.channels.size(); ++c)
+                if (p.channels[c]) {
+                    detachView(ctx, p.value, c);
+                    p.channels[c] = nullptr;
+                }
+            p.stamp = 0;
+        }
+    }
+
+    static void detachView(JSContext* ctx, JSValueConst views, std::uint32_t c) {
+        JSValue view = JS_GetPropertyUint32(ctx, views, c);
+        if (JS_GetTypedArrayType(view) >= 0) {
+            JSValue buffer = JS_GetTypedArrayBuffer(ctx, view, nullptr, nullptr, nullptr);
+            if (JS_IsException(buffer)) clearException(ctx);
+            else JS_DetachArrayBuffer(ctx, buffer);
+            JS_FreeValue(ctx, buffer);
+        }
+        JS_FreeValue(ctx, view);
+    }
+
+    static void freeLayoutJs(JSContext* ctx, Layout& l) {
+        detachViews(ctx, l);
+        for (auto& p : l.js) {
+            for (JSValue* v : {&p.value, &p.pool, &p.items, &p.payload}) {
+                JS_FreeValue(ctx, *v);
+                *v = JS_UNDEFINED;
+            }
+            if (p.atom != JS_ATOM_NULL) JS_FreeAtom(ctx, p.atom);
+            p.atom = JS_ATOM_NULL;
+            p.stamp = 0;
+        }
+        l.bound = false;
+    }
+
+    // ---- the Block object ----------------------------------------------------------------------------------------
+    // The instance whose process call is running with this block, or null with a TypeError thrown.
+    static Instance* running(JSContext* ctx, JSValueConst self) {
+        auto* in = static_cast<Instance*>(JS_GetOpaque(self, hostOf(ctx).blockClass_));
+        if (!in || !in->running) {
+            JS_ThrowTypeError(ctx, "a block is used only during its node's process call");
+            return nullptr;
+        }
+        return in;
+    }
+
+    // The port `id` names, when it is one of these kinds on one of these sides (kInputs | kOutputs | kParams); null,
+    // with a TypeError thrown, when not. A linear walk comparing atoms: a layout has a handful of ports.
+    static constexpr unsigned kInputs = 1, kOutputs = 2, kParams = 4;
+    static PortJs* lookup(JSContext* ctx, Instance& in, JSValueConst id, unsigned sides, std::initializer_list<PortKind> kinds,
+                          const char* what, const Port** found) {
+        const JSAtom a = JS_ValueToAtom(ctx, id);
+        if (a == JS_ATOM_NULL) return nullptr;
+        Layout& l = *in.layout;
+        for (std::size_t i = 0; i < l.ports.size(); ++i) {
+            const Port& p = l.ports[i];
+            const unsigned side = p.side == Side::Input ? kInputs : p.side == Side::Output ? kOutputs : kParams;
+            if (l.js[i].atom != a || !(sides & side) || std::find(kinds.begin(), kinds.end(), p.kind) == kinds.end()) continue;
+            JS_FreeAtom(ctx, a);
+            *found = &p;
+            return &l.js[i];
+        }
+        JS_FreeAtom(ctx, a);
+        const char* name = JS_ToCString(ctx, id);
+        JS_ThrowTypeError(ctx, "%s has no %s %s", in.type->id.c_str(), what, name ? name : "of that id");
+        if (name) JS_FreeCString(ctx, name);
+        return nullptr;
+    }
+
+    // The message objects of `array`, element i made (into pool) when it has never been.
+    static JSValue element(JSContext* ctx, PortJs& p, std::uint32_t i) {
+        JSValue e = JS_GetPropertyUint32(ctx, p.pool, i);
+        if (JS_IsObject(e)) return e;
+        JS_FreeValue(ctx, e);
+        e = JS_NewObject(ctx);
+        JS_SetPropertyUint32(ctx, p.pool, i, JS_DupValue(ctx, e));
+        return e;
+    }
+
+    // Does `view` already look at [offset, offset + size) of `buffer`?
+    static bool viewing(JSContext* ctx, JSValueConst view, JSValueConst buffer, std::uint32_t offset, std::uint32_t size) {
+        if (JS_GetTypedArrayType(view) != JS_TYPED_ARRAY_UINT8) return false;
+        std::size_t at = 0, length = 0;
+        JSValue b = JS_GetTypedArrayBuffer(ctx, view, &at, &length, nullptr);
+        if (JS_IsException(b)) {
+            clearException(ctx);
+            return false;
+        }
+        const bool same = sameObject(b, buffer) && at == offset && length == size;
+        JS_FreeValue(ctx, b);
+        return same;
+    }
+
+    // An events or bytes input as a reused Message[]: the payloads copied into one JS-owned buffer (grown, never
+    // shrunk), each message's data a Uint8Array over its bytes there, made again only when its place moves.
+    static void fillMessages(ScriptHost& h, JSContext* ctx, PortJs& p, const rp_queue& q) {
+        if (JS_IsUndefined(p.value)) {
+            p.value = JS_NewArray(ctx);
+            p.pool = JS_NewArray(ctx);
+        }
+        if (q.count > 0 && q.bytes_capacity > 0) {
+            std::size_t room = 0;
+            std::uint8_t* bytes = JS_IsUndefined(p.payload) ? nullptr : JS_GetArrayBuffer(ctx, &room, p.payload);
+            if (!bytes && !JS_IsUndefined(p.payload)) clearException(ctx);  // detached, by JS
+            if (!bytes || q.bytes_used > room) {
+                // The queue's arena holds bytes_capacity bytes, so any size up to that can be copied out of it.
+                const std::size_t size =
+                    std::min<std::size_t>(q.bytes_capacity, std::max<std::size_t>({q.bytes_used, room * 2, 256}));
+                JS_FreeValue(ctx, p.payload);
+                p.payload = JS_NewArrayBufferCopy(ctx, q.bytes, std::max<std::size_t>(size, 1));
+                bytes = JS_GetArrayBuffer(ctx, &room, p.payload);
+            }
+            if (bytes && q.bytes_used) std::memcpy(bytes, q.bytes, q.bytes_used);
+        }
+        for (std::uint32_t i = 0; i < q.count; ++i) {
+            const rp_message& m = q.items[i];
+            JSValue e = element(ctx, p, i);
+            JS_SetProperty(ctx, e, atom(h, kFrame), JS_NewUint32(ctx, m.frame));
+            JSValue data = JS_GetProperty(ctx, e, atom(h, kData));
+            if (!viewing(ctx, data, p.payload, m.offset, m.size)) {
+                JSValueConst args[3] = {p.payload, JS_NewUint32(ctx, m.offset), JS_NewUint32(ctx, m.size)};
+                JS_SetProperty(ctx, e, atom(h, kData), JS_NewTypedArray(ctx, 3, args, JS_TYPED_ARRAY_UINT8));
+            }
+            JS_FreeValue(ctx, data);
+            JS_SetProperty(ctx, e, atom(h, kFlags), JS_NewUint32(ctx, m.flags));
+            JS_SetPropertyUint32(ctx, p.value, i, e);
+        }
+        JS_SetProperty(ctx, p.value, atom(h, kLength), JS_NewUint32(ctx, q.count));
+    }
+
+    // A control input or a param as a reused { start, changes }.
+    static void fillControl(ScriptHost& h, JSContext* ctx, PortJs& p, const rp_control_queue& q) {
+        if (JS_IsUndefined(p.value)) {
+            p.value = JS_NewObject(ctx);
+            p.items = JS_NewArray(ctx);
+            p.pool = JS_NewArray(ctx);
+            JS_SetProperty(ctx, p.value, atom(h, kStart), JS_NewFloat64(ctx, q.start));
+            JS_SetProperty(ctx, p.value, atom(h, kChanges), JS_DupValue(ctx, p.items));
+        }
+        JS_SetProperty(ctx, p.value, atom(h, kStart), JS_NewFloat64(ctx, q.start));
+        for (std::uint32_t i = 0; i < q.count; ++i) {
+            JSValue e = element(ctx, p, i);
+            JS_SetProperty(ctx, e, atom(h, kFrame), JS_NewUint32(ctx, q.changes[i].frame));
+            JS_SetProperty(ctx, e, atom(h, kValue), JS_NewFloat64(ctx, q.changes[i].value));
+            JS_SetPropertyUint32(ctx, p.items, i, e);
+        }
+        JS_SetProperty(ctx, p.items, atom(h, kLength), JS_NewUint32(ctx, q.count));
+    }
+
+    // An audio port as a reused Float32Array[], one view per channel straight over the plan's buffer (no copy), made
+    // again only when the buffer or the block's length moves; a replaced view is detached first.
+    static void fillAudio(ScriptHost& h, JSContext* ctx, PortJs& p, const rp_audio_view& v, std::uint32_t frames) {
+        if (JS_IsUndefined(p.value)) p.value = JS_NewArray(ctx);
+        const std::uint32_t count = std::min<std::uint32_t>(v.channel_count, static_cast<std::uint32_t>(p.channels.size()));
+        for (std::uint32_t c = 0; c < count; ++c) {
+            const float* buffer = v.channels[c];
+            if (p.channels[c] == buffer && p.viewFrames == frames) continue;
+            if (p.channels[c]) detachView(ctx, p.value, c);
+            JSValue ab = JS_NewArrayBuffer(ctx, reinterpret_cast<std::uint8_t*>(const_cast<float*>(buffer)),
+                                           std::size_t(frames) * sizeof(float), nullptr, nullptr, false);
+            // All three arguments: the constructor reads offset and length whatever argc says.
+            JSValueConst args[3] = {ab, JS_NewUint32(ctx, 0), JS_NewUint32(ctx, frames)};
+            JS_SetPropertyUint32(ctx, p.value, c, JS_NewTypedArray(ctx, 3, args, JS_TYPED_ARRAY_FLOAT32));
+            JS_FreeValue(ctx, ab);
+            p.channels[c] = buffer;
+        }
+        for (std::uint32_t c = count; c < p.channels.size() && p.channels[c]; ++c) {
+            detachView(ctx, p.value, c);
+            p.channels[c] = nullptr;
+        }
+        p.viewFrames = frames;
+        JS_SetProperty(ctx, p.value, atom(h, kLength), JS_NewUint32(ctx, count));
+    }
+
+    // block.messages(port): an events or bytes input.
+    static JSValue messages(JSContext* ctx, JSValueConst self, int argc, JSValueConst* argv) {
+        Instance* in = running(ctx, self);
+        const Port* found = nullptr;
+        PortJs* p = in ? lookup(ctx, *in, argc ? argv[0] : JS_UNDEFINED, kInputs, {PortKind::Events, PortKind::Bytes},
+                                    "events or bytes input", &found)
+                       : nullptr;
+        if (!p) return JS_EXCEPTION;
+        if (p->stamp != in->blockStamp) {
+            fillMessages(hostOf(ctx), ctx, *p, *in->running->inputs[found->index].u.queue);
+            p->stamp = in->blockStamp;
+        }
+        return JS_DupValue(ctx, p->value);
+    }
+
+    // block.control(id): a control input, or a param.
+    static JSValue control(JSContext* ctx, JSValueConst self, int argc, JSValueConst* argv) {
+        Instance* in = running(ctx, self);
+        const Port* found = nullptr;
+        PortJs* p = in ? lookup(ctx, *in, argc ? argv[0] : JS_UNDEFINED, kInputs | kParams, {PortKind::Control},
+                                    "control input or param", &found)
+                       : nullptr;
+        if (!p) return JS_EXCEPTION;
+        if (p->stamp != in->blockStamp) {
+            const rp_control_queue& q =
+                found->side == Side::Param ? *in->running->params[found->index] : *in->running->inputs[found->index].u.control;
+            fillControl(hostOf(ctx), ctx, *p, q);
+            p->stamp = in->blockStamp;
+        }
+        return JS_DupValue(ctx, p->value);
+    }
+
+    // block.audio(port): an audio input or output.
+    static JSValue audio(JSContext* ctx, JSValueConst self, int argc, JSValueConst* argv) {
+        Instance* in = running(ctx, self);
+        const Port* found = nullptr;
+        PortJs* p = in ? lookup(ctx, *in, argc ? argv[0] : JS_UNDEFINED, kInputs | kOutputs, {PortKind::Audio}, "audio port", &found)
+                       : nullptr;
+        if (!p) return JS_EXCEPTION;
+        if (p->stamp != in->blockStamp) {
+            const rp_port_view& v = found->side == Side::Output ? in->running->outputs[found->index] : in->running->inputs[found->index];
+            fillAudio(hostOf(ctx), ctx, *p, v.u.audio, in->running->frames);
+            p->stamp = in->blockStamp;
+        }
+        return JS_DupValue(ctx, p->value);
+    }
+
+    // block.send(port, frame, data, flags?): onto an events or bytes output's queue, straight; false when it is full.
+    static JSValue send(JSContext* ctx, JSValueConst self, int argc, JSValueConst* argv) {
+        Instance* in = running(ctx, self);
+        const Port* found = nullptr;
+        if (!in || !lookup(ctx, *in, argc ? argv[0] : JS_UNDEFINED, kOutputs, {PortKind::Events, PortKind::Bytes},
+                               "events or bytes output", &found))
+            return JS_EXCEPTION;
+        std::uint32_t frame = 0, flags = 0;
+        if (argc < 3 || JS_ToUint32(ctx, &frame, argv[1]) < 0 || (argc > 3 && JS_ToUint32(ctx, &flags, argv[3]) < 0))
+            return argc < 3 ? JS_ThrowTypeError(ctx, "send takes a port, a frame and the data") : JS_EXCEPTION;
+        rp_queue& q = *in->running->outputs[found->index].u.queue;
+        const int typed = JS_GetTypedArrayType(argv[2]);
+        if (typed == JS_TYPED_ARRAY_UINT8 || typed == JS_TYPED_ARRAY_UINT8C) {
+            std::size_t size = 0;
+            const std::uint8_t* data = JS_GetUint8Array(ctx, &size, argv[2]);
+            if (!data && size == 0 && JS_HasException(ctx)) return JS_EXCEPTION;
+            return JS_NewBool(ctx, graph::pushMessage(q, frame, {data, size}, flags));
+        }
+        // Any other array-like of numbers, each byte read into the queue as it is reserved.
+        std::int64_t length = 0;
+        if (JS_GetLength(ctx, argv[2], &length) < 0) return JS_EXCEPTION;
+        if (length < 0 || length > static_cast<std::int64_t>(UINT32_MAX)) return JS_ThrowRangeError(ctx, "the data is too long");
+        std::uint8_t* at = nullptr;
+        if (!graph::reserveMessage(q, frame, static_cast<std::size_t>(length), flags, &at)) return JS_NewBool(ctx, false);
+        for (std::int64_t i = 0; i < length; ++i) {
+            JSValue v = JS_GetPropertyUint32(ctx, argv[2], static_cast<std::uint32_t>(i));
+            std::int32_t b = 0;
+            const bool ok = JS_ToInt32(ctx, &b, v) == 0;
+            JS_FreeValue(ctx, v);
+            if (!ok) {  // a node's bug, and it throws: the message keeps the bytes read so far, then zeros
+                std::memset(at + i, 0, static_cast<std::size_t>(length - i));
+                return JS_EXCEPTION;
+            }
+            at[i] = static_cast<std::uint8_t>(b & 0xff);
+        }
+        return JS_NewBool(ctx, true);
+    }
+
+    // block.emit(port, frame, value): onto a control output.
+    static JSValue emit(JSContext* ctx, JSValueConst self, int argc, JSValueConst* argv) {
+        Instance* in = running(ctx, self);
+        const Port* found = nullptr;
+        if (!in || !lookup(ctx, *in, argc ? argv[0] : JS_UNDEFINED, kOutputs, {PortKind::Control}, "control output", &found))
+            return JS_EXCEPTION;
+        std::uint32_t frame = 0;
+        double value = 0.0;
+        if (argc < 3) return JS_ThrowTypeError(ctx, "emit takes a port, a frame and a value");
+        if (JS_ToUint32(ctx, &frame, argv[1]) < 0 || JS_ToFloat64(ctx, &value, argv[2]) < 0) return JS_EXCEPTION;
+        return JS_NewBool(ctx, graph::pushControl(*in->running->outputs[found->index].u.control, frame, value));
+    }
+};
+
+// ---- ScriptHost ------------------------------------------------------------------------------------------------
+
+ScriptHost::ScriptHost(Binder binder, void* user) {
+    package_ = rp_package{RP_ABI_VERSION, kPackageManifest, 0, nullptr};
+    controlRt_ = JS_NewRuntime();
+    control_ = JS_NewContext(controlRt_);
+    const JSMallocFunctions counted{&Glue::jsCalloc, &Glue::jsMalloc, &Glue::jsFree, &Glue::jsRealloc, &Glue::jsUsable};
+    audioRt_ = JS_NewRuntime2(&counted, &counters_);  // QuickJS copies the functions and keeps the opaque
+    audio_ = JS_NewContext(audioRt_);
+    JS_SetContextOpaque(audio_, this);
+
+    // The Block object: one per instance, its methods on the class prototype, the instance its opaque.
+    JS_NewClassID(audioRt_, &blockClass_);
+    JSClassDef block{};
+    block.class_name = "Block";
+    JS_NewClass(audioRt_, blockClass_, &block);
+    JSValue proto = JS_NewObject(audio_);
+    JS_SetPropertyStr(audio_, proto, "messages", JS_NewCFunction(audio_, &Glue::messages, "messages", 1));
+    JS_SetPropertyStr(audio_, proto, "send", JS_NewCFunction(audio_, &Glue::send, "send", 4));
+    JS_SetPropertyStr(audio_, proto, "control", JS_NewCFunction(audio_, &Glue::control, "control", 1));
+    JS_SetPropertyStr(audio_, proto, "emit", JS_NewCFunction(audio_, &Glue::emit, "emit", 3));
+    JS_SetPropertyStr(audio_, proto, "audio", JS_NewCFunction(audio_, &Glue::audio, "audio", 1));
+    JS_SetClassProto(audio_, blockClass_, proto);
+    static_assert(kAtomCount <= std::tuple_size_v<decltype(atoms_)>, "atoms_ holds every block-path atom");
+    for (std::size_t a = 0; a < kAtomCount; ++a) atoms_[a] = JS_NewAtom(audio_, kAtomNames[a]);
+
+    if (binder) {
+        binder(user, control_, false);
+        binder(user, audio_, true);
+    }
+}
+
+ScriptHost::~ScriptHost() {
+    assert(!audioOwns_.load() && "destroy a ScriptHost only once no audio thread runs its blocks");
+    releaseQueued();
+    assert(live_.load() == 0 && "every shim goes before its script host");
+    freeTypes();
+    for (std::size_t a = 0; a < kAtomCount; ++a) JS_FreeAtom(audio_, atoms_[a]);
+    JS_FreeContext(audio_);
+    JS_FreeRuntime(audioRt_);
+    JS_FreeContext(control_);
+    JS_FreeRuntime(controlRt_);
+}
+
+ScriptHost::Chunk ScriptHost::embeddedBundle() { return {rp_script_bundle, rp_script_bundle_size}; }
+
+bool ScriptHost::load(std::span<const Chunk> chunks, std::string* error) {
+    auto fail = [&](std::string why) {
+        freeTypes();
+        if (error) *error = std::move(why);
+        return false;
+    };
+    if (!types_.empty()) return fail("a script host loads one bundle");
+    for (const bool audioSide : {false, true}) {
+        JSContext* ctx = audioSide ? audio_ : control_;
+        JS_UpdateStackTop(audioSide ? audioRt_ : controlRt_);
+        for (std::size_t i = 0; i < chunks.size(); ++i) {
+            JSValue code = JS_ReadObject(ctx, chunks[i].data(), chunks[i].size(), JS_READ_OBJ_BYTECODE);
+            JSValue result = JS_IsException(code) ? JS_EXCEPTION : JS_EvalFunction(ctx, code);  // consumes `code`
+            if (JS_IsException(result)) return fail("chunk " + std::to_string(i) + ": " + exceptionText(ctx, false));
+            JS_FreeValue(ctx, result);
+        }
+    }
+    // The definitions, in the same order in both contexts (the same bundle ran in each).
+    JSValue lists[2];
+    for (const bool audioSide : {false, true}) {
+        JSContext* ctx = audioSide ? audio_ : control_;
+        JSValue global = JS_GetGlobalObject(ctx);
+        lists[audioSide] = JS_GetPropertyStr(ctx, global, kNodesGlobal);
+        JS_FreeValue(ctx, global);
+    }
+    struct Lists {
+        JSContext* control;
+        JSContext* audio;
+        JSValue*   v;
+        ~Lists() {
+            JS_FreeValue(control, v[0]);
+            JS_FreeValue(audio, v[1]);
+        }
+    } owned{control_, audio_, lists};
+    if (JS_IsUndefined(lists[0])) return true;  // a bundle that registers nothing
+    std::int64_t count = 0;
+    if (!JS_IsArray(lists[0]) || JS_GetLength(control_, lists[0], &count) < 0)
+        return fail(std::string(kNodesGlobal) + " is not an array of node definitions");
+    for (std::int64_t i = 0; i < count; ++i) {
+        auto t = std::make_unique<Type>();
+        t->host = this;
+        t->control = JS_GetPropertyUint32(control_, lists[0], static_cast<std::uint32_t>(i));
+        t->audio = JS_GetPropertyUint32(audio_, lists[1], static_cast<std::uint32_t>(i));
+        types_.push_back(std::move(t));
+        Type& type = *types_.back();
+        const std::string at = "definition #" + std::to_string(i);
+        JSValue id = JS_GetPropertyStr(control_, type.control, "id");
+        const char* text = JS_IsString(id) ? JS_ToCString(control_, id) : nullptr;
+        if (text) {
+            type.id = text;
+            JS_FreeCString(control_, text);
+        }
+        JS_FreeValue(control_, id);
+        if (type.id.empty()) return fail(at + " has no id");
+        JSValue audioId = JS_GetPropertyStr(audio_, type.audio, "id");
+        const char* audioText = JS_IsString(audioId) ? JS_ToCString(audio_, audioId) : nullptr;
+        const bool same = audioText && type.id == audioText;
+        if (audioText) JS_FreeCString(audio_, audioText);
+        JS_FreeValue(audio_, audioId);
+        if (!same) return fail(at + " (" + type.id + ") is not the same in both contexts");
+        JSValue d = callMethod(control_, type.control, "descriptor", 0, nullptr);
+        const bool described = !JS_IsException(d) && stringify(control_, d, type.descriptor);
+        JS_FreeValue(control_, d);
+        if (!described) return fail(type.id + ": its descriptor: " + exceptionText(control_, true));
+        for (const auto& [flag, key] : {std::pair{&type.reshapes, "reshapes"}, std::pair{&type.faultOnThrow, "faultOnThrow"}}) {
+            JSValue v = JS_GetPropertyStr(control_, type.control, key);
+            *flag = JS_IsBool(v) && JS_ToBool(control_, v);
+            JS_FreeValue(control_, v);
+        }
+        type.abi = rp_node_type{type.id.c_str(), &Glue::descriptor, &Glue::layoutFor, &Glue::queryMemory,
+                                &Glue::create, &Glue::destroy, RP_TYPE_STATELESS_PREPARE, &type};
+    }
+    typeList_.clear();
+    for (const auto& t : types_) typeList_.push_back(&t->abi);
+    package_ = rp_package{RP_ABI_VERSION, kPackageManifest, static_cast<std::uint32_t>(typeList_.size()), typeList_.data()};
+    return true;
+}
+
+void ScriptHost::freeTypes() {
+    for (auto& t : types_) {
+        JS_FreeValue(control_, t->control);
+        JS_FreeValue(audio_, t->audio);
+    }
+    types_.clear();
+    typeList_.clear();
+    package_ = rp_package{RP_ABI_VERSION, kPackageManifest, 0, nullptr};
+}
+
+void ScriptHost::setAudioThreadOwns(bool owns) {
+    audioOwns_.store(owns, std::memory_order_release);
+    if (!owns) releaseQueued();
+}
+
+// A destroyed shim's record: released there and then while no audio thread runs blocks, else queued for the next.
+void ScriptHost::retire(Instance* in) {
+    reclaim();
+    if (!audioOwns_.load(std::memory_order_acquire)) {
+        releaseJs(*in);
+        delete in;
+        return;
+    }
+    if (!backlog_.empty() || !releases_.tryPush(in)) backlog_.push_back(in);
+}
+
+void ScriptHost::beginBlock() {
+    Instance* in = nullptr;
+    while (releases_.tryPop(in)) {
+        releaseJs(*in);
+        if (!released_.tryPush(in)) leakedRecords_.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+void ScriptHost::reclaim() {
+    Instance* in = nullptr;
+    while (released_.tryPop(in)) delete in;
+    while (!backlog_.empty() && releases_.tryPush(backlog_.front())) backlog_.erase(backlog_.begin());
+    if (const auto leaked = leakedRecords_.load(std::memory_order_relaxed); leaked != leaksReported_) {
+        std::fprintf(stderr, "[script] the release ring back was full: %u instance record(s) leaked rather than freed on the audio thread\n",
+                     static_cast<unsigned>(leaked - leaksReported_));
+        leaksReported_ = leaked;
+    }
+    if (!firstThrowLogged_ && firstThrowState_.load(std::memory_order_acquire) == 2) {
+        std::fprintf(stderr, "[script] %s (a throw is counted, and the node runs again next block; later ones are counted only)\n",
+                     firstThrow_);
+        firstThrowLogged_ = true;
+    }
+}
+
+std::string ScriptHost::firstThrow() const {
+    return firstThrowState_.load(std::memory_order_acquire) == 2 ? std::string(firstThrow_) : std::string();
+}
+
+// Quiescent: everything queued for the block thread is released here, and every record deleted.
+void ScriptHost::releaseQueued() {
+    Instance* in = nullptr;
+    while (releases_.tryPop(in)) {
+        releaseJs(*in);
+        delete in;
+    }
+    for (Instance* b : backlog_) {
+        releaseJs(*b);
+        delete b;
+    }
+    backlog_.clear();
+    while (released_.tryPop(in)) delete in;
+}
+
+void ScriptHost::releaseJs(Instance& in) {
+    JSContext* ctx = audio_;
+    JS_UpdateStackTop(audioRt_);
+    if (in.layout) Glue::freeLayoutJs(ctx, *in.layout);
+    if (!JS_IsUndefined(in.block)) JS_SetOpaque(in.block, nullptr);  // a block JS kept is no longer this instance's
+    for (JSValue* v : {&in.object, &in.process, &in.onSettings, &in.portsChanged, &in.activate, &in.block, &in.transport}) {
+        JS_FreeValue(ctx, *v);
+        *v = JS_UNDEFINED;
+    }
+    if (in.state == Instance::State::Live) live_.fetch_sub(1, std::memory_order_relaxed);
+    in.state = Instance::State::Released;
+}
+
+ScriptAllocations ScriptHost::audioAllocations() const {
+    return {counters_.allocs.load(std::memory_order_relaxed), counters_.reallocs.load(std::memory_order_relaxed),
+            counters_.frees.load(std::memory_order_relaxed), counters_.bytes.load(std::memory_order_relaxed)};
+}
+
+}  // namespace rp::host
