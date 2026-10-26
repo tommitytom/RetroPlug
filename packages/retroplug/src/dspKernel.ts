@@ -44,11 +44,11 @@ export interface KeyEvent {
   down: boolean;
 }
 
-/** One raw serial-out byte a core emitted on its serial port (LSDj MI.OUT), targeted at a system.
- *  A Game Boy node's `serialOut` reaches the kernel node over a feedback wire, so a block's bytes
+/** One raw serial-out byte a core emitted on its serial port (LSDj MI.OUT or master sync), targeted at a
+ *  system. A Game Boy node's `serialOut` reaches the kernel node over a feedback wire, so a block's bytes
  *  arrive in the NEXT block (one-block latency), and `frame` is where the byte fell in the block that
- *  produced it: the previous one. The kernel fans them per-system into `ctx.serialOut` and
- *  `ctx.serialOutFrames` for the MI.OUT and master-sync decoders. */
+ *  produced it: the previous one. The kernel fans them per-system into `ctx.serialOut`, which the MI.OUT
+ *  and master-sync decoders read, and `ctx.serialOutFrames`, which master sync times its stop by. */
 export interface SerialOutEvent {
   system: number;
   frame: number;

@@ -261,7 +261,9 @@ struct SystemInputs {
     }
 };
 
-// Stands in for a Game Boy node's serialOut: what its core clocked out in the block, a byte a message at frame 0.
+// Stands in for a Game Boy node's serialOut: what its core clocked out in the block, a byte a message. The real node
+// stamps each byte at the frame its core completed it; these all sit at frame 0, since what a message costs the kernel
+// does not depend on its frame.
 struct SerialOut {
     static constexpr const char* id = "rp.bench.serial-out";
     struct {

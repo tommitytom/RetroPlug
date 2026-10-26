@@ -267,7 +267,11 @@ A wire may be marked `feedback: true`. Only feedback wires may close a loop; the
 block late. A cycle with no feedback wire is rejected, and the error names the loop. Audio, events, bytes
 and control wires can be feedback; a resource or link wire cannot (a handle or a link has no previous
 block to deliver). Data between two members of one coupled group needs a feedback wire too: the group
-steps as one unit, so a same-block wire inside it would have no order.
+steps as one unit, so a same-block wire inside it would have no order. Messages on a feedback events or
+bytes wire keep the frames of the block that produced them, so a reader sees last block's coordinates,
+and a frame can lie past the end of a shorter reading block. The Game Boy's `serialOut` into the kernel
+is the first feedback wire to carry frames other than 0: each byte at the frame its core completed it,
+which master sync times its stop by ([lsdj-master-sync-fix-design.md](lsdj-master-sync-fix-design.md)).
 
 LSDj needs this today: `lsdj.sync` feeds the GB's `serialIn`, and the GB's `serialOut` comes back
 to `lsdj.sync` for MI.OUT. The current engine already gives that return path exactly one block of latency

@@ -551,8 +551,9 @@ export class SystemsStore {
     const rewired = roleKind === "sameboy" && e.built.type === "rp.sameboy.gb" && linkGroup !== e.built.linkGroup;
     const built = rewired ? { ...e.built, linkGroup } : e.built;
     this.entries = replaceById(this.entries, id, { ...e, roles, built });
-    // A feature role stays pure TS, EXCEPT lsdj-sync's serial-out capture gate — arm/disarm it on a
-    // MIDIOUT mode change (the decoder itself runs in the kernel, which the publish below hands the new mode).
+    // A feature role stays pure TS, EXCEPT lsdj-sync's serial-out capture mode, set on any lsdj-sync change: drive
+    // for MI.OUT, listen for master sync, none otherwise (the decoders themselves run in the kernel, which the
+    // publish below hands the new mode).
     if (roleKind === "lsdj-sync") this.syncSerialOutCapture(id);
     // A role the kernel runs is the system's pipeline, which the document carries, so its edit publishes; an edit the
     // document does not carry (a model or palette, an asset override) leaves it as it was.

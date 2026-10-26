@@ -680,8 +680,8 @@ TEST_CASE("the Game Boy's serialOut carries what its core captured this block, e
           "[engine-graph][system-node][inputs]") {
     // mGB holds its serial port in external-clock receive, so once MI.OUT capture is armed the engine clocks a byte
     // out of it every eight frames. Each byte goes out a byte a message at the frame the core completed it, a byte
-    // completed past the block's end at the block's last frame. The node copies the core's log rather than draining
-    // it: the core clears it at its next prepareForBlock.
+    // stamped at or past the block's end (completed in its last sample, or past it) at the block's last frame. The
+    // node copies the core's log rather than draining it: the core clears it at its next prepareForBlock.
     NodeRig rig(kRate);
     auto core = mgb(1);
     core->setSerialOutCapture(SerialOutCapture::Drive);
@@ -693,23 +693,29 @@ TEST_CASE("the Game Boy's serialOut carries what its core captured this block, e
     Probe& probe = rig.node<Probe>("probe");
     Lanes graph(2);
     const rp_transport t{kRate, 120.0, 0.0, 0};
-    std::size_t captured = 0;
+    std::size_t captured = 0, atOrPastEnd = 0;
     for (std::size_t b = 0; b < 160; ++b) {
         const std::uint32_t frames = kBlocks[b % kBlocks.size()];
         rig.host->processBlock(frames, t, graph.ptrs.data(), 2);
         std::vector<std::pair<std::uint32_t, std::uint8_t>> log, carried;
-        for (const auto& [frame, byte] : gb->serialOutLog_) log.emplace_back(std::min(frame, frames - 1), byte);
-        bool eachAlone = true;
+        for (const auto& [frame, byte] : gb->serialOutLog_) {
+            log.emplace_back(std::min(frame, frames - 1), byte);
+            atOrPastEnd += frame >= frames;
+        }
+        bool eachAlone = true, inside = true;
         for (const auto& m : probe.bytes) {
             eachAlone = eachAlone && m.data.size() == 1;
+            inside = inside && m.frame < frames;
             if (!m.data.empty()) carried.emplace_back(m.frame, m.data[0]);
         }
         INFO("block " << b);
         CHECK(eachAlone);
+        CHECK(inside);  // every message lies inside the block that carries it
         CHECK(carried == log);
         captured += log.size();
     }
     CHECK(captured > 0);
+    CHECK(atOrPastEnd > 0);  // the core stamped a byte at or past a block's end, so the clamp ran
 }
 
 TEST_CASE("a Game Boy whose capture listens is never clocked: mGB, waiting on an external clock, sends nothing",

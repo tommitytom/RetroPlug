@@ -1,7 +1,8 @@
 # LSDj master sync: listening to LSDj instead of clocking it
 
-**Date:** 2026-10-26 · **Branch:** `feature/modularize` · **Status:** designed (revised after the first prototype,
-section 2); not yet built.
+**Date:** 2026-10-26 · **Branch:** `feature/modularize` · **Status:** built (designed, then revised after the first
+prototype, section 2): aa04ac72 and 98647396 (section 9's second and third commits), then the review's follow-ups,
+b1e560c5 among them (the stop checked before each byte too, section 5); section 10 holds the limits review accepted.
 
 LSDj master sync (lsdj-sync mode `masterSync`, the Arduinoboy firmware's Mode 2, SYNC=LSDj) turns what LSDj sends
 out of its link port into host MIDI: one 0xF8 per byte while LSDj plays, a song-row NoteOn and 0xFA before the
@@ -144,3 +145,12 @@ say it is done, and `spec/02` / `spec/04` describe the capture modes and the sto
    must be (AGENTS.md).
 
 Each goes through review.
+
+## 10. Limits accepted in review
+
+- **A live switch from MI.OUT to master sync** can decode the one block captured under `drive` before the capture
+  flips as clocks: master sync sends a NoteOn, 0xFA and clocks for it, then 0xFC 200 ms on. Accepted, since it needs a
+  user's mode switch on an LSDj set to the other SYNC mode.
+- **Only the fixture-only LSDj tests prove `listen` captures a self-clocked byte**
+  ([lsdj-mastersync.test.ts](../packages/retroplug/test-native/lsdj-mastersync.test.ts) and the master-sync parity
+  cases). CI checks the modes on the wire and that `listen` never clocks (mGB, section 7).

@@ -204,7 +204,7 @@ reads its inputs and writes frame-tagged sinks.
 | Type | Arrives | Contents |
 |---|---|---|
 | `KernelStructure` | at each structure change, via `setSystems`: the kernel node's settings (below) | `{ project?: RoleInstance[], systems: { id, pipeline: RoleInstance[] }[] }` |
-| `BlockInput` | every block, via `processBlock`, built by the kernel node from its inputs | `BlockInfo` (`frames`, `sampleRate`, `tempo`, `ppqStart`, `transport`, `controllerConnected`) + `midiIn` (global), `serialOut` (each Game Boy's MI.OUT bytes of last block, each with its frame in that block), `controllerIn`, `buttons`, `keys` |
+| `BlockInput` | every block, via `processBlock`, built by the kernel node from its inputs | `BlockInfo` (`frames`, `sampleRate`, `tempo`, `ppqStart`, `transport`, `controllerConnected`) + `midiIn` (global), `serialOut` (each Game Boy's serial-out bytes of last block, which MI.OUT and master sync decode, each with its frame in that block), `controllerIn`, `buttons`, `keys` |
 
 **System order is authoritative**: positional MIDI routing maps a channel to a system by its index in
 `systems`, so the list defines both the set and the order. `DspKernel` keeps ONE persistent `Block`

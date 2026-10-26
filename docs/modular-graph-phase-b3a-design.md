@@ -303,20 +303,23 @@ holds, the same block's MIDI included, as it did. A Game Boy's `midi` input has 
 ### 3.2 The Game Boy's `serialOut`
 
 The Game Boy node has a `serialOut` output (bytes): the bytes its core captured on the serial port this block while
-MI.OUT capture is armed (the build-time `serialOutCapture` flag, or `setSerialOutCapture`). It replaces the engine's
-per-block gather into `pendingSerialOut_`. That gather dropped the bytes' frames, and the kernel read them without
-any; the port carries each byte at frame 0, so the kernel reads exactly what it read before. The node copies the
-core's log in `finish`, only while the port is connected, and the core clears it at its next `prepareForBlock`.
+capture is on (the build-time `serialOutCapture`, or `setSerialOutCapture`). It replaces the engine's per-block
+gather into `pendingSerialOut_`. That gather dropped the bytes' frames, and the kernel read them without any; the
+port carried each byte at frame 0, so the kernel read exactly what it read before. Since then the LSDj master-sync
+fix ([lsdj-master-sync-fix-design.md](lsdj-master-sync-fix-design.md)) has the port carry each byte at the frame
+its core completed it, clamped into the block, and made capture a mode, `listen` or `drive`, rather than a flag.
+The node copies the core's log in `finish`, only while the port is connected, and the core clears it at its next
+`prepareForBlock`.
 
-Capture clocks a bit every sample frame while the Game Boy holds an external-clock transfer (SC = 0x80), so an armed
-port carries about one byte every 8 frames, idle bytes included, not only MI.OUT data. Its capacity, 8256 messages and
-8256 bytes, is a byte every 8 frames over the largest block a host can run (65536 frames, the GraphHost's
-`kMaxBlockFrames`, to which the plugin grows its plan with its buffer size), with 64 to spare for the bits a block
-carries in and the frames a core runs past its target
-([SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp) `kSerialOutCapacity`). A Game Boy that clocks
-the port itself shifts at its serial rate instead, and a CGB on its fast clock can outrun the capacity in a block past
-about 12000 frames (about 6000 in double speed); what does not fit is dropped and counted. The capacity is fixed, so
-the feedback wire from it keeps its front across every plan swap (§2.6).
+Under `drive` (MI.OUT's mode) capture clocks a bit every sample frame while the Game Boy holds an external-clock
+transfer (SC = 0x80), so the port carries about one byte every 8 frames, idle bytes included, not only MI.OUT data;
+under `listen` (master sync's) it never clocks the port. Its capacity, 8256 messages and 8256 bytes, is a byte every
+8 frames over the largest block a host can run (65536 frames, the GraphHost's `kMaxBlockFrames`, to which the plugin
+grows its plan with its buffer size), with 64 to spare for the bits a block carries in and the frames a core runs
+past its target ([SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp) `kSerialOutCapacity`). A Game
+Boy that clocks the port itself shifts at its serial rate instead, and a CGB on its fast clock can outrun the
+capacity in a block past about 12000 frames (about 6000 in double speed); what does not fit is dropped and counted.
+The capacity is fixed, so the feedback wire from it keeps its front across every plan swap (§2.6).
 
 ### 3.3 Host I/O nodes
 

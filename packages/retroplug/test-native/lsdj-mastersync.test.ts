@@ -8,10 +8,11 @@
 // decoder times the silence on the bytes' own frames, so what it decodes must not depend on how the host cuts
 // its blocks, at either rate: the second case holds it to that.
 //
-// This resolves the "SYNC=LSDJ is a continuous ~4500 bytes/sec raw link protocol" folklore empirically:
-// a stock LSDj-master emits a TEMPO-LOCKED byte stream (~50/sec = ~130 BPM at 24 PPQN, tens/sec — NOT
-// thousands). (The Arduinoboy-patched ROM behaves differently in this mode; Master Sync targets stock
-// LSDj, whose SYNC=LSDj is the standard link-cable master clock. Arduinoboy builds use MI.OUT / mode 7.)
+// A playing stock LSDj master emits a TEMPO-LOCKED byte stream (~50/sec = ~130 BPM at 24 PPQN: tens a second,
+// NOT thousands), and a stopped one goes quiet. The thousands-a-second stream once taken for SYNC=LSDj's raw link
+// protocol was the core clocking a stopped LSDj (`drive`, one bit an audio frame: about 5500 bytes a second at
+// 44.1 kHz; docs/lsdj-master-sync-fix-design.md section 2). (Master Sync targets stock LSDj, whose SYNC=LSDj is the
+// standard link-cable master clock; Arduinoboy builds use MI.OUT / mode 7.)
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
@@ -89,8 +90,8 @@ test("Master Sync (mode 8): a stock LSDj in SYNC=LSDj clocks the host — byte�
   // Transport start + a song-row NoteOn open the run.
   expect(starts >= 1).toBeTruthy();
   expect(noteOns >= 1).toBeTruthy();
-  // The clock stream is LSDj's tempo: 24 PPQN → tens/sec across normal tempos. The old "~4500 bytes/sec"
-  // folklore (an Arduinoboy-ROM artifact) would land in the thousands; asserting a tempo band settles it.
+  // The clock stream is LSDj's tempo: 24 PPQN → tens/sec across normal tempos. The core clocking a stopped LSDj
+  // (`drive`, one bit an audio frame) would land in the thousands; asserting a tempo band rules it out.
   expect(clocks > 20).toBeTruthy();
   expect(clocksPerSec > 10 && clocksPerSec < 500).toBeTruthy();
 
