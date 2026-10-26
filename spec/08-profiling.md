@@ -53,7 +53,9 @@ arrays **created even when empty**; and a `{ system, byte }` object per MI.OUT b
 freed after the call, so this is per-block garbage, and it grows with the block's message count.
 
 **The TS kernel** ([dspKernel.ts](../packages/retroplug/src/dspKernel.ts), as it was before the pass
-below; the code these rows name is gone) added per block:
+below; the code these rows name is gone, but for `routeBlock`, which survives off the per-block path as the
+reference twin of the `routeBlockInto` that replaced it there, [midiRouting.ts](../packages/retroplug/src/midiRouting.ts#L62))
+added per block:
 
 | Site | Allocates |
 |---|---|

@@ -82,7 +82,7 @@ All three hosts compose the services, mount their facets on an rpcpp server over
   ([`SharedDSP`](../packages/native/plugin/PluginShared.hpp#L21)),
   so the UI reaches the backend through the already-bound `__rpcSend` — no second RPC bridge.
   The UI and window-geometry seams are 03's topic.
-- **Native test host**: [`main.cpp:107-141`](../packages/native/src/main.cpp#L107) binds
+- **Native test host**: [`main.cpp:107-151`](../packages/native/src/main.cpp#L107-L151) binds
   the same namespace, installs a `globalThis.tjs.exit` hook that records the exit code, evals a TS
   bundle, and pumps the job loop until the harness reports TAP. This is the
   `test:native` runner (`retroplug-host`).
@@ -134,9 +134,9 @@ directly on the control thread: `buildCore` and `setGraph` (`Engine::parkCore` /
 running plan holds a system), the render calls, and the profile calls `dspResetAllocStats`,
 `dspRunGc` and `dspTraceReset` (which the script host refuses while the audio thread owns its
 runtime). The render calls drive `processBlock` on the calling thread themselves and refuse while the
-audio thread owns the engine; `renderBlocks` also stages each block's MIDI and sets its transport on
-the `Engine` itself, once it has drained the ring. Every read of a core's state routes through the
-`SnapshotRegistry`. No method walks a live core.
+audio thread owns the engine; `renderBlocks` also stages each block's MIDI and controller traffic on
+the `Engine` itself before it drains the ring, and sets the block's bpm, transport and ppq after. Every
+read of a core's state routes through the `SnapshotRegistry`. No method walks a live core.
 
 | Method | Signature | Behaviour |
 |---|---|---|
@@ -681,9 +681,13 @@ audio-side one that holds every instance and runs `process`.
   deadline or out of memory), are counted too (`Engine::scriptThrows()`; a promise reaction's own throw
   only rejects its promise); the first one's text is kept on the block thread in a fixed buffer and
   logged once by `reclaim`. A write the block path makes onto what a node holds that fails (a setter
-  the node hung there threw, or it froze the object) is the node's throw too: `messages()` and
-  `control()` throw it, and on the `Block` or its transport, written before `process` is called, it is
-  a throw in `process` whose block does not run.
+  the node hung there threw or ran past the deadline, or it froze the object) is the node's throw too:
+  `messages()` and `control()` throw it, and on its audio views, the `Block` or its transport, written
+  before `process` is called, it is a throw in `process` whose block does not run. Only the node's own
+  setters can run there: every node shares one realm, so the host makes each property it will write,
+  and each new array slot, the object's own data property (a define, which never walks the prototype
+  chain), and none of its writes reaches an accessor another node (or the bundle) hung on
+  `Object.prototype` or `Array.prototype`.
 - **The call deadline.** Every call the block thread makes into a node's JS (and `endBlock`'s promise
   jobs, together) is held to a deadline of the calling thread's CPU time (2 s by default,
   `setCallDeadline`), so a stall that is not the node's own never trips it. A call that runs past it is

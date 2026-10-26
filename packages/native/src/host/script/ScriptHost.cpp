@@ -51,6 +51,13 @@ enum Atom : std::size_t {
 constexpr const char* kAtomNames[kAtomCount] = {"frames", "transport", "sampleRate", "tempo", "ppq",     "playing", "frame",
                                                 "data",   "flags",     "start",      "changes", "value", "length",  "fault"};
 
+// How the host makes a property on an object it made, or a new slot of an array JS holds: an own data property,
+// writable, enumerable and configurable as a plain assignment would make it, a failure thrown. A define never walks
+// the prototype chain, so in the one realm every script node shares, an accessor one node (or the bundle) hung on
+// Object.prototype or Array.prototype never runs for another's; and once a property is the object's own, a later
+// JS_SetProperty finds it there and walks no further either.
+constexpr int kDefine = JS_PROP_C_W_E | JS_PROP_THROW;
+
 // `text` into out[0..capacity), NUL-terminated, cut where it does not fit at the end of a character: a cut by bytes
 // alone can land inside a UTF-8 sequence, and leave text a reader refuses. The bytes written, the NUL not counted.
 std::size_t copyText(char* out, std::size_t capacity, std::string_view text) {
@@ -224,6 +231,11 @@ struct PortJs {
     JSValue       items = JS_UNDEFINED;    // control: the stream's changes array
     JSValue       payload = JS_UNDEFINED;  // messages: the JS-owned ArrayBuffer the block's payloads are copied into
     std::uint64_t stamp = 0;               // the block it was filled for
+    // messages and changes: the elements in pool (JS never sees the pool, so its first `pooled` slots are its own and
+    // the rest are read nowhere), and the length the last fill gave the array JS holds (value, or items), whose slots
+    // below it the host set itself.
+    std::uint32_t pooled = 0;
+    std::uint32_t filled = 0;
     // audio: the instance's own copy of each channel, a JS-owned ArrayBuffer of bufferFrames floats (undefined until
     // the port first runs with that channel), which a block's samples are copied into before process (an input) or out
     // of after it (an output); value holds a view of the first viewFrames of each of the first viewCount. Never read
@@ -528,7 +540,11 @@ struct ScriptHost::Glue {
         if (!JS_IsFunction(ctx, in.portsChanged)) return;
         const Deadline call(h);
         JSValue mask = JS_NewArray(ctx);
-        for (std::uint32_t i = 0; i < count; ++i) JS_SetPropertyUint32(ctx, mask, i, JS_NewBool(ctx, connected[i] != 0));
+        for (std::uint32_t i = 0; i < count && !JS_IsException(mask); ++i)
+            if (JS_DefinePropertyValueUint32(ctx, mask, i, JS_NewBool(ctx, connected[i] != 0), kDefine) < 0) {
+                JS_FreeValue(ctx, mask);  // out of memory: a throw in portsChanged
+                mask = JS_EXCEPTION;
+            }
         JSValue result = JS_IsException(mask) ? JS_EXCEPTION : JS_Call(ctx, in.portsChanged, in.object, 1, &mask);
         hookDone(h, in, JS_IsException(result), "portsChanged");
         JS_FreeValue(ctx, result);
@@ -547,7 +563,7 @@ struct ScriptHost::Glue {
         ++in.blockStamp;
         // Every audio port's copies first, the inputs' samples in them: a node may read views it kept from a block
         // before, so the copy cannot wait for it to ask.
-        if (!readyAudio(ctx, in, *block)) return cannotRun(h, in, *block);  // out of memory in JS
+        if (!readyAudio(h, ctx, in, *block)) return cannotRun(h, in, *block);
         in.running = block;
         if (!fillBlock(h, ctx, in, *block)) {
             in.running = nullptr;
@@ -575,8 +591,9 @@ struct ScriptHost::Glue {
     }
 
     // A block whose marshalling failed before its process could be called, with the exception pending: JS out of
-    // memory, or a write onto what the node holds refused (fillBlock). Counted as a throw in process, its audio outputs
-    // silent, and faulted as such a throw would fault it.
+    // memory, a write onto what the node holds refused (readyAudio's onto its views, fillBlock's onto the Block and its
+    // transport), or the deadline stopping a setter it hung there, whose uncatchable error is the throw kept. Counted as
+    // a throw in process, its audio outputs silent, and faulted as such a throw would fault it.
     static rp_status cannotRun(ScriptHost& h, Instance& in, const rp_process& block) {
         const bool expired = expiryFaults(h, in);
         recordThrow(h, in, "process");
@@ -586,8 +603,9 @@ struct ScriptHost::Glue {
         return in.type->faultOnThrow || expired ? RP_FAULT : RP_OK;
     }
 
-    // The block's length and transport, onto the Block object and its transport. False, with the exception pending, when
-    // a write fails: a setter the node hung on one threw, or it froze one.
+    // The block's length and transport, onto the Block object and its transport, whose fields createJs defined, so each
+    // write finds its own property. False, with the exception pending, when a write fails: a setter the node hung on one
+    // threw, or it froze one.
     static bool fillBlock(ScriptHost& h, JSContext* ctx, Instance& in, const rp_process& block) {
         const rp_transport& t = *block.transport;
         return JS_SetProperty(ctx, in.block, atom(h, kFrames), JS_NewUint32(ctx, block.frames)) >= 0 &&
@@ -715,7 +733,8 @@ struct ScriptHost::Glue {
     }
 
     // The definition's create, with the instance's current settings: it fails (and the node faults) when create
-    // throws or returns no process.
+    // throws or returns no process, when reading its process or a hook throws, or when JS runs out of memory making
+    // what the host hands it. What the host makes here holds every field it will write as its own (kDefine).
     static void createJs(ScriptHost& h, Instance& in) {
         JSContext* ctx = h.audio_;
         JS_UpdateStackTop(h.audioRt_);
@@ -724,46 +743,77 @@ struct ScriptHost::Glue {
         // The settings as the control side's parseSettings returned them, in their JSON form (the class comment).
         JSValue settings = JS_ParseJSON(ctx, in.settings->json.c_str(), in.settings->json.size(), "<settings>");
         JSValue cc = JS_IsException(settings) ? JS_EXCEPTION : JS_NewObject(ctx);
-        if (!JS_IsException(cc)) {
-            JS_SetPropertyStr(ctx, cc, "settings", settings);
-            JS_SetPropertyStr(ctx, cc, "sampleRate", JS_NewFloat64(ctx, in.sampleRate));
-            JS_SetPropertyStr(ctx, cc, "maxFrames", JS_NewUint32(ctx, in.maxFrames));
-        } else {
+        if (JS_IsException(cc)) {
             JS_FreeValue(ctx, settings);
+        } else if (JS_DefinePropertyValueStr(ctx, cc, "settings", settings, kDefine) < 0 ||  // each takes its value
+                   JS_DefinePropertyValueStr(ctx, cc, "sampleRate", JS_NewFloat64(ctx, in.sampleRate), kDefine) < 0 ||
+                   JS_DefinePropertyValueStr(ctx, cc, "maxFrames", JS_NewUint32(ctx, in.maxFrames), kDefine) < 0) {
+            JS_FreeValue(ctx, cc);
+            cc = JS_EXCEPTION;
         }
         JSValue object = JS_IsException(cc) ? JS_EXCEPTION : callMethod(ctx, in.type->audio, "create", 1, &cc);
         JS_FreeValue(ctx, cc);
-        if (JS_IsException(object)) {
-            recordThrow(h, in, "create");
-            in.state = Instance::State::Failed;
-            return;
-        }
+        if (JS_IsException(object)) return failCreate(h, in);
         JSValue process = JS_IsObject(object) ? JS_GetPropertyStr(ctx, object, "process") : JS_UNDEFINED;
         if (!JS_IsFunction(ctx, process)) {
+            if (!JS_IsException(process)) JS_ThrowTypeError(ctx, "create returned no process function");
             JS_FreeValue(ctx, process);
             JS_FreeValue(ctx, object);
-            JS_ThrowTypeError(ctx, "create returned no process function");
-            recordThrow(h, in, "create");
-            in.state = Instance::State::Failed;
-            return;
+            return failCreate(h, in);
         }
-        auto hook = [&](const char* name) {
-            JSValue fn = JS_GetPropertyStr(ctx, object, name);
-            if (JS_IsFunction(ctx, fn)) return fn;
-            JS_FreeValue(ctx, fn);
-            return JS_UNDEFINED;
-        };
+        // The hooks, read as JS reads them (a class keeps its methods on its prototype): one absent is undefined.
+        const char* const names[3] = {"onSettings", "portsChanged", "activate"};
+        JSValue hooks[3] = {JS_UNDEFINED, JS_UNDEFINED, JS_UNDEFINED};
+        bool ok = true;
+        for (int k = 0; k < 3 && ok; ++k) {
+            JSValue fn = JS_GetPropertyStr(ctx, object, names[k]);
+            ok = !JS_IsException(fn);
+            if (JS_IsFunction(ctx, fn)) hooks[k] = fn;
+            else JS_FreeValue(ctx, fn);
+        }
+        // The Block object and its transport, with every field the block path fills (fillBlock), so no write there
+        // reaches the Block class's prototype or Object.prototype.
+        JSValue block = ok ? JS_NewObjectClass(ctx, h.blockClass_) : JS_EXCEPTION;
+        JSValue transport = JS_IsException(block) ? JS_EXCEPTION : JS_NewObject(ctx);
+        ok = !JS_IsException(transport) && defineFields(h, ctx, transport, {kSampleRate, kTempo, kPpq, kPlaying}) &&
+             JS_DefinePropertyValue(ctx, block, atom(h, kTransport), JS_DupValue(ctx, transport), kDefine) >= 0 &&
+             defineFields(h, ctx, block, {kFrames});
+        if (!ok) {
+            for (JSValue v : {transport, block, hooks[0], hooks[1], hooks[2], process, object}) JS_FreeValue(ctx, v);
+            return failCreate(h, in);
+        }
+        JS_SetOpaque(block, &in);
         in.object = object;
         in.process = process;
-        in.onSettings = hook("onSettings");
-        in.portsChanged = hook("portsChanged");
-        in.activate = hook("activate");
-        in.block = JS_NewObjectClass(ctx, h.blockClass_);
-        JS_SetOpaque(in.block, &in);
-        in.transport = JS_NewObject(ctx);
-        JS_SetProperty(ctx, in.block, atom(h, kTransport), JS_DupValue(ctx, in.transport));
+        in.onSettings = hooks[0];
+        in.portsChanged = hooks[1];
+        in.activate = hooks[2];
+        in.block = block;
+        in.transport = transport;
         in.state = Instance::State::Live;
         h.live_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    // A create that failed, with its exception pending: counted, and the node faults at its first block.
+    static void failCreate(ScriptHost& h, Instance& in) {
+        recordThrow(h, in, "create");
+        in.state = Instance::State::Failed;
+    }
+
+    // Each of `fields` onto `obj`, an object the host made and JS has not yet seen, as its own data property, undefined
+    // until the block path fills it. False, with the exception pending, when JS is out of memory.
+    static bool defineFields(ScriptHost& h, JSContext* ctx, JSValueConst obj, std::initializer_list<Atom> fields) {
+        for (const Atom a : fields)
+            if (JS_DefinePropertyValue(ctx, obj, atom(h, a), JS_UNDEFINED, kDefine) < 0) return false;
+        return true;
+    }
+
+    // Slot i of `array`, an array the node holds, which takes `v` set or not: set when it is below `given` (a slot the
+    // host made there before, the node's own unless the node changed the array, so a setter the node hung there runs and
+    // a freeze refuses), defined when it is new, so the write never walks to an accessor on Array.prototype. Below zero,
+    // with the exception pending, when the write fails.
+    static int putSlot(JSContext* ctx, JSValueConst array, std::uint32_t i, std::uint32_t given, JSValue v) {
+        return i < given ? JS_SetPropertyUint32(ctx, array, i, v) : JS_DefinePropertyValueUint32(ctx, array, i, v, kDefine);
     }
 
     static bool callActivate(ScriptHost& h, Instance& in) {
@@ -853,6 +903,7 @@ struct ScriptHost::Glue {
                 b = JS_UNDEFINED;
             }
             p.bufferFrames = p.viewFrames = p.viewCount = 0;
+            p.pooled = p.filled = 0;
             if (p.atom != JS_ATOM_NULL) JS_FreeAtom(ctx, p.atom);
             p.atom = JS_ATOM_NULL;
             p.stamp = 0;
@@ -881,8 +932,11 @@ struct ScriptHost::Glue {
     // Every audio port's copies, readied for this block: made the first time a channel runs, and again when a larger
     // block than they hold is activated or JS has transferred one away (so a steady block allocates nothing), each
     // view made again only when its copy is or the block's length moves, and an input's samples copied in. False,
-    // with the exception pending, when JS is out of memory.
-    static bool readyAudio(JSContext* ctx, Instance& in, const rp_process& b) {
+    // with the exception pending, when JS is out of memory or a write onto the views array the node holds fails (a
+    // setter it hung on a slot threw, or ran past the deadline, or it froze the array), which process then fails as the
+    // node's throw. Every view of that port is then made again next block, so the array is never left holding a view of
+    // a copy the host has since replaced.
+    static bool readyAudio(ScriptHost& h, JSContext* ctx, Instance& in, const rp_process& b) {
         Layout& l = *in.layout;
         for (std::size_t i = 0; i < l.ports.size(); ++i) {
             if (l.ports[i].kind != PortKind::Audio) continue;
@@ -893,6 +947,11 @@ struct ScriptHost::Glue {
                 if (JS_IsException(views)) return false;
                 p.value = views;
             }
+            // A length no block has (one of no frames runs no node), so the next block makes every view again.
+            const auto stale = [&p] {
+                p.viewFrames = 0;
+                return false;
+            };
             const std::uint32_t want = std::max(in.maxFrames, b.frames);
             if (p.bufferFrames < want) {  // a block longer than the copies: all of them made again, at the new size
                 for (JSValue& c : p.buffers) {
@@ -909,22 +968,20 @@ struct ScriptHost::Glue {
                     JS_FreeValue(ctx, p.buffers[c]);
                     p.buffers[c] = JS_UNDEFINED;
                     JSValue made = JS_NewArrayBufferCopy(ctx, nullptr, std::size_t(p.bufferFrames) * sizeof(float));
-                    if (JS_IsException(made)) return false;
+                    if (JS_IsException(made)) return stale();
                     p.buffers[c] = made;
-                    if (!(data = samples(ctx, made, b.frames))) return false;
+                    if (!(data = samples(ctx, made, b.frames))) return stale();
                 }
                 if (fresh || c >= p.viewCount || p.viewFrames != b.frames) {
                     // All three arguments: the constructor reads offset and length whatever argc says.
                     JSValueConst args[3] = {p.buffers[c], JS_NewUint32(ctx, 0), JS_NewUint32(ctx, b.frames)};
                     JSValue view = JS_NewTypedArray(ctx, 3, args, JS_TYPED_ARRAY_FLOAT32);
-                    if (JS_IsException(view)) return false;
-                    // Refused only by an array JS has frozen, which is the node's to answer for: its views stay as they are.
-                    if (JS_SetPropertyUint32(ctx, p.value, c, view) < 0) clearException(ctx);
+                    if (JS_IsException(view) || putSlot(ctx, p.value, c, p.viewCount, view) < 0) return stale();
                 }
                 if (l.ports[i].side == Side::Input) std::memcpy(data, v.channels[c], std::size_t(b.frames) * sizeof(float));
             }
             if (count != p.viewCount || p.viewFrames != b.frames) {
-                if (JS_SetProperty(ctx, p.value, atom(hostOf(ctx), kLength), JS_NewUint32(ctx, count)) < 0) clearException(ctx);
+                if (JS_SetProperty(ctx, p.value, atom(h, kLength), JS_NewUint32(ctx, count)) < 0) return stale();
                 p.viewCount = count;
                 p.viewFrames = b.frames;
             }
@@ -995,18 +1052,20 @@ struct ScriptHost::Glue {
         return nullptr;
     }
 
-    // The message objects of `array`, element i made (into pool) when it has never been; JS_EXCEPTION, with it pending,
-    // when JS is out of memory or the read or write there fails (a getter or setter JS hung on Array.prototype).
-    static JSValue element(JSContext* ctx, PortJs& p, std::uint32_t i) {
-        JSValue e = JS_GetPropertyUint32(ctx, p.pool, i);
-        if (JS_IsObject(e) || JS_IsException(e)) return e;
-        JS_FreeValue(ctx, e);
-        e = JS_NewObject(ctx);
+    // Element i of a port's pool (a message, or a control change), made when it has never been, with `fields` its own
+    // (defineFields), so a fill's writes onto it never reach Object.prototype. The pool is read only below `pooled`,
+    // where every slot is one the host defined, so no read walks to a getter on Array.prototype either. JS_EXCEPTION,
+    // with it pending, when JS is out of memory.
+    static JSValue element(ScriptHost& h, JSContext* ctx, PortJs& p, std::uint32_t i, std::initializer_list<Atom> fields) {
+        if (i < p.pooled) return JS_GetPropertyUint32(ctx, p.pool, i);
+        assert(i == p.pooled && "a fill makes its elements in order");
+        JSValue e = JS_NewObject(ctx);
         if (JS_IsException(e)) return e;
-        if (JS_SetPropertyUint32(ctx, p.pool, i, JS_DupValue(ctx, e)) < 0) {
+        if (!defineFields(h, ctx, e, fields) || JS_DefinePropertyValueUint32(ctx, p.pool, i, JS_DupValue(ctx, e), kDefine) < 0) {
             JS_FreeValue(ctx, e);
             return JS_EXCEPTION;
         }
+        ++p.pooled;
         return e;
     }
 
@@ -1061,6 +1120,7 @@ struct ScriptHost::Glue {
             }
             p.pool = pool;
             p.value = value;
+            p.pooled = p.filled = 0;
         }
         if (q.count > 0 && q.bytes_capacity > 0) {
             std::size_t room = 0;
@@ -1078,15 +1138,17 @@ struct ScriptHost::Glue {
             if (bytes && q.bytes_used) std::memcpy(bytes, q.bytes, q.bytes_used);
         }
         for (std::uint32_t i = 0; i < q.count; ++i) {
-            JSValue e = element(ctx, p, i);
+            JSValue e = element(h, ctx, p, i, {kFrame, kData, kFlags});
             if (JS_IsException(e)) return false;
             if (!fillMessage(h, ctx, p, e, q.items[i])) {
                 JS_FreeValue(ctx, e);
                 return false;
             }
-            if (JS_SetPropertyUint32(ctx, p.value, i, e) < 0) return false;  // which takes e, set or not
+            if (putSlot(ctx, p.value, i, p.filled, e) < 0) return false;
         }
-        return JS_SetProperty(ctx, p.value, atom(h, kLength), JS_NewUint32(ctx, q.count)) >= 0;
+        if (JS_SetProperty(ctx, p.value, atom(h, kLength), JS_NewUint32(ctx, q.count)) < 0) return false;
+        p.filled = q.count;
+        return true;
     }
 
     // A control input or a param as a reused { start, changes }. False, with the exception pending, when JS is out of
@@ -1096,7 +1158,8 @@ struct ScriptHost::Glue {
         if (JS_IsUndefined(p.value)) {
             JSValue items = JS_NewArray(ctx), pool = JS_NewArray(ctx), value = JS_NewObject(ctx);
             const bool made = !JS_IsException(items) && !JS_IsException(pool) && !JS_IsException(value) &&
-                              JS_SetProperty(ctx, value, atom(h, kChanges), JS_DupValue(ctx, items)) >= 0;
+                              JS_DefinePropertyValue(ctx, value, atom(h, kChanges), JS_DupValue(ctx, items), kDefine) >= 0 &&
+                              defineFields(h, ctx, value, {kStart});
             if (!made) {  // all made again next time
                 for (JSValue v : {items, pool, value}) JS_FreeValue(ctx, v);
                 return false;
@@ -1104,19 +1167,22 @@ struct ScriptHost::Glue {
             p.items = items;
             p.pool = pool;
             p.value = value;
+            p.pooled = p.filled = 0;
         }
         if (JS_SetProperty(ctx, p.value, atom(h, kStart), JS_NewFloat64(ctx, q.start)) < 0) return false;
         for (std::uint32_t i = 0; i < q.count; ++i) {
-            JSValue e = element(ctx, p, i);
+            JSValue e = element(h, ctx, p, i, {kFrame, kValue});
             if (JS_IsException(e)) return false;
             if (JS_SetProperty(ctx, e, atom(h, kFrame), JS_NewUint32(ctx, q.changes[i].frame)) < 0 ||
                 JS_SetProperty(ctx, e, atom(h, kValue), JS_NewFloat64(ctx, q.changes[i].value)) < 0) {
                 JS_FreeValue(ctx, e);
                 return false;
             }
-            if (JS_SetPropertyUint32(ctx, p.items, i, e) < 0) return false;  // which takes e, set or not
+            if (putSlot(ctx, p.items, i, p.filled, e) < 0) return false;
         }
-        return JS_SetProperty(ctx, p.items, atom(h, kLength), JS_NewUint32(ctx, q.count)) >= 0;
+        if (JS_SetProperty(ctx, p.items, atom(h, kLength), JS_NewUint32(ctx, q.count)) < 0) return false;
+        p.filled = q.count;
+        return true;
     }
 
     // block.messages(port): an events or bytes input.

@@ -143,9 +143,13 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // (design section 4.5), unless its definition says faultOnThrow, when it faults (RP_FAULT, the executor's latch); a
 // faultOnThrow node whose onSettings or portsChanged threw faults at its next block, since it may hold half of what
 // the hook set. Returning "fault" faults it too. The first throw's message is kept, and logged by reclaim. A write the
-// block path makes onto what the node holds that fails (a setter the node hung there threw, or it froze the object) is
-// the node's throw too: messages() and control() throw it, and on the Block object or its transport, written before
-// process is called, it is a throw in process whose block does not run (its audio outputs silent).
+// block path makes onto what the node holds that fails (a setter the node hung there threw or ran past the deadline, or
+// it froze the object) is the node's throw too: messages() and control() throw it, and on its audio views, the Block
+// object or its transport, written before process is called, it is a throw in process whose block does not run (its
+// audio outputs silent). Only the node's own setters can run there: every node shares the one realm, so the host makes
+// each property it will write, and each new slot of an array, the object's own data property (a define, which never
+// walks the prototype chain), and its later writes find it there, never an accessor another node (or the bundle) hung on
+// Object.prototype or Array.prototype.
 //
 // Settings reach the audio side as their JSON form: the control side's parseSettings checks them, and what it
 // returns crosses as JSON (the two runtimes share no value), so a transform's result that JSON cannot hold (a Map, a

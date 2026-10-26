@@ -124,10 +124,14 @@ has freed. Handing JS views of the plan's buffers and detaching them before a bu
 kept array, `transfer()` and an edited array each outran the tracking (§10). What a block hands out is good for that
 call only.
 
-What a block refills is the node's to hold, so a write onto it can fail: a setter the node hung there throws, or it
-froze the object. That is the node's throw. `messages()` and `control()` throw it rather than hand back a half-written
-value with the exception left pending, and a failed write onto the `Block` or its transport, made before `process` is
-called, is a throw in `process` whose block does not run (§10).
+What a block refills is the node's to hold, so a write onto it can fail: a setter the node hung there throws (or runs
+past the deadline), or it froze the object. That is the node's throw. `messages()` and `control()` throw it rather than
+hand back a half-written value with the exception left pending, and a failed write onto its audio views (written again
+when the block's length moves or a copy is made again), the `Block` or its transport, made before `process` is called,
+is a throw in `process` whose block does not run (§10). Every node shares one realm, so only the node's own setters
+may run there: the host makes each property it will write, and each new array slot, the object's own data property
+(a define, which never walks the prototype chain), so none of its writes reaches an accessor another node (or the
+bundle) hung on `Object.prototype` or `Array.prototype`.
 
 **Outputs** go out through `send` and `emit`, which write the plan's queue or control stream for the port directly,
 with no intermediate JS array; a `send` that does not fit returns false, and the queue counts the drop (§2.6). Ports
@@ -605,13 +609,14 @@ behaviour. `nes-core-bytes` sends a 60 KiB SysEx and requires it to reach the NE
   marshalling, sends past capacity refused and counted, layouts from the control-side runtime, a reshaping node kept
   and a non-reshaping one swapped or rebuilt, creation at adoption and release at reclaim on the block thread (the
   release ring, its backlog and the 16 a block), a throw's count and the latch, a failed write onto what a node holds
-  (a setter it hung there, or an object it froze) counted as its throw, the warm block path allocating nothing
-  native; the JS-owned audio copies against a node that keeps its array across swaps, transfers its buffer, writes
-  an input in place or edits the array; promise jobs run and bounded per block; the call deadline on CPU time, once
-  counted and twice faulted; a second load and a bundle that differs between the runtimes refused; two Engines on two
-  threads; and ThreadSanitizer runs a plan's script nodes on an audio thread while the control thread plans,
-  reshapes, rebuilds and reclaims them. A profile build adds five `[profile]` cases on the trace window and the
-  calls it refuses while an audio thread runs (spec/08).
+  (a setter it hung there, or an object it froze, its audio views among them) counted as its throw while the setters
+  one node hangs on the shared prototypes charge no other, the warm block path allocating nothing native; the
+  JS-owned audio copies against a node that keeps its array across swaps, transfers its buffer, writes an input in
+  place or edits the array; promise jobs run and bounded per block, a queueMicrotask callback's throw counted; the call
+  deadline on CPU time, once counted and twice faulted; a second load and a bundle that differs between the runtimes
+  refused; two Engines on two threads; and ThreadSanitizer runs a plan's script nodes on an audio thread while the
+  control thread plans, reshapes, rebuilds and reclaims them. A profile build adds five `[profile]` cases on the trace
+  window and the calls it refuses while an audio thread runs (spec/08).
 - The kernel node ([KernelNode.test.cpp](../packages/native/test/engine-graph/KernelNode.test.cpp)), in a plan with the
   host I/O nodes: host MIDI under every routing, every LSDj sync mode, risa and smsggdj host sync, a controller
   session, state across structure changes (survivors go on, a removed id is pruned), a throw, a block that fills
@@ -805,7 +810,17 @@ Before B3b starts, the LSDj master-sync fix lands on its own (§10).
   `JS_SetProperty` returned, so a setter a node hung on a message (or a message it froze) left an exception pending
   while `messages()` returned: the throw went uncounted, and stayed pending for whatever asked QuickJS next. A failed
   write now ends the fill as running out of memory did, and the host's writes onto the `Block` and its transport
-  before `process` go the same way (§2.3).
+  before `process` go the same way (§2.3). Its review found the audio views still swallowing one: a refused write onto
+  a node's views array was cleared and the block run, uncounted, even when the refusal was the deadline stopping a
+  setter there. It now fails the block as the others do, and every view is made again the next block.
+- **One node's prototype setters were charged to another.** The host's first write of each property onto an object it
+  had just made (the transport and `frames`, a message's `frame` / `data` / `flags`, a change's `frame` / `value`, the
+  control stream's `start` / `changes`, a new slot of an array, `create`'s context, `portsChanged`'s mask), and its
+  read of the element pool past its end, walked the prototype chain, so an accessor one node hung on `Object.prototype`
+  or `Array.prototype` ran there for every node beside it: with the fix above, its throw skipped their blocks, the
+  kernel's included, and a getter there that returned an object of its own would have had another node's messages
+  written into it. The host now defines what it will write as the object's own data property when it makes the
+  object, and reads the pool only where it defined the slot (§2.3).
 - **The TS stripper does not build outside the repo.** `retroplug-ts-stripper-bundle` fails in a build directory
   outside the source tree: [build-ts-stripper.mjs](../tools/build-ts-stripper.mjs) sets no `absWorkingDir`, unlike
   `build-ui.js`, so esbuild resolves its `typescript-5` alias against the build's working directory. Pre-existing, and

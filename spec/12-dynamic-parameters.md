@@ -10,8 +10,9 @@ they pass no callback, `Plugin::canUpdateParameterInfo()` is false there, and th
 it was declared with.
 
 Verified against real Reaper in both formats (`pnpm reaper:params` / `reaper:params-clap`) and per
-BlipToaster build (`reaper:params-vrc7`). Sections 1-5 below describe the design as built; section 9
-records where the build diverged from the original plan and why.
+BlipToaster build (`reaper:params-vrc7`). Section 1 describes DPF as it stood before the fork and section
+2 what the formats allow; sections 3-5 describe the design as built, and section 9 records where the
+build diverged from the original plan and why.
 
 ## 1. Why upstream DPF could not do it
 

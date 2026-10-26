@@ -2,7 +2,8 @@
 // native ones, one runtime per engine. Toy nodes, written here as JS source on the authoring layer the test bundle
 // exposes (ScriptRig.hpp), are planned and run beside the graph tests' C++ sources and sinks: what reaches them
 // through Block, what they send, the control-side context laying their ports out from settings, a node kept across
-// a reshape or swapped or rebuilt, where their instances are made and released, a throw, the block path's
+// a reshape or swapped or rebuilt, where their instances are made and released, a throw (a refused write onto what a
+// node holds among them, while the setters one hangs on the shared prototypes charge no other), the block path's
 // allocations, and a running audio thread under all of it. The embedded production bundle and an Engine built
 // around a toy bundle close it. A RETROPLUG_PROFILE build (build-prof/, which tools/run-profile.sh configures) adds the
 // trace window's cases, [profile]: a span JS leaves open, a setter JS hangs on a marshalled message and one on a
@@ -803,6 +804,39 @@ rp.register([rp.defineNode({
     rig.reclaim();  // says so, once
 }
 
+TEST_CASE("a queueMicrotask callback that throws fails its job, which is counted; a promise reaction's throw only rejects its "
+          "promise",
+          "[script][jobs]") {
+    ScriptRig rig(R"JS(
+rp.register([rp.defineNode({
+  id: "rp.toy.microtask",
+  ports: { out: rp.events.out() },
+  create: () => {
+    let n = 0;
+    return {
+      process(b) {
+        ++n;
+        if (n === 1) queueMicrotask(() => { throw new Error("from a microtask"); });
+        if (n === 2) Promise.resolve().then(() => { throw new Error("a rejection, not a throw"); });
+        b.send("out", 0, [n]);
+      },
+    };
+  },
+})]);
+)JS");
+    REQUIRE(rig.set(doc(node("m", "rp.toy.microtask") + "," + node("p", "rp.test.probe"), wire("m.out", "p.events"))).ok);
+    rig.run();
+    CHECK(rig.scripts.throwCount() == 1);  // at the block's end, as no one node's
+    CHECK_FALSE(rig.host->isFaulted("m"));
+    rig.run();
+    CHECK(rig.scripts.throwCount() == 1);
+    REQUIRE(rig.node<Probe>("p").events.size() == 1);
+    CHECK(rig.node<Probe>("p").events[0].data == bytes({2}));
+    rig.reclaim();
+    INFO(rig.scripts.firstThrow());
+    CHECK(rig.scripts.firstThrow().find("a promise job threw: Error: from a microtask") == 0);
+}
+
 TEST_CASE("a script node's payloads grow their buffer when a block's outgrow it, and one JS detached is replaced",
           "[script][payload]") {
     ScriptRig rig(R"JS(
@@ -957,19 +991,60 @@ rp.register([rp.defineNode({
     CHECK(rig.scripts.throwCount() == 0);  // the node caught them
 }
 
+namespace {
+
 // Hangs a trap, in its first block, on what the block path fills for it: a setter that throws on a message's frame, on
-// a control change's value or on the control stream's start, or a message frozen whole. Its second block reads that
-// input under a catch, its third uncaught, and its fourth not at all; each says whether an exception is pending, and
-// sends its block's number, when it gets that far. rp.toy.trap-transport hangs one on the transport, which the host
-// writes before every process call, and sends; rp.toy.asker, after it, says whether an exception is pending.
+// a control change's value or on the control stream's start, or a message, the messages array, the changes array or
+// the control stream frozen whole. Its second block reads that input under a catch, its third uncaught, and its fourth
+// not at all; each says whether an exception is pending, and sends its block's number, when it gets that far.
+// rp.toy.trap-transport hangs one on the transport, which the host writes before every process call, and sends, as
+// does rp.toy.strict-trap-transport, which faults on a throw. rp.toy.trap-audio writes 0.5 into each view of its output
+// it can reach, then hangs a setter on the views array's first slot that throws (or runs for ever), or freezes the
+// array, which the host writes when the block's length moves; rp.toy.strict-trap-audio is the setter's, faulting on a
+// throw. rp.toy.asker, after one, says whether an exception is pending.
 const char* const kTrap = R"JS(
+const trapTransport = (id, extra) => rp.defineNode({
+  id, ...extra,
+  ports: { out: rp.events.out() },
+  create: () => {
+    let armed = false;
+    return {
+      process(b) {
+        if (!armed) Object.defineProperty(b.transport, "tempo", { set() { throw new Error("trapped"); } });
+        armed = true;
+        b.send("out", 0, [1]);
+      },
+    };
+  },
+});
+const trapAudio = (id, extra) => rp.defineNode({
+  id, ...extra,
+  settings: rp.z.object({ on: rp.z.string().default("setter") }),
+  ports: { out: rp.audio.out(rp.channels.stereo()), sent: rp.events.out() },
+  create: ({ settings: { on } }) => {
+    let armed = false;
+    return {
+      process(b) {
+        const outs = b.audio("out");
+        for (let c = 0; c < outs.length; ++c) if (outs[c]) outs[c].fill(0.5);
+        if (!armed) {
+          armed = true;
+          if (on === "frozen") Object.freeze(outs);
+          else Object.defineProperty(outs, 0, { configurable: true, get() { return undefined; },
+                                                set() { if (on === "spin") for (;;) {} throw new Error("trapped"); } });
+        }
+        b.send("sent", 0, [1]);
+      },
+    };
+  },
+});
 rp.register([rp.defineNode({
   id: "rp.toy.trap",
   settings: rp.z.object({ on: rp.z.string().default("message") }),
   ports: { in: rp.events.in(), level: rp.control.in(), out: rp.events.out() },
   create: ({ settings: { on } }) => {
     let n = 0;
-    const read = (b) => (on === "message" || on === "frozen" ? b.messages("in") : b.control("level"));
+    const read = (b) => (on === "message" || on === "frozen" || on === "frozen-array" ? b.messages("in") : b.control("level"));
     const thrower = { set() { throw new Error("trapped"); } };
     return {
       process(b) {
@@ -977,7 +1052,10 @@ rp.register([rp.defineNode({
         if (n === 1) {
           if (on === "message") Object.defineProperty(b.messages("in")[0], "frame", thrower);
           else if (on === "frozen") Object.freeze(b.messages("in")[0]);
+          else if (on === "frozen-array") Object.freeze(b.messages("in"));
           else if (on === "change") Object.defineProperty(b.control("level").changes[0], "value", thrower);
+          else if (on === "frozen-changes") Object.freeze(b.control("level").changes);
+          else if (on === "frozen-stream") Object.freeze(b.control("level"));
           else Object.defineProperty(b.control("level"), "start", thrower);
         } else if (n === 2) {
           try { read(b); __probe("read"); } catch (e) { __probe("caught " + e.name); }
@@ -990,32 +1068,83 @@ rp.register([rp.defineNode({
       },
     };
   },
-}), rp.defineNode({
-  id: "rp.toy.trap-transport",
-  ports: { out: rp.events.out() },
-  create: () => {
-    let armed = false;
-    return {
-      process(b) {
-        if (!armed) Object.defineProperty(b.transport, "tempo", { set() { throw new Error("trapped"); } });
-        armed = true;
-        b.send("out", 0, [1]);
-      },
-    };
-  },
-}), rp.defineNode({
+}), trapTransport("rp.toy.trap-transport", {}), trapTransport("rp.toy.strict-trap-transport", { faultOnThrow: true }),
+trapAudio("rp.toy.trap-audio", {}), trapAudio("rp.toy.strict-trap-audio", { faultOnThrow: true }), rp.defineNode({
   id: "rp.toy.asker",
   ports: { in: rp.events.in() },
   create: () => ({ process(b) { b.messages("in"); __probe(__pending() ? "pending" : "clear"); } }),
 })]);
 )JS";
 
+// The one realm every script node shares. rp.toy.polluter, in its first block, hangs a getter and a setter that throw
+// (saying so first) on Array.prototype's first indices and on Object.prototype for every name the host writes onto
+// what it makes, as a node, or the bundle, may; then shows each took, on a fresh object or array. rp.toy.tidy, planned
+// after it, does nothing a node should not: it passes its messages and control changes on, scales its audio by its
+// param, reads its transport and says whether an exception is pending. It calls no builtin that keeps an array of its
+// own, as JSON.stringify does: QuickJS pushes onto one through the prototype chain, so the traps would meet the node's
+// own call, which is no write of the host's.
+const char* const kRealm = R"JS(
+rp.register([rp.defineNode({
+  id: "rp.toy.polluter",
+  ports: { out: rp.events.out() },
+  create: () => {
+    let quiet = false, done = false;
+    const trap = (name) => ({
+      configurable: true,
+      get() { if (!quiet) __probe("got " + name); throw new Error("polluted " + name); },
+      set(v) { if (!quiet) __probe("set " + name); throw new Error("polluted " + name); },
+    });
+    // "value" last: Object.defineProperty reads a descriptor's value through the prototype chain.
+    const names = ["frames", "transport", "sampleRate", "tempo", "ppq", "playing", "frame", "data", "flags", "start",
+                   "changes", "settings", "maxFrames", "value"];
+    return {
+      process() {
+        if (done) return;
+        done = true;
+        for (let i = 0; i < 8; ++i) Object.defineProperty(Array.prototype, i, trap("[" + i + "]"));
+        for (let k = 0; k < names.length; ++k) Object.defineProperty(Object.prototype, names[k], trap(names[k]));
+        quiet = true;
+        let took = 0;
+        for (let k = 0; k < names.length; ++k) try { ({})[names[k]] = 1; } catch (e) { ++took; }
+        for (let i = 0; i < 8; ++i) try { [][i] = 1; } catch (e) { ++took; }
+        quiet = false;
+        __probe("polluted " + took);
+      },
+    };
+  },
+}), rp.defineNode({
+  id: "rp.toy.tidy",
+  ports: { in: rp.events.in(), level: rp.control.in(), audioIn: rp.audio.in(), out: rp.events.out({ messages: 16 }),
+           audioOut: rp.audio.out(rp.channels.match("audioIn")), changes: rp.control.out() },
+  params: { gain: rp.param.float({ name: "Gain", min: 0, max: 4, default: 0.5 }) },
+  create: ({ settings, sampleRate, maxFrames }) => {
+    __probe("created " + sampleRate + " " + maxFrames + " " + typeof settings);
+    return {
+      process(b) {
+        const ms = b.messages("in");
+        for (let i = 0; i < ms.length; ++i) b.send("out", ms[i].frame, ms[i].data, ms[i].flags);
+        const changes = b.control("level").changes;
+        for (let k = 0; k < changes.length; ++k) b.emit("changes", changes[k].frame, changes[k].value);
+        const g = b.control("gain").start;
+        const ins = b.audio("audioIn"), outs = b.audio("audioOut");
+        for (let c = 0; c < outs.length; ++c) { const i = ins[c], o = outs[c]; for (let f = 0; f < b.frames; ++f) o[f] = i[f] * g; }
+        const t = b.transport;
+        __probe((__pending() ? "pending " : "clear ") + t.sampleRate + " " + t.tempo + " " + t.playing);
+      },
+      portsChanged(connected) { __probe("ports " + connected.join(",")); },
+    };
+  },
+})]);
+)JS";
+
 std::vector<std::string> tagsOf(rp::host::test::ProbeLog& log) {
     const std::lock_guard<std::mutex> lock(log.mutex);
     std::vector<std::string> tags;
-    for (const auto& [tag, thread] : log.calls) tags.push_back(tag);
+    for (const auto& call : log.calls) tags.push_back(call.first);
     return tags;
 }
+
+}  // namespace
 
 TEST_CASE("a write the block path makes onto what a script node holds that fails is the node's throw, and leaves nothing "
           "pending",
@@ -1024,7 +1153,9 @@ TEST_CASE("a write the block path makes onto what a script node holds that fails
         const char* on;
         const char* thrown;
     };
-    for (const Case& c : {Case{"message", "Error"}, Case{"frozen", "TypeError"}, Case{"change", "Error"}, Case{"start", "Error"}}) {
+    for (const Case& c : {Case{"message", "Error"}, Case{"frozen", "TypeError"}, Case{"frozen-array", "TypeError"},
+                          Case{"change", "Error"}, Case{"frozen-changes", "TypeError"}, Case{"frozen-stream", "TypeError"},
+                          Case{"start", "Error"}}) {
         INFO(c.on);
         ScriptRig rig(kTrap);
         REQUIRE(rig.set(doc(node("feed", "rp.test.feed") + "," + node("k", "rp.core.constant", "", R"({"value":0.5})") + "," +
@@ -1070,6 +1201,117 @@ TEST_CASE("a write onto a script node's transport that fails is a throw in its p
     rig.reclaim();
     INFO(rig.scripts.firstThrow());
     CHECK(rig.scripts.firstThrow().find("rp.toy.trap-transport threw in process: Error: trapped") == 0);
+}
+
+TEST_CASE("a write onto a faultOnThrow script node's transport that fails faults it, as a throw in its process does",
+          "[script][trap][fault-on-throw]") {
+    ScriptRig rig(kTrap);
+    REQUIRE(rig.set(doc(node("t", "rp.toy.strict-trap-transport") + "," + node("p", "rp.test.probe"), wire("t.out", "p.events"))).ok);
+    const auto& probe = rig.node<Probe>("p");
+    rig.run();
+    CHECK(probe.events.size() == 1);
+    CHECK_FALSE(rig.host->isFaulted("t"));
+    rig.run();  // the write onto its transport fails before process runs
+    CHECK(rig.scripts.throwCount() == 1);
+    CHECK(rig.host->isFaulted("t"));
+    CHECK(probe.events.empty());
+    rig.run();  // bypassed from now on: nothing runs, so nothing more is counted
+    CHECK(rig.scripts.throwCount() == 1);
+    CHECK(probe.events.empty());
+}
+
+TEST_CASE("a refused write onto a script node's audio views is a throw in its process, which then does not run",
+          "[script][trap][audio]") {
+    struct Case {
+        const char*   type;
+        const char*   on;
+        const char*   first;      // how the first throw is told
+        std::uint32_t throws[2];  // after the third block, and the fourth
+        bool          faulted[2];
+    };
+    // The host writes the views when the block's length moves (the third block, 32 frames), and again the block after,
+    // since a refused write leaves them all to be made again. The deadline stopping the setter is a throw as any other:
+    // faulted on the second in a row, or under faultOnThrow on the first.
+    for (const Case& c :
+         {Case{"rp.toy.trap-audio", "setter", "rp.toy.trap-audio threw in process: Error: trapped", {1, 2}, {false, false}},
+          Case{"rp.toy.trap-audio", "frozen", "rp.toy.trap-audio threw in process: TypeError", {1, 2}, {false, false}},
+          Case{"rp.toy.trap-audio", "spin",
+               "rp.toy.trap-audio ran past the 50 ms call deadline in process (CPU time), and was stopped", {1, 2}, {false, true}},
+          Case{"rp.toy.strict-trap-audio", "setter", "rp.toy.strict-trap-audio threw in process: Error: trapped", {1, 1},
+               {true, true}}}) {
+        INFO(c.type << " " << c.on);
+        ScriptRig rig(kTrap);
+        rig.scripts.setCallDeadline(std::chrono::milliseconds(50));
+        REQUIRE(rig.set(doc(node("t", c.type, std::string(R"({"on":")") + c.on + "\"}") + "," + node("a", "rp.toy.asker") + "," +
+                                node("p", "rp.test.probe") + "," + node("sink", "rp.test.sink"),
+                            wire("t.sent", "a.in") + "," + wire("t.sent", "p.events") + "," + wire("t.out", "sink.in")))
+                    .ok);
+        const auto& probe = rig.node<Probe>("p");
+        const auto& sink = rig.node<gt::Sink>("sink");
+        rig.run(64, 2);  // the first arms the trap; the second, as long, writes no view, so runs
+        CHECK(probe.events.size() == 1);
+        CHECK(sink.first[1] == 0.5f);
+        CHECK(rig.scripts.throwCount() == 0);
+        for (int k = 0; k < 2; ++k) {
+            INFO("block " << 3 + k);
+            rig.run(32);
+            CHECK(probe.events.empty());   // its process did not run
+            CHECK(sink.first[0] == 0.0f);  // and its outputs are silent
+            CHECK(sink.first[1] == 0.0f);
+            CHECK(rig.scripts.throwCount() == c.throws[k]);
+            CHECK(rig.host->isFaulted("t") == c.faulted[k]);
+        }
+        CHECK(tagsOf(rig.log) == std::vector<std::string>(4, "clear"));
+        rig.reclaim();
+        INFO(rig.scripts.firstThrow());
+        CHECK(rig.scripts.firstThrow().find(c.first) == 0);
+    }
+}
+
+TEST_CASE("the setters a script node hangs on the shared prototypes run for none of the host's writes, so a node beside it "
+          "runs uncharged",
+          "[script][trap][realm]") {
+    ScriptRig rig(kRealm);
+    REQUIRE(rig.set(doc(node("x", "rp.toy.polluter"), "")).ok);
+    rig.run();
+    REQUIRE(rig.log.count("polluted 22") == 1);  // every trap took
+    // The tidy node is made after, in the realm as the polluter left it, and so is everything it is handed.
+    const std::string nodes = node("x", "rp.toy.polluter") + "," + node("feed", "rp.test.feed") + "," +
+                              node("k", "rp.core.constant", "", R"({"value":0.5})") + "," + node("src", "rp.test.source") + "," +
+                              node("t", "rp.toy.tidy") + "," + node("p", "rp.test.probe") + "," + node("sink", "rp.test.sink");
+    const std::string wires = wire("feed.midi", "t.in") + "," + wire("k.out", "t.level") + "," + wire("src.out", "t.audioIn") + "," +
+                              wire("t.out", "p.events") + "," + wire("t.changes", "p.control") + "," + wire("t.audioOut", "sink.in");
+    REQUIRE(rig.set(doc(nodes, wires)).ok);
+    CHECK(rig.log.count("created 48000 256 object") == 1);
+    CHECK(rig.log.count("ports true,true,true") == 1);
+    auto& feed = rig.node<Feed>("feed");
+    const auto& probe = rig.node<Probe>("p");
+    const auto& sink = rig.node<gt::Sink>("sink");
+    // Its messages array and their pool grow over the first two blocks, its views are made again on the third and the
+    // fourth, and the fourth has no message.
+    const std::uint32_t counts[] = {3, 5, 1, 0};
+    const std::uint32_t frames[] = {64, 64, 32, 64};
+    for (int n = 0; n < 4; ++n) {
+        INFO("block " << n + 1);
+        std::vector<rp::host::test::Message> sent;
+        for (std::uint32_t i = 0; i < counts[n]; ++i) sent.push_back({i, bytes({0x90, static_cast<int>(60 + i), 100})});
+        feed.next[Feed::Midi] = sent;
+        if (n > 0) REQUIRE(rig.host->setParam("k", "value", 0.25 * n, 10));
+        rig.run(frames[n]);
+        CHECK(rig.scripts.throwCount() == 0);
+        CHECK_FALSE(rig.host->isFaulted("t"));
+        CHECK(probe.events == sent);
+        REQUIRE(probe.controlChanges.size() == 1);
+        CHECK(probe.controlChanges[0] == (n == 0 ? 0.5 : 0.25 * n));
+        CHECK(sink.first[0] == 0.5f);  // the source's 1, by the gain param's default
+        CHECK(sink.last[1] == 0.5f);
+    }
+    CHECK(rig.log.count("clear 48000 120 false") == 4);
+    // None of the polluter's accessors ran, for the host or for the tidy node, and nothing was left pending.
+    std::vector<std::string> hit;
+    for (const auto& tag : tagsOf(rig.log))
+        if (tag.rfind("got ", 0) == 0 || tag.rfind("set ", 0) == 0 || tag.rfind("pending", 0) == 0) hit.push_back(tag);
+    CHECK(hit.empty());
 }
 
 TEST_CASE("a script node's create and onSettings receive its settings as their JSON form", "[script][settings]") {
