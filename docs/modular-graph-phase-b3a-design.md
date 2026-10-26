@@ -137,9 +137,13 @@ run there, never an accessor another node (or the bundle) hung on `Object.protot
 left: a field the node deletes is set again, which walks the chain, as does the read of a message's `data` it deleted;
 asking at every field write as well would cost each script call about 12 ns a block, 14% of an empty pass-through's on
 §7.4's bench. `process` and the hooks are read from what `create` returned and the prototypes it inherits them through,
-short of `Object.prototype`, so a getter there runs for no node and a function there is no node's hook; and the `Block`
-prototype every node reaches is frozen with its methods (a profile build binds the trace globals read-only and frozen
-too), so no node replaces one for another. That is the host's part only: what nodes can do to each other through the
+short of `Object.prototype`, so a getter there runs for no node and a function there is no node's hook. A Proxy on the
+way answers as JS reads one (its `get` trap, or its target's chain), so a wrapper or a test double works; a chain longer
+than 1024 plain objects (`ScriptHost::kMethodHops`), or one that cycles back through a Proxy, fails the `create` rather
+than holding the block thread, since that read runs no JS for the deadline to stop (§10). The `Block` prototype every
+node reaches is frozen with its methods (a profile build binds the trace globals read-only and frozen too), so no node
+replaces one for another: assigning one on a node's own `Block` (`block.send = f`) throws in the strict bundle, where
+`Object.defineProperty` on it still works. That is the host's part only: what nodes can do to each other through the
 shared realm (an accessor on a prototype another's own code reads through, a global it calls) is left to one context per
 node ([spec/07](../spec/07-remaining-work.md)).
 
@@ -616,19 +620,20 @@ behaviour. `nes-core-bytes` sends a 60 KiB SysEx and requires it to reach the NE
   rebuilt; and the invariants a reshape relies on (its ports switch only with a published plan, what carries over and
   what starts afresh, a plan committing to both a stateless and a stateful prepare awaits adoption).
 - Toy TS nodes ([ScriptNodes.test.cpp](../packages/native/test/engine-graph/ScriptNodes.test.cpp)): input and output
-  marshalling, sends past capacity refused and counted, layouts from the control-side runtime, a reshaping node kept
-  and a non-reshaping one swapped or rebuilt, creation at adoption and release at reclaim on the block thread (the
-  release ring, its backlog and the 16 a block), a throw's count and the latch, a failed write onto what a node holds
-  (a setter it hung there, or an object it froze, its audio views among them) counted as its throw while the setters
-  one node hangs on the shared prototypes charge no other (one that shifts, splices and empties every array it is
-  handed included), a method only `Object.prototype` holds is adopted by none and no node replaces a method of the
-  frozen `Block` prototype, the warm block path allocating nothing native; the
-  JS-owned audio copies against a node that keeps its array across swaps, transfers its buffer, writes an input in
-  place or edits the array; promise jobs run and bounded per block, a queueMicrotask callback's throw counted; the call
-  deadline on CPU time, once counted and twice faulted; a second load and a bundle that differs between the runtimes
-  refused; two Engines on two threads; and ThreadSanitizer runs a plan's script nodes on an audio thread while the
-  control thread plans, reshapes, rebuilds and reclaims them. A profile build adds five `[profile]` cases on the trace
-  window and the calls it refuses while an audio thread runs (spec/08).
+  marshalling, sends past capacity refused and counted, layouts from the control-side runtime, a reshaping node kept and
+  a non-reshaping one swapped or rebuilt, creation at adoption and release at reclaim on the block thread (the release
+  ring, its backlog and the 16 a block), a throw's count and the latch, a failed write onto what a node holds (a setter
+  it hung there, or an object it froze, its audio views among them) counted as its throw while the setters one node
+  hangs on the shared prototypes charge no other (one that shifts, splices and empties every array it is handed
+  included), a method only `Object.prototype` holds is adopted by none, a getter on a base class or a Proxy's `get` trap
+  answers a node's methods, a prototype cycle through a Proxy or a chain past 1024 objects fails its `create`, and no
+  node replaces a method of the frozen `Block` prototype, the warm block path allocating nothing native; the JS-owned
+  audio copies against a node that keeps its array across swaps, transfers its buffer, writes an input in place or edits
+  the array; promise jobs run and bounded per block, a queueMicrotask callback's throw counted; the call deadline on CPU
+  time, once counted and twice faulted; a second load and a bundle that differs between the runtimes refused; two
+  Engines on two threads; and ThreadSanitizer runs a plan's script nodes on an audio thread while the control thread
+  plans, reshapes, rebuilds and reclaims them. A profile build adds five `[profile]` cases on the trace window and the
+  calls it refuses while an audio thread runs (spec/08).
 - The kernel node ([KernelNode.test.cpp](../packages/native/test/engine-graph/KernelNode.test.cpp)), in a plan with the
   host I/O nodes: host MIDI under every routing, every LSDj sync mode, risa and smsggdj host sync, a controller
   session, state across structure changes (survivors go on, a removed id is pruned), a throw, a block that fills
@@ -839,7 +844,12 @@ Before B3b starts, the LSDj master-sync fix lands on its own (§10).
   the chain; it now asks the array at each write. `process` and the hooks were read through `Object.prototype`, so a
   getter there that threw failed every later node's `create`, and a function there became the hook of every node
   without one; they are read short of it now. And the `Block` prototype every node reaches was open, so one node could
-  replace `messages` for all; it is frozen. A field a node deletes is left as the one gap (§2.3), and the realm itself,
+  replace `messages` for all; it is frozen. The walk that read the methods short of `Object.prototype` had no bound of
+  its own: a `create` whose object's prototype was a Proxy over the object itself, a cycle `setPrototypeOf` cannot see
+  through, held the block thread for ever, since the walk ran no JS for the deadline to stop (the plain read it replaced
+  had recursed into the Proxy until QuickJS's stack check threw); and a wrapper whose `get` trap answers the methods,
+  a trap the walk never asked, had stopped working. At a Proxy the read is a plain one again, and the walk stops at 1024
+  objects. A field a node deletes is left as the one gap (§2.3), and the realm itself,
   whose prototypes and globals one node's own code can still change under another's, is what one context per node
   would close (spec/07).
 - **The TS stripper does not build outside the repo.** `retroplug-ts-stripper-bundle` fails in a build directory

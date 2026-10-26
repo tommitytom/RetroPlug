@@ -1097,6 +1097,15 @@ class Classy extends Base {
   process() { __probe("classy process"); }
   portsChanged(connected) { __probe("classy ports " + connected.join(",")); }
 }
+// Its process and onSettings are getters on its base class, which hand back what the instance holds.
+class Accessed { get process() { return this.run; } get onSettings() { return this.swap; } }
+class Handled extends Accessed {
+  constructor() {
+    super();
+    this.run = () => __probe("handled process");
+    this.swap = (s) => __probe("handled onSettings " + s.tag);
+  }
+}
 rp.register([rp.defineNode({
   id: "rp.toy.polluter",
   settings: rp.z.object({ hooks: rp.z.enum(["none", "throw", "adopt"]).default("none") }),
@@ -1173,6 +1182,49 @@ rp.register([rp.defineNode({
   settings: rp.z.object({ tag: rp.z.number().default(0) }),
   ports: { out: rp.events.out() },
   create: () => new Classy(),
+}), rp.defineNode({
+  id: "rp.toy.handled",
+  settings: rp.z.object({ tag: rp.z.number().default(0) }),
+  ports: { out: rp.events.out() },
+  create: () => new Handled(),
+}), rp.defineNode({
+  // A test double: a Proxy with nothing of its own (no getOwnPropertyDescriptor trap) whose get trap answers process
+  // and onSettings, as the object create returns ("self") or as that object's prototype ("proto"). Its process says
+  // whether the trap was handed the object create returned as the receiver.
+  id: "rp.toy.wrapped",
+  settings: rp.z.object({ at: rp.z.enum(["self", "proto"]).default("self"), tag: rp.z.number().default(0) }),
+  ports: { out: rp.events.out() },
+  create: ({ settings }) => {
+    const handler = {
+      get: (target, key, receiver) => {
+        if (key === "process") return () => __probe("wrapped process " + (receiver === self));
+        if (key === "onSettings") return (s) => __probe("wrapped onSettings " + s.tag);
+        return undefined;
+      },
+    };
+    const self = settings.at === "self" ? new Proxy({}, handler) : Object.create(new Proxy({}, handler));
+    return self;
+  },
+}), rp.defineNode({
+  // Its prototype is a Proxy over itself, which setPrototypeOf's cycle check cannot see through: the chain past its
+  // own process cycles for ever.
+  id: "rp.toy.looped",
+  ports: { out: rp.events.out() },
+  create: () => {
+    const t = { process() { __probe("looped process"); } };
+    Object.setPrototypeOf(t, new Proxy(t, {}));
+    return t;
+  },
+}), rp.defineNode({
+  // Its process on the last of `depth` plain objects, each the prototype of the one before.
+  id: "rp.toy.deep",
+  settings: rp.z.object({ depth: rp.z.number().default(1) }),
+  ports: { out: rp.events.out() },
+  create: ({ settings }) => {
+    let o = { process() { __probe("deep process"); } };
+    for (let i = 1; i < settings.depth; ++i) o = Object.create(o);
+    return o;
+  },
 }), rp.defineNode({
   id: "rp.toy.vandal",
   ports: { out: rp.events.out() },
@@ -1446,6 +1498,70 @@ TEST_CASE("the host reads a script node's process and hooks from what its create
         rig.reclaim();
         CHECK(rig.scripts.firstThrow() == "rp.toy.hollow threw in create: TypeError: create returned no process function");
         CHECK(trapsHit(rig.log).empty());
+    }
+}
+
+TEST_CASE("the host reads a script node's process and hooks through a getter with the object create returned as `this`, and "
+          "through a Proxy as JS reads one, so a wrapper or a test double whose get trap answers them runs",
+          "[script][realm][hooks]") {
+    struct Case {
+        const char* type;
+        const char* at;
+        const char* process;  // what its process says
+        const char* swapped;  // what its onSettings says for the tag 1
+    };
+    for (const Case& c : {Case{"rp.toy.handled", "", "handled process", "handled onSettings 1"},
+                          Case{"rp.toy.wrapped", "self", "wrapped process true", "wrapped onSettings 1"},
+                          Case{"rp.toy.wrapped", "proto", "wrapped process true", "wrapped onSettings 1"}}) {
+        INFO(c.type << " " << c.at);
+        ScriptRig rig(kRealm);
+        const auto graph = [&](int tag) {
+            const std::string at = *c.at ? std::string(R"("at":")") + c.at + "\"," : "";
+            return doc(node("n", c.type, "{" + at + R"("tag":)" + std::to_string(tag) + "}"), "");
+        };
+        REQUIRE(rig.set(graph(0)).ok);
+        rig.run(64, 2);
+        CHECK_FALSE(rig.host->isFaulted("n"));
+        CHECK(rig.log.count(c.process) == 2);
+        REQUIRE(rig.set(graph(1)).ok);  // a swap, which runs its onSettings
+        CHECK(rig.log.count(c.swapped) == 1);
+        rig.reclaim();
+        INFO(rig.scripts.firstThrow());
+        CHECK(rig.scripts.throwCount() == 0);
+    }
+}
+
+TEST_CASE("a script node whose prototype chain cycles through a Proxy, or runs past ScriptHost::kMethodHops plain objects, fails "
+          "its create and faults, holding the block thread no longer than a create takes",
+          "[script][realm][hooks]") {
+    // A hang in either section is the regression: the read of its hooks walked the chain for ever, and since that walk
+    // calls no JS, the call deadline never stopped it.
+    ScriptRig rig(kRealm);
+    SECTION("a cycle through a Proxy") {
+        REQUIRE(rig.set(doc(node("l", "rp.toy.looped") + "," + node("c", "rp.toy.classy"), "")).ok);
+        rig.run(64, 2);
+        CHECK(rig.host->isFaulted("l"));
+        CHECK(rig.log.count("looped process") == 0);
+        CHECK_FALSE(rig.host->isFaulted("c"));  // the context is as usable after it as before
+        CHECK(rig.log.count("classy process") == 2);
+        CHECK(rig.scripts.throwCount() == 1);
+        rig.reclaim();
+        INFO(rig.scripts.firstThrow());
+        CHECK(rig.scripts.firstThrow().find("rp.toy.looped threw in create: RangeError: ") == 0);
+    }
+    SECTION("a chain one past kMethodHops") {
+        const auto deep = [](const char* id, int depth) {
+            return node(id, "rp.toy.deep", R"({"depth":)" + std::to_string(depth) + "}");
+        };
+        REQUIRE(rig.set(doc(deep("at", ScriptHost::kMethodHops) + "," + deep("past", ScriptHost::kMethodHops + 1), "")).ok);
+        rig.run(64, 2);
+        CHECK_FALSE(rig.host->isFaulted("at"));  // its process is on the last object the walk reads
+        CHECK(rig.host->isFaulted("past"));
+        CHECK(rig.log.count("deep process") == 2);  // the first node's, a block each
+        CHECK(rig.scripts.throwCount() == 1);
+        rig.reclaim();
+        CHECK(rig.scripts.firstThrow() == "rp.toy.deep threw in create: RangeError: the prototype chain is longer than " +
+                                              std::to_string(ScriptHost::kMethodHops) + " objects");
     }
 }
 

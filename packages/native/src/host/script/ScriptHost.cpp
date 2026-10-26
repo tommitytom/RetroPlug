@@ -737,9 +737,10 @@ struct ScriptHost::Glue {
     }
 
     // The definition's create, with the instance's current settings: it fails (and the node faults) when create
-    // throws or returns no process, when reading its process or a hook throws (a getter the node defined for one), or
-    // when JS runs out of memory making what the host hands it. What the host makes here holds every field it will write
-    // as its own (kDefine).
+    // throws or returns no process, when reading its process or a hook throws (a getter or a Proxy trap the node
+    // defined for one, or a prototype chain too long or cycling through a Proxy, as method says), or when JS runs out
+    // of memory making what the host hands it. What the host makes here holds every field it will write as its own
+    // (kDefine).
     static void createJs(ScriptHost& h, Instance& in) {
         JSContext* ctx = h.audio_;
         JS_UpdateStackTop(h.audioRt_);
@@ -816,12 +817,25 @@ struct ScriptHost::Glue {
     // A method of the object create returned, as JS would find it there or on a prototype it inherits from (a class
     // keeps its methods on its prototype), short of Object.prototype: what only Object.prototype holds is no method of
     // the node's, and reading it there would run, or adopt as the node's, whatever another node (or the bundle) hung on
-    // the realm's one. A getter found on the way is the node's own, and runs with the object as `this`. Undefined when
-    // nothing on the way has it; JS_EXCEPTION, with it pending, when a getter (or a Proxy's trap) throws.
+    // the realm's one. A getter found on the way is the node's own, and runs with the object as `this`. A Proxy on the
+    // way answers for itself and all past it, as JS reads one: the read there is a plain get of the object, which finds
+    // nothing on the plain objects before the Proxy (the walk asked each) and hands it the object as the receiver, so
+    // its get trap answers, or with none its target and the target's prototypes, up to Object.prototype. A wrapper or a
+    // test double whose get trap answers the methods works, and what a Proxy the node made answers is the node's. The
+    // walk and that get run no JS of their own, so the call deadline cannot stop them, and each is bounded otherwise:
+    // the get by QuickJS's stack check (a chain that cycles back through a Proxy, which setPrototypeOf's cycle check
+    // cannot see past, recurses into it until that throws a RangeError), and the walk by kMethodHops (plain objects
+    // never form a cycle, and a chain of more than that is refused, with a RangeError). Undefined when nothing on the
+    // way has it; JS_EXCEPTION, with it pending, when a getter or a Proxy's trap throws or the read is refused.
     static JSValue method(ScriptHost& h, JSContext* ctx, JSValueConst object, Atom name) {
         if (!JS_IsObject(object)) return JS_UNDEFINED;
         JSValue at = JS_DupValue(ctx, object);
-        while (JS_IsObject(at) && JS_VALUE_GET_PTR(at) != h.objectProto_) {
+        for (int hops = 0; JS_IsObject(at) && JS_VALUE_GET_PTR(at) != h.objectProto_; ++hops) {
+            if (hops == kMethodHops || JS_IsProxy(at)) {
+                JS_FreeValue(ctx, at);
+                if (hops < kMethodHops) return JS_GetProperty(ctx, object, atom(h, name));
+                return JS_ThrowRangeError(ctx, "the prototype chain is longer than %d objects", kMethodHops);
+            }
             JSPropertyDescriptor d;
             const int own = JS_GetOwnProperty(ctx, &d, at, atom(h, name));
             if (own != 0) {

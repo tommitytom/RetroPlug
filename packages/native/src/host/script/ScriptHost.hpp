@@ -153,12 +153,16 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // shift, a splice or a shorter length). So only the node's own setters run there, never an accessor another node (or
 // the bundle) hung on Object.prototype or Array.prototype, with one gap: a field the node deletes is set again, which
 // walks the chain, as does the host's read of a message's data the node deleted (asking at every field write would cost
-// a script call about 14%). It reads process and the hooks from the object create returned and the prototypes it
-// inherits them through, short of Object.prototype, so it neither runs nor adopts a getter or a function another put
-// there; and it freezes the Block prototype every node reaches, with its methods (and, in a profile build, binds the
-// trace globals read-only and frozen), so no node replaces one for another. That is the host's part only: what nodes can
-// do to each other through the realm they share (an accessor on a prototype another's own code reads through, a global
-// it calls) it does not cover, and one context per node is what would close that (spec/07-remaining-work.md).
+// each script call about 12 ns a block, 14% of an empty pass-through's). It reads process and the hooks from the object
+// create returned and the prototypes it inherits them through, short of Object.prototype, so it neither runs nor adopts
+// a getter or a function another put there. A Proxy on the way answers as JS reads one (its get trap, or its target's
+// chain), so a wrapper or a test double works; a chain longer than kMethodHops, or one that cycles back through a
+// Proxy, fails the create rather than holding the block thread, where the deadline has no JS to stop. And it freezes
+// the Block prototype every node reaches, with its methods (and, in a profile build, binds the trace globals read-only
+// and frozen), so no node replaces one for another: assigning one on a node's own Block (`block.send = f`) throws in
+// the strict bundle, where defining it there still works. That is the host's part only: what nodes can do to each other
+// through the realm they share (an accessor on a prototype another's own code reads through, a global it calls) it does
+// not cover, and one context per node is what would close that (spec/07-remaining-work.md).
 //
 // Settings reach the audio side as their JSON form: the control side's parseSettings checks them, and what it
 // returns crosses as JSON (the two runtimes share no value), so a transform's result that JSON cannot hold (a Map, a
@@ -225,6 +229,9 @@ public:
     void endBlock();
     static constexpr int kJobsPerBlock = 256;
     static constexpr std::size_t kStackBytes = 256 * 1024;  // each runtime's JS stack (the class comment)
+    // How many plain objects reading a node's process or a hook walks (what its create returned, then the prototypes
+    // it inherits from, short of Object.prototype) before it refuses, failing the create (the class comment).
+    static constexpr int kMethodHops = 1024;
 
     // ---- any thread ------------------------------------------------------------------------------------------
     // Throws caught in a script node (process, and its create, onSettings, portsChanged and activate) so far, and the
