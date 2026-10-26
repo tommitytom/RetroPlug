@@ -117,9 +117,9 @@ struct SystemNode {
                     std::memset(b.output(o).u.audio.channels[c], 0, b.frames() * sizeof(float));
         for (std::size_t l = 0; l < n; ++l) std::memset(lanes[l], 0, b.frames() * sizeof(float));
         core->finishBlock(info(b), lanes.data(), n);
-        static_cast<Self*>(this)->writeQueues();
+        static_cast<Self*>(this)->writeQueues(b.frames());
     }
-    void writeQueues() noexcept {}
+    void writeQueues(std::uint32_t) noexcept {}
 
     // Each input in queue order, the inputs in the order the kernel stage the kernel node replaced fanned its sinks
     // out: serialIn, midi, bytes, buttons. The order matters on the NES, where MIDI and bytes land in the same FIFO
@@ -208,12 +208,15 @@ struct GameBoy : SystemNode<GameBoy, SameBoySystem> {
         return 8;
     }
 
-    // MI.OUT (design section 3.2): the bytes the core captured on its serial port this block, each at frame 0, as the
-    // engine's gather once handed them to the kernel, without their frames. Copied, not drained: the core clears the
-    // log at its next prepareForBlock.
-    void writeQueues() noexcept {
+    // MI.OUT (design section 3.2): the bytes the core captured on its serial port this block, each at the frame the core
+    // completed it, which master sync's decoder times its stop by (docs/lsdj-master-sync-fix-design.md). The core runs an
+    // instruction at a time, so it can complete a byte past the block's end; that byte is stamped at the block's last
+    // frame, so a block's messages always lie inside it. Copied, not drained: the core clears the log at its next
+    // prepareForBlock.
+    void writeQueues(std::uint32_t frames) noexcept {
         if (!connected[kSerialOut]) return;
-        for (const auto& entry : core->serialOutLog_) outputs.serialOut.push(0, std::span<const std::uint8_t>(&entry.second, 1));
+        for (const auto& entry : core->serialOutLog_)
+            outputs.serialOut.push(std::min(entry.first, frames - 1), std::span<const std::uint8_t>(&entry.second, 1));
     }
 
     // The coupled group's other members, in member order: the cable the serial callbacks read and write.

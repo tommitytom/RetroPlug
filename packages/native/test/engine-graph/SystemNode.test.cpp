@@ -675,11 +675,13 @@ TEST_CASE("a linked Game Boy takes its inputs in prepare, before its group steps
     }
 }
 
-TEST_CASE("the Game Boy's serialOut carries what its core captured this block, at frame 0, and leaves the log",
+TEST_CASE("the Game Boy's serialOut carries what its core captured this block, each byte at the frame its core "
+          "completed it, and leaves the log",
           "[engine-graph][system-node][inputs]") {
     // mGB holds its serial port in external-clock receive, so once MI.OUT capture is armed the engine clocks a byte
-    // out of it every eight frames. The node copies the core's log rather than draining it: the engine's MI.OUT
-    // gather reads the same log after the plan, and the core clears it at its next prepareForBlock.
+    // out of it every eight frames. Each byte goes out a byte a message at the frame the core completed it, a byte
+    // completed past the block's end at the block's last frame. The node copies the core's log rather than draining
+    // it: the core clears it at its next prepareForBlock.
     NodeRig rig(kRate);
     auto core = mgb(1);
     core->setSerialOutCapture(true);
@@ -695,15 +697,15 @@ TEST_CASE("the Game Boy's serialOut carries what its core captured this block, a
     for (std::size_t b = 0; b < 160; ++b) {
         const std::uint32_t frames = kBlocks[b % kBlocks.size()];
         rig.host->processBlock(frames, t, graph.ptrs.data(), 2);
-        std::vector<std::uint8_t> log, carried;
-        for (const auto& entry : gb->serialOutLog_) log.push_back(entry.second);
-        bool eachAtZero = true;
+        std::vector<std::pair<std::uint32_t, std::uint8_t>> log, carried;
+        for (const auto& [frame, byte] : gb->serialOutLog_) log.emplace_back(std::min(frame, frames - 1), byte);
+        bool eachAlone = true;
         for (const auto& m : probe.bytes) {
-            eachAtZero = eachAtZero && m.frame == 0 && m.data.size() == 1;
-            if (!m.data.empty()) carried.push_back(m.data[0]);
+            eachAlone = eachAlone && m.data.size() == 1;
+            if (!m.data.empty()) carried.emplace_back(m.frame, m.data[0]);
         }
         INFO("block " << b);
-        CHECK(eachAtZero);
+        CHECK(eachAlone);
         CHECK(carried == log);
         captured += log.size();
     }

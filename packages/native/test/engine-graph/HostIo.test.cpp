@@ -190,6 +190,14 @@ std::vector<std::uint8_t> serialLog(const SameBoySystem& gb) {
     return log;
 }
 
+// The same bytes as the Game Boy's serialOut stamps them in a block of `frames`: each at the frame its core completed
+// it, a byte completed past the block's end at its last frame.
+std::vector<std::pair<std::uint32_t, std::uint8_t>> serialStamped(const SameBoySystem& gb, std::uint32_t frames) {
+    std::vector<std::pair<std::uint32_t, std::uint8_t>> log;
+    for (const auto& [frame, byte] : gb.serialOutLog_) log.emplace_back(std::min(frame, frames - 1), byte);
+    return log;
+}
+
 // Set RETROPLUG_SYNC_TRACE, or clear it (null), for the engines constructed after: each reads it as it is built.
 void setSyncTraceEnv(const char* value) {
 #if defined(_WIN32)
@@ -640,29 +648,34 @@ TEST_CASE("a cart mirror names one of the document's NES systems, its settings r
     CHECK(e.cartMirrorSystemId() == 1);
 }
 
-TEST_CASE("the Game Boy's serialOut carries what its core captured, each byte at frame 0", "[engine-graph][host-io]") {
+TEST_CASE("the Game Boy's serialOut carries what its core captured, each byte at the frame its core completed it",
+          "[engine-graph][host-io]") {
     // mGB, with MI.OUT capture armed, has a byte clocked out of its serial port every eight frames (it holds the
-    // port in external-clock receive). The port carries this block's bytes at frame 0, here into a cart mirror whose
-    // sink records them. (buildGraph wires it into the kernel node as a feedback wire: MI.OUT's one block.)
+    // port in external-clock receive). The port carries this block's bytes a byte a message, each at the frame its core
+    // completed it, here into a cart mirror whose sink records them. (buildGraph wires it into the kernel node as a
+    // feedback wire: MI.OUT's one block, and the times master sync's stop is timed from.)
     Engine e(kRate);
     SameBoySystem* const gb = serialOutToCart(e);
-    std::vector<std::uint8_t> carried;
-    bool eachAtZero = true;
+    std::vector<std::pair<std::uint32_t, std::uint8_t>> carried;
+    bool eachAlone = true;
     e.setCoreByteSink([&](std::uint32_t frame, const std::uint8_t* d, std::size_t n, bool) {
-        eachAtZero = eachAtZero && frame == 0 && n == 1;
-        carried.insert(carried.end(), d, d + n);
+        eachAlone = eachAlone && n == 1;
+        for (std::size_t i = 0; i < n; ++i) carried.emplace_back(frame, d[i]);
     });
     std::size_t captured = 0;
+    bool spread = false;
     for (int b = 0; b < 100; ++b) {
         carried.clear();
         block(e);
-        const std::vector<std::uint8_t> log = serialLog(*gb);
+        const auto log = serialStamped(*gb, kFrames);
         INFO("block " << b);
         CHECK(carried == log);
         captured += log.size();
+        spread = spread || (log.size() > 1 && log.front().first != log.back().first);
     }
-    CHECK(eachAtZero);
+    CHECK(eachAlone);
     CHECK(captured > 0);
+    CHECK(spread);  // the frames are the core's, not one frame for the whole block
 }
 
 TEST_CASE("the Game Boy's serialOut carries the largest block a host runs without a drop", "[engine-graph][host-io]") {
@@ -737,8 +750,8 @@ TEST_CASE("a system node's bytes input reaches the engine's sync trace while it 
           "[engine-graph][host-io]") {
     // The engine opens its trace at construction when RETROPLUG_SYNC_TRACE names a file, and its destructor writes
     // what is left. A Game Boy's serialOut feeds a NES's bytes input, so each block's line holds what the Game Boy
-    // captured that block, at frame 0, as the NES node recorded it. 256-frame blocks keep that under the trace's
-    // 48 bytes a block.
+    // captured that block, each byte at the frame its core completed it, as the NES node recorded it. 256-frame
+    // blocks keep that under the trace's 48 bytes a block.
     const std::string path =
         (std::filesystem::temp_directory_path() / ("rp-engine-graph-sync-trace-" + std::to_string(std::random_device{}()) + ".log"))
             .string();
@@ -748,7 +761,8 @@ TEST_CASE("a system node's bytes input reaches the engine's sync trace while it 
         std::optional<std::string> was;
         ~Restore() { setSyncTraceEnv(was ? was->c_str() : nullptr); }
     } restore{was ? std::optional<std::string>(was) : std::nullopt};
-    // The trace part of each block's line, " 0:<hex>" or "", for what the Game Boy captured.
+    // The trace part of each block's line, " <frame>:<hex>" for each run of bytes at one frame, or "", for what the
+    // Game Boy captured.
     const auto run = [&](bool traced) {
         setSyncTraceEnv(traced ? path.c_str() : nullptr);
         std::vector<std::string> lines;
@@ -763,13 +777,15 @@ TEST_CASE("a system node's bytes input reaches the engine's sync trace while it 
                     .ok);
         for (int b = 0; b < 200; ++b) {
             block(e, 256);
-            std::string hex;
-            for (const std::uint8_t byte : serialLog(*gb)) {
+            std::string line;
+            const auto log = serialStamped(*gb, 256);
+            for (std::size_t i = 0; i < log.size(); ++i) {
+                if (i == 0 || log[i].first != log[i - 1].first) line += " " + std::to_string(log[i].first) + ":";
                 char two[3];
-                std::snprintf(two, sizeof two, "%02X", byte);
-                hex += two;
+                std::snprintf(two, sizeof two, "%02X", log[i].second);
+                line += two;
             }
-            lines.push_back(hex.empty() ? "" : " 0:" + hex);
+            lines.push_back(line);
         }
         return lines;
     };

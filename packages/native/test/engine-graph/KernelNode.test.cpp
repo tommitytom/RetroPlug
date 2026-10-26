@@ -115,6 +115,16 @@ std::string settingsJson(const Structure& s) {
 
 // ---- one block's input -------------------------------------------------------------------------------------------
 
+// What one Game Boy captured last block, as its serialOut stamps it: each byte at the frame its core completed it, here
+// the first at `first` and each next `stride` frames on (MI.OUT's port clocks a byte every eight frames; a playing LSDj
+// master clocks one every few hundred).
+struct Captured {
+    std::uint32_t system;
+    Bytes         bytes;
+    std::uint32_t stride = 8;
+    std::uint32_t first = 7;
+};
+
 struct BlockIn {
     std::uint32_t                                     frames = 1024;
     double                                            ppq = 0.0;
@@ -123,7 +133,7 @@ struct BlockIn {
     std::vector<std::pair<std::uint32_t, Bytes>>      midi;        // as a host stages it, in any frame order
     std::vector<Bytes>                                controller;  // control-surface traffic, at frame 0
     bool                                              connected = false;
-    std::vector<std::pair<std::uint32_t, Bytes>>      serialOut;   // what each Game Boy captured last block
+    std::vector<Captured>                             serialOut;   // what each Game Boy captured last block
 };
 
 Bytes on(int channel, int key, int velocity = 100) {
@@ -309,7 +319,7 @@ struct KernelRig {
         return *t;
     }
 
-    // One block: what the host staged, each Game Boy's MI.OUT a byte a message at frame 0 as its serialOut carries it,
+    // One block: what the host staged, each Game Boy's MI.OUT a byte a message at its frame as its serialOut carries it,
     // then the block as the engine runs it (the host outputs cleared first, as the engine clears them), and every
     // output recorded.
     void block(const BlockIn& in) {
@@ -319,9 +329,10 @@ struct KernelRig {
         for (const System& s : structure.systems) {
             if (!s.serialOut) continue;
             Feed& feed = node<Feed>("mi-out-" + std::to_string(s.id));
-            for (const auto& [id, captured] : in.serialOut)
-                if (id == s.id)
-                    for (const std::uint8_t b : captured) feed.next[Feed::Bytes].push_back({0, {b}, 0});
+            for (const Captured& c : in.serialOut)
+                if (c.system == s.id)
+                    for (std::size_t i = 0; i < c.bytes.size(); ++i)
+                        feed.next[Feed::Bytes].push_back({c.first + static_cast<std::uint32_t>(i) * c.stride, {c.bytes[i]}, 0});
         }
         midiOut.clear();
         controllerOut.clear();
@@ -533,12 +544,12 @@ TEST_CASE("the kernel node drives each LSDj sync mode, MI.OUT and master sync am
     BlockIn playing{.frames = 1024, .ppq = 1024.0 / kBeat, .playing = true};
     rig.run(playing, 30);
     // MI.OUT: framed protocol bytes, a frame split over two captured bytes; master sync: a run, a quiet block, then a
-    // stopped LSDj's idle flood, then a run again.
+    // stopped LSDj's idle flood, then a run again (a playing LSDj's bytes a few hundred frames apart, its flood's 8).
     Bytes flood;
     for (int i = 0; i < 40; ++i) flood.push_back(static_cast<std::uint8_t>(i & 0x7f));
     playing.ppq = 31 * 1024.0 / kBeat;
-    for (auto captured : {std::vector<std::pair<std::uint32_t, Bytes>>{{7, {framed(0x7d), framed(0x7f), framed(0x70), framed(0x69), 0x7f}},
-                                                                       {8, {5, 5, 5}}},
+    for (auto captured : {std::vector<Captured>{{7, {framed(0x7d), framed(0x7f), framed(0x70), framed(0x69), 0x7f}},
+                                                {8, {5, 5, 5}, 300}},
                           {{7, {0x80, framed(0x74), framed(64)}}, {8, {}}},
                           {{8, flood}},
                           {{8, flood}, {7, {framed(0x7e)}}},

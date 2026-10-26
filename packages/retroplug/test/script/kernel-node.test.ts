@@ -97,7 +97,7 @@ test("each sink call goes onto its system's port in emission order, host MIDI ou
   );
   const { block, sent } = blockOf(1024, true, {
     midiIn: [{ frame: 4, data: [0x90, 60, 100] }],
-    [`sys-${0x01020304}.serialOut`]: [{ frame: 0, data: [5] }, { frame: 0, data: [5] }],
+    [`sys-${0x01020304}.serialOut`]: [{ frame: 0, data: [5] }, { frame: 900, data: [5] }],
   });
   node.process(block);
   const at = (port: string) => sent.filter((s) => s.port === port).map((s) => [s.frame, ...s.data, s.flags]);
