@@ -1,147 +1,141 @@
-# LSDj master sync: telling a stopped LSDj by time, not by block
+# LSDj master sync: listening to LSDj instead of clocking it
 
-**Date:** 2026-10-26 · **Branch:** `feature/modularize` · **Status:** designed; not yet built.
+**Date:** 2026-10-26 · **Branch:** `feature/modularize` · **Status:** designed (revised after the first prototype,
+section 2); not yet built.
 
-The eighth defect B0 pinned (design section 2.5 of [modular-graph-phase-b0-design.md](modular-graph-phase-b0-design.md)):
-in small host blocks, LSDj master sync decodes a stopped LSDj as clocks. By the user's decision it is fixed after B3a
-([modular-graph-phase-b3a-design.md](modular-graph-phase-b3a-design.md)) and before B3b ports the decoder into a
-protocol node, as its own change, re-recording exactly the parity cases it moves.
+LSDj master sync (lsdj-sync mode `masterSync`, the Arduinoboy firmware's Mode 2, SYNC=LSDj) turns what LSDj sends
+out of its link port into host MIDI: one 0xF8 per byte while LSDj plays, a song-row NoteOn and 0xFA before the
+first, and 0xFC when it stops. B0 pinned two defects in it (design section 2.5 of
+[modular-graph-phase-b0-design.md](modular-graph-phase-b0-design.md)): the **sixth**, master sync silent at 48 kHz and
+above while serial-out capture is armed, and the **eighth**, a stopped LSDj decoded as clocks in small host blocks.
+By the user's decision the eighth is fixed after B3a ([modular-graph-phase-b3a-design.md](modular-graph-phase-b3a-design.md))
+and before B3b ports the decoder into a protocol node, as its own change. Building it found that the two share a
+cause, which also stops a stopped LSDj from ever playing again, so this change fixes all three.
 
-## 1. The defect
+## 1. What was pinned
 
-Master sync (lsdj-sync mode `masterSync`, the Arduinoboy firmware's Mode 2, SYNC=LSDj) turns what LSDj sends out of
-its link port into host MIDI: one 0xF8 per byte while LSDj plays, a song-row NoteOn and 0xFA before the first, and
-0xFC when it stops. A stopped LSDj does not go quiet: it floods its port. The decoder (`arduinoboyMasterSyncBlock`,
-[lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts)) tells the two apart by counting: a block holding
-more than 16 bytes (`MASTER_SYNC_IDLE_FLOOD`) is the flood. How many bytes a block holds depends on how long the block
-is, not on LSDj, so in 1-frame blocks every flood byte is a clock (10497 MIDI messages on `lsdj-modes`' master-sync
-scene at 44.1 kHz, against 101 in 1024-frame blocks), and FL-style splits fall on both sides of the threshold, opening
-and closing a run every few blocks.
+The decoder (`arduinoboyMasterSyncBlock`, [lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts)) took a
+block holding more than 16 bytes (`MASTER_SYNC_IDLE_FLOOD`) to be a stopped LSDj's "idle flood", dropped it, and
+sent one 0xFC. How many bytes a block holds depends on how long the block is, not on LSDj: in 1-frame blocks every
+flood byte decoded as a clock (10497 MIDI messages on `lsdj-modes`' master-sync scene at 44.1 kHz, against 101 in
+1024-frame blocks). And at 48 kHz, master sync was silent: LSDj never played, and its MIDI out was the flood alone.
 
-## 2. What the bytes look like
+## 2. What building found
 
-Measured on that scene in 1-frame blocks, where a decoded clock's block index is its byte's frame:
+The first design (c8135ed4) kept the flood as LSDj's behaviour and told it from clocks by the time between bytes. Its
+prototype decoded every split identically, but an end-to-end check that restarts LSDj after a stop found that a
+stopped LSDj in master sync never plays again: silent through two more START taps over six seconds, where the same
+taps restart it with the mode `off`. The cause is the emulator, not LSDj:
 
-| | Gap between bytes | Rate |
-|---|---|---|
-| A stopped LSDj's flood | 8 to 16 frames (at most 0.33 ms at 48 kHz) | about 5000 a second, steady |
-| A playing LSDj | about 860 frames at 44.1 kHz (19.5 ms) | 51 a second at tempo 128 (24 PPQN) |
-| A playing LSDj at its fastest tempo (295 BPM) | about 8.5 ms | 118 a second |
+- With capture armed, `SameBoySystem::writeAudioSample` clocks any transfer waiting on an EXTERNAL clock (SC=0x80),
+  one bit per audio frame, and captures each bit. That is MI.OUT's path: there LSDj (the Arduinoboy build) is the
+  serial slave and the Arduinoboy clocks it. Master sync needs none of it: the Arduinoboy only listens to the bytes
+  LSDj clocks itself (SC=0x81), which `serialStart` already captures.
+- A stopped stock LSDj in SYNC=LSDj waits on an external clock, for another master. We clock it, so every bit we
+  clock is captured (one bit a frame is 5512 bytes a second at 44.1 kHz: the "flood", 8 to 16 frames a byte), and
+  LSDj takes our idle 0xFF bytes for a master's clock and behaves as a slave, which ignores START: no restart.
+- At 48 kHz it falls into that state at boot and never leaves it: the sixth defect. At 44.1 kHz it leaves it during
+  boot (1.2 s in) and falls back into it at the first stop.
 
-A gap of 2 ms separates them with room on both sides: six times the flood's widest gap, a quarter of the fastest
-clock's. Two more facts from the same run:
+With that clocking switched off for master sync (a scratch run): no flood and no boot noise at either rate, LSDj
+plays at 44.1 and 48 kHz alike, START restarts it after a stop at both, and a stopped LSDj goes quiet, as it does on
+the hardware. Nothing then sends 0xFC, so the decoder takes the firmware's own stop rule: a silence.
 
-- At 44.1 kHz a booted LSDj is quiet on the song screen (1.2 s to 6.0 s). It floods during boot, from 0.3 s to 1.2 s
-  after two lone bytes, and after a stop. At 48 kHz it floods throughout and never plays: B0's sixth defect, a
-  separate one, which stays pinned.
-- The byte timeline barely depends on the block split. Mapped back to frames, `fl256`'s 81 clocks fall within about
-  30 frames of the 1-frame run's 81: the core runs past its target by an instruction at a time, so a split moves its
-  timing by tens of frames, never by a gap's worth.
-
-The core already stamps every captured byte with its frame (`SameBoySystem::serialOutLog_`); the Game Boy node drops
-the stamp and pushes every byte at frame 0.
+A lead, not fixed here: MI.OUT's path clocks one bit per audio frame, so MI.OUT's bit rate is the host's sample rate,
+which is a likely cause of B0's seventh defect (MI.OUT's decoded notes depend on the sample rate).
 
 ## 3. Decisions taken
 
 | Question | Decision |
 |---|---|
-| Where does the decoder get time from? | **The bytes' own frames**, carried from the core to the decoder. A TS-only density window over block lengths was rejected: a long block gives its bytes no positions, and the block where play stops mixes clocks and flood, which is exactly where the decision matters. |
-| What is a clock? | **A byte with no other byte within 2 ms on either side.** Every other byte is flood. |
-| When is a byte decided? | **Once its forward window is in the past**, so the newest byte waits up to 2 ms. Messages still go out at frame 0 of the block that decides them. |
-| The firmware's own stop rule (every byte a clock, 0xFC after a silence)? | **Not used.** The emulated stopped LSDj floods rather than going quiet, so every flood byte would be a clock. A silence timeout can be added later if a quiet stop ever shows up. |
+| Fix the decoder, or the cause? | **The cause.** Master sync captures only what LSDj clocks itself and never clocks its port. The first design's gap rule was a detector for our own artefact; it is dropped. |
+| How does the core know which? | **Capture becomes a mode.** `listen`: capture the bits the Game Boy clocks itself. `drive`: that, and clock a transfer waiting on an external clock, capturing its bits too (today's behaviour, MI.OUT's). Absent is off. The store picks `drive` for `midiOut` and `listen` for `masterSync`. |
+| The stop rule | **The firmware's: a silence.** Every byte is a clock, sent in the block it reaches; 0xFC goes out once no byte has come for 200 ms (`MASTER_SYNC_STOP_MS`), about three times the gap between clocks at LSDj's slowest tempo (40 BPM at 24 PPQN: 62.5 ms). |
+| Measured how? | **On the bytes' own frames** (built first, section 9): the Game Boy's `serialOut` stamps each byte at the frame its core completed it, and the kernel hands the frames to the role beside the bytes. So the silence is exact and the 0xFC lands in the same place at any block split. |
+| State across modes | **Dropped when the mode is not master sync**, so coming back starts clean rather than from a stale run or a stale last byte. |
 | 0xFC when the user switches mode mid-run? | **Not added.** Today does not send one either. |
 
-## 4. The data path
+## 4. The core: capture modes
 
-**The Game Boy node** (`GameBoy::writeQueues`, [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp))
-pushes each byte at the frame its core completed it, `serialOutLog_`'s `entry.first`, instead of at frame 0. A byte
-the core completed past the block's end (it runs an instruction at a time, so it can overshoot) is stamped at the
-block's last frame, so a block's messages always lie inside it. `buildGraph` wires `serialOut` only into the kernel
-node and the MI.OUT decoder ignores frames, so nothing else the engine produces changes.
+`SameBoySystem` replaces its `serialOutEnabled_` flag with `SerialOutCapture serialOutCapture_` (`Off`, `Listen`,
+`Drive`), set by `setSerialOutCapture(SerialOutCapture)`:
 
-**The kernel** carries the frames to the role:
+- `serialStart`, the internal-clock path, captures under `Listen` and `Drive` (it captured whenever the flag was on).
+- `writeAudioSample`'s external-clock path runs under `Drive` only.
 
-- `SerialOutEvent` ([dspKernel.ts](../packages/retroplug/src/dspKernel.ts)) gains `frame`: where the byte fell in the
-  block that produced it, which is the previous block, since `serialOut` reaches the kernel over a feedback wire.
-- `blockInput` ([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts)) copies each message's frame.
-- `SystemCtx` gains `serialOutFrames: number[]`, parallel to `serialOut`, so the MI.OUT decoder keeps its plain
-  `number[]` input and the kernel allocates nothing more per block (the fan-out pushes one more number per byte).
+On the wire the mode is a string, `"listen"` or `"drive"`, absent for off, parsed in one place on the native side:
+
+- The build spec's `serialOutCapture` (`ConstructSpec` in [backend.ts](../packages/retroplug/src/backend.ts),
+  `BackendConstructSpec` in [BackendTypes.hpp](../packages/native/src/host/rpc/BackendTypes.hpp)) goes from a
+  boolean to the mode.
+- `setSerialOutCapture(id, mode)` takes the mode or null ([EngineRpcService](../packages/native/src/host/rpc/EngineRpcService.cpp));
+  an unknown string is refused. It rides `ConfigField::SerialOutCapture` as 0 (off), 1 (`listen`) or 2 (`drive`).
+- `serialOutCaptureFor` ([systemsStore.ts](../packages/retroplug/src/systemsStore.ts)) returns `"drive"` for
+  `midiOut`, `"listen"` for `masterSync`, and null otherwise; the build hook and the live re-arm both send it.
 
 ## 5. The decoder
 
 `arduinoboyMasterSyncBlock(bytes, frames, block, state, emit)`, where `block` is the current `{ frames, sampleRate }`;
 the role passes `c.serialOut`, `c.serialOutFrames` and `c.block`.
 
-**The timeline.** Positions are frames from the current block's start. This call's bytes came from the previous
-block, so a byte sits at `frame - lastFrames`, a negative position; `lastFrames` is the previous call's block length,
-taken to equal the current one on the first call. At the end of a call every stored position shifts back by
-`block.frames` and `lastFrames` becomes `block.frames`. Nothing in the decoder depends on how the frames were cut into
-blocks.
-
-**The rule.** `T` is `MASTER_SYNC_GAP_MS` (2 ms) at the block's sample rate, 88 frames at 44.1 kHz, with section 2's
-figures beside the constant. Decisions are made in byte order:
-
-- A byte with no other byte within `T` on either side is a **clock**. If no run is open it opens one first: the
-  song-row NoteOn (the byte's value, on the configured channel, default 0) and 0xFA. Then its 0xF8.
-- Any other byte is **flood** and is dropped. If a run is open, the first flood byte sends one 0xFC and closes it.
-
-**The hold.** Every byte up to the current block's start is known, so the newest byte is decided once it lies more
-than `T` before that start; until then it waits, at most one byte at a time, held as plain fields on the state (no
-per-block allocation). In 1-frame blocks a clock goes out about 2 ms after its byte; in 1024-frame blocks only a byte
-in the last `T` frames of its block goes out a block later than it does today.
-
-**State across modes.** The kernel keeps a stage's state across config changes, so master sync's fields (the run, the
-pending byte, the last byte's position, `lastFrames`) move into their own sub-object of the lsdj-sync state, and the
-dispatcher drops it whenever the mode is not master sync. Coming back to master sync then starts clean rather than
-deciding new bytes against a stale pending one. It also stops a run left open by a mode switch from swallowing the
-next run's NoteOn and 0xFA, which happens today.
+- **Every byte is a clock**, sent at once: if no run is open it first sends the song-row NoteOn (the byte's value, on
+  the configured channel, default 0) and 0xFA.
+- **The stop.** Positions are frames from the current block's start. This call's bytes came from the previous block,
+  so a byte sits at `frame - lastFrames`; `lastFrames` is the previous call's block length, taken to equal the current
+  one on the first call. Every byte before the current block's start is then known, so once a run is open and its
+  newest byte lies more than `MASTER_SYNC_STOP_MS` before that start, the decoder sends 0xFC and closes the run. At
+  the end of a call the stored position shifts back by `block.frames`.
+- **State** is the run, the newest byte's position and `lastFrames`, plain fields (no per-block allocation), in a
+  `masterSync` sub-object of the lsdj-sync stage's state that the dispatcher drops whenever the mode is not master
+  sync.
 
 ## 6. What moves
 
-Only master sync's MIDI out. Its MIDI out feeds nothing back into a core, so every audio, SRAM and RAM digest stays as
-recorded. Expected at 44.1 kHz, at every split: LSDj's two lone boot bytes open a short run that the boot flood closes
-(NoteOn, 0xFA, two clocks, 0xFC); START opens the real run with its NoteOn and 0xFA and about 80 clocks; the stop sends
-one 0xFC and nothing follows. About 90 messages in each split, against 10497 (`1`), 316 (`fl`), 894 (`fl256`) and 101
-(1024-frame) today. At 48 kHz the flood never stops, so those cases drop from 42861 / 1000 / 3373 messages to the boot's
-short run alone.
+Only the master-sync cases; MI.OUT keeps `drive`, so its cases (`lsdj-modes`' `midiOut`, `blocks-tiny-lsdj`'s) stay
+bit for bit. The eight master-sync cases move in audio, RAM and MIDI out: `blocks-tiny-lsdj-master`'s six and
+`lsdj-modes`' `masterSync-44100` and `masterSync-48000`. At 44.1 kHz LSDj is no longer clocked during boot, so its
+audio moves and the boot sends nothing; the run sends its NoteOn, 0xFA and clocks, and the stop one 0xFC 200 ms after
+LSDj's last byte. The 48 kHz cases become audible, their `audible` lanes `[0, 1]` instead of `[]`, with the same story.
+The C++ KernelNode test's master-sync input, which modelled the flood, becomes a run, a silence and a run, and its
+digest is re-recorded.
 
-The re-record covers `blocks-tiny-lsdj-master` (six cases), `lsdj-modes`' `masterSync-44100` and `masterSync-48000`,
-and the KernelNode C++ test's master-sync digest. It is accepted only if the baseline diff touches nothing but those
-eight cases' `midiOut` digests, which a script checks, and the full parity suite then passes with the fixtures present
-and `RP_FAIL_ON_SKIP=1`.
+The re-record is accepted only if a script finds no other case's digest moved, and the full parity suite then passes
+with the fixtures present and `RP_FAIL_ON_SKIP=1`.
 
 ## 7. Tests
 
-- **Unit** (`pnpm test`, [lsdj-arduinoboy.test.ts](../packages/retroplug/test/dsp/lsdj-arduinoboy.test.ts)). The
-  master-sync cases are rewritten around a helper that takes absolute byte times and a block partition and feeds the
-  decoder one block late, as the wire does: clocks 860 frames apart; a flood after a run (one 0xFC, no clocks); a flood
-  before any run (nothing); a restart after a flood (a fresh NoteOn and 0xFA); the boot shape (lone bytes, then a
-  flood: a short run the flood closes); the hold (a byte near a block's end decided in a later block); leaving master
-  sync and coming back (a clean start). And the property the fix exists for: one timeline cut into 1-frame,
-  `FL_RAGGED`, `FL_BUFFER`, 1024- and 8192-frame blocks decodes to the identical message sequence.
+- **Unit** (`pnpm test`, [lsdj-arduinoboy.test.ts](../packages/retroplug/test/dsp/lsdj-arduinoboy.test.ts)). Around a
+  helper that takes absolute byte times and a block partition and feeds the decoder one block late, as the wire does:
+  every byte a clock, the first opening the run; a silence of 200 ms closing it with one 0xFC, and a silence just
+  short of it not; a byte after the stop opening a fresh run; the 0xFC landing in the first block that starts more
+  than 200 ms after the last byte; the silence in time, not frames (one length is a stop at one rate and not at
+  another); leaving master sync and coming back starting clean. And one timeline cut into 1-frame, `FL_RAGGED`,
+  `FL_BUFFER`, 1024- and 8192-frame blocks decoding to the identical message sequence.
 - **Kernel.** A kernel-level case shows `SerialOutEvent` frames reaching `ctx.serialOutFrames`;
-  [kernel-node.test.ts](../packages/retroplug/test/script/kernel-node.test.ts) shows `blockInput` copying the frames.
-- **Native.** The HostIo case "each byte at frame 0" becomes "each byte at the frame its core completed it"; the
-  sync-trace case's expected lines group bytes by frame; the KernelNode rig's stand-in Game Boy gives its bytes frames.
-- **End to end** ([lsdj-mastersync.test.ts](../packages/retroplug/test-native/lsdj-mastersync.test.ts)). A new case
-  runs a real LSDj through `renderBlocks` in 1-frame, `fl` and 1024-frame blocks, through START, play, stop and START
-  again, and holds every split to the same transport story: one NoteOn and 0xFA per start, one 0xFC per stop, no clock
-  while stopped, clock counts within one of each other (a byte at a segment edge can land on either side, section 2).
-  The parity cases never restart after a stop, so this is the only check that a restart after a flood works.
+  [kernel-node.test.ts](../packages/retroplug/test/script/kernel-node.test.ts) shows `blockInput` handing the frames
+  to the decoder.
+- **Capture modes.** The build-spec wire tests (TS and the C++ EngineGraph case) carry each mode under its key;
+  `listen` captures a Game Boy's own clocked bytes and never clocks its port (mGB, which holds its port in
+  external-clock receive, captures nothing under `listen` and a byte every eight frames under `drive`).
+- **End to end** ([lsdj-mastersync.test.ts](../packages/retroplug/test-native/lsdj-mastersync.test.ts)). A real LSDj
+  through `renderBlocks` in 1-frame, `fl` and 1024-frame blocks, at 44.1 and 48 kHz, from power-on through START,
+  play, stop, START again and play: every run tells the same story, nothing during boot, one NoteOn and 0xFA per
+  start, one 0xFC per stop, no clock while stopped, clock counts within one of each other across the splits (the
+  core's own timing moves by tens of frames with the split, so a byte at a render's edge can land on either side).
 
 ## 8. Docs
 
-B0 design section 2.5 marks the eighth defect fixed with the new figures, and its sixth-defect paragraph drops the
-sentence about 512-frame blocks opening a run that never closes (the boot flood now closes it; the cases keep their
-1024-frame blocks). AGENTS.md counts four pinned defects and drops "the next due". `spec/06` drops this one from its
+B0 design section 2.5 marks the sixth and eighth defects fixed, with the cause and the new figures, and notes the
+lead on the seventh. AGENTS.md counts three pinned defects and drops "the next due". `spec/06` drops both from its
 defect list, `spec/07` drops its item (B3b is next), the B3a design's section 10 and the main design's B3 paragraph
-say it is done, and `spec/04` describes the gap rule. Comments follow in `dspRoles.ts`, `lsdjArduinoboy.ts`,
-`SystemNodes.cpp` and the three LSDj test files.
+say it is done, and `spec/02` / `spec/04` describe the capture modes and the stop rule. Comments follow in
+`dspRoles.ts`, `lsdjArduinoboy.ts`, `SameBoySystem`, `SystemNodes.cpp` and the LSDj test files.
 
 ## 9. Landing
 
 1. This design, and its plan beside it.
 2. The frames on the wire and through the kernel: no behaviour change, parity bit for bit.
-3. The decoder, its tests, the re-record and the docs, in one commit, as an intentional change must be (AGENTS.md).
+3. The capture modes, the decoder, their tests, the re-record and the docs, in one commit, as an intentional change
+   must be (AGENTS.md).
 
 Each goes through review.
