@@ -28,8 +28,9 @@ struct DspCommand {
         struct { std::string* json; } setSystems;                 // owning; audio thread deletes
         struct { std::vector<std::uint8_t>* bytecode; } loadKernel; // owning; audio thread deletes
         // `len` bytes inline when the message fits; else `ext` OWNS the whole message (audio thread deletes)
-        // and `len` is 0. Also carries StageControllerMidi, which never uses `ext` (a pad press is 3 bytes).
-        struct { std::uint8_t data[4]; std::uint8_t len; std::vector<std::uint8_t>* ext; } stageMidi;
+        // and `len` is 0. `frame` places it in the next block. Also carries StageControllerMidi, which never uses
+        // `ext` (a pad press is 3 bytes) and is always at frame 0.
+        struct { std::uint8_t data[4]; std::uint8_t len; std::uint32_t frame; std::vector<std::uint8_t>* ext; } stageMidi;
         struct { double value; } setBpm;                          // transport as a queued op
         struct { bool value; } setTransport;
         struct { std::uint32_t id; std::uint8_t field; double value; } setConfigField; // live setting → core
@@ -49,5 +50,5 @@ struct DspCommand {
         struct { bool arm; std::uint8_t mode; std::uint32_t id; } syncTap;  // what it arms after the restore
     };
 
-    DspCommand() : kind(Kind::None), stageMidi{{0, 0, 0, 0}, 0, nullptr} {}
+    DspCommand() : kind(Kind::None), stageMidi{{0, 0, 0, 0}, 0, 0, nullptr} {}
 };

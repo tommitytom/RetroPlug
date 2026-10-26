@@ -31,7 +31,8 @@ struct HostCores {
     bool (*released)(void* ctx, SystemBase* core);
 };
 
-// The engine's kernel stage (section 3.3), run by rp.dsp.kernel as the plan's first step. [audio]
+// The engine's kernel stage (section 3.3), run by the native kernel node (KernelNode.hpp), which no engine registers
+// since the script kernel took its type id. [audio]
 #define RP_ENGINE_KERNEL_INTERFACE "rp.engine.kernel/1"
 struct EngineKernel {
     void* ctx;

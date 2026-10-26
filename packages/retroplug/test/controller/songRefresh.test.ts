@@ -1,13 +1,14 @@
 // Noticing that the player edited the song ON THE CART.
 //
-// The controller's row-timing table is derived on the control plane and pushed to the audio thread as
-// data, so it only moves when something re-pushes the structure - and nothing did. Adding a chain to a
+// The controller's row-timing table is derived on the control plane and reaches the audio thread as the
+// kernel's settings in the graph the project publishes, so it only moves when something publishes - and
+// nothing did. Adding a chain to a
 // song row inside LSDj left the Launchpad's grid showing the song as it was; toggling "Use in Project"
 // off and on was the only way through, because that drops the stage and takes its state with it.
 // Reported from a hardware session.
 //
 // A cart being edited on its own screen emits no signal at all, so this is a poll. It has to be cheap
-// enough to sit on the same 0.5 s timer as the recents song-watch, and it has to be quiet: a re-push on
+// enough to sit on the same 0.5 s timer as the recents song-watch, and it has to be quiet: a publish on
 // every instrument tweak would re-derive the table (a whole sav decode) for a change that cannot affect
 // it. Hence a signature over only the four regions row timing actually depends on.
 import { test, expect } from "../../testing/harness";
@@ -17,6 +18,23 @@ import { workingSongSignature } from "../../src/lsdj/playback/fromSav";
 import * as R from "../../src/lsdj/codec/regions";
 import { gbRom } from "../systems/fixtures";
 import { identifyLsdj, resolveLayout } from "../../src/lsdj/runtime";
+
+/** Count the project's publishes from here on, sent or not (the graph sends only a document that changed). */
+function countPublishes(stores: ReturnType<typeof composeAppStores>): { n: number } {
+  const count = { n: 0 };
+  const graph = stores.project.graph;
+  const publish = graph.publish.bind(graph);
+  graph.publish = (...args) => {
+    count.n++;
+    return publish(...args);
+  };
+  return count;
+}
+
+/** The launchpad stage of the kernel's structure in the last document sent. */
+function launchpadStage(be: MockBackend): Record<string, unknown> | undefined {
+  return be.kernelSettings()?.project.find((r) => r.kind === "launchpad")?.config;
+}
 
 /** A blank song bank, big enough to be a plausible battery. */
 function sav(): Uint8Array {
@@ -78,7 +96,7 @@ test("an unreadable battery is inert rather than a change", () => {
   expect(workingSongSignature(undefined)).toBe(0);
 });
 
-test("refreshControllerSong re-pushes the kernel exactly once per real edit", () => {
+test("refreshControllerSong publishes the kernel's structure exactly once per real edit", () => {
   const be = new MockBackend();
   const stores = composeAppStores({ backend: be });
   be.seed("/roms/a.gb", gbRom());
@@ -87,21 +105,19 @@ test("refreshControllerSong re-pushes the kernel exactly once per real edit", ()
   be.setSram(id, sav());
   stores.project.setController({ enabled: true });
 
-  let pushes = 0;
-  stores.project.setOnSystemsChange(() => void pushes++);
-
+  const publishes = countPublishes(stores);
   expect(stores.project.refreshControllerSong()).toBe(true); // first look: adopt whatever is there
-  expect(pushes).toBe(1);
+  expect(publishes.n).toBe(1);
   expect(stores.project.refreshControllerSong()).toBe(false); // unchanged -> silent
-  expect(pushes).toBe(1);
+  expect(publishes.n).toBe(1);
 
   const edited = sav();
   edited[R.kModernRegions.chainAssignments + 4 * R.kChannelCount] = 3;
   be.setSram(id, edited);
   expect(stores.project.refreshControllerSong()).toBe(true);
-  expect(pushes).toBe(2);
+  expect(publishes.n).toBe(2);
   expect(stores.project.refreshControllerSong()).toBe(false);
-  expect(pushes).toBe(2);
+  expect(publishes.n).toBe(2);
 });
 
 test("refreshControllerSong costs nothing while no controller is enabled", () => {
@@ -126,7 +142,7 @@ test("an edit does not dirty the project - the song lives in the cart, not the .
   stores.project.setController({ enabled: true });
   stores.project.refreshControllerSong();
 
-  // markDirty is what fires onChange, so counting that is the precise test: a re-push must re-drive the
+  // markDirty is what fires onChange, so counting that is the precise test: a publish must re-drive the
   // KERNEL without touching the project's saved state. Otherwise every edit in LSDj would put an unsaved
   // asterisk on a project file whose contents did not move.
   let changes = 0;
@@ -248,13 +264,13 @@ test("the anchor is per channel, because channels diverge in normal play", () =>
   expect(stores.project.controllerStartAnchor()?.rows).toEqual([4, 3, 4, null]);
 });
 
-test("a start edge re-pushes the kernel, or the anchor would sit on the control plane doing nothing", () => {
+test("a start edge publishes the kernel's structure, or the anchor would sit on the control plane doing nothing", () => {
   const { stores, be, id } = controllerCart();
   be.setRam(id, wramWith([null, null, null, null]));
   stores.project.refreshControllerSong();
-  let pushes = 0;
-  stores.project.setOnSystemsChange(() => void pushes++);
+  const sent = be.graphRequests.length;
   be.setRam(id, wramWith([1, 1, 1, 1]));
   expect(stores.project.refreshControllerSong()).toBe(true);
-  expect(pushes).toBe(1);
+  expect(be.graphRequests.length).toBe(sent + 1);
+  expect(launchpadStage(be)?.anchorRows).toEqual([1, 1, 1, 1]);
 });

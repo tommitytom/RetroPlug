@@ -35,8 +35,9 @@ public:
     // producer (control thread)
     void loadKernel(std::vector<std::uint8_t> bytecode);
     void setSystems(std::string json);
-    // Any length: a channel message rides the command inline, a longer run (SysEx) as an owning payload.
-    void stageMidi(std::vector<std::uint8_t> bytes);
+    // Any length: a channel message rides the command inline, a longer run (SysEx) as an owning payload. `frame`
+    // places it in the next block, which it must be inside.
+    void stageMidi(std::vector<std::uint8_t> bytes, std::uint32_t frame = 0);
     // Control-surface traffic (a pad press), kept out of the musical stream. Inline-only (4 bytes),
     // which a Note/CC press fits inside; a surface's sysex never comes this way. False, with nothing
     // staged, for an empty message or one longer than 4 bytes.

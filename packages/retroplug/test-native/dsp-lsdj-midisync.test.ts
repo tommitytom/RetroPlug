@@ -8,7 +8,6 @@
 // frozen/SILENT, MidiSync (1) makes it sing. Whole-mix RMS on a single system = that system's audio.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";
 import { directGraph } from "../src/graph/directGraph";
@@ -17,16 +16,13 @@ import { directGraph } from "../src/graph/directGraph";
 const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
-declare const __DSP_KERNEL_BUNDLE__: string;
 
 const LSDJ = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_4_2.gb";
 const START = 7; // GameboyButton::Start
 
 // The system's lsdj-sync pipeline at a given LsdjSyncMode (0 = Off, 1 = MidiSync). mode:0 must be
 // EXPLICIT — the role's schema defaults a bare config to MidiSync (clocking).
-const lsdjSync = (id: number, mode: string) => ({
-  systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode } }] }],
-});
+const lsdjSync = (mode: string) => [{ kind: "lsdj-sync", config: { mode } }];
 
 // SYNC=MIDI + chain0 -> phrase0 -> a C note on a hard-panned pulse (the proven cell set). The codec
 // pads every fixed array to full length; syncMode:"Midi" now writes the real LSDj byte 3.
@@ -51,7 +47,6 @@ test("the TS lsdj-sync role in the DSP kernel is the sole clock that makes an ar
   const be = createRealBackend();
   if (!be.fileExists(LSDJ)) skip(`dsp-lsdj-midisync: LSDj ROM not found at ${LSDJ}`); // no resources on disk (e.g. resource-less CI) — the devcontainer has it
 
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
 
   // Real LSDj, authored SYNC=MIDI song, constructed bare (no C++ roles) so the kernel is the only clock.
@@ -67,9 +62,6 @@ test("the TS lsdj-sync role in the DSP kernel is the sole clock that makes an ar
     sramBytes: sav, // a Uint8Array — rides the bridge as-is (rfl::Bytestring)
   }, id)).toBeTruthy();
 
-  // Load the real role kernel; per-block drive is the kernel from here on.
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-
   audio.renderAudio(6000); // warm up (transport off) -> LSDj reaches the SONG screen from the sav
 
   // Arm: a START tap parks SYNC=MIDI LSDj in "wait for MIDI clock".
@@ -82,11 +74,11 @@ test("the TS lsdj-sync role in the DSP kernel is the sole clock that makes an ar
   audio.setTransport(true);
 
   // Negative: lsdj-sync Off -> the role emits no clock -> armed LSDj stays frozen -> silent.
-  expect(dsp.setSystems(lsdjSync(id, "off"))).toBeTruthy();
+  expect(graph.setPipeline(id, lsdjSync("off"))).toBeTruthy();
   const neg = rms(audio.renderAudio(600));
 
   // Positive: lsdj-sync MidiSync -> eachTick(24)->pushSerialIn(0xF8) is the only clock -> LSDj plays.
-  expect(dsp.setSystems(lsdjSync(id, "midiSync"))).toBeTruthy();
+  expect(graph.setPipeline(id, lsdjSync("midiSync"))).toBeTruthy();
   const pos = rms(audio.renderAudio(3000));
 
   console.log(`[dsp-lsdj-midisync] neg=${neg.toFixed(5)} pos=${pos.toFixed(5)}`);

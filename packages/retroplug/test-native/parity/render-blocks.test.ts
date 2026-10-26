@@ -14,7 +14,7 @@ const session = bootSession();
 // the session's own graph, so the session's renders run what this places. The two models are not merged: this
 // is safe only because the session's stores place nothing here and the two publish in turn (see directGraph.ts).
 const graph = new DirectGraph(session.backend, session.project.graph);
-const { project, audio, backend: be, dsp } = session;
+const { project, audio, backend: be } = session;
 
 const CHORD = [
   [0x90, 60, 100],
@@ -186,12 +186,8 @@ test("MIDI out through renderBlocks is what renderAudio + drainMidiOut yields, t
         id,
       ),
     ).toBeTruthy();
-    expect(
-      dsp.setSystems({
-        project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
-        systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode: "midiOut" } }] }],
-      }),
-    ).toBeTruthy();
+    expect(graph.setProjectStages([{ kind: "midi-routing", config: { mode: "sendToAll" } }])).toBeTruthy();
+    expect(graph.setPipeline(id, [{ kind: "lsdj-sync", config: { mode: "midiOut" } }])).toBeTruthy();
     expect(be.setSerialOutCapture(id, true)).toBeTruthy();
     render(6000); // reach the song screen; its output is not compared
     const out: Msg[] = [];

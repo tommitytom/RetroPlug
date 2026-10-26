@@ -34,10 +34,13 @@ const rp_package* n8Package();
 // the same settings: a field the node does not know is ignored, a missing or out-of-range system refused (nullopt).
 std::optional<std::uint32_t> cartMirrorSystem(std::string_view settings);
 
-// rp.host.midi-in's output: room for a dense block of DAW MIDI, the frame-0 CCs of moved automation and a SysEx
-// (a wave upload), with margin. A message past it is dropped and counted (GraphHost::droppedMessages).
+// rp.host.midi-in's output: room for a dense block of DAW MIDI, the frame-0 CCs of moved automation and a large
+// SysEx (a sample or wave upload to a NES build, which the staging has always taken whole), with margin. The kernel's
+// sys-<id>.midi and serialIn outputs hold as many bytes (src/script/kernelNode.ts KERNEL_CORE_MIDI and
+// KERNEL_SERIAL_IN), so what passes here reaches the system. A message past it is dropped and counted
+// (GraphHost::droppedMessages).
 inline constexpr std::uint32_t kHostMidiInMessages = 2048;
-inline constexpr std::uint32_t kHostMidiInBytes = 32768;
+inline constexpr std::uint32_t kHostMidiInBytes = 65536;
 // rp.host.controller-in's: a Launchpad's pad traffic and its replies.
 inline constexpr std::uint32_t kControllerInMessages = 1024;
 inline constexpr std::uint32_t kControllerInBytes = 16384;

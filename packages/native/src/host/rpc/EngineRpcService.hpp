@@ -80,7 +80,10 @@ public:
     bool            setTransport(bool running);
     bool            setPpq(double ppq);
     bool            setBpm(double bpm);
-    bool            stageMidiIn(std::vector<std::uint8_t> bytes);
+    // Host MIDI for the next block rendered, at `frame` inside it (any order, as a plugin stages a block: its events,
+    // then each moved automation slot's CC at frame 0). False, nothing staged, for an empty message or a frame past
+    // the block renderAudio renders (kBlockSize); a renderBlocks block shorter than `frame` is the caller's to avoid.
+    bool            stageMidiIn(std::vector<std::uint8_t> bytes, std::uint32_t frame);
     // The control-surface twin: staged as `controllerIn` rather than musical MIDI, so a headless test
     // can drive a Launchpad app without a Launchpad. Harness-facet only, like stageMidiIn.
     bool            stageControllerIn(std::vector<std::uint8_t> bytes);

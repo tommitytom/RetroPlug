@@ -17,10 +17,9 @@ import type { MidiEvent } from "../midiRouting";
 import { RoleRegistry } from "../systemRoles";
 import { registerDspRoles } from "../dspRoles";
 
-/** The kernel node's type id. Its own is rp.dsp.kernel, which the native kernel stage holds until the engine
- *  switches over (a registry refuses a second type under one id); the switch deletes that node and this one takes
- *  the id, so a document that names rp.dsp.kernel with no settings plans as an empty kernel from then on. */
-export const KERNEL_NODE_TYPE = "rp.dsp.kernel-script";
+/** The kernel node's type id, which the native kernel stage's node held before it: the engine registers that node no
+ *  more. A document that names it with no settings plans as an empty kernel. */
+export const KERNEL_NODE_TYPE = "rp.dsp.kernel";
 
 /** RP_MESSAGE_FLUSH (graph/rp_node.h): a bytes message the device takes only after dropping what it still holds. */
 const FLUSH = 1;
@@ -30,9 +29,11 @@ const FLUSH = 1;
 // MIDI (nes-n8-midi), each hold at least what rp.host.midi-in's output holds (kHostMidiInMessages and
 // kHostMidiInBytes, host/graph/HostIoNodes.hpp), so the one place host MIDI is dropped is that edge. Core MIDI takes a
 // message for each forwarded one; serial in a run of same-frame bytes to a message, so at most one for each forwarded
-// message, plus the sync roles' own bytes. Both have room for 4096 messages and 64 KiB. (The most the suites sent
-// through them in one block, measured over test:native with the fixtures, parity included, 2.2 million kernel blocks
-// up to 8192 frames: per system, 18 serial-in bytes and 8 core-MIDI messages holding 4096 bytes, the largest 512.)
+// message, plus the sync roles' own bytes. Both have room for 4096 messages and 64 KiB: twice rp.host.midi-in's
+// messages and exactly its bytes, so a SysEx the host stages whole (a sample upload to a NES build) reaches the
+// system whole. (The most the suites sent through them in one block, measured over test:native with the fixtures,
+// parity included, 2.2 million kernel blocks up to 8192 frames: per system, 18 serial-in bytes and 8 core-MIDI messages
+// holding 4096 bytes, the largest 512.)
 // The rest are sized from the same measurement: per system, 11 core-byte messages holding 11 bytes, 1 button press;
 // 14 host MIDI-out messages holding 70 bytes with their prefixes; 5 control-surface messages holding 206 bytes (in
 // one). dsp-bench's densest profile, skipped there, sends 13 messages of 39 bytes a block. Each of these has room for

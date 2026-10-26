@@ -331,7 +331,7 @@ test("the status row reads what the link is actually doing", () => {
   }
 });
 
-test("the app rows edit PROJECT settings, and each edit re-pushes the kernel", () => {
+test("the app rows edit PROJECT settings, and each edit publishes the kernel's structure", () => {
   const lp = installLaunchpad();
   try {
     const be = new MockBackend();
@@ -339,8 +339,7 @@ test("the app rows edit PROJECT settings, and each edit re-pushes the kernel", (
     // A cycler's onCycle takes a DIRECTION, so each of these steps once from its default: off -> on,
     // bar -> beat, follow on -> off, and the emulated cart -> MIDI out.
     const rows = submenu(stores, be);
-    let pushes = 0; // counted from HERE: seeding the cart above pushes once on its own
-    stores.project.setOnSystemsChange(() => void pushes++);
+    const sent = be.graphRequests.length; // counted from HERE: seeding the cart above publishes on its own
 
     findItem(rows, "lp-enabled")?.onCycle?.(1);
     findItem(rows, "lp-quantise")?.onCycle?.(-1);
@@ -352,9 +351,12 @@ test("the app rows edit PROJECT settings, and each edit re-pushes the kernel", (
     expect(c.target).toBe("midiOut");
     expect(c.appConfig.quantise).toBe("beat");
     expect(c.appConfig.follow).toBe(false);
-    // The controller role is SYNTHESIZED at projection time, so an edit that never reached setSystems would
-    // leave the audio thread running the previous settings.
-    expect(pushes).toBe(4);
+    // The controller role is SYNTHESIZED at projection time, so an edit that was never published would leave
+    // the audio thread running the previous settings: each one sends a document, the last carrying the session.
+    expect(be.graphRequests.length - sent).toBe(4);
+    const launchpad = be.kernelSettings()?.project.find((r) => r.kind === "launchpad");
+    expect(launchpad?.config.target).toBe("midiOut");
+    expect((launchpad?.config.appConfig as { quantise?: string } | undefined)?.quantise).toBe("beat");
   } finally {
     lp.restore();
   }

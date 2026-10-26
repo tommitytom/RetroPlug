@@ -9,13 +9,10 @@
 // point the paths below at it. The test SKIPs cleanly when they're absent so CI stays green.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
-
-declare const __DSP_KERNEL_BUNDLE__: string;
+import { buildAppRegistry } from "../src/appHost";
 
 declare const __RISA_SRC__: string;
 const RISA_ROM = __RISA_SRC__ + "/build/risa-pal.nes";
@@ -33,10 +30,7 @@ test("M0: risa (NES/MMC5) boots in Mesen, exposes 64KB battery + 2KB RAM, and pl
   if (!be.fileExists(RISA_ROM)) skip(`risa-m0: no ROM at ${RISA_ROM}`);
 
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
 
   // ---- M0b: load + boot. If Mesen rejected MMC5, the construct fails and loadRom returns no system.
   const hasSav = be.fileExists(DEMO_SRM);

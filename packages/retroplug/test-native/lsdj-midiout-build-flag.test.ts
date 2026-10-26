@@ -5,7 +5,6 @@
 // the decode itself, armed by the live command.)
 import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../src/bootSession";
-import { syncDspFromStore } from "../src/appHost";
 import { savFrom, type SavInput } from "../src/lsdjSav";
 import { LsdjSyncMode } from "../src/settingsEnums";
 import type { ConstructSpec } from "../src/backend";
@@ -36,7 +35,7 @@ const MIDIOUT_SONG: SavInput = {
 };
 
 const session = bootSession();
-const { project, audio, backend: be, dsp } = session;
+const { project, audio, backend: be } = session;
 project.systems.setBatteryFlush(false); // a remove must not write the song into the fixture ROM's .sav
 
 // Adopt the LSDj in MIDI-out mode, as a project load adopts each system, with `build` editing the spec it is built
@@ -59,7 +58,6 @@ function playMidiOut(build: (spec: ConstructSpec) => ConstructSpec): MidiOutRun 
       { sramBytes: savFrom(MIDIOUT_SONG) },
     );
     expect(typeof id, "adopted").toBe("number");
-    syncDspFromStore(project, dsp); // adopt is quiet: project the store into the kernel
     audio.renderAudio(4000); // boot
     audio.drainMidiOut();
     audio.pressButton(id!, START, true);

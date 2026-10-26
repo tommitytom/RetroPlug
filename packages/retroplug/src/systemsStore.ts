@@ -118,12 +118,13 @@ export class SystemsStore {
   private focusedId = 0;
   private dirty = false;
   private onFocusChange: () => void = () => {};
-  // A store on its own publishes its systems at the default (stereo) routing through a graph of its own;
-  // the ProjectStore that owns one replaces this with its own publish, which adds the project's routing.
+  // A store on its own publishes its systems at the default (stereo) routing, with no project stages (so no MIDI
+  // routing), through a graph of its own; the ProjectStore that owns one replaces this with its own publish, which
+  // adds the project's routing and kernel structure.
   private ownGraph: EngineGraph | null = null;
   private onGraphChange: (rearmTap: boolean) => void = (rearmTap) => {
     this.ownGraph ??= new EngineGraph(this.backend);
-    this.ownGraph.publish(this.graphSystems(), "stereo", { rearmTap });
+    this.ownGraph.publish({ systems: this.graphSystems(), routing: "stereo", project: [] }, { rearmTap });
   };
   // Whether a core teardown writes the battery to disk first. Off only for an offline render.
   private batteryFlush = true;
@@ -155,9 +156,22 @@ export class SystemsStore {
   systems(): SystemEntry[] {
     return this.entries.slice();
   }
-  /** The systems as the engine's graph places them, in slot order (graph/buildGraph.ts). */
+  /** The systems as the engine's graph places them, in slot order (graph/buildGraph.ts), each with the roles the
+   *  DSP kernel runs for it as its pipeline. */
   graphSystems(): GraphSystem[] {
-    return this.entries.map((e) => ({ id: e.id, ...e.built }));
+    return this.entries.map((e) => ({ id: e.id, ...e.built, pipeline: this.kernelPipeline(e.roles) }));
+  }
+
+  /** `roles`, in order, without those the DSP kernel does not run: the core's config role and the features with no
+   *  DSP behaviour (asset overrides, a ROM's facts). The kernel skips those itself, but in the graph's document they
+   *  would make every model, palette or asset edit a new document. Without a registry, every role (it has none). */
+  private kernelPipeline(roles: RoleInstance[]): RoleInstance[] {
+    return this.registry ? roles.filter((r) => this.runsInKernel(r.kind)) : roles.slice();
+  }
+
+  private runsInKernel(kind: string): boolean {
+    const rt = this.registry?.roleType(kind);
+    return rt !== undefined && rt.scope === "system" && rt.dsp !== undefined;
   }
   focused(): number {
     return this.focusedId;
@@ -173,15 +187,15 @@ export class SystemsStore {
 
   /** Install the observer fired on a focus change (setFocus). A NON-dirtying UI signal — focus is
    *  transient (not persisted), so it re-renders the tiles without marking the project dirty or
-   *  re-projecting the DSP (distinct from the structural onChange). */
+   *  publishing the graph (distinct from the structural onChange). */
   setOnFocusChange(fn: () => void): void {
     this.onFocusChange = fn;
   }
 
-  /** Install the hook that publishes the engine's graph (the ProjectStore's, which adds the routing; without
-   *  one the store publishes its systems at the default stereo routing itself). Called
-   *  once at the end of every edit that changes what the graph places, BEFORE the structural onChange that
-   *  pushes the kernel: `rearmTap` for an edit that builds or drops a core, which re-arms the NES tap. */
+  /** Install the hook that publishes the engine's graph (the ProjectStore's, which adds the routing and the kernel's
+   *  project stages; without one the store publishes its systems at the default stereo routing itself). Called
+   *  once at the end of every edit that changes what the graph places or what the kernel runs for a system, BEFORE
+   *  the structural onChange: `rearmTap` for an edit that builds or drops a core, which re-arms the NES tap. */
   setOnGraphChange(fn: (rearmTap: boolean) => void): void {
     this.onGraphChange = fn;
   }
@@ -535,10 +549,12 @@ export class SystemsStore {
     const rewired = roleKind === "sameboy" && e.built.type === "rp.sameboy.gb" && linkGroup !== e.built.linkGroup;
     const built = rewired ? { ...e.built, linkGroup } : e.built;
     this.entries = replaceById(this.entries, id, { ...e, roles, built });
-    if (rewired) this.onGraphChange(false);
     // A feature role stays pure TS, EXCEPT lsdj-sync's serial-out capture gate — arm/disarm it on a
-    // MIDIOUT mode change (the decoder itself runs in the kernel via the re-projection below).
+    // MIDIOUT mode change (the decoder itself runs in the kernel, which the publish below hands the new mode).
     if (roleKind === "lsdj-sync") this.syncSerialOutCapture(id);
+    // A role the kernel runs is the system's pipeline, which the document carries, so its edit publishes; an edit the
+    // document does not carry (a model or palette, an asset override) leaves it as it was.
+    if (rewired || this.runsInKernel(roleKind)) this.onGraphChange(false);
     this.markDirty();
     return true;
   }
@@ -546,7 +562,7 @@ export class SystemsStore {
   /** Link a freshly-created instance to the one it was created from: the child joins the parent's link group,
    *  and if the parent is ungrouped (0) the parent is promoted to group 1 so the pair is linked. A no-op unless
    *  BOTH are SameBoy (GB) systems — link groups are a Game Boy link-cable concept. Routes through
-   *  setRoleConfig, so native-apply + dirty + re-projection are handled. */
+   *  setRoleConfig, so native-apply + dirty + the publish are handled. */
   inheritLinkGroup(childId: number, parentId: number): void {
     const parentSb = findById(this.entries, parentId)?.roles.find((r) => r.kind === "sameboy");
     const childSb = findById(this.entries, childId)?.roles.find((r) => r.kind === "sameboy");
@@ -591,13 +607,10 @@ export class SystemsStore {
    *  only for a zip-import) seed the emulator's SRAM/savestate from the archive instead
    *  of from disk; `savPath` stays the auto-save target.
    *
-   *  QUIET ON PURPOSE: unlike every other mutation this does NOT markDirty(), so the
-   *  store→DSP projection does not run. It does publish the graph, so the core runs at once
-   *  (a project load holds that back and publishes once its systems are all built; see
-   *  projectStore.load). A project load adopts N systems and then fires ONE onSystemsChange,
-   *  rather than re-projecting N times. A standalone caller must therefore trigger a sync
-   *  itself - any markDirty-ing call (e.g. setRoleConfig) will do - or the system boots and
-   *  renders VIDEO while the DSP knows nothing about it and it produces NO AUDIO. */
+   *  QUIET ON PURPOSE: unlike every other mutation this does NOT markDirty() or fire onChange. It
+   *  does publish the graph, which carries the system's kernel pipeline, so the core and its roles
+   *  run at once (a project load holds that back and publishes once its systems are all built; see
+   *  projectStore.load, which then fires ONE onSystemsChange rather than N). */
   adopt(
     config: {
       core?: Core; // persisted since the v2 project schema (else auto-derived from platform)
@@ -769,12 +782,12 @@ export class SystemsStore {
    *    construct-time `settings` blob from the STORED roles: synthesising one here would start passing
    *    schema defaults where `undefined` is passed today and native applies its own.
    *  - **A stored role is never touched**, so a configured sync mode or a kit override survives.
-   *  - **Appended, not merged in place.** `kernelProjection` maps this array straight to the DSP
-   *    pipeline in order, and `defaultRoles` itself emits core-role-then-providers, so appending
+   *  - **Appended, not merged in place.** `graphSystems` keeps this array's order for the DSP
+   *    pipeline, and `defaultRoles` itself emits core-role-then-providers, so appending
    *    reproduces the order a freshly added system would have.
    *
-   *  A stored kind that is no longer registered is left alone rather than pruned: `DspKernel` already
-   *  skips unknown kinds when building the pipeline, so it is inert, and dropping it would silently
+   *  A stored kind that is no longer registered is left alone rather than pruned: the pipeline leaves
+   *  out kinds the registry does not know, so it is inert, and dropping it would silently
    *  discard state belonging to a build the user might go back to.
    *
    *  No schema change and no version bump: the file is read as written, and the augmented list only

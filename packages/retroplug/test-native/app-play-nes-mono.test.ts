@@ -6,17 +6,15 @@
 // streams are MONO (silent right lane). ch1→Square1 is the guaranteed anchor (ch2 is broken in the
 // committed ROM, DMC needs a sample bank unavailable headless).
 //
-// Uses `adopt` (mode 3 arms capture at CONSTRUCT) + a manual syncDspFromStore (adopt is quiet). See
-// app-play-nes-channels.test.ts for the same construct-time-capture rationale.
+// Uses `adopt` (mode 3 arms capture at CONSTRUCT), whose publish carries the system's kernel pipeline.
+// See app-play-nes-channels.test.ts for the same construct-time-capture rationale.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
+import { buildAppRegistry } from "../src/appHost";
 
-declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
 
 const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
@@ -40,11 +38,7 @@ test("NES renders its 5 core channels individually (renderAudioPerChannel mode 3
   if (!be.fileExists(NES)) skip(`app-play-nes-mono: no ROM at ${NES}`);
 
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
-  const dsp = createDspRuntime();
   const audio = createAudioDriver(project.graph);
-
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
 
   project.systems.adopt({
     romPath: NES,
@@ -53,7 +47,6 @@ test("NES renders its 5 core channels individually (renderAudioPerChannel mode 3
       { kind: "mesen", config: { channelExportMode: "individualMono" } },
     ],
   });
-  syncDspFromStore(project, dsp);
 
   const v = project.systems.view()[0];
   expect(v.platform).toBe("nes");

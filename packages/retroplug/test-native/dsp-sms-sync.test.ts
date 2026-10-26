@@ -14,7 +14,6 @@
 // control than an idle one.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import {
   buildSmsMetronomeSav,
@@ -27,7 +26,6 @@ import { directGraph } from "../src/graph/directGraph";
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
 const graph = directGraph();
 
-declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
 
 // Both machines, because the sync PROTOCOL is shared and only the pins differ: SMS carries the
@@ -45,10 +43,7 @@ type Machine = (typeof MACHINES)[number];
 const PAUSE = 7;
 
 // This system's pipeline: the sync role, or nothing at all (the negative control).
-const withSync = (id: number, m: Machine) => ({
-  systems: [{ id, pipeline: [{ kind: "sms-sync", config: { machine: m.machine } }] }],
-});
-const noRoles = (id: number) => ({ systems: [{ id, pipeline: [] }] });
+const withSync = (m: Machine) => [{ kind: "sms-sync", config: { machine: m.machine } }];
 
 const rms = (a: Float32Array): number => {
   let s = 0;
@@ -172,8 +167,6 @@ for (const m of MACHINES) {
     const be0 = createRealBackend();
     if (!be0.fileExists(m.rom)) skip(`dsp-sms-sync ${m.machine}: missing ${m.rom}`);
     const { be, audio, id } = boot(SMS_SYNC_IN24, m);
-    const dsp = createDspRuntime();
-    expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
 
     // The fixture's OPTIONS block really did reach the ROM: config_load ran at boot and took IN24.
     // Without this the negative control below would pass for the wrong reason (a ROM that is simply
@@ -195,13 +188,13 @@ for (const m of MACHINES) {
     // ROM sits in WAIT, even though it is armed and the DAW transport is running. This ALSO proves
     // config_load applied the fixture's sync_mode: with sync OFF the ROM would already be playing here,
     // which is exactly what Guard A shows.
-    expect(dsp.setSystems(noRoles(id))).toBeTruthy();
+    expect(graph.setPipeline(id, [])).toBeTruthy();
     const negRows = rowsAdvanced(be, audio, id, 500, 6);
     const neg = rms(audio.renderAudio(500));
     expect(syncState(be, id)?.wait).toBe(1); // still WAIT - nothing clocked it
 
     // Positive: the role steps the counter at 24 PPQN -> the ROM recovers clocks -> the sequencer runs.
-    expect(dsp.setSystems(withSync(id, m))).toBeTruthy();
+    expect(graph.setPipeline(id, withSync(m))).toBeTruthy();
     const posRows = rowsAdvanced(be, audio, id, 500, 6);
     const pos = rms(audio.renderAudio(500));
 
@@ -221,9 +214,7 @@ for (const m of MACHINES) {
     const be0 = createRealBackend();
     if (!be0.fileExists(m.rom)) skip(`dsp-sms-sync ${m.machine}: missing ${m.rom}`);
     const { be, audio, id } = boot(SMS_SYNC_IN24, m);
-    const dsp = createDspRuntime();
-    expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-    expect(dsp.setSystems(withSync(id, m))).toBeTruthy();
+    expect(graph.setPipeline(id, withSync(m))).toBeTruthy();
 
     pressPlay(audio, id);
     audio.setBpm(120);

@@ -1,29 +1,26 @@
-// The plugin's control-plane bundle: the Phase-0 composition root (stores + DSP kernel), packaged for
+// The plugin's control-plane bundle: the Phase-0 composition root (the stores), packaged for
 // a host to eval once at construct. It runs in the plugin's txiki QuickJS context (the same
 // __rpcSend-bound namespace the test host uses), composing ProjectStore/SystemsStore over the real
-// Backend and loading the DSP kernel, then exposing a tiny C++→JS surface for project I/O:
+// Backend (the DSP kernel is a script node every Engine has, its structure carried by the graph the
+// project publishes), then exposing a tiny C++→JS surface for project I/O:
 //
 //   __rp_loadProjectPath(path)  — autoload a `.rplg` from disk (reaper -renderproject seeds this)
 //   __rp_loadProjectB64(b64)    — DPF setState: load an in-memory chunk (base64 of the .rplg zip)
 //   __rp_saveProjectB64()       — DPF getState: export the project as a base64 .rplg chunk
 //   __rp_newProject()           — DPF setState(""): reset to an empty project
 //   __rp_setHostOutputs(n)      - the host's output channel count: the graph's multi(n) shape
-//   __rp_ready                  — set true once composition + kernel load succeeded
+//   __rp_ready                  - set true once composition succeeded
 //
 // The C++ boundary stays string-only: base64 is done HERE (DPF state is NUL-terminated UTF-8; the
 // .rplg is binary PKZIP). Every op is synchronous over the synchronous Backend RPC — the host pumps
 // once after eval to run this top-level, then calls the globals directly with no further pumping.
 import { composeAppStores, type StoreChannel, type AppStores } from "./appStores";
-import { createDspRuntime } from "./dspRuntime";
-import { syncDspFromStore } from "./appHost";
 import { FileWatcher } from "./fileWatcher";
 import { LsdjSyncMode } from "./settingsEnums";
 import { projectParameterMap } from "./parameterMap";
 import { b64encode, b64decode } from "./base64";
 
-declare const __DSP_KERNEL_BUNDLE__: string;
-
-// --- compose the app layer over the real backend + the DSP kernel ---
+// --- compose the app layer over the real backend ---
 // One store graph, composed here at construct. The editor, when it attaches (same runtime, separate
 // bundle), REUSES this graph rather than composing a second one — so the systems the UI loads are the
 // same ones the DSP plays and getState serializes, and they survive a window close/reopen. The editor
@@ -32,13 +29,11 @@ declare const __DSP_KERNEL_BUNDLE__: string;
 const uiNotify: { fn: (channel: StoreChannel) => void } = { fn: () => {} };
 const stores: AppStores = composeAppStores({ notify: (channel) => uiNotify.fn(channel) });
 const project = stores.project;
-const dsp = createDspRuntime();
 
-const kernelOk = dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!);
-// A structural systems edit (load / new / role change) re-projects the store into the DSP kernel AND
-// re-renders the editor. composeAppStores already routed onChange / onFocusChange to the UI notify;
-// layer the DSP projection onto the structure signal without dropping that notify (focus changes, wired
-// to onFocusChange, re-render only — no DSP re-project).
+// A structural systems edit (load / new / role change) refreshes the watched ROMs AND re-renders the
+// editor. composeAppStores already routed onChange / onFocusChange to the UI notify; layer the watch-list
+// refresh onto the structure signal without dropping that notify (focus changes, wired to onFocusChange,
+// re-render only).
 // The file watcher's TS policy half: drains native's changed paths and reacts (reload config, refresh
 // bindings, cold-boot a ROM-changed system with reloadOnRomChange on). A bindings change re-renders the
 // editor via the "bindings" notify. Driven from the UI idle loop through __rp_pumpWatcher below.
@@ -52,7 +47,6 @@ const refreshWatchedRoms = (): void => {
 };
 
 project.setOnSystemsChange(() => {
-  syncDspFromStore(project, dsp);
   refreshWatchedRoms();
   uiNotify.fn("systems");
 });
@@ -121,4 +115,4 @@ g.__rp_syncLatencyMs = (): string => {
 g.__rp_parameterMapJson = (): string =>
   JSON.stringify(projectParameterMap(project.systems.view(), project.settings().midiRouting));
 
-g.__rp_ready = kernelOk;
+g.__rp_ready = true;

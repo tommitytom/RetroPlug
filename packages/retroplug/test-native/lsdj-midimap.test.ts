@@ -4,7 +4,6 @@
 // triggers that song row live, so mapping a row that has a note makes the core sing.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";
 import { LsdjProbe, transitions, changeMs, gaps, fmtSample } from "./lsdjPlaybackProbe";
@@ -14,7 +13,6 @@ import { directGraph } from "../src/graph/directGraph";
 const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
-declare const __DSP_KERNEL_BUNDLE__: string;
 
 const ABOY = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_3_3-arduinoboy.gb";
 
@@ -30,10 +28,8 @@ const MIDIMAP_SONG: SavInput = {
   },
 };
 
-const sysStruct = (id: number, mode: string) => ({
-  project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
-  systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode } }] }],
-});
+const SEND_TO_ALL = [{ kind: "midi-routing", config: { mode: "sendToAll" } }];
+const lsdjSync = (mode: string) => [{ kind: "lsdj-sync", config: { mode } }];
 
 const rms = (a: Float32Array): number => {
   let s = 0;
@@ -46,7 +42,6 @@ test("the TS lsdj-sync MidiMap role maps MIDI notes to LSDj row bytes on a real 
   const be = createRealBackend();
   if (!be.fileExists(ABOY)) skip(`lsdj-midimap: aboy LSDj ROM not found at ${ABOY}`);
 
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
 
   const id = 1;
@@ -60,8 +55,8 @@ test("the TS lsdj-sync MidiMap role maps MIDI notes to LSDj row bytes on a real 
     sramBytes: savFrom(MIDIMAP_SONG),
   }, id)).toBeTruthy();
 
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems(sysStruct(id, "midiMap"))).toBeTruthy();
+  expect(graph.setProjectStages(SEND_TO_ALL)).toBeTruthy();
+  expect(graph.setPipeline(id, lsdjSync("midiMap"))).toBeTruthy();
 
   audio.renderAudio(6000); // reach the song screen from the sav
   const idle = rms(audio.renderAudio(500)); // no map notes → baseline

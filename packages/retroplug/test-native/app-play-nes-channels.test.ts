@@ -6,17 +6,15 @@
 // each interleaved-stereo buffer's right lane is silent. spec/10 §5.
 //
 // Uses `adopt` (not loadRom): the mesen role's channelExportMode arms capture at CONSTRUCT (onActivate);
-// setRoleConfig is the live path and would not engage it. adopt is quiet, so the store→DSP projection is
-// driven by hand (syncDspFromStore), matching how ProjectStore.load re-projects after its adopt.
+// setRoleConfig is the live path and would not engage it. adopt publishes the graph, the system's
+// kernel pipeline with it, as ProjectStore.load's one publish does after its adopts.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
+import { buildAppRegistry } from "../src/appHost";
 
-declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
 
 const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
@@ -40,13 +38,9 @@ test("NES renders its stereo-mod pins (renderAudioPerChannel): Pulse rings, TND/
   if (!be.fileExists(NES)) skip(`app-play-nes-channels: no ROM at ${NES}`);
 
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
-  const dsp = createDspRuntime();
   const audio = createAudioDriver(project.graph);
 
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
-
-  // Construct-time StereoModPins (channelExportMode 1) + the host-MIDI role. adopt is quiet → project by hand.
+  // Construct-time StereoModPins (channelExportMode 1) + the host-MIDI role.
   project.systems.adopt({
     romPath: NES,
     roles: [
@@ -54,7 +48,6 @@ test("NES renders its stereo-mod pins (renderAudioPerChannel): Pulse rings, TND/
       { kind: "mesen", config: { channelExportMode: "stereoModPins" } },
     ],
   });
-  syncDspFromStore(project, dsp);
 
   const v = project.systems.view()[0];
   expect(v.platform).toBe("nes");

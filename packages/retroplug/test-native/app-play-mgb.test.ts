@@ -1,20 +1,17 @@
 // The composition root, proven for mGB: a real project assembled from the app-layer STORES
-// (ProjectStore/SystemsStore) + the role registry + the DSP runtime plays real audio driven
+// (ProjectStore/SystemsStore) + the role registry + the DSP kernel plays real audio driven
 // entirely THROUGH the stores. loadMgb() attaches the `mgb` feature role via the ROM provider;
-// the onSystemsChange hook projects the store into the kernel structure (syncDspFromStore) and
-// pushes it; a staged MIDI chord — routed by the projected midi-routing role and serialized by
-// the `mgb` role — makes the core sing. Same proof as audio-render.test.ts, but reached via the
-// stores instead of a hand-written setSystems, so it exercises the real store→projection→DSP path
-// a host will drive. (One test per file: whole-mix RMS needs an isolated native engine.)
+// the graph the store publishes carries the projected kernel structure; a staged MIDI chord -
+// routed by the projected midi-routing role and serialized by the `mgb` role - makes the core
+// sing. Same proof as audio-render.test.ts, but reached via the stores instead of a hand-set
+// pipeline, so it exercises the real store→projection→DSP path a host will drive. (One test per
+// file: whole-mix RMS needs an isolated native engine.)
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
-
-declare const __DSP_KERNEL_BUNDLE__: string;
+import { buildAppRegistry } from "../src/appHost";
 
 // mGB listens on a MIDI channel per pulse voice; a C-major chord is one note per channel.
 const CHORD: number[][] = [
@@ -34,14 +31,9 @@ test("mGB plays a MIDI chord driven through the app stores (composition root)", 
   const registry = buildAppRegistry();
   const recent = new RecentStore(be);
   const project = new ProjectStore(be, recent, registry);
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
 
-  // Load the role kernel, THEN install the store→DSP hook (the first mutation fires it).
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
-
-  // Embedded mGB → the ROM provider attaches the `mgb` role; the hook pushes the projected structure.
+  // Embedded mGB → the ROM provider attaches the `mgb` role; the store publishes the projected structure.
   const id = project.systems.loadMgb()!;
   expect(typeof id).toBe("number");
   // The STORE attached the feature role from the ROM identity — not a hand-written pipeline.

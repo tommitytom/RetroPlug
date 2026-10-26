@@ -1,9 +1,8 @@
 // appStores.ts — the composition root for the store graph.
 //
 // One place that builds the full store graph over a Backend, so every host constructs it identically
-// instead of re-deriving pluginControlPlane.ts's sequence. Pure — no React, no DSP. Wiring the DSP stays
-// the control plane's job (it installs syncDspFromStore on project.setOnSystemsChange AFTER its runtime
-// exists).
+// instead of re-deriving pluginControlPlane.ts's sequence. Pure - no React. The DSP kernel needs no wiring:
+// the project publishes its structure with the graph.
 //
 // Change notification is injected as a single `notify(channel)` so a consumer can observe the whole
 // graph through one seam: the UI's store provider passes a fan-out that re-renders the matching hooks;
@@ -51,7 +50,7 @@ export interface ComposeOptions {
 
 /** Build the store graph over `backend` (the real native backend by default). Mirrors
  *  pluginControlPlane.ts's sequence and additionally composes the config/bindings stores (nothing in
- *  src/ constructs them yet), loading each store's on-disk state. Does NOT wire the DSP. */
+ *  src/ constructs them yet), loading each store's on-disk state. */
 export function composeAppStores({ backend = createRealBackend({ debug: false }), notify = () => {} }: ComposeOptions = {}): AppStores {
   const registry = buildAppRegistry();
 
@@ -72,7 +71,7 @@ export function composeAppStores({ backend = createRealBackend({ debug: false })
   const project = new ProjectStore(backend, recent, registry);
   project.setOnSystemsChange(() => notify("systems"));
   project.setOnChange(() => notify("project"));
-  // Focus is transient: re-render the tiles on the systems channel, but bypass dirty + the DSP re-project.
+  // Focus is transient: re-render the tiles on the systems channel, but bypass dirty + the graph publish.
   project.systems.setOnFocusChange(() => notify("systems"));
 
   const fileSelection = new FileSelection(backend, project.systems);

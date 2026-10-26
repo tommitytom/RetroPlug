@@ -4,7 +4,6 @@
 
 import type { Backend } from "../backend";
 import type { ProjectStore } from "../projectStore";
-import type { DspRuntimeClient } from "../dspRuntime";
 import type { AudioDriver } from "../audioDriver";
 import type { RoleInstance } from "../systemRoles";
 
@@ -50,7 +49,6 @@ export interface RenderOpts {
 export interface RenderContext {
   backend: Backend; // readFile / readCpu + the WavBackend writers (writeFile / appendFile / writeFileAt)
   project: ProjectStore;
-  dsp: DspRuntimeClient;
   audio: AudioDriver;
 }
 

@@ -26,7 +26,6 @@
 #include "host/engine/DspCommand.hpp"
 #include "host/graph/HostIoNodes.hpp"
 #include "host/graph/HostServices.hpp"
-#include "host/graph/KernelNode.hpp"
 #include "host/graph/SystemNodes.hpp"
 #include "host/graph/SystemTable.hpp"
 
@@ -44,6 +43,9 @@ const std::vector<DspRuntime::ButtonIn> kNoButtons;
 const std::vector<DspRuntime::KeyIn>    kNoKeys;
 // What the kernel stage is handed of the staged MIDI while a host I/O node of the plan takes it.
 const std::vector<DspRuntime::MidiIn>   kNoMidi;
+// The kernel stage's MI.OUT input: nothing gathers it since the Game Boy's serialOut port carries MI.OUT to the
+// kernel node, and no plan runs the kernel stage (its node, rp.dsp.kernel, is the script kernel now).
+const std::vector<DspRuntime::SerialOut> kNoSerialOut;
 
 // The table before the first plan. At namespace scope, not function-local: currentTable() may first run on
 // the audio thread, which must not take a static's init guard or register its destructor.
@@ -57,9 +59,9 @@ DspCommand syncTapCommand(bool arm, SystemId id, std::uint32_t mode) {
     return c;
 }
 
-// The graph before the first document TS sends: the kernel and the host's stereo pair.
+// The graph before the first document TS sends: the host's stereo pair, silent.
 constexpr const char* kEmptyDocument =
-    R"({"nodes":[{"id":"kernel","type":"rp.dsp.kernel"},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[1,1]}}],"wires":[]})";
+    R"({"nodes":[{"id":"out","type":"rp.host.audio-out","settings":{"buses":[1,1]}}],"wires":[]})";
 
 // A system node is a node of one of the two system packages: every type in them adapts a core.
 bool isSystemNodeType(const std::string& type) {
@@ -225,9 +227,10 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
     std::string why;
     if (!graph_->script.load(scriptBundle, &why))
         std::fprintf(stderr, "[engine] the script-node bundle did not load (%s); no script node type is registered\n", why.c_str());
+    // The DSP kernel is the script package's rp.dsp.kernel (src/script/kernelNode.ts); the native node that ran the
+    // kernel stage under that id is no longer registered.
     for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), rp::host::sameboyPackage(),
-                                rp::host::mesenPackage(), rp::host::dspPackage(), rp::host::hostIoPackage(),
-                                rp::host::n8Package()})
+                                rp::host::mesenPackage(), rp::host::hostIoPackage(), rp::host::n8Package()})
         graph_->registry.addPackage(p);
     if (!graph_->registry.addPackage(graph_->script.package(), &why))
         std::fprintf(stderr, "[engine] the script node types were refused (%s); none is registered\n", why.c_str());
@@ -276,8 +279,8 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
     config.interfacesCtx = this;
     graph_->host = std::make_unique<rp::graph::GraphHost>(graph_->registry, graph_->resources, config);
     graph_->host->setHostCommandHandler(&Engine::onHostCommand, this);
-    // The plan every engine starts from. Refused, nothing runs, the kernel included, until a document TS sends
-    // plans: logged, so a node type renamed in its package cannot leave an engine silent without a word.
+    // The plan every engine starts from. Refused, nothing runs until a document TS sends plans: logged, so a node
+    // type renamed in its package cannot leave an engine silent without a word.
     if (const GraphResult empty = setGraph({kEmptyDocument, {}}); !empty.ok)
         for (const auto& e : empty.errors)
             std::fprintf(stderr, "[engine] the empty graph was refused (%s) at %s%s%s: %s\n", e.code.c_str(),
@@ -551,19 +554,19 @@ void Engine::applyCommand(DspCommand& cmd, const rp::host::SystemTable& table) {
             break;
         case DspCommand::Kind::StageMidi:
             if (cmd.stageMidi.ext) {
-                stageMidi(std::move(*cmd.stageMidi.ext));
+                stageMidi(cmd.stageMidi.frame, std::move(*cmd.stageMidi.ext));
                 delete cmd.stageMidi.ext;
             } else {
-                stageMidi(std::vector<std::uint8_t>(cmd.stageMidi.data, cmd.stageMidi.data + cmd.stageMidi.len));
+                stageMidi(cmd.stageMidi.frame, std::vector<std::uint8_t>(cmd.stageMidi.data, cmd.stageMidi.data + cmd.stageMidi.len));
             }
             break;
         case DspCommand::Kind::StageControllerMidi:
             stageControllerMidi(std::vector<std::uint8_t>(cmd.stageMidi.data, cmd.stageMidi.data + cmd.stageMidi.len));
             break;
         case DspCommand::Kind::StageSystemMidi: {
-            // Which system the cart mirrors, judged against this plan's table like the core lookup (a handler must
-            // not read currentTable()).
-            const bool toCart = cmd.stageSystemMidi.id != 0 && cmd.stageSystemMidi.id == cartSystemId(table);
+            // Whether the cart mirrors this system: the rp.n8.cart-mirror of this plan's table, judged like the core
+            // lookup against the plan current at this point of the drain (a handler must not read currentTable()).
+            const bool toCart = coreByteSink_ && cmd.stageSystemMidi.id != 0 && cmd.stageSystemMidi.id == table.cartMirror;
             if (cmd.stageSystemMidi.ext) {
                 stageSystemMidi(core(cmd.stageSystemMidi.id), cmd.stageSystemMidi.ext->data(), cmd.stageSystemMidi.ext->size(), toCart);
                 delete cmd.stageSystemMidi.ext;
@@ -668,11 +671,10 @@ void Engine::runKernelStage(std::uint32_t frames) {
 #endif
         const rp::host::SystemTable& table = currentTable();
         const DspRuntime::BlockInfo dInfo{ frames, sampleRate_, bpm_, ppq_, transport_, controllerConnected_ };
-        dsp_.processBlock(table.takesHostMidi ? kNoMidi : pendingMidi_, kNoButtons, kNoKeys, pendingSerialOut_,
+        dsp_.processBlock(table.takesHostMidi ? kNoMidi : pendingMidi_, kNoButtons, kNoKeys, kNoSerialOut,
                           table.takesControllerMidi ? kNoMidi : pendingControllerMidi_, dInfo);
         if (!table.takesHostMidi) pendingMidi_.clear();  // staged host MIDI consumed this block
         if (!table.takesControllerMidi) pendingControllerMidi_.clear();
-        pendingSerialOut_.clear();  // last block's serial-out consumed by the kernel this block
         const SystemId cart = cartSystemId();   // the system a physical N8 mirrors (0 = none)
         // serial-in sink → the addressed system's serial FIFO.
         for (const auto& sv : dsp_.serialIn_)
@@ -727,13 +729,12 @@ void Engine::runKernelStage(std::uint32_t frames) {
 void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size_t numOutputs) {
     // What the control thread's destroyed script nodes left to release, before any of the block's JS runs.
     graph_->script.beginBlock();
-    // An empty block runs nothing, and the tail must not either: the cores never ran, so the MI.OUT gather
-    // would collect the last block's log a second time. There are no frames to silence.
+    // An empty block runs nothing, and the tail must not either (no publish, no ppq advance). There are no frames
+    // to silence.
     if (frames == 0) return;
     // Longer than the plan's buffers: the GraphHost would refuse it, so nothing runs, and the tail must not
-    // either (no MI.OUT gather of a log the cores never cleared, no publish, no ppq advance). A host that
-    // reported its block size (setMaxBlockFrames) never gets here; one that did not is counted, for
-    // reclaim() to report on the control thread.
+    // either (no publish, no ppq advance). A host that reported its block size (setMaxBlockFrames) never gets
+    // here; one that did not is counted, for reclaim() to report on the control thread.
     if (frames > graph_->maxFrames) {
         for (std::size_t c = 0; c < numOutputs; ++c)
             if (outputs[c]) std::memset(outputs[c], 0, frames * sizeof(float));
@@ -742,24 +743,24 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
         return;
     }
     blockTracing_ = syncTrace_.beginBlock(frames, sampleRate_, bpm_, ppq_, transport_);
-    // The block's host outputs start empty here rather than in the kernel, so the kernel stage and the
-    // rp.host.midi-out / controller-out nodes both append to them, in plan order.
+    // The block's host outputs start empty here, and the plan's rp.host.midi-out / controller-out append to them.
     dsp_.midiOut_.clear();
     dsp_.controllerOut_.clear();
     const rp_transport transport{sampleRate_, bpm_, ppq_, transport_ ? std::uint32_t{RP_TRANSPORT_PLAYING} : 0u};
-    // The kernel stage, every system, the mixing and the host outputs (the host drained before this).
+#ifdef RETROPLUG_PROFILE
+    dsp_.spanBegin(DSP_SPAN_APU);  // the plan: the kernel node (its roles' spans inside it) and every system
+#endif
+    // The host inputs, the kernel, every system, the mixing and the host outputs (the host drained before this).
     graph_->host->run(frames, transport, outputs, static_cast<std::uint32_t>(numOutputs));
     graph_->script.endBlock();  // the promise jobs the block's script nodes queued
 #ifdef RETROPLUG_PROFILE
-    dsp_.spanEnd();  // apu-render, begun at the end of the kernel stage
+    dsp_.spanEnd();  // apu-render
 #endif
     const rp::host::SystemTable& table = currentTable();
-    // MI.OUT: in slot order with each byte's frame dropped, for the kernel's next block.
-    if (dspActive_)
-        for (const auto& e : table.slots) {
-            if (!e.sameboy || e.sameboy->serialOutLog_.empty()) continue;
-            for (const auto& entry : e.sameboy->serialOutLog_) pendingSerialOut_.push_back({ e.id, entry.second });
-        }
+    // What was staged for this block and no node of the plan took (a plan with no rp.host.midi-in or controller-in)
+    // is dropped, not carried into the next block.
+    if (!table.takesHostMidi) pendingMidi_.clear();
+    if (!table.takesControllerMidi) pendingControllerMidi_.clear();
 #ifdef RETROPLUG_PROFILE
     dsp_.spanBegin(DSP_SPAN_PUBLISH);  // the audio->control-plane state pump (per-block frame + timed savestate)
 #endif
@@ -850,7 +851,7 @@ EngineFrame Engine::getFrame(SystemId id) {
 
 bool Engine::stageSystemMidi(SystemBase* sys, const std::uint8_t* bytes, std::size_t len, bool toCart) {
     if (!bytes || len == 0 || !sys) return false;
-    // The cart mirrors this system (cartSystemId): it gets the message too, or a setting changed from the UI would
+    // The cart mirrors this system (the plan's rp.n8.cart-mirror): it gets the message too, or a setting changed from the UI would
     // reach the emulated console and not the real one. (Drained on the audio thread, like the kernel sinks.)
     if (toCart) coreByteSink_(0, bytes, len, false);
     // Frame 0: a knob has no musical position, exactly as stageControllerMidi argues for a pad press.

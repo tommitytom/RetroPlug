@@ -5,26 +5,18 @@
 // `if (audioRunning_) return null`; there is no native duplicate method anymore.) This starts the
 // background audio thread, lets it publish a snapshot, duplicates through the store, and asserts a second
 // instance actually lands. Resource-free (embedded mGB). Ownership discipline (per dsp-threaded):
-// construct + load the kernel BEFORE startAudio; read systemCount only AFTER stopAudio.
+// construct BEFORE startAudio; read systemCount only AFTER stopAudio.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
-
-declare const __DSP_KERNEL_BUNDLE__: string;
+import { buildAppRegistry } from "../src/appHost";
 
 test("duplicate (TS orchestration) clones off the state snapshot while the audio thread runs", () => {
   const be = createRealBackend();
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
-
-  // Load the role kernel + install the store→DSP hook BEFORE startAudio.
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
 
   const id = project.systems.loadMgb()!;
   expect(typeof id).toBe("number");

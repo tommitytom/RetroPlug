@@ -1,28 +1,30 @@
 // The engine's graph as one control-plane context publishes it (docs/modular-graph-phase-b2-design.md section
-// 2.2): the systems and routing the last publish gave it, the host's output shape, and the canonical text and
-// slots of the document that last planned. Whoever builds systems (the ProjectStore, or a DirectGraph for callers
-// with no store) publishes through it, and the host shape is an edit of its own. One per native Engine: two
+// 2.2): the model the last publish gave it (the systems with their kernel pipelines, the routing and the kernel's
+// project stages: docs/modular-graph-phase-b3a-design.md section 5.2), the host's output shape, and the canonical
+// text and slots of the document that last planned. Whoever builds systems (the ProjectStore, or a DirectGraph for
+// callers with no store) publishes through it, and the host shape is an edit of its own. One per native Engine: two
 // publishers with separate EngineGraphs would each skip a document the other had already replaced.
 //
 // A refused document leaves the running plan as it was and every core it named parked until a document plans.
-// The publisher keeps the systems it published either way, so they are the model here too; the next document is
+// The publisher keeps the model it published either way, so it is the model here too; the next document is
 // sent even if it matches the running one, so the parked cores are freed; and a refused re-arm rides it. A send
 // that throws counts as refused, and so does a withShape restore that did not plan, after which the engine still
 // runs the temporary shape: until a document plans, even a shape change to the current shape is sent.
-import { buildGraph, type GraphSystem, type HostShape } from "./graph/buildGraph";
+import { buildGraph, type GraphModel, type HostShape } from "./graph/buildGraph";
 import { toGraphJson } from "./graph/graphDocument";
 import type { Backend, SetGraphRequest, SetGraphResult } from "./backend";
-import type { AudioRouting } from "./settingsEnums";
 
 export type GraphBackend = Pick<Backend, "setGraph">;
+
+/** What a publisher hands the graph: everything a document is built from but the host shape, which is the graph's. */
+export type PublishedModel = Omit<GraphModel, "shape">;
 
 const sameShape = (a: HostShape, b: HostShape): boolean =>
   a.kind === b.kind && (a.kind !== "multi" || b.kind !== "multi" || a.channels === b.channels);
 
 export class EngineGraph {
   private shape_: HostShape = { kind: "multi", channels: 2 };
-  private systems: readonly GraphSystem[] = [];
-  private routing: AudioRouting = "stereo";
+  private model: PublishedModel = { systems: [], routing: "stereo", project: [] };
   /** The canonical text and slots of the last document that planned; null before the first and after a refusal. */
   private sent: string | null = null;
   /** A refused document carried a re-arm: every document sent carries it until one of them plans. */
@@ -37,17 +39,16 @@ export class EngineGraph {
     return { ...this.shape_ };
   }
 
-  /** Build and send the graph for these systems (slot order) and this routing, at the current shape. Skipped
-   *  when the document and slots are unchanged and no re-arm is due; a re-arm is sent even then, since its plan
-   *  carries the tap trailer. False when the planner refused it; the systems and routing are the model either
-   *  way, so a later shape change rebuilds them and not the ones running. */
-  publish(systems: readonly GraphSystem[], routing: AudioRouting, opts: { rearmTap?: boolean } = {}): boolean {
-    this.systems = systems.slice();
-    this.routing = routing;
+  /** Build and send the graph for this model (its systems in slot order) at the current shape. Skipped when the
+   *  document and slots are unchanged and no re-arm is due, so an edit that changes nothing sends nothing; a re-arm
+   *  is sent even then, since its plan carries the tap trailer. False when the planner refused it; the model is
+   *  this one either way, so a later shape change rebuilds it and not the one running. */
+  publish(model: PublishedModel, opts: { rearmTap?: boolean } = {}): boolean {
+    this.model = { systems: model.systems.slice(), routing: model.routing, project: model.project.slice() };
     return this.send(this.shape_, opts.rearmTap === true);
   }
 
-  /** Rebuild the model (the last published systems and routing) at another output shape. A no-op when it is the
+  /** Rebuild the model (the last one published) at another output shape. A no-op when it is the
    *  current one, unless a document that did not plan left the engine's own unknown; false, keeping the shape
    *  before it, for a document the planner refuses (more systems than a perSystem render has buses for) or a
    *  multi shape whose channels are not a positive integer, which every placement is modulo. It re-arms the tap
@@ -94,10 +95,10 @@ export class EngineGraph {
 
   private send(shape: HostShape, rearmTap: boolean): boolean {
     const rearm = rearmTap || this.rearmDue;
-    const built = buildGraph({ systems: this.systems, routing: this.routing, shape });
+    const built = buildGraph({ ...this.model, shape });
     const document = toGraphJson(built.document);
-    // The slots as well: two slot orders can build one document (a link group sums after the unlinked systems),
-    // and native's slot table orders its outputs and snapshot publishes.
+    // The slots as well: native's slot table orders its snapshot publishes. (Two slot orders no longer build one
+    // document, as a link group's could before the kernel listed its systems in slot order; the key holds either way.)
     const key = `${document}\n${built.slots.join(",")}`;
     if (key !== this.sent || rearm) {
       const request: SetGraphRequest = { document, slots: built.slots };

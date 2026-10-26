@@ -5,7 +5,6 @@
 // after the play command — the gating the legacy screenshots only implied, asserted here via RMS.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";
 import { directGraph } from "../src/graph/directGraph";
@@ -14,7 +13,6 @@ import { directGraph } from "../src/graph/directGraph";
 const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
-declare const __DSP_KERNEL_BUNDLE__: string;
 
 // The aboy build is required for the Arduinoboy sync families (docs/lsdj.md ROM table).
 const ABOY = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_3_3-arduinoboy.gb";
@@ -33,10 +31,8 @@ const SLAVE_SONG: SavInput = {
 
 // A one-system project with the given lsdj-sync mode + SendToAll routing so system 1 receives every
 // host-MIDI event verbatim (the Arduinoboy control notes ride channel-agnostic).
-const sysStruct = (id: number, mode: string) => ({
-  project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
-  systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode } }] }],
-});
+const SEND_TO_ALL = [{ kind: "midi-routing", config: { mode: "sendToAll" } }];
+const lsdjSync = (mode: string) => [{ kind: "lsdj-sync", config: { mode } }];
 
 const rms = (a: Float32Array): number => {
   let s = 0;
@@ -48,7 +44,6 @@ test("the TS lsdj-sync Arduinoboy-slave role plays a real LSDj on note-24, gates
   const be = createRealBackend();
   if (!be.fileExists(ABOY)) skip(`lsdj-arduinoboy-slave: aboy LSDj ROM not found at ${ABOY}`); // no resources on disk (e.g. resource-less CI) — the devcontainer has it
 
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
 
   const id = 1; // direct-backend test picks its own id (fresh host per file)
@@ -62,8 +57,8 @@ test("the TS lsdj-sync Arduinoboy-slave role plays a real LSDj on note-24, gates
     sramBytes: savFrom(SLAVE_SONG),
   }, id)).toBeTruthy();
 
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems(sysStruct(id, "midiSyncArduinoboy"))).toBeTruthy();
+  expect(graph.setProjectStages(SEND_TO_ALL)).toBeTruthy();
+  expect(graph.setPipeline(id, lsdjSync("midiSyncArduinoboy"))).toBeTruthy();
 
   audio.renderAudio(6000); // valid sav skips the self-test; still needs a few s to the song screen
 

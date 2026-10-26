@@ -1,10 +1,9 @@
-// The engine's host I/O nodes and the cart mirror (docs/modular-graph-phase-b3a-design.md sections 3.3 to 3.5),
-// beside today's kernel stage: what the hosts stage reaches a plan through rp.host.midi-in and controller-in, what
-// a plan sends reaches the buffers the hosts drain through rp.host.midi-out and controller-out, both producers of
-// those buffers coexist, rp.n8.cart-mirror feeds the engine's core-byte sink, the Game Boy's serialOut carries
-// MI.OUT while the engine's own gather still does, and a full queue's drops reach the engine and the harness RPC.
-// A document holds one midi-in, one controller-in and one cart mirror at most, the mirror naming a NES. Driven on a
-// quiescent Engine, and on a NodeRig where a node's calls on the engine are what is checked.
+// The engine's host I/O nodes and the cart mirror (docs/modular-graph-phase-b3a-design.md sections 3.3 to 3.5): what
+// the hosts stage reaches a plan through rp.host.midi-in and controller-in (and a plan with neither drops it), what a
+// plan sends reaches the buffers the hosts drain through rp.host.midi-out and controller-out, rp.n8.cart-mirror feeds
+// the engine's core-byte sink, the Game Boy's serialOut carries MI.OUT, and a full queue's drops reach the engine and
+// the harness RPC. A document holds one midi-in, one controller-in and one cart mirror at most, the mirror naming a
+// NES. Driven on a quiescent Engine, and on a NodeRig where a node's calls on the engine are what is checked.
 //
 // Run via `pnpm test:plugin engine-graph`.
 
@@ -31,7 +30,6 @@
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
 #include "graph/GraphHost.hpp"
-#include "host/dsp/ScriptCompiler.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "host/graph/HostIoNodes.hpp"
@@ -75,13 +73,6 @@ std::unique_ptr<SystemBase> bliptoaster(SystemId id) {
     return s;
 }
 
-// A stand-in kernel, compiled as the control plane compiles the real one: two globals, `processBlock` its body.
-void loadKernel(Engine& e, const std::string& processBlock) {
-    const auto bc = dsp::compileToBytecode("function setSystems(json) {}\nfunction processBlock(input) {\n" + processBlock + "\n}\n");
-    REQUIRE(bc.has_value());
-    REQUIRE(e.loadKernel(*bc));
-}
-
 // One stereo block; the output, interleaved.
 std::vector<float> block(Engine& e, std::uint32_t frames = kFrames) {
     std::vector<float> l(frames), r(frames), out;
@@ -116,25 +107,17 @@ std::vector<Out> midiOut(const Engine& e) {
 }
 
 // The host I/O nodes alone, on no systems: `nodes` and `wires`, and the host's stereo pair.
-Engine::GraphRequest hostIoOnly(std::vector<std::string> nodes, std::vector<std::string> wires, bool kernel = false) {
-    return graphRequest(stereoDocument({}, DocExtras{std::move(nodes), std::move(wires), kernel}), {});
+Engine::GraphRequest hostIoOnly(std::vector<std::string> nodes, std::vector<std::string> wires) {
+    return graphRequest(stereoDocument({}, DocExtras{std::move(nodes), std::move(wires)}), {});
 }
 
 // A lone BlipToaster NES rendered for 3.5 s in 1024-frame blocks, MIDI staged by `stage` ahead of each block (with
-// the block's first frame): through rp.host.midi-in into its midi input, or through today's path, the kernel stage,
-// with a stand-in kernel that forwards every staged message to the NES as core MIDI.
-std::vector<float> renderNes(bool viaKernel, const std::function<void(Engine&, std::uint64_t)>& stage) {
+// the block's first frame), through rp.host.midi-in into its midi input.
+std::vector<float> renderNes(const std::function<void(Engine&, std::uint64_t)>& stage) {
     Engine e(kRate);
     REQUIRE(e.parkCore(bliptoaster(1)));
-    DocExtras extras;
-    extras.kernel = viaKernel;
-    if (!viaKernel) {
-        extras.nodes = {docNode("midi-in", "rp.host.midi-in")};
-        extras.wires = {docWire("midi-in.midi", "sys-1.midi")};
-    }
+    const DocExtras extras{{docNode("midi-in", "rp.host.midi-in")}, {docWire("midi-in.midi", "sys-1.midi")}};
     REQUIRE(e.setGraph(graphRequest(stereoDocument({{1, kNes}}, extras), {1})).ok);
-    if (viaKernel)
-        loadKernel(e, "for (var i = 0; i < input.midiIn.length; i++) emitCoreMidi(1, input.midiIn[i].frame, input.midiIn[i].data);");
     std::vector<float> out;
     for (std::uint64_t at = 0; at < static_cast<std::uint64_t>(3.5 * kRate); at += kFrames) {
         stage(e, at);
@@ -222,22 +205,23 @@ std::function<void(Engine&, std::uint64_t)> stageAt(std::vector<std::pair<double
 
 }  // namespace
 
-TEST_CASE("rp.host.midi-in hands a NES exactly what today's kernel stage hands it", "[engine-graph][host-io]") {
+TEST_CASE("rp.host.midi-in hands a NES its staged MIDI in frame order, ties in staging order", "[engine-graph][host-io]") {
     // The plugin stages DAW events, then each moved automation slot's CC at frame 0, so a block can be [100, 300, 0].
-    // A queue keeps frame order by clamping an earlier frame up, so midi-in sorts first, stably: the NES, whose FIFO
-    // stable-sorts by frame, gets the frame-0 note at frame 0, and two frame-0 notes in the order they were staged.
-    // BlipToaster plays the last note it is given on a channel, so either order shows. It ignores MIDI for its first
-    // second or so (parity/scenes.ts BOOT_MS).
+    // A queue keeps frame order by clamping an earlier frame up, so midi-in sorts first, stably: the NES gets what it
+    // gets from a host that stages in frame order (the frame-0 note at frame 0), and two frame-0 notes in the order
+    // they were staged, as its FIFO, which stable-sorts by frame, always gave them. BlipToaster plays the last note it
+    // is given on a channel, so either order shows. It ignores MIDI for its first second or so (parity/scenes.ts
+    // BOOT_MS).
     const Staged ragged{{100, noteOn(60)}, {300, noteOn(62)}, {0, noteOn(64)}};
     const Staged ties{{0, noteOn(67)}, {0, noteOn(69)}};
-    const auto viaMidiIn = renderNes(false, stageAt({{1.5, ragged}, {2.5, ties}}));
-    const auto today = renderNes(true, stageAt({{1.5, ragged}, {2.5, ties}}));
-    CHECK(firstDifference(viaMidiIn, today) == SIZE_MAX);
+    const auto viaMidiIn = renderNes(stageAt({{1.5, ragged}, {2.5, ties}}));
+    const auto inOrder = renderNes(stageAt({{1.5, {{0, noteOn(64)}, {100, noteOn(60)}, {300, noteOn(62)}}}, {2.5, ties}}));
+    CHECK(firstDifference(viaMidiIn, inOrder) == SIZE_MAX);
 
     // And each order is audible: the frame-0 note clamped behind the others (no sort), or the ties swapped (an
     // unstable one), renders something else from that block on.
-    const auto clamped = renderNes(true, stageAt({{1.5, {{100, noteOn(60)}, {300, noteOn(62)}, {300, noteOn(64)}}}, {2.5, ties}}));
-    const auto swapped = renderNes(true, stageAt({{1.5, ragged}, {2.5, {{0, noteOn(69)}, {0, noteOn(67)}}}}));
+    const auto clamped = renderNes(stageAt({{1.5, {{100, noteOn(60)}, {300, noteOn(62)}, {300, noteOn(64)}}}, {2.5, ties}}));
+    const auto swapped = renderNes(stageAt({{1.5, ragged}, {2.5, {{0, noteOn(69)}, {0, noteOn(67)}}}}));
     const auto from = [](double seconds) { return static_cast<std::size_t>(seconds * kRate) / kFrames * kFrames; };
     CHECK(firstDifference(viaMidiIn, clamped) >= from(1.5));
     CHECK(firstDifference(viaMidiIn, clamped) < from(2.5));
@@ -260,8 +244,8 @@ TEST_CASE("rp.host.midi-in sorts and pushes the staged MIDI without allocating",
         e.processBlock(64, outs, 2);
         const auto counted = rp::test::endCountingAllocations();
         CHECK(counted.allocations == 0);
-        // The staged messages' own bytes, freed as the staging is cleared, as the kernel stage frees them today:
-        // each staged message owns its bytes (DspRuntime::MidiIn).
+        // The staged messages' own bytes, freed as the staging is cleared: each staged message owns its bytes
+        // (DspRuntime::MidiIn).
         CHECK(counted.frees == static_cast<int>(frames.size()));
     }
 }
@@ -320,83 +304,69 @@ TEST_CASE("rp.host.midi-out lands each message in Engine::midiOut, tagged with t
     CHECK(e.droppedMessages() == 1);
 }
 
-TEST_CASE("the kernel stage and the host I/O nodes share the host's buffers, in plan order", "[engine-graph][host-io]") {
-    // Both produce what the hosts drain after a block, so the engine starts each block's buffers empty itself and
-    // each producer appends as it runs. A plan holding rp.host.midi-in or controller-in takes what is staged, so the
-    // kernel stage then gets none of it. The stand-in kernel reports how many messages it was handed.
-    const std::string kernel =
-        "emitMidiOut(7, 3, [input.midiIn.length]);\n"
-        "emitControllerOut([0xB0, 0, input.controllerIn ? input.controllerIn.length : 0]);";
+TEST_CASE("each block's host buffers start empty, and a plan with no input node drops what was staged",
+          "[engine-graph][host-io]") {
+    // The engine empties what the hosts drain at the top of each block, and the plan's output nodes fill it. What is
+    // staged belongs to the next block: a plan holding rp.host.midi-in (controller-in) takes it then, and a plan with
+    // neither drops it at that block's end rather than carrying it into a later one.
     const auto controllerOut = [](const Engine& e) { return e.controllerOut(); };
     using Bytes = std::vector<std::vector<std::uint8_t>>;
+    const auto io = hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("midi-out", "rp.host.midi-out"),
+                                docNode("controller-in", "rp.host.controller-in"),
+                                docNode("controller-out", "rp.host.controller-out")},
+                               {docWire("midi-in.midi", "midi-out.midi"), docWire("controller-in.midi", "controller-out.midi")});
 
     SECTION("with the host I/O nodes") {
         Engine e(kRate);
-        REQUIRE(e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("midi-out", "rp.host.midi-out"),
-                                       docNode("controller-in", "rp.host.controller-in"),
-                                       docNode("controller-out", "rp.host.controller-out")},
-                                      {docWire("midi-in.midi", "midi-out.midi"), docWire("controller-in.midi", "controller-out.midi")},
-                                      true))
-                    .ok);
-        loadKernel(e, kernel);
+        REQUIRE(e.setGraph(io).ok);
         e.stageMidi(4, tagged(5, {0xF8}));
         e.stageControllerMidi({0x90, 11, 127});
         block(e);
-        CHECK(midiOut(e) == std::vector<Out>{{7, 3, {0}}, {5, 4, {0xF8}}});
-        CHECK(controllerOut(e) == Bytes{{0xB0, 0, 0}, {0x90, 11, 127}});
+        CHECK(midiOut(e) == std::vector<Out>{{5, 4, {0xF8}}});
+        CHECK(controllerOut(e) == Bytes{{0x90, 11, 127}});
         // Nothing staged, and nothing drained in between: the next block starts from empty buffers all the same.
         block(e);
-        CHECK(midiOut(e) == std::vector<Out>{{7, 3, {0}}});
-        CHECK(controllerOut(e) == Bytes{{0xB0, 0, 0}});
+        CHECK(midiOut(e).empty());
+        CHECK(controllerOut(e).empty());
     }
-    SECTION("with the kernel after them in plan order") {
+    SECTION("without them") {
         Engine e(kRate);
-        REQUIRE(e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("midi-out", "rp.host.midi-out"),
-                                       docNode("kernel", "rp.dsp.kernel")},
-                                      {docWire("midi-in.midi", "midi-out.midi")}))
-                    .ok);
-        loadKernel(e, kernel);
+        REQUIRE(e.setGraph(hostIoOnly({}, {})).ok);
         e.stageMidi(4, tagged(5, {0xF8}));
-        block(e);
-        CHECK(midiOut(e) == std::vector<Out>{{5, 4, {0xF8}}, {7, 3, {0}}});
-    }
-    SECTION("without them, the kernel stage gets what is staged, as today") {
-        Engine e(kRate);
-        REQUIRE(e.setGraph(hostIoOnly({}, {}, true)).ok);
-        loadKernel(e, kernel);
-        e.stageMidi(0, {0xF8});
-        e.stageMidi(0, {0xFA});
         e.stageControllerMidi({0x90, 11, 127});
         block(e);
-        CHECK(midiOut(e) == std::vector<Out>{{7, 3, {2}}});
-        CHECK(controllerOut(e) == Bytes{{0xB0, 0, 1}});
+        REQUIRE(e.setGraph(io).ok);
+        block(e);
+        CHECK(midiOut(e).empty());
+        CHECK(controllerOut(e).empty());
     }
-    SECTION("with controller-in alone, the kernel stage keeps the host MIDI and gets none of the control surface's") {
+    SECTION("with controller-in alone, it takes the control surface's and the host MIDI is dropped") {
         Engine e(kRate);
         REQUIRE(e.setGraph(hostIoOnly({docNode("controller-in", "rp.host.controller-in"),
                                        docNode("controller-out", "rp.host.controller-out")},
-                                      {docWire("controller-in.midi", "controller-out.midi")}, true))
+                                      {docWire("controller-in.midi", "controller-out.midi")}))
                     .ok);
-        loadKernel(e, kernel);
-        e.stageMidi(0, {0xF8});
-        e.stageMidi(0, {0xFA});
+        e.stageMidi(4, tagged(5, {0xF8}));
         e.stageControllerMidi({0x90, 11, 127});
         block(e);
-        CHECK(midiOut(e) == std::vector<Out>{{7, 3, {2}}});
-        CHECK(controllerOut(e) == Bytes{{0xB0, 0, 0}, {0x90, 11, 127}});
+        CHECK(midiOut(e).empty());
+        CHECK(controllerOut(e) == Bytes{{0x90, 11, 127}});
+        REQUIRE(e.setGraph(io).ok);
+        block(e);
+        CHECK(midiOut(e).empty());
+        CHECK(controllerOut(e).empty());
     }
     SECTION("a swap to a plan holding midi-in hands it what was staged before the swap, once") {
         Engine e(kRate);
-        REQUIRE(e.setGraph(hostIoOnly({}, {}, true)).ok);
-        loadKernel(e, kernel);
+        REQUIRE(e.setGraph(hostIoOnly({}, {})).ok);
         e.stageMidi(4, tagged(5, {0xF8}));
         REQUIRE(e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("midi-out", "rp.host.midi-out")},
-                                      {docWire("midi-in.midi", "midi-out.midi")}, true))
+                                      {docWire("midi-in.midi", "midi-out.midi")}))
                     .ok);
         block(e);
-        CHECK(midiOut(e) == std::vector<Out>{{7, 3, {0}}, {5, 4, {0xF8}}});
+        CHECK(midiOut(e) == std::vector<Out>{{5, 4, {0xF8}}});
         block(e);
-        CHECK(midiOut(e) == std::vector<Out>{{7, 3, {0}}});
+        CHECK(midiOut(e).empty());
     }
 }
 
@@ -527,36 +497,25 @@ TEST_CASE("a cart mirror names one of the document's NES systems, its settings r
     CHECK(e.cartMirrorSystemId() == 1);
 }
 
-TEST_CASE("the Game Boy's serialOut carries what its core captured, and the engine's MI.OUT gather still does",
-          "[engine-graph][host-io]") {
+TEST_CASE("the Game Boy's serialOut carries what its core captured, each byte at frame 0", "[engine-graph][host-io]") {
     // mGB, with MI.OUT capture armed, has a byte clocked out of its serial port every eight frames (it holds the
     // port in external-clock receive). The port carries this block's bytes at frame 0, here into a cart mirror whose
-    // sink records them; the gather hands the same bytes to the kernel stage next block, which a stand-in kernel
-    // echoes as host MIDI out.
+    // sink records them. (buildGraph wires it into the kernel node as a feedback wire: MI.OUT's one block.)
     Engine e(kRate);
     SameBoySystem* const gb = serialOutToCart(e);
-    loadKernel(e, "for (var i = 0; i < input.serialOut.length; i++) emitMidiOut(input.serialOut[i].system, 0, [input.serialOut[i].byte]);");
     std::vector<std::uint8_t> carried;
     bool eachAtZero = true;
     e.setCoreByteSink([&](std::uint32_t frame, const std::uint8_t* d, std::size_t n, bool) {
         eachAtZero = eachAtZero && frame == 0 && n == 1;
         carried.insert(carried.end(), d, d + n);
     });
-    std::vector<std::uint8_t> last;  // what the core captured last block
     std::size_t captured = 0;
     for (int b = 0; b < 100; ++b) {
         carried.clear();
         block(e);
         const std::vector<std::uint8_t> log = serialLog(*gb);
-        std::vector<std::uint8_t> gathered;
-        for (const auto& m : e.midiOut()) {
-            CHECK(m.system == 1);
-            gathered.insert(gathered.end(), m.data.begin(), m.data.end());
-        }
         INFO("block " << b);
         CHECK(carried == log);
-        CHECK(gathered == last);
-        last = log;
         captured += log.size();
     }
     CHECK(eachAtZero);

@@ -464,12 +464,12 @@ bool EngineRpcService::setBpm(double bpm) {
     return true;
 }
 
-bool EngineRpcService::stageMidiIn(std::vector<std::uint8_t> bytes) {
+bool EngineRpcService::stageMidiIn(std::vector<std::uint8_t> bytes, std::uint32_t frame) {
     // Any non-empty length: a channel message, a SysEx, or several messages staged as one run. The
     // invoker carries the long ones as an owning payload; the kernel's routing broadcasts a run longer
-    // than one message unchanged, and the core-MIDI sink hands it to the core's raw byte path.
-    if (bytes.empty()) return false;
-    invoker_.stageMidi(std::move(bytes));
+    // than one message unchanged, and a system node's midi input hands it to the core's raw byte path.
+    if (bytes.empty() || frame >= kBlockSize) return false;
+    invoker_.stageMidi(std::move(bytes), frame);
     return true;
 }
 

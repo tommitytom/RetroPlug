@@ -7,15 +7,13 @@
 // registration in useSramAutoSave/App.tsx, which follows the same untested convention as useSongWatch.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { UserConfigStore } from "../src/userConfigStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
+import { buildAppRegistry } from "../src/appHost";
 import { SramAutoSaver } from "../src/sramAutoSave";
 
-declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __RESOURCES_DIR__: string;
 declare const __CONFIG_DIR__: string;
 
@@ -30,10 +28,7 @@ test("Continuous mirrors a live battery to its .sav with no explicit save", () =
 
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const userConfig = new UserConfigStore(be);
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
-  dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!);
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
   const id = project.systems.addSystem(rom)!;
   audio.renderAudio(2000);
 

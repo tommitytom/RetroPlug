@@ -144,11 +144,14 @@ export interface AudioDriver {
    *  ppq accumulate, so "resume where we paused" is expressible but "rewind and play again" is not. */
   setPpq(ppq: number): boolean;
   setBpm(bpm: number): boolean;
-  /** Stage global host-MIDI bytes for the kernel's next render (consumed on its first block). Any
-   *  non-empty length: a channel message, a whole SysEx, or several messages as one run - the kernel's
-   *  midi-routing behaviour fans a channel message to its system(s) and broadcasts a longer run unchanged;
-   *  with no routing role it reaches none. False only for an empty array. */
-  stageMidiIn(bytes: Uint8Array | number[]): boolean;
+  /** Stage global host-MIDI bytes for the kernel's next render (consumed on its first block), at `frame` inside
+   *  that block (0 when omitted). Any non-empty length: a channel message, a whole SysEx, or several messages as
+   *  one run - the kernel's midi-routing behaviour fans a channel message to its system(s) and broadcasts a longer
+   *  run unchanged; with no routing role it reaches none. Messages may be staged out of frame order, as a plugin
+   *  stages a block (its notes, then each moved automation slot's CC at frame 0): the engine's MIDI input sorts
+   *  them by frame, keeping the staging order on a tie. False for an empty array, or a frame past renderAudio's
+   *  1024-frame block (a renderBlocks block that is shorter than `frame` is the caller's to avoid). */
+  stageMidiIn(bytes: Uint8Array | number[], frame?: number): boolean;
   /** Stage one CONTROL-SURFACE message (a Launchpad pad press), delivered to the kernel as
    *  `controllerIn` rather than as musical MIDI - so a headless test can drive a controller app with
    *  no controller attached. Separate from stageMidiIn because a pad press is a NoteOn, and a
@@ -166,6 +169,9 @@ export interface AudioDriver {
   renderBlocks(outputs: 2 | 4 | 6 | 8, blocks: RenderBlock[]): RenderBlocksResult;
   /** The target the host was built for ("linux-x64-gnu13"): which parity baseline it can be held to. */
   buildTarget(): string;
+  /** Messages the engine's graph has dropped so far, a full queue on one of its wires each (cumulative, never
+   *  reset): what a test holds to zero to know nothing it staged was lost on the way to a core. */
+  droppedMessages(): number;
 
   // --- DSP-runtime allocation/GC profiling (spec/08-profiling.md; real only in a RETROPLUG_PROFILE host) ---
   /** Snapshot the DSP JS runtime's allocation counters (deltas since the last reset). */
@@ -183,9 +189,9 @@ export interface AudioDriver {
   dspTraceNames(): string[];
 
   // --- background audio thread (threaded mode) ---
-  /** Spawn a real audio thread that free-runs the render loop; DSP-structure edits sent while it
-   *  runs (setSystems/loadKernel/stageMidiIn) cross via a lock-free queue applied on that thread.
-   *  Construct systems + load the kernel BEFORE this; read core state only AFTER stopAudio. */
+  /** Spawn a real audio thread that free-runs the render loop; edits sent while it runs (a graph,
+   *  stageMidiIn) cross via a lock-free queue applied on that thread. Construct systems BEFORE this;
+   *  read core state only AFTER stopAudio. */
   startAudio(): boolean;
   /** Stop and join the audio thread. */
   stopAudio(): boolean;
@@ -266,7 +272,7 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
     setTransport: (running) => call("setTransport", running) as boolean,
     setPpq: (ppq) => call("setPpq", ppq) as boolean,
     setBpm: (bpm) => call("setBpm", bpm) as boolean,
-    stageMidiIn: (bytes) => call("stageMidiIn", ints(bytes)) as boolean,
+    stageMidiIn: (bytes, frame = 0) => call("stageMidiIn", ints(bytes), frame) as boolean,
     stageControllerIn: (bytes) => call("stageControllerIn", ints(bytes)) as boolean,
     drainMidiOut: () =>
       (call("drainMidiOut") as { system: number; frame: number; data: Uint8Array }[] | null) ?? [],
@@ -279,6 +285,7 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
       });
     },
     buildTarget: () => call("buildTarget") as string,
+    droppedMessages: () => call("droppedMessages") as number,
     dspAllocStats: () => call("dspAllocStats") as DspAllocStats,
     dspResetAllocStats: (disableAutoGc) => call("dspResetAllocStats", disableAutoGc) as boolean,
     dspRunGc: () => call("dspRunGc") as DspGcResult,

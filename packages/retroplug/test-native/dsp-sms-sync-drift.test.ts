@@ -25,7 +25,6 @@
 // and the grid-anchored residual below actually test.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { encodeWav } from "../src/render/wav";
 import {
@@ -39,7 +38,6 @@ import { directGraph } from "../src/graph/directGraph";
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
 const graph = directGraph();
 
-declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
 
 // Both machines. The protocol is shared and only the pins differ (SMS controller port 2, GG EXT
@@ -136,9 +134,7 @@ for (const m of MACHINES) {
     expect(pokeMetronomeIntoWram(be, 1) > 0).toBeTruthy();
 
     const wav = outWav(m.machine);
-    const dsp = createDspRuntime();
-    expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-    expect(dsp.setSystems({ systems: [{ id: 1, pipeline: [{ kind: "sms-sync", config: { machine: m.machine } }] }] })).toBeTruthy();
+    expect(graph.setPipeline(1, [{ kind: "sms-sync", config: { machine: m.machine } }])).toBeTruthy();
 
     // Arm: in IN24 this parks the ROM in WAIT holding for the first host clock.
     audio.pressButton(1, PAUSE, true);

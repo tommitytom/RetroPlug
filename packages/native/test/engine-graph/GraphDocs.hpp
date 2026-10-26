@@ -1,9 +1,10 @@
 #pragma once
 
-// Graph documents for native tests, spelled the way packages/retroplug/src/graph/buildGraph.ts writes them
+// Graph documents for native tests, spelled the way packages/retroplug/src/graph/buildGraph.ts writes their audio
 // (node ids, document order, buses), so a test drives the Engine with what TS would send. Only the shapes the
-// tests need: systems summed to a stereo pair (with a test's own nodes and wires added, the host I/O nodes
-// buildGraph does not place yet among them), each system on its own pair, and a lone NES split.
+// tests need: systems summed to a stereo pair (with a test's own nodes and wires added: host I/O nodes, a kernel, a
+// cart mirror), each system on its own pair, and a lone NES split. None holds the kernel and the host I/O buildGraph
+// places beside the audio: a test that stages MIDI or reads MIDI out adds the nodes it needs.
 
 #include <cstdint>
 #include <string>
@@ -58,12 +59,11 @@ inline std::string docNode(const std::string& id, const std::string& type, const
 }
 inline std::string docWire(const std::string& from, const std::string& to) { return docs_detail::wire(from, to); }
 
-// What a test adds to a document: nodes after the systems (the host I/O nodes, a cart mirror) and wires after the
-// routing's; and whether the document keeps the kernel node every buildGraph document starts with.
+// What a test adds to a document: nodes after the systems (the host I/O nodes, a kernel, a cart mirror) and wires
+// after the routing's.
 struct DocExtras {
     std::vector<std::string> nodes;
     std::vector<std::string> wires;
-    bool                     kernel = true;
 };
 
 // The Stereo routing at a `channels`-wide host: every system's L summed into channel 0, its R into 1. One
@@ -71,7 +71,6 @@ struct DocExtras {
 inline std::string stereoDocument(const std::vector<DocSystem>& systems, const DocExtras& extras, std::uint32_t channels = 2) {
     using namespace docs_detail;
     std::vector<std::string> nodes, wires;
-    if (extras.kernel) nodes.push_back(node("kernel", "rp.dsp.kernel"));
     for (const DocSystem& s : systems) nodes.push_back(sys(s));
     for (const DocSystem& s : systems) {
         const std::string split = "split-" + std::to_string(s.id);
@@ -102,7 +101,7 @@ inline std::string stereoDocument(const std::vector<DocSystem>& systems, std::ui
 // The perSystem shape: slot i's mix on host channels 2i and 2i + 1.
 inline std::string perSystemDocument(const std::vector<DocSystem>& systems) {
     using namespace docs_detail;
-    std::vector<std::string> nodes{node("kernel", "rp.dsp.kernel")}, wires;
+    std::vector<std::string> nodes, wires;
     for (std::size_t i = 0; i < systems.size(); ++i) {
         nodes.push_back(sys(systems[i]));
         wires.push_back(wire("sys-" + std::to_string(systems[i].id) + ".mix", out(static_cast<std::uint32_t>(2 * i), 2)));
@@ -116,7 +115,7 @@ inline std::string perSystemDocument(const std::vector<DocSystem>& systems) {
 inline std::string nesSplitDocument(SystemId id, const std::string& split) {
     using namespace docs_detail;
     const std::string n = "sys-" + std::to_string(id);
-    std::vector<std::string> nodes{node("kernel", "rp.dsp.kernel"), sys({id, kNesType})}, wires;
+    std::vector<std::string> nodes{sys({id, kNesType})}, wires;
     std::vector<std::string> streams = split == "channels"
                                            ? std::vector<std::string>{"channels.sq1", "channels.sq2", "channels.tri", "channels.noise", "channels.dmc"}
                                            : std::vector<std::string>{"pins.pulse", "pins.tnd", "pins.expansion"};

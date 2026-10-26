@@ -1,4 +1,5 @@
-// The DSP kernel as a script node (docs/modular-graph-phase-b3a-design.md section 4), held to today's kernel stage.
+// The DSP kernel as a script node (docs/modular-graph-phase-b3a-design.md section 4), held to the kernel stage it
+// replaced ("today's" below: the engine runs it no more, but its DspRuntime stays until the kernel stage is deleted).
 // The same blocks are driven through today's DspRuntime, loaded with today's kernel bundle (src/dspKernelBundle.ts,
 // embedded here alone), and through the kernel node of the production script bundle in a plan, fed by the host I/O
 // nodes and a stand-in for the Game Boys' serialOut, its every output read back by probes. Every sink output is
@@ -68,7 +69,7 @@ using Bytes = std::vector<std::uint8_t>;
 
 constexpr double kRate = 44100.0;
 constexpr std::uint32_t kBeat = 22050;  // frames per quarter at 120 bpm
-const char* const kKernel = "rp.dsp.kernel-script";  // KERNEL_NODE_TYPE (src/script/kernelNode.ts)
+const char* const kKernel = "rp.dsp.kernel";  // KERNEL_NODE_TYPE (src/script/kernelNode.ts)
 
 // ---- structures, spelled as kernelProjection spells them -----------------------------------------------------
 

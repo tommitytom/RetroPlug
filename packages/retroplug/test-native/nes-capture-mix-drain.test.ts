@@ -12,13 +12,11 @@
 // to renderAudioPerChannel. Before the fix the pins are dead; after it the note still rings on the Pulse pin.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
+import { buildAppRegistry } from "../src/appHost";
 
-declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
 
 const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
@@ -35,16 +33,12 @@ test("NES per-channel capture survives a MIX-path drain (renderAudio) then plays
   if (!be.fileExists(NES)) skip(`nes-capture-mix-drain: no ROM at ${NES}`);
 
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
-  const dsp = createDspRuntime();
   const audio = createAudioDriver(project.graph);
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
 
   project.systems.adopt({
     romPath: NES,
     roles: [{ kind: "nes-n8-midi", config: {} }, { kind: "mesen", config: { channelExportMode: "stereoModPins" } }],
   });
-  syncDspFromStore(project, dsp);
   const id = project.systems.view()[0]!.id;
 
   // Drain ~1.5 s through the MIX path — this is what fills the capture streams (a split render's renderAudio

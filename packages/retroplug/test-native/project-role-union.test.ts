@@ -12,7 +12,6 @@
 // correctly-named role with a wrong or empty config would pass the pure test and fail here.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { ProjectStore } from "../src/projectStore";
 import { RecentStore } from "../src/recentStore";
@@ -21,7 +20,6 @@ import { buildSmsMetronomeSav, pokeMetronomeIntoWram, SMS_SYNC_IN24 } from "./sm
 
 declare const __REPO_RESOURCES_DIR__: string;
 declare const __CONFIG_DIR__: string;
-declare const __DSP_KERNEL_BUNDLE__: string;
 
 const ROM = __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.sms";
 const PAUSE = 7;
@@ -76,10 +74,7 @@ test("a project saved before sms-sync existed loads WITH it, and the DAW can clo
   const audio = createAudioDriver();
   audio.renderAudio(3000); // boot: splash, config_load (takes IN24), song_new
   expect(pokeMetronomeIntoWram(be, id) > 0).toBeTruthy();
-
-  const dsp = createDspRuntime();
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems({ systems: [{ id, pipeline: view[0].roles }] })).toBeTruthy();
+  // The load's publish carried the system's pipeline, sms-sync in it, to the kernel: idle until the transport runs.
 
   audio.pressButton(id, PAUSE, true);
   audio.renderAudio(100);

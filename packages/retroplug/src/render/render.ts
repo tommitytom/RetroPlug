@@ -14,7 +14,6 @@
 // boot, so song / songIndex promote a chosen project to the working song before booting (decode → assign →
 // re-encode → seed the fresh system).
 import { createWavWriter, type WavWriter } from "./wav";
-import { syncDspFromStore } from "../appHost";
 import { extensionLower, dirname, stem, joinPath, uniqueBase } from "../pathUtil";
 import { siblingSavPath } from "../savPaths";
 import { decodeSav, encodeSav, kSavSize } from "../lsdj";
@@ -396,8 +395,8 @@ function rolesForRender(carried: RoleInstance[] | undefined, exportMode?: Channe
   return merged.some((r) => r.kind === "mesen") ? merged : [...merged, { kind: "mesen", config: { channelExportMode: exportMode } }];
 }
 
-/** Build the single system + project it into the DSP runtime. `seed` (LSDj song bytes) forces the adopt
- *  path; so do carried roles / gain (they can only be applied at construct) and a NES split mode arming
+/** Build the single system; the graph it publishes carries its kernel pipeline. `seed` (LSDj song bytes) forces
+ *  the adopt path; so do carried roles / gain (they can only be applied at construct) and a NES split mode arming
  *  construct-time capture; otherwise addSystem auto-detects. */
 function buildSystem(ctx: RenderContext, o: RenderOpts, platform: Platform, seed?: Uint8Array): number {
   let id: number | null;
@@ -407,17 +406,14 @@ function buildSystem(ctx: RenderContext, o: RenderOpts, platform: Platform, seed
     // A chosen-song seed (adopt takes raw SRAM bytes), the instance's carried configuration, and NES
     // per-channel capture (channelExportMode engages at construct/onActivate) all go through adopt — combined
     // here so `--song-index … --split channels` arms both. A seed replaces the sav; without one, pair the sav.
-    // adopt is quiet → project the store by hand (bootSession's onSystemsChange hook doesn't fire).
     const spec: Parameters<typeof ctx.project.systems.adopt>[0] = { romPath: o.rom };
     if (!seed && o.sav) spec.savPath = o.sav;
     if (roles) spec.roles = roles;
     if (o.gainDb) spec.settings = { gainDb: o.gainDb };
     ctx.project.systems.adopt(spec, seed ? { sramBytes: seed } : undefined);
-    syncDspFromStore(ctx.project, ctx.dsp);
     id = ctx.project.systems.view()[0]?.id ?? null;
   } else {
-    // mix (any platform) + GB channels: addSystem auto-detects roles and — via bootSession's
-    // onSystemsChange hook — projects into the DSP runtime. Sibling <rom>.sav auto-pairs when sav absent.
+    // mix (any platform) + GB channels: addSystem auto-detects roles. Sibling <rom>.sav auto-pairs when sav absent.
     id = ctx.project.systems.addSystem(o.rom, { explicitSav: o.sav });
   }
   if (id == null) throw new Error(`render: could not load ROM: ${o.rom}`);

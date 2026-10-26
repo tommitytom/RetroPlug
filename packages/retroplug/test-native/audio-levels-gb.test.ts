@@ -3,14 +3,11 @@
 // Run with:  node packages/retroplug/scripts/run-native-tests.mjs audio-levels-gb
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
+import { buildAppRegistry } from "../src/appHost";
 import { report, peak, sustain, sustainPerChannel, AUDIBLE } from "./audio-levels-lib";
-
-declare const __DSP_KERNEL_BUNDLE__: string;
 
 // mGB: MIDI ch1..4 → Pulse 1 / Pulse 2 / Wave / Noise. Velocity 127 = max envelope volume.
 const NOTES = [[0x90, 48, 127], [0x91, 55, 127], [0x92, 60, 127], [0x93, 40, 127]];
@@ -19,10 +16,7 @@ const NAMES = ["Pulse 1", "Pulse 2", "Wave", "Noise"];
 test("audio levels: SameBoy (mGB)", () => {
   const be = createRealBackend();
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
-  const dsp = createDspRuntime();
   const audio = createAudioDriver(project.graph);
-  dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!);
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
   const id = project.systems.loadMgb()!;
   audio.renderAudio(1500); // boot + firmware init
 

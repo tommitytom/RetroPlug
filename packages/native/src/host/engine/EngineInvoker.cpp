@@ -22,10 +22,11 @@ void QueuedInvoker::setSystems(std::string json) {
     if (!push(c)) delete c.setSystems.json;
 }
 
-void QueuedInvoker::stageMidi(std::vector<std::uint8_t> bytes) {
+void QueuedInvoker::stageMidi(std::vector<std::uint8_t> bytes, std::uint32_t frame) {
     if (bytes.empty()) return;
     DspCommand c;
     c.kind = DspCommand::Kind::StageMidi;
+    c.stageMidi.frame = frame;
     c.stageMidi.ext = nullptr;
     if (bytes.size() <= 4) {
         c.stageMidi.len = static_cast<std::uint8_t>(bytes.size());

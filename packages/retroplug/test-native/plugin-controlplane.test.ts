@@ -1,6 +1,6 @@
 // The plugin's control-plane bundle, exercised the way the DPF plugin will: import it (composing the
-// stores + loading the DSP kernel + defining the __rp_* globals), then drive project I/O through those
-// globals. Proves the bundle boots, autoloads a real .rplg (reaper's seed path), plays through the
+// stores + defining the __rp_* globals; the DSP kernel is a script node the engine embeds), then drive
+// project I/O through those globals. Proves the bundle boots, autoloads a real .rplg (reaper's seed path), plays through the
 // kernel, and round-trips a base64 state chunk (DPF getState/setState).
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
@@ -26,8 +26,8 @@ const rms = (a: Float32Array): number => {
   return a.length ? Math.sqrt(s / a.length) : 0;
 };
 
-test("the control-plane bundle composes, loads the kernel, and exposes the __rp_* globals", () => {
-  expect(g.__rp_ready).toBeTruthy(); // kernel compiled + loaded
+test("the control-plane bundle composes and exposes the __rp_* globals", () => {
+  expect(g.__rp_ready).toBeTruthy(); // composed
   expect(typeof g.__rp_loadProjectPath).toBe("function");
   expect(typeof g.__rp_loadProjectB64).toBe("function");
   expect(typeof g.__rp_saveProjectB64).toBe("function");
@@ -47,7 +47,7 @@ test("autoload an mGB .rplg.zip → the kernel plays it; base64 getState/setStat
   const loadPath = g.__rp_loadProjectPath as (p: string) => boolean;
   expect(loadPath(rplg)).toBeTruthy();
 
-  // The load's onSystemsChange projected the store into the kernel; drive audio.
+  // The load published the graph, the kernel's structure with it; drive audio.
   const audio = createAudioDriver();
   audio.renderAudio(1500); // warm up: GB boot + mGB firmware init
   const idle = rms(audio.renderAudio(500));

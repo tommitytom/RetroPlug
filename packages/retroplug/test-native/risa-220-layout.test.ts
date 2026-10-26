@@ -7,14 +7,11 @@
 // SKIPs when the 2.2.0 ROM / LETGO sav aren't present, like the other risa native tests.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
+import { buildAppRegistry } from "../src/appHost";
 import { runtime } from "../src/risa";
-
-declare const __DSP_KERNEL_BUNDLE__: string;
 
 declare const __RESOURCES_DIR__: string;
 const ROM_220 = __RESOURCES_DIR__ + "/roms/risa/risa-v2.2.0/risa-2.2.0-pal.nes";
@@ -33,10 +30,7 @@ test("risa 2.2.0 aliases the 2.2.1 layout — a live 2.2.0 core decodes coherent
   expect(layout!.seqMode).toBe(runtime.resolveRisaLayout("2.2.1")!.seqMode);
 
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
   const id = (project.systems.loadRom(ROM_220, { explicitSav: LETGO }) as { system: number }).system;
   audio.renderAudio(1500);
 

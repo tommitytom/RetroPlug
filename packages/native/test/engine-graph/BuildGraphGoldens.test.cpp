@@ -1,9 +1,10 @@
 // Every document buildGraph's goldens hold must PLAN on the engine: golden/build-graph.json is the matrix of
 // system sets, routings and host shapes the TS builder is held to (packages/retroplug/test/graph/
 // build-graph-goldens.test.ts), and that test only compares documents. Here each distinct request is handed
-// to a fresh Engine with the real packages, so a port name, a settings key or a node limit the planner refuses
-// fails here for a shape no other suite runs: chained adds past rp.core.add's 16 inputs, a NES's ten channels,
-// the Game Boy stems, link cables under every routing.
+// to a fresh Engine with the real packages (the kernel script node among them, from the script bundle every
+// Engine embeds), so a port name, a settings key or a node limit the planner refuses fails here for a shape no
+// other suite runs: chained adds past rp.core.add's 16 inputs, a NES's ten channels, the Game Boy stems, link
+// cables under every routing, the kernel's ports for thirty-three systems and each Game Boy's MI.OUT feedback.
 //
 // The cores are real: a system node takes its core by its concrete class, so a stand-in reporting only its
 // kind is refused when the node activates. Each is built as the case's model says (a Game Boy's link group, a

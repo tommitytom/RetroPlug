@@ -6,13 +6,10 @@
 // duplicated four ways could never show. spec/10 §5.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
-
-declare const __DSP_KERNEL_BUNDLE__: string;
+import { buildAppRegistry } from "../src/appHost";
 
 // One note per mGB voice (ch0→Pulse1, ch1→Pulse2, ch2→Wave); Noise (ch3) is left unplayed.
 const CHORD: number[][] = [
@@ -32,11 +29,7 @@ test("mGB renders as four isolated Game Boy channels (renderAudioPerChannel)", (
   const registry = buildAppRegistry();
   const recent = new RecentStore(be);
   const project = new ProjectStore(be, recent, registry);
-  const dsp = createDspRuntime();
   const audio = createAudioDriver(project.graph);
-
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
 
   const id = project.systems.loadMgb()!;
   expect(typeof id).toBe("number");

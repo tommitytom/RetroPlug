@@ -22,17 +22,16 @@
 // other LSDj native tests.
 
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";
 import { LsdjReader, type LsdjState, CHANNELS, type ChannelName } from "../src/lsdj/runtime";
 import { directGraph } from "../src/graph/directGraph";
+import type { KernelStructure } from "../src/dspKernel";
 
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
 const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
-declare const __DSP_KERNEL_BUNDLE__: string;
 
 /** The aboy build is the one that has MI.MAP at all (docs/lsdj.md ROM table). */
 export const ABOY_ROM = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_3_3-arduinoboy.gb";
@@ -75,7 +74,7 @@ export interface ProbeOptions {
   /** Build the whole kernel structure instead of the default one-role pipeline, given the id the probe
    *  assigned. For asking what the REAL projection produces - whether the pipeline a project actually
    *  runs drives the cart - rather than what a hand-written pipeline does. */
-  structure?: (systemId: number) => unknown;
+  structure?: (systemId: number) => KernelStructure;
 }
 
 const emptyChannels = (): ProbeSample["channels"] => ({
@@ -122,7 +121,6 @@ export class LsdjProbe {
     if (!reader.supported) return null;
 
     const audio = createAudioDriver();
-    const dsp = createDspRuntime();
     // A fresh id per probe: every test in this file shares ONE native host process, so reusing an id
     // would collide with the cart a previous test left running (TS owns system identity - doc-01).
     const id = nextSystemId++;
@@ -131,14 +129,17 @@ export class LsdjProbe {
       savPath: null, statePath: null, sramBytes: savFrom(opts.song),
     }, id)) return null;
 
-    if (!dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)) return null;
-    const structure = opts.structure
+    const structure: KernelStructure = opts.structure
       ? opts.structure(id)
       : {
           project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
           systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode: opts.mode ?? "midiPassthrough" } }] }],
         };
-    if (!dsp.setSystems(structure as never)) return null;
+    // The structure's project stages, and the pipeline it gives this cart (the probe places no other system). The
+    // stages are dropped first, which prunes their state, so a controller session never carries over from the
+    // previous probe: each probe's kernel starts as a fresh one would.
+    if (!graph.setProjectStages([]) || !graph.setProjectStages(structure.project ?? [])) return null;
+    if (!graph.setPipeline(id, structure.systems.find((s) => s.id === id)?.pipeline ?? [])) return null;
 
     const probe = new LsdjProbe(be, audio, reader, id);
     liveProbes.push(probe);

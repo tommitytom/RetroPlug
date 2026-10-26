@@ -3,15 +3,12 @@
 // the live 64 KB WRAM back, and list it. SKIPs cleanly when the built ROM is absent (like risa-m0-spike).
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
+import { buildAppRegistry } from "../src/appHost";
 import { listSongs } from "../src/risaSav";
 import { savBytes } from "../test/risa/fixtures";
-
-declare const __DSP_KERNEL_BUNDLE__: string;
 
 declare const __RISA_SRC__: string;
 const RISA_ROM = __RISA_SRC__ + "/build/risa-pal.nes";
@@ -26,10 +23,7 @@ test("risa catalog reader lists songs from a live battery via readSram", () => {
   expect(be.writeFile(SAV_PATH, battery)).toBeTruthy();
 
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
 
   const id = (project.systems.loadRom(RISA_ROM, { explicitSav: SAV_PATH }) as { system: number }).system;
   expect(typeof id).toBe("number");

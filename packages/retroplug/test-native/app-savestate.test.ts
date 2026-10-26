@@ -6,27 +6,21 @@
 // savestate the same way.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { SystemsStore } from "../src/systemsStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
+import { buildAppRegistry } from "../src/appHost";
 import { gbRomBattery } from "../test/systems/fixtures";
 
-declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __CONFIG_DIR__: string;
 
 test("saveState → disk → loadState round-trips a real core, saving while the audio thread runs", () => {
   const be = createRealBackend();
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
 
-  // Ownership discipline (per dsp-threaded): construct + load the kernel BEFORE startAudio.
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
-
+  // Ownership discipline (per dsp-threaded): construct BEFORE startAudio.
   const id = project.systems.loadMgb()!;
   expect(typeof id).toBe("number");
   audio.renderAudio(1500); // boot + publish a state snapshot into the registry

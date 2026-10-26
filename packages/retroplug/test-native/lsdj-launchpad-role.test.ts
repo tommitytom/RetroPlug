@@ -3,13 +3,12 @@
 //
 // test/dsp/controller-role.test.ts proves the same path in pure TS, but against the mock host - it shows the
 // kernel produces the right bytes, not that the bytes arrive. This runs the identical role over the real
-// Engine, the real DSP runtime and a real SameBoy, and reads the answer out of the cart's WRAM. Everything
+// Engine, the real DSP kernel node and a real SameBoy, and reads the answer out of the cart's WRAM. Everything
 // between the pad and the sound is genuine except the Launchpad itself.
 //
 // Run: pnpm test:native lsdj-launchpad-role
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";
 import { LsdjReader } from "../src/lsdj/runtime";
@@ -22,7 +21,6 @@ import { directGraph } from "../src/graph/directGraph";
 const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
-declare const __DSP_KERNEL_BUNDLE__: string;
 
 const ABOY = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_3_3-arduinoboy.gb";
 const SYSTEM = 1;
@@ -50,7 +48,6 @@ test("a pad press on the controller stream launches a row on a real cart", () =>
   const reader = header ? LsdjReader.fromHeader(header) : null;
   if (!reader || !reader.supported) return skip("lsdj-launchpad-role: unsupported LSDj version");
 
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
 
   expect(graph.add({
@@ -58,22 +55,19 @@ test("a pad press on the controller stream launches a row on a real cart", () =>
     savPath: null, statePath: null, sramBytes: savFrom(SONG),
   }, SYSTEM)).toBeTruthy();
 
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems({
-    project: [
-      { kind: "midi-routing", config: { mode: "sendToAll" } },
-      // Exactly what kernelProjection synthesizes for an enabled controller, song table and all.
-      {
-        kind: "launchpad",
-        config: {
-          app: "lsdj-midimap", target: "system", systemId: SYSTEM,
-          appConfig: { quantise: "immediate" },
-          songRowTicks: songRowTicks(SongSchema.parse(songJson)),
-        },
+  expect(graph.setProjectStages([
+    { kind: "midi-routing", config: { mode: "sendToAll" } },
+    // Exactly what kernelProjection synthesizes for an enabled controller, song table and all.
+    {
+      kind: "launchpad",
+      config: {
+        app: "lsdj-midimap", target: "system", systemId: SYSTEM,
+        appConfig: { quantise: "immediate" },
+        songRowTicks: songRowTicks(SongSchema.parse(songJson)),
       },
-    ],
-    systems: [{ id: SYSTEM, pipeline: [{ kind: "lsdj-sync", config: { mode: "midiMap" } }] }],
-  })).toBeTruthy();
+    },
+  ])).toBeTruthy();
+  expect(graph.setPipeline(SYSTEM, [{ kind: "lsdj-sync", config: { mode: "midiMap" } }])).toBeTruthy();
 
   audio.renderAudio(6000); // past the cartridge self-test, onto the song screen
   const before = reader.read(be.readRam(SYSTEM)!);
@@ -87,6 +81,7 @@ test("a pad press on the controller stream launches a row on a real cart", () =>
   console.log(`[lsdj-launchpad-role] after pressing the pad for row 6: playing=${after.channels.pu1.playing} row=${after.channels.pu1.songRow}`);
   expect(after.channels.pu1.playing).toBe(true);
   expect(after.channels.pu1.songRow).toBe(6);
+  graph.remove(SYSTEM); // a live system is emulated by every later test in this file
 });
 
 test("the same bytes on the MUSICAL stream launch a different row, which is why the streams are separate", () => {
@@ -102,7 +97,6 @@ test("the same bytes on the MUSICAL stream launch a different row, which is why 
   if (!reader || !reader.supported) return skip("lsdj-launchpad-role: unsupported LSDj version");
 
   const id = 2;
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
   expect(graph.add({
     romPath: ABOY, platform: "gb", core: "sameboy", embeddedRom: "",
@@ -110,11 +104,9 @@ test("the same bytes on the MUSICAL stream launch a different row, which is why 
       workingSong: { ...songJson, rows: Array.from({ length: 64 }, () => ({ chains: [0, 0, 0, 0] })) },
     }),
   }, id)).toBeTruthy();
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems({
-    project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
-    systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode: "midiMap" } }] }],
-  })).toBeTruthy();
+  // The routing alone: the controller session goes, and its state with it.
+  expect(graph.setProjectStages([{ kind: "midi-routing", config: { mode: "sendToAll" } }])).toBeTruthy();
+  expect(graph.setPipeline(id, [{ kind: "lsdj-sync", config: { mode: "midiMap" } }])).toBeTruthy();
 
   audio.renderAudio(6000);
   const note = press(6)[1];

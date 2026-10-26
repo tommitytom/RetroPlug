@@ -9,7 +9,6 @@
 //   retroplug-cli build/cli/export-nes-mono.js <rom.nes> [outPrefix]
 import { runSession, hostArgs } from "../session";
 import { encodeWav, deinterleaveStereo } from "../wav";
-import { syncDspFromStore } from "../../src/appHost";
 
 // One note per core APU channel (n8-midi routing): ch1→Pulse1, ch2→Pulse2, ch3→Triangle, ch4→Noise.
 // (DMC/ch5 needs a sample bank, unavailable headless — it stays silent here.)
@@ -29,8 +28,8 @@ runSession((s) => {
   if (!romPath) throw new Error("usage: export-nes-mono <rom.nes> [outPrefix]");
 
   // Adopt with the "mesen" role in individualMono mode — capture engages at construct/onActivate,
-  // so it MUST be set here, not live. The host-MIDI role lets notes reach the APU. adopt is quiet → project
-  // the store into the DSP runtime by hand (bootSession's onSystemsChange hook doesn't fire).
+  // so it MUST be set here, not live. The host-MIDI role lets notes reach the APU (the graph the adopt
+  // publishes carries it to the kernel).
   s.project.systems.adopt({
     romPath,
     roles: [
@@ -38,7 +37,6 @@ runSession((s) => {
       { kind: "mesen", config: { channelExportMode: "individualMono" } },
     ],
   });
-  syncDspFromStore(s.project, s.dsp);
 
   const id = s.project.systems.view()[0]?.id;
   if (id == null) throw new Error("adopt failed (no system)");

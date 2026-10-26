@@ -66,6 +66,12 @@ function settingsNumber(spec: ConstructSpec, key: string): number {
   return typeof v === "number" ? v : 0;
 }
 
+/** The kernel node's settings as a document carries them (src/script/kernelNode.ts). */
+export interface MockKernelSettings {
+  project: { kind: string; config: Record<string, unknown> }[];
+  systems: { id: number; pipeline: { kind: string; config: Record<string, unknown> }[]; serialOut: boolean }[];
+}
+
 export class MockBackend implements Backend {
   private files = new Map<string, Uint8Array>();
   private dir: string;
@@ -646,6 +652,15 @@ export class MockBackend implements Backend {
   }
 
   // --- test helpers (not part of Backend) ---------------------------------
+
+  /** The DSP kernel's settings (its structure: the project stages, each system's pipeline in slot order) in the
+   *  graph document setGraph was sent `back` requests ago (0 = the last), or undefined when none was sent. */
+  kernelSettings(back = 0): MockKernelSettings | undefined {
+    const request = this.graphRequests[this.graphRequests.length - 1 - back];
+    if (!request) return undefined;
+    const doc = JSON.parse(request.document) as { nodes: { id: string; settings?: unknown }[] };
+    return doc.nodes.find((n) => n.id === "kernel")?.settings as MockKernelSettings | undefined;
+  }
 
   /** The ids the mock currently considers live, sorted. */
   liveSystemIds(): number[] {

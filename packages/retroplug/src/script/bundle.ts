@@ -7,7 +7,7 @@ import type { DefinedNode } from "../graph/defineNode";
 import { kernelNode } from "./kernelNode";
 import { registerScriptNodes } from "./register";
 
-// The production script node types: the DSP kernel, beside the native one the engine still runs until it switches.
+// The production script node types: the DSP kernel.
 const scriptNodes: readonly DefinedNode<any>[] = [kernelNode];
 
 registerScriptNodes(scriptNodes);

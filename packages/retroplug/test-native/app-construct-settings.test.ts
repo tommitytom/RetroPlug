@@ -5,13 +5,10 @@
 // — the boot screen skipped, silent). Here fastBoot=false runs the boot ROM, which chimes.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
-
-declare const __DSP_KERNEL_BUNDLE__: string;
+import { buildAppRegistry } from "../src/appHost";
 
 const rms = (a: Float32Array): number => {
   let s = 0;
@@ -24,11 +21,7 @@ test("a system adopted with fastBoot=false plays the GB boot chime (construct-ti
   const registry = buildAppRegistry();
   const recent = new RecentStore(be);
   const project = new ProjectStore(be, recent, registry);
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
-
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
 
   // Adopt the embedded mGB with an explicit sameboy role whose fastBoot is FALSE, so construct runs
   // the boot ROM instead of skipping it. (adopt is the load seam; it forwards the sameboy role config
@@ -41,7 +34,6 @@ test("a system adopted with fastBoot=false plays the GB boot chime (construct-ti
     ],
   })!;
   expect(typeof id).toBe("number");
-  syncDspFromStore(project, dsp); // adopt is quiet
 
   // No MIDI staged: the ONLY thing that can make noise this early is the GB boot chime, which plays
   // only because fastBoot=false was honoured at construct (a live setFastBoot would be deferred).

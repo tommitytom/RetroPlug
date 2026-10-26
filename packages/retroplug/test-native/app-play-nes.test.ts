@@ -8,13 +8,11 @@
 // A fresh NoteOn is staged before each measurement so the proof doesn't depend on the ROM sustaining.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
+import { buildAppRegistry } from "../src/appHost";
 
-declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
 
 const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
@@ -31,13 +29,9 @@ test("host MIDI drives a NES core (ch1 → Pulse1), and live gain silences/resto
   if (!be.fileExists(NES)) skip(`app-play-nes: no ROM at ${NES}`);
 
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
 
-  // Ownership discipline (per dsp-threaded): kernel loaded + store→DSP hook installed before audio.
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
-
+  // Ownership discipline (per dsp-threaded): construct before audio.
   const id = (project.systems.loadRom(NES) as { system: number }).system;
   expect(project.systems.view()[0].platform).toBe("nes");
   // The NES rom provider attached the host-MIDI role → the emitCoreMidi path is in the pipeline.

@@ -1,22 +1,28 @@
 // Project the app's live systems into the DSP kernel's structure. The store owns systems
-// as `{ id, roles }` (SystemView); the DSP kernel consumes `KernelStructure` — a project-scope
+// as `{ id, roles }`; the DSP kernel consumes `KernelStructure` - a project-scope
 // role list + per-system pipelines. This is the one seam that turns "what the app has" into
-// "what the DSP runs", pushed to the runtime on every structure change (syncDspFromStore in
-// appHost.ts). Pure and registry-free: the kernel self-guards scope (dspKernel.ts — a pipeline
-// stage whose roleType is missing / project-scope / has no `dsp` is skipped), so a system's
-// backend "system" role rides along as harmless dead bytes and needs no filtering here.
+// "what the DSP runs", which the ProjectStore publishes with the graph as the kernel node's
+// settings (docs/modular-graph-phase-b3a-design.md section 5.2). Pure and registry-free: the
+// systems store hands it only the roles the kernel runs (SystemsStore.graphSystems), and the
+// kernel self-guards scope all the same (dspKernel.ts - a pipeline stage whose roleType is
+// missing / project-scope / has no `dsp` is skipped).
 
 import type { KernelStructure } from "./dspKernel";
 import type { RoleInstance } from "./systemRoles";
-import type { SystemView } from "./systemsStore";
 import type { MidiRouting } from "./settingsEnums";
 import type { ControllerSettings } from "./projectConfig";
 import type { RowTicksTable } from "./lsdj/playback/predict";
 import type { ControllerAnchor } from "./lsdj/playback/anchor";
 
 /** What the controller role needs that project settings alone cannot give: the derived per-row timing
- *  table, and the start-edge anchor. Assembled by the caller (appHost), because reading a cart's battery
+ *  table, and the start-edge anchor. Assembled by the caller (ProjectStore), because reading a cart's battery
  *  and its live RAM needs the store. */
+
+/** A system as the projection reads it: its id and its roles, in order. */
+export interface ProjectedSystem {
+  id: number;
+  roles: RoleInstance[];
+}
 export interface ControllerProjection extends ControllerSettings {
   songRowTicks: RowTicksTable;
   /** Where the cart was seen starting on its own, or null on the hardware path / before it ever has. */
@@ -41,7 +47,7 @@ export interface ControllerProjection extends ControllerSettings {
  *  rendering properly. Measured in test-native/lsdj-sync-toggle. Better to send a cart that is not listening
  *  nothing at all. */
 export function controllerSyncOverride(
-  views: SystemView[],
+  views: readonly ProjectedSystem[],
   controller?: ControllerProjection,
 ): { systemId: number; mode: "midiMap" | "off" } | null {
   if (!controller?.enabled || controller.target !== "system" || controller.app !== "lsdj-midimap") return null;
@@ -63,7 +69,7 @@ export function controllerSyncOverride(
  *  the `.rplg` (only the user's own choices are, under project settings). Omitted entirely when there is
  *  no controller, so a project without one runs exactly the pipeline it always did. */
 export function projectKernelStructure(
-  views: SystemView[],
+  views: readonly ProjectedSystem[],
   midiRouting: MidiRouting,
   controller?: ControllerProjection,
 ): KernelStructure {

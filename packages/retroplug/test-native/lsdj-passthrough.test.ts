@@ -4,7 +4,6 @@
 // LSDj core — the legacy floor: LSDj keeps running (valid frames) after the byte stream, no crash.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom } from "../src/lsdjSav";
 import { directGraph } from "../src/graph/directGraph";
@@ -13,16 +12,13 @@ import { directGraph } from "../src/graph/directGraph";
 const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
-declare const __DSP_KERNEL_BUNDLE__: string;
 
 const LSDJ = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_4_2.gb"; // stock ROM supports MidiPassthrough
 
 const emptySav = () => savFrom({ workingSong: { formatVersion: 22 } });
 
-const sysStruct = (id: number, mode: string) => ({
-  project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
-  systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode } }] }],
-});
+const SEND_TO_ALL = [{ kind: "midi-routing", config: { mode: "sendToAll" } }];
+const lsdjSync = (mode: string) => [{ kind: "lsdj-sync", config: { mode } }];
 
 const rms = (a: Float32Array): number => {
   let s = 0;
@@ -34,7 +30,6 @@ test("the TS lsdj-sync MidiPassthrough role forwards raw MIDI to a real LSDj cor
   const be = createRealBackend();
   if (!be.fileExists(LSDJ)) skip(`lsdj-passthrough: LSDj ROM not found at ${LSDJ}`);
 
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
 
   const id = 1;
@@ -48,8 +43,8 @@ test("the TS lsdj-sync MidiPassthrough role forwards raw MIDI to a real LSDj cor
     sramBytes: emptySav(),
   }, id)).toBeTruthy();
 
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems(sysStruct(id, "midiPassthrough"))).toBeTruthy();
+  expect(graph.setProjectStages(SEND_TO_ALL)).toBeTruthy();
+  expect(graph.setPipeline(id, lsdjSync("midiPassthrough"))).toBeTruthy();
 
   audio.renderAudio(6000); // reach the song screen from the sav
 

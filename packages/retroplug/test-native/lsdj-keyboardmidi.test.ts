@@ -15,7 +15,6 @@
 //      keyboard notes fill every window with audio.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";
 import { directGraph } from "../src/graph/directGraph";
@@ -24,7 +23,6 @@ import { directGraph } from "../src/graph/directGraph";
 const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
-declare const __DSP_KERNEL_BUNDLE__: string;
 
 const ABOY = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_3_3-arduinoboy.gb";
 const START = 7; // GameboyButton::Start
@@ -42,10 +40,8 @@ const KEYBD_SONG: SavInput = {
   },
 };
 
-const sysStruct = (id: number, mode: string) => ({
-  project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
-  systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode } }] }],
-});
+const SEND_TO_ALL = [{ kind: "midi-routing", config: { mode: "sendToAll" } }];
+const lsdjSync = (mode: string) => [{ kind: "lsdj-sync", config: { mode } }];
 
 const rms = (a: Float32Array): number => {
   let s = 0;
@@ -58,7 +54,6 @@ test("KeyboardMidi: MIDI notes play live on a real LSDj via the PS/2-keyboard se
   const be = createRealBackend();
   if (!be.fileExists(ABOY)) skip(`lsdj-keyboardmidi: aboy LSDj ROM not found at ${ABOY}`);
 
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
 
   const id = 1;
@@ -72,8 +67,8 @@ test("KeyboardMidi: MIDI notes play live on a real LSDj via the PS/2-keyboard se
     sramBytes: savFrom(KEYBD_SONG),
   }, id)).toBeTruthy();
 
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems(sysStruct(id, "keyboardMidi"))).toBeTruthy();
+  expect(graph.setProjectStages(SEND_TO_ALL)).toBeTruthy();
+  expect(graph.setPipeline(id, lsdjSync("keyboardMidi"))).toBeTruthy();
 
   audio.renderAudio(6000); // reach the song screen
 

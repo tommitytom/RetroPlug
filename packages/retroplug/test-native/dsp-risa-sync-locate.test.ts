@@ -11,7 +11,6 @@
 // advancing) was already covered; rewinding was not.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { runtime } from "../src/risa";
 import { risaLocate } from "../src/risaSync";
@@ -21,26 +20,22 @@ import { directGraph } from "../src/graph/directGraph";
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
 const graph = directGraph();
 
-declare const __DSP_KERNEL_BUNDLE__: string;
-
 declare const __RESOURCES_DIR__: string;
 const ROM_230 = __RESOURCES_DIR__ + "/roms/risa/risa-v2.3.0/risa-2.3.0-pal.nes";
 const TRACK_NOISE = 3; // the metronome song's only populated track
-const withSync = (id: number) => ({ systems: [{ id, pipeline: [{ kind: "risa-sync", config: {} }] }] });
+const RISA_SYNC = [{ kind: "risa-sync", config: {} }];
 
 test("a stop, a rewind and a mid-song jump each land risa on the row the arm named", () => {
   const be = createRealBackend();
   if (!be.fileExists(ROM_230)) skip(`dsp-risa-sync-locate: missing ${ROM_230}`);
 
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
   const id = 1;
   expect(graph.add({
     romPath: ROM_230, platform: "nes", core: "mesen", embeddedRom: "",
     savPath: null, statePath: null, sramBytes: buildRisaMetronomeSav(),
   }, id)).toBeTruthy();
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems(withSync(id))).toBeTruthy();
+  expect(graph.setPipeline(id, RISA_SYNC)).toBeTruthy();
   audio.renderAudio(2500); // boot (transport off)
   audio.setBpm(120);
 
@@ -105,15 +100,13 @@ test("the beat grid still holds on a run that follows a stop and rewind", () => 
   const be = createRealBackend();
   if (!be.fileExists(ROM_230)) skip(`dsp-risa-sync-locate: missing ${ROM_230}`);
 
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
   const id = 1;
   expect(graph.add({
     romPath: ROM_230, platform: "nes", core: "mesen", embeddedRom: "",
     savPath: null, statePath: null, sramBytes: buildRisaMetronomeSav(),
   }, id)).toBeTruthy();
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems(withSync(id))).toBeTruthy();
+  expect(graph.setPipeline(id, RISA_SYNC)).toBeTruthy();
   audio.renderAudio(2500);
   audio.setBpm(120);
 

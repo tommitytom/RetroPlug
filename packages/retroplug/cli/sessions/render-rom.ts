@@ -11,8 +11,8 @@ runSession((s) => {
   const [romPath, outPath, msArg] = hostArgs();
   if (!romPath || !outPath) throw new Error("usage: render-rom.js <rom> <out.wav> [ms]");
 
-  // addSystem loads exactly this ROM (no sibling-.rplg deferral, no stray disk writes) and — because
-  // bootSession installed the onSystemsChange hook — projects it into the DSP runtime so audio renders.
+  // addSystem loads exactly this ROM (no sibling-.rplg deferral, no stray disk writes), and the graph it
+  // publishes carries its roles to the DSP kernel, so audio renders.
   const id = s.project.systems.addSystem(romPath);
   if (id == null) throw new Error(`could not load ROM: ${romPath}`);
 

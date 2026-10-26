@@ -3,18 +3,14 @@
 // moment audio started (the live-plugin state). It now routes through the invoker — a queued
 // DspCommand::PressButton drained on the audio thread — so this presses a button with the background audio
 // thread free-running and asserts the call is accepted (the old path returned false there). Resource-free:
-// embedded mGB, no ROM file. Ownership discipline (per dsp-threaded): construct + load the kernel BEFORE
-// startAudio; never read core state while the thread runs — a button press is a WRITE over the queue, the
-// intended path.
+// embedded mGB, no ROM file. Ownership discipline (per dsp-threaded): construct BEFORE startAudio; never
+// read core state while the thread runs - a button press is a WRITE over the queue, the intended path.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
-
-declare const __DSP_KERNEL_BUNDLE__: string;
+import { buildAppRegistry } from "../src/appHost";
 
 const RIGHT = 0; // GameboyButton::Right
 const START = 7; // GameboyButton::Start
@@ -24,11 +20,7 @@ test("pressButton reaches a live core quiescent AND while the audio thread runs"
   const registry = buildAppRegistry();
   const recent = new RecentStore(be);
   const project = new ProjectStore(be, recent, registry);
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
-
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
 
   const id = project.systems.loadMgb()!;
   expect(typeof id).toBe("number");

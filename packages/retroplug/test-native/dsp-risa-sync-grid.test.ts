@@ -8,7 +8,6 @@
 // through an actual DAW transport and pairs each onset to a ReaSynth click. This one runs in test:native.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { buildRisaMetronomeSav } from "./risaSyncSong";
 import { directGraph } from "../src/graph/directGraph";
@@ -16,13 +15,11 @@ import { directGraph } from "../src/graph/directGraph";
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
 const graph = directGraph();
 
-declare const __DSP_KERNEL_BUNDLE__: string;
-
 declare const __RESOURCES_DIR__: string;
 const ROM_230 = __RESOURCES_DIR__ + "/roms/risa/risa-v2.3.0/risa-2.3.0-pal.nes";
 const SAMPLE_RATE = 44100;
 
-const withSync = (id: number) => ({ systems: [{ id, pipeline: [{ kind: "risa-sync", config: {} }] }] });
+const RISA_SYNC = [{ kind: "risa-sync", config: {} }];
 
 // Onsets as a rising-edge crossing of a short-window envelope. The song emits at most one hit per beat,
 // so `refractoryMs` (half a beat) is what keeps a decaying noise burst - whose RMS ripples on the way
@@ -61,15 +58,13 @@ test("host sync puts one risa hit on every DAW beat, at the DAW's tempo", () => 
   const be = createRealBackend();
   if (!be.fileExists(ROM_230)) skip(`dsp-risa-sync-grid: missing ${ROM_230}`);
 
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
   const id = 1;
   expect(graph.add({
     romPath: ROM_230, platform: "nes", core: "mesen", embeddedRom: "",
     savPath: null, statePath: null, sramBytes: buildRisaMetronomeSav(),
   }, id)).toBeTruthy();
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems(withSync(id))).toBeTruthy();
+  expect(graph.setPipeline(id, RISA_SYNC)).toBeTruthy();
   audio.renderAudio(2500); // boot (transport off) — risa materializes the authored song
 
   // The DAW tempo alone sets the hit rate: risa's project tempo never enters into it under host sync.

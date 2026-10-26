@@ -7,7 +7,6 @@
 // freed (its snapshot slot gone), plus a coarse energy check that the concurrently-added core renders.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import type { ConstructSpec } from "../src/backend";
 import { directGraph } from "../src/graph/directGraph";
@@ -15,29 +14,24 @@ import { directGraph } from "../src/graph/directGraph";
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
 const graph = directGraph();
 
-declare const __DSP_KERNEL_BUNDLE__: string;
-
 // An embedded mGB (no ROM file) — the simplest sounding Game Boy the host can build on demand.
 const MGB: ConstructSpec = { romPath: "", platform: "gb", core: "sameboy", embeddedRom: "mgb", savPath: null, statePath: null };
 const NOTE = [0x90, 60, 100]; // C note-on
 
 // The kernel structure that lets host MIDI reach each mGB: midi-routing (SendToAll) → per-system mgb.
-const routingMgb = (ids: number[]) => ({
-  project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
-  systems: ids.map((id) => ({ id, pipeline: [{ kind: "mgb", config: {} }] })),
-});
+const SEND_TO_ALL = [{ kind: "midi-routing", config: { mode: "sendToAll" } }];
+const MGB_PIPELINE = [{ kind: "mgb", config: {} }];
 
 test("add + remove a system while the audio thread plays, via the command + release queues", () => {
   const be = createRealBackend();
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
 
   // --- setup (quiescent): one mGB + the kernel routing so notes can reach it ---
   // TS owns the id counter now; a test calling the backend directly picks its own (fresh host per file).
   const a = 1;
   expect(graph.add(MGB, a)).toBeTruthy();
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems(routingMgb([a]))).toBeTruthy();
+  expect(graph.setProjectStages(SEND_TO_ALL)).toBeTruthy();
+  expect(graph.setPipeline(a, MGB_PIPELINE)).toBeTruthy();
 
   expect(audio.startAudio()).toBeTruthy();
   expect(audio.systemCount()).toBe(1);
@@ -58,7 +52,7 @@ test("add + remove a system while the audio thread plays, via the command + rele
   expect(graph.add(MGB, b)).toBeTruthy();
   audio.sleepMs(30); // let the audio thread adopt the plan that adds it
   expect(audio.systemCount()).toBe(2);
-  expect(dsp.setSystems(routingMgb([a, b]))).toBeTruthy();
+  expect(graph.setPipeline(b, MGB_PIPELINE)).toBeTruthy();
   audio.stageMidiIn(NOTE); // SendToAll → both mGBs
   const twoSys = energyWindow(120);
 
@@ -71,8 +65,7 @@ test("add + remove a system while the audio thread plays, via the command + rele
   expect(audio.drainReleased()).toBeGreaterThanOrEqual(1);
   expect(be.readState(a)).toBe(null);
   expect(be.readState(b) !== null, "b's slot").toBeTruthy();
-  expect(dsp.setSystems(routingMgb([b]))).toBeTruthy();
-  audio.stageMidiIn(NOTE);
+  audio.stageMidiIn(NOTE); // the kernel lost `a` with the plan that removed it
   const afterRemove = energyWindow(120);
 
   expect(audio.stopAudio()).toBeTruthy();

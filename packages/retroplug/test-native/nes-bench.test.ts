@@ -16,13 +16,11 @@
 // RP_BENCH_ROM (path to a .nes; default the in-tree bliptoaster.nes). One test per file (shared native Engine).
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
+import { buildAppRegistry } from "../src/appHost";
 
-declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
 
 const SR = 44100;
@@ -109,7 +107,6 @@ test("nes-bench: Mesen core per-block cost + JS allocation under a NES + MIDI wo
   if (!be.fileExists(rom)) skip(`nes-bench: no ROM at ${rom} — set RP_BENCH_ROM`);
 
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
 
   const profile = envStr("RP_BENCH_PROFILE", "A");
@@ -117,10 +114,8 @@ test("nes-bench: Mesen core per-block cost + JS allocation under a NES + MIDI wo
   const warmup = Math.max(0, envInt("RP_BENCH_WARMUP", 200));
   const seed = envInt("RP_BENCH_SEED", 0xc0ffee);
 
-  // Ownership discipline (per dsp-threaded / app-play-nes): kernel loaded + store→DSP hook installed
-  // before audio, then loadRom triggers syncDspFromStore to build the NES pipeline (nes-n8-midi role).
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
+  // Ownership discipline (per dsp-threaded / app-play-nes): construct before audio. loadRom's publish carries
+  // the NES pipeline (the nes-n8-midi role) to the kernel.
   const id = (project.systems.loadRom(rom) as { system: number }).system;
   expect(typeof id).toBe("number");
   expect(project.systems.view()[0].platform).toBe("nes");
@@ -153,6 +148,10 @@ test("nes-bench: Mesen core per-block cost + JS allocation under a NES + MIDI wo
   const wallMs = nowMs() - t0;
 
   const s = audio.dspAllocStats();
+  // The counters read the native DSP runtime's QuickJS heap, which no plan runs since the kernel became a script
+  // node (the script host's own heap has no window counters yet), so a profile host measures nothing here.
+  if (s.blockCount === 0)
+    skip("nes-bench: the allocation counters read the native DSP runtime, which the kernel no longer runs in");
   const gc = audio.dspRunGc();
 
   const bc = s.blockCount || 1;

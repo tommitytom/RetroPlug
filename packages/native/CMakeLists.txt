@@ -210,8 +210,8 @@ set_target_properties(retroplug-render-host-test PROPERTIES
 
 # The root CLI dispatcher bundle — cli/cli.ts → tjsc bytecode C array, COMPILED INTO retroplug-cli
 # (mirrors the plugin's cp-/ui-bundle recipe). It owns command routing + all help; esbuild follows its
-# imports (cli.ts → tools.ts → sessions/render.ts → session.ts). build-session.js injects
-# __DSP_KERNEL_BUNDLE__; tjsc derives the array name from the output stem → rp_cli_bundle[] +
+# imports (cli.ts → tools.ts → sessions/render.ts → session.ts). tjsc derives the array name from the
+# output stem → rp_cli_bundle[] +
 # rp_cli_bundle_size. Derived; never committed. Adding a command is pure TS (cli/tools.ts) — no change here.
 set(CLI_BUNDLE_JS "${CMAKE_BINARY_DIR}/native/cli-bundle.js")
 set(CLI_BUNDLE_C  "${CMAKE_BINARY_DIR}/native/cli-bundle_data.c")
@@ -303,8 +303,8 @@ set_target_properties(retroplug-cli PROPERTIES
 # The Node-API addon host (opt-in: -DRETROPLUG_NODE_ADDON=ON).
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/node-addon.cmake)
 
-# The example sessions, esbuild-bundled to runnable .js (with the DSP kernel injected as
-# __DSP_KERNEL_BUNDLE__, mirroring the cp-bundle recipe). A normal build yields both the binary and demos
+# The example sessions, esbuild-bundled to runnable .js (mirroring the cp-bundle recipe). A normal build
+# yields both the binary and demos
 # the binary can run, e.g. build/bin/retroplug-cli build/cli/mgb-smoke.js.
 set(CLI_SESSIONS "${CMAKE_SOURCE_DIR}/packages/retroplug/cli/sessions")
 add_custom_target(retroplug-example-session ALL

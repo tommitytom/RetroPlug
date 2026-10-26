@@ -5,12 +5,15 @@
 // non-silent AND louder than idle — proving the MIDI drove the core's sound through the kernel path.
 // Complements dsp-serial (routing-presence toggle) with an idle-baseline magnitude check. In-TS RMS.
 import { test, expect } from "../testing/harness";
-import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
-import { createDspRuntime } from "../src/dspRuntime";
-import { SystemsStore } from "../src/systemsStore";
+import type { ConstructSpec } from "../src/backend";
+import { directGraph } from "../src/graph/directGraph";
 
-declare const __DSP_KERNEL_BUNDLE__: string;
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
+
+// The embedded mGB, built bare (no roles of its own): the pipeline set here is all the kernel runs for it.
+const MGB: ConstructSpec = { romPath: "", platform: "gb", core: "sameboy", embeddedRom: "mgb", savPath: null, statePath: null };
 
 // mGB listens on a MIDI channel per pulse voice; a C-major chord is one note per channel.
 const CHORD: number[][] = [
@@ -26,22 +29,15 @@ const rms = (a: Float32Array): number => {
 };
 
 test("mGB renders non-silent audio from a MIDI chord (idle-silence control)", () => {
-  const be = createRealBackend();
   const audio = createAudioDriver();
-  const dsp = createDspRuntime();
 
-  const id = new SystemsStore(be).loadMgb()!; // embedded mGB → real bare core in the shared Project
-  expect(typeof id).toBe("number");
+  const id = 1; // this direct-backend test picks its own id (fresh host per file)
+  expect(graph.add(MGB, id)).toBeTruthy(); // embedded mGB → a real bare core
 
   // The kernel is the only behaviour layer: midi-routing (SendToAll) fans host MIDI to the system,
   // and its `mgb` role turns the routed bytes into serial input (mGB reads MIDI-over-serial).
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(
-    dsp.setSystems({
-      project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
-      systems: [{ id, pipeline: [{ kind: "mgb", config: {} }] }],
-    }),
-  ).toBeTruthy();
+  expect(graph.setProjectStages([{ kind: "midi-routing", config: { mode: "sendToAll" } }])).toBeTruthy();
+  expect(graph.setPipeline(id, [{ kind: "mgb", config: {} }])).toBeTruthy();
 
   audio.renderAudio(1500); // warm up: GB boot + mGB firmware init (discarded)
 

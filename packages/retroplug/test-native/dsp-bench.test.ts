@@ -9,12 +9,15 @@
 // rather than printing a green tick for it). One test per file (the
 // native Engine is shared per host process).
 import { test, expect, skip } from "../testing/harness";
-import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
-import { createDspRuntime } from "../src/dspRuntime";
-import { SystemsStore } from "../src/systemsStore";
+import type { ConstructSpec } from "../src/backend";
+import { directGraph } from "../src/graph/directGraph";
 
-declare const __DSP_KERNEL_BUNDLE__: string;
+// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
+const graph = directGraph();
+
+// The embedded mGB, built bare (no roles of its own): the pipeline set here is all the kernel runs for it.
+const MGB: ConstructSpec = { romPath: "", platform: "gb", core: "sameboy", embeddedRom: "mgb", savPath: null, statePath: null };
 
 const SR = 44100;
 const BLK = 1024;
@@ -116,9 +119,7 @@ function buildSchedule(profile: string, blocks: number, seed: number): Ev[] {
 }
 
 test("dsp-bench: DSP kernel per-block allocation under an mGB + MIDI workload", () => {
-  const be = createRealBackend();
   const audio = createAudioDriver();
-  const dsp = createDspRuntime();
 
   const profile = envStr("RP_BENCH_PROFILE", "A");
   const cores = Math.max(1, envInt("RP_BENCH_CORES", 1));
@@ -126,20 +127,16 @@ test("dsp-bench: DSP kernel per-block allocation under an mGB + MIDI workload", 
   const warmup = Math.max(0, envInt("RP_BENCH_WARMUP", 200));
   const seed = envInt("RP_BENCH_SEED", 0xc0ffee);
 
-  // One real mGB core (audio + realism); extra cores are kernel-only synthetic ids that still exercise
-  // the per-system JS allocation path (ctx/closures/filters) — cores are the dominant JS-load lever.
-  const realId = new SystemsStore(be).loadMgb()!;
-  expect(typeof realId).toBe("number");
-  const ids = [realId];
-  for (let i = 1; i < cores; i++) ids.push(realId + i);
-
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(
-    dsp.setSystems({
-      project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }], // SendToAll → every system's mgb pipeline
-      systems: ids.map((id) => ({ id, pipeline: [{ kind: "mgb", config: {} }] })),
-    }),
-  ).toBeTruthy();
+  // `cores` real mGB cores, each with an mgb pipeline: cores are the dominant JS-load lever (each one a
+  // ctx, its closures and its routed inbox). The graph places only real systems, so each is a real core.
+  const ids: number[] = [];
+  for (let i = 1; i <= cores; i++) {
+    expect(graph.add(MGB, i)).toBeTruthy();
+    expect(graph.setPipeline(i, [{ kind: "mgb", config: {} }])).toBeTruthy();
+    ids.push(i);
+  }
+  // SendToAll → every system's mgb pipeline.
+  expect(graph.setProjectStages([{ kind: "midi-routing", config: { mode: "sendToAll" } }])).toBeTruthy();
 
   // Bail early (before the render loops) when the host has no profiling allocator, so the normal
   // test:native sweep stays fast + green.
@@ -170,6 +167,10 @@ test("dsp-bench: DSP kernel per-block allocation under an mGB + MIDI workload", 
   const wallMs = nowMs() - t0;
 
   const s = audio.dspAllocStats();
+  // The counters read the native DSP runtime's QuickJS heap, which no plan runs since the kernel became a script
+  // node (the script host's own heap has no window counters yet), so a profile host measures nothing here.
+  if (s.blockCount === 0)
+    skip("dsp-bench: the allocation counters read the native DSP runtime, which the kernel no longer runs in");
   const gc = audio.dspRunGc(); // one self-driven cycle pass — freedBytes ~0 proves no cycle accumulation
 
   const bc = s.blockCount || 1;

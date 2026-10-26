@@ -8,8 +8,6 @@ import { bootSession, type Session } from "../../src/bootSession";
 import type { RenderBlock } from "../../src/audioDriver";
 import { laneDigest, type MidiOutEntry, type SegmentDigest } from "./digest";
 
-declare const __DSP_KERNEL_BUNDLE__: string;
-
 /** EngineRpcService's kBlockSize: the block the shape render calls use. */
 const SHAPE_BLOCK = 1024;
 
@@ -71,18 +69,17 @@ export class Rig {
     return this.session.audio;
   }
 
-  /** Back to a known state: no systems, default project settings, a freshly loaded kernel, the transport
-   *  stopped at ppq 0 and 120 bpm, `sampleRate`, nothing pending, and no ROM copies left from the last
-   *  case (a leftover "-2.sav" would be adopted by the next duplicate). */
+  /** Back to a known state: no systems, default project settings, the transport stopped at ppq 0 and 120
+   *  bpm, `sampleRate`, nothing pending, and no ROM copies left from the last case (a leftover "-2.sav" would
+   *  be adopted by the next duplicate). The new project leaves the kernel node as a fresh one: the structure
+   *  it publishes names no system (so every system's state is pruned) and only the default MIDI routing,
+   *  which keeps no state, so a controller session's state goes with its stage. */
   reset(sampleRate: number): void {
     this.project.newProject();
     const romDir = this.romDir();
     for (const name of this.session.backend.listDir(romDir))
       if (!name.endsWith("/")) this.session.backend.deleteFile(`${romDir}/${name}`);
-    const { dsp, audio } = this.session;
-    // Reload the kernel so no script state survives from the last case. (The RPC always answers true, so
-    // there is no result worth checking; a script that failed to compile would fail the case's own render.)
-    dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!);
+    const { audio } = this.session;
     audio.setTransport(false);
     audio.setPpq(0);
     audio.setBpm(120);
@@ -173,6 +170,7 @@ export class Rig {
 
     this.project.systems.view().forEach((v, i) => this.slots.set(v.id, i));
     const r = this.audio.renderBlocks(outputs, blocks);
+    this.noneDropped();
     const midiOut = r.midiOut.map((m) => ({
       block: this.blockBase + m.block,
       slot: this.slots.get(m.system) ?? -1,
@@ -181,6 +179,14 @@ export class Rig {
     }));
     this.blockBase += blocks.length;
     return { digest: { frames: total, lanes: r.lanes.map((l) => laneDigest(l, 0, total)) }, midiOut, lanes: r.lanes };
+  }
+
+  /** Every message a case staged, and every one the kernel sent, reached the node it was wired to: a full queue on
+   *  any wire of the graph counts a drop, and a case that dropped one renders what today's unbounded staging did
+   *  not. (The count is the engine's, cumulative over the file.) */
+  private noneDropped(): void {
+    const dropped = this.audio.droppedMessages();
+    if (dropped !== 0) throw new Error(`${dropped} message(s) dropped on a full queue of the graph`);
   }
 
   private renderShape(seg: Segment, shape: NonNullable<Segment["shape"]>): { digest: SegmentDigest; midiOut: MidiOutEntry[]; lanes: Float32Array[] } {
@@ -198,6 +204,7 @@ export class Rig {
     const total = Math.floor((shape.ms * this.sampleRate) / 1000);
     const interleaved = "perSystem" in shape ? this.audio.renderAudioPerSystem(shape.ms) : this.audio.renderAudioPerChannel(perChannelId, shape.ms);
     if (!interleaved.length) throw new Error("the render call returned nothing (the audio thread owns the engine)");
+    this.noneDropped();
     const lanes: Float32Array[] = [];
     for (const buf of interleaved) {
       if (buf.length !== total * 2) throw new Error(`a render returned ${buf.length / 2} frames, expected ${total}`);

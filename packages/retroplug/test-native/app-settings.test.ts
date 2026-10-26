@@ -5,13 +5,10 @@
 // One test / one mGB system: whole-mix RMS needs a single system in the shared native engine.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
-
-declare const __DSP_KERNEL_BUNDLE__: string;
+import { buildAppRegistry } from "../src/appHost";
 
 // A C-major chord (one note per mGB pulse channel) that mGB sustains — so a later gain edit acts on
 // a still-ringing voice.
@@ -32,11 +29,7 @@ test("live gain silences/restores a ringing mGB, and sameboy role config dispatc
   const registry = buildAppRegistry();
   const recent = new RecentStore(be);
   const project = new ProjectStore(be, recent, registry);
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
-
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
 
   const id = project.systems.loadMgb()!;
   expect(typeof id).toBe("number");

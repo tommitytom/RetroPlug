@@ -2,6 +2,8 @@
 // changes what runs, re-arming the NES tap where the edit builds or drops a core or changes the routing; a
 // project load publishing its clear, then placing every system at once, whatever its adopts did; the build
 // spec carrying serial-out capture; and DirectGraph keeping the B1 translator's model for callers with no store.
+// Each document carries the DSP kernel's structure (docs/modular-graph-phase-b3a-design.md section 5.2), so an edit
+// to a role the kernel runs, the MIDI routing or the controller publishes too, and nothing else does.
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { ProjectStore } from "../../src/projectStore";
@@ -10,9 +12,10 @@ import { SystemsStore } from "../../src/systemsStore";
 import { DirectGraph } from "../../src/graph/directGraph";
 import { buildGraph, type HostShape } from "../../src/graph/buildGraph";
 import { toGraphJson } from "../../src/graph/graphDocument";
-import { buildAppRegistry, syncDspFromStore } from "../../src/appHost";
-import type { DspRuntimeClient } from "../../src/dspRuntime";
+import { canonicalJson } from "../../src/graph/canonicalJson";
+import { buildAppRegistry } from "../../src/appHost";
 import { LsdjSyncMode, type AudioRouting } from "../../src/settingsEnums";
+import type { RoleInstance } from "../../src/systemRoles";
 import type { EngineGraph } from "../../src/engineGraph";
 import type { ConstructSpec, SetGraphResult } from "../../src/backend";
 import { gbRom, lsdjRom, nesRom } from "./fixtures";
@@ -65,9 +68,15 @@ function refuseNext(be: MockBackend, n: number): void {
   };
 }
 
-// The document a store's systems build at `routing` and `shape`.
+// The kernel's project stage a project has by default: the MIDI routing, sending every message to every system.
+const SEND_TO_ALL: RoleInstance = { kind: "midi-routing", config: { mode: "sendToAll" } };
+
+// `v` as a document carries it: canonical JSON, its keys sorted.
+const canon = (v: unknown): unknown => JSON.parse(canonicalJson(v));
+
+// The document a store's systems build at `routing` and `shape`, with the default project stage.
 const documentFor = (sys: SystemsStore, routing: AudioRouting, shape: HostShape): string =>
-  toGraphJson(buildGraph({ systems: sys.graphSystems(), routing, shape }).document);
+  toGraphJson(buildGraph({ systems: sys.graphSystems(), routing, shape, project: [SEND_TO_ALL] }).document);
 
 // A core the mock still holds (built, parked or placed): its state reads answer.
 const alive = (be: MockBackend, id: number): boolean => be.readState(id) !== null;
@@ -197,17 +206,6 @@ test("a load that throws partway places what it adopted, and the edits after it 
     if (++builds === 2) throw new Error("the build RPC died"); // as an RPC error reply throws
     return buildCore(spec, id);
   };
-  // The kernel, as a host wires it: each push records the systems it was given.
-  const kernel: number[][] = [];
-  const dsp: DspRuntimeClient = {
-    compileScript: () => new Uint8Array(0),
-    loadKernel: () => true,
-    setSystems: (struct) => {
-      kernel.push(struct.systems.map((sys) => sys.id));
-      return true;
-    },
-  };
-  p.setOnSystemsChange(() => void syncDspFromStore(p, dsp));
   const n = be.graphRequests.length;
   expect(() => p.loadBytes(bytes, "/")).toThrow("the build RPC died");
   be.buildCore = buildCore;
@@ -218,7 +216,8 @@ test("a load that throws partway places what it adopted, and the edits after it 
     { slots: [], tap: {} },
     { slots: adopted, tap: {} },
   ]);
-  expect(kernel).toEqual([adopted]); // and pushed to the kernel, which held the previous project's systems
+  // And the kernel runs it: the document carries its pipeline (the previous project's systems are gone with it).
+  expect(be.kernelSettings()?.systems.map((s) => s.id)).toEqual(adopted);
   const answered = answers(be);
   // A render's shape round trip rebuilds that model, so the core stays placed under the store.
   expect(p.graph.withShape({ kind: "perSystem" }, () => true)).toBe(true);
@@ -286,6 +285,52 @@ test("a systems store on its own publishes its systems at the stereo routing", (
   expect(since(be, 0)).toEqual([{ slots: [id], tap: {} }]);
 });
 
+test("each document carries the kernel's structure: the project stage and the roles the kernel runs, in slot order", () => {
+  const { be, sys } = project();
+  const a = sys.addSystem("/roms/lsdj.gb")!;
+  const c = sys.addSystem("/roms/c.nes")!;
+  const kernel = be.kernelSettings()!;
+  expect(kernel.project).toEqual(canon([SEND_TO_ALL]));
+  expect(kernel.systems.map((s) => s.id)).toEqual([a, c]);
+  expect(kernel.systems.map((s) => s.serialOut)).toEqual([true, false]);
+  // The kernel runs only the roles with a DSP behaviour: the core's own config role and the feature roles with
+  // none (a ROM's asset overrides) stay out of the document, so their edits leave it as it was.
+  const roles = sys.view().map((v) => v.roles.map((r) => r.kind));
+  expect(roles[0].includes("sameboy")).toBe(true);
+  expect(kernel.systems[0].pipeline.map((r) => r.kind)).toEqual(["lsdj-sync"]);
+  expect(kernel.systems[1].pipeline.map((r) => r.kind)).toEqual(["nes-n8-midi"]);
+});
+
+test("an edit to a role the kernel runs publishes its pipeline, without a re-arm; the same edit again sends nothing", () => {
+  const { be, sys } = project();
+  const id = sys.addSystem("/roms/lsdj.gb")!;
+  const n = be.graphRequests.length;
+  sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MidiOut });
+  expect(since(be, n)).toEqual([{ slots: [id] }]);
+  expect(be.kernelSettings()!.systems[0].pipeline).toEqual(
+    canon([{ kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiOut, tempoDivisor: 1, autoStart: false } }]),
+  );
+  // The capture arm is the command it always was, sent before the plan that hands the kernel the new mode.
+  expect(be.log.lastIndexOf("setSerialOutCapture")).toBeLessThan(be.log.lastIndexOf("setGraph"));
+  sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MidiOut });
+  expect(since(be, n).length).toBe(1);
+});
+
+test("a controller session rides the document as a project stage, with the sync mode its cart needs", () => {
+  const { be, p, sys } = project();
+  const id = sys.addSystem("/roms/lsdj.gb")!;
+  const n = be.graphRequests.length;
+  p.setController({ enabled: true, app: "lsdj-midimap", target: "system", systemId: id });
+  expect(since(be, n)).toEqual([{ slots: [id] }]);
+  const kernel = be.kernelSettings()!;
+  expect(kernel.project.map((r) => r.kind)).toEqual(["midi-routing", "launchpad"]);
+  expect(kernel.systems[0].pipeline[0].config.mode).toBe("midiMap"); // forced at projection time, never saved
+  expect(sys.view()[0].roles.find((r) => r.kind === "lsdj-sync")?.config.mode).toBe(LsdjSyncMode.MidiSync);
+  p.setController({ enabled: false });
+  expect(be.kernelSettings()!.project).toEqual(canon([SEND_TO_ALL]));
+  expect(be.kernelSettings()!.systems[0].pipeline[0].config.mode).toBe(LsdjSyncMode.MidiSync);
+});
+
 const MGB: ConstructSpec = { romPath: "", platform: "gb", core: "sameboy", embeddedRom: "mgb", savPath: null, statePath: null };
 
 test("DirectGraph keeps the B1 model: append, replace in place, remove shifting down", () => {
@@ -346,6 +391,49 @@ test("DirectGraph republishes the model a refused edit put back, which frees the
   expect(g.add(MGB, 2)).toBe(true);
   expect(g.ids()).toEqual([1, 2]);
   expect(alive(be, 2)).toBe(true);
+});
+
+test("DirectGraph sets each system's pipeline and the project stages, each a publish without a re-arm", () => {
+  const be = new MockBackend("/cfg");
+  const g = new DirectGraph(be);
+  g.add(MGB, 1);
+  g.add(MGB, 2);
+  expect(be.kernelSettings()).toEqual(
+    canon({
+      project: [],
+      systems: [
+        { id: 1, pipeline: [], serialOut: true },
+        { id: 2, pipeline: [], serialOut: true },
+      ],
+    }),
+  );
+  const n = be.graphRequests.length;
+  const mgb: RoleInstance = { kind: "mgb", config: {} };
+  expect(g.setPipeline(2, [mgb])).toBe(true);
+  expect(g.setProjectStages([SEND_TO_ALL])).toBe(true);
+  expect(g.setPipeline(9, [mgb])).toBe(false); // not placed here
+  expect(since(be, n)).toEqual([{ slots: [1, 2] }, { slots: [1, 2] }]);
+  expect(be.kernelSettings()!.project).toEqual(canon([SEND_TO_ALL]));
+  expect(be.kernelSettings()!.systems.map((s) => s.pipeline)).toEqual(canon([[], [mgb]]));
+  // A replace is a new system, with an empty pipeline; the other keeps its own.
+  g.replace(2, MGB, 3);
+  g.setPipeline(1, [mgb]);
+  expect(be.kernelSettings()!.systems.map((s) => [s.id, s.pipeline])).toEqual(canon([[1, [mgb]], [3, []]]));
+});
+
+test("DirectGraph puts the structure back when its document is refused", () => {
+  const be = new MockBackend("/cfg");
+  const g = new DirectGraph(be);
+  g.add(MGB, 1);
+  const before = be.kernelSettings();
+  refuseNext(be, 1);
+  expect(g.setPipeline(1, [{ kind: "mgb", config: {} }])).toBe(false);
+  refuseNext(be, 1);
+  expect(g.setProjectStages([SEND_TO_ALL])).toBe(false);
+  // The restored model is what a shape change builds.
+  expect(g.graph.withShape({ kind: "perSystem" }, () => true)).toBe(true);
+  expect(be.kernelSettings()).toEqual(before);
+  expect(before).toEqual(canon({ project: [], systems: [{ id: 1, pipeline: [], serialOut: true }] }));
 });
 
 test("buildCore refuses id 0 and builds nothing, as native does", () => {

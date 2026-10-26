@@ -4,16 +4,12 @@
 // file, one core busy, for half the suite's wall clock. Split across files they run
 // concurrently; this module is what they share. Not a `.test.ts`, so the runner's walk
 // skips it.
-import { expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
+import { buildAppRegistry } from "../src/appHost";
 import type { RenderContext, RenderOpts } from "../src/render";
-
-declare const __DSP_KERNEL_BUNDLE__: string;
 
 declare const __RISA_SRC__: string;
 export const RISA_ROM = __RISA_SRC__ + "/build/risa-pal.nes";
@@ -37,11 +33,8 @@ export const rms = (a: Float32Array): number => {
 
 export function newCtx(be: ReturnType<typeof createRealBackend>): RenderContext {
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
-  return { backend: be, project, dsp, audio };
+  return { backend: be, project, audio };
 }
 
 // `sav` is deliberately required rather than defaulted: these files now run as concurrent

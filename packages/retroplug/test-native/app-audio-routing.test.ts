@@ -6,15 +6,12 @@
 // needs an isolated native engine.)
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
+import { buildAppRegistry } from "../src/appHost";
 import type { SetGraphResult } from "../src/backend";
 import type { AudioRouting } from "../src/settingsEnums";
-
-declare const __DSP_KERNEL_BUNDLE__: string;
 
 const CHORD: number[][] = [
   [0x90, 60, 100], // ch0 C4
@@ -39,11 +36,7 @@ test("audioRouting reaches native and playback survives a mode switch", () => {
     return result;
   };
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
-
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
 
   const id = project.systems.loadMgb()!;
   expect(typeof id).toBe("number");

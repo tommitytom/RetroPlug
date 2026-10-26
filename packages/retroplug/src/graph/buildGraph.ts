@@ -1,8 +1,11 @@
 // The engine's graph as TS builds it (docs/modular-graph-phase-b2-design.md section 2.1): the systems in slot
-// order, the project's audio routing and the host's output shape, turned into the document setGraph plans.
-// Pure, and held to the B1 native translator's output by test/graph/golden/build-graph.json, so every node
-// id, the document order (which is the plan order on ties) and every per-lane sum is the translator's.
+// order, the project's audio routing and the host's output shape, turned into the document setGraph plans. Each
+// document also carries the DSP kernel, whose structure (every system's pipeline and the project's stages) is its
+// settings, wired between the host's I/O and every system (docs/modular-graph-phase-b3a-design.md section 5.1).
+// Pure, and held to test/graph/golden/build-graph.json, whose audio wiring is the B1 native translator's, so every
+// audio node id, the document order (which is the plan order on ties) and every per-lane sum is the translator's.
 import type { AudioRouting } from "../settingsEnums";
+import type { RoleInstance } from "../systemRoles";
 import type { GraphDocument, NodeDoc, WireDoc } from "./graphDocument";
 
 export type SystemNodeType = "rp.sameboy.gb" | "rp.mesen.nes" | "rp.mesen.gba" | "rp.mesen.sms";
@@ -21,6 +24,8 @@ export interface GraphSystem {
   linkGroup: number;
   /** NES only: the channel export mode its core was built with. */
   exportMode: number;
+  /** The DSP kernel's pipeline for this system: the roles it runs, in order (kernelProjection.ts). */
+  pipeline: RoleInstance[];
 }
 
 export interface GraphModel {
@@ -28,6 +33,8 @@ export interface GraphModel {
   systems: readonly GraphSystem[];
   routing: AudioRouting;
   shape: HostShape;
+  /** The DSP kernel's project-scope stages (the MIDI routing, a controller session), run before every pipeline. */
+  project: RoleInstance[];
 }
 
 /** The NES tap the engine arms for a lone NES under a split routing: its pins (1) or its five channels (3).
@@ -39,7 +46,7 @@ export interface TapArm {
 
 export interface BuiltGraph {
   document: GraphDocument;
-  /** System ids in slot order: the engine's system table, which its tail still walks while the kernel is sealed. */
+  /** System ids in slot order: the engine's system table, which orders its snapshot publishes. */
   slots: number[];
   /** What the engine's SyncTap arms on an edit that re-arms, or null for nothing (a restore only). */
   tapArm: TapArm | null;
@@ -47,6 +54,12 @@ export interface BuiltGraph {
 
 /** rp.core.add's input limit (CoreNodes.cpp): a longer sum chains adds, continuing the same left-to-right sum. */
 const ADD_INPUTS = 16;
+
+/** The DSP kernel's node type (script/kernelNode.ts KERNEL_NODE_TYPE, which test/graph/build-graph.test.ts holds this to). */
+const KERNEL = "rp.dsp.kernel";
+
+/** The inputs every system node has, each fed by the kernel output of the same name for that system. */
+const SYSTEM_INPUTS = ["serialIn", "midi", "bytes", "buttons"] as const;
 
 interface Stream {
   port: string;
@@ -121,12 +134,45 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     return [`${name}.out1`, `${name}.out2`];
   };
 
-  nodes.push({ id: "kernel", type: "rp.dsp.kernel" });
+  // The kernel between the host's input and the systems: its settings are the structure, in slot order (positional
+  // MIDI routing reads it), each Game Boy with the serialOut port that brings its MI.OUT back.
+  nodes.push(
+    { id: "midi-in", type: "rp.host.midi-in" },
+    { id: "controller-in", type: "rp.host.controller-in" },
+    {
+      id: "kernel",
+      type: KERNEL,
+      settings: {
+        project: model.project,
+        systems: systems.map((s) => ({ id: s.id, pipeline: s.pipeline, serialOut: s.type === "rp.sameboy.gb" })),
+      },
+    },
+  );
+  wire("midi-in.midi", "kernel.midiIn");
+  wire("controller-in.midi", "kernel.controllerIn");
+  wire("controller-in.connected", "kernel.controllerConnected");
   const groups = linkGroups(systems);
   const order = sumOrder(systems, groups);
   for (const i of order) nodes.push({ id: sysNode(systems[i].id), type: systems[i].type, settings: { core: systems[i].id } });
+  for (const s of systems) {
+    const n = sysNode(s.id);
+    for (const port of SYSTEM_INPUTS) wire(`kernel.${n}.${port}`, `${n}.${port}`);
+    // MI.OUT reaches the kernel a block after the core sent it, as it always has.
+    if (s.type === "rp.sameboy.gb") wires.push({ from: `${n}.serialOut`, to: `kernel.${n}.serialOut`, feedback: true });
+  }
   for (const g of groups)
     for (let k = 1; k < g.length; ++k) wire(`${sysNode(systems[g[k - 1]].id)}.link`, `${sysNode(systems[g[k]].id)}.link`);
+  // A physical N8 mirrors the first NES in slot order: what the kernel sends that system, it sends the cart.
+  const cart = systems.find((s) => s.type === "rp.mesen.nes");
+  if (cart) {
+    nodes.push({ id: "cart", type: "rp.n8.cart-mirror", settings: { system: cart.id } });
+    wire(`kernel.${sysNode(cart.id)}.midi`, "cart.midi");
+    wire(`kernel.${sysNode(cart.id)}.bytes`, "cart.bytes");
+  }
+  // The kernel's MIDI (each message behind its system's id) and its control-surface traffic, out to the host.
+  nodes.push({ id: "midi-out", type: "rp.host.midi-out" }, { id: "controller-out", type: "rp.host.controller-out" });
+  wire("kernel.midiOut", "midi-out.midi");
+  wire("kernel.controllerOut", "controller-out.midi");
 
   const buses: number[] = [];
   if (shape.kind === "perSystem") {

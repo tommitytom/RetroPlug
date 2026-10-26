@@ -2,16 +2,14 @@
 // .bak lands next to the sav. Operates on a temp copy.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
+import { buildAppRegistry } from "../src/appHost";
 import { mutateLiveSav, lsdjSongCatalog, songLoadWouldDiscard } from "../src/tracker";
 import { saveWorkingToCatalog } from "../src/lsdjSongOps";
 import { decompressSlot, activeSlot } from "../src/lsdj/codec/sav";
 
-declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __RESOURCES_DIR__: string;
 declare const __CONFIG_DIR__: string;
 
@@ -24,10 +22,7 @@ test("e2e: dirty working song is detected, Save & Load preserves it, .bak is wri
   be.writeFileAtomic(sav, be.readFile(src + ".sav")!);
 
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
-  dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!);
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
   project.systems.addSystem(rom);
   audio.renderAudio(3000);
 

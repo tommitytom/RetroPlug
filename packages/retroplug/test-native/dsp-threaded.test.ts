@@ -2,14 +2,13 @@
 // THREAD while the control thread flips its mode over the lock-free command queue. This is the
 // audio-thread / control-thread seam a DAW imposes, made testable headlessly — and under TSan
 // (tools/run-sanitizer.sh) it proves the QuickJS DSP context is touched only by the audio
-// thread (structure edits cross as queued commands, transport as atomics). Coarse silent→audible
+// thread (structure edits cross as queued plans, transport as atomics). Coarse silent→audible
 // over a real time window (a concurrency test, not exact samples). In-TS RMS.
 //
 // Ownership discipline: cores are quiescent while the audio thread runs — the system is constructed
-// and the kernel loaded BEFORE startAudio; nothing reads core state until after stopAudio.
+// BEFORE startAudio; nothing reads core state until after stopAudio.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";
 import { LsdjSyncMode } from "../src/settingsEnums";
@@ -19,15 +18,12 @@ import { directGraph } from "../src/graph/directGraph";
 const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
-declare const __DSP_KERNEL_BUNDLE__: string;
 
 const LSDJ = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_4_2.gb";
 const START = 7; // GameboyButton::Start
 
 // The system's lsdj-sync pipeline at a given LsdjSyncMode (Off / MidiSync).
-const lsdjSync = (id: number, mode: LsdjSyncMode) => ({
-  systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode } }] }],
-});
+const lsdjSync = (mode: LsdjSyncMode) => [{ kind: "lsdj-sync", config: { mode } }];
 
 // SYNC=MIDI + a C note on a hard-panned pulse (the proven flagship cell set).
 const SYNC_MIDI_SONG: SavInput = {
@@ -45,7 +41,6 @@ test("the lsdj-sync role clocks LSDj on a background audio thread, toggled via t
   const be = createRealBackend();
   if (!be.fileExists(LSDJ)) skip(`dsp-threaded: LSDj ROM not found at ${LSDJ}`);
 
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
 
   // --- setup (single-threaded, before the audio thread) ---
@@ -62,8 +57,7 @@ test("the lsdj-sync role clocks LSDj on a background audio thread, toggled via t
     // Cores construct bare (no C++ roles) — the TS lsdj-sync kernel role is the sole clock.
   }, id)).toBeTruthy();
 
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems(lsdjSync(id, "off"))).toBeTruthy(); // structure known, clock off
+  expect(graph.setPipeline(id, lsdjSync("off"))).toBeTruthy(); // structure known, clock off
 
   audio.renderAudio(6000); // reach the SONG screen from the sav (pull path)
   audio.pressButton(id, START, true); // arm SYNC=MIDI LSDj ("wait for MIDI clock")
@@ -86,7 +80,7 @@ test("the lsdj-sync role clocks LSDj on a background audio thread, toggled via t
   };
 
   const neg = rmsWindow(150); // lsdj-sync Off → no clock → armed LSDj frozen → silent
-  expect(dsp.setSystems(lsdjSync(id, "midiSync"))).toBeTruthy(); // enqueue MidiSync; applied on the audio thread
+  expect(graph.setPipeline(id, lsdjSync("midiSync"))).toBeTruthy(); // enqueue MidiSync; applied on the audio thread
   const pos = rmsWindow(400); // the kernel's clock now advances LSDj → audible
 
   expect(audio.stopAudio()).toBeTruthy();

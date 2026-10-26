@@ -15,17 +15,15 @@
 // the block to hold. The regression this guards is silence, so every case asserts on audio.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
+import { buildAppRegistry } from "../src/appHost";
 import { runRenderJob, decodeWav, validateRenderOpts, type RenderContext, type RenderOpts } from "../src/render";
 import { buildSav } from "../src/smsggdj/codec/sav";
 import { smsggdjIntegration } from "../src/tracker/trackerIntegration";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF } from "./smsSyncSong";
 
-declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
 
 const ROM = __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.sms";
@@ -47,11 +45,8 @@ let shared: RenderContext | null = null;
 function ctxFor(be: ReturnType<typeof createRealBackend>): RenderContext {
   if (!shared) {
     const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
-    const dsp = createDspRuntime();
     const audio = createAudioDriver();
-    expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-    project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
-    shared = { backend: be, project, dsp, audio };
+    shared = { backend: be, project, audio };
   }
   shared.project.systems.clear(); // tear down the previous test's cart before booting the next
   return shared;

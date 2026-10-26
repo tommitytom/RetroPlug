@@ -9,7 +9,6 @@
 //   retroplug-cli build/cli/export-nes-channels.js <rom.nes> [outPrefix]
 import { runSession, hostArgs } from "../session";
 import { encodeWav, deinterleaveStereo } from "../wav";
-import { syncDspFromStore } from "../../src/appHost";
 
 // ch1 NoteOn C4 → n8-midi drives APU Pulse1 (so the Pulse pin rings while TND/Expansion stay quiet).
 const NOTE_ON_CH1 = [0x90, 60, 100];
@@ -23,8 +22,8 @@ runSession((s) => {
   if (!romPath) throw new Error("usage: export-nes-channels <rom.nes> [outPrefix]");
 
   // Adopt the NES with the "mesen" role in StereoModPins mode — capture engages at construct/onActivate,
-  // so it MUST be set here, not live. The host-MIDI role lets a note reach the APU. adopt is quiet, so
-  // project the store into the DSP runtime by hand (bootSession's onSystemsChange hook doesn't fire).
+  // so it MUST be set here, not live. The host-MIDI role lets a note reach the APU (the graph the adopt
+  // publishes carries it to the kernel).
   s.project.systems.adopt({
     romPath,
     roles: [
@@ -32,7 +31,6 @@ runSession((s) => {
       { kind: "mesen", config: { channelExportMode: "stereoModPins" } },
     ],
   });
-  syncDspFromStore(s.project, s.dsp);
 
   const id = s.project.systems.view()[0]?.id;
   if (id == null) throw new Error("adopt failed (no system)");

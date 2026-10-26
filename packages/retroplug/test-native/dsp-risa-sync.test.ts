@@ -8,7 +8,6 @@
 // too - 2.3.0 rejects it - which is what makes this a real protocol check rather than a smoke test.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { isRisaSyncRom, risaMarkerVersion } from "../src/risa";
 import { directGraph } from "../src/graph/directGraph";
@@ -16,15 +15,12 @@ import { directGraph } from "../src/graph/directGraph";
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
 const graph = directGraph();
 
-declare const __DSP_KERNEL_BUNDLE__: string;
-
 declare const __RESOURCES_DIR__: string;
 const ROM_230 = __RESOURCES_DIR__ + "/roms/risa/risa-v2.3.0/risa-2.3.0-pal.nes";
 const LETGO = __RESOURCES_DIR__ + "/roms/risa/let_go.srm";
 
 // This system's pipeline: the sync role, or nothing at all (the negative control).
-const withSync = (id: number) => ({ systems: [{ id, pipeline: [{ kind: "risa-sync", config: {} }] }] });
-const noRoles = (id: number) => ({ systems: [{ id, pipeline: [] }] });
+const RISA_SYNC = [{ kind: "risa-sync", config: {} }];
 
 const rms = (a: Float32Array): number => {
   let s = 0;
@@ -41,7 +37,6 @@ test("the risa-sync role in the DSP kernel is the sole clock that makes risa 2.3
   expect(risaMarkerVersion(rom.subarray(0, 0x150))).toBe("2.3.0");
   expect(isRisaSyncRom(rom.subarray(0, 0x150))).toBe(true);
 
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
 
   const id = 1; // TS owns the id counter; this direct-backend test picks its own (fresh host per file)
@@ -54,7 +49,6 @@ test("the risa-sync role in the DSP kernel is the sole clock that makes risa 2.3
     statePath: null,
   }, id)).toBeTruthy();
 
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
   audio.renderAudio(2500); // boot (transport off) — risa materializes the song into working RAM
 
   audio.setBpm(120);
@@ -62,11 +56,11 @@ test("the risa-sync role in the DSP kernel is the sole clock that makes risa 2.3
 
   // Negative: no role -> no arm, no start, no clocks -> the receive path stays dormant and risa is silent,
   // even though the DAW transport is running.
-  expect(dsp.setSystems(noRoles(id))).toBeTruthy();
+  expect(graph.setPipeline(id, [])).toBeTruthy();
   const neg = rms(audio.renderAudio(3000));
 
   // Positive: risa-sync arms (F9 52 ss cc tt), starts (FA), then clocks at 24 PPQN -> risa plays.
-  expect(dsp.setSystems(withSync(id))).toBeTruthy();
+  expect(graph.setPipeline(id, RISA_SYNC)).toBeTruthy();
   const pos = rms(audio.renderAudio(3000));
 
   console.log(`[dsp-risa-sync] neg=${neg.toFixed(5)} pos=${pos.toFixed(5)}`);
@@ -80,14 +74,12 @@ test("stopping the transport stops risa, and restarting it plays again", () => {
   const be = createRealBackend();
   if (!be.fileExists(ROM_230) || !be.fileExists(LETGO)) skip(`dsp-risa-sync: missing ${ROM_230} or ${LETGO}`);
 
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
   const id = 1;
   expect(graph.add({
     romPath: ROM_230, platform: "nes", core: "mesen", embeddedRom: "", savPath: LETGO, statePath: null,
   }, id)).toBeTruthy();
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems(withSync(id))).toBeTruthy();
+  expect(graph.setPipeline(id, RISA_SYNC)).toBeTruthy();
   audio.renderAudio(2500);
 
   audio.setBpm(120);

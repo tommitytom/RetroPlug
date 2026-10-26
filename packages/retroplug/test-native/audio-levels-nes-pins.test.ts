@@ -3,14 +3,12 @@
 // Run with:  node packages/retroplug/scripts/run-native-tests.mjs audio-levels-nes-pins
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
+import { buildAppRegistry } from "../src/appHost";
 import { report, sustainPerChannel , AUDIBLE } from "./audio-levels-lib";
 
-declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
 
 const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
@@ -21,10 +19,7 @@ test("audio levels: Mesen NES 2A03 pins (n8-midi, stereoModPins)", () => {
   const be = createRealBackend();
   if (!be.fileExists(NES)) skip(`no ROM at ${NES}`);
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
-  const dsp = createDspRuntime();
   const audio = createAudioDriver(project.graph);
-  dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!);
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
   project.systems.adopt({
     romPath: NES,
     roles: [
@@ -32,7 +27,6 @@ test("audio levels: Mesen NES 2A03 pins (n8-midi, stereoModPins)", () => {
       { kind: "mesen", config: { channelExportMode: "stereoModPins" } },
     ],
   });
-  syncDspFromStore(project, dsp);
   const id = project.systems.view()[0].id;
 
   audio.renderAudio(1500);

@@ -2,20 +2,18 @@
 // boots LSDj from an authored SYNC=MIDI sav (the store's `adopt` load seam), and the store's
 // `lsdj-sync` role — attached by the ROM provider, toggled via setRoleConfig — is the SOLE clock.
 // This is dsp-lsdj-midisync.test.ts's proof, but driven THROUGH the stores: setRoleConfig(mode)
-// on a feature role re-projects the structure (syncDspFromStore) and pushes it, so flipping the
+// on a feature role publishes the graph with the re-projected structure, so flipping the
 // store's role config is what makes an armed LSDj sing. Whole-mix RMS on a single system = that
 // system's audio. (One test per file: whole-mix RMS needs an isolated native engine.)
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
+import { buildAppRegistry } from "../src/appHost";
 import { savFrom, type SavInput } from "../src/lsdjSav";
 
 declare const __RESOURCES_DIR__: string;
-declare const __DSP_KERNEL_BUNDLE__: string;
 
 const LSDJ = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_4_2.gb";
 const START = 7; // GameboyButton::Start
@@ -45,20 +43,15 @@ test("the store's lsdj-sync role is the sole clock that makes an armed LSDj sing
   const registry = buildAppRegistry();
   const recent = new RecentStore(be);
   const project = new ProjectStore(be, recent, registry);
-  const dsp = createDspRuntime();
   const audio = createAudioDriver();
 
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-
   // Boot LSDj from the authored SYNC=MIDI sav via the store's load seam. `adopt` reads the real
-  // header, so the ROM provider attaches lsdj-sync (mode 1 default). `adopt` is quiet, so push the
-  // initial structure explicitly; then install the hook so later setRoleConfig edits re-push.
+  // header, so the ROM provider attaches lsdj-sync (mode 1 default). Its publish carries the pipeline,
+  // and each later setRoleConfig edit publishes the new one.
   const sav = savFrom(SYNC_MIDI_SONG);
   const id = project.systems.adopt({ romPath: LSDJ }, { sramBytes: sav })!;
   expect(typeof id).toBe("number");
   expect(project.systems.view()[0].roles.map((r) => r.kind).includes("lsdj-sync")).toBeTruthy();
-  syncDspFromStore(project, dsp);
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
 
   audio.renderAudio(6000); // reach the SONG screen from the sav (transport off → no clock leaks)
 

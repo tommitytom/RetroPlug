@@ -406,3 +406,30 @@ test("an explicit rate overrides the profile without restating the depth", () =>
   expect(slow.wirePending).toBeGreaterThan(0);
   expect(slow.rxDepth + slow.droppedBytes + slow.wirePending).toEqual(4096);
 });
+
+test("a 60 KiB SysEx staged whole reaches a NES whole, with nothing dropped on any wire of the graph", () => {
+  // A sample or wave upload is one long SysEx, which the host staging has always taken whole. On its way to the
+  // core it now rides the graph's queues: rp.host.midi-in's output, then the kernel's sys-<id>.midi for the NES
+  // (after the routing and the NES's MIDI forward), each sized to hold it (HostIoNodes.hpp kHostMidiInBytes,
+  // kernelNode.ts KERNEL_CORE_MIDI). A ROM that reads nothing keeps every byte the FIFO was handed.
+  const s = bootSession();
+  const path = "/tmp/rp-corebytes-sysex.nes";
+  expect(s.backend.writeFile(path, nromRom(parkAfter([])))).toBeTruthy();
+  const id = s.project.systems.addSystem(path);
+  if (id == null) throw new Error("addSystem failed");
+  s.audio.renderAudio(10); // let the ROM reach its parked loop
+  const before = s.audio.droppedMessages();
+
+  const sysex = new Uint8Array(60 * 1024);
+  for (let i = 1; i < sysex.length - 1; ++i) sysex[i] = i & 0x7f;
+  sysex[0] = 0xf0;
+  sysex[sysex.length - 1] = 0xf7;
+  expect(s.audio.stageMidiIn(sysex)).toBeTruthy();
+  s.audio.renderAudio(50);
+
+  const stats = s.backend.getCoreTransportStats(id);
+  s.project.systems.removeSystem(id);
+  expect(s.audio.droppedMessages() - before).toEqual(0);
+  expect(stats.rxDepth).toEqual(sysex.length);
+  expect(stats.droppedBytes).toEqual(0);
+});
