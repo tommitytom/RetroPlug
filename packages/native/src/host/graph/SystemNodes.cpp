@@ -164,10 +164,17 @@ struct SystemNode {
     }
 };
 
-// The Game Boy's serialOut: a byte a message, at most one every eight frames while MI.OUT capture clocks the port
-// (SameBoySystem::writeAudioSample), so this carries blocks up to 32768 frames. Fixed, so a feedback wire from it
-// keeps its front across every plan swap.
-constexpr rp::capacity kSerialOutCapacity{.messages = 4096, .bytes = 4096};
+// The Game Boy's serialOut: a byte a message. While MI.OUT capture clocks the port (external clock, SC=0x80:
+// SameBoySystem::writeAudioSample shifts one bit an audio frame) a byte takes eight frames, so the largest block a
+// host can run (rp::graph::kMaxBlockFrames, 65536 frames; the plugin grows its plan to its buffer size) carries
+// 8192. The other 64 are slack for what a block adds to that: up to 7 bits carried in from the block before, and
+// the frames the core runs past its target (an instruction at a time, so rarely more than one; 64 bytes is 512
+// frames of it). Fixed rather than sized from the plan's block size, so a feedback wire from it keeps its front
+// across every plan swap. A Game Boy that clocks the port itself (internal clock, SC=0x81) shifts at its serial
+// rate instead, and a CGB on its fast clock (32768 bytes a second, about 0.7 a frame at 48 kHz, twice that in
+// double speed) can outrun this in a block past about 12000 frames: what does not fit is dropped and counted
+// (GraphHost::droppedMessages), never lost silently.
+constexpr rp::capacity kSerialOutCapacity{.messages = 8256, .bytes = 8256};
 
 struct GameBoy : SystemNode<GameBoy, SameBoySystem> {
     static constexpr const char* id = "rp.sameboy.gb";

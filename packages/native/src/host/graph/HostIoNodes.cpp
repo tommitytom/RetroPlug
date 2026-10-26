@@ -4,6 +4,7 @@
 #include <iterator>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "graph/node.hpp"
 #include "host/graph/HostServices.hpp"
@@ -49,7 +50,10 @@ struct MidiOut : HostIoNode {
     void process(const rp::Block&) noexcept {
         for (const rp_message& m : inputs.midi.messages()) {
             const auto data = inputs.midi.data(m);
-            if (data.size() < kSystemPrefix) continue;  // names no system
+            if (data.size() < kSystemPrefix) {  // names no system: nowhere to go
+                io->dropped(io->ctx);
+                continue;
+            }
             const std::uint32_t system = std::uint32_t{data[0]} | std::uint32_t{data[1]} << 8 |
                                          std::uint32_t{data[2]} << 16 | std::uint32_t{data[3]} << 24;
             io->midiOut(io->ctx, system, m.frame, data.data() + kSystemPrefix, data.size() - kSystemPrefix);
@@ -134,6 +138,13 @@ const rp_package* n8Package() {
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.n8","version":"1.0.0"})",
                                      static_cast<std::uint32_t>(std::size(kTypes)), kTypes};
     return &kPackage;
+}
+
+std::optional<std::uint32_t> cartMirrorSystem(std::string_view settings) {
+    const rp_settings s{settings.data(), settings.size(), RP_SETTINGS_JSON};
+    const auto parsed = rp::detail::parseSettings<CartMirror>(&s);
+    if (!parsed) return std::nullopt;
+    return static_cast<std::uint32_t>(parsed->system);  // validate kept it to 1..UINT32_MAX
 }
 
 }  // namespace rp::host

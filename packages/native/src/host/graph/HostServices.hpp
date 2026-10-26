@@ -40,7 +40,9 @@ struct EngineKernel {
 
 // The engine's host I/O (docs/modular-graph-phase-b3a-design.md section 3.3), for the rp.host I/O nodes and the cart
 // mirror: the hosts stage what they receive through the engine and drain what it sends after each block, and these
-// move it between that staging and the plan's queues. [audio]
+// move it between that staging and the plan's queues. [audio], though not allocation-free: midiOut and controllerOut
+// each append one std::vector per message to the buffers the hosts drain, as today's kernel sinks do. A flat staging
+// arena, as the staged host MIDI becomes later, is the fix.
 #define RP_ENGINE_HOST_IO_INTERFACE "rp.engine.host-io/1"
 struct EngineHostIo {
     void* ctx;
@@ -50,16 +52,21 @@ struct EngineHostIo {
     void (*takeControllerMidi)(void* ctx, rp_queue* out);
     // Whether a control surface is attached this block.
     bool (*controllerConnected)(void* ctx);
-    // Append one message to the host MIDI out (Engine::midiOut), as `system` emitted it.
+    // Append one message to the host MIDI out (Engine::midiOut), as `system` emitted it. Allocates (see above).
     void (*midiOut)(void* ctx, std::uint32_t system, std::uint32_t frame, const std::uint8_t* data, std::size_t size);
-    // Append one message to the control-surface out (Engine::controllerOut).
+    // Append one message to the control-surface out (Engine::controllerOut). Allocates (see above).
     void (*controllerOut)(void* ctx, const std::uint8_t* data, std::size_t size);
     // Hand one message to the physical N8 the engine feeds (Engine::setCoreByteSink); nothing while none is set.
     void (*cartBytes)(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush);
+    // Count one message a node was handed and could not deliver (Engine::droppedMessages counts it with the plan's
+    // full queues): rp.host.midi-out's, too short to carry the system id that names its sender.
+    void (*dropped)(void* ctx);
 };
 
 // The engine's sync trace (HostSyncTrace): a system node records the bytes its `bytes` input feeds the core's byte
-// device, as the kernel stage records its core-bytes sink. Nothing while the trace is off. [audio]
+// device, as the kernel stage records its core-bytes sink, so across systems a block's bytes are in plan order, one
+// system's after another's, where the kernel stage's are in its emission order. The trace is a diagnostic, and
+// nothing reads that order. Nothing while the trace is off. [audio]
 #define RP_ENGINE_SYNC_TRACE_INTERFACE "rp.engine.sync-trace/1"
 struct EngineSyncTrace {
     void* ctx;

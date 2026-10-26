@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
+#include <string_view>
 
 #include "graph/rp_node.h"
 
@@ -11,18 +13,26 @@ namespace rp::host {
 //
 //   rp.host.midi-in         out midi: the host MIDI the engine staged, stable-sorted by frame
 //   rp.host.midi-out        in midi: each message's payload is a 4-byte little-endian system id, then the MIDI,
-//                           which lands in Engine::midiOut tagged with that system (section 4.4)
+//                           which lands in Engine::midiOut tagged with that system (section 4.4); a message too
+//                           short to carry the id is dropped and counted (Engine::droppedMessages)
 //   rp.host.controller-in   out midi: the staged control-surface MIDI, at frame 0; out connected: 1 while a
 //                           control surface is attached, from frame 0 of the block
 //   rp.host.controller-out  in midi: appended to Engine::controllerOut
 //
 // The host keeps staging and draining as it does; each input node takes what is staged at the top of its block.
+// An input node owns its staging whether or not its output is wired: the engine hands the kernel stage none of it
+// while the plan holds the node, and an unwired output goes nowhere. So a document holds one rp.host.midi-in and
+// one rp.host.controller-in at most (Engine::setGraph refuses a second), and a plan holding one should wire it.
 const rp_package* hostIoPackage();
 
 // rp.n8.cart-mirror (section 3.5), {"system": <id>}: everything on its midi input, then everything on its bytes
 // input (each with its flush flag), handed to the physical N8 the engine feeds, in queue order. The system it names
-// is the one the cart mirrors, which the engine reads off the plan.
+// is the one the cart mirrors, which the engine reads off the plan: a NES of the document's, one mirror at most.
 const rp_package* n8Package();
+
+// The system a cart mirror's settings (JSON) name, read as the node reads them, so the engine and the node accept
+// the same settings: a field the node does not know is ignored, a missing or out-of-range system refused (nullopt).
+std::optional<std::uint32_t> cartMirrorSystem(std::string_view settings);
 
 // rp.host.midi-in's output: room for a dense block of DAW MIDI, the frame-0 CCs of moved automation and a SysEx
 // (a wave upload), with margin. A message past it is dropped and counted (GraphHost::droppedMessages).

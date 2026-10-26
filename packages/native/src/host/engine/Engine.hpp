@@ -102,8 +102,9 @@ public:
     void setSampleRate(double sr);
 
     // The host MIDI out of this block: what the kernel stage's sink and any rp.host.midi-out appended, in plan
-    // order, each tagged with the system that emitted it. Cleared at the top of each block. The plugin drains this
-    // to the DAW after processBlock; nothing else reads it.
+    // order, each tagged with the system that emitted it. Cleared at the top of each block that runs: a 0-frame block,
+    // or one longer than the plan's buffers, runs nothing and keeps the previous contents. The plugin drains this to
+    // the DAW after processBlock; nothing else reads it.
     const std::vector<DspRuntime::MidiOut>& midiOut() const { return dsp_.midiOut_; }
     void clearMidiOut() { dsp_.midiOut_.clear(); }
 
@@ -206,10 +207,11 @@ public:
         std::vector<GraphError> errors;
     };
     // Plan `request` and publish it with its system table (built from the slots and the live cores) and its
-    // SyncTap. Refused before planning when a system node's type is not its core's, or the tap arms a mode
-    // other than 1 to 3 or a system not in the slots. Refused at all, every core stays where it was: one a
-    // node of the refused plan took goes back to parked. Once it has published, a core still parked is one
-    // no document placed, and is freed.
+    // SyncTap. Refused before planning when a system node's type is not its core's, the tap arms a mode other
+    // than 1 to 3 or a system not in the slots, the document holds a second rp.host.midi-in, rp.host.controller-in
+    // or rp.n8.cart-mirror, or its mirror names anything but one of its NES systems. Refused at all, every core
+    // stays where it was: one a node of the refused plan took goes back to parked. Once it has published, a core
+    // still parked is one no document placed, and is freed.
     GraphResult setGraph(const GraphRequest& request);
     // The host channels the last published plan writes (the sum of its rp.host.audio-out buses). Control thread.
     std::uint32_t hostWidth() const { return hostWidth_; }
@@ -217,8 +219,9 @@ public:
     // block thread bumps relaxed: any thread may read it, a control-thread read may lag a running audio thread,
     // and on a quiescent engine, whose blocks run on the caller's thread, it is exact once processBlock returns.
     std::uint32_t faultCount() const;
-    // Messages the plan's full output queues have dropped so far (GraphHost::droppedMessages), each counted by the
-    // block thread at the end of its block: any thread may read it, as faultCount.
+    // Messages dropped so far: by the plan's full output queues (GraphHost::droppedMessages), each counted by the
+    // block thread at the end of its block, and by rp.host.midi-out, a message too short to carry the system id that
+    // names its sender, counted as it is dropped. Any thread may read it, as faultCount. Wraps, as the graph's does.
     std::uint32_t droppedMessages() const;
 
 private:
@@ -275,7 +278,8 @@ private:
     DspRuntime dsp_;
     double     sampleRate_;
     bool       dspActive_ = false;                 // a kernel is loaded → run the per-block DSP stage
-    // Staged host MIDI, consumed on the next block: by the kernel stage, or by the plan's rp.host.midi-in.
+    // Staged host MIDI, consumed on the next block: by the kernel stage, or by the plan's rp.host.midi-in (its one,
+    // which takes it whether or not its output is wired).
     std::vector<DspRuntime::MidiIn> pendingMidi_;
     std::vector<DspRuntime::MidiIn> pendingControllerMidi_;  // staged control-surface traffic, likewise (controller-in)
     // Raw serial-out bytes each core emitted LAST block (LSDj MI.OUT), gathered after the plan runs and fed
@@ -300,6 +304,10 @@ private:
     std::atomic<std::uint32_t> oversizedBlocks_{0};
     std::atomic<std::uint32_t> oversizedFrames_{0};
     std::uint32_t              oversizedReported_ = 0;
+    // Messages the host I/O nodes could not deliver (rp.engine.host-io/1's dropped), counted on the block thread
+    // and part of droppedMessages; reclaim() names the first (hostIoDropsReported_ is its side).
+    std::atomic<std::uint32_t> hostIoDrops_{0};
+    bool                       hostIoDropsReported_ = false;
 
     // Cores buildCore built, waiting for the node a document names them in (control thread), and every core
     // alive anywhere by id: parked, or owned by a system node, until that node frees it.

@@ -51,11 +51,12 @@ struct NodeRig {
     std::vector<SystemId>                                released;  // ids whose node freed its core
     HostCores                                            cores{this, &take, &release};
     // The host I/O stand-in: nothing is ever staged, `connected` is the control surface, and every output call is
-    // recorded.
+    // recorded, a drop counted.
     bool                                                 connected = false;
     std::vector<HostCall>                                midiOut, controllerOut, cart, traced;
+    std::uint32_t                                        dropped = 0;
     EngineHostIo                                         hostIo{this, &takeNothing, &takeNothing, &isConnected, &recordMidiOut,
-                                                                &recordControllerOut, &recordCart};
+                                                                &recordControllerOut, &recordCart, &countDropped};
     EngineSyncTrace                                      trace{this, &recordTrace};
     // Last, so it is destroyed first: its nodes free their cores through `cores` into `released`.
     std::unique_ptr<rp::graph::GraphHost>                host;
@@ -118,6 +119,7 @@ struct NodeRig {
     static void recordCart(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush) {
         static_cast<NodeRig*>(ctx)->cart.push_back({0, frame, bytesOf(data, size), flush});
     }
+    static void countDropped(void* ctx) { ++static_cast<NodeRig*>(ctx)->dropped; }
     static void recordTrace(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size) {
         static_cast<NodeRig*>(ctx)->traced.push_back({0, frame, bytesOf(data, size), false});
     }

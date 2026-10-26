@@ -3,33 +3,46 @@
 // a plan sends reaches the buffers the hosts drain through rp.host.midi-out and controller-out, both producers of
 // those buffers coexist, rp.n8.cart-mirror feeds the engine's core-byte sink, the Game Boy's serialOut carries
 // MI.OUT while the engine's own gather still does, and a full queue's drops reach the engine and the harness RPC.
-// Driven on a quiescent Engine, and on a NodeRig where a node's calls on the engine are what is checked.
+// A document holds one midi-in, one controller-in and one cart mirror at most, the mirror naming a NES. Driven on a
+// quiescent Engine, and on a NodeRig where a node's calls on the engine are what is checked.
 //
 // Run via `pnpm test:plugin engine-graph`.
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <memory>
+#include <optional>
+#include <random>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <quickjs.h>
 
 #include "../graph/CountingAllocator.hpp"
 #include "GraphDocs.hpp"
 #include "NodeRig.hpp"
+#include "TypedRpcServer.h"
+#include "codecs/QuickJSCodec.h"
+#include "graph/GraphHost.hpp"
 #include "host/dsp/ScriptCompiler.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "host/graph/HostIoNodes.hpp"
+#include "host/rpc/BackendRpcRegistration.hpp"
 #include "host/rpc/EngineRpcService.hpp"
 #include "system/SystemFactory.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
+#include "transports/QuickJSTransport.h"
 
 using rp::host::test::DocExtras;
 using rp::host::test::docNode;
@@ -138,6 +151,63 @@ std::size_t firstDifference(const std::vector<float>& a, const std::vector<float
     return a.size() == b.size() ? SIZE_MAX : std::min(a.size(), b.size()) / 2;
 }
 
+// rp.host.midi-in wired straight to rp.host.midi-out, so what midi-in hands on lands in Engine::midiOut.
+Engine::GraphRequest midiInToOut() {
+    return hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("midi-out", "rp.host.midi-out")},
+                      {docWire("midi-in.midi", "midi-out.midi")});
+}
+
+// (frame, staging index) pairs, in the order a block's messages arrive.
+using Order = std::vector<std::pair<std::uint32_t, std::uint32_t>>;
+
+// One block's staging at `frames`, through midiInToOut: each message staged under its index as the system id
+// midi-out reads, so Engine::midiOut says which message each one was.
+Order midiInOrder(Engine& e, const std::vector<std::uint32_t>& frames) {
+    for (std::uint32_t i = 0; i < frames.size(); ++i) e.stageMidi(frames[i], tagged(i, {0xF8}));
+    block(e);
+    Order out;
+    for (const auto& m : e.midiOut()) out.push_back({m.frame, m.system});
+    return out;
+}
+
+// The same staging stable-sorted by frame, as std::stable_sort orders it.
+Order stableOrder(const std::vector<std::uint32_t>& frames) {
+    Order out;
+    for (std::uint32_t i = 0; i < frames.size(); ++i) out.push_back({frames[i], i});
+    std::stable_sort(out.begin(), out.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    return out;
+}
+
+// A Game Boy (sys-1, MI.OUT capture armed) and a NES (sys-2) that the cart mirror names, the Game Boy's serialOut
+// wired to the mirror's bytes input: the core-byte sink sees every byte the port carries. The Game Boy's core.
+SameBoySystem* serialOutToCart(Engine& e) {
+    auto core = mgb(1);
+    core->setSerialOutCapture(true);
+    SameBoySystem* const gb = core.get();
+    REQUIRE(e.parkCore(std::move(core)));
+    REQUIRE(e.parkCore(bliptoaster(2)));
+    DocExtras extras{{docNode("cart", "rp.n8.cart-mirror", R"({"system":2})")}, {docWire("sys-1.serialOut", "cart.bytes")}};
+    REQUIRE(e.setGraph(graphRequest(stereoDocument({{1, kGb}, {2, kNes}}, extras), {1, 2})).ok);
+    return gb;
+}
+
+// The bytes a Game Boy's core captured this block.
+std::vector<std::uint8_t> serialLog(const SameBoySystem& gb) {
+    std::vector<std::uint8_t> log;
+    for (const auto& entry : gb.serialOutLog_) log.push_back(entry.second);
+    return log;
+}
+
+// Set RETROPLUG_SYNC_TRACE, or clear it (null), for the engines constructed after: each reads it as it is built.
+void setSyncTraceEnv(const char* value) {
+#if defined(_WIN32)
+    _putenv_s("RETROPLUG_SYNC_TRACE", value ? value : "");
+#else
+    if (value) setenv("RETROPLUG_SYNC_TRACE", value, 1);
+    else unsetenv("RETROPLUG_SYNC_TRACE");
+#endif
+}
+
 // `messages` (frame, MIDI) staged ahead of the first block at or past `seconds`.
 using Staged = std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>>;
 std::function<void(Engine&, std::uint64_t)> stageAt(std::vector<std::pair<double, Staged>> plan) {
@@ -176,19 +246,64 @@ TEST_CASE("rp.host.midi-in hands a NES exactly what today's kernel stage hands i
 }
 
 TEST_CASE("rp.host.midi-in sorts and pushes the staged MIDI without allocating", "[engine-graph][host-io]") {
+    // Both of its paths: the merge of two runs (the plugin's staging: its DAW events, then automation's CCs at frame
+    // 0), and the sort it falls back to for more.
     Engine e(kRate);
     REQUIRE(e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in")}, {})).ok);
-    for (const std::uint32_t frame : {100u, 300u, 0u, 100u, 0u}) e.stageMidi(frame, noteOn(60));
     float l[64], r[64];
     float* outs[2] = {l, r};
-    // No warm-up: a sort that allocates on its first call is caught too.
-    rp::test::beginCountingAllocations();
-    e.processBlock(64, outs, 2);
-    const auto counted = rp::test::endCountingAllocations();
-    CHECK(counted.allocations == 0);
-    // The staged messages' own bytes, freed as the staging is cleared, as the kernel stage frees them today: each
-    // staged message owns its bytes (DspRuntime::MidiIn).
-    CHECK(counted.frees == 5);
+    for (const auto& frames : {std::vector<std::uint32_t>{100, 300, 0, 0}, std::vector<std::uint32_t>{100, 300, 0, 100, 0}}) {
+        INFO(frames.size() << " staged");
+        for (const std::uint32_t frame : frames) e.stageMidi(frame, noteOn(60));
+        // No warm-up: a path that allocates on its first call is caught too.
+        rp::test::beginCountingAllocations();
+        e.processBlock(64, outs, 2);
+        const auto counted = rp::test::endCountingAllocations();
+        CHECK(counted.allocations == 0);
+        // The staged messages' own bytes, freed as the staging is cleared, as the kernel stage frees them today:
+        // each staged message owns its bytes (DspRuntime::MidiIn).
+        CHECK(counted.frees == static_cast<int>(frames.size()));
+    }
+}
+
+TEST_CASE("rp.host.midi-in hands on the staging in frame order, ties in the order they were staged",
+          "[engine-graph][host-io]") {
+    Engine e(kRate);
+    REQUIRE(e.setGraph(midiInToOut()).ok);
+    // One run.
+    CHECK(midiInOrder(e, {0, 0, 5, 9}) == Order{{0, 0}, {0, 1}, {5, 2}, {9, 3}});
+    // Two, as the plugin stages them: a tie within a run keeps its order, and one across the runs goes to the earlier.
+    CHECK(midiInOrder(e, {100, 300, 0, 0}) == Order{{0, 2}, {0, 3}, {100, 0}, {300, 1}});
+    CHECK(midiInOrder(e, {0, 100, 0, 100}) == Order{{0, 0}, {0, 2}, {100, 1}, {100, 3}});
+    CHECK(midiInOrder(e, {7, 7, 7, 0, 7}) == Order{{0, 3}, {7, 0}, {7, 1}, {7, 2}, {7, 4}});
+    // Three.
+    CHECK(midiInOrder(e, {100, 300, 0, 100, 0}) == Order{{0, 2}, {0, 4}, {100, 0}, {100, 3}, {300, 1}});
+    CHECK(midiInOrder(e, {}).empty());
+    CHECK(e.droppedMessages() == 0);
+}
+
+TEST_CASE("rp.host.midi-in's order is std::stable_sort's by frame, for any staging", "[engine-graph][host-io]") {
+    // Stagings of every shape its paths tell apart: one run, two, more; ties within a run and across runs; every
+    // frame the same; and runs left unsorted, so a run is any length down to one message.
+    Engine e(kRate);
+    REQUIRE(e.setGraph(midiInToOut()).ok);
+    std::mt19937 rng(20261026);
+    const auto pick = [&](std::uint32_t n) { return std::uniform_int_distribution<std::uint32_t>(0, n - 1)(rng); };
+    const std::uint32_t spans[] = {1, 3, 16, kFrames};  // the frames a staging draws from; 1: all the same
+    for (int trial = 0; trial < 3000; ++trial) {
+        const std::uint32_t span = spans[pick(4)];
+        const bool sortedRuns = trial % 4 != 3;
+        std::vector<std::uint32_t> frames;
+        for (std::uint32_t run = 1 + pick(5); run > 0; --run) {
+            std::vector<std::uint32_t> part(pick(40));
+            for (auto& f : part) f = pick(span);
+            if (sortedRuns) std::sort(part.begin(), part.end());
+            frames.insert(frames.end(), part.begin(), part.end());
+        }
+        INFO("trial " << trial << ": " << frames.size() << " messages over " << span << " frames");
+        REQUIRE(midiInOrder(e, frames) == stableOrder(frames));
+    }
+    CHECK(e.droppedMessages() == 0);
 }
 
 TEST_CASE("rp.host.midi-out lands each message in Engine::midiOut, tagged with the system its prefix names",
@@ -199,9 +314,10 @@ TEST_CASE("rp.host.midi-out lands each message in Engine::midiOut, tagged with t
                 .ok);
     e.stageMidi(7, tagged(2, {0x90, 60, 100}));
     e.stageMidi(9, tagged(513, {0xF8}));
-    e.stageMidi(11, {3, 0, 0});  // too short to name a system: dropped
+    e.stageMidi(11, {3, 0, 0});  // too short to name a system: dropped, and counted
     block(e);
     CHECK(midiOut(e) == std::vector<Out>{{2, 7, {0x90, 60, 100}}, {513, 9, {0xF8}}});
+    CHECK(e.droppedMessages() == 1);
 }
 
 TEST_CASE("the kernel stage and the host I/O nodes share the host's buffers, in plan order", "[engine-graph][host-io]") {
@@ -255,6 +371,50 @@ TEST_CASE("the kernel stage and the host I/O nodes share the host's buffers, in 
         CHECK(midiOut(e) == std::vector<Out>{{7, 3, {2}}});
         CHECK(controllerOut(e) == Bytes{{0xB0, 0, 1}});
     }
+    SECTION("with controller-in alone, the kernel stage keeps the host MIDI and gets none of the control surface's") {
+        Engine e(kRate);
+        REQUIRE(e.setGraph(hostIoOnly({docNode("controller-in", "rp.host.controller-in"),
+                                       docNode("controller-out", "rp.host.controller-out")},
+                                      {docWire("controller-in.midi", "controller-out.midi")}, true))
+                    .ok);
+        loadKernel(e, kernel);
+        e.stageMidi(0, {0xF8});
+        e.stageMidi(0, {0xFA});
+        e.stageControllerMidi({0x90, 11, 127});
+        block(e);
+        CHECK(midiOut(e) == std::vector<Out>{{7, 3, {2}}});
+        CHECK(controllerOut(e) == Bytes{{0xB0, 0, 0}, {0x90, 11, 127}});
+    }
+    SECTION("a swap to a plan holding midi-in hands it what was staged before the swap, once") {
+        Engine e(kRate);
+        REQUIRE(e.setGraph(hostIoOnly({}, {}, true)).ok);
+        loadKernel(e, kernel);
+        e.stageMidi(4, tagged(5, {0xF8}));
+        REQUIRE(e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("midi-out", "rp.host.midi-out")},
+                                      {docWire("midi-in.midi", "midi-out.midi")}, true))
+                    .ok);
+        block(e);
+        CHECK(midiOut(e) == std::vector<Out>{{7, 3, {0}}, {5, 4, {0xF8}}});
+        block(e);
+        CHECK(midiOut(e) == std::vector<Out>{{7, 3, {0}}});
+    }
+}
+
+TEST_CASE("a document holds one rp.host.midi-in and one rp.host.controller-in at most, as it holds one cart mirror",
+          "[engine-graph][host-io]") {
+    // Each takes everything staged whether or not its output is wired, so a second would take it from the first
+    // whenever the plan ran it first.
+    Engine e(kRate);
+    for (const std::string type : {"rp.host.midi-in", "rp.host.controller-in"}) {
+        INFO(type);
+        const auto refused = e.setGraph(hostIoOnly({docNode("in-a", type), docNode("in-b", type)}, {}));
+        REQUIRE_FALSE(refused.ok);
+        REQUIRE(refused.errors.size() == 1);
+        CHECK(refused.errors[0].nodeId == "in-b");
+        CHECK(refused.errors[0].code == type.substr(std::string("rp.host.").size()));
+        CHECK(e.setGraph(hostIoOnly({docNode("in-a", type)}, {})).ok);
+    }
+    CHECK(e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("controller-in", "rp.host.controller-in")}, {})).ok);
 }
 
 TEST_CASE("rp.host.controller-in's connected output follows the engine's flag from frame 0", "[engine-graph][host-io]") {
@@ -343,6 +503,30 @@ TEST_CASE("the engine feeds the cart mirror to its core-byte sink, and reads the
     CHECK(e.cartMirrorSystemId() == 0);
 }
 
+TEST_CASE("a cart mirror names one of the document's NES systems, its settings read as the node reads them",
+          "[engine-graph][host-io][n8]") {
+    Engine e(kRate);
+    REQUIRE(e.parkCore(bliptoaster(1)));
+    REQUIRE(e.parkCore(mgb(2)));
+    const auto mirroring = [](std::string settings) {
+        const DocExtras mirror{{docNode("cart", "rp.n8.cart-mirror", std::move(settings))}, {}};
+        return graphRequest(stereoDocument({{1, kNes}, {2, kGb}}, mirror), {1, 2});
+    };
+    // An N8 is a NES cart: a Game Boy is refused, as a system outside the slots is.
+    const auto gb = e.setGraph(mirroring(R"({"system":2})"));
+    REQUIRE_FALSE(gb.ok);
+    REQUIRE(gb.errors.size() == 1);
+    CHECK(gb.errors[0].nodeId == "cart");
+    CHECK(gb.errors[0].code == "cart-mirror");
+    // What the node refuses, the engine refuses; what the node reads, the engine reads, a field neither knows included.
+    for (const char* refused : {R"({})", R"({"system":0})", R"({"system":"1"})", R"({"system":4294967296})"}) {
+        INFO(refused);
+        CHECK(e.setGraph(mirroring(refused)).errors.at(0).code == "cart-mirror");
+    }
+    REQUIRE(e.setGraph(mirroring(R"({"system":1,"note":"the first NES"})")).ok);
+    CHECK(e.cartMirrorSystemId() == 1);
+}
+
 TEST_CASE("the Game Boy's serialOut carries what its core captured, and the engine's MI.OUT gather still does",
           "[engine-graph][host-io]") {
     // mGB, with MI.OUT capture armed, has a byte clocked out of its serial port every eight frames (it holds the
@@ -350,12 +534,7 @@ TEST_CASE("the Game Boy's serialOut carries what its core captured, and the engi
     // sink records them; the gather hands the same bytes to the kernel stage next block, which a stand-in kernel
     // echoes as host MIDI out.
     Engine e(kRate);
-    auto core = mgb(1);
-    core->setSerialOutCapture(true);
-    SameBoySystem* const gb = core.get();
-    REQUIRE(e.parkCore(std::move(core)));
-    DocExtras extras{{docNode("cart", "rp.n8.cart-mirror", R"({"system":1})")}, {docWire("sys-1.serialOut", "cart.bytes")}};
-    REQUIRE(e.setGraph(graphRequest(stereoDocument({{1, kGb}}, extras), {1})).ok);
+    SameBoySystem* const gb = serialOutToCart(e);
     loadKernel(e, "for (var i = 0; i < input.serialOut.length; i++) emitMidiOut(input.serialOut[i].system, 0, [input.serialOut[i].byte]);");
     std::vector<std::uint8_t> carried;
     bool eachAtZero = true;
@@ -368,8 +547,8 @@ TEST_CASE("the Game Boy's serialOut carries what its core captured, and the engi
     for (int b = 0; b < 100; ++b) {
         carried.clear();
         block(e);
-        std::vector<std::uint8_t> log, gathered;
-        for (const auto& entry : gb->serialOutLog_) log.push_back(entry.second);
+        const std::vector<std::uint8_t> log = serialLog(*gb);
+        std::vector<std::uint8_t> gathered;
         for (const auto& m : e.midiOut()) {
             CHECK(m.system == 1);
             gathered.insert(gathered.end(), m.data.begin(), m.data.end());
@@ -384,22 +563,141 @@ TEST_CASE("the Game Boy's serialOut carries what its core captured, and the engi
     CHECK(captured > 0);
 }
 
+TEST_CASE("the Game Boy's serialOut carries the largest block a host runs without a drop", "[engine-graph][host-io]") {
+    // The plugin grows its plan to its buffer size, up to the graph's limit. At 65536 frames mGB's port clocks out
+    // close to 7000 bytes a block, each its own message.
+    Engine e(kRate);
+    e.setMaxBlockFrames(rp::graph::kMaxBlockFrames);
+    SameBoySystem* const gb = serialOutToCart(e);
+    std::vector<std::uint8_t> carried;
+    e.setCoreByteSink([&](std::uint32_t, const std::uint8_t* d, std::size_t n, bool) { carried.insert(carried.end(), d, d + n); });
+    std::size_t most = 0;
+    for (int b = 0; b < 8; ++b) {
+        carried.clear();
+        block(e, rp::graph::kMaxBlockFrames);
+        INFO("block " << b);
+        CHECK(carried == serialLog(*gb));
+        most = std::max(most, carried.size());
+    }
+    CHECK(most > 4096);  // past what the port held before it was sized for this block
+    CHECK(e.droppedMessages() == 0);
+}
+
 TEST_CASE("a full output queue's drops reach the engine and the harness facet", "[engine-graph][host-io]") {
+    struct Js {
+        JSRuntime* rt  = JS_NewRuntime();
+        JSContext* ctx = JS_NewContext(rt);
+        ~Js() {
+            JS_FreeContext(ctx);
+            JS_FreeRuntime(rt);
+        }
+    } js;  // first, so it outlives the server holding its context
+
     Engine           e(kRate);
     SystemFactory    factory;
     QueuedInvoker    invoker(e);
     EngineRpcService rpc(e, factory, invoker);
-    REQUIRE(e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("midi-out", "rp.host.midi-out")},
-                                  {docWire("midi-in.midi", "midi-out.midi")}))
-                .ok);
+    rpcpp::QuickJSTransport                                   transport(js.ctx, [](JSContext*, JSValue) {});
+    rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec> server(transport, rpcpp::QuickJSCodec{js.ctx});
+    registerHarnessRpc(server, rpc);
+    // droppedMessages as a host calls it: by name, through the harness facet; nullopt when it answers no number.
+    const auto dropped = [&]() -> std::optional<std::int64_t> {
+        const std::string src = "({jsonrpc: '2.0', id: 1, method: 'droppedMessages', params: []})";
+        JSValue message = JS_Eval(js.ctx, src.c_str(), src.size(), "<droppedMessages>", JS_EVAL_TYPE_GLOBAL);
+        std::optional<rpcpp::QuickJSOut> reply;
+        if (!JS_IsException(message)) reply = server.processMessage(message);
+        JS_FreeValue(js.ctx, message);
+        if (!reply) return std::nullopt;
+        JSValue answer = reply->materialize(js.ctx);
+        JSValue result = JS_GetPropertyStr(js.ctx, answer, "result");
+        std::optional<std::int64_t> count;
+        std::int64_t n = 0;
+        if (JS_IsNumber(result) && JS_ToInt64(js.ctx, &n, result) == 0) count = n;
+        JS_FreeValue(js.ctx, result);
+        JS_FreeValue(js.ctx, answer);
+        return count;
+    };
+
+    REQUIRE(e.setGraph(midiInToOut()).ok);
     for (int i = 0; i < 3; ++i) e.stageMidi(0, tagged(1, {0xF8}));
     block(e);
     CHECK(e.droppedMessages() == 0);
-    CHECK(rpc.droppedMessages() == 0);
+    CHECK(dropped() == 0);
     // One block's worth more than midi-in's port holds.
     for (std::uint32_t i = 0; i < rp::host::kHostMidiInMessages + 3; ++i) e.stageMidi(0, tagged(1, {0xF8}));
     block(e);
     CHECK(e.midiOut().size() == rp::host::kHostMidiInMessages);
     CHECK(e.droppedMessages() == 3);
-    CHECK(rpc.droppedMessages() == 3);
+    CHECK(dropped() == 3);
+}
+
+TEST_CASE("a system node's bytes input reaches the engine's sync trace while it is on, and nothing while it is off",
+          "[engine-graph][host-io]") {
+    // The engine opens its trace at construction when RETROPLUG_SYNC_TRACE names a file, and its destructor writes
+    // what is left. A Game Boy's serialOut feeds a NES's bytes input, so each block's line holds what the Game Boy
+    // captured that block, at frame 0, as the NES node recorded it. 256-frame blocks keep that under the trace's
+    // 48 bytes a block.
+    const std::string path =
+        (std::filesystem::temp_directory_path() / ("rp-engine-graph-sync-trace-" + std::to_string(std::random_device{}()) + ".log"))
+            .string();
+    // Put back as it was however the case ends, so no later engine in this process traces.
+    const char* const was = std::getenv("RETROPLUG_SYNC_TRACE");
+    struct Restore {
+        std::optional<std::string> was;
+        ~Restore() { setSyncTraceEnv(was ? was->c_str() : nullptr); }
+    } restore{was ? std::optional<std::string>(was) : std::nullopt};
+    // The trace part of each block's line, " 0:<hex>" or "", for what the Game Boy captured.
+    const auto run = [&](bool traced) {
+        setSyncTraceEnv(traced ? path.c_str() : nullptr);
+        std::vector<std::string> lines;
+        Engine e(kRate);
+        auto core = mgb(1);
+        core->setSerialOutCapture(true);
+        SameBoySystem* const gb = core.get();
+        REQUIRE(e.parkCore(std::move(core)));
+        REQUIRE(e.parkCore(bliptoaster(2)));
+        REQUIRE(e.setGraph(graphRequest(stereoDocument({{1, kGb}, {2, kNes}}, DocExtras{{}, {docWire("sys-1.serialOut", "sys-2.bytes")}}),
+                                        {1, 2}))
+                    .ok);
+        for (int b = 0; b < 200; ++b) {
+            block(e, 256);
+            std::string hex;
+            for (const std::uint8_t byte : serialLog(*gb)) {
+                char two[3];
+                std::snprintf(two, sizeof two, "%02X", byte);
+                hex += two;
+            }
+            lines.push_back(hex.empty() ? "" : " 0:" + hex);
+        }
+        return lines;
+    };
+    // A second traced engine in one process writes <path>.2 and so on (HostSyncTrace).
+    const auto traceFile = [&]() -> std::string {
+        for (int n = 1; n < 32; ++n) {
+            const std::string p = n == 1 ? path : path + "." + std::to_string(n);
+            if (std::ifstream(p).good()) return p;
+        }
+        return "";
+    };
+
+    const auto untraced = run(false);
+    CHECK(traceFile().empty());
+    const auto expected = run(true);
+    setSyncTraceEnv(restore.was ? restore.was->c_str() : nullptr);
+    CHECK(untraced == expected);  // the trace changes nothing the cores hear
+    CHECK(std::count_if(expected.begin(), expected.end(), [](const std::string& l) { return !l.empty(); }) > 0);
+
+    const std::string file = traceFile();
+    REQUIRE_FALSE(file.empty());
+    std::ifstream in(file);
+    std::vector<std::string> traced;
+    for (std::string line; std::getline(in, line);) {
+        if (line.empty() || line[0] == '#') continue;
+        const auto bar = line.find('|');
+        REQUIRE(bar != std::string::npos);
+        traced.push_back(line.substr(bar + 1));
+    }
+    in.close();
+    std::remove(file.c_str());
+    CHECK(traced == expected);
 }

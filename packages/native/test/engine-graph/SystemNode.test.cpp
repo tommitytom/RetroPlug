@@ -580,6 +580,58 @@ TEST_CASE("a system node's inputs reach its core as the calls they map to, bit f
     }
 }
 
+TEST_CASE("a system node skips an empty midi or bytes message and a short buttons payload, and takes what follows",
+          "[engine-graph][system-node][inputs]") {
+    // As the kernel stage skips them: nothing reaches the core for the message skipped, and the input's later
+    // messages still do. `heard` as above.
+    std::uint64_t heard = kNever;
+
+    SECTION("midi: an empty message, then a note") {
+        NodeRig rig(kRate);
+        auto direct = nes(1, 0), control = nes(1, 0);
+        REQUIRE(rig.set(fedDocument("rp.mesen.nes", rig.park(nes(1, 0)), {"midi"})).ok);
+        Feed& feed = rig.node<Feed>("feed");
+        Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
+        CHECK(compare(rig, d, 3.0, once(1.5, [&] {
+                  feed.next[Feed::Midi] = {{0, {}}, {20, kNoteOn60}};
+                  const ::MidiEvent ev = midiEvent(20, kNoteOn60);
+                  direct->onMidi(&ev, 1);
+              }), &c, &heard) == "");
+        CHECK(heard != kNever);
+    }
+    SECTION("bytes: an empty flushed message, then a note") {
+        NodeRig rig(kRate);
+        auto direct = nes(1, 0), control = nes(1, 0);
+        REQUIRE(rig.set(fedDocument("rp.mesen.nes", rig.park(nes(1, 0)), {"bytes"})).ok);
+        Feed& feed = rig.node<Feed>("feed");
+        Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
+        CHECK(compare(rig, d, 3.0, once(1.5, [&] {
+                  feed.next[Feed::Bytes] = {{0, {}, RP_MESSAGE_FLUSH}, {0, kNoteOn60}};
+                  direct->pushCoreBytes(0, kNoteOn60.data(), kNoteOn60.size(), false);
+              }), &c, &heard) == "");
+        CHECK(heard != kNever);
+        CHECK(rig.traced.size() == 1);  // the note's bytes, and nothing for the empty message
+    }
+    SECTION("buttons: a payload shorter than [button, down] presses nothing") {
+        // Two one-byte payloads, PAUSE's code then a 1: read past its end, the first would be [PAUSE, 1], a press
+        // that starts smsStart's song. Every core gets the song, and none a press, so all three render alike.
+        NodeRig rig(kRate);
+        auto direct = sms(1), control = sms(1);
+        auto viaGraph = sms(1);
+        SystemBase* graphCore = viaGraph.get();
+        REQUIRE(rig.set(fedDocument("rp.mesen.sms", rig.park(std::move(viaGraph)), {"buttons"})).ok);
+        Feed& feed = rig.node<Feed>("feed");
+        Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
+        const auto pause = static_cast<std::uint8_t>(SmsButton::Start);
+        CHECK(compare(rig, d, 5.0, once(3.0, [&] {
+                  for (SystemBase* s : {static_cast<SystemBase*>(direct.get()), graphCore, static_cast<SystemBase*>(control.get())})
+                      pokeMetronome(*s);
+                  feed.next[Feed::Buttons] = {{0, {pause}}, {0, {1}}};
+              }), &c, &heard) == "");
+        CHECK(heard == kNever);
+    }
+}
+
 TEST_CASE("a linked Game Boy takes its inputs in prepare, before its group steps", "[engine-graph][system-node][inputs]") {
     // A coupled member is never processed, only prepared, stepped and finished, so its inputs are applied at the top
     // of prepare. Seen in the core's queues right after the block: a linked core's serial port belongs to the cable,

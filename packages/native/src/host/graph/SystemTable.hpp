@@ -27,10 +27,11 @@ struct SystemEntry {
 struct SystemTable {
     std::vector<SystemEntry> slots;
     // The plan holds an rp.host.midi-in (an rp.host.controller-in), which takes the staged host (control-surface)
-    // MIDI at its block, so the kernel stage gets none of it, whichever of the two runs first.
+    // MIDI at its block, so the kernel stage gets none of it, whichever of the two runs first. The node owns the
+    // staging whether or not its output is wired, which is why a document may hold one of each at most.
     bool                     takesHostMidi = false;
     bool                     takesControllerMidi = false;
-    // The system the plan's rp.n8.cart-mirror names (0 = none).
+    // The system the plan's rp.n8.cart-mirror names (0 = none): one of the plan's NES systems.
     SystemId                 cartMirror = 0;
 
     // A linear scan in slot order: the kernel's outputs name a system by id.
