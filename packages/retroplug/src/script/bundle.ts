@@ -4,9 +4,10 @@
 // its script contexts at construction and every host has the same node types, with no boot call. An entry point
 // only: importing it registers.
 import type { DefinedNode } from "../graph/defineNode";
+import { kernelNode } from "./kernelNode";
 import { registerScriptNodes } from "./register";
 
-// The production script node types (none yet: the DSP kernel still runs natively, as rp.dsp.kernel).
-const scriptNodes: readonly DefinedNode<any>[] = [];
+// The production script node types: the DSP kernel, beside the native one the engine still runs until it switches.
+const scriptNodes: readonly DefinedNode<any>[] = [kernelNode];
 
 registerScriptNodes(scriptNodes);

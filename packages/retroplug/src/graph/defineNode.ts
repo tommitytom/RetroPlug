@@ -24,7 +24,7 @@ type OutputChannels = MatchChannels | FixedChannels;
 
 // Each kind's legal shape, so a hand-written spec that C++'s parser would refuse does not type-check. (The
 // same rules are also checked at run time, for callers that are not type-checked.)
-type PortSpec =
+export type PortSpec =
   | { dir: "in"; kind: "audio"; channels: ChannelSpec }
   | { dir: "out"; kind: "audio"; channels: OutputChannels }
   | { dir: "in"; kind: "events" | "bytes" }
@@ -117,6 +117,16 @@ export interface ControlStream {
   start: number;
   /** This block's changes, frame-ordered. */
   changes: readonly { frame: number; value: number }[];
+}
+
+/** The value a control stream holds from the block's first frame: its start, or the last change at frame 0. A node
+ *  cannot set an output's start (it is the last block's end), so a value that takes effect from frame 0 arrives as a
+ *  change at frame 0. */
+export function startValue(stream: ControlStream): number {
+  let value = stream.start;
+  const changes = stream.changes;
+  for (let i = 0; i < changes.length && changes[i].frame === 0; i++) value = changes[i].value;
+  return value;
 }
 
 // What a block hands out (the arrays, the views, the message objects) is valid only during the process call it is

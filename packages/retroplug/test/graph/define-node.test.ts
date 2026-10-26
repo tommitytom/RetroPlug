@@ -2,7 +2,7 @@
 import { test, expect } from "../../testing/harness";
 import { z } from "zod";
 import { canonicalJson } from "../../src/graph/canonicalJson";
-import { audio, bytes, channels, control, defineNode, events, param, resource } from "../../src/graph/defineNode";
+import { audio, bytes, channels, control, defineNode, events, param, resource, startValue } from "../../src/graph/defineNode";
 
 const noop = () => ({ process() {} });
 
@@ -293,4 +293,12 @@ test("a returned descriptor is the caller's own copy", () => {
   expect(second.exclusive).toEqual([["pins.a", "pins.b"]]);
   expect((second.params[0] as { values: string[] }).values).toEqual(["a", "b"]);
   expect(second.settings).toEqual({ type: "object" });
+});
+
+test("a control stream's value from frame 0 is its start, or its last change at frame 0", () => {
+  expect(startValue({ start: 0, changes: [] })).toBe(0);
+  // A node cannot set an output's start, so a value from frame 0 arrives as a change at frame 0.
+  expect(startValue({ start: 0, changes: [{ frame: 0, value: 1 }] })).toBe(1);
+  expect(startValue({ start: 1, changes: [{ frame: 0, value: 0 }, { frame: 0, value: 2 }, { frame: 5, value: 3 }] })).toBe(2);
+  expect(startValue({ start: 1, changes: [{ frame: 3, value: 0 }] })).toBe(1);
 });

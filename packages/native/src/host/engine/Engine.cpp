@@ -30,6 +30,12 @@
 #include "host/graph/SystemNodes.hpp"
 #include "host/graph/SystemTable.hpp"
 
+#ifdef RETROPLUG_PROFILE
+extern "C" {
+#include "quickjs.h"
+}
+#endif
+
 namespace {
 
 // Read-only empties the kernel's per-block button/key inputs default to. The host
@@ -135,6 +141,54 @@ std::uint32_t hostWidthOf(const rp::graph::GraphDocument& doc) {
     return 0;
 }
 
+#ifdef RETROPLUG_PROFILE
+// The per-role tracing thunks (spec/08-profiling.md Tier B) in the script host's audio context, where the kernel node
+// reads them as the native kernel reads its own: they record into the DspRuntime's trace window. traceArmed is that
+// window's state, which the node reads each block, having no __setTrace for traceReset to call.
+DspRuntime& traceOf(JSContext* ctx, JSValueConst* data) {
+    std::int64_t p = 0;
+    JS_ToInt64(ctx, &p, data[0]);
+    return *reinterpret_cast<DspRuntime*>(static_cast<std::intptr_t>(p));
+}
+JSValue spanBeginFn(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValueConst* data) {
+    std::int32_t label = 0;
+    if (argc >= 1) JS_ToInt32(ctx, &label, argv[0]);
+    traceOf(ctx, data).spanBegin(static_cast<std::uint32_t>(label));
+    return JS_UNDEFINED;
+}
+JSValue spanEndFn(JSContext* ctx, JSValueConst, int, JSValueConst*, int, JSValueConst* data) {
+    traceOf(ctx, data).spanEnd();
+    return JS_UNDEFINED;
+}
+JSValue traceNameFn(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValueConst* data) {
+    std::int32_t label = 0;
+    if (argc < 2) return JS_UNDEFINED;
+    JS_ToInt32(ctx, &label, argv[0]);
+    if (const char* name = JS_ToCString(ctx, argv[1])) {
+        traceOf(ctx, data).traceName(static_cast<std::uint32_t>(label), name);
+        JS_FreeCString(ctx, name);
+    }
+    return JS_UNDEFINED;
+}
+JSValue traceArmedFn(JSContext* ctx, JSValueConst, int, JSValueConst*, int, JSValueConst* data) {
+    return JS_NewBool(ctx, traceOf(ctx, data).traceArmed());
+}
+void bindTracing(void* dsp, JSContext* ctx, bool audioSide) {
+    if (!audioSide) return;
+    JSValue data = JS_NewInt64(ctx, static_cast<std::int64_t>(reinterpret_cast<std::intptr_t>(dsp)));
+    JSValue global = JS_GetGlobalObject(ctx);
+    JS_SetPropertyStr(ctx, global, "spanBegin", JS_NewCFunctionData(ctx, &spanBeginFn, 1, 0, 1, &data));
+    JS_SetPropertyStr(ctx, global, "spanEnd", JS_NewCFunctionData(ctx, &spanEndFn, 0, 0, 1, &data));
+    JS_SetPropertyStr(ctx, global, "traceName", JS_NewCFunctionData(ctx, &traceNameFn, 2, 0, 1, &data));
+    JS_SetPropertyStr(ctx, global, "traceArmed", JS_NewCFunctionData(ctx, &traceArmedFn, 0, 0, 1, &data));
+    JS_FreeValue(ctx, global);
+    JS_FreeValue(ctx, data);
+}
+constexpr rp::host::ScriptHost::Binder kScriptGlobals = &bindTracing;
+#else
+constexpr rp::host::ScriptHost::Binder kScriptGlobals = nullptr;
+#endif
+
 // The embedded script-node bundle (src/script/bundle.ts) every Engine loads unless it is built with another.
 std::span<const rp::host::ScriptHost::Chunk> embeddedScripts() {
     static const rp::host::ScriptHost::Chunk chunks[] = {rp::host::ScriptHost::embeddedBundle()};
@@ -148,6 +202,8 @@ std::span<const rp::host::ScriptHost::Chunk> embeddedScripts() {
 // before the core handoff and the engine services (the kernel stage, the host I/O, the sync trace) its nodes call into,
 // and before the script host its script nodes release their instances through.
 struct Engine::Graph {
+    // `dsp` keeps the trace a profile build's script nodes record into (kScriptGlobals); it outlives the graph.
+    explicit Graph(DspRuntime& dsp) : script(kScriptGlobals, &dsp) {}
     // First, so it goes last: the script nodes the host destroys hand their instances back to it.
     rp::host::ScriptHost                   script;
     rp::graph::NodeRegistry                registry;
@@ -163,7 +219,7 @@ struct Engine::Graph {
 Engine::Engine(double sampleRate) : Engine(sampleRate, embeddedScripts()) {}
 
 Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> scriptBundle) : sampleRate_(sampleRate) {
-    graph_ = std::make_unique<Graph>();
+    graph_ = std::make_unique<Graph>(dsp_);
     // The script node types first: the bundle runs in both of the script host's contexts, and its definitions become
     // one more package. One that will not load registers no type, so a document naming one is refused (unknown-type).
     std::string why;

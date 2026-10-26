@@ -166,6 +166,9 @@ public:
     void spanEnd();
     void traceName(std::uint32_t label, const std::string& name);
     void traceReset(bool arm);
+    // Whether a trace window is armed: what a script kernel reads each block, where the native kernel is told
+    // through __setTrace (always false off-profile).
+    bool traceArmed() const { return traceArmed_; }
     std::vector<DspTraceSpan> traceSpans() const;
     std::vector<std::string>  traceNames() const;
 
