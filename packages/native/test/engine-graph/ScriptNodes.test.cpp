@@ -117,11 +117,11 @@ rp.register([rp.defineNode({
 })]);
 )JS";
 
-// One output per `outs` its settings name; refuses more than 4 with zod's reason.
+// One output per `outs` its settings name; refuses more than 4, its reason worded as zod words it.
 const char* const kFan = R"JS(
 rp.register([rp.defineNode({
   id: "rp.toy.fan",
-  settings: rp.z.object({ outs: rp.z.number().int().min(1).max(4).default(2) }),
+  settings: rp.s.object({ outs: rp.s.int({ min: 1, max: 4, default: 2 }) }),
   ports: (s) => { const p = { in: rp.events.in() }; for (let k = 1; k <= s.outs; ++k) p["out" + k] = rp.events.out(); return p; },
   create: ({ settings }) => ({
     process(b) {
@@ -139,7 +139,7 @@ const outsFor = (s) => { const p = {}; for (let k = s.outs; k >= 1; --k) p["out"
 const counted = (reshapes) => rp.defineNode({
   id: reshapes ? "rp.toy.counter" : "rp.toy.plain",
   ...(reshapes ? { reshapes: true } : {}),
-  settings: rp.z.object({ outs: rp.z.number().int().min(1).max(4).default(2), tag: rp.z.number().default(0) }),
+  settings: rp.s.object({ outs: rp.s.int({ min: 1, max: 4, default: 2 }), tag: rp.s.number(0) }),
   ports: outsFor,
   create: ({ settings }) => {
     let outs = settings.outs, tag = settings.tag, count = 0;
@@ -235,7 +235,7 @@ rp.defineNode({
 }),
 rp.defineNode({
   id: "rp.toy.transfer",  // length 0: its output's buffer transferred away once, at its length; n: to n bytes, every block
-  settings: rp.z.object({ length: rp.z.number().int().min(0).default(0) }),
+  settings: rp.s.object({ length: rp.s.int({ min: 0, default: 0 }) }),
   ports: { out: rp.audio.out(rp.channels.stereo()) },
   create: ({ settings }) => {
     let taken = null;
@@ -293,8 +293,8 @@ rp.defineNode({
 const char* const kBrittle = R"JS(
 const brittle = (id, extra) => rp.defineNode({
   id, ...extra, reshapes: true,
-  settings: rp.z.object({ fail: rp.z.enum(["none", "settings", "ports"]).default("none"),
-                          outs: rp.z.number().int().min(1).max(2).default(1) }),
+  settings: rp.s.object({ fail: rp.s.enum(["none", "settings", "ports"], "none"),
+                          outs: rp.s.int({ min: 1, max: 2, default: 1 }) }),
   ports: (s) => (s.outs === 1 ? { out1: rp.events.out() } : { out1: rp.events.out(), out2: rp.events.out() }),
   create: ({ settings }) => {
     let fail = settings.fail;
@@ -314,7 +314,7 @@ const char* const kWordy = R"JS(
 const wordy = (pad) => "x".repeat(pad) + "\u00e9\u20ac".repeat(200);
 rp.register([rp.defineNode({
   id: "rp.toy.wordy",
-  settings: rp.z.object({ pad: rp.z.number().int().min(0).max(2).default(0), refuse: rp.z.boolean().default(false) }),
+  settings: rp.s.object({ pad: rp.s.int({ min: 0, max: 2, default: 0 }), refuse: rp.s.bool(false) }),
   ports: (s) => { if (s.refuse) throw new Error(wordy(s.pad)); return { out: rp.events.out() }; },
   create: ({ settings }) => ({ process() { throw new Error(wordy(settings.pad)); } }),
 })]);
@@ -1020,7 +1020,7 @@ const trapTransport = (id, extra) => rp.defineNode({
 });
 const trapAudio = (id, extra) => rp.defineNode({
   id, ...extra,
-  settings: rp.z.object({ on: rp.z.string().default("setter") }),
+  settings: rp.s.object({ on: rp.s.string("setter") }),
   ports: { out: rp.audio.out(rp.channels.stereo()), sent: rp.events.out() },
   create: ({ settings: { on } }) => {
     let armed = false;
@@ -1041,7 +1041,7 @@ const trapAudio = (id, extra) => rp.defineNode({
 });
 rp.register([rp.defineNode({
   id: "rp.toy.trap",
-  settings: rp.z.object({ on: rp.z.string().default("message") }),
+  settings: rp.s.object({ on: rp.s.string("message") }),
   ports: { in: rp.events.in(), level: rp.control.in(), out: rp.events.out() },
   create: ({ settings: { on } }) => {
     let n = 0;
@@ -1108,7 +1108,7 @@ class Handled extends Accessed {
 }
 rp.register([rp.defineNode({
   id: "rp.toy.polluter",
-  settings: rp.z.object({ hooks: rp.z.enum(["none", "throw", "adopt"]).default("none") }),
+  settings: rp.s.object({ hooks: rp.s.enum(["none", "throw", "adopt"], "none") }),
   ports: { out: rp.events.out() },
   create: ({ settings: { hooks } }) => {
     let quiet = false, done = false;
@@ -1142,7 +1142,7 @@ rp.register([rp.defineNode({
   },
 }), rp.defineNode({
   id: "rp.toy.tidy",
-  settings: rp.z.object({ shrink: rp.z.enum(["none", "arrays"]).default("none"), tag: rp.z.number().default(0) }),
+  settings: rp.s.object({ shrink: rp.s.enum(["none", "arrays"], "none"), tag: rp.s.number(0) }),
   ports: { in: rp.events.in(), level: rp.control.in(), audioIn: rp.audio.in(), out: rp.events.out({ messages: 16 }),
            audioOut: rp.audio.out(rp.channels.match("audioIn")), changes: rp.control.out() },
   params: { gain: rp.param.float({ name: "Gain", min: 0, max: 4, default: 0.5 }) },
@@ -1179,12 +1179,12 @@ rp.register([rp.defineNode({
   create: () => ({}),
 }), rp.defineNode({
   id: "rp.toy.classy",
-  settings: rp.z.object({ tag: rp.z.number().default(0) }),
+  settings: rp.s.object({ tag: rp.s.number(0) }),
   ports: { out: rp.events.out() },
   create: () => new Classy(),
 }), rp.defineNode({
   id: "rp.toy.handled",
-  settings: rp.z.object({ tag: rp.z.number().default(0) }),
+  settings: rp.s.object({ tag: rp.s.number(0) }),
   ports: { out: rp.events.out() },
   create: () => new Handled(),
 }), rp.defineNode({
@@ -1192,7 +1192,7 @@ rp.register([rp.defineNode({
   // and onSettings, as the object create returns ("self") or as that object's prototype ("proto"). Its process says
   // whether the trap was handed the object create returned as the receiver.
   id: "rp.toy.wrapped",
-  settings: rp.z.object({ at: rp.z.enum(["self", "proto"]).default("self"), tag: rp.z.number().default(0) }),
+  settings: rp.s.object({ at: rp.s.enum(["self", "proto"], "self"), tag: rp.s.number(0) }),
   ports: { out: rp.events.out() },
   create: ({ settings }) => {
     const handler = {
@@ -1218,7 +1218,7 @@ rp.register([rp.defineNode({
 }), rp.defineNode({
   // Its process on the last of `depth` plain objects, each the prototype of the one before.
   id: "rp.toy.deep",
-  settings: rp.z.object({ depth: rp.z.number().default(1) }),
+  settings: rp.s.object({ depth: rp.s.number(1) }),
   ports: { out: rp.events.out() },
   create: ({ settings }) => {
     let o = { process() { __probe("deep process"); } };
@@ -1577,12 +1577,19 @@ TEST_CASE("the Block prototype every script node shares, and its methods, are fr
 
 TEST_CASE("a script node's create and onSettings receive its settings as their JSON form", "[script][settings]") {
     ScriptRig rig(R"JS(
+const base = rp.s.object({ name: rp.s.string("abc"), tags: rp.s.array(rp.s.string(""), ["a"]) });
 rp.register([rp.defineNode({
   id: "rp.toy.transformed",
-  settings: rp.z.object({
-    name: rp.z.string().default("abc").transform((s) => s.length),                // a number: JSON keeps it
-    tags: rp.z.array(rp.z.string()).default(["a"]).transform((t) => new Set(t)),  // a Set: JSON makes it {}
-  }),
+  // A schema of its own (defineNode takes any with a safeParse and a toJSONSchema): an `s` one's result, transformed.
+  settings: {
+    safeParse(raw) {
+      const parsed = base.safeParse(raw);
+      if (!parsed.success) return parsed;
+      return { success: true, data: { name: parsed.data.name.length,      // a number: JSON keeps it
+                                      tags: new Set(parsed.data.tags) } }; // a Set: JSON makes it {}
+    },
+    toJSONSchema: (opts) => base.toJSONSchema(opts),
+  },
   ports: { out: rp.events.out() },
   create: ({ settings }) => {
     __probe("create " + JSON.stringify(settings) + " " + (settings.tags instanceof Set));
@@ -1662,7 +1669,7 @@ TEST_CASE("a released script instance's cycles are collected when it is released
     ScriptRig rig(R"JS(
 rp.register([rp.defineNode({
   id: "rp.toy.cyclic",
-  settings: rp.z.object({ tag: rp.z.string().default("cyclic") }),
+  settings: rp.s.object({ tag: rp.s.string("cyclic") }),
   ports: { out: rp.events.out() },
   create: ({ settings }) => { const self = { t: __token(settings.tag), n: 0, process(b) { self.n++; } }; return self; },
 })]);
@@ -1736,7 +1743,7 @@ TEST_CASE("releases past the ring wait in the control thread's backlog, a destro
 const char* const kSpinners = R"JS(
 const spinner = (id, extra) => rp.defineNode({
   id, ...extra,
-  settings: rp.z.object({ spinOn: rp.z.enum(["every", "odd"]).default("every") }),
+  settings: rp.s.object({ spinOn: rp.s.enum(["every", "odd"], "every") }),
   ports: { out: rp.events.out() },
   create: ({ settings }) => {
     let n = 0;

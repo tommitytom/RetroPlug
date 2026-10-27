@@ -3,6 +3,7 @@ import { test, expect } from "../../testing/harness";
 import { z } from "zod";
 import { canonicalJson } from "../../src/graph/canonicalJson";
 import { audio, bytes, channels, control, defineNode, events, param, resource, startValue } from "../../src/graph/defineNode";
+import { s } from "../../src/graph/settingsSchema";
 
 const noop = () => ({ process() {} });
 
@@ -18,10 +19,10 @@ test("ports list inputs before outputs, each in declaration order", () => {
 test("ports and params can follow settings", () => {
   const add = defineNode({
     id: "rp.test.add",
-    settings: z.object({ inputs: z.number().int().min(1).max(16).default(2) }),
-    ports: (s) => {
+    settings: s.object({ inputs: s.int({ min: 1, max: 16, default: 2 }) }),
+    ports: (settings) => {
       const ports: Record<string, ReturnType<typeof audio.in>> = {};
-      for (let k = 1; k <= s.inputs; ++k) ports[`in${k}`] = audio.in(k === 1 ? channels.any() : channels.match("in1"));
+      for (let k = 1; k <= settings.inputs; ++k) ports[`in${k}`] = audio.in(k === 1 ? channels.any() : channels.match("in1"));
       ports.out = audio.out(channels.match("in1"));
       return ports;
     },
@@ -40,7 +41,7 @@ test("a node without settings declares the same empty schema C++ does", () => {
 test("a node with settings ships the JSON Schema of what a document may write", () => {
   const n = defineNode({
     id: "rp.test.schema",
-    settings: z.object({ maxSamples: z.number().int().min(1).default(48000) }),
+    settings: s.object({ maxSamples: s.int({ min: 1, default: 48000 }) }),
     ports: {},
     create: noop,
   });
@@ -53,26 +54,23 @@ test("a node with settings ships the JSON Schema of what a document may write", 
   expect(n.parseSettings({ maxSamples: 5, extra: 1 }).maxSamples).toBe(5);
 });
 
-test("settings are a JSON object or nothing, and every field needs a default", () => {
+test("settings are a JSON object or nothing", () => {
   const n = defineNode({ id: "rp.test.bare", ports: {}, create: noop });
   expect(n.parseSettings(undefined)).toEqual({});
   expect(() => n.parseSettings("x")).toThrow("JSON object");
   expect(() => n.parseSettings(null)).toThrow("JSON object");
   expect(() => n.parseSettings([1])).toThrow("JSON object");
-  expect(() => defineNode({ id: "rp.test.nodefault", settings: z.object({ rom: z.string() }), ports: {}, create: noop })).toThrow(
-    "needs a default",
-  );
 });
 
 test("refused settings say which field and why, in one line a planner error can carry", () => {
   const n = defineNode({
     id: "rp.test.refused",
-    settings: z.object({ outs: z.number().int().min(1).max(4).default(2), name: z.string().default("a") }),
+    settings: s.object({ outs: s.int({ min: 1, max: 4, default: 2 }), name: s.string("a") }),
     ports: {},
     create: noop,
   });
   expect(() => n.parseSettings({ outs: 9 })).toThrow(`node type "rp.test.refused": settings: outs: Too big: expected number to be <=4`);
-  expect(() => n.parseSettings({ name: 5 })).toThrow("settings: name: ");
+  expect(() => n.parseSettings({ name: 5 })).toThrow(`settings: name: Invalid input: expected string, received number`);
   let message = "";
   try {
     n.parseSettings({ outs: 0, name: 5 });
@@ -80,6 +78,32 @@ test("refused settings say which field and why, in one line a planner error can 
     message = (e as Error).message;
   }
   expect(message.includes("\n")).toBe(false);
+});
+
+// The kernel node's settings are zod's until it goes (docs/modular-graph-phase-b3b-design.md section 7), so defineNode
+// still takes a zod schema, which has the same safeParse and toJSONSchema; and a zod field can lack a default, which
+// an `s` one cannot.
+test("a zod schema serves as settings too, and every field needs a default", () => {
+  const n = defineNode({
+    id: "rp.test.zod",
+    settings: z.object({ outs: z.number().int().min(1).max(4).default(2), mode: z.enum(["a", "b"]).default("a") }),
+    ports: (settings) => ({ out: events.out({ messages: settings.mode === "b" ? settings.outs : 1 }) }),
+    create: noop,
+  });
+  expect(n.parseSettings({ mode: "b", extra: 1 })).toEqual({ outs: 2, mode: "b" });
+  expect(n.layout(n.parseSettings({ mode: "b", outs: 3 })).ports[0].capacity).toEqual({ messages: 3 });
+  expect(() => n.parseSettings({ outs: 9 })).toThrow(`node type "rp.test.zod": settings: outs: Too big: expected number to be <=4`);
+  expect(n.descriptor().settings).toEqual({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    properties: {
+      outs: { default: 2, type: "integer", minimum: 1, maximum: 4 },
+      mode: { default: "a", type: "string", enum: ["a", "b"] },
+    },
+  });
+  expect(() => defineNode({ id: "rp.test.nodefault", settings: z.object({ rom: z.string() }), ports: {}, create: noop })).toThrow(
+    "needs a default (rom: Invalid input: expected string, received undefined)",
+  );
 });
 
 test("duplicate ids and bad enum defaults are rejected", () => {
@@ -205,8 +229,8 @@ test("an input's capacity is refused: a wire carries its source's queue", () => 
 test("a capacity a ports function computes from settings is checked as each layout is made", () => {
   const n = defineNode({
     id: "rp.test.sized",
-    settings: z.object({ messages: z.number().int().default(256) }),
-    ports: (s) => ({ out: events.out({ messages: s.messages }) }),
+    settings: s.object({ messages: s.int({ default: 256 }) }),
+    ports: (settings) => ({ out: events.out({ messages: settings.messages }) }),
     create: noop,
   });
   expect(n.descriptor().ports[0].capacity).toEqual({ messages: 256 });
@@ -236,16 +260,18 @@ test("metadata, params and settings are typed and readable as C++ reads them", (
   // a stray field is not emitted (C++ would drop it when it spells the descriptor back), a missing name is the id
   const stray = meta({ params: { b: { type: "bool", default: true, min: 3, foo: 1 } } })();
   expect(stray.params[0]).toEqual({ id: "b", name: "b", type: "bool", default: true });
-  expect(meta({ settings: z.object({ tag: z.string().default("\ud800") }) })).toThrow("lone surrogate");
+  expect(meta({ settings: s.object({ tag: s.string("\ud800") }) })).toThrow("lone surrogate");
   // an undefined member is no member, as canonicalJson (and so C++) sees it
   expect(meta({ ports: { in: { dir: "in", kind: "audio", channels: { any: true, count: undefined } } } })().ports[0].channels).toEqual({ any: true, count: undefined });
   expect(meta({ ports: { r: resource.in("audio buffer") } })).toThrow("resourceType");
-  expect(() => defineNode({ id: "rp.test.rootless", settings: z.number() as never, ports: {}, create: noop })).toThrow("needs a default (");
+  expect(() => defineNode({ id: "rp.test.rootless", settings: s.number(0) as never, ports: {}, create: noop })).toThrow(
+    "needs a default (Invalid input: expected number, received object)",
+  );
 });
 
 test("how the script host runs a node is the definition's, never its descriptor's", () => {
-  const settings = z.object({ outs: z.number().int().min(1).max(4).default(1) });
-  const ports = (s: { outs: number }) => Object.fromEntries(Array.from({ length: s.outs }, (_, i) => [`out${i + 1}`, events.out()]));
+  const settings = s.object({ outs: s.int({ min: 1, max: 4, default: 1 }) });
+  const ports = (o: { outs: number }) => Object.fromEntries(Array.from({ length: o.outs }, (_, i) => [`out${i + 1}`, events.out()]));
   const kept = defineNode({
     id: "rp.test.kept",
     reshapes: true,

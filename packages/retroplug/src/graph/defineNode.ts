@@ -9,11 +9,12 @@
 //   });
 //
 // Settings are validated on the CONTROL plane (parseSettings), so the code that runs on the audio thread
-// receives a plain, already-checked object. zod is imported for its types only: the schema a definition
-// carries brings its own toJSONSchema, so a bundle holding just a node's create/process need not hold zod.
-import type { z } from "zod";
+// receives a plain, already-checked object. A definition's settings are any SettingsSchema, which brings its own
+// safeParse and toJSONSchema: an `s` schema (settingsSchema.ts), which holds no zod, or a zod one, which has the same
+// two methods. defineNode imports only their types, so a bundle holds zod only when a node it carries does.
 import { plainId, wellFormed } from "./descriptor";
 import type { ChannelSpec, Layout, ParamDesc, PortDesc, QueueCapacity, TypeDescriptor } from "./descriptor";
+import type { SettingsIssue, SettingsSchema } from "./settingsSchema";
 
 // ---- ports ------------------------------------------------------------------------------------------------
 
@@ -204,7 +205,7 @@ export interface CreateContext<S> {
   /** What parseSettings returned, in its JSON form: the settings are checked on the control side and cross to
    *  the runtime that runs the node as JSON (the two share no value), so a transform whose result JSON cannot
    *  hold (a Map, a Set, a Date, undefined) arrives as JSON spells it. The node's side never runs the schema,
-   *  so it needs no zod and does no checking at a plan swap. */
+   *  so it does no checking at a plan swap. */
   settings: S;
   sampleRate: number;
   maxFrames: number;
@@ -221,7 +222,7 @@ export interface NodeDefinition<S> {
   name?: string;
   category?: string;
   requires?: { heap?: boolean; threads?: boolean };
-  settings?: z.ZodType<S>;
+  settings?: SettingsSchema<S>;
   ports: PortMap | ((settings: S) => PortMap);
   params?: ParamMap | ((settings: S) => ParamMap);
   exclusive?: string[][];
@@ -240,8 +241,8 @@ export interface NodeDefinition<S> {
 }
 
 export interface DefinedNode<S> extends NodeDefinition<S> {
-  /** Settings checked on the control plane: defaults filled, and a refusal thrown as zod's first issue on one line
-   *  (`field: why`), not zod's own message. */
+  /** Settings checked on the control plane: defaults filled, and a refusal thrown as the schema's first issue on one
+   *  line (`field: why`), not every issue as zod's own message spells them. */
   parseSettings(raw: unknown): S;
   /** The resolved layout for these (already-parsed) settings. */
   layout(settings: S): Layout;
@@ -417,7 +418,7 @@ function allWellFormed(v: unknown): boolean {
 
 // The INPUT schema: what a document may write (defaulted fields optional, extra keys allowed), which is
 // what C++'s DefaultIfMissing schema says too. zod's default, the output schema, would mark every
-// defaulted field required.
+// defaulted field required; an `s` schema has the input form alone.
 function settingsSchema<S>(def: NodeDefinition<S>): Record<string, unknown> {
   const schema = def.settings!.toJSONSchema({ io: "input" }) as Record<string, unknown>;
   if (!allWellFormed(schema)) throw new Error(`node type ${q(def.id)}: the settings schema holds a lone surrogate, which C++ cannot read`);
@@ -480,7 +481,7 @@ export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): D
   checkMetadata(def);
   // The first issue, on one line, as `field: why`: what the planner reports (settings-invalid) and a node's
   // rp_error can carry, where zod's own message is every issue as indented JSON.
-  const firstIssue = (error: z.ZodError): string => {
+  const firstIssue = (error: { issues: readonly SettingsIssue[] }): string => {
     const issue = error.issues[0];
     return `${issue?.path.length ? `${issue.path.join(".")}: ` : ""}${issue?.message ?? "invalid"}`;
   };
