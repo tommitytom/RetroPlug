@@ -114,8 +114,8 @@ with the fixtures present and `RP_FAIL_ON_SKIP=1`.
   short of it not; a byte after the stop opening a fresh run; the 0xFC landing in the first block that starts more
   than 200 ms after the last byte; the silence in time, not frames (one length is a stop at one rate and not at
   another); leaving master sync and coming back starting clean. And one timeline cut into 1-frame, `FL_RAGGED`,
-  `FL_BUFFER`, 1024- and 8192-frame blocks decoding to the identical message sequence, and a second whose silences end
-  inside one call (no 4096- or 8192-frame block start between a silence's 200 ms mark and the byte that ends it), cut
+  `FL_BUFFER`, 1024- and 8192-frame blocks decoding to the identical message sequence, and a second with a silence
+  that ends inside one call (no 4096- or 8192-frame block start between its 200 ms mark and the byte that ends it), cut
   the same ways and into 4096-frame blocks, likewise.
 - **Kernel.** A kernel-level case shows `SerialOutEvent` frames reaching `ctx.serialOutFrames`;
   [kernel-node.test.ts](../packages/retroplug/test/script/kernel-node.test.ts) shows `blockInput` handing the frames
@@ -149,8 +149,8 @@ Each goes through review.
 ## 10. Limits accepted in review
 
 - **A live switch from MI.OUT to master sync** can decode the one block captured under `drive` before the capture
-  flips as clocks: master sync sends a NoteOn, 0xFA and clocks for it, then 0xFC 200 ms on. Accepted, since it needs a
-  user's mode switch on an LSDj set to the other SYNC mode.
+  flips as clocks: master sync sends a NoteOn, 0xFA and clocks for it, then the real run's clocks, or 0xFC 200 ms on
+  if none follow. Accepted, since it needs a user's mode switch on an LSDj set to the other SYNC mode.
 - **Only the fixture-only LSDj tests prove `listen` captures a self-clocked byte**
   ([lsdj-mastersync.test.ts](../packages/retroplug/test-native/lsdj-mastersync.test.ts) and the master-sync parity
   cases). CI checks the modes on the wire and that `listen` never clocks (mGB, section 7).
