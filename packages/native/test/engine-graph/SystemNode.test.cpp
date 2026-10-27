@@ -741,6 +741,37 @@ TEST_CASE("a Game Boy whose capture listens is never clocked: mGB, waiting on an
     }
 }
 
+TEST_CASE("a capture-mode switch drops the Game Boy's half-assembled serial-out byte, and a same-mode call keeps it",
+          "[engine-graph][system-node][inputs]") {
+    // Drive clocks mGB's port a bit an audio frame, so a block whose length is not a multiple of eight ends with a
+    // byte part-assembled. Kept across a switch, those bits would make every later byte straddle two transfers; the
+    // store re-sends the mode on every lsdj-sync config edit, which must leave MI.OUT's partial byte alone.
+    NodeRig rig(kRate);
+    auto core = mgb(1);
+    core->setSerialOutCapture(SerialOutCapture::Drive);
+    SameBoySystem* const gb = core.get();
+    REQUIRE(rig.set(R"({"nodes":[{"id":"gb","type":"rp.sameboy.gb","settings":{"core":)" + std::to_string(rig.park(std::move(core))) +
+                    R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                        "wires":[{"from":"gb.mix","to":"out.out.1-2"}]})")
+                .ok);
+    Lanes graph(2);
+    const rp_transport t{kRate, 120.0, 0.0, 0};
+    bool partial = false;
+    for (std::size_t b = 0; b < 160 && !partial; ++b) {
+        rig.host->processBlock(kBlocks[b % kBlocks.size()], t, graph.ptrs.data(), 2);
+        partial = gb->serialOutBits_ != 0;
+    }
+    REQUIRE(partial);
+    const std::uint8_t byte = gb->serialOutByte_;
+    const int bits = gb->serialOutBits_;
+    gb->setSerialOutCapture(SerialOutCapture::Drive);
+    CHECK(gb->serialOutByte_ == byte);
+    CHECK(gb->serialOutBits_ == bits);
+    gb->setSerialOutCapture(SerialOutCapture::Listen);
+    CHECK(gb->serialOutByte_ == 0);
+    CHECK(gb->serialOutBits_ == 0);
+}
+
 TEST_CASE("a system node records what its bytes input feeds the core in the engine's sync trace", "[engine-graph][system-node][inputs]") {
     // As the kernel stage recorded its core-bytes sink: the bytes input only, an empty message skipped, and a long
     // MIDI message (which also goes down the core's byte path) not at all.

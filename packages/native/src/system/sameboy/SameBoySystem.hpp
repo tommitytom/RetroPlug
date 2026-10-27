@@ -161,8 +161,18 @@ public:
     // Set serial-out capture's mode. The host drives it through this (the TS
     // store picks it from a system's lsdj-sync mode: Drive for MI.OUT, Listen for
     // master sync). Stays set across a model-change restart (onActivate no
-    // longer clears it).
-    void setSerialOutCapture(SerialOutCapture mode) { serialOutCapture_ = mode; }
+    // longer clears it). A switch drops the half-assembled byte: Drive clocks
+    // continuously, so a switch lands mid-byte 7 times in 8, and the old mode's
+    // bits would leave every later byte straddling two transfers. A same-mode
+    // call keeps them, since the store re-sends the mode on every lsdj-sync
+    // config edit and MI.OUT's partial byte must survive that.
+    void setSerialOutCapture(SerialOutCapture mode) {
+        if (mode != serialOutCapture_) {
+            serialOutByte_ = 0;
+            serialOutBits_ = 0;
+        }
+        serialOutCapture_ = mode;
+    }
     void captureSerialOutBit(bool bit);
 
     // TODO: Not a fan of the public vars
