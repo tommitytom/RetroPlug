@@ -60,12 +60,18 @@ const lsdj = (mode: string, tempoDivisor = 1, autoStart = false): RoleInstance =
 /** A song of sixteen one-phrase rows on every channel, as the control plane derives the table from a battery. */
 const ROW_TICKS = [0, 1, 2, 3].map(() => Array.from({ length: 16 }, () => 96));
 
-/** The lsdj-midimap app for `systemId` (0 for the first system), its config as the app's schema parses it. */
-const launchpad = (target: ControllerTarget, systemId: number, over: Partial<GraphController> = {}): GraphController => ({
+/** The lsdj-midimap app for `systemId` (0 for the first system), quantised to `quantise`, its config as the app's
+ *  schema parses it. */
+const launchpad = (
+  target: ControllerTarget,
+  systemId: number,
+  quantise = "bar",
+  over: Partial<GraphController> = {},
+): GraphController => ({
   app: "lsdj-midimap",
   target,
   systemId,
-  appConfig: { quantise: "bar", follow: true, page: 0 },
+  appConfig: { quantise, follow: true, page: 0 },
   songRowTicks: ROW_TICKS,
   anchor: null,
   cartSync: null,
@@ -107,7 +113,7 @@ const CASES: Case[] = [
   // A chosen cart whose own SYNC is not MI.MAP: its lsdj-sync is forced off.
   {
     name: "controller/system/chosen-cart-off",
-    model: model([gb(1, [lsdj("midiSync")]), gb(2, [lsdj("midiMap")])], { controller: launchpad("system", 2, { cartSync: "Lsdj" }) }),
+    model: model([gb(1, [lsdj("midiSync")]), gb(2, [lsdj("midiMap")])], { controller: launchpad("system", 2, "bar", { cartSync: "Lsdj" }) }),
   },
   // Launches out of the host to a real Game Boy: rp.host.midi-out takes the controller's input first, under system 2,
   // then each LSDj's in slot order.
@@ -139,6 +145,74 @@ const CASES: Case[] = [
     model: model([nes(1, [N8]), nes(2, [N8, RISA]), sms(3, [smsSync("gg")])], { shape: { kind: "perSystem" } }),
   },
 ];
+
+// ---- the protocol rig's structures ---------------------------------------------------------------------------------
+//
+// packages/native/test/engine-graph/ProtocolNodes.test.cpp, the equivalence rig, plans each case named "rig/<name>" by
+// its name, as buildGraph built it but for its systems, which probes and feeds stand in for, and its audio, which it
+// leaves out. So the per-role graph the rig holds to the DSP kernel's recorded digests is the one buildGraph builds, and
+// a change to buildGraph's wiring for these structures fails this file until re-recorded, then the rig if it moves what
+// reaches a system or the host. Each structure is the one the rig's cases describe, which say where each is used.
+
+const RIG_CASES: Case[] = [];
+const rig = (name: string, systems: GraphSystem[], midiRouting: GraphModel["midiRouting"], controller: GraphController | null = null) =>
+  RIG_CASES.push({ name: `rig/${name}`, model: model(systems, { midiRouting, controller }) });
+
+// mGB and the N8, under each routing.
+for (const mode of ["sendToAll", "oneChannelPerInstance", "midiChannelToInstance", "fourChannelsPerInstance"] as const)
+  rig(`mgb-and-n8/${mode}`, [gb(1, [MGB]), nes(2, [N8])], mode);
+// An LSDj in each sync mode.
+rig(
+  "lsdj-modes",
+  [
+    gb(1, [lsdj("midiSync", 1, true)]),
+    gb(2, [lsdj("midiSync", 2)]),
+    gb(3, [lsdj("midiSyncArduinoboy", 1, true)]),
+    gb(4, [lsdj("midiMap")]),
+    gb(5, [lsdj("keyboardMidi")]),
+    gb(6, [lsdj("midiPassthrough")]),
+    gb(7, [lsdj("midiOut")]),
+    gb(8, [lsdj("masterSync")]),
+    gb(9, [lsdj("off")]),
+  ],
+  "sendToAll",
+);
+// A NES on the N8 and risa, smsggdj on an SMS and on a Game Gear.
+rig("risa-and-sms", [nes(1, [N8, RISA]), sms(2, [smsSync("sms")]), sms(3, [smsSync("gg")])], "sendToAll");
+// A controller on Game Boy 7, quantised to the bar, driving its cart's MI.MAP or a real Game Boy, beside one decoding
+// MI.OUT.
+for (const target of ["system", "midiOut"] as const)
+  rig(`controller/${target}`, [gb(7, [lsdj("midiMap")]), gb(8, [lsdj("midiOut")])], "sendToAll", launchpad(target, 7));
+// A controller on the first system, launching at once, beside an LSDj decoding MI.OUT and a master.
+for (const target of ["system", "midiOut"] as const)
+  rig(
+    `controller-orders/${target}`,
+    [gb(1, [lsdj("midiMap")]), gb(2, [lsdj("midiOut")]), gb(3, [lsdj("masterSync")])],
+    "sendToAll",
+    launchpad(target, 0, "immediate"),
+  );
+// Structure changes: two LSDj clocks and mGB, a NES added, the Arduinoboy removed and added again at the end, the first
+// LSDj's clock divided with the order changed under positional routing, everything removed, and mGB back alone.
+const STATE_LSDJ = gb(1, [lsdj("midiSync")]);
+const STATE_MGB = gb(2, [MGB]);
+const STATE_ARDUINOBOY = gb(3, [lsdj("midiSyncArduinoboy")]);
+const STATE_NES = nes(4, [N8, RISA]);
+rig("state/first", [STATE_LSDJ, STATE_MGB, STATE_ARDUINOBOY], "sendToAll");
+rig("state/nes-added", [STATE_LSDJ, STATE_MGB, STATE_ARDUINOBOY, STATE_NES], "sendToAll");
+rig("state/arduinoboy-removed", [STATE_LSDJ, STATE_MGB, STATE_NES], "sendToAll");
+rig("state/arduinoboy-again", [STATE_LSDJ, STATE_MGB, STATE_NES, STATE_ARDUINOBOY], "sendToAll");
+rig("state/divided-and-reordered", [gb(1, [lsdj("midiSync", 4)]), STATE_ARDUINOBOY, STATE_NES, STATE_MGB], "oneChannelPerInstance");
+rig("state/mgb-alone", [STATE_MGB], "sendToAll");
+// No system at all.
+rig("empty", [], "sendToAll");
+// mGB on either side of an LSDj, whose node the throw case makes throw.
+rig("throw", [gb(1, [MGB]), gb(2, [lsdj("midiSync")]), gb(3, [MGB])], "sendToAll");
+// What the restructuring stress case cycles through, with "empty".
+rig("stress/lsdj-and-nes", [gb(1, [lsdj("midiSync")]), nes(2, [N8, RISA])], "sendToAll");
+rig("stress/controller", [gb(1, [lsdj("midiMap")]), nes(2, [N8, RISA]), gb(3, [MGB])], "sendToAll", launchpad("system", 1));
+rig("stress/mgb-by-channel", [gb(3, [MGB])], "oneChannelPerInstance");
+
+CASES.push(...RIG_CASES);
 
 // ---- the file ------------------------------------------------------------------------------------------------------
 

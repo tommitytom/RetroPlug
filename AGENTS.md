@@ -42,7 +42,7 @@ The rules below are the parts that don't fit those.
   TS nodes run behind the C ABI in the script host (B3a,
   [docs/modular-graph-phase-b3a-design.md](docs/modular-graph-phase-b3a-design.md)): marshalling, reshape,
   creation and release on the block thread, throws; the protocol script nodes (B3b: the MIDI routing, a
-  controller session and each role's protocol node, wired as `buildGraph` wires them,
+  controller session and each role's protocol node, in the documents `buildGraph` builds, read from its role goldens,
   `test/engine-graph/ProtocolNodes.test.cpp`) send exactly the digests the DSP kernel they replaced was recorded
   sending, a throw stopping only its own node the one difference, checked; and every document in `buildGraph`'s
   goldens, handed to the engine with real cores, plans and runs with no node faulting, no script node throwing and
