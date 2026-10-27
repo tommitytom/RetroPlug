@@ -37,7 +37,9 @@ struct RomModel {
     Bytes        buf;
     std::vector<Bytes> applied;
 
-    void bad() { st = Idle; dirty = true; }
+    // A frame damaged after its seq: the ROM reports the frame it expects as the last one read, since a damaged
+    // frame's seq cannot be trusted (frame_hdr's damaged exit).
+    void bad() { if (st == InMsg || st == WantSum) last = next; st = Idle; dirty = true; }
 
     void byte(std::uint8_t b) {
         if (b >= 0xF8) return;                                          // real-time: skipped (0xFF panic not modelled)
@@ -62,8 +64,8 @@ struct RomModel {
                 return;
             case WantSum:
                 if (b & 0x80) { bad(); byte(b); return; }
+                if (b != (sum & 0x7F)) { bad(); return; }              // the sum does not match: damaged
                 st = Idle;
-                if (b != (sum & 0x7F)) { dirty = true; return; }
                 if (!linkOn) { linkOn = true; next = seq; }
                 if (seq != next) { dirty = true; return; }
                 applied.push_back(buf);
@@ -340,4 +342,102 @@ TEST_CASE("reliable link: an ack after a frame arrived settles it - no re-send",
     now = 500'000'000; s.poll(now, emit);
     CHECK(wire.empty());
     CHECK(s.outstanding() == 0);
+}
+
+TEST_CASE("reliable link: the emulated role numbers frames in the order it releases them", "[audio][nes][link]") {
+    // A ROM already mid-stream (one frame applied) gets three messages queued out of offset order within one block:
+    // onMidi at 100, a raw pushBytes SysEx at 20, onMidi at 50. pumpUntil releases by offset, so the sequence numbers
+    // must follow that order - numbered in queue order instead, the ROM drops the early arrivals as out of sequence,
+    // applies them late and out of order, and the sender has to re-send them.
+    NesN8FifoRole role;
+    std::uint64_t cycles = 0;
+    role.setClock([&cycles] { return cycles; }, 1'789'773.0);
+    N8ReliableSender::Timing t;
+    t.resendDelayNs = 0;
+    role.enableLink(t);
+
+    // The ROM reads everything delivered so far, then answers on the back-channel as the cart does (CMD_USB_WR).
+    RomModel rom;
+    Bytes got;
+    auto romReads = [&] {
+        for (int v; (v = role.readFifoByte()) >= 0;) {
+            got.push_back(static_cast<std::uint8_t>(v));
+            rom.byte(static_cast<std::uint8_t>(v));
+        }
+        Bytes ack;
+        if (!rom.ack(ack)) return;
+        const Bytes cmd = { '+', std::uint8_t('+' ^ 0xFF), 0x22, std::uint8_t(0x22 ^ 0xFF),
+                            std::uint8_t(ack.size()), 0 };
+        for (auto v : cmd) role.writeFifoByte(v);
+        for (auto v : ack) role.writeFifoByte(v);
+    };
+
+    ::MidiEvent prime{};
+    prime.frame = 0; prime.size = 3; prime.data[0] = 0x92; prime.data[1] = 64; prime.data[2] = 80;
+    role.onMidi(&prime, 1);
+    role.pumpUntil(0);
+    romReads();
+    REQUIRE(rom.applied.size() == 1);
+    REQUIRE(role.link()->outstanding() == 0);
+    rom.applied.clear();
+    got.clear();
+    role.rebase(512);
+
+    ::MidiEvent a{};
+    a.frame = 100; a.size = 3; a.data[0] = 0x90; a.data[1] = 60; a.data[2] = 100;
+    role.onMidi(&a, 1);
+    const Bytes sysex = { 0xF0, 0x7D, 0x42, 0x02, 0xF7 };
+    role.pushBytes(20, sysex.data(), sysex.size());
+    ::MidiEvent b{};
+    b.frame = 50; b.size = 3; b.data[0] = 0x91; b.data[1] = 62; b.data[2] = 90;
+    role.onMidi(&b, 1);
+
+    for (std::uint32_t off : { 20u, 50u, 100u }) {
+        role.pumpUntil(off);
+        romReads();
+        cycles += 1000;
+    }
+    CHECK(got == cat({ frame(1, sysex), frame(2, { 0x91, 62, 90 }), frame(3, { 0x90, 60, 100 }) }));
+
+    // Well past the sender's timeout: anything still unconfirmed would be re-sent here.
+    cycles += 1'789'773 / 2;
+    role.pumpUntil(512);
+    romReads();
+
+    REQUIRE(rom.applied.size() == 3);
+    CHECK(rom.applied[0] == sysex);
+    CHECK(rom.applied[1] == Bytes{ 0x91, 62, 90 });
+    CHECK(rom.applied[2] == Bytes{ 0x90, 60, 100 });
+    CHECK(role.link()->outstanding() == 0);
+    CHECK(role.link()->resends() == 0);
+}
+
+TEST_CASE("reliable link: a message carried into the next block is numbered when it is released", "[audio][nes][link]") {
+    // A message queued past the block end rides rebase into the next block. One queued there for an EARLIER offset
+    // goes out first, so it must carry the earlier sequence number - framing at the carried message's first pump would
+    // have numbered it first, and the ROM would drop it.
+    NesN8FifoRole role;
+    std::uint64_t cycles = 0;
+    role.setClock([&cycles] { return cycles; }, 1'789'773.0);
+    N8ReliableSender::Timing t;
+    t.resendDelayNs = 0;
+    role.enableLink(t);
+
+    constexpr std::uint32_t kBlock = 512;
+    ::MidiEvent late{};
+    late.frame = kBlock + 100; late.size = 3; late.data[0] = 0x90; late.data[1] = 60; late.data[2] = 100;
+    role.onMidi(&late, 1);
+    role.pumpUntil(kBlock);
+    CHECK(role.readFifoByte() < 0);   // not due this block
+    role.rebase(kBlock);
+
+    ::MidiEvent early{};
+    early.frame = 20; early.size = 3; early.data[0] = 0x91; early.data[1] = 62; early.data[2] = 90;
+    role.onMidi(&early, 1);
+    Bytes got;
+    for (std::uint32_t off : { 20u, 100u }) {
+        role.pumpUntil(off);
+        for (int v; (v = role.readFifoByte()) >= 0;) got.push_back(static_cast<std::uint8_t>(v));
+    }
+    CHECK(got == cat({ { 0xF4, 0 }, frame(0, { 0x91, 62, 90 }), frame(1, { 0x90, 60, 100 }) }));
 }

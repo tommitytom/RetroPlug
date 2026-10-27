@@ -92,7 +92,8 @@ public:
     // sample offset. The queue is stable-sorted by offset on the first call after any enqueue (all
     // enqueuing happens before the step loop), so bytes released front-first are in true sample order
     // even when two feeds (MIDI + raw) interleave out of enqueue order — subsequent calls are a plain
-    // front-drain.
+    // front-drain. With the reliable link on, each message is framed here as it is released, so the
+    // sequence numbers follow the order they are released.
     void pumpUntil(std::uint32_t sampleOffset);
 
     // Audio-thread: at block end, shift still-queued offsets back by `frames` so a byte that didn't
@@ -119,7 +120,7 @@ public:
 
     // Drop all queued (not-yet-delivered) bytes — on reset, to avoid stale MIDI after a state change. With the link
     // on, its window goes too and the next frame is preceded by a sync: the ROM's sequence may no longer be ours.
-    void clear() { pending_.clear(); needsSort_ = false; if (link_) { link_->reset(); linkDueCycle_ = kNoDue; } }
+    void clear() { pending_.clear(); pendingMsgs_.clear(); needsSort_ = false; if (link_) { link_->reset(); linkDueCycle_ = kNoDue; } }
 
     // Drop BOTH queues: the not-yet-delivered bytes AND the delivered-but-unread ones sitting in the
     // FIFO's RX queue. `clear()` alone leaves the latter, which the ROM would still read. Used on a
@@ -128,6 +129,7 @@ public:
     void flushAll() { clear(); fifo_.clearRx(); }
 
     // Introspection / tests.
+    // Queued raw BYTES; link-mode messages wait unframed in pendingMsgs_ and are not counted (no caller needs them).
     std::size_t pendingCount() const { return pending_.size(); }
     std::size_t fifoRxCount() { return fifo_.rxCount(); }
     // Write a byte to the FIFO as the ROM would (STA $40F0) - an Edio command to the MCU, e.g. a CMD_USB_WR ack.
@@ -142,9 +144,17 @@ private:
     struct PendingByte {
         std::uint32_t offset;   // samples from block start
         std::uint8_t  byte;
-        int           seq = -1; // >= 0: the first byte of reliable-link frame `seq` (onSent when released)
     };
     std::deque<PendingByte> pending_;
+    // Link mode: whole messages wait here unframed, sorted by offset like the bytes, and pumpUntil frames each as it
+    // releases it - so the sequence numbers follow release order, not the order the feeds queued them.
+    // Invariant: in link mode pending_ stays empty (both feeds go here), so pumpUntil's raw-then-messages drain order
+    // never matters. A mid-stream enableLink (bytes already in pending_) would need to revisit that.
+    struct PendingMsg {
+        std::uint32_t             offset;
+        std::vector<std::uint8_t> bytes;
+    };
+    std::deque<PendingMsg>  pendingMsgs_;
     bool                    needsSort_ = false;  // set on enqueue; pumpUntil stable-sorts by offset once
     rp::NesEverdriveFifo    fifo_;
 
