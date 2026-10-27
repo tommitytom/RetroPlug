@@ -63,6 +63,8 @@ which is a likely cause of B0's seventh defect (MI.OUT's decoded notes depend on
 
 - `serialStart`, the internal-clock path, captures under `Listen` and `Drive` (it captured whenever the flag was on).
 - `writeAudioSample`'s external-clock path runs under `Drive` only.
+- A switch to another mode drops the byte half-assembled under the old one (a same-mode call keeps it, so MI.OUT's
+  partial byte survives the store re-sending the mode on every lsdj-sync edit).
 
 On the wire the mode is a string, `"listen"` or `"drive"`, absent for off, parsed in one place on the native side:
 
