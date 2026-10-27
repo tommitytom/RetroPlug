@@ -1,7 +1,7 @@
 // The protocol script nodes (docs/modular-graph-phase-b3b-design.md section 2): the MIDI routing, a controller session
 // and each system's protocol nodes, as buildGraph places them, of the production script bundle in a plan, fed by the
-// host I/O nodes and a stand-in for the Game Boys' serialOut, what reaches every system input read back by probes, block
-// by block.
+// host I/O nodes and a stand-in for the Game Boys' serialOut, what reaches every system input read back by probes,
+// block by block.
 //
 // Each structure's document is buildGraph's own: the case of its name among buildGraph's role goldens
 // (packages/retroplug/test/graph/golden/build-graph-roles.json, its "rig/" cases, recorded from and held to buildGraph
@@ -13,30 +13,39 @@
 // wire a Game Boy's MI.OUT comes back on, whose feed here is a plain wire carrying what the core captured last block.
 // Nor any model but these, or what the stores hand buildGraph.
 //
-// Each case is held to the values the DSP kernel those nodes replaced was recorded sending: the messages of each kind,
-// and a digest of all of them (per block, per system and input, each message's frame, flags and bytes in order; the
-// host MIDI out with its system tags in emission order; the control-surface out). A digest hashes what reaches each
-// system input and the host outputs, never which node sent it, so a split of the kernel's work over nodes is held to
-// what the kernel sent: that is B3b's proof, bit for bit, that splitting the kernel changed nothing a core or the host
-// can see. The values have a history. The kernel node (B3a) was run beside the native kernel stage it replaced and
-// found equal to it block by block, from c323c7a8 to e3de2e46, the last commit before the stage's deletion; the B3a
-// prototype recorded the values from the same cases, and they held as recorded. One was re-recorded since: the LSDj
-// modes case, when master sync's stop became a silence rather than a flood (docs/lsdj-master-sync-fix-design.md). One
-// case came after the stage had gone, recorded from the kernel node alone: the controller's launches behind routed MIDI
-// and its host MIDI out ahead of the systems', two orders no earlier case sends a message through. Then, until B3b
-// deleted the kernel node (from the commit that held its recorded digests on the per-role graph too, to the flip that
-// had buildGraph place that graph), every case ran on both, the kernel node's graph and this one, each held to the same
-// values. So a changed value is a change to what reaches a core or the host: a deliberate one is
-// re-recorded from the values a failing case prints.
+// A case that ends in rig.matches is held to the values the DSP kernel those nodes replaced was recorded sending: the
+// messages of each kind, and a digest of all of them (per block, per system and input, each message's frame, flags and
+// bytes in order; the host MIDI out with its system tags in emission order; the control-surface out). A digest hashes
+// what reaches each system input and the host outputs, never which node sent it, so a split of the kernel's work over
+// nodes is held to what the kernel sent. That is B3b's proof, bit for bit, that splitting the kernel changed nothing a
+// core or the host can see in those cases, and in no others. The design's section 9 lists where the per-role graph
+// behaves otherwise than the kernel did: among them a node's state keyed by its role's kind, so a role removed and
+// added again on a surviving system starts afresh; the controller's default target following a change of first system;
+// its session rebuilt on a change to its parsed config rather than its raw one; its launches going only into an
+// lsdj-sync node; a config read with its defaults filled. No case here sends a message through any of those; the throw
+// is the one difference a case reaches, below.
+//
+// The values have a history. The kernel node (B3a) was run beside the native kernel stage it replaced and found equal
+// to it block by block, from c323c7a8 to e3de2e46, the last commit before the stage's deletion; the B3a prototype
+// recorded the values from the same cases, and they held as recorded. One was re-recorded since: the LSDj modes case,
+// when master sync's stop became a silence rather than a flood (docs/lsdj-master-sync-fix-design.md). One case came
+// after the stage had gone, recorded from the kernel node alone: the controller's launches behind routed MIDI and its
+// host MIDI out ahead of the systems', two orders no earlier case sends a message through, which the stage-era proof
+// therefore never reached. Then, until B3b deleted the kernel node (from the commit that held its recorded digests on
+// the per-role graph too, to the flip that had buildGraph place that graph), every case ran on both, the kernel node's
+// graph and this one, each held to the same values. So a changed value is a change to what reaches a core or the host:
+// a deliberate one is re-recorded from the values a failing case prints. The other cases, which came after the kernel
+// or record nothing, check what they hold directly: a block that fills rp.host.midi-in, a controller's session kept
+// through a system added behind it, and the restructuring under an audio thread.
 //
 // A serial input is counted and hashed byte by byte, each byte as the one-byte message (its frame, flags 0, one byte)
 // the kernel node sent when the values were recorded: a node sends a run of same-frame bytes as one message, which the
 // system node applies byte by byte at its frame, so where a run breaks, which no core can see, moves no value. Every
 // other input is hashed message for message.
 //
-// Where the per-role graph differs from the kernel by design (the design's section 5: a throw stops only the node it is
-// in), the case says so, checks what the per-role graph does instead, and the digest takes that one difference as the
-// kernel had it.
+// Where a case reaches a difference from the kernel by design (the throw: it stops only the node it is in, design
+// section 5), the case says so, checks what the per-role graph does instead, and the digest takes the one input that
+// differs as the kernel had it.
 //
 // Last, the graph runs on an audio thread while the control thread restructures it, for the thread sanitizer.
 //
@@ -363,9 +372,10 @@ struct ProtocolRig {
     int                               blocks = 0;
     Sent                              sent;
     Digest                            digest;
-    // Systems whose output the next block's digest takes as the kernel sent it, nothing, where the per-role graph sends
-    // some by design: a case sets it for one block, and checks what the per-role graph sent instead.
-    std::vector<std::uint32_t>        unsentByKernel;
+    // System inputs (a system and an input's name) whose messages the next block's digest takes as the kernel sent
+    // them, none, where the per-role graph sends some by design: a case sets it for one block, and checks what the
+    // per-role graph sent instead.
+    std::vector<std::pair<std::uint32_t, std::string>> unsentByKernel;
 
     // The node types the script bundle registers: a document's script nodes are its nodes of these.
     std::set<std::string>             scriptTypes;
@@ -404,9 +414,9 @@ struct ProtocolRig {
     ~ProtocolRig() { host.reset(); }
 
     // A structure change, as the stores publish one: each node kept through a swap or a reshape. Every script node the
-    // next structure places that is placed now keeps its instance; and once the replaced plan is reclaimed, the instances
-    // live are the nodes placed, one each, so a node placed anew (a system added, or removed and added again) is a new
-    // instance and one no longer placed is gone.
+    // next structure places that is placed now keeps its instance; and once the replaced plan is reclaimed, the
+    // instances live are the nodes placed, one each, so a node placed anew (a system added, or removed and added again)
+    // is a new instance and one no longer placed is gone.
     void restructure(Structure next) {
         std::map<std::string, rp_node*> placed;
         for (const std::string& id : scriptNodes(next)) placed[id] = host->node(id);  // null for one placed anew
@@ -449,8 +459,8 @@ struct ProtocolRig {
         return *t;
     }
 
-    // One block: what the host staged, each Game Boy's MI.OUT a byte a message at its frame as its serialOut carries it,
-    // then the block as the engine runs it (the host outputs cleared first, as the engine clears them), and every
+    // One block: what the host staged, each Game Boy's MI.OUT a byte a message at its frame as its serialOut carries
+    // it, then the block as the engine runs it (the host outputs cleared first, as the engine clears them), and every
     // output recorded.
     void block(const BlockIn& in) {
         stagedMidi = in.midi;
@@ -488,13 +498,16 @@ struct ProtocolRig {
         static const std::vector<Message> none;
         for (const std::uint32_t id : structure.systems) {
             digest.u32(id);
-            const bool unsent = std::find(unsentByKernel.begin(), unsentByKernel.end(), id) != unsentByKernel.end();
+            const auto unsent = [&](const char* input) {
+                return std::find(unsentByKernel.begin(), unsentByKernel.end(), std::make_pair(id, std::string(input))) !=
+                       unsentByKernel.end();
+            };
             const Probe& in = node<Probe>("in-" + std::to_string(id));
             const Probe& io = node<Probe>("io-" + std::to_string(id));
-            const std::vector<Message> serialIn = unsent ? none : serialBytes(in.bytes);  // a byte a message, as when recorded
-            const std::vector<Message>& midi = unsent ? none : in.events;
-            const std::vector<Message>& bytes = unsent ? none : io.bytes;
-            const std::vector<Message>& buttons = unsent ? none : io.events;
+            const std::vector<Message> serialIn = unsent("serialIn") ? none : serialBytes(in.bytes);  // a byte a message
+            const std::vector<Message>& midi = unsent("midi") ? none : in.events;
+            const std::vector<Message>& bytes = unsent("bytes") ? none : io.bytes;
+            const std::vector<Message>& buttons = unsent("buttons") ? none : io.events;
             for (const auto* ms : {&serialIn, &midi, &bytes, &buttons}) digest.messages(*ms);
             sent.serialIn += static_cast<int>(serialIn.size());
             sent.midi += static_cast<int>(midi.size());
@@ -602,9 +615,9 @@ TEST_CASE("the per-role graph hands every system its host MIDI, under every rout
 TEST_CASE("the per-role graph forwards a block that fills rp.host.midi-in, all of it, to a Game Boy's serial port and a NES",
           "[engine-graph][protocol-nodes]") {
     // The one place host MIDI is dropped is rp.host.midi-in's output: every output that forwards it on (a routing
-    // output, mGB's serial in, a NES's MIDI) holds at least as much. So a block that fills it to the message and the byte (two dense curves, a CC and a pitch bend,
-    // notes, and a SysEx, a wave upload, taking the rest of the bytes) reaches mGB's serial input byte for byte and the
-    // NES's MIDI message for message.
+    // output, mGB's serial in, a NES's MIDI) holds at least as much. So a block that fills it to the message and the
+    // byte (two dense curves, a CC and a pitch bend, notes, and a SysEx, a wave upload, taking the rest of the bytes)
+    // reaches mGB's serial input byte for byte and the NES's MIDI message for message.
     using rp::host::kHostMidiInBytes;
     using rp::host::kHostMidiInMessages;
     constexpr std::uint32_t kFrames = 8192;
@@ -717,9 +730,10 @@ TEST_CASE("the per-role graph drives risa and smsggdj host sync, and a NES's hos
 }
 
 TEST_CASE("the per-role graph runs a controller session: its surface, its launches, its LEDs", "[engine-graph][protocol-nodes]") {
-    // A Launchpad driving an emulated cart in MI.MAP (whose clock and launches go to its serial port), beside a
-    // Game Boy decoding MI.OUT, so the controller's host MIDI out and a system's go out through one rp.host.midi-out.
-    // The controller on Game Boy 7 (MI.MAP), quantised to the bar; Game Boy 8 in MI.OUT.
+    // A Launchpad driving an emulated cart in MI.MAP (whose clock and launches go to its serial port), beside a Game
+    // Boy decoding MI.OUT: the controller on Game Boy 7, quantised to the bar, and Game Boy 8 in MI.OUT. Both feed one
+    // rp.host.midi-out, but only Game Boy 8 sends it anything: the one press the controller sends towards the host,
+    // below, is cued for a bar past the last block (the next case's presses reach the host).
     const auto target = [](const std::string& t) { return structure("controller/" + t); };
     ProtocolRig rig(target("system"));
     rig.block({.controller = {pad(0, 3)}});  // pressed with no surface attached
@@ -737,13 +751,15 @@ TEST_CASE("the per-role graph runs a controller session: its surface, its launch
     }
     rig.block({.ppq = play.ppq, .playing = true, .connected = false});  // detached
     rig.block({.ppq = play.ppq, .playing = true, .connected = true});   // and back: repainted
-    // Its launches to a real Game Boy's MIDI out instead (a new session, the predictor carried over), while the
-    // other Game Boy's MI.OUT is decoded in the same blocks.
+    // Its launches to a real Game Boy's MIDI out instead (a new session, the predictor carried over), while the other
+    // Game Boy's MI.OUT is decoded in the same blocks. Its press waits for a bar no block reaches, so every host MIDI
+    // out message is Game Boy 8's.
     rig.restructure(target("midiOut"));
     play.controller = {pad(0, 6)};
     for (int i = 0; i < 40; ++i) {
         play.serialOut = {{8, {framed(0x7f), framed(0x71), framed(60)}}};
         rig.block(play);
+        for (const ProtocolRig::Out& m : rig.midiOut) CHECK(m.system == 8);
         play.controller.clear();
         play.ppq += 1024.0 / kBeat;
     }
@@ -758,25 +774,58 @@ TEST_CASE("the per-role graph puts a controller's launches after the routed MIDI
     // and 3: it stages no host MIDI, and its one launch to the host is cued past its last block), and the controller's
     // default target (item 6). Launched at once, each press lands in the block it is pressed in: into the first
     // system's MI.MAP, behind a row the host sent at frame 300, then, its target switched, out of the host in a block
-    // where two Game Boys send host MIDI too (MI.OUT, and a master's clocks). Recorded from the kernel node when the
-    // per-role graph was added, not beside the old kernel stage, which had gone: so it holds the per-role graph to the
-    // kernel node that stage was proven equal to.
+    // where two Game Boys send host MIDI too (MI.OUT, and a master's clocks). Its value was recorded from the kernel
+    // node when the per-role graph was added, after the old kernel stage had gone, and no case run beside that stage
+    // sent a message through either order: the stage-era proof never reached them, and the value holds the per-role
+    // graph only to what the kernel node did. So both orders are checked directly as well.
+    //
     // The controller on the first system, launching at once; Game Boy 1 in MI.MAP, 2 in MI.OUT, 3 in master sync.
     const auto target = [](const std::string& t) { return structure("controller-orders/" + t); };
     ProtocolRig rig(target("system"));
     BlockIn play{.frames = 1024, .ppq = 0.0, .playing = true, .connected = true};
-    const auto press = [&](int blocks) {
+    std::vector<std::vector<Message>> cartSerialIn;  // Game Boy 1's serial input, a block a press, while it is the target
+    std::vector<Bytes>                hostLaunches;  // the controller's host MIDI out, a block a press, after
+    const auto press = [&](int blocks, bool toHost) {
         for (int i = 0; i < blocks; ++i) {
             play.midi = {{300, on(0, 20 + i)}};
             play.controller = {pad(i % 8, i % 4)};
             play.serialOut = {{2, {framed(0x7f), framed(0x71), framed(60)}}, {3, {5, 5, 5}, 300}};
             rig.block(play);
             play.ppq += 1024.0 / kBeat;
+            if (!toHost) {
+                cartSerialIn.push_back(serialBytes(rig.node<Probe>("in-1").bytes));
+                continue;
+            }
+            // Host MIDI out: the controller's launch first, under the system its default target resolved to (Game Boy
+            // 1), then Game Boy 2's decoded MI.OUT, then Game Boy 3's clocks.
+            std::vector<std::uint32_t> systems;
+            for (const ProtocolRig::Out& m : rig.midiOut) systems.push_back(m.system);
+            INFO("press " << i);
+            REQUIRE_FALSE(rig.midiOut.empty());
+            hostLaunches.push_back(rig.midiOut.front().data);
+            CHECK(systems.front() == 1);
+            CHECK(std::is_sorted(systems.begin(), systems.end()));
+            CHECK(std::count(systems.begin(), systems.end(), 1u) == 1);
+            CHECK(std::count(systems.begin(), systems.end(), 2u) > 0);
+            CHECK(std::count(systems.begin(), systems.end(), 3u) > 0);
         }
     };
-    press(6);
+    press(6, false);
     rig.restructure(target("midiOut"));
-    press(6);
+    press(6, true);
+    // The same presses launch the same rows: out of the host, a NoteOn whose key is the row; into the cart, that row's
+    // byte, behind the row the host's note sent (20 + i), at its frame, 300, where the launch came at frame 0 and the
+    // frame-ordered queue raised it.
+    REQUIRE(cartSerialIn.size() == 6);
+    REQUIRE(hostLaunches.size() == 6);
+    for (std::size_t i = 0; i < 6; ++i) {
+        INFO("press " << i);
+        REQUIRE(hostLaunches[i].size() == 3);
+        CHECK(hostLaunches[i][0] == 0x90);
+        REQUIRE(cartSerialIn[i].size() >= 2);
+        CHECK(cartSerialIn[i][0] == Message{300, {static_cast<std::uint8_t>(20 + i)}, 0});
+        CHECK(cartSerialIn[i][1] == Message{300, {hostLaunches[i][1]}, 0});
+    }
     rig.matches({32, 0, 0, 0, 68, 84, 0xeb884025953336a5ULL});
     rig.finish();
 }
@@ -833,16 +882,66 @@ TEST_CASE("the per-role graph keeps its state across structure changes: survivor
     rig.finish();
 }
 
+TEST_CASE("the per-role graph keeps a controller's session through a system added behind it: its cue fires, the device "
+          "is not taken again",
+          "[engine-graph][protocol-nodes]") {
+    // Every structural edit is a structure push, so a session rebuilt at each would lose its pending cue and its shadow
+    // of the device, which it would then take and repaint whole for no reason (what project-ctx's "state survives a
+    // structure push" held the kernel to). The controller's settings are the same before and after (its target, "0 is
+    // the first system", still resolves to Game Boy 1), so its node is kept through the change (the rig checks the
+    // instance); what is checked here is that its state went with it. Nothing here was recorded from the kernel.
+    ProtocolRig rig(structure("controller-survives/one-cart"));  // the controller on Game Boy 1's MI.MAP, by the bar
+    // MI.MAP's row bytes in a system's serial input: everything but its tick and its note-off.
+    const auto rows = [&](std::uint32_t id) {
+        std::vector<Message> out;
+        for (const Message& m : serialBytes(rig.node<Probe>("in-" + std::to_string(id)).bytes))
+            if (m.data[0] != 0xFF && m.data[0] != 0xFE) out.push_back(m);
+        return out;
+    };
+    BlockIn play{.frames = 4096, .ppq = 0.0, .playing = true, .controller = {pad(0, 0)}, .connected = true};
+    rig.block(play);  // attached, and nothing playing yet: the press launches at once
+    // A fresh session takes the device: Programmer mode first, then a full paint.
+    const std::vector<Bytes> hello = rig.controllerOut;
+    REQUIRE_FALSE(hello.empty());
+    CHECK(rows(1).size() == 1);
+    play.ppq += 4096.0 / kBeat;
+    play.controller = {pad(0, 5)};  // cued for the bar, at ppq 4
+    rig.block(play);
+    play.controller.clear();
+    CHECK(rows(1).empty());
+    rig.restructure(structure("controller-survives/system-added"));  // mGB on Game Boy 2
+    // Until the bar, no launch; then the cued one, in the first block that starts on or past it (the session reads the
+    // transport at a block's start); and the device is never taken again.
+    int launched = 0;
+    for (int i = 0; i < 24; ++i) {
+        const bool first = play.ppq < 4.0 && play.ppq + 4096.0 / kBeat >= 4.0;
+        play.ppq += 4096.0 / kBeat;
+        rig.block(play);
+        INFO("block at ppq " << play.ppq);
+        CHECK(rows(1).size() == (first ? 1u : 0u));
+        launched += static_cast<int>(rows(1).size());
+        for (const Bytes& m : rig.controllerOut) CHECK(m != hello.front());
+    }
+    CHECK(launched == 1);
+    CHECK(rows(2).empty());
+    rig.finish();
+}
+
 TEST_CASE("a throw in a protocol node keeps what was sent before it and runs the next block", "[engine-graph][protocol-nodes]") {
     // No shipped node throws on what its settings accept, so the throw is injected: run after the bundle, in both
     // runtimes, Math.ceil throws for one value, which walkTicks reaches when the second system's clock first syncs,
-    // at ppq 10.5 (tick 252). The first system's mGB node has forwarded its MIDI by then.
+    // at ppq 10.5 (tick 252), before that node sends anything in the block. The first system's mGB node forwards its
+    // MIDI that block, as the kernel did ahead of the throw.
     //
     // The recorded value is the kernel's, in which the throw also stopped every system after the one it was in, so the
-    // third system sent nothing that block. A throw stops only the node it is in (docs/modular-graph-phase-b3b-design.md
-    // section 5): the third system's mGB node runs that block and forwards its MIDI, which is checked here, and that
-    // block's digest takes the third system as the kernel left it, with nothing. Everything else is held to the
-    // recorded values, the throw count included.
+    // third system sent nothing that block. A throw stops only the node it is in (the design's section 5): the third
+    // system's mGB node runs that block and forwards its MIDI to its serial input, which is checked here, and that
+    // block's digest takes that one input as the kernel left it, empty (the third system's others are empty under
+    // both). Everything else is held to the recorded values, the throw count included.
+    //
+    // What a throw keeps here is what the nodes around it sent. That a node's own output up to its throw stands, and
+    // that it runs again the next block, is the script host's rule for every script node, held by ScriptNodes.test.cpp
+    // ("a throw in a script node is counted and it runs on; ..."): this node has sent nothing when it throws.
     const std::string inject = R"JS(
       (function () {
         var ceil = Math.ceil;
@@ -851,9 +950,10 @@ TEST_CASE("a throw in a protocol node keeps what was sent before it and runs the
     )JS";
     ProtocolRig rig(structure("throw"), inject);  // mGB on Game Boys 1 and 3, MIDI sync on 2
     rig.block({.midi = {{0, on(0, 60)}}});
-    rig.unsentByKernel = {3};
+    rig.unsentByKernel = {{3, "serialIn"}};
     rig.block({.ppq = 10.5, .playing = true, .midi = {{4, on(0, 62)}}});
     CHECK(rig.scripts.throwCount() == 1);
+    CHECK(rig.node<Probe>("in-2").bytes.empty());
     CHECK(text(serialBytes(rig.node<Probe>("in-3").bytes)) == "4:90 4:3e 4:64 ");
     rig.run({.ppq = 10.5 + 1024.0 / kBeat, .playing = true, .midi = {{4, on(0, 64)}}}, 3);
     rig.matches({18, 0, 0, 0, 0, 0, 0x420d378cfb9af0faULL});
@@ -863,10 +963,12 @@ TEST_CASE("a throw in a protocol node keeps what was sent before it and runs the
 TEST_CASE("the per-role graph restructures under a running audio thread, the routing's instance kept through every change",
           "[engine-graph][protocol-nodes][stress]") {
     // The threading of the real nodes: their settings committed on the audio thread at each swap, and a system's nodes
-    // created and released there as it comes and goes, the routing node reshaped at each, while the control thread plans
-    // the next and reclaims the last.
+    // created and released there as it comes and goes, the routing node reshaped at each, while the control thread
+    // plans the next and reclaims the last. The structures include a controller with no system, whose host MIDI goes
+    // out under 4294967295 (the kernel's -1) and whose node's system is 0, its none.
     const std::vector<Structure> structures{structure("stress/lsdj-and-nes"), structure("stress/controller"),
-                                            structure("stress/mgb-by-channel"), structure("empty")};
+                                            structure("stress/mgb-by-channel"), structure("empty"),
+                                            structure("stress/controller-no-systems")};
     ProtocolRig rig(structures[0]);
     rig.setAudioThreadOwns(true);
     std::atomic<bool> running{true};

@@ -44,7 +44,8 @@ The rules below are the parts that don't fit those.
   creation and release on the block thread, throws; the protocol script nodes (B3b: the MIDI routing, a
   controller session and each role's protocol node, in the documents `buildGraph` builds, read from its role goldens,
   `test/engine-graph/ProtocolNodes.test.cpp`) send exactly the digests the DSP kernel they replaced was recorded
-  sending, a throw stopping only its own node the one difference, checked; and every document in `buildGraph`'s
+  sending in the cases it runs, a throw stopping only its own node the one difference those reach, checked (the B3b
+  design's section 9 lists the others, which no case sends a message through); and every document in `buildGraph`'s
   goldens, handed to the engine with real cores, plans and runs with no node faulting, no script node throwing and
   no message dropped: the B1 translator's matrix a block each (the 33-system `perSystem` ones are refused, as they
   must be), and `golden/build-graph-roles.json`, `buildGraph`'s own record of documents with every protocol node

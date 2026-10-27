@@ -211,6 +211,10 @@ rig("throw", [gb(1, [MGB]), gb(2, [lsdj("midiSync")]), gb(3, [MGB])], "sendToAll
 rig("stress/lsdj-and-nes", [gb(1, [lsdj("midiSync")]), nes(2, [N8, RISA])], "sendToAll");
 rig("stress/controller", [gb(1, [lsdj("midiMap")]), nes(2, [N8, RISA]), gb(3, [MGB])], "sendToAll", launchpad("system", 1));
 rig("stress/mgb-by-channel", [gb(3, [MGB])], "oneChannelPerInstance");
+rig("stress/controller-no-systems", [], "sendToAll", launchpad("system", 0));
+// A controller on the first system, quantised to the bar, before and after a system is added behind it.
+rig("controller-survives/one-cart", [gb(1, [lsdj("midiMap")])], "sendToAll", launchpad("system", 0));
+rig("controller-survives/system-added", [gb(1, [lsdj("midiMap")]), gb(2, [MGB])], "sendToAll", launchpad("system", 0));
 
 CASES.push(...RIG_CASES);
 
