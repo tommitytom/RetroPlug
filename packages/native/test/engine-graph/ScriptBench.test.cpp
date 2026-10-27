@@ -180,9 +180,9 @@ ChainRow timeChain(bool message, int n, std::uint32_t frames) {
 // A run, by block size: a few seconds of audio but at 1 frame, and enough blocks to time there.
 int kernelBlocks(std::uint32_t frames) { return frames == 1 ? 32768 : frames == 64 ? 8192 : 2048; }
 
-// kernelProjection's structure for the three, as the kernel node's settings: each pipeline holds only the roles with a
-// DSP behaviour, the project MIDI routing sending every message to all of them, and each system says whether it has a
-// serialOut.
+// The structure kernelProjection published for the three, as the kernel node's settings: each pipeline holds only the
+// roles with a DSP behaviour, the project MIDI routing sending every message to all of them, and each system says
+// whether it has a serialOut.
 struct BenchSystem {
     std::uint32_t id;
     const char*   pipeline;

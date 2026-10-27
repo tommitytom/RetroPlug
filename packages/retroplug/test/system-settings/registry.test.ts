@@ -4,7 +4,9 @@
 // mechanism with zero LSDj knowledge in the core. Role behavior (the doc-06
 // translators) is a deferred RoleType seam, not exercised here.
 import { test, expect } from "../../testing/harness";
-import { RoleRegistry } from "../../src/systemRoles";
+import { RoleRegistry, isSystemStage } from "../../src/systemRoles";
+import { buildAppRegistry } from "../../src/appHost";
+import { protocolNodeOf } from "../../src/graph/protocolNodes";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { z, clampedInt } from "../../src/configSchema";
 import { sameboyRoleConfig } from "../systems/fixtures";
@@ -91,4 +93,23 @@ test("defaultRoles: system role first, then provider-matched feature roles", () 
   expect(reg.defaultRoles("mesen", "nes", headerWithTitle("SMB3"))).toEqual([
     { kind: "mesen", config: { region: "auto", removeSpriteLimit: false, enableFm: true, apuLatencyMs: 1.4, s5bNoise: "n8", mmc5PhaseReset: "n8", expansionVolume: 100, channelExportMode: "mix", sdRoot: "", fifo: "instant", fifoDepth: 0, fifoBytesPerSecond: 0, n8Link: "auto", n8LinkRttUs: 2200 } },
   ]);
+});
+
+test("the protocol-node table names a node for exactly the app's roles the DSP kernel ran per system", () => {
+  // The stores place what graph/protocolNodes.ts says, not what a registry says, so the two must agree for every
+  // role the app registers: every kind the kernel ran as a system stage has a node, and no other kind does.
+  const kinds: string[] = [];
+  const register = RoleRegistry.prototype.registerRole;
+  RoleRegistry.prototype.registerRole = function (t) {
+    kinds.push(t.kind);
+    register.call(this, t);
+  };
+  let registry: RoleRegistry;
+  try {
+    registry = buildAppRegistry();
+  } finally {
+    RoleRegistry.prototype.registerRole = register;
+  }
+  expect(kinds.length).toBeGreaterThan(10);
+  for (const kind of kinds) expect(protocolNodeOf(kind) !== undefined, kind).toBe(isSystemStage(registry.roleType(kind)));
 });

@@ -5,8 +5,10 @@
 // Once the translator is deleted, buildGraph is the record and nothing generates golden/build-graph.json: an
 // intentional change to the document it writes rewrites the file's documents by hand (a short script mapping
 // each case's model through buildGraph), and says why in its commit. B3a did so for the DSP kernel and the host
-// I/O around the audio (every model gained an empty kernel structure; the audio of every document is the
-// translator's still). Not every golden document plans: the thirty-three systems under perSystem give
+// I/O around the audio (every model gained an empty kernel structure), and B3b for the script nodes that replaced
+// the kernel (every model routes the host's MIDI to all its systems, with no controller and no roles, so each
+// document places the routing node and no protocol node); the audio of every document is the translator's still.
+// Not every golden document plans: the thirty-three systems under perSystem give
 // rp.host.audio-out 33 buses, past the 32 it takes.
 // packages/native/test/engine-graph/BuildGraphGoldens.test.cpp plans every other one on the engine.
 import { test, expect } from "../../testing/harness";

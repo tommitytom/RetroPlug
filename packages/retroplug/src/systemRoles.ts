@@ -77,8 +77,8 @@ export interface RoleType {
 }
 
 /** Whether the DSP kernel runs `rt` as a stage of a system's pipeline: a role with a `dsp` behaviour whose scope is
- *  not "project" (no scope at all is "system"). The kernel's own test (dspKernel.ts setSystems), and the systems
- *  store's for what it hands the kernel, so the two cannot disagree about a role. */
+ *  not "project" (no scope at all is "system"). The kernel's own test (dspKernel.ts setSystems). What the stores
+ *  place is graph/protocolNodes.ts's table, which names a node for exactly the app's roles this passes. */
 export function isSystemStage(rt: RoleType | undefined): rt is RoleType {
   return rt !== undefined && rt.scope !== "project" && rt.dsp !== undefined;
 }

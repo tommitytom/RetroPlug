@@ -57,7 +57,7 @@ test("a pad press on the controller stream launches a row on a real cart", () =>
 
   expect(graph.setProjectStages([
     { kind: "midi-routing", config: { mode: "sendToAll" } },
-    // Exactly what kernelProjection synthesizes for an enabled controller, song table and all.
+    // What a project hands its controller, song table and all (DirectGraph parses the app config as the store does).
     {
       kind: "launchpad",
       config: {

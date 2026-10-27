@@ -183,7 +183,7 @@ export function registerControllerRole(registry: RoleRegistry): void {
     scope: "project",
     // app: which controller app to run (a ControllerRegistry id). target/systemId: where launches go.
     // appConfig: the app's own config, validated by ITS schema rather than here. songRowTicks: the
-    // derived per-row timing table (see kernelProjection) - the model's only input, and the reason a
+    // derived per-row timing table (see ProjectStore.controllerModel) - the model's only input, and the reason a
     // DSP-thread role can predict a song it cannot read.
     schema: z.object({
       app: stringOr("lsdj-midimap"),

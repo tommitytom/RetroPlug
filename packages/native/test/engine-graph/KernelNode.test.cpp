@@ -82,7 +82,7 @@ struct PerRoleGraph {
     static constexpr Graph graph = Graph::PerRole;
 };
 
-// ---- structures, spelled as kernelProjection spells them -----------------------------------------------------
+// ---- structures, spelled as kernelProjection spelled them ----------------------------------------------------
 
 // A launchpad's choices as the project holds them, which the kernel's role resolved and parsed itself, from its config,
 // and which the per-role graph's document resolves and parses as buildGraph is to.

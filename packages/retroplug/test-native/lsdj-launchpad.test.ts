@@ -1,6 +1,6 @@
 // Does the controller layer's launch encoding actually move a REAL LSDj cart?
 //
-// The pure-TS side already proves a pad press comes out of the kernel as a row byte on a system's link
+// The pure-TS side already proves a pad press comes out of the controller as a row byte on a system's link
 // port (test/dsp/controller-role.test.ts), and that every row survives a round trip through `midiMapRow`
 // (test/controller/trackerTarget.test.ts). But both of those check our encoder against our own decoder.
 // This checks it against LSDj, which is the only opinion that counts - and in particular checks the
@@ -15,9 +15,8 @@ import { type SavInput } from "../src/lsdjSav";
 import { launchMessage } from "../src/controller";
 import { PredictedLsdjModel } from "../src/lsdj/playback";
 import { SongSchema } from "../src/lsdj/model";
-import { LsdjProbe, fmtSample } from "./lsdjPlaybackProbe";
-import { projectKernelStructure, type ControllerProjection } from "../src/kernelProjection";
-import type { SystemView } from "../src/systemsStore";
+import { LsdjProbe, fmtSample, type ProbeProject } from "./lsdjPlaybackProbe";
+import type { GraphController } from "../src/graph/controller";
 
 // 130 rows, every one a single-phrase chain, so every row is playable and 96 ticks long. Reaching past
 // row 127 is the point: that is where the wire protocol switches to MIDI channel 2. All rows share one
@@ -72,21 +71,18 @@ test("the controller layer's launch bytes move a real cart, on both MIDI channel
 // Everything above hand-writes `mode: "midiMap"`. A real project does not: `lsdj-sync` defaults to
 // `midiSync`, and nothing made it agree with the controller - so enabling a Launchpad on a fresh cart
 // clocked it for a mode it was not in, sent launches nowhere, and left LSDj sitting on "WAIT". Reported
-// from a hardware session. These drive the cart through projectKernelStructure, so what is under test is
-// the pipeline a project would really produce.
+// from a hardware session. These drive the cart through the graph buildGraph places for a project, whose
+// controller forces its cart's sync mode, so what is under test is the pipeline a project would really produce.
 
-/** A SystemView carrying the roles a freshly built LSDj cart has, with the STORED (default) sync mode. */
-function lsdjView(id: number, mode = "midiSync"): SystemView {
-  return {
-    id, platform: "gb", core: "sameboy", romPath: "", savPath: "", savSuffix: 0,
-    embedded: false, battery: true, focused: true, missing: false,
-    settings: { gainDb: 0, reloadOnRomChange: false },
-    roles: [{ kind: "sameboy", config: {} }, { kind: "lsdj-sync", config: { mode, tempoDivisor: 1 } }],
-  };
-}
+/** A project with the roles a freshly built LSDj cart has, with the STORED (default) sync mode, and `controller`. */
+const lsdjProject = (controller: GraphController | null, mode = "midiSync"): ProbeProject => ({
+  midiRouting: "sendToAll",
+  controller,
+  roles: [{ kind: "sameboy", config: {} }, { kind: "lsdj-sync", config: { mode, tempoDivisor: 1 } }],
+});
 
-const projection = (over: Partial<ControllerProjection> = {}): ControllerProjection => ({
-  enabled: true, app: "lsdj-midimap", target: "system", systemId: 0, appConfig: {},
+const enabled = (over: Partial<GraphController> = {}): GraphController => ({
+  app: "lsdj-midimap", target: "system", systemId: 0, appConfig: {},
   songRowTicks: [], anchor: null, cartSync: "MidiMap", ...over,
 });
 
@@ -94,7 +90,7 @@ test("a project whose cart is in the DEFAULT midiSync still launches rows once a
   LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({
     song: SONG,
-    structure: (id) => projectKernelStructure([lsdjView(id)], "sendToAll", projection()),
+    project: () => lsdjProject(enabled()),
   });
   if (!p) return skip("lsdj-launchpad: aboy ROM not found / unsupported version");
 
@@ -106,11 +102,11 @@ test("a project whose cart is in the DEFAULT midiSync still launches rows once a
 
 test("without a controller the same project ignores the same launch, which is what was wrong", () => {
   LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
-  // The control: it is the projection's override that makes the row land, not something else about the
+  // The control: it is the controller's override that makes the row land, not something else about the
   // pipeline. A cart in midiSync reads a NoteOn as nothing at all.
   const p = LsdjProbe.create({
     song: SONG,
-    structure: (id) => projectKernelStructure([lsdjView(id)], "sendToAll"),
+    project: () => lsdjProject(null),
   });
   if (!p) return;
 
@@ -123,11 +119,11 @@ test("without a controller the same project ignores the same launch, which is wh
 test("a cart whose OWN SYNC is not MI.MAP is left alone rather than clocked at", () => {
   LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   // A cart in LSDJ (master) mode drives the link itself, so our bytes collide with its own and LSDj
-  // reports TOO BUSY. The projection sends it nothing; the launch therefore does nothing, which is the
+  // reports TOO BUSY. The graph sends it nothing; the launch therefore does nothing, which is the
   // correct outcome for a cart that is not listening.
   const p = LsdjProbe.create({
     song: SONG,
-    structure: (id) => projectKernelStructure([lsdjView(id)], "sendToAll", projection({ cartSync: "Lsdj" })),
+    project: () => lsdjProject(enabled({ cartSync: "Lsdj" })),
   });
   if (!p) return;
 

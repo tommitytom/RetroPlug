@@ -90,3 +90,24 @@ test("serializeConfig keeps an out-of-base asset absolute (no ../ chains)", () =
   const parsed = JSON.parse(serializeConfig(cfg, "/proj", identity));
   expect(parsed.systems[0].romPath).toBe("/elsewhere/a.gb"); // outside base → kept absolute
 });
+
+// --- the controller ---------------------------------------------------------------------------------------
+// Only the user's choices persist. The graph's controller node carries a ~1000-number timing table derived from the
+// cart's battery, and being synthesized at each publish is what keeps that out of the `.rplg`.
+
+test("the derived song table never reaches a saved project", () => {
+  // A `.rplg` holds the user's CHOICES; a thousand numbers re-derivable from the cart's own battery would be derived
+  // data in a config file, and stale the moment the song changed.
+  const settings = { ...DEFAULT_SETTINGS, controller: { enabled: true, app: "lsdj-midimap", target: "system" as const, systemId: 0, appConfig: { quantise: "bar" } } };
+  const json = serializeConfig(buildConfig(settings, []), "", identity);
+
+  expect(json.includes("songRowTicks")).toBe(false);
+  expect(json.includes("launchpad")).toBe(false);
+  expect(parseConfig(json).settings.controller.enabled).toBe(true); // but the choice itself persists
+  expect(parseConfig(json).settings.controller.appConfig).toEqual({ quantise: "bar" });
+});
+
+test("an older project with no controller key loads with it defaulted off, needing no migration", () => {
+  const raw = JSON.stringify({ schemaVersion: K_PROJECT, settings: { layout: "auto", midiRouting: "sendToAll", audioRouting: "stereo", zoom: 0 }, systems: [] });
+  expect(parseConfig(raw).settings.controller).toEqual({ enabled: false, app: "lsdj-midimap", target: "system", systemId: 0, appConfig: {} });
+});

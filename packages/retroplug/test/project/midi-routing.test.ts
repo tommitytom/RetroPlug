@@ -1,6 +1,6 @@
-// The project MIDI-routing mode reaches the kernel the moment it changes. The `midi-routing` role is
-// synthesized from the setting at projection time (kernelProjection), so a setter that only wrote the
-// setting left the kernel routing by the old mode until some unrelated structural edit published it.
+// The project MIDI-routing mode reaches the audio thread the moment it changes. The routing node is placed
+// from the setting at each publish (buildGraph), so a setter that only wrote the setting left the audio
+// thread routing by the old mode until some unrelated structural edit published it.
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
@@ -12,11 +12,11 @@ function newProject() {
   return { be, project: new ProjectStore(be, new RecentStore(be), buildAppRegistry()) };
 }
 
-test("setMidiRouting publishes the kernel's structure with the new mode", () => {
+test("setMidiRouting publishes the routing node with the new mode", () => {
   const { be, project } = newProject();
   expect(project.setMidiRouting("oneChannelPerInstance")).toBeTruthy();
   expect(be.graphRequests.length).toBe(1);
-  expect(be.kernelSettings()?.project).toEqual([{ config: { mode: "oneChannelPerInstance" }, kind: "midi-routing" }]); // keys sorted, as a document spells them
+  expect(be.graphNode("routing")?.settings).toEqual({ mode: "oneChannelPerInstance", systems: [] });
   expect(be.graphRequests[0].tap).toBe(undefined); // a routing of MIDI, not of audio: no re-arm
 });
 

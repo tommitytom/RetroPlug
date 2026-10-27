@@ -267,25 +267,20 @@ stores it per system id), so the clock is drift-free at block edges — each tic
 never double or missed, and a >1-tick transport jump (seek/loop/start) resyncs. `lsdj-sync` uses it at
 24 PPQN.
 
-## `kernelProjection` — store → kernel
+## Store → graph
 
-[projectKernelStructure(views, midiRouting, controller?)](../packages/retroplug/src/kernelProjection.ts#L72)
-is the single seam that turns "what the app has" into "what the DSP runs". Its `views` are
-`ProjectedSystem`s (`{ id, roles }`) in slot order:
-
-- each system's `roles` map straight into its `pipeline`, order preserved;
-- the project-scope `{ kind: "midi-routing", config: { mode: midiRouting } }` role is **synthesized**
-  from the project's MIDI-routing setting (it lives in project settings, not on any system);
-- with a controller enabled, the project-scope `launchpad` role is synthesized from the controller
-  settings the same way (its config carries the derived song-timing table, so it never reaches the
-  `.rplg`), and the `lsdj-sync` stage of the cart the MI.MAP app drives is forced to `midiMap`, or to
-  `off` when the cart's own SYNC setting is not MI.MAP (`controllerSyncOverride`).
-
-It is pure and **registry-free**: the kernel self-guards scope. `ProjectStore.publishGraph` calls it
-with each system's pipeline (`SystemsStore.graphSystems`: the roles the kernel runs, or every role for a
-store without a registry) and
-publishes the result with the graph, where `buildGraph` makes it the kernel node's settings, so every
-structural edit, and every edit to a role or setting the structure reads, reaches the kernel.
+Since B3b's flip ([modular-graph-phase-b3b-design.md](../docs/modular-graph-phase-b3b-design.md)
+section 4) no document places the kernel. [`buildGraph`](../packages/retroplug/src/graph/buildGraph.ts)
+places, ahead of the systems, the routing node from the project's MIDI-routing setting, the controller
+node when a controller is enabled (its target "0 is the first system" resolved, its app config parsed
+by the app's schema on the control plane), and a protocol node for each role of each system that has
+one ([graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts), the one table of which
+role kind is placed as which node, so a store with a registry and one without publish the same nodes).
+The `lsdj-sync` node of the cart the MI.MAP app drives is forced to `midiMap`, or to `off` when the
+cart's own SYNC setting is not MI.MAP (`controllerSyncOverride`,
+[graph/controller.ts](../packages/retroplug/src/graph/controller.ts)): that node's settings alone, so
+nothing reaches the `.rplg`. The rest of this doc describes the kernel, which stays registered,
+unplaced, until B3b deletes it.
 
 ## Running as a script node
 
@@ -373,7 +368,7 @@ node removed and added again, clears it).
 
 **Two registries, one kernel.** The control-plane registry (core + DSP + ROM providers) drives the
 stores and derives roles; the bundle's registry holds only the DSP behaviours. This is safe because
-`kernelProjection` is registry-free and the kernel self-guards scope, so a pipeline (one a
+the kernel self-guards scope, so a pipeline (one a
 `DirectGraph` caller wrote included) is interpreted identically whether or not the bundle knows every
 kind in it.
 
@@ -416,8 +411,9 @@ TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
   ROM identity.
 - [dspKernel.ts](../packages/retroplug/src/dspKernel.ts): `DspKernel`, `SystemCtx`, the
   sinks, `walkTicks`.
-- [kernelProjection.ts](../packages/retroplug/src/kernelProjection.ts) — store →
-  `KernelStructure`.
+- [graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts) /
+  [graph/controller.ts](../packages/retroplug/src/graph/controller.ts) - store → graph: the
+  protocol node per role, the controller's target and its cart's sync override.
 - [script/kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts) /
   [script/bundle.ts](../packages/retroplug/src/script/bundle.ts) /
   [script/register.ts](../packages/retroplug/src/script/register.ts): the kernel as a script node,

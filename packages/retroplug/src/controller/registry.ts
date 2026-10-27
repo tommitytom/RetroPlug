@@ -70,3 +70,11 @@ export function registerControllerApps(registry: ControllerRegistry): void {
     registry.register({ id, label: config.label, schema: config.schema, app });
   }
 }
+
+/** `config` as app `id`'s schema parses it (defaults filled, values clamped): the app config the control plane hands
+ *  the controller node (graph/controller.ts), so the audio side parses nothing and imports no schema. An id no app
+ *  has gets an empty config, which nothing reads: its node runs nothing. */
+export function parseAppConfig(id: string, config: unknown): Record<string, unknown> {
+  const entry = Object.prototype.hasOwnProperty.call(APP_CONFIGS, id) ? APP_CONFIGS[id] : undefined;
+  return entry ? entry.schema.parse(config ?? {}) : {};
+}

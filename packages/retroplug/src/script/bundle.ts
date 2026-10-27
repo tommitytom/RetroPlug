@@ -14,8 +14,8 @@ import { lsdjSyncNode } from "./nodes/lsdjSync";
 import { controllerSessionNode } from "./nodes/controllerSession";
 import { registerScriptNodes } from "./register";
 
-// The production script node types, in registration order: the DSP kernel, then the per-role nodes that replace it
-// (docs/modular-graph-phase-b3b-design.md section 2), which no document places yet.
+// The production script node types, in registration order: the DSP kernel, which no document places any more, then
+// the per-role nodes that replaced it (docs/modular-graph-phase-b3b-design.md section 2), which buildGraph places.
 const scriptNodes: readonly DefinedNode<any>[] = [
   kernelNode,
   midiRouteNode,

@@ -2,7 +2,7 @@
 // to hold the per-role nodes to.
 //
 // The per-role script nodes (src/script/nodes/) against the DspKernel they replace, block for block. Each case builds
-// one project two ways: the kernel's structure, as kernelProjection publishes it, run by a DspKernel over a
+// one project two ways: the kernel's structure, as kernelProjection published it, run by a DspKernel over a
 // CollectingSink; and the per-role graph as buildGraph is to place it (a routing node, a controller node when there
 // is a controller, each system's protocol nodes in slot order), each node over the Block stand-in, its outputs wired
 // into the next nodes' inputs within the block. Both are driven through the same blocks and every output is compared,
@@ -80,7 +80,7 @@ registerControllerApps(apps);
 /** A role's config as the stores hand it over: parsed by the role's own schema, its defaults filled. */
 const roleConfig = (r: Role): Record<string, unknown> => roles.roleType(r.kind)!.schema.parse(r.config ?? {}) as Record<string, unknown>;
 
-/** The kernel's structure, as kernelProjection builds it: the routing stage, the launchpad stage with the
+/** The kernel's structure, as kernelProjection built it: the routing stage, the launchpad stage with the
  *  controller's settings as given, and each system's pipeline. Fresh objects each time, as each publish's are. */
 function structureOf(p: Project): KernelStructure {
   const project: RoleInstance[] = [{ kind: "midi-routing", config: { mode: p.routing } }];

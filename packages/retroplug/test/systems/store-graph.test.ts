@@ -2,8 +2,9 @@
 // changes what runs, re-arming the NES tap where the edit builds or drops a core or changes the routing; a
 // project load publishing its clear, then placing every system at once, whatever its adopts did; the build
 // spec carrying serial-out capture; and DirectGraph keeping the B1 translator's model for callers with no store.
-// Each document carries the DSP kernel's structure (docs/modular-graph-phase-b3a-design.md section 5.2), so an edit
-// to a role the kernel runs, the MIDI routing or the controller publishes too, and nothing else does.
+// Each document places the script nodes that feed the systems (docs/modular-graph-phase-b3b-design.md section 4): the
+// MIDI routing, the controller and a protocol node for each role that has one, so an edit to such a role, the MIDI
+// routing or the controller publishes too, and nothing else does.
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { ProjectStore } from "../../src/projectStore";
@@ -18,7 +19,6 @@ import { LsdjSyncMode, MidiRouting, type AudioRouting } from "../../src/settings
 import type { RoleInstance } from "../../src/systemRoles";
 import type { EngineGraph } from "../../src/engineGraph";
 import type { ConstructSpec, SetGraphResult } from "../../src/backend";
-import { DspKernel } from "../../src/dspKernel";
 import { z, clampedInt } from "../../src/configSchema";
 import { blipToasterRom, gbRom, lsdjRom, nesRom } from "./fixtures";
 
@@ -70,15 +70,22 @@ function refuseNext(be: MockBackend, n: number): void {
   };
 }
 
-// The kernel's project stage a project has by default: the MIDI routing, sending every message to every system.
+// The project stage DirectGraph takes for the MIDI routing a project has by default: every message to every system.
 const SEND_TO_ALL: RoleInstance = { kind: "midi-routing", config: { mode: "sendToAll" } };
 
 // `v` as a document carries it: canonical JSON, its keys sorted.
 const canon = (v: unknown): unknown => JSON.parse(canonicalJson(v));
 
-// The document a store's systems build at `routing` and `shape`, with the default project stage.
+// Whether the last document sent wires `from` into `to` (not over a feedback wire).
+const wired = (be: MockBackend, from: string, to: string): boolean =>
+  be.lastDocument()!.wires.some((w) => w.from === from && w.to === to && !w.feedback);
+
+// The document a store's systems build at `routing` and `shape`, with the default MIDI routing and no controller.
 const documentFor = (sys: SystemsStore, routing: AudioRouting, shape: HostShape): string =>
-  toGraphJson(buildGraph({ systems: sys.graphSystems(), routing, shape, project: [SEND_TO_ALL] }).document);
+  toGraphJson(buildGraph({ systems: sys.graphSystems(), routing, shape, midiRouting: "sendToAll" }).document);
+
+// The systems the routing node lists, in slot order, in the last document sent.
+const routed = (be: MockBackend): unknown => be.graphNode("routing")?.settings?.systems;
 
 // A core the mock still holds (built, parked or placed): its state reads answer.
 const alive = (be: MockBackend, id: number): boolean => be.readState(id) !== null;
@@ -223,8 +230,8 @@ test("a load that throws partway places what it adopted, and the edits after it 
     { slots: [], tap: {} },
     { slots: adopted, tap: {} },
   ]);
-  // And the kernel runs it: the document carries its pipeline (the previous project's systems are gone with it).
-  expect(be.kernelSettings()?.systems.map((s) => s.id)).toEqual(adopted);
+  // And the document routes to it (the previous project's systems are gone with it).
+  expect(routed(be)).toEqual(adopted);
   const answered = answers(be);
   // A render's shape round trip rebuilds that model, so the core stays placed under the store.
   expect(p.graph.withShape({ kind: "perSystem" }, () => true)).toBe(true);
@@ -280,7 +287,7 @@ test("a load whose clear's publish throws still tells the observers once", () =>
   expect(sys.systems().length).toBe(0);
   expect(notified).toBe(1);
   // The failed load placed what it listed, nothing: the clear's document, sent again.
-  expect(be.kernelSettings()?.systems).toEqual([]);
+  expect(routed(be)).toEqual([]);
 });
 
 test("an adopt whose settings do not parse throws before it builds a core", () => {
@@ -348,53 +355,62 @@ test("a systems store on its own publishes its systems at the stereo routing", (
   expect(since(be, 0)).toEqual([{ slots: [id], tap: {} }]);
 });
 
-test("each document carries the kernel's structure: the project stage and the roles the kernel runs, in slot order", () => {
+test("each document places the routing and a protocol node for each role that has one, in slot order", () => {
   const { be, sys } = project();
   const a = sys.addSystem("/roms/lsdj.gb")!;
   const c = sys.addSystem("/roms/c.nes")!;
-  const kernel = be.kernelSettings()!;
-  expect(kernel.project).toEqual(canon([SEND_TO_ALL]));
-  expect(kernel.systems.map((s) => s.id)).toEqual([a, c]);
-  expect(kernel.systems.map((s) => s.serialOut)).toEqual([true, false]);
-  // The kernel runs only the roles with a DSP behaviour: the core's own config role and the feature roles with
-  // none (a ROM's asset overrides) stay out of the document, so their edits leave it as it was.
+  expect(be.graphNode("routing")?.settings).toEqual({ mode: "sendToAll", systems: [a, c] });
+  expect(be.graphNode("controller")).toBe(undefined); // none enabled
+  // Only the roles with a protocol node are placed: the core's own config role and the feature roles with no DSP
+  // behaviour (a ROM's asset overrides) stay out of the document, so their edits leave it as it was.
   const roles = sys.view().map((v) => v.roles.map((r) => r.kind));
   expect(roles[0].includes("sameboy")).toBe(true);
-  expect(kernel.systems[0].pipeline.map((r) => r.kind)).toEqual(["lsdj-sync"]);
-  expect(kernel.systems[1].pipeline.map((r) => r.kind)).toEqual(["nes-n8-midi"]);
+  expect(roles[0].includes("lsdj-assets")).toBe(true);
+  expect(be.protocolNodes(a)).toEqual([`sys-${a}/lsdj-sync`]);
+  expect(be.protocolNodes(c)).toEqual([`sys-${c}/nes-n8-midi`]);
+  // The Game Boy's serial out comes back into its lsdj-sync node, a block late.
+  expect(be.lastDocument()!.wires.filter((w) => w.feedback)).toEqual(
+    canon([{ from: `sys-${a}.serialOut`, to: `sys-${a}/lsdj-sync.serialOut`, feedback: true }]),
+  );
 });
 
-test("an edit to a role the kernel runs publishes its pipeline, without a re-arm; the same edit again sends nothing", () => {
+test("an edit to a role with a protocol node publishes its settings, without a re-arm; the same edit again sends nothing", () => {
   const { be, sys } = project();
   const id = sys.addSystem("/roms/lsdj.gb")!;
   const n = be.graphRequests.length;
   sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MidiOut });
   expect(since(be, n)).toEqual([{ slots: [id] }]);
-  expect(be.kernelSettings()!.systems[0].pipeline).toEqual(
-    canon([{ kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiOut, tempoDivisor: 1, autoStart: false } }]),
+  expect(be.graphNode(`sys-${id}/lsdj-sync`)).toEqual(
+    canon({ id: `sys-${id}/lsdj-sync`, type: "rp.lsdj.sync", settings: { mode: LsdjSyncMode.MidiOut, tempoDivisor: 1, autoStart: false } }),
   );
-  // The capture arm is the command it always was, sent before the plan that hands the kernel the new mode.
+  // The capture arm is the command it always was, sent before the plan that hands the node the new mode.
   expect(be.log.lastIndexOf("setSerialOutCapture")).toBeLessThan(be.log.lastIndexOf("setGraph"));
   sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MidiOut });
   expect(since(be, n).length).toBe(1);
 });
 
-test("a controller session rides the document as a project stage, with the sync mode its cart needs", () => {
+test("a controller session is a node of the document, with the sync mode its cart needs", () => {
   const { be, p, sys } = project();
   const id = sys.addSystem("/roms/lsdj.gb")!;
   const n = be.graphRequests.length;
   p.setController({ enabled: true, app: "lsdj-midimap", target: "system", systemId: id });
   expect(since(be, n)).toEqual([{ slots: [id] }]);
-  const kernel = be.kernelSettings()!;
-  expect(kernel.project.map((r) => r.kind)).toEqual(["midi-routing", "launchpad"]);
-  expect(kernel.systems[0].pipeline[0].config.mode).toBe("midiMap"); // forced at projection time, never saved
+  // Its app config parsed by the app's schema on this side, every default filled; its launches into the cart.
+  expect(be.graphNode("controller")?.settings).toEqual(
+    canon({
+      app: "lsdj-midimap", target: "system", systemId: id, appConfig: { quantise: "bar", follow: true, page: 0 },
+      songRowTicks: [], anchorRows: [], anchorSeq: 0,
+    }),
+  );
+  expect(wired(be, "controller.launches", `sys-${id}/lsdj-sync.launches`)).toBe(true);
+  expect(be.graphNode(`sys-${id}/lsdj-sync`)?.settings?.mode).toBe("midiMap"); // forced in the document, never saved
   expect(sys.view()[0].roles.find((r) => r.kind === "lsdj-sync")?.config.mode).toBe(LsdjSyncMode.MidiSync);
   p.setController({ enabled: false });
-  expect(be.kernelSettings()!.project).toEqual(canon([SEND_TO_ALL]));
-  expect(be.kernelSettings()!.systems[0].pipeline[0].config.mode).toBe(LsdjSyncMode.MidiSync);
+  expect(be.graphNode("controller")).toBe(undefined);
+  expect(be.graphNode(`sys-${id}/lsdj-sync`)?.settings?.mode).toBe(LsdjSyncMode.MidiSync);
 });
 
-test("a load hands the kernel its project's MIDI routing and controller in the one publish that places its systems", () => {
+test("a load hands the document its project's MIDI routing and controller in the one publish that places its systems", () => {
   // The settings are assigned after the adopts and before that publish. The plugin's setState is a load, so a
   // publish that read the settings before them would route by the previous project's until the next edit.
   const { be, p, sys } = project();
@@ -403,17 +419,18 @@ test("a load hands the kernel its project's MIDI routing and controller in the o
   p.setController({ enabled: true, app: "lsdj-midimap", target: "system", systemId: 0 });
   const bytes = p.exportBytes()!;
   p.newProject();
-  expect(be.kernelSettings()!.project).toEqual(canon([SEND_TO_ALL]));
+  expect(be.graphNode("routing")?.settings).toEqual({ mode: "sendToAll", systems: [] });
+  expect(be.graphNode("controller")).toBe(undefined);
   const n = be.graphRequests.length;
   expect(p.loadBytes(bytes, "/").kind).toBe("loaded");
-  expect(since(be, n)).toEqual([{ slots: sys.systems().map((e) => e.id), tap: {} }]); // an empty clear sends nothing
-  const kernel = be.kernelSettings()!;
-  expect(kernel.project.map((r) => r.kind)).toEqual(["midi-routing", "launchpad"]);
-  expect(kernel.project[0].config).toEqual({ mode: MidiRouting.MidiChannelToInstance });
-  expect(kernel.systems[0].pipeline[0].config.mode).toBe("midiMap"); // the controller's cart, in the mode it needs
+  const [id] = sys.systems().map((e) => e.id);
+  expect(since(be, n)).toEqual([{ slots: [id], tap: {} }]); // an empty clear sends nothing
+  expect(be.graphNode("routing")?.settings).toEqual({ mode: MidiRouting.MidiChannelToInstance, systems: [id] });
+  expect(be.graphNode("controller")?.settings?.systemId).toBe(id); // "the first system", resolved
+  expect(be.graphNode(`sys-${id}/lsdj-sync`)?.settings?.mode).toBe("midiMap"); // the controller's cart, in the mode it needs
 });
 
-test("an asset-role edit publishes nothing: the kernel runs no asset role, so the document carries none", () => {
+test("an asset-role edit publishes nothing: no asset role has a protocol node, so the document carries none", () => {
   const { be, p, sys } = project();
   be.seed("/roms/bt.nes", blipToasterRom());
   const lsdj = sys.addSystem("/roms/lsdj.gb")!;
@@ -432,46 +449,41 @@ test("an asset-role edit publishes nothing: the kernel runs no asset role, so th
   expect(sys.view()[0].roles.find((r) => r.kind === "lsdj-assets")?.config.overrides).toEqual(overrides);
 });
 
-test("a DSP role registered with no scope runs in the kernel: the pipeline carries it, and its edit publishes", () => {
-  // RoleType.scope is optional and defaults to "system", so the store and the kernel must both read it that way: a
-  // store that wanted it spelled out would hand the kernel nothing, and the role would never run.
+test("which roles are placed is the protocol-node table's: a registered role with none is not, and its edit publishes nothing", () => {
+  // The node types are code in the script bundle, so a role registered at runtime has no node to be placed as,
+  // whatever its RoleType says (graph/protocolNodes.ts).
   const registry = buildAppRegistry();
-  let ran = 0;
-  registry.registerRole({
-    kind: "probe",
-    category: "feature",
-    schema: z.object({ level: clampedInt(0, 10, 1) }),
-    dsp: () => void ran++,
-  });
+  registry.registerRole({ kind: "probe", category: "feature", schema: z.object({ level: clampedInt(0, 10, 1) }), dsp: () => {} });
   registry.registerRomProvider(({ platform }) => (platform === "gb" ? [{ kind: "probe", config: {} }] : []));
   const be = new MockBackend("/cfg");
   be.seed("/roms/a.gb", gbRom());
   const p = new ProjectStore(be, new RecentStore(be), registry);
   const id = p.systems.addSystem("/roms/a.gb")!;
-  expect(be.kernelSettings()!.systems[0].pipeline).toEqual(canon([{ kind: "probe", config: { level: 1 } }]));
+  expect(p.systems.view()[0].roles.map((r) => r.kind).includes("probe")).toBe(true);
+  expect(be.protocolNodes(id)).toEqual([]);
   const n = be.graphRequests.length;
   expect(p.systems.setRoleConfig(id, "probe", { level: 3 })).toBe(true);
-  expect(since(be, n)).toEqual([{ slots: [id] }]);
-  // And the kernel, handed the structure that document carries, runs it.
-  const kernel = new DspKernel(registry);
-  kernel.setSystems(be.kernelSettings()!);
-  const block = { frames: 64, sampleRate: 48000, tempo: 120, ppqStart: 0, transport: false };
-  kernel.processBlock({ ...block, midiIn: [], buttons: [], keys: [], serialOut: [] });
-  expect(ran).toBe(1);
+  expect(since(be, n)).toEqual([]);
 });
 
-test("a systems store without a registry hands the kernel every role it holds, and an edit to one publishes", () => {
-  // It cannot tell which roles the kernel runs, so the kernel's own registry decides; the document it publishes
-  // carries them all, and so must a publish after an edit.
+test("a systems store without a registry places the same protocol nodes, and an edit to one publishes", () => {
+  // With no registry the store parses no config, so the node gets the role's config as it was stored; which roles
+  // are placed does not depend on a registry at all.
   const be = new MockBackend("/cfg");
   be.seed("/roms/a.gb", gbRom());
   const sys = new SystemsStore(be);
-  const id = sys.adopt({ romPath: "/roms/a.gb", roles: [{ kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiSync } }] })!;
-  expect(be.kernelSettings()!.systems[0].pipeline).toEqual(canon([{ kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiSync } }]));
+  const id = sys.adopt({
+    romPath: "/roms/a.gb",
+    roles: [{ kind: "sameboy", config: {} }, { kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiSync } }],
+  })!;
+  expect(be.protocolNodes(id)).toEqual([`sys-${id}/lsdj-sync`]);
+  expect(be.graphNode(`sys-${id}/lsdj-sync`)?.settings).toEqual({ mode: LsdjSyncMode.MidiSync });
+  // A store on its own routes no MIDI and runs no controller.
+  expect(be.graphNode("routing")).toBe(undefined);
   const n = be.graphRequests.length;
   expect(sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MidiOut })).toBe(true);
   expect(since(be, n)).toEqual([{ slots: [id] }]);
-  expect(be.kernelSettings()!.systems[0].pipeline).toEqual(canon([{ kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiOut } }]));
+  expect(be.graphNode(`sys-${id}/lsdj-sync`)?.settings).toEqual({ mode: LsdjSyncMode.MidiOut });
 });
 
 const MGB: ConstructSpec = { romPath: "", platform: "gb", core: "sameboy", embeddedRom: "mgb", savPath: null, statePath: null };
@@ -541,42 +553,57 @@ test("DirectGraph sets each system's pipeline and the project stages, each a pub
   const g = new DirectGraph(be);
   g.add(MGB, 1);
   g.add(MGB, 2);
-  expect(be.kernelSettings()).toEqual(
-    canon({
-      project: [],
-      systems: [
-        { id: 1, pipeline: [], serialOut: true },
-        { id: 2, pipeline: [], serialOut: true },
-      ],
-    }),
-  );
+  // No roles and no stages: no protocol node, no routing and no controller.
+  expect(be.lastDocument()!.nodes.map((n) => n.id).slice(0, 4)).toEqual(["midi-in", "controller-in", "sys-1", "sys-2"]);
   const n = be.graphRequests.length;
   const mgb: RoleInstance = { kind: "mgb", config: {} };
-  expect(g.setPipeline(2, [mgb])).toBe(true);
+  expect(g.setPipeline(2, [{ kind: "sameboy", config: {} }, mgb])).toBe(true); // a role with no node is left out
   expect(g.setProjectStages([SEND_TO_ALL])).toBe(true);
   expect(g.setPipeline(9, [mgb])).toBe(false); // not placed here
   expect(since(be, n)).toEqual([{ slots: [1, 2] }, { slots: [1, 2] }]);
-  expect(be.kernelSettings()!.project).toEqual(canon([SEND_TO_ALL]));
-  expect(be.kernelSettings()!.systems.map((s) => s.pipeline)).toEqual(canon([[], [mgb]]));
-  // A replace is a new system, with an empty pipeline; the other keeps its own.
+  expect(be.graphNode("routing")?.settings).toEqual({ mode: "sendToAll", systems: [1, 2] });
+  expect([be.protocolNodes(1), be.protocolNodes(2)]).toEqual([[], ["sys-2/mgb"]]);
+  expect(wired(be, "routing.sys-2", "sys-2/mgb.midi")).toBe(true);
+  // A replace is a new system, with no roles; the other keeps its own.
   g.replace(2, MGB, 3);
   g.setPipeline(1, [mgb]);
-  expect(be.kernelSettings()!.systems.map((s) => [s.id, s.pipeline])).toEqual(canon([[1, [mgb]], [3, []]]));
+  expect([be.protocolNodes(1), be.protocolNodes(3)]).toEqual([["sys-1/mgb"], []]);
+});
+
+test("DirectGraph takes a launchpad stage as the project's controller, its app config parsed by the app's schema", () => {
+  const be = new MockBackend("/cfg");
+  const g = new DirectGraph(be);
+  g.add(MGB, 1);
+  const launchpad: RoleInstance = { kind: "launchpad", config: { app: "lsdj-midimap", target: "midiOut", appConfig: { quantise: "beat" } } };
+  expect(g.setProjectStages([SEND_TO_ALL, launchpad])).toBe(true);
+  expect(be.graphNode("controller")?.settings).toEqual(
+    canon({
+      app: "lsdj-midimap", target: "midiOut", systemId: 1, appConfig: { quantise: "beat", follow: true, page: 0 },
+      songRowTicks: [], anchorRows: [], anchorSeq: 0,
+    }),
+  );
+  // Bound for a real Game Boy, its launches leave the host, under the system it resolved.
+  expect(be.graphNode("midi-out")?.settings).toEqual({ systems: [1] });
+  expect(wired(be, "controller.midiOut", "midi-out.in1")).toBe(true);
+  expect(g.setController(null)).toBe(true);
+  expect(be.graphNode("controller")).toBe(undefined);
+  expect(be.graphNode("routing") !== undefined).toBe(true); // the routing stays
 });
 
 test("DirectGraph puts the structure back when its document is refused", () => {
   const be = new MockBackend("/cfg");
   const g = new DirectGraph(be);
   g.add(MGB, 1);
-  const before = be.kernelSettings();
+  const before = be.lastDocument();
   refuseNext(be, 1);
   expect(g.setPipeline(1, [{ kind: "mgb", config: {} }])).toBe(false);
   refuseNext(be, 1);
   expect(g.setProjectStages([SEND_TO_ALL])).toBe(false);
   // The restored model is what a shape change builds.
   expect(g.graph.withShape({ kind: "perSystem" }, () => true)).toBe(true);
-  expect(be.kernelSettings()).toEqual(before);
-  expect(before).toEqual(canon({ project: [], systems: [{ id: 1, pipeline: [], serialOut: true }] }));
+  expect(be.lastDocument()).toEqual(before);
+  expect(be.protocolNodes(1)).toEqual([]);
+  expect(be.graphNode("routing")).toBe(undefined);
 });
 
 test("buildCore refuses id 0 and builds nothing, as native does", () => {

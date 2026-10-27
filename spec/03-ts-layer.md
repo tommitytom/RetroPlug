@@ -200,14 +200,16 @@ missing files, and holds `pendingLoad` for `relink` or `commit`
 ([`beginLoad`, projectStore.ts:704](../packages/retroplug/src/projectStore.ts#L704); [`commit`,
 :719](../packages/retroplug/src/projectStore.ts#L719)).
 Three project settings reach the engine, each through the graph the project publishes
-([`publishGraph`, projectStore.ts:165](../packages/retroplug/src/projectStore.ts#L165)):
+([`publishGraph`, projectStore.ts:166](../packages/retroplug/src/projectStore.ts#L166)):
 `setAudioRouting` as its wiring (`publishRouting()`, which re-arms the NES tap), and `setMidiRouting`
-and `setController` as the DSP kernel's structure. `publishGraph` runs
-[`projectKernelStructure`](../packages/retroplug/src/kernelProjection.ts) over the systems'
-pipelines, the MIDI routing and the controller (with the song-timing table it reads from the
-controller cart's battery here, on the control plane), and publishes `{ systems, routing, project }`:
-each system with its projected pipeline, and the synthesized `midi-routing` and Launchpad stages as
-the project's. `refreshControllerSong` publishes too, when its poll finds the controller cart's song
+and `setController` as the script nodes ahead of the systems. `publishGraph` publishes
+`{ systems, routing, midiRouting, controller }`: each system with its roles that have a protocol node
+([`graph/protocolNodes.ts`](../packages/retroplug/src/graph/protocolNodes.ts)), the MIDI routing, and
+the controller with its app config parsed by the app's schema and the song-timing table it reads from
+the controller cart's battery here, on the control plane. [`buildGraph`](../packages/retroplug/src/graph/buildGraph.ts)
+places the routing node, the controller node and a node per role from them, forcing the MI.MAP
+controller's cart into the sync mode it needs ([`graph/controller.ts`](../packages/retroplug/src/graph/controller.ts)).
+`refreshControllerSong` publishes too, when its poll finds the controller cart's song
 moved or a new start anchor. A load holds the publishes back while it adopts and publishes once; a
 load that throws partway publishes what it adopted before rethrowing, and every exit of a load tells the
 structure's observers (`onSystemsChange`) once.
@@ -590,9 +592,10 @@ Two concepts touched throughout this doc belong fully to **doc 04**:
   runs as the script node [`src/script/kernelNode.ts`](../packages/retroplug/src/script/kernelNode.ts),
   in the bundle every Engine embeds, inside the script host's **bare QuickJS audio context**: the
   distinct runtime, never shared with the control-plane runtime.
-  [`kernelProjection.ts`](../packages/retroplug/src/kernelProjection.ts) turns the systems' pipelines,
-  the `midiRouting` and the controller settings into the kernel structure, which
-  `ProjectStore.publishGraph` publishes and `buildGraph` makes the kernel node's settings.
+  Since B3b's flip no document places it: `buildGraph` places a script node per role instead
+  ([`graph/protocolNodes.ts`](../packages/retroplug/src/graph/protocolNodes.ts),
+  [`src/script/nodes/`](../packages/retroplug/src/script/nodes)), and the kernel node stays registered,
+  unplaced, until it is deleted.
 
 Doc 04 covers the kernel node's ports, the per-system pipelines, the drift-exact PPQ clock in JS,
 and how the kernel runs in the script host.
@@ -625,4 +628,4 @@ broader remaining feature gaps live in **doc 07**; this list is only the TS-laye
 | Services | [`src/fileSelection.ts`](../packages/retroplug/src/fileSelection.ts) · [`src/fileWatcher.ts`](../packages/retroplug/src/fileWatcher.ts) · [`src/sramAutoSave.ts`](../packages/retroplug/src/sramAutoSave.ts) |
 | Composition | [`src/pluginControlPlane.ts`](../packages/retroplug/src/pluginControlPlane.ts) · [`src/appStores.ts`](../packages/retroplug/src/appStores.ts) · [`src/appHost.ts`](../packages/retroplug/src/appHost.ts) |
 | UI | [`ui/main.tsx`](../packages/retroplug/ui/main.tsx) · [`ui/App.tsx`](../packages/retroplug/ui/App.tsx) · [`ui/screens/grid/`](../packages/retroplug/ui/screens/grid) · [`ui/screens/menu/`](../packages/retroplug/ui/screens/menu) · [`ui/lvgl/`](../packages/retroplug/ui/lvgl) · [`ui/app/`](../packages/retroplug/ui/app) · [`ui/host/`](../packages/retroplug/ui/host) · [`ui/hooks/`](../packages/retroplug/ui/hooks) |
-| DSP kernel (doc 04) | [`src/script/kernelNode.ts`](../packages/retroplug/src/script/kernelNode.ts) · [`src/kernelProjection.ts`](../packages/retroplug/src/kernelProjection.ts) |
+| DSP kernel (doc 04) | [`src/script/kernelNode.ts`](../packages/retroplug/src/script/kernelNode.ts) · [`src/graph/protocolNodes.ts`](../packages/retroplug/src/graph/protocolNodes.ts) · [`src/graph/controller.ts`](../packages/retroplug/src/graph/controller.ts) |

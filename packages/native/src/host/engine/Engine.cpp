@@ -126,7 +126,7 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
     std::string why;
     if (!graph_->script.load(scriptBundle, &why))
         std::fprintf(stderr, "[engine] the script-node bundle did not load (%s); no script node type is registered\n", why.c_str());
-    // The DSP kernel is the script package's rp.dsp.kernel (src/script/kernelNode.ts).
+    // The routing, the controller and the protocol nodes are the script package's (src/script/nodes/).
     for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), rp::host::sameboyPackage(),
                                 rp::host::mesenPackage(), rp::host::hostIoPackage(), rp::host::n8Package()})
         graph_->registry.addPackage(p);
@@ -622,11 +622,12 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
     rp::host::ScriptHost& script = graph_->script;
     const double planStart = script.traceNow();
 #endif
-    // The host inputs, the kernel, every system, the mixing and the host outputs (the host drained before this).
+    // The host inputs, the script nodes, every system, the mixing and the host outputs (the host drained before this).
     graph_->host->run(frames, transport, outputs, static_cast<std::uint32_t>(numOutputs));
 #ifdef RETROPLUG_PROFILE
-    // apu-render: the plan from where its script nodes end, which in every document TS builds is the kernel node,
-    // run before the systems it feeds.
+    // apu-render: the plan from where its script nodes end. In every document TS builds they all run before the
+    // systems they feed: buildGraph places them ahead of the systems, and the planner keeps document order among nodes
+    // ready at once (Planner.cpp order()).
     script.spanSince(rp::host::DSP_SPAN_APU, std::max(planStart, script.lastProcessEnd()));
 #endif
     // The promise jobs the block's script nodes queued, then (a profile build) the allocation window's block counts.

@@ -331,7 +331,7 @@ test("the status row reads what the link is actually doing", () => {
   }
 });
 
-test("the app rows edit PROJECT settings, and each edit publishes the kernel's structure", () => {
+test("the app rows edit PROJECT settings, and each edit publishes the graph", () => {
   const lp = installLaunchpad();
   try {
     const be = new MockBackend();
@@ -351,12 +351,12 @@ test("the app rows edit PROJECT settings, and each edit publishes the kernel's s
     expect(c.target).toBe("midiOut");
     expect(c.appConfig.quantise).toBe("beat");
     expect(c.appConfig.follow).toBe(false);
-    // The controller role is SYNTHESIZED at projection time, so an edit that was never published would leave
-    // the audio thread running the previous settings: each one sends a document, the last carrying the session.
+    // The controller node is SYNTHESIZED at each publish, so an edit that was never published would leave the
+    // audio thread running the previous settings: each one sends a document, the last carrying the session.
     expect(be.graphRequests.length - sent).toBe(4);
-    const launchpad = be.kernelSettings()?.project.find((r) => r.kind === "launchpad");
-    expect(launchpad?.config.target).toBe("midiOut");
-    expect((launchpad?.config.appConfig as { quantise?: string } | undefined)?.quantise).toBe("beat");
+    const controller = be.graphNode("controller");
+    expect(controller?.settings?.target).toBe("midiOut");
+    expect((controller?.settings?.appConfig as { quantise?: string } | undefined)?.quantise).toBe("beat");
   } finally {
     lp.restore();
   }

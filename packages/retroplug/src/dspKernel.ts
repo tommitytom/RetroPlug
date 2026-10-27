@@ -3,8 +3,9 @@
 // each system's pipeline of translators/sources reads its inputs and writes frame-tagged sinks.
 // This is doc-06's "translators are scripts" model expressed as plain TS behaviours over a
 // per-system context, so it runs and is fully testable under the mock (txiki) suite with ZERO C++.
-// On the audio thread it runs as the script node `rp.dsp.kernel` (script/kernelNode.ts), in the
-// script host's audio runtime.
+// On the audio thread it ran as the script node `rp.dsp.kernel` (script/kernelNode.ts), in the
+// script host's audio runtime; since B3b's flip no document places it (buildGraph places a script node
+// per role instead), and it stays registered until it is deleted.
 
 import type { MidiEvent } from "./midiRouting";
 import { isSystemStage, type RoleInstance, type RoleRegistry } from "./systemRoles";

@@ -111,7 +111,7 @@ import {
 } from "./launchpadDevices";
 import { ControllerRegistry, registerControllerApps, QUANTISE_VALUES, type Quantise } from "../../../src/controller";
 import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "../../../src/settingsEnums";
-import { controllerSyncOverride } from "../../../src/kernelProjection";
+import { controllerSyncOverride } from "../../../src/graph/controller";
 import type { MenuAction, MenuItem, MenuTree } from "./menuTree";
 import { roleConfig } from "../../../src/systemRoles";
 import { action, actionCycler, button, cycleInt, cycler, infoRow, separator, submenu } from "./menuItems";
@@ -441,11 +441,9 @@ function launchpadMenuChildren(ctx: MenuContext, cfg: LaunchpadConfig): MenuItem
   // Polled on the song-watch timer (refreshControllerSong), so reading it here costs a field access
   // rather than a 128 KB battery copy per menu render.
   const cartSync = controller.enabled ? project.controllerCartSync() : null;
-  // What the kernel will actually run on the cart, computed by the SAME helper the projection uses - so the
-  // row cannot describe something other than what is happening.
-  const syncOverride = controllerSyncOverride(ctx.systems, {
-    ...controller, songRowTicks: [], anchor: null, cartSync,
-  });
+  // What the cart's lsdj-sync node will actually run, computed by the SAME helper buildGraph uses - so the row
+  // cannot describe something other than what is happening.
+  const syncOverride = controllerSyncOverride(ctx.systems, controller.enabled ? { ...controller, cartSync } : null);
   const apps = controllerApps.list();
   const appIdx = Math.max(0, apps.findIndex((a) => a.id === controller.app));
   const quantise = (controller.appConfig.quantise as Quantise) ?? "bar";
@@ -459,8 +457,8 @@ function launchpadMenuChildren(ctx: MenuContext, cfg: LaunchpadConfig): MenuItem
     action("lp-connect", cfg.enabled ? "Disconnect" : "Connect", () => connectLaunchpad(!cfg.enabled, cfg)),
     infoRow("lp-status", `Status: ${launchpadStatus(cfg)}`), // read-only
     // What the controller is doing to the cart's sync role, and why. Shown rather than applied silently:
-    // the override does not touch the saved project (it happens at projection time), so without a row here
-    // the LSDj submenu would go on reporting the user's own setting while the kernel ran a different one.
+    // the override does not touch the saved project (it happens in the published graph), so without a row here
+    // the LSDj submenu would go on reporting the user's own setting while the cart ran a different one.
     //
     // A cart that is not in MI.MAP ignores row launches ENTIRELY WITHOUT COMPLAINT - it goes on playing and
     // stepping to the host clock, so the only symptom is that the pads stop doing anything. And the way
@@ -471,7 +469,7 @@ function launchpadMenuChildren(ctx: MenuContext, cfg: LaunchpadConfig): MenuItem
       ? [infoRow("lp-cart-sync", cartSyncLabel(syncOverride.mode, cartSync))]
       : []),
     separator("lp-sep-app"),
-    // Project scope from here down: these ride the .rplg, and each edit re-pushes the kernel structure.
+    // Project scope from here down: these ride the .rplg, and each edit publishes the graph.
     cycler("lp-enabled", "Use in Project", OFF_ON, controller.enabled ? 1 : 0, (n) =>
       project.setController({ enabled: n === 1 })),
     cycler("lp-app", "App", apps.map((a) => a.label), appIdx, (n) =>

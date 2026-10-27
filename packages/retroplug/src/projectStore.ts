@@ -21,7 +21,8 @@ import type { RoleRegistry } from "./systemRoles";
 import type { RecentStore } from "./recentStore";
 import { resolveSongCatalog, resolveTracker, workingSongReady, songLoadByNameWouldDiscard, loadSongLive, mutateLiveSav } from "./tracker";
 import { workingSongSignature, savSyncMode, songRowTicksFromSav } from "./lsdj/playback/fromSav";
-import { projectKernelStructure, type ControllerProjection } from "./kernelProjection";
+import type { GraphController } from "./graph/controller";
+import { parseAppConfig } from "./controller/registry";
 import { anchorRowsFromState, anyChannelPlaying, type ControllerAnchor } from "./lsdj/playback/anchor";
 import { LsdjReader } from "./lsdj/runtime";
 import { basename, dirname, stem } from "./pathUtil";
@@ -156,64 +157,68 @@ export class ProjectStore {
     this.systems.setOnGraphChange((rearmTap) => this.publishGraph(rearmTap));
   }
 
-  // Publish the engine's graph for the systems, the audio routing and the DSP kernel's structure as they stand
-  // (docs/modular-graph-phase-b3a-design.md section 5.2): the systems store calls this at the end of every edit
-  // that changes what the graph places or what the kernel runs for a system, and the settings the structure reads
-  // (the MIDI routing, the controller) publish it themselves. An edit that changes none of it sends nothing (the
-  // graph's dedupe). `rearmTap` re-arms the NES tap, as every edit that builds or drops a core does. A load holds it
-  // back while it adopts (holdGraph), then publishes once.
+  // Publish the engine's graph for the systems, the audio and MIDI routing and the controller as they stand
+  // (docs/modular-graph-phase-b3b-design.md section 4): the systems store calls this at the end of every edit that
+  // changes what the graph places for a system, and the settings the script nodes read (the MIDI routing, the
+  // controller) publish it themselves. An edit that changes none of it sends nothing (the graph's dedupe).
+  // `rearmTap` re-arms the NES tap, as every edit that builds or drops a core does. A load holds it back while it
+  // adopts (holdGraph), then publishes once.
   private publishGraph(rearmTap: boolean): boolean {
     if (this.holdGraph) return true;
-    const systems = this.systems.graphSystems();
-    const structure = projectKernelStructure(
-      systems.map((s) => ({ id: s.id, roles: s.pipeline })),
-      this.projectSettings.midiRouting,
-      this.controllerProjection(),
-    );
     return this.graph.publish(
       {
-        systems: systems.map((s, i) => ({ ...s, pipeline: structure.systems[i].pipeline })),
+        systems: this.systems.graphSystems(),
         routing: this.projectSettings.audioRouting,
-        project: structure.project ?? [],
+        midiRouting: this.projectSettings.midiRouting,
+        controller: this.controllerModel(),
       },
       { rearmTap },
     );
   }
 
-  /** The controller role's config, including the derived song-timing table the predictor runs on, or undefined
-   *  with no controller enabled.
+  /** The controller as the graph places it, its app config parsed by the app's schema and the derived song-timing
+   *  table the predictor runs on, or null with no controller enabled.
    *
-   *  The table is built HERE rather than in the role because decoding a battery is a control-plane job - the
+   *  The table is built HERE rather than in the node because decoding a battery is a control-plane job - the
    *  audio thread has neither the bytes nor any business running the sav codec. It is rebuilt on every publish
-   *  and is never persisted.
+   *  and is never persisted. The app config is parsed here for the same reason: zod is loaded on this side, and
+   *  the node imports only the apps' runtime.
    *
    *  KNOWN STALENESS: edits the player makes inside LSDj itself publish nothing, so the table lags the cart until
    *  refreshControllerSong notices the song moved (it polls), or something else publishes. The LEDs then describe
    *  the song as it was, which is the predictor's standing limitation (docs/launchpad-plan.md risk 5) rather than
    *  a new one. */
-  private controllerProjection(): ControllerProjection | undefined {
+  private controllerModel(): GraphController | null {
     const controller = this.projectSettings.controller;
-    if (!controller?.enabled) return undefined;
+    if (!controller?.enabled) return null;
     const views = this.systems.systems();
     const systemId = controller.systemId > 0 ? controller.systemId : (views[0]?.id ?? 0);
     const table = systemId > 0 ? songRowTicksFromSav(this.systems.readSram(systemId)) : null;
     // No readable battery is not a failure: the app still launches rows, it just cannot shade the ones that
     // hold chains. An empty table reads as "no content anywhere".
-    return { ...controller, songRowTicks: table ?? [], anchor: this.controllerAnchor, cartSync: this.controllerSync };
+    return {
+      app: controller.app,
+      target: controller.target,
+      systemId: controller.systemId,
+      appConfig: parseAppConfig(controller.app, controller.appConfig),
+      songRowTicks: table ?? [],
+      anchor: this.controllerAnchor,
+      cartSync: this.controllerSync,
+    };
   }
 
   /** Install the hook fired whenever the systems structure changes (a user edit, or a load / new; the quiet
-   *  rebuild path notifies at the end of commit/newProject), or when a setting the kernel's structure reads
+   *  rebuild path notifies at the end of commit/newProject), or when a setting the graph's script nodes read
    *  changes (MIDI routing, the controller, the controller cart's song). For the structure's observers (the UI,
-   *  the plugin's watched ROMs): the kernel needs no hook, since the graph this store publishes carries its
-   *  structure. */
+   *  the plugin's watched ROMs): the audio side needs no hook, since the graph this store publishes carries all of
+   *  it. */
   setOnSystemsChange(fn: () => void): void {
     this.onSystemsChange = fn;
   }
 
   /** Install a hook fired on ANY project-state change — settings edits (setLayout / setZoom / …) and
    *  dirty transitions (mutation, save, export, new, load). Distinct from setOnSystemsChange, which fires on
-   *  a systems-structure change or a change to a setting the kernel's structure reads (MIDI routing, the
+   *  a systems-structure change or a change to a setting the graph's script nodes read (MIDI routing, the
    *  controller). A UI multiplexer wires this to re-render the settings / dirty views, which would otherwise
    *  never be notified. */
   setOnChange(fn: () => void): void {
@@ -422,11 +427,11 @@ export class ProjectStore {
     return "dropped";
   }
 
-  /** Notice an edit the player made INSIDE the tracker and re-publish the kernel's structure, so a control
-   *  surface's song grid follows the song.
+  /** Notice an edit the player made INSIDE the tracker and re-publish the graph, so a control surface's song
+   *  grid follows the song.
    *
-   *  The controller's row-timing table is derived at publish time and reaches the audio thread as the kernel's
-   *  settings, which means it only moves when something publishes. Nothing did: adding a chain to a song row
+   *  The controller's row-timing table is derived at publish time and reaches the audio thread as the controller
+   *  node's settings, which means it only moves when something publishes. Nothing did: adding a chain to a song row
    *  left the grid showing the song as it was until the feature was toggled off and on. This is the
    *  missing signal, and it is polled rather than pushed because a cart being edited on its own screen
    *  emits nothing. Cheap enough to sit on the same timer as syncRecent: a signature over ~3 KB of
@@ -489,7 +494,7 @@ export class ProjectStore {
   }
 
   /** The latest start-edge anchor, or null when the cart has not started on its own since load. Read by
-   *  the kernel projection, which publishes it to the controller role. */
+   *  the publish, which hands it to the controller node. */
   controllerStartAnchor(): ControllerAnchor | null {
     return this.controllerAnchor;
   }
@@ -506,8 +511,8 @@ export class ProjectStore {
   }
   setMidiRouting(v: MidiRouting): boolean {
     if (!this.setEnumSetting("midiRouting", v)) return false;
-    // The kernel's midi-routing role is synthesized from this setting at projection time, so publish: otherwise
-    // the audio thread keeps routing by the old mode until an unrelated structural edit.
+    // The routing node is placed from this setting at each publish, so publish: otherwise the audio thread keeps
+    // routing by the old mode until an unrelated structural edit.
     this.publishGraph(false);
     this.onSystemsChange();
     return true;
@@ -526,9 +531,9 @@ export class ProjectStore {
 
   /** Edit the control-surface session (which app runs, where its launches go, the app's own knobs).
    *
-   *  Like setMidiRouting, and unlike the other setting writers, this publishes the KERNEL's structure, not just the
-   *  title bar: the kernel projection reads these settings (kernelProjection synthesizes the controller role from
-   *  them), so a change that was never published would leave the audio thread running the previous app.
+   *  Like setMidiRouting, and unlike the other setting writers, this publishes the GRAPH, not just the title bar:
+   *  the controller node is placed from these settings at each publish, so a change that was never published would
+   *  leave the audio thread running the previous app.
    *  `appConfig` merges rather than replaces, so a menu row can set one knob without knowing the others. */
   setController(patch: Partial<ControllerSettings>): void {
     const current = this.projectSettings.controller;
@@ -734,7 +739,7 @@ export class ProjectStore {
       });
     } catch (e) {
       // The systems adopted before the throw are built and listed, so place them as the final publish would, with
-      // their kernel pipelines: a graph left at the clear's would free their cores under the store, and refuse
+      // their protocol nodes: a graph left at the clear's would free their cores under the store, and refuse
       // every later edit. (A throw in the clear's own publish lists none, and this places none, as it tried to.)
       // Then tell the structure's observers, which the quiet clear and adopts have not: the UI would keep the
       // previous project's tiles, and the plugin would watch that project's ROMs. Either step's throw is logged, so
@@ -785,8 +790,8 @@ export class ProjectStore {
     return true;
   }
 
-  /** Publish the whole graph: the systems as they stand, wired by the current audio-routing mode, with the kernel's
-   *  structure. Called on set / load / reset, every one re-arming the NES tap, as a routing change always has, even
+  /** Publish the whole graph: the systems as they stand, wired by the current audio-routing mode, with their
+   *  script nodes. Called on set / load / reset, every one re-arming the NES tap, as a routing change always has, even
    *  to the mode already set. */
   private publishRouting(): void {
     this.publishGraph(true);

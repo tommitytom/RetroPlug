@@ -1,7 +1,7 @@
 // The engine's graph as one control-plane context publishes it (docs/modular-graph-phase-b2-design.md section
-// 2.2): the model the last publish gave it (the systems with their kernel pipelines, the routing and the kernel's
-// project stages: docs/modular-graph-phase-b3a-design.md section 5.2), the host's output shape, and the canonical
-// text and slots of the document that last planned. Whoever builds systems (the ProjectStore, or a DirectGraph for
+// 2.2): the model the last publish gave it (the systems with their protocol roles, the audio routing, the MIDI
+// routing and the controller: docs/modular-graph-phase-b3b-design.md section 4), the host's output shape, and the
+// canonical text and slots of the document that last planned. Whoever builds systems (the ProjectStore, or a DirectGraph for
 // callers with no store) publishes through it, and the host shape is an edit of its own. One per native Engine: two
 // publishers with separate EngineGraphs would each skip a document the other had already replaced.
 //
@@ -24,7 +24,7 @@ const sameShape = (a: HostShape, b: HostShape): boolean =>
 
 export class EngineGraph {
   private shape_: HostShape = { kind: "multi", channels: 2 };
-  private model: PublishedModel = { systems: [], routing: "stereo", project: [] };
+  private model: PublishedModel = { systems: [], routing: "stereo", midiRouting: null, controller: null };
   /** The canonical text and slots of the last document that planned; null before the first and after a refusal. */
   private sent: string | null = null;
   /** A refused document carried a re-arm: every document sent carries it until one of them plans. */
@@ -44,7 +44,12 @@ export class EngineGraph {
    *  is sent even then, since its plan carries the tap trailer. False when the planner refused it; the model is
    *  this one either way, so a later shape change rebuilds it and not the one running. */
   publish(model: PublishedModel, opts: { rearmTap?: boolean } = {}): boolean {
-    this.model = { systems: model.systems.slice(), routing: model.routing, project: model.project.slice() };
+    this.model = {
+      systems: model.systems.slice(),
+      routing: model.routing,
+      midiRouting: model.midiRouting ?? null,
+      controller: model.controller ?? null,
+    };
     return this.send(this.shape_, opts.rearmTap === true);
   }
 
@@ -97,8 +102,9 @@ export class EngineGraph {
     const rearm = rearmTap || this.rearmDue;
     const built = buildGraph({ ...this.model, shape });
     const document = toGraphJson(built.document);
-    // The slots as well: native's slot table orders its snapshot publishes. (Two slot orders no longer build one
-    // document, as a link group's could before the kernel listed its systems in slot order; the key holds either way.)
+    // The slots as well: native's slot table orders its snapshot publishes. (Two slot orders of a link group build
+    // one document when nothing in it lists the systems in slot order, as the routing node does; the key holds
+    // either way.)
     const key = `${document}\n${built.slots.join(",")}`;
     if (key !== this.sent || rearm) {
       const request: SetGraphRequest = { document, slots: built.slots };

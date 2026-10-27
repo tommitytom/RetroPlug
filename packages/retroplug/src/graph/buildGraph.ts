@@ -1,12 +1,14 @@
 // The engine's graph as TS builds it (docs/modular-graph-phase-b2-design.md section 2.1): the systems in slot
-// order, the project's audio routing and the host's output shape, turned into the document setGraph plans. Each
-// document also carries the DSP kernel, whose structure (every system's pipeline and the project's stages) is its
-// settings, wired between the host's I/O and every system (docs/modular-graph-phase-b3a-design.md section 5.1).
+// order, the project's audio routing and the host's output shape, turned into the document setGraph plans. Ahead of
+// the systems, each document places the script nodes that feed them (docs/modular-graph-phase-b3b-design.md
+// section 4): the MIDI routing, a controller session when one is enabled, and a protocol node for each role of each
+// system that has one, wired between the host's I/O and the systems as the DSP kernel's ports were.
 // Pure, and held to test/graph/golden/build-graph.json, whose audio wiring is the B1 native translator's, so every
 // audio node id, the document order (which is the plan order on ties) and every per-lane sum is the translator's.
-import type { AudioRouting } from "../settingsEnums";
-import type { RoleInstance } from "../systemRoles";
+import type { AudioRouting, MidiRouting } from "../settingsEnums";
 import type { GraphDocument, NodeDoc, WireDoc } from "./graphDocument";
+import { PROTOCOL_NODES, type ProtocolNodeSpec, type ProtocolRole, type SystemInput } from "./protocolNodes";
+import { controllerSettings, controllerSyncOverride, controllerTarget, NO_SYSTEM, type GraphController } from "./controller";
 
 export type SystemNodeType = "rp.sameboy.gb" | "rp.mesen.nes" | "rp.mesen.gba" | "rp.mesen.sms";
 
@@ -24,8 +26,9 @@ export interface GraphSystem {
   linkGroup: number;
   /** NES only: the channel export mode its core was built with. */
   exportMode: number;
-  /** The DSP kernel's pipeline for this system: the roles it runs, in order (kernelProjection.ts). */
-  pipeline: RoleInstance[];
+  /** The roles that have a protocol node, in the system's order, each with the node type it is placed as and its
+   *  config as the store parsed it (graph/protocolNodes.ts protocolPipeline). */
+  pipeline: ProtocolRole[];
 }
 
 export interface GraphModel {
@@ -33,8 +36,11 @@ export interface GraphModel {
   systems: readonly GraphSystem[];
   routing: AudioRouting;
   shape: HostShape;
-  /** The DSP kernel's project-scope stages (the MIDI routing, a controller session), run before every pipeline. */
-  project: RoleInstance[];
+  /** How the host's MIDI is fanned out to the systems. Absent or null routes none: no routing node is placed, as a
+   *  DirectGraph or a lone SystemsStore publishes before anything sets a mode. */
+  midiRouting?: MidiRouting | null;
+  /** The control-surface session, absent or null when none is enabled. */
+  controller?: GraphController | null;
 }
 
 /** The NES tap the engine arms for a lone NES under a split routing: its pins (1) or its five channels (3).
@@ -55,11 +61,10 @@ export interface BuiltGraph {
 /** rp.core.add's input limit (CoreNodes.cpp): a longer sum chains adds, continuing the same left-to-right sum. */
 const ADD_INPUTS = 16;
 
-/** The DSP kernel's node type (script/kernelNode.ts KERNEL_NODE_TYPE, which test/graph/build-graph.test.ts holds this to). */
-const KERNEL = "rp.dsp.kernel";
-
-/** The inputs every system node has, each fed by the kernel output of the same name for that system. */
-const SYSTEM_INPUTS = ["serialIn", "midi", "bytes", "buttons"] as const;
+// The project's script node types, as their modules spell them (script/nodes/midiRoute.ts and
+// controllerSession.ts, which test/graph/build-graph.test.ts holds these to).
+const MIDI_ROUTE = "rp.midi.route";
+const CONTROLLER_SESSION = "rp.controller.session";
 
 interface Stream {
   port: string;
@@ -67,6 +72,9 @@ interface Stream {
 }
 
 const sysNode = (id: number): string => `sys-${id}`;
+
+/** A system's protocol node: sys-<id>/<role-kind>, the main design's convention. */
+const protocolId = (system: number, kind: string): string => `${sysNode(system)}/${kind}`;
 
 /** The streams a core reports in `mode` (a NES's export mode; ignored otherwise), as channelLayout() does. */
 function streamsOf(type: SystemNodeType, mode: number): Stream[] {
@@ -134,46 +142,76 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     return [`${name}.out1`, `${name}.out2`];
   };
 
-  // The kernel between the host's input and the systems: its settings are the structure, in slot order (positional
-  // MIDI routing reads it), each Game Boy with the serialOut port that brings its serial-out bytes back (what MI.OUT
-  // and master sync decode).
-  nodes.push(
-    { id: "midi-in", type: "rp.host.midi-in" },
-    { id: "controller-in", type: "rp.host.controller-in" },
-    {
-      id: "kernel",
-      type: KERNEL,
-      settings: {
-        project: model.project,
-        systems: systems.map((s) => ({ id: s.id, pipeline: s.pipeline, serialOut: s.type === "rp.sameboy.gb" })),
-      },
-    },
-  );
-  wire("midi-in.midi", "kernel.midiIn");
-  wire("controller-in.midi", "kernel.controllerIn");
-  wire("controller-in.connected", "kernel.controllerConnected");
+  nodes.push({ id: "midi-in", type: "rp.host.midi-in" }, { id: "controller-in", type: "rp.host.controller-in" });
+  // Every script node goes before the systems in the document, so before them in the plan: the planner breaks ties by
+  // document order (Planner.cpp order()), and nothing a script node reads comes from a node after it but over a
+  // feedback wire. A profile build's apu-render span begins where the last script node's process ended, which
+  // relies on it.
+  //
+  // The routing: the host's MIDI fanned out to the systems in slot order (positional routing reads it), an output
+  // for each, sys-<id>.
+  const midiRouting = model.midiRouting ?? null;
+  if (midiRouting !== null) {
+    nodes.push({ id: "routing", type: MIDI_ROUTE, settings: { mode: midiRouting, systems: systems.map((s) => s.id) } });
+    wire("midi-in.midi", "routing.midiIn");
+  }
+  // Host MIDI out's inputs, in the order the kernel emitted: the controller's first, then each system's in slot
+  // order, every message under the system named beside it.
+  const hostMidi: { from: string; system: number }[] = [];
+  const controller = model.controller ?? null;
+  const target = controller ? controllerTarget(controller, systems) : NO_SYSTEM;
+  if (controller) {
+    // Its target resolved here ("0 is the first system"), so it follows a change of first system.
+    nodes.push({ id: "controller", type: CONTROLLER_SESSION, settings: controllerSettings(controller, target) });
+    wire("controller-in.midi", "controller.controllerIn");
+    wire("controller-in.connected", "controller.controllerConnected");
+    // Driving a cart, it sends no host MIDI; it is wired all the same, as the kernel tagged its MIDI out either way.
+    hostMidi.push({ from: "controller.midiOut", system: target });
+  }
+  // The MI.MAP controller's cart, in the lsdj-sync mode it needs: that node's settings alone, never the project's.
+  const sync = controllerSyncOverride(systems, controller);
+  // Each system's protocol nodes, in slot order, then pipeline order. Their outputs feed the system's inputs of the
+  // same name; what reads MIDI reads its system's routed output.
+  for (const s of systems) {
+    const n = sysNode(s.id);
+    for (const role of s.pipeline) {
+      const spec: ProtocolNodeSpec = PROTOCOL_NODES[role.node];
+      const id = protocolId(s.id, role.kind);
+      const forced = sync !== null && sync.systemId === s.id && role.node === "rp.lsdj.sync";
+      nodes.push({ id, type: role.node, settings: forced ? { ...role.config, mode: sync.mode } : role.config });
+      if (spec.midiIn !== null && midiRouting !== null) wire(`routing.${n}`, `${id}.${spec.midiIn}`);
+      // The launches follow the routed MIDI, as the kernel appended them to its target's inbox.
+      if (spec.launches && controller?.target === "system" && target === s.id)
+        wire("controller.launches", `${id}.launches`);
+      for (const input of spec.writes) wire(`${id}.${input}`, `${n}.${input}`);
+      // MI.OUT comes back from the Game Boy a block after the core sent it, as it always has.
+      if (spec.serialOut && s.type === "rp.sameboy.gb")
+        wires.push({ from: `${n}.serialOut`, to: `${id}.serialOut`, feedback: true });
+      if (spec.midiOut) hostMidi.push({ from: `${id}.midiOut`, system: s.id });
+    }
+  }
   const groups = linkGroups(systems);
   const order = sumOrder(systems, groups);
   for (const i of order) nodes.push({ id: sysNode(systems[i].id), type: systems[i].type, settings: { core: systems[i].id } });
-  for (const s of systems) {
-    const n = sysNode(s.id);
-    for (const port of SYSTEM_INPUTS) wire(`kernel.${n}.${port}`, `${n}.${port}`);
-    // MI.OUT reaches the kernel a block after the core sent it, as it always has.
-    if (s.type === "rp.sameboy.gb") wires.push({ from: `${n}.serialOut`, to: `kernel.${n}.serialOut`, feedback: true });
-  }
   for (const g of groups)
     for (let k = 1; k < g.length; ++k) wire(`${sysNode(systems[g[k - 1]].id)}.link`, `${sysNode(systems[g[k]].id)}.link`);
-  // A physical N8 mirrors the first NES in slot order: what the kernel sends that system, it sends the cart.
+  // A physical N8 mirrors the first NES in slot order: what its protocol nodes send that system's core MIDI and core
+  // bytes, they send the cart.
   const cart = systems.find((s) => s.type === "rp.mesen.nes");
   if (cart) {
     nodes.push({ id: "cart", type: "rp.n8.cart-mirror", settings: { system: cart.id } });
-    wire(`kernel.${sysNode(cart.id)}.midi`, "cart.midi");
-    wire(`kernel.${sysNode(cart.id)}.bytes`, "cart.bytes");
+    for (const role of cart.pipeline)
+      for (const input of PROTOCOL_NODES[role.node].writes as readonly SystemInput[])
+        if (input === "midi" || input === "bytes") wire(`${protocolId(cart.id, role.kind)}.${input}`, `cart.${input}`);
   }
-  // The kernel's MIDI (each message behind its system's id) and its control-surface traffic, out to the host.
-  nodes.push({ id: "midi-out", type: "rp.host.midi-out" }, { id: "controller-out", type: "rp.host.controller-out" });
-  wire("kernel.midiOut", "midi-out.midi");
-  wire("kernel.controllerOut", "controller-out.midi");
+  // Host MIDI out, an input a producer, and the controller's surface traffic. With no producer the systems list is
+  // empty, which rp.host.midi-out still reads as its prefixed form, left unwired: nothing reaches the host either way.
+  nodes.push(
+    { id: "midi-out", type: "rp.host.midi-out", settings: { systems: hostMidi.map((p) => p.system) } },
+    { id: "controller-out", type: "rp.host.controller-out" },
+  );
+  hostMidi.forEach((p, k) => wire(p.from, `midi-out.in${k + 1}`));
+  if (controller) wire("controller.controllerOut", "controller-out.midi");
 
   const buses: number[] = [];
   if (shape.kind === "perSystem") {

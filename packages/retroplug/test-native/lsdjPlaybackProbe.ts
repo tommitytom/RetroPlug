@@ -26,7 +26,9 @@ import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";
 import { LsdjReader, type LsdjState, CHANNELS, type ChannelName } from "../src/lsdj/runtime";
 import { directGraph } from "../src/graph/directGraph";
-import type { KernelStructure } from "../src/dspKernel";
+import type { GraphController } from "../src/graph/controller";
+import type { RoleInstance } from "../src/systemRoles";
+import type { MidiRouting } from "../src/settingsEnums";
 
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
 const graph = directGraph();
@@ -71,10 +73,19 @@ export interface ProbeOptions {
   rom?: string;
   /** Milliseconds rendered before the probe hands back control, to clear the boot/self-test. */
   bootMs?: number;
-  /** Build the whole kernel structure instead of the default one-role pipeline, given the id the probe
-   *  assigned. For asking what the REAL projection produces - whether the pipeline a project actually
-   *  runs drives the cart - rather than what a hand-written pipeline does. */
-  structure?: (systemId: number) => KernelStructure;
+  /** Build the project the cart runs in instead of the default one-role pipeline, given the id the probe
+   *  assigned: its MIDI routing, its controller and the cart's roles, as a project holds them. For asking what
+   *  the REAL graph does - whether the pipeline a project actually runs (buildGraph's controller override
+   *  included) drives the cart - rather than what a hand-written pipeline does. */
+  project?: (systemId: number) => ProbeProject;
+}
+
+/** A project as a probe's cart runs in it. */
+export interface ProbeProject {
+  midiRouting: MidiRouting | null;
+  controller: GraphController | null;
+  /** The cart's roles, in order: each with a protocol node is placed as one. */
+  roles: RoleInstance[];
 }
 
 const emptyChannels = (): ProbeSample["channels"] => ({
@@ -129,25 +140,21 @@ export class LsdjProbe {
       savPath: null, statePath: null, sramBytes: savFrom(opts.song),
     }, id)) throw new Error(`LsdjProbe: the graph did not place system ${id}`);
 
-    const structure: KernelStructure = opts.structure
-      ? opts.structure(id)
-      : {
-          project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
-          systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode: opts.mode ?? "midiPassthrough" } }] }],
-        };
-    // The structure's project stages, and the pipeline it gives this cart. The stages are dropped first, which
-    // prunes their state, so a controller session never carries over from the previous probe: each probe's kernel
-    // starts as a fresh one would. Every OTHER system the graph holds loses its pipeline, whether or not a probe
+    const project: ProbeProject = opts.project
+      ? opts.project(id)
+      : { midiRouting: "sendToAll", controller: null, roles: [{ kind: "lsdj-sync", config: { mode: opts.mode ?? "midiPassthrough" } }] };
+    // The project's MIDI routing and controller, and the roles it gives this cart. The controller is dropped first,
+    // which frees its node and its state, so a controller session never carries over from the previous probe: each
+    // probe's starts as a fresh one would. Every OTHER system the graph holds loses its roles, whether or not a probe
     // owns it (a test can place one through the shared directGraph() and never remove it): as when each probe
     // loaded a kernel of its own and pushed it a structure naming only its own cart, under sendToAll it would
     // otherwise hear every byte staged at the new one. A graph call that fails throws, so it never reads as a
     // skipped test.
     for (const other of graph.ids())
       if (other !== id && !graph.setPipeline(other, [])) throw new Error(`LsdjProbe: could not clear system ${other}'s pipeline`);
-    if (!graph.setProjectStages([]) || !graph.setProjectStages(structure.project ?? []))
-      throw new Error("LsdjProbe: the graph refused the project stages");
-    if (!graph.setPipeline(id, structure.systems.find((s) => s.id === id)?.pipeline ?? []))
-      throw new Error(`LsdjProbe: the graph refused system ${id}'s pipeline`);
+    if (!graph.setProjectStages([]) || !graph.setMidiRouting(project.midiRouting) || !graph.setController(project.controller))
+      throw new Error("LsdjProbe: the graph refused the project's routing or controller");
+    if (!graph.setPipeline(id, project.roles)) throw new Error(`LsdjProbe: the graph refused system ${id}'s pipeline`);
 
     const probe = new LsdjProbe(be, audio, reader, id);
     liveProbes.push(probe);

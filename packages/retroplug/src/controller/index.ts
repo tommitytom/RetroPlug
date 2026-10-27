@@ -12,7 +12,7 @@ export {
   lsdjMidiMapTarget, launchMessage, nullTarget, LSDJ_MAX_ROW, type TrackerTarget,
 } from "./trackerTarget";
 
-export { ControllerRegistry, registerControllerApps, type ControllerAppType } from "./registry";
+export { ControllerRegistry, registerControllerApps, parseAppConfig, type ControllerAppType } from "./registry";
 
 export { CONTROLLER_APPS, controllerApp, type ControllerAppRuntime } from "./apps";
 

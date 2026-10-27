@@ -1,10 +1,10 @@
 // Noticing that the player edited the song ON THE CART.
 //
 // The controller's row-timing table is derived on the control plane and reaches the audio thread as the
-// kernel's settings in the graph the project publishes, so it only moves when something publishes - and
-// nothing did. Adding a chain to a
+// controller node's settings in the graph the project publishes, so it only moves when something publishes -
+// and nothing did. Adding a chain to a
 // song row inside LSDj left the Launchpad's grid showing the song as it was; toggling "Use in Project"
-// off and on was the only way through, because that drops the stage and takes its state with it.
+// off and on was the only way through, because that drops the node and takes its state with it.
 // Reported from a hardware session.
 //
 // A cart being edited on its own screen emits no signal at all, so this is a poll. It has to be cheap
@@ -31,9 +31,9 @@ function countPublishes(stores: ReturnType<typeof composeAppStores>): { n: numbe
   return count;
 }
 
-/** The launchpad stage of the kernel's structure in the last document sent. */
-function launchpadStage(be: MockBackend): Record<string, unknown> | undefined {
-  return be.kernelSettings()?.project.find((r) => r.kind === "launchpad")?.config;
+/** The controller node's settings in the last document sent. */
+function controllerSettings(be: MockBackend): Record<string, unknown> | undefined {
+  return be.graphNode("controller")?.settings;
 }
 
 /** A blank song bank, big enough to be a plausible battery. */
@@ -96,7 +96,7 @@ test("an unreadable battery is inert rather than a change", () => {
   expect(workingSongSignature(undefined)).toBe(0);
 });
 
-test("refreshControllerSong publishes the kernel's structure exactly once per real edit", () => {
+test("refreshControllerSong publishes the graph exactly once per real edit", () => {
   const be = new MockBackend();
   const stores = composeAppStores({ backend: be });
   be.seed("/roms/a.gb", gbRom());
@@ -264,7 +264,7 @@ test("the anchor is per channel, because channels diverge in normal play", () =>
   expect(stores.project.controllerStartAnchor()?.rows).toEqual([4, 3, 4, null]);
 });
 
-test("a start edge publishes the kernel's structure, or the anchor would sit on the control plane doing nothing", () => {
+test("a start edge publishes the graph, or the anchor would sit on the control plane doing nothing", () => {
   const { stores, be, id } = controllerCart();
   be.setRam(id, wramWith([null, null, null, null]));
   stores.project.refreshControllerSong();
@@ -272,5 +272,5 @@ test("a start edge publishes the kernel's structure, or the anchor would sit on 
   be.setRam(id, wramWith([1, 1, 1, 1]));
   expect(stores.project.refreshControllerSong()).toBe(true);
   expect(be.graphRequests.length).toBe(sent + 1);
-  expect(launchpadStage(be)?.anchorRows).toEqual([1, 1, 1, 1]);
+  expect(controllerSettings(be)?.anchorRows).toEqual([1, 1, 1, 1]);
 });

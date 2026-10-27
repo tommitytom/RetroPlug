@@ -30,7 +30,8 @@ import {
   nextFocusAfterRemove,
 } from "./systemsList";
 import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettingsSchema } from "./systemSettings";
-import { isSystemStage, type RoleRegistry, type RoleInstance } from "./systemRoles";
+import type { RoleRegistry, RoleInstance } from "./systemRoles";
+import { protocolNodeOf, protocolPipeline } from "./graph/protocolNodes";
 import { blipToasterChip, needsChipLabelScan, BLIPTOASTER_CHIP_SCAN_LEN } from "./bliptoaster/romDetect";
 import { roleConfigForNative, LsdjSyncMode } from "./settingsEnums";
 
@@ -118,13 +119,13 @@ export class SystemsStore {
   private focusedId = 0;
   private dirty = false;
   private onFocusChange: () => void = () => {};
-  // A store on its own publishes its systems at the default (stereo) routing, with no project stages (so no MIDI
-  // routing), through a graph of its own; the ProjectStore that owns one replaces this with its own publish, which
-  // adds the project's routing and kernel structure.
+  // A store on its own publishes its systems at the default (stereo) routing, with no MIDI routing and no
+  // controller, through a graph of its own; the ProjectStore that owns one replaces this with its own publish, which
+  // adds the project's audio and MIDI routing and its controller.
   private ownGraph: EngineGraph | null = null;
   private onGraphChange: (rearmTap: boolean) => void = (rearmTap) => {
     this.ownGraph ??= new EngineGraph(this.backend);
-    this.ownGraph.publish({ systems: this.graphSystems(), routing: "stereo", project: [] }, { rearmTap });
+    this.ownGraph.publish({ systems: this.graphSystems(), routing: "stereo" }, { rearmTap });
   };
   // Whether a core teardown writes the battery to disk first. Off only for an offline render.
   private batteryFlush = true;
@@ -156,24 +157,12 @@ export class SystemsStore {
   systems(): SystemEntry[] {
     return this.entries.slice();
   }
-  /** The systems as the engine's graph places them, in slot order (graph/buildGraph.ts), each with the roles the
-   *  DSP kernel runs for it as its pipeline. */
+  /** The systems as the engine's graph places them, in slot order (graph/buildGraph.ts), each with the roles that
+   *  have a protocol node, in order, as its pipeline: the core's config role and the features with no DSP behaviour
+   *  (asset overrides, a ROM's facts) stay out of the document, so a model, palette or asset edit leaves it as it
+   *  was. The same with a registry or without one (graph/protocolNodes.ts). */
   graphSystems(): GraphSystem[] {
-    return this.entries.map((e) => ({ id: e.id, ...e.built, pipeline: this.kernelPipeline(e.roles) }));
-  }
-
-  /** `roles`, in order, without those the DSP kernel does not run: the core's config role and the features with no
-   *  DSP behaviour (asset overrides, a ROM's facts). The kernel skips those itself, but in the graph's document they
-   *  would make every model, palette or asset edit a new document. */
-  private kernelPipeline(roles: RoleInstance[]): RoleInstance[] {
-    return roles.filter((r) => this.runsInKernel(r.kind));
-  }
-
-  // Whether the kernel runs a role of `kind`, by the kernel's own test (isSystemStage). A store without a registry
-  // cannot tell, so it hands the kernel every role it holds (a loaded project's), for the kernel's registry to
-  // decide, and an edit to any of them publishes.
-  private runsInKernel(kind: string): boolean {
-    return this.registry ? isSystemStage(this.registry.roleType(kind)) : true;
+    return this.entries.map((e) => ({ id: e.id, ...e.built, pipeline: protocolPipeline(e.roles) }));
   }
   focused(): number {
     return this.focusedId;
@@ -194,10 +183,10 @@ export class SystemsStore {
     this.onFocusChange = fn;
   }
 
-  /** Install the hook that publishes the engine's graph (the ProjectStore's, which adds the routing and the kernel's
-   *  project stages; without one the store publishes its systems at the default stereo routing itself). Called
-   *  once at the end of every edit that changes what the graph places or what the kernel runs for a system, BEFORE
-   *  the structural onChange: `rearmTap` for an edit that builds or drops a core, which re-arms the NES tap. */
+  /** Install the hook that publishes the engine's graph (the ProjectStore's, which adds the routing, the MIDI
+   *  routing and the controller; without one the store publishes its systems at the default stereo routing itself).
+   *  Called once at the end of every edit that changes what the graph places for a system, BEFORE the structural
+   *  onChange: `rearmTap` for an edit that builds or drops a core, which re-arms the NES tap. */
   setOnGraphChange(fn: (rearmTap: boolean) => void): void {
     this.onGraphChange = fn;
   }
@@ -552,12 +541,12 @@ export class SystemsStore {
     const built = rewired ? { ...e.built, linkGroup } : e.built;
     this.entries = replaceById(this.entries, id, { ...e, roles, built });
     // A feature role stays pure TS, EXCEPT lsdj-sync's serial-out capture mode, set on any lsdj-sync change: drive
-    // for MI.OUT, listen for master sync, none otherwise (the decoders themselves run in the kernel, which the
-    // publish below hands the new mode).
+    // for MI.OUT, listen for master sync, none otherwise (the decoders themselves run in the system's lsdj-sync node,
+    // which the publish below hands the new mode).
     if (roleKind === "lsdj-sync") this.syncSerialOutCapture(id);
-    // A role the kernel runs is the system's pipeline, which the document carries, so its edit publishes; an edit the
-    // document does not carry (a model or palette, an asset override) leaves it as it was.
-    if (rewired || this.runsInKernel(roleKind)) this.onGraphChange(false);
+    // A role with a protocol node is placed with its config as that node's settings, so its edit publishes; an edit
+    // the document does not carry (a model or palette, an asset override) leaves it as it was.
+    if (rewired || protocolNodeOf(roleKind) !== undefined) this.onGraphChange(false);
     this.markDirty();
     return true;
   }
@@ -611,7 +600,7 @@ export class SystemsStore {
    *  of from disk; `savPath` stays the auto-save target.
    *
    *  QUIET ON PURPOSE: unlike every other mutation this does NOT markDirty() or fire onChange. It
-   *  does publish the graph, which carries the system's kernel pipeline, so the core and its roles
+   *  does publish the graph, which carries the system's protocol nodes, so the core and its roles
    *  run at once (a project load holds that back and publishes once its systems are all built; see
    *  projectStore.load, which then fires ONE onSystemsChange rather than N). */
   adopt(
@@ -789,8 +778,8 @@ export class SystemsStore {
    *    pipeline, and `defaultRoles` itself emits core-role-then-providers, so appending
    *    reproduces the order a freshly added system would have.
    *
-   *  A stored kind that is no longer registered is left alone rather than pruned: the pipeline leaves
-   *  out kinds the registry does not know, so it is inert, and dropping it would silently
+   *  A stored kind that is no longer registered is left alone rather than pruned: the graph places
+   *  nothing for a kind with no protocol node, so it is inert, and dropping it would silently
    *  discard state belonging to a build the user might go back to.
    *
    *  No schema change and no version bump: the file is read as written, and the augmented list only

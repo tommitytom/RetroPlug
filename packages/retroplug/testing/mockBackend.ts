@@ -7,6 +7,7 @@
 import type { ApuState, ApuSquareState, Backend, BreakHitBatch, BuiltCore, SetGraphRequest, SetGraphResult, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CoreTransportStats, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, SerialOutCapture, TraceLine, ZipEntry } from "../src/backend";
 import { detectPlatform } from "../src/platform";
 import { savFromJson } from "../src/lsdj";
+import type { GraphDocument, NodeDoc } from "../src/graph/graphDocument";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -67,11 +68,6 @@ function settingsNumber(spec: ConstructSpec, key: string): number {
 }
 
 /** The kernel node's settings as a document carries them (src/script/kernelNode.ts). */
-export interface MockKernelSettings {
-  project: { kind: string; config: Record<string, unknown> }[];
-  systems: { id: number; pipeline: { kind: string; config: Record<string, unknown> }[]; serialOut: boolean }[];
-}
-
 export class MockBackend implements Backend {
   private files = new Map<string, Uint8Array>();
   private dir: string;
@@ -653,13 +649,23 @@ export class MockBackend implements Backend {
 
   // --- test helpers (not part of Backend) ---------------------------------
 
-  /** The DSP kernel's settings (its structure: the project stages, each system's pipeline in slot order) in the
-   *  last graph document setGraph was sent, or undefined when none was sent. */
-  kernelSettings(): MockKernelSettings | undefined {
+  /** The last graph document setGraph was sent, as it was spelt (canonical: keys sorted), or undefined when none was
+   *  sent. */
+  lastDocument(): GraphDocument | undefined {
     const request = this.graphRequests[this.graphRequests.length - 1];
-    if (!request) return undefined;
-    const doc = JSON.parse(request.document) as { nodes: { id: string; settings?: unknown }[] };
-    return doc.nodes.find((n) => n.id === "kernel")?.settings as MockKernelSettings | undefined;
+    return request ? (JSON.parse(request.document) as GraphDocument) : undefined;
+  }
+
+  /** Node `id` of the last graph document sent (the routing, the controller, a system's protocol node
+   *  `sys-<id>/<role-kind>`, ...), or undefined when that document has none or none was sent. */
+  graphNode(id: string): NodeDoc | undefined {
+    return this.lastDocument()?.nodes.find((n) => n.id === id);
+  }
+
+  /** The ids of the protocol nodes the last document places for system `system`, in document order. */
+  protocolNodes(system: number): string[] {
+    const prefix = `sys-${system}/`;
+    return (this.lastDocument()?.nodes ?? []).filter((n) => n.id.startsWith(prefix)).map((n) => n.id);
   }
 
   /** The ids the mock currently considers live, sorted. */
