@@ -419,11 +419,11 @@ The document `buildGraph` writes:
   for that system, `serialOut` true for a Game Boy. Its wires: `midi-in.midi`, `controller-in.midi` and
   `controller-in.connected` to its `midiIn`, `controllerIn` and `controllerConnected`; its
   `sys-<id>.serialIn` / `.midi` / `.bytes` / `.buttons` to the system node's input of the same name; each
-  Game Boy's `serialOut` back to its `sys-<id>.serialOut` as a feedback wire (MI.OUT's one block of
-  latency); the first NES's `sys-<id>.midi` and `.bytes` to the cart mirror as well; its `midiOut` and
-  `controllerOut` to `midi-out` and `controller-out`. Its ports are named by system id, so a structure
-  change reshapes it: the instance is kept and a surviving system's wires stay bound
-  ([04-roles-dsp-kernel.md](04-roles-dsp-kernel.md)).
+  Game Boy's `serialOut` back to its `sys-<id>.serialOut` as a feedback wire (one block of latency on
+  the serial-out bytes MI.OUT and master sync decode); the first NES's `sys-<id>.midi` and `.bytes` to
+  the cart mirror as well; its `midiOut` and `controllerOut` to `midi-out` and `controller-out`. Its
+  ports are named by system id, so a structure change reshapes it: the instance is kept and a surviving
+  system's wires stay bound ([04-roles-dsp-kernel.md](04-roles-dsp-kernel.md)).
 - **Routing as wiring.** For each host channel it lists the contributions in the order they sum:
   unlinked systems by slot, then the link groups by first appearance, L before R within a system. One
   contribution is wired straight to `audio-out`; several go through one mono `rp.core.add` in that order

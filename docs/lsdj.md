@@ -610,10 +610,10 @@ play that role:
 
   **Drive only, never master sync.** A stopped stock LSDj in SYNC=LSDj also waits on an external clock,
   for another master. Clocked, it takes the idle `0xFF` bytes for a master's clock, turns slave and
-  ignores START, and every bit clocked is captured: the "idle flood" (one bit a frame, about 5000 bytes a
-  second) master sync once had to detect, and what kept it silent at 48 kHz. So master sync's capture
-  listens, taking only the bytes LSDj clocks out itself (`serialStart`, internal clock), and its decoder's
-  stop is a 200 ms silence ([lsdj-master-sync-fix-design.md](lsdj-master-sync-fix-design.md)).
+  ignores START, and every bit clocked is captured: the "idle flood" (one bit a frame, about 5500 bytes a
+  second at 44.1 kHz) master sync once had to detect, and what kept it silent at 48 kHz. So master sync's
+  capture listens, taking only the bytes LSDj clocks out itself (`serialStart`, internal clock), and its
+  decoder's stop is a 200 ms silence ([lsdj-master-sync-fix-design.md](lsdj-master-sync-fix-design.md)).
 
 - **Serial-IN delivery (mGB, LSDJ KEYBD)** lives in `stepIfBelowTarget`, a
   per-byte slave pump: while `SC=0x80` and the FIFO is non-empty, it pops a byte

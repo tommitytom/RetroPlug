@@ -156,7 +156,9 @@ export function arduinoboyDecodeSerialOut(bytes: number[], state: ArduinoboyStat
 // (docs/lsdj-master-sync-fix-design.md). So every byte is a clock, and a stopped LSDj goes quiet, which makes the
 // firmware's stop a silence. A playing master clocks one byte per 24-PPQN tick, 62.5 ms apart at LSDj's slowest tempo
 // (40 BPM), so a silence this long is a stop: about three times that gap. It is measured on the bytes' own frames, so
-// where the 0xFC lands does not depend on how the host cuts its blocks.
+// the message sequence does not depend on how the host cuts its blocks. The 0xFC's time does: like every message this
+// decoder sends, it goes out at frame 0, here of the first block that starts more than MASTER_SYNC_STOP_MS after the
+// last byte, so it is quantised to a block start and up to a block late.
 const MASTER_SYNC_STOP_MS = 200;
 
 /** Cross-block Master Sync state (the lsdj-sync stage's `masterSync` sub-object, dropped whenever the mode is not

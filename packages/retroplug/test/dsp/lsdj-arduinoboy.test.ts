@@ -273,6 +273,16 @@ test("MasterSync: a silence that ends inside one call still stops the run, howev
     expect(sent(masterSync(timeline, split, 60000))).toEqual(expected);
 });
 
+test("MasterSync: the checks before a byte and at a block start share the stop's boundary: exactly 200 ms is no stop, a frame more is", () => {
+  // The second byte comes exactly STOP_FRAMES after the first, the third STOP_FRAMES + 1 after the second. In 1-frame
+  // blocks a block starts at each mark, so the block-start check meets both; in longer ones the check before each
+  // byte does.
+  const timeline: Timeline = [[100, 1], [100 + STOP_FRAMES, 1], [100 + 2 * STOP_FRAMES + 1, 2]];
+  const expected = [row(1), START, CLOCK, CLOCK, STOP, row(2), START, CLOCK, STOP];
+  for (const split of [even(1), cycle(FL_RAGGED), cycle(FL_BUFFER), even(1024), even(4096), even(8192)])
+    expect(sent(masterSync(timeline, split, 40000))).toEqual(expected);
+});
+
 test("lsdj-sync mode 8: kernel fans serialOut to the master-sync role → clock + start MIDI", () => {
   const reg = new RoleRegistry();
   registerDspRoles(reg);

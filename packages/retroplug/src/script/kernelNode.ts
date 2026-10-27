@@ -122,9 +122,9 @@ function midiEvents(messages: readonly Message[]): MidiEvent[] {
 }
 
 // The block's input, built as the native kernel stage built it: the transport, controllerConnected only when true,
-// midiIn, empty buttons and keys (no host feeds them yet), every system's MI.OUT bytes from last block in slot order
-// (each with its frame in that block), and controllerIn only when a surface sent something. Fresh every block, as the
-// stage's was.
+// midiIn, empty buttons and keys (no host feeds them yet), every system's serial-out bytes (what MI.OUT and master
+// sync decode) from last block in slot order (each with its frame in that block), and controllerIn only when a surface
+// sent something. Fresh every block, as the stage's was.
 function blockInput(b: Block, systems: readonly SystemPorts[]): BlockInput {
   const t = b.transport;
   const input = {

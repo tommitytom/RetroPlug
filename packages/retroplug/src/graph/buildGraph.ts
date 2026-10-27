@@ -135,7 +135,8 @@ export function buildGraph(model: GraphModel): BuiltGraph {
   };
 
   // The kernel between the host's input and the systems: its settings are the structure, in slot order (positional
-  // MIDI routing reads it), each Game Boy with the serialOut port that brings its MI.OUT back.
+  // MIDI routing reads it), each Game Boy with the serialOut port that brings its serial-out bytes back (what MI.OUT
+  // and master sync decode).
   nodes.push(
     { id: "midi-in", type: "rp.host.midi-in" },
     { id: "controller-in", type: "rp.host.controller-in" },

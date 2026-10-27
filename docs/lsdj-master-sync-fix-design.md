@@ -52,7 +52,7 @@ which is a likely cause of B0's seventh defect (MI.OUT's decoded notes depend on
 | Fix the decoder, or the cause? | **The cause.** Master sync captures only what LSDj clocks itself and never clocks its port. The first design's gap rule was a detector for our own artefact; it is dropped. |
 | How does the core know which? | **Capture becomes a mode.** `listen`: capture the bits the Game Boy clocks itself. `drive`: that, and clock a transfer waiting on an external clock, capturing its bits too (today's behaviour, MI.OUT's). Absent is off. The store picks `drive` for `midiOut` and `listen` for `masterSync`. |
 | The stop rule | **The firmware's: a silence.** Every byte is a clock, sent in the block it reaches; 0xFC goes out once no byte has come for 200 ms (`MASTER_SYNC_STOP_MS`), about three times the gap between clocks at LSDj's slowest tempo (40 BPM at 24 PPQN: 62.5 ms). |
-| Measured how? | **On the bytes' own frames** (built first, section 9): the Game Boy's `serialOut` stamps each byte at the frame its core completed it, and the kernel hands the frames to the role beside the bytes. So the silence is exact and the 0xFC lands in the same place at any block split. |
+| Measured how? | **On the bytes' own frames** (built first, section 9): the Game Boy's `serialOut` stamps each byte at the frame its core completed it, and the kernel hands the frames to the role beside the bytes. So the silence is exact and the message sequence is the same at any block split. The 0xFC's time is quantised to a block start, as every message this decoder sends goes out at frame 0: it leaves at frame 0 of the first block that starts more than 200 ms after the last byte, up to a block late. |
 | State across modes | **Dropped when the mode is not master sync**, so coming back starts clean rather than from a stale run or a stale last byte. |
 | 0xFC when the user switches mode mid-run? | **Not added.** Today does not send one either. |
 
@@ -80,7 +80,7 @@ On the wire the mode is a string, `"listen"` or `"drive"`, absent for off, parse
 the role passes `c.serialOut`, `c.serialOutFrames` and `c.block`.
 
 - **Every byte is a clock**, sent at once: if no run is open it first sends the song-row NoteOn (the byte's value, on
-  the configured channel, default 0) and 0xFA.
+  channel 0: `MasterSyncState.channel` exists, but nothing sets it yet) and 0xFA.
 - **The stop.** Positions are frames from the current block's start. This call's bytes came from the previous block,
   so a byte sits at `frame - lastFrames`; `lastFrames` is the previous call's block length, taken to equal the current
   one on the first call. The rule is checked in two places. Before each byte: a byte more than `MASTER_SYNC_STOP_MS`
@@ -88,7 +88,8 @@ the role passes `c.serialOut`, `c.serialOutFrames` and `c.block`.
   call, with no block start between its 200 ms mark and the byte that ends it, so without this check the restart would
   carry on the old run in some splits and not others. At each block start: every byte before it is then known, so a
   run whose newest byte lies more than `MASTER_SYNC_STOP_MS` back has ended, which catches a silence no byte has ended
-  yet. At the end of a call the stored position shifts back by `block.frames`.
+  yet. At the end of a call, while a run is open, the stored position shifts back by `block.frames`; a closed run's
+  is never read again, since the next byte opens a fresh run and sets it.
 - **State** is the run, the newest byte's position and `lastFrames`, plain fields (no per-block allocation), in a
   `masterSync` sub-object of the lsdj-sync stage's state that the dispatcher drops whenever the mode is not master
   sync.

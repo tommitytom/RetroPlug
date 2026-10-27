@@ -70,7 +70,8 @@ test("Master Sync (mode 8): a stock LSDj in SYNC=LSDj clocks the host â€” byteâ†
   expect(be.setSerialOutCapture(id, "listen")).toBeTruthy(); // what the store does for mode 8
 
   audio.renderAudio(6000); // reach the song screen
-  audio.drainMidiOut(); // discard boot noise
+  // Nothing from the boot: a stopped LSDj master waits on an external clock, which `listen` never supplies.
+  expect(messages(audio.drainMidiOut())).toEqual([]);
 
   // Play: LSDj becomes the internal-clock serial master and streams its sync bytes at tempo.
   audio.pressButton(id, START, true);
@@ -177,5 +178,5 @@ test("Master Sync tells one story at 44.1 and 48 kHz in 1-frame, FL-style ragged
       expect(Math.max(...counts) - Math.min(...counts) <= 1).toBeTruthy();
     }
   }
-  expect(audio.setSampleRate(44100)).toBeTruthy(); // the engine's default, as the next file finds it
+  expect(audio.setSampleRate(44100)).toBeTruthy(); // back to the engine's default, for a case added after this one
 });

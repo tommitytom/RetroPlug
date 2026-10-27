@@ -161,8 +161,8 @@ export interface SystemCtx {
   midi: MidiEvent[];
   keys: KeyEvent[];
   buttons: ButtonEvent[];
-  /** The raw serial-out bytes this system emitted LAST block (LSDj MI.OUT), in order: the MI.OUT and
-   *  master-sync decoders' input. Empty unless the system's core has serial-out capture armed and the
+  /** The raw serial-out bytes this system emitted LAST block (LSDj's MI.OUT or master-sync clock), in order: the
+   *  MI.OUT and master-sync decoders' input. Empty unless the system's core has serial-out capture armed and the
    *  kernel node has its `serialOut` input (a Game Boy). */
   serialOut: number[];
   /** Each `serialOut` byte's frame in the block that produced it (the previous block), index for index:

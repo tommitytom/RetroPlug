@@ -140,10 +140,15 @@ start again. What is left, in order:
   so merging large wires needs a merge whose output capacity its settings give. A port per protocol also
   ends the private 4-byte system prefix on host MIDI out (`rp.host.midi-out` takes the id from its
   wiring instead), and with it the one port's reliance on every role sending its host MIDI out at frame 0.
-  A Game Boy's `serialOut` is to be wired only into a node that decodes MI.OUT, so one without pays
-  nothing for an armed capture's idle bytes. And a profile build's `apu-render` span starts where the
-  last script node's `process` ended, which is right only while every script node runs before the
-  systems: a protocol node placed after a system needs it revisited.
+  A Game Boy's `serialOut` is to be wired only into a node that decodes MI.OUT or master sync, so one
+  without pays nothing for a driving capture's idle bytes. Once each protocol node has its own `midiOut`
+  port, the frame-0 rule goes (B3a design section 4.4) and master sync can send each clock at its byte's
+  frame, one block late, so clocks keep their spacing instead of bunching at frame 0 in large blocks.
+  Carrying the capture mode as a Game Boy node setting in the published document, rather than through
+  `ConfigField::SerialOutCapture` plus a publish, would make a mode switch atomic and retire the
+  master-sync design's first accepted limit (its section 10). And a profile build's `apu-render` span
+  starts where the last script node's `process` ended, which is right only while every script node runs
+  before the systems: a protocol node placed after a system needs it revisited.
 - **One QuickJS context per script node, decided before user-written nodes.** Every script node runs in
   the audio runtime's one context, so they share a realm: the script host keeps its own writes and its
   reads of a node's methods off the shared prototypes ([02-native-host.md](02-native-host.md)), but one
