@@ -187,16 +187,49 @@ test("a stored role with a protocol node is parsed by its schema; the core's rol
 });
 
 test("a stored config its schema refuses outright falls back to the role's defaults, logged once", () => {
-  // sms-sync's machine has no per-field fallback, so a value it does not know refuses the whole config.
+  // sms-sync's machine has no per-field fallback, so a value it does not know refuses the whole config. Without the
+  // SMSGGDJ marker no provider suggests sms-sync for this cart, so the fallback is the schema's defaults.
   const { be, store } = newStore();
-  be.seed("/roms/smsggdj.sms", smsggdjRom());
-  const { result: id, warnings } = warned(() => store.adopt({ romPath: "/roms/smsggdj.sms", core: "mesen", roles: [
+  const plain = smsggdjRom();
+  plain.fill(0, 0x3640, 0x3640 + "SMSGGDJ".length);
+  be.seed("/roms/plain.sms", plain);
+  const { result: id, warnings } = warned(() => store.adopt({ romPath: "/roms/plain.sms", core: "mesen", roles: [
     { kind: "mesen", config: {} },
     { kind: "sms-sync", config: { machine: "md" } },
   ] }));
   const sync = store.view().find((v) => v.id === id)!.roles.find((r) => r.kind === "sms-sync")!;
   expect(sync.config).toEqual({ machine: "sms" });
   expect(warnings.length).toBe(1);
+});
+
+test("a refused config falls back to what this ROM's provider suggests for the role, before the schema's defaults", () => {
+  // A Game Gear smsggdj cart's provider tags its sms-sync "gg" (it reads the EXT port, not Player 2's lines), where the
+  // schema's own default is "sms": falling back to that would clock the wrong pins.
+  const { be, store } = newStore();
+  const gg = smsggdjRom();
+  gg[0x7ff0 + 0xf] = 0x60; // region nibble 6 -> Game Gear
+  be.seed("/roms/smsggdj.gg", gg);
+  const { result: id, warnings } = warned(() => store.adopt({ romPath: "/roms/smsggdj.gg", core: "mesen", roles: [
+    { kind: "mesen", config: {} },
+    { kind: "sms-sync", config: { machine: "md" } },
+  ] }));
+  const sync = store.view().find((v) => v.id === id)!.roles.find((r) => r.kind === "sms-sync")!;
+  expect(sync.config).toEqual({ machine: "gg" });
+  expect(warnings.length).toBe(1);
+});
+
+test("a key the role's schema does not read is dropped by the parse, and the log names it", () => {
+  // A newer build's additive field, or a hand edit: the node never reads it, and the next save no longer carries it.
+  const { be, store } = newStore();
+  const romPath = seedLsdj(be);
+  const { result: id, warnings } = warned(() => store.adopt({ romPath, core: "sameboy", roles: [
+    { kind: "sameboy", config: {} },
+    { kind: "lsdj-sync", config: { mode: "midiOut", tempoDivisor: 2, futureKnob: 3 } },
+  ] }));
+  const sync = store.view().find((v) => v.id === id)!.roles.find((r) => r.kind === "lsdj-sync")!;
+  expect(sync.config).toEqual({ mode: "midiOut", tempoDivisor: 2, autoStart: false });
+  expect(warnings.length).toBe(1);
+  expect(warnings[0].includes("futureKnob")).toBe(true);
 });
 
 // --- derived facts vs stored configuration -------------------------------------------------------

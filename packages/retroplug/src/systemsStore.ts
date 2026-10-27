@@ -640,7 +640,7 @@ export class SystemsStore {
     const rom = romPath || `the embedded ${embeddedRom}`;
     const notes: string[] = [];
     const suggested = this.defaultRoles(core, platform, romPath, embeddedRom);
-    const stored = config.roles?.length ? this.parsedForTheirNodes(config.roles, core, rom, notes) : null;
+    const stored = config.roles?.length ? this.parsedForTheirNodes(config.roles, core, suggested, rom, notes) : null;
     const roles = stored
       ? this.suggestedFirst(this.withMissingFeatureRoles(stored, core, suggested, romPath, embeddedRom), suggested)
       : suggested;
@@ -778,16 +778,26 @@ export class SystemsStore {
    *  a value the file holds that this build does not read (a newer build's added mode, which is additive and so no
    *  version bump; a v2 file's out-of-range mode index, which the v3 step leaves for this schema; a hand edit) would
    *  silence the project. A field the schema's helpers repair (configSchema.ts: an unknown enum defaults, an integer
-   *  clamps) is repaired; a config the schema refuses outright becomes the role's defaults. Either is noted in `notes`,
-   *  which adopt logs once the core has built. A config it accepts keeps every value, gaining only the defaults its
-   *  node would fill anyway.
+   *  clamps) is repaired. A config the schema refuses outright becomes what this ROM's providers suggest for the role
+   *  (`suggested`: a Game Gear smsggdj's sms-sync is "gg", where the schema's default is "sms"), or the schema's
+   *  defaults when they suggest none. A config it accepts keeps the value of every field the schema reads and gains
+   *  only the defaults its node would fill anyway, but loses a key the schema does not read (a zod object strips it,
+   *  as the node's settings ignore it), so the next save no longer carries it. Each repair and dropped key is noted in
+   *  `notes`, which adopt logs once the core has built.
    *
    *  Only the roles with a protocol node: the core's config role must stay as written (withMissingFeatureRoles says
    *  why), and a role with no node never reaches the graph. A kind this registry does not register has no schema to
    *  parse by here, and stays as it is. */
-  private parsedForTheirNodes(stored: RoleInstance[], core: Core, rom: string, notes: string[]): RoleInstance[] {
+  private parsedForTheirNodes(
+    stored: RoleInstance[],
+    core: Core,
+    suggested: readonly RoleInstance[],
+    rom: string,
+    notes: string[],
+  ): RoleInstance[] {
     const registry = this.registry;
     if (!registry) return stored;
+    const has = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
     return stored.map((r) => {
       const rt = r.kind !== core && protocolNodeOf(r.kind) !== undefined ? registry.roleType(r.kind) : undefined;
       if (!rt) return r;
@@ -795,22 +805,23 @@ export class SystemsStore {
       try {
         config = rt.schema.parse(r.config);
       } catch {
-        config = rt.schema.parse({});
+        const suggestion = suggested.find((d) => d.kind === r.kind)?.config;
+        config = suggestion ? { ...suggestion } : rt.schema.parse({});
         notes.push(
           `[systems] ${rom}: its stored ${r.kind} config ${JSON.stringify(r.config)} is not one this build reads; ` +
-            `using the defaults ${JSON.stringify(config)}`,
+            `using ${suggestion ? "what this ROM calls for" : "the defaults"}, ${JSON.stringify(config)}`,
         );
         return { kind: r.kind, config };
       }
       const given = r.config;
-      const repaired = Object.keys(config).filter(
-        (k) => Object.prototype.hasOwnProperty.call(given, k) && JSON.stringify(given[k]) !== JSON.stringify(config[k]),
-      );
-      if (repaired.length)
-        notes.push(
-          `[systems] ${rom}: its stored ${r.kind} config holds values this build does not read; repaired ` +
-            repaired.map((k) => `${k} ${JSON.stringify(given[k])} to ${JSON.stringify(config[k])}`).join(", "),
-        );
+      const changes = [
+        ...Object.keys(config)
+          .filter((k) => has(given, k) && JSON.stringify(given[k]) !== JSON.stringify(config[k]))
+          .map((k) => `repaired ${k} ${JSON.stringify(given[k])} to ${JSON.stringify(config[k])}`),
+        ...Object.keys(given).filter((k) => !has(config, k)).map((k) => `dropped ${k}`),
+      ];
+      const what = `[systems] ${rom}: its stored ${r.kind} config holds what this build does not read`;
+      if (changes.length) notes.push(`${what}: ${changes.join(", ")}`);
       return { kind: r.kind, config };
     });
   }
@@ -858,7 +869,8 @@ export class SystemsStore {
    *    construct-time `settings` blob from the STORED roles: synthesising one here would start passing
    *    schema defaults where `undefined` is passed today and native applies its own.
    *  - **A stored role is never touched** here, so a configured sync mode or a kit override survives
-   *    (adopt has parsed one with a protocol node by its schema first, which keeps every value it accepts).
+   *    (adopt has parsed one with a protocol node by its schema first, which keeps the value of every field
+   *    the schema reads).
    *  - **Appended, not merged in place.** `graphSystems` keeps this array's order for the DSP
    *    pipeline, and `defaultRoles` itself emits core-role-then-providers, so appending
    *    reproduces the order a freshly added system would have. (adopt then moves a suggested
