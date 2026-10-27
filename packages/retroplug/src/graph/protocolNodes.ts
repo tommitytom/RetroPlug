@@ -29,8 +29,9 @@ export interface ProtocolNodeSpec {
   midiOut?: true;
 }
 
-// Each type's id as its node module spells it (script/nodes/*.ts), which test/graph/build-graph.test.ts holds these
-// to: importing the modules would pull every protocol into whatever imports buildGraph.
+// Each type's id as its node module spells it (script/nodes/*.ts), and each port name as that module declares it, which
+// test/graph/build-graph.test.ts and test/graph/protocol-nodes.test.ts hold these to: importing the modules would pull
+// every protocol into whatever imports buildGraph.
 //
 // One writer per system input: the planner refuses a second producer wired into one input, and with it the whole
 // document, so the project would go silent for one system's roles. The roles a provider attaches never collide, but a
@@ -49,8 +50,10 @@ export const PROTOCOL_NODES = {
 
 export type ProtocolNodeType = keyof typeof PROTOCOL_NODES;
 
-/** The role kinds that have a protocol node (dspRoles.ts registers them), each with the node type it is placed as. */
-const ROLE_NODES: Readonly<Record<string, ProtocolNodeType>> = {
+/** The role kinds that have a protocol node (dspRoles.ts registers them), each with the node type it is placed as.
+ *  Exported for test/graph/protocol-nodes.test.ts, which holds each type to one the script bundle registers; everything
+ *  else reads it through protocolNodeOf. */
+export const ROLE_NODES: Readonly<Record<string, ProtocolNodeType>> = {
   mgb: "rp.mgb.midi",
   "nes-n8-midi": "rp.n8.midi-to-fifo",
   "risa-sync": "rp.risa.sync",
