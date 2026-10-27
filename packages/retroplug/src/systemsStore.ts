@@ -31,7 +31,7 @@ import {
 } from "./systemsList";
 import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettingsSchema } from "./systemSettings";
 import type { RoleRegistry, RoleInstance } from "./systemRoles";
-import { protocolNodeOf, protocolPipeline } from "./graph/protocolNodes";
+import { protocolNodeOf, protocolPipeline, type ProtocolRole } from "./graph/protocolNodes";
 import { blipToasterChip, needsChipLabelScan, BLIPTOASTER_CHIP_SCAN_LEN } from "./bliptoaster/romDetect";
 import { roleConfigForNative, LsdjSyncMode } from "./settingsEnums";
 
@@ -540,9 +540,9 @@ export class SystemsStore {
     const rewired = roleKind === "sameboy" && e.built.type === "rp.sameboy.gb" && linkGroup !== e.built.linkGroup;
     const built = rewired ? { ...e.built, linkGroup } : e.built;
     this.entries = replaceById(this.entries, id, { ...e, roles, built });
-    // A feature role stays pure TS, EXCEPT lsdj-sync's serial-out capture mode, set on any lsdj-sync change: drive
-    // for MI.OUT, listen for master sync, none otherwise (the decoders themselves run in the system's lsdj-sync node,
-    // which the publish below hands the new mode).
+    // A feature role stays pure TS, EXCEPT lsdj-sync's serial-out capture mode, set on any change to an lsdj-sync the
+    // pipeline places: drive for MI.OUT, listen for master sync, none otherwise (the decoders themselves run in the
+    // system's lsdj-sync node, which the publish below hands the new mode).
     if (roleKind === "lsdj-sync") this.syncSerialOutCapture(id);
     // A role with a protocol node is placed with its config as that node's settings, so its edit publishes; an edit
     // the document does not carry (a model or palette, an asset override) leaves it as it was.
@@ -973,19 +973,30 @@ export class SystemsStore {
 
   // Set native serial-out capture for a running system from its lsdj-sync mode (serialOutCaptureFor). Called
   // only when the mode changes (setRoleConfig): a core that is built or rebuilt carries its capture in the build
-  // spec instead (applyConstructHooks). A no-op for a non-LSDj system (no lsdj-sync role → nothing to arm).
+  // spec instead (applyConstructHooks). A no-op for a system whose pipeline places no lsdj-sync: a non-LSDj system,
+  // or one whose lsdj-sync the one-writer rule leaves out. Which roles are placed is fixed with the system's role kinds
+  // and their order, which an edit never changes (there is no adding or removing a role), so its core was built with
+  // no capture either, and there is nothing to disarm.
   private syncSerialOutCapture(id: number): void {
     const roles = findById(this.entries, id)?.roles;
-    if (!roles?.some((r) => r.kind === "lsdj-sync")) return;
+    if (!roles || !placedLsdjSync(roles)) return;
     this.backend.setSerialOutCapture(id, serialOutCaptureFor(roles));
   }
 }
 
+// The system's lsdj-sync role as its pipeline places it, or undefined when it has none or the one-writer rule leaves it
+// out (graph/protocolNodes.ts: an mgb ahead of it already writes serialIn).
+function placedLsdjSync(roles: RoleInstance[]): ProtocolRole | undefined {
+  return protocolPipeline(roles).find((r) => r.kind === "lsdj-sync");
+}
+
 // How a system with these roles captures its serial out: both LSDj-to-host MIDI-out modes need it. MidiOut
 // (SYNC=MI.OUT) drives, playing the Arduinoboy that clocks LSDj as the serial slave; MasterSync (SYNC=LSDJ) only
-// listens to the clock LSDj sends as the master. Null for no capture.
+// listens to the clock LSDj sends as the master. Null for no capture, which is also what an lsdj-sync the pipeline
+// leaves out gets, whatever its mode: what a capture delivers is decoded by the system's lsdj-sync node, which is not
+// running, and a driving core would clock the serial port under the bytes the placed role writes.
 function serialOutCaptureFor(roles: RoleInstance[]): SerialOutCapture | null {
-  const mode = (roles.find((r) => r.kind === "lsdj-sync")?.config as { mode?: LsdjSyncMode } | undefined)?.mode;
+  const mode = (placedLsdjSync(roles)?.config as { mode?: LsdjSyncMode } | undefined)?.mode;
   if (mode === LsdjSyncMode.MidiOut) return "drive";
   if (mode === LsdjSyncMode.MasterSync) return "listen";
   return null;

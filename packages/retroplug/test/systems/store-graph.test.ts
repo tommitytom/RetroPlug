@@ -591,6 +591,29 @@ test("a system whose roles' nodes both write serialIn places the first in role o
   expect(again.warnings).toEqual([]);
 });
 
+test("a left-out lsdj-sync arms no serial-out capture: not at a build, nor on an edit", () => {
+  // Capture is for the system's lsdj-sync node, which decodes what the core sends (MI.OUT drives, master sync listens).
+  // Where mgb wins serialIn that node is not placed, so nothing would read the capture, and a driving core would clock
+  // the serial port under mgb's bytes.
+  const { be, sys } = project();
+  const roles: RoleInstance[] = [
+    { kind: "sameboy", config: {} },
+    { kind: "mgb", config: {} },
+    { kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiOut } },
+  ];
+  const lastBuild = () => be.buildCalls[be.buildCalls.length - 1].serialOutCapture;
+  const captures = (id: number) => be.serialOutCaptureCalls.filter((c) => c.id === id);
+  let id = warned(() => sys.adopt({ romPath: "/roms/lsdj.gb", core: "sameboy", roles })!).result;
+  expect(be.protocolNodes(id)).toEqual([`sys-${id}/mgb`]);
+  expect(lastBuild()).toBe(undefined); // a load, stored in MI.OUT
+  for (const mode of [LsdjSyncMode.MasterSync, LsdjSyncMode.MidiOut]) {
+    expect(sys.setRoleConfig(id, "lsdj-sync", { mode })).toBe(true);
+    expect(captures(id)).toEqual([]); // an edit
+    id = sys.reset(id)!;
+    expect(lastBuild()).toBe(undefined); // a rebuild
+  }
+});
+
 const MGB: ConstructSpec = { romPath: "", platform: "gb", core: "sameboy", embeddedRom: "mgb", savPath: null, statePath: null };
 
 test("DirectGraph keeps the B1 model: append, replace in place, remove shifting down", () => {
