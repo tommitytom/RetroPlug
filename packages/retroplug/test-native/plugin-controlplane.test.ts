@@ -9,6 +9,7 @@ import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry } from "../src/appHost";
 import { createAudioDriver } from "../src/audioDriver";
 import "../src/pluginControlPlane"; // side-effect: compose the control plane + define the __rp_* globals
+import { lsdjRom } from "../test/systems/fixtures";
 
 declare const __CONFIG_DIR__: string;
 
@@ -65,4 +66,27 @@ test("autoload an mGB .rplg.zip → the kernel plays it; base64 getState/setStat
   expect(chunk.length > 0).toBeTruthy();
   expect(loadB64("")).toBeTruthy(); // reset to empty
   expect(loadB64(chunk)).toBeTruthy(); // restore from the chunk
+});
+
+test("the latency the plugin reports follows the lsdj-sync its pipeline places: one left out adds none", () => {
+  // LSDj in a host-clocked sync mode reports a fixed latency for the host's PDC. On an mGB cart whose project stored
+  // lsdj-sync, the store places mgb (the role the ROM calls for) and leaves lsdj-sync out: it runs nothing, so it
+  // shifts nothing, and a reported latency would only move the cart off the grid.
+  const be = createRealBackend();
+  const lsdj = __CONFIG_DIR__ + "/cp_latency_lsdj.gb";
+  expect(be.writeFile(lsdj, lsdjRom())).toBeTruthy();
+  const project = (name: string, system: Record<string, unknown>): string => {
+    const path = __CONFIG_DIR__ + "/" + name;
+    const roles = [{ kind: "sameboy", config: {} }, { kind: "lsdj-sync", config: { mode: "midiSync" } }];
+    const doc = { schemaVersion: "4", settings: {}, systems: [{ platform: "gb", core: "sameboy", ...system, roles }] };
+    expect(be.writeFile(path, new TextEncoder().encode(JSON.stringify(doc)))).toBeTruthy();
+    return path;
+  };
+  const loadPath = g.__rp_loadProjectPath as (p: string) => boolean;
+  const latency = g.__rp_syncLatencyMs as () => string;
+  expect(loadPath(project("cp_latency_placed.rplg", { romPath: lsdj }))).toBeTruthy();
+  expect(latency()).toBe("33"); // an LSDj cart in MIDI sync: its lsdj-sync is placed
+  expect(loadPath(project("cp_latency_left_out.rplg", { embeddedRom: "mgb" }))).toBeTruthy();
+  expect(latency()).toBe("0");
+  (g.__rp_newProject as () => void)(); // the cores go, so nothing later in this host emulates them
 });

@@ -17,6 +17,7 @@
 import { composeAppStores, type StoreChannel, type AppStores } from "./appStores";
 import { FileWatcher } from "./fileWatcher";
 import { LsdjSyncMode } from "./settingsEnums";
+import { placedRole } from "./graph/protocolNodes";
 import { projectParameterMap } from "./parameterMap";
 import { b64encode, b64decode } from "./base64";
 
@@ -96,13 +97,15 @@ g.__rp_pumpWatcher = (): void => {
 // LSDj in a host-clocked sync mode (MidiSync / MidiSyncArduinoboy) locks its playback a fixed distance
 // behind the DAW clock — an emulator clock→sound latency, not a drift. Reporting it as plugin latency lets
 // the host apply PDC so LSDj lands on the grid, for the DAW-timing renders and real users alike. Output
-// modes (MI.OUT / Master Sync) and Off/Keyboard don't host-clock playback, so they add no latency. The
-// plugin queries this (as ms) after each load and converts to frames at the live sample rate.
+// modes (MI.OUT / Master Sync) and Off/Keyboard don't host-clock playback, so they add no latency, and nor
+// does an lsdj-sync its system's pipeline leaves out (graph/protocolNodes.ts placedRole: on an mGB cart
+// whose project stored one, mgb is placed), which runs nothing. The plugin queries this (as ms) after each
+// load and converts to frames at the live sample rate.
 const LSDJ_HOST_SYNC_LATENCY_MS = 33;
 g.__rp_syncLatencyMs = (): string => {
   let ms = 0;
   for (const s of project.systems.view()) {
-    const mode = (s.roles.find((r) => r.kind === "lsdj-sync")?.config as { mode?: LsdjSyncMode } | undefined)?.mode;
+    const mode = (placedRole(s.roles, "lsdj-sync")?.config as { mode?: LsdjSyncMode } | undefined)?.mode;
     if (mode === LsdjSyncMode.MidiSync || mode === LsdjSyncMode.MidiSyncArduinoboy) ms = Math.max(ms, LSDJ_HOST_SYNC_LATENCY_MS);
   }
   return String(ms);

@@ -31,7 +31,7 @@ import {
 } from "./systemsList";
 import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettingsSchema } from "./systemSettings";
 import type { RoleRegistry, RoleInstance } from "./systemRoles";
-import { protocolNodeOf, protocolPipeline, protocolWrites, type ProtocolRole } from "./graph/protocolNodes";
+import { placedRole, protocolNodeOf, protocolPipeline, protocolWrites } from "./graph/protocolNodes";
 import { blipToasterChip, needsChipLabelScan, BLIPTOASTER_CHIP_SCAN_LEN } from "./bliptoaster/romDetect";
 import { roleConfigForNative, LsdjSyncMode } from "./settingsEnums";
 
@@ -1021,15 +1021,9 @@ export class SystemsStore {
   // no capture either, and there is nothing to disarm.
   private syncSerialOutCapture(id: number): void {
     const roles = findById(this.entries, id)?.roles;
-    if (!roles || !placedLsdjSync(roles)) return;
+    if (!roles || !placedRole(roles, "lsdj-sync")) return;
     this.backend.setSerialOutCapture(id, serialOutCaptureFor(roles));
   }
-}
-
-// The system's lsdj-sync role as its pipeline places it, or undefined when it has none or the one-writer rule leaves it
-// out (graph/protocolNodes.ts: an mgb ahead of it already writes serialIn).
-function placedLsdjSync(roles: RoleInstance[]): ProtocolRole | undefined {
-  return protocolPipeline(roles).find((r) => r.kind === "lsdj-sync");
 }
 
 // How a system with these roles captures its serial out: both LSDj-to-host MIDI-out modes need it. MidiOut
@@ -1038,7 +1032,7 @@ function placedLsdjSync(roles: RoleInstance[]): ProtocolRole | undefined {
 // leaves out gets, whatever its mode: what a capture delivers is decoded by the system's lsdj-sync node, which is not
 // running, and a driving core would clock the serial port under the bytes the placed role writes.
 function serialOutCaptureFor(roles: RoleInstance[]): SerialOutCapture | null {
-  const mode = (placedLsdjSync(roles)?.config as { mode?: LsdjSyncMode } | undefined)?.mode;
+  const mode = (placedRole(roles, "lsdj-sync")?.config as { mode?: LsdjSyncMode } | undefined)?.mode;
   if (mode === LsdjSyncMode.MidiOut) return "drive";
   if (mode === LsdjSyncMode.MasterSync) return "listen";
   return null;

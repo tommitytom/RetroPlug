@@ -120,3 +120,10 @@ export function protocolPipeline(
   }
   return out;
 }
+
+/** The role of `kind` as `roles`' pipeline places it, or undefined when there is none or protocolPipeline leaves it
+ *  out. What a role's mode decides beside its node (the serial-out capture an lsdj-sync arms, the latency it reports)
+ *  reads this, not the role list: a role left out runs no node. */
+export function placedRole(roles: readonly RoleInstance[], kind: string): ProtocolRole | undefined {
+  return protocolPipeline(roles).find((r) => r.kind === kind);
+}
