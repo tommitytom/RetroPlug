@@ -45,9 +45,12 @@ The rules below are the parts that don't fit those.
   controller session and each role's protocol node, wired as `buildGraph` wires them,
   `test/engine-graph/ProtocolNodes.test.cpp`) send exactly the digests the DSP kernel they replaced was recorded
   sending, a throw stopping only its own node the one difference, checked; and every document in `buildGraph`'s
-  goldens, handed to the engine with real cores, plans and runs a block with no node faulting, no script node
-  throwing and no message dropped (the 33-system `perSystem` ones are refused, as they must be; the wiring itself
-  is `buildGraph`'s, held by `pnpm test graph` to explicit tables and to the B1 translator's goldens). A hidden
+  goldens, handed to the engine with real cores, plans and runs with no node faulting, no script node throwing and
+  no message dropped: the B1 translator's matrix a block each (the 33-system `perSystem` ones are refused, as they
+  must be), and `golden/build-graph-roles.json`, `buildGraph`'s own record of documents with every protocol node
+  type, a controller each way and every MIDI routing, twenty driven blocks each (the wiring itself is
+  `buildGraph`'s, held by `pnpm test graph` to explicit tables, to the B1 translator's goldens and to the role
+  goldens, which `RP_GOLDEN_UPDATE=1 pnpm test graph/build-graph-role-goldens` re-records). A hidden
   bench times a script node per block, and the protocol nodes' plan, at 1, 64 and 512 frames
   (`build/bin/retroplug-engine-graph-test "[bench]"`), and a profile build adds four `[profile]` cases
   (`tools/run-profile.sh unit`).

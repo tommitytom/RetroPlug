@@ -1,18 +1,23 @@
-// Every document buildGraph's goldens hold must PLAN on the engine: golden/build-graph.json is the matrix of
-// system sets, routings and host shapes the TS builder is held to (packages/retroplug/test/graph/
-// build-graph-goldens.test.ts), and that test only compares documents. Here each distinct request is handed
-// to a fresh Engine with the real packages (the routing script node among them, from the script bundle every
-// Engine embeds), so a port name, a settings key or a node limit the planner refuses fails here for a shape no
-// other suite runs: chained adds past rp.core.add's 16 inputs, a NES's ten channels, the Game Boy stems, link
-// cables under every routing, and the routing's outputs for thirty-three systems.
+// Every document buildGraph's goldens hold must PLAN on the engine. Two files hold them. golden/build-graph.json is the
+// matrix of system sets, routings and host shapes the TS builder is held to (packages/retroplug/test/graph/
+// build-graph-goldens.test.ts), with no roles; golden/build-graph-roles.json is buildGraph's own record of documents with
+// protocol nodes, controllers and every MIDI routing mode (build-graph-role-goldens.test.ts). Those tests only compare
+// documents. Here each distinct request is handed to a fresh Engine with the real packages (the script nodes among
+// them, from the script bundle every Engine embeds), so a port name, a settings key or a node limit the planner refuses
+// fails here for a shape no other suite runs: chained adds past rp.core.add's 16 inputs, a NES's ten channels, the Game
+// Boy stems, link cables under every routing, the routing's outputs for thirty-three systems, and each protocol node
+// type wired into the system node it feeds, MI.OUT fed back to an LSDj, the N8 cart mirror and a controller each way.
 //
 // The cores are real: a system node takes its core by its concrete class, so a stand-in reporting only its
 // kind is refused when the node activates. Each is built as the case's model says (a Game Boy's link group, a
 // NES's export mode), and the case's tap arm rides the request, so each NES must end in the mode it armed, or
-// the one it was built in. Each plan then runs one block, which must fault no node, throw in no script node and
-// drop no message: a document can plan and still wedge a linked group or a node's process, and the script host
-// catches a script node's throw, counts it and runs the node again next block, rather than faulting. The thirty-three systems under perSystem give rp.host.audio-out 33 buses,
-// past the 32 it takes: those are refused instead.
+// the one it was built in. Each plan then runs, and its blocks must fault no node, throw in no script node and drop no
+// message: a document can plan and still wedge a linked group or a node's process, and the script host catches a
+// script node's throw, counts it and runs the node again next block, rather than faulting. A build-graph.json plan runs
+// one quiet block. A build-graph-roles.json plan runs twenty, with the transport playing, host MIDI on four channels
+// and a control surface attached and pressed, so its protocol nodes send into the system inputs they feed and its
+// controller launches into its cart or out of the host. The thirty-three systems under perSystem give
+// rp.host.audio-out 33 buses, past the 32 it takes: those are refused instead.
 //
 // Run via `pnpm test:plugin engine-graph`.
 
@@ -46,6 +51,8 @@ namespace {
 
 constexpr double        kRate = 48000.0;
 constexpr std::uint32_t kBlockFrames = 256;
+// A role golden's blocks: at 120 bpm, about five clock ticks at 24 PPQN.
+constexpr int kDrivenBlocks = 20;
 
 // A golden case, as build-graph-goldens.test.ts reads it; the model's routing is what built the document, and
 // nothing here needs it.
@@ -81,8 +88,9 @@ struct Goldens {
 
 // Through parseJson, then each document re-spelled as the text setGraph is sent; the cases read typed, so
 // their integers are range-checked.
-Goldens readGoldens() {
-    const auto bytes = readFile(RP_BUILD_GRAPH_GOLDENS_PATH);
+Goldens readGoldens(const char* path) {
+    INFO(path);
+    const auto bytes = readFile(path);
     REQUIRE_FALSE(bytes.empty());
     const auto root = rp::graph::parseJson(std::string(bytes.begin(), bytes.end()));
     REQUIRE(root);
@@ -133,8 +141,12 @@ std::string requestKey(const GoldenCase& c) {
            rfl::json::write(c.model.systems);
 }
 
-// Plan `c` on a fresh Engine; what went wrong, or nothing.
-std::optional<std::string> plan(const GoldenCase& c, const std::string& document) {
+// A press of the top-left pad, as a Launchpad in Programmer mode sends it (padIndex in src/launchpad/profile.ts).
+const std::vector<std::uint8_t> kPadPress{0x90, 81, 100};
+
+// Plan `c` on a fresh Engine and run it, quiet for one block or `driven` for kDrivenBlocks; what went wrong, or
+// nothing.
+std::optional<std::string> plan(const GoldenCase& c, const std::string& document, bool driven) {
     Engine e(kRate);
     std::map<SystemId, const GoldenSystem*> byId;
     for (const GoldenSystem& s : c.model.systems) byId[s.id] = &s;
@@ -172,38 +184,73 @@ std::optional<std::string> plan(const GoldenCase& c, const std::string& document
             return "NES " + std::to_string(id) + " is in mode " + std::to_string(nes->channelExportMode()) +
                    ", not " + std::to_string(want);
     }
-    // One block, into as many channels as the plan writes.
+    // Into as many channels as the plan writes. Driven, each block stages a note and its release on each of four
+    // channels (under oneChannelPerInstance, channel k is system k + 1's), and the surface's press lands in the second.
     std::vector<std::vector<float>> lanes(e.hostWidth(), std::vector<float>(kBlockFrames, 0.0f));
     std::vector<float*>             outs;
     for (auto& lane : lanes) outs.push_back(lane.data());
-    e.processBlock(kBlockFrames, outs.data(), outs.size());
-    if (e.faultCount() != 0) return std::to_string(e.faultCount()) + " node(s) faulted in its first block";
-    // The script host catches a script node's throw, counts it and runs the node again next block (design section 4.5),
-    // so a fault cannot show one.
-    if (e.scriptThrows() != 0) return std::to_string(e.scriptThrows()) + " script node throw(s) in its first block";
-    if (e.droppedMessages() != 0) return std::to_string(e.droppedMessages()) + " message(s) dropped in its first block";
+    if (driven) {
+        e.setBpm(120.0);
+        e.setTransport(true);
+        e.setControllerConnected(true);
+    }
+    for (int b = 0; b < (driven ? kDrivenBlocks : 1); ++b) {
+        if (driven) {
+            for (std::uint8_t ch = 0; ch < 4; ++ch) {
+                const auto key = static_cast<std::uint8_t>(48 + 12 * ch + b % 12);
+                e.stageMidi(16u * ch, std::vector<std::uint8_t>{static_cast<std::uint8_t>(0x90 | ch), key, 100});
+                e.stageMidi(128u + 16u * ch, std::vector<std::uint8_t>{static_cast<std::uint8_t>(0x80 | ch), key, 0});
+            }
+            if (b == 1) e.stageControllerMidi(kPadPress);
+        }
+        e.processBlock(kBlockFrames, outs.data(), outs.size());
+        const std::string when = driven ? " by block " + std::to_string(b + 1) : " in its first block";
+        if (e.faultCount() != 0) return std::to_string(e.faultCount()) + " node(s) faulted" + when;
+        // The script host catches a script node's throw, counts it and runs the node again next block (design section
+        // 4.5), so a fault cannot show one.
+        if (e.scriptThrows() != 0) return std::to_string(e.scriptThrows()) + " script node throw(s)" + when;
+        if (e.droppedMessages() != 0) return std::to_string(e.droppedMessages()) + " message(s) dropped" + when;
+    }
     return std::nullopt;
+}
+
+// Every case of the file at `path`, each distinct request once; the case names that went wrong, with why, and how many
+// were refused as they must be.
+struct FileResult {
+    std::vector<std::string> wrong;
+    std::size_t              refused = 0;
+};
+FileResult planAll(const char* path, bool driven) {
+    const Goldens goldens = readGoldens(path);
+    REQUIRE_FALSE(goldens.cases.empty());
+    std::set<std::string> seen;
+    std::set<std::size_t> documents;
+    FileResult            out;
+    for (const GoldenCase& c : goldens.cases) {
+        if (!seen.insert(requestKey(c)).second) continue;
+        REQUIRE(c.document < goldens.documents.size());
+        documents.insert(c.document);
+        if (expectRefused(c.model)) ++out.refused;
+        if (const auto why = plan(c, goldens.documents[c.document], driven)) out.wrong.push_back(c.name + ": " + *why);
+    }
+    // Every document was handed over.
+    CHECK(documents.size() == goldens.documents.size());
+    return out;
 }
 
 }  // namespace
 
 TEST_CASE("every document buildGraph's goldens hold plans on the engine", "[engine-graph][goldens]") {
-    const Goldens goldens = readGoldens();
-    REQUIRE_FALSE(goldens.cases.empty());
-    std::set<std::string>    seen;
-    std::set<std::size_t>    documents;
-    std::vector<std::string> wrong;
-    std::size_t              refused = 0;
-    for (const GoldenCase& c : goldens.cases) {
-        if (!seen.insert(requestKey(c)).second) continue;
-        REQUIRE(c.document < goldens.documents.size());
-        documents.insert(c.document);
-        if (expectRefused(c.model)) ++refused;
-        if (const auto why = plan(c, goldens.documents[c.document])) wrong.push_back(c.name + ": " + *why);
-    }
-    for (const std::string& w : wrong) UNSCOPED_INFO(w);
-    CHECK(wrong.empty());
-    // Every document was handed over, and the refusal is one the goldens still hold.
-    CHECK(documents.size() == goldens.documents.size());
-    CHECK(refused > 0);
+    const FileResult goldens = planAll(RP_BUILD_GRAPH_GOLDENS_PATH, false);
+    for (const std::string& w : goldens.wrong) UNSCOPED_INFO(w);
+    CHECK(goldens.wrong.empty());
+    // The refusal is one the goldens still hold.
+    CHECK(goldens.refused > 0);
+}
+
+TEST_CASE("every document buildGraph's role goldens hold plans on the engine and runs driven", "[engine-graph][goldens]") {
+    const FileResult roles = planAll(RP_BUILD_GRAPH_ROLE_GOLDENS_PATH, true);
+    for (const std::string& w : roles.wrong) UNSCOPED_INFO(w);
+    CHECK(roles.wrong.empty());
+    CHECK(roles.refused == 0);
 }

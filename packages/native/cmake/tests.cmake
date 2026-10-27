@@ -79,8 +79,8 @@ retroplug_add_test_binary(
 # each system node renders exactly what its core renders driven directly, its inputs included, the engine places,
 # re-arms and frees what the documents TS builds say, the host I/O nodes and the cart mirror move what the hosts stage
 # and drain, TS nodes run behind the C ABI in the script host, the protocol script nodes send what the DSP kernel they
-# replaced was recorded sending, and every document in buildGraph's goldens plans on it. A hidden bench times a script
-# node per block.
+# replaced was recorded sending, and every document in buildGraph's goldens, its role goldens among them, plans on it.
+# A hidden bench times a script node per block.
 # Every core in it powers on in a fixed state (test/engine-graph/Deterministic.cpp), so two identical cores agree.
 # CountingAllocator.cpp is shared with retroplug-graph-test, for the no-allocation checks. The script tests' bundle
 # (the authoring layer for their toy nodes) is embedded here alone: cmake/bundles.cmake, retroplug-script-test-bundle.
@@ -102,6 +102,7 @@ retroplug_add_test_binary(
              RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
              RP_BUILD_GRAPH_GOLDENS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/test/graph/golden/build-graph.json"
+             RP_BUILD_GRAPH_ROLE_GOLDENS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/test/graph/golden/build-graph-roles.json"
              RP_BUILD_TYPE="$<CONFIG>")                 # the bench prints the configuration it was built in
 add_dependencies(retroplug-engine-graph-test retroplug-script-test-bundle)  # the embedded bytecode first
 

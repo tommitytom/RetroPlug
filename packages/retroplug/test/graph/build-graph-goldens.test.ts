@@ -8,7 +8,8 @@
 // I/O around the audio (every model gained an empty kernel structure), and B3b for the script nodes that replaced
 // the kernel (every model routes the host's MIDI to all its systems, with no controller and no roles, so each
 // document places the routing node and no protocol node); the audio of every document is the translator's still.
-// Not every golden document plans: the thirty-three systems under perSystem give
+// Documents with roles and a controller are buildGraph's own record, golden/build-graph-roles.json
+// (build-graph-role-goldens.test.ts). Not every golden document plans: the thirty-three systems under perSystem give
 // rp.host.audio-out 33 buses, past the 32 it takes.
 // packages/native/test/engine-graph/BuildGraphGoldens.test.cpp plans every other one on the engine.
 import { test, expect } from "../../testing/harness";
