@@ -639,6 +639,15 @@ export class SystemsStore {
     const roles = stored
       ? this.withMissingFeatureRoles(stored, core, platform, romPath, embeddedRom)
       : this.defaultRoles(core, platform, romPath, embeddedRom);
+    // A loaded system's roles can hold two whose nodes write one input (graph/protocolNodes.ts, beside
+    // PROTOCOL_NODES), and every publish leaves the later one out of its pipeline, quietly; this says so once,
+    // here, where the roles enter.
+    protocolPipeline(roles, (r) =>
+      console.warn(
+        `[systems] ${rom}: its ${r.kind} role is not placed: its node would write ${r.input}, ` +
+          `which its ${r.by} role's already does`,
+      ),
+    );
     // The core-config "system" role (kind === core) carries the emulator config; pass it as the
     // construct-time settings blob so a loaded non-default model/highpass is applied AT build, not via
     // a post-construct restart that would nuke the just-restored savestate.

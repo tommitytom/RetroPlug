@@ -18,7 +18,7 @@ export type SystemInput = "serialIn" | "midi" | "bytes" | "buttons";
 export interface ProtocolNodeSpec {
   /** The input its system's routed MIDI arrives on, or null for a node that reads only the transport. */
   midiIn: string | null;
-  /** The system inputs it writes. No two roles of one system write the same one, so no input is fed twice. */
+  /** The system inputs it writes, each by one node of its system at most: protocolPipeline keeps that so. */
   writes: readonly SystemInput[];
   /** It takes the controller's launches on `launches` when its system is the controller's target. */
   launches?: true;
@@ -31,6 +31,14 @@ export interface ProtocolNodeSpec {
 
 // Each type's id as its node module spells it (script/nodes/*.ts), which test/graph/build-graph.test.ts holds these
 // to: importing the modules would pull every protocol into whatever imports buildGraph.
+//
+// One writer per system input: the planner refuses a second producer wired into one input, and with it the whole
+// document, so the project would go silent for one system's roles. The roles a provider attaches never collide, but a
+// loaded project's can: one stored with mgb whose ROM path holds LSDj today gains lsdj-sync as a missing feature role
+// (SystemsStore.withMissingFeatureRoles), and both write serialIn; a hand-edited file can name a kind twice, which
+// always collides, as every type writes an input. So of two roles of one system whose nodes would write the same
+// input, the first in role order is placed and the later one left out of the pipeline whole (protocolPipeline), where
+// the kernel merged what both sent.
 export const PROTOCOL_NODES = {
   "rp.mgb.midi": { midiIn: "midi", writes: ["serialIn"] },
   "rp.n8.midi-to-fifo": { midiIn: "midiIn", writes: ["midi"] },
@@ -66,13 +74,35 @@ export function protocolNodeOf(kind: string): ProtocolNodeType | undefined {
   return Object.prototype.hasOwnProperty.call(ROLE_NODES, kind) ? ROLE_NODES[kind] : undefined;
 }
 
+/** A role protocolPipeline leaves out: its node would write `input`, which the node of `by`, earlier in its system's
+ *  roles, already writes. */
+export interface LeftOutRole {
+  kind: string;
+  input: SystemInput;
+  by: string;
+}
+
 /** `roles`, in order, as the protocol nodes they are placed as; a role with none is left out, so an edit to it (a
- *  model, a palette, an asset override) leaves the document as it was. */
-export function protocolPipeline(roles: readonly RoleInstance[]): ProtocolRole[] {
+ *  model, a palette, an asset override) leaves the document as it was. So is a role whose node would write a system
+ *  input an earlier role's node already writes (one writer per input, beside PROTOCOL_NODES), and `leftOut` hears of
+ *  each one. */
+export function protocolPipeline(
+  roles: readonly RoleInstance[],
+  leftOut?: (role: LeftOutRole) => void,
+): ProtocolRole[] {
   const out: ProtocolRole[] = [];
+  const writer: Partial<Record<SystemInput, string>> = {};
   for (const r of roles) {
     const node = protocolNodeOf(r.kind);
-    if (node) out.push({ kind: r.kind, node, config: r.config });
+    if (!node) continue;
+    const writes: readonly SystemInput[] = PROTOCOL_NODES[node].writes;
+    const taken = writes.find((input) => writer[input] !== undefined);
+    if (taken !== undefined) {
+      leftOut?.({ kind: r.kind, input: taken, by: writer[taken]! });
+      continue;
+    }
+    for (const input of writes) writer[input] = r.kind;
+    out.push({ kind: r.kind, node, config: r.config });
   }
   return out;
 }

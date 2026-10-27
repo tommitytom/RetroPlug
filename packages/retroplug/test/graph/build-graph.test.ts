@@ -6,7 +6,7 @@
 // section 4): the MIDI routing, the controller and each role's protocol node, wired as the DSP kernel's ports were.
 import { test, expect } from "../../testing/harness";
 import { buildGraph, type GraphModel, type GraphSystem, type HostShape } from "../../src/graph/buildGraph";
-import { protocolPipeline, type ProtocolRole } from "../../src/graph/protocolNodes";
+import { protocolPipeline, type LeftOutRole, type ProtocolRole } from "../../src/graph/protocolNodes";
 import { controllerSyncOverride, type GraphController } from "../../src/graph/controller";
 import { MIDI_ROUTE_NODE_TYPE } from "../../src/script/nodes/midiRoute";
 import { CONTROLLER_SESSION_NODE_TYPE } from "../../src/script/nodes/controllerSession";
@@ -285,6 +285,33 @@ test("each protocol node feeds its system's inputs of the same name, and a syste
   expect(inputs(3)).toEqual([[], [], ["sys-3/sms-sync.bytes"], []]);
   expect(inputs(4)).toEqual([["sys-4/lsdj-sync.serialIn"], [], [], ["sys-4/lsdj-sync.buttons"]]);
   expect(inputs(5)).toEqual([[], [], [], []]);
+});
+
+test("of two roles whose nodes write one system input, the first in role order is placed and the later left out", () => {
+  // The planner refuses a second producer into one input, and the whole document with it. A project stored with mgb
+  // whose ROM path holds LSDj today gains lsdj-sync (both write serialIn), and a hand-edited file can name a kind
+  // twice.
+  const left: LeftOutRole[] = [];
+  const roles = [
+    { kind: "sameboy", config: {} },
+    { kind: "mgb", config: {} },
+    { kind: "lsdj-sync", config: LSDJ().config },
+    { kind: "mgb", config: {} },
+  ];
+  const pipeline = protocolPipeline(roles, (r) => left.push(r));
+  expect(pipeline).toEqual([MGB]);
+  expect(left).toEqual([
+    { kind: "lsdj-sync", input: "serialIn", by: "mgb" },
+    { kind: "mgb", input: "serialIn", by: "mgb" },
+  ]);
+  const g = built([gb(1, 0, pipeline)], "stereo", multi(2), { midiRouting: "sendToAll" });
+  expect(g.into("sys-1.serialIn")).toEqual(["sys-1/mgb.serialIn"]);
+  // The other order places lsdj-sync; nodes that write different inputs are all placed, and nothing is left out.
+  expect(protocolPipeline([{ kind: "lsdj-sync", config: LSDJ().config }, { kind: "mgb", config: {} }])).toEqual([LSDJ()]);
+  const none: LeftOutRole[] = [];
+  const nesRoles = [{ kind: "nes-n8-midi", config: {} }, { kind: "risa-sync", config: {} }];
+  expect(protocolPipeline(nesRoles, (r) => none.push(r))).toEqual([N8, RISA]);
+  expect(none).toEqual([]);
 });
 
 test("MI.OUT comes back from a Game Boy a block later, into its lsdj-sync node and nowhere else", () => {

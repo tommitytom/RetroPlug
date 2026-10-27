@@ -571,6 +571,26 @@ test("a loaded lsdj-sync config this build refuses reaches its node repaired, an
   expect(answered.every((r) => r.ok)).toBe(true);
 });
 
+test("a system whose roles' nodes both write serialIn places the first in role order: mgb stored, LSDj in the ROM now", () => {
+  // A project stored with mgb, its ROM path holding LSDj today, gains lsdj-sync as a missing feature role, and both
+  // nodes write the system's serialIn: a second producer into one input, for which the planner refuses the document.
+  const { be, sys } = project();
+  const roles: RoleInstance[] = [{ kind: "sameboy", config: {} }, { kind: "mgb", config: {} }];
+  const { result: id, warnings } = warned(() => sys.adopt({ romPath: "/roms/lsdj.gb", core: "sameboy", roles })!);
+  // lsdj-sync is kept on the system, and left out of its pipeline.
+  expect(sys.view()[0].roles.map((r) => r.kind).slice(0, 3)).toEqual(["sameboy", "mgb", "lsdj-sync"]);
+  expect(be.protocolNodes(id)).toEqual([`sys-${id}/mgb`]);
+  const serialIn = be.lastDocument()!.wires.filter((w) => w.to === `sys-${id}.serialIn`);
+  expect(serialIn.map((w) => w.from)).toEqual([`sys-${id}/mgb.serialIn`]);
+  expect(refusals(be.lastDocument()!)).toEqual([]);
+  expect(warnings.length).toBe(1);
+  // An edit to the role left out leaves it out, and says nothing more.
+  const again = warned(() => sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MidiOut }));
+  expect(again.result).toBe(true);
+  expect(be.protocolNodes(id)).toEqual([`sys-${id}/mgb`]);
+  expect(again.warnings).toEqual([]);
+});
+
 const MGB: ConstructSpec = { romPath: "", platform: "gb", core: "sameboy", embeddedRom: "mgb", savPath: null, statePath: null };
 
 test("DirectGraph keeps the B1 model: append, replace in place, remove shifting down", () => {
