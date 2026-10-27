@@ -51,7 +51,9 @@ const ROLE_NODES: Readonly<Record<string, ProtocolNodeType>> = {
 };
 
 /** A role on a system as buildGraph places it: its node, `sys-<id>/<kind>`, of type `node`, with the role's config as
- *  the store parsed it as its settings. */
+ *  its settings. A store with a registry that registers the kind hands it as the role's schema parsed it (an edit, a
+ *  fresh system's defaults and a loaded project's alike); a DirectGraph, or a store with no registry, as it was
+ *  given. */
 export interface ProtocolRole {
   kind: string;
   node: ProtocolNodeType;

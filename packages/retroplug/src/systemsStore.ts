@@ -630,11 +630,14 @@ export class SystemsStore {
     // Prefer the persisted core (v2+); fall back to auto-derive for a pre-migration/hand-built entry.
     const core = config.core ?? defaultCoreFor(platform);
     const savPath = embeddedRom ? null : resolveSavPath(romPath, savSuffix, override);
-    // Stored roles win, but a role kind they PREDATE is added (see withMissingFeatureRoles); a config
-    // that omits them entirely re-attaches defaults. Known before the build so a role's load-time hook
-    // can seed the spec (e.g. an empty LSDj sav) before instantiation.
-    const roles = config.roles && config.roles.length
-      ? this.withMissingFeatureRoles(config.roles, core, platform, romPath, embeddedRom)
+    // Stored roles win, each config that reaches a protocol node parsed first (parsedForTheirNodes), but a
+    // role kind they PREDATE is added (see withMissingFeatureRoles); a config that omits them entirely
+    // re-attaches defaults. Known before the build so a role's load-time hook can seed the spec (e.g. an
+    // empty LSDj sav) before instantiation.
+    const rom = romPath || `the embedded ${embeddedRom}`;
+    const stored = config.roles && config.roles.length ? this.parsedForTheirNodes(config.roles, core, rom) : null;
+    const roles = stored
+      ? this.withMissingFeatureRoles(stored, core, platform, romPath, embeddedRom)
       : this.defaultRoles(core, platform, romPath, embeddedRom);
     // The core-config "system" role (kind === core) carries the emulator config; pass it as the
     // construct-time settings blob so a loaded non-default model/highpass is applied AT build, not via
@@ -753,6 +756,47 @@ export class SystemsStore {
     return this.registry.defaultRoles(core, platform, header, embeddedRom);
   }
 
+  /** `stored` with each config that reaches a protocol node parsed by its role's schema, as an edit's and a fresh
+   *  system's already are. A node's settings are strict, and the planner refuses the whole document for one node's, so
+   *  a value the file holds that this build does not read (a newer build's added mode, which is additive and so no
+   *  version bump; a v2 file's out-of-range mode index, which the v3 step leaves for this schema; a hand edit) would
+   *  silence the project. A field the schema's helpers repair (configSchema.ts: an unknown enum defaults, an integer
+   *  clamps) is repaired; a config the schema refuses outright becomes the role's defaults. Either is logged, once,
+   *  here. A config it accepts keeps every value, gaining only the defaults its node would fill anyway.
+   *
+   *  Only the roles with a protocol node: the core's config role must stay as written (withMissingFeatureRoles says
+   *  why), and a role with no node never reaches the graph. A kind this registry does not register has no schema to
+   *  parse by here, and stays as it is. */
+  private parsedForTheirNodes(stored: RoleInstance[], core: Core, rom: string): RoleInstance[] {
+    const registry = this.registry;
+    if (!registry) return stored;
+    return stored.map((r) => {
+      const rt = r.kind !== core && protocolNodeOf(r.kind) !== undefined ? registry.roleType(r.kind) : undefined;
+      if (!rt) return r;
+      let config: Record<string, unknown>;
+      try {
+        config = rt.schema.parse(r.config);
+      } catch {
+        config = rt.schema.parse({});
+        console.warn(
+          `[systems] ${rom}: its stored ${r.kind} config ${JSON.stringify(r.config)} is not one this build reads; ` +
+            `using the defaults ${JSON.stringify(config)}`,
+        );
+        return { kind: r.kind, config };
+      }
+      const given = r.config;
+      const repaired = Object.keys(config).filter(
+        (k) => Object.prototype.hasOwnProperty.call(given, k) && JSON.stringify(given[k]) !== JSON.stringify(config[k]),
+      );
+      if (repaired.length)
+        console.warn(
+          `[systems] ${rom}: its stored ${r.kind} config holds values this build does not read; repaired ` +
+            repaired.map((k) => `${k} ${JSON.stringify(given[k])} to ${JSON.stringify(config[k])}`).join(", "),
+        );
+      return { kind: r.kind, config };
+    });
+  }
+
   /** `stored`, plus any FEATURE role today's providers suggest for this ROM whose kind is missing.
    *
    *  Without this a project can never acquire a role that shipped after it was saved: the stored list
@@ -773,16 +817,19 @@ export class SystemsStore {
    *  - **Feature roles only.** The core-config role (kind === core) is skipped, because adopt reads the
    *    construct-time `settings` blob from the STORED roles: synthesising one here would start passing
    *    schema defaults where `undefined` is passed today and native applies its own.
-   *  - **A stored role is never touched**, so a configured sync mode or a kit override survives.
+   *  - **A stored role is never touched** here, so a configured sync mode or a kit override survives
+   *    (adopt has parsed one with a protocol node by its schema first, which keeps every value it accepts).
    *  - **Appended, not merged in place.** `graphSystems` keeps this array's order for the DSP
    *    pipeline, and `defaultRoles` itself emits core-role-then-providers, so appending
    *    reproduces the order a freshly added system would have.
    *
-   *  A stored kind that is no longer registered is left alone rather than pruned: the graph places
-   *  nothing for a kind with no protocol node, so it is inert, and dropping it would silently
-   *  discard state belonging to a build the user might go back to.
+   *  A stored kind this registry does not register is left alone rather than pruned (and unparsed, as
+   *  there is no schema to parse it by): dropping it would silently discard state belonging to a build
+   *  the user might go back to. What the graph places is the protocol-node table's, not the registry's
+   *  (graph/protocolNodes.ts): a kind with no node, a retired one among them, places nothing, so it is
+   *  inert; a kind with a node is placed whether this registry registers it or not.
    *
-   *  No schema change and no version bump: the file is read as written, and the augmented list only
+   *  No schema change and no version bump: nothing migrates the file, and the augmented list only
    *  reaches disk if the user saves - at which point the project self-heals. */
   private withMissingFeatureRoles(
     stored: RoleInstance[],

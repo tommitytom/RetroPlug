@@ -12,7 +12,7 @@ import { RecentStore } from "../../src/recentStore";
 import { SystemsStore } from "../../src/systemsStore";
 import { DirectGraph } from "../../src/graph/directGraph";
 import { buildGraph, type HostShape } from "../../src/graph/buildGraph";
-import { toGraphJson } from "../../src/graph/graphDocument";
+import { toGraphJson, type GraphDocument } from "../../src/graph/graphDocument";
 import { canonicalJson } from "../../src/graph/canonicalJson";
 import { buildAppRegistry } from "../../src/appHost";
 import { LsdjSyncMode, MidiRouting, type AudioRouting } from "../../src/settingsEnums";
@@ -20,6 +20,13 @@ import type { RoleInstance } from "../../src/systemRoles";
 import type { EngineGraph } from "../../src/engineGraph";
 import type { ConstructSpec, SetGraphResult } from "../../src/backend";
 import { z, clampedInt } from "../../src/configSchema";
+import { midiRouteNode } from "../../src/script/nodes/midiRoute";
+import { controllerSessionNode } from "../../src/script/nodes/controllerSession";
+import { mgbMidiNode } from "../../src/script/nodes/mgbMidi";
+import { n8MidiToFifoNode } from "../../src/script/nodes/n8MidiToFifo";
+import { risaSyncNode } from "../../src/script/nodes/risaSync";
+import { smsSyncNode } from "../../src/script/nodes/smsSync";
+import { lsdjSyncNode } from "../../src/script/nodes/lsdjSync";
 import { blipToasterRom, gbRom, lsdjRom, nesRom } from "./fixtures";
 
 function project() {
@@ -481,6 +488,87 @@ test("a systems store without a registry places the same protocol nodes, and an 
   expect(sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MidiOut })).toBe(true);
   expect(since(be, n)).toEqual([{ slots: [id] }]);
   expect(be.graphNode(`sys-${id}/lsdj-sync`)?.settings).toEqual({ mode: LsdjSyncMode.MidiOut });
+});
+
+// The script node types a document places, by type, each with the settings check the engine's script host runs.
+const SCRIPT_NODES: Record<string, { parseSettings(raw: unknown): unknown }> = Object.fromEntries(
+  [midiRouteNode, controllerSessionNode, mgbMidiNode, n8MidiToFifoNode, risaSyncNode, smsSyncNode, lsdjSyncNode].map(
+    (d) => [d.id, d],
+  ),
+);
+
+// What the engine's planner would refuse `doc` for, of the two refusals a loaded project's roles can earn it: a script
+// node's settings its type refuses (settings-invalid), and a second producer wired into one input (input-taken).
+// Either refuses the whole document. Empty when neither applies.
+function refusals(doc: GraphDocument): string[] {
+  const out: string[] = [];
+  for (const n of doc.nodes) {
+    const def = SCRIPT_NODES[n.type];
+    if (!def) continue;
+    try {
+      def.parseSettings(n.settings);
+    } catch (e) {
+      out.push(`settings-invalid ${n.id}: ${String(e)}`);
+    }
+  }
+  const fed = new Set<string>();
+  for (const w of doc.wires) {
+    if (fed.has(w.to)) out.push(`input-taken ${w.to}`);
+    fed.add(w.to);
+  }
+  return out;
+}
+
+// What `fn` logged as warnings, and its result.
+function warned<T>(fn: () => T): { result: T; warnings: string[] } {
+  const warnings: string[] = [];
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => warnings.push(args.map(String).join(" "));
+  try {
+    return { result: fn(), warnings };
+  } finally {
+    console.warn = warn;
+  }
+}
+
+// A thin project file at `path`, stamped `version`, holding one system: the LSDj cart with `roles`.
+function seedLsdjProject(be: MockBackend, path: string, roles: RoleInstance[], version = "4"): void {
+  const systems = [{ platform: "gb", core: "sameboy", romPath: "/roms/lsdj.gb", roles }];
+  be.seed(path, new TextEncoder().encode(JSON.stringify({ schemaVersion: version, settings: {}, systems })));
+}
+
+test("a loaded lsdj-sync config this build refuses reaches its node repaired, and the project plans", () => {
+  // A store parses a role's config on an edit and fills a fresh system's defaults, and a load must too: a newer
+  // build's added mode (additive, so no version bump), a v2 file's out-of-range mode index (the v3 step leaves it) or a
+  // hand edit would reach the node as written, whose settings are strict, and the planner refuses the whole document
+  // for one node's settings: the project would play nothing.
+  const { be, p, sys } = project();
+  seedLsdjProject(be, "/proj/newer.rplg", [
+    { kind: "sameboy", config: {} },
+    { kind: "lsdj-sync", config: { mode: "midiSyncTurbo", tempoDivisor: 12, autoStart: "yes" } },
+  ]);
+  seedLsdjProject(be, "/proj/v2.rplg", [
+    { kind: "sameboy", config: {} },
+    { kind: "lsdj-sync", config: { mode: 9, tempoDivisor: 4 } },
+  ], "2");
+  const answered = answers(be);
+  const cases: [string, Record<string, unknown>][] = [
+    ["/proj/newer.rplg", { mode: LsdjSyncMode.MidiSync, tempoDivisor: 8, autoStart: false }],
+    ["/proj/v2.rplg", { mode: LsdjSyncMode.MidiSync, tempoDivisor: 4, autoStart: false }],
+  ];
+  for (const [path, repaired] of cases) {
+    const { result, warnings } = warned(() => p.load(path));
+    expect(result.kind).toBe("loaded");
+    const [id] = sys.systems().map((e) => e.id);
+    const settings = be.graphNode(`sys-${id}/lsdj-sync`)?.settings;
+    expect(settings).toEqual(canon(repaired));
+    expect(lsdjSyncNode.parseSettings(settings)).toEqual(repaired);
+    expect(refusals(be.lastDocument()!)).toEqual([]);
+    // The system holds the config its node runs, so its menu shows it and a save writes it.
+    expect(sys.view()[0].roles.find((r) => r.kind === "lsdj-sync")?.config).toEqual(repaired);
+    expect(warnings.length).toBe(1);
+  }
+  expect(answered.every((r) => r.ok)).toBe(true);
 });
 
 const MGB: ConstructSpec = { romPath: "", platform: "gb", core: "sameboy", embeddedRom: "mgb", savPath: null, statePath: null };

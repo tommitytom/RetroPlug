@@ -22,7 +22,7 @@ import { registerDspRoles } from "../../src/dspRoles";
 import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
 import { buildAppRegistry } from "../../src/appHost";
-import { gbRom, lsdjRom, blipToasterRom } from "./fixtures";
+import { gbRom, lsdjRom, blipToasterRom, smsggdjRom } from "./fixtures";
 
 function newStore() {
   const be = new MockBackend("/cfg");
@@ -147,6 +147,56 @@ test("the smsggdj case that prompted this: a mesen-only project gains sms-sync",
   const sync = roles.find((r) => r.kind === "sms-sync");
   expect(sync != null).toBeTruthy();
   expect(sync!.config.machine).toBe("sms"); // tagged with the wire format, as a fresh add would be
+});
+
+// --- a stored config, parsed for its protocol node -----------------------------------------------
+//
+// A role with a protocol node hands its config to that node as its settings, which are strict: the planner refuses a
+// whole document for one node's settings. So adopt parses each such stored config by its role's schema, as an edit
+// and a fresh system's defaults already are; the core's config role and the roles with no node never reach a node,
+// and keep what the file says.
+
+// What `fn` logged as warnings, and its result.
+function warned<T>(fn: () => T): { result: T; warnings: string[] } {
+  const warnings: string[] = [];
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => warnings.push(args.map(String).join(" "));
+  try {
+    return { result: fn(), warnings };
+  } finally {
+    console.warn = warn;
+  }
+}
+
+test("a stored role with a protocol node is parsed by its schema; the core's role and one with no node stay as written", () => {
+  const { be, store } = newStore();
+  const romPath = seedLsdj(be);
+  const { result: id, warnings } = warned(() => store.adopt({ romPath, core: "sameboy", roles: [
+    { kind: "sameboy", config: { futureKnob: 1 } },
+    { kind: "lsdj-sync", config: { mode: "midiOut" } },
+    { kind: "lsdj-assets", config: { overrides: [], futureKnob: 2 } },
+  ] }));
+  const roles = store.view().find((v) => v.id === id)!.roles;
+  // A config the schema accepts keeps every value, and gains only the defaults its node would fill anyway: no repair,
+  // so nothing is logged.
+  const sync = roles.find((r) => r.kind === "lsdj-sync")!.config;
+  expect(sync).toEqual({ mode: "midiOut", tempoDivisor: 1, autoStart: false });
+  expect(warnings).toEqual([]);
+  expect(roles.find((r) => r.kind === "sameboy")!.config).toEqual({ futureKnob: 1 });
+  expect(roles.find((r) => r.kind === "lsdj-assets")!.config).toEqual({ overrides: [], futureKnob: 2 });
+});
+
+test("a stored config its schema refuses outright falls back to the role's defaults, logged once", () => {
+  // sms-sync's machine has no per-field fallback, so a value it does not know refuses the whole config.
+  const { be, store } = newStore();
+  be.seed("/roms/smsggdj.sms", smsggdjRom());
+  const { result: id, warnings } = warned(() => store.adopt({ romPath: "/roms/smsggdj.sms", core: "mesen", roles: [
+    { kind: "mesen", config: {} },
+    { kind: "sms-sync", config: { machine: "md" } },
+  ] }));
+  const sync = store.view().find((v) => v.id === id)!.roles.find((r) => r.kind === "sms-sync")!;
+  expect(sync.config).toEqual({ machine: "sms" });
+  expect(warnings.length).toBe(1);
 });
 
 // --- derived facts vs stored configuration -------------------------------------------------------

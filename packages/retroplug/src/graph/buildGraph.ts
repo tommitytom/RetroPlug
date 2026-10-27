@@ -27,7 +27,7 @@ export interface GraphSystem {
   /** NES only: the channel export mode its core was built with. */
   exportMode: number;
   /** The roles that have a protocol node, in the system's order, each with the node type it is placed as and its
-   *  config as the store parsed it (graph/protocolNodes.ts protocolPipeline). */
+   *  config as that node's settings (graph/protocolNodes.ts protocolPipeline; ProtocolRole says who parsed it). */
   pipeline: ProtocolRole[];
 }
 
