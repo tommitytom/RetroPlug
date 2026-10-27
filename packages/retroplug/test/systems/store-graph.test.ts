@@ -572,39 +572,76 @@ test("a loaded lsdj-sync config this build refuses reaches its node repaired, an
   expect(answered.every((r) => r.ok)).toBe(true);
 });
 
-test("a system whose roles' nodes both write serialIn places the first in role order: mgb stored, LSDj in the ROM now", () => {
-  // A project stored with mgb, its ROM path holding LSDj today, gains lsdj-sync as a missing feature role, and both
-  // nodes write the system's serialIn: a second producer into one input, for which the planner refuses the document.
+test("of two roles whose nodes write serialIn, a loaded system places the one its ROM calls for, either way round", () => {
+  // A project stored with mgb, its ROM path holding LSDj today, gains lsdj-sync as a missing feature role (and the
+  // reverse for an mGB cart), and both nodes write the system's serialIn: a second producer into one input, for which
+  // the planner refuses the document. The role today's ROM calls for is placed; the stale one, kept on the system so a
+  // save keeps it, is left out.
   const { be, sys } = project();
-  const roles: RoleInstance[] = [{ kind: "sameboy", config: {} }, { kind: "mgb", config: {} }];
-  const { result: id, warnings } = warned(() => sys.adopt({ romPath: "/roms/lsdj.gb", core: "sameboy", roles })!);
-  // lsdj-sync is kept on the system, and left out of its pipeline.
-  expect(sys.view()[0].roles.map((r) => r.kind).slice(0, 3)).toEqual(["sameboy", "mgb", "lsdj-sync"]);
-  expect(be.protocolNodes(id)).toEqual([`sys-${id}/mgb`]);
-  const serialIn = be.lastDocument()!.wires.filter((w) => w.to === `sys-${id}.serialIn`);
-  expect(serialIn.map((w) => w.from)).toEqual([`sys-${id}/mgb.serialIn`]);
-  expect(refusals(be.lastDocument()!)).toEqual([]);
-  expect(warnings.length).toBe(1);
-  // An edit to the role left out leaves it out, and says nothing more.
-  const again = warned(() => sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MidiOut }));
-  expect(again.result).toBe(true);
-  expect(be.protocolNodes(id)).toEqual([`sys-${id}/mgb`]);
-  expect(again.warnings).toEqual([]);
+  be.seed("/roms/mgb.gb", lsdjRom("MGB"));
+  const sameboy: RoleInstance = { kind: "sameboy", config: {} };
+  const cases: [string, RoleInstance, string, string][] = [
+    ["/roms/lsdj.gb", { kind: "mgb", config: {} }, "lsdj-sync", "mgb"],
+    ["/roms/mgb.gb", { kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiSync } }, "mgb", "lsdj-sync"],
+  ];
+  for (const [romPath, stale, placed, left] of cases) {
+    const { result: id, warnings } = warned(() => sys.adopt({ romPath, core: "sameboy", roles: [sameboy, stale] })!);
+    // The role the ROM calls for goes ahead of the stale one, which is the order a save then writes.
+    const kinds = sys.view().find((v) => v.id === id)!.roles.map((r) => r.kind);
+    expect(kinds.slice(0, 3)).toEqual(["sameboy", placed, left]);
+    expect(be.protocolNodes(id)).toEqual([`sys-${id}/${placed}`]);
+    const serialIn = be.lastDocument()!.wires.filter((w) => w.to === `sys-${id}.serialIn`);
+    expect(serialIn.map((w) => w.from)).toEqual([`sys-${id}/${placed}.serialIn`]);
+    expect(refusals(be.lastDocument()!)).toEqual([]);
+    expect(warnings.length).toBe(1);
+    // An edit to the role left out leaves it out, and says nothing more.
+    const again = warned(() => sys.setRoleConfig(id, left, {}));
+    expect(again.result).toBe(true);
+    expect(be.protocolNodes(id)).toEqual([`sys-${id}/${placed}`]);
+    expect(again.warnings).toEqual([]);
+    sys.removeSystem(id);
+  }
 });
 
-test("a left-out lsdj-sync arms no serial-out capture: not at a build, nor on an edit", () => {
-  // Capture is for the system's lsdj-sync node, which decodes what the core sends (MI.OUT drives, master sync listens).
-  // Where mgb wins serialIn that node is not placed, so nothing would read the capture, and a driving core would clock
-  // the serial port under mgb's bytes.
+test("of two colliding roles neither of which the ROM calls for, the first in role order is placed", () => {
   const { be, sys } = project();
   const roles: RoleInstance[] = [
     { kind: "sameboy", config: {} },
     { kind: "mgb", config: {} },
+    { kind: "lsdj-sync", config: {} },
+  ];
+  const { result: id, warnings } = warned(() => sys.adopt({ romPath: "/roms/a.gb", core: "sameboy", roles })!);
+  expect(be.protocolNodes(id)).toEqual([`sys-${id}/mgb`]);
+  expect(sys.view()[0].roles.map((r) => r.kind)).toEqual(["sameboy", "mgb", "lsdj-sync"]); // as stored
+  expect(warnings.length).toBe(1);
+});
+
+test("an adopt whose core does not build logs nothing about the system it never added", () => {
+  const { be, sys } = project();
+  be.buildCore = () => null;
+  const roles: RoleInstance[] = [
+    { kind: "sameboy", config: {} },
+    { kind: "mgb", config: {} },
+    { kind: "lsdj-sync", config: { mode: "midiSyncTurbo" } },
+  ];
+  const { result, warnings } = warned(() => sys.adopt({ romPath: "/roms/lsdj.gb", core: "sameboy", roles }));
+  expect(result).toBe(null);
+  expect(warnings).toEqual([]);
+});
+
+test("a left-out lsdj-sync arms no serial-out capture: not at a build, nor on an edit", () => {
+  // Capture is for the system's lsdj-sync node, which decodes what the core sends (MI.OUT drives, master sync listens).
+  // On an mGB cart whose project stored lsdj-sync, mgb wins serialIn and that node is not placed, so nothing would read
+  // the capture, and a driving core would clock the serial port under mgb's bytes.
+  const { be, sys } = project();
+  be.seed("/roms/mgb.gb", lsdjRom("MGB"));
+  const roles: RoleInstance[] = [
+    { kind: "sameboy", config: {} },
     { kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiOut } },
   ];
   const lastBuild = () => be.buildCalls[be.buildCalls.length - 1].serialOutCapture;
   const captures = (id: number) => be.serialOutCaptureCalls.filter((c) => c.id === id);
-  let id = warned(() => sys.adopt({ romPath: "/roms/lsdj.gb", core: "sameboy", roles })!).result;
+  let id = warned(() => sys.adopt({ romPath: "/roms/mgb.gb", core: "sameboy", roles })!).result;
   expect(be.protocolNodes(id)).toEqual([`sys-${id}/mgb`]);
   expect(lastBuild()).toBe(undefined); // a load, stored in MI.OUT
   for (const mode of [LsdjSyncMode.MasterSync, LsdjSyncMode.MidiOut]) {

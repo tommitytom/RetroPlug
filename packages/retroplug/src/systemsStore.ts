@@ -31,7 +31,7 @@ import {
 } from "./systemsList";
 import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettingsSchema } from "./systemSettings";
 import type { RoleRegistry, RoleInstance } from "./systemRoles";
-import { protocolNodeOf, protocolPipeline, type ProtocolRole } from "./graph/protocolNodes";
+import { protocolNodeOf, protocolPipeline, protocolWrites, type ProtocolRole } from "./graph/protocolNodes";
 import { blipToasterChip, needsChipLabelScan, BLIPTOASTER_CHIP_SCAN_LEN } from "./bliptoaster/romDetect";
 import { roleConfigForNative, LsdjSyncMode } from "./settingsEnums";
 
@@ -632,19 +632,23 @@ export class SystemsStore {
     const core = config.core ?? defaultCoreFor(platform);
     const savPath = embeddedRom ? null : resolveSavPath(romPath, savSuffix, override);
     // Stored roles win, each config that reaches a protocol node parsed first (parsedForTheirNodes), but a
-    // role kind they PREDATE is added (see withMissingFeatureRoles); a config that omits them entirely
-    // re-attaches defaults. Known before the build so a role's load-time hook can seed the spec (e.g. an
-    // empty LSDj sav) before instantiation.
+    // role kind they PREDATE is added (see withMissingFeatureRoles), and of two that collide the one this ROM
+    // calls for is placed (suggestedFirst); a config that omits them entirely re-attaches defaults. Known
+    // before the build so a role's load-time hook can seed the spec (e.g. an empty LSDj sav) before
+    // instantiation. What the load repairs or leaves out is noted here and logged once the core has built,
+    // so a failed build says nothing about a system that was never added.
     const rom = romPath || `the embedded ${embeddedRom}`;
-    const stored = config.roles && config.roles.length ? this.parsedForTheirNodes(config.roles, core, rom) : null;
+    const notes: string[] = [];
+    const suggested = this.defaultRoles(core, platform, romPath, embeddedRom);
+    const stored = config.roles?.length ? this.parsedForTheirNodes(config.roles, core, rom, notes) : null;
     const roles = stored
-      ? this.withMissingFeatureRoles(stored, core, platform, romPath, embeddedRom)
-      : this.defaultRoles(core, platform, romPath, embeddedRom);
+      ? this.suggestedFirst(this.withMissingFeatureRoles(stored, core, suggested, romPath, embeddedRom), suggested)
+      : suggested;
     // A loaded system's roles can hold two whose nodes write one input, or a kind twice (graph/protocolNodes.ts,
     // beside PROTOCOL_NODES), and every publish leaves the later one out of its pipeline, quietly; this says so
     // once, here, where the roles enter.
     protocolPipeline(roles, (r) =>
-      console.warn(
+      notes.push(
         r.input === null
           ? `[systems] ${rom}: its second ${r.kind} role is not placed`
           : `[systems] ${rom}: its ${r.kind} role is not placed: its node would write ${r.input}, ` +
@@ -673,6 +677,7 @@ export class SystemsStore {
     const battery = this.detectBattery(romPath, embeddedRom, platform);
     const built = this.backend.buildCore(spec, id); // a loaded system already in MIDIOUT mode is built capturing
     if (!built) return null;
+    for (const note of notes) console.warn(note);
     const wasEmpty = this.entries.length === 0;
     this.entries = appendEntry(this.entries, { id, platform, core, romPath, savPath: override, savSuffix, embeddedRom, battery, settings, roles, built });
     if (wasEmpty) this.focusedId = id;
@@ -773,13 +778,14 @@ export class SystemsStore {
    *  a value the file holds that this build does not read (a newer build's added mode, which is additive and so no
    *  version bump; a v2 file's out-of-range mode index, which the v3 step leaves for this schema; a hand edit) would
    *  silence the project. A field the schema's helpers repair (configSchema.ts: an unknown enum defaults, an integer
-   *  clamps) is repaired; a config the schema refuses outright becomes the role's defaults. Either is logged, once,
-   *  here. A config it accepts keeps every value, gaining only the defaults its node would fill anyway.
+   *  clamps) is repaired; a config the schema refuses outright becomes the role's defaults. Either is noted in `notes`,
+   *  which adopt logs once the core has built. A config it accepts keeps every value, gaining only the defaults its
+   *  node would fill anyway.
    *
    *  Only the roles with a protocol node: the core's config role must stay as written (withMissingFeatureRoles says
    *  why), and a role with no node never reaches the graph. A kind this registry does not register has no schema to
    *  parse by here, and stays as it is. */
-  private parsedForTheirNodes(stored: RoleInstance[], core: Core, rom: string): RoleInstance[] {
+  private parsedForTheirNodes(stored: RoleInstance[], core: Core, rom: string, notes: string[]): RoleInstance[] {
     const registry = this.registry;
     if (!registry) return stored;
     return stored.map((r) => {
@@ -790,7 +796,7 @@ export class SystemsStore {
         config = rt.schema.parse(r.config);
       } catch {
         config = rt.schema.parse({});
-        console.warn(
+        notes.push(
           `[systems] ${rom}: its stored ${r.kind} config ${JSON.stringify(r.config)} is not one this build reads; ` +
             `using the defaults ${JSON.stringify(config)}`,
         );
@@ -801,12 +807,34 @@ export class SystemsStore {
         (k) => Object.prototype.hasOwnProperty.call(given, k) && JSON.stringify(given[k]) !== JSON.stringify(config[k]),
       );
       if (repaired.length)
-        console.warn(
+        notes.push(
           `[systems] ${rom}: its stored ${r.kind} config holds values this build does not read; repaired ` +
             repaired.map((k) => `${k} ${JSON.stringify(given[k])} to ${JSON.stringify(config[k])}`).join(", "),
         );
       return { kind: r.kind, config };
     });
+  }
+
+  /** `roles` with each role this ROM's providers suggest (`suggested`, defaultRoles) moved ahead of the earliest role
+   *  they do not suggest whose node writes an input its own node writes, so of two that collide the pipeline places
+   *  the protocol today's ROM calls for (graph/protocolNodes.ts: of two writers of one input, the first is placed).
+   *  Met when the file at a ROM path changes builds: a project stored with mgb whose path now holds LSDj gains
+   *  lsdj-sync as a missing feature role, and first-wins would keep running mGB's protocol on an LSDj cart, whose menu
+   *  then shows sync controls that do nothing (and the reverse on an mGB cart). Every other role keeps its place, so
+   *  with no collision, or none the ROM settles (no registry, or neither role suggested), the order is as stored and
+   *  the first wins. A save writes the moved order, which is harmless: the suggested role goes ahead of one a fresh
+   *  system on this ROM would not have at all. */
+  private suggestedFirst(roles: RoleInstance[], suggested: readonly RoleInstance[]): RoleInstance[] {
+    const wanted = new Set(suggested.map((r) => r.kind));
+    const out = roles.slice();
+    for (let i = 0; i < out.length; ++i) {
+      if (!wanted.has(out[i].kind)) continue;
+      const writes = protocolWrites(out[i].kind);
+      const collides = (q: RoleInstance) => protocolWrites(q.kind).some((w) => writes.includes(w));
+      const j = out.findIndex((q, k) => k < i && !wanted.has(q.kind) && collides(q));
+      if (j >= 0) out.splice(j, 0, ...out.splice(i, 1));
+    }
+    return out;
   }
 
   /** `stored`, plus any FEATURE role today's providers suggest for this ROM whose kind is missing.
@@ -833,7 +861,8 @@ export class SystemsStore {
    *    (adopt has parsed one with a protocol node by its schema first, which keeps every value it accepts).
    *  - **Appended, not merged in place.** `graphSystems` keeps this array's order for the DSP
    *    pipeline, and `defaultRoles` itself emits core-role-then-providers, so appending
-   *    reproduces the order a freshly added system would have.
+   *    reproduces the order a freshly added system would have. (adopt then moves a suggested
+   *    role ahead of a stale one it collides with: suggestedFirst.)
    *
    *  A stored kind this registry does not register is left alone rather than pruned (and unparsed, as
    *  there is no schema to parse it by): dropping it would silently discard state belonging to a build
@@ -846,7 +875,7 @@ export class SystemsStore {
   private withMissingFeatureRoles(
     stored: RoleInstance[],
     core: Core,
-    platform: Platform,
+    suggested: readonly RoleInstance[],
     romPath: string,
     embeddedRom: string,
   ): RoleInstance[] {
@@ -857,9 +886,7 @@ export class SystemsStore {
     // explicit and be subtly worse - a provider suggesting a kind whose RoleType is not registered
     // would be dropped here while a freshly added system still received it, so the two paths would
     // disagree for a partially-wired registry.
-    const missing = this.defaultRoles(core, platform, romPath, embeddedRom).filter(
-      (r) => r.kind !== core && !have.has(r.kind),
-    );
+    const missing = suggested.filter((r) => r.kind !== core && !have.has(r.kind));
     return this.withDerivedRoleFacts(missing.length ? [...stored, ...missing] : stored, romPath, embeddedRom);
   }
 

@@ -38,8 +38,9 @@ export interface ProtocolNodeSpec {
 // loaded project's can: one stored with mgb whose ROM path holds LSDj today gains lsdj-sync as a missing feature role
 // (SystemsStore.withMissingFeatureRoles), and both write serialIn. So of two roles of one system whose nodes would
 // write the same input, the first in role order is placed and the later one left out of the pipeline whole
-// (protocolPipeline), where the kernel merged what both sent. A kind named twice (a hand-edited file) is left out the
-// same way, as its node id, sys-<id>/<kind>, is taken, which the planner refuses too.
+// (protocolPipeline), where the kernel merged what both sent; the store orders a loaded system's roles so that, of two
+// that collide, the one its ROM calls for comes first (SystemsStore.suggestedFirst). A kind named twice (a hand-edited
+// file) is left out the same way, as its node id, sys-<id>/<kind>, is taken, which the planner refuses too.
 export const PROTOCOL_NODES = {
   "rp.mgb.midi": { midiIn: "midi", writes: ["serialIn"] },
   "rp.n8.midi-to-fifo": { midiIn: "midiIn", writes: ["midi"] },
@@ -75,6 +76,12 @@ export interface ProtocolRole {
  *  features with no DSP behaviour (asset overrides, a ROM's facts). */
 export function protocolNodeOf(kind: string): ProtocolNodeType | undefined {
   return Object.prototype.hasOwnProperty.call(ROLE_NODES, kind) ? ROLE_NODES[kind] : undefined;
+}
+
+/** The system inputs the node a role of `kind` is placed as writes; none for a role with no node. */
+export function protocolWrites(kind: string): readonly SystemInput[] {
+  const node = protocolNodeOf(kind);
+  return node ? PROTOCOL_NODES[node].writes : [];
 }
 
 /** A role protocolPipeline leaves out: its node would write `input`, which the node of `by`, earlier in its system's
