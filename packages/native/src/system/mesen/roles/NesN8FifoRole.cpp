@@ -39,10 +39,8 @@ void NesN8FifoRole::pushBytes(std::uint32_t offset, const std::uint8_t* data, st
     if (flush) flushAll();
     if (link_) {
         // A link-capable ROM ignores unframed MIDI, and this is how a long SysEx (anything over a MidiEvent's 4
-        // bytes) or a multi-message run arrives - so it is framed like onMidi's. Those ROMs speak no raw protocol.
-        link_->send(data, count, [&](const std::uint8_t* d, std::size_t n, int seq) {
-            for (std::size_t b = 0; b < n; ++b) pending_.push_back({ offset, d[b], b == 0 ? seq : -1 });
-        });
+        // bytes) or a multi-message run arrives - so it is framed like onMidi's, when pumpUntil releases it.
+        pendingMsgs_.push_back({ offset, std::vector<std::uint8_t>(data, data + count) });
         needsSort_ = true;
         return;
     }
@@ -90,15 +88,12 @@ void NesN8FifoRole::serviceLink() {
 void NesN8FifoRole::onMidi(const ::MidiEvent* events, std::uint32_t count) {
     if (events == nullptr || count == 0) return;
     if (link_) {
-        // Framed: each event's bytes become frames (plus a sync ahead of the first), queued at the event's offset;
-        // a frame's first byte carries its seq so pumpUntil can tell the sender when it actually left.
+        // Framed by pumpUntil as it releases them: each event's bytes become frames (plus a sync ahead of the first) at
+        // the event's offset, numbered in release order.
         for (std::uint32_t i = 0; i < count; ++i) {
             const auto& ev = events[i];
             const std::uint32_t size = ev.size > ::MidiEvent::kDataSize ? ::MidiEvent::kDataSize : ev.size;
-            link_->send(ev.data, size, [&](const std::uint8_t* data, std::size_t n, int seq) {
-                for (std::size_t b = 0; b < n; ++b)
-                    pending_.push_back({ ev.frame, data[b], b == 0 ? seq : -1 });
-            });
+            pendingMsgs_.push_back({ ev.frame, std::vector<std::uint8_t>(ev.data, ev.data + size) });
         }
         needsSort_ = true;
         return;
@@ -113,19 +108,33 @@ void NesN8FifoRole::onMidi(const ::MidiEvent* events, std::uint32_t count) {
 
 void NesN8FifoRole::pumpUntil(std::uint32_t sampleOffset) {
     if (needsSort_) {
-        // Stable so bytes of one message (same offset, contiguous) stay together + in order; runs once per
-        // block (all enqueuing precedes the step loop), after which this is a plain front-drain.
+        // Stable so bytes of one message (same offset, contiguous) stay together + in order, and link messages at one
+        // offset keep their enqueue order (the sender's parser relies on it: running status, a SysEx split across
+        // pushes) with any carried in from an earlier block ahead of them. Runs once per block (all enqueuing precedes
+        // the step loop), after which this is a plain front-drain.
         std::stable_sort(pending_.begin(), pending_.end(),
                          [](const PendingByte& a, const PendingByte& b) { return a.offset < b.offset; });
+        std::stable_sort(pendingMsgs_.begin(), pendingMsgs_.end(),
+                         [](const PendingMsg& a, const PendingMsg& b) { return a.offset < b.offset; });
         needsSort_ = false;
     }
     while (!pending_.empty() && pending_.front().offset <= sampleOffset) {
         fifo_.pushByte(pending_.front().byte);
-        if (link_ && pending_.front().seq >= 0) {
-            link_->onSent(pending_.front().seq, nowNs());
-            if (linkDueCycle_ == kNoDue) linkDueCycle_ = 0;   // a frame in flight: its timeout needs arming
-        }
         pending_.pop_front();
+    }
+    // Link mode: a message is framed the moment it is released, so its sequence number is the next one the ROM sees -
+    // whichever feed queued it, in whatever order, and however many blocks it was carried by rebase.
+    while (link_ && !pendingMsgs_.empty() && pendingMsgs_.front().offset <= sampleOffset) {
+        const auto& m = pendingMsgs_.front();
+        const std::int64_t now = nowNs();
+        link_->send(m.bytes.data(), m.bytes.size(), [&](const std::uint8_t* data, std::size_t n, int seq) {
+            for (std::size_t b = 0; b < n; ++b) fifo_.pushByte(data[b]);
+            if (seq >= 0) {
+                link_->onSent(seq, now);
+                if (linkDueCycle_ == kNoDue) linkDueCycle_ = 0;   // a frame in flight: its timeout needs arming
+            }
+        });
+        pendingMsgs_.pop_front();
     }
     // Called before every instruction, so this is the link's clock tick: one compare unless work is due.
     if (linkDueCycle_ != kNoDue && cycles_ && cycles_() >= linkDueCycle_) serviceLink();
@@ -134,5 +143,8 @@ void NesN8FifoRole::pumpUntil(std::uint32_t sampleOffset) {
 void NesN8FifoRole::rebase(std::uint32_t frames) {
     for (auto& e : pending_) {
         e.offset = (e.offset > frames) ? e.offset - frames : 0;
+    }
+    for (auto& m : pendingMsgs_) {
+        m.offset = (m.offset > frames) ? m.offset - frames : 0;
     }
 }
