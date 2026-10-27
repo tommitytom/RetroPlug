@@ -51,7 +51,7 @@ struct EngineHostIo {
     // Hand one message to the physical N8 the engine feeds (Engine::setCoreByteSink); nothing while none is set.
     void (*cartBytes)(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush);
     // Count one message a node was handed and could not deliver (Engine::droppedMessages counts it with the plan's
-    // full queues): rp.host.midi-out's, too short to carry the system id that names its sender.
+    // full queues): one on rp.host.midi-out's prefixed input too short to carry the system id that names its sender.
     void (*dropped)(void* ctx);
 };
 

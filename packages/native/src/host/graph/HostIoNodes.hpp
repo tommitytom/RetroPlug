@@ -12,9 +12,12 @@ namespace rp::host {
 // rp.engine.host-io/1 service, without which it will not activate:
 //
 //   rp.host.midi-in         out midi: the host MIDI the engine staged, stable-sorted by frame
-//   rp.host.midi-out        in midi: each message's payload is a 4-byte little-endian system id, then the MIDI,
-//                           which lands in Engine::midiOut tagged with that system (section 4.4); a message too
-//                           short to carry the id is dropped and counted (Engine::droppedMessages)
+//   rp.host.midi-out        {"systems": [<id>, ...]}: in in1 to inN, an input per entry, whose messages land in
+//                           Engine::midiOut tagged with that entry's system, input by input, each in queue order
+//                           (docs/modular-graph-phase-b3b-design.md section 5); two entries may name one system.
+//                           With no systems (the default): in midi, each message's payload a 4-byte little-endian
+//                           system id, then the MIDI, which lands tagged with that system (section 4.4); a message
+//                           too short to carry the id is dropped and counted (Engine::droppedMessages)
 //   rp.host.controller-in   out midi: the staged control-surface MIDI, at frame 0; out connected: 1 while a
 //                           control surface is attached, from frame 0 of the block
 //   rp.host.controller-out  in midi: appended to Engine::controllerOut
@@ -34,6 +37,12 @@ const rp_package* n8Package();
 // The system a cart mirror's settings (JSON) name, read as the node reads them, so the engine and the node accept
 // the same settings: a field the node does not know is ignored, a missing or out-of-range system refused (nullopt).
 std::optional<std::uint32_t> cartMirrorSystem(std::string_view settings);
+
+// The most inputs rp.host.midi-out's systems form takes: it copies their ids into a fixed array at each commit, which
+// must not allocate. A host MIDI out producer for every system an engine holds (SnapshotRegistry::kMaxSlots, 64) and
+// a controller's ahead of them fit, with room. Each input's queue is its producer's, sized at that output, since a wire
+// carries its source's queue.
+inline constexpr std::uint32_t kMidiOutMaxSystems = 128;
 
 // rp.host.midi-in's output: room for a dense block of DAW MIDI, the frame-0 CCs of moved automation and a large
 // SysEx (a sample or wave upload to a NES build, which the staging has always taken whole), with margin. The kernel's

@@ -1,17 +1,26 @@
 #include "host/graph/HostIoNodes.hpp"
 
+#include <array>
 #include <cstdint>
 #include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include "graph/node.hpp"
 #include "host/graph/HostServices.hpp"
 
 namespace rp::host {
 
-// Named, so its JSON Schema $defs key is the same under every compiler.
+// Named, so their JSON Schema $defs keys are the same under every compiler.
+struct MidiOutSettings {
+    // The system each input's messages go out as, an input per entry: in1 takes the first's. Empty (the default):
+    // the one prefixed input, `midi`.
+    std::vector<std::uint32_t> systems;
+};
+
 struct CartMirrorSettings {
     // The system the cart mirrors (a system id, as a system node's {"core": <id>}).
     std::uint64_t system = 0;
@@ -39,17 +48,73 @@ struct MidiIn : HostIoNode {
 };
 
 // The emitting system's id, little-endian, ahead of each message's MIDI (design section 4.4): private to the
-// kernel's one midiOut port and this node, until each protocol node has a port of its own.
+// kernel's one midiOut port and this node's prefixed form, until each protocol node has a port of its own.
 constexpr std::size_t kSystemPrefix = 4;
 
+rp::graph::PortDesc eventsIn(std::string id) {
+    rp::graph::PortDesc p;
+    p.id = std::move(id);
+    p.dir = rp::graph::PortDir::In;
+    p.kind = rp::graph::PortKind::Events;
+    return p;
+}
+
+// Its settings pick its form (docs/modular-graph-phase-b3b-design.md section 5). With `systems`, an input per entry,
+// in1 to inN, each holding one producer's MIDI as it is, which goes out as that entry's system: input by input, each
+// in queue order, never merged by frame, so the order a document wires its producers in is the host's order across
+// them. Two entries may name one system (a controller sending to a real Game Boy under the id of a system whose own
+// MI.OUT also goes out). Without, the one input `midi`, every message behind its system's id. Every input is
+// appended here, none reflected, since adjust_layout cannot take a reflected port away from the systems form.
 struct MidiOut : HostIoNode {
     static constexpr const char* id = "rp.host.midi-out";
     static constexpr const char* name = "MIDI Out";
     static constexpr const char* category = "host";
-    struct { rp::events_in midi; } inputs;
-    void process(const rp::Block&) noexcept {
-        for (const rp_message& m : inputs.midi.messages()) {
-            const auto data = inputs.midi.data(m);
+    using Settings = MidiOutSettings;
+    // A change of systems that keeps the inputs is a swap and one that moves them a rebuild (it holds nothing a
+    // rebuild loses), so its prepare reads only what create wrote, never what a commit writes, and setGraph need not
+    // wait for a swap to be adopted.
+    static constexpr bool stateless_prepare = true;
+
+    static std::optional<std::string> validate(const Settings& s) {
+        if (s.systems.size() > kMidiOutMaxSystems)
+            return "systems names each input's system: at most " + std::to_string(kMidiOutMaxSystems) + " inputs";
+        return std::nullopt;
+    }
+
+    static void adjust_layout(rp::graph::Layout& l, const Settings& s) {
+        if (s.systems.empty()) l.ports.push_back(eventsIn("midi"));
+        for (std::size_t k = 1; k <= s.systems.size() && k <= kMidiOutMaxSystems; ++k)
+            l.ports.push_back(eventsIn("in" + std::to_string(k)));
+    }
+
+    // Copied at each commit, which must not allocate; 0 inputs is the prefixed form.
+    std::array<std::uint32_t, kMidiOutMaxSystems> systems{};
+    std::uint32_t                                 inputCount = 0;
+    void on_settings(const Settings& s) noexcept {
+        inputCount = 0;
+        for (std::size_t k = 0; k < s.systems.size() && k < kMidiOutMaxSystems; ++k)
+            systems[inputCount++] = s.systems[k];
+    }
+
+    void process(const rp::Block& b) noexcept {
+        if (inputCount == 0) {
+            prefixed(*b.input(0).u.queue);
+            return;
+        }
+        for (std::uint32_t k = 0; k < inputCount && k < b.raw.input_count; ++k) {
+            const rp_queue& q = *b.input(k).u.queue;
+            for (std::uint32_t i = 0; i < q.count; ++i) {
+                const rp_message& m = q.items[i];
+                const auto data = rp::graph::messageData(q, m);
+                io->midiOut(io->ctx, systems[k], m.frame, data.data(), data.size());
+            }
+        }
+    }
+
+    void prefixed(const rp_queue& q) const noexcept {
+        for (std::uint32_t i = 0; i < q.count; ++i) {
+            const rp_message& m = q.items[i];
+            const auto data = rp::graph::messageData(q, m);
             if (data.size() < kSystemPrefix) {  // names no system: nowhere to go
                 io->dropped(io->ctx);
                 continue;

@@ -1,7 +1,8 @@
 // The engine's host I/O nodes and the cart mirror (docs/modular-graph-phase-b3a-design.md sections 3.3 to 3.5): what
 // the hosts stage reaches a plan through rp.host.midi-in and controller-in (a plan without one drops what it would
 // take, and a block too long to run drops it all), what a plan sends reaches the buffers the hosts drain through
-// rp.host.midi-out and controller-out, rp.n8.cart-mirror feeds the engine's core-byte sink, the Game Boy's serialOut
+// rp.host.midi-out (in either form: each input under the system its settings name, or one input whose messages name
+// their own) and controller-out, rp.n8.cart-mirror feeds the engine's core-byte sink, the Game Boy's serialOut
 // carries MI.OUT, and a full queue's drops reach the engine and the harness RPC. A document holds one midi-in, one
 // controller-in and one cart mirror at most, the mirror naming a NES. Driven on a quiescent Engine, and on a NodeRig
 // where a node's calls on the engine are what is checked.
@@ -423,6 +424,147 @@ TEST_CASE("rp.host.midi-out lands each message in Engine::midiOut, tagged with t
     block(e);
     CHECK(midiOut(e) == std::vector<Out>{{2, 7, {0x90, 60, 100}}, {513, 9, {0xF8}}});
     CHECK(e.droppedMessages() == 1);
+}
+
+TEST_CASE("rp.host.midi-out's systems form hands the engine each input's messages, input by input, under its system",
+          "[engine-graph][host-io]") {
+    // Three producers, each wired to its own input, the first and third naming one system (a controller's launches to
+    // a real Game Boy, under the id of a system whose own MI.OUT goes out too), and a fourth input left unwired. Each
+    // input's messages go out in queue order, a whole input before the next, so a frame on a later input that is
+    // earlier than one on an earlier input comes after it all the same. A message goes out as it is: a short one, an
+    // empty one and one that looks like a prefixed message alike.
+    using rp::host::test::Feed;
+    using rp::host::test::HostMidiOut;
+    using rp::host::test::NodeRig;
+    NodeRig rig(kRate);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.feed"},{"id":"b","type":"rp.test.feed"},{"id":"c","type":"rp.test.feed"},
+                                 {"id":"midi-out","type":"rp.host.midi-out","settings":{"systems":[21,22,21,23]}}],
+                        "wires":[{"from":"a.midi","to":"midi-out.in1"},{"from":"b.midi","to":"midi-out.in2"},
+                                 {"from":"c.midi","to":"midi-out.in3"}]})")
+                .ok);
+    rig.node<Feed>("a").next[Feed::Midi] = {{5, {0x90, 60, 100}}, {9, {0xF8}}};
+    rig.node<Feed>("b").next[Feed::Midi] = {{0, {0xFA}}, {2, tagged(7, {0xF8})}, {2, {0xF0, 1, 2, 0xF7}}};
+    rig.node<Feed>("c").next[Feed::Midi] = {{1, {0xFC}}, {1, {}}, {30, {0x80, 60, 0}}};
+    const rp_transport t{kRate, 120.0, 0.0, 0};
+    rig.host->processBlock(64, t);
+    CHECK(rig.midiOut == std::vector<HostMidiOut>{{21, 5, {0x90, 60, 100}},
+                                                  {21, 9, {0xF8}},
+                                                  {22, 0, {0xFA}},
+                                                  {22, 2, tagged(7, {0xF8})},
+                                                  {22, 2, {0xF0, 1, 2, 0xF7}},
+                                                  {21, 1, {0xFC}},
+                                                  {21, 1, {}},
+                                                  {21, 30, {0x80, 60, 0}}});
+    CHECK(rig.dropped == 0);
+
+    // And only this block's: a block with nothing queued sends nothing.
+    rig.midiOut.clear();
+    rig.host->processBlock(64, t);
+    CHECK(rig.midiOut.empty());
+}
+
+TEST_CASE("rp.host.midi-out with no systems, or an empty list of them, is the prefixed form", "[engine-graph][host-io]") {
+    // The one input `midi`, each message behind the 4-byte id of the system it goes out as, as the kernel node sends
+    // them: what the existing cases drive with no settings at all, here under each spelling of none. Each form has only
+    // its own inputs, so a wire to the other's is refused.
+    using rp::host::test::Feed;
+    using rp::host::test::HostMidiOut;
+    using rp::host::test::NodeRig;
+    const auto doc = [](const std::string& settings, const std::string& to) {
+        return R"({"nodes":[{"id":"feed","type":"rp.test.feed"},{"id":"midi-out","type":"rp.host.midi-out")" +
+               (settings.empty() ? "" : R"(,"settings":)" + settings) + R"(}],"wires":[{"from":"feed.midi","to":"midi-out.)" + to +
+               R"("}]})";
+    };
+    for (const std::string settings : {"", "{}", R"({"systems":[]})"}) {
+        INFO("settings: " << settings);
+        NodeRig rig(kRate);
+        REQUIRE(rig.set(doc(settings, "midi")).ok);
+        rig.node<Feed>("feed").next[Feed::Midi] = {{3, tagged(2, {0x90, 60, 100})}, {4, {3, 0, 0}}, {9, tagged(513, {0xF8})}};
+        rig.host->processBlock(64, rp_transport{kRate, 120.0, 0.0, 0});
+        CHECK(rig.midiOut == std::vector<HostMidiOut>{{2, 3, {0x90, 60, 100}}, {513, 9, {0xF8}}});
+        CHECK(rig.dropped == 1);  // too short to name a system
+
+        const auto refused = rig.set(doc(settings, "in1"));
+        REQUIRE_FALSE(refused.ok);
+        CHECK(refused.errors.at(0).code == "unknown-port");
+    }
+    NodeRig rig(kRate);
+    const auto refused = rig.set(doc(R"({"systems":[2]})", "midi"));
+    REQUIRE_FALSE(refused.ok);
+    CHECK(refused.errors.at(0).code == "unknown-port");
+}
+
+TEST_CASE("a change to rp.host.midi-out's systems replans cleanly, its inputs moved or kept", "[engine-graph][host-io]") {
+    // On an Engine, from the prefixed form to systems and back, rp.host.midi-in's output wired to every input: the
+    // engine's MIDI out is each input's messages in turn, under that input's system. A change that moves the inputs
+    // rebuilds the node and one that keeps them swaps its settings; either way the next block goes out as the new
+    // settings say, with nothing dropped and no fault.
+    Engine e(kRate);
+    const auto plan = [&](const std::string& settings, std::vector<std::string> inputs) {
+        std::vector<std::string> wires;
+        for (const auto& in : inputs) wires.push_back(docWire("midi-in.midi", "midi-out." + in));
+        return e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("midi-out", "rp.host.midi-out", settings)},
+                                     std::move(wires)));
+    };
+    // Two messages staged out of frame order, which midi-in sorts.
+    const auto run = [&](bool prefixed) {
+        e.stageMidi(3, prefixed ? tagged(5, {0xF8}) : std::vector<std::uint8_t>{0xF8});
+        e.stageMidi(1, prefixed ? tagged(5, {0xFA}) : std::vector<std::uint8_t>{0xFA});
+        block(e);
+        return midiOut(e);
+    };
+    // Each system in turn: the two messages under it.
+    const auto under = [](std::vector<std::uint32_t> systems) {
+        std::vector<Out> out;
+        for (const auto s : systems) {
+            out.push_back({s, 1, {0xFA}});
+            out.push_back({s, 3, {0xF8}});
+        }
+        return out;
+    };
+
+    REQUIRE(plan("", {"midi"}).ok);
+    CHECK(run(true) == under({5}));
+    REQUIRE(plan(R"({"systems":[7,9,7]})", {"in1", "in2", "in3"}).ok);  // a rebuild: midi gone, in1 to in3 new
+    CHECK(run(false) == under({7, 9, 7}));
+    REQUIRE(plan(R"({"systems":[9]})", {"in1"}).ok);  // a rebuild: in2 and in3 gone
+    CHECK(run(false) == under({9}));
+    REQUIRE(plan(R"({"systems":[11]})", {"in1"}).ok);  // a swap: the same input, another system
+    CHECK(run(false) == under({11}));
+    REQUIRE(plan(R"({"systems":[11,12]})", {"in1", "in2"}).ok);
+    CHECK(run(false) == under({11, 12}));
+    REQUIRE(plan(R"({"systems":[]})", {"midi"}).ok);  // and back
+    CHECK(run(true) == under({5}));
+    CHECK(e.droppedMessages() == 0);
+    CHECK(e.faultCount() == 0);
+}
+
+TEST_CASE("rp.host.midi-out's systems are 32-bit ids, at most kMidiOutMaxSystems of them", "[engine-graph][host-io]") {
+    // Any id a message's prefix could carry, 0 and 4294967295 included: the node tags, and leaves to the document
+    // whether an id names one of its systems.
+    Engine e(kRate);
+    const auto plan = [&](const std::string& settings) {
+        return e.setGraph(hostIoOnly({docNode("midi-out", "rp.host.midi-out", settings)}, {}));
+    };
+    const auto ids = [](std::uint32_t n) {
+        std::string list;
+        for (std::uint32_t i = 0; i < n; ++i) list += (i ? "," : "") + std::to_string(i + 1);
+        return R"({"systems":[)" + list + "]}";
+    };
+    for (const std::string accepted : {std::string(R"({"systems":[0]})"), std::string(R"({"systems":[4294967295,1]})"),
+                                       ids(rp::host::kMidiOutMaxSystems)}) {
+        INFO(accepted.substr(0, 60));
+        CHECK(plan(accepted).ok);
+    }
+    for (const std::string refused : {std::string(R"({"systems":[-1]})"), std::string(R"({"systems":[4294967296]})"),
+                                      std::string(R"({"systems":[7.5]})"), std::string(R"({"systems":["7"]})"),
+                                      std::string(R"({"systems":7})"), ids(rp::host::kMidiOutMaxSystems + 1)}) {
+        INFO(refused.substr(0, 60));
+        const auto result = plan(refused);
+        REQUIRE_FALSE(result.ok);
+        CHECK(result.errors.at(0).nodeId == "midi-out");
+        CHECK(result.errors.at(0).code == "settings-invalid");
+    }
 }
 
 TEST_CASE("each block's host buffers start empty, and a plan with no input node drops what was staged",
