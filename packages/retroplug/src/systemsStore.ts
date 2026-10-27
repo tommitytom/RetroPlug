@@ -160,7 +160,8 @@ export class SystemsStore {
   /** The systems as the engine's graph places them, in slot order (graph/buildGraph.ts), each with the roles that
    *  have a protocol node, in order, as its pipeline: the core's config role and the features with no DSP behaviour
    *  (asset overrides, a ROM's facts) stay out of the document, so a model, palette or asset edit leaves it as it
-   *  was. The same with a registry or without one (graph/protocolNodes.ts). */
+   *  was, and so does a role whose kind is already placed or whose node would write an input an earlier role's does
+   *  (one writer per input, graph/protocolNodes.ts). The same with a registry or without one. */
   graphSystems(): GraphSystem[] {
     return this.entries.map((e) => ({ id: e.id, ...e.built, pipeline: protocolPipeline(e.roles) }));
   }
@@ -639,13 +640,15 @@ export class SystemsStore {
     const roles = stored
       ? this.withMissingFeatureRoles(stored, core, platform, romPath, embeddedRom)
       : this.defaultRoles(core, platform, romPath, embeddedRom);
-    // A loaded system's roles can hold two whose nodes write one input (graph/protocolNodes.ts, beside
-    // PROTOCOL_NODES), and every publish leaves the later one out of its pipeline, quietly; this says so once,
-    // here, where the roles enter.
+    // A loaded system's roles can hold two whose nodes write one input, or a kind twice (graph/protocolNodes.ts,
+    // beside PROTOCOL_NODES), and every publish leaves the later one out of its pipeline, quietly; this says so
+    // once, here, where the roles enter.
     protocolPipeline(roles, (r) =>
       console.warn(
-        `[systems] ${rom}: its ${r.kind} role is not placed: its node would write ${r.input}, ` +
-          `which its ${r.by} role's already does`,
+        r.input === null
+          ? `[systems] ${rom}: its second ${r.kind} role is not placed`
+          : `[systems] ${rom}: its ${r.kind} role is not placed: its node would write ${r.input}, ` +
+              `which its ${r.by} role's already does`,
       ),
     );
     // The core-config "system" role (kind === core) carries the emulator config; pass it as the

@@ -11,6 +11,7 @@ import { ProjectStore } from "../../src/projectStore";
 import { RecentStore } from "../../src/recentStore";
 import { SystemsStore } from "../../src/systemsStore";
 import { DirectGraph } from "../../src/graph/directGraph";
+import type { LeftOutRole } from "../../src/graph/protocolNodes";
 import { buildGraph, type HostShape } from "../../src/graph/buildGraph";
 import { toGraphJson, type GraphDocument } from "../../src/graph/graphDocument";
 import { canonicalJson } from "../../src/graph/canonicalJson";
@@ -696,6 +697,11 @@ test("DirectGraph sets each system's pipeline and the project stages, each a pub
   g.replace(2, MGB, 3);
   g.setPipeline(1, [mgb]);
   expect([be.protocolNodes(1), be.protocolNodes(3)]).toEqual([["sys-1/mgb"], []]);
+  // Of two roles whose nodes write one input the first is placed, and the caller hears of the other.
+  const left: LeftOutRole[] = [];
+  expect(g.setPipeline(1, [mgb, { kind: "lsdj-sync", config: {} }], (r) => left.push(r))).toBe(true);
+  expect(be.protocolNodes(1)).toEqual(["sys-1/mgb"]);
+  expect(left).toEqual([{ kind: "lsdj-sync", input: "serialIn", by: "mgb" }]);
 });
 
 test("DirectGraph takes the project's controller, its app config parsed by the app's schema", () => {

@@ -300,9 +300,10 @@ test("of two roles whose nodes write one system input, the first in role order i
   ];
   const pipeline = protocolPipeline(roles, (r) => left.push(r));
   expect(pipeline).toEqual([MGB]);
+  // A kind already placed is left out as such (its node id, sys-<id>/<kind>, is taken), whatever its node writes.
   expect(left).toEqual([
     { kind: "lsdj-sync", input: "serialIn", by: "mgb" },
-    { kind: "mgb", input: "serialIn", by: "mgb" },
+    { kind: "mgb", input: null, by: "mgb" },
   ]);
   const g = built([gb(1, 0, pipeline)], "stereo", multi(2), { midiRouting: "sendToAll" });
   expect(g.into("sys-1.serialIn")).toEqual(["sys-1/mgb.serialIn"]);

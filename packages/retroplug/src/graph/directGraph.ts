@@ -16,7 +16,7 @@ import { EngineGraph } from "../engineGraph";
 import { parseAppConfig } from "../controller/registry";
 import type { GraphSystem } from "./buildGraph";
 import type { GraphController } from "./controller";
-import { protocolPipeline } from "./protocolNodes";
+import { protocolPipeline, type LeftOutRole } from "./protocolNodes";
 
 export type DirectBackend = Pick<EmulatorBackend, "buildCore" | "setGraph" | "applyRoleConfig">;
 
@@ -72,13 +72,16 @@ export class DirectGraph {
     return this.change(() => (this.routing = routing), true);
   }
 
-  /** System `id`'s roles, in order: each that has a protocol node is placed as one, with its config as given as
-   *  the node's settings (a role kept from the last call keeps its node and state; a role with no node is left
-   *  out). False when `id` is not placed here, or the document did not plan. */
-  setPipeline(id: number, roles: RoleInstance[]): boolean {
+  /** System `id`'s roles, in order, placed as protocolPipeline places them: each with a protocol node as one, with its
+   *  config as given as the node's settings (a role kept from the last call keeps its node and state). A role with no
+   *  node is left out, and so is one whose kind is already placed or whose node would write an input an earlier
+   *  role's does, which `leftOut` hears of: the document is sent without it, and plans, where it used to carry both
+   *  and be refused. False when `id` is not placed here, or the document did not plan. */
+  setPipeline(id: number, roles: RoleInstance[], leftOut?: (role: LeftOutRole) => void): boolean {
     const at = this.systems.findIndex((s) => s.id === id);
     if (at < 0) return false;
-    return this.change(() => (this.systems[at] = { ...this.systems[at], pipeline: protocolPipeline(roles) }), false);
+    const pipeline = protocolPipeline(roles, leftOut);
+    return this.change(() => (this.systems[at] = { ...this.systems[at], pipeline }), false);
   }
 
   /** The project's MIDI routing, or null to route none. False when the document did not plan. */

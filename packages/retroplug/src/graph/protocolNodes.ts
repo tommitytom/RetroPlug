@@ -36,10 +36,10 @@ export interface ProtocolNodeSpec {
 // One writer per system input: the planner refuses a second producer wired into one input, and with it the whole
 // document, so the project would go silent for one system's roles. The roles a provider attaches never collide, but a
 // loaded project's can: one stored with mgb whose ROM path holds LSDj today gains lsdj-sync as a missing feature role
-// (SystemsStore.withMissingFeatureRoles), and both write serialIn; a hand-edited file can name a kind twice, which
-// always collides, as every type writes an input. So of two roles of one system whose nodes would write the same
-// input, the first in role order is placed and the later one left out of the pipeline whole (protocolPipeline), where
-// the kernel merged what both sent.
+// (SystemsStore.withMissingFeatureRoles), and both write serialIn. So of two roles of one system whose nodes would
+// write the same input, the first in role order is placed and the later one left out of the pipeline whole
+// (protocolPipeline), where the kernel merged what both sent. A kind named twice (a hand-edited file) is left out the
+// same way, as its node id, sys-<id>/<kind>, is taken, which the planner refuses too.
 export const PROTOCOL_NODES = {
   "rp.mgb.midi": { midiIn: "midi", writes: ["serialIn"] },
   "rp.n8.midi-to-fifo": { midiIn: "midiIn", writes: ["midi"] },
@@ -78,17 +78,17 @@ export function protocolNodeOf(kind: string): ProtocolNodeType | undefined {
 }
 
 /** A role protocolPipeline leaves out: its node would write `input`, which the node of `by`, earlier in its system's
- *  roles, already writes. */
+ *  roles, already writes; or, with `input` null, a role of its kind is already placed (and `by` is its kind). */
 export interface LeftOutRole {
   kind: string;
-  input: SystemInput;
+  input: SystemInput | null;
   by: string;
 }
 
 /** `roles`, in order, as the protocol nodes they are placed as; a role with none is left out, so an edit to it (a
- *  model, a palette, an asset override) leaves the document as it was. So is a role whose node would write a system
- *  input an earlier role's node already writes (one writer per input, beside PROTOCOL_NODES), and `leftOut` hears of
- *  each one. */
+ *  model, a palette, an asset override) leaves the document as it was. So is a role whose kind is already placed, or
+ *  whose node would write a system input an earlier role's node already writes (one writer per input, beside
+ *  PROTOCOL_NODES), and `leftOut` hears of each of those. */
 export function protocolPipeline(
   roles: readonly RoleInstance[],
   leftOut?: (role: LeftOutRole) => void,
@@ -98,6 +98,10 @@ export function protocolPipeline(
   for (const r of roles) {
     const node = protocolNodeOf(r.kind);
     if (!node) continue;
+    if (out.some((placed) => placed.kind === r.kind)) {
+      leftOut?.({ kind: r.kind, input: null, by: r.kind });
+      continue;
+    }
     const writes: readonly SystemInput[] = PROTOCOL_NODES[node].writes;
     const taken = writes.find((input) => writer[input] !== undefined);
     if (taken !== undefined) {
