@@ -37,7 +37,9 @@ struct RomModel {
     Bytes        buf;
     std::vector<Bytes> applied;
 
-    void bad() { st = Idle; dirty = true; }
+    // A frame damaged after its seq: the ROM reports the frame it expects as the last one read, since a damaged
+    // frame's seq cannot be trusted (frame_hdr's damaged exit).
+    void bad() { if (st == InMsg || st == WantSum) last = next; st = Idle; dirty = true; }
 
     void byte(std::uint8_t b) {
         if (b >= 0xF8) return;                                          // real-time: skipped (0xFF panic not modelled)
@@ -62,8 +64,8 @@ struct RomModel {
                 return;
             case WantSum:
                 if (b & 0x80) { bad(); byte(b); return; }
+                if (b != (sum & 0x7F)) { bad(); return; }              // the sum does not match: damaged
                 st = Idle;
-                if (b != (sum & 0x7F)) { dirty = true; return; }
                 if (!linkOn) { linkOn = true; next = seq; }
                 if (seq != next) { dirty = true; return; }
                 applied.push_back(buf);
