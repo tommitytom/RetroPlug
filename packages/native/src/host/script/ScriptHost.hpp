@@ -66,20 +66,26 @@ struct DspTraceSpan {
     double        t1    = 0.0;
 };
 
-// The fixed span labels; the kernel node interns its role kinds from DSP_SPAN_ROLE_BASE up.
+// The span labels. A script node's process call is labelled by its type, so a profile shows each type's cost, as the
+// DSP kernel's per-role spans did inside its one node until B3b made each role a node of its own: the bundle's types
+// take DSP_SPAN_TYPE_BASE up, in the order it registered them, each named by its id. By type, not by node id, because
+// the kernel's role spans were per role kind too, two systems' nodes of one type still show as two spans a block (in
+// plan order), and a type's label is fixed at the load: one per id would come and go with every document, and a
+// node's create is never told its id.
 enum DspSpanLabel : std::uint32_t {
-    DSP_SPAN_KERNEL    = 0,   // ScriptHost: a script node's process call (the DSP kernel's, in every document TS builds)
-    DSP_SPAN_MARSHAL   = 1,   // ScriptHost: its inputs made JS values (the audio copies in and the transport, then
-                              //   each input it reads)
-    DSP_SPAN_JSCALL    = 2,   // ScriptHost: the JS_Call into its process
-    DSP_SPAN_APU       = 3,   // Engine: the plan after its script nodes (the cores, the mixing, the host outputs)
-    DSP_SPAN_PUBLISH   = 4,   // Engine: the state pump to the control plane (the per-block frame copy, and the timed
-                              //   savestate and SRAM republish, so spiky)
-    DSP_SPAN_ROLE_BASE = 16,
+    DSP_SPAN_SCRIPT_NODE = 0,   // ScriptHost: the process call of a script node whose type has no label of its own (a
+                                //   bundle registering more types than kDspSpanLabels leaves room for)
+    DSP_SPAN_MARSHAL     = 1,   // ScriptHost: its inputs made JS values (the audio copies in and the transport, then
+                                //   each input it reads)
+    DSP_SPAN_JSCALL      = 2,   // ScriptHost: the JS_Call into its process
+    DSP_SPAN_APU         = 3,   // Engine: the plan after its script nodes (the cores, the mixing, the host outputs)
+    DSP_SPAN_PUBLISH     = 4,   // Engine: the state pump to the control plane (the per-block frame copy, and the timed
+                                //   savestate and SRAM republish, so spiky)
+    DSP_SPAN_TYPE_BASE   = 16,  // ScriptHost: the process call of a script node of the bundle's first type, and up
 };
 
-// Every label a trace names is below this: the fixed ones, then the kernel node's, one per DSP role kind it registers
-// (a handful), well short of it. traceName refuses a label past it, so no label JS hands it can size the name table.
+// Every label a trace names is below this: the fixed ones, then one per script node type (the production bundle has
+// seven), so the name table is bounded whatever a bundle registers.
 inline constexpr std::uint32_t kDspSpanLabels = 1024;
 
 // The script host (docs/modular-graph-phase-b3a-design.md section 2): every TS node one Engine runs, behind the
@@ -158,11 +164,11 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // a getter or a function another put there. A Proxy on the way answers as JS reads one (its get trap, or its target's
 // chain), so a wrapper or a test double works; a chain longer than kMethodHops, or one that cycles back through a
 // Proxy, fails the create rather than holding the block thread, where the deadline has no JS to stop. And it freezes
-// the Block prototype every node reaches, with its methods (and, in a profile build, binds the trace globals read-only
-// and frozen), so no node replaces one for another: assigning one on a node's own Block (`block.send = f`) throws in
-// the strict bundle, where defining it there still works. That is the host's part only: what nodes can do to each other
-// through the realm they share (an accessor on a prototype another's own code reads through, a global it calls) it does
-// not cover, and one context per node is what would close that (spec/07-remaining-work.md).
+// the Block prototype every node reaches, with its methods, so no node replaces one for another: assigning one on a
+// node's own Block (`block.send = f`) throws in the strict bundle, where defining it there still works. That is the
+// host's part only: what nodes can do to each other through the realm they share (an accessor on a prototype another's
+// own code reads through, a global it calls) it does not cover, and one context per node is what would close that
+// (spec/07-remaining-work.md).
 //
 // Settings reach the audio side as their JSON form: the control side's parseSettings checks them, and what it
 // returns crosses as JSON (the two runtimes share no value), so a transform's result that JSON cannot hold (a Map, a
@@ -171,12 +177,12 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 //
 // A profile build (RETROPLUG_PROFILE, spec/08-profiling.md) profiles the audio runtime: its allocator keeps the live
 // and peak heap, an allocation window counts per block, and a trace window records nested wall-time spans. Every
-// script node's process is a dsp-kernel span, holding a marshal span for the audio copies in and the transport and a
-// js-call span for its JS, inside which each input it reads is a marshal span too; the audio context's globals
-// spanBegin(label), spanEnd(), traceName(label, name) and traceArmed() let the JS add its own (the kernel node's
-// roles). JS's spans nest inside the js-call span of the process call running, and record nothing outside one: its
-// spanEnd never closes a span the host opened, and what it leaves open (a throw, or the deadline, which skips every
-// finally) the host closes as the call returns, so js-call and dsp-kernel always close their own.
+// script node's process is a span labelled by its type (DspSpanLabel), holding a marshal span for the audio copies in
+// and the transport and a js-call span for its JS, inside which each input it reads is a marshal span too. Only the
+// host opens spans, and it closes each on every way out of the call (a throw, the deadline, a write onto what the node
+// holds refused before its JS runs). JS adds none: the DSP kernel's roles were the only JS that did, through globals a
+// profile build bound into the audio context, and with each role a node of its own the host's spans attribute per
+// role without them.
 class ScriptHost {
 public:
     using Chunk = std::span<const std::uint8_t>;
@@ -353,13 +359,9 @@ private:
     ScriptAllocations          blockStart_{};
     std::atomic<std::uint64_t> windowBlocks_{0}, maxBlockAllocs_{0}, maxBlockBytes_{0};
     // The trace window: its clock's start (steady_clock nanoseconds), the spans open as {label, t0} and those closed.
-    // While a process call's JS runs, jsSpanFloor_ is the open spans' count with its js-call span the last of them:
-    // JS's own spans stand above it, and none is JS's while it is kNoJsSpans.
-    static constexpr std::size_t                  kNoJsSpans = static_cast<std::size_t>(-1);
     bool                                          traceArmed_ = false;
     std::uint64_t                                 traceStartNs_ = 0;
     double                                        lastProcessEnd_ = 0.0;
-    std::size_t                                   jsSpanFloor_ = kNoJsSpans;
     std::vector<std::pair<std::uint32_t, double>> traceStack_;
     std::vector<DspTraceSpan>                     traceSpans_;
     std::vector<std::string>                      traceNames_;

@@ -290,14 +290,15 @@ std::unique_ptr<Layout> buildLayout(const std::string& json, std::string& why) {
 }  // namespace
 
 struct ScriptHost::Type {
-    rp_node_type abi{};
-    ScriptHost*  host = nullptr;
-    std::string  id;
-    std::string  descriptor;
-    bool         reshapes = false;
-    bool         faultOnThrow = false;
-    JSValue      control = JS_UNDEFINED;  // the definition, in the control context
-    JSValue      audio = JS_UNDEFINED;    // and in the audio context
+    rp_node_type  abi{};
+    ScriptHost*   host = nullptr;
+    std::string   id;
+    std::string   descriptor;
+    bool          reshapes = false;
+    bool          faultOnThrow = false;
+    std::uint32_t spanLabel = DSP_SPAN_SCRIPT_NODE;  // its nodes' process spans' label (DspSpanLabel), set by the load
+    JSValue       control = JS_UNDEFINED;  // the definition, in the control context
+    JSValue       audio = JS_UNDEFINED;    // and in the audio context
 };
 
 // One script node instance, behind its shim. Allocated by create and deleted on the control thread; its JS state is
@@ -562,7 +563,7 @@ struct ScriptHost::Glue {
         JSContext* ctx = h.audio_;
         // The whole block, not just the call: a node may hang a setter on what the block path fills in.
         const Deadline call(h);
-        traceBegin(h, DSP_SPAN_KERNEL);
+        traceBegin(h, in.type->spanLabel);
         traceBegin(h, DSP_SPAN_MARSHAL);
         ++in.blockStamp;
         // Every audio port's copies first, the inputs' samples in them: a node may read views it kept from a block
@@ -619,53 +620,18 @@ struct ScriptHost::Glue {
                JS_SetProperty(ctx, in.transport, atom(h, kPlaying), JS_NewBool(ctx, (t.flags & RP_TRANSPORT_PLAYING) != 0)) >= 0;
     }
 
-    // A process call's js-call span (a profile build), which the spans its JS opens stand inside: opened with the trace
-    // stack's depth there kept as their floor, and closed as the call returns, with every span the JS left open above
-    // it first, whatever happened in JS (a throw, or the deadline, which skips every finally, can leave a role's open).
-    // So a span JS leaves open never closes js-call or dsp-kernel for it.
-    static void jsCallBegin([[maybe_unused]] ScriptHost& h) {
-#ifdef RETROPLUG_PROFILE
-        if (!h.traceArmed_) return;
-        h.spanBegin(DSP_SPAN_JSCALL);
-        h.jsSpanFloor_ = h.traceStack_.size();
-#endif
-    }
-    static void jsCallEnd([[maybe_unused]] ScriptHost& h) {
-#ifdef RETROPLUG_PROFILE
-        if (!h.traceArmed_) return;
-        const std::size_t floor = h.jsSpanFloor_;
-        h.jsSpanFloor_ = kNoJsSpans;
-        while (!h.traceStack_.empty() && h.traceStack_.size() >= floor) h.spanEnd();  // JS's, then js-call
-#endif
-    }
+    // A process call's js-call span (a profile build), closed as the call returns whatever happened in JS. Every span
+    // the host opens inside it (an input's marshal, as JS reads one) closes before the host returns to JS, and JS opens
+    // none, so js-call is the innermost open span here.
+    static void jsCallBegin(ScriptHost& h) { traceBegin(h, DSP_SPAN_JSCALL); }
+    static void jsCallEnd(ScriptHost& h) { traceEnd(h); }
 
-    // Around the host writing onto objects JS holds (a setter JS defined there runs): the spans that setter's JS opens or
-    // closes record nothing, as outside a process call, so it cannot close the marshal span the host has open. The
-    // floor comes back as the fence goes out of scope, on every way out; the host's own span calls never read it, so
-    // where in that scope the host closes its span does not matter.
-    struct JsSpanFence {
-        ScriptHost&       h;
-        const std::size_t saved;
-        explicit JsSpanFence(ScriptHost& host) : h(host), saved(host.jsSpanFloor_) {
-#ifdef RETROPLUG_PROFILE
-            h.jsSpanFloor_ = kNoJsSpans;
-#endif
-        }
-        ~JsSpanFence() {
-#ifdef RETROPLUG_PROFILE
-            h.jsSpanFloor_ = saved;
-#endif
-        }
-        JsSpanFence(const JsSpanFence&) = delete;
-        JsSpanFence& operator=(const JsSpanFence&) = delete;
-    };
-
-    // The end of a process call's dsp-kernel span (a profile build), where apu-render starts if no script node runs
+    // The end of a process call's span, its type's (a profile build), where apu-render starts if no script node runs
     // after it.
     static void processSpanEnd([[maybe_unused]] ScriptHost& h) {
 #ifdef RETROPLUG_PROFILE
         if (h.traceArmed_) {
-            h.spanEnd();  // dsp-kernel
+            h.spanEnd();  // the type's
             h.lastProcessEnd_ = h.traceNow();
         }
 #endif
@@ -1243,7 +1209,6 @@ struct ScriptHost::Glue {
         if (!p) return JS_EXCEPTION;
         if (p->stamp != in->blockStamp) {
             traceBegin(hostOf(ctx), DSP_SPAN_MARSHAL);
-            const JsSpanFence fence(hostOf(ctx));
             const bool filled = fillMessages(hostOf(ctx), ctx, *p, *in->running->inputs[found->index].u.queue);
             traceEnd(hostOf(ctx));
             if (!filled) return JS_EXCEPTION;
@@ -1264,7 +1229,6 @@ struct ScriptHost::Glue {
             const rp_control_queue& q =
                 found->side == Side::Param ? *in->running->params[found->index] : *in->running->inputs[found->index].u.control;
             traceBegin(hostOf(ctx), DSP_SPAN_MARSHAL);
-            const JsSpanFence fence(hostOf(ctx));
             const bool filled = fillControl(hostOf(ctx), ctx, *p, q);
             traceEnd(hostOf(ctx));
             if (!filled) return JS_EXCEPTION;
@@ -1337,42 +1301,6 @@ struct ScriptHost::Glue {
         if (JS_ToUint32(ctx, &frame, argv[1]) < 0 || JS_ToFloat64(ctx, &value, argv[2]) < 0) return JS_EXCEPTION;
         return JS_NewBool(ctx, graph::pushControl(*in->running->outputs[found->index].u.control, frame, value));
     }
-
-#ifdef RETROPLUG_PROFILE
-    // ---- the trace window's globals, in the audio context of a profile build -------------------------------------
-    // A span JS opens stands inside its process call's js-call span (jsCallBegin), and one opened outside a process
-    // call records nothing, as an unarmed window records nothing: spanEnd closes only a span JS opened.
-    static JSValue spanBegin(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-        std::uint32_t label = 0;
-        if (argc < 1) return JS_ThrowTypeError(ctx, "spanBegin takes a label");
-        if (JS_ToUint32(ctx, &label, argv[0]) < 0) return JS_EXCEPTION;
-        ScriptHost& h = hostOf(ctx);
-        if (h.jsSpanFloor_ != kNoJsSpans) h.spanBegin(label);
-        return JS_UNDEFINED;
-    }
-    static JSValue spanEnd(JSContext* ctx, JSValueConst, int, JSValueConst*) {
-        ScriptHost& h = hostOf(ctx);
-        if (h.jsSpanFloor_ != kNoJsSpans && h.traceStack_.size() > h.jsSpanFloor_) h.spanEnd();
-        return JS_UNDEFINED;
-    }
-    static JSValue traceName(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-        double at = 0.0;
-        if (argc < 2) return JS_ThrowTypeError(ctx, "traceName takes a label and a name");
-        if (JS_ToFloat64(ctx, &at, argv[0]) < 0) return JS_EXCEPTION;
-        // Read whole, so a label past the bound is refused rather than wrapped onto one below it.
-        if (!(at >= 0.0 && at < kDspSpanLabels))
-            return JS_ThrowRangeError(ctx, "a trace label is from 0 to %u", static_cast<unsigned>(kDspSpanLabels - 1));
-        const auto label = static_cast<std::uint32_t>(at);
-        const char* name = JS_ToCString(ctx, argv[1]);
-        if (!name) return JS_EXCEPTION;
-        hostOf(ctx).traceName(label, name);
-        JS_FreeCString(ctx, name);
-        return JS_UNDEFINED;
-    }
-    static JSValue traceArmed(JSContext* ctx, JSValueConst, int, JSValueConst*) {
-        return JS_NewBool(ctx, hostOf(ctx).traceArmed());
-    }
-#endif
 };
 
 // ---- ScriptHost ------------------------------------------------------------------------------------------------
@@ -1422,21 +1350,11 @@ ScriptHost::ScriptHost(Binder binder, void* user) {
     static_assert(kAtomCount <= std::tuple_size_v<decltype(atoms_)>, "atoms_ holds every atom the block thread names");
     for (std::size_t a = 0; a < kAtomCount; ++a) atoms_[a] = JS_NewAtom(audio_, kAtomNames[a]);
 
-#ifdef RETROPLUG_PROFILE
-    // The trace window's globals, which only a profile build binds (so a script tests `typeof spanBegin`), and the
-    // fixed labels' names. Each node calls them by name, so they are bound read-only and frozen too: no node points
-    // another's span calls at a function of its own.
-    JSValue global = JS_GetGlobalObject(audio_);
-    bindFrozen(global, "spanBegin", &Glue::spanBegin, 1, JS_PROP_ENUMERABLE);
-    bindFrozen(global, "spanEnd", &Glue::spanEnd, 0, JS_PROP_ENUMERABLE);
-    bindFrozen(global, "traceName", &Glue::traceName, 2, JS_PROP_ENUMERABLE);
-    bindFrozen(global, "traceArmed", &Glue::traceArmed, 0, JS_PROP_ENUMERABLE);
-    JS_FreeValue(audio_, global);
-    for (const auto& [label, name] : {std::pair{DSP_SPAN_KERNEL, "dsp-kernel"}, std::pair{DSP_SPAN_MARSHAL, "marshal"},
+    // The fixed labels' names (a profile build's: traceName names nothing in any other); load names the types'.
+    for (const auto& [label, name] : {std::pair{DSP_SPAN_SCRIPT_NODE, "script-node"}, std::pair{DSP_SPAN_MARSHAL, "marshal"},
                                       std::pair{DSP_SPAN_JSCALL, "js-call"}, std::pair{DSP_SPAN_APU, "apu-render"},
                                       std::pair{DSP_SPAN_PUBLISH, "state-publish"}})
         traceName(label, name);
-#endif
 
     if (binder) {
         binder(user, control_, false);
@@ -1552,6 +1470,12 @@ bool ScriptHost::load(std::span<const Chunk> chunks, std::string* error) {
                                 &Glue::create, &Glue::destroy, RP_TYPE_STATELESS_PREPARE, &type};
     }
     runJobs(audioRt_, kJobsPerBlock, [](JSContext* c) { clearException(c); });  // what the descriptors queued there
+    // Each type's span label, in registration order, named by its id (DspSpanLabel); past the name table's bound, a type
+    // keeps the shared script-node label.
+    for (std::size_t i = 0; i < types_.size() && DSP_SPAN_TYPE_BASE + i < kDspSpanLabels; ++i) {
+        types_[i]->spanLabel = DSP_SPAN_TYPE_BASE + static_cast<std::uint32_t>(i);
+        traceName(types_[i]->spanLabel, types_[i]->id);
+    }
     typeList_.clear();
     for (const auto& t : types_) typeList_.push_back(&t->abi);
     package_ = rp_package{RP_ABI_VERSION, kPackageManifest, static_cast<std::uint32_t>(typeList_.size()), typeList_.data()};

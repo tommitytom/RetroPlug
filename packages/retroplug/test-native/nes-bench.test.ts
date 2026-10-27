@@ -2,8 +2,9 @@
 // Mesen core off the RT thread via the deterministic renderAudio pull path under a MIDI workload, and
 // reports the same per-block allocation + per-stage timing metrics. The point of comparison: on the
 // handheld the NES core "struggles" far more than SameBoy, and this pins down WHERE — the Mesen core
-// step (CPU+PPU+APU: the "apu-render" span is the plan after the kernel node, Mesen included) vs the
-// kernel node ("dsp-kernel": marshal + js-call). One real NES system driven by host MIDI (the nes-n8-midi role).
+// step (CPU+PPU+APU: the "apu-render" span is the plan after the script nodes, Mesen included) vs the
+// script nodes (spans named by their types, rp.midi.route and rp.n8.midi-to-fifo, each holding marshal and
+// js-call). One real NES system driven by host MIDI (the nes-n8-midi role, placed as rp.n8.midi-to-fifo).
 //
 // The counters/spans exist only in a RETROPLUG_PROFILE host (built by tools/run-profile.sh); under the
 // default host this SKIPS (so the normal test:native sweep stays fast, and says the case did not run
@@ -114,8 +115,8 @@ test("nes-bench: Mesen core per-block cost + JS allocation under a NES + MIDI wo
   const warmup = Math.max(0, envInt("RP_BENCH_WARMUP", 200));
   const seed = envInt("RP_BENCH_SEED", 0xc0ffee);
 
-  // Ownership discipline (per dsp-threaded / app-play-nes): construct before audio. loadRom's publish carries
-  // the NES pipeline (the nes-n8-midi role) to the kernel.
+  // Ownership discipline (per dsp-threaded / app-play-nes): construct before audio. loadRom's publish places the
+  // NES's protocol node (the nes-n8-midi role's, rp.n8.midi-to-fifo).
   const id = (project.systems.loadRom(rom) as { system: number }).system;
   expect(typeof id).toBe("number");
   expect(project.systems.view()[0].platform).toBe("nes");
@@ -172,9 +173,12 @@ test("nes-bench: Mesen core per-block cost + JS allocation under a NES + MIDI wo
   console.log("DSP-BENCH " + JSON.stringify(metrics));
 
   expect(s.blockCount > 0).toBeTruthy();
+  // The counters are wired: only a profile host's allocator keeps the live heap's peak (dsp-bench says why the
+  // allocation count cannot say so).
+  expect(s.peakBytes, "the audio runtime's peak heap").toBeGreaterThan(0);
 
-  // --- optional per-stage runtime trace (spec/08 Tier B): dsp-kernel (⊃ marshal, js-call) + apu-render
-  // (the Mesen core step). One Chrome trace-event JSON line the wrapper captures → build-prof/trace.json. ---
+  // --- optional per-stage runtime trace (spec/08 Tier B): each script node's span (holding marshal, js-call)
+  // + apu-render (the Mesen core step). One Chrome trace-event JSON line the wrapper captures → build-prof/trace.json.
   if (env("RP_BENCH_TRACE")) {
     const traceBlocks = Math.max(1, envInt("RP_BENCH_TRACE_BLOCKS", 64));
     const tSched = buildSchedule(profile, traceBlocks, seed ^ 0x9e3779b9);

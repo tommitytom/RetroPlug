@@ -7,9 +7,9 @@
 // Object.prototype holds is adopted by none, and none replaces a method of the frozen Block prototype), the block path's
 // allocations, and a running audio thread under all of it. The embedded production bundle and an Engine built
 // around a toy bundle close it. A RETROPLUG_PROFILE build (build-prof/, which tools/run-profile.sh configures) adds the
-// trace window's cases, [profile]: a span JS leaves open, a setter JS hangs on a marshalled message and one on a
-// marshalled control stream, the profile calls refused while an audio thread owns the runtime, and a label past the
-// bound.
+// trace window's cases, [profile]: a script node's process span labelled by its type and closed every way a call ends,
+// a label per type in load order, the profile calls refused while an audio thread owns the runtime, and the types past
+// the label table's bound.
 //
 // Run via `pnpm test:plugin engine-graph`; the profile cases, build-prof/bin/retroplug-engine-graph-test "[profile]".
 
@@ -1089,8 +1089,8 @@ trapAudio("rp.toy.trap-audio", {}), trapAudio("rp.toy.strict-trap-audio", { faul
 // pushes onto one through the prototype chain, so the traps would meet the node's own call, which is no write of the
 // host's. rp.toy.hollow's create returns no process; rp.toy.classy's returns a class instance, its process and
 // portsChanged on its class's prototype and its onSettings on its base class's. rp.toy.vandal, in its first block,
-// tries every way to replace, remove or shadow a method on the Block prototype every node shares (and on the trace
-// globals, in a profile build), and says whether all of it stood.
+// tries every way to replace, remove or shadow a method on the Block prototype every node shares, and says whether
+// all of it stood.
 const char* const kRealm = R"JS(
 class Base { onSettings(s) { __probe("classy onSettings " + s.tag); } }
 class Classy extends Base {
@@ -1237,7 +1237,6 @@ rp.register([rp.defineNode({
         const spy = function () { __probe("spied"); return []; };
         const attempt = (f) => { try { f(); } catch (e) {} };
         const shared = [[Object.getPrototypeOf(b), ["messages", "send", "control", "emit", "audio"]]];
-        if (typeof spanBegin === "function") shared.push([globalThis, ["spanBegin", "spanEnd", "traceName", "traceArmed"]]);
         let intact = true;
         for (let s = 0; s < shared.length; ++s) {
           const owner = shared[s][0], names = shared[s][1];
@@ -1570,7 +1569,7 @@ TEST_CASE("the Block prototype every script node shares, and its methods, are fr
     ScriptRig rig(kRealm);
     REQUIRE(rig.set(doc(node("v", "rp.toy.vandal"), "")).ok);
     rig.run();
-    CHECK(rig.log.count("intact") == 1);  // in a profile build, the trace globals too
+    CHECK(rig.log.count("intact") == 1);
     runTidy(rig, node("v", "rp.toy.vandal"), "");  // its messages, control, audio, send and emit are the host's
     CHECK(trapsHit(rig.log).empty());
 }
@@ -2017,72 +2016,31 @@ TEST_CASE("what a bundle's load leaves in cycles is collected by the first quies
 #ifdef RETROPLUG_PROFILE
 namespace {
 
-// Spans its JS leaves open, or closes past: a throw inside a role's span, a hang inside one the deadline stops, more
-// spanEnds than spanBegins (then a span after them, which is still the call's), setters that close and open spans as
-// the host fills a message or a control stream, and a span a promise job opens and closes, outside any process call.
-const char* const kSpanners = R"JS(
+// Script nodes whose process calls end each way one can: a pass-through that reads its input (a marshal span inside its
+// js-call), one that does nothing, a throw, a hang the deadline stops, and one that freezes its Block in its first
+// block, so every later block's marshalling is refused before its JS runs.
+const char* const kSpanned = R"JS(
 rp.register([
-  rp.defineNode({ id: "rp.toy.span-throw", ports: { out: rp.events.out() },
-                  create: () => ({ process() { spanBegin(16); throw new Error("mid-span"); } }) }),
-  rp.defineNode({ id: "rp.toy.span-hang", ports: { out: rp.events.out() },
-                  create: () => ({ process() { spanBegin(17); for (;;) {} } }) }),
-  rp.defineNode({ id: "rp.toy.span-overclose", ports: { out: rp.events.out() },
+  rp.defineNode({ id: "rp.toy.span-pass", ports: { in: rp.events.in(), out: rp.events.out() },
                   create: () => ({
-                    process() { spanBegin(18); for (let i = 0; i < 4; ++i) spanEnd(); spanBegin(18); spanEnd(); },
+                    process(b) {
+                      const ms = b.messages("in");
+                      for (let i = 0; i < ms.length; ++i) b.send("out", ms[i].frame, ms[i].data);
+                    },
                   }) }),
-  rp.defineNode({ id: "rp.toy.span-setter", ports: { in: rp.events.in(), out: rp.events.out() },
-                  create: () => {
-                    let armed = false;
-                    return {
-                      process(b) {
-                        const ms = b.messages("in");
-                        if (ms.length && !armed) {
-                          armed = true;
-                          Object.defineProperty(ms[0], "frame", { set() { spanEnd(); spanBegin(20); }, get() { return 0; } });
-                        }
-                        spanBegin(20);
-                        spanEnd();
-                      },
-                    };
-                  } }),
-  rp.defineNode({ id: "rp.toy.span-control-setter", ports: { level: rp.control.in(), out: rp.events.out() },
-                  create: () => {
-                    let armed = false;
-                    const setter = { set() { spanEnd(); spanBegin(21); }, get() { return 0; } };
-                    return {
-                      process(b) {
-                        const level = b.control("level");
-                        if (level.changes.length && !armed) {
-                          armed = true;
-                          Object.defineProperty(level, "start", setter);
-                          Object.defineProperty(level.changes[0], "frame", setter);
-                          Object.defineProperty(level.changes[0], "value", setter);
-                        }
-                        spanBegin(21);
-                        spanEnd();
-                      },
-                    };
-                  } }),
-  rp.defineNode({ id: "rp.toy.span-job", ports: { out: rp.events.out() },
-                  create: () => ({ process() { Promise.resolve().then(() => { spanBegin(19); spanEnd(); }); } }) }),
+  rp.defineNode({ id: "rp.toy.span-idle", ports: { out: rp.events.out() }, create: () => ({ process() {} }) }),
+  rp.defineNode({ id: "rp.toy.span-throw", ports: { out: rp.events.out() },
+                  create: () => ({ process() { throw new Error("mid-call"); } }) }),
+  rp.defineNode({ id: "rp.toy.span-hang", ports: { out: rp.events.out() }, create: () => ({ process() { for (;;) {} } }) }),
+  rp.defineNode({ id: "rp.toy.span-frozen", ports: { out: rp.events.out() },
+                  create: () => ({ process(b) { Object.freeze(b); } }) }),
 ]);
 )JS";
 
-// A label past the bound, refused whole (never wrapped onto one below it), and the last one there is.
-const char* const kNamer = R"JS(
-rp.register([rp.defineNode({
-  id: "rp.toy.namer",
-  ports: { out: rp.events.out() },
-  create: () => ({
-    process() {
-      for (const label of [1024, 4294967295, 4294967296 + 3, -1, NaN, 1e300]) {
-        try { traceName(label, "past"); __probe("named"); }
-        catch (e) { __probe(e instanceof RangeError ? "refused" : "threw " + e); }
-      }
-      traceName(1023, "last");
-    },
-  }),
-})]);
+// More types than the trace's name table has labels for: with the test bundle's own, the first 1007 of these get one.
+const char* const kMany = R"JS(
+rp.register(Array.from({ length: 1100 }, (_, i) =>
+  rp.defineNode({ id: "rp.toy.many-" + i, ports: { out: rp.events.out() }, create: () => ({ process() {} }) })));
 )JS";
 
 std::vector<rp::host::DspTraceSpan> spansOf(const ScriptHost& h, std::uint32_t label) {
@@ -2092,6 +2050,13 @@ std::vector<rp::host::DspTraceSpan> spansOf(const ScriptHost& h, std::uint32_t l
     return out;
 }
 
+// The label a trace names `type`'s process spans by, or kDspSpanLabels when it names none.
+std::uint32_t labelOf(const ScriptHost& h, const std::string& type) {
+    const auto names = h.traceNames();
+    const auto at = std::find(names.begin(), names.end(), type);
+    return at == names.end() ? rp::host::kDspSpanLabels : static_cast<std::uint32_t>(at - names.begin());
+}
+
 // Each of `inner` inside one of `outer`.
 bool nested(const std::vector<rp::host::DspTraceSpan>& inner, const std::vector<rp::host::DspTraceSpan>& outer) {
     return std::all_of(inner.begin(), inner.end(), [&](const auto& i) {
@@ -2099,98 +2064,95 @@ bool nested(const std::vector<rp::host::DspTraceSpan>& inner, const std::vector<
     });
 }
 
+// How many of `inner` stand inside one of `outer`.
+std::size_t countInside(const std::vector<rp::host::DspTraceSpan>& inner, const std::vector<rp::host::DspTraceSpan>& outer) {
+    std::size_t n = 0;
+    for (const auto& i : inner) n += nested({i}, outer) ? 1 : 0;
+    return n;
+}
+
 }  // namespace
 
-TEST_CASE("a span a script node's JS leaves open is closed as its process call returns, and JS closes none of the host's",
+TEST_CASE("a script node's process span is labelled by its type, holds marshal and then js-call, and closes every way out",
           "[script][profile][trace]") {
     struct Case {
         const char*   type;
-        std::uint32_t label;
-        std::size_t   calls, roleSpans;  // over 3 blocks
+        bool          fed;  // a message into its input every block
+        std::size_t   calls, jsCalls, marshals;  // over 3 blocks
     };
-    // The hang is stopped twice, and faulted by the second (no faultOnThrow), so its third block makes no call.
-    for (const Case& c : {Case{"rp.toy.span-throw", 16, 3, 3}, Case{"rp.toy.span-hang", 17, 2, 2},
-                          Case{"rp.toy.span-overclose", 18, 3, 6}, Case{"rp.toy.span-job", 19, 3, 0}}) {
+    // The hang is stopped twice and faulted by the second (no faultOnThrow), so its third block makes no call. The frozen
+    // node's second and third blocks are refused at the Block's frames, before their JS runs: a marshal span and no
+    // js-call. The pass-through's marshals are the transport's, before its call, and its message's, inside it.
+    for (const Case& c : {Case{"rp.toy.span-pass", true, 3, 3, 6}, Case{"rp.toy.span-throw", false, 3, 3, 3},
+                          Case{"rp.toy.span-hang", false, 2, 2, 2}, Case{"rp.toy.span-frozen", false, 3, 1, 3}}) {
         INFO(c.type);
-        ScriptRig rig(kSpanners);
+        ScriptRig rig(kSpanned);
         rig.scripts.setCallDeadline(std::chrono::milliseconds(50));
-        REQUIRE(rig.set(doc(node("s", c.type), "")).ok);
+        REQUIRE(rig.set(c.fed ? doc(node("feed", "rp.test.feed") + "," + node("s", c.type), wire("feed.midi", "s.in"))
+                              : doc(node("s", c.type), ""))
+                    .ok);
         rig.scripts.traceReset(true);
-        rig.run(64, 3);
-        const auto kernel = spansOf(rig.scripts, rp::host::DSP_SPAN_KERNEL);
+        for (int i = 0; i < 3; ++i) {
+            if (c.fed) rig.node<Feed>("feed").next[Feed::Midi] = {{0, bytes({0x90, 60, 100})}};
+            rig.run(64, 1);
+        }
+        const std::uint32_t label = labelOf(rig.scripts, c.type);
+        REQUIRE(label >= rp::host::DSP_SPAN_TYPE_BASE);
+        REQUIRE(label < rp::host::kDspSpanLabels);
+        const auto process = spansOf(rig.scripts, label);
         const auto call = spansOf(rig.scripts, rp::host::DSP_SPAN_JSCALL);
-        const auto role = spansOf(rig.scripts, c.label);
-        CHECK(kernel.size() == c.calls);
-        CHECK(call.size() == c.calls);
-        CHECK(spansOf(rig.scripts, rp::host::DSP_SPAN_MARSHAL).size() == c.calls);  // the transport's: it reads no input
-        CHECK(role.size() == c.roleSpans);
-        CHECK(nested(call, kernel));
-        CHECK(nested(role, call));
+        const auto marshal = spansOf(rig.scripts, rp::host::DSP_SPAN_MARSHAL);
+        CHECK(process.size() == c.calls);
+        CHECK(call.size() == c.jsCalls);
+        CHECK(marshal.size() == c.marshals);
+        CHECK(rig.scripts.traceSpans().size() == process.size() + call.size() + marshal.size());  // the host's alone
+        CHECK(nested(call, process));
+        CHECK(nested(marshal, process));
+        CHECK(countInside(marshal, call) == (c.fed ? 3u : 0u));
         rig.scripts.traceReset(false);
     }
 }
 
-TEST_CASE("a setter JS hangs on a marshalled message closes no span of the host's", "[script][profile][trace]") {
-    ScriptRig rig(kSpanners);
-    REQUIRE(rig.set(doc(node("feed", "rp.test.feed") + "," + node("s", "rp.toy.span-setter"), wire("feed.midi", "s.in"))).ok);
-    auto& feed = rig.node<Feed>("feed");
-    rig.scripts.traceReset(true);
-    for (int i = 0; i < 3; ++i) {
-        feed.next[Feed::Midi] = {{0, bytes({0x90, 60, 100})}};
-        rig.run(64, 1);  // the second and third blocks' fill runs the setter the first block's process hung on the element
-    }
-    const auto kernel = spansOf(rig.scripts, rp::host::DSP_SPAN_KERNEL);
-    const auto call = spansOf(rig.scripts, rp::host::DSP_SPAN_JSCALL);
-    const auto role = spansOf(rig.scripts, 20);
-    CHECK(kernel.size() == 3);
-    CHECK(call.size() == 3);
-    CHECK(role.size() == 3);  // each block's own, none of the setter's
-    CHECK(spansOf(rig.scripts, rp::host::DSP_SPAN_MARSHAL).size() == 6);  // the transport's, and the messages' each block
-    CHECK(nested(call, kernel));
-    CHECK(nested(role, call));
-    // The transport's marshal comes before the call; each block's messages marshal stands inside it.
-    std::size_t inside = 0;
-    for (const auto& m : spansOf(rig.scripts, rp::host::DSP_SPAN_MARSHAL)) inside += nested({m}, call) ? 1 : 0;
-    CHECK(inside == 3);
-    rig.scripts.traceReset(false);
-}
-
-TEST_CASE("a setter JS hangs on a marshalled control stream closes no span of the host's", "[script][profile][trace]") {
-    ScriptRig rig(kSpanners);
-    REQUIRE(rig.set(doc(node("k", "rp.core.constant", "", R"({"value":0.5})") + "," + node("s", "rp.toy.span-control-setter"),
-                        wire("k.out", "s.level")))
+TEST_CASE("script nodes of one type share its span label, each type has its own, and the types are labelled in load order",
+          "[script][profile][trace]") {
+    ScriptRig rig(kSpanned);
+    REQUIRE(rig.set(doc(node("feed", "rp.test.feed") + "," + node("a", "rp.toy.span-pass") + "," + node("b", "rp.toy.span-pass") +
+                            "," + node("idle", "rp.toy.span-idle"),
+                        wire("feed.midi", "a.in") + "," + wire("a.out", "b.in")))
                 .ok);
     rig.scripts.traceReset(true);
     for (int i = 0; i < 3; ++i) {
-        if (i > 0) REQUIRE(rig.host->setParam("k", "value", 0.1 * i, 10));  // a change, so the fill writes onto the setters
-        rig.run(64, 1);  // the second and third blocks' fill runs the setters the first block's process hung
+        rig.node<Feed>("feed").next[Feed::Midi] = {{0, bytes({0x90, 60, 100})}};
+        rig.run(64, 1);
     }
-    const auto kernel = spansOf(rig.scripts, rp::host::DSP_SPAN_KERNEL);
-    const auto call = spansOf(rig.scripts, rp::host::DSP_SPAN_JSCALL);
-    const auto role = spansOf(rig.scripts, 21);
-    CHECK(kernel.size() == 3);
-    CHECK(call.size() == 3);
-    CHECK(role.size() == 3);  // each block's own, none of the setters'
-    CHECK(spansOf(rig.scripts, rp::host::DSP_SPAN_MARSHAL).size() == 6);  // the transport's, and the stream's each block
-    CHECK(nested(call, kernel));
-    CHECK(nested(role, call));
-    std::size_t inside = 0;
-    for (const auto& m : spansOf(rig.scripts, rp::host::DSP_SPAN_MARSHAL)) inside += nested({m}, call) ? 1 : 0;
-    CHECK(inside == 3);
+    // The test bundle's own type first, then this bundle's, in the order it registered them.
+    CHECK(labelOf(rig.scripts, "rp.test.script-echo") == rp::host::DSP_SPAN_TYPE_BASE);
+    const std::uint32_t pass = labelOf(rig.scripts, "rp.toy.span-pass"), idle = labelOf(rig.scripts, "rp.toy.span-idle");
+    CHECK(pass == rp::host::DSP_SPAN_TYPE_BASE + 1);
+    CHECK(idle == pass + 1);
+    CHECK(labelOf(rig.scripts, "rp.toy.span-frozen") == idle + 3);
+    CHECK(spansOf(rig.scripts, pass).size() == 6);  // a and b, each block
+    CHECK(spansOf(rig.scripts, idle).size() == 3);
+    CHECK(spansOf(rig.scripts, rp::host::DSP_SPAN_SCRIPT_NODE).empty());
+    // One node's process after another's, never inside it.
+    auto process = spansOf(rig.scripts, pass);
+    for (const auto& s : spansOf(rig.scripts, idle)) process.push_back(s);
+    std::sort(process.begin(), process.end(), [](const auto& x, const auto& y) { return x.t0 < y.t0; });
+    for (std::size_t i = 1; i < process.size(); ++i) CHECK(process[i - 1].t1 <= process[i].t0);
     CHECK(rig.scripts.throwCount() == 0);
     rig.scripts.traceReset(false);
 }
 
 TEST_CASE("the profile calls refuse while an audio thread owns the runtime, and the trace reads read nothing",
           "[script][profile][trace]") {
-    ScriptRig rig(kSpanners);
-    REQUIRE(rig.set(doc(node("s", "rp.toy.span-overclose"), "")).ok);
+    ScriptRig rig(kSpanned);
+    REQUIRE(rig.set(doc(node("s", "rp.toy.span-idle"), "")).ok);
     REQUIRE(rig.scripts.traceReset(true));
     rig.run();
     const auto spans = rig.scripts.traceSpans();
     const auto names = rig.scripts.traceNames();
     REQUIRE_FALSE(spans.empty());
-    REQUIRE_FALSE(names.empty());  // the fixed labels, named as the host is made
+    REQUIRE_FALSE(names.empty());  // the fixed labels, named as the host is made, and the types', as it loads
     rig.scripts.setAudioThreadOwns(true);
     CHECK_FALSE(rig.scripts.resetAllocStats(true));
     CHECK_FALSE(rig.scripts.runGc().enabled);
@@ -2207,18 +2169,26 @@ TEST_CASE("the profile calls refuse while an audio thread owns the runtime, and 
     CHECK(rig.scripts.traceReset(false));
 }
 
-TEST_CASE("a trace label past the bound is refused with a RangeError, whole, and leaves the names as they were",
+TEST_CASE("a type past the trace's name table is traced under the shared script-node label, and the table stays bounded",
           "[script][profile][trace]") {
-    ScriptRig rig(kNamer);
-    REQUIRE(rig.set(doc(node("n", "rp.toy.namer"), "")).ok);
-    rig.run();
-    CHECK(rig.log.count("refused") == 6);
-    CHECK(rig.log.count("named") == 0);
-    CHECK(rig.scripts.throwCount() == 0);
+    ScriptRig rig(kMany);
+    REQUIRE(rig.scripts.package()->node_type_count == 1101);  // the test bundle's echo, and these
+    REQUIRE(rig.set(doc(node("first", "rp.toy.many-0") + "," + node("last", "rp.toy.many-1006") + "," +
+                            node("past", "rp.toy.many-1007") + "," + node("far", "rp.toy.many-1099"),
+                        ""))
+                .ok);
+    rig.scripts.traceReset(true);
+    rig.run(64, 2);
     const auto names = rig.scripts.traceNames();
     REQUIRE(names.size() == rp::host::kDspSpanLabels);
-    CHECK(names[rp::host::kDspSpanLabels - 1] == "last");
-    CHECK(names[rp::host::DSP_SPAN_APU] == "apu-render");  // not renamed by a label that wraps onto it
-    CHECK(std::find(names.begin(), names.end(), "past") == names.end());
+    CHECK(names[rp::host::DSP_SPAN_SCRIPT_NODE] == "script-node");
+    CHECK(names[rp::host::DSP_SPAN_APU] == "apu-render");
+    CHECK(labelOf(rig.scripts, "rp.toy.many-0") == rp::host::DSP_SPAN_TYPE_BASE + 1);
+    CHECK(labelOf(rig.scripts, "rp.toy.many-1006") == rp::host::kDspSpanLabels - 1);
+    CHECK(labelOf(rig.scripts, "rp.toy.many-1007") == rp::host::kDspSpanLabels);  // named by no label
+    CHECK(spansOf(rig.scripts, rp::host::DSP_SPAN_TYPE_BASE + 1).size() == 2);
+    CHECK(spansOf(rig.scripts, rp::host::kDspSpanLabels - 1).size() == 2);
+    CHECK(spansOf(rig.scripts, rp::host::DSP_SPAN_SCRIPT_NODE).size() == 4);  // past's and far's, each block
+    rig.scripts.traceReset(false);
 }
 #endif

@@ -1,7 +1,7 @@
-// DSP-thread allocation benchmark (spec/08-profiling.md). Drives the real DSP kernel off the RT thread
-// via the deterministic renderAudio pull path under a seeded mGB + heavy-MIDI workload, and reports what
-// the script host's audio runtime (the bare QuickJS runtime the kernel node runs in) allocates PER BLOCK:
-// the refcount-churn signal (QuickJS frees acyclic garbage immediately, so "GC" is rare; malloc/free churn
+// DSP-thread allocation benchmark (spec/08-profiling.md). Drives the real script nodes (the MIDI routing and an
+// rp.mgb.midi a system) off the RT thread via the deterministic renderAudio pull path under a seeded mGB + heavy-MIDI
+// workload, and reports what the script host's audio runtime (the bare QuickJS runtime they run in) allocates PER
+// BLOCK: the refcount-churn signal (QuickJS frees acyclic garbage immediately, so "GC" is rare; malloc/free churn
 // per block is the real cost).
 //
 // The allocation counters exist only in a RETROPLUG_PROFILE host (built by `pnpm profile` /
@@ -17,7 +17,7 @@ import { directGraph } from "../src/graph/directGraph";
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
 const graph = directGraph();
 
-// The embedded mGB, built bare (no roles of its own): the pipeline set here is all the kernel runs for it.
+// The embedded mGB, built bare (no roles of its own): the pipeline set here is its one protocol node.
 const MGB: ConstructSpec = { romPath: "", platform: "gb", core: "sameboy", embeddedRom: "mgb", savPath: null, statePath: null };
 
 const SR = 44100;
@@ -60,7 +60,7 @@ const cc = (ch: number, num: number, val: number): number[] => [0xb0 | ch, num, 
 const pb = (ch: number, v14: number): number[] => [0xe0 | ch, v14 & 0x7f, (v14 >> 7) & 0x7f];
 
 // Realistic mGB streams (docs/lsdj.md + spec/08 §5). A: musical 4-part @140 BPM (~105 ev/s). B: poly
-// chord bursts + arp (per-block bursts). C: synthetic worst case (~700 ev/s) — floods the kernel/FIFO.
+// chord bursts + arp (per-block bursts). C: synthetic worst case (~700 ev/s): floods the routing and the FIFO.
 function buildSchedule(profile: string, blocks: number, seed: number): Ev[] {
   const rnd = mulberry32(seed);
   const pick = <T>(a: T[]): T => a[Math.floor(rnd() * a.length)];
@@ -119,7 +119,7 @@ function buildSchedule(profile: string, blocks: number, seed: number): Ev[] {
   return evs.sort((a, c) => a.block - c.block);
 }
 
-test("dsp-bench: DSP kernel per-block allocation under an mGB + MIDI workload", () => {
+test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI workload", () => {
   const audio = createAudioDriver();
 
   const profile = envStr("RP_BENCH_PROFILE", "A");
@@ -129,7 +129,7 @@ test("dsp-bench: DSP kernel per-block allocation under an mGB + MIDI workload", 
   const seed = envInt("RP_BENCH_SEED", 0xc0ffee);
 
   // `cores` real mGB cores, each with an mgb pipeline: cores are the dominant JS-load lever (each one a
-  // ctx, its closures and its routed inbox). The graph places only real systems, so each is a real core.
+  // protocol node and a routing output). The graph places only real systems, so each is a real core.
   const ids: number[] = [];
   for (let i = 1; i <= cores; i++) {
     expect(graph.add(MGB, i)).toBeTruthy();
@@ -168,9 +168,9 @@ test("dsp-bench: DSP kernel per-block allocation under an mGB + MIDI workload", 
   const wallMs = nowMs() - t0;
 
   const s = audio.dspAllocStats();
-  // One self-driven cycle pass. Auto-GC was pinned off for the window, and the bundle's load left its cycles to the
-  // first setGraph's reclaim, which collected them before the window opened: what this frees, the window's blocks
-  // left in cycles, so freedBytes ~0 says they accumulate none.
+  // One self-driven cycle pass. Auto-GC was pinned off for the window, and the bundle's load leaves no cycles (it left
+  // about 144 KiB while zod and the DSP kernel were in it, which the first setGraph's reclaim collected before the
+  // window opened): what this frees, the window's blocks left in cycles, so freedBytes ~0 says they accumulate none.
   const gc = audio.dspRunGc();
 
   const bc = s.blockCount || 1;
@@ -194,19 +194,19 @@ test("dsp-bench: DSP kernel per-block allocation under an mGB + MIDI workload", 
   console.log("DSP-BENCH " + JSON.stringify(metrics));
 
   expect(s.blockCount, "blocks measured").toBeGreaterThan(0);
-  // `allocCalls >= 0` was here, which a count satisfies by definition. The claim worth making is that
-  // the counters this whole file reports are actually wired: we only reach this line under a profile
-  // host, and a kernel that allocated NOTHING across the measured window means the instrumentation is
-  // dead, not that the kernel is free.
-  expect(s.allocCalls, "kernel allocations over the window").toBeGreaterThan(0);
+  // The claim worth making is that the counters this file reports are wired: we only reach this line under a profile
+  // host. The DSP kernel allocated every block, so a count above 0 used to prove it; the protocol nodes allocate
+  // nothing in a warm block, so a window's count is 0 either way. The live heap's peak is kept only by a profile host's
+  // allocator, so a peak above 0 says it counted.
+  expect(s.peakBytes, "the audio runtime's peak heap").toBeGreaterThan(0);
 
   // --- optional per-role runtime trace (spec/08-profiling.md Tier B) --------------------------------
-  // A separate SHORT armed window AFTER the alloc measurement (so those numbers stay pristine). Records
-  // nested wall-time spans (per block: dsp-kernel, the kernel node's process, holding marshal and then
-  // js-call, which holds a marshal per input it reads and a span per role; then apu-render, the rest of the
-  // plan; then state-publish) and prints ONE Chrome trace-event JSON line the wrapper captures into
-  // build-prof/trace.json (load in ui.perfetto.dev or speedscope). Gated on RP_BENCH_TRACE so the normal
-  // stats run stays a single line.
+  // A separate SHORT armed window AFTER the alloc measurement (so those numbers stay pristine). Records nested
+  // wall-time spans (per block: each script node's process, a span named by its type, rp.midi.route then each
+  // rp.mgb.midi, holding marshal and then js-call, which holds a marshal per input it reads; then apu-render, the rest
+  // of the plan; then state-publish) and prints ONE Chrome trace-event JSON line the wrapper captures into
+  // build-prof/trace.json (load in ui.perfetto.dev or speedscope). Gated on RP_BENCH_TRACE so the normal stats run
+  // stays a single line.
   if (env("RP_BENCH_TRACE")) {
     const traceBlocks = Math.max(1, envInt("RP_BENCH_TRACE_BLOCKS", 64));
     const tSched = buildSchedule(profile, traceBlocks, seed ^ 0x9e3779b9);
@@ -214,7 +214,7 @@ test("dsp-bench: DSP kernel per-block allocation under an mGB + MIDI workload", 
     const stageTrace = (blk: number): void => {
       while (ti < tSched.length && tSched[ti].block === blk) audio.stageMidiIn(tSched[ti++].msg);
     };
-    audio.dspTraceReset(true); // arm: the script host, the engine and the kernel's roles record spans
+    audio.dspTraceReset(true); // arm: the script host and the engine record spans
     for (let blk = 0; blk < traceBlocks; blk++) {
       stageTrace(blk);
       audio.renderAudio(BLOCK_MS);
