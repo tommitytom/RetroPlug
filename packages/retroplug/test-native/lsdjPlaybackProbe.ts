@@ -39,7 +39,7 @@ export const ABOY_ROM = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_3_3-arduinoboy.gb"
 // The MI.MAP wire protocol, as Arduinoboy's Mode_LSDJ_Map.ino writes it to the link port. Row bytes
 // are the payload; these two are the sentinels that aren't rows.
 export const MAP_CLOCK = 0xff; // one per MIDI clock (0xF8) — Arduinoboy's setMapByte(0xFF, …)
-export const MAP_NOTEOFF = 0xfe; // the NoteOff handshake (MIDIMAP_NOTEOFF in dspRoles.ts)
+export const MAP_NOTEOFF = 0xfe; // the NoteOff handshake (MIDIMAP_NOTEOFF in lsdjSyncBytes.ts)
 
 /** Song-relative offset of the SYNC setting in the working song (regions.ts syncMode). Lets a test read
  *  which mode the cart is ACTUALLY in, rather than trusting a count of button presses. */
@@ -202,7 +202,7 @@ export class LsdjProbe {
   }
 
   /** Launch a row THROUGH THE MIDI LAYER, as a Launchpad app would: ch1 note = rows 0..127,
-   *  ch2 note = rows 128..255 (midiMapRow in dspRoles.ts). Only meaningful in `midiMap` mode. */
+   *  ch2 note = rows 128..255 (midiMapRow in lsdjSyncBytes.ts). Only meaningful in `midiMap` mode. */
   launchNote(row: number, on = true): void {
     const status = (on ? 0x90 : 0x80) | (row >= 128 ? 1 : 0);
     this.audio.stageMidiIn([status, row & 0x7f, on ? 100 : 0]);

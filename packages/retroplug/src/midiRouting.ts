@@ -1,7 +1,8 @@
 // The MIDI routing decision. Given a block's MIDI events + the project's routing mode + system
 // count, it decides which system(s) each event lands on and applies the MidiChannelToInstance
-// channel rewrite. The DSP kernel's midi-routing role (dspRoles.ts) runs it every block. No
-// emulator, no audio thread, no retained state: pure decision logic (doc-06 Tier-1).
+// channel rewrite. The DSP kernel's midi-routing role (dspRoles.ts) and the routing script node
+// (script/nodes/midiRoute.ts) run it every block. No emulator, no audio thread, no retained state:
+// pure decision logic (doc-06 Tier-1).
 
 import { MidiRouting, MIDI_ROUTING_VALUES } from "./settingsEnums";
 export { MidiRouting, MIDI_ROUTING_VALUES };
@@ -74,6 +75,35 @@ function allTargets(n: number): number[] {
   const out: number[] = [];
   for (let i = 0; i < n; i++) out.push(i);
   return out;
+}
+
+/** `routeTarget`'s answer for a message every system receives. */
+export const ROUTE_ALL = -1;
+/** `routeTarget`'s answer for a message no system receives. */
+export const ROUTE_NONE = -2;
+
+/** Where one message lands among `systemCount` systems, by `routeBlockInto`'s arithmetic over bytes in any array:
+ *  the 0-based index of the one system it lands on, ROUTE_ALL, or ROUTE_NONE (an empty message, no systems, or an
+ *  unknown mode). Allocates nothing. The caller applies MidiChannelToInstance's channel rewrite, which only a single
+ *  target in that mode takes, to the copy it hands that system. The routing script node (script/nodes/midiRoute.ts)
+ *  routes with it. */
+export function routeTarget(data: ArrayLike<number>, mode: MidiRouting, systemCount: number): number {
+  if (systemCount <= 0 || data.length === 0) return ROUTE_NONE;
+  const status = data[0];
+  // System/realtime messages and SysEx have no channel nibble: broadcast unchanged.
+  if ((status & 0xf0) === 0xf0 || data.length > MIDI_DATA_SIZE) return ROUTE_ALL;
+  const chan = status & 0x0f;
+  switch (mode) {
+    case MidiRouting.SendToAll:
+      return ROUTE_ALL;
+    case MidiRouting.FourChannelsPerInstance:
+      return Math.floor(chan / 4) % systemCount;
+    case MidiRouting.OneChannelPerInstance:
+    case MidiRouting.MidiChannelToInstance:
+      return chan % systemCount;
+    default:
+      return ROUTE_NONE; // modes are clamped 0..3 upstream; an unknown one drops
+  }
 }
 
 /** The allocation-free hot-path twin of `routeBlock`: fan `events` into caller-owned, PRE-CLEARED

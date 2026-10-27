@@ -59,8 +59,9 @@ type MutableCtx = { -readonly [K in keyof ControllerCtx]: ControllerCtx[K] };
  *  supplies `Math.floor(block.ppqStart * 24)`, which is the quantity `walkTicks` derives its ticks from;
  *  a stopped transport freezes ppqStart, so `ticks` falls to 0 on its own. */
 export interface SessionInput {
-  /** Raw MIDI messages received from the device since the previous update. */
-  input: readonly (readonly number[])[];
+  /** Raw MIDI messages received from the device since the previous update: any arrays of bytes, none of them
+   *  kept past the update. */
+  input: readonly ArrayLike<number>[];
   tick: number;
   transport: boolean;
 }

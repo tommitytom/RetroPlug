@@ -1,12 +1,12 @@
 // The launch encoder, checked against the decoder that actually ships.
 //
-// The strongest available oracle here is not a hex literal: it is `midiMapRow` from dspRoles.ts, the
+// The strongest available oracle here is not a hex literal: it is `midiMapRow` from lsdjSyncBytes.ts, the
 // function a real cart's row bytes are produced by. If every row survives encode -> decode we are
 // speaking the protocol the role consumes, rather than a second opinion about it that happens to look
 // similar.
 import { test, expect } from "../../testing/harness";
 import { lsdjMidiMapTarget, launchMessage, nullTarget, LSDJ_MAX_ROW } from "../../src/controller";
-import { midiMapRow } from "../../src/dspRoles";
+import { midiMapRow } from "../../src/lsdjSyncBytes";
 
 const collect = () => {
   const sent: number[][] = [];

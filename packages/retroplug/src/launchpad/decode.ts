@@ -35,8 +35,9 @@ const CONTROL_CHANGE = 0xb0;
  *
  *  Returns null rather than guessing for anything unrecognised - SysEx replies, clock, messages from
  *  some other device sharing the port - so a host can forward what it does not understand instead of
- *  having it silently mistaken for a pad press. */
-export function decodeMessage(profile: LaunchpadProfile, data: readonly number[]): SurfaceEvent | null {
+ *  having it silently mistaken for a pad press. Any array of bytes will do (the controller session's script node
+ *  hands over the block's own views), and nothing of it is kept. */
+export function decodeMessage(profile: LaunchpadProfile, data: ArrayLike<number>): SurfaceEvent | null {
   if (data.length < 3) return null;
   const status = data[0] & 0xf0;
   const index = data[1];

@@ -5,9 +5,26 @@
 // only: importing it registers.
 import type { DefinedNode } from "../graph/defineNode";
 import { kernelNode } from "./kernelNode";
+import { midiRouteNode } from "./nodes/midiRoute";
+import { mgbMidiNode } from "./nodes/mgbMidi";
+import { n8MidiToFifoNode } from "./nodes/n8MidiToFifo";
+import { risaSyncNode } from "./nodes/risaSync";
+import { smsSyncNode } from "./nodes/smsSync";
+import { lsdjSyncNode } from "./nodes/lsdjSync";
+import { controllerSessionNode } from "./nodes/controllerSession";
 import { registerScriptNodes } from "./register";
 
-// The production script node types: the DSP kernel.
-const scriptNodes: readonly DefinedNode<any>[] = [kernelNode];
+// The production script node types, in registration order: the DSP kernel, then the per-role nodes that replace it
+// (docs/modular-graph-phase-b3b-design.md section 2), which no document places yet.
+const scriptNodes: readonly DefinedNode<any>[] = [
+  kernelNode,
+  midiRouteNode,
+  mgbMidiNode,
+  n8MidiToFifoNode,
+  risaSyncNode,
+  smsSyncNode,
+  lsdjSyncNode,
+  controllerSessionNode,
+];
 
 registerScriptNodes(scriptNodes);

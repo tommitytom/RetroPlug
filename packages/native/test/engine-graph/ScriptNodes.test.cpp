@@ -1922,9 +1922,12 @@ TEST_CASE("the embedded script bundle loads, and registers the production script
     REQUIRE(bundle.size() > 0);
     REQUIRE(host.load({&bundle, 1}, &error));
     CHECK(error.empty());
-    // The DSP kernel (KernelNode.test.cpp holds it to what it was recorded sending).
-    REQUIRE(host.package()->node_type_count == 1);
-    CHECK(std::string(host.package()->node_types[0]->id) == "rp.dsp.kernel");
+    // The DSP kernel (KernelNode.test.cpp holds it to what it was recorded sending), then, in the bundle's order, the
+    // per-role nodes that replace it, which no document places yet.
+    const std::vector<std::string> ids{"rp.dsp.kernel", "rp.midi.route",  "rp.mgb.midi",  "rp.n8.midi-to-fifo",
+                                       "rp.risa.sync",  "rp.sms.sync",    "rp.lsdj.sync", "rp.controller.session"};
+    REQUIRE(host.package()->node_type_count == ids.size());
+    for (std::size_t i = 0; i < ids.size(); ++i) CHECK(std::string(host.package()->node_types[i]->id) == ids[i]);
     CHECK(host.package()->abi_version == RP_ABI_VERSION);
 }
 

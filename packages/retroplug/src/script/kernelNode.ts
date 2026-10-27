@@ -15,37 +15,22 @@ import { DspKernel, type BlockInput, type DspTracer, type SinkTarget } from "../
 import type { MidiEvent } from "../midiRouting";
 import { RoleRegistry } from "../systemRoles";
 import { registerDspRoles } from "../dspRoles";
+import { BUTTONS, CONTROLLER_OUT, CORE_BYTES, CORE_MIDI, FLUSH, MIDI_OUT, SERIAL_IN } from "./nodes/ports";
 
 /** The kernel node's type id. A document that names it with no settings plans as an empty kernel. */
 export const KERNEL_NODE_TYPE = "rp.dsp.kernel";
 
-/** RP_MESSAGE_FLUSH (graph/rp_node.h): a bytes message the device takes only after dropping what it still holds. */
-const FLUSH = 1;
-
 // What each output carries in one block, at most (design section 2.6): the kernel stage's sink vectors were unbounded,
-// and a queue drops what does not fit. The two that pass host MIDI on, serial in (mGB, lsdj-sync's passthrough) and
-// core MIDI (nes-n8-midi), each hold at least what rp.host.midi-in's output holds (kHostMidiInMessages and
-// kHostMidiInBytes, host/graph/HostIoNodes.hpp), so the one place host MIDI is dropped is that edge. Core MIDI takes a
-// message for each forwarded one; serial in a run of same-frame bytes to a message, so at most one for each forwarded
-// message, plus the sync roles' own bytes. Both have room for 4096 messages and 72 KiB: twice rp.host.midi-in's
-// messages, and its bytes with 8 KiB more for a role's own (a sync role's clock and row bytes, in a block whose
-// forwarded MIDI fills rp.host.midi-in), so a SysEx the host stages whole (a sample upload to a NES build) reaches the
-// system whole. (The most the suites sent through them in one block, measured over test:native with the fixtures,
-// parity included, 2.2 million kernel blocks up to 8192 frames: per system, 18 serial-in bytes and 8 core-MIDI messages
-// holding 4096 bytes, the largest 512.)
-// The rest are sized from the same measurement: per system, 11 core-byte messages holding 11 bytes, 1 button press;
-// 14 host MIDI-out messages holding 70 bytes with their prefixes; 5 control-surface messages holding 206 bytes (in
-// one). dsp-bench's densest profile, skipped there, sends 13 messages of 39 bytes a block. Each of these has room for
-// 16 times the messages or more, and the bytes as well, but for the MIDI out's (a decoded MI.OUT stream at its
-// densest, a captured byte every 8 frames: 1024 in 8192). A queue costs 16 bytes a message plus its bytes, per plan:
-// a system's four take 278 KiB, nearly all of it the two that pass host MIDI on, so 33 systems take 9.0 MiB of the
-// plan's 64 MiB queue budget.
-export const KERNEL_SERIAL_IN: QueueCapacity = { messages: 4096, bytes: 73728 };
-export const KERNEL_CORE_MIDI: QueueCapacity = { messages: 4096, bytes: 73728 };
-export const KERNEL_CORE_BYTES: QueueCapacity = { messages: 256, bytes: 1024 };
-export const KERNEL_BUTTONS: QueueCapacity = { messages: 64, bytes: 128 };
-export const KERNEL_MIDI_OUT: QueueCapacity = { messages: 1024, bytes: 8192 };
-export const KERNEL_CONTROLLER_OUT: QueueCapacity = { messages: 256, bytes: 4096 };
+// and a queue drops what does not fit. Sized, and explained, in nodes/ports.ts, which the protocol script nodes that
+// replace this one take their capacities from, port for port. A queue costs 16 bytes a message plus its bytes, per
+// plan: a system's four take 278 KiB, nearly all of it the two that pass host MIDI on, so 33 systems take 9.0 MiB of
+// the plan's 64 MiB queue budget.
+export const KERNEL_SERIAL_IN: QueueCapacity = SERIAL_IN;
+export const KERNEL_CORE_MIDI: QueueCapacity = CORE_MIDI;
+export const KERNEL_CORE_BYTES: QueueCapacity = CORE_BYTES;
+export const KERNEL_BUTTONS: QueueCapacity = BUTTONS;
+export const KERNEL_MIDI_OUT: QueueCapacity = MIDI_OUT;
+export const KERNEL_CONTROLLER_OUT: QueueCapacity = CONTROLLER_OUT;
 
 const role = z.object({ kind: z.string(), config: z.record(z.string(), z.unknown()).default({}) });
 

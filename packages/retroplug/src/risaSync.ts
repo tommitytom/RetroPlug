@@ -21,6 +21,9 @@ export const RISA_STOP = 0xfc;
 export const RISA_PPQN = 24;
 /** Clocks per phrase: 16 rows of the fixed six-clock locate grid (so tickOffset is 0x00..0x5F). */
 export const RISA_CLOCKS_PER_PHRASE = 96;
+/** How far, in quarters, a block's ppqStart may lie from where the last one ended before it is a seek (or a loop)
+ *  that needs a fresh arm: contiguous block edges meet exactly, and a seek or loop jump far exceeds this. */
+export const RISA_SEEK_TOLERANCE = 1e-3;
 
 export interface RisaLocate {
   /** Song row, 0..0x7f. */

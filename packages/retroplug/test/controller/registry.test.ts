@@ -5,7 +5,7 @@
 // parse, because these values come off disk and a user should never be locked out of their own controller
 // by a bad enum.
 import { test, expect } from "../../testing/harness";
-import { ControllerRegistry, registerControllerApps, lsdjMidiMap, MAX_PAGE } from "../../src/controller";
+import { ControllerRegistry, registerControllerApps, lsdjMidiMap, MAX_PAGE, CONTROLLER_APPS, controllerApp } from "../../src/controller";
 
 const registry = (): ControllerRegistry => {
   const r = new ControllerRegistry();
@@ -50,4 +50,21 @@ test("registering the same id twice replaces it, so an extension can override a 
   r.register(replacement);
   expect(r.get("lsdj-midimap")!.label).toBe("Mine");
   expect(r.list().length).toBe(1);
+});
+
+test("the registry is the apps' runtime, each with its label and schema, in the runtime's order", () => {
+  // The audio side reads the runtime (controller/apps/index.ts) alone, without the schemas, so the two must name the
+  // same apps with the same functions.
+  expect(registry().list().map((t) => t.id)).toEqual(CONTROLLER_APPS.map((a) => a.id));
+  for (const { id, app } of CONTROLLER_APPS) {
+    expect(registry().get(id)!.app, id).toBe(app);
+    expect(controllerApp(id), id).toBe(app);
+  }
+  expect(controllerApp("lsdj-midimap")).toBe(lsdjMidiMap);
+});
+
+test("the runtime knows no app it does not list, an Object.prototype name included", () => {
+  expect(controllerApp("nope")).toBe(undefined);
+  expect(controllerApp("toString")).toBe(undefined);
+  expect(controllerApp("")).toBe(undefined);
 });

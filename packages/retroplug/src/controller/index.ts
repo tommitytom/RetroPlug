@@ -14,6 +14,8 @@ export {
 
 export { ControllerRegistry, registerControllerApps, type ControllerAppType } from "./registry";
 
+export { CONTROLLER_APPS, controllerApp, type ControllerAppRuntime } from "./apps";
+
 export {
   lsdjMidiMap, rowAt, channelAt, followRow,
   CHANNELS_ACROSS, PANE_ROWS, WINDOW_ROWS, MAX_PAGE, QUANTISE_VALUES, type Quantise,

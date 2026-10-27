@@ -20,7 +20,19 @@ import {
   toGbSerialByte,
 } from "./lsdjKeyboardMap";
 import { arduinoboyDecodeSerialOut, arduinoboyMasterSyncBlock, type ArduinoboyState, type MasterSyncState } from "./lsdjArduinoboy";
-import { RISA_PPQN, RISA_START, RISA_CLOCK, RISA_STOP, risaLocate, risaArmPacket } from "./risaSync";
+import {
+  LSDJ_START_BUTTON,
+  LSDJ_CLOCK,
+  LSDJ_START,
+  LSDJ_STOP,
+  MIDIMAP_NOTEOFF,
+  MIDIMAP_CLOCK,
+  isNoteOn,
+  isNoteOff,
+  channelOf,
+  midiMapRow,
+} from "./lsdjSyncBytes";
+import { RISA_PPQN, RISA_START, RISA_CLOCK, RISA_STOP, RISA_SEEK_TOLERANCE, risaLocate, risaArmPacket } from "./risaSync";
 import { SMS_SYNC_PPQN, SMS_SYNC_COUNTER_MOD, syncLevelsFor, type SmsSyncMachine } from "./smsSync";
 import { registerControllerRole } from "./controllerRole";
 
@@ -49,22 +61,6 @@ const forwardMidiToCore: SystemBehavior = (c) => {
   }
 };
 
-// LSDj serial control bytes (host → LSDj over the link cable) and MIDI status helpers, mirroring
-// LsdjSyncRole.cpp. DPF hands the full status byte (channel in the low nibble) in data[0].
-const START_BTN = 7; // GameboyButton::Start
-const LSDJ_CLOCK = 0xf8; // 24-PPQN MIDI clock tick
-const LSDJ_START = 0xfa; // transport start — Arduinoboy-mode bookend
-const LSDJ_STOP = 0xfc; // transport stop
-const MIDIMAP_NOTEOFF = 0xfe; // MidiMap NoteOff handshake sentinel
-const MIDIMAP_CLOCK = 0xff; // MidiMap tick — Arduinoboy's Mode_LSDJ_Map setMapByte(0xFF) on a 0xF8
-const isNoteOn = (status: number) => (status & 0xf0) === 0x90;
-const isNoteOff = (status: number) => (status & 0xf0) === 0x80;
-const channelOf = (status: number) => status & 0x0f;
-// MidiMap row byte: ch0 NoteOn → note; ch1 → note + 128; other channels skipped (-1). Exported so the
-// controller layer's launch ENCODER (src/controller/trackerTarget.ts) can be round-tripped against the
-// decoder that actually ships, rather than restating the same convention twice and hoping they agree.
-export const midiMapRow = (channel: number, note: number) => (channel === 0 ? note : channel === 1 ? note + 128 : -1);
-
 // MidiSyncArduinoboy (== LsdjSyncRole MidiSyncArduinoboy). Input notes drive runtime state: 24/25 toggle
 // the play flag, 26-29 set the tempo divisor, 30+ push a raw row byte (note-30). The 0xF8 clock flows
 // only while the play flag is set (NOT on host transport), and 0xFA/0xFC bookend host-transport edges.
@@ -74,8 +70,8 @@ const arduinoboy: SystemBehavior = (c) => {
   // autoStart: tap START on the host transport rise to park the SYNC=Lsdj cart in "wait for sync" before
   // the note-24 play-enable + clock arrive — so a headless render starts on-grid instead of boot-lagging.
   if (c.config.autoStart) {
-    if (c.block.transport && !(st.prevTransport ?? false)) { c.pressButton(START_BTN, true); st.armDown = 2; }
-    else if (st.armDown && st.armDown > 0) { if (--st.armDown === 0) c.pressButton(START_BTN, false); }
+    if (c.block.transport && !(st.prevTransport ?? false)) { c.pressButton(LSDJ_START_BUTTON, true); st.armDown = 2; }
+    else if (st.armDown && st.armDown > 0) { if (--st.armDown === 0) c.pressButton(LSDJ_START_BUTTON, false); }
   }
   for (const e of c.midi) {
     if (!isNoteOn(e.data[0])) continue;
@@ -210,8 +206,8 @@ const lsdjSync: SystemBehavior = (c) => {
       // a headless DAW render (which can't press a joypad) can drive it. Off by default (manual arm).
       if (c.config.autoStart) {
         const st = c.state as { prevT?: boolean; armDown?: number };
-        if (c.block.transport && !st.prevT) { c.pressButton(START_BTN, true); st.armDown = 2; }
-        else if (st.armDown && st.armDown > 0) { if (--st.armDown === 0) c.pressButton(START_BTN, false); }
+        if (c.block.transport && !st.prevT) { c.pressButton(LSDJ_START_BUTTON, true); st.armDown = 2; }
+        else if (st.armDown && st.armDown > 0) { if (--st.armDown === 0) c.pressButton(LSDJ_START_BUTTON, false); }
         st.prevT = c.block.transport;
       }
       const divisor = (c.config.tempoDivisor as number) || 1;
@@ -243,7 +239,6 @@ const lsdjSync: SystemBehavior = (c) => {
 //    The arm therefore points the clock stream at armedClock + 1: "the next F8 is the first clock after
 //    the locate". That also covers an exact loop back to the same position, where eachTick's own resync
 //    (which only fires on a jump of more than a tick) would leave the counter past the block and emit none.
-const RISA_SEEK_TOL = 1e-3; // quarters — contiguous block edges meet exactly; a seek/loop jump far exceeds this.
 const risaSync: SystemBehavior = (c) => {
   const st = c.state as { prevT?: boolean; ppqEnd?: number };
   const b = c.block;
@@ -252,7 +247,7 @@ const risaSync: SystemBehavior = (c) => {
 
   // Re-arm on a fresh start, or on a ppqStart discontinuity while playing — a seek/loop needs a new locate,
   // and the arm gates risa's playback + discards the old position's queued clocks.
-  const seek = st.ppqEnd !== undefined && Math.abs(b.ppqStart - st.ppqEnd) > RISA_SEEK_TOL;
+  const seek = st.ppqEnd !== undefined && Math.abs(b.ppqStart - st.ppqEnd) > RISA_SEEK_TOLERANCE;
   if (playing && (!prevT || seek)) {
     const loc = risaLocate(b.ppqStart);
     c.pushCoreBytes(0, risaArmPacket(loc), true); // F9 52 songRow chainRow tickOffset, flushing the FIFO
