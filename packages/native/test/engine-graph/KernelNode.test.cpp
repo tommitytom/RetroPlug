@@ -11,14 +11,26 @@
 // those comparisons: the B3a prototype recorded them from the same cases, and they hold here as recorded. So a changed
 // value is a change to what the kernel does: a deliberate one is re-recorded from the values a failing case prints. One
 // was: the LSDj modes case, when master sync's stop became a silence rather than a flood
-// (docs/lsdj-master-sync-fix-design.md).
+// (docs/lsdj-master-sync-fix-design.md). One case came after the stage had gone, recorded from the node alone: the
+// controller's launches behind routed MIDI and its host MIDI out ahead of the systems', two orders no earlier case
+// sends a message through.
 //
 // A serial input is counted and hashed byte by byte, each byte as the one-byte message (its frame, flags 0, one byte)
 // the node sent when the values were recorded: it now sends a run of same-frame bytes as one message, which the system
 // node applies byte by byte at its frame, so where a run breaks, which no core can see, moves no value. Every other
 // port is hashed message for message.
 //
-// Last, the node runs on an audio thread while the control thread reshapes it, for the thread sanitizer.
+// Every case runs twice, on two graphs (docs/modular-graph-phase-b3b-design.md section 6): the kernel node's, and the
+// per-role graph B3b's buildGraph is to place in its stead, a script node per role (the MIDI routing, a controller
+// session, each system's protocol nodes) wired between the same host I/O nodes, feeds and probes. A digest hashes what
+// reaches each system input and the host outputs, never which node sent it, so the per-role graph is held to the same
+// recorded values: that is B3b's proof, bit for bit, that splitting the kernel changes nothing a core or the host can
+// see. Where the per-role graph differs from the kernel by design (the design's section 5: a throw stops only the node
+// it is in), the case says so, checks what the per-role graph does instead, and the digest takes that one difference as
+// the kernel had it.
+//
+// Last, the node (or the per-role graph) runs on an audio thread while the control thread restructures it, for the
+// thread sanitizer.
 //
 // Run via `pnpm test:plugin engine-graph`.
 
@@ -27,12 +39,15 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
 
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "TestNodes.hpp"
@@ -58,11 +73,32 @@ constexpr double kRate = 44100.0;
 constexpr std::uint32_t kBeat = 22050;  // frames per quarter at 120 bpm
 const char* const kKernel = "rp.dsp.kernel";  // KERNEL_NODE_TYPE (src/script/kernelNode.ts)
 
+// The two graphs a case runs on, each a type so that every case is listed, run and reported once per graph.
+enum class Graph { Kernel, PerRole };
+struct KernelGraph {
+    static constexpr Graph graph = Graph::Kernel;
+};
+struct PerRoleGraph {
+    static constexpr Graph graph = Graph::PerRole;
+};
+
 // ---- structures, spelled as kernelProjection spells them -----------------------------------------------------
+
+// A launchpad's choices as the project holds them, which the kernel's role resolved and parsed itself, from its config,
+// and which the per-role graph's document resolves and parses as buildGraph is to.
+struct Controller {
+    std::string   target;    // where its launches go: "system", or "midiOut" (a real Game Boy's Arduinoboy)
+    std::uint32_t systemId;  // the system they are for: 0 is the first
+    std::string   quantise;  // its app config, { quantise }, as the user set it
+};
 
 struct Role {
     std::string kind;
     std::string config = "{}";  // JSON
+    // What the two project roles' script nodes take that is not their config as it stands: a midi-routing's mode, which
+    // its node takes beside the systems' ids, and a launchpad's choices.
+    std::string               mode;
+    std::optional<Controller> controller;
 };
 struct System {
     std::uint32_t     id;
@@ -81,7 +117,7 @@ const Role kSameBoy{"sameboy", R"({"model":"cgbC","highpass":"accurate","linkGro
 const Role kMesen{"mesen", R"({"region":"auto","removeSpriteLimit":false,"enableFm":true,"apuLatencyMs":1.4,"s5bNoise":"n8",)"
                            R"("mmc5PhaseReset":"n8","expansionVolume":100,"channelExportMode":"mix","sdRoot":""})"};
 
-Role routing(const std::string& mode) { return {"midi-routing", R"({"mode":")" + mode + R"("})"}; }
+Role routing(const std::string& mode) { return {"midi-routing", R"({"mode":")" + mode + R"("})", mode}; }
 Role lsdj(const std::string& mode, int divisor = 1, bool autoStart = false) {
     return {"lsdj-sync", R"({"mode":")" + mode + R"(","tempoDivisor":)" + std::to_string(divisor) +
                              R"(,"autoStart":)" + (autoStart ? "true" : "false") + "}"};
@@ -90,6 +126,22 @@ const Role kMgb{"mgb"};
 const Role kNesMidi{"nes-n8-midi"};
 const Role kRisa{"risa-sync"};
 Role sms(const std::string& machine) { return {"sms-sync", R"({"machine":")" + machine + R"("})"}; }
+
+// The lsdj-midimap app's song timing for a song of sixteen one-phrase rows on every channel, as the control plane
+// derives it from a battery (songRowTicks).
+std::string songRowTicks() {
+    std::string row = "[";
+    for (int r = 0; r < 16; ++r) row += (r ? "," : "") + std::string("96");
+    row += "]";
+    return "[" + row + "," + row + "," + row + "," + row + "]";
+}
+Role launchpad(const std::string& target, std::uint32_t systemId, const std::string& quantise) {
+    return {"launchpad",
+            R"({"app":"lsdj-midimap","target":")" + target + R"(","systemId":)" + std::to_string(systemId) +
+                R"(,"appConfig":{"quantise":")" + quantise + R"("},"songRowTicks":)" + songRowTicks() +
+                R"(,"anchorRows":[],"anchorSeq":0})",
+            "", Controller{target, systemId, quantise}};
+}
 
 System gameBoy(std::uint32_t id, Role feature) { return {id, {kSameBoy, std::move(feature)}, true}; }
 System nes(std::uint32_t id, std::vector<Role> features) {
@@ -113,6 +165,99 @@ std::string settingsJson(const Structure& s) {
                R"(,"serialOut":)" + (sys.serialOut ? "true" : "false") + "}";
     }
     return out + "]}";
+}
+
+// ---- the per-role graph, spelled as buildGraph is to spell it ---------------------------------------------------
+
+// The system inputs, which a system's probes stand in for: serialIn and midi on one probe, bytes and buttons on another.
+constexpr const char* kSystemInputs[] = {"serialIn", "midi", "bytes", "buttons"};
+std::string probeFor(std::uint32_t system, const std::string& input) {
+    const std::string id = std::to_string(system);
+    if (input == "serialIn") return "in-" + id + ".bytes";
+    if (input == "midi") return "in-" + id + ".events";
+    if (input == "bytes") return "io-" + id + ".bytes";
+    return "io-" + id + ".events";  // buttons
+}
+
+// Each DSP role's script node (docs/modular-graph-phase-b3b-design.md section 2): its type, the input its routed MIDI
+// arrives on (none for one that reads only the transport), and the system inputs it writes, each from an output of the
+// same name. No two roles of a system write one input, so no input of a system is fed twice.
+struct ProtocolNode {
+    const char*              kind;
+    const char*              type;
+    const char*              midiIn;
+    std::vector<const char*> writes;
+};
+const std::vector<ProtocolNode> kProtocolNodes{
+    {"mgb", "rp.mgb.midi", "midi", {"serialIn"}},
+    {"nes-n8-midi", "rp.n8.midi-to-fifo", "midiIn", {"midi"}},
+    {"risa-sync", "rp.risa.sync", nullptr, {"bytes"}},
+    {"sms-sync", "rp.sms.sync", nullptr, {"bytes"}},
+    {"lsdj-sync", "rp.lsdj.sync", "midi", {"serialIn", "buttons"}},
+};
+
+// A role's script node, or null for a system role, which has none, as the kernel ran nothing for it.
+const ProtocolNode* protocolNode(const Role& role) {
+    for (const ProtocolNode& p : kProtocolNodes)
+        if (role.kind == p.kind) return &p;
+    INFO(role.kind);
+    REQUIRE((role.kind == "sameboy" || role.kind == "mesen"));
+    return nullptr;
+}
+
+// A system's protocol node: sys-<id>/<role-kind>, the main design's convention.
+std::string protocolId(std::uint32_t system, const std::string& kind) { return "sys-" + std::to_string(system) + "/" + kind; }
+
+const Role& projectRole(const Structure& s, const std::string& kind) {
+    const auto r = std::find_if(s.project.begin(), s.project.end(), [&](const Role& role) { return role.kind == kind; });
+    REQUIRE(r != s.project.end());
+    return *r;
+}
+const Controller* controllerOf(const Structure& s) {
+    for (const Role& r : s.project)
+        if (r.kind == "launchpad") return &r.controller.value();
+    return nullptr;
+}
+
+// The system a controller's launches are for, resolved as the kernel's role resolved it (resolveSystemId,
+// src/controllerRole.ts): the chosen one, else the first system, else none, which tags the controller's host MIDI out
+// with the kernel's -1.
+constexpr std::uint32_t kNoSystem = 0xffffffffu;
+std::uint32_t controllerTarget(const Controller& c, const Structure& s) {
+    if (c.systemId > 0) return c.systemId;
+    return s.systems.empty() ? kNoSystem : s.systems.front().id;
+}
+
+// The controller node's settings, as the control plane resolves them: its system (0 for none, the node's "none"), its
+// app config as the app's schema parses it, every default filled (lsdj-midimap's follow and page), the timing table and
+// the anchor as the kernel's role had them.
+std::string controllerSettings(const Controller& c, std::uint32_t target) {
+    return R"({"app":"lsdj-midimap","target":")" + c.target + R"(","systemId":)" +
+           std::to_string(target == kNoSystem ? 0 : target) + R"(,"appConfig":{"quantise":")" + c.quantise +
+           R"(","follow":true,"page":0},"songRowTicks":)" + songRowTicks() + R"(,"anchorRows":[],"anchorSeq":0})";
+}
+
+// The script nodes a structure's per-role graph places, in document order: the routing, the controller when the project
+// has a launchpad, then each system's protocol nodes in slot order, each in its pipeline's order.
+std::vector<std::string> perRoleNodes(const Structure& s) {
+    std::vector<std::string> ids{"routing"};
+    if (controllerOf(s)) ids.emplace_back("controller");
+    for (const System& sys : s.systems)
+        for (const Role& role : sys.pipeline)
+            if (protocolNode(role)) ids.push_back(protocolId(sys.id, role.kind));
+    return ids;
+}
+
+std::string nodeJson(const std::string& id, const std::string& type, const std::string& settings = "") {
+    return R"({"id":")" + id + R"(","type":")" + type + "\"" + (settings.empty() ? "" : R"(,"settings":)" + settings) + "}";
+}
+std::string wireJson(const std::string& from, const std::string& to) { return R"({"from":")" + from + R"(","to":")" + to + "\"}"; }
+std::string documentJson(const std::vector<std::string>& nodes, const std::vector<std::string>& wires) {
+    std::string doc = R"({"nodes":[)";
+    for (std::size_t i = 0; i < nodes.size(); ++i) doc += (i ? "," : "") + nodes[i];
+    doc += R"(],"wires":[)";
+    for (std::size_t i = 0; i < wires.size(); ++i) doc += (i ? "," : "") + wires[i];
+    return doc + "]}";
 }
 
 // ---- one block's input -------------------------------------------------------------------------------------------
@@ -209,8 +354,12 @@ std::vector<Message> serialBytes(const std::vector<Message>& ms) {
 // ---- the rig ---------------------------------------------------------------------------------------------------
 
 struct KernelRig {
-    Structure structure;
-    // Before the graph, so it is destroyed after it: the kernel's shim hands its instance back to it.
+    const Graph graph;
+    // The script node every document of this graph places, which every structure change keeps: the kernel, or the
+    // routing node.
+    const char* const keptId;
+    Structure         structure;
+    // Before the graph, so it is destroyed after it: a script node's shim hands its instance back to it.
     ScriptHost                        scripts;
     rp::graph::NodeRegistry           registry;
     rp::graph::ResourceTable          resources;
@@ -229,13 +378,17 @@ struct KernelRig {
     rp::host::EngineHostIo            hostIo{this, &takeMidi, &takeController, &isConnected, &recordMidiOut, &recordControllerOut,
                                              &noCart, &countDropped};
     std::unique_ptr<rp::graph::GraphHost> host;
-    rp_node*                          kernel = nullptr;
+    rp_node*                          kept = nullptr;  // keptId's instance, as the first plan made it
     int                               blocks = 0;
     Sent                              sent;
     Digest                            digest;
+    // Systems whose output the next block's digest takes as the kernel sent it, nothing, where the per-role graph sends
+    // some by design: a case sets it for one block, and checks what the per-role graph sent instead.
+    std::vector<std::uint32_t>        unsentByKernel;
 
     // `inject`: JS run after the bundle, in both of the script host's runtimes.
-    explicit KernelRig(Structure s, const std::string& inject = "") : structure(std::move(s)) {
+    KernelRig(Graph g, Structure s, const std::string& inject = "")
+        : graph(g), keptId(g == Graph::Kernel ? "kernel" : "routing"), structure(std::move(s)) {
         std::vector<ScriptHost::Chunk> chunks{ScriptHost::embeddedBundle()};
         Bytes injected;
         if (!inject.empty()) {
@@ -260,17 +413,34 @@ struct KernelRig {
         config.interfacesCtx = this;
         host = std::make_unique<rp::graph::GraphHost>(registry, resources, config);
         plan();
-        kernel = host->node("kernel");
-        REQUIRE(kernel != nullptr);
+        kept = host->node(keptId);
+        REQUIRE(kept != nullptr);
     }
     ~KernelRig() { host.reset(); }
 
-    // A structure change, as the stores publish one: the node's settings, which reshape it (the instance kept) whenever
-    // its ports move.
+    // A structure change, as the stores publish one: the kernel's settings, which reshape it whenever its ports move, or
+    // the per-role graph's nodes, each kept through a swap or a reshape. Every script node the next structure places that
+    // is placed now keeps its instance; and once the replaced plan is reclaimed, the instances live are the nodes placed,
+    // one each, so a node placed anew (a system added, or removed and added again) is a new instance and one no longer
+    // placed is gone.
     void restructure(Structure next) {
+        std::map<std::string, rp_node*> placed;
+        for (const std::string& id : scriptNodes(next)) placed[id] = host->node(id);  // null for one placed anew
         structure = std::move(next);
         plan();
-        CHECK(host->node("kernel") == kernel);
+        host->reclaim();
+        scripts.reclaim();
+        for (const auto& [id, before] : placed) {
+            INFO(id);
+            REQUIRE(host->node(id) != nullptr);
+            if (before) CHECK(host->node(id) == before);
+        }
+        CHECK(scripts.liveInstances() == placed.size());
+    }
+
+    // The script nodes this graph places for a structure.
+    std::vector<std::string> scriptNodes(const Structure& s) const {
+        return graph == Graph::Kernel ? std::vector<std::string>{"kernel"} : perRoleNodes(s);
     }
 
     void plan() {
@@ -279,39 +449,88 @@ struct KernelRig {
         REQUIRE(r.ok);
     }
 
+    std::string document() const { return graph == Graph::Kernel ? kernelDocument() : perRoleDocument(); }
+
     // The host I/O nodes into the kernel, a feed for each Game Boy's MI.OUT, the kernel, and every output read: a
     // system's serialIn and midi on one probe, its bytes and buttons on another.
-    std::string document() const {
-        const auto node = [](const std::string& id, const std::string& type, const std::string& settings = "") {
-            return R"({"id":")" + id + R"(","type":")" + type + "\"" + (settings.empty() ? "" : R"(,"settings":)" + settings) + "}";
-        };
-        const auto wire = [](const std::string& from, const std::string& to) {
-            return R"({"from":")" + from + R"(","to":")" + to + "\"}";
-        };
-        std::vector<std::string> nodes{node("midi-in", "rp.host.midi-in"), node("controller-in", "rp.host.controller-in"),
-                                       node("kernel", kKernel, settingsJson(structure)),
-                                       node("midi-out", "rp.host.midi-out"), node("controller-out", "rp.host.controller-out")};
-        std::vector<std::string> wires{wire("midi-in.midi", "kernel.midiIn"), wire("controller-in.midi", "kernel.controllerIn"),
-                                       wire("controller-in.connected", "kernel.controllerConnected"),
-                                       wire("kernel.midiOut", "midi-out.midi"), wire("kernel.controllerOut", "controller-out.midi")};
+    std::string kernelDocument() const {
+        std::vector<std::string> nodes{nodeJson("midi-in", "rp.host.midi-in"), nodeJson("controller-in", "rp.host.controller-in"),
+                                       nodeJson("kernel", kKernel, settingsJson(structure)), nodeJson("midi-out", "rp.host.midi-out"),
+                                       nodeJson("controller-out", "rp.host.controller-out")};
+        std::vector<std::string> wires{wireJson("midi-in.midi", "kernel.midiIn"),
+                                       wireJson("controller-in.midi", "kernel.controllerIn"),
+                                       wireJson("controller-in.connected", "kernel.controllerConnected"),
+                                       wireJson("kernel.midiOut", "midi-out.midi"),
+                                       wireJson("kernel.controllerOut", "controller-out.midi")};
         for (const System& s : structure.systems) {
             const std::string id = std::to_string(s.id), port = "kernel.sys-" + id;
             if (s.serialOut) {
-                nodes.push_back(node("mi-out-" + id, "rp.test.feed"));
-                wires.push_back(wire("mi-out-" + id + ".bytes", port + ".serialOut"));
+                nodes.push_back(nodeJson("mi-out-" + id, "rp.test.feed"));
+                wires.push_back(wireJson("mi-out-" + id + ".bytes", port + ".serialOut"));
             }
-            nodes.push_back(node("in-" + id, "rp.test.probe"));
-            nodes.push_back(node("io-" + id, "rp.test.probe"));
-            wires.push_back(wire(port + ".serialIn", "in-" + id + ".bytes"));
-            wires.push_back(wire(port + ".midi", "in-" + id + ".events"));
-            wires.push_back(wire(port + ".bytes", "io-" + id + ".bytes"));
-            wires.push_back(wire(port + ".buttons", "io-" + id + ".events"));
+            nodes.push_back(nodeJson("in-" + id, "rp.test.probe"));
+            nodes.push_back(nodeJson("io-" + id, "rp.test.probe"));
+            for (const char* input : kSystemInputs) wires.push_back(wireJson(port + "." + input, probeFor(s.id, input)));
         }
-        std::string doc = R"({"nodes":[)";
-        for (std::size_t i = 0; i < nodes.size(); ++i) doc += (i ? "," : "") + nodes[i];
-        doc += R"(],"wires":[)";
-        for (std::size_t i = 0; i < wires.size(); ++i) doc += (i ? "," : "") + wires[i];
-        return doc + "]}";
+        return documentJson(nodes, wires);
+    }
+
+    // The per-role graph, as B3b's buildGraph is to place it (docs/modular-graph-phase-b3b-design.md sections 2, 4 and
+    // 5), between the same host I/O nodes, feeds and probes: the routing node, the controller node when the project has
+    // a launchpad, then each system's protocol nodes in slot order, a node for each role in its pipeline that has one.
+    // Each protocol node's outputs go where the kernel's for its system went; a Game Boy's MI.OUT goes into its lsdj-sync
+    // node, and nowhere when it has none, where the kernel took it and ran nothing that read it; the controller's
+    // launches go into its target's lsdj-sync node when it drives an emulated cart. rp.host.midi-out takes an input for
+    // each node that sends host MIDI, in the kernel's emission order: the controller's first, under the system it
+    // resolved (whatever its target: driving a cart, it sends none), then each lsdj-sync node's, in slot order.
+    std::string perRoleDocument() const {
+        const Structure& s = structure;
+        std::vector<std::string> nodes{nodeJson("midi-in", "rp.host.midi-in"), nodeJson("controller-in", "rp.host.controller-in")};
+        std::vector<std::string> wires{wireJson("midi-in.midi", "routing.midiIn")};
+        // The routing: its mode, and the systems' ids in slot order, each an output, sys-<id>.
+        std::string ids;
+        for (const System& sys : s.systems) ids += (ids.empty() ? "" : ",") + std::to_string(sys.id);
+        nodes.push_back(nodeJson("routing", "rp.midi.route", R"({"mode":")" + projectRole(s, "midi-routing").mode +
+                                                                 R"(","systems":[)" + ids + "]}"));
+        std::vector<std::pair<std::string, std::uint32_t>> producers;  // host MIDI out's, each with its system
+        const Controller* controller = controllerOf(s);
+        const std::uint32_t target = controller ? controllerTarget(*controller, s) : kNoSystem;
+        if (controller) {
+            nodes.push_back(nodeJson("controller", "rp.controller.session", controllerSettings(*controller, target)));
+            wires.push_back(wireJson("controller-in.midi", "controller.controllerIn"));
+            wires.push_back(wireJson("controller-in.connected", "controller.controllerConnected"));
+            wires.push_back(wireJson("controller.controllerOut", "controller-out.midi"));
+            producers.emplace_back("controller.midiOut", target);
+        }
+        for (const System& sys : s.systems) {
+            for (const Role& role : sys.pipeline) {
+                const ProtocolNode* p = protocolNode(role);
+                if (!p) continue;
+                const std::string n = protocolId(sys.id, role.kind);
+                nodes.push_back(nodeJson(n, p->type, role.config));
+                if (p->midiIn) wires.push_back(wireJson("routing.sys-" + std::to_string(sys.id), n + "." + p->midiIn));
+                for (const char* input : p->writes) wires.push_back(wireJson(n + "." + input, probeFor(sys.id, input)));
+                if (role.kind != "lsdj-sync") continue;
+                if (sys.serialOut) wires.push_back(wireJson("mi-out-" + std::to_string(sys.id) + ".bytes", n + ".serialOut"));
+                if (controller && controller->target == "system" && target == sys.id)
+                    wires.push_back(wireJson("controller.launches", n + ".launches"));
+                producers.emplace_back(n + ".midiOut", sys.id);
+            }
+        }
+        std::string systems;
+        for (std::size_t k = 0; k < producers.size(); ++k) {
+            systems += (k ? "," : "") + std::to_string(producers[k].second);
+            wires.push_back(wireJson(producers[k].first, "midi-out.in" + std::to_string(k + 1)));
+        }
+        nodes.push_back(nodeJson("midi-out", "rp.host.midi-out", R"({"systems":[)" + systems + "]}"));
+        nodes.push_back(nodeJson("controller-out", "rp.host.controller-out"));
+        for (const System& sys : s.systems) {
+            const std::string id = std::to_string(sys.id);
+            if (sys.serialOut) nodes.push_back(nodeJson("mi-out-" + id, "rp.test.feed"));
+            nodes.push_back(nodeJson("in-" + id, "rp.test.probe"));
+            nodes.push_back(nodeJson("io-" + id, "rp.test.probe"));
+        }
+        return documentJson(nodes, wires);
     }
 
     template <class T>
@@ -341,6 +560,7 @@ struct KernelRig {
         scripts.beginBlock();
         host->processBlock(in.frames, rp_transport{kRate, in.tempo, in.ppq, in.playing ? std::uint32_t{RP_TRANSPORT_PLAYING} : 0u});
         record(in.frames);
+        unsentByKernel.clear();
         ++blocks;
     }
     void run(BlockIn in, int count) {
@@ -357,16 +577,21 @@ struct KernelRig {
     void record(std::uint32_t frames) {
         digest.u32(static_cast<std::uint32_t>(blocks));
         digest.u32(frames);
+        static const std::vector<Message> none;
         for (const System& s : structure.systems) {
             digest.u32(s.id);
+            const bool unsent = std::find(unsentByKernel.begin(), unsentByKernel.end(), s.id) != unsentByKernel.end();
             const Probe& in = node<Probe>("in-" + std::to_string(s.id));
             const Probe& io = node<Probe>("io-" + std::to_string(s.id));
-            const std::vector<Message> serialIn = serialBytes(in.bytes);  // a byte a message, as when recorded
-            for (const auto* ms : {&serialIn, &in.events, &io.bytes, &io.events}) digest.messages(*ms);
+            const std::vector<Message> serialIn = unsent ? none : serialBytes(in.bytes);  // a byte a message, as when recorded
+            const std::vector<Message>& midi = unsent ? none : in.events;
+            const std::vector<Message>& bytes = unsent ? none : io.bytes;
+            const std::vector<Message>& buttons = unsent ? none : io.events;
+            for (const auto* ms : {&serialIn, &midi, &bytes, &buttons}) digest.messages(*ms);
             sent.serialIn += static_cast<int>(serialIn.size());
-            sent.midi += static_cast<int>(in.events.size());
-            sent.bytes += static_cast<int>(io.bytes.size());
-            sent.buttons += static_cast<int>(io.events.size());
+            sent.midi += static_cast<int>(midi.size());
+            sent.bytes += static_cast<int>(bytes.size());
+            sent.buttons += static_cast<int>(buttons.size());
         }
         digest.u32(static_cast<std::uint32_t>(midiOut.size()));
         for (const Out& m : midiOut) {
@@ -417,11 +642,14 @@ struct KernelRig {
         CHECK(sent == recorded);
     }
 
-    // Nothing dropped, nothing faulted, and `throws` caught in all.
+    // Nothing dropped, no script node faulted, and `throws` caught in all.
     void finish(std::uint32_t throws = 0) {
         CHECK(host->droppedMessages() == 0);
         CHECK(dropped == 0);
-        CHECK_FALSE(host->isFaulted("kernel"));
+        for (const std::string& id : scriptNodes(structure)) {
+            INFO(id);
+            CHECK_FALSE(host->isFaulted(id));
+        }
         CHECK(scripts.throwCount() == throws);
     }
 };
@@ -429,19 +657,6 @@ struct KernelRig {
 // A frame-flagged MI.OUT byte as LSDj's link carries it: a flag bit, then the protocol byte's seven bits.
 std::uint8_t framed(std::uint8_t command) { return static_cast<std::uint8_t>(0x80 | (command & 0x7f)); }
 
-// The lsdj-midimap app's song timing for a song of sixteen one-phrase rows on every channel, as the control plane
-// derives it from a battery (songRowTicks).
-std::string songRowTicks() {
-    std::string row = "[";
-    for (int r = 0; r < 16; ++r) row += (r ? "," : "") + std::string("96");
-    row += "]";
-    return "[" + row + "," + row + "," + row + "," + row + "]";
-}
-Role launchpad(const std::string& target, std::uint32_t systemId, const std::string& quantise) {
-    return {"launchpad", R"({"app":"lsdj-midimap","target":")" + target + R"(","systemId":)" + std::to_string(systemId) +
-                             R"(,"appConfig":{"quantise":")" + quantise + R"("},"songRowTicks":)" + songRowTicks() +
-                             R"(,"anchorRows":[],"anchorSeq":0})"};
-}
 // A press of the pad at (x, y), (0, 0) top left, as a Launchpad in Programmer mode sends it (padIndex in
 // src/launchpad/profile.ts).
 Bytes pad(int x, int y, int velocity = 100) {
@@ -450,10 +665,11 @@ Bytes pad(int x, int y, int velocity = 100) {
 
 }  // namespace
 
-TEST_CASE("the kernel node hands every system its host MIDI, under every routing", "[engine-graph][kernel-node]") {
+TEMPLATE_TEST_CASE("the kernel node hands every system its host MIDI, under every routing", "[engine-graph][kernel-node]",
+                   KernelGraph, PerRoleGraph) {
     // mGB forwards each byte to its serial port, the NES each message to its FIFO, a SysEx (longer than a MidiEvent)
     // included. The plugin stages a block's DAW events, then a moved automation slot's CC at frame 0.
-    KernelRig rig({{routing("sendToAll")}, {gameBoy(1, kMgb), nes(2, {kNesMidi})}});
+    KernelRig rig(TestType::graph, {{routing("sendToAll")}, {gameBoy(1, kMgb), nes(2, {kNesMidi})}});
     rig.block({.midi = {{100, on(0, 60)}, {300, on(1, 62)}, {0, cc(0, 7, 100)}}});
     // In frame order (rp.host.midi-in's sort), to both: each byte to mGB's serial port, each message to the NES.
     std::vector<Message> bytes, messages;
@@ -478,8 +694,8 @@ TEST_CASE("the kernel node hands every system its host MIDI, under every routing
     rig.finish();
 }
 
-TEST_CASE("the kernel node forwards a block that fills rp.host.midi-in, all of it, to a Game Boy's serial port and a NES",
-          "[engine-graph][kernel-node]") {
+TEMPLATE_TEST_CASE("the kernel node forwards a block that fills rp.host.midi-in, all of it, to a Game Boy's serial port and a NES",
+                   "[engine-graph][kernel-node]", KernelGraph, PerRoleGraph) {
     // The one place host MIDI is dropped is rp.host.midi-in's output: every output the kernel forwards it on holds at
     // least as much. So a block that fills it to the message and the byte (two dense curves, a CC and a pitch bend,
     // notes, and a SysEx, a wave upload, taking the rest of the bytes) reaches mGB's serial input byte for byte and the
@@ -517,12 +733,15 @@ TEST_CASE("the kernel node forwards a block that fills rp.host.midi-in, all of i
     REQUIRE(messages.size() == kHostMidiInMessages);
     REQUIRE(bytes.size() == kHostMidiInBytes);
 
-    KernelRig rig({{routing("sendToAll")}, {gameBoy(1, kMgb), nes(2, {kNesMidi})}});
+    KernelRig rig(TestType::graph, {{routing("sendToAll")}, {gameBoy(1, kMgb), nes(2, {kNesMidi})}});
     rig.block({.frames = kFrames, .midi = midi});
     const std::vector<Message> serialIn = serialBytes(rig.node<Probe>("in-1").bytes);
     const std::vector<Message>& nesMidi = rig.node<Probe>("in-2").events;
     CHECK(rig.host->droppedMessages("midi-in") == 0);
-    CHECK(rig.host->droppedMessages("kernel") == 0);
+    for (const std::string& id : rig.scriptNodes(rig.structure)) {
+        INFO(id);
+        CHECK(rig.host->droppedMessages(id) == 0);
+    }
     CHECK(serialIn.size() == bytes.size());
     CHECK(rig.node<Probe>("in-1").bytes.size() == messages.size());  // a run for each message, each at its own frame
     CHECK(nesMidi.size() == messages.size());
@@ -531,8 +750,10 @@ TEST_CASE("the kernel node forwards a block that fills rp.host.midi-in, all of i
     rig.finish();
 }
 
-TEST_CASE("the kernel node drives each LSDj sync mode, MI.OUT and master sync among them", "[engine-graph][kernel-node]") {
-    KernelRig rig({{routing("sendToAll")},
+TEMPLATE_TEST_CASE("the kernel node drives each LSDj sync mode, MI.OUT and master sync among them", "[engine-graph][kernel-node]",
+                   KernelGraph, PerRoleGraph) {
+    KernelRig rig(TestType::graph,
+                  {{routing("sendToAll")},
                    {gameBoy(1, lsdj("midiSync", 1, true)), gameBoy(2, lsdj("midiSync", 2)), gameBoy(3, lsdj("midiSyncArduinoboy", 1, true)),
                     gameBoy(4, lsdj("midiMap")), gameBoy(5, lsdj("keyboardMidi")), gameBoy(6, lsdj("midiPassthrough")),
                     gameBoy(7, lsdj("midiOut")), gameBoy(8, lsdj("masterSync")), gameBoy(9, lsdj("off"))}});
@@ -572,8 +793,9 @@ TEST_CASE("the kernel node drives each LSDj sync mode, MI.OUT and master sync am
     rig.finish();
 }
 
-TEST_CASE("the kernel node drives risa and smsggdj host sync, and a NES's host MIDI", "[engine-graph][kernel-node]") {
-    KernelRig rig({{routing("sendToAll")}, {nes(1, {kNesMidi, kRisa}), nes(2, {sms("sms")}), nes(3, {sms("gg")})}});
+TEMPLATE_TEST_CASE("the kernel node drives risa and smsggdj host sync, and a NES's host MIDI", "[engine-graph][kernel-node]",
+                   KernelGraph, PerRoleGraph) {
+    KernelRig rig(TestType::graph, {{routing("sendToAll")}, {nes(1, {kNesMidi, kRisa}), nes(2, {sms("sms")}), nes(3, {sms("gg")})}});
     rig.block({.midi = {{12, on(0, 60)}, {500, off(0, 60)}}});
     // A start partway into a phrase (an arm and START, flushing), clocks, a seek (a re-arm), an exact loop back to
     // the same place, a stop, and a restart at a new tempo.
@@ -593,13 +815,14 @@ TEST_CASE("the kernel node drives risa and smsggdj host sync, and a NES's host M
     rig.finish();
 }
 
-TEST_CASE("the kernel node runs a controller session: its surface, its launches, its LEDs", "[engine-graph][kernel-node]") {
+TEMPLATE_TEST_CASE("the kernel node runs a controller session: its surface, its launches, its LEDs", "[engine-graph][kernel-node]",
+                   KernelGraph, PerRoleGraph) {
     // A Launchpad driving an emulated cart in MI.MAP (whose clock and launches go to its serial port), beside a
     // Game Boy decoding MI.OUT, so project-stage and system-stage host MIDI out interleave on one port.
     const auto structure = [](const std::string& target) {
         return Structure{{routing("sendToAll"), launchpad(target, 7, "bar")}, {gameBoy(7, lsdj("midiMap")), gameBoy(8, lsdj("midiOut"))}};
     };
-    KernelRig rig(structure("system"));
+    KernelRig rig(TestType::graph, structure("system"));
     rig.block({.controller = {pad(0, 3)}});  // pressed with no surface attached
     rig.block({.connected = true});          // attached: the session takes it (Programmer mode, a full paint)
     rig.run({.connected = true}, 2);
@@ -629,12 +852,45 @@ TEST_CASE("the kernel node runs a controller session: its surface, its launches,
     rig.finish();
 }
 
-TEST_CASE("the kernel node keeps its state across structure changes: survivors go on, a removed id is pruned",
-          "[engine-graph][kernel-node]") {
+TEMPLATE_TEST_CASE("the kernel node puts a controller's launches after the routed MIDI, and its host MIDI out before the "
+                   "systems'",
+                   "[engine-graph][kernel-node]", KernelGraph, PerRoleGraph) {
+    // The two orders the case above leaves without a message (docs/modular-graph-phase-b3b-design.md section 5, items 2
+    // and 3: it stages no host MIDI, and its one launch to the host is cued past its last block), and the controller's
+    // default target (item 6). Launched at once, each press lands in the block it is pressed in: into the first
+    // system's MI.MAP, behind a row the host sent at frame 300, then, its target switched, out of the host in a block
+    // where two Game Boys send host MIDI too (MI.OUT, and a master's clocks). Recorded from the kernel node when the
+    // per-role graph was added, not beside the old kernel stage, which had gone: so it holds the per-role graph to the
+    // kernel node that stage was proven equal to.
+    const auto structure = [](const std::string& target) {
+        return Structure{{routing("sendToAll"), launchpad(target, 0, "immediate")},
+                         {gameBoy(1, lsdj("midiMap")), gameBoy(2, lsdj("midiOut")), gameBoy(3, lsdj("masterSync"))}};
+    };
+    KernelRig rig(TestType::graph, structure("system"));
+    BlockIn play{.frames = 1024, .ppq = 0.0, .playing = true, .connected = true};
+    const auto press = [&](int blocks) {
+        for (int i = 0; i < blocks; ++i) {
+            play.midi = {{300, on(0, 20 + i)}};
+            play.controller = {pad(i % 8, i % 4)};
+            play.serialOut = {{2, {framed(0x7f), framed(0x71), framed(60)}}, {3, {5, 5, 5}, 300}};
+            rig.block(play);
+            play.ppq += 1024.0 / kBeat;
+        }
+    };
+    press(6);
+    rig.restructure(structure("midiOut"));
+    press(6);
+    rig.matches({32, 0, 0, 0, 68, 84, 0xeb884025953336a5ULL});
+    rig.finish();
+}
+
+TEMPLATE_TEST_CASE("the kernel node keeps its state across structure changes: survivors go on, a removed id is pruned",
+                   "[engine-graph][kernel-node]", KernelGraph, PerRoleGraph) {
     // Every change moves the node's ports, so each is a reshape: the instance is kept (the rig checks) and setSystems
-    // runs at the swap. A clock that survives does not restart; an id removed and added again starts afresh.
+    // runs at the swap. A clock that survives does not restart; an id removed and added again starts afresh. On the
+    // per-role graph a survivor's nodes are kept and a system added, or added again, has new ones (the rig checks both).
     const Structure first{{routing("sendToAll")}, {gameBoy(1, lsdj("midiSync")), gameBoy(2, kMgb), gameBoy(3, lsdj("midiSyncArduinoboy"))}};
-    KernelRig rig(first);
+    KernelRig rig(TestType::graph, first);
     BlockIn play{.frames = 1024, .ppq = 0.5, .playing = true, .midi = {{0, on(0, 24)}}};  // Arduinoboy: play
     rig.block(play);
     play.midi.clear();
@@ -681,37 +937,47 @@ TEST_CASE("the kernel node keeps its state across structure changes: survivors g
     rig.finish();
 }
 
-TEST_CASE("a throw in the kernel node's roles keeps what was sent before it and runs the next block",
-          "[engine-graph][kernel-node]") {
+TEMPLATE_TEST_CASE("a throw in the kernel node's roles keeps what was sent before it and runs the next block",
+                   "[engine-graph][kernel-node]", KernelGraph, PerRoleGraph) {
     // No shipped role throws on what the kernel accepts, so the throw is injected: run after the bundle, in both
     // runtimes, Math.ceil throws for one value, which walkTicks reaches when the second system's clock first syncs,
     // at ppq 10.5 (tick 252). The first system has forwarded its MIDI by then; the third never runs that block.
+    //
+    // On the per-role graph a throw stops only the node it is in (docs/modular-graph-phase-b3b-design.md section 5), so
+    // the third system's mGB node does run that block and forwards its MIDI: checked here, and that block's digest takes
+    // the third system as the kernel left it, with nothing. Everything else the per-role graph sends is held to the
+    // kernel's recorded values, the throw count included.
     const std::string inject = R"JS(
       (function () {
         var ceil = Math.ceil;
         Math.ceil = function (x) { if (x === 252) throw new Error("injected"); return ceil(x); };
       })();
     )JS";
-    KernelRig rig({{routing("sendToAll")}, {gameBoy(1, kMgb), gameBoy(2, lsdj("midiSync")), gameBoy(3, kMgb)}}, inject);
+    KernelRig rig(TestType::graph, {{routing("sendToAll")}, {gameBoy(1, kMgb), gameBoy(2, lsdj("midiSync")), gameBoy(3, kMgb)}},
+                  inject);
     rig.block({.midi = {{0, on(0, 60)}}});
+    const bool perRole = rig.graph == Graph::PerRole;
+    if (perRole) rig.unsentByKernel = {3};
     rig.block({.ppq = 10.5, .playing = true, .midi = {{4, on(0, 62)}}});
     CHECK(rig.scripts.throwCount() == 1);
+    if (perRole) CHECK(text(serialBytes(rig.node<Probe>("in-3").bytes)) == "4:90 4:3e 4:64 ");
     rig.run({.ppq = 10.5 + 1024.0 / kBeat, .playing = true, .midi = {{4, on(0, 64)}}}, 3);
     rig.matches({18, 0, 0, 0, 0, 0, 0x420d378cfb9af0faULL});
     rig.finish(1);
 }
 
-TEST_CASE("the kernel node reshapes under a running audio thread, its instance kept through every structure change",
-          "[engine-graph][kernel-node][stress]") {
+TEMPLATE_TEST_CASE("the kernel node reshapes under a running audio thread, its instance kept through every structure change",
+                   "[engine-graph][kernel-node][stress]", KernelGraph, PerRoleGraph) {
     // The threading of the real node, its settings committed and setSystems run on the audio thread at each swap, while
-    // the control thread plans the next and reclaims the last.
+    // the control thread plans the next and reclaims the last. On the per-role graph the audio thread also creates and
+    // releases a system's nodes as it comes and goes, and the routing node reshapes at each swap.
     const std::vector<Structure> structures{
         {{routing("sendToAll")}, {gameBoy(1, lsdj("midiSync")), nes(2, {kNesMidi, kRisa})}},
         {{routing("sendToAll"), launchpad("system", 1, "bar")}, {gameBoy(1, lsdj("midiMap")), nes(2, {kNesMidi, kRisa}), gameBoy(3, kMgb)}},
         {{routing("oneChannelPerInstance")}, {gameBoy(3, kMgb)}},
         {{routing("sendToAll")}, {}},
     };
-    KernelRig rig(structures[0]);
+    KernelRig rig(TestType::graph, structures[0]);
     rig.setAudioThreadOwns(true);
     std::atomic<bool> running{true};
     std::thread audio([&] {
@@ -739,7 +1005,9 @@ TEST_CASE("the kernel node reshapes under a running audio thread, its instance k
     audio.join();
     rig.setAudioThreadOwns(false);
     CHECK(refused < 200);
-    CHECK(rig.host->node("kernel") == rig.kernel);
-    CHECK(rig.scripts.liveInstances() == 1);
+    // Quiescent again: the last structure planned once more, so every node it places keeps the instance it has and the
+    // instances live are those nodes', and the node every structure places has kept the one the first plan made.
+    rig.restructure(rig.structure);
+    CHECK(rig.host->node(rig.keptId) == rig.kept);
     rig.finish();
 }
