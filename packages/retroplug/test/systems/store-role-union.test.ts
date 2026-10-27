@@ -22,6 +22,7 @@ import { registerDspRoles } from "../../src/dspRoles";
 import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
 import { buildAppRegistry } from "../../src/appHost";
+import { warned } from "../_warnings";
 import { gbRom, lsdjRom, blipToasterRom, smsggdjRom } from "./fixtures";
 
 function newStore() {
@@ -155,18 +156,6 @@ test("the smsggdj case that prompted this: a mesen-only project gains sms-sync",
 // whole document for one node's settings. So adopt parses each such stored config by its role's schema, as an edit
 // and a fresh system's defaults already are; the core's config role and the roles with no node never reach a node,
 // and keep what the file says.
-
-// What `fn` logged as warnings, and its result.
-function warned<T>(fn: () => T): { result: T; warnings: string[] } {
-  const warnings: string[] = [];
-  const warn = console.warn;
-  console.warn = (...args: unknown[]) => warnings.push(args.map(String).join(" "));
-  try {
-    return { result: fn(), warnings };
-  } finally {
-    console.warn = warn;
-  }
-}
 
 test("a stored role with a protocol node is parsed by its schema; the core's role and one with no node stay as written", () => {
   const { be, store } = newStore();

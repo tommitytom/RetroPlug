@@ -11,7 +11,6 @@ import { ProjectStore } from "../../src/projectStore";
 import { RecentStore } from "../../src/recentStore";
 import { SystemsStore } from "../../src/systemsStore";
 import { DirectGraph } from "../../src/graph/directGraph";
-import type { LeftOutRole } from "../../src/graph/protocolNodes";
 import { buildGraph, type HostShape } from "../../src/graph/buildGraph";
 import { toGraphJson, type GraphDocument } from "../../src/graph/graphDocument";
 import { canonicalJson } from "../../src/graph/canonicalJson";
@@ -21,14 +20,15 @@ import type { RoleInstance } from "../../src/systemRoles";
 import type { EngineGraph } from "../../src/engineGraph";
 import type { ConstructSpec, SetGraphResult } from "../../src/backend";
 import { z, clampedInt } from "../../src/configSchema";
-import { midiRouteNode } from "../../src/script/nodes/midiRoute";
-import { controllerSessionNode } from "../../src/script/nodes/controllerSession";
-import { mgbMidiNode } from "../../src/script/nodes/mgbMidi";
-import { n8MidiToFifoNode } from "../../src/script/nodes/n8MidiToFifo";
-import { risaSyncNode } from "../../src/script/nodes/risaSync";
-import { smsSyncNode } from "../../src/script/nodes/smsSync";
+import type { DefinedNode } from "../../src/graph/defineNode";
+import { ROLE_NODES, type LeftOutRole } from "../../src/graph/protocolNodes";
+import { SCRIPT_NODES_GLOBAL } from "../../src/script/register";
 import { lsdjSyncNode } from "../../src/script/nodes/lsdjSync";
-import { blipToasterRom, gbRom, lsdjRom, nesRom } from "./fixtures";
+// The production bundle's entry point: importing it registers its node types on SCRIPT_NODES_GLOBAL, as it does in each
+// of the script host's contexts.
+import "../../src/script/bundle";
+import { warned } from "../_warnings";
+import { blipToasterRom, gbRom, lsdjRom, nesRom, smsggdjRom } from "./fixtures";
 
 function project() {
   const be = new MockBackend("/cfg");
@@ -491,21 +491,31 @@ test("a systems store without a registry places the same protocol nodes, and an 
   expect(be.graphNode(`sys-${id}/lsdj-sync`)?.settings).toEqual({ mode: LsdjSyncMode.MidiOut });
 });
 
-// The script node types a document places, by type, each with the settings check the engine's script host runs.
-const SCRIPT_NODES: Record<string, { parseSettings(raw: unknown): unknown }> = Object.fromEntries(
-  [midiRouteNode, controllerSessionNode, mgbMidiNode, n8MidiToFifoNode, risaSyncNode, smsSyncNode, lsdjSyncNode].map(
-    (d) => [d.id, d],
-  ),
+// The script node types the engine registers, read from the bundle, each with the settings check its script host runs.
+const SCRIPT_NODES = new Map(
+  ((globalThis as Record<string, unknown>)[SCRIPT_NODES_GLOBAL] as DefinedNode<any>[]).map((d) => [d.id, d]),
 );
+// The C++ node types buildGraph places. A type in neither this nor the bundle is one the engine registers nowhere.
+const NATIVE_TYPES = new Set([
+  "rp.host.midi-in", "rp.host.controller-in", "rp.host.midi-out", "rp.host.controller-out", "rp.host.audio-out",
+  "rp.core.split", "rp.core.add", "rp.n8.cart-mirror", "rp.sameboy.gb", "rp.mesen.nes", "rp.mesen.gba", "rp.mesen.sms",
+]);
 
-// What the engine's planner would refuse `doc` for, of the two refusals a loaded project's roles can earn it: a script
-// node's settings its type refuses (settings-invalid), and a second producer wired into one input (input-taken).
-// Either refuses the whole document. Empty when neither applies.
+// What the engine's planner would refuse `doc` for, of the refusals a document TS builds can earn it: a node id used
+// twice (node-id), a type nothing registers (unknown-type), a script node's settings its type refuses
+// (settings-invalid), and a second producer wired into one input (input-taken). Any of them refuses the whole
+// document. Empty when none applies. It fails closed: a type it does not know is a refusal, not a pass.
 function refusals(doc: GraphDocument): string[] {
   const out: string[] = [];
+  const ids = new Set<string>();
   for (const n of doc.nodes) {
-    const def = SCRIPT_NODES[n.type];
-    if (!def) continue;
+    if (ids.has(n.id)) out.push(`node-id ${n.id}`);
+    ids.add(n.id);
+    const def = SCRIPT_NODES.get(n.type);
+    if (!def) {
+      if (!NATIVE_TYPES.has(n.type)) out.push(`unknown-type ${n.id}`);
+      continue;
+    }
     try {
       def.parseSettings(n.settings);
     } catch (e) {
@@ -520,17 +530,60 @@ function refusals(doc: GraphDocument): string[] {
   return out;
 }
 
-// What `fn` logged as warnings, and its result.
-function warned<T>(fn: () => T): { result: T; warnings: string[] } {
-  const warnings: string[] = [];
-  const warn = console.warn;
-  console.warn = (...args: unknown[]) => warnings.push(args.map(String).join(" "));
-  try {
-    return { result: fn(), warnings };
-  } finally {
-    console.warn = warn;
+test("the refusals check refuses what the planner would: a type nothing registers, an id twice, an input fed twice", () => {
+  // It fails closed, so a node type buildGraph starts placing is named here before a document of it is called sound.
+  const doc = (nodes: GraphDocument["nodes"], wires: GraphDocument["wires"] = []): GraphDocument => ({ nodes, wires });
+  expect(refusals(doc([{ id: "x", type: "rp.no.such-type" }]))).toEqual(["unknown-type x"]);
+  const twice = doc([{ id: "sys-1", type: "rp.sameboy.gb" }, { id: "sys-1", type: "rp.sameboy.gb" }]);
+  expect(refusals(twice)).toEqual(["node-id sys-1"]);
+  const fed = [{ from: "a/mgb.serialIn", to: "sys-1.serialIn" }, { from: "b/mgb.serialIn", to: "sys-1.serialIn" }];
+  expect(refusals(doc([{ id: "sys-1", type: "rp.sameboy.gb" }], fed))).toEqual(["input-taken sys-1.serialIn"]);
+  const bad = refusals(doc([{ id: "s", type: "rp.lsdj.sync", settings: { mode: "midiSyncTurbo" } }]));
+  expect(bad.length === 1 && bad[0].startsWith("settings-invalid s:")).toBe(true);
+});
+
+// Stored configs a load can hand a protocol role: every field missing, unknown enum values, integers out of range or
+// not whole, wrong types, nulls, nested values, a key no schema reads, and not an object at all.
+const ADVERSARIAL: unknown[] = [
+  {},
+  { mode: "midiSyncTurbo", machine: "md" },
+  { tempoDivisor: 99 },
+  { tempoDivisor: -3 },
+  { tempoDivisor: 2.5 },
+  { tempoDivisor: Number.NaN },
+  { mode: 7, tempoDivisor: "4", autoStart: "yes", machine: 1 },
+  { mode: null, tempoDivisor: null, autoStart: null, machine: null },
+  { mode: ["midiOut"], tempoDivisor: { n: 2 }, machine: { gg: true } },
+  { mode: "midiOut", machine: "gg", futureKnob: 3 },
+  [],
+];
+
+test("whatever a loaded project stores for a protocol role, the store hands its node settings the node accepts", () => {
+  // What a load's repair rests on: each role's schema, and the fallback when it refuses, yield settings its node's
+  // strict schema takes, for every kind with a protocol node. A kind added to the table without a cart here fails.
+  const { be, sys } = project();
+  be.seed("/roms/smsggdj.sms", smsggdjRom());
+  const carts: Record<string, { romPath?: string; embeddedRom?: string }> = {
+    mgb: { embeddedRom: "mgb" },
+    "nes-n8-midi": { romPath: "/roms/c.nes" },
+    "risa-sync": { romPath: "/roms/c.nes" },
+    "sms-sync": { romPath: "/roms/smsggdj.sms" },
+    "lsdj-sync": { romPath: "/roms/lsdj.gb" },
+  };
+  expect(Object.keys(carts).sort()).toEqual(Object.keys(ROLE_NODES).sort());
+  for (const [kind, cart] of Object.entries(carts)) {
+    for (const config of ADVERSARIAL) {
+      const what = `${kind} ${JSON.stringify(config)}`;
+      const roles = [{ kind, config: config as Record<string, unknown> }];
+      const id = warned(() => sys.adopt({ ...cart, roles })).result;
+      expect(id !== null, what).toBe(true);
+      const node = be.graphNode(`sys-${id}/${kind}`);
+      expect(node?.type, what).toBe(ROLE_NODES[kind]);
+      expect(refusals(be.lastDocument()!), what).toEqual([]);
+      sys.removeSystem(id!);
+    }
   }
-}
+});
 
 // A thin project file at `path`, stamped `version`, holding one system: the LSDj cart with `roles`.
 function seedLsdjProject(be: MockBackend, path: string, roles: RoleInstance[], version = "4"): void {
