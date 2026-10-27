@@ -1,5 +1,5 @@
 // backend.stageSystemMidi — control MIDI aimed at ONE system, delivered straight to its ingress and NEVER
-// through the routing kernel.
+// through the routing node.
 //
 // The bypass IS the feature, so that is what this proves rather than mere delivery. Two identical BlipToaster
 // carts boot side by side; a theme CC goes to the first only; the first's screen changes and the second's does

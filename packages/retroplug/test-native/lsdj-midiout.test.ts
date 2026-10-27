@@ -1,8 +1,8 @@
 // Arduinoboy MIDIOUT (MI.OUT / "Arduinoboy Master", mode 7) — the full end-to-end functional proof on a
 // real LSDj core. A song authored with SYNC=MI.OUT + N (NoteOn) commands, once playing, emits the
 // Arduinoboy protocol on LSDj's serial-out port; native captures those raw bytes (armed via
-// setSerialOutCapture) and feeds them to the DSP kernel, where the mode-7 decoder strips the flag-gated
-// framing + decodes the byte protocol into host MIDI (emitMidiOut). We drain that MIDI and assert a
+// setSerialOutCapture) and feeds them to the lsdj-sync node, where the mode-7 decoder strips the flag-gated
+// framing + decodes the byte protocol into host MIDI (its midiOut port). We drain that MIDI and assert a
 // transport START (0xFA), a clock stream (0xF8), and NoteOns (0x9x).
 //
 // This is the reversal of the old "MI.OUT is unreachable headlessly" folklore (docs/lsdj.md): SYNC=MI.OUT

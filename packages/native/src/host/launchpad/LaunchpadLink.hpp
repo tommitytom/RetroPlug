@@ -27,8 +27,8 @@ public:
 
 // Host-side link to a control surface (a Novation Launchpad) on its own in/out pair, kept out of the shared
 // musical MIDI stream. Pad presses arrive on the backend's callback thread and are drained by the audio
-// thread into the Engine's `controllerIn`; LED traffic the kernel produced during processBlock is pushed by
-// the audio thread and written out by the host's MAIN loop.
+// thread into the Engine's `controllerIn`; LED traffic the controller session produced during processBlock is
+// pushed by the audio thread and written out by the host's MAIN loop.
 //
 // Three decisions worth knowing before touching anything here:
 //

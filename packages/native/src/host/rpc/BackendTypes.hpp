@@ -61,8 +61,9 @@ struct AudioCaptured { double energy; std::uint64_t frames; };
 // concurrent FrameBufferTriple, so it is safe to fetch while the audio thread renders.
 struct RpcFrame { std::uint32_t width; std::uint32_t height; bool published; rfl::Bytestring data; };
 
-// One MIDI-out message a system's DSP kernel emitted (LSDj MI.OUT decoder → emitMidiOut). `data` is the
-// raw MIDI bytes (msgpack BIN -> JS Uint8Array). Accumulated across a renderAudio loop and returned by
+// One host MIDI-out message, under the system whose node sent it (an LSDj sync node's MI.OUT or master-sync
+// decoder, or the controller session driving a real Game Boy). `data` is the raw MIDI bytes (msgpack BIN -> JS
+// Uint8Array). Accumulated across a renderAudio loop and returned by
 // drainMidiOut for headless tests — the plugin drains Engine::midiOut() to the DAW directly instead.
 struct RpcMidiOut { std::uint32_t system; std::uint32_t frame; rfl::Bytestring data; };
 
@@ -80,7 +81,7 @@ struct RpcRenderBlock {
     std::optional<double>                  ppq;         // a locate
 };
 struct RpcRenderBlocksRequest { std::uint32_t outputs; std::vector<RpcRenderBlock> blocks; };
-// The kernel's MIDI out, tagged with the block (index into the request) it was emitted in.
+// The host MIDI out, tagged with the block (index into the request) it was emitted in.
 struct RpcBlockMidiOut { std::uint32_t block; std::uint32_t system; std::uint32_t frame; rfl::Bytestring data; };
 // `error` is empty on success; otherwise it says why the request was refused and nothing was rendered.
 // `lanes` are planar f32, one per output, each the whole run long.

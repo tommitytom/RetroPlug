@@ -80,9 +80,9 @@ test("refused settings say which field and why, in one line a planner error can 
   expect(message.includes("\n")).toBe(false);
 });
 
-// The kernel node's settings are zod's until it goes (docs/modular-graph-phase-b3b-design.md section 7), so defineNode
-// still takes a zod schema, which has the same safeParse and toJSONSchema; and a zod field can lack a default, which
-// an `s` one cannot.
+// defineNode still takes a zod schema, which has the same safeParse and toJSONSchema: no production node has used one
+// since B3b took zod out of the script-node bundle, but a node author outside it may. And a zod field can lack a
+// default, which an `s` one cannot.
 test("a zod schema serves as settings too, and every field needs a default", () => {
   const n = defineNode({
     id: "rp.test.zod",

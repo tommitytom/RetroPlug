@@ -1,7 +1,7 @@
 // The host's MIDI fanned out to the systems (what the DSP kernel's `midi-routing` stage ran until B3b, as a script node):
 // one output a system, named by its id, in slot order, since the modes but send-to-all route by a channel's position
 // among them. Each message goes to its systems at its own frame, in the order it came, by routeTarget's arithmetic
-// (midiRouting.ts), the decision the kernel's routeBlockInto makes; MidiChannelToInstance's target takes a copy with
+// (midiRouting.ts), the decision the kernel's routeBlockInto made; MidiChannelToInstance's target takes a copy with
 // the channel rewritten to 0.
 //
 // Allocation-free: a message goes on as the view the block handed over, and a rewritten one from a 4-byte buffer

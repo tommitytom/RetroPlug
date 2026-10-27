@@ -1,6 +1,6 @@
 // The shared emulator matrix for the Node-vs-QuickJS host parity test. Unlike ops.mjs (which pokes
 // __rpcSend directly), this drives the REAL control plane: bootSession, the project/systems store,
-// the DSP kernel and the audio driver. Both hosts import the SAME built SDK bundle
+// the protocol script nodes and the audio driver. Both hosts import the SAME built SDK bundle
 // (build/cli-sdk/retroplug-cli.js), so the only difference between the two runs is the codec and the
 // JS runtime underneath.
 //

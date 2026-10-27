@@ -1,8 +1,8 @@
 // The plugin's control-plane bundle: the Phase-0 composition root (the stores), packaged for
 // a host to eval once at construct. It runs in the plugin's txiki QuickJS context (the same
 // __rpcSend-bound namespace the test host uses), composing ProjectStore/SystemsStore over the real
-// Backend (the DSP kernel is a script node every Engine has, its structure carried by the graph the
-// project publishes), then exposing a tiny C++→JS surface for project I/O:
+// Backend (the script nodes are in the bundle every Engine embeds, placed by the graph the project
+// publishes), then exposing a tiny C++→JS surface for project I/O:
 //
 //   __rp_loadProjectPath(path)  — autoload a `.rplg` from disk (reaper -renderproject seeds this)
 //   __rp_loadProjectB64(b64)    — DPF setState: load an in-memory chunk (base64 of the .rplg zip)

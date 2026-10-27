@@ -14,8 +14,9 @@
 // modes case, when master sync's stop became a silence rather than a flood (docs/lsdj-master-sync-fix-design.md). One
 // case came after the stage had gone, recorded from the kernel node alone: the controller's launches behind routed MIDI
 // and its host MIDI out ahead of the systems', two orders no earlier case sends a message through. Then, until B3b
-// deleted the kernel node (af85c139 to 6ed24696), every case ran on both, the kernel node's graph and this one, each
-// held to the same values. So a changed value is a change to what reaches a core or the host: a deliberate one is
+// deleted the kernel node (from the commit that held its recorded digests on the per-role graph too, to the flip that
+// had buildGraph place that graph), every case ran on both, the kernel node's graph and this one, each held to the same
+// values. So a changed value is a change to what reaches a core or the host: a deliberate one is
 // re-recorded from the values a failing case prints.
 //
 // A serial input is counted and hashed byte by byte, each byte as the one-byte message (its frame, flags 0, one byte)

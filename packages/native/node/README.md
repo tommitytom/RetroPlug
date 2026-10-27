@@ -16,9 +16,10 @@ Two properties of the existing design, neither of them added for this:
 1. **The TS layer has no txiki coupling.** `packages/retroplug/src` contains zero references to
    `tjs`; the only ones in the whole TS tree are `tjs.exit` in
    [cli/session.ts](../../retroplug/cli/session.ts), which a two-line shim replaces.
-2. **The DSP kernel does not run in the host runtime.** It is a script node the *native* engine runs
-   in its own embedded QuickJS, from a bundle compiled into the binary. So the kernel is already
-   host-independent and comes along for free.
+2. **The audio-thread TS does not run in the host runtime.** The protocol nodes (MIDI routing, each
+   role's sync, the controller session) are script nodes the *native* engine runs in its own embedded
+   QuickJS, from a bundle compiled into the binary. So they are already host-independent and come
+   along for free.
 
 The whole backend reaches JS through one function:
 

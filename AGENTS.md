@@ -49,7 +49,7 @@ The rules below are the parts that don't fit those.
   throwing and no message dropped (the 33-system `perSystem` ones are refused, as they must be; the wiring itself
   is `buildGraph`'s, held by `pnpm test graph` to explicit tables and to the B1 translator's goldens). A hidden
   bench times a script node per block, and the protocol nodes' plan, at 1, 64 and 512 frames
-  (`build/bin/retroplug-engine-graph-test "[bench]"`), and a profile build adds five `[profile]` cases
+  (`build/bin/retroplug-engine-graph-test "[bench]"`), and a profile build adds four `[profile]` cases
   (`tools/run-profile.sh unit`).
   `retroplug-dynparams-test` is the odd one out: it compiles DPF's format-neutral core (`DistrhoPlugin.cpp`)
   plus its OWN `DistrhoPluginInfo.h`, building no plugin format at all, to drive

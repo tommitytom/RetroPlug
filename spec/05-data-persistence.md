@@ -22,7 +22,7 @@ and **parses** it back. The model lives in
 | Type | Fields | Notes |
 |---|---|---|
 | `ProjectConfig` | `schemaVersion: string`, `name?`, `settings`, `systems[]` | The root; `schemaVersion` is a *string* (`"1"`) for historical reasons. `name` is present ONLY when the user named the project (`Project` > `Name`); the display name a nameless project shows is derived from its systems at runtime and never written (see [03-ts-layer.md](03-ts-layer.md)) |
-| `ProjectSettings` | `layout`, `midiRouting`, `audioRouting` (string enums; see [settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)), `zoom 0-6` | Three string enums + a `zoom` magnitude (`0` = inherit the user default). Native's numeric enums are recovered at the RPC/kernel boundary |
+| `ProjectSettings` | `layout`, `midiRouting`, `audioRouting` (string enums; see [settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)), `zoom 0-6` | Three string enums + a `zoom` magnitude (`0` = inherit the user default). Native's numeric enums are recovered at the RPC boundary |
 | `SystemThin` | `platform`, `romPath?`, `savPath?`, `savSuffix?`, `embeddedRom?`, `settings?`, `roles?` | One serialized system |
 
 **"Thin"** means the model carries no binary blobs (ROM/SRAM/savestate/kit
@@ -213,7 +213,7 @@ edit are folded onto the base ROM in memory by the one patcher (`applyConfigToRo
 what the menu's bake rows write out, so the image the cart runs and the image "Patch ROM in Place"
 writes cannot drift apart. The block's format is in
 [bliptoaster/rom/settings.ts](../packages/retroplug/src/bliptoaster/rom/settings.ts); feature roles
-and their construct hooks are [04-roles-dsp-kernel.md](04-roles-dsp-kernel.md).
+and their construct hooks are [04-roles-protocol-nodes.md](04-roles-protocol-nodes.md).
 
 Additive-only changes still need no step: the strict zod schemas fill a missing field from
 its `.default()` and **clamp** out-of-range scalars (an unknown string enum falls to its default)

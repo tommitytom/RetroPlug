@@ -1,7 +1,7 @@
 // The project MIDI-routing modes, over three systems whose audio lands on separate pairs (TwoPerInstance)
 // so each system's share of the MIDI shows on its own lanes. Notes go out on all 16 channels, with ties,
 // plus a SysEx (which every mode broadcasts unchanged). The last case switches mode mid-run, which is
-// the path the setMidiRouting fix made reach the kernel.
+// the path the setMidiRouting fix made reach the audio thread.
 import { runGroup, type ParityCase } from "./group";
 import { even } from "./rig";
 import { frames, mgb, mgbFile, BOOT_MS, phrase, ROMS } from "./scenes";

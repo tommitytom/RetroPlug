@@ -27,7 +27,7 @@ designing:**
 - [spec/00-overview.md](../../../spec/00-overview.md) + [01-architecture.md](../../../spec/01-architecture.md) — the whole picture (native host + TS layer + cores).
 - [spec/02-native-host.md](../../../spec/02-native-host.md) — the C++ host (Engine, systems, RPC).
 - [spec/03-ts-layer.md](../../../spec/03-ts-layer.md) — the TS layer (stores, backend, SDK).
-- [spec/04-roles-dsp-kernel.md](../../../spec/04-roles-dsp-kernel.md) — roles + the DSP kernel (per-system audio/MIDI behavior).
+- [spec/04-roles-protocol-nodes.md](../../../spec/04-roles-protocol-nodes.md) - roles + the protocol script nodes that run them (per-system audio/MIDI behavior).
 - [spec/05-data-persistence.md](../../../spec/05-data-persistence.md) — versioned JSON persistence, migrations, role-config.
 - [spec/06-build-test.md](../../../spec/06-build-test.md) — build + the headless verify loop.
 - [spec/08-profiling.md](../../../spec/08-profiling.md) / [09-cli-debugging.md](../../../spec/09-cli-debugging.md) — profiler + CLI debug surface.
@@ -55,8 +55,9 @@ codec, persistence, tests) and a good template to pattern-match against.
   `packages/native/src/system/{mesen,sameboy}/` (`SystemBase`, per-console system + roles). New emulator
   behavior for a console feature lives here.
 - **Audio / DSP** — `packages/native/src/host/{engine,dsp}/` (`Engine::processBlock`, per-system /
-  per-channel mixing, `MultiOutRouter`); the DSP kernel + roles are TS
-  (`packages/retroplug/src/{dspKernel,dspRoles,coreRoles}.ts`). Per-channel stems: spec/10. Offline render:
+  per-channel mixing, `MultiOutRouter`); roles are TS (`packages/retroplug/src/{dspRoles,coreRoles}.ts`),
+  and each audio-thread role runs as a protocol script node (`packages/retroplug/src/script/nodes/`, placed by
+  `src/graph/buildGraph.ts` from `src/graph/protocolNodes.ts`). Per-channel stems: spec/10. Offline render:
   `src/host/render` + `packages/retroplug/src/render/`.
 - **MIDI + transport** — host MIDI → `Engine::stageMidi` → the system's ingress (SameBoy serial; NES N8
   FIFO role in `system/mesen/roles/`); routing in `packages/retroplug/src/midiRouting.ts`.
@@ -87,8 +88,9 @@ codec, persistence, tests) and a good template to pattern-match against.
   `test-native` guard. reflect-cpp auto-serializes; C++ field names must equal the TS keys.
 - **Expose an existing backend method to consumers** → declare it in `cli/sdk-types.d.ts` + re-export in
   `cli/sdk.ts` (`realBackend` may already implement it — the SDK surface is hand-maintained and can lag).
-- **New per-system audio/MIDI behavior** → a role (`coreRoles`/`dspRoles`) + any role-config, wired through
-  the DSP kernel. spec/04.
+- **New per-system audio/MIDI behavior** → a role (`coreRoles`/`dspRoles`) + any role-config, and its
+  protocol script node (`src/script/nodes/`, registered in `script/bundle.ts`, its kind in
+  `graph/protocolNodes.ts`). spec/04.
 - **New emulator behavior** → the vendored core (edit `deps/mesen` directly; `deps/sameboy` via its tracked
   patch) + the wrapping system. Revert temporary instrumentation.
 - **New persisted state** → the TS persistence layer + a `migrate.ts` step if the change is breaking. spec/05.

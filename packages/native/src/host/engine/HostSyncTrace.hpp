@@ -10,7 +10,7 @@
 #include <thread>
 #include <vector>
 
-// Per-block trace of what the HOST reports and what the DSP kernel emits to a core's byte device.
+// Per-block trace of what the HOST reports and what the protocol nodes send a core's byte device.
 // Opt-in via an env var, inert otherwise:
 //
 //   RETROPLUG_SYNC_TRACE=/tmp/risa-sync.log
@@ -19,7 +19,7 @@
 // landing off-grid in Renoise, say) and can't be reproduced with the test harness's clean transport.
 // It records BOTH halves of the seam, because either can be the culprit: the host's transport/ppq
 // (does the DAW rewind? does ppq jump? does the transport flag drop at all?) and the bytes the
-// risa-sync role derived from it (is the arm packet where we think, is the clock stream continuous?).
+// risa sync node derived from it (is the arm packet where we think, is the clock stream continuous?).
 // A block's bytes are recorded as they reach the cores: those a system node's `bytes` input feeds
 // (rp.engine.sync-trace/1), as each node runs, so across systems they are in plan order, one system's bytes after
 // another's (the kernel stage the kernel node replaced recorded the bytes it pushed in its emission order). Each byte

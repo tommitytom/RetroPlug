@@ -1,7 +1,8 @@
-// LSDj's sync (the `lsdj-sync` role's DSP behaviour, dspRoles.ts, as a script node): each block, the configured mode of
-// LsdjSyncMode, the role's glue around the protocol's pure parts ported line for line. Its scratch is the role's one
-// scratch bag, kept on the instance, so a mode change keeps what the role kept, and master sync's sub-object is dropped
-// outside that mode as the role dropped it.
+// LSDj's sync (the `lsdj-sync` role's audio-thread work; dspRoles.ts registers the role, and buildGraph places this
+// node for it): each block, the configured mode of LsdjSyncMode, the glue the role ran around the protocol's pure
+// parts under the DSP kernel, ported line for line. Its scratch is the role's one scratch bag, kept on the instance,
+// so a mode change keeps what the role kept, and master sync's sub-object is dropped outside that mode as the role
+// dropped it.
 //
 // What the modes read: the routed MIDI on `midi`, then the controller's launches on `launches`, as ONE inbox in that
 // order, the order the kernel's inbox held them in (its launches appended at frame 0 after the routed events, so a

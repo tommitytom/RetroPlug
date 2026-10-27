@@ -20,7 +20,7 @@ function headerWithTitle(title: string): Uint8Array {
 function registry(): RoleRegistry {
   const reg = new RoleRegistry();
   registerCoreRoles(reg); // sameboy system role
-  registerDspRoles(reg); // mgb / lsdj-sync / midi-routing role types (schemas)
+  registerDspRoles(reg); // mgb / nes-n8-midi / risa-sync / sms-sync / lsdj-sync role types (schemas)
   registerLsdjAssetsRole(reg); // lsdj-assets role type (schema)
   registerRomProviders(reg); // the providers under test
   return reg;

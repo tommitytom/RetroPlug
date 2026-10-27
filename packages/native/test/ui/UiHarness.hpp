@@ -6,7 +6,7 @@
 // backend service graph: it mounts the host + emulator facets as `__rpcSend` on
 // globalThis[Symbol.for("plugin")] — the exact namespace realBackend.ts targets — then evals the
 // UI bundle and mounts React. This is the plugin's control-plane bring-up
-// (PluginDSP::bootControlPlane) minus the audio thread + DSP kernel, plus a display.
+// (PluginDSP::bootControlPlane) minus the audio thread (so no block, and no script node, ever runs), plus a display.
 //
 // The bind is synchronous (the reply is materialized inline in __rpcSend) to match realBackend.ts's
 // synchronous JSON-RPC client — no async "rpc-message"/pumpAsync path.
@@ -52,8 +52,8 @@ private:
 
     RenderCore core_;   // owns the LVGL engine + JS context; first so it outlives the RPC server
 
-    // The backend service graph (host + emulator only — the UI never drives the DSP kernel, audio-render
-    // harness, debugger, or background thread). Declaration order is load-bearing.
+    // The backend service graph (host + emulator only - the UI never drives the audio-render harness,
+    // debugger, or background thread). Declaration order is load-bearing.
     Engine           engine_;
     SystemFactory    factory_;
     QueuedInvoker    invoker_{engine_};

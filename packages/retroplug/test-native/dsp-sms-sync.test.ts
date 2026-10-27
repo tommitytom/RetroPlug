@@ -1,4 +1,4 @@
-// The TS `sms-sync` role, running IN the real DSP kernel, is the SOLE clock for a real smsggdj core.
+// The TS `sms-sync` role, running as its script node in the real engine, is the SOLE clock for a real smsggdj core.
 // The Master System counterpart of dsp-risa-sync / dsp-lsdj-midisync, and the end-to-end proof that
 // the controller-port transport lands: nothing here fakes the transport shape, so the ROM's own
 // `sync_in_delta` path has to recover a clock from levels held on port 2 exactly as GGSYNC.md says.
@@ -204,7 +204,7 @@ for (const m of MACHINES) {
     console.log(`[dsp-sms-sync ${m.machine}] guardB neg=${neg.toFixed(5)}/${negRows}rows pos=${pos.toFixed(5)}/${posRows}rows`);
     expect(negRows).toBe(0); // armed, transport running, unclocked -> the sequencer never moves
     expect(neg < 0.001).toBeTruthy(); // and it is silent
-    expect(pos > 0.001).toBeTruthy(); // the kernel's level stream advances smsggdj -> audible
+    expect(pos > 0.001).toBeTruthy(); // the node's level stream advances smsggdj -> audible
     expect(Math.abs(posRows - 24) <= 2).toBeTruthy(); // ~24 rows: one clock stream at the DAW's tempo
     expect(syncState(be, id)?.wait).toBe(0); // WAIT -> PLAY, flipped by the role's first clock
     expect(graph.remove(id)).toBeTruthy();

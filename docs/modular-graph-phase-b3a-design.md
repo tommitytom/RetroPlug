@@ -2,7 +2,8 @@
 
 **Date:** 2026-10-25 · **Branch:** `feature/modularize` · **Status:** built (5002c4b4 to 1ed9a283, then the branch
 review's cleanup, §8); the LSDj master-sync fix landed after it ([lsdj-master-sync-fix-design.md](lsdj-master-sync-fix-design.md),
-§10); B3b not yet built.
+§10); B3b is built too ([modular-graph-phase-b3b-design.md](modular-graph-phase-b3b-design.md)), so the kernel node
+this document describes is gone: what follows is the record of B3a.
 
 Phase B of [modular-graph-design.md](modular-graph-design.md) moves the engine onto the graph in steps,
 each held bit for bit to the B0 parity baseline ([modular-graph-phase-b0-design.md](modular-graph-phase-b0-design.md)).
@@ -77,7 +78,8 @@ the shim and its record. The JS instance behind it lives in the script host:
   quiescent operation which released some (the Engine's after every `setGraph`, one collection however many went),
   and the audio thread handing the runtime back. While an audio thread owns the runtime, those cycles wait for
   QuickJS's own threshold collection, inside whichever block's JS allocates past it. The first reclaim after the
-  bundle's load collects what the load left in cycles too (about 144 KiB of the production bundle's).
+  bundle's load collects what the load left in cycles too (about 144 KiB of the production bundle's in B3a; the
+  zod-free bundle B3b built leaves none).
 
 So the audio runtime runs on one thread at a time, as it did (the control-side runtime runs on the planning thread,
 §2.2). Creating an instance allocates in QuickJS on the block thread, as the old `SetSystems` command, applied on the
@@ -232,7 +234,7 @@ with no boot call, and the boot-time `dsp.loadKernel(dsp.compileScript(__DSP_KER
 every document naming one is refused (`unknown-type`), and the Engine logs why.
 
 The bundle is about 660 KB and still carries zod (about 567 KB of it, by esbuild's metafile) through the kernel
-node's settings schema and `dspRoles.ts`; B3b removes it. Both runtimes load it, which costs memory and construction
+node's settings schema and `dspRoles.ts`; B3b removed it (78 KB, no zod). Both runtimes load it, which costs memory and construction
 time, not per-block time: making a script host and loading the bundle into it takes about 11 ms in a Release build
 (the engine-graph case that does just that).
 
@@ -326,7 +328,7 @@ The capacity is fixed, so the feedback wire from it keeps its front across every
 | Node | Ports | Replaces |
 |---|---|---|
 | `rp.host.midi-in` | out `midi` (events; 2048 messages, 64 KiB) | `pendingMidi_` handed to the kernel |
-| `rp.host.midi-out` | in `midi` (events) | `DspRuntime::midiOut_`; feeds `Engine::midiOut()` |
+| `rp.host.midi-out` | in `midi` (events); since B3b, `in1` to `inN`, each input's system from its settings ([B3b §5](modular-graph-phase-b3b-design.md)) | `DspRuntime::midiOut_`; feeds `Engine::midiOut()` |
 | `rp.host.controller-in` | out `midi` (events; 1024 messages, 16 KiB), out `connected` (control) | `pendingControllerMidi_` and the per-block `controllerConnected` flag handed to the kernel |
 | `rp.host.controller-out` | in `midi` (events) | `DspRuntime::controllerOut_`; feeds `Engine::controllerOut()` |
 
@@ -341,7 +343,7 @@ was staged for a block too long to run. An input node takes everything staged wh
 `Engine::setGraph` refuses a document with a second `rp.host.midi-in` or `rp.host.controller-in`. The output nodes
 append to the buffers the plugin, the SDL host and `drainMidiOut` read, which the engine clears at the top of each
 block; `rp.host.midi-out` drops a message too short to carry its system prefix (§4.4), counted in
-`Engine::droppedMessages`.
+`Engine::droppedMessages` (until B3b, which took the system from the wiring and the prefix and that count with it).
 
 `controllerConnected` is a control value. `rp.host.controller-in` writes a change at frame 0 on the block the flag
 flips, since a node cannot set an output's start (the start is the last block's end), so a reader takes the start and
@@ -559,8 +561,9 @@ What stayed: `ScriptCompiler` (the native tests compile toy nodes with it), `Dsp
 (now in `ScriptHost.hpp`, which TS mirrors), `DspKernel.setSystems` in TS until B3b, and the `dsp*` profiling and
 trace RPC names `dsp-bench`, `nes-bench` and `tools/run-profile.sh` use. The script host took over the runtime's
 profiling: a profile build's allocation window per Engine block, auto-GC pinning, a timed collection, and the trace
-window, in which every script node's `process` is a `dsp-kernel` span; resetting either window and the GC pass refuse
-while an audio thread owns the runtime, and the trace reads return nothing then (spec/08 has the detail).
+window, in which every script node's `process` is a `dsp-kernel` span (since B3b, a span named by the node's type);
+resetting either window and the GC pass refuse while an audio thread owns the runtime, and the trace reads return
+nothing then (spec/08 has the detail).
 
 ## 6. Block size
 
@@ -639,7 +642,8 @@ behaviour. `nes-core-bytes` sends a 60 KiB SysEx and requires it to reach the NE
   time, once counted and twice faulted; a second load and a bundle that differs between the runtimes refused; two
   Engines on two threads; and ThreadSanitizer runs a plan's script nodes on an audio thread while the control thread
   plans, reshapes, rebuilds and reclaims them. A profile build adds five `[profile]` cases on the trace window and the
-  calls it refuses while an audio thread runs (spec/08).
+  calls it refuses while an audio thread runs (spec/08; four since B3b removed the span globals the kernel's roles
+  used).
 - The kernel node (`KernelNode.test.cpp`, since B3b [ProtocolNodes.test.cpp](../packages/native/test/engine-graph/ProtocolNodes.test.cpp)), in a plan with the
   host I/O nodes: host MIDI under every routing, every LSDj sync mode, risa and smsggdj host sync, a controller
   session, state across structure changes (survivors go on, a removed id is pruned), a throw, a block that fills
@@ -724,6 +728,12 @@ executed task by task with review, each task's review fixes following its commit
     sanitizers and the consumer suites.
 
 ## 9. Left for B3b
+
+B3b built what follows ([modular-graph-phase-b3b-design.md](modular-graph-phase-b3b-design.md)): one protocol node
+per role, `kernelProjection` in `buildGraph`, a bundle with no zod, the kernel deleted, and the system prefix gone
+with it. No merge was needed, since no two roles of a system write one input; a Game Boy's `serialOut` is wired
+only into its `rp.lsdj.sync` node; and the planner keeps document order, so the `apu-render` span stood. The list
+is kept as it was written.
 
 The bench (§7.4) settles how B3b is cut: one node per role is affordable at 1-frame blocks, and batching is not
 needed.
@@ -836,7 +846,8 @@ Before B3b started, the LSDj master-sync fix landed on its own (§10).
   queue, so a capacity on an input only read as if it did something; both parsers and the C++ layer refuse one now.
   Each port may declare about 32 MiB, so a plan's queues are held to a 64 MiB budget (§2.6).
 - **The bundle's load left about 144 KiB of cycles** in the audio runtime, waiting for QuickJS's threshold collection
-  inside a block (45bb10c6); the first quiescent reclaim collects them now (§2.1).
+  inside a block (45bb10c6); the first quiescent reclaim collects them now (§2.1). B3b's zod-free bundle leaves
+  none.
 - **A failed write in a marshal fill was swallowed.** `fillMessages` and `fillControl` ignored what each
   `JS_SetProperty` returned, so a setter a node hung on a message (or a message it froze) left an exception pending
   while `messages()` returned: the throw went uncounted, and stayed pending for whatever asked QuickJS next. A failed

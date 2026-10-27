@@ -7,7 +7,7 @@
 //
 // Uses `adopt` (not loadRom): the mesen role's channelExportMode arms capture at CONSTRUCT (onActivate);
 // setRoleConfig is the live path and would not engage it. adopt publishes the graph, the system's
-// kernel pipeline with it, as ProjectStore.load's one publish does after its adopts.
+// protocol nodes in it, as ProjectStore.load's one publish does after its adopts.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";

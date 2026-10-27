@@ -1,7 +1,7 @@
 // The single source of truth for every string-valued enum setting in a project. Each enum is an
 // index-ordered value tuple whose position EQUALS the native enum integer — the tuple feeds
 // `z.enum(...)` (configSchema.enumField), indexes the menu cyclers' display-name arrays, and drives
-// the string<->int conversion at the native/kernel boundary. TS carries the strings everywhere;
+// the string<->int conversion at the native boundary. TS carries the strings everywhere;
 // native (the reflect-cpp role structs) stays numeric, so the boundary encoder here
 // (`roleConfigForNative`) maps back to the ints native decodes.
 //

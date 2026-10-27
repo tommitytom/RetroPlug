@@ -53,7 +53,7 @@ retroplug_add_test_binary(
 retroplug_add_test_binary(
     NAME     retroplug-audio-test
     SOURCES  test/audio/SameBoyStems.test.cpp
-             test/audio/EngineCartMirror.test.cpp      # what a physical N8 is fed: the first NES system's kernel output
+             test/audio/EngineCartMirror.test.cpp      # what a physical N8 is fed: the first NES system's protocol output
              test/audio/EngineSampleRate.test.cpp      # host sample-rate change re-rates live cores
              test/audio/SameBoySerialTiming.test.cpp   # host MIDI-in keeps its intra-block sample offset over serial
              test/audio/NesApuLatency.test.cpp         # runtime NES APU flush window (live apuLatencyMs knob)

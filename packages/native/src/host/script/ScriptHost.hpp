@@ -115,8 +115,8 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // Both runtimes' JS stacks are held to kStackBytes, under the smallest thread that may enter one: 512 KiB is a macOS
 // secondary thread's default, which a DAW's audio or control thread may have and a render job's std::thread does
 // (no host here sizes its threads), so 256 KiB leaves the caller's frames half. Loading the production bundle needs
-// 4 KiB of it; the test bundle with its toys, planned (zod's parse, refusal and JSON schema), 40 KiB, 64 under
-// TSan and 96 under ASan.
+// 4 KiB of it; the test bundle with its toys, planned (their settings' parse, refusal and JSON schema, measured while
+// those were zod's, before B3b), 40 KiB, 64 under TSan and 96 under ASan.
 //
 // Every call into the audio runtime from the block thread is held to a deadline (setCallDeadline) of the calling
 // thread's CPU time, so a stall that is not the node's (preemption, a stopped process, a debugger or a VM pause) never
@@ -172,8 +172,8 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 //
 // Settings reach the audio side as their JSON form: the control side's parseSettings checks them, and what it
 // returns crosses as JSON (the two runtimes share no value), so a transform's result that JSON cannot hold (a Map, a
-// Date, undefined) arrives as JSON spells it. The audio side never runs the schema: it needs no zod (which B3b takes
-// out of the bundle) and does no validation work at a swap.
+// Date, undefined) arrives as JSON spells it. The audio side never runs the schema, so it does no validation work at
+// a swap (and no node's schema is zod's: since B3b the bundle holds none, graph/settingsSchema.ts's instead).
 //
 // A profile build (RETROPLUG_PROFILE, spec/08-profiling.md) profiles the audio runtime: its allocator keeps the live
 // and peak heap, an allocation window counts per block, and a trace window records nested wall-time spans. Every

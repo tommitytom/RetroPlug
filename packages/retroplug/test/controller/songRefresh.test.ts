@@ -143,7 +143,7 @@ test("an edit does not dirty the project - the song lives in the cart, not the .
   stores.project.refreshControllerSong();
 
   // markDirty is what fires onChange, so counting that is the precise test: a publish must re-drive the
-  // KERNEL without touching the project's saved state. Otherwise every edit in LSDj would put an unsaved
+  // CONTROLLER NODE without touching the project's saved state. Otherwise every edit in LSDj would put an unsaved
   // asterisk on a project file whose contents did not move.
   let changes = 0;
   stores.project.setOnChange(() => void changes++);

@@ -9,8 +9,8 @@
 //   <cmd> --help                  → print that tool's detailed help (exit 0)
 //   <cmd> [args]                  → boot the control plane and run the tool
 //   <unknown>                     → error + the index (exit 2)
-// Help/version/error paths print and exit WITHOUT booting a session (bootSession compiles+loads the DSP
-// kernel — wasted work for a help print), so only a real tool run pays that cost.
+// Help/version/error paths print and exit WITHOUT booting a session (bootSession composes the backend and the
+// stores - wasted work for a help print), so only a real tool run pays that cost.
 import { hostArgs, runSession, runLongSession, exitProcess } from "./session";
 import { createHostClient } from "../src/realBackend";
 import { tools, topLevelHelp } from "./tools";

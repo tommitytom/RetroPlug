@@ -1,9 +1,9 @@
-// The flagship: the TS `lsdj-sync` role, running IN the real DSP kernel, is the SOLE advancing clock
+// The flagship: the TS `lsdj-sync` role, running as its script node in the real engine, is the SOLE advancing clock
 // for a real LSDj instance. Its MidiSync behaviour is exactly doc-06's shape — eachTick(24) ->
 // pushSerialIn(0xF8) — now authored as a plain TS role (dspRoles.ts) rather than an ad-hoc script.
 //
 // LSDj in SYNC=MIDI is a serial slave: a START press arms it ("wait for MIDI"), then the 0xF8 clock
-// advances it. The core constructs bare (no C++ roles) so nothing but the kernel clocks it. The kernel
+// advances it. The core constructs bare (no C++ roles) so nothing but the node clocks it. The graph
 // drives every system; we toggle THIS system's lsdj-sync mode: Off (0) leaves the armed LSDj
 // frozen/SILENT, MidiSync (1) makes it sing. Whole-mix RMS on a single system = that system's audio.
 import { test, expect, skip } from "../testing/harness";
@@ -49,7 +49,7 @@ test("the TS lsdj-sync role in the DSP kernel is the sole clock that makes an ar
 
   const audio = createAudioDriver();
 
-  // Real LSDj, authored SYNC=MIDI song, constructed bare (no C++ roles) so the kernel is the only clock.
+  // Real LSDj, authored SYNC=MIDI song, constructed bare (no C++ roles) so the node is the only clock.
   const sav = savFrom(SYNC_MIDI_SONG);
   const id = 1; // TS owns the id counter; this direct-backend test picks its own (fresh host per file)
   expect(graph.add({
@@ -83,6 +83,6 @@ test("the TS lsdj-sync role in the DSP kernel is the sole clock that makes an ar
 
   console.log(`[dsp-lsdj-midisync] neg=${neg.toFixed(5)} pos=${pos.toFixed(5)}`);
   expect(neg < 0.001).toBeTruthy(); // armed but unclocked -> silent
-  expect(pos > 0.001).toBeTruthy(); // the kernel's clock advances LSDj -> audible
+  expect(pos > 0.001).toBeTruthy(); // the node's clock advances LSDj -> audible
   expect(pos > neg).toBeTruthy();
 });

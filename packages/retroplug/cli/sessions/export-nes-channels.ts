@@ -23,7 +23,7 @@ runSession((s) => {
 
   // Adopt the NES with the "mesen" role in StereoModPins mode — capture engages at construct/onActivate,
   // so it MUST be set here, not live. The host-MIDI role lets a note reach the APU (the graph the adopt
-  // publishes carries it to the kernel).
+  // publishes places its protocol node).
   s.project.systems.adopt({
     romPath,
     roles: [

@@ -1,9 +1,9 @@
 // The whole chain, through the real native host: a pad press staged on the control-surface stream reaches a
 // real LSDj cart and moves it.
 //
-// test/dsp/controller-role.test.ts proves the same path in pure TS, but against the mock host - it shows the
-// kernel produces the right bytes, not that the bytes arrive. This runs the identical role over the real
-// Engine, the real DSP kernel node and a real SameBoy, and reads the answer out of the cart's WRAM. Everything
+// test/script/nodes/controller-session.test.ts proves the same path in pure TS, at the node over a stand-in
+// block - it shows the node sends the right bytes, not that the bytes arrive. This runs the session over the
+// real Engine, its real script node and a real SameBoy, and reads the answer out of the cart's WRAM. Everything
 // between the pad and the sound is genuine except the Launchpad itself.
 //
 // Run: pnpm test:native lsdj-launchpad-role

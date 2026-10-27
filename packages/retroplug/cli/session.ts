@@ -5,7 +5,7 @@
 //
 // Authored in TS, esbuild-bundled to JS (tools/build-session.js), then run on the standalone
 // retroplug-cli binary (no Node at runtime). The binary provides the Backend over
-// globalThis[Symbol.for("plugin")].__rpcSend and globalThis.tjs.exit(code), and embeds the DSP kernel.
+// globalThis[Symbol.for("plugin")].__rpcSend and globalThis.tjs.exit(code), and embeds the script nodes.
 
 // bootSession + the Session type moved to src/bootSession.ts so the background render worker shares the
 // same boot path; re-exported here so every existing importer (test-native, sdk, sessions) is unchanged.

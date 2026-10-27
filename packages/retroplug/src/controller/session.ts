@@ -42,7 +42,7 @@ export interface ControllerCtx {
   readonly ticks: number;
   readonly transport: boolean;
   readonly config: Record<string, unknown>;
-  /** Persistent scratch, scoped to this session. Same contract as a DSP role's `ctx.state`. */
+  /** Persistent scratch, scoped to this session: the contract a DSP role's `ctx.state` had under the kernel. */
   readonly state: Record<string, unknown>;
 }
 

@@ -421,7 +421,7 @@ export interface AudioDriver {
    *  example sessions call it (cli/sessions/export-{mgb,nes}-channels.ts, export-nes-mono.ts), so a
    *  consumer copying one got a type error against the very declaration they were handed. */
   renderAudioPerChannel(id: number, ms: number): Float32Array[];
-  /** Stage global host-MIDI bytes for the kernel's next render - any non-empty length: a channel message
+  /** Stage global host-MIDI bytes for the next render - any non-empty length: a channel message
    *  (fanned to systems by routing), a whole SysEx, or several messages as one run (broadcast unchanged,
    *  delivered to the N8 FIFO byte-for-byte, in order) - at `frame` inside the render's first block (0 when
    *  omitted). Staged out of frame order, messages still arrive in it (a tie in staging order). False, nothing
@@ -429,7 +429,8 @@ export interface AudioDriver {
    *  lands when that block renders at least 1024 frames (a render's first block is the lesser of 1024 frames and
    *  the whole render). */
   stageMidiIn(bytes: Uint8Array | number[], frame?: number): boolean;
-  /** Drain the MIDI-out the DSP kernel emitted since the last drain (each entry is one message). */
+  /** Drain the host MIDI out (an LSDj sync node's MI.OUT or master-sync decoder, a controller driving a real Game
+   *  Boy) since the last drain (each entry is one message). */
   drainMidiOut(): { system: number; frame: number; data: Uint8Array }[];
   /** Messages the engine's graph has dropped so far, a full queue on one of its wires each (cumulative, never
    *  reset): what a test holds to zero to know nothing it staged was lost on the way to a core. */
@@ -457,7 +458,7 @@ export interface Session {
   recent: unknown;
 }
 
-/** Stand up the control plane the way every host does (backend + stores; the DSP kernel is built into the engine).
+/** Stand up the control plane the way every host does (backend + stores; the script nodes are built into the engine).
  *  One session at a time: every session drives the process's one engine, so a new session's first edit frees the
  *  systems earlier sessions built. */
 export declare function bootSession(): Session;

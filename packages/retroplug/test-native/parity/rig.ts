@@ -74,9 +74,9 @@ export class Rig {
 
   /** Back to a known state: no systems, default project settings, the transport stopped at ppq 0 and 120
    *  bpm, `sampleRate`, nothing pending, and no ROM copies left from the last case (a leftover "-2.sav" would
-   *  be adopted by the next duplicate). The new project reshapes the kernel node, which buildGraph always
-   *  places: the structure it publishes names no system (so every system's state is pruned) and only the
-   *  default MIDI routing, which keeps no state, so a controller session's state goes with its stage. */
+   *  be adopted by the next duplicate). The new project publishes a document with no system, so every protocol
+   *  node goes with its system, and no controller, so a controller session goes too; the routing node it keeps,
+   *  reshaped to the default mode, keeps no state. */
   reset(sampleRate: number): void {
     this.project.newProject();
     const romDir = this.romDir();
@@ -185,9 +185,9 @@ export class Rig {
     return { digest: { frames: total, lanes: r.lanes.map((l) => laneDigest(l, 0, total)) }, midiOut, lanes: r.lanes };
   }
 
-  /** Every message a case staged, and every one the kernel sent, reached the node it was wired to: a full queue on
-   *  any wire of the graph counts a drop, and a case that dropped one renders what the unbounded staging the
-   *  baseline was recorded with did not. The engine's count is cumulative over the file, so a case is held to the
+  /** Every message a case staged, and every one the script nodes sent, reached the node it was wired to: a full
+   *  queue on any wire of the graph counts a drop, and a case that dropped one renders what the unbounded staging
+   *  the baseline was recorded with did not. The engine's count is cumulative over the file, so a case is held to the
    *  drops since its reset, and one case's drop fails that case alone. */
   private noneDropped(): void {
     const dropped = this.audio.droppedMessages() - this.droppedAtReset;

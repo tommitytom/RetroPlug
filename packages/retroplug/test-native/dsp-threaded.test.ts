@@ -54,7 +54,7 @@ test("the lsdj-sync role clocks LSDj on a background audio thread, toggled via t
     savPath: null,
     statePath: null,
     sramBytes: sav,
-    // Cores construct bare (no C++ roles) — the TS lsdj-sync kernel role is the sole clock.
+    // Cores construct bare (no C++ roles) - the TS lsdj-sync role's node is the sole clock.
   }, id)).toBeTruthy();
 
   expect(graph.setPipeline(id, lsdjSync("off"))).toBeTruthy(); // structure known, clock off
@@ -81,7 +81,7 @@ test("the lsdj-sync role clocks LSDj on a background audio thread, toggled via t
 
   const neg = rmsWindow(150); // lsdj-sync Off → no clock → armed LSDj frozen → silent
   expect(graph.setPipeline(id, lsdjSync("midiSync"))).toBeTruthy(); // enqueue MidiSync; applied on the audio thread
-  const pos = rmsWindow(400); // the kernel's clock now advances LSDj → audible
+  const pos = rmsWindow(400); // the node's clock now advances LSDj → audible
 
   expect(audio.stopAudio()).toBeTruthy();
 

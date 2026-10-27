@@ -36,7 +36,7 @@ struct DspCommand {
         // Host poke into a core's work RAM. Owning payload (a song block is ~7 KB, far past what the
         // union can hold inline), freed by the audio thread after applying - the rare-op pattern above.
         struct { std::uint32_t id; std::uint32_t offset; std::vector<std::uint8_t>* bytes; } writeRam;
-        // MIDI aimed at ONE system, delivered straight to its ingress and NEVER through the routing kernel.
+        // MIDI aimed at ONE system, delivered straight to its ingress and NEVER through the routing node.
         // That is the whole point: a menu knob has to reach the cart whose menu it is, whatever the project's
         // MUSICAL routing is doing with channels (sendToAll would hit every instance; midiChannelToInstance
         // rewrites the channel out from under it). `len` bytes inline when the message fits, else `ext` OWNS

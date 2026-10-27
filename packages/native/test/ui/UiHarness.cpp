@@ -43,7 +43,7 @@ bool UiHarness::boot() {
     transport_ = std::make_unique<rpcpp::QuickJSTransport>(ctx, [](JSContext*, JSValue) {});
     server_    = std::make_unique<BackendRpcServer>(*transport_, rpcpp::QuickJSCodec{ctx});
     // The UI reads getFrame + drives pressButton over RPC and its stores use the fs surface; it never
-    // touches the DSP kernel, the audio-render harness, the debugger, or the background driver.
+    // touches the audio-render harness, the debugger, or the background driver.
     registerHostRpc(*server_, host_);
     registerEmulatorRpc(*server_, engineSvc_);
     server_->addDiscoveryMethod();

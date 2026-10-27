@@ -1,7 +1,7 @@
 // The one behaviour B3a changes on purpose (docs/modular-graph-phase-b3a-design.md sections 3.4 and 7.2): host MIDI
 // staged out of frame order, as the plugin stages a block (the DAW's notes, then each moved automation slot's CC at
-// frame 0), reaches every system in frame order, because rp.host.midi-in stable-sorts what is staged before the
-// kernel reads it.
+// frame 0), reaches every system in frame order, because rp.host.midi-in stable-sorts what is staged before any
+// node reads it.
 //
 // - A Game Boy now takes the CC at the block's start, before the notes. Before B3a its serial queue, which releases
 //   only the byte at its front, took the CC's bytes after the last note's, as if the CC were at that note's frame.

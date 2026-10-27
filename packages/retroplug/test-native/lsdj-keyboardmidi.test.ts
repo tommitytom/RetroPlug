@@ -1,5 +1,5 @@
 // Final migration task #3: native KeyboardMidi coverage — a real end-to-end functional proof. The TS
-// `lsdj-sync` role in KeyboardMidi mode (5), in the real DSP kernel, turns host MIDI notes into LSDj
+// `lsdj-sync` role in KeyboardMidi mode (5), as its script node, turns host MIDI notes into LSDj
 // PS/2 keyboard scancodes and plays them LIVE on a real LSDj core, audibly.
 //
 // Getting this to work required two fixes the reference (jkotlinski/keyjazz) + the LSDj manual made

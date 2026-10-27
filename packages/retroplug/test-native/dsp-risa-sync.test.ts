@@ -1,4 +1,4 @@
-// The TS `risa-sync` role, running IN the real DSP kernel, is the SOLE clock for a real risa 2.3.0 core.
+// The TS `risa-sync` role, running as its script node in the real engine, is the SOLE clock for a real risa 2.3.0 core.
 // The counterpart of dsp-lsdj-midisync for the NES tracker, and the end-to-end proof that the 2.3.0
 // protocol lands: nothing here fakes the transport shape, so the ROM's own dormant receive path has to
 // accept the 5-byte arm, the start, and the 24-PPQN clock stream exactly as risa's doc specifies.
@@ -65,7 +65,7 @@ test("the risa-sync role in the DSP kernel is the sole clock that makes risa 2.3
 
   console.log(`[dsp-risa-sync] neg=${neg.toFixed(5)} pos=${pos.toFixed(5)}`);
   expect(neg < 0.001).toBeTruthy(); // transport running but unclocked -> silent
-  expect(pos > 0.001).toBeTruthy(); // the kernel's byte stream advances risa -> audible
+  expect(pos > 0.001).toBeTruthy(); // the node's byte stream advances risa -> audible
   expect(pos > neg).toBeTruthy();
   graph.remove(id); // a live system is emulated by every later test in this file
 });

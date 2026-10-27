@@ -89,25 +89,30 @@ The two config surfaces are distinct and easy to confuse:
 - **The `lsdj-sync` role config**: RetroPlug's own behaviour, its `mode` one of `"off"`, `"midiSync"`,
   `"midiSyncArduinoboy"`, `"midiMap"`, `"keyboard"`, `"keyboardMidi"`, `"midiPassthrough"`, `"midiOut"`,
   `"masterSync"` (`LSDJ_MODE_VALUES` in [settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts), run
-  by [dspRoles.ts](../packages/retroplug/src/dspRoles.ts)). A feature role: it is set with the store's
-  `setRoleConfig` and read by the DSP kernel, while native's `applyRoleConfig` takes only the `sameboy` and
-  `mesen` system roles (any other kind returns false).
+  by the role's protocol node, [lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts)). A feature
+  role: it is set with the store's `setRoleConfig` and handed to that node as its settings in the graph the
+  project publishes, while native's `applyRoleConfig` takes only the `sameboy` and `mesen` system roles (any
+  other kind returns false).
 
-A test that builds through a `DirectGraph` has no store, so it hands the kernel its roles itself: a
-system's DSP roles are its pipeline and the MIDI routing is a project stage, each call a publish of the
-graph that carries them to the kernel. Until a project stage routes it, no host MIDI reaches any system.
-From [lsdj-mastersync.test.ts](../packages/retroplug/test-native/lsdj-mastersync.test.ts):
+A test that builds through a `DirectGraph` has no store, so it hands the graph a system's roles and the
+MIDI routing itself, each call a publish of the graph that places their nodes. Until a routing mode is
+set, no host MIDI reaches any system. From
+[lsdj-mastersync.test.ts](../packages/retroplug/test-native/lsdj-mastersync.test.ts):
 
 ```ts
-graph.setProjectStages([{ kind: "midi-routing", config: { mode: "sendToAll" } }]); // host MIDI to every system
-graph.setPipeline(id, [{ kind: "lsdj-sync", config: { mode: "masterSync" } }]);    // what the kernel runs for `id`
+graph.setMidiRouting("sendToAll");                                                 // host MIDI to every system
+graph.setPipeline(id, [{ kind: "lsdj-sync", config: { mode: "masterSync" } }]);    // places sys-<id>/lsdj-sync, an rp.lsdj.sync
 be.setSerialOutCapture(id, "listen"); // the store sets it ("drive" for midiOut, "listen" for masterSync); a DirectGraph caller does it itself
 ```
+
+A `DirectGraph` hands each node its config as given, where a store hands the config the role's schema
+parsed, and the node fills what is missing with its own defaults (an `lsdj-sync` with no `mode` is
+MIDI sync), so spell out what the test depends on.
 
 The rest of the native-tier surface these tests use:
 `audio.renderAudioPerSystem(ms)` (per-system buffers in slot order — the thing that proves link
 sync, where a mixed buffer cannot), `audio.setTransport(bool)` / `audio.setBpm(n)` (simulated host
-transport -> the role's MIDI clock), `audio.drainMidiOut()` (the MIDI the kernel's roles sent since the
+transport -> the role's MIDI clock), `audio.drainMidiOut()` (the host MIDI the LSDj nodes sent since the
 last drain, each message with its system and frame, LSDj's MI.OUT among them, decoded from the captured
 serial out), `be.readMemory(id, region)` (WRAM/SRAM reads), and `graph.remove(id)`
 ([directGraph.ts](../packages/retroplug/src/graph/directGraph.ts)). The `audio` calls are declared in
@@ -575,8 +580,8 @@ mode selected" indicator on the aboy build. Read the SYNC field text (or the
 
 Serial-out capture is a mode the store sets from the `lsdj-sync` mode (`serialOutCaptureFor` in
 [systemsStore.ts](../packages/retroplug/src/systemsStore.ts)): `drive` for MI.OUT, `listen` for master sync.
-The captured bytes reach the DSP kernel over the Game Boy node's `serialOut` wire, each at the frame its
-core completed it, and `audio.drainMidiOut()` returns what the decoders made of them.
+The captured bytes reach the system's `rp.lsdj.sync` node over the Game Boy node's `serialOut` wire, each at
+the frame its core completed it, and `audio.drainMidiOut()` returns what the decoders made of them.
 See [lsdj-midiout.test.ts](../packages/retroplug/test-native/lsdj-midiout.test.ts),
 which authors SYNC=MI.OUT with `N` commands, plays, and asserts a transport START, a clock
 stream and NoteOns come back out as host MIDI, and

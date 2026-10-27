@@ -8,7 +8,7 @@
 //
 // The fix is the re-anchor sketched in docs/launchpad-plan.md 4.4, at the one moment it is both cheap and
 // unambiguous: the not-playing -> playing EDGE. Mid-song correction would mean streaming the cart's position
-// to the audio thread every block (that is M6, and it needs a memory seam the kernel does not have); a start
+// to the audio thread every block (that is M6, and it needs a memory seam the script nodes do not have); a start
 // edge is a rare, discrete event that fits the existing "push it as role config" path exactly.
 //
 // Emulated carts only, necessarily: on a real Game Boy there is no WRAM to read and dead reckoning is all

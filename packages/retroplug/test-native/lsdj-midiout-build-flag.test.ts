@@ -39,7 +39,7 @@ const { project, audio, backend: be } = session;
 project.systems.setBatteryFlush(false); // a remove must not write the song into the fixture ROM's .sav
 
 // Adopt the LSDj in MIDI-out mode, as a project load adopts each system, with `build` editing the spec it is built
-// from; play its song and count the NoteOns the kernel decoded from its serial out. Removed at the end.
+// from; play its song and count the NoteOns its node decoded from its serial out. Removed at the end.
 type MidiOutRun = { spec: ConstructSpec; liveArms: number; noteOns: number };
 function playMidiOut(build: (spec: ConstructSpec) => ConstructSpec): MidiOutRun {
   const buildCore = be.buildCore;

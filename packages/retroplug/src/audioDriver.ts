@@ -26,7 +26,7 @@ export interface DspAllocStats {
   maxBlockAllocBytes: number;
 }
 
-/** Result of a self-driven JS_RunGC pass. `freedBytes` ~0 proves the acyclic kernel holds no cycles. */
+/** Result of a self-driven JS_RunGC pass. `freedBytes` ~0 proves the script nodes hold no cycles. */
 export interface DspGcResult {
   enabled: boolean;
   ms: number;
@@ -106,7 +106,7 @@ export interface RenderBlock {
 export interface RenderBlocksResult {
   /** Planar f32, one per output, each the whole run long. */
   lanes: Float32Array[];
-  /** The kernel's MIDI out, tagged with the index of the block that emitted it. */
+  /** The host MIDI out, tagged with the index of the block that emitted it. */
   midiOut: { block: number; system: number; frame: number; data: Uint8Array }[];
 }
 
@@ -145,7 +145,7 @@ export interface AudioDriver {
    *  ppq accumulate, so "resume where we paused" is expressible but "rewind and play again" is not. */
   setPpq(ppq: number): boolean;
   setBpm(bpm: number): boolean;
-  /** Stage global host-MIDI bytes for the kernel's next render (consumed on its first block), at `frame` inside
+  /** Stage global host-MIDI bytes for the next render (consumed on its first block), at `frame` inside
    *  that block (0 when omitted). Any non-empty length: a channel message, a whole SysEx, or several messages as
    *  one run - the routing node fans a channel message to its system(s) and broadcasts a longer run unchanged; with
    *  no routing placed it reaches none. Messages may be staged out of frame order, as a plugin
@@ -155,12 +155,12 @@ export interface AudioDriver {
    *  frames (renderAudio's first block is the lesser of 1024 frames and the whole render); a block of
    *  `frame` frames or fewer, a renderBlocks one included, is the caller's to avoid. */
   stageMidiIn(bytes: Uint8Array | number[], frame?: number): boolean;
-  /** Stage one CONTROL-SURFACE message (a Launchpad pad press), delivered to the kernel as
+  /** Stage one CONTROL-SURFACE message (a Launchpad pad press), delivered to the controller session as
    *  `controllerIn` rather than as musical MIDI - so a headless test can drive a controller app with
    *  no controller attached. Separate from stageMidiIn because a pad press is a NoteOn, and a
    *  translator like LSDj's MidiMap would read one on the musical stream as a row launch. */
   stageControllerIn(bytes: Uint8Array | number[]): boolean;
-  /** Drain the MIDI-out the DSP kernel emitted (e.g. the LSDj MI.OUT decoder → `emitMidiOut`),
+  /** Drain the host MIDI out (e.g. an LSDj sync node's MI.OUT decoder, on its `midiOut` port),
    *  accumulated across the renderAudio blocks since the last drain. Each entry is one MIDI message
    *  with its source system + block-frame. The plugin drains this to the DAW directly; this is the
    *  headless test path. */
@@ -186,15 +186,15 @@ export interface AudioDriver {
    *  false when refused (the audio thread running) or off-profile. */
   dspRunGc(): DspGcResult;
   /** Open (arm=true) / close (arm=false) a runtime-trace window; while armed, every script node's process,
-   *  the engine's stages and the kernel's roles record nested wall-time spans. False, doing nothing, when
-   *  refused (the audio thread running: a window armed before startAudio records until stopAudio) or
-   *  off-profile. */
+   *  each labelled by its node type, and the engine's stages record nested wall-time spans. False, doing
+   *  nothing, when refused (the audio thread running: a window armed before startAudio records until
+   *  stopAudio) or off-profile. */
   dspTraceReset(arm: boolean): boolean;
   /** The recorded spans (µs, relative to the window base), nested by containment for a flame; a read leaves
    *  them, dspTraceReset clears them. Empty while the audio thread runs, and off-profile. */
   dspTrace(): DspTraceSpan[];
-  /** The span label table: `dspTraceNames()[span.label]` is the stage/role name. Empty while the audio
-   *  thread runs, and off-profile. */
+  /** The span label table: `dspTraceNames()[span.label]` is the engine stage's or the script node type's name.
+   *  Empty while the audio thread runs, and off-profile. */
   dspTraceNames(): string[];
 
   // --- background audio thread (threaded mode) ---

@@ -18,9 +18,10 @@ config / SRAM / kits) is testable with no emulator in the loop.
 
 | Dir | What |
 |---|---|
-| `src/` | The application logic. Pure TS over the `Backend` interface; no React, no DSP. |
+| `src/` | The application logic. Pure TS over the `Backend` interface; no React. |
 | `src/backend.ts` | The **single** native contract - fs bytes, atomic writes, path canonicalisation, config dir, dialogs, emulator construction, live reads. Grow it only when a feature genuinely needs the OS or a core. |
-| `src/dspRoles.ts` + `src/dspKernel.ts` | The per-block role kernel. Authored in TS, compiled to bytecode, executed on the audio thread ([spec/04](../../spec/04-roles-dsp-kernel.md)). |
+| `src/script/` | The script nodes the audio thread runs: a protocol node per role (`nodes/`; the roles themselves are registered in `src/dspRoles.ts`), the MIDI routing and the controller session, bundled, compiled to bytecode and embedded in every Engine ([spec/04](../../spec/04-roles-protocol-nodes.md)). |
+| `src/graph/` | The graph TS builds for the engine: `buildGraph`, the node contract (`defineNode`) and its zod-free settings schema, and which role is placed as which node. |
 | `ui/` | The React/LVGL UI, bundled by `tools/build-ui.js` and embedded in the plugin. |
 | `cli/` | The `retroplug-cli` session SDK, its `.d.ts`, and the TS stripper the CLI embeds ([spec/09](../../spec/09-cli-debugging.md)). |
 | `testing/` | The TAP harness (`test`, `expect`, `skip`) and `MockBackend`. |

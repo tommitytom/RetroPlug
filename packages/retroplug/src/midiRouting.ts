@@ -106,12 +106,13 @@ export function routeTarget(data: ArrayLike<number>, mode: MidiRouting, systemCo
 }
 
 /** The allocation-free hot-path twin of `routeBlock`: fan `events` into caller-owned, PRE-CLEARED
- *  positional `inboxes` (element `i` = system `i`), mutating them in place. Used per audio block by
- *  the DSP kernel, so it inlines the routing arithmetic — no per-event `routeEvent` result object, no
- *  `allTargets` array. For every mode EXCEPT MidiChannelToInstance the delivered event is the ORIGINAL
- *  `ev` reference (zero allocation), which downstream translators must treat as read-only (true today;
- *  a future transform stage rewriting `ctx.midi` would need copy-on-write here). Only the mode-3
- *  channel rewrite allocates a fresh event. `routeBlock` stays the pure reference/conformance oracle. */
+ *  positional `inboxes` (element `i` = system `i`), mutating them in place. The DSP kernel ran it per audio
+ *  block until B3b (the routing node routes with `routeTarget` now, the same arithmetic per message), so it
+ *  inlines the routing arithmetic: no per-event `routeEvent` result object, no `allTargets` array. For every
+ *  mode EXCEPT MidiChannelToInstance the delivered event is the ORIGINAL `ev` reference (zero allocation),
+ *  which a reader must treat as read-only (a transform rewriting an inbox event would need copy-on-write
+ *  here). Only the mode-3 channel rewrite allocates a fresh event. `routeBlock` stays the pure
+ *  reference/conformance oracle. */
 export function routeBlockInto(events: MidiEvent[], mode: MidiRouting, inboxes: MidiEvent[][]): void {
   const systemCount = inboxes.length;
   if (systemCount <= 0) return;

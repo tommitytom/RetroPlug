@@ -1,7 +1,7 @@
 // Port of legacy test/ts/gb/lsdj/sync_pattern.test.ts: LSDj link-cable sync, proven
 // with PER-SYSTEM audio (the new renderAudioPerSystem RPC). Two LSDj instances in the same link group,
 // both authored SYNC=LSDJ, START on the leader only. Link sync is pure GB serial ferrying over the
-// cable buildGraph wires between them (no DSP kernel needed), so the follower produces audio ONLY
+// cable buildGraph wires between them (no protocol node needed), so the follower produces audio ONLY
 // when it actually synced to the leader, and, being the same song under the same clock, its level
 // tracks the leader's. A healthy-looking two-system MIX can't show this; isolated per-system RMS can.
 // (lsdj-sync-negative.test.ts is the control: SYNC=None → the follower stays silent.)

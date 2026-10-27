@@ -281,7 +281,7 @@ rfl::Bytestring EngineRpcService::renderAudio(double ms) {
     for (std::uint64_t s = 0; s < total; s += kBlockSize) {
         const auto frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(kBlockSize, total - s));
         engine_.processBlock(frames, scratchL_.data(), scratchR_.data());
-        accumulateMidiOut();  // gather this block's kernel MIDI-out before the next block clears it
+        accumulateMidiOut();  // gather this block's host MIDI out before the next block clears it
         for (std::uint32_t f = 0; f < frames; ++f) {
             out.push_back(scratchL_[f]);  // interleave L,R,L,R…
             out.push_back(scratchR_[f]);
@@ -315,7 +315,7 @@ std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerSystem(double ms) {
     for (std::uint64_t s = 0; s < total; s += kBlockSize) {
         const auto frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(kBlockSize, total - s));
         engine_.processBlock(frames, lanes.data(), lanes.size());
-        accumulateMidiOut();  // gather this block's kernel MIDI-out before the next block clears it
+        accumulateMidiOut();  // gather this block's host MIDI out before the next block clears it
         for (std::size_t i = 0; i < n; ++i)
             for (std::uint32_t f = 0; f < frames; ++f) {
                 out[i].push_back(ls[i][f]);  // interleave L,R,L,R…
@@ -361,7 +361,7 @@ std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerChannel(std::uint32
     for (std::uint64_t s = 0; s < total; s += kBlockSize) {
         const auto frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(kBlockSize, total - s));
         engine_.processBlock(frames, lanes.data(), lanes.size());
-        accumulateMidiOut();  // gather this block's kernel MIDI-out before the next block clears it
+        accumulateMidiOut();  // gather this block's host MIDI out before the next block clears it
         for (std::size_t i = 0; i < n; ++i)
             for (std::uint32_t f = 0; f < frames; ++f) {
                 out[i].push_back(ls[i][f]);  // interleave L,R,L,R…
@@ -460,7 +460,7 @@ bool EngineRpcService::setBpm(double bpm) {
 
 bool EngineRpcService::stageMidiIn(std::vector<std::uint8_t> bytes, std::uint32_t frame) {
     // Any non-empty length: a channel message, a SysEx, or several messages staged as one run. The
-    // invoker carries the long ones as an owning payload; the kernel's routing broadcasts a run longer
+    // invoker carries the long ones as an owning payload; the routing node broadcasts a run longer
     // than one message unchanged, and a system node's midi input hands it to the core's raw byte path.
     if (bytes.empty() || frame >= kBlockSize) return false;
     invoker_.stageMidi(std::move(bytes), frame);

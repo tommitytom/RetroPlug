@@ -1,11 +1,11 @@
-// smsggdj's host sync (the `sms-sync` role's DSP behaviour, dspRoles.ts, as a script node): while the DAW plays, a
-// 2-bit counter advanced one step a 24-PPQN tick, each step a LEVEL WORD at the tick's own frame, which the system
-// holds on the sync lines until the next (smsSync.ts). `machine` picks which lines: controller port 2's TR + TH on a
-// Master System, the EXT port's PC4/PC5 + PC6 on a Game Gear. No arm, no locate, no start or stop: the ROM reads
-// deltas, and latches the lines itself when it arms.
+// smsggdj's host sync (the `sms-sync` role's audio-thread work; dspRoles.ts registers the role, and buildGraph places
+// this node for it): while the DAW plays, a 2-bit counter advanced one step a 24-PPQN tick, each step a LEVEL WORD at
+// the tick's own frame, which the system holds on the sync lines until the next (smsSync.ts). `machine` picks which
+// lines: controller port 2's TR + TH on a Master System, the EXT port's PC4/PC5 + PC6 on a Game Gear. No arm, no
+// locate, no start or stop: the ROM reads deltas, and latches the lines itself when it arms.
 //
-// The role's glue, line for line, with its counter and its system's tick counter on the instance. A block allocates
-// nothing.
+// The glue the role ran under the DSP kernel, ported line for line, with its counter and its system's tick counter on
+// the instance. A block allocates nothing.
 import { bytes, defineNode, type Block } from "../../graph/defineNode";
 import { s, type Infer } from "../../graph/settingsSchema";
 import { SMS_SYNC_COUNTER_MOD, SMS_SYNC_PPQN, syncLevelsFor } from "../../smsSync";

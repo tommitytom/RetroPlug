@@ -3,7 +3,7 @@
 // serial MASTER and streams one byte out its link port per MIDI-clock tick. Native captures those bytes
 // (setSerialOutCapture's `listen`: the internal-clock serialStart path, same serialOutLog_ MI.OUT uses, no
 // peer needed, and never `drive`, which would clock a stopped LSDj's wait for another master and turn it
-// slave) and feeds them to the DSP kernel, where the mode-8 decoder turns each byte into a 0xF8 clock (+ a
+// slave) and feeds them to the lsdj-sync node, where the mode-8 decoder turns each byte into a 0xF8 clock (+ a
 // song-row NoteOn/0xFA at run start) and a 200 ms silence into 0xFC. So the host follows LSDj's tempo. The
 // decoder times the silence on the bytes' own frames, so what it decodes must not depend on how the host cuts
 // its blocks, at either rate: the second case holds it to that.

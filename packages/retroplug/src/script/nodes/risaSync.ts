@@ -1,11 +1,12 @@
-// risa's host sync (the `risa-sync` role's DSP behaviour, dspRoles.ts, as a script node): the DAW transport into
-// risa's N8-FIFO receive path, a raw byte protocol that reuses MIDI status values (risaSync.ts). On a transport rise,
-// or a ppqStart discontinuity while playing (a seek or a loop), a fresh 5-byte arm+locate computed from ppqStart, which
-// flushes the FIFO, then START; on a fall, STOP; while playing, 24-PPQN clocks at their own frames (the FIFO has no
-// serial gate). The arm points the clock at the clock after the one it names, which risa primes itself.
+// risa's host sync (the `risa-sync` role's audio-thread work; dspRoles.ts registers the role, and buildGraph places
+// this node for it): the DAW transport into risa's N8-FIFO receive path, a raw byte protocol that reuses MIDI status
+// values (risaSync.ts). On a transport rise, or a ppqStart discontinuity while playing (a seek or a loop), a fresh
+// 5-byte arm+locate computed from ppqStart, which flushes the FIFO, then START; on a fall, STOP; while playing, 24-PPQN
+// clocks at their own frames (the FIFO has no serial gate). The arm points the clock at the clock after the one it
+// names, which risa primes itself.
 //
-// The role's glue, line for line, with its state and its system's tick counter on the instance. A block allocates
-// nothing but an arm's packet, as the role's did.
+// The glue the role ran under the DSP kernel, ported line for line, with its state and its system's tick counter on
+// the instance. A block allocates nothing but an arm's packet, as the role's did.
 import { bytes, defineNode, type Block } from "../../graph/defineNode";
 import {
   RISA_CLOCK,

@@ -1,6 +1,6 @@
 // Port of legacy test/ts/gb/lsdj/arduinoboy_input.test.ts: the TS `lsdj-sync` role in
-// MidiSyncArduinoboy mode (2), running in the real DSP kernel, drives a real LSDj (aboy build) as a
-// slave. The contract (dspRoles.ts / LsdjSyncRole.cpp): a `play` note (24) arms the clock, `stop`
+// MidiSyncArduinoboy mode (2), running as its script node, drives a real LSDj (aboy build) as a
+// slave. The contract (script/nodes/lsdjSync.ts / LsdjSyncRole.cpp): a `play` note (24) arms the clock, `stop`
 // (25) disarms it; the 0xF8 clock only flows while playing AND transport runs. So LSDj sings only
 // after the play command — the gating the legacy screenshots only implied, asserted here via RMS.
 import { test, expect, skip } from "../testing/harness";

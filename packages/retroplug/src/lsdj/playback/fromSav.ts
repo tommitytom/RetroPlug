@@ -1,6 +1,6 @@
 // Deriving a predictor's row-timing table from a live cart's battery.
 //
-// Kept OUT of the playback barrel on purpose. The predictor itself is bundled into the DSP kernel, and
+// Kept OUT of the playback barrel on purpose. The predictor itself is bundled into the controller session node, and
 // this pulls in the whole sav codec - which has no business on the audio thread, and is exactly why the
 // table is derived here (on the control plane, where the bytes are) and pushed across as data.
 

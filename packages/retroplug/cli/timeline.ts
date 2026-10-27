@@ -212,7 +212,7 @@ export function renderTimeline(
     advance(ev.ms);
     switch (ev.kind) {
       case "midi":
-        // The driver's false is the ONLY way a message can fail to reach the kernel now; make it loud.
+        // The driver's false is the ONLY way a message can fail to reach the engine now; make it loud.
         if (!audio.stageMidiIn(ev.bytes))
           throw new Error(`Timeline: the host refused a ${ev.bytes.length}-byte MIDI message at ${ev.ms} ms`);
         break;

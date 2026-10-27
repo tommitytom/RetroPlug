@@ -31,7 +31,7 @@ runSession((s) => {
   const graph = new DirectGraph(s.backend, s.project.graph);
 
   // Link-cable sync is pure GB serial ferrying over the link cable: construct both cores directly,
-  // link them, and drive; no DSP kernel needed.
+  // link them, and drive; no protocol node needed.
   const construct = (id: number, sync: SongSettings["syncMode"]) => graph.add({
     romPath, platform: "gb", core: "sameboy", embeddedRom: "",
     savPath: null, statePath: null, sramBytes: songSav(sync),

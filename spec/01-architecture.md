@@ -90,7 +90,7 @@ goes through the command ring; all audio→control observation goes through the 
 | | **Control plane** (main / UI thread) | **Audio thread** (DPF `run()` / spawned `audioThread_`) |
 |---|---|---|
 | QuickJS runtime | control-plane txiki host ([`TjsHostRuntime`](../packages/native/plugin/PluginDSP.cpp)) | the script host's bare audio context ([`ScriptHost`](../packages/native/src/host/script/ScriptHost.hpp), owned by the Engine's graph) |
-| Owns | the RPC services + their facets, the TS stores and the graph they publish (`EngineGraph`), the editor | the live [`Engine`](../packages/native/src/host/engine/Engine.hpp): the running plan (its system nodes, each owning its core, and its script nodes, the DSP kernel among them, whose JS instances live in the script host), **while running** |
+| Owns | the RPC services + their facets, the TS stores and the graph they publish (`EngineGraph`), the editor | the live [`Engine`](../packages/native/src/host/engine/Engine.hpp): the running plan (its system nodes, each owning its core, and its script nodes, the MIDI routing and each role's protocol node among them, whose JS instances live in the script host), **while running** |
 | Does | issues mutation *requests*; plans structure into graph documents (the script nodes' settings checked in the script host's control side); reads snapshots by id; frees replaced plans and the cores only they held | drains the command ring, adopting plans in order; runs the plan each block; publishes snapshots |
 | Never | dereferences a live `SystemBase` while audio runs; frees a core a running plan holds | builds or frees a core or a plan, or blocks |
 
@@ -121,7 +121,7 @@ world currently owns the `Engine`, and therefore who drains the command ring.
              drain block │                    │ publish per block  │ hand back the replaced plan
                          ▼                    │                    │
                          AUDIO THREAD  (DPF run() / spawned audioThread_)
-     script host (audio side) · Engine · GraphHost plan: host I/O · kernel · systems · mixing
+     script host (audio side) · Engine · GraphHost plan: host I/O · script nodes · systems · mixing
 ```
 
 Three primitives, three directions:
@@ -145,13 +145,13 @@ Every control-plane edit lands on ONE ring: the `SpscRing<Command, 256>` inside 
 arrives one of two ways:
 
 - **Structure** (which systems run, in what order and wired how, a Game Boy's link cable, the host's
-  output shape, and what the DSP kernel runs: each system's role pipeline and the project's stages,
-  which are the kernel node's settings) is a graph document TS builds
+  output shape, and the script nodes ahead of the systems: the MIDI routing, the controller session and
+  each role's protocol node, each with its settings) is a graph document TS builds
   ([modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md),
-  [modular-graph-phase-b3a-design.md](../docs/modular-graph-phase-b3a-design.md)). The stores call
+  [modular-graph-phase-b3b-design.md](../docs/modular-graph-phase-b3b-design.md)). The stores call
   [`EngineGraph.publish`](../packages/retroplug/src/engineGraph.ts) once at the end of every edit that
-  changes what the document holds (a structural edit, a kernel role's config, the MIDI routing, the
-  controller); it builds the document with
+  changes what the document holds (a structural edit, the config of a role with a protocol node, the MIDI
+  routing, the controller); it builds the document with
   [`buildGraph`](../packages/retroplug/src/graph/buildGraph.ts) and sends it with the `setGraph` RPC,
   which `EngineRpcService::setGraph` hands straight to `Engine::setGraph`, not through the invoker.
   `Engine::setGraph` builds the plan's `SystemTable` from the request's slots and the live cores
@@ -173,10 +173,10 @@ it sees the old, even when both plans are adopted in the same drain.
 published carries a settings commit to a node type whose prepare reads the node's current settings,
 one without `RP_TYPE_STATELESS_PREPARE` (`PlanStorage::awaitsAdoption`): the planner must not ask
 such a node to prepare again while its last commit may still be landing. The commits the engine's
-documents carry are the kernel node's, whenever its settings change (a system added or removed, a
-DSP role's config, the MIDI routing, the controller), and the cart mirror's, and both types prepare
-statelessly (every script type does); the other C++ nodes take each settings change they meet as a
-rebuild. So `setGraph` never waits on the audio thread: several plans can sit in the ring at once,
+documents carry are the script nodes', whenever their settings change (a system added or removed, which
+moves the routing node's outputs, a role's config, the MIDI routing, the controller), and the cart
+mirror's, and both prepare statelessly (every script type does); `rp.host.midi-out` swaps or rebuilds,
+statelessly too, and the other C++ nodes take each settings change they meet as a rebuild. So `setGraph` never waits on the audio thread: several plans can sit in the ring at once,
 adopted in push order in one drain. What bounds edits is the ring itself. While no block runs with
 the audio thread still owning the engine (a host that stops calling process while the plugin stays
 active, as CLAP's `stop_processing` allows), each edit queues one plan, holding its buffers, and once
@@ -347,7 +347,7 @@ shared, and no JS value passes between any two:
 |---|---|---|---|
 | Type | txiki full host ([`TjsHostRuntime`](../packages/native/plugin/PluginDSP.cpp)) | bare QuickJS, no txiki | bare QuickJS, no txiki |
 | Owner | the host (plugin / test host / UI harness) | the Engine's graph | the Engine's graph |
-| Runs | the TS control-plane bundle: stores, `Backend` adapter, `__rp_*` globals, editor | each script type's `parseSettings` and `layout`, for the planner's `layout_for` and `prepare_settings`; it never holds an instance | every script node instance (its `create`, `process`, `onSettings`, `portsChanged`, `activate`), the DSP kernel's among them |
+| Runs | the TS control-plane bundle: stores, `Backend` adapter, `__rp_*` globals, editor | each script type's `parseSettings` and `layout`, for the planner's `layout_for` and `prepare_settings`; it never holds an instance | every script node instance (its `create`, `process`, `onSettings`, `portsChanged`, `activate`): the MIDI routing, the controller session and each role's protocol node |
 | Thread | control plane only | the thread that plans (`setGraph`) | whichever thread drives the block |
 | Data | full JS objects over `__rpcSend` | settings JSON in, layout JSON out | the plan's queues and control streams, and copies of its audio buffers, through one reused `Block` object per instance; a JSValue never crosses out |
 
@@ -357,12 +357,13 @@ embedded in `retroplug-backend`, so every host's Engines have the same node type
 Each script type is a node type of the package `rp.script`, and each script node of a plan is a
 native shim the planner creates, activates and destroys like any node; its JS instance is made on the
 block thread when its plan is adopted, before that plan's first `process`, and released there at the
-start of a later block once the shim is destroyed (at once while no audio thread runs). The DSP kernel
-is one such node, `rp.dsp.kernel` (`kernelNode.ts`, deleted in B3b):
-its structure is its settings, and its inputs and outputs are real wires from the host I/O nodes and
-to each system node's inputs. Native owns no role logic; in particular, **the drift-exact PPQ tick
-clock lives entirely in JS** (`walkTicks`). The kernel and the role model are specified in
-[04-roles-dsp-kernel.md](04-roles-dsp-kernel.md); the runtime under it in
+start of a later block once the shim is destroyed (at once while no audio thread runs). The
+production bundle's seven are the MIDI routing, a protocol node for each role that has one (mGB, the N8
+FIFO, risa, smsggdj and LSDj sync) and the controller session: each takes its settings from the
+document, and its inputs and outputs are real wires from the host I/O nodes and to each system node's
+inputs. Native owns no role logic; in particular, **the drift-exact PPQ tick clock lives entirely in
+JS** (`walkTicks`). The nodes and the role model are specified in
+[04-roles-protocol-nodes.md](04-roles-protocol-nodes.md); the runtime under them in
 [02-native-host.md](02-native-host.md).
 
 The audio side runs on **both** threads over its lifetime (the control thread on the pull-path
@@ -371,15 +372,18 @@ guard to the current thread with `JS_UpdateStackTop` before entering JS, or a ca
 different stack throws a spurious overflow. The control side does the same.
 
 `Engine::processBlock` runs the plan: `rp.host.midi-in` and `rp.host.controller-in` take what the
-hosts staged; the kernel node reads them, and each Game Boy's `serialOut` of last block over a
-feedback wire, and sends each system node its inputs; the system nodes apply those inputs and run
-their cores; `rp.n8.cart-mirror` hands a physical N8 what the first NES was sent, and
-`rp.host.midi-out` / `controller-out` hand the host the kernel's MIDI and control-surface output; the
+hosts staged; the routing node fans the host MIDI out to the systems, the controller session reads the
+surface, and each system's protocol nodes read their routed MIDI (and an LSDj's, its Game Boy's
+`serialOut` of last block over a feedback wire) and send that system node its inputs; the system nodes
+apply those inputs and run their cores; `rp.n8.cart-mirror` hands a physical N8 what the first NES was
+sent, and `rp.host.midi-out` / `controller-out` hand the host the script nodes' MIDI and control-surface
+output; the
 mixing nodes and `rp.host.audio-out` fill the host's buffers. Then
 `registry_.publishSystem(...)` runs for each system: the one place every driver funnels the block
 ([`Engine.cpp`](../packages/native/src/host/engine/Engine.cpp); the full order is in
-[02-native-host.md](02-native-host.md)). The kernel's host MIDI-out, through `rp.host.midi-out`, is
-drained after the block by the plugin (to the DAW) and the SDL standalone (to its MIDI out port).
+[02-native-host.md](02-native-host.md)). The host MIDI out (LSDj's MI.OUT and master sync, the
+controller's launches to a real Game Boy), through `rp.host.midi-out`, is drained after the block by the
+plugin (to the DAW) and the SDL standalone (to its MIDI out port).
 
 ---
 
@@ -436,7 +440,7 @@ lost mutation.
    buffers, its audio ports are JS-owned copies (an input's samples copied in before `process`, an
    output's copied out after it), and what it sends is written straight into the plan's output queues.
    So nothing a node keeps, transfers or edits can reach a buffer another node reads or a plan the
-   control thread has freed. The DSP kernel's sinks are its output ports. The runtime is separate
+   control thread has freed. A protocol node's sends are its output ports. The runtime is separate
    from the control-plane runtime and from the script host's control side, and is re-anchored to the
    calling thread on every entry.
 
@@ -446,7 +450,8 @@ lost mutation.
    run, in what order and wired how is the graph document TS builds and sends with `setGraph`.
    Duplicate, reload and remove are TS orchestration over `buildCore`-with-state, registry reads and
    the documents the stores publish, not native methods.
-   Cores are built bare (no default roles baked into C++); feature behaviour lives in the TS kernel.
+   Cores are built bare (no default roles baked into C++); feature behaviour lives in TS, the audio
+   thread's part in the protocol script nodes.
 
 ### Not yet built / deferred
 

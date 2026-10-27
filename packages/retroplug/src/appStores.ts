@@ -1,8 +1,8 @@
 // appStores.ts — the composition root for the store graph.
 //
 // One place that builds the full store graph over a Backend, so every host constructs it identically
-// instead of re-deriving pluginControlPlane.ts's sequence. Pure - no React. The DSP kernel needs no wiring:
-// the project publishes its structure with the graph.
+// instead of re-deriving pluginControlPlane.ts's sequence. Pure - no React. The script nodes need no wiring:
+// the graph the project publishes places them.
 //
 // Change notification is injected as a single `notify(channel)` so a consumer can observe the whole
 // graph through one seam: the UI's store provider passes a fan-out that re-renders the matching hooks;

@@ -1,5 +1,5 @@
 // C1: host MIDI drives a NES core. The whole path end-to-end against a REAL Mesen core — routing →
-// the nes-n8-midi role → the emitCoreMidi sink → Engine fans it to onMidi → the always-attached N8
+// the nes-n8-midi role's node (rp.n8.midi-to-fifo) → the system node's midi input → onMidi → the always-attached N8
 // FIFO → bliptoaster.nes plays APU Pulse1. Proven by RMS: silent when idle, audible after a ch1 NoteOn.
 // Also closes the F3 gap (deferred earlier because NES had no audio): the universal gain setting now
 // audibly silences/restores a ringing NES core.
@@ -34,7 +34,7 @@ test("host MIDI drives a NES core (ch1 → Pulse1), and live gain silences/resto
   // Ownership discipline (per dsp-threaded): construct before audio.
   const id = (project.systems.loadRom(NES) as { system: number }).system;
   expect(project.systems.view()[0].platform).toBe("nes");
-  // The NES rom provider attached the host-MIDI role → the emitCoreMidi path is in the pipeline.
+  // The NES rom provider attached the host-MIDI role → its rp.n8.midi-to-fifo node is in the graph.
   expect(project.systems.view()[0].roles.map((r) => r.kind).includes("nes-n8-midi")).toBeTruthy();
 
   audio.renderAudio(1000); // boot; NES has no boot screen but let the ROM's init settle

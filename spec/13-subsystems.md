@@ -104,12 +104,14 @@ the behaviour is a control-plane app selected by the controller settings.
 ### The controller role
 
 A project-level setting (`settings.controller`) that points one attached controller at one target:
-`{ enabled, app, target, systemId, appConfig }`, additive and off by default. `appHost.ts`'s
-`controllerProjection` folds it into the DSP kernel structure, so the chosen app runs as part of the
-per-block program rather than as UI-thread glue. `appConfig` is deliberately opaque at this level —
-the chosen app's own schema validates it.
+`{ enabled, app, target, systemId, appConfig }`, additive and off by default. `ProjectStore` hands it to
+`buildGraph`, which places it as the `rp.controller.session` script node (its target resolved, the MI.MAP
+cart's sync mode forced: `graph/controller.ts`), so the chosen app runs on the audio thread as part of the
+per-block graph rather than as UI-thread glue. `appConfig` is deliberately opaque at this level: the
+chosen app's own schema validates it on the control plane (`parseAppConfig`), and the node takes it parsed.
 
-- **Prove a change:** `pnpm test controller`, `pnpm test dsp/projection`.
+- **Prove a change:** `pnpm test controller`, `pnpm test script/nodes/controller-session`,
+  `pnpm test graph/build-graph`.
 
 ### Pico firmware (`pico/`)
 
@@ -168,8 +170,9 @@ descriptors by shared golden files.
 **The native engine runs on it** (Phase B1,
 [docs/modular-graph-phase-b1-design.md](../docs/modular-graph-phase-b1-design.md)):
 `Engine::processBlock` runs a `GraphHost` plan of the engine's own nodes: the host I/O nodes
-(`rp.host.midi-in`, `-midi-out`, `-controller-in`, `-controller-out`), the DSP kernel, one system node per
-core (`rp.sameboy.gb`, `rp.mesen.nes`, `rp.mesen.gba`, `rp.mesen.sms`) and, with a NES, the
+(`rp.host.midi-in`, `-midi-out`, `-controller-in`, `-controller-out`), the script nodes that feed the
+systems, one system node per core (`rp.sameboy.gb`, `rp.mesen.nes`, `rp.mesen.gba`, `rp.mesen.sms`) and,
+with a NES, the
 `rp.n8.cart-mirror` that feeds a physical N8, mixed by `rp.core.split` / `rp.core.add` into
 `rp.host.audio-out`.
 **TS builds the graph** (Phase B2,
@@ -177,18 +180,20 @@ core (`rp.sameboy.gb`, `rp.mesen.nes`, `rp.mesen.gba`, `rp.mesen.sms`) and, with
 whole document per structural edit through `EngineGraph` (`buildGraph` writes it from the systems, the
 routing and the host shape), native builds each core with `buildCore` and plans the document with
 `setGraph`, and every other edit rides the one ring as a command
-([01-architecture.md](01-architecture.md), [02-native-host.md](02-native-host.md)). **The kernel is a
-script node** (Phase B3a,
-[docs/modular-graph-phase-b3a-design.md](../docs/modular-graph-phase-b3a-design.md)): `rp.dsp.kernel` is
-a TS node run by the script host every Engine embeds, its settings the kernel's structure (published
-with the graph), its inputs and outputs wires from the host I/O nodes and to every system node's inputs,
-and each Game Boy's `serialOut` coming back on a feedback wire. Splitting it into one protocol node per
-role is B3b ([07-remaining-work.md](07-remaining-work.md) section 5).
+([01-architecture.md](01-architecture.md), [02-native-host.md](02-native-host.md)). **The kernel became
+script nodes** (Phase B3a,
+[docs/modular-graph-phase-b3a-design.md](../docs/modular-graph-phase-b3a-design.md), then B3b,
+[docs/modular-graph-phase-b3b-design.md](../docs/modular-graph-phase-b3b-design.md)): a TS node per role
+(`rp.mgb.midi`, `rp.lsdj.sync`, ...), the MIDI routing and the controller session, run by the script host
+every Engine embeds, each with its settings in the published graph, its inputs and outputs wires from the
+host I/O nodes and to its system node's inputs, and each Game Boy's `serialOut` coming back into its LSDj
+node on a feedback wire ([04-roles-protocol-nodes.md](04-roles-protocol-nodes.md)). What is left is
+[07-remaining-work.md](07-remaining-work.md) section 5.
 
 - Code: `packages/native/src/graph/` (C++), `packages/native/src/host/graph/` (the engine's nodes),
   `packages/native/src/host/script/` (the script host), `packages/retroplug/src/graph/` (TS: the node and
-  extension contracts, `buildGraph`, `DirectGraph`), `packages/retroplug/src/script/` (the script-node
-  bundle and the kernel node) and `packages/retroplug/src/engineGraph.ts`.
+  extension contracts, `buildGraph`, `DirectGraph`, the zod-free settings schema), `packages/retroplug/src/script/`
+  (the script-node bundle and its nodes) and `packages/retroplug/src/engineGraph.ts`.
 - **Prove a change:** `pnpm test:plugin graph` (a substring filter, so both `retroplug-graph-test`
   and `retroplug-engine-graph-test`), `pnpm test graph`, `pnpm test:native parity` for anything the
   engine renders, and the ThreadSanitizer build of `retroplug-graph-test` (`build-tsan/`, as in

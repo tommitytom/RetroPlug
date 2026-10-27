@@ -395,7 +395,7 @@ function rolesForRender(carried: RoleInstance[] | undefined, exportMode?: Channe
   return merged.some((r) => r.kind === "mesen") ? merged : [...merged, { kind: "mesen", config: { channelExportMode: exportMode } }];
 }
 
-/** Build the single system; the graph it publishes carries its kernel pipeline. `seed` (LSDj song bytes) forces
+/** Build the single system; the graph it publishes places its protocol nodes. `seed` (LSDj song bytes) forces
  *  the adopt path; so do carried roles / gain (they can only be applied at construct) and a NES split mode arming
  *  construct-time capture; otherwise addSystem auto-detects. */
 function buildSystem(ctx: RenderContext, o: RenderOpts, platform: Platform, seed?: Uint8Array): number {

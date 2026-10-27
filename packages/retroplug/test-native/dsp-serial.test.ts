@@ -1,9 +1,9 @@
-// The DSP pushSerialIn sink IN the render loop, driven by the real kernel. Host MIDI is staged
-// globally; the kernel's midi-routing project behaviour fans it to systems, and each system's `mgb`
-// role turns its routed bytes into serial input (mGB reads MIDI-over-serial, so raw serial == onMidi).
+// A system's serial input IN the render loop, driven by the real script nodes. Host MIDI is staged
+// globally; the routing node fans it to systems, and each system's `mgb` role's node turns its
+// routed bytes into serial input (mGB reads MIDI-over-serial, so raw serial == onMidi).
 // The toggle is ROUTING PRESENCE — the native twin of routing.test.ts's two cases: with a routing
 // role the chord reaches mGB and it sounds; with none it reaches no system and mGB stays silent. So
-// pushSerialIn demonstrably reaches the live core, purely from the kernel structure. In-TS RMS.
+// serial input demonstrably reaches the live core, purely from the graph's structure. In-TS RMS.
 import { test, expect } from "../testing/harness";
 import { createAudioDriver } from "../src/audioDriver";
 import type { ConstructSpec } from "../src/backend";
@@ -12,7 +12,7 @@ import { directGraph } from "../src/graph/directGraph";
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
 const graph = directGraph();
 
-// The embedded mGB, built bare (no roles of its own): the pipeline set here is all the kernel runs for it.
+// The embedded mGB, built bare (no roles of its own): the pipeline set here is every protocol node placed for it.
 const MGB: ConstructSpec = { romPath: "", platform: "gb", core: "sameboy", embeddedRom: "mgb", savPath: null, statePath: null };
 
 // One note per channel (mGB's per-voice MIDI inputs) — a C-major chord.

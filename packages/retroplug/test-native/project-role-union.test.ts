@@ -8,7 +8,7 @@
 // rather than that file, which has since been repaired by hand.
 //
 // The second half is what makes this more than a duplicate: it does not stop at "the role is attached",
-// it runs the DSP kernel and the transport and asserts the sequencer MOVES. A union that produced a
+// it runs the sync node and the transport and asserts the sequencer MOVES. A union that produced a
 // correctly-named role with a wrong or empty config would pass the pure test and fail here.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
@@ -74,7 +74,7 @@ test("a project saved before sms-sync existed loads WITH it, and the DAW can clo
   const audio = createAudioDriver();
   audio.renderAudio(3000); // boot: splash, config_load (takes IN24), song_new
   expect(pokeMetronomeIntoWram(be, id) > 0).toBeTruthy();
-  // The load's publish carried the system's pipeline, sms-sync in it, to the kernel: idle until the transport runs.
+  // The load's publish placed the system's sms-sync node: idle until the transport runs.
 
   audio.pressButton(id, PAUSE, true);
   audio.renderAudio(100);

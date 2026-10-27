@@ -1,8 +1,8 @@
 // The composition root, proven for mGB: a real project assembled from the app-layer STORES
-// (ProjectStore/SystemsStore) + the role registry + the DSP kernel plays real audio driven
+// (ProjectStore/SystemsStore) + the role registry + the protocol script nodes plays real audio driven
 // entirely THROUGH the stores. loadMgb() attaches the `mgb` feature role via the ROM provider;
-// the graph the store publishes carries the projected kernel structure; a staged MIDI chord -
-// routed by the projected midi-routing role and serialized by the `mgb` role - makes the core
+// the graph the store publishes places its protocol node; a staged MIDI chord - routed by the
+// routing node and serialized by the `mgb` role's node (rp.mgb.midi) - makes the core
 // sing. Same proof as audio-render.test.ts, but reached via the stores instead of a hand-set
 // pipeline, so it exercises the real store→projection→DSP path a host will drive. (One test per
 // file: whole-mix RMS needs an isolated native engine.)

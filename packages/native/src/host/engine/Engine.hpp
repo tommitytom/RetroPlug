@@ -64,7 +64,7 @@ struct EngineFrame {
 // (docs/modular-graph-phase-b2-design.md), planned on the control thread; every other edit is a command on
 // the GraphHost's one ring, applied at the next drain. A removed core is freed on the control thread, with
 // the plan that last ran it. Transport and ppq are plain members, set per block by whoever drives it; its own
-// atomics count what the audio thread may not log: the blocks too long to run, and what the host I/O nodes drop.
+// atomics count what the audio thread may not log: the blocks too long to run.
 class Engine {
 public:
     // The block size the plan starts at, the matrix's largest (B0 section 4). A render never grows it, so

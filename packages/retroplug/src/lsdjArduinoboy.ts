@@ -1,7 +1,7 @@
 // The Arduinoboy MIDIOUT (MI.OUT) decoder for the `lsdj-sync` role's mode 7 — the TS port of the
 // native ArduinoboyMaster role (packages/native/src/system/sameboy/roles/ArduinoboyMaster.{hpp,cpp}).
 // Per the "native owns bytes, TS owns meaning" split: native captures LSDj's raw outgoing serial
-// bytes and feeds them to the kernel (ctx.serialOut); this module turns them into host MIDI.
+// bytes, which reach the rp.lsdj.sync node on its `serialOut` input; this module turns them into host MIDI.
 //
 // Two layers, both pure + testable in isolation:
 //
@@ -36,7 +36,7 @@ const MIDI_PC_BASE = 0xc0;
 /** Emit one decoded MIDI message (raw status + data bytes). */
 export type MidiEmit = (data: number[]) => void;
 
-/** Cross-block decoder state (persisted in the role's `ctx.state`). Fields are created lazily by the
+/** Cross-block decoder state (kept in the lsdj-sync node's scratch). Fields are created lazily by the
  *  decoders, so a fresh `{}` is a valid starting state. */
 export interface ArduinoboyState {
   // Byte protocol: a 0x70..0x7C command awaiting its value byte. `pendingCmd` is m = byte-0x70; stored
@@ -177,8 +177,8 @@ export interface MasterSyncBlock {
 }
 
 /** Decode the Master Sync serial-out bytes that reached this block into host MIDI. Call once per block with the
- *  system's `ctx.serialOut` and `ctx.serialOutFrames`, which are LAST block's bytes at their frames in it (the
- *  feedback wire's one block), and this block's length and rate. Each byte is a tempo clock, the first of a run
+ *  bytes the lsdj-sync node read off its `serialOut` input and each one's frame, which are LAST block's bytes at
+ *  their frames in it (the feedback wire's one block), and this block's length and rate. Each byte is a tempo clock, the first of a run
  *  opened with LSDj's song row; a run ends with one 0xFC once MASTER_SYNC_STOP_MS pass with no byte. */
 export function arduinoboyMasterSyncBlock(
   bytes: number[],

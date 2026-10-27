@@ -25,7 +25,7 @@ test("add + remove a system while the audio thread plays, via the command + rele
   const be = createRealBackend();
   const audio = createAudioDriver();
 
-  // --- setup (quiescent): one mGB + the kernel routing so notes can reach it ---
+  // --- setup (quiescent): one mGB + the MIDI routing so notes can reach it ---
   // TS owns the id counter now; a test calling the backend directly picks its own (fresh host per file).
   const a = 1;
   expect(graph.add(MGB, a)).toBeTruthy();
@@ -64,7 +64,7 @@ test("add + remove a system while the audio thread plays, via the command + rele
   expect(audio.drainReleased()).toBeGreaterThanOrEqual(1);
   expect(be.readState(a)).toBe(null);
   expect(be.readState(b) !== null, "b's slot").toBeTruthy();
-  audio.stageMidiIn(NOTE); // the kernel lost `a` with the plan that removed it
+  audio.stageMidiIn(NOTE); // `a`'s nodes went with the plan that removed it
   const afterRemove = energyWindow(120);
 
   expect(audio.stopAudio()).toBeTruthy();

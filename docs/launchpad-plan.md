@@ -738,4 +738,4 @@ OUTSTANDING:
 - [Arduinoboy 1.3.0 changelog](https://github.com/trash80/Arduinoboy/commit/f154263f197eb3eea7948c5b56bac0acc06a7ee6) - LIVEMAP removal, SYNCMAP -> MI.MAP rename
 - [jkotlinski/lsdj-doc `sync.tex`](https://github.com/jkotlinski/lsdj-doc/blob/master/sync.tex) - LSDj's own sync documentation
 - [docs/lsdj.md](lsdj.md) - RetroPlug's LSDj domain reference, including the sync-mode table
-- [spec/04-roles-dsp-kernel.md](../spec/04-roles-dsp-kernel.md) - the role model the controller registry mirrors
+- [spec/04-roles-protocol-nodes.md](../spec/04-roles-protocol-nodes.md) - the role model the controller registry mirrors

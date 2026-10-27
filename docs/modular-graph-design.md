@@ -1,6 +1,6 @@
 # Design: the modular node-graph engine
 
-**Date:** 2026-10-23 · **Branch:** `feature/modularize` · **Status:** Phase A built (`packages/native/src/graph/`, `packages/retroplug/src/graph/`); Phase B0 to B3a built (B3b and Phases C to E not yet built).
+**Date:** 2026-10-23 · **Branch:** `feature/modularize` · **Status:** Phase A built (`packages/native/src/graph/`, `packages/retroplug/src/graph/`); Phase B0 to B3b built (Phases C to E not yet built).
 
 RetroPlug's long-term direction is a modular system in the spirit of Reaktor: emulated consoles (and
 the real hardware they can drive) appear as nodes in a graph alongside DSP effects and routing nodes.
@@ -269,9 +269,10 @@ and control wires can be feedback; a resource or link wire cannot (a handle or a
 block to deliver). Data between two members of one coupled group needs a feedback wire too: the group
 steps as one unit, so a same-block wire inside it would have no order. Messages on a feedback events or
 bytes wire keep the frames of the block that produced them, so a reader sees last block's coordinates,
-and a frame can lie past the end of a shorter reading block. The Game Boy's `serialOut` into the kernel
-is the first feedback wire to carry frames other than 0: each byte at the frame its core completed it,
-which master sync times its stop by ([lsdj-master-sync-fix-design.md](lsdj-master-sync-fix-design.md)).
+and a frame can lie past the end of a shorter reading block. The Game Boy's `serialOut` into its
+`rp.lsdj.sync` node (the DSP kernel's input until B3b) is the first feedback wire to carry frames other
+than 0: each byte at the frame its core completed it, which master sync times its stop by
+([lsdj-master-sync-fix-design.md](lsdj-master-sync-fix-design.md)).
 
 LSDj needs this today: `lsdj.sync` feeds the GB's `serialIn`, and the GB's `serialOut` comes back
 to `lsdj.sync` for MI.OUT. The current engine already gives that return path exactly one block of latency
@@ -316,8 +317,8 @@ Three mechanisms, each for a different kind of dynamism:
    setting means a re-layout and a replan; the planner rejects wires to ports that no longer exist, and
    the document's owner (today the graph builder, later the modular UI) removes them. A node that can keep
    its state through the new layout reshapes rather than rebuilds (`RP_PREPARE_RESHAPE`, §4.3): the instance
-   is kept and its ports are rebound by id, as the DSP kernel node is whenever a system comes or goes
-   ([B3a §2.4](modular-graph-phase-b3a-design.md)).
+   is kept and its ports are rebound by id, as the MIDI routing node's are whenever a system comes or goes
+   ([B3a §2.4](modular-graph-phase-b3a-design.md), [B3b §2](modular-graph-phase-b3b-design.md)).
 3. **Inferred channel counts** (`any` / `match`, §3.4) for the DSP library.
 
 ### 3.6 Host bus layout
@@ -559,7 +560,7 @@ export const lsdjSync = defineNode({
     mode: param.enum({ name: "Mode", values: ["off", "midi-sync", "master"], default: "midi-sync" }),
     divisor: param.int({ name: "Divisor", min: 1, max: 16, default: 1 }),
   },
-  settings: z.object({ /* ... every field with a .default() */ }),
+  settings: s.object({ /* ... every field with its default */ }),
   create: (ctx) => ({ process(block) { /* ... */ } }),
 });
 ```
@@ -571,15 +572,17 @@ export const lsdjSync = defineNode({
   at compile time), so a descriptor the native registry would refuse is an error where it is written.
   Two shared golden descriptors pin the byte-for-byte agreement.
 - **Settings are validated on the control plane.** The audio-thread code receives plain, already-checked
-  objects, so **zod leaves the audio-thread bundle**: `defineNode` imports zod's types only, and the
+  objects, so **zod leaves the audio-thread bundle**: a node's settings are a zod-free schema
+  ([settingsSchema.ts](../packages/retroplug/src/graph/settingsSchema.ts), `s.object`, `s.enum`, `s.int`, ...,
+  each parsing and writing its JSON Schema as its zod twin does), `defineNode` imports no zod at all (it takes
+  any schema with `safeParse` and `toJSONSchema`, so a zod one still serves on the control plane), and the
   descriptor's schema comes from the definition's own schema object (`toJSONSchema({ io: "input" })`, the
   shape a document may write: defaulted fields optional, as reflect-cpp's `DefaultIfMissing` says too).
-  The script-node bundle B3a built, which both of an Engine's script runtimes load, is about 660 KB, 567 KB
-  of it zod (the kernel node's settings schema and `dspRoles.ts` pull it in); removing it is also a hard
-  requirement for MicroQuickJS on the Pico. `defineNode` alone no longer pulls zod in, but a node module that
-  builds its `z.object(...)` at top level still does, so B3b's bundle has to keep schemas out of the audio
-  side (a separate settings module per node, or a schema built lazily on the control plane). Every settings
-  field needs a default, since the descriptor describes the layout for default settings (a C++ node has `S{}`).
+  The script-node bundle, which both of an Engine's script runtimes load, was about 660 KB in B3a, 567 KB
+  of it zod; since B3b it is 78 KB with none, and a test fails any build that pulls zod back in
+  ([B3b §3](modular-graph-phase-b3b-design.md)). That is also a hard requirement for MicroQuickJS on the
+  Pico, which `defineNode` itself does not yet meet (it uses ES2015's library). Every settings field needs a
+  default, since the descriptor describes the layout for default settings (a C++ node has `S{}`).
 - A TS node sees an audio port as an array of `Float32Array`s, an events port as a frame-ordered array,
   a resource port as a handle with typed accessors (an audio buffer's samples as a `Float32Array`). The arrays
   are the node's own: B3a's script host copies an audio input's samples into JS-owned buffers before `process`
@@ -615,14 +618,16 @@ with a second, control-side runtime that answers `layout_for` and `prepare_setti
 about 5%. Fine for event-rate work (sync, MIDI, sequencing) and light audio; heavy DSP belongs in C++.
 In the browser the same node runs under a JIT and is far faster.
 
-**Per-node call overhead.** One JS call per TS node per block replaces the kernel's single `processBlock`
+**Per-node call overhead.** One JS call per TS node per block replaced the kernel's single `processBlock`
 call. Measured in B3a ([B3a §7.4](modular-graph-phase-b3a-design.md), a Release build at 44.1 kHz, where a 1-frame
-block has 22.7 us): a script node's call costs about 0.09 us with nothing to pass and 0.18 us with one message in and
-out, marshalling included, flat in node count and block size, with nothing allocated per block for a node written
-with indexed loops. An audio port adds one copy per channel each way. One node per role is therefore affordable even
-at 1-frame blocks, and batching consecutive script nodes into one call is not needed: it would matter only at
-hundreds of script nodes on 1-frame blocks (1,000 empty nodes take about 90 us a block), which is the Reaktor-scale
-case to revisit then. What a node costs beyond that is what its own JS does.
+block has 22.7 us), and again in B3b: a script node's call costs about 0.09 us with nothing to pass and 0.18 us with
+one message in and out, marshalling included, flat in node count and block size, with nothing allocated per block for
+a node written with indexed loops. An audio port adds one copy per channel each way. One node per role was therefore
+affordable even at 1-frame blocks, and so it proved: B3b's protocol nodes for an mGB, an LSDj and a NES take about
+0.94 us a 1-frame block, 2.2 at 64 frames and 11 at 512, allocating nothing, about 3 to 3.6 times less than B3a's one
+kernel node ([B3b §9](modular-graph-phase-b3b-design.md)). Batching consecutive script nodes into one call is not
+needed: it would matter only at hundreds of script nodes on 1-frame blocks (1,000 empty nodes take about 90 us a
+block), which is the Reaktor-scale case to revisit then. What a node costs beyond that is what its own JS does.
 
 ---
 
@@ -791,7 +796,8 @@ shared scratch queue of unconnected outputs, since nothing reads what it drops, 
 own `dropped` only accumulates (a full stream keeps its end value right, §9) and is not reported. The
 counts are 32-bit and wrap rather than saturate, which keeps the executor's add one wait-free `fetch_add`;
 what reads them compares or subtracts, which a wrap leaves right. TS reads them through the harness facet's
-`droppedMessages` (`audio.droppedMessages()`, B3a), which adds what `rp.host.midi-out` drops. Events stay
+`droppedMessages` (`audio.droppedMessages()`, B3a), which until B3b also added what `rp.host.midi-out` dropped
+(a message too short for its system prefix, which went with the prefix). Events stay
 frame-stamped; v1 uses the host's block size with no sub-blocking. v1 is single-threaded; the plan records
 dependencies, so running independent branches in parallel (enkiTS) can come later without changing the plan
 format.
@@ -974,7 +980,7 @@ single system, pins need a NES) so behaviour is unchanged.
 | Today | Becomes |
 |---|---|
 | System roles (`sameboy`, `mesen`) | system node settings and params |
-| DSP roles (`mgb`, `lsdj-sync`, `risa-sync`, `sms-sync`, `nes-n8-midi`, `midi-routing`, Launchpad controller) | TS node types, each in the module that will become its package |
+| DSP roles (`mgb`, `lsdj-sync`, `risa-sync`, `sms-sync`, `nes-n8-midi`, `midi-routing`, Launchpad controller) | TS node types, each in the module that will become its package (built in B3b: a protocol node per role, and the routing and the controller nodes placed from the project's settings, those two no longer roles) |
 | Marker and asset roles (`lsdj-assets`, `risa`, `risa-assets`, `bliptoaster`, `bliptoaster-assets`) | extensions |
 
 **`.rplg` does not change.** `RoleInstance` stays the saved form and the graph builder reads it; no
@@ -985,20 +991,25 @@ single system, pins need a NES) so behaviour is unchanged.
 In two steps. B3a ([modular-graph-phase-b3a-design.md](modular-graph-phase-b3a-design.md)) built the first:
 
 - `DspRuntime` evolved into the script-node runtime, the script host (§4.9), and the kernel-loading commands
-  went: the kernel bundle is embedded in every Engine and loaded at construction.
-- The kernel runs, unchanged, as one TS node, `rp.dsp.kernel`, whose settings are its structure.
+  went: the script-node bundle is embedded in every Engine and loaded at construction.
+- The kernel ran, unchanged, as one TS node, `rp.dsp.kernel`, whose settings were its structure.
 - The sink thunks (`pushSerialIn`, `emitCoreMidi`, `pushCoreBytes`, `pressButton`, `emitMidiOut`,
   `emitControllerOut`) became that node's output ports, wired to each system node's `serialIn`, `midi`, `bytes`
-  and `buttons` inputs and to `rp.host.midi-out` / `controller-out`, and the per-block input object is built
+  and `buttons` inputs and to `rp.host.midi-out` / `controller-out`, and the per-block input object was built
   from its input ports, fed by `rp.host.midi-in` / `controller-in` and each Game Boy's `serialOut`.
 
-B3b does the rest:
+B3b ([modular-graph-phase-b3b-design.md](modular-graph-phase-b3b-design.md)) built the rest:
 
-- `dspKernel.ts`'s per-system pipelines become individual TS nodes in the script runtime, one per role.
-- `kernelProjection.ts`'s special cases (synthesized `midi-routing` and Launchpad stages, the forced
-  `lsdj-sync` mode for MI.MAP) become graph-builder logic.
-- The one script-node bundle (about 660 KB, most of it zod) becomes a per-product **script-node bundle** with no zod
-  in it.
+- The kernel's per-system pipelines became individual TS nodes in the script runtime, one per role
+  (`rp.mgb.midi`, `rp.n8.midi-to-fifo`, `rp.risa.sync`, `rp.sms.sync`, `rp.lsdj.sync`), beside the MIDI routing
+  (`rp.midi.route`) and the control-surface session (`rp.controller.session`), each wired straight into its
+  system node's inputs; `rp.host.midi-out` takes each input's system from its settings, so the private system
+  prefix went too.
+- `kernelProjection.ts`'s special cases (the synthesized `midi-routing` and Launchpad stages, the forced
+  `lsdj-sync` mode for MI.MAP) became graph-builder logic (`graph/controller.ts`, and one table of which role is
+  placed as which node, `graph/protocolNodes.ts`).
+- The one script-node bundle (about 660 KB, most of it zod) became a **script-node bundle** of 78 KB with no zod in
+  it, and the kernel, `DspKernel` and the kernel node are deleted.
 
 ### 7.5 The Backend surface
 
@@ -1008,7 +1019,7 @@ B3b does the rest:
 | `putResource(type, bytes)` -> handle, `releaseResource(handle)` | `setAudioRouting` (gone in B2) |
 | capability calls (memory, SRAM, state, ROM info) addressed by node id | `applyRoleConfig` (Phase C) |
 | `setParam(node, param, value)` | `setSerialOutCapture` (Phase C) |
-| snapshot reads (unchanged) | `dspSetSystems`, kernel loading (gone in B3a: the kernel's structure is its node's settings in the document, and every Engine embeds its bundle) |
+| snapshot reads (unchanged) | `dspSetSystems`, kernel loading (gone in B3a: the kernel's structure became its node's settings in the document, and every Engine embeds its bundle; since B3b each role's node's settings are its config) |
 | host I/O, transport (unchanged) | |
 
 Duplicate and reload become "a new node id whose settings point at a state-seed resource": the same
@@ -1113,13 +1124,16 @@ node params, and the kernel commands stay until B3 deletes the kernel (B3a delet
 stays a native call (`buildCore`) until Phase C, when system nodes build their own from settings and resources.
 
 B3 is split in two. B3a is built ([modular-graph-phase-b3a-design.md](modular-graph-phase-b3a-design.md)): the
-kernel's input and output are real wires (host I/O nodes, input ports on every system node, the Game Boy's
-`serialOut`), and the kernel runs unchanged as one node, `rp.dsp.kernel`, in the new script-node runtime, with its
-structure as its settings; the sealed kernel, its fan-out, the kernel RPCs and the native kernel node are gone. B3b
-is next: it splits that node into one protocol node per role, moves `kernelProjection` into `buildGraph`, takes zod
-out of the bundle and deletes the kernel. Between the two, LSDj master sync was fixed as its own change, before B3b
-ports the decoder ([lsdj-master-sync-fix-design.md](lsdj-master-sync-fix-design.md)): its stopped-LSDj detector, which
-B3a's tiny-block parity groups pinned as a defect, turned out to be reading the core's own clocking of a stopped LSDj.
+kernel's input and output became real wires (host I/O nodes, input ports on every system node, the Game Boy's
+`serialOut`), and the kernel ran unchanged as one node, `rp.dsp.kernel`, in the new script-node runtime, with its
+structure as its settings; the sealed kernel, its fan-out, the kernel RPCs and the native kernel node went. Between
+the two, LSDj master sync was fixed as its own change, before B3b ported the decoder
+([lsdj-master-sync-fix-design.md](lsdj-master-sync-fix-design.md)): its stopped-LSDj detector, which B3a's tiny-block
+parity groups pinned as a defect, turned out to be reading the core's own clocking of a stopped LSDj. B3b is built
+([modular-graph-phase-b3b-design.md](modular-graph-phase-b3b-design.md)): that node is split into one protocol node
+per role beside the MIDI routing and the controller session, `kernelProjection` moved into `buildGraph`, zod is out
+of the bundle (78 KB, from 660), and the kernel is deleted. Every recorded digest of the kernel node's rig held on
+the per-role graph, and strict parity held bit for bit at every commit.
 
 ### Phase C: nodes own their knowledge
 
@@ -1249,8 +1263,8 @@ here so it is not lost.
   package's rule; the exact peer topology is confirmed in Phase B against the existing link tests.
 - **Bit-identical parity** relies on summing order and frame offsets matching the current engine; any
   deviation is documented in Phase B.
-- **Script-node call overhead** versus the kernel's single call: measured in B3a (§4.9), about 0.09 to 0.18 us
-  a node per block, so batching is not needed below hundreds of script nodes on 1-frame blocks.
+- **Script-node call overhead** versus the kernel's single call: measured in B3a and B3b (§4.9), about 0.09 to
+  0.18 us a node per block, so batching is not needed below hundreds of script nodes on 1-frame blocks.
 - **Surround to the DAW** depends on DPF port groups (§3.6).
 - **Large graphs.** The goal past chiptune is user-built synths and music apps, so graphs of thousands of
   nodes. Measured in B2 with `build/bin/retroplug-graph-test "[bench]"`, a Release build on a Ryzen 9 9950X:

@@ -4,9 +4,11 @@
 // matter (docs/launchpad-plan.md 7.3) and the difference is not in this file at all - it is in the `send`
 // the caller injects:
 //
-//   emulated cart   send pushes into the system's MIDI inbox, and the existing `midiMap` role
-//                   (dspRoles.ts) turns it into link-port bytes exactly as it always has
-//   real Game Boy   send is ctx.emitMidiOut, and an Arduinoboy on the other end does the same job
+//   emulated cart   send goes out on the controller node's `launches` port into the cart's lsdj-sync
+//                   node, whose `midiMap` mode (script/nodes/lsdjSync.ts) turns it into link-port bytes
+//                   exactly as it always has
+//   real Game Boy   send goes out on the node's `midiOut` port, and an Arduinoboy on the other end does
+//                   the same job
 //
 // So both paths carry the SAME launch stream and are in sync by construction - the property
 // Engine::setCoreByteSink gives the risa/N8 mirror. Note what is deliberately NOT here: the app does not

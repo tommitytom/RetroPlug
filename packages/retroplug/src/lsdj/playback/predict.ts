@@ -23,7 +23,7 @@
 // edits made on the device.
 
 import type { Song } from "../model";
-// The leaf, not ../runtime: this module is bundled into the DSP kernel (the audio thread), and the
+// The leaf, not ../runtime: this module is bundled into the controller session node (the audio thread), and the
 // runtime barrel would drag the whole WRAM reader in behind one four-element constant.
 import { CHANNELS } from "../runtime/types";
 import {

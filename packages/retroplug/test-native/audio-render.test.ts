@@ -1,8 +1,8 @@
 // The host renders REAL audio from a REAL Game Boy core, driven purely through the TS
-// DSP kernel (cores construct bare — no C++ roles). Boots the embedded mGB synth, captures an idle
-// baseline (near-silent control), then stages a MIDI C-major chord that the kernel's midi-routing
-// role fans to the system and its `mgb` role turns into serial input; asserts the rendered audio is
-// non-silent AND louder than idle — proving the MIDI drove the core's sound through the kernel path.
+// script nodes (cores construct bare - no C++ roles). Boots the embedded mGB synth, captures an idle
+// baseline (near-silent control), then stages a MIDI C-major chord that the routing node fans to the
+// system and its `mgb` role's node turns into serial input; asserts the rendered audio is non-silent
+// AND louder than idle - proving the MIDI drove the core's sound through the script nodes.
 // Complements dsp-serial (routing-presence toggle) with an idle-baseline magnitude check. In-TS RMS.
 import { test, expect } from "../testing/harness";
 import { createAudioDriver } from "../src/audioDriver";
@@ -12,7 +12,7 @@ import { directGraph } from "../src/graph/directGraph";
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
 const graph = directGraph();
 
-// The embedded mGB, built bare (no roles of its own): the pipeline set here is all the kernel runs for it.
+// The embedded mGB, built bare (no roles of its own): the pipeline set here is every protocol node placed for it.
 const MGB: ConstructSpec = { romPath: "", platform: "gb", core: "sameboy", embeddedRom: "mgb", savPath: null, statePath: null };
 
 // mGB listens on a MIDI channel per pulse voice; a C-major chord is one note per channel.
@@ -34,19 +34,19 @@ test("mGB renders non-silent audio from a MIDI chord (idle-silence control)", ()
   const id = 1; // this direct-backend test picks its own id (fresh host per file)
   expect(graph.add(MGB, id)).toBeTruthy(); // embedded mGB → a real bare core
 
-  // The kernel is the only behaviour layer: midi-routing (SendToAll) fans host MIDI to the system,
-  // and its `mgb` role turns the routed bytes into serial input (mGB reads MIDI-over-serial).
+  // The script nodes are the only behaviour layer: the routing (SendToAll) fans host MIDI to the system,
+  // and its `mgb` role's node turns the routed bytes into serial input (mGB reads MIDI-over-serial).
   expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
   expect(graph.setPipeline(id, [{ kind: "mgb", config: {} }])).toBeTruthy();
 
   audio.renderAudio(1500); // warm up: GB boot + mGB firmware init (discarded)
 
   const idle = rms(audio.renderAudio(500)); // no MIDI staged → near-silent baseline
-  CHORD.forEach((m) => audio.stageMidiIn(m)); // host MIDI → kernel routing → mGB serial
+  CHORD.forEach((m) => audio.stageMidiIn(m)); // host MIDI → the routing node → mGB serial
   const playing = rms(audio.renderAudio(1500)); // the chord rings
 
   console.log(`[audio-render] mGB RMS idle=${idle.toFixed(5)} playing=${playing.toFixed(5)}`);
   expect(idle < 0.01).toBeTruthy(); // control: silent before the notes
   expect(playing > 0.001).toBeTruthy(); // the chord is audible
-  expect(playing > idle).toBeTruthy(); // and it was driven by the MIDI through the kernel
+  expect(playing > idle).toBeTruthy(); // and it was driven by the MIDI through the script nodes
 });

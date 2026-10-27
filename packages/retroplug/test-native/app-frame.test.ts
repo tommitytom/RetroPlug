@@ -2,7 +2,7 @@
 // (loadMgb → buildCore), advance the core with renderAudio, then read its framebuffer back over
 // the new getFrame RPC. Proves the per-system FrameBufferTriple escapes to TS as raw XRGB8888 pixels —
 // the data an EmulatorTile blits into an LVGL Canvas. (Frames are produced by the core rendering vblanks
-// during processBlock, independent of the DSP kernel, so no kernel is wired here.)
+// during processBlock, independent of the script nodes, so no protocol node is placed here.)
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";

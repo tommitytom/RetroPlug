@@ -2,7 +2,7 @@
 //
 // The Reaper leg is the only check that the plugin tracks a REAL DAW transport, but it needs a Reaper
 // install, it is not in CI, and its only observable is the rendered audio. This runs the same 30 s at
-// 120 BPM against the real core and the real DSP kernel, and measures the two things that render
+// 120 BPM against the real core and the real sync node, and measures the two things that render
 // cannot separate:
 //
 //   1. THE ROM'S OWN ROW COUNTER, polled every 256 frames (5.8 ms - finer than the ~16.7 ms video

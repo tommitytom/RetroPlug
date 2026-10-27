@@ -6,7 +6,7 @@
 // streams are MONO (silent right lane). ch1→Square1 is the guaranteed anchor (ch2 is broken in the
 // committed ROM, DMC needs a sample bank unavailable headless).
 //
-// Uses `adopt` (mode 3 arms capture at CONSTRUCT), whose publish carries the system's kernel pipeline.
+// Uses `adopt` (mode 3 arms capture at CONSTRUCT), whose publish places the system's protocol nodes.
 // See app-play-nes-channels.test.ts for the same construct-time-capture rationale.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";

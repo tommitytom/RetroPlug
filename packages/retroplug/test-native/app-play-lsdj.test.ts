@@ -69,7 +69,7 @@ test("the store's lsdj-sync role is the sole clock that makes an armed LSDj sing
   expect(project.systems.setRoleConfig(id, "lsdj-sync", { mode: "off" })).toBeTruthy();
   const neg = rms(audio.renderAudio(600));
 
-  // Positive: lsdj-sync MidiSync (via the store) → the kernel's 24-PPQN 0xF8 clock is the only clock.
+  // Positive: lsdj-sync MidiSync (via the store) → its node's 24-PPQN 0xF8 clock is the only clock.
   expect(project.systems.setRoleConfig(id, "lsdj-sync", { mode: "midiSync" })).toBeTruthy();
   const pos = rms(audio.renderAudio(3000));
 

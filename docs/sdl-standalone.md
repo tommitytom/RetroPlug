@@ -283,7 +283,9 @@ Self-contained; independent of the MIDI/audio work.
 ## Performance notes (future work)
 
 Profiled with the in-tree harness (`dsp-bench` / `nes-bench` under a `RETROPLUG_PROFILE` host; the `DSP_SPAN_*`
-trace spans). Audio-thread JS is ~0.5% of a block for both cores — the emulator core dominates. Two items
+trace spans, which since B3b name each script node's span by its type). Audio-thread JS was ~0.5% of a block for
+both cores when this was measured, under the DSP kernel, and B3b's protocol nodes took it under 0.2% with no
+allocation a block ([spec/08](../spec/08-profiling.md)): the emulator core dominates. Two items
 stand out, most relevant on constrained (low-power) devices:
 
 - **NES savestate-serialize spike.** `SnapshotRegistry::publishSystem`, which `Engine::processBlock` calls for

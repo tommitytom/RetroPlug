@@ -258,7 +258,7 @@ struct AppState {
     // Control surface (Settings-adjacent "Launchpad" submenu): its own RtMidi in/out pair, deliberately kept
     // out of app.midi's shared stream so pad presses never arrive as musical MIDI too (a NoteOn there is a
     // row launch to LSDj's MI.MAP translator, so a shared stream fires every launch twice). audioCb drains
-    // its input into the Engine's controllerIn and pushes the kernel's LED traffic back; the 60 fps loop
+    // its input into the Engine's controllerIn and pushes the controller session's LED traffic back; the 60 fps loop
     // writes that out. The port + enabled toggle persist to launchpad.cfg.
     retroplug::LaunchpadHost launchpadHost{
         retroplug::rtMidiPortFactory("RetroPlug Launchpad"),
@@ -866,8 +866,8 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
         // Real-time is already gone (stripped above); SYSEX is excluded here, because a control surface's
         // bulk-LED message (hundreds of bytes) would otherwise be shovelled down a cart FIFO that has no
         // idea what it is.
-        // Only with no emulated NES system to mirror (Engine::cartMirrorSystemId): with one, the cart gets that
-        // system's kernel output instead, as the plugin does.
+        // Only with no emulated NES system to mirror (Engine::cartMirrorSystemId): with one, the cart gets what
+        // that system's protocol nodes send its core instead, as the plugin does.
         const bool sysex = m.bytes[0] == 0xF0;
         if (!sysex && a.svc.engine.cartMirrorSystemId() == 0)
             a.n8Host.link().push(0, m.bytes.data(), m.bytes.size(), a.sampleRate);
@@ -875,7 +875,7 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
         // MIDI: no role consumes it, and the passthrough translators (mGB, LSDj MidiPassthrough) push every
         // byte they are given straight down the cart's link port - so a controller's handshake or bulk-LED
         // message would arrive at the Game Boy as noise. A control surface has its own stream for this
-        // (BlockInput.controllerIn), which is the whole reason that stream exists.
+        // (rp.host.controller-in, read by the controller session), which is the whole reason that stream exists.
         if (sysex) continue;
         // Everything left (notes / CC / ...) is staged as host MIDI in.
         a.svc.engine.stageMidi(0, m.bytes);
@@ -886,7 +886,7 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
     // Control-surface traffic, on its own stream. Same shape as the MIDI drain above (the vectors were
     // allocated on the backend's callback thread, and the engine copies each into its staging arena, which
     // allocates nothing), but staged as controllerIn rather than musical MIDI - a pad NoteOn must reach the
-    // controller app's quantiser and nothing else. The connected flag rides the block so the role can take
+    // controller app's quantiser and nothing else. The connected flag rides the block so the session can take
     // the device the moment one shows up (it enters Programmer mode and repaints on that edge).
     a.launchpadHost.link().drainInput(a.launchpadScratch);
     for (const auto& m : a.launchpadScratch)
@@ -908,17 +908,17 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
     // every mode to the stereo mix. N=4/6/8 spreads stems across the device's pairs.
     a.svc.engine.processBlock(static_cast<std::uint32_t>(frames), a.audioPtrs.data(), static_cast<std::size_t>(N));
 
-    // Kernel MIDI-out (LSDj MI.OUT / Master Sync / passthrough) → the RtMidi out port, then clear the block's
-    // queue. Mirrors PluginDSP::run's writeMidiEvent drain (there it goes to the DAW). No length cap: MidiIo
-    // sends whatever it is given, and a control surface's LED traffic is sysex, so capping at 3 bytes would
-    // silently drop exactly the messages that matter.
+    // Host MIDI out (LSDj MI.OUT / Master Sync, the controller's launches) → the RtMidi out port, then clear
+    // the block's queue. Mirrors PluginDSP::run's writeMidiEvent drain (there it goes to the DAW). No length
+    // cap: MidiIo sends whatever it is given, and a control surface's LED traffic is sysex, so capping at 3
+    // bytes would silently drop exactly the messages that matter.
     for (const auto& mo : a.svc.engine.midiOut())
         if (!mo.data.empty()) a.midi.send(mo.data.data(), mo.data.size());
     a.svc.engine.clearMidiOut();
 
-    // Kernel control-surface-out (LED traffic) → the Launchpad link's ring, written to the device by the 60
-    // fps loop rather than from here: a frame of latency is invisible on a light, and it keeps a possible
-    // 538-byte bulk-SysEx USB write off the audio thread. A no-op when no surface is connected.
+    // Control-surface out (the controller session's LED traffic) → the Launchpad link's ring, written to the
+    // device by the 60 fps loop rather than from here: a frame of latency is invisible on a light, and it keeps
+    // a possible 538-byte bulk-SysEx USB write off the audio thread. A no-op when no surface is connected.
     for (const auto& co : a.svc.engine.controllerOut())
         if (!co.empty()) a.launchpadHost.link().pushOutput(co.data(), co.size());
     a.svc.engine.clearControllerOut();
@@ -1613,8 +1613,8 @@ int main(int argc, char** argv) {
     if (!setupSdl(app)) return 1;
     if (!bootControlPlane(app)) return 1;
 
-    // Mirror the first emulated NES system to a connected physical N8 - the kernel output its FIFO gets, routed MIDI
-    // and generated bytes alike (the plan's rp.n8.cart-mirror; risa's host sync among them) - so the real cart stays
+    // Mirror the first emulated NES system to a connected physical N8 - what its protocol nodes send its FIFO, routed
+    // MIDI and generated bytes alike (the plan's rp.n8.cart-mirror; risa's host sync among them) - so the real cart stays
     // in lock-step with the emulated core. No-op + near-free
     // until an N8 is connected. The frame offset preserves each clock's intra-block timing via N8Link's
     // timed-release scheduler. (The emulated-FIFO `flush` barrier isn't replayed: the physical arm byte

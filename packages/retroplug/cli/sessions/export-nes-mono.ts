@@ -29,7 +29,7 @@ runSession((s) => {
 
   // Adopt with the "mesen" role in individualMono mode — capture engages at construct/onActivate,
   // so it MUST be set here, not live. The host-MIDI role lets notes reach the APU (the graph the adopt
-  // publishes carries it to the kernel).
+  // publishes places its protocol node).
   s.project.systems.adopt({
     romPath,
     roles: [

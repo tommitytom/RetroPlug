@@ -22,7 +22,7 @@ export class TickClock {
   }
 
   /** Each tick this block holds at `resolution` ticks a quarter, through `cb`, and the counter advanced past them: the
-   *  kernel's ctx.eachTick. A walk `cb` throws out of leaves the counter where it was, as the kernel's did. */
+   *  kernel's ctx.eachTick was. A walk `cb` throws out of leaves the counter where it was, as the kernel's did. */
   walk(resolution: number, cb: TickCallback): void {
     this.next = walkTicks(this.block, resolution, this.next, cb);
   }

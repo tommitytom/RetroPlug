@@ -1,6 +1,6 @@
 // Port of legacy test/ts/gb/lsdj/passthrough.test.ts: the TS `lsdj-sync` role in
-// MidiPassthrough mode (6), running in the real DSP kernel, forwards raw host-MIDI bytes verbatim to
-// LSDj's serial (dspRoles.ts `forwardMidiToSerial`). This exercises the raw-forward path against a real
+// MidiPassthrough mode (6), running as its script node, forwards raw host-MIDI bytes verbatim to
+// LSDj's serial (script/nodes/lsdjSync.ts, its passthrough mode). This exercises the raw-forward path against a real
 // LSDj core — the legacy floor: LSDj keeps running (valid frames) after the byte stream, no crash.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";

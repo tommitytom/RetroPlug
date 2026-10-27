@@ -48,7 +48,7 @@ public:
 
     // --- audio render / input drive / transport ---
     bool            pressButton(std::uint32_t id, std::uint32_t button, bool down);
-    // Control MIDI for ONE system, bypassing the routing kernel: a settings knob that must reach the cart
+    // Control MIDI for ONE system, bypassing the routing node: a settings knob that must reach the cart
     // it belongs to, however the project routes musical MIDI. Up to 4 bytes (a channel message).
     bool            stageSystemMidi(std::uint32_t id, std::vector<std::uint8_t> bytes);
     rfl::Bytestring renderAudio(double ms);
@@ -89,12 +89,12 @@ public:
     // false for any other string. Control-plane, via the invoker's config path (ConfigField::SerialOutCapture):
     // the TS store calls it when a system's lsdj-sync mode changes.
     bool            setSerialOutCapture(std::uint32_t id, std::optional<std::string> mode);
-    // Drain the MIDI-out the kernel emitted (LSDj MI.OUT decoder), accumulated across renderAudio blocks
+    // Drain the host MIDI out (the LSDj sync nodes' decoders), accumulated across renderAudio blocks
     // since the last drain. For headless tests; the plugin drains Engine::midiOut() to the DAW directly.
     std::vector<RpcMidiOut> drainMidiOut();
     // Render a scripted run of host blocks the way PluginDSP::run renders each one: stage the block's MIDI
     // at its frames, drain the command ring, apply its transport, processBlock(frames, lanes, outputs),
-    // then take and clear the kernel's MIDI out. Quiescent only. The parity suite's capture call.
+    // then take and clear the host MIDI out. Quiescent only. The parity suite's capture call.
     // ppq (a locate) and controller have no PluginDSP::run counterpart (the plugin never calls setPpq, which
     // would double-count; controller traffic is the SDL standalone's path), and the plugin's CC-automation
     // stage and MIDI-out size filter are not modelled.
@@ -120,7 +120,7 @@ public:
 
 private:
     bool rendersInto(std::size_t channels) const;
-    // Append the kernel's per-block MIDI-out (Engine::midiOut(), cleared each block) to accumMidiOut_.
+    // Append the block's host MIDI out (Engine::midiOut(), cleared each block) to accumMidiOut_.
     // Called after each processBlock in the render loops so drainMidiOut() sees the whole window.
     void accumulateMidiOut();
 
@@ -131,6 +131,6 @@ private:
     static constexpr std::uint32_t kBlockSize = 1024;
     std::vector<float>       scratchL_;  // renderAudio pull-path scratch (control thread)
     std::vector<float>       scratchR_;
-    std::vector<RpcMidiOut> accumMidiOut_;  // kernel MIDI-out gathered across a render window (drainMidiOut)
+    std::vector<RpcMidiOut> accumMidiOut_;  // host MIDI out gathered across a render window (drainMidiOut)
     std::unique_ptr<rp::kit::KitCompiler> kitCompiler_;  // lazy: built on first compileKit (enkiTS pool)
 };

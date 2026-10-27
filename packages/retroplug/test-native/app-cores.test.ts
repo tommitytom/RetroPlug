@@ -28,7 +28,7 @@ const GG = __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.gg";
 
 // Boot `rom` through the stores, advance the core, and assert its framebuffer published (the core is
 // live and rendering). Liveness is the published frame itself (getFrame, in-memory) — no screenshot /
-// file write, so it can't be confused with a failed PNG write. No DSP kernel needed — this is a
+// file write, so it can't be confused with a failed PNG write. No protocol node needed - this is a
 // construct/boot/render proof, not a role test.
 //
 // `size` additionally pins the VISIBLE resolution. Worth asserting because Mesen's real per-console

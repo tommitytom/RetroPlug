@@ -1,5 +1,5 @@
 // End-to-end host parity: the REAL TypeScript control plane (bootSession, the project/systems store,
-// the DSP kernel, the audio driver) driven identically on both hosts, with the rendered PCM compared
+// the protocol script nodes, the audio driver) driven identically on both hosts, with the rendered PCM compared
 // sample for sample.
 //
 //   node --test packages/native/node/test/emu-parity.test.mjs

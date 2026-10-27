@@ -19,13 +19,11 @@ Things a user could reasonably expect that aren't wired yet. None block shipping
 
 `lsdj-sync` implements every sync mode except raw **Keyboard**: MidiSync, MidiSyncArduinoboy,
 MidiMap, KeyboardMidi, MidiPassthrough, MidiOut (ArduinoboyMaster), and MasterSync all ship
-([dspRoles.ts](../packages/retroplug/src/dspRoles.ts)). Raw Keyboard emits nothing because it needs
-the per-block **`keys` feed**, which nothing supplies yet: the kernel node hands the kernel empty
-`buttons` and `keys` arrays every block
-(`kernelNode.ts`, `blockInput`, deleted in B3b), so the kernel's
-`buttons`/`keys` inputs are present but unfed. Feeding host keys/buttons per block (a port on the kernel
-node, or on the protocol node that replaces it) unblocks this mode. (See
-[04-roles-dsp-kernel.md](04-roles-dsp-kernel.md).)
+([script/nodes/lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts), the role's protocol
+node). Raw Keyboard sends nothing because it needs a per-block **`keys` feed**, which nothing supplies
+yet: `rp.lsdj.sync` has no input for host keys (the DSP kernel carried empty `buttons` and `keys`
+arrays until B3b deleted it), and no host stages any. A `keys` input on the node, and a host I/O node
+that feeds it, unblock this mode. (See [04-roles-protocol-nodes.md](04-roles-protocol-nodes.md).)
 
 ### NES per-mapper expansion sub-channels (multichannel audio)
 
@@ -106,7 +104,6 @@ swept as their feature lands or when touched. Known ones:
 | Location | Marker |
 |---|---|
 | [host/engine/Engine.cpp](../packages/native/src/host/engine/Engine.cpp) | `fastBoot` takes effect on the next restart, not live |
-| [systemRoles.ts:13,59](../packages/retroplug/src/systemRoles.ts#L13) | names kit-patch as the motivating example for the deferred `ui` descriptor. The descriptor is still unbuilt, but kit patching shipped without it - `lsdj-assets` is a no-DSP role that compiles on the control plane through the `compileKit` RPC - so the example needs replacing, not the entry |
 
 Not cleanup (intentional domain terms that read like TODOs): `deferredProject` in
 [systemsStore.ts](../packages/retroplug/src/systemsStore.ts) and `kind: "deferred"` in
@@ -114,41 +111,31 @@ Not cleanup (intentional domain terms that read like TODOs): `deferredProject` i
 
 ---
 
-## 5. The node-graph engine: after B3a
+## 5. The node-graph engine: after B3b
 
 Phase B of [modular-graph-design.md](../docs/modular-graph-design.md) moves the engine onto the graph in
 steps, each held bit for bit to the parity baseline ([06-build-test.md](06-build-test.md)). B3a
-([modular-graph-phase-b3a-design.md](../docs/modular-graph-phase-b3a-design.md)) is built: the kernel's
-input and output are real wires (host I/O nodes, `serialIn` / `midi` / `bytes` / `buttons` inputs on
-every system node, the Game Boy's `serialOut`, `rp.n8.cart-mirror`), the kernel runs unchanged as one TS
-node, `rp.dsp.kernel`, in the script host every Engine embeds, and the sealed native kernel node, its
-fan-out, the `dspSetSystems` / `dspLoadKernel` / `compileScript` RPCs and the boot-time kernel load are
-gone. Staging host MIDI allocates nothing within the room reserved at construction (one flat arena per
-staging). After it, LSDj master sync was fixed on its own
+([modular-graph-phase-b3a-design.md](../docs/modular-graph-phase-b3a-design.md)) made the DSP kernel's
+input and output real wires (host I/O nodes, `serialIn` / `midi` / `bytes` / `buttons` inputs on every
+system node, the Game Boy's `serialOut`, `rp.n8.cart-mirror`) and ran the kernel as one TS node in the
+script host every Engine embeds. LSDj master sync was then fixed on its own
 ([lsdj-master-sync-fix-design.md](../docs/lsdj-master-sync-fix-design.md)): a Game Boy's serial-out capture is
 a mode, `listen` for master sync and `drive` for MI.OUT, and the decoder sends a clock per byte and a stop after a
-200 ms silence timed on the bytes' frames, which fixed B0's sixth and eighth recorded defects and let a stopped LSDj
-start again. What is left, in order:
+200 ms silence timed on the bytes' frames. B3b
+([modular-graph-phase-b3b-design.md](../docs/modular-graph-phase-b3b-design.md)) split the kernel into one
+protocol script node per role beside the MIDI routing and the controller session, moved `kernelProjection`
+into `buildGraph`, took zod out of the script-node bundle (78 KB, from 660), gave `rp.host.midi-out` each
+input's system from its settings, and deleted the kernel. What is left, in order:
 
-- **B3b.** One protocol node per role (`mgb.midi`, `lsdj.sync`, `risa.sync`, `sms.sync`,
-  `n8.midi-to-fifo`, the MIDI routing, the Launchpad controller), each with its own ports;
-  `kernelProjection`'s special cases (the synthesized `midi-routing` and Launchpad stages, the forced
-  `lsdj-sync` mode for MI.MAP) moved into `buildGraph`; a script-node bundle with no zod in it (the
-  kernel's settings schema and `dspRoles.ts` carry it today); then the kernel node and `DspKernel`
-  deleted. How several stages' outputs merge into one system input is B3b's to decide; a system input
-  must keep "all MIDI, then all bytes" per core, and `rp.core.merge`'s output queue is the default size,
-  so merging large wires needs a merge whose output capacity its settings give. A port per protocol also
-  ends the private 4-byte system prefix on host MIDI out (`rp.host.midi-out` takes the id from its
-  wiring instead), and with it the one port's reliance on every role sending its host MIDI out at frame 0.
-  A Game Boy's `serialOut` is to be wired only into a node that decodes MI.OUT or master sync, so one
-  without pays nothing for a driving capture's idle bytes. Once each protocol node has its own `midiOut`
-  port, the frame-0 rule goes (B3a design section 4.4) and master sync can send each clock at its byte's
-  frame, one block late, so clocks keep their spacing instead of bunching at frame 0 in large blocks.
-  Carrying the capture mode as a Game Boy node setting in the published document, rather than through
-  `ConfigField::SerialOutCapture` plus a publish, would make a mode switch atomic and retire the
-  master-sync design's first accepted limit (its section 10). And a profile build's `apu-render` span
-  starts where the last script node's `process` ended, which is right only while every script node runs
-  before the systems: a protocol node placed after a system needs it revisited.
+- **Master-sync clocks at their byte's frame**, its own change, with its own re-record: master sync sends each
+  clock at frame 0 of the block after its byte, so in a large block its clocks bunch where they could keep
+  their spacing, one block late. Each LSDj node has its own `midiOut` port now, so its queue no longer orders
+  another's; but this would be the first producer of host MIDI past frame 0, and `rp.host.midi-out` appends
+  input by input, so the host's list would need a merge by frame across its inputs, or the hosts (the plugin
+  writing to the DAW, the SDL standalone) a sort before they write it out.
+- **The capture mode as a Game Boy node setting** (Phase C, with the other live knobs): carried in the
+  published document rather than through `ConfigField::SerialOutCapture` plus a publish, it would make a mode
+  switch atomic and retire the master-sync design's first accepted limit (its section 10).
 - **One QuickJS context per script node, decided before user-written nodes.** Every script node runs in
   the audio runtime's one context, so they share a realm: the script host keeps its own writes and its
   reads of a node's methods off the shared prototypes ([02-native-host.md](02-native-host.md)), but one
@@ -160,7 +147,27 @@ start again. What is left, in order:
   (2 s of CPU) every block and is never bypassed, as a `process` that hangs would be. A context per node
   in the same runtime (its own intrinsics and prototypes) closes all of it, at a per-context memory cost,
   and names the node a job ran in (`JS_ExecutePendingJob` reports the job's context); decide it before
-  nodes users write (Phase C, the Reaktor-scale aim).
+  nodes users write (Phase C, the Reaktor-scale aim). B3b made that seven nodes a project, not one.
+- **Found while building B3b, left as they are:**
+  - The MI.OUT and master-sync decoders (`arduinoboyDecodeSerialOut`, `arduinoboyMasterSyncBlock` in
+    [lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts)) build each message they emit as a new
+    array, about 3 JS allocations for every host MIDI message they decode: the one per-block JS allocation
+    left on a production path (every other protocol node allocates nothing in a warm block,
+    [08-profiling.md](08-profiling.md)). Emitting into a reused buffer is the decoders' own change.
+  - `defineNode` keeps to ES2015's library (`Set`, `Object.entries`, `includes`), so the script-node bundle
+    holds no zod but is not yet MicroQuickJS-ready; `settingsSchema.ts` already keeps to ES5's.
+  - `routeBlockInto` in [midiRouting.ts](../packages/retroplug/src/midiRouting.ts) has no caller since B3b:
+    the routing node routes each message with `routeTarget`, the same arithmetic, and `routeBlock`, its pure
+    twin, stays as the reference the routing node's test holds every mode to. It can be deleted.
+  - `DirectGraph.setPipeline` hands a node its role's config as given, where a store hands the config its
+    schema parsed, and a node's settings fill their own defaults: a direct caller's `lsdj-sync` with no `mode`
+    is MIDI sync, where the kernel read a missing mode as nothing.
+  - A profile build's `apu-render` span begins where the last script node's `process` ended, which is right
+    while every script node runs before the systems, as `buildGraph` places them; a script node placed after
+    a system would need it revisited.
+  - A few test-native case names still say "the kernel" (in `dsp-lsdj-midisync`, `dsp-risa-sync`,
+    `dsp-sms-sync`, `lsdj-midiout` and `plugin-controlplane`), where they mean the protocol nodes. Renaming
+    a case is harmless but was kept out of B3b, which changed no test's identity it did not have to.
 - **Found while building B3a, left as they are:**
   - `rp.host.midi-out` and `rp.host.controller-out` append one `std::vector` per message to the engine's
     host outputs (`Engine::midiOut_` / `controllerOut_`, the `rp.engine.host-io/1` service in
@@ -181,10 +188,10 @@ start again. What is left, in order:
   - A Game Boy that clocks its serial port itself, a CGB on its fast clock, can send more in a block past
     about 12000 frames (6000 in double speed) than its fixed `serialOut` holds; the rest is dropped and
     counted ([SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp) `kSerialOutCapacity`).
-  - The kernel node's `midiOut` is sized for a decoded MI.OUT stream at its densest up to 8192-frame
-    blocks (1024 messages, a captured byte every 8 frames), while `serialOut` is sized for 65536: in a
-    larger block the decoded stream can pass 1024 messages, and the rest is dropped and counted
-    ([nodes/ports.ts](../packages/retroplug/src/script/nodes/ports.ts) `MIDI_OUT`).
+  - `rp.lsdj.sync`'s `midiOut` (the kernel node's, before B3b) is sized for a decoded MI.OUT stream at its
+    densest up to 8192-frame blocks (1024 messages, a captured byte every 8 frames), while `serialOut` is
+    sized for 65536: in a larger block the decoded stream can pass 1024 messages, and the rest is dropped and
+    counted ([nodes/ports.ts](../packages/retroplug/src/script/nodes/ports.ts) `MIDI_OUT`).
   - `rp.host.midi-in`'s sort at the source merges two frame runs in linear time, which is what real
     plugin hosts stage (the DAW's events, then the automation CCs at frame 0); a staging of three or more
     runs falls back to an in-place insertion sort, quadratic in what was staged, on the block thread. The

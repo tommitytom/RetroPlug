@@ -427,7 +427,7 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
    Guarded by `retroplug-audio-test` (`SameBoyStems.test.cpp`): `Sum(4 stems) == mix` per-sample on a
    real mGB boot render (Off + Accurate), plus the golden mGB mix render staying byte-identical.
 3. **CLI GB export - DONE.** The `PerChannel` host shape (the sibling of `renderAudioPerSystem`'s
-   `PerSystem`; single-system, keeping the kernel/MIDI pipeline) + `EngineRpcService::
+   `PerSystem`; single-system, keeping the script nodes / MIDI pipeline) + `EngineRpcService::
    renderAudioPerChannel(id, ms)` (gated `systemCount()==1`, sized from the target's `channelLayout()`,
    returns one interleaved-stereo `Bytestring` per stream) + a `sampleRate()` query, all wired through
    the harness facet (`BackendRpcRegistration`) and `audioDriver.ts`. `export-mgb-channels.ts` emits the 3

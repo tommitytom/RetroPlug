@@ -39,7 +39,7 @@ public:
     // which a Note/CC press fits inside; a surface's sysex never comes this way. False, with nothing
     // staged, for an empty message or one longer than 4 bytes.
     bool stageControllerMidi(std::vector<std::uint8_t> bytes);
-    // MIDI for ONE system, bypassing the routing kernel entirely (see DspCommand::stageSystemMidi).
+    // MIDI for ONE system, bypassing the routing node entirely (see DspCommand::stageSystemMidi).
     void stageSystemMidi(SystemId id, std::vector<std::uint8_t> bytes);
     void setBpm(double bpm);
     void setTransport(bool playing);

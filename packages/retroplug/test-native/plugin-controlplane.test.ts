@@ -1,7 +1,7 @@
 // The plugin's control-plane bundle, exercised the way the DPF plugin will: import it (composing the
-// stores + defining the __rp_* globals; the DSP kernel is a script node the engine embeds), then drive
-// project I/O through those globals. Proves the bundle boots, autoloads a real .rplg (reaper's seed path), plays through the
-// kernel, and round-trips a base64 state chunk (DPF getState/setState).
+// stores + defining the __rp_* globals; the script nodes are in the bundle the engine embeds), then drive
+// project I/O through those globals. Proves the bundle boots, autoloads a real .rplg (reaper's seed path), plays through
+// the script nodes, and round-trips a base64 state chunk (DPF getState/setState).
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { RecentStore } from "../src/recentStore";
@@ -47,7 +47,7 @@ test("autoload an mGB .rplg.zip → the kernel plays it; base64 getState/setStat
   const loadPath = g.__rp_loadProjectPath as (p: string) => boolean;
   expect(loadPath(rplg)).toBeTruthy();
 
-  // The load published the graph, the kernel's structure with it; drive audio.
+  // The load published the graph, its protocol nodes in it; drive audio.
   const audio = createAudioDriver();
   audio.renderAudio(1500); // warm up: GB boot + mGB firmware init
   const idle = rms(audio.renderAudio(500));

@@ -2,8 +2,8 @@
 // graph, the same way the plugin and native tests wire it. Lives in src/ (not cli/) so both the CLI session
 // layer (cli/session.ts re-exports it) and the background render worker (src/render/worker.ts) share one
 // boot path. Authored in TS, esbuild-bundled to JS; the host provides the Backend over
-// globalThis[Symbol.for("plugin")].__rpcSend. The DSP kernel needs no boot: it is a script node every Engine
-// has (docs/modular-graph-phase-b3a-design.md section 2.5), and the project's graph carries its structure.
+// globalThis[Symbol.for("plugin")].__rpcSend. The script nodes need no boot: they are in the bundle every Engine
+// embeds (docs/modular-graph-phase-b3a-design.md section 2.5), and the project's graph places them.
 
 import { createRealBackend } from "./realBackend";
 import { RecentStore } from "./recentStore";

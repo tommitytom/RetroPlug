@@ -7,7 +7,7 @@ export interface SegmentDigest {
   lanes: string[];
 }
 
-/** A whole case: its segments in order, the kernel's MIDI out, and at the end each battery system's SRAM
+/** A whole case: its segments in order, the host MIDI out, and at the end each battery system's SRAM
  *  and every system's work RAM, keyed by project slot. Work RAM is stable only because the parity suite
  *  powers cores on in a fixed state (util/Determinism.hpp); it catches state a stimulus changed without
  *  making a sound. */
