@@ -57,15 +57,14 @@ struct NodeRig {
     std::uint64_t                                        nextToken = 1;
     std::vector<SystemId>                                released;  // ids whose node freed its core
     HostCores                                            cores{this, &take, &release};
-    // The host I/O stand-in: nothing is ever staged, `connected` is the control surface, and the host MIDI out, the
-    // cart's calls and the drops are recorded. The control-surface out goes nowhere, since no test reads it off this rig
+    // The host I/O stand-in: nothing is ever staged, `connected` is the control surface, and the host MIDI out and the
+    // cart's calls are recorded. The control-surface out goes nowhere, since no test reads it off this rig
     // (HostIo.test.cpp reads it off an Engine), but a node calls it, so it is wired.
     bool                                                 connected = false;
     std::vector<HostCall>                                cart, traced;
     std::vector<HostMidiOut>                             midiOut;
-    std::uint32_t                                        dropped = 0;
     EngineHostIo                                         hostIo{this, &takeNothing, &takeNothing, &isConnected, &recordMidiOut,
-                                                                &ignoreControllerOut, &recordCart, &countDropped};
+                                                                &ignoreControllerOut, &recordCart};
     EngineSyncTrace                                      trace{this, &recordTrace};
     // Last, so it is destroyed first: its nodes free their cores through `cores` into `released`.
     std::unique_ptr<rp::graph::GraphHost>                host;
@@ -127,7 +126,6 @@ struct NodeRig {
     static void recordCart(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush) {
         static_cast<NodeRig*>(ctx)->cart.push_back({frame, bytesOf(data, size), flush});
     }
-    static void countDropped(void* ctx) { ++static_cast<NodeRig*>(ctx)->dropped; }
     static void recordTrace(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size) {
         static_cast<NodeRig*>(ctx)->traced.push_back({frame, bytesOf(data, size), false});
     }

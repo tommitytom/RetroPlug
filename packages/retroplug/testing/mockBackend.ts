@@ -67,7 +67,6 @@ function settingsNumber(spec: ConstructSpec, key: string): number {
   return typeof v === "number" ? v : 0;
 }
 
-/** The kernel node's settings as a document carries them (src/script/kernelNode.ts). */
 export class MockBackend implements Backend {
   private files = new Map<string, Uint8Array>();
   private dir: string;

@@ -147,8 +147,8 @@ export interface AudioDriver {
   setBpm(bpm: number): boolean;
   /** Stage global host-MIDI bytes for the kernel's next render (consumed on its first block), at `frame` inside
    *  that block (0 when omitted). Any non-empty length: a channel message, a whole SysEx, or several messages as
-   *  one run - the kernel's midi-routing behaviour fans a channel message to its system(s) and broadcasts a longer
-   *  run unchanged; with no routing role it reaches none. Messages may be staged out of frame order, as a plugin
+   *  one run - the routing node fans a channel message to its system(s) and broadcasts a longer run unchanged; with
+   *  no routing placed it reaches none. Messages may be staged out of frame order, as a plugin
    *  stages a block (its notes, then each moved automation slot's CC at frame 0): the engine's MIDI input sorts
    *  them by frame, keeping the staging order on a tie. False, nothing staged, for an empty array or a frame that is
    *  not an integer from 0 to 1023. The frame is where the message lands when that block renders at least 1024

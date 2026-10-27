@@ -1,314 +1,17 @@
-// The built-in DSP-thread role behaviors: doc-06 translators/sources authored as plain TS over the
-// per-system context (dspKernel.ts). `mgb` + `lsdj-sync` are the two we're migrating off their
-// legacy C++ roles; `midi-routing` is the project-scope behavior that fans host MIDI to systems,
-// reusing the existing routeBlock decision. Registered into a RoleRegistry like registerCoreRoles.
+// The built-in roles whose work is the audio thread's: each is placed as a protocol script node
+// (graph/protocolNodes.ts names its type, script/nodes/ holds its code), which runs it for its system every block.
+// What a role is to the app stays here, on the control plane: its kind, its zod config schema (the shape the stores
+// parse, persist and hand the node as its settings), and a load-time hook. Registered into a RoleRegistry like
+// registerCoreRoles; test/system-settings/registry.test.ts holds these kinds to protocolNodes.ts's table.
 
 import type { RoleRegistry, ConstructCaps } from "./systemRoles";
-import type { ProjectBehavior, SystemBehavior, SystemCtx } from "./dspKernel";
 import type { ConstructSpec } from "./backend";
 import { z, clampedInt, boolField, enumField } from "./configSchema";
-import { routeBlockInto, MidiRouting } from "./midiRouting";
-import { LsdjSyncMode, LSDJ_MODE_VALUES, MIDI_ROUTING_VALUES } from "./settingsEnums";
-import {
-  KEYBOARD_NOTE_START,
-  KEYBOARD_LOW_START,
-  KEYBOARD_NOTE_MAP,
-  KEYBOARD_LOW_OCTAVE_MAP,
-  KEYBOARD_OCT_UP,
-  KEYBOARD_OCT_DN,
-  isExtendedScancode,
-  toGbSerialByte,
-} from "./lsdjKeyboardMap";
-import { arduinoboyDecodeSerialOut, arduinoboyMasterSyncBlock, type ArduinoboyState, type MasterSyncState } from "./lsdjArduinoboy";
-import {
-  LSDJ_START_BUTTON,
-  LSDJ_CLOCK,
-  LSDJ_START,
-  LSDJ_STOP,
-  MIDIMAP_NOTEOFF,
-  MIDIMAP_CLOCK,
-  isNoteOn,
-  isNoteOff,
-  channelOf,
-  midiMapRow,
-} from "./lsdjSyncBytes";
-import { RISA_PPQN, RISA_START, RISA_CLOCK, RISA_STOP, RISA_SEEK_TOLERANCE, risaLocate, risaArmPacket } from "./risaSync";
-import { SMS_SYNC_PPQN, SMS_SYNC_COUNTER_MOD, syncLevelsFor, type SmsSyncMachine } from "./smsSync";
-import { registerControllerRole } from "./controllerRole";
-
-// Forward every host-MIDI byte verbatim into the system's serial input. This is both `mgb`
-// (== MgbPassthroughRole) and lsdj-sync's MidiPassthrough mode (== LsdjSyncRole handlePassthrough).
-const forwardMidiToSerial: SystemBehavior = (c) => {
-  // Indexed loops, not `.forEach` — the nested forEach allocated a closure per call + one per event,
-  // and this is the hot mGB path (spec/08-profiling.md).
-  const midi = c.midi;
-  for (let i = 0; i < midi.length; i++) {
-    const e = midi[i];
-    const data = e.data;
-    for (let j = 0; j < data.length; j++) c.pushSerialIn(e.frame, data[j]);
-  }
-};
-const mgb = forwardMidiToSerial;
-
-// Forward every routed host-MIDI message straight to the core's onMidi (the emitCoreMidi sink). The
-// NES twin of `mgb`: a core with no serial port (Mesen) receives MIDI here instead of over serial.
-// The whole message goes as one event: the NES core's NesN8FifoRole iterates the bytes into its FIFO.
-const forwardMidiToCore: SystemBehavior = (c) => {
-  const midi = c.midi;
-  for (let i = 0; i < midi.length; i++) {
-    const e = midi[i];
-    c.emitCoreMidi(e.frame, e.data);
-  }
-};
-
-// MidiSyncArduinoboy (== LsdjSyncRole MidiSyncArduinoboy). Input notes drive runtime state: 24/25 toggle
-// the play flag, 26-29 set the tempo divisor, 30+ push a raw row byte (note-30). The 0xF8 clock flows
-// only while the play flag is set (NOT on host transport), and 0xFA/0xFC bookend host-transport edges.
-const arduinoboy: SystemBehavior = (c) => {
-  const st = c.state as { playing?: boolean; divisor?: number; prevTransport?: boolean; armDown?: number };
-  if (st.divisor === undefined) st.divisor = (c.config.tempoDivisor as number) || 1;
-  // autoStart: tap START on the host transport rise to park the SYNC=Lsdj cart in "wait for sync" before
-  // the note-24 play-enable + clock arrive — so a headless render starts on-grid instead of boot-lagging.
-  if (c.config.autoStart) {
-    if (c.block.transport && !(st.prevTransport ?? false)) { c.pressButton(LSDJ_START_BUTTON, true); st.armDown = 2; }
-    else if (st.armDown && st.armDown > 0) { if (--st.armDown === 0) c.pressButton(LSDJ_START_BUTTON, false); }
-  }
-  for (const e of c.midi) {
-    if (!isNoteOn(e.data[0])) continue;
-    const note = e.data[1];
-    if (note === 24) st.playing = true;
-    else if (note === 25) st.playing = false;
-    else if (note === 26) st.divisor = 1;
-    else if (note === 27) st.divisor = 2;
-    else if (note === 28) st.divisor = 4;
-    else if (note === 29) st.divisor = 8;
-    else if (note >= 30) c.pushSerialIn(e.frame, note - 30);
-  }
-  if (c.block.transport !== (st.prevTransport ?? false)) {
-    c.pushSerialIn(0, c.block.transport ? LSDJ_START : LSDJ_STOP);
-    st.prevTransport = c.block.transport;
-  }
-  // Deliver each clock opportunistically (frame 0), NOT at its tick sample-offset. LSDj in Arduinoboy-slave
-  // mode toggles its serial-clock-enable (SC) between bytes, so the SameBoy offset gate — which holds a byte
-  // until its sample offset — misses LSDj's ready window and starves the clock (LSDj goes silent). eachTick
-  // still emits the tempo-correct NUMBER of clocks per block; only the intra-block delivery time is dropped
-  // (it was cosmetic before the host-MIDI offset gate landed). Host MIDI (forwardMidiToSerial) keeps its
-  // real frame for sample-accuracy — that path drives always-listening ROMs like mGB.
-  if (st.playing) c.eachTick(24 / (st.divisor || 1), () => c.pushSerialIn(0, LSDJ_CLOCK));
-};
-
-// MidiMap (== LsdjSyncRole handleMidiMap): NoteOn → a row byte LSDj reads as a SONG-row jump; a matching
-// NoteOff sends the 0xFE handshake. lastRow persists across blocks so the NoteOff only fires for the row
-// most recently sounded.
-//
-// MI.MAP is a SYNC mode, so it also has to CLOCK the cart: Arduinoboy's Mode_LSDJ_Map turns each host
-// 0xF8 into a 0xFF byte on the link, and LSDj advances one phrase step per 6 of them. Without that
-// stream a mapped row triggers, sounds its first step, and then freezes there forever — measured on a
-// real cart in test-native/lsdj-playback-probe.test.ts (B1), which is how this omission was found.
-// Transport-gated for free: walkTicks yields nothing while the host is stopped, so a paused DAW leaves
-// the cart exactly as it was.
-const midiMap: SystemBehavior = (c) => {
-  const st = c.state as { lastRow?: number };
-  if (st.lastRow === undefined) st.lastRow = -1;
-  for (const e of c.midi) {
-    const status = e.data[0];
-    const note = e.data.length >= 2 ? e.data[1] : 0;
-    if (isNoteOn(status)) {
-      const row = midiMapRow(channelOf(status), note);
-      if (row < 0) continue;
-      c.pushSerialIn(e.frame, row & 0xff);
-      st.lastRow = row;
-    } else if (isNoteOff(status)) {
-      if (midiMapRow(channelOf(status), note) === st.lastRow) {
-        c.pushSerialIn(e.frame, MIDIMAP_NOTEOFF);
-        st.lastRow = -1;
-      }
-    }
-  }
-  // Frame 0, NOT the tick's sample offset — the same rule the Arduinoboy mode above follows, and for
-  // the same reason: LSDj toggles its serial-clock-enable between bytes in the aboy slave protocols,
-  // so a byte held back by SameBoy's offset gate misses the cart's ready window and the clock starves
-  // (the cart then ignores row bytes too, and sits silent). Delivering at frame 0 emits the same NUMBER
-  // of clocks per block and only drops intra-block placement, which this protocol does not carry anyway.
-  const divisor = (c.config.tempoDivisor as number) || 1;
-  c.eachTick(24 / divisor, () => c.pushSerialIn(0, MIDIMAP_CLOCK));
-};
-
-// Slide LSDj's internal keyboard octave toward `target` by emitting OCT_UP/OCT_DN scancodes; returns the
-// new octave. Mirrors slideKeyboardOctave in LsdjSyncRole.cpp.
-function slideKeyboardOctave(c: SystemCtx, frame: number, target: number, current: number): number {
-  if (target === current) return current;
-  const code = toGbSerialByte(target > current ? KEYBOARD_OCT_UP : KEYBOARD_OCT_DN);
-  let steps = Math.abs(target - current);
-  while (steps-- > 0) c.pushSerialIn(frame, code);
-  return target;
-}
-
-// KeyboardMidi (== LsdjSyncRole handleKeyboardMidi): translate MIDI NoteOns into LSDj PS/2 scancodes,
-// sliding the octave cursor to track the incoming note. octave persists across blocks.
-const keyboardMidi: SystemBehavior = (c) => {
-  const st = c.state as { octave?: number };
-  if (st.octave === undefined) st.octave = 4;
-  for (const e of c.midi) {
-    if (!isNoteOn(e.data[0])) continue;
-    let note = e.data[1];
-    if (note >= KEYBOARD_NOTE_START) {
-      note -= KEYBOARD_NOTE_START;
-      st.octave = slideKeyboardOctave(c, e.frame, Math.floor(note / 12), st.octave);
-      const idx = note >= 0x3c ? (note % 12) + 0x0c : note % 12; // two rows of note keys
-      c.pushSerialIn(e.frame, toGbSerialByte(KEYBOARD_NOTE_MAP[idx]));
-    } else if (note >= KEYBOARD_LOW_START) {
-      const command = KEYBOARD_LOW_OCTAVE_MAP[note - KEYBOARD_LOW_START];
-      // Cursor keys need the extended (0xE0) prefix; every byte is mangled to LSDj's GB-serial form.
-      if (isExtendedScancode(command)) c.pushSerialIn(e.frame, toGbSerialByte(0xe0));
-      c.pushSerialIn(e.frame, toGbSerialByte(command));
-    }
-  }
-};
-
-// ArduinoboyMaster / MIDIOUT (mode 7, the old native ArduinoboyMaster role's port): LSDj is a serial
-// SLAVE that emits the Arduinoboy MI.OUT protocol on its serial-out port. The core captures the raw
-// bytes, and its Game Boy node's `serialOut`, a feedback wire into the kernel node, hands them back as
-// ctx.serialOut (one-block latency); we strip the flag-gated framing + decode the byte
-// protocol into host MIDI (emitMidiOut). Frame 0 — the protocol carries no intra-block timing, and the
-// downstream drain/DAW timestamps by block. Decoder state (pending command, partial framing bits)
-// persists across blocks in ctx.state.
-const arduinoboyMaster: SystemBehavior = (c) => {
-  if (c.serialOut.length === 0) return;
-  const st = c.state as ArduinoboyState;
-  arduinoboyDecodeSerialOut(c.serialOut, st, (data) => c.emitMidiOut(0, data));
-};
-
-// Master Sync (mode 8, == Arduinoboy firmware Mode 2, SYNC=LSDJ): LSDj self-clocks as the serial master
-// and streams one byte per MIDI-clock tick out its link port, which the core captures by listening (never
-// driving its clock); we turn each byte into a 0xF8 clock (+ a song-row NoteOn/0xFA at run start) and a
-// 200 ms silence into one 0xFC, so the host follows LSDj's tempo. Unlike mode 7 this runs EVERY block: a
-// block with no bytes is how the silence passes. Its state is a sub-object the dispatcher drops whenever
-// the mode is not master sync.
-const masterSync: SystemBehavior = (c) => {
-  const st = c.state as { masterSync?: MasterSyncState };
-  arduinoboyMasterSyncBlock(c.serialOut, c.serialOutFrames, c.block, (st.masterSync ??= {}), (data) => c.emitMidiOut(0, data));
-};
-
-// lsdj-sync: dispatch on the configured mode (LsdjSyncMode). Off(0)/Keyboard(4) emit nothing here — 4
-// needs the host `keys` feed (a later phase). MidiSync's 0xF8 stream carries no 0xFA; the START-arm that
-// begins LSDj is a user action, not part of the clock (only Arduinoboy mode bookends with 0xFA/0xFC).
-const lsdjSync: SystemBehavior = (c) => {
-  // A stage's state survives a config change, so master sync's would go stale while another mode runs: dropped
-  // here, coming back starts clean rather than from a stale run or a stale last byte.
-  const held = c.state as { masterSync?: MasterSyncState };
-  if (held.masterSync !== undefined && c.config.mode !== LsdjSyncMode.MasterSync) held.masterSync = undefined;
-  switch (c.config.mode as LsdjSyncMode) {
-    case LsdjSyncMode.MidiSync: { // MidiSync
-      // Optional auto-arm (autoStart): SYNC=MIDI LSDj only follows the clock once START has parked it in
-      // "wait for MIDI" — normally a user action. When autoStart is set, tap START on the transport rise
-      // (press ~2 blocks, then release) so LSDj starts with the host, the way a DAW user expects — and so
-      // a headless DAW render (which can't press a joypad) can drive it. Off by default (manual arm).
-      if (c.config.autoStart) {
-        const st = c.state as { prevT?: boolean; armDown?: number };
-        if (c.block.transport && !st.prevT) { c.pressButton(LSDJ_START_BUTTON, true); st.armDown = 2; }
-        else if (st.armDown && st.armDown > 0) { if (--st.armDown === 0) c.pressButton(LSDJ_START_BUTTON, false); }
-        st.prevT = c.block.transport;
-      }
-      const divisor = (c.config.tempoDivisor as number) || 1;
-      c.eachTick(24 / divisor, (_t, off) => c.pushSerialIn(off, LSDJ_CLOCK));
-      break;
-    }
-    case LsdjSyncMode.MidiSyncArduinoboy: arduinoboy(c); break;
-    case LsdjSyncMode.MidiMap: midiMap(c); break;
-    case LsdjSyncMode.KeyboardMidi: keyboardMidi(c); break;
-    case LsdjSyncMode.MidiPassthrough: forwardMidiToSerial(c); break;
-    case LsdjSyncMode.MidiOut: arduinoboyMaster(c); break; // ArduinoboyMaster / MIDIOUT
-    case LsdjSyncMode.MasterSync: masterSync(c); break; // LSDj drives the host clock
-    default: break; // Off / Keyboard emit nothing here
-  }
-};
-
-// risa-sync (no config): drive risa's dormant N8-FIFO host-sync receive path from the DAW transport. Bytes
-// go over ctx.pushCoreBytes → the N8 FIFO (NOT MIDI — a raw byte protocol reusing MIDI status values; see
-// risaSync.ts). On a transport rise OR a ppqStart discontinuity (a DAW seek/loop) send a fresh 5-byte
-// arm+locate (computed from ppqStart) then START; on a transport fall send STOP; while playing stream
-// 24-PPQN clocks at their real sample offsets (the FIFO has no serial gate, unlike SameBoy). Attached only
-// to sync-capable risa ROMs (the RISAxyz marker) by the rom provider. Coexists with nes-n8-midi passthrough.
-//
-// Two rules from risa's protocol doc shape this beyond "arm, start, clock, stop":
-//  - The arm FLUSHES the FIFO. It's a barrier: clocks queued for the old position must not arrive after
-//    a re-locate, so the flush drops both undelivered and delivered-but-unread bytes.
-//  - No clock for the ARMED position. risa performs one priming sequencer tick itself when it applies the
-//    locate, so the target row triggers immediately; an F8 for that same clock would double-advance it.
-//    The arm therefore points the clock stream at armedClock + 1: "the next F8 is the first clock after
-//    the locate". That also covers an exact loop back to the same position, where eachTick's own resync
-//    (which only fires on a jump of more than a tick) would leave the counter past the block and emit none.
-const risaSync: SystemBehavior = (c) => {
-  const st = c.state as { prevT?: boolean; ppqEnd?: number };
-  const b = c.block;
-  const playing = b.transport;
-  const prevT = st.prevT ?? false;
-
-  // Re-arm on a fresh start, or on a ppqStart discontinuity while playing — a seek/loop needs a new locate,
-  // and the arm gates risa's playback + discards the old position's queued clocks.
-  const seek = st.ppqEnd !== undefined && Math.abs(b.ppqStart - st.ppqEnd) > RISA_SEEK_TOLERANCE;
-  if (playing && (!prevT || seek)) {
-    const loc = risaLocate(b.ppqStart);
-    c.pushCoreBytes(0, risaArmPacket(loc), true); // F9 52 songRow chainRow tickOffset, flushing the FIFO
-    c.pushCoreBytes(0, [RISA_START]); // FA
-    c.setNextTick(loc.absoluteClock + 1); // risa primes the armed clock itself; we resume after it
-  } else if (!playing && prevT) {
-    c.pushCoreBytes(0, [RISA_STOP]); // FC
-  }
-
-  if (playing) c.eachTick(RISA_PPQN, (_t, off) => c.pushCoreBytes(off, [RISA_CLOCK])); // F8 at 24 PPQN
-
-  // Predict the next contiguous block's ppqStart for seek detection (quarters this block spans).
-  st.prevT = playing;
-  if (playing) {
-    const samplesPerQuarter = (b.sampleRate * 60) / b.tempo;
-    st.ppqEnd = b.ppqStart + (samplesPerQuarter > 0 ? b.frames / samplesPerQuarter : 0);
-  } else {
-    st.ppqEnd = undefined;
-  }
-};
-
-// sms-sync: clock smsggdj from the DAW transport by driving a 2-bit counter onto its sync lines. The
-// payload crossing ctx.pushCoreBytes is a LEVEL WORD, not a protocol byte - MesenSmsSystem routes it to
-// SmsSyncRole, which holds it on the port until the next one. See smsSync.ts for the encoding and the
-// ROM references.
-//
-// `machine` picks the wire format: "sms" (default) drives controller port 2's TR + TH, "gg" drives the
-// EXT parallel port's PC4/PC5 + PC6. One role rather than two because the PROTOCOL is identical - same
-// counter, same once-per-frame delta, same arm, same absence of a locate - and only the bit positions
-// move. The provider sets it from the ROM's platform; the native side picks its own sink from the
-// system it was built for, so this config drives the encoding alone.
-//
-// Much smaller than risaSync above, and every absence is the protocol's rather than a shortcut:
-//
-//   No arm, no flush. The ROM latches the live line state on its OWN Play and sits in WAIT until the
-//   first host clock (engine.asm:383-388), so it self-synchronises and a stale level cannot count. A
-//   held level has no undelivered-stream hazard either, so SmsSyncRole ignores the flush flag.
-//
-//   No start or stop message. Stop is implicit: stop clocking and the ROM's per-frame delta goes to 0.
-//
-//   No setNextTick and no seek detection, because there is nothing to relocate. The ROM sees only
-//   deltas, so a DAW seek does NOT move the song - the transport drives tempo, start and stop but not
-//   position. That is a genuine product difference from risa-sync and lsdj-sync, not an omission here.
-//
-// The counter is free-running and its absolute value is irrelevant (the ROM diffs it), so it is never
-// reset - only advanced, one step per tick, at the tick's own sample offset.
-const smsSync: SystemBehavior = (c) => {
-  if (!c.block.transport) return;
-  const st = c.state as { counter?: number };
-  const levels = syncLevelsFor((c.config as { machine?: SmsSyncMachine }).machine ?? "sms");
-  let counter = st.counter ?? 0;
-  c.eachTick(SMS_SYNC_PPQN, (_t, off) => {
-    counter = (counter + 1) % SMS_SYNC_COUNTER_MOD;
-    c.pushCoreBytes(off, [levels(counter)]);
-  });
-  st.counter = counter;
-};
+import { LSDJ_MODE_VALUES } from "./settingsEnums";
 
 // lsdj-sync load-time hook: a fresh LSDj cart with no SRAM runs a 12–15 s cartridge self-test on boot.
 // When nothing else will seed the battery (no savestate, no sram blob, no on-disk .sav for native to
-// load), hand it a valid empty sav — savFromJson stamps the jk/rb validity markers LSDj checks — so it
+// load), hand it a valid empty sav (savFromJson stamps the jk/rb validity markers LSDj checks) so it
 // boots straight to the song screen. Additive: return the spec untouched when real save data is present.
 const lsdjSeedSav = (spec: ConstructSpec, caps: ConstructCaps): ConstructSpec => {
   const willLoadData = !!spec.stateBytes || !!spec.sramBytes || (spec.savPath != null && caps.fileExists(spec.savPath));
@@ -316,55 +19,35 @@ const lsdjSeedSav = (spec: ConstructSpec, caps: ConstructCaps): ConstructSpec =>
   return { ...spec, sramBytes: caps.savFromJson("{}") };
 };
 
-// midi-routing (project scope): fan the block's GLOBAL midiIn into the per-system inboxes the kernel
-// then hands to each system's pipeline. `inboxes` are the kernel's persistent, pre-cleared arrays
-// (positional, parallel to block.systems), filled in place with no per-block allocation.
-const midiRouting: ProjectBehavior = (c) => {
-  routeBlockInto(c.block.midiIn, (c.config.mode as MidiRouting) ?? MidiRouting.SendToAll, c.inboxes);
-};
-
-/** Register the built-in DSP-thread roles into `registry`. */
+/** Register the built-in roles that have a protocol node into `registry`. */
 export function registerDspRoles(registry: RoleRegistry): void {
-  registry.registerRole({ kind: "mgb", category: "feature", scope: "system", schema: z.object({}), dsp: mgb });
-  // NES host-MIDI: forward routed MIDI to the core's onMidi (→ the always-attached N8 FIFO). Attached to
-  // every NES ROM by the rom provider (romProviders.ts), mirroring the native always-on N8 role.
-  registry.registerRole({ kind: "nes-n8-midi", category: "feature", scope: "system", schema: z.object({}), dsp: forwardMidiToCore });
-  // risa-sync: no config — drives risa's N8-FIFO host-sync receive path from the DAW transport (locate /
-  // start / 24-PPQN clock / stop over pushCoreBytes). Attached only to sync-capable risa ROMs.
-  registry.registerRole({ kind: "risa-sync", category: "feature", scope: "system", schema: z.object({}), dsp: risaSync });
-  // sms-sync: no config - clocks smsggdj by holding a 2-bit counter on controller port 2 (TR + TH) at
-  // 24 PPQN. Attached only to smsggdj (the SMSGGDJ marker), NOT to every SMS ROM: these are Player 2's
-  // button lines, so an unconditional attach would inject phantom P2 presses into any game.
-  // `machine` is additive with a default, so no migration step: an existing project stamped before it
-  // existed parses as "sms", which is what those projects were.
+  // mgb: every routed MIDI byte into the Game Boy's serial port (rp.mgb.midi). No config.
+  registry.registerRole({ kind: "mgb", category: "feature", schema: z.object({}) });
+  // NES host-MIDI: routed MIDI to the core's MIDI input (to the always-attached N8 FIFO), rp.n8.midi-to-fifo.
+  // Attached to every NES ROM by the rom provider (romProviders.ts), mirroring the native always-on N8 role.
+  registry.registerRole({ kind: "nes-n8-midi", category: "feature", schema: z.object({}) });
+  // risa-sync (no config) drives risa's N8-FIFO host-sync receive path from the DAW transport (locate /
+  // start / 24-PPQN clock / stop), rp.risa.sync. Attached only to sync-capable risa ROMs.
+  registry.registerRole({ kind: "risa-sync", category: "feature", schema: z.object({}) });
+  // sms-sync: clocks smsggdj by holding a 2-bit counter on controller port 2 (TR + TH) at 24 PPQN, or a
+  // Game Gear's EXT port for `machine: "gg"` (rp.sms.sync). Attached only to smsggdj (the SMSGGDJ marker),
+  // NOT to every SMS ROM: these are Player 2's button lines, so an unconditional attach would inject phantom
+  // P2 presses into any game. `machine` is additive with a default, so no migration step: an existing project
+  // stamped before it existed parses as "sms", which is what those projects were.
   registry.registerRole({
     kind: "sms-sync",
     category: "feature",
-    scope: "system",
     schema: z.object({ machine: z.enum(["sms", "gg"]).default("sms") }),
-    dsp: smsSync,
   });
   registry.registerRole({
     kind: "lsdj-sync",
     category: "feature",
-    scope: "system",
     // mode: LsdjSyncMode ("off", "midiSync", … "midiOut", "masterSync"). tempoDivisor subdivides the
     // 24-PPQN clock (24/divisor) for MidiSync + MidiSyncArduinoboy; the menu offers 1/2/4/8. autoStart
-    // taps START on the host transport rise to auto-arm a SYNC=MIDI (MidiSync) cart — needed for a
-    // headless DAW render, off by default so normal MidiSync keeps its manual-arm behaviour.
+    // taps START on the host transport rise to auto-arm a SYNC=MIDI (MidiSync) cart, needed for a
+    // headless DAW render, off by default so normal MidiSync keeps its manual-arm behaviour. rp.lsdj.sync
+    // runs each mode.
     schema: z.object({ mode: enumField(LSDJ_MODE_VALUES, "midiSync"), tempoDivisor: clampedInt(1, 8, 1), autoStart: boolField(false) }),
-    dsp: lsdjSync,
     onConstruct: lsdjSeedSav,
   });
-  registry.registerRole({
-    kind: "midi-routing",
-    category: "feature",
-    scope: "project",
-    schema: z.object({ mode: enumField(MIDI_ROUTING_VALUES, "sendToAll") }),
-    dsp: midiRouting,
-  });
-  // launchpad: the project-scope controller session (docs/launchpad-plan.md M5). Lives in its own file
-  // because it pulls in the whole src/controller + src/launchpad layer, and is registered HERE so it
-  // reaches the DSP bundle's registry rather than only the control plane's.
-  registerControllerRole(registry);
 }

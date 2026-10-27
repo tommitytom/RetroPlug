@@ -146,13 +146,13 @@ export class LsdjProbe {
     // The project's MIDI routing and controller, and the roles it gives this cart. The controller is dropped first,
     // which frees its node and its state, so a controller session never carries over from the previous probe: each
     // probe's starts as a fresh one would. Every OTHER system the graph holds loses its roles, whether or not a probe
-    // owns it (a test can place one through the shared directGraph() and never remove it): as when each probe
-    // loaded a kernel of its own and pushed it a structure naming only its own cart, under sendToAll it would
-    // otherwise hear every byte staged at the new one. A graph call that fails throws, so it never reads as a
+    // owns it (a test can place one through the shared directGraph() and never remove it), as each probe once
+    // pushed its own kernel a structure naming only its own cart: under sendToAll it would otherwise hear every
+    // byte staged at the new one. A graph call that fails throws, so it never reads as a
     // skipped test.
     for (const other of graph.ids())
       if (other !== id && !graph.setPipeline(other, [])) throw new Error(`LsdjProbe: could not clear system ${other}'s pipeline`);
-    if (!graph.setProjectStages([]) || !graph.setMidiRouting(project.midiRouting) || !graph.setController(project.controller))
+    if (!graph.setController(null) || !graph.setMidiRouting(project.midiRouting) || !graph.setController(project.controller))
       throw new Error("LsdjProbe: the graph refused the project's routing or controller");
     if (!graph.setPipeline(id, project.roles)) throw new Error(`LsdjProbe: the graph refused system ${id}'s pipeline`);
 

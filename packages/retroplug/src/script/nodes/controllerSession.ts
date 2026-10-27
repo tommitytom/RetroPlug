@@ -1,4 +1,4 @@
-// A control surface's session (the `launchpad` role's DSP behaviour, controllerRole.ts, as a script node): a
+// A control surface's session (what the DSP kernel's `launchpad` role ran until B3b, as a script node): a
 // ControllerSession (src/controller/session.ts) fed the surface's traffic and the block's clock each block, its LED
 // bytes back to the device on `controllerOut`, its row launches onward: into the target system's lsdj-sync node on
 // `launches`, or out of the host to a real Game Boy's Arduinoboy on `midiOut`, each at frame 0.

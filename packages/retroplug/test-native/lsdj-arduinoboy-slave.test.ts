@@ -31,7 +31,6 @@ const SLAVE_SONG: SavInput = {
 
 // A one-system project with the given lsdj-sync mode + SendToAll routing so system 1 receives every
 // host-MIDI event verbatim (the Arduinoboy control notes ride channel-agnostic).
-const SEND_TO_ALL = [{ kind: "midi-routing", config: { mode: "sendToAll" } }];
 const lsdjSync = (mode: string) => [{ kind: "lsdj-sync", config: { mode } }];
 
 const rms = (a: Float32Array): number => {
@@ -57,7 +56,7 @@ test("the TS lsdj-sync Arduinoboy-slave role plays a real LSDj on note-24, gates
     sramBytes: savFrom(SLAVE_SONG),
   }, id)).toBeTruthy();
 
-  expect(graph.setProjectStages(SEND_TO_ALL)).toBeTruthy();
+  expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
   expect(graph.setPipeline(id, lsdjSync("midiSyncArduinoboy"))).toBeTruthy();
 
   audio.renderAudio(6000); // valid sav skips the self-test; still needs a few s to the song screen

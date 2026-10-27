@@ -1,6 +1,6 @@
 // rp.midi.route (src/script/nodes/midiRoute.ts): the host's MIDI fanned to one output a system, by the routing mode.
-// The expectations of test/dsp/routing.test.ts, which drives the midi-routing role through the kernel, at the node,
-// and each mode's decision held to routeBlock, the pure oracle.
+// What the DSP kernel's midi-routing stage did until B3b, at the node, and each mode's decision held to routeBlock, the
+// pure oracle. With no routing node placed, no system gets the host's MIDI: buildGraph's (test/graph/build-graph.test.ts).
 import { test, expect } from "../../../testing/harness";
 import { MIDI_ROUTE_NODE_TYPE, midiRouteNode } from "../../../src/script/nodes/midiRoute";
 import { routeBlock, MIDI_ROUTING_VALUES, type MidiEvent } from "../../../src/midiRouting";

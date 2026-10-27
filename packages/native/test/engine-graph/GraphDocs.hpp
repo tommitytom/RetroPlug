@@ -2,9 +2,9 @@
 
 // Graph documents for native tests, spelled the way packages/retroplug/src/graph/buildGraph.ts writes their audio
 // (node ids, document order, buses), so a test drives the Engine with what TS would send. Only the shapes the
-// tests need: systems summed to a stereo pair (with a test's own nodes and wires added: host I/O nodes, a kernel, a
-// cart mirror), each system on its own pair, and a lone NES split. None holds the kernel and the host I/O buildGraph
-// places beside the audio: a test that stages MIDI or reads MIDI out adds the nodes it needs.
+// tests need: systems summed to a stereo pair (with a test's own nodes and wires added: host I/O nodes, script nodes, a
+// cart mirror), each system on its own pair, and a lone NES split. None holds the script nodes and the host I/O
+// buildGraph places beside the audio: a test that stages MIDI or reads MIDI out adds the nodes it needs.
 
 #include <cstdint>
 #include <string>
@@ -59,7 +59,7 @@ inline std::string docNode(const std::string& id, const std::string& type, const
 }
 inline std::string docWire(const std::string& from, const std::string& to) { return docs_detail::wire(from, to); }
 
-// What a test adds to a document: nodes after the systems (the host I/O nodes, a kernel, a cart mirror) and wires
+// What a test adds to a document: nodes after the systems (the host I/O nodes, script nodes, a cart mirror) and wires
 // after the routing's.
 struct DocExtras {
     std::vector<std::string> nodes;

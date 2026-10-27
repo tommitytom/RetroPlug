@@ -1,4 +1,4 @@
-// The host's MIDI fanned out to the systems (the `midi-routing` role's DSP behaviour, dspRoles.ts, as a script node):
+// The host's MIDI fanned out to the systems (what the DSP kernel's `midi-routing` stage ran until B3b, as a script node):
 // one output a system, named by its id, in slot order, since the modes but send-to-all route by a channel's position
 // among them. Each message goes to its systems at its own frame, in the order it came, by routeTarget's arithmetic
 // (midiRouting.ts), the decision the kernel's routeBlockInto makes; MidiChannelToInstance's target takes a copy with

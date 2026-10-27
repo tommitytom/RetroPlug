@@ -7,21 +7,17 @@
 // union on "kind" — into a runtime registry, minus the hardcoded if/else chains.
 //
 // Two categories: "system" roles carry a backend's emulator settings (attached by
-// backend kind); "feature" roles are behaviors attached by a ROM provider. A role's
-// DSP-thread behavior (the doc-06 translator/source/router — mGB, lsdj-sync, routing)
-// is the `dsp` field, authored as a plain TS behavior over dspKernel's per-system
-// context. Its UI-thread behavior (a role's own settings UI) stays a deferred `ui`
-// seam — a role is never an opaque native blob.
+// backend kind); "feature" roles are behaviors attached by a ROM provider. What a role
+// does on the audio thread (mGB, lsdj-sync, risa's host sync) is its protocol script node,
+// which graph/protocolNodes.ts names for its kind and buildGraph places with the role's
+// config as its settings: the registry holds the role as the app sees it (its schema and
+// a load-time hook). Its UI-thread behavior (a role's own settings UI) stays a deferred
+// `ui` seam: a role is never an opaque native blob.
 
-import type { ProjectBehavior, SystemBehavior } from "./dspKernel";
 import type { Platform, Core } from "./platform";
 import type { ConstructSpec } from "./backend";
 
 export type RoleCategory = "system" | "feature";
-
-/** Where a DSP-thread behavior runs: per-system (translator/source), or once over all systems
- *  (project scope — e.g. MIDI routing). Defaults to "system". */
-export type RoleScope = "system" | "project";
 
 /** A role on a system: a kind + its opaque config data. This is what serializes. */
 export interface RoleInstance {
@@ -56,15 +52,9 @@ export interface RoleConfigSchema {
 export interface RoleType {
   kind: string;
   category: RoleCategory;
-  /** Where the `dsp` behavior runs (default "system"). "project" behaviors (routing) run once
-   *  over all systems, before the per-system pipelines. */
-  scope?: RoleScope;
   /** The zod schema for this role's config — the single source of truth for its
    *  shape, defaults, and clamping. */
   schema: RoleConfigSchema;
-  /** The DSP-thread behavior (doc-06 translator/source/router): a `SystemBehavior` for system
-   *  scope, a `ProjectBehavior` for project scope. Run per block by the DSP kernel. */
-  dsp?: SystemBehavior | ProjectBehavior;
   /** A load-time hook: transform the resolved `ConstructSpec` just before the core is instantiated
    *  (after paths + any seed blobs are resolved). ADDITIVE by contract — seed data that is otherwise
    *  absent (e.g. a fresh LSDj cart gets a valid empty sav), never clobber what's already there.
@@ -72,15 +62,8 @@ export interface RoleType {
    *  role's own config (e.g. an LSDj asset-override list). */
   onConstruct?(spec: ConstructSpec, caps: ConstructCaps, config: Record<string, unknown>): ConstructSpec;
   /** DEFERRED: a role-owned settings UI + its render descriptor. (Kit patching does NOT need this -
-   *  `lsdj-assets` is a no-DSP role that compiles on the control plane via the compileKit RPC.) */
+   *  `lsdj-assets` is a role with no protocol node that compiles on the control plane via the compileKit RPC.) */
   ui?: unknown;
-}
-
-/** Whether the DSP kernel runs `rt` as a stage of a system's pipeline: a role with a `dsp` behaviour whose scope is
- *  not "project" (no scope at all is "system"). The kernel's own test (dspKernel.ts setSystems). What the stores
- *  place is graph/protocolNodes.ts's table, which names a node for exactly the app's roles this passes. */
-export function isSystemStage(rt: RoleType | undefined): rt is RoleType {
-  return rt !== undefined && rt.scope !== "project" && rt.dsp !== undefined;
 }
 
 /** The narrow Backend slice a load-time `onConstruct` hook may use: synthesize an LSDj SRAM image, check

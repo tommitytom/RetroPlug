@@ -43,7 +43,6 @@ const MASTER_SONG: SavInput = {
   },
 };
 
-const SEND_TO_ALL = [{ kind: "midi-routing", config: { mode: "sendToAll" } }];
 const lsdjSync = (mode: string) => [{ kind: "lsdj-sync", config: { mode } }];
 
 const messages = (drained: { data: Uint8Array }[]): number[][] => drained.map((m) => Array.from(m.data));
@@ -65,7 +64,7 @@ test("Master Sync (mode 8): a stock LSDj in SYNC=LSDj clocks the host â€” byteâ†
     sramBytes: savFrom(MASTER_SONG),
   }, id)).toBeTruthy();
 
-  expect(graph.setProjectStages(SEND_TO_ALL)).toBeTruthy();
+  expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
   expect(graph.setPipeline(id, lsdjSync(MASTER_SYNC))).toBeTruthy();
   expect(be.setSerialOutCapture(id, "listen")).toBeTruthy(); // what the store does for mode 8
 
@@ -138,7 +137,7 @@ test("Master Sync tells one story at 44.1 and 48 kHz in 1-frame, FL-style ragged
     const stories = splits.map(([name, split], i) => {
       const id = 10 + i;
       expect(graph.add({ romPath: LSDJ, platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null, sramBytes: savFrom(MASTER_SONG) }, id)).toBeTruthy();
-      expect(graph.setProjectStages(SEND_TO_ALL)).toBeTruthy();
+      expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
       expect(graph.setPipeline(id, lsdjSync(MASTER_SYNC))).toBeTruthy();
       expect(be.setSerialOutCapture(id, "listen")).toBeTruthy();
       const sent: number[][] = [];

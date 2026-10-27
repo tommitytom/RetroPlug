@@ -81,7 +81,6 @@ export function registerRisaAssetsRole(registry: RoleRegistry): void {
   registry.registerRole({
     kind: RISA_ASSETS_ROLE,
     category: "feature",
-    scope: "system",
     schema: risaAssetsSchema,
     onConstruct: applyAssetOverrides,
   });

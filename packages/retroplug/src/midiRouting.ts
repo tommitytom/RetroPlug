@@ -1,7 +1,6 @@
 // The MIDI routing decision. Given a block's MIDI events + the project's routing mode + system
 // count, it decides which system(s) each event lands on and applies the MidiChannelToInstance
-// channel rewrite. The DSP kernel's midi-routing role (dspRoles.ts) and the routing script node
-// (script/nodes/midiRoute.ts) run it every block. No emulator, no audio thread, no retained state:
+// channel rewrite. The routing script node (script/nodes/midiRoute.ts) runs it every block. No emulator, no audio thread, no retained state:
 // pure decision logic (doc-06 Tier-1).
 
 import { MidiRouting, MIDI_ROUTING_VALUES } from "./settingsEnums";

@@ -103,8 +103,8 @@ bit for bit. The eight master-sync cases move in audio, RAM and MIDI out: `block
 `lsdj-modes`' `masterSync-44100` and `masterSync-48000`. At 44.1 kHz LSDj is no longer clocked during boot, so its
 audio moves and the boot sends nothing; the run sends its NoteOn, 0xFA and clocks, and the stop one 0xFC 200 ms after
 LSDj's last byte. The 48 kHz cases become audible, their `audible` lanes `[0, 1]` instead of `[]`, with the same story.
-The C++ KernelNode test's master-sync input, which modelled the flood, becomes a run, a silence and a run, and its
-digest is re-recorded.
+The C++ KernelNode test's (since B3b, ProtocolNodes.test.cpp's) master-sync input, which modelled the flood, becomes a
+run, a silence and a run, and its digest is re-recorded.
 
 The re-record is accepted only if a script finds no other case's digest moved, and the full parity suite then passes
 with the fixtures present and `RP_FAIL_ON_SKIP=1`.
@@ -121,7 +121,7 @@ with the fixtures present and `RP_FAIL_ON_SKIP=1`.
   that ends inside one call (no 4096- or 8192-frame block start between its 200 ms mark and the byte that ends it), cut
   the same ways and into 4096-frame blocks, likewise.
 - **Kernel.** A kernel-level case shows `SerialOutEvent` frames reaching `ctx.serialOutFrames`;
-  [kernel-node.test.ts](../packages/retroplug/test/script/kernel-node.test.ts) shows `blockInput` handing the frames
+  `kernel-node.test.ts` (deleted in B3b) shows `blockInput` handing the frames
   to the decoder.
 - **Capture modes.** The build-spec wire tests (TS and the C++ EngineGraph case) carry each mode under its key;
   `listen` captures a Game Boy's own clocked bytes and never clocks its port (mGB, which holds its port in

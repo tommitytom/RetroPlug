@@ -1,7 +1,7 @@
 // What the protocol script nodes' outputs hold in one block, at most, and the bytes-message flag one of them sends
-// (docs/modular-graph-phase-b3b-design.md section 5). The capacities are the DSP kernel node's, port for port
-// (script/kernelNode.ts takes its own from here until it goes), since each protocol node's output carries what that
-// kernel output carried for its system; a queue drops what does not fit, and the drop is counted per port.
+// (docs/modular-graph-phase-b3b-design.md section 5). The capacities are the DSP kernel node's, port for port, as B3a
+// sized them, since each protocol node's output carries what that kernel output carried for its system; a queue drops
+// what does not fit, and the drop is counted per port.
 import type { QueueCapacity } from "../../graph/descriptor";
 
 /** RP_MESSAGE_FLUSH (graph/rp_node.h): a bytes message the device takes only after dropping what it still holds. */

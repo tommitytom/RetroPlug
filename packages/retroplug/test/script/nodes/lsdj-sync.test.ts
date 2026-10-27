@@ -1,7 +1,7 @@
-// rp.lsdj.sync (src/script/nodes/lsdjSync.ts): LSDj's sync modes, as the lsdj-sync role ran them. The role cases of
-// test/dsp/lsdj-modes.test.ts and test/dsp/roles.test.ts, and the kernel-level MI.OUT and master-sync cases of
-// test/dsp/lsdj-arduinoboy.test.ts (whose pure decoder cases stay there), at the node; with what the kernel node's own
-// tests held of the serial-in runs and the feedback wire's frames (test/script/kernel-node.test.ts).
+// rp.lsdj.sync (src/script/nodes/lsdjSync.ts): LSDj's sync modes, as the DSP kernel's lsdj-sync role ran them until
+// B3b. The cases its kernel-level tests held (every mode, MI.OUT and master sync off the Game Boy's serial out), at the
+// node, with what the kernel node's own tests held of the serial-in runs and the feedback wire's frames; the decoders'
+// pure cases are test/dsp/lsdj-arduinoboy.test.ts's.
 import { test, expect } from "../../../testing/harness";
 import { LSDJ_SYNC_NODE_TYPE, lsdjSyncNode } from "../../../src/script/nodes/lsdjSync";
 import { NodeRig, bytesOn, on, type BlockSpec, type In, type Sent } from "./_rig";

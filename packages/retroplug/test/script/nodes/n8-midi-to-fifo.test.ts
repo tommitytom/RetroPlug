@@ -1,6 +1,5 @@
 // rp.n8.midi-to-fifo (src/script/nodes/n8MidiToFifo.ts): every routed MIDI message, whole, to a NES core's MIDI input
-// and its N8 FIFO. The nes-n8-midi case of test/dsp/roles.test.ts, which drives the role through the kernel, at the
-// node.
+// and its N8 FIFO, as the DSP kernel's nes-n8-midi role forwarded it until B3b.
 import { test, expect } from "../../../testing/harness";
 import { N8_MIDI_TO_FIFO_NODE_TYPE, n8MidiToFifoNode } from "../../../src/script/nodes/n8MidiToFifo";
 import { NodeRig, on } from "./_rig";

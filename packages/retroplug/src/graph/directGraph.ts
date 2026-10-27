@@ -9,10 +9,9 @@
 // while the session's stores place nothing, the two publishing in turn, as test-native/parity/render-blocks.test.ts
 // and cli/sessions/analyze-lsdj-sync.ts do.
 import { createRealBackend } from "../realBackend";
-import type { AudioRouting, ControllerTarget, MidiRouting } from "../settingsEnums";
+import type { AudioRouting, MidiRouting } from "../settingsEnums";
 import type { RoleInstance } from "../systemRoles";
 import type { ConstructSpec, EmulatorBackend } from "../backend";
-import type { RowTicksTable } from "../lsdj/playback/predict";
 import { EngineGraph } from "../engineGraph";
 import { parseAppConfig } from "../controller/registry";
 import type { GraphSystem } from "./buildGraph";
@@ -82,20 +81,6 @@ export class DirectGraph {
     return this.change(() => (this.systems[at] = { ...this.systems[at], pipeline: protocolPipeline(roles) }), false);
   }
 
-  /** The project's stages as the DSP kernel took them, onto the graph's model: a `midi-routing` stage is the MIDI
-   *  routing (its mode, send-to-all by default), a `launchpad` stage the controller (as setController takes it, from
-   *  the stage's config, its cart's own SYNC unread); a model with neither routes no MIDI and runs no controller.
-   *  The routing runs before the controller whatever order they come in, as a project has always ordered them.
-   *  False when the document did not plan. */
-  setProjectStages(stages: RoleInstance[]): boolean {
-    const routing = stages.find((r) => r.kind === "midi-routing");
-    const launchpad = stages.find((r) => r.kind === "launchpad");
-    return this.change(() => {
-      this.midiRouting = routing ? ((routing.config.mode as MidiRouting | undefined) ?? "sendToAll") : null;
-      this.controller = launchpad ? controllerOf(launchpad.config) : null;
-    }, false);
-  }
-
   /** The project's MIDI routing, or null to route none. False when the document did not plan. */
   setMidiRouting(mode: MidiRouting | null): boolean {
     return this.change(() => (this.midiRouting = mode), false);
@@ -142,22 +127,6 @@ export class DirectGraph {
     const { systems, routing, midiRouting, controller } = this;
     return this.graph.publish({ systems, routing, midiRouting, controller }, { rearmTap });
   }
-}
-
-/** A `launchpad` stage's config, read as the kernel's role read it, as the controller: its app config parsed by the
- *  app's schema, its cart's own SYNC unread. */
-function controllerOf(config: Record<string, unknown>): GraphController {
-  const anchorRows = Array.isArray(config.anchorRows) ? (config.anchorRows as (number | null)[]) : [];
-  const anchorSeq = typeof config.anchorSeq === "number" ? config.anchorSeq : 0;
-  return {
-    app: typeof config.app === "string" ? config.app : "",
-    target: (config.target as ControllerTarget | undefined) ?? "system",
-    systemId: typeof config.systemId === "number" ? config.systemId : 0,
-    appConfig: parseAppConfig(typeof config.app === "string" ? config.app : "", config.appConfig ?? {}),
-    songRowTicks: Array.isArray(config.songRowTicks) ? (config.songRowTicks as RowTicksTable) : [],
-    anchor: anchorRows.length > 0 || anchorSeq !== 0 ? { rows: anchorRows, seq: anchorSeq } : null,
-    cartSync: null,
-  };
 }
 
 let shared: DirectGraph | null = null;

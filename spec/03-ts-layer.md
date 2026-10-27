@@ -588,8 +588,8 @@ Two concepts touched throughout this doc belong fully to **doc 04**:
   struct. The control-plane `RoleRegistry` (built by `buildAppRegistry`) attaches feature
   roles to a system by ROM identity ([`romProviders.ts`](../packages/retroplug/src/romProviders.ts),
   the TS twin of the native `RomSniffer`).
-- **The DSP role kernel.** [`src/dspKernel.ts`](../packages/retroplug/src/dspKernel.ts)
-  runs as the script node [`src/script/kernelNode.ts`](../packages/retroplug/src/script/kernelNode.ts),
+- **The DSP role kernel.** `src/dspKernel.ts` (deleted in B3b)
+  runs as the script node `src/script/kernelNode.ts` (deleted in B3b),
   in the bundle every Engine embeds, inside the script host's **bare QuickJS audio context**: the
   distinct runtime, never shared with the control-plane runtime.
   Since B3b's flip no document places it: `buildGraph` places a script node per role instead
@@ -628,4 +628,4 @@ broader remaining feature gaps live in **doc 07**; this list is only the TS-laye
 | Services | [`src/fileSelection.ts`](../packages/retroplug/src/fileSelection.ts) · [`src/fileWatcher.ts`](../packages/retroplug/src/fileWatcher.ts) · [`src/sramAutoSave.ts`](../packages/retroplug/src/sramAutoSave.ts) |
 | Composition | [`src/pluginControlPlane.ts`](../packages/retroplug/src/pluginControlPlane.ts) · [`src/appStores.ts`](../packages/retroplug/src/appStores.ts) · [`src/appHost.ts`](../packages/retroplug/src/appHost.ts) |
 | UI | [`ui/main.tsx`](../packages/retroplug/ui/main.tsx) · [`ui/App.tsx`](../packages/retroplug/ui/App.tsx) · [`ui/screens/grid/`](../packages/retroplug/ui/screens/grid) · [`ui/screens/menu/`](../packages/retroplug/ui/screens/menu) · [`ui/lvgl/`](../packages/retroplug/ui/lvgl) · [`ui/app/`](../packages/retroplug/ui/app) · [`ui/host/`](../packages/retroplug/ui/host) · [`ui/hooks/`](../packages/retroplug/ui/hooks) |
-| DSP kernel (doc 04) | [`src/script/kernelNode.ts`](../packages/retroplug/src/script/kernelNode.ts) · [`src/graph/protocolNodes.ts`](../packages/retroplug/src/graph/protocolNodes.ts) · [`src/graph/controller.ts`](../packages/retroplug/src/graph/controller.ts) |
+| DSP kernel (doc 04) | [`src/script/nodes/`](../packages/retroplug/src/script/nodes) · [`src/graph/protocolNodes.ts`](../packages/retroplug/src/graph/protocolNodes.ts) · [`src/graph/controller.ts`](../packages/retroplug/src/graph/controller.ts) |

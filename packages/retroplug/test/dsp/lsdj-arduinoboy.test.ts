@@ -4,6 +4,8 @@
 //     packages/native/test/ArduinoboyMasterTests.cpp (same bytes in, same MIDI out).
 //   - arduinoboyDecodeSerialOut: the flag-gated framing in front of it — the raw captured bytes LSDj
 //     actually emits (each frame = 1 flag bit + 7 payload bits, MSB-first), decoded to the same MIDI.
+// Then master sync's decoder, arduinoboyMasterSyncBlock. The rp.lsdj.sync node that runs them off its Game Boy's
+// serial out (modes 7 and 8) is test/script/nodes/lsdj-sync.test.ts's.
 import { test, expect } from "../../testing/harness";
 import {
   arduinoboyDecodeByte,
@@ -13,10 +15,6 @@ import {
   type ArduinoboyState,
   type MasterSyncState,
 } from "../../src/lsdjArduinoboy";
-import { RoleRegistry } from "../../src/systemRoles";
-import { registerDspRoles } from "../../src/dspRoles";
-import { z } from "../../src/configSchema";
-import { DspKernel, type BlockInput, type SystemCtx } from "../../src/dspKernel";
 
 // Feed a run of protocol bytes through a fresh decoder, returning the emitted MIDI messages.
 function decode(bytes: number[]): number[][] {
@@ -121,51 +119,6 @@ test("framing: a frame straddling a captured-byte boundary buffers, then decodes
   expect(out.length).toBe(0); // partial frame buffered, nothing decoded yet
   arduinoboyDecodeSerialOut([0x80], state, (d) => out.push(d));
   expect(out).toEqual([[0xf8]]); // the straddling clock frame completes exactly once
-});
-
-// --- integration: the mode-7 lsdj-sync role through the real DSP kernel --------------------------
-
-const baseDyn = (): BlockInput => ({
-  frames: 1024, sampleRate: 44100, tempo: 120, ppqStart: 0, transport: false,
-  midiIn: [], buttons: [], keys: [], serialOut: [],
-});
-
-test("lsdj-sync mode 7: kernel fans serialOut to the role, which decodes it to emitMidiOut", () => {
-  // The full TS pipeline: BlockInput.serialOut → kernel per-system fan → ctx.serialOut → case 7 →
-  // arduinoboyDecodeSerialOut → emitMidiOut. Each captured byte flag-frames one protocol byte (0x80|cmd).
-  const reg = new RoleRegistry();
-  registerDspRoles(reg);
-  const k = new DspKernel(reg);
-  k.setSystems({
-    project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
-    systems: [{ id: 1, pipeline: [{ kind: "lsdj-sync", config: { mode: "midiOut" } }] }],
-  });
-  // A byte every eight frames, as SameBoy clocks MI.OUT's port (one bit an audio frame).
-  const framed = (cmd: number, at: number) => ({ system: 1, frame: at, byte: 0x80 | (cmd & 0x7f) });
-  const out = k.processBlock({
-    ...baseDyn(),
-    serialOut: [framed(0x7d, 7), framed(0x7f, 15), framed(0x70, 23), framed(0x69, 31)], // START, clock, NoteOn ch0 note 0x69
-  });
-  expect(out.midiOut.map((m) => m.data)).toEqual([[0xfa], [0xf8], [0x90, 0x69, 0x7f]]);
-  expect(out.serialIn.length).toBe(0); // mode 7 is a pure decoder — it never feeds LSDj serial-in
-});
-
-test("the kernel hands a system stage its own serial-out bytes, each byte's frame beside it", () => {
-  // Master sync times its stop from its last byte, so the frames must reach the stage index for index.
-  const seen: { bytes: number[]; frames: number[] }[] = [];
-  const reg = new RoleRegistry();
-  reg.registerRole({
-    kind: "probe", category: "feature", schema: z.object({}),
-    dsp: (c: SystemCtx) => void seen.push({ bytes: [...c.serialOut], frames: [...c.serialOutFrames] }),
-  });
-  const k = new DspKernel(reg);
-  k.setSystems({ systems: [{ id: 1, pipeline: [{ kind: "probe", config: {} }] }, { id: 2, pipeline: [] }] });
-  k.processBlock({
-    ...baseDyn(),
-    serialOut: [{ system: 1, frame: 3, byte: 0x10 }, { system: 2, frame: 4, byte: 0x20 }, { system: 1, frame: 900, byte: 0x11 }],
-  });
-  k.processBlock(baseDyn());
-  expect(seen).toEqual([{ bytes: [0x10, 0x11], frames: [3, 900] }, { bytes: [], frames: [] }]);
 });
 
 // --- Master Sync (mode 8, SYNC=LSDJ): each byte a clock, a silence the stop ------------------------------------
@@ -281,32 +234,4 @@ test("MasterSync: the checks before a byte and at a block start share the stop's
   const expected = [row(1), START, CLOCK, CLOCK, STOP, row(2), START, CLOCK, STOP];
   for (const split of [even(1), cycle(FL_RAGGED), cycle(FL_BUFFER), even(1024), even(4096), even(8192)])
     expect(sent(masterSync(timeline, split, 40000))).toEqual(expected);
-});
-
-test("lsdj-sync mode 8: kernel fans serialOut to the master-sync role → clock + start MIDI", () => {
-  const reg = new RoleRegistry();
-  registerDspRoles(reg);
-  const k = new DspKernel(reg);
-  k.setSystems({
-    project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
-    systems: [{ id: 1, pipeline: [{ kind: "lsdj-sync", config: { mode: "masterSync" } }] }],
-  });
-  const out = k.processBlock({ ...baseDyn(), serialOut: [{ system: 1, frame: 0, byte: 5 }, { system: 1, frame: 900, byte: 6 }] });
-  expect(out.midiOut.map((m) => m.data)).toEqual([row(5), START, CLOCK, CLOCK]);
-  expect(out.serialIn.length).toBe(0); // master sync is a pure decoder: no serial-in
-});
-
-test("lsdj-sync: leaving master sync drops its state, so coming back opens a fresh run", () => {
-  const reg = new RoleRegistry();
-  registerDspRoles(reg);
-  const k = new DspKernel(reg);
-  const mode = (m: string) => k.setSystems({ systems: [{ id: 1, pipeline: [{ kind: "lsdj-sync", config: { mode: m } }] }] });
-  const run = (serialOut: BlockInput["serialOut"]) => k.processBlock({ ...baseDyn(), serialOut }).midiOut.map((m) => m.data);
-  mode("masterSync");
-  expect(run([{ system: 1, frame: 100, byte: 5 }])).toEqual([row(5), START, CLOCK]); // a run opens
-  mode("off");
-  run([]);
-  mode("masterSync");
-  // Kept, the stale open run would swallow this run's NoteOn and 0xFA.
-  expect(run([{ system: 1, frame: 0, byte: 7 }])).toEqual([row(7), START, CLOCK]);
 });

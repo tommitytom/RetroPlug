@@ -409,9 +409,9 @@ test("an explicit rate overrides the profile without restating the depth", () =>
 
 test("a 60 KiB SysEx staged whole reaches a NES whole, with nothing dropped on any wire of the graph", () => {
   // A sample or wave upload is one long SysEx, which the host staging has always taken whole. On its way to the
-  // core it now rides the graph's queues: rp.host.midi-in's output, then the kernel's sys-<id>.midi for the NES
-  // (after the routing and the NES's MIDI forward), each sized to hold it (HostIoNodes.hpp kHostMidiInBytes,
-  // kernelNode.ts KERNEL_CORE_MIDI). A ROM that reads nothing keeps every byte the FIFO was handed.
+  // core it now rides the graph's queues: rp.host.midi-in's output, the routing's output for the NES, then its
+  // rp.n8.midi-to-fifo node's midi, each sized to hold it (HostIoNodes.hpp kHostMidiInBytes, nodes/ports.ts
+  // ROUTED_MIDI and CORE_MIDI). A ROM that reads nothing keeps every byte the FIFO was handed.
   const s = bootSession();
   const path = "/tmp/rp-corebytes-sysex.nes";
   expect(s.backend.writeFile(path, nromRom(parkAfter([])))).toBeTruthy();

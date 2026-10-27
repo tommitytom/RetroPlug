@@ -162,8 +162,7 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
         },
         [](void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush) {
             if (const auto& sink = static_cast<Engine*>(ctx)->coreByteSink_) sink(frame, data, size, flush);
-        },
-        [](void* ctx) { static_cast<Engine*>(ctx)->hostIoDrops_.fetch_add(1, std::memory_order_relaxed); }};
+        }};
     graph_->syncTrace = {this, [](void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size) {
                              auto* self = static_cast<Engine*>(ctx);
                              if (!self->blockTracing_) return;
@@ -368,12 +367,6 @@ std::size_t Engine::reclaim() {
                      static_cast<unsigned>(oversizedFrames_.load(std::memory_order_relaxed)));
         oversizedReported_ = seen;
     }
-    // A host output node's drops, named the first time only: a document that sends one may send one every block.
-    if (!hostIoDropsReported_ && hostIoDrops_.load(std::memory_order_relaxed) != 0) {
-        std::fprintf(stderr, "[engine] rp.host.midi-out has dropped a message too short to carry its system id "
-                             "(Engine::droppedMessages counts each)\n");
-        hostIoDropsReported_ = true;
-    }
     return n;
 }
 
@@ -381,9 +374,7 @@ void Engine::discardPending() { graph_->host->discardPending(); }
 
 std::uint32_t Engine::faultCount() const { return graph_->host->faultCount(); }
 
-std::uint32_t Engine::droppedMessages() const {
-    return graph_->host->droppedMessages() + hostIoDrops_.load(std::memory_order_relaxed);
-}
+std::uint32_t Engine::droppedMessages() const { return graph_->host->droppedMessages(); }
 
 std::uint32_t Engine::scriptThrows() const { return graph_->script.throwCount(); }
 
@@ -735,7 +726,7 @@ bool Engine::stageSystemMidi(SystemBase* sys, const std::uint8_t* bytes, std::si
     // pushCoreBytes, not onMidi, and the difference is load-bearing: onMidi is the MIDI-FRAMED door, and the
     // NES role's implementation clamps every event to MidiEvent::kDataSize and ignores dataExt
     // (NesN8FifoRole.cpp), so a SysEx through it arrives as its first four bytes and the cart waits forever
-    // for an F7 that was thrown away. pushCoreBytes is the raw door the DSP kernel's bytes reach a system
+    // for an F7 that was thrown away. pushCoreBytes is the raw door a protocol node's bytes reach a system
     // through (the system node's bytes input), with no framing and no cap - which is what a rig message
     // needs. A system with no raw ingress falls back to the framed one, where a channel message still fits.
     if (sys->hasCoreBytesIn()) {

@@ -40,7 +40,6 @@ const KEYBD_SONG: SavInput = {
   },
 };
 
-const SEND_TO_ALL = [{ kind: "midi-routing", config: { mode: "sendToAll" } }];
 const lsdjSync = (mode: string) => [{ kind: "lsdj-sync", config: { mode } }];
 
 const rms = (a: Float32Array): number => {
@@ -67,7 +66,7 @@ test("KeyboardMidi: MIDI notes play live on a real LSDj via the PS/2-keyboard se
     sramBytes: savFrom(KEYBD_SONG),
   }, id)).toBeTruthy();
 
-  expect(graph.setProjectStages(SEND_TO_ALL)).toBeTruthy();
+  expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
   expect(graph.setPipeline(id, lsdjSync("keyboardMidi"))).toBeTruthy();
 
   audio.renderAudio(6000); // reach the song screen

@@ -33,10 +33,10 @@ Two consequences show up everywhere and are worth stating once here:
 
 - **Cores are built bare.** Each core is constructed with
   `setSniffDefaultRoles(false)`, so no feature behaviour is baked into C++. LSDj
-  sync, mGB and Arduinoboy behaviour live in a TypeScript **DSP role kernel**
-  ([dspKernel.ts](../packages/retroplug/src/dspKernel.ts)), which runs as a
-  script node of the engine's graph, in the bare QuickJS runtime of the Engine's
-  script host. (Kit-patch is the exception: it runs on the **UI thread**,
+  sync, mGB and Arduinoboy behaviour live in TypeScript **protocol script nodes**,
+  one per role ([src/script/nodes/](../packages/retroplug/src/script/nodes); B3b
+  deleted the DSP role kernel they replaced), which run in the engine's graph, in
+  the bare QuickJS runtime of the Engine's script host. (Kit-patch is the exception: it runs on the **UI thread**,
   writing already-patched memory regions into the core — it has no DSP-kernel
   component.) See [04-roles-dsp-kernel.md](04-roles-dsp-kernel.md).
 - **TS owns the system-id counter and orchestration.** Native never mints an id;
@@ -154,4 +154,4 @@ node instance and runs it on the thread that runs blocks (the audio thread in a 
 - [`packages/retroplug/src/realBackend.ts`](../packages/retroplug/src/realBackend.ts) — the adapter that binds `Symbol.for("plugin").__rpcSend`.
 - [`packages/native/src/host/engine/Engine.hpp`](../packages/native/src/host/engine/Engine.hpp): the single-threaded owner of the graph the cores run on, the script host its TS nodes (the DSP kernel among them) run in, and the snapshot registry.
 - [`packages/retroplug/src/graph/buildGraph.ts`](../packages/retroplug/src/graph/buildGraph.ts): the engine's graph document, built in TS from the stores' systems, routing and host shape.
-- [`packages/retroplug/src/dspKernel.ts`](../packages/retroplug/src/dspKernel.ts): the TS DSP role kernel, run on the audio thread by the kernel node ([`script/kernelNode.ts`](../packages/retroplug/src/script/kernelNode.ts)).
+- [`packages/retroplug/src/script/nodes/`](../packages/retroplug/src/script/nodes): the MIDI routing, each role's protocol node and the controller session, the script nodes buildGraph places (B3b deleted the DSP role kernel they replaced).

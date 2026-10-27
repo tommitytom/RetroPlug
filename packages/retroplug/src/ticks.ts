@@ -1,6 +1,6 @@
 // The PPQ tick walk every clocking protocol counts its clocks with: LSDj's 24-PPQN serial clock, risa's FIFO clock and
-// the smsggdj line counter. Shared by the DSP kernel (dspKernel.ts, until it goes) and the protocol script nodes
-// (script/nodes/), which keep the counter on their instance. A leaf: it imports nothing.
+// the smsggdj line counter. The protocol script nodes (script/nodes/) walk it, each keeping its counter on its
+// instance (script/nodes/clock.ts). A leaf: it imports nothing.
 
 /** What a tick walk reads of a block: its length and rate, the tempo, the PPQ position at its start, and whether the
  *  transport is playing. */

@@ -36,7 +36,7 @@ test("mGB renders non-silent audio from a MIDI chord (idle-silence control)", ()
 
   // The kernel is the only behaviour layer: midi-routing (SendToAll) fans host MIDI to the system,
   // and its `mgb` role turns the routed bytes into serial input (mGB reads MIDI-over-serial).
-  expect(graph.setProjectStages([{ kind: "midi-routing", config: { mode: "sendToAll" } }])).toBeTruthy();
+  expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
   expect(graph.setPipeline(id, [{ kind: "mgb", config: {} }])).toBeTruthy();
 
   audio.renderAudio(1500); // warm up: GB boot + mGB firmware init (discarded)

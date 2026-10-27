@@ -1762,7 +1762,7 @@ TEST_CASE("a script node held off the CPU past the call deadline is not stopped:
           "[script][deadline][off-cpu]") {
     ScriptRig rig(R"JS(
 rp.register([rp.defineNode({
-  id: "rp.toy.stalled",  // no faultOnThrow, as the kernel
+  id: "rp.toy.stalled",  // no faultOnThrow, as the production nodes
   ports: { out: rp.events.out() },
   create: () => {
     let n = 0;
@@ -1922,10 +1922,10 @@ TEST_CASE("the embedded script bundle loads, and registers the production script
     REQUIRE(bundle.size() > 0);
     REQUIRE(host.load({&bundle, 1}, &error));
     CHECK(error.empty());
-    // The DSP kernel (KernelNode.test.cpp holds it to what it was recorded sending), then, in the bundle's order, the
-    // per-role nodes that replace it, which no document places yet.
-    const std::vector<std::string> ids{"rp.dsp.kernel", "rp.midi.route",  "rp.mgb.midi",  "rp.n8.midi-to-fifo",
-                                       "rp.risa.sync",  "rp.sms.sync",    "rp.lsdj.sync", "rp.controller.session"};
+    // In the bundle's order: the MIDI routing, each role's protocol node and the controller session, which buildGraph
+    // places (ProtocolNodes.test.cpp holds them to what the DSP kernel they replaced was recorded sending).
+    const std::vector<std::string> ids{"rp.midi.route", "rp.mgb.midi",  "rp.n8.midi-to-fifo",   "rp.risa.sync",
+                                       "rp.sms.sync",   "rp.lsdj.sync", "rp.controller.session"};
     REQUIRE(host.package()->node_type_count == ids.size());
     for (std::size_t i = 0; i < ids.size(); ++i) CHECK(std::string(host.package()->node_types[i]->id) == ids[i]);
     CHECK(host.package()->abi_version == RP_ABI_VERSION);
@@ -1997,10 +1997,14 @@ rp.register([rp.defineNode({ id: "rp.toy.badcreate", ports: { out: rp.events.out
     // The Engine goes at the end of the test, its last plan's script node with it, after the GraphHost that holds it.
 }
 
-TEST_CASE("what the bundle's load leaves in cycles is collected by the first quiescent reclaim, once", "[script][gc]") {
+TEST_CASE("what a bundle's load leaves in cycles is collected by the first quiescent reclaim, once", "[script][gc]") {
+    // The production bundle has left none since B3b took zod and the DSP kernel out of it, so a chunk loaded after it
+    // leaves one: an array holding itself and 8 KiB, which its top level drops.
+    const std::vector<std::uint8_t> cyclic =
+        rp::host::test::compileToys("(function () { const a = [new Float64Array(1024)]; a.push(a); })();");
     ScriptHost host;
-    const ScriptHost::Chunk bundle = ScriptHost::embeddedBundle();
-    REQUIRE(host.load({&bundle, 1}));
+    const ScriptHost::Chunk chunks[] = {ScriptHost::embeddedBundle(), cyclic};
+    REQUIRE(host.load(chunks));
     const auto loaded = host.audioAllocations();
     host.reclaim();  // no instance released yet: the load's cycles alone
     const auto first = host.audioAllocations();

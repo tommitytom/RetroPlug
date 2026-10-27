@@ -137,7 +137,7 @@ test("dsp-bench: DSP kernel per-block allocation under an mGB + MIDI workload", 
     ids.push(i);
   }
   // SendToAll → every system's mgb pipeline.
-  expect(graph.setProjectStages([{ kind: "midi-routing", config: { mode: "sendToAll" } }])).toBeTruthy();
+  expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
 
   // Bail early (before the render loops) when the host has no profiling allocator, so the normal
   // test:native sweep stays fast + green.

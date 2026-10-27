@@ -17,7 +17,7 @@ namespace rp::host {
 // Named, so their JSON Schema $defs keys are the same under every compiler.
 struct MidiOutSettings {
     // The system each input's messages go out as, an input per entry: in1 takes the first's. Empty (the default):
-    // the one prefixed input, `midi`.
+    // no inputs.
     std::vector<std::uint32_t> systems;
 };
 
@@ -47,10 +47,6 @@ struct MidiIn : HostIoNode {
     void process(const rp::Block&) noexcept { io->takeMidi(io->ctx, outputs.midi.queue); }
 };
 
-// The emitting system's id, little-endian, ahead of each message's MIDI (design section 4.4): private to the
-// kernel's one midiOut port and this node's prefixed form, until each protocol node has a port of its own.
-constexpr std::size_t kSystemPrefix = 4;
-
 rp::graph::PortDesc eventsIn(std::string id) {
     rp::graph::PortDesc p;
     p.id = std::move(id);
@@ -59,12 +55,12 @@ rp::graph::PortDesc eventsIn(std::string id) {
     return p;
 }
 
-// Its settings pick its form (docs/modular-graph-phase-b3b-design.md section 5). With `systems`, an input per entry,
-// in1 to inN, each holding one producer's MIDI as it is, which goes out as that entry's system: input by input, each
-// in queue order, never merged by frame, so the order a document wires its producers in is the host's order across
-// them. Two entries may name one system (a controller sending to a real Game Boy under the id of a system whose own
-// MI.OUT also goes out). Without, the one input `midi`, every message behind its system's id. Every input is
-// appended here, none reflected, since adjust_layout cannot take a reflected port away from the systems form.
+// An input per entry of its settings' `systems` (docs/modular-graph-phase-b3b-design.md section 5), in1 to inN, each
+// holding one producer's MIDI as it is, which goes out as that entry's system: input by input, each in queue order,
+// never merged by frame, so the order a document wires its producers in is the host's order across them. Two entries
+// may name one system (a controller sending to a real Game Boy under the id of a system whose own MI.OUT also goes
+// out). No entries, no inputs: a document whose roles send no host MIDI places it all the same, and it sends nothing.
+// The inputs are appended here, none reflected, since their count is the settings'.
 struct MidiOut : HostIoNode {
     static constexpr const char* id = "rp.host.midi-out";
     static constexpr const char* name = "MIDI Out";
@@ -82,12 +78,11 @@ struct MidiOut : HostIoNode {
     }
 
     static void adjust_layout(rp::graph::Layout& l, const Settings& s) {
-        if (s.systems.empty()) l.ports.push_back(eventsIn("midi"));
         for (std::size_t k = 1; k <= s.systems.size() && k <= kMidiOutMaxSystems; ++k)
             l.ports.push_back(eventsIn("in" + std::to_string(k)));
     }
 
-    // Copied at each commit, which must not allocate; 0 inputs is the prefixed form.
+    // Copied at each commit, which must not allocate.
     std::array<std::uint32_t, kMidiOutMaxSystems> systems{};
     std::uint32_t                                 inputCount = 0;
     void on_settings(const Settings& s) noexcept {
@@ -97,10 +92,6 @@ struct MidiOut : HostIoNode {
     }
 
     void process(const rp::Block& b) noexcept {
-        if (inputCount == 0) {
-            prefixed(*b.input(0).u.queue);
-            return;
-        }
         for (std::uint32_t k = 0; k < inputCount && k < b.raw.input_count; ++k) {
             const rp_queue& q = *b.input(k).u.queue;
             for (std::uint32_t i = 0; i < q.count; ++i) {
@@ -108,20 +99,6 @@ struct MidiOut : HostIoNode {
                 const auto data = rp::graph::messageData(q, m);
                 io->midiOut(io->ctx, systems[k], m.frame, data.data(), data.size());
             }
-        }
-    }
-
-    void prefixed(const rp_queue& q) const noexcept {
-        for (std::uint32_t i = 0; i < q.count; ++i) {
-            const rp_message& m = q.items[i];
-            const auto data = rp::graph::messageData(q, m);
-            if (data.size() < kSystemPrefix) {  // names no system: nowhere to go
-                io->dropped(io->ctx);
-                continue;
-            }
-            const std::uint32_t system = std::uint32_t{data[0]} | std::uint32_t{data[1]} << 8 |
-                                         std::uint32_t{data[2]} << 16 | std::uint32_t{data[3]} << 24;
-            io->midiOut(io->ctx, system, m.frame, data.data() + kSystemPrefix, data.size() - kSystemPrefix);
         }
     }
 };

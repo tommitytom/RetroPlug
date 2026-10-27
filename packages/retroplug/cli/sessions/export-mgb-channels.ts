@@ -25,7 +25,7 @@ runSession((s) => {
 
   const id = s.project.systems.loadMgb();
   if (id == null) throw new Error("loadMgb failed");
-  s.audio.renderAudio(1500); // boot past the mGB splash (the store's midi-routing role is projected)
+  s.audio.renderAudio(1500); // boot past the mGB splash (the store places the project's MIDI routing)
 
   CHORD.forEach((m) => s.audio.stageMidiIn(m));
   const bufs = s.audio.renderAudioPerChannel(id, 2000); // 4 interleaved-stereo buffers, one per channel

@@ -33,7 +33,7 @@ Three layers, all pure TypeScript except a thin native device seam:
 
 ### Verdict
 
-Feasible, and most of it is pure TS on rails that already exist. The LSDj side needs **no new tracker code at all**: [`dspRoles.ts:103`](../packages/retroplug/src/dspRoles.ts#L103) already implements MI.MAP byte-for-byte. The native work is bounded and enumerable (§6).
+Feasible, and most of it is pure TS on rails that already exist. The LSDj side needs **no new tracker code at all**: `dspRoles.ts:103` already implements MI.MAP byte-for-byte (since B3b, [lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts)). The native work is bounded and enumerable (§6).
 
 ### The one real complication
 
@@ -57,7 +57,7 @@ Nothing is read back. The row readout LSDj shows top-right on the song screen is
 
 ### 2.2 RetroPlug already implements exactly this
 
-[`dspRoles.ts:103-121`](../packages/retroplug/src/dspRoles.ts#L103-L121) (`midiMap`) is a byte-for-byte match, including the `0xFE` handshake and the `lastRow` cross-block state. `midiMapRow` ([`dspRoles.ts:62`](../packages/retroplug/src/dspRoles.ts#L62)) does the two-channel row extension. **The Launchpad app produces the MIDI this role already consumes** - it does not reimplement LSDj.
+`dspRoles.ts:103-121` (`midiMap`; since B3b, [lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts)) is a byte-for-byte match, including the `0xFE` handshake and the `lastRow` cross-block state. `midiMapRow` (`dspRoles.ts:62`; now [lsdjSyncBytes.ts](../packages/retroplug/src/lsdjSyncBytes.ts)) does the two-channel row extension. **The Launchpad app produces the MIDI this role already consumes** - it does not reimplement LSDj.
 
 ### 2.3 Correction: LIVEMAP no longer exists
 
@@ -289,9 +289,9 @@ Because a row launch is immediate and repeatable, the model can force truth to m
 
 | Rail | Where | Relevance |
 |---|---|---|
-| MI.MAP implementation | [`dspRoles.ts:103`](../packages/retroplug/src/dspRoles.ts#L103) | The LSDj side is done |
+| MI.MAP implementation | `dspRoles.ts:103` (since B3b, [lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts)) | The LSDj side is done |
 | Role registry + zod-validated config, testable with zero C++ | [`systemRoles.ts`](../packages/retroplug/src/systemRoles.ts), [`dspRoles.ts`](../packages/retroplug/src/dspRoles.ts) | The template for the controller-app registry |
-| Project-scope behaviours run **regardless of system count** | [`dspKernel.ts:399`](../packages/retroplug/src/dspKernel.ts#L399) | A device-only project (real GB, no emulated system) works structurally |
+| Project-scope behaviours run **regardless of system count** | `dspKernel.ts:399` (deleted in B3b) | A device-only project (real GB, no emulated system) works structurally |
 | SysEx already contemplated in TS routing | [`midiRouting.ts:43`](../packages/retroplug/src/midiRouting.ts#L43) | Long messages broadcast unchanged; no TS-side change needed |
 | Pure-TS LSDj sav codec + runtime WRAM reader | [`src/lsdj/`](../packages/retroplug/src/lsdj/) | Both `PlaybackModel` implementations are built from existing parts |
 | **`N8Link`**: audio thread -> SpscRing -> dedicated device thread, injected `PortFactory` so it is testable hardware-free | [`N8Link.hpp`](../packages/native/src/host/n8/N8Link.hpp) | **The direct architectural precedent** for a device-scoped link |
@@ -343,7 +343,7 @@ list each render, so a device that goes away while idle takes its menu with it.)
 
 ### 6.3 With a real Game Boy there is no system to attach to
 
-Feature roles attach per-system by ROM identity. On the hardware path there is no `SystemBase` at all. Hence the app must be **project-scope** (like `midi-routing`), with the target chosen by config. Verified that project stages run with zero systems: [`dspKernel.ts:399-401`](../packages/retroplug/src/dspKernel.ts#L399-L401).
+Feature roles attach per-system by ROM identity. On the hardware path there is no `SystemBase` at all. Hence the app must be **project-scope** (like `midi-routing`), with the target chosen by config. Verified that project stages run with zero systems: `dspKernel.ts:399-401` (deleted in B3b).
 
 ### 6.4 `stageMidiIn` is harness-only
 
@@ -482,7 +482,7 @@ of a launcher.
 
 ### 8.2 BUILT: M5, the thing that actually runs
 
-Everything above was a library nothing called. [`src/controllerRole.ts`](../packages/retroplug/src/controllerRole.ts)
+Everything above was a library nothing called. `src/controllerRole.ts` (since B3b, [controllerSession.ts](../packages/retroplug/src/script/nodes/controllerSession.ts))
 is the `launchpad` project-scope DSP role that owns a `ControllerSession` and runs it once per audio block.
 
 **Project scope needed three things it did not have.** A project stage got `(block, inboxes, config)` -

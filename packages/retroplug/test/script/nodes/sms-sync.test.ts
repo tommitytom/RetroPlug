@@ -1,8 +1,8 @@
 // rp.sms.sync (src/script/nodes/smsSync.ts): the DAW transport as smsggdj's sync transport, a 2-bit counter held on
 // two port lines at 24 PPQN, each step a LEVEL WORD on its `bytes` output. Both machines: a Master System's controller
-// port 2 (TR + TH), a Game Gear's EXT port (PC4/PC5 + PC6), picked by `machine`. The role cases of
-// test/dsp/sms-sync.test.ts, which drives the role through the kernel, at the node; the encoding's pure cases and the
-// ROM provider's stay there.
+// port 2 (TR + TH), a Game Gear's EXT port (PC4/PC5 + PC6), picked by `machine`. The cases the DSP kernel's sms-sync
+// role was held to until B3b, at the node; the encoding's pure cases and the ROM provider's are
+// test/dsp/sms-sync.test.ts's.
 //
 // Protocol reference: smsggdj's GGSYNC.md and src/engine.asm:576-590 / :646-661.
 import { test, expect } from "../../../testing/harness";

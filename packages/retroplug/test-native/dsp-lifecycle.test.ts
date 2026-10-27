@@ -18,8 +18,7 @@ const graph = directGraph();
 const MGB: ConstructSpec = { romPath: "", platform: "gb", core: "sameboy", embeddedRom: "mgb", savPath: null, statePath: null };
 const NOTE = [0x90, 60, 100]; // C note-on
 
-// The kernel structure that lets host MIDI reach each mGB: midi-routing (SendToAll) → per-system mgb.
-const SEND_TO_ALL = [{ kind: "midi-routing", config: { mode: "sendToAll" } }];
+// What lets host MIDI reach each mGB: the routing (SendToAll), then each system's mgb node.
 const MGB_PIPELINE = [{ kind: "mgb", config: {} }];
 
 test("add + remove a system while the audio thread plays, via the command + release queues", () => {
@@ -30,7 +29,7 @@ test("add + remove a system while the audio thread plays, via the command + rele
   // TS owns the id counter now; a test calling the backend directly picks its own (fresh host per file).
   const a = 1;
   expect(graph.add(MGB, a)).toBeTruthy();
-  expect(graph.setProjectStages(SEND_TO_ALL)).toBeTruthy();
+  expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
   expect(graph.setPipeline(a, MGB_PIPELINE)).toBeTruthy();
 
   expect(audio.startAudio()).toBeTruthy();

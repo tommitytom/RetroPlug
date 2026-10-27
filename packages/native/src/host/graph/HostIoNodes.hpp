@@ -15,9 +15,7 @@ namespace rp::host {
 //   rp.host.midi-out        {"systems": [<id>, ...]}: in in1 to inN, an input per entry, whose messages land in
 //                           Engine::midiOut tagged with that entry's system, input by input, each in queue order
 //                           (docs/modular-graph-phase-b3b-design.md section 5); two entries may name one system.
-//                           With no systems (the default): in midi, each message's payload a 4-byte little-endian
-//                           system id, then the MIDI, which lands tagged with that system (section 4.4); a message
-//                           too short to carry the id is dropped and counted (Engine::droppedMessages)
+//                           With no systems (the default) it has no inputs and sends nothing
 //   rp.host.controller-in   out midi: the staged control-surface MIDI, at frame 0; out connected: 1 while a
 //                           control surface is attached, from frame 0 of the block
 //   rp.host.controller-out  in midi: appended to Engine::controllerOut
@@ -45,10 +43,10 @@ std::optional<std::uint32_t> cartMirrorSystem(std::string_view settings);
 inline constexpr std::uint32_t kMidiOutMaxSystems = 128;
 
 // rp.host.midi-in's output: room for a dense block of DAW MIDI, the frame-0 CCs of moved automation and a large
-// SysEx (a sample or wave upload to a NES build, which the staging has always taken whole), with margin. The kernel's
-// sys-<id>.midi and serialIn outputs hold as many bytes and 8 KiB more for a role's own (src/script/kernelNode.ts
-// KERNEL_CORE_MIDI and KERNEL_SERIAL_IN), so what passes here reaches the system. A message past it is dropped and
-// counted (GraphHost::droppedMessages).
+// SysEx (a sample or wave upload to a NES build, which the staging has always taken whole), with margin. The protocol
+// nodes' outputs that pass host MIDI on (a NES's midi, a Game Boy's serialIn) hold as many bytes and 8 KiB more for a
+// role's own (src/script/nodes/ports.ts CORE_MIDI and SERIAL_IN), so what passes here reaches the system. A message
+// past it is dropped and counted (GraphHost::droppedMessages).
 inline constexpr std::uint32_t kHostMidiInMessages = 2048;
 inline constexpr std::uint32_t kHostMidiInBytes = 65536;
 // rp.host.controller-in's: a Launchpad's pad traffic and its replies.

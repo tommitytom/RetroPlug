@@ -43,7 +43,7 @@ test("a DSP pushSerialIn (mgb role) in the render loop flips the core silent ↔
   const muted = rms(audio.renderAudio(1500));
 
   // Add midi-routing (SendToAll) -> the chord reaches mGB's serial via pushSerialIn -> it plays.
-  expect(graph.setProjectStages([{ kind: "midi-routing", config: { mode: "sendToAll" } }])).toBeTruthy();
+  expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
   stageChord();
   const passed = rms(audio.renderAudio(1500));
 

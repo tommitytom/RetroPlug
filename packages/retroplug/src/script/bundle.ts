@@ -4,7 +4,6 @@
 // its script contexts at construction and every host has the same node types, with no boot call. An entry point
 // only: importing it registers.
 import type { DefinedNode } from "../graph/defineNode";
-import { kernelNode } from "./kernelNode";
 import { midiRouteNode } from "./nodes/midiRoute";
 import { mgbMidiNode } from "./nodes/mgbMidi";
 import { n8MidiToFifoNode } from "./nodes/n8MidiToFifo";
@@ -14,10 +13,11 @@ import { lsdjSyncNode } from "./nodes/lsdjSync";
 import { controllerSessionNode } from "./nodes/controllerSession";
 import { registerScriptNodes } from "./register";
 
-// The production script node types, in registration order: the DSP kernel, which no document places any more, then
-// the per-role nodes that replaced it (docs/modular-graph-phase-b3b-design.md section 2), which buildGraph places.
+// The production script node types, in registration order: the MIDI routing, a protocol node for each role that has
+// one, and the control-surface session (docs/modular-graph-phase-b3b-design.md section 2), which buildGraph places.
+// Nothing here registers roles or imports zod: a node's settings are graph/settingsSchema.ts's, and
+// test/script/bundle-no-zod.test.ts holds the bundle to that.
 const scriptNodes: readonly DefinedNode<any>[] = [
-  kernelNode,
   midiRouteNode,
   mgbMidiNode,
   n8MidiToFifoNode,

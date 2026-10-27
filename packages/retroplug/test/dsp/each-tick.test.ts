@@ -1,11 +1,12 @@
-// walkTicks — the TS twin of native PpqUtil::eachTick. Proves the drift-free 24-PPQN clock: two
-// consecutive half-second blocks at 44100/120 each span exactly 1 beat = 24 ticks, the boundary
-// tick fires exactly once (contiguous 0..47, no double/miss), and a stopped transport emits none.
+// walkTicks (src/ticks.ts), the TS twin of native PpqUtil::eachTick. Proves the drift-free 24-PPQN clock:
+// two consecutive half-second blocks at 44100/120 each span exactly 1 beat = 24 ticks, the boundary tick
+// fires exactly once (contiguous 0..47, no double/miss), and a stopped transport emits none. The clock a
+// protocol node keeps over it is test/script/nodes/tick-clock.test.ts's.
 import { test, expect } from "../../testing/harness";
-import { walkTicks, type BlockInfo } from "../../src/dspKernel";
+import { walkTicks, type TickBlock } from "../../src/ticks";
 
 // 22050 frames @ 44100 Hz / 120 BPM = 0.5 s = exactly 1 beat → 24 ticks at 24 PPQN.
-const block = (ppqStart: number, transport: boolean): BlockInfo => ({
+const block = (ppqStart: number, transport: boolean): TickBlock => ({
   frames: 22050,
   sampleRate: 44100,
   tempo: 120,

@@ -41,7 +41,7 @@ export const PROTOCOL_NODES = {
 
 export type ProtocolNodeType = keyof typeof PROTOCOL_NODES;
 
-/** The role kinds whose DSP behaviour the kernel ran for a system, each with the node type it is placed as. */
+/** The role kinds that have a protocol node (dspRoles.ts registers them), each with the node type it is placed as. */
 const ROLE_NODES: Readonly<Record<string, ProtocolNodeType>> = {
   mgb: "rp.mgb.midi",
   "nes-n8-midi": "rp.n8.midi-to-fifo",

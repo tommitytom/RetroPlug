@@ -1,7 +1,8 @@
-// rp.controller.session (src/script/nodes/controllerSession.ts): a control surface's session, as the `launchpad` role
-// ran it. The cases of test/dsp/controller-role.test.ts and test/controller/role.test.ts, which drive the role through
-// the kernel, at the node: a pad press out as a launch (into an rp.lsdj.sync node's launches, through its real MI.MAP
-// mode, or out of the host), LEDs on controllerOut, the device taken on its connect edge, and the re-push rules.
+// rp.controller.session (src/script/nodes/controllerSession.ts): a control surface's session, as the DSP kernel's
+// `launchpad` role ran it until B3b, whose cases these were: a pad press out as a launch (into an rp.lsdj.sync node's
+// launches, through its real MI.MAP mode, or out of the host), LEDs on controllerOut, the device taken on its connect
+// edge, and the re-push rules. Its default target ("0 is the first system") is buildGraph's
+// (test/graph/build-graph.test.ts).
 import { test, expect } from "../../../testing/harness";
 import { CONTROLLER_SESSION_NODE_TYPE, controllerSessionNode } from "../../../src/script/nodes/controllerSession";
 import { lsdjSyncNode } from "../../../src/script/nodes/lsdjSync";

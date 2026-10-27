@@ -1,10 +1,8 @@
-// The tick walk (src/ticks.ts, the TS twin of native PpqUtil::eachTick) and a protocol node's clock over it
-// (src/script/nodes/clock.ts). The expectations of test/dsp/each-tick.test.ts, which reads the walk through the kernel's
-// re-export, here through its own module and through the clock a node keeps: a drift-free 24-PPQN clock, the boundary
-// tick fired exactly once, a stopped transport firing none.
+// A protocol node's clock (src/script/nodes/clock.ts) over the tick walk (src/ticks.ts, the TS twin of native
+// PpqUtil::eachTick, whose own cases are test/dsp/each-tick.test.ts's): the counter carried across blocks, the same
+// ticks however the blocks are cut, and a walk a callback throws out of leaving the counter where it was.
 import { test, expect } from "../../../testing/harness";
-import { walkTicks, type TickBlock } from "../../../src/ticks";
-import { walkTicks as kernelWalkTicks } from "../../../src/dspKernel";
+import type { TickBlock } from "../../../src/ticks";
 import { TickClock } from "../../../src/script/nodes/clock";
 import type { Block } from "../../../src/graph/defineNode";
 
@@ -12,30 +10,6 @@ import type { Block } from "../../../src/graph/defineNode";
 const tickBlock = (ppqStart: number, transport: boolean): TickBlock => ({ frames: 22050, sampleRate: 44100, tempo: 120, ppqStart, transport });
 const block = (ppq: number, playing: boolean, frames = 22050): Block =>
   ({ frames, transport: { sampleRate: 44100, tempo: 120, ppq, playing } }) as Block;
-
-test("the kernel's walkTicks is this one", () => {
-  expect(kernelWalkTicks).toBe(walkTicks);
-});
-
-test("walkTicks emits a drift-free 24-PPQN clock (24 / 24 / 0 across two blocks + a stopped control)", () => {
-  const b1: { t: number; o: number }[] = [];
-  let nextTick = walkTicks(tickBlock(0, true), 24, 0, (t, o) => b1.push({ t, o }));
-  expect(b1.length).toBe(24);
-  expect(b1[0]).toEqual({ t: 0, o: 0 });
-  expect(b1[23].t).toBe(23);
-  expect(nextTick).toBe(24);
-
-  const b2: number[] = [];
-  nextTick = walkTicks(tickBlock(1.0, true), 24, nextTick, (t) => b2.push(t));
-  expect(b2.length).toBe(24);
-  expect(b2[0]).toBe(24);
-  expect(b2[23]).toBe(47);
-  expect(nextTick).toBe(48);
-
-  const stopped: number[] = [];
-  expect(walkTicks(tickBlock(2.0, false), 24, nextTick, (t) => stopped.push(t))).toBe(48);
-  expect(stopped.length).toBe(0);
-});
 
 test("a node's clock carries its counter across blocks, as the kernel's per-system counter did", () => {
   const clock = new TickClock();

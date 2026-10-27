@@ -96,7 +96,7 @@ test("nothing is invented for a ROM no provider matches", () => {
 });
 
 test("a stored role whose kind is no longer registered is left alone", () => {
-  // dspKernel skips unknown kinds when building the pipeline, so a stale entry is inert - and dropping
+  // A kind with no protocol node places none (graph/protocolNodes.ts), so a stale entry is inert - and dropping
   // it here would silently discard a role belonging to a build the user might go back to.
   const { be, store } = newStore();
   const romPath = seedLsdj(be);

@@ -22,7 +22,7 @@ MidiMap, KeyboardMidi, MidiPassthrough, MidiOut (ArduinoboyMaster), and MasterSy
 ([dspRoles.ts](../packages/retroplug/src/dspRoles.ts)). Raw Keyboard emits nothing because it needs
 the per-block **`keys` feed**, which nothing supplies yet: the kernel node hands the kernel empty
 `buttons` and `keys` arrays every block
-([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts), `blockInput`), so the kernel's
+(`kernelNode.ts`, `blockInput`, deleted in B3b), so the kernel's
 `buttons`/`keys` inputs are present but unfed. Feeding host keys/buttons per block (a port on the kernel
 node, or on the protocol node that replaces it) unblocks this mode. (See
 [04-roles-dsp-kernel.md](04-roles-dsp-kernel.md).)
@@ -184,7 +184,7 @@ start again. What is left, in order:
   - The kernel node's `midiOut` is sized for a decoded MI.OUT stream at its densest up to 8192-frame
     blocks (1024 messages, a captured byte every 8 frames), while `serialOut` is sized for 65536: in a
     larger block the decoded stream can pass 1024 messages, and the rest is dropped and counted
-    ([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts) `KERNEL_MIDI_OUT`).
+    ([nodes/ports.ts](../packages/retroplug/src/script/nodes/ports.ts) `MIDI_OUT`).
   - `rp.host.midi-in`'s sort at the source merges two frame runs in linear time, which is what real
     plugin hosts stage (the DAW's events, then the automation CCs at frame 0); a staging of three or more
     runs falls back to an in-place insertion sort, quadratic in what was staged, on the block thread. The

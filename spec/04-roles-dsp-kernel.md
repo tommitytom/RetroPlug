@@ -107,7 +107,7 @@ ROM-gated), transforming the resolved `ConstructSpec`. It sees only a narrow `Co
 itself.
 
 The one hook today is LSDj's empty-sav seed
-([dspRoles.ts:312](../packages/retroplug/src/dspRoles.ts#L312)): a fresh LSDj cart with no
+([dspRoles.ts:16](../packages/retroplug/src/dspRoles.ts#L16)): a fresh LSDj cart with no
 save data runs a 12–15 s cartridge self-test on boot. When nothing else will seed the battery (no
 savestate, no SRAM blob, no on-disk `.sav` for native to load) the hook hands it a valid empty sav
 via `savFromJson("{}")` so LSDj boots straight to the song screen. It is additive — the spec is
@@ -194,7 +194,7 @@ the core plays the Arduinoboy that clocks LSDj, and `listen` for master sync, wh
 
 ## The DSP kernel
 
-[dspKernel.ts](../packages/retroplug/src/dspKernel.ts) is pure TS with no `Backend`
+`dspKernel.ts` (deleted in B3b) is pure TS with no `Backend`
 dependency. The kernel node hands `processBlock` what its inputs carried for one audio block;
 project-scope behaviours fan the input to systems, then each system's ordered pipeline of behaviours
 reads its inputs and writes frame-tagged sinks.
@@ -212,7 +212,7 @@ view and overwrites its dynamic fields each block — no per-block allocation.
 
 ### Execution order
 
-[`DspKernel.processBlock`](../packages/retroplug/src/dspKernel.ts#L425):
+`DspKernel.processBlock` (deleted in B3b):
 
 1. **The per-system inputs**: this block's `keys`, `buttons` and `serialOut` are fanned to their
    systems, one pass each, into per-system lists kept across blocks and cleared in place.
@@ -233,7 +233,7 @@ system being added); a project stage past the new count is dropped.
 ### The sinks
 
 A behaviour never carries a `sys` argument; it writes through a per-system `SystemCtx`
-([dspKernel.ts:157](../packages/retroplug/src/dspKernel.ts#L157)) whose sinks are scoped to
+(`dspKernel.ts:157`, deleted in B3b) whose sinks are scoped to
 the system id. The kernel forwards each call to an injected `SinkTarget`:
 
 | Sink | Signature (on `SystemCtx`) | Direction |
@@ -246,7 +246,7 @@ the system id. The kernel forwards each call to an injected `SinkTarget`:
 | `eachTick` | `(resolution, cb)` | walk the PPQ ticks in this block (see below) |
 | `setNextTick` | `(tick)` | force the tick this system's next `eachTick` starts from |
 
-`SinkTarget` ([dspKernel.ts:106](../packages/retroplug/src/dspKernel.ts#L106)) is the
+`SinkTarget` (`dspKernel.ts:106`, deleted in B3b) is the
 system-addressed form: `pushSerialIn(system, frame, byte)`, `emitCoreMidi(system, frame, data)`,
 `pushCoreBytes(system, frame, data, flush?)`, `emitMidiOut(system, frame, data)`,
 `pressButton(system, frame, button, down)`, optional `emitControllerOut(data)` and `reset()`. A
@@ -260,7 +260,7 @@ the system nodes' inputs and the host's outputs. (Role-generated `pressButton` i
 ### The drift-exact PPQ clock — in JS
 
 The tick clock lives **entirely in the kernel**; native owns no `nextTick`/`eachTick` primitive.
-[`walkTicks`](../packages/retroplug/src/dspKernel.ts#L241) is a faithful TS twin of native
+[`walkTicks`](../packages/retroplug/src/ticks.ts#L23) is a faithful TS twin of native
 `PpqUtil::eachTick`: it walks the ticks at `resolution` ticks/quarter that fall in this block, calling
 `cb(tick, offsetSamples)` for each. The caller-owned `nextTick` persists across blocks (the kernel
 stores it per system id), so the clock is drift-free at block edges — each tick fires exactly once,
@@ -285,7 +285,7 @@ unplaced, until B3b deletes it.
 ## Running as a script node
 
 The kernel runs as the script node `rp.dsp.kernel`
-([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts), docs/modular-graph-phase-b3a-design.md
+(`kernelNode.ts`, deleted in B3b; docs/modular-graph-phase-b3a-design.md
 section 4) inside the script host's **bare QuickJS audio context** (no txiki), on whichever thread runs
 blocks, distinct from the control-plane runtime; see [01-architecture.md](01-architecture.md) for the
 runtimes and [02-native-host.md](02-native-host.md) for the script host.
@@ -409,12 +409,12 @@ TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
   `midi-routing` behaviours + the LSDj `onConstruct` seed.
 - [romProviders.ts](../packages/retroplug/src/romProviders.ts) — feature-role attachment by
   ROM identity.
-- [dspKernel.ts](../packages/retroplug/src/dspKernel.ts): `DspKernel`, `SystemCtx`, the
+- `dspKernel.ts` (deleted in B3b): `DspKernel`, `SystemCtx`, the
   sinks, `walkTicks`.
 - [graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts) /
   [graph/controller.ts](../packages/retroplug/src/graph/controller.ts) - store → graph: the
   protocol node per role, the controller's target and its cart's sync override.
-- [script/kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts) /
+- `script/kernelNode.ts` (deleted in B3b) /
   [script/bundle.ts](../packages/retroplug/src/script/bundle.ts) /
   [script/register.ts](../packages/retroplug/src/script/register.ts): the kernel as a script node,
   the bundle every Engine embeds, and how a bundle registers its node types.

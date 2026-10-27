@@ -251,7 +251,7 @@ staging). Then, in order:
    the planner's order (topological, ties broken by document order):
    1. **The host inputs and the kernel.** `rp.host.midi-in` and `rp.host.controller-in` take what the
       hosts staged (the host MIDI stable-sorted by frame). The DSP kernel, the script node
-      `rp.dsp.kernel` ([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts), run by the
+      `rp.dsp.kernel` (`kernelNode.ts`, deleted in B3b, run by the
       [script host](../packages/native/src/host/script/ScriptHost.hpp)), reads them, the transport at
       the **block-start** `ppq_` and each Game Boy's `serialOut` of last block (a feedback wire), and
       sends each system's `serialIn`, `midi`, `bytes` and `buttons` on wires to that system node's
@@ -358,7 +358,7 @@ C++, `events.out(capacity)` / `bytes.out(capacity)` in TS), by default 256 messa
 most 1 Mi messages and 16 MiB. A wire carries its source's queue, so an input declares none (both parsers
 refuse one, and an input has no `sized`): the outputs that do are the host inputs above, the Game Boy's
 `serialOut`, and each of the kernel's outputs
-([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts): per system `serialIn` 4096 messages /
+([nodes/ports.ts](../packages/retroplug/src/script/nodes/ports.ts), the protocol nodes' since B3b: per system `serialIn` 4096 messages /
 72 KiB, `midi` 4096 / 72 KiB, `bytes` 256 / 1 KiB, `buttons` 64 / 128 B; `midiOut` 1024 / 8 KiB,
 `controllerOut` 256 / 4 KiB). The two that pass host MIDI on, `serialIn` and `midi`, hold what
 `rp.host.midi-in`'s output holds and room for a role's own bytes besides, so the one place host MIDI is
@@ -622,8 +622,8 @@ blob carries the NES role-config (Region / Remove Sprite Limit / channel-export 
 ## `ScriptHost` + `ScriptCompiler`: the script-node runtime
 
 Native runs the TypeScript DSP role kernel but understands nothing about roles. The kernel itself
-([`dspKernel.ts`](../packages/retroplug/src/dspKernel.ts)) and its behaviour are 04's topic; it
-runs as a script node ([`kernelNode.ts`](../packages/retroplug/src/script/kernelNode.ts)), and this
+(`dspKernel.ts`, deleted in B3b) and its behaviour are 04's topic; it
+runs as a script node (`kernelNode.ts`, deleted in B3b), and this
 doc covers the C++ runtime under it (docs/modular-graph-phase-b3a-design.md section 2).
 
 [`ScriptHost`](../packages/native/src/host/script/ScriptHost.hpp) owns **two bare QuickJS
@@ -781,7 +781,7 @@ is one automatable parameter applied post-render across all 8 channels
   (`enableMemorySnapshot(type)`). Reads are one-shot through the registry read door; if live
   memory streaming to the UI is ever needed, that arming seam must be built.
 - **Per-block buttons/keys into the kernel.** The kernel node hands its kernel empty `buttons` and
-  `keys` arrays every block ([`kernelNode.ts`](../packages/retroplug/src/script/kernelNode.ts)): it has
+  `keys` arrays every block (`kernelNode.ts`, deleted in B3b): it has
   no input port for them, and no host feeds them yet (this blocks the raw LSDj Keyboard mode,
   [07-remaining-work.md](07-remaining-work.md)).
 - **The snapshot double-copy collapse** (§`SnapshotRegistry`) is a documented redundancy, not a

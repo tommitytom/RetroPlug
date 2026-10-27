@@ -1,6 +1,6 @@
 // rp.risa.sync (src/script/nodes/risaSync.ts): the DAW transport as risa's N8-FIFO host-sync byte protocol (arm+locate,
-// start, 24-PPQN clock, stop) on its `bytes` output. The role cases of test/dsp/risa-sync.test.ts, which drives the
-// role through the kernel, at the node; the protocol's pure cases stay there.
+// start, 24-PPQN clock, stop) on its `bytes` output, as the DSP kernel's risa-sync role sent it until B3b; the locate's
+// pure cases are test/risa/sync-locate.test.ts's.
 // Protocol reference: risa's docs/sync/host-sync-protocol.md (2.3.0 and later).
 import { test, expect } from "../../../testing/harness";
 import { RISA_SYNC_NODE_TYPE, risaSyncNode } from "../../../src/script/nodes/risaSync";

@@ -6,20 +6,22 @@
 // Two tables. The first is the fixed cost of a script node's process call, marshalling included: chains of 1, 4, 16
 // and 64 trivial TS nodes (an events pass-through written with indexed loops) between a native source and sink, the
 // source sending nothing or one message a block. A node's cost is the chain's less the source wired straight to the
-// sink, over the node count. The second times the kernel node in a plan, driven as KernelNode.test.cpp drives it,
-// over one structure and input: mGB, an LSDj in MIDI sync and a NES on nes-n8-midi, every host message to all three,
-// the transport playing, a steady MIDI stream, and each Game Boy's MI.OUT as its system node carries it, reaching the
-// kernel a block after the core clocked it out (a feedback wire, as buildGraph wires it). No core runs: the plan's
-// system stand-ins count what reaches their inputs. The plan's native nodes alone (the same document with no kernel)
-// are timed too, so the kernel node's own share shows. (While the kernel stage the node replaced still existed,
-// 9c3c10f9, this table timed it too, over the same blocks: in three runs the node took 1.36 to 1.62 times as long,
-// and where the stage made 0, 0.15 and 1.16 native allocations a block at 1, 64 and 512 frames, the node's plan made
-// none. The stage's JS allocations went unmeasured: its runtime counted them only in a RETROPLUG_PROFILE build.)
+// sink, over the node count. The second times the script nodes buildGraph places for one structure and input, in a
+// plan driven as ProtocolNodes.test.cpp drives one: mGB, an LSDj in MIDI sync and a NES on nes-n8-midi, the routing
+// sending every host message to all three, so four script nodes (the routing and a protocol node a system), the
+// transport playing, a steady MIDI stream, and each Game Boy's serial out as its system node carries it, the LSDj's
+// reaching its node a block after the core clocked it out (a feedback wire, as buildGraph wires it). No core runs: the
+// plan's system stand-ins count what reaches their inputs. The plan's native nodes alone (the same document with no
+// script nodes) are timed too, so the script nodes' own share shows. (Until B3b this table timed the one DSP kernel
+// node that did the four nodes' work, and before that, while the native kernel stage the node replaced still existed,
+// 9c3c10f9, the stage too, over the same blocks: in three runs the node took 1.36 to 1.62 times as long, and where the
+// stage made 0, 0.15 and 1.16 native allocations a block at 1, 64 and 512 frames, the node's plan made none. The
+// stage's JS allocations went unmeasured: its runtime counted them only in a RETROPLUG_PROFILE build.)
 //
-// Each figure is a median of kRuns runs; a kernel run times the node, then its plan with no kernel, over the same
-// blocks. Allocations are per block over every run: JS from the script host's audio runtime, native on the calling
-// thread (CountingAllocator). It asserts that the work was done, never a time: the messages came through, counted per
-// system and input (serial in in bytes), and none reached a system in the plan with no kernel.
+// Each figure is a median of kRuns runs; a run times the script nodes' plan, then that plan with no script nodes, over
+// the same blocks. Allocations are per block over every run: JS from the script host's audio runtime, native on the
+// calling thread (CountingAllocator). It asserts that the work was done, never a time: the messages came through,
+// counted per system and input (serial in in bytes), and none reached a system in the plan with no script nodes.
 //
 // Hidden from the normal run. Run it on its own: build/bin/retroplug-engine-graph-test "[bench]"
 
@@ -175,33 +177,29 @@ ChainRow timeChain(bool message, int n, std::uint32_t frames) {
     return {median(us), scriptDelta(before, rig.scripts.audioAllocations(), native, double{kRuns} * kChainBlocks)};
 }
 
-// ---- the kernel ---------------------------------------------------------------------------------------------------
+// ---- the protocol nodes --------------------------------------------------------------------------------------------
 
 // A run, by block size: a few seconds of audio but at 1 frame, and enough blocks to time there.
-int kernelBlocks(std::uint32_t frames) { return frames == 1 ? 32768 : frames == 64 ? 8192 : 2048; }
+int protocolBlocks(std::uint32_t frames) { return frames == 1 ? 32768 : frames == 64 ? 8192 : 2048; }
 
-// The structure kernelProjection published for the three, as the kernel node's settings: each pipeline holds only the
-// roles with a DSP behaviour, the project MIDI routing sending every message to all of them, and each system says
-// whether it has a serialOut.
+// The three systems, each with the one role buildGraph places a protocol node for (graph/protocolNodes.ts): its node
+// sys-<id>/<kind>, its type and settings (the role's config as the store parses it), the input its routed MIDI arrives
+// on, and the system inputs it writes. The LSDj's node takes its Game Boy's serial out too, and sends host MIDI.
 struct BenchSystem {
-    std::uint32_t id;
-    const char*   pipeline;
-    bool          gameBoy;
+    std::uint32_t            id;
+    const char*              kind;
+    const char*              type;
+    const char*              settings;
+    const char*              midiIn;
+    std::vector<const char*> writes;
+    bool                     gameBoy;
 };
 const BenchSystem kSystems[] = {
-    {1, R"([{"kind":"mgb","config":{}}])", true},
-    {2, R"([{"kind":"lsdj-sync","config":{"mode":"midiSync","tempoDivisor":1,"autoStart":false}}])", true},
-    {3, R"([{"kind":"nes-n8-midi","config":{}}])", false},
+    {1, "mgb", "rp.mgb.midi", "{}", "midi", {"serialIn"}, true},
+    {2, "lsdj-sync", "rp.lsdj.sync", R"({"mode":"midiSync","tempoDivisor":1,"autoStart":false})", "midi", {"serialIn", "buttons"}, true},
+    {3, "nes-n8-midi", "rp.n8.midi-to-fifo", "{}", "midiIn", {"midi"}, false},
 };
 constexpr std::size_t kSystemCount = std::size(kSystems);
-
-std::string settingsJson() {
-    std::string out = R"({"project":[{"kind":"midi-routing","config":{"mode":"sendToAll"}}],"systems":[)";
-    for (std::size_t i = 0; i < kSystemCount; ++i)
-        out += (i ? "," : "") + std::string(R"({"id":)") + std::to_string(kSystems[i].id) + R"(,"pipeline":)" +
-               kSystems[i].pipeline + R"(,"serialOut":)" + (kSystems[i].gameBoy ? "true" : "false") + "}";
-    return out + "]}";
-}
 
 // The host MIDI: a message every kMidiEvery frames (100 a second), message m at frame m * kMidiEvery from the start, a
 // note on and then its note off, on channels 0 to 3 in turn.
@@ -252,7 +250,7 @@ struct SystemInputs {
     } inputs;
     Counts counts;
     void process(const rp::Block&) noexcept {
-        // Serial-in in bytes: the kernel node sends a run of same-frame bytes as one message, which the system node
+        // Serial-in in bytes: a protocol node sends a run of same-frame bytes as one message, which the system node
         // applies a byte at a time, so a byte is what a core takes.
         for (const rp_message& m : inputs.serialIn.messages()) counts.serialIn += m.size;
         counts.midi += inputs.midi.messages().size();
@@ -262,8 +260,8 @@ struct SystemInputs {
 };
 
 // Stands in for a Game Boy node's serialOut: what its core clocked out in the block, a byte a message. The real node
-// stamps each byte at the frame its core completed it; these all sit at frame 0, since what a message costs the kernel
-// does not depend on its frame.
+// stamps each byte at the frame its core completed it; these all sit at frame 0, since what a message costs a node does
+// not depend on its frame.
 struct SerialOut {
     static constexpr const char* id = "rp.bench.serial-out";
     struct {
@@ -283,23 +281,21 @@ const rp_package* benchPackage() {
     return &kPackage;
 }
 
-// The kernel node in its plan, or that plan with no kernel.
-struct KernelBench {
+// The script nodes in their plan, or that plan with none.
+struct ProtocolBench {
     std::uint32_t frames;
-    // Before the graph, so it is destroyed after it: the kernel's shim hands its instance back to it.
+    // Before the graph, so it is destroyed after it: a script node's shim hands its instance back to it.
     ScriptHost               scripts;
     rp::graph::NodeRegistry  registry;
     rp::graph::ResourceTable resources;
     // The engine's host I/O, standing in: what is staged for the block, and the host outputs counted.
     const std::vector<Staged>* staged = nullptr;
-    // dropped: a host MIDI-out message too short to name its system.
-    std::uint64_t              midiOut = 0, controllerOut = 0, dropped = 0;
-    rp::host::EngineHostIo hostIo{this, &takeMidi, &takeNothing, &disconnected, &countMidiOut, &countControllerOut, &noCart,
-                                  &countDropped};
+    std::uint64_t              midiOut = 0, controllerOut = 0;
+    rp::host::EngineHostIo hostIo{this, &takeMidi, &takeNothing, &disconnected, &countMidiOut, &countControllerOut, &noCart};
     std::unique_ptr<rp::graph::GraphHost> host;
 
-    // `kernel`: false for the plan's native nodes alone.
-    KernelBench(std::uint32_t blockFrames, bool kernel) : frames(blockFrames) {
+    // `scriptNodes`: false for the plan's native nodes alone.
+    ProtocolBench(std::uint32_t blockFrames, bool scriptNodes) : frames(blockFrames) {
         const std::vector<ScriptHost::Chunk> chunks{ScriptHost::embeddedBundle()};
         std::string error;
         const bool loaded = scripts.load(chunks, &error);
@@ -312,35 +308,41 @@ struct KernelBench {
         config.sampleRate = kRate;
         config.maxFrames = kMaxFrames;
         config.interfaces = [](void* ctx, const char* id) -> const void* {
-            return std::string(id) == RP_ENGINE_HOST_IO_INTERFACE ? &static_cast<KernelBench*>(ctx)->hostIo : nullptr;
+            return std::string(id) == RP_ENGINE_HOST_IO_INTERFACE ? &static_cast<ProtocolBench*>(ctx)->hostIo : nullptr;
         };
         config.interfacesCtx = this;
         host = std::make_unique<rp::graph::GraphHost>(registry, resources, config);
-        const auto r = host->setGraph(document(kernel));
+        const auto r = host->setGraph(document(scriptNodes));
         for (const auto& e : r.errors) UNSCOPED_INFO(e.code << " at " << e.nodeId << "." << e.port << ": " << e.message);
         REQUIRE(r.ok);
     }
-    ~KernelBench() { host.reset(); }
+    ~ProtocolBench() { host.reset(); }
 
-    // As buildGraph wires it: the host I/O nodes into the kernel, each Game Boy's serialOut into it by a feedback wire,
-    // its outputs to each system's inputs, and on to the host outputs.
-    static std::string document(bool kernel) {
-        std::vector<std::string> nodes{node("midi-in", "rp.host.midi-in"), node("controller-in", "rp.host.controller-in"),
-                                       node("midi-out", "rp.host.midi-out"), node("controller-out", "rp.host.controller-out")};
+    // As buildGraph wires it: the host I/O nodes, the routing (every host message to every system), each system's
+    // protocol node fed its routed MIDI and wired into its system's inputs, the LSDj's taking its Game Boy's serialOut
+    // by a feedback wire and its host MIDI out going to rp.host.midi-out's one input (under its system), and the systems.
+    static std::string document(bool scriptNodes) {
+        std::vector<std::string> nodes{node("midi-in", "rp.host.midi-in"), node("controller-in", "rp.host.controller-in")};
         std::vector<std::string> wires;
-        if (kernel) {
-            nodes.push_back(node("kernel", "rp.dsp.kernel", settingsJson()));
-            wires = {wire("midi-in.midi", "kernel.midiIn"), wire("controller-in.midi", "kernel.controllerIn"),
-                     wire("controller-in.connected", "kernel.controllerConnected"), wire("kernel.midiOut", "midi-out.midi"),
-                     wire("kernel.controllerOut", "controller-out.midi")};
+        if (scriptNodes) {
+            nodes.push_back(node("routing", "rp.midi.route", R"({"mode":"sendToAll","systems":[1,2,3]})"));
+            wires.push_back(wire("midi-in.midi", "routing.midiIn"));
+            for (const BenchSystem& s : kSystems) {
+                const std::string sys = "sys-" + std::to_string(s.id), id = sys + "/" + s.kind;
+                nodes.push_back(node(id, s.type, s.settings));
+                wires.push_back(wire("routing." + sys, id + "." + s.midiIn));
+                for (const char* in : s.writes) wires.push_back(wire(id + "." + in, sys + "." + in));
+                if (std::string(s.kind) != "lsdj-sync") continue;
+                wires.push_back(wire(sys + "-serial.serialOut", id + ".serialOut", true));
+                wires.push_back(wire(id + ".midiOut", "midi-out.in1"));
+            }
         }
+        nodes.push_back(node("midi-out", "rp.host.midi-out", scriptNodes ? R"({"systems":[2]})" : R"({"systems":[]})"));
+        nodes.push_back(node("controller-out", "rp.host.controller-out"));
         for (const BenchSystem& s : kSystems) {
-            const std::string id = "sys-" + std::to_string(s.id), port = "kernel." + id;
-            nodes.push_back(node(id, "rp.bench.system"));
-            if (s.gameBoy) nodes.push_back(node(id + "-serial", "rp.bench.serial-out"));
-            if (!kernel) continue;
-            if (s.gameBoy) wires.push_back(wire(id + "-serial.serialOut", port + ".serialOut", true));
-            for (const char* in : {"serialIn", "midi", "bytes", "buttons"}) wires.push_back(wire(port + "." + in, id + "." + in));
+            const std::string sys = "sys-" + std::to_string(s.id);
+            nodes.push_back(node(sys, "rp.bench.system"));
+            if (s.gameBoy) nodes.push_back(node(sys + "-serial", "rp.bench.serial-out"));
         }
         return graphJson(nodes, wires);
     }
@@ -356,7 +358,7 @@ struct KernelBench {
         return rp::peer_as<SystemInputs>(host->node("sys-" + std::to_string(kSystems[i].id)))->counts;
     }
 
-    static KernelBench& of(void* ctx) { return *static_cast<KernelBench*>(ctx); }
+    static ProtocolBench& of(void* ctx) { return *static_cast<ProtocolBench*>(ctx); }
     // As the engine's: the staging, frame-ordered, onto the queue.
     static void takeMidi(void* ctx, rp_queue* out) {
         for (const auto& m : *of(ctx).staged) rp::graph::pushMessage(*out, m.frame, m.data);
@@ -366,24 +368,23 @@ struct KernelBench {
     static void countMidiOut(void* ctx, std::uint32_t, std::uint32_t, const std::uint8_t*, std::size_t) { ++of(ctx).midiOut; }
     static void countControllerOut(void* ctx, const std::uint8_t*, std::size_t) { ++of(ctx).controllerOut; }
     static void noCart(void*, std::uint32_t, const std::uint8_t*, std::size_t, bool) {}
-    static void countDropped(void* ctx) { ++of(ctx).dropped; }
 };
 
-struct KernelRow {
+struct ProtocolRow {
     double      us = 0.0;  // per block
     Allocations allocations;
 };
 
-struct KernelRows {
-    KernelRow     node, plan;  // plan: the node's plan with no kernel in it
+struct ProtocolRows {
+    ProtocolRow   node, plan;  // node: the script nodes' plan; plan: that plan with no script nodes in it
     Counts        delivered;          // to every system, by input, over every block run
     std::uint64_t blocks = 0;         // run, warm-up included
 };
 
-KernelRows timeKernel(std::uint32_t frames) {
-    const int blocks = kernelBlocks(frames);
-    KernelRows rows;
-    KernelBench bench(frames, true), plan(frames, false);
+ProtocolRows timeProtocolNodes(std::uint32_t frames) {
+    const int blocks = protocolBlocks(frames);
+    ProtocolRows rows;
+    ProtocolBench bench(frames, true), plan(frames, false);
     // Block k's staging, for the run's blocks, made before the run.
     std::vector<std::vector<Staged>> staged(static_cast<std::size_t>(std::max(blocks, kWarm)));
     const auto prepare = [&](std::uint64_t first, int count) {
@@ -419,7 +420,7 @@ KernelRows timeKernel(std::uint32_t frames) {
     rows.node = {median(nodeUs), scriptDelta(nodeBefore, bench.scripts.audioAllocations(), nativeNode, measured)};
     rows.plan = {median(planUs), scriptDelta(planBefore, plan.scripts.audioAllocations(), nativePlan, measured)};
 
-    // The kernel handed every system its messages, input by input (serial in in bytes), and with no kernel nothing
+    // The script nodes handed every system its messages, input by input (serial in in bytes), and with none nothing
     // reached any. Nothing here sends core bytes or presses a button, so those two are 0.
     for (std::size_t i = 0; i < kSystemCount; ++i) {
         INFO("system " << kSystems[i].id);
@@ -437,9 +438,8 @@ KernelRows timeKernel(std::uint32_t frames) {
     CHECK(rows.delivered.buttons == 0);       // or presses a button
     CHECK(bench.midiOut == 0);                // or sends host MIDI out
     CHECK(bench.host->droppedMessages() == 0);
-    CHECK(bench.dropped == 0);
     CHECK(bench.scripts.throwCount() == 0);
-    CHECK(bench.scripts.liveInstances() == 1);
+    CHECK(bench.scripts.liveInstances() == 1 + kSystemCount);  // the routing and a protocol node a system
     rows.blocks = k;
     return rows;
 }
@@ -474,25 +474,25 @@ void chainTable() {
     }
 }
 
-void kernelTable() {
-    std::printf("\nthe kernel node: mGB, an LSDj in MIDI sync and a NES on nes-n8-midi, routing sendToAll; playing at %.0f "
-                "bpm; a host message every %llu frames; each Game Boy's MI.OUT a byte every 8 frames\n",
+void protocolTable() {
+    std::printf("\nthe protocol nodes: mGB, an LSDj in MIDI sync and a NES on nes-n8-midi, routing sendToAll; playing at %.0f "
+                "bpm; a host message every %llu frames; each Game Boy's serial out a byte every 8 frames\n",
                 kTempo, static_cast<unsigned long long>(kMidiEvery));
-    std::printf("node: its plan (the host I/O nodes, the kernel node, each Game Boy's serialOut, a stand-in for each "
-                "system's inputs); plan: that plan with no kernel; no core runs\n");
+    std::printf("nodes: their plan (the host I/O nodes, the routing and a protocol node a system, each Game Boy's serialOut, "
+                "a stand-in for each system's inputs); plan: that plan with no script nodes; no core runs\n");
     std::printf("%6s  %-20s %6s | %9s %9s %9s | %9s %9s %9s\n", "frames", "path", "blocks", "us/block", "%1-frame", "%own",
                 "JS allocs", "JS bytes", "native");
     for (const std::uint32_t frames : kBlockSizes) {
-        const KernelRows rows = timeKernel(frames);
-        const int blocks = kernelBlocks(frames);
-        for (const auto& [path, row] : {std::pair{"kernel node, plan", rows.node}, std::pair{"plan, no kernel", rows.plan}}) {
+        const ProtocolRows rows = timeProtocolNodes(frames);
+        const int blocks = protocolBlocks(frames);
+        for (const auto& [path, row] : {std::pair{"nodes, plan", rows.node}, std::pair{"plan, no nodes", rows.plan}}) {
             std::printf("%6u  %-20s %6d", frames, path, blocks);
             printTime(row.us, frames);
             printAllocations(row.allocations);
             std::printf("\n");
         }
         const auto count = [](std::uint64_t n) { return static_cast<unsigned long long>(n); };
-        std::printf("%6s  the kernel node alone (node - plan) %.3f us; delivered in %llu blocks: %llu serial-in bytes, %llu MIDI "
+        std::printf("%6s  the script nodes alone (nodes - plan) %.3f us; delivered in %llu blocks: %llu serial-in bytes, %llu MIDI "
                     "messages, %llu core-byte messages, %llu button presses\n",
                     "", rows.node.us - rows.plan.us, count(rows.blocks), count(rows.delivered.serialIn), count(rows.delivered.midi),
                     count(rows.delivered.bytes), count(rows.delivered.buttons));
@@ -509,6 +509,6 @@ TEST_CASE("a script node's cost per block, at 1, 64 and 512-frame blocks", "[.][
                 "per block, native on the block thread\n",
                 kBudgetUs);
     chainTable();
-    kernelTable();
+    protocolTable();
     std::printf("total %.2f s\n", usSince(start) / 1e6);
 }

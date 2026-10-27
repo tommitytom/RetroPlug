@@ -17,7 +17,6 @@ const LSDJ = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_4_2.gb"; // stock ROM support
 
 const emptySav = () => savFrom({ workingSong: { formatVersion: 22 } });
 
-const SEND_TO_ALL = [{ kind: "midi-routing", config: { mode: "sendToAll" } }];
 const lsdjSync = (mode: string) => [{ kind: "lsdj-sync", config: { mode } }];
 
 const rms = (a: Float32Array): number => {
@@ -43,7 +42,7 @@ test("the TS lsdj-sync MidiPassthrough role forwards raw MIDI to a real LSDj cor
     sramBytes: emptySav(),
   }, id)).toBeTruthy();
 
-  expect(graph.setProjectStages(SEND_TO_ALL)).toBeTruthy();
+  expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
   expect(graph.setPipeline(id, lsdjSync("midiPassthrough"))).toBeTruthy();
 
   audio.renderAudio(6000); // reach the song screen from the sav

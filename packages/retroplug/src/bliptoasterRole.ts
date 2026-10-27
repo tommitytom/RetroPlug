@@ -9,7 +9,6 @@ export function registerBlipToasterRole(registry: RoleRegistry): void {
   registry.registerRole({
     kind: "bliptoaster",
     category: "feature",
-    scope: "system",
     // `chip` is which expansion build this ROM is, set by the provider from the iNES mapper. It picks
     // the DAW parameter map's CC set (parameterMap.ts), which differs per build. A plain string rather
     // than an enum so a project written by a newer bundle (a chip this build has never heard of) still

@@ -70,9 +70,6 @@ function refuseNext(be: MockBackend, n: number): void {
   };
 }
 
-// The project stage DirectGraph takes for the MIDI routing a project has by default: every message to every system.
-const SEND_TO_ALL: RoleInstance = { kind: "midi-routing", config: { mode: "sendToAll" } };
-
 // `v` as a document carries it: canonical JSON, its keys sorted.
 const canon = (v: unknown): unknown => JSON.parse(canonicalJson(v));
 
@@ -450,10 +447,10 @@ test("an asset-role edit publishes nothing: no asset role has a protocol node, s
 });
 
 test("which roles are placed is the protocol-node table's: a registered role with none is not, and its edit publishes nothing", () => {
-  // The node types are code in the script bundle, so a role registered at runtime has no node to be placed as,
-  // whatever its RoleType says (graph/protocolNodes.ts).
+  // The node types are code in the script bundle, so a role registered at runtime has no node to be placed as
+  // (graph/protocolNodes.ts).
   const registry = buildAppRegistry();
-  registry.registerRole({ kind: "probe", category: "feature", schema: z.object({ level: clampedInt(0, 10, 1) }), dsp: () => {} });
+  registry.registerRole({ kind: "probe", category: "feature", schema: z.object({ level: clampedInt(0, 10, 1) }) });
   registry.registerRomProvider(({ platform }) => (platform === "gb" ? [{ kind: "probe", config: {} }] : []));
   const be = new MockBackend("/cfg");
   be.seed("/roms/a.gb", gbRom());
@@ -558,7 +555,7 @@ test("DirectGraph sets each system's pipeline and the project stages, each a pub
   const n = be.graphRequests.length;
   const mgb: RoleInstance = { kind: "mgb", config: {} };
   expect(g.setPipeline(2, [{ kind: "sameboy", config: {} }, mgb])).toBe(true); // a role with no node is left out
-  expect(g.setProjectStages([SEND_TO_ALL])).toBe(true);
+  expect(g.setMidiRouting("sendToAll")).toBe(true);
   expect(g.setPipeline(9, [mgb])).toBe(false); // not placed here
   expect(since(be, n)).toEqual([{ slots: [1, 2] }, { slots: [1, 2] }]);
   expect(be.graphNode("routing")?.settings).toEqual({ mode: "sendToAll", systems: [1, 2] });
@@ -570,12 +567,13 @@ test("DirectGraph sets each system's pipeline and the project stages, each a pub
   expect([be.protocolNodes(1), be.protocolNodes(3)]).toEqual([["sys-1/mgb"], []]);
 });
 
-test("DirectGraph takes a launchpad stage as the project's controller, its app config parsed by the app's schema", () => {
+test("DirectGraph takes the project's controller, its app config parsed by the app's schema", () => {
   const be = new MockBackend("/cfg");
   const g = new DirectGraph(be);
   g.add(MGB, 1);
-  const launchpad: RoleInstance = { kind: "launchpad", config: { app: "lsdj-midimap", target: "midiOut", appConfig: { quantise: "beat" } } };
-  expect(g.setProjectStages([SEND_TO_ALL, launchpad])).toBe(true);
+  expect(g.setMidiRouting("sendToAll")).toBe(true);
+  const controller = { app: "lsdj-midimap", target: "midiOut", systemId: 0, appConfig: { quantise: "beat" } } as const;
+  expect(g.setController({ ...controller, songRowTicks: [], anchor: null, cartSync: null })).toBe(true);
   expect(be.graphNode("controller")?.settings).toEqual(
     canon({
       app: "lsdj-midimap", target: "midiOut", systemId: 1, appConfig: { quantise: "beat", follow: true, page: 0 },
@@ -598,7 +596,7 @@ test("DirectGraph puts the structure back when its document is refused", () => {
   refuseNext(be, 1);
   expect(g.setPipeline(1, [{ kind: "mgb", config: {} }])).toBe(false);
   refuseNext(be, 1);
-  expect(g.setProjectStages([SEND_TO_ALL])).toBe(false);
+  expect(g.setMidiRouting("sendToAll")).toBe(false);
   // The restored model is what a shape change builds.
   expect(g.graph.withShape({ kind: "perSystem" }, () => true)).toBe(true);
   expect(be.lastDocument()).toEqual(before);

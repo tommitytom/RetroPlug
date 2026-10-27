@@ -41,12 +41,14 @@ The rules below are the parts that don't fit those.
   documents TS builds say; the host I/O nodes and the N8 cart mirror move what the hosts stage and drain;
   TS nodes run behind the C ABI in the script host (B3a,
   [docs/modular-graph-phase-b3a-design.md](docs/modular-graph-phase-b3a-design.md)): marshalling, reshape,
-  creation and release on the block thread, throws; the DSP kernel, now the script node `rp.dsp.kernel`, sends
-  exactly the digests it was recorded sending while the old kernel stage still ran beside it and matched it; and
-  every document in `buildGraph`'s goldens, handed to the engine with real cores, plans and runs a block with no
-  node faulting, no script node throwing and no message dropped (the 33-system `perSystem` ones are refused,
-  as they must be; the wiring itself is `buildGraph`'s, held by `pnpm test graph` to explicit tables and to
-  the B1 translator's goldens). A hidden bench times a script node per block at 1, 64 and 512 frames
+  creation and release on the block thread, throws; the protocol script nodes (B3b: the MIDI routing, a
+  controller session and each role's protocol node, wired as `buildGraph` wires them,
+  `test/engine-graph/ProtocolNodes.test.cpp`) send exactly the digests the DSP kernel they replaced was recorded
+  sending, a throw stopping only its own node the one difference, checked; and every document in `buildGraph`'s
+  goldens, handed to the engine with real cores, plans and runs a block with no node faulting, no script node
+  throwing and no message dropped (the 33-system `perSystem` ones are refused, as they must be; the wiring itself
+  is `buildGraph`'s, held by `pnpm test graph` to explicit tables and to the B1 translator's goldens). A hidden
+  bench times a script node per block, and the protocol nodes' plan, at 1, 64 and 512 frames
   (`build/bin/retroplug-engine-graph-test "[bench]"`), and a profile build adds five `[profile]` cases
   (`tools/run-profile.sh unit`).
   `retroplug-dynparams-test` is the odd one out: it compiles DPF's format-neutral core (`DistrhoPlugin.cpp`)

@@ -129,7 +129,6 @@ export function registerBlipToasterAssetsRole(registry: RoleRegistry): void {
   registry.registerRole({
     kind: BLIPTOASTER_ASSETS_ROLE,
     category: "feature",
-    scope: "system",
     schema: blipToasterAssetsSchema,
     onConstruct: applyAssetOverrides,
   });

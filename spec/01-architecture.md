@@ -358,7 +358,7 @@ Each script type is a node type of the package `rp.script`, and each script node
 native shim the planner creates, activates and destroys like any node; its JS instance is made on the
 block thread when its plan is adopted, before that plan's first `process`, and released there at the
 start of a later block once the shim is destroyed (at once while no audio thread runs). The DSP kernel
-is one such node, `rp.dsp.kernel` ([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts)):
+is one such node, `rp.dsp.kernel` (`kernelNode.ts`, deleted in B3b):
 its structure is its settings, and its inputs and outputs are real wires from the host I/O nodes and
 to each system node's inputs. Native owns no role logic; in particular, **the drift-exact PPQ tick
 clock lives entirely in JS** (`walkTicks`). The kernel and the role model are specified in
@@ -472,7 +472,7 @@ lost mutation.
 | [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) | the id-keyed read door; claim/publishSystem/read/release |
 | [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) | the single-threaded owner of the graph (with the script host its TS nodes run in), the staged host MIDI, the host outputs and the registry; `parkCore` / `setGraph`, `processBlock`, the command handler, `SyncTap` |
 | [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp) | the script-node runtime: TS nodes behind the C ABI in two bare QuickJS contexts, and the audio runtime's profiling |
-| [`kernelNode.ts`](../packages/retroplug/src/script/kernelNode.ts) / [`bundle.ts`](../packages/retroplug/src/script/bundle.ts) | the DSP kernel as the script node `rp.dsp.kernel`, and the script-node bundle every Engine embeds |
+| [`nodes/`](../packages/retroplug/src/script/nodes) / [`bundle.ts`](../packages/retroplug/src/script/bundle.ts) | the script nodes buildGraph places (the MIDI routing, each role's protocol node, the controller session), and the script-node bundle every Engine embeds |
 | [`PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp) | plugin control-plane bring-up + the `run()` block driver |
 | [`PluginShared.hpp`](../packages/native/plugin/PluginShared.hpp) | the in-process editor↔control-plane handoff |
 | [`main.cpp`](../packages/native/src/main.cpp) | the standalone / native test host |

@@ -55,18 +55,14 @@ test("a pad press on the controller stream launches a row on a real cart", () =>
     savPath: null, statePath: null, sramBytes: savFrom(SONG),
   }, SYSTEM)).toBeTruthy();
 
-  expect(graph.setProjectStages([
-    { kind: "midi-routing", config: { mode: "sendToAll" } },
-    // What a project hands its controller, song table and all (DirectGraph parses the app config as the store does).
-    {
-      kind: "launchpad",
-      config: {
-        app: "lsdj-midimap", target: "system", systemId: SYSTEM,
-        appConfig: { quantise: "immediate" },
-        songRowTicks: songRowTicks(SongSchema.parse(songJson)),
-      },
-    },
-  ])).toBeTruthy();
+  expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
+  // What a project hands its controller, song table and all (DirectGraph parses the app config as the store does).
+  expect(graph.setController({
+    app: "lsdj-midimap", target: "system", systemId: SYSTEM,
+    appConfig: { quantise: "immediate" },
+    songRowTicks: songRowTicks(SongSchema.parse(songJson)),
+    anchor: null, cartSync: null,
+  })).toBeTruthy();
   expect(graph.setPipeline(SYSTEM, [{ kind: "lsdj-sync", config: { mode: "midiMap" } }])).toBeTruthy();
 
   audio.renderAudio(6000); // past the cartridge self-test, onto the song screen
@@ -105,7 +101,8 @@ test("the same bytes on the MUSICAL stream launch a different row, which is why 
     }),
   }, id)).toBeTruthy();
   // The routing alone: the controller session goes, and its state with it.
-  expect(graph.setProjectStages([{ kind: "midi-routing", config: { mode: "sendToAll" } }])).toBeTruthy();
+  expect(graph.setController(null)).toBeTruthy();
+  expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
   expect(graph.setPipeline(id, [{ kind: "lsdj-sync", config: { mode: "midiMap" } }])).toBeTruthy();
 
   audio.renderAudio(6000);

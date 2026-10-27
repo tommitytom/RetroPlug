@@ -37,7 +37,7 @@ goes unmeasured.
 
 ## 3. What the per-block path allocates today
 
-The kernel header comments claim "no per-block allocation" ([dspKernel.ts:83](../packages/retroplug/src/dspKernel.ts#L83)).
+The kernel header comments claim "no per-block allocation" (`dspKernel.ts:83`, deleted in B3b).
 That holds **only for the top-level reused `Block` struct**; in practice two layers allocate every
 block, and the harness should expose this on day one.
 
@@ -47,12 +47,12 @@ refilled in place, its payloads copied into one JS-owned buffer:
 with indexed loops allocates nothing per block once warm: a message's `data` view is made again only when
 its place in the payload buffer moves, and the pool and the buffer grow only past their largest block.
 The kernel node then builds the kernel's `BlockInput` afresh every block
-([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts) `blockInput`): an `input` object and its
+(`kernelNode.ts` `blockInput`, deleted in B3b): an `input` object and its
 transport fields; a `midiIn` array (per event an object and a `data` array of numbers); `buttons`/`keys`
 arrays **created even when empty**; and a `{ system, byte }` object per MI.OUT byte. The whole graph is
 freed after the call, so this is per-block garbage, and it grows with the block's message count.
 
-**The TS kernel** ([dspKernel.ts](../packages/retroplug/src/dspKernel.ts), as it was before the pass
+**The TS kernel** (`dspKernel.ts`, deleted in B3b, as it was before the pass
 below; the code these rows name is gone, but for `routeBlock`, which survives off the per-block path as the
 reference twin of the `routeBlockInto` that replaced it there, [midiRouting.ts](../packages/retroplug/src/midiRouting.ts#L62))
 added per block:
@@ -73,7 +73,7 @@ the plan's queue, so it allocates nothing once the run has grown, but everything
 per-block path" pass): the per-system `SystemCtx` + its sink closures, the routed inboxes, and the
 per-system key/button lists are built **once** at `setSystems` (`DspKernel.setSystems`, which the kernel
 node calls at create and from `onSettings`) and mutated in place each block
-([dspKernel.ts](../packages/retroplug/src/dspKernel.ts) `slots`/`buildCtx`,
+(`dspKernel.ts` `slots`/`buildCtx`, deleted in B3b,
 `routeBlockInto` in [midiRouting.ts](../packages/retroplug/src/midiRouting.ts), and an
 indexed-loop `mgb`). That cut Profile A from **~171 to ~32 allocs/block** (−81%). The residual per-block
 churn is now the kernel node's `BlockInput` copy (the marshalling row above) plus QuickJS per-call
@@ -318,7 +318,7 @@ Native ([packages/native/src/](../packages/native/src/)):
 TypeScript ([packages/retroplug/](../packages/retroplug/)):
 - [src/audioDriver.ts](../packages/retroplug/src/audioDriver.ts) — `renderAudio` /
   `stageMidiIn` / `setBpm` / `setTransport` (the bench's injection surface).
-- [src/script/kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts) / [src/dspKernel.ts](../packages/retroplug/src/dspKernel.ts) / [src/midiRouting.ts](../packages/retroplug/src/midiRouting.ts) / [src/dspRoles.ts](../packages/retroplug/src/dspRoles.ts): the per-block allocation sites (§3), the kernel node's `blockInput` and its role tracer among them.
+- `src/script/kernelNode.ts` / `src/dspKernel.ts` (both deleted in B3b) / [src/midiRouting.ts](../packages/retroplug/src/midiRouting.ts) / [src/dspRoles.ts](../packages/retroplug/src/dspRoles.ts): the per-block allocation sites (§3), the kernel node's `blockInput` and its role tracer among them.
 - [test-native/audio-render.test.ts](../packages/retroplug/test-native/audio-render.test.ts) —
   the setup template to copy.
 - [scripts/run-native-tests.mjs](../packages/retroplug/scripts/run-native-tests.mjs) — how a

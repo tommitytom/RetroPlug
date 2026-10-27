@@ -397,7 +397,7 @@ plan adopted ahead of it in the same drain.
 
 ### 4.1 Settings and ports
 
-`rp.dsp.kernel` is a TS node ([kernelNode.ts](../packages/retroplug/src/script/kernelNode.ts)), defined with
+`rp.dsp.kernel` is a TS node (`kernelNode.ts`, deleted in B3b), defined with
 `defineNode` in the script-node bundle around the unchanged `DspKernel`, with a registry of the DSP roles alone. Its
 settings are the kernel's `KernelStructure` plus one fact per system:
 
@@ -640,7 +640,7 @@ behaviour. `nes-core-bytes` sends a 60 KiB SysEx and requires it to reach the NE
   Engines on two threads; and ThreadSanitizer runs a plan's script nodes on an audio thread while the control thread
   plans, reshapes, rebuilds and reclaims them. A profile build adds five `[profile]` cases on the trace window and the
   calls it refuses while an audio thread runs (spec/08).
-- The kernel node ([KernelNode.test.cpp](../packages/native/test/engine-graph/KernelNode.test.cpp)), in a plan with the
+- The kernel node (`KernelNode.test.cpp`, since B3b [ProtocolNodes.test.cpp](../packages/native/test/engine-graph/ProtocolNodes.test.cpp)), in a plan with the
   host I/O nodes: host MIDI under every routing, every LSDj sync mode, risa and smsggdj host sync, a controller
   session, state across structure changes (survivors go on, a removed id is pruned), a throw, a block that fills
   `rp.host.midi-in` reaching an mGB and a NES whole, and a reshape under a running audio thread. Each case is held to

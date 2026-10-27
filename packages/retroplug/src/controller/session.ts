@@ -1,9 +1,9 @@
 // The controller session: the thing that owns a Launchpad and runs a controller app against it.
 //
-// A controller app is a plain function over a context, exactly like a DSP role's `SystemBehavior`
-// (dspRoles.ts) - not an object of callbacks. Decoding incoming bytes happens once here rather than in
-// every app, LED flushing likewise, and an app's cross-update state lives in `ctx.state` the way a role's
-// does. An app therefore reads as "given what the player pressed and where the song is, paint the grid".
+// A controller app is a plain function over a context - not an object of callbacks. Decoding incoming
+// bytes happens once here rather than in every app, LED flushing likewise, and an app's cross-update
+// state lives in `ctx.state`. An app therefore reads as "given what the player pressed and where the
+// song is, paint the grid".
 //
 // Three things the session owns so no app has to get them right:
 //
@@ -55,7 +55,7 @@ type MutableCtx = { -readonly [K in keyof ControllerCtx]: ControllerCtx[K] };
 /** One update's worth of host input.
  *
  *  `tick` is ABSOLUTE and the session diffs it, so elapsed ticks can be neither double-counted nor lost
- *  at a block edge - the same reason the DSP kernel's `eachTick` carries `nextTick` across blocks. A host
+ *  at a block edge - the same reason a protocol node's tick clock carries `next` across blocks. A host
  *  supplies `Math.floor(block.ppqStart * 24)`, which is the quantity `walkTicks` derives its ticks from;
  *  a stopped transport freezes ppqStart, so `ticks` falls to 0 on its own. */
 export interface SessionInput {
@@ -95,9 +95,9 @@ export class ControllerSession {
   private prevTransport = false;
   private started = false;
 
-  // The ctx and the decoded-event list are built ONCE and mutated per update, the way the DSP kernel
-  // builds a SystemCtx: this runs on the audio thread, and a fresh nine-field object plus an array every
-  // block is exactly the per-block allocation the kernel is careful not to make.
+  // The ctx and the decoded-event list are built ONCE and mutated per update: this runs on the audio
+  // thread (rp.controller.session), and a fresh nine-field object plus an array every block is exactly
+  // the per-block allocation a script node is careful not to make.
   private readonly events: SurfaceEvent[] = [];
   private readonly ctx: MutableCtx;
 

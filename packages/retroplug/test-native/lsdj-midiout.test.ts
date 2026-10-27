@@ -44,7 +44,6 @@ const MIDIOUT_SONG: SavInput = {
   },
 };
 
-const SEND_TO_ALL = [{ kind: "midi-routing", config: { mode: "sendToAll" } }];
 const lsdjSync = (mode: string) => [{ kind: "lsdj-sync", config: { mode } }];
 
 // Flatten a drainMidiOut result into the raw status/data byte messages for assertions.
@@ -67,7 +66,7 @@ test("MIDIOUT (mode 7): a real LSDj in SYNC=MI.OUT emits Arduinoboy MIDI the ker
     sramBytes: savFrom(MIDIOUT_SONG),
   }, id)).toBeTruthy();
 
-  expect(graph.setProjectStages(SEND_TO_ALL)).toBeTruthy();
+  expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
   expect(graph.setPipeline(id, lsdjSync(MIDIOUT))).toBeTruthy();
 
   // Arm serial-out capture (what the store does when a system's lsdj-sync mode is MIDIOUT).

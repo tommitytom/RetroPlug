@@ -124,7 +124,6 @@ export function registerLsdjAssetsRole(registry: RoleRegistry): void {
   registry.registerRole({
     kind: LSDJ_ASSETS_ROLE,
     category: "feature",
-    scope: "system",
     schema: lsdjAssetsSchema,
     onConstruct: applyAssetOverrides,
   });

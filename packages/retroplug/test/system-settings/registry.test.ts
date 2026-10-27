@@ -4,10 +4,11 @@
 // mechanism with zero LSDj knowledge in the core. Role behavior (the doc-06
 // translators) is a deferred RoleType seam, not exercised here.
 import { test, expect } from "../../testing/harness";
-import { RoleRegistry, isSystemStage } from "../../src/systemRoles";
+import { RoleRegistry, type RoleType } from "../../src/systemRoles";
 import { buildAppRegistry } from "../../src/appHost";
 import { protocolNodeOf } from "../../src/graph/protocolNodes";
 import { registerCoreRoles } from "../../src/coreRoles";
+import { registerDspRoles } from "../../src/dspRoles";
 import { z, clampedInt } from "../../src/configSchema";
 import { sameboyRoleConfig } from "../systems/fixtures";
 
@@ -95,21 +96,32 @@ test("defaultRoles: system role first, then provider-matched feature roles", () 
   ]);
 });
 
-test("the protocol-node table names a node for exactly the app's roles the DSP kernel ran per system", () => {
-  // The stores place what graph/protocolNodes.ts says, not what a registry says, so the two must agree for every
-  // role the app registers: every kind the kernel ran as a system stage has a node, and no other kind does.
-  const kinds: string[] = [];
-  const register = RoleRegistry.prototype.registerRole;
+// Every role kind `register` registers, in order.
+function kindsRegisteredBy(register: () => void): RoleType[] {
+  const types: RoleType[] = [];
+  const registerRole = RoleRegistry.prototype.registerRole;
   RoleRegistry.prototype.registerRole = function (t) {
-    kinds.push(t.kind);
-    register.call(this, t);
+    types.push(t);
+    registerRole.call(this, t);
   };
-  let registry: RoleRegistry;
   try {
-    registry = buildAppRegistry();
+    register();
   } finally {
-    RoleRegistry.prototype.registerRole = register;
+    RoleRegistry.prototype.registerRole = registerRole;
   }
-  expect(kinds.length).toBeGreaterThan(10);
-  for (const kind of kinds) expect(protocolNodeOf(kind) !== undefined, kind).toBe(isSystemStage(registry.roleType(kind)));
+  return types;
+}
+
+test("the protocol-node table names a node for exactly the roles registerDspRoles registers", () => {
+  // The stores place what graph/protocolNodes.ts says, not what a registry says, so the two must agree for every role
+  // the app registers: each kind registerDspRoles registers (the roles whose work is the audio thread's) has a node,
+  // and no other kind the app registers does: not a core's config role, not a feature with none (an asset override,
+  // a ROM's facts). A role registered there with no node, a node for a role registered elsewhere, or a kind renamed
+  // on either side fails here.
+  const dsp = kindsRegisteredBy(() => registerDspRoles(new RoleRegistry())).map((t) => t.kind);
+  expect(dsp).toEqual(["mgb", "nes-n8-midi", "risa-sync", "sms-sync", "lsdj-sync"]);
+  const app = kindsRegisteredBy(() => buildAppRegistry());
+  expect(app.length).toBeGreaterThan(10);
+  for (const t of app) expect(protocolNodeOf(t.kind) !== undefined, t.kind).toBe(dsp.includes(t.kind));
+  for (const kind of dsp) expect(app.some((t) => t.kind === kind && t.category === "feature"), kind).toBe(true);
 });

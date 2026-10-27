@@ -6,7 +6,7 @@
 #include <vector>
 
 // Compile JS source, as global code, to QuickJS bytecode on a transient, bare QuickJS context. The
-// engine-graph tests compile their toy script nodes with it (ScriptRig.hpp, KernelNode.test.cpp), and
+// engine-graph tests compile their toy script nodes with it (ScriptRig.hpp, ProtocolNodes.test.cpp), and
 // load the bytecode into a ScriptHost as a bundle chunk. (It compiled the scripts the control plane
 // sent the native DSP runtime, through the compileScript RPC, until both were deleted.)
 //

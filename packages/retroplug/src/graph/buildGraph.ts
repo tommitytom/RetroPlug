@@ -205,7 +205,8 @@ export function buildGraph(model: GraphModel): BuiltGraph {
         if (input === "midi" || input === "bytes") wire(`${protocolId(cart.id, role.kind)}.${input}`, `cart.${input}`);
   }
   // Host MIDI out, an input a producer, and the controller's surface traffic. With no producer the systems list is
-  // empty, which rp.host.midi-out still reads as its prefixed form, left unwired: nothing reaches the host either way.
+  // empty, an rp.host.midi-out with no inputs, which sends nothing: placed all the same, so a document has its host
+  // outputs whatever its roles.
   nodes.push(
     { id: "midi-out", type: "rp.host.midi-out", settings: { systems: hostMidi.map((p) => p.system) } },
     { id: "controller-out", type: "rp.host.controller-out" },

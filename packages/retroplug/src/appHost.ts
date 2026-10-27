@@ -1,9 +1,9 @@
 // The host glue every host (plugin, standalone, CLI) reuses on top of the store graph:
 // buildAppRegistry() assembles the control-plane RoleRegistry: the backend "system" roles
-// (coreRoles), the DSP-thread feature behaviours (dspRoles), and the ROM providers that
-// attach those features by ROM identity (romProviders). This is the registry the stores
-// drive; the kernel script node builds its own (dspRoles only). The kernel needs no other
-// wiring: the ProjectStore publishes its structure with the graph.
+// (coreRoles), the feature roles that have a protocol node (dspRoles) and those that have
+// none (asset overrides, a ROM's facts), and the ROM providers that attach the features by ROM
+// identity (romProviders). This is the registry the stores drive. The audio thread needs no
+// registry: the ProjectStore publishes each role's protocol node with the graph.
 
 import { RoleRegistry } from "./systemRoles";
 import { registerCoreRoles } from "./coreRoles";
@@ -15,8 +15,8 @@ import { registerBlipToasterRole } from "./bliptoasterRole";
 import { registerBlipToasterAssetsRole } from "./bliptoasterAssetsRole";
 import { registerRomProviders } from "./romProviders";
 
-/** The control-plane role registry: backend system roles + DSP feature behaviours + the ROM
- *  providers that attach features by ROM identity. */
+/** The control-plane role registry: backend system roles + the feature roles + the ROM providers
+ *  that attach features by ROM identity. */
 export function buildAppRegistry(): RoleRegistry {
   const registry = new RoleRegistry();
   registerCoreRoles(registry);

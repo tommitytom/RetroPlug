@@ -1,5 +1,5 @@
-// rp.mgb.midi (src/script/nodes/mgbMidi.ts): every routed MIDI byte into the Game Boy's serial input. The mgb case of
-// test/dsp/roles.test.ts, which drives the role through the kernel, at the node.
+// rp.mgb.midi (src/script/nodes/mgbMidi.ts): every routed MIDI byte into the Game Boy's serial input, as the DSP
+// kernel's mgb role forwarded it until B3b.
 import { test, expect } from "../../../testing/harness";
 import { MGB_MIDI_NODE_TYPE, mgbMidiNode } from "../../../src/script/nodes/mgbMidi";
 import { NodeRig, bytesOn, on } from "./_rig";

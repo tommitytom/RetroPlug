@@ -9,5 +9,5 @@ import { z } from "zod";
 import type { RoleRegistry } from "./systemRoles";
 
 export function registerRisaRole(registry: RoleRegistry): void {
-  registry.registerRole({ kind: "risa", category: "feature", scope: "system", schema: z.object({}) });
+  registry.registerRole({ kind: "risa", category: "feature", schema: z.object({}) });
 }

@@ -28,7 +28,6 @@ const MIDIMAP_SONG: SavInput = {
   },
 };
 
-const SEND_TO_ALL = [{ kind: "midi-routing", config: { mode: "sendToAll" } }];
 const lsdjSync = (mode: string) => [{ kind: "lsdj-sync", config: { mode } }];
 
 const rms = (a: Float32Array): number => {
@@ -55,7 +54,7 @@ test("the TS lsdj-sync MidiMap role maps MIDI notes to LSDj row bytes on a real 
     sramBytes: savFrom(MIDIMAP_SONG),
   }, id)).toBeTruthy();
 
-  expect(graph.setProjectStages(SEND_TO_ALL)).toBeTruthy();
+  expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
   expect(graph.setPipeline(id, lsdjSync("midiMap"))).toBeTruthy();
 
   audio.renderAudio(6000); // reach the song screen from the sav

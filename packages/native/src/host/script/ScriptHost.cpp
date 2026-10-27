@@ -1482,8 +1482,9 @@ bool ScriptHost::load(std::span<const Chunk> chunks, std::string* error) {
         // What the bundle's top level queued runs now, in this context's runtime: no block has begun.
         runJobs(audioSide ? audioRt_ : controlRt_, kJobsPerBlock, [](JSContext* c) { clearException(c); });
     }
-    // What the load leaves in cycles in the audio runtime, its top level's and the descriptors' below (about 144 KiB of
-    // the production bundle's), goes at the first quiescent reclaim, rather than waiting for a block's threshold GC.
+    // What the load leaves in cycles in the audio runtime, its top level's and the descriptors' below, goes at the first
+    // quiescent reclaim, rather than waiting for a block's threshold GC. (The production bundle left about 144 KiB while
+    // zod and the DSP kernel were in it; it has left none since B3b.)
     garbage_ = true;
     // The definitions, in the same order in both contexts (the same bundle ran in each).
     JSValue lists[2];
