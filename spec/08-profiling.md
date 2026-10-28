@@ -246,8 +246,10 @@ past `renderAudio`'s 1024-frame block).
 - **The seeded-MIDI benchmark** [test-native/dsp-bench.test.ts](../packages/retroplug/test-native/dsp-bench.test.ts):
   a mulberry32 generator for Profiles A/B/C, the block-stepped `stageMidiIn` + `renderAudio(BLOCK_MS)`
   loop (warmup window discarded), one JSON metrics line. Env knobs `RP_BENCH_{PROFILE,CORES,BLOCKS,WARMUP,SEED}`.
-  It proves its counters live by the audio runtime's peak heap (an allocation count of 0 is the goal, so it
-  cannot be the proof). Skips (a counted `skip`) under a non-profile host so the normal sweep stays fast and green;
+  It asserts the measured window allocated nothing, and proves the window live with a second one after it: adding
+  a system places a protocol node, whose JS state is created on the block thread at its first block, so that
+  block's count must be above 0 (the runtime's peak heap cannot be the proof: it is never reset, and the bundle's
+  load puts ~300 KB in it before the window opens). Skips (a counted `skip`) under a non-profile host so the normal sweep stays fast and green;
   [test-native/nes-bench.test.ts](../packages/retroplug/test-native/nes-bench.test.ts) is its NES twin, on
   the Mesen core and the `nes-n8-midi` role's node, and does the same.
 - **Build knob + scripts** — `RETROPLUG_PROFILE` ([CMakeLists.txt](../CMakeLists.txt), mirrors

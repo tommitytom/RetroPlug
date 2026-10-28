@@ -194,11 +194,11 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
   console.log("DSP-BENCH " + JSON.stringify(metrics));
 
   expect(s.blockCount, "blocks measured").toBeGreaterThan(0);
-  // The claim worth making is that the counters this file reports are wired: we only reach this line under a profile
-  // host. The DSP kernel allocated every block, so a count above 0 used to prove it; the protocol nodes allocate
-  // nothing in a warm block, so a window's count is 0 either way. The live heap's peak is kept only by a profile host's
-  // allocator, so a peak above 0 says it counted.
-  expect(s.peakBytes, "the audio runtime's peak heap").toBeGreaterThan(0);
+  // A warm window of the protocol nodes allocates nothing, and the headline is held: a count of 0 here means the
+  // window counted and found none only if the window is live, which the short window after the trace proves below (the
+  // runtime's peak heap cannot: it is never reset, and the bundle's load alone puts ~300 KB in it before this window).
+  expect(s.allocCalls, "allocations in the measured window").toBe(0);
+  expect(s.maxBlockAllocCalls, "allocations in the worst block").toBe(0);
 
   // --- optional per-role runtime trace (spec/08-profiling.md Tier B) --------------------------------
   // A separate SHORT armed window AFTER the alloc measurement (so those numbers stay pristine). Records nested
@@ -232,4 +232,17 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
     }));
     console.log("DSP-TRACE " + JSON.stringify({ traceEvents, displayTimeUnit: "ms" }));
   }
+
+  // The window is live: a block known to allocate on the audio runtime shows up in a fresh one. A newly placed
+  // protocol node creates its JS state on the block thread at its first block, so adding a system and rendering one
+  // block must count (the zero above is only worth printing if this can fail).
+  audio.dspResetAllocStats(true);
+  const extra = cores + 1;
+  expect(graph.add(MGB, extra)).toBeTruthy();
+  expect(graph.setPipeline(extra, [{ kind: "mgb", config: {} }])).toBeTruthy();
+  audio.renderAudio(BLOCK_MS);
+  const live = audio.dspAllocStats();
+  expect(live.blockCount, "blocks in the proof window").toBeGreaterThan(0);
+  expect(live.allocCalls, "a block that creates a node's JS state allocates").toBeGreaterThan(0);
+  expect(live.maxBlockAllocCalls, "and the worst-block counter sees it").toBeGreaterThan(0);
 });

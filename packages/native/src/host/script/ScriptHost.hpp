@@ -68,10 +68,10 @@ struct DspTraceSpan {
 
 // The span labels. A script node's process call is labelled by its type, so a profile shows each type's cost, as the
 // DSP kernel's per-role spans did inside its one node until B3b made each role a node of its own: the bundle's types
-// take DSP_SPAN_TYPE_BASE up, in the order it registered them, each named by its id. By type, not by node id, because
-// the kernel's role spans were per role kind too, two systems' nodes of one type still show as two spans a block (in
-// plan order), and a type's label is fixed at the load: one per id would come and go with every document, and a
-// node's create is never told its id.
+// take DSP_SPAN_TYPE_BASE up, in the order it registered them, each named by its id. The label is the type's, not the
+// node's: the kernel's role spans were per role kind too, so two systems' nodes of one type still show as two spans a
+// block (in plan order). A type's label is fixed at the load, where one per node id would come and go with every
+// document, and a node's create is never told its id.
 enum DspSpanLabel : std::uint32_t {
     DSP_SPAN_SCRIPT_NODE = 0,   // ScriptHost: the process call of a script node whose type has no label of its own (a
                                 //   bundle registering more types than kDspSpanLabels leaves room for)
@@ -84,8 +84,8 @@ enum DspSpanLabel : std::uint32_t {
     DSP_SPAN_TYPE_BASE   = 16,  // ScriptHost: the process call of a script node of the bundle's first type, and up
 };
 
-// Every label a trace names is below this: the fixed ones, then one per script node type (the production bundle has
-// seven), so the name table is bounded whatever a bundle registers.
+// Every label a trace names is below this: the fixed ones, then one per script node type (the production bundle's are
+// in packages/retroplug/src/script/bundle.ts), so the name table is bounded whatever a bundle registers.
 inline constexpr std::uint32_t kDspSpanLabels = 1024;
 
 // The script host (docs/modular-graph-phase-b3a-design.md section 2): every TS node one Engine runs, behind the

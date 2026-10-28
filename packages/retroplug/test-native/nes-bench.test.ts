@@ -173,9 +173,11 @@ test("nes-bench: Mesen core per-block cost + JS allocation under a NES + MIDI wo
   console.log("DSP-BENCH " + JSON.stringify(metrics));
 
   expect(s.blockCount > 0).toBeTruthy();
-  // The counters are wired: only a profile host's allocator keeps the live heap's peak (dsp-bench says why the
-  // allocation count cannot say so).
-  expect(s.peakBytes, "the audio runtime's peak heap").toBeGreaterThan(0);
+  // A warm window of the protocol nodes allocates nothing, which the second window after the trace proves it could
+  // have counted otherwise (the runtime's peak heap cannot say so: it is never reset, and the bundle's load alone puts
+  // ~300 KB in it before this window opens).
+  expect(s.allocCalls, "allocations in the measured window").toBe(0);
+  expect(s.maxBlockAllocCalls, "allocations in the worst block").toBe(0);
 
   // --- optional per-stage runtime trace (spec/08 Tier B): each script node's span (holding marshal, js-call)
   // + apu-render (the Mesen core step). One Chrome trace-event JSON line the wrapper captures → build-prof/trace.json.
@@ -204,4 +206,14 @@ test("nes-bench: Mesen core per-block cost + JS allocation under a NES + MIDI wo
     }));
     console.log("DSP-TRACE " + JSON.stringify({ traceEvents, displayTimeUnit: "ms" }));
   }
+
+  // The window is live: a second NES places a protocol node, whose JS state is created on the block thread at its
+  // first block, so one block after loading it must count (the zero above is only worth printing if this can fail).
+  audio.dspResetAllocStats(true);
+  expect(typeof (project.systems.loadRom(rom) as { system: number }).system).toBe("number");
+  audio.renderAudio(BLOCK_MS);
+  const live = audio.dspAllocStats();
+  expect(live.blockCount, "blocks in the proof window").toBeGreaterThan(0);
+  expect(live.allocCalls, "a block that creates a node's JS state allocates").toBeGreaterThan(0);
+  expect(live.maxBlockAllocCalls, "and the worst-block counter sees it").toBeGreaterThan(0);
 });

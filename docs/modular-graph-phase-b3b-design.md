@@ -276,8 +276,10 @@ Every commit bit-identical. As built, each step's commit named by its subject:
   to four ([spec/08](../spec/08-profiling.md)).
 - **The profile benches proved themselves live by allocating.** `dsp-bench` and `nes-bench` checked that their
   counters worked by an allocation count above zero, which the allocation-free nodes broke: `dsp-bench` failed under
-  the profile host from the deletion until the bench commit (nothing in the default suites runs it), which checks the
-  audio runtime's peak heap instead.
+  the profile host from the deletion until the bench commit (nothing in the default suites runs it), which checked the
+  audio runtime's peak heap instead. That proves nothing about the window (the peak is never reset and the bundle's
+  load fills it), so the benches now assert the window's 0 and prove it live with a second window around a block that
+  creates a node's JS state, which must count.
 - **The settings schema, as built.** Each `s` builder parses and writes its JSON Schema as its zod twin does, held by
   `test/graph/settings-schema.test.ts` to zod's own output over 34 values, refusals in zod's own English words, and an
   object drops a key it does not name, as `z.object` does. An array's item needs a default of its own, though parse

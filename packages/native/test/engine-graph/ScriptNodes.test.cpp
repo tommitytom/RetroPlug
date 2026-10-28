@@ -1236,20 +1236,17 @@ rp.register([rp.defineNode({
         done = true;
         const spy = function () { __probe("spied"); return []; };
         const attempt = (f) => { try { f(); } catch (e) {} };
-        const shared = [[Object.getPrototypeOf(b), ["messages", "send", "control", "emit", "audio"]]];
+        const owner = Object.getPrototypeOf(b), names = ["messages", "send", "control", "emit", "audio"];
         let intact = true;
-        for (let s = 0; s < shared.length; ++s) {
-          const owner = shared[s][0], names = shared[s][1];
-          for (let k = 0; k < names.length; ++k) {
-            const name = names[k], kept = owner[name];
-            attempt(() => { owner[name] = spy; });
-            attempt(() => Object.defineProperty(owner, name, { value: spy }));
-            attempt(() => Object.defineProperty(owner, name, { get: () => spy }));
-            attempt(() => { delete owner[name]; });
-            attempt(() => Object.defineProperty(kept, "call", { value: spy }));
-            attempt(() => Object.setPrototypeOf(kept, { call: spy }));
-            intact = intact && owner[name] === kept && Object.isFrozen(kept);
-          }
+        for (let k = 0; k < names.length; ++k) {
+          const name = names[k], kept = owner[name];
+          attempt(() => { owner[name] = spy; });
+          attempt(() => Object.defineProperty(owner, name, { value: spy }));
+          attempt(() => Object.defineProperty(owner, name, { get: () => spy }));
+          attempt(() => { delete owner[name]; });
+          attempt(() => Object.defineProperty(kept, "call", { value: spy }));
+          attempt(() => Object.setPrototypeOf(kept, { call: spy }));
+          intact = intact && owner[name] === kept && Object.isFrozen(kept);
         }
         const proto = Object.getPrototypeOf(b);
         attempt(() => Object.setPrototypeOf(proto, { messages: spy }));
@@ -2109,6 +2106,15 @@ TEST_CASE("a script node's process span is labelled by its type, holds marshal a
         CHECK(nested(call, process));
         CHECK(nested(marshal, process));
         CHECK(countInside(marshal, call) == (c.fed ? 3u : 0u));
+        // "Then": the transport's marshal (one outside every js-call) ends before the js-call of its own process span
+        // starts. A process span that made no call (the frozen node's refused blocks) has no call to precede.
+        for (const auto& p : process) {
+            for (const auto& c2 : call) {
+                if (!(p.t0 <= c2.t0 && c2.t1 <= p.t1)) continue;
+                for (const auto& m : marshal)
+                    if (p.t0 <= m.t0 && m.t1 <= p.t1 && !nested({m}, {c2})) CHECK(m.t1 <= c2.t0);
+            }
+        }
         rig.scripts.traceReset(false);
     }
 }
@@ -2190,5 +2196,17 @@ TEST_CASE("a type past the trace's name table is traced under the shared script-
     CHECK(spansOf(rig.scripts, rp::host::kDspSpanLabels - 1).size() == 2);
     CHECK(spansOf(rig.scripts, rp::host::DSP_SPAN_SCRIPT_NODE).size() == 4);  // past's and far's, each block
     rig.scripts.traceReset(false);
+}
+
+TEST_CASE("the embedded bundle's types are labelled 16 to 22 in the order spec/08 and the B3b design quote",
+          "[script][profile][trace]") {
+    ScriptHost host;
+    const ScriptHost::Chunk bundle = ScriptHost::embeddedBundle();
+    REQUIRE(host.load({&bundle, 1}));
+    const auto names = host.traceNames();
+    const std::vector<std::string> ids{"rp.midi.route", "rp.mgb.midi",  "rp.n8.midi-to-fifo",   "rp.risa.sync",
+                                       "rp.sms.sync",   "rp.lsdj.sync", "rp.controller.session"};
+    REQUIRE(names.size() >= rp::host::DSP_SPAN_TYPE_BASE + ids.size());
+    for (std::size_t i = 0; i < ids.size(); ++i) CHECK(names[rp::host::DSP_SPAN_TYPE_BASE + i] == ids[i]);
 }
 #endif

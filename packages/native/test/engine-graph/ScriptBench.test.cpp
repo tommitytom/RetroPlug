@@ -22,7 +22,9 @@
 // long). B3a's last figures for the kernel node, on this machine (Release, a Ryzen 9 9950X, medians of 7 runs, ranges
 // over three runs, docs/modular-graph-phase-b3a-design.md section 7.4), were 2.68 to 2.74 us, 7.69 to 7.92 us and 39.5
 // to 40.7 us at 1, 64 and 512 frames, with 25, 81 and 431 JS allocations a block. They were measured on another tree,
-// on another day, so they compare with this table's MIDI-sync rows by their size, not to the percent.
+// on another day, so they compare with this table's MIDI-sync rows by their size, not to the percent. B3a's bench also
+// fed both Game Boys' idle serial-out bytes to the kernel node (128 a block at 512 frames, against this table's 64:
+// only the LSDj's now), which its design section 7.4 says were nearly all the node read in the larger blocks.
 //
 // Each figure is a median of kRuns runs; a run times the script nodes' plan, then that plan with no script nodes, over
 // the same blocks. Allocations are per block over every run: JS from the script host's audio runtime, native on the
@@ -206,8 +208,11 @@ const BenchSystem kSystems[] = {
     {3, "nes-n8-midi", "rp.n8.midi-to-fifo", "midiIn", {"midi"}},
 };
 constexpr std::size_t kSystemCount = std::size(kSystems);
-constexpr std::size_t kLsdj = 1;  // its index in kSystems
-bool isLsdj(const BenchSystem& s) { return std::string(s.kind) == "lsdj-sync"; }
+// Each system's index in kSystems.
+constexpr std::size_t kMgb = 0;
+constexpr std::size_t kLsdj = 1;
+constexpr std::size_t kNes = 2;
+bool isLsdj(const BenchSystem& s) { return &s == &kSystems[kLsdj]; }
 
 // The structures the table times, by the LSDj's mode (its role's config as the store parses it, its node's settings)
 // and what its Game Boy's serial port clocks out: the idle line, or a framed MI.OUT stream (kMiOut). The other roles'
@@ -471,8 +476,8 @@ ProtocolRows timeProtocolNodes(const Structure& structure, std::uint32_t frames)
         rows.delivered.buttons += got.buttons;
         CHECK(plan.nodeCounts(i) == Counts{});
     }
-    CHECK(bench.nodeCounts(0).serialIn > 0);  // mGB: the host MIDI, in bytes
-    CHECK(bench.nodeCounts(2).midi > 0);      // the NES: the host MIDI
+    CHECK(bench.nodeCounts(kMgb).serialIn > 0);  // mGB: the host MIDI, in bytes
+    CHECK(bench.nodeCounts(kNes).midi > 0);      // the NES: the host MIDI
     CHECK(rows.delivered.bytes == 0);         // nothing here sends core bytes
     CHECK(rows.delivered.buttons == 0);       // or presses a button
     if (structure.miOut) {
