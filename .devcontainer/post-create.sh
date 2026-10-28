@@ -25,6 +25,28 @@ mkdir -p /workspaces/.claude
 ln -sfn /workspaces/.claude       "${HOME}/.claude"
 ln -sfn /workspaces/.claude.json  "${HOME}/.claude.json"
 
+# Git and gh state live in /workspaces/.config the same way, so pushing works without VS Code's forwarded SSH
+# agent or credential helper. ~/.config/gh holds gh's login (`gh auth login` once; its token is the git
+# credential), and ~/.config/git/config - which git reads as global config - holds the identity, gh as the
+# github.com credential helper, and a rewrite of git@github.com: to https:// so SSH remotes and submodules
+# (deps/dpf.js) go over HTTPS. A fresh /workspaces/.config/git/config is seeded once; edit it, not ~/.gitconfig.
+echo "==> Wiring git + gh state to /workspaces/.config..."
+mkdir -p /workspaces/.config/gh /workspaces/.config/git
+chmod 700 /workspaces/.config /workspaces/.config/gh /workspaces/.config/git
+mkdir -p "${HOME}/.config"
+[ -d "${HOME}/.config/gh" ] && [ ! -L "${HOME}/.config/gh" ] && cp -a --update=none "${HOME}/.config/gh/." /workspaces/.config/gh/ && rm -rf "${HOME}/.config/gh"
+ln -sfn /workspaces/.config/gh  "${HOME}/.config/gh"
+ln -sfn /workspaces/.config/git "${HOME}/.config/git"
+GITCFG=/workspaces/.config/git/config
+if [ ! -f "$GITCFG" ]; then
+    git config --file "$GITCFG" url."https://github.com/".insteadOf "git@github.com:"
+    git config --file "$GITCFG" --add url."https://github.com/".insteadOf "ssh://git@github.com/"
+    git config --file "$GITCFG" credential."https://github.com".helper ""
+    git config --file "$GITCFG" --add credential."https://github.com".helper "!/usr/bin/gh auth git-credential"
+    chmod 600 "$GITCFG"
+    echo "post-create: seeded $GITCFG - set user.name / user.email there, and run 'gh auth login' if gh is not logged in"
+fi
+
 # Install the self-updating native Claude CLI for this user (~/.local/bin, first
 # on PATH) so the terminal `claude` matches the VSCode extension's version and
 # shares the same ~/.claude state — instead of a root-owned npm global the user
