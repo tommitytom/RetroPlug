@@ -162,7 +162,7 @@ test("a run a throw leaves is sent, and a run a stopped call left is never sent 
     b.messages = (port) => {
       const list = messages.call(b, port);
       if (port !== "midi") return list;
-      const bad = { frame: 9, get data(): Uint8Array { throw new Error("injected"); } };
+      const bad = { frame: 9, flags: 0, get data(): Uint8Array { throw new Error("injected"); } };
       return [...list, bad];
     };
     return real(b);
