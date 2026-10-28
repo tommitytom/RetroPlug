@@ -19,6 +19,7 @@ export const mgbMidiNode = defineNode({
       const messages = b.messages("midi");
       for (let i = 0; i < messages.length; i++) {
         const m = messages[i];
+        // The kernel's mgb pushed each byte of a message, so an empty message pushed nothing: it is skipped here.
         if (m.data.length > 0) b.send("serialIn", m.frame, m.data);
       }
     },

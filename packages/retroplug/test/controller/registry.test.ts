@@ -5,6 +5,7 @@
 // parse, because these values come off disk and a user should never be locked out of their own controller
 // by a bad enum.
 import { test, expect } from "../../testing/harness";
+import { APP_CONFIGS } from "../../src/controller/registry";
 import { ControllerRegistry, registerControllerApps, lsdjMidiMap, MAX_PAGE, CONTROLLER_APPS, controllerApp } from "../../src/controller";
 
 const registry = (): ControllerRegistry => {
@@ -67,4 +68,18 @@ test("the runtime knows no app it does not list, an Object.prototype name includ
   expect(controllerApp("nope")).toBe(undefined);
   expect(controllerApp("toString")).toBe(undefined);
   expect(controllerApp("")).toBe(undefined);
+});
+
+test("every config entry names a runtime, and every runtime has a config", () => {
+  const runtimeIds = CONTROLLER_APPS.map((a) => a.id);
+  // registerControllerApps walks the runtimes, so a config no runtime names would be dropped without a word.
+  expect(Object.keys(APP_CONFIGS).sort()).toEqual(runtimeIds.slice().sort());
+});
+
+test("a runtime with no label and config is refused when the apps are registered, not half-registered", () => {
+  const orphan = { id: "no-config", app: lsdjMidiMap };
+  const r = new ControllerRegistry();
+  expect(() => registerControllerApps(r, [...CONTROLLER_APPS, orphan])).toThrow(`controller app "no-config" has no label or config schema`);
+  // The apps before it registered; none is reachable under the refused id.
+  expect(r.get("no-config")).toBe(undefined);
 });

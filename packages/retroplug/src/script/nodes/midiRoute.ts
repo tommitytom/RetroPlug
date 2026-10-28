@@ -34,9 +34,9 @@ export const midiRouteNode = defineNode<MidiRouteSettings>({
   reshapes: true,
   // Two systems with one id would be one output fed twice, so the layout refuses them (the settings schema has no
   // way to say so, where the kernel's zod settings refined it).
-  ports: (s) => {
+  ports: (given) => {
     const p: Record<string, PortSpec> = { midiIn: events.in() };
-    for (const id of s.systems) {
+    for (const id of given.systems) {
       const port = routedPort(id);
       if (Object.prototype.hasOwnProperty.call(p, port)) throw new Error(`${MIDI_ROUTE_NODE_TYPE}: two systems have the id ${id}`);
       p[port] = events.out(ROUTED_MIDI);

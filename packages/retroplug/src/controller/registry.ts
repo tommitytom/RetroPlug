@@ -11,7 +11,7 @@
 import { z, boolField, clampedInt, enumField } from "../configSchema";
 import type { RoleConfigSchema } from "../systemRoles";
 import type { ControllerApp } from "./session";
-import { CONTROLLER_APPS } from "./apps";
+import { CONTROLLER_APPS, type ControllerAppRuntime } from "./apps";
 import { MAX_PAGE, QUANTISE_VALUES } from "./apps/lsdjMidiMap";
 
 export interface ControllerAppType {
@@ -47,7 +47,7 @@ export class ControllerRegistry {
 
 /** Each built-in app's menu label and config schema, by id: what the control plane adds to its runtime. The one
  *  place a new app's schema is added; its runtime is added to CONTROLLER_APPS. */
-const APP_CONFIGS: Record<string, { label: string; schema: RoleConfigSchema }> = {
+export const APP_CONFIGS: Record<string, { label: string; schema: RoleConfigSchema }> = {
   "lsdj-midimap": {
     label: "LSDj MI.MAP",
     // quantise: when a pressed pad's launch actually fires. Default `bar` - one bar is also exactly one
@@ -63,8 +63,8 @@ const APP_CONFIGS: Record<string, { label: string; schema: RoleConfigSchema }> =
 
 /** Register the built-in controller apps: every runtime in CONTROLLER_APPS, in its order, with its label and
  *  schema. An app with no label and schema here is refused when this runs, rather than reaching a menu half-made. */
-export function registerControllerApps(registry: ControllerRegistry): void {
-  for (const { id, app } of CONTROLLER_APPS) {
+export function registerControllerApps(registry: ControllerRegistry, runtimes: readonly ControllerAppRuntime[] = CONTROLLER_APPS): void {
+  for (const { id, app } of runtimes) {
     const config = Object.prototype.hasOwnProperty.call(APP_CONFIGS, id) ? APP_CONFIGS[id] : undefined;
     if (!config) throw new Error(`controller app "${id}" has no label or config schema in registry.ts`);
     registry.register({ id, label: config.label, schema: config.schema, app });

@@ -54,7 +54,7 @@ export type ControllerSessionSettings = Infer<typeof settings>;
 /** The settings that need a NEW session rather than an in-place update: which app runs, where its launches go, and
  *  the app's own knobs (an app reads some of those once into its state, so swapping the config underneath it would
  *  leave half the change applied). */
-const shapeOf = (s: ControllerSessionSettings): string => JSON.stringify([s.app, s.target, s.systemId, s.appConfig]);
+const shapeOf = (c: ControllerSessionSettings): string => JSON.stringify([c.app, c.target, c.systemId, c.appConfig]);
 
 /** What the session keeps between blocks, as the role kept it in its scratch bag. */
 interface SessionState {
@@ -90,7 +90,11 @@ export const controllerSessionNode = defineNode<ControllerSessionSettings>({
     const st: SessionState = {};
     let block: Block | null = null; // the block being processed, which a launch is sent on
     // This block's surface messages, as the views the block handed over: the session decodes them and keeps none.
+    // They are JS-owned copies the script host refills each block, so what this holds after process returns is
+    // retained, not dangling; it is read only inside update, and emptied at the start of the next block.
     const input: Uint8Array[] = [];
+    // The session's whole input for a block, one object refilled each block so none is built per block.
+    const frame = { input, tick: 0, transport: false };
     const toLaunches = (data: number[]) => {
       block!.send("launches", 0, data);
     };
@@ -149,11 +153,9 @@ export const controllerSessionNode = defineNode<ControllerSessionSettings>({
         const messages = b.messages("controllerIn");
         input.length = 0;
         for (let i = 0; i < messages.length; i++) input.push(messages[i].data);
-        const out = session.update({
-          input,
-          tick: Math.floor(b.transport.ppq * TICKS_PER_QUARTER),
-          transport: b.transport.playing,
-        });
+        frame.tick = Math.floor(b.transport.ppq * TICKS_PER_QUARTER);
+        frame.transport = b.transport.playing;
+        const out = session.update(frame);
         for (let i = 0; i < out.length; i++) b.send("controllerOut", 0, out[i]);
       },
       onSettings(next) {

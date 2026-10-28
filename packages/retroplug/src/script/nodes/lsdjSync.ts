@@ -99,6 +99,9 @@ export const lsdjSyncNode = defineNode<LsdjSyncSettings>({
     const st: LsdjState = {};
     const clock = new TickClock();
     let block: Block | null = null; // the block being processed, which every send goes on
+    // This block's routed MIDI and launches. The views inside are JS-owned copies the script host refills each block,
+    // so holding them after process returns retains memory but never reads freed memory; only eachEvent reads them,
+    // inside process, after process has set them for the block.
     let midi: readonly Message[] = [];
     let launches: readonly Message[] = [];
     // Last block's serial-out bytes, and each one's frame in that block, index for index: what the kernel handed a

@@ -19,6 +19,8 @@ export const n8MidiToFifoNode = defineNode({
   create: () => ({
     process(b) {
       const messages = b.messages("midiIn");
+      // The kernel's NES role handed the core every routed message whole, an empty one included (the core iterates
+      // the bytes), so nothing is filtered here.
       for (let i = 0; i < messages.length; i++) b.send("midi", messages[i].frame, messages[i].data);
     },
   }),
