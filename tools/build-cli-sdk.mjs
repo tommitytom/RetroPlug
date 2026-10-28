@@ -1,7 +1,7 @@
 // Build the retroplug-cli test SDK: the reusable authoring layer, pre-bundled so a consumer repo (e.g.
 // bliptoaster) can write + run CLI test sessions with only esbuild (bundle a test) and tsc (typecheck it) —
 // no copy of this package's src/ tree. Mirrors tools/build-session.js, but bundles the cli/sdk.ts BARREL
-// once (into a reusable module) instead of a single session. (The DSP kernel is embedded in the binary.)
+// once (into a reusable module) instead of a single session. (The script-node bundle, the protocol nodes, is embedded in the binary.)
 //
 //   node tools/build-cli-sdk.mjs [outDir]      (default outDir: build/cli-sdk)
 //

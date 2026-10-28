@@ -2,8 +2,8 @@
 // transport stream (SPP / Start / Continue / Stop / Clock) into risa's arm/clock/stop protocol. It reuses
 // the risaLocate/risaArmPacket primitives from ../risaSync (the single source of truth) - this replaces the
 // C++ RisaSyncTranslator, which was a hand-port of the same logic. Feed one MIDI message at a time via
-// onMessage(); it appends any risa output bytes. Cross-checked against the golden role test
-// (test/dsp/risa-sync.test.ts) and the former native gtest.
+// onMessage(); it appends any risa output bytes. Cross-checked against the golden node test
+// (test/script/nodes/risa-sync.test.ts) and the former native gtest.
 
 import { RISA_START, RISA_CLOCK, RISA_STOP, risaLocate, risaArmPacket } from "../risaSync";
 

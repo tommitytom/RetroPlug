@@ -166,7 +166,7 @@ test("a stored role with a protocol node is parsed by its schema; the core's rol
     { kind: "lsdj-assets", config: { overrides: [], futureKnob: 2 } },
   ] }));
   const roles = store.view().find((v) => v.id === id)!.roles;
-  // A config the schema accepts keeps every value, and gains only the defaults its node would fill anyway: no repair,
+  // A config the schema accepts keeps every field the schema reads (this one has no unread keys), and gains only the defaults its node would fill anyway: no repair,
   // so nothing is logged.
   const sync = roles.find((r) => r.kind === "lsdj-sync")!.config;
   expect(sync).toEqual({ mode: "midiOut", tempoDivisor: 1, autoStart: false });

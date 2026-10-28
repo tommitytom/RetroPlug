@@ -830,7 +830,7 @@ test("DirectGraph republishes the model a refused edit put back, which frees the
   expect(alive(be, 2)).toBe(true);
 });
 
-test("DirectGraph sets each system's pipeline and the project stages, each a publish without a re-arm", () => {
+test("DirectGraph sets each system's pipeline and the MIDI routing, each a publish without a re-arm", () => {
   const be = new MockBackend("/cfg");
   const g = new DirectGraph(be);
   g.add(MGB, 1);

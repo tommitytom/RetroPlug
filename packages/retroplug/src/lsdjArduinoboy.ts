@@ -178,8 +178,8 @@ export interface MasterSyncBlock {
 
 /** Decode the Master Sync serial-out bytes that reached this block into host MIDI. Call once per block with the
  *  bytes the lsdj-sync node read off its `serialOut` input and each one's frame, which are LAST block's bytes at
- *  their frames in it (the feedback wire's one block), and this block's length and rate. Each byte is a tempo clock, the first of a run
- *  opened with LSDj's song row; a run ends with one 0xFC once MASTER_SYNC_STOP_MS pass with no byte. */
+ *  their frames in it (the feedback wire's one block), and this block's length and rate. Each byte is a tempo clock, the first of a
+ *  run opened with LSDj's song row; a run ends with one 0xFC once MASTER_SYNC_STOP_MS pass with no byte. */
 export function arduinoboyMasterSyncBlock(
   bytes: number[],
   frames: number[],

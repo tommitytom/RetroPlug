@@ -1,8 +1,8 @@
 // A system's serial input IN the render loop, driven by the real script nodes. Host MIDI is staged
 // globally; the routing node fans it to systems, and each system's `mgb` role's node turns its
 // routed bytes into serial input (mGB reads MIDI-over-serial, so raw serial == onMidi).
-// The toggle is ROUTING PRESENCE — the native twin of routing.test.ts's two cases: with a routing
-// role the chord reaches mGB and it sounds; with none it reaches no system and mGB stays silent. So
+// The toggle is ROUTING PRESENCE - the native twin of routing.test.ts's two cases: with the routing
+// node the chord reaches mGB and it sounds; with none it reaches no system and mGB stays silent. So
 // serial input demonstrably reaches the live core, purely from the graph's structure. In-TS RMS.
 import { test, expect } from "../testing/harness";
 import { createAudioDriver } from "../src/audioDriver";
@@ -28,7 +28,7 @@ const rms = (a: Float32Array): number => {
   return a.length ? Math.sqrt(s / a.length) : 0;
 };
 
-test("a DSP pushSerialIn (mgb role) in the render loop flips the core silent ↔ audible via routing", () => {
+test("a serial input from the mgb node in the render loop flips the core silent ↔ audible via routing", () => {
   const audio = createAudioDriver();
 
   const id = 1; // this direct-backend test picks its own id (fresh host per file)
@@ -42,7 +42,7 @@ test("a DSP pushSerialIn (mgb role) in the render loop flips the core silent ↔
   stageChord();
   const muted = rms(audio.renderAudio(1500));
 
-  // Add midi-routing (SendToAll) -> the chord reaches mGB's serial via pushSerialIn -> it plays.
+  // Add midi-routing (SendToAll) -> the chord reaches mGB's serial input -> it plays.
   expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
   stageChord();
   const passed = rms(audio.renderAudio(1500));

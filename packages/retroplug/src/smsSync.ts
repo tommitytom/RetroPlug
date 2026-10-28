@@ -2,9 +2,9 @@
 //
 // NOT a byte protocol, unlike risa's FIFO stream (risaSync.ts) or LSDj's serial. What crosses the wire
 // is a PORT LEVEL WORD: a 2-bit counter held on two input lines, which the ROM samples once per video
-// frame and turns into a clock count. The `sms-sync` DSP role (dspRoles.ts) generates these from the
-// DAW transport and delivers them over ctx.pushCoreBytes, which MesenSmsSystem routes to SmsSyncRole
-// rather than to any MIDI or serial path. Pure + unit-tested (test/dsp/sms-sync.test.ts).
+// frame and turns into a clock count. The `rp.sms.sync` node (script/nodes/smsSync.ts) generates these from the
+// DAW transport and sends them on its `bytes` output, which MesenSmsSystem routes to SmsSyncRole
+// rather than to any MIDI or serial path. Pure + unit-tested (test/script/nodes/sms-sync.test.ts).
 //
 // BOTH MACHINES ARE SUPPORTED, and they differ only in which pins carry the counter: Master System
 // uses controller port 2 ($DD, via SmsControlManager::SetExternalInput), Game Gear uses the EXT

@@ -25,9 +25,9 @@ Two modes:
 
 What the startup-latency mode measures:
 
-  When Reaper's transport starts at t=0, a NoteOn 24 hits LsdjSyncRole
-  ("Arduinoboy play-enable"). The role starts emitting 0xFA + 0xF8
-  bytes from PpqUtil::eachTick() on the next audio block. LSDj
+  When Reaper's transport starts at t=0, a NoteOn 24 hits the rp.lsdj.sync node
+  ("Arduinoboy play-enable"). The node starts emitting 0xFA + 0xF8
+  bytes from its tick clock on the next audio block. LSDj
   receives them via the GB serial-in path and starts advancing rows.
   At the same t=0 the ReaSynth click fires its first note. Comparing
   *when* LSDj produces its first audible sample against *when* the
@@ -418,7 +418,7 @@ def main():
         print("FAIL: Arduinoboy slave is slipping its startup window")
         print("  expected:  LSDj's first row note within ~50 ms of host t=0")
         print("  observed:  {:+.0f} ms drift".format(latency_ms))
-        print("  possible:  PpqUtil tick alignment, LsdjSyncRole start-byte"
+        print("  possible:  tick alignment, the rp.lsdj.sync start-byte"
               " timing, or LSDj's own boot-into-play latency")
         return 1
     print("PASS")

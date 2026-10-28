@@ -108,13 +108,13 @@ test("the midiMap role clocks the cart, so a mapped row actually plays through",
   console.log(`[lsdj-midimap] after launch, transport stopped: ${fmtSample(triggered[triggered.length - 1])}`);
   expect(triggered.some((s) => s.playing)).toBeTruthy();
 
-  // Now start the host. The role's clock comes from eachTick, which walkTicks gates on transport, so
+  // Now start the host. The node's clock comes from its TickClock, which walkTicks gates on transport, so
   // this is the moment the cart should begin stepping.
   p.bpm(120);
   p.transport(true);
   // At 120 BPM a 24-PPQN tick is 20.8 ms, a 6-tick step is 125 ms and a 96-tick phrase is 2 s, so 8 s
-  // covers several rows. Timings are read in MILLISECONDS here: the clock comes from the role's own
-  // eachTick, not from bytes this probe wrote, so its tick counter stays at zero.
+  // covers several rows. Timings are read in MILLISECONDS here: the clock comes from the node's own
+  // tick clock, not from bytes this probe wrote, so its tick counter stays at zero.
   const samples = p.runFree(8000, 25);
 
   const steps = changeMs(samples, (s) => s.channels.pu1.phraseRow);

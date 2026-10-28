@@ -60,8 +60,8 @@ struct EngineFrame {
 
 // The core of the host: the graph the systems run on (docs/modular-graph-phase-b1-design.md), the script host its TS
 // nodes run in, the MIDI routing, the controller and each role's protocol node among them
-// (docs/modular-graph-phase-b3b-design.md section 2), the staged MIDI and the snapshot registry. Structure reaches it as graph documents TS builds
-// (docs/modular-graph-phase-b2-design.md), planned on the control thread; every other edit is a command on
+// (docs/modular-graph-phase-b3b-design.md section 2), the staged MIDI and the snapshot registry. Structure reaches it
+// as graph documents TS builds (docs/modular-graph-phase-b2-design.md), planned on the control thread; every other edit is a command on
 // the GraphHost's one ring, applied at the next drain. A removed core is freed on the control thread, with
 // the plan that last ran it. Transport and ppq are plain members, set per block by whoever drives it; its own
 // atomics count what the audio thread may not log: the blocks too long to run.
@@ -94,9 +94,9 @@ public:
     }
 
     // Stage traffic from a CONTROL SURFACE (a Launchpad), delivered on the next processBlock by the plan's
-    // rp.host.controller-in to the controller node's `controllerIn` - a separate stream from stageMidi, and separate for a reason: a pad press is a NoteOn,
-    // and a translator like LSDj's MidiMap reads a NoteOn as a row launch. A surface sharing the musical
-    // stream would fire every launch twice, once through the controller app and once raw.
+    // rp.host.controller-in to the controller node's `controllerIn` - a separate stream from stageMidi, and separate
+    // for a reason: a pad press is a NoteOn, and a translator like LSDj's MidiMap reads a NoteOn as a row launch. A
+    // surface sharing the musical stream would fire every launch twice, once through the controller app and once raw.
     void stageControllerMidi(std::span<const std::uint8_t> bytes);
     void stageControllerMidi(const std::vector<std::uint8_t>& bytes) { stageControllerMidi(std::span<const std::uint8_t>(bytes)); }
 

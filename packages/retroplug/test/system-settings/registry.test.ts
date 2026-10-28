@@ -1,8 +1,8 @@
 // The generic role registry: extensions register RoleTypes (config schema + clamp)
 // + ROM providers (feature roles by ROM header). The core registers the built-in
 // backend "system" roles via registerCoreRoles; a FAKE feature extension proves the
-// mechanism with zero LSDj knowledge in the core. Role behavior (the doc-06
-// translators) is a deferred RoleType seam, not exercised here.
+// mechanism with zero LSDj knowledge in the core. A role's behaviour is its
+// protocol node (script/nodes/), not a RoleType field, so none is exercised here.
 import { test, expect } from "../../testing/harness";
 import { RoleRegistry, type RoleType } from "../../src/systemRoles";
 import { buildAppRegistry } from "../../src/appHost";

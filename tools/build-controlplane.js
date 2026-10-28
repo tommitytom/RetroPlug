@@ -1,6 +1,6 @@
 // Build the plugin's control-plane bundle (pluginControlPlane.ts) for embedding as
-// bytecode: esbuild the control plane to an ES module CMake compiles with tjsc. (The DSP kernel is a
-// script node every Engine has embedded, so the control plane carries no kernel of its own.)
+// bytecode: esbuild the control plane to an ES module CMake compiles with tjsc. (The protocol nodes are
+// script nodes in a bundle every Engine has embedded, so the control plane carries none of them.)
 //
 //   node tools/build-controlplane.js OUT.js
 const { buildSync } = require("esbuild");

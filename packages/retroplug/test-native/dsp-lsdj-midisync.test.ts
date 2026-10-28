@@ -1,6 +1,6 @@
 // The flagship: the TS `lsdj-sync` role, running as its script node in the real engine, is the SOLE advancing clock
-// for a real LSDj instance. Its MidiSync behaviour is exactly doc-06's shape — eachTick(24) ->
-// pushSerialIn(0xF8) — now authored as a plain TS role (dspRoles.ts) rather than an ad-hoc script.
+// for a real LSDj instance. Its MidiSync behaviour is exactly doc-06's shape: a 0xF8 on the serial input
+// every 24th of a quarter note, which its TickClock / walkTicks (script/nodes/lsdjSync.ts) put there.
 //
 // LSDj in SYNC=MIDI is a serial slave: a START press arms it ("wait for MIDI"), then the 0xF8 clock
 // advances it. The core constructs bare (no C++ roles) so nothing but the node clocks it. The graph
@@ -77,7 +77,7 @@ test("the TS lsdj-sync role in the DSP kernel is the sole clock that makes an ar
   expect(graph.setPipeline(id, lsdjSync("off"))).toBeTruthy();
   const neg = rms(audio.renderAudio(600));
 
-  // Positive: lsdj-sync MidiSync -> eachTick(24)->pushSerialIn(0xF8) is the only clock -> LSDj plays.
+  // Positive: lsdj-sync MidiSync -> the node's 24-PPQN 0xF8 on serialIn is the only clock -> LSDj plays.
   expect(graph.setPipeline(id, lsdjSync("midiSync"))).toBeTruthy();
   const pos = rms(audio.renderAudio(3000));
 

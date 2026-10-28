@@ -1,7 +1,7 @@
 // Does the controller layer's launch encoding actually move a REAL LSDj cart?
 //
 // The pure-TS side already proves a pad press comes out of the controller as a row byte on a system's link
-// port (test/dsp/controller-role.test.ts), and that every row survives a round trip through `midiMapRow`
+// port (test/script/nodes/controller-session.test.ts), and that every row survives a round trip through `midiMapRow`
 // (test/controller/trackerTarget.test.ts). But both of those check our encoder against our own decoder.
 // This checks it against LSDj, which is the only opinion that counts - and in particular checks the
 // two-channel split, where rows 128-255 ride MIDI channel 2 and a wrong nibble would silently launch a

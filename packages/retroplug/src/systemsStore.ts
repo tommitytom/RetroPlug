@@ -521,8 +521,8 @@ export class SystemsStore {
   }
 
   /** Edit a role's config (validated/clamped via its RoleType). A "system" role's
-   *  config is applied to the live emulator; a "feature" role's config is pure TS
-   *  (its behaviour is the deferred script future). False when the role is absent. */
+   *  config is applied to the live emulator; a "feature" role's config reaches only its
+   *  protocol node, as the node's settings in the next published graph. False when the role is absent. */
   setRoleConfig(id: number, roleKind: string, partial: Record<string, unknown>): boolean {
     const e = findById(this.entries, id);
     if (!e) return false;
@@ -645,8 +645,8 @@ export class SystemsStore {
       ? this.suggestedFirst(this.withMissingFeatureRoles(stored, core, suggested, romPath, embeddedRom), suggested)
       : suggested;
     // A loaded system's roles can hold two whose nodes write one input, or a kind twice (graph/protocolNodes.ts,
-    // beside PROTOCOL_NODES), and every publish leaves the later one out of its pipeline, quietly; this says so
-    // once, here, where the roles enter.
+    // beside PROTOCOL_NODES), and every publish leaves the later one out of its pipeline, quietly; this notes it
+    // for the log, which is written once the core has built, where the roles enter.
     protocolPipeline(roles, (r) =>
       notes.push(
         r.input === null

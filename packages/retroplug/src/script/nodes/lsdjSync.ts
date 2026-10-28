@@ -62,7 +62,7 @@ const settings = s.object({
 export type LsdjSyncSettings = Infer<typeof settings>;
 
 /** The role's scratch bag, every mode's fields in one, as the kernel kept it for the stage: a mode reads what another
- *  left (the Arduinoboy and MidiSync auto-arms share armDown) until a system is removed. The MI.OUT decoder keeps its
+ *  left (the Arduinoboy and MidiSync auto-arms share armDown) until the node goes. The MI.OUT decoder keeps its
  *  own fields in it too. */
 interface LsdjState extends ArduinoboyState {
   // MidiSyncArduinoboy
@@ -180,8 +180,7 @@ export const lsdjSyncNode = defineNode<LsdjSyncSettings>({
         }
       }
     };
-    // Slide LSDj's keyboard octave toward `target` with OCT_UP / OCT_DN scancodes; the new octave. Mirrors
-    // slideKeyboardOctave in LsdjSyncRole.cpp.
+    // Slide LSDj's keyboard octave toward `target` with OCT_UP / OCT_DN scancodes; the new octave.
     const slideKeyboardOctave = (frame: number, target: number, current: number): number => {
       if (target === current) return current;
       const code = toGbSerialByte(target > current ? KEYBOARD_OCT_UP : KEYBOARD_OCT_DN);

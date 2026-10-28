@@ -1,5 +1,5 @@
-// What the lsdj-sync modes put on LSDj's link port (host -> LSDj), mirroring LsdjSyncRole.cpp, and the button its
-// auto-arm presses: shared by the role (dspRoles.ts) and its script node (script/nodes/lsdjSync.ts). The keyboard
+// What the lsdj-sync modes put on LSDj's link port (host -> LSDj) and the button its
+// auto-arm presses: shared by the role's schema (dspRoles.ts) and its protocol node (script/nodes/lsdjSync.ts). The keyboard
 // mode's scancodes are lsdjKeyboardMap.ts's, and the decoders for what LSDj sends back are lsdjArduinoboy.ts's. A leaf:
 // it imports nothing.
 

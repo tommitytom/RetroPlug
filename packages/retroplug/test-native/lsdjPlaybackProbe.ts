@@ -8,7 +8,7 @@
 // Two things make this an instrument rather than a test:
 //
 //   1. It drives the protocol DIRECTLY. The system runs `lsdj-sync` in `midiPassthrough`, which
-//      forwards every host-MIDI byte verbatim into the link port (dspRoles.ts forwardMidiToSerial),
+//      forwards every host-MIDI byte verbatim into the link port (the rp.lsdj.sync node),
 //      so `raw()` puts an exact byte on the wire. That measures THE CART, not RetroPlug's `midiMap`
 //      role — which matters here, because whether that role is complete is one of the open questions.
 //      `probeViaRole()` builds the other configuration (the shipped `midiMap` role) for the one
@@ -179,7 +179,7 @@ export class LsdjProbe {
 
   /** Put one raw byte on the link port (via the passthrough role). A 1-byte "MIDI message" whose
    *  status nibble routing broadcasts unchanged — the routing layer never rewrites it, and
-   *  forwardMidiToSerial pushes exactly these bytes. */
+   *  the rp.lsdj.sync node sends exactly these bytes. */
   raw(byte: number): void {
     const ok = this.audio.stageMidiIn([byte & 0xff]);
     if (!ok && !this.warnedRaw) {
@@ -362,7 +362,7 @@ export class LsdjProbe {
     this.audio.setTransport(on);
   }
 
-  /** Host tempo, for the role-generated clock path (eachTick derives ticks from bpm + ppq). */
+  /** Host tempo, for the role-generated clock path (the node's tick clock derives ticks from bpm + ppq). */
   bpm(bpm: number): void {
     this.audio.setBpm(bpm);
   }

@@ -113,8 +113,8 @@ using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec
 namespace {
 
 // Derives the host transport (BPM + playing) from incoming MIDI real-time bytes, so an external clock
-// master drives LSDj sync-to-external (the LSDj MidiSync role regenerates 0xF8 from Engine tempo/transport
-// via eachTick — it doesn't read the raw wire clock, so feeding setBpm/setTransport is all it takes).
+// master drives LSDj sync-to-external (the rp.lsdj.sync node regenerates 0xF8 from Engine tempo/transport
+// with its own tick clock - it doesn't read the raw wire clock, so feeding setBpm/setTransport is all it takes).
 // Audio-thread-only: fed from audioCb, never touched elsewhere → plain members, no locking.
 //
 // Clock timing: RtMidi timestamps are discarded and messages arrive block-quantized, so we measure the

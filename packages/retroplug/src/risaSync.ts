@@ -1,8 +1,8 @@
 // The risa host-sync byte protocol (the NES/MMC5 tracker, driven over the EverDrive N8 Pro receive FIFO).
 // NOT MIDI: a raw byte stream that reuses MIDI status VALUES — 0xF8/0xFA/0xFC are real System Real-Time
 // (clock/start/stop); 0xF9 52 ss cc tt is risa's PRIVATE locate packet, borrowing 0xF9 (undefined in real
-// MIDI). The `risa-sync` DSP role (dspRoles.ts) generates these from the DAW transport and delivers them
-// over ctx.pushCoreBytes → the N8 FIFO. Pure + unit-tested (test/dsp/risa-sync.test.ts).
+// MIDI). The `rp.risa.sync` node (script/nodes/risaSync.ts) generates these from the DAW transport and sends
+// them on its `bytes` output → the N8 FIFO. Pure + unit-tested (test/script/nodes/risa-sync.test.ts).
 //
 // Protocol reference: risa's docs/sync/host-sync-protocol.md (2.3.0 and later). The 4-byte arm an early
 // prototype used is REJECTED by released risa, so the 5-byte form is the only one.

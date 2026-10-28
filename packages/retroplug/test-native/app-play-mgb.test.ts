@@ -4,7 +4,7 @@
 // the graph the store publishes places its protocol node; a staged MIDI chord - routed by the
 // routing node and serialized by the `mgb` role's node (rp.mgb.midi) - makes the core
 // sing. Same proof as audio-render.test.ts, but reached via the stores instead of a hand-set
-// pipeline, so it exercises the real store→projection→DSP path a host will drive. (One test per
+// pipeline, so it exercises the real store→graph→protocol-node path a host will drive. (One test per
 // file: whole-mix RMS needs an isolated native engine.)
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";

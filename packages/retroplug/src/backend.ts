@@ -143,8 +143,8 @@ export interface Backend {
 
   /** Set capture of a system's outgoing serial bytes (SerialOutCapture), or null for off. The store calls this when
    *  a system's `lsdj-sync` mode changes: armed, the Game Boy node's `serialOut` port carries the raw bytes, a feedback
-   *  wire into its rp.lsdj.sync node, for the MI.OUT and master-sync decoders. False for a mode native does not know. SameBoy-only (a no-op on other
-   *  cores). */
+   *  wire into its rp.lsdj.sync node, for the MI.OUT and master-sync decoders. False for a mode native does not know.
+   *  SameBoy-only (a no-op on other cores). */
   setSerialOutCapture(id: number, mode: SerialOutCapture | null): boolean;
 
   // --- Live emulator input ------------------------------------------------
@@ -249,7 +249,8 @@ export interface Backend {
   drainEvents(id: number): DebugEvent[];
 
   /** Drain the raw bytes the CORE has sent host-ward since the last call, oldest first — the inverse of
-   *  a system node's `bytes` input (what a sync node sends the core's byte device). On the NES that is the EverDrive FIFO's `CMD_USB_WR` payload: the
+   *  a system node's `bytes` input (what a sync node sends the core's byte
+   *  device). On the NES that is the EverDrive FIFO's `CMD_USB_WR` payload: the
    *  cartridge's back-channel, which on real hardware the N8's MCU forwards out of its USB port (the
    *  `retroplug-n8-hwtest fiford` op reads the same stream). A ROM streaming data in can use it to pace
    *  itself to the host instead of guessing. Empty when the id is gone, the ROM has sent nothing, or the

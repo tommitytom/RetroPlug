@@ -6,7 +6,8 @@
 // names, which risa primes itself.
 //
 // The glue the role ran under the DSP kernel, ported line for line, with its state and its system's tick counter on
-// the instance. A block allocates nothing but an arm's packet, as the role's did.
+// the instance. A block allocates nothing but on an arm (risaLocate's object and
+// risaArmPacket's array); START, STOP and CLOCK are built once, where the role built them each time it sent one.
 import { bytes, defineNode, type Block } from "../../graph/defineNode";
 import {
   RISA_CLOCK,
