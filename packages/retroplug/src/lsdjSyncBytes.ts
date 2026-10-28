@@ -1,7 +1,7 @@
 // What the lsdj-sync modes put on LSDj's link port (host -> LSDj) and the button its
-// auto-arm presses: shared by the role's schema (dspRoles.ts) and its protocol node (script/nodes/lsdjSync.ts). The keyboard
-// mode's scancodes are lsdjKeyboardMap.ts's, and the decoders for what LSDj sends back are lsdjArduinoboy.ts's. A leaf:
-// it imports nothing.
+// auto-arm presses: used by its protocol node (script/nodes/lsdjSync.ts), and trackerTarget.test.ts holds the
+// controller's row encoding to midiMapRow. The keyboard mode's scancodes are lsdjKeyboardMap.ts's, and the decoders
+// for what LSDj sends back are lsdjArduinoboy.ts's. A leaf: it imports nothing.
 
 /** GameboyButton::Start, which autoStart taps on the transport's rise. */
 export const LSDJ_START_BUTTON = 7;

@@ -75,7 +75,8 @@ export class DirectGraph {
   /** System `id`'s roles, in order, placed as protocolPipeline places them: each with a protocol node as one, with its
    *  config as given as the node's settings (a role kept from the last call keeps its node and state). A role with no
    *  node is left out, and so is one whose kind is already placed or whose node would write an input an earlier
-   *  role's does, which `leftOut` hears of: the document is sent without it. False when `id` is not placed here, or the document did not plan. */
+   *  role's does, which `leftOut` hears of: the document is sent without it. False when `id` is not placed here, or the
+   *  document did not plan. */
   setPipeline(id: number, roles: RoleInstance[], leftOut?: (role: LeftOutRole) => void): boolean {
     const at = this.systems.findIndex((s) => s.id === id);
     if (at < 0) return false;

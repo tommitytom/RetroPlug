@@ -22,6 +22,7 @@ const MGB: ConstructSpec = { romPath: "", platform: "gb", core: "sameboy", embed
 
 const SR = 44100;
 const BLK = 1024;
+const DEFAULT_WARMUP = 200; // blocks discarded before the window; the zero-allocation assertion needs at least this
 const BLOCK_MS = (1000 * BLK) / SR; // 23.22 ms — one renderAudio(BLOCK_MS) == exactly one processBlock
 
 // --- env params (optional; the wrapper script sets these to vary the run) --------------------------
@@ -125,7 +126,7 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
   const profile = envStr("RP_BENCH_PROFILE", "A");
   const cores = Math.max(1, envInt("RP_BENCH_CORES", 1));
   const blocks = Math.max(1, envInt("RP_BENCH_BLOCKS", 2000));
-  const warmup = Math.max(0, envInt("RP_BENCH_WARMUP", 200));
+  const warmup = Math.max(0, envInt("RP_BENCH_WARMUP", DEFAULT_WARMUP));
   const seed = envInt("RP_BENCH_SEED", 0xc0ffee);
 
   // `cores` real mGB cores, each with an mgb pipeline: cores are the dominant JS-load lever (each one a
@@ -199,7 +200,7 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
   // runtime's peak heap cannot: it is never reset, and the bundle's load alone puts ~300 KB in it before this window).
   // The zero holds at the default warmup only: a shorter one (RP_BENCH_WARMUP) leaves pool growth in the window, so
   // then the figure is printed and not asserted.
-  if (warmup >= 200) {
+  if (warmup >= DEFAULT_WARMUP) {
     expect(s.allocCalls, "allocations in the measured window").toBe(0);
     expect(s.maxBlockAllocCalls, "allocations in the worst block").toBe(0);
   }
@@ -251,6 +252,6 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
   audio.renderAudio(BLOCK_MS);
   const live = audio.dspAllocStats();
   expect(live.blockCount, "blocks in the proof window").toBeGreaterThan(0);
-  expect(live.allocCalls, "a block that creates a node's JS state allocates").toBeGreaterThan(0);
+  expect(live.allocCalls, "a block whose fresh ports fill their message arrays allocates").toBeGreaterThan(0);
   expect(live.maxBlockAllocCalls, "and the worst-block counter sees it").toBeGreaterThan(0);
 });

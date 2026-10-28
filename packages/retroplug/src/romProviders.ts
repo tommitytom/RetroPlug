@@ -1,5 +1,5 @@
-// The built-in ROM providers: the TS twin of the C++ RomSniffer's default-role step
-// (packages/native/src/system/sameboy/RomSniffer.cpp). Given a freshly-classified ROM,
+// The built-in ROM providers: the TS replacement for the deleted C++
+// RomSniffer's default-role step. Given a freshly-classified ROM,
 // they attach the FEATURE roles that give it behaviour — mGB gets the `mgb` MIDI-to-serial
 // passthrough, LSDj gets `lsdj-sync`. Registered into the CONTROL-PLANE registry only
 // (buildAppRegistry in appHost.ts); the bare DSP-context bundle never sees them. Feature

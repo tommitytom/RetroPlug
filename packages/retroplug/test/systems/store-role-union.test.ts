@@ -157,7 +157,8 @@ test("the smsggdj case that prompted this: a mesen-only project gains sms-sync",
 // and a fresh system's defaults already are; the core's config role and the roles with no node never reach a node,
 // and keep what the file says.
 
-test("a stored role with a protocol node is parsed by its schema; the core's role and one with no node stay as written", () => {
+test("a stored role with a protocol node is parsed by its schema; the core's role and one with no node stay as " +
+  "written", () => {
   const { be, store } = newStore();
   const romPath = seedLsdj(be);
   const { result: id, warnings } = warned(() => store.adopt({ romPath, core: "sameboy", roles: [
@@ -166,8 +167,8 @@ test("a stored role with a protocol node is parsed by its schema; the core's rol
     { kind: "lsdj-assets", config: { overrides: [], futureKnob: 2 } },
   ] }));
   const roles = store.view().find((v) => v.id === id)!.roles;
-  // A config the schema accepts keeps every field the schema reads (this one has no unread keys), and gains only the defaults its node would fill anyway: no repair,
-  // so nothing is logged.
+  // A config the schema accepts keeps every field the schema reads (this one has no unread keys), and gains only the
+  // defaults its node would fill anyway: no repair, so nothing is logged.
   const sync = roles.find((r) => r.kind === "lsdj-sync")!.config;
   expect(sync).toEqual({ mode: "midiOut", tempoDivisor: 1, autoStart: false });
   expect(warnings).toEqual([]);

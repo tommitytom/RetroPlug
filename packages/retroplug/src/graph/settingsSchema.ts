@@ -27,8 +27,8 @@
 //   Schema, as zod writes an item's .default.
 // - A default is read through its own schema when the schema is built: an array's default has each item normalized
 //   (an object item gets its fields' defaults, which zod does not do: its .default() returns a default as given), and a
-//   default that schema refuses throws. An int's bounds must be
-//   finite numbers with min no greater than max, or the int throws.
+//   default that schema refuses throws. An int's bounds must be finite numbers with min no greater than max, or the
+//   int throws.
 // - An enum lists its values in declaration order in the JSON Schema (zod's may order integer-like strings such as
 //   "1", "2" differently), and a value named twice throws where zod's enum collapses it.
 // - An object drops a key its shape does not name, as z.object does: it strips, and refuses nothing. So a document may

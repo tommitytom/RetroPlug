@@ -144,7 +144,7 @@ export class PredictedLsdjModel implements PredictivePlaybackModel {
   private readonly gridView: PlaybackGrid;
 
   /** Takes a decoded song, or a prebuilt `RowTicksTable` for a caller that has the arithmetic but not
-   *  the song - the DSP-thread controller role, handed its table through config. */
+   *  the song - the controller session node (rp.controller.session), handed its table through config. */
   constructor(source: Song | RowTicksTable) {
     this.rowTicksCache = Array.isArray(source) ? normaliseRowTicks(source) : songRowTicks(source);
     for (let ch = 0; ch < this.channelCount; ch++) this.cursors.push({ row: null, remaining: 0, playing: false });

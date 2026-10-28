@@ -132,8 +132,8 @@ input's system from its settings, and deleted the kernel. What is left, in order
   their spacing, one block late. Each LSDj node has its own `midiOut` port now, so its queue no longer orders
   another's; but this would be the first producer of host MIDI past frame 0. `rp.host.midi-out` already keeps the
   host's list frame-sorted across its inputs (each message goes out at the later of its frame and the last
-  one handed out in the block), so a host-side sort is no longer the alternative. But the clamp raises a later input's earlier frames to an
-  earlier input's, so a second LSDj in master sync would have its clocks bunched behind the first's: that change
+  one handed out in the block), so a host-side sort is no longer the alternative. But the clamp raises a later
+  input's earlier frames to an earlier input's, so a second LSDj in master sync would have its clocks bunched behind the first's: that change
   has to turn the clamp into a merge by frame, or its re-record would bake the bunching into the baseline.
 - **The capture mode as a Game Boy node setting** (Phase C, with the other live knobs): carried in the
   published document rather than through `ConfigField::SerialOutCapture` plus a publish, it would make a mode
@@ -149,7 +149,9 @@ input's system from its settings, and deleted the kernel. What is left, in order
   (2 s of CPU) every block and is never bypassed, as a `process` that hangs would be. A context per node
   in the same runtime (its own intrinsics and prototypes) closes all of it, at a per-context memory cost,
   and names the node a job ran in (`JS_ExecutePendingJob` reports the job's context); decide it before
-  nodes users write (Phase C, the Reaktor-scale aim). B3b made the project's nodes many, not one: seven is the number of node types, and a project places the routing node, a controller when enabled, and one node per protocol role.
+  nodes users write (Phase C, the Reaktor-scale aim). B3b made the project's nodes many, not one: seven is the
+  number of node types, and a project places the routing node, a controller when enabled, and one node per protocol
+  role.
 - **Found while building B3b, left as they are:**
   - The MI.OUT and master-sync decoders (`arduinoboyDecodeSerialOut`, `arduinoboyMasterSyncBlock` in
     [lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts)) build each message they emit as a new
@@ -171,16 +173,23 @@ input's system from its settings, and deleted the kernel. What is left, in order
     `markerRole` presence), so the LSDj menu's sync cyclers
     ([menuDefs.ts](../packages/retroplug/ui/screens/menu/menuDefs.ts)) edit a left-out `lsdj-sync` on an mGB cart;
     `hasRole(..., "lsdj-sync")` in `ui/App.tsx`, `ui/screens/grid/useLsdjRuntime.ts`,
-    `ui/screens/hd/useLsdjHdSession.ts` and `projectStore.ts`; and `projectParameterMap`
+    `ui/screens/hd/useLsdjHdSession.ts` and `projectStore.ts` (which tests `roles.some((r) => r.kind ===
+    "lsdj-sync")`); and `projectParameterMap`
     ([parameterMap.ts](../packages/retroplug/src/parameterMap.ts)), which still exposes mGB's CC lanes for an LSDj
-    cart carrying a stale `mgb`. The fix is `placedRole(...)` ([graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts))
-    in those readers. Not fixed.
+    cart carrying a stale `mgb`. The fix is `placedRole(...)`
+    ([graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts)) in those readers. Not fixed.
+  - **The controller's MI.MAP override changes only the document.** `controllerSyncOverride`
+    ([graph/controller.ts](../packages/retroplug/src/graph/controller.ts), applied in `buildGraph`) runs an LSDj's
+    node in `midiMap` for a cart reading MidiMap, but `serialOutCaptureFor` (`systemsStore.ts`) and
+    `__rp_syncLatencyMs` still follow the stored `lsdj-sync` mode: an LSDj stored in MI.OUT whose cart reads MidiMap
+    keeps capture "drive" while its node runs `midiMap`. Pre-existing: `kernelProjection` behaved the same.
   - A profile build's `apu-render` span begins where the last script node's `process` ended, which is right
     while every script node runs before the systems, as `buildGraph` places them; a script node placed after
     a system would need it revisited.
   - A few test-native case names still say "the kernel" (in `dsp-lsdj-midisync`, `dsp-risa-sync`,
     `dsp-sms-sync`, `lsdj-midiout` and `plugin-controlplane`), where they mean the protocol nodes. Renaming
-    a case is harmless but was kept out of B3b, which changed no test's identity it did not have to.
+    a case is harmless but was kept out of B3b, which changed no test's identity it did not have to (the one case
+    `dsp-serial.test.ts` renamed, because its name described the deleted kernel, is the exception).
 - **Found while building B3a, left as they are:**
   - `rp.host.midi-out` and `rp.host.controller-out` append one `std::vector` per message to the engine's
     host outputs (`Engine::midiOut_` / `controllerOut_`, the `rp.engine.host-io/2` service in

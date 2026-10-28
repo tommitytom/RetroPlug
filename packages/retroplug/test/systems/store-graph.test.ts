@@ -838,7 +838,7 @@ test("DirectGraph sets each system's pipeline and the MIDI routing, each a publi
   const g = new DirectGraph(be);
   g.add(MGB, 1);
   g.add(MGB, 2);
-  // No roles and no stages: no protocol node, no routing and no controller.
+  // No roles: no protocol node, no routing and no controller.
   expect(be.lastDocument()!.nodes.map((n) => n.id).slice(0, 4)).toEqual(["midi-in", "controller-in", "sys-1", "sys-2"]);
   const n = be.graphRequests.length;
   const mgb: RoleInstance = { kind: "mgb", config: {} };

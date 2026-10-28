@@ -116,7 +116,7 @@ void LaunchpadHost::restore() {
         deviceLabel_ = label;
     }
     // Reconnect the persisted pair, if any. This claims the ports; it does NOT put the device into
-    // Programmer mode - only the controller role does that, on the connect edge it sees in the block info -
+    // Programmer mode - only the controller session node does that, on the connect edge it sees in the block info -
     // so a link restored before the UI has run owes the device no farewell yet.
     if (enabled_) applyLink();
 }

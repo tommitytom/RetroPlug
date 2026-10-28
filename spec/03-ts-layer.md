@@ -389,8 +389,9 @@ and reopening the editor in a DAW showed the start menu instead of the loaded pr
 ### `appHost.ts` — host glue
 
 [`src/appHost.ts`](../packages/retroplug/src/appHost.ts) holds the wiring every host
-reuses: `buildAppRegistry()` assembles the control-plane role registry (core roles + the feature roles
-that have protocol nodes + ROM providers, see doc 04).
+reuses: `buildAppRegistry()` assembles the control-plane role registry (core roles + the feature roles: the five
+with protocol nodes, and the asset and marker roles `lsdj-assets`, `risa`, `risa-assets`, `bliptoaster` and
+`bliptoaster-assets` + ROM providers, see doc 04).
 
 ### The `__rp_*` UI↔native direct-hook pattern
 

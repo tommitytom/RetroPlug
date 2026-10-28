@@ -225,8 +225,12 @@ default"; "refactor(nodes): the controller session builds no input object per bl
 notes say why"; "test(nodes): inject the lsdj throw through the block, port the kernel's arm and 48 kHz stop cases, pin
 the collision rule's round trip"; "test(bundle): the no-zod test uses the runner's node and bounds the bundle's size";
 "test(nodes): the poisoned message carries the flags a Message does, so the suite typechecks"; "test(engine-graph): the
-controller floor needs Programmer mode, and the rig's order and drops are held"; and the comment and doc pass that
-followed them.
+controller floor needs Programmer mode, and the rig's order and drops are held"; "docs: the B3b follow-up round - the design's section 9 and the specs say what the stores, the goldens and the host MIDI out now do";
+"docs(comments): comments that described the deleted kernel, roles and tests say what exists"; "docs: the follow-up C review - the
+bench window's real mechanism, the midi-out merge the clamp will need, and wrapped lines"; "fix(settings): an array default its
+item schema refuses throws when built"; "test: the review's strengthenings of the node, store and goldens tests, and their
+comments"; and the docs pass that lists itself, "docs: the last review's false statements, stale comments, wrapped lines and
+the limitation it found".
 
 ## 8. Left for later
 
@@ -277,11 +281,11 @@ followed them.
   inputs that sends nothing, and `buildGraph` still places it, so a document has its host outputs whatever its roles;
   no golden document changed. The prefix was the one way `rp.host.midi-out` dropped a message (one too short to carry
   it), so the engine's count of those went with it: `Engine::droppedMessages` is now the plan's queues alone. The host
-  service kept its interface id, `rp.engine.host-io/1`, until the follow-up round: `EngineHostIo` then lost its drop
-  counter under that id, so it is `rp.engine.host-io/2`.
+  service kept its interface id, `rp.engine.host-io/1`, until the follow-up round: `EngineHostIo` had lost its drop
+  counter at the deletion, and the follow-up round only moved the id to `rp.engine.host-io/2` to say so.
 - **The host's MIDI out is frame-sorted across the node's inputs.** As first built the node handed its inputs' messages
   over input by input, so a later input's message at frame 3 followed an earlier one's at frame 10, and
-  `Engine::midiOut` came out unsorted, which the plugin passes to `writeMidiEvent` as it is and CLAP and LV2 require
+  `Engine::midiOut` would have come out unsorted had a producer sent past frame 0, which the plugin passes to `writeMidiEvent` as it is and CLAP and LV2 require
   sorted. The kernel's one queue clamped each message to the latest frame already queued. The node keeps the last
   frame handed out in the block and sends `max(frame, last)`: bit-identical while every frame is 0, and
   `Engine::midiOut` is documented as frame-sorted. A settings change that keeps the input count keeps the node
@@ -336,9 +340,9 @@ followed them.
   the assertion would need another trigger.
 - **The settings schema, as built.** Each `s` builder parses and writes its JSON Schema as its zod twin does, held by
   `test/graph/settings-schema.test.ts` to zod's own output over 34 values, refusals in zod's own English words, and an
-  object drops a key it does not name, as `z.object` does. An array's item needs a default of its own, though parse
-  never uses it as a value, since zod writes an item's `.default` into the schema (an array's own default is read
-  through its item schema, as zod's is); an enum naming a value twice, and an int with a `NaN` or inverted bound, throw
+  object drops a key it does not name, as `z.object` does. An array's item needs a default of its own: it is written to
+  the JSON Schema and taken for an undefined item, as in zod. The array's own default is normalized through its item
+  schema when the schema is built, where zod returns a `.default` as given (a deliberate departure); an enum naming a value twice, and an int with a `NaN` or inverted bound, throw
   when the schema is built, where zod collapses the first and has no second; inherited `Object.prototype` names read
   as missing; and `s.json` takes its type as an explicit
   parameter, since a default such as `{}` says nothing about it. `defineNode` takes any schema with `safeParse` and
@@ -358,7 +362,7 @@ followed them.
   graph from the rig's commit to the flip, and alone since. One case reads a per-node difference, the throw (section
   5): in the block where the second system's LSDj node throws, the third system's mGB node still forwards its MIDI,
   which the case checks, and that block's digest takes the third system as the kernel left it, with nothing. That
-  check is true from commit 78861a0b ("the rig's feeds lead its document ...") on. Until then the rig (and the old
+  check is true from the commit whose subject begins "the rig's feeds lead its document" on. Until then the rig (and the old
   hand-written one) ran that LSDj node after the third system's mGB, because the `serialOut` feeds stood where the
   systems stood, so the check could not tell a throw that stops only its node from one that stops every node planned
   after it; the feeds now lead the document, and a case holds every structure's executed script-node order to
@@ -385,8 +389,8 @@ followed them.
   - `onSettings` runs only on a real change; the kernel re-applied the song table on every push, which nothing could
     observe.
   - A pipeline's configs must be what the store parsed: a node's settings fill their defaults (an `lsdj-sync` with no
-    mode is `midiSync`), where the kernel's roles read a missing field as nothing. The stores hand parsed configs: an edit parses its role's, and
-    a load does too (`adopt` parses each stored role that has a protocol node by its registered `RoleType` schema,
+    mode is `midiSync`), where the kernel's roles read a missing field as nothing. The stores hand parsed configs: an edit parses its role's,
+    and a load does too (`adopt` parses each stored role that has a protocol node by its registered `RoleType` schema,
     before anything else reads it, so the parsed config is the system's everywhere: the node's settings, the serial-out
     capture, the menus and what a save writes). A stored config a schema refuses outright falls back to what this
     ROM's providers suggest for the role, and to the schema's defaults only when they suggest none (a Game Gear
@@ -440,5 +444,5 @@ followed them.
   `dsp-bench` (`tools/run-profile.sh trace`) has `rp.midi.route` at 1.37 us a block and `rp.mgb.midi` at 0.83
   (each the whole `process` span of its node, so the `js-call` and `marshal` spans nest inside those figures); the
   means over every `js-call` and `marshal` span in the trace, the two nodes' together, are about 0.95 and 0.11 us,
-  against 1428 us of `apu-render` and 2.0 of `state-publish`; `nes-bench`'s has `rp.midi.route` at 1.09 us and `rp.n8.midi-to-fifo` at 0.53, against 2151 of
-  `apu-render` and 3.7 of `state-publish` ([spec/08](../spec/08-profiling.md)).
+  against 1428 us of `apu-render` and 2.0 of `state-publish`; `nes-bench`'s has `rp.midi.route` at 1.09 us and
+  `rp.n8.midi-to-fifo` at 0.53, against 2151 of `apu-render` and 3.7 of `state-publish` ([spec/08](../spec/08-profiling.md)).

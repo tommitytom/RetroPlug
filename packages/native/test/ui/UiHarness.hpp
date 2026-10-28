@@ -6,7 +6,8 @@
 // backend service graph: it mounts the host + emulator facets as `__rpcSend` on
 // globalThis[Symbol.for("plugin")] — the exact namespace realBackend.ts targets — then evals the
 // UI bundle and mounts React. This is the plugin's control-plane bring-up
-// (PluginDSP::bootControlPlane) minus the audio thread: blocks, and the script nodes in them, run only when a test calls advance(), on the test's thread, plus a display.
+// (PluginDSP::bootControlPlane) minus the audio thread, plus a display: blocks, and the script nodes in them, run only
+// when a test calls advance(), on the test's thread.
 //
 // The bind is synchronous (the reply is materialized inline in __rpcSend) to match realBackend.ts's
 // synchronous JSON-RPC client — no async "rpc-message"/pumpAsync path.

@@ -125,9 +125,9 @@ ROM in memory the same way.
 [SystemsStore](../packages/retroplug/src/systemsStore.ts) drives the registry:
 `defaultRoles(...)` reads a `ROLE_HEADER_LEN = 0x150` header prefix and calls
 `registry.defaultRoles(...)`
-([systemsStore.ts:749](../packages/retroplug/src/systemsStore.ts#L749)); `applyConstructHooks`
+([systemsStore.ts:769](../packages/retroplug/src/systemsStore.ts#L769)); `applyConstructHooks`
 folds each attached role's `onConstruct` over the spec before the build call
-([systemsStore.ts:853](../packages/retroplug/src/systemsStore.ts#L853)). See
+([systemsStore.ts:951](../packages/retroplug/src/systemsStore.ts#L951)). See
 [03-ts-layer.md](03-ts-layer.md) for the surrounding store idioms.
 
 ## The built-in roles
@@ -190,7 +190,7 @@ Two channels cross the RPC boundary to a running emulator, and no feature-role c
 | a **system-role** config edit | `applyRoleConfig(id, kind, config)` | the live core (`sameboy` + `mesen`), minus the construct-time fields noted above |
 | a **feature-role** config edit | *(none to the core)* | only its protocol node, as its settings in the next document the project publishes |
 
-[`SystemsStore.setRoleConfig`](../packages/retroplug/src/systemsStore.ts#L525) merges the
+[`SystemsStore.setRoleConfig`](../packages/retroplug/src/systemsStore.ts#L526) merges the
 partial, re-parses through the role schema, and calls `backend.applyRoleConfig` **only when the role's
 `category === "system"`**. On the native side
 [`EngineRpcService::applyRoleConfig`](../packages/native/src/host/rpc/EngineRpcService.cpp#L165)

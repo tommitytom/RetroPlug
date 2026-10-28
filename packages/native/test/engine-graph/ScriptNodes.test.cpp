@@ -8,8 +8,8 @@
 // allocations, and a running audio thread under all of it. The embedded production bundle and an Engine built
 // around a toy bundle close it. A RETROPLUG_PROFILE build (build-prof/, which tools/run-profile.sh configures) adds the
 // trace window's cases, [profile]: a script node's process span labelled by its type and closed every way a call ends,
-// a label per type in load order, the profile calls refused while an audio thread owns the runtime, and the types past
-// the label table's bound.
+// a label per type in load order, the profile calls refused while an audio thread owns the runtime, the types past
+// the label table's bound, and the embedded bundle's types labelled in the order the docs quote.
 //
 // Run via `pnpm test:plugin engine-graph`; the profile cases, build-prof/bin/retroplug-engine-graph-test "[profile]".
 

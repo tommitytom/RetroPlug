@@ -274,7 +274,7 @@ staging). Then, in order:
    3. **The cart mirror and the host outputs.** `rp.n8.cart-mirror`, wired from the first NES in slot order,
       hands what that system was sent to `coreByteSink_` for a physical N8 (a message staged straight
       at it, `StageSystemMidi`, reaches the sink too, at drain); `rp.host.midi-out` fills
-      `midiOut_`, frame-sorted,, which the plugin drains to the DAW after the block (the SDL standalone to its MIDI out
+      `midiOut_`, frame-sorted, which the plugin drains to the DAW after the block (the SDL standalone to its MIDI out
       port); `rp.host.controller-out` appends
       to `controllerOut_`, which the SDL standalone drains to the Launchpad link.
    4. **The mixing nodes**, `rp.core.split` and `rp.core.add`: the routing, as wiring (below).

@@ -487,7 +487,7 @@ export type TimelineEvent =
 /** A fluent, TS-authored timeline of timed emulator events. Every method records an event at absolute
  *  `ms` and returns `this`. */
 export declare class Timeline {
-  /** Stage raw MIDI bytes — global host MIDI, fanned to systems by the routing role. Any length: one
+  /** Stage raw MIDI bytes - global host MIDI, fanned to systems by the routing node (rp.midi.route). Any length: one
    *  channel message, a whole SysEx, or several messages as one run (a run longer than one message is
    *  broadcast unchanged and reaches the N8 FIFO byte-for-byte, in order). Throws at authoring time on an
    *  empty array or a non-byte value, so a bad message can never be dropped silently. */

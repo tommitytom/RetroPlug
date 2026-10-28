@@ -41,7 +41,7 @@ export class Timeline {
     return this;
   }
 
-  /** Stage raw MIDI bytes — global host MIDI, fanned to systems by the routing role. Any length: one
+  /** Stage raw MIDI bytes - global host MIDI, fanned to systems by the routing node (rp.midi.route). Any length: one
    *  channel message, a whole SysEx, or several messages as one run (the routing broadcasts a run longer
    *  than one message unchanged, and the NES N8 FIFO takes it byte-for-byte, in order). Throws HERE, at
    *  authoring time, on an empty array or a non-byte value, so a bad message can never be dropped silently
