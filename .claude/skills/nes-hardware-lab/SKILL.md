@@ -51,6 +51,12 @@ RPBIN=retroplug-cli/bin    # BlipToaster repo
 
 - Both binaries auto-detect the N8 (VID:PID `38df:0017`), so `--serial` is usually optional; pass
   `--serial /dev/ttyACM0` (or your N8 node) if auto-detect fails.
+- **"no Everdrive N8 Pro found" while `lsusb` lists `38df:0017`** means the container has no device
+  node, not that the N8 is gone. RetroPlug's container does not pass the devices with `--device`; its
+  postStart `hw-usb-perms.sh` mknods whatever the host has, ONCE. So a power-cycle that re-enumerates
+  the N8 after the container started leaves no `/dev/ttyACM*` (the capture card and the L6 can go the
+  same way). Re-run `bash .devcontainer/hw-usb-perms.sh` from the RetroPlug repo - no rebuild - and
+  `n8-load --info` answers again.
 - On boot the N8 sits at its **file-browser menu**; no game auto-runs. `n8-load` boots one.
 - **The N8 serial is exclusive.** Both dev containers pass `/dev/ttyACM0` through, but only one
   process can hold it. `Edio: serial read timeout` can therefore also mean "the other container is
