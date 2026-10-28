@@ -69,8 +69,8 @@ struct DspTraceSpan {
 // The span labels. A script node's process call is labelled by its type, so a profile shows each type's cost, as the
 // DSP kernel's per-role spans did inside its one node until B3b made each role a node of its own: the bundle's types
 // take DSP_SPAN_TYPE_BASE up, in the order it registered them, each named by its id. The label is the type's, not the
-// node's: the kernel's role spans were per role kind too, so two systems' nodes of one type still show as two spans a
-// block (in plan order). A type's label is fixed at the load, where one per node id would come and go with every
+// node's, as the kernel's role spans were per role kind; two systems' nodes of one type still show as two spans a
+// block (each its own process call, in plan order). A type's label is fixed at the load, where one per node id would come and go with every
 // document, and a node's create is never told its id.
 enum DspSpanLabel : std::uint32_t {
     DSP_SPAN_SCRIPT_NODE = 0,   // ScriptHost: the process call of a script node whose type has no label of its own (a

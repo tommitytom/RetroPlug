@@ -381,7 +381,8 @@ export interface Backend {
 /** Filesystem / config / codec / sav authoring + the OS file dialog — the facet every host binds. */
 export type HostBackend = Pick<
   Backend,
-  | "readFile" | "writeFile" | "writeFileAtomic" | "appendFile" | "writeFileAt" | "fileExists" | "rename" | "listDir" | "deleteFile"
+  | "readFile" | "writeFile" | "writeFileAtomic" | "appendFile" | "writeFileAt" | "fileExists" | "rename" | "listDir"
+  | "deleteFile"
   | "drainChangedPaths" | "setWatchedRoms" | "canonicalize" | "readFilePrefix" | "configDir" | "version"
   | "zip" | "unzip" | "pngEncode" | "pngDecode" | "savFromJson" | "openFileBrowser"
 >;
@@ -398,8 +399,9 @@ export type DebugBackend = Pick<
   Backend,
   | "getApuState" | "getExpansionAudioState" | "getPpuState" | "readCpu" | "writeCpu" | "readMemory" | "getCpuRegisters"
   | "getCoreTransportStats"
-  | "stepInstruction" | "drainEvents" | "drainCoreBytes" | "loadLabels" | "symbolAddress" | "setCpuRegister" | "runUntilPc"
-  | "setBreakpoints" | "runUntilBreak" | "drainBreakHits" | "setTrace" | "readTrace" | "stepInto" | "stepOver" | "stepOut"
+  | "stepInstruction" | "drainEvents" | "drainCoreBytes" | "loadLabels" | "symbolAddress" | "setCpuRegister"
+  | "runUntilPc" | "setBreakpoints" | "runUntilBreak" | "drainBreakHits" | "setTrace" | "readTrace" | "stepInto"
+  | "stepOver" | "stepOut"
   | "beginProfile" | "readProfile" | "disassemble" | "getCallStack"
 >;
 

@@ -247,9 +247,15 @@ past `renderAudio`'s 1024-frame block).
   a mulberry32 generator for Profiles A/B/C, the block-stepped `stageMidiIn` + `renderAudio(BLOCK_MS)`
   loop (warmup window discarded), one JSON metrics line. Env knobs `RP_BENCH_{PROFILE,CORES,BLOCKS,WARMUP,SEED}`.
   It asserts the measured window allocated nothing, and proves the window live with a second one after it: adding
-  a system places a protocol node, whose JS state is created on the block thread at its first block, so that
-  block's count must be above 0 (the runtime's peak heap cannot be the proof: it is never reset, and the bundle's
-  load puts ~300 KB in it before the window opens). Skips (a counted `skip`) under a non-profile host so the normal sweep stays fast and green;
+  a system places a protocol node. In the `renderAudio` pull path `GraphHost::publish` adopts the plan at once, so
+  the node's JS state is created inside `graph.add` / `setPipeline` / `loadRom`, before any block (counted in
+  `allocCalls`, not in `maxBlockAllocCalls`); what lands inside the block is `fillMessages` making each fresh port's
+  reused `Message[]` and its pool the first time the node calls `messages()` (the new `rp.mgb.midi` /
+  `rp.n8.midi-to-fifo`, and `rp.midi.route`, whose reshape freed its port arrays when its outputs grew). That count
+  must be above 0; pre-making those arrays at create time would move the allocation out of the block, and the
+  assertion would need another trigger. (The runtime's peak heap cannot be the proof: it is never reset, and the
+  bundle's load puts ~300 KB in it before the window opens.) Skips (a counted `skip`) under a non-profile host so the
+  normal sweep stays fast and green;
   [test-native/nes-bench.test.ts](../packages/retroplug/test-native/nes-bench.test.ts) is its NES twin, on
   the Mesen core and the `nes-n8-midi` role's node, and does the same.
 - **Build knob + scripts** — `RETROPLUG_PROFILE` ([CMakeLists.txt](../CMakeLists.txt), mirrors

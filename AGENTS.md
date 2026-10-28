@@ -315,7 +315,8 @@ them (the `blocks-tiny-*` groups B3a recorded first), each hashed per lane per s
 and work RAM, against `test-native/parity/baseline/*.json`. Every other audio test asserts levels, which a
 refactor can move without failing one; this one fails on a single changed bit, so treat a parity failure as a
 real change to the audio, never as noise. Exact audio is compared only on `linux-x64-gnu13` (this devcontainer
-and CI's linux-x64 job); elsewhere a case must agree with itself and its integer state is still compared (CI's linux-x64 step sets `RP_PARITY_REQUIRE_TARGET=1`, so there a foreign host fails instead). An
+and CI's linux-x64 job); elsewhere a case must agree with itself and its integer state is still compared (CI's
+linux-x64 step sets `RP_PARITY_REQUIRE_TARGET=1`, so there a foreign host fails instead). An
 INTENTIONAL audio change re-records the groups it moves in the same commit (`RP_PARITY_UPDATE=1 pnpm
 test:native parity/<group>`, one group by its full name; a prefix covering several takes the DASH form,
 `parity-blocks-tiny` for the five `blocks-tiny-*` groups, since `parity/blocks-tiny` matches nothing), and the
@@ -324,7 +325,10 @@ order-dependent cases and an ignored stimulus. Three traps, all met building it:
 fixed state (`RETROPLUG_DETERMINISTIC=1`, which the runner sets for `parity/` only; the SMS VDP's random start
 scanline was the last source); mGB ignores MIDI for its first ~1.5 s, so a case sends nothing before
 `BOOT_MS`; and a second instance of one ROM path gets a fresh `-2.sav` battery slot, so two systems that each
-need a battery each need their own copy (`rig.rom(src, prefix)`). Three engine defects are pinned on purpose (design section 2.5 of [docs/modular-graph-phase-b0-design.md](docs/modular-graph-phase-b0-design.md)); fixing one is its own change with a re-record, as the LSDj master-sync fix was ([docs/lsdj-master-sync-fix-design.md](docs/lsdj-master-sync-fix-design.md)). The fixture groups need
+need a battery each need their own copy (`rig.rom(src, prefix)`). Three engine defects are pinned on purpose (design
+section 2.5 of [docs/modular-graph-phase-b0-design.md](docs/modular-graph-phase-b0-design.md)); fixing one is its
+own change with a re-record, as the LSDj master-sync fix was
+([docs/lsdj-master-sync-fix-design.md](docs/lsdj-master-sync-fix-design.md)). The fixture groups need
 `RETROPLUG_RESOURCES_DIR` pointed at the sibling resources tree, and CI runs only the 152 fixture-free cases
 (every LSDj case, its MIDI-out and link-cable ones among them, and every controller-in, risa and GBA case is
 fixture-only), so a Phase B step is accepted only on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`.

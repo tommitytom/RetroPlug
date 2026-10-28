@@ -197,8 +197,12 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
   // A warm window of the protocol nodes allocates nothing, and the headline is held: a count of 0 here means the
   // window counted and found none only if the window is live, which the short window after the trace proves below (the
   // runtime's peak heap cannot: it is never reset, and the bundle's load alone puts ~300 KB in it before this window).
-  expect(s.allocCalls, "allocations in the measured window").toBe(0);
-  expect(s.maxBlockAllocCalls, "allocations in the worst block").toBe(0);
+  // The zero holds at the default warmup only: a shorter one (RP_BENCH_WARMUP) leaves pool growth in the window, so
+  // then the figure is printed and not asserted.
+  if (warmup >= 200) {
+    expect(s.allocCalls, "allocations in the measured window").toBe(0);
+    expect(s.maxBlockAllocCalls, "allocations in the worst block").toBe(0);
+  }
 
   // --- optional per-role runtime trace (spec/08-profiling.md Tier B) --------------------------------
   // A separate SHORT armed window AFTER the alloc measurement (so those numbers stay pristine). Records nested
@@ -233,9 +237,13 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
     console.log("DSP-TRACE " + JSON.stringify({ traceEvents, displayTimeUnit: "ms" }));
   }
 
-  // The window is live: a block known to allocate on the audio runtime shows up in a fresh one. A newly placed
-  // protocol node creates its JS state on the block thread at its first block, so adding a system and rendering one
-  // block must count (the zero above is only worth printing if this can fail).
+  // The window is live: a block known to allocate on the audio runtime shows up in a fresh one. Adding a system and
+  // its mgb role places a protocol node; GraphHost::publish adopts the plan at once in this pull path, so the node's
+  // createJs runs inside graph.add / setPipeline, before any block (counted in allocCalls, not in maxBlockAllocCalls).
+  // What lands inside the block is fillMessages making each fresh port's reused Message[] and its pool the first time
+  // a node calls messages() (ScriptHost.cpp): for the new rp.mgb.midi, and for rp.midi.route, whose reshape freed its
+  // port arrays when its outputs grew. Pre-making those arrays at create time would move that allocation out of the
+  // block, and this assertion would then need another trigger. The zero above is only worth printing if this can fail.
   audio.dspResetAllocStats(true);
   const extra = cores + 1;
   expect(graph.add(MGB, extra)).toBeTruthy();

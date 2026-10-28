@@ -1248,10 +1248,9 @@ rp.register([rp.defineNode({
           attempt(() => Object.setPrototypeOf(kept, { call: spy }));
           intact = intact && owner[name] === kept && Object.isFrozen(kept);
         }
-        const proto = Object.getPrototypeOf(b);
-        attempt(() => Object.setPrototypeOf(proto, { messages: spy }));
-        attempt(() => Object.defineProperty(proto, "extra", { value: spy }));
-        intact = intact && Object.isFrozen(proto) && Object.getPrototypeOf(proto) === Object.prototype && !("extra" in proto);
+        attempt(() => Object.setPrototypeOf(owner, { messages: spy }));
+        attempt(() => Object.defineProperty(owner, "extra", { value: spy }));
+        intact = intact && Object.isFrozen(owner) && Object.getPrototypeOf(owner) === Object.prototype && !("extra" in owner);
         __probe(intact ? "intact" : "vandalized");
       },
     };
@@ -2109,10 +2108,10 @@ TEST_CASE("a script node's process span is labelled by its type, holds marshal a
         // "Then": the transport's marshal (one outside every js-call) ends before the js-call of its own process span
         // starts. A process span that made no call (the frozen node's refused blocks) has no call to precede.
         for (const auto& p : process) {
-            for (const auto& c2 : call) {
-                if (!(p.t0 <= c2.t0 && c2.t1 <= p.t1)) continue;
+            for (const auto& callSpan : call) {
+                if (!(p.t0 <= callSpan.t0 && callSpan.t1 <= p.t1)) continue;
                 for (const auto& m : marshal)
-                    if (p.t0 <= m.t0 && m.t1 <= p.t1 && !nested({m}, {c2})) CHECK(m.t1 <= c2.t0);
+                    if (p.t0 <= m.t0 && m.t1 <= p.t1 && !nested({m}, {callSpan})) CHECK(m.t1 <= callSpan.t0);
             }
         }
         rig.scripts.traceReset(false);

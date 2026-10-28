@@ -212,7 +212,7 @@ constexpr std::size_t kSystemCount = std::size(kSystems);
 constexpr std::size_t kMgb = 0;
 constexpr std::size_t kLsdj = 1;
 constexpr std::size_t kNes = 2;
-bool isLsdj(const BenchSystem& s) { return &s == &kSystems[kLsdj]; }
+bool isLsdj(const BenchSystem& s) { return s.id == kSystems[kLsdj].id; }
 
 // The structures the table times, by the LSDj's mode (its role's config as the store parses it, its node's settings)
 // and what its Game Boy's serial port clocks out: the idle line, or a framed MI.OUT stream (kMiOut). The other roles'
@@ -478,8 +478,8 @@ ProtocolRows timeProtocolNodes(const Structure& structure, std::uint32_t frames)
     }
     CHECK(bench.nodeCounts(kMgb).serialIn > 0);  // mGB: the host MIDI, in bytes
     CHECK(bench.nodeCounts(kNes).midi > 0);      // the NES: the host MIDI
-    CHECK(rows.delivered.bytes == 0);         // nothing here sends core bytes
-    CHECK(rows.delivered.buttons == 0);       // or presses a button
+    CHECK(rows.delivered.bytes == 0);            // nothing here sends core bytes
+    CHECK(rows.delivered.buttons == 0);          // or presses a button
     if (structure.miOut) {
         // The LSDj sends its core nothing, and its node decodes every byte its port clocked out up to the block before
         // the last (the feedback wire's), each 8 into 5 host MIDI messages.

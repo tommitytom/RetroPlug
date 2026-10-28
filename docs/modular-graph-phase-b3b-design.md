@@ -233,8 +233,10 @@ followed them.
 - The capture mode as a Game Boy node setting, which makes a mode switch atomic (Phase C).
 - Master-sync clocks at their byte's frame (its own change after B3b). It would be the first producer of host MIDI
   past frame 0. `rp.host.midi-out` already keeps the host's list frame-sorted across its inputs (each message goes out
-  at the later of its frame and the last frame handed out in the block, as the kernel's one queue clamped), so that
-  change needs no merge.
+  at the later of its frame and the last frame handed out in the block, as the kernel's one queue clamped), so a host-side
+  sort is no longer the alternative. But the clamp raises a later input's earlier frames to an earlier input's (a
+  second LSDj in master sync would have its clocks bunched behind the first's), so that change has to turn the clamp
+  into a merge by frame, or its re-record would bake the bunching into the baseline.
 - One QuickJS context per script node (before user-written nodes).
 - The MI.OUT and master-sync decoders' emitted arrays: about 3 JS allocations for every host MIDI message they
   decode, the one per-block JS allocation left on a production path (section 9). It is the decoders' own change, in
@@ -326,7 +328,12 @@ followed them.
   the profile host from the deletion until the bench commit (nothing in the default suites runs it), which checked the
   audio runtime's peak heap instead. That proves nothing about the window (the peak is never reset and the bundle's
   load fills it), so the benches now assert the window's 0 and prove it live with a second window around a block that
-  creates a node's JS state, which must count.
+  allocates for a newly placed node, which must count. The allocation in the block is not the node's `createJs`
+  (`GraphHost::publish` adopts the plan at once in the `renderAudio` pull path, so that runs inside `graph.add` /
+  `setPipeline` / `loadRom`) but `fillMessages` making each fresh port's reused `Message[]` and pool the first time the
+  node calls `messages()`; for the new `rp.mgb.midi` / `rp.n8.midi-to-fifo`, and for `rp.midi.route`, whose reshape
+  freed its port arrays when its outputs grew. Making those arrays at create time would move it out of the block, and
+  the assertion would need another trigger.
 - **The settings schema, as built.** Each `s` builder parses and writes its JSON Schema as its zod twin does, held by
   `test/graph/settings-schema.test.ts` to zod's own output over 34 values, refusals in zod's own English words, and an
   object drops a key it does not name, as `z.object` does. An array's item needs a default of its own, though parse

@@ -132,7 +132,9 @@ input's system from its settings, and deleted the kernel. What is left, in order
   their spacing, one block late. Each LSDj node has its own `midiOut` port now, so its queue no longer orders
   another's; but this would be the first producer of host MIDI past frame 0. `rp.host.midi-out` already keeps the
   host's list frame-sorted across its inputs (each message goes out at the later of its frame and the last
-  one handed out in the block), so no merge or sort is needed.
+  one handed out in the block), so a host-side sort is no longer the alternative. But the clamp raises a later input's earlier frames to an
+  earlier input's, so a second LSDj in master sync would have its clocks bunched behind the first's: that change
+  has to turn the clamp into a merge by frame, or its re-record would bake the bunching into the baseline.
 - **The capture mode as a Game Boy node setting** (Phase C, with the other live knobs): carried in the
   published document rather than through `ConfigField::SerialOutCapture` plus a publish, it would make a mode
   switch atomic and retire the master-sync design's first accepted limit (its section 10).

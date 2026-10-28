@@ -173,11 +173,14 @@ test("nes-bench: Mesen core per-block cost + JS allocation under a NES + MIDI wo
   console.log("DSP-BENCH " + JSON.stringify(metrics));
 
   expect(s.blockCount > 0).toBeTruthy();
-  // A warm window of the protocol nodes allocates nothing, which the second window after the trace proves it could
-  // have counted otherwise (the runtime's peak heap cannot say so: it is never reset, and the bundle's load alone puts
-  // ~300 KB in it before this window opens).
-  expect(s.allocCalls, "allocations in the measured window").toBe(0);
-  expect(s.maxBlockAllocCalls, "allocations in the worst block").toBe(0);
+  // A warm window of the protocol nodes allocates nothing. A zero means something only if the window can count, which
+  // the second window after the trace shows (the runtime's peak heap cannot: it is never reset, and the bundle's load
+  // alone puts ~300 KB in it before this window opens). The zero holds at the default warmup only: a shorter one
+  // leaves pool growth in the window, so then the figure is printed and not asserted.
+  if (warmup >= 200) {
+    expect(s.allocCalls, "allocations in the measured window").toBe(0);
+    expect(s.maxBlockAllocCalls, "allocations in the worst block").toBe(0);
+  }
 
   // --- optional per-stage runtime trace (spec/08 Tier B): each script node's span (holding marshal, js-call)
   // + apu-render (the Mesen core step). One Chrome trace-event JSON line the wrapper captures → build-prof/trace.json.
@@ -207,8 +210,13 @@ test("nes-bench: Mesen core per-block cost + JS allocation under a NES + MIDI wo
     console.log("DSP-TRACE " + JSON.stringify({ traceEvents, displayTimeUnit: "ms" }));
   }
 
-  // The window is live: a second NES places a protocol node, whose JS state is created on the block thread at its
-  // first block, so one block after loading it must count (the zero above is only worth printing if this can fail).
+  // The window is live: a second NES places a protocol node; GraphHost::publish adopts the plan at once in this pull
+  // path, so the node's createJs runs inside loadRom, before any block (counted in allocCalls, not in
+  // maxBlockAllocCalls). What lands inside the block is fillMessages making each fresh port's reused Message[] and its
+  // pool the first time a node calls messages() (ScriptHost.cpp): for the new rp.n8.midi-to-fifo, and for rp.midi.route,
+  // whose reshape freed its port arrays when its outputs grew. Pre-making those arrays at create time would move that
+  // allocation out of the block, and this assertion would then need another trigger. The zero above is only worth
+  // printing if this can fail.
   audio.dspResetAllocStats(true);
   expect(typeof (project.systems.loadRom(rom) as { system: number }).system).toBe("number");
   audio.renderAudio(BLOCK_MS);

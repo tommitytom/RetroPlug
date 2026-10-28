@@ -59,8 +59,9 @@ rp::graph::PortDesc eventsIn(std::string id) {
 // holding one producer's MIDI as it is, which goes out as that entry's system: input by input, each in queue order,
 // never merged by frame. A message whose frame is earlier than one already handed out in the block goes out at that
 // frame instead, as the kernel's one queue clamped it, so Engine::midiOut stays frame-sorted whatever order a document
-// wires its producers in. Two entries may name one system (a controller sending to a real Game Boy under the id of a system whose own MI.OUT also goes
-// out). No entries, no inputs: a document whose roles send no host MIDI places it all the same, and it sends nothing.
+// wires its producers in. Two entries may name one system (a controller sending to a real Game Boy under the id of a
+// system whose own MI.OUT also goes out). No entries, no inputs: a document whose roles send no host MIDI places it
+// all the same, and it sends nothing.
 // The inputs are appended here, none reflected, since their count is the settings'.
 struct MidiOut : HostIoNode {
     static constexpr const char* id = "rp.host.midi-out";

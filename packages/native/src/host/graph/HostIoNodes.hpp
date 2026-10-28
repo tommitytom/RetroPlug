@@ -14,7 +14,8 @@ namespace rp::host {
 //   rp.host.midi-in         out midi: the host MIDI the engine staged, stable-sorted by frame
 //   rp.host.midi-out        {"systems": [<id>, ...]}: inputs in1 to inN, one per entry, whose messages land in
 //                           Engine::midiOut tagged with that entry's system, input by input, each in queue order and
-//                           none earlier in frame than one before it (docs/modular-graph-phase-b3b-design.md section 5); two entries may name one system.
+//                           none earlier in frame than one before it
+//                           (docs/modular-graph-phase-b3b-design.md section 5); two entries may name one system.
 //                           With no systems (the default) it has no inputs and sends nothing
 //   rp.host.controller-in   out midi: the staged control-surface MIDI, at frame 0; out connected: 1 while a
 //                           control surface is attached, from frame 0 of the block
