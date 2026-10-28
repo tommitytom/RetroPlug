@@ -289,3 +289,22 @@ test("every protocol node type, both controller targets and every routing mode a
   expect([...targets].sort()).toEqual(["midiOut", "system"]);
   expect([...modes].sort()).toEqual([...MIDI_ROUTING_VALUES].sort());
 });
+
+test("every wire that is not a feedback wire runs forward in its document's node order", () => {
+  // The engine plans nodes in document order, breaking ties by it, and a feedback wire orders nothing. The rig of
+  // packages/native/test/engine-graph/ProtocolNodes.test.cpp leaves out the cart mirror and the audio nodes and runs
+  // the script nodes in that order, which holds only while no wire runs backward into one of them: a future wire from
+  // the mirror or an audio node into a script node would reorder production silently while the rig stayed green.
+  const backward: string[] = [];
+  for (let d = 0; d < goldens.documents.length; d++) {
+    const doc = goldens.documents[d] as { nodes: { id: string }[]; wires: { from: string; to: string; feedback?: boolean }[] };
+    const index = (endpoint: string): number => doc.nodes.findIndex((n) => n.id === endpoint.split(".")[0]);
+    for (const w of doc.wires) {
+      if (w.feedback === true) continue;
+      const from = index(w.from);
+      const to = index(w.to);
+      if (from < 0 || to < 0 || from >= to) backward.push(`document ${d}: ${w.from} -> ${w.to} (${from} -> ${to})`);
+    }
+  }
+  expect(backward).toEqual([]);
+});

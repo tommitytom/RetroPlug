@@ -239,7 +239,13 @@ Structure standIns(const GoldenCase& c, const Document& doc) {
     for (const DocWire& w : doc.wires) {
         const auto [fromNode, fromPort] = splitEndpoint(w.from);
         const auto [toNode, toPort] = splitEndpoint(w.to);
-        if (leftOut.count(fromNode) || leftOut.count(toNode)) continue;
+        if (leftOut.count(fromNode) || leftOut.count(toNode)) {
+            // A node the rig leaves out may feed only another it leaves out or a system, whose stand-in takes no wire
+            // from it: one feeding a script node it plans would drop an input from the case without a word.
+            INFO(w.from << " -> " << w.to);
+            REQUIRE((!leftOut.count(fromNode) || leftOut.count(toNode) || systemOf.count(toNode) == 1));
+            continue;
+        }
         const auto fromSystem = systemOf.find(fromNode);
         const auto toSystem = systemOf.find(toNode);
         if (fromSystem != systemOf.end()) {

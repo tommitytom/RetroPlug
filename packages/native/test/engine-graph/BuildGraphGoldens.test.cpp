@@ -153,6 +153,12 @@ std::string requestKey(const GoldenCase& c) {
 // A press of the top-left pad, as a Launchpad in Programmer mode sends it (padIndex in src/launchpad/profile.ts).
 const std::vector<std::uint8_t> kPadPress{0x90, 81, 100};
 
+// The SysEx that puts a Launchpad Pro MK3 into Programmer mode (enterProgrammerMode(PRO_MK3), src/launchpad/protocol.ts:
+// the Novation header, the model's id 0x0E, the toggle command 0x0E, on). Only the session's connect() sends it, and
+// connect() runs only when a link reports a device, so seeing it out proves the connected wire reached the session
+// and that the session ran; the LED repaints the session sends every block, attached or not, prove neither.
+const std::vector<std::uint8_t> kEnterProgrammerMode{0xf0, 0x00, 0x20, 0x29, 0x02, 0x0e, 0x0e, 0x01, 0xf7};
+
 // Plan `c` on a fresh Engine and run it, quiet for one block or `driven` for kDrivenBlocks; what went wrong, or
 // nothing.
 std::optional<std::string> plan(const GoldenCase& c, const std::string& document, bool driven) {
@@ -204,15 +210,15 @@ std::optional<std::string> plan(const GoldenCase& c, const std::string& document
         e.setTransport(true);
         e.setControllerConnected(true);
     }
-    // A floor under the traffic, from what the engine hands its host: a controller takes its surface, so sends it
-    // something, and one driving a real Game Boy launches the press out of the host under the system it resolved ("0 is
+    // A floor under the traffic, from what the engine hands its host: a controller told a device is attached takes it
+    // into Programmer mode (its first message, sent by no other path), and one driving a real Game Boy launches the press out of the host under the system it resolved ("0 is
     // the first system"; with none, 4294967295).
     const std::optional<GoldenController>& controller = c.model.controller;
     const SystemId controllerSystem = !controller            ? 0
                                       : controller->systemId ? controller->systemId
                                       : c.slots.empty()      ? 0xffffffffu
                                                              : c.slots.front();
-    std::size_t surfaceOut = 0;
+    bool        enteredProgrammerMode = false;
     bool        launchedOut = false;
     for (int b = 0; b < (driven ? kDrivenBlocks : 1); ++b) {
         if (driven) {
@@ -224,7 +230,7 @@ std::optional<std::string> plan(const GoldenCase& c, const std::string& document
             if (b == 1) e.stageControllerMidi(kPadPress);
         }
         e.processBlock(kBlockFrames, outs.data(), outs.size());
-        surfaceOut += e.controllerOut().size();
+        for (const auto& m : e.controllerOut()) enteredProgrammerMode = enteredProgrammerMode || m == kEnterProgrammerMode;
         for (const EngineMidiOut& m : e.midiOut()) launchedOut = launchedOut || m.system == controllerSystem;
         const std::string when = driven ? " by block " + std::to_string(b + 1) : " in its first block";
         if (e.faultCount() != 0) return std::to_string(e.faultCount()) + " node(s) faulted" + when;
@@ -234,7 +240,7 @@ std::optional<std::string> plan(const GoldenCase& c, const std::string& document
         if (e.droppedMessages() != 0) return std::to_string(e.droppedMessages()) + " message(s) dropped" + when;
     }
     if (driven && controller) {
-        if (surfaceOut == 0) return std::string("its controller sent its surface nothing");
+        if (!enteredProgrammerMode) return std::string("its controller never put the attached device in Programmer mode");
         if (controller->target == "midiOut" && !launchedOut)
             return "its controller sent no host MIDI out under system " + std::to_string(controllerSystem);
     }
