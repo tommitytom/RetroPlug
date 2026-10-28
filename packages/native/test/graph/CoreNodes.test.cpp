@@ -1,6 +1,7 @@
 // The rp.core package: explicit combining and conversion, the constant source, delay, and buffer playback
 // and recording - plus the planner's resource-binding rules, which these are the first nodes to exercise.
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <array>
 #include <functional>
@@ -151,8 +152,10 @@ TEST_CASE("5.1 downmixes to stereo by ITU-style coefficients and to mono as an e
                                   {"from":"stereo.out","to":"out.out.1-2"},{"from":"mono.out","to":"out.out.3"}]})").ok);
     rig.run();
     constexpr float k = 0.70710678f;
-    CHECK(rig.outs[0][0] == 1.0f + k * 3.0f + k * 5.0f);  // L + C + Ls, LFE dropped
-    CHECK(rig.outs[1][0] == 2.0f + k * 3.0f + k * 6.0f);  // R + C + Rs
+    // Not ==: the node and this expression may round differently (aarch64 GCC fuses the multiply-adds).
+    using Catch::Matchers::WithinRel;
+    CHECK_THAT(rig.outs[0][0], WithinRel(1.0f + k * 3.0f + k * 5.0f, 1e-6f));  // L + C + Ls, LFE dropped
+    CHECK_THAT(rig.outs[1][0], WithinRel(2.0f + k * 3.0f + k * 6.0f, 1e-6f));  // R + C + Rs
     CHECK(rig.outs[2][0] == 21.0f);  // all six, unscaled
 }
 
