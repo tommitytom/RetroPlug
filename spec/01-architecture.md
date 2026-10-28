@@ -373,7 +373,7 @@ different stack throws a spurious overflow. The control side does the same.
 
 `Engine::processBlock` runs the plan: `rp.host.midi-in` and `rp.host.controller-in` take what the
 hosts staged; the routing node fans the host MIDI out to the systems, the controller session reads the
-surface, and each system's protocol nodes read their routed MIDI (and an LSDj's, its Game Boy's
+surface, and each system's protocol nodes read their routed MIDI (risa and smsggdj read only the transport; and an LSDj's, its Game Boy's
 `serialOut` of last block over a feedback wire) and send that system node its inputs; the system nodes
 apply those inputs and run their cores; `rp.n8.cart-mirror` hands a physical N8 what the first NES was
 sent, and `rp.host.midi-out` / `controller-out` hand the host the script nodes' MIDI and control-surface

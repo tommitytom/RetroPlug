@@ -130,9 +130,9 @@ input's system from its settings, and deleted the kernel. What is left, in order
 - **Master-sync clocks at their byte's frame**, its own change, with its own re-record: master sync sends each
   clock at frame 0 of the block after its byte, so in a large block its clocks bunch where they could keep
   their spacing, one block late. Each LSDj node has its own `midiOut` port now, so its queue no longer orders
-  another's; but this would be the first producer of host MIDI past frame 0, and `rp.host.midi-out` appends
-  input by input, so the host's list would need a merge by frame across its inputs, or the hosts (the plugin
-  writing to the DAW, the SDL standalone) a sort before they write it out.
+  another's; but this would be the first producer of host MIDI past frame 0. `rp.host.midi-out` already keeps the
+  host's list frame-sorted across its inputs (each message goes out at the later of its frame and the last
+  one handed out in the block), so no merge or sort is needed.
 - **The capture mode as a Game Boy node setting** (Phase C, with the other live knobs): carried in the
   published document rather than through `ConfigField::SerialOutCapture` plus a publish, it would make a mode
   switch atomic and retire the master-sync design's first accepted limit (its section 10).
@@ -147,7 +147,7 @@ input's system from its settings, and deleted the kernel. What is left, in order
   (2 s of CPU) every block and is never bypassed, as a `process` that hangs would be. A context per node
   in the same runtime (its own intrinsics and prototypes) closes all of it, at a per-context memory cost,
   and names the node a job ran in (`JS_ExecutePendingJob` reports the job's context); decide it before
-  nodes users write (Phase C, the Reaktor-scale aim). B3b made that seven nodes a project, not one.
+  nodes users write (Phase C, the Reaktor-scale aim). B3b made the project's nodes many, not one: seven is the number of node types, and a project places the routing node, a controller when enabled, and one node per protocol role.
 - **Found while building B3b, left as they are:**
   - The MI.OUT and master-sync decoders (`arduinoboyDecodeSerialOut`, `arduinoboyMasterSyncBlock` in
     [lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts)) build each message they emit as a new
@@ -162,6 +162,17 @@ input's system from its settings, and deleted the kernel. What is left, in order
   - `DirectGraph.setPipeline` hands a node its role's config as given, where a store hands the config its
     schema parsed, and a node's settings fill their own defaults: a direct caller's `lsdj-sync` with no `mode`
     is MIDI sync, where the kernel read a missing mode as nothing.
+  - **Readers that decide "is this system LSDj" (or mGB) by a role's presence, not its placement.** In the rare
+    case a ROM path changed between an LSDj and an mGB build, a system holds both `mgb` and `lsdj-sync`, and the
+    pipeline places one (the one the ROM calls for). The graph is right; these readers are not:
+    `trackerIntegrationFor` ([trackerIntegration.ts](../packages/retroplug/src/tracker/trackerIntegration.ts), by
+    `markerRole` presence), so the LSDj menu's sync cyclers
+    ([menuDefs.ts](../packages/retroplug/ui/screens/menu/menuDefs.ts)) edit a left-out `lsdj-sync` on an mGB cart;
+    `hasRole(..., "lsdj-sync")` in `ui/App.tsx`, `ui/screens/grid/useLsdjRuntime.ts`,
+    `ui/screens/hd/useLsdjHdSession.ts` and `projectStore.ts`; and `projectParameterMap`
+    ([parameterMap.ts](../packages/retroplug/src/parameterMap.ts)), which still exposes mGB's CC lanes for an LSDj
+    cart carrying a stale `mgb`. The fix is `placedRole(...)` ([graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts))
+    in those readers. Not fixed.
   - A profile build's `apu-render` span begins where the last script node's `process` ended, which is right
     while every script node runs before the systems, as `buildGraph` places them; a script node placed after
     a system would need it revisited.
@@ -170,7 +181,7 @@ input's system from its settings, and deleted the kernel. What is left, in order
     a case is harmless but was kept out of B3b, which changed no test's identity it did not have to.
 - **Found while building B3a, left as they are:**
   - `rp.host.midi-out` and `rp.host.controller-out` append one `std::vector` per message to the engine's
-    host outputs (`Engine::midiOut_` / `controllerOut_`, the `rp.engine.host-io/1` service in
+    host outputs (`Engine::midiOut_` / `controllerOut_`, the `rp.engine.host-io/2` service in
     [Engine.cpp](../packages/native/src/host/engine/Engine.cpp)), an allocation on the block thread for
     every message out; a flat arena, as the staging has, would remove it.
   - The script node `Block` ([defineNode.ts](../packages/retroplug/src/graph/defineNode.ts)) has no

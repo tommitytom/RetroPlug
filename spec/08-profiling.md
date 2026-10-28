@@ -52,7 +52,7 @@ still allocates is work that makes something:
 | Site | Allocates |
 |---|---|
 | the MI.OUT and master-sync decoders' `emit([...])` ([lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts)), run by `rp.lsdj.sync` in its two MIDI-out modes | about 3 JS objects for every host MIDI message decoded: the one per-block allocation left on a production path |
-| `rp.risa.sync`'s arm packet ([risaSync.ts](../packages/retroplug/src/risaSync.ts) `risaArmPacket`) | one array on a start or a seek |
+| `rp.risa.sync`'s arm ([risaSync.ts](../packages/retroplug/src/risaSync.ts)) | two objects on a start or a seek: `risaLocate`'s object and `risaArmPacket`'s array |
 | `rp.controller.session`'s surface diff and launches ([controller/session.ts](../packages/retroplug/src/controller/session.ts)) | per LED change and per launch, while a surface is in use |
 
 **How it got here.** Under the DSP kernel (one TS kernel running every role, until B3b) the first
@@ -266,12 +266,12 @@ modes are out.
   **bit-identical run-to-run** (only `xRT`/`gcMs` wall-clock vary). First measured result (Profile A, 1
   mGB core, 2000 blocks): **~171 allocs/block**, `freesPerBlock` ≈ allocs (balanced churn),
   `liveHeapDelta` ≈ 0 (not a leak), `maxBlockAllocs` 279.
-- The profile build's own unit checks are the four Catch2 `[profile]` cases of `retroplug-engine-graph-test`
+- The profile build's own unit checks are the five Catch2 `[profile]` cases of `retroplug-engine-graph-test`
   (a script node's span labelled by its type, holding `marshal` then `js-call` and closed every way a call
   ends; nodes of one type sharing its label and each type labelled in load order; the calls refused while
   the audio thread runs and the trace reads reading nothing then; a type past the name table traced as
-  `script-node`). Nothing else runs them: `tools/run-profile.sh unit`, or by hand
-  `cmake --build build-prof --target retroplug-engine-graph-test -j$(nproc)` then
+  `script-node`; and the embedded bundle's types labelled 16 to 22 in order). Nothing else runs them:
+  `tools/run-profile.sh unit`, or by hand `cmake --build build-prof --target retroplug-engine-graph-test -j$(nproc)` then
   `build-prof/bin/retroplug-engine-graph-test "[profile]"`.
 - **Optimization pass (done):** hoisting the per-block ctx/closures/filters/routing-Map to `setSystems`
   (§3) cut Profile A to **~32 allocs/block** (−81%), **~2.3 KB/block** (−79%), `maxBlockAllocs` 279 → 60,
@@ -287,14 +287,15 @@ modes are out.
   (Profile A, 1 mGB core, 2000 blocks, a `build-prof` host) measured **33.81 allocs/block**, ~2.1 KB/block,
   `maxBlockAllocs` 62; nes-bench, its twin on the Mesen core, 20.14, ~1.3 KB and 44.
 - **On the protocol nodes (B3b).** The same runs measure **0 allocs/block** and 0 bytes, `maxBlockAllocs` 0,
-  in both: dsp-bench with a peak heap of 307096 bytes at 15.8× real time, nes-bench 305064 bytes at 10.3×
+  in both: dsp-bench with a peak heap of 307096 bytes at 16.6× real time, nes-bench 305064 bytes at 10.8×
   (2243 us a block, nearly all of it the Mesen core). The bundle's load leaves no cycles in the audio runtime
   (B3a's, which carried zod and the kernel's role registry, left about 144 KiB for the first quiescent reclaim
   to collect), so the end-of-window `runGc` reads what the window itself left in cycles: 0 bytes, in dsp-bench
   and nes-bench alike. `allocsPerBlock` is the stable metric: the byte counts are bytes requested, which move
   with the heap's layout. A trace (`tools/run-profile.sh trace`, 64 blocks of dsp-bench) has `rp.midi.route`
-  at 1.37 us a block and `rp.mgb.midi` at 0.83, each holding a `js-call` of about 0.95 and `marshal` spans of
-  about 0.11, against 1428 us of `apu-render` and 2.0 of `state-publish`; nes-bench's has `rp.midi.route` at
+  at 1.37 us a block and `rp.mgb.midi` at 0.83 (each the whole `process` span of its node, so the `js-call` and
+  `marshal` spans nest inside those figures); the means over every `js-call` and `marshal` span in the trace, the
+  two nodes' together, are about 0.95 and 0.11 us, against 1428 us of `apu-render` and 2.0 of `state-publish`; nes-bench's has `rp.midi.route` at
   1.09 us and `rp.n8.midi-to-fifo` at 0.53, against 2151 of `apu-render` and 3.7 of `state-publish`. The
   script nodes are under 0.2% of a block's work; the cores are the rest.
 - **Ship path clean:** dsp-bench skips under the default host; the full `pnpm test:native`

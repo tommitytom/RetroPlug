@@ -112,7 +112,7 @@ MIDI sync), so spell out what the test depends on.
 The rest of the native-tier surface these tests use:
 `audio.renderAudioPerSystem(ms)` (per-system buffers in slot order — the thing that proves link
 sync, where a mixed buffer cannot), `audio.setTransport(bool)` / `audio.setBpm(n)` (simulated host
-transport -> the role's MIDI clock), `audio.drainMidiOut()` (the host MIDI the LSDj nodes sent since the
+transport -> the role's MIDI clock), `audio.drainMidiOut()` (the host MIDI the LSDj nodes and the controller session sent since the
 last drain, each message with its system and frame, LSDj's MI.OUT among them, decoded from the captured
 serial out), `be.readMemory(id, region)` (WRAM/SRAM reads), and `graph.remove(id)`
 ([directGraph.ts](../packages/retroplug/src/graph/directGraph.ts)). The `audio` calls are declared in
@@ -449,7 +449,7 @@ normal DAW behaviour).
   (LSDj hard-L on `MidiSyncArduinoboy`, a ReaSynth click hard-R, one note/quarter
   at 120 BPM), then [tools/reaper-timing-analyze.py](../tools/reaper-timing-analyze.py)
   reports the offset between host transport start and LSDj's first audible sample.
-  Pass/fail ±50 ms. Surfaces drift in `PpqUtil::eachTick()` and in `LsdjSyncRole`'s
+  Pass/fail ±50 ms. Surfaces drift in the `rp.lsdj.sync` node's tick clock and in its
   startup byte sequence (`0xFA` + first `0xF8`). A stock-MidiSync counterpart,
   `reaper:lsdj-midi-metro`, measures the same number through `MidiSync`.
 - **MidiSync per-beat drift over time** — `pnpm reaper:lsdj-midi-drift` renders

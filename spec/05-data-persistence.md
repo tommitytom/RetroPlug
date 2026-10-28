@@ -222,6 +222,14 @@ lacks a newly-added optional field validates as-is. The project `schemaVersion` 
 **string** (old `.rplg` carried `"1.0"`); `parseProjectVersion` takes its leading integer,
 flooring empty/garbage to the baseline. The other three stamps are numbers (`readNumericVersion`).
 
+**Loading parses a role's config.** A loaded feature role that has a protocol node has its stored config parsed
+by its registered `RoleType` schema when the system is adopted (the schema's defaults fill, an out-of-range
+integer or unknown enum value repairs, a config the schema refuses falls back to what the ROM's providers
+suggest), and a repair is logged once. That parse drops a key this build's schema does not read, as an edit
+already did, so the next save no longer carries it (a newer build's additive field in a role config survives a
+load only in a build that reads it). The core's config role, roles with no node and kinds the registry does not
+register stay as written. See [04-roles-protocol-nodes.md](04-roles-protocol-nodes.md).
+
 Two things stay outside the JSON-migration model: the per-system **role-config** that
 crosses to native is re-parsed there with reflect-cpp `rfl::DefaultIfMissing` (tolerant —
 the one outlier), and the LSDj `.sav` is a binary codec with its own internal format

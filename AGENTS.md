@@ -43,9 +43,10 @@ The rules below are the parts that don't fit those.
   [docs/modular-graph-phase-b3a-design.md](docs/modular-graph-phase-b3a-design.md)): marshalling, reshape,
   creation and release on the block thread, throws; the protocol script nodes (B3b: the MIDI routing, a
   controller session and each role's protocol node, in the documents `buildGraph` builds, read from its role goldens
-  and run in its plan order, `test/engine-graph/ProtocolNodes.test.cpp`) send exactly the digests the DSP kernel they replaced was recorded
-  sending in the cases it runs, a throw stopping only its own node the one difference those reach, checked (the B3b
-  design's section 9 lists the others, which no case sends a message through); and every document in `buildGraph`'s
+  and run in its plan order, `test/engine-graph/ProtocolNodes.test.cpp`) send exactly the digests the DSP kernel they
+  replaced was recorded sending in the cases it runs, a throw stopping only its own node the one difference those
+  reach, checked (the B3b design's section 9 lists the others, which no case sends a message through); and every
+  document in `buildGraph`'s
   goldens, handed to the engine with real cores, plans and runs with no node faulting, no script node throwing and
   no message dropped: the B1 translator's matrix a block each (the 33-system `perSystem` ones are refused, as they
   must be), and `golden/build-graph-roles.json`, `buildGraph`'s own record of documents with every protocol node
@@ -53,7 +54,7 @@ The rules below are the parts that don't fit those.
   `buildGraph`'s, held by `pnpm test graph` to explicit tables, to the B1 translator's goldens and to the role
   goldens, which `RP_GOLDEN_UPDATE=1 pnpm test graph/build-graph-role-goldens` re-records). A hidden
   bench times a script node per block, and the protocol nodes' plan, at 1, 64 and 512 frames
-  (`build/bin/retroplug-engine-graph-test "[bench]"`), and a profile build adds four `[profile]` cases
+  (`build/bin/retroplug-engine-graph-test "[bench]"`), and a profile build adds five `[profile]` cases
   (`tools/run-profile.sh unit`).
   `retroplug-dynparams-test` is the odd one out: it compiles DPF's format-neutral core (`DistrhoPlugin.cpp`)
   plus its OWN `DistrhoPluginInfo.h`, building no plugin format at all, to drive

@@ -31,13 +31,13 @@ Every design decision serves one split:
 
 Two consequences show up everywhere and are worth stating once here:
 
-- **Cores are built bare.** Each core is constructed with
-  `setSniffDefaultRoles(false)`, so no feature behaviour is baked into C++. LSDj
+- **Cores are built bare.** (The legacy build did it with `setSniffDefaultRoles(false)`; no such call
+  exists now.) No feature behaviour is baked into C++. LSDj
   sync, mGB and Arduinoboy behaviour live in TypeScript **protocol script nodes**,
   one per role ([src/script/nodes/](../packages/retroplug/src/script/nodes); B3b
   deleted the DSP role kernel they replaced), which run in the engine's graph, in
-  the bare QuickJS runtime of the Engine's script host. (Kit-patch is the exception: it runs on the **UI thread**,
-  writing already-patched memory regions into the core; it has no protocol
+  the bare QuickJS runtime of the Engine's script host. (Kit-patch is the exception: the `lsdj-assets` role's `onConstruct` folds the
+  overrides into the ROM in memory when the core is constructed; it has no protocol
   node.) See [04-roles-protocol-nodes.md](04-roles-protocol-nodes.md).
 - **TS owns the system-id counter and orchestration.** Native never mints an id;
   `duplicate`/`reload` are TS orchestration over a `buildCore`-with-state
@@ -145,7 +145,7 @@ node instance and runs it on the thread that runs blocks (the audio thread in a 
 | [04-roles-protocol-nodes.md](04-roles-protocol-nodes.md) | The role model: system-role vs feature-role, the role registry, and the protocol nodes: a script node per role, the MIDI routing and the controller session, their settings and ports, and how `buildGraph` places them. |
 | [05-data-persistence.md](05-data-persistence.md) | The project model + `.rplg`, DPF get/setState + autoload, config models, forward-tolerant reads + version stamps, the LSDj sav codec, SRAM auto-save. |
 | [06-build-test.md](06-build-test.md) | How the project builds, the pnpm scripts, the dpf.js seam, and the headless verification loop. |
-| [07-remaining-work.md](07-remaining-work.md) | The remaining feature gaps now the port is complete: the raw LSDj Keyboard mode, NES per-mapper expansion sub-channels, the kit-patch UI rework, the deferred items, and the node-graph engine's next steps after B3b. |
+| [07-remaining-work.md](07-remaining-work.md) | The remaining feature gaps now the port is complete: the raw LSDj Keyboard mode, NES per-mapper expansion sub-channels, the standalone disk-wins reopen, the live memory-region subscription, the 4-byte MIDI-out cap, Mesen `.mlb` labels in the CLI debugger, the deferred items, the pending refactor, the code-comment cleanup backlog, and the node-graph engine's next steps after B3b. |
 
 ## Key files
 

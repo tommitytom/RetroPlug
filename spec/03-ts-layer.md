@@ -389,8 +389,8 @@ and reopening the editor in a DAW showed the start menu instead of the loaded pr
 ### `appHost.ts` — host glue
 
 [`src/appHost.ts`](../packages/retroplug/src/appHost.ts) holds the wiring every host
-reuses: `buildAppRegistry()` assembles the control-plane role registry (core roles + DSP
-feature behaviours + ROM providers, see doc 04).
+reuses: `buildAppRegistry()` assembles the control-plane role registry (core roles + the feature roles
+that have protocol nodes + ROM providers, see doc 04).
 
 ### The `__rp_*` UI↔native direct-hook pattern
 
@@ -593,7 +593,7 @@ Two concepts touched throughout this doc belong fully to **doc 04**:
   (LSDj-sync, mGB, the asset overrides) are pure TS whose config **never** gets a C++
   struct. The control-plane `RoleRegistry` (built by `buildAppRegistry`) attaches feature
   roles to a system by ROM identity ([`romProviders.ts`](../packages/retroplug/src/romProviders.ts),
-  the TS twin of the native `RomSniffer`).
+  the TS replacement for the legacy build's native `RomSniffer`, which is gone).
 - **The protocol nodes.** A role whose work is the audio thread's runs as a script node of its own
   ([`src/script/nodes/`](../packages/retroplug/src/script/nodes)), which `buildGraph` places for each
   system that has the role ([`graph/protocolNodes.ts`](../packages/retroplug/src/graph/protocolNodes.ts)),

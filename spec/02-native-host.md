@@ -256,7 +256,8 @@ staging). Then, in order:
       [script host](../packages/native/src/host/script/ScriptHost.hpp)
       ([04-roles-protocol-nodes.md](04-roles-protocol-nodes.md)): the MIDI routing (`rp.midi.route`) fans
       the host MIDI out to the systems; the controller session reads the control surface; and each
-      system's protocol nodes read their routed MIDI, the transport at the **block-start** `ppq_` and, for
+      system's protocol nodes read what they need (mGB, N8 and LSDj their routed MIDI; risa and smsggdj only the
+      transport) at the **block-start** `ppq_` and, for
       an LSDj, its Game Boy's `serialOut` of last block (a feedback wire), and send that system node's
       `serialIn`, `midi`, `bytes` and `buttons` inputs, their host MIDI out to `rp.host.midi-out` and the
       session's control-surface out to `rp.host.controller-out`.
@@ -272,8 +273,8 @@ staging). Then, in order:
       its `serialOut`.
    3. **The cart mirror and the host outputs.** `rp.n8.cart-mirror`, wired from the first NES in slot order,
       hands what that system was sent to `coreByteSink_` for a physical N8 (a message staged straight
-      at it, `StageSystemMidi`, reaches the sink too, at drain); `rp.host.midi-out` appends to
-      `midiOut_`, which the plugin drains to the DAW after the block (the SDL standalone to its MIDI out
+      at it, `StageSystemMidi`, reaches the sink too, at drain); `rp.host.midi-out` fills
+      `midiOut_`, frame-sorted,, which the plugin drains to the DAW after the block (the SDL standalone to its MIDI out
       port); `rp.host.controller-out` appends
       to `controllerOut_`, which the SDL standalone drains to the Launchpad link.
    4. **The mixing nodes**, `rp.core.split` and `rp.core.add`: the routing, as wiring (below).
@@ -306,14 +307,14 @@ What the script nodes read and send are wires the planner sees
 ([modular-graph-phase-b3a-design.md](../docs/modular-graph-phase-b3a-design.md) section 3,
 [modular-graph-phase-b3b-design.md](../docs/modular-graph-phase-b3b-design.md) section 5). The host
 I/O nodes ([HostIoNodes.hpp](../packages/native/src/host/graph/HostIoNodes.hpp)) reach the engine
-through its host service `rp.engine.host-io/1`
+through its host service `rp.engine.host-io/2`
 ([HostServices.hpp](../packages/native/src/host/graph/HostServices.hpp)) and do not activate without
 it:
 
 | Node | Ports | Does |
 |---|---|---|
 | `rp.host.midi-in` | out `midi` (events: 2048 messages, 64 KiB) | takes the staged host MIDI, stable-sorted by frame without allocating: the plugin stages two runs in frame order (a block's DAW events, then each moved automation slot's CC at frame 0), which it merges onto its queue, a tie to the earlier run; more runs are sorted in place first, by insertion |
-| `rp.host.midi-out` | in `in1` to `inN` (events), an input per entry of its settings `{"systems": [<id>, ...]}`, at most 128 | each input's messages land in `Engine::midiOut` tagged with that entry's system, input by input, each in queue order; two entries may name one system, and an empty list is a node with no inputs, which sends nothing. A settings change that keeps the inputs is a swap, one that moves them a rebuild |
+| `rp.host.midi-out` | in `in1` to `inN` (events), an input per entry of its settings `{"systems": [<id>, ...]}`, at most 128 | each input's messages land in `Engine::midiOut` tagged with that entry's system, input by input, each in queue order, with the list kept frame-sorted across inputs (each message at the later of its frame and the last handed out in the block); two entries may name one system, and an empty list is a node with no inputs, which sends nothing. A settings change that keeps the inputs is a swap, one that moves them a rebuild |
 | `rp.host.controller-in` | out `midi` (events: 1024 messages, 16 KiB), out `connected` (control) | takes the staged control-surface traffic, all at frame 0; `connected` is 1 while a surface is attached, from frame 0 of the block (a change at frame 0 on the block the flag flips, since a control output's start is the last block's end) |
 | `rp.host.controller-out` | in `midi` | appends each message to `Engine::controllerOut` |
 | `rp.n8.cart-mirror` | in `midi` (events), in `bytes` | settings `{"system": <id>}`; hands the core-byte sink every MIDI message, then every byte message with its flush flag, in queue order, skipping empty ones; nothing while no sink is set |
@@ -610,8 +611,8 @@ sys->enableStateSnapshot();        // tear-free savestate each block for the reg
 ```
 
 The cores are built **bare** — no feature behaviour is baked into C++. The DSP-thread behaviours
-(LSDj sync, mGB, Arduinoboy) run as TS protocol script nodes; kit-patch instead runs on the UI thread
-(writing patched memory regions into the core), not on the audio thread. See 04. The system-role config
+(LSDj sync, mGB, Arduinoboy) run as TS protocol script nodes; kit-patch instead is `lsdj-assets`' `onConstruct`
+folding the overrides into the ROM in memory at construct, with no audio-thread part. See 04. The system-role config
 schema (`SameBoyRoleConfig` field names) mirrors TS's
 `coreRoles.ts`; [`decodeSameBoyRoleConfig`](../packages/native/src/system/sameboy/SameBoyBackend.cpp#L19)
 reads with `rfl::DefaultIfMissing` (forward-tolerant) and is the single JSON decode point,
@@ -755,7 +756,7 @@ The graph the engine runs on is not in `retroplug-core`: the executor, planner a
 control-surface I/O, the cart mirror) and the script host (`src/host/script/`) compile into
 `retroplug-backend`.
 
-ROM classification (the old C++ `RomSniffer`) and the LSDj sav codec are TS-owned — neither is in
+ROM classification (the legacy build's C++ `RomSniffer`) and the LSDj sav codec are TS-owned - neither is in
 the C++ tree.
 
 The txiki host `TjsHostRuntime` comes from

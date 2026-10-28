@@ -4,7 +4,7 @@ Roles are how RetroPlug attaches *meaning* to a system without teaching the C++ 
 A role is a `{ kind, config }` pair keyed by a string; the core treats `config` as an opaque
 per-kind blob. Everything specific to a system (a backend's emulator knobs, or an optional
 feature like LSDj sync or mGB passthrough) is a role, so the cores stay free of backend/LSDj/mGB
-knowledge. Cores are built **bare** (`setSniffDefaultRoles(false)`); every feature behaviour lives in
+knowledge. Cores are built **bare** (the legacy build said so with a `setSniffDefaultRoles(false)` call; there is none now); every feature behaviour lives in
 TypeScript, and a role whose work is the audio thread's runs as a **protocol node**: a TS script node
 of its own in the engine's graph, which `buildGraph` places for each system that has the role.
 
@@ -38,8 +38,8 @@ that node's settings in the graph document the project publishes (below).
 ## The role model
 
 Five pieces make up the generic model, in [systemRoles.ts](../packages/retroplug/src/systemRoles.ts).
-It ports the shape of the native `RoleConfig` tagged union into a runtime registry, minus the
-hardcoded if/else chains.
+It is a runtime registry (the legacy build had a native `RoleConfig` tagged union and hardcoded if/else
+chains in its place; neither exists now).
 
 ### `RoleInstance`: what serializes
 
@@ -83,7 +83,7 @@ plus a list of `RomProvider`s:
 ### `RomProvider` + `RomContext`: feature-role attachment
 
 A `RomProvider` inspects a freshly-classified ROM and returns the feature roles to attach. It is the
-TS twin of the C++ `RomSniffer`'s default-role step:
+TS replacement for the legacy build's C++ `RomSniffer` default-role step (gone):
 
 ```ts
 type RomProvider = (rom: RomContext) => RoleInstance[];
@@ -294,7 +294,8 @@ is the block's, at the block-start ppq.
 
 **Capacities.** Each output declares its queue
 ([nodes/ports.ts](../packages/retroplug/src/script/nodes/ports.ts)): `serialIn` and `midi` 4096 messages /
-72 KiB, what `rp.host.midi-in`'s output holds with 8 KiB more for a role's own bytes, so a SysEx the host
+72 KiB: the bytes are what `rp.host.midi-in`'s output holds (64 KiB) with 8 KiB more for a role's own, the
+message count twice its 2048, so a SysEx the host
 stages whole reaches the system whole and host MIDI is dropped only at that edge; a routing output what
 `rp.host.midi-in`'s holds (2048 / 64 KiB), since under send-to-all it carries everything; `bytes` 256 / 1
 KiB, `buttons` 64 / 128 bytes, `midiOut` 1024 / 8 KiB, `controllerOut` 256 / 4 KiB, `launches` 64 / 256
@@ -321,8 +322,8 @@ Schema as its zod twin did, so the bundle every Engine loads into both of its sc
 (78 KB, where the kernel's was 660 KB, most of it zod). `defineNode` takes any schema with `safeParse` and
 `toJSONSchema`, so a zod schema still serves on the control plane. The role's own zod schema stays on the
 control plane: the store parses a role's config with it, and that parsed config is the node's settings.
-[bundle-no-zod.test.ts](../packages/retroplug/test/script/bundle-no-zod.test.ts) fails the build of any
-bundle that pulls a zod module, or a role or config module, back in.
+[bundle-no-zod.test.ts](../packages/retroplug/test/script/bundle-no-zod.test.ts), a `pnpm test` case (not a
+build gate), fails on a bundle that pulls a zod module, or a role or config module, back in, or that passes 200 KB.
 
 ## Store → graph
 
@@ -345,13 +346,33 @@ Which role kind is placed as which node, and how each type is wired, is one pure
 [graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts) (`protocolNodeOf`,
 `protocolPipeline`): both stores and a `DirectGraph` read it, with or without a role registry, and a role
 with no node is left out, so an edit to it (a model, a palette, an asset override) leaves the document as
-it was. `test/system-settings/registry.test.ts` holds it to what `registerDspRoles` registers.
+it was. `test/system-settings/registry.test.ts` holds it to what `registerDspRoles` registers, and
+`test/graph/protocol-nodes.test.ts` to the ports each node module declares and to the bundle's node types;
+`golden/build-graph-roles.json` records the documents it makes `buildGraph` build.
+
+**One writer per system input.** Two roles whose nodes write the same system input (a project stored with `mgb`
+whose ROM path now holds LSDj gains `lsdj-sync`, both writing `serialIn`; or a hand-edited file naming a kind twice)
+would make the planner refuse the whole document (`input-taken`). `protocolPipeline` places the first in role order
+and leaves out a later one, and a kind already placed, whole: the role stays on the system, so a save keeps it. On a
+load, `adopt` first moves each role the ROM's providers suggest ahead of the earliest role they do not suggest whose
+node writes an input its own does, so the role today's ROM calls for is the one placed; the left-out one is logged
+once, after the core has built. The serial-out capture and the reported sync latency follow the `lsdj-sync` the
+pipeline places (`placedRole`), so a left-out one arms nothing. `DirectGraph.setPipeline` sends the document
+without the later role and can report it through a callback.
+
+**Loaded role configs are parsed.** A loaded protocol role's config is parsed by its `RoleType` schema in `adopt`
+(so the node's settings, the capture the core is built with, the menus and a save all see the parsed one), and a
+repair is logged once with the ROM and each repaired value. A config the schema refuses outright falls back to
+what the ROM's providers suggest for the role, then to the schema's defaults. The parse drops a key the schema does
+not read, as an edit already did, and names it in the log.
 
 The rest of the document follows from those nodes:
 
 - **Host MIDI out**: `rp.host.midi-out` in its systems form, its inputs in the order the kernel emitted:
   the controller's `midiOut` first (under its resolved target), then each `rp.lsdj.sync`'s in slot order,
-  each under its system; with no producer, an empty list and no inputs.
+  each under its system; with no producer, an empty list and no inputs. The node keeps the host's list
+  frame-sorted across its inputs (each message at the later of its frame and the last handed out in the block, as the
+  kernel's one queue clamped), which `Engine::midiOut` promises and CLAP and LV2 require.
 - **The N8 cart mirror** (`cart`, `rp.n8.cart-mirror`) for the first NES in slot order, fed what that
   system's protocol nodes send its `midi` and `bytes` inputs.
 - **The controller** ([graph/controller.ts](../packages/retroplug/src/graph/controller.ts)): its target

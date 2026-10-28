@@ -90,9 +90,9 @@ With **no** external clock it falls back to the prior free-running 120/playing, 
 LSDj) is unchanged. The real-time bytes are consumed for transport and not staged into the emulator; channel
 messages (notes/CC) still stage as before.
 
-This is all that's needed for **LSDj sync-to-external to lock**: the LSDj `MidiSync` role regenerates its `0xF8`
-serial clock from the Engine's tempo/transport via `eachTick`
-([dspRoles.ts](../packages/retroplug/src/dspRoles.ts), [PpqUtil.hpp](../packages/native/src/util/PpqUtil.hpp))
+This is all that's needed for **LSDj sync-to-external to lock**: the `rp.lsdj.sync` node regenerates its `0xF8`
+serial clock from the Engine's tempo/transport with its `TickClock` / `walkTicks`
+([lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts), [PpqUtil.hpp](../packages/native/src/util/PpqUtil.hpp))
 — it never read the raw wire clock — so feeding `setBpm`/`setTransport` (exactly as
 [PluginDSP::run](../packages/native/plugin/PluginDSP.cpp#L152) does from the DAW's `TimePosition`) is the whole
 job. Verified headlessly via `RETROPLUG_SDL_TEST_CLOCK=<bpm>` (synthetic clock → derived BPM within ~0.2, plus

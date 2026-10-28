@@ -22,9 +22,12 @@ port per system input plus one host MIDI out port whose messages carried a priva
 
 What the code said about splitting it:
 
-- **No two roles on one system write the same system input.** mGB writes `serialIn`; LSDj writes `serialIn`,
-  `buttons` and host MIDI out; a NES writes `midi` (`nes-n8-midi`) and, for a risa ROM, `bytes` (`risa-sync`); an
-  SMS or GG writes `bytes`. So splitting needs no merge between protocols.
+- **No two roles on one system were meant to write the same system input.** mGB writes `serialIn`; LSDj writes
+  `serialIn`, `buttons` and host MIDI out; a NES writes `midi` (`nes-n8-midi`) and, for a risa ROM, `bytes`
+  (`risa-sync`); an SMS or GG writes `bytes`. So splitting needs no merge between protocols for a system the providers
+  build. It is not true of every loaded project: a project stored with `mgb` whose ROM path now holds LSDj gains
+  `lsdj-sync`, and a hand-edited file can name a kind twice. The kernel merged what both sent; the graph places one
+  (section 9).
 - **Tick state is per system, and no system has two ticking roles**, so a tick counter per node is the same.
 - **One stream was merged**: the controller's launches joined its target system's routed MIDI, appended after the
   routed events at frame 0.
@@ -151,8 +154,10 @@ case throws.
 
 - **Equivalence.** The C++ kernel-node rig's cases (every LSDj mode, risa and smsggdj sync, NES MIDI, a controller
   session whose launches interleave with MI.OUT, structure changes with state surviving) are rebuilt on the per-role
-  graph, their document generated as `buildGraph` places it, and must hold their recorded digests unchanged (recorded
-  while the old kernel stage ran beside the kernel node). The rig's thread-sanitizer case (the control side
+  graph, their documents the ones `buildGraph` places, and must hold their recorded digests unchanged (recorded while
+  the old kernel stage ran beside the kernel node). The rig does not write those documents: each structure is a case of
+  `golden/build-graph-roles.json` (`rig/<name>`), `buildGraph`'s own record, and the rig plans it by name with its
+  system nodes replaced by probes. The rig's thread-sanitizer case (the control side
   restructuring while the audio thread runs) moves over too. Built:
   [ProtocolNodes.test.cpp](../packages/native/test/engine-graph/ProtocolNodes.test.cpp).
 - **Node-level tests.** The role tests that drive `DspKernel` (roles, LSDj modes, routing, risa, sms, the controller,
@@ -199,12 +204,37 @@ Every commit bit-identical. As built, each step's commit named by its subject:
    the kernel's deletion, and what building it found").
 9. Acceptance (section 6).
 
+The follow-up round after the docs commit, each by its subject: "fix(systems): a loaded project's role configs reach
+their protocol nodes parsed by the role's schema"; "fix(graph): one writer per system input - of two roles whose nodes
+write one input, the first is placed"; "fix(systems): serial-out capture follows the lsdj-sync the pipeline places, so a
+left-out one arms none"; "test(graph): buildGraph's role goldens - every protocol node type, a controller each way and
+every routing, planned and driven on the engine in CI"; "test(graph): PROTOCOL_NODES' port names held to the ports each
+node module declares, and every role's node type to the bundle's"; "test(engine): the equivalence rig plans buildGraph's
+own documents, read from its role goldens, its systems stood in for"; "test(engine): the rig claims only the cases it
+runs, states the controller's two orders outright, and keeps a session through a system added"; "fix(graph):
+protocolPipeline leaves out a kind already placed, and DirectGraph.setPipeline reports what it leaves out"; "fix(systems):
+of two colliding roles, a loaded system places the one its ROM calls for, and logs once it has built"; "fix(systems): a
+refused role config falls back to what the ROM calls for, and the keys a parse drops are logged"; "fix(plugin): the
+reported LSDj sync latency follows the lsdj-sync the pipeline places"; "test(systems): every adversarial stored config
+reaches its node as settings it accepts, and the refusals check fails closed"; "test(engine): the role goldens' driven
+blocks have a floor under what reaches the host"; "test(engine): the rig's feeds lead its document, so its script nodes
+run in buildGraph's plan order, which a case now holds"; "fix(host-io): rp.host.midi-out keeps the host's MIDI out
+frame-sorted across its inputs"; "test(profile): the benches prove their allocation window live, and the profile cases
+pin more"; "fix(settings): the zod-free schema refuses a duplicate enum value, bad int bounds, and normalizes an array's
+default"; "refactor(nodes): the controller session builds no input object per block, locals stop shadowing s, and the
+notes say why"; "test(nodes): inject the lsdj throw through the block, port the kernel's arm and 48 kHz stop cases, pin
+the collision rule's round trip"; "test(bundle): the no-zod test uses the runner's node and bounds the bundle's size";
+"test(nodes): the poisoned message carries the flags a Message does, so the suite typechecks"; "test(engine-graph): the
+controller floor needs Programmer mode, and the rig's order and drops are held"; and the comment and doc pass that
+followed them.
+
 ## 8. Left for later
 
 - The capture mode as a Game Boy node setting, which makes a mode switch atomic (Phase C).
 - Master-sync clocks at their byte's frame (its own change after B3b). It would be the first producer of host MIDI
-  past frame 0, and `rp.host.midi-out` appends input by input, so the host's list would then need a merge by frame
-  across its inputs, or the hosts a sort before they write it out.
+  past frame 0. `rp.host.midi-out` already keeps the host's list frame-sorted across its inputs (each message goes out
+  at the later of its frame and the last frame handed out in the block, as the kernel's one queue clamped), so that
+  change needs no merge.
 - One QuickJS context per script node (before user-written nodes).
 - The MI.OUT and master-sync decoders' emitted arrays: about 3 JS allocations for every host MIDI message they
   decode, the one per-block JS allocation left on a production path (section 9). It is the decoders' own change, in
@@ -222,15 +252,22 @@ Every commit bit-identical. As built, each step's commit named by its subject:
   types are code in the bundle every Engine embeds, so which role kinds have one is a fact of that bundle, not of
   whichever registry a store was handed; and three publishers need it, two of which hold no registry at all (a
   `DirectGraph`, and a `SystemsStore` built without one, as the tests build them). A field on `RoleType` would need
-  this table as its fallback anyway, which makes two sources that can disagree about a role. Two tests hold it: the
-  registry test that it names a node for exactly the roles `registerDspRoles` registers, and `build-graph.test.ts`
+  this table as its fallback anyway, which makes two sources that can disagree about a role. Three tests hold it: the
+  registry test that it names a node for exactly the roles `registerDspRoles` registers, `build-graph.test.ts`
   that its type ids are the node modules' own (importing the modules would pull every protocol into whatever imports
-  `buildGraph`).
+  `buildGraph`), and `test/graph/protocol-nodes.test.ts`, which reads each node module's declared ports and holds every
+  entry's port names to them exactly (a name a module lacks is a wire the planner refuses, and with it the whole
+  document), and holds every type a role is placed as, and every type the table names, to one the production bundle
+  registers. `golden/build-graph-roles.json` holds what the table makes `buildGraph` do: one case per protocol node
+  type, a controller each way and every routing, recorded from `buildGraph` by `build-graph-role-goldens.test.ts`,
+  planned and driven on the engine with real cores by the native golden runner (in CI), and the equivalence rig plans
+  its documents from it. Section 6's promise that the rig's documents be generated as `buildGraph` places them is
+  therefore kept: it no longer spells any.
 - **Host MIDI out by wiring came before the equivalence rig.** Section 7 had the rig third and `rp.host.midi-out`'s
   `systems` form fourth. The rig builds the per-role document, and without the systems form that document has no way
   to say whose host MIDI is whose: the prefixed form needs a 4-byte prefix that no protocol node writes. So the systems
   form landed first, beside the prefixed form, and the rig wired it. As built it takes inputs `in1` to `inN`, 1-based
-  as `rp.core.merge`'s, at most 128 (`kMidiOutMaxSystems`, so a commit copies the ids into a fixed array without
+  as `rp.core.merge`'s, at most 128 (`kMidiOutMaxInputs`, so a commit copies the ids into a fixed array without
   allocating); any 32-bit id, 0 and 4294967295 included, and one id may repeat. Its prepare is stateless: a settings
   change that keeps the inputs is a swap, one that moves them a rebuild.
 - **An empty `systems` list means no inputs.** The flip placed `{"systems": []}` when nothing sends host MIDI, which
@@ -238,7 +275,15 @@ Every commit bit-identical. As built, each step's commit named by its subject:
   inputs that sends nothing, and `buildGraph` still places it, so a document has its host outputs whatever its roles;
   no golden document changed. The prefix was the one way `rp.host.midi-out` dropped a message (one too short to carry
   it), so the engine's count of those went with it: `Engine::droppedMessages` is now the plan's queues alone. The host
-  service keeps its interface id, `rp.engine.host-io/1`.
+  service kept its interface id, `rp.engine.host-io/1`, until the follow-up round: `EngineHostIo` then lost its drop
+  counter under that id, so it is `rp.engine.host-io/2`.
+- **The host's MIDI out is frame-sorted across the node's inputs.** As first built the node handed its inputs' messages
+  over input by input, so a later input's message at frame 3 followed an earlier one's at frame 10, and
+  `Engine::midiOut` came out unsorted, which the plugin passes to `writeMidiEvent` as it is and CLAP and LV2 require
+  sorted. The kernel's one queue clamped each message to the latest frame already queued. The node keeps the last
+  frame handed out in the block and sends `max(frame, last)`: bit-identical while every frame is 0, and
+  `Engine::midiOut` is documented as frame-sorted. A settings change that keeps the input count keeps the node
+  instance; one that changes it rebuilds.
 - **Port names.** The N8 node's input is `midiIn`, where section 2 said `midi`: its output is named for the system
   input it feeds, `midi`, as every protocol node's is, and a port id names one port. `buildGraph` reads each type's
   MIDI input from the table. The routing node's outputs are `sys-<id>`, and its layout refuses two systems under one
@@ -262,7 +307,8 @@ Every commit bit-identical. As built, each step's commit named by its subject:
   registers are still the roles whose work is the audio thread's.
 - **`DirectGraph`'s `setProjectStages` became `setMidiRouting` and `setController`.** The flip mapped it onto the new
   model; the deletion removed it, since it spelled the routing and the controller as the two roles that went, and its
-  19 calling files moved. A `DirectGraph`'s controller now gets the target resolution and the MI.MAP override a
+  calls moved: 18 of them in 14 files (13 under `test-native`, `lsdjPlaybackProbe.ts` among them, and
+  `test/systems/store-graph.test.ts`). A `DirectGraph`'s controller now gets the target resolution and the MI.MAP override a
   project's does, since `buildGraph` applies both to any model.
 - **The spans are named by node type.** The kernel traced each role's stage as a span inside its one node's
   `process` span, through span globals bound into the audio context. Each role is a node now, so the script host labels
@@ -273,7 +319,8 @@ Every commit bit-identical. As built, each step's commit named by its subject:
   became `script-node` (`DSP_SPAN_SCRIPT_NODE`, label 0), now only the fallback for a type past the 1024-label bound.
   The span globals (`spanBegin`, `spanEnd`, `traceName`, `traceArmed`) and the floor and fence that kept JS's spans
   inside the host's went: the kernel's roles were their only user. The profile build's `[profile]` cases went from five
-  to four ([spec/08](../spec/08-profiling.md)).
+  to four, and a case pinning the embedded bundle's labels (16 to 22, in order) made them five again
+  ([spec/08](../spec/08-profiling.md)).
 - **The profile benches proved themselves live by allocating.** `dsp-bench` and `nes-bench` checked that their
   counters worked by an allocation count above zero, which the allocation-free nodes broke: `dsp-bench` failed under
   the profile host from the deletion until the bench commit (nothing in the default suites runs it), which checked the
@@ -283,7 +330,10 @@ Every commit bit-identical. As built, each step's commit named by its subject:
 - **The settings schema, as built.** Each `s` builder parses and writes its JSON Schema as its zod twin does, held by
   `test/graph/settings-schema.test.ts` to zod's own output over 34 values, refusals in zod's own English words, and an
   object drops a key it does not name, as `z.object` does. An array's item needs a default of its own, though parse
-  never uses it, since zod writes an item's `.default` into the schema; and `s.json` takes its type as an explicit
+  never uses it as a value, since zod writes an item's `.default` into the schema (an array's own default is read
+  through its item schema, as zod's is); an enum naming a value twice, and an int with a `NaN` or inverted bound, throw
+  when the schema is built, where zod collapses the first and has no second; inherited `Object.prototype` names read
+  as missing; and `s.json` takes its type as an explicit
   parameter, since a default such as `{}` says nothing about it. `defineNode` takes any schema with `safeParse` and
   `toJSONSchema`, so a zod schema still serves on the control plane (`define-node.test.ts` keeps one zod case on
   purpose). The script test bundle's toy nodes moved too, which took that bundle from 588942 bytes to 21537.
@@ -292,13 +342,20 @@ Every commit bit-identical. As built, each step's commit named by its subject:
   the LSDj link constants and `midiMapRow` into `lsdjSyncBytes.ts`, out of `dspRoles.ts` and its schemas, and
   `walkTicks` into `ticks.ts`, out of the kernel's module. `test/script/bundle-no-zod.test.ts` builds the bundle with
   the build's own options (`tools/build-session.js` exports them) and fails on any zod module in esbuild's metafile,
-  and on the role and config modules (`configSchema`, `systemRoles`, `dspRoles`, `coreRoles`, `projectConfig`). The
+  and on the role and config modules (`configSchema`, `systemRoles`, `dspRoles`, `coreRoles`, `projectConfig`), and on
+  a bundle over 200 KB, which catches zod arriving pre-inlined in another package's dist, as the path check cannot see.
+  It is a `pnpm test` case, run with the runner's own node (`RP_NODE`), not a build gate. The
   bundle's load leaves no cycles in the audio runtime, where B3a's left about 144 KiB for the first quiescent reclaim
   to collect: the `[script][gc]` case that holds that collection now loads a chunk of its own that leaves one.
 - **What the equivalence rig showed.** Every recorded digest held on the per-role graph, run beside the kernel node's
   graph from the rig's commit to the flip, and alone since. One case reads a per-node difference, the throw (section
   5): in the block where the second system's LSDj node throws, the third system's mGB node still forwards its MIDI,
-  which the case checks, and that block's digest takes the third system as the kernel left it, with nothing. One case
+  which the case checks, and that block's digest takes the third system as the kernel left it, with nothing. That
+  check is true from commit 78861a0b ("the rig's feeds lead its document ...") on. Until then the rig (and the old
+  hand-written one) ran that LSDj node after the third system's mGB, because the `serialOut` feeds stood where the
+  systems stood, so the check could not tell a throw that stops only its node from one that stops every node planned
+  after it; the feeds now lead the document, and a case holds every structure's executed script-node order to
+  `buildGraph`'s document order. One case
   is new, recorded from the kernel node when the rig was built: a controller with its default target launching
   immediately, behind routed MIDI into an MI.MAP cart, then out of the host in blocks where two Game Boys send host
   MIDI too. Section 5's items 2, 3 and 6 were orders no earlier case sent a message through (the controller case
@@ -321,8 +378,27 @@ Every commit bit-identical. As built, each step's commit named by its subject:
   - `onSettings` runs only on a real change; the kernel re-applied the song table on every push, which nothing could
     observe.
   - A pipeline's configs must be what the store parsed: a node's settings fill their defaults (an `lsdj-sync` with no
-    mode is `midiSync`), where the kernel's roles read a missing field as nothing. The stores hand parsed configs; a
-    `DirectGraph` caller passes its own as given.
+    mode is `midiSync`), where the kernel's roles read a missing field as nothing. The stores hand parsed configs: an edit parses its role's, and
+    a load does too (`adopt` parses each stored role that has a protocol node by its registered `RoleType` schema,
+    before anything else reads it, so the parsed config is the system's everywhere: the node's settings, the serial-out
+    capture, the menus and what a save writes). A stored config a schema refuses outright falls back to what this
+    ROM's providers suggest for the role, and to the schema's defaults only when they suggest none (a Game Gear
+    smsggdj cart is `gg`, not the schema's `sms`). The parse repairs fields (an unknown enum defaults, an integer
+    clamps), and it also drops a key the schema does not read, as an edit already did, which the next save no longer
+    carries; the repair line, logged once per load after the core has built, names the ROM, each repaired value and
+    each dropped key. A `DirectGraph` caller passes its own configs as given.
+  - Two roles whose nodes write one system input are not both placed. A project stored with `mgb` whose ROM path now
+    holds LSDj gains `lsdj-sync`, and both write `serialIn`, which the planner refuses (`input-taken`) with the whole
+    document. `protocolPipeline`, which every publisher builds with, keeps one writer per input and leaves out a kind
+    already placed (a node's id is `sys-<id>/<kind>`, so a kind named twice would place two nodes under one id); the
+    role stays on the system, so a save keeps it. Which of two is placed: `adopt` moves each role this ROM's providers
+    suggest ahead of the earliest role they do not suggest whose node writes an input its own does, so a loaded system
+    places the one its ROM calls for (today's LSDj, not the stale `mgb`), and with no collision, no registry or no
+    suggestion the order is as stored and the first wins. A save writes the moved order. What is left out is logged
+    once, after the core has built. `DirectGraph.setPipeline` sends the document without the later role and takes an
+    optional callback that hears what was left out. The serial-out capture and the reported LSDj sync latency
+    (`__rp_syncLatencyMs`) follow the `lsdj-sync` the pipeline places (`placedRole`), so a left-out one arms no capture
+    and reports no latency. Known limitation: spec/07.
   - A throw stops only the node it is in (section 5).
   - The routing always runs before the controller; the kernel ran its project stages in the order given, which the
     stores always gave as routing first.
@@ -352,9 +428,10 @@ Every commit bit-identical. As built, each step's commit named by its subject:
   bytes. The rest is the kernel node's per-block `BlockInput` copy, which B3a's bench found to be its per-message
   cost, gone.
 - **The profile benches** (`tools/run-profile.sh stats`, Profile A): `dsp-bench` makes 0 allocations a block (B3a:
-  33.81), 0 in its worst block (62), with a peak heap of 307096 bytes, at 15.8 times real time; `nes-bench` 0 (20.14) and
-  0 (44), peak 305064 bytes, at 10.3 times real time. The end-of-window collection frees nothing in either. A trace of
-  `dsp-bench` (`tools/run-profile.sh trace`) has `rp.midi.route` at 1.37 us a block and `rp.mgb.midi` at 0.83, each
-  holding a `js-call` of about 0.95 and its `marshal` spans of about 0.11, against 1428 us of `apu-render` and 2.0 of
-  `state-publish`; `nes-bench`'s has `rp.midi.route` at 1.09 us and `rp.n8.midi-to-fifo` at 0.53, against 2151 of
+  33.81), 0 in its worst block (62), with a peak heap of 307096 bytes, at 16.6 times real time; `nes-bench` 0 (20.14) and
+  0 (44), peak 305064 bytes, at 10.8 times real time. The end-of-window collection frees nothing in either. A trace of
+  `dsp-bench` (`tools/run-profile.sh trace`) has `rp.midi.route` at 1.37 us a block and `rp.mgb.midi` at 0.83
+  (each the whole `process` span of its node, so the `js-call` and `marshal` spans nest inside those figures); the
+  means over every `js-call` and `marshal` span in the trace, the two nodes' together, are about 0.95 and 0.11 us,
+  against 1428 us of `apu-render` and 2.0 of `state-publish`; `nes-bench`'s has `rp.midi.route` at 1.09 us and `rp.n8.midi-to-fifo` at 0.53, against 2151 of
   `apu-render` and 3.7 of `state-publish` ([spec/08](../spec/08-profiling.md)).

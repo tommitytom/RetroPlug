@@ -92,7 +92,7 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
 
 A Novation Launchpad on a real MIDI port drives a real cart — the first consumer being LSDj MI.MAP
 song-row launching from the 8x8 grid. The host half scans for the device and owns the MIDI ports;
-the behaviour is a control-plane app selected by the controller settings.
+the behaviour is an app (the controller settings select it) that runs on the audio thread, in the controller session node (below).
 
 - Code: `src/host/launchpad/` (`LaunchpadHost`, `LaunchpadLink`, `LaunchpadScanner`, `RtMidiPort`),
   with the TS side in `src/launchpad/`.

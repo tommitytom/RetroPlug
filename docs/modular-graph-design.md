@@ -579,7 +579,7 @@ export const lsdjSync = defineNode({
   descriptor's schema comes from the definition's own schema object (`toJSONSchema({ io: "input" })`, the
   shape a document may write: defaulted fields optional, as reflect-cpp's `DefaultIfMissing` says too).
   The script-node bundle, which both of an Engine's script runtimes load, was about 660 KB in B3a, 567 KB
-  of it zod; since B3b it is 78 KB with none, and a test fails any build that pulls zod back in
+  of it zod; since B3b it is 78 KB with none, and a `pnpm test` case (not a build gate) fails a bundle that pulls zod back in
   ([B3b §3](modular-graph-phase-b3b-design.md)). That is also a hard requirement for MicroQuickJS on the
   Pico, which `defineNode` itself does not yet meet (it uses ES2015's library). Every settings field needs a
   default, since the descriptor describes the layout for default settings (a C++ node has `S{}`).
@@ -624,7 +624,8 @@ block has 22.7 us), and again in B3b: a script node's call costs about 0.09 us w
 one message in and out, marshalling included, flat in node count and block size, with nothing allocated per block for
 a node written with indexed loops. An audio port adds one copy per channel each way. One node per role was therefore
 affordable even at 1-frame blocks, and so it proved: B3b's protocol nodes for an mGB, an LSDj and a NES take about
-0.94 us a 1-frame block, 2.2 at 64 frames and 11 at 512, allocating nothing, about 3 to 3.6 times less than B3a's one
+0.94 us a 1-frame block, 2.2 at 64 frames and 11 at 512 with the LSDj in MIDI sync, allocating nothing (the LSDj
+decoding MI.OUT takes 0.84, 3.9 and 23 us, with 0.23, 15 and 120 JS allocations a block), about 3 to 3.6 times less than B3a's one
 kernel node ([B3b §9](modular-graph-phase-b3b-design.md)). Batching consecutive script nodes into one call is not
 needed: it would matter only at hundreds of script nodes on 1-frame blocks (1,000 empty nodes take about 90 us a
 block), which is the Reaktor-scale case to revisit then. What a node costs beyond that is what its own JS does.
