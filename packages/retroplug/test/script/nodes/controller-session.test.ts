@@ -333,7 +333,8 @@ test("no anchor on the hardware path leaves dead reckoning exactly as it was", (
   const rig = quiet();
   const dev = new Device();
   dev.feed(rig.run(still({ playing: true, ppq: 0, connected: true, surface: [PRESS_ROW_0] })));
-  rig.set(settingsOf({ songRowTicks: twoRows(), anchorRows: [], anchorSeq: 0 }));
+  // Settings with no anchor are what the node already holds, so the push is no change at all (the rig sees none).
+  expect(rig.set(settingsOf({ songRowTicks: twoRows(), anchorRows: [], anchorSeq: 0 }))).toBe(false);
   dev.feed(rig.run(still({ playing: true, ppq: 0.1, connected: true })));
   expect(dev.leds.get(pad(0, 0))).toBe(Palette.greenBright);
 });

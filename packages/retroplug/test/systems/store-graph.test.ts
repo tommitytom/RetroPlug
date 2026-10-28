@@ -669,6 +669,69 @@ test("of two colliding roles neither of which the ROM calls for, the first in ro
   expect(warnings.length).toBe(1);
 });
 
+test("a collision's outcome survives a save and a load: the ROM's role first and placed, the stale one kept after it", () => {
+  const { be, p, sys } = project();
+  seedLsdjProject(be, "/proj/collide.rplg", [
+    { kind: "sameboy", config: {} },
+    { kind: "mgb", config: {} },
+    { kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiMap } },
+  ]);
+  const settle = (path: string) => {
+    const { result, warnings } = warned(() => p.load(path));
+    expect(result.kind).toBe("loaded");
+    const [entry] = sys.systems();
+    const kinds = sys.view().find((v) => v.id === entry.id)!.roles.map((r) => r.kind);
+    return { id: entry.id, kinds, placed: be.protocolNodes(entry.id), warnings };
+  };
+  const first = settle("/proj/collide.rplg");
+  expect(first.kinds.slice(0, 3)).toEqual(["sameboy", "lsdj-sync", "mgb"]); // moved ahead of the stale role
+  expect(first.placed).toEqual([`sys-${first.id}/lsdj-sync`]);
+  expect(first.warnings.length).toBe(1);
+  expect(be.graphNode(`sys-${first.id}/lsdj-sync`)?.settings).toEqual(canon({ mode: LsdjSyncMode.MidiMap, tempoDivisor: 1, autoStart: false }));
+  expect(p.save("/proj/saved.rplg")).toBe(true);
+  const again = settle("/proj/saved.rplg");
+  expect(again.kinds).toEqual(first.kinds);
+  expect(again.placed).toEqual([`sys-${again.id}/lsdj-sync`]);
+  expect(again.warnings.length).toBe(1); // the stale role is still kept, so it is still noted
+  expect(be.graphNode(`sys-${again.id}/lsdj-sync`)?.settings).toEqual(canon({ mode: LsdjSyncMode.MidiMap, tempoDivisor: 1, autoStart: false }));
+});
+
+test("a suggested role that collides with nothing keeps its place in the stored order", () => {
+  const { be, p, sys } = project();
+  seedLsdjProject(be, "/proj/order.rplg", [
+    { kind: "lsdj-sync", config: {} },
+    { kind: "sameboy", config: {} },
+  ]);
+  const { result, warnings } = warned(() => p.load("/proj/order.rplg"));
+  expect(result.kind).toBe("loaded");
+  const [entry] = sys.systems();
+  expect(sys.view().find((v) => v.id === entry.id)!.roles.map((r) => r.kind).slice(0, 2)).toEqual(["lsdj-sync", "sameboy"]);
+  expect(be.protocolNodes(entry.id)).toEqual([`sys-${entry.id}/lsdj-sync`]);
+  expect(warnings).toEqual([]);
+});
+
+test("a kind stored twice: the first is placed and is the one an edit reaches, and the second is noted once", () => {
+  const { be, sys } = project();
+  const roles: RoleInstance[] = [
+    { kind: "sameboy", config: {} },
+    { kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiSync, tempoDivisor: 2 } },
+    { kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiMap, tempoDivisor: 4 } },
+  ];
+  const { result: id, warnings } = warned(() => sys.adopt({ romPath: "/roms/lsdj.gb", core: "sameboy", roles })!);
+  expect(warnings.length).toBe(1);
+  expect(warnings[0].includes("its second lsdj-sync role is not placed")).toBe(true);
+  expect(be.protocolNodes(id)).toEqual([`sys-${id}/lsdj-sync`]);
+  const settings = () => be.graphNode(`sys-${id}/lsdj-sync`)?.settings;
+  expect(settings()).toEqual(canon({ mode: LsdjSyncMode.MidiSync, tempoDivisor: 2, autoStart: false }));
+  // An edit reaches the first role, the placed one; the second keeps what it was stored with.
+  const edit = warned(() => sys.setRoleConfig(id, "lsdj-sync", { tempoDivisor: 8 }));
+  expect(edit.result).toBe(true);
+  expect(edit.warnings).toEqual([]);
+  expect(settings()).toEqual(canon({ mode: LsdjSyncMode.MidiSync, tempoDivisor: 8, autoStart: false }));
+  const stored = sys.view().find((v) => v.id === id)!.roles.filter((r) => r.kind === "lsdj-sync");
+  expect(stored.map((r) => (r.config as { tempoDivisor: number }).tempoDivisor)).toEqual([8, 4]);
+});
+
 test("an adopt whose core does not build logs nothing about the system it never added", () => {
   const { be, sys } = project();
   be.buildCore = () => null;

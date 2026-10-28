@@ -57,6 +57,24 @@ test("MidiSync's tempo divisor subdivides the clock, and its auto-arm taps START
   expect(press(rig.run({ frames: 1024, playing: true, ppq: 0.15 }))).toEqual([]);
 });
 
+test("an auto-arm turned on while the transport plays reads the edge it last saw with it on", () => {
+  // The arm's memory of the transport moves only while the arm is on, as the kernel's did: switched off across a rise
+  // and on again mid-play, it still remembers the transport stopped, so it taps START on its first block back.
+  const rig = lsdj("midiSync", { autoStart: true });
+  const press = (sent: Sent[]) => on(sent, "buttons");
+  expect(press(rig.run({ frames: 1024 }))).toEqual([]); // seen stopped, with it on
+  expect(rig.set({ mode: "midiSync", autoStart: false })).toBe(true);
+  expect(press(rig.run({ frames: 1024, playing: true }))).toEqual([]); // the rise, with it off: not seen
+  rig.run({ frames: 1024, playing: true });
+  expect(rig.set({ mode: "midiSync", autoStart: true })).toBe(true);
+  expect(press(rig.run({ frames: 1024, playing: true }))).toEqual([[0, 7, 1]]);
+  // A node that has never seen the transport with it on takes the same first block as a rise.
+  const fresh = lsdj("midiSync");
+  fresh.run({ frames: 1024, playing: true });
+  fresh.set({ mode: "midiSync", autoStart: true });
+  expect(press(fresh.run({ frames: 1024, playing: true }))).toEqual([[0, 7, 1]]);
+});
+
 test("MidiPassthrough forwards raw MIDI bytes verbatim to serial", () => {
   expect(serial(lsdj("midiPassthrough").run(withMidi([noteOn(0, 60)])))).toEqual([0x90, 60, 100]);
 });
@@ -134,20 +152,24 @@ test("serial-in bytes go a run of same-frame bytes to a message, each run sent b
 });
 
 test("a run a throw leaves is sent, and a run a stopped call left is never sent in a later block", () => {
-  // No mode throws on what it accepts, so Math.ceil throws for the one value MidiMap's clock reaches when it first
-  // syncs, at ppq 10.5 (tick 252), after the node has pushed the row byte it holds as a run.
-  const rig = lsdj("midiMap");
-  const ceil = Math.ceil;
-  Math.ceil = (x: number) => {
-    if (x === 252) throw new Error("injected");
-    return ceil(x);
+  // No mode throws on what it accepts, so the block throws: a second routed message whose data cannot be read, behind
+  // a first the node has already pushed to serial as the run it holds.
+  const rig = lsdj("midiPassthrough");
+  const poisoned = rig.node;
+  const real = poisoned.process.bind(poisoned);
+  poisoned.process = (b) => {
+    const messages = b.messages;
+    b.messages = (port) => {
+      const list = messages.call(b, port);
+      if (port !== "midi") return list;
+      const bad = { frame: 9, get data(): Uint8Array { throw new Error("injected"); } };
+      return [...list, bad];
+    };
+    return real(b);
   };
-  try {
-    expect(() => rig.run(withMidi([noteOn(0, 3, 4)], { frames: 1024, ppq: 10.5, playing: true }))).toThrow("injected");
-  } finally {
-    Math.ceil = ceil;
-  }
-  expect(rig.last.map((s) => [s.port, s.frame, ...s.data])).toEqual([["serialIn", 4, 3]]);
+  expect(() => rig.run(withMidi([noteOn(0, 3, 4)], { frames: 1024 }))).toThrow("injected");
+  poisoned.process = real;
+  expect(rig.last.map((s) => [s.port, s.frame, ...s.data])).toEqual([["serialIn", 4, 0x90, 3, 100]]);
 
   // The deadline's stop skips the finally that sends the run. A send that throws stands in for it: the run is still
   // held when the call ends, and the next block starts from none.
@@ -207,6 +229,19 @@ test("master sync times its stop from the byte's own frame, which only the feedb
   };
   expect(stopsIn(0)).toBe(8); // the byte 1024 frames before block 0's start: 1024 + 8 * 1024 > 8820
   expect(stopsIn(1000)).toBe(9); // 24 frames before it: 24 + 9 * 1024 > 8820
+});
+
+test("master sync's 200 ms stop is 200 ms at the host's rate: 9600 frames at 48 kHz, not 8820", () => {
+  const stopsIn = (frame: number) => {
+    const rig = lsdj("masterSync");
+    for (let b = 0; b < 16; b++) {
+      const sent = rig.run({ frames: 1024, sampleRate: 48000, playing: true, inputs: b === 0 ? { serialOut: [{ frame, data: [5] }] } : {} });
+      if (midiOut(sent).some((m) => m[0] === 0xfc)) return b;
+    }
+    return -1;
+  };
+  expect(stopsIn(0)).toBe(9); // 1024 + 9 * 1024 = 10240 > 9600, where 1024 + 8 * 1024 = 9216 is not (and was at 44.1 kHz)
+  expect(stopsIn(1000)).toBe(10); // 24 + 10 * 1024 = 10264 > 9600; 24 + 9 * 1024 = 9240 is not
 });
 
 test("leaving master sync drops its state, so coming back opens a fresh run", () => {
