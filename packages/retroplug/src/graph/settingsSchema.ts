@@ -1,7 +1,8 @@
 // Node settings without zod (docs/modular-graph-phase-b3b-design.md section 3). A bundle of script nodes is loaded
 // into both of an Engine's QuickJS runtimes, the control side that checks settings and lays out ports and the audio
 // side that runs process, and with zod in the bundle it was most of it (about 567 KB of 660 KB) though the audio side
-// never checks a thing; MicroQuickJS (the Pico) cannot carry it at all. This is the part of zod a node's settings use, and no more:
+// never checks a thing; MicroQuickJS (the Pico) cannot carry it at all. This is the part of zod a node's settings use,
+// and no more:
 //
 //   const settings = s.object({
 //     mode: s.enum(["off", "midiSync", "masterSync"], "off"),
@@ -15,16 +16,18 @@
 // z.enum, z.number().int().min().max(), z.boolean(), z.number(), z.string(), z.array(), z.unknown(), each field with a
 // .default), held to zod's own output by test/graph/settings-schema.test.ts:
 //
-// - safeParse returns zod's result, each issue with zod's path and zod's English message, word for word, so
-//   defineNode's one-line `field: why` reads the same. Every field is checked, in shape order, and a value refused
-//   gets one issue: the first zod reports for it.
+// - safeParse returns zod's result, each issue with zod's path and zod's English message, word for word (but for an
+//   enum of integer-like strings, whose refusal zod lists reordered, "1"|"2"|"10" for ["2","10","1"]; this lists them
+//   as declared), so defineNode's one-line `field: why` reads the same. Every field is checked, in shape order, and a
+//   value refused gets one issue: the first zod reports for it.
 // - Every schema has a default, which a field takes when it is missing or undefined; an object's is its fields'
 //   defaults. The value safeParse is handed is never missing (parseSettings reads nothing as {}), so the root takes no
 //   default and its JSON Schema writes none, as zod's twin has none at its root. An array item is read the same way, so
 //   an undefined item takes the item schema's default (as it does in zod); the default is also written to the JSON
 //   Schema, as zod writes an item's .default.
 // - A default is read through its own schema when the schema is built: an array's default has each item normalized
-//   (an object item gets its fields' defaults), and a default that schema refuses throws. An int's bounds must be
+//   (an object item gets its fields' defaults, which zod does not do: its .default() returns a default as given), and a
+//   default that schema refuses throws. An int's bounds must be
 //   finite numbers with min no greater than max, or the int throws.
 // - An enum lists its values in declaration order in the JSON Schema (zod's may order integer-like strings such as
 //   "1", "2" differently), and a value named twice throws where zod's enum collapses it.
@@ -38,8 +41,8 @@
 //   is the caller's to edit. A json value given is kept as given, as z.unknown keeps it.
 //
 // It keeps to ES5's library (no Map, Set, Object.entries, includes, Number.isInteger and the like), the rule the script
-// core follows so it can run on MicroQuickJS under check:portable (docs/modular-graph-design.md, the Pico row), so it is
-// no obstacle to MicroQuickJS; defineNode itself is not there yet.
+// core follows so it can run on MicroQuickJS under check:portable (docs/modular-graph-design.md, the Pico row), so it
+// is no obstacle there; defineNode itself is not yet.
 
 /** A refusal, as a zod issue carries one: where (the field names and item indices from the root), and why. */
 export interface SettingsIssue {
@@ -234,8 +237,12 @@ function array<T>(item: Schema<T>, fallback: readonly T[]): Schema<T[]> {
     return out;
   };
   // The default is read through the item schema, so an item of it takes its own defaults as one parsed would.
+  // What it refuses is a mistake in the definition, thrown here: a container check returns an empty one for a value it
+  // refuses, which the constructor's re-check of the result would pass.
   const normalized: T[] = [];
-  for (let i = 0; i < fallback.length; ++i) normalized.push(item.read(fallback[i], [i], []));
+  const refused: Issues = [];
+  for (let i = 0; i < fallback.length; ++i) normalized.push(item.read(fallback[i], [i], refused));
+  if (refused.length > 0) throw new Error(`a settings default must pass its own schema: ${refused[0].message}`);
   return new Schema(normalized, check, () => ({ type: "array", items: item.describe() }));
 }
 

@@ -242,6 +242,11 @@ test("an array's default is normalized through its item schema", () => {
   expect(list.describe().default).toEqual([{ id: 3, on: false }, { id: 1, on: false }]);
 });
 
+test("an array default an item schema refuses is refused when the schema is built", () => {
+  expect(() => s.array(s.object({ id: s.int({ min: 1, default: 1 }) }), [5 as never])).toThrow("a settings default must pass its own schema: Invalid input: expected object");
+  expect(() => s.array(s.int({ min: 1, default: 1 }), [0])).toThrow("Too small");
+});
+
 test("an int's bounds are checked when it is built", () => {
   expect(() => s.int({ min: NaN, default: 0 })).toThrow("finite");
   expect(() => s.int({ max: Infinity, default: 0 })).toThrow("finite");
