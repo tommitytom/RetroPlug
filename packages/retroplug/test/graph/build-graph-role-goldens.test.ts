@@ -95,8 +95,8 @@ const model = (systems: GraphSystem[], over: Partial<GraphModel> = {}): GraphMod
 });
 
 // Every protocol node type on the system type it is placed for: mGB and an LSDj decoding MI.OUT on Game Boys (the
-// LSDj's serial out fed back to it, its host MIDI out an input of rp.host.midi-out), the N8 and risa on a NES (which the
-// cart mirrors), smsggdj on an SMS.
+// LSDj's serial out fed back to it, its host MIDI out an input of rp.host.midi-out), the N8 and risa on a NES (which
+// the cart mirrors), smsggdj on an SMS.
 const everyNode = (): GraphSystem[] => [gb(1, [MGB]), gb(2, [lsdj("midiOut")]), nes(3, [N8, RISA]), sms(4, [smsSync("sms")])];
 
 const CASES: Case[] = [
@@ -149,10 +149,11 @@ const CASES: Case[] = [
 // ---- the protocol rig's structures ---------------------------------------------------------------------------------
 //
 // packages/native/test/engine-graph/ProtocolNodes.test.cpp, the equivalence rig, plans each case named "rig/<name>" by
-// its name, as buildGraph built it but for its systems, which probes and feeds stand in for, and its audio, which it
-// leaves out. So the per-role graph the rig holds to the DSP kernel's recorded digests is the one buildGraph builds, and
-// a change to buildGraph's wiring for these structures fails this file until re-recorded, then the rig if it moves what
-// reaches a system or the host. Each structure is the one the rig's cases describe, which say where each is used.
+// its name, as buildGraph built it but for its systems, which probes and feeds stand in for, and its audio and N8 cart
+// mirror, which it leaves out. So the per-role graph the rig holds to the DSP kernel's recorded digests is the one
+// buildGraph builds, in buildGraph's plan order, and a change to buildGraph's wiring for these structures fails this
+// file until re-recorded, then the rig if it moves what reaches a system or the host. Each structure is the one the
+// rig's cases describe, which say where each is used.
 
 const RIG_CASES: Case[] = [];
 const rig = (name: string, systems: GraphSystem[], midiRouting: GraphModel["midiRouting"], controller: GraphController | null = null) =>

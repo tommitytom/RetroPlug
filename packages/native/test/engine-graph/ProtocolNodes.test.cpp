@@ -11,7 +11,10 @@
 // what reaches a system input or the host. It does not reach what the stand-ins replace: the system nodes, the audio
 // and the cart mirror (BuildGraphGoldens.test.cpp plans these same documents whole on real cores), nor the feedback
 // wire a Game Boy's MI.OUT comes back on, whose feed here is a plain wire carrying what the core captured last block.
-// Nor any model but these, or what the stores hand buildGraph.
+// Nor any model but these, or what the stores hand buildGraph. The plan order is buildGraph's: the feeds lead the
+// document, so the script nodes run in their document order, as production plans them, and a case holds every
+// structure to that. The throw case relies on it: only a node planned after the one that throws can show that a throw
+// stops no other.
 //
 // A case that ends in rig.matches is held to the values the DSP kernel those nodes replaced was recorded sending: the
 // messages of each kind, and a digest of all of them (per block, per system and input, each message's frame, flags and
@@ -36,7 +39,8 @@
 // graph and this one, each held to the same values. So a changed value is a change to what reaches a core or the host:
 // a deliberate one is re-recorded from the values a failing case prints. The other cases, which came after the kernel
 // or record nothing, check what they hold directly: a block that fills rp.host.midi-in, a controller's session kept
-// through a system added behind it, and the restructuring under an audio thread.
+// through a system added behind it, every structure's script nodes running in buildGraph's order, and the restructuring
+// under an audio thread.
 //
 // A serial input is counted and hashed byte by byte, each byte as the one-byte message (its frame, flags 0, one byte)
 // the kernel node sent when the values were recorded: a node sends a run of same-frame bytes as one message, which the
@@ -69,6 +73,7 @@
 #include <rfl/json.hpp>
 
 #include "NodeRig.hpp"
+#include "ScriptRig.hpp"
 #include "TestNodes.hpp"
 #include "graph/CanonicalJson.hpp"
 #include "graph/GraphHost.hpp"
@@ -177,19 +182,27 @@ std::pair<std::string, std::string> splitEndpoint(const std::string& endpoint) {
 }
 
 // A structure the rig plans: one of buildGraph's role goldens, its document as buildGraph built it but for what the
-// rig stands in for. Each system node is replaced where it stood by a probe for its serialIn and midi inputs (in-<id>),
-// one for its bytes and buttons (io-<id>) and, for a Game Boy, a feed for its serialOut (mi-out-<id>), which the rig
-// fills with what the core captured last block: so the wire from it into an LSDj's node is a plain one, where
-// buildGraph's from the Game Boy is a feedback wire, the feed's bytes being a block late already. The audio nodes and
-// the N8 cart mirror are left out (no core runs here; HostIo.test.cpp holds the mirror), with every wire to or from
-// them or a system node that no stand-in takes. Every other node and wire, the script nodes' with their settings and
-// the host I/O's, is buildGraph's as recorded.
+// rig stands in for. Each system node is replaced where it stood by a probe for its serialIn and midi inputs (in-<id>)
+// and one for its bytes and buttons (io-<id>). A Game Boy's serialOut is stood in for by a feed (mi-out-<id>), which
+// the rig fills with what the core captured last block: so the wire from it into an LSDj's node is a plain one, where
+// buildGraph's from the Game Boy is a feedback wire, the feed's bytes being a block late already. The feeds lead the
+// document, which keeps buildGraph's plan order: a feedback wire orders nothing, and a plain one from a feed where its
+// system stood would hold the LSDj node back until the feed, behind every script node placed after it (the planner
+// takes the first ready node in document order), while a feed at the head, with no inputs, is planned before them all.
+// The audio nodes and the N8 cart mirror are left out (no core runs here; HostIo.test.cpp holds the mirror), with every
+// wire to or from them or a system node that no stand-in takes. Every other node and wire, the script nodes' with their
+// settings and the host I/O's, is buildGraph's as recorded.
+struct PlacedNode {
+    std::string id;
+    std::string type;
+    std::string settings;  // canonical JSON, empty for none
+};
 struct Structure {
-    std::string                                      name;
-    std::vector<std::uint32_t>                       systems;   // in slot order
-    std::vector<std::uint32_t>                       gameBoys;  // the systems a serialOut feed stands in for
-    std::vector<std::pair<std::string, std::string>> nodes;     // each node of buildGraph's kept, its id and type
-    std::string                                      document;  // what the rig plans
+    std::string                name;
+    std::vector<std::uint32_t> systems;   // in slot order
+    std::vector<std::uint32_t> gameBoys;  // the systems a serialOut feed stands in for
+    std::vector<PlacedNode>    nodes;     // each node of buildGraph's kept, in its document order
+    std::string                document;  // what the rig plans
 };
 
 const std::set<std::string> kSystemTypes{"rp.sameboy.gb", "rp.mesen.nes", "rp.mesen.gba", "rp.mesen.sms"};
@@ -200,7 +213,7 @@ Structure standIns(const GoldenCase& c, const Document& doc) {
     std::map<std::string, std::uint32_t> systemOf;  // a system node's id, and its system's
     for (const std::uint32_t id : s.systems) systemOf["sys-" + std::to_string(id)] = id;
     std::set<std::string>    leftOut;
-    std::vector<std::string> nodes, wires;
+    std::vector<std::string> feeds, nodes, wires;
     for (const DocNode& n : doc.nodes) {
         if (kSystemTypes.count(n.type)) {
             INFO(n.id);
@@ -209,7 +222,7 @@ Structure standIns(const GoldenCase& c, const Document& doc) {
             const std::string   id = std::to_string(system);
             if (n.type == "rp.sameboy.gb") {
                 s.gameBoys.push_back(system);
-                nodes.push_back(nodeJson("mi-out-" + id, "rp.test.feed"));
+                feeds.push_back(nodeJson("mi-out-" + id, "rp.test.feed"));
             }
             nodes.push_back(nodeJson("in-" + id, "rp.test.probe"));
             nodes.push_back(nodeJson("io-" + id, "rp.test.probe"));
@@ -219,8 +232,9 @@ Structure standIns(const GoldenCase& c, const Document& doc) {
             leftOut.insert(n.id);
             continue;
         }
-        nodes.push_back(nodeJson(n.id, n.type, n.settings ? rp::graph::canonicalJson(*n.settings) : ""));
-        s.nodes.emplace_back(n.id, n.type);
+        const std::string settings = n.settings ? rp::graph::canonicalJson(*n.settings) : "";
+        nodes.push_back(nodeJson(n.id, n.type, settings));
+        s.nodes.push_back({n.id, n.type, settings});
     }
     for (const DocWire& w : doc.wires) {
         const auto [fromNode, fromPort] = splitEndpoint(w.from);
@@ -229,22 +243,41 @@ Structure standIns(const GoldenCase& c, const Document& doc) {
         const auto fromSystem = systemOf.find(fromNode);
         const auto toSystem = systemOf.find(toNode);
         if (fromSystem != systemOf.end()) {
-            // A Game Boy's MI.OUT into its LSDj's node comes from its feed; the rest a system sends is its audio, and a
-            // link cable into another system.
-            if (fromPort == "serialOut" && toSystem == systemOf.end())
+            // A Game Boy's MI.OUT into its LSDj's node comes from its feed. Past the audio, left out above, the one
+            // other wire a system sends is a link cable into another system, which no stand-in takes: any other would
+            // be a system output buildGraph wires to a node the rig plans, which must fail here rather than vanish.
+            if (fromPort == "serialOut" && toSystem == systemOf.end()) {
                 wires.push_back(wireJson("mi-out-" + std::to_string(fromSystem->second) + ".bytes", w.to));
+                continue;
+            }
+            INFO(w.from << " -> " << w.to);
+            REQUIRE(toSystem != systemOf.end());
             continue;
         }
         wires.push_back(wireJson(w.from, toSystem != systemOf.end() ? probeFor(toSystem->second, toPort) : w.to,
                                  w.feedback.value_or(false)));
     }
-    s.document = documentJson(nodes, wires);
+    feeds.insert(feeds.end(), nodes.begin(), nodes.end());
+    s.document = documentJson(feeds, wires);
     return s;
+}
+
+const RoleGoldens& roleGoldens() {
+    static const RoleGoldens goldens = readRoleGoldens();
+    return goldens;
+}
+
+// The rig's structures, by name: the role goldens named "rig/<name>".
+std::vector<std::string> rigStructureNames() {
+    std::vector<std::string> names;
+    for (const GoldenCase& c : roleGoldens().cases)
+        if (c.name.rfind("rig/", 0) == 0) names.push_back(c.name.substr(4));
+    return names;
 }
 
 // The rig's structure `name`: buildGraph's role golden "rig/<name>", with its stand-ins.
 Structure structure(const std::string& name) {
-    static const RoleGoldens goldens = readRoleGoldens();
+    const RoleGoldens& goldens = roleGoldens();
     const auto it = std::find_if(goldens.cases.begin(), goldens.cases.end(),
                                  [&](const GoldenCase& c) { return c.name == "rig/" + name; });
     INFO("rig/" << name << ": a case of build-graph-role-goldens.test.ts, recorded into build-graph-roles.json");
@@ -350,8 +383,10 @@ struct ProtocolRig {
     // The script node every document places, which every structure change keeps.
     static constexpr const char* keptId = "routing";
     Structure structure;
+    // What a script calls __probe with (ScriptRig.hpp's probes, bound into both runtimes): the order case's record.
+    rp::host::test::ProbeLog          log;
     // Before the graph, so it is destroyed after it: a script node's shim hands its instance back to it.
-    ScriptHost                        scripts;
+    ScriptHost                        scripts{&rp::host::test::bindProbes, &log};
     rp::graph::NodeRegistry           registry;
     rp::graph::ResourceTable          resources;
     // The engine's host I/O, standing in: what is staged for a block, and what the output nodes hand back.
@@ -436,8 +471,8 @@ struct ProtocolRig {
     // then each system's protocol nodes in slot order, each in its pipeline's order.
     std::vector<std::string> scriptNodes(const Structure& s) const {
         std::vector<std::string> ids;
-        for (const auto& [id, type] : s.nodes)
-            if (scriptTypes.count(type)) ids.push_back(id);
+        for (const PlacedNode& n : s.nodes)
+            if (scriptTypes.count(n.type)) ids.push_back(n.id);
         return ids;
     }
 
@@ -499,12 +534,13 @@ struct ProtocolRig {
         for (const std::uint32_t id : structure.systems) {
             digest.u32(id);
             const auto unsent = [&](const char* input) {
-                return std::find(unsentByKernel.begin(), unsentByKernel.end(), std::make_pair(id, std::string(input))) !=
-                       unsentByKernel.end();
+                const auto key = std::make_pair(id, std::string(input));
+                return std::find(unsentByKernel.begin(), unsentByKernel.end(), key) != unsentByKernel.end();
             };
             const Probe& in = node<Probe>("in-" + std::to_string(id));
             const Probe& io = node<Probe>("io-" + std::to_string(id));
-            const std::vector<Message> serialIn = unsent("serialIn") ? none : serialBytes(in.bytes);  // a byte a message
+            // A byte a message, as when recorded.
+            const std::vector<Message> serialIn = unsent("serialIn") ? none : serialBytes(in.bytes);
             const std::vector<Message>& midi = unsent("midi") ? none : in.events;
             const std::vector<Message>& bytes = unsent("bytes") ? none : io.bytes;
             const std::vector<Message>& buttons = unsent("buttons") ? none : io.events;
@@ -783,7 +819,7 @@ TEST_CASE("the per-role graph puts a controller's launches after the routed MIDI
     const auto target = [](const std::string& t) { return structure("controller-orders/" + t); };
     ProtocolRig rig(target("system"));
     BlockIn play{.frames = 1024, .ppq = 0.0, .playing = true, .connected = true};
-    std::vector<std::vector<Message>> cartSerialIn;  // Game Boy 1's serial input, a block a press, while it is the target
+    std::vector<std::vector<Message>> cartSerialIn;  // Game Boy 1's serial input, a block a press, while it is targeted
     std::vector<Bytes>                hostLaunches;  // the controller's host MIDI out, a block a press, after
     const auto press = [&](int blocks, bool toHost) {
         for (int i = 0; i < blocks; ++i) {
@@ -887,9 +923,11 @@ TEST_CASE("the per-role graph keeps a controller's session through a system adde
           "[engine-graph][protocol-nodes]") {
     // Every structural edit is a structure push, so a session rebuilt at each would lose its pending cue and its shadow
     // of the device, which it would then take and repaint whole for no reason (what project-ctx's "state survives a
-    // structure push" held the kernel to). The controller's settings are the same before and after (its target, "0 is
-    // the first system", still resolves to Game Boy 1), so its node is kept through the change (the rig checks the
-    // instance); what is checked here is that its state went with it. Nothing here was recorded from the kernel.
+    // structure push" held the kernel to). Its node is kept through the change by its id and type, whatever its
+    // settings, since the controller's type reshapes (the rig checks the instance); its settings are the same before
+    // and after (its target, "0 is the first system", still resolves to Game Boy 1), which is what keeps the session in
+    // it from being rebuilt. What is checked here is that its state went with it. Nothing here was recorded from the
+    // kernel.
     ProtocolRig rig(structure("controller-survives/one-cart"));  // the controller on Game Boy 1's MI.MAP, by the bar
     // MI.MAP's row bytes in a system's serial input: everything but its tick and its note-off.
     const auto rows = [&](std::uint32_t id) {
@@ -935,9 +973,10 @@ TEST_CASE("a throw in a protocol node keeps what was sent before it and runs the
     //
     // The recorded value is the kernel's, in which the throw also stopped every system after the one it was in, so the
     // third system sent nothing that block. A throw stops only the node it is in (the design's section 5): the third
-    // system's mGB node runs that block and forwards its MIDI to its serial input, which is checked here, and that
-    // block's digest takes that one input as the kernel left it, empty (the third system's others are empty under
-    // both). Everything else is held to the recorded values, the throw count included.
+    // system's mGB node, planned after the LSDj node as buildGraph places it (the plan-order case holds that), runs
+    // that block and forwards its MIDI to its serial input, which is checked here, and that block's digest takes that
+    // one input as the kernel left it, empty (the third system's others are empty under both). Everything else is held
+    // to the recorded values, the throw count included.
     //
     // What a throw keeps here is what the nodes around it sent. That a node's own output up to its throw stands, and
     // that it runs again the next block, is the script host's rule for every script node, held by ScriptNodes.test.cpp
@@ -958,6 +997,51 @@ TEST_CASE("a throw in a protocol node keeps what was sent before it and runs the
     rig.run({.ppq = 10.5 + 1024.0 / kBeat, .playing = true, .midi = {{4, on(0, 64)}}}, 3);
     rig.matches({18, 0, 0, 0, 0, 0, 0x420d378cfb9af0faULL});
     rig.finish(1);
+}
+
+TEST_CASE("each structure's script nodes run in the order buildGraph's document places them",
+          "[engine-graph][protocol-nodes]") {
+    // Production plans the script nodes in their document order: nothing a script node reads comes from a node after it
+    // but over a feedback wire, which orders nothing, and the planner breaks ties by document order. The rig must run
+    // them in that order too, or a case that holds what one node does to the nodes after it (the throw) holds nothing.
+    // So each structure is planned and run a block with every script node's process recorded as it is called (the wrap
+    // injected below, through __probe), and the record is held to buildGraph's script nodes in document order, each by
+    // its type and settings: two nodes of one type with one settings (the throw structure's two mGB nodes) are not told
+    // apart, and neither reads the other.
+    const std::string recordOrder = R"JS(
+      (function () {
+        var defs = globalThis.__rp_scriptNodes;
+        for (var i = 0; i < defs.length; i++) (function (d) {
+          var create = d.create;
+          d.create = function (ctx) {
+            var node = create.call(this, ctx);
+            var process = node.process;
+            var tag = d.id + " " + JSON.stringify(ctx.settings);
+            node.process = function (b) { __probe(tag); return process.call(node, b); };
+            return node;
+          };
+        })(defs[i]);
+      })();
+    )JS";
+    const std::vector<std::string> names = rigStructureNames();
+    REQUIRE(names.size() > 20);
+    for (const std::string& name : names) {
+        INFO(name);
+        ProtocolRig rig(structure(name), recordOrder);
+        rig.block({});
+        std::vector<std::string> ran, placed;
+        for (const auto& [tag, thread] : rig.log.calls) {
+            const auto space = tag.find(' ');
+            const auto settings = rp::graph::parseJson(tag.substr(space + 1));
+            REQUIRE(settings);
+            ran.push_back(tag.substr(0, space) + " " + rp::graph::canonicalJson(*settings));
+        }
+        for (const PlacedNode& n : rig.structure.nodes)
+            if (rig.scriptTypes.count(n.type))
+                placed.push_back(n.type + " " + (n.settings.empty() ? "{}" : n.settings));
+        CHECK(ran == placed);
+        rig.finish();
+    }
 }
 
 TEST_CASE("the per-role graph restructures under a running audio thread, the routing's instance kept through every change",
