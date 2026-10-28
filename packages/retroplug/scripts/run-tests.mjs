@@ -27,6 +27,10 @@ const REPO = resolve(PKG, "../..");
 const TEST_DIR = join(PKG, "test");
 const OUT_DIR = join(PKG, ".test-build");
 
+// The node running this runner, for a test that needs a Node child (the script-node bundle's build): handed down so it
+// is this node and not whichever the PATH names. spawnBuffered's children inherit the environment.
+process.env.RP_NODE = process.execPath;
+
 const TJS =
   process.env.RETROPLUG_TJS ||
   join(

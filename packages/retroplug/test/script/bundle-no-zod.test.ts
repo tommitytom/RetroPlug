@@ -6,8 +6,11 @@
 //
 // The bundle is built here as packages/native/cmake/bundles.cmake builds it, through tools/build-session.js with its
 // own options, in memory, and esbuild's metafile says which modules went in: a module from zod among them fails the
-// test, and says which. The build is Node's (esbuild is not a txiki module), so the test runs it in a node child: the
-// node on the PATH, which the suite's own runner needs anyway.
+// test, and says which. A size ceiling backs the path check up for what it cannot see (zod arriving pre-inlined in
+// another package's dist leaves no zod path in the inputs). The build is Node's (esbuild is not a txiki module), so
+// the test runs it in a node child: the runner's own node (RP_NODE, which scripts/run-tests.mjs sets), else the node
+// on the PATH when the test is run by hand. This catches zod and the like arriving; it does not prove what the
+// script host can run.
 import { test, expect } from "../../testing/harness";
 
 // Just enough of txiki's spawn and a child's pipe, declared locally as cli/childSession.ts declares them.
@@ -15,6 +18,7 @@ interface ByteStream {
   getReader(): { read(): Promise<{ done: boolean; value?: Uint8Array }> };
 }
 declare const tjs: {
+  env: Record<string, string | undefined>;
   spawn(
     args: string[],
     opts: { stdout: "pipe"; stderr: "pipe" },
@@ -51,7 +55,7 @@ async function scriptBundle(): Promise<{ inputs: string[]; bytes: number }> {
   const script =
     'const r = require("../../tools/build-session.js").bundleInputs("src/script/bundle.ts", "iife");' +
     "process.stdout.write(JSON.stringify(r));";
-  const child = tjs.spawn(["node", "-e", script], { stdout: "pipe", stderr: "pipe" });
+  const child = tjs.spawn([tjs.env.RP_NODE || "node", "-e", script], { stdout: "pipe", stderr: "pipe" });
   // Both pipes drained beside the wait, so a child that fills one cannot block on it.
   const [out, err, status] = await Promise.all([text(child.stdout), text(child.stderr), child.wait()]);
   if (status.term_signal || status.exit_status !== 0) throw new Error(`bundling src/script/bundle.ts failed: ${err}`);
@@ -61,6 +65,8 @@ async function scriptBundle(): Promise<{ inputs: string[]; bytes: number }> {
 test("the script-node bundle imports no zod module", async () => {
   const { inputs, bytes } = await scriptBundle();
   console.log(`# script-node bundle: ${inputs.length} modules, ${bytes} bytes`);
+  // B3a's bundle was 660 KB with zod; this one is about 78 KB. A loose ceiling, for zod inlined where no path says so.
+  expect(bytes < 200 * 1024, `the bundle is ${bytes} bytes, past 200 KB`).toBe(true);
   // Every production node type is in it, so an entry that bundled nothing cannot pass.
   for (const node of ["midiRoute", "mgbMidi", "n8MidiToFifo", "risaSync", "smsSync", "lsdjSync", "controllerSession"])
     expect(inputs.includes(`src/script/nodes/${node}.ts`), node).toBe(true);
