@@ -211,8 +211,8 @@ std::optional<std::string> plan(const GoldenCase& c, const std::string& document
         e.setControllerConnected(true);
     }
     // A floor under the traffic, from what the engine hands its host: a controller told a device is attached takes it
-    // into Programmer mode (its first message, sent by no other path), and one driving a real Game Boy launches the press out of the host under the system it resolved ("0 is
-    // the first system"; with none, 4294967295).
+    // into Programmer mode (its first message, sent by no other path), and one driving a real Game Boy launches the
+    // press out of the host under the system it resolved ("0 is the first system"; with none, 4294967295).
     const std::optional<GoldenController>& controller = c.model.controller;
     const SystemId controllerSystem = !controller            ? 0
                                       : controller->systemId ? controller->systemId

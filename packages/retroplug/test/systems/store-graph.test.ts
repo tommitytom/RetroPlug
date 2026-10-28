@@ -698,14 +698,17 @@ test("a collision's outcome survives a save and a load: the ROM's role first and
 
 test("a suggested role that collides with nothing keeps its place in the stored order", () => {
   const { be, p, sys } = project();
+  // A stored kind with no protocol node is kept and collides with nothing, and it is not one the ROM suggests: if
+  // lsdj-sync were hoisted past it, or past anything, the order would move.
   seedLsdjProject(be, "/proj/order.rplg", [
-    { kind: "lsdj-sync", config: {} },
     { kind: "sameboy", config: {} },
+    { kind: "retired-x", config: {} },
+    { kind: "lsdj-sync", config: {} },
   ]);
   const { result, warnings } = warned(() => p.load("/proj/order.rplg"));
   expect(result.kind).toBe("loaded");
   const [entry] = sys.systems();
-  expect(sys.view().find((v) => v.id === entry.id)!.roles.map((r) => r.kind).slice(0, 2)).toEqual(["lsdj-sync", "sameboy"]);
+  expect(sys.view().find((v) => v.id === entry.id)!.roles.map((r) => r.kind).slice(0, 3)).toEqual(["sameboy", "retired-x", "lsdj-sync"]);
   expect(be.protocolNodes(entry.id)).toEqual([`sys-${entry.id}/lsdj-sync`]);
   expect(warnings).toEqual([]);
 });

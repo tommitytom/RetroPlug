@@ -291,7 +291,7 @@ test("every protocol node type, both controller targets and every routing mode a
 });
 
 test("every wire that is not a feedback wire runs forward in its document's node order", () => {
-  // The engine plans nodes in document order, breaking ties by it, and a feedback wire orders nothing. The rig of
+  // The engine orders nodes topologically, breaking ties by document order, and a feedback wire orders nothing. The rig of
   // packages/native/test/engine-graph/ProtocolNodes.test.cpp leaves out the cart mirror and the audio nodes and runs
   // the script nodes in that order, which holds only while no wire runs backward into one of them: a future wire from
   // the mirror or an audio node into a script node would reorder production silently while the rig stayed green.

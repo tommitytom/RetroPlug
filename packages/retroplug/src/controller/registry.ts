@@ -62,7 +62,8 @@ export const APP_CONFIGS: Record<string, { label: string; schema: RoleConfigSche
 };
 
 /** Register the built-in controller apps: every runtime in CONTROLLER_APPS, in its order, with its label and
- *  schema. An app with no label and schema here is refused when this runs, rather than reaching a menu half-made. */
+ *  schema. An app with no label and schema here is refused when this runs, rather than reaching a menu half-made.
+ *  `runtimes` is what is registered (CONTROLLER_APPS unless a test hands others). */
 export function registerControllerApps(registry: ControllerRegistry, runtimes: readonly ControllerAppRuntime[] = CONTROLLER_APPS): void {
   for (const { id, app } of runtimes) {
     const config = Object.prototype.hasOwnProperty.call(APP_CONFIGS, id) ? APP_CONFIGS[id] : undefined;

@@ -81,5 +81,6 @@ test("a runtime with no label and config is refused when the apps are registered
   const r = new ControllerRegistry();
   expect(() => registerControllerApps(r, [...CONTROLLER_APPS, orphan])).toThrow(`controller app "no-config" has no label or config schema`);
   // The apps before it registered; none is reachable under the refused id.
+  expect(r.get("lsdj-midimap") !== undefined).toBe(true);
   expect(r.get("no-config")).toBe(undefined);
 });

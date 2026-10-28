@@ -91,7 +91,7 @@ export const controllerSessionNode = defineNode<ControllerSessionSettings>({
     let block: Block | null = null; // the block being processed, which a launch is sent on
     // This block's surface messages, as the views the block handed over: the session decodes them and keeps none.
     // They are JS-owned copies the script host refills each block, so what this holds after process returns is
-    // retained, not dangling; it is read only inside update, and emptied at the start of the next block.
+    // retained, not dangling; it is read only inside update, and emptied before the next update reads it.
     const input: Uint8Array[] = [];
     // The session's whole input for a block, one object refilled each block so none is built per block.
     const frame = { input, tick: 0, transport: false };

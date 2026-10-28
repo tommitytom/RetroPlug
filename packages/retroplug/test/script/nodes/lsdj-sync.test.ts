@@ -119,7 +119,7 @@ test("MidiSyncArduinoboy: tempo divisor subdivides the clock; note >= 30 pushes 
   // Notes 26-29 set the divisor (1, 2, 4, 8), which outlives a tempoDivisor edit, as the role's did.
   const rig = lsdj("midiSyncArduinoboy");
   rig.run(withMidi([noteOn(0, 24), noteOn(0, 28)], { playing: true }));
-  rig.set({ mode: "midiSyncArduinoboy", tempoDivisor: 1 });
+  expect(rig.set({ mode: "midiSyncArduinoboy", tempoDivisor: 2 })).toBe(true);
   expect(clocks(rig.run(beat({ ppq: 1, playing: true })))).toBe(6);
 });
 
@@ -233,7 +233,7 @@ test("master sync times its stop from the byte's own frame, which only the feedb
 
 test("master sync's 200 ms stop is 200 ms at the host's rate: 9600 frames at 48 kHz, not 8820", () => {
   const stopsIn = (frame: number) => {
-    const rig = lsdj("masterSync");
+    const rig = new NodeRig(lsdjSyncNode, { mode: "masterSync" }, 48000);
     for (let b = 0; b < 16; b++) {
       const sent = rig.run({ frames: 1024, sampleRate: 48000, playing: true, inputs: b === 0 ? { serialOut: [{ frame, data: [5] }] } : {} });
       if (midiOut(sent).some((m) => m[0] === 0xfc)) return b;
