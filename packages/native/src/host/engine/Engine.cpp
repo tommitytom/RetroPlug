@@ -148,7 +148,7 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
                          self->liveCores_.erase(id);
                          return false;
                      }};
-    // rp.engine.host-io/1: the staging the hosts fill and the buffers they drain, on the block thread.
+    // rp.engine.host-io/2: the staging the hosts fill and the buffers they drain, on the block thread.
     graph_->hostIo = {
         this,
         [](void* ctx, rp_queue* out) { static_cast<Engine*>(ctx)->pendingMidi_.takeSortedInto(*out); },

@@ -119,7 +119,8 @@ public:
     void setSampleRate(double sr);
 
     // The host MIDI out of this block: what the plan's rp.host.midi-out appended, in plan order, each tagged with
-    // the system that emitted it. Cleared at the top of each block that runs: a 0-frame block, or one longer than the
+    // the system that emitted it. Frame-sorted: the node raises a later input's earlier frame to the last it handed
+    // out, which the plugin relies on to write the events to a DAW that requires them in order (CLAP, LV2). Cleared at the top of each block that runs: a 0-frame block, or one longer than the
     // plan's buffers, runs nothing and keeps the previous contents. The plugin drains this to the DAW after
     // processBlock; nothing else reads it.
     const std::vector<EngineMidiOut>& midiOut() const { return midiOut_; }

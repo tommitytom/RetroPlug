@@ -57,8 +57,9 @@ rp::graph::PortDesc eventsIn(std::string id) {
 
 // An input per entry of its settings' `systems` (docs/modular-graph-phase-b3b-design.md section 5), in1 to inN, each
 // holding one producer's MIDI as it is, which goes out as that entry's system: input by input, each in queue order,
-// never merged by frame, so the order a document wires its producers in is the host's order across them. Two entries
-// may name one system (a controller sending to a real Game Boy under the id of a system whose own MI.OUT also goes
+// never merged by frame. A message whose frame is earlier than one already handed out in the block goes out at that
+// frame instead, as the kernel's one queue clamped it, so Engine::midiOut stays frame-sorted whatever order a document
+// wires its producers in. Two entries may name one system (a controller sending to a real Game Boy under the id of a system whose own MI.OUT also goes
 // out). No entries, no inputs: a document whose roles send no host MIDI places it all the same, and it sends nothing.
 // The inputs are appended here, none reflected, since their count is the settings'.
 struct MidiOut : HostIoNode {
@@ -66,38 +67,40 @@ struct MidiOut : HostIoNode {
     static constexpr const char* name = "MIDI Out";
     static constexpr const char* category = "host";
     using Settings = MidiOutSettings;
-    // A change of systems that keeps the inputs is a swap and one that moves them a rebuild (it holds nothing a
-    // rebuild loses), so its prepare reads only what create wrote, never what a commit writes, and setGraph need not
+    // A change of systems that keeps the inputs is a swap and one that moves them a rebuild. It holds nothing a
+    // rebuild loses, so its prepare reads only what create wrote, never what a commit writes, and setGraph need not
     // wait for a swap to be adopted.
     static constexpr bool stateless_prepare = true;
 
     static std::optional<std::string> validate(const Settings& s) {
-        if (s.systems.size() > kMidiOutMaxSystems)
-            return "systems names each input's system: at most " + std::to_string(kMidiOutMaxSystems) + " inputs";
+        if (s.systems.size() > kMidiOutMaxInputs)
+            return "systems names each input's system: at most " + std::to_string(kMidiOutMaxInputs) + " inputs";
         return std::nullopt;
     }
 
     static void adjust_layout(rp::graph::Layout& l, const Settings& s) {
-        for (std::size_t k = 1; k <= s.systems.size() && k <= kMidiOutMaxSystems; ++k)
+        for (std::size_t k = 1; k <= s.systems.size() && k <= kMidiOutMaxInputs; ++k)
             l.ports.push_back(eventsIn("in" + std::to_string(k)));
     }
 
     // Copied at each commit, which must not allocate.
-    std::array<std::uint32_t, kMidiOutMaxSystems> systems{};
+    std::array<std::uint32_t, kMidiOutMaxInputs> systems{};
     std::uint32_t                                 inputCount = 0;
     void on_settings(const Settings& s) noexcept {
         inputCount = 0;
-        for (std::size_t k = 0; k < s.systems.size() && k < kMidiOutMaxSystems; ++k)
+        for (std::size_t k = 0; k < s.systems.size() && k < kMidiOutMaxInputs; ++k)
             systems[inputCount++] = s.systems[k];
     }
 
     void process(const rp::Block& b) noexcept {
+        std::uint32_t last = 0;  // the latest frame handed out this block
         for (std::uint32_t k = 0; k < inputCount && k < b.raw.input_count; ++k) {
             const rp_queue& q = *b.input(k).u.queue;
             for (std::uint32_t i = 0; i < q.count; ++i) {
                 const rp_message& m = q.items[i];
                 const auto data = rp::graph::messageData(q, m);
-                io->midiOut(io->ctx, systems[k], m.frame, data.data(), data.size());
+                if (m.frame > last) last = m.frame;
+                io->midiOut(io->ctx, systems[k], last, data.data(), data.size());
             }
         }
     }

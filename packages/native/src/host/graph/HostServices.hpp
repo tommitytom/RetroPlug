@@ -35,7 +35,11 @@ struct HostCores {
 // move it between that staging and the plan's queues. [audio], though not allocation-free: midiOut and controllerOut
 // each append one std::vector per message to the buffers the hosts drain, as the native kernel stage's sinks did before
 // B3a. A flat arena, as the staged host MIDI's is (Engine::Staging), is the fix.
-#define RP_ENGINE_HOST_IO_INTERFACE "rp.engine.host-io/1"
+//
+// Host services are looked up by this versioned id so that a change of shape is visible to a node built against the
+// old one. /2: the drop counter left the struct, which /1 had. Every consumer is in tree (the nodes, the tests' rigs),
+// but a node built against /1 would read a struct a member short, so the id moved.
+#define RP_ENGINE_HOST_IO_INTERFACE "rp.engine.host-io/2"
 struct EngineHostIo {
     void* ctx;
     // Push the host MIDI staged since the last take onto `out`, stable-sorted by frame, and clear the staging.

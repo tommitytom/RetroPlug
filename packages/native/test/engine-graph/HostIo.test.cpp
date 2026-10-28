@@ -410,12 +410,13 @@ TEST_CASE("host MIDI staged through the command ring is drained and taken withou
     CHECK(midiOut(e) == std::vector<Out>{{kLoop, 2, {0xFA}}, {kLoop, 5, {0xF8}}});
 }
 
-TEST_CASE("rp.host.midi-out hands the engine each input's messages, input by input, under its system",
+TEST_CASE("rp.host.midi-out hands the engine each input's messages, input by input, frame-sorted, under its system",
           "[engine-graph][host-io]") {
     // Three producers, each wired to its own input, the first and third naming one system (a controller's launches to
     // a real Game Boy, under the id of a system whose own MI.OUT goes out too), and a fourth input left unwired. Each
-    // input's messages go out in queue order, a whole input before the next, so a frame on a later input that is
-    // earlier than one on an earlier input comes after it all the same. A message goes out as it is, whatever its bytes:
+    // input's messages go out in queue order, a whole input before the next, and a frame on a later input that is
+    // earlier than one already handed out is raised to it, so the host's MIDI out stays frame-sorted (CLAP and LV2
+    // require it), as the one queue the kernel kept clamped it. A message goes out as it is, whatever its bytes:
     // a short one, an empty one and one that is no MIDI at all alike.
     using rp::host::test::Feed;
     using rp::host::test::HostMidiOut;
@@ -433,11 +434,11 @@ TEST_CASE("rp.host.midi-out hands the engine each input's messages, input by inp
     rig.host->processBlock(64, t);
     CHECK(rig.midiOut == std::vector<HostMidiOut>{{21, 5, {0x90, 60, 100}},
                                                   {21, 9, {0xF8}},
-                                                  {22, 0, {0xFA}},
-                                                  {22, 2, {7, 0, 0, 0, 0xF8}},
-                                                  {22, 2, {0xF0, 1, 2, 0xF7}},
-                                                  {21, 1, {0xFC}},
-                                                  {21, 1, {}},
+                                                  {22, 9, {0xFA}},
+                                                  {22, 9, {7, 0, 0, 0, 0xF8}},
+                                                  {22, 9, {0xF0, 1, 2, 0xF7}},
+                                                  {21, 9, {0xFC}},
+                                                  {21, 9, {}},
                                                   {21, 30, {0x80, 60, 0}}});
 
     // And only this block's: a block with nothing queued sends nothing.
@@ -479,7 +480,7 @@ TEST_CASE("rp.host.midi-out with no systems, or an empty list of them, has no in
 
 TEST_CASE("a change to rp.host.midi-out's systems replans cleanly, its inputs moved or kept", "[engine-graph][host-io]") {
     // On an Engine, from no inputs to some and back, rp.host.midi-in's output wired to every input: the engine's MIDI
-    // out is each input's messages in turn, under that input's system. A change that moves the inputs
+    // out is each input's messages in turn, under that input's system, frame-sorted. A change that moves the inputs
     // rebuilds the node and one that keeps them swaps its settings; either way the next block goes out as the new
     // settings say, with nothing dropped and no fault.
     Engine e(kRate);
@@ -496,11 +497,12 @@ TEST_CASE("a change to rp.host.midi-out's systems replans cleanly, its inputs mo
         block(e);
         return midiOut(e);
     };
-    // Each system in turn: the two messages under it.
+    // Each system in turn: the two messages under it. The first input's are at frames 1 and 3; a later input's frame 1
+    // is raised to the 3 already handed out.
     const auto under = [](std::vector<std::uint32_t> systems) {
         std::vector<Out> out;
         for (const auto s : systems) {
-            out.push_back({s, 1, {0xFA}});
+            out.push_back({s, out.empty() ? 1u : 3u, {0xFA}});
             out.push_back({s, 3, {0xF8}});
         }
         return out;
@@ -522,7 +524,49 @@ TEST_CASE("a change to rp.host.midi-out's systems replans cleanly, its inputs mo
     CHECK(e.faultCount() == 0);
 }
 
-TEST_CASE("rp.host.midi-out's systems are 32-bit ids, at most kMidiOutMaxSystems of them", "[engine-graph][host-io]") {
+TEST_CASE("a later input's earlier frame is raised to the last frame handed out, and a new block starts again from 0",
+          "[engine-graph][host-io]") {
+    // The deleted kernel's one queue clamped each message to the latest frame queued, so the host's MIDI out was
+    // frame-sorted whatever order the producers were wired in; CLAP and LV2 require it of the events the plugin writes.
+    using rp::host::test::Feed;
+    using rp::host::test::HostMidiOut;
+    using rp::host::test::NodeRig;
+    NodeRig rig(kRate);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.feed"},{"id":"b","type":"rp.test.feed"},
+                                 {"id":"midi-out","type":"rp.host.midi-out","settings":{"systems":[1,2]}}],
+                        "wires":[{"from":"a.midi","to":"midi-out.in1"},{"from":"b.midi","to":"midi-out.in2"}]})")
+                .ok);
+    const rp_transport t{kRate, 120.0, 0.0, 0};
+    rig.node<Feed>("a").next[Feed::Midi] = {{10, {0xF8}}};
+    rig.node<Feed>("b").next[Feed::Midi] = {{3, {0xFA}}, {12, {0xFC}}, {5, {0xFB}}};
+    rig.host->processBlock(64, t);
+    CHECK(rig.midiOut == std::vector<HostMidiOut>{{1, 10, {0xF8}}, {2, 10, {0xFA}}, {2, 12, {0xFC}}, {2, 12, {0xFB}}});
+
+    // The floor is the block's: the next block's early frame is its own.
+    rig.midiOut.clear();
+    rig.node<Feed>("a").next[Feed::Midi] = {};
+    rig.node<Feed>("b").next[Feed::Midi] = {{3, {0xFA}}};
+    rig.host->processBlock(64, t);
+    CHECK(rig.midiOut == std::vector<HostMidiOut>{{2, 3, {0xFA}}});
+}
+
+TEST_CASE("a change to rp.host.midi-out's systems keeps the node while its inputs hold and rebuilds it when they move",
+          "[engine-graph][host-io]") {
+    using rp::host::test::NodeRig;
+    NodeRig rig(kRate);
+    const auto doc = [](const std::string& systems) {
+        return R"({"nodes":[{"id":"midi-out","type":"rp.host.midi-out","settings":{"systems":)" + systems + "}}],\"wires\":[]}";
+    };
+    REQUIRE(rig.set(doc("[7,9]")).ok);
+    rp_node* const first = rig.host->node("midi-out");
+    REQUIRE(first != nullptr);
+    REQUIRE(rig.set(doc("[8,9]")).ok);  // the same inputs, other systems: a swap
+    CHECK(rig.host->node("midi-out") == first);
+    REQUIRE(rig.set(doc("[8,9,10]")).ok);  // an input more: a rebuild
+    CHECK(rig.host->node("midi-out") != first);
+}
+
+TEST_CASE("rp.host.midi-out's systems are 32-bit ids, at most kMidiOutMaxInputs of them", "[engine-graph][host-io]") {
     // Any 32-bit id, 0 and 4294967295 included: the node tags, and leaves to the document whether an id names one of
     // its systems.
     Engine e(kRate);
@@ -535,19 +579,37 @@ TEST_CASE("rp.host.midi-out's systems are 32-bit ids, at most kMidiOutMaxSystems
         return R"({"systems":[)" + list + "]}";
     };
     for (const std::string accepted : {std::string(R"({"systems":[0]})"), std::string(R"({"systems":[4294967295,1]})"),
-                                       ids(rp::host::kMidiOutMaxSystems)}) {
+                                       ids(rp::host::kMidiOutMaxInputs)}) {
         INFO(accepted.substr(0, 60));
         CHECK(plan(accepted).ok);
     }
     for (const std::string refused : {std::string(R"({"systems":[-1]})"), std::string(R"({"systems":[4294967296]})"),
                                       std::string(R"({"systems":[7.5]})"), std::string(R"({"systems":["7"]})"),
-                                      std::string(R"({"systems":7})"), ids(rp::host::kMidiOutMaxSystems + 1)}) {
+                                      std::string(R"({"systems":7})"), ids(rp::host::kMidiOutMaxInputs + 1)}) {
         INFO(refused.substr(0, 60));
         const auto result = plan(refused);
         REQUIRE_FALSE(result.ok);
         CHECK(result.errors.at(0).nodeId == "midi-out");
         CHECK(result.errors.at(0).code == "settings-invalid");
     }
+
+    // The last input is a real one: wired and sent on, under the extreme ids.
+    using rp::host::test::Feed;
+    using rp::host::test::HostMidiOut;
+    using rp::host::test::NodeRig;
+    NodeRig     rig(kRate);
+    std::string list = "4294967295";
+    for (std::uint32_t i = 2; i < rp::host::kMidiOutMaxInputs; ++i) list += "," + std::to_string(i);
+    list += ",0";
+    const std::string last = "in" + std::to_string(rp::host::kMidiOutMaxInputs);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.feed"},{"id":"b","type":"rp.test.feed"},
+                                 {"id":"midi-out","type":"rp.host.midi-out","settings":{"systems":[)" + list + R"(]}}],
+                        "wires":[{"from":"a.midi","to":"midi-out.in1"},{"from":"b.midi","to":"midi-out.)" + last + R"("}]})")
+                .ok);
+    rig.node<Feed>("a").next[Feed::Midi] = {{1, {0xFA}}};
+    rig.node<Feed>("b").next[Feed::Midi] = {{2, {0xFC}}};
+    rig.host->processBlock(64, rp_transport{kRate, 120.0, 0.0, 0});
+    CHECK(rig.midiOut == std::vector<HostMidiOut>{{4294967295u, 1, {0xFA}}, {0, 2, {0xFC}}});
 }
 
 TEST_CASE("each block's host buffers start empty, and a plan with no input node drops what was staged",
