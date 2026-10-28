@@ -219,3 +219,32 @@ test("the settings type is inferred, and a node's create and ports receive it", 
   const typed: Equal<ReturnType<typeof node.parseSettings>, Infer<typeof settings>> = true;
   expect(typed).toBe(true);
 });
+
+test("an enum lists its values in declaration order, and a value named twice is refused when it is built", () => {
+  // Integer-like strings are where an object-key ordering would reorder them; the list is the declaration's.
+  const ids = s.enum(["2", "10", "1"], "1");
+  expect(ids.toJSONSchema(input)).toEqual({ $schema: "https://json-schema.org/draft/2020-12/schema", type: "string", enum: ["2", "10", "1"] });
+  expect(() => s.enum(["a", "b", "a"], "a")).toThrow(`names "a" twice`);
+});
+
+test("an inherited name reads as missing: a field named toString absent from a parsed document takes its default", () => {
+  const n = s.object({ toString: s.string("dflt"), constructor: s.int({ default: 7 }) });
+  const raw = JSON.parse("{}");
+  // The parsed object inherits Object.prototype, so these members are there to be mistaken for the fields.
+  expect("toString" in raw).toBe(true);
+  expect(n.safeParse(raw)).toEqual({ success: true, data: { toString: "dflt", constructor: 7 } });
+  expect(n.safeParse(JSON.parse('{"toString":"own"}'))).toEqual({ success: true, data: { toString: "own", constructor: 7 } });
+});
+
+test("an array's default is normalized through its item schema", () => {
+  const list = s.array(s.object({ id: s.int({ min: 1, default: 1 }), on: s.bool(false) }), [{ id: 3 } as { id: number; on: boolean }, undefined as never]);
+  expect(s.object({ list }).safeParse({})).toEqual({ success: true, data: { list: [{ id: 3, on: false }, { id: 1, on: false }] } });
+  expect(list.describe().default).toEqual([{ id: 3, on: false }, { id: 1, on: false }]);
+});
+
+test("an int's bounds are checked when it is built", () => {
+  expect(() => s.int({ min: NaN, default: 0 })).toThrow("finite");
+  expect(() => s.int({ max: Infinity, default: 0 })).toThrow("finite");
+  expect(() => s.int({ min: 5, max: 2, default: 3 })).toThrow("min 5 is above its max 2");
+  expect(s.int({ min: 2, max: 2, default: 2 }).safeParse(2)).toEqual({ success: true, data: 2 });
+});

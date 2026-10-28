@@ -1,7 +1,7 @@
 // Node settings without zod (docs/modular-graph-phase-b3b-design.md section 3). A bundle of script nodes is loaded
 // into both of an Engine's QuickJS runtimes, the control side that checks settings and lays out ports and the audio
-// side that runs process, and zod was most of it (about 567 KB of 660 KB) though the audio side never checks a thing;
-// MicroQuickJS (the Pico) cannot carry it at all. This is the part of zod a node's settings use, and no more:
+// side that runs process, and with zod in the bundle it was most of it (about 567 KB of 660 KB) though the audio side
+// never checks a thing; MicroQuickJS (the Pico) cannot carry it at all. This is the part of zod a node's settings use, and no more:
 //
 //   const settings = s.object({
 //     mode: s.enum(["off", "midiSync", "masterSync"], "off"),
@@ -18,10 +18,16 @@
 // - safeParse returns zod's result, each issue with zod's path and zod's English message, word for word, so
 //   defineNode's one-line `field: why` reads the same. Every field is checked, in shape order, and a value refused
 //   gets one issue: the first zod reports for it.
-// - Every schema has a default, which a field (or an array item) takes when it is missing or undefined; an object's is
-//   its fields' defaults. The value safeParse is handed is never missing (parseSettings reads nothing as {}), so the
-//   root takes no default and its JSON Schema writes none, as zod's twin has none at its root. An item's default is
-//   never used to parse, but is written to the JSON Schema, as zod writes an item's .default.
+// - Every schema has a default, which a field takes when it is missing or undefined; an object's is its fields'
+//   defaults. The value safeParse is handed is never missing (parseSettings reads nothing as {}), so the root takes no
+//   default and its JSON Schema writes none, as zod's twin has none at its root. An array item is read the same way, so
+//   an undefined item takes the item schema's default (as it does in zod); the default is also written to the JSON
+//   Schema, as zod writes an item's .default.
+// - A default is read through its own schema when the schema is built: an array's default has each item normalized
+//   (an object item gets its fields' defaults), and a default that schema refuses throws. An int's bounds must be
+//   finite numbers with min no greater than max, or the int throws.
+// - An enum lists its values in declaration order in the JSON Schema (zod's may order integer-like strings such as
+//   "1", "2" differently), and a value named twice throws where zod's enum collapses it.
 // - An object drops a key its shape does not name, as z.object does: it strips, and refuses nothing. So a document may
 //   carry a field this build does not read (one a later version adds) and still be read, and its input JSON Schema
 //   says as much by writing no additionalProperties. A C++ node's settings (rfl::DefaultIfMissing) ignore one too.
@@ -31,8 +37,9 @@
 // - A default is copied each time it is taken, and an object or array parsed is a new one, so what safeParse returns
 //   is the caller's to edit. A json value given is kept as given, as z.unknown keeps it.
 //
-// It keeps to ES5's library (no Object.entries, includes, Number.isInteger and the like), as src/controller/portable.ts
-// does, so it is no obstacle to MicroQuickJS; defineNode itself is not there yet.
+// It keeps to ES5's library (no Map, Set, Object.entries, includes, Number.isInteger and the like), the rule the script
+// core follows so it can run on MicroQuickJS under check:portable (docs/modular-graph-design.md, the Pico row), so it is
+// no obstacle to MicroQuickJS; defineNode itself is not there yet.
 
 /** A refusal, as a zod issue carries one: where (the field names and item indices from the root), and why. */
 export interface SettingsIssue {
@@ -143,8 +150,8 @@ function object<F extends Fields>(fields: F): Schema<{ [K in keyof F]: Infer<F[K
       return out as Out;
     }
     const given = value as Record<string, unknown>;
-    // Own keys only, where zod reads inherited ones too: a field named for an Object.prototype member (toString)
-    // given no value is missing, not that member. JSON has no inherited keys, so a document reads the same either way.
+    // Own keys only, where zod reads inherited ones too: a parsed JSON object inherits Object.prototype, so a field
+    // named for one of its members (toString, constructor) given no value must read as missing, not as that member.
     for (let i = 0; i < keys.length; ++i) {
       const key = keys[i];
       out[key] = fields[key].read(hasOwn(given, key) ? given[key] : undefined, path.concat(key), issues);
@@ -174,6 +181,10 @@ const isNumber = (value: unknown): value is number => typeof value === "number" 
 /** A whole number, a safe integer, from min to max when they are given. */
 function int(o: { min?: number; max?: number; default: number }): Schema<number> {
   const { min, max } = o;
+  if ((min !== undefined && !isNumber(min)) || (max !== undefined && !isNumber(max))) {
+    throw new Error(`an int's bounds must be finite numbers, got min ${String(min)} and max ${String(max)}`);
+  }
+  if (min !== undefined && max !== undefined && min > max) throw new Error(`an int's min ${min} is above its max ${max}`);
   // In zod's order: the type, then .int() (whole, then safe), then .min(), then .max().
   const check: Check<number> = (value, path, issues) => {
     const why = !isNumber(value) ? invalidType("number", value)
@@ -194,9 +205,12 @@ function int(o: { min?: number; max?: number; default: number }): Schema<number>
   }));
 }
 
-/** One of a list of strings. */
+/** One of a list of strings, listed in the JSON Schema in the order given. */
 function oneOf<const V extends readonly [string, ...string[]]>(values: V, fallback: NoInfer<V[number]>): Schema<V[number]> {
   const list: string[] = values.slice();
+  for (let i = 0; i < list.length; ++i) {
+    if (list.indexOf(list[i]) !== i) throw new Error(`an enum names "${list[i]}" twice (${list.map((v) => `"${v}"`).join(", ")})`);
+  }
   // zod's words: one value alone is expected outright, more are listed quoted and joined by "|".
   const why = list.length === 1
     ? `Invalid input: expected "${list[0]}"`
@@ -219,13 +233,16 @@ function array<T>(item: Schema<T>, fallback: readonly T[]): Schema<T[]> {
     for (let i = 0; i < value.length; ++i) out.push(item.read(value[i], path.concat(i), issues));
     return out;
   };
-  return new Schema(fallback as T[], check, () => ({ type: "array", items: item.describe() }));
+  // The default is read through the item schema, so an item of it takes its own defaults as one parsed would.
+  const normalized: T[] = [];
+  for (let i = 0; i < fallback.length; ++i) normalized.push(item.read(fallback[i], [i], []));
+  return new Schema(normalized, check, () => ({ type: "array", items: item.describe() }));
 }
 
 /** An opaque JSON value, already checked where it was made (a controller's parsed app config, say): any value is
  *  kept, and its JSON Schema says nothing but its default. Its type is the caller's to name: s.json<AppConfig>(...). */
-function json<T = unknown>(fallback: T): Schema<T> {
-  return new Schema(fallback, (value) => value as T, () => ({}));
+function json<T = unknown>(fallback: NoInfer<T>): Schema<T> {
+  return new Schema<T>(fallback, (value) => value as T, () => ({}));
 }
 
 /** The builders. Each takes its default; s.object's is its fields'. */
