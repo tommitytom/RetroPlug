@@ -170,6 +170,11 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     settles) or reloading its pack clears it ([02-native-host.md](02-native-host.md), the script host). A per-node
     "invalid" state, the document planning without the node, rather than a refused document is a choice for the
     authoring work.
+  - **A retired generation waits for the host's reclaims.** Under an audio thread, a generation a reload replaced is
+    freed at the host's next reclaim after its nodes' records come back, which they do once a reclaim has freed the
+    plan that held them and a block has released them. The plugin and SDL reclaim only inside `setGraph`,
+    `buildCore` and `loadScriptPack` while their audio runs, so the generation the last reload replaced, its two
+    runtimes, stays until later calls have done that; an idle reclaim in the plugin and SDL would free it sooner.
   - **A record the release ring back cannot take keeps its pack for the host's life**, as it leaks its record rather
     than free it on the audio thread; nothing has filled that ring. A profile build's absolute live heap leaves out
     what the load of any pack loaded beside the built-in one allocated (its deltas are exact).

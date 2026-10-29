@@ -698,8 +698,12 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   then its audio runtime leaves what packs share, so its frees are counted apart, then its runtimes go. So a
   whole generation's heap is freed off the audio thread, while it runs blocks in other packs: the block
   thread holds nothing of a pack none of whose records is alive. With no audio thread running, a reload frees
-  the old generation within the call. A record the release ring back could not take, leaked rather than
-  freed on the audio thread, keeps its pack for the host's life.
+  the old generation within the call. Under one, the old generation goes at the first reclaim after its
+  records come back, which they do once a reclaim has freed the plan that held its nodes and a block has
+  released them: the Engine reclaims first in `setGraph` and in every `loadScriptPack`, and the `buildCore`
+  RPC calls its `reclaim` first, which in the plugin and SDL are the only reclaims while audio runs
+  ([07-remaining-work.md](07-remaining-work.md) section 5). A record the release ring back could not take,
+  leaked rather than freed on the audio thread, keeps its pack for the host's life.
 - **Settings and layout** (control side, the planning thread). `layout_for` and `prepare_settings` run
   the definition's `parseSettings` and its `layout` on the settings alone, so the planner can check a
   whole document before it creates anything. Every script type declares `RP_TYPE_STATELESS_PREPARE`,

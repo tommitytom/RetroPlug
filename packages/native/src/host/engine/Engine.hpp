@@ -283,10 +283,14 @@ public:
     // settings check run again: at its control runtime's memory limit, say), their releases go to the block thread, so
     // it stays in scriptPacks(), discarded, until those records come back, and the reclaim that finds them back frees
     // it; else (a settings refusal or a type gone is refused before anything is created) it too is freed within the
-    // call. On success `types` are the new generation's, and the old one is retired, freed with its runtimes once its
-    // nodes' records come back (within the call when no audio thread runs; else by the reclaim that finds them back,
-    // its registry entries dropped with it). A document that places none of the pack's nodes is not replanned: it would
-    // plan as it runs.
+    // call. On success `types` are the new generation's, and the old one is retired, freed with its runtimes, its
+    // registry entries dropped with it, once its nodes' records come back: within the call when no audio thread runs.
+    // Under one, they come back once a reclaim has freed the plan that held those nodes, queuing their releases to the
+    // block thread, and a block has released them; the generation goes at the host's next reclaim after that, which is
+    // reclaim() or the one setGraph and every load begin with (buildCore's RPC calls reclaim() first too). The plugin
+    // and SDL reclaim only in those calls, and as they stop the audio thread, so the generation the last reload
+    // replaced stays until later ones have freed that plan and, once a block has released its nodes, found their
+    // records back. A document that places none of the pack's nodes is not replanned: it would plan as it runs.
     ScriptPackResult loadScriptPack(const std::string& id, const std::string& source, std::size_t memoryLimit = 0);
     // How much of the calling thread's CPU time one call into a script pack's JS may use, on either side
     // (ScriptHost::setCallDeadline): set it before an audio thread runs blocks.

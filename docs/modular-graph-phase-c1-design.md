@@ -238,10 +238,15 @@ ring (release on push, acquire on adopt) carries the whole built pack with it.
   generation's package first (the Engine's has the registry drop that package's retired entries), then its audio
   runtime leaves what packs share (the join's reverse, so its frees are counted apart), then its runtimes go. A whole
   generation's heap is freed off the audio thread, where an instance's release frees its JS state on it. While no
-  audio thread runs, releases happen there and then, so a reload frees the old generation within the call. A record
-  the release ring back could not take, leaked rather than freed on the audio thread, keeps its pack for the host's
-  life. A profile build takes what a freed generation added to the live heap off the shared count once no audio thread
-  runs.
+  audio thread runs, releases happen there and then, so a reload frees the old generation within the call. Under one,
+  a retired generation is freed at the host's next reclaim after its records come back, and they come back only once a
+  reclaim has freed the plan that held its nodes and a block has released them. The Engine reclaims at the top of
+  `setGraph` and of every `loadScriptPack` (a refused one, and one that replans nothing, among them), and the RPC's
+  `buildCore` calls its `reclaim` first; the plugin and SDL reclaim nowhere else while their audio runs, so the
+  generation the last reload replaced stays, its two runtimes with it, until later calls have freed that plan and,
+  once a block has released its nodes, found their records back (section 12). A record the release ring back could not
+  take, leaked rather than freed on the audio thread, keeps its pack for the host's life. A profile build takes what a
+  freed generation added to the live heap off the shared count once no audio thread runs.
 - **Not in C1:** unloading a pack (a dev loop reloads, and a pack nothing places costs only its runtimes), and loading a
   pack into more than one Engine: a render job's Engine (or a second one) has the built-in pack only. Loading a project's
   packs into every Engine that runs it belongs with whatever first places user nodes in projects; until then none does.
@@ -380,7 +385,9 @@ bugs), belong with the authoring and package-split work.
     driving blocks, and a reload loop frees every generation it replaces; a pack the registry refuses is discarded with
     nothing in an audio-side count; a reload refused `busy` under an audio thread, after its replan made a fresh
     instance, leaves its generation listed, discarded, until the block thread releases that instance and a reclaim
-    finds its record back;
+    finds its record back; and under an audio thread, with no reclaim but the loads', the generation a reload replaced
+    freed by the first load after a block has released its node, a load its compile refuses and one of another id
+    among them;
   - jobs: a never-settling chain faults its node after two cut-short checkpoints while another pack's node is never
     charged, and a built-in node's counts stay 0 throughout; a load whose promise jobs do not settle in 256 (its top
     level's in either runtime, a descriptor's in either, a flag's getter's read after the last descriptor, its
@@ -496,6 +503,10 @@ is written from it; the prototype is where the questions below are answered (eac
 - **A node whose settings check fails refuses every document placing it** (section 4), as the planner always has for
   settings a node refuses, so while it is placed no other edit to the graph lands. A per-node invalid state, the
   document planning without that node, is the authoring work's to choose.
+- **A retired generation waits for the host's reclaims** (section 5). Under an audio thread the plugin and SDL reclaim
+  only inside `setGraph`, `buildCore` and `loadScriptPack`, so the generation the last reload replaced, its two
+  runtimes, stays until later calls have freed the plan that held its nodes and found their records back. An idle
+  reclaim in the plugin and SDL would free it sooner.
 
 ## 13. Found while building
 
@@ -615,3 +626,7 @@ is written from it; the prototype is where the questions below are answered (eac
   it (section 5). That is kept as the planner's contract: removing the node (every node of its pack, for a chain that
   never settles) or reloading its pack clears it, and a per-node invalid state is the authoring work's to choose
   (section 12).
+- **A load did not reclaim first.** `setGraph`, and the `buildCore` RPC through `reclaim`, take back what the audio
+  thread has handed back before anything else, and a load did not: under an audio thread, a reload that replanned
+  nothing, or was refused, freed no generation an earlier reload had replaced, and one that replanned freed them only
+  after building its own. Every load reclaims first (section 5).

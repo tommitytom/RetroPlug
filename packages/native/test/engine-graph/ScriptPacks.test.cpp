@@ -8,10 +8,11 @@
 // and its state (the running plan's tap included), a reload whose replan is refused leaves the registry and the running
 // plan as they were, the generation it built discarded: freed within the call, or, when under an audio thread the
 // refused plan made a fresh instance of it, held until that instance's record comes back; and the generation a reload
-// replaced is freed on the control thread once its records are back, within the call when no audio thread runs. The
-// control thread's calls into a pack, its load and its settings checks, are held to the call deadline on a clock of
-// their own. Driven on an Engine, whose built-in pack is the production bundle, the toy packs inline JS source; and on
-// a ScriptRig, where the host's binder, its allocation counts and the built-in pack's deadline are what is checked.
+// replaced is freed on the control thread once its records are back: within the call when no audio thread runs, else
+// at the first reclaim after, every load reclaiming first. The control thread's calls into a pack, its load and its
+// settings checks, are held to the call deadline on a clock of their own. Driven on an Engine, whose built-in pack is
+// the production bundle, the toy packs inline JS source; and on a ScriptRig, where the host's binder, its allocation
+// counts and the built-in pack's deadline are what is checked.
 //
 // Run via `pnpm test:plugin engine-graph`, or `build/bin/retroplug-engine-graph-test "[packs]"`.
 
@@ -1348,6 +1349,58 @@ TEST_CASE("a reload refused under an audio thread after its replan made a fresh 
                       {docWire("count.out", "midi-out.in1"), docWire("count2.out", "midi-out.in2")}));
     e.drainCommands();
     CHECK(block(e) == sorted({{1, 0, {1, 3}}, {2, 0, {1, 1}}}));
+    e.setAudioThreadOwns(false);
+    CHECK(e.scriptThrows() == 0);
+    CHECK(e.faultCount() == 0);
+}
+
+TEST_CASE("under an audio thread, a load reclaims first: the generation a reload replaced is freed by the first load "
+          "after a block has released its node, a load its compile refuses and one of another id among them",
+          "[script][packs][reload]") {
+    Engine e(kRate);
+    load(e, "test.back", toys(tally("test.back.count", 1)));
+    place(e, document({docNode("count", "test.back.count"), midiOut("1")}, {docWire("count.out", "midi-out.in1")}));
+    CHECK(block(e) == std::vector<Out>{{1, 0, {1, 1}}});
+    // The test thread is the block thread from here, and nothing reclaims but the loads, as in the plugin and SDL, which
+    // reclaim only inside setGraph, buildCore and a load.
+    e.setAudioThreadOwns(true);
+    const auto drained = [&] {
+        e.drainCommands();
+        return block(e);
+    };
+    const auto held = [&](std::uint32_t generation) {
+        const auto packs = e.scriptPacks();
+        const ScriptHost::PackInfo* p = findPack(packs, "test.back", generation);
+        return p && p->standing == ScriptHost::PackStanding::Retired && p->records == 1;
+    };
+    // The first reload's replan is queued, so the generation it replaced is retired with its node's record out; the
+    // block adopts the replan and hands the plan that held that node back.
+    load(e, "test.back", toys(tally("test.back.count", 2)));
+    CHECK(held(1));
+    CHECK(drained() == std::vector<Out>{{1, 0, {2, 1}}});
+    // The second reload's reclaim frees that plan, which queues the node's release to the block thread: its record is
+    // not back, so the first generation is still held, and the second is retired beside it.
+    load(e, "test.back", toys(tally("test.back.count", 3)));
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.back#1", "test.back#2", "test.back#3"});
+    CHECK(held(1));
+    CHECK(held(2));
+    CHECK(e.retiredNodeTypeCount() == 2);
+    // A block releases that node at its top and hands its record back, which no reclaim has found yet.
+    CHECK(drained() == std::vector<Out>{{1, 0, {3, 1}}});
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.back#1", "test.back#2", "test.back#3"});
+    // A load its compile refuses still reclaims first: the record found back frees the first generation, its retired
+    // entries with it, and the plan holding the second's node is handed back to the block thread.
+    const auto typo = e.loadScriptPack("test.back", "var x = ;");
+    CHECK_FALSE(typo.ok);
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.back#2", "test.back#3"});
+    CHECK(held(2));
+    CHECK(e.retiredNodeTypeCount() == 1);
+    CHECK(drained() == std::vector<Out>{{1, 0, {3, 2}}});
+    // And a load of another id, which replans nothing, frees the second.
+    load(e, "test.beside", toys(tally("test.beside.count", 9)));
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.back#3", "test.beside#1"});
+    CHECK(e.retiredNodeTypeCount() == 0);
+    CHECK(drained() == std::vector<Out>{{1, 0, {3, 3}}});
     e.setAudioThreadOwns(false);
     CHECK(e.scriptThrows() == 0);
     CHECK(e.faultCount() == 0);
