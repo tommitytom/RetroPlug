@@ -897,6 +897,46 @@ toy.define("test.bound.pass", [toy.input("in"), toy.output("out")], function () 
     CHECK(rig.scripts.throwCount() == 0);
 }
 
+TEST_CASE("a pack the registry refuses is discarded with nothing in any audio-side count: neither what its load "
+          "allocated nor what freeing it frees, which is the control thread's",
+          "[script][packs]") {
+    using rp::host::test::compileToys;
+    rp::host::test::ScriptRig rig;
+    // A descriptor the registry cannot use, and a type id another pack holds ("test.nest" and "test.nest.x" can both
+    // name "test.nest.x.up"), each pack built and joined before the registry is asked.
+    const std::vector<std::pair<std::string, std::string>> refusals{
+        {"test.odd", R"JS(
+toy.define("test.odd.smoke", [{ id: "in", dir: "in", kind: "smoke" }], function () {
+  return { process: function () {} };
+});
+)JS"},
+        {"test.nest.x", transposer("test.nest.x.up", 1)},
+    };
+    const auto holding = compileToys(toys(transposer("test.nest.x.up", 2)));
+    const ScriptHost::Chunk holdingChunk = holding;
+    std::string error;
+    const rp_package* holder = rig.scripts.loadPack("test.nest", {&holdingChunk, 1}, 0, &error);
+    REQUIRE(holder != nullptr);
+    REQUIRE(rig.registry.addPackage(holder, &error));
+    for (const auto& [id, body] : refusals) {
+        INFO(id);
+        const auto before = rig.scripts.audioAllocations();
+        const auto bytecode = compileToys(toys(body));
+        const ScriptHost::Chunk chunk = bytecode;
+        const rp_package* package = rig.scripts.loadPack(id, {&chunk, 1}, 0, &error);
+        INFO(error);
+        REQUIRE(package != nullptr);
+        CHECK_FALSE(rig.registry.addPackage(package, &error));
+        rig.scripts.discardPack(package);
+        const auto after = rig.scripts.audioAllocations();
+        CHECK(after.allocs == before.allocs);
+        CHECK(after.reallocs == before.reallocs);
+        CHECK(after.frees == before.frees);
+        CHECK(after.bytes == before.bytes);
+        CHECK(rig.scripts.packs().size() == 2);  // the built-in pack and the holder's
+    }
+}
+
 namespace {
 
 // A node, `id`, that sends [tag, n] every block, n its block count: which code runs, and whether its instance, and so

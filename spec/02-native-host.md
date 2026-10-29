@@ -675,7 +675,7 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   the checks the built-in pack's load makes and one more: every type id is the pack's id, a dot and a name
   (`user.synth.osc` in `user.synth`). Then the pack's package joins the registry, which refuses a type id
   another package holds (one pack's id can run on into another's, `a` and `a.b`), a refusal that frees the
-  pack. A document can place its nodes from the next `setGraph`. The block thread first meets a pack through
+  pack, its frees counted apart as every freed pack's are (below). A document can place its nodes from the next `setGraph`. The block thread first meets a pack through
   an instance in a plan it adopts, so the plan swap's ring carries the whole built pack across; a pack's audio
   runtime joins what packs share (the call deadline's interrupt handler, the allocation counters) only once
   its load is done, so what a loaded pack's load allocates is counted apart from `audioAllocations`.

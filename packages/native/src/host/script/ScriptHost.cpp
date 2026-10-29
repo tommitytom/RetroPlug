@@ -1674,7 +1674,13 @@ ScriptHost::~ScriptHost() {
     assert(!audioOwns_.load() && "destroy a ScriptHost only once no audio thread runs its blocks");
     releaseQueued();
     assert(live_.load() == 0 && "every shim goes before its script host");
-    for (auto& pack : packs_) freeRuntimes(*pack);
+    // Each pack leaves what packs share before it goes, as freePack's does, so no way a pack is freed counts what
+    // freeing it frees in the shared counters.
+    Counters freeing;
+    for (auto& pack : packs_) {
+        leave(*pack, freeing);
+        freeRuntimes(*pack);
+    }
 }
 
 ScriptHost::Chunk ScriptHost::embeddedBundle() { return {rp_script_bundle, rp_script_bundle_size}; }

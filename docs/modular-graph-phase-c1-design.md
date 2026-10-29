@@ -178,7 +178,8 @@ ring (release on push, acquire on adopt) carries the whole built pack with it.
   its definitions read, what the load left in cycles collected, and its audio runtime joined to what packs share
   (section 4); then its package is added to the Engine's node registry. A document can place its nodes from then on.
   A package the registry refuses (a descriptor the planner could not use, a type id another pack holds) frees the
-  pack there and then: nothing placed it.
+  pack there and then: nothing placed it. Its audio runtime leaves what packs share first, as every freed pack's does
+  (the destructor's included), so nothing freeing it frees is in the shared counters.
 - **Reload** (an id already loaded), all or nothing, as `setGraph` is:
   1. The new generation is built as a load builds, beside the old one. Its number is one more than the newest of its
      id the host still holds, so a refused reload freed at once uses no number and one waiting for its records does.
@@ -341,7 +342,8 @@ bugs), belong with the authoring and package-split work.
     JS state across it, a type added by the reload places, and a refused reload (a type the document places removed,
     settings the new code rejects) returns the planner's errors with the old code still running;
   - freeing: a retired generation's runtimes are freed once its records come back, quiescent and under an audio thread
-    driving blocks, and a reload loop frees every generation it replaces;
+    driving blocks, and a reload loop frees every generation it replaces; a pack the registry refuses is discarded with
+    nothing in an audio-side count;
   - jobs: a node's failing `queueMicrotask` callback is its throw and faults it under `faultOnThrow`; a job the
     deadline stops counts as its call stopped; a never-settling chain faults its node after two cut-short checkpoints
     while a pack-mate is never charged; a built-in node's counts stay 0 throughout; a load whose promise jobs do not
