@@ -104,11 +104,14 @@ bool placesAny(const std::string& document, const rp_package& package) {
     return false;
 }
 
-// The planner's errors as one line: the first, and how many more.
+// The planner's errors as one line: the first, where it is when it is at a node (a refusal of the whole document, busy
+// among them, is at none), and how many more.
 std::string describeErrors(const std::vector<Engine::GraphError>& errors) {
     if (errors.empty()) return "no reason given";
     const auto& e = errors.front();
-    std::string text = e.code + " at " + e.nodeId + (e.port.empty() ? "" : "." + e.port) + ": " + e.message;
+    std::string text = e.code;
+    if (!e.nodeId.empty()) text += " at " + e.nodeId + (e.port.empty() ? "" : "." + e.port);
+    text += ": " + e.message;
     if (errors.size() > 1) text += " (and " + std::to_string(errors.size() - 1) + " more)";
     return text;
 }

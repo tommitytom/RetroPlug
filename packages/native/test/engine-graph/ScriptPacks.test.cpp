@@ -1248,7 +1248,8 @@ TEST_CASE("a reload refused under an audio thread after its replan made a fresh 
     CHECK_FALSE(refused.ok);
     REQUIRE(refused.errors.size() == 1);
     CHECK(refused.errors[0].code == "busy");
-    CHECK(refused.error.find("the command ring is full") != std::string::npos);
+    // A planner error with no node says so with none named.
+    CHECK(refused.error == "the running document does not plan with the reloaded pack: busy: the command ring is full");
     CHECK(refused.types.empty());
     // That instance went with the refused plan, its release queued to the block thread, so its record is out: the new
     // generation is held, discarded, while the registry has the old one's entries back, none of them retired.

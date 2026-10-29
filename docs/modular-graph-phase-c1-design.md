@@ -300,11 +300,11 @@ logged text already names the node's type, so a dev loop sees which of its nodes
 
 - **The Engine** (control thread): `loadScriptPack(id, source, memoryLimit)` returns `ok`; `error`, why not, as text
   (for a reload's refused replan, "the running document does not plan with the reloaded pack: " and the planner's
-  first error, with how many more); `errors`, the planner's structured errors when it was a reload's replan that
-  refused, empty for a refusal before any replan (the id, the compile, the load, the registry); and on success
-  `types`: each type's id and its descriptor as the registry holds it (canonical JSON, every field spelled), in the
-  order the source registered them, so whatever builds documents for the pack knows its ports. `memoryLimit` 0 is the
-  default.
+  first error, `<code> at <node>: <message>`, or `<code>: <message>` for one at no node such as `busy`, with how many
+  more); `errors`, the planner's structured errors when it was a reload's replan that refused, empty for a refusal
+  before any replan (the id, the compile, the load, the registry); and on success `types`: each type's id and its
+  descriptor as the registry holds it (canonical JSON, every field spelled), in the order the source registered them,
+  so whatever builds documents for the pack knows its ports. `memoryLimit` 0 is the default.
 - **RPC:** `EngineRpcService::loadScriptPack(RpcLoadScriptPackRequest) -> RpcLoadScriptPackResult`
   ([BackendTypes.hpp](../packages/native/src/host/rpc/BackendTypes.hpp)) on the `emulator` facet beside `setGraph`,
   so every host has it (the plugin, SDL, the CLI, the Node addon, the test host): a user developing nodes in a DAW
