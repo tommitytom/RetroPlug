@@ -236,6 +236,11 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // the pack's top level, parseSettings and layout, which hold no instance: a load or a settings check that fails on an
 // allocation it refused is refused, saying so (a settings check's refusing the document, so the running plan stands),
 // and one that catches the error runs on, there being no node to fault.
+// "Past its limit" means past it in reachable and uncollected bytes together: the limit counts everything the runtime
+// holds, garbage included. A refusal comes at once, with no collection first, and QuickJS's own cycle GC runs only as
+// an object is made, once the heap has grown half again since the last one, so a pack whose reachable heap is above
+// about two thirds of its limit can be refused for garbage it has not collected yet, and a profile window whose
+// auto-GC is pinned off (resetAllocStats) gathers garbage until the limit faults a node.
 //
 // A throw in process is caught, counted and the block's output up to it stands: the node runs again next block
 // (design section 4.5), unless its definition says faultOnThrow, when it faults (RP_FAULT, the executor's latch); a

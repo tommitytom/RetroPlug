@@ -773,7 +773,11 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   refused, saying so (a settings check's refusing the document, the running plan standing), and one that
   catches the error runs on, with no node to fault. The limit holds each runtime whole, its intrinsics
   (about 90 KB) and its code included, so a limit too small for those refuses the load, which says so.
-  Another pack is untouched.
+  Another pack is untouched. "Past the limit" means reachable and uncollected bytes together: a refusal
+  comes at once, with no collection first, and QuickJS's own cycle GC runs only as an object is made, once
+  the heap has grown half again since the last one, so a pack whose reachable heap is above about two
+  thirds of its limit can be refused for garbage, and a profile window that pins the auto-GC off
+  (`resetAllocStats(true)`) gathers garbage until the limit faults a node.
 - **A throw** in `process` is caught and counted, the block's output up to it stands, and the node runs
   again next block; a definition that says `faultOnThrow`, or a `process` that returns `"fault"`,
   faults instead (bypassed from then on), and a `faultOnThrow` node whose `onSettings`,

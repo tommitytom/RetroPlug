@@ -286,6 +286,12 @@ or its pack reloaded. Other packs, the built-in one among them, are untouched. I
 instance, the limit holds the pack's top level, `parseSettings` and `layout`: a load or a settings check that fails on
 an allocation it refused is refused, saying so ("reached its pack's N MiB memory limit"), a settings check's refusing
 the document while the running plan stands, and one that catches the error runs on, there being no node to fault.
+"Past its limit" means past it in reachable and uncollected bytes together: the limit counts everything a runtime
+holds, garbage included. An allocation past it is refused at once, with no collection first, and QuickJS's own cycle
+GC runs only as an object is made, once the heap has grown half again since the last one. So a pack whose reachable
+heap is above about two thirds of its limit can be refused, and a node faulted, for garbage not yet collected, and a
+profile window whose auto-GC is pinned off (`resetAllocStats(true)`, [spec/08-profiling.md](../spec/08-profiling.md))
+gathers garbage until the limit faults a node. Left as it is (section 12).
 
 Faults latch per instance as now, and a reload clears them, every instance of the pack being fresh. The first throw's
 logged text already names the node's type, so a dev loop sees which of its nodes broke.
@@ -431,6 +437,9 @@ is written from it; the prototype is where the questions below are answered (eac
   8).
 - **The script nodes' own call cost** (about 0.08 us a node a block empty, B3a) and MicroQuickJS readiness
   (`defineNode` keeps to ES2015's library), both unchanged.
+- **The memory limit counts garbage** (section 6): nothing collects before a refusal, so a pack whose reachable heap is
+  above about two thirds of its limit can be faulted for garbage. The default leaves room (64 MiB, where the largest
+  test pack peaked at 2.55 MB, section 11).
 
 ## 13. Found while building
 

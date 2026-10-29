@@ -154,6 +154,12 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     pack**, and **loading one into more than one Engine**: a render job's Engine has the built-in pack only. A pack
     compiled from source keeps its debug information, about a quarter more memory than stripped code; whether a
     downloaded pack's is stripped is the pack format's to say.
+  - **A pack's memory limit counts garbage.** "Past the limit" is past it in reachable and uncollected bytes
+    together: an allocation past it is refused at once, with no collection first, and QuickJS's own cycle GC runs
+    only as an object is made, once the heap has grown half again since the last one. So a pack whose reachable heap
+    is above about two thirds of its limit can be faulted for garbage, and a profile window that pins the auto-GC off
+    (`disableAutoGc`) gathers garbage until the limit faults a node. The default limit leaves room (64 MiB, where the
+    largest test pack peaked at 2.55 MB).
   - **A record the release ring back cannot take keeps its pack for the host's life**, as it leaks its record rather
     than free it on the audio thread; nothing has filled that ring. A profile build's absolute live heap leaves out
     what a pack loaded while audio runs allocated in its load (its deltas are exact).
