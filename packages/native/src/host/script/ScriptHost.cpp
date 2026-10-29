@@ -384,11 +384,10 @@ struct ScriptHost::Pack {
     Instance*     jobsOwner = nullptr;
     bool          jobsOrphaned = false;
     // The control thread's. The records of its types' instances alive (made by create, deleted by deleteRecord), and
-    // whether it stands: a generation a reload replaced is retired, one a refused reload built is discarded, and either
-    // is freed once its records are 0 (freeIdle).
+    // how it stands (PackStanding): a generation a reload replaced is retired, one that never stood is discarded, and
+    // either is freed once its records are 0 (freeIdle).
     std::uint32_t records = 0;
-    enum class Standing : std::uint8_t { Current, Retired, Discarded };
-    Standing      standing = Standing::Current;
+    PackStanding  standing = PackStanding::Current;
     // Its live heap as it joined, which the shared counters never had (a loaded pack's load is counted apart; the
     // built-in pack's is not, but it is freed only with the host): what they have of its live heap is the rest, which a
     // profile build takes off them once it is freed (settleFreedLive).
@@ -1830,7 +1829,7 @@ void ScriptHost::retirePack(const rp_package* package) {
     const auto at = findPack(package);
     assert(at != packs_.end() && "retirePack takes a pack loadPack returned, never the built-in one");
     if (at == packs_.end()) return;
-    (*at)->standing = Pack::Standing::Retired;
+    (*at)->standing = PackStanding::Retired;
     if ((*at)->records == 0) freePack(at);
 }
 
@@ -1838,7 +1837,7 @@ void ScriptHost::discardPack(const rp_package* package) {
     const auto at = findPack(package);
     assert(at != packs_.end() && "discardPack takes a pack loadPack returned, never the built-in one");
     if (at == packs_.end()) return;
-    (*at)->standing = Pack::Standing::Discarded;
+    (*at)->standing = PackStanding::Discarded;
     if ((*at)->records == 0) freePack(at);
 }
 
@@ -1850,7 +1849,7 @@ void ScriptHost::setPackFreed(PackFreed freed, void* user) {
 std::vector<ScriptHost::PackInfo> ScriptHost::packs() const {
     std::vector<PackInfo> out;
     for (const auto& pack : packs_)
-        out.push_back({pack->id, pack->generation, pack->standing != Pack::Standing::Current, pack->records});
+        out.push_back({pack->id, pack->generation, pack->standing, pack->records});
     return out;
 }
 
@@ -1858,7 +1857,7 @@ std::vector<ScriptHost::PackInfo> ScriptHost::packs() const {
 // comment), so it goes here, on the control thread, whether or not an audio thread runs.
 void ScriptHost::freeIdle() {
     for (auto at = packs_.begin() + 1; at != packs_.end();) {
-        if ((*at)->standing != Pack::Standing::Current && (*at)->records == 0) at = freePack(at);
+        if ((*at)->standing != PackStanding::Current && (*at)->records == 0) at = freePack(at);
         else ++at;
     }
 }
@@ -1867,7 +1866,7 @@ void ScriptHost::freeIdle() {
 // drops them), then its audio runtime leaves what every pack shares and its runtimes go, with the pack.
 ScriptHost::Packs::iterator ScriptHost::freePack(Packs::iterator at) {
     Pack& pack = **at;
-    if (pack.standing == Pack::Standing::Retired && packFreed_) packFreed_(packFreedUser_, &pack.package);
+    if (pack.standing == PackStanding::Retired && packFreed_) packFreed_(packFreedUser_, &pack.package);
     Counters freeing;  // what freeing it frees, counted apart (leave)
     leave(pack, freeing);
     freeRuntimes(pack);

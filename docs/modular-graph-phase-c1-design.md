@@ -349,7 +349,9 @@ bugs), belong with the authoring and package-split work.
     settings the new code rejects) returns the planner's errors with the old code still running;
   - freeing: a retired generation's runtimes are freed once its records come back, quiescent and under an audio thread
     driving blocks, and a reload loop frees every generation it replaces; a pack the registry refuses is discarded with
-    nothing in an audio-side count;
+    nothing in an audio-side count; a reload refused `busy` under an audio thread, after its replan made a fresh
+    instance, leaves its generation listed, discarded, until the block thread releases that instance and a reclaim
+    finds its record back;
   - jobs: a node's failing `queueMicrotask` callback is its throw and faults it under `faultOnThrow`; a job the
     deadline stops counts as its call stopped; a never-settling chain faults its node after two cut-short checkpoints
     while a pack-mate is never charged; a built-in node's counts stay 0 throughout; a load whose promise jobs do not

@@ -345,12 +345,17 @@ public:
     // NodeRegistry::dropRetired). Never by the destructor, which frees every pack it holds.
     using PackFreed = void (*)(void* user, const rp_package* package);
     void setPackFreed(PackFreed freed, void* user);
-    // A pack held: its id, its generation (its load's count: 1, then one more each reload), whether it is a retired or
-    // discarded one waiting for its records, and how many records of its types' instances are alive.
+    // How a pack held stands: current (the built-in pack, or a loaded one neither retirePack nor discardPack has been
+    // called on), retired (a reload replaced it) or discarded (it never stood: a registry refused its package, or the
+    // replan of the reload that built it was refused). A retired or discarded pack is held until no record of its
+    // types' instances is alive, then freed.
+    enum class PackStanding : std::uint8_t { Current, Retired, Discarded };
+    // A pack held: its id, its generation (its load's count: 1, then one more each reload), how it stands, and how many
+    // records of its types' instances are alive.
     struct PackInfo {
         std::string   id;
         std::uint32_t generation = 0;
-        bool          retired = false;
+        PackStanding  standing = PackStanding::Current;
         std::uint32_t records = 0;
     };
     // Every pack held, the built-in one first, then in load order: a retired or discarded generation among them until

@@ -6,7 +6,7 @@
 // nothing. Loaded again, it reloads: its placed nodes rebuild on the new code while every other node keeps its instance
 // and its state (the running plan's tap included), a reload whose replan is refused changes nothing, and the generation
 // a reload replaced is freed on the control thread once its records are back, within the call when no audio thread
-// runs. The control thread's calls into a pack, its load and its settings checks, are held to the call deadline on a
+// runs, as one a refused replan discarded under an audio thread is. The control thread's calls into a pack, its load and its settings checks, are held to the call deadline on a
 // clock of their own. Driven on an Engine, whose built-in pack is the production bundle, the toy packs inline JS
 // source; and on a ScriptRig, where the host's binder, its allocation counts and the built-in pack's deadline are what
 // is checked.
@@ -31,6 +31,7 @@
 #include "NodeRig.hpp"
 #include "ScriptRig.hpp"
 #include "graph/Descriptor.hpp"
+#include "host/engine/DspCommand.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/script/ScriptHost.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
@@ -1012,7 +1013,7 @@ TEST_CASE("a pack reloads while its nodes run: they rebuild on its new code, fre
     CHECK(e.scriptInstances() == instances);
     const auto packs = e.scriptPacks();
     REQUIRE(packs.size() == 3);
-    CHECK_FALSE(packs[2].retired);
+    CHECK(packs[2].standing == ScriptHost::PackStanding::Current);
     CHECK(packs[2].records == 2);
     CHECK(packs[1].records == 1);
     CHECK(packs[0].records == 1);  // the session
@@ -1188,7 +1189,8 @@ TEST_CASE("under an audio thread, a reload's old generation is retired until its
     const auto onlyCurrent = [&] {
         e.reclaim();
         const auto packs = e.scriptPacks();
-        return packs.size() == 2 && !packs[1].retired && packs[1].records == 1 && e.retiredNodeTypeCount() == 0;
+        return packs.size() == 2 && packs[1].standing == ScriptHost::PackStanding::Current && packs[1].records == 1 &&
+               e.retiredNodeTypeCount() == 0;
     };
     const bool freedFirst = waitUntil(onlyCurrent);
     const bool ranFirst = waitUntil([&] { return lastTag.load() == 1; });
@@ -1209,7 +1211,7 @@ TEST_CASE("under an audio thread, a reload's old generation is retired until its
     INFO(first.error);
     REQUIRE(first.ok);
     REQUIRE(old != nullptr);
-    CHECK(old->retired);
+    CHECK(old->standing == ScriptHost::PackStanding::Retired);
     CHECK(old->records == 1);
     CHECK(retiredTypes == 1);
     CHECK(freedFirst);
@@ -1219,6 +1221,67 @@ TEST_CASE("under an audio thread, a reload's old generation is retired until its
     CHECK(ranLast);
     CHECK(packIds(e).size() == 2);
     CHECK(e.scriptInstances() == 1);
+    CHECK(e.scriptThrows() == 0);
+    CHECK(e.faultCount() == 0);
+}
+
+TEST_CASE("a reload refused under an audio thread after its replan made a fresh instance leaves its generation listed, "
+          "discarded, until that instance's record comes back, and the block thread's release of it, then the reclaim "
+          "that finds it back, frees the generation while the old code runs on",
+          "[script][packs][reload]") {
+    Engine e(kRate);
+    load(e, "test.held", toys(tally("test.held.count", 1)));
+    place(e, document({docNode("count", "test.held.count"), midiOut("1")}, {docWire("count.out", "midi-out.in1")}));
+    CHECK(block(e) == std::vector<Out>{{1, 0, {1, 1}}});
+    const std::uint32_t instances = e.scriptInstances();
+    const std::size_t types = e.nodeTypeCount();
+    // The test thread is the block thread from here: a push only queues, so the ring fills, and the replan, planned
+    // with a fresh instance of the new generation's node, finds no room for its swap.
+    e.setAudioThreadOwns(true);
+    DspCommand bpm;
+    bpm.kind = DspCommand::Kind::SetBpm;
+    bpm.setBpm = {120.0};
+    while (e.pushCommand(bpm)) {
+    }
+    const auto refused = e.loadScriptPack("test.held", toys(tally("test.held.count", 2)));
+    INFO(refused.error);
+    CHECK_FALSE(refused.ok);
+    REQUIRE(refused.errors.size() == 1);
+    CHECK(refused.errors[0].code == "busy");
+    CHECK(refused.error.find("the command ring is full") != std::string::npos);
+    CHECK(refused.types.empty());
+    // That instance went with the refused plan, its release queued to the block thread, so its record is out: the new
+    // generation is held, discarded, while the registry has the old one's entries back, none of them retired.
+    const auto held = e.scriptPacks();
+    REQUIRE(held.size() == 3);
+    CHECK(held[1].id == "test.held");
+    CHECK(held[1].generation == 1);
+    CHECK(held[1].standing == ScriptHost::PackStanding::Current);
+    CHECK(held[1].records == 1);
+    CHECK(held[2].id == "test.held");
+    CHECK(held[2].generation == 2);
+    CHECK(held[2].standing == ScriptHost::PackStanding::Discarded);
+    CHECK(held[2].records == 1);
+    CHECK(e.retiredNodeTypeCount() == 0);
+    CHECK(e.nodeTypeCount() == types);
+
+    // The ring drained, then a block, whose top releases that instance in the discarded generation's runtime (which
+    // must still be there), and the reclaim that deletes its record frees the generation with it.
+    e.drainCommands();
+    CHECK(block(e) == std::vector<Out>{{1, 0, {1, 2}}});
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.held#1", "test.held#2"});
+    e.reclaim();
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.held#1"});
+    CHECK(e.retiredNodeTypeCount() == 0);
+    CHECK(e.nodeTypeCount() == types);
+    CHECK(e.scriptInstances() == instances);
+    // The type found is the old generation's again: a second node of it, placed now, runs the old code beside the
+    // first, which keeps its instance.
+    place(e, document({docNode("count", "test.held.count"), docNode("count2", "test.held.count"), midiOut("1,2")},
+                      {docWire("count.out", "midi-out.in1"), docWire("count2.out", "midi-out.in2")}));
+    e.drainCommands();
+    CHECK(block(e) == sorted({{1, 0, {1, 3}}, {2, 0, {1, 1}}}));
+    e.setAudioThreadOwns(false);
     CHECK(e.scriptThrows() == 0);
     CHECK(e.faultCount() == 0);
 }
