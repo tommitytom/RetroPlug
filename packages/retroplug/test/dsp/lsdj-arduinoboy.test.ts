@@ -375,6 +375,14 @@ test("MasterSync: a run carried over a rise in the host's rate stops 200 ms afte
   ]);
 });
 
+test("MasterSync: two rate changes inside one silence leave the stop at the first frame past 200 ms", () => {
+  // A byte at frame 100 of 1024-frame blocks at 48 kHz, with block 3 alone at 44.1 kHz. Block 3 is 1114.5 frames at 48
+  // kHz, so block 9 starts 9206.5 frames after the byte and the silence passes 9600 frames, 200 ms, at the first
+  // frame past 393.5: 394. Rescaling a floored position at each change moves the mark to 393, a frame early.
+  const out = masterSync([[100, 1]], even(1024), 16384, (block) => (block === 3 ? 44100 : 48000));
+  expect(out.filter((m) => m.data[0] === 0xfc).map(({ block, frame }) => [block, frame])).toEqual([[9, 394]]);
+});
+
 test("MasterSync: a stop a rise in the rate leaves overdue at a block's start goes at its first frame", () => {
   // A byte at frame 395 of 1024-frame blocks at 44.1 kHz marks block 9's frame 0, as above, and block 9 is at 96 kHz.
   // Its silence passed 200 ms one 44.1 kHz frame before the block's start, 2.2 frames at 96 kHz, so the finer grid

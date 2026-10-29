@@ -189,9 +189,10 @@ export interface MasterSyncBlock {
 /** Decode one block's Master Sync serial-out bytes into host MIDI. Call once per block with the bytes the Game Boy
  *  captured in it, each one's frame in it, and the block's length and rate. Each byte is a tempo clock, sent at its
  *  frame, the first of a run opened there with LSDj's song row and 0xFA; a run ends with one 0xFC at its mark, the
- *  first frame its silence passes MASTER_SYNC_STOP_MS, `lastAt + stop + 1`. A mark is sent before the byte at or past
- *  it (which then opens a fresh run at its own frame), or found at the end of the block it falls inside and sent there
- *  at its frame; one past the block carries to the next, with the run's newest byte moved back by the block's length.
+ *  first frame its silence passes MASTER_SYNC_STOP_MS, `floor(lastAt + stop) + 1`. A mark is sent before the byte at
+ *  or past it (which then opens a fresh run at its own frame), or found at the end of the block it falls inside and
+ *  sent there at its frame; one past the block carries to the next, with the run's newest byte moved back by the
+ *  block's length.
  *  So while the host's rate holds, a mark is never behind the block it is sent in. The silence a run carries into a
  *  block at another rate is time, and is counted again in the new rate's frames (200 ms stays 200 ms); a rise can then
  *  put the mark before the block's start, by less than a frame at the old rate, which had it at the block's first
@@ -208,9 +209,10 @@ export function arduinoboyMasterSyncBlock(
   const rate = block.sampleRate;
   const stop = Math.round((rate * MASTER_SYNC_STOP_MS) / 1000);
   // A run carried from a block at another rate: its newest byte, counted in that rate's frames, counted again in this
-  // one's. Floored, so the mark is still the first whole frame the silence passes 200 ms at.
+  // one's, and kept fractional: a floor here would compound over several changes in one silence, where the mark
+  // below floors once.
   if (state.started && state.rate !== undefined && state.rate !== rate)
-    state.lastAt = Math.floor(((state.lastAt ?? 0) * rate) / state.rate);
+    state.lastAt = ((state.lastAt ?? 0) * rate) / state.rate;
   state.rate = rate;
   for (let i = 0; i < bytes.length; i++) {
     const at = frames[i];
@@ -218,7 +220,7 @@ export function arduinoboyMasterSyncBlock(
     // Checked only at a block's end, the restart would carry on the old run (no 0xFC, no fresh NoteOn and 0xFA), so
     // the output would depend on the block split.
     if (state.started) {
-      const mark = Math.max(0, (state.lastAt ?? 0) + stop + 1);
+      const mark = Math.max(0, Math.floor((state.lastAt ?? 0) + stop) + 1);
       if (at >= mark) {
         emit(mark, 1, 0xfc, 0, 0);
         state.started = false;
@@ -236,7 +238,7 @@ export function arduinoboyMasterSyncBlock(
   }
   // Every byte of this block is known: a run whose mark falls inside it stopped there.
   if (state.started) {
-    const mark = Math.max(0, (state.lastAt ?? 0) + stop + 1);
+    const mark = Math.max(0, Math.floor((state.lastAt ?? 0) + stop) + 1);
     if (mark < block.frames) {
       emit(mark, 1, 0xfc, 0, 0);
       state.started = false;
