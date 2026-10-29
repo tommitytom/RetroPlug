@@ -169,6 +169,141 @@ TEST_CASE("addPackage checks everything the host will later call or read", "[gra
     CHECK(refusal(newer, {&future}) == "registered");
 }
 
+namespace {
+
+// The versions of a package "p" the replacement cases swap: p.a in each (its name telling which), p.b in the first, p.c
+// in the second.
+const char* aOne(const rp_node_type*) { return R"({"id":"p.a","name":"A one"})"; }
+const char* aTwo(const rp_node_type*) { return R"({"id":"p.a","name":"A two"})"; }
+const char* aThree(const rp_node_type*) { return R"({"id":"p.a","name":"A three"})"; }
+const char* bOne(const rp_node_type*) { return R"({"id":"p.b"})"; }
+const char* cTwo(const rp_node_type*) { return R"({"id":"p.c"})"; }
+
+// One version of a package: its types, held where the package's array points, and the package.
+struct Version {
+    std::vector<rp_node_type>        types;
+    std::vector<const rp_node_type*> list;
+    rp_package                       package{};
+    Version(const char* manifest, std::vector<rp_node_type> t) : types(std::move(t)) {
+        for (const auto& type : types) list.push_back(&type);
+        package = rp_package{RP_ABI_VERSION, manifest, static_cast<std::uint32_t>(list.size()), list.data()};
+    }
+    Version(const Version&) = delete;
+    Version& operator=(const Version&) = delete;
+};
+
+}  // namespace
+
+TEST_CASE("a package is replaced by a new version of itself: its old entries stay valid until it is put back as it "
+          "was, or they are dropped",
+          "[graph][registry]") {
+    NodeRegistry reg;
+    REQUIRE(reg.addPackage(test::testPackage()));
+    const Version one(R"({"id":"p"})", {typeWith("p.a", &aOne), typeWith("p.b", &bOne)});
+    const Version two(R"({"id":"p"})", {typeWith("p.a", &aTwo), typeWith("p.c", &cTwo)});
+    const Version three(R"({"id":"p"})", {typeWith("p.a", &aThree)});
+    REQUIRE(reg.addPackage(&one.package));
+    CHECK(reg.hasPackage("p"));
+    const auto* a1 = reg.find("p.a");
+    const auto* b1 = reg.find("p.b");
+    REQUIRE(a1);
+    REQUIRE(b1);
+    const std::size_t total = reg.size();
+
+    // The swap: p.a is a new entry (the planner rebuilds an instance whose entry changed), p.b is gone, p.c is found,
+    // and what a planned instance of the first version holds is still there to read.
+    std::string error;
+    CHECK(reg.replacePackage("p", &two.package, &error) == &one.package);
+    INFO(error);
+    const auto* a2 = reg.find("p.a");
+    REQUIRE(a2);
+    CHECK(a2 != a1);
+    CHECK(a2->type == &two.types[0]);
+    CHECK(a2->descriptor.name == "A two");
+    CHECK(reg.find("p.b") == nullptr);
+    REQUIRE(reg.find("p.c"));
+    CHECK(reg.find("p.c")->package == "p");
+    CHECK(a1->descriptor.name == "A one");
+    CHECK(a1->type == &one.types[0]);
+    CHECK(b1->descriptor.id == "p.b");
+    CHECK(reg.size() == total);
+    CHECK(reg.retiredSize() == 2);
+
+    // Undone: the first version's entries found again, the very ones, and the second's gone.
+    CHECK(reg.restorePackage(&one.package));
+    CHECK(reg.find("p.a") == a1);
+    CHECK(reg.find("p.b") == b1);
+    CHECK(reg.find("p.c") == nullptr);
+    CHECK(reg.retiredSize() == 0);
+    CHECK_FALSE(reg.restorePackage(&one.package));  // retired no more
+
+    // Two swaps in a row retire two versions; only the last can be undone, and each is dropped on its own.
+    CHECK(reg.replacePackage("p", &two.package) == &one.package);
+    const auto* a2again = reg.find("p.a");
+    CHECK(reg.replacePackage("p", &three.package) == &two.package);
+    CHECK(reg.find("p.a")->descriptor.name == "A three");
+    CHECK(reg.find("p.c") == nullptr);
+    CHECK(reg.retiredSize() == 4);
+    CHECK_FALSE(reg.restorePackage(&one.package));  // the second version replaced it, not the third
+    CHECK(reg.restorePackage(&two.package));
+    CHECK(reg.find("p.a") == a2again);
+    CHECK(reg.find("p.c")->descriptor.id == "p.c");
+    CHECK(reg.retiredSize() == 2);
+    CHECK(reg.dropRetired(&one.package));
+    CHECK_FALSE(reg.dropRetired(&one.package));
+    CHECK(reg.retiredSize() == 0);
+    CHECK(reg.find("p.a") == a2again);
+    CHECK(reg.replacePackage("p", &three.package) == &two.package);
+    CHECK(reg.dropRetired(&two.package));
+    CHECK(reg.retiredSize() == 0);
+    CHECK(reg.find("p.a")->type == &three.types[0]);
+    CHECK(reg.size() == total - 1);  // p.a alone, where the first version had p.b too
+}
+
+TEST_CASE("a replacement refused changes nothing: a bad descriptor, another package's id, a type id another package "
+          "holds, a package not registered, a version held already",
+          "[graph][registry]") {
+    NodeRegistry reg;
+    REQUIRE(reg.addPackage(test::testPackage()));
+    const Version one(R"({"id":"p"})", {typeWith("p.a", &aOne), typeWith("p.b", &bOne)});
+    const Version two(R"({"id":"p"})", {typeWith("p.a", &aTwo)});
+    REQUIRE(reg.addPackage(&one.package));
+    REQUIRE(reg.replacePackage("p", &two.package) == &one.package);
+    const auto* a = reg.find("p.a");
+    const auto* source = reg.find("rp.test.source");
+    const std::size_t total = reg.size();
+
+    const auto refused = [&](const char* id, const rp_package* next, const std::string& why) {
+        INFO(why);
+        std::string error;
+        CHECK(reg.replacePackage(id, next, &error) == nullptr);
+        CHECK(error.find(why) == 0);
+        CHECK(reg.find("p.a") == a);
+        CHECK(reg.find("p.b") == nullptr);
+        CHECK(reg.find("rp.test.source") == source);
+        CHECK(reg.size() == total);
+        CHECK(reg.retiredSize() == 2);
+    };
+    const Version bad(R"({"id":"p"})", {typeWith("p.a", &aThree), typeWith("p.x", &badDescriptor)});
+    refused("p", &bad.package, "node type \"p.x\": ");
+    const Version other(R"({"id":"rp.test"})", {typeWith("p.a", &aThree)});
+    refused("p", &other.package,
+            "package \"rp.test\" cannot replace package \"p\": a new version keeps its package's id");
+    const Version stray(R"({"id":"q"})", {typeWith("p.a", &aThree)});
+    refused("p", &stray.package, "package \"q\" cannot replace package \"p\"");
+    const Version taker(R"({"id":"p"})", {typeWith("p.a", &aThree), typeWith("rp.test.source", &sourceDescriptor)});
+    refused("p", &taker.package, "node type \"rp.test.source\" is already registered");
+    refused("q", &stray.package, "package \"q\" is not registered, so it has no version to replace");
+    refused("p", &two.package, "that version of package \"p\" is registered already");
+    refused("p", &one.package, "that version of package \"p\" is registered already");  // retired, not yet dropped
+    refused("p", nullptr, "null package");
+
+    // A package's own type ids are the new version's to take again; the replacement that keeps every one goes through.
+    const Version three(R"({"id":"p"})", {typeWith("p.a", &aThree)});
+    CHECK(reg.replacePackage("p", &three.package) == &two.package);
+    CHECK(reg.find("p.a")->descriptor.name == "A three");
+}
+
 TEST_CASE("endpoints split at the first dot; resource refs parse", "[graph][document]") {
     const auto e = parseEndpoint("gb1.pins.pulse");
     REQUIRE(e);

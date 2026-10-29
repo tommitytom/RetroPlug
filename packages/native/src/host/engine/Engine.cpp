@@ -1,6 +1,7 @@
 #include "host/engine/Engine.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -92,6 +93,26 @@ std::uint32_t hostWidthOf(const rp::graph::GraphDocument& doc) {
     return 0;
 }
 
+// Whether `document` places a node of one of `package`'s types. A document that does not parse places nothing; one
+// published always parses.
+bool placesAny(const std::string& document, const rp_package& package) {
+    const auto doc = rp::graph::parseGraphDocument(document);
+    if (!doc) return false;
+    for (const auto& n : doc->nodes)
+        for (std::uint32_t k = 0; k < package.node_type_count; ++k)
+            if (n.type == package.node_types[k]->id) return true;
+    return false;
+}
+
+// The planner's errors as one line: the first, and how many more.
+std::string describeErrors(const std::vector<Engine::GraphError>& errors) {
+    if (errors.empty()) return "no reason given";
+    const auto& e = errors.front();
+    std::string text = e.code + " at " + e.nodeId + (e.port.empty() ? "" : "." + e.port) + ": " + e.message;
+    if (errors.size() > 1) text += " (and " + std::to_string(errors.size() - 1) + " more)";
+    return text;
+}
+
 // The embedded script-node bundle (src/script/bundle.ts) every Engine loads unless it is built with another.
 std::span<const rp::host::ScriptHost::Chunk> embeddedScripts() {
     static const rp::host::ScriptHost::Chunk chunks[] = {rp::host::ScriptHost::embeddedBundle()};
@@ -108,10 +129,14 @@ struct Engine::Graph {
     // First, so it goes last: the script nodes the host destroys hand their instances back to it, and its packs' types
     // are the registry's script entries.
     rp::host::ScriptHost                   script;
-    // Filled at construction and by loadScriptPack, on the control thread, which is where every plan is made too
-    // (setGraph, and reactivate, quiescent), so an addPackage never overlaps a find (NodeRegistry's threading rule).
-    // Nothing on the audio thread reads it: a plan's instances carry their entries, which only the control thread reads
-    // (to destroy a node, as it frees the plan that held it), and an entry never moves.
+    // Filled at construction and by loadScriptPack (a pack's package added, or a reload's swapped in, and swapped back
+    // when its replan is refused), and a reload's retired entries dropped as the script host frees their generation
+    // (its pack-freed callback, from the reclaims), all on the control thread, which is where every plan is made too
+    // (setGraph, and reactivate, quiescent), so no change overlaps a find (NodeRegistry's threading rule). Nothing on
+    // the audio thread reads it: a plan's instances carry their entries, which only the control thread reads (to
+    // destroy a node, as it frees the plan that held it), and an entry never moves, nor is dropped while an instance
+    // holds it: a retired generation is freed only once no record of its types' instances is alive, each one's planned
+    // instance gone first.
     rp::graph::NodeRegistry                registry;
     rp::graph::ResourceTable               resources;
     rp::host::HostCores                    cores{};
@@ -131,6 +156,10 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
     // The script node types first: the bundle runs in both of the built-in pack's contexts, and its definitions become
     // one more package. One that will not load registers no type, so a document naming one is refused (unknown-type).
     std::string why;
+    // A retired generation's entries go as the script host frees it, on whichever reclaim frees it.
+    graph_->script.setPackFreed(
+        [](void* ctx, const rp_package* package) { static_cast<Graph*>(ctx)->registry.dropRetired(package); },
+        graph_.get());
     if (!graph_->script.load(scriptBundle, &why))
         std::fprintf(stderr, "[engine] the script-node bundle did not load (%s); no script node type is registered\n", why.c_str());
     // The routing, the controller and the protocol nodes are the script package's (src/script/nodes/).
@@ -231,7 +260,9 @@ bool Engine::parkCore(std::unique_ptr<SystemBase> core) {
     return true;
 }
 
-Engine::GraphResult Engine::setGraph(const GraphRequest& request) {
+Engine::GraphResult Engine::setGraph(const GraphRequest& request) { return publishGraph(request, false); }
+
+Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool replan) {
     GraphResult out;
     auto refuse = [&](const std::string& node, const char* code, std::string message) {
         out.errors.push_back({node, "", code, std::move(message)});
@@ -352,6 +383,8 @@ Engine::GraphResult Engine::setGraph(const GraphRequest& request) {
     if (!result.ok) return out;
     out.ok = true;
     hostWidth_ = hostWidthOf(*doc);
+    if (replan) return out;  // a core parked since the document was published is for TS's next one
+    lastRequest_ = request;
     // Each node the document names took its core when it was activated: a core still parked is one no
     // document placed.
     for (auto& [id, core] : parked_) {
@@ -397,6 +430,7 @@ Engine::ScriptPackResult Engine::loadScriptPack(const std::string& id, const std
                                                 std::size_t memoryLimit) {
     ScriptPackResult out;
     rp::host::ScriptHost& script = graph_->script;
+    rp::graph::NodeRegistry& registry = graph_->registry;
     // The id first: a refused one is refused whatever its source says, and costs no compile.
     if (!script.canLoadPack(id, &out.error)) return out;
     std::string why;
@@ -408,16 +442,52 @@ Engine::ScriptPackResult Engine::loadScriptPack(const std::string& id, const std
     const rp::host::ScriptHost::Chunk chunk{*bytecode};
     const rp_package* package = script.loadPack(id, {&chunk, 1}, memoryLimit, &out.error);
     if (!package) return out;
-    // Checked here as every package is: a descriptor the planner could not use, or a package or type id the registry
-    // holds already (a pack named as a native package, or one whose namespace holds another's: "a" and "a.b" can both
-    // name a type "a.b.c"). Refused, the pack goes: nothing placed it.
-    if (!graph_->registry.addPackage(package, &why)) {
-        script.discardPack(package);
-        out.error = "the registry refused the pack's types: " + why;
-        return out;
+    // A pack id canLoadPack takes names no native package (those are the app's, "rp" and under), so one the registry
+    // holds is a pack loaded before, and this is its reload (docs/modular-graph-phase-c1-design.md section 5).
+    if (!registry.hasPackage(id)) {
+        // Checked here as every package is: a descriptor the planner could not use, or a type id the registry holds
+        // already (one whose namespace holds another's: "a" and "a.b" can both name a type "a.b.c"). Refused, the pack
+        // goes: nothing placed it.
+        if (!registry.addPackage(package, &why)) {
+            script.discardPack(package);
+            out.error = "the registry refused the pack's types: " + why;
+            return out;
+        }
+    } else {
+        // The new generation's entries in place of the old one's, checked as an addition is. The old entries stay valid
+        // for the running plan's instances, which no longer match them, so a replan of the document last published
+        // rebuilds the pack's nodes on the new code, under the same node ids, and keeps every other node's instance.
+        // Its tap is carried as it is: a request that does not re-arm leaves the tap the running plan has, neither
+        // restored nor armed again. A document that places none of the pack's nodes would plan as it runs, so it is not
+        // replanned.
+        const rp_package* previous = registry.replacePackage(id, package, &why);
+        if (!previous) {
+            script.discardPack(package);
+            out.error = "the registry refused the pack's types: " + why;
+            return out;
+        }
+        if (lastRequest_ && placesAny(lastRequest_->document, *previous)) {
+            GraphRequest replan = *lastRequest_;
+            replan.rearmTap = false;
+            GraphResult planned = publishGraph(replan, true);
+            if (!planned.ok) {
+                // Nothing has changed: the old entries are found again, the same ones, so the running plan's instances
+                // still match them, and the new generation goes.
+                [[maybe_unused]] const bool restored = registry.restorePackage(previous);
+                assert(restored && "the swap is the package's last: the replan's reclaim drops only older generations");
+                script.discardPack(package);
+                out.error =
+                    "the running document does not plan with the reloaded pack: " + describeErrors(planned.errors);
+                out.errors = std::move(planned.errors);
+                return out;
+            }
+        }
+        // Freed with its runtimes once the plan holding its nodes is handed back and their records come back: at once
+        // when no audio thread runs, as the replan released them there and then.
+        script.retirePack(previous);
     }
     for (std::uint32_t k = 0; k < package->node_type_count; ++k) {
-        const auto* entry = graph_->registry.find(package->node_types[k]->id);
+        const auto* entry = registry.find(package->node_types[k]->id);
         out.types.push_back({entry->descriptor.id, rp::graph::descriptorJson(entry->descriptor)});
     }
     out.ok = true;
@@ -429,6 +499,9 @@ void Engine::setScriptCallDeadline(std::chrono::milliseconds limit) { graph_->sc
 std::vector<rp::host::ScriptHost::PackInfo> Engine::scriptPacks() const { return graph_->script.packs(); }
 
 std::size_t Engine::nodeTypeCount() const { return graph_->registry.size(); }
+std::size_t Engine::retiredNodeTypeCount() const { return graph_->registry.retiredSize(); }
+
+std::uint32_t Engine::scriptInstances() const { return graph_->script.liveInstances(); }
 
 rp::host::DspAllocStats Engine::dspAllocStats() const { return graph_->script.allocStats(); }
 bool Engine::resetDspAllocStats(bool disableAutoGc) { return graph_->script.resetAllocStats(disableAutoGc); }

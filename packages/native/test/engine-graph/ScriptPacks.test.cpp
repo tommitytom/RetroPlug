@@ -3,8 +3,11 @@
 // getter on Object.prototype, Array.prototype.push replaced, a global) no node of another pack sees, its memory limit
 // and its promise jobs fault only its own nodes, and it loads while an audio thread runs blocks. Its id (never one of
 // the app's, "rp" and under), its types' namespace, its source and its definitions are checked, and a refusal changes
-// nothing. The control thread's calls into a pack, its load and its settings checks, are held to the call deadline on
-// a clock of their own. Driven on an Engine, whose built-in pack is the production bundle, the toy packs inline JS
+// nothing. Loaded again, it reloads: its placed nodes rebuild on the new code while every other node keeps its instance
+// and its state (the running plan's tap included), a reload whose replan is refused changes nothing, and the generation
+// a reload replaced is freed on the control thread once its records are back, within the call when no audio thread
+// runs. The control thread's calls into a pack, its load and its settings checks, are held to the call deadline on a
+// clock of their own. Driven on an Engine, whose built-in pack is the production bundle, the toy packs inline JS
 // source; and on a ScriptRig, where the host's binder, its allocation counts and the built-in pack's deadline are what
 // is checked.
 //
@@ -15,6 +18,8 @@
 #include <chrono>
 #include <compare>
 #include <cstdint>
+#include <cstdlib>
+#include <memory>
 #include <string>
 #include <thread>
 #include <utility>
@@ -23,10 +28,13 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "GraphDocs.hpp"
+#include "NodeRig.hpp"
 #include "ScriptRig.hpp"
 #include "graph/Descriptor.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/script/ScriptHost.hpp"
+#include "system/mesen/MesenNesConfig.hpp"
+#include "system/mesen/MesenNesSystem.hpp"
 
 using rp::host::ScriptHost;
 using rp::host::test::DocExtras;
@@ -272,8 +280,8 @@ void refused(Engine& e, const std::string& id, const std::string& source, const 
 
 }  // namespace
 
-TEST_CASE("a pack refused changes nothing: a non-plain id, the built-in pack's, one of the app's, one loaded, a type "
-          "outside its namespace, a compile error, a definition that cannot be read, one the registry refuses",
+TEST_CASE("a pack refused changes nothing: a non-plain id, the built-in pack's, one of the app's, a type outside its "
+          "namespace, a compile error, a definition that cannot be read, one the registry refuses",
           "[script][packs][refused]") {
     Engine e(kRate);
     refused(e, "test pack", toys(transposer("test pack.up", 12)), "must be non-empty, with no whitespace", "test pack.up");
@@ -286,10 +294,6 @@ TEST_CASE("a pack refused changes nothing: a non-plain id, the built-in pack's, 
         refused(e, app, toys(transposer(app + ".up", 1)), "is the app's to give: \"rp\" and every id under \"rp.\"",
                 app + ".up");
     }
-
-    load(e, "test.once", toys(transposer("test.once.first", 1)));
-    refused(e, "test.once", toys(transposer("test.once.second", 2)), "pack \"test.once\" is already loaded",
-            "test.once.second");
 
     // A type id is the pack's id, a dot and a name: not another prefix, the bare id, or the id and a dot.
     for (const std::string stray : {"test.other.stray", "test.nsx.stray", "test.ns", "test.ns."}) {
@@ -343,14 +347,8 @@ toy.define("test.baddesc.odd", [{ id: "in", dir: "in", kind: "smoke" }], functio
     const auto quoted = load(e, "test\"q", toys(transposer("test\"q.up", 1)));
     REQUIRE(quoted.types.size() == 1);
     CHECK(quoted.types[0].id == "test\"q.up");
-    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.once#1", "test.nest#1", "test.ns#1",
-                                                 "test.syntax#1", "test.nodesc#1", "test.baddesc#1", "test.nest.x#1",
-                                                 "test\"q#1"});
-
-    // The pack that was loaded when a second load of its id was refused runs its own code.
-    place(e, document({docNode("midi-in", "rp.host.midi-in"), docNode("once", "test.once.first"), midiOut("1")},
-                      {docWire("midi-in.midi", "once.in"), docWire("once.out", "midi-out.in1")}));
-    CHECK(block(e, {{2, kNote}}) == std::vector<Out>{{1, 2, {0x90, 61, 100}}});
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.nest#1", "test.ns#1", "test.syntax#1",
+                                                 "test.nodesc#1", "test.baddesc#1", "test.nest.x#1", "test\"q#1"});
     CHECK(e.scriptThrows() == 0);
 }
 
@@ -726,3 +724,364 @@ toy.define("test.bound.pass", [toy.input("in"), toy.output("out")], function () 
     CHECK(rig.scripts.audioAllocations().allocs > loaded.allocs);  // its node's create and first block, on the block thread
     CHECK(rig.scripts.throwCount() == 0);
 }
+
+namespace {
+
+// A node, `id`, that sends [tag, n] every block, n its block count: which code runs, and whether its instance, and so
+// its count, carried on.
+std::string tally(const std::string& id, int tag) {
+    return "toy.define('" + id + "', [toy.output('out')], function () {\n"
+           "  var n = 0;\n"
+           "  return { process: function (b) { b.send('out', 0, [" + std::to_string(tag) + ", ++n & 0x7f]); } };\n"
+           "});\n";
+}
+
+// The pack `id` at `generation` among `packs`, or null.
+const ScriptHost::PackInfo* findPack(const std::vector<ScriptHost::PackInfo>& packs, const std::string& id,
+                                     std::uint32_t generation) {
+    for (const auto& p : packs)
+        if (p.id == id && p.generation == generation) return &p;
+    return nullptr;
+}
+
+// Until `done()`, for at most ten seconds (the block thread is someone else); whether it came.
+template <class Done>
+bool waitUntil(Done&& done) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!done() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    return done();
+}
+
+}  // namespace
+
+TEST_CASE("a pack reloads while its nodes run: they rebuild on its new code, fresh, while another pack's node and a "
+          "built-in one keep their instances and their state, and the old generation is freed within the call",
+          "[script][packs][reload]") {
+    Engine e(kRate);
+    e.setControllerConnected(true);
+    load(e, "test.keep", toys(tally("test.keep.count", 1)));
+    load(e, "test.code", toys(transposer("test.code.shift", 12) + tally("test.code.count", 2)));
+    // Beside them the built-in controller session, which takes the control surface (Programmer mode, a full paint) on
+    // the block it first sees one attached, and only then: a session made again takes it again.
+    const auto request = [](const std::string& session) {
+        return document({docNode("midi-in", "rp.host.midi-in"), docNode("shift", "test.code.shift"),
+                         docNode("keep", "test.keep.count"), docNode("count", "test.code.count"), midiOut("1,2,3"),
+                         docNode("surface-in", "rp.host.controller-in"), docNode(session, "rp.controller.session"),
+                         docNode("surface-out", "rp.host.controller-out")},
+                        {docWire("midi-in.midi", "shift.in"), docWire("shift.out", "midi-out.in1"),
+                         docWire("keep.out", "midi-out.in2"), docWire("count.out", "midi-out.in3"),
+                         docWire("surface-in.midi", session + ".controllerIn"),
+                         docWire("surface-in.connected", session + ".controllerConnected"),
+                         docWire(session + ".controllerOut", "surface-out.midi")});
+    };
+    place(e, request("session"));
+    CHECK(block(e, {{3, kNote}}) == sorted({{1, 3, {0x90, 72, 100}}, {2, 0, {1, 1}}, {3, 0, {2, 1}}}));
+    CHECK_FALSE(e.controllerOut().empty());
+    for (std::uint8_t n = 2; n <= 3; ++n) {
+        INFO("block " << int{n});
+        CHECK(block(e) == sorted({{2, 0, {1, n}}, {3, 0, {2, n}}}));
+        CHECK(e.controllerOut().empty());
+    }
+    const std::uint32_t instances = e.scriptInstances();
+    const std::size_t types = e.nodeTypeCount();
+
+    const auto reloaded = load(e, "test.code", toys(transposer("test.code.shift", -12) + tally("test.code.count", 3)));
+    CHECK(reloaded.error.empty());
+    CHECK(reloaded.errors.empty());
+    REQUIRE(reloaded.types.size() == 2);
+    CHECK(reloaded.types[0].id == "test.code.shift");
+    CHECK(reloaded.types[1].id == "test.code.count");
+    // No audio thread runs, so the replan released the old generation's nodes there and then, and the generation went
+    // within the call: its runtimes, and its entries in the registry.
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.keep#1", "test.code#2"});
+    CHECK(e.retiredNodeTypeCount() == 0);
+    CHECK(e.nodeTypeCount() == types);
+    CHECK(e.scriptInstances() == instances);
+    const auto packs = e.scriptPacks();
+    REQUIRE(packs.size() == 3);
+    CHECK_FALSE(packs[2].retired);
+    CHECK(packs[2].records == 2);
+    CHECK(packs[1].records == 1);
+    CHECK(packs[0].records == 1);  // the session
+
+    // The pack's nodes on the new code, counting from 1 again; the other pack's count carrying on, unbroken; the
+    // session not taking the surface again.
+    CHECK(block(e, {{3, kNote}}) == sorted({{1, 3, {0x90, 48, 100}}, {2, 0, {1, 4}}, {3, 0, {3, 1}}}));
+    CHECK(e.controllerOut().empty());
+    CHECK(block(e) == sorted({{2, 0, {1, 5}}, {3, 0, {3, 2}}}));
+    CHECK(e.controllerOut().empty());
+    // Where a session made again does take it: the same document with the session under another id.
+    place(e, request("session2"));
+    CHECK(block(e) == sorted({{2, 0, {1, 6}}, {3, 0, {3, 3}}}));
+    CHECK_FALSE(e.controllerOut().empty());
+    CHECK(e.scriptThrows() == 0);
+    CHECK(e.faultCount() == 0);
+}
+
+namespace {
+
+// A reload of `id` from `source` refused, changing nothing: `why` in its error and the planner's first error `code` at
+// `node` (no planner error when `code` is empty: refused before any replan), no types listed, and the packs, the
+// registry and the script instances as they were.
+void refusedReload(Engine& e, const std::string& id, const std::string& source, const std::string& why,
+                   const std::string& code = "", const std::string& node = "") {
+    const auto packsBefore = packIds(e);
+    const std::size_t typesBefore = e.nodeTypeCount();
+    const std::uint32_t instances = e.scriptInstances();
+    const auto r = e.loadScriptPack(id, source);
+    INFO(id << ": " << r.error);
+    CHECK_FALSE(r.ok);
+    CHECK(r.error.find(why) != std::string::npos);
+    CHECK(r.types.empty());
+    if (code.empty()) {
+        CHECK(r.errors.empty());
+    } else {
+        REQUIRE_FALSE(r.errors.empty());
+        CHECK(r.errors[0].code == code);
+        CHECK(r.errors[0].nodeId == node);
+        CHECK(r.error.find(r.errors[0].message) != std::string::npos);
+    }
+    CHECK(packIds(e) == packsBefore);
+    CHECK(e.nodeTypeCount() == typesBefore);
+    CHECK(e.retiredNodeTypeCount() == 0);
+    CHECK(e.scriptInstances() == instances);
+}
+
+}  // namespace
+
+TEST_CASE("a reload refused changes nothing, the old code running on with its state: the new settings check refusing "
+          "the document's settings, a type the document places gone, a type another pack holds, a source that does not "
+          "load; and a type a reload adds places",
+          "[script][packs][reload]") {
+    Engine e(kRate);
+    load(e, "test.code", toys(transposer("test.code.shift", 12) + tally("test.code.count", 2)));
+    load(e, "test.code.sub", toys(tally("test.code.sub.x", 5)));
+    place(e, document({docNode("midi-in", "rp.host.midi-in"), docNode("shift", "test.code.shift"),
+                       docNode("count", "test.code.count"), midiOut("1,2")},
+                      {docWire("midi-in.midi", "shift.in"), docWire("shift.out", "midi-out.in1"),
+                       docWire("count.out", "midi-out.in2")}));
+    // The old code, its instances kept: up an octave, and [2, n] with n carrying on.
+    std::uint8_t n = 0;
+    const auto oldCodeRuns = [&] {
+        ++n;
+        CHECK(block(e, {{3, kNote}}) == sorted({{1, 3, {0x90, 72, 100}}, {2, 0, {2, n}}}));
+    };
+    oldCodeRuns();
+
+    // Every type kept, but test.code.shift's settings check wants a gain, which the document's settings do not give.
+    refusedReload(e, "test.code", toys(transposer("test.code.shift", 7) + tally("test.code.count", 3) + R"JS(
+globalThis.__rp_scriptNodes[0].parseSettings = function (raw) {
+  if (!raw || typeof raw.gain !== "number") throw new Error("test.code.shift takes a gain");
+  return raw;
+};
+)JS"),
+                  "test.code.shift takes a gain", "settings-invalid", "shift");
+    oldCodeRuns();
+    // test.code.count gone.
+    refusedReload(e, "test.code", toys(transposer("test.code.shift", 7)),
+                  "no node type \"test.code.count\" is registered", "unknown-type", "count");
+    oldCodeRuns();
+    // A type in its namespace that the pack whose id runs on into it holds (test.code.sub's).
+    refusedReload(e, "test.code",
+                  toys(transposer("test.code.shift", 7) + tally("test.code.count", 3) + tally("test.code.sub.x", 6)),
+                  "the registry refused the pack's types: node type \"test.code.sub.x\" is already registered");
+    oldCodeRuns();
+    // Refused before it is a generation: a compile error, a top level that throws, a type outside its namespace.
+    refusedReload(e, "test.code", "var x = ;", "the source does not compile: line 1: SyntaxError");
+    refusedReload(e, "test.code", toys(transposer("test.code.shift", 7) + "throw new Error('not this one');"),
+                  "chunk 0: Error: not this one");
+    refusedReload(e, "test.code", toys(transposer("test.other.shift", 7)), "is outside pack \"test.code\"");
+    oldCodeRuns();
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.code#1", "test.code.sub#1"});
+
+    // One that adds a type: the placed nodes rebuild on it (the count from 1 again), and the new type places.
+    const auto added = load(e, "test.code", toys(transposer("test.code.shift", 12) + tally("test.code.count", 2) +
+                                                tally("test.code.extra", 9)));
+    REQUIRE(added.types.size() == 3);
+    CHECK(added.types[2].id == "test.code.extra");
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.code.sub#1", "test.code#2"});
+    CHECK(block(e, {{3, kNote}}) == sorted({{1, 3, {0x90, 72, 100}}, {2, 0, {2, 1}}}));
+    place(e, document({docNode("count", "test.code.count"), docNode("extra", "test.code.extra"), midiOut("2,3")},
+                      {docWire("count.out", "midi-out.in1"), docWire("extra.out", "midi-out.in2")}));
+    CHECK(block(e) == sorted({{2, 0, {2, 2}}, {3, 0, {9, 1}}}));
+    CHECK(e.scriptThrows() == 0);
+    CHECK(e.faultCount() == 0);
+}
+
+TEST_CASE("fifty reloads of a placed pack, blocks run between them, leave one generation, the instance count steady "
+          "and the registry as it was",
+          "[script][packs][reload]") {
+    Engine e(kRate);
+    load(e, "test.loop", toys(tally("test.loop.count", 0)));
+    place(e, document({docNode("count", "test.loop.count"), midiOut("1")}, {docWire("count.out", "midi-out.in1")}));
+    CHECK(block(e) == std::vector<Out>{{1, 0, {0, 1}}});
+    const std::uint32_t instances = e.scriptInstances();
+    const std::size_t types = e.nodeTypeCount();
+    for (int k = 1; k <= 50; ++k) {
+        INFO("reload " << k);
+        load(e, "test.loop", toys(tally("test.loop.count", k)));
+        const auto tag = static_cast<std::uint8_t>(k);
+        CHECK(block(e) == std::vector<Out>{{1, 0, {tag, 1}}});
+        CHECK(block(e) == std::vector<Out>{{1, 0, {tag, 2}}});
+        CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.loop#" + std::to_string(k + 1)});
+        CHECK(e.scriptInstances() == instances);
+        CHECK(e.nodeTypeCount() == types);
+        CHECK(e.retiredNodeTypeCount() == 0);
+    }
+    CHECK(e.scriptThrows() == 0);
+    CHECK(e.faultCount() == 0);
+}
+
+TEST_CASE("under an audio thread, a reload's old generation is retired until its records come back, then freed by a "
+          "reclaim on the control thread, and reloads in a row free every generation they replace",
+          "[script][packs][reload][threads]") {
+    Engine e(kRate);
+    load(e, "test.live", toys(tally("test.live.count", 0)));
+    place(e, document({docNode("count", "test.live.count"), midiOut("1")}, {docWire("count.out", "midi-out.in1")}));
+    e.setAudioThreadOwns(true);
+    // The audio thread: blocks, each noting the tag of the code its node ran.
+    std::atomic<bool> running{true};
+    std::atomic<int>  lastTag{-1};
+    std::thread       audio([&] {
+        std::vector<float> l(kFrames), r(kFrames);
+        while (running.load()) {
+            e.drainCommands();
+            e.processBlock(kFrames, l.data(), r.data());
+            for (const auto& m : e.midiOut())
+                if (m.system == 1 && !m.data.empty()) lastTag.store(m.data[0]);
+            std::this_thread::sleep_for(std::chrono::microseconds(50));
+        }
+    });
+    const bool started = waitUntil([&] { return lastTag.load() == 0; });
+    // A reload, tried again while its replan finds the ring busy (which the audio thread drains).
+    const auto reload = [&](int tag) {
+        Engine::ScriptPackResult r;
+        for (int attempt = 0; attempt < 1000; ++attempt) {
+            r = e.loadScriptPack("test.live", toys(tally("test.live.count", tag)));
+            if (r.ok || r.errors.empty() || r.errors[0].code != "busy") break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            e.reclaim();
+        }
+        return r;
+    };
+    const auto first = reload(1);
+    // The plan holding the old generation's node is the audio thread's until it adopts the replan and hands the old
+    // one back, so the generation is retired, its record still out, and its entries still in the registry.
+    const auto held = e.scriptPacks();
+    const ScriptHost::PackInfo* old = findPack(held, "test.live", 1);
+    const std::size_t retiredTypes = e.retiredNodeTypeCount();
+    // A reclaim frees the plan handed back, which queues its node's release; a later block releases it; and the reclaim
+    // after that deletes the record, and frees the generation with it.
+    const auto onlyCurrent = [&] {
+        e.reclaim();
+        const auto packs = e.scriptPacks();
+        return packs.size() == 2 && !packs[1].retired && packs[1].records == 1 && e.retiredNodeTypeCount() == 0;
+    };
+    const bool freedFirst = waitUntil(onlyCurrent);
+    const bool ranFirst = waitUntil([&] { return lastTag.load() == 1; });
+    // Twenty in a row, a reclaim between each, so each frees what it can while the next is loaded and planned.
+    bool reloaded = true;
+    for (int k = 2; k <= 21; ++k) {
+        reloaded = reload(k).ok && reloaded;
+        e.reclaim();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    const bool freedAll = waitUntil(onlyCurrent);
+    const bool ranLast = waitUntil([&] { return lastTag.load() == 21; });
+    running = false;
+    audio.join();
+    e.setAudioThreadOwns(false);
+    e.reclaim();
+    CHECK(started);
+    INFO(first.error);
+    REQUIRE(first.ok);
+    REQUIRE(old != nullptr);
+    CHECK(old->retired);
+    CHECK(old->records == 1);
+    CHECK(retiredTypes == 1);
+    CHECK(freedFirst);
+    CHECK(ranFirst);
+    CHECK(reloaded);
+    CHECK(freedAll);
+    CHECK(ranLast);
+    CHECK(packIds(e).size() == 2);
+    CHECK(e.scriptInstances() == 1);
+    CHECK(e.scriptThrows() == 0);
+    CHECK(e.faultCount() == 0);
+}
+
+TEST_CASE("a reload's replan carries the running plan's tap as it is: neither restored nor armed again",
+          "[script][packs][reload]") {
+    using rp::host::test::DocSystem;
+    using rp::host::test::kNesType;
+    using rp::host::test::rearming;
+    Engine e(kRate);
+    MesenNesConfig cfg;
+    cfg.romPath = RP_BLIPTOASTER_ROM_PATH;
+    auto core = std::make_unique<MesenNesSystem>(1, cfg, rp::host::test::readFile(RP_BLIPTOASTER_ROM_PATH));
+    core->onActivate(kRate);
+    auto* nes = core.get();
+    REQUIRE(e.parkCore(std::move(core)));
+    load(e, "test.tap", toys(tally("test.tap.count", 1)));
+    const auto request = graphRequest(stereoDocument({DocSystem{1, kNesType}},
+                                                     DocExtras{{docNode("count", "test.tap.count"), midiOut("1")},
+                                                               {docWire("count.out", "midi-out.in1")}}),
+                                      {1});
+    place(e, rearming(request, 1, 1));  // the tap armed to mode 1 from the core's 0
+    CHECK(nes->channelExportMode() == 1);
+    CHECK(block(e) == std::vector<Out>{{1, 0, {1, 1}}});
+    // Moved behind the engine's back, so a replan that restored the tap (to 0) or armed it again (to 1) would show.
+    nes->setChannelExportMode(2);
+    load(e, "test.tap", toys(tally("test.tap.count", 2)));
+    CHECK(block(e) == std::vector<Out>{{1, 0, {2, 1}}});  // the pack's node rebuilt on the new code
+    CHECK(nes->channelExportMode() == 2);
+    // And the engine still holds what it armed: a re-arm with nothing to arm restores the mode the core had before.
+    place(e, rearming(request));
+    CHECK(nes->channelExportMode() == 0);
+    CHECK(e.scriptThrows() == 0);
+    CHECK(e.faultCount() == 0);
+}
+
+#ifdef RETROPLUG_PROFILE
+TEST_CASE("a type keeps its span label across its pack's reloads, the trace's name table does not grow, and what each "
+          "freed generation's realm kept leaves the live heap with it",
+          "[script][packs][reload][profile][trace]") {
+    // A tally that, on its first block, keeps 32 KiB in its realm (a global), which outlives its instance and goes only
+    // with its pack's runtimes.
+    const auto source = [](int tag) {
+        return toys("toy.define('test.loop.count', [toy.output('out')], function () {\n"
+                    "  var n = 0;\n"
+                    "  return { process: function (b) {\n"
+                    "    if (n === 0) globalThis.kept = new Float64Array(4096);\n"
+                    "    b.send('out', 0, [" + std::to_string(tag) + ", ++n & 0x7f]);\n"
+                    "  } };\n"
+                    "});\n");
+    };
+    Engine e(kRate);
+    load(e, "test.loop", source(0));
+    place(e, document({docNode("count", "test.loop.count"), midiOut("1")}, {docWire("count.out", "midi-out.in1")}));
+    // The label of the node's process spans over one traced block, named by the trace's name table.
+    const auto traced = [&] {
+        REQUIRE(e.dspTraceReset(true));
+        block(e);
+        const auto names = e.dspTraceNames();
+        std::vector<std::uint32_t> labels;
+        for (const auto& span : e.dspTrace())
+            if (span.label < names.size() && names[span.label] == "test.loop.count") labels.push_back(span.label);
+        REQUIRE(e.dspTraceReset(false));
+        REQUIRE(labels.size() == 1);
+        return std::pair{labels[0], names.size()};
+    };
+    const auto [label, names] = traced();
+    CHECK(label >= rp::host::DSP_SPAN_TYPE_BASE);
+    REQUIRE(e.resetDspAllocStats(false));  // the allocation window, from one generation's realm holding its 32 KiB
+    for (int k = 1; k <= 50; ++k) {
+        INFO("reload " << k);
+        load(e, "test.loop", source(k));
+        CHECK(traced() == std::pair{label, names});
+    }
+    // Fifty generations each kept 32 KiB, and each took it with it: the live heap is where one generation's was.
+    CHECK(std::abs(e.dspAllocStats().liveBytesDelta) < 16 * 1024);
+}
+#endif

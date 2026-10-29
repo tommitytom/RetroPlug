@@ -130,6 +130,23 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // every pack shares (the call deadline's interrupt handler, the allocation counters) as its load ends (join). So what
 // a loaded pack's load allocates is left out of the allocation counters, which count the audio side's blocks,
 // adoptions and releases; the built-in pack's, at the host's construction, comes before any and is in them.
+// A pack loaded again is reloaded (docs/modular-graph-phase-c1-design.md section 5): loadPack on an id loaded builds
+// its next generation beside the current one, as a load builds a pack, under the same id and namespace, and the caller
+// settles which stands once it knows whether a plan placing the new one's nodes was published: retirePack retires the
+// old generation, discardPack the new one. Either way that generation's instances go the way every released instance
+// goes, and a pack counts the records of its types' instances alive (create makes them, and drainReleased,
+// releaseQueued and retire's quiescent path delete them, all on the control thread, so a plain count). A retired or
+// discarded generation whose count is 0 is freed by the call that finds it so (retirePack, discardPack, reclaim,
+// setAudioThreadOwns(false)), on the control thread: its runtimes and contexts, its types' definitions and its atoms,
+// with the pack-freed callback told a retired one's package first (an Engine's registry drops its retired entries
+// then). That holds while an audio thread runs blocks in other packs: the last record came back through the release
+// ring after the block thread released its JS (or was released on this thread while none ran), so the block thread
+// holds nothing of the pack, no plan it may yet adopt places one of its nodes (that plan would hold a record), and no
+// JS value crosses packs, so no other heap points into its. Its audio runtime first leaves what every pack shares
+// (leave, join's reverse): what freeing it frees is kept out of the allocation counters, as a loaded pack's load is,
+// since the block thread may be writing them. So a whole generation's heap is freed off the audio thread, where an
+// instance's release frees its JS on it. A record the release ring back could not take, leaked rather than freed on the
+// audio thread, leaks its pack with it. The built-in pack is never retired.
 // What every pack shares stays the host's: the call deadline (one call runs at a time on the block thread), the
 // allocation counters (summed over every pack's audio runtime, so audioAllocations and the profile's allocation window
 // mean the whole audio side), the release rings, the throw count and the first throw, and the profile's span labels.
@@ -263,42 +280,61 @@ public:
     // The built-in pack's script node types, for NodeRegistry::addPackage; valid for the host's life (empty before a
     // load).
     const rp_package* package() const;
-    // Load a pack beside the built-in one (docs/modular-graph-phase-c1-design.md sections 4 and 5): a new pack named
-    // `id`, its two runtimes made for it, runs a bundle (global-code bytecode, in chunks run in order) in both, its
-    // audio runtime held to `memoryLimit` bytes (0: kDefaultMemoryLimit), the load included, and its definitions are
-    // read and checked as load checks the built-in pack's. Callable while an audio thread runs blocks (the class
-    // comment). Its package, named by `id`, for NodeRegistry::addPackage, valid for the host's life unless discarded;
-    // null, with a reason, when canLoadPack refuses the id (nothing is built), or, the pack freed there and then, when
-    // a chunk fails to load (or runs out of memory), the load runs past the call deadline, a definition cannot be read
-    // or is not the same in both contexts, or a type id is not the pack's id, a dot and more ("user.synth.osc" in
-    // "user.synth").
+    // Load a pack beside the built-in one (docs/modular-graph-phase-c1-design.md sections 4 and 5): a pack named `id`,
+    // its two runtimes made for it, runs a bundle (global-code bytecode, in chunks run in order) in both, its audio
+    // runtime held to `memoryLimit` bytes (0: kDefaultMemoryLimit), the load included, and its definitions are read and
+    // checked as load checks the built-in pack's. Callable while an audio thread runs blocks (the class comment). On an
+    // id loaded already it builds the pack's next generation (one more than the newest of the id held), beside the
+    // current one, until retirePack or discardPack settles which goes. Its package, named by `id`, for the registry
+    // (NodeRegistry::addPackage, or replacePackage for a new generation), valid until the pack is freed; null, with a
+    // reason, when canLoadPack refuses the id (nothing is built), or, the pack freed there and then, when a chunk fails
+    // to load (or runs out of memory), the load runs past the call deadline, a definition cannot be read or is not the
+    // same in both contexts, or a type id is not the pack's id, a dot and more ("user.synth.osc" in "user.synth").
     const rp_package* loadPack(const std::string& id, std::span<const Chunk> chunks, std::size_t memoryLimit,
                                std::string* error = nullptr);
     // Whether loadPack takes a pack named `id`: a plain id (graph::isPlainId), not the built-in pack's ("rp.script",
-    // which is not reloadable), not otherwise the app's ("rp" and every id under "rp.", where its native packages are
-    // named too), and none loaded already. False, with the reason.
+    // which is not reloadable), and not otherwise the app's ("rp" and every id under "rp.", where its native packages
+    // are named too). False, with the reason.
     bool canLoadPack(const std::string& id, std::string* error = nullptr) const;
-    // Free a pack loadPack returned whose package no registry took (a NodeRegistry refused it), so nothing has made an
-    // instance of its types: its runtimes, there and then. Never the built-in pack.
+    // Retire the generation `package` names, which a reload replaced: a plan placing the new generation's nodes in
+    // place of its own is published (or none placed its own). Freed at once when no record of its types' instances is
+    // alive, else by the call that finds the last one back (the class comment), the pack-freed callback told its
+    // package first either way. Never the built-in pack.
+    void retirePack(const rp_package* package);
+    // Free a pack loadPack returned that never stood: a registry refused its package, or the replan of the reload that
+    // built it was refused. There and then when no record of its types' instances is alive; else (instances a refused
+    // plan made, whose releases the block thread has yet to hand back) by the call that finds the last one back. No
+    // registry holds its entries, so the pack-freed callback is not told. Never the built-in pack.
     void discardPack(const rp_package* package);
-    // A pack loaded: its id and its generation (its load's count).
+    // Told, on the control thread, of each retired generation as it is freed, before its types go: `user` as given, and
+    // its package, whose retired entries whatever holds them drops then (an Engine's registry:
+    // NodeRegistry::dropRetired). Never by the destructor, which frees every pack it holds.
+    using PackFreed = void (*)(void* user, const rp_package* package);
+    void setPackFreed(PackFreed freed, void* user);
+    // A pack held: its id, its generation (its load's count: 1, then one more each reload), whether it is a retired or
+    // discarded one waiting for its records, and how many records of its types' instances are alive.
     struct PackInfo {
         std::string   id;
         std::uint32_t generation = 0;
+        bool          retired = false;
+        std::uint32_t records = 0;
     };
-    // Every pack loaded, the built-in one first, then in load order.
+    // Every pack held, the built-in one first, then in load order: a retired or discarded generation among them until
+    // it is freed.
     std::vector<PackInfo> packs() const;
     // Set true BEFORE an audio thread starts running blocks, false AFTER it has stopped: false releases every
-    // queued instance there and then, and collects what they left.
+    // queued instance there and then, frees each retired or discarded pack whose last records that brings back, and
+    // collects what they left.
     void setAudioThreadOwns(bool owns);
     // How much of the calling thread's CPU time one call into a pack's JS may use before it is stopped, on either side
     // (kDefaultCallDeadline until set: the class comment). Set it before an audio thread runs blocks.
     void setCallDeadline(std::chrono::milliseconds limit);
     static constexpr std::chrono::milliseconds kDefaultCallDeadline{2000};
-    // Delete the records the block thread has released, and log the first throw once. While quiescent, also collect
-    // what instances released since the last left in cycles, and, the first time after a pack's load, what its bundle's
-    // load left (whether or not anything was released), in each pack that has some: call it after an operation that
-    // may release some.
+    // Delete the records the block thread has released, free each retired or discarded pack whose last records that
+    // brings back (the class comment), and log the first throw once. While quiescent, also collect what instances
+    // released since the last left in cycles, and, the first time after a pack's load, what its bundle's load left
+    // (whether or not anything was released), in each pack that has some: call it after an operation that may release
+    // some.
     void reclaim();
     // The first throw's type and message ("" until one), once the block thread has kept it.
     std::string firstThrow() const;
@@ -385,7 +421,16 @@ private:
     // control thread, its load done and before any plan can place its types: the pack's audio runtime joins what every
     // pack shares (the class comment)
     void join(Pack& pack);
+    // control thread, no record of its types alive: the pack's audio runtime leaves what every pack shares, its frees
+    // counted in `counters` from then on
+    void leave(Pack& pack, Counters& counters);
     void freeTypes(Pack& pack);
+    using Packs = std::vector<std::unique_ptr<Pack>>;
+    Packs::iterator findPack(const rp_package* package);  // a pack loadPack returned, by its package, or end
+    void freeIdle();                    // control thread: every retired or discarded pack with no record alive, freed
+    Packs::iterator freePack(Packs::iterator at);  // control thread: one of those, freed; the pack after it
+    void settleFreedLive();             // control thread: a profile build's live heap, past freed packs, once quiescent
+    void deleteRecord(Instance* in);    // control thread: a record its release is done with, off its pack's count
     std::uint32_t spanLabelFor(const std::string& typeId);  // control thread: a type id's label (DspSpanLabel)
     void releaseJs(Instance& in);   // the block thread, or quiescent
     void retire(Instance* in);      // control thread: a destroyed shim's record
@@ -400,12 +445,18 @@ private:
     Binder                       binder_ = nullptr;
     void*                        binderUser_ = nullptr;
     // Every pack, the built-in one first. Made, loaded and read on the control thread (and quiescent, by releaseQueued,
-    // collect and the profile calls), so it grows (loadPack) and shrinks (discardPack) there, while an audio thread
-    // runs blocks; the block thread reaches a pack only through an instance of one of its types, never through this
-    // list.
-    std::vector<std::unique_ptr<Pack>> packs_;
+    // collect and the profile calls), so it grows (loadPack) and shrinks (freePack) there, while an audio thread runs
+    // blocks; the block thread reaches a pack only through an instance of one of its types, never through this list.
+    Packs                              packs_;
     bool                               loaded_ = false;  // load has been called
     bool                               gcPinned_ = false;  // resetAllocStats pinned the audio runtimes' auto-GC off
+    PackFreed                          packFreed_ = nullptr;
+    void*                              packFreedUser_ = nullptr;
+#ifdef RETROPLUG_PROFILE
+    // What freed packs had added to the live heap in counters_ since they joined, taken off it once no audio thread
+    // runs (settleFreedLive): the control thread's.
+    std::int64_t                       freedLive_ = 0;
+#endif
     // Each type id's span label (DspSpanLabel), given at its first registration in any pack and kept, and the next one
     // to give (control thread).
     std::unordered_map<std::string, std::uint32_t> spanLabels_;

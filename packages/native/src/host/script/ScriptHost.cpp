@@ -355,6 +355,16 @@ struct ScriptHost::Pack {
     // released (Glue::chargeJobs).
     Instance*     jobsOwner = nullptr;
     bool          jobsOrphaned = false;
+    // The control thread's. The records of its types' instances alive (made by create, deleted by deleteRecord), and
+    // whether it stands: a generation a reload replaced is retired, one a refused reload built is discarded, and either
+    // is freed once its records are 0 (freeIdle).
+    std::uint32_t records = 0;
+    enum class Standing : std::uint8_t { Current, Retired, Discarded };
+    Standing      standing = Standing::Current;
+    // Its live heap as it joined, which the shared counters never had (a loaded pack's load is counted apart; the
+    // built-in pack's is not, but it is freed only with the host): what they have of its live heap is the rest, which a
+    // profile build takes off them once it is freed (settleFreedLive).
+    std::size_t   joinedLive = 0;
 };
 
 // One script node instance, behind its shim. Allocated by create and deleted on the control thread; its JS state is
@@ -644,6 +654,7 @@ struct ScriptHost::Glue {
         auto* shim = new (memory) Shim{};
         shim->vt = &kVtable;
         shim->in = in.release();
+        ++type.pack->records;  // the pack is freed only once every record of its types is back (freeIdle)
         return shim;
     }
 
@@ -1722,18 +1733,22 @@ bool ScriptHost::canLoadPack(const std::string& id, std::string* error) const {
         return refuse("pack id " + graph::jsonString(id) +
                       " is the app's to give: \"rp\" and every id under \"rp.\" name its own packages (its built-in "
                       "script pack, its native ones)");
-    for (const auto& pack : packs_)
-        if (pack->id == id) return refuse("pack " + graph::jsonString(id) + " is already loaded");
     return true;
 }
 
 const rp_package* ScriptHost::loadPack(const std::string& id, std::span<const Chunk> chunks, std::size_t memoryLimit,
                                        std::string* error) {
     if (!canLoadPack(id, error)) return nullptr;
+    // An id loaded already gets its next generation: one more than the newest held (a retired one waiting for its
+    // records, or a discarded one, among them).
+    std::uint32_t generation = 1;
+    for (const auto& held : packs_)
+        if (held->id == id) generation = std::max(generation, held->generation + 1);
     // What its audio runtime allocates until it joins, the load's own, counted apart: this is the control thread, and
     // the block thread may be counting into the shared counters, which have one writer at a time.
     Counters loading;
     auto pack = makePack(id, loading);
+    pack->generation = generation;
     pack->heap.limit = memoryLimit ? memoryLimit : kDefaultMemoryLimit;  // before the load, whose allocations it holds
     if (!loadInto(*pack, chunks, error)) {
         freeRuntimes(*pack);  // counted in `loading` still
@@ -1749,19 +1764,87 @@ const rp_package* ScriptHost::loadPack(const std::string& id, std::span<const Ch
     return &packs_.back()->package;
 }
 
+ScriptHost::Packs::iterator ScriptHost::findPack(const rp_package* package) {
+    return std::find_if(packs_.begin() + 1, packs_.end(), [&](const auto& p) { return &p->package == package; });
+}
+
+void ScriptHost::retirePack(const rp_package* package) {
+    const auto at = findPack(package);
+    assert(at != packs_.end() && "retirePack takes a pack loadPack returned, never the built-in one");
+    if (at == packs_.end()) return;
+    (*at)->standing = Pack::Standing::Retired;
+    if ((*at)->records == 0) freePack(at);
+}
+
 void ScriptHost::discardPack(const rp_package* package) {
-    const auto at =
-        std::find_if(packs_.begin() + 1, packs_.end(), [&](const auto& p) { return &p->package == package; });
+    const auto at = findPack(package);
     assert(at != packs_.end() && "discardPack takes a pack loadPack returned, never the built-in one");
     if (at == packs_.end()) return;
-    freeRuntimes(**at);
-    packs_.erase(at);
+    (*at)->standing = Pack::Standing::Discarded;
+    if ((*at)->records == 0) freePack(at);
+}
+
+void ScriptHost::setPackFreed(PackFreed freed, void* user) {
+    packFreed_ = freed;
+    packFreedUser_ = user;
 }
 
 std::vector<ScriptHost::PackInfo> ScriptHost::packs() const {
     std::vector<PackInfo> out;
-    for (const auto& pack : packs_) out.push_back({pack->id, pack->generation});
+    for (const auto& pack : packs_)
+        out.push_back({pack->id, pack->generation, pack->standing != Pack::Standing::Current, pack->records});
     return out;
+}
+
+// Every retired or discarded pack no record of whose types is alive: the block thread holds nothing of it (the class
+// comment), so it goes here, on the control thread, whether or not an audio thread runs.
+void ScriptHost::freeIdle() {
+    for (auto at = packs_.begin() + 1; at != packs_.end();) {
+        if ((*at)->standing != Pack::Standing::Current && (*at)->records == 0) at = freePack(at);
+        else ++at;
+    }
+}
+
+// A retired generation's package named to the callback while its types still stand (what holds its retired entries
+// drops them), then its audio runtime leaves what every pack shares and its runtimes go, with the pack.
+ScriptHost::Packs::iterator ScriptHost::freePack(Packs::iterator at) {
+    Pack& pack = **at;
+    if (pack.standing == Pack::Standing::Retired && packFreed_) packFreed_(packFreedUser_, &pack.package);
+    Counters freeing;  // what freeing it frees, counted apart (leave)
+    leave(pack, freeing);
+    freeRuntimes(pack);
+    at = packs_.erase(at);
+    settleFreedLive();
+    return at;
+}
+
+// join's reverse, for a pack about to be freed on the control thread: its frees counted apart, since the block thread
+// may be writing the shared counters (a profile build notes what it had added to their live heap, for settleFreedLive),
+// and the control thread's interrupt handler in place of the block thread's, whose deadline state it must not touch.
+// Both runtimes' stacks anchored here: the audio one was last entered on the block thread.
+void ScriptHost::leave(Pack& pack, Counters& counters) {
+#ifdef RETROPLUG_PROFILE
+    freedLive_ += static_cast<std::int64_t>(pack.heap.live) - static_cast<std::int64_t>(pack.joinedLive);
+#endif
+    pack.heap.counters = &counters;
+    JS_SetInterruptHandler(pack.audioRt, &Glue::controlInterrupt, this);
+    JS_UpdateStackTop(pack.audioRt);
+    JS_UpdateStackTop(pack.controlRt);
+}
+
+// A profile build's live heap in the shared counters, without what freed packs had added to it since they joined:
+// taken off once no audio thread runs, when this thread is their one writer.
+void ScriptHost::settleFreedLive() {
+#ifdef RETROPLUG_PROFILE
+    if (freedLive_ == 0 || audioOwns_.load(std::memory_order_acquire)) return;
+    Glue::grew(counters_, -freedLive_);
+    freedLive_ = 0;
+#endif
+}
+
+void ScriptHost::deleteRecord(Instance* in) {
+    --in->type->pack->records;
+    delete in;
 }
 
 // The pack's audio runtime joins what every pack shares: what the block thread runs in it held to the call deadline,
@@ -1772,6 +1855,7 @@ std::vector<ScriptHost::PackInfo> ScriptHost::packs() const {
 void ScriptHost::join(Pack& pack) {
     JS_SetInterruptHandler(pack.audioRt, &Glue::interrupt, this);  // in place of the control thread's
     pack.heap.counters = &counters_;
+    pack.joinedLive = pack.heap.live;
     if (gcPinned_) JS_SetGCThreshold(pack.audioRt, static_cast<std::size_t>(-1));
 }
 
@@ -1928,6 +2012,8 @@ void ScriptHost::setAudioThreadOwns(bool owns) {
     audioOwns_.store(owns, std::memory_order_release);
     if (owns) return;
     releaseQueued();
+    freeIdle();  // a generation whose last records were still queued
+    settleFreedLive();
     collect();  // the runtimes are this thread's again: what the audio thread's releases left in cycles goes now
 }
 
@@ -1942,7 +2028,7 @@ void ScriptHost::retire(Instance* in) {
     drainReleased();
     if (!audioOwns_.load(std::memory_order_acquire)) {
         releaseJs(*in);
-        delete in;
+        deleteRecord(in);
         return;
     }
     if (!backlogHead_ && releases_.tryPush(in)) return;
@@ -1979,7 +2065,7 @@ void ScriptHost::drainControlJobs(Pack& pack) {
 
 void ScriptHost::drainReleased() {
     Instance* in = nullptr;
-    while (released_.tryPop(in)) delete in;
+    while (released_.tryPop(in)) deleteRecord(in);
     while (backlogHead_) {  // the next read first: once pushed, a record is the block thread's until it comes back
         Instance* next = backlogHead_->backlogNext;
         if (!releases_.tryPush(backlogHead_)) break;
@@ -2007,6 +2093,7 @@ void ScriptHost::reclaim() {
                      firstThrow_);
         firstThrowLogged_ = true;
     }
+    freeIdle();  // a retired generation whose last record just came back
     if (!audioOwns_.load(std::memory_order_acquire)) collect();  // quiescent: what this thread's releases left in cycles
 }
 
@@ -2020,16 +2107,16 @@ void ScriptHost::releaseQueued() {
     Instance* in = nullptr;
     while (releases_.tryPop(in)) {
         releaseJs(*in);
-        delete in;
+        deleteRecord(in);
     }
     for (Instance* b = backlogHead_; b;) {
         Instance* next = b->backlogNext;
         releaseJs(*b);
-        delete b;
+        deleteRecord(b);
         b = next;
     }
     backlogHead_ = backlogTail_ = nullptr;
-    while (released_.tryPop(in)) delete in;
+    while (released_.tryPop(in)) deleteRecord(in);
 }
 
 // Quiescent only, and never by a block: a GC's cost is the whole heap's, which a block cannot afford. QuickJS's own

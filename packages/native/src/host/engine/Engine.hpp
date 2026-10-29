@@ -233,7 +233,8 @@ public:
     // than 1 to 3 or a system not in the slots, the document holds a second rp.host.midi-in, rp.host.controller-in,
     // rp.host.midi-out or rp.n8.cart-mirror, or its mirror names anything but one of its NES systems. Refused at all,
     // every core stays where it was: one a node of the refused plan took goes back to parked. Once it has published, a
-    // core still parked is one no document placed, and is freed.
+    // core still parked is one no document placed, and is freed, and the request is the one a script pack's reload
+    // replans (loadScriptPack).
     GraphResult setGraph(const GraphRequest& request);
     // The host channels the last published plan writes (the sum of its rp.host.audio-out buses). Control thread.
     std::uint32_t hostWidth() const { return hostWidth_; }
@@ -268,6 +269,17 @@ public:
     // "rp" and under, among them), a compile error (its line), a pack ScriptHost::loadPack refuses (a definition it
     // cannot read, a type id outside the pack's namespace, a load past the call deadline), or one the registry refuses
     // (a descriptor it cannot use, a type id another pack holds already).
+    // An id loaded already is reloaded, all or nothing (docs/modular-graph-phase-c1-design.md section 5): its next
+    // generation is built as a load builds a pack, the registry swaps the pack's entries for its, and the request
+    // setGraph last published is planned again without re-arming the tap (the running plan's stays as it is), so every
+    // node of the pack is rebuilt on the new code, its JS state not carried over, while every other node keeps its
+    // instance; a core parked since that request stays parked. When the replan is refused (a node's settings the new
+    // code refuses, a type the document places gone, the ring busy) the registry is swapped back, the new generation
+    // freed, and the planner's errors are returned in `errors`, summed up in `error`: the old code runs on, its
+    // instances untouched. On success `types` are the new generation's, and the old one is retired, freed with its
+    // runtimes once its nodes' records come back (within the call when no audio thread runs; else by the reclaim that
+    // finds them back, its registry entries dropped with it). A document that places none of the pack's nodes is not
+    // replanned: it would plan as it runs.
     ScriptPackResult loadScriptPack(const std::string& id, const std::string& source, std::size_t memoryLimit = 0);
     // How much of the calling thread's CPU time one call into a script pack's JS may use, on either side
     // (ScriptHost::setCallDeadline): set it before an audio thread runs blocks.
@@ -276,6 +288,11 @@ public:
     std::vector<rp::host::ScriptHost::PackInfo> scriptPacks() const;
     // The node types a document can name: the registry's, native and script.
     std::size_t nodeTypeCount() const;
+    // The registry's entries a reload swapped out whose generation the script host has not yet freed.
+    std::size_t retiredNodeTypeCount() const;
+    // Script node instances whose JS is made and not yet released (ScriptHost::liveInstances): any thread, as
+    // faultCount.
+    std::uint32_t scriptInstances() const;
 
 private:
     struct Graph;
@@ -307,6 +324,9 @@ private:
     // handler: the tail on the block thread, and the control thread's readers. The handler is handed its plan's
     // table instead, and threads that through.
     const rp::host::SystemTable& currentTable() const;
+    // setGraph, or with `replan` a script pack's reload planning the request last published again, which leaves the
+    // parked cores and the request kept as they are.
+    GraphResult publishGraph(const GraphRequest& request, bool replan);
     void applyCommand(DspCommand& c, const rp::host::SystemTable& table);
     void syncTap(bool arm, SystemId id, std::uint32_t mode, const rp::host::SystemTable& table);
     SystemBase* takeCore(std::uint64_t id);
@@ -387,6 +407,8 @@ private:
     // gives its core up again, the plan refused, puts it back in parked_ rather than freeing it.
     bool                                            inSetGraph_ = false;
     std::set<SystemId>                              takenInSetGraph_;
+    // The request setGraph last published (the empty document's, from construction), which a reload replans.
+    std::optional<GraphRequest>                     lastRequest_;
 
     // Last, so it goes first: its system nodes release their snapshot slots into registry_ (and leave
     // liveCores_) as they go.
