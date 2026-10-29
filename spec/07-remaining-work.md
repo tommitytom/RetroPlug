@@ -151,13 +151,20 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   nodes users write (Phase C, the Reaktor-scale aim). B3b made the project's nodes many, not one: eight is the
   number of node types, and a project places the routing node, a controller when enabled, one node per protocol
   role, and a second for each LSDj on a Game Boy, its serial-out decoder.
-- **Left by LSDj's serial-out node, as they are** (its design's section 11):
+- **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
     moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype
     measured it, the whole stream shifting and its clock gaps the same in every split; the test logs the gaps, not
-    the shift), which predates the decoder's move. The decoder adds no split
-    dependence of its own, so the tests hold each message to its byte, not to one absolute time shared by every
-    split. A SameBoy matter, its own change if wanted.
+    the shift), which predates the decoder's move. The decoder adds no split dependence of its own, so the tests
+    hold each message to its byte, not to one absolute time shared by every split. A SameBoy matter, its own change
+    if wanted.
+  - **MI.OUT decodes about half the NoteOns a song plays.** dsp-bench's MI.OUT window sends 20 NoteOns in 400
+    blocks (9.3 s), where its phrase's eight notes at tempo 128 come to about 40. Likely MI.OUT's rate-dependent
+    decode, one of the defects parity pins ([06-build-test.md](06-build-test.md)); not looked into.
+  - **No DAW check records LSDj's host MIDI out.** What MI.OUT and master sync send is held at `Engine::midiOut`
+    (the native tests, parity's MIDI-out hashes), never as a DAW records the plugin's `writeMidiEvent`: the Reaper
+    legs (`reaper:lsdj-*`) drive LSDj from the DAW and analyse the audio. A leg that records the plugin's MIDI out
+    would close it.
   - **The SDL standalone sends host MIDI at block time.** Its RtMidi out takes no timestamp, so `audioCb` sends
     each block's `Engine::midiOut` at once as the block is rendered, its frames dropped, where the plugin hands the
     DAW each message at its frame (`writeMidiEvent`). Scheduling it is the standalone's own work.

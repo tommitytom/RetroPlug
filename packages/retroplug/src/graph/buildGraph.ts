@@ -164,8 +164,9 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     nodes.push({ id: "routing", type: MIDI_ROUTE, settings: { mode: midiRouting, systems: systems.map((s) => s.id) } });
     wire("midi-in.midi", "routing.midiIn");
   }
-  // Host MIDI out's inputs, in the order the kernel emitted: the controller's first, then each system's in slot
-  // order, every message under the system named beside it, wherever in the document the node that sends it sits.
+  // Host MIDI out's inputs: the controller's first, so it wins a tie at a frame (rp.host.midi-out merges its inputs by
+  // frame, the lower input on a tie), then each system's in slot order, every message under the system named beside
+  // it, wherever in the document the node that sends it sits.
   const hostMidi: { from: string; system: number }[] = [];
   const controller = model.controller ?? null;
   const target = controller ? controllerTarget(controller, systems) : NO_SYSTEM;

@@ -189,15 +189,14 @@ export interface MasterSyncBlock {
 /** Decode one block's Master Sync serial-out bytes into host MIDI. Call once per block with the bytes the Game Boy
  *  captured in it, each one's frame in it, and the block's length and rate. Each byte is a tempo clock, sent at its
  *  frame, the first of a run opened there with LSDj's song row and 0xFA; a run ends with one 0xFC at its mark, the
- *  first frame its silence passes MASTER_SYNC_STOP_MS, `floor(lastAt + stop) + 1`. A mark is sent before the byte at
- *  or past it (which then opens a fresh run at its own frame), or found at the end of the block it falls inside and
- *  sent there at its frame; one past the block carries to the next, with the run's newest byte moved back by the
- *  block's length.
- *  So while the host's rate holds, a mark is never behind the block it is sent in. The silence a run carries into a
- *  block at another rate is time, and is counted again in the new rate's frames (200 ms stays 200 ms); a rise can then
- *  put the mark before the block's start, by less than a frame at the old rate, which had it at the block's first
- *  frame, and the stop goes there, never at a negative frame. A gap of exactly `stop` frames is no stop: the mark is
- *  the frame after. */
+ *  first frame its silence passes MASTER_SYNC_STOP_MS, `floor(lastAt + stop) + 1`. A mark is sent before the byte
+ *  at or past it (which then opens a fresh run at its own frame), or found at the end of the block it falls inside
+ *  and sent there at its frame; one past the block carries to the next, with the run's newest byte moved back by
+ *  the block's length. So while the host's rate holds, a mark is never behind the block it is sent in. The silence
+ *  a run carries into a block at another rate is time, and is counted again in the new rate's frames (200 ms stays
+ *  200 ms); a rise can then put the mark before the block's start, by less than a frame at the old rate, which had
+ *  it at the block's first frame, and the stop goes there, never at a negative frame. A gap of exactly `stop`
+ *  frames is no stop: the mark is the frame after. */
 export function arduinoboyMasterSyncBlock(
   bytes: number[],
   frames: number[],

@@ -171,8 +171,8 @@ descriptors by shared golden files.
 [docs/modular-graph-phase-b1-design.md](../docs/modular-graph-phase-b1-design.md)):
 `Engine::processBlock` runs a `GraphHost` plan of the engine's own nodes: the host I/O nodes
 (`rp.host.midi-in`, `-midi-out`, `-controller-in`, `-controller-out`), the script nodes that feed the
-systems (and LSDj's serial-out decoder, which reads its Game Boy), one system node per core (`rp.sameboy.gb`, `rp.mesen.nes`, `rp.mesen.gba`, `rp.mesen.sms`) and,
-with a NES, the
+systems (and LSDj's serial-out decoder, which reads its Game Boy), one system node per core
+(`rp.sameboy.gb`, `rp.mesen.nes`, `rp.mesen.gba`, `rp.mesen.sms`) and, with a NES, the
 `rp.n8.cart-mirror` that feeds a physical N8, mixed by `rp.core.split` / `rp.core.add` into
 `rp.host.audio-out`.
 **TS builds the graph** (Phase B2,

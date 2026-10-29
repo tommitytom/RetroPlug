@@ -57,8 +57,8 @@ Both take the role's config as their settings, through the one `lsdj-sync` schem
 mode included (`controllerSyncOverride`): a cart the controller forces to `midiMap` stays silent on host MIDI, as it
 is today. The decoder reads only `mode`. It is placed whatever the mode, so a mode switch stays a change of
 settings, as it is today, and a document's shape does not depend on a mode; in the other modes its capture is off,
-its input empty, and it costs one script call a block that sends nothing. It is placed only on a Game Boy, as the
-feedback wire was.
+its input empty (but see section 12), and it costs one script call a block that sends nothing. It is placed only on
+a Game Boy, as the feedback wire was.
 
 In [protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts) a spec names a node placed after its system
 beside the one before it: `rp.lsdj.sync`'s spec drops `serialOut` and `midiOut` and names `rp.lsdj.serial-out`,
@@ -66,9 +66,9 @@ whose own spec says it reads its system's `serialOut` and sends host MIDI. `prot
 one-writer rule are unchanged: the decoder writes no system input.
 [buildGraph.ts](../packages/retroplug/src/graph/buildGraph.ts) pushes the decoders after the systems in slot order,
 before the cart mirror and the host outputs, and its comment that every script node goes before the systems becomes
-the rule that a script node reads only earlier nodes (or a feedback wire). The role goldens' forward-wire check (B3b follow-up E) holds it. The new type registers last in
-[bundle.ts](../packages/retroplug/src/script/bundle.ts), so the production span labels 16 to 22 keep their types and
-it takes 23.
+the rule that a script node reads only earlier nodes (or a feedback wire). The role goldens' forward-wire check (B3b
+follow-up E) holds it. The new type registers last in [bundle.ts](../packages/retroplug/src/script/bundle.ts), so
+the production span labels 16 to 22 keep their types and it takes 23.
 
 ## 4. The decoder
 
@@ -207,6 +207,8 @@ Accepted on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`, plus the su
 - **The core's byte timing moves with the split** (section 8): a SameBoy matter, its own change if wanted.
 - **MI.OUT's rate-dependent decode** (section 4), still pinned.
 - **The SDL standalone sends host MIDI at block time** (section 5).
+- **No DAW check records the host MIDI out**: section 8's tests hold `Engine::midiOut`, and the Reaper legs analyse
+  audio.
 - **The capture mode as a Game Boy node setting**, Phase C as spec/07 says: a mode switch still publishes the
   document and sets the capture through `ConfigField::SerialOutCapture`, so for a block the two can disagree, as
   the master-sync design's section 10 accepted.
@@ -237,8 +239,8 @@ Accepted on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`, plus the su
   a block earlier than before, but for one stop in each 1-frame master-sync case, which stays in its block; a
   checker over the old and new baselines and their dumps found every lane, SRAM and work RAM of the three groups,
   and every other case's whole digest, unchanged. Every new message lies off frame 0 but in the 1-frame splits,
-  whose blocks have no other frame, and for one clock of 85 in each master-sync `fl256` case, whose byte the core
-  completed at its block's first frame.
+  whose blocks have no other frame, and for one message of 85, a clock, in each master-sync `fl256` case, whose
+  byte the core completed at its block's first frame.
 - **A hand-edited `lsdj-sync` on another system loses its host MIDI input.** The decoder is placed only on a Game
   Boy, as the feedback wire was, but `rp.host.midi-out`'s input for the system had been `rp.lsdj.sync`'s, placed on
   any system. Such a system (no ROM provider attaches `lsdj-sync` to anything but a Game Boy) has its `rp.lsdj.sync`
@@ -291,21 +293,21 @@ The commits' reviews found more, fixed in the commits after them:
 - **The rig's re-record re-blessed what reached the systems.** Its one digest hashed the system inputs and the host
   outputs together, so re-recording the three cases whose host MIDI out moved (the LSDj modes and the controller's
   two) took their system inputs into the new values unchecked: in `lsdj-modes`' nine modes, `rp.lsdj.sync`'s
-  `serialIn` and `buttons`. Every case now records a second digest beside the first, over the system inputs alone.
-  Its values were run on the rig at 0d781dd4, the commit before the decoder moved, where every first digest still
-  held the kernel's value: every second digest was equal there, the three re-recorded cases' among them, so the move
-  changed no system input.
+  `serialIn` and `buttons`. Every case that records digests (the seven that end in `rig.matches`) now records a
+  second beside the first, over the system inputs alone. Its values were run on the rig at 0d781dd4, the commit
+  before the decoder moved, where every first digest still held the kernel's value: every second digest was equal
+  there, the three re-recorded cases' among them, so the move changed no system input.
 - **`Engine::midiOut` is frame-sorted only within one `rp.host.midi-out`.** Section 5's promise held for the one
   `buildGraph` places, but a document holding two would append the second's merge behind the first's, and the
   plugin writes the list to the DAW as it is (CLAP and LV2 require the order). Nothing places two (every golden
   holds one), so `Engine::setGraph` refuses a second (`midi-out`), as it refuses a second `rp.host.midi-in`,
   `rp.host.controller-in` or cart mirror.
-- **No document holds a feedback wire, and every golden is now held to that.** The role goldens' forward-wire check
-  passed feedback wires over, and `build-graph.test.ts` looks for one in an LSDj's structure alone:
+- **No document holds a feedback wire, and every role golden is now held to that.** The role goldens' forward-wire
+  check passed feedback wires over, and `build-graph.test.ts` looks for one in an LSDj's structure alone:
   [build-graph-role-goldens.test.ts](../packages/retroplug/test/graph/build-graph-role-goldens.test.ts) refuses a
-  feedback wire in any golden as it refuses a backward wire, since one into a script node would hand it last block's
-  values and nothing would show it. So the rule `buildGraph` keeps is that every node reads only nodes placed before
-  it, a feedback wire the exception none of its documents takes.
+  feedback wire in any role golden as it refuses a backward wire, since one into a script node would hand it last
+  block's values and nothing would show it. So the rule `buildGraph` keeps is that every node reads only nodes
+  placed before it, a feedback wire the exception none of its documents takes.
 - **The guard kept the host's list in order but not inside its block.** A script node's `send` carries a frame at or
   past the block's end as given, and wraps a negative one there (the rate drop's stop, above, went out at
   4294967001); the guard handed such a frame on to `Engine::midiOut` and the plugin's `writeMidiEvent`, and DPF

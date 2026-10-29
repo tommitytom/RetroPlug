@@ -845,7 +845,8 @@ TEST_CASE("a document holds one rp.host.midi-in, controller-in and midi-out at m
         CHECK(refused.errors[0].code == type.substr(std::string("rp.host.").size()));
         CHECK(e.setGraph(hostIoOnly({docNode("in-a", type)}, {})).ok);
     }
-    CHECK(e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("controller-in", "rp.host.controller-in"),
+    CHECK(e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in"),
+                                 docNode("controller-in", "rp.host.controller-in"),
                                  docNode("midi-out", "rp.host.midi-out")},
                                 {}))
               .ok);
