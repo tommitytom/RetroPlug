@@ -2046,19 +2046,23 @@ rp.register(Array.from({ length: 1100 }, (_, i) =>
   rp.defineNode({ id: "rp.toy.many-" + i, ports: { out: rp.events.out() }, create: () => ({ process() {} }) })));
 )JS";
 
-std::vector<rp::host::DspTraceSpan> spansOf(const ScriptHost& h, std::uint32_t label) {
+// A trace's spans of `label`, in the order they were recorded (a span is recorded as it closes).
+std::vector<rp::host::DspTraceSpan> spansOf(const std::vector<rp::host::DspTraceSpan>& spans, std::uint32_t label) {
     std::vector<rp::host::DspTraceSpan> out;
-    for (const auto& s : h.traceSpans())
+    for (const auto& s : spans)
         if (s.label == label) out.push_back(s);
     return out;
 }
+std::vector<rp::host::DspTraceSpan> spansOf(const ScriptHost& h, std::uint32_t label) {
+    return spansOf(h.traceSpans(), label);
+}
 
-// The label a trace names `type`'s process spans by, or kDspSpanLabels when it names none.
-std::uint32_t labelOf(const ScriptHost& h, const std::string& type) {
-    const auto names = h.traceNames();
+// The label a trace's names (`names`) give `type`'s process spans, or kDspSpanLabels when they name none.
+std::uint32_t labelOf(const std::vector<std::string>& names, const std::string& type) {
     const auto at = std::find(names.begin(), names.end(), type);
     return at == names.end() ? rp::host::kDspSpanLabels : static_cast<std::uint32_t>(at - names.begin());
 }
+std::uint32_t labelOf(const ScriptHost& h, const std::string& type) { return labelOf(h.traceNames(), type); }
 
 // Each of `inner` inside one of `outer`.
 bool nested(const std::vector<rp::host::DspTraceSpan>& inner, const std::vector<rp::host::DspTraceSpan>& outer) {
@@ -2253,28 +2257,23 @@ TEST_CASE("an Engine's apu-render spans its plan's whole run, each script node's
     REQUIRE(e.dspTraceReset(false));
     CHECK(e.scriptThrows() == 0);
 
-    // A label's spans, in the order they started: one a block.
-    const auto spansOf = [&](std::uint32_t label) {
-        std::vector<rp::host::DspTraceSpan> out;
-        for (const auto& sp : spans)
-            if (sp.label == label) out.push_back(sp);
-        std::sort(out.begin(), out.end(), [](const auto& x, const auto& y) { return x.t0 < y.t0; });
-        return out;
-    };
-    const auto labelOf = [&](const std::string& type) {
-        return static_cast<std::uint32_t>(std::find(names.begin(), names.end(), type) - names.begin());
-    };
-    const auto apu = spansOf(rp::host::DSP_SPAN_APU);
+    // Each label's spans, one a block, in block order: no two spans of one label overlap, so they are recorded in the
+    // order they started.
+    const auto apu = spansOf(spans, rp::host::DSP_SPAN_APU);
+    const auto mgb = spansOf(spans, labelOf(names, "rp.mgb.midi"));
+    const auto late = spansOf(spans, labelOf(names, "rp.lsdj.serial-out"));
     REQUIRE(apu.size() == kBlocks);
-    for (const char* type : {"rp.mgb.midi", "rp.lsdj.serial-out"}) {
-        INFO(type);
-        const auto process = spansOf(labelOf(type));
-        REQUIRE(process.size() == kBlocks);
-        for (std::size_t k = 0; k < kBlocks; ++k) {
-            INFO("block " << k);
-            CHECK(apu[k].t0 <= process[k].t0);
-            CHECK(process[k].t1 <= apu[k].t1);
+    REQUIRE(mgb.size() == kBlocks);
+    REQUIRE(late.size() == kBlocks);
+    for (std::size_t k = 0; k < kBlocks; ++k) {
+        INFO("block " << k);
+        for (const auto* process : {&mgb, &late}) {
+            CHECK(apu[k].t0 <= (*process)[k].t0);
+            CHECK((*process)[k].t1 <= apu[k].t1);
         }
+        // In the plan's order, the one the wires allow: rp.mgb.midi before the Game Boy it feeds, rp.lsdj.serial-out
+        // after the Game Boy it reads. So the second span is a node's that runs after a system.
+        CHECK(mgb[k].t1 <= late[k].t0);
     }
 }
 #endif

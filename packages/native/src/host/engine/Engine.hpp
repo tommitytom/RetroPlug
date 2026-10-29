@@ -157,10 +157,11 @@ public:
     SystemId cartMirrorSystemId() const;
 
     // --- profiling the audio runtime (spec/08-profiling.md): the script host's allocation window, its GC pass and
-    // its trace window, which holds the engine's own stages too (the plan after its script nodes, the state publish).
-    // Quiescent (the renderAudio pull path): while the audio thread runs, resetDspAllocStats and dspTraceReset return
-    // false, dspRunGc a result with enabled false, and dspTrace and dspTraceNames nothing, as they do in any build
-    // but a RETROPLUG_PROFILE one; dspAllocStats never refuses, and is enabled false only off-profile ---
+    // its trace window, which holds the engine's own stages too (the plan's whole run, its script nodes' spans inside
+    // it; the state publish). Quiescent (the renderAudio pull path): while the audio thread runs, resetDspAllocStats
+    // and dspTraceReset return false, dspRunGc a result with enabled false, and dspTrace and dspTraceNames nothing, as
+    // they do in any build but a RETROPLUG_PROFILE one; dspAllocStats never refuses, and is enabled false only
+    // off-profile ---
     rp::host::DspAllocStats             dspAllocStats() const;
     bool                                resetDspAllocStats(bool disableAutoGc);
     rp::host::DspGcResult               dspRunGc();

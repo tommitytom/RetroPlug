@@ -626,8 +626,7 @@ struct ScriptHost::Glue {
     static void jsCallBegin(ScriptHost& h) { traceBegin(h, DSP_SPAN_JSCALL); }
     static void jsCallEnd(ScriptHost& h) { traceEnd(h); }
 
-    // The end of a process call's span, its type's (a profile build), which the Engine's apu-render holds: that spans
-    // the plan's whole run.
+    // The end of a process call's span, its type's (a profile build).
     static void processSpanEnd(ScriptHost& h) { traceEnd(h); }
 
     static rp_prepare_result prepare(rp_node* n, const rp_settings* s, void** prepared, rp_error* err) {
