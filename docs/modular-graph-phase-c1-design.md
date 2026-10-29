@@ -138,9 +138,11 @@ thrown error's stack names), where the built-in bundle is compiled stripped (`tj
 - **Shared across packs:** the call deadline's state (one call runs at a time on the block thread); the allocation
   counters, summed over every pack's audio runtime, so `audioAllocations`, the profile's allocation window and the
   zero-allocation benches keep their meaning, "the audio side"; the release rings (a record knows its pack); the
-  throw count and first throw; and the profile's span labels, one per type id, given at a type id's first
-  registration and kept by its reloads, so the built-in types' labels stay 16 up in bundle order
-  ([spec/08-profiling.md](../spec/08-profiling.md)) and a dev loop's reloads do not use up the name table. A loaded
+  throw count and first throw; and the profile's span labels, one per type id, given as the first pack defining it
+  loads and kept by its reloads, so the built-in types' labels stay 16 up in bundle order
+  ([spec/08-profiling.md](../spec/08-profiling.md)) and a dev loop's reloads do not use up the name table. A label is
+  given before the registry is asked, so a pack it refuses, or a refused reload's new type, keeps a label and a trace
+  name for its ids; bounded, the same ids loaded again reusing theirs. A loaded
   pack's audio runtime joins the deadline's handler and the allocation counters only once its load is done: the load
   runs on the control thread while the block thread may be inside a call into another pack, so a handler polled in the
   load would touch that call's deadline state, and the load's allocations would be a second writer of counters that

@@ -69,11 +69,12 @@ struct DspTraceSpan {
 
 // The span labels. A script node's process call is labelled by its type, so a profile shows each type's cost, as the
 // DSP kernel's per-role spans did inside its one node until B3b made each role a node of its own: the packs' types
-// take DSP_SPAN_TYPE_BASE up, in the order they were registered, each named by its id. The label is the type's, not
-// the node's, as the kernel's role spans were per role kind; two systems' nodes of one type still show as two spans a
-// block (each its own process call, in plan order). A type id's label is given at its first registration and kept for
-// the host's life, so one registered again has the label it had, where one per node id would come and go with every
-// document, and a node's create is never told its id.
+// take DSP_SPAN_TYPE_BASE up, in the order their packs first loaded them, each named by its id. The label is the
+// type's, not the node's, as the kernel's role spans were per role kind; two systems' nodes of one type still show as
+// two spans a block (each its own process call, in plan order). A type id's label is given as the first pack defining
+// it loads, before any registry takes the pack (so a pack a registry refuses keeps its ids' labels), and kept for the
+// host's life, so one loaded again has the label it had, where one per node id would come and go with every document,
+// and a node's create is never told its id.
 enum DspSpanLabel : std::uint32_t {
     DSP_SPAN_SCRIPT_NODE = 0,   // ScriptHost: the process call of a script node whose type has no label of its own (a
                                 //   bundle registering more types than kDspSpanLabels leaves room for)
@@ -511,8 +512,8 @@ private:
     // Each loaded pack id's count of loads, which every loadPack of it that canLoadPack takes advances, refused or not:
     // its latest generation's number, so a number names one source for the host's life (control thread).
     std::unordered_map<std::string, std::uint32_t> generations_;
-    // Each type id's span label (DspSpanLabel), given at its first registration in any pack and kept, and the next one
-    // to give (control thread).
+    // Each type id's span label (DspSpanLabel), given as the first pack defining it loads, whatever a registry then
+    // makes of the pack, and kept, and the next one to give (control thread).
     std::unordered_map<std::string, std::uint32_t> spanLabels_;
     std::uint32_t                                  nextSpanLabel_ = DSP_SPAN_TYPE_BASE;
 

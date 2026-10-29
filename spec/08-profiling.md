@@ -235,7 +235,7 @@ past `renderAudio`'s 1024-frame block).
   `apu-render` follows the spans inside it in the list; the trace-event JSON gives each span its start and
   length, so nothing that reads it depends on that order. The labels are fixed: `script-node` (0),
   `marshal`, `js-call`, `apu-render`, `state-publish` (1 to 4), then the packs' types from
-  `DSP_SPAN_TYPE_BASE` (16) up, in the order they were first registered, each named by its id and keeping its
+  `DSP_SPAN_TYPE_BASE` (16) up, in the order their packs first loaded them, each named by its id and keeping its
   label across its pack's reloads, so a dev loop's reloads do not use up the table (the production
   bundle's eight are 16 to 23: `rp.midi.route`, `rp.mgb.midi`, `rp.n8.midi-to-fifo`, `rp.risa.sync`,
   `rp.sms.sync`, `rp.lsdj.sync`, `rp.controller.session` and `rp.lsdj.serial-out`, registered last so the

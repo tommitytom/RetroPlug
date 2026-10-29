@@ -264,22 +264,26 @@ public:
     // compiled here and run in runtimes of the pack's own (ScriptHost::loadPack), each held to `memoryLimit` bytes (0:
     // ScriptHost::kDefaultMemoryLimit); then its types join the registry, so a document can place them from the next
     // setGraph on. Callable while an audio thread runs blocks: the pack is built here, and the block thread meets it
-    // only in a plan that places one of its nodes. Refused, changing nothing, with the reason in `error`: an id
-    // ScriptHost::canLoadPack refuses (checked first, before the source is compiled: one of the app's, "rp" and under,
-    // among them), a compile error (its line), a pack ScriptHost::loadPack refuses (a definition it cannot read, a type
-    // id outside the pack's namespace, a load past the call deadline or the memory limit), or one the registry refuses
-    // (a descriptor it cannot use, a type id another pack holds already).
-    // An id loaded already is reloaded, all or nothing (docs/modular-graph-phase-c1-design.md section 5): its next
-    // generation is built as a load builds a pack, the registry swaps the pack's entries for its, and the request
-    // setGraph last published is planned again without re-arming the tap (the running plan's stays as it is), so every
-    // node of the pack is rebuilt on the new code, its JS state not carried over, while every other node keeps its
-    // instance; a core parked since that request stays parked. When the replan is refused (a node's settings the new
-    // code refuses, a type the document places gone, the ring busy) the registry is swapped back, the new generation
-    // freed, and the planner's errors are returned in `errors`, summed up in `error`: the old code runs on, its
-    // instances untouched. On success `types` are the new generation's, and the old one is retired, freed with its
-    // runtimes once its nodes' records come back (within the call when no audio thread runs; else by the reclaim that
-    // finds them back, its registry entries dropped with it). A document that places none of the pack's nodes is not
-    // replanned: it would plan as it runs.
+    // only in a plan that places one of its nodes. Refused with the reason in `error`, the registry and the running
+    // plan as they were: an id ScriptHost::canLoadPack refuses (checked first, before the source is compiled: one of
+    // the app's, "rp" and under, among them), a compile error (its line), a pack ScriptHost::loadPack refuses (a
+    // definition it cannot read, a type id outside the pack's namespace, a load past the call deadline or the memory
+    // limit), or one the registry refuses (a descriptor it cannot use, a type id another pack holds already). A refusal
+    // after the script host built the pack still uses up a generation number (the id's count of loads:
+    // ScriptHost::loadPack).
+    // An id the script host holds a current generation of is reloaded (docs/modular-graph-phase-c1-design.md section
+    // 5), all or nothing: its next generation is built as a load builds a pack, the registry swaps the pack's entries
+    // for its, and the request setGraph last published is planned again without re-arming the tap (the running plan's
+    // stays as it is), so every node of the pack is rebuilt on the new code, its JS state not carried over, while every
+    // other node keeps its instance; a core parked since that request stays parked. When the replan is refused (a
+    // node's settings the new code refuses, a type the document places gone, the ring busy) the registry is swapped
+    // back and the planner's errors are returned in `errors`, summed up in `error`: the old code runs on, its instances
+    // untouched. The new generation is discarded: freed within the call when no audio thread runs; under one, the
+    // refused plan's fresh instances are released by the block thread, so it stays in scriptPacks(), discarded, until
+    // their records come back, and the reclaim that finds them back frees it. On success `types` are the new
+    // generation's, and the old one is retired, freed with its runtimes once its nodes' records come back (within the
+    // call when no audio thread runs; else by the reclaim that finds them back, its registry entries dropped with it).
+    // A document that places none of the pack's nodes is not replanned: it would plan as it runs.
     ScriptPackResult loadScriptPack(const std::string& id, const std::string& source, std::size_t memoryLimit = 0);
     // How much of the calling thread's CPU time one call into a script pack's JS may use, on either side
     // (ScriptHost::setCallDeadline): set it before an audio thread runs blocks.

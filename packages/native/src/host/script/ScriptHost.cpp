@@ -2073,7 +2073,11 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
         if (controlInterrupted_) return fail("a promise job its collection queued");
         if (!collected) return fail(unsettled("its collection's") + ", in the audio context");
     }
-    // Each type's span label, in registration order (spanLabelFor).
+    // Each type's span label, in registration order (spanLabelFor). Given here, as the pack loads and before any
+    // registry is asked, so the type ids of a pack a registry then refuses, or of a reload whose replan is refused,
+    // keep a label and a trace name though nothing placed them. Bounded all the same: a type id keeps the label it was
+    // given, so the same ids loaded again reuse theirs, and once kDspSpanLabels is reached a new one is traced as the
+    // shared label.
     for (const auto& t : pack.types) t->spanLabel = spanLabelFor(t->id);
     pack.typeList.clear();
     for (const auto& t : pack.types) pack.typeList.push_back(&t->abi);
@@ -2082,8 +2086,8 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
     return true;
 }
 
-// A type id's label: the one it was given at its first registration, else the next one, named by its id, while the name
-// table has room; past it, the shared script-node label.
+// A type id's label: the one it was given when a pack defining it first loaded, else the next one, named by its id,
+// while the name table has room; past it, the shared script-node label.
 std::uint32_t ScriptHost::spanLabelFor(const std::string& typeId) {
     if (const auto at = spanLabels_.find(typeId); at != spanLabels_.end()) return at->second;
     if (nextSpanLabel_ >= kDspSpanLabels) return DSP_SPAN_SCRIPT_NODE;
