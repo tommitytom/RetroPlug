@@ -202,7 +202,10 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // pack has pending, charged to that remembered owner when it is another node, else to no node, as is what a released
 // owner leaves (a throw counted, faulting no one). A fault charged to the node whose process this is returns RP_FAULT;
 // one after a hook, or charged to another node of the pack whose leftovers ran, faults that node at its next block. A
-// promise reaction's own throw only rejects its promise, which is the node's to handle.
+// promise reaction's own throw only rejects its promise, which is the node's to handle. A load's own jobs run as it
+// loads, at most kJobsPerCheckpoint each stretch of it (its top level in each runtime, each descriptor, what a loaded
+// pack's collection queues), and a load that leaves any is refused: they would run at the pack's first checkpoint,
+// charged to whichever of its nodes' calls came first.
 //
 // Each pack's audio runtime is held to a memory limit (kDefaultMemoryLimit, unless its load says otherwise) by the
 // host's allocator, which refuses an allocation past it, so QuickJS throws out of memory in the call that asked, and
@@ -273,9 +276,10 @@ public:
     // read the definitions it registered, its audio runtime held to `memoryLimit` bytes (0: kDefaultMemoryLimit) from
     // then on, the load included. Once, before anything plans with the package: a second call is refused, and leaves
     // what the first registered as it is. False, with a reason, when a chunk fails to load (or runs out of memory), the
-    // load runs past the call deadline, or a definition cannot be read or is not the same in both contexts (its id or its
-    // descriptor differs: a bundle that branches on which context it runs in). One bad definition refuses the whole
-    // package: it then has no types, so every document naming any of the bundle's is refused (unknown-type).
+    // load runs past the call deadline, the promise jobs it queues do not settle in kJobsPerCheckpoint (the class
+    // comment), or a definition cannot be read or is not the same in both contexts (its id or its descriptor differs: a
+    // bundle that branches on which context it runs in). One bad definition refuses the whole package: it then has no
+    // types, so every document naming any of the bundle's is refused (unknown-type).
     bool load(std::span<const Chunk> chunks, std::string* error = nullptr, std::size_t memoryLimit = kDefaultMemoryLimit);
     // What a pack's audio runtime may hold, in usable bytes, unless its load says otherwise (the class comment).
     static constexpr std::size_t kDefaultMemoryLimit = std::size_t{64} << 20;
@@ -290,8 +294,9 @@ public:
     // current one, until retirePack or discardPack settles which goes. Its package, named by `id`, for the registry
     // (NodeRegistry::addPackage, or replacePackage for a new generation), valid until the pack is freed; null, with a
     // reason, when canLoadPack refuses the id (nothing is built), or, the pack freed there and then, when a chunk fails
-    // to load (or runs out of memory), the load runs past the call deadline, a definition cannot be read or is not the
-    // same in both contexts, or a type id is not the pack's id, a dot and more ("user.synth.osc" in "user.synth").
+    // to load (or runs out of memory), the load runs past the call deadline, the promise jobs it queues do not settle
+    // in kJobsPerCheckpoint, a definition cannot be read or is not the same in both contexts, or a type id is not the
+    // pack's id, a dot and more ("user.synth.osc" in "user.synth").
     const rp_package* loadPack(const std::string& id, std::span<const Chunk> chunks, std::size_t memoryLimit,
                                std::string* error = nullptr);
     // Whether loadPack takes a pack named `id`: a plain id (graph::isPlainId), not the built-in pack's ("rp.script",
@@ -350,7 +355,9 @@ public:
     // At the end of every block that ran the graph: the allocation window's per-block counts (a profile build). Its
     // promise jobs ran at its calls' checkpoints.
     void endBlock();
-    // The most of its pack's pending promise jobs a checkpoint after a call into a node runs (the class comment).
+    // The most of a pack's pending promise jobs one run takes (the class comment): a checkpoint after a call into a
+    // node, a run outside any (a release's), each stretch of a load (one that leaves any refuses the load), and a
+    // settings check's drain of the control side.
     static constexpr int kJobsPerCheckpoint = 256;
     static constexpr std::size_t kStackBytes = 256 * 1024;  // each runtime's JS stack (the class comment)
     // How many plain objects reading a node's process or a hook walks (what its create returned, then the prototypes
@@ -440,7 +447,8 @@ private:
     void drainReleased();           // control thread: the records handed back, deleted, and the backlog moved on
     void collect();                 // quiescent: a GC of each pack's audio runtime whose load or releases have left
                                     //   garbage since its last
-    static void drainControlJobs(Pack& pack);  // control thread: the jobs a call into its control context queued
+    // control thread: the jobs a call into its control context queued, at most kJobsPerCheckpoint; whether they settled
+    static bool drainControlJobs(Pack& pack);
 
     // Every audio runtime's allocator opaque (its pack's Heap) points at counters_, so it is declared (and made) first.
     Counters                     counters_;

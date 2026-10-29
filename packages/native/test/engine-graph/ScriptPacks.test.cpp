@@ -424,6 +424,68 @@ toy.define("test.calm.settles", [toy.output("out")], function () {
     CHECK(e.faultCount() == 1);
 }
 
+namespace {
+
+// JS that queues a chain of `jobs` promise jobs, one link each, the first from where it runs; 0, a chain that never
+// ends.
+std::string jobChain(int jobs) {
+    return "(function () { var n = 0, link = function () { if (" + std::to_string(jobs) +
+           " === 0 || ++n < " + std::to_string(jobs) + ") Promise.resolve().then(link); };\n"
+           "  Promise.resolve().then(link); })();\n";
+}
+
+}  // namespace
+
+TEST_CASE("a load whose promise jobs do not settle in the 256 a load runs is refused, changing nothing: its top "
+          "level's, a descriptor's, what its collection queues, in either runtime, the built-in pack's load too",
+          "[script][packs][jobs]") {
+    constexpr const char* kUnsettled = "promise jobs did not settle in the 256 a load runs";
+    Engine e(kRate);
+    // In each runtime a load runs at most 256 of what its top level queued: a chain that long settles, one more does
+    // not.
+    load(e, "test.settles", toys(transposer("test.settles.up", 1) + jobChain(256)));
+    refused(e, "test.unsettled", toys(transposer("test.unsettled.up", 1) + jobChain(257)),
+            std::string("its top level's ") + kUnsettled, "test.unsettled.up");
+    refused(e, "test.endless", toys(transposer("test.endless.up", 1) + jobChain(0)),
+            std::string("its top level's ") + kUnsettled, "test.endless.up");
+    // A descriptor that starts one, each time it is asked.
+    refused(e, "test.descchain", toys(transposer("test.descchain.up", 1) + R"JS(
+var d = globalThis.__rp_scriptNodes, plain = d[d.length - 1].descriptor;
+d[d.length - 1].descriptor = function () { )JS" + jobChain(0) + R"JS( return plain(); };
+)JS"),
+            std::string("test.descchain.up: its descriptor's ") + kUnsettled, "test.descchain.up");
+    // A FinalizationRegistry callback that starts one, its target a cycle the top level drops, which the loaded pack's
+    // collection (or a threshold GC on the way) finds.
+    refused(e, "test.finchain", toys(transposer("test.finchain.up", 1) + R"JS(
+var registry = globalThis.registry = new FinalizationRegistry(function () { )JS" + jobChain(0) + R"JS( });
+(function () { var cycle = {}; cycle.self = cycle; registry.register(cycle, 0); })();
+)JS"),
+            kUnsettled, "test.finchain.up");
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.settles#1"});
+    CHECK(e.scriptThrows() == 0);
+
+    // The audio runtime's drain alone (the control side's settles): what the binder says of the context it runs in.
+    rp::host::test::ScriptRig rig;
+    const auto audioOnly =
+        rp::host::test::compileToys(toys(transposer("test.audiochain.up", 1) + "if (__audioSide) " + jobChain(0)));
+    const ScriptHost::Chunk audioChunk = audioOnly;
+    std::string error;
+    CHECK(rig.scripts.loadPack("test.audiochain", {&audioChunk, 1}, 0, &error) == nullptr);
+    INFO(error);
+    CHECK(error == std::string("its top level's ") + kUnsettled + ", in the audio context");
+    CHECK(rig.scripts.packs().size() == 1);
+
+    // The built-in pack's load, refused as a loaded pack's is: its package then holds no type.
+    ScriptHost host;
+    const auto chained = rp::host::test::compileToys(toys(transposer("test.builtin.up", 1) + jobChain(0)));
+    const ScriptHost::Chunk chunks[] = {ScriptHost::embeddedBundle(), chained};
+    error.clear();
+    CHECK_FALSE(host.load(chunks, &error));
+    INFO(error);
+    CHECK(error == std::string("its top level's ") + kUnsettled + ", in the control context");
+    CHECK(host.package()->node_type_count == 0);
+}
+
 TEST_CASE("a pack loads while an audio thread runs blocks, and the plan that places its node runs it on that thread",
           "[script][packs][threads]") {
     Engine e(kRate);

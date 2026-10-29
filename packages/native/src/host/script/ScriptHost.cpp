@@ -1754,12 +1754,7 @@ const rp_package* ScriptHost::loadPack(const std::string& id, std::span<const Ch
         freeRuntimes(*pack);  // counted in `loading` still
         return nullptr;
     }
-    // What the load left in cycles goes now, while the pack is still this thread's alone: once a plan places one of
-    // its nodes, its audio runtime is the block thread's, and no block collects.
-    JS_UpdateStackTop(pack->audioRt);
-    JS_RunGC(pack->audioRt);
-    pack->garbage = false;
-    join(*pack);
+    join(*pack);  // what its load left in cycles collected at its end (loadInto)
     packs_.push_back(std::move(pack));
     return &packs_.back()->package;
 }
@@ -1888,6 +1883,16 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
         if (error) *error = std::move(why);
         return false;
     };
+    // The promise jobs a stretch of the load queued in `rt`, run there and then, at most kJobsPerCheckpoint; whether
+    // they settled. A load's jobs are no node's, and must settle: QuickJS cannot drop a pending job, so one a load left
+    // would run at its pack's first checkpoint, charged to whichever of its nodes' calls came first. So a load that
+    // leaves any is refused, saying which stretch left them.
+    const auto settle = [](JSRuntime* rt) {
+        return runJobs(rt, kJobsPerCheckpoint, [](JSContext* c) { clearException(c); });
+    };
+    const auto unsettled = [](const std::string& whose) {
+        return whose + " promise jobs did not settle in the " + std::to_string(kJobsPerCheckpoint) + " a load runs";
+    };
     JSContext* const control = pack.control;
     JSContext* const audio = pack.audio;
     for (const bool audioSide : {false, true}) {
@@ -1899,16 +1904,17 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
             if (JS_IsException(result)) return fail("chunk " + std::to_string(i) + ": " + exceptionText(ctx, false));
             JS_FreeValue(ctx, result);
         }
-        // What the bundle's top level queued runs now, in this context's runtime: no block has begun.
-        runJobs(audioSide ? pack.audioRt : pack.controlRt, kJobsPerCheckpoint, [](JSContext* c) { clearException(c); });
+        // What the bundle's top level queued runs now, in this context's runtime (no block has begun), and must settle.
+        const char* const side = audioSide ? "audio" : "control";
+        const bool settled = settle(audioSide ? pack.audioRt : pack.controlRt);
         if (controlInterrupted_)
-            return fail(std::string("a promise job its top level queued in the ") + (audioSide ? "audio" : "control") +
-                        " context");
+            return fail(std::string("a promise job its top level queued in the ") + side + " context");
+        if (!settled) return fail(unsettled("its top level's") + ", in the " + side + " context");
     }
     // What the load leaves in cycles in the audio runtime, its top level's and the descriptors' below, goes at the first
-    // quiescent reclaim (the built-in pack's) or before loadPack returns (a loaded pack's), rather than waiting for a
-    // block's threshold GC. (The production bundle left about 144 KiB while zod and the DSP kernel were in it; it has
-    // left none since B3b.)
+    // quiescent reclaim (the built-in pack's) or at the load's end (a loaded pack's), rather than waiting for a block's
+    // threshold GC. (The production bundle left about 144 KiB while zod and the DSP kernel were in it; it has left none
+    // since B3b.)
     pack.garbage = true;
     // The definitions, in the same order in both contexts (the same bundle ran in each).
     JSValue lists[2];
@@ -1965,8 +1971,9 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
         JSValue d = callMethod(control, type.control, "descriptor", 0, nullptr);
         const bool described = !JS_IsException(d) && stringify(control, d, type.descriptor);
         JS_FreeValue(control, d);
-        drainControlJobs(pack);
+        const bool settled = drainControlJobs(pack);
         if (!described) return fail(type.id + ": its descriptor: " + exceptionText(control, true));
+        if (!settled && !controlInterrupted_) return fail(type.id + ": " + unsettled("its descriptor's"));
         // The audio side's must be the same: the control side lays out and checks what the audio side then runs.
         std::string audioDescriptor;
         JSValue ad = callMethod(audio, type.audio, "descriptor", 0, nullptr);
@@ -1986,8 +1993,19 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
         // A read the deadline stopped that left no exception behind (a getter on a flag): refused all the same.
         if (controlInterrupted_) return fail(at + " (" + type.id + ")");
     }
-    runJobs(pack.audioRt, kJobsPerCheckpoint, [](JSContext* c) { clearException(c); });  // what the descriptors queued there
+    const bool settled = settle(pack.audioRt);  // what the descriptors queued there
     if (controlInterrupted_) return fail("a promise job its descriptors queued");
+    if (!settled) return fail(unsettled("its descriptors'") + ", in the audio context");
+    // A loaded pack's load collects what it left in cycles now, while the pack is still this thread's alone: once a
+    // plan places one of its nodes, its audio runtime is the block thread's, and no block collects. What the collection
+    // queues (a FinalizationRegistry callback whose target it found) is the load's too, and settles as the rest must.
+    if (pack.id != kBuiltInPack) {
+        JS_RunGC(pack.audioRt);
+        pack.garbage = false;
+        const bool collected = settle(pack.audioRt);
+        if (controlInterrupted_) return fail("a promise job its collection queued");
+        if (!collected) return fail(unsettled("its collection's") + ", in the audio context");
+    }
     // Each type's span label, in registration order (spanLabelFor).
     for (const auto& t : pack.types) t->spanLabel = spanLabelFor(t->id);
     pack.typeList.clear();
@@ -2069,8 +2087,9 @@ void ScriptHost::endBlock() {
 #endif
 }
 
-void ScriptHost::drainControlJobs(Pack& pack) {
-    if (JS_IsJobPending(pack.controlRt)) runJobs(pack.controlRt, kJobsPerCheckpoint, [](JSContext* ctx) { clearException(ctx); });
+bool ScriptHost::drainControlJobs(Pack& pack) {
+    return !JS_IsJobPending(pack.controlRt) ||
+           runJobs(pack.controlRt, kJobsPerCheckpoint, [](JSContext* ctx) { clearException(ctx); });
 }
 
 void ScriptHost::drainReleased() {

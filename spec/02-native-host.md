@@ -664,9 +664,10 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   ([register.ts](../packages/retroplug/src/script/register.ts)); the host reads that list in both of the
   pack's runtimes, requires the same id and descriptor at each index, and registers one `rp_node_type` per
   definition in the pack's package, all served by the same functions, each type telling itself apart by
-  its `ctx`. A bundle that does not load, or one definition that cannot be read, registers no type, logged,
-  and every document naming one is refused (`unknown-type`); the built-in pack is loaded once, and never
-  reloaded. The native tests build an Engine with toy bundles of their own instead.
+  its `ctx`. A bundle that does not load (the promise jobs its load queues among it: they must settle in the
+  256 a load runs, below), or one definition that cannot be read, registers no type, logged, and every
+  document naming one is refused (`unknown-type`); the built-in pack is loaded once, and never reloaded.
+  The native tests build an Engine with toy bundles of their own instead.
 - **Loading a pack** (`Engine::loadScriptPack`, the `loadScriptPack` RPC above) runs on the control thread,
   while an audio thread runs blocks or not. The id is checked first: a plain id, and none of the app's (`rp`
   and every id under `rp.`, its built-in pack's and its native packages'). The source, global code as the
@@ -743,7 +744,11 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   is until the queue empties: its later checkpoints (the next calls into any of the pack's nodes) run the
   rest charged to that node, never to a pack-mate, and once that node is released the rest is no node's.
   A release runs what its pack has pending, charged likewise. Only a reload, which frees the pack's
-  runtime, ends a faulted node's chain; it runs, bounded, in its own pack.
+  runtime, ends a faulted node's chain; it runs, bounded, in its own pack. A load runs the jobs it queues
+  as it loads, at most 256 each stretch of it (its top level in each runtime, each descriptor, what a
+  loaded pack's collection queues), and one that leaves any is refused, as every other load failure is:
+  QuickJS cannot drop a pending job, and one a load left would be charged to whichever of its nodes'
+  calls came first.
 - **Memory.** Each pack's audio runtime is held to a memory limit (64 MiB unless its load says
   otherwise) by the host's allocator, which refuses an allocation past it, so QuickJS throws out of
   memory in the call that asked, and notes the refusal on the pack. A call, or its jobs, during which
