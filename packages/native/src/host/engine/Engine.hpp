@@ -227,10 +227,10 @@ public:
     };
     // Plan `request` and publish it with its system table (built from the slots and the live cores) and its
     // SyncTap. Refused before planning when a system node's type is not its core's, the tap arms a mode other
-    // than 1 to 3 or a system not in the slots, the document holds a second rp.host.midi-in, rp.host.controller-in
-    // or rp.n8.cart-mirror, or its mirror names anything but one of its NES systems. Refused at all, every core
-    // stays where it was: one a node of the refused plan took goes back to parked. Once it has published, a core
-    // still parked is one no document placed, and is freed.
+    // than 1 to 3 or a system not in the slots, the document holds a second rp.host.midi-in, rp.host.controller-in,
+    // rp.host.midi-out or rp.n8.cart-mirror, or its mirror names anything but one of its NES systems. Refused at all,
+    // every core stays where it was: one a node of the refused plan took goes back to parked. Once it has published, a
+    // core still parked is one no document placed, and is freed.
     GraphResult setGraph(const GraphRequest& request);
     // The host channels the last published plan writes (the sum of its rp.host.audio-out buses). Control thread.
     std::uint32_t hostWidth() const { return hostWidth_; }

@@ -367,10 +367,10 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
     expect(w.blockCount, `${workload}: blocks measured`).toBe(lsdjBlocks);
     // LSDj played through the window: its decoder sent more clocks than the bound, which is most of what its tempo
     // sends in master sync (40 a second, of about 51 at tempo 128, a byte a 24-PPQN tick) and half of it in MI.OUT (2
-    // a second, of about 4).
-    // The bound is the default warmup's: MI.OUT's clocks come unevenly, and a shorter warmup starts the window earlier.
-    if (warmup >= DEFAULT_WARMUP) expect(clocks, `${workload}: clocks decoded in the window`).toBeGreaterThan(minClocks);
+    // a second, of about 4). The bound is the default warmup's, as the zero is: MI.OUT's clocks come unevenly, and a
+    // shorter warmup starts the window earlier.
     if (warmup >= DEFAULT_WARMUP) {
+      expect(clocks, `${workload}: clocks decoded in the window`).toBeGreaterThan(minClocks);
       expect(w.allocCalls, `${workload}: allocations in the measured window`).toBe(0);
       expect(w.maxBlockAllocCalls, `${workload}: allocations in the worst block`).toBe(0);
     }

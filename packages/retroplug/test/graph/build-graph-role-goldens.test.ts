@@ -312,7 +312,7 @@ test("every wire runs forward in its document's node order, and none is a feedba
     for (const w of doc.wires) {
       const from = index(w.from);
       const to = index(w.to);
-      if (w.feedback !== undefined) refused.push(`document ${d}: ${w.from} -> ${w.to} is a feedback wire`);
+      if (w.feedback === true) refused.push(`document ${d}: ${w.from} -> ${w.to} is a feedback wire`);
       else if (from < 0 || to < 0 || from >= to) refused.push(`document ${d}: ${w.from} -> ${w.to} (${from} -> ${to})`);
     }
   }

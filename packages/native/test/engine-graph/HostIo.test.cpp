@@ -4,8 +4,7 @@
 // rp.host.midi-out (each input under the system its settings name) and controller-out, rp.n8.cart-mirror feeds the
 // engine's core-byte sink, the Game Boy's serialOut carries MI.OUT, and a full queue's drops reach the engine and the
 // harness RPC. A document holds one midi-in, one controller-in, one midi-out and one cart mirror at most, the mirror
-// naming a NES.
-// Driven on a quiescent Engine, and on a NodeRig where a node's calls on the engine are what is checked.
+// naming a NES. Driven on a quiescent Engine, and on a NodeRig where a node's calls on the engine are what is checked.
 //
 // Run via `pnpm test:plugin engine-graph`.
 
