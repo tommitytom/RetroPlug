@@ -4,7 +4,8 @@
 // BLOCK: the refcount-churn signal (QuickJS frees acyclic garbage immediately, so "GC" is rare; malloc/free churn
 // per block is the real cost). Then a window each on a real LSDj, playing, whose rp.lsdj.serial-out decodes its serial
 // out to host MIDI, in master sync and in MI.OUT: those need the fixture tree's LSDj ROMs (RETROPLUG_RESOURCES_DIR),
-// and without them the case SKIPs there, after the mGB window has been held to its zero.
+// and without them the case SKIPs there, after the mGB window has been held to its zero (RP_BENCH_LSDJ=0 leaves them
+// out).
 //
 // The allocation counters exist only in a RETROPLUG_PROFILE host (built by `pnpm profile` /
 // tools/run-profile.sh). Under the default host the counters report enabled:false and this
@@ -248,7 +249,7 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
   // --- optional per-role runtime trace (spec/08-profiling.md Tier B) --------------------------------
   // A separate SHORT armed window AFTER the alloc measurement (so those numbers stay pristine). Records nested
   // wall-time spans (per block: apu-render, the plan's whole run, holding each script node's process, a span named by
-  // its type, rp.midi.route then each rp.mgb.midi, which holds marshal and then js-call, which holds a marshal per
+  // its type, rp.midi.route then each rp.mgb.midi, each holding marshal and then js-call, which holds a marshal per
   // input it reads; then state-publish) and prints ONE Chrome trace-event JSON line the wrapper captures into
   // build-prof/trace.json (load in ui.perfetto.dev or speedscope). Gated on RP_BENCH_TRACE so the normal stats run
   // stays a single line.
@@ -306,9 +307,21 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
   // runs it), and MI.OUT on an Arduinoboy build in SYNC=MI.OUT (its clock and the N commands' NoteOns, captured in
   // `drive`, as lsdj-midiout.test.ts runs it). Each window is held to the mGB window's zero, the clocks its decoder
   // sent say LSDj played through it, and the same proof as above says the window counted.
+  //
+  // RP_BENCH_LSDJ=0 leaves them out, as tools/run-profile.sh's valgrind modes do by default: their boots and warmups do
+  // not follow RP_BENCH_BLOCKS, so under valgrind they would make the run several times longer and fill the census
+  // with an LSDj's setup, where those modes are there to attribute the mGB workload. Their zero is the stats mode's to
+  // hold.
+  if (envInt("RP_BENCH_LSDJ", 1) === 0) {
+    console.log("# dsp-bench: the LSDj windows left out (RP_BENCH_LSDJ=0)");
+    return;
+  }
   for (const id of ids) graph.remove(id);
   const be = createRealBackend();
-  const lsdjBlocks = Math.min(blocks, 400);
+  // A window of RP_BENCH_BLOCKS, but at most 400 blocks (9.3 s), the LSDj windows coming on top of the mGB one, and at
+  // least 100 (2.3 s): MI.OUT's clocks come unevenly (at the default warmup none in the window's first 20 blocks, 8 in
+  // its first 100 and 40 in 400), so a shorter window can fail the playing check below for want of them.
+  const lsdjBlocks = Math.max(100, Math.min(blocks, 400));
   const lsdjWindow = (
     workload: string,
     romPath: string,
@@ -352,8 +365,9 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
         }),
     );
     expect(w.blockCount, `${workload}: blocks measured`).toBe(lsdjBlocks);
-    // LSDj played through the window: its decoder sent more clocks than its tempo sends in half of it (in master sync
-    // about 51 a second at tempo 128, a byte a 24-PPQN tick, against the 40 asked; in MI.OUT about 4, against 2).
+    // LSDj played through the window: its decoder sent more clocks than the bound, which is most of what its tempo
+    // sends in master sync (40 a second, of about 51 at tempo 128, a byte a 24-PPQN tick) and half of it in MI.OUT (2
+    // a second, of about 4).
     expect(clocks, `${workload}: clocks decoded in the window`).toBeGreaterThan(minClocks);
     if (warmup >= DEFAULT_WARMUP) {
       expect(w.allocCalls, `${workload}: allocations in the measured window`).toBe(0);

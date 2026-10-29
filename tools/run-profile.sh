@@ -20,8 +20,10 @@
 #   massif    — heap size over time → ms_print.
 #
 # Workload knobs (env, honoured by the benchmark): RP_BENCH_PROFILE (A|B|C), RP_BENCH_CORES,
-# RP_BENCH_BLOCKS, RP_BENCH_WARMUP, RP_BENCH_SEED. The valgrind modes default RP_BENCH_BLOCKS low
-# (valgrind is ~20-50x) unless you override it.
+# RP_BENCH_BLOCKS, RP_BENCH_WARMUP, RP_BENCH_SEED, RP_BENCH_LSDJ (0 leaves the LSDj windows out). The
+# valgrind modes default RP_BENCH_BLOCKS low (valgrind is ~20-50x) and RP_BENCH_LSDJ to 0 unless you
+# override them: the LSDj windows' boots and warmups do not shrink with RP_BENCH_BLOCKS, so they would
+# make a valgrind run several times longer and put an LSDj's setup in the census of the mGB workload.
 set -euo pipefail
 
 mode="${1:-stats}"
@@ -80,7 +82,8 @@ case "$mode" in
         out="$repo/$builddir/valgrind"
         mkdir -p "$out"
         : "${RP_BENCH_BLOCKS:=200}"   # keep valgrind runs tractable unless overridden
-        export RP_BENCH_BLOCKS
+        : "${RP_BENCH_LSDJ:=0}"       # and attribute the mGB workload alone (the header says why)
+        export RP_BENCH_BLOCKS RP_BENCH_LSDJ
         case "$mode" in
             dhat)      vg=(--tool=dhat "--dhat-out-file=$out/dhat.out.json") ;;
             callgrind) vg=(--tool=callgrind "--callgrind-out-file=$out/callgrind.out" --dump-instr=yes --collect-jumps=yes) ;;
@@ -91,7 +94,8 @@ case "$mode" in
         shim="$out/host-$mode.sh"
         { echo '#!/usr/bin/env bash'; echo "exec valgrind ${vg[*]} \"$host\" \"\$@\""; } > "$shim"
         chmod +x "$shim"
-        echo "==> running '$slug' under valgrind --tool=$mode (RP_BENCH_BLOCKS=$RP_BENCH_BLOCKS)"
+        echo "==> running '$slug' under valgrind --tool=$mode" \
+            "(RP_BENCH_BLOCKS=$RP_BENCH_BLOCKS RP_BENCH_LSDJ=$RP_BENCH_LSDJ)"
         run_native "$shim" || true
         echo "==> $mode results:"
         case "$mode" in
