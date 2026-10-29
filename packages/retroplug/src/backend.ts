@@ -128,8 +128,10 @@ export interface Backend {
    *  `errors` holds the planner's errors when a reload's replan refused, and is empty when the refusal came before any
    *  replan (the id, a compile error, the load, the registry). A replan refused `busy` (the engine's command ring
    *  full, or a settings change not yet adopted) says nothing against the pack: the call may be retried.
-   *  `memoryLimitBytes` holds each of the pack's runtimes to that many bytes (absent or 0: 64 MiB). Nothing in the app
-   *  calls it yet; the mock backend refuses it. */
+   *  `memoryLimitBytes` holds each of the pack's runtimes to that many bytes (absent or 0: 64 MiB), for this load
+   *  alone: a reload without it holds the new generation to 64 MiB, whatever an earlier load of the pack said. Each
+   *  runtime's own intrinsics (about 90 KB) and the pack's code count against it, so a limit too small for those
+   *  refuses the load, saying so. Nothing in the app calls it yet; the mock backend refuses it. */
   loadScriptPack(request: LoadScriptPackRequest): LoadScriptPackResult;
 
   // --- File dialog --------------------------------------------------------
@@ -744,7 +746,9 @@ export interface SetGraphResult {
 }
 
 /** A pack of script node types for `loadScriptPack`: its id, its source (global code) and the memory limit each of its
- *  runtimes is held to, a whole number of bytes (absent or 0: the default, 64 MiB). */
+ *  runtimes is held to, a whole number of bytes up to 2^53 - 1 (absent or 0: the default, 64 MiB). The limit is this
+ *  load's: a reload that leaves it out is held to the default, not to what the pack was loaded with before. It counts
+ *  each runtime whole, its intrinsics (about 90 KB) and the pack's code with them. */
 export interface LoadScriptPackRequest {
   id: string;
   source: string;

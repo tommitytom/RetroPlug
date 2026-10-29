@@ -194,7 +194,7 @@ Two channels cross the RPC boundary to a running emulator, and no feature-role c
 [`SystemsStore.setRoleConfig`](../packages/retroplug/src/systemsStore.ts#L526) merges the
 partial, re-parses through the role schema, and calls `backend.applyRoleConfig` **only when the role's
 `category === "system"`**. On the native side
-[`EngineRpcService::applyRoleConfig`](../packages/native/src/host/rpc/EngineRpcService.cpp#L165)
+[`EngineRpcService::applyRoleConfig`](../packages/native/src/host/rpc/EngineRpcService.cpp#L189)
 accepts `kind == "sameboy"` and `"mesen"`, decodes the whole role config, and pushes each field as a
 guarded config field (an unchanged field is a no-op, so moving `highpass` never triggers a spurious
 model restart).
@@ -489,5 +489,5 @@ Native ([packages/native/src/](../packages/native/src/)):
   applied before its core runs.
 - [HostIoNodes.cpp](../packages/native/src/host/graph/HostIoNodes.cpp): the host I/O nodes the protocol
   nodes read from and send to, and the N8 cart mirror.
-- [EngineRpcService.cpp](../packages/native/src/host/rpc/EngineRpcService.cpp#L165): `applyRoleConfig`
+- [EngineRpcService.cpp](../packages/native/src/host/rpc/EngineRpcService.cpp#L189): `applyRoleConfig`
   (system-role only).

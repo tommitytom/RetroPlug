@@ -364,7 +364,7 @@ struct ScriptHost::Pack {
         bool        refused = false;  // an allocation was refused since this was last read (Glue::refusedSince)
     };
 
-    ScriptHost*   host = nullptr;   // how a Block method, which finds the pack as its context's opaque, finds the host
+    ScriptHost*   host = nullptr;   // the host holding it, whose trace a Block method's marshal spans go to
     std::string   id;
     std::uint32_t generation = 1;   // which of its id's loads made it (generations_)
     std::string   manifest;         // its package's: {"id":"<id>"}

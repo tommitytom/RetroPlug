@@ -160,9 +160,19 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     is above about two thirds of its limit can be faulted for garbage, and a profile window that pins the auto-GC off
     (`disableAutoGc`) gathers garbage until the limit faults a node. The default limit leaves room (64 MiB, where the
     largest test pack peaked at 2.55 MB).
+  - **A node whose settings check fails refuses every document placing it.** The planner checks every placed node's
+    settings at every plan, and a node whose check fails (its `parseSettings` or `layout` throws, runs past the
+    deadline, refuses the settings or reaches its pack's memory limit, or its pack's control-side promise jobs do not
+    settle) makes the document refused, as settings it refuses always have. So while such a node is placed no other
+    edit to the graph lands either, the running document published again among them, nor a reload of another pack
+    whose nodes the running document places beside it (refused as "the running document does not plan with the
+    reloaded pack: " and that node's error); removing the node (every node of its pack, for a chain that never
+    settles) or reloading its pack clears it ([02-native-host.md](02-native-host.md), the script host). A per-node
+    "invalid" state, the document planning without the node, rather than a refused document is a choice for the
+    authoring work.
   - **A record the release ring back cannot take keeps its pack for the host's life**, as it leaks its record rather
     than free it on the audio thread; nothing has filled that ring. A profile build's absolute live heap leaves out
-    what a pack loaded while audio runs allocated in its load (its deltas are exact).
+    what the load of any pack loaded beside the built-in one allocated (its deltas are exact).
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
     moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype

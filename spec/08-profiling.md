@@ -73,7 +73,7 @@ and 0.44 in its MI.OUT one, both 0 since.
 ### 4a. Drive the real code path **off** the real-time thread
 
 There is already a deterministic, device-free pull-render path:
-[`EngineRpcService::renderAudio(ms)`](../packages/native/src/host/rpc/EngineRpcService.cpp#L258) loops
+[`EngineRpcService::renderAudio(ms)`](../packages/native/src/host/rpc/EngineRpcService.cpp#L293) loops
 `Engine::processBlock` in 1024-frame blocks synchronously on the **calling** thread — no audio device, no
 RT scheduling, fully repeatable. It is exposed to TS as `createAudioDriver().renderAudio`
 ([audioDriver.ts](../packages/retroplug/src/audioDriver.ts)). Profile **this**, not a live
@@ -94,12 +94,16 @@ does not.
 ### 4b. Primary signal: instrument QuickJS's own allocator (in-process, deterministic)
 
 The direct, deterministic answer to "what does the JS runtime allocate per block" is to count every
-allocation the audio runtime makes. The script host makes it with **`JS_NewRuntime2(&mf, &counters)`**
-and a counting `JSMallocFunctions` wrapper (quickjs-ng shape:
-`js_calloc/js_malloc/js_free/js_realloc/js_malloc_usable_size`, `quickjs.h:451-457`;
+allocation the audio runtimes make. The script host makes each of a pack's runtimes with
+**`JS_NewRuntime2(&mf, &heap)`**, the opaque a heap of the pack's for that runtime (the counters it adds
+to, its live bytes and the pack's memory limit), and a counting `JSMallocFunctions` wrapper (quickjs-ng
+shape: `js_calloc/js_malloc/js_free/js_realloc/js_malloc_usable_size`, `quickjs.h:451-457`;
 [ScriptHost.cpp](../packages/native/src/host/script/ScriptHost.cpp)). The wrapper bumps cumulative
-allocation, realloc and free calls and the bytes asked for (in every build: the native tests read them),
-and, in a profile build, the live and peak heap in usable bytes, and delegates to libc.
+allocation, realloc and free calls and the bytes asked for (in every build: the native tests read them;
+an audio runtime's go to the shared counters once its pack has loaded, a control runtime's to a count of
+its pack's that nothing reads), keeps the runtime's live bytes, refusing an allocation that would take
+them past the limit, and, in a profile build, the live and peak heap in usable bytes, and delegates to
+libc.
 
 - **Critical:** `js_malloc_usable_size` **must return the real platform usable size**
   (`malloc_usable_size`), or QuickJS's internal byte accounting and GC-threshold math break.
@@ -161,8 +165,8 @@ Two cost levers: **MIDI density** stresses the *routing and protocol nodes* spec
 per-sample APU cost is MIDI-independent. A realistic heavy run combines both.
 
 **Injection:** `audioDriver.stageMidiIn(bytes)` → `EngineRpcService::stageMidiIn`
-([:450](../packages/native/src/host/rpc/EngineRpcService.cpp#L450)) → `Engine::stageMidi`
-([Engine.cpp:579](../packages/native/src/host/engine/Engine.cpp#L579)) → `pendingMidi_` at frame 0, which
+([:485](../packages/native/src/host/rpc/EngineRpcService.cpp#L485)) → `Engine::stageMidi`
+([Engine.cpp:699](../packages/native/src/host/engine/Engine.cpp#L699)) → `pendingMidi_` at frame 0, which
 the plan's `rp.host.midi-in` takes, sorted by frame, at the top of the next `processBlock`.
 **Determinism recipe:** fixed SR
 44100 / block 1024 (23.22 ms); `setBpm`/`setTransport` once; a **seeded PRNG** (mulberry32 — never
@@ -217,37 +221,36 @@ past `renderAudio`'s 1024-frame block).
 - **Native allocator instrumentation**, on the script host's audio runtimes, every pack's summed
   ([ScriptHost.hpp/.cpp](../packages/native/src/host/script/ScriptHost.cpp); a pack loaded beside the built-in
   one, [modular-graph-phase-c1-design.md](../docs/modular-graph-phase-c1-design.md), counts its load and its
-  freeing apart, so a profile build's absolute live heap leaves out what a pack loaded while audio runs
-  allocated in its load, its deltas exact): the counting
-  `JSMallocFunctions` installed via `JS_NewRuntime2` (`js_malloc_usable_size` returns the real platform
-  size so QuickJS's own accounting stays valid), a per-Engine-block allocation bracket (`beginBlock` to
-  `endBlock`: native aggregation → no per-block RPC), and `allocStats()` /
-  `resetAllocStats(disableAutoGc)` (pins `JS_SetGCThreshold(SIZE_MAX)`) / `runGc()` (timed `JS_RunGC`).
-  The window, the live and peak heap and the block bracket are behind `#ifdef RETROPLUG_PROFILE`; the
-  `#else` path returns `enabled:false`.
+  freeing apart, so a profile build's absolute live heap leaves out what the load of any pack loaded beside
+  the built-in one allocated, its deltas exact): the counting `JSMallocFunctions` installed via
+  `JS_NewRuntime2` (`js_malloc_usable_size` returns the real platform size so QuickJS's own accounting stays
+  valid), a per-Engine-block allocation bracket (`beginBlock` to `endBlock`: native aggregation → no per-block
+  RPC), and `allocStats()` / `resetAllocStats(disableAutoGc)` (pins `JS_SetGCThreshold(SIZE_MAX)`) / `runGc()`
+  (timed `JS_RunGC`). The window, the live and peak heap and the block bracket are behind
+  `#ifdef RETROPLUG_PROFILE`; the `#else` path returns `enabled:false`.
 - **The trace window** (Tier B), on the same runtime: `traceReset(arm)` opens a window of nested wall-time
   spans, recorded only while armed. Every script node's process is a span **named by its type**
   (`rp.midi.route`, `rp.mgb.midi`, ...), holding `marshal` (its audio copies in and the transport) and
   `js-call` (its JS, inside which each input it reads is a `marshal` span); the Engine adds `apu-render` (the
-  plan's whole run, from where it starts to where it ends, so every script node's process span lies inside
-  it, wherever the planner runs the node, before a system or after one, and its figure includes the script
-  nodes' few microseconds beside the cores') and `state-publish`. A span is stored as it closes, so a block's
+  plan's whole run, from where it starts to where it ends, so every script node's process span lies inside it,
+  wherever the planner runs the node, before a system or after one, and its figure includes the script nodes'
+  few microseconds beside the cores') and `state-publish`. A span is stored as it closes, so a block's
   `apu-render` follows the spans inside it in the list; the trace-event JSON gives each span its start and
-  length, so nothing that reads it depends on that order. The labels are fixed: `script-node` (0),
-  `marshal`, `js-call`, `apu-render`, `state-publish` (1 to 4), then the packs' types from
-  `DSP_SPAN_TYPE_BASE` (16) up, in the order their packs first loaded them, each named by its id and keeping its
-  label across its pack's reloads, so a dev loop's reloads do not use up the table (the production
-  bundle's eight are 16 to 23: `rp.midi.route`, `rp.mgb.midi`, `rp.n8.midi-to-fifo`, `rp.risa.sync`,
-  `rp.sms.sync`, `rp.lsdj.sync`, `rp.controller.session` and `rp.lsdj.serial-out`, registered last so the
-  others kept their labels). By type rather than node id, as the DSP kernel's per-role spans were per kind
-  until B3b made each role a node: a type's label is fixed when the bundle loads, where an id comes and goes
-  with every document, so two systems' nodes of one type are two spans of one label a block, in plan order.
-  Every label is below `kDspSpanLabels` (1024), so the name table stays bounded: a type past it is traced
-  as `script-node`. JS adds no spans of its own (the kernel's roles were the only JS that did, through span
-  globals that went with them), so a span is always closed by the host, every way a call ends. The promise
-  jobs a node's call queues have no span of their own: they run at the checkpoint after the call, which for
-  `process` lies inside its process span, after its `js-call`. `dspTraceReset` / `dspTrace` / `dspTraceNames` read it, and `tools/run-profile.sh trace`
-  writes it as Chrome trace-event JSON.
+  length, so nothing that reads it depends on that order. The labels are fixed: `script-node` (0), `marshal`,
+  `js-call`, `apu-render`, `state-publish` (1 to 4), then the packs' types from `DSP_SPAN_TYPE_BASE` (16) up,
+  in the order their packs first loaded them, each named by its id and keeping its label across its pack's
+  reloads, so a dev loop's reloads do not use up the table (the production bundle's eight are 16 to 23:
+  `rp.midi.route`, `rp.mgb.midi`, `rp.n8.midi-to-fifo`, `rp.risa.sync`, `rp.sms.sync`, `rp.lsdj.sync`,
+  `rp.controller.session` and `rp.lsdj.serial-out`, registered last so the others kept their labels). By type
+  rather than node id, as the DSP kernel's per-role spans were per kind until B3b made each role a node: a
+  type's label is fixed when the bundle loads, where an id comes and goes with every document, so two systems'
+  nodes of one type are two spans of one label a block, in plan order. Every label is below `kDspSpanLabels`
+  (1024), so the name table stays bounded: a type past it is traced as `script-node`. JS adds no spans of its
+  own (the kernel's roles were the only JS that did, through span globals that went with them), so a span is
+  always closed by the host, every way a call ends. The promise jobs a node's call queues have no span of
+  their own: they run at the checkpoint after the call, which for `process` lies inside its process span,
+  after its `js-call`. `dspTraceReset` / `dspTrace` / `dspTraceNames` read it, and
+  `tools/run-profile.sh trace` writes it as Chrome trace-event JSON.
 - **Introspection RPCs** — `dspAllocStats` / `dspResetAllocStats` / `dspRunGc` on the harness facet
   (`Engine` → `EngineRpcService`, reached directly through `engine_` in the quiescent `renderAudio`
   regime) and surfaced in [audioDriver.ts](../packages/retroplug/src/audioDriver.ts). The calls that act on
@@ -358,9 +361,9 @@ modes are out.
 Native ([packages/native/src/](../packages/native/src/)):
 - [ScriptHost.cpp](../packages/native/src/host/script/ScriptHost.cpp): the script-node runtime, its
   per-block C→JS marshalling, and **where the allocator instrumentation and the trace window live**.
-- [Engine.cpp](../packages/native/src/host/engine/Engine.cpp#L594): `processBlock` (the plan, with the
+- [Engine.cpp](../packages/native/src/host/engine/Engine.cpp#L714): `processBlock` (the plan, with the
   `apu-render` and `state-publish` spans) + `stageMidi`.
-- [EngineRpcService.cpp](../packages/native/src/host/rpc/EngineRpcService.cpp#L258): `renderAudio`
+- [EngineRpcService.cpp](../packages/native/src/host/rpc/EngineRpcService.cpp#L293): `renderAudio`
   (deterministic off-RT loop) + `stageMidiIn`; where introspection RPCs register.
 - [AudioDriverRpcService.cpp](../packages/native/src/host/rpc/AudioDriverRpcService.cpp#L34): the
   threaded free-run (RT/soak path).

@@ -70,7 +70,7 @@ glance:
 | Service | Facet(s) | Concern | Thread |
 |---|---|---|---|
 | [`HostRpcService`](../packages/native/src/host/rpc/HostRpcService.hpp) | `host` | filesystem, config dir, zip/unzip — stateless, pure | control |
-| [`EngineRpcService`](../packages/native/src/host/rpc/EngineRpcService.hpp) | `emulator` + `harness` | build cores and place them (`buildCore` / `setGraph`), reads, MIDI, transport, render/profile | control (pushes mutations) |
+| [`EngineRpcService`](../packages/native/src/host/rpc/EngineRpcService.hpp) | `emulator` + `harness` | build cores and place them (`buildCore` / `setGraph`), load script node packs (`loadScriptPack`), reads, MIDI, transport, render/profile | control (pushes mutations) |
 | [`DebugRpcService`](../packages/native/src/host/rpc/DebugRpcService.hpp) | `debug` | live-core inspection / stepping / breakpoints (CLI only — [09-cli-debugging.md](09-cli-debugging.md)) | control |
 | [`AudioDriverRpcService`](../packages/native/src/host/rpc/AudioDriverRpcService.hpp) | `driver` | background audio thread (`startAudio`/`stopAudio`/`audioCaptured`/`drainReleased`) | control; owns `audioThread_` (**test host only**) |
 

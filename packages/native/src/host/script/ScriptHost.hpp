@@ -231,14 +231,14 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // loaded, a refusal in its audio runtime during a call, or its jobs, faults the node they are charged to, whatever its
 // faultOnThrow and whether or not JS caught the error (a refusal JS caught is counted as its throw), since a pack at
 // its limit is one none of its nodes can rely on: at once in its process (RP_FAULT), at its next block after a hook or
-// for its leftovers run at a pack-mate's checkpoint or where no call ran (a release's run). Only an out-of-memory error the limit did not cause, the
-// platform's allocator running out, is a throw like any other, faulting under faultOnThrow. A call is charged only
-// what its pack refuses after it begins: the refusal note is cleared as each call arms its deadline, so a refusal made
-// where no checkpoint looks (a release freeing a node's JS, a quiescent collection, the text the host makes of a
-// checkpoint's last job's throw) faults no node. Another pack is untouched. In the control runtime, which holds no
-// instance, the limit holds the pack's top level, parseSettings and layout: a load or a settings check that fails on an
-// allocation it refused is refused, saying so (a settings check's refusing the document, so the running plan stands),
-// and one that catches the error runs on, there being no node to fault.
+// for its leftovers run at a pack-mate's checkpoint or where no call ran (a release's run). Only an out-of-memory error
+// the limit did not cause, the platform's allocator running out, is a throw like any other, faulting under
+// faultOnThrow. A call is charged only what its pack refuses after it begins: the refusal note is cleared as each call
+// arms its deadline, so a refusal made where no checkpoint looks (a release freeing a node's JS, a quiescent
+// collection, the text the host makes of a checkpoint's last job's throw) faults no node. Another pack is untouched. In
+// the control runtime, which holds no instance, the limit holds the pack's top level, parseSettings and layout: a load
+// or a settings check that fails on an allocation it refused is refused, saying so (a settings check's refusing the
+// document, so the running plan stands), and one that catches the error runs on, there being no node to fault.
 // "Past its limit" means past it in reachable and uncollected bytes together: the limit counts everything the runtime
 // holds, garbage included. A refusal comes at once, with no collection first, and QuickJS's own cycle GC runs only as
 // an object is made, once the heap has grown half again since the last one, so a pack whose reachable heap is above

@@ -274,18 +274,19 @@ public:
     // An id the script host holds a current generation of is reloaded (docs/modular-graph-phase-c1-design.md section
     // 5), all or nothing: its next generation is built as a load builds a pack, the registry swaps the pack's entries
     // for its, and the request setGraph last published is planned again without re-arming the tap (the running plan's
-    // stays as it is), so every node of the pack is rebuilt on the new code, its JS state not carried over, while
-    // every other node keeps its instance; a core parked since that request stays parked. When the replan is refused
-    // (a node's settings the new code refuses, a type the document places gone, the ring busy) the registry is
-    // swapped back and the planner's errors are returned in `errors`, summed up in `error`: the old code runs on, its
-    // instances untouched. The new generation is discarded: freed within the call when no audio thread runs. Under
-    // one, if the refused plan made fresh instances of it (the ring busy, a later node failing to activate), their
-    // releases go to the block thread, so it stays in scriptPacks(), discarded, until those records come back, and
-    // the reclaim that finds them back frees it; else (a settings refusal or a type gone is refused before anything
-    // is created) it too is freed within the call. On success `types` are the new generation's, and the old one is
-    // retired, freed with its runtimes once its nodes' records come back (within the call when no audio thread runs;
-    // else by the reclaim that finds them back, its registry entries dropped with it). A document that places none of
-    // the pack's nodes is not replanned: it would plan as it runs.
+    // stays as it is), so every node of the pack is rebuilt on the new code, its JS state not carried over, while every
+    // other node keeps its instance; a core parked since that request stays parked. When the replan is refused (a
+    // node's settings the new code refuses, a type the document places gone, the ring busy) the registry is swapped
+    // back and the planner's errors are returned in `errors`, summed up in `error`: the old code runs on, its instances
+    // untouched. The new generation is discarded: freed within the call when no audio thread runs. Under one, if the
+    // refused plan made fresh instances of it (the ring busy, or a later node of the pack whose create refuses, its
+    // settings check run again: at its control runtime's memory limit, say), their releases go to the block thread, so
+    // it stays in scriptPacks(), discarded, until those records come back, and the reclaim that finds them back frees
+    // it; else (a settings refusal or a type gone is refused before anything is created) it too is freed within the
+    // call. On success `types` are the new generation's, and the old one is retired, freed with its runtimes once its
+    // nodes' records come back (within the call when no audio thread runs; else by the reclaim that finds them back,
+    // its registry entries dropped with it). A document that places none of the pack's nodes is not replanned: it would
+    // plan as it runs.
     ScriptPackResult loadScriptPack(const std::string& id, const std::string& source, std::size_t memoryLimit = 0);
     // How much of the calling thread's CPU time one call into a script pack's JS may use, on either side
     // (ScriptHost::setCallDeadline): set it before an audio thread runs blocks.

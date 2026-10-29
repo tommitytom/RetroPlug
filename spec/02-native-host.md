@@ -681,16 +681,16 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   deadline's interrupt handler, the allocation counters) only once its load is done, so what a loaded pack's
   load allocates is counted apart from `audioAllocations`.
 - **Reloading one.** The same id loaded again builds the pack's next generation beside the current one
-  (numbered by the id's count of loads, refused ones included, so a number names one source), and the registry
-  swaps the package's entries for the new generation's, keeping the old ones valid for the instances that hold
-  them. The Engine plans the request
-  `setGraph` last published again, with no tap re-arm (the running plan's tap stays as it is, neither
-  restored nor armed again) and its parked cores left parked; the planner rebuilds every instance whose
-  registry entry changed, so each of the pack's nodes gets a fresh instance of the new code under its node
-  id, its JS state not carried over, and every other node keeps its instance. A document that places none
-  of the pack's nodes is not planned again. All or nothing: a replan the planner refuses (a node's settings
-  the new code refuses, a type the document places gone, or `busy`) puts the old entries back and discards
-  the new generation, and the result carries the planner's errors, the old code running on.
+  (numbered by the id's count of loads, refused ones included, so a number names one source), and the
+  registry swaps the package's entries for the new generation's, keeping the old ones valid for the
+  instances that hold them. The Engine plans the request `setGraph` last published again, with no tap
+  re-arm (the running plan's tap stays as it is, neither restored nor armed again) and its parked cores
+  left parked; the planner rebuilds every instance whose registry entry changed, so each of the pack's
+  nodes gets a fresh instance of the new code under its node id, its JS state not carried over, and every
+  other node keeps its instance. A document that places none of the pack's nodes is not planned again. All
+  or nothing: a replan the planner refuses (a node's settings the new code refuses, a type the document
+  places gone, or `busy`) puts the old entries back and discards the new generation, and the result carries
+  the planner's errors, the old code running on.
 - **Freeing a generation.** A pack counts the records of its types' instances alive (made and deleted on the
   control thread, so a plain count). A generation a reload retired, or one a refused replan discarded, is
   freed by the control-thread call that finds its count 0 (`retirePack`, `discardPack`, `reclaim`,
@@ -783,62 +783,70 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   pack whose reachable heap is above about two thirds of its limit can be refused for garbage, and a profile
   window that pins the auto-GC off (`resetAllocStats(true)`) gathers garbage until the limit faults a node.
 - **A throw** in `process` is caught and counted, the block's output up to it stands, and the node runs
-  again next block; a definition that says `faultOnThrow`, or a `process` that returns `"fault"`,
-  faults instead (bypassed from then on), and a `faultOnThrow` node whose `onSettings`,
-  `portsChanged` or `activate` threw faults at its next block. Throws in `create`, `onSettings`,
-  `portsChanged` and `activate`, and a job that fails (a `queueMicrotask` callback that threw, or a job
-  stopped by the deadline or out of memory), are counted too (`Engine::scriptThrows()`; a promise
-  reaction's own throw only rejects its promise); the first one's text is kept on the block thread in a
-  fixed buffer and logged once by `reclaim`. A write the block path makes onto what a node holds that
-  fails (a setter the node hung there threw or ran past the deadline, or it froze the object) is the
-  node's throw too: `messages()` and `control()` throw it, and on its audio views, the `Block` or its
-  transport, written before `process` is called, it is a throw in `process` whose block does not run.
-  Every node of a pack shares its realm, so the host keeps its writes, and its reads of a node's methods,
-  off the prototypes they share: each field it fills is the object's own data property from when it makes the object
-  (a define, which never walks the prototype chain), and each array slot is set when it is the array's
-  own at that write and defined when it is not (never made, or taken back by a shift, a splice or a
-  shorter length). So only the node's own setters run there, never an accessor another node (or the
-  bundle) hung on `Object.prototype` or `Array.prototype`, with one gap: a field the node deletes is set
-  again, which walks the chain, as does the read of a message's `data` it deleted (asking at every field
-  write would cost each script call about 12 ns a block, 14% of an empty pass-through's). `process` and
-  the hooks are read from what `create` returned and the prototypes it inherits them through, short of
-  `Object.prototype`, so none is run or adopted from there. A Proxy on the way answers as JS reads one
-  (its `get` trap, or its target's chain), so a wrapper or a test double works; a chain longer than
-  `ScriptHost::kMethodHops` (1024) plain objects, or one that cycles back through a Proxy, fails the
-  `create` rather than holding the block thread. The `Block` prototype every node reaches is frozen with
-  its methods, so no node replaces one for another: assigning one on a node's own `Block`
-  (`block.send = f`) throws in the strict bundle, where `Object.defineProperty` on it still works. That
-  is the host's part only, and it guards against the nodes of one pack: what they can do to each other
-  through the realm they share (an accessor on a prototype another's own code reads through, a global it
-  calls) is left as it is, since one author wrote them all. Nodes of different packs share no realm.
+  again next block; a definition that says `faultOnThrow`, or a `process` that returns `"fault"`, faults
+  instead (bypassed from then on), and a `faultOnThrow` node whose `onSettings`, `portsChanged` or
+  `activate` threw faults at its next block. Throws in `create`, `onSettings`, `portsChanged` and
+  `activate`, and a job that fails (a `queueMicrotask` callback that threw, or a job stopped by the
+  deadline or out of memory), are counted too (`Engine::scriptThrows()`; a promise reaction's own throw
+  only rejects its promise); the first one's text is kept on the block thread in a fixed buffer and logged
+  once by `reclaim`. A write the block path makes onto what a node holds that fails (a setter the node hung
+  there threw or ran past the deadline, or it froze the object) is the node's throw too: `messages()` and
+  `control()` throw it, and on its audio views, the `Block` or its transport, written before `process` is
+  called, it is a throw in `process` whose block does not run. Every node of a pack shares its realm, so
+  the host keeps its writes, and its reads of a node's methods, off the prototypes they share: each field
+  it fills is the object's own data property from when it makes the object (a define, which never walks the
+  prototype chain), and each array slot is set when it is the array's own at that write and defined when it
+  is not (never made, or taken back by a shift, a splice or a shorter length). So only the node's own
+  setters run there, never an accessor another node (or the bundle) hung on `Object.prototype` or
+  `Array.prototype`, with one gap: a field the node deletes is set again, which walks the chain, as does
+  the read of a message's `data` it deleted (asking at every field write would cost each script call about
+  12 ns a block, 14% of an empty pass-through's). `process` and the hooks are read from what `create`
+  returned and the prototypes it inherits them through, short of `Object.prototype`, so none is run or
+  adopted from there. A Proxy on the way answers as JS reads one (its `get` trap, or its target's chain),
+  so a wrapper or a test double works; a chain longer than `ScriptHost::kMethodHops` (1024) plain objects,
+  or one that cycles back through a Proxy, fails the `create` rather than holding the block thread. The
+  `Block` prototype every node of a pack reaches is frozen with its methods, so no node replaces one for
+  another: assigning one on a node's own `Block` (`block.send = f`) throws in the strict bundle, where
+  `Object.defineProperty` on it still works. That is the host's part only, and it guards against the nodes
+  of one pack: what they can do to each other through the realm they share (an accessor on a prototype
+  another's own code reads through, a global it calls) is left as it is, since one author wrote them all.
+  Nodes of different packs share no realm.
 - **The call deadline.** Every call the block thread makes into a node's JS, with the `create` a fresh
   instance's first call makes and the promise jobs its checkpoint runs, is held to one deadline of the
   calling thread's CPU time (2 s by default, `setCallDeadline`), so a stall that is not the node's own
-  never trips it. A call that runs past it is stopped and counted as a throw: a `faultOnThrow` node
-  faults, any other runs again and faults only if its next call is stopped too. The control thread's
-  calls into a pack are held to the same length of its own CPU time, on a clock of its own: a load is one
-  call (its chunks in both runtimes, the jobs they queue, its definitions read), and so is a settings
-  check (`parseSettings` and `layout` with their jobs). A load the deadline stops refuses the pack; a
-  settings check it stops refuses the settings, so the planner refuses the document and the running plan
-  stands. A settings check runs at most 256 of the promise jobs pending in its pack's control runtime, and
-  one that leaves any refuses the settings too, saying so; QuickJS cannot drop them, so they wait there for
-  the pack's next settings check, which runs them with its own, and a chain that never settles refuses
-  every settings check of the pack, and so every document placing one of its nodes, until a reload frees
-  that runtime. Every runtime's JS stack is held to 256 KiB, under a macOS secondary thread's 512 KiB.
+  never trips it. A call that runs past it is stopped and counted as a throw: a `faultOnThrow` node faults,
+  any other runs again and faults only if its next call is stopped too. The control thread's calls into a
+  pack are held to the same length of its own CPU time, on a clock of its own: a load is one call (its
+  chunks in both runtimes, the jobs they queue, its definitions read), and so is a settings check
+  (`parseSettings` and `layout` with their jobs). A load the deadline stops refuses the pack; a settings
+  check it stops refuses the settings, so the planner refuses the document and the running plan stands. A
+  settings check runs at most 256 of the promise jobs pending in its pack's control runtime, and one that
+  leaves any refuses the settings too, saying so; QuickJS cannot drop them, so they wait there for the
+  pack's next settings check, which runs them with its own, and a chain that never settles refuses every
+  settings check of the pack, and so every document placing one of its nodes, until a reload frees that
+  runtime. The planner checks every placed node's settings at every plan, so a node whose settings check
+  fails (its `parseSettings` or `layout` throws, runs past the deadline, refuses the settings or reaches
+  its pack's memory limit, or its pack's control-side jobs do not settle) makes every document placing it
+  refused, as settings it refuses always have: while it is placed no other edit to the graph lands either,
+  the running document published again among them, and neither does a reload of another pack whose nodes
+  the running document places beside it, refused with that node's error after "the running document does
+  not plan with the reloaded pack: ". Removing it (every node of its pack, for a chain that never settles)
+  or reloading its pack clears it. Every runtime's JS stack is held to 256 KiB, under a macOS secondary
+  thread's 512 KiB.
 
 Every entry into a runtime re-anchors with `JS_UpdateStackTop` because the driving thread differs
 (the control thread on the pull path, the audio thread while running), and QuickJS's stack-overflow
 guard is calibrated against the thread that last entered it. A profile build profiles the audio
 runtimes there, every pack's summed ([08-profiling.md](08-profiling.md)).
 
-[`ScriptCompiler`](../packages/native/src/host/dsp/ScriptCompiler.hpp#L18) (`dsp::compileToBytecode`)
+[`ScriptCompiler`](../packages/native/src/host/dsp/ScriptCompiler.hpp#L26) (`dsp::compileToBytecode`)
 compiles a script to QuickJS bytecode on a **transient, bare context**: `Engine::loadScriptPack` compiles a
 pack's source with it, and the engine-graph tests their toy script nodes. A compile error comes back as its
-text and line (`line 3: SyntaxError: ...`; QuickJS gives no finer position), and the parser is held to the
-script host's 256 KiB stack, since the source is a user's and the thread the Engine's control thread. The
-bytecode keeps its debug information (the built-in bundle's is stripped at build time) and is
-version-locked to this exact qjs-ng build, which is fine because the compiler and the script host are the
-same `qjs`.
+text and line (`the source does not compile: line 3: SyntaxError: ...`; QuickJS gives no finer position),
+and the parser is held to the script host's 256 KiB stack, since the source is a user's and the thread the
+Engine's control thread. The bytecode keeps its debug information (the built-in bundle's is stripped at
+build time) and is version-locked to this exact qjs-ng build, which is fine because the compiler and the
+script host are the same `qjs`.
 
 ## Wrapped shared-core classes
 

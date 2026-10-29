@@ -63,7 +63,7 @@ The rules below are the parts that don't fit those.
   twenty driven blocks each (the wiring itself is `buildGraph`'s, held by `pnpm test graph` to explicit tables, to the
   B1 translator's goldens and to the role goldens, which `RP_GOLDEN_UPDATE=1 pnpm test graph/build-graph-role-goldens`
   re-records). A hidden bench times a script node per block, and the protocol nodes' plan, at 1, 64 and 512 frames
-  (`build/bin/retroplug-engine-graph-test "[bench]"`), and a profile build adds seven `[profile]` cases
+  (`build/bin/retroplug-engine-graph-test "[bench]"`), and a profile build adds eight `[profile]` cases
   (`tools/run-profile.sh unit`).
   `retroplug-dynparams-test` is the odd one out: it compiles DPF's format-neutral core (`DistrhoPlugin.cpp`)
   plus its OWN `DistrhoPluginInfo.h`, building no plugin format at all, to drive

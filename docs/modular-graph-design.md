@@ -580,12 +580,13 @@ export const lsdjSync = defineNode({
   each parsing and writing its JSON Schema as its zod twin does), `defineNode` imports no zod at all (it takes
   any schema with `safeParse` and `toJSONSchema`, so a zod one still serves on the control plane), and the
   descriptor's schema comes from the definition's own schema object (`toJSONSchema({ io: "input" })`, the
-  shape a document may write: defaulted fields optional, as reflect-cpp's `DefaultIfMissing` says too).
-  The script-node bundle, which both of an Engine's script runtimes load, was about 660 KB in B3a, 567 KB
-  of it zod; since B3b it is 78 KB with none, and a `pnpm test` case (not a build gate) fails a bundle that pulls zod back in
-  ([B3b §3](modular-graph-phase-b3b-design.md)). That is also a hard requirement for MicroQuickJS on the
-  Pico, which `defineNode` itself does not yet meet (it uses ES2015's library). Every settings field needs a
-  default, since the descriptor describes the layout for default settings (a C++ node has `S{}`).
+  shape a document may write: defaulted fields optional, as reflect-cpp's `DefaultIfMissing` says too). The
+  script-node bundle, which both runtimes of an Engine's built-in script pack load, was about 660 KB in B3a,
+  567 KB of it zod; since B3b it is 78 KB with none, and a `pnpm test` case (not a build gate) fails a bundle
+  that pulls zod back in ([B3b §3](modular-graph-phase-b3b-design.md)). That is also a hard requirement for
+  MicroQuickJS on the Pico, which `defineNode` itself does not yet meet (it uses ES2015's library). Every
+  settings field needs a default, since the descriptor describes the layout for default settings (a C++ node
+  has `S{}`).
 - A TS node sees an audio port as an array of `Float32Array`s, an events port as a frame-ordered array,
   a resource port as a handle with typed accessors (an audio buffer's samples as a `Float32Array`). The arrays
   are the node's own: B3a's script host copies an audio input's samples into JS-owned buffers before `process`
@@ -606,12 +607,13 @@ export const lsdjSync = defineNode({
 
 ### 4.9 The script-node runtime
 
-The host wraps each TS node instance in the C table. One script runtime per engine holds every TS node,
-and each node's `process` calls into it. On the desktop that is B3a's script host
+The host wraps each TS node instance in the C table, and each node's `process` calls into the script runtime that
+holds it. On the desktop that is B3a's script host
 ([ScriptHost.hpp](../packages/native/src/host/script/ScriptHost.hpp), [B3a §2](modular-graph-phase-b3a-design.md)),
-with a second, control-side runtime that answers `layout_for` and `prepare_settings` and holds no instance. Since C1
-that pair is per script node pack ([modular-graph-phase-c1-design.md](modular-graph-phase-c1-design.md)): the built-in
-bundle is the first pack, and each pack loaded beside it holds its own nodes in runtimes of its own.
+which holds its TS nodes by script node pack ([modular-graph-phase-c1-design.md](modular-graph-phase-c1-design.md)):
+each pack in a runtime pair of its own, an audio-side runtime that holds the pack's instances and a control-side one
+that answers `layout_for` and `prepare_settings` and holds none. The built-in bundle is the first pack, and each pack
+loaded beside it holds its own nodes: the nodes of one pack share a realm, and nodes of different packs share none.
 
 | Platform | Script runtime |
 |---|---|

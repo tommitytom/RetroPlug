@@ -68,7 +68,7 @@ set of RPC facets is bound behind `__rpcSend` (see doc 01/02).
 ### `ConstructSpec` — the resolved-paths-only build request
 
 `buildCore` takes a `ConstructSpec`
-([backend.ts:748](../packages/retroplug/src/backend.ts#L748)) in which **TS has
+([backend.ts:800](../packages/retroplug/src/backend.ts#L800)) in which **TS has
 already resolved every path, suffix, sibling, and classification** — *native never sees a
 suffix, never looks for a sibling, never classifies.*
 

@@ -132,14 +132,15 @@ export function startValue(stream: ControlStream): number {
 
 // ---- the host contract ------------------------------------------------------------------------------------
 // What the script host (packages/native/src/host/script/ScriptHost.cpp) does around a node that the types below
-// cannot say (docs/modular-graph-phase-b3a-design.md section 2):
+// cannot say (docs/modular-graph-phase-b3a-design.md section 2, docs/modular-graph-phase-c1-design.md):
 //
-// - One realm for every node. Every instance of every script type lives in one QuickJS context, so a global one
-//   node's code sets, or an accessor it hangs on a shared prototype, is there for every node. The host keeps its
-//   own writes off them: each field it fills is the object's own, from when it made the object. The Block prototype is
-//   frozen with its methods, so assigning over one (`block.send = f`) throws in strict code, where
-//   Object.defineProperty on the node's own Block still works. The one gap: a field deleted from an object the
-//   block hands out is set again through the prototype chain.
+// - One realm per pack. Every instance of every type a pack defines lives in that pack's QuickJS context (the
+//   built-in bundle is one pack, and each pack loaded beside it has runtimes of its own), so a global one node's code
+//   sets, or an accessor it hangs on a shared prototype, is there for every node of its pack, and for no other
+//   pack's. The host keeps its own writes off them: each field it fills is the object's own, from when it made the
+//   object. The pack's Block prototype is frozen with its methods, so assigning over one (`block.send = f`) throws in
+//   strict code, where Object.defineProperty on the node's own Block still works. The one gap: a field deleted from
+//   an object the block hands out is set again through the prototype chain.
 // - process and the hooks are read once, from what create returned (and the prototypes it inherits them through,
 //   short of Object.prototype): assigning another one later does nothing.
 // - portsChanged runs once on every fresh instance, when the plan that made it is adopted, before its first
