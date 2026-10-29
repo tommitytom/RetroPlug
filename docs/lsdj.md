@@ -590,8 +590,11 @@ completed it, and the decoders send each message in that same block, at its byte
   straddle two blocks goes in the later one, at its completing byte's frame there.
 - **Master sync**: a `0xF8` at each byte's frame, a run's song-row NoteOn and `0xFA` at its first byte's, and
   the run's `0xFC` at its 200 ms mark, the first frame the silence since the run's newest byte passes 200 ms
-  (`lastAt + stop + 1`, `stop` the 200 ms in frames at the block's rate, so a gap of exactly 200 ms is no
-  stop), in the block that holds the mark, ahead of a byte at or past it, which then opens a fresh run.
+  (`floor(lastAt + stop) + 1`, `stop` the 200 ms in frames at the block's rate, so a gap of exactly 200 ms is
+  no stop), in the block that holds the mark, ahead of a byte at or past it, which then opens a fresh run. The
+  silence is time: a run carried into a block at another host rate (a DAW's project rate, the standalone's
+  settings) has `lastAt` counted again in that rate's frames, kept fractional so that several changes in one
+  silence do not compound, and a mark a rise leaves before the block's start goes at its first frame.
 
 `audio.drainMidiOut()` returns what the decoders made of them, each message with its frame in the
 `renderAudio` block it went out in (`renderBlocks` adds the block's index). The core's own byte timing

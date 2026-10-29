@@ -48,8 +48,9 @@ The rules below are the parts that don't fit those.
   reach, checked (the B3b design's section 9 lists the others, which no case sends a message through), but for the
   host MIDI out of MI.OUT and master sync, which differs by design: LSDj's decoder, `rp.lsdj.serial-out`, after its
   Game Boy, sends each message at its byte's frame in the block the core captured it, where the kernel sent it at
-  frame 0 of the block after, so the three cases that carry it hold that decoder's recorded digests, every system
-  input in them still the kernel's ([docs/lsdj-serial-out-design.md](docs/lsdj-serial-out-design.md)); and every
+  frame 0 of the block after, so the three cases that carry it hold that decoder's recorded digests; every case also
+  holds a second digest over its system inputs alone, which the rig gave equal at the commit before the decoder moved,
+  so the move changed no system input ([docs/lsdj-serial-out-design.md](docs/lsdj-serial-out-design.md)); and every
   document in `buildGraph`'s goldens, handed to the engine with real cores, plans and runs with no node faulting, no
   script node throwing and no message dropped: the B1 translator's matrix a block each (the 33-system `perSystem` ones
   are refused, as they must be), and `golden/build-graph-roles.json`, `buildGraph`'s own record of documents with every protocol node

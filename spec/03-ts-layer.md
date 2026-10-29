@@ -246,8 +246,10 @@ records nothing until it's opened.
 (`{ systems, routing, shape, midiRouting?, controller? }`) to the document `setGraph` plans
 ([modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md) section 2.1; the node
 order, the routing as wiring and the host shapes are in [02-native-host.md](02-native-host.md)).
-Besides the system nodes and their mixing it places the script nodes between the host's I/O and the
-systems ([modular-graph-phase-b3b-design.md](../docs/modular-graph-phase-b3b-design.md) section 4,
+Besides the system nodes and their mixing it places the script nodes: those that feed a system between the
+host's inputs and the systems, and those that read one after the systems, before the host's outputs
+([modular-graph-phase-b3b-design.md](../docs/modular-graph-phase-b3b-design.md) section 4,
+[lsdj-serial-out-design.md](../docs/lsdj-serial-out-design.md) section 3,
 [04-roles-protocol-nodes.md](04-roles-protocol-nodes.md)):
 
 - `midi-in` (`rp.host.midi-in`) and `controller-in` (`rp.host.controller-in`);

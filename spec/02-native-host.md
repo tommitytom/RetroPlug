@@ -318,20 +318,22 @@ it:
 | Node | Ports | Does |
 |---|---|---|
 | `rp.host.midi-in` | out `midi` (events: 2048 messages, 64 KiB) | takes the staged host MIDI, stable-sorted by frame without allocating: the plugin stages two runs in frame order (a block's DAW events, then each moved automation slot's CC at frame 0), which it merges onto its queue, a tie to the earlier run; more runs are sorted in place first, by insertion |
-| `rp.host.midi-out` | in `in1` to `inN` (events), an input per entry of its settings `{"systems": [<id>, ...]}`, at most 128 | each input's messages land in `Engine::midiOut` tagged with that entry's system, the inputs merged by frame: each step hands out the head with the earliest frame, the lower input on a tie, so with every frame 0 it is the inputs in turn, each in queue order; each message goes at the later of its frame and the last handed out in the block, a guard that keeps the list frame-sorted whatever an input's queue holds (a node on the C ABI writes its own). It allocates nothing, a head index per input, and costs messages times inputs. Two entries may name one system, and an empty list is a node with no inputs, which sends nothing. A settings change that keeps the inputs is a swap, one that moves them a rebuild |
+| `rp.host.midi-out` | in `in1` to `inN` (events), an input per entry of its settings `{"systems": [<id>, ...]}`, at most 128 | each input's messages land in `Engine::midiOut` tagged with that entry's system, the inputs merged by frame: each step hands out the head with the earliest frame, the lower input on a tie, so with every frame 0 it is the inputs' concatenation, input by input, each in queue order; each message goes at the later of its frame and the last handed out in the block, a guard that keeps the list frame-sorted whatever an input's queue holds (a node on the C ABI writes its own). The merge allocates nothing, a head index per input, and costs messages times inputs; the sink it hands each message to, `Engine::midiOut`, still takes a `std::vector` per message ([07-remaining-work.md](07-remaining-work.md)). Two entries may name one system, and an empty list is a node with no inputs, which sends nothing. A settings change that keeps the inputs is a swap, one that moves them a rebuild |
 | `rp.host.controller-in` | out `midi` (events: 1024 messages, 16 KiB), out `connected` (control) | takes the staged control-surface traffic, all at frame 0; `connected` is 1 while a surface is attached, from frame 0 of the block (a change at frame 0 on the block the flag flips, since a control output's start is the last block's end) |
 | `rp.host.controller-out` | in `midi` | appends each message to `Engine::controllerOut` |
 | `rp.n8.cart-mirror` | in `midi` (events), in `bytes` | settings `{"system": <id>}`; hands the core-byte sink every MIDI message, then every byte message with its flush flag, in queue order, skipping empty ones; nothing while no sink is set |
 
-An input node takes everything staged whether or not its output is wired, so `Engine::setGraph`
-refuses (`midi-in`, `controller-in`) a document with a second of either. It refuses (`cart-mirror`) a
-second cart mirror too, or one whose `system` is not one of the slots' NES systems, reading the settings
-with the node's own reader (`cartMirrorSystem`). The system it names goes into the plan's `SystemTable`, and
-`Engine::cartMirrorSystemId()` reads it off the running plan: while it is non-zero the plugin and the
-SDL standalone stop forwarding their raw host MIDI (the DAW's, or the standalone's MIDI input) to the
-cart (it would arrive twice, the second copy unrouted), and a `StageSystemMidi` aimed at that system
-reaches the cart too. The node's settings
-change nothing it does, so it prepares statelessly and a change is a swap.
+An input node takes everything staged whether or not its output is wired, so `Engine::setGraph` refuses
+(`midi-in`, `controller-in`) a document with a second of either. It refuses (`midi-out`) a second
+`rp.host.midi-out`: the node frame-sorts only what it merges, so a second would append its own run behind
+the first's, and `Engine::midiOut`, which the plugin writes to a DAW as it is, would step back in frame. It
+refuses (`cart-mirror`) a second cart mirror too, or one whose `system` is not one of the slots' NES
+systems, reading the settings with the node's own reader (`cartMirrorSystem`). The system it names goes into
+the plan's `SystemTable`, and `Engine::cartMirrorSystemId()` reads it off the running plan: while it is
+non-zero the plugin and the SDL standalone stop forwarding their raw host MIDI (the DAW's, or the
+standalone's MIDI input) to the cart (it would arrive twice, the second copy unrouted), and a
+`StageSystemMidi` aimed at that system reaches the cart too. The node's settings change nothing it does, so
+it prepares statelessly and a change is a swap.
 
 Every system node has four inputs, mapped onto core calls `SystemBase` already has. It applies them
 at the top of its `prepare` (where `process` starts too, and which a linked group runs for every member
@@ -420,8 +422,8 @@ The document `buildGraph` writes:
   nodes that read a system, in slot order (an LSDj's `rp.lsdj.serial-out`, on a Game Boy), then
   `rp.n8.cart-mirror` when there is a NES, `rp.host.midi-out` and `rp.host.controller-out`, then the mixing
   nodes, then `rp.host.audio-out`. A protocol node runs before its system because the system reads its
-  outputs, and LSDj's decoder after it because it reads the system's `serialOut` in the same block: a script
-  node reads only nodes placed before it (or a feedback wire, which orders nothing, and which no document
+  outputs, and LSDj's decoder after it because it reads the system's `serialOut` in the same block: every
+  node reads only nodes placed before it (but over a feedback wire, which orders nothing, and which no document
   `buildGraph` builds holds), and the planner breaks ties by document order (`Planner.cpp` `order()`), so
   this is also the order the plan runs in. Node ids are `midi-in`, `controller-in`, `routing`, `controller`,
   `cart`, `midi-out`, `controller-out`, `out`, `sys-<id>`, a system's protocol nodes `sys-<id>/<role-kind>`
@@ -438,9 +440,9 @@ The document `buildGraph` writes:
   the same name; each LSDj's Game Boy's `serialOut` goes forward into its `rp.lsdj.serial-out`, which reads
   the bytes MI.OUT and master sync decode in the block the core captured them; the first NES's protocol
   nodes' `midi` and `bytes` go to the cart mirror as well; and `midi-out` takes the controller's `midiOut`
-  and then each `rp.lsdj.serial-out`'s, in slot order, each input under its system, in the order the kernel
-  emitted. Every script node reshapes, so a structure change keeps each surviving instance (the routing
-  node's ports follow the systems) and its wires stay bound.
+  and then each `rp.lsdj.serial-out`'s, in slot order, each input under its system: the controller's first, so
+  its message wins a tie at a frame. Every script node reshapes, so a structure change keeps each surviving
+  instance (the routing node's ports follow the systems) and its wires stay bound.
 - **Routing as wiring.** For each host channel it lists the contributions in the order they sum:
   unlinked systems by slot, then the link groups by first appearance, L before R within a system. One
   contribution is wired straight to `audio-out`; several go through one mono `rp.core.add` in that order

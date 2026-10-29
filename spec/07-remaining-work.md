@@ -17,13 +17,16 @@ Things a user could reasonably expect that aren't wired yet. None block shipping
 
 ### Raw LSDj Keyboard mode (LsdjSyncMode 4)
 
-`lsdj-sync` implements every sync mode except raw **Keyboard**: MidiSync, MidiSyncArduinoboy,
-MidiMap, KeyboardMidi, MidiPassthrough, MidiOut (ArduinoboyMaster), and MasterSync all ship
-([script/nodes/lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts), the role's protocol
-node). Raw Keyboard sends nothing because it needs a per-block **`keys` feed**, which nothing supplies
-yet: `rp.lsdj.sync` has no input for host keys (the DSP kernel carried empty `buttons` and `keys`
-arrays until B3b deleted it), and no host stages any. A `keys` input on the node, and a host I/O node
-that feeds it, unblock this mode. (See [04-roles-protocol-nodes.md](04-roles-protocol-nodes.md).)
+`lsdj-sync` implements every sync mode except raw **Keyboard**: MidiSync, MidiSyncArduinoboy, MidiMap,
+KeyboardMidi and MidiPassthrough ship in
+[script/nodes/lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts), the role's protocol
+node, and MidiOut (ArduinoboyMaster) and MasterSync in
+[script/nodes/lsdjSerialOut.ts](../packages/retroplug/src/script/nodes/lsdjSerialOut.ts), the role's
+second node, after its Game Boy. Raw Keyboard sends nothing because it needs a per-block **`keys`
+feed**, which nothing supplies yet: `rp.lsdj.sync` has no input for host keys (the DSP kernel carried
+empty `buttons` and `keys` arrays until B3b deleted it), and no host stages any. A `keys` input on the
+node, and a host I/O node that feeds it, unblock this mode. (See
+[04-roles-protocol-nodes.md](04-roles-protocol-nodes.md).)
 
 ### NES per-mapper expansion sub-channels (multichannel audio)
 
@@ -150,8 +153,9 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   role, and a second for each LSDj on a Game Boy, its serial-out decoder.
 - **Left by LSDj's serial-out node, as they are** (its design's section 11):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
-    moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync`, where the whole stream shifts
-    and its clock gaps are the same in every split), which predates the decoder's move. The decoder adds no split
+    moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype
+    measured it, the whole stream shifting and its clock gaps the same in every split; the test logs the gaps, not
+    the shift), which predates the decoder's move. The decoder adds no split
     dependence of its own, so the tests hold each message to its byte, not to one absolute time shared by every
     split. A SameBoy matter, its own change if wanted.
   - **The SDL standalone sends host MIDI at block time.** Its RtMidi out takes no timestamp, so `audioCb` sends
@@ -180,9 +184,11 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     ([graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts)) in those readers. Not fixed.
   - **The controller's MI.MAP override changes only the document.** `controllerSyncOverride`
     ([graph/controller.ts](../packages/retroplug/src/graph/controller.ts), applied in `buildGraph`) runs an LSDj's
-    nodes in `midiMap` for a cart reading MidiMap, but `serialOutCaptureFor` (`systemsStore.ts`) and
-    `__rp_syncLatencyMs` still follow the stored `lsdj-sync` mode: an LSDj stored in MI.OUT whose cart reads MidiMap
-    keeps capture "drive" while its nodes run `midiMap`. Pre-existing: `kernelProjection` behaved the same.
+    nodes in `midiMap` for a cart reading MidiMap (in `off` for one reading another SYNC), but `serialOutCaptureFor`
+    (`systemsStore.ts`) and `__rp_syncLatencyMs` still follow the stored `lsdj-sync` mode: an LSDj stored in MI.OUT
+    (or master sync) whose nodes the controller forces keeps capture "drive" (or "listen") while its nodes run the
+    forced mode, and its `rp.lsdj.serial-out` leaves those bytes unread. Pre-existing: `kernelProjection` behaved
+    the same.
   - A few test-native case names still say "the kernel" (in `dsp-lsdj-midisync`, `dsp-risa-sync`,
     `dsp-sms-sync` and `plugin-controlplane`), where they mean the protocol nodes. Renaming
     a case is harmless but was kept out of B3b, which changed no test's identity it did not have to (the one case

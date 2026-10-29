@@ -255,7 +255,8 @@ past `renderAudio`'s 1024-frame block).
   profile host can arm one, and only through the harness facet).
 - **The seeded-MIDI benchmark** [test-native/dsp-bench.test.ts](../packages/retroplug/test-native/dsp-bench.test.ts):
   a mulberry32 generator for Profiles A/B/C, the block-stepped `stageMidiIn` + `renderAudio(BLOCK_MS)`
-  loop (warmup window discarded), one JSON metrics line. Env knobs `RP_BENCH_{PROFILE,CORES,BLOCKS,WARMUP,SEED}`.
+  loop (warmup window discarded), one JSON metrics line. Env knobs `RP_BENCH_{PROFILE,CORES,BLOCKS,WARMUP,SEED}`,
+  and `RP_BENCH_LSDJ` (below).
   It asserts the measured window allocated nothing (at the default 200-block warmup only; `RP_BENCH_WARMUP` is a
   documented knob, and a shorter one prints the figure without asserting it), and proves the window live with a second
   one after it: adding a system places a protocol node. In the `renderAudio` pull path `GraphHost::publish` adopts the plan at once, so
@@ -271,10 +272,16 @@ past `renderAudio`'s 1024-frame block).
   the Mesen core and the `nes-n8-midi` role's node, and does the same. After the mGB window, the mGB systems gone,
   dsp-bench has a window each on a real LSDj, playing, its `rp.lsdj.serial-out` decoding what it clocks out: master
   sync (a stock LSDj in SYNC=LSDj, captured in `listen`) and MI.OUT (an Arduinoboy build in SYNC=MI.OUT, captured in
-  `drive`), each over `min(RP_BENCH_BLOCKS, 400)` blocks after the same warmup, held to the mGB window's zero, to
-  more clocks than half its tempo sends (so LSDj played through it), and proved live by the same second window.
-  They need the fixture tree's LSDj ROMs (`RETROPLUG_RESOURCES_DIR`): without them the case skips there, after the
-  mGB window has been held to its zero.
+  `drive`), each over `max(100, min(RP_BENCH_BLOCKS, 400))` blocks after the same warmup (MI.OUT's clocks come
+  unevenly, none in a window's first 20 blocks at the default warmup, so a shorter window could hold none), proved
+  live by the same second window. At the default warmup each is held to the mGB window's zero and to more clocks
+  than its bound, so LSDj played through it: 40 a second in master sync, most of the about 51 a second LSDj sends at
+  tempo 128, and 2 a second in MI.OUT, half of its about 4. They need the fixture tree's LSDj ROMs
+  (`RETROPLUG_RESOURCES_DIR`): without them the case skips there, after the mGB window has been held to its zero.
+  `RP_BENCH_LSDJ=0` leaves them out (a line says so, and the case passes), and `tools/run-profile.sh`'s valgrind
+  modes default to it unless it is set: the windows' boots and warmups do not shrink with `RP_BENCH_BLOCKS`, which
+  those modes lower to 200, so they would make a run several times longer and put an LSDj's setup in the census
+  of the mGB workload. Their zero is the `stats` mode's to hold.
 - **Build knob + scripts** — `RETROPLUG_PROFILE` ([CMakeLists.txt](../CMakeLists.txt), mirrors
   `RETROPLUG_SANITIZE`), `tools/run-profile.sh [stats|trace|unit|dhat|callgrind|massif]` (separate
   `build-prof/` RelWithDebInfo dir), and `pnpm profile`.
@@ -295,7 +302,7 @@ modes are out.
   the audio thread runs and the trace reads reading nothing then; a type past the name table traced as
   `script-node`; the embedded bundle's types labelled 16 to 23 in order, `rp.lsdj.serial-out` 23; and an
   Engine's `apu-render` spanning its plan's whole run, each block's holding the process spans of a script node
-  before its Game Boy and of one after it). Nothing else runs them:
+  before its Game Boy and of one after it, the first ending before the second starts). Nothing else runs them:
   `tools/run-profile.sh unit`, or by hand `cmake --build build-prof --target retroplug-engine-graph-test -j$(nproc)`
   then
   `build-prof/bin/retroplug-engine-graph-test "[profile]"`.

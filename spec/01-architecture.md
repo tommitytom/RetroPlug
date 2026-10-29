@@ -145,8 +145,9 @@ Every control-plane edit lands on ONE ring: the `SpscRing<Command, 256>` inside 
 arrives one of two ways:
 
 - **Structure** (which systems run, in what order and wired how, a Game Boy's link cable, the host's
-  output shape, and the script nodes ahead of the systems: the MIDI routing, the controller session and
-  each role's protocol node, each with its settings) is a graph document TS builds
+  output shape, and the script nodes, each with its settings: ahead of the systems the MIDI routing, the
+  controller session and each role's protocol node, and after its Game Boy an LSDj's serial-out decoder) is
+  a graph document TS builds
   ([modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md),
   [modular-graph-phase-b3b-design.md](../docs/modular-graph-phase-b3b-design.md)). The stores call
   [`EngineGraph.publish`](../packages/retroplug/src/engineGraph.ts) once at the end of every edit that

@@ -1,6 +1,7 @@
 # LSDj's serial out as its own node: host MIDI at each byte's frame
 
-**Date:** 2026-10-28 · **Branch:** `feature/modularize` · **Status:** built: section 10's five commits
+**Date:** 2026-10-28 · **Branch:** `feature/modularize` · **Status:** built: section 10's five commits, then the
+fixes their reviews found (section 12)
 
 LSDj sends host MIDI two ways, both decoded from what it clocks out of its link port: MI.OUT (lsdj-sync mode
 `midiOut`, Arduinoboy's Mode_LSDJ_Midiout: notes, CCs, program changes and realtime) and master sync (mode
@@ -79,11 +80,15 @@ byte its song row's NoteOn and 0xFA before its clock, and a stop when the silenc
 200 ms (`stop` frames at the block's rate). What changes is where each goes:
 
 - A byte at frame `a` sends its messages at `a`.
-- The stop goes at the first frame the silence passes 200 ms, `lastAt + stop + 1`. Checked before each byte (a
+- The stop goes at the first frame the silence passes 200 ms, `floor(lastAt + stop) + 1`: `lastAt + stop + 1`
+  while `lastAt` is whole, as it is unless the host's rate changed during the run. Checked before each byte (a
   restart then goes out after its stop, at the byte's frame) and at the block's end: a mark inside the block sends
-  0xFC there; one past it carries to the next block, with `lastAt` moved back by the block's length. A mark is never
-  behind the block it is sent in, since each block's end sends any mark inside it.
-- `MasterSyncState.lastFrames` goes: the bytes are this block's.
+  0xFC there; one past it carries to the next block, with `lastAt` moved back by the block's length. While the host's
+  rate holds, a mark is never behind the block it is sent in, since each block's end sends any mark inside it. A run
+  carried into a block at another rate has its silence counted again in that rate's frames, and a mark that then
+  falls before the block goes at its first frame (section 12).
+- `MasterSyncState.lastFrames` goes: the bytes are this block's. `MasterSyncState.rate`, the rate `lastAt` is
+  counted at, is added (section 12).
 
 So what is sent, in order, is what is sent today: the same messages from the same bytes, only earlier, and at their
 frames. The one addition is a case's last block, now decoded.
@@ -107,10 +112,12 @@ A throw stops only the decoder's block, as for any script node.
 
 `rp.host.midi-out` merges its inputs by frame: each step hands out the head with the earliest frame, the lower input
 on a tie. Each input arrives frame-sorted (a port's queue raises a frame sent behind a later one), and
-`max(frame, last)` stays after the merge as a guard, so `Engine::midiOut` is frame-sorted whatever arrives. With
-every frame 0 the merge is today's order, input by input, so it moves nothing on its own. It allocates nothing (one
-head index per input, `kMidiOutMaxInputs` of them) and costs messages times inputs a block. Nothing it exposes
-changes, so the host-io service id stays `rp.engine.host-io/2`.
+`max(frame, last)` stays after the merge as a guard, so `Engine::midiOut` is frame-sorted whatever arrives, a
+document holding one `rp.host.midi-out` (`Engine::setGraph` refuses a second, section 12). With every frame 0 the
+merge is today's order, input by input, so it moves nothing on its own. The merge allocates nothing (one head index
+per input, `kMidiOutMaxInputs` of them) and costs messages times inputs a block; the sink it hands each message to
+still allocates, `Engine::midiOut` taking a `std::vector` per message, as spec/07's item from B3a records. Nothing
+it exposes changes, so the host-io service id stays `rp.engine.host-io/2`.
 
 What a host does with a frame is unchanged: the plugin hands it to the DAW (`writeMidiEvent`), the RPC drains record
 it, and the SDL standalone sends each message once its block is rendered, without it (its RtMidi out has no
@@ -207,11 +214,13 @@ Accepted on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`, plus the su
 ## 12. Found while building
 
 - **No node of RetroPlug's can hand the merge an unsorted input, so the guard needed one of its own.** Section 8 had
-  a case pin the guard. Every node pushes through `rp::graph::pushMessage`, which raises a frame pushed behind a
-  later one, and so does the test feed: in the old case whose input went back in frame, its queue had raised that
-  frame before `rp.host.midi-out` saw it. [HostIo.test.cpp](../packages/native/test/engine-graph/HostIo.test.cpp)
-  pins the guard with a test-only node, `rp.test.raw-feed`, that writes its queue's items directly and out of order,
-  as a node on the C ABI may.
+  a case pin the guard. An `rp_queue` is frame-ordered by contract (`rp_node.h`), and every node of RetroPlug's
+  writes its queues through `rp::graph::reserveMessage` (`pushMessage` calls it, as a script node's `send` does),
+  which raises a frame written behind a later one; so does the test feed: in the old case whose input went back in
+  frame, its queue had raised that frame before `rp.host.midi-out` saw it.
+  [HostIo.test.cpp](../packages/native/test/engine-graph/HostIo.test.cpp) pins the guard with a test-only node,
+  `rp.test.raw-feed`, that writes its queue's items directly and out of order, as a node on the C ABI may; like
+  `reserveMessage` it drops and counts a message that does not fit, and the case checks it dropped none.
 - **`apu-render` is recorded after the spans it holds.** A span is stored as it closes, so a block's `apu-render`,
   opened at the plan's start, follows its script nodes' process spans in the trace. The trace-event JSON gives each
   span its start and length, so nothing that reads it depends on the order.
@@ -221,12 +230,15 @@ Accepted on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`, plus the su
   44.1 kHz). [lsdj-mastersync.test.ts](../packages/retroplug/test-native/lsdj-mastersync.test.ts) holds the gaps
   within 3% of the period, which still refuses a clock moved to its block's start (a 1024-frame block is 19% past
   the period), and a run's first gap within 30%. The split moves the whole stream by up to 32 frames and its gaps
-  not at all, as section 8 said of the core.
+  not at all, as section 8 said of the core: the shift is the prototype's measurement, since the test logs each
+  split's gaps and not where its stream lies.
 - **No re-recorded case gained a message.** Section 7 expected each case's last block, decoded at last, to add what
   it held. In all twelve the new MIDI out is the old one's messages in the same order with nothing after them, each
   a block earlier than before, but for one stop in each 1-frame master-sync case, which stays in its block; a
   checker over the old and new baselines and their dumps found every lane, SRAM and work RAM of the three groups,
-  and every other case's whole digest, unchanged.
+  and every other case's whole digest, unchanged. Every new message lies off frame 0 but in the 1-frame splits,
+  whose blocks have no other frame, and for one clock of 85 in each master-sync `fl256` case, whose byte the core
+  completed at its block's first frame.
 - **A hand-edited `lsdj-sync` on another system loses its host MIDI input.** The decoder is placed only on a Game
   Boy, as the feedback wire was, but `rp.host.midi-out`'s input for the system had been `rp.lsdj.sync`'s, placed on
   any system. Such a system (no ROM provider attaches `lsdj-sync` to anything but a Game Boy) has its `rp.lsdj.sync`
@@ -235,12 +247,72 @@ Accepted on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`, plus the su
 - **The controller's order case checks the merge.**
   [ProtocolNodes.test.cpp](../packages/native/test/engine-graph/ProtocolNodes.test.cpp)'s case for a controller's
   launch beside two LSDjs' host MIDI held the system tags in input order; under the merge the host's list is ordered
-  by frame and then input, the launch first at frame 0, so the case checks that. Its digest re-recorded with the
-  LSDj modes' and the controller session's, every count unchanged.
-- **The decoder reads nothing outside its two modes.** Section 3 said its input is empty there; it does not read it
-  at all, a test handing it one that throws, so its call costs the mode check. In `ScriptBench`'s MIDI-sync
-  structure, whose stand-in clocks the idle line into it, it reads none of it.
+  by frame and then input. The case checks the exact interleave each press sends, as frame:system,
+  `0:1 7:2 7:3 23:2 307:3 607:3`: the launch first at frame 0, then Game Boy 2's clock and Game Boy 3's on the tie
+  at 7, Game Boy 3's ahead of Game Boy 2's NoteOn at 23. That the list is sorted by (frame, system) would not tell
+  the merge from the old concatenation, which raised each frame to the last handed out and so sent Game Boy 3's
+  first clock at 23, behind that NoteOn (`0:1 7:2 23:2 23:3 307:3 607:3`), sorted all the same. Its first digest
+  re-recorded with the LSDj modes' and the controller session's, every count unchanged.
+- **The decoder reads nothing outside its two modes, though its input there is not always empty.** Section 3 said
+  its input is empty there; it does not read it at all, a test handing it one that throws, so its call costs the
+  mode check. In `ScriptBench`'s MIDI-sync structure, whose stand-in clocks the idle line into it, it reads none of
+  it. In a project the input can hold bytes: the capture follows the role's stored mode (`serialOutCaptureFor`), so
+  an LSDj stored in MI.OUT or master sync whose cart the MI.MAP controller forces (to `midiMap`, or to `off`) keeps
+  capturing, and leaving those bytes unread is what keeps that cart as silent on host MIDI as section 3 wants
+  (spec/07 records the capture following the stored mode).
 - **A spec's `out` is a string.** [protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts)'s `out` names
   a `PROTOCOL_NODES` key, but typing it as one would make the `as const` table refer to its own keys, so `outNodeOf`
   casts it and [protocol-nodes.test.ts](../packages/retroplug/test/graph/protocol-nodes.test.ts) holds every `out`
-  to a key whose spec writes no system input.
+  to a key whose spec writes no system input. It holds the wiring too, which `buildGraph` alone had kept: a spec
+  that reads a system's `serialOut` is some entry's `out`, and an `out` reads neither routed MIDI nor launches,
+  since `buildGraph` wires `serialOut` only into a node it places after the systems and the other two into none.
+
+The commits' reviews found more, fixed in the commits after them:
+
+- **A drop in the host's rate during a run sent master sync's stop at a negative frame.** The node outlives a change
+  of rate (`Engine::setSampleRate` re-activates the graph's instances rather than making new ones; the plugin's
+  `sampleRateChanged` and the SDL standalone's settings call it), and so does its run. The run's newest byte was
+  carried in frames at the old rate and its mark taken with the new block's `stop`: a run carried at 48 kHz to
+  `lastAt` -9116, its mark 485 at that rate, marked frame -295 in a 44.1 kHz block, which `send` wrapped through
+  ToUint32 to 4294967001, and `rp.host.midi-out` raised every later host message of that block to it. Any run whose
+  silence had passed 200 ms times the new rate over the old at the drop (183.75 ms from 48 to 44.1 kHz) had its stop
+  marked behind its block; a rise sent the stop late instead. `MasterSyncState.rate` now carries the rate `lastAt`
+  is counted at, read off each block's transport, and a call at another rate counts the silence again in the new
+  rate's frames: it is time, so 200 ms stays 200 ms. `lastAt` stays fractional and the mark floors once,
+  `floor(lastAt + stop) + 1`: a floor at each rescale compounded over two changes in one silence and brought the
+  mark a frame early (at 48, then 44.1, then 48 kHz, frame 393 for 394), and for a whole `lastAt` the mark is the
+  old `lastAt + stop + 1`, so a constant rate, every parity case among them, sends what it sent. The mark is clamped
+  at 0, which only a rise needs: it can put a mark less than an old-rate frame before the block, where the old rate
+  had it at the block's first frame.
+  [lsdj-arduinoboy.test.ts](../packages/retroplug/test/dsp/lsdj-arduinoboy.test.ts) holds a drop, a rise, the clamp
+  and two changes in one silence, and
+  [lsdj-serial-out.test.ts](../packages/retroplug/test/script/nodes/lsdj-serial-out.test.ts) a drop and a rise
+  through the node's transport.
+- **The rig's re-record re-blessed what reached the systems.** Its one digest hashed the system inputs and the host
+  outputs together, so re-recording the three cases whose host MIDI out moved (the LSDj modes and the controller's
+  two) took their system inputs into the new values unchecked: in `lsdj-modes`' nine modes, `rp.lsdj.sync`'s
+  `serialIn` and `buttons`. Every case now records a second digest beside the first, over the system inputs alone.
+  Its values were run on the rig at 0d781dd4, the commit before the decoder moved, where every first digest still
+  held the kernel's value: every second digest was equal there, the three re-recorded cases' among them, so the move
+  changed no system input.
+- **`Engine::midiOut` is frame-sorted only within one `rp.host.midi-out`.** Section 5's promise held for the one
+  `buildGraph` places, but a document holding two would append the second's merge behind the first's, and the
+  plugin writes the list to the DAW as it is (CLAP and LV2 require the order). Nothing places two (every golden
+  holds one), so `Engine::setGraph` refuses a second (`midi-out`), as it refuses a second `rp.host.midi-in`,
+  `rp.host.controller-in` or cart mirror.
+- **No document holds a feedback wire, and every golden is now held to that.** The role goldens' forward-wire check
+  passed feedback wires over, and `build-graph.test.ts` looks for one in an LSDj's structure alone:
+  [build-graph-role-goldens.test.ts](../packages/retroplug/test/graph/build-graph-role-goldens.test.ts) refuses a
+  feedback wire in any golden as it refuses a backward wire, since one into a script node would hand it last block's
+  values and nothing would show it. So the rule `buildGraph` keeps is that every node reads only nodes placed before
+  it, a feedback wire the exception none of its documents takes.
+- **dsp-bench's LSDj windows needed a floor, and stay out of the valgrind modes.** MI.OUT's clocks come unevenly
+  (at the default warmup none in a window's first 20 blocks, 8 in its first 100, 40 in 400), so a window of
+  `RP_BENCH_BLOCKS` 5, 10 or 20 failed the playing check for want of one: a window runs at least 100 blocks, and the
+  clock bound, like the zero, holds only at the default warmup. Their boots and warmups do not shrink with
+  `RP_BENCH_BLOCKS`, so `tools/run-profile.sh`'s valgrind modes, which lower it, would have run several times longer
+  with an LSDj's setup in the census of the mGB workload they attribute: `RP_BENCH_LSDJ=0` leaves the windows out,
+  and those modes default to it.
+- **dsp-bench's MI.OUT window decodes about half the NoteOns its song plays.** It sends 20 NoteOns in 400 blocks
+  (9.3 s), where the phrase's eight notes at tempo 128 come to about 40. Likely MI.OUT's rate-dependent decode
+  (section 4, B0's seventh defect); not looked into.

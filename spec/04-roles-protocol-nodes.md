@@ -284,10 +284,15 @@ routing node's outputs follow the systems); a system removed and added again get
   command straddling two blocks goes at its completing byte's frame in the later one) and MasterSync (LSDj
   clocks itself: a `0xF8` at each byte's frame, the first of a run after the song-row NoteOn and `0xFA` at
   the same frame, and one `0xFC` at the run's mark, the first frame its silence passes 200 ms at the block's
-  rate, `lastAt + stop + 1`, sent before the byte at or past the mark or at the end of the block the mark
-  falls in, a mark at or past the block's end carried to the next block). In every other mode it reads
-  nothing and sends nothing, and the core captures nothing to read. Each message goes on `midiOut` at that
-  frame, from one of three arrays made with the instance, one a message length. MI.OUT's bit accumulator and
+  rate, `floor(lastAt + stop) + 1`, sent before the byte at or past the mark or at the end of the block the mark
+  falls in, a mark at or past the block's end carried to the next block; a run carried into a block at another
+  host rate has its silence counted again in that rate's frames, kept fractional so that several changes in one
+  silence do not compound, and a mark a rise leaves before the block's start goes at its first frame). In every
+  other mode it sends nothing and reads nothing of its input, which is usually empty: the core captures for the
+  two decoded modes alone, but the capture follows the role's stored mode, so a cart stored in MI.OUT or master
+  sync that the MI.MAP controller forces (to MidiMap, or Off) keeps capturing
+  ([07-remaining-work.md](07-remaining-work.md)), and those bytes go unread. Each message goes on `midiOut` at
+  that frame, from one of three arrays made with the instance, one a message length. MI.OUT's bit accumulator and
   pending command are kept on the instance across mode changes; master sync's state is dropped outside that
   mode, so coming back opens a fresh run. Its settings are the role's config through the schema
   `rp.lsdj.sync` takes too
@@ -367,10 +372,11 @@ controller's forced mode included), fed `sys-<id>.serialOut` over a forward wire
 captured in the same block. It is placed whatever the mode, so a mode switch is a change of settings and
 never of the document, and only on a Game Boy, the one system with a serial out (a hand-edited `lsdj-sync`
 on another system places its `rp.lsdj.sync` alone, and host MIDI out takes no input for it). The rule under
-both: a script node reads only nodes placed before it in the document, or a feedback wire, which orders
-nothing, so the plan runs the script nodes in document order. No document `buildGraph` builds holds a
-feedback wire (`test/graph/build-graph.test.ts` checks it), and
-`test/graph/build-graph-role-goldens.test.ts` holds every wire of its role goldens to run forward.
+both: every node reads only nodes placed before it in the document, but over a feedback wire, which orders
+nothing, so the plan runs the nodes, the script nodes among them, in document order. No document `buildGraph`
+builds holds a feedback wire: `test/graph/build-graph-role-goldens.test.ts` holds every wire of its role
+goldens to run forward and refuses a feedback wire among them, and `test/graph/build-graph.test.ts` checks an
+LSDj's structure for one.
 
 Which role kind is placed as which node, and how each type is wired, is one pure, zod-free table,
 [graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts) (`protocolNodeOf`,
@@ -399,12 +405,13 @@ not read, as an edit already did, and names it in the log.
 
 The rest of the document follows from those nodes:
 
-- **Host MIDI out**: `rp.host.midi-out` in its systems form, its inputs in the order the kernel emitted:
-  the controller's `midiOut` first (under its resolved target), then each `rp.lsdj.serial-out`'s in slot
-  order, each under its system; with no producer, an empty list and no inputs. The node merges its inputs
-  by frame, a tie to the lower input, so two LSDjs in master sync each keep their clocks' times, and sends
-  each message at the later of its frame and the last it handed out in the block, a guard that keeps the
-  host's list frame-sorted whatever an input holds, which `Engine::midiOut` promises and CLAP and LV2 require.
+- **Host MIDI out**: `rp.host.midi-out` in its systems form, the one a document holds (`Engine::setGraph`
+  refuses a second), its inputs the controller's `midiOut` first (under its resolved target), so it wins a
+  tie at a frame, then each `rp.lsdj.serial-out`'s in slot order, each under its system; with no producer, an
+  empty list and no inputs. The node merges its inputs by frame, a tie to the lower input, so two LSDjs in
+  master sync each keep their clocks' times, and sends each message at the later of its frame and the last
+  it handed out in the block, a guard that keeps the host's list frame-sorted whatever an input holds, which
+  `Engine::midiOut` promises and CLAP and LV2 require.
 - **The N8 cart mirror** (`cart`, `rp.n8.cart-mirror`) for the first NES in slot order, fed what that
   system's protocol nodes send its `midi` and `bytes` inputs.
 - **The controller** ([graph/controller.ts](../packages/retroplug/src/graph/controller.ts)): its target
