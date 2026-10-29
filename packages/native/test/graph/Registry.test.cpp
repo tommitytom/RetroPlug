@@ -399,8 +399,18 @@ TEST_CASE("a refused replacement leaves the last one undoable: the retired versi
     const Version bad(R"({"id":"p"})", {typeWith("p.a", &aThree), typeWith("p.x", &badDescriptor)});
     const Version taker(R"({"id":"p"})", {typeWith("p.a", &aThree), typeWith("rp.test.source", &sourceDescriptor)});
     const Version stray(R"({"id":"q"})", {typeWith("p.a", &aThree)});
-    for (const rp_package* next : {&bad.package, &taker.package, &two.package, &one.package, &stray.package}) {
-        CHECK(reg.replacePackage("p", next) == nullptr);
+    const std::pair<const rp_package*, std::string> refusals[] = {
+        {&bad.package, "node type \"p.x\": "},
+        {&taker.package, "node type \"rp.test.source\" is already registered"},
+        {&two.package, "that version of package \"p\" is registered already"},
+        {&one.package, "that version of package \"p\" is registered already"},
+        {&stray.package, "package \"q\" cannot replace package \"p\""},
+    };
+    for (const auto& [next, why] : refusals) {
+        INFO(why);
+        std::string error;
+        CHECK(reg.replacePackage("p", next, &error) == nullptr);
+        CHECK(error.find(why) == 0);
         CHECK(reg.size() == total);
         CHECK(reg.retiredSize() == 2);
     }

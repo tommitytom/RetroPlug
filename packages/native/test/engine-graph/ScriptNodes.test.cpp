@@ -7,12 +7,12 @@
 // hangs on the shared prototypes charge no other, a method only Object.prototype holds is adopted by none, and none
 // replaces a method of the frozen Block prototype), a node's promise jobs run and charged to it at the checkpoint after
 // its call (a pack-mate never charged for them, nor for what runs between two calls) and its pack's memory limit
-// faulting it, the block path's allocations, and a running audio thread under all of it. The embedded production bundle and an Engine built around a toy bundle
-// close it. A RETROPLUG_PROFILE build (build-prof/, which tools/run-profile.sh configures) adds the trace window's
-// cases, [profile]: a script node's process span labelled by its type and closed every way a call ends, a label per
-// type in load order, the profile calls refused while an audio thread owns the runtime, the types past the label
-// table's bound, the embedded bundle's types labelled in the order the docs quote, and an Engine's apu-render spanning
-// its plan's whole run, its script nodes' process spans inside it.
+// faulting it, the block path's allocations, and a running audio thread under all of it. The embedded production bundle
+// and an Engine built around a toy bundle close it. A RETROPLUG_PROFILE build (build-prof/, which tools/run-profile.sh
+// configures) adds the trace window's cases, [profile]: a script node's process span labelled by its type and closed
+// every way a call ends, a label per type in load order, the profile calls refused while an audio thread owns the
+// runtime, the types past the label table's bound, the embedded bundle's types labelled in the order the docs quote,
+// and an Engine's apu-render spanning its plan's whole run, its script nodes' process spans inside it.
 //
 // Run via `pnpm test:plugin engine-graph`; the profile cases, build-prof/bin/retroplug-engine-graph-test "[profile]".
 
@@ -1181,6 +1181,8 @@ TEST_CASE("an allocation refused in a script node's promise job faults it at onc
     CHECK(rig.scripts.throwCount() == 2);
     rig.reclaim();
     INFO(rig.scripts.firstThrow());
+    // Both hogs fail in the same block, and the first throw kept is the hog's: the plan runs it first because nothing
+    // orders the two but the document, whose order breaks the tie.
     CHECK(rig.scripts.firstThrow().find("rp.toy.job-hog ") == 0);
     CHECK(rig.scripts.firstThrow().find("16 MiB memory limit in a promise job (an allocation was refused), and was "
                                         "faulted") != std::string::npos);
