@@ -437,7 +437,8 @@ std::string jobChain(int jobs) {
 }  // namespace
 
 TEST_CASE("a load whose promise jobs do not settle in the 256 a load runs is refused, changing nothing: its top "
-          "level's, a descriptor's, what its collection queues, in either runtime, the built-in pack's load too",
+          "level's, a descriptor's, a definition's read after the last descriptor, what its collection queues, in "
+          "either runtime, the built-in pack's load too",
           "[script][packs][jobs]") {
     constexpr const char* kUnsettled = "promise jobs did not settle in the 256 a load runs";
     Engine e(kRate);
@@ -454,6 +455,12 @@ var d = globalThis.__rp_scriptNodes, plain = d[d.length - 1].descriptor;
 d[d.length - 1].descriptor = function () { )JS" + jobChain(0) + R"JS( return plain(); };
 )JS"),
             std::string("test.descchain.up: its descriptor's ") + kUnsettled, "test.descchain.up");
+    // A getter on a flag the load reads after the last descriptor's drain, which starts one.
+    refused(e, "test.flagchain", toys(transposer("test.flagchain.up", 1) + R"JS(
+var f = globalThis.__rp_scriptNodes;
+Object.defineProperty(f[f.length - 1], "faultOnThrow", { get: function () { )JS" + jobChain(0) + R"JS( return false; } });
+)JS"),
+            std::string("its definitions' ") + kUnsettled + ", in the control context", "test.flagchain.up");
     // A FinalizationRegistry callback that starts one, its target a cycle the top level drops, which the loaded pack's
     // collection (or a threshold GC on the way) finds.
     refused(e, "test.finchain", toys(transposer("test.finchain.up", 1) + R"JS(

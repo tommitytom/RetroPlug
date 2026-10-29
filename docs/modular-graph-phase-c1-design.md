@@ -159,8 +159,9 @@ thrown error's stack names), where the built-in bundle is compiled stripped (`tj
   settings check, which runs them with its own, and a chain that never settles refuses every settings check of the
   pack, and so every document placing one of its nodes, until a reload frees that runtime. A pack's control runtime
   keeps that handler for its life, its audio runtime until it joins. A load runs at most 256 of the promise jobs each
-  stretch of it queues (its top level in each runtime, each descriptor, what a loaded pack's collection of its load's
-  cycles queues), and one that leaves any is refused (section 6).
+  stretch of it queues (its top level in each runtime, each descriptor, what reading the definitions after the last
+  one queues, what a loaded pack's collection of its load's cycles queues), and one that leaves any is refused (section
+  6).
 
 The built-in pack's memory is today's; each loaded pack adds two runtimes, about 180 KB and twice what its code loads
 to (section 3). Each call into a node gains its checkpoint (a job-pending check when nothing is queued), and each
@@ -261,9 +262,10 @@ no node, since the node is gone; and a `FinalizationRegistry` callback is queued
 target: one inside a call (QuickJS's threshold GC, or a commit freeing a reshaped node's old layout) runs as that
 call's job, a reshape with no `onSettings` having a checkpoint of its own for it, and a quiescent collection (`collect`,
 the profile's `runGc`) runs what it queued there and then, as a release does. No built-in node uses either. A load's own
-jobs run as it loads, at most 256 each stretch of it (its top level in each runtime, each descriptor, what a loaded
-pack's collection queues), and a load that leaves any is refused, as every other load failure is: QuickJS cannot drop
-them, and they would run at the pack's first checkpoint, charged to whichever of its nodes' calls came first.
+jobs run as it loads, at most 256 each stretch of it (its top level in each runtime, each descriptor, what reading the
+definitions after the last one queues, what a loaded pack's collection queues), and a load that leaves any is refused,
+as every other load failure is: QuickJS cannot drop them, and they would run at the pack's first checkpoint, charged to
+whichever of its nodes' calls came first, or, in the control runtime, at its first settings check.
 
 **Memory.** Each of a pack's two runtimes is held to its memory limit (64 MiB unless the load says otherwise), each on
 its own: an allocation that would pass it is refused, and QuickJS throws out of memory in the call that made it. The
@@ -340,12 +342,13 @@ bugs), belong with the authoring and package-split work.
     settings the new code rejects) returns the planner's errors with the old code still running;
   - freeing: a retired generation's runtimes are freed once its records come back, quiescent and under an audio thread
     driving blocks, and a reload loop frees every generation it replaces;
-  - jobs: a node's failing `queueMicrotask` callback is its throw and faults it under `faultOnThrow`; a job the deadline
-    stops counts as its call stopped; a never-settling chain faults its node after two cut-short checkpoints while a
-    pack-mate is never charged; a built-in node's counts stay 0 throughout; a load whose promise jobs do not settle in
-    256 (its top level's in either runtime, a descriptor's, its collection's, the built-in pack's load too) refused; a
-    settings check whose promise jobs do not settle in 256 refusing its document while the running plan runs on, and a
-    chain that never settles refusing every later check of its pack until the pack is reloaded;
+  - jobs: a node's failing `queueMicrotask` callback is its throw and faults it under `faultOnThrow`; a job the
+    deadline stops counts as its call stopped; a never-settling chain faults its node after two cut-short checkpoints
+    while a pack-mate is never charged; a built-in node's counts stay 0 throughout; a load whose promise jobs do not
+    settle in 256 (its top level's in either runtime, a descriptor's, a flag's getter's read after the last
+    descriptor, its collection's, the built-in pack's load too) refused; a settings check whose promise jobs do not
+    settle in 256 refusing its document while the running plan runs on, and a chain that never settles refusing every
+    later check of its pack until the pack is reloaded;
   - memory: a node that allocates past its pack's limit faults, and nodes of other packs keep running; a top level, or
     a `parseSettings`, allocating past it in the control runtime refuses the load, or the document placing its node
     while the running plan runs on, saying so;
@@ -482,7 +485,9 @@ is written from it; the prototype is where the questions below are answered (eac
   queued and let the rest wait, so the first of the pack's nodes a checkpoint followed was charged for them, and
   faulted after two cut shorts, for a top level's chain; a loaded pack's collection of its load's cycles, after the
   load, queued its `FinalizationRegistry` callbacks the same way. A load that leaves any is refused (section 6),
-  and the collection runs inside the load.
+  and the collection runs inside the load. What the load's reads of a definition after the last descriptor's drain
+  queued in the control runtime (a getter on a flag) was then still left for the pack's first settings check, until a
+  drain of that runtime after the definitions took it in.
 - **What ran between two calls into a pack was charged to a node.** A quiescent collection's `FinalizationRegistry`
   callbacks, and a reshape's with no `onSettings` to run them after, waited for the pack's next checkpoint and were
   charged to whichever node's call it followed; and an allocation refused where no checkpoint looks faulted a node: one

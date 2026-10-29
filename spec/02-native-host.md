@@ -755,9 +755,10 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   queues runs at a checkpoint after its commit, charged to its node. Only a reload, which frees the
   pack's runtime, ends a faulted node's chain; it runs, bounded, in its own pack. A load runs the jobs it
   queues as it loads, at most 256 each stretch of it (its top level in each runtime, each descriptor,
-  what a loaded pack's collection queues), and one that leaves any is refused, as every other load
-  failure is: QuickJS cannot drop a pending job, and one a load left would be charged to whichever of its
-  nodes' calls came first.
+  what reading the definitions after the last one queues, what a loaded pack's collection queues), and
+  one that leaves any is refused, as every other load failure is: QuickJS cannot drop a pending job, and
+  one a load left would be charged to whichever of its nodes' calls came first, or, in the control
+  runtime, would run at its first settings check.
 - **Memory.** Each of a pack's two runtimes is held to a memory limit (64 MiB unless its load says
   otherwise), each on its own, by the host's allocator, which refuses an allocation past it, so QuickJS
   throws out of memory in the call that asked, and notes the refusal on the pack. In the audio runtime, a

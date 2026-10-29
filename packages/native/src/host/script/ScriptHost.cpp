@@ -2046,6 +2046,11 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
         // A read the deadline stopped that left no exception behind (a getter on a flag): refused all the same.
         if (controlInterrupted_) return fail(at + " (" + type.id + ")");
     }
+    // What the reads after the last descriptor's drain queued in the control runtime (a getter on a flag), which no
+    // later drain there runs.
+    const bool read = settle(pack.controlRt);
+    if (controlInterrupted_) return fail("a promise job its definitions queued");
+    if (!read) return fail(unsettled("its definitions'") + ", in the control context");
     const bool settled = settle(pack.audioRt);  // what the descriptors queued there
     if (controlInterrupted_) return fail("a promise job its descriptors queued");
     if (!settled) return fail(unsettled("its descriptors'") + ", in the audio context");

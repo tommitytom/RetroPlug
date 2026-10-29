@@ -216,9 +216,10 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // fault charged to the node whose process this is returns RP_FAULT; one after a hook, or charged to another node of
 // the pack whose leftovers ran, faults that node at its next block. A promise reaction's own throw only rejects its
 // promise, which is the node's to handle. A load's own jobs run as it loads, at most kJobsPerCheckpoint each stretch
-// of it (its top level in each runtime, each descriptor, what a loaded pack's collection queues), and a load that
-// leaves any is refused: they would run at the pack's first checkpoint, charged to whichever of its nodes' calls came
-// first.
+// of it (its top level in each runtime, each descriptor, what reading the definitions after the last one queued, what
+// a loaded pack's collection queues), and a load that leaves any is refused: they would run at the pack's first
+// checkpoint, charged to whichever of its nodes' calls came first, or, in the control runtime, at its first settings
+// check.
 //
 // Each of a pack's two runtimes is held to its memory limit (kDefaultMemoryLimit, unless its load says otherwise), on
 // its own, by the host's allocator, which refuses an allocation past it, so QuickJS throws out of memory in the call
