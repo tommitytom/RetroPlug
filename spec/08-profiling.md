@@ -45,13 +45,15 @@ its place in the payload buffer moves, and the pool and the buffer grow only pas
 
 **The protocol nodes** ([src/script/nodes/](../packages/retroplug/src/script/nodes), since B3b) are
 written that way: each reads the `Message` views it is handed, sends on its own ports, and keeps its state
-and tick counter on its instance, so the routing, mGB, N8 and LSDj MIDI-sync nodes allocate **nothing** in
-a warm block, JS or native, and `dsp-bench` and `nes-bench` measure 0 allocations a block (section 9). What
-still allocates is work that makes something:
+and tick counter on its instance, so the routing, mGB, N8 and LSDj MIDI-sync nodes, and LSDj's serial-out
+decoder (`rp.lsdj.serial-out`) in master sync and MI.OUT, allocate **nothing** in a warm block, JS or
+native, and `dsp-bench` and `nes-bench` measure 0 allocations a block (section 9). The decoders
+([lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts)) hand each message over byte by byte,
+`emit(frame, len, b0, b1, b2)`, and the node sends it from one of three arrays it made once, one a message
+length. What still allocates is work that makes something:
 
 | Site | Allocates |
 |---|---|
-| the MI.OUT and master-sync decoders' `emit([...])` ([lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts)), run by `rp.lsdj.sync` in its two MIDI-out modes | about 3 JS objects for every host MIDI message decoded: the one per-block allocation left on a production path |
 | `rp.risa.sync`'s arm ([risaSync.ts](../packages/retroplug/src/risaSync.ts)) | two objects on a start or a seek: `risaLocate`'s object and `risaArmPacket`'s array |
 | `rp.controller.session`'s surface diff and launches ([controller/session.ts](../packages/retroplug/src/controller/session.ts)) | per LED change and per launch, while a surface is in use |
 
@@ -62,7 +64,9 @@ Hoisting those to the kernel's structure change cut it to **~32** (−81%). The 
 measured **33.81**: it still built the kernel's `BlockInput` afresh every block (an input object, a
 `midiIn` array of `{ frame, data }` objects with `data` copied to a plain array, empty `buttons` / `keys`
 arrays, a `{ system, byte }` object per MI.OUT byte). B3b's nodes take the marshalled inputs as they are,
-and the count is 0.
+and the count is 0. The MI.OUT and master-sync decoders built each message they emitted as a new array
+until their emit took its bytes as arguments: 3.56 allocations a block in `dsp-bench`'s master-sync window
+and 0.44 in its MI.OUT one, both 0 since.
 
 ## 4. Approach
 
@@ -222,10 +226,16 @@ past `renderAudio`'s 1024-frame block).
   spans, recorded only while armed. Every script node's process is a span **named by its type**
   (`rp.midi.route`, `rp.mgb.midi`, ...), holding `marshal` (its audio copies in and the transport) and
   `js-call` (its JS, inside which each input it reads is a `marshal` span); the Engine adds `apu-render` (the
-  plan from where its script nodes end) and `state-publish`. The labels are fixed: `script-node` (0),
+  plan's whole run, from where it starts to where it ends, so every script node's process span lies inside
+  it, wherever the planner runs the node, before a system or after one, and its figure includes the script
+  nodes' few microseconds beside the cores') and `state-publish`. A span is stored as it closes, so a block's
+  `apu-render` follows the spans inside it in the list; the trace-event JSON gives each span its start and
+  length, so nothing that reads it depends on that order. The labels are fixed: `script-node` (0),
   `marshal`, `js-call`, `apu-render`, `state-publish` (1 to 4), then the bundle's types from
   `DSP_SPAN_TYPE_BASE` (16) up, in the order it registered them, each named by its id (the production
-  bundle's seven are 16 to 22). By type rather than node id, as the DSP kernel's per-role spans were per kind
+  bundle's eight are 16 to 23: `rp.midi.route`, `rp.mgb.midi`, `rp.n8.midi-to-fifo`, `rp.risa.sync`,
+  `rp.sms.sync`, `rp.lsdj.sync`, `rp.controller.session` and `rp.lsdj.serial-out`, registered last so the
+  others kept their labels). By type rather than node id, as the DSP kernel's per-role spans were per kind
   until B3b made each role a node: a type's label is fixed when the bundle loads, where an id comes and goes
   with every document, so two systems' nodes of one type are two spans of one label a block, in plan order.
   Every label is below `kDspSpanLabels` (1024), so the name table stays bounded: a type past it is traced
@@ -255,10 +265,16 @@ past `renderAudio`'s 1024-frame block).
   `rp.n8.midi-to-fifo`, and `rp.midi.route`, whose reshape freed its port arrays when its outputs grew). That count
   must be above 0; pre-making those arrays at create time would move the allocation out of the block, and the
   assertion would need another trigger. (The runtime's peak heap cannot be the proof: it is never reset, and the
-  bundle's load puts ~300 KB in it before the window opens.) Skips (a counted `skip`) under a non-profile host so the
-  normal sweep stays fast and green;
+  bundle's load puts ~300 KB in it before the window opens.) Skips (a counted `skip`) under a non-profile host so
+  the normal sweep stays fast and green;
   [test-native/nes-bench.test.ts](../packages/retroplug/test-native/nes-bench.test.ts) is its NES twin, on
-  the Mesen core and the `nes-n8-midi` role's node, and does the same.
+  the Mesen core and the `nes-n8-midi` role's node, and does the same. After the mGB window, the mGB systems gone,
+  dsp-bench has a window each on a real LSDj, playing, its `rp.lsdj.serial-out` decoding what it clocks out: master
+  sync (a stock LSDj in SYNC=LSDj, captured in `listen`) and MI.OUT (an Arduinoboy build in SYNC=MI.OUT, captured in
+  `drive`), each over `min(RP_BENCH_BLOCKS, 400)` blocks after the same warmup, held to the mGB window's zero, to
+  more clocks than half its tempo sends (so LSDj played through it), and proved live by the same second window.
+  They need the fixture tree's LSDj ROMs (`RETROPLUG_RESOURCES_DIR`): without them the case skips there, after the
+  mGB window has been held to its zero.
 - **Build knob + scripts** — `RETROPLUG_PROFILE` ([CMakeLists.txt](../CMakeLists.txt), mirrors
   `RETROPLUG_SANITIZE`), `tools/run-profile.sh [stats|trace|unit|dhat|callgrind|massif]` (separate
   `build-prof/` RelWithDebInfo dir), and `pnpm profile`.
@@ -273,11 +289,13 @@ modes are out.
   **bit-identical run-to-run** (only `xRT`/`gcMs` wall-clock vary). First measured result (Profile A, 1
   mGB core, 2000 blocks): **~171 allocs/block**, `freesPerBlock` ≈ allocs (balanced churn),
   `liveHeapDelta` ≈ 0 (not a leak), `maxBlockAllocs` 279.
-- The profile build's own unit checks are the five Catch2 `[profile]` cases of `retroplug-engine-graph-test`
+- The profile build's own unit checks are the six Catch2 `[profile]` cases of `retroplug-engine-graph-test`
   (a script node's span labelled by its type, holding `marshal` then `js-call` and closed every way a call
   ends; nodes of one type sharing its label and each type labelled in load order; the calls refused while
   the audio thread runs and the trace reads reading nothing then; a type past the name table traced as
-  `script-node`; and the embedded bundle's types labelled 16 to 22 in order). Nothing else runs them:
+  `script-node`; the embedded bundle's types labelled 16 to 23 in order, `rp.lsdj.serial-out` 23; and an
+  Engine's `apu-render` spanning its plan's whole run, each block's holding the process spans of a script node
+  before its Game Boy and of one after it). Nothing else runs them:
   `tools/run-profile.sh unit`, or by hand `cmake --build build-prof --target retroplug-engine-graph-test -j$(nproc)`
   then
   `build-prof/bin/retroplug-engine-graph-test "[profile]"`.
@@ -305,7 +323,18 @@ modes are out.
   `marshal` spans nest inside those figures); the means over every `js-call` and `marshal` span in the trace, the
   two nodes' together, are about 0.95 and 0.11 us, against 1428 us of `apu-render` and 2.0 of `state-publish`;
   nes-bench's has `rp.midi.route` at 1.09 us and `rp.n8.midi-to-fifo` at 0.53, against 2151 of `apu-render` and 3.7 of
-  `state-publish`. The script nodes are under 0.2% of a block's work; the cores are the rest.
+  `state-publish`. The script nodes are under 0.2% of a block's work; the cores are the rest. (That `apu-render`
+  began where the last script node's `process` ended; it spans the whole plan since LSDj's decoder moved after its
+  Game Boy, so a trace's figure holds the script nodes' microseconds too.)
+- **On LSDj's serial-out decoder.** dsp-bench's two LSDj windows read **0 allocs/block** and 0 bytes,
+  `maxBlockAllocs` 0, over 400 blocks each: master sync with 476 host MIDI messages decoded, every one a clock, and
+  MI.OUT with 60 (40 clocks, 20 NoteOns); the same run's mGB window reads 0 with a peak heap of 311912 bytes at
+  16.4× real time. With the decoders' array per message (the emit before it took each message's bytes as arguments)
+  the two windows read 3.56 and 0.44 allocations a block. `ScriptBench`'s protocol-node plan
+  (`build/bin/retroplug-engine-graph-test "[bench]"`, five script nodes, the decoder placed after the systems) reads
+  0.00 JS allocations a block in every row, where its MI.OUT rows read 0.23, 15 and 120 at 1, 64 and 512 frames with
+  that emit: the script nodes alone take 0.87, 1.03 and 1.83 us a block with the LSDj in MIDI sync, and 0.85, 3.86 and
+  23.84 us decoding MI.OUT at a byte every 8 frames.
 - **Ship path clean:** dsp-bench skips under the default host; the full `pnpm test:native`
   sweep and `pnpm test` stay green; the default `build/` and shipped plugin never
   define `RETROPLUG_PROFILE` (zero overhead).
@@ -330,7 +359,7 @@ Native ([packages/native/src/](../packages/native/src/)):
 TypeScript ([packages/retroplug/](../packages/retroplug/)):
 - [src/audioDriver.ts](../packages/retroplug/src/audioDriver.ts) — `renderAudio` /
   `stageMidiIn` / `setBpm` / `setTransport` (the bench's injection surface).
-- [src/script/nodes/](../packages/retroplug/src/script/nodes) / [src/lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts) / [src/midiRouting.ts](../packages/retroplug/src/midiRouting.ts): the protocol nodes the benchmarks drive, and the decoders that are the per-block allocation site left (§3).
+- [src/script/nodes/](../packages/retroplug/src/script/nodes) / [src/lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts) / [src/midiRouting.ts](../packages/retroplug/src/midiRouting.ts): the protocol nodes the benchmarks drive, and the MI.OUT and master-sync decoders `rp.lsdj.serial-out` runs (§3).
 - [test-native/audio-render.test.ts](../packages/retroplug/test-native/audio-render.test.ts) —
   the setup template to copy.
 - [scripts/run-native-tests.mjs](../packages/retroplug/scripts/run-native-tests.mjs) — how a

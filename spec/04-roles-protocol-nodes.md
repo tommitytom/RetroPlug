@@ -6,7 +6,8 @@ per-kind blob. Everything specific to a system (a backend's emulator knobs, or a
 feature like LSDj sync or mGB passthrough) is a role, so the cores stay free of backend/LSDj/mGB
 knowledge. Cores are built **bare** (the legacy build said so with a `setSniffDefaultRoles(false)` call; there is none now); every feature behaviour lives in
 TypeScript, and a role whose work is the audio thread's runs as a **protocol node**: a TS script node
-of its own in the engine's graph, which `buildGraph` places for each system that has the role.
+of its own in the engine's graph (two for `lsdj-sync`, one each way between the host and the cart),
+which `buildGraph` places for each system that has the role.
 
 This is the sharpest expression of the thesis (*"native owns bytes and cores; TypeScript owns
 meaning"*): the same node code runs over a `Block` stand-in in the unit tests and on the audio thread
@@ -174,7 +175,7 @@ for LSDj, the seed hook. What each does on the audio thread is its node's
 | `nes-n8-midi` | `rp.n8.midi-to-fifo` | none |
 | `risa-sync` | `rp.risa.sync` | none |
 | `sms-sync` | `rp.sms.sync` | `machine`: `"sms"` or `"gg"` |
-| `lsdj-sync` | `rp.lsdj.sync` | `mode` (an `LsdjSyncMode`, default `midiSync`), `tempoDivisor` 1-8, `autoStart` |
+| `lsdj-sync` | `rp.lsdj.sync`, and `rp.lsdj.serial-out` after its Game Boy | `mode` (an `LsdjSyncMode`, default `midiSync`), `tempoDivisor` 1-8, `autoStart` |
 
 The MIDI routing and the control-surface controller are **project settings**, not roles
 ([05-data-persistence.md](05-data-persistence.md)): `buildGraph` places a node for each from the
@@ -206,19 +207,25 @@ An edit to a role with no node (an asset override) changes no document. Then `ma
 systems `onChange` → the project's `onSystemsChange`
 ([projectStore.ts:215](../packages/retroplug/src/projectStore.ts#L215)) for the structure's
 observers. The core is never told, with one exception: an `lsdj-sync` mode change sets the Game Boy's
-serial-out capture (`setSerialOutCapture`), which the two MIDI-out modes decode: `drive` for MI.OUT, where
-the core plays the Arduinoboy that clocks LSDj, and `listen` for master sync, where LSDj clocks itself.
+serial-out capture (`setSerialOutCapture`), which `rp.lsdj.serial-out` decodes in the two MIDI-out modes:
+`drive` for MI.OUT, where the core plays the Arduinoboy that clocks LSDj, and `listen` for master sync, where
+LSDj clocks itself.
 
 ## The protocol nodes
 
-Seven TS node types ([src/script/nodes/](../packages/retroplug/src/script/nodes)), each a `defineNode`
+Eight TS node types ([src/script/nodes/](../packages/retroplug/src/script/nodes)), each a `defineNode`
 in the script-node bundle ([script/bundle.ts](../packages/retroplug/src/script/bundle.ts)): the MIDI
-routing, a protocol node for each role that has one, and the control-surface session. Each is its
-protocol's glue around pure functions that stay where they were (the Arduinoboy and master-sync
-decoders in `lsdjArduinoboy.ts`, `routeTarget` in `midiRouting.ts`, `risaLocate` / `risaArmPacket` in
-`risaSync.ts`, `syncLevelsFor` in `smsSync.ts`, `walkTicks` in `ticks.ts`, the LSDj keyboard map and
-link bytes), and each is held to the kernel it replaced by the recorded digests of
-[ProtocolNodes.test.cpp](../packages/native/test/engine-graph/ProtocolNodes.test.cpp).
+routing, a protocol node for each role that has one, the control-surface session, and LSDj's serial-out
+decoder, the `lsdj-sync` role's second node. Each is its protocol's glue around pure functions that stay
+where they were (the Arduinoboy and master-sync decoders in `lsdjArduinoboy.ts`, `routeTarget` in
+`midiRouting.ts`, `risaLocate` / `risaArmPacket` in `risaSync.ts`, `syncLevelsFor` in `smsSync.ts`,
+`walkTicks` in `ticks.ts`, the LSDj keyboard map and link bytes), and each is held to the kernel it
+replaced by the recorded digests of
+[ProtocolNodes.test.cpp](../packages/native/test/engine-graph/ProtocolNodes.test.cpp), but for the host
+MIDI out of MI.OUT and master sync, which `rp.lsdj.serial-out` sends at each byte's frame in the block the
+core captured it, where the kernel sent it at frame 0 of the block after: that differs by design
+([lsdj-serial-out-design.md](../docs/lsdj-serial-out-design.md)), and the cases carrying it hold the
+decoder's recorded digests.
 
 | Type | Placed for | Inputs | Outputs | Settings |
 |---|---|---|---|---|
@@ -227,17 +234,18 @@ link bytes), and each is held to the kernel it replaced by the recorded digests 
 | `rp.n8.midi-to-fifo` | `nes-n8-midi` | `midiIn` | `midi` | none |
 | `rp.risa.sync` | `risa-sync` | none (the transport) | `bytes` | none |
 | `rp.sms.sync` | `sms-sync` | none (the transport) | `bytes` | `machine` |
-| `rp.lsdj.sync` | `lsdj-sync` | `midi`, `launches`, `serialOut` | `serialIn`, `buttons`, `midiOut` | `mode`, `tempoDivisor`, `autoStart` |
+| `rp.lsdj.sync` | `lsdj-sync` | `midi`, `launches` | `serialIn`, `buttons` | `mode`, `tempoDivisor`, `autoStart` |
+| `rp.lsdj.serial-out` | `lsdj-sync`, after its Game Boy | `serialOut` | `midiOut` | `rp.lsdj.sync`'s (it reads `mode`) |
 | `rp.controller.session` | the project's controller (`controller`) | `controllerIn` (events), `controllerConnected` (control) | `controllerOut`, `launches`, `midiOut` | `app`, `target`, `systemId` (resolved: 0 is none), `appConfig` (parsed), `songRowTicks`, `anchorRows`, `anchorSeq` |
 
-**How they are written.** Against the `Block` API, as the bench's pass-through is: indexed loops over
-the input `Message` views, `send` on the node's own ports, state and the tick counter on the instance
-(made in `create`), nothing allocated per block. Measured, the routing, mGB, N8 and LSDj MIDI-sync nodes
-allocate nothing in a warm block, JS or native ([08-profiling.md](08-profiling.md)); what still allocates is
-work that makes something: risa's arm packet on a start or a seek, the controller session's surface diff and
-launches, and the LSDj node's two MIDI-out decoders' emitted messages. Every type declares `reshapes`, so a
-settings change keeps the instance and its state, even one that changes its ports (the routing node's
-outputs follow the systems); a system removed and added again gets fresh nodes.
+**How they are written.** Against the `Block` API, as the bench's pass-through is: indexed loops over the
+input `Message` views, `send` on the node's own ports, state and the tick counter on the instance (made in
+`create`), nothing allocated per block. Measured, the routing, mGB, N8 and LSDj MIDI-sync nodes, and
+LSDj's serial-out decoder in master sync and MI.OUT, allocate nothing in a warm block, JS or native
+([08-profiling.md](08-profiling.md)); what still allocates is work that makes something: risa's arm packet
+on a start or a seek, and the controller session's surface diff and launches. Every type declares
+`reshapes`, so a settings change keeps the instance and its state, even one that changes its ports (the
+routing node's outputs follow the systems); a system removed and added again gets fresh nodes.
 
 **What each does per block:**
 
@@ -260,19 +268,31 @@ outputs follow the systems); a system removed and added again gets fresh nodes.
 - **`rp.sms.sync`** clocks smsggdj: while playing, a 2-bit counter advanced each 24-PPQN tick, each step a
   level word at the tick's frame that the system holds on the sync lines (controller port 2's TR + TH on a
   Master System, the EXT port on a Game Gear, by `machine`).
-- **`rp.lsdj.sync`** runs its `mode`, reading its routed MIDI and then the controller's launches as one
-  inbox, in that order: MidiSync (a 24-PPQN `0xF8` clock at each tick's frame, `tempoDivisor`-subdivided,
-  `autoStart` tapping START on the transport's rise), MidiSyncArduinoboy (notes 24/25 play and stop,
-  26-29 set the divisor, 30 and up a row byte, `0xFA`/`0xFC` on transport edges, its clocks at frame 0),
-  MidiMap (a NoteOn a row byte, the matching NoteOff `0xFE`, `0xFF` clocks at frame 0), KeyboardMidi (PS/2
-  scancodes, sliding the octave cursor), MidiPassthrough (every byte verbatim), MidiOut (ArduinoboyMaster:
-  last block's serial-out bytes decoded to host MIDI), and MasterSync (LSDj clocks itself: a `0xF8` a byte,
-  the first of a run after the song-row NoteOn and `0xFA`, and `0xFC` once 200 ms pass with no byte, timed
-  on the bytes' frames); Off and Keyboard send nothing. Its serial-in bytes go as runs of same-frame bytes,
-  a run a message; a button press as `[button, down]` on `buttons` at frame 0; its host MIDI at frame 0. Its
-  scratch is one bag kept across mode changes, master sync's sub-object dropped outside that mode so coming
-  back starts clean. `serialOut` is a feedback wire from its Game Boy: last block's captured bytes, each at
-  the frame its core completed it.
+- **`rp.lsdj.sync`**, the `lsdj-sync` role's host-to-cart direction, runs its `mode`, reading its routed
+  MIDI and then the controller's launches as one inbox, in that order: MidiSync (a 24-PPQN `0xF8` clock at
+  each tick's frame, `tempoDivisor`-subdivided, `autoStart` tapping START on the transport's rise),
+  MidiSyncArduinoboy (notes 24/25 play and stop, 26-29 set the divisor, 30 and up a row byte, `0xFA`/`0xFC`
+  on transport edges, its clocks at frame 0), MidiMap (a NoteOn a row byte, the matching NoteOff `0xFE`,
+  `0xFF` clocks at frame 0), KeyboardMidi (PS/2 scancodes, sliding the octave cursor) and MidiPassthrough
+  (every byte verbatim); Off, Keyboard, MidiOut and MasterSync send nothing here. Its serial-in bytes go as
+  runs of same-frame bytes, a run a message; a button press as `[button, down]` on `buttons` at frame 0. Its
+  scratch is one bag kept across mode changes.
+- **`rp.lsdj.serial-out`**, the role's cart-to-host direction, placed after the systems, reads its Game
+  Boy's `serialOut` over a forward wire, in the block the core captured it, each byte at the frame its core
+  completed it, and decodes it in two modes: MidiOut (ArduinoboyMaster MI.OUT: the flag-gated bit framing,
+  then the byte protocol, each message at the frame of the captured byte whose bits complete it, so a
+  command straddling two blocks goes at its completing byte's frame in the later one) and MasterSync (LSDj
+  clocks itself: a `0xF8` at each byte's frame, the first of a run after the song-row NoteOn and `0xFA` at
+  the same frame, and one `0xFC` at the run's mark, the first frame its silence passes 200 ms at the block's
+  rate, `lastAt + stop + 1`, sent before the byte at or past the mark or at the end of the block the mark
+  falls in, a mark at or past the block's end carried to the next block). In every other mode it reads
+  nothing and sends nothing, and the core captures nothing to read. Each message goes on `midiOut` at that
+  frame, from one of three arrays made with the instance, one a message length. MI.OUT's bit accumulator and
+  pending command are kept on the instance across mode changes; master sync's state is dropped outside that
+  mode, so coming back opens a fresh run. Its settings are the role's config through the schema
+  `rp.lsdj.sync` takes too
+  ([nodes/lsdjSyncSettings.ts](../packages/retroplug/src/script/nodes/lsdjSyncSettings.ts)); it reads only
+  `mode`.
 - **`rp.controller.session`** runs a `ControllerSession` ([controller/session.ts](../packages/retroplug/src/controller/session.ts))
   for the app its settings name (`controller/apps/index.ts`, the apps' runtime, zod-free): the surface's
   traffic and the block's clock in (its tick derived from ppq at 24 PPQN), its LED bytes out on
@@ -328,8 +348,7 @@ build gate), fails on a bundle that pulls a zod module, or a role or config modu
 ## Store → graph
 
 [`buildGraph`](../packages/retroplug/src/graph/buildGraph.ts) places, in document order and ahead of the
-systems (the planner breaks ties by document order, so they run first, and a profile build's `apu-render`
-span relies on it):
+systems (the planner breaks ties by document order, so they run before them):
 
 1. `routing`, the `rp.midi.route` node, when the model has a MIDI routing mode (a project always has one;
    a `DirectGraph`, or a `SystemsStore` used without a project, routes none until a mode is set), fed from
@@ -338,17 +357,29 @@ span relies on it):
    `controller-in.midi` and `.connected`, its `controllerOut` to `controller-out`;
 3. each system's protocol nodes, in slot order and then the order of its roles, each `sys-<id>/<kind>`
    with the role's parsed config as its settings: what reads MIDI is fed from `routing.sys-<id>`, each
-   output wired to the system node's input of the same name, a Game Boy's `serialOut` back into its
-   `rp.lsdj.sync` as a feedback wire (one block late: what MI.OUT and master sync decode), and the
-   controller's `launches` into the target system's `rp.lsdj.sync` when the target is `"system"`.
+   output wired to the system node's input of the same name, and the controller's `launches` into the
+   target system's `rp.lsdj.sync` when the target is `"system"`.
+
+After the systems and their link wires, and before the cart mirror and the host outputs, it places the
+node a role's type names to run after its system (its `out`), in slot order: `rp.lsdj.serial-out` for an
+`lsdj-sync` on a Game Boy, `sys-<id>/lsdj-sync/out`, with the settings its `rp.lsdj.sync` got (the MI.MAP
+controller's forced mode included), fed `sys-<id>.serialOut` over a forward wire, so it reads what the core
+captured in the same block. It is placed whatever the mode, so a mode switch is a change of settings and
+never of the document, and only on a Game Boy, the one system with a serial out (a hand-edited `lsdj-sync`
+on another system places its `rp.lsdj.sync` alone, and host MIDI out takes no input for it). The rule under
+both: a script node reads only nodes placed before it in the document, or a feedback wire, which orders
+nothing, so the plan runs the script nodes in document order. No document `buildGraph` builds holds a
+feedback wire (`test/graph/build-graph.test.ts` checks it), and
+`test/graph/build-graph-role-goldens.test.ts` holds every wire of its role goldens to run forward.
 
 Which role kind is placed as which node, and how each type is wired, is one pure, zod-free table,
 [graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts) (`protocolNodeOf`,
-`protocolPipeline`): both stores and a `DirectGraph` read it, with or without a role registry, and a role
-with no node is left out, so an edit to it (a model, a palette, an asset override) leaves the document as
-it was. `test/system-settings/registry.test.ts` holds it to what `registerDspRoles` registers, and
-`test/graph/protocol-nodes.test.ts` to the ports each node module declares and to the bundle's node types;
-`golden/build-graph-roles.json` records the documents it makes `buildGraph` build.
+`protocolPipeline`, and `outNodeOf` for a type's `out`): both stores and a `DirectGraph` read it, with or
+without a role registry, and a role with no node is left out, so an edit to it (a model, a palette, an
+asset override) leaves the document as it was. `test/system-settings/registry.test.ts` holds it to what
+`registerDspRoles` registers, and `test/graph/protocol-nodes.test.ts` to the ports each node module
+declares and to the bundle's node types; `golden/build-graph-roles.json` records the documents it makes
+`buildGraph` build.
 
 **One writer per system input.** Two roles whose nodes write the same system input (a project stored with `mgb`
 whose ROM path now holds LSDj gains `lsdj-sync`, both writing `serialIn`; or a hand-edited file naming a kind twice)
@@ -369,10 +400,11 @@ not read, as an edit already did, and names it in the log.
 The rest of the document follows from those nodes:
 
 - **Host MIDI out**: `rp.host.midi-out` in its systems form, its inputs in the order the kernel emitted:
-  the controller's `midiOut` first (under its resolved target), then each `rp.lsdj.sync`'s in slot order,
-  each under its system; with no producer, an empty list and no inputs. The node keeps the host's list
-  frame-sorted across its inputs (each message at the later of its frame and the last handed out in the block, as the
-  kernel's one queue clamped), which `Engine::midiOut` promises and CLAP and LV2 require.
+  the controller's `midiOut` first (under its resolved target), then each `rp.lsdj.serial-out`'s in slot
+  order, each under its system; with no producer, an empty list and no inputs. The node merges its inputs
+  by frame, a tie to the lower input, so two LSDjs in master sync each keep their clocks' times, and sends
+  each message at the later of its frame and the last it handed out in the block, a guard that keeps the
+  host's list frame-sorted whatever an input holds, which `Engine::midiOut` promises and CLAP and LV2 require.
 - **The N8 cart mirror** (`cart`, `rp.n8.cart-mirror`) for the first NES in slot order, fed what that
   system's protocol nodes send its `midi` and `bytes` inputs.
 - **The controller** ([graph/controller.ts](../packages/retroplug/src/graph/controller.ts)): its target
@@ -380,9 +412,10 @@ The rest of the document follows from those nodes:
   with no system its host MIDI is tagged `NO_SYSTEM` (4294967295) and the node takes 0, its none. The
   publisher hands it the app config already parsed by the app's own schema (`parseAppConfig`,
   [controller/registry.ts](../packages/retroplug/src/controller/registry.ts)) and the timing table it read
-  from the cart's battery, on the control plane. The `rp.lsdj.sync` node of the cart the MI.MAP app drives
-  is forced to `midiMap`, or to `off` when the cart's own SYNC setting is not MI.MAP
-  (`controllerSyncOverride`): that node's settings alone, so nothing reaches the `.rplg`.
+  from the cart's battery, on the control plane. The `lsdj-sync` nodes of the cart the MI.MAP app drives
+  are forced to `midiMap`, or to `off` when the cart's own SYNC setting is not MI.MAP
+  (`controllerSyncOverride`), its `rp.lsdj.serial-out` with its `rp.lsdj.sync`, so a forced cart sends no
+  host MIDI. The override is those nodes' settings alone, so nothing reaches the `.rplg`.
 
 Where nothing produces for a system input, or no controller is enabled, the input or the host I/O node is
 left unwired. The plugin loads nothing for any of this
@@ -394,14 +427,12 @@ publishes carries every node and its settings.
 Only the pieces below are open; the [07-remaining-work.md](07-remaining-work.md) doc is the authoritative
 inventory of remaining work.
 
-- **Raw Keyboard mode is the one unbuilt LSDj sync mode.** `rp.lsdj.sync` runs every other mode:
-  MidiSync, MidiSyncArduinoboy, MidiMap, KeyboardMidi, MidiPassthrough, and the two host-out directions
-  **MidiOut** (ArduinoboyMaster MI.OUT, serial out decoded to host MIDI) and **MasterSync**, with a
-  live-apply menu. Raw **Keyboard** (mode 4) still sends nothing: it needs a per-block `keys` feed, an
-  input on the node that nothing in the running host would feed yet, and per-block host `buttons` the same.
-- **The MI.OUT and master-sync decoders allocate.** Their emitted arrays cost about 3 JS allocations for
-  every host MIDI message they decode, the one per-block JS allocation left on a production path; it is
-  the decoders' own change, in `lsdjArduinoboy.ts`.
+- **Raw Keyboard mode is the one unbuilt LSDj sync mode.** The `lsdj-sync` role runs every other mode, with
+  a live-apply menu: `rp.lsdj.sync` MidiSync, MidiSyncArduinoboy, MidiMap, KeyboardMidi and MidiPassthrough,
+  and `rp.lsdj.serial-out` the two host-out directions, **MidiOut** (ArduinoboyMaster MI.OUT, serial out
+  decoded to host MIDI) and **MasterSync**. Raw **Keyboard** (mode 4) still sends nothing: it needs a
+  per-block `keys` feed, an input on `rp.lsdj.sync` that nothing in the running host would feed yet, and
+  per-block host `buttons` the same.
 - **kit-patch UI-thread behaviour.** LSDj kit-patch runs entirely on the UI / control thread: it
   compiles the kit (over the native `KitCompiler` primitives) and the `lsdj-assets` role folds it into the
   ROM in memory. It has **no protocol node** and never reaches the audio thread. A role-owned settings UI
@@ -420,8 +451,9 @@ TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
 - [dspRoles.ts](../packages/retroplug/src/dspRoles.ts): the roles that have a protocol node (kind, schema)
   + the LSDj `onConstruct` seed.
 - [romProviders.ts](../packages/retroplug/src/romProviders.ts): feature-role attachment by ROM identity.
-- [script/nodes/](../packages/retroplug/src/script/nodes): the seven node types, `clock.ts` (the tick
-  counter) and `ports.ts` (the capacities); [ticks.ts](../packages/retroplug/src/ticks.ts): `walkTicks`.
+- [script/nodes/](../packages/retroplug/src/script/nodes): the eight node types, `lsdjSyncSettings.ts` (the
+  `lsdj-sync` schema both its nodes take), `clock.ts` (the tick counter) and `ports.ts` (the capacities);
+  [ticks.ts](../packages/retroplug/src/ticks.ts): `walkTicks`.
 - [graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts) /
   [graph/controller.ts](../packages/retroplug/src/graph/controller.ts) /
   [graph/buildGraph.ts](../packages/retroplug/src/graph/buildGraph.ts): store → graph, the protocol node per

@@ -270,15 +270,18 @@ block to deliver). Data between two members of one coupled group needs a feedbac
 steps as one unit, so a same-block wire inside it would have no order. Messages on a feedback events or
 bytes wire keep the frames of the block that produced them, so a reader sees last block's coordinates,
 and a frame can lie past the end of a shorter reading block. The Game Boy's `serialOut` into its
-`rp.lsdj.sync` node (the DSP kernel's input until B3b) is the first feedback wire to carry frames other
-than 0: each byte at the frame its core completed it, which master sync times its stop by
+`rp.lsdj.sync` node (the DSP kernel's input until B3b) was the first feedback wire to carry frames other
+than 0: each byte at the frame its core completed it, which master sync timed its stop by
 ([lsdj-master-sync-fix-design.md](lsdj-master-sync-fix-design.md)).
 
-LSDj needs this today: `lsdj.sync` feeds the GB's `serialIn`, and the GB's `serialOut` comes back
-to `lsdj.sync` for MI.OUT. The current engine already gives that return path exactly one block of latency
-(it gathers `serialOutLog_` for the next block), so the graph makes existing behaviour visible. A wire
-flag was chosen over Reaktor's auto-inserted delay because the delay's position matters: the sync-to-GB
-edge must stay in the same block.
+LSDj was the case that called for this: `lsdj.sync` feeds the GB's `serialIn`, and the GB's `serialOut`
+came back to `lsdj.sync` for MI.OUT. The engine before the graph gave that return path exactly one block of
+latency (it gathered `serialOutLog_` for the next block), so the graph made existing behaviour visible. A
+wire flag was chosen over Reaktor's auto-inserted delay because the delay's position matters: the sync-to-GB
+edge must stay in the same block. That loop has since gone: LSDj's decoders moved into a node of their own,
+`rp.lsdj.serial-out`, placed after the Game Boy, which reads its `serialOut` over a forward wire in the block
+the core captured it ([lsdj-serial-out-design.md](lsdj-serial-out-design.md)), so no document the stores
+build holds a feedback wire.
 
 ### 3.4 Channels and layouts
 

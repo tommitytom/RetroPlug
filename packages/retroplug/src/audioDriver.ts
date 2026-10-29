@@ -160,10 +160,10 @@ export interface AudioDriver {
    *  no controller attached. Separate from stageMidiIn because a pad press is a NoteOn, and a
    *  translator like LSDj's MidiMap would read one on the musical stream as a row launch. */
   stageControllerIn(bytes: Uint8Array | number[]): boolean;
-  /** Drain the host MIDI out (e.g. an LSDj sync node's MI.OUT decoder, on its `midiOut` port),
-   *  accumulated across the renderAudio blocks since the last drain. Each entry is one MIDI message
-   *  with its source system + block-frame. The plugin drains this to the DAW directly; this is the
-   *  headless test path. */
+  /** Drain the host MIDI out (e.g. LSDj's serial-out decoder, rp.lsdj.serial-out, in MI.OUT or master
+   *  sync, on its `midiOut` port), accumulated across the renderAudio blocks since the last drain. Each
+   *  entry is one MIDI message with its source system + block-frame. The plugin drains this to the DAW
+   *  directly; this is the headless test path. */
   drainMidiOut(): { system: number; frame: number; data: Uint8Array }[];
   /** Render `blocks` as the plugin renders each host block (stage MIDI, drain edits, transport,
    *  processBlock at `outputs` lanes, take the MIDI out), for the parity suite. Throws with the reason

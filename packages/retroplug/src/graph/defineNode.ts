@@ -150,7 +150,8 @@ export function startValue(stream: ControlStream): number {
 //   counted; an emit onto a full stream overwrites its last change and returns false. A port the layout does not
 //   have, or not of the method's kind, throws a TypeError.
 // - A feedback input carries last block's messages at their frames in that block, so a frame can lie at or past
-//   this block's end. The master-sync decoder B3b ports reads one: a Game Boy's serialOut, each byte at its frame.
+//   this block's end. No production node reads one: LSDj's serial-out decoder, the one that reads a system's output,
+//   takes its Game Boy's serialOut over a forward wire, each byte at its frame in this block.
 // - Promise reactions and queueMicrotask callbacks run at the end of the block, after every node's process: at
 //   most 256 a block (the rest at the next block's end), under one call deadline between them. Every Block method
 //   throws inside one, as in a hook: a block exists only during its node's process call. A reaction's own throw

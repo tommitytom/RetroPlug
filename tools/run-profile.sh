@@ -10,10 +10,11 @@
 # allocator + the dsp* profiling RPCs are compiled in, and -g is global so valgrind attributes into
 # quickjs.c. The load-bearing build/ and the shipped plugin are untouched (they never define the macro).
 #
-#   stats     — in-process allocation counters; prints one JSON metrics line (deterministic, fast).
+#   stats     - in-process allocation counters; prints a JSON metrics line per window (deterministic, fast):
+#               dsp-bench's mGB window, then, with the fixture tree's LSDj ROMs, its master-sync and MI.OUT ones.
 #   trace     — per-role runtime spans (spec/08 Tier B) → build-prof/trace.json (Chrome trace-event JSON;
 #               load in ui.perfetto.dev or speedscope). Knob: RP_BENCH_TRACE_BLOCKS (default 64).
-#   unit      - the [profile] Catch2 cases of retroplug-engine-graph-test (spans, refusals), built here.
+#   unit      - the [profile] Catch2 cases of retroplug-engine-graph-test (spans, refusals, apu-render), built here.
 #   dhat      — valgrind DHAT allocation census → build-prof/valgrind/dhat.out.json (load in the viewer).
 #   callgrind — deterministic instruction counts → callgrind_annotate top-N.
 #   massif    — heap size over time → ms_print.

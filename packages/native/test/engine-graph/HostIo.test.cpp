@@ -913,8 +913,9 @@ TEST_CASE("the Game Boy's serialOut carries what its core captured, each byte at
           "[engine-graph][host-io]") {
     // mGB, with MI.OUT capture armed, has a byte clocked out of its serial port every eight frames (it holds the
     // port in external-clock receive). The port carries this block's bytes a byte a message, each at the frame its core
-    // completed it, here into a cart mirror whose sink records them. (buildGraph wires it into its lsdj-sync node as a
-    // feedback wire: MI.OUT's one block, and the times master sync's stop is timed from.)
+    // completed it, here into a cart mirror whose sink records them. (buildGraph wires it forward into its LSDj's
+    // decoder, rp.lsdj.serial-out, which reads it in the same block: MI.OUT's bytes, and the frames master sync sends
+    // its clocks at and times its stop from.)
     Engine e(kRate);
     SameBoySystem* const gb = serialOutToCart(e);
     std::vector<std::pair<std::uint32_t, std::uint8_t>> carried;

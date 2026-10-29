@@ -753,9 +753,10 @@ test("an adopt whose core does not build logs nothing about the system it never 
 });
 
 test("a left-out lsdj-sync arms no serial-out capture: not at a build, nor on an edit", () => {
-  // Capture is for the system's lsdj-sync node, which decodes what the core sends (MI.OUT drives, master sync listens).
-  // On an mGB cart whose project stored lsdj-sync, mgb wins serialIn and that node is not placed, so nothing would read
-  // the capture, and a driving core would clock the serial port under mgb's bytes.
+  // Capture is for the lsdj-sync role's decoder, rp.lsdj.serial-out, which decodes what the core sends (MI.OUT
+  // drives, master sync listens). On an mGB cart whose project stored lsdj-sync, mgb wins serialIn and the role's
+  // nodes are not placed, so nothing would read the capture, and a driving core would clock the serial port under
+  // mgb's bytes.
   const { be, sys } = project();
   be.seed("/roms/mgb.gb", lsdjRom("MGB"));
   const roles: RoleInstance[] = [

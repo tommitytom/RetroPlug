@@ -358,12 +358,12 @@ Each script type is a node type of the package `rp.script`, and each script node
 native shim the planner creates, activates and destroys like any node; its JS instance is made on the
 block thread when its plan is adopted, before that plan's first `process`, and released there at the
 start of a later block once the shim is destroyed (at once while no audio thread runs). The
-production bundle's seven are the MIDI routing, a protocol node for each role that has one (mGB, the N8
-FIFO, risa, smsggdj and LSDj sync) and the controller session: each takes its settings from the
-document, and its inputs and outputs are real wires from the host I/O nodes and to each system node's
-inputs. Native owns no role logic; in particular, **the drift-exact PPQ tick clock lives entirely in
-JS** (`walkTicks`). The nodes and the role model are specified in
-[04-roles-protocol-nodes.md](04-roles-protocol-nodes.md); the runtime under them in
+production bundle's eight are the MIDI routing, a protocol node for each role that has one (mGB, the N8
+FIFO, risa, smsggdj and LSDj sync), the controller session and LSDj's serial-out decoder: each takes its
+settings from the document, and its inputs and outputs are real wires from the host I/O nodes and to each
+system node's inputs, or, for the decoder, from its Game Boy's output. Native owns no role logic; in
+particular, **the drift-exact PPQ tick clock lives entirely in JS** (`walkTicks`). The nodes and the role
+model are specified in [04-roles-protocol-nodes.md](04-roles-protocol-nodes.md); the runtime under them in
 [02-native-host.md](02-native-host.md).
 
 The audio side runs on **both** threads over its lifetime (the control thread on the pull-path
@@ -373,17 +373,18 @@ different stack throws a spurious overflow. The control side does the same.
 
 `Engine::processBlock` runs the plan: `rp.host.midi-in` and `rp.host.controller-in` take what the
 hosts staged; the routing node fans the host MIDI out to the systems, the controller session reads the
-surface, and each system's protocol nodes read their routed MIDI (risa and smsggdj read only the transport; an LSDj's also reads its Game
-Boy's `serialOut` of last block over a feedback wire) and send that system node its inputs; the system nodes
-apply those inputs and run their cores; `rp.n8.cart-mirror` hands a physical N8 what the first NES was
-sent, and `rp.host.midi-out` / `controller-out` hand the host the script nodes' MIDI and control-surface
-output; the
-mixing nodes and `rp.host.audio-out` fill the host's buffers. Then
+surface, and each system's protocol nodes read their routed MIDI (risa and smsggdj read only the
+transport) and send that system node its inputs; the system nodes apply those inputs and run their cores;
+an LSDj's serial-out decoder reads what its Game Boy captured on its link port in that block and decodes
+it to host MIDI, each message at its byte's frame; `rp.n8.cart-mirror` hands a physical N8 what the first
+NES was sent, and `rp.host.midi-out` / `controller-out` hand the host the script nodes' MIDI (merged by
+frame) and control-surface output; the mixing nodes and `rp.host.audio-out` fill the host's buffers. Then
 `registry_.publishSystem(...)` runs for each system: the one place every driver funnels the block
 ([`Engine.cpp`](../packages/native/src/host/engine/Engine.cpp); the full order is in
 [02-native-host.md](02-native-host.md)). The host MIDI out (LSDj's MI.OUT and master sync, the
 controller's launches to a real Game Boy), through `rp.host.midi-out`, is drained after the block by the
-plugin (to the DAW) and the SDL standalone (to its MIDI out port).
+plugin (to the DAW, each message at its frame) and the SDL standalone (to its MIDI out port, at once,
+without the frame).
 
 ---
 

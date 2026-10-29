@@ -186,8 +186,9 @@ script nodes** (Phase B3a,
 [docs/modular-graph-phase-b3b-design.md](../docs/modular-graph-phase-b3b-design.md)): a TS node per role
 (`rp.mgb.midi`, `rp.lsdj.sync`, ...), the MIDI routing and the controller session, run by the script host
 every Engine embeds, each with its settings in the published graph, its inputs and outputs wires from the
-host I/O nodes and to its system node's inputs, and each Game Boy's `serialOut` coming back into its LSDj
-node on a feedback wire ([04-roles-protocol-nodes.md](04-roles-protocol-nodes.md)). What is left is
+host I/O nodes and to its system node's inputs, and each LSDj's Game Boy's `serialOut` going forward into
+its serial-out decoder, `rp.lsdj.serial-out`, placed after the systems
+([04-roles-protocol-nodes.md](04-roles-protocol-nodes.md)). What is left is
 [07-remaining-work.md](07-remaining-work.md) section 5.
 
 - Code: `packages/native/src/graph/` (C++), `packages/native/src/host/graph/` (the engine's nodes),

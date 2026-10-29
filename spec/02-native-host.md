@@ -251,16 +251,15 @@ staging). Then, in order:
    `controllerOut_` cleared for the plan's output nodes to fill.
 3. `GraphHost::run(frames, transport, outputs, n)`: silence every host output, then run the plan, in
    the planner's order (topological, ties broken by document order):
-   1. **The host inputs and the script nodes.** `rp.host.midi-in` and `rp.host.controller-in` take what
-      the hosts staged (the host MIDI stable-sorted by frame). Then the script nodes, run by the
-      [script host](../packages/native/src/host/script/ScriptHost.hpp)
+   1. **The host inputs and the script nodes that feed the systems.** `rp.host.midi-in` and
+      `rp.host.controller-in` take what the hosts staged (the host MIDI stable-sorted by frame). Then the
+      script nodes, run by the [script host](../packages/native/src/host/script/ScriptHost.hpp)
       ([04-roles-protocol-nodes.md](04-roles-protocol-nodes.md)): the MIDI routing (`rp.midi.route`) fans
       the host MIDI out to the systems; the controller session reads the control surface; and each
       system's protocol nodes read what they need (mGB, N8 and LSDj their routed MIDI; risa and smsggdj only the
-      transport) at the **block-start** `ppq_` and, for
-      an LSDj, its Game Boy's `serialOut` of last block (a feedback wire), and send that system node's
-      `serialIn`, `midi`, `bytes` and `buttons` inputs, their host MIDI out to `rp.host.midi-out` and the
-      session's control-surface out to `rp.host.controller-out`.
+      transport) at the **block-start** `ppq_`, and send that system node's `serialIn`, `midi`, `bytes` and
+      `buttons` inputs, the session its host MIDI out to `rp.host.midi-out` and its control-surface out to
+      `rp.host.controller-out`.
    2. **The system nodes** ([SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp):
       `rp.sameboy.gb`, `rp.mesen.nes`, `rp.mesen.gba`, `rp.mesen.sms`), each a `SystemNode<T>` over a
       core's `prepareForBlock` / `stepIfBelowTarget` / `finishBlock`. Each applies its inputs first
@@ -271,18 +270,23 @@ staging). Then, in order:
       adds into them) and sets the lane count from which of its outputs are connected
       ([10-multichannel-audio-out.md](10-multichannel-audio-out.md) section 1); a Game Boy then writes
       its `serialOut`.
-   3. **The cart mirror and the host outputs.** `rp.n8.cart-mirror`, wired from the first NES in slot order,
+   3. **The script nodes that read the systems.** An LSDj's serial-out decoder (`rp.lsdj.serial-out`)
+      reads its Game Boy's `serialOut` of this block, over a forward wire, and sends its host MIDI out to
+      `rp.host.midi-out`, each message at its byte's frame.
+   4. **The cart mirror and the host outputs.** `rp.n8.cart-mirror`, wired from the first NES in slot order,
       hands what that system was sent to `coreByteSink_` for a physical N8 (a message staged straight
       at it, `StageSystemMidi`, reaches the sink too, at drain); `rp.host.midi-out` fills
-      `midiOut_`, frame-sorted, which the plugin drains to the DAW after the block (the SDL standalone to its MIDI out
-      port); `rp.host.controller-out` appends
-      to `controllerOut_`, which the SDL standalone drains to the Launchpad link.
-   4. **The mixing nodes**, `rp.core.split` and `rp.core.add`: the routing, as wiring (below).
-   5. **`rp.host.audio-out`**, which copies its buses into the host's buffers (it reaches them
+      `midiOut_`, its inputs merged by frame, which the plugin drains to the DAW after the block, each
+      message at its frame (the SDL standalone to its MIDI out port at once, without the frame);
+      `rp.host.controller-out` appends to `controllerOut_`, which the SDL standalone drains to the Launchpad
+      link.
+   5. **The mixing nodes**, `rp.core.split` and `rp.core.add`: the routing, as wiring (below).
+   6. **`rp.host.audio-out`**, which copies its buses into the host's buffers (it reaches them
       through `rp_host.get_interface("rp.host.audio-buffers/1")`).
 4. `ScriptHost::endBlock()`: the promise jobs the block's script nodes queued, at most 256 (the rest
    wait for the next block's end), then, in a profile build, the allocation window's block counts; a
-   profile build closes the block's `apu-render` span just before ([08-profiling.md](08-profiling.md)).
+   profile build closes the block's `apu-render` span, the plan's whole run with the script nodes' spans
+   inside it, just before ([08-profiling.md](08-profiling.md)).
    What was staged and no node of the plan took (a plan with no `rp.host.midi-in` or `controller-in`)
    is dropped, not carried into the next block.
 5. `registry_.publishSystem(...)` for each system of the plan, in slot order: copy its
@@ -314,7 +318,7 @@ it:
 | Node | Ports | Does |
 |---|---|---|
 | `rp.host.midi-in` | out `midi` (events: 2048 messages, 64 KiB) | takes the staged host MIDI, stable-sorted by frame without allocating: the plugin stages two runs in frame order (a block's DAW events, then each moved automation slot's CC at frame 0), which it merges onto its queue, a tie to the earlier run; more runs are sorted in place first, by insertion |
-| `rp.host.midi-out` | in `in1` to `inN` (events), an input per entry of its settings `{"systems": [<id>, ...]}`, at most 128 | each input's messages land in `Engine::midiOut` tagged with that entry's system, input by input, each in queue order, with the list kept frame-sorted across inputs (each message at the later of its frame and the last handed out in the block); two entries may name one system, and an empty list is a node with no inputs, which sends nothing. A settings change that keeps the inputs is a swap, one that moves them a rebuild |
+| `rp.host.midi-out` | in `in1` to `inN` (events), an input per entry of its settings `{"systems": [<id>, ...]}`, at most 128 | each input's messages land in `Engine::midiOut` tagged with that entry's system, the inputs merged by frame: each step hands out the head with the earliest frame, the lower input on a tie, so with every frame 0 it is the inputs in turn, each in queue order; each message goes at the later of its frame and the last handed out in the block, a guard that keeps the list frame-sorted whatever an input's queue holds (a node on the C ABI writes its own). It allocates nothing, a head index per input, and costs messages times inputs. Two entries may name one system, and an empty list is a node with no inputs, which sends nothing. A settings change that keeps the inputs is a swap, one that moves them a rebuild |
 | `rp.host.controller-in` | out `midi` (events: 1024 messages, 16 KiB), out `connected` (control) | takes the staged control-surface traffic, all at frame 0; `connected` is 1 while a surface is attached, from frame 0 of the block (a change at frame 0 on the block the flag flips, since a control output's start is the last block's end) |
 | `rp.host.controller-out` | in `midi` | appends each message to `Engine::controllerOut` |
 | `rp.n8.cart-mirror` | in `midi` (events), in `bytes` | settings `{"system": <id>}`; hands the core-byte sink every MIDI message, then every byte message with its flush flag, in queue order, skipping empty ones; nothing while no sink is set |
@@ -352,11 +356,12 @@ completed past the block's end at its last frame (the core clears its log at its
 master), and `drive` also clocks a transfer waiting on an external clock, a bit an audio frame, taking a
 byte every 8 frames while the Game Boy holds the port for one, idle bytes included (the Arduinoboy's part
 in MI.OUT). Only MI.OUT drives: a stopped LSDj master waits on an external clock for another master, and
-clocked, it turns slave and ignores START. The port's capacity is
-fixed at 8256 messages and 8256 bytes, a byte every 8 frames over the largest block a host can run
-(65536 frames) with slack, so the feedback wire to its `rp.lsdj.sync` node keeps its front across every swap; a CGB
-clocking the port itself on its fast clock can outrun it in a very long block, and what does not fit is
-dropped and counted.
+clocked, it turns slave and ignores START. An LSDj's serial-out decoder, `rp.lsdj.serial-out`, placed
+after the systems, reads the port over a forward wire in the same block. The port's capacity is fixed at
+8256 messages and 8256 bytes, a byte every 8 frames over the largest block a host can run (65536 frames)
+with slack, rather than sized from the plan's block size, so a feedback wire from it would keep its front
+across every swap; a CGB clocking the port itself on its fast clock can outrun it in a very long block, and
+what does not fit is dropped and counted.
 
 An events or bytes output may declare its queue's capacity (`rp::bytes_out::sized<rp::capacity{...}>` in
 C++, `events.out(capacity)` / `bytes.out(capacity)` in TS), by default 256 messages and 4096 bytes, at
@@ -409,31 +414,33 @@ Structure arrives as a graph document TS builds
 The document `buildGraph` writes:
 
 - **Order.** `rp.host.midi-in`, `rp.host.controller-in`, then the script nodes: the MIDI routing (when the
-  model has a routing mode), the controller session (when one is enabled) and each system's protocol
-  nodes, in slot order and then role order; then the unlinked systems by slot, then the link groups in
-  order of first appearance (members by slot, one `link` wire chaining each member to the next), then
-  `rp.n8.cart-mirror` when there is a NES, `rp.host.midi-out` and `rp.host.controller-out`, then the
-  mixing nodes, then `rp.host.audio-out`. A protocol node runs before its system because the system reads
-  its outputs (a Game Boy's `serialOut` reaches its `rp.lsdj.sync` over a feedback wire, which orders
-  nothing), and the planner breaks ties by document order (`Planner.cpp` `order()`), so this is also the
-  order the plan runs in: every script node ahead of every system, which a profile build's `apu-render`
-  span relies on. Node ids are `midi-in`, `controller-in`, `routing`, `controller`, `cart`, `midi-out`,
-  `controller-out`, `out`, `sys-<id>`, a system's protocol nodes `sys-<id>/<role-kind>`, and names derived
-  from a system id (`split-<id>`, `stem-<id>-<k>`) or a host channel (`lane-<c>`), never from position, so
-  a system and its nodes keep their instances across edits. Link groups are Game Boys only, bucketed by
-  nonzero link-group id in slot order, a group of fewer than two dissolved.
+  model has a routing mode), the controller session (when one is enabled) and each system's protocol nodes,
+  in slot order and then role order; then the unlinked systems by slot, then the link groups in order of
+  first appearance (members by slot, one `link` wire chaining each member to the next), then the script
+  nodes that read a system, in slot order (an LSDj's `rp.lsdj.serial-out`, on a Game Boy), then
+  `rp.n8.cart-mirror` when there is a NES, `rp.host.midi-out` and `rp.host.controller-out`, then the mixing
+  nodes, then `rp.host.audio-out`. A protocol node runs before its system because the system reads its
+  outputs, and LSDj's decoder after it because it reads the system's `serialOut` in the same block: a script
+  node reads only nodes placed before it (or a feedback wire, which orders nothing, and which no document
+  `buildGraph` builds holds), and the planner breaks ties by document order (`Planner.cpp` `order()`), so
+  this is also the order the plan runs in. Node ids are `midi-in`, `controller-in`, `routing`, `controller`,
+  `cart`, `midi-out`, `controller-out`, `out`, `sys-<id>`, a system's protocol nodes `sys-<id>/<role-kind>`
+  (one placed after its system `sys-<id>/<role-kind>/out`), and names derived from a system id
+  (`split-<id>`, `stem-<id>-<k>`) or a host channel (`lane-<c>`), never from position, so a system and its
+  nodes keep their instances across edits. Link groups are Game Boys only, bucketed by nonzero link-group id
+  in slot order, a group of fewer than two dissolved.
 - **The script nodes** ([04-roles-protocol-nodes.md](04-roles-protocol-nodes.md)). `routing`
   (`rp.midi.route`, settings the routing mode and the system ids in slot order, which positional MIDI
   routing reads) takes `midi-in.midi` and has an output per system, `sys-<id>`, into each of that system's
   protocol nodes that reads MIDI. `controller` (`rp.controller.session`) takes `controller-in.midi` and
   `.connected`, its `controllerOut` to `controller-out`, its `launches` into the target system's
-  `rp.lsdj.sync` when its target is a system. Each protocol node's outputs go to its system node's inputs
-  of the same name; each Game Boy's `serialOut` goes back into its `rp.lsdj.sync` as a feedback wire (one
-  block of latency on the serial-out bytes MI.OUT and master sync decode); the first NES's protocol nodes'
-  `midi` and `bytes` go to the cart mirror as well; and `midi-out` takes the controller's `midiOut` and
-  then each `rp.lsdj.sync`'s, in slot order, each input under its system. Every script node reshapes, so a
-  structure change keeps each surviving instance (the routing node's ports follow the systems) and its
-  wires stay bound.
+  `rp.lsdj.sync` when its target is a system. Each protocol node's outputs go to its system node's inputs of
+  the same name; each LSDj's Game Boy's `serialOut` goes forward into its `rp.lsdj.serial-out`, which reads
+  the bytes MI.OUT and master sync decode in the block the core captured them; the first NES's protocol
+  nodes' `midi` and `bytes` go to the cart mirror as well; and `midi-out` takes the controller's `midiOut`
+  and then each `rp.lsdj.serial-out`'s, in slot order, each input under its system, in the order the kernel
+  emitted. Every script node reshapes, so a structure change keeps each surviving instance (the routing
+  node's ports follow the systems) and its wires stay bound.
 - **Routing as wiring.** For each host channel it lists the contributions in the order they sum:
   unlinked systems by slot, then the link groups by first appearance, L before R within a system. One
   contribution is wired straight to `audio-out`; several go through one mono `rp.core.add` in that order

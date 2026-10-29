@@ -256,13 +256,15 @@ systems ([modular-graph-phase-b3b-design.md](../docs/modular-graph-phase-b3b-des
 - `controller` (`rp.controller.session`) when a controller is enabled, its target resolved and its app
   config already parsed by the publisher, fed from `controller-in`;
 - each system's protocol nodes (`sys-<id>/<role-kind>`, settings the role's parsed config), fed its routed
-  MIDI, each output wired to that system node's input of the same name, and each Game Boy's `serialOut`
-  back into its `rp.lsdj.sync` as a feedback wire, so MI.OUT reaches it a block after the core sent it;
-  the MI.MAP controller's cart has its `rp.lsdj.sync` forced to the mode the app needs;
+  MIDI, each output wired to that system node's input of the same name; the MI.MAP controller's cart has
+  its `lsdj-sync` nodes forced to the mode the app needs;
+- after the systems, each LSDj's serial-out decoder (`sys-<id>/lsdj-sync/out`, `rp.lsdj.serial-out`, on a
+  Game Boy, with its `rp.lsdj.sync`'s settings), fed that Game Boy's `serialOut` over a forward wire, so
+  MI.OUT and master sync reach it in the block the core captured them;
 - `cart` (`rp.n8.cart-mirror`, settings `{ system }`), fed what the first NES's protocol nodes send its
   `midi` and `bytes`, when there is a NES;
 - `midi-out` (`rp.host.midi-out`, settings `{ systems }`), its inputs the controller's `midiOut` and then
-  each `rp.lsdj.sync`'s in slot order, and `controller-out` (`rp.host.controller-out`), fed from the
+  each `rp.lsdj.serial-out`'s in slot order, and `controller-out` (`rp.host.controller-out`), fed from the
   controller's `controllerOut`.
 
 [`EngineGraph`](../packages/retroplug/src/engineGraph.ts) is one control-plane context's publisher:

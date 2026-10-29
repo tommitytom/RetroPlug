@@ -543,7 +543,7 @@ export class SystemsStore {
     this.entries = replaceById(this.entries, id, { ...e, roles, built });
     // A feature role stays pure TS, EXCEPT lsdj-sync's serial-out capture mode, set on any change to an lsdj-sync the
     // pipeline places: drive for MI.OUT, listen for master sync, none otherwise (the decoders themselves run in the
-    // system's lsdj-sync node, which the publish below hands the new mode).
+    // role's rp.lsdj.serial-out node, after the Game Boy, which the publish below hands the new mode).
     if (roleKind === "lsdj-sync") this.syncSerialOutCapture(id);
     // A role with a protocol node is placed with its config as that node's settings, so its edit publishes; an edit
     // the document does not carry (a model or palette, an asset override) leaves it as it was.
@@ -1029,8 +1029,8 @@ export class SystemsStore {
 // How a system with these roles captures its serial out: both LSDj-to-host MIDI-out modes need it. MidiOut
 // (SYNC=MI.OUT) drives, playing the Arduinoboy that clocks LSDj as the serial slave; MasterSync (SYNC=LSDJ) only
 // listens to the clock LSDj sends as the master. Null for no capture, which is also what an lsdj-sync the pipeline
-// leaves out gets, whatever its mode: what a capture delivers is decoded by the system's lsdj-sync node, which is not
-// running, and a driving core would clock the serial port under the bytes the placed role writes.
+// leaves out gets, whatever its mode: what a capture delivers is decoded by the role's rp.lsdj.serial-out node, which
+// is not placed, and a driving core would clock the serial port under the bytes the placed role writes.
 function serialOutCaptureFor(roles: RoleInstance[]): SerialOutCapture | null {
   const mode = (placedRole(roles, "lsdj-sync")?.config as { mode?: LsdjSyncMode } | undefined)?.mode;
   if (mode === LsdjSyncMode.MidiOut) return "drive";

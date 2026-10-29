@@ -429,8 +429,8 @@ export interface AudioDriver {
    *  lands when that block renders at least 1024 frames (a render's first block is the lesser of 1024 frames and
    *  the whole render). */
   stageMidiIn(bytes: Uint8Array | number[], frame?: number): boolean;
-  /** Drain the host MIDI out (an LSDj sync node's MI.OUT or master-sync decoder, a controller driving a real Game
-   *  Boy) since the last drain (each entry is one message). */
+  /** Drain the host MIDI out (LSDj's serial-out decoder in MI.OUT or master sync, a controller driving a real Game
+   *  Boy) since the last drain (each entry is one message, at its frame in the block it went out in). */
   drainMidiOut(): { system: number; frame: number; data: Uint8Array }[];
   /** Messages the engine's graph has dropped so far, a full queue on one of its wires each (cumulative, never
    *  reset): what a test holds to zero to know nothing it staged was lost on the way to a core. */

@@ -909,9 +909,10 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
     a.svc.engine.processBlock(static_cast<std::uint32_t>(frames), a.audioPtrs.data(), static_cast<std::size_t>(N));
 
     // Host MIDI out (LSDj MI.OUT / Master Sync, the controller's launches) → the RtMidi out port, then clear
-    // the block's queue. Mirrors PluginDSP::run's writeMidiEvent drain (there it goes to the DAW). No length
-    // cap: MidiIo sends whatever it is given, and a control surface's LED traffic is sysex, so capping at 3
-    // bytes would silently drop exactly the messages that matter.
+    // the block's queue. Mirrors PluginDSP::run's writeMidiEvent drain (there it goes to the DAW), but at once,
+    // each message's frame dropped: RtMidi's out takes no timestamp, so a message goes when its block is rendered
+    // (spec/07-remaining-work.md). No length cap: MidiIo sends whatever it is given, and a control surface's LED
+    // traffic is sysex, so capping at 3 bytes would silently drop exactly the messages that matter.
     for (const auto& mo : a.svc.engine.midiOut())
         if (!mo.data.empty()) a.midi.send(mo.data.data(), mo.data.size());
     a.svc.engine.clearMidiOut();

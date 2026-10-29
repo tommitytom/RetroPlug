@@ -89,8 +89,8 @@ public:
     // false for any other string. Control-plane, via the invoker's config path (ConfigField::SerialOutCapture):
     // the TS store calls it when a system's lsdj-sync mode changes.
     bool            setSerialOutCapture(std::uint32_t id, std::optional<std::string> mode);
-    // Drain the host MIDI out (the LSDj sync nodes' decoders), accumulated across renderAudio blocks
-    // since the last drain. For headless tests; the plugin drains Engine::midiOut() to the DAW directly.
+    // Drain the host MIDI out (LSDj's serial-out decoders, a controller's launches), accumulated across renderAudio
+    // blocks since the last drain. For headless tests; the plugin drains Engine::midiOut() to the DAW directly.
     std::vector<RpcMidiOut> drainMidiOut();
     // Render a scripted run of host blocks the way PluginDSP::run renders each one: stage the block's MIDI
     // at its frames, drain the command ring, apply its transport, processBlock(frames, lanes, outputs),

@@ -1,7 +1,6 @@
 # LSDj's serial out as its own node: host MIDI at each byte's frame
 
-**Date:** 2026-10-28 · **Branch:** `feature/modularize` · **Status:** designed (prototype next, then a plan, as for
-B3b and the master-sync fix)
+**Date:** 2026-10-28 · **Branch:** `feature/modularize` · **Status:** built: section 10's five commits
 
 LSDj sends host MIDI two ways, both decoded from what it clocks out of its link port: MI.OUT (lsdj-sync mode
 `midiOut`, Arduinoboy's Mode_LSDJ_Midiout: notes, CCs, program changes and realtime) and master sync (mode
@@ -204,3 +203,44 @@ Accepted on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`, plus the su
 - **The capture mode as a Game Boy node setting**, Phase C as spec/07 says: a mode switch still publishes the
   document and sets the capture through `ConfigField::SerialOutCapture`, so for a block the two can disagree, as
   the master-sync design's section 10 accepted.
+
+## 12. Found while building
+
+- **No node of RetroPlug's can hand the merge an unsorted input, so the guard needed one of its own.** Section 8 had
+  a case pin the guard. Every node pushes through `rp::graph::pushMessage`, which raises a frame pushed behind a
+  later one, and so does the test feed: in the old case whose input went back in frame, its queue had raised that
+  frame before `rp.host.midi-out` saw it. [HostIo.test.cpp](../packages/native/test/engine-graph/HostIo.test.cpp)
+  pins the guard with a test-only node, `rp.test.raw-feed`, that writes its queue's items directly and out of order,
+  as a node on the C ABI may.
+- **`apu-render` is recorded after the spans it holds.** A span is stored as it closes, so a block's `apu-render`,
+  opened at the plan's start, follows its script nodes' process spans in the trace. The trace-event JSON gives each
+  span its start and length, so nothing that reads it depends on the order.
+- **LSDj's first clock of a run comes early.** Section 8's spacing check has to allow it. In every split and at both
+  rates a run's clock gaps follow LSDj's own repeating pattern of six, 846 to 874 frames at 44.1 kHz (921 to 951 at
+  48), within 1.8% of the tempo's period, while its first tick after START comes at 0.78 of a period (673 frames at
+  44.1 kHz). [lsdj-mastersync.test.ts](../packages/retroplug/test-native/lsdj-mastersync.test.ts) holds the gaps
+  within 3% of the period, which still refuses a clock moved to its block's start (a 1024-frame block is 19% past
+  the period), and a run's first gap within 30%. The split moves the whole stream by up to 32 frames and its gaps
+  not at all, as section 8 said of the core.
+- **No re-recorded case gained a message.** Section 7 expected each case's last block, decoded at last, to add what
+  it held. In all twelve the new MIDI out is the old one's messages in the same order with nothing after them, each
+  a block earlier than before, but for one stop in each 1-frame master-sync case, which stays in its block; a
+  checker over the old and new baselines and their dumps found every lane, SRAM and work RAM of the three groups,
+  and every other case's whole digest, unchanged.
+- **A hand-edited `lsdj-sync` on another system loses its host MIDI input.** The decoder is placed only on a Game
+  Boy, as the feedback wire was, but `rp.host.midi-out`'s input for the system had been `rp.lsdj.sync`'s, placed on
+  any system. Such a system (no ROM provider attaches `lsdj-sync` to anything but a Game Boy) has its `rp.lsdj.sync`
+  placed and no decoder, so `rp.host.midi-out` has no input for it, where it had one that sent nothing;
+  [build-graph.test.ts](../packages/retroplug/test/graph/build-graph.test.ts) pins it, and no golden holds one.
+- **The controller's order case checks the merge.**
+  [ProtocolNodes.test.cpp](../packages/native/test/engine-graph/ProtocolNodes.test.cpp)'s case for a controller's
+  launch beside two LSDjs' host MIDI held the system tags in input order; under the merge the host's list is ordered
+  by frame and then input, the launch first at frame 0, so the case checks that. Its digest re-recorded with the
+  LSDj modes' and the controller session's, every count unchanged.
+- **The decoder reads nothing outside its two modes.** Section 3 said its input is empty there; it does not read it
+  at all, a test handing it one that throws, so its call costs the mode check. In `ScriptBench`'s MIDI-sync
+  structure, whose stand-in clocks the idle line into it, it reads none of it.
+- **A spec's `out` is a string.** [protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts)'s `out` names
+  a `PROTOCOL_NODES` key, but typing it as one would make the `as const` table refer to its own keys, so `outNodeOf`
+  casts it and [protocol-nodes.test.ts](../packages/retroplug/test/graph/protocol-nodes.test.ts) holds every `out`
+  to a key whose spec writes no system input.

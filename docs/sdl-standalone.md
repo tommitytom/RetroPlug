@@ -55,7 +55,10 @@ Design:
 ### P2 — MIDI output — ✅ DONE
 `audioCb` drains `engine.midiOut()` to the `RtMidiOut` virtual port each block (mirrors
 [PluginDSP.cpp:178-186](../packages/native/plugin/PluginDSP.cpp#L178)) and mirrors it to the selected
-hardware output port, if any. Hardware-verified: LSDj Master-Sync clock (`0xF8`) reaches `aseqdump`.
+hardware output port, if any. It sends each message at once, its frame in the block dropped (RtMidi's out
+takes no timestamp), where the plugin hands the DAW each at its frame; scheduling it is the standalone's own
+work ([07-remaining-work.md](../spec/07-remaining-work.md)). Hardware-verified: LSDj Master-Sync clock
+(`0xF8`) reaches `aseqdump`.
 `RETROPLUG_MIDI_LOG` dumps in + out bytes.
 
 ### MIDI device selection — ✅ DONE
