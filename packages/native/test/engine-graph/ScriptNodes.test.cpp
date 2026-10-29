@@ -801,11 +801,12 @@ rp.register([rp.defineNode({
 }
 
 // A promise chain that queues another link every time, started in its first block, and a reaction that throws, which
-// rejects its promise rather than failing its job; and, in the same pack, a node that does nothing but faults on any
-// throw it is charged, fed by the chain's node so it runs after it.
+// rejects its promise rather than failing its job, the strict chain under faultOnThrow; and, in the same pack, a node
+// that does nothing, under faultOnThrow, so it faults on any throw charged to it (a cut short among them), fed by the
+// chain's node so it runs after it.
 const char* const kChain = R"JS(
-rp.register([rp.defineNode({
-  id: "rp.toy.chain",
+const chain = (id, extra) => rp.defineNode({
+  id, ...extra,
   ports: { links: rp.control.out(), out: rp.events.out() },
   create: () => {
     let links = 0, started = false;
@@ -817,7 +818,8 @@ rp.register([rp.defineNode({
       },
     };
   },
-}), rp.defineNode({
+});
+rp.register([chain("rp.toy.chain", {}), chain("rp.toy.strict-chain", { faultOnThrow: true }), rp.defineNode({
   id: "rp.toy.strict-mate",
   faultOnThrow: true,
   ports: { in: rp.events.in(), out: rp.events.out() },
@@ -854,6 +856,19 @@ TEST_CASE("an endless promise chain is cut short after a checkpoint's bound, cha
                                         std::to_string(ScriptHost::kJobsPerCheckpoint) + " a checkpoint runs") == 0);
 }
 
+TEST_CASE("a faultOnThrow node whose promise chain is cut short faults at once, as on every other throw of its",
+          "[script][jobs][strict]") {
+    ScriptRig rig(kChain);
+    REQUIRE(rig.set(doc(node("c", "rp.toy.strict-chain") + "," + node("p", "rp.test.probe"), wire("c.links", "p.control"))).ok);
+    rig.run();
+    CHECK(rig.scripts.jobsCutShort() == 1);
+    CHECK(rig.scripts.throwCount() == 1);
+    CHECK(rig.host->isFaulted("c"));  // at its first cut short, in the block whose checkpoint cut it
+    rig.run(64, 2);                   // bypassed: no call, so no checkpoint, and the chain waits in its pack
+    CHECK(rig.scripts.jobsCutShort() == 1);
+    CHECK(rig.scripts.throwCount() == 1);
+}
+
 TEST_CASE("a node's leftover promise chain is charged to it at a pack-mate's checkpoint, never to the pack-mate, and to no "
           "node once it is removed",
           "[script][jobs][pack-mate]") {
@@ -862,8 +877,8 @@ TEST_CASE("a node's leftover promise chain is charged to it at a pack-mate's che
     REQUIRE(rig.set(doc(node("c", "rp.toy.chain") + "," + mate, wire("c.out", "m.in") + "," + wire("m.out", "pm.events"))).ok);
     rig.run();
     // The chain's own checkpoint cut it short once; the strict mate's, after it, ran 256 more charged to the chain, and
-    // cut it short a second time in a row: the chain faults at its next block, and the mate, which faults on any throw
-    // it is charged, runs on.
+    // cut it short a second time in a row: the chain faults at its next block, and the mate, which would fault on any
+    // throw charged to it, runs on, charged none.
     CHECK(rig.scripts.jobsCutShort() == 2);
     CHECK(rig.scripts.throwCount() == 2);
     CHECK_FALSE(rig.host->isFaulted("c"));

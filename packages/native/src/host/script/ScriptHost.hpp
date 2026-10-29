@@ -196,18 +196,19 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // call, inside its deadline, at most kJobsPerCheckpoint of them, and are charged to that node: a job that fails (a
 // queueMicrotask callback that threw, or JS out of memory) is its throw, and faults it under faultOnThrow; one the
 // deadline stops counts as its call stopped (the rule above); and a chain still pending after the bound is cut short,
-// its throw, the second cut short in a row faulting it, as two expiries do. QuickJS cannot drop a pending job, so a
-// chain cut short stays queued and its pack remembers whose it is until the queue empties: its later checkpoints (the
-// next calls into any of its nodes) run the rest charged to that node, never to a pack-mate. What is queued where no
-// call into a node ran, by a release freeing a node's JS or by a quiescent collection finding a FinalizationRegistry
-// callback's target, runs there and then, charged to that remembered owner when the pack has one, else to no node, as
-// is what a released owner leaves (a throw counted, faulting no one); what a reshape's freeing queues runs at a
-// checkpoint after the commit, charged to its node. A fault charged to the node whose process this is returns RP_FAULT;
-// one after a hook, or charged to another node of the pack whose leftovers ran, faults that node at its next block. A
-// promise reaction's own throw only rejects its promise, which is the node's to handle. A load's own jobs run as it
-// loads, at most kJobsPerCheckpoint each stretch of it (its top level in each runtime, each descriptor, what a loaded
-// pack's collection queues), and a load that leaves any is refused: they would run at the pack's first checkpoint,
-// charged to whichever of its nodes' calls came first.
+// its throw, which faults it at once under faultOnThrow and otherwise on the second cut short in a row, as two
+// expiries do. QuickJS cannot drop a pending job, so a chain cut short stays queued and its pack remembers whose it
+// is until the queue empties: its later checkpoints (the next calls into any of its nodes) run the rest charged to
+// that node, never to a pack-mate. What is queued where no call into a node ran, by a release freeing a node's JS or
+// by a quiescent collection finding a FinalizationRegistry callback's target, runs there and then, charged to that
+// remembered owner when the pack has one, else to no node, as is what a released owner leaves (a throw counted,
+// faulting no one); what a reshape's freeing queues runs at a checkpoint after the commit, charged to its node. A
+// fault charged to the node whose process this is returns RP_FAULT; one after a hook, or charged to another node of
+// the pack whose leftovers ran, faults that node at its next block. A promise reaction's own throw only rejects its
+// promise, which is the node's to handle. A load's own jobs run as it loads, at most kJobsPerCheckpoint each stretch
+// of it (its top level in each runtime, each descriptor, what a loaded pack's collection queues), and a load that
+// leaves any is refused: they would run at the pack's first checkpoint, charged to whichever of its nodes' calls came
+// first.
 //
 // Each pack's audio runtime is held to a memory limit (kDefaultMemoryLimit, unless its load says otherwise) by the
 // host's allocator, which refuses an allocation past it, so QuickJS throws out of memory in the call that asked, and

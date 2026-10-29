@@ -1081,7 +1081,8 @@ struct ScriptHost::Glue {
     struct Settled {
         bool stopped = false;  // the deadline stopped one of its jobs: its call counts as stopped (expiryFaults)
         bool fault = false;    // it faults now: an allocation its pack refused in its call or its jobs, a job of its
-                               //   that failed under faultOnThrow, or its jobs cut short a second time in a row
+                               //   that failed under faultOnThrow, or its jobs cut short (at once under faultOnThrow,
+                               //   else a second time in a row)
     };
 
     // Whether `pack` refused an allocation since this was last asked; the note is cleared.
@@ -1123,8 +1124,9 @@ struct ScriptHost::Glue {
     // charged to having been released). A job that fails (a queueMicrotask callback that threw, or JS out of memory) is
     // the owner's throw, and faults a faultOnThrow owner; one the deadline stops ends the run and counts as the owner's
     // call stopped; an allocation the pack refused in one faults the owner (and is its throw when JS caught it). Jobs
-    // still pending after the bound are cut short: counted (jobsCutShort), the owner's throw, and its second cut short
-    // in a row faults it. QuickJS cannot drop a job, so the pack remembers the owner while any are pending, and its
+    // still pending after the bound are cut short: counted (jobsCutShort), and the owner's throw, which faults a
+    // faultOnThrow owner at once, as its every throw does, and any other on its second cut short in a row, as two
+    // expiries do. QuickJS cannot drop a job, so the pack remembers the owner while any are pending, and its
     // later checkpoints charge them to the same node, never to a pack-mate; one that empties the queue forgets the
     // owner and its count. A promise reaction's own throw only rejects its promise: the job runs to its end.
     static Settled chargeJobs(ScriptHost& h, Pack& pack, Instance* owner) {
@@ -1156,7 +1158,7 @@ struct ScriptHost::Glue {
         if (owner) {
             recordCutShort(h, type);
             if (owner->cutShorts < 2) ++owner->cutShorts;
-            if (owner->cutShorts >= 2) charged.fault = true;
+            if (owner->cutShorts >= 2 || owner->type->faultOnThrow) charged.fault = true;
         }
         return charged;
     }

@@ -160,10 +160,11 @@ export function startValue(stream: ControlStream): number {
 // - Promise reactions and queueMicrotask callbacks run right after the call that queued them (create, onSettings,
 //   portsChanged, activate or process), before the next node's, inside that call's deadline, and are charged to the
 //   node: at most 256 after a call, the rest of a chain that queues another every time left for the next call into
-//   a node of its pack and still charged to it; a node whose jobs are cut short twice in a row faults. Every Block
-//   method throws inside one, as in a hook: a block exists only during its node's process call. A reaction's own
-//   throw only rejects its promise and is not counted; a queueMicrotask callback's is counted as the node's throw,
-//   and faults a faultOnThrow node, and one the deadline stops counts as the node's call stopped.
+//   a node of its pack and still charged to it; a node whose jobs are cut short faults at once under faultOnThrow, and
+//   otherwise on the second cut short in a row. Every Block method throws inside one, as in a hook: a block exists
+//   only during its node's process call. A reaction's own throw only rejects its promise and is not counted; a
+//   queueMicrotask callback's is counted as the node's throw, and faults a faultOnThrow node, and one the deadline
+//   stops counts as the node's call stopped.
 //
 // What a block hands out (the arrays, the views, the message objects) is valid only during the process call it is
 // handed to: the same objects are refilled for the next block, or made again, so read them through the block every

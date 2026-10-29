@@ -739,7 +739,8 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   out), at most 256 (`kJobsPerCheckpoint`), inside the call's deadline, and are charged to that node: a
   job that fails (a `queueMicrotask` callback that threw, or JS out of memory) is its throw, and faults
   it under `faultOnThrow`; one the deadline stops counts as its call stopped; and a chain still pending
-  after the bound is cut short, its throw (`jobsCutShort` counts it), the second in a row faulting it.
+  after the bound is cut short, its throw (`jobsCutShort` counts it), which faults a `faultOnThrow` node
+  at once and any other on the second in a row.
   QuickJS cannot drop a pending job, so a chain cut short stays queued, and its pack remembers whose it
   is until the queue empties: its later checkpoints (the next calls into any of the pack's nodes) run the
   rest charged to that node, never to a pack-mate, and once that node is released the rest is no node's.

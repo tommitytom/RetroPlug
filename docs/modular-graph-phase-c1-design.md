@@ -231,7 +231,7 @@ audio outputs are copied out. No built-in node uses a promise, so parity cannot 
 |---|---|---|
 | A job that fails (a `queueMicrotask` callback that threw, or ran out of memory) | a throw charged to no node, never faulting one | the node's throw: counted, and a `faultOnThrow` node faults |
 | The deadline stops a job | stops the whole block's job run, charged to no node | counts as the node's call being stopped: it faults on the second in a row, or at once under `faultOnThrow` |
-| A chain that does not settle in 256 jobs | the rest wait for the next block's end (`jobsCutShort`) | the node's throw (and `jobsCutShort`), and twice in a row faults it, as two expiries do |
+| A chain that does not settle in 256 jobs | the rest wait for the next block's end (`jobsCutShort`) | the node's throw (and `jobsCutShort`): a `faultOnThrow` node faults at once, any other on the second in a row, as two expiries do |
 | A promise reaction's own throw | only rejects its promise | unchanged |
 
 QuickJS cannot drop pending jobs, so a chain that is cut short stays queued. Its pack remembers whose jobs they are
