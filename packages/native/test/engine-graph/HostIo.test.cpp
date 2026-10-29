@@ -966,10 +966,10 @@ TEST_CASE("a cart mirror names one of the document's NES systems, its settings r
 TEST_CASE("the Game Boy's serialOut carries what its core captured, each byte at the frame its core completed it",
           "[engine-graph][host-io]") {
     // mGB, with MI.OUT capture armed, has a byte clocked out of its serial port about every ten frames, every eight
-    // frames at the fastest (it holds the port in external-clock receive). The port carries this block's bytes a byte a message, each at the frame its core
-    // completed it, here into a cart mirror whose sink records them. (buildGraph wires it forward into its LSDj's
-    // decoder, rp.lsdj.serial-out, which reads it in the same block: MI.OUT's bytes, and the frames master sync sends
-    // its clocks at and times its stop from.)
+    // frames at the fastest (it holds the port in external-clock receive). The port carries this block's bytes a byte
+    // a message, each at the frame its core completed it, here into a cart mirror whose sink records them. (buildGraph
+    // wires it forward into its LSDj's decoder, rp.lsdj.serial-out, which reads it in the same block: MI.OUT's bytes,
+    // and the frames master sync sends its clocks at and times its stop from.)
     Engine e(kRate);
     SameBoySystem* const gb = serialOutToCart(e);
     std::vector<std::pair<std::uint32_t, std::uint8_t>> carried;
@@ -1053,12 +1053,12 @@ TEST_CASE("master sync's stop after Engine::setSampleRate drops the rate during 
 
 TEST_CASE("what a Game Boy's core captures decodes through rp.lsdj.serial-out into Engine::midiOut inside each block",
           "[engine-graph][host-io]") {
-    // A real core's capture through the real decoder into the host's MIDI out, with no fixture: mGB, with capture armed
-    // in drive, has its idle line clocked out of its serial port, 0xFF byte after 0xFF byte (after one other as it boots),
-    // and MI.OUT reads 0xFF as a wire frame of flag 1 and payload 0x7F, LSDj's clock, so a 0xF8 at the frame of the
-    // byte that completes it. In ragged blocks, a 1-frame one among them, each block's messages lie inside it, each at
-    // the frame of a byte the core captured in that block (a wire frame straddling two blocks completes in the later
-    // one), at most one a byte, and Engine::midiOut is frame-sorted.
+    // A real core's capture through the real decoder into the host's MIDI out, with no fixture: mGB, with capture
+    // armed in drive, has its idle line clocked out of its serial port, 0xFF byte after 0xFF byte (after one other as
+    // it boots), and MI.OUT reads 0xFF as a wire frame of flag 1 and payload 0x7F, LSDj's clock, so a 0xF8 at the frame
+    // of the byte that completes it. In ragged blocks, a 1-frame one among them, each block's messages lie inside it,
+    // each at the frame of a byte the core captured in that block (a wire frame straddling two blocks completes in the
+    // later one), at most one a byte, and Engine::midiOut is frame-sorted.
     Engine e(kRate);
     auto core = mgb(1);
     core->setSerialOutCapture(SerialOutCapture::Drive);
@@ -1097,7 +1097,8 @@ TEST_CASE("what a Game Boy's core captures decodes through rp.lsdj.serial-out in
         spread = spread || (out.size() > 1 && out.front().frame != out.back().frame);
     }
     CHECK(clocks > 1000);
-    CHECK(clocks + 2 >= bytes);  // a clock a byte but the one other as it boots and the one that completes an unpaired value
+    // A clock a byte, but for the one other byte as it boots and the one that completes an unpaired value.
+    CHECK(clocks + 2 >= bytes);
     CHECK(spread);  // the frames are the bytes', not one frame for the whole block
     CHECK(e.scriptThrows() == 0);
     CHECK(e.droppedMessages() == 0);
