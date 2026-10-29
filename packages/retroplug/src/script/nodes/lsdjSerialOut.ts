@@ -8,9 +8,9 @@
 //
 // The other modes send nothing and read nothing of their input. It is usually empty, the core capturing for the two
 // MIDI-out modes alone, but not always: the capture follows the role's stored mode, so an LSDj stored in MI.OUT whose
-// cart the MI.MAP controller forces to `midiMap` keeps capturing in `drive` (spec/07). Left unread, those bytes send
-// nothing, which is right: the node decodes for the mode it runs, and a cart forced to `midiMap` is as silent on host
-// MIDI as one set to it. The node is placed whatever the mode, so a mode switch is a change of settings, as it is for
+// cart the MI.MAP controller forces (to `midiMap`, or to `off`) keeps capturing in `drive` (spec/07). Left unread,
+// those bytes send nothing, which is right: the node decodes for the mode it runs, and a cart so forced is as silent
+// on host MIDI as one set to that mode. The node is placed whatever the mode, so a mode switch is a change of settings, as it is for
 // rp.lsdj.sync, and never of the document. Its settings are the role's config through the schema rp.lsdj.sync takes
 // too (lsdjSyncSettings.ts), the MI.MAP controller's forced mode included; it reads only `mode`.
 //

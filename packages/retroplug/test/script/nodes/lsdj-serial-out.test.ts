@@ -115,8 +115,8 @@ test("MI.OUT keeps its decoder's state across a mode change: a wire frame begun 
 });
 
 test("every other mode sends nothing and reads nothing of its input", () => {
-  // Another mode's input is usually empty, but not for a cart the MI.MAP controller forces to midiMap (lsdjSerialOut.ts
-  // says why), so each mode is handed one, which throws when read: the node never reads it.
+  // Another mode's input is usually empty, but not for a cart the MI.MAP controller forces (to midiMap, or off;
+  // lsdjSerialOut.ts says why), so each mode is handed one, which throws when read: the node never reads it.
   for (const mode of LSDJ_MODE_VALUES.filter((m) => m !== "midiOut" && m !== "masterSync")) {
     const rig = serialOut(mode);
     const process = rig.node.process.bind(rig.node);
