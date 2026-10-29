@@ -626,16 +626,9 @@ struct ScriptHost::Glue {
     static void jsCallBegin(ScriptHost& h) { traceBegin(h, DSP_SPAN_JSCALL); }
     static void jsCallEnd(ScriptHost& h) { traceEnd(h); }
 
-    // The end of a process call's span, its type's (a profile build), where apu-render starts if no script node runs
-    // after it.
-    static void processSpanEnd([[maybe_unused]] ScriptHost& h) {
-#ifdef RETROPLUG_PROFILE
-        if (h.traceArmed_) {
-            h.spanEnd();  // the type's
-            h.lastProcessEnd_ = h.traceNow();
-        }
-#endif
-    }
+    // The end of a process call's span, its type's (a profile build), which the Engine's apu-render holds: that spans
+    // the plan's whole run.
+    static void processSpanEnd(ScriptHost& h) { traceEnd(h); }
 
     static rp_prepare_result prepare(rp_node* n, const rp_settings* s, void** prepared, rp_error* err) {
         Instance& in = instanceOf(n);
@@ -1735,7 +1728,6 @@ bool ScriptHost::traceReset(bool arm) {
     traceStack_.clear();
     traceSpans_.clear();
     traceStartNs_ = steadyNs();
-    lastProcessEnd_ = 0.0;
     traceArmed_ = arm;
     return true;
 }

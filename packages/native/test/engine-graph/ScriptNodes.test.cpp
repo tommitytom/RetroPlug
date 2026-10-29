@@ -9,7 +9,8 @@
 // around a toy bundle close it. A RETROPLUG_PROFILE build (build-prof/, which tools/run-profile.sh configures) adds the
 // trace window's cases, [profile]: a script node's process span labelled by its type and closed every way a call ends,
 // a label per type in load order, the profile calls refused while an audio thread owns the runtime, the types past
-// the label table's bound, and the embedded bundle's types labelled in the order the docs quote.
+// the label table's bound, the embedded bundle's types labelled in the order the docs quote, and an Engine's apu-render
+// spanning its plan's whole run, its script nodes' process spans inside it.
 //
 // Run via `pnpm test:plugin engine-graph`; the profile cases, build-prof/bin/retroplug-engine-graph-test "[profile]".
 
@@ -18,6 +19,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -27,8 +29,12 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "../graph/CountingAllocator.hpp"
+#include "GraphDocs.hpp"
+#include "NodeRig.hpp"
 #include "ScriptRig.hpp"
 #include "host/engine/Engine.hpp"
+#include "system/sameboy/SameBoyConfig.hpp"
+#include "system/sameboy/SameBoySystem.hpp"
 
 using rp::host::ScriptHost;
 using rp::host::test::Feed;
@@ -2207,5 +2213,64 @@ TEST_CASE("the embedded bundle's types are labelled 16 to 22 in the order spec/0
                                        "rp.sms.sync",   "rp.lsdj.sync", "rp.controller.session"};
     REQUIRE(names.size() >= rp::host::DSP_SPAN_TYPE_BASE + ids.size());
     for (std::size_t i = 0; i < ids.size(); ++i) CHECK(names[rp::host::DSP_SPAN_TYPE_BASE + i] == ids[i]);
+}
+
+TEST_CASE("an Engine's apu-render spans its plan's whole run, each script node's process span inside it wherever it runs",
+          "[script][profile][trace]") {
+    // The embedded bundle's rp.mgb.midi runs before its Game Boy, as buildGraph places it, and its rp.lsdj.sync after it,
+    // over a forward wire from the Game Boy's serialOut, as a node placed after a system runs: each block's apu-render
+    // holds both nodes' process spans (Chrome trace events nest), and no script node's span starts it.
+    using rp::host::test::DocExtras;
+    using rp::host::test::docNode;
+    using rp::host::test::docWire;
+    constexpr double kRate = 48000.0;
+    constexpr std::size_t kBlocks = 4;
+    Engine e(kRate);
+    SameBoyConfig cfg;
+    cfg.model = SameBoyModel::DmgB;
+    auto core = std::make_unique<SameBoySystem>(1, cfg, rp::host::test::readFile(RP_MGB_ROM_PATH));
+    core->onActivate(kRate);
+    REQUIRE(e.parkCore(std::move(core)));
+    const DocExtras extras{{docNode("midi-in", "rp.host.midi-in"), docNode("mgb", "rp.mgb.midi"), docNode("late", "rp.lsdj.sync")},
+                           {docWire("midi-in.midi", "mgb.midi"), docWire("mgb.serialIn", "sys-1.serialIn"),
+                            docWire("sys-1.serialOut", "late.serialOut")}};
+    const auto planned =
+        e.setGraph(rp::host::test::graphRequest(rp::host::test::stereoDocument({{1, rp::host::test::kGbType}}, extras), {1}));
+    INFO((planned.errors.empty() ? std::string() : planned.errors[0].code + ": " + planned.errors[0].message));
+    REQUIRE(planned.ok);
+    REQUIRE(e.dspTraceReset(true));
+    std::vector<float> l(256), r(256);
+    for (std::size_t i = 0; i < kBlocks; ++i) {
+        e.stageMidi(0, std::vector<std::uint8_t>{0x90, 60, 100});
+        e.processBlock(256, l.data(), r.data());
+    }
+    const auto spans = e.dspTrace();
+    const auto names = e.dspTraceNames();
+    REQUIRE(e.dspTraceReset(false));
+    CHECK(e.scriptThrows() == 0);
+
+    // A label's spans, in the order they started: one a block.
+    const auto spansOf = [&](std::uint32_t label) {
+        std::vector<rp::host::DspTraceSpan> out;
+        for (const auto& sp : spans)
+            if (sp.label == label) out.push_back(sp);
+        std::sort(out.begin(), out.end(), [](const auto& x, const auto& y) { return x.t0 < y.t0; });
+        return out;
+    };
+    const auto labelOf = [&](const std::string& type) {
+        return static_cast<std::uint32_t>(std::find(names.begin(), names.end(), type) - names.begin());
+    };
+    const auto apu = spansOf(rp::host::DSP_SPAN_APU);
+    REQUIRE(apu.size() == kBlocks);
+    for (const char* type : {"rp.mgb.midi", "rp.lsdj.sync"}) {
+        INFO(type);
+        const auto process = spansOf(labelOf(type));
+        REQUIRE(process.size() == kBlocks);
+        for (std::size_t k = 0; k < kBlocks; ++k) {
+            INFO("block " << k);
+            CHECK(apu[k].t0 <= process[k].t0);
+            CHECK(process[k].t1 <= apu[k].t1);
+        }
+    }
 }
 #endif

@@ -2,9 +2,9 @@
 // Mesen core off the RT thread via the deterministic renderAudio pull path under a MIDI workload, and
 // reports the same per-block allocation + per-stage timing metrics. The point of comparison: on the
 // handheld the NES core "struggles" far more than SameBoy, and this pins down WHERE — the Mesen core
-// step (CPU+PPU+APU: the "apu-render" span is the plan after the script nodes, Mesen included) vs the
-// script nodes (spans named by their types, rp.midi.route and rp.n8.midi-to-fifo, each holding marshal and
-// js-call). One real NES system driven by host MIDI (the nes-n8-midi role, placed as rp.n8.midi-to-fifo).
+// step (CPU+PPU+APU: the "apu-render" span is the plan's whole run, Mesen included) vs the script nodes
+// (spans named by their types, rp.midi.route and rp.n8.midi-to-fifo, inside apu-render, each holding marshal
+// and js-call). One real NES system driven by host MIDI (the nes-n8-midi role, placed as rp.n8.midi-to-fifo).
 //
 // The counters/spans exist only in a RETROPLUG_PROFILE host (built by tools/run-profile.sh); under the
 // default host this SKIPS (so the normal test:native sweep stays fast, and says the case did not run
@@ -183,9 +183,9 @@ test("nes-bench: Mesen core per-block cost + JS allocation under a NES + MIDI wo
     expect(s.maxBlockAllocCalls, "allocations in the worst block").toBe(0);
   }
 
-  // --- optional per-stage runtime trace (spec/08 Tier B): each script node's span (holding marshal, js-call)
-  // + apu-render (the Mesen core step). One Chrome trace-event JSON line the wrapper
-  // captures → build-prof/trace.json.
+  // --- optional per-stage runtime trace (spec/08 Tier B): apu-render (the plan's whole run, the Mesen core
+  // step most of it), holding each script node's span (holding marshal, js-call). One Chrome trace-event JSON
+  // line the wrapper captures → build-prof/trace.json.
   if (env("RP_BENCH_TRACE")) {
     const traceBlocks = Math.max(1, envInt("RP_BENCH_TRACE_BLOCKS", 64));
     const tSched = buildSchedule(profile, traceBlocks, seed ^ 0x9e3779b9);

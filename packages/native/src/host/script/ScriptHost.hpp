@@ -78,7 +78,8 @@ enum DspSpanLabel : std::uint32_t {
     DSP_SPAN_MARSHAL     = 1,   // ScriptHost: its inputs made JS values (the audio copies in and the transport, then
                                 //   each input it reads)
     DSP_SPAN_JSCALL      = 2,   // ScriptHost: the JS_Call into its process
-    DSP_SPAN_APU         = 3,   // Engine: the plan after its script nodes (the cores, the mixing, the host outputs)
+    DSP_SPAN_APU         = 3,   // Engine: the plan's whole run (the cores, the mixing, the host outputs), holding its
+                                //   script nodes' process spans
     DSP_SPAN_PUBLISH     = 4,   // Engine: the state pump to the control plane (the per-block frame copy, and the timed
                                 //   savestate and SRAM republish, so spiky)
     DSP_SPAN_TYPE_BASE   = 16,  // ScriptHost: the process call of a script node of the bundle's first type, and up
@@ -266,13 +267,12 @@ public:
     // The trace window. traceReset clears it and arms (or disarms) it, quiescent, as are the reads; the block thread
     // records, and only while it is armed, so a window armed before an audio thread starts records (and grows) until
     // that thread hands the runtime back. spanBegin and spanEnd bracket a span; spanSince records one from `t0`, a
-    // traceNow(), to now. lastProcessEnd() is when the last script node's process span ended, on traceNow's clock.
+    // traceNow(), to now.
     // traceName names a label below kDspSpanLabels, and ignores one past it.
     void                      spanBegin(std::uint32_t label);
     void                      spanEnd();
     void                      spanSince(std::uint32_t label, double t0);
     double                    traceNow() const;
-    double                    lastProcessEnd() const { return lastProcessEnd_; }
     void                      traceName(std::uint32_t label, const std::string& name);
     bool                      traceReset(bool arm);
     bool                      traceArmed() const { return traceArmed_; }
@@ -361,7 +361,6 @@ private:
     // The trace window: its clock's start (steady_clock nanoseconds), the spans open as {label, t0} and those closed.
     bool                                          traceArmed_ = false;
     std::uint64_t                                 traceStartNs_ = 0;
-    double                                        lastProcessEnd_ = 0.0;
     std::vector<std::pair<std::uint32_t, double>> traceStack_;
     std::vector<DspTraceSpan>                     traceSpans_;
     std::vector<std::string>                      traceNames_;

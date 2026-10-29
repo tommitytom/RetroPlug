@@ -616,11 +616,10 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
     // The host inputs, the script nodes, every system, the mixing and the host outputs (the host drained before this).
     graph_->host->run(frames, transport, outputs, static_cast<std::uint32_t>(numOutputs));
 #ifdef RETROPLUG_PROFILE
-    // apu-render: the plan from where its last script node ends. buildGraph places every script node ahead of every
-    // system and the planner takes the first ready node in document order (Planner.cpp order()), so they all run
-    // first: a script node reads only earlier nodes, a Game Boy's serialOut reaching its LSDj over a feedback wire,
-    // which orders nothing.
-    script.spanSince(rp::host::DSP_SPAN_APU, std::max(planStart, script.lastProcessEnd()));
+    // apu-render: the plan's whole run, from where it starts to where it ends. Each script node's process span lies
+    // inside it (Chrome trace events nest), so it holds wherever the planner puts a script node, before a system or
+    // after one, and its figure includes the script nodes' few microseconds beside the cores'.
+    script.spanSince(rp::host::DSP_SPAN_APU, planStart);
 #endif
     // The promise jobs the block's script nodes queued, then (a profile build) the allocation window's block counts.
     graph_->script.endBlock();

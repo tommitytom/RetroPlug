@@ -207,9 +207,9 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
 
   // --- optional per-role runtime trace (spec/08-profiling.md Tier B) --------------------------------
   // A separate SHORT armed window AFTER the alloc measurement (so those numbers stay pristine). Records nested
-  // wall-time spans (per block: each script node's process, a span named by its type, rp.midi.route then each
-  // rp.mgb.midi, holding marshal and then js-call, which holds a marshal per input it reads; then apu-render, the rest
-  // of the plan; then state-publish) and prints ONE Chrome trace-event JSON line the wrapper captures into
+  // wall-time spans (per block: apu-render, the plan's whole run, holding each script node's process, a span named by
+  // its type, rp.midi.route then each rp.mgb.midi, which holds marshal and then js-call, which holds a marshal per
+  // input it reads; then state-publish) and prints ONE Chrome trace-event JSON line the wrapper captures into
   // build-prof/trace.json (load in ui.perfetto.dev or speedscope). Gated on RP_BENCH_TRACE so the normal stats run
   // stays a single line.
   if (env("RP_BENCH_TRACE")) {

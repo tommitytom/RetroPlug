@@ -146,8 +146,7 @@ export function buildGraph(model: GraphModel): BuiltGraph {
   nodes.push({ id: "midi-in", type: "rp.host.midi-in" }, { id: "controller-in", type: "rp.host.controller-in" });
   // Every script node goes before the systems in the document, so before them in the plan: the planner breaks ties by
   // document order (Planner.cpp order()), and nothing a script node reads comes from a node after it but over a
-  // feedback wire. A profile build's apu-render span begins where the last script node's process ended, which
-  // relies on it.
+  // feedback wire.
   //
   // The routing: the host's MIDI fanned out to the systems in slot order (positional routing reads it), an output
   // for each, sys-<id>.
