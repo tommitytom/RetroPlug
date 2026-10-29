@@ -149,6 +149,10 @@ export function startValue(stream: ControlStream): number {
 //   every later one on that port this block to it. A send that does not fit returns false and is dropped, and
 //   counted; an emit onto a full stream overwrites its last change and returns false. A port the layout does not
 //   have, or not of the method's kind, throws a TypeError.
+// - send copies `data` into the port's queue before it returns and keeps no hold on it: a Uint8Array's bytes at once,
+//   any other array-like's read element by element into the space reserved for them (an element that throws takes the
+//   message back out, and the send throws). So a node may refill the array it sent and send it again, in the same
+//   block or a later one, as the LSDj nodes do with theirs.
 // - A feedback input carries last block's messages at their frames in that block, so a frame can lie at or past
 //   this block's end. No production node reads one: LSDj's serial-out decoder, the one that reads a system's output,
 //   takes its Game Boy's serialOut over a forward wire, each byte at its frame in this block.

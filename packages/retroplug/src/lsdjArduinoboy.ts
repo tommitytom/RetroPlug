@@ -5,12 +5,13 @@
 //
 // Two layers, both pure + testable in isolation:
 //
-//   1. FLAG-GATED FRAMING (arduinoboyDecodeSerialOut). LSDj's MI.OUT wire frames each command as
-//      `1 data-present flag bit + 7 payload bits`, MSB-first, so a captured 8-bit byte reads as
+//   1. FLAG-GATED FRAMING (arduinoboyDecodeSerialOut). LSDj's MI.OUT wire sends each command as a wire
+//      frame, `1 data-present flag bit + 7 payload bits`, MSB-first, so a captured 8-bit byte reads as
 //      `0x80|payload` and the native 8-bit `captureSerialOutBit` mis-frames it as high-bit "garbage".
 //      We reconstruct the raw bit stream (MSB-first per captured byte) and apply: read 1 flag; if it
-//      is 1, read 7 payload bits → a 7-bit command byte; else it's an idle bit. A frame that straddles
-//      a block boundary is buffered in `state` (bitAcc/bitCount) across calls.
+//      is 1, read 7 payload bits → a 7-bit command byte; else it's an idle bit. A wire frame that
+//      straddles a block boundary is buffered in `state` (bitAcc/bitCount) across calls. A "frame"
+//      alone is an audio frame, as everywhere in the graph: where a message lies in its block.
 //
 //   2. BYTE PROTOCOL (arduinoboyDecodeByte). The 7-bit command byte drives the Arduinoboy protocol
 //      (verbatim from the trash80/Arduinoboy firmware, Mode_LSDJ_Midiout.ino):
@@ -34,8 +35,8 @@ const MIDI_CC_BASE = 0xb0;
 const MIDI_PC_BASE = 0xc0;
 
 /** Emit one decoded MIDI message: its frame, its length (1 to 3 bytes) and its bytes, 0 past the length. A
- *  message is handed over byte by byte, so a decoder builds nothing to emit one, and the caller sends it from what
- *  it reuses. */
+ *  message is handed over byte by byte, so a decoder builds nothing to emit one; the function passed in as the emit
+ *  puts it wherever it keeps one (rp.lsdj.serial-out's copies it into a reused array of its length and sends that). */
 export type MidiEmit = (frame: number, len: number, b0: number, b1: number, b2: number) => void;
 
 /** Cross-block decoder state (kept on the rp.lsdj.serial-out node's instance). Fields are created lazily by the
@@ -111,9 +112,9 @@ export function arduinoboyReset(state: ArduinoboyState): void {
 
 /** Decode a block's worth of RAW captured serial-out bytes, each with its frame (`frames`, index for index):
  *  reconstruct the MSB-first bit stream, strip the flag-gated framing, and drive the byte protocol. Partial bits (a
- *  frame split across a block boundary) persist in `state` for the next call. A message goes to `emit` at the frame of
- *  the captured byte whose bits complete it, so a frame split across two calls goes at its completing byte's frame in
- *  the later one. */
+ *  wire frame split across a block boundary) persist in `state` for the next call. A message goes to `emit` at the
+ *  frame of the captured byte whose bits complete it, so a wire frame split across two calls goes at its completing
+ *  byte's frame in the later one. */
 export function arduinoboyDecodeSerialOut(
   bytes: number[],
   frames: number[],
@@ -129,7 +130,7 @@ export function arduinoboyDecodeSerialOut(
     acc = ((acc << 8) | (bytes[i] & 0xff)) >>> 0;
     count += 8;
 
-    // Drain whole frames while enough bits remain. A frame is `flag (1) [+ payload (7) if flag]`.
+    // Drain whole wire frames while enough bits remain. A wire frame is `flag (1) [+ payload (7) if flag]`.
     for (;;) {
       if (count < 1) break;
       const flag = (acc >>> (count - 1)) & 1; // the oldest (most-significant) buffered bit

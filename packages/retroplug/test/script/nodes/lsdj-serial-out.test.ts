@@ -40,7 +40,7 @@ test("MI.OUT: the serial-out bytes decode to host MIDI in their own block, each 
   expect(sent.every((s) => s.port === "midiOut" && s.queued === s.frame)).toBe(true);
 });
 
-test("MI.OUT: a frame split across two blocks' bytes decodes once, at its completing byte's frame in the later block", () => {
+test("MI.OUT: a wire frame split across two blocks' bytes decodes once, at its completing byte's frame in the later block", () => {
   const rig = serialOut("midiOut");
   expect(rig.run({ frames: 1024, inputs: { serialOut: [{ frame: 1000, data: [0x7f] }] } })).toEqual([]);
   expect(midiOut(rig.run({ frames: 1024, inputs: { serialOut: [{ frame: 3, data: [0x80] }] } }))).toEqual([[3, 0xf8]]);
@@ -100,7 +100,7 @@ test("leaving master sync drops its state, so coming back opens a fresh run", ()
   expect(rig.creates).toBe(1);
 });
 
-test("MI.OUT keeps its decoder's state across a mode change: a frame begun before it completes after it", () => {
+test("MI.OUT keeps its decoder's state across a mode change: a wire frame begun before it completes after it", () => {
   // The first half of a framed clock, then a block in master sync (whose run does not touch MI.OUT's bits) and one in
   // off, then MI.OUT again: the second half completes the clock, once.
   const rig = serialOut("midiOut");
@@ -115,8 +115,8 @@ test("MI.OUT keeps its decoder's state across a mode change: a frame begun befor
 });
 
 test("every other mode sends nothing and reads nothing of its input", () => {
-  // The core captures only for MI.OUT and master sync, so another mode's input is empty: an input whose bytes throw
-  // when read shows the node never reads it.
+  // Another mode's input is usually empty, but not for a cart the MI.MAP controller forces to midiMap (lsdjSerialOut.ts
+  // says why), so each mode is handed one, which throws when read: the node never reads it.
   for (const mode of LSDJ_MODE_VALUES.filter((m) => m !== "midiOut" && m !== "masterSync")) {
     const rig = serialOut(mode);
     const process = rig.node.process.bind(rig.node);
@@ -133,8 +133,9 @@ test("every other mode sends nothing and reads nothing of its input", () => {
 });
 
 test("MI.OUT and master sync send each message from an array the node made once, one a message length", () => {
-  // The rig keeps what send was handed: in a warm block the node passes the same arrays it passed in the first, one for
-  // each length a message has, so it makes none for a message it decodes.
+  // The rig keeps what send was handed: in every block the node passes, for each length a message has, the array it
+  // passed first. That is the reuse, which the rig can see; that a warm block allocates nothing at all is
+  // test-native/dsp-bench.test.ts's to show, in a profile build (tools/run-profile.sh stats).
   // MI.OUT: a clock (1 byte), a NoteOn (3) and a program change (2), the same each block.
   const miOut = [framed(0x7f, 7), framed(0x70, 15), framed(60, 23), framed(0x78, 31), framed(5, 39)];
   // Master sync: a run's first block sends its NoteOn (3), 0xFA and a clock (1), and each block after a clock.
