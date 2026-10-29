@@ -32,6 +32,10 @@ public:
     std::optional<RpcBuiltCore> buildCore(BackendConstructSpec spec);
     // Plan a document TS built (docs/modular-graph-phase-b2-design.md section 2.5).
     RpcSetGraphResult           setGraph(RpcSetGraphRequest request);
+    // Load a pack of script node types, or reload one loaded already (Engine::loadScriptPack,
+    // docs/modular-graph-phase-c1-design.md section 7), while the audio thread runs blocks or not. Refused, changing
+    // nothing, for a memory limit that is no whole number of bytes from 0 to 2^53 - 1 (BackendTypes.hpp).
+    RpcLoadScriptPackResult     loadScriptPack(RpcLoadScriptPackRequest request);
     bool applySystemSetting(std::uint32_t id, std::string key, double value);
     bool applyRoleConfig(std::uint32_t id, std::string kind, std::string config);
     std::optional<rfl::Bytestring> readState(std::uint32_t id);

@@ -267,8 +267,8 @@ public:
     // block thread meets it only in a plan that places one of its nodes. Refused, changing nothing, with the reason in
     // `error`: an id ScriptHost::canLoadPack refuses (checked first, before the source is compiled: one of the app's,
     // "rp" and under, among them), a compile error (its line), a pack ScriptHost::loadPack refuses (a definition it
-    // cannot read, a type id outside the pack's namespace, a load past the call deadline), or one the registry refuses
-    // (a descriptor it cannot use, a type id another pack holds already).
+    // cannot read, a type id outside the pack's namespace, a load past the call deadline or the memory limit), or one
+    // the registry refuses (a descriptor it cannot use, a type id another pack holds already).
     // An id loaded already is reloaded, all or nothing (docs/modular-graph-phase-c1-design.md section 5): its next
     // generation is built as a load builds a pack, the registry swaps the pack's entries for its, and the request
     // setGraph last published is planned again without re-arming the tap (the running plan's stays as it is), so every

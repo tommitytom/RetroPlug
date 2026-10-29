@@ -13,7 +13,7 @@
 // recomposes them into the full `Backend`. openFileBrowser is the one async method and rides
 // a UI-direct native hook rather than the RPC bridge (see below).
 
-import type { ApuState, Backend, BreakHitBatch, BuiltCore, SetGraphRequest, SetGraphResult, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CoreTransportStats, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, ExpansionAudioState, FileBrowserOpts, FrameData, HostBackend, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
+import type { ApuState, Backend, BreakHitBatch, BuiltCore, SetGraphRequest, SetGraphResult, LoadScriptPackRequest, LoadScriptPackResult, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CoreTransportStats, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, ExpansionAudioState, FileBrowserOpts, FrameData, HostBackend, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
 import type { OpenSerialPort, SerialClient, SerialPortInfo } from "./n8/transport";
 import { savFromJson as savFromJsonTs } from "./lsdj";
 import { makeCall } from "./rpcClient";
@@ -108,6 +108,7 @@ export function createEmulatorClient(): EmulatorBackend {
   return {
     buildCore: (spec: ConstructSpec, id: number) => (call("buildCore", specParams(spec, id)) as BuiltCore | null) ?? null,
     setGraph: (request: SetGraphRequest) => call("setGraph", request) as SetGraphResult,
+    loadScriptPack: (request: LoadScriptPackRequest) => call("loadScriptPack", request) as LoadScriptPackResult,
     applySystemSetting: (id, key, value) =>
       call("applySystemSetting", id, key, typeof value === "boolean" ? (value ? 1 : 0) : value) as boolean,
     applyRoleConfig: (id, kind, config) => call("applyRoleConfig", id, kind, JSON.stringify(config)) as boolean,

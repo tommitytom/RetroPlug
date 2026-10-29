@@ -134,3 +134,22 @@ struct RpcSetGraphRequest {
 };
 struct RpcGraphError { std::string nodeId; std::string port; std::string code; std::string message; };
 struct RpcSetGraphResult { bool ok; std::vector<RpcGraphError> errors; };
+
+// loadScriptPack (docs/modular-graph-phase-c1-design.md section 7): a pack of script node types, by its id, its source
+// (global code, as Engine::loadScriptPack takes it) and its audio runtime's memory limit in bytes, absent or 0 for the
+// default (64 MiB). The limit is a double so that one which is no whole number of bytes is refused, where an integer
+// field would read it truncated (1.5 as 1, -1 as a limit past any heap). The result is the Engine's: `error` empty on
+// success, `errors` the planner's when a reload's replan refused (empty for a refusal before any replan), and `types`
+// the pack's on success, in registration order, each with its descriptor as the registry holds it.
+struct RpcLoadScriptPackRequest {
+    std::string           id;
+    std::string           source;
+    std::optional<double> memoryLimitBytes;
+};
+struct RpcScriptPackType { std::string id; std::string descriptor; };
+struct RpcLoadScriptPackResult {
+    bool                           ok;
+    std::string                    error;
+    std::vector<RpcGraphError>     errors;
+    std::vector<RpcScriptPackType> types;
+};

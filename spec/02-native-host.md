@@ -129,7 +129,8 @@ does.
 ### `EngineRpcService`: emulator / MIDI / transport
 
 Every mutation here routes through the `QueuedInvoker` except these, which call the `Engine`
-directly on the control thread: `buildCore` and `setGraph` (`Engine::parkCore` / `Engine::setGraph`),
+directly on the control thread: `buildCore`, `setGraph` and `loadScriptPack` (`Engine::parkCore` /
+`Engine::setGraph` / `Engine::loadScriptPack`),
 `setSampleRate` (`Engine::setSampleRate`, so it refuses while the audio thread owns the engine or the
 running plan holds a system), the render calls, and the profile calls `dspResetAllocStats`,
 `dspRunGc` and `dspTraceReset` (which the script host refuses while the audio thread owns its
@@ -142,6 +143,7 @@ read of a core's state routes through the `SnapshotRegistry`. No method walks a 
 |---|---|---|
 | `buildCore` | `(BackendConstructSpec) → optional<RpcBuiltCore>` | TS-owned `spec.id`; `factory_.build` → `Engine::parkCore`, which claims the registry slot. Returns the core's node type, export mode and link group, or null (below) |
 | `setGraph` | `(RpcSetGraphRequest) → RpcSetGraphResult` | a graph document TS built, its slots and its tap re-arm → `Engine::setGraph` (below) |
+| `loadScriptPack` | `(RpcLoadScriptPackRequest) → RpcLoadScriptPackResult` | a pack of script node types, by its id, its source and its audio runtime's memory limit (`memoryLimitBytes`, a double, absent or 0 for 64 MiB, refused unless a whole number of bytes) → `Engine::loadScriptPack`, which loads it or, for an id loaded already, reloads it (the script host, below); returns `ok`, `error` (empty on success), the planner's `errors` when a reload's replan refused (empty for a refusal before any replan) and the pack's `types`, each with its descriptor JSON |
 | `applySystemSetting` | `(uint32 id, string key, double value) → bool` | `gainDb` / `reloadOnRomChange` → a `ConfigField` |
 | `applyRoleConfig` | `(uint32 id, string kind, string config) → bool` | `kind` `"sameboy"` or `"mesen"`, false for any other; decodes the whole role config and pushes each field as a `ConfigField` (sameboy: Model/Highpass/LinkGroup/FastBoot/ColorCorrection/DmgPalette/LightTemperature; mesen: NesRegion/NesRemoveSpriteLimit/NesApuLatencyMs/NesS5bNoise/NesMmc5PhaseReset/NesExpansionVolume) |
 | `readState` | `(uint32 id) → optional<Bytestring>` | published savestate from the registry |
@@ -157,10 +159,10 @@ read of a core's state routes through the `SnapshotRegistry`. No method walks a 
 
 The table is a selection. The facets
 ([`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp)) hold 19
-`host` methods, 13 `emulator`, 22 `harness` (the renders, transport and sample rate, staged MIDI in and
+`host` methods, 14 `emulator`, 22 `harness` (the renders, transport and sample rate, staged MIDI in and
 MIDI out, `droppedMessages`, `buildTarget`, the kit compiles and the audio runtime's profiling calls),
 27 `debug` and
-6 `driver`: 87 in the union. There is no call for what the roles do on the audio thread: their protocol
+6 `driver`: 88 in the union. There is no call for what the roles do on the audio thread: their protocol
 nodes are script node types every Engine embeds, and each node's settings ride the documents `setGraph`
 plans.
 
@@ -227,7 +229,8 @@ block, so staging allocates nothing until a block stages more), the host outputs
 snapshot registry, the transport fields, and the graph the systems run on: the `ScriptHost` its script
 nodes (the MIDI routing, the controller session and each role's protocol node) run in, a `NodeRegistry`
 holding the node packages (`rp.core`,
-`rp.host`, `rp.sameboy`, `rp.mesen`, `rp.host.io`, `rp.n8`, `rp.script`), a `ResourceTable`, the
+`rp.host`, `rp.sameboy`, `rp.mesen`, `rp.host.io`, `rp.n8`, `rp.script`, and each script node pack
+`loadScriptPack` loaded), a `ResourceTable`, the
 [`GraphHost`](../packages/native/src/graph/GraphHost.hpp) running the plan, the cores `buildCore`
 parked until a document places them, and every live core by id. Every op runs "now, on the calling
 thread"; it holds **no locks**: transport and the ppq clock are plain members mutated only by
@@ -283,10 +286,10 @@ staging). Then, in order:
    5. **The mixing nodes**, `rp.core.split` and `rp.core.add`: the routing, as wiring (below).
    6. **`rp.host.audio-out`**, which copies its buses into the host's buffers (it reaches them
       through `rp_host.get_interface("rp.host.audio-buffers/1")`).
-4. `ScriptHost::endBlock()`: the promise jobs the block's script nodes queued, at most 256 (the rest
-   wait for the next block's end), then, in a profile build, the allocation window's block counts; a
-   profile build closes the block's `apu-render` span, the plan's whole run with the script nodes' spans
-   inside it, just before ([08-profiling.md](08-profiling.md)).
+4. `ScriptHost::endBlock()`: in a profile build, the allocation window's block counts (the script
+   nodes' promise jobs ran at each call's checkpoint, inside the plan's run); a profile build closes the
+   block's `apu-render` span, the plan's whole run with the script nodes' spans inside it, just before
+   ([08-profiling.md](08-profiling.md)).
    What was staged and no node of the plan took (a plan with no `rp.host.midi-in` or `controller-in`)
    is dropped, not carried into the next block.
 5. `registry_.publishSystem(...)` for each system of the plan, in slot order: copy its
@@ -645,23 +648,55 @@ protocol node) but understands nothing about roles. The nodes and what they do a
 ([04-roles-protocol-nodes.md](04-roles-protocol-nodes.md)); this doc covers the C++ runtime under them
 (docs/modular-graph-phase-b3a-design.md section 2).
 
-[`ScriptHost`](../packages/native/src/host/script/ScriptHost.hpp) owns **two bare QuickJS
-runtimes** (no txiki; see [01-architecture.md](01-architecture.md)), one pair per Engine, sharing no
-JS value: a control-side one that only checks settings and lays out a node's ports, and the
-audio-side one that holds every instance and runs `process`.
+[`ScriptHost`](../packages/native/src/host/script/ScriptHost.hpp) holds **packs**, the unit it
+isolates, loads and replaces ([modular-graph-phase-c1-design.md](../docs/modular-graph-phase-c1-design.md)).
+A pack has an id, a bundle that registers its node definitions, a package of its own named by its id, and
+**two bare QuickJS runtimes** of its own (no txiki; see [01-architecture.md](01-architecture.md)), sharing
+no JS value with each other or with another pack's: a control-side one that only checks settings and lays
+out a node's ports, and an audio-side one that holds every instance of the pack's types and runs `process`.
 
-- **The bundle.** Both run the script-node bundle
+- **The built-in pack.** The first pack, `rp.script`, runs the script-node bundle
   ([`bundle.ts`](../packages/retroplug/src/script/bundle.ts)), esbuilt to a global-code IIFE and
   compiled to bytecode at build time by the `retroplug-script-bundle` target
   ([bundles.cmake](../packages/native/cmake/bundles.cmake)), whose derived C array is compiled into
   `retroplug-backend`: every Engine loads it at construction, so every host has the same node types
-  with no boot call. The bundle appends its `defineNode` results to the global `__rp_scriptNodes`
-  ([register.ts](../packages/retroplug/src/script/register.ts)); the host reads that list in both
-  runtimes, requires the same id and descriptor at each index, and registers one `rp_node_type` per
-  definition in the package `rp.script`, all served by the same functions, each type telling itself
-  apart by its `ctx`. A bundle that does not load, or one definition that cannot be read, registers no
-  type, logged, and every document naming one is refused (`unknown-type`); a second load is refused.
-  The native tests build an Engine with toy bundles of their own instead.
+  with no boot call. A bundle appends its `defineNode` results to the global `__rp_scriptNodes`
+  ([register.ts](../packages/retroplug/src/script/register.ts)); the host reads that list in both of the
+  pack's runtimes, requires the same id and descriptor at each index, and registers one `rp_node_type` per
+  definition in the pack's package, all served by the same functions, each type telling itself apart by
+  its `ctx`. A bundle that does not load, or one definition that cannot be read, registers no type, logged,
+  and every document naming one is refused (`unknown-type`); the built-in pack is loaded once, and never
+  reloaded. The native tests build an Engine with toy bundles of their own instead.
+- **Loading a pack** (`Engine::loadScriptPack`, the `loadScriptPack` RPC above) runs on the control thread,
+  while an audio thread runs blocks or not. The id is checked first: a plain id, and none of the app's (`rp`
+  and every id under `rp.`, its built-in pack's and its native packages'). The source, global code as the
+  built-in bundle is, is compiled by `ScriptCompiler` (below) and run in two runtimes made for the pack, under
+  the checks the built-in pack's load makes and one more: every type id is the pack's id, a dot and a name
+  (`user.synth.osc` in `user.synth`). Then the pack's package joins the registry, which refuses a type id
+  another package holds (one pack's id can run on into another's, `a` and `a.b`), a refusal that frees the
+  pack. A document can place its nodes from the next `setGraph`. The block thread first meets a pack through
+  an instance in a plan it adopts, so the plan swap's ring carries the whole built pack across; a pack's audio
+  runtime joins what packs share (the call deadline's interrupt handler, the allocation counters) only once
+  its load is done, so what a loaded pack's load allocates is counted apart from `audioAllocations`.
+- **Reloading one.** The same id loaded again builds the pack's next generation beside the current one (one
+  more than the newest of its id still held), and the registry swaps the package's entries for the new
+  generation's, keeping the old ones valid for the instances that hold them. The Engine plans the request
+  `setGraph` last published again, with no tap re-arm (the running plan's tap stays as it is, neither
+  restored nor armed again) and its parked cores left parked; the planner rebuilds every instance whose
+  registry entry changed, so each of the pack's nodes gets a fresh instance of the new code under its node
+  id, its JS state not carried over, and every other node keeps its instance. A document that places none
+  of the pack's nodes is not planned again. All or nothing: a replan the planner refuses (a node's settings
+  the new code refuses, a type the document places gone, or `busy`) puts the old entries back and discards
+  the new generation, and the result carries the planner's errors, the old code running on.
+- **Freeing a generation.** A pack counts the records of its types' instances alive (made and deleted on the
+  control thread, so a plain count). A generation a reload retired, or one a refused replan discarded, is
+  freed by the control-thread call that finds its count 0 (`retirePack`, `discardPack`, `reclaim`,
+  `setAudioThreadOwns(false)`): the registry drops a retired one's entries first (the pack-freed callback),
+  then its audio runtime leaves what packs share, so its frees are counted apart, then its runtimes go. So a
+  whole generation's heap is freed off the audio thread, while it runs blocks in other packs: the block
+  thread holds nothing of a pack none of whose records is alive. With no audio thread running, a reload frees
+  the old generation within the call. A record the release ring back could not take, leaked rather than
+  freed on the audio thread, keeps its pack for the host's life.
 - **Settings and layout** (control side, the planning thread). `layout_for` and `prepare_settings` run
   the definition's `parseSettings` and its `layout` on the settings alone, so the planner can check a
   whole document before it creates anything. Every script type declares `RP_TYPE_STATELESS_PREPARE`,
@@ -682,9 +717,10 @@ audio-side one that holds every instance and runs `process`.
   queued on a 256-slot SPSC ring (a control-side backlog behind it) that `beginBlock` drains at the
   top of later blocks, 16 a block, freeing the JS state on the block thread, and the record comes back
   on a second ring for `reclaim` (control thread) to delete, so the audio thread frees nothing native.
-  What released instances, and the bundle's load, leave in cycles is collected while no block runs: at
-  the reclaim that ends a quiescent operation (the Engine's after every `setGraph`) and when the audio
-  thread hands the runtime back.
+  What released instances, and the built-in bundle's load, leave in cycles is collected while no block
+  runs, by a GC of each pack's audio runtime that has some: at the reclaim that ends a quiescent operation
+  (the Engine's after every `setGraph`) and when the audio thread hands the runtimes back. A loaded pack's
+  load collects its own before it returns.
 - **The block.** A node's `process` gets one `Block` object, the same every block: `messages(port)` a
   reused array whose payloads are copied into one JS-owned buffer per port, `control(id)` a reused
   `{ start, changes }`, `audio(port)` a reused `Float32Array[]` over the instance's own JS-owned copy of
@@ -695,9 +731,27 @@ audio-side one that holds every instance and runs `process`.
   or writes can reach a buffer another node reads or a plan the control thread frees. Ports are found
   through atoms made when the instance or its new layout is bound, so a warm block allocates nothing
   native, and a node written with indexed loops nothing in JS either. So **a `JSValue` never crosses
-  out**. The promise jobs a block's JS queues run at its end (`endBlock`), at most 256. The
-  **drift-exact PPQ tick clock lives entirely in JS** (`walkTicks`, which each clocking protocol node
-  runs); native passes only the block's transport in.
+  out**. The **drift-exact PPQ tick clock lives entirely in JS** (`walkTicks`, which each clocking
+  protocol node runs); native passes only the block's transport in.
+- **Promise jobs** run at a checkpoint right after each call the block thread makes into a node (its
+  `create`, `onSettings`, `portsChanged`, `activate` or `process`, after the audio outputs are copied
+  out), at most 256 (`kJobsPerCheckpoint`), inside the call's deadline, and are charged to that node: a
+  job that fails (a `queueMicrotask` callback that threw, or JS out of memory) is its throw, and faults
+  it under `faultOnThrow`; one the deadline stops counts as its call stopped; and a chain still pending
+  after the bound is cut short, its throw (`jobsCutShort` counts it), the second in a row faulting it.
+  QuickJS cannot drop a pending job, so a chain cut short stays queued, and its pack remembers whose it
+  is until the queue empties: its later checkpoints (the next calls into any of the pack's nodes) run the
+  rest charged to that node, never to a pack-mate, and once that node is released the rest is no node's.
+  A release runs what its pack has pending, charged likewise. Only a reload, which frees the pack's
+  runtime, ends a faulted node's chain; it runs, bounded, in its own pack.
+- **Memory.** Each pack's audio runtime is held to a memory limit (64 MiB unless its load says
+  otherwise) by the host's allocator, which refuses an allocation past it, so QuickJS throws out of
+  memory in the call that asked, and notes the refusal on the pack. A call, or its jobs, during which
+  its pack refused one faults its node at once (a refusal JS caught counted as the node's throw), since
+  a pack at its limit is one none of its nodes can rely on; a refusal during a release or a load faults
+  no node. The limit holds the whole runtime, its intrinsics (about 90 KB) and its code included, so a
+  limit too small for those refuses the load, which says so. Another pack is untouched, and the control
+  side's runtimes keep no limit: they hold no instance.
 - **A throw** in `process` is caught and counted, the block's output up to it stands, and the node runs
   again next block; a definition that says `faultOnThrow`, or a `process` that returns `"fault"`,
   faults instead (bypassed from then on), and a `faultOnThrow` node whose `onSettings`,
@@ -709,8 +763,8 @@ audio-side one that holds every instance and runs `process`.
   fails (a setter the node hung there threw or ran past the deadline, or it froze the object) is the
   node's throw too: `messages()` and `control()` throw it, and on its audio views, the `Block` or its
   transport, written before `process` is called, it is a throw in `process` whose block does not run.
-  Every node shares one realm, so the host keeps its writes, and its reads of a node's methods, off the
-  shared prototypes: each field it fills is the object's own data property from when it makes the object
+  Every node of a pack shares its realm, so the host keeps its writes, and its reads of a node's methods,
+  off the prototypes they share: each field it fills is the object's own data property from when it makes the object
   (a define, which never walks the prototype chain), and each array slot is set when it is the array's
   own at that write and defined when it is not (never made, or taken back by a shift, a splice or a
   shorter length). So only the node's own setters run there, never an accessor another node (or the
@@ -722,26 +776,35 @@ audio-side one that holds every instance and runs `process`.
   (its `get` trap, or its target's chain), so a wrapper or a test double works; a chain longer than
   `ScriptHost::kMethodHops` (1024) plain objects, or one that cycles back through a Proxy, fails the
   `create` rather than holding the block thread. The `Block` prototype every node reaches is frozen with
-  its methods, so no node replaces one for another: assigning one on a node's own `Block` (`block.send = f`) throws in the strict bundle,
-  where `Object.defineProperty` on it still works. That is the host's part only: what nodes can do to
-  each other through the shared realm (an accessor on a prototype another's own code reads through, a
-  global it calls) is left to one context per node ([07-remaining-work.md](07-remaining-work.md)).
-- **The call deadline.** Every call the block thread makes into a node's JS (and `endBlock`'s promise
-  jobs, together) is held to a deadline of the calling thread's CPU time (2 s by default,
-  `setCallDeadline`), so a stall that is not the node's own never trips it. A call that runs past it is
-  stopped and counted as a throw: a `faultOnThrow` node faults, any other runs again and faults only if
-  its next call is stopped too. Both runtimes' JS stacks are held to 256 KiB, under a macOS secondary
-  thread's 512 KiB.
+  its methods, so no node replaces one for another: assigning one on a node's own `Block`
+  (`block.send = f`) throws in the strict bundle, where `Object.defineProperty` on it still works. That
+  is the host's part only, and it guards against the nodes of one pack: what they can do to each other
+  through the realm they share (an accessor on a prototype another's own code reads through, a global it
+  calls) is left as it is, since one author wrote them all. Nodes of different packs share no realm.
+- **The call deadline.** Every call the block thread makes into a node's JS, with the `create` a fresh
+  instance's first call makes and the promise jobs its checkpoint runs, is held to one deadline of the
+  calling thread's CPU time (2 s by default, `setCallDeadline`), so a stall that is not the node's own
+  never trips it. A call that runs past it is stopped and counted as a throw: a `faultOnThrow` node
+  faults, any other runs again and faults only if its next call is stopped too. The control thread's
+  calls into a pack are held to the same length of its own CPU time, on a clock of its own: a load is one
+  call (its chunks in both runtimes, the jobs they queue, its definitions read), and so is a settings
+  check (`parseSettings` and `layout` with their jobs). A load the deadline stops refuses the pack; a
+  settings check it stops refuses the settings, so the planner refuses the document and the running plan
+  stands. Every runtime's JS stack is held to 256 KiB, under a macOS secondary thread's 512 KiB.
 
 Every entry into a runtime re-anchors with `JS_UpdateStackTop` because the driving thread differs
 (the control thread on the pull path, the audio thread while running), and QuickJS's stack-overflow
 guard is calibrated against the thread that last entered it. A profile build profiles the audio
-runtime there ([08-profiling.md](08-profiling.md)).
+runtimes there, every pack's summed ([08-profiling.md](08-profiling.md)).
 
 [`ScriptCompiler`](../packages/native/src/host/dsp/ScriptCompiler.hpp#L18) (`dsp::compileToBytecode`)
-compiles a script to QuickJS bytecode on a **transient, bare context**: the engine-graph tests use
-it to build their toy script nodes. The bytecode is version-locked to this exact qjs-ng build, which
-is fine because the compiler and the script host are the same `qjs`.
+compiles a script to QuickJS bytecode on a **transient, bare context**: `Engine::loadScriptPack` compiles a
+pack's source with it, and the engine-graph tests their toy script nodes. A compile error comes back as its
+text and line (`line 3: SyntaxError: ...`; QuickJS gives no finer position), and the parser is held to the
+script host's 256 KiB stack, since the source is a user's and the thread the Engine's control thread. The
+bytecode keeps its debug information (the built-in bundle's is stripped at build time) and is
+version-locked to this exact qjs-ng build, which is fine because the compiler and the script host are the
+same `qjs`.
 
 ## Wrapped shared-core classes
 
@@ -808,13 +871,13 @@ is one automatable parameter applied post-render across all 8 channels
 
 - [`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp) — mounts the capability facets onto a server; the single source of truth for the wire surface.
 - [`CoreBackends.cpp`](../packages/native/src/system/CoreBackends.cpp) — registers the `sameboy` / `mesen` backends into the `SystemFactory`.
-- [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp): the single-threaded owner of the graph (with its script host), the staged host MIDI, the host outputs and the registry; `processBlock`, `setGraph`, the command handler, `SyncTap`.
+- [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp): the single-threaded owner of the graph (with its script host), the staged host MIDI, the host outputs and the registry; `processBlock`, `setGraph`, `loadScriptPack`, the command handler, `SyncTap`.
 - [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp): `QueuedInvoker`, the one command path; [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp).
 - [`host/graph/`](../packages/native/src/host/graph): [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) (the cores as nodes), [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) (the host I/O nodes and the cart mirror), [`SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp), [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp).
 - [`GraphHost.hpp`](../packages/native/src/graph/GraphHost.hpp) / [`.cpp`](../packages/native/src/graph/GraphHost.cpp), [`rp_node.h`](../packages/native/src/graph/rp_node.h): the one ring, plan swap and reclaim; the node ABI (`layout_for` per type).
 - [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) — the owned read door.
 - [`SystemFactory.hpp`](../packages/native/src/system/SystemFactory.hpp), [`SameBoyBackend.cpp`](../packages/native/src/system/sameboy/SameBoyBackend.cpp), [`MesenBackend.cpp`](../packages/native/src/system/mesen/MesenBackend.cpp) — the build path.
-- [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp), [`ScriptCompiler.hpp`](../packages/native/src/host/dsp/ScriptCompiler.hpp): the script-node runtime + the tests' compiler; [`src/script/`](../packages/retroplug/src/script) (`bundle.ts`, `register.ts`, `nodes/`): the bundle every Engine embeds, how it registers its nodes, and the script nodes themselves.
+- [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp), [`ScriptCompiler.hpp`](../packages/native/src/host/dsp/ScriptCompiler.hpp): the script-node runtime and its packs, + the compiler a pack's source and the tests' toys go through; [`src/script/`](../packages/retroplug/src/script) (`bundle.ts`, `register.ts`, `nodes/`): the bundle every Engine embeds, how it registers its nodes, and the script nodes themselves.
 - [`HostRpcService.cpp`](../packages/native/src/host/rpc/HostRpcService.cpp), [`EngineRpcService.cpp`](../packages/native/src/host/rpc/EngineRpcService.cpp), [`DebugRpcService.cpp`](../packages/native/src/host/rpc/DebugRpcService.cpp), [`AudioDriverRpcService.cpp`](../packages/native/src/host/rpc/AudioDriverRpcService.cpp) — the RPC services behind the facets.
 - [`plugin/PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp), [`plugin/PluginShared.hpp`](../packages/native/plugin/PluginShared.hpp), [`src/main.cpp`](../packages/native/src/main.cpp), [`test/ui/UiHarness.hpp`](../packages/native/test/ui/UiHarness.hpp) — the three hosts.
 - [`CMakeLists.txt`](../packages/native/CMakeLists.txt), [`plugin/DistrhoPluginInfo.h`](../packages/native/plugin/DistrhoPluginInfo.h) — build wiring + plugin identity.

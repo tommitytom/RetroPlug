@@ -137,20 +137,26 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
 - **The capture mode as a Game Boy node setting** (Phase C, with the other live knobs): carried in the
   published document rather than through `ConfigField::SerialOutCapture` plus a publish, it would make a mode
   switch atomic and retire the master-sync design's first accepted limit (its section 10).
-- **One QuickJS context per script node, decided before user-written nodes.** Every script node runs in
-  the audio runtime's one context, so they share a realm: the script host keeps its own writes and its
-  reads of a node's methods off the shared prototypes ([02-native-host.md](02-native-host.md)), but one
-  node's code can still change what another's reads through (an accessor on `Object.prototype` or
-  `Array.prototype`, a global, a definition in `__rp_scriptNodes`), and a field a node deletes puts the
-  host's next write of it back on the chain. Promise jobs are charged to no node either:
-  `ScriptHost::runAudioJobs` runs every node's at the block's end under one deadline and counts a failed
-  one as nobody's throw, so a node that queues a never-ending reaction every block burns a full deadline
-  (2 s of CPU) every block and is never bypassed, as a `process` that hangs would be. A context per node
-  in the same runtime (its own intrinsics and prototypes) closes all of it, at a per-context memory cost,
-  and names the node a job ran in (`JS_ExecutePendingJob` reports the job's context); decide it before
-  nodes users write (Phase C, the Reaktor-scale aim). B3b made the project's nodes many, not one: eight is the
-  number of node types, and a project places the routing node, a controller when enabled, one node per protocol
-  role, and a second for each LSDj on a Game Boy, its serial-out decoder.
+- **Script node packs, built in Phase C1**
+  ([modular-graph-phase-c1-design.md](../docs/modular-graph-phase-c1-design.md)): each pack of script node types
+  runs in a QuickJS runtime pair of its own, the built-in bundle the first, packs load and reload while audio runs
+  (`loadScriptPack`, on every host), and a node pays for its own promise jobs (run at a checkpoint after each call
+  into it) and its pack's memory limit. Nothing in the app loads a pack yet. What it leaves (its sections 5, 12 and
+  13):
+  - **Isolation inside a pack.** Nodes of one pack share its realm, one author having written them all: one node's
+    code can still change what another's reads through (an accessor on `Object.prototype` or `Array.prototype`, a
+    global, a definition in `__rp_scriptNodes`), and a field a node deletes puts the host's next write of it back
+    on the chain ([02-native-host.md](02-native-host.md)). Freezing a pack's intrinsics after its load (an SES-style
+    lockdown) would close it, at the price of code that writes over an inherited property.
+  - **A node's state across a reload.** A reloaded pack's nodes restart clean; a `snapshot` / `restore` pair would
+    carry it.
+  - **The authoring loop, the pack format and downloads, a pack's UI half** (the design's section 8), **unloading a
+    pack**, and **loading one into more than one Engine**: a render job's Engine has the built-in pack only. A pack
+    compiled from source keeps its debug information, about a quarter more memory than stripped code; whether a
+    downloaded pack's is stripped is the pack format's to say.
+  - **A record the release ring back cannot take keeps its pack for the host's life**, as it leaks its record rather
+    than free it on the audio thread; nothing has filled that ring. A profile build's absolute live heap leaves out
+    what a pack loaded while audio runs allocated in its load (its deltas are exact).
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
     moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype

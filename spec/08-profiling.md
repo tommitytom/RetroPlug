@@ -214,8 +214,11 @@ past `renderAudio`'s 1024-frame block).
 
 ## 8. What was built
 
-- **Native allocator instrumentation**, on the script host's audio runtime
-  ([ScriptHost.hpp/.cpp](../packages/native/src/host/script/ScriptHost.cpp)): the counting
+- **Native allocator instrumentation**, on the script host's audio runtimes, every pack's summed
+  ([ScriptHost.hpp/.cpp](../packages/native/src/host/script/ScriptHost.cpp); a pack loaded beside the built-in
+  one, [modular-graph-phase-c1-design.md](../docs/modular-graph-phase-c1-design.md), counts its load and its
+  freeing apart, so a profile build's absolute live heap leaves out what a pack loaded while audio runs
+  allocated in its load, its deltas exact): the counting
   `JSMallocFunctions` installed via `JS_NewRuntime2` (`js_malloc_usable_size` returns the real platform
   size so QuickJS's own accounting stays valid), a per-Engine-block allocation bracket (`beginBlock` to
   `endBlock`: native aggregation → no per-block RPC), and `allocStats()` /
@@ -231,8 +234,9 @@ past `renderAudio`'s 1024-frame block).
   nodes' few microseconds beside the cores') and `state-publish`. A span is stored as it closes, so a block's
   `apu-render` follows the spans inside it in the list; the trace-event JSON gives each span its start and
   length, so nothing that reads it depends on that order. The labels are fixed: `script-node` (0),
-  `marshal`, `js-call`, `apu-render`, `state-publish` (1 to 4), then the bundle's types from
-  `DSP_SPAN_TYPE_BASE` (16) up, in the order it registered them, each named by its id (the production
+  `marshal`, `js-call`, `apu-render`, `state-publish` (1 to 4), then the packs' types from
+  `DSP_SPAN_TYPE_BASE` (16) up, in the order they were first registered, each named by its id and keeping its
+  label across its pack's reloads, so a dev loop's reloads do not use up the table (the production
   bundle's eight are 16 to 23: `rp.midi.route`, `rp.mgb.midi`, `rp.n8.midi-to-fifo`, `rp.risa.sync`,
   `rp.sms.sync`, `rp.lsdj.sync`, `rp.controller.session` and `rp.lsdj.serial-out`, registered last so the
   others kept their labels). By type rather than node id, as the DSP kernel's per-role spans were per kind
@@ -241,8 +245,8 @@ past `renderAudio`'s 1024-frame block).
   Every label is below `kDspSpanLabels` (1024), so the name table stays bounded: a type past it is traced
   as `script-node`. JS adds no spans of its own (the kernel's roles were the only JS that did, through span
   globals that went with them), so a span is always closed by the host, every way a call ends. The promise
-  jobs a block's JS queued sit in no span: they run in `endBlock`, after `apu-render` closes and before
-  `state-publish`. `dspTraceReset` / `dspTrace` / `dspTraceNames` read it, and `tools/run-profile.sh trace`
+  jobs a node's call queues have no span of their own: they run at the checkpoint after the call, which for
+  `process` lies inside its process span, after its `js-call`. `dspTraceReset` / `dspTrace` / `dspTraceNames` read it, and `tools/run-profile.sh trace`
   writes it as Chrome trace-event JSON.
 - **Introspection RPCs** — `dspAllocStats` / `dspResetAllocStats` / `dspRunGc` on the harness facet
   (`Engine` → `EngineRpcService`, reached directly through `engine_` in the quiescent `renderAudio`

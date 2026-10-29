@@ -89,7 +89,7 @@ goes through the command ring; all audio→control observation goes through the 
 
 | | **Control plane** (main / UI thread) | **Audio thread** (DPF `run()` / spawned `audioThread_`) |
 |---|---|---|
-| QuickJS runtime | control-plane txiki host ([`TjsHostRuntime`](../packages/native/plugin/PluginDSP.cpp)) | the script host's bare audio context ([`ScriptHost`](../packages/native/src/host/script/ScriptHost.hpp), owned by the Engine's graph) |
+| QuickJS runtime | control-plane txiki host ([`TjsHostRuntime`](../packages/native/plugin/PluginDSP.cpp)) | the script host's bare audio runtimes, one per pack ([`ScriptHost`](../packages/native/src/host/script/ScriptHost.hpp), owned by the Engine's graph) |
 | Owns | the RPC services + their facets, the TS stores and the graph they publish (`EngineGraph`), the editor | the live [`Engine`](../packages/native/src/host/engine/Engine.hpp): the running plan (its system nodes, each owning its core, and its script nodes, the MIDI routing and each role's protocol node among them, whose JS instances live in the script host), **while running** |
 | Does | issues mutation *requests*; plans structure into graph documents (the script nodes' settings checked in the script host's control side); reads snapshots by id; frees replaced plans and the cores only they held | drains the command ring, adopting plans in order; runs the plan each block; publishes snapshots |
 | Never | dereferences a live `SystemBase` while audio runs; frees a core a running plan holds | builds or frees a core or a plan, or blocks |
@@ -338,36 +338,50 @@ This is the teardown counterpart to `drainInto`, which *applies* pending command
 ## 6. The QuickJS runtimes
 
 A host runs one control-plane runtime, and every `Engine` it holds has a **script host** of its own
-with two more ([`ScriptHost`](../packages/native/src/host/script/ScriptHost.hpp),
-[modular-graph-phase-b3a-design.md](../docs/modular-graph-phase-b3a-design.md) section 2). (A UI
+with two more for each **script node pack** it holds: the built-in one, and any loaded beside it
+([`ScriptHost`](../packages/native/src/host/script/ScriptHost.hpp),
+[modular-graph-phase-b3a-design.md](../docs/modular-graph-phase-b3a-design.md) section 2,
+[modular-graph-phase-c1-design.md](../docs/modular-graph-phase-c1-design.md)). (A UI
 render job adds a bare QuickJS `RenderHost` with an Engine, so a script host, of its own,
 [11-ui-rendering.md](11-ui-rendering.md); the Node-API host runs its control plane in V8.) None is
 shared, and no JS value passes between any two:
 
-| | **Control-plane runtime** | **Script host: control side** | **Script host: audio side** |
+| | **Control-plane runtime** | **A pack's control side** | **A pack's audio side** |
 |---|---|---|---|
 | Type | txiki full host ([`TjsHostRuntime`](../packages/native/plugin/PluginDSP.cpp)) | bare QuickJS, no txiki | bare QuickJS, no txiki |
-| Owner | the host (plugin / test host / UI harness) | the Engine's graph | the Engine's graph |
-| Runs | the TS control-plane bundle: stores, `Backend` adapter, `__rp_*` globals, editor | each script type's `parseSettings` and `layout`, for the planner's `layout_for` and `prepare_settings`; it never holds an instance | every script node instance (its `create`, `process`, `onSettings`, `portsChanged`, `activate`): the MIDI routing, the controller session and each role's protocol node |
-| Thread | control plane only | the thread that plans (`setGraph`) | whichever thread drives the block |
+| Owner | the host (plugin / test host / UI harness) | the Engine's script host, one per pack | the Engine's script host, one per pack |
+| Runs | the TS control-plane bundle: stores, `Backend` adapter, `__rp_*` globals, editor | its pack's types' `parseSettings` and `layout`, for the planner's `layout_for` and `prepare_settings`; it never holds an instance | every instance of its pack's types (its `create`, `process`, `onSettings`, `portsChanged`, `activate`): for the built-in pack, the MIDI routing, the controller session and each role's protocol node |
+| Thread | control plane only | the thread that plans (`setGraph`) and loads packs (`loadScriptPack`) | whichever thread drives the block, once its pack is loaded (the load runs on the control thread) |
 | Data | full JS objects over `__rpcSend` | settings JSON in, layout JSON out | the plan's queues and control streams, and copies of its audio buffers, through one reused `Block` object per instance; a JSValue never crosses out |
 
-Both script runtimes are loaded at the Engine's construction with the same script-node bundle
-([`bundle.ts`](../packages/retroplug/src/script/bundle.ts)), compiled to bytecode at build time and
-embedded in `retroplug-backend`, so every host's Engines have the same node types with no boot call.
-Each script type is a node type of the package `rp.script`, and each script node of a plan is a
-native shim the planner creates, activates and destroys like any node; its JS instance is made on the
-block thread when its plan is adopted, before that plan's first `process`, and released there at the
-start of a later block once the shim is destroyed (at once while no audio thread runs). The
-production bundle's eight are the MIDI routing, a protocol node for each role that has one (mGB, the N8
-FIFO, risa, smsggdj and LSDj sync), the controller session and LSDj's serial-out decoder: each takes its
-settings from the document, and its inputs and outputs are real wires from the host I/O nodes and to each
-system node's inputs, or, for the decoder, from its Game Boy's output. Native owns no role logic; in
-particular, **the drift-exact PPQ tick clock lives entirely in JS** (`walkTicks`). The nodes and the role
+The built-in pack, `rp.script`, is the first: both its runtimes are loaded at the Engine's construction
+with the script-node bundle ([`bundle.ts`](../packages/retroplug/src/script/bundle.ts)), compiled to
+bytecode at build time and embedded in `retroplug-backend`, so every host's Engines have the same node
+types with no boot call. Each of a pack's script types is a node type of the package named by the
+pack's id, and each script node of a plan is a native shim the planner creates, activates and destroys
+like any node; its JS instance is made on the block thread when its plan is adopted, before that plan's
+first `process`, and released there at the start of a later block once the shim is destroyed (at once
+while no audio thread runs). The production bundle's eight are the MIDI routing, a protocol node for each
+role that has one (mGB, the N8 FIFO, risa, smsggdj and LSDj sync), the controller session and LSDj's
+serial-out decoder: each takes its settings from the document, and its inputs and outputs are real
+wires from the host I/O nodes and to each system node's inputs, or, for the decoder, from its Game Boy's
+output. Native owns no role logic; in particular, **the drift-exact PPQ tick clock lives entirely in JS**
+(`walkTicks`). The nodes and the role
 model are specified in [04-roles-protocol-nodes.md](04-roles-protocol-nodes.md); the runtime under them in
 [02-native-host.md](02-native-host.md).
 
-The audio side runs on **both** threads over its lifetime (the control thread on the pull-path
+More packs load at runtime, while audio runs or not: `loadScriptPack`, on the `emulator` facet every host
+mounts, compiles a pack's source on the control thread and loads it into two runtimes made for it, its type
+ids under its own id (never `rp` or an id under it, which are the app's), and its types join the registry for
+the next document to place. Loaded again, a pack reloads: the running document is planned again, so its
+nodes rebuild on the new code while every other node keeps its instance, all or nothing, and the old
+generation's runtimes are freed on the control thread once the block thread holds nothing of it. A pack
+isolates its nodes from every other pack's (a prototype or a global one patches, a heap it fills) but not from
+each other; its promise jobs run after each call into one of its nodes, charged to that node, and its audio
+runtime is held to a memory limit (64 MiB by default). Each loaded pack costs two runtimes, about 180 KB and
+twice what its code loads to. Nothing in the app loads one yet.
+
+A pack's audio side runs on **both** threads over its lifetime (the control thread on the pull-path
 `renderAudio`, the audio thread once running), so every entry re-anchors QuickJS's stack-overflow
 guard to the current thread with `JS_UpdateStackTop` before entering JS, or a call from a
 different stack throws a spurious overflow. The control side does the same.
@@ -419,14 +433,16 @@ lost mutation.
    there by the planner. A replaced plan goes back through the release ring and is destroyed, with
    any core only it held, on the control thread. Adopting a plan inside a block is a pointer swap
    and the calls its plan carries (settings commits, `ports_changed`). The block thread does allocate
-   and free in the script host's audio runtime: a script node's JS instance is created there when its
-   plan is adopted (and a commit's settings are parsed into JS for its `onSettings`), and released at
-   the start of a later block once its shim is destroyed (16 a block at most). The native record
+   and free in the script host's audio runtimes: a script node's JS instance is created in its pack's
+   when its plan is adopted (and a commit's settings are parsed into JS for its `onSettings`), and
+   released at the start of a later block once its shim is destroyed (16 a block at most). The native record
    behind a released instance goes back to the control thread to be deleted (`ScriptHost::reclaim`),
    as do the settings a commit replaced, and what released instances leave in cycles is collected
-   while no block runs (a quiescent reclaim, or the audio thread handing the runtime back). A heavy
-   `create` is therefore an xrun risk at a swap, accepted as the price of one runtime that only the
-   block thread enters.
+   while no block runs (a quiescent reclaim, or the audio thread handing the runtimes back). A heavy
+   `create` is therefore an xrun risk at a swap, accepted as the price of runtimes that only the
+   block thread enters. A pack's runtimes themselves are made, loaded and freed on the control thread:
+   a pack loaded, or a reload's new generation, before any plan places one of its nodes, and a
+   generation a reload retired once no record of its nodes is alive.
 
 5. **Leak before you block or free in the render loop.** A full release ring leaks a plan (and the
    cores only it held) rather than free it on the audio thread: real-time safety is never traded for
@@ -437,14 +453,14 @@ lost mutation.
    both on the control thread, both outside the window in which the audio thread publishes to that
    slot. `claim` publishes the slot id last; `release` clears it first.
 
-7. **A JSValue never crosses out of the script host's audio runtime, and no plan memory crosses in.**
+7. **A JSValue never crosses out of a pack's audio runtime, and no plan memory crosses in.**
    A script node reaches the plan only through its shim: its input messages are copied into JS-owned
    buffers, its audio ports are JS-owned copies (an input's samples copied in before `process`, an
    output's copied out after it), and what it sends is written straight into the plan's output queues.
    So nothing a node keeps, transfers or edits can reach a buffer another node reads or a plan the
    control thread has freed. A protocol node's sends are its output ports. The runtime is separate
-   from the control-plane runtime and from the script host's control side, and is re-anchored to the
-   calling thread on every entry.
+   from the control-plane runtime, from its pack's control side and from every other pack's runtimes,
+   and is re-anchored to the calling thread on every entry.
 
 8. **TypeScript owns identity, orchestration and structure; native never mints or decides.** System
    ids are allocated by TS and passed into `buildCore`; native returns what it built, never an id
@@ -477,8 +493,8 @@ lost mutation.
 | [`buildGraph.ts`](../packages/retroplug/src/graph/buildGraph.ts) / [`engineGraph.ts`](../packages/retroplug/src/engineGraph.ts) | the engine's graph as TS builds it from the stores, and its publisher (the `ProjectStore`'s, or a `DirectGraph`'s or bare `SystemsStore`'s own) |
 | [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) / [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) / [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp) | the cores as nodes (each owning its core), the host I/O nodes and the cart mirror, and the host services they ask for |
 | [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) | the id-keyed read door; claim/publishSystem/read/release |
-| [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) | the single-threaded owner of the graph (with the script host its TS nodes run in), the staged host MIDI, the host outputs and the registry; `parkCore` / `setGraph`, `processBlock`, the command handler, `SyncTap` |
-| [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp) | the script-node runtime: TS nodes behind the C ABI in two bare QuickJS contexts, and the audio runtime's profiling |
+| [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) | the single-threaded owner of the graph (with the script host its TS nodes run in), the staged host MIDI, the host outputs and the registry; `parkCore` / `setGraph` / `loadScriptPack`, `processBlock`, the command handler, `SyncTap` |
+| [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp) | the script-node runtime: TS nodes behind the C ABI in packs, each two bare QuickJS runtimes of its own (the built-in pack first, more loaded and reloaded at runtime), and the audio runtimes' profiling |
 | [`nodes/`](../packages/retroplug/src/script/nodes) / [`bundle.ts`](../packages/retroplug/src/script/bundle.ts) | the script nodes buildGraph places (the MIDI routing, each role's protocol node, the controller session), and the script-node bundle every Engine embeds |
 | [`PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp) | plugin control-plane bring-up + the `run()` block driver |
 | [`PluginShared.hpp`](../packages/native/plugin/PluginShared.hpp) | the in-process editor↔control-plane handoff |

@@ -102,7 +102,8 @@ export interface Backend {
   // looks for a sibling, never classifies. No ROM/SRAM bytes cross for construction:
   // native slurps the paths it's given. Which cores run, in what order and wired how is
   // the graph TS builds (graph/buildGraph.ts); duplicate, reload and remove are TS
-  // orchestration over these two calls (SystemsStore), with no native method of their own.
+  // orchestration over buildCore and setGraph (SystemsStore), with no native method of their own.
+  // loadScriptPack adds script node types beside the built-in ones, for a document to place.
 
   /** Build + activate an emulator core from a spec under the TS-allocated `id` (TS owns the id counter;
    *  native never mints one), and park it for the next graph document to place
@@ -116,6 +117,20 @@ export interface Backend {
    *  and the host's outputs, with the systems in slot order and the NES tap re-arm its edit makes. A
    *  refused document changes nothing; its errors name the node at fault. */
   setGraph(request: SetGraphRequest): SetGraphResult;
+
+  /** Load a pack of script node types into the engine, or reload one loaded already, while audio runs or not
+   *  (docs/modular-graph-phase-c1-design.md section 7). `source` is global code, the IIFE a bundler makes, appending
+   *  its `defineNode` results to `__rp_scriptNodes` (script/register.ts) as the built-in bundle does; each type id is
+   *  the pack's id, a dot and a name, and the id is none of the app's ("rp" and every id under "rp."). A load lists the
+   *  pack's types with their descriptor JSON, and a document can place them from the next `setGraph`. A reload
+   *  rebuilds every node of the pack the running document places on the new code, its JS state not carried over, and
+   *  every other node runs on as it was. Refused, nothing changes and the old code runs on, `error` saying why:
+   *  `errors` holds the planner's errors when a reload's replan refused, and is empty when the refusal came before any
+   *  replan (the id, a compile error, the load, the registry). A replan refused `busy` (the engine's command ring
+   *  full, or a settings change not yet adopted) says nothing against the pack: the call may be retried.
+   *  `memoryLimitBytes` holds the pack's audio runtime to that many bytes (absent or 0: 64 MiB). Nothing in the app
+   *  calls it yet; the mock backend refuses it. */
+  loadScriptPack(request: LoadScriptPackRequest): LoadScriptPackResult;
 
   // --- File dialog --------------------------------------------------------
 
@@ -390,7 +405,7 @@ export type HostBackend = Pick<
 /** Emulator lifecycle / live config / input / snapshot reads — bound by the plugin, UI, CLI, test host. */
 export type EmulatorBackend = Pick<
   Backend,
-  | "buildCore" | "setGraph" | "applySystemSetting" | "applyRoleConfig" | "setSerialOutCapture"
+  | "buildCore" | "setGraph" | "loadScriptPack" | "applySystemSetting" | "applyRoleConfig" | "setSerialOutCapture"
   | "pressButton" | "stageSystemMidi" | "readState" | "readSram" | "readRam" | "writeRam" | "getFrame"
 >;
 
@@ -726,6 +741,29 @@ export interface GraphError {
 export interface SetGraphResult {
   ok: boolean;
   errors: GraphError[];
+}
+
+/** A pack of script node types for `loadScriptPack`: its id, its source (global code) and its audio runtime's memory
+ *  limit, a whole number of bytes (absent or 0: the default, 64 MiB). */
+export interface LoadScriptPackRequest {
+  id: string;
+  source: string;
+  memoryLimitBytes?: number;
+}
+
+/** One of a pack's node types: its id and its descriptor, the canonical JSON the engine's registry holds. */
+export interface ScriptPackType {
+  id: string;
+  descriptor: string;
+}
+
+/** What `loadScriptPack` did: `error` is empty when `ok`; `errors` are the planner's when a reload's replan refused;
+ *  `types` are the pack's when `ok`, in the order its source registered them. */
+export interface LoadScriptPackResult {
+  ok: boolean;
+  error: string;
+  errors: GraphError[];
+  types: ScriptPackType[];
 }
 
 /** Presentation for an OS file dialog: its title + the glob patterns to show. */

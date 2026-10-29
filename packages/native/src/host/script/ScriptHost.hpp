@@ -206,9 +206,11 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 //
 // Each pack's audio runtime is held to a memory limit (kDefaultMemoryLimit, unless its load says otherwise) by the
 // host's allocator, which refuses an allocation past it, so QuickJS throws out of memory in the call that asked, and
-// notes the refusal on the pack: a call, or its jobs, during which its pack refused one faults its node at once (a
-// refusal JS caught counted as the node's throw), since a pack at its limit is one none of its nodes can rely on.
-// Another pack is untouched. The control side's runtimes keep no limit: they hold no instance.
+// notes the refusal on the pack. The limit holds the whole runtime, its intrinsics (about 90 KB) and the pack's loaded
+// code with them, so one too small for those refuses the load, which says so. Once the pack is loaded, a call, or its
+// jobs, during which its pack refused one faults its node at once (a refusal JS caught counted as the node's throw),
+// since a pack at its limit is one none of its nodes can rely on. Another pack is untouched. The control side's
+// runtimes keep no limit: they hold no instance.
 //
 // A throw in process is caught, counted and the block's output up to it stands: the node runs again next block
 // (design section 4.5), unless its definition says faultOnThrow, when it faults (RP_FAULT, the executor's latch); a

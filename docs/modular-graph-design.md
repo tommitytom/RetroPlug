@@ -1,6 +1,6 @@
 # Design: the modular node-graph engine
 
-**Date:** 2026-10-23 · **Branch:** `feature/modularize` · **Status:** Phase A built (`packages/native/src/graph/`, `packages/retroplug/src/graph/`); Phase B0 to B3b built (Phases C to E not yet built).
+**Date:** 2026-10-23 · **Branch:** `feature/modularize` · **Status:** Phase A built (`packages/native/src/graph/`, `packages/retroplug/src/graph/`); Phase B0 to B3b built, and Phase C1 (the rest of Phases C to E not yet built).
 
 RetroPlug's long-term direction is a modular system in the spirit of Reaktor: emulated consoles (and
 the real hardware they can drive) appear as nodes in a graph alongside DSP effects and routing nodes.
@@ -609,7 +609,9 @@ export const lsdjSync = defineNode({
 The host wraps each TS node instance in the C table. One script runtime per engine holds every TS node,
 and each node's `process` calls into it. On the desktop that is B3a's script host
 ([ScriptHost.hpp](../packages/native/src/host/script/ScriptHost.hpp), [B3a §2](modular-graph-phase-b3a-design.md)),
-with a second, control-side runtime that answers `layout_for` and `prepare_settings` and holds no instance.
+with a second, control-side runtime that answers `layout_for` and `prepare_settings` and holds no instance. Since C1
+that pair is per script node pack ([modular-graph-phase-c1-design.md](modular-graph-phase-c1-design.md)): the built-in
+bundle is the first pack, and each pack loaded beside it holds its own nodes in runtimes of its own.
 
 | Platform | Script runtime |
 |---|---|
@@ -1140,6 +1142,11 @@ of the bundle (78 KB, from 660), and the kernel is deleted. Every recorded diges
 the per-role graph, and strict parity held bit for bit at every commit.
 
 ### Phase C: nodes own their knowledge
+
+C1 is built ([modular-graph-phase-c1-design.md](modular-graph-phase-c1-design.md)): the script host holds packs, each
+pack of script node types in a QuickJS runtime pair of its own with the built-in bundle the first, a pack loads and
+reloads while audio runs (`loadScriptPack`, on every host), and a node pays for its own promise jobs and its pack's
+memory limit. Strict parity held bit for bit at every commit.
 
 - Console-specific code moves into each node; every `dynamic_cast` in §6.5 goes.
 - `SystemBase` shrinks to the capability interfaces; `MesenAudioDevice` gets a preallocated ring (it

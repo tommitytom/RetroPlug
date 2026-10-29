@@ -145,6 +145,30 @@ RpcSetGraphResult EngineRpcService::setGraph(RpcSetGraphRequest request) {
     return out;
 }
 
+RpcLoadScriptPackResult EngineRpcService::loadScriptPack(RpcLoadScriptPackRequest request) {
+    RpcLoadScriptPackResult out{false, {}, {}, {}};
+    // The limit arrives as the JS number it was (BackendTypes.hpp says why): a whole number of bytes a double holds
+    // exactly, or refused.
+    std::size_t limit = 0;
+    if (request.memoryLimitBytes) {
+        constexpr double kLargest = 9007199254740991.0;  // 2^53 - 1, JS's Number.MAX_SAFE_INTEGER
+        const double bytes = *request.memoryLimitBytes;
+        if (!(bytes >= 0.0 && bytes <= kLargest && std::floor(bytes) == bytes)) {
+            char text[64];
+            std::snprintf(text, sizeof text, "%g", bytes);
+            out.error = std::string("memoryLimitBytes must be a whole number of bytes, 0 for the default: not ") + text;
+            return out;
+        }
+        limit = static_cast<std::size_t>(bytes);
+    }
+    const Engine::ScriptPackResult result = engine_.loadScriptPack(request.id, request.source, limit);
+    out.ok = result.ok;
+    out.error = result.error;
+    for (const auto& e : result.errors) out.errors.push_back({e.nodeId, e.port, e.code, e.message});
+    for (const auto& t : result.types) out.types.push_back({t.id, t.descriptor});
+    return out;
+}
+
 // duplicate, reload and remove are TS orchestration (SystemsStore over the registry reads + buildCore, and
 // the documents it publishes): duplicate pulls the source savestate and builds a seeded core; reload pulls
 // SRAM and cold-boots the ROM into the same slot; remove publishes a document without it. Native has no

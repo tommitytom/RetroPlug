@@ -1875,6 +1875,16 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
         clearException(pack.control);
         clearException(pack.audio);
         if (controlInterrupted_) why = Glue::stopped(*this, "its load") + ": " + why;
+        // A load the memory limit refused an allocation says so: the limit holds the whole audio runtime, its
+        // intrinsics included, and once it cannot even make its out-of-memory error QuickJS throws null, which says
+        // nothing.
+        if (pack.heap.refused) {
+            constexpr std::size_t kMiB = std::size_t{1} << 20;
+            why += " (the load went past the pack's " +
+                   (pack.heap.limit % kMiB == 0 ? std::to_string(pack.heap.limit / kMiB) + " MiB"
+                                                : std::to_string(pack.heap.limit) + "-byte") +
+                   " memory limit)";
+        }
         if (error) *error = std::move(why);
         return false;
     };

@@ -4,7 +4,7 @@
 // "disk". This is what lets the whole application layer be tested with `tjs run`
 // and nothing else.
 
-import type { ApuState, ApuSquareState, Backend, BreakHitBatch, BuiltCore, SetGraphRequest, SetGraphResult, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CoreTransportStats, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, SerialOutCapture, TraceLine, ZipEntry } from "../src/backend";
+import type { ApuState, ApuSquareState, Backend, BreakHitBatch, BuiltCore, SetGraphRequest, SetGraphResult, LoadScriptPackResult, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CoreTransportStats, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, SerialOutCapture, TraceLine, ZipEntry } from "../src/backend";
 import { detectPlatform } from "../src/platform";
 import { savFromJson } from "../src/lsdj";
 import type { GraphDocument, NodeDoc } from "../src/graph/graphDocument";
@@ -313,6 +313,13 @@ export class MockBackend implements Backend {
     }
     this.systems = live;
     return { ok: true, errors: [] };
+  }
+
+  // Script packs need a JS engine to run their nodes in, which the mock does not have: it refuses every one, before
+  // any replan, as native refuses a pack it cannot load.
+  loadScriptPack(): LoadScriptPackResult {
+    this.log.push("loadScriptPack");
+    return { ok: false, error: "the mock backend runs no script packs", errors: [], types: [] };
   }
 
   /** The system the build `call` displaced from its slot: the id that held that slot in the document before

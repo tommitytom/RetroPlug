@@ -343,9 +343,12 @@ or the node removed and added again, clears it).
 **Settings without zod.** A node's settings are a zod-free schema
 ([graph/settingsSchema.ts](../packages/retroplug/src/graph/settingsSchema.ts): `s.object`, `s.enum`,
 `s.int`, `s.bool`, `s.number`, `s.string`, `s.array`, `s.json`), each builder parsing and writing its JSON
-Schema as its zod twin did, so the bundle every Engine loads into both of its script runtimes holds no zod
-(78 KB, where the kernel's was 660 KB, most of it zod). `defineNode` takes any schema with `safeParse` and
-`toJSONSchema`, so a zod schema still serves on the control plane. The role's own zod schema stays on the
+Schema as its zod twin did, so the bundle every Engine loads as its built-in script pack, `rp.script`, into
+both of that pack's runtimes, holds no zod (78 KB, where the kernel's was 660 KB, most of it zod). A pack
+loaded beside it ([02-native-host.md](02-native-host.md), the script host) runs in runtimes of its own, so
+nothing its nodes do to their realm, their promise jobs or their heap reaches the protocol nodes.
+`defineNode` takes any schema with `safeParse` and `toJSONSchema`, so a zod schema still serves on the
+control plane. The role's own zod schema stays on the
 control plane: the store parses a role's config with it, and that parsed config is the node's settings.
 [bundle-no-zod.test.ts](../packages/retroplug/test/script/bundle-no-zod.test.ts), a `pnpm test` case (not a
 build gate), fails on a bundle that pulls a zod module, or a role or config module, back in, or that passes 200 KB.
