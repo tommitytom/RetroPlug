@@ -6,12 +6,12 @@
 // the registry and the running plan as they were (a load that got as far as being built still uses up a generation
 // number). Loaded again, it reloads: its placed nodes rebuild on the new code while every other node keeps its instance
 // and its state (the running plan's tap included), a reload whose replan is refused leaves the registry and the running
-// plan as they were, the generation it built discarded, and the generation a reload replaced is freed on the control
-// thread once its records are back, within the call when no audio thread runs, as a discarded one is when the refused
-// plan made no instance of it. The control thread's calls into a pack, its load and its settings checks, are held to
-// the call deadline on a clock of their own. Driven on an Engine, whose built-in pack is the production bundle, the toy
-// packs inline JS source; and on a ScriptRig, where the host's binder, its allocation counts and the built-in pack's
-// deadline are what is checked.
+// plan as they were, the generation it built discarded: freed within the call, or, when under an audio thread the
+// refused plan made a fresh instance of it, held until that instance's record comes back; and the generation a reload
+// replaced is freed on the control thread once its records are back, within the call when no audio thread runs. The
+// control thread's calls into a pack, its load and its settings checks, are held to the call deadline on a clock of
+// their own. Driven on an Engine, whose built-in pack is the production bundle, the toy packs inline JS source; and on
+// a ScriptRig, where the host's binder, its allocation counts and the built-in pack's deadline are what is checked.
 //
 // Run via `pnpm test:plugin engine-graph`, or `build/bin/retroplug-engine-graph-test "[packs]"`.
 
@@ -468,7 +468,7 @@ Object.defineProperty(f[f.length - 1], "faultOnThrow", { get: function () { )JS"
 )JS"),
             std::string("its definitions' ") + kUnsettled + ", in the control context", "test.flagchain.up");
     // A FinalizationRegistry callback that starts one, its target a cycle the top level drops, which the loaded pack's
-    // collection finds (a threshold GC on the way would find it earlier, and be read as the top level's own; this
+    // collection finds (a threshold GC on the way would find it earlier, and be read as the stretch it ran in; this
     // small a heap reaches none).
     refused(e, "test.finchain", toys(transposer("test.finchain.up", 1) + R"JS(
 var registry = globalThis.registry = new FinalizationRegistry(function () { )JS" + jobChain(0) + R"JS( });
@@ -738,8 +738,8 @@ TEST_CASE("the call deadline holds every pack's control side, the built-in one's
 
     // A loaded pack's load, stopped wherever it hangs: its audio runtime's top level (the control side's loaded fine),
     // a job its top level queued, a definition's descriptor. None is added. Only the first reaches the audio runtime
-    // before the load stops: the others run in both runtimes, and the control runtime, loaded first, is the one they
-    // stop in.
+    // before the load stops: the others hang in code both runtimes would run, and the control runtime, loaded first, is
+    // where they stop.
     const std::vector<std::pair<std::string, std::string>> hangs{
         {"test.audiohang", transposer("test.audiohang.up", 1) + "if (__audioSide) for (;;) {}"},
         {"test.jobhang", transposer("test.jobhang.up", 1) + "Promise.resolve().then(function () { for (;;) {} });"},

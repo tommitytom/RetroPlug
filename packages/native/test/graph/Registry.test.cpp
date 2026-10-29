@@ -410,6 +410,7 @@ TEST_CASE("a refused replacement leaves the last one undoable: the retired versi
         INFO(why);
         std::string error;
         CHECK(reg.replacePackage("p", next, &error) == nullptr);
+        INFO(error);
         CHECK(error.find(why) == 0);
         CHECK(reg.size() == total);
         CHECK(reg.retiredSize() == 2);

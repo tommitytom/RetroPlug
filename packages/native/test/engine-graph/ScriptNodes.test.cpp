@@ -1181,8 +1181,8 @@ TEST_CASE("an allocation refused in a script node's promise job faults it at onc
     CHECK(rig.scripts.throwCount() == 2);
     rig.reclaim();
     INFO(rig.scripts.firstThrow());
-    // Both hogs fail in the same block, and the first throw kept is the hog's: the plan runs it first because nothing
-    // orders the two but the document, whose order breaks the tie.
+    // Both hogs fail in the same block, and the first throw kept is the job-hog's, not the job-glutton's: the plan runs
+    // it first because nothing orders the two but the document, whose order breaks the tie.
     CHECK(rig.scripts.firstThrow().find("rp.toy.job-hog ") == 0);
     CHECK(rig.scripts.firstThrow().find("16 MiB memory limit in a promise job (an allocation was refused), and was "
                                         "faulted") != std::string::npos);
@@ -1544,20 +1544,20 @@ trapAudio("rp.toy.trap-audio", {}), trapAudio("rp.toy.strict-trap-audio", { faul
 })]);
 )JS";
 
-// The one realm every script node shares. rp.toy.polluter, in its first block, hangs a getter and a setter that throw
-// (saying so first) on Array.prototype's first indices and on Object.prototype for every name the host writes onto
-// what it makes, as a node, or the bundle, may; then shows each took, on a fresh object or array. Its settings add the
-// names the host reads a node's methods by: hooks "throw" traps them too, and hooks "adopt" makes each a function on
-// Object.prototype that says it ran. rp.toy.tidy, planned after it, does nothing a node should not: it passes its
-// messages and control changes on, scales its audio by its param and its block's number, reads its transport and says
-// whether an exception is pending and how many views it got; with shrink "arrays" it takes back every array it was
-// handed once it has read it, every block, draining its messages with shift and emptying its changes and both views
-// arrays (a zero length, a splice). It calls no builtin that keeps an array of its own, as JSON.stringify does: QuickJS
-// pushes onto one through the prototype chain, so the traps would meet the node's own call, which is no write of the
-// host's. rp.toy.hollow's create returns no process; rp.toy.classy's returns a class instance, its process and
-// portsChanged on its class's prototype and its onSettings on its base class's. rp.toy.vandal, in its first block,
-// tries every way to replace, remove or shadow a method on the Block prototype every node shares, and says whether
-// all of it stood.
+// The one realm every script node of a pack shares (these toys are all one pack's, the bundle a ScriptRig loads as its
+// built-in pack). rp.toy.polluter, in its first block, hangs a getter and a setter that throw (saying so first) on
+// Array.prototype's first indices and on Object.prototype for every name the host writes onto what it makes, as a node,
+// or the bundle, may; then shows each took, on a fresh object or array. Its settings add the names the host reads a
+// node's methods by: hooks "throw" traps them too, and hooks "adopt" makes each a function on Object.prototype that
+// says it ran. rp.toy.tidy, planned after it, does nothing a node should not: it passes its messages and control
+// changes on, scales its audio by its param and its block's number, reads its transport and says whether an exception
+// is pending and how many views it got; with shrink "arrays" it takes back every array it was handed once it has read
+// it, every block, draining its messages with shift and emptying its changes and both views arrays (a zero length, a
+// splice). It calls no builtin that keeps an array of its own, as JSON.stringify does: QuickJS pushes onto one through
+// the prototype chain, so the traps would meet the node's own call, which is no write of the host's. rp.toy.hollow's
+// create returns no process; rp.toy.classy's returns a class instance, its process and portsChanged on its class's
+// prototype and its onSettings on its base class's. rp.toy.vandal, in its first block, tries every way to replace,
+// remove or shadow a method on the Block prototype every node of its pack shares, and says whether all of it stood.
 const char* const kRealm = R"JS(
 class Base { onSettings(s) { __probe("classy onSettings " + s.tag); } }
 class Classy extends Base {
@@ -2027,7 +2027,8 @@ TEST_CASE("a script node whose prototype chain cycles through a Proxy, or runs p
     }
 }
 
-TEST_CASE("the Block prototype every script node shares, and its methods, are frozen, so no node replaces one for another",
+TEST_CASE("the Block prototype every script node of a pack shares, and its methods, are frozen, so no node replaces one for "
+          "another",
           "[script][trap][realm][block]") {
     ScriptRig rig(kRealm);
     REQUIRE(rig.set(doc(node("v", "rp.toy.vandal"), "")).ok);
