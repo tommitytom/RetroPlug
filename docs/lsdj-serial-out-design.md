@@ -314,6 +314,14 @@ The commits' reviews found more, fixed in the commits after them:
   block. [HostIo.test.cpp](../packages/native/test/engine-graph/HostIo.test.cpp) feeds it frames at and past the
   block's length and one wrapped from -1 through `rp.test.raw-feed`. No producer of RetroPlug's sends such a frame,
   so parity holds unchanged.
+- **No case on CI ran a real capture through the decoder, or a change of rate on an engine.** The decoder's rate
+  cases are TS (the decoder, and the node on its rig's transport), the protocol rig and the bench feed it stand-ins,
+  and the cases that capture from LSDj need the fixtures.
+  [HostIo.test.cpp](../packages/native/test/engine-graph/HostIo.test.cpp) now runs both on an `Engine`: mGB's idle
+  line, which it clocks out 0xFF byte after 0xFF byte and MI.OUT reads as LSDj's clock, decoded into a 0xF8 at each
+  completing byte's frame, inside each block of a ragged split; and a master-sync run opened at 48 kHz, carried over
+  `Engine::setSampleRate(44100)`, whose stop goes at frame 445 of the next block, the first past 200 ms (the decoder
+  before the rescale put it at frame -295, which the guard now sends at the block's last frame).
 - **dsp-bench's LSDj windows needed a floor, and stay out of the valgrind modes.** MI.OUT's clocks come unevenly
   (at the default warmup none in a window's first 20 blocks, 8 in its first 100, 40 in 400), so a window of
   `RP_BENCH_BLOCKS` 5, 10 or 20 failed the playing check for want of one: a window runs at least 100 blocks, and the

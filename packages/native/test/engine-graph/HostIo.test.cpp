@@ -1,10 +1,12 @@
 // The engine's host I/O nodes and the cart mirror (docs/modular-graph-phase-b3a-design.md sections 3.3 to 3.5): what
 // the hosts stage reaches a plan through rp.host.midi-in and controller-in (a plan without one drops what it would
 // take, and a block too long to run drops it all), what a plan sends reaches the buffers the hosts drain through
-// rp.host.midi-out (each input under the system its settings name) and controller-out, rp.n8.cart-mirror feeds the
-// engine's core-byte sink, the Game Boy's serialOut carries MI.OUT, and a full queue's drops reach the engine and the
-// harness RPC. A document holds one midi-in, one controller-in, one midi-out and one cart mirror at most, the mirror
-// naming a NES. Driven on a quiescent Engine, and on a NodeRig where a node's calls on the engine are what is checked.
+// rp.host.midi-out (each input under the system its settings name, merged by frame, every frame inside its block) and
+// controller-out, rp.n8.cart-mirror feeds the engine's core-byte sink, the Game Boy's serialOut carries MI.OUT, which
+// LSDj's decoder (rp.lsdj.serial-out) sends on as host MIDI inside each block, its master-sync run carried over a
+// change of the engine's rate, and a full queue's drops reach the engine and the harness RPC. A document holds one
+// midi-in, one controller-in, one midi-out and one cart mirror at most, the mirror naming a NES. Driven on a quiescent
+// Engine, and on a NodeRig where a node's calls on the engine are what is checked.
 //
 // Run via `pnpm test:plugin engine-graph`.
 
@@ -1008,6 +1010,93 @@ TEST_CASE("the Game Boy's serialOut carries the largest block a host runs withou
         most = std::max(most, carried.size());
     }
     CHECK(most > 4096);  // past what the port held before it was sized for this block
+    CHECK(e.droppedMessages() == 0);
+}
+
+TEST_CASE("master sync's stop after Engine::setSampleRate drops the rate during a run goes inside its block at the "
+          "first frame past 200 ms",
+          "[engine-graph][host-io]") {
+    // The plugin's sampleRateChanged and the SDL standalone's settings call Engine::setSampleRate between blocks, which
+    // re-activates the plan's nodes and keeps them, so rp.lsdj.serial-out's master-sync run carries over the change. A
+    // stand-in for the Game Boy's serialOut feeds it: rp.mgb.midi, which puts each message rp.host.midi-in hands it on
+    // its serialIn at its frame, here a byte a message, as the Game Boy's port carries them. A run opened at 48 kHz in
+    // the first 1024-frame block, its newest byte at frame 100, is silent for the rest of that block and eight more,
+    // 9116 frames (about 189.92 ms), its stop still ahead. At 44.1 kHz the silence passes 200 ms about 10.08 ms,
+    // 444.675 frames, into the next block, so the 0xFC goes at frame 445 of it; the silence counted in the old rate's
+    // frames against the new rate's 200 ms would put it 295 frames before the block.
+    Engine e(48000.0);
+    REQUIRE(e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("feed", "rp.mgb.midi"),
+                                   docNode("decoder", "rp.lsdj.serial-out", R"({"mode":"masterSync"})"), loopOut()},
+                                  {docWire("midi-in.midi", "feed.midi"), docWire("feed.serialIn", "decoder.serialOut"),
+                                   docWire("decoder.midiOut", "midi-out.in1")}))
+                .ok);
+    e.stageMidi(40, {0x05});
+    e.stageMidi(100, {0x05});
+    block(e);
+    CHECK(midiOut(e) == std::vector<Out>{{kLoop, 40, {0x90, 0x05, 0x7f}}, {kLoop, 40, {0xFA}}, {kLoop, 40, {0xF8}},
+                                         {kLoop, 100, {0xF8}}});
+    for (int b = 1; b <= 8; ++b) {
+        block(e);
+        INFO("block " << b);
+        CHECK(e.midiOut().empty());
+    }
+    e.setSampleRate(44100.0);
+    block(e);
+    CHECK(midiOut(e) == std::vector<Out>{{kLoop, 445, {0xFC}}});
+    for (const auto& m : e.midiOut()) CHECK(m.frame < kFrames);
+    block(e);
+    CHECK(e.midiOut().empty());  // one stop
+    CHECK(e.scriptThrows() == 0);
+    CHECK(e.faultCount() == 0);
+}
+
+TEST_CASE("what a Game Boy's core captures decodes through rp.lsdj.serial-out into Engine::midiOut inside each block",
+          "[engine-graph][host-io]") {
+    // A real core's capture through the real decoder into the host's MIDI out, with no fixture: mGB, with capture armed
+    // in drive, clocks its idle line out of its serial port, 0xFF byte after 0xFF byte (after one other as it boots),
+    // and MI.OUT reads 0xFF as a wire frame of flag 1 and payload 0x7F, LSDj's clock, so a 0xF8 at the frame of the
+    // byte that completes it. In ragged blocks, a 1-frame one among them, each block's messages lie inside it, each at
+    // the frame of a byte the core captured in that block (a wire frame straddling two blocks completes in the later
+    // one), at most one a byte, and Engine::midiOut is frame-sorted.
+    Engine e(kRate);
+    auto core = mgb(1);
+    core->setSerialOutCapture(SerialOutCapture::Drive);
+    SameBoySystem* const gb = core.get();
+    REQUIRE(e.parkCore(std::move(core)));
+    const DocExtras extras{
+        {docNode("decoder", "rp.lsdj.serial-out", R"({"mode":"midiOut"})"), loopOut()},
+        {docWire("sys-1.serialOut", "decoder.serialOut"), docWire("decoder.midiOut", "midi-out.in1")}};
+    REQUIRE(e.setGraph(graphRequest(stereoDocument({{1, kGb}}, extras), {1})).ok);
+    const std::uint32_t sizes[] = {1024, 1, 333, 64, 2048, 7};
+    std::size_t clocks = 0;
+    bool spread = false;
+    for (int b = 0; b < 600; ++b) {
+        const std::uint32_t frames = sizes[b % std::size(sizes)];
+        block(e, frames);
+        const auto stamped = serialStamped(*gb, frames);
+        const auto& out = e.midiOut();
+        bool clocksOnly = true, inside = true, sorted = true, atBytes = true;
+        std::size_t j = 0;  // the next captured byte a message may lie at
+        for (std::size_t i = 0; i < out.size(); ++i) {
+            const auto& m = out[i];
+            clocksOnly = clocksOnly && m.system == kLoop && m.data == std::vector<std::uint8_t>{0xF8};
+            inside = inside && m.frame < frames;
+            sorted = sorted && (i == 0 || out[i - 1].frame <= m.frame);
+            while (j < stamped.size() && stamped[j].first != m.frame) ++j;
+            atBytes = atBytes && j < stamped.size();  // at a captured byte's frame, after the last message's byte
+            ++j;
+        }
+        INFO("block " << b << ", " << frames << " frames");
+        CHECK(clocksOnly);
+        CHECK(inside);
+        CHECK(sorted);
+        CHECK(atBytes);
+        clocks += out.size();
+        spread = spread || (out.size() > 1 && out.front().frame != out.back().frame);
+    }
+    CHECK(clocks > 1000);
+    CHECK(spread);  // the frames are the bytes', not one frame for the whole block
+    CHECK(e.scriptThrows() == 0);
     CHECK(e.droppedMessages() == 0);
 }
 
