@@ -410,8 +410,9 @@ The rest of the document follows from those nodes:
   tie at a frame, then each `rp.lsdj.serial-out`'s in slot order, each under its system; with no producer, an
   empty list and no inputs. The node merges its inputs by frame, a tie to the lower input, so two LSDjs in
   master sync each keep their clocks' times, and sends each message at the later of its frame and the last
-  it handed out in the block, a guard that keeps the host's list frame-sorted whatever an input holds, which
-  `Engine::midiOut` promises and CLAP and LV2 require.
+  it handed out in the block, and at the block's last frame at most, a guard that keeps the host's list
+  frame-sorted and inside the block whatever an input holds, which `Engine::midiOut` promises and CLAP and
+  LV2 require.
 - **The N8 cart mirror** (`cart`, `rp.n8.cart-mirror`) for the first NES in slot order, fed what that
   system's protocol nodes send its `midi` and `bytes` inputs.
 - **The controller** ([graph/controller.ts](../packages/retroplug/src/graph/controller.ts)): its target

@@ -63,13 +63,15 @@ rp::graph::PortDesc eventsIn(std::string id) {
 // with every frame 0 the merge is the inputs' concatenation, input by input, each in queue order. An rp_queue is
 // frame-ordered by contract (rp_node.h), which rp::graph::reserveMessage keeps for every node of RetroPlug's (each
 // writes its queues through it), so an input arrives frame-sorted. A message still goes out at the later of its frame
-// and the last handed out in the block: a guard against a node that breaks the contract (one on the C ABI writes its
-// own queue), which keeps Engine::midiOut frame-sorted, as the plugin relies on to write a DAW's events in order. The
-// merge allocates nothing (a head index per input, reset each block) and costs messages times inputs; the sink it hands
-// each message to does allocate, io->midiOut appending a std::vector per message to Engine::midiOut (HostServices.hpp).
-// Two entries may name one system (a controller sending to a real Game Boy under the id of a system whose own MI.OUT
-// also goes out). No entries, no inputs: a document whose roles send no host MIDI places it all the same, and it sends
-// nothing.
+// and the last handed out in the block, and at the block's last frame at most: a guard against a node that breaks the
+// contract (one on the C ABI writes its own queue) and against a frame at or past the block's end, which nothing
+// refuses (a script node's send carries one as given, and wraps a negative one through ToUint32). It keeps
+// Engine::midiOut frame-sorted and inside the block, as the plugin relies on to write a DAW's events in order and in
+// place (DPF hands each frame to CLAP, VST3 and LV2 unchecked). The merge allocates nothing (a head index per input,
+// reset each block) and costs messages times inputs; the sink it hands each message to does allocate, io->midiOut
+// appending a std::vector per message to Engine::midiOut (HostServices.hpp). Two entries may name one system (a
+// controller sending to a real Game Boy under the id of a system whose own MI.OUT also goes out). No entries, no
+// inputs: a document whose roles send no host MIDI places it all the same, and it sends nothing.
 // The inputs are appended here, none reflected, since their count is the settings'.
 struct MidiOut : HostIoNode {
     static constexpr const char* id = "rp.host.midi-out";
@@ -107,7 +109,8 @@ struct MidiOut : HostIoNode {
     void process(const rp::Block& b) noexcept {
         const std::uint32_t inputs = inputCount < b.raw.input_count ? inputCount : b.raw.input_count;
         for (std::uint32_t k = 0; k < inputs; ++k) heads[k] = 0;
-        std::uint32_t last = 0;  // the latest frame handed out this block
+        const std::uint32_t end = b.frames() - 1;  // the block's last frame: a block that runs has one
+        std::uint32_t       last = 0;               // the latest frame handed out this block
         for (;;) {
             std::uint32_t next = inputs;  // the input whose head goes out next: none yet
             std::uint32_t frame = 0;
@@ -123,7 +126,7 @@ struct MidiOut : HostIoNode {
             const rp_queue&   q = *b.input(next).u.queue;
             const rp_message& m = q.items[heads[next]++];
             const auto        data = rp::graph::messageData(q, m);
-            if (m.frame > last) last = m.frame;
+            if (m.frame > last) last = m.frame < end ? m.frame : end;
             io->midiOut(io->ctx, systems[next], last, data.data(), data.size());
         }
     }

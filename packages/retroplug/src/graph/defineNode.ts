@@ -146,9 +146,10 @@ export function startValue(stream: ControlStream): number {
 //   process; then again whenever a later plan reshapes it or changes which of its outputs are wired.
 // - send and emit: a frame earlier than the port's last one this block is raised to it, and none is range-checked.
 //   A frame past the block goes on as given, and a negative one wraps through ToUint32 (-1 is 4294967295), raising
-//   every later one on that port this block to it. A send that does not fit returns false and is dropped, and
-//   counted; an emit onto a full stream overwrites its last change and returns false. A port the layout does not
-//   have, or not of the method's kind, throws a TypeError.
+//   every later one on that port this block to it; rp.host.midi-out sends any frame at or past the block's end at
+//   the block's last frame, so the host's MIDI out never holds one. A send that does not fit returns false and is
+//   dropped, and counted; an emit onto a full stream overwrites its last change and returns false. A port the layout
+//   does not have, or not of the method's kind, throws a TypeError.
 // - send copies `data` into the port's queue before it returns and keeps no hold on it: a Uint8Array's bytes at once,
 //   any other array-like's read element by element into the space reserved for them (an element that throws takes the
 //   message back out, and the send throws). So a node may refill the array it sent and send it again, in the same

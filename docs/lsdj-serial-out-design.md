@@ -112,12 +112,12 @@ A throw stops only the decoder's block, as for any script node.
 
 `rp.host.midi-out` merges its inputs by frame: each step hands out the head with the earliest frame, the lower input
 on a tie. Each input arrives frame-sorted (a port's queue raises a frame sent behind a later one), and
-`max(frame, last)` stays after the merge as a guard, so `Engine::midiOut` is frame-sorted whatever arrives, a
-document holding one `rp.host.midi-out` (`Engine::setGraph` refuses a second, section 12). With every frame 0 the
-merge is today's order, input by input, so it moves nothing on its own. The merge allocates nothing (one head index
-per input, `kMidiOutMaxInputs` of them) and costs messages times inputs a block; the sink it hands each message to
-still allocates, `Engine::midiOut` taking a `std::vector` per message, as spec/07's item from B3a records. Nothing
-it exposes changes, so the host-io service id stays `rp.engine.host-io/2`.
+`min(max(frame, last), frames - 1)` stays after the merge as a guard, so `Engine::midiOut` is frame-sorted and
+inside the block whatever arrives, a document holding one `rp.host.midi-out` (`Engine::setGraph` refuses a second,
+section 12). With every frame 0 the merge is today's order, input by input, so it moves nothing on its own. The
+merge allocates nothing (one head index per input, `kMidiOutMaxInputs` of them) and costs messages times inputs a
+block; the sink it hands each message to still allocates, `Engine::midiOut` taking a `std::vector` per message, as
+spec/07's item from B3a records. Nothing it exposes changes, so the host-io service id stays `rp.engine.host-io/2`.
 
 What a host does with a frame is unchanged: the plugin hands it to the DAW (`writeMidiEvent`), the RPC drains record
 it, and the SDL standalone sends each message once its block is rendered, without it (its RtMidi out has no
@@ -306,6 +306,14 @@ The commits' reviews found more, fixed in the commits after them:
   feedback wire in any golden as it refuses a backward wire, since one into a script node would hand it last block's
   values and nothing would show it. So the rule `buildGraph` keeps is that every node reads only nodes placed before
   it, a feedback wire the exception none of its documents takes.
+- **The guard kept the host's list in order but not inside its block.** A script node's `send` carries a frame at or
+  past the block's end as given, and wraps a negative one there (the rate drop's stop, above, went out at
+  4294967001); the guard handed such a frame on to `Engine::midiOut` and the plugin's `writeMidiEvent`, and DPF
+  passes each frame to CLAP, VST3 and LV2 unchecked. The guard now caps each frame at the block's last,
+  `min(max(frame, last), frames - 1)`, so such a message goes out there, and so does every one after it in that
+  block. [HostIo.test.cpp](../packages/native/test/engine-graph/HostIo.test.cpp) feeds it frames at and past the
+  block's length and one wrapped from -1 through `rp.test.raw-feed`. No producer of RetroPlug's sends such a frame,
+  so parity holds unchanged.
 - **dsp-bench's LSDj windows needed a floor, and stay out of the valgrind modes.** MI.OUT's clocks come unevenly
   (at the default warmup none in a window's first 20 blocks, 8 in its first 100, 40 in 400), so a window of
   `RP_BENCH_BLOCKS` 5, 10 or 20 failed the playing check for want of one: a window runs at least 100 blocks, and the

@@ -636,6 +636,42 @@ TEST_CASE("rp.host.midi-out sends nothing earlier than the last frame it handed 
     CHECK(rig.host->droppedMessages() == 0);
 }
 
+TEST_CASE("rp.host.midi-out sends a frame at or past its block's end at the block's last frame",
+          "[engine-graph][host-io]") {
+    // A host takes each frame of Engine::midiOut for a place in the block it rendered: the plugin hands it to the DAW
+    // (writeMidiEvent, which DPF passes on to CLAP, VST3 and LV2 unchecked). A frame at or past the block's end reaches
+    // the node from a queue written against the contract, or from a script node's send, which carries a frame as given
+    // and wraps a negative one through ToUint32 (-1 is 4294967295). The guard keeps every frame inside the block too:
+    // such a message goes out at the block's last frame, and so does every one after it there.
+    using rp::host::test::Feed;
+    using rp::host::test::HostMidiOut;
+    using rp::host::test::NodeRig;
+    NodeRig rig(kRate);
+    REQUIRE(rig.registry.addPackage(rawFeedPackage()));
+    REQUIRE(rig.set(R"({"nodes":[{"id":"raw","type":"rp.test.raw-feed"},{"id":"b","type":"rp.test.feed"},
+                                 {"id":"midi-out","type":"rp.host.midi-out","settings":{"systems":[1,2]}}],
+                        "wires":[{"from":"raw.midi","to":"midi-out.in1"},{"from":"b.midi","to":"midi-out.in2"}]})")
+                .ok);
+    const rp_transport t{kRate, 120.0, 0.0, 0};
+    // One at the block's length, one past it, one wrapped from -1: each at frame 63, after the input's in-range one.
+    rig.node<RawFeed>("raw").next = {{3, {0xF8}}, {64, {0xFA}}, {100, {0xFB}}, {4294967295u, {0xFC}}};
+    rig.node<Feed>("b").next[Feed::Midi] = {{5, {0x90, 60, 100}}, {63, {0x80, 60, 0}}};
+    rig.host->processBlock(64, t);
+    CHECK(rig.midiOut == std::vector<HostMidiOut>{{1, 3, {0xF8}}, {2, 5, {0x90, 60, 100}}, {2, 63, {0x80, 60, 0}},
+                                                  {1, 63, {0xFA}}, {1, 63, {0xFB}}, {1, 63, {0xFC}}});
+    for (const auto& m : rig.midiOut) CHECK(m.frame < 64);
+
+    // A wrapped frame ahead of the input's others, in a shorter block: the merge takes it last, at frame 31, and the
+    // frame after it on its input goes there too.
+    rig.midiOut.clear();
+    rig.node<RawFeed>("raw").next = {{4294967295u, {0xFC}}, {2, {0xF8}}};
+    rig.node<Feed>("b").next[Feed::Midi] = {{1, {0xFA}}, {7, {0xF8}}};
+    rig.host->processBlock(32, t);
+    CHECK(rig.midiOut == std::vector<HostMidiOut>{{2, 1, {0xFA}}, {2, 7, {0xF8}}, {1, 31, {0xFC}}, {1, 31, {0xF8}}});
+    for (const auto& m : rig.midiOut) CHECK(m.frame < 32);
+    CHECK(rig.host->droppedMessages() == 0);
+}
+
 TEST_CASE("a change to rp.host.midi-out's systems keeps the node while its inputs hold and rebuilds it when they move",
           "[engine-graph][host-io]") {
     using rp::host::test::NodeRig;
