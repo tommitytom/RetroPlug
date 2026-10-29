@@ -17,37 +17,39 @@
 // stops no other.
 //
 // A case that ends in rig.matches is held to the values the DSP kernel those nodes replaced was recorded sending: the
-// messages of each kind, and a digest of all of them (per block, per system and input, each message's frame, flags and
-// bytes in order; the host MIDI out with its system tags in emission order; the control-surface out). A digest hashes
-// what reaches each system input and the host outputs, never which node sent it, so a split of the kernel's work over
-// nodes is held to what the kernel sent. That is B3b's proof, bit for bit, that splitting the kernel changed nothing a
-// core or the host can see in those cases, and in no others. But for the host MIDI out of MI.OUT and master sync, which
-// differs from what the kernel sent by design (docs/lsdj-serial-out-design.md): rp.lsdj.serial-out, placed after the
-// Game Boy, sends each message at its byte's frame in the block the core captured it, where the kernel sent it at
-// frame 0 of the block after, and master sync's stop at the first frame its silence passes 200 ms. So the three cases
-// whose host MIDI out carries it (the LSDj modes, and the controller's two, beside an LSDj in MI.OUT) hold the values
-// that decoder was recorded sending, every system input in them still as the kernel sent it, and every other case still
-// holds the kernel's values. The design's section 9 lists where the per-role graph behaves otherwise than the kernel
-// did: among them a node's state keyed by its role's kind, so a role removed and added again on a surviving system
-// starts afresh; the controller's default target following a change of first system; its session rebuilt on a change to
-// its parsed config rather than its raw one; its launches going only into an lsdj-sync node; a config read with its
-// defaults filled. No case here sends a message through any of those; the throw is the one difference a case reaches,
-// below.
+// messages of each kind, a digest of all of them (per block, per system and input, each message's frame, flags and
+// bytes in order; the host MIDI out with its system tags in emission order; the control-surface out), and a digest of
+// the system inputs alone (the same, without the host outputs). A digest hashes what reaches each system input and the
+// host outputs, never which node sent it, so a split of the kernel's work over nodes is held to what the kernel sent.
+// That is B3b's proof, bit for bit, that splitting the kernel changed nothing a core or the host can see in those
+// cases, and in no others. But for the host MIDI out of MI.OUT and master sync, which differs from what the kernel sent
+// by design (docs/lsdj-serial-out-design.md): rp.lsdj.serial-out, placed after the Game Boy, sends each message at its
+// byte's frame in the block the core captured it, where the kernel sent it at frame 0 of the block after, and master
+// sync's stop at the first frame its silence passes 200 ms. So the three cases whose host MIDI out carries it (the LSDj
+// modes, and the controller's two, beside an LSDj in MI.OUT) hold, in their first digest, the values that decoder was
+// recorded sending, and in their second the system inputs the kernel sent; every other case holds the kernel's values
+// in both. The design's section 9 lists where the per-role graph behaves otherwise than the kernel did: among them a
+// node's state keyed by its role's kind, so a role removed and added again on a surviving system starts afresh; the
+// controller's default target following a change of first system; its session rebuilt on a change to its parsed config
+// rather than its raw one; its launches going only into an lsdj-sync node; a config read with its defaults filled. No
+// case here sends a message through any of those; the throw is the one difference a case reaches, below.
 //
 // The values have a history. The kernel node (B3a) was run beside the native kernel stage it replaced and found equal
 // to it block by block, from c323c7a8 to e3de2e46, the last commit before the stage's deletion; the B3a prototype
 // recorded the values from the same cases, and they held as recorded. One was re-recorded since: the LSDj modes case,
 // when master sync's stop became a silence rather than a flood (docs/lsdj-master-sync-fix-design.md). Then the three
-// above, the LSDj modes case among them, when the decoder moved after the Game Boy. One case came after the stage had
-// gone, recorded from the kernel node alone: the controller's launches behind routed MIDI and its host MIDI out ahead
-// of the systems', two orders no earlier case sends a message through, which the stage-era proof therefore never
-// reached. Then, until B3b deleted the kernel node (from the commit that held its recorded digests on the per-role
-// graph too, to the flip that had buildGraph place that graph), every case ran on both, the kernel node's graph and
-// this one, each held to the same values. So a changed value is a change to what reaches a core or the host: a
-// deliberate one is re-recorded from the values a failing case prints. The other cases, which came after the kernel or
-// record nothing, check what they hold directly: a block that fills rp.host.midi-in, a controller's session kept
-// through a system added behind it, every structure's script nodes running in buildGraph's order, and the restructuring
-// under an audio thread.
+// above, the LSDj modes case among them, when the decoder moved after the Game Boy: their first digests. The second
+// digest came after that, recorded from this graph, and was run on the rig at 0d781dd4, the commit before the decoder
+// moved, where every case's first digest still held the kernel's values: every case's second digest was equal there, so
+// the move changed no system input. One case came after the stage had gone, recorded from the kernel node alone: the
+// controller's launches behind routed MIDI and its host MIDI out ahead of the systems', two orders no earlier case
+// sends a message through, which the stage-era proof therefore never reached. Then, until B3b deleted the kernel node
+// (from the commit that held its recorded digests on the per-role graph too, to the flip that had buildGraph place that
+// graph), every case ran on both, the kernel node's graph and this one, each held to the same values. So a changed
+// value is a change to what reaches a core or the host (the second digest moves only for a core's): a deliberate one is
+// re-recorded from the values a failing case prints. The other cases, which came after the kernel or record nothing,
+// check what they hold directly: a block that fills rp.host.midi-in, a controller's session kept through a system added
+// behind it, every structure's script nodes running in buildGraph's order, and the restructuring under an audio thread.
 //
 // A serial input is counted and hashed byte by byte, each byte as the one-byte message (its frame, flags 0, one byte)
 // the kernel node sent when the values were recorded: a node sends a run of same-frame bytes as one message, which the
@@ -55,7 +57,7 @@
 // other input is hashed message for message.
 //
 // Where a case reaches a difference from the kernel by design (the throw: it stops only the node it is in, design
-// section 5), the case says so, checks what the per-role graph does instead, and the digest takes the one input that
+// section 5), the case says so, checks what the per-role graph does instead, and the digests take the one input that
 // differs as the kernel had it.
 //
 // Last, the graph runs on an audio thread while the control thread restructures it, for the thread sanitizer.
@@ -330,10 +332,11 @@ Bytes cc(int channel, int number, int value) {
     return {static_cast<std::uint8_t>(0xB0 | channel), static_cast<std::uint8_t>(number), static_cast<std::uint8_t>(value)};
 }
 
-// What a case's graph sent, over every block: the messages of each kind, and their digest.
+// What a case's graph sent, over every block: the messages of each kind, a digest of all of them, and one of the
+// system inputs alone (ProtocolRig::record).
 struct Sent {
     int           serialIn = 0, midi = 0, bytes = 0, buttons = 0, midiOut = 0, controllerOut = 0;
-    std::uint64_t digest = 0;
+    std::uint64_t digest = 0, inputs = 0;
     bool operator==(const Sent&) const = default;
 };
 
@@ -360,9 +363,10 @@ struct Digest {
 
 // As the recorded values are written, so a failing case prints what to re-record.
 std::string text(const Sent& s) {
-    char b[160];
-    std::snprintf(b, sizeof b, "{%d, %d, %d, %d, %d, %d, 0x%016llxULL}", s.serialIn, s.midi, s.bytes, s.buttons, s.midiOut,
-                  s.controllerOut, static_cast<unsigned long long>(s.digest));
+    char b[192];
+    std::snprintf(b, sizeof b, "{%d, %d, %d, %d, %d, %d, 0x%016llxULL, 0x%016llxULL}", s.serialIn, s.midi, s.bytes,
+                  s.buttons, s.midiOut, s.controllerOut, static_cast<unsigned long long>(s.digest),
+                  static_cast<unsigned long long>(s.inputs));
     return b;
 }
 
@@ -419,8 +423,9 @@ struct ProtocolRig {
     rp_node*                          kept = nullptr;  // keptId's instance, as the first plan made it
     int                               blocks = 0;
     Sent                              sent;
-    Digest                            digest;
-    // System inputs (a system and an input's name) whose messages the next block's digest takes as the kernel sent
+    Digest                            digest;  // every output
+    Digest                            inputs;  // the system inputs alone
+    // System inputs (a system and an input's name) whose messages the next block's digests take as the kernel sent
     // them, none, where the per-role graph sends some by design: a case sets it for one block, and checks what the
     // per-role graph sent instead.
     std::vector<std::pair<std::uint32_t, std::string>> unsentByKernel;
@@ -539,13 +544,17 @@ struct ProtocolRig {
         }
     }
 
-    // The block's outputs into the digest: each system's four, in structure order, then the host's two.
+    // The block's outputs into the digests: each system's four, in structure order, into both, then the host's two
+    // into `digest` alone. So `inputs` holds what reached the systems whatever the host was sent, which is what lets a
+    // case whose host MIDI out moved by design keep proving its system inputs unmoved.
     void record(std::uint32_t frames) {
-        digest.u32(static_cast<std::uint32_t>(blocks));
-        digest.u32(frames);
+        for (Digest* d : {&digest, &inputs}) {
+            d->u32(static_cast<std::uint32_t>(blocks));
+            d->u32(frames);
+        }
         static const std::vector<Message> none;
         for (const std::uint32_t id : structure.systems) {
-            digest.u32(id);
+            for (Digest* d : {&digest, &inputs}) d->u32(id);
             const auto unsent = [&](const char* input) {
                 const auto key = std::make_pair(id, std::string(input));
                 return std::find(unsentByKernel.begin(), unsentByKernel.end(), key) != unsentByKernel.end();
@@ -557,7 +566,10 @@ struct ProtocolRig {
             const std::vector<Message>& midi = unsent("midi") ? none : in.events;
             const std::vector<Message>& bytes = unsent("bytes") ? none : io.bytes;
             const std::vector<Message>& buttons = unsent("buttons") ? none : io.events;
-            for (const auto* ms : {&serialIn, &midi, &bytes, &buttons}) digest.messages(*ms);
+            for (const auto* ms : {&serialIn, &midi, &bytes, &buttons}) {
+                digest.messages(*ms);
+                inputs.messages(*ms);
+            }
             sent.serialIn += static_cast<int>(serialIn.size());
             sent.midi += static_cast<int>(midi.size());
             sent.bytes += static_cast<int>(bytes.size());
@@ -574,6 +586,7 @@ struct ProtocolRig {
         sent.midiOut += static_cast<int>(midiOut.size());
         sent.controllerOut += static_cast<int>(controllerOut.size());
         sent.digest = digest.h;
+        sent.inputs = inputs.h;
     }
 
     // ---- the host I/O stand-in -----------------------------------------------------------------------------------
@@ -657,7 +670,7 @@ TEST_CASE("the per-role graph hands every system its host MIDI, under every rout
         rig.restructure(structure(std::string("mgb-and-n8/") + mode));
         for (int ch = 0; ch < 8; ++ch) rig.block({.frames = 512, .midi = {{static_cast<std::uint32_t>(ch * 50), on(ch, 50 + ch)}}});
     }
-    rig.matches({123, 40, 0, 0, 0, 0, 0xf64c0bc85842f369ULL});
+    rig.matches({123, 40, 0, 0, 0, 0, 0xf64c0bc85842f369ULL, 0x0d359fb0010e9069ULL});
     rig.finish();
 }
 
@@ -754,7 +767,8 @@ TEST_CASE("the per-role graph drives each LSDj sync mode, MI.OUT and master sync
     }
     rig.block({.ppq = fast.ppq, .tempo = 174.0, .playing = false, .midi = {{0, on(0, 25)}, {0, on(0, 26)}}});
     rig.run({.frames = 2048, .ppq = fast.ppq}, 2);
-    rig.matches({269, 0, 0, 4, 16, 0, 0x50c11f5dc636b650ULL});  // the buttons: autoStart's START press and release
+    // The buttons: autoStart's START press and release.
+    rig.matches({269, 0, 0, 4, 16, 0, 0x50c11f5dc636b650ULL, 0x86ef6705f6ff2691ULL});
     rig.finish();
 }
 
@@ -775,7 +789,7 @@ TEST_CASE("the per-role graph drives risa and smsggdj host sync, and a NES's hos
         rig.block(again);
         again.ppq += again.tempo / 60.0 * frames / kRate;
     }
-    rig.matches({0, 3, 64, 0, 0, 0, 0x3db831405226989bULL});
+    rig.matches({0, 3, 64, 0, 0, 0, 0x3db831405226989bULL, 0x0b2fc234860b1dfbULL});
     rig.finish();
 }
 
@@ -813,7 +827,7 @@ TEST_CASE("the per-role graph runs a controller session: its surface, its launch
         play.controller.clear();
         play.ppq += 1024.0 / kBeat;
     }
-    rig.matches({161, 0, 0, 0, 80, 35, 0xcf9b8961b949c269ULL});
+    rig.matches({161, 0, 0, 0, 80, 35, 0xcf9b8961b949c269ULL, 0x5f3484f60d57d690ULL});
     rig.finish();
 }
 
@@ -846,25 +860,20 @@ TEST_CASE("the per-role graph puts a controller's launches after the routed MIDI
                 cartSerialIn.push_back(serialBytes(rig.node<Probe>("in-1").bytes));
                 continue;
             }
-            // Host MIDI out, merged by frame with ties in input order: the controller's launch first, at frame 0, under
-            // the system its default target resolved to (Game Boy 1), then Game Boy 2's decoded MI.OUT and Game Boy 3's
-            // clocks at their bytes' frames, Game Boy 2's first on a tie. The system tags follow the input order here,
-            // so the merge is (frame, system) ascending.
-            std::vector<std::uint32_t> systems;
-            std::vector<std::pair<std::uint32_t, std::uint32_t>> merged;
-            for (const ProtocolRig::Out& m : rig.midiOut) {
-                systems.push_back(m.system);
-                merged.push_back({m.frame, m.system});
-            }
+            // Host MIDI out, merged by frame with ties in input order, each message as frame:system: the controller's
+            // launch first, at frame 0, under the system its default target resolved to (Game Boy 1); then Game Boy 2's
+            // decoded MI.OUT, its clock at its first byte's frame (7) and its NoteOn at its third's (23), interleaved
+            // with Game Boy 3's clocks, one at each of its bytes' frames (7, 307 and 607, its run going on from the
+            // blocks before): Game Boy 2's clock first on the tie at 7, and Game Boy 3's there ahead of Game Boy 2's
+            // NoteOn. Handing the inputs out one after another, each message raised to the last frame handed out, would
+            // send Game Boy 3's first clock behind that NoteOn, at 23: still in (frame, system) order, but not this.
+            std::string merged;
+            for (const ProtocolRig::Out& m : rig.midiOut)
+                merged += std::to_string(m.frame) + ":" + std::to_string(m.system) + " ";
             INFO("press " << i);
             REQUIRE_FALSE(rig.midiOut.empty());
             hostLaunches.push_back(rig.midiOut.front().data);
-            CHECK(systems.front() == 1);
-            CHECK(rig.midiOut.front().frame == 0);
-            CHECK(std::is_sorted(merged.begin(), merged.end()));
-            CHECK(std::count(systems.begin(), systems.end(), 1u) == 1);
-            CHECK(std::count(systems.begin(), systems.end(), 2u) > 0);
-            CHECK(std::count(systems.begin(), systems.end(), 3u) > 0);
+            CHECK(merged == "0:1 7:2 7:3 23:2 307:3 607:3 ");
         }
     };
     press(6, false);
@@ -883,7 +892,7 @@ TEST_CASE("the per-role graph puts a controller's launches after the routed MIDI
         CHECK(cartSerialIn[i][0] == Message{300, {static_cast<std::uint8_t>(20 + i)}, 0});
         CHECK(cartSerialIn[i][1] == Message{300, {hostLaunches[i][1]}, 0});
     }
-    rig.matches({32, 0, 0, 0, 68, 84, 0x5474d124ec373f2bULL});
+    rig.matches({32, 0, 0, 0, 68, 84, 0x5474d124ec373f2bULL, 0xf7705e16658fd85cULL});
     rig.finish();
 }
 
@@ -935,7 +944,7 @@ TEST_CASE("the per-role graph keeps its state across structure changes: survivor
     rig.restructure(structure("state/mgb-alone"));
     play.midi = {{0, on(0, 65)}};
     step(1);
-    rig.matches({57, 5, 18, 0, 0, 0, 0xd28fffd230a8c468ULL});
+    rig.matches({57, 5, 18, 0, 0, 0, 0xd28fffd230a8c468ULL, 0x3e3e54c934727048ULL});
     rig.finish();
 }
 
@@ -1016,7 +1025,7 @@ TEST_CASE("a throw in a protocol node keeps what was sent before it and runs the
     CHECK(rig.node<Probe>("in-2").bytes.empty());
     CHECK(text(serialBytes(rig.node<Probe>("in-3").bytes)) == "4:90 4:3e 4:64 ");
     rig.run({.ppq = 10.5 + 1024.0 / kBeat, .playing = true, .midi = {{4, on(0, 64)}}}, 3);
-    rig.matches({18, 0, 0, 0, 0, 0, 0x420d378cfb9af0faULL});
+    rig.matches({18, 0, 0, 0, 0, 0, 0x420d378cfb9af0faULL, 0x119232bfe20f3a7aULL});
     rig.finish(1);
 }
 
