@@ -44,7 +44,9 @@ export const lsdjSerialOutNode = defineNode<LsdjSyncSettings>({
     let block: Block | null = null; // the block being processed, which every send goes on
     const miOut: ArduinoboyState = {};
     let masterSync: MasterSyncState | undefined;
-    // This block's length and rate, as master sync reads them.
+    // This block's length and rate, as master sync reads them: the rate is the block's transport's, not create's, since
+    // the instance outlives a change of the host's rate (the host re-activates it), and a run carried over one is
+    // counted again at the new rate.
     const span: MasterSyncBlock = { frames: 0, sampleRate: 44100 };
     // This block's serial-out bytes, and each one's frame in it, index for index, as the decoders take them. Refilled
     // each block, so they allocate nothing once grown.

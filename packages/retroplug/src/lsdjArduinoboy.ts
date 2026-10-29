@@ -176,6 +176,7 @@ export interface MasterSyncState {
   started?: boolean; // a run is in progress (0xFA sent; 0xFC pending on the silence that ends it)
   channel?: number; // MIDI channel for the song-row NoteOn (default 0)
   lastAt?: number; // the run's newest byte: frames from the current block's start (negative: an earlier block)
+  rate?: number; // the sample rate `lastAt` is counted at: the last call's
 }
 
 /** The block a Master Sync call runs in: its length and rate. */
@@ -188,9 +189,13 @@ export interface MasterSyncBlock {
  *  captured in it, each one's frame in it, and the block's length and rate. Each byte is a tempo clock, sent at its
  *  frame, the first of a run opened there with LSDj's song row and 0xFA; a run ends with one 0xFC at its mark, the
  *  first frame its silence passes MASTER_SYNC_STOP_MS, `lastAt + stop + 1`. A mark is sent before the byte at or past
- *  it (which then opens a fresh run at its own frame), or at the end of the block it falls inside; one past the block
- *  carries to the next, with the run's newest byte moved back by the block's length, so a mark is never behind the
- *  block it is sent in. A gap of exactly `stop` frames is no stop: the mark is the frame after. */
+ *  it (which then opens a fresh run at its own frame), or found at the end of the block it falls inside and sent there
+ *  at its frame; one past the block carries to the next, with the run's newest byte moved back by the block's length.
+ *  So while the host's rate holds, a mark is never behind the block it is sent in. The silence a run carries into a
+ *  block at another rate is time, and is counted again in the new rate's frames (200 ms stays 200 ms); a rise can then
+ *  put the mark before the block's start, by less than a frame at the old rate, which had it at the block's first
+ *  frame, and the stop goes there, never at a negative frame. A gap of exactly `stop` frames is no stop: the mark is
+ *  the frame after. */
 export function arduinoboyMasterSyncBlock(
   bytes: number[],
   frames: number[],
@@ -199,14 +204,20 @@ export function arduinoboyMasterSyncBlock(
   emit: MidiEmit,
 ): void {
   const ch = state.channel ?? 0;
-  const stop = Math.round((block.sampleRate * MASTER_SYNC_STOP_MS) / 1000);
+  const rate = block.sampleRate;
+  const stop = Math.round((rate * MASTER_SYNC_STOP_MS) / 1000);
+  // A run carried from a block at another rate: its newest byte, counted in that rate's frames, counted again in this
+  // one's. Floored, so the mark is still the first whole frame the silence passes 200 ms at.
+  if (state.started && state.rate !== undefined && state.rate !== rate)
+    state.lastAt = Math.floor(((state.lastAt ?? 0) * rate) / state.rate);
+  state.rate = rate;
   for (let i = 0; i < bytes.length; i++) {
     const at = frames[i];
     // The silence before this byte passed 200 ms at the mark: the run stopped there, and this byte opens a new one.
     // Checked only at a block's end, the restart would carry on the old run (no 0xFC, no fresh NoteOn and 0xFA), so
     // the output would depend on the block split.
     if (state.started) {
-      const mark = (state.lastAt ?? 0) + stop + 1;
+      const mark = Math.max(0, (state.lastAt ?? 0) + stop + 1);
       if (at >= mark) {
         emit(mark, 1, 0xfc, 0, 0);
         state.started = false;
@@ -224,7 +235,7 @@ export function arduinoboyMasterSyncBlock(
   }
   // Every byte of this block is known: a run whose mark falls inside it stopped there.
   if (state.started) {
-    const mark = (state.lastAt ?? 0) + stop + 1;
+    const mark = Math.max(0, (state.lastAt ?? 0) + stop + 1);
     if (mark < block.frames) {
       emit(mark, 1, 0xfc, 0, 0);
       state.started = false;

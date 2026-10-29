@@ -53,11 +53,14 @@ test("master sync: each byte a clock at its frame, the first opening the run wit
   expect(midiOut(sent)).toEqual([[0, 0x90, 5, 0x7f], [0, 0xfa], [0, 0xf8], [900, 0xf8]]);
 });
 
-/** The block and frame of the first 0xFC after a run's one byte at `frame` of block 0, in 1024-frame blocks. */
-function stopOf(frame: number, sampleRate: number): [number, number] | null {
-  const rig = serialOut("masterSync", sampleRate);
+/** The block and frame of the first 0xFC after a run's one byte at `frame` of block 0, in 1024-frame blocks at
+ *  `sampleRate`, every block's or each block's by its index. */
+function stopOf(frame: number, sampleRate: number | ((block: number) => number)): [number, number] | null {
+  const rateOf = (b: number) => (typeof sampleRate === "number" ? sampleRate : sampleRate(b));
+  const rig = serialOut("masterSync", rateOf(0));
   for (let b = 0; b < 16; b++) {
-    const sent = rig.run({ frames: 1024, sampleRate, playing: true, inputs: b === 0 ? { serialOut: [{ frame, data: [5] }] } : {} });
+    const inputs: Record<string, In[]> = b === 0 ? { serialOut: [{ frame, data: [5] }] } : {};
+    const sent = rig.run({ frames: 1024, sampleRate: rateOf(b), playing: true, inputs });
     const stop = sent.find((s) => s.data[0] === 0xfc);
     if (stop) return [b, stop.frame];
   }
@@ -73,6 +76,14 @@ test("master sync stops a run at its mark, the first frame its silence passes 20
 test("master sync's 200 ms stop is 200 ms at the host's rate: 9600 frames at 48 kHz, not 8820", () => {
   expect(stopOf(0, 48000)).toEqual([9, 9601 - 9 * 1024]);
   expect(stopOf(1000, 48000)).toEqual([10, 10601 - 10 * 1024]);
+});
+
+test("master sync's stop over a change in the host's rate is 200 ms after the run's byte, at a frame of its block", () => {
+  // Each block's rate is its transport's. A byte at frame 100 at 48 kHz, then 44.1 kHz from block 9, whose start is
+  // 9116 frames on at 48 kHz, 8375.3 at 44.1 kHz: the silence passes 8820 at its frame 445. And 44.1 kHz, then 48 kHz
+  // from block 8, 8092 frames on, 8807.6 at 48 kHz: it passes 9600 at its frame 793.
+  expect(stopOf(100, (b) => (b < 9 ? 48000 : 44100))).toEqual([9, 445]);
+  expect(stopOf(100, (b) => (b < 8 ? 44100 : 48000))).toEqual([8, 793]);
 });
 
 // --- state across settings changes ----------------------------------------------------------------------------------

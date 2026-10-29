@@ -201,8 +201,14 @@ interface Sent {
 }
 
 /** Decode `timeline` in the blocks `split` cuts `total` frames into, each block's bytes handed to the decoder in that
- *  block at their frames in it, as rp.lsdj.serial-out reads its Game Boy's serial out after the system. */
-function masterSync(timeline: Timeline, split: (total: number) => number[], total: number, rate = RATE): Sent[] {
+ *  block at their frames in it, as rp.lsdj.serial-out reads its Game Boy's serial out after the system. `rate` is every
+ *  block's, or each block's by its index. */
+function masterSync(
+  timeline: Timeline,
+  split: (total: number) => number[],
+  total: number,
+  rate: number | ((block: number) => number) = RATE,
+): Sent[] {
   const out: Sent[] = [];
   const state: MasterSyncState = {};
   let start = 0;
@@ -214,7 +220,8 @@ function masterSync(timeline: Timeline, split: (total: number) => number[], tota
       frames.push(timeline[next][0] - start);
       bytes.push(timeline[next][1]);
     }
-    arduinoboyMasterSyncBlock(bytes, frames, { frames: n, sampleRate: rate }, state, (frame, len, b0, b1, b2) =>
+    const sampleRate = typeof rate === "number" ? rate : rate(block);
+    arduinoboyMasterSyncBlock(bytes, frames, { frames: n, sampleRate }, state, (frame, len, b0, b1, b2) =>
       out.push({ block, frame, at: start + frame, inside: frame >= 0 && frame < n, data: [b0, b1, b2].slice(0, len) }),
     );
     start += n;
@@ -338,6 +345,53 @@ test("MasterSync: a restart in the block of its stop sends the 0xFC at the mark,
     [0, 16000, START],
     [0, 16000, CLOCK],
     [1, 8437, STOP],
+  ]);
+});
+
+// A host can change its rate between two blocks (a DAW's project rate, the standalone's settings), and the node, and so
+// a run, lives through it. The silence a run carries is time, so 200 ms stays 200 ms at the new rate.
+
+test("MasterSync: a run carried over a drop in the host's rate stops 200 ms after its byte, inside the new rate's block", () => {
+  // A byte at frame 100 of 1024-frame blocks at 48 kHz, and from block 9 at 44.1 kHz. At block 9's start the silence
+  // is 9116 frames at 48 kHz (189.9 ms), 8375.3 at 44.1 kHz, so it passes 200 ms, 8820 frames, at block 9's frame 445.
+  const out = masterSync([[100, 1]], even(1024), 16384, (block) => (block < 9 ? 48000 : 44100));
+  expect(out.map(({ block, frame, inside, data }) => [block, frame, inside, data])).toEqual([
+    [0, 100, true, row(1)],
+    [0, 100, true, START],
+    [0, 100, true, CLOCK],
+    [9, 445, true, STOP],
+  ]);
+});
+
+test("MasterSync: a run carried over a rise in the host's rate stops 200 ms after its byte, not later", () => {
+  // A byte at frame 100 of 1024-frame blocks at 44.1 kHz, and from block 8 at 48 kHz. At block 8's start the silence
+  // is 8092 frames at 44.1 kHz (183.5 ms), 8807.6 at 48 kHz, so it passes 200 ms, 9600 frames, at block 8's frame 793.
+  const out = masterSync([[100, 1]], even(1024), 16384, (block) => (block < 8 ? 44100 : 48000));
+  expect(out.map(({ block, frame, inside, data }) => [block, frame, inside, data])).toEqual([
+    [0, 100, true, row(1)],
+    [0, 100, true, START],
+    [0, 100, true, CLOCK],
+    [8, 793, true, STOP],
+  ]);
+});
+
+test("MasterSync: a stop a rise in the rate leaves overdue at a block's start goes at its first frame", () => {
+  // A byte at frame 395 of 1024-frame blocks at 44.1 kHz marks block 9's frame 0, as above, and block 9 is at 96 kHz.
+  // Its silence passed 200 ms one 44.1 kHz frame before the block's start, 2.2 frames at 96 kHz, so the finer grid
+  // marks frame -2: the 0xFC goes at the block's first frame instead, where the old rate had it, and before a byte
+  // there.
+  const rate = (block: number) => (block < 9 ? 44100 : 96000);
+  const stops = (timeline: Timeline) =>
+    masterSync(timeline, even(1024), 12288, rate)
+      .filter((m) => m.data[0] === 0xfc)
+      .map(({ block, frame, inside }) => [block, frame, inside]);
+  expect(stops([[395, 1]])).toEqual([[9, 0, true]]);
+  const restart = masterSync([[395, 1], [9216, 2]], even(1024), 12288, rate).slice(3, 7);
+  expect(restart.map(({ block, frame, data }) => [block, frame, data])).toEqual([
+    [9, 0, STOP],
+    [9, 0, row(2)],
+    [9, 0, START],
+    [9, 0, CLOCK],
   ]);
 });
 
