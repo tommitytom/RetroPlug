@@ -57,15 +57,18 @@ rp::graph::PortDesc eventsIn(std::string id) {
 
 // An input per entry of its settings' `systems` (docs/modular-graph-phase-b3b-design.md section 5), in1 to inN, each
 // holding one producer's MIDI as it is, which goes out as that entry's system. The inputs are merged by frame
-// (docs/lsdj-serial-out-design.md section 5): each step hands out the head with the earliest frame, the lower input on
-// a tie, so two LSDjs in master sync each keep their clocks' times rather than the second's bunching behind the
-// first's, and with every frame 0 the merge is the inputs' concatenation, input by input, each in queue order. A port's
-// queue raises a frame pushed behind a later one, so an input arrives frame-sorted; a message still goes out at the
-// later of its frame and the last handed out in the block, a guard that keeps Engine::midiOut frame-sorted whatever an
-// input holds (a node on the C ABI writes its own queue), which the plugin relies on to write a DAW's events in order.
-// It allocates nothing: a head index per input, reset each block, and the merge costs messages times inputs. Two
-// entries may name one system (a controller sending to a real Game Boy under the id of a system whose own MI.OUT also
-// goes out). No entries, no inputs: a document whose roles send no host MIDI places it all the same, and it sends
+// (docs/lsdj-serial-out-design.md section 5), the k-way merge rp.core.merge makes (CoreNodes.cpp) but into the host's
+// MIDI out: each step hands out the head with the earliest frame, the lower input on a tie, so a producer sending at
+// real frames, as LSDj's serial out does, keeps its messages' times rather than bunching behind an earlier input's, and
+// with every frame 0 the merge is the inputs' concatenation, input by input, each in queue order. An rp_queue is
+// frame-ordered by contract (rp_node.h), which rp::graph::reserveMessage keeps for every node of RetroPlug's (each
+// writes its queues through it), so an input arrives frame-sorted. A message still goes out at the later of its frame
+// and the last handed out in the block: a guard against a node that breaks the contract (one on the C ABI writes its
+// own queue), which keeps Engine::midiOut frame-sorted, as the plugin relies on to write a DAW's events in order. The
+// merge allocates nothing (a head index per input, reset each block) and costs messages times inputs; the sink it hands
+// each message to does allocate, io->midiOut appending a std::vector per message to Engine::midiOut (HostServices.hpp).
+// Two entries may name one system (a controller sending to a real Game Boy under the id of a system whose own MI.OUT
+// also goes out). No entries, no inputs: a document whose roles send no host MIDI places it all the same, and it sends
 // nothing.
 // The inputs are appended here, none reflected, since their count is the settings'.
 struct MidiOut : HostIoNode {

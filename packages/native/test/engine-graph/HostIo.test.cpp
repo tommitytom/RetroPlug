@@ -3,7 +3,8 @@
 // take, and a block too long to run drops it all), what a plan sends reaches the buffers the hosts drain through
 // rp.host.midi-out (each input under the system its settings name) and controller-out, rp.n8.cart-mirror feeds the
 // engine's core-byte sink, the Game Boy's serialOut carries MI.OUT, and a full queue's drops reach the engine and the
-// harness RPC. A document holds one midi-in, one controller-in and one cart mirror at most, the mirror naming a NES.
+// harness RPC. A document holds one midi-in, one controller-in, one midi-out and one cart mirror at most, the mirror
+// naming a NES.
 // Driven on a quiescent Engine, and on a NodeRig where a node's calls on the engine are what is checked.
 //
 // Run via `pnpm test:plugin engine-graph`.
@@ -202,8 +203,10 @@ std::vector<std::pair<std::uint32_t, std::uint8_t>> serialStamped(const SameBoyS
     return log;
 }
 
-// Writes what the test queued in `next` onto its one output as it is, frames and all: a node on the C ABI owns its
-// output queue, and nothing makes it keep the queue frame-sorted, as rp::graph::pushMessage's clamp keeps it.
+// Writes what the test queued in `next` onto its one output as it is, frames and all. An rp_queue is frame-ordered by
+// contract (rp_node.h), which rp::graph::reserveMessage's clamp keeps for every node of RetroPlug's, but a node on the
+// C ABI writes its own output queue, and this one breaks the contract. A message that does not fit is dropped and
+// counted, as reserveMessage drops one.
 struct RawFeed {
     static constexpr const char* id = "rp.test.raw-feed";
     struct {
@@ -215,6 +218,10 @@ struct RawFeed {
         rp_queue& q = *b.output(0).u.queue;
         for (const auto& m : next) {
             const auto size = static_cast<std::uint32_t>(m.data.size());
+            if (q.count >= q.capacity || size > q.bytes_capacity - q.bytes_used) {
+                ++q.dropped;
+                continue;
+            }
             if (size) std::memcpy(q.bytes + q.bytes_used, m.data.data(), size);
             q.items[q.count++] = rp_message{m.frame, size, q.bytes_used, m.flags};
             q.bytes_used += size;
@@ -552,9 +559,9 @@ TEST_CASE("a change to rp.host.midi-out's systems replans cleanly, its inputs mo
 
 TEST_CASE("rp.host.midi-out sends a later input's earlier frame before an earlier input's later one, at its own frame",
           "[engine-graph][host-io]") {
-    // Two LSDjs in master sync each send a clock at its own byte's frame: merged by frame, the second's keep their
-    // times rather than bunching behind the first's, and the host's MIDI out stays frame-sorted, which CLAP and LV2
-    // require of the events the plugin writes.
+    // Two producers sending at real frames, as LSDj's serial out does (two LSDjs in master sync, a clock at each byte's
+    // frame): merged by frame, the second's keep their times rather than bunching behind the first's, and the host's
+    // MIDI out stays frame-sorted, which CLAP and LV2 require of the events the plugin writes.
     using rp::host::test::Feed;
     using rp::host::test::HostMidiOut;
     using rp::host::test::NodeRig;
@@ -600,15 +607,18 @@ TEST_CASE("rp.host.midi-out sends messages at one frame in input order, so with 
     rig.node<Feed>("a").next[Feed::Midi] = {{0, {0xFA}}, {0, {0xF8}}};
     rig.node<Feed>("b").next[Feed::Midi] = {{0, {0x90, 64, 100}}, {0, {0xF8}}};
     rig.host->processBlock(64, t);
-    CHECK(rig.midiOut == std::vector<HostMidiOut>{{1, 0, {0xFA}}, {1, 0, {0xF8}}, {2, 0, {0x90, 64, 100}}, {2, 0, {0xF8}}});
+    CHECK(rig.midiOut ==
+          std::vector<HostMidiOut>{{1, 0, {0xFA}}, {1, 0, {0xF8}}, {2, 0, {0x90, 64, 100}}, {2, 0, {0xF8}}});
 }
 
 TEST_CASE("rp.host.midi-out sends nothing earlier than the last frame it handed out, whatever order an input holds",
           "[engine-graph][host-io]") {
-    // Every node of RetroPlug's pushes through rp::graph::pushMessage, whose clamp keeps a queue frame-sorted, but a
-    // node on the C ABI owns its output queue and may leave it out of order. The merge reads each input's head, so an
-    // input that steps back in frame would step the host's MIDI out back with it; the node sends each message at the
-    // later of its frame and the last it handed out instead, so Engine::midiOut stays frame-sorted.
+    // An rp_queue is frame-ordered by contract (rp_node.h). Every node of RetroPlug's writes its queues through
+    // rp::graph::reserveMessage (pushMessage calls it, as a script node's send does), whose clamp keeps the contract,
+    // but a node on the C ABI writes its own output queue and may break it. The merge reads each input's head, so an
+    // input that steps back in frame would step the host's MIDI out back with it; the node guards against that,
+    // sending each message at the later of its frame and the last it handed out, so Engine::midiOut stays
+    // frame-sorted.
     using rp::host::test::Feed;
     using rp::host::test::HostMidiOut;
     using rp::host::test::NodeRig;
@@ -624,6 +634,7 @@ TEST_CASE("rp.host.midi-out sends nothing earlier than the last frame it handed 
     CHECK(rig.midiOut == std::vector<HostMidiOut>{{2, 5, {0xFB}}, {1, 10, {0xF8}}, {1, 10, {0xFA}}, {2, 11, {0xF8}},
                                                   {1, 12, {0xFC}}});
     for (std::size_t i = 1; i < rig.midiOut.size(); ++i) CHECK(rig.midiOut[i - 1].frame <= rig.midiOut[i].frame);
+    CHECK(rig.host->droppedMessages() == 0);
 }
 
 TEST_CASE("a change to rp.host.midi-out's systems keeps the node while its inputs hold and rebuilds it when they move",
@@ -781,12 +792,14 @@ TEST_CASE("a block too long to run drops what was staged for it, without allocat
     CHECK(e.controllerOut().empty());
 }
 
-TEST_CASE("a document holds one rp.host.midi-in and one rp.host.controller-in at most, as it holds one cart mirror",
+TEST_CASE("a document holds one rp.host.midi-in, controller-in and midi-out at most, as it holds one cart mirror",
           "[engine-graph][host-io]") {
-    // Each takes everything staged whether or not its output is wired, so a second would take it from the first
-    // whenever the plan ran it first.
+    // An input takes everything staged whether or not its output is wired, so a second would take it from the first
+    // whenever the plan ran it first. rp.host.midi-out frame-sorts only what it merges, so a second would append a run
+    // of its own behind the first's, and Engine::midiOut, which the plugin writes to a DAW as it is, would step back in
+    // frame.
     Engine e(kRate);
-    for (const std::string type : {"rp.host.midi-in", "rp.host.controller-in"}) {
+    for (const std::string type : {"rp.host.midi-in", "rp.host.controller-in", "rp.host.midi-out"}) {
         INFO(type);
         const auto refused = e.setGraph(hostIoOnly({docNode("in-a", type), docNode("in-b", type)}, {}));
         REQUIRE_FALSE(refused.ok);
@@ -795,7 +808,10 @@ TEST_CASE("a document holds one rp.host.midi-in and one rp.host.controller-in at
         CHECK(refused.errors[0].code == type.substr(std::string("rp.host.").size()));
         CHECK(e.setGraph(hostIoOnly({docNode("in-a", type)}, {})).ok);
     }
-    CHECK(e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("controller-in", "rp.host.controller-in")}, {})).ok);
+    CHECK(e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("controller-in", "rp.host.controller-in"),
+                                 docNode("midi-out", "rp.host.midi-out")},
+                                {}))
+              .ok);
 }
 
 TEST_CASE("rp.host.controller-in's connected output follows the engine's flag from frame 0", "[engine-graph][host-io]") {

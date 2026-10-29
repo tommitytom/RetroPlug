@@ -279,13 +279,21 @@ Engine::GraphResult Engine::setGraph(const GraphRequest& request) {
         table->slots.push_back({id, core, dynamic_cast<MesenNesSystem*>(core)});
     }
     // The host inputs, one of each at most: each takes everything staged, wired or not, so a second would take it from
-    // the first whenever it ran first. And the one system a physical N8 can mirror, of the document's.
-    bool takesHostMidi = false, takesControllerMidi = false;
+    // the first whenever it ran first. The host MIDI out, one at most: it frame-sorts what it merges, and a second
+    // would append its own run behind it, so midiOut_ would step back in frame (buildGraph places one). And the one
+    // system a physical N8 can mirror, of the document's.
+    bool takesHostMidi = false, takesControllerMidi = false, sendsHostMidi = false;
     for (const auto& n : doc->nodes) {
         if (n.type == "rp.host.midi-in") {
             if (takesHostMidi)
                 return refuse(n.id, "midi-in", "a document has one rp.host.midi-in at most: it takes all the staged host MIDI");
             takesHostMidi = true;
+        }
+        if (n.type == "rp.host.midi-out") {
+            if (sendsHostMidi)
+                return refuse(n.id, "midi-out",
+                              "a document has one rp.host.midi-out at most: it merges all the host MIDI out by frame");
+            sendsHostMidi = true;
         }
         if (n.type == "rp.host.controller-in") {
             if (takesControllerMidi)

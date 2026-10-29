@@ -25,7 +25,8 @@ namespace rp::host {
 // plan without one drops what it would have taken at the block's end. An input node owns its staging whether or not
 // its output is wired: it takes everything staged, and an unwired output goes nowhere. So a document holds one
 // rp.host.midi-in and one rp.host.controller-in at most (Engine::setGraph refuses a second), and a plan holding one
-// should wire it.
+// should wire it. It holds one rp.host.midi-out at most too, which keeps Engine::midiOut frame-sorted: a second would
+// append its own merge behind the first's.
 const rp_package* hostIoPackage();
 
 // rp.n8.cart-mirror (section 3.5), {"system": <id>}: everything on its midi input, then everything on its bytes

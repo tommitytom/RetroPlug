@@ -241,7 +241,8 @@ struct Merge {
     std::uint32_t inputCount = 2;
     void on_settings(const Settings& s) noexcept { inputCount = s.inputs; }
 
-    // A k-way merge by frame; equal frames keep input order, so in1's message lands first.
+    // A k-way merge by frame; equal frames keep input order, so in1's message lands first. rp.host.midi-out merges its
+    // inputs the same way into the host's MIDI out (HostIoNodes.cpp).
     void process(const rp::Block& b) noexcept {
         rp_queue& out = *b.output(0).u.queue;
         std::array<std::uint32_t, kMaxPorts> next{};

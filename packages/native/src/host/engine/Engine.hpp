@@ -120,13 +120,13 @@ public:
     // deactivated; the CLI, before any build.
     void setSampleRate(double sr);
 
-    // The host MIDI out of this block: what the plan's rp.host.midi-out appended, in plan order, each tagged with
-    // the system that emitted it. Frame-sorted within the plan's one rp.host.midi-out: the node merges its inputs by
-    // frame and sends nothing earlier than the last frame it handed out, which the plugin relies on to write the
-    // events to a DAW that requires them in order (CLAP, LV2). Cleared at the top of each block that runs: a 0-frame
-    // block, or one longer than the plan's buffers, runs nothing and keeps the previous contents. The plugin drains
-    // this to the DAW after processBlock, and the SDL standalone to its MIDI out; the RPC drains (drainMidiOut, the
-    // harness's) read it too.
+    // The host MIDI out of this block: what the plan's rp.host.midi-out appended, each tagged with the system that
+    // emitted it. Frame-sorted: a plan holds one rp.host.midi-out at most (setGraph refuses a second), which merges its
+    // inputs by frame and sends nothing earlier than the last frame it handed out, and the plugin relies on that to
+    // write the events to a DAW that requires them in order (CLAP, LV2). Cleared at the top of each block that runs: a
+    // 0-frame block, or one longer than the plan's buffers, runs nothing and keeps the previous contents. The plugin
+    // drains this to the DAW after processBlock, and the SDL standalone to its MIDI out; the RPC drains (drainMidiOut,
+    // the harness's) read it too.
     const std::vector<EngineMidiOut>& midiOut() const { return midiOut_; }
     void clearMidiOut() { midiOut_.clear(); }
 
