@@ -77,6 +77,19 @@ std::size_t copyText(char* out, std::size_t capacity, std::string_view text) {
     return n;
 }
 
+// Text written into a fixed buffer piece by piece, each piece cut at a character where it does not fit (copyText).
+struct TextOut {
+    char*       out;
+    std::size_t capacity;
+    std::size_t n = 0;
+    void add(std::string_view text) { n += copyText(out + n, capacity - n, text); }
+    void number(long long value) {
+        char digits[24];
+        std::snprintf(digits, sizeof digits, "%lld", value);
+        add(digits);
+    }
+};
+
 void copyError(rp_error* err, std::string_view what) {
     if (err) copyText(err->message, sizeof err->message, what);
 }
@@ -309,6 +322,16 @@ struct ScriptHost::Type {
 // address of Object.prototype. Made and loaded on the control thread; the block thread reaches it only through an
 // instance of one of its types.
 struct ScriptHost::Pack {
+    // Its audio runtime's allocator opaque: the host's counters, which every pack's runtime adds to, and its own live
+    // heap and the limit an allocation may not take it past (design section 6). Written by whichever thread runs the
+    // runtime (the block thread, or the control thread while it loads or no audio thread runs).
+    struct Heap {
+        Counters*   counters = nullptr;
+        std::size_t live = 0;      // usable bytes
+        std::size_t limit = kDefaultMemoryLimit;
+        bool        refused = false;  // an allocation was refused since this was last read (Glue::refusedSince)
+    };
+
     ScriptHost*   host = nullptr;   // how a Block method, which finds the pack as its context's opaque, finds the host
     std::string   id;
     std::uint32_t generation = 1;   // its load's count
@@ -325,6 +348,12 @@ struct ScriptHost::Pack {
     rp_package    package{};
     // Its load, or a release of one of its instances, since its last collect (whoever released it).
     bool          garbage = false;
+    Heap          heap;
+    // Whose promise jobs are pending while a checkpoint has left some (the block thread's): the instance they are
+    // charged to until the queue empties, or, `jobsOrphaned`, no node, the one they were charged to having been
+    // released (Glue::chargeJobs).
+    Instance*     jobsOwner = nullptr;
+    bool          jobsOrphaned = false;
 };
 
 // One script node instance, behind its shim. Allocated by create and deleted on the control thread; its JS state is
@@ -343,6 +372,7 @@ struct ScriptHost::Instance {
     State                   state = State::Pending;
     bool                    faultNext = false;  // a hook threw under faultOnThrow, or expired twice in a row: fault next block
     std::uint8_t            expiries = 0;       // its calls the deadline stopped in a row (expiryFaults)
+    std::uint8_t            cutShorts = 0;      // checkpoints in a row that cut its promise jobs short (Glue::chargeJobs)
     Settings*               settings = nullptr;
     std::unique_ptr<Layout> layout;
     JSValue                 object = JS_UNDEFINED;  // the NodeInstance its definition's create returned
@@ -411,12 +441,13 @@ struct ScriptHost::Glue {
         return 1;
     }
 
-    // After one of a node's calls: whether the deadline stopping it faults the node. Under faultOnThrow the first expiry
-    // does; without, only a second in a row (design section 4.5: one throw and the next block runs again), and a call
-    // that ran to its end clears the count. So a node that hangs still faults within two deadlines, and one long call
-    // costs a block rather than the session, which a fault would: it outlives a reshape.
-    static bool expiryFaults(const ScriptHost& h, Instance& in) {
-        if (!h.interrupted_) {
+    // After one of a node's calls: whether the deadline stopping it (`stopped`: the call, or a promise job charged to
+    // the node at its checkpoint) faults the node. Under faultOnThrow the first expiry does; without, only a second in
+    // a row (design section 4.5: one throw and the next block runs again), and a call that ran to its end, its jobs
+    // with it, clears the count. So a node that hangs, or whose reaction does, still faults within two deadlines, and
+    // one long call costs a block rather than the session, which a fault would: it outlives a reshape.
+    static bool expiryFaults(Instance& in, bool stopped) {
+        if (!stopped) {
             in.expiries = 0;
             return false;
         }
@@ -425,10 +456,14 @@ struct ScriptHost::Glue {
         return in.expiries >= 2;
     }
 
-    // ---- the audio runtimes' allocator: the platform's, counted -----------------------------------------------
+    // ---- the audio runtimes' allocator: the platform's, counted and held to each pack's limit ------------------ Each
+    // pack's runtime has its own opaque (Pack::Heap), which keeps its live heap in usable bytes, as QuickJS's own
+    // accounting (jsUsable) reads it, in every build: an allocation that would take it past the pack's limit is refused
+    // (null, which QuickJS throws as out of memory in the call that asked) and the refusal noted, for the call's
+    // checkpoint to fault its node. The limit is the host's to enforce rather than QuickJS's (JS_SetMemoryLimit), which
+    // checks its own before calling the allocator and so would refuse without the host ever seeing it.
 #ifdef RETROPLUG_PROFILE
-    // A profile build keeps the live heap and its peak too, in usable bytes, as QuickJS's own accounting (jsUsable)
-    // reads a block.
+    // A profile build keeps the live heap of every pack's runtime summed, and its peak, in the host's counters.
     static void grew(Counters& c, std::int64_t by) {
         const std::int64_t live = c.liveBytes.load(std::memory_order_relaxed) + by;
         c.liveBytes.store(live, std::memory_order_relaxed);
@@ -436,42 +471,59 @@ struct ScriptHost::Glue {
             c.peakBytes.store(static_cast<std::uint64_t>(live), std::memory_order_relaxed);
     }
 #endif
-    static void allocated(Counters& c, [[maybe_unused]] void* p, std::size_t size) {
-        bump(c.allocs);
-        bump(c.bytes, size);
+    // Whether `heap` has room for `more` bytes; when not, the refusal is noted.
+    static bool admits(Pack::Heap& heap, std::size_t more) {
+        if (more <= heap.limit && heap.live <= heap.limit - more) return true;
+        heap.refused = true;
+        return false;
+    }
+    static void allocated(Pack::Heap& heap, void* p, std::size_t size) {
+        const std::size_t usable = usableSize(p);
+        heap.live += usable;
+        bump(heap.counters->allocs);
+        bump(heap.counters->bytes, size);
 #ifdef RETROPLUG_PROFILE
-        grew(c, static_cast<std::int64_t>(usableSize(p)));
+        grew(*heap.counters, static_cast<std::int64_t>(usable));
 #endif
     }
     static void* jsCalloc(void* opaque, std::size_t count, std::size_t size) {
+        auto& heap = *static_cast<Pack::Heap*>(opaque);
+        if (!admits(heap, count * size)) return nullptr;  // QuickJS has checked count * size for overflow
         void* p = std::calloc(count, size);
-        if (p) allocated(*static_cast<Counters*>(opaque), p, count * size);
+        if (p) allocated(heap, p, count * size);
         return p;
     }
     static void* jsMalloc(void* opaque, std::size_t size) {
+        auto& heap = *static_cast<Pack::Heap*>(opaque);
+        if (!admits(heap, size)) return nullptr;
         void* p = std::malloc(size);
-        if (p) allocated(*static_cast<Counters*>(opaque), p, size);
+        if (p) allocated(heap, p, size);
         return p;
     }
     static void jsFree(void* opaque, void* p) {
         if (p) {
-            auto& c = *static_cast<Counters*>(opaque);
-            bump(c.frees);
+            auto& heap = *static_cast<Pack::Heap*>(opaque);
+            const std::size_t usable = usableSize(p);
+            heap.live -= usable;
+            bump(heap.counters->frees);
 #ifdef RETROPLUG_PROFILE
-            grew(c, -static_cast<std::int64_t>(usableSize(p)));
+            grew(*heap.counters, -static_cast<std::int64_t>(usable));
 #endif
         }
         std::free(p);
     }
     static void* jsRealloc(void* opaque, void* p, std::size_t size) {
+        auto& heap = *static_cast<Pack::Heap*>(opaque);
         const std::size_t before = p ? usableSize(p) : 0;
+        if (size > before && !admits(heap, size - before)) return nullptr;  // p left as it was, as a failed realloc does
         void* q = std::realloc(p, size);
         if (q || size == 0) {
-            auto& c = *static_cast<Counters*>(opaque);
-            bump(c.reallocs);
-            if (size > before) bump(c.bytes, size - before);
+            const std::size_t after = q ? usableSize(q) : 0;
+            heap.live = heap.live - before + after;
+            bump(heap.counters->reallocs);
+            if (size > before) bump(heap.counters->bytes, size - before);
 #ifdef RETROPLUG_PROFILE
-            grew(c, static_cast<std::int64_t>(q ? usableSize(q) : 0) - static_cast<std::int64_t>(before));
+            grew(*heap.counters, static_cast<std::int64_t>(after) - static_cast<std::int64_t>(before));
 #endif
         }
         return q;
@@ -569,10 +621,14 @@ struct ScriptHost::Glue {
     static void portsChanged(rp_node* n, const std::uint8_t* connected, std::uint32_t count) {
         Instance& in = instanceOf(n);
         ScriptHost& h = *in.type->host;
+        const Deadline call(h);  // the create a fresh instance makes first, the hook, and the jobs they queue
+        const bool fresh = in.state == Instance::State::Pending;
         if (!ensureLive(h, in)) return;
         JSContext* ctx = packOf(in).audio;
-        if (!JS_IsFunction(ctx, in.portsChanged)) return;
-        const Deadline call(h);
+        if (!JS_IsFunction(ctx, in.portsChanged)) {
+            if (fresh) hookDone(h, in, false, "create");  // what its create queued, at a checkpoint of its own
+            return;
+        }
         JSValue mask = JS_NewArray(ctx);
         for (std::uint32_t i = 0; i < count && !JS_IsException(mask); ++i)
             if (JS_DefinePropertyValueUint32(ctx, mask, i, JS_NewBool(ctx, connected[i] != 0), kDefine) < 0) {
@@ -588,11 +644,12 @@ struct ScriptHost::Glue {
     static rp_status process(rp_node* n, const rp_process* block) {
         Instance& in = instanceOf(n);
         ScriptHost& h = *in.type->host;
+        // The whole block, not just the call: the create a fresh instance makes first, the block path (a node may hang
+        // a setter on what it fills in), the call, and the jobs they queue.
+        const Deadline call(h);
         if (!ensureLive(h, in) || in.faultNext) return RP_FAULT;
         const Pack& pack = packOf(in);
         JSContext* ctx = pack.audio;
-        // The whole block, not just the call: a node may hang a setter on what the block path fills in.
-        const Deadline call(h);
         traceBegin(h, in.type->spanLabel);
         traceBegin(h, DSP_SPAN_MARSHAL);
         ++in.blockStamp;
@@ -609,33 +666,38 @@ struct ScriptHost::Glue {
         JSValue result = JS_Call(ctx, in.process, in.object, 1, &in.block);
         jsCallEnd(h);
         in.running = nullptr;
-        const bool threw = JS_IsException(result), expired = expiryFaults(h, in);
+        const bool threw = JS_IsException(result), stopped = h.interrupted_;
         if (threw) recordThrow(h, in, "process");  // first: the copy out may meet a detached buffer, which throws too
         copyAudioOut(ctx, in, *block);             // what it wrote up to a throw stands, as its sends do
-        bool fault = false;
-        if (threw) {
-            fault = in.type->faultOnThrow || expired;
-        } else if (JS_IsString(result)) {
-            const JSAtom said = JS_ValueToAtom(ctx, result);
-            fault = said == atom(pack, kFault);
-            JS_FreeAtom(ctx, said);
+        bool said = false;                         // it answered "fault"
+        if (!threw && JS_IsString(result)) {
+            const JSAtom answer = JS_ValueToAtom(ctx, result);
+            said = answer == atom(pack, kFault);
+            JS_FreeAtom(ctx, answer);
         }
         JS_FreeValue(ctx, result);
+        // Its jobs after the copy out, so the block's audio is what process wrote, inside its process span (a profile
+        // build), after its js-call span.
+        const Settled jobs = checkpoint(h, in, threw, "process");
+        const bool expired = expiryFaults(in, stopped || jobs.stopped);
         processSpanEnd(h);
-        return fault ? RP_FAULT : RP_OK;
+        return (threw && in.type->faultOnThrow) || expired || said || jobs.fault ? RP_FAULT : RP_OK;
     }
 
     // A block whose marshalling failed before its process could be called, with the exception pending: JS out of
     // memory, a write onto what the node holds refused (readyAudio's onto its views, fillBlock's onto the Block and its
     // transport), or the deadline stopping a setter it hung there, whose uncatchable error is the throw kept. Counted as
-    // a throw in process, its audio outputs silent, and faulted as such a throw would fault it.
+    // a throw in process, its audio outputs silent, and faulted as such a throw would fault it. What the setter queued
+    // runs at the checkpoint after it.
     static rp_status cannotRun(ScriptHost& h, Instance& in, const rp_process& block) {
-        const bool expired = expiryFaults(h, in);
+        const bool stopped = h.interrupted_;
         recordThrow(h, in, "process");
         silenceAudio(in, block);
         traceEnd(h);  // marshal
+        const Settled jobs = checkpoint(h, in, true, "process");
+        const bool expired = expiryFaults(in, stopped || jobs.stopped);
         processSpanEnd(h);
-        return in.type->faultOnThrow || expired ? RP_FAULT : RP_OK;
+        return in.type->faultOnThrow || expired || jobs.fault ? RP_FAULT : RP_OK;
     }
 
     // The block's length and transport, onto the Block object and its transport, whose fields createJs defined, so each
@@ -686,6 +748,8 @@ struct ScriptHost::Glue {
         ScriptHost& h = *in.type->host;
         auto* next = static_cast<Settings*>(prepared);
         Settings* prev = in.settings;
+        const Deadline call(h);  // the create a fresh instance makes first, onSettings, and the jobs they queue
+        const bool fresh = in.state == Instance::State::Pending;
         const bool live = ensureLive(h, in);  // a fresh instance is made from the settings it was created with first
         JSContext* ctx = packOf(in).audio;
         if (next->layout) {
@@ -700,8 +764,11 @@ struct ScriptHost::Glue {
         }
         in.settings = next;
         *old = prev;
-        if (!live || !JS_IsFunction(ctx, in.onSettings)) return;
-        const Deadline call(h);
+        if (!live) return;
+        if (!JS_IsFunction(ctx, in.onSettings)) {
+            if (fresh) hookDone(h, in, false, "create");  // what its create queued, at a checkpoint of its own
+            return;
+        }
         JSValue settings = JS_ParseJSON(ctx, next->json.c_str(), next->json.size(), "<settings>");
         JSValue result = JS_IsException(settings) ? JS_EXCEPTION : JS_Call(ctx, in.onSettings, in.object, 1, &settings);
         hookDone(h, in, JS_IsException(result), "onSettings");
@@ -728,13 +795,13 @@ struct ScriptHost::Glue {
     // throws or returns no process, when reading its process or a hook throws (a getter or a Proxy trap the node
     // defined for one, or a prototype chain too long or cycling through a Proxy, as method says), or when JS runs out
     // of memory making what the host hands it. What the host makes here holds every field it will write as its own
-    // (kDefine).
+    // (kDefine). It runs inside the deadline of the call that reached the pending instance (ensureLive's caller), whose
+    // checkpoint runs the jobs it queues.
     static void createJs(ScriptHost& h, Instance& in) {
         const Pack& pack = packOf(in);
         JSContext* ctx = pack.audio;
         JS_UpdateStackTop(pack.audioRt);
         bindLayout(ctx, *in.layout);
-        const Deadline call(h);
         // The settings as the control side's parseSettings returned them, in their JSON form (the class comment).
         JSValue settings = JS_ParseJSON(ctx, in.settings->json.c_str(), in.settings->json.size(), "<settings>");
         JSValue cc = JS_IsException(settings) ? JS_EXCEPTION : JS_NewObject(ctx);
@@ -789,10 +856,12 @@ struct ScriptHost::Glue {
         h.live_.fetch_add(1, std::memory_order_relaxed);
     }
 
-    // A create that failed, with its exception pending: counted, and the node faults at its first block.
+    // A create that failed, with its exception pending: counted, what it queued run at a checkpoint (charged to it, as
+    // nothing else is to be), and the node faults at its first block.
     static void failCreate(ScriptHost& h, Instance& in) {
         recordThrow(h, in, "create");
         in.state = Instance::State::Failed;
+        checkpoint(h, in, true, "create");
     }
 
     // Each of `fields` onto `obj`, an object the host made and JS has not yet seen, as its own data property, undefined
@@ -877,54 +946,197 @@ struct ScriptHost::Glue {
         return ok;
     }
 
+    // A throw counted, and the first one's text kept for reclaim to log, written by `write` into a fixed buffer (the
+    // block thread allocates nothing native there).
+    template <class Write>
+    static void countThrow(ScriptHost& h, Write&& write) {
+        h.throws_.fetch_add(1, std::memory_order_relaxed);
+        int unclaimed = 0;
+        if (!h.firstThrowState_.compare_exchange_strong(unclaimed, 1, std::memory_order_acq_rel)) return;
+        TextOut text{h.firstThrow_, sizeof h.firstThrow_};
+        write(text);
+        h.firstThrowState_.store(2, std::memory_order_release);
+    }
+
     // Counted, and the first one kept for reclaim to log; the exception, pending in `ctx` (the context the call ran
     // in), is cleared. A call the deadline stopped counts as a throw, and says so.
     static void recordThrow(ScriptHost& h, Instance& in, const char* where) {
         recordThrow(h, packOf(in).audio, in.type->id.c_str(), where);
     }
-    // `type` null: no one node's (a promise job).
+    // `type` null: no one node's (a promise job a release ran, or one whose node is gone).
     static void recordThrow(ScriptHost& h, JSContext* ctx, const char* type, const char* where) {
         JSValue thrown = JS_GetException(ctx);
-        h.throws_.fetch_add(1, std::memory_order_relaxed);
-        int unclaimed = 0;
-        if (h.firstThrowState_.compare_exchange_strong(unclaimed, 1, std::memory_order_acq_rel)) {
-            char* const out = h.firstThrow_;
-            std::size_t n = 0;
-            const auto add = [&](std::string_view text) { n += copyText(out + n, sizeof h.firstThrow_ - n, text); };
-            add(type ? type : where);
+        countThrow(h, [&](TextOut& t) {
+            t.add(type ? type : where);
             if (h.interrupted_) {
-                char ms[24];
-                std::snprintf(ms, sizeof ms, "%lld",
-                              static_cast<long long>(h.callDeadlineNs_.load(std::memory_order_relaxed) / 1000000));
-                add(" ran past the ");
-                add(ms);
-                add(" ms call deadline");
+                t.add(" ran past the ");
+                t.number(static_cast<long long>(h.callDeadlineNs_.load(std::memory_order_relaxed) / 1000000));
+                t.add(" ms call deadline");
                 if (type) {
-                    add(" in ");
-                    add(where);
+                    t.add(" in ");
+                    t.add(where);
                 }
-                add(" (CPU time), and was stopped: ");
+                t.add(" (CPU time), and was stopped: ");
             } else if (type) {
-                add(" threw in ");
-                add(where);
-                add(": ");
+                t.add(" threw in ");
+                t.add(where);
+                t.add(": ");
             } else {
-                add(" threw: ");
+                t.add(" threw: ");
             }
-            describe(ctx, thrown, false, out + n, sizeof h.firstThrow_ - n);
-            h.firstThrowState_.store(2, std::memory_order_release);
-        }
+            describe(ctx, thrown, false, t.out + t.n, t.capacity - t.n);
+        });
         JS_FreeValue(ctx, thrown);
     }
 
-    // After a hook (onSettings and portsChanged at a plan swap, activate at a re-activation): a throw is counted, and
-    // under faultOnThrow, or when it is the deadline's second expiry in a row (expiryFaults), the node faults at its
-    // next block, since it may hold half of what the hook would have set.
+    // After a hook (onSettings and portsChanged at a plan swap, activate at a re-activation), or a create no hook
+    // follows: a throw is counted, then its checkpoint runs, and the node faults at its next block, since it may hold
+    // half of what the hook would have set, under faultOnThrow, when the deadline stopped it or its jobs a second time
+    // in a row (expiryFaults), or when its checkpoint faults it.
     static void hookDone(ScriptHost& h, Instance& in, bool threw, const char* where) {
-        const bool expired = expiryFaults(h, in);
-        if (!threw) return;
-        recordThrow(h, in, where);
-        if (in.type->faultOnThrow || expired) in.faultNext = true;
+        const bool stopped = h.interrupted_;
+        if (threw) recordThrow(h, in, where);
+        const Settled jobs = checkpoint(h, in, threw, where);
+        const bool expired = expiryFaults(in, stopped || jobs.stopped);
+        if ((threw && in.type->faultOnThrow) || expired || jobs.fault) in.faultNext = true;
+    }
+
+    // ---- the checkpoint after a call: its pack's promise jobs, and its memory (design section 6) ----------------
+    // What a checkpoint charged to a node.
+    struct Settled {
+        bool stopped = false;  // the deadline stopped one of its jobs: its call counts as stopped (expiryFaults)
+        bool fault = false;    // it faults now: an allocation its pack refused in its call or its jobs, a job of its
+                               //   that failed under faultOnThrow, or its jobs cut short a second time in a row
+    };
+
+    // Whether `pack` refused an allocation since this was last asked; the note is cleared.
+    static bool refusedSince(Pack& pack) { return std::exchange(pack.heap.refused, false); }
+
+    // After a call the block thread made into `in` (create, onSettings, portsChanged, activate or process), inside the
+    // call's deadline, which spans the call and its jobs. An allocation its pack refused during the call faults it,
+    // whether or not JS caught the error (`threw`: the call threw, so its throw, the refusal's error or another, is
+    // counted; else the refusal is counted as its throw). Then the jobs pending in its pack run (chargeJobs), charged
+    // to the pack's remembered owner when it has one, else to `in`: so its own, and only those, while no other node's
+    // are pending. What falls to `in` is returned, for its call to fold in as its own (process faults at once, a hook
+    // at the next block); what falls to another node, whose leftovers these are, faults that one at its next block
+    // (chargeOther). Once the deadline has stopped the call, nothing runs: what it left waits for the pack's next
+    // checkpoint, still charged to it. A call into a pack with nothing pending costs one list test here.
+    static Settled checkpoint(ScriptHost& h, Instance& in, bool threw, const char* where) {
+        Pack& pack = packOf(in);
+        Settled self;
+        if (refusedSince(pack)) {
+            if (!threw) recordRefusal(h, pack, in.type->id.c_str(), where);
+            self.fault = true;
+        }
+        if (!JS_IsJobPending(pack.audioRt)) return self;
+        Instance* const owner = pack.jobsOwner ? pack.jobsOwner : pack.jobsOrphaned ? nullptr : &in;
+        if (h.interrupted_) {
+            pack.jobsOwner = owner;
+            return self;
+        }
+        const Settled jobs = chargeJobs(h, pack, owner);
+        if (owner == &in) {
+            self.stopped = jobs.stopped;
+            self.fault = self.fault || jobs.fault;
+        } else if (owner) {
+            chargeOther(*owner, jobs);
+        }
+        return self;
+    }
+
+    // The jobs pending in `pack`, at most kJobsPerCheckpoint, charged to `owner` (null: no node's, the node they were
+    // charged to having been released). A job that fails (a queueMicrotask callback that threw, or JS out of memory) is
+    // the owner's throw, and faults a faultOnThrow owner; one the deadline stops ends the run and counts as the owner's
+    // call stopped; an allocation the pack refused in one faults the owner (and is its throw when JS caught it). Jobs
+    // still pending after the bound are cut short: counted (jobsCutShort), the owner's throw, and its second cut short
+    // in a row faults it. QuickJS cannot drop a job, so the pack remembers the owner while any are pending, and its
+    // later checkpoints charge them to the same node, never to a pack-mate; one that empties the queue forgets the
+    // owner and its count. A promise reaction's own throw only rejects its promise: the job runs to its end.
+    static Settled chargeJobs(ScriptHost& h, Pack& pack, Instance* owner) {
+        Settled charged;
+        const char* const type = owner ? owner->type->id.c_str() : nullptr;
+        for (int n = 0; n < kJobsPerCheckpoint; ++n) {
+            JSContext* ctx = nullptr;
+            const int r = JS_ExecutePendingJob(pack.audioRt, &ctx);
+            if (r == 0) break;
+            const bool refused = refusedSince(pack);
+            if (r < 0) recordThrow(h, ctx, type, "a promise job");
+            else if (refused) recordRefusal(h, pack, type, "a promise job");
+            if (owner && (refused || (r < 0 && owner->type->faultOnThrow))) charged.fault = true;
+            if (r < 0 && h.interrupted_) {
+                charged.stopped = true;
+                break;
+            }
+        }
+        if (!JS_IsJobPending(pack.audioRt)) {
+            pack.jobsOwner = nullptr;
+            pack.jobsOrphaned = false;
+            if (owner) owner->cutShorts = 0;
+            return charged;
+        }
+        pack.jobsOwner = owner;
+        pack.jobsOrphaned = !owner;
+        if (charged.stopped) return charged;  // the deadline's, not the bound's: the rest wait, uncounted
+        h.jobsCutShort_.fetch_add(1, std::memory_order_relaxed);
+        if (owner) {
+            recordCutShort(h, type);
+            if (owner->cutShorts < 2) ++owner->cutShorts;
+            if (owner->cutShorts >= 2) charged.fault = true;
+        }
+        return charged;
+    }
+
+    // What a checkpoint charged to a node other than the one whose call it followed, the owner of the leftovers it ran:
+    // it faults at its next block when they fault it, or when the deadline stopping one of them is its second expiry in
+    // a row (expiryFaults; a run the deadline did not stop leaves its count alone, its own calls being what clear it).
+    static void chargeOther(Instance& owner, const Settled& jobs) {
+        const bool expired = jobs.stopped && expiryFaults(owner, true);
+        if (jobs.fault || expired) owner.faultNext = true;
+    }
+
+    // A release's (releaseJs), after the instance's JS is freed: what its pack has pending runs there, under a deadline
+    // of its own, charged to the pack's owner when it has one (never the released instance, which releaseJs has let go
+    // of), else to no node.
+    static void releaseJobs(ScriptHost& h, Pack& pack) {
+        const Deadline call(h);
+        Instance* const owner = pack.jobsOwner;
+        const Settled jobs = chargeJobs(h, pack, owner);
+        if (owner) chargeOther(*owner, jobs);
+    }
+
+    // An owner's jobs cut short (chargeJobs): its throw, with no exception behind it.
+    static void recordCutShort(ScriptHost& h, const char* type) {
+        countThrow(h, [&](TextOut& t) {
+            t.add(type);
+            t.add("'s promise jobs did not settle in the ");
+            t.number(kJobsPerCheckpoint);
+            t.add(" a checkpoint runs");
+        });
+    }
+
+    // An allocation `pack` refused that JS caught, so no throw stands for it: counted as the node's throw (`type`;
+    // null: no node's), which faults it.
+    static void recordRefusal(ScriptHost& h, const Pack& pack, const char* type, const char* where) {
+        countThrow(h, [&](TextOut& t) {
+            constexpr std::size_t kMiB = std::size_t{1} << 20;
+            t.add(type ? type : where);
+            t.add(" went past its pack's ");
+            if (pack.heap.limit % kMiB == 0) {
+                t.number(static_cast<long long>(pack.heap.limit / kMiB));
+                t.add(" MiB");
+            } else {
+                t.number(static_cast<long long>(pack.heap.limit));
+                t.add("-byte");
+            }
+            t.add(" memory limit");
+            if (type) {
+                t.add(" in ");
+                t.add(where);
+                t.add(" (an allocation was refused), and was faulted");
+            } else {
+                t.add(" (an allocation was refused)");
+            }
+        });
     }
 
     static void bindLayout(JSContext* ctx, Layout& l) {
@@ -1367,7 +1579,8 @@ void ScriptHost::makeRuntimes(Pack& pack) {
     pack.controlRt = JS_NewRuntime();
     pack.control = JS_NewContext(pack.controlRt);
     const JSMallocFunctions counted{&Glue::jsCalloc, &Glue::jsMalloc, &Glue::jsFree, &Glue::jsRealloc, &Glue::jsUsable};
-    pack.audioRt = JS_NewRuntime2(&counted, &counters_);  // QuickJS copies the functions and keeps the opaque
+    pack.heap.counters = &counters_;
+    pack.audioRt = JS_NewRuntime2(&counted, &pack.heap);  // QuickJS copies the functions and keeps the opaque
     pack.audio = JS_NewContext(pack.audioRt);
     JS_SetContextOpaque(pack.audio, &pack);  // what a Block method runs in: Glue::packOf
     // Both runtimes' JS stacks, inside the smallest thread that enters either (the class comment), and what the block
@@ -1425,17 +1638,24 @@ void ScriptHost::freeRuntimes(Pack& pack) {
     pack.audioRt = pack.controlRt = nullptr;
 }
 
-bool ScriptHost::load(std::span<const Chunk> chunks, std::string* error) {
+bool ScriptHost::load(std::span<const Chunk> chunks, std::string* error, std::size_t memoryLimit) {
     // Refused without touching what a first load registered: a registry may hold its types already.
     if (loaded_) {
         if (error) *error = "a script host loads one bundle";
         return false;
     }
     loaded_ = true;
-    return loadInto(*packs_.front(), chunks, error);
+    Pack& pack = *packs_.front();
+    pack.heap.limit = memoryLimit ? memoryLimit : kDefaultMemoryLimit;  // before the load, whose allocations it holds
+    return loadInto(pack, chunks, error);
 }
 
 bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string* error) {
+    // An allocation the load was refused fails it (the chunk throws out of memory); no node's call is to be faulted.
+    struct Forget {
+        Pack* pack;
+        ~Forget() { pack->heap.refused = false; }
+    } forget{&pack};
     auto fail = [&](std::string why) {
         freeTypes(pack);
         if (error) *error = std::move(why);
@@ -1453,7 +1673,7 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
             JS_FreeValue(ctx, result);
         }
         // What the bundle's top level queued runs now, in this context's runtime: no block has begun.
-        runJobs(audioSide ? pack.audioRt : pack.controlRt, kJobsPerBlock, [](JSContext* c) { clearException(c); });
+        runJobs(audioSide ? pack.audioRt : pack.controlRt, kJobsPerCheckpoint, [](JSContext* c) { clearException(c); });
     }
     // What the load leaves in cycles in the audio runtime, its top level's and the descriptors' below, goes at the first
     // quiescent reclaim, rather than waiting for a block's threshold GC. (The production bundle left about 144 KiB while
@@ -1525,7 +1745,7 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
         type.abi = rp_node_type{type.id.c_str(), &Glue::descriptor, &Glue::layoutFor, &Glue::queryMemory,
                                 &Glue::create, &Glue::destroy, RP_TYPE_STATELESS_PREPARE, &type};
     }
-    runJobs(pack.audioRt, kJobsPerBlock, [](JSContext* c) { clearException(c); });  // what the descriptors queued there
+    runJobs(pack.audioRt, kJobsPerCheckpoint, [](JSContext* c) { clearException(c); });  // what the descriptors queued there
     // Each type's span label, in registration order (spanLabelFor).
     for (const auto& t : pack.types) t->spanLabel = spanLabelFor(t->id);
     pack.typeList.clear();
@@ -1594,14 +1814,8 @@ void ScriptHost::beginBlock() {
     }
 }
 
-// The promise jobs the block's JS queued (its process calls, and whatever the adoption before it ran), each pack's
-// bounded so a reaction that queues another every time cannot hold the block, and held to one call deadline. A job
-// that fails (a queueMicrotask callback that threw, the deadline, or JS out of memory: a promise reaction's own throw
-// only rejects its promise) is counted as a node's throw is, and one the deadline stopped leaves the rest of its pack's
-// for the next block's end. This reads the pack list on the block thread, which nothing else there does (packs_).
+// The block's promise jobs have run already, each at the checkpoint after the call that queued it.
 void ScriptHost::endBlock() {
-    for (const auto& pack : packs_)
-        if (JS_IsJobPending(pack->audioRt)) runAudioJobs(*pack);
 #ifdef RETROPLUG_PROFILE
     // The allocation window's per-block counts, the promise jobs included.
     const ScriptAllocations now = audioAllocations();
@@ -1611,22 +1825,8 @@ void ScriptHost::endBlock() {
 #endif
 }
 
-void ScriptHost::runAudioJobs(Pack& pack) {
-    JS_UpdateStackTop(pack.audioRt);
-    const Glue::Deadline call(*this);
-    for (int n = 0; n < kJobsPerBlock; ++n) {
-        JSContext* ctx = nullptr;
-        const int r = JS_ExecutePendingJob(pack.audioRt, &ctx);
-        if (r == 0) return;
-        if (r > 0) continue;
-        Glue::recordThrow(*this, ctx, nullptr, "a promise job");
-        if (interrupted_) break;
-    }
-    if (JS_IsJobPending(pack.audioRt)) jobsCutShort_.fetch_add(1, std::memory_order_relaxed);
-}
-
 void ScriptHost::drainControlJobs(Pack& pack) {
-    if (JS_IsJobPending(pack.controlRt)) runJobs(pack.controlRt, kJobsPerBlock, [](JSContext* ctx) { clearException(ctx); });
+    if (JS_IsJobPending(pack.controlRt)) runJobs(pack.controlRt, kJobsPerCheckpoint, [](JSContext* ctx) { clearException(ctx); });
 }
 
 void ScriptHost::drainReleased() {
@@ -1648,9 +1848,9 @@ void ScriptHost::reclaim() {
         leaksReported_ = leaked;
     }
     if (!jobsLogged_ && jobsCutShort() > 0) {
-        std::fprintf(stderr, "[script] a block's promise jobs outran the %d a block runs; the rest ran at the next block's end "
-                             "(said once; jobsCutShort() counts them)\n",
-                     kJobsPerBlock);
+        std::fprintf(stderr, "[script] a script node's promise jobs outran the %d a checkpoint runs; the rest wait for its pack's "
+                             "next checkpoint, still charged to it (said once; jobsCutShort() counts them)\n",
+                     kJobsPerCheckpoint);
         jobsLogged_ = true;
     }
     if (!firstThrowLogged_ && firstThrowState_.load(std::memory_order_acquire) == 2) {
@@ -1709,6 +1909,13 @@ void ScriptHost::releaseJs(Instance& in) {
     if (in.state == Instance::State::Live) live_.fetch_sub(1, std::memory_order_relaxed);
     in.state = Instance::State::Released;
     pack.garbage = true;
+    // Never left its pack's owner, its record being deleted after this: what it left pending is no node's now.
+    if (pack.jobsOwner == &in) {
+        pack.jobsOwner = nullptr;
+        pack.jobsOrphaned = true;
+    }
+    if (JS_IsJobPending(pack.audioRt)) Glue::releaseJobs(*this, pack);
+    pack.heap.refused = false;  // what freeing it was refused is no node's to fault
 }
 
 ScriptAllocations ScriptHost::audioAllocations() const {

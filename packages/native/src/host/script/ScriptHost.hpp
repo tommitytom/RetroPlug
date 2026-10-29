@@ -121,6 +121,7 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // What every pack shares stays the host's: the call deadline (one call runs at a time on the block thread), the
 // allocation counters (summed over every pack's audio runtime, so audioAllocations and the profile's allocation window
 // mean the whole audio side), the release rings, the throw count and the first throw, and the profile's span labels.
+// What is a pack's own: its promise-job queue, its memory limit, its cycle GC and its quiescent collection.
 //
 // Every runtime's JS stack is held to kStackBytes, under the smallest thread that may enter one: 512 KiB is a macOS
 // secondary thread's default, which a DAW's audio or control thread may have and a render job's std::thread does
@@ -130,11 +131,13 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 //
 // Every call into an audio runtime from the block thread is held to a deadline (setCallDeadline) of the calling
 // thread's CPU time, so a stall that is not the node's (preemption, a stopped process, a debugger or a VM pause) never
-// trips it. A call that runs past it is stopped (QuickJS's interrupt, which JS cannot catch) and counted as a throw.
-// A node with faultOnThrow then faults; one without runs again next block (design section 4.5), and faults only if
-// its next call is stopped too, so a node that hangs is bypassed within two deadlines and one that ran long once is
-// not. A call that runs to its end starts the count again. A deadline fault is a fault like any other: it latches on
-// the instance and outlives reshapes, and only a rebuild (or the node removed and added again) clears it.
+// trips it. One deadline spans a call into a node, the create a fresh instance makes first, and the promise jobs they
+// queue (below). A call that runs past it is stopped (QuickJS's interrupt, which JS cannot catch) and counted as a
+// throw. A node with faultOnThrow then faults; one without runs again next block (design section 4.5), and faults only
+// if its next call is stopped too, so a node that hangs is bypassed within two deadlines and one that ran long once is
+// not. A call that runs to its end, its jobs with it, starts the count again. A deadline fault is a fault like any
+// other: it latches on the instance and outlives reshapes, and only a rebuild (or the node removed and added again)
+// clears it.
 //
 // Every type declares RP_TYPE_STATELESS_PREPARE: its prepare_settings reads the settings it is handed, the
 // definition and what the instance was created with, never anything a commit writes. A type that reshapes answers
@@ -152,8 +155,24 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // block allocates nothing native, and a node written with indexed loops nothing in JS either. What a block hands out
 // is good for that process call: keep copies.
 //
-// The promise jobs a block's JS queues run at the end of the block (endBlock), at most kJobsPerBlock of each pack's,
-// so a reaction that queues another every time cannot hold the block: the rest wait for the next block's end.
+// A node pays for its own promise jobs and memory (docs/modular-graph-phase-c1-design.md section 6). The jobs a call
+// into its JS queues (its create, onSettings, portsChanged, activate or process) run at a checkpoint right after the
+// call, inside its deadline, at most kJobsPerCheckpoint of them, and are charged to that node: a job that fails (a
+// queueMicrotask callback that threw, or JS out of memory) is its throw, and faults it under faultOnThrow; one the
+// deadline stops counts as its call stopped (the rule above); and a chain still pending after the bound is cut short,
+// its throw, the second cut short in a row faulting it, as two expiries do. QuickJS cannot drop a pending job, so a
+// chain cut short stays queued and its pack remembers whose it is until the queue empties: its later checkpoints (the
+// next calls into any of its nodes) run the rest charged to that node, never to a pack-mate. A release runs what its
+// pack has pending, charged to that remembered owner when it is another node, else to no node, as is what a released
+// owner leaves (a throw counted, faulting no one). A fault charged to the node whose process this is returns RP_FAULT;
+// one after a hook, or charged to another node of the pack whose leftovers ran, faults that node at its next block. A
+// promise reaction's own throw only rejects its promise, which is the node's to handle.
+//
+// Each pack's audio runtime is held to a memory limit (kDefaultMemoryLimit, unless its load says otherwise) by the
+// host's allocator, which refuses an allocation past it, so QuickJS throws out of memory in the call that asked, and
+// notes the refusal on the pack: a call, or its jobs, during which its pack refused one faults its node at once (a
+// refusal JS caught counted as the node's throw), since a pack at its limit is one none of its nodes can rely on.
+// Another pack is untouched. The control side's runtimes keep no limit: they hold no instance.
 //
 // A throw in process is caught, counted and the block's output up to it stands: the node runs again next block
 // (design section 4.5), unless its definition says faultOnThrow, when it faults (RP_FAULT, the executor's latch); a
@@ -213,12 +232,15 @@ public:
 
     // ---- control thread ------------------------------------------------------------------------------
     // Load the built-in pack: run a bundle (global-code bytecode, in chunks run in order) in both of its contexts, then
-    // read the definitions it registered. Once, before anything plans with the package: a second call is refused, and
-    // leaves what the first registered as it is. False, with a reason, when a chunk fails to load or a definition
-    // cannot be read or is not the same in both contexts (its id or its descriptor differs: a bundle that branches on
-    // which context it runs in). One bad definition refuses the whole package: it then has no types, so every document
-    // naming any of the bundle's is refused (unknown-type).
-    bool load(std::span<const Chunk> chunks, std::string* error = nullptr);
+    // read the definitions it registered, its audio runtime held to `memoryLimit` bytes (0: kDefaultMemoryLimit) from
+    // then on, the load included. Once, before anything plans with the package: a second call is refused, and leaves
+    // what the first registered as it is. False, with a reason, when a chunk fails to load (or runs out of memory) or a
+    // definition cannot be read or is not the same in both contexts (its id or its descriptor differs: a bundle that
+    // branches on which context it runs in). One bad definition refuses the whole package: it then has no types, so
+    // every document naming any of the bundle's is refused (unknown-type).
+    bool load(std::span<const Chunk> chunks, std::string* error = nullptr, std::size_t memoryLimit = kDefaultMemoryLimit);
+    // What a pack's audio runtime may hold, in usable bytes, unless its load says otherwise (the class comment).
+    static constexpr std::size_t kDefaultMemoryLimit = std::size_t{64} << 20;
     // The built-in pack's script node types, for NodeRegistry::addPackage; valid for the host's life (empty before a
     // load).
     const rp_package* package() const;
@@ -243,25 +265,28 @@ public:
     // going at once is spread over blocks, and a full ring still drains in 16).
     void beginBlock();
     static constexpr std::uint32_t kReleasesPerBlock = 16;
-    // At the end of every block that ran the graph: the promise jobs its JS queued, at most kJobsPerBlock of each
-    // pack's, then the allocation window's per-block counts (a profile build).
+    // At the end of every block that ran the graph: the allocation window's per-block counts (a profile build). Its
+    // promise jobs ran at its calls' checkpoints.
     void endBlock();
-    static constexpr int kJobsPerBlock = 256;
+    // The most of its pack's pending promise jobs a checkpoint after a call into a node runs (the class comment).
+    static constexpr int kJobsPerCheckpoint = 256;
     static constexpr std::size_t kStackBytes = 256 * 1024;  // each runtime's JS stack (the class comment)
     // How many plain objects reading a node's process or a hook walks (what its create returned, then the prototypes
     // it inherits from, short of Object.prototype) before it refuses, failing the create (the class comment).
     static constexpr int kMethodHops = 1024;
 
     // ---- any thread ------------------------------------------------------------------------------------------
-    // Throws caught in a script node (process, and its create, onSettings, portsChanged and activate) so far, and the
-    // jobs their blocks queued that failed: a queueMicrotask callback that threw, or a job the deadline stopped or JS
-    // ran out of memory in. A promise reaction's own throw only rejects its promise, which is the node's to handle, so
-    // it is not counted.
+    // Throws caught in a script node (process, and its create, onSettings, portsChanged and activate) so far; the jobs
+    // their calls queued that failed: a queueMicrotask callback that threw, or a job the deadline stopped or JS ran out
+    // of memory in (each charged to its node, or to no node for one a release ran); the checkpoints that cut a node's
+    // jobs short; and the allocations a pack refused that JS caught. A promise reaction's own throw only rejects its
+    // promise, which is the node's to handle, so it is not counted.
     std::uint32_t     throwCount() const { return throws_.load(std::memory_order_relaxed); }
     ScriptAllocations audioAllocations() const;
     // JS instances created and not yet released.
     std::uint32_t     liveInstances() const { return live_.load(std::memory_order_relaxed); }
-    // Blocks whose promise jobs outran kJobsPerBlock, leaving some for the next block; reclaim says so once.
+    // Checkpoints (and releases) whose pack's promise jobs outran kJobsPerCheckpoint, leaving some for its next one;
+    // reclaim says so once.
     std::uint32_t     jobsCutShort() const { return jobsCutShort_.load(std::memory_order_relaxed); }
 
     // ---- profiling (spec/08-profiling.md): real only in a RETROPLUG_PROFILE build --------------------------------
@@ -319,16 +344,14 @@ private:
     void collect();                 // quiescent: a GC of each pack's audio runtime whose load or releases have left
                                     //   garbage since its last
     static void drainControlJobs(Pack& pack);  // control thread: the jobs a call into its control context queued
-    void runAudioJobs(Pack& pack);  // the block thread: endBlock's promise jobs, one pack's
 
-    // counters_ is every audio runtime's allocator opaque, so it is declared (and made) before them.
+    // Every audio runtime's allocator opaque (its pack's Heap) points at counters_, so it is declared (and made) first.
     Counters                     counters_;
     Binder                       binder_ = nullptr;
     void*                        binderUser_ = nullptr;
     // Every pack, the built-in one first. Made, loaded and read on the control thread (and quiescent, by releaseQueued,
     // collect and the profile calls); the block thread reaches a pack only through an instance of one of its types,
-    // never through this list. endBlock is the one exception: it runs every pack's promise jobs, which is sound while
-    // the list is fixed from the constructor on, as it is with the built-in pack the only one.
+    // never through this list.
     std::vector<std::unique_ptr<Pack>> packs_;
     bool                               loaded_ = false;  // load has been called
     // Each type id's span label (DspSpanLabel), given at its first registration in any pack and kept, and the next one
