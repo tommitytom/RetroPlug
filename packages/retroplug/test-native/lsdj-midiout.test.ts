@@ -1,9 +1,11 @@
 // Arduinoboy MIDIOUT (MI.OUT / "Arduinoboy Master", mode 7) — the full end-to-end functional proof on a
 // real LSDj core. A song authored with SYNC=MI.OUT + N (NoteOn) commands, once playing, emits the
 // Arduinoboy protocol on LSDj's serial-out port; native captures those raw bytes (armed via
-// setSerialOutCapture) and feeds them to the lsdj-sync node, where the mode-7 decoder strips the flag-gated
-// framing + decodes the byte protocol into host MIDI (its midiOut port). We drain that MIDI and assert a
-// transport START (0xFA), a clock stream (0xF8), and NoteOns (0x9x).
+// setSerialOutCapture) and feeds them, in the block it captured them, to the lsdj-sync role's decoder after the
+// Game Boy (rp.lsdj.serial-out), where the mode-7 decoder strips the flag-gated framing + decodes the byte
+// protocol into host MIDI (its midiOut port), each message at the frame of the byte that completes it. We drain
+// that MIDI and assert a transport START (0xFA), a clock stream (0xF8), and NoteOns (0x9x), at frames inside
+// their blocks.
 //
 // This is the reversal of the old "MI.OUT is unreachable headlessly" folklore (docs/lsdj.md): SYNC=MI.OUT
 // is byte 9 (cold-authored here), and the wire's 1-flag-bit + 7-payload-bit framing — which the raw 8-bit
@@ -49,7 +51,7 @@ const lsdjSync = (mode: string) => [{ kind: "lsdj-sync", config: { mode } }];
 // Flatten a drainMidiOut result into the raw status/data byte messages for assertions.
 const messages = (drained: { data: Uint8Array }[]): number[][] => drained.map((m) => Array.from(m.data));
 
-test("MIDIOUT (mode 7): a real LSDj in SYNC=MI.OUT emits Arduinoboy MIDI the kernel decodes to host MIDI", () => {
+test("MIDIOUT (mode 7): a real LSDj in SYNC=MI.OUT emits Arduinoboy MIDI its decoder turns into host MIDI", () => {
   const be = createRealBackend();
   if (!be.fileExists(ABOY)) skip(`lsdj-midiout: aboy LSDj ROM not found at ${ABOY}`);
 
@@ -91,7 +93,8 @@ test("MIDIOUT (mode 7): a real LSDj in SYNC=MI.OUT emits Arduinoboy MIDI the ker
   tap(); // play again → 0xFA, mid-stream where framing is aligned
   audio.renderAudio(2000);
 
-  const drained = messages(audio.drainMidiOut());
+  const out = audio.drainMidiOut();
+  const drained = messages(out);
   const status = drained.map((m) => m[0]);
   const starts = status.filter((s) => s === 0xfa).length;
   const stops = status.filter((s) => s === 0xfc).length;
@@ -105,4 +108,11 @@ test("MIDIOUT (mode 7): a real LSDj in SYNC=MI.OUT emits Arduinoboy MIDI the ker
   expect(noteOns > 0).toBeTruthy();
   // A transport bookend — the stop→restart toggle sends 0xFC then 0xFA on the (aligned) MI.OUT stream.
   expect(starts + stops > 0).toBeTruthy();
+  // Each message at its byte's frame in the block it was captured in: inside renderAudio's 1024-frame blocks, and
+  // spread across them, never all at a block's frame 0 as a decoder timestamping by block would send them.
+  const frames = out.map((m) => m.frame);
+  const offZero = frames.filter((f) => f > 0).length;
+  console.log(`[lsdj-midiout] frames ${Math.min(...frames)}..${Math.max(...frames)}, ${offZero} of ${frames.length} past frame 0`);
+  expect(frames.every((f) => f >= 0 && f < 1024)).toBeTruthy();
+  expect(offZero > frames.length / 2).toBeTruthy();
 });

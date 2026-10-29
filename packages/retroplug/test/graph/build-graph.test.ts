@@ -3,7 +3,8 @@
 // engine stepped them (unlinked by slot, then each link group). These are the B1 translator's own tests,
 // carried over when buildGraph replaced it; build-graph-goldens.test.ts holds the two builders to each other.
 // Then the script nodes ahead of the systems and the host's I/O around them (docs/modular-graph-phase-b3b-design.md
-// section 4): the MIDI routing, the controller and each role's protocol node, wired as the DSP kernel's ports were.
+// section 4): the MIDI routing, the controller and each role's protocol node, wired as the DSP kernel's ports were; and
+// after the systems, LSDj's serial-out decoder (docs/lsdj-serial-out-design.md section 3).
 import { test, expect } from "../../testing/harness";
 import { buildGraph, type GraphModel, type GraphSystem, type HostShape } from "../../src/graph/buildGraph";
 import { protocolPipeline, type LeftOutRole, type ProtocolRole } from "../../src/graph/protocolNodes";
@@ -15,13 +16,14 @@ import { N8_MIDI_TO_FIFO_NODE_TYPE } from "../../src/script/nodes/n8MidiToFifo";
 import { RISA_SYNC_NODE_TYPE } from "../../src/script/nodes/risaSync";
 import { SMS_SYNC_NODE_TYPE } from "../../src/script/nodes/smsSync";
 import { LSDJ_SYNC_NODE_TYPE } from "../../src/script/nodes/lsdjSync";
+import { LSDJ_SERIAL_OUT_NODE_TYPE } from "../../src/script/nodes/lsdjSerialOut";
 import type { AudioRouting, MidiRouting } from "../../src/settingsEnums";
 
 const gb = (id: number, linkGroup = 0, pipeline: ProtocolRole[] = []): GraphSystem => ({ id, type: "rp.sameboy.gb", linkGroup, exportMode: 0, pipeline });
 const nes = (id: number, exportMode = 0, pipeline: ProtocolRole[] = []): GraphSystem => ({ id, type: "rp.mesen.nes", linkGroup: 0, exportMode, pipeline });
 const multi = (channels: number): HostShape => ({ kind: "multi", channels });
 
-// The host's I/O and the script nodes ahead of the systems, which every document carries; the B1 tables below are the
+// The host's I/O and the script nodes around the systems, which every document carries; the B1 tables below are the
 // rest, the audio.
 const AROUND_THE_AUDIO = new Set(["midi-in", "controller-in", "routing", "controller", "cart", "midi-out", "controller-out"]);
 const aroundTheAudio = (id: string): boolean => AROUND_THE_AUDIO.has(id) || id.includes("/");
@@ -243,20 +245,26 @@ const withController = (over: Partial<GraphController> = {}): Project => ({ midi
 test("each type buildGraph places is the id its node module registers", () => {
   const types = (g: ReturnType<typeof built>) => g.document.nodes.map((n) => n.type);
   const g = built([gb(1, 0, [MGB]), nes(2, 0, [N8, RISA]), sms(3, [SMS]), gb(4, 0, [LSDJ()])], "stereo", multi(2), withController());
-  for (const type of [MIDI_ROUTE_NODE_TYPE, CONTROLLER_SESSION_NODE_TYPE, MGB_MIDI_NODE_TYPE, N8_MIDI_TO_FIFO_NODE_TYPE, RISA_SYNC_NODE_TYPE, SMS_SYNC_NODE_TYPE, LSDJ_SYNC_NODE_TYPE])
+  for (const type of [MIDI_ROUTE_NODE_TYPE, CONTROLLER_SESSION_NODE_TYPE, MGB_MIDI_NODE_TYPE, N8_MIDI_TO_FIFO_NODE_TYPE, RISA_SYNC_NODE_TYPE, SMS_SYNC_NODE_TYPE, LSDJ_SYNC_NODE_TYPE, LSDJ_SERIAL_OUT_NODE_TYPE])
     expect(types(g).includes(type)).toBe(true);
   expect(protocolPipeline([{ kind: "sameboy", config: {} }, { kind: "lsdj-assets", config: {} }, { kind: "risa", config: {} }])).toEqual([]);
 });
 
-test("every script node is placed before the systems: the routing, the controller, then each system's in slot then pipeline order", () => {
-  // Slot order, not the sum order a link group gives the systems themselves.
+test("the script nodes that feed the systems go before them, in slot then pipeline order, and LSDj's decoder after them", () => {
+  // Slot order, not the sum order a link group gives the systems themselves: the routing, the controller, each system's
+  // protocol nodes, the systems and their link cable, then each node that reads what a system sent, before the cart
+  // mirror and the host outputs.
   const g = built([gb(1, 1, [MGB]), nes(2, 0, [N8, RISA]), gb(3, 1, [LSDJ()])], "stereo", multi(2), withController());
-  expect(g.nodeOrder.slice(0, 11)).toEqual([
+  expect(g.nodeOrder.slice(0, 14)).toEqual([
     "midi-in", "controller-in", "routing", "controller", "sys-1/mgb", "sys-2/nes-n8-midi", "sys-2/risa-sync", "sys-3/lsdj-sync",
-    "sys-2", "sys-1", "sys-3",
+    "sys-2", "sys-1", "sys-3", "sys-3/lsdj-sync/out", "cart", "midi-out",
   ]);
   // Each protocol node takes its role's config as its settings.
   expect(g.node("sys-3/lsdj-sync")).toEqual({ id: "sys-3/lsdj-sync", type: LSDJ_SYNC_NODE_TYPE, settings: LSDJ().config });
+  expect(g.node("sys-3/lsdj-sync/out")).toEqual({ id: "sys-3/lsdj-sync/out", type: LSDJ_SERIAL_OUT_NODE_TYPE, settings: LSDJ().config });
+  // The link cable's wire is the systems', and the decoder's forward wire follows it.
+  const wireIndex = (from: string) => g.document.wires.findIndex((w) => w.from === from);
+  expect(wireIndex("sys-1.link") < wireIndex("sys-3.serialOut")).toBe(true);
 });
 
 test("the routing fans the host's MIDI out to the systems in slot order, into each node that reads it", () => {
@@ -315,10 +323,33 @@ test("of two roles whose nodes write one system input, the first in role order i
   expect(none).toEqual([]);
 });
 
-test("MI.OUT comes back from a Game Boy a block later, into its lsdj-sync node and nowhere else", () => {
+test("a Game Boy's serial out goes forward into its LSDj's decoder, whose host MIDI is the system's input of midi-out", () => {
+  // Read in the block the core captured it: a plain wire into a node placed after the system, and no feedback wire in
+  // the document. The decoder writes no system input, and its rp.lsdj.sync neither reads the serial out nor sends host
+  // MIDI.
   const g = built([gb(1, 0, [MGB]), gb(2, 0, [LSDJ("midiOut")]), gb(3)]);
-  const back = g.document.wires.filter((w) => w.feedback);
-  expect(back).toEqual([{ from: "sys-2.serialOut", to: "sys-2/lsdj-sync.serialOut", feedback: true }]);
+  expect(g.document.wires.filter((w) => w.feedback)).toEqual([]);
+  expect(g.document.wires.filter((w) => w.from.endsWith(".serialOut"))).toEqual([{ from: "sys-2.serialOut", to: "sys-2/lsdj-sync/out.serialOut" }]);
+  expect(g.wired("sys-2.serialOut", "sys-2/lsdj-sync/out.serialOut")).toBe(true);
+  const at = (id: string) => g.nodeOrder.indexOf(id);
+  for (const sys of ["sys-1", "sys-2", "sys-3"]) expect(at(sys) < at("sys-2/lsdj-sync/out"), sys).toBe(true);
+  expect(g.node("midi-out")?.settings).toEqual({ systems: [2] });
+  expect(g.into("midi-out.in1")).toEqual(["sys-2/lsdj-sync/out.midiOut"]);
+  expect(g.document.wires.filter((w) => w.from.startsWith("sys-2/lsdj-sync/out.")).map((w) => w.to)).toEqual(["midi-out.in1"]);
+  expect(g.document.wires.some((w) => w.from === "sys-2/lsdj-sync.midiOut" || w.to === "sys-2/lsdj-sync.serialOut")).toBe(false);
+  // Placed whatever the mode: a mode switch is a change of settings, never of the document.
+  for (const mode of ["midiSync", "masterSync", "off"])
+    expect(built([gb(2, 0, [LSDJ(mode)])]).node("sys-2/lsdj-sync/out")?.settings, mode).toEqual(LSDJ(mode).config);
+});
+
+test("LSDj's decoder is placed only on a Game Boy, the one system with a serial out to decode", () => {
+  // A hand-edited project can hand lsdj-sync to another system: its rp.lsdj.sync is placed, and nothing reads a serial
+  // out it has not got, so host MIDI out takes no input for it.
+  const g = built([nes(4, 0, [LSDJ("midiOut")])]);
+  expect(g.node("sys-4/lsdj-sync")?.type).toBe(LSDJ_SYNC_NODE_TYPE);
+  expect(g.node("sys-4/lsdj-sync/out")).toBe(undefined);
+  expect(g.node("midi-out")?.settings).toEqual({ systems: [] });
+  expect(g.document.wires.some((w) => w.from.endsWith(".serialOut"))).toBe(false);
 });
 
 test("the controller takes the surface, sends it its LEDs, and its target ('0 is the first system') resolved", () => {
@@ -359,10 +390,13 @@ test("the controller's launches reach only a 'system' target's lsdj-sync node", 
   expect(gone.node("controller")?.settings?.systemId).toBe(9);
 });
 
-test("host MIDI out takes the controller's first, then each lsdj-sync node's in slot order, each under its system", () => {
+test("host MIDI out takes the controller's first, then each LSDj decoder's in slot order, each under its system", () => {
   const g = built([gb(3, 1, [LSDJ("midiOut")]), gb(1, 0, [MGB]), gb(2, 1, [LSDJ("masterSync")])], "stereo", multi(2), withController({ systemId: 2 }));
   expect(g.node("midi-out")?.settings).toEqual({ systems: [2, 3, 2] });
-  expect([1, 2, 3].map((k) => g.into(`midi-out.in${k}`))).toEqual([["controller.midiOut"], ["sys-3/lsdj-sync.midiOut"], ["sys-2/lsdj-sync.midiOut"]]);
+  expect([1, 2, 3].map((k) => g.into(`midi-out.in${k}`))).toEqual([["controller.midiOut"], ["sys-3/lsdj-sync/out.midiOut"], ["sys-2/lsdj-sync/out.midiOut"]]);
+  // The decoders in slot order too, after the systems the link group reorders.
+  expect(g.nodeOrder.filter((id) => id.endsWith("/out"))).toEqual(["sys-3/lsdj-sync/out", "sys-2/lsdj-sync/out"]);
+  expect(g.nodeOrder.indexOf("sys-3/lsdj-sync/out") > g.nodeOrder.indexOf("sys-2")).toBe(true);
   // With no system to resolve "the first" to, the controller's is tagged as the kernel tagged it (its -1), and the node
   // takes 0, its none.
   const empty = built([], "stereo", multi(2), withController());
@@ -391,12 +425,19 @@ test("the cart mirrors the first NES in slot order, fed what its protocol nodes 
 // cart clocked it for a mode it was not in, sent launches nowhere, and left LSDj sitting on "WAIT". Reported from a
 // hardware session. The document forces it in that cart's lsdj-sync node alone, so nothing reaches the `.rplg`.
 
-const syncModeOf = (g: ReturnType<typeof built>, id: number): unknown => g.node(`sys-${id}/lsdj-sync`)?.settings?.mode;
+// Its decoder, after the Game Boy, takes the same settings, so the two always read one mode: syncModeOf holds them to
+// each other.
+const syncModeOf = (g: ReturnType<typeof built>, id: number): unknown => {
+  const mode = g.node(`sys-${id}/lsdj-sync`)?.settings?.mode;
+  expect(g.node(`sys-${id}/lsdj-sync/out`)?.settings?.mode, `sys-${id}'s decoder`).toBe(mode);
+  return mode;
+};
 
 test("an enabled controller drives its cart in MI.MAP, whatever the stored mode said", () => {
   const g = built([gb(1, 0, [LSDJ()])], "stereo", multi(2), withController({ cartSync: "MidiMap" }));
   expect(syncModeOf(g, 1)).toBe("midiMap");
   expect(g.node("sys-1/lsdj-sync")?.settings).toEqual({ mode: "midiMap", tempoDivisor: 1, autoStart: false });
+  expect(g.node("sys-1/lsdj-sync/out")?.settings).toEqual({ mode: "midiMap", tempoDivisor: 1, autoStart: false });
 });
 
 test("systemId 0 means the first system, matching what the node resolves", () => {

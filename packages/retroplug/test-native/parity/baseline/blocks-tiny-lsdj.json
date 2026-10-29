@@ -3,7 +3,7 @@
   "midiOut-1": {
    "midiOut": {
     "count": 38,
-    "fnv": "3efc872d"
+    "fnv": "15804b2c"
    },
    "ram": {
     "0": {
@@ -93,7 +93,7 @@
   "midiOut-fl": {
    "midiOut": {
     "count": 38,
-    "fnv": "a401bbe7"
+    "fnv": "6108dcb3"
    },
    "ram": {
     "0": {
@@ -183,7 +183,7 @@
   "midiOut-fl256": {
    "midiOut": {
     "count": 38,
-    "fnv": "71157011"
+    "fnv": "3f054ada"
    },
    "ram": {
     "0": {

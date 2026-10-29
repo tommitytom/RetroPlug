@@ -15,9 +15,9 @@ import { BOOT_MS, frames, mgb, MGB_CHANNELS, NES_CHANNELS, phrase, ROMS, type Bl
 
 /** The design's ragged list (section 7.1). No buffer grid at all: 1-frame blocks between odd sizes, and a
  *  4096-frame block next to a 2-frame one, the largest swing in size from one block to the next, which is
- *  what a core's per-block run-ahead and MI.OUT's one-block latency move with. It sums to 4362 frames, a
- *  multiple of neither a 24-PPQN tick nor a console frame, so its edges drift against both from one cycle to
- *  the next rather than meeting them at one phase. */
+ *  what a core's per-block run-ahead moves with. It sums to 4362 frames, a multiple of neither a 24-PPQN tick
+ *  nor a console frame, so its edges drift against both from one cycle to the next rather than meeting them
+ *  at one phase. */
 export const FL_RAGGED = [33, 1, 222, 1, 7, 4096, 2];
 
 /** FL's own shape: a fixed 256-frame buffer, split inside at automation points and never across one, as five

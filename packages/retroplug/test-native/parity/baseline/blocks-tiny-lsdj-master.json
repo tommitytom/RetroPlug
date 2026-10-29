@@ -3,7 +3,7 @@
   "masterSync-44100-1": {
    "midiOut": {
     "count": 85,
-    "fnv": "a5b9ff5a"
+    "fnv": "3b4bfc5c"
    },
    "ram": {
     "0": {
@@ -72,7 +72,7 @@
   "masterSync-44100-fl": {
    "midiOut": {
     "count": 85,
-    "fnv": "49f74875"
+    "fnv": "2e335c21"
    },
    "ram": {
     "0": {
@@ -141,7 +141,7 @@
   "masterSync-44100-fl256": {
    "midiOut": {
     "count": 85,
-    "fnv": "aa53b88a"
+    "fnv": "e8e67b61"
    },
    "ram": {
     "0": {
@@ -210,7 +210,7 @@
   "masterSync-48000-1": {
    "midiOut": {
     "count": 85,
-    "fnv": "b68ffaa6"
+    "fnv": "f62661c8"
    },
    "ram": {
     "0": {
@@ -279,7 +279,7 @@
   "masterSync-48000-fl": {
    "midiOut": {
     "count": 85,
-    "fnv": "02c7a8b0"
+    "fnv": "567b3265"
    },
    "ram": {
     "0": {
@@ -348,7 +348,7 @@
   "masterSync-48000-fl256": {
    "midiOut": {
     "count": 85,
-    "fnv": "a7761f21"
+    "fnv": "b3474a68"
    },
    "ram": {
     "0": {

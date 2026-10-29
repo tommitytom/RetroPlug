@@ -1,7 +1,7 @@
-// rp.lsdj.sync (src/script/nodes/lsdjSync.ts): LSDj's sync modes, as the DSP kernel's lsdj-sync role ran them until
-// B3b. The cases its kernel-level tests held (every mode, MI.OUT and master sync off the Game Boy's serial out), at the
-// node, with what the kernel node's own tests held of the serial-in runs and the feedback wire's frames; the decoders'
-// pure cases are test/dsp/lsdj-arduinoboy.test.ts's.
+// rp.lsdj.sync (src/script/nodes/lsdjSync.ts): LSDj's sync modes, host to Game Boy, as the DSP kernel's lsdj-sync role
+// ran them until B3b. The cases its kernel-level tests held of every mode that feeds the cart, at the node, with what
+// the kernel node's own tests held of the serial-in runs. MI.OUT and master sync, the Game Boy's serial out decoded to
+// host MIDI, are rp.lsdj.serial-out's (lsdj-serial-out.test.ts); here they send nothing.
 import { test, expect } from "../../../testing/harness";
 import { LSDJ_SYNC_NODE_TYPE, lsdjSyncNode } from "../../../src/script/nodes/lsdjSync";
 import { NodeRig, bytesOn, on, type BlockSpec, type In, type Sent } from "./_rig";
@@ -14,20 +14,12 @@ const noteOn = (channel: number, note: number, frame = 0): In => ({ frame, data:
 const noteOff = (channel: number, note: number, frame = 0): In => ({ frame, data: [0x80 | channel, note, 0] });
 const serial = (sent: Sent[]): number[] => bytesOn(sent, "serialIn").map(([, b]) => b);
 const clocks = (sent: Sent[]): number => serial(sent).filter((b) => b === 0xf8).length;
-const midiOut = (sent: Sent[]): number[][] => sent.filter((s) => s.port === "midiOut").map((s) => s.data);
 
-test("its ports: the routed MIDI, the launches and the Game Boy's serial out in; serial in, buttons and MIDI out", () => {
-  expect(lsdj("midiSync").ports()).toEqual([
-    "in events midi",
-    "in events launches",
-    "in bytes serialOut",
-    "out bytes serialIn",
-    "out events buttons",
-    "out events midiOut",
-  ]);
+test("its ports: the routed MIDI and the launches in; serial in and buttons out", () => {
+  expect(lsdj("midiSync").ports()).toEqual(["in events midi", "in events launches", "out bytes serialIn", "out events buttons"]);
   expect(lsdjSyncNode.descriptor().id).toBe(LSDJ_SYNC_NODE_TYPE);
-  const caps = lsdjSyncNode.layout(lsdjSyncNode.parseSettings({})).ports.slice(3).map((p) => p.capacity);
-  expect(caps).toEqual([{ messages: 4096, bytes: 73728 }, { messages: 64, bytes: 128 }, { messages: 1024, bytes: 8192 }]);
+  const caps = lsdjSyncNode.layout(lsdjSyncNode.parseSettings({})).ports.slice(2).map((p) => p.capacity);
+  expect(caps).toEqual([{ messages: 4096, bytes: 73728 }, { messages: 64, bytes: 128 }]);
   expect(lsdjSyncNode.reshapes).toBe(true);
 });
 
@@ -193,91 +185,14 @@ test("a run a throw leaves is sent, and a run a stopped call left is never sent 
   expect(run(withMidi([noteOn(0, 61, 7)], { frames: 1024 })).map((s) => [s.frame, ...s.data])).toEqual([[7, 0x90, 61, 100]]);
 });
 
-// --- MI.OUT (mode 7) and master sync (mode 8): the Game Boy's serial out, a block late ---------------------------------
+// --- MI.OUT (mode 7) and master sync (mode 8): rp.lsdj.serial-out's -------------------------------------------------
 
-test("MI.OUT: the serial-out bytes decode to host MIDI at frame 0, and nothing reaches serial in", () => {
-  // A byte every eight frames, as SameBoy clocks MI.OUT's port (one bit an audio frame); each flag-frames one protocol
-  // byte (0x80 | cmd): START, clock, NoteOn ch0 note 0x69.
-  const framed = (cmd: number, frame: number): In => ({ frame, data: [0x80 | (cmd & 0x7f)] });
-  const sent = lsdj("midiOut").run({ frames: 1024, inputs: { serialOut: [framed(0x7d, 7), framed(0x7f, 15), framed(0x70, 23), framed(0x69, 31)] } });
-  expect(midiOut(sent)).toEqual([[0xfa], [0xf8], [0x90, 0x69, 0x7f]]);
-  expect(sent.every((s) => s.port === "midiOut" && s.frame === 0)).toBe(true);
-});
-
-test("MI.OUT: a frame split across two blocks' bytes decodes once, its partial bits held between them", () => {
-  const rig = lsdj("midiOut");
-  expect(rig.run({ frames: 1024, inputs: { serialOut: [{ frame: 0, data: [0x7f] }] } })).toEqual([]);
-  expect(midiOut(rig.run({ frames: 1024, inputs: { serialOut: [{ frame: 0, data: [0x80] }] } }))).toEqual([[0xf8]]);
-});
-
-test("master sync: each byte a clock, the first opening the run with LSDj's song row and 0xFA", () => {
-  const sent = lsdj("masterSync").run({ frames: 1024, inputs: { serialOut: [{ frame: 0, data: [5] }, { frame: 900, data: [6] }] } });
-  expect(midiOut(sent)).toEqual([[0x90, 5, 0x7f], [0xfa], [0xf8], [0xf8]]);
-  expect(bytesOn(sent, "serialIn")).toEqual([]); // a pure decoder: no serial in
-});
-
-test("master sync times its stop from the byte's own frame, which only the feedback wire's frame can tell", () => {
-  // A run's one byte at frame 0 or at frame 1000 of a 1024-frame block: the 0xFC goes out in the first block that
-  // starts more than 200 ms (8820 frames) after the byte.
-  const stopsIn = (frame: number) => {
-    const rig = lsdj("masterSync");
-    for (let b = 0; b < 16; b++) {
-      const sent = rig.run({ frames: 1024, playing: true, inputs: b === 0 ? { serialOut: [{ frame, data: [5] }] } : {} });
-      if (midiOut(sent).some((m) => m[0] === 0xfc)) return b;
-    }
-    return -1;
-  };
-  expect(stopsIn(0)).toBe(8); // the byte 1024 frames before block 0's start: 1024 + 8 * 1024 > 8820
-  expect(stopsIn(1000)).toBe(9); // 24 frames before it: 24 + 9 * 1024 > 8820
-});
-
-test("master sync's 200 ms stop is 200 ms at the host's rate: 9600 frames at 48 kHz, not 8820", () => {
-  const stopsIn = (frame: number) => {
-    const rig = new NodeRig(lsdjSyncNode, { mode: "masterSync" }, 48000);
-    for (let b = 0; b < 16; b++) {
-      const sent = rig.run({ frames: 1024, sampleRate: 48000, playing: true, inputs: b === 0 ? { serialOut: [{ frame, data: [5] }] } : {} });
-      if (midiOut(sent).some((m) => m[0] === 0xfc)) return b;
-    }
-    return -1;
-  };
-  expect(stopsIn(0)).toBe(9); // 1024 + 9 * 1024 = 10240 > 9600, where 1024 + 8 * 1024 = 9216 is not (and was at 44.1 kHz)
-  expect(stopsIn(1000)).toBe(10); // 24 + 10 * 1024 = 10264 > 9600; 24 + 9 * 1024 = 9240 is not
-});
-
-test("leaving master sync drops its state, so coming back opens a fresh run", () => {
-  const rig = lsdj("masterSync");
-  const block = (serialOut: In[]) => midiOut(rig.run({ frames: 1024, inputs: { serialOut } }));
-  expect(block([{ frame: 100, data: [5] }])).toEqual([[0x90, 5, 0x7f], [0xfa], [0xf8]]); // a run opens
-  rig.set({ mode: "off" });
-  block([]);
-  rig.set({ mode: "masterSync" });
-  // Kept, the stale open run would swallow this run's NoteOn and 0xFA.
-  expect(block([{ frame: 0, data: [7] }])).toEqual([[0x90, 7, 0x7f], [0xfa], [0xf8]]);
-});
-
-test("MI.OUT and master sync send each message from an array the node made once, one a message length", () => {
-  // The rig keeps what send was handed: in a warm block the node passes the same arrays it passed in the first, one for
-  // each length a message has, so it makes none for a message it decodes.
-  const framed = (cmd: number, frame: number): In => ({ frame, data: [0x80 | (cmd & 0x7f)] });
-  // MI.OUT: a clock (1 byte), a NoteOn (3) and a program change (2), the same each block.
-  const miOut = [framed(0x7f, 7), framed(0x70, 15), framed(60, 23), framed(0x78, 31), framed(5, 39)];
-  // Master sync: a run's first block sends its NoteOn (3), 0xFA and a clock (1), and each block after a clock.
-  const master = (b: number): In[] => [{ frame: 100, data: [b === 0 ? 4 : 9] }];
-  for (const [mode, serialOut] of [["midiOut", () => miOut], ["masterSync", master]] as const) {
-    const rig = lsdj(mode);
-    const byLength = new Map<number, ArrayLike<number>>();
-    for (let b = 0; b < 4; b++) {
-      const sent = rig.run({ frames: 1024, inputs: { serialOut: serialOut(b) } });
-      expect(sent.length > 0).toBeTruthy();
-      sent.forEach((s, i) => {
-        const source = rig.sources[i];
-        expect(s.port).toBe("midiOut");
-        expect(source.length).toBe(s.data.length);
-        if (!byLength.has(source.length)) byLength.set(source.length, source);
-        expect(byLength.get(source.length) === source).toBeTruthy();
-      });
-    }
-    expect([...byLength.keys()].sort()).toEqual(mode === "midiOut" ? [1, 2, 3] : [1, 3]);
+test("MI.OUT and master sync send nothing: the Game Boy's serial out is decoded after the Game Boy, not here", () => {
+  // The routed MIDI and the transport each mode could act on, reaching neither the cart nor the host.
+  for (const mode of ["midiOut", "masterSync"]) {
+    const rig = lsdj(mode, { autoStart: true });
+    expect(rig.run(withMidi([noteOn(0, 24), noteOn(0, 40, 9)], { playing: true })), mode).toEqual([]);
+    expect(rig.run(beat({ ppq: 1, playing: true })), mode).toEqual([]);
   }
 });
 

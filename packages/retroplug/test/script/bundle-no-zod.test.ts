@@ -68,7 +68,7 @@ test("the script-node bundle imports no zod module", async () => {
   // B3a's bundle was 660 KB with zod; this one is about 78 KB. A loose ceiling, for zod inlined where no path says so.
   expect(bytes < 200 * 1024, `the bundle is ${bytes} bytes, past 200 KB`).toBe(true);
   // Every production node type is in it, so an entry that bundled nothing cannot pass.
-  for (const node of ["midiRoute", "mgbMidi", "n8MidiToFifo", "risaSync", "smsSync", "lsdjSync", "controllerSession"])
+  for (const node of ["midiRoute", "mgbMidi", "n8MidiToFifo", "risaSync", "smsSync", "lsdjSync", "controllerSession", "lsdjSerialOut"])
     expect(inputs.includes(`src/script/nodes/${node}.ts`), node).toBe(true);
   // zod from node_modules, however the package manager lays it out (node_modules/zod/..., .pnpm/zod@x/...).
   const zod = inputs.filter((path) => /(^|[\\/])zod(@[^\\/]*)?[\\/]/.test(path));

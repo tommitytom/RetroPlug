@@ -1,23 +1,21 @@
-// LSDj's sync (the `lsdj-sync` role's audio-thread work; dspRoles.ts registers the role, and buildGraph places this
-// node for it): each block, the configured mode of LsdjSyncMode, the glue the role ran around the protocol's pure
-// parts under the DSP kernel, ported line for line. Its scratch is the role's one scratch bag, kept on the instance,
-// so a mode change keeps what the role kept, and master sync's sub-object is dropped outside that mode as the role
-// dropped it.
+// LSDj's sync, host to Game Boy (the `lsdj-sync` role's audio-thread work into the cart; dspRoles.ts registers the
+// role, and buildGraph places this node for it before the systems): each block, the configured mode of LsdjSyncMode,
+// the glue the role ran around the protocol's pure parts under the DSP kernel, ported line for line. Its scratch is
+// the role's one scratch bag, kept on the instance, so a mode change keeps what the role kept. The Game Boy-to-host
+// direction, the MI.OUT and master-sync decoders, is rp.lsdj.serial-out's (lsdjSerialOut.ts), placed for the same
+// role after the systems, where it reads its Game Boy's serial out in the block the core captured it.
 //
 // What the modes read: the routed MIDI on `midi`, then the controller's launches on `launches`, as ONE inbox in that
 // order, the order the kernel's inbox held them in (its launches appended at frame 0 after the routed events, so a
-// frame merge would not be the same); and on `serialOut`, a feedback wire from the Game Boy's node, last block's
-// captured serial-out bytes at their frames in that block, which MI.OUT and master sync decode.
+// frame merge would not be the same).
 //
 // What they send: serial-in bytes, a run of same-frame bytes to a message as the kernel node sent them; a button
-// press as [button, down] at frame 0; host MIDI out at frame 0. The frame-ordered queue raises a byte sent behind a
-// later one (Arduinoboy's START after a row byte, MI.MAP's clocks after its rows) as it raised the kernel's.
+// press as [button, down] at frame 0. The frame-ordered queue raises a byte sent behind a later one (Arduinoboy's
+// START after a row byte, MI.MAP's clocks after its rows) as it raised the kernel's.
 //
-// Nothing is allocated in a warm block: the decoders hand each message's bytes to emitMidiOut, which sends them from
-// arrays made with the instance.
+// Nothing is allocated in a warm block: the serial-in run and the button press are made once and reused.
 import { bytes, defineNode, events, type Block, type Message } from "../../graph/defineNode";
-import { s, type Infer } from "../../graph/settingsSchema";
-import { LSDJ_MODE_VALUES, LsdjSyncMode } from "../../settingsEnums";
+import { LsdjSyncMode } from "../../settingsEnums";
 import {
   KEYBOARD_LOW_OCTAVE_MAP,
   KEYBOARD_LOW_START,
@@ -28,12 +26,6 @@ import {
   isExtendedScancode,
   toGbSerialByte,
 } from "../../lsdjKeyboardMap";
-import {
-  arduinoboyDecodeSerialOut,
-  arduinoboyMasterSyncBlock,
-  type ArduinoboyState,
-  type MasterSyncState,
-} from "../../lsdjArduinoboy";
 import {
   LSDJ_CLOCK,
   LSDJ_START,
@@ -47,25 +39,14 @@ import {
   midiMapRow,
 } from "../../lsdjSyncBytes";
 import { TickClock } from "./clock";
-import { BUTTONS, MIDI_OUT, SERIAL_IN } from "./ports";
+import { lsdjSyncSettings, type LsdjSyncSettings } from "./lsdjSyncSettings";
+import { BUTTONS, SERIAL_IN } from "./ports";
 
 export const LSDJ_SYNC_NODE_TYPE = "rp.lsdj.sync";
 
-// mode: LsdjSyncMode. tempoDivisor subdivides the 24-PPQN clock (24/divisor) for MidiSync, MidiSyncArduinoboy and
-// MidiMap; the menu offers 1/2/4/8. autoStart taps START on the host transport's rise to auto-arm a SYNC=MIDI cart
-// (MidiSync, MidiSyncArduinoboy), which a headless DAW render needs; off by default, so a cart arms by hand.
-const settings = s.object({
-  mode: s.enum(LSDJ_MODE_VALUES, "midiSync"),
-  tempoDivisor: s.int({ min: 1, max: 8, default: 1 }),
-  autoStart: s.bool(false),
-});
-
-export type LsdjSyncSettings = Infer<typeof settings>;
-
 /** The role's scratch bag, every mode's fields in one, as the kernel kept it for the stage: a mode reads what another
- *  left (the Arduinoboy and MidiSync auto-arms share armDown) until the node goes. The MI.OUT decoder keeps its
- *  own fields in it too. */
-interface LsdjState extends ArduinoboyState {
+ *  left (the Arduinoboy and MidiSync auto-arms share armDown) until the node goes. */
+interface LsdjState {
   // MidiSyncArduinoboy
   playing?: boolean;
   divisor?: number;
@@ -77,23 +58,19 @@ interface LsdjState extends ArduinoboyState {
   lastRow?: number;
   // KeyboardMidi
   octave?: number;
-  // MasterSync: dropped whenever the mode is not master sync, so coming back starts clean.
-  masterSync?: MasterSyncState;
 }
 
 export const lsdjSyncNode = defineNode<LsdjSyncSettings>({
   id: LSDJ_SYNC_NODE_TYPE,
   name: "LSDj Sync",
   category: "protocol",
-  settings,
+  settings: lsdjSyncSettings,
   reshapes: true,
   ports: {
     midi: events.in(),
     launches: events.in(),
-    serialOut: bytes.in(),
     serialIn: bytes.out(SERIAL_IN),
     buttons: events.out(BUTTONS),
-    midiOut: events.out(MIDI_OUT),
   },
   create: ({ settings: initial }) => {
     let config = initial;
@@ -105,10 +82,6 @@ export const lsdjSyncNode = defineNode<LsdjSyncSettings>({
     // inside process, after process has set them for the block.
     let midi: readonly Message[] = [];
     let launches: readonly Message[] = [];
-    // Last block's serial-out bytes, and each one's frame in that block, index for index: what the kernel handed a
-    // stage as ctx.serialOut and ctx.serialOutFrames. Refilled each block, so they allocate nothing once grown.
-    const serialOut: number[] = [];
-    const serialOutFrames: number[] = [];
     const press = new Uint8Array(2);
 
     // The serial-in bytes not yet sent: consecutive bytes at runFrame, sent as one message when a byte at another
@@ -129,20 +102,6 @@ export const lsdjSyncNode = defineNode<LsdjSyncSettings>({
       press[0] = button;
       press[1] = down ? 1 : 0;
       block!.send("buttons", 0, press);
-    };
-    // A decoded message, at frame 0: the decoders give each its byte's frame, but that is a frame of last block, which
-    // the feedback wire brought, so the host timestamps it by block. A message is 1 to 3 bytes and send sends all of
-    // the array it is given, so each length has an array of its own, made once here; send copies a message into the
-    // port's queue, so its array is free again when send returns.
-    const out1 = new Uint8Array(1);
-    const out2 = new Uint8Array(2);
-    const out3 = new Uint8Array(3);
-    const emitMidiOut = (_frame: number, len: number, b0: number, b1: number, b2: number) => {
-      const data = len === 1 ? out1 : len === 2 ? out2 : out3;
-      data[0] = b0;
-      if (len > 1) data[1] = b1;
-      if (len > 2) data[2] = b2;
-      block!.send("midiOut", 0, data);
     };
     // Each inbox event, through `handle`: the routed MIDI, then the launches.
     const eachEvent = (handle: (e: Message) => void) => {
@@ -223,9 +182,6 @@ export const lsdjSyncNode = defineNode<LsdjSyncSettings>({
 
     const dispatch = () => {
       const transport = clock.block.transport;
-      // A mode's scratch survives a config change, so master sync's would go stale while another mode runs: dropped
-      // here, coming back starts clean rather than from a stale run or a stale last byte.
-      if (st.masterSync !== undefined && config.mode !== LsdjSyncMode.MasterSync) st.masterSync = undefined;
       switch (config.mode) {
         case LsdjSyncMode.MidiSync: {
           // Optional auto-arm: SYNC=MIDI LSDj follows the clock only once START has parked it in "wait for MIDI", so
@@ -270,12 +226,9 @@ export const lsdjSyncNode = defineNode<LsdjSyncSettings>({
         case LsdjSyncMode.MidiPassthrough:
           eachEvent(passthroughEvent);
           break;
-        case LsdjSyncMode.MidiOut: // ArduinoboyMaster / MIDIOUT: LSDj's MI.OUT stream, decoded to host MIDI
-          if (serialOut.length > 0) arduinoboyDecodeSerialOut(serialOut, serialOutFrames, st, emitMidiOut);
-          break;
-        case LsdjSyncMode.MasterSync: // LSDj drives the host clock: a byte a clock, a silence the stop
-          arduinoboyMasterSyncBlock(serialOut, serialOutFrames, clock.block, (st.masterSync ??= {}), emitMidiOut);
-          break;
+        case LsdjSyncMode.MidiOut:
+        case LsdjSyncMode.MasterSync:
+          break; // LSDj's serial out, which rp.lsdj.serial-out decodes after the Game Boy
         default:
           break; // Off / Keyboard send nothing here
       }
@@ -291,16 +244,6 @@ export const lsdjSyncNode = defineNode<LsdjSyncSettings>({
         clock.begin(b);
         midi = b.messages("midi");
         launches = b.messages("launches");
-        serialOut.length = 0;
-        serialOutFrames.length = 0;
-        const captured = b.messages("serialOut");
-        for (let i = 0; i < captured.length; i++) {
-          const m = captured[i];
-          for (let j = 0; j < m.data.length; j++) {
-            serialOut.push(m.data[j]);
-            serialOutFrames.push(m.frame);
-          }
-        }
         try {
           dispatch();
         } finally {

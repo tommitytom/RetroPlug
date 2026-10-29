@@ -6,16 +6,17 @@
 // 64 trivial TS nodes (an events pass-through written with indexed loops) between a native source and sink, the source
 // sending nothing or one message a block. A node's cost is the chain's less the source wired straight to the sink, over
 // the node count. The second times the protocol nodes buildGraph places for one project, in a plan driven as
-// ProtocolNodes.test.cpp drives one: mGB, an LSDj and a NES on nes-n8-midi, so four script nodes (the routing, sending
-// every host message to all three, and a protocol node a system: rp.mgb.midi, rp.lsdj.sync and rp.n8.midi-to-fifo), the
-// transport playing and a steady MIDI stream. The LSDj's node takes its Game Boy's serial out a block after the core
-// clocked it out (a feedback wire, as buildGraph wires it), at the most the port carries, a byte every 8 frames, in two
-// structures: in MIDI sync, where it is the idle line, which the node reads and copies every block and decodes in no
-// mode but MI.OUT and master sync (the worst case B3a timed: capture is armed only for an LSDj in a MIDI-out mode); and
-// in MI.OUT, where every byte is a framed command, so the decoder runs and the node sends host MIDI. mGB's serial out
-// is wired to nothing (buildGraph wires a Game Boy's only into rp.lsdj.sync), so its core captures none and nothing
-// stands in for it. No core runs: the plan's system stand-ins count what reaches their inputs. The plan's native nodes
-// alone (the same document with no script nodes) are timed too, so the script nodes' own share shows.
+// ProtocolNodes.test.cpp drives one: mGB, an LSDj and a NES on nes-n8-midi, so five script nodes (the routing, sending
+// every host message to all three, a protocol node a system: rp.mgb.midi, rp.lsdj.sync and rp.n8.midi-to-fifo, and the
+// LSDj's decoder, rp.lsdj.serial-out, after the systems), the transport playing and a steady MIDI stream. The decoder
+// takes its Game Boy's serial out in the block the core clocked it out (a forward wire, as buildGraph wires it), at the
+// most the port carries, a byte every 8 frames, in two structures: in MIDI sync, where it is the idle line, which the
+// decoder does not read (it reads its input only in MI.OUT and master sync, the modes capture is armed for, so in
+// production this line is not even captured); and in MI.OUT, where every byte is a framed command, so the decoder runs
+// and sends host MIDI. mGB's serial out is wired to nothing (buildGraph wires a Game Boy's only into its LSDj's
+// decoder), so its core captures none and nothing stands in for it. No core runs: the plan's system stand-ins count
+// what reaches their inputs. The plan's native nodes alone (the same document with no script nodes) are timed too, so
+// the script nodes' own share shows.
 //
 // Until B3b the second table timed the one DSP kernel node that did the four nodes' work, in the MIDI-sync structure,
 // against the native kernel stage it replaced while that still existed (9c3c10f9: the node took 1.36 to 1.62 times as
@@ -23,8 +24,9 @@
 // over three runs, docs/modular-graph-phase-b3a-design.md section 7.4), were 2.68 to 2.74 us, 7.69 to 7.92 us and 39.5
 // to 40.7 us at 1, 64 and 512 frames, with 25, 81 and 431 JS allocations a block. They were measured on another tree,
 // on another day, so they compare with this table's MIDI-sync rows by their size, not to the percent. B3a's bench also
-// fed both Game Boys' idle serial-out bytes to the kernel node (128 a block at 512 frames, against this table's 64:
-// only the LSDj's now), which its design section 7.4 says were nearly all the node read in the larger blocks.
+// fed both Game Boys' idle serial-out bytes to the kernel node (128 a block at 512 frames, against this table's 64,
+// only the LSDj's, which its decoder does not read in MIDI sync), which its design section 7.4 says were nearly all the
+// node read in the larger blocks.
 //
 // Each figure is a median of kRuns runs; a run times the script nodes' plan, then that plan with no script nodes, over
 // the same blocks. Allocations are per block over every run: JS from the script host's audio runtime, native on the
@@ -128,8 +130,8 @@ rp.register([rp.defineNode({
 std::string node(const std::string& id, const std::string& type, const std::string& settings = "") {
     return R"({"id":")" + id + R"(","type":")" + type + "\"" + (settings.empty() ? "" : R"(,"settings":)" + settings) + "}";
 }
-std::string wire(const std::string& from, const std::string& to, bool feedback = false) {
-    return R"({"from":")" + from + R"(","to":")" + to + "\"" + (feedback ? R"(,"feedback":true)" : "") + "}";
+std::string wire(const std::string& from, const std::string& to) {
+    return R"({"from":")" + from + R"(","to":")" + to + "\"}";
 }
 std::string graphJson(const std::vector<std::string>& nodes, const std::vector<std::string>& wires) {
     std::string doc = R"({"nodes":[)";
@@ -193,8 +195,9 @@ ChainRow timeChain(bool message, int n, std::uint32_t frames) {
 int protocolBlocks(std::uint32_t frames) { return frames == 1 ? 32768 : frames == 64 ? 8192 : 2048; }
 
 // The three systems, each with the one role buildGraph places a protocol node for (graph/protocolNodes.ts): its node
-// sys-<id>/<kind>, its type, the input its routed MIDI arrives on, and the system inputs it writes. The LSDj's node
-// (lsdj-sync) takes its Game Boy's serial out too, and sends host MIDI.
+// sys-<id>/<kind>, its type, the input its routed MIDI arrives on, and the system inputs it writes. The LSDj's role
+// places a second node after the systems, its decoder (kLsdjDecoder), which takes its Game Boy's serial out and sends
+// host MIDI.
 struct BenchSystem {
     std::uint32_t            id;
     const char*              kind;
@@ -213,6 +216,8 @@ constexpr std::size_t kMgb = 0;
 constexpr std::size_t kLsdj = 1;
 constexpr std::size_t kNes = 2;
 bool isLsdj(const BenchSystem& s) { return s.id == kSystems[kLsdj].id; }
+// The LSDj's decoder, as buildGraph places it: sys-<id>/lsdj-sync/out, with its rp.lsdj.sync's settings.
+constexpr const char* kLsdjDecoder = "rp.lsdj.serial-out";
 
 // The structures the table times, by the LSDj's mode (its role's config as the store parses it, its node's settings)
 // and what its Game Boy's serial port clocks out: the idle line, or a framed MI.OUT stream (kMiOut). The other roles'
@@ -362,9 +367,9 @@ struct ProtocolBench {
     ~ProtocolBench() { host.reset(); }
 
     // As buildGraph wires it: the host I/O nodes, the routing (every host message to every system), each system's
-    // protocol node fed its routed MIDI and wired into its system's inputs, the LSDj's taking its Game Boy's serialOut
-    // by a feedback wire and its host MIDI out going to rp.host.midi-out's one input (under its system), and the systems,
-    // the LSDj's Game Boy with its serial out.
+    // protocol node fed its routed MIDI and wired into its system's inputs, the systems, the LSDj's Game Boy with its
+    // serial out, then the LSDj's decoder, taking that serial out by a forward wire, its host MIDI out going to
+    // rp.host.midi-out's one input (under its system), and the host outputs.
     static std::string document(const Structure& structure, bool scriptNodes) {
         std::vector<std::string> nodes{node("midi-in", "rp.host.midi-in"), node("controller-in", "rp.host.controller-in")};
         std::vector<std::string> wires;
@@ -376,18 +381,22 @@ struct ProtocolBench {
                 nodes.push_back(node(id, s.type, isLsdj(s) ? structure.lsdjSettings : "{}"));
                 wires.push_back(wire("routing." + sys, id + "." + s.midiIn));
                 for (const char* in : s.writes) wires.push_back(wire(id + "." + in, sys + "." + in));
-                if (!isLsdj(s)) continue;
-                wires.push_back(wire(sys + "-serial.serialOut", id + ".serialOut", true));
-                wires.push_back(wire(id + ".midiOut", "midi-out.in1"));
             }
         }
-        nodes.push_back(node("midi-out", "rp.host.midi-out", scriptNodes ? R"({"systems":[2]})" : R"({"systems":[]})"));
-        nodes.push_back(node("controller-out", "rp.host.controller-out"));
         for (const BenchSystem& s : kSystems) {
             const std::string sys = "sys-" + std::to_string(s.id);
             nodes.push_back(node(sys, "rp.bench.system"));
             if (isLsdj(s)) nodes.push_back(node(sys + "-serial", structure.miOut ? "rp.bench.mi-out" : "rp.bench.serial-out"));
         }
+        if (scriptNodes) {
+            const BenchSystem& s = kSystems[kLsdj];
+            const std::string sys = "sys-" + std::to_string(s.id), id = sys + "/" + s.kind + "/out";
+            nodes.push_back(node(id, kLsdjDecoder, structure.lsdjSettings));
+            wires.push_back(wire(sys + "-serial.serialOut", id + ".serialOut"));
+            wires.push_back(wire(id + ".midiOut", "midi-out.in1"));
+        }
+        nodes.push_back(node("midi-out", "rp.host.midi-out", scriptNodes ? R"({"systems":[2]})" : R"({"systems":[]})"));
+        nodes.push_back(node("controller-out", "rp.host.controller-out"));
         return graphJson(nodes, wires);
     }
 
@@ -481,10 +490,10 @@ ProtocolRows timeProtocolNodes(const Structure& structure, std::uint32_t frames)
     CHECK(rows.delivered.bytes == 0);            // nothing here sends core bytes
     CHECK(rows.delivered.buttons == 0);          // or presses a button
     if (structure.miOut) {
-        // The LSDj sends its core nothing, and its node decodes every byte its port clocked out up to the block before
-        // the last (the feedback wire's), each 8 into 5 host MIDI messages.
+        // The LSDj sends its core nothing, and its decoder decodes every byte its port clocked out, the last block's
+        // included (it reads them in the block they were clocked out), each 8 into 5 host MIDI messages.
         CHECK(bench.nodeCounts(kLsdj).serialIn == 0);
-        CHECK(bench.midiOut == miOutMessages(clocked(0, static_cast<std::uint32_t>((k - 1) * frames))));
+        CHECK(bench.midiOut == miOutMessages(clocked(0, static_cast<std::uint32_t>(k * frames))));
     } else {
         CHECK(bench.nodeCounts(kLsdj).serialIn > 0);  // its clocks
         CHECK(bench.midiOut == 0);                     // and nothing decoded
@@ -493,7 +502,7 @@ ProtocolRows timeProtocolNodes(const Structure& structure, std::uint32_t frames)
     rows.midiOut = bench.midiOut;
     CHECK(bench.host->droppedMessages() == 0);
     CHECK(bench.scripts.throwCount() == 0);
-    CHECK(bench.scripts.liveInstances() == 1 + kSystemCount);  // the routing and a protocol node a system
+    CHECK(bench.scripts.liveInstances() == 2 + kSystemCount);  // the routing, a protocol node a system, the decoder
     rows.blocks = k;
     return rows;
 }
@@ -534,8 +543,9 @@ void protocolTable() {
                     "host message every %llu frames; the LSDj's serial out a byte every 8 frames, %s\n",
                     structure.name, kTempo, static_cast<unsigned long long>(kMidiEvery),
                     structure.miOut ? "every one a framed command, 5 host MIDI messages each 8 bytes" : "the idle line");
-        std::printf("nodes: their plan (the host I/O nodes, the routing and a protocol node a system, the LSDj's serialOut, a "
-                    "stand-in for each system's inputs); plan: that plan with no script nodes; no core runs\n");
+        std::printf("nodes: their plan (the host I/O nodes, the routing and a protocol node a system, the LSDj's serialOut "
+                    "and its decoder, a stand-in for each system's inputs); plan: that plan with no script nodes; no core "
+                    "runs\n");
         std::printf("%6s  %-20s %6s | %9s %9s %9s | %9s %9s %9s\n", "frames", "path", "blocks", "us/block", "%1-frame", "%own",
                     "JS allocs", "JS bytes", "native");
         for (const std::uint32_t frames : kBlockSizes) {

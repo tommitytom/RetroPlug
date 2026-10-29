@@ -1,10 +1,10 @@
 // LSDj's host-sync protocols in 1-frame blocks and FL-style ragged splits (blocks-tiny.ts has the lists, lsdj.ts
 // the scenes): SYNC=MIDI following the host clock, each tick at its own frame; the Arduinoboy protocol, its
 // clocks at a block's frame 0, its play / stop notes, 0xFA and 0xFC on the transport's edges; MI.OUT, LSDj's
-// serial out decoded into host MIDI out a block later, so the recorded block indices pin that one-block latency
-// at every block size here. Master sync is blocks-tiny-lsdj-master.test.ts. Tempo
-// and transport points after a segment's start sit on 1-frame blocks, where FL puts them (it splits a buffer
-// at each one), and the sync notes on block edges. Needs the sibling LSDj
+// serial out decoded into host MIDI out in the block the core captured it, each message at its completing byte's
+// frame, which the recorded block indices and frames pin at every block size here. Master sync is
+// blocks-tiny-lsdj-master.test.ts. Tempo and transport points after a segment's start sit on 1-frame blocks,
+// where FL puts them (it splits a buffer at each one), and the sync notes on block edges. Needs the sibling LSDj
 // ROMs, so these skip in CI.
 import { runGroup, type ParityCase } from "./group";
 import { ANY, BIG, BUFFER, Edges, TINY_SPLITS } from "./blocks-tiny";

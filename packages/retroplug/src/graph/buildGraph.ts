@@ -2,12 +2,20 @@
 // order, the project's audio routing and the host's output shape, turned into the document setGraph plans. Ahead of
 // the systems, each document places the script nodes that feed them (docs/modular-graph-phase-b3b-design.md
 // section 4): the MIDI routing, a controller session when one is enabled, and a protocol node for each role of each
-// system that has one, wired between the host's I/O and the systems as the DSP kernel's ports were.
+// system that has one, wired between the host's I/O and the systems as the DSP kernel's ports were. After the
+// systems, it places each role's second node where its type names one, which reads what its system sent in the same
+// block: LSDj's serial-out decoder, whose host MIDI goes where the kernel's did (docs/lsdj-serial-out-design.md).
 // Pure, and held to test/graph/golden/build-graph.json, whose audio wiring is the B1 native translator's, so every
 // audio node id, the document order (which is the plan order on ties) and every per-lane sum is the translator's.
 import type { AudioRouting, MidiRouting } from "../settingsEnums";
 import type { GraphDocument, NodeDoc, WireDoc } from "./graphDocument";
-import { PROTOCOL_NODES, type ProtocolNodeSpec, type ProtocolRole, type SystemInput } from "./protocolNodes";
+import {
+  outNodeOf,
+  PROTOCOL_NODES,
+  type ProtocolNodeSpec,
+  type ProtocolRole,
+  type SystemInput,
+} from "./protocolNodes";
 import { controllerSettings, controllerSyncOverride, controllerTarget, NO_SYSTEM, type GraphController } from "./controller";
 
 export type SystemNodeType = "rp.sameboy.gb" | "rp.mesen.nes" | "rp.mesen.gba" | "rp.mesen.sms";
@@ -144,9 +152,10 @@ export function buildGraph(model: GraphModel): BuiltGraph {
   };
 
   nodes.push({ id: "midi-in", type: "rp.host.midi-in" }, { id: "controller-in", type: "rp.host.controller-in" });
-  // Every script node goes before the systems in the document, so before them in the plan: the planner breaks ties by
-  // document order (Planner.cpp order()), and nothing a script node reads comes from a node after it but over a
-  // feedback wire.
+  // A script node reads only nodes placed before it in the document, or a feedback wire, so the plan runs the script
+  // nodes in document order: the planner orders nodes topologically and breaks ties by document order (Planner.cpp
+  // order()), and a feedback wire orders nothing. So the nodes that feed the systems go before them, and a node that
+  // reads what a system sent goes after the systems.
   //
   // The routing: the host's MIDI fanned out to the systems in slot order (positional routing reads it), an output
   // for each, sys-<id>.
@@ -156,7 +165,7 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     wire("midi-in.midi", "routing.midiIn");
   }
   // Host MIDI out's inputs, in the order the kernel emitted: the controller's first, then each system's in slot
-  // order, every message under the system named beside it.
+  // order, every message under the system named beside it, wherever in the document the node that sends it sits.
   const hostMidi: { from: string; system: number }[] = [];
   const controller = model.controller ?? null;
   const target = controller ? controllerTarget(controller, systems) : NO_SYSTEM;
@@ -170,6 +179,9 @@ export function buildGraph(model: GraphModel): BuiltGraph {
   }
   // The MI.MAP controller's cart, in the lsdj-sync mode it needs: that node's settings alone, never the project's.
   const sync = controllerSyncOverride(systems, controller);
+  // The nodes placed after the systems, in slot order, then pipeline order: each role's second node, and the system
+  // output it reads, if any.
+  const after: { node: NodeDoc; reads: string | null }[] = [];
   // Each system's protocol nodes, in slot order, then pipeline order. Their outputs feed the system's inputs of the
   // same name; what reads MIDI reads its system's routed output.
   for (const s of systems) {
@@ -178,16 +190,23 @@ export function buildGraph(model: GraphModel): BuiltGraph {
       const spec: ProtocolNodeSpec = PROTOCOL_NODES[role.node];
       const id = protocolId(s.id, role.kind);
       const forced = sync !== null && sync.systemId === s.id && role.node === "rp.lsdj.sync";
-      nodes.push({ id, type: role.node, settings: forced ? { ...role.config, mode: sync.mode } : role.config });
+      const settings = forced ? { ...role.config, mode: sync.mode } : role.config;
+      nodes.push({ id, type: role.node, settings });
       if (spec.midiIn !== null && midiRouting !== null) wire(`routing.${n}`, `${id}.${spec.midiIn}`);
       // The launches follow the routed MIDI, as the kernel appended them to its target's inbox.
       if (spec.launches && controller?.target === "system" && target === s.id)
         wire("controller.launches", `${id}.launches`);
       for (const input of spec.writes) wire(`${id}.${input}`, `${n}.${input}`);
-      // MI.OUT comes back from the Game Boy a block after the core sent it, as it always has.
-      if (spec.serialOut && s.type === "rp.sameboy.gb")
-        wires.push({ from: `${n}.serialOut`, to: `${id}.serialOut`, feedback: true });
       if (spec.midiOut) hostMidi.push({ from: `${id}.midiOut`, system: s.id });
+      // The role's second node takes the same settings, so the two read one mode, the controller's forced one
+      // included. One that reads a serial out is placed only on a Game Boy, the one system that has one.
+      const outType = outNodeOf(role.node);
+      if (outType === undefined) continue;
+      const out: ProtocolNodeSpec = PROTOCOL_NODES[outType];
+      if (out.serialOut && s.type !== "rp.sameboy.gb") continue;
+      const outId = `${id}/out`;
+      after.push({ node: { id: outId, type: outType, settings }, reads: out.serialOut ? `${n}.serialOut` : null });
+      if (out.midiOut) hostMidi.push({ from: `${outId}.midiOut`, system: s.id });
     }
   }
   const groups = linkGroups(systems);
@@ -195,6 +214,12 @@ export function buildGraph(model: GraphModel): BuiltGraph {
   for (const i of order) nodes.push({ id: sysNode(systems[i].id), type: systems[i].type, settings: { core: systems[i].id } });
   for (const g of groups)
     for (let k = 1; k < g.length; ++k) wire(`${sysNode(systems[g[k - 1]].id)}.link`, `${sysNode(systems[g[k]].id)}.link`);
+  // After the systems, so each reads its system's output of this block: a Game Boy's serial out, which LSDj's
+  // decoder turns into host MIDI at each byte's frame.
+  for (const a of after) {
+    nodes.push(a.node);
+    if (a.reads !== null) wire(a.reads, `${a.node.id}.serialOut`);
+  }
   // A physical N8 mirrors the first NES in slot order: what its protocol nodes send that system's core MIDI and core
   // bytes, they send the cart.
   const cart = systems.find((s) => s.type === "rp.mesen.nes");

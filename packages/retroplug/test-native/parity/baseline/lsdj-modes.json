@@ -106,7 +106,7 @@
   "masterSync-44100": {
    "midiOut": {
     "count": 85,
-    "fnv": "b1aa4151"
+    "fnv": "e9e21f17"
    },
    "ram": {
     "0": {
@@ -175,7 +175,7 @@
   "masterSync-48000": {
    "midiOut": {
     "count": 85,
-    "fnv": "c46e88ad"
+    "fnv": "73378fb1"
    },
    "ram": {
     "0": {
@@ -285,7 +285,7 @@
   "midiOut": {
    "midiOut": {
     "count": 42,
-    "fnv": "df957825"
+    "fnv": "c8f61b17"
    },
    "ram": {
     "0": {

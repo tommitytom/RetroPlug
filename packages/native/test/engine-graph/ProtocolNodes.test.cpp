@@ -9,8 +9,8 @@
 // (Structure, below). So the graph these cases hold to their values is the one buildGraph builds for them: a change to
 // its wiring for these structures fails that TS test until it is re-recorded, and then fails a case here if it moves
 // what reaches a system input or the host. It does not reach what the stand-ins replace: the system nodes, the audio
-// and the cart mirror (BuildGraphGoldens.test.cpp plans these same documents whole on real cores), nor the feedback
-// wire a Game Boy's MI.OUT comes back on, whose feed here is a plain wire carrying what the core captured last block.
+// and the cart mirror (BuildGraphGoldens.test.cpp plans these same documents whole on real cores), nor what a Game
+// Boy's core captures on its link port, which a case writes into the feed standing in for the Game Boy's serialOut.
 // Nor any model but these, or what the stores hand buildGraph. The plan order is buildGraph's: the feeds lead the
 // document, so the script nodes run in their document order, as production plans them, and a case holds every
 // structure to that. The throw case relies on it: only a node planned after the one that throws can show that a throw
@@ -21,24 +21,31 @@
 // bytes in order; the host MIDI out with its system tags in emission order; the control-surface out). A digest hashes
 // what reaches each system input and the host outputs, never which node sent it, so a split of the kernel's work over
 // nodes is held to what the kernel sent. That is B3b's proof, bit for bit, that splitting the kernel changed nothing a
-// core or the host can see in those cases, and in no others. The design's section 9 lists where the per-role graph
-// behaves otherwise than the kernel did: among them a node's state keyed by its role's kind, so a role removed and
-// added again on a surviving system starts afresh; the controller's default target following a change of first system;
-// its session rebuilt on a change to its parsed config rather than its raw one; its launches going only into an
-// lsdj-sync node; a config read with its defaults filled. No case here sends a message through any of those; the throw
-// is the one difference a case reaches, below.
+// core or the host can see in those cases, and in no others. But for the host MIDI out of MI.OUT and master sync, which
+// differs from what the kernel sent by design (docs/lsdj-serial-out-design.md): rp.lsdj.serial-out, placed after the
+// Game Boy, sends each message at its byte's frame in the block the core captured it, where the kernel sent it at
+// frame 0 of the block after, and master sync's stop at the first frame its silence passes 200 ms. So the three cases
+// whose host MIDI out carries it (the LSDj modes, and the controller's two, beside an LSDj in MI.OUT) hold the values
+// that decoder was recorded sending, every system input in them still as the kernel sent it, and every other case still
+// holds the kernel's values. The design's section 9 lists where the per-role graph behaves otherwise than the kernel
+// did: among them a node's state keyed by its role's kind, so a role removed and added again on a surviving system
+// starts afresh; the controller's default target following a change of first system; its session rebuilt on a change to
+// its parsed config rather than its raw one; its launches going only into an lsdj-sync node; a config read with its
+// defaults filled. No case here sends a message through any of those; the throw is the one difference a case reaches,
+// below.
 //
 // The values have a history. The kernel node (B3a) was run beside the native kernel stage it replaced and found equal
 // to it block by block, from c323c7a8 to e3de2e46, the last commit before the stage's deletion; the B3a prototype
 // recorded the values from the same cases, and they held as recorded. One was re-recorded since: the LSDj modes case,
-// when master sync's stop became a silence rather than a flood (docs/lsdj-master-sync-fix-design.md). One case came
-// after the stage had gone, recorded from the kernel node alone: the controller's launches behind routed MIDI and its
-// host MIDI out ahead of the systems', two orders no earlier case sends a message through, which the stage-era proof
-// therefore never reached. Then, until B3b deleted the kernel node (from the commit that held its recorded digests on
-// the per-role graph too, to the flip that had buildGraph place that graph), every case ran on both, the kernel node's
-// graph and this one, each held to the same values. So a changed value is a change to what reaches a core or the host:
-// a deliberate one is re-recorded from the values a failing case prints. The other cases, which came after the kernel
-// or record nothing, check what they hold directly: a block that fills rp.host.midi-in, a controller's session kept
+// when master sync's stop became a silence rather than a flood (docs/lsdj-master-sync-fix-design.md). Then the three
+// above, the LSDj modes case among them, when the decoder moved after the Game Boy. One case came after the stage had
+// gone, recorded from the kernel node alone: the controller's launches behind routed MIDI and its host MIDI out ahead
+// of the systems', two orders no earlier case sends a message through, which the stage-era proof therefore never
+// reached. Then, until B3b deleted the kernel node (from the commit that held its recorded digests on the per-role
+// graph too, to the flip that had buildGraph place that graph), every case ran on both, the kernel node's graph and
+// this one, each held to the same values. So a changed value is a change to what reaches a core or the host: a
+// deliberate one is re-recorded from the values a failing case prints. The other cases, which came after the kernel or
+// record nothing, check what they hold directly: a block that fills rp.host.midi-in, a controller's session kept
 // through a system added behind it, every structure's script nodes running in buildGraph's order, and the restructuring
 // under an audio thread.
 //
@@ -184,14 +191,13 @@ std::pair<std::string, std::string> splitEndpoint(const std::string& endpoint) {
 // A structure the rig plans: one of buildGraph's role goldens, its document as buildGraph built it but for what the
 // rig stands in for. Each system node is replaced where it stood by a probe for its serialIn and midi inputs (in-<id>)
 // and one for its bytes and buttons (io-<id>). A Game Boy's serialOut is stood in for by a feed (mi-out-<id>), which
-// the rig fills with what the core captured last block: so the wire from it into an LSDj's node is a plain one, where
-// buildGraph's from the Game Boy is a feedback wire, the feed's bytes being a block late already. The feeds lead the
-// document, which keeps buildGraph's plan order: a feedback wire orders nothing, and a plain one from a feed where its
-// system stood would hold the LSDj node back until the feed, behind every script node placed after it (the planner
-// takes the first ready node in document order), while a feed at the head, with no inputs, is planned before them all.
-// The audio nodes and the N8 cart mirror are left out (no core runs here; HostIo.test.cpp holds the mirror), with every
-// wire to or from them or a system node that no stand-in takes. Every other node and wire, the script nodes' with their
-// settings and the host I/O's, is buildGraph's as recorded.
+// the rig fills with what the core captures in the block, so the wire from it into the LSDj's decoder is the plain one
+// buildGraph wires from the Game Boy, read in the same block. The feeds lead the document: a feed has no inputs, so at
+// the head it is planned before every node, and each node reading it runs where buildGraph's document places it, the
+// planner taking the first ready node in document order. The audio nodes and the N8 cart mirror are left out (no core
+// runs here; HostIo.test.cpp holds the mirror), with every wire to or from them or a system node that no stand-in
+// takes. Every other node and wire, the script nodes' with their settings and the host I/O's, is buildGraph's as
+// recorded.
 struct PlacedNode {
     std::string id;
     std::string type;
@@ -249,9 +255,10 @@ Structure standIns(const GoldenCase& c, const Document& doc) {
         const auto fromSystem = systemOf.find(fromNode);
         const auto toSystem = systemOf.find(toNode);
         if (fromSystem != systemOf.end()) {
-            // A Game Boy's MI.OUT into its LSDj's node comes from its feed. Past the audio, left out above, the one
-            // other wire a system sends is a link cable into another system, which no stand-in takes: any other would
-            // be a system output buildGraph wires to a node the rig plans, which must fail here rather than vanish.
+            // A Game Boy's serial out into its LSDj's decoder comes from its feed. Past the audio, left out above, the
+            // one other wire a system sends is a link cable into another system, which no stand-in takes: any other
+            // would be a system output buildGraph wires to a node the rig plans, which must fail here rather than
+            // vanish.
             if (fromPort == "serialOut" && toSystem == systemOf.end()) {
                 wires.push_back(wireJson("mi-out-" + std::to_string(fromSystem->second) + ".bytes", w.to));
                 continue;
@@ -294,7 +301,7 @@ Structure structure(const std::string& name) {
 
 // ---- one block's input -------------------------------------------------------------------------------------------
 
-// What one Game Boy captured last block, as its serialOut stamps it: each byte at the frame its core completed it, here
+// What one Game Boy captures in a block, as its serialOut stamps it: each byte at the frame its core completed it, here
 // the first at `first` and each next `stride` frames on (MI.OUT's port clocks a byte every eight frames; a playing LSDj
 // master clocks one every few hundred).
 struct Captured {
@@ -312,7 +319,7 @@ struct BlockIn {
     std::vector<std::pair<std::uint32_t, Bytes>>      midi;        // as a host stages it, in any frame order
     std::vector<Bytes>                                controller;  // control-surface traffic, at frame 0
     bool                                              connected = false;
-    std::vector<Captured>                             serialOut;   // what each Game Boy captured last block
+    std::vector<Captured>                             serialOut;   // what each Game Boy captures in the block
 };
 
 Bytes on(int channel, int key, int velocity = 100) {
@@ -723,9 +730,10 @@ TEST_CASE("the per-role graph drives each LSDj sync mode, MI.OUT and master sync
     rig.block({.ppq = 0.0, .playing = true, .midi = {{200, on(0, 31)}, {200, on(0, 7)}}});
     BlockIn playing{.frames = 1024, .ppq = 1024.0 / kBeat, .playing = true};
     rig.run(playing, 30);
-    // MI.OUT: framed protocol bytes, a frame split over two captured bytes; master sync: a run (a playing LSDj's bytes
-    // a few hundred frames apart), a stopped LSDj's silence, whose 200 ms (8820 frames) pass in the ninth quiet block
-    // and send its stop, then a run again.
+    // MI.OUT: framed protocol bytes, a frame split over two captured bytes, each message at its completing byte's
+    // frame; master sync: a run (a playing LSDj's bytes a few hundred frames apart, a clock at each), a stopped LSDj's
+    // silence, whose 200 ms (8820 frames) pass at frame 212 of the ninth block after its last byte, which sends its
+    // stop there, then a run again.
     playing.ppq = 31 * 1024.0 / kBeat;
     for (auto captured : {std::vector<Captured>{{7, {framed(0x7d), framed(0x7f), framed(0x70), framed(0x69), 0x7f}},
                                                 {8, {5, 5, 5}, 300}},
@@ -746,7 +754,7 @@ TEST_CASE("the per-role graph drives each LSDj sync mode, MI.OUT and master sync
     }
     rig.block({.ppq = fast.ppq, .tempo = 174.0, .playing = false, .midi = {{0, on(0, 25)}, {0, on(0, 26)}}});
     rig.run({.frames = 2048, .ppq = fast.ppq}, 2);
-    rig.matches({269, 0, 0, 4, 16, 0, 0xef0d11f87eff9493ULL});  // the buttons: autoStart's START press and release
+    rig.matches({269, 0, 0, 4, 16, 0, 0x50c11f5dc636b650ULL});  // the buttons: autoStart's START press and release
     rig.finish();
 }
 
@@ -805,7 +813,7 @@ TEST_CASE("the per-role graph runs a controller session: its surface, its launch
         play.controller.clear();
         play.ppq += 1024.0 / kBeat;
     }
-    rig.matches({161, 0, 0, 0, 80, 35, 0x097e9ae8508f0a25ULL});
+    rig.matches({161, 0, 0, 0, 80, 35, 0xcf9b8961b949c269ULL});
     rig.finish();
 }
 
@@ -838,15 +846,22 @@ TEST_CASE("the per-role graph puts a controller's launches after the routed MIDI
                 cartSerialIn.push_back(serialBytes(rig.node<Probe>("in-1").bytes));
                 continue;
             }
-            // Host MIDI out: the controller's launch first, under the system its default target resolved to (Game Boy
-            // 1), then Game Boy 2's decoded MI.OUT, then Game Boy 3's clocks.
+            // Host MIDI out, merged by frame with ties in input order: the controller's launch first, at frame 0, under
+            // the system its default target resolved to (Game Boy 1), then Game Boy 2's decoded MI.OUT and Game Boy 3's
+            // clocks at their bytes' frames, Game Boy 2's first on a tie. The system tags follow the input order here,
+            // so the merge is (frame, system) ascending.
             std::vector<std::uint32_t> systems;
-            for (const ProtocolRig::Out& m : rig.midiOut) systems.push_back(m.system);
+            std::vector<std::pair<std::uint32_t, std::uint32_t>> merged;
+            for (const ProtocolRig::Out& m : rig.midiOut) {
+                systems.push_back(m.system);
+                merged.push_back({m.frame, m.system});
+            }
             INFO("press " << i);
             REQUIRE_FALSE(rig.midiOut.empty());
             hostLaunches.push_back(rig.midiOut.front().data);
             CHECK(systems.front() == 1);
-            CHECK(std::is_sorted(systems.begin(), systems.end()));
+            CHECK(rig.midiOut.front().frame == 0);
+            CHECK(std::is_sorted(merged.begin(), merged.end()));
             CHECK(std::count(systems.begin(), systems.end(), 1u) == 1);
             CHECK(std::count(systems.begin(), systems.end(), 2u) > 0);
             CHECK(std::count(systems.begin(), systems.end(), 3u) > 0);
@@ -868,7 +883,7 @@ TEST_CASE("the per-role graph puts a controller's launches after the routed MIDI
         CHECK(cartSerialIn[i][0] == Message{300, {static_cast<std::uint8_t>(20 + i)}, 0});
         CHECK(cartSerialIn[i][1] == Message{300, {hostLaunches[i][1]}, 0});
     }
-    rig.matches({32, 0, 0, 0, 68, 84, 0xeb884025953336a5ULL});
+    rig.matches({32, 0, 0, 0, 68, 84, 0x5474d124ec373f2bULL});
     rig.finish();
 }
 
@@ -1007,9 +1022,9 @@ TEST_CASE("a throw in a protocol node keeps what was sent before it and runs the
 
 TEST_CASE("each structure's script nodes run in the order buildGraph's document places them",
           "[engine-graph][protocol-nodes]") {
-    // Production plans the script nodes in their document order: nothing a script node reads comes from a node after it
-    // but over a feedback wire, which orders nothing (test/graph/build-graph-role-goldens.test.ts holds every golden
-    // document to that), and the planner breaks ties by document order. The rig must run
+    // Production plans the script nodes in their document order: a script node reads only nodes placed before it, or a
+    // feedback wire, which orders nothing (test/graph/build-graph-role-goldens.test.ts holds every golden document to
+    // that), and the planner breaks ties by document order. The rig must run
     // them in that order too, or a case that holds what one node does to the nodes after it (the throw) holds nothing.
     // So each structure is planned and run a block with every script node's process recorded as it is called (the wrap
     // injected below, through __probe), and the record is held to buildGraph's script nodes in document order, each by

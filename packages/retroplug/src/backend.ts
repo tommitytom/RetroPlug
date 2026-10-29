@@ -142,8 +142,8 @@ export interface Backend {
   applyRoleConfig(id: number, kind: string, config: Record<string, unknown>): boolean;
 
   /** Set capture of a system's outgoing serial bytes (SerialOutCapture), or null for off. The store calls this when
-   *  a system's `lsdj-sync` mode changes: armed, the Game Boy node's `serialOut` port carries the raw bytes, a feedback
-   *  wire into its rp.lsdj.sync node, for the MI.OUT and master-sync decoders. False for a mode native does not know.
+   *  a system's `lsdj-sync` mode changes: armed, the Game Boy node's `serialOut` port carries the raw bytes, a wire
+   *  into its rp.lsdj.serial-out node, for the MI.OUT and master-sync decoders. False for a mode native does not know.
    *  SameBoy-only (a no-op on other cores). */
   setSerialOutCapture(id: number, mode: SerialOutCapture | null): boolean;
 

@@ -6,8 +6,8 @@
 // among them, from the script bundle every Engine embeds), so a port name, a settings key or a node limit the planner
 // refuses fails here for a shape no other suite runs: chained adds past rp.core.add's 16 inputs, a NES's ten channels,
 // the Game Boy stems, link cables under every routing, the routing's outputs for thirty-three systems, and each
-// protocol node type wired into the system node it feeds, MI.OUT fed back to an LSDj, the N8 cart mirror and a
-// controller each way.
+// protocol node type wired into the system node it feeds, an LSDj's serial-out decoder after its Game Boy, the N8 cart
+// mirror and a controller each way.
 //
 // The cores are real: a system node takes its core by its concrete class, so a stand-in reporting only its
 // kind is refused when the node activates. Each is built as the case's model says (a Game Boy's link group, a
@@ -19,7 +19,9 @@
 // and a control surface attached and pressed, so its protocol nodes send into the system inputs they feed and its
 // controller launches into its cart or out of the host. What reaches a system input the engine does not hand back, so
 // only the host's side has a floor: a controller sends its surface something, and one driving a real Game Boy sends
-// the host its launch under the system it resolved. The thirty-three systems under perSystem give
+// the host its launch under the system it resolved. No core here captures its serial out (that is armed only for an
+// LSDj in a MIDI-out mode, by the control plane), so the LSDj decoders send the host nothing, and host MIDI under the
+// controller's system is the controller's. The thirty-three systems under perSystem give
 // rp.host.audio-out 33 buses, past the 32 it takes: those are refused instead.
 //
 // Run via `pnpm test:plugin engine-graph`.

@@ -1,7 +1,7 @@
 // The Arduinoboy MIDIOUT (MI.OUT) decoder for the `lsdj-sync` role's mode 7 — the TS port of the
 // native ArduinoboyMaster role (packages/native/src/system/sameboy/roles/ArduinoboyMaster.{hpp,cpp}).
 // Per the "native owns bytes, TS owns meaning" split: native captures LSDj's raw outgoing serial
-// bytes, which reach the rp.lsdj.sync node on its `serialOut` input; this module turns them into host MIDI.
+// bytes, which reach the rp.lsdj.serial-out node on its `serialOut` input; this module turns them into host MIDI.
 //
 // Two layers, both pure + testable in isolation:
 //
@@ -38,7 +38,7 @@ const MIDI_PC_BASE = 0xc0;
  *  it reuses. */
 export type MidiEmit = (frame: number, len: number, b0: number, b1: number, b2: number) => void;
 
-/** Cross-block decoder state (kept in the lsdj-sync node's scratch). Fields are created lazily by the
+/** Cross-block decoder state (kept on the rp.lsdj.serial-out node's instance). Fields are created lazily by the
  *  decoders, so a fresh `{}` is a valid starting state. */
 export interface ArduinoboyState {
   // Byte protocol: a 0x70..0x7C command awaiting its value byte. `pendingCmd` is m = byte-0x70; stored
@@ -165,19 +165,17 @@ export function arduinoboyDecodeSerialOut(
 // stopped LSDj master waits on an external clock for another master, and clocked, it turns slave and ignores START
 // (docs/lsdj-master-sync-fix-design.md). So every byte is a clock, and a stopped LSDj goes quiet, which makes the
 // firmware's stop a silence. A playing master clocks one byte per 24-PPQN tick, 62.5 ms apart at LSDj's slowest tempo
-// (40 BPM), so a silence this long is a stop: about three times that gap. It is measured on the bytes' own frames, so
-// the message sequence does not depend on how the host cuts its blocks. The 0xFC's time does: it is found at the first
-// block start more than MASTER_SYNC_STOP_MS after the last byte (or at the byte that ends the silence, when no block
-// starts between them), so it is quantised to a block start and up to a block late.
+// (40 BPM), so a silence this long is a stop: about three times that gap. It is measured on the bytes' own frames, and
+// the 0xFC goes at the first frame the silence passes it, so neither what is sent nor where it goes depends on how
+// the host cuts its blocks.
 const MASTER_SYNC_STOP_MS = 200;
 
-/** Cross-block Master Sync state (the lsdj-sync stage's `masterSync` sub-object, dropped whenever the mode is not
- *  master sync, so coming back starts clean). */
+/** Cross-block Master Sync state (the rp.lsdj.serial-out node's, dropped whenever the mode is not master sync, so
+ *  coming back starts clean). */
 export interface MasterSyncState {
   started?: boolean; // a run is in progress (0xFA sent; 0xFC pending on the silence that ends it)
   channel?: number; // MIDI channel for the song-row NoteOn (default 0)
   lastAt?: number; // the run's newest byte: frames from the current block's start (negative: an earlier block)
-  lastFrames?: number; // the last call's block length: where this call's bytes, from that block, sit
 }
 
 /** The block a Master Sync call runs in: its length and rate. */
@@ -186,12 +184,13 @@ export interface MasterSyncBlock {
   sampleRate: number;
 }
 
-/** Decode the Master Sync serial-out bytes that reached this block into host MIDI. Call once per block with the
- *  bytes the lsdj-sync node read off its `serialOut` input and each one's frame, which are LAST block's bytes at
- *  their frames in it (the feedback wire's one block), and this block's length and rate. Each byte is a tempo clock,
- *  the first of a run opened with LSDj's song row; a run ends with one 0xFC once MASTER_SYNC_STOP_MS pass with no
- *  byte. Every message goes to `emit` at a frame of the bytes' block: a byte's at its own frame, a stop found before a
- *  byte at that byte's, and one found at this block's start at that start, one past the bytes' block's last frame. */
+/** Decode one block's Master Sync serial-out bytes into host MIDI. Call once per block with the bytes the Game Boy
+ *  captured in it, each one's frame in it, and the block's length and rate. Each byte is a tempo clock, sent at its
+ *  frame, the first of a run opened there with LSDj's song row and 0xFA; a run ends with one 0xFC at its mark, the
+ *  first frame its silence passes MASTER_SYNC_STOP_MS, `lastAt + stop + 1`. A mark is sent before the byte at or past
+ *  it (which then opens a fresh run at its own frame), or at the end of the block it falls inside; one past the block
+ *  carries to the next, with the run's newest byte moved back by the block's length, so a mark is never behind the
+ *  block it is sent in. A gap of exactly `stop` frames is no stop: the mark is the frame after. */
 export function arduinoboyMasterSyncBlock(
   bytes: number[],
   frames: number[],
@@ -200,33 +199,37 @@ export function arduinoboyMasterSyncBlock(
   emit: MidiEmit,
 ): void {
   const ch = state.channel ?? 0;
-  const from = state.lastFrames ?? block.frames; // the length of the block these bytes came from
   const stop = Math.round((block.sampleRate * MASTER_SYNC_STOP_MS) / 1000);
   for (let i = 0; i < bytes.length; i++) {
-    const at = frames[i] - from;
-    // A silence can end inside this call, with no block start between its 200 ms mark and the byte that ends it.
-    // Checked only at a block start, the restart would carry on the old run (no 0xFC, no fresh NoteOn and 0xFA), so
+    const at = frames[i];
+    // The silence before this byte passed 200 ms at the mark: the run stopped there, and this byte opens a new one.
+    // Checked only at a block's end, the restart would carry on the old run (no 0xFC, no fresh NoteOn and 0xFA), so
     // the output would depend on the block split.
-    if (state.started && at - (state.lastAt ?? 0) > stop) {
-      emit(frames[i], 1, 0xfc, 0, 0);
-      state.started = false;
+    if (state.started) {
+      const mark = (state.lastAt ?? 0) + stop + 1;
+      if (at >= mark) {
+        emit(mark, 1, 0xfc, 0, 0);
+        state.started = false;
+      }
     }
     if (!state.started) {
       // First tick of a run: the byte value is LSDj's song row → NoteOn, then transport start, then this
       // byte's own clock tick (the firmware sends NoteOn + 0xFA before the first 0xF8).
       state.started = true;
-      emit(frames[i], 3, 0x90 | ch, bytes[i] & 0x7f, 0x7f);
-      emit(frames[i], 1, 0xfa, 0, 0);
+      emit(at, 3, 0x90 | ch, bytes[i] & 0x7f, 0x7f);
+      emit(at, 1, 0xfa, 0, 0);
     }
-    emit(frames[i], 1, 0xf8, 0, 0); // one MIDI clock per tempo byte
+    emit(at, 1, 0xf8, 0, 0); // one MIDI clock per tempo byte
     state.lastAt = at;
   }
-  // Every byte before this block's start is known: a run whose newest byte lies further back than the stop's
-  // silence has ended.
-  if (state.started && -(state.lastAt ?? 0) > stop) {
-    emit(from, 1, 0xfc, 0, 0);
-    state.started = false;
+  // Every byte of this block is known: a run whose mark falls inside it stopped there.
+  if (state.started) {
+    const mark = (state.lastAt ?? 0) + stop + 1;
+    if (mark < block.frames) {
+      emit(mark, 1, 0xfc, 0, 0);
+      state.started = false;
+    } else {
+      state.lastAt = (state.lastAt ?? 0) - block.frames;
+    }
   }
-  if (state.started) state.lastAt = (state.lastAt ?? 0) - block.frames;
-  state.lastFrames = block.frames;
 }

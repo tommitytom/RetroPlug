@@ -11,10 +11,13 @@ import { risaSyncNode } from "./nodes/risaSync";
 import { smsSyncNode } from "./nodes/smsSync";
 import { lsdjSyncNode } from "./nodes/lsdjSync";
 import { controllerSessionNode } from "./nodes/controllerSession";
+import { lsdjSerialOutNode } from "./nodes/lsdjSerialOut";
 import { registerScriptNodes } from "./register";
 
 // The production script node types, in registration order: the MIDI routing, a protocol node for each role that has
-// one, and the control-surface session (docs/modular-graph-phase-b3b-design.md section 2), which buildGraph places.
+// one, the control-surface session (docs/modular-graph-phase-b3b-design.md section 2), and LSDj's serial-out decoder,
+// which buildGraph places after the systems (docs/lsdj-serial-out-design.md). The order is the profile's span labels'
+// (spec/08-profiling.md: 16 up, one a type in this order), so a type added goes last, keeping the others' labels.
 // Nothing here registers roles or imports zod: a node's settings are graph/settingsSchema.ts's, and
 // test/script/bundle-no-zod.test.ts holds the bundle to that.
 const scriptNodes: readonly DefinedNode<any>[] = [
@@ -25,6 +28,7 @@ const scriptNodes: readonly DefinedNode<any>[] = [
   smsSyncNode,
   lsdjSyncNode,
   controllerSessionNode,
+  lsdjSerialOutNode,
 ];
 
 registerScriptNodes(scriptNodes);

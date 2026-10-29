@@ -2,9 +2,9 @@
 // rp.mgb.midi a system) off the RT thread via the deterministic renderAudio pull path under a seeded mGB + heavy-MIDI
 // workload, and reports what the script host's audio runtime (the bare QuickJS runtime they run in) allocates PER
 // BLOCK: the refcount-churn signal (QuickJS frees acyclic garbage immediately, so "GC" is rare; malloc/free churn
-// per block is the real cost). Then a window each on a real LSDj, playing, whose rp.lsdj.sync decodes its serial out
-// to host MIDI, in master sync and in MI.OUT: those need the fixture tree's LSDj ROMs (RETROPLUG_RESOURCES_DIR), and
-// without them the case SKIPs there, after the mGB window has been held to its zero.
+// per block is the real cost). Then a window each on a real LSDj, playing, whose rp.lsdj.serial-out decodes its serial
+// out to host MIDI, in master sync and in MI.OUT: those need the fixture tree's LSDj ROMs (RETROPLUG_RESOURCES_DIR),
+// and without them the case SKIPs there, after the mGB window has been held to its zero.
 //
 // The allocation counters exist only in a RETROPLUG_PROFILE host (built by `pnpm profile` /
 // tools/run-profile.sh). Under the default host the counters report enabled:false and this
@@ -300,12 +300,12 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
   expectWindowLive();
 
   // --- an LSDj decoding its serial out to host MIDI, playing ------------------------------------------------------
-  // rp.lsdj.sync's two MIDI-out modes run their decoders only on what a playing LSDj clocks out, so each has a window
-  // of its own on a real LSDj, the mGB systems gone: master sync on a stock LSDj in SYNC=LSDj (a byte a 24-PPQN tick,
-  // which the core captures in `listen`, as lsdj-mastersync.test.ts runs it), and MI.OUT on an Arduinoboy build in
-  // SYNC=MI.OUT (its clock and the N commands' NoteOns, captured in `drive`, as lsdj-midiout.test.ts runs it). Each
-  // window is held to the mGB window's zero, the clocks its decoder sent say LSDj played through it, and the same proof
-  // as above says the window counted.
+  // The lsdj-sync role's two MIDI-out modes run their decoders, in rp.lsdj.serial-out after the Game Boy, only on what
+  // a playing LSDj clocks out, so each has a window of its own on a real LSDj, the mGB systems gone: master sync on a
+  // stock LSDj in SYNC=LSDj (a byte a 24-PPQN tick, which the core captures in `listen`, as lsdj-mastersync.test.ts
+  // runs it), and MI.OUT on an Arduinoboy build in SYNC=MI.OUT (its clock and the N commands' NoteOns, captured in
+  // `drive`, as lsdj-midiout.test.ts runs it). Each window is held to the mGB window's zero, the clocks its decoder
+  // sent say LSDj played through it, and the same proof as above says the window counted.
   for (const id of ids) graph.remove(id);
   const be = createRealBackend();
   const lsdjBlocks = Math.min(blocks, 400);

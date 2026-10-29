@@ -5,8 +5,9 @@
 //   - arduinoboyDecodeSerialOut: the flag-gated framing in front of it — the raw captured bytes LSDj
 //     actually emits (each frame = 1 flag bit + 7 payload bits, MSB-first), decoded to the same MIDI.
 // Then master sync's decoder, arduinoboyMasterSyncBlock. Each decoder hands every message to its emit with its byte's
-// frame. The rp.lsdj.sync node that runs them off its Game Boy's serial out (modes 7 and 8) is
-// test/script/nodes/lsdj-sync.test.ts's.
+// frame, and adds no dependence on the host's block split of its own: one byte stream cut into any blocks sends the
+// same messages at the same absolute frames. The rp.lsdj.serial-out node that runs them off its Game Boy's serial out
+// (modes 7 and 8) is test/script/nodes/lsdj-serial-out.test.ts's.
 import { test, expect } from "../../testing/harness";
 import {
   arduinoboyDecodeByte,
@@ -189,36 +190,40 @@ const cycle = (sizes: number[]) => (total: number): number[] => {
 const FL_RAGGED = [33, 1, 222, 1, 7, 4096, 2];
 const FL_BUFFER = [256, 33, 1, 222, 255, 1, 1, 255, 7, 249];
 
-/** Decode `timeline` in the blocks `split` cuts `total` frames into, fed as the feedback wire feeds the decoder: a
- *  block's bytes reach it with the next block, at their frames in the block that produced them. Each message with the
- *  index of the block it went out in and the frame the decoder gave it, a frame of the block before. */
-function masterSync(
-  timeline: Timeline,
-  split: (total: number) => number[],
-  total: number,
-  rate = RATE,
-): { block: number; frame: number; data: number[] }[] {
-  const out: { block: number; frame: number; data: number[] }[] = [];
+/** A message as a split decoder sent it: the block it went out in, its frame there, that frame counted from the
+ *  timeline's start, and whether the frame lies inside its block. */
+interface Sent {
+  block: number;
+  frame: number;
+  at: number;
+  inside: boolean;
+  data: number[];
+}
+
+/** Decode `timeline` in the blocks `split` cuts `total` frames into, each block's bytes handed to the decoder in that
+ *  block at their frames in it, as rp.lsdj.serial-out reads its Game Boy's serial out after the system. */
+function masterSync(timeline: Timeline, split: (total: number) => number[], total: number, rate = RATE): Sent[] {
+  const out: Sent[] = [];
   const state: MasterSyncState = {};
   let start = 0;
   let next = 0;
-  let bytes: number[] = [];
-  let frames: number[] = [];
   split(total).forEach((n, block) => {
-    arduinoboyMasterSyncBlock(bytes, frames, { frames: n, sampleRate: rate }, state, (frame, len, b0, b1, b2) =>
-      out.push({ block, frame, data: [b0, b1, b2].slice(0, len) }),
-    );
-    bytes = [];
-    frames = [];
+    const bytes: number[] = [];
+    const frames: number[] = [];
     for (; next < timeline.length && timeline[next][0] < start + n; next++) {
       frames.push(timeline[next][0] - start);
       bytes.push(timeline[next][1]);
     }
+    arduinoboyMasterSyncBlock(bytes, frames, { frames: n, sampleRate: rate }, state, (frame, len, b0, b1, b2) =>
+      out.push({ block, frame, at: start + frame, inside: frame >= 0 && frame < n, data: [b0, b1, b2].slice(0, len) }),
+    );
     start += n;
   });
   return out;
 }
 const sent = (out: { data: number[] }[]): number[][] => out.map((m) => m.data);
+/** Each message at its absolute frame. */
+const timed = (out: Sent[]): [number, number[]][] => out.map((m) => [m.at, m.data]);
 
 test("MasterSync: every byte is a clock, and the first opens the run with the song-row NoteOn and 0xFA", () => {
   expect(sent(masterSync(clocks(100, 3, 5), even(1024), 4096))).toEqual([row(5), START, CLOCK, CLOCK, CLOCK]);
@@ -235,11 +240,11 @@ test("MasterSync: before any byte, and while stopped, nothing is sent", () => {
   expect(sent(masterSync([[100, 9]], even(1024), 40000))).toEqual([row(9), START, CLOCK, STOP]);
 });
 
-test("MasterSync: the 0xFC goes out in the first block that starts more than 200 ms after the last byte", () => {
-  const stopBlock = (out: { block: number; data: number[] }[]) => out.find((m) => m.data[0] === 0xfc)?.block;
-  // A byte at frame 100: the stop is due after frame 100 + STOP_FRAMES = 8920.
-  expect(stopBlock(masterSync([[100, 9]], even(1024), 20000))).toBe(Math.floor((100 + STOP_FRAMES) / 1024) + 1); // 9216
-  expect(stopBlock(masterSync([[100, 9]], even(1), 10000))).toBe(100 + STOP_FRAMES + 1);
+test("MasterSync: the 0xFC goes at the run's mark, the first frame its silence passes 200 ms, in the block that holds it", () => {
+  // A byte at frame 100: the silence passes STOP_FRAMES after frame 100 + STOP_FRAMES = 8920, so the mark is 8921.
+  const stopOf = (out: Sent[]) => out.find((m) => m.data[0] === 0xfc);
+  expect(stopOf(masterSync([[100, 9]], even(1024), 20000))).toEqual({ block: 8, frame: 729, at: 8921, inside: true, data: STOP });
+  expect(stopOf(masterSync([[100, 9]], even(1), 10000))).toEqual({ block: 8921, frame: 0, at: 8921, inside: true, data: STOP });
 });
 
 test("MasterSync: the silence is time, so 10000 frames is a stop at 44.1 kHz and not at 96 kHz", () => {
@@ -257,49 +262,205 @@ test("MasterSync: one timeline decodes to the same messages however the host cut
 });
 
 test("MasterSync: a silence that ends inside one call still stops the run, however the host cuts its blocks", () => {
-  // The silence before frame 18100 passes 200 ms at frame 16920, and no 4096- or 8192-frame block starts between
-  // that and the byte that ends it, so the byte reaches the decoder in the same call as the silence's end.
+  // The silence before frame 18100 passes 200 ms at frame 16921, and no 4096- or 8192-frame block ends between that
+  // and the byte that ends it, so the byte reaches the decoder in the same call as the silence's mark.
   const timeline: Timeline = [[100, 1], [8100, 1], [18100, 2], [40000, 3]];
   const expected = [row(1), START, CLOCK, CLOCK, STOP, row(2), START, CLOCK, STOP, row(3), START, CLOCK, STOP];
   for (const split of [even(1), cycle(FL_RAGGED), cycle(FL_BUFFER), even(1024), even(4096), even(8192)])
     expect(sent(masterSync(timeline, split, 60000))).toEqual(expected);
 });
 
-test("MasterSync: the checks before a byte and at a block start share the stop's boundary: exactly 200 ms is no stop, a frame more is", () => {
-  // The second byte comes exactly STOP_FRAMES after the first, the third STOP_FRAMES + 1 after the second. In 1-frame
-  // blocks a block starts at each mark, so the block-start check meets both; in longer ones the check before each
-  // byte does.
+test("MasterSync: the checks before a byte and at a block's end share the stop's boundary: exactly 200 ms is no stop, a frame more is", () => {
+  // The second byte comes exactly STOP_FRAMES after the first, before its mark; the third STOP_FRAMES + 1 after the
+  // second, on its mark. So the check before the third sends the stop, at the third's frame, wherever the blocks are
+  // cut: a block that ends on the mark carries it to the next, whose first frame the third byte is.
   const timeline: Timeline = [[100, 1], [100 + STOP_FRAMES, 1], [100 + 2 * STOP_FRAMES + 1, 2]];
   const expected = [row(1), START, CLOCK, CLOCK, STOP, row(2), START, CLOCK, STOP];
-  for (const split of [even(1), cycle(FL_RAGGED), cycle(FL_BUFFER), even(1024), even(4096), even(8192)])
-    expect(sent(masterSync(timeline, split, 40000))).toEqual(expected);
+  for (const split of [even(1), cycle(FL_RAGGED), cycle(FL_BUFFER), even(1024), even(4096), even(8192)]) {
+    const out = masterSync(timeline, split, 40000);
+    expect(sent(out)).toEqual(expected);
+    expect(out.filter((m) => m.data[0] === 0xfc).map((m) => m.at)).toEqual([100 + 2 * STOP_FRAMES + 1, 100 + 3 * STOP_FRAMES + 2]);
+  }
 });
 
-test("MasterSync: each byte's messages go at its frame, the run's NoteOn and 0xFA at its first byte's", () => {
-  // Bytes at frames 100, 960 and 1820 of 1024-frame blocks: each reaches the decoder in the block after its own.
+test("MasterSync: each byte's messages go at its frame, in its own block, the run's NoteOn and 0xFA at its first byte's", () => {
+  // Bytes at frames 100, 960 and 1820 of 1024-frame blocks: each reaches the decoder in the block that captured it.
   const out = masterSync([[100, 5], [960, 5], [1820, 5]], even(1024), 4096);
-  expect(out).toEqual([
-    { block: 1, frame: 100, data: row(5) },
-    { block: 1, frame: 100, data: START },
-    { block: 1, frame: 100, data: CLOCK },
-    { block: 1, frame: 960, data: CLOCK },
-    { block: 2, frame: 796, data: CLOCK },
+  expect(out.slice(0, 5).map(({ block, frame, data }) => ({ block, frame, data }))).toEqual([
+    { block: 0, frame: 100, data: row(5) },
+    { block: 0, frame: 100, data: START },
+    { block: 0, frame: 100, data: CLOCK },
+    { block: 0, frame: 960, data: CLOCK },
+    { block: 1, frame: 796, data: CLOCK },
   ]);
 });
 
-test("MasterSync: a stop found before a byte goes at that byte's frame, and one found at a block start at that start", () => {
-  // The silence after frame 100 passes 200 ms inside the 16384-frame block, so the byte at 16000 that ends it finds
-  // the stop, at its own frame, before its run's NoteOn. The second run's silence is found at a 16384-frame block's
-  // start: frame 16384 of the block before, its bytes' block.
-  const out = masterSync([[100, 1], [16000, 2]], even(16384), 49152);
-  expect(out).toEqual([
-    { block: 1, frame: 100, data: row(1) },
-    { block: 1, frame: 100, data: START },
-    { block: 1, frame: 100, data: CLOCK },
-    { block: 1, frame: 16000, data: STOP },
-    { block: 1, frame: 16000, data: row(2) },
-    { block: 1, frame: 16000, data: START },
-    { block: 1, frame: 16000, data: CLOCK },
-    { block: 2, frame: 16384, data: STOP },
+test("MasterSync: a run stops at its mark mid-block", () => {
+  // One byte at frame 100 of a 16384-frame block: its mark, 8921, is inside the same block.
+  expect(masterSync([[100, 1]], even(16384), 16384)).toEqual([
+    { block: 0, frame: 100, at: 100, inside: true, data: row(1) },
+    { block: 0, frame: 100, at: 100, inside: true, data: START },
+    { block: 0, frame: 100, at: 100, inside: true, data: CLOCK },
+    { block: 0, frame: 8921, at: 8921, inside: true, data: STOP },
+  ]);
+});
+
+test("MasterSync: a mark at a block's length goes at the next block's first frame", () => {
+  // A byte at frame 395: its mark is 9216, block 8's length past its start, so block 8 carries it and block 9 sends it
+  // at its frame 0, with no byte there to send it before.
+  const out = masterSync([[395, 1]], even(1024), 12288);
+  expect(out[out.length - 1]).toEqual({ block: 9, frame: 0, at: 9216, inside: true, data: STOP });
+  expect(out.length).toBe(4);
+});
+
+test("MasterSync: a run's mark is carried across a block with no bytes", () => {
+  // A byte at frame 100 of a 4096-frame block: block 1 holds no byte and not the mark, which it carries; block 2
+  // sends it at 8921 - 8192.
+  const out = masterSync([[100, 1]], even(4096), 16384);
+  expect(out.map(({ block, frame, data }) => [block, frame, data])).toEqual([
+    [0, 100, row(1)],
+    [0, 100, START],
+    [0, 100, CLOCK],
+    [2, 729, STOP],
+  ]);
+});
+
+test("MasterSync: a restart in the block of its stop sends the 0xFC at the mark, then the NoteOn, 0xFA and 0xF8 at the byte", () => {
+  // The silence after frame 100 passes 200 ms at 8921, inside the 16384-frame block whose byte at 16000 ends it: the
+  // check before that byte sends the stop at the mark, and the byte opens a fresh run at its own frame. That run's
+  // mark, 24821, is past the block, so the next block sends it, at 24821 - 16384.
+  expect(masterSync([[100, 1], [16000, 2]], even(16384), 49152).map(({ block, frame, data }) => [block, frame, data])).toEqual([
+    [0, 100, row(1)],
+    [0, 100, START],
+    [0, 100, CLOCK],
+    [0, 8921, STOP],
+    [0, 16000, row(2)],
+    [0, 16000, START],
+    [0, 16000, CLOCK],
+    [1, 8437, STOP],
+  ]);
+});
+
+// --- the decoders add no split dependence of their own ----------------------------------------------------------
+//
+// A core's byte timing moves with the host's block split (test-native/lsdj-mastersync.test.ts says so), and that is the
+// core's. What the decoders are held to here is that they add none: one byte stream at absolute frames, cut into
+// 1-frame blocks, FL-style ragged ones (some longer than a run's gaps, some shorter), a 256-frame buffer split at
+// automation points and 1024-frame blocks, sends the same messages at the same absolute frames, each inside the block
+// it goes out in.
+
+/** Block lists the property cases cut a stream into: ragged lengths below and above a clock's 860-frame gap and the
+ *  stop's 8820, among them. */
+const SPLITS: [string, (total: number) => number[]][] = [
+  ["1", even(1)],
+  ["fl", cycle(FL_RAGGED)],
+  ["fl256", cycle(FL_BUFFER)],
+  ["ragged", cycle([5000, 13, 777, 9000, 1, 861, 12000, 3])],
+  ["1024", even(1024)],
+];
+
+test("MasterSync: one byte stream sends the same messages at the same absolute frames however the host cuts its blocks", () => {
+  // Runs, silences past 200 ms and restarts: 80 clocks; a second's silence; 40; a lone byte; a restart on its mark
+  // exactly; a gap of exactly 200 ms inside a run; and a run left open at the end, its mark past the stream.
+  const last1 = 5000 + 79 * 860;
+  const lone = 170000;
+  const onMark = lone + STOP_FRAMES + 1;
+  const timeline: Timeline = [
+    ...clocks(5000, 80),
+    ...clocks(120000, 40, 3),
+    [lone, 4],
+    ...clocks(onMark, 5, 6),
+    [onMark + 4 * 860 + STOP_FRAMES, 6],
+    ...clocks(215000, 3, 7),
+  ];
+  const total = 220000;
+  const runs = SPLITS.map(([name, split]) => {
+    const out = masterSync(timeline, split, total);
+    expect(out.every((m) => m.inside), `${name}: every frame inside its block`).toBe(true);
+    return { name, out: timed(out) };
+  });
+  for (const { name, out } of runs) expect(out, name).toEqual(runs[0].out);
+  // And that one list is the rule's: each byte's messages at its frame, each stop at its run's mark.
+  const at = (frame: number, data: number[]): [number, number[]] => [frame, data];
+  const run = (t: Timeline): [number, number[]][] => t.flatMap(([f, b], i) => (i === 0 ? [at(f, row(b)), at(f, START), at(f, CLOCK)] : [at(f, CLOCK)]));
+  const stopAfter = (frame: number) => at(frame + STOP_FRAMES + 1, STOP);
+  const second = clocks(120000, 40, 3);
+  const fourth: Timeline = [...clocks(onMark, 5, 6), [onMark + 4 * 860 + STOP_FRAMES, 6]];
+  expect(runs[0].out).toEqual([
+    ...run(clocks(5000, 80)),
+    stopAfter(last1),
+    ...run(second),
+    stopAfter(second[second.length - 1][0]),
+    ...run([[lone, 4]]),
+    stopAfter(lone),
+    ...run(fourth),
+    stopAfter(fourth[fourth.length - 1][0]),
+    ...run(clocks(215000, 3, 7)),
+  ]);
+});
+
+/** An MI.OUT bit stream: each command a flag bit and its 7 payload bits, `idle` zero bits before it, MSB-first. */
+function miOutBits(commands: [number, number][]): number[] {
+  const bits: number[] = [];
+  for (const [idle, cmd] of commands) {
+    for (let k = 0; k < idle; k++) bits.push(0);
+    bits.push(1);
+    for (let k = 6; k >= 0; k--) bits.push((cmd >> k) & 1);
+  }
+  while (bits.length % 8 !== 0) bits.push(0);
+  return bits;
+}
+
+test("MI.OUT: one captured stream sends the same messages at the same absolute frames however the host cuts its blocks", () => {
+  // A byte every 8 frames from frame 3 (MI.OUT's port, a bit a frame), the commands off the byte grid by the idle bits
+  // before them, so most straddle two captured bytes and, cut into short blocks, two blocks: clocks, START, a NoteOn
+  // and its NoteOff, a CC, a program change, STOP.
+  const bits = miOutBits([
+    [0, 0x7d], [3, 0x7f], [0, 0x70], [1, 60], [5, 0x7f], [2, 0x74], [0, 64], [7, 0x70], [1, 0],
+    [0, 0x78], [4, 9], [1, 0x7f], [0, 0x7e], [9, 0x7f],
+  ]);
+  const bytes: number[] = [];
+  for (let i = 0; i < bits.length; i += 8) bytes.push(bits.slice(i, i + 8).reduce((v, b) => (v << 1) | b, 0));
+  const frameOf = (i: number) => 3 + 8 * i;
+  const total = frameOf(bytes.length) + 100;
+  const runs = SPLITS.map(([name, split]) => {
+    const out: [number, number[]][] = [];
+    const state: ArduinoboyState = {};
+    let start = 0;
+    let next = 0;
+    let inside = true;
+    for (const n of split(total)) {
+      const blockBytes: number[] = [];
+      const frames: number[] = [];
+      for (; next < bytes.length && frameOf(next) < start + n; next++) {
+        blockBytes.push(bytes[next]);
+        frames.push(frameOf(next) - start);
+      }
+      arduinoboyDecodeSerialOut(blockBytes, frames, state, (frame, len, b0, b1, b2) => {
+        inside = inside && frame >= 0 && frame < n;
+        out.push([start + frame, [b0, b1, b2].slice(0, len)]);
+      });
+      start += n;
+    }
+    expect(inside, `${name}: every frame inside its block`).toBe(true);
+    return { name, out };
+  });
+  for (const { name, out } of runs) expect(out, name).toEqual(runs[0].out);
+  // Each message at the frame of the captured byte holding its last bit.
+  const ends: number[] = [];
+  let bit = 0;
+  for (const [idle] of [[0], [3], [0], [1], [5], [2], [0], [7], [1], [0], [4], [1], [0], [9]]) ends.push((bit += idle + 8) - 1);
+  const atBit = (k: number) => frameOf(Math.floor(ends[k] / 8));
+  expect(runs[0].out).toEqual([
+    [atBit(0), [0xfa]],
+    [atBit(1), [0xf8]],
+    [atBit(3), [0x90, 60, 0x7f]],
+    [atBit(4), [0xf8]],
+    [atBit(6), [0xb0, 4, 64]],
+    [atBit(8), [0x80, 0, 0]],
+    [atBit(10), [0xc0, 9]],
+    [atBit(11), [0xf8]],
+    [atBit(12), [0xfc]],
+    [atBit(13), [0xf8]],
   ]);
 });

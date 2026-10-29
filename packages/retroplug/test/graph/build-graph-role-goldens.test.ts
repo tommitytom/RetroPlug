@@ -19,12 +19,12 @@
 // packages/native/test/engine-graph/BuildGraphGoldens.test.cpp plans every document of this file on the engine with
 // real cores, beside build-graph.json's, and runs it twenty blocks with the transport playing, host MIDI and a control
 // surface's press staged, so CI plans buildGraph's per-role wiring on the real engine: each protocol node type against
-// the system node it feeds, the routing in each mode, a controller each way, the MI.OUT feedback wire and the N8 cart
-// mirror. Every document must plan, and its blocks fault no node, throw in no script node and drop no message.
+// the system node it feeds, the routing in each mode, a controller each way, LSDj's decoder after its Game Boy and the
+// N8 cart mirror. Every document must plan, and its blocks fault no node, throw in no script node and drop no message.
 import { test, expect } from "../../testing/harness";
 import { canonicalJson } from "../../src/graph/canonicalJson";
 import { buildGraph, type GraphModel, type GraphSystem, type HostShape, type SystemNodeType, type TapArm } from "../../src/graph/buildGraph";
-import { protocolPipeline } from "../../src/graph/protocolNodes";
+import { outNodeOf, protocolPipeline } from "../../src/graph/protocolNodes";
 import type { GraphController } from "../../src/graph/controller";
 import type { RoleInstance } from "../../src/systemRoles";
 import { MIDI_ROUTING_VALUES, type ControllerTarget } from "../../src/settingsEnums";
@@ -95,8 +95,8 @@ const model = (systems: GraphSystem[], over: Partial<GraphModel> = {}): GraphMod
 });
 
 // Every protocol node type on the system type it is placed for: mGB and an LSDj decoding MI.OUT on Game Boys (the
-// LSDj's serial out fed back to it, its host MIDI out an input of rp.host.midi-out), the N8 and risa on a NES (which
-// the cart mirrors), smsggdj on an SMS.
+// LSDj's serial out read by its decoder after the systems, whose host MIDI out is an input of rp.host.midi-out), the
+// N8 and risa on a NES (which the cart mirrors), smsggdj on an SMS.
 const everyNode = (): GraphSystem[] => [gb(1, [MGB]), gb(2, [lsdj("midiOut")]), nes(3, [N8, RISA]), sms(4, [smsSync("sms")])];
 
 const CASES: Case[] = [
@@ -123,8 +123,8 @@ const CASES: Case[] = [
   },
   // No system to resolve "the first" to: the controller's host MIDI is tagged 4294967295, the node's system 0.
   { name: "controller/no-systems", model: model([], { controller: launchpad("system", 0) }) },
-  // The protocol nodes stay in slot order while a link group moves the systems' own order; MI.OUT comes back to each
-  // linked LSDj.
+  // The protocol nodes stay in slot order while a link group moves the systems' own order, before the systems and
+  // after them: the linked LSDj in MI.OUT has its decoder after every system.
   {
     name: "audio/linked-lsdj/twoPerInstance/multi4",
     model: model([gb(1, [lsdj("midiSync")], 1), gb(2, [MGB]), gb(3, [lsdj("midiOut")], 1)], {
@@ -269,18 +269,25 @@ test("the goldens are what buildGraph builds for every case, and nothing else", 
 });
 
 test("every protocol node type, both controller targets and every routing mode are planned", () => {
-  // What makes the file the CI check of buildGraph's per-role wiring on the engine: each of these is in some case.
+  // What makes the file the CI check of buildGraph's per-role wiring on the engine: each of these is in some case, the
+  // node a role's type places after its system (outNodeOf) among them.
   const types = new Set<string>();
   const targets = new Set<string>();
   const modes = new Set<string>();
   for (const c of CASES) {
-    for (const s of c.model.systems) for (const r of s.pipeline) types.add(`${r.node} on ${s.type}`);
+    for (const s of c.model.systems)
+      for (const r of s.pipeline) {
+        types.add(`${r.node} on ${s.type}`);
+        const out = outNodeOf(r.node);
+        if (out !== undefined) types.add(`${out} on ${s.type}`);
+      }
     if (c.model.controller) targets.add(c.model.controller.target);
     if (c.model.midiRouting) modes.add(c.model.midiRouting);
   }
   for (const t of [
     "rp.mgb.midi on rp.sameboy.gb",
     "rp.lsdj.sync on rp.sameboy.gb",
+    "rp.lsdj.serial-out on rp.sameboy.gb",
     "rp.n8.midi-to-fifo on rp.mesen.nes",
     "rp.risa.sync on rp.mesen.nes",
     "rp.sms.sync on rp.mesen.sms",

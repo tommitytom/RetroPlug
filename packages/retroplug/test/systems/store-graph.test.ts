@@ -81,6 +81,11 @@ function refuseNext(be: MockBackend, n: number): void {
 // `v` as a document carries it: canonical JSON, its keys sorted.
 const canon = (v: unknown): unknown => JSON.parse(canonicalJson(v));
 
+// The nodes a role of `kind` on Game Boy `id` is placed as, in document order: lsdj-sync's two (its rp.lsdj.sync, and
+// its serial-out decoder after the systems), any other's one.
+const roleNodes = (id: number, kind: string): string[] =>
+  kind === "lsdj-sync" ? [`sys-${id}/lsdj-sync`, `sys-${id}/lsdj-sync/out`] : [`sys-${id}/${kind}`];
+
 // Whether the last document sent wires `from` into `to` (not over a feedback wire).
 const wired = (be: MockBackend, from: string, to: string): boolean =>
   be.lastDocument()!.wires.some((w) => w.from === from && w.to === to && !w.feedback);
@@ -371,12 +376,11 @@ test("each document places the routing and a protocol node for each role that ha
   const roles = sys.view().map((v) => v.roles.map((r) => r.kind));
   expect(roles[0].includes("sameboy")).toBe(true);
   expect(roles[0].includes("lsdj-assets")).toBe(true);
-  expect(be.protocolNodes(a)).toEqual([`sys-${a}/lsdj-sync`]);
+  expect(be.protocolNodes(a)).toEqual(roleNodes(a, "lsdj-sync"));
   expect(be.protocolNodes(c)).toEqual([`sys-${c}/nes-n8-midi`]);
-  // The Game Boy's serial out comes back into its lsdj-sync node, a block late.
-  expect(be.lastDocument()!.wires.filter((w) => w.feedback)).toEqual(
-    canon([{ from: `sys-${a}.serialOut`, to: `sys-${a}/lsdj-sync.serialOut`, feedback: true }]),
-  );
+  // The Game Boy's serial out goes forward into its lsdj-sync role's decoder, in the block the core captured it.
+  expect(be.lastDocument()!.wires.filter((w) => w.feedback)).toEqual([]);
+  expect(wired(be, `sys-${a}.serialOut`, `sys-${a}/lsdj-sync/out.serialOut`)).toBe(true);
 });
 
 test("an edit to a role with a protocol node publishes its settings, without a re-arm; the same edit again sends nothing", () => {
@@ -481,7 +485,7 @@ test("a systems store without a registry places the same protocol nodes, and an 
     romPath: "/roms/a.gb",
     roles: [{ kind: "sameboy", config: {} }, { kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiSync } }],
   })!;
-  expect(be.protocolNodes(id)).toEqual([`sys-${id}/lsdj-sync`]);
+  expect(be.protocolNodes(id)).toEqual(roleNodes(id, "lsdj-sync"));
   expect(be.graphNode(`sys-${id}/lsdj-sync`)?.settings).toEqual({ mode: LsdjSyncMode.MidiSync });
   // A store on its own routes no MIDI and runs no controller.
   expect(be.graphNode("routing")).toBe(undefined);
@@ -642,7 +646,7 @@ test("of two roles whose nodes write serialIn, a loaded system places the one it
     // The role the ROM calls for goes ahead of the stale one, which is the order a save then writes.
     const kinds = sys.view().find((v) => v.id === id)!.roles.map((r) => r.kind);
     expect(kinds.slice(0, 3)).toEqual(["sameboy", placed, left]);
-    expect(be.protocolNodes(id)).toEqual([`sys-${id}/${placed}`]);
+    expect(be.protocolNodes(id)).toEqual(roleNodes(id, placed));
     const serialIn = be.lastDocument()!.wires.filter((w) => w.to === `sys-${id}.serialIn`);
     expect(serialIn.map((w) => w.from)).toEqual([`sys-${id}/${placed}.serialIn`]);
     expect(refusals(be.lastDocument()!)).toEqual([]);
@@ -650,7 +654,7 @@ test("of two roles whose nodes write serialIn, a loaded system places the one it
     // An edit to the role left out leaves it out, and says nothing more.
     const again = warned(() => sys.setRoleConfig(id, left, {}));
     expect(again.result).toBe(true);
-    expect(be.protocolNodes(id)).toEqual([`sys-${id}/${placed}`]);
+    expect(be.protocolNodes(id)).toEqual(roleNodes(id, placed));
     expect(again.warnings).toEqual([]);
     sys.removeSystem(id);
   }
@@ -685,13 +689,13 @@ test("a collision's outcome survives a save and a load: the ROM's role first and
   };
   const first = settle("/proj/collide.rplg");
   expect(first.kinds.slice(0, 3)).toEqual(["sameboy", "lsdj-sync", "mgb"]); // moved ahead of the stale role
-  expect(first.placed).toEqual([`sys-${first.id}/lsdj-sync`]);
+  expect(first.placed).toEqual(roleNodes(first.id, "lsdj-sync"));
   expect(first.warnings.length).toBe(1);
   expect(be.graphNode(`sys-${first.id}/lsdj-sync`)?.settings).toEqual(canon({ mode: LsdjSyncMode.MidiMap, tempoDivisor: 1, autoStart: false }));
   expect(p.save("/proj/saved.rplg")).toBe(true);
   const again = settle("/proj/saved.rplg");
   expect(again.kinds).toEqual(first.kinds);
-  expect(again.placed).toEqual([`sys-${again.id}/lsdj-sync`]);
+  expect(again.placed).toEqual(roleNodes(again.id, "lsdj-sync"));
   expect(again.warnings.length).toBe(1); // the stale role is still kept, so it is still noted
   expect(be.graphNode(`sys-${again.id}/lsdj-sync`)?.settings).toEqual(canon({ mode: LsdjSyncMode.MidiMap, tempoDivisor: 1, autoStart: false }));
 });
@@ -709,7 +713,7 @@ test("a suggested role that collides with nothing keeps its place in the stored 
   expect(result.kind).toBe("loaded");
   const [entry] = sys.systems();
   expect(sys.view().find((v) => v.id === entry.id)!.roles.map((r) => r.kind).slice(0, 3)).toEqual(["sameboy", "retired-x", "lsdj-sync"]);
-  expect(be.protocolNodes(entry.id)).toEqual([`sys-${entry.id}/lsdj-sync`]);
+  expect(be.protocolNodes(entry.id)).toEqual(roleNodes(entry.id, "lsdj-sync"));
   expect(warnings).toEqual([]);
 });
 
@@ -723,7 +727,7 @@ test("a kind stored twice: the first is placed and is the one an edit reaches, a
   const { result: id, warnings } = warned(() => sys.adopt({ romPath: "/roms/lsdj.gb", core: "sameboy", roles })!);
   expect(warnings.length).toBe(1);
   expect(warnings[0].includes("its second lsdj-sync role is not placed")).toBe(true);
-  expect(be.protocolNodes(id)).toEqual([`sys-${id}/lsdj-sync`]);
+  expect(be.protocolNodes(id)).toEqual(roleNodes(id, "lsdj-sync"));
   const settings = () => be.graphNode(`sys-${id}/lsdj-sync`)?.settings;
   expect(settings()).toEqual(canon({ mode: LsdjSyncMode.MidiSync, tempoDivisor: 2, autoStart: false }));
   // An edit reaches the first role, the placed one; the second keeps what it was stored with.

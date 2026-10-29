@@ -1,26 +1,28 @@
 // graph/protocolNodes.ts against the node modules it describes. buildGraph wires each protocol node by PROTOCOL_NODES'
-// port names (its routed MIDI's input, the system inputs it writes, its launches, MI.OUT and host MIDI out), and the
-// table spells them without importing the modules, so nothing but this file holds a name to the port its module
-// declares: a name the module does not have is a wire the planner refuses, and with it the whole document, for every
-// project with that role. So each entry's names are held to the ports of the node of that type, each in the direction
-// and kind buildGraph wires it, and the other way round, each port the module declares to an entry's name, since a port
-// the table does not name is one buildGraph never wires. And every type the table names, and every type a role kind is
-// placed as, is one the script-node bundle registers.
+// port names (its routed MIDI's input, the system inputs it writes, its launches, the Game Boy's serial out and host
+// MIDI out), and the table spells them without importing the modules, so nothing but this file holds a name to the port
+// its module declares: a name the module does not have is a wire the planner refuses, and with it the whole document,
+// for every project with that role. So each entry's names are held to the ports of the node of that type, each in the
+// direction and kind buildGraph wires it, and the other way round, each port the module declares to an entry's name,
+// since a port the table does not name is one buildGraph never wires. And every type the table names, every type a
+// role kind is placed as and every type an entry names as the node after its system (`out`) is one the script-node
+// bundle registers.
 import { test, expect } from "../../testing/harness";
 import type { DefinedNode } from "../../src/graph/defineNode";
 import type { PortDesc } from "../../src/graph/descriptor";
-import { PROTOCOL_NODES, ROLE_NODES, protocolNodeOf, type ProtocolNodeSpec } from "../../src/graph/protocolNodes";
+import { PROTOCOL_NODES, ROLE_NODES, outNodeOf, protocolNodeOf, type ProtocolNodeSpec, type ProtocolNodeType } from "../../src/graph/protocolNodes";
 import { SCRIPT_NODES_GLOBAL } from "../../src/script/register";
 import { mgbMidiNode } from "../../src/script/nodes/mgbMidi";
 import { n8MidiToFifoNode } from "../../src/script/nodes/n8MidiToFifo";
 import { risaSyncNode } from "../../src/script/nodes/risaSync";
 import { smsSyncNode } from "../../src/script/nodes/smsSync";
 import { lsdjSyncNode } from "../../src/script/nodes/lsdjSync";
+import { lsdjSerialOutNode } from "../../src/script/nodes/lsdjSerialOut";
 // The production bundle's entry point: importing it registers its node types on SCRIPT_NODES_GLOBAL, as it does in each
 // of the script host's contexts.
 import "../../src/script/bundle";
 
-const PROTOCOL_MODULES: readonly DefinedNode<any>[] = [mgbMidiNode, n8MidiToFifoNode, risaSyncNode, smsSyncNode, lsdjSyncNode];
+const PROTOCOL_MODULES: readonly DefinedNode<any>[] = [mgbMidiNode, n8MidiToFifoNode, risaSyncNode, smsSyncNode, lsdjSyncNode, lsdjSerialOutNode];
 const moduleOf = (type: string): DefinedNode<any> | undefined => PROTOCOL_MODULES.find((d) => d.id === type);
 
 const registered = (): string[] =>
@@ -52,13 +54,25 @@ test("every PROTOCOL_NODES entry names exactly the ports its node module declare
   }
 });
 
-test("every type a role kind is placed as, and every type PROTOCOL_NODES names, is one the script bundle registers", () => {
+test("every type a role kind is placed as, every type PROTOCOL_NODES names and every `out` is one the script bundle registers", () => {
   const types = new Set(registered());
   for (const [kind, type] of Object.entries(ROLE_NODES)) {
     expect(types.has(type), `${kind} -> ${type}`).toBe(true);
     expect(protocolNodeOf(kind)).toBe(type);
   }
   for (const type of Object.keys(PROTOCOL_NODES)) expect(types.has(type), type).toBe(true);
-  // Every protocol node type is some role's: a type no role is placed as would be dead in the bundle.
-  expect([...new Set(Object.values(ROLE_NODES))].sort()).toEqual(Object.keys(PROTOCOL_NODES).sort());
+  // Each `out` is an entry of the table, and one placed after its system: it writes no system input, so the one-writer
+  // rule, which protocolPipeline keeps for a role's first node, has nothing of it to keep.
+  const outs: string[] = [];
+  for (const [type, spec] of Object.entries(PROTOCOL_NODES) as [ProtocolNodeType, ProtocolNodeSpec][]) {
+    if (spec.out === undefined) continue;
+    expect(Object.prototype.hasOwnProperty.call(PROTOCOL_NODES, spec.out), `${type} -> ${spec.out}`).toBe(true);
+    expect(outNodeOf(type)).toBe(spec.out);
+    expect((PROTOCOL_NODES as Record<string, ProtocolNodeSpec>)[spec.out].writes, spec.out).toEqual([]);
+    outs.push(spec.out);
+  }
+  expect(outs).toEqual(["rp.lsdj.serial-out"]);
+  // Every protocol node type is some role's, before its system or after it: a type no role is placed as would be dead
+  // in the bundle.
+  expect([...new Set([...Object.values(ROLE_NODES), ...outs])].sort()).toEqual(Object.keys(PROTOCOL_NODES).sort());
 });

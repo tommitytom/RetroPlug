@@ -1,7 +1,9 @@
 // The protocol nodes a system's roles are placed as (docs/modular-graph-phase-b3b-design.md section 2): which role
 // kind has a script node, its type, and how buildGraph wires each type between the routing, the controller, its
-// system and the host. Pure and zod-free, so buildGraph, both stores and a DirectGraph read the same table, with or
-// without a role registry.
+// system and the host. A role's node is placed before the systems, feeding its system's inputs; its type may name one
+// more for the role, placed after the systems, which reads what its system sent in the same block (`out`: LSDj's
+// serial-out decoder, docs/lsdj-serial-out-design.md section 3). Pure and zod-free, so buildGraph, both stores and a
+// DirectGraph read the same table, with or without a role registry.
 //
 // The mapping lives here rather than on RoleType because the node types are code in the script-node bundle every
 // Engine embeds: which role kinds have one is a fact of that bundle, not of whichever registry a store was handed,
@@ -22,11 +24,15 @@ export interface ProtocolNodeSpec {
   writes: readonly SystemInput[];
   /** It takes the controller's launches on `launches` when its system is the controller's target. */
   launches?: true;
-  /** It takes its Game Boy's serial out on `serialOut`, a block late (a feedback wire): what MI.OUT and master sync
-   *  decode. */
+  /** It takes its Game Boy's serial out on `serialOut`, in the block the core captured it, over a forward wire from
+   *  the system, so it is placed after its system: what MI.OUT and master sync decode. */
   serialOut?: true;
   /** It sends host MIDI on `midiOut`, under its system's id. */
   midiOut?: true;
+  /** The type of the second node buildGraph places for the role, after the systems, as sys-<id>/<kind>/out with the
+   *  same settings: a PROTOCOL_NODES type that writes no system input, so the one-writer rule below is the first
+   *  node's alone. */
+  out?: string;
 }
 
 // Each type's id as its node module spells it (script/nodes/*.ts), and each port name as that module declares it, which
@@ -41,19 +47,30 @@ export interface ProtocolNodeSpec {
 // (protocolPipeline), where the kernel merged what both sent; the store orders a loaded system's roles so that, of two
 // that collide, the one its ROM calls for comes first (SystemsStore.suggestedFirst). A kind named twice (a hand-edited
 // file) is left out the same way, as its node id, sys-<id>/<kind>, is taken, which the planner refuses too.
+//
+// An lsdj-sync role is two nodes: rp.lsdj.sync, before its Game Boy, takes the host's side into the cart (the routed
+// MIDI and the launches in, serial in and buttons out), and rp.lsdj.serial-out, after it, the cart's side to the host
+// (the Game Boy's serial out in, host MIDI out).
 export const PROTOCOL_NODES = {
   "rp.mgb.midi": { midiIn: "midi", writes: ["serialIn"] },
   "rp.n8.midi-to-fifo": { midiIn: "midiIn", writes: ["midi"] },
   "rp.risa.sync": { midiIn: null, writes: ["bytes"] },
   "rp.sms.sync": { midiIn: null, writes: ["bytes"] },
-  "rp.lsdj.sync": { midiIn: "midi", writes: ["serialIn", "buttons"], launches: true, serialOut: true, midiOut: true },
+  "rp.lsdj.sync": { midiIn: "midi", writes: ["serialIn", "buttons"], launches: true, out: "rp.lsdj.serial-out" },
+  "rp.lsdj.serial-out": { midiIn: null, writes: [], serialOut: true, midiOut: true },
 } as const satisfies Record<string, ProtocolNodeSpec>;
 
 export type ProtocolNodeType = keyof typeof PROTOCOL_NODES;
 
-/** The role kinds that have a protocol node (dspRoles.ts registers them), each with the node type it is placed as.
- *  Exported for test/graph/protocol-nodes.test.ts, which holds each type to one the script bundle registers; everything
- *  else reads it through protocolNodeOf. */
+/** The type of the node placed after its system for a role whose node is of type `node`, or undefined for none. */
+export function outNodeOf(node: ProtocolNodeType): ProtocolNodeType | undefined {
+  // A PROTOCOL_NODES key, which test/graph/protocol-nodes.test.ts holds every `out` to.
+  return (PROTOCOL_NODES[node] as ProtocolNodeSpec).out as ProtocolNodeType | undefined;
+}
+
+/** The role kinds that have a protocol node (dspRoles.ts registers them), each with the node type it is placed as,
+ *  before its system (its `out`, after it, follows from the type). Exported for test/graph/protocol-nodes.test.ts,
+ *  which holds each type to one the script bundle registers; everything else reads it through protocolNodeOf. */
 export const ROLE_NODES: Readonly<Record<string, ProtocolNodeType>> = {
   mgb: "rp.mgb.midi",
   "nes-n8-midi": "rp.n8.midi-to-fifo",
@@ -63,9 +80,9 @@ export const ROLE_NODES: Readonly<Record<string, ProtocolNodeType>> = {
 };
 
 /** A role on a system as buildGraph places it: its node, `sys-<id>/<kind>`, of type `node`, with the role's config as
- *  its settings. A store with a registry that registers the kind hands it as the role's schema parsed it (an edit, a
- *  fresh system's defaults and a loaded project's alike); a DirectGraph, or a store with no registry, as it was
- *  given. */
+ *  its settings (and its type's `out`, when it names one, `sys-<id>/<kind>/out`, with the same). A store with a
+ *  registry that registers the kind hands it as the role's schema parsed it (an edit, a fresh system's defaults and a
+ *  loaded project's alike); a DirectGraph, or a store with no registry, as it was given. */
 export interface ProtocolRole {
   kind: string;
   node: ProtocolNodeType;
