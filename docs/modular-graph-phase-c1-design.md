@@ -378,9 +378,11 @@ bugs), belong with the authoring and package-split work.
     another pack's namespace holds;
   - reload: the pack's nodes run the new code, a node of another pack (and a built-in one) keeps its instance and its
     JS state across it, a type added by the reload places, and a refused reload (a type the document places removed,
-    settings the new code rejects) returns the planner's errors with the old code still running; generation numbers
-    only increase, refused loads counted, however soon a refused generation is freed; which generation of an id the
-    script host holds as current;
+    settings the new code rejects) returns the planner's errors with the old code still running, as does a reload of
+    another pack whose nodes the running document places beside one whose settings check fails (a chain left unsettled
+    in its pack's control runtime), until that node's pack is reloaded; generation numbers only increase, refused
+    loads counted, however soon a refused generation is freed; which generation of an id the script host holds as
+    current;
   - freeing: a retired generation's runtimes are freed once its records come back, quiescent and under an audio thread
     driving blocks, and a reload loop frees every generation it replaces; a pack the registry refuses is discarded with
     nothing in an audio-side count; a reload refused `busy` under an audio thread, after its replan made a fresh

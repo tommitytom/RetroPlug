@@ -1188,6 +1188,62 @@ globalThis.__rp_scriptNodes[0].parseSettings = function (raw) {
     CHECK(e.faultCount() == 0);
 }
 
+TEST_CASE("a placed node whose settings check fails refuses a reload of another pack the running document places "
+          "beside it, that pack's old code running on, until the failing node's own pack is reloaded",
+          "[script][packs][reload][jobs]") {
+    // test.stuck's node starts a chain of promise jobs that never ends, in its pack's control runtime, when its
+    // settings ask for one, so it places while they do not.
+    const std::string stuck =
+        toys(transposer("test.stuck.shift", 12) +
+             "(function () { var d = globalThis.__rp_scriptNodes, n = d[d.length - 1], plain = n.parseSettings;\n"
+             "  n.parseSettings = function (raw) { if (raw && raw.endless) " +
+             jobChain(0) + " return plain(raw); };\n})();\n");
+    const auto request = [](const std::string& settings) {
+        return document({docNode("midi-in", "rp.host.midi-in"), routing("sendToAll", "1,2"),
+                         docNode("stuck", "test.stuck.shift", settings), docNode("other", "test.other.shift"),
+                         midiOut("1,2")},
+                        {docWire("midi-in.midi", "routing.midiIn"), docWire("routing.sys-1", "stuck.in"),
+                         docWire("stuck.out", "midi-out.in1"), docWire("routing.sys-2", "other.in"),
+                         docWire("other.out", "midi-out.in2")});
+    };
+    const std::string unsettled =
+        "test.stuck.shift's settings check: its pack's promise jobs did not settle in the 256 a settings check runs";
+    Engine e(kRate);
+    load(e, "test.stuck", stuck);
+    load(e, "test.other", toys(transposer("test.other.shift", 1)));
+    place(e, request(""));
+    // test.stuck's node up an octave, test.other's up `by`.
+    const auto runs = [&](int by) {
+        CHECK(block(e, {{2, kNote}}) ==
+              sorted({{1, 2, {0x90, 72, 100}}, {2, 2, {0x90, static_cast<std::uint8_t>(60 + by), 100}}}));
+    };
+    runs(1);
+    // Asked for the chain: refused, the running plan running on, and the chain left queued in test.stuck's control
+    // runtime, which QuickJS cannot drop it from.
+    const auto endless = e.setGraph(request(R"({"endless":true})"));
+    CHECK_FALSE(endless.ok);
+    REQUIRE_FALSE(endless.errors.empty());
+    CHECK(endless.errors[0].code == "settings-invalid");
+    CHECK(endless.errors[0].nodeId == "stuck");
+    CHECK(endless.errors[0].message == unsettled);
+    runs(1);
+    // A reload of test.other plans the running document again, whose check of the placed test.stuck node, settings
+    // that start nothing, finds that chain unsettled: refused with that node's error, test.other's old code running on.
+    refusedReload(e, "test.other", toys(transposer("test.other.shift", 2)),
+                  "the running document does not plan with the reloaded pack: settings-invalid at stuck: " + unsettled,
+                  "settings-invalid", "stuck");
+    runs(1);
+    // test.stuck reloaded, its parseSettings starting no chain: its replan checks the node in the new generation's
+    // control runtime, and the runtime the chain lived in goes with the old one. Then test.other reloads.
+    load(e, "test.stuck", toys(transposer("test.stuck.shift", 12)));
+    runs(1);
+    load(e, "test.other", toys(transposer("test.other.shift", 2)));
+    runs(2);
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.stuck#2", "test.other#3"});
+    CHECK(e.scriptThrows() == 0);
+    CHECK(e.faultCount() == 0);
+}
+
 TEST_CASE("fifty reloads of a placed pack, blocks run between them, leave one generation, the instance count steady "
           "and the registry as it was",
           "[script][packs][reload]") {
