@@ -940,6 +940,37 @@ toy.define("test.odd.smoke", [{ id: "in", dir: "in", kind: "smoke" }], function 
     }
 }
 
+TEST_CASE("the script host says which generation of an id is current, which is what makes a load of it a reload: none "
+          "before its first load or for the built-in pack, a discarded generation never, a retired one no longer",
+          "[script][packs][reload]") {
+    using rp::host::test::compileToys;
+    rp::host::test::ScriptRig rig;
+    const auto bytecode = compileToys(toys(transposer("test.which.up", 1)));
+    const ScriptHost::Chunk chunk = bytecode;
+    std::string error;
+    CHECK(rig.scripts.currentPack("test.which") == nullptr);
+    CHECK(rig.scripts.currentPack("rp.script") == nullptr);
+    const rp_package* first = rig.scripts.loadPack("test.which", {&chunk, 1}, 0, &error);
+    INFO(error);
+    REQUIRE(first != nullptr);
+    CHECK(rig.scripts.currentPack("test.which") == first);
+    CHECK(rig.scripts.currentPack("test.whic") == nullptr);
+    CHECK(rig.scripts.currentPack("test.which.up") == nullptr);
+    // A generation that never stood leaves the one before it current.
+    const rp_package* refused = rig.scripts.loadPack("test.which", {&chunk, 1}, 0, &error);
+    REQUIRE(refused != nullptr);
+    rig.scripts.discardPack(refused);
+    CHECK(rig.scripts.currentPack("test.which") == first);
+    // One that replaced it is current in its place.
+    const rp_package* next = rig.scripts.loadPack("test.which", {&chunk, 1}, 0, &error);
+    REQUIRE(next != nullptr);
+    rig.scripts.retirePack(first);
+    CHECK(rig.scripts.currentPack("test.which") == next);
+    const auto packs = rig.scripts.packs();
+    REQUIRE(packs.size() == 2);
+    CHECK(packs[1].generation == 3);
+}
+
 namespace {
 
 // A node, `id`, that sends [tag, n] every block, n its block count: which code runs, and whether its instance, and so

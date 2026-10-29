@@ -180,7 +180,9 @@ ring (release on push, acquire on adopt) carries the whole built pack with it.
   A package the registry refuses (a descriptor the planner could not use, a type id another pack holds) frees the
   pack there and then: nothing placed it. Its audio runtime leaves what packs share first, as every freed pack's does
   (the destructor's included), so nothing freeing it frees is in the shared counters.
-- **Reload** (an id already loaded), all or nothing, as `setGraph` is:
+- **Reload** (an id already loaded: one the script host holds a current generation of, asked of it rather than of the
+  registry, where a package of another kind, a downloaded native one, could one day share the id), all or nothing, as
+  `setGraph` is:
   1. The new generation is built as a load builds, beside the old one. Its number is the id's count of loads, which
      every load of it advances, refused or not, so one number never names two sources, whenever a refused one is
      freed.

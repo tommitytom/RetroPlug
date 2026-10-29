@@ -1839,6 +1839,12 @@ void ScriptHost::discardPack(const rp_package* package) {
     if ((*at)->records == 0) freePack(at);
 }
 
+const rp_package* ScriptHost::currentPack(const std::string& id) const {
+    for (auto at = packs_.begin() + 1; at != packs_.end(); ++at)
+        if ((*at)->id == id && (*at)->standing == PackStanding::Current) return &(*at)->package;
+    return nullptr;
+}
+
 void ScriptHost::setPackFreed(PackFreed freed, void* user) {
     packFreed_ = freed;
     packFreedUser_ = user;

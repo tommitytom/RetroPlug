@@ -341,6 +341,12 @@ public:
     // plan made, whose releases the block thread has yet to hand back) by the call that finds the last one back. No
     // registry holds its entries, so the pack-freed callback is not told. Never the built-in pack.
     void discardPack(const rp_package* package);
+    // The package of the loaded pack `id`'s current generation (one loadPack returned that neither retirePack nor
+    // discardPack has been called on), or null when the host holds none, so whether a load of `id` would be its reload:
+    // the script host built every generation it names, where a registry holding a package `id` could hold one of
+    // another kind. Asked before a reload's loadPack, which makes the new generation current too until the caller
+    // settles which stands. Never the built-in pack's.
+    const rp_package* currentPack(const std::string& id) const;
     // Told, on the control thread, of each retired generation as it is freed, before its types go: `user` as given, and
     // its package, whose retired entries whatever holds them drops then (an Engine's registry:
     // NodeRegistry::dropRetired). Never by the destructor, which frees every pack it holds.

@@ -443,11 +443,14 @@ Engine::ScriptPackResult Engine::loadScriptPack(const std::string& id, const std
         return out;
     }
     const rp::host::ScriptHost::Chunk chunk{*bytecode};
+    // Whether this is a reload (docs/modular-graph-phase-c1-design.md section 5): the script host knows whether it holds
+    // a current generation of `id`, having built it, where the registry could one day hold a package of another kind
+    // under the same id (a downloaded native one), which a reload must not swap out. Asked before the load, which makes
+    // the new generation current too.
+    const rp_package* current = script.currentPack(id);
     const rp_package* package = script.loadPack(id, {&chunk, 1}, memoryLimit, &out.error);
     if (!package) return out;
-    // A pack id canLoadPack takes names no native package (those are the app's, "rp" and under), so one the registry
-    // holds is a pack loaded before, and this is its reload (docs/modular-graph-phase-c1-design.md section 5).
-    if (!registry.hasPackage(id)) {
+    if (!current) {
         // Checked here as every package is: a descriptor the planner could not use, or a type id the registry holds
         // already (one whose namespace holds another's: "a" and "a.b" can both name a type "a.b.c"). Refused, the pack
         // goes: nothing placed it.
@@ -469,6 +472,7 @@ Engine::ScriptPackResult Engine::loadScriptPack(const std::string& id, const std
             out.error = "the registry refused the pack's types: " + why;
             return out;
         }
+        assert(previous == current && "the registry holds the generation the script host holds as current");
         if (lastRequest_ && placesAny(lastRequest_->document, *previous)) {
             GraphRequest replan = *lastRequest_;
             replan.rearmTap = false;
