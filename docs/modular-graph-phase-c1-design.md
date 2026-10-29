@@ -154,9 +154,13 @@ thrown error's stack names), where the built-in bundle is compiled stripped (`tj
   (both runtimes' chunks, the jobs they queue, its definitions read), and so is a settings check (`parseSettings` and
   `layout` with their jobs, for `layout_for`, `prepare_settings` and `create`). A load it stops refuses the pack; a
   settings check it stops refuses the settings, saying so, so the planner refuses the document and the running plan
-  stands. A pack's control runtime keeps that handler for its life, its audio runtime until it joins. A load runs at
-  most 256 of the promise jobs each stretch of it queues (its top level in each runtime, each descriptor, what a loaded
-  pack's collection of its load's cycles queues), and one that leaves any is refused (section 6).
+  stands. A settings check runs at most 256 of the promise jobs pending in the pack's control runtime, and one that
+  leaves any refuses the settings the same way: QuickJS cannot drop them, so they wait there for the pack's next
+  settings check, which runs them with its own, and a chain that never settles refuses every settings check of the
+  pack, and so every document placing one of its nodes, until a reload frees that runtime. A pack's control runtime
+  keeps that handler for its life, its audio runtime until it joins. A load runs at most 256 of the promise jobs each
+  stretch of it queues (its top level in each runtime, each descriptor, what a loaded pack's collection of its load's
+  cycles queues), and one that leaves any is refused (section 6).
 
 The built-in pack's memory is today's; each loaded pack adds two runtimes, about 180 KB and twice what its code loads
 to (section 3). Each call into a node gains its checkpoint (a job-pending check when nothing is queued), and each
@@ -339,7 +343,9 @@ bugs), belong with the authoring and package-split work.
   - jobs: a node's failing `queueMicrotask` callback is its throw and faults it under `faultOnThrow`; a job the deadline
     stops counts as its call stopped; a never-settling chain faults its node after two cut-short checkpoints while a
     pack-mate is never charged; a built-in node's counts stay 0 throughout; a load whose promise jobs do not settle in
-    256 (its top level's in either runtime, a descriptor's, its collection's, the built-in pack's load too) refused;
+    256 (its top level's in either runtime, a descriptor's, its collection's, the built-in pack's load too) refused; a
+    settings check whose promise jobs do not settle in 256 refusing its document while the running plan runs on, and a
+    chain that never settles refusing every later check of its pack until the pack is reloaded;
   - memory: a node that allocates past its pack's limit faults, and nodes of other packs keep running; a top level, or
     a `parseSettings`, allocating past it in the control runtime refuses the load, or the document placing its node
     while the running plan runs on, saying so;
@@ -438,8 +444,11 @@ is written from it; the prototype is where the questions below are answered (eac
   put the app's namespace out of reach before anything is built.
 - **The control thread had no deadline**, so a pack whose top level, `parseSettings`, `layout` or descriptor never
   returns hung whichever thread loaded it or planned it (section 2). A call the control deadline stops leaves the
-  pack's control runtime usable; a control-side promise chain that never settles is stopped at its drain's deadline,
-  and the rest of it waits in that runtime for the pack's next settings check.
+  pack's control runtime usable. A settings check then ran at most 256 of its pack's control-side jobs (fewer, if its
+  deadline stopped one) and accepted the settings whatever it left, the rest waiting in that runtime for the pack's
+  next check, so a `parseSettings` or `layout` that started a chain that never settles taxed every later check of its
+  pack 256 of its jobs. A settings check whose jobs do not settle in the 256 it runs is refused now (section 4), as a
+  load is.
 - **A refused replan's generation cannot always be freed at once.** Under an audio thread the refused plan's fresh
   instances have their releases queued to the block thread, so the new generation is marked discarded and freed by the
   call that finds its last record back, with no pack-freed callback: the registry dropped its entries when it put the

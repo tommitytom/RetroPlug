@@ -811,7 +811,11 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   call (its chunks in both runtimes, the jobs they queue, its definitions read), and so is a settings
   check (`parseSettings` and `layout` with their jobs). A load the deadline stops refuses the pack; a
   settings check it stops refuses the settings, so the planner refuses the document and the running plan
-  stands. Every runtime's JS stack is held to 256 KiB, under a macOS secondary thread's 512 KiB.
+  stands. A settings check runs at most 256 of the promise jobs pending in its pack's control runtime, and
+  one that leaves any refuses the settings too, saying so; QuickJS cannot drop them, so they wait there for
+  the pack's next settings check, which runs them with its own, and a chain that never settles refuses
+  every settings check of the pack, and so every document placing one of its nodes, until a reload frees
+  that runtime. Every runtime's JS stack is held to 256 KiB, under a macOS secondary thread's 512 KiB.
 
 Every entry into a runtime re-anchors with `JS_UpdateStackTop` because the driving thread differs
 (the control thread on the pull path, the audio thread while running), and QuickJS's stack-overflow

@@ -625,7 +625,7 @@ struct ScriptHost::Glue {
         JS_UpdateStackTop(pack.controlRt);  // QuickJS guards the stack from where it was last entered: re-anchor here
         // Its parseSettings, its layout and the jobs they queue, as one call: one the deadline stops, or that fails on
         // an allocation the pack's memory limit refused, refuses the settings, saying so, so the planner refuses the
-        // document and the running plan stands.
+        // document and the running plan stands; and so does one whose jobs do not settle in kJobsPerCheckpoint.
         const ControlDeadline call(h);
         pack.controlHeap.refused = false;  // what this call is refused, from here on
         const std::string text = s && s->data && s->size ? std::string(s->data, s->size) : std::string("{}");
@@ -650,10 +650,17 @@ struct ScriptHost::Glue {
         JS_FreeValue(ctx, lay);
         JS_FreeValue(ctx, parsed);
         JS_FreeValue(ctx, raw);
-        drainControlJobs(pack);
+        // QuickJS cannot drop a pending job, so what does not settle stays queued in the pack's control runtime, where
+        // the pack's next settings check runs it with its own: a chain that never settles refuses every check of the
+        // pack, until a reload frees that runtime.
+        const bool settled = drainControlJobs(pack);
         if (ok && h.controlInterrupted_) {
             ok = false;
             copyError(err, stopped(h, t.id + "'s promise jobs"));
+        } else if (ok && !settled) {
+            ok = false;
+            copyError(err, t.id + "'s settings check: its pack's promise jobs did not settle in the " +
+                               std::to_string(kJobsPerCheckpoint) + " a settings check runs");
         }
         return ok;
     }

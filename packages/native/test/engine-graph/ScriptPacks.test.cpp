@@ -785,6 +785,61 @@ defs[defs.length - 2].parseSettings = function (raw) { )JS" + hog + R"JS( return
     CHECK(e.faultCount() == 0);
 }
 
+TEST_CASE("a settings check whose promise jobs do not settle in the 256 it runs refuses its document while the running "
+          "plan runs on, and a chain that never settles, staying queued, refuses every later check of its pack until "
+          "the pack is reloaded",
+          "[script][packs][jobs]") {
+    constexpr const char* kUnsettled =
+        "'s settings check: its pack's promise jobs did not settle in the 256 a settings check runs";
+    // Each a transposer whose parseSettings starts a chain of promise jobs, 256 long, 257, or one that never ends, and
+    // one that starts none.
+    const auto chained = [](const std::string& id, int by, int jobs) {
+        return transposer(id, by) + "(function () { var d = globalThis.__rp_scriptNodes, n = d[d.length - 1], plain = "
+                                    "n.parseSettings;\n  n.parseSettings = function (raw) { " +
+               jobChain(jobs) + " return plain(raw); };\n})();\n";
+    };
+    const std::string source = toys(chained("test.loose.long", 1, 256) + chained("test.loose.over", 2, 257) +
+                                    chained("test.loose.endless", 3, 0) + transposer("test.loose.fine", 12));
+    const auto refusedCheck = [](Engine& e, const std::string& type) {
+        const auto r = e.setGraph(routedTo(type));
+        CHECK_FALSE(r.ok);
+        REQUIRE(r.errors.size() == 1);
+        INFO(r.errors[0].message);
+        CHECK(r.errors[0].code == "settings-invalid");
+        CHECK(r.errors[0].nodeId == "node");
+        CHECK(r.errors[0].message == type + kUnsettled);
+    };
+    Engine e(kRate);
+    load(e, "test.loose", source);
+    place(e, routedTo());
+    CHECK(block(e, {{2, kNote}}) == std::vector<Out>{{1, 2, kNote}});
+    // 256 settle in each check (the planner's layout_for, then the fresh instance's create).
+    place(e, routedTo("test.loose.long"));
+    const std::vector<Out> longRuns = sorted({{1, 2, kNote}, {2, 2, {0x90, 61, 100}}});
+    CHECK(block(e, {{2, kNote}}) == longRuns);
+    // 257 do not: refused, the running plan running on. The one left waits in the pack's control runtime, and the next
+    // check runs it with its own.
+    refusedCheck(e, "test.loose.over");
+    CHECK(block(e, {{2, kNote}}) == longRuns);
+    place(e, routedTo("test.loose.fine"));
+    const std::vector<Out> fineRuns = sorted({{1, 2, kNote}, {2, 2, {0x90, 72, 100}}});
+    CHECK(block(e, {{2, kNote}}) == fineRuns);
+    // A chain that never ends: refused, and QuickJS cannot drop what it leaves queued, so every later check of the pack
+    // finds it unsettled too, a type that starts none among them.
+    refusedCheck(e, "test.loose.endless");
+    refusedCheck(e, "test.loose.long");
+    refusedCheck(e, "test.loose.fine");
+    CHECK(block(e, {{2, kNote}}) == fineRuns);
+    // A reload frees the runtime the chain lived in: its replan checks the placed node in the new generation's.
+    load(e, "test.loose", source);
+    CHECK(block(e, {{2, kNote}}) == fineRuns);
+    place(e, routedTo("test.loose.long"));
+    CHECK(block(e, {{2, kNote}}) == longRuns);
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.loose#2"});
+    CHECK(e.scriptThrows() == 0);
+    CHECK(e.faultCount() == 0);
+}
+
 TEST_CASE("a pack is bound by the host's binder in both its contexts, and what its load allocates is in no audio-side "
           "count, where its nodes' are",
           "[script][packs]") {

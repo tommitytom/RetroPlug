@@ -173,7 +173,11 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // layout, for layout_for, prepare_settings and create, and the jobs they queue). A pack's control runtime has the
 // control thread's handler for its life, its audio runtime until join gives it the block thread's. A load the deadline
 // stops refuses the pack; a settings check it stops refuses the settings, saying so, so the planner refuses the
-// document and the running plan stands.
+// document and the running plan stands. A settings check runs at most kJobsPerCheckpoint of the promise jobs pending
+// in its pack's control runtime, as a load does each stretch of it, and one that leaves any refuses the settings too,
+// saying so. QuickJS cannot drop a pending job, so what is left stays there for the pack's next settings check, which
+// runs it with its own: a chain that never settles refuses every settings check of the pack, and so every document
+// placing one of its nodes, until a reload frees the runtime it lives in.
 //
 // Every type declares RP_TYPE_STATELESS_PREPARE: its prepare_settings reads the settings it is handed, the
 // definition and what the instance was created with, never anything a commit writes. A type that reshapes answers
@@ -374,7 +378,7 @@ public:
     void endBlock();
     // The most of a pack's pending promise jobs one run takes (the class comment): a checkpoint after a call into a
     // node, a run outside any (a release's), each stretch of a load (one that leaves any refuses the load), and a
-    // settings check's drain of the control side.
+    // settings check's drain of the control side (one that leaves any refuses the settings).
     static constexpr int kJobsPerCheckpoint = 256;
     static constexpr std::size_t kStackBytes = 256 * 1024;  // each runtime's JS stack (the class comment)
     // How many plain objects reading a node's process or a hook walks (what its create returned, then the prototypes
