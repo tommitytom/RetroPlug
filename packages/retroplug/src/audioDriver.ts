@@ -9,10 +9,10 @@ import { makeCall } from "./rpcClient";
 import type { EngineGraph } from "./engineGraph";
 import type { HostShape } from "./graph/buildGraph";
 
-/** The allocation counters of the script host's audio runtime, the JS the audio thread runs
- *  (spec/08-profiling.md). Fields are DELTAS since the last dspResetAllocStats() (`blockCount` and the
- *  max-block pair count engine blocks); `enabled` is false unless the host was built with RETROPLUG_PROFILE.
- *  Mirrors the native DspAllocStats struct field-for-field (reflect-cpp names). */
+/** The allocation counters of the script host's audio runtimes, every pack's summed: the JS the audio
+ *  thread runs (spec/08-profiling.md). Fields are DELTAS since the last dspResetAllocStats() (`blockCount`
+ *  and the max-block pair count engine blocks); `enabled` is false unless the host was built with
+ *  RETROPLUG_PROFILE. Mirrors the native DspAllocStats struct field-for-field (reflect-cpp names). */
 export interface DspAllocStats {
   enabled: boolean;
   allocCalls: number;

@@ -130,10 +130,11 @@ graph document the stores built, or a command), and every audio→control
 observation goes through the snapshot registry (reads) plus the release ring (a
 replaced plan, and the cores only it held, handed back to be freed). Native runs
 **separate QuickJS runtimes** that share no value: the control-plane one (txiki, full
-host) and, per Engine, the script host's two bare ones: one the control thread uses only
-to check a script node's settings and lay out its ports, and one that holds every script
-node instance and runs it on the thread that runs blocks (the audio thread in a live host). All of this is specified in
-[01-architecture.md](01-architecture.md).
+host) and, per Engine, two bare ones for each script node pack its script host holds
+(the built-in bundle the first): one the control thread uses only to check a node's
+settings and lay out its ports, and one that holds every instance of the pack's nodes
+and runs each on the thread that runs blocks (the audio thread in a live host). All of
+this is specified in [01-architecture.md](01-architecture.md).
 
 ## Where to go next
 

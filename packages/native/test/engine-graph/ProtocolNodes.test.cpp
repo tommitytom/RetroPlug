@@ -433,7 +433,7 @@ struct ProtocolRig {
     // The node types the script bundle registers: a document's script nodes are its nodes of these.
     std::set<std::string>             scriptTypes;
 
-    // `inject`: JS run after the bundle, in both of the script host's runtimes.
+    // `inject`: JS run after the bundle, in both of the built-in pack's runtimes.
     explicit ProtocolRig(Structure s, const std::string& inject = "") : structure(std::move(s)) {
         std::vector<ScriptHost::Chunk> chunks{ScriptHost::embeddedBundle()};
         Bytes injected;

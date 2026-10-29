@@ -336,6 +336,11 @@ first throw's logged text already names the node's type, so a dev loop sees whic
   before any replan (the id, the compile, the load, the registry); and on success `types`: each type's id and its
   descriptor as the registry holds it (canonical JSON, every field spelled), in the order the source registered them,
   so whatever builds documents for the pack knows its ports. `memoryLimit` 0 is the default.
+- **The Engine's other new calls**, beside it: `setScriptCallDeadline` (the call deadline on either side, set before
+  an audio thread runs blocks), `scriptPacks` (every pack held, the built-in one first: its id, generation, standing
+  and records alive), `nodeTypeCount` and `retiredNodeTypeCount` (the registry's types, and the entries a reload
+  swapped out whose generation is not yet freed), and `scriptInstances` (instances whose JS is made and not yet
+  released, read on any thread).
 - **RPC:** `EngineRpcService::loadScriptPack(RpcLoadScriptPackRequest) -> RpcLoadScriptPackResult`
   ([BackendTypes.hpp](../packages/native/src/host/rpc/BackendTypes.hpp)) on the `emulator` facet beside `setGraph`,
   so every host has it (the plugin, SDL, the CLI, the Node addon, the test host): a user developing nodes in a DAW

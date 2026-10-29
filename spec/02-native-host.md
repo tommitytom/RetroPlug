@@ -160,7 +160,7 @@ read of a core's state routes through the `SnapshotRegistry`. No method walks a 
 The table is a selection. The facets
 ([`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp)) hold 19
 `host` methods, 14 `emulator`, 22 `harness` (the renders, transport and sample rate, staged MIDI in and
-MIDI out, `droppedMessages`, `buildTarget`, the kit compiles and the audio runtime's profiling calls),
+MIDI out, `droppedMessages`, `buildTarget`, the kit compiles and the audio runtimes' profiling calls),
 27 `debug` and
 6 `driver`: 88 in the union. There is no call for what the roles do on the audio thread: their protocol
 nodes are script node types every Engine embeds, and each node's settings ride the documents `setGraph`

@@ -5,15 +5,16 @@
 // (packages/retroplug/test/script/scriptTestBundle.ts: the authoring layer as a global `rp`, and a node of its own)
 // and then with toy nodes the test writes as JS source, compiled by the control plane's compiler, so no toy ships.
 //
-// Two probes are bound into both of the script host's contexts, so a toy can say what ran where: `__probe(tag)`
-// records the tag and the calling thread, and `__token(tag)` returns an object that records "released <tag>" and the
-// thread that frees it, which is the thread that released the instance holding it. `__audioSide` says which context
-// a bundle is running in, for a toy that would tell the two apart, and `__sleep(ms)` takes the calling thread off the
-// CPU for that long, as a preemption, a stopped process or a paused VM would. `__pending()` says whether an exception
-// is pending on the runtime as JS runs, which none should be: a native call that returned a value with one left
-// pending hands it to whatever asks QuickJS next. And in the audio context only, `__greedy()` returns an object whose
-// finalizer asks its runtime for more than any pack's memory limit (refused, and the refusal noted on the pack), then
-// records "greedy finalized": an allocation refused while JS is freed, between two calls into a pack's nodes.
+// Two probes are bound into both contexts of every pack the script host loads, so a toy can say what ran where:
+// `__probe(tag)` records the tag and the calling thread, and `__token(tag)` returns an object that records "released
+// <tag>" and the thread that frees it, which is the thread that released the instance holding it. `__audioSide` says
+// which context a bundle is running in, for a toy that would tell the two apart, and `__sleep(ms)` takes the calling
+// thread off the CPU for that long, as a preemption, a stopped process or a paused VM would. `__pending()` says
+// whether an exception is pending on the runtime as JS runs, which none should be: a native call that returned a value
+// with one left pending hands it to whatever asks QuickJS next. And in the audio context only, `__greedy()` returns an
+// object whose finalizer asks its runtime for more than any pack's memory limit (refused, and the refusal noted on the
+// pack), then records "greedy finalized": an allocation refused while JS is freed, between two calls into a pack's
+// nodes.
 
 #include <chrono>
 #include <cstdint>

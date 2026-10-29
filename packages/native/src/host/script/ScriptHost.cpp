@@ -2195,7 +2195,8 @@ void ScriptHost::reclaim() {
     if (!jobsLogged_ && jobsCutShort() > 0) {
         std::fprintf(stderr,
                      "[script] a script node's promise jobs outran the %d a checkpoint runs; the rest wait for its "
-                     "pack's next checkpoint, still charged to it (said once; jobsCutShort() counts them)\n",
+                     "pack's next checkpoint, charged to it while it lives and to no node once it is released (said "
+                     "once; jobsCutShort() counts them)\n",
                      kJobsPerCheckpoint);
         jobsLogged_ = true;
     }
