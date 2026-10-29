@@ -675,10 +675,11 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   the checks the built-in pack's load makes and one more: every type id is the pack's id, a dot and a name
   (`user.synth.osc` in `user.synth`). Then the pack's package joins the registry, which refuses a type id
   another package holds (one pack's id can run on into another's, `a` and `a.b`), a refusal that frees the
-  pack, its frees counted apart as every freed pack's are (below). A document can place its nodes from the next `setGraph`. The block thread first meets a pack through
-  an instance in a plan it adopts, so the plan swap's ring carries the whole built pack across; a pack's audio
-  runtime joins what packs share (the call deadline's interrupt handler, the allocation counters) only once
-  its load is done, so what a loaded pack's load allocates is counted apart from `audioAllocations`.
+  pack, its frees counted apart as every freed pack's are (below). A document can place its nodes from the
+  next `setGraph`. The block thread first meets a pack through an instance in a plan it adopts, so the plan
+  swap's ring carries the whole built pack across; a pack's audio runtime joins what packs share (the call
+  deadline's interrupt handler, the allocation counters) only once its load is done, so what a loaded pack's
+  load allocates is counted apart from `audioAllocations`.
 - **Reloading one.** The same id loaded again builds the pack's next generation beside the current one
   (numbered by the id's count of loads, refused ones included, so a number names one source), and the registry
   swaps the package's entries for the new generation's, keeping the old ones valid for the instances that hold
@@ -740,45 +741,47 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   `create` a fresh instance's first call makes before it, whose jobs run with that call's, or at a
   checkpoint of their own when the call has no hook to run), at most 256 (`kJobsPerCheckpoint`), inside
   the call's deadline, and are charged to that node: a job that fails (a `queueMicrotask` callback that
-  threw, or the platform's allocator out of memory) is its throw, and faults it under `faultOnThrow`; one
-  the deadline stops counts as its call stopped; and a chain still pending after the bound is cut short,
-  its throw (`jobsCutShort` counts it), which faults a `faultOnThrow` node at once and any other on the
-  second in a row. QuickJS cannot drop a pending job, so a chain cut short stays queued, and its pack
-  remembers whose it is until the queue empties: its later checkpoints (the next calls into any of the
-  pack's nodes) run the rest charged to that node, never to a pack-mate, and once that node is released
-  the rest is no node's. Every other job those checkpoints run meanwhile is charged to that node too, a
-  pack-mate's own among them: a pack-mate that starts a chain of its own that never settles while another
-  node's leftovers are pending has its cut shorts charged to that node, which faults for them while the
-  pack-mate runs on, and once that node is released the chain is no node's, the pack-mate that started it
-  never charged or bypassed, until the pack is reloaded. What is queued where no call into a node ran (by
-  a release freeing a node's JS, or by a quiescent collection finding a `FinalizationRegistry` callback's
-  target) runs there and then, charged to the remembered owner, else to no node; what a reshape's freeing
-  queues runs at a checkpoint after its commit, charged to its node. Only a reload, which frees the
-  pack's runtime, ends a faulted node's chain; it runs, bounded, in its own pack. A load runs the jobs it
-  queues as it loads, at most 256 each stretch of it (its top level in each runtime, each descriptor,
-  what reading the definitions after the last one queues, what a loaded pack's collection queues), and
-  one that leaves any is refused, as every other load failure is: QuickJS cannot drop a pending job, and
-  one a load left would be charged to whichever of its nodes' calls came first, or, in the control
-  runtime, would run at its first settings check.
+  threw, or the platform's allocator out of memory) is its throw, and faults it under `faultOnThrow`;
+  one the deadline stops counts as its call stopped; and a chain still pending after the bound is cut
+  short, its throw (`jobsCutShort` counts it), which faults a `faultOnThrow` node at once and any other
+  on the second in a row. QuickJS cannot drop a pending job, so a chain cut short stays queued, and its
+  pack remembers whose it is until the queue empties: its later checkpoints (the next calls into any of
+  the pack's nodes) run the rest charged to that node, never to a pack-mate, and once that node is
+  released the rest is no node's. Every other job those checkpoints run meanwhile is charged to that
+  node too, a pack-mate's own among them: a pack-mate that starts a chain of its own that never settles
+  while another node's leftovers are pending has its cut shorts charged to that node, which faults for
+  them while the pack-mate runs on, and once that node is released the chain is no node's, the pack-mate
+  that started it never charged or bypassed, until the pack is reloaded. What is queued where no call
+  into a node ran runs there and then, charged to the remembered owner, else to no node: what a release
+  freeing a node's JS queues, and what a quiescent collection queues by finding a `FinalizationRegistry`
+  callback's target when the queue was empty before it (queued behind another node's leftovers, those
+  jobs wait with them and are charged to that node); what a reshape's freeing queues runs at a
+  checkpoint after its commit, charged to its node. Only a reload, which frees the pack's runtime, ends
+  a faulted node's chain; it runs, bounded, in its own pack. A load runs the jobs it queues as it loads,
+  at most 256 each stretch of it (its top level in each runtime, each descriptor, what reading the
+  definitions after the last one queues, what a loaded pack's collection queues), and one that leaves
+  any is refused, as every other load failure is: QuickJS cannot drop a pending job, and one a load left
+  would be charged to whichever of its nodes' calls came first, or, in the control runtime, would run at
+  its first settings check.
 - **Memory.** Each of a pack's two runtimes is held to a memory limit (64 MiB unless its load says
   otherwise), each on its own, by the host's allocator, which refuses an allocation past it, so QuickJS
   throws out of memory in the call that asked, and notes the refusal on the pack. In the audio runtime, a
   refusal during a call, or its jobs, faults the node they are charged to whatever its `faultOnThrow` (a
   refusal JS caught counted as its throw): at once in `process`, at its next block after a hook or for its
-  leftovers run at a pack-mate's checkpoint, since a pack at its limit is one none of its nodes can rely
-  on. Only an out-of-memory error the limit did not cause (the platform's allocator ran out) is a throw
-  like any other, faulting under `faultOnThrow`. A call is charged only what its pack refuses after it
-  begins (the note is cleared as each call arms its deadline), so a refusal during a release, a quiescent
-  collection or a load faults no node. In the control runtime the limit holds the pack's top level,
-  `parseSettings` and `layout`: a load or a settings check that fails on an allocation it refused is
-  refused, saying so (a settings check's refusing the document, the running plan standing), and one that
-  catches the error runs on, with no node to fault. The limit holds each runtime whole, its intrinsics
-  (about 90 KB) and its code included, so a limit too small for those refuses the load, which says so.
-  Another pack is untouched. "Past the limit" means reachable and uncollected bytes together: a refusal
-  comes at once, with no collection first, and QuickJS's own cycle GC runs only as an object is made, once
-  the heap has grown half again since the last one, so a pack whose reachable heap is above about two
-  thirds of its limit can be refused for garbage, and a profile window that pins the auto-GC off
-  (`resetAllocStats(true)`) gathers garbage until the limit faults a node.
+  leftovers run at a pack-mate's checkpoint or where no call ran (a release's run), since a pack at its
+  limit is one none of its nodes can rely on. Only an out-of-memory error the limit did not cause (the
+  platform's allocator ran out) is a throw like any other, faulting under `faultOnThrow`. A call is charged
+  only what its pack refuses after it begins (the note is cleared as each call arms its deadline), so a
+  refusal while a release frees a node's JS, in a quiescent collection or during a load faults no node. In
+  the control runtime the limit holds the pack's top level, `parseSettings` and `layout`: a load or a
+  settings check that fails on an allocation it refused is refused, saying so (a settings check's refusing
+  the document, the running plan standing), and one that catches the error runs on, with no node to fault.
+  The limit holds each runtime whole, its intrinsics (about 90 KB) and its code included, so a limit too
+  small for those refuses the load, which says so. Another pack is untouched. "Past the limit" means
+  reachable and uncollected bytes together: a refusal comes at once, with no collection first, and QuickJS's
+  own cycle GC runs only as an object is made, once the heap has grown half again since the last one, so a
+  pack whose reachable heap is above about two thirds of its limit can be refused for garbage, and a profile
+  window that pins the auto-GC off (`resetAllocStats(true)`) gathers garbage until the limit faults a node.
 - **A throw** in `process` is caught and counted, the block's output up to it stands, and the node runs
   again next block; a definition that says `faultOnThrow`, or a `process` that returns `"fault"`,
   faults instead (bypassed from then on), and a `faultOnThrow` node whose `onSettings`,

@@ -438,7 +438,9 @@ struct ProtocolRig {
         std::vector<ScriptHost::Chunk> chunks{ScriptHost::embeddedBundle()};
         Bytes injected;
         if (!inject.empty()) {
-            const auto bc = dsp::compileToBytecode(inject);
+            std::string compileError;
+            const auto bc = dsp::compileToBytecode(inject, ScriptHost::kStackBytes, &compileError);
+            INFO(compileError);
             REQUIRE(bc.has_value());
             injected = *bc;
             chunks.emplace_back(injected);

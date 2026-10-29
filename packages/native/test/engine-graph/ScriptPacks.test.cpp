@@ -2,14 +2,16 @@
 // beside the built-in pack's nodes in one document, in runtimes of its own, so what one pack does to its realm (a
 // getter on Object.prototype, Array.prototype.push replaced, a global) no node of another pack sees, its memory limit
 // and its promise jobs fault only its own nodes, and it loads while an audio thread runs blocks. Its id (never one of
-// the app's, "rp" and under), its types' namespace, its source and its definitions are checked, and a refusal changes
-// nothing. Loaded again, it reloads: its placed nodes rebuild on the new code while every other node keeps its instance
-// and its state (the running plan's tap included), a reload whose replan is refused changes nothing, and the generation
-// a reload replaced is freed on the control thread once its records are back, within the call when no audio thread
-// runs, as one a refused replan discarded under an audio thread is. The control thread's calls into a pack, its load and its settings checks, are held to the call deadline on a
-// clock of their own. Driven on an Engine, whose built-in pack is the production bundle, the toy packs inline JS
-// source; and on a ScriptRig, where the host's binder, its allocation counts and the built-in pack's deadline are what
-// is checked.
+// the app's, "rp" and under), its types' namespace, its source and its definitions are checked, and a refusal leaves
+// the registry and the running plan as they were (a load that got as far as being built still uses up a generation
+// number). Loaded again, it reloads: its placed nodes rebuild on the new code while every other node keeps its instance
+// and its state (the running plan's tap included), a reload whose replan is refused leaves the registry and the running
+// plan as they were, the generation it built discarded, and the generation a reload replaced is freed on the control
+// thread once its records are back, within the call when no audio thread runs, as a discarded one is when the refused
+// plan made no instance of it. The control thread's calls into a pack, its load and its settings checks, are held to
+// the call deadline on a clock of their own. Driven on an Engine, whose built-in pack is the production bundle, the toy
+// packs inline JS source; and on a ScriptRig, where the host's binder, its allocation counts and the built-in pack's
+// deadline are what is checked.
 //
 // Run via `pnpm test:plugin engine-graph`, or `build/bin/retroplug-engine-graph-test "[packs]"`.
 
@@ -201,8 +203,8 @@ TEST_CASE("a pack's nodes run beside the built-in pack's in one document, and it
         CHECK(t.descriptor == rp::graph::descriptorJson(*d));
     }
 
-    // Host MIDI through the built-in routing, by channel: channel 0 to system 1 through the pack's node, which moves its
-    // note up an octave, and channel 1 to system 2 straight, its channel rewritten to 0 (the routing's own job).
+    // Host MIDI through the built-in routing, by channel: channel 0 to system 1 through the pack's node, which moves
+    // its note up an octave, and channel 1 to system 2 straight, its channel rewritten to 0 (the routing's own job).
     place(e, document({docNode("midi-in", "rp.host.midi-in"), routing("midiChannelToInstance", "1,2"),
                        docNode("up", "test.shift.up"), midiOut("1,2")},
                       {docWire("midi-in.midi", "routing.midiIn"), docWire("routing.sys-1", "up.in"),
@@ -286,8 +288,8 @@ TEST_CASE("a pack refused changes nothing: a non-plain id, the built-in pack's, 
           "[script][packs][refused]") {
     Engine e(kRate);
     refused(e, "test pack", toys(transposer("test pack.up", 12)), "must be non-empty, with no whitespace", "test pack.up");
-    refused(e, "rp.script", toys(transposer("rp.script.up", 12)), "rp.script is the built-in pack, which is not reloadable",
-            "rp.script.up");
+    refused(e, "rp.script", toys(transposer("rp.script.up", 12)),
+            "pack id \"rp.script\" is the built-in pack, which is not reloadable", "rp.script.up");
     // "rp" and the ids under it are the app's to give: its built-in pack's and its native packages' (rp.core, rp.host,
     // ...), and a pack named "rp.midi" would hold the built-in rp.midi.route's namespace.
     for (const std::string app : {"rp", "rp.mine", "rp.core", "rp.midi"}) {
@@ -338,9 +340,9 @@ toy.define("test.baddesc.odd", [{ id: "in", dir: "in", kind: "smoke" }], functio
                       {docWire("midi-in.midi", "nest.in"), docWire("nest.out", "midi-out.in1")}));
     CHECK(block(e, {{2, kNote}}) == std::vector<Out>{{1, 2, {0x90, 61, 100}}});  // the first pack's: a semitone, not two
 
-    // Each id refused once its pack was built loads clean now: neither the script host nor the registry kept it, but for
-    // its count of loads, so each is numbered past those refused (test.ns's four, one each of the others; a compile
-    // error builds nothing, so test.syntax's count none).
+    // Each id refused once its pack was built loads clean now: neither the script host nor the registry kept it, but
+    // for its count of loads, so each is numbered past those refused (test.ns's four, one each of the others; a
+    // compile error builds nothing, so test.syntax's count none).
     load(e, "test.ns", toys(transposer("test.ns.fine", 1)));
     load(e, "test.syntax", toys(transposer("test.syntax.up", 1)));
     load(e, "test.nodesc", toys(transposer("test.nodesc.fine", 1)));
@@ -359,8 +361,8 @@ TEST_CASE("a pack's node that allocates past its pack's memory limit faults, whi
           "run on",
           "[script][packs][memory]") {
     Engine e(kRate);
-    // Pack A held to 16 MiB, its node reaching for 32 on its second block; pack B at the default, its node taking 24 and
-    // keeping them, more than pack A may hold.
+    // Pack A held to 16 MiB, its node reaching for 32 on its second block; pack B at the default, its node taking 24
+    // and keeping them, more than pack A may hold.
     constexpr std::size_t kLimit = std::size_t{16} << 20;
     const auto mebibytes = [](int n) {
         return "for (var k = 0; k < " + std::to_string(n) + "; k++) kept[k] = new Float64Array(1 << 17);";
@@ -408,7 +410,8 @@ toy.define("test.calm.settles", [toy.output("out")], function () {
   } };
 });
 )JS"));
-    // The chain's node first, so the other's checkpoint follows its leftovers in every block: a pack-mate's would run them.
+    // The chain's node first, so the other's checkpoint follows its leftovers in every block: a pack-mate's would run
+    // them.
     place(e, document({docNode("midi-in", "rp.host.midi-in"), docNode("chain", "test.chain.endless"),
                        docNode("calm", "test.calm.settles"), routing("sendToAll", "3"), midiOut("1,2,3")},
                       {docWire("midi-in.midi", "routing.midiIn"), docWire("chain.out", "midi-out.in1"),
@@ -465,12 +468,13 @@ Object.defineProperty(f[f.length - 1], "faultOnThrow", { get: function () { )JS"
 )JS"),
             std::string("its definitions' ") + kUnsettled + ", in the control context", "test.flagchain.up");
     // A FinalizationRegistry callback that starts one, its target a cycle the top level drops, which the loaded pack's
-    // collection (or a threshold GC on the way) finds.
+    // collection finds (a threshold GC on the way would find it earlier, and be read as the top level's own; this
+    // small a heap reaches none).
     refused(e, "test.finchain", toys(transposer("test.finchain.up", 1) + R"JS(
 var registry = globalThis.registry = new FinalizationRegistry(function () { )JS" + jobChain(0) + R"JS( });
 (function () { var cycle = {}; cycle.self = cycle; registry.register(cycle, 0); })();
 )JS"),
-            kUnsettled, "test.finchain.up");
+            std::string("its collection's ") + kUnsettled + ", in the audio context", "test.finchain.up");
     CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.settles#1"});
     CHECK(e.scriptThrows() == 0);
 
@@ -483,6 +487,21 @@ var registry = globalThis.registry = new FinalizationRegistry(function () { )JS"
     CHECK(rig.scripts.loadPack("test.audiochain", {&audioChunk, 1}, 0, &error) == nullptr);
     INFO(error);
     CHECK(error == std::string("its top level's ") + kUnsettled + ", in the audio context");
+    CHECK(rig.scripts.packs().size() == 1);
+
+    // The audio descriptors' drain alone: a descriptor, asked in the audio context only, that starts a chain. (The
+    // descriptor tests above stop on the control side first.)
+    const auto audioDescriptor = rp::host::test::compileToys(toys(transposer("test.audiodesc.up", 1) + R"JS(
+if (__audioSide) {
+  var d = globalThis.__rp_scriptNodes, plain = d[d.length - 1].descriptor;
+  d[d.length - 1].descriptor = function () { )JS" + jobChain(0) + R"JS( return plain(); };
+}
+)JS"));
+    const ScriptHost::Chunk descriptorChunk = audioDescriptor;
+    error.clear();
+    CHECK(rig.scripts.loadPack("test.audiodesc", {&descriptorChunk, 1}, 0, &error) == nullptr);
+    INFO(error);
+    CHECK(error == std::string("its descriptors' ") + kUnsettled + ", in the audio context");
     CHECK(rig.scripts.packs().size() == 1);
 
     // The built-in pack's load, refused as a loaded pack's is: its package then holds no type.
@@ -539,7 +558,8 @@ TEST_CASE("a pack loads while an audio thread runs blocks, and the plan that pla
                                    docWire("routing.sys-2", "up.in"), docWire("up.out", "midi-out.in2")});
     bool placed = false;
     std::string refusal;
-    for (int attempt = 0; loaded.ok && !placed && attempt < 1000; ++attempt) {
+    const auto patience = std::chrono::steady_clock::now() + std::chrono::seconds(10);  // as waitFor's
+    while (loaded.ok && !placed && std::chrono::steady_clock::now() < patience) {
         const auto r = e.setGraph(request);
         placed = r.ok;
         if (!r.ok) {
@@ -672,7 +692,8 @@ TEST_CASE("the control side's deadline keeps its own clock while an audio thread
     const int afterRefusal = plain.load();
     const bool ranOn = waitFor(plain, afterRefusal + 10);  // the running plan, as it was
     bool placed = false;
-    for (int attempt = 0; stuck.ok && !placed && attempt < 1000; ++attempt) {
+    const auto patience = std::chrono::steady_clock::now() + std::chrono::seconds(10);  // as waitFor's
+    while (stuck.ok && !placed && std::chrono::steady_clock::now() < patience) {
         const auto r = e.setGraph(routedTo("test.stuck.fine"));
         placed = r.ok;
         if (!r.ok && (r.errors.empty() || r.errors[0].code != "busy")) break;
@@ -716,7 +737,9 @@ TEST_CASE("the call deadline holds every pack's control side, the built-in one's
           "test.stuck.settings's parseSettings ran past the 50 ms call deadline (CPU time), and was stopped");
 
     // A loaded pack's load, stopped wherever it hangs: its audio runtime's top level (the control side's loaded fine),
-    // a job its top level queued, a definition's descriptor. None is added.
+    // a job its top level queued, a definition's descriptor. None is added. Only the first reaches the audio runtime
+    // before the load stops: the others run in both runtimes, and the control runtime, loaded first, is the one they
+    // stop in.
     const std::vector<std::pair<std::string, std::string>> hangs{
         {"test.audiohang", transposer("test.audiohang.up", 1) + "if (__audioSide) for (;;) {}"},
         {"test.jobhang", transposer("test.jobhang.up", 1) + "Promise.resolve().then(function () { for (;;) {} });"},
@@ -771,11 +794,15 @@ TEST_CASE("a pack's control runtime is held to its memory limit as its audio run
     const ScriptHost::Chunk fineChunk = fine;
     CHECK(rig.scripts.loadPack("test.ctlhog", {&fineChunk, 1}, kLimit, &error) != nullptr);
 
-    // A settings check: test.memset.big's parseSettings holds 8 MiB while it runs.
+    // A settings check: test.memset.big's parseSettings holds 8 MiB while it runs; test.memset.catcher's does too, and
+    // catches the error it is refused with.
     Engine e(kRate);
-    load(e, "test.memset", toys(transposer("test.memset.big", 1) + transposer("test.memset.fine", 12) + R"JS(
-var defs = globalThis.__rp_scriptNodes, plain = defs[defs.length - 2].parseSettings;
-defs[defs.length - 2].parseSettings = function (raw) { )JS" + hog + R"JS( return plain(raw); };
+    load(e, "test.memset", toys(transposer("test.memset.big", 1) + transposer("test.memset.catcher", 2) +
+                                transposer("test.memset.fine", 12) + R"JS(
+var defs = globalThis.__rp_scriptNodes, big = defs[defs.length - 3], catcher = defs[defs.length - 2];
+var bigPlain = big.parseSettings, catcherPlain = catcher.parseSettings;
+big.parseSettings = function (raw) { )JS" + hog + R"JS( return bigPlain(raw); };
+catcher.parseSettings = function (raw) { try { )JS" + hog + R"JS( } catch (e) {} return catcherPlain(raw); };
 )JS"),
          kLimit);
     place(e, routedTo());
@@ -791,6 +818,10 @@ defs[defs.length - 2].parseSettings = function (raw) { )JS" + hog + R"JS( return
     // The pack is no worse for it: its fine type plans and runs.
     place(e, routedTo("test.memset.fine"));
     CHECK(block(e, {{2, kNote}}) == sorted({{1, 2, kNote}, {2, 2, {0x90, 72, 100}}}));
+    // A check that catches the refused allocation runs on, there being no node to fault: the document is planned, and
+    // no throw is counted.
+    place(e, routedTo("test.memset.catcher"));
+    CHECK(block(e, {{2, kNote}}) == sorted({{1, 2, kNote}, {2, 2, {0x90, 62, 100}}}));
     CHECK(e.scriptThrows() == 0);
     CHECK(e.faultCount() == 0);
 }
@@ -1204,7 +1235,8 @@ TEST_CASE("under an audio thread, a reload's old generation is retired until its
     // A reload, tried again while its replan finds the ring busy (which the audio thread drains).
     const auto reload = [&](int tag) {
         Engine::ScriptPackResult r;
-        for (int attempt = 0; attempt < 1000; ++attempt) {
+        const auto patience = std::chrono::steady_clock::now() + std::chrono::seconds(10);  // as waitUntil's
+        while (std::chrono::steady_clock::now() < patience) {
             r = e.loadScriptPack("test.live", toys(tally("test.live.count", tag)));
             if (r.ok || r.errors.empty() || r.errors[0].code != "busy") break;
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -1338,7 +1370,8 @@ TEST_CASE("a pack's generation numbers only increase: every load of its id takes
     CHECK(block(e) == std::vector<Out>{{1, 0, {4, 1}}});
 
     // Generation 5, refused busy under an audio thread and so held, discarded, until a block releases its fresh
-    // instance and a reclaim finds the record back: the next load is 6 whether it comes before that or after.
+    // instance and a reclaim finds the record back. Its number is spent as it is made, freed or not; the next load,
+    // checked here once it is freed, is 6.
     e.setAudioThreadOwns(true);
     DspCommand bpm;
     bpm.kind = DspCommand::Kind::SetBpm;

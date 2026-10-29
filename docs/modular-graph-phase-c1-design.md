@@ -137,18 +137,18 @@ thrown error's stack names), where the built-in bundle is compiled stripped (`tj
      built-in pack keeps its embedded bytecode.
 - **Shared across packs:** the call deadline's state (one call runs at a time on the block thread); the allocation
   counters, summed over every pack's audio runtime, so `audioAllocations`, the profile's allocation window and the
-  zero-allocation benches keep their meaning, "the audio side"; the release rings (a record knows its pack); the
-  throw count and first throw; and the profile's span labels, one per type id, given as the first pack defining it
-  loads and kept by its reloads, so the built-in types' labels stay 16 up in bundle order
-  ([spec/08-profiling.md](../spec/08-profiling.md)) and a dev loop's reloads do not use up the name table. A label is
-  given before the registry is asked, so a pack it refuses, or a refused reload's new type, keeps a label and a trace
-  name for its ids; bounded, the same ids loaded again reusing theirs. A loaded
-  pack's audio runtime joins the deadline's handler and the allocation counters only once its load is done: the load
-  runs on the control thread while the block thread may be inside a call into another pack, so a handler polled in the
-  load would touch that call's deadline state, and the load's allocations would be a second writer of counters that
-  have one (section 13). So what a loaded pack's load allocates, and what freeing a generation frees (section 5), are
-  counted apart, never in `audioAllocations`; the built-in pack's load, at construction, comes before any block and is
-  counted. A pack loaded after the profile's allocation window pinned the auto-GC off joins with its own pinned too.
+  zero-allocation benches keep their meaning, "the audio side"; the release rings (a record knows its pack); the live
+  instance count, the throw count and first throw, and `jobsCutShort`; and the profile's span labels, one per type id,
+  given as the first pack defining it loads and kept by its reloads, so the built-in types' labels stay 16 up in
+  bundle order ([spec/08-profiling.md](../spec/08-profiling.md)) and a dev loop's reloads do not use up the name
+  table. A label is given before the registry is asked, so a pack it refuses, or a refused reload's new type, keeps a
+  label and a trace name for its ids; bounded, the same ids loaded again reusing theirs. A loaded pack's audio runtime
+  joins the deadline's handler and the allocation counters only once its load is done: the load runs on the control
+  thread while the block thread may be inside a call into another pack, so a handler polled in the load would touch
+  that call's deadline state, and the load's allocations would be a second writer of counters that have one (section
+  13). So what a loaded pack's load allocates, and what freeing a generation frees (section 5), are counted apart,
+  never in `audioAllocations`; the built-in pack's load, at construction, comes before any block and is counted. A
+  pack loaded after the profile's allocation window pinned the auto-GC off joins with its own pinned too.
 - **Per pack:** its memory limit (section 6), its promise-job queue, its cycle GC, and its quiescent collection
   (`collect` runs per pack that has garbage).
 - **The control thread's calls into a pack** are held to the call deadline's length of its own CPU time, on a clock of
@@ -241,7 +241,7 @@ outputs are copied out. No built-in node uses a promise, so parity cannot move.
 
 | | Today | C1 |
 |---|---|---|
-| A job that fails (a `queueMicrotask` callback that threw, or the platform's allocator ran out of memory) | a throw charged to no node, never faulting one | the node's throw: counted, and a `faultOnThrow` node faults (an allocation the pack's limit refused faults any node at once: Memory, below) |
+| A job that fails (a `queueMicrotask` callback that threw, or the platform's allocator ran out of memory) | a throw charged to no node, never faulting one | the node's throw: counted, and a `faultOnThrow` node faults (an allocation the pack's limit refused faults the node whatever its `faultOnThrow`: Memory, below) |
 | The deadline stops a job | stops the whole block's job run, charged to no node | counts as the node's call being stopped: it faults on the second in a row, or at once under `faultOnThrow` |
 | A chain that does not settle in 256 jobs | the rest wait for the next block's end (`jobsCutShort`) | the node's throw (and `jobsCutShort`): a `faultOnThrow` node faults at once, any other on the second in a row, as two expiries do |
 | A promise reaction's own throw | only rejects its promise | unchanged |
@@ -267,7 +267,8 @@ destroyed node's JS) runs its pack's jobs there, charged to the node that left t
 no node, since the node is gone; and a `FinalizationRegistry` callback is queued by whichever GC or free found its
 target: one inside a call (QuickJS's threshold GC, or a commit freeing a reshaped node's old layout) runs as that
 call's job, a reshape with no `onSettings` having a checkpoint of its own for it, and a quiescent collection (`collect`,
-the profile's `runGc`) runs what it queued there and then, as a release does. No built-in node uses either. A load's own
+the profile's `runGc`) runs what it queued there and then, as a release does, when the queue was empty before the
+collection (behind another node's leftovers those jobs wait with them, charged to that node). No built-in node uses either. A load's own
 jobs run as it loads, at most 256 each stretch of it (its top level in each runtime, each descriptor, what reading the
 definitions after the last one queues, what a loaded pack's collection queues), and a load that leaves any is refused,
 as every other load failure is: QuickJS cannot drop them, and they would run at the pack's first checkpoint, charged to
@@ -279,7 +280,8 @@ host's own allocator enforces it (section 11's third question): each runtime all
 holding its live bytes and the limit, which refuses an allocation past the limit and notes the refusal on the pack. In
 the audio runtime, a refusal during a call (or its jobs) faults the node they are charged to, whether or not it caught
 the error and whatever its `faultOnThrow`: a pack at its limit is one none of its nodes can rely on. It faults at once
-in `process`, and at its next block after a hook or for its leftovers run at a pack-mate's checkpoint. A refusal JS
+in `process`, and at its next block after a hook or for its leftovers run at a pack-mate's checkpoint or where no call
+ran (a release's run). A refusal JS
 caught is counted as the node's throw, saying the node "reached its pack's N MiB memory limit"; an uncaught one is the
 out-of-memory throw already counted. Only an out-of-memory error the limit did not cause, the platform's allocator
 running out, is a throw like any other, faulting a `faultOnThrow` node. A call is charged only what its pack refused

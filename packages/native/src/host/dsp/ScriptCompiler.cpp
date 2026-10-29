@@ -7,8 +7,6 @@ extern "C" {
 #include "quickjs.h"
 }
 
-#include "host/script/ScriptHost.hpp"  // kStackBytes
-
 namespace dsp {
 
 namespace {
@@ -35,7 +33,7 @@ std::string text(JSContext* ctx, JSValueConst v) {
 std::string compileError(JSContext* ctx) {
     JSValue thrown = JS_GetException(ctx);
     std::string out = text(ctx, thrown);
-    if (out.empty()) out = "the source does not compile";
+    if (out.empty()) out = "the parser threw something with no text";
     JSValue stack = JS_IsError(thrown) ? JS_GetPropertyStr(ctx, thrown, "stack") : JS_UNDEFINED;
     const std::string frames = JS_IsString(stack) ? text(ctx, stack) : std::string();
     const std::string at = "at " + std::string(kName) + ":";
@@ -52,17 +50,18 @@ std::string compileError(JSContext* ctx) {
 
 }  // namespace
 
-std::optional<std::vector<std::uint8_t>> compileToBytecode(const std::string& source, std::string* error) {
+std::optional<std::vector<std::uint8_t>> compileToBytecode(const std::string& source, std::size_t stackBytes,
+                                                           std::string* error) {
     const auto fail = [&](std::string why) -> std::optional<std::vector<std::uint8_t>> {
         if (error) *error = std::move(why);
         return std::nullopt;
     };
     JSRuntime* rt = JS_NewRuntime();
     if (!rt) return fail("no QuickJS runtime could be made");
-    // The parser recurses on the calling thread, which may be the Engine's control thread: held to the script host's
-    // stack, under the smallest thread that may call it (ScriptHost's class comment), so deeply nested source is a
-    // compile error rather than an overflowed stack.
-    JS_SetMaxStackSize(rt, rp::host::ScriptHost::kStackBytes);
+    // The parser recurses on the calling thread, which may be the Engine's control thread: held to the stack the caller
+    // gives (the script host's, under the smallest thread that may call it), so deeply nested source is a compile error
+    // rather than an overflowed stack.
+    JS_SetMaxStackSize(rt, stackBytes);
     JSContext* ctx = JS_NewContext(rt);
     if (!ctx) {
         JS_FreeRuntime(rt);
@@ -74,7 +73,7 @@ std::optional<std::vector<std::uint8_t>> compileToBytecode(const std::string& so
     JSValue fn =
         JS_Eval(ctx, source.c_str(), source.size(), kName.data(), JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
     if (JS_IsException(fn)) {
-        fail(compileError(ctx));
+        fail("the source does not compile: " + compileError(ctx));
     } else {
         std::size_t len = 0;
         std::uint8_t* buf = JS_WriteObject(ctx, &len, fn, JS_WRITE_OBJ_BYTECODE);

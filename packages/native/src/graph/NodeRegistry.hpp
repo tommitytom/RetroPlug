@@ -23,9 +23,9 @@ namespace rp::graph {
 // back (restorePackage, when what the replacement was for is refused: the same Entry objects found again, so a plan
 // that holds them still matches them and nothing is rebuilt) or dropped (dropRetired, once nothing holds one). Each
 // Entry is an object of its own, owned by the lookup while it is found and by its retired version while it is not, so
-// retiring, restoring and dropping move the pointer that owns it, and it keeps its address for its whole life. It is
-// not the map's element, extracted whole to retire it: reading an element through a pointer taken while it was in the
-// map is undefined while a node handle owns it, and every planned instance holds such a pointer. A version is named by
+// retiring and restoring move the pointer that owns it and dropping frees it, and it keeps its address for its whole
+// life. It is not a map element retired by extract: reading one through a pointer taken while it was in the map is
+// undefined while a node handle owns it, and every planned instance holds such a pointer. A version is named by
 // the rp_package it was registered from, which its owner holds anyway (a script pack's generation is a package of its
 // own, alive as long as the generation is): so whoever frees a version names it by what it frees, and no token has to
 // be kept beside it. Not thread-safe: no call may overlap another, so a registry shared by several hosts is filled

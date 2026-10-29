@@ -436,20 +436,17 @@ Engine::ScriptPackResult Engine::loadScriptPack(const std::string& id, const std
     rp::graph::NodeRegistry& registry = graph_->registry;
     // The id first: a refused one is refused whatever its source says, and costs no compile.
     if (!script.canLoadPack(id, &out.error)) return out;
-    std::string why;
-    const auto bytecode = dsp::compileToBytecode(source, &why);
-    if (!bytecode) {
-        out.error = "the source does not compile: " + why;
-        return out;
-    }
+    const auto bytecode = dsp::compileToBytecode(source, rp::host::ScriptHost::kStackBytes, &out.error);
+    if (!bytecode) return out;
     const rp::host::ScriptHost::Chunk chunk{*bytecode};
-    // Whether this is a reload (docs/modular-graph-phase-c1-design.md section 5): the script host knows whether it holds
-    // a current generation of `id`, having built it, where the registry could one day hold a package of another kind
-    // under the same id (a downloaded native one), which a reload must not swap out. Asked before the load, which makes
-    // the new generation current too.
+    // Whether this is a reload (docs/modular-graph-phase-c1-design.md section 5): the script host knows whether it
+    // holds a current generation of `id`, having built it, where the registry could one day hold a package of another
+    // kind under the same id (a downloaded native one), which a reload must not swap out. Asked before the load,
+    // which makes the new generation current too.
     const rp_package* current = script.currentPack(id);
     const rp_package* package = script.loadPack(id, {&chunk, 1}, memoryLimit, &out.error);
     if (!package) return out;
+    std::string why;
     if (!current) {
         // Checked here as every package is: a descriptor the planner could not use, or a type id the registry holds
         // already (one whose namespace holds another's: "a" and "a.b" can both name a type "a.b.c"). Refused, the pack

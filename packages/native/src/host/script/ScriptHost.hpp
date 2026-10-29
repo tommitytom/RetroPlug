@@ -117,13 +117,13 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 //     block), or does it there and then while no audio thread runs; the record it frees then goes back to the control
 //     thread to be deleted (reclaim), so the audio thread frees nothing native. What a released instance leaves in
 //     cycles is collected by a GC of its pack's audio runtime at two points no block is running: the reclaim that ends
-//     a quiescent operation which released some (the Engine's after every setGraph: one GC a pack however many went),
-//     and the audio thread handing the runtimes back (setAudioThreadOwns(false)). The first reclaim after the built-in
-//     pack's load (an Engine's first setGraph, at its top) takes what its bundle's load left in cycles too, whether or
-//     not an instance released anything; a loaded pack's load collects its own before loadPack returns. Never by a
-//     block, so while an audio thread owns the runtimes (a live session) those cycles wait for QuickJS's own threshold
-//     GC, which runs inside whichever block's JS allocates past it in that runtime, or for the audio thread to hand the
-//     runtimes back.
+//     a quiescent operation which released some (the Engine's after every setGraph: one GC of each pack that had some
+//     released, however many went), and the audio thread handing the runtimes back (setAudioThreadOwns(false)). The
+//     first reclaim after the built-in pack's load (an Engine's first setGraph, at its top) takes what its bundle's
+//     load left in cycles too, whether or not an instance released anything; a loaded pack's load collects its own
+//     before loadPack returns. Never by a block, so while an audio thread owns the runtimes (a live session) those
+//     cycles wait for QuickJS's own threshold GC, which runs inside whichever block's JS allocates past it in that
+//     runtime, or for the audio thread to hand the runtimes back.
 // A pack is made and loaded on the control thread, its audio side included, so loadPack runs while an audio thread
 // runs blocks in the other packs: the block thread first reaches a pack through an instance of one of its types, in a
 // plan published after its load, and the plan swap's ring (release on push, acquire on adopt) carries the whole built
@@ -150,7 +150,8 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // audio thread, leaks its pack with it. The built-in pack is never retired.
 // What every pack shares stays the host's: the call deadline (one call runs at a time on the block thread), the
 // allocation counters (summed over every pack's audio runtime, so audioAllocations and the profile's allocation window
-// mean the whole audio side), the release rings, the throw count and the first throw, and the profile's span labels.
+// mean the whole audio side), the release rings, the live instance count, the throw count and the first throw,
+// jobsCutShort, and the profile's span labels, allocation window and trace window.
 // What is a pack's own: its promise-job queue, its memory limit, its cycle GC and its quiescent collection.
 //
 // Every runtime's JS stack is held to kStackBytes, under the smallest thread that may enter one: 512 KiB is a macOS
@@ -202,25 +203,26 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // them: a create's with those of the call that made it, or at a checkpoint of its own when that call has no hook to
 // run. They are charged to that node: a job that fails (a queueMicrotask callback that threw, or the platform's
 // allocator out of memory) is its throw, and faults it under faultOnThrow; one the deadline stops counts as its call
-// stopped (the rule above); and a chain still pending after the bound is cut short, its throw, which faults it at
-// once under faultOnThrow and otherwise on the second cut short in a row, as two expiries do. QuickJS cannot drop a
-// pending job, so a chain cut short stays queued and its pack remembers whose it is until the queue empties: its
-// later checkpoints (the next calls into any of its nodes) run the rest charged to that node, never to a pack-mate,
-// and charge it every other job they run meanwhile too, a pack-mate's own included. So a pack-mate that starts a
-// chain of its own that never settles while another node's leftovers are pending has its cut shorts charged to that
-// node, which faults for them while the pack-mate runs on; and once that node is released the chain is no node's, run
+// stopped (the rule above); and a chain still pending after the bound is cut short, its throw, which faults it at once
+// under faultOnThrow and otherwise on the second cut short in a row, as two expiries do. QuickJS cannot drop a pending
+// job, so a chain cut short stays queued and its pack remembers whose it is until the queue empties: its later
+// checkpoints (the next calls into any of its nodes) run the rest charged to that node, never to a pack-mate, and
+// charge it every other job they run meanwhile too, a pack-mate's own included. So a pack-mate that starts a chain of
+// its own that never settles while another node's leftovers are pending has its cut shorts charged to that node, which
+// faults for them while the pack-mate runs on; and once that node is released the chain is no node's, run
 // kJobsPerCheckpoint at a time at every checkpoint of the pack until the pack is reloaded, the node that started it
-// never charged or bypassed. What is queued where no call into a node ran, by a release freeing a node's JS or by a
-// quiescent collection finding a FinalizationRegistry callback's target, runs there and then, charged to the
+// never charged or bypassed. What is queued where no call into a node ran runs there and then, charged to the
 // remembered owner when the pack has one, else to no node, as is what a released owner leaves (a throw counted,
-// faulting no one); what a reshape's freeing queues runs at a checkpoint after its commit, charged to its node. A
-// fault charged to the node whose process this is returns RP_FAULT; one after a hook, or charged to another node of
-// the pack whose leftovers ran, faults that node at its next block. A promise reaction's own throw only rejects its
-// promise, which is the node's to handle. A load's own jobs run as it loads, at most kJobsPerCheckpoint each stretch
-// of it (its top level in each runtime, each descriptor, what reading the definitions after the last one queued, what
-// a loaded pack's collection queues), and a load that leaves any is refused: they would run at the pack's first
-// checkpoint, charged to whichever of its nodes' calls came first, or, in the control runtime, at its first settings
-// check.
+// faulting no one): what a release freeing a node's JS queues, and what a quiescent collection queues by finding a
+// FinalizationRegistry callback's target when the queue was empty before it (queued behind another node's leftovers,
+// those jobs wait with them and are charged to that node); what a reshape's freeing queues runs at a checkpoint after
+// its commit, charged to its node. A fault charged to the node whose process this is returns RP_FAULT; one after a
+// hook, or charged to another node of the pack whose leftovers ran, faults that node at its next block. A promise
+// reaction's own throw only rejects its promise, which is the node's to handle. A load's own jobs run as it loads, at
+// most kJobsPerCheckpoint each stretch of it (its top level in each runtime, each descriptor, what reading the
+// definitions after the last one queued, what a loaded pack's collection queues), and a load that leaves any is
+// refused: they would run at the pack's first checkpoint, charged to whichever of its nodes' calls came first, or, in
+// the control runtime, at its first settings check.
 //
 // Each of a pack's two runtimes is held to its memory limit (kDefaultMemoryLimit, unless its load says otherwise), on
 // its own, by the host's allocator, which refuses an allocation past it, so QuickJS throws out of memory in the call
@@ -229,12 +231,12 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // loaded, a refusal in its audio runtime during a call, or its jobs, faults the node they are charged to, whatever its
 // faultOnThrow and whether or not JS caught the error (a refusal JS caught is counted as its throw), since a pack at
 // its limit is one none of its nodes can rely on: at once in its process (RP_FAULT), at its next block after a hook or
-// for its leftovers run at a pack-mate's checkpoint. Only an out-of-memory error the limit did not cause, the
+// for its leftovers run at a pack-mate's checkpoint or where no call ran (a release's run). Only an out-of-memory error the limit did not cause, the
 // platform's allocator running out, is a throw like any other, faulting under faultOnThrow. A call is charged only
 // what its pack refuses after it begins: the refusal note is cleared as each call arms its deadline, so a refusal made
 // where no checkpoint looks (a release freeing a node's JS, a quiescent collection, the text the host makes of a
-// checkpoint's last job's throw) faults no node. Another pack is untouched. In the control runtime the limit holds
-// the pack's top level, parseSettings and layout, which hold no instance: a load or a settings check that fails on an
+// checkpoint's last job's throw) faults no node. Another pack is untouched. In the control runtime, which holds no
+// instance, the limit holds the pack's top level, parseSettings and layout: a load or a settings check that fails on an
 // allocation it refused is refused, saying so (a settings check's refusing the document, so the running plan stands),
 // and one that catches the error runs on, there being no node to fault.
 // "Past its limit" means past it in reachable and uncollected bytes together: the limit counts everything the runtime
@@ -270,8 +272,8 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 //
 // Settings reach the audio side as their JSON form: the control side's parseSettings checks them, and what it
 // returns crosses as JSON (a pack's two runtimes share no value), so a transform's result that JSON cannot hold (a
-// Map, a Date, undefined) arrives as JSON spells it. The audio side never runs the schema, so it does no validation work at
-// a swap (and no node's schema is zod's: since B3b the bundle holds none, graph/settingsSchema.ts's instead).
+// Map, a Date, undefined) arrives as JSON spells it. The audio side never runs the schema, so it does no validation
+// work at a swap (and no node's schema is zod's: since B3b the bundle holds none, graph/settingsSchema.ts's instead).
 //
 // A profile build (RETROPLUG_PROFILE, spec/08-profiling.md) profiles the audio runtimes: their allocator keeps the
 // live and peak heap, every pack's summed, an allocation window counts per block, and a trace window records nested
@@ -314,18 +316,18 @@ public:
     // The built-in pack's script node types, for NodeRegistry::addPackage; valid for the host's life (empty before a
     // load).
     const rp_package* package() const;
-    // Load a pack beside the built-in one (docs/modular-graph-phase-c1-design.md sections 4 and 5): a pack named `id`,
-    // its two runtimes made for it, runs a bundle (global-code bytecode, in chunks run in order) in both, each held to
-    // `memoryLimit` bytes (0: kDefaultMemoryLimit), the load included, and its definitions are read and checked as
-    // load checks the built-in pack's. Callable while an audio thread runs blocks (the class comment). Its generation
-    // is the id's count of loads, every one of them counted, refused or not (1 for the first), so a number names one
-    // source. On an id loaded already it builds the pack's next generation beside the current one, until retirePack or
-    // discardPack settles which goes. Its package, named by `id`, for the registry
+    // Load a pack beside the built-in one (docs/modular-graph-phase-c1-design.md sections 4 and 5): a pack named
+    // `id`, its two runtimes made for it, runs a bundle (global-code bytecode, in chunks run in order) in both, each
+    // held to `memoryLimit` bytes (0: kDefaultMemoryLimit), the load included, and its definitions are read and
+    // checked as load checks the built-in pack's. Callable while an audio thread runs blocks (the class comment). Its
+    // generation is the id's count of loads, every one of them counted, refused or not (1 for the first), so a number
+    // names one source. On an id loaded already it builds the pack's next generation beside the current one, until
+    // retirePack or discardPack settles which goes. Its package, named by `id`, for the registry
     // (NodeRegistry::addPackage, or replacePackage for a new generation), valid until the pack is freed; null, with a
-    // reason, when canLoadPack refuses the id (nothing is built), or, the pack freed there and then, when a chunk fails
-    // to load (or runs out of memory), the load runs past the call deadline, the promise jobs it queues do not settle
-    // in kJobsPerCheckpoint, a definition cannot be read or is not the same in both contexts, or a type id is not the
-    // pack's id, a dot and more ("user.synth.osc" in "user.synth").
+    // reason, when canLoadPack refuses the id (nothing is built), or, the pack freed there and then, when a chunk
+    // fails to load (or runs out of memory), the load runs past the call deadline, the promise jobs it queues do not
+    // settle in kJobsPerCheckpoint, a definition cannot be read or is not the same in both contexts, or a type id is
+    // not the pack's id, a dot and more ("user.synth.osc" in "user.synth").
     const rp_package* loadPack(const std::string& id, std::span<const Chunk> chunks, std::size_t memoryLimit,
                                std::string* error = nullptr);
     // Whether loadPack takes a pack named `id`: a plain id (graph::isPlainId), not the built-in pack's ("rp.script",
@@ -396,8 +398,8 @@ public:
     // promise jobs ran at its calls' checkpoints.
     void endBlock();
     // The most of a pack's pending promise jobs one run takes (the class comment): a checkpoint after a call into a
-    // node, a run outside any (a release's), each stretch of a load (one that leaves any refuses the load), and a
-    // settings check's drain of the control side (one that leaves any refuses the settings).
+    // node, a run outside any (a release's, or a quiescent collection's), each stretch of a load (one that leaves any
+    // refuses the load), and a settings check's drain of the control side (one that leaves any refuses the settings).
     static constexpr int kJobsPerCheckpoint = 256;
     static constexpr std::size_t kStackBytes = 256 * 1024;  // each runtime's JS stack (the class comment)
     // How many plain objects reading a node's process or a hook walks (what its create returned, then the prototypes
@@ -421,9 +423,9 @@ public:
 
     // ---- profiling (spec/08-profiling.md): real only in a RETROPLUG_PROFILE build --------------------------------
     // The allocation window, opened by resetAllocStats, which can pin every pack's audio runtime's auto-GC off from
-    // then on, a pack loaded later's too (so a window collects nothing); runGc runs and times one collection of each.
-    // allocStats never refuses (a benchmark reads its `enabled` to know a profile host), and read on another thread
-    // while blocks run lags them.
+    // then on, a pack loaded later's too (so a window collects nothing); runGc runs and times one collection of each,
+    // then runs what they queued (untimed). allocStats never refuses (a benchmark reads its `enabled` to know a profile
+    // host), and read on another thread while blocks run lags them.
     DspAllocStats allocStats() const;
     // These refuse, doing nothing, while an audio thread owns the runtimes (setAudioThreadOwns): resetAllocStats and
     // traceReset return false and runGc a result with enabled false (the first refusal said once on stderr), and the
@@ -446,12 +448,11 @@ public:
     std::vector<DspTraceSpan> traceSpans() const;
     std::vector<std::string>  traceNames() const;
 
+private:
     // Defined in ScriptHost.cpp: a pack, a script type, and one instance's record.
     struct Pack;
     struct Type;
     struct Instance;
-
-private:
     struct Glue;  // the ABI tables, the Block object's methods and the audio runtimes' allocator
     struct Counters {
         std::atomic<std::uint64_t> allocs{0}, reallocs{0}, frees{0}, bytes{0};
@@ -488,7 +489,8 @@ private:
     void drainReleased();           // control thread: the records handed back, deleted, and the backlog moved on
     void collect();                 // quiescent: a GC of each pack's audio runtime whose load or releases have left
                                     //   garbage since its last
-    bool collectAudio(Pack& pack);  // quiescent: one GC of its audio runtime; whether it queued jobs (collect)
+    // quiescent: one GC of a pack's audio runtime; whether it queued jobs (collect and runGc)
+    bool collectAudio(Pack& pack);
     // control thread: the jobs a call into its control context queued, at most kJobsPerCheckpoint; whether they settled
     static bool drainControlJobs(Pack& pack);
 
@@ -496,9 +498,11 @@ private:
     Counters                     counters_;
     Binder                       binder_ = nullptr;
     void*                        binderUser_ = nullptr;
-    // Every pack, the built-in one first. Made, loaded and read on the control thread (and quiescent, by releaseQueued,
-    // collect and the profile calls), so it grows (loadPack) and shrinks (freePack) there, while an audio thread runs
-    // blocks; the block thread reaches a pack only through an instance of one of its types, never through this list.
+    // Every pack, the built-in one first. Read and changed on the control thread, or while no audio thread runs: the
+    // constructor and destructor, load, loadPack (which grows it), freeIdle and freePack (which shrink it), package,
+    // currentPack, packs, findPack (retirePack and discardPack), collect, resetAllocStats and runGc. So it grows and
+    // shrinks while an audio thread runs blocks, which reaches a pack only through an instance of one of its types,
+    // never this list.
     Packs                              packs_;
     bool                               loaded_ = false;  // load has been called
     bool                               gcPinned_ = false;  // resetAllocStats pinned the audio runtimes' auto-GC off
@@ -530,7 +534,8 @@ private:
     std::uint32_t              leaksReported_ = 0;
 
     // The call deadline: its length in CPU nanoseconds (set on the control thread), and while a call runs (armed_), the
-    // thread's CPU time at the first poll in it (-1 until then) and whether the interrupt stopped it (the block thread's).
+    // thread's CPU time at the first poll in it (-1 until then) and whether the interrupt stopped it (the block
+    // thread's).
     std::atomic<std::int64_t>  callDeadlineNs_{std::chrono::nanoseconds(kDefaultCallDeadline).count()};
     bool                       armed_ = false;
     std::int64_t               cpuStart_ = -1;

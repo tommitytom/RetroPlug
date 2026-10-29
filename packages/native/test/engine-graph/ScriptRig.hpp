@@ -49,8 +49,9 @@ inline ScriptHost::Chunk scriptTestBundle() { return {rp_script_test_bundle, rp_
 
 // A toy bundle's source as bytecode, as the control plane compiles a script.
 inline std::vector<std::uint8_t> compileToys(const std::string& source) {
-    auto bytecode = dsp::compileToBytecode(source);
-    if (!bytecode) throw std::runtime_error("the toy source does not compile");
+    std::string error;
+    auto bytecode = dsp::compileToBytecode(source, ScriptHost::kStackBytes, &error);
+    if (!bytecode) throw std::runtime_error("the toy source: " + error);
     return *bytecode;
 }
 
@@ -196,7 +197,8 @@ struct ScriptRig {
             chunks.emplace_back(toyBytecode);
         }
         std::string error;
-        if (!scripts.load(chunks, &error, memoryLimit)) throw std::runtime_error("the toy bundle does not load: " + error);
+        if (!scripts.load(chunks, &error, memoryLimit))
+            throw std::runtime_error("the toy bundle does not load: " + error);
         for (const rp_package* p : {graph::corePackage(), graph::hostPackage(), graph::test::testPackage(),
                                     test::testPackage(), scripts.package()})
             if (!registry.addPackage(p, &error)) throw std::runtime_error("a package is refused: " + error);

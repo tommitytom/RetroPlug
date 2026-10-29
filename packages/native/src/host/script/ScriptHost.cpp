@@ -89,6 +89,11 @@ struct TextOut {
         std::snprintf(digits, sizeof digits, "%lld", value);
         add(digits);
     }
+    void size(std::size_t value) {
+        char digits[24];
+        std::snprintf(digits, sizeof digits, "%zu", value);
+        add(digits);
+    }
 };
 
 // A pack's memory limit as every refusal at it says it: "64 MiB memory limit" when it is a whole number of
@@ -96,10 +101,10 @@ struct TextOut {
 void addLimit(TextOut& t, std::size_t limit) {
     constexpr std::size_t kMiB = std::size_t{1} << 20;
     if (limit % kMiB == 0) {
-        t.number(static_cast<long long>(limit / kMiB));
+        t.size(limit / kMiB);
         t.add(" MiB");
     } else {
-        t.number(static_cast<long long>(limit));
+        t.size(limit);
         t.add("-byte");
     }
     t.add(" memory limit");
@@ -346,6 +351,9 @@ struct ScriptHost::Type {
 // address of Object.prototype. Made and loaded on the control thread; the block thread reaches it only through an
 // instance of one of its types.
 struct ScriptHost::Pack {
+    // The runtimes are raw pointers, freed by ScriptHost::freeRuntimes (which nulls them) before a pack goes.
+    ~Pack() { assert(!audioRt && !controlRt && !audio && !control && "a pack is freed through freeRuntimes"); }
+
     // A runtime's allocator opaque: the counters it adds to, and its own live heap and the limit an allocation may not
     // take it past (design section 6). Written by whichever thread runs the runtime (for the audio one, the block
     // thread, or the control thread while it loads or no audio thread runs).
@@ -410,7 +418,7 @@ struct ScriptHost::Instance {
     State                   state = State::Pending;
     bool                    faultNext = false;  // a hook threw under faultOnThrow, or expired twice in a row: fault next block
     std::uint8_t            expiries = 0;       // its calls the deadline stopped in a row (expiryFaults)
-    std::uint8_t            cutShorts = 0;      // checkpoints in a row that cut its promise jobs short (Glue::chargeJobs)
+    std::uint8_t            cutShorts = 0;      // checkpoints in a row that cut its promise jobs short (chargeJobs)
     Settings*               settings = nullptr;
     std::unique_ptr<Layout> layout;
     JSValue                 object = JS_UNDEFINED;  // the NodeInstance its definition's create returned
@@ -424,23 +432,18 @@ struct ScriptHost::Instance {
     ~Instance() { delete settings; }
 };
 
-namespace {
-
-// The rp_node a script node is to the planner: a pointer to its record, which outlives it until its release.
-struct Shim : rp_node {
-    ScriptHost::Instance* in = nullptr;
-};
-
-}  // namespace
-
 // Everything the ABI tables, the Block object's methods and the runtimes' allocator reach the host through. What an
 // instance's JS lives in is reached through its type's pack, and what a Block method runs in through its context's.
 struct ScriptHost::Glue {
+    // The rp_node a script node is to the planner: a pointer to its record, which outlives it until its release.
+    struct Shim : rp_node {
+        Instance* in = nullptr;
+    };
+
     static Type&       typeOf(const rp_node_type* t) { return *static_cast<Type*>(t->ctx); }
     static Instance&   instanceOf(rp_node* n) { return *static_cast<Shim*>(n)->in; }
     static Pack&       packOf(Instance& in) { return *in.type->pack; }
     static Pack&       packOf(JSContext* audio) { return *static_cast<Pack*>(JS_GetContextOpaque(audio)); }
-    static ScriptHost& hostOf(JSContext* audio) { return *packOf(audio).host; }
     static JSAtom      atom(const Pack& p, Atom a) { return p.atoms[a]; }
 
     // ---- the call deadline ---------------------------------------------------------------------------------------
@@ -470,7 +473,8 @@ struct ScriptHost::Glue {
     };
 
     // QuickJS asks once every 10000 of its polls (at each call and each jump back in a loop) whether to stop: the
-    // block thread's clock in an audio runtime that has joined, the control thread's everywhere else (controlInterrupt).
+    // block thread's clock in an audio runtime that has joined, the control thread's everywhere else
+    // (controlInterrupt).
     static int interrupt(JSRuntime*, void* opaque) {
         auto& h = *static_cast<ScriptHost*>(opaque);
         return expired(h, h.armed_, h.cpuStart_, h.interrupted_) ? 1 : 0;
@@ -595,7 +599,8 @@ struct ScriptHost::Glue {
     static void* jsRealloc(void* opaque, void* p, std::size_t size) {
         auto& heap = *static_cast<Pack::Heap*>(opaque);
         const std::size_t before = p ? usableSize(p) : 0;
-        if (size > before && !admits(heap, size - before)) return nullptr;  // p left as it was, as a failed realloc does
+        // p is left as it was, as a failed realloc does.
+        if (size > before && !admits(heap, size - before)) return nullptr;
         void* q = std::realloc(p, size);
         if (q || size == 0) {
             const std::size_t after = q ? usableSize(q) : 0;
@@ -817,11 +822,12 @@ struct ScriptHost::Glue {
     // when a write fails: a setter the node hung on one threw, or it froze one.
     static bool fillBlock(const Pack& p, JSContext* ctx, Instance& in, const rp_process& block) {
         const rp_transport& t = *block.transport;
+        const bool playing = (t.flags & RP_TRANSPORT_PLAYING) != 0;
         return JS_SetProperty(ctx, in.block, atom(p, kFrames), JS_NewUint32(ctx, block.frames)) >= 0 &&
                JS_SetProperty(ctx, in.transport, atom(p, kSampleRate), JS_NewFloat64(ctx, t.sample_rate)) >= 0 &&
                JS_SetProperty(ctx, in.transport, atom(p, kTempo), JS_NewFloat64(ctx, t.tempo)) >= 0 &&
                JS_SetProperty(ctx, in.transport, atom(p, kPpq), JS_NewFloat64(ctx, t.ppq)) >= 0 &&
-               JS_SetProperty(ctx, in.transport, atom(p, kPlaying), JS_NewBool(ctx, (t.flags & RP_TRANSPORT_PLAYING) != 0)) >= 0;
+               JS_SetProperty(ctx, in.transport, atom(p, kPlaying), JS_NewBool(ctx, playing)) >= 0;
     }
 
     // A process call's js-call span (a profile build), closed as the call returns whatever happened in JS. Every span
@@ -1132,15 +1138,16 @@ struct ScriptHost::Glue {
     // Whether `pack` refused an allocation since this was last asked; the note is cleared.
     static bool refusedSince(Pack& pack) { return std::exchange(pack.heap.refused, false); }
 
-    // After a call the block thread made into `in` (create, onSettings, portsChanged, activate or process), inside the
-    // call's deadline, which spans the call and its jobs. An allocation its pack refused during the call faults it,
-    // whether or not JS caught the error (`threw`: the call threw, so its throw, the refusal's error or another, is
-    // counted; else the refusal is counted as its throw). Then the jobs pending in its pack run (chargeJobs), charged
-    // to the pack's remembered owner when it has one, else to `in`: so its own, and only those, while no other node's
-    // are pending. What falls to `in` is returned, for its call to fold in as its own (process faults at once, a hook
-    // at the next block); what falls to another node, whose leftovers these are, faults that one at its next block
-    // (chargeOther). Once the deadline has stopped the call, nothing runs: what it left waits for the pack's next
-    // checkpoint, still charged to it. A call into a pack with nothing pending costs one list test here.
+    // After a call the block thread made into `in` (create, onSettings, portsChanged, activate or process), or the
+    // commit of a reshape no onSettings follows, inside the call's deadline, which spans the call and its jobs. An
+    // allocation its pack refused during the call faults it, whether or not JS caught the error (`threw`: the call
+    // threw, so its throw, the refusal's error or another, is counted; else the refusal is counted as its throw).
+    // Then the jobs pending in its pack run (chargeJobs), charged to the pack's remembered owner when it has one,
+    // else to `in`: so its own, and only those, while no other node's are pending. What falls to `in` is returned,
+    // for its call to fold in as its own (process faults at once, a hook at the next block); what falls to another
+    // node, whose leftovers these are, faults that one at its next block (chargeOther). Once the deadline has stopped
+    // the call, nothing runs: what it left waits for the pack's next checkpoint, still charged to it. A call into a
+    // pack with nothing pending costs one list test here.
     static Settled checkpoint(ScriptHost& h, Instance& in, bool threw, const char* where) {
         Pack& pack = packOf(in);
         Settled self;
@@ -1562,9 +1569,10 @@ struct ScriptHost::Glue {
                        : nullptr;
         if (!p) return JS_EXCEPTION;
         if (p->stamp != in->blockStamp) {
-            traceBegin(hostOf(ctx), DSP_SPAN_MARSHAL);
-            const bool filled = fillMessages(packOf(*in), ctx, *p, *in->running->inputs[found->index].u.queue);
-            traceEnd(hostOf(ctx));
+            Pack& pack = packOf(*in);
+            traceBegin(*pack.host, DSP_SPAN_MARSHAL);
+            const bool filled = fillMessages(pack, ctx, *p, *in->running->inputs[found->index].u.queue);
+            traceEnd(*pack.host);
             if (!filled) return JS_EXCEPTION;
             p->stamp = in->blockStamp;
         }
@@ -1582,9 +1590,10 @@ struct ScriptHost::Glue {
         if (p->stamp != in->blockStamp) {
             const rp_control_queue& q =
                 found->side == Side::Param ? *in->running->params[found->index] : *in->running->inputs[found->index].u.control;
-            traceBegin(hostOf(ctx), DSP_SPAN_MARSHAL);
-            const bool filled = fillControl(packOf(*in), ctx, *p, q);
-            traceEnd(hostOf(ctx));
+            Pack& pack = packOf(*in);
+            traceBegin(*pack.host, DSP_SPAN_MARSHAL);
+            const bool filled = fillControl(pack, ctx, *p, q);
+            traceEnd(*pack.host);
             if (!filled) return JS_EXCEPTION;
             p->stamp = in->blockStamp;
         }
@@ -1789,7 +1798,8 @@ bool ScriptHost::canLoadPack(const std::string& id, std::string* error) const {
     if (!graph::isPlainId(id))
         return refuse("pack id " + graph::jsonString(id) +
                       " must be non-empty, with no whitespace or control characters");
-    if (id == kBuiltInPack) return refuse(std::string(kBuiltInPack) + " is the built-in pack, which is not reloadable");
+    if (id == kBuiltInPack)
+        return refuse("pack id " + graph::jsonString(id) + " is the built-in pack, which is not reloadable");
     if (id == "rp" || id.rfind("rp.", 0) == 0)
         return refuse("pack id " + graph::jsonString(id) +
                       " is the app's to give: \"rp\" and every id under \"rp.\" name its own packages (its built-in "
@@ -1921,8 +1931,8 @@ void ScriptHost::join(Pack& pack) {
 }
 
 bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string* error) {
-    // An allocation the load was refused fails it (the chunk throws out of memory); no node's call is to be faulted, and
-    // no settings check is to say so.
+    // An allocation the load was refused fails it (the chunk throws out of memory); no node's call is to be faulted,
+    // and no settings check is to say so.
     struct Forget {
         Pack* pack;
         ~Forget() { pack->heap.refused = pack->controlHeap.refused = false; }
@@ -2041,7 +2051,8 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
         JSValue ad = callMethod(audio, type.audio, "descriptor", 0, nullptr);
         const bool audioDescribed = !JS_IsException(ad) && stringify(audio, ad, audioDescriptor);
         JS_FreeValue(audio, ad);
-        if (!audioDescribed) return fail(type.id + ": its descriptor, in the audio context: " + exceptionText(audio, true));
+        if (!audioDescribed)
+            return fail(type.id + ": its descriptor, in the audio context: " + exceptionText(audio, true));
         if (audioDescriptor != type.descriptor)
             return fail(at + " (" + type.id + ") is not the same in both contexts: its descriptor differs, so the bundle "
                              "defines it by which context it runs in");
@@ -2182,8 +2193,9 @@ void ScriptHost::reclaim() {
         leaksReported_ = leaked;
     }
     if (!jobsLogged_ && jobsCutShort() > 0) {
-        std::fprintf(stderr, "[script] a script node's promise jobs outran the %d a checkpoint runs; the rest wait for its pack's "
-                             "next checkpoint, still charged to it (said once; jobsCutShort() counts them)\n",
+        std::fprintf(stderr,
+                     "[script] a script node's promise jobs outran the %d a checkpoint runs; the rest wait for its "
+                     "pack's next checkpoint, still charged to it (said once; jobsCutShort() counts them)\n",
                      kJobsPerCheckpoint);
         jobsLogged_ = true;
     }
@@ -2193,7 +2205,7 @@ void ScriptHost::reclaim() {
                      firstThrow_);
         firstThrowLogged_ = true;
     }
-    freeIdle();  // a retired generation whose last record just came back
+    freeIdle();  // a retired or discarded generation whose last record just came back
     if (!audioOwns_.load(std::memory_order_acquire)) collect();  // quiescent: what this thread's releases left in cycles
 }
 

@@ -180,7 +180,7 @@ test("a refusal before any replan says why, with no planner errors, and changes 
   // The built-in pack, and another id that is the app's to give.
   refused(
     { id: "rp.script", source: TOY + transposer("rp.script.up", 1) },
-    "rp.script is the built-in pack, which is not reloadable",
+    `pack id "rp.script" is the built-in pack, which is not reloadable`,
   );
   refused({ id: "rp.mine", source: TOY + transposer("rp.mine.up", 1) }, `pack id "rp.mine" is the app's to give`);
   // A memory limit that is no whole number of bytes, refused before the id is looked at.
