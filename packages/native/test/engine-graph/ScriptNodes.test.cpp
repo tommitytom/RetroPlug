@@ -6,8 +6,8 @@
 // instances are made and released, a throw (a refused write onto what a node holds among them, while the accessors one
 // hangs on the shared prototypes charge no other, a method only Object.prototype holds is adopted by none, and none
 // replaces a method of the frozen Block prototype), a node's promise jobs run and charged to it at the checkpoint after
-// its call (a pack-mate never charged for them) and its pack's memory limit faulting it, the block path's allocations,
-// and a running audio thread under all of it. The embedded production bundle and an Engine built around a toy bundle
+// its call (a pack-mate never charged for them, nor for what runs between two calls) and its pack's memory limit
+// faulting it, the block path's allocations, and a running audio thread under all of it. The embedded production bundle and an Engine built around a toy bundle
 // close it. A RETROPLUG_PROFILE build (build-prof/, which tools/run-profile.sh configures) adds the trace window's
 // cases, [profile]: a script node's process span labelled by its type and closed every way a call ends, a label per
 // type in load order, the profile calls refused while an audio thread owns the runtime, the types past the label
@@ -801,16 +801,17 @@ rp.register([rp.defineNode({
 }
 
 // A promise chain that queues another link every time, started in its first block, and a reaction that throws, which
-// rejects its promise rather than failing its job, the strict chain under faultOnThrow; and, in the same pack, a node
-// that does nothing, under faultOnThrow, so it faults on any throw charged to it (a cut short among them), fed by the
-// chain's node so it runs after it.
+// rejects its promise rather than failing its job, the strict chain under faultOnThrow, each keeping its count of links
+// in a global too; and, in the same pack, a node that does nothing, under faultOnThrow, so it faults on any throw
+// charged to it (a cut short among them), but send its block count and emit the chain's links as it sees them, fed by
+// the chain's node so it runs after it.
 const char* const kChain = R"JS(
 const chain = (id, extra) => rp.defineNode({
   id, ...extra,
-  ports: { links: rp.control.out(), out: rp.events.out() },
+  ports: { in: rp.events.in(), links: rp.control.out(), out: rp.events.out() },
   create: () => {
     let links = 0, started = false;
-    const link = () => { ++links; Promise.resolve().then(link); };
+    const link = () => { globalThis.chainLinks = ++links; Promise.resolve().then(link); };
     return {
       process(b) {
         b.emit("links", 0, links);
@@ -822,10 +823,10 @@ const chain = (id, extra) => rp.defineNode({
 rp.register([chain("rp.toy.chain", {}), chain("rp.toy.strict-chain", { faultOnThrow: true }), rp.defineNode({
   id: "rp.toy.strict-mate",
   faultOnThrow: true,
-  ports: { in: rp.events.in(), out: rp.events.out() },
+  ports: { in: rp.events.in(), out: rp.events.out(), seen: rp.control.out() },
   create: () => {
     let n = 0;
-    return { process(b) { b.send("out", 0, [++n & 0x7f]); } };
+    return { process(b) { b.send("out", 0, [++n & 0x7f]); b.emit("seen", 0, globalThis.chainLinks || 0); } };
   },
 })]);
 )JS";
@@ -873,8 +874,10 @@ TEST_CASE("a node's leftover promise chain is charged to it at a pack-mate's che
           "node once it is removed",
           "[script][jobs][pack-mate]") {
     ScriptRig rig(kChain);
-    const std::string mate = node("m", "rp.toy.strict-mate") + "," + node("pm", "rp.test.probe");
-    REQUIRE(rig.set(doc(node("c", "rp.toy.chain") + "," + mate, wire("c.out", "m.in") + "," + wire("m.out", "pm.events"))).ok);
+    const std::string mate = node("m", "rp.toy.strict-mate") + "," + node("pm", "rp.test.probe") + "," +
+                             node("seen", "rp.test.probe");
+    const std::string mateWires = wire("m.out", "pm.events") + "," + wire("m.seen", "seen.control");
+    REQUIRE(rig.set(doc(node("c", "rp.toy.chain") + "," + mate, wire("c.out", "m.in") + "," + mateWires)).ok);
     rig.run();
     // The chain's own checkpoint cut it short once; the strict mate's, after it, ran 256 more charged to the chain, and
     // cut it short a second time in a row: the chain faults at its next block, and the mate, which would fault on any
@@ -883,6 +886,10 @@ TEST_CASE("a node's leftover promise chain is charged to it at a pack-mate's che
     CHECK(rig.scripts.throwCount() == 2);
     CHECK_FALSE(rig.host->isFaulted("c"));
     CHECK_FALSE(rig.host->isFaulted("m"));
+    // The bound: the mate saw the links the chain had after its first checkpoint, the one its process made and 255
+    // more, which with the reaction that threw are that checkpoint's 256 jobs, exactly.
+    CHECK(ScriptHost::kJobsPerCheckpoint == 256);
+    CHECK(rig.node<Probe>("seen").controlAtZero == 256.0);
     for (int n = 2; n <= 5; ++n) {
         rig.run();
         INFO("block " << n);
@@ -891,12 +898,13 @@ TEST_CASE("a node's leftover promise chain is charged to it at a pack-mate's che
         REQUIRE(rig.node<Probe>("pm").events.size() == 1);
         CHECK(rig.node<Probe>("pm").events[0].data == bytes({n}));
         // The chain goes on at the mate's checkpoint, 256 jobs a block, each run cut short and charged to the chain.
+        CHECK(rig.node<Probe>("seen").controlAtZero == 256.0 * n);
         CHECK(rig.scripts.jobsCutShort() == static_cast<std::uint32_t>(n + 1));
         CHECK(rig.scripts.throwCount() == static_cast<std::uint32_t>(n + 1));
     }
     // Removing the chain's node frees nothing in the runtime its closures live in, so the chain goes on, charged to no
     // node: cut short, counted, and no one's throw.
-    REQUIRE(rig.set(doc(mate, wire("m.out", "pm.events"))).ok);
+    REQUIRE(rig.set(doc(mate, mateWires)).ok);
     const std::uint32_t throws = rig.scripts.throwCount(), cut = rig.scripts.jobsCutShort();
     for (int n = 6; n <= 9; ++n) {
         rig.run();
@@ -909,6 +917,138 @@ TEST_CASE("a node's leftover promise chain is charged to it at a pack-mate's che
     CHECK(rig.scripts.jobsCutShort() > cut);
     rig.reclaim();
     CHECK(rig.scripts.firstThrow().find("rp.toy.chain") == 0);
+}
+
+// Each sends its block count. The early node's create queues a queueMicrotask callback that throws, and the settler's
+// onSettings one once its settings say fail, both under faultOnThrow, as is the mate, so a job charged to it in error
+// would fault it. The hanger, without faultOnThrow, starts a chain of 300 links in its first block, whose last queues
+// two promise reactions that never return.
+const char* const kCheckpoints = R"JS(
+const counting = (id, extra, hooks) => rp.defineNode({
+  id, ...extra,
+  settings: rp.s.object({ fail: rp.s.bool(false) }),
+  ports: { in: rp.events.in(), out: rp.events.out() },
+  create: () => {
+    let n = 0;
+    if (hooks.create) hooks.create();
+    const made = { process: (b) => { b.send("out", 0, [++n & 0x7f]); if (n === 1 && hooks.first) hooks.first(); } };
+    if (hooks.onSettings) made.onSettings = hooks.onSettings;
+    return made;
+  },
+});
+const boom = (where) => queueMicrotask(() => { throw new Error("from " + where); });
+const hang = () => { for (;;) {} };
+let links = 0;
+const link = () => {
+  if (++links < 300) return void Promise.resolve().then(link);
+  Promise.resolve().then(hang);
+  Promise.resolve().then(hang);
+};
+rp.register([
+  counting("rp.toy.mate", { faultOnThrow: true }, {}),
+  counting("rp.toy.early", { faultOnThrow: true }, { create: () => boom("create") }),
+  counting("rp.toy.settler", { faultOnThrow: true }, { onSettings: (s) => { if (s.fail) boom("onSettings"); } }),
+  counting("rp.toy.hanger", {}, { first: () => Promise.resolve().then(link) }),
+]);
+)JS";
+
+TEST_CASE("what a fresh instance's create queues runs at a checkpoint of its own, charged to it: a faultOnThrow node whose "
+          "create queues a throwing callback faults at its first block, a pack-mate planned before it uncharged",
+          "[script][jobs][create]") {
+    ScriptRig rig(kCheckpoints);
+    REQUIRE(rig.set(doc(node("m", "rp.toy.mate") + "," + node("e", "rp.toy.early") + "," + node("pm", "rp.test.probe") +
+                            "," + node("pe", "rp.test.probe"),
+                        wire("m.out", "e.in") + "," + wire("m.out", "pm.events") + "," + wire("e.out", "pe.events")))
+                .ok);
+    for (int n = 1; n <= 3; ++n) {
+        rig.run();
+        INFO("block " << n);
+        CHECK(rig.host->isFaulted("e"));  // from its first block, which its create's checkpoint faulted: silent
+        CHECK(rig.node<Probe>("pe").events.empty());
+        CHECK_FALSE(rig.host->isFaulted("m"));
+        REQUIRE(rig.node<Probe>("pm").events.size() == 1);
+        CHECK(rig.node<Probe>("pm").events[0].data == bytes({n}));
+        CHECK(rig.scripts.throwCount() == 1);
+    }
+    rig.reclaim();
+    CHECK(rig.scripts.firstThrow() == "rp.toy.early threw in a promise job: Error: from create");
+}
+
+TEST_CASE("what a script node's onSettings queues runs at the checkpoint after it, charged to it: under faultOnThrow, a "
+          "throwing callback faults it at its next block",
+          "[script][jobs][hook]") {
+    ScriptRig rig(kCheckpoints);
+    const auto graph = [](bool fail) {
+        return doc(node("m", "rp.toy.mate") + "," + node("s", "rp.toy.settler", fail ? R"({"fail":true})" : "") + "," +
+                       node("pm", "rp.test.probe") + "," + node("ps", "rp.test.probe"),
+                   wire("m.out", "s.in") + "," + wire("m.out", "pm.events") + "," + wire("s.out", "ps.events"));
+    };
+    REQUIRE(rig.set(graph(false)).ok);
+    rig.run();
+    REQUIRE(rig.node<Probe>("ps").events.size() == 1);
+    rp_node* const kept = rig.host->node("s");
+    REQUIRE(rig.set(graph(true)).ok);  // a swap, adopted there and then (quiescent): onSettings at its commit
+    REQUIRE(rig.host->node("s") == kept);
+    CHECK(rig.scripts.throwCount() == 1);  // its callback, at the checkpoint after it
+    CHECK_FALSE(rig.host->isFaulted("s"));
+    rig.run();
+    CHECK(rig.scripts.throwCount() == 1);
+    CHECK(rig.host->isFaulted("s"));  // at its next block, which is silent
+    CHECK(rig.node<Probe>("ps").events.empty());
+    CHECK_FALSE(rig.host->isFaulted("m"));
+    CHECK(rig.node<Probe>("pm").events.size() == 1);
+    rig.reclaim();
+    CHECK(rig.scripts.firstThrow() == "rp.toy.settler threw in a promise job: Error: from onSettings");
+}
+
+TEST_CASE("a node's leftover reaction the deadline stops at a pack-mate's checkpoint counts as its own call stopped: two "
+          "in a row fault it at its next block, the pack-mates charged nothing",
+          "[script][jobs][deadline]") {
+    ScriptRig rig(kCheckpoints);
+    rig.scripts.setCallDeadline(std::chrono::milliseconds(50));
+    REQUIRE(rig.set(doc(node("h", "rp.toy.hanger") + "," + node("m1", "rp.toy.mate") + "," + node("m2", "rp.toy.mate") +
+                            "," + node("ph", "rp.test.probe") + "," + node("p1", "rp.test.probe") + "," +
+                            node("p2", "rp.test.probe"),
+                        wire("h.out", "m1.in") + "," + wire("m1.out", "m2.in") + "," + wire("h.out", "ph.events") + "," +
+                            wire("m1.out", "p1.events") + "," + wire("m2.out", "p2.events")))
+                .ok);
+    rig.run();
+    // The hanger's checkpoint cut its chain short, its throw; the first mate's ran the 44 links left, then the first
+    // reaction that never returns, which the deadline stopped: the hanger's first expiry. The second mate's ran the
+    // other, its second in a row, so it faults at its next block. The mates, which fault on any throw charged to them,
+    // run on.
+    CHECK(rig.scripts.jobsCutShort() == 1);
+    CHECK(rig.scripts.throwCount() == 3);
+    CHECK_FALSE(rig.host->isFaulted("h"));
+    REQUIRE(rig.node<Probe>("ph").events.size() == 1);
+    for (int n = 2; n <= 3; ++n) {
+        rig.run();
+        INFO("block " << n);
+        CHECK(rig.host->isFaulted("h"));
+        CHECK(rig.node<Probe>("ph").events.empty());
+        for (const char* mate : {"m1", "m2"}) CHECK_FALSE(rig.host->isFaulted(mate));
+        REQUIRE(rig.node<Probe>("p2").events.size() == 1);
+        CHECK(rig.node<Probe>("p2").events[0].data == bytes({n}));
+        CHECK(rig.scripts.throwCount() == 3);
+    }
+}
+
+TEST_CASE("a release runs its pack's leftovers charged to the live node that left them, whose cut short it is",
+          "[script][jobs][release]") {
+    ScriptRig rig(kChain);
+    // The mate first (the planner orders nodes no wire orders as the document lists them), so no checkpoint follows the
+    // chain's in the block: its leftovers wait.
+    REQUIRE(rig.set(doc(node("m", "rp.toy.strict-mate") + "," + node("c", "rp.toy.chain"), "")).ok);
+    rig.run();
+    CHECK(rig.scripts.jobsCutShort() == 1);
+    CHECK(rig.scripts.throwCount() == 1);
+    REQUIRE(rig.set(doc(node("c", "rp.toy.chain"), "")).ok);  // the mate released: its release runs the chain on
+    CHECK(rig.scripts.jobsCutShort() == 2);
+    CHECK(rig.scripts.throwCount() == 2);  // the chain's second cut short in a row: it faults at its next block
+    rig.run();
+    CHECK(rig.host->isFaulted("c"));
+    rig.reclaim();
+    CHECK(rig.scripts.firstThrow().find("rp.toy.chain's promise jobs did not settle") == 0);
 }
 
 TEST_CASE("a queueMicrotask callback that throws is its node's throw, named by its type, and faults a faultOnThrow node; a "
@@ -951,9 +1091,16 @@ rp.register([microtask("rp.toy.microtask", {}), microtask("rp.toy.strict-microta
 }
 
 // Each allocates 1 MiB at a time on its second block, up to 64 MiB, and sends its block count every block: `hog`
-// catches the error a refused allocation throws, `glutton` lets it go. The idler allocates nothing.
+// catches the error a refused allocation throws, `glutton` lets it go, and `job-hog` and `job-glutton` do the same in a
+// promise job their process queues. The idler only sends its block count, which allocates a little every block and
+// keeps none of it: running on in a pack the hogs took to its limit, it shows their frees were counted.
 const char* const kHogs = R"JS(
-const hog = (id, catches) => rp.defineNode({
+const grab = (id, catches) => {
+  const kept = [];
+  if (!catches) { for (let k = 0; k < 64; ++k) kept.push(new Float64Array(1 << 17)); return; }
+  try { for (let k = 0; k < 64; ++k) kept.push(new Float64Array(1 << 17)); } catch (e) { __probe("caught " + id); }
+};
+const hog = (id, catches, inJob) => rp.defineNode({
   id,
   ports: { out: rp.events.out() },
   create: () => {
@@ -962,14 +1109,14 @@ const hog = (id, catches) => rp.defineNode({
       process(b) {
         b.send("out", 0, [++n]);
         if (n !== 2) return;
-        const kept = [];
-        if (!catches) { for (let k = 0; k < 64; ++k) kept.push(new Float64Array(1 << 17)); return; }
-        try { for (let k = 0; k < 64; ++k) kept.push(new Float64Array(1 << 17)); } catch (e) { __probe("caught " + id); }
+        if (inJob) Promise.resolve().then(() => grab(id, catches));
+        else grab(id, catches);
       },
     };
   },
 });
-rp.register([hog("rp.toy.hog", true), hog("rp.toy.glutton", false), rp.defineNode({
+rp.register([hog("rp.toy.hog", true), hog("rp.toy.glutton", false), hog("rp.toy.job-hog", true, true),
+             hog("rp.toy.job-glutton", false, true), rp.defineNode({
   id: "rp.toy.idler",
   ports: { out: rp.events.out() },
   create: () => { let n = 0; return { process(b) { b.send("out", 0, [++n]); } }; },
@@ -977,7 +1124,7 @@ rp.register([hog("rp.toy.hog", true), hog("rp.toy.glutton", false), rp.defineNod
 )JS";
 
 TEST_CASE("a script node that allocates past its pack's memory limit faults at once, whether or not it catches the error, "
-          "and a node of the same pack that allocates nothing runs on",
+          "and a node of the same pack that keeps nothing runs on",
           "[script][memory]") {
     constexpr std::size_t kLimit = std::size_t{16} << 20;
     ScriptRig rig(kHogs, 256, 48000.0, kLimit);
@@ -1005,7 +1152,38 @@ TEST_CASE("a script node that allocates past its pack's memory limit faults at o
     CHECK(rig.scripts.throwCount() == 2);
     rig.reclaim();
     INFO(rig.scripts.firstThrow());
+    // The hog's refusal, not the glutton's throw: the hog runs first, the planner ordering nodes no wire orders as the
+    // document lists them.
     CHECK(rig.scripts.firstThrow().find("rp.toy.hog went past its pack's 16 MiB memory limit in process") == 0);
+}
+
+TEST_CASE("an allocation refused in a script node's promise job faults it at once, whether or not the job catches the "
+          "error, and a node of the same pack that keeps nothing runs on",
+          "[script][memory][jobs]") {
+    constexpr std::size_t kLimit = std::size_t{16} << 20;
+    ScriptRig rig(kHogs, 256, 48000.0, kLimit);
+    REQUIRE(rig.set(doc(node("h", "rp.toy.job-hog") + "," + node("g", "rp.toy.job-glutton") + "," + node("i", "rp.toy.idler") +
+                            "," + node("ph", "rp.test.probe") + "," + node("pg", "rp.test.probe") + "," +
+                            node("pi", "rp.test.probe"),
+                        wire("h.out", "ph.events") + "," + wire("g.out", "pg.events") + "," + wire("i.out", "pi.events")))
+                .ok);
+    rig.run(64, 2);  // each hog's job, queued by its second process, runs out at the checkpoint after it
+    CHECK(rig.log.count("caught rp.toy.job-hog") == 1);
+    CHECK(rig.host->isFaulted("h"));  // at once, in the block whose checkpoint ran the job: silent
+    CHECK(rig.host->isFaulted("g"));
+    CHECK(rig.node<Probe>("ph").events.empty());
+    CHECK(rig.node<Probe>("pg").events.empty());
+    CHECK(rig.scripts.throwCount() == 2);  // the refusal the one job caught, the throw the other let go
+    rig.run(64, 2);
+    CHECK_FALSE(rig.host->isFaulted("i"));
+    REQUIRE(rig.node<Probe>("pi").events.size() == 1);
+    CHECK(rig.node<Probe>("pi").events[0].data == bytes({4}));
+    CHECK(rig.scripts.throwCount() == 2);
+    rig.reclaim();
+    INFO(rig.scripts.firstThrow());
+    CHECK(rig.scripts.firstThrow().find("rp.toy.job-hog ") == 0);
+    CHECK(rig.scripts.firstThrow().find("16 MiB memory limit in a promise job (an allocation was refused), and was "
+                                        "faulted") != std::string::npos);
 }
 
 // What runs between two calls into a pack's nodes. Each node sends its block count, and holds what `make` makes: the
