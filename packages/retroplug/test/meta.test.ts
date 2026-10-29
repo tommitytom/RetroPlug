@@ -3,6 +3,7 @@
 // TDD loop is ready and every subsequent feature test can rely on it.
 import { test, expect } from "../testing/harness";
 import { MockBackend } from "../testing/mockBackend";
+import type { Backend } from "../src/backend";
 
 test("harness: expect matchers behave", () => {
   expect(1 + 1).toBe(2);
@@ -37,4 +38,15 @@ test("mock backend: canonicalize collapses ./ and ../ (the dedupe key)", () => {
   expect(be.canonicalize("/a/b/../c")).toBe("/a/c");
   expect(be.canonicalize("/a/./b")).toBe("/a/b");
   expect(be.canonicalize("recent.json")).toBe("/cfg/recent.json"); // relative -> config dir
+});
+
+test("mock backend: loadScriptPack refuses every pack, before any replan, with no types", () => {
+  // It has no JS engine to run a pack's nodes in (test-native/script-packs.test.ts runs them on the real host).
+  const be: Backend = new MockBackend("/cfg");
+  expect(be.loadScriptPack({ id: "user.pack", source: "", memoryLimitBytes: 1 << 20 })).toEqual({
+    ok: false,
+    error: "the mock backend runs no script packs",
+    errors: [],
+    types: [],
+  });
 });

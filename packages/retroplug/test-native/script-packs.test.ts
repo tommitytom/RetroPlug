@@ -183,9 +183,12 @@ test("a refusal before any replan says why, with no planner errors, and changes 
     `pack id "rp.script" is the built-in pack, which is not reloadable`,
   );
   refused({ id: "rp.mine", source: TOY + transposer("rp.mine.up", 1) }, `pack id "rp.mine" is the app's to give`);
-  // A memory limit that is no whole number of bytes, refused before the id is looked at.
-  refused({ id: "test.limit", source: TOY, memoryLimitBytes: 1.5 }, "memoryLimitBytes must be a whole number of bytes");
-  refused({ id: "test.limit", source: TOY, memoryLimitBytes: -1 }, "memoryLimitBytes must be a whole number of bytes");
+  // A memory limit that is no whole number of bytes, refused before the id is looked at: a fraction, a negative, one
+  // past 2^53 - 1 (past it a double no longer holds every whole number) and one that is not finite.
+  const notWhole = "memoryLimitBytes must be a whole number of bytes";
+  for (const memoryLimitBytes of [1.5, -1, 2 ** 53, Infinity, NaN]) {
+    refused({ id: "test.limit", source: TOY, memoryLimitBytes }, notWhole);
+  }
   // One too small for the load: the limit holds each of the pack's runtimes whole, its intrinsics included.
   refused(
     { id: "test.limit", source: TOY + transposer("test.limit.up", 1), memoryLimitBytes: 64 * 1024 },
@@ -203,6 +206,8 @@ test("a refusal before any replan says why, with no planner errors, and changes 
   load({ id: "test.syntax", source: TOY + transposer("test.syntax.up", 1) });
   load({ id: "test.ns", source: TOY + transposer("test.ns.fine", 1) });
   load({ id: "test.limit", source: TOY, memoryLimitBytes: 0 });
+  // 2^53 - 1 is the largest limit taken.
+  load({ id: "test.limit.largest", source: TOY, memoryLimitBytes: 2 ** 53 - 1 });
 });
 
 /** A reload of `id` from `source` refused by its replan of the running document, which places it as node "shift":
