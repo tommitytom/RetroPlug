@@ -56,12 +56,17 @@ rp::graph::PortDesc eventsIn(std::string id) {
 }
 
 // An input per entry of its settings' `systems` (docs/modular-graph-phase-b3b-design.md section 5), in1 to inN, each
-// holding one producer's MIDI as it is, which goes out as that entry's system: input by input, each in queue order,
-// never merged by frame. A message whose frame is earlier than one already handed out in the block goes out at that
-// frame instead, as the kernel's one queue clamped it, so Engine::midiOut stays frame-sorted whatever order a document
-// wires its producers in. Two entries may name one system (a controller sending to a real Game Boy under the id of a
-// system whose own MI.OUT also goes out). No entries, no inputs: a document whose roles send no host MIDI places it
-// all the same, and it sends nothing.
+// holding one producer's MIDI as it is, which goes out as that entry's system. The inputs are merged by frame
+// (docs/lsdj-serial-out-design.md section 5): each step hands out the head with the earliest frame, the lower input on
+// a tie, so two LSDjs in master sync each keep their clocks' times rather than the second's bunching behind the
+// first's, and with every frame 0 the merge is the inputs' concatenation, input by input, each in queue order. A port's
+// queue raises a frame pushed behind a later one, so an input arrives frame-sorted; a message still goes out at the
+// later of its frame and the last handed out in the block, a guard that keeps Engine::midiOut frame-sorted whatever an
+// input holds (a node on the C ABI writes its own queue), which the plugin relies on to write a DAW's events in order.
+// It allocates nothing: a head index per input, reset each block, and the merge costs messages times inputs. Two
+// entries may name one system (a controller sending to a real Game Boy under the id of a system whose own MI.OUT also
+// goes out). No entries, no inputs: a document whose roles send no host MIDI places it all the same, and it sends
+// nothing.
 // The inputs are appended here, none reflected, since their count is the settings'.
 struct MidiOut : HostIoNode {
     static constexpr const char* id = "rp.host.midi-out";
@@ -93,16 +98,30 @@ struct MidiOut : HostIoNode {
             systems[inputCount++] = s.systems[k];
     }
 
+    // Each input's next message this block, an index into its queue; only process reads or writes them.
+    std::array<std::uint32_t, kMidiOutMaxInputs> heads{};
+
     void process(const rp::Block& b) noexcept {
+        const std::uint32_t inputs = inputCount < b.raw.input_count ? inputCount : b.raw.input_count;
+        for (std::uint32_t k = 0; k < inputs; ++k) heads[k] = 0;
         std::uint32_t last = 0;  // the latest frame handed out this block
-        for (std::uint32_t k = 0; k < inputCount && k < b.raw.input_count; ++k) {
-            const rp_queue& q = *b.input(k).u.queue;
-            for (std::uint32_t i = 0; i < q.count; ++i) {
-                const rp_message& m = q.items[i];
-                const auto data = rp::graph::messageData(q, m);
-                if (m.frame > last) last = m.frame;
-                io->midiOut(io->ctx, systems[k], last, data.data(), data.size());
+        for (;;) {
+            std::uint32_t next = inputs;  // the input whose head goes out next: none yet
+            std::uint32_t frame = 0;
+            for (std::uint32_t k = 0; k < inputs; ++k) {
+                const rp_queue& q = *b.input(k).u.queue;
+                if (heads[k] >= q.count) continue;
+                if (next == inputs || q.items[heads[k]].frame < frame) {  // strictly earlier: a tie keeps the lower
+                    next = k;
+                    frame = q.items[heads[k]].frame;
+                }
             }
+            if (next == inputs) return;
+            const rp_queue&   q = *b.input(next).u.queue;
+            const rp_message& m = q.items[heads[next]++];
+            const auto        data = rp::graph::messageData(q, m);
+            if (m.frame > last) last = m.frame;
+            io->midiOut(io->ctx, systems[next], last, data.data(), data.size());
         }
     }
 };

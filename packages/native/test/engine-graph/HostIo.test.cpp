@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -199,6 +200,33 @@ std::vector<std::pair<std::uint32_t, std::uint8_t>> serialStamped(const SameBoyS
     std::vector<std::pair<std::uint32_t, std::uint8_t>> log;
     for (const auto& [frame, byte] : gb.serialOutLog_) log.emplace_back(std::min(frame, frames - 1), byte);
     return log;
+}
+
+// Writes what the test queued in `next` onto its one output as it is, frames and all: a node on the C ABI owns its
+// output queue, and nothing makes it keep the queue frame-sorted, as rp::graph::pushMessage's clamp keeps it.
+struct RawFeed {
+    static constexpr const char* id = "rp.test.raw-feed";
+    struct {
+        rp::events_out::sized<rp::host::test::kFeedCapacity> midi;
+    } outputs;
+    std::vector<rp::host::test::Message> next;
+
+    void process(const rp::Block& b) noexcept {
+        rp_queue& q = *b.output(0).u.queue;
+        for (const auto& m : next) {
+            const auto size = static_cast<std::uint32_t>(m.data.size());
+            if (size) std::memcpy(q.bytes + q.bytes_used, m.data.data(), size);
+            q.items[q.count++] = rp_message{m.frame, size, q.bytes_used, m.flags};
+            q.bytes_used += size;
+        }
+        next.clear();
+    }
+};
+
+const rp_package* rawFeedPackage() {
+    static const rp_node_type* const kTypes[] = {rp::node_type<RawFeed>()};
+    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.host-io"})", 1, kTypes};
+    return &kPackage;
 }
 
 // Set RETROPLUG_SYNC_TRACE, or clear it (null), for the engines constructed after: each reads it as it is built.
@@ -410,14 +438,14 @@ TEST_CASE("host MIDI staged through the command ring is drained and taken withou
     CHECK(midiOut(e) == std::vector<Out>{{kLoop, 2, {0xFA}}, {kLoop, 5, {0xF8}}});
 }
 
-TEST_CASE("rp.host.midi-out hands the engine each input's messages, input by input, frame-sorted, under its system",
+TEST_CASE("rp.host.midi-out hands the engine its inputs' messages merged by frame, each under its input's system",
           "[engine-graph][host-io]") {
     // Three producers, each wired to its own input, the first and third naming one system (a controller's launches to
     // a real Game Boy, under the id of a system whose own MI.OUT goes out too), and a fourth input left unwired. Each
-    // input's messages go out in queue order, a whole input before the next, and a frame on a later input that is
-    // earlier than one already handed out is raised to it, so the host's MIDI out stays frame-sorted (CLAP and LV2
-    // require it), as the one queue the kernel kept clamped it. A message goes out as it is, whatever its bytes:
-    // a short one, an empty one and one that is no MIDI at all alike.
+    // step hands out the input whose next message is earliest, at its own frame, so the host's MIDI out is
+    // frame-sorted (CLAP and LV2 require it) and each producer's messages keep their times; each input's own go out in
+    // queue order. A message goes out as it is, whatever its bytes: a short one, an empty one and one that is no MIDI
+    // at all alike.
     using rp::host::test::Feed;
     using rp::host::test::HostMidiOut;
     using rp::host::test::NodeRig;
@@ -432,13 +460,13 @@ TEST_CASE("rp.host.midi-out hands the engine each input's messages, input by inp
     rig.node<Feed>("c").next[Feed::Midi] = {{1, {0xFC}}, {1, {}}, {30, {0x80, 60, 0}}};
     const rp_transport t{kRate, 120.0, 0.0, 0};
     rig.host->processBlock(64, t);
-    CHECK(rig.midiOut == std::vector<HostMidiOut>{{21, 5, {0x90, 60, 100}},
+    CHECK(rig.midiOut == std::vector<HostMidiOut>{{22, 0, {0xFA}},
+                                                  {21, 1, {0xFC}},
+                                                  {21, 1, {}},
+                                                  {22, 2, {7, 0, 0, 0, 0xF8}},
+                                                  {22, 2, {0xF0, 1, 2, 0xF7}},
+                                                  {21, 5, {0x90, 60, 100}},
                                                   {21, 9, {0xF8}},
-                                                  {22, 9, {0xFA}},
-                                                  {22, 9, {7, 0, 0, 0, 0xF8}},
-                                                  {22, 9, {0xF0, 1, 2, 0xF7}},
-                                                  {21, 9, {0xFC}},
-                                                  {21, 9, {}},
                                                   {21, 30, {0x80, 60, 0}}});
 
     // And only this block's: a block with nothing queued sends nothing.
@@ -480,7 +508,7 @@ TEST_CASE("rp.host.midi-out with no systems, or an empty list of them, has no in
 
 TEST_CASE("a change to rp.host.midi-out's systems replans cleanly, its inputs moved or kept", "[engine-graph][host-io]") {
     // On an Engine, from no inputs to some and back, rp.host.midi-in's output wired to every input: the engine's MIDI
-    // out is each input's messages in turn, under that input's system, frame-sorted. A change that moves the inputs
+    // out is the inputs' messages merged by frame, each under its input's system. A change that moves the inputs
     // rebuilds the node and one that keeps them swaps its settings; either way the next block goes out as the new
     // settings say, with nothing dropped and no fault.
     Engine e(kRate);
@@ -497,14 +525,12 @@ TEST_CASE("a change to rp.host.midi-out's systems replans cleanly, its inputs mo
         block(e);
         return midiOut(e);
     };
-    // Each system in turn: the two messages under it. The first input's are at frames 1 and 3; a later input's frame 1
-    // is raised to the 3 already handed out.
+    // Every input holds the same two messages, at frames 1 and 3: frame 1's under each system in input order, then
+    // frame 3's.
     const auto under = [](std::vector<std::uint32_t> systems) {
         std::vector<Out> out;
-        for (const auto s : systems) {
-            out.push_back({s, out.empty() ? 1u : 3u, {0xFA}});
-            out.push_back({s, 3, {0xF8}});
-        }
+        for (const auto s : systems) out.push_back({s, 1, {0xFA}});
+        for (const auto s : systems) out.push_back({s, 3, {0xF8}});
         return out;
     };
 
@@ -524,10 +550,11 @@ TEST_CASE("a change to rp.host.midi-out's systems replans cleanly, its inputs mo
     CHECK(e.faultCount() == 0);
 }
 
-TEST_CASE("a later input's earlier frame is raised to the last frame handed out, and a new block starts again from 0",
+TEST_CASE("rp.host.midi-out sends a later input's earlier frame before an earlier input's later one, at its own frame",
           "[engine-graph][host-io]") {
-    // The deleted kernel's one queue clamped each message to the latest frame queued, so the host's MIDI out was
-    // frame-sorted whatever order the producers were wired in; CLAP and LV2 require it of the events the plugin writes.
+    // Two LSDjs in master sync each send a clock at its own byte's frame: merged by frame, the second's keep their
+    // times rather than bunching behind the first's, and the host's MIDI out stays frame-sorted, which CLAP and LV2
+    // require of the events the plugin writes.
     using rp::host::test::Feed;
     using rp::host::test::HostMidiOut;
     using rp::host::test::NodeRig;
@@ -537,17 +564,66 @@ TEST_CASE("a later input's earlier frame is raised to the last frame handed out,
                         "wires":[{"from":"a.midi","to":"midi-out.in1"},{"from":"b.midi","to":"midi-out.in2"}]})")
                 .ok);
     const rp_transport t{kRate, 120.0, 0.0, 0};
-    rig.node<Feed>("a").next[Feed::Midi] = {{10, {0xF8}}};
-    rig.node<Feed>("b").next[Feed::Midi] = {{3, {0xFA}}, {12, {0xFC}}, {5, {0xFB}}};
+    rig.node<Feed>("a").next[Feed::Midi] = {{10, {0xF8}}, {40, {0xF8}}};
+    rig.node<Feed>("b").next[Feed::Midi] = {{3, {0xFA}}, {12, {0xF8}}, {41, {0xFC}}};
     rig.host->processBlock(64, t);
-    CHECK(rig.midiOut == std::vector<HostMidiOut>{{1, 10, {0xF8}}, {2, 10, {0xFA}}, {2, 12, {0xFC}}, {2, 12, {0xFB}}});
+    CHECK(rig.midiOut == std::vector<HostMidiOut>{{2, 3, {0xFA}}, {1, 10, {0xF8}}, {2, 12, {0xF8}}, {1, 40, {0xF8}},
+                                                  {2, 41, {0xFC}}});
 
-    // The floor is the block's: the next block's early frame is its own.
+    // The last frame handed out is the block's: the next block's early frame is its own.
     rig.midiOut.clear();
-    rig.node<Feed>("a").next[Feed::Midi] = {};
     rig.node<Feed>("b").next[Feed::Midi] = {{3, {0xFA}}};
     rig.host->processBlock(64, t);
     CHECK(rig.midiOut == std::vector<HostMidiOut>{{2, 3, {0xFA}}});
+}
+
+TEST_CASE("rp.host.midi-out sends messages at one frame in input order, so with every frame 0 its inputs in turn",
+          "[engine-graph][host-io]") {
+    // A tie goes to the lower input, and each input's own messages keep their queue order: with every frame 0 the merge
+    // is the inputs' concatenation, input by input.
+    using rp::host::test::Feed;
+    using rp::host::test::HostMidiOut;
+    using rp::host::test::NodeRig;
+    NodeRig rig(kRate);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"a","type":"rp.test.feed"},{"id":"b","type":"rp.test.feed"},
+                                 {"id":"midi-out","type":"rp.host.midi-out","settings":{"systems":[1,2]}}],
+                        "wires":[{"from":"a.midi","to":"midi-out.in1"},{"from":"b.midi","to":"midi-out.in2"}]})")
+                .ok);
+    const rp_transport t{kRate, 120.0, 0.0, 0};
+    rig.node<Feed>("a").next[Feed::Midi] = {{4, {0x90, 60, 100}}, {8, {0x80, 60, 0}}};
+    rig.node<Feed>("b").next[Feed::Midi] = {{4, {0x90, 64, 100}}, {8, {0x80, 64, 0}}};
+    rig.host->processBlock(64, t);
+    CHECK(rig.midiOut == std::vector<HostMidiOut>{{1, 4, {0x90, 60, 100}}, {2, 4, {0x90, 64, 100}},
+                                                  {1, 8, {0x80, 60, 0}}, {2, 8, {0x80, 64, 0}}});
+
+    rig.midiOut.clear();
+    rig.node<Feed>("a").next[Feed::Midi] = {{0, {0xFA}}, {0, {0xF8}}};
+    rig.node<Feed>("b").next[Feed::Midi] = {{0, {0x90, 64, 100}}, {0, {0xF8}}};
+    rig.host->processBlock(64, t);
+    CHECK(rig.midiOut == std::vector<HostMidiOut>{{1, 0, {0xFA}}, {1, 0, {0xF8}}, {2, 0, {0x90, 64, 100}}, {2, 0, {0xF8}}});
+}
+
+TEST_CASE("rp.host.midi-out sends nothing earlier than the last frame it handed out, whatever order an input holds",
+          "[engine-graph][host-io]") {
+    // Every node of RetroPlug's pushes through rp::graph::pushMessage, whose clamp keeps a queue frame-sorted, but a
+    // node on the C ABI owns its output queue and may leave it out of order. The merge reads each input's head, so an
+    // input that steps back in frame would step the host's MIDI out back with it; the node sends each message at the
+    // later of its frame and the last it handed out instead, so Engine::midiOut stays frame-sorted.
+    using rp::host::test::Feed;
+    using rp::host::test::HostMidiOut;
+    using rp::host::test::NodeRig;
+    NodeRig rig(kRate);
+    REQUIRE(rig.registry.addPackage(rawFeedPackage()));
+    REQUIRE(rig.set(R"({"nodes":[{"id":"raw","type":"rp.test.raw-feed"},{"id":"b","type":"rp.test.feed"},
+                                 {"id":"midi-out","type":"rp.host.midi-out","settings":{"systems":[1,2]}}],
+                        "wires":[{"from":"raw.midi","to":"midi-out.in1"},{"from":"b.midi","to":"midi-out.in2"}]})")
+                .ok);
+    rig.node<RawFeed>("raw").next = {{10, {0xF8}}, {3, {0xFA}}, {12, {0xFC}}};
+    rig.node<Feed>("b").next[Feed::Midi] = {{5, {0xFB}}, {11, {0xF8}}};
+    rig.host->processBlock(64, rp_transport{kRate, 120.0, 0.0, 0});
+    CHECK(rig.midiOut == std::vector<HostMidiOut>{{2, 5, {0xFB}}, {1, 10, {0xF8}}, {1, 10, {0xFA}}, {2, 11, {0xF8}},
+                                                  {1, 12, {0xFC}}});
+    for (std::size_t i = 1; i < rig.midiOut.size(); ++i) CHECK(rig.midiOut[i - 1].frame <= rig.midiOut[i].frame);
 }
 
 TEST_CASE("a change to rp.host.midi-out's systems keeps the node while its inputs hold and rebuilds it when they move",
