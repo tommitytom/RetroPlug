@@ -220,32 +220,36 @@ ring (release on push, acquire on adopt) carries the whole built pack with it.
 ## 6. A node pays for its own jobs and memory
 
 **Promise jobs** run after the call that queued them, not at the block's end. After every call the block thread makes
-into a node (`create`, `onSettings`, `portsChanged`, `activate`, `process`), the host runs its pack's pending jobs at a
-checkpoint, at most 256 (`kJobsPerCheckpoint`, which was `kJobsPerBlock`), under the same deadline as the call: one
-deadline spans the call, the `create` a fresh instance's first call makes before it, and the checkpoint after them. A
-pack's queue is empty between two calls into its nodes, so every job that runs is charged to the node whose call
-queued it (or whose jobs did). `endBlock` no longer runs jobs, and in `process` the checkpoint runs after the node's
-audio outputs are copied out. No built-in node uses a promise, so parity cannot move.
+into a node (`create`, `onSettings`, `portsChanged`, `activate`, `process`), the host runs its pack's pending jobs at
+a checkpoint, at most 256 (`kJobsPerCheckpoint`, which was `kJobsPerBlock`), under the same deadline as the call: one
+deadline spans the call, the `create` a fresh instance's first call makes before it, and the checkpoint after them (a
+`create` whose call has no hook to run gets a checkpoint of its own). Unless a chain was cut short (below), a pack's
+queue is empty between two calls into its nodes, so every job that runs is charged to the node whose call queued it
+(or whose jobs did). `endBlock` no longer runs jobs, and in `process` the checkpoint runs after the node's audio
+outputs are copied out. No built-in node uses a promise, so parity cannot move.
 
 | | Today | C1 |
 |---|---|---|
-| A job that fails (a `queueMicrotask` callback that threw, or ran out of memory) | a throw charged to no node, never faulting one | the node's throw: counted, and a `faultOnThrow` node faults |
+| A job that fails (a `queueMicrotask` callback that threw, or the platform's allocator ran out of memory) | a throw charged to no node, never faulting one | the node's throw: counted, and a `faultOnThrow` node faults (an allocation the pack's limit refused faults any node at once: Memory, below) |
 | The deadline stops a job | stops the whole block's job run, charged to no node | counts as the node's call being stopped: it faults on the second in a row, or at once under `faultOnThrow` |
 | A chain that does not settle in 256 jobs | the rest wait for the next block's end (`jobsCutShort`) | the node's throw (and `jobsCutShort`): a `faultOnThrow` node faults at once, any other on the second in a row, as two expiries do |
 | A promise reaction's own throw | only rejects its promise | unchanged |
 
 QuickJS cannot drop pending jobs, so a chain that is cut short stays queued. Its pack remembers whose jobs they are
 until its queue empties: they run at the pack's later checkpoints (the next calls into any of its nodes) still charged
-to the node that left them, so a pack-mate is never charged for them (while they are pending, a pack-mate's own job
-failures are charged to that node too, which errs towards the innocent). A faulted node's chain can still run up to
-256 jobs a checkpoint, since rebuilding or removing the node frees nothing in the runtime its closures live in; a
-reload of its pack, which frees that runtime, ends it. The cost stays bounded and stays in its pack. Each of those
-checkpoints that cuts the chain short again still counts as the faulted node's throw. Leftovers that a pack-mate's
-checkpoint ran and the deadline stopped count against the node that left them as its own call stopped would: it
-faults at its next block on the second in a row, or the first under `faultOnThrow`; a run not stopped leaves its count
-alone. Once the node that left them is released, they are no node's until the queue empties: a later checkpoint runs
-them charged to no node, never to the pack-mate whose call it follows, and one that cuts them short counts in
-`jobsCutShort` only.
+to the node that left them, so a pack-mate is never charged for them. While they are pending, every job those
+checkpoints run is charged to that node, a pack-mate's own among them. So a pack-mate that starts a chain of its own
+that never settles then has its cut shorts charged to the node that left the leftovers, which faults for them while
+the pack-mate runs on; and once that node is released the chain is no node's, run 256 jobs at every checkpoint of the
+pack until the pack is reloaded, the pack-mate that started it never charged or bypassed. A faulted node's chain can
+still run up to 256 jobs a checkpoint, since rebuilding or removing the node frees nothing in the runtime its closures
+live in; a reload of its pack, which frees that runtime, ends it. The cost stays bounded and stays in its pack. Each
+of those checkpoints that cuts the chain short again still counts as the faulted node's throw. Leftovers that a
+pack-mate's checkpoint ran and the deadline stopped count against the node that left them as its own call stopped
+would: it faults at its next block on the second in a row, or the first under `faultOnThrow`; a run not stopped leaves
+its count alone. Once the node that left them is released, they are no node's until the queue empties: a later
+checkpoint runs them charged to no node, never to the pack-mate whose call it follows, and one that cuts them short
+counts in `jobsCutShort` only.
 
 Two more queue a job outside any one node's call, and are charged as follows: a release (`beginBlock` freeing a
 destroyed node's JS) runs its pack's jobs there, charged to the node that left them when that is another node, else to
@@ -261,15 +265,18 @@ them, and they would run at the pack's first checkpoint, charged to whichever of
 allocation that would pass it is refused, and QuickJS throws out of memory in the call that made it. The host's own
 allocator enforces it (section 11's third question): each pack's audio runtime allocates through an opaque of its
 pack's holding its live bytes and its limit, which refuses an allocation past the limit and notes the refusal on the
-pack. A call (or its jobs) during which its pack refused one faults the node at once, whether or not the node caught
-the error: a pack at its limit is one none of its nodes can rely on. A refusal JS caught is counted as the node's
-throw, saying the node "went past its pack's N MiB memory limit"; an uncaught one is the out-of-memory throw already
-counted. A call is charged only what its pack refused since it began: the note is cleared as each call arms its
-deadline, so a refusal made where no checkpoint looks (a release freeing a node's JS, a quiescent collection, the text
-the host makes of a checkpoint's last job's throw), or while the pack loads, faults no node. The limit holds the
-whole runtime, its intrinsics and its loaded code included, so a limit too small for those refuses the load, which
-says so. A node's heap is freed when it is rebuilt or removed, or its pack reloaded. Other packs, the built-in one
-among them, are untouched. The control side's runtimes keep no limit: they hold no instance.
+pack. A refusal during a call (or its jobs) faults the node they are charged to, whether or not it caught the error
+and whatever its `faultOnThrow`: a pack at its limit is one none of its nodes can rely on. It faults at once in
+`process`, and at its next block after a hook or for its leftovers run at a pack-mate's checkpoint. A refusal JS
+caught is counted as the node's throw, saying the node "reached its pack's N MiB memory limit"; an uncaught one is the
+out-of-memory throw already counted. Only an out-of-memory error the limit did not cause, the platform's allocator
+running out, is a throw like any other, faulting a `faultOnThrow` node. A call is charged only what its pack refused
+since it began: the note is cleared as each call arms its deadline, so a refusal made where no checkpoint looks (a
+release freeing a node's JS, a quiescent collection, the text the host makes of a checkpoint's last job's throw), or
+while the pack loads, faults no node. The limit holds the whole runtime, its intrinsics and its loaded code included,
+so a limit too small for those refuses the load, which says so. A node's heap is freed when it is rebuilt or removed,
+or its pack reloaded. Other packs, the built-in one among them, are untouched. The control side's runtimes keep no
+limit: they hold no instance.
 
 Faults latch per instance as now, and a reload clears them, every instance of the pack being fresh. The first throw's
 logged text already names the node's type, so a dev loop sees which of its nodes broke.

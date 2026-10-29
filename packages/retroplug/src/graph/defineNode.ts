@@ -157,14 +157,16 @@ export function startValue(stream: ControlStream): number {
 // - A feedback input carries last block's messages at their frames in that block, so a frame can lie at or past
 //   this block's end. No production node reads one: LSDj's serial-out decoder, the one that reads a system's output,
 //   takes its Game Boy's serialOut over a forward wire, each byte at its frame in this block.
-// - Promise reactions and queueMicrotask callbacks run right after the call that queued them (create, onSettings,
+// - Promise reactions and queueMicrotask callbacks run right after the call that queued them (onSettings,
 //   portsChanged, activate or process), before the next node's, inside that call's deadline, and are charged to the
-//   node: at most 256 after a call, the rest of a chain that queues another every time left for the next call into
-//   a node of its pack and still charged to it; a node whose jobs are cut short faults at once under faultOnThrow, and
-//   otherwise on the second cut short in a row. Every Block method throws inside one, as in a hook: a block exists
-//   only during its node's process call. A reaction's own throw only rejects its promise and is not counted; a
-//   queueMicrotask callback's is counted as the node's throw, and faults a faultOnThrow node, and one the deadline
-//   stops counts as the node's call stopped.
+//   node. create runs inside its instance's first call (the portsChanged it gets as the plan that made it is adopted),
+//   so what create queues runs after that call, with what the call queued. At most 256 run after a call; the rest of
+//   a chain that queues another every time waits for the next call into a node of its pack, still charged to it, as
+//   is every other job run while it waits, another node's included. A node whose jobs are cut short faults at once
+//   under faultOnThrow, and otherwise on the second cut short in a row. Every Block method throws inside one, as in a
+//   hook: a block exists only during its node's process call. A reaction's own throw only rejects its promise and is
+//   not counted; a queueMicrotask callback's is counted as the node's throw, and faults a faultOnThrow node, and one
+//   the deadline stops counts as the node's call stopped.
 //
 // What a block hands out (the arrays, the views, the message objects) is valid only during the process call it is
 // handed to: the same objects are refilled for the next block, or made again, so read them through the block every

@@ -218,8 +218,8 @@ struct ScriptRig {
         return r;
     }
 
-    // One block, as an Engine runs it: the script host's releases, the graph's drain and block, then the promise jobs
-    // the block queued.
+    // One block, as an Engine runs it: the script host's releases, then the graph's drain and block (each script node's
+    // promise jobs at the checkpoint after its call), then the script host's end of the block.
     void block(std::uint32_t frames = 64) {
         scripts.beginBlock();
         host->processBlock(frames, transport, outPointers.data(), static_cast<std::uint32_t>(outPointers.size()));

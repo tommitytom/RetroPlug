@@ -746,7 +746,8 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
     // after one, and its figure includes the script nodes' few microseconds beside the cores'.
     script.spanSince(rp::host::DSP_SPAN_APU, planStart);
 #endif
-    // The promise jobs the block's script nodes queued, then (a profile build) the allocation window's block counts.
+    // The allocation window's block counts (a profile build): the script nodes' promise jobs ran at their calls'
+    // checkpoints, inside the plan's run.
     graph_->script.endBlock();
     // What was staged for this block and no node of the plan took (a plan with no rp.host.midi-in or controller-in)
     // is dropped, not carried into the next block.

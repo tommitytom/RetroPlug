@@ -1154,7 +1154,7 @@ TEST_CASE("a script node that allocates past its pack's memory limit faults at o
     INFO(rig.scripts.firstThrow());
     // The hog's refusal, not the glutton's throw: the hog runs first, the planner ordering nodes no wire orders as the
     // document lists them.
-    CHECK(rig.scripts.firstThrow().find("rp.toy.hog went past its pack's 16 MiB memory limit in process") == 0);
+    CHECK(rig.scripts.firstThrow().find("rp.toy.hog reached its pack's 16 MiB memory limit in process") == 0);
 }
 
 TEST_CASE("an allocation refused in a script node's promise job faults it at once, whether or not the job catches the "

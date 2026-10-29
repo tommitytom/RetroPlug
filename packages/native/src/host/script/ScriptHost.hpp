@@ -192,17 +192,23 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // is good for that process call: keep copies.
 //
 // A node pays for its own promise jobs and memory (docs/modular-graph-phase-c1-design.md section 6). The jobs a call
-// into its JS queues (its create, onSettings, portsChanged, activate or process) run at a checkpoint right after the
-// call, inside its deadline, at most kJobsPerCheckpoint of them, and are charged to that node: a job that fails (a
-// queueMicrotask callback that threw, or JS out of memory) is its throw, and faults it under faultOnThrow; one the
-// deadline stops counts as its call stopped (the rule above); and a chain still pending after the bound is cut short,
-// its throw, which faults it at once under faultOnThrow and otherwise on the second cut short in a row, as two
-// expiries do. QuickJS cannot drop a pending job, so a chain cut short stays queued and its pack remembers whose it
-// is until the queue empties: its later checkpoints (the next calls into any of its nodes) run the rest charged to
-// that node, never to a pack-mate. What is queued where no call into a node ran, by a release freeing a node's JS or
-// by a quiescent collection finding a FinalizationRegistry callback's target, runs there and then, charged to that
+// into a node's JS queues (its onSettings, portsChanged, activate or process, and the create a fresh instance's first
+// call makes before it) run at a checkpoint right after the call, inside its deadline, at most kJobsPerCheckpoint of
+// them: a create's with those of the call that made it, or at a checkpoint of its own when that call has no hook to
+// run. They are charged to that node: a job that fails (a queueMicrotask callback that threw, or the platform's
+// allocator out of memory) is its throw, and faults it under faultOnThrow; one the deadline stops counts as its call
+// stopped (the rule above); and a chain still pending after the bound is cut short, its throw, which faults it at
+// once under faultOnThrow and otherwise on the second cut short in a row, as two expiries do. QuickJS cannot drop a
+// pending job, so a chain cut short stays queued and its pack remembers whose it is until the queue empties: its
+// later checkpoints (the next calls into any of its nodes) run the rest charged to that node, never to a pack-mate,
+// and charge it every other job they run meanwhile too, a pack-mate's own included. So a pack-mate that starts a
+// chain of its own that never settles while another node's leftovers are pending has its cut shorts charged to that
+// node, which faults for them while the pack-mate runs on; and once that node is released the chain is no node's, run
+// kJobsPerCheckpoint at a time at every checkpoint of the pack until the pack is reloaded, the node that started it
+// never charged or bypassed. What is queued where no call into a node ran, by a release freeing a node's JS or by a
+// quiescent collection finding a FinalizationRegistry callback's target, runs there and then, charged to the
 // remembered owner when the pack has one, else to no node, as is what a released owner leaves (a throw counted,
-// faulting no one); what a reshape's freeing queues runs at a checkpoint after the commit, charged to its node. A
+// faulting no one); what a reshape's freeing queues runs at a checkpoint after its commit, charged to its node. A
 // fault charged to the node whose process this is returns RP_FAULT; one after a hook, or charged to another node of
 // the pack whose leftovers ran, faults that node at its next block. A promise reaction's own throw only rejects its
 // promise, which is the node's to handle. A load's own jobs run as it loads, at most kJobsPerCheckpoint each stretch
@@ -212,12 +218,15 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 //
 // Each pack's audio runtime is held to a memory limit (kDefaultMemoryLimit, unless its load says otherwise) by the
 // host's allocator, which refuses an allocation past it, so QuickJS throws out of memory in the call that asked, and
-// notes the refusal on the pack. The limit holds the whole runtime, its intrinsics (about 90 KB) and the pack's loaded
-// code with them, so one too small for those refuses the load, which says so. Once the pack is loaded, a call, or its
-// jobs, during which its pack refused one faults its node at once (a refusal JS caught counted as the node's throw),
-// since a pack at its limit is one none of its nodes can rely on. A call is charged only what its pack refuses after
-// it begins: the refusal note is cleared as each call arms its deadline, so a refusal made where no checkpoint looks
-// (a release freeing a node's JS, a quiescent collection, the text the host makes of a checkpoint's last job's throw)
+// notes the refusal on the pack. The limit holds the whole runtime, its intrinsics (about 90 KB) and the pack's
+// loaded code with them, so one too small for those refuses the load, which says so. Once the pack is loaded, a
+// refusal during a call, or its jobs, faults the node they are charged to, whatever its faultOnThrow and whether or
+// not JS caught the error (a refusal JS caught is counted as its throw), since a pack at its limit is one none of its
+// nodes can rely on: at once in its process (RP_FAULT), at its next block after a hook or for its leftovers run at a
+// pack-mate's checkpoint. Only an out-of-memory error the limit did not cause, the platform's allocator running out,
+// is a throw like any other, faulting under faultOnThrow. A call is charged only what its pack refuses after it
+// begins: the refusal note is cleared as each call arms its deadline, so a refusal made where no checkpoint looks (a
+// release freeing a node's JS, a quiescent collection, the text the host makes of a checkpoint's last job's throw)
 // faults no node. Another pack is untouched. The control side's runtimes keep no limit: they hold no instance.
 //
 // A throw in process is caught, counted and the block's output up to it stands: the node runs again next block
@@ -371,16 +380,17 @@ public:
 
     // ---- any thread ------------------------------------------------------------------------------------------
     // Throws caught in a script node (process, and its create, onSettings, portsChanged and activate) so far; the jobs
-    // their calls queued that failed: a queueMicrotask callback that threw, or a job the deadline stopped or JS ran out
-    // of memory in (each charged to its node, or to no node for one a release ran); the checkpoints that cut a node's
-    // jobs short; and the allocations a pack refused that JS caught. A promise reaction's own throw only rejects its
-    // promise, which is the node's to handle, so it is not counted.
+    // that failed: a queueMicrotask callback that threw, or a job the deadline stopped or JS ran out of memory in, each
+    // charged to the node the class comment says, or to no node (one run where no call ran with no owner remembered,
+    // or a released owner's leftovers); the runs that cut a node's jobs short; and the allocations a pack refused that
+    // JS caught. A promise reaction's own throw only rejects its promise, which is the node's to handle, so it is not
+    // counted.
     std::uint32_t     throwCount() const { return throws_.load(std::memory_order_relaxed); }
     ScriptAllocations audioAllocations() const;
     // JS instances created and not yet released.
     std::uint32_t     liveInstances() const { return live_.load(std::memory_order_relaxed); }
-    // Checkpoints (and releases) whose pack's promise jobs outran kJobsPerCheckpoint, leaving some for its next one;
-    // reclaim says so once.
+    // Runs of a pack's promise jobs (a checkpoint's, or one where no call ran: a release's, a quiescent collection's)
+    // that outran kJobsPerCheckpoint, leaving some for its next one; reclaim says so once.
     std::uint32_t     jobsCutShort() const { return jobsCutShort_.load(std::memory_order_relaxed); }
 
     // ---- profiling (spec/08-profiling.md): real only in a RETROPLUG_PROFILE build --------------------------------

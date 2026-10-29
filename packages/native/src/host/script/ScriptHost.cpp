@@ -507,8 +507,8 @@ struct ScriptHost::Glue {
         return in.expiries >= 2;
     }
 
-    // ---- the audio runtimes' allocator: the platform's, counted and held to each pack's limit ------------------ Each
-    // pack's runtime has its own opaque (Pack::Heap), which keeps its live heap in usable bytes, as QuickJS's own
+    // ---- the audio runtimes' allocator: the platform's, counted and held to each pack's limit ------------------
+    // Each pack's runtime has its own opaque (Pack::Heap), which keeps its live heap in usable bytes, as QuickJS's own
     // accounting (jsUsable) reads it, in every build: an allocation that would take it past the pack's limit is refused
     // (null, which QuickJS throws as out of memory in the call that asked) and the refusal noted, for the call's
     // checkpoint to fault its node. The limit is the host's to enforce rather than QuickJS's (JS_SetMemoryLimit), which
@@ -1038,7 +1038,8 @@ struct ScriptHost::Glue {
     static void recordThrow(ScriptHost& h, Instance& in, const char* where) {
         recordThrow(h, packOf(in).audio, in.type->id.c_str(), where);
     }
-    // `type` null: no one node's (a promise job a release ran, or one whose node is gone).
+    // `type` null: no one node's (a promise job run where no call ran and no owner is remembered, or one whose node is
+    // gone).
     static void recordThrow(ScriptHost& h, JSContext* ctx, const char* type, const char* where) {
         JSValue thrown = JS_GetException(ctx);
         countThrow(h, [&](TextOut& t) {
@@ -1121,14 +1122,15 @@ struct ScriptHost::Glue {
     }
 
     // The jobs pending in `pack`, at most kJobsPerCheckpoint, charged to `owner` (null: no node's, the node they were
-    // charged to having been released). A job that fails (a queueMicrotask callback that threw, or JS out of memory) is
-    // the owner's throw, and faults a faultOnThrow owner; one the deadline stops ends the run and counts as the owner's
-    // call stopped; an allocation the pack refused in one faults the owner (and is its throw when JS caught it). Jobs
-    // still pending after the bound are cut short: counted (jobsCutShort), and the owner's throw, which faults a
-    // faultOnThrow owner at once, as its every throw does, and any other on its second cut short in a row, as two
-    // expiries do. QuickJS cannot drop a job, so the pack remembers the owner while any are pending, and its
-    // later checkpoints charge them to the same node, never to a pack-mate; one that empties the queue forgets the
-    // owner and its count. A promise reaction's own throw only rejects its promise: the job runs to its end.
+    // charged to having been released, or none remembered by a run where no call ran). A job that fails (a
+    // queueMicrotask callback that threw, or JS out of memory) is the owner's throw, and faults a faultOnThrow owner;
+    // one the deadline stops ends the run and counts as the owner's call stopped; an allocation the pack refused in one
+    // faults the owner whatever its faultOnThrow (and is its throw when JS caught it). Jobs still pending after the
+    // bound are cut short: counted (jobsCutShort), and the owner's throw, which faults a faultOnThrow owner at once, as
+    // its every throw does, and any other on its second cut short in a row, as two expiries do. QuickJS cannot drop a
+    // job, so the pack remembers the owner while any are pending, and its later checkpoints charge them to the same
+    // node, never to a pack-mate; one that empties the queue forgets the owner and its count. A promise reaction's own
+    // throw only rejects its promise: the job runs to its end.
     static Settled chargeJobs(ScriptHost& h, Pack& pack, Instance* owner) {
         Settled charged;
         const char* const type = owner ? owner->type->id.c_str() : nullptr;
@@ -1198,7 +1200,7 @@ struct ScriptHost::Glue {
         countThrow(h, [&](TextOut& t) {
             constexpr std::size_t kMiB = std::size_t{1} << 20;
             t.add(type ? type : where);
-            t.add(" went past its pack's ");
+            t.add(" reached its pack's ");
             if (pack.heap.limit % kMiB == 0) {
                 t.number(static_cast<long long>(pack.heap.limit / kMiB));
                 t.add(" MiB");
