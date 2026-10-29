@@ -1,7 +1,7 @@
 # Phase C1: script node packs, each in its own runtimes
 
-**Date:** 2026-10-29 · **Branch:** `feature/modularize` · **Status:** built: section 11's five commits; what
-building them changed is in the sections it changed, and what it found is section 13
+**Date:** 2026-10-29 · **Branch:** `feature/modularize` · **Status:** built: section 11's five commits, and the fixes
+their code reviews found; what building them changed is in the sections it changed, and what it found is section 13
 
 Every script node an Engine runs shares one QuickJS realm and one promise-job queue, so one node's bug can reach
 another: a getter it hangs on `Object.prototype`, a global it replaces, a promise chain that never settles, a heap it
@@ -14,7 +14,7 @@ section 5: "One QuickJS context per script node, decided before user-written nod
 as node settings (C2), system nodes building their own cores (C3), console code into the nodes and the capability
 interfaces (C4), and hardware as nodes (C5).
 
-## 1. What happens today
+## 1. Before C1
 
 `ScriptHost` ([ScriptHost.hpp](../packages/native/src/host/script/ScriptHost.hpp)) owns two bare QuickJS runtimes per
 Engine, loaded at construction with the embedded script-node bundle (B3a,
@@ -113,13 +113,13 @@ thrown error's stack names), where the built-in bundle is compiled stripped (`tj
 - **A pack** is an id, a generation (which of its id's loads made it: 1 for the first, every load of the id counted,
   refused ones included, section 5), a control runtime and context, an audio runtime and context, its types, and its own
   `rp_package` (manifest `{"id": "<pack id>"}`, the id written as a JSON string, since a plain id may hold `"` or
-  `\`). Everything the audio side holds per runtime today is the pack's: the `Block` class and its frozen prototype,
+  `\`). Everything the audio side held per runtime before C1 is the pack's: the `Block` class and its frozen prototype,
   the atoms the block thread names properties by, the address of `Object.prototype`, the interrupt handler (with the
   host as its opaque). The audio context's opaque is its pack, through which a `Block` method finds its pack's class
   and the host. A `Type` names its pack, and an `Instance` reaches its runtime through its type.
-- **The built-in pack** is today's bundle, as pack `rp.script`: the same type ids, the same code, loaded at the Engine's
-  construction as now (`ScriptHost::load` keeps its signature, a defaulted memory limit added, and loads this pack).
-  The binder a test host passes binds into every pack's two contexts.
+- **The built-in pack** is the bundle the script host loaded before C1, as pack `rp.script`: the same type ids, the
+  same code, loaded at the Engine's construction as it was (`ScriptHost::load` keeps its signature, a defaulted memory
+  limit added, and loads this pack). The binder a test host passes binds into every pack's two contexts.
 - **A loaded pack** (`loadScriptPack`, section 7) is checked before anything is built:
   1. Its id is a plain id (the registry's `isPlainId`), not `rp.script`, which is not reloadable, and not otherwise
      the app's: `rp` and every id under `rp.` (section 2). The id is checked first, before the source is compiled.
@@ -129,12 +129,13 @@ thrown error's stack names), where the built-in bundle is compiled stripped (`tj
   3. Its source is global code, the IIFE a bundler makes, appending `defineNode` results to `__rp_scriptNodes`
      ([register.ts](../packages/retroplug/src/script/register.ts)), as the built-in bundle does. It is compiled to
      bytecode on the control thread by `dsp::compileToBytecode`
-     ([ScriptCompiler.hpp](../packages/native/src/host/dsp/ScriptCompiler.hpp)), which returns the compile error's
-     text and its line (`line 3: SyntaxError: ...`; section 13 says why only the line) rather than nothing, its parser
-     held to the script host's 256 KiB stack rather than QuickJS's 1 MiB, and run in both of the pack's runtimes by
-     today's load path, with its checks: the same ids and descriptors in both, and one definition that cannot be read
-     refusing the whole pack. Bytecode is locked to one qjs build, so a download or a reload cannot ship it; the
-     built-in pack keeps its embedded bytecode.
+     ([ScriptCompiler.hpp](../packages/native/src/host/dsp/ScriptCompiler.hpp)), which returns why the source does not
+     compile, QuickJS's text after the line it was found on (`the source does not compile: line 3: SyntaxError: ...`;
+     section 13 says why only the line), rather than nothing, its parser held to the script host's 256 KiB stack
+     rather than QuickJS's 1 MiB, and run in both of the pack's runtimes by the built-in bundle's load path, with its
+     checks: the same ids and descriptors in both, and one definition that cannot be read refusing the whole pack.
+     Bytecode is locked to one qjs build, so a download or a reload cannot ship it; the built-in pack keeps its
+     embedded bytecode.
 - **Shared across packs:** the call deadline's state (one call runs at a time on the block thread); the allocation
   counters, summed over every pack's audio runtime, so `audioAllocations`, the profile's allocation window and the
   zero-allocation benches keep their meaning, "the audio side"; the release rings (a record knows its pack); the live
@@ -162,13 +163,20 @@ thrown error's stack names), where the built-in bundle is compiled stripped (`tj
   pack, and so every document placing one of its nodes, until a reload frees that runtime. A pack's control runtime
   keeps that handler for its life, its audio runtime until it joins. A load runs at most 256 of the promise jobs each
   stretch of it queues (its top level in each runtime, each descriptor, what reading the definitions after the last
-  one queues, what a loaded pack's collection of its load's cycles queues), and one that leaves any is refused (section
-  6).
+  one queues, what a loaded pack's collection of its load's cycles queues), and one that leaves any is refused
+  (section 6). The planner checks every placed node's settings at every plan, so a node whose settings check fails
+  (its `parseSettings` or `layout` throws, runs past the deadline, refuses the settings or reaches its pack's memory
+  limit, or its pack's control-side jobs do not settle) makes every document placing it refused, as settings it
+  refuses always have: while it is placed no other edit to the graph lands either, the running document published
+  again among them, and neither does a reload of another pack whose nodes the running document places beside it
+  (section 5). Removing it (every node of its pack, for a chain that never settles) or reloading its pack clears it
+  (section 13).
 
-The built-in pack's memory is today's; each loaded pack adds two runtimes, about 180 KB and twice what its code loads
-to (section 3). Each call into a node gains its checkpoint (a job-pending check when nothing is queued), and each
-allocation and free in an audio runtime a `malloc_usable_size` (section 11's third question): B3a's `[bench]` moved by
-about 4 ns an empty call and 12 one that passes a message on (section 9).
+The built-in pack's memory is what the script host's two runtimes held before C1; each loaded pack adds two runtimes,
+about 180 KB and twice what its code loads to (section 3). Each call into a node gains its checkpoint (a job-pending
+test and a read of its pack's refusal note, when nothing is queued), and each allocation and free in a pack's runtimes
+a `malloc_usable_size` (section 11's third question). B3a's `[bench]` moved by about 4 to 5 ns an empty call and 14 to
+15 one that passes a message on (section 9): the checkpoint's, since a steady block allocates nothing.
 
 ## 5. Loading, reloading and freeing
 
@@ -191,9 +199,11 @@ ring (release on push, acquire on adopt) carries the whole built pack with it.
   2. The registry swaps the package's entries for the new generation's (`NodeRegistry::replacePackage`, keyed by each
      generation's `rp_package`, which the generation owns for its life). The old entries stay valid: planned instances
      point at them. The registry retires them, each keeping its address, until told to drop them (`dropRetired`),
-     rather than never removing an entry, and can put the same ones back (`restorePackage`). The swap is checked as an
-     addition is, and refused, changing nothing, for a new version naming another package or a type id another
-     package holds.
+     rather than never removing an entry, and can put the same ones back (`restorePackage`): each entry is an object
+     of its own, owned by the lookup while it is found and by its retired version while it is not, so a retired one is
+     never read through a map's node handle (section 13). The swap is checked as an addition is, and refused, changing
+     nothing, for an id no package is registered under, a new version naming another package or one the registry
+     holds already, or a type id another package holds.
   3. The Engine replans its current document: the last request `setGraph` published, with its tap carried as it is
      (the request re-arms no tap, so its swap carries none: section 11's second question). The planner already
      rebuilds an instance whose registry entry changed ([Planner.cpp](../packages/native/src/graph/Planner.cpp)
@@ -202,28 +212,35 @@ ring (release on push, acquire on adopt) carries the whole built pack with it.
      generation's types would plan as it runs, so it is not replanned. The replan leaves a core parked since that
      request parked (TS may have built it for the next document), and the request stays the one `setGraph` published.
   4. A replan that is refused (the new generation rejects a node's settings, or no longer has a type the document
-     places) swaps the registry back to the old entries, frees the new generation, and returns the planner's errors.
-     Nothing has changed: the old plan's instances still match the old entries, so none is rebuilt. The new
-     generation is freed there and then while no audio thread runs; under one, the refused plan's fresh instances have
-     releases queued to the block thread, so the generation is marked discarded and freed once their records come
-     back. A replan refused as `busy` (the command ring full, or a settings commit not yet adopted) says nothing
-     against the pack: the caller may try again.
+     places) swaps the registry back to the old entries, discards the new generation, and returns the planner's
+     errors. Nothing has changed: the old plan's instances still match the old entries, so none is rebuilt. The new
+     generation is freed there and then while no audio thread runs, and under one when the plan was refused before it
+     made an instance (a settings refusal or a type gone, which the planner finds before it creates anything). A
+     refusal after it made some (`busy`, or a later node of the pack whose `create` refuses, its settings check run
+     again) has their releases queued to the block thread under an audio thread, so the generation is marked discarded
+     and freed once their records come back. A replan refused as `busy` (the command ring full, or a settings commit
+     not yet adopted) says nothing against the pack: the caller may try again. Another pack's node can refuse it too:
+     while the running document places a node of another pack whose settings check fails (section 4), a chain that
+     never settles in that pack's control runtime, say, every reload whose replan checks that node is refused with
+     that node's error, "the running document does not plan with the reloaded pack: settings-invalid at <node>:
+     <type>'s settings check: its pack's promise jobs did not settle in the 256 a settings check runs".
 
   With no document placing the pack's nodes (the empty one the Engine publishes at construction among them), a
   reload is steps 1 and 2. A reload may add or remove types; removing one the document still places is refused by
   step 4.
 - **Freeing a retired generation.** A replaced generation is retired, and its instances go the way every released
-  instance goes today: each shim is destroyed when the plan that held it is reclaimed, its JS state freed on the block
-  thread at the top of a later block, and its record handed back to the control thread to be deleted. A pack counts its
-  records (the control thread makes and deletes them: a plain count). Once a retired or discarded pack's count is 0
-  the block thread holds nothing of it, and the call that finds it so (`retirePack` itself, `discardPack`, `reclaim`,
-  or `setAudioThreadOwns(false)`) frees it on the control thread: the pack-freed callback is told a retired
+  instance goes: each shim is destroyed when the plan that held it is reclaimed, its JS state freed on the block
+  thread at the top of a later block, and its record handed back to the control thread to be deleted. A pack counts
+  its records (the control thread makes and deletes them: a plain count). Once a retired or discarded pack's count is
+  0 the block thread holds nothing of it, and the call that finds it so (`retirePack` itself, `discardPack`,
+  `reclaim`, or `setAudioThreadOwns(false)`) frees it on the control thread: the pack-freed callback is told a retired
   generation's package first (the Engine's has the registry drop that package's retired entries), then its audio
   runtime leaves what packs share (the join's reverse, so its frees are counted apart), then its runtimes go. A whole
-  generation's heap is freed off the audio thread, where today's releases free JS state on it. While no audio thread
-  runs, releases happen there and then, so a reload frees the old generation within the call. A record the release
-  ring back could not take, leaked rather than freed on the audio thread, keeps its pack for the host's life. A
-  profile build takes what a freed generation added to the live heap off the shared count once no audio thread runs.
+  generation's heap is freed off the audio thread, where an instance's release frees its JS state on it. While no
+  audio thread runs, releases happen there and then, so a reload frees the old generation within the call. A record
+  the release ring back could not take, leaked rather than freed on the audio thread, keeps its pack for the host's
+  life. A profile build takes what a freed generation added to the live heap off the shared count once no audio thread
+  runs.
 - **Not in C1:** unloading a pack (a dev loop reloads, and a pack nothing places costs only its runtimes), and loading a
   pack into more than one Engine: a render job's Engine (or a second one) has the built-in pack only. Loading a project's
   packs into every Engine that runs it belongs with whatever first places user nodes in projects; until then none does.
@@ -239,7 +256,7 @@ queue is empty between two calls into its nodes, so every job that runs is charg
 (or whose jobs did). `endBlock` no longer runs jobs, and in `process` the checkpoint runs after the node's audio
 outputs are copied out. No built-in node uses a promise, so parity cannot move.
 
-| | Today | C1 |
+| | Before C1 | C1 |
 |---|---|---|
 | A job that fails (a `queueMicrotask` callback that threw, or the platform's allocator ran out of memory) | a throw charged to no node, never faulting one | the node's throw: counted, and a `faultOnThrow` node faults (an allocation the pack's limit refused faults the node whatever its `faultOnThrow`: Memory, below) |
 | The deadline stops a job | stops the whole block's job run, charged to no node | counts as the node's call being stopped: it faults on the second in a row, or at once under `faultOnThrow` |
@@ -266,13 +283,14 @@ Two more queue a job outside any one node's call, and are charged as follows: a 
 destroyed node's JS) runs its pack's jobs there, charged to the node that left them when that is another node, else to
 no node, since the node is gone; and a `FinalizationRegistry` callback is queued by whichever GC or free found its
 target: one inside a call (QuickJS's threshold GC, or a commit freeing a reshaped node's old layout) runs as that
-call's job, a reshape with no `onSettings` having a checkpoint of its own for it, and a quiescent collection (`collect`,
-the profile's `runGc`) runs what it queued there and then, as a release does, when the queue was empty before the
-collection (behind another node's leftovers those jobs wait with them, charged to that node). No built-in node uses either. A load's own
-jobs run as it loads, at most 256 each stretch of it (its top level in each runtime, each descriptor, what reading the
-definitions after the last one queues, what a loaded pack's collection queues), and a load that leaves any is refused,
-as every other load failure is: QuickJS cannot drop them, and they would run at the pack's first checkpoint, charged to
-whichever of its nodes' calls came first, or, in the control runtime, at its first settings check.
+call's job, a reshape with no `onSettings` having a checkpoint of its own for it; and what a quiescent collection
+(`collect`, the profile's `runGc`) queues into an empty queue it runs there and then, as a release runs its pack's
+jobs, while what it queues behind another node's leftovers waits with them, charged to that node. No built-in node
+uses either. A load's own jobs run as it loads, at most 256 each stretch of it (its top level in each runtime, each
+descriptor, what reading the definitions after the last one queues, what a loaded pack's collection queues), and a
+load that leaves any is refused, as every other load failure is: QuickJS cannot drop them, and they would run at the
+pack's first checkpoint, charged to whichever of its nodes' calls came first, or, in the control runtime, at its first
+settings check.
 
 **Memory.** Each of a pack's two runtimes is held to its memory limit (64 MiB unless the load says otherwise), each on
 its own: an allocation that would pass it is refused, and QuickJS throws out of memory in the call that made it. The
@@ -281,27 +299,27 @@ holding its live bytes and the limit, which refuses an allocation past the limit
 the audio runtime, a refusal during a call (or its jobs) faults the node they are charged to, whether or not it caught
 the error and whatever its `faultOnThrow`: a pack at its limit is one none of its nodes can rely on. It faults at once
 in `process`, and at its next block after a hook or for its leftovers run at a pack-mate's checkpoint or where no call
-ran (a release's run). A refusal JS
-caught is counted as the node's throw, saying the node "reached its pack's N MiB memory limit"; an uncaught one is the
-out-of-memory throw already counted. Only an out-of-memory error the limit did not cause, the platform's allocator
-running out, is a throw like any other, faulting a `faultOnThrow` node. A call is charged only what its pack refused
-since it began: the note is cleared as each call arms its deadline, so a refusal made where no checkpoint looks (a
-release freeing a node's JS, a quiescent collection, the text the host makes of a checkpoint's last job's throw), or
-while the pack loads, faults no node. The limit holds each runtime whole, its intrinsics and its loaded code included,
-so a limit too small for those refuses the load, which says so. A node's heap is freed when it is rebuilt or removed,
-or its pack reloaded. Other packs, the built-in one among them, are untouched. In the control runtime, which holds no
-instance, the limit holds the pack's top level, `parseSettings` and `layout`: a load or a settings check that fails on
-an allocation it refused is refused, saying so ("reached its pack's N MiB memory limit"), a settings check's refusing
-the document while the running plan stands, and one that catches the error runs on, there being no node to fault.
-"Past its limit" means past it in reachable and uncollected bytes together: the limit counts everything a runtime
-holds, garbage included. An allocation past it is refused at once, with no collection first, and QuickJS's own cycle
-GC runs only as an object is made, once the heap has grown half again since the last one. So a pack whose reachable
-heap is above about two thirds of its limit can be refused, and a node faulted, for garbage not yet collected, and a
-profile window whose auto-GC is pinned off (`resetAllocStats(true)`, [spec/08-profiling.md](../spec/08-profiling.md))
-gathers garbage until the limit faults a node. Left as it is (section 12).
+ran (a release's run). A refusal JS caught is counted as the node's throw, saying the node "reached its pack's N MiB
+memory limit"; an uncaught one is the out-of-memory throw already counted. Only an out-of-memory error the limit did
+not cause, the platform's allocator running out, is a throw like any other, faulting a `faultOnThrow` node. A call is
+charged only what its pack refused since it began: the note is cleared as each call arms its deadline, so a refusal
+made where no checkpoint looks (a release freeing a node's JS, a quiescent collection, the text the host makes of a
+checkpoint's last job's throw), or while the pack loads, faults no node. The limit holds each runtime whole, its
+intrinsics and its loaded code included, so a limit too small for those refuses the load, which says so. A node's heap
+is freed when it is rebuilt or removed, or its pack reloaded. Other packs, the built-in one among them, are untouched.
+In the control runtime, which holds no instance, the limit holds the pack's top level, `parseSettings` and `layout`: a
+load or a settings check that fails on an allocation it refused is refused, saying so ("reached its pack's N MiB
+memory limit"), a settings check's refusing the document while the running plan stands, and one that catches the error
+runs on, there being no node to fault. "Past its limit" means past it in reachable and uncollected bytes together: the
+limit counts everything a runtime holds, garbage included. An allocation past it is refused at once, with no
+collection first, and QuickJS's own cycle GC runs only as an object is made, once the heap has grown half again since
+the last one. So a pack whose reachable heap is above about two thirds of its limit can be refused, and a node
+faulted, for garbage not yet collected, and a profile window whose auto-GC is pinned off (`resetAllocStats(true)`,
+[spec/08-profiling.md](../spec/08-profiling.md)) gathers garbage until the limit faults a node. Left as it is (section
+12).
 
-Faults latch per instance as now, and a reload clears them, every instance of the pack being fresh. The first throw's
-logged text already names the node's type, so a dev loop sees which of its nodes broke.
+Faults latch per instance as they did before C1, and a reload clears them, every instance of the pack being fresh. The
+first throw's logged text already names the node's type, so a dev loop sees which of its nodes broke.
 
 ## 7. The surface
 
@@ -343,8 +361,9 @@ bugs), belong with the authoring and package-split work.
 
 ## 9. Tests
 
-- **`retroplug-engine-graph-test`**, a new `test/engine-graph/ScriptPacks.test.cpp` over the Engine, its toy packs inline
-  JS source:
+- **`retroplug-engine-graph-test`**, a new `test/engine-graph/ScriptPacks.test.cpp` over the Engine, its toy packs
+  inline JS source, and over a `ScriptRig` where the host's binder, its audio-side counts or the built-in pack's load
+  are what it checks:
   - a second pack's nodes run beside the built-in ones', placed in one document;
   - isolation: one pack hangs a getter on `Object.prototype`, replaces `Array.prototype.push` and a global, and a probe
     node in another pack, reading through each, sees nothing changed;
@@ -361,36 +380,55 @@ bugs), belong with the authoring and package-split work.
     nothing in an audio-side count; a reload refused `busy` under an audio thread, after its replan made a fresh
     instance, leaves its generation listed, discarded, until the block thread releases that instance and a reclaim
     finds its record back;
-  - jobs: a node's failing `queueMicrotask` callback is its throw and faults it under `faultOnThrow`; a job the
-    deadline stops counts as its call stopped; a never-settling chain faults its node after two cut-short checkpoints
-    while a pack-mate is never charged; a built-in node's counts stay 0 throughout; a load whose promise jobs do not
-    settle in 256 (its top level's in either runtime, a descriptor's, a flag's getter's read after the last
-    descriptor, its collection's, the built-in pack's load too) refused; a settings check whose promise jobs do not
-    settle in 256 refusing its document while the running plan runs on, and a chain that never settles refusing every
-    later check of its pack until the pack is reloaded;
+  - jobs: a never-settling chain faults its node after two cut-short checkpoints while another pack's node is never
+    charged, and a built-in node's counts stay 0 throughout; a load whose promise jobs do not settle in 256 (its top
+    level's in either runtime, a descriptor's in either, a flag's getter's read after the last descriptor, its
+    collection's, the built-in pack's load too) refused; a settings check whose promise jobs do not settle in 256
+    refusing its document while the running plan runs on, and a chain that never settles refusing every later check of
+    its pack until the pack is reloaded;
   - memory: a node that allocates past its pack's limit faults, and nodes of other packs keep running; a top level, or
     a `parseSettings`, allocating past it in the control runtime refuses the load, or the document placing its node
-    while the running plan runs on, saying so;
+    while the running plan runs on, saying so, and a `parseSettings` that catches the refusal places its node;
   - the control thread's deadline: a load that never returns refused, a settings check that never returns refusing its
     document while the running plan runs on, its clock its own while an audio thread makes calls into another pack;
   - a load under an audio thread driving blocks, and a reload under one, its old generation freed by a later reclaim;
   - a reload's replan carrying the running plan's tap as it is, and leaving a core parked since the last request
     parked; a type's span label kept across fifty reloads; and, in a profile build, a freed generation's share of the
     live heap taken off within the call while quiescent, and under an audio thread once it hands the runtimes back.
-- **The ThreadSanitizer and AddressSanitizer passes** (`tools/run-sanitizer.sh`) cover reloading under a running audio
-  thread.
+
+  The jobs and memory rules within one pack are B3a's `test/engine-graph/ScriptNodes.test.cpp`'s, on the one pack a
+  `ScriptRig` loads its toys into (its built-in pack):
+  - jobs: a reaction runs right after its own call, before the next node's; a node's failing `queueMicrotask` callback
+    is its throw and faults it under `faultOnThrow`; a job the deadline stops counts as its call stopped; a chain cut
+    short at the bound, pinned at 256, faults its node on the second cut short in a row, or at once under
+    `faultOnThrow`; its leftovers run at a pack-mate's checkpoint charged to it, never to the pack-mate, and to no node
+    once it is removed, and two of them stopped there by the deadline fault it; what a fresh instance's `create`
+    queues runs at a checkpoint of its own and what `onSettings` queues at the one after it, each charged to its node;
+    a release runs its pack's leftovers charged to the live node that left them; and what is done between two calls is
+    charged to no node (an allocation refused while JS is freed, a `FinalizationRegistry` callback a quiescent
+    collection or a reshape's freeing queues);
+  - memory: a node that allocates past its pack's limit, in its call or in its promise job, faults at once whether or
+    not it catches the error, and a pack-mate that keeps nothing runs on.
+- **The ThreadSanitizer and AddressSanitizer passes**: `retroplug-engine-graph-test "[script]"`, its `[packs]` cases
+  among them, built in `build-tsan/` and `build-asan/` (configured with `-DRETROPLUG_SANITIZE=thread` and `address`),
+  covers loading, reloading and freeing packs under a running audio thread, and the jobs and memory rules.
+  `tools/run-sanitizer.sh` does not: it runs the host's `dsp-threaded` and `dsp-lifecycle` cases, which load no
+  pack.
 - **`test:native`**, a `script-packs` case through the real host
   ([script-packs.test.ts](../packages/retroplug/test-native/script-packs.test.ts)): `loadScriptPack`, a document
   placing a pack node beside the built-in ones, a reload whose node's output changes, and the error shapes (a compile
   error at its line, a type outside the namespace, `rp.script`, an id of the app's, a memory limit that is no whole
-  number or too small for the load, a refused reload with the planner's errors). No fixtures, so CI runs it.
+  number of bytes, past 2^53 - 1 or not finite, or too small for the load, a refused reload with the planner's
+  errors), 2^53 - 1 the largest limit taken. No fixtures, so CI runs it. The mock tier's `meta.test.ts` holds the mock
+  backend's refusal.
 - **Unchanged and re-run:** strict parity (all 197 cases, the fixtures present, `RP_FAIL_ON_SKIP=1`), with no
   re-record; the four suites; `test:plugin`; the zero-allocation benches.
 - **Measured**: a pack's memory and load time in the Engine (section 3), and the script node call cost before and after
   (B3a's `[bench]`, `build/bin/retroplug-engine-graph-test "[bench]"`, two runs each, before and after the second
   commit): an empty pass-through 0.083 to 0.092 us a call before, 0.088 to 0.096 after; one passing a message on 0.178
   to 0.188 before, 0.193 to 0.202 after; the protocol nodes' plan at 1 frame 0.84 to 0.855 before, 0.872 to 0.898
-  after. The profile's `allocsPerBlock` and `maxBlockAllocs` stay 0 in all three of its windows.
+  after; and with the fixes the commits' reviews found (a46ed34f, two runs), 0.087 to 0.094, 0.182 to 0.199 and 0.872
+  to 0.886. The profile's `allocsPerBlock` and `maxBlockAllocs` stay 0 in all three of its windows.
 
 ## 10. Docs
 
@@ -434,7 +472,8 @@ is written from it; the prototype is where the questions below are answered (eac
   called, so the refusal has to be read from QuickJS after the call. **The host's allocator.** `JS_SetMemoryLimit`
   refuses inside `js_malloc_rt` before the allocator is called, and QuickJS keeps no record of a refusal JS caught, so
   there is nothing to read after the call. The cost is one `malloc_usable_size` an allocation and one a free in every
-  build (QuickJS already calls it once each), and the call cost section 9 records.
+  build (QuickJS already calls it once each), which a steady block, allocating nothing, never pays, and a read of the
+  pack's refusal note at each call's checkpoint, part of the call cost section 9 records.
 - That the 64 MiB default holds every test bundle's toys. **It does**, with room: the largest any engine-graph test's
   pack reached was 2.55 MB, across 546 packs, and the production bundle's in a whole `test:native` run 0.43 MB (a
   temporary probe of each pack's peak). Only the toy built to pass a 16 MiB limit came near one.
@@ -448,11 +487,14 @@ is written from it; the prototype is where the questions below are answered (eac
   carry it.
 - **The authoring loop, the pack format and downloads, unloading, more than one Engine, the UI half** (sections 5 and
   8).
-- **The script nodes' own call cost** (about 0.08 us a node a block empty, B3a) and MicroQuickJS readiness
-  (`defineNode` keeps to ES2015's library), both unchanged.
+- **The script nodes' own call cost** (about 0.09 us a node a block empty, where B3a measured 0.08 before each call
+  gained its checkpoint: section 9) and MicroQuickJS readiness (`defineNode` keeps to ES2015's library, unchanged).
 - **The memory limit counts garbage** (section 6): nothing collects before a refusal, so a pack whose reachable heap is
   above about two thirds of its limit can be faulted for garbage. The default leaves room (64 MiB, where the largest
   test pack peaked at 2.55 MB, section 11).
+- **A node whose settings check fails refuses every document placing it** (section 4), as the planner always has for
+  settings a node refuses, so while it is placed no other edit to the graph lands. A per-node invalid state, the
+  document planning without that node, is the authoring work's to choose.
 
 ## 13. Found while building
 
@@ -461,10 +503,14 @@ is written from it; the prototype is where the questions below are answered (eac
   found a data race in `Glue::interrupt` called from `loadPack` (three runs of three) once a toy's top level ran long
   enough to reach QuickJS's interrupt poll (300000 iterations), the block thread inside a call into another pack, so
   the join moved to the load's end (section 4). What the load allocates goes to a counter of its own, so a profile
-  build's absolute live heap leaves out what a live-loaded pack's load left: a constant offset, every delta exact.
+  build's absolute live heap leaves out what the load of any pack loaded beside the built-in one left: a constant
+  offset, every delta exact. Every way a pack is freed leaves what packs share first (join's reverse), the
+  destructor's too, so its frees are counted apart as well: a pack the registry refused was first freed after it had
+  joined, its frees going into the shared counters from the control thread, a second writer while an audio thread
+  runs.
 - **A compile error has a line and nothing finer.** QuickJS puts no position on the error object, and the first frame
   of its stack (`at <script>:L:C`) gives a column that is often 1 whatever the column was, so `compileToBytecode`
-  says `line 3: SyntaxError: ...` (section 4). Its compiled code's name is `<script>`.
+  says `the source does not compile: line 3: SyntaxError: ...` (section 4). Its compiled code's name is `<script>`.
 - **Where namespaces meet, the registry is the backstop.** `a` and `a.b` can both name a type `a.b.c`, a pack named
   `rp.midi` could define the built-in `rp.midi.route`, and one named `rp.core` takes a native package's name. The
   registry refuses each type already registered, and the pack goes with it; the `rp.` reservation (section 2) then
@@ -476,13 +522,18 @@ is written from it; the prototype is where the questions below are answered (eac
   next check, so a `parseSettings` or `layout` that started a chain that never settles taxed every later check of its
   pack 256 of its jobs. A settings check whose jobs do not settle in the 256 it runs is refused now (section 4), as a
   load is.
-- **A refused replan's generation cannot always be freed at once.** Under an audio thread the refused plan's fresh
-  instances have their releases queued to the block thread, so the new generation is marked discarded and freed by the
-  call that finds its last record back, with no pack-freed callback: the registry dropped its entries when it put the
-  old ones back (section 5).
+- **A refused replan's generation cannot always be freed at once.** Under an audio thread, when the refused plan made
+  fresh instances of it, their releases are queued to the block thread, so the new generation is marked discarded and
+  freed by the call that finds its last record back, with no pack-freed callback: the registry dropped its entries
+  when it put the old ones back (section 5).
 - **A replan must leave the parked cores alone.** A reload between a `buildCore` and the `setGraph` that places its
   core would otherwise free the core TS had just parked, as a published document frees the parked cores it does not
   place; so a replan leaves them parked and the request it replans stays the last one `setGraph` published.
+- **A reload whose running document places none of the pack's types is not replanned.** The design replanned the
+  current document at every reload, and skipped it only with no document published yet. A document that places none
+  of the old generation's types plans as it runs, so its replan would publish the plan already running, and under an
+  audio thread could be refused `busy` for it; so such a reload, the empty document the Engine publishes at
+  construction among them, is the registry's swap alone (section 5).
 - **A record the release ring back cannot take keeps its pack for the host's life.** It is leaked rather than freed on
   the audio thread, as before C1, and its pack's count never reaches 0. Left as it is: the ring back is twice the
   release ring's depth, and nothing has filled it.
@@ -491,11 +542,20 @@ is written from it; the prototype is where the questions below are answered (eac
   detachment when a generation is freed leaves ThreadSanitizer silent, since relaxed atomics lose updates rather than
   race. And a profile build has to take a freed generation's share off the live heap: fifty reloads leave it within
   16 bytes of where it was, where without that it rose by 1.67 MB.
-- **A memory limit too small for the runtime itself refuses every load, and QuickJS said `null`.** The limit holds the
-  audio runtime's intrinsics (about 90 KB) and its loaded code, so 64 KiB refuses a two-node toy's load (256 KiB loads
-  it), and once QuickJS cannot make its out-of-memory error it throws `null`: the load said only `chunk 0: null`. The
-  fifth commit has a load the limit refused say so, `(the load reached the pack's 65536-byte memory limit)` (in the
-  words a node's refusal uses, "reached its pack's N MiB memory limit"), and `test:native` holds it.
+- **The memory limit is the host's allocator's.** The design left open how the host would learn that a pack refused
+  an allocation (section 11's third question) and expected each call to cost one job-pending check more. QuickJS's
+  `JS_SetMemoryLimit` refuses inside `js_malloc_rt`, before the allocator is called, and keeps no record of a refusal
+  JS caught, so each runtime allocates through a heap of its pack's that holds its live bytes and the limit, refuses
+  an allocation past the limit and notes the refusal on the pack, which the call's checkpoint reads. That costs a
+  `malloc_usable_size` an allocation and one a free in every build, beside QuickJS's own, which a steady block,
+  allocating nothing, never pays, and each call a read of the note beside its job-pending test: about 4 to 5 ns an
+  empty call and 14 to 15 one passing a message on (section 9).
+- **A memory limit too small for the runtime itself refuses every load, and QuickJS said `null`.** The limit holds
+  each runtime whole, its intrinsics (about 90 KB) and its loaded code with them, so 64 KiB refuses a two-node toy's
+  load in the control runtime, which loads first (128 KiB loads it), and once QuickJS cannot make its out-of-memory
+  error it throws `null`: the load said only `chunk 0: null`. A load the limit refused says so,
+  `(the load reached the pack's 65536-byte memory limit)` (in the words a node's refusal uses, "reached its pack's N
+  MiB memory limit"), and `test:native` holds it.
 - **A pack compiled from source keeps its debug information.** The built-in bundle is compiled stripped (`tjsc -s`);
   `compileToBytecode` keeps the lines a thrown error's stack names, which a dev loop wants, so the production bundle's
   source loaded as a pack holds about 366 KB in its audio runtime, where the stripped bundle loaded to 296 (section
@@ -503,6 +563,15 @@ is written from it; the prototype is where the questions below are answered (eac
 - **Running out of memory faults sooner than a throw did.** An allocation refused at the limit in `process`, or while
   its inputs are made JS values, faults the node at once, where it had been a throw the node ran on from; a refusal
   while a release frees a node's JS, or while a pack loads, faults no node (section 6).
+- **A chain cut short faulted a `faultOnThrow` node only on its second.** The design held a node to two cut shorts in a
+  row, as two expiries are, whatever its `faultOnThrow`, where every other throw of a `faultOnThrow` node faults it at
+  once. A cut short is the node's throw, so a `faultOnThrow` node faults on its first (section 6's table).
+- **A release runs other nodes' leftovers.** The design charged what a release (`beginBlock` freeing a destroyed node's
+  JS) runs to no node, the node being gone. But a release runs whatever its pack has pending, and while a chain another
+  node left is pending those jobs are that node's: a release charges them to it, as the pack's later checkpoints
+  would, and to no node only once the node that left them is released, this release or an earlier one; those
+  leftovers are then no node's until the queue empties, every later checkpoint of the pack running them charged to
+  none, never to the pack-mate whose call it follows (section 6).
 - **A plain id can hold `"` or `\`,** so a pack's manifest writes its id as a JSON string; an id `test"q` broke the
   manifest built by concatenation.
 - **A generation's number could name two sources.** It was one more than the newest of its id the host still held,
@@ -527,3 +596,21 @@ is written from it; the prototype is where the questions below are answered (eac
   (section 6), through the same allocator as the audio runtime rather than QuickJS's `JS_SetMemoryLimit`, which
   refuses before the allocator is called and keeps no record of it, so the load or the settings check it fails could
   not say the limit was why.
+- **Whether a load is a reload is the script host's to say.** The Engine first asked its registry whether it held a
+  package under the id, but a registry may hold a package of another kind, and a downloaded native package sharing a
+  pack's id would have been swapped out by that load. The script host, which built every generation it names, says
+  whether it holds a current one of the id (section 5).
+- **A retired registry entry was read through a map's node handle.** The registry first retired a version's entries
+  by extracting them from its lookup, each keeping its address inside the node handle, while planned instances read
+  them through pointers taken before the extract, which the standard leaves undefined while a node handle owns the
+  element (no standard library in use moves one). Each entry is an object of its own now, owned by the lookup while it
+  is found and by its retired version while it is not, so retiring and restoring move the pointer that owns it, and
+  its address holds for its whole life (section 5).
+- **A node whose settings check fails holds every edit.** The planner checks every placed node's settings at every
+  plan and refuses a document a node refuses, as it always has for settings a node refuses. A settings check can now
+  fail for more than the settings (the deadline, its pack's memory limit, its pack's control-side jobs not settling),
+  so a node placed while its check passed can fail it later: every document placing it is then refused, the running
+  one published again among them, and so is a reload of another pack whose nodes the running document places beside
+  it (section 5). That is kept as the planner's contract: removing the node (every node of its pack, for a chain that
+  never settles) or reloading its pack clears it, and a per-node invalid state is the authoring work's to choose
+  (section 12).
