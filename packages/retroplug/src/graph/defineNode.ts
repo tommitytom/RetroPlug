@@ -190,8 +190,8 @@ export interface Block {
   emit(port: string, frame: number, value: number): boolean;
 }
 
-// Every hook runs on the thread that runs blocks, never on the control thread: the script host holds every
-// instance in one runtime that only that thread enters (docs/modular-graph-phase-b3a-design.md section 2.1). Each
+// Every hook runs on the thread that runs blocks, never on the control thread: each pack's instances live in
+// its pack's audio runtime, which only that thread enters (docs/modular-graph-phase-b3a-design.md section 2.1). Each
 // call is held to a deadline of the thread's own CPU time (2 s unless the host sets another; section 2.7): one that
 // runs past it is stopped, which no try can catch, and counted as a throw. Under faultOnThrow the node then faults;
 // without, it runs again next block and faults if that call is stopped too. A fault outlives reshapes.

@@ -100,8 +100,8 @@ to, its live bytes and the pack's memory limit), and a counting `JSMallocFunctio
 shape: `js_calloc/js_malloc/js_free/js_realloc/js_malloc_usable_size`, `quickjs.h:451-457`;
 [ScriptHost.cpp](../packages/native/src/host/script/ScriptHost.cpp)). The wrapper bumps cumulative
 allocation, realloc and free calls and the bytes asked for (in every build: the native tests read them;
-an audio runtime's go to the shared counters once its pack has loaded, a control runtime's to a count of
-its pack's that nothing reads), keeps the runtime's live bytes, refusing an allocation that would take
+an audio runtime's go to the shared counters once it joins: from the start for the built-in pack, after its load for
+any other, a control runtime's to a count of its pack's that nothing reads), keeps the runtime's live bytes, refusing an allocation that would take
 them past the limit, and, in a profile build, the live and peak heap in usable bytes, and delegates to
 libc.
 
@@ -303,13 +303,14 @@ modes are out.
   **bit-identical run-to-run** (only `xRT`/`gcMs` wall-clock vary). First measured result (Profile A, 1
   mGB core, 2000 blocks): **~171 allocs/block**, `freesPerBlock` ≈ allocs (balanced churn),
   `liveHeapDelta` ≈ 0 (not a leak), `maxBlockAllocs` 279.
-- The profile build's own unit checks are the six Catch2 `[profile]` cases of `retroplug-engine-graph-test`
+- The profile build's own unit checks are the eight Catch2 `[profile]` cases of `retroplug-engine-graph-test`
   (a script node's span labelled by its type, holding `marshal` then `js-call` and closed every way a call
   ends; nodes of one type sharing its label and each type labelled in load order; the calls refused while
   the audio thread runs and the trace reads reading nothing then; a type past the name table traced as
   `script-node`; the embedded bundle's types labelled 16 to 23 in order, `rp.lsdj.serial-out` 23; and an
   Engine's `apu-render` spanning its plan's whole run, each block's holding the process spans of a script node
-  before its Game Boy and of one after it, the first ending before the second starts). Nothing else runs them:
+  before its Game Boy and of one after it, the first ending before the second starts; and two pack cases: a type's
+  label kept across its pack's reloads, and a freed generation's share taken off the live heap, quiescent and under an audio thread). Nothing else runs them:
   `tools/run-profile.sh unit`, or by hand `cmake --build build-prof --target retroplug-engine-graph-test -j$(nproc)`
   then
   `build-prof/bin/retroplug-engine-graph-test "[profile]"`.

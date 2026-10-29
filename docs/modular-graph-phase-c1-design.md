@@ -215,11 +215,12 @@ ring (release on push, acquire on adopt) carries the whole built pack with it.
      places) swaps the registry back to the old entries, discards the new generation, and returns the planner's
      errors. Nothing has changed: the old plan's instances still match the old entries, so none is rebuilt. The new
      generation is freed there and then while no audio thread runs, and under one when the plan was refused before it
-     made an instance (a settings refusal or a type gone, which the planner finds before it creates anything). A
-     refusal after it made some (`busy`, or a later node of the pack whose `create` refuses, its settings check run
-     again) has their releases queued to the block thread under an audio thread, so the generation is marked discarded
-     and freed once their records come back. A replan refused as `busy` (the command ring full, or a settings commit
-     not yet adopted) says nothing against the pack: the caller may try again. Another pack's node can refuse it too:
+     made an instance (a settings refusal or a type gone, which the planner finds before it creates anything, or a
+     settings commit not yet adopted, answered `busy` before planning). A refusal after it made some
+     (the ring full, or a later node of the pack whose `create` refuses, its settings check run again) has their
+     releases queued to the block thread under an audio thread, so the generation is marked discarded and freed once
+     their records come back. A replan refused as `busy` (the command ring full, or a settings commit not yet
+     adopted) says nothing against the pack: the caller may try again. Another pack's node can refuse it too:
      while the running document places a node of another pack whose settings check fails (section 4), a chain that
      never settles in that pack's control runtime, say, every reload whose replan checks that node is refused with
      that node's error, "the running document does not plan with the reloaded pack: settings-invalid at <node>:
@@ -552,7 +553,7 @@ is written from it; the prototype is where the questions below are answered (eac
   empty call and 14 to 15 one passing a message on (section 9).
 - **A memory limit too small for the runtime itself refuses every load, and QuickJS said `null`.** The limit holds
   each runtime whole, its intrinsics (about 90 KB) and its loaded code with them, so 64 KiB refuses a two-node toy's
-  load in the control runtime, which loads first (128 KiB loads it), and once QuickJS cannot make its out-of-memory
+  load in the control runtime, which loads first, and once QuickJS cannot make its out-of-memory
   error it throws `null`: the load said only `chunk 0: null`. A load the limit refused says so,
   `(the load reached the pack's 65536-byte memory limit)` (in the words a node's refusal uses, "reached its pack's N
   MiB memory limit"), and `test:native` holds it.

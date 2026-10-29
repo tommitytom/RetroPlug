@@ -264,9 +264,9 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // a getter or a function another put there. A Proxy on the way answers as JS reads one (its get trap, or its target's
 // chain), so a wrapper or a test double works; a chain longer than kMethodHops, or one that cycles back through a
 // Proxy, fails the create rather than holding the block thread, where the deadline has no JS to stop. And it freezes
-// the Block prototype every node reaches, with its methods, so no node replaces one for another: assigning one on a
-// node's own Block (`block.send = f`) throws in the strict bundle, where defining it there still works. That is the
-// host's part only: what the nodes of a pack can do to each other through the realm they share (an accessor on a
+// the Block prototype every node of a pack reaches, with its methods, so no node replaces one for another: assigning
+// one on a node's own Block (`block.send = f`) throws in the strict bundle, where defining it there still works. That
+// is the host's part only: what the nodes of a pack can do to each other through the realm they share (an accessor on a
 // prototype another's own code reads through, a global it calls) it does not cover. Only nodes of different packs are
 // kept apart, each pack's realm in runtimes of its own (docs/modular-graph-phase-c1-design.md section 12).
 //

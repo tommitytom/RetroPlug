@@ -2027,8 +2027,8 @@ TEST_CASE("a script node whose prototype chain cycles through a Proxy, or runs p
     }
 }
 
-TEST_CASE("the Block prototype every script node of a pack shares, and its methods, are frozen, so no node replaces one for "
-          "another",
+TEST_CASE("the Block prototype every script node of a pack shares, and its methods, are frozen, so no node replaces "
+          "one for another",
           "[script][trap][realm][block]") {
     ScriptRig rig(kRealm);
     REQUIRE(rig.set(doc(node("v", "rp.toy.vandal"), "")).ok);
