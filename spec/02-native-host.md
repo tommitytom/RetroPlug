@@ -743,7 +743,9 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   QuickJS cannot drop a pending job, so a chain cut short stays queued, and its pack remembers whose it
   is until the queue empties: its later checkpoints (the next calls into any of the pack's nodes) run the
   rest charged to that node, never to a pack-mate, and once that node is released the rest is no node's.
-  A release runs what its pack has pending, charged likewise. Only a reload, which frees the pack's
+  What is queued where no call into a node ran (by a release freeing a node's JS, or by a quiescent
+  collection finding a `FinalizationRegistry` callback's target) runs there and then, charged likewise,
+  else to no node. Only a reload, which frees the pack's
   runtime, ends a faulted node's chain; it runs, bounded, in its own pack. A load runs the jobs it queues
   as it loads, at most 256 each stretch of it (its top level in each runtime, each descriptor, what a
   loaded pack's collection queues), and one that leaves any is refused, as every other load failure is:
@@ -753,10 +755,11 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   otherwise) by the host's allocator, which refuses an allocation past it, so QuickJS throws out of
   memory in the call that asked, and notes the refusal on the pack. A call, or its jobs, during which
   its pack refused one faults its node at once (a refusal JS caught counted as the node's throw), since
-  a pack at its limit is one none of its nodes can rely on; a refusal during a release or a load faults
-  no node. The limit holds the whole runtime, its intrinsics (about 90 KB) and its code included, so a
-  limit too small for those refuses the load, which says so. Another pack is untouched, and the control
-  side's runtimes keep no limit: they hold no instance.
+  a pack at its limit is one none of its nodes can rely on. A call is charged only what its pack refuses
+  after it begins (the note is cleared as each call arms its deadline), so a refusal during a release, a
+  quiescent collection or a load faults no node. The limit holds the whole runtime, its intrinsics (about
+  90 KB) and its code included, so a limit too small for those refuses the load, which says so. Another
+  pack is untouched, and the control side's runtimes keep no limit: they hold no instance.
 - **A throw** in `process` is caught and counted, the block's output up to it stands, and the node runs
   again next block; a definition that says `faultOnThrow`, or a `process` that returns `"fault"`,
   faults instead (bypassed from then on), and a `faultOnThrow` node whose `onSettings`,

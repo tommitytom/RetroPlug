@@ -198,9 +198,11 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // deadline stops counts as its call stopped (the rule above); and a chain still pending after the bound is cut short,
 // its throw, the second cut short in a row faulting it, as two expiries do. QuickJS cannot drop a pending job, so a
 // chain cut short stays queued and its pack remembers whose it is until the queue empties: its later checkpoints (the
-// next calls into any of its nodes) run the rest charged to that node, never to a pack-mate. A release runs what its
-// pack has pending, charged to that remembered owner when it is another node, else to no node, as is what a released
-// owner leaves (a throw counted, faulting no one). A fault charged to the node whose process this is returns RP_FAULT;
+// next calls into any of its nodes) run the rest charged to that node, never to a pack-mate. What is queued where no
+// call into a node ran, by a release freeing a node's JS or by a quiescent collection finding a FinalizationRegistry
+// callback's target, runs there and then, charged to that remembered owner when the pack has one, else to no node, as
+// is what a released owner leaves (a throw counted, faulting no one); what a reshape's freeing queues runs at a
+// checkpoint after the commit, charged to its node. A fault charged to the node whose process this is returns RP_FAULT;
 // one after a hook, or charged to another node of the pack whose leftovers ran, faults that node at its next block. A
 // promise reaction's own throw only rejects its promise, which is the node's to handle. A load's own jobs run as it
 // loads, at most kJobsPerCheckpoint each stretch of it (its top level in each runtime, each descriptor, what a loaded
@@ -212,8 +214,10 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // notes the refusal on the pack. The limit holds the whole runtime, its intrinsics (about 90 KB) and the pack's loaded
 // code with them, so one too small for those refuses the load, which says so. Once the pack is loaded, a call, or its
 // jobs, during which its pack refused one faults its node at once (a refusal JS caught counted as the node's throw),
-// since a pack at its limit is one none of its nodes can rely on. Another pack is untouched. The control side's
-// runtimes keep no limit: they hold no instance.
+// since a pack at its limit is one none of its nodes can rely on. A call is charged only what its pack refuses after
+// it begins: the refusal note is cleared as each call arms its deadline, so a refusal made where no checkpoint looks
+// (a release freeing a node's JS, a quiescent collection, the text the host makes of a checkpoint's last job's throw)
+// faults no node. Another pack is untouched. The control side's runtimes keep no limit: they hold no instance.
 //
 // A throw in process is caught, counted and the block's output up to it stands: the node runs again next block
 // (design section 4.5), unless its definition says faultOnThrow, when it faults (RP_FAULT, the executor's latch); a
@@ -447,6 +451,7 @@ private:
     void drainReleased();           // control thread: the records handed back, deleted, and the backlog moved on
     void collect();                 // quiescent: a GC of each pack's audio runtime whose load or releases have left
                                     //   garbage since its last
+    bool collectAudio(Pack& pack);  // quiescent: one GC of its audio runtime; whether it queued jobs (collect)
     // control thread: the jobs a call into its control context queued, at most kJobsPerCheckpoint; whether they settled
     static bool drainControlJobs(Pack& pack);
 

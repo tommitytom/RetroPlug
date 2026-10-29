@@ -993,6 +993,123 @@ TEST_CASE("a script node that allocates past its pack's memory limit faults at o
     CHECK(rig.scripts.firstThrow().find("rp.toy.hog went past its pack's 16 MiB memory limit in process") == 0);
 }
 
+// What runs between two calls into a pack's nodes. Each node sends its block count, and holds what `make` makes: the
+// holder a __greedy() object, whose finalizer is refused an allocation (ScriptRig.hpp), the cycler one inside a cycle
+// only a collection frees, and the registrant a cycle registered with a FinalizationRegistry whose callback throws.
+// The reshaper registers its input's message array, which a reshape frees, and has no onSettings. The lingerer starts
+// a chain of 300 jobs in its first block, which leaves 44 after its own checkpoint.
+const char* const kBetweenCalls = R"JS(
+globalThis.finalized = new FinalizationRegistry((tag) => { throw new Error("finalized " + tag); });
+const counting = (id, extra, make) => rp.defineNode({
+  id, ...extra,
+  ports: { in: rp.events.in(), out: rp.events.out() },
+  create: () => {
+    const held = make ? make() : null;
+    let n = 0;
+    return { process: (b) => { b.send("out", 0, [++n & 0x7f]); void held; } };
+  },
+});
+const cycle = () => { const self = {}; self.self = self; return self; };
+rp.register([
+  counting("rp.toy.holder", {}, () => __greedy()),
+  counting("rp.toy.cycler", {}, () => { const c = cycle(); c.greedy = __greedy(); return c; }),
+  counting("rp.toy.registrant", {}, () => {
+    const c = cycle();
+    globalThis.finalized.register(c, "registrant");
+    return c;
+  }),
+  counting("rp.toy.calm", {}),
+  counting("rp.toy.strict-calm", { faultOnThrow: true }),
+  rp.defineNode({
+    id: "rp.toy.reshaper", reshapes: true,
+    settings: rp.s.object({ outs: rp.s.int({ min: 1, max: 2, default: 1 }) }),
+    ports: (s) => (s.outs === 1 ? { in: rp.events.in(), out1: rp.events.out() }
+                                : { in: rp.events.in(), out1: rp.events.out(), out2: rp.events.out() }),
+    create: () => {
+      let n = 0;
+      return { process: (b) => { if (++n === 1) globalThis.finalized.register(b.messages("in"), "reshaper"); } };
+    },
+  }),
+  rp.defineNode({
+    id: "rp.toy.lingerer",
+    ports: { in: rp.events.in(), out: rp.events.out() },
+    create: () => {
+      let n = 0, links = 0;
+      const link = () => { if (++links < 300) Promise.resolve().then(link); };
+      return { process: (b) => { b.send("out", 0, [++n & 0x7f]); if (n === 1) Promise.resolve().then(link); } };
+    },
+  }),
+]);
+)JS";
+
+TEST_CASE("what is done between two calls into a pack's nodes is charged to neither: an allocation refused while JS is "
+          "freed, and a FinalizationRegistry callback a quiescent collection or a reshape's freeing queues",
+          "[script][jobs][between]") {
+    {
+        INFO("an allocation refused as a release frees a node's JS, with another node's leftovers pending");
+        ScriptRig rig(kBetweenCalls);
+        // The holder before the lingerer, so no checkpoint follows the lingerer's in the block: its leftovers wait.
+        REQUIRE(rig.set(doc(node("h", "rp.toy.holder") + "," + node("l", "rp.toy.lingerer"), wire("h.out", "l.in")))
+                    .ok);
+        rig.run();
+        CHECK(rig.scripts.jobsCutShort() == 1);
+        CHECK(rig.scripts.throwCount() == 1);
+        REQUIRE(rig.set(doc(node("l", "rp.toy.lingerer"), "")).ok);  // the holder released: its finalizer refused
+        CHECK(rig.log.count("greedy finalized") == 1);
+        rig.run(64, 2);
+        // The release ran the lingerer's 44 leftovers, charged to it and settling: its one cut short is all it owes.
+        CHECK_FALSE(rig.host->isFaulted("l"));
+        CHECK(rig.scripts.throwCount() == 1);
+        CHECK(rig.scripts.jobsCutShort() == 1);
+    }
+    {
+        INFO("an allocation refused as a quiescent collection frees a released node's cycle");
+        ScriptRig rig(kBetweenCalls);
+        REQUIRE(rig.set(doc(node("c", "rp.toy.cycler") + "," + node("m", "rp.toy.calm"), "")).ok);
+        rig.run();
+        REQUIRE(rig.set(doc(node("m", "rp.toy.calm"), "")).ok);  // the cycler released, and its cycle collected
+        CHECK(rig.log.count("greedy finalized") == 1);
+        rig.run(64, 2);
+        CHECK_FALSE(rig.host->isFaulted("m"));
+        CHECK(rig.scripts.throwCount() == 0);
+    }
+    {
+        INFO("a FinalizationRegistry callback a quiescent collection queues");
+        ScriptRig rig(kBetweenCalls);
+        REQUIRE(rig.set(doc(node("r", "rp.toy.registrant") + "," + node("m", "rp.toy.strict-calm"), "")).ok);
+        rig.run();
+        REQUIRE(rig.set(doc(node("m", "rp.toy.strict-calm"), "")).ok);  // the callback runs as the collection's
+        CHECK(rig.scripts.throwCount() == 1);
+        rig.run(64, 2);
+        CHECK_FALSE(rig.host->isFaulted("m"));
+        CHECK(rig.scripts.throwCount() == 1);
+        rig.reclaim();
+        CHECK(rig.scripts.firstThrow() == "a promise job threw: Error: finalized registrant");
+    }
+    {
+        INFO("a FinalizationRegistry callback a reshape's freeing queues, its node having no onSettings");
+        ScriptRig rig(kBetweenCalls);
+        // The strict mate before the reshaper: it has the next call into the pack after the reshaper's commit.
+        const auto graph = [](int outs) {
+            return doc(node("m", "rp.toy.strict-calm") + "," +
+                           node("s", "rp.toy.reshaper", R"({"outs":)" + std::to_string(outs) + "}"),
+                       wire("m.out", "s.in"));
+        };
+        REQUIRE(rig.set(graph(1)).ok);
+        rig.run();
+        rp_node* const kept = rig.host->node("s");
+        REQUIRE(rig.set(graph(2)).ok);
+        REQUIRE(rig.host->node("s") == kept);
+        rig.run(64, 2);
+        // The callback ran at the reshaper's commit, charged to it, which runs on: no faultOnThrow.
+        CHECK_FALSE(rig.host->isFaulted("m"));
+        CHECK_FALSE(rig.host->isFaulted("s"));
+        CHECK(rig.scripts.throwCount() == 1);
+        rig.reclaim();
+        CHECK(rig.scripts.firstThrow() == "rp.toy.reshaper threw in a promise job: Error: finalized reshaper");
+    }
+}
+
 TEST_CASE("a script node's payloads grow their buffer when a block's outgrow it, and one JS detached is replaced",
           "[script][payload]") {
     ScriptRig rig(R"JS(

@@ -422,14 +422,18 @@ struct ScriptHost::Glue {
     // throw. Arming one reads no clock: the handler takes the baseline at its first poll inside the call and compares at
     // the later ones, so a call too short to reach a poll costs nothing (and one that does goes uncounted for up to
     // 10000 polls, far under any deadline). One made inside another's call is part of that call, and its budget.
+    // Arming one is where a call into `pack` begins, so it clears the pack's refusal note too: a call is charged only
+    // what its pack refuses from then on, never one made where no checkpoint looks (a release freeing a node's JS, a
+    // quiescent collection, the text the host makes of a checkpoint's last job's throw).
     struct Deadline {
         ScriptHost& h;
         bool        nested;
-        explicit Deadline(ScriptHost& host) : h(host), nested(host.armed_) {
+        Deadline(ScriptHost& host, Pack& pack) : h(host), nested(host.armed_) {
             if (nested) return;
             h.armed_ = true;
             h.cpuStart_ = -1;
             h.interrupted_ = false;
+            pack.heap.refused = false;
         }
         ~Deadline() {
             if (!nested) h.armed_ = false;
@@ -685,7 +689,8 @@ struct ScriptHost::Glue {
     static void portsChanged(rp_node* n, const std::uint8_t* connected, std::uint32_t count) {
         Instance& in = instanceOf(n);
         ScriptHost& h = *in.type->host;
-        const Deadline call(h);  // the create a fresh instance makes first, the hook, and the jobs they queue
+        // The create a fresh instance makes first, the hook, and the jobs they queue.
+        const Deadline call(h, packOf(in));
         const bool fresh = in.state == Instance::State::Pending;
         if (!ensureLive(h, in)) return;
         JSContext* ctx = packOf(in).audio;
@@ -710,7 +715,7 @@ struct ScriptHost::Glue {
         ScriptHost& h = *in.type->host;
         // The whole block, not just the call: the create a fresh instance makes first, the block path (a node may hang
         // a setter on what it fills in), the call, and the jobs they queue.
-        const Deadline call(h);
+        const Deadline call(h, packOf(in));
         if (!ensureLive(h, in) || in.faultNext) return RP_FAULT;
         const Pack& pack = packOf(in);
         JSContext* ctx = pack.audio;
@@ -812,16 +817,19 @@ struct ScriptHost::Glue {
         ScriptHost& h = *in.type->host;
         auto* next = static_cast<Settings*>(prepared);
         Settings* prev = in.settings;
-        const Deadline call(h);  // the create a fresh instance makes first, onSettings, and the jobs they queue
+        // The create a fresh instance makes first, onSettings, and the jobs they queue.
+        const Deadline call(h, packOf(in));
         const bool fresh = in.state == Instance::State::Pending;
         const bool live = ensureLive(h, in);  // a fresh instance is made from the settings it was created with first
         JSContext* ctx = packOf(in).audio;
+        bool reshaped = false;
         if (next->layout) {
             if (next->layout->json != in.layout->json) {
                 freeLayoutJs(ctx, *in.layout);
                 prev->layout = std::move(in.layout);
                 in.layout = std::move(next->layout);
                 bindLayout(ctx, *in.layout);
+                reshaped = true;
             } else {
                 prev->layout = std::move(next->layout);
             }
@@ -830,7 +838,10 @@ struct ScriptHost::Glue {
         *old = prev;
         if (!live) return;
         if (!JS_IsFunction(ctx, in.onSettings)) {
-            if (fresh) hookDone(h, in, false, "create");  // what its create queued, at a checkpoint of its own
+            // What its create queued, or what its new layout's atoms were refused and freeing the old one's JS queued
+            // (a FinalizationRegistry callback whose target that was), at a checkpoint of its own: the commit's,
+            // charged to it.
+            if (fresh || reshaped) hookDone(h, in, false, fresh ? "create" : "a reshape");
             return;
         }
         JSValue settings = JS_ParseJSON(ctx, next->json.c_str(), next->json.size(), "<settings>");
@@ -999,7 +1010,7 @@ struct ScriptHost::Glue {
         JSContext* ctx = pack.audio;
         if (!JS_IsFunction(ctx, in.activate)) return true;
         JS_UpdateStackTop(pack.audioRt);
-        const Deadline call(h);
+        const Deadline call(h, packOf(in));
         JSValueConst args[2] = {JS_NewFloat64(ctx, in.sampleRate), JS_NewUint32(ctx, in.maxFrames)};
         JSValue result = JS_Call(ctx, in.activate, in.object, 2, args);
         // A throw is no refusal (the re-activation stands): it is a hook's throw, faulting the node as hookDone says.
@@ -1053,10 +1064,10 @@ struct ScriptHost::Glue {
         JS_FreeValue(ctx, thrown);
     }
 
-    // After a hook (onSettings and portsChanged at a plan swap, activate at a re-activation), or a create no hook
-    // follows: a throw is counted, then its checkpoint runs, and the node faults at its next block, since it may hold
-    // half of what the hook would have set, under faultOnThrow, when the deadline stopped it or its jobs a second time
-    // in a row (expiryFaults), or when its checkpoint faults it.
+    // After a hook (onSettings and portsChanged at a plan swap, activate at a re-activation), a create no hook follows,
+    // or a reshape no onSettings follows: a throw is counted, then its checkpoint runs, and the node faults at its next
+    // block, since it may hold half of what the hook would have set, under faultOnThrow, when the deadline stopped it
+    // or its jobs a second time in a row (expiryFaults), or when its checkpoint faults it.
     static void hookDone(ScriptHost& h, Instance& in, bool threw, const char* where) {
         const bool stopped = h.interrupted_;
         if (threw) recordThrow(h, in, where);
@@ -1158,11 +1169,12 @@ struct ScriptHost::Glue {
         if (jobs.fault || expired) owner.faultNext = true;
     }
 
-    // A release's (releaseJs), after the instance's JS is freed: what its pack has pending runs there, under a deadline
-    // of its own, charged to the pack's owner when it has one (never the released instance, which releaseJs has let go
-    // of), else to no node.
-    static void releaseJobs(ScriptHost& h, Pack& pack) {
-        const Deadline call(h);
+    // What `pack` has pending where no call into one of its nodes ran: a release's (releaseJs, once the instance's JS
+    // is freed), and a quiescent collection's (collect and runGc: a FinalizationRegistry callback whose target it
+    // found). It runs there, as a call of its own, under its own deadline, charged to the pack's remembered owner when
+    // it has one (never a released instance, which releaseJs has let go of), else to no node.
+    static void betweenCalls(ScriptHost& h, Pack& pack) {
+        const Deadline call(h, pack);
         Instance* const owner = pack.jobsOwner;
         const Settled jobs = chargeJobs(h, pack, owner);
         if (owner) chargeOther(*owner, jobs);
@@ -2155,9 +2167,19 @@ void ScriptHost::collect() {
     for (const auto& pack : packs_) {
         if (!pack->garbage) continue;
         pack->garbage = false;
-        JS_UpdateStackTop(pack->audioRt);
-        JS_RunGC(pack->audioRt);
+        if (collectAudio(*pack)) Glue::betweenCalls(*this, *pack);
     }
+}
+
+// One quiescent GC of the pack's audio runtime. Whether it queued jobs (a FinalizationRegistry callback whose target
+// it found) into a queue that was empty: the caller runs them there and then (Glue::betweenCalls), where at the pack's
+// next checkpoint they would be charged to whichever node's call came first. Queued behind another node's leftovers,
+// they wait with them, charged to that node.
+bool ScriptHost::collectAudio(Pack& pack) {
+    const bool idle = !JS_IsJobPending(pack.audioRt);
+    JS_UpdateStackTop(pack.audioRt);
+    JS_RunGC(pack.audioRt);
+    return idle && JS_IsJobPending(pack.audioRt);
 }
 
 void ScriptHost::releaseJs(Instance& in) {
@@ -2173,13 +2195,15 @@ void ScriptHost::releaseJs(Instance& in) {
     if (in.state == Instance::State::Live) live_.fetch_sub(1, std::memory_order_relaxed);
     in.state = Instance::State::Released;
     pack.garbage = true;
-    // Never left its pack's owner, its record being deleted after this: what it left pending is no node's now.
+    // Its record is deleted after this, so the pack's owner is never left pointing at it: what it left pending is no
+    // node's now.
     if (pack.jobsOwner == &in) {
         pack.jobsOwner = nullptr;
         pack.jobsOrphaned = true;
     }
-    if (JS_IsJobPending(pack.audioRt)) Glue::releaseJobs(*this, pack);
-    pack.heap.refused = false;  // what freeing it was refused is no node's to fault
+    // What its pack has pending runs now, as a call of its own, whose deadline drops what freeing it was refused: no
+    // node's to fault (and with nothing pending, the next call into the pack drops it).
+    if (JS_IsJobPending(pack.audioRt)) Glue::betweenCalls(*this, pack);
 }
 
 ScriptAllocations ScriptHost::audioAllocations() const {
@@ -2234,14 +2258,14 @@ DspGcResult ScriptHost::runGc() {
     if (refuseWhileOwned("a GC pass")) return {};  // enabled false
     const std::int64_t before = counters_.liveBytes.load(std::memory_order_relaxed);
     const auto t0 = std::chrono::steady_clock::now();
-    for (const auto& pack : packs_) {
-        JS_UpdateStackTop(pack->audioRt);
-        JS_RunGC(pack->audioRt);
-    }
+    std::vector<Pack*> queued;  // whose collection queued jobs, run once the collections are measured
+    for (const auto& pack : packs_)
+        if (collectAudio(*pack)) queued.push_back(pack.get());
     DspGcResult r;
     r.enabled = true;
     r.ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     r.freedBytes = before - counters_.liveBytes.load(std::memory_order_relaxed);  // the cycles collected
+    for (Pack* pack : queued) Glue::betweenCalls(*this, *pack);
     return r;
 }
 

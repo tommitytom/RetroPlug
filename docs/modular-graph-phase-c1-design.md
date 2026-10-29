@@ -249,11 +249,13 @@ them charged to no node, never to the pack-mate whose call it follows, and one t
 
 Two more queue a job outside any one node's call, and are charged as follows: a release (`beginBlock` freeing a
 destroyed node's JS) runs its pack's jobs there, charged to the node that left them when that is another node, else to
-no node, since the node is gone; and a `FinalizationRegistry` callback is queued by whichever call's GC found its
-target, so it runs as that call's job. No built-in node uses either. A load's own jobs run as it loads, at most 256 each
-stretch of it (its top level in each runtime, each descriptor, what a loaded pack's collection queues), and a load that
-leaves any is refused, as every other load failure is: QuickJS cannot drop them, and they would run at the pack's first
-checkpoint, charged to whichever of its nodes' calls came first.
+no node, since the node is gone; and a `FinalizationRegistry` callback is queued by whichever GC or free found its
+target: one inside a call (QuickJS's threshold GC, or a commit freeing a reshaped node's old layout) runs as that
+call's job, a reshape with no `onSettings` having a checkpoint of its own for it, and a quiescent collection (`collect`,
+the profile's `runGc`) runs what it queued there and then, as a release does. No built-in node uses either. A load's own
+jobs run as it loads, at most 256 each stretch of it (its top level in each runtime, each descriptor, what a loaded
+pack's collection queues), and a load that leaves any is refused, as every other load failure is: QuickJS cannot drop
+them, and they would run at the pack's first checkpoint, charged to whichever of its nodes' calls came first.
 
 **Memory.** Each pack's audio runtime is held to its memory limit (64 MiB unless the load says otherwise): an
 allocation that would pass it is refused, and QuickJS throws out of memory in the call that made it. The host's own
@@ -262,7 +264,9 @@ pack's holding its live bytes and its limit, which refuses an allocation past th
 pack. A call (or its jobs) during which its pack refused one faults the node at once, whether or not the node caught
 the error: a pack at its limit is one none of its nodes can rely on. A refusal JS caught is counted as the node's
 throw, saying the node "went past its pack's N MiB memory limit"; an uncaught one is the out-of-memory throw already
-counted. A refusal while a release frees a node's JS, or while the pack loads, faults no node. The limit holds the
+counted. A call is charged only what its pack refused since it began: the note is cleared as each call arms its
+deadline, so a refusal made where no checkpoint looks (a release freeing a node's JS, a quiescent collection, the text
+the host makes of a checkpoint's last job's throw), or while the pack loads, faults no node. The limit holds the
 whole runtime, its intrinsics and its loaded code included, so a limit too small for those refuses the load, which
 says so. A node's heap is freed when it is rebuilt or removed, or its pack reloaded. Other packs, the built-in one
 among them, are untouched. The control side's runtimes keep no limit: they hold no instance.
@@ -459,3 +463,9 @@ is written from it; the prototype is where the questions below are answered (eac
   faulted after two cut shorts, for a top level's chain; a loaded pack's collection of its load's cycles, after the
   load, queued its `FinalizationRegistry` callbacks the same way. A load that leaves any is refused (section 6),
   and the collection runs inside the load.
+- **What ran between two calls into a pack was charged to a node.** A quiescent collection's `FinalizationRegistry`
+  callbacks, and a reshape's with no `onSettings` to run them after, waited for the pack's next checkpoint and were
+  charged to whichever node's call it followed; and an allocation refused where no checkpoint looks faulted a node: one
+  in a quiescent collection the next node called, one as a release freed a node's JS the node whose leftovers that
+  release ran. A collection runs what it queued, a reshape has a checkpoint of its own, and each call clears its pack's
+  refusal note as it arms its deadline (section 6).

@@ -11,7 +11,9 @@
 // a bundle is running in, for a toy that would tell the two apart, and `__sleep(ms)` takes the calling thread off the
 // CPU for that long, as a preemption, a stopped process or a paused VM would. `__pending()` says whether an exception
 // is pending on the runtime as JS runs, which none should be: a native call that returned a value with one left
-// pending hands it to whatever asks QuickJS next.
+// pending hands it to whatever asks QuickJS next. And in the audio context only, `__greedy()` returns an object whose
+// finalizer asks its runtime for more than any pack's memory limit (refused, and the refusal noted on the pack), then
+// records "greedy finalized": an allocation refused while JS is freed, between two calls into a pack's nodes.
 
 #include <chrono>
 #include <cstdint>
@@ -57,6 +59,7 @@ struct ProbeLog {
     std::mutex                                           mutex;
     std::vector<std::pair<std::string, std::thread::id>> calls;
     JSClassID                                            tokenClass[2] = {0, 0};  // control side, audio side
+    JSClassID                                            greedyClass = 0;         // audio side
 
     void add(std::string tag) {
         const std::lock_guard<std::mutex> lock(mutex);
@@ -127,7 +130,24 @@ inline void tokenFinalizer(JSRuntime*, JSValueConst value) {
     delete t;
 }
 
-// ScriptHost::Binder.
+inline JSValue greedyFn(JSContext* ctx, JSValueConst, int, JSValueConst*, int, JSValueConst* data) {
+    ProbeLog* log = logOf(ctx, data[0]);
+    JSValue greedy = JS_NewObjectClass(ctx, log->greedyClass);
+    JS_SetOpaque(greedy, log);
+    return greedy;
+}
+
+// Only ever in an audio runtime, whose allocator refuses what would pass its pack's limit before asking the platform.
+inline void greedyFinalizer(JSRuntime* rt, JSValueConst value) {
+    JSClassID id = 0;
+    auto* log = static_cast<ProbeLog*>(JS_GetAnyOpaque(value, &id));
+    if (!log) return;
+    if (void* p = js_malloc_rt(rt, std::size_t{1} << 40)) js_free_rt(rt, p);
+    log->add("greedy finalized");
+}
+
+// ScriptHost::Binder. Every pack's runtimes make their classes in the same order (the pack's own first), so one id
+// each serves every pack.
 inline void bindProbes(void* user, JSContext* ctx, bool audioSide) {
     auto* log = static_cast<ProbeLog*>(user);
     JSClassID& id = log->tokenClass[audioSide ? 1 : 0];
@@ -138,6 +158,14 @@ inline void bindProbes(void* user, JSContext* ctx, bool audioSide) {
     JS_NewClass(JS_GetRuntime(ctx), id, &def);
     JSValue data = JS_NewInt64(ctx, static_cast<std::int64_t>(reinterpret_cast<std::intptr_t>(log)));
     JSValue global = JS_GetGlobalObject(ctx);
+    if (audioSide) {
+        JS_NewClassID(JS_GetRuntime(ctx), &log->greedyClass);
+        JSClassDef greedy{};
+        greedy.class_name = "Greedy";
+        greedy.finalizer = &greedyFinalizer;
+        JS_NewClass(JS_GetRuntime(ctx), log->greedyClass, &greedy);
+        JS_SetPropertyStr(ctx, global, "__greedy", JS_NewCFunctionData(ctx, &greedyFn, 0, 0, 1, &data));
+    }
     JS_SetPropertyStr(ctx, global, "__probe", JS_NewCFunctionData(ctx, &probeFn, 1, 0, 1, &data));
     JS_SetPropertyStr(ctx, global, "__token", JS_NewCFunctionData(ctx, &tokenFn, 1, audioSide ? 1 : 0, 1, &data));
     JS_SetPropertyStr(ctx, global, "__audioSide", JS_NewBool(ctx, audioSide));
