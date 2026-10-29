@@ -316,9 +316,10 @@ public:
     // Load a pack beside the built-in one (docs/modular-graph-phase-c1-design.md sections 4 and 5): a pack named `id`,
     // its two runtimes made for it, runs a bundle (global-code bytecode, in chunks run in order) in both, each held to
     // `memoryLimit` bytes (0: kDefaultMemoryLimit), the load included, and its definitions are read and checked as
-    // load checks the built-in pack's. Callable while an audio thread runs blocks (the class comment). On an
-    // id loaded already it builds the pack's next generation (one more than the newest of the id held), beside the
-    // current one, until retirePack or discardPack settles which goes. Its package, named by `id`, for the registry
+    // load checks the built-in pack's. Callable while an audio thread runs blocks (the class comment). Its generation
+    // is the id's count of loads, every one of them counted, refused or not (1 for the first), so a number names one
+    // source. On an id loaded already it builds the pack's next generation beside the current one, until retirePack or
+    // discardPack settles which goes. Its package, named by `id`, for the registry
     // (NodeRegistry::addPackage, or replacePackage for a new generation), valid until the pack is freed; null, with a
     // reason, when canLoadPack refuses the id (nothing is built), or, the pack freed there and then, when a chunk fails
     // to load (or runs out of memory), the load runs past the call deadline, the promise jobs it queues do not settle
@@ -350,8 +351,8 @@ public:
     // replan of the reload that built it was refused). A retired or discarded pack is held until no record of its
     // types' instances is alive, then freed.
     enum class PackStanding : std::uint8_t { Current, Retired, Discarded };
-    // A pack held: its id, its generation (its load's count: 1, then one more each reload), how it stands, and how many
-    // records of its types' instances are alive.
+    // A pack held: its id, its generation (which of its id's loads made it, refused loads counted: loadPack), how it
+    // stands, and how many records of its types' instances are alive.
     struct PackInfo {
         std::string   id;
         std::uint32_t generation = 0;
@@ -501,6 +502,9 @@ private:
     // runs (settleFreedLive): the control thread's.
     std::int64_t                       freedLive_ = 0;
 #endif
+    // Each loaded pack id's count of loads, which every loadPack of it that canLoadPack takes advances, refused or not:
+    // its latest generation's number, so a number names one source for the host's life (control thread).
+    std::unordered_map<std::string, std::uint32_t> generations_;
     // Each type id's span label (DspSpanLabel), given at its first registration in any pack and kept, and the next one
     // to give (control thread).
     std::unordered_map<std::string, std::uint32_t> spanLabels_;

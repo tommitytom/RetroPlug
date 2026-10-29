@@ -679,9 +679,10 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   an instance in a plan it adopts, so the plan swap's ring carries the whole built pack across; a pack's audio
   runtime joins what packs share (the call deadline's interrupt handler, the allocation counters) only once
   its load is done, so what a loaded pack's load allocates is counted apart from `audioAllocations`.
-- **Reloading one.** The same id loaded again builds the pack's next generation beside the current one (one
-  more than the newest of its id still held), and the registry swaps the package's entries for the new
-  generation's, keeping the old ones valid for the instances that hold them. The Engine plans the request
+- **Reloading one.** The same id loaded again builds the pack's next generation beside the current one
+  (numbered by the id's count of loads, refused ones included, so a number names one source), and the registry
+  swaps the package's entries for the new generation's, keeping the old ones valid for the instances that hold
+  them. The Engine plans the request
   `setGraph` last published again, with no tap re-arm (the running plan's tap stays as it is, neither
   restored nor armed again) and its parked cores left parked; the planner rebuilds every instance whose
   registry entry changed, so each of the pack's nodes gets a fresh instance of the new code under its node

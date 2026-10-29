@@ -358,7 +358,7 @@ struct ScriptHost::Pack {
 
     ScriptHost*   host = nullptr;   // how a Block method, which finds the pack as its context's opaque, finds the host
     std::string   id;
-    std::uint32_t generation = 1;   // its load's count
+    std::uint32_t generation = 1;   // which of its id's loads made it (generations_)
     std::string   manifest;         // its package's: {"id":"<id>"}
     JSRuntime*    controlRt = nullptr;
     JSContext*    control = nullptr;
@@ -1800,11 +1800,9 @@ bool ScriptHost::canLoadPack(const std::string& id, std::string* error) const {
 const rp_package* ScriptHost::loadPack(const std::string& id, std::span<const Chunk> chunks, std::size_t memoryLimit,
                                        std::string* error) {
     if (!canLoadPack(id, error)) return nullptr;
-    // An id loaded already gets its next generation: one more than the newest held (a retired one waiting for its
-    // records, or a discarded one, among them).
-    std::uint32_t generation = 1;
-    for (const auto& held : packs_)
-        if (held->id == id) generation = std::max(generation, held->generation + 1);
+    // The id's next generation, whatever came of its loads before and whenever their generations were freed, so one
+    // number never names two sources.
+    const std::uint32_t generation = ++generations_[id];
     // What its audio runtime allocates until it joins, the load's own, counted apart: this is the control thread, and
     // the block thread may be counting into the shared counters, which have one writer at a time.
     Counters loading;

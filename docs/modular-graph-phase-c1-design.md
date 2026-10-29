@@ -110,8 +110,8 @@ thrown error's stack names), where the built-in bundle is compiled stripped (`tj
 
 `ScriptHost` stops being one pair of runtimes and becomes a holder of packs.
 
-- **A pack** is an id, a generation (its load's count: 1, then one more than the newest of its id the host still
-  holds, section 5), a control runtime and context, an audio runtime and context, its types, and its own
+- **A pack** is an id, a generation (which of its id's loads made it: 1 for the first, every load of the id counted,
+  refused ones included, section 5), a control runtime and context, an audio runtime and context, its types, and its own
   `rp_package` (manifest `{"id": "<pack id>"}`, the id written as a JSON string, since a plain id may hold `"` or
   `\`). Everything the audio side holds per runtime today is the pack's: the `Block` class and its frozen prototype,
   the atoms the block thread names properties by, the address of `Object.prototype`, the interrupt handler (with the
@@ -181,8 +181,9 @@ ring (release on push, acquire on adopt) carries the whole built pack with it.
   pack there and then: nothing placed it. Its audio runtime leaves what packs share first, as every freed pack's does
   (the destructor's included), so nothing freeing it frees is in the shared counters.
 - **Reload** (an id already loaded), all or nothing, as `setGraph` is:
-  1. The new generation is built as a load builds, beside the old one. Its number is one more than the newest of its
-     id the host still holds, so a refused reload freed at once uses no number and one waiting for its records does.
+  1. The new generation is built as a load builds, beside the old one. Its number is the id's count of loads, which
+     every load of it advances, refused or not, so one number never names two sources, whenever a refused one is
+     freed.
   2. The registry swaps the package's entries for the new generation's (`NodeRegistry::replacePackage`, keyed by each
      generation's `rp_package`, which the generation owns for its life). The old entries stay valid: planned instances
      point at them. The registry retires them, each keeping its address, until told to drop them (`dropRetired`),
@@ -494,6 +495,9 @@ is written from it; the prototype is where the questions below are answered (eac
   while a release frees a node's JS, or while a pack loads, faults no node (section 6).
 - **A plain id can hold `"` or `\`,** so a pack's manifest writes its id as a JSON string; an id `test"q` broke the
   manifest built by concatenation.
+- **A generation's number could name two sources.** It was one more than the newest of its id the host still held,
+  so a refused reload freed at once left its number to the next load, and one waiting for its records did not: the
+  number a reload got hung on when a block ran. Each id counts its loads now (section 5).
 - **What a load left queued was charged to its pack's first node.** A load ran at most 256 of the jobs each stretch
   queued and let the rest wait, so the first of the pack's nodes a checkpoint followed was charged for them, and
   faulted after two cut shorts, for a top level's chain; a loaded pack's collection of its load's cycles, after the

@@ -338,7 +338,9 @@ toy.define("test.baddesc.odd", [{ id: "in", dir: "in", kind: "smoke" }], functio
                       {docWire("midi-in.midi", "nest.in"), docWire("nest.out", "midi-out.in1")}));
     CHECK(block(e, {{2, kNote}}) == std::vector<Out>{{1, 2, {0x90, 61, 100}}});  // the first pack's: a semitone, not two
 
-    // Each id refused once its pack was built loads clean now: neither the script host nor the registry kept it.
+    // Each id refused once its pack was built loads clean now: neither the script host nor the registry kept it, but for
+    // its count of loads, so each is numbered past those refused (test.ns's four, one each of the others; a compile
+    // error builds nothing, so test.syntax's count none).
     load(e, "test.ns", toys(transposer("test.ns.fine", 1)));
     load(e, "test.syntax", toys(transposer("test.syntax.up", 1)));
     load(e, "test.nodesc", toys(transposer("test.nodesc.fine", 1)));
@@ -348,8 +350,8 @@ toy.define("test.baddesc.odd", [{ id: "in", dir: "in", kind: "smoke" }], functio
     const auto quoted = load(e, "test\"q", toys(transposer("test\"q.up", 1)));
     REQUIRE(quoted.types.size() == 1);
     CHECK(quoted.types[0].id == "test\"q.up");
-    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.nest#1", "test.ns#1", "test.syntax#1",
-                                                 "test.nodesc#1", "test.baddesc#1", "test.nest.x#1", "test\"q#1"});
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.nest#1", "test.ns#5", "test.syntax#1",
+                                                 "test.nodesc#2", "test.baddesc#2", "test.nest.x#2", "test\"q#1"});
     CHECK(e.scriptThrows() == 0);
 }
 
@@ -1113,7 +1115,8 @@ globalThis.__rp_scriptNodes[0].parseSettings = function (raw) {
                                                 tally("test.code.extra", 9)));
     REQUIRE(added.types.size() == 3);
     CHECK(added.types[2].id == "test.code.extra");
-    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.code.sub#1", "test.code#2"});
+    // Numbered past the five refused above that were built: the generations the id's loads gave never come again.
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.code.sub#1", "test.code#7"});
     CHECK(block(e, {{3, kNote}}) == sorted({{1, 3, {0x90, 72, 100}}, {2, 0, {2, 1}}}));
     place(e, document({docNode("count", "test.code.count"), docNode("extra", "test.code.extra"), midiOut("2,3")},
                       {docWire("count.out", "midi-out.in1"), docWire("extra.out", "midi-out.in2")}));
@@ -1283,6 +1286,47 @@ TEST_CASE("a reload refused under an audio thread after its replan made a fresh 
     e.drainCommands();
     CHECK(block(e) == sorted({{1, 0, {1, 3}}, {2, 0, {1, 1}}}));
     e.setAudioThreadOwns(false);
+    CHECK(e.scriptThrows() == 0);
+    CHECK(e.faultCount() == 0);
+}
+
+TEST_CASE("a pack's generation numbers only increase: every load of its id takes the next, refused or not, and however "
+          "soon a refused one was freed, so no number names two sources",
+          "[script][packs][reload]") {
+    Engine e(kRate);
+    load(e, "test.gen", toys(tally("test.gen.count", 1)));
+    place(e, document({docNode("count", "test.gen.count"), midiOut("1")}, {docWire("count.out", "midi-out.in1")}));
+    CHECK(block(e) == std::vector<Out>{{1, 0, {1, 1}}});
+    // Generation 2, its replan refused (the type the document places gone), freed within the call; generation 3, its
+    // load refused (its top level throws).
+    CHECK_FALSE(e.loadScriptPack("test.gen", toys(tally("test.gen.other", 2))).ok);
+    CHECK_FALSE(e.loadScriptPack("test.gen", toys(tally("test.gen.count", 3) + "throw new Error('not this one');")).ok);
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.gen#1"});
+    load(e, "test.gen", toys(tally("test.gen.count", 4)));
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.gen#4"});
+    CHECK(block(e) == std::vector<Out>{{1, 0, {4, 1}}});
+
+    // Generation 5, refused busy under an audio thread and so held, discarded, until a block releases its fresh
+    // instance and a reclaim finds the record back: the next load is 6 whether it comes before that or after.
+    e.setAudioThreadOwns(true);
+    DspCommand bpm;
+    bpm.kind = DspCommand::Kind::SetBpm;
+    bpm.setBpm = {120.0};
+    while (e.pushCommand(bpm)) {
+    }
+    CHECK_FALSE(e.loadScriptPack("test.gen", toys(tally("test.gen.count", 5))).ok);
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.gen#4", "test.gen#5"});
+    e.drainCommands();
+    block(e);
+    e.reclaim();
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.gen#4"});
+    e.setAudioThreadOwns(false);
+    load(e, "test.gen", toys(tally("test.gen.count", 6)));
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.gen#6"});
+    CHECK(block(e) == std::vector<Out>{{1, 0, {6, 1}}});
+    // Each id counts its own loads.
+    load(e, "test.gen.b", toys(tally("test.gen.b.count", 1)));
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.gen#6", "test.gen.b#1"});
     CHECK(e.scriptThrows() == 0);
     CHECK(e.faultCount() == 0);
 }
