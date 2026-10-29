@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -15,17 +16,22 @@ namespace rp::graph {
 // trust boundary for a pack's metadata: everything the host will later call or read is checked here.
 //
 // A package may be replaced by a new version of itself (replacePackage: a script node pack's reload,
-// docs/modular-graph-phase-c1-design.md section 5), and that is the only way an entry stops being found. An entry is
-// never moved, and never freed while anything may hold it: a planned instance keeps an Entry* (and destroys its node
-// through it), so the entries a replacement swaps out are retired, kept where they are, until their version is put back
-// (restorePackage, when what the replacement was for is refused: the same Entry objects found again, so a plan that
-// holds them still matches them and nothing is rebuilt) or dropped (dropRetired, once nothing holds one). A version is
-// named by the rp_package it was registered from, which its owner holds anyway (a script pack's generation is a package
-// of its own, alive as long as the generation is): so whoever frees a version names it by what it frees, and no token
-// has to be kept beside it. Not thread-safe: no call may overlap another, so a registry shared by several hosts is
-// filled before any of them plans, and after that, concurrent find() is safe. One host may change it between its plans
-// on the thread that plans (an Engine's script node packs: Engine::loadScriptPack adds and replaces, its reclaim
-// drops), since planning is the only reader: an executor runs a plan's instances and never looks a type up.
+// docs/modular-graph-phase-c1-design.md section 5), and the last replacement undone (restorePackage); those are the
+// only ways an entry stops being found, the old version's entries retired by the one and the new version's dropped by
+// the other. A planned instance keeps an Entry* (and destroys its node through it), so an entry is never moved, and
+// never freed while anything may hold it: the entries a replacement swaps out are retired until their version is put
+// back (restorePackage, when what the replacement was for is refused: the same Entry objects found again, so a plan
+// that holds them still matches them and nothing is rebuilt) or dropped (dropRetired, once nothing holds one). Each
+// Entry is an object of its own, owned by the lookup while it is found and by its retired version while it is not, so
+// retiring, restoring and dropping move the pointer that owns it, and it keeps its address for its whole life. It is
+// not the map's element, extracted whole to retire it: reading an element through a pointer taken while it was in the
+// map is undefined while a node handle owns it, and every planned instance holds such a pointer. A version is named by
+// the rp_package it was registered from, which its owner holds anyway (a script pack's generation is a package of its
+// own, alive as long as the generation is): so whoever frees a version names it by what it frees, and no token has to
+// be kept beside it. Not thread-safe: no call may overlap another, so a registry shared by several hosts is filled
+// before any of them plans, and after that, concurrent find() is safe. One host may change it between its plans on the
+// thread that plans (an Engine's script node packs: Engine::loadScriptPack adds and replaces, its reclaim drops), since
+// planning is the only reader: an executor runs a plan's instances and never looks a type up.
 class NodeRegistry {
 public:
     struct Entry {
@@ -65,19 +71,19 @@ public:
     std::size_t  retiredSize() const;                      // the entries retired and not yet put back or dropped
 
 private:
-    using Entries = std::map<std::string, Entry, std::less<>>;  // node-based: an Entry never moves
+    using Entries = std::map<std::string, std::unique_ptr<Entry>, std::less<>>;  // each Entry owned apart: never moved
     // A package registered: the rp_package its entries came from, and their type ids.
     struct Version {
         const rp_package*        source = nullptr;
         std::vector<std::string> types;
     };
-    // A version a replacement swapped out: its entries, extracted from the map whole (a node handle keeps its element
-    // where it is, so each Entry stays at its address), its package, where it came from and what replaced it.
+    // A version a replacement swapped out: its entries, the pointers that own them taken out of the lookup (each Entry
+    // stays where it is), its package, where it came from and what replaced it.
     struct Retired {
-        std::string                     package;
-        const rp_package*               source = nullptr;
-        const rp_package*               replacedBy = nullptr;
-        std::vector<Entries::node_type> entries;
+        std::string                         package;
+        const rp_package*                   source = nullptr;
+        const rp_package*                   replacedBy = nullptr;
+        std::vector<std::unique_ptr<Entry>> entries;
     };
 
     // The entries `package` would register, checked, and its id; `replacing` names the package a replacement replaces

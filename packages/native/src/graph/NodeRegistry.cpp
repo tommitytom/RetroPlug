@@ -1,6 +1,7 @@
 #include "graph/NodeRegistry.hpp"
 
 #include <algorithm>
+#include <memory>
 #include <vector>
 
 #include <rfl/from_generic.hpp>
@@ -102,7 +103,7 @@ bool NodeRegistry::addPackage(const rp_package* package, std::string* error) {
     for (auto& e : added) {
         version.types.push_back(e.descriptor.id);
         std::string key = e.descriptor.id;
-        entries_.emplace(std::move(key), std::move(e));
+        entries_.emplace(std::move(key), std::make_unique<Entry>(std::move(e)));
     }
     return true;
 }
@@ -118,13 +119,17 @@ const rp_package* NodeRegistry::replacePackage(std::string_view id, const rp_pac
     if (!check(next, id, pkg, added, error)) return nullptr;
     Version& current = packages_.find(pkg)->second;
     Retired old{pkg, current.source, next, {}};
-    for (const auto& type : current.types) old.entries.push_back(entries_.extract(type));
+    for (const auto& type : current.types) {
+        const auto it = entries_.find(type);
+        old.entries.push_back(std::move(it->second));  // the pointer that owns it, so the Entry is where it was
+        entries_.erase(it);
+    }
     current.source = next;
     current.types.clear();
     for (auto& e : added) {
         current.types.push_back(e.descriptor.id);
         std::string key = e.descriptor.id;
-        entries_.emplace(std::move(key), std::move(e));
+        entries_.emplace(std::move(key), std::make_unique<Entry>(std::move(e)));
     }
     const rp_package* const previous = old.source;
     retired_.push_back(std::move(old));
@@ -138,14 +143,14 @@ bool NodeRegistry::restorePackage(const rp_package* previous) {
     if (pkg == packages_.end() || pkg->second.source != at->replacedBy) return false;  // not its package's last
     // Each of its type ids is free once the version that replaced it goes, unless another package took one since.
     for (const auto& e : at->entries)
-        if (const auto taken = entries_.find(e.key()); taken != entries_.end() && taken->second.package != at->package)
-            return false;
+        if (const Entry* taken = find(e->descriptor.id); taken && taken->package != at->package) return false;
     for (const auto& type : pkg->second.types) entries_.erase(type);
     pkg->second.source = previous;
     pkg->second.types.clear();
     for (auto& e : at->entries) {
-        pkg->second.types.push_back(e.key());
-        entries_.insert(std::move(e));  // the node itself, so the Entry is where it was
+        pkg->second.types.push_back(e->descriptor.id);
+        std::string key = e->descriptor.id;
+        entries_.emplace(std::move(key), std::move(e));  // the pointer that owns it, so the Entry is where it was
     }
     retired_.erase(at);
     return true;
@@ -166,7 +171,7 @@ std::size_t NodeRegistry::retiredSize() const {
 
 const NodeRegistry::Entry* NodeRegistry::find(std::string_view typeId) const {
     const auto it = entries_.find(typeId);
-    return it != entries_.end() ? &it->second : nullptr;
+    return it != entries_.end() ? it->second.get() : nullptr;
 }
 
 }  // namespace rp::graph
