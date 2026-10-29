@@ -326,6 +326,94 @@ TEST_CASE("a replacement with no package id is refused, changing nothing: never 
     CHECK(reg.addPackage(&fresh.package));  // still free to be added
 }
 
+TEST_CASE("a package's current version is no retired one: dropRetired refuses it, changing nothing",
+          "[graph][registry]") {
+    NodeRegistry reg;
+    REQUIRE(reg.addPackage(test::testPackage()));
+    const Version one(R"({"id":"p"})", {typeWith("p.a", &aOne), typeWith("p.b", &bOne)});
+    const Version two(R"({"id":"p"})", {typeWith("p.a", &aTwo)});
+    REQUIRE(reg.addPackage(&one.package));
+    const auto* a1 = reg.find("p.a");
+    const auto* b1 = reg.find("p.b");
+    REQUIRE(reg.replacePackage("p", &two.package) == &one.package);
+    const auto* a2 = reg.find("p.a");
+    const std::size_t total = reg.size();
+
+    CHECK_FALSE(reg.dropRetired(&two.package));
+    CHECK_FALSE(reg.dropRetired(test::testPackage()));  // registered, never replaced
+    CHECK(reg.find("p.a") == a2);
+    CHECK(reg.size() == total);
+    CHECK(reg.retiredSize() == 2);  // the first version's two
+
+    // Its retired version is untouched: still put back, the very entries.
+    CHECK(reg.restorePackage(&one.package));
+    CHECK(reg.find("p.a") == a1);
+    CHECK(reg.find("p.b") == b1);
+    CHECK_FALSE(reg.dropRetired(&one.package));  // current again
+    CHECK(reg.find("p.a") == a1);
+    CHECK(reg.retiredSize() == 0);
+}
+
+TEST_CASE("a retired version is not put back once another package has taken one of its type ids, changing nothing",
+          "[graph][registry]") {
+    NodeRegistry reg;
+    const Version one(R"({"id":"p"})", {typeWith("p.a", &aOne), typeWith("p.b", &bOne)});
+    const Version two(R"({"id":"p"})", {typeWith("p.a", &aTwo), typeWith("p.c", &cTwo)});
+    const Version taker(R"({"id":"q"})", {typeWith("p.b", &bOne)});  // the id the second version gave up
+    REQUIRE(reg.addPackage(&one.package));
+    REQUIRE(reg.replacePackage("p", &two.package) == &one.package);
+    REQUIRE(reg.addPackage(&taker.package));
+    const auto* a2 = reg.find("p.a");
+    const auto* b = reg.find("p.b");
+    const auto* c2 = reg.find("p.c");
+    REQUIRE(b);
+    CHECK(b->package == "q");
+    const std::size_t total = reg.size();
+
+    CHECK_FALSE(reg.restorePackage(&one.package));
+    CHECK(reg.find("p.a") == a2);
+    CHECK(reg.find("p.b") == b);
+    CHECK(reg.find("p.c") == c2);
+    CHECK(reg.size() == total);
+    CHECK(reg.retiredSize() == 2);
+    // Still retired, so still dropped, and the second version stays.
+    CHECK(reg.dropRetired(&one.package));
+    CHECK(reg.retiredSize() == 0);
+    CHECK(reg.find("p.a") == a2);
+}
+
+TEST_CASE("a refused replacement leaves the last one undoable: the retired version is put back as it was",
+          "[graph][registry]") {
+    NodeRegistry reg;
+    REQUIRE(reg.addPackage(test::testPackage()));
+    const Version one(R"({"id":"p"})", {typeWith("p.a", &aOne), typeWith("p.b", &bOne)});
+    const Version two(R"({"id":"p"})", {typeWith("p.a", &aTwo), typeWith("p.c", &cTwo)});
+    REQUIRE(reg.addPackage(&one.package));
+    const auto* a1 = reg.find("p.a");
+    const auto* b1 = reg.find("p.b");
+    REQUIRE(reg.replacePackage("p", &two.package) == &one.package);
+    const std::size_t total = reg.size();
+
+    // Refused for each kind of reason: a bad descriptor, a type id another package holds, a version held already (the
+    // retired one itself among them), another package's id.
+    const Version bad(R"({"id":"p"})", {typeWith("p.a", &aThree), typeWith("p.x", &badDescriptor)});
+    const Version taker(R"({"id":"p"})", {typeWith("p.a", &aThree), typeWith("rp.test.source", &sourceDescriptor)});
+    const Version stray(R"({"id":"q"})", {typeWith("p.a", &aThree)});
+    for (const rp_package* next : {&bad.package, &taker.package, &two.package, &one.package, &stray.package}) {
+        CHECK(reg.replacePackage("p", next) == nullptr);
+        CHECK(reg.size() == total);
+        CHECK(reg.retiredSize() == 2);
+    }
+
+    CHECK(reg.restorePackage(&one.package));
+    CHECK(reg.find("p.a") == a1);
+    CHECK(reg.find("p.b") == b1);
+    CHECK(reg.find("p.c") == nullptr);
+    CHECK(reg.find("p.a")->descriptor.name == "A one");
+    CHECK(reg.retiredSize() == 0);
+    CHECK(reg.size() == total);
+}
+
 TEST_CASE("endpoints split at the first dot; resource refs parse", "[graph][document]") {
     const auto e = parseEndpoint("gb1.pins.pulse");
     REQUIRE(e);
