@@ -124,14 +124,16 @@ export interface Backend {
    *  the pack's id, a dot and a name, and the id is none of the app's ("rp" and every id under "rp."). A load lists the
    *  pack's types with their descriptor JSON, and a document can place them from the next `setGraph`. A reload
    *  rebuilds every node of the pack the running document places on the new code, its JS state not carried over, and
-   *  every other node runs on as it was. Refused, nothing changes and the old code runs on, `error` saying why:
-   *  `errors` holds the planner's errors when a reload's replan refused, and is empty when the refusal came before any
-   *  replan (the id, a compile error, the load, the registry). A replan refused `busy` (the engine's command ring
-   *  full, or a settings change not yet adopted) says nothing against the pack: the call may be retried.
-   *  `memoryLimitBytes` holds each of the pack's runtimes to that many bytes (absent or 0: 64 MiB), for this load
-   *  alone: a reload without it holds the new generation to 64 MiB, whatever an earlier load of the pack said. Each
-   *  runtime's own intrinsics (about 90 KB) and the pack's code count against it, so a limit too small for those
-   *  refuses the load, saying so. Nothing in the app calls it yet; the mock backend refuses it. */
+   *  every other node runs on as it was. Refused, the types a document can name and the running plan stay as they were
+   *  and the old code runs on (the reclaim the load makes first may still free generations earlier reloads replaced,
+   *  as a refused `setGraph`'s can), `error` saying why: `errors` holds the planner's errors when a reload's replan
+   *  refused, and is empty when the refusal came before any replan (the id, a compile error, the load, the registry).
+   *  A replan refused `busy` (the engine's command ring full, or a settings change not yet adopted) says nothing
+   *  against the pack: the call may be retried. `memoryLimitBytes` holds each of the pack's runtimes to that many
+   *  bytes (absent or 0: 64 MiB), for this load alone: a reload without it holds the new generation to 64 MiB,
+   *  whatever an earlier load of the pack said. Each runtime's own intrinsics (about 90 KB) and the pack's code count
+   *  against it, so a limit too small for those refuses the load, saying so. Nothing in the app calls it yet; the mock
+   *  backend refuses it. */
   loadScriptPack(request: LoadScriptPackRequest): LoadScriptPackResult;
 
   // --- File dialog --------------------------------------------------------

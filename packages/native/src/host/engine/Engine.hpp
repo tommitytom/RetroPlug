@@ -264,13 +264,14 @@ public:
     // compiled here and run in runtimes of the pack's own (ScriptHost::loadPack), each held to `memoryLimit` bytes
     // (0: ScriptHost::kDefaultMemoryLimit); then its types join the registry, so a document can place them from the
     // next setGraph on. Callable while an audio thread runs blocks: the pack is built here, and the block thread
-    // meets it only in a plan that places one of its nodes. Refused with the reason in `error`, the registry and the
-    // running plan as they were: an id ScriptHost::canLoadPack refuses (checked first, before the source is compiled:
-    // one of the app's, "rp" and under, among them), a compile error (its line), a pack ScriptHost::loadPack refuses
-    // (a definition it cannot read, a type id outside the pack's namespace, a load past the call deadline or the
-    // memory limit), or one the registry refuses (a descriptor it cannot use, a type id another pack holds already).
-    // A refusal once the source compiles (ScriptHost::loadPack's own included) still uses up a generation number (the
-    // id's count of loads: ScriptHost::loadPack).
+    // meets it only in a plan that places one of its nodes. Refused with the reason in `error`, the types a document
+    // can name and the running plan as they were (the reclaim it makes first may still free retired generations, their
+    // retired entries dropped, as a refused setGraph's can): an id ScriptHost::canLoadPack refuses (checked first,
+    // before the source is compiled: one of the app's, "rp" and under, among them), a compile error (its line), a pack
+    // ScriptHost::loadPack refuses (a definition it cannot read, a type id outside the pack's namespace, a load past
+    // the call deadline or the memory limit), or one the registry refuses (a descriptor it cannot use, a type id
+    // another pack holds already). A refusal once the source compiles (ScriptHost::loadPack's own included) still uses
+    // up a generation number (the id's count of loads: ScriptHost::loadPack).
     // An id the script host holds a current generation of is reloaded (docs/modular-graph-phase-c1-design.md section
     // 5), all or nothing: its next generation is built as a load builds a pack, the registry swaps the pack's entries
     // for its, and the request setGraph last published is planned again without re-arming the tap (the running plan's

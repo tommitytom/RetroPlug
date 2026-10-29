@@ -213,18 +213,19 @@ ring (release on push, acquire on adopt) carries the whole built pack with it.
      request parked (TS may have built it for the next document), and the request stays the one `setGraph` published.
   4. A replan that is refused (the new generation rejects a node's settings, or no longer has a type the document
      places) swaps the registry back to the old entries, discards the new generation, and returns the planner's
-     errors. Nothing has changed: the old plan's instances still match the old entries, so none is rebuilt. The new
-     generation is freed there and then while no audio thread runs, and under one when the plan was refused before it
-     made an instance (a settings refusal or a type gone, which the planner finds before it creates anything, or a
-     settings commit not yet adopted, answered `busy` before planning). A refusal after it made some
-     (the ring full, or a later node of the pack whose `create` refuses, its settings check run again) has their
-     releases queued to the block thread under an audio thread, so the generation is marked discarded and freed once
-     their records come back. A replan refused as `busy` (the command ring full, or a settings commit not yet
-     adopted) says nothing against the pack: the caller may try again. Another pack's node can refuse it too:
-     while the running document places a node of another pack whose settings check fails (section 4), a chain that
-     never settles in that pack's control runtime, say, every reload whose replan checks that node is refused with
-     that node's error, "the running document does not plan with the reloaded pack: settings-invalid at <node>:
-     <type>'s settings check: its pack's promise jobs did not settle in the 256 a settings check runs".
+     errors. Nothing a document can name or the running plan holds has changed (the reclaim the load made first may
+     still have freed retired generations, as a refused `setGraph`'s can): the old plan's instances still match the
+     old entries, so none is rebuilt. The new generation is freed there and then while no audio thread runs, and under
+     one when the plan was refused before it made an instance (a settings refusal or a type gone, which the planner
+     finds before it creates anything, or a settings commit not yet adopted, answered `busy` before planning). A
+     refusal after it made some (the ring full, or a later node of the pack whose `create` refuses, its settings check
+     run again) has their releases queued to the block thread under an audio thread, so the generation is marked
+     discarded and freed once their records come back. A replan refused as `busy` (the command ring full, or a
+     settings commit not yet adopted) says nothing against the pack: the caller may try again. Another pack's node can
+     refuse it too: while the running document places a node of another pack whose settings check fails (section 4), a
+     chain that never settles in that pack's control runtime, say, every reload whose replan checks that node is
+     refused with that node's error, "the running document does not plan with the reloaded pack: settings-invalid at
+     <node>: <type>'s settings check: its pack's promise jobs did not settle in the 256 a settings check runs".
 
   With no document placing the pack's nodes (the empty one the Engine publishes at construction among them), a
   reload is steps 1 and 2. A reload may add or remove types; removing one the document still places is refused by
