@@ -47,9 +47,9 @@ public:
     // so the planner, which compares an instance's entry with the one it finds, rebuilds every instance of the package;
     // a type the new version lacks is found no more. The old version's entries are retired, still valid for whatever
     // holds one. The rp_package the swapped-out version was registered from, the key restorePackage and dropRetired
-    // take; null, with a reason, changing nothing, when `next` would be refused by addPackage (a type id another
-    // package holds among the reasons), its manifest names another package than `id`, no package `id` is registered, or
-    // `next` is a version the registry holds already (`id`'s current one, or one retired).
+    // take; null, with a reason, changing nothing, when no package `id` is registered (an empty `id` names none),
+    // `next` would be refused by addPackage (a type id another package holds among the reasons), its manifest names
+    // another package, or `next` is a version the registry holds already (`id`'s current one, or one retired).
     const rp_package* replacePackage(std::string_view id, const rp_package* next, std::string* error = nullptr);
     // Undo the replacement that retired `previous`, which must be the last one made to its package: its entries are
     // found again, the same Entry objects, and those of the version that replaced it are dropped, so nothing may hold
@@ -81,7 +81,8 @@ private:
     };
 
     // The entries `package` would register, checked, and its id; `replacing` names the package a replacement replaces
-    // (empty for an addition), whose own type ids the new version may take again.
+    // (empty for an addition: replacePackage refuses an id not registered first), whose own type ids the new version
+    // may take again.
     bool check(const rp_package* package, std::string_view replacing, std::string& id, std::vector<Entry>& entries,
                std::string* error) const;
     // Whether the registry holds the version `source` came from: a package's current one, or one retired.

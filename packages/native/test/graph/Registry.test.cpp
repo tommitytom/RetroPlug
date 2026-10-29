@@ -178,6 +178,7 @@ const char* aTwo(const rp_node_type*) { return R"({"id":"p.a","name":"A two"})";
 const char* aThree(const rp_node_type*) { return R"({"id":"p.a","name":"A three"})"; }
 const char* bOne(const rp_node_type*) { return R"({"id":"p.b"})"; }
 const char* cTwo(const rp_node_type*) { return R"({"id":"p.c"})"; }
+const char* qA(const rp_node_type*) { return R"({"id":"q.a"})"; }
 
 // One version of a package: its types, held where the package's array points, and the package.
 struct Version {
@@ -302,6 +303,27 @@ TEST_CASE("a replacement refused changes nothing: a bad descriptor, another pack
     const Version three(R"({"id":"p"})", {typeWith("p.a", &aThree)});
     CHECK(reg.replacePackage("p", &three.package) == &two.package);
     CHECK(reg.find("p.a")->descriptor.name == "A three");
+}
+
+TEST_CASE("a replacement with no package id is refused, changing nothing: never taken for an addition",
+          "[graph][registry]") {
+    NodeRegistry reg;
+    const Version one(R"({"id":"p"})", {typeWith("p.a", &aOne)});
+    const Version two(R"({"id":"p"})", {typeWith("p.a", &aTwo)});
+    const Version fresh(R"({"id":"q"})", {typeWith("q.a", &qA)});  // a package no one registered, every type id free
+    REQUIRE(reg.addPackage(&one.package));
+    const auto* a = reg.find("p.a");
+    for (const rp_package* next : {&fresh.package, &two.package}) {
+        std::string error;
+        CHECK(reg.replacePackage("", next, &error) == nullptr);
+        CHECK(error == "package \"\" is not registered, so it has no version to replace");
+        CHECK_FALSE(reg.hasPackage("q"));
+        CHECK(reg.find("q.a") == nullptr);
+        CHECK(reg.find("p.a") == a);
+        CHECK(reg.size() == 1);
+        CHECK(reg.retiredSize() == 0);
+    }
+    CHECK(reg.addPackage(&fresh.package));  // still free to be added
 }
 
 TEST_CASE("endpoints split at the first dot; resource refs parse", "[graph][document]") {

@@ -50,8 +50,6 @@ bool NodeRegistry::check(const rp_package* package, std::string_view replacing, 
         if (pkg != replacing)
             return fail("package " + q(pkg) + " cannot replace package " + q(replacing) +
                         ": a new version keeps its package's id");
-        if (!packages_.count(pkg))
-            return fail("package " + q(pkg) + " is not registered, so it has no version to replace");
         if (holds(package)) return fail("that version of package " + q(pkg) + " is registered already");
     }
     if (package->node_type_count > 0 && !package->node_types)
@@ -110,6 +108,11 @@ bool NodeRegistry::addPackage(const rp_package* package, std::string* error) {
 }
 
 const rp_package* NodeRegistry::replacePackage(std::string_view id, const rp_package* next, std::string* error) {
+    // Before check, which takes an empty `replacing` for an addition: no id is registered empty.
+    if (!packages_.count(id)) {
+        if (error) *error = "package " + q(id) + " is not registered, so it has no version to replace";
+        return nullptr;
+    }
     std::string pkg;
     std::vector<Entry> added;
     if (!check(next, id, pkg, added, error)) return nullptr;
