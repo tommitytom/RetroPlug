@@ -57,6 +57,13 @@ constexpr std::uint32_t kBlockFrames = 256;
 // A role golden's blocks: at 120 bpm, about five clock ticks at 24 PPQN.
 constexpr int kDrivenBlocks = 20;
 
+}  // namespace
+
+// These live in a NAMED namespace deliberately: reflect-cpp reflects a struct through a fake-object
+// conversion operator, which clang refuses to define for a type with no linkage - an anonymous-namespace
+// DTO fails to compile.
+namespace build_graph_golden {
+
 // A golden case, as build-graph-goldens.test.ts reads it; the model's routing is what built the document, and
 // nothing here needs it.
 struct GoldenSystem {
@@ -94,6 +101,12 @@ struct Goldens {
     std::vector<std::string> documents;
     std::vector<GoldenCase>  cases;
 };
+
+}  // namespace build_graph_golden
+
+using namespace build_graph_golden;
+
+namespace {
 
 // Through parseJson, then each document re-spelled as the text setGraph is sent; the cases read typed, so
 // their integers are range-checked.

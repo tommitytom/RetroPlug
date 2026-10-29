@@ -58,4 +58,13 @@ if(MSVC)
     set_source_files_properties(
         ${DPFJS_PATH}/deps/dpf-widgets/generic/LVGL.cpp
         PROPERTIES COMPILE_OPTIONS "/wd4100")
+
+    # reflect-cpp is header-heavy and its templates instantiate inside OUR TUs, so /W4 judges its
+    # code wherever we include it (0.26 trips C4244 in rfl/Literal.hpp). Mark it SYSTEM: consumers
+    # then see its include dirs as -external:I, which the -external:W0 already on the command line
+    # silences -- the same treatment sameboy/mesen/vcpkg get -- without a /wd4244 that would also
+    # hide narrowing in our own code.
+    if(TARGET reflectcpp)
+        set_target_properties(reflectcpp PROPERTIES SYSTEM ON)
+    endif()
 endif()

@@ -26,6 +26,13 @@
 # of them would fail confusingly, and short enough here to read.
 set(RP_QUICKJS_INCLUDE "${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs")
 
+# reflect-cpp's templates instantiate enough COMDAT sections that any TU leaning on it (RenderHost, the
+# host and CLI mains, ...) passes COFF's 2^16 section limit (C1128). /bigobj only lifts that limit, so
+# set it directory-wide rather than chasing each TU that crosses it.
+if(MSVC)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/bigobj>)
+endif()
+
 # The shape shared by every native test binary (see the file for why).
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/test-binary.cmake)
 
