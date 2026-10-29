@@ -2,7 +2,9 @@
 // rp.mgb.midi a system) off the RT thread via the deterministic renderAudio pull path under a seeded mGB + heavy-MIDI
 // workload, and reports what the script host's audio runtime (the bare QuickJS runtime they run in) allocates PER
 // BLOCK: the refcount-churn signal (QuickJS frees acyclic garbage immediately, so "GC" is rare; malloc/free churn
-// per block is the real cost).
+// per block is the real cost). Then a window each on a real LSDj, playing, whose rp.lsdj.sync decodes its serial out
+// to host MIDI, in master sync and in MI.OUT: those need the fixture tree's LSDj ROMs (RETROPLUG_RESOURCES_DIR), and
+// without them the case SKIPs there, after the mGB window has been held to its zero.
 //
 // The allocation counters exist only in a RETROPLUG_PROFILE host (built by `pnpm profile` /
 // tools/run-profile.sh). Under the default host the counters report enabled:false and this
@@ -11,14 +13,52 @@
 // native Engine is shared per host process).
 import { test, expect, skip } from "../testing/harness";
 import { createAudioDriver } from "../src/audioDriver";
-import type { ConstructSpec } from "../src/backend";
+import type { ConstructSpec, SerialOutCapture } from "../src/backend";
 import { directGraph } from "../src/graph/directGraph";
+import { savFrom, type SavInput } from "../src/lsdjSav";
+import { createRealBackend } from "../src/realBackend";
+
+declare const __RESOURCES_DIR__: string;
 
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
 const graph = directGraph();
 
 // The embedded mGB, built bare (no roles of its own): the pipeline set here is its one protocol node.
 const MGB: ConstructSpec = { romPath: "", platform: "gb", core: "sameboy", embeddedRom: "mgb", savPath: null, statePath: null };
+
+// The LSDj windows' ROMs (the fixture tree's) and songs, as lsdj-mastersync.test.ts and lsdj-midiout.test.ts author
+// them: a stock LSDj in SYNC=LSDj playing a one-note phrase, and an Arduinoboy build in SYNC=MI.OUT playing eight
+// notes, each with an N command, which MI.OUT sends as a NoteOn.
+const LSDJ_ROM = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_4_2.gb";
+const LSDJ_ABOY_ROM = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_3_3-arduinoboy.gb";
+const LSDJ_START = 7; // GameboyButton::Start
+const MASTER_SONG: SavInput = {
+  workingSong: {
+    formatVersion: 22,
+    settings: { syncMode: "Lsdj" },
+    rows: [{ chains: [0] }],
+    chains: [{ phrases: [0] }],
+    phrases: [{ notes: [1], instruments: [0] }],
+    instruments: [{ type: "pulse", panning: "LeftRight", adsr: { initialLevel: 8, attackSpeed: 8 } }],
+  },
+};
+const MIDIOUT_SONG: SavInput = {
+  workingSong: {
+    formatVersion: 22,
+    settings: { syncMode: "MidiOut" },
+    rows: [{ chains: [0] }],
+    chains: [{ phrases: [0] }],
+    phrases: [
+      {
+        notes: [1, 13, 25, 1, 13, 25, 1, 13],
+        instruments: [0, 0, 0, 0, 0, 0, 0, 0],
+        commands: ["N", "N", "N", "N", "N", "N", "N", "N"],
+        commandValues: [48, 52, 55, 60, 64, 67, 72, 36],
+      },
+    ],
+    instruments: [{ type: "pulse", panning: "LeftRight", adsr: { initialLevel: 8, attackSpeed: 8 } }],
+  },
+};
 
 const SR = 44100;
 const BLK = 1024;
@@ -245,13 +285,84 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
   // a node calls messages() (ScriptHost.cpp): for the new rp.mgb.midi, and for rp.midi.route, whose reshape freed its
   // port arrays when its outputs grew. Pre-making those arrays at create time would move that allocation out of the
   // block, and this assertion would then need another trigger. The zero above is only worth printing if this can fail.
-  audio.dspResetAllocStats(true);
   const extra = cores + 1;
-  expect(graph.add(MGB, extra)).toBeTruthy();
-  expect(graph.setPipeline(extra, [{ kind: "mgb", config: {} }])).toBeTruthy();
-  audio.renderAudio(BLOCK_MS);
-  const live = audio.dspAllocStats();
-  expect(live.blockCount, "blocks in the proof window").toBeGreaterThan(0);
-  expect(live.allocCalls, "a block whose fresh ports fill their message arrays allocates").toBeGreaterThan(0);
-  expect(live.maxBlockAllocCalls, "and the worst-block counter sees it").toBeGreaterThan(0);
+  const expectWindowLive = (): void => {
+    audio.dspResetAllocStats(true);
+    expect(graph.add(MGB, extra)).toBeTruthy();
+    expect(graph.setPipeline(extra, [{ kind: "mgb", config: {} }])).toBeTruthy();
+    audio.renderAudio(BLOCK_MS);
+    const live = audio.dspAllocStats();
+    expect(live.blockCount, "blocks in the proof window").toBeGreaterThan(0);
+    expect(live.allocCalls, "a block whose fresh ports fill their message arrays allocates").toBeGreaterThan(0);
+    expect(live.maxBlockAllocCalls, "and the worst-block counter sees it").toBeGreaterThan(0);
+    graph.remove(extra);
+  };
+  expectWindowLive();
+
+  // --- an LSDj decoding its serial out to host MIDI, playing ------------------------------------------------------
+  // rp.lsdj.sync's two MIDI-out modes run their decoders only on what a playing LSDj clocks out, so each has a window
+  // of its own on a real LSDj, the mGB systems gone: master sync on a stock LSDj in SYNC=LSDj (a byte a 24-PPQN tick,
+  // which the core captures in `listen`, as lsdj-mastersync.test.ts runs it), and MI.OUT on an Arduinoboy build in
+  // SYNC=MI.OUT (its clock and the N commands' NoteOns, captured in `drive`, as lsdj-midiout.test.ts runs it). Each
+  // window is held to the mGB window's zero, the clocks its decoder sent say LSDj played through it, and the same proof
+  // as above says the window counted.
+  for (const id of ids) graph.remove(id);
+  const be = createRealBackend();
+  const lsdjBlocks = Math.min(blocks, 400);
+  const lsdjWindow = (
+    workload: string,
+    romPath: string,
+    song: SavInput,
+    mode: string,
+    capture: SerialOutCapture,
+    minClocks: number,
+  ): void => {
+    if (!be.fileExists(romPath)) skip(`dsp-bench: the ${workload} window needs the LSDj ROM at ${romPath}`);
+    const id = extra + 1;
+    const spec: ConstructSpec = { romPath, platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null };
+    expect(graph.add({ ...spec, sramBytes: savFrom(song) }, id)).toBeTruthy();
+    expect(graph.setPipeline(id, [{ kind: "lsdj-sync", config: { mode } }])).toBeTruthy();
+    expect(be.setSerialOutCapture(id, capture)).toBeTruthy(); // what the store does for the mode
+    audio.renderAudio(6000); // the song screen
+    audio.pressButton(id, LSDJ_START, true); // play
+    audio.renderAudio(80);
+    audio.pressButton(id, LSDJ_START, false);
+    for (let b = 0; b < warmup; b++) audio.renderAudio(BLOCK_MS);
+    audio.drainMidiOut();
+    audio.dspResetAllocStats(true);
+    for (let b = 0; b < lsdjBlocks; b++) audio.renderAudio(BLOCK_MS);
+    const w = audio.dspAllocStats();
+    const status = audio.drainMidiOut().map((m) => m.data[0]);
+    const clocks = status.filter((st) => st === 0xf8).length;
+    const notes = status.filter((st) => (st & 0xf0) === 0x90).length;
+    const wb = w.blockCount || 1;
+    console.log(
+      "DSP-BENCH " +
+        JSON.stringify({
+          workload,
+          warmupBlocks: warmup,
+          blocks: w.blockCount,
+          allocsPerBlock: round(w.allocCalls / wb),
+          bytesPerBlock: round(w.allocBytes / wb),
+          maxBlockAllocs: w.maxBlockAllocCalls,
+          maxBlockBytes: w.maxBlockAllocBytes,
+          midiOut: status.length,
+          clocks,
+          noteOns: notes,
+        }),
+    );
+    expect(w.blockCount, `${workload}: blocks measured`).toBe(lsdjBlocks);
+    // LSDj played through the window: its decoder sent more clocks than its tempo sends in half of it (in master sync
+    // about 51 a second at tempo 128, a byte a 24-PPQN tick, against the 40 asked; in MI.OUT about 4, against 2).
+    expect(clocks, `${workload}: clocks decoded in the window`).toBeGreaterThan(minClocks);
+    if (warmup >= DEFAULT_WARMUP) {
+      expect(w.allocCalls, `${workload}: allocations in the measured window`).toBe(0);
+      expect(w.maxBlockAllocCalls, `${workload}: allocations in the worst block`).toBe(0);
+    }
+    graph.remove(id);
+    expectWindowLive();
+  };
+  const seconds = (lsdjBlocks * BLOCK_MS) / 1000;
+  lsdjWindow("lsdj-masterSync", LSDJ_ROM, MASTER_SONG, "masterSync", "listen", 40 * seconds);
+  lsdjWindow("lsdj-midiOut", LSDJ_ABOY_ROM, MIDIOUT_SONG, "midiOut", "drive", 2 * seconds);
 });

@@ -33,8 +33,10 @@ const MIDI_NOTE_OFF_BASE = 0x80;
 const MIDI_CC_BASE = 0xb0;
 const MIDI_PC_BASE = 0xc0;
 
-/** Emit one decoded MIDI message (raw status + data bytes). */
-export type MidiEmit = (data: number[]) => void;
+/** Emit one decoded MIDI message: its frame, its length (1 to 3 bytes) and its bytes, 0 past the length. A
+ *  message is handed over byte by byte, so a decoder builds nothing to emit one, and the caller sends it from what
+ *  it reuses. */
+export type MidiEmit = (frame: number, len: number, b0: number, b1: number, b2: number) => void;
 
 /** Cross-block decoder state (kept in the lsdj-sync node's scratch). Fields are created lazily by the
  *  decoders, so a fresh `{}` is a valid starting state. */
@@ -49,38 +51,39 @@ export interface ArduinoboyState {
   bitCount?: number;
 }
 
-// Complete a pending command with its value byte. `m` is the 0..11 command id (byte-0x70); channels are
-// 0-indexed (GB channel 0..3 → MIDI channel low nibble). Mirrors ArduinoboyMaster::emitCommandValue.
-function emitCommandValue(m: number, v: number, emit: MidiEmit): void {
+// Complete a pending command with its value byte, at the value byte's `frame`. `m` is the 0..11 command id
+// (byte-0x70); channels are 0-indexed (GB channel 0..3 → MIDI channel low nibble). Mirrors
+// ArduinoboyMaster::emitCommandValue.
+function emitCommandValue(m: number, v: number, frame: number, emit: MidiEmit): void {
   if (m < 4) {
     const ch = m;
     // value 0 → NoteOff. The firmware sends a NoteOff for the channel's most-recent note; without that
     // running state we emit NoteOff on note 0 — an unambiguous "channel quiet" signal downstream.
-    if (v === 0) emit([MIDI_NOTE_OFF_BASE | ch, 0, 0]);
-    else emit([MIDI_NOTE_ON_BASE | ch, v & 0x7f, 0x7f]);
+    if (v === 0) emit(frame, 3, MIDI_NOTE_OFF_BASE | ch, 0, 0);
+    else emit(frame, 3, MIDI_NOTE_ON_BASE | ch, v & 0x7f, 0x7f);
   } else if (m < 8) {
     const ch = m - 4;
     // Simplest of the firmware's CC-encoding modes: CC number = m, value = v (documented simplification).
-    emit([MIDI_CC_BASE | ch, m, v & 0x7f]);
+    emit(frame, 3, MIDI_CC_BASE | ch, m, v & 0x7f);
   } else if (m < 0x0c) {
     const ch = m - 8;
-    emit([MIDI_PC_BASE | ch, v & 0x7f]);
+    emit(frame, 2, MIDI_PC_BASE | ch, v & 0x7f, 0);
   }
   // m >= 0x0C: undefined per the firmware; drop.
 }
 
 /** Feed one already-de-framed protocol byte (0x00..0x7F) through the Arduinoboy state machine, pushing
- *  decoded MIDI into `emit`. The TS twin of ArduinoboyMaster::feed. */
-export function arduinoboyDecodeByte(byte: number, state: ArduinoboyState, emit: MidiEmit): void {
+ *  decoded MIDI into `emit` at `frame`, the byte's. The TS twin of ArduinoboyMaster::feed. */
+export function arduinoboyDecodeByte(byte: number, frame: number, state: ArduinoboyState, emit: MidiEmit): void {
   // Not part of the documented MI.OUT protocol — drop defensively without disturbing pending state.
   if (byte >= 0x80) return;
 
   // Realtime commands are single-byte and orthogonal to the command/value pairing — they can fire even
   // while we're waiting on a value byte without disturbing the wait.
   switch (byte) {
-    case REALTIME_CLOCK: emit([0xf8]); return;
-    case REALTIME_START: emit([0xfa]); return;
-    case REALTIME_STOP: emit([0xfc]); return;
+    case REALTIME_CLOCK: emit(frame, 1, 0xf8, 0, 0); return;
+    case REALTIME_START: emit(frame, 1, 0xfa, 0, 0); return;
+    case REALTIME_STOP: emit(frame, 1, 0xfc, 0, 0); return;
     default: break;
   }
 
@@ -92,7 +95,7 @@ export function arduinoboyDecodeByte(byte: number, state: ArduinoboyState, emit:
 
   // Value byte (0x00..0x6F). Only meaningful when a command is pending.
   if (state.pendingValueExpected) {
-    emitCommandValue(state.pendingCmd ?? 0, byte, emit);
+    emitCommandValue(state.pendingCmd ?? 0, byte, frame, emit);
     state.pendingValueExpected = false;
     state.pendingCmd = 0;
   }
@@ -106,10 +109,17 @@ export function arduinoboyReset(state: ArduinoboyState): void {
   state.bitCount = 0;
 }
 
-/** Decode a block's worth of RAW captured serial-out bytes: reconstruct the MSB-first bit stream,
- *  strip the flag-gated framing, and drive the byte protocol. Partial bits (a frame split across a
- *  block boundary) persist in `state` for the next call. */
-export function arduinoboyDecodeSerialOut(bytes: number[], state: ArduinoboyState, emit: MidiEmit): void {
+/** Decode a block's worth of RAW captured serial-out bytes, each with its frame (`frames`, index for index):
+ *  reconstruct the MSB-first bit stream, strip the flag-gated framing, and drive the byte protocol. Partial bits (a
+ *  frame split across a block boundary) persist in `state` for the next call. A message goes to `emit` at the frame of
+ *  the captured byte whose bits complete it, so a frame split across two calls goes at its completing byte's frame in
+ *  the later one. */
+export function arduinoboyDecodeSerialOut(
+  bytes: number[],
+  frames: number[],
+  state: ArduinoboyState,
+  emit: MidiEmit,
+): void {
   let acc = state.bitAcc ?? 0;
   let count = state.bitCount ?? 0;
 
@@ -130,7 +140,7 @@ export function arduinoboyDecodeSerialOut(bytes: number[], state: ArduinoboyStat
       if (count < 8) break; // flag says a 7-bit payload follows, but it hasn't fully arrived yet
       const cmd = (acc >>> (count - 8)) & 0x7f; // the 7 payload bits after the flag
       count -= 8;
-      arduinoboyDecodeByte(cmd, state, emit);
+      arduinoboyDecodeByte(cmd, frames[i], state, emit);
     }
 
     // Keep only the still-buffered low `count` bits so `acc` can't overflow a 32-bit shift over a long run.
@@ -156,9 +166,9 @@ export function arduinoboyDecodeSerialOut(bytes: number[], state: ArduinoboyStat
 // (docs/lsdj-master-sync-fix-design.md). So every byte is a clock, and a stopped LSDj goes quiet, which makes the
 // firmware's stop a silence. A playing master clocks one byte per 24-PPQN tick, 62.5 ms apart at LSDj's slowest tempo
 // (40 BPM), so a silence this long is a stop: about three times that gap. It is measured on the bytes' own frames, so
-// the message sequence does not depend on how the host cuts its blocks. The 0xFC's time does: like every message this
-// decoder sends, it goes out at frame 0, here of the first block that starts more than MASTER_SYNC_STOP_MS after the
-// last byte, so it is quantised to a block start and up to a block late.
+// the message sequence does not depend on how the host cuts its blocks. The 0xFC's time does: it is found at the first
+// block start more than MASTER_SYNC_STOP_MS after the last byte (or at the byte that ends the silence, when no block
+// starts between them), so it is quantised to a block start and up to a block late.
 const MASTER_SYNC_STOP_MS = 200;
 
 /** Cross-block Master Sync state (the lsdj-sync stage's `masterSync` sub-object, dropped whenever the mode is not
@@ -180,7 +190,8 @@ export interface MasterSyncBlock {
  *  bytes the lsdj-sync node read off its `serialOut` input and each one's frame, which are LAST block's bytes at
  *  their frames in it (the feedback wire's one block), and this block's length and rate. Each byte is a tempo clock,
  *  the first of a run opened with LSDj's song row; a run ends with one 0xFC once MASTER_SYNC_STOP_MS pass with no
- *  byte. */
+ *  byte. Every message goes to `emit` at a frame of the bytes' block: a byte's at its own frame, a stop found before a
+ *  byte at that byte's, and one found at this block's start at that start, one past the bytes' block's last frame. */
 export function arduinoboyMasterSyncBlock(
   bytes: number[],
   frames: number[],
@@ -197,23 +208,23 @@ export function arduinoboyMasterSyncBlock(
     // Checked only at a block start, the restart would carry on the old run (no 0xFC, no fresh NoteOn and 0xFA), so
     // the output would depend on the block split.
     if (state.started && at - (state.lastAt ?? 0) > stop) {
-      emit([0xfc]);
+      emit(frames[i], 1, 0xfc, 0, 0);
       state.started = false;
     }
     if (!state.started) {
       // First tick of a run: the byte value is LSDj's song row → NoteOn, then transport start, then this
       // byte's own clock tick (the firmware sends NoteOn + 0xFA before the first 0xF8).
       state.started = true;
-      emit([0x90 | ch, bytes[i] & 0x7f, 0x7f]);
-      emit([0xfa]);
+      emit(frames[i], 3, 0x90 | ch, bytes[i] & 0x7f, 0x7f);
+      emit(frames[i], 1, 0xfa, 0, 0);
     }
-    emit([0xf8]); // one MIDI clock per tempo byte
+    emit(frames[i], 1, 0xf8, 0, 0); // one MIDI clock per tempo byte
     state.lastAt = at;
   }
   // Every byte before this block's start is known: a run whose newest byte lies further back than the stop's
   // silence has ended.
   if (state.started && -(state.lastAt ?? 0) > stop) {
-    emit([0xfc]);
+    emit(from, 1, 0xfc, 0, 0);
     state.started = false;
   }
   if (state.started) state.lastAt = (state.lastAt ?? 0) - block.frames;

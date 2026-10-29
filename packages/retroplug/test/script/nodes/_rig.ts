@@ -5,7 +5,8 @@
 // - messages, send and control take only a port the layout has, of the method's kind, and throw a TypeError for
 //   another, as the host does; every Block method throws once the process call it was handed to has returned.
 // - send copies the data (each value & 0xff) and records the frame twice: as sent, and as the port's queue holds it,
-//   raised to the last frame sent on that port this block.
+//   raised to the last frame sent on that port this block. It keeps what it was handed too (`sources`), so a test can
+//   tell an array a node reuses from one it makes.
 // - The messages a block hands out are the node's for that call only: their bytes are scribbled over once it returns,
 //   so a node that kept a view past the block reads garbage, as it would from the host's refilled buffers.
 import type { Block, ControlStream, DefinedNode, Message, NodeInstance } from "../../../src/graph/defineNode";
@@ -49,6 +50,8 @@ export class NodeRig<S> {
   creates = 1;
   /** The last block's sends, kept when its process threw. */
   last: Sent[] = [];
+  /** What each of the last block's sends was handed, index for index with `last`. */
+  sources: ArrayLike<number>[] = [];
 
   constructor(
     readonly def: DefinedNode<S>,
@@ -87,7 +90,9 @@ export class NodeRig<S> {
   /** One block, and every send it made. A throw from process is the caller's, the sends before it kept in `last`. */
   run(spec: BlockSpec): Sent[] {
     const sent: Sent[] = [];
+    const sources: ArrayLike<number>[] = [];
     this.last = sent;
+    this.sources = sources;
     const ports = this.layout.ports;
     const port = (id: unknown, dir: "in" | "out", kinds: readonly string[], what: string) => {
       const p = ports.find((q) => q.id === id && q.dir === dir && kinds.includes(q.kind));
@@ -122,6 +127,7 @@ export class NodeRig<S> {
         const queued = Math.max(at, lastFrame.get(id) ?? 0);
         lastFrame.set(id, queued);
         sent.push({ port: id, frame: at, queued, data: Array.from(data, (v) => v & 0xff), flags: flags >>> 0 });
+        sources.push(data);
         return true;
       },
       control: (id) => {

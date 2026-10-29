@@ -255,6 +255,32 @@ test("leaving master sync drops its state, so coming back opens a fresh run", ()
   expect(block([{ frame: 0, data: [7] }])).toEqual([[0x90, 7, 0x7f], [0xfa], [0xf8]]);
 });
 
+test("MI.OUT and master sync send each message from an array the node made once, one a message length", () => {
+  // The rig keeps what send was handed: in a warm block the node passes the same arrays it passed in the first, one for
+  // each length a message has, so it makes none for a message it decodes.
+  const framed = (cmd: number, frame: number): In => ({ frame, data: [0x80 | (cmd & 0x7f)] });
+  // MI.OUT: a clock (1 byte), a NoteOn (3) and a program change (2), the same each block.
+  const miOut = [framed(0x7f, 7), framed(0x70, 15), framed(60, 23), framed(0x78, 31), framed(5, 39)];
+  // Master sync: a run's first block sends its NoteOn (3), 0xFA and a clock (1), and each block after a clock.
+  const master = (b: number): In[] => [{ frame: 100, data: [b === 0 ? 4 : 9] }];
+  for (const [mode, serialOut] of [["midiOut", () => miOut], ["masterSync", master]] as const) {
+    const rig = lsdj(mode);
+    const byLength = new Map<number, ArrayLike<number>>();
+    for (let b = 0; b < 4; b++) {
+      const sent = rig.run({ frames: 1024, inputs: { serialOut: serialOut(b) } });
+      expect(sent.length > 0).toBeTruthy();
+      sent.forEach((s, i) => {
+        const source = rig.sources[i];
+        expect(s.port).toBe("midiOut");
+        expect(source.length).toBe(s.data.length);
+        if (!byLength.has(source.length)) byLength.set(source.length, source);
+        expect(byLength.get(source.length) === source).toBeTruthy();
+      });
+    }
+    expect([...byLength.keys()].sort()).toEqual(mode === "midiOut" ? [1, 2, 3] : [1, 3]);
+  }
+});
+
 // --- state across settings changes ---------------------------------------------------------------------------------
 
 test("a settings change keeps the clock: a mode change mid-run does not restart the tick count", () => {

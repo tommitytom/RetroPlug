@@ -4,8 +4,9 @@
 //     packages/native/test/ArduinoboyMasterTests.cpp (same bytes in, same MIDI out).
 //   - arduinoboyDecodeSerialOut: the flag-gated framing in front of it — the raw captured bytes LSDj
 //     actually emits (each frame = 1 flag bit + 7 payload bits, MSB-first), decoded to the same MIDI.
-// Then master sync's decoder, arduinoboyMasterSyncBlock. The rp.lsdj.sync node that runs them off its Game Boy's
-// serial out (modes 7 and 8) is test/script/nodes/lsdj-sync.test.ts's.
+// Then master sync's decoder, arduinoboyMasterSyncBlock. Each decoder hands every message to its emit with its byte's
+// frame. The rp.lsdj.sync node that runs them off its Game Boy's serial out (modes 7 and 8) is
+// test/script/nodes/lsdj-sync.test.ts's.
 import { test, expect } from "../../testing/harness";
 import {
   arduinoboyDecodeByte,
@@ -14,13 +15,20 @@ import {
   arduinoboyReset,
   type ArduinoboyState,
   type MasterSyncState,
+  type MidiEmit,
 } from "../../src/lsdjArduinoboy";
+
+/** An emit recording each message's bytes into `out`, and its frame into `frames` when given. */
+const into = (out: number[][], frames?: number[]): MidiEmit => (frame, len, b0, b1, b2) => {
+  out.push([b0, b1, b2].slice(0, len));
+  frames?.push(frame);
+};
 
 // Feed a run of protocol bytes through a fresh decoder, returning the emitted MIDI messages.
 function decode(bytes: number[]): number[][] {
   const out: number[][] = [];
   const state: ArduinoboyState = {};
-  for (const b of bytes) arduinoboyDecodeByte(b, state, (d) => out.push(d));
+  bytes.forEach((b, i) => arduinoboyDecodeByte(b, i, state, into(out)));
   return out;
 }
 
@@ -70,12 +78,12 @@ test("ArduinoboyMaster: high-bit bytes (>=0x80) are ignored", () => {
 test("ArduinoboyMaster: reset clears pending state mid-command", () => {
   const out: number[][] = [];
   const state: ArduinoboyState = {};
-  arduinoboyDecodeByte(0x71, state, (d) => out.push(d)); // pending NoteOn ch 1
+  arduinoboyDecodeByte(0x71, 0, state, into(out)); // pending NoteOn ch 1
   expect(out.length).toBe(0);
   arduinoboyReset(state);
-  arduinoboyDecodeByte(60, state, (d) => out.push(d)); // would complete the note; now dropped
+  arduinoboyDecodeByte(60, 0, state, into(out)); // would complete the note; now dropped
   expect(out.length).toBe(0);
-  arduinoboyDecodeByte(0x7f, state, (d) => out.push(d)); // realtime still works
+  arduinoboyDecodeByte(0x7f, 0, state, into(out)); // realtime still works
   expect(out).toEqual([[0xf8]]);
 });
 
@@ -89,10 +97,11 @@ test("ArduinoboyMaster: command 0x7C consumes its value but emits nothing (m=0xC
 // packed into a single captured 8-bit byte (so a data byte reads as 0x80 | payload).
 const frame = (cmd: number): number => 0x80 | (cmd & 0x7f);
 
+// A byte every eight frames, as SameBoy clocks MI.OUT's port (one bit an audio frame).
 function decodeSerial(bytes: number[]): number[][] {
   const out: number[][] = [];
   const state: ArduinoboyState = {};
-  arduinoboyDecodeSerialOut(bytes, state, (d) => out.push(d));
+  arduinoboyDecodeSerialOut(bytes, bytes.map((_, i) => 8 * i + 7), state, into(out));
   return out;
 }
 
@@ -115,10 +124,33 @@ test("framing: a frame straddling a captured-byte boundary buffers, then decodes
   // bit + idle padding). The decoder must buffer the partial frame across the two calls and emit once.
   const out: number[][] = [];
   const state: ArduinoboyState = {};
-  arduinoboyDecodeSerialOut([0x7f], state, (d) => out.push(d));
+  arduinoboyDecodeSerialOut([0x7f], [0], state, into(out));
   expect(out.length).toBe(0); // partial frame buffered, nothing decoded yet
-  arduinoboyDecodeSerialOut([0x80], state, (d) => out.push(d));
+  arduinoboyDecodeSerialOut([0x80], [0], state, into(out));
   expect(out).toEqual([[0xf8]]); // the straddling clock frame completes exactly once
+});
+
+test("framing: each message goes at the frame of the captured byte whose bits complete it", () => {
+  // START, clock, then a NoteOn whose command byte and value byte are two captured bytes: it completes at the value's.
+  const out: number[][] = [];
+  const frames: number[] = [];
+  const bytes = [frame(0x7d), frame(0x7f), frame(0x70), frame(0x69)];
+  arduinoboyDecodeSerialOut(bytes, [7, 15, 23, 31], {}, into(out, frames));
+  expect(out).toEqual([[0xfa], [0xf8], [0x90, 0x69, 0x7f]]);
+  expect(frames).toEqual([7, 15, 31]);
+});
+
+test("framing: a frame straddling two calls goes at its completing byte's frame in the second", () => {
+  // The straddling clock above, its first byte at frame 1000 of one block and its second at frame 3 of the next; and a
+  // NoteOn whose command ends one call and whose value starts the next, at the value's frame there.
+  const out: number[][] = [];
+  const frames: number[] = [];
+  const state: ArduinoboyState = {};
+  arduinoboyDecodeSerialOut([0x7f], [1000], state, into(out, frames));
+  arduinoboyDecodeSerialOut([0x80, frame(0x70)], [3, 11], state, into(out, frames));
+  arduinoboyDecodeSerialOut([frame(60)], [5], state, into(out, frames));
+  expect(out).toEqual([[0xf8], [0x90, 60, 0x7f]]);
+  expect(frames).toEqual([3, 5]);
 });
 
 // --- Master Sync (mode 8, SYNC=LSDJ): each byte a clock, a silence the stop ------------------------------------
@@ -159,16 +191,23 @@ const FL_BUFFER = [256, 33, 1, 222, 255, 1, 1, 255, 7, 249];
 
 /** Decode `timeline` in the blocks `split` cuts `total` frames into, fed as the feedback wire feeds the decoder: a
  *  block's bytes reach it with the next block, at their frames in the block that produced them. Each message with the
- *  index of the block it went out in. */
-function masterSync(timeline: Timeline, split: (total: number) => number[], total: number, rate = RATE): { block: number; data: number[] }[] {
-  const out: { block: number; data: number[] }[] = [];
+ *  index of the block it went out in and the frame the decoder gave it, a frame of the block before. */
+function masterSync(
+  timeline: Timeline,
+  split: (total: number) => number[],
+  total: number,
+  rate = RATE,
+): { block: number; frame: number; data: number[] }[] {
+  const out: { block: number; frame: number; data: number[] }[] = [];
   const state: MasterSyncState = {};
   let start = 0;
   let next = 0;
   let bytes: number[] = [];
   let frames: number[] = [];
   split(total).forEach((n, block) => {
-    arduinoboyMasterSyncBlock(bytes, frames, { frames: n, sampleRate: rate }, state, (data) => out.push({ block, data }));
+    arduinoboyMasterSyncBlock(bytes, frames, { frames: n, sampleRate: rate }, state, (frame, len, b0, b1, b2) =>
+      out.push({ block, frame, data: [b0, b1, b2].slice(0, len) }),
+    );
     bytes = [];
     frames = [];
     for (; next < timeline.length && timeline[next][0] < start + n; next++) {
@@ -234,4 +273,33 @@ test("MasterSync: the checks before a byte and at a block start share the stop's
   const expected = [row(1), START, CLOCK, CLOCK, STOP, row(2), START, CLOCK, STOP];
   for (const split of [even(1), cycle(FL_RAGGED), cycle(FL_BUFFER), even(1024), even(4096), even(8192)])
     expect(sent(masterSync(timeline, split, 40000))).toEqual(expected);
+});
+
+test("MasterSync: each byte's messages go at its frame, the run's NoteOn and 0xFA at its first byte's", () => {
+  // Bytes at frames 100, 960 and 1820 of 1024-frame blocks: each reaches the decoder in the block after its own.
+  const out = masterSync([[100, 5], [960, 5], [1820, 5]], even(1024), 4096);
+  expect(out).toEqual([
+    { block: 1, frame: 100, data: row(5) },
+    { block: 1, frame: 100, data: START },
+    { block: 1, frame: 100, data: CLOCK },
+    { block: 1, frame: 960, data: CLOCK },
+    { block: 2, frame: 796, data: CLOCK },
+  ]);
+});
+
+test("MasterSync: a stop found before a byte goes at that byte's frame, and one found at a block start at that start", () => {
+  // The silence after frame 100 passes 200 ms inside the 16384-frame block, so the byte at 16000 that ends it finds
+  // the stop, at its own frame, before its run's NoteOn. The second run's silence is found at a 16384-frame block's
+  // start: frame 16384 of the block before, its bytes' block.
+  const out = masterSync([[100, 1], [16000, 2]], even(16384), 49152);
+  expect(out).toEqual([
+    { block: 1, frame: 100, data: row(1) },
+    { block: 1, frame: 100, data: START },
+    { block: 1, frame: 100, data: CLOCK },
+    { block: 1, frame: 16000, data: STOP },
+    { block: 1, frame: 16000, data: row(2) },
+    { block: 1, frame: 16000, data: START },
+    { block: 1, frame: 16000, data: CLOCK },
+    { block: 2, frame: 16384, data: STOP },
+  ]);
 });

@@ -13,7 +13,8 @@
 // press as [button, down] at frame 0; host MIDI out at frame 0. The frame-ordered queue raises a byte sent behind a
 // later one (Arduinoboy's START after a row byte, MI.MAP's clocks after its rows) as it raised the kernel's.
 //
-// Nothing is allocated in a block but what the decoders allocate for the MIDI they emit, as under the kernel.
+// Nothing is allocated in a warm block: the decoders hand each message's bytes to emitMidiOut, which sends them from
+// arrays made with the instance.
 import { bytes, defineNode, events, type Block, type Message } from "../../graph/defineNode";
 import { s, type Infer } from "../../graph/settingsSchema";
 import { LSDJ_MODE_VALUES, LsdjSyncMode } from "../../settingsEnums";
@@ -129,8 +130,18 @@ export const lsdjSyncNode = defineNode<LsdjSyncSettings>({
       press[1] = down ? 1 : 0;
       block!.send("buttons", 0, press);
     };
-    // Frame 0: MI.OUT and master sync carry no intra-block timing, and the host timestamps by block.
-    const emitMidiOut = (data: number[]) => {
+    // A decoded message, at frame 0: the decoders give each its byte's frame, but that is a frame of last block, which
+    // the feedback wire brought, so the host timestamps it by block. A message is 1 to 3 bytes and send sends all of
+    // the array it is given, so each length has an array of its own, made once here; send copies a message into the
+    // port's queue, so its array is free again when send returns.
+    const out1 = new Uint8Array(1);
+    const out2 = new Uint8Array(2);
+    const out3 = new Uint8Array(3);
+    const emitMidiOut = (_frame: number, len: number, b0: number, b1: number, b2: number) => {
+      const data = len === 1 ? out1 : len === 2 ? out2 : out3;
+      data[0] = b0;
+      if (len > 1) data[1] = b1;
+      if (len > 2) data[2] = b2;
       block!.send("midiOut", 0, data);
     };
     // Each inbox event, through `handle`: the routed MIDI, then the launches.
@@ -260,7 +271,7 @@ export const lsdjSyncNode = defineNode<LsdjSyncSettings>({
           eachEvent(passthroughEvent);
           break;
         case LsdjSyncMode.MidiOut: // ArduinoboyMaster / MIDIOUT: LSDj's MI.OUT stream, decoded to host MIDI
-          if (serialOut.length > 0) arduinoboyDecodeSerialOut(serialOut, st, emitMidiOut);
+          if (serialOut.length > 0) arduinoboyDecodeSerialOut(serialOut, serialOutFrames, st, emitMidiOut);
           break;
         case LsdjSyncMode.MasterSync: // LSDj drives the host clock: a byte a clock, a silence the stop
           arduinoboyMasterSyncBlock(serialOut, serialOutFrames, clock.block, (st.masterSync ??= {}), emitMidiOut);
