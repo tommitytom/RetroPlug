@@ -186,7 +186,7 @@ test("a refusal before any replan says why, with no planner errors, and changes 
   // A memory limit that is no whole number of bytes, refused before the id is looked at.
   refused({ id: "test.limit", source: TOY, memoryLimitBytes: 1.5 }, "memoryLimitBytes must be a whole number of bytes");
   refused({ id: "test.limit", source: TOY, memoryLimitBytes: -1 }, "memoryLimitBytes must be a whole number of bytes");
-  // One too small for the load: the limit holds the pack's whole audio runtime, its intrinsics included.
+  // One too small for the load: the limit holds each of the pack's runtimes whole, its intrinsics included.
   refused(
     { id: "test.limit", source: TOY + transposer("test.limit.up", 1), memoryLimitBytes: 64 * 1024 },
     "(the load reached the pack's 65536-byte memory limit)",

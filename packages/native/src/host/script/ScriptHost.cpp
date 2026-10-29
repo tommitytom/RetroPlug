@@ -346,9 +346,9 @@ struct ScriptHost::Type {
 // address of Object.prototype. Made and loaded on the control thread; the block thread reaches it only through an
 // instance of one of its types.
 struct ScriptHost::Pack {
-    // Its audio runtime's allocator opaque: the host's counters, which every pack's runtime adds to, and its own live
-    // heap and the limit an allocation may not take it past (design section 6). Written by whichever thread runs the
-    // runtime (the block thread, or the control thread while it loads or no audio thread runs).
+    // A runtime's allocator opaque: the counters it adds to, and its own live heap and the limit an allocation may not
+    // take it past (design section 6). Written by whichever thread runs the runtime (for the audio one, the block
+    // thread, or the control thread while it loads or no audio thread runs).
     struct Heap {
         Counters*   counters = nullptr;
         std::size_t live = 0;      // usable bytes
@@ -372,7 +372,12 @@ struct ScriptHost::Pack {
     rp_package    package{};
     // Its load, or a release of one of its instances, since its last collect (whoever released it).
     bool          garbage = false;
+    // Its audio runtime's heap, adding to the host's counters once it joins (to a load's own before), and its control
+    // runtime's, held to the same limit with a refusal noted the same way, so a load or a settings check it fails says
+    // so, adding to controlCounts, which nothing reads: only the audio side's counts are the host's to give.
     Heap          heap;
+    Heap          controlHeap;
+    Counters      controlCounts;
     // Whose promise jobs are pending while a checkpoint has left some (the block thread's): the instance they are
     // charged to until the queue empties, or, `jobsOrphaned`, no node, the one they were charged to having been
     // released (Glue::chargeJobs).
@@ -530,14 +535,16 @@ struct ScriptHost::Glue {
         return in.expiries >= 2;
     }
 
-    // ---- the audio runtimes' allocator: the platform's, counted and held to each pack's limit ------------------
-    // Each pack's runtime has its own opaque (Pack::Heap), which keeps its live heap in usable bytes, as QuickJS's own
-    // accounting (jsUsable) reads it, in every build: an allocation that would take it past the pack's limit is refused
-    // (null, which QuickJS throws as out of memory in the call that asked) and the refusal noted, for the call's
-    // checkpoint to fault its node. The limit is the host's to enforce rather than QuickJS's (JS_SetMemoryLimit), which
+    // ---- the runtimes' allocator: the platform's, counted and held to each pack's limit -------------------------
+    // Each of a pack's two runtimes has its own opaque (Pack::Heap), which keeps its live heap in usable bytes, as
+    // QuickJS's own accounting (jsUsable) reads it, in every build: an allocation that would take it past the pack's
+    // limit is refused (null, which QuickJS throws as out of memory in the call that asked) and the refusal noted, for
+    // the call's checkpoint to fault its node (the audio runtime), or for the load or the settings check it failed to
+    // say so (the control one). The limit is the host's to enforce rather than QuickJS's (JS_SetMemoryLimit), which
     // checks its own before calling the allocator and so would refuse without the host ever seeing it.
 #ifdef RETROPLUG_PROFILE
-    // A profile build keeps the live heap of every pack's runtime summed, and its peak, in the host's counters.
+    // A profile build keeps the live heap of what a heap counts into summed, and its peak: every pack's audio runtime
+    // in the host's counters.
     static void grew(Counters& c, std::int64_t by) {
         const std::int64_t live = c.liveBytes.load(std::memory_order_relaxed) + by;
         c.liveBytes.store(live, std::memory_order_relaxed);
@@ -616,20 +623,27 @@ struct ScriptHost::Glue {
         ScriptHost& h = *t.host;
         JSContext* ctx = pack.control;
         JS_UpdateStackTop(pack.controlRt);  // QuickJS guards the stack from where it was last entered: re-anchor here
-        // Its parseSettings, its layout and the jobs they queue, as one call: one the deadline stops refuses the
-        // settings, saying so, so the planner refuses the document and the running plan stands.
+        // Its parseSettings, its layout and the jobs they queue, as one call: one the deadline stops, or that fails on
+        // an allocation the pack's memory limit refused, refuses the settings, saying so, so the planner refuses the
+        // document and the running plan stands.
         const ControlDeadline call(h);
+        pack.controlHeap.refused = false;  // what this call is refused, from here on
         const std::string text = s && s->data && s->size ? std::string(s->data, s->size) : std::string("{}");
         JSValue raw = JS_ParseJSON(ctx, text.c_str(), text.size(), "<settings>");
         JSValue parsed = JS_IsException(raw) ? JS_EXCEPTION : callMethod(ctx, t.control, "parseSettings", 1, &raw);
         JSValue lay = JS_IsException(parsed) ? JS_EXCEPTION : callMethod(ctx, t.control, "layout", 1, &parsed);
         bool ok = !JS_IsException(lay) && stringify(ctx, parsed, settings) && stringify(ctx, lay, layout);
+        const char* where = JS_IsException(parsed) ? "parseSettings"
+                            : JS_IsException(lay)    ? "layout"
+                                                     : "settings check";
         if (!ok && h.controlInterrupted_) {
             clearException(ctx);
-            const char* where = JS_IsException(parsed) ? "parseSettings"
-                                : JS_IsException(lay)    ? "layout"
-                                                         : "settings check";
             copyError(err, stopped(h, t.id + "'s " + where));
+        } else if (!ok && pack.controlHeap.refused) {
+            // The error is QuickJS's out of memory (null when it could not make even that), or the definition's own
+            // after it caught that one: the limit is said either way.
+            copyError(err, t.id + "'s " + where + " reached its pack's " + limitText(pack.controlHeap.limit) + ": " +
+                               exceptionText(ctx, true));
         } else if (!ok) {
             copyError(err, exceptionText(ctx, true));
         }
@@ -1668,16 +1682,19 @@ std::unique_ptr<ScriptHost::Pack> ScriptHost::makePack(const std::string& id, Co
     // manifest unreadable, or name another package.
     pack->manifest = R"({"id":)" + graph::jsonString(id) + "}";
     pack->package = rp_package{RP_ABI_VERSION, pack->manifest.c_str(), 0, nullptr};
-    pack->heap.counters = &counters;  // before its runtime is made, which allocates
+    pack->heap.counters = &counters;  // before its runtimes are made, which allocate
+    pack->controlHeap.counters = &pack->controlCounts;
     makeRuntimes(*pack);
     return pack;
 }
 
 void ScriptHost::makeRuntimes(Pack& pack) {
-    pack.controlRt = JS_NewRuntime();
-    pack.control = JS_NewContext(pack.controlRt);
+    // Both through the host's allocator, each with a heap of its pack's (Glue's allocator): QuickJS copies the
+    // functions and keeps the opaque.
     const JSMallocFunctions counted{&Glue::jsCalloc, &Glue::jsMalloc, &Glue::jsFree, &Glue::jsRealloc, &Glue::jsUsable};
-    pack.audioRt = JS_NewRuntime2(&counted, &pack.heap);  // QuickJS copies the functions and keeps the opaque
+    pack.controlRt = JS_NewRuntime2(&counted, &pack.controlHeap);
+    pack.control = JS_NewContext(pack.controlRt);
+    pack.audioRt = JS_NewRuntime2(&counted, &pack.heap);
     pack.audio = JS_NewContext(pack.audioRt);
     JS_SetContextOpaque(pack.audio, &pack);  // what a Block method runs in: Glue::packOf
     // Both runtimes' JS stacks, inside the smallest thread that enters either (the class comment), and what the control
@@ -1745,7 +1762,8 @@ bool ScriptHost::load(std::span<const Chunk> chunks, std::string* error, std::si
     }
     loaded_ = true;
     Pack& pack = *packs_.front();
-    pack.heap.limit = memoryLimit ? memoryLimit : kDefaultMemoryLimit;  // before the load, whose allocations it holds
+    // Both runtimes' limit, before the load, whose allocations it holds.
+    pack.heap.limit = pack.controlHeap.limit = memoryLimit ? memoryLimit : kDefaultMemoryLimit;
     const bool loaded = loadInto(pack, chunks, error);
     join(pack);  // counted in the shared counters from the start: no audio thread runs before the host is loaded
     return loaded;
@@ -1780,7 +1798,8 @@ const rp_package* ScriptHost::loadPack(const std::string& id, std::span<const Ch
     Counters loading;
     auto pack = makePack(id, loading);
     pack->generation = generation;
-    pack->heap.limit = memoryLimit ? memoryLimit : kDefaultMemoryLimit;  // before the load, whose allocations it holds
+    // Both runtimes' limit, before the load, whose allocations it holds.
+    pack->heap.limit = pack->controlHeap.limit = memoryLimit ? memoryLimit : kDefaultMemoryLimit;
     if (!loadInto(*pack, chunks, error)) {
         freeRuntimes(*pack);  // counted in `loading` still
         return nullptr;
@@ -1886,10 +1905,11 @@ void ScriptHost::join(Pack& pack) {
 }
 
 bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string* error) {
-    // An allocation the load was refused fails it (the chunk throws out of memory); no node's call is to be faulted.
+    // An allocation the load was refused fails it (the chunk throws out of memory); no node's call is to be faulted, and
+    // no settings check is to say so.
     struct Forget {
         Pack* pack;
-        ~Forget() { pack->heap.refused = false; }
+        ~Forget() { pack->heap.refused = pack->controlHeap.refused = false; }
     } forget{&pack};
     // The whole load is one call, held to the control thread's deadline: a top level, a job or a definition that runs
     // past it refuses the pack, saying so.
@@ -1901,10 +1921,10 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
         clearException(pack.control);
         clearException(pack.audio);
         if (controlInterrupted_) why = Glue::stopped(*this, "its load") + ": " + why;
-        // A load the memory limit refused an allocation says so: the limit holds the whole audio runtime, its
-        // intrinsics included, and once it cannot even make its out-of-memory error QuickJS throws null, which says
-        // nothing.
-        if (pack.heap.refused)
+        // A load the memory limit refused an allocation says so: the limit holds each of the pack's runtimes whole,
+        // its intrinsics included, and once it cannot even make its out-of-memory error QuickJS throws null, which
+        // says nothing.
+        if (pack.heap.refused || pack.controlHeap.refused)
             why += " (the load reached the pack's " + limitText(pack.heap.limit) + ")";
         if (error) *error = std::move(why);
         return false;

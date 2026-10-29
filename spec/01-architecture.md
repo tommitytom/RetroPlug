@@ -377,8 +377,8 @@ the next document to place. Loaded again, a pack reloads: the running document i
 nodes rebuild on the new code while every other node keeps its instance, all or nothing, and the old
 generation's runtimes are freed on the control thread once the block thread holds nothing of it. A pack
 isolates its nodes from every other pack's (a prototype or a global one patches, a heap it fills) but not from
-each other; its promise jobs run after each call into one of its nodes, charged to that node, and its audio
-runtime is held to a memory limit (64 MiB by default). Each loaded pack costs two runtimes, about 180 KB and
+each other; its promise jobs run after each call into one of its nodes, charged to that node, and each of its
+runtimes is held to a memory limit (64 MiB by default). Each loaded pack costs two runtimes, about 180 KB and
 twice what its code loads to. Nothing in the app loads one yet.
 
 A pack's audio side runs on **both** threads over its lifetime (the control thread on the pull-path

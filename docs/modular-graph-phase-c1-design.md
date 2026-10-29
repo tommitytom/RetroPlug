@@ -261,22 +261,24 @@ jobs run as it loads, at most 256 each stretch of it (its top level in each runt
 pack's collection queues), and a load that leaves any is refused, as every other load failure is: QuickJS cannot drop
 them, and they would run at the pack's first checkpoint, charged to whichever of its nodes' calls came first.
 
-**Memory.** Each pack's audio runtime is held to its memory limit (64 MiB unless the load says otherwise): an
-allocation that would pass it is refused, and QuickJS throws out of memory in the call that made it. The host's own
-allocator enforces it (section 11's third question): each pack's audio runtime allocates through an opaque of its
-pack's holding its live bytes and its limit, which refuses an allocation past the limit and notes the refusal on the
-pack. A refusal during a call (or its jobs) faults the node they are charged to, whether or not it caught the error
-and whatever its `faultOnThrow`: a pack at its limit is one none of its nodes can rely on. It faults at once in
-`process`, and at its next block after a hook or for its leftovers run at a pack-mate's checkpoint. A refusal JS
+**Memory.** Each of a pack's two runtimes is held to its memory limit (64 MiB unless the load says otherwise), each on
+its own: an allocation that would pass it is refused, and QuickJS throws out of memory in the call that made it. The
+host's own allocator enforces it (section 11's third question): each runtime allocates through an opaque of its pack's
+holding its live bytes and the limit, which refuses an allocation past the limit and notes the refusal on the pack. In
+the audio runtime, a refusal during a call (or its jobs) faults the node they are charged to, whether or not it caught
+the error and whatever its `faultOnThrow`: a pack at its limit is one none of its nodes can rely on. It faults at once
+in `process`, and at its next block after a hook or for its leftovers run at a pack-mate's checkpoint. A refusal JS
 caught is counted as the node's throw, saying the node "reached its pack's N MiB memory limit"; an uncaught one is the
 out-of-memory throw already counted. Only an out-of-memory error the limit did not cause, the platform's allocator
 running out, is a throw like any other, faulting a `faultOnThrow` node. A call is charged only what its pack refused
 since it began: the note is cleared as each call arms its deadline, so a refusal made where no checkpoint looks (a
 release freeing a node's JS, a quiescent collection, the text the host makes of a checkpoint's last job's throw), or
-while the pack loads, faults no node. The limit holds the whole runtime, its intrinsics and its loaded code included,
+while the pack loads, faults no node. The limit holds each runtime whole, its intrinsics and its loaded code included,
 so a limit too small for those refuses the load, which says so. A node's heap is freed when it is rebuilt or removed,
-or its pack reloaded. Other packs, the built-in one among them, are untouched. The control side's runtimes keep no
-limit: they hold no instance.
+or its pack reloaded. Other packs, the built-in one among them, are untouched. In the control runtime, which holds no
+instance, the limit holds the pack's top level, `parseSettings` and `layout`: a load or a settings check that fails on
+an allocation it refused is refused, saying so ("reached its pack's N MiB memory limit"), a settings check's refusing
+the document while the running plan stands, and one that catches the error runs on, there being no node to fault.
 
 Faults latch per instance as now, and a reload clears them, every instance of the pack being fresh. The first throw's
 logged text already names the node's type, so a dev loop sees which of its nodes broke.
@@ -338,7 +340,9 @@ bugs), belong with the authoring and package-split work.
     stops counts as its call stopped; a never-settling chain faults its node after two cut-short checkpoints while a
     pack-mate is never charged; a built-in node's counts stay 0 throughout; a load whose promise jobs do not settle in
     256 (its top level's in either runtime, a descriptor's, its collection's, the built-in pack's load too) refused;
-  - memory: a node that allocates past its pack's limit faults, and nodes of other packs keep running;
+  - memory: a node that allocates past its pack's limit faults, and nodes of other packs keep running; a top level, or
+    a `parseSettings`, allocating past it in the control runtime refuses the load, or the document placing its node
+    while the running plan runs on, saying so;
   - the control thread's deadline: a load that never returns refused, a settings check that never returns refusing its
     document while the running plan runs on, its clock its own while an audio thread makes calls into another pack;
   - a load under an audio thread driving blocks, and a reload under one, its old generation freed by a later reclaim;
@@ -476,3 +480,9 @@ is written from it; the prototype is where the questions below are answered (eac
   in a quiescent collection the next node called, one as a release freed a node's JS the node whose leftovers that
   release ran. A collection runs what it queued, a reshape has a checkpoint of its own, and each call clears its pack's
   refusal note as it arms its deadline (section 6).
+- **A pack's control runtime had no memory limit.** Its top level, `parseSettings` and `layout` run there, held only by
+  the control thread's deadline, so a top level allocating without bound could take the host's memory before 2 s of
+  CPU stopped it, the design having reasoned that the control side holds no instance. It is held to the pack's limit
+  (section 6), through the same allocator as the audio runtime rather than QuickJS's `JS_SetMemoryLimit`, which
+  refuses before the allocator is called and keeps no record of it, so the load or the settings check it fails could
+  not say the limit was why.

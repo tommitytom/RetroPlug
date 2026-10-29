@@ -128,7 +128,7 @@ export interface Backend {
    *  `errors` holds the planner's errors when a reload's replan refused, and is empty when the refusal came before any
    *  replan (the id, a compile error, the load, the registry). A replan refused `busy` (the engine's command ring
    *  full, or a settings change not yet adopted) says nothing against the pack: the call may be retried.
-   *  `memoryLimitBytes` holds the pack's audio runtime to that many bytes (absent or 0: 64 MiB). Nothing in the app
+   *  `memoryLimitBytes` holds each of the pack's runtimes to that many bytes (absent or 0: 64 MiB). Nothing in the app
    *  calls it yet; the mock backend refuses it. */
   loadScriptPack(request: LoadScriptPackRequest): LoadScriptPackResult;
 
@@ -743,8 +743,8 @@ export interface SetGraphResult {
   errors: GraphError[];
 }
 
-/** A pack of script node types for `loadScriptPack`: its id, its source (global code) and its audio runtime's memory
- *  limit, a whole number of bytes (absent or 0: the default, 64 MiB). */
+/** A pack of script node types for `loadScriptPack`: its id, its source (global code) and the memory limit each of its
+ *  runtimes is held to, a whole number of bytes (absent or 0: the default, 64 MiB). */
 export interface LoadScriptPackRequest {
   id: string;
   source: string;

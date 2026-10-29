@@ -737,6 +737,54 @@ TEST_CASE("the call deadline holds every pack's control side, the built-in one's
     CHECK(host.package()->node_type_count == 0);
 }
 
+TEST_CASE("a pack's control runtime is held to its memory limit as its audio runtime is: a top level allocating past it "
+          "there refuses the load, and a parseSettings allocating past it refuses the document placing its node while "
+          "the running plan runs on, each saying so",
+          "[script][packs][memory]") {
+    using rp::host::test::compileToys;
+    constexpr std::size_t kLimit = std::size_t{4} << 20;
+    // 8 MiB, held until the code that holds it returns.
+    const std::string hog = "var kept = []; for (var k = 0; k < 8; k++) kept[k] = new Float64Array(1 << 17);\n";
+
+    // The load: its top level allocates only in the control runtime (what the binder says of the context it runs in),
+    // so only that runtime's limit can refuse it. The same pack without it loads under the same limit.
+    rp::host::test::ScriptRig rig;
+    const auto hogging = compileToys(toys(transposer("test.ctlhog.up", 1) + "if (!__audioSide) { " + hog + "}"));
+    const ScriptHost::Chunk hoggingChunk = hogging;
+    std::string error;
+    CHECK(rig.scripts.loadPack("test.ctlhog", {&hoggingChunk, 1}, kLimit, &error) == nullptr);
+    INFO(error);
+    CHECK(error.rfind("chunk 0: ", 0) == 0);
+    CHECK(error.find("(the load reached the pack's 4 MiB memory limit)") != std::string::npos);
+    CHECK(rig.scripts.packs().size() == 1);
+    const auto fine = compileToys(toys(transposer("test.ctlhog.up", 1)));
+    const ScriptHost::Chunk fineChunk = fine;
+    CHECK(rig.scripts.loadPack("test.ctlhog", {&fineChunk, 1}, kLimit, &error) != nullptr);
+
+    // A settings check: test.memset.big's parseSettings holds 8 MiB while it runs.
+    Engine e(kRate);
+    load(e, "test.memset", toys(transposer("test.memset.big", 1) + transposer("test.memset.fine", 12) + R"JS(
+var defs = globalThis.__rp_scriptNodes, plain = defs[defs.length - 2].parseSettings;
+defs[defs.length - 2].parseSettings = function (raw) { )JS" + hog + R"JS( return plain(raw); };
+)JS"),
+         kLimit);
+    place(e, routedTo());
+    CHECK(block(e, {{2, kNote}}) == std::vector<Out>{{1, 2, kNote}});
+    const auto r = e.setGraph(routedTo("test.memset.big"));
+    CHECK_FALSE(r.ok);
+    REQUIRE(r.errors.size() == 1);
+    INFO(r.errors[0].message);
+    CHECK(r.errors[0].code == "settings-invalid");
+    CHECK(r.errors[0].nodeId == "node");
+    CHECK(r.errors[0].message == "test.memset.big's parseSettings reached its pack's 4 MiB memory limit: out of memory");
+    for (int n = 0; n < 3; ++n) CHECK(block(e, {{2, kNote}}) == std::vector<Out>{{1, 2, kNote}});
+    // The pack is no worse for it: its fine type plans and runs.
+    place(e, routedTo("test.memset.fine"));
+    CHECK(block(e, {{2, kNote}}) == sorted({{1, 2, kNote}, {2, 2, {0x90, 72, 100}}}));
+    CHECK(e.scriptThrows() == 0);
+    CHECK(e.faultCount() == 0);
+}
+
 TEST_CASE("a pack is bound by the host's binder in both its contexts, and what its load allocates is in no audio-side "
           "count, where its nodes' are",
           "[script][packs]") {

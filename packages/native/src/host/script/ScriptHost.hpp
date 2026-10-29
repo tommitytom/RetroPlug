@@ -216,18 +216,21 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // leaves any is refused: they would run at the pack's first checkpoint, charged to whichever of its nodes' calls came
 // first.
 //
-// Each pack's audio runtime is held to a memory limit (kDefaultMemoryLimit, unless its load says otherwise) by the
-// host's allocator, which refuses an allocation past it, so QuickJS throws out of memory in the call that asked, and
-// notes the refusal on the pack. The limit holds the whole runtime, its intrinsics (about 90 KB) and the pack's
-// loaded code with them, so one too small for those refuses the load, which says so. Once the pack is loaded, a
-// refusal during a call, or its jobs, faults the node they are charged to, whatever its faultOnThrow and whether or
-// not JS caught the error (a refusal JS caught is counted as its throw), since a pack at its limit is one none of its
-// nodes can rely on: at once in its process (RP_FAULT), at its next block after a hook or for its leftovers run at a
-// pack-mate's checkpoint. Only an out-of-memory error the limit did not cause, the platform's allocator running out,
-// is a throw like any other, faulting under faultOnThrow. A call is charged only what its pack refuses after it
-// begins: the refusal note is cleared as each call arms its deadline, so a refusal made where no checkpoint looks (a
-// release freeing a node's JS, a quiescent collection, the text the host makes of a checkpoint's last job's throw)
-// faults no node. Another pack is untouched. The control side's runtimes keep no limit: they hold no instance.
+// Each of a pack's two runtimes is held to its memory limit (kDefaultMemoryLimit, unless its load says otherwise), on
+// its own, by the host's allocator, which refuses an allocation past it, so QuickJS throws out of memory in the call
+// that asked, and notes the refusal on the pack. The limit holds each runtime whole, its intrinsics (about 90 KB) and
+// the pack's loaded code with them, so one too small for those refuses the load, which says so. Once the pack is
+// loaded, a refusal in its audio runtime during a call, or its jobs, faults the node they are charged to, whatever its
+// faultOnThrow and whether or not JS caught the error (a refusal JS caught is counted as its throw), since a pack at
+// its limit is one none of its nodes can rely on: at once in its process (RP_FAULT), at its next block after a hook or
+// for its leftovers run at a pack-mate's checkpoint. Only an out-of-memory error the limit did not cause, the
+// platform's allocator running out, is a throw like any other, faulting under faultOnThrow. A call is charged only
+// what its pack refuses after it begins: the refusal note is cleared as each call arms its deadline, so a refusal made
+// where no checkpoint looks (a release freeing a node's JS, a quiescent collection, the text the host makes of a
+// checkpoint's last job's throw) faults no node. Another pack is untouched. In the control runtime the limit holds
+// the pack's top level, parseSettings and layout, which hold no instance: a load or a settings check that fails on an
+// allocation it refused is refused, saying so (a settings check's refusing the document, so the running plan stands),
+// and one that catches the error runs on, there being no node to fault.
 //
 // A throw in process is caught, counted and the block's output up to it stands: the node runs again next block
 // (design section 4.5), unless its definition says faultOnThrow, when it faults (RP_FAULT, the executor's latch); a
@@ -287,23 +290,23 @@ public:
 
     // ---- control thread ------------------------------------------------------------------------------
     // Load the built-in pack: run a bundle (global-code bytecode, in chunks run in order) in both of its contexts, then
-    // read the definitions it registered, its audio runtime held to `memoryLimit` bytes (0: kDefaultMemoryLimit) from
-    // then on, the load included. Once, before anything plans with the package: a second call is refused, and leaves
-    // what the first registered as it is. False, with a reason, when a chunk fails to load (or runs out of memory), the
-    // load runs past the call deadline, the promise jobs it queues do not settle in kJobsPerCheckpoint (the class
-    // comment), or a definition cannot be read or is not the same in both contexts (its id or its descriptor differs: a
-    // bundle that branches on which context it runs in). One bad definition refuses the whole package: it then has no
-    // types, so every document naming any of the bundle's is refused (unknown-type).
+    // read the definitions it registered, each of its runtimes held to `memoryLimit` bytes (0: kDefaultMemoryLimit)
+    // from then on, the load included. Once, before anything plans with the package: a second call is refused, and
+    // leaves what the first registered as it is. False, with a reason, when a chunk fails to load (or runs out of
+    // memory), the load runs past the call deadline, the promise jobs it queues do not settle in kJobsPerCheckpoint
+    // (the class comment), or a definition cannot be read or is not the same in both contexts (its id or its
+    // descriptor differs: a bundle that branches on which context it runs in). One bad definition refuses the whole
+    // package: it then has no types, so every document naming any of the bundle's is refused (unknown-type).
     bool load(std::span<const Chunk> chunks, std::string* error = nullptr, std::size_t memoryLimit = kDefaultMemoryLimit);
-    // What a pack's audio runtime may hold, in usable bytes, unless its load says otherwise (the class comment).
+    // What each of a pack's runtimes may hold, in usable bytes, unless its load says otherwise (the class comment).
     static constexpr std::size_t kDefaultMemoryLimit = std::size_t{64} << 20;
     // The built-in pack's script node types, for NodeRegistry::addPackage; valid for the host's life (empty before a
     // load).
     const rp_package* package() const;
     // Load a pack beside the built-in one (docs/modular-graph-phase-c1-design.md sections 4 and 5): a pack named `id`,
-    // its two runtimes made for it, runs a bundle (global-code bytecode, in chunks run in order) in both, its audio
-    // runtime held to `memoryLimit` bytes (0: kDefaultMemoryLimit), the load included, and its definitions are read and
-    // checked as load checks the built-in pack's. Callable while an audio thread runs blocks (the class comment). On an
+    // its two runtimes made for it, runs a bundle (global-code bytecode, in chunks run in order) in both, each held to
+    // `memoryLimit` bytes (0: kDefaultMemoryLimit), the load included, and its definitions are read and checked as
+    // load checks the built-in pack's. Callable while an audio thread runs blocks (the class comment). On an
     // id loaded already it builds the pack's next generation (one more than the newest of the id held), beside the
     // current one, until retirePack or discardPack settles which goes. Its package, named by `id`, for the registry
     // (NodeRegistry::addPackage, or replacePackage for a new generation), valid until the pack is freed; null, with a

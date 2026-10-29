@@ -143,7 +143,7 @@ read of a core's state routes through the `SnapshotRegistry`. No method walks a 
 |---|---|---|
 | `buildCore` | `(BackendConstructSpec) → optional<RpcBuiltCore>` | TS-owned `spec.id`; `factory_.build` → `Engine::parkCore`, which claims the registry slot. Returns the core's node type, export mode and link group, or null (below) |
 | `setGraph` | `(RpcSetGraphRequest) → RpcSetGraphResult` | a graph document TS built, its slots and its tap re-arm → `Engine::setGraph` (below) |
-| `loadScriptPack` | `(RpcLoadScriptPackRequest) → RpcLoadScriptPackResult` | a pack of script node types, by its id, its source and its audio runtime's memory limit (`memoryLimitBytes`, a double, absent or 0 for 64 MiB, refused unless a whole number of bytes) → `Engine::loadScriptPack`, which loads it or, for an id loaded already, reloads it (the script host, below); returns `ok`, `error` (empty on success), the planner's `errors` when a reload's replan refused (empty for a refusal before any replan) and the pack's `types`, each with its descriptor JSON |
+| `loadScriptPack` | `(RpcLoadScriptPackRequest) → RpcLoadScriptPackResult` | a pack of script node types, by its id, its source and the memory limit each of its runtimes is held to (`memoryLimitBytes`, a double, absent or 0 for 64 MiB, refused unless a whole number of bytes) → `Engine::loadScriptPack`, which loads it or, for an id loaded already, reloads it (the script host, below); returns `ok`, `error` (empty on success), the planner's `errors` when a reload's replan refused (empty for a refusal before any replan) and the pack's `types`, each with its descriptor JSON |
 | `applySystemSetting` | `(uint32 id, string key, double value) → bool` | `gainDb` / `reloadOnRomChange` → a `ConfigField` |
 | `applyRoleConfig` | `(uint32 id, string kind, string config) → bool` | `kind` `"sameboy"` or `"mesen"`, false for any other; decodes the whole role config and pushes each field as a `ConfigField` (sameboy: Model/Highpass/LinkGroup/FastBoot/ColorCorrection/DmgPalette/LightTemperature; mesen: NesRegion/NesRemoveSpriteLimit/NesApuLatencyMs/NesS5bNoise/NesMmc5PhaseReset/NesExpansionVolume) |
 | `readState` | `(uint32 id) → optional<Bytestring>` | published savestate from the registry |
@@ -758,18 +758,21 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   what a loaded pack's collection queues), and one that leaves any is refused, as every other load
   failure is: QuickJS cannot drop a pending job, and one a load left would be charged to whichever of its
   nodes' calls came first.
-- **Memory.** Each pack's audio runtime is held to a memory limit (64 MiB unless its load says otherwise)
-  by the host's allocator, which refuses an allocation past it, so QuickJS throws out of memory in the
-  call that asked, and notes the refusal on the pack. A refusal during a call, or its jobs, faults the
-  node they are charged to whatever its `faultOnThrow` (a refusal JS caught counted as its throw): at
-  once in `process`, at its next block after a hook or for its leftovers run at a pack-mate's checkpoint,
-  since a pack at its limit is one none of its nodes can rely on. Only an out-of-memory error the limit
-  did not cause (the platform's allocator ran out) is a throw like any other, faulting under
-  `faultOnThrow`. A call is charged only what its pack refuses after it begins (the note is cleared as
-  each call arms its deadline), so a refusal during a release, a quiescent collection or a load faults no
-  node. The limit holds the whole runtime, its intrinsics (about 90 KB) and its code included, so a limit
-  too small for those refuses the load, which says so. Another pack is untouched, and the control side's
-  runtimes keep no limit: they hold no instance.
+- **Memory.** Each of a pack's two runtimes is held to a memory limit (64 MiB unless its load says
+  otherwise), each on its own, by the host's allocator, which refuses an allocation past it, so QuickJS
+  throws out of memory in the call that asked, and notes the refusal on the pack. In the audio runtime, a
+  refusal during a call, or its jobs, faults the node they are charged to whatever its `faultOnThrow` (a
+  refusal JS caught counted as its throw): at once in `process`, at its next block after a hook or for its
+  leftovers run at a pack-mate's checkpoint, since a pack at its limit is one none of its nodes can rely
+  on. Only an out-of-memory error the limit did not cause (the platform's allocator ran out) is a throw
+  like any other, faulting under `faultOnThrow`. A call is charged only what its pack refuses after it
+  begins (the note is cleared as each call arms its deadline), so a refusal during a release, a quiescent
+  collection or a load faults no node. In the control runtime the limit holds the pack's top level,
+  `parseSettings` and `layout`: a load or a settings check that fails on an allocation it refused is
+  refused, saying so (a settings check's refusing the document, the running plan standing), and one that
+  catches the error runs on, with no node to fault. The limit holds each runtime whole, its intrinsics
+  (about 90 KB) and its code included, so a limit too small for those refuses the load, which says so.
+  Another pack is untouched.
 - **A throw** in `process` is caught and counted, the block's output up to it stands, and the node runs
   again next block; a definition that says `faultOnThrow`, or a `process` that returns `"fault"`,
   faults instead (bypassed from then on), and a `faultOnThrow` node whose `onSettings`,
