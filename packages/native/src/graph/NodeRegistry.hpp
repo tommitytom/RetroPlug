@@ -15,8 +15,10 @@ namespace rp::graph {
 // trust boundary for a pack's metadata: everything the host will later call or read is checked here.
 //
 // Entries are never moved or removed, so an Entry* stays valid for the registry's life (a planned instance
-// keeps one). Not thread-safe: addPackage must not overlap any other call, so a registry shared by several
-// hosts is filled before any of them plans; after that, concurrent find() is safe.
+// keeps one), whatever is added after. Not thread-safe: addPackage must not overlap any other call, so a registry
+// shared by several hosts is filled before any of them plans; after that, concurrent find() is safe. One host may add
+// packages between its plans on the thread that plans (an Engine's script node packs: Engine::loadScriptPack), since
+// planning is the only reader: an executor runs a plan's instances and never looks a type up.
 class NodeRegistry {
 public:
     struct Entry {

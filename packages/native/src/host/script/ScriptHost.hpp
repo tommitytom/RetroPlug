@@ -95,16 +95,20 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // same C ABI as a native node. It holds them in packs (docs/modular-graph-phase-c1-design.md section 4), the unit it
 // isolates and loads: a pack has an id, a bundle that registers its node definitions (defineNode results, appended to
 // the global __rp_scriptNodes: packages/retroplug/src/script/register.ts), and a package of its own, named by its id,
-// in which the host registers an rp_node_type for each definition, whose instances are native shims. The host holds
-// one pack, the built-in one, "rp.script", which load fills with a bundle (an Engine's is embeddedBundle()).
+// in which the host registers an rp_node_type for each definition, whose instances are native shims. The first pack is
+// the built-in one, "rp.script", which load fills with a bundle (an Engine's is embeddedBundle()); loadPack loads
+// more beside it, each under an id of its own that names its types: every type id a loaded pack registers is the
+// pack's id, a dot and more, so no pack takes another's type ids (where two namespaces meet, one id running on into
+// another's, "a" and "a.b", the registry refuses the type the second would take).
 //
 // A pack is two bare QuickJS runtimes of its own, each loaded with its bundle, sharing no JS value with each other or
 // with another pack's:
 //   - the CONTROL side, entered only by the control thread, answers layout_for and prepare_settings: the
 //     definition's own parseSettings checks a settings object, and its layout gives the ports, from the settings
 //     alone. It never holds an instance.
-//   - the AUDIO side holds every instance of the pack's types and is entered only by the thread that runs blocks (the
-//     audio thread, or the control thread while setAudioThreadOwns(false)), which reaches it only through an instance.
+//   - the AUDIO side holds every instance of the pack's types and, once the pack is loaded (below), is entered only by
+//     the thread that runs blocks (the audio thread, or the control thread while setAudioThreadOwns(false)), which
+//     reaches it only through an instance.
 //     A shim's create and activate run on the control thread and only allocate the shim; the JS instance is created on
 //     the block thread at the first call the shim gets there, which is the ports_changed the planner sends every fresh
 //     instance when its plan is adopted, so before that plan's first process. A shim's destroy (control thread) queues
@@ -113,11 +117,19 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 //     thread to be deleted (reclaim), so the audio thread frees nothing native. What a released instance leaves in
 //     cycles is collected by a GC of its pack's audio runtime at two points no block is running: the reclaim that ends
 //     a quiescent operation which released some (the Engine's after every setGraph: one GC a pack however many went),
-//     and the audio thread handing the runtimes back (setAudioThreadOwns(false)). The first reclaim after a pack's load
-//     (for the built-in one, the top of the first setGraph) takes what its bundle's load left in cycles too, whether or
-//     not an instance released anything. Never by a block, so while an audio thread owns the runtimes (a live session)
-//     those cycles wait for QuickJS's own threshold GC, which runs inside whichever block's JS allocates past it in
-//     that runtime, or for the audio thread to hand the runtimes back.
+//     and the audio thread handing the runtimes back (setAudioThreadOwns(false)). The first reclaim after the built-in
+//     pack's load (an Engine's first setGraph, at its top) takes what its bundle's load left in cycles too, whether or
+//     not an instance released anything; a loaded pack's load collects its own before loadPack returns. Never by a
+//     block, so while an audio thread owns the runtimes (a live session) those cycles wait for QuickJS's own threshold
+//     GC, which runs inside whichever block's JS allocates past it in that runtime, or for the audio thread to hand the
+//     runtimes back.
+// A pack is made and loaded on the control thread, its audio side included, so loadPack runs while an audio thread
+// runs blocks in the other packs: the block thread first reaches a pack through an instance of one of its types, in a
+// plan published after its load, and the plan swap's ring (release on push, acquire on adopt) carries the whole built
+// pack with it. Until its load is done, a pack's audio runtime touches nothing the block thread writes: it joins what
+// every pack shares (the call deadline's interrupt handler, the allocation counters) as its load ends (join). So what
+// a loaded pack's load allocates is left out of the allocation counters, which count the audio side's blocks,
+// adoptions and releases; the built-in pack's, at the host's construction, comes before any and is in them.
 // What every pack shares stays the host's: the call deadline (one call runs at a time on the block thread), the
 // allocation counters (summed over every pack's audio runtime, so audioAllocations and the profile's allocation window
 // mean the whole audio side), the release rings, the throw count and the first throw, and the profile's span labels.
@@ -138,6 +150,13 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // not. A call that runs to its end, its jobs with it, starts the count again. A deadline fault is a fault like any
 // other: it latches on the instance and outlives reshapes, and only a rebuild (or the node removed and added again)
 // clears it.
+// The control thread's calls into a pack are held to the same length of its own CPU time, on a clock of its own (the
+// block thread may be inside a call into another pack meanwhile, so the two share no deadline state): a load, one call
+// (its chunks in both runtimes, the jobs they queue, its definitions read), and a settings check (parseSettings and
+// layout, for layout_for, prepare_settings and create, and the jobs they queue). A pack's control runtime has the
+// control thread's handler for its life, its audio runtime until join gives it the block thread's. A load the deadline
+// stops refuses the pack; a settings check it stops refuses the settings, saying so, so the planner refuses the
+// document and the running plan stands.
 //
 // Every type declares RP_TYPE_STATELESS_PREPARE: its prepare_settings reads the settings it is handed, the
 // definition and what the instance was created with, never anything a commit writes. A type that reshapes answers
@@ -234,21 +253,46 @@ public:
     // Load the built-in pack: run a bundle (global-code bytecode, in chunks run in order) in both of its contexts, then
     // read the definitions it registered, its audio runtime held to `memoryLimit` bytes (0: kDefaultMemoryLimit) from
     // then on, the load included. Once, before anything plans with the package: a second call is refused, and leaves
-    // what the first registered as it is. False, with a reason, when a chunk fails to load (or runs out of memory) or a
-    // definition cannot be read or is not the same in both contexts (its id or its descriptor differs: a bundle that
-    // branches on which context it runs in). One bad definition refuses the whole package: it then has no types, so
-    // every document naming any of the bundle's is refused (unknown-type).
+    // what the first registered as it is. False, with a reason, when a chunk fails to load (or runs out of memory), the
+    // load runs past the call deadline, or a definition cannot be read or is not the same in both contexts (its id or its
+    // descriptor differs: a bundle that branches on which context it runs in). One bad definition refuses the whole
+    // package: it then has no types, so every document naming any of the bundle's is refused (unknown-type).
     bool load(std::span<const Chunk> chunks, std::string* error = nullptr, std::size_t memoryLimit = kDefaultMemoryLimit);
     // What a pack's audio runtime may hold, in usable bytes, unless its load says otherwise (the class comment).
     static constexpr std::size_t kDefaultMemoryLimit = std::size_t{64} << 20;
     // The built-in pack's script node types, for NodeRegistry::addPackage; valid for the host's life (empty before a
     // load).
     const rp_package* package() const;
+    // Load a pack beside the built-in one (docs/modular-graph-phase-c1-design.md sections 4 and 5): a new pack named
+    // `id`, its two runtimes made for it, runs a bundle (global-code bytecode, in chunks run in order) in both, its
+    // audio runtime held to `memoryLimit` bytes (0: kDefaultMemoryLimit), the load included, and its definitions are
+    // read and checked as load checks the built-in pack's. Callable while an audio thread runs blocks (the class
+    // comment). Its package, named by `id`, for NodeRegistry::addPackage, valid for the host's life unless discarded;
+    // null, with a reason, when canLoadPack refuses the id (nothing is built), or, the pack freed there and then, when
+    // a chunk fails to load (or runs out of memory), the load runs past the call deadline, a definition cannot be read
+    // or is not the same in both contexts, or a type id is not the pack's id, a dot and more ("user.synth.osc" in
+    // "user.synth").
+    const rp_package* loadPack(const std::string& id, std::span<const Chunk> chunks, std::size_t memoryLimit,
+                               std::string* error = nullptr);
+    // Whether loadPack takes a pack named `id`: a plain id (graph::isPlainId), not the built-in pack's ("rp.script",
+    // which is not reloadable), not otherwise the app's ("rp" and every id under "rp.", where its native packages are
+    // named too), and none loaded already. False, with the reason.
+    bool canLoadPack(const std::string& id, std::string* error = nullptr) const;
+    // Free a pack loadPack returned whose package no registry took (a NodeRegistry refused it), so nothing has made an
+    // instance of its types: its runtimes, there and then. Never the built-in pack.
+    void discardPack(const rp_package* package);
+    // A pack loaded: its id and its generation (its load's count).
+    struct PackInfo {
+        std::string   id;
+        std::uint32_t generation = 0;
+    };
+    // Every pack loaded, the built-in one first, then in load order.
+    std::vector<PackInfo> packs() const;
     // Set true BEFORE an audio thread starts running blocks, false AFTER it has stopped: false releases every
     // queued instance there and then, and collects what they left.
     void setAudioThreadOwns(bool owns);
-    // How much of the calling thread's CPU time one call into an audio runtime may use before it is stopped
-    // (kDefaultCallDeadline until set). Set it before an audio thread runs blocks.
+    // How much of the calling thread's CPU time one call into a pack's JS may use before it is stopped, on either side
+    // (kDefaultCallDeadline until set: the class comment). Set it before an audio thread runs blocks.
     void setCallDeadline(std::chrono::milliseconds limit);
     static constexpr std::chrono::milliseconds kDefaultCallDeadline{2000};
     // Delete the records the block thread has released, and log the first throw once. While quiescent, also collect
@@ -291,8 +335,9 @@ public:
 
     // ---- profiling (spec/08-profiling.md): real only in a RETROPLUG_PROFILE build --------------------------------
     // The allocation window, opened by resetAllocStats, which can pin every pack's audio runtime's auto-GC off from
-    // then on (so a window collects nothing); runGc runs and times one collection of each. allocStats never refuses (a
-    // benchmark reads its `enabled` to know a profile host), and read on another thread while blocks run lags them.
+    // then on, a pack loaded later's too (so a window collects nothing); runGc runs and times one collection of each.
+    // allocStats never refuses (a benchmark reads its `enabled` to know a profile host), and read on another thread
+    // while blocks run lags them.
     DspAllocStats allocStats() const;
     // These refuse, doing nothing, while an audio thread owns the runtimes (setAudioThreadOwns): resetAllocStats and
     // traceReset return false and runGc a result with enabled false (the first refusal said once on stderr), and the
@@ -329,12 +374,17 @@ private:
         std::atomic<std::uint64_t> peakBytes{0};
     };
 
-    // control thread: a pack named `id` with its two runtimes made (makeRuntimes), loaded with nothing yet
-    std::unique_ptr<Pack> makePack(const std::string& id);
+    // control thread: a pack named `id` with its two runtimes made (makeRuntimes), loaded with nothing yet, its audio
+    // runtime's allocations counted in `counters` until it joins
+    std::unique_ptr<Pack> makePack(const std::string& id, Counters& counters);
     void makeRuntimes(Pack& pack);  // control thread: its runtimes and contexts, set up as the class comment says
     void freeRuntimes(Pack& pack);  // control thread or quiescent: its types first (freeTypes), then its runtimes
-    // control thread: run a bundle in both of the pack's contexts, read and check its definitions, and label its types
+    // control thread: run a bundle in both of the pack's contexts, read and check its definitions (a loaded pack's
+    // type ids in its namespace), and label its types
     bool loadInto(Pack& pack, std::span<const Chunk> chunks, std::string* error);
+    // control thread, its load done and before any plan can place its types: the pack's audio runtime joins what every
+    // pack shares (the class comment)
+    void join(Pack& pack);
     void freeTypes(Pack& pack);
     std::uint32_t spanLabelFor(const std::string& typeId);  // control thread: a type id's label (DspSpanLabel)
     void releaseJs(Instance& in);   // the block thread, or quiescent
@@ -350,10 +400,12 @@ private:
     Binder                       binder_ = nullptr;
     void*                        binderUser_ = nullptr;
     // Every pack, the built-in one first. Made, loaded and read on the control thread (and quiescent, by releaseQueued,
-    // collect and the profile calls); the block thread reaches a pack only through an instance of one of its types,
-    // never through this list.
+    // collect and the profile calls), so it grows (loadPack) and shrinks (discardPack) there, while an audio thread
+    // runs blocks; the block thread reaches a pack only through an instance of one of its types, never through this
+    // list.
     std::vector<std::unique_ptr<Pack>> packs_;
     bool                               loaded_ = false;  // load has been called
+    bool                               gcPinned_ = false;  // resetAllocStats pinned the audio runtimes' auto-GC off
     // Each type id's span label (DspSpanLabel), given at its first registration in any pack and kept, and the next one
     // to give (control thread).
     std::unordered_map<std::string, std::uint32_t> spanLabels_;
@@ -377,6 +429,11 @@ private:
     bool                       armed_ = false;
     std::int64_t               cpuStart_ = -1;
     bool                       interrupted_ = false;
+    // The control thread's own: its calls into a pack's JS (a load, a settings check) run while the block thread may be
+    // inside one into another pack, so the two clocks share nothing but the length.
+    bool                       controlArmed_ = false;
+    std::int64_t               controlCpuStart_ = -1;
+    bool                       controlInterrupted_ = false;
 
     std::atomic<std::uint32_t> throws_{0};
     std::atomic<std::uint32_t> live_{0};

@@ -25,6 +25,7 @@ extern "C" {
 #include "quickjs.h"
 }
 
+#include "graph/CanonicalJson.hpp"
 #include "graph/Descriptor.hpp"
 #include "graph/Queue.hpp"
 
@@ -427,18 +428,54 @@ struct ScriptHost::Glue {
         Deadline& operator=(const Deadline&) = delete;
     };
 
-    // QuickJS asks once every 10000 of its polls (at each call and each jump back in a loop) whether to stop.
+    // QuickJS asks once every 10000 of its polls (at each call and each jump back in a loop) whether to stop: the
+    // block thread's clock in an audio runtime that has joined, the control thread's everywhere else (controlInterrupt).
     static int interrupt(JSRuntime*, void* opaque) {
         auto& h = *static_cast<ScriptHost*>(opaque);
-        if (!h.armed_) return 0;
+        return expired(h, h.armed_, h.cpuStart_, h.interrupted_) ? 1 : 0;
+    }
+    // Whether the armed call one thread's clock times has used up the deadline: the baseline is taken at the call's
+    // first poll, and `interrupted` set once it has.
+    static bool expired(const ScriptHost& h, bool armed, std::int64_t& cpuStart, bool& interrupted) {
+        if (!armed) return false;
         const std::int64_t now = threadCpuNs();
-        if (h.cpuStart_ < 0) {
-            h.cpuStart_ = now;
-            return 0;
+        if (cpuStart < 0) {
+            cpuStart = now;
+            return false;
         }
-        if (now - h.cpuStart_ < h.callDeadlineNs_.load(std::memory_order_relaxed)) return 0;
-        h.interrupted_ = true;
-        return 1;
+        if (now - cpuStart < h.callDeadlineNs_.load(std::memory_order_relaxed)) return false;
+        interrupted = true;
+        return true;
+    }
+
+    // ---- the control thread's deadline ---------------------------------------------------------------------------
+    // The same length, of the control thread's own CPU time, on a clock of its own, held to every call it makes into a
+    // pack's JS: a load (the chunks in both runtimes, the jobs they queue, the definitions read) and a settings check.
+    // Never the block thread's clock: the block thread may be inside a call into another pack meanwhile.
+    struct ControlDeadline {
+        ScriptHost& h;
+        bool        nested;
+        explicit ControlDeadline(ScriptHost& host) : h(host), nested(host.controlArmed_) {
+            if (nested) return;
+            h.controlArmed_ = true;
+            h.controlCpuStart_ = -1;
+            h.controlInterrupted_ = false;
+        }
+        ~ControlDeadline() {
+            if (!nested) h.controlArmed_ = false;
+        }
+        ControlDeadline(const ControlDeadline&) = delete;
+        ControlDeadline& operator=(const ControlDeadline&) = delete;
+    };
+    // A pack's control runtime's handler for its life, and its audio runtime's until join.
+    static int controlInterrupt(JSRuntime*, void* opaque) {
+        auto& h = *static_cast<ScriptHost*>(opaque);
+        return expired(h, h.controlArmed_, h.controlCpuStart_, h.controlInterrupted_) ? 1 : 0;
+    }
+    // What a call the control thread's deadline stopped says, `what` the call.
+    static std::string stopped(const ScriptHost& h, const std::string& what) {
+        return what + " ran past the " + std::to_string(h.callDeadlineNs_.load(std::memory_order_relaxed) / 1000000) +
+               " ms call deadline (CPU time), and was stopped";
     }
 
     // After one of a node's calls: whether the deadline stopping it (`stopped`: the call, or a promise job charged to
@@ -539,18 +576,34 @@ struct ScriptHost::Glue {
             return false;
         }
         Pack& pack = *t.pack;
+        ScriptHost& h = *t.host;
         JSContext* ctx = pack.control;
         JS_UpdateStackTop(pack.controlRt);  // QuickJS guards the stack from where it was last entered: re-anchor here
+        // Its parseSettings, its layout and the jobs they queue, as one call: one the deadline stops refuses the
+        // settings, saying so, so the planner refuses the document and the running plan stands.
+        const ControlDeadline call(h);
         const std::string text = s && s->data && s->size ? std::string(s->data, s->size) : std::string("{}");
         JSValue raw = JS_ParseJSON(ctx, text.c_str(), text.size(), "<settings>");
         JSValue parsed = JS_IsException(raw) ? JS_EXCEPTION : callMethod(ctx, t.control, "parseSettings", 1, &raw);
         JSValue lay = JS_IsException(parsed) ? JS_EXCEPTION : callMethod(ctx, t.control, "layout", 1, &parsed);
-        const bool ok = !JS_IsException(lay) && stringify(ctx, parsed, settings) && stringify(ctx, lay, layout);
-        if (!ok) copyError(err, exceptionText(ctx, true));
+        bool ok = !JS_IsException(lay) && stringify(ctx, parsed, settings) && stringify(ctx, lay, layout);
+        if (!ok && h.controlInterrupted_) {
+            clearException(ctx);
+            const char* where = JS_IsException(parsed) ? "parseSettings"
+                                : JS_IsException(lay)    ? "layout"
+                                                         : "settings check";
+            copyError(err, stopped(h, t.id + "'s " + where));
+        } else if (!ok) {
+            copyError(err, exceptionText(ctx, true));
+        }
         JS_FreeValue(ctx, lay);
         JS_FreeValue(ctx, parsed);
         JS_FreeValue(ctx, raw);
         drainControlJobs(pack);
+        if (ok && h.controlInterrupted_) {
+            ok = false;
+            copyError(err, stopped(h, t.id + "'s promise jobs"));
+        }
         return ok;
     }
 
@@ -1551,7 +1604,7 @@ ScriptHost::ScriptHost(Binder binder, void* user) : binder_(binder), binderUser_
                                       std::pair{DSP_SPAN_JSCALL, "js-call"}, std::pair{DSP_SPAN_APU, "apu-render"},
                                       std::pair{DSP_SPAN_PUBLISH, "state-publish"}})
         traceName(label, name);
-    packs_.push_back(makePack(kBuiltInPack));  // loaded by load
+    packs_.push_back(makePack(kBuiltInPack, counters_));  // loaded by load
 }
 
 ScriptHost::~ScriptHost() {
@@ -1565,12 +1618,15 @@ ScriptHost::Chunk ScriptHost::embeddedBundle() { return {rp_script_bundle, rp_sc
 
 const rp_package* ScriptHost::package() const { return &packs_.front()->package; }
 
-std::unique_ptr<ScriptHost::Pack> ScriptHost::makePack(const std::string& id) {
+std::unique_ptr<ScriptHost::Pack> ScriptHost::makePack(const std::string& id, Counters& counters) {
     auto pack = std::make_unique<Pack>();
     pack->host = this;
     pack->id = id;
-    pack->manifest = R"({"id":")" + id + R"("})";
+    // Spelled as JSON spells the id: a plain id may hold a quote or a backslash, which written raw would make the
+    // manifest unreadable, or name another package.
+    pack->manifest = R"({"id":)" + graph::jsonString(id) + "}";
     pack->package = rp_package{RP_ABI_VERSION, pack->manifest.c_str(), 0, nullptr};
+    pack->heap.counters = &counters;  // before its runtime is made, which allocates
     makeRuntimes(*pack);
     return pack;
 }
@@ -1579,15 +1635,16 @@ void ScriptHost::makeRuntimes(Pack& pack) {
     pack.controlRt = JS_NewRuntime();
     pack.control = JS_NewContext(pack.controlRt);
     const JSMallocFunctions counted{&Glue::jsCalloc, &Glue::jsMalloc, &Glue::jsFree, &Glue::jsRealloc, &Glue::jsUsable};
-    pack.heap.counters = &counters_;
     pack.audioRt = JS_NewRuntime2(&counted, &pack.heap);  // QuickJS copies the functions and keeps the opaque
     pack.audio = JS_NewContext(pack.audioRt);
     JS_SetContextOpaque(pack.audio, &pack);  // what a Block method runs in: Glue::packOf
-    // Both runtimes' JS stacks, inside the smallest thread that enters either (the class comment), and what the block
-    // thread runs held to the call deadline, whose state every pack shares: the handler's opaque is the host.
+    // Both runtimes' JS stacks, inside the smallest thread that enters either (the class comment), and what the control
+    // thread runs in either held to its deadline: the audio runtime's handler is the control thread's until join gives
+    // it the block thread's.
     JS_SetMaxStackSize(pack.controlRt, kStackBytes);
     JS_SetMaxStackSize(pack.audioRt, kStackBytes);
-    JS_SetInterruptHandler(pack.audioRt, &Glue::interrupt, this);
+    JS_SetInterruptHandler(pack.controlRt, &Glue::controlInterrupt, this);
+    JS_SetInterruptHandler(pack.audioRt, &Glue::controlInterrupt, this);
 
     // Object.prototype, which a node's methods are never read from (Glue::method): by address, as the context holds it
     // for its life and no script can replace it.
@@ -1647,7 +1704,75 @@ bool ScriptHost::load(std::span<const Chunk> chunks, std::string* error, std::si
     loaded_ = true;
     Pack& pack = *packs_.front();
     pack.heap.limit = memoryLimit ? memoryLimit : kDefaultMemoryLimit;  // before the load, whose allocations it holds
-    return loadInto(pack, chunks, error);
+    const bool loaded = loadInto(pack, chunks, error);
+    join(pack);  // counted in the shared counters from the start: no audio thread runs before the host is loaded
+    return loaded;
+}
+
+bool ScriptHost::canLoadPack(const std::string& id, std::string* error) const {
+    const auto refuse = [&](std::string why) {
+        if (error) *error = std::move(why);
+        return false;
+    };
+    if (!graph::isPlainId(id))
+        return refuse("pack id " + graph::jsonString(id) +
+                      " must be non-empty, with no whitespace or control characters");
+    if (id == kBuiltInPack) return refuse(std::string(kBuiltInPack) + " is the built-in pack, which is not reloadable");
+    if (id == "rp" || id.rfind("rp.", 0) == 0)
+        return refuse("pack id " + graph::jsonString(id) +
+                      " is the app's to give: \"rp\" and every id under \"rp.\" name its own packages (its built-in "
+                      "script pack, its native ones)");
+    for (const auto& pack : packs_)
+        if (pack->id == id) return refuse("pack " + graph::jsonString(id) + " is already loaded");
+    return true;
+}
+
+const rp_package* ScriptHost::loadPack(const std::string& id, std::span<const Chunk> chunks, std::size_t memoryLimit,
+                                       std::string* error) {
+    if (!canLoadPack(id, error)) return nullptr;
+    // What its audio runtime allocates until it joins, the load's own, counted apart: this is the control thread, and
+    // the block thread may be counting into the shared counters, which have one writer at a time.
+    Counters loading;
+    auto pack = makePack(id, loading);
+    pack->heap.limit = memoryLimit ? memoryLimit : kDefaultMemoryLimit;  // before the load, whose allocations it holds
+    if (!loadInto(*pack, chunks, error)) {
+        freeRuntimes(*pack);  // counted in `loading` still
+        return nullptr;
+    }
+    // What the load left in cycles goes now, while the pack is still this thread's alone: once a plan places one of
+    // its nodes, its audio runtime is the block thread's, and no block collects.
+    JS_UpdateStackTop(pack->audioRt);
+    JS_RunGC(pack->audioRt);
+    pack->garbage = false;
+    join(*pack);
+    packs_.push_back(std::move(pack));
+    return &packs_.back()->package;
+}
+
+void ScriptHost::discardPack(const rp_package* package) {
+    const auto at =
+        std::find_if(packs_.begin() + 1, packs_.end(), [&](const auto& p) { return &p->package == package; });
+    assert(at != packs_.end() && "discardPack takes a pack loadPack returned, never the built-in one");
+    if (at == packs_.end()) return;
+    freeRuntimes(**at);
+    packs_.erase(at);
+}
+
+std::vector<ScriptHost::PackInfo> ScriptHost::packs() const {
+    std::vector<PackInfo> out;
+    for (const auto& pack : packs_) out.push_back({pack->id, pack->generation});
+    return out;
+}
+
+// The pack's audio runtime joins what every pack shares: what the block thread runs in it held to the call deadline,
+// whose state every pack shares (the handler's opaque is the host), and its allocations counted with every other
+// pack's (and, in a profile build, its auto-GC pinned off with theirs). Not before its load is done, which runs on the
+// control thread while an audio thread may be making a call into another pack: a handler polled in the load would read
+// and write that call's deadline state, and its allocations would be a second writer of the counters.
+void ScriptHost::join(Pack& pack) {
+    JS_SetInterruptHandler(pack.audioRt, &Glue::interrupt, this);  // in place of the control thread's
+    pack.heap.counters = &counters_;
+    if (gcPinned_) JS_SetGCThreshold(pack.audioRt, static_cast<std::size_t>(-1));
 }
 
 bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string* error) {
@@ -1656,8 +1781,16 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
         Pack* pack;
         ~Forget() { pack->heap.refused = false; }
     } forget{&pack};
+    // The whole load is one call, held to the control thread's deadline: a top level, a job or a definition that runs
+    // past it refuses the pack, saying so.
+    const Glue::ControlDeadline call(*this);
     auto fail = [&](std::string why) {
         freeTypes(pack);
+        // What a read that failed left pending (the deadline's error among them) goes with the load: the built-in pack
+        // keeps its runtimes, and nothing is to find it there.
+        clearException(pack.control);
+        clearException(pack.audio);
+        if (controlInterrupted_) why = Glue::stopped(*this, "its load") + ": " + why;
         if (error) *error = std::move(why);
         return false;
     };
@@ -1674,10 +1807,14 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
         }
         // What the bundle's top level queued runs now, in this context's runtime: no block has begun.
         runJobs(audioSide ? pack.audioRt : pack.controlRt, kJobsPerCheckpoint, [](JSContext* c) { clearException(c); });
+        if (controlInterrupted_)
+            return fail(std::string("a promise job its top level queued in the ") + (audioSide ? "audio" : "control") +
+                        " context");
     }
     // What the load leaves in cycles in the audio runtime, its top level's and the descriptors' below, goes at the first
-    // quiescent reclaim, rather than waiting for a block's threshold GC. (The production bundle left about 144 KiB while
-    // zod and the DSP kernel were in it; it has left none since B3b.)
+    // quiescent reclaim (the built-in pack's) or before loadPack returns (a loaded pack's), rather than waiting for a
+    // block's threshold GC. (The production bundle left about 144 KiB while zod and the DSP kernel were in it; it has
+    // left none since B3b.)
     pack.garbage = true;
     // The definitions, in the same order in both contexts (the same bundle ran in each).
     JSValue lists[2];
@@ -1717,6 +1854,14 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
         }
         JS_FreeValue(control, id);
         if (type.id.empty()) return fail(at + " has no id");
+        // A loaded pack's types are named under its id (the built-in pack's predate the rule: rp.midi.route, ...), so
+        // its namespace meets another's only where one pack's id runs on into another's ("a" beside "a.b", or "rp.midi"
+        // beside the built-in rp.midi.route), and there the registry refuses the type a second pack would take.
+        if (pack.id != kBuiltInPack &&
+            (type.id.size() <= pack.id.size() + 1 || type.id.compare(0, pack.id.size(), pack.id) != 0 ||
+             type.id[pack.id.size()] != '.'))
+            return fail(at + " (" + type.id + ") is outside pack " + graph::jsonString(pack.id) +
+                        ": its type ids are " + graph::jsonString(pack.id + ".<name>"));
         JSValue audioId = JS_GetPropertyStr(audio, type.audio, "id");
         const char* audioText = JS_IsString(audioId) ? JS_ToCString(audio, audioId) : nullptr;
         const bool same = audioText && type.id == audioText;
@@ -1744,8 +1889,11 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
         }
         type.abi = rp_node_type{type.id.c_str(), &Glue::descriptor, &Glue::layoutFor, &Glue::queryMemory,
                                 &Glue::create, &Glue::destroy, RP_TYPE_STATELESS_PREPARE, &type};
+        // A read the deadline stopped that left no exception behind (a getter on a flag): refused all the same.
+        if (controlInterrupted_) return fail(at + " (" + type.id + ")");
     }
     runJobs(pack.audioRt, kJobsPerCheckpoint, [](JSContext* c) { clearException(c); });  // what the descriptors queued there
+    if (controlInterrupted_) return fail("a promise job its descriptors queued");
     // Each type's span label, in registration order (spanLabelFor).
     for (const auto& t : pack.types) t->spanLabel = spanLabelFor(t->id);
     pack.typeList.clear();
@@ -1959,8 +2107,10 @@ bool ScriptHost::resetAllocStats(bool disableAutoGc) {
     maxBlockAllocs_.store(0, std::memory_order_relaxed);
     maxBlockBytes_.store(0, std::memory_order_relaxed);
     // QuickJS checks its threshold only as it makes an object, so SIZE_MAX means a collection never starts by itself.
-    if (disableAutoGc)
+    if (disableAutoGc) {
+        gcPinned_ = true;  // a pack loaded later joins pinned
         for (const auto& pack : packs_) JS_SetGCThreshold(pack->audioRt, static_cast<std::size_t>(-1));
+    }
     return true;
 }
 

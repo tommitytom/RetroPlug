@@ -19,10 +19,12 @@
 #include "native/core/img/png/lodepng.h"
 
 #include "graph/CanonicalJson.hpp"
+#include "graph/Descriptor.hpp"
 #include "graph/GraphHost.hpp"
 #include "graph/HostNodes.hpp"
 #include "graph/Queue.hpp"
 #include "graph/nodes/CoreNodes.hpp"
+#include "host/dsp/ScriptCompiler.hpp"
 #include "host/engine/DspCommand.hpp"
 #include "host/graph/HostIoNodes.hpp"
 #include "host/graph/HostServices.hpp"
@@ -103,8 +105,13 @@ std::span<const rp::host::ScriptHost::Chunk> embeddedScripts() {
 // before the core handoff and the engine services (the host I/O, the sync trace) its nodes call into, and before the
 // script host its script nodes release their instances through.
 struct Engine::Graph {
-    // First, so it goes last: the script nodes the host destroys hand their instances back to it.
+    // First, so it goes last: the script nodes the host destroys hand their instances back to it, and its packs' types
+    // are the registry's script entries.
     rp::host::ScriptHost                   script;
+    // Filled at construction and by loadScriptPack, on the control thread, which is where every plan is made too
+    // (setGraph, and reactivate, quiescent), so an addPackage never overlaps a find (NodeRegistry's threading rule).
+    // Nothing on the audio thread reads it: a plan's instances carry their entries, which only the control thread reads
+    // (to destroy a node, as it frees the plan that held it), and an entry never moves.
     rp::graph::NodeRegistry                registry;
     rp::graph::ResourceTable               resources;
     rp::host::HostCores                    cores{};
@@ -121,7 +128,7 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
       pendingMidi_(rp::host::kHostMidiInMessages, rp::host::kHostMidiInBytes),
       pendingControllerMidi_(rp::host::kControllerInMessages, rp::host::kControllerInBytes) {
     graph_ = std::make_unique<Graph>();
-    // The script node types first: the bundle runs in both of the script host's contexts, and its definitions become
+    // The script node types first: the bundle runs in both of the built-in pack's contexts, and its definitions become
     // one more package. One that will not load registers no type, so a document naming one is refused (unknown-type).
     std::string why;
     if (!graph_->script.load(scriptBundle, &why))
@@ -385,6 +392,43 @@ std::uint32_t Engine::faultCount() const { return graph_->host->faultCount(); }
 std::uint32_t Engine::droppedMessages() const { return graph_->host->droppedMessages(); }
 
 std::uint32_t Engine::scriptThrows() const { return graph_->script.throwCount(); }
+
+Engine::ScriptPackResult Engine::loadScriptPack(const std::string& id, const std::string& source,
+                                                std::size_t memoryLimit) {
+    ScriptPackResult out;
+    rp::host::ScriptHost& script = graph_->script;
+    // The id first: a refused one is refused whatever its source says, and costs no compile.
+    if (!script.canLoadPack(id, &out.error)) return out;
+    std::string why;
+    const auto bytecode = dsp::compileToBytecode(source, &why);
+    if (!bytecode) {
+        out.error = "the source does not compile: " + why;
+        return out;
+    }
+    const rp::host::ScriptHost::Chunk chunk{*bytecode};
+    const rp_package* package = script.loadPack(id, {&chunk, 1}, memoryLimit, &out.error);
+    if (!package) return out;
+    // Checked here as every package is: a descriptor the planner could not use, or a package or type id the registry
+    // holds already (a pack named as a native package, or one whose namespace holds another's: "a" and "a.b" can both
+    // name a type "a.b.c"). Refused, the pack goes: nothing placed it.
+    if (!graph_->registry.addPackage(package, &why)) {
+        script.discardPack(package);
+        out.error = "the registry refused the pack's types: " + why;
+        return out;
+    }
+    for (std::uint32_t k = 0; k < package->node_type_count; ++k) {
+        const auto* entry = graph_->registry.find(package->node_types[k]->id);
+        out.types.push_back({entry->descriptor.id, rp::graph::descriptorJson(entry->descriptor)});
+    }
+    out.ok = true;
+    return out;
+}
+
+void Engine::setScriptCallDeadline(std::chrono::milliseconds limit) { graph_->script.setCallDeadline(limit); }
+
+std::vector<rp::host::ScriptHost::PackInfo> Engine::scriptPacks() const { return graph_->script.packs(); }
+
+std::size_t Engine::nodeTypeCount() const { return graph_->registry.size(); }
 
 rp::host::DspAllocStats Engine::dspAllocStats() const { return graph_->script.allocStats(); }
 bool Engine::resetDspAllocStats(bool disableAutoGc) { return graph_->script.resetAllocStats(disableAutoGc); }

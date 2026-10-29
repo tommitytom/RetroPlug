@@ -152,7 +152,7 @@ add_library(retroplug-backend STATIC
     src/system/CoreBackends.cpp             # registerCoreBackends: mounts sameboy + mesen on a factory
     src/system/sameboy/SameBoyBackend.cpp   # SameBoy builder — the only place SameBoyConfig is constructed
     src/system/mesen/MesenBackend.cpp       # Mesen builder — NES + GBA (HLE BIOS), dispatched on platform
-    src/host/dsp/ScriptCompiler.cpp         # bare-QuickJS bytecode compiler (the engine-graph tests' toy nodes)
+    src/host/dsp/ScriptCompiler.cpp         # bare-QuickJS bytecode compiler (script packs' source, the tests' toys)
     src/host/script/ScriptHost.cpp          # the script-node runtime: TS nodes behind the C ABI, two bare contexts
     src/host/render/RenderHost.cpp          # bare-QuickJS render host (own Engine, runs the worker bundle)
     src/host/render/RenderJobRegistry.cpp   # background render jobs — one worker thread each, cancellable

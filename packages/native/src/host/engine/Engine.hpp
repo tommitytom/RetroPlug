@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -60,7 +61,8 @@ struct EngineFrame {
 
 // The core of the host: the graph the systems run on (docs/modular-graph-phase-b1-design.md), the script host its TS
 // nodes run in, the MIDI routing, the controller and each role's protocol node among them
-// (docs/modular-graph-phase-b3b-design.md section 2), the staged MIDI and the snapshot registry. Structure reaches it
+// (docs/modular-graph-phase-b3b-design.md section 2), and the types of any script node pack loaded beside them
+// (docs/modular-graph-phase-c1-design.md), the staged MIDI and the snapshot registry. Structure reaches it
 // as graph documents TS builds (docs/modular-graph-phase-b2-design.md), planned on the control thread; every other
 // edit is a command on the GraphHost's one ring, applied at the next drain. A removed core is freed on the control
 // thread, with the plan that last ran it. Transport and ppq are plain members, set per block by whoever drives it; its
@@ -244,6 +246,36 @@ public:
     std::uint32_t droppedMessages() const;
     // Throws caught in the script nodes so far (ScriptHost::throwCount): any thread, as faultCount.
     std::uint32_t scriptThrows() const;
+
+    // --- script node packs (docs/modular-graph-phase-c1-design.md section 7), control thread ---
+    struct ScriptPackType {
+        std::string id;
+        std::string descriptor;  // as the registry holds it: canonical JSON, every field spelled
+    };
+    struct ScriptPackResult {
+        bool                        ok = false;
+        std::string                 error;   // why not, when not
+        std::vector<GraphError>     errors;  // the planner's, when a replan refused (a load makes no plan: none)
+        std::vector<ScriptPackType> types;   // the pack's, in registration order
+    };
+    // Load a pack of script node types named `id`: `source` is global code (the IIFE a bundler makes, appending its
+    // defineNode results to __rp_scriptNodes as the built-in bundle does: packages/retroplug/src/script/register.ts),
+    // compiled here and run in runtimes of the pack's own (ScriptHost::loadPack), its audio runtime held to
+    // `memoryLimit` bytes (0: ScriptHost::kDefaultMemoryLimit); then its types join the registry, so a document can
+    // place them from the next setGraph on. Callable while an audio thread runs blocks: the pack is built here, and the
+    // block thread meets it only in a plan that places one of its nodes. Refused, changing nothing, with the reason in
+    // `error`: an id ScriptHost::canLoadPack refuses (checked first, before the source is compiled: one of the app's,
+    // "rp" and under, among them), a compile error (its line), a pack ScriptHost::loadPack refuses (a definition it
+    // cannot read, a type id outside the pack's namespace, a load past the call deadline), or one the registry refuses
+    // (a descriptor it cannot use, a type id another pack holds already).
+    ScriptPackResult loadScriptPack(const std::string& id, const std::string& source, std::size_t memoryLimit = 0);
+    // How much of the calling thread's CPU time one call into a script pack's JS may use, on either side
+    // (ScriptHost::setCallDeadline): set it before an audio thread runs blocks.
+    void setScriptCallDeadline(std::chrono::milliseconds limit);
+    // The script host's packs, the built-in one first (ScriptHost::packs).
+    std::vector<rp::host::ScriptHost::PackInfo> scriptPacks() const;
+    // The node types a document can name: the registry's, native and script.
+    std::size_t nodeTypeCount() const;
 
 private:
     struct Graph;
