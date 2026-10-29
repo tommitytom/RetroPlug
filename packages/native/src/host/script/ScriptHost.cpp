@@ -91,6 +91,28 @@ struct TextOut {
     }
 };
 
+// A pack's memory limit as every refusal at it says it: "64 MiB memory limit" when it is a whole number of
+// mebibytes, else "65536-byte memory limit". Into `t`, so the block thread says it allocating nothing.
+void addLimit(TextOut& t, std::size_t limit) {
+    constexpr std::size_t kMiB = std::size_t{1} << 20;
+    if (limit % kMiB == 0) {
+        t.number(static_cast<long long>(limit / kMiB));
+        t.add(" MiB");
+    } else {
+        t.number(static_cast<long long>(limit));
+        t.add("-byte");
+    }
+    t.add(" memory limit");
+}
+
+// The same, as a string (control thread).
+std::string limitText(std::size_t limit) {
+    char text[48];
+    TextOut t{text, sizeof text};
+    addLimit(t, limit);
+    return std::string(text, t.n);
+}
+
 void copyError(rp_error* err, std::string_view what) {
     if (err) copyText(err->message, sizeof err->message, what);
 }
@@ -194,6 +216,8 @@ bool sameObject(JSValueConst a, JSValueConst b) {
     return JS_IsObject(a) && JS_IsObject(b) && JS_VALUE_GET_PTR(a) == JS_VALUE_GET_PTR(b);
 }
 
+// The bytes the platform's allocator gave `p`: what a pack's runtimes count against its memory limit, so a platform
+// that cannot say is one the limit cannot hold, and is refused here rather than built with the limit silently off.
 std::size_t usableSize(const void* p) {
 #if defined(__APPLE__)
     return malloc_size(p);
@@ -202,8 +226,7 @@ std::size_t usableSize(const void* p) {
 #elif defined(__linux__) || defined(__GLIBC__)
     return malloc_usable_size(const_cast<void*>(p));
 #else
-    (void)p;
-    return 0;
+#error "the script host's memory limit needs the allocator's usable size of a block on this platform"
 #endif
 }
 
@@ -1198,17 +1221,9 @@ struct ScriptHost::Glue {
     // null: no node's), which faults it.
     static void recordRefusal(ScriptHost& h, const Pack& pack, const char* type, const char* where) {
         countThrow(h, [&](TextOut& t) {
-            constexpr std::size_t kMiB = std::size_t{1} << 20;
             t.add(type ? type : where);
             t.add(" reached its pack's ");
-            if (pack.heap.limit % kMiB == 0) {
-                t.number(static_cast<long long>(pack.heap.limit / kMiB));
-                t.add(" MiB");
-            } else {
-                t.number(static_cast<long long>(pack.heap.limit));
-                t.add("-byte");
-            }
-            t.add(" memory limit");
+            addLimit(t, pack.heap.limit);
             if (type) {
                 t.add(" in ");
                 t.add(where);
@@ -1889,13 +1904,8 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
         // A load the memory limit refused an allocation says so: the limit holds the whole audio runtime, its
         // intrinsics included, and once it cannot even make its out-of-memory error QuickJS throws null, which says
         // nothing.
-        if (pack.heap.refused) {
-            constexpr std::size_t kMiB = std::size_t{1} << 20;
-            why += " (the load went past the pack's " +
-                   (pack.heap.limit % kMiB == 0 ? std::to_string(pack.heap.limit / kMiB) + " MiB"
-                                                : std::to_string(pack.heap.limit) + "-byte") +
-                   " memory limit)";
-        }
+        if (pack.heap.refused)
+            why += " (the load reached the pack's " + limitText(pack.heap.limit) + ")";
         if (error) *error = std::move(why);
         return false;
     };

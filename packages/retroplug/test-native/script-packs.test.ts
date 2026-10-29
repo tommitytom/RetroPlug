@@ -189,7 +189,7 @@ test("a refusal before any replan says why, with no planner errors, and changes 
   // One too small for the load: the limit holds the pack's whole audio runtime, its intrinsics included.
   refused(
     { id: "test.limit", source: TOY + transposer("test.limit.up", 1), memoryLimitBytes: 64 * 1024 },
-    "(the load went past the pack's 65536-byte memory limit)",
+    "(the load reached the pack's 65536-byte memory limit)",
   );
   // A top level that throws.
   refused({ id: "test.throws", source: TOY + "throw new Error('not today');" }, "chunk 0: Error: not today");

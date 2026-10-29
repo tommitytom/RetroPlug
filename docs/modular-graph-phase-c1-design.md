@@ -454,8 +454,8 @@ is written from it; the prototype is where the questions below are answered (eac
 - **A memory limit too small for the runtime itself refuses every load, and QuickJS said `null`.** The limit holds the
   audio runtime's intrinsics (about 90 KB) and its loaded code, so 64 KiB refuses a two-node toy's load (256 KiB loads
   it), and once QuickJS cannot make its out-of-memory error it throws `null`: the load said only `chunk 0: null`. The
-  fifth commit has a load the limit refused say so, `(the load went past the pack's 65536-byte memory limit)`, and
-  `test:native` holds it.
+  fifth commit has a load the limit refused say so, `(the load reached the pack's 65536-byte memory limit)` (in the
+  words a node's refusal uses, "reached its pack's N MiB memory limit"), and `test:native` holds it.
 - **A pack compiled from source keeps its debug information.** The built-in bundle is compiled stripped (`tjsc -s`);
   `compileToBytecode` keeps the lines a thrown error's stack names, which a dev loop wants, so the production bundle's
   source loaded as a pack holds about 366 KB in its audio runtime, where the stripped bundle loaded to 296 (section
