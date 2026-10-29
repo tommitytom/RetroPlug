@@ -61,10 +61,10 @@ struct AudioCaptured { double energy; std::uint64_t frames; };
 // concurrent FrameBufferTriple, so it is safe to fetch while the audio thread renders.
 struct RpcFrame { std::uint32_t width; std::uint32_t height; bool published; rfl::Bytestring data; };
 
-// One host MIDI-out message, under the system whose node sent it (an LSDj sync node's MI.OUT or master-sync
-// decoder, or the controller session driving a real Game Boy). `data` is the raw MIDI bytes (msgpack BIN -> JS
-// Uint8Array). Accumulated across a renderAudio loop and returned by
-// drainMidiOut for headless tests — the plugin drains Engine::midiOut() to the DAW directly instead.
+// One host MIDI-out message, under the system whose node sent it (an LSDj's rp.lsdj.serial-out, decoding MI.OUT or
+// master sync, or the controller session driving a real Game Boy). `data` is the raw MIDI bytes (msgpack BIN -> JS
+// Uint8Array). Accumulated across a renderAudio loop and returned by drainMidiOut for headless tests; the plugin
+// drains Engine::midiOut() to the DAW directly instead.
 struct RpcMidiOut { std::uint32_t system; std::uint32_t frame; rfl::Bytestring data; };
 
 // renderBlocks (harness facet): render a scripted run of host blocks exactly as the plugin would hand

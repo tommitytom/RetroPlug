@@ -48,9 +48,9 @@ export function controllerTarget(
  *  row bytes - so enabling a Launchpad on a fresh cart produced a cart being clocked for a mode it was not
  *  in, launches that went nowhere, and LSDj sitting on "WAIT". Reported from a hardware session.
  *
- *  The override is applied to the document, to that cart's lsdj-sync node's settings alone, rather than written
- *  into the project, which is what makes it safe: nothing reaches the `.rplg`, and turning the controller off
- *  restores whatever the user had.
+ *  The override is applied to the document, to the settings of that cart's two lsdj-sync nodes alone (its
+ *  rp.lsdj.sync and its serial-out decoder), rather than written into the project, which is what makes it safe:
+ *  nothing reaches the `.rplg`, and turning the controller off restores whatever the user had.
  *
  *  `off` when the CART's own SYNC says it is not in MI.MAP. That is not politeness - a cart in LSDJ (master)
  *  mode drives the link itself, so our clock bytes collide with its own and LSDj reports TOO BUSY and stops

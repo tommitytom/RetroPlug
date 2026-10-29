@@ -297,21 +297,24 @@ test("every protocol node type, both controller targets and every routing mode a
   expect([...modes].sort()).toEqual([...MIDI_ROUTING_VALUES].sort());
 });
 
-test("every wire that is not a feedback wire runs forward in its document's node order", () => {
+test("every wire runs forward in its document's node order, and none is a feedback wire", () => {
   // The engine orders nodes topologically, breaking ties by document order, and a feedback wire orders nothing. The rig of
   // packages/native/test/engine-graph/ProtocolNodes.test.cpp leaves out the cart mirror and the audio nodes and runs
   // the script nodes in that order, which holds only while no wire runs backward into one of them: a future wire from
-  // the mirror or an audio node into a script node would reorder production silently while the rig stayed green.
-  const backward: string[] = [];
+  // the mirror or an audio node into a script node would reorder production silently while the rig stayed green. No
+  // document buildGraph builds holds a feedback wire (LSDj's decoder reads its Game Boy's serial out over a forward
+  // one, in the same block), so one is refused here as a backward wire is, rather than passed over: a feedback wire
+  // into a script node would hand it the last block's values, which nothing here would show.
+  const refused: string[] = [];
   for (let d = 0; d < goldens.documents.length; d++) {
     const doc = goldens.documents[d] as { nodes: { id: string }[]; wires: { from: string; to: string; feedback?: boolean }[] };
     const index = (endpoint: string): number => doc.nodes.findIndex((n) => n.id === endpoint.split(".")[0]);
     for (const w of doc.wires) {
-      if (w.feedback === true) continue;
       const from = index(w.from);
       const to = index(w.to);
-      if (from < 0 || to < 0 || from >= to) backward.push(`document ${d}: ${w.from} -> ${w.to} (${from} -> ${to})`);
+      if (w.feedback !== undefined) refused.push(`document ${d}: ${w.from} -> ${w.to} is a feedback wire`);
+      else if (from < 0 || to < 0 || from >= to) refused.push(`document ${d}: ${w.from} -> ${w.to} (${from} -> ${to})`);
     }
   }
-  expect(backward).toEqual([]);
+  expect(refused).toEqual([]);
 });

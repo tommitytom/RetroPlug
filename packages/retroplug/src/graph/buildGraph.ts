@@ -152,10 +152,10 @@ export function buildGraph(model: GraphModel): BuiltGraph {
   };
 
   nodes.push({ id: "midi-in", type: "rp.host.midi-in" }, { id: "controller-in", type: "rp.host.controller-in" });
-  // A script node reads only nodes placed before it in the document, or a feedback wire, so the plan runs the script
-  // nodes in document order: the planner orders nodes topologically and breaks ties by document order (Planner.cpp
-  // order()), and a feedback wire orders nothing. So the nodes that feed the systems go before them, and a node that
-  // reads what a system sent goes after the systems.
+  // Every node reads only nodes placed before it in the document, but over a feedback wire, so the plan runs the nodes,
+  // the script nodes among them, in document order: the planner orders nodes topologically and breaks ties by document
+  // order (Planner.cpp order()), and a feedback wire orders nothing. So the nodes that feed the systems go before them,
+  // and a node that reads what a system sent goes after the systems.
   //
   // The routing: the host's MIDI fanned out to the systems in slot order (positional routing reads it), an output
   // for each, sys-<id>.
@@ -177,7 +177,8 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     // Driving a cart, it sends no host MIDI; it is wired all the same, as the kernel tagged its MIDI out either way.
     hostMidi.push({ from: "controller.midiOut", system: target });
   }
-  // The MI.MAP controller's cart, in the lsdj-sync mode it needs: that node's settings alone, never the project's.
+  // The MI.MAP controller's cart, in the lsdj-sync mode it needs: the settings of that role's two nodes alone (its
+  // rp.lsdj.sync and its serial-out decoder), never the project's.
   const sync = controllerSyncOverride(systems, controller);
   // The nodes placed after the systems, in slot order, then pipeline order: each role's second node, and the system
   // output it reads, if any.

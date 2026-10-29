@@ -76,3 +76,17 @@ test("every type a role kind is placed as, every type PROTOCOL_NODES names and e
   // in the bundle.
   expect([...new Set([...Object.values(ROLE_NODES), ...outs])].sort()).toEqual(Object.keys(PROTOCOL_NODES).sort());
 });
+
+test("a type reads its system's serial out only as some entry's `out`, and an `out` reads neither routed MIDI nor launches", () => {
+  // buildGraph wires `serialOut` only into a node it places after the systems, as a role's `out`, and wires neither
+  // `midiIn` nor `launches` into one: a type that read the serial out as a role's first node, or an `out` that read
+  // MIDI or launches, would have an input the document leaves unwired, and nothing would say so.
+  const specs = Object.entries(PROTOCOL_NODES) as [ProtocolNodeType, ProtocolNodeSpec][];
+  const outs = new Set(specs.map(([, spec]) => spec.out).filter((out) => out !== undefined));
+  for (const [type, spec] of specs) {
+    if (spec.serialOut) expect(outs.has(type), `${type} reads serialOut`).toBe(true);
+    if (!outs.has(type)) continue;
+    expect(spec.midiIn, `${type} is an out`).toBe(null);
+    expect(spec.launches, `${type} is an out`).toBe(undefined);
+  }
+});

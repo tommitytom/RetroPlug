@@ -1031,10 +1031,10 @@ TEST_CASE("a throw in a protocol node keeps what was sent before it and runs the
 
 TEST_CASE("each structure's script nodes run in the order buildGraph's document places them",
           "[engine-graph][protocol-nodes]") {
-    // Production plans the script nodes in their document order: a script node reads only nodes placed before it, or a
-    // feedback wire, which orders nothing (test/graph/build-graph-role-goldens.test.ts holds every golden document to
-    // that), and the planner breaks ties by document order. The rig must run
-    // them in that order too, or a case that holds what one node does to the nodes after it (the throw) holds nothing.
+    // Production plans the script nodes in their document order: every node reads only nodes placed before it, but over
+    // a feedback wire, which orders nothing (test/graph/build-graph-role-goldens.test.ts holds every golden document to
+    // that, and to holding no feedback wire), and the planner breaks ties by document order. The rig must run them in
+    // that order too, or a case that holds what one node does to the nodes after it (the throw) holds nothing.
     // So each structure is planned and run a block with every script node's process recorded as it is called (the wrap
     // injected below, through __probe), and the record is held to buildGraph's script nodes in document order, each by
     // its type and settings: two nodes of one type with one settings (the throw structure's two mGB nodes) are not told

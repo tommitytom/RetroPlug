@@ -208,13 +208,14 @@ struct GameBoy : SystemNode<GameBoy, SameBoySystem> {
         return 8;
     }
 
-    // MI.OUT and master sync (section 3.2 of docs/modular-graph-phase-b3a-design.md): the bytes the core captured on its
-    // serial port this block, each at the frame the core completed it, which master sync's decoder times its stop by
-    // (docs/lsdj-master-sync-fix-design.md). A stamp can lie at or past the block's end two ways: the core runs an
-    // instruction at a time, so it can complete a byte past the block's end, and the drive path counts the frame before
-    // it captures (SameBoySystem::writeAudioSample), so its stamps run 1..frames and a byte completed in the block's last
-    // sample is stamped `frames`. Either is stamped at the block's last frame, so a block's messages always lie inside
-    // it. Copied, not drained: the core clears the log at its next prepareForBlock.
+    // MI.OUT and master sync (section 3.2 of docs/modular-graph-phase-b3a-design.md): the bytes the core captured on
+    // its serial port this block, each at the frame the core completed it: rp.lsdj.serial-out sends each message it
+    // decodes at its completing byte's frame (docs/lsdj-serial-out-design.md), and times master sync's stop from the
+    // newest byte's (docs/lsdj-master-sync-fix-design.md). A stamp can lie at or past the block's end two ways: the
+    // core runs an instruction at a time, so it can complete a byte past the block's end, and the drive path counts the
+    // frame before it captures (SameBoySystem::writeAudioSample), so its stamps run 1..frames and a byte completed in
+    // the block's last sample is stamped `frames`. Either is stamped at the block's last frame, so a block's messages
+    // always lie inside it. Copied, not drained: the core clears the log at its next prepareForBlock.
     void writeQueues(std::uint32_t frames) noexcept {
         if (!connected[kSerialOut]) return;
         for (const auto& entry : core->serialOutLog_)
