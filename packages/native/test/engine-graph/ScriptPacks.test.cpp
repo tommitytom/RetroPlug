@@ -1362,6 +1362,35 @@ TEST_CASE("a pack's generation numbers only increase: every load of its id takes
     CHECK(e.faultCount() == 0);
 }
 
+TEST_CASE("a core parked since the last request stays parked across a reload's replan, for the document that places it",
+          "[script][packs][reload]") {
+    using rp::host::test::DocSystem;
+    using rp::host::test::kNesType;
+    Engine e(kRate);
+    load(e, "test.park", toys(tally("test.park.count", 1)));
+    const std::vector<std::string> nodes{docNode("count", "test.park.count"), midiOut("1")};
+    const std::vector<std::string> wires{docWire("count.out", "midi-out.in1")};
+    place(e, document(nodes, wires));
+    CHECK(block(e) == std::vector<Out>{{1, 0, {1, 1}}});
+    // A core built for the next document, parked after the last request was published, as TS parks one before the
+    // setGraph that places it.
+    MesenNesConfig cfg;
+    cfg.romPath = RP_BLIPTOASTER_ROM_PATH;
+    auto core = std::make_unique<MesenNesSystem>(1, cfg, rp::host::test::readFile(RP_BLIPTOASTER_ROM_PATH));
+    core->onActivate(kRate);
+    REQUIRE(e.parkCore(std::move(core)));
+    // The reload replans the running document, which places no system: the core is left where it was.
+    load(e, "test.park", toys(tally("test.park.count", 2)));
+    CHECK(block(e) == std::vector<Out>{{1, 0, {2, 1}}});
+    CHECK(e.coreLive(1));
+    CHECK(e.findSystem(1) == nullptr);
+    place(e, graphRequest(stereoDocument({DocSystem{1, kNesType}}, DocExtras{nodes, wires}), {1}));
+    CHECK(e.findSystem(1) != nullptr);
+    CHECK(block(e) == std::vector<Out>{{1, 0, {2, 2}}});
+    CHECK(e.scriptThrows() == 0);
+    CHECK(e.faultCount() == 0);
+}
+
 TEST_CASE("a reload's replan carries the running plan's tap as it is: neither restored nor armed again",
           "[script][packs][reload]") {
     using rp::host::test::DocSystem;
@@ -1395,20 +1424,26 @@ TEST_CASE("a reload's replan carries the running plan's tap as it is: neither re
 }
 
 #ifdef RETROPLUG_PROFILE
+namespace {
+
+// A pack of one node, test.loop.count, a tally that on its first block keeps 32 KiB in its realm (a global), which
+// outlives its instance and goes only with its pack's runtimes.
+std::string keeper(int tag) {
+    return toys("toy.define('test.loop.count', [toy.output('out')], function () {\n"
+                "  var n = 0;\n"
+                "  return { process: function (b) {\n"
+                "    if (n === 0) globalThis.kept = new Float64Array(4096);\n"
+                "    b.send('out', 0, [" + std::to_string(tag) + ", ++n & 0x7f]);\n"
+                "  } };\n"
+                "});\n");
+}
+
+}  // namespace
+
 TEST_CASE("a type keeps its span label across its pack's reloads, the trace's name table does not grow, and what each "
           "freed generation's realm kept leaves the live heap with it",
           "[script][packs][reload][profile][trace]") {
-    // A tally that, on its first block, keeps 32 KiB in its realm (a global), which outlives its instance and goes only
-    // with its pack's runtimes.
-    const auto source = [](int tag) {
-        return toys("toy.define('test.loop.count', [toy.output('out')], function () {\n"
-                    "  var n = 0;\n"
-                    "  return { process: function (b) {\n"
-                    "    if (n === 0) globalThis.kept = new Float64Array(4096);\n"
-                    "    b.send('out', 0, [" + std::to_string(tag) + ", ++n & 0x7f]);\n"
-                    "  } };\n"
-                    "});\n");
-    };
+    const auto source = keeper;
     Engine e(kRate);
     load(e, "test.loop", source(0));
     place(e, document({docNode("count", "test.loop.count"), midiOut("1")}, {docWire("count.out", "midi-out.in1")}));
@@ -1434,5 +1469,34 @@ TEST_CASE("a type keeps its span label across its pack's reloads, the trace's na
     }
     // Fifty generations each kept 32 KiB, and each took it with it: the live heap is where one generation's was.
     CHECK(std::abs(e.dspAllocStats().liveBytesDelta) < 16 * 1024);
+}
+
+TEST_CASE("a generation freed under an audio thread leaves what its realm kept in the live heap until the audio thread "
+          "hands the runtimes back, which takes it off",
+          "[script][packs][reload][profile]") {
+    Engine e(kRate);
+    load(e, "test.loop", keeper(1));
+    place(e, document({docNode("count", "test.loop.count"), midiOut("1")}, {docWire("count.out", "midi-out.in1")}));
+    CHECK(block(e) == std::vector<Out>{{1, 0, {1, 1}}});
+    REQUIRE(e.resetDspAllocStats(false));  // the allocation window, from the first generation's realm holding its 32 KiB
+    // The test thread is the block thread from here. The reload's replan is published, and the old generation retired
+    // with its node's record out; the block that adopts the replan hands the old plan back, the reclaim after it frees
+    // that plan, queuing the old node's release, the next block releases it, and the reclaim after that finds the
+    // record back and frees the generation.
+    e.setAudioThreadOwns(true);
+    load(e, "test.loop", keeper(2));
+    e.drainCommands();
+    CHECK(block(e) == std::vector<Out>{{1, 0, {2, 1}}});
+    e.reclaim();
+    CHECK(block(e) == std::vector<Out>{{1, 0, {2, 2}}});
+    e.reclaim();
+    CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.loop#2"});
+    // Its runtimes were freed on the control thread while the block thread may have been writing the live heap's count,
+    // so what its realm kept is still in it, beside the new generation's 32 KiB, until no audio thread runs.
+    CHECK(e.dspAllocStats().liveBytesDelta > 24 * 1024);
+    e.setAudioThreadOwns(false);
+    CHECK(std::abs(e.dspAllocStats().liveBytesDelta) < 16 * 1024);
+    CHECK(e.scriptThrows() == 0);
+    CHECK(e.faultCount() == 0);
 }
 #endif

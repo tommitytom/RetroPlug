@@ -349,7 +349,9 @@ bugs), belong with the authoring and package-split work.
     another pack's namespace holds;
   - reload: the pack's nodes run the new code, a node of another pack (and a built-in one) keeps its instance and its
     JS state across it, a type added by the reload places, and a refused reload (a type the document places removed,
-    settings the new code rejects) returns the planner's errors with the old code still running;
+    settings the new code rejects) returns the planner's errors with the old code still running; generation numbers
+    only increase, refused loads counted, however soon a refused generation is freed; which generation of an id the
+    script host holds as current;
   - freeing: a retired generation's runtimes are freed once its records come back, quiescent and under an audio thread
     driving blocks, and a reload loop frees every generation it replaces; a pack the registry refuses is discarded with
     nothing in an audio-side count; a reload refused `busy` under an audio thread, after its replan made a fresh
@@ -368,7 +370,9 @@ bugs), belong with the authoring and package-split work.
   - the control thread's deadline: a load that never returns refused, a settings check that never returns refusing its
     document while the running plan runs on, its clock its own while an audio thread makes calls into another pack;
   - a load under an audio thread driving blocks, and a reload under one, its old generation freed by a later reclaim;
-  - a reload's replan carrying the running plan's tap as it is, and a type's span label kept across fifty reloads.
+  - a reload's replan carrying the running plan's tap as it is, and leaving a core parked since the last request
+    parked; a type's span label kept across fifty reloads; and, in a profile build, a freed generation's share of the
+    live heap taken off within the call while quiescent, and under an audio thread once it hands the runtimes back.
 - **The ThreadSanitizer and AddressSanitizer passes** (`tools/run-sanitizer.sh`) cover reloading under a running audio
   thread.
 - **`test:native`**, a `script-packs` case through the real host
