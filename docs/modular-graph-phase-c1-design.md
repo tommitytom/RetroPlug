@@ -635,6 +635,6 @@ is written from it; the prototype is where the questions below are answered (eac
   never settles) or reloading its pack clears it, and a per-node invalid state is the authoring work's to choose
   (section 12).
 - **A load did not reclaim first.** `setGraph`, and the `buildCore` RPC through `reclaim`, take back what the audio
-  thread has handed back before anything else, and a load did not: under an audio thread, a reload that replanned
-  nothing, or was refused, freed no generation an earlier reload had replaced, and one that replanned freed them only
-  after building its own. Every load reclaims first (section 5).
+  thread has handed back before anything else, and a load did not: under an audio thread, a first load of a new id, a
+  reload that replanned nothing, or one refused before replanning, freed no generation an earlier reload had replaced,
+  and one that replanned freed them only after building its own. Every load reclaims first (section 5).

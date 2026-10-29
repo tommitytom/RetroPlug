@@ -45,7 +45,8 @@ The rules below are the parts that don't fit those.
   built-in one (C1, [docs/modular-graph-phase-c1-design.md](docs/modular-graph-phase-c1-design.md),
   `test/engine-graph/ScriptPacks.test.cpp`) run in runtimes of their own, what one does to its realm reaching no
   other pack's node and its jobs and memory limit faulting only its own, and load, reload and free while an audio
-  thread runs blocks, a refused one changing nothing and a reload's replan carrying the running plan's tap as it is;
+  thread runs blocks, a refused one changing neither the types a document can name nor the running plan and a reload's
+  replan carrying the running plan's tap as it is;
   the protocol script nodes (B3b: the MIDI routing, a
   controller session and each role's protocol node, in the documents `buildGraph` builds, read from its role goldens
   and run in its plan order, `test/engine-graph/ProtocolNodes.test.cpp`) send exactly the digests the DSP kernel they

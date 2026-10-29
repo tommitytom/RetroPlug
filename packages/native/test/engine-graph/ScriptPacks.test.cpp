@@ -3,13 +3,14 @@
 // getter on Object.prototype, Array.prototype.push replaced, a global) no node of another pack sees, its memory limit
 // and its promise jobs fault only its own nodes, and it loads while an audio thread runs blocks. Its id (never one of
 // the app's, "rp" and under), its types' namespace, its source and its definitions are checked, and a refusal leaves
-// the registry and the running plan as they were (a load that got as far as being built still uses up a generation
-// number). Loaded again, it reloads: its placed nodes rebuild on the new code while every other node keeps its instance
-// and its state (the running plan's tap included), a reload whose replan is refused leaves the registry and the running
+// the types a document can name and the running plan as they were (a load that got as far as being built still uses up
+// a generation number, and the reclaim every load makes first may still free retired generations). Loaded again, it
+// reloads: its placed nodes rebuild on the new code while every other node keeps its instance and its state (the
+// running plan's tap included), a reload whose replan is refused leaves the types a document can name and the running
 // plan as they were, the generation it built discarded: freed within the call, or, when under an audio thread the
 // refused plan made a fresh instance of it, held until that instance's record comes back; and the generation a reload
-// replaced is freed on the control thread once its records are back: within the call when no audio thread runs, else
-// at the first reclaim after, every load reclaiming first. The control thread's calls into a pack, its load and its
+// replaced is freed on the control thread once its records are back: within the call when no audio thread runs, else at
+// the first reclaim after, every load reclaiming first. The control thread's calls into a pack, its load and its
 // settings checks, are held to the call deadline on a clock of their own. Driven on an Engine, whose built-in pack is
 // the production bundle, the toy packs inline JS source; and on a ScriptRig, where the host's binder, its allocation
 // counts and the built-in pack's deadline are what is checked.
@@ -1417,8 +1418,8 @@ TEST_CASE("under an audio thread, a load reclaims first: the generation a reload
     load(e, "test.back", toys(tally("test.back.count", 1)));
     place(e, document({docNode("count", "test.back.count"), midiOut("1")}, {docWire("count.out", "midi-out.in1")}));
     CHECK(block(e) == std::vector<Out>{{1, 0, {1, 1}}});
-    // The test thread is the block thread from here, and nothing reclaims but the loads, as in the plugin and SDL, which
-    // reclaim only inside setGraph, buildCore and a load.
+    // The test thread is the block thread from here, and nothing reclaims but the loads, as in the plugin and SDL,
+    // which reclaim only inside setGraph, buildCore and a load.
     e.setAudioThreadOwns(true);
     const auto drained = [&] {
         e.drainCommands();
@@ -1445,7 +1446,8 @@ TEST_CASE("under an audio thread, a load reclaims first: the generation a reload
     CHECK(drained() == std::vector<Out>{{1, 0, {3, 1}}});
     CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.back#1", "test.back#2", "test.back#3"});
     // A load its compile refuses still reclaims first: the record found back frees the first generation, its retired
-    // entries with it, and the plan holding the second's node is handed back to the block thread.
+    // entries with it, and the plan holding the second's node, handed back at that block, is freed, queuing its node's
+    // release to the block thread.
     const auto typo = e.loadScriptPack("test.back", "var x = ;");
     CHECK_FALSE(typo.ok);
     CHECK(packIds(e) == std::vector<std::string>{"rp.script#1", "test.back#2", "test.back#3"});

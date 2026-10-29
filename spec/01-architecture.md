@@ -318,10 +318,11 @@ reclaimed), so a new core always plans as a new instance. A core no published
 document placed is freed by the engine once a document plans without it, releasing its slot the same
 way.
 
-`reclaim` runs at every `setGraph`, in every inline flush (quiescent), and at the hosts' stop and
-deactivate points; it returns the number of plans freed and is exposed on the wire as
-`drainReleased` (`QueuedInvoker::reclaimReleased`) for the test host to pump while running. A
-removed core is freed at the first of those after the audio thread has moved past it.
+`reclaim` runs at every `setGraph`, every `loadScriptPack` and every `buildCore` RPC, in every
+inline flush (quiescent), and at the hosts' stop and deactivate points; it returns the number of
+plans freed and is exposed on the wire as `drainReleased` (`QueuedInvoker::reclaimReleased`) for
+the test host to pump while running. A removed core is freed at the first of those after the audio
+thread has moved past it.
 
 **Leak, don't block.** If the release ring is full (512 unreclaimed plans; `setGraph` reclaims before every publish, so a drain cannot outrun it), the audio thread
 **leaks the plan rather than block or free in the render loop**: it only counts the leak (it must

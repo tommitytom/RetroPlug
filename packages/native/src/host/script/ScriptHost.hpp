@@ -119,11 +119,11 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 //     cycles is collected by a GC of its pack's audio runtime at two points no block is running: the reclaim that ends
 //     a quiescent operation which released some (the Engine's after every setGraph: one GC of each pack that had some
 //     released, however many went), and the audio thread handing the runtimes back (setAudioThreadOwns(false)). The
-//     first reclaim after the built-in pack's load (an Engine's first setGraph, at its top) takes what its bundle's
-//     load left in cycles too, whether or not an instance released anything; a loaded pack's load collects its own
-//     before loadPack returns. Never by a block, so while an audio thread owns the runtimes (a live session) those
-//     cycles wait for QuickJS's own threshold GC, which runs inside whichever block's JS allocates past it in that
-//     runtime, or for the audio thread to hand the runtimes back.
+//     first reclaim after the built-in pack's load (an Engine's first setGraph, at its top: the one its construction
+//     makes, before any loadScriptPack can) takes what its bundle's load left in cycles too, whether or not an instance
+//     released anything; a loaded pack's load collects its own before loadPack returns. Never by a block, so while an
+//     audio thread owns the runtimes (a live session) those cycles wait for QuickJS's own threshold GC, which runs
+//     inside whichever block's JS allocates past it in that runtime, or for the audio thread to hand the runtimes back.
 // A pack is made and loaded on the control thread, its audio side included, so loadPack runs while an audio thread
 // runs blocks in the other packs: the block thread first reaches a pack through an instance of one of its types, in a
 // plan published after its load, and the plan swap's ring (release on push, acquire on adopt) carries the whole built
