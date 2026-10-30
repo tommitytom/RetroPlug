@@ -394,7 +394,7 @@ export interface SystemsStore {
    *  the core as its system node's settings: a model change restarts it and a region change resets it at the
    *  next block. Only construct-time fields need a `reset(id)`: `sdRoot`, the FIFO profile and its
    *  overrides, the N8 link and its round trip, `channelExportMode`, and SMS `enableFm`. A live model or
-   *  region edit lands after the next rendered block, so a `writeRam`, `pressButton` or `stageSystemMidi`
+   *  region edit lands when the next block is rendered, so a `writeRam`, `pressButton` or `stageSystemMidi`
    *  issued right after one in a quiescent session reaches the core the restart replaces: render a block
    *  first when the command must act on the restarted core. False when the system or the role is absent.
    *

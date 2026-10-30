@@ -78,7 +78,7 @@ suffix, never looks for a sibling, never classifies.*
 | `platform` / `core` | What the ROM targets + which factory builds it — TS classifies via [`platform.ts`](../packages/retroplug/src/platform.ts) |
 | `savPath` / `statePath` | The exact battery file (load-from + auto-save-to) and savestate to boot from, or `null` |
 | `sramBytes?` / `stateBytes?` | Seed bytes (zip-import blob, carried battery, role-synthesized sav) that override what native reads from disk; `savPath` stays the auto-save target |
-| `settings?` | The system-role config as JSON, applied **at construct** so a restored savestate isn't nuked by a post-build restart: the construct-time fields reach the core only this way, and its knobs again from its node's settings in the document that places it (`roleConfigForNative` encodes it, its enums as ordinals) |
+| `settings?` | The role schema's parse of the stored system-role config as JSON, applied **at construct** so a restored savestate isn't nuked by a post-build restart: the construct-time fields reach the core only this way, and its knobs again from its node's settings in the document that places it (`roleConfigForNative` encodes the parse, its enums as ordinals) |
 
 `openFileBrowser` is the odd one out and does **not** ride the RPC bridge: it uses the
 UI-direct hooks `__rp_openFileBrowser` / `__rp_onFileBrowserResult` on the shared context

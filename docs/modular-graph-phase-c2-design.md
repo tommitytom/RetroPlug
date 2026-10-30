@@ -174,9 +174,10 @@ The user's, on 2026-10-30:
   its capture in the block the decoder first runs in the new mode); `Engine::setParam` (unknown node or param refused,
   values clamped, an integer value decoded, a later publish of the same value moving nothing); a knob a wire drives is
   clamped to its range; a node's first block plays its gain at the document's level, snapped rather than ramped from 0
-  dB; the restart order after a host command sent behind a plan, and both layers of a knob's guard; no allocation on
-  the block thread for the params path, the knobs a Game Boy applies in place, or a NES's setters but its region
-  reset; the new cases under ThreadSanitizer. And every system node of every document in `buildGraph`'s goldens names
+  dB; the restart order after a host command sent behind a plan, and both layers of a knob's guard; a Game Boy's params
+  and in-place knobs allocate nothing on the block thread, and a NES's settings and params count what an unedited
+  window counts once the block an edit lands in has passed (its region reset allocates, section 10); the new cases
+  under ThreadSanitizer. And every system node of every document in `buildGraph`'s goldens names
   only the settings fields its type's schema lists, and the role goldens' every-node model places a GBA, whose gain
   param reaches a real core (section 10).
 - **`pnpm test`:** `buildGraph`'s settings and params for every system type, the capture for each mode and `off` under
@@ -272,13 +273,14 @@ dropped value and `DirectGraph.setCoreConfig`'s refusal in sections 5 and 10; an
   NES's `s5bNoise` and `mmc5PhaseReset` never reached its core (`MesenBackend::build` does not copy them from the
   construct blob). Each system node gives its core the document's values by its first block.
 - **The NES core allocates on the block thread on its own**, inside Mesen (8 allocations and frees over two 512-frame
-  blocks), and one of its setters does: `setRegion` reconfigures timing and resets the core, which allocates (3).
-  Sprite limit, APU latency, the two accuracy switches, gain and expansion volume allocate nothing: a direct call counts
-  zero, and a settled block after the edit counts what the same block counts with no edit. The block an edit first lands
-  in can allocate differently because Mesen's changed emulation does, which is Mesen's own. So section 6's "no
-  allocation on the block thread" holds for the knobs a Game Boy applies in place, a NES's setters but its region, and
-  every param, and not for a model change that restarts the core, a NES region reset, or Mesen's own blocks. Left as it
-  is: Mesen's own, the region reset's and the model restart's, as the command ring had them.
+  blocks), and one of its setters does: `setRegion` reconfigures timing and resets the core, which allocates a few
+  (the test holds that it allocates at all, not how many: the count is allocator- and platform-dependent). Sprite
+  limit, APU latency, the two accuracy switches, gain and expansion volume allocate nothing: a direct call counts
+  zero, and a settled block after the edit counts what the same block counts with no edit. The block an edit first
+  lands in can allocate differently because Mesen's changed emulation does, which is Mesen's own. So section 6 holds
+  a Game Boy's params and in-place knobs to zero, and a NES's settings and params to a settled window's, and not a
+  model change that restarts the core, a NES region reset, or Mesen's own blocks. Left as it is: Mesen's own, the
+  region reset's and the model restart's, as the command ring had them.
 - **The fast boot moved ahead of the model.** The prototype applied the Game Boy's knobs in `applyRoleConfig`'s order,
   model first. Several documents published between two blocks commit together, so a fast boot edit and a model edit
   landed in one block, and the model's restart booted with the old fast boot (`app-sameboy-display` failed). The fast
