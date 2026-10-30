@@ -549,9 +549,12 @@ constexpr bool checkHooks() {
     if constexpr (requires { requires kIsFunction<decltype(&T::rebuild_key)>; }) {
         static_assert(requires(const S& s) { T::rebuild_key(s); },
                       "rebuild_key must be `static Key rebuild_key(const Settings&)`");
-        using K = typename RebuildKeyOf<T>::type;
-        static_assert(!std::is_void_v<K> && std::copy_constructible<K> && std::equality_comparable<K>,
-                      "rebuild_key's Key must be copyable and compare with ==");
+        // Only a key the call really gives has a type to check: a signature near-miss falls back to NoKey here.
+        if constexpr (requires(const S& s) { T::rebuild_key(s); }) {
+            using K = typename RebuildKeyOf<T>::type;
+            static_assert(!std::is_void_v<K> && std::copy_constructible<K> && std::equality_comparable<K>,
+                          "rebuild_key's Key must be copyable and compare with ==");
+        }
     }
     static_assert(!(kHasRebuildKey<T> && requires(const S& s) { T::needs_rebuild(s, s); }),
                   "a node has needs_rebuild or rebuild_key, not both: the key already decides what rebuilds");
@@ -601,7 +604,8 @@ struct Instance : rp_node {
     std::string                   layoutJson;  // as created, which prepare compares against; empty if it reshapes
     std::span<std::byte>          extra;
     // The rebuild_key of the settings it was created with, which prepare compares against (empty without the
-    // hook). A different key rebuilds, so it never changes while the instance lives, and no commit writes it.
+    // hook). create is its only writer: a commit cannot change it, since prepare answers rebuild for a different
+    // key.
     std::optional<typename RebuildKeyOf<T>::type> key;
 };
 
@@ -749,7 +753,7 @@ rp_status processFn(rp_node* n, const rp_process* p) noexcept {
 // node without stateless_prepare is such a type; a stateless_prepare type (every script node) is not waited for,
 // which is why that flag rules needs_rebuild out. The rule is asserted on the call itself, so no form of
 // needs_rebuild this would call (a template, an overload set, a callable static member) slips past it. A
-// rebuild_key decides the same thing from the key create kept, so a type that rebuilds on a key prepares
+// rebuild_key decides the same thing from the key create kept, so a type that rebuilds on a key may prepare
 // statelessly.
 template <class T>
 rp_prepare_result prepareFn(rp_node* n, const rp_settings* s, void** prepared, rp_error* err) {
@@ -769,7 +773,11 @@ rp_prepare_result prepareFn(rp_node* n, const rp_settings* s, void** prepared, r
                           "a stateless_prepare node cannot have needs_rebuild, which reads its current settings");
             rebuild = rebuild || T::needs_rebuild(*inst->settings, *parsed);
         }
-        if constexpr (kHasRebuildKey<T>) rebuild = rebuild || !(T::rebuild_key(*parsed) == *inst->key);
+        if constexpr (kHasRebuildKey<T>) {
+            // create engages it for a keyed type, so this only ever fires if the invariant broke.
+            if (!inst->key) throw std::logic_error("a keyed instance was created without its key");
+            rebuild = rebuild || !(T::rebuild_key(*parsed) == *inst->key);
+        }
         if (rebuild) return RP_PREPARE_REBUILD;
         *prepared = new S(std::move(*parsed));
         if constexpr (reshapesOf<T>()) return RP_PREPARE_RESHAPE;
@@ -920,7 +928,7 @@ rp_node* createFn(const rp_node_type*, [[maybe_unused]] const rp_host* host, voi
         inst = new (memory) Instance<T>{};
         inst->vt = vtable<T>();
         inst->layoutJson = std::move(layout);
-        if (key) inst->key.emplace(std::move(*key));
+        inst->key = std::move(key);
         inst->settings = new S(std::move(*parsed));
         if constexpr (requires(T& t) { t.bind_host(host); }) inst->node.bind_host(host);
         if (extra) {
