@@ -7,6 +7,7 @@
 // buildGraph places beside the audio: a test that stages MIDI or reads MIDI out adds the nodes it needs.
 
 #include <algorithm>
+#include <charconv>
 #include <cstdint>
 #include <cstdio>
 #include <map>
@@ -78,22 +79,30 @@ inline std::uint32_t putRom(Engine& engine, const std::string& type, std::string
     return id;
 }
 
-// `systems`, each naming the `rom` resource its node type boots: one put per console, so two systems of one console
-// share the bytes. A system that already names one (a test that put its own, a wrong-console ROM among them) keeps it.
-// Throws with the reason when a fixture is missing or refused, as NodeRig::put does.
-inline void withRoms(Engine& engine, std::vector<DocSystem>& systems) {
-    std::map<std::string, std::uint32_t> byType;
+// The `rom` resource each console's fixture was put under, one per Engine: a case that publishes more than one document
+// keeps one of these beside its Engine. A republish that names the same ids leaves every system node's rebuild key
+// alone, so the nodes are reused; a fresh put per document moves every ref, and a moved ref is a rebuild, which under an
+// id a live core still holds is refused ("system N is live").
+struct Roms {
+    std::map<std::string, std::uint32_t> ids;
+};
+
+// `systems`, each naming the `rom` resource its node type boots: one put per console in `roms`, so two systems of one
+// console share the bytes and a later document names what this one did. A system that already names one (a test that put
+// its own, a wrong-console ROM among them) keeps it. Throws with the reason when a fixture is missing or refused, as
+// NodeRig::put does.
+inline void withRoms(Engine& engine, std::vector<DocSystem>& systems, Roms& roms) {
     for (DocSystem& s : systems) {
         if (s.rom != 0) continue;
-        const auto cached = byType.find(s.type);
-        if (cached != byType.end()) {
+        const auto cached = roms.ids.find(s.type);
+        if (cached != roms.ids.end()) {
             s.rom = cached->second;
             continue;
         }
         std::string why;
         const std::uint32_t rom = putRom(engine, s.type, &why);
         if (rom == 0) throw std::runtime_error(why);
-        byType.emplace(s.type, rom);
+        roms.ids.emplace(s.type, rom);
         s.rom = rom;
     }
 }
@@ -101,9 +110,15 @@ inline void withRoms(Engine& engine, std::vector<DocSystem>& systems) {
 // `document` with every `"res:<id>"` replaced by the id `ids` gives it, in ONE pass: two ids can each be the other's
 // engine id, and replacing them one after another would let the second see the first's output. A document built by the
 // helpers below already names the engine's own ids; this is for documents spelled before an Engine had them (the
-// goldens' models). nullopt with the reason when the document names an id `ids` does not have.
+// goldens' models). Nothing with the reason in *why for a reference that runs off the document, one that is not a
+// decimal id, and an id `ids` does not have.
 inline std::optional<std::string> rebindResources(const std::string& document,
-                                                  const std::map<std::uint32_t, std::uint32_t>& ids) {
+                                                  const std::map<std::uint32_t, std::uint32_t>& ids,
+                                                  std::string* why = nullptr) {
+    const auto refuse = [why](std::string reason) {
+        if (why) *why = std::move(reason);
+        return std::optional<std::string>();
+    };
     std::string out;
     for (std::size_t at = 0; at < document.size();) {
         const auto found = document.find("\"res:", at);
@@ -114,10 +129,15 @@ inline std::optional<std::string> rebindResources(const std::string& document,
         out.append(document, at, found - at);
         const auto digits = found + 5;  // past `"res:`
         const auto end = document.find('"', digits);
-        if (end == std::string::npos) return std::nullopt;  // a reference runs off the document
-        const auto mapped = ids.find(static_cast<std::uint32_t>(std::stoul(document.substr(digits, end - digits))));
+        if (end == std::string::npos) return refuse("a resource reference runs off the document");
+        std::uint32_t wanted = 0;
+        const auto parsed = std::from_chars(document.data() + digits, document.data() + end, wanted);
+        if (parsed.ec != std::errc() || parsed.ptr != document.data() + end)
+            return refuse(document.substr(found, end - found + 1) + " is not a resource id");
+        const auto mapped = ids.find(wanted);
         if (mapped == ids.end())
-            return "the document names " + document.substr(found, end - found + 1) + ", which no system of the model has";
+            return refuse("the document names " + document.substr(found, end - found + 1) +
+                          ", which no system of the model has");
         out += "\"res:" + std::to_string(mapped->second) + "\"";
         at = end + 1;
     }
@@ -227,9 +247,10 @@ inline std::string nesSplitDocument(const DocSystem& nes, const std::string& spl
     using namespace docs_detail;
     const std::string n = "sys-" + std::to_string(nes.id);
     std::vector<std::string> nodes{sys(nes)}, wires;
-    std::vector<std::string> streams = split == "channels"
-                                           ? std::vector<std::string>{"channels.sq1", "channels.sq2", "channels.tri", "channels.noise", "channels.dmc"}
-                                           : std::vector<std::string>{"pins.pulse", "pins.tnd", "pins.expansion"};
+    std::vector<std::string> streams =
+        split == "channels"
+            ? std::vector<std::string>{"channels.sq1", "channels.sq2", "channels.tri", "channels.noise", "channels.dmc"}
+            : std::vector<std::string>{"pins.pulse", "pins.tnd", "pins.expansion"};
     const std::uint32_t stride = split == "stereoPins" ? 2 : 1;
     for (std::uint32_t k = 0; k < streams.size(); ++k)
         for (std::uint32_t l = 0; l < stride; ++l) wires.push_back(wire(n + "." + streams[k], out(stride * k + l, 1)));

@@ -49,10 +49,11 @@ using rp::host::test::DocSystem;
 
 // `systems` as a stereo document at `channels` host channels, each system's ROM put in `e` first: a node builds its
 // core from the resources its settings name.
-Engine::GraphRequest request(Engine& e, std::vector<DocSystem> systems, std::uint32_t channels = 2) {
+Engine::GraphRequest request(Engine& e, rp::host::test::Roms& roms, std::vector<DocSystem> systems,
+                             std::uint32_t channels = 2) {
     std::vector<SystemId> slots;
     for (const DocSystem& s : systems) slots.push_back(s.id);
-    rp::host::test::withRoms(e, systems);
+    rp::host::test::withRoms(e, systems, roms);
     return rp::host::test::graphRequest(rp::host::test::stereoDocument(systems, channels), slots);
 }
 
@@ -72,8 +73,9 @@ const char* const kNes = rp::host::test::kNesType;
 
 TEST_CASE("a document places its system nodes' cores", "[engine-graph][b2]") {
     Engine e(kRate);
+    rp::host::test::Roms roms;
     // Four host channels, so the width read back is this document's, not the stereo pair of the first plan.
-    const auto r = request(e, {{2, kGb}, {1, kGb}}, 4);
+    const auto r = request(e, roms, {{2, kGb}, {1, kGb}}, 4);
     const auto result = e.setGraph(r);
     REQUIRE(result.ok);
     CHECK(e.systemCount() == 2);
@@ -89,8 +91,9 @@ TEST_CASE("a document places its system nodes' cores", "[engine-graph][b2]") {
 
 TEST_CASE("the slots and the system nodes must name the same systems", "[engine-graph][b2]") {
     Engine e(kRate);
+    rp::host::test::Roms roms;
     auto systems = std::vector<DocSystem>{{1, kGb}, {2, kGb}};
-    withRoms(e, systems);
+    withRoms(e, systems, roms);
 
     auto missing = rp::host::test::graphRequest(rp::host::test::stereoDocument(systems), {1});
     auto result = e.setGraph(missing);
@@ -108,7 +111,7 @@ TEST_CASE("the slots and the system nodes must name the same systems", "[engine-
     CHECK(e.setGraph(renamed).errors.at(0).code == "slots");
 
     // A system node whose ROM resource the engine does not hold is refused on that node.
-    result = e.setGraph(request(e, {{9, kGb, 7}}));
+    result = e.setGraph(request(e, roms, {{9, kGb, 7}}));
     CHECK(result.errors.at(0).code == "create-failed");
     CHECK(result.errors.at(0).nodeId == "sys-9");
     CHECK(result.errors.at(0).message.find("is not a live resource") != std::string::npos);
@@ -121,19 +124,33 @@ TEST_CASE("the slots and the system nodes must name the same systems", "[engine-
 
 TEST_CASE("a refused document leaves the running plan and its cores alone", "[engine-graph][b2]") {
     Engine e(kRate);
-    REQUIRE(e.setGraph(request(e, {{1, kGb}})).ok);
-    auto bad = request(e, {{1, kGb}, {2, kGb}});
-    bad.document.replace(bad.document.find("rp.core.add"), 11, "rp.core.nope");
-    CHECK_FALSE(e.setGraph(bad).ok);
+    rp::host::test::Roms roms;
+    REQUIRE(e.setGraph(request(e, roms, {{1, kGb}})).ok);
+    SystemBase* const running = e.findSystem(1);
+    REQUIRE(running != nullptr);
+    // The refused document reuses sys-1 (same ROM resource) and places two more: sys-2 builds, and sys-3 is handed the
+    // NES fixture under a Game Boy node, so its activation refuses the plan after sys-2's core exists. The refusal's
+    // unwind is what has to leave the running plan alone.
+    const std::uint32_t nesRom = e.putResource("rom", readFile(RP_BLIPTOASTER_ROM_PATH));
+    const auto refused = e.setGraph(request(e, roms, {{1, kGb}, {2, kGb}, {3, kGb, nesRom}}));
+    CHECK_FALSE(refused.ok);
+    REQUIRE(refused.errors.size() == 1);
+    CHECK(refused.errors[0].nodeId == "sys-3");
+    CHECK(refused.errors[0].code == "activate-failed");
+    CHECK(refused.errors[0].message == "the ROM is not a Game Boy ROM");
     CHECK(e.systemCount() == 1);
+    CHECK(e.findSystem(1) == running);  // the plan still published is the one that was running
     CHECK(e.coreLive(1));
-    CHECK_FALSE(e.coreLive(2));  // the refused plan built nothing
+    CHECK_FALSE(e.coreLive(2));  // built, and destroyed as the refused plan unwound
+    CHECK_FALSE(e.coreLive(3));
+    CHECK(e.resourcePinCount(nesRom) == 0);
 }
 
 TEST_CASE("the tap re-arm rides the swap: restore, then arm", "[engine-graph][b2]") {
     Engine e(kRate);
+    rp::host::test::Roms roms;
     auto systems = std::vector<DocSystem>{{1, kNes}};
-    withRoms(e, systems);
+    withRoms(e, systems, roms);
     auto nesRequest = [&](std::uint32_t channels = 2) {
         return rp::host::test::graphRequest(rp::host::test::stereoDocument(systems, channels), {1});
     };
@@ -167,7 +184,8 @@ TEST_CASE("the tap re-arm rides the swap: restore, then arm", "[engine-graph][b2
 
 TEST_CASE("a sample-rate change re-rates the running plan's cores", "[engine-graph][b2]") {
     Engine e(kRate);
-    REQUIRE(e.setGraph(request(e, {{1, kGb}})).ok);
+    rp::host::test::Roms roms;
+    REQUIRE(e.setGraph(request(e, roms, {{1, kGb}})).ok);
     const auto* raw = dynamic_cast<const SameBoySystem*>(e.findSystem(1));
     REQUIRE(raw != nullptr);
     REQUIRE(raw->sampleRate_ == kRate);
@@ -177,8 +195,9 @@ TEST_CASE("a sample-rate change re-rates the running plan's cores", "[engine-gra
 
 TEST_CASE("bad tap requests are refused", "[engine-graph][b2]") {
     Engine e(kRate);
+    rp::host::test::Roms roms;
     auto systems = std::vector<DocSystem>{{1, kNes}};
-    withRoms(e, systems);
+    withRoms(e, systems, roms);
     const auto nesRequest = [&] { return rp::host::test::graphRequest(rp::host::test::stereoDocument(systems), {1}); };
     // 257 is mode 1 once narrowed to the command's byte.
     for (const std::uint32_t mode : {0u, 4u, 7u, 257u}) {
@@ -194,19 +213,21 @@ TEST_CASE("bad tap requests are refused", "[engine-graph][b2]") {
 
 TEST_CASE("an id above INT32_MAX is read whole, one above UINT32_MAX is refused", "[engine-graph][b2]") {
     Engine e(kRate);
+    rp::host::test::Roms roms;
     constexpr SystemId kHigh = 3000000000u;
-    REQUIRE(e.setGraph(request(e, {{kHigh, kGb}})).ok);
+    REQUIRE(e.setGraph(request(e, roms, {{kHigh, kGb}})).ok);
     CHECK(e.findSystem(kHigh) != nullptr);
 
-    auto over = request(e, {});
+    auto over = request(e, roms, {});
     over.document = R"({"nodes":[{"id":"sys-4294967296","type":"rp.sameboy.gb","settings":{"system":4294967296}}],"wires":[]})";
     CHECK(e.setGraph(over).errors.at(0).code == "slots");
 }
 
 TEST_CASE("an audio-out with no buses of its own is its default eight channels wide", "[engine-graph][b2]") {
     Engine e(kRate);
+    rp::host::test::Roms roms;
     auto systems = std::vector<DocSystem>{{1, kGb}};
-    withRoms(e, systems);
+    withRoms(e, systems, roms);
     Engine::GraphRequest r;
     r.document = R"({"nodes":[)" + rp::host::test::docs_detail::sys(systems[0]) +
                  R"(,{"id":"out","type":"rp.host.audio-out"}],"wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})";
@@ -217,10 +238,11 @@ TEST_CASE("an audio-out with no buses of its own is its default eight channels w
 
 TEST_CASE("setGraph over the RPC layer places a system a document's node builds", "[engine-graph][b2]") {
     Engine           e(kRate);
+    rp::host::test::Roms roms;
     QueuedInvoker    invoker(e);
     EngineRpcService rpc(e, invoker);
     auto systems = std::vector<DocSystem>{{5, kGb}};
-    withRoms(e, systems);
+    withRoms(e, systems, roms);
     RpcSetGraphRequest graph{rp::host::test::stereoDocument(systems), {5}, std::nullopt};
     const auto placed = rpc.setGraph(graph);
     CHECK(placed.ok);
@@ -233,10 +255,11 @@ TEST_CASE("setGraph over the RPC layer places a system a document's node builds"
 TEST_CASE("a render into buffers the planned graph does not write is refused", "[engine-graph][b2]") {
     // TS sets the shape a render call needs before it makes the call; the render calls only check it.
     Engine           e(kRate);
+    rp::host::test::Roms roms;
     QueuedInvoker    inv(e);
     EngineRpcService svc(e, inv);
     auto systems = std::vector<DocSystem>{{1, kGb}, {2, kGb}};
-    withRoms(e, systems);
+    withRoms(e, systems, roms);
     REQUIRE(e.setGraph(rp::host::test::graphRequest(rp::host::test::stereoDocument(systems), {1, 2})).ok);
     CHECK(e.hostWidth() == 2);
     CHECK_FALSE(svc.renderAudio(10.0).empty());
@@ -287,7 +310,8 @@ const char* const kLevelPack = R"JS(
 TEST_CASE("a system node's settings carry its knobs beside its system, and the engine places it",
           "[engine-graph][settings]") {
     Engine e(kRate);
-    auto r = request(e, {{1, kGb, 0, R"("highpass":"off","serialOutCapture":"listen")"},
+    rp::host::test::Roms roms;
+    auto r = request(e, roms, {{1, kGb, 0, R"("highpass":"off","serialOutCapture":"listen")"},
                          {2, kNes, 0, R"("removeSpriteLimit":true)"}});
     REQUIRE(e.setGraph(r).ok);
     // Given as the nodes took their cores, before a block.
@@ -300,8 +324,9 @@ TEST_CASE("a system node's settings carry its knobs beside its system, and the e
     CHECK(nes->config().removeSpriteLimit);
 
     // Settings a node refuses refuse the document: the running plan keeps its knobs, and the core a new node would have
-    // built is never built. The refused document moves a knob of an already placed system too, which must not land.
-    const auto refused = e.setGraph(request(e, {{1, kGb, 0, R"("highpass":"removeDcOffset")"},
+    // built is never built. The refused document names the two placed systems again (their ROM resources are unchanged,
+    // so their nodes are reused) and moves a knob of sys-1's, which must not land.
+    const auto refused = e.setGraph(request(e, roms, {{1, kGb, 0, R"("highpass":"removeDcOffset")"},
                                                {2, kNes, 0, R"("removeSpriteLimit":true)"},
                                                {3, kGb, 0, R"("model":"cgb-c")"}}));
     CHECK_FALSE(refused.ok);
@@ -310,6 +335,8 @@ TEST_CASE("a system node's settings carry its knobs beside its system, and the e
     CHECK(refused.errors[0].nodeId == "sys-3");
     CHECK_FALSE(e.coreLive(3));
     CHECK(e.systemCount() == 2);
+    CHECK(e.findSystem(1) == static_cast<const SystemBase*>(gb));   // reused, and the same core
+    CHECK(e.findSystem(2) == static_cast<const SystemBase*>(nes));
     // A block runs the plan still published, whose knobs are untouched: the refused change is not among them.
     std::vector<float> left(256), right(256);
     float* outs[2] = {left.data(), right.data()};
@@ -325,8 +352,9 @@ TEST_CASE("a setting lands at the node's next prepare, after a host command sent
     // quiescent writeRam follows it, so the write lands on the core the next block's prepare restarts, and the
     // restarted core never sees it. A knob applied in place leaves the write alone.
     Engine e(kRate);
+    rp::host::test::Roms roms;
     auto systems = std::vector<DocSystem>{{1, kGb, 0, R"("model":"dmgB","highpass":"accurate")"}};
-    withRoms(e, systems);
+    withRoms(e, systems, roms);
     const auto plan = [&](const std::string& knobs) {
         systems[0].extra = knobs;
         return e.setGraph(rp::host::test::graphRequest(rp::host::test::stereoDocument(systems), {1}));
@@ -366,9 +394,10 @@ TEST_CASE("a setting lands at the node's next prepare, after a host command sent
 
 TEST_CASE("Engine::setParam reaches a param of the running plan at the next block, clamped", "[engine-graph][settings]") {
     Engine e(kRate);
+    rp::host::test::Roms roms;
     REQUIRE(e.loadScriptPack("knobs", kLevelPack).ok);
     auto systems = std::vector<DocSystem>{{1, kGb}};
-    rp::host::test::withRoms(e, systems);
+    rp::host::test::withRoms(e, systems, roms);
     const rp::host::test::DocExtras extras{{rp::host::test::docNode("level", "knobs.level")},
                                            {rp::host::test::docWire("level.out", "out.out.2")}};
     // The Game Boy alone on channel 1, so channel 2 is the toy's.
@@ -408,8 +437,9 @@ TEST_CASE("Engine::setParam reaches a param of the running plan at the next bloc
 TEST_CASE("Engine::setParam sets a system node's gain and a NES's expansion volume at the next block, clamped",
           "[engine-graph][settings][params]") {
     Engine e(kRate);
+    rp::host::test::Roms roms;
     auto systems = std::vector<DocSystem>{{1, kGb}, {2, kNes}};
-    withRoms(e, systems);
+    withRoms(e, systems, roms);
     REQUIRE(e.setGraph(rp::host::test::graphRequest(rp::host::test::stereoDocument(systems), {1, 2})).ok);
     const auto* gb = dynamic_cast<const SameBoySystem*>(e.findSystem(1));
     const auto* nes = dynamic_cast<const MesenNesSystem*>(e.findSystem(2));
@@ -455,12 +485,13 @@ TEST_CASE("setParam over the RPC layer takes the node, the param and the value a
     } js;  // first, so it outlives the server holding its context
 
     Engine           e(kRate);
+    rp::host::test::Roms roms;
     QueuedInvoker    invoker(e);
     EngineRpcService rpc(e, invoker);
     rpcpp::QuickJSTransport                                   transport(js.ctx, [](JSContext*, JSValue) {});
     rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec> server(transport, rpcpp::QuickJSCodec{js.ctx});
     registerEmulatorRpc(server, rpc);
-    REQUIRE(e.setGraph(request(e, {{1, kGb}, {2, kNes}})).ok);
+    REQUIRE(e.setGraph(request(e, roms, {{1, kGb}, {2, kNes}})).ok);
 
     // The call createEmulatorClient makes: true when the engine took it.
     const auto setParam = [&](const std::string& params) {
@@ -515,7 +546,8 @@ TEST_CASE("putResource and releaseResource over the RPC layer", "[engine-graph][
 
     // One call, answering its `result` (owned by the caller).
     const auto call = [&](const char* method, const std::string& params) -> JSValue {
-        const std::string src = std::string("({jsonrpc: '2.0', id: 1, method: '") + method + "', params: [" + params + "]})";
+        const std::string src =
+            std::string("({jsonrpc: '2.0', id: 1, method: '") + method + "', params: [" + params + "]})";
         JSValue message = JS_Eval(js.ctx, src.c_str(), src.size(), "<rpc>", JS_EVAL_TYPE_GLOBAL);
         if (JS_IsException(message)) {
             JS_FreeValue(js.ctx, message);
@@ -710,21 +742,25 @@ TEST_CASE("a build that fails refuses the document and leaves the running plan, 
         CHECK(e.resourcePinCount(nesRom) == 0);  // pinned at create, dropped as the refused plan unwinds
     }
     SECTION("an id a live core still holds") {
-        // A different ROM resource under the same system id is a different node, so it is a fresh instance that builds:
-        // the id the older instance still holds refuses the build rather than sharing the core.
-        const std::uint32_t otherRom = e.putResource("rom", readFile(RP_MGB_ROM_PATH));
-        const auto r = e.setGraph(builtRequest(builtDoc(1, rp::host::test::kGbType, otherRom), {1}));
+        // A NES under the Game Boy's id is a different node, so it is a fresh instance that builds: the id the older
+        // instance still holds refuses the build rather than sharing the core. The refused core is a NES, a quarter of
+        // the Game Boy's work RAM, so a slot answered by the wrong core changes the size the registry publishes.
+        const std::uint32_t otherRom = e.putResource("rom", readFile(RP_BLIPTOASTER_ROM_PATH));
+        const std::uint32_t ram = e.ramSize(1);
+        REQUIRE(ram > 0);
+        const auto r = e.setGraph(builtRequest(builtDoc(1, rp::host::test::kNesType, otherRom), {1}));
         CHECK_FALSE(r.ok);
         CHECK(refusal(r) == "sys-1: activate-failed: system 1 is live");
+        CHECK(e.ramSize(1) == ram);  // the live core's slot, not one a released second claim freed for a NES
         CHECK(e.resourcePinCount(otherRom) == 0);
     }
     SECTION("two nodes naming one system") {
         // Both would have to be sys-2, so the node ids repeat; naming one system twice is what the document is refused
         // for, before the planner reaches the repeated id.
+        const std::string settings = R"({"system":2,"rom":"res:)" + std::to_string(mgbRom) + R"("})";
         const std::string document =
-            R"({"nodes":[{"id":"sys-2","type":"rp.sameboy.gb","settings":{"system":2,"rom":"res:)" + std::to_string(mgbRom) +
-            R"("}},{"id":"sys-2","type":"rp.sameboy.gb","settings":{"system":2,"rom":"res:)" + std::to_string(mgbRom) + R"("}}],
-                "wires":[]})";
+            R"({"nodes":[{"id":"sys-2","type":"rp.sameboy.gb","settings":)" + settings + "}," +
+            R"({"id":"sys-2","type":"rp.sameboy.gb","settings":)" + settings + R"(}],"wires":[]})";
         const auto r = e.setGraph(builtRequest(document, {2}));
         CHECK_FALSE(r.ok);
         CHECK(refusal(r) == ": slots: two system nodes name system 2");
@@ -782,13 +818,16 @@ TEST_CASE("a construct-time field is applied by building a new core, which an id
     const std::size_t cores = e.liveSystemCount(), slots = e.registry().liveCount();
 
     // The same id: the older instance still holds it, so the build refuses rather than sharing the core.
-    const auto sameId = e.setGraph(builtRequest(builtDoc(1, rp::host::test::kNesType, rom, R"("channelExportMode":"individualMono")"), {1}));
+    const auto sameId = e.setGraph(
+        builtRequest(builtDoc(1, rp::host::test::kNesType, rom, R"("channelExportMode":"individualMono")"), {1}));
     CHECK(refusal(sameId) == "sys-1: activate-failed: system 1 is live");
     CHECK(e.findSystem(1) == first);  // the running plan still runs the same core
     CHECK(first->config().channelExportMode == 0);
 
     // A new id, as TS rebuilds: the new core is built with the new field.
-    REQUIRE(e.setGraph(builtRequest(builtDoc(2, rp::host::test::kNesType, rom, R"("channelExportMode":"individualMono")"), {2})).ok);
+    REQUIRE(e.setGraph(
+                builtRequest(builtDoc(2, rp::host::test::kNesType, rom, R"("channelExportMode":"individualMono")"), {2}))
+                .ok);
     auto* second = dynamic_cast<MesenNesSystem*>(e.findSystem(2));
     REQUIRE(second != nullptr);
     CHECK(second->config().channelExportMode == 3);
@@ -906,7 +945,7 @@ TEST_CASE("a document changing only a param or a live knob keeps a system node's
     CHECK(e.resourcePinCount(rom) == 2);
 }
 
-TEST_CASE("a reused system node's core is in the new plan's table before any node activates",
+TEST_CASE("a reused system node's core is in the new plan's table without its node building again",
           "[engine-graph][b2][systems]") {
     // A node whose rebuild_key is unchanged is reused across a republish: it returns from activate without calling
     // buildSystem, so its core reaches the new plan's table only from the engine's live cores (the pre-fill

@@ -29,7 +29,8 @@ TEST_CASE("Engine::setSampleRate re-rates already-live systems", "[audio][sample
     // A system node builds its core at the rate the plan runs at, as the factory does (the DMG boot ROM's chime needs
     // the model its settings name).
     std::vector<DocSystem> systems{{1, kGbType, 0, R"("model":"dmgB","fastBoot":false)"}};
-    withRoms(eng, systems);
+    Roms                   roms;
+    withRoms(eng, systems, roms);
     REQUIRE(eng.setGraph(graphRequest(stereoDocument(systems), {1})).ok);
     const auto* raw = dynamic_cast<const SameBoySystem*>(eng.findSystem(1));
     REQUIRE(raw != nullptr);

@@ -278,7 +278,9 @@ TEST_CASE("A replacing NES is armed afresh, never restored to the replaced core'
           "[audio][channelsplit][nes]") {
     NesRig rig;
     Engine& eng = rig.eng;
-    rig.place(rearming(graphRequest(nesSplitDocument({1, kNesType, rig.rom, R"("channelExportMode":"pinsPlusRef")"}, "channels"), {1}), 1, 3));  // armed to 3, remembering 2
+    const auto channels = graphRequest(
+        nesSplitDocument({1, kNesType, rig.rom, R"("channelExportMode":"pinsPlusRef")"}, "channels"), {1});
+    rig.place(rearming(channels, 1, 3));  // armed to 3, remembering 2
     REQUIRE(dynamic_cast<MesenNesSystem*>(eng.findSystem(1))->channelExportMode() == 3);
 
     rig.place(rearming(graphRequest(nesSplitDocument({2, kNesType, rig.rom}, "channels"), {2}), 2, 3));

@@ -104,8 +104,9 @@ Engine::GraphRequest hostIoOnly(std::vector<std::string> nodes, std::vector<std:
 // the block's first frame), through rp.host.midi-in into its midi input.
 std::vector<float> renderNes(const std::function<void(Engine&, std::uint64_t)>& stage) {
     Engine e(kRate);
+    rp::host::test::Roms roms;
     std::vector<DocSystem> systems{{1, kNes}};
-    withRoms(e, systems);
+    withRoms(e, systems, roms);
     const DocExtras extras{{docNode("midi-in", "rp.host.midi-in")}, {docWire("midi-in.midi", "sys-1.midi")}};
     REQUIRE(e.setGraph(graphRequest(stereoDocument(systems, extras), {1})).ok);
     std::vector<float> out;
@@ -166,7 +167,8 @@ Order stableOrder(const std::vector<std::uint32_t>& frames) {
 SameBoySystem* serialOutToCart(Engine& e) {
     std::vector<DocSystem> systems{{1, kGb, 0, R"("model":"dmgB","serialOutCapture":"drive")"},
                                    {2, kNes}};
-    withRoms(e, systems);
+    rp::host::test::Roms roms;  // this document's puts: its caller publishes nothing else
+    withRoms(e, systems, roms);
     DocExtras extras{{docNode("cart", "rp.n8.cart-mirror", R"({"system":2})")}, {docWire("sys-1.serialOut", "cart.bytes")}};
     REQUIRE(e.setGraph(graphRequest(stereoDocument(systems, extras), {1, 2})).ok);
     return dynamic_cast<SameBoySystem*>(e.findSystem(1));
@@ -888,8 +890,9 @@ TEST_CASE("rp.n8.cart-mirror hands the cart every MIDI message, then every byte 
 TEST_CASE("the engine feeds the cart mirror to its core-byte sink, and reads the system it mirrors off the plan",
           "[engine-graph][host-io][n8]") {
     Engine e(kRate);
+    rp::host::test::Roms roms;
     std::vector<DocSystem> systems{{1, kNes}};
-    withRoms(e, systems);
+    withRoms(e, systems, roms);
     const auto mirrored = [](std::string settings) {
         return DocExtras{{docNode("midi-in", "rp.host.midi-in"), docNode("cart", "rp.n8.cart-mirror", std::move(settings))},
                          {docWire("midi-in.midi", "cart.midi")}};
@@ -926,8 +929,9 @@ TEST_CASE("the engine feeds the cart mirror to its core-byte sink, and reads the
 TEST_CASE("a cart mirror names one of the document's NES systems, its settings read as the node reads them",
           "[engine-graph][host-io][n8]") {
     Engine e(kRate);
+    rp::host::test::Roms roms;
     std::vector<DocSystem> systems{{1, kNes}, {2, kGb, 0, R"("model":"dmgB")"}};
-    withRoms(e, systems);
+    withRoms(e, systems, roms);
     const auto mirroring = [&](std::string settings) {
         const DocExtras mirror{{docNode("cart", "rp.n8.cart-mirror", std::move(settings))}, {}};
         return graphRequest(stereoDocument(systems, mirror), {1, 2});
@@ -1044,8 +1048,9 @@ TEST_CASE("what a Game Boy's core captures decodes through rp.lsdj.serial-out in
     // each at the frame of a byte the core captured in that block (a wire frame straddling two blocks completes in the
     // later one), at most one a byte, and Engine::midiOut is frame-sorted.
     Engine e(kRate);
+    rp::host::test::Roms roms;
     std::vector<DocSystem> systems{{1, kGb, 0, R"("model":"dmgB","serialOutCapture":"drive")"}};
-    withRoms(e, systems);
+    withRoms(e, systems, roms);
     const DocExtras extras{
         {docNode("decoder", "rp.lsdj.serial-out", R"({"mode":"midiOut"})"), loopOut()},
         {docWire("sys-1.serialOut", "decoder.serialOut"), docWire("decoder.midiOut", "midi-out.in1")}};
@@ -1097,10 +1102,11 @@ TEST_CASE("one setGraph switches a Game Boy's capture and its decoder's mode tog
     // Moved by two paths, the capture a block behind, master sync would decode a block of MI.OUT's bytes as clocks,
     // starting a run (docs/lsdj-master-sync-fix-design.md section 10).
     Engine e(kRate);
+    rp::host::test::Roms roms;
     std::uint32_t rom;
     {
         std::vector<DocSystem> systems{{1, kGb}};
-        withRoms(e, systems);
+        withRoms(e, systems, roms);
         rom = systems[0].rom;
     }
     const auto switched = [&](const char* capture, const char* mode) {
@@ -1215,9 +1221,10 @@ TEST_CASE("a system node's bytes input reaches the engine's sync trace while it 
         setSyncTraceEnv(traced ? path.c_str() : nullptr);
         std::vector<std::string> lines;
         Engine e(kRate);
+        rp::host::test::Roms roms;
         std::vector<DocSystem> systems{{1, kGb, 0, R"("model":"dmgB","serialOutCapture":"drive")"},
                                        {2, kNes}};
-        withRoms(e, systems);
+        withRoms(e, systems, roms);
         REQUIRE(e.setGraph(graphRequest(stereoDocument(systems, DocExtras{{}, {docWire("sys-1.serialOut", "sys-2.bytes")}}),
                                         {1, 2}))
                     .ok);

@@ -1512,8 +1512,9 @@ TEST_CASE("a reload's replan carries the running plan's tap as it is: neither re
     using rp::host::test::rearming;
     using rp::host::test::withRoms;
     Engine e(kRate);
+    rp::host::test::Roms roms;
     std::vector<DocSystem> systems{{1, kNesType}};
-    withRoms(e, systems);
+    withRoms(e, systems, roms);
     load(e, "test.tap", toys(tally("test.tap.count", 1)));
     const auto request = graphRequest(stereoDocument(systems,
                                                      DocExtras{{docNode("count", "test.tap.count"), midiOut("1")},
