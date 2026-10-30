@@ -110,9 +110,10 @@ export interface Backend {
    *  name as `"res:<id>"` (docs/modular-graph-phase-c3-design.md section 4): a system node's ROM, its battery, a
    *  savestate seed. Native reads a `path` itself, so an unpatched ROM or a `.sav` never crosses the bridge; only a
    *  patched image, a seed TS holds or an embedded ROM's marker arrives as a source. Refused, creating nothing, with
-   *  `error` saying why: a type that is not `rom`, `sram` or `state`, no source or more than one, a file that is
-   *  absent, unreadable or empty, or an embedded marker this build does not carry. An empty `sram` is a resource (a
-   *  blank battery) while an empty `rom` is refused: a zero-length ROM cannot boot. Ids count up from 1 and are never
+   *  `error` saying why: a type that is not `rom`, `sram` or `state`, no source or more than one, a file that is absent
+   *  or unreadable, or an embedded marker this build does not carry. A file that opens and is empty is not refused: an
+   *  empty `sram` is a resource (a blank battery), so a zero-byte `.sav` beside a ROM is a fresh cartridge, while an
+   *  empty `rom` is refused, since a zero-length ROM cannot boot. Ids count up from 1 and are never
    *  reused, so a stale `res:N` is refused rather than naming whatever took its place. */
   putResource(spec: ResourceSpec): PutResourceResult;
 

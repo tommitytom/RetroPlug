@@ -6,7 +6,9 @@
 //
 // The seeds follow the core's own rule: seed bytes when TS holds them (an asset role's image, a battery read back from
 // a live core, a project's blob), else the file by path when it is there, else NO seed - a missing `.sav` is a fresh
-// cartridge, never a failure. A savestate wins over a battery, as it does at the core.
+// cartridge, never a failure, and so is an empty one, since a file that opens and holds nothing is an empty payload (a
+// blank battery) while only a file that cannot be opened is refused. A savestate wins over a battery, as it does at the
+// core.
 import type { ConstructSpec, EmulatorBackend, HostBackend, ResourceSpec, ResourceType } from "../backend";
 import { systemNodeTypeFor, type SystemNodeType } from "../platform";
 import { stem } from "../pathUtil";

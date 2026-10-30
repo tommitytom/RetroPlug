@@ -61,12 +61,12 @@ test("mock backend: putResource answers ids that count up, and a dropped id stay
   expect(be.putResource({ type: "rom", embedded: "mgb" })).toEqual({ id: 3 }); // never reused
   expect(be.putResource({ type: "rom", embedded: "nope" })).toEqual({ error: '"nope" is not an embedded ROM' });
   expect(be.putResource({ type: "rom", path: "/cfg/missing.gb" })).toEqual({
-    error: 'could not read "/cfg/missing.gb": the file is absent, unreadable or empty',
+    error: 'could not read "/cfg/missing.gb": the file is absent or unreadable',
   });
   // A caller's path and marker are quoted the way native quotes them (graph/CanonicalJson.cpp jsonString), so a name
   // carrying a quote cannot forge or break the diagnostic a caller logs or parses.
   expect(be.putResource({ type: "sram", path: '/cfg/a"b.sav' })).toEqual({
-    error: 'could not read "/cfg/a\\"b.sav": the file is absent, unreadable or empty',
+    error: 'could not read "/cfg/a\\"b.sav": the file is absent or unreadable',
   });
   expect(be.putResource({ type: "rom", embedded: 'mg"b' })).toEqual({ error: '"mg\\"b" is not an embedded ROM' });
   // Native's exactly-one-source rule: a test that casts past the typed union sees the engine's answer, not a silent
@@ -102,6 +102,24 @@ test("mock backend: putResource answers ids that count up, and a dropped id stay
   expect(be.resource(copied.id)).toEqual({ type: "rom", bytes: Uint8Array.of(5, 5) });
   expect(be.putResourceCalls.length).toBe(15); // refused puts are recorded too, with id 0
   expect(be.putResourceCalls.filter((c) => c.id === 0).length).toBe(10);
+});
+
+test("mock backend: a zero-byte file read by path is an empty resource, as an empty byte block is", () => {
+  const be = new MockBackend("/cfg");
+  be.seed("/cfg/battery.sav", "");
+  expect(be.fileExists("/cfg/battery.sav")).toBeTruthy();
+  // Native tells a file it could not open from one that opened and is empty: a zero-byte `.sav` beside a ROM is a
+  // fresh cartridge, not a load failure, because an empty payload is a resource (a blank battery).
+  const sram = be.putResource({ type: "sram", path: "/cfg/battery.sav" });
+  if ("error" in sram) throw new Error(sram.error);
+  expect(be.resource(sram.id)).toEqual({ type: "sram", bytes: new Uint8Array(0) });
+  const state = be.putResource({ type: "state", path: "/cfg/battery.sav" });
+  if ("error" in state) throw new Error(state.error);
+  expect(be.resource(state.id)).toEqual({ type: "state", bytes: new Uint8Array(0) });
+  // A ROM needs bytes to boot, so an empty file is refused exactly as an empty byte block is.
+  expect(be.putResource({ type: "rom", path: "/cfg/battery.sav" })).toEqual({
+    error: "a rom resource cannot be empty: a zero-length ROM cannot boot",
+  });
 });
 
 test("mock backend: a document naming a resource the engine does not hold is refused, as native refuses it", () => {

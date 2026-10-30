@@ -10,6 +10,7 @@
 // Run via `pnpm test:plugin engine-graph`.
 
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -636,12 +637,26 @@ TEST_CASE("putResource and releaseResource over the RPC layer", "[engine-graph][
     REQUIRE(blankPayload);
     CHECK(blankPayload->size == 0);
     CHECK(blankPayload->data != nullptr);
+    // A file that opens and is empty is such a resource too: a zero-byte `.sav` beside a ROM is a fresh cartridge.
+    // Only a file that cannot be opened is refused, and a zero-byte ROM with it.
+    const std::string emptyPath =
+        (std::filesystem::temp_directory_path() / "rp-empty-resource.sav").generic_string();
+    std::ofstream(emptyPath, std::ios::binary).close();
+    const Answer emptySeed = put(std::string("{type: 'sram', path: '") + emptyPath + "'}");
+    REQUIRE(emptySeed.error.empty());
+    const auto* emptySeedPayload = static_cast<const rp_bytes*>(e.resource(emptySeed.id)->payload);
+    REQUIRE(emptySeedPayload);
+    CHECK(emptySeedPayload->size == 0);
+    CHECK(emptySeedPayload->data != nullptr);
+    CHECK(put(std::string("{type: 'rom', path: '") + emptyPath + "'}").error ==
+          "a rom resource cannot be empty: a zero-length ROM cannot boot");
+    std::filesystem::remove(emptyPath);
     CHECK(put("{type: 'kit', bytes: new Uint8Array([1])}").error.find("\"rom\", \"sram\" or \"state\"") !=
           std::string::npos);
     // A caller-supplied path and marker are quoted the way the graph layer quotes a settings field, so a name carrying
     // a quote cannot forge or break the diagnostic a caller logs or parses.
     CHECK(put(R"({type: 'sram', path: '/nonexistent/a"b.sav'})").error ==
-          R"(could not read "/nonexistent/a\"b.sav": the file is absent, unreadable or empty)");
+          R"(could not read "/nonexistent/a\"b.sav": the file is absent or unreadable)");
     CHECK(put(R"({type: 'rom', embedded: 'mg"b'})").error == R"("mg\"b" is not an embedded ROM)");
     CHECK(e.resource(byBytes.id) != nullptr);  // the refusals left what was there alone
 

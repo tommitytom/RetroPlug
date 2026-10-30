@@ -353,9 +353,10 @@ export class MockBackend implements Backend {
     let bytes: Uint8Array | undefined;
     if (sources.bytes != null) bytes = sources.bytes;
     else if (sources.path != null) {
+      // A file that is not there is refused; one that is there and empty is not, since an empty payload is a resource
+      // (a zero-byte `.sav` is a blank battery). An empty rom is refused below, as a byte block is.
       bytes = this.files.get(this.canonicalize(sources.path));
-      if (!bytes || bytes.length === 0)
-        return refused(`could not read ${JSON.stringify(sources.path)}: the file is absent, unreadable or empty`);
+      if (!bytes) return refused(`could not read ${JSON.stringify(sources.path)}: the file is absent or unreadable`);
     } else if (sources.embedded !== "mgb") return refused(`${JSON.stringify(sources.embedded)} is not an embedded ROM`);
     else bytes = enc.encode("embedded:mgb");
     // An empty payload is a legitimate seed (a blank battery), but a ROM has to have something to boot.

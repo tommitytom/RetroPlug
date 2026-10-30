@@ -144,7 +144,7 @@ read of a core's state routes through the `SnapshotRegistry`. No method walks a 
 
 | Method | Signature | Behaviour |
 |---|---|---|
-| `putResource` | `(BackendResourceSpec) → RpcPutResourceResult` | an immutable byte resource for the engine's `ResourceTable` (`Engine::putResource`): `type` is `rom`, `sram` or `state` and the payload is `bytes`, `path` (read here, so a 32 MB ROM or a `.sav` never crosses the bridge) or `embedded` (a baked-in ROM's marker, `mgb`). Answers `{id}`; `{error}` for a type a node would not read, no source or more than one, a file that is absent, unreadable or empty, an empty byte block for a `rom` (an empty `sram` is a blank battery), or an unknown marker |
+| `putResource` | `(BackendResourceSpec) → RpcPutResourceResult` | an immutable byte resource for the engine's `ResourceTable` (`Engine::putResource`): `type` is `rom`, `sram` or `state` and the payload is `bytes`, `path` (read here, so a 32 MB ROM or a `.sav` never crosses the bridge) or `embedded` (a baked-in ROM's marker, `mgb`). Answers `{id}`; `{error}` for a type a node would not read, no source or more than one, a file that is absent or unreadable, an empty payload for a `rom` (an empty `sram` is a blank battery, whether TS hands the bytes or the file it read is zero bytes), or an unknown marker |
 | `releaseResource` | `(uint32 id) → bool` | the owner's drop, idempotent. A resource a plan or a live node still pins stays readable and is freed when the last pin goes |
 | `setGraph` | `(RpcSetGraphRequest) → RpcSetGraphResult` | a graph document TS built, its slots and its tap re-arm → `Engine::setGraph` (below) |
 | `loadScriptPack` | `(RpcLoadScriptPackRequest) → RpcLoadScriptPackResult` | a pack of script node types, by its id, its source and the memory limit each of its runtimes is held to (`memoryLimitBytes`, a double, absent or 0 for 64 MiB, refused unless a whole number of bytes) → `Engine::loadScriptPack`, which loads it or, for an id loaded already, reloads it (the script host, below); returns `ok`, `error` (empty on success), the planner's `errors` when a reload's replan refused (empty for a refusal before any replan) and the pack's `types`, each with its descriptor JSON |
@@ -214,11 +214,12 @@ DTO worth spelling out. `putResource` takes exactly one source of the bytes, and
 | `path` | `optional<string>` | a file the engine reads itself, so an unpatched ROM or a `.sav` never crosses the bridge (a GBA ROM can be 32 MB) |
 | `embedded` | `optional<string>` | a baked-in ROM's marker, `mgb` |
 
-A type a node would not read, no source or more than one, a file that is absent, unreadable or empty, an
-empty byte block for a `rom` (an empty `sram` is a blank battery) and an unknown marker are each answered
-here, before any document is written. Ids count up from 1 and are never reused, so a stale `"res:N"` is
-refused as unknown rather than binding whatever took its place. A resource may be empty (a blank battery is one), and a
-node that reads one gets a valid data pointer at size 0, since a consumer forms a range from `(data, data + size)`.
+A type a node would not read, no source or more than one, a file that is absent or unreadable, an empty payload
+for a `rom` (an empty `sram` is a blank battery, and so is a `.sav` file that opens and holds nothing) and an
+unknown marker are each answered here, before any document is written. Ids count up from 1 and are never reused, so a
+stale `"res:N"` is refused as unknown rather than binding whatever took its place. A resource may be empty (a blank
+battery is one), and a node that reads one gets a valid data pointer at size 0, since a consumer forms a range from
+`(data, data + size)`.
 
 ## `Engine` + `QueuedInvoker`: the mutation path
 

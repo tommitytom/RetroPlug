@@ -70,12 +70,15 @@ RpcPutResourceResult EngineRpcService::putResource(BackendResourceSpec spec) {
     if (spec.bytes) {
         bytes = toBytes(*spec.bytes);
     } else if (spec.path) {
-        bytes = slurpAll(*spec.path);
-        if (bytes.empty()) {
-            out.error = "could not read " + rp::graph::jsonString(*spec.path) +
-                        ": the file is absent, unreadable or empty";
+        // A file that cannot be opened is refused; one that opens empty is not, since an empty payload is a
+        // resource (a zero-byte `.sav` is a blank battery, as a zero-byte byte block is). An empty rom is refused
+        // below, for the same reason a byte block is: it has nothing to boot.
+        std::optional<std::vector<std::uint8_t>> file = slurpAll(*spec.path);
+        if (!file) {
+            out.error = "could not read " + rp::graph::jsonString(*spec.path) + ": the file is absent or unreadable";
             return out;
         }
+        bytes = std::move(*file);
     } else {
         const std::span<const std::uint8_t> rom = rp::embeddedRom(*spec.embedded);
         if (rom.empty()) {
