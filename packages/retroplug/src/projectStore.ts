@@ -806,8 +806,10 @@ export class ProjectStore {
   private placeLoadedSystems(): void {
     for (;;) {
       if (this.publishGraph(true)) return;
-      const refusal = this.graph.lastErrors.find((e) => /^sys-\d+(?:\/|$)/.test(e.nodeId));
-      const id = refusal ? Number(/^sys-(\d+)/.exec(refusal.nodeId)?.[1] ?? 0) : 0;
+      // A system's node is sys-<system id>, which is the only node id native can attribute a system's failure to
+      // (a document's own fault, a slots mismatch among them, names no node at all).
+      const refusal = this.graph.lastErrors.find((e) => /^sys-\d+$/.test(e.nodeId));
+      const id = refusal ? Number(/^sys-(\d+)$/.exec(refusal.nodeId)?.[1] ?? 0) : 0;
       const dropped = id > 0 ? this.systems.discard(id) : undefined;
       if (!dropped) return; // a refusal no system explains: the load cannot fix it by dropping one
       console.warn(
