@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 #
 # One iteration of the n8-host hardware loop, with no hands on the rig:
-#   build -> power-cycle the NES (Home Assistant) -> flash over SWD (the Debug Probe) ->
-#   capture the Pico's console (the probe's UART) until a pattern or a timeout.
+#   build -> halt the Pico -> power-cycle the NES (Home Assistant) -> flash over SWD (the Debug
+#   Probe) -> capture the Pico's console (the probe's UART) until a pattern or a timeout.
 #
-# The N8's USB cable stays in the Pico's host socket throughout. The power-cycle puts the N8 at
-# a fresh file-browser menu, so every run starts from the same state - the repro for the
-# FIFO-write blocker (`*t` at a fresh menu, see ../pico-n8-fifo-write-bug.md) needs no ROM and
-# no PC. It comes BEFORE the flash: the other way round, the power-off lands while the freshly
-# booted Pico is enumerating the N8, and the host stack never sees that device go or come back.
+# The N8's USB cable stays in the Pico's host socket throughout. With the Pico halted, the
+# power-cycle leaves the N8 at a fresh file-browser menu that no host has touched, so the
+# flashed firmware is the first thing to talk to it and every run starts from the same state.
+# A good run ends with the Pico booting a ROM through that menu, no PC involved.
 #
 #   ./loop.sh                                   # full loop, 90 s of console
-#   ./loop.sh --until 'menu up' --fail "no 'k'" # stop at the first verdict, exit 0 / 1
+#   ./loop.sh --until 'booted by the Pico' --fail "no 'k'"   # stop at the verdict, exit 0 / 1
 #   ./loop.sh --no-power                        # keep whatever the NES is running (the Pico
 #                                               # reset still re-mounts the N8)
 #   ./loop.sh --native                          # the RP_NATIVE_USB build (build-native/)
 #   ./loop.sh --debug                           # + TinyUSB attach/enumeration trace (build-debug/)
+#   ./loop.sh -DN8_MENU_TRIES=3                 # any CMake define; each set gets its own build dir
 #
 # Exit: 0 = done (or --until matched), 1 = --fail matched or --until timed out, 2 = setup failed.
 # The timestamped console is kept in --log (default /tmp/n8-host-console.log).
@@ -27,6 +27,7 @@ power=/workspaces/.nes-power.sh
 console=/dev/ttyDbgProbe
 
 do_build=1 do_flash=1 do_power=1 native=0 debug=0 force=0
+defs=()
 secs=90 until_re= fail_re= log=/tmp/n8-host-console.log
 
 usage() { sed -n '3,/^set -u/{/^#/p}' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -37,6 +38,7 @@ while [ $# -gt 0 ]; do
 		--no-power) do_power=0 ;;
 		--native)   native=1 ;;
 		--debug)    debug=1 ;;   # TinyUSB attach/enumeration trace on the console
+		-D*)        defs+=("$1") ;;   # a CMake define, e.g. -DN8_MENU_TRIES=3 (own build dir)
 		--force)    force=1 ;;   # run even though the N8 is enumerated on the PC
 		--secs)     secs=$2; shift ;;
 		--until)    until_re=$2; shift ;;
@@ -72,6 +74,8 @@ sdk=${PICO_SDK_PATH:-}
 if [ $native = 1 ]; then bdir=$here/build-native cfg=-DRP_NATIVE_USB=ON
 else bdir=$here/build cfg=-DRP_NATIVE_USB=OFF; fi
 if [ $debug = 1 ]; then bdir=$bdir-debug cfg="$cfg -DN8_TUSB_DEBUG=2"; fi
+# Each define set builds in its own dir, so flipping between experiment builds never reconfigures.
+for d in "${defs[@]}"; do bdir=$bdir-$(echo "${d#-D}" | tr -c "A-Za-z0-9\n" "_"); cfg="$cfg $d"; done
 elf=$bdir/n8_host.elf
 
 # --- build -----------------------------------------------------------------------------------
@@ -87,16 +91,19 @@ if [ $do_build = 1 ]; then
 fi
 [ -f "$elf" ] || die "$elf not built"
 
+# --- halt the running firmware first -----------------------------------------------------------
+# Before the power-cycle, not after: a working firmware left running sees the N8 come back, and
+# boots a ROM through its menu before this run's firmware is flashed - which then finds a game
+# running and no menu to answer. Halting also stops its output reaching this run's log.
+ocd=(openocd -f interface/cmsis-dap.cfg -f target/rp2350.cfg -c "adapter speed 5000")
+"${ocd[@]}" -c "init; reset halt; exit" >/tmp/n8-host-openocd.log 2>&1 \
+	|| { tail -15 /tmp/n8-host-openocd.log; die "halt failed (log: /tmp/n8-host-openocd.log)"; }
+
 # --- power-cycle the NES -> fresh N8 menu, before the Pico boots and enumerates it -----------
 if [ $do_power = 1 ]; then
 	echo "== power-cycle the NES"
 	"$power" reset >/dev/null || die "power-cycle failed ($power)"
 fi
-
-# --- halt the running firmware, so nothing it already printed reaches this run's log ---------
-ocd=(openocd -f interface/cmsis-dap.cfg -f target/rp2350.cfg -c "adapter speed 5000")
-"${ocd[@]}" -c "init; reset halt; exit" >/tmp/n8-host-openocd.log 2>&1 \
-	|| { tail -15 /tmp/n8-host-openocd.log; die "halt failed (log: /tmp/n8-host-openocd.log)"; }
 
 # --- console capture -------------------------------------------------------------------------
 # Started BEFORE the flash so the boot banner is caught. Each line is stamped with seconds since
@@ -116,15 +123,23 @@ trap cleanup EXIT
 sleep 0.3
 
 # --- flash (or just reset, so every run starts from a firmware boot) -------------------------
+# Then hand the cores back with C_DEBUGEN cleared. OpenOCD sets it on attach and leaves it set
+# on exit, and TinyUSB's TU_ASSERT executes BKPT whenever it is set - so with the probe merely
+# plugged in, the first failed USB transfer (the N8 powering off under a live link) parked the
+# core on a breakpoint for good, which reads exactly like a hung host stack. Without a debugger
+# the same assert just returns false, which is what the standalone box will see. A later manual
+# OpenOCD session sets it again; re-run with --no-build --no-flash to clear it.
+fl=(-c init)
 if [ $do_flash = 1 ]; then
 	echo "== flash $(basename "$elf")"
-	"${ocd[@]}" -c "program $elf verify reset exit" >/tmp/n8-host-openocd.log 2>&1 \
-		|| { tail -15 /tmp/n8-host-openocd.log; die "flash failed (log: /tmp/n8-host-openocd.log)"; }
+	fl+=(-c "program $elf verify")
 else
 	echo "== reset the Pico"
-	"${ocd[@]}" -c "init; reset run; exit" >/tmp/n8-host-openocd.log 2>&1 \
-		|| { tail -15 /tmp/n8-host-openocd.log; die "reset failed (log: /tmp/n8-host-openocd.log)"; }
 fi
+fl+=(-c "reset run")
+for core in cm0 cm1; do fl+=(-c "targets rp2350.$core" -c "mww 0xe000edf0 0xa05f0000"); done
+"${ocd[@]}" "${fl[@]}" -c exit >/tmp/n8-host-openocd.log 2>&1 \
+	|| { tail -15 /tmp/n8-host-openocd.log; die "flash/reset failed (log: /tmp/n8-host-openocd.log)"; }
 
 
 # --- wait for a verdict ----------------------------------------------------------------------

@@ -20,7 +20,6 @@
 #include "hardware/uart.h"
 #ifndef USE_NATIVE_USB
 #include "pio_usb.h"
-#include "pio_usb_ll.h"
 #endif
 #include "tusb.h"
 #include "edio.h"
@@ -29,6 +28,11 @@
 #define PIN_USB_DP 2          // GP2 = D+, GP3 = D-
 #define N8_VID     0x38df
 #define N8_PID     0x0017
+
+// '*t' attempts before giving up on the menu (~2.4 s each); lowered for quick experiments.
+#ifndef N8_MENU_TRIES
+#define N8_MENU_TRIES 20
+#endif
 
 #define MIDI_UART   uart1     // stage-1 MIDI IN
 #define MIDI_RX_PIN 5         // GP5 = UART1 RX = physical pin 7
@@ -73,24 +77,19 @@ static void n8_probe(void) {
         printf("[n8-host] SYS_INF read failed\n");
     }
 
-    uint8_t srm[16];
-    if (edio_mem_rd(EDIO_ADDR_SRM, srm, sizeof srm))
-        hexdump("memRD SRM[0..15]", srm, 16);
-    else
-        printf("[n8-host] memRD failed\n");
-
-    // memWR isn't checked destructively here (an SRM round-trip would clobber a
-    // save-game's battery RAM): the bridge exercises it live via fifoWR, and
-    // sniff_report() reads Pulse1 back to confirm the forwarded notes landed.
+    // NEVER touch cart memory (PRG / CHR / SRM) here. It is a DMA that takes the cart bus off the
+    // console, and this runs the moment the N8 enumerates - while its menu is still booting. A
+    // 16-byte SRM read at this point left the menu's FIFO command channel dead until the next
+    // power-cycle: '*t' never got its 'k' in 9 of 10 trials, against 8 of 8 without the read.
+    // That was the whole "Pico can't write the cart FIFO" blocker (../pico-n8-fifo-write-bug.md).
     printf("[n8-host] --- probe done ---\n");
 }
 
 // Autonomous boot: if the N8 file-browser MENU is running (it answers '*t' with 'k'),
 // drive it over the cart FIFO (edio_menu_*) to install + boot BlipToaster, no PC in the loop.
 // If a game is already running (or wedged) the menu won't answer, and we just forward MIDI.
-// NOTE: this depends on the cart-FIFO WRITE path (memWR to 0x1810000), which does NOT work
-// over Pico-PIO-USB - the N8 ACKs the write but never routes it to the FIFO, so '*t' gets no
-// reply and this returns early. It works from a silicon USB host. See ../pico-n8-fifo-write-bug.md.
+// The handshake rides the cart-FIFO write (memWR to 0x1810000); it only works if nothing
+// touched cart memory while the menu was booting - see n8_probe().
 // The filename on the N8's PHYSICAL SD card, which is not renamed by this repo - it still reads n8-midi.nes
 // until the card is rewritten. Update both together.
 #define BLIPTOASTER_SD_PATH "usb-games/n8-midi.nes"
@@ -99,7 +98,7 @@ static void boot_bliptoaster(void) {
     // for a few seconds after a fresh power-up.
     printf("[n8-host] menu handshake (*t)...\n");
     bool menu = false;
-    for (int i = 0; i < 20 && !menu; i++) {
+    for (int i = 0; i < N8_MENU_TRIES && !menu; i++) {
         menu = edio_menu_test();
         if (!menu) for (int j = 0; j < 4; j++) { sleep_ms(100); tuh_task(); }
     }
@@ -166,32 +165,6 @@ static void sniff_report(void) {
     printf("[sniff] timer=%-4u %4u Hz\n", p1, hz);
 }
 
-#ifndef USE_NATIVE_USB
-// RP2350-E9 (chip revisions up to A2, which is what this board carries): a Bank 0 pad with its
-// input enabled latches at ~2.2V once it has been high, and the internal pull-down cannot pull
-// it back. With D+ AND D- latched the idle bus reads SE1, which is neither attach state, so the
-// N8 is never detected - measured after a flash or a NES power-cycle with the N8 plugged in:
-// both pads read high with NOTHING attached, and dropped low once input-enable was cleared.
-// Pico-PIO-USB already clears IE before each line-state read, but for 8 nops (~67 ns at
-// 120 MHz) - enough for a bare pin, not for D+/D- wired out to a socket, whose capacitance takes
-// microseconds to drain through the ~50k pull-down. So, while the port has nothing connected,
-// hold IE off long enough to drain it. Never while connected: the PIO samples these pads.
-static void e9_drain_idle_port(void) {
-#if PICO_RP2350
-    static uint32_t next_ms = 0;
-    if (rp2350_chip_version() > 2 || PIO_USB_ROOT_PORT(0)->connected) return;
-    uint32_t t = to_ms_since_boot(get_absolute_time());
-    if (t < next_ms) return;
-    next_ms = t + 50;
-    gpio_set_input_enabled(PIN_USB_DP, false);
-    gpio_set_input_enabled(PIN_USB_DP + 1, false);
-    busy_wait_us(50);
-    gpio_set_input_enabled(PIN_USB_DP, true);
-    gpio_set_input_enabled(PIN_USB_DP + 1, true);
-#endif
-}
-#endif
-
 int main(void) {
 #ifndef USE_NATIVE_USB
     set_sys_clock_khz(120000, true);   // PIO-USB needs a 120 MHz-multiple clock
@@ -227,9 +200,6 @@ int main(void) {
 
     while (true) {
         tuh_task();
-#ifndef USE_NATIVE_USB
-        e9_drain_idle_port();
-#endif
 
         // Drain any MIDI bytes -> parser (which forwards complete messages via the
         // sink). Always drain so the UART FIFO can't overrun; the sink itself gates

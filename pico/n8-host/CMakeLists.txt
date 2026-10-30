@@ -70,6 +70,14 @@ if(DEFINED N8_TUSB_DEBUG)
     target_compile_definitions(n8_host PRIVATE CFG_TUSB_DEBUG=${N8_TUSB_DEBUG})
 endif()
 
+# Experiment knobs, each a plain #define in main.c with a default: N8_MENU_TRIES (how many
+# '*t' attempts before giving up on the menu).
+foreach(knob N8_MENU_TRIES)
+    if(DEFINED ${knob})
+        target_compile_definitions(n8_host PRIVATE ${knob}=${${knob}})
+    endif()
+endforeach()
+
 # Console (printf) over UART0 (GP0/GP1) for the debug probe. Native USB stdio stays off:
 # in the PIO-USB build the native port is unused; in the native-USB build it IS the host
 # port, so it must not be a stdio device.
