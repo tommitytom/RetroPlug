@@ -74,80 +74,44 @@ function seedSource(
   return null;
 }
 
-/** The control plane's counted handles on the engine's resources: a resource is put once and named by every system
- *  that boots from it (an entry's ROM survives its rebuilds, and a duplicate shares its source's), and the engine is
- *  told to drop it when the last handle goes. The engine keeps a dropped resource readable while a plan still pins
- *  it, so a caller drops one only after the document that stops naming it has planned. */
+/** The control plane's handles on the engine's resources: a boot puts the ROM and the seeds its node names, and a
+ *  system holds one handle on each for as long as it lives, so the engine is told to drop a resource when the system
+ *  that holds it goes. Every boot reads its own bytes - a rebuild re-reads the ROM from its source - so no two systems
+ *  share one. The engine keeps a dropped resource readable while a plan still pins it, so a caller drops one only
+ *  after the document that stops naming it has planned. */
 export class ResourcePool {
-  private counts = new Map<number, number>();
-  private sources = new Map<number, ResourceSpec>();
+  private readonly held = new Set<number>();
 
   constructor(readonly backend: ResourceBackend) {}
 
-  /** Put `spec` in the engine's table and take its first handle: the id, or the reason the engine refused it. */
+  /** Put `spec` in the engine's table and take its handle: the id, or the reason the engine refused it. */
   put(spec: ResourceSpec): { id: number } | { error: string } {
     const result = this.backend.putResource(spec);
     if ("error" in result) return { error: result.error };
-    this.counts.set(result.id, (this.counts.get(result.id) ?? 0) + 1);
-    this.sources.set(result.id, spec);
+    this.held.add(result.id);
     return { id: result.id };
   }
 
-  /** Whether the resource `id` was put from `spec`: true for the same file, the same embedded marker, or byte-for-byte
-   *  the same image. A rebuild whose ROM bytes moved (an asset role folded a different image in) must not reuse the
-   *  resource the old core read. */
-  sameSource(id: number, spec: ResourceSpec): boolean {
-    const was = this.sources.get(id);
-    if (!was || was.type !== spec.type) return false;
-    if ("path" in was && "path" in spec) return was.path === spec.path;
-    if ("embedded" in was && "embedded" in spec) return was.embedded === spec.embedded;
-    if (!("bytes" in was) || !("bytes" in spec) || was.bytes.length !== spec.bytes.length) return false;
-    for (let i = 0; i < was.bytes.length; ++i) if (was.bytes[i] !== spec.bytes[i]) return false;
-    return true;
-  }
-
-  /** Take another handle on a resource this pool holds, so a boot can share it: the same id. */
-  retain(id: number): number {
-    const held = this.counts.get(id) ?? 0;
-    if (held === 0) throw new Error(`resource ${id} is not one this pool holds`);
-    this.counts.set(id, held + 1);
-    return id;
-  }
-
-  /** Give one handle back, telling the engine to drop the resource once it was the last. Absent ids are no-ops, so a
-   *  caller can hand back the seeds a boot never took. */
+  /** Give the handle back, telling the engine to drop the resource. Absent ids and ids this pool does not hold are
+   *  no-ops, so a caller can hand back the seeds a boot never took. */
   drop(id: number | undefined): void {
     if (id === undefined) return;
-    const held = this.counts.get(id) ?? 0;
-    if (held > 1) {
-      this.counts.set(id, held - 1);
-      return;
-    }
-    this.counts.delete(id);
-    this.sources.delete(id);
-    if (held === 1) this.backend.releaseResource(id);
+    if (!this.held.delete(id)) return;
+    this.backend.releaseResource(id);
   }
-
 }
 
 /** Boot `spec` from resources: put its ROM and its seeds, or answer why the engine refused one of them, having given
- *  back what it had already taken. `opts.rom` is a ROM resource to share when it was put from the same bytes (a rebuild
- *  of the same image, a duplicate of the same cart); a spec whose ROM moved puts its own. */
-export function bootSystem(pool: ResourcePool, spec: ConstructSpec, opts: { rom?: number } = {}): BootResult {
+ *  back what it had already taken. Every boot puts its own ROM, so a rebuild's file is read again from its source. */
+export function bootSystem(pool: ResourcePool, spec: ConstructSpec): BootResult {
   const handles: number[] = [];
   const giveBack = (error: string): BootResult => {
     for (const id of handles) pool.drop(id);
     return { error };
   };
-  const source = romSource(spec);
-  let rom: number;
-  if (opts.rom !== undefined && pool.sameSource(opts.rom, source)) {
-    rom = pool.retain(opts.rom);
-  } else {
-    const put = pool.put(source);
-    if ("error" in put) return { error: put.error };
-    rom = put.id;
-  }
+  const put = pool.put(romSource(spec));
+  if ("error" in put) return { error: put.error };
+  const rom = put.id;
   handles.push(rom);
   let sram: number | undefined;
   let state: number | undefined;

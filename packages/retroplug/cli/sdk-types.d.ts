@@ -417,7 +417,8 @@ export interface SystemsStore {
   setRoleConfig(id: number, roleKind: string, partial: Record<string, unknown>): boolean;
   /** Reboot `id` in place, carrying its battery SRAM forward (a hardware-style reset: the save persists,
    *  the running state is dropped). Rebuilds the core, so the system gets a NEW id - use the returned one;
-   *  null when `id` is absent.
+   *  null when `id` is absent. The ROM is read again from its source (its path, an embedded marker or an asset
+   *  role's folded bytes), as every rebuild reads its own, so a ROM rebuilt on disk is what the reset boots.
    *
    *  `id` may be one a rebuild replaced: a construct-time `setRoleConfig` rebuilds under a new id, and code
    *  written against the old contract follows it with `reset(id)`. That still works - the reset applies to

@@ -117,11 +117,10 @@ created and activated the node, and a system node builds its core at activation.
 
 **TS owns them per system.** A store entry owns its ROM resource and the seeds it booted from for as long as the system
 lives, since every later document names them too, and drops them when the system is removed or rebuilt under a new id.
-A rebuild reuses its ROM resource only when the source is the same (the same path, the same embedded marker, or the
-same image byte for byte), so a rebuild whose asset role folded in a different image puts its own; a duplicate shares
-the source's. TS counts references to each and drops a resource when its count reaches zero. A dropped resource is
-freed when the plan that last ran its node is reclaimed. Holding the seeds costs nothing extra: the node pins them for
-its lifetime regardless.
+Every boot puts its own ROM, read again from its source (a path, an embedded marker or the asset roles' folded bytes),
+so a rebuild after a ROM file changed on disk boots the new bytes and a duplicate gets a resource of its own; no two
+systems share one. A dropped resource is freed when the plan that last ran its node is reclaimed. Holding the seeds
+costs nothing extra: the node pins them for its lifetime regardless.
 
 **The bytes come from** a path (a plain ROM, a `.sav`, a savestate file), the asset roles (`lsdj-assets`,
 `risa-assets`, `bliptoaster-assets` fold their overrides into ROM bytes, and `lsdj-sync`'s empty-save seeding becomes an
@@ -181,18 +180,19 @@ its config, where they started. Every verb that called `buildCore` keeps its orc
 |---|---|---|
 | add, load, replace | the ROM by path or embedded, folded by the asset roles | the battery from its `.sav` (an `sram` seed by path) |
 | swap ROM | the new ROM; an `sram` seed from `readSram` | the live battery |
-| duplicate | the source's ROM (shared); a `state` seed from `readState` | the whole machine |
-| reload, reset | the same ROM; an `sram` seed from `readSram` | the battery |
-| new SRAM | the same ROM; a blank `sram` seed | nothing |
-| load state, load SRAM | the same ROM; the file by path | the file |
+| duplicate | the ROM put again from its source; a `state` seed from `readState` | the whole machine |
+| reload, reset | the ROM put again from its source; an `sram` seed from `readSram` | the battery |
+| new SRAM | the ROM put again from its source; a blank `sram` seed | nothing |
+| load state, load SRAM | the ROM put again from its source; the file by path | the file |
 | project load | each system's ROM; the archive's blobs | what the archive saved |
-| a construct-time edit | the same ROM; an `sram` seed from `readSram` | the battery |
+| a construct-time edit | the ROM put again from its source; an `sram` seed from `readSram` | the battery |
 
-A rebuild reuses its ROM resource only when it offers the one it holds and its source is the same (a path, an
-embedded marker or image bytes); `reload` offers none, since the ROM watcher's reread is one of its callers, so it
-puts a fresh one. An edit's resources are released only once its document has planned: a dropped resource cannot be
-bound by a new instance, so the store publishes first and drops afterwards. `discard` drops one system's resources at
-once: the document it was in never planned, so nothing pinned them.
+Every boot reads its ROM again, so a file a user rebuilt on disk is what Reset, New SRAM, Load SRAM, Load State, a
+construct-time edit and a duplicate boot (the pre-C3 behaviour, when the build took the `romPath` for every in-place
+verb); an asset role's hook folds its current bytes, so a changed override is the image booted. An edit's resources
+are released only once its document has planned: a dropped resource cannot be bound by a new instance, so the store
+publishes first and drops afterwards. `discard` drops one system's resources at once: the document it was in never
+planned, so nothing pinned them.
 
 **A construct-time edit** is the reset path, run by `setRoleConfig` itself: the `systemKnobs` table gains a third
 column beside settings and params, and when one of its fields moves the store rebuilds the system under a new id with
@@ -254,8 +254,9 @@ places (native's "system N is live"). The render path and every host go through 
   `discard`, DirectGraph's add/replace/remove, every put balanced by a release.
 - **`test:native`** ([app-construct-edit.test.ts](../packages/retroplug/test-native/app-construct-edit.test.ts)): a NES
   FIFO profile edit changes the queue's capacity with no Reset, an export-mode edit makes the per-channel streams
-  appear, an SMS FM edit silences an FM song, duplicate/reset/load-state carry what they carry today, and a project
-  with one unreadable ROM loads the rest.
+  appear, an SMS FM edit silences an FM song, a sparse stored config keeps a live edit, a param and a later live edit
+  live, a ROM rewritten on disk is what reset and a construct-time edit boot, duplicate/reset/load-state carry what
+  they carry today, and a project with one unreadable ROM loads the rest.
 - **The acceptance run** as C2's: every suite, the Reaper leg, SDL, BlipToaster and NESVJ.
 
 ## 8. Landing
@@ -318,9 +319,11 @@ section 7; and the findings below.
   settings' `res:N` refs with the pins its instance holds, so a moved ref is a rebuild on its own, and a prepare that
   keeps them copies the instance's pins into the new settings object. That is stronger than section 3's rule, and it
   keeps `stateless_prepare` sound because it reads only what create fixed (sections 3 and 4).
-- **A rebuild's ROM resource is only shared when its source is the same.** A rebuild that always shared the old ROM
-  silently kept an asset role's previous image: `bootSystem` compares path, embedded marker or image bytes, and a
-  reload puts a fresh ROM resource because the file watcher is one of its callers (sections 4 and 6).
+- **Every rebuild reads its ROM again.** C3 first shared the old ROM resource across an in-place rebuild, which made
+  Reset boot stale bytes after a user rebuilt a ROM on disk (and made an asset role's previous image stick). Every
+  boot now puts its own ROM from its source, as the pre-C3 build did with the `romPath`, so Reset, New SRAM, Load
+  SRAM, Load State, a construct-time edit and a duplicate all boot what is on disk now, and a rebuild of a ROM since
+  deleted fails again as it did before C3 (sections 4 and 6).
 - **A stored value the role schema would have repaired now takes the node's default.** There is no blob to carry a
   repaired value. `systemKnobs` writes the node's own default where the stored value is one it would refuse, and notes
   it, so an out-of-range number or a fractional integer takes that default where the blob took the clamp or the rounded

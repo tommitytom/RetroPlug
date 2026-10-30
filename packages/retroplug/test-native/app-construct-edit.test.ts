@@ -1,21 +1,21 @@
 // A construct-time edit lands with no manual Reset (docs/modular-graph-phase-c3-design.md section 2): those fields are
 // read once, when a system's node builds its core, so SystemsStore.setRoleConfig rebuilds the system itself - a new id,
-// the same ROM resource, the live battery carried - and the new value is in the document that replaces the old one.
-// Each case watches a real core change behaviour, not just the document:
+// the ROM read again from its source, the live battery carried - and the new value is in the document that replaces the
+// old one. Each case watches a real core change behaviour, not just the document:
 //
 //  - a NES's FIFO profile is its RX queue's capacity, which the transport stats report (0 = unbounded);
 //  - a NES's channel export mode decides how many streams its node produces, which the per-channel render returns;
 //  - an SMS's FM switch decides whether the YM2413 is emulated at all, so an FM-instrument song goes silent.
 // And what a rebuild CARRIES: a construct-time edit and a reset the battery, a duplicate the whole machine, a load-state
 // the file it was given. A Game Boy has no construct-time field of its own (its model and the rest are applied live), so
-// its rebuilds are the reset path itself. A stored core config written by an older build holds only the fields it knew,
-// and every document names the rest at their defaults: an edit must stay live rather than move its node's rebuild key
-// under a live id.
+// its rebuilds are the reset path itself. Every rebuild reads the ROM again, so a file a user rebuilt on disk is what
+// the next boot runs. A stored core config written by an older build holds only the fields it knew, and every document
+// names the rest at their defaults: an edit must stay live rather than move its node's rebuild key under a live id.
 //
 // Run with: `pnpm test:native app-construct-edit`.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import type { Backend } from "../src/backend";
+import { MemoryRegion, type Backend } from "../src/backend";
 import { createAudioDriver, type AudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
@@ -232,6 +232,37 @@ test("a sparse stored NES config keeps a live edit, a param and a later live edi
   expect(be.getCoreTransportStats(rebuilt).rxCapacity).toBe(2048);
   store.removeSystem(rebuilt);
   store.removeSystem(second);
+});
+
+test("a ROM rewritten on disk is what reset and a construct-time edit boot, as before C3", () => {
+  const { be, project } = session();
+  const first = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
+  const second = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster-vrc6.nes";
+  if (!be.fileExists(first) || !be.fileExists(second)) skip(`no ROMs at ${first}`);
+  const store = project.systems;
+  const temp = "/tmp/rp-construct-edit-rom.nes";
+  // The PRG image a file holds (iNES: 16-byte header, then PRG banks), which readMemory(Rom) answers for a live core.
+  const prgOf = (bytes: Uint8Array): Uint8Array => bytes.slice(16, 16 + bytes[4] * 0x4000);
+  const prg = (id: number): Uint8Array => new Uint8Array(be.readMemory(id, MemoryRegion.Rom)!);
+  const a = prgOf(be.readFile(first)!);
+  const b = prgOf(be.readFile(second)!);
+  expect(a.slice(0, 64).some((v, i) => v !== b[i])).toBe(true);
+  be.writeFileAtomic(temp, be.readFile(first)!);
+  const id = store.addSystem(temp)!;
+  expect(prg(id).slice(0, 64)).toEqual(a.slice(0, 64));
+  // Rebuild the ROM on disk, then Reset: the reset boots the bytes that are there now, not the resource the old node
+  // read (the pre-C3 behaviour, when every in-place rebuild handed the build the ROM's path).
+  be.writeFileAtomic(temp, be.readFile(second)!);
+  const reset = store.reset(id)!;
+  expect(prg(reset).slice(0, 64)).toEqual(b.slice(0, 64));
+  // A construct-time edit is an in-place rebuild too, so it reads the file again (here back to the first image).
+  be.writeFileAtomic(temp, be.readFile(first)!);
+  expect(store.setRoleConfig(reset, "mesen", { fifo: "hardware" })).toBe(true);
+  const rebuilt = store.view()[0].id;
+  expect(rebuilt === reset).toBe(false);
+  expect(prg(rebuilt).slice(0, 64)).toEqual(a.slice(0, 64));
+  store.removeSystem(rebuilt);
+  be.deleteFile(temp);
 });
 
 test("a project with one unreadable ROM loads the rest, with a note", () => {

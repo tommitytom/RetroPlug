@@ -2,8 +2,8 @@
 // and its seeds, the document that follows names their ids, and the engine is told to drop one only after the document
 // that stops naming it has planned. A refused document puts the store's model back, gives back what the edit put and
 // reports the verb's failure; a project load drops the system a refusal names and publishes the rest. And a
-// construct-time edit is a reset that carries the battery: a new id, the same ROM resource, a new value in the
-// document.
+// construct-time edit is a reset that carries the battery: a new id, a ROM re-read from its source, a new value in the
+// document. Every rebuild reads the ROM again, so a file rebuilt on disk is what the next boot runs.
 import { test, expect } from "../../testing/harness";
 import { MockBackend, sramBytesFor, stateBytesFor } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
@@ -85,7 +85,7 @@ test("remove: drops the document first, then gives every resource of the system 
   expect(heldIds(be)).toEqual([]);
 });
 
-test("reset: the same ROM boots again from its resource, and only the new seed is put", () => {
+test("reset: re-reads the ROM from its source, so a file rebuilt on disk is what the cart boots", () => {
   const { be, store } = newStore();
   be.seed("/roms/a.gb", gbRom());
   be.seed("/roms/a.sav", "battery");
@@ -93,12 +93,15 @@ test("reset: the same ROM boots again from its resource, and only the new seed i
   const before = store.systems()[0].resources;
   be.log.length = 0;
   const next = store.reset(id)!;
-  // The ROM resource is shared, not put again; the battery is a new seed (the live one), put before the document.
-  expect(order(be)).toEqual(["putResource", "setGraph", "releaseResource"]);
-  expect(store.systems()[0].resources.rom).toBe(before.rom);
+  // The ROM is put again from its path, and the live battery as a seed; then the document; then the two handles the
+  // old system held, once that document has planned.
+  expect(order(be)).toEqual(["putResource", "putResource", "setGraph", "releaseResource", "releaseResource"]);
+  expect(store.systems()[0].resources.rom === before.rom).toBe(false);
+  expect(be.bootOf(next)!.rom!.spec).toEqual({ type: "rom", path: "/roms/a.gb" });
   expect(be.bootOf(next)!.sramBytes).toEqual(sramBytesFor(id)); // the live battery, read back rather than re-read
-  expect(be.releaseResourceCalls).toEqual([before.sram]); // the old seed, after the document that stopped naming it
-  expect(be.resource(before.rom)).toBeTruthy(); // the ROM is still the running plan's
+  // The old system's two handles, released after the document that replaced it.
+  expect(be.releaseResourceCalls).toEqual([before.rom, before.sram]);
+  expect(be.resource(before.rom)).toBe(undefined);
 });
 
 test("reload: re-reads the ROM from disk, so its resource is put again rather than shared", () => {
@@ -115,23 +118,25 @@ test("reload: re-reads the ROM from disk, so its resource is put again rather th
   expect(be.bootOf(next)!.rom!.spec).toEqual({ type: "rom", path: "/roms/a.gb" });
 });
 
-test("duplicate: shares the source's ROM and seeds the clone from its live state", () => {
+test("duplicate: re-reads the ROM and seeds the clone from its live state", () => {
   const { be, store } = newStore();
   be.seed("/roms/a.gb", gbRom());
   const id = store.addSystem("/roms/a.gb")!;
   const src = store.systems()[0].resources;
   be.log.length = 0;
   const copy = store.duplicateSystem(id)!;
-  expect(order(be)).toEqual(["putResource", "setGraph"]); // the state seed, then the document; no ROM put
+  // The ROM and the state seed, then the document.
+  expect(order(be)).toEqual(["putResource", "putResource", "setGraph"]);
   const clone = store.systems().find((e) => e.id === copy)!;
-  expect(clone.resources.rom).toBe(src.rom); // one resource, two handles
+  expect(clone.resources.rom === src.rom).toBe(false);
+  expect(be.bootOf(copy)!.rom!.spec).toEqual({ type: "rom", path: "/roms/a.gb" });
   expect(be.bootOf(copy)!.stateBytes).toEqual(stateBytesFor(id)); // the source's published machine
   expect(be.bootOf(copy)!.state!.source).toBe("bytes");
-  // Removing the source keeps the clone's ROM: its handle is the one that is left.
+  // Removing the source keeps the clone's own ROM: the two hold resources of their own.
   store.removeSystem(id);
-  expect(be.resource(src.rom)).toBeTruthy();
+  expect(be.resource(clone.resources.rom)).toBeTruthy();
   store.removeSystem(copy);
-  expect(be.resource(src.rom)).toBe(undefined);
+  expect(be.resource(clone.resources.rom)).toBe(undefined);
 });
 
 test("every put is balanced by a release once every system is gone", () => {
@@ -205,7 +210,7 @@ test("a project load drops the system a refusal names, with a note, and publishe
   expect(project.systems.systems().every((e) => be.resource(e.resources.rom) !== undefined)).toBe(true);
 });
 
-test("a construct-time edit resets the system with its battery: a new id, the same ROM, the new value in the document", () => {
+test("a construct-time edit resets the system: a new id, a re-read ROM, the battery carried, the new value", () => {
   const { be, store } = newStore();
   be.seed("/roms/a.nes", nesRom());
   const id = store.addSystem("/roms/a.nes")!;
@@ -216,17 +221,18 @@ test("a construct-time edit resets the system with its battery: a new id, the sa
   expect(next === id).toBe(false); // a construct-time field is read at the build, so the node is rebuilt
   expect(store.systems().length).toBe(1);
   expect(store.focused()).toBe(next);
-  // The live battery is carried: the seed is the old core's, read back rather than the .sav on disk.
+  // The live battery is carried: the seed is the old core's, read back rather than the .sav on disk. The ROM is read
+  // again from its path, as every boot reads its own.
   expect(be.bootOf(next)!.sramBytes).toEqual(sramBytesFor(id));
-  expect(store.systems()[0].resources.rom).toBe(before.rom); // the same ROM resource
+  expect(be.bootOf(next)!.rom!.spec).toEqual({ type: "rom", path: "/roms/a.nes" });
+  expect(store.systems()[0].resources.rom === before.rom).toBe(false);
   const settings = be.bootOf(next)!.settings;
   expect(settings.fifo).toBe("hardware");
   expect(settings.fifoDepth).toBe(4096);
-  // Nothing of the old system's is dropped: the ROM is shared and it held no seed (no .sav on disk). The one put is
-  // the carried battery, made before the document that names it.
-  expect(order(be)).toEqual(["putResource", "setGraph"]);
-  expect(be.releaseResourceCalls).toEqual([]);
-  expect(be.resource(before.rom)).toBeTruthy();
+  // The ROM and the carried battery, made before the document that names them, then the old system's handle once it
+  // planned (it held no seed: there was no .sav on disk).
+  expect(order(be)).toEqual(["putResource", "putResource", "setGraph", "releaseResource"]);
+  expect(be.releaseResourceCalls).toEqual([before.rom]);
 });
 
 test("reset of the id a construct-time edit replaced resets what it became, carrying that system's battery", () => {
@@ -239,6 +245,7 @@ test("reset of the id a construct-time edit replaced resets what it became, carr
   const replacement = store.systems()[0].resources;
   // The pre-C3 contract: follow the construct-time edit with a reset of the id the caller held.
   be.log.length = 0;
+  be.releaseResourceCalls.length = 0;
   const next = store.reset(id);
   expect(next === null).toBe(false);
   expect(next === rebuilt).toBe(false); // the reset builds a system of its own, under a new id
@@ -249,11 +256,9 @@ test("reset of the id a construct-time edit replaced resets what it became, carr
   expect(be.bootOf(next as number)!.settings.fifo).toBe("hardware");
   expect(be.bootOf(next as number)!.settings.fifoDepth).toBe(4096);
   expect(be.bootOf(next as number)!.sramBytes).toEqual(sramBytesFor(rebuilt));
-  // The replacement's own seed is the one the document stopped naming, so it goes after the document planned; its ROM
-  // is still the running plan's.
-  expect(order(be)).toEqual(["putResource", "setGraph", "releaseResource"]);
-  expect(be.releaseResourceCalls).toEqual([replacement.sram]);
-  expect(be.resource(replacement.rom)).toBeTruthy();
+  // The replacement's own ROM and seed are the ones the document stopped naming, so they go after it planned.
+  expect(order(be)).toEqual(["putResource", "putResource", "setGraph", "releaseResource", "releaseResource"]);
+  expect(be.releaseResourceCalls).toEqual([replacement.rom, replacement.sram]);
 });
 
 test("reset follows a chain of rebuilds: the first id resets the live end of it", () => {
@@ -424,11 +429,13 @@ test("a stored construct value the schema repairs takes the rebuild it needs, ra
   );
   const id = adopted.result!;
   expect(be.graphNode(`sys-${id}`)?.settings?.fifoDepth).toBe(0);
+  const resources = store.systems()[0].resources;
   expect(store.setRoleConfig(id, "mesen", { region: "pal" })).toBe(true);
   const rebuilt = store.systems()[0].id;
   expect(rebuilt === id).toBe(false);
   expect(be.graphNode(`sys-${rebuilt}`)?.settings?.fifoDepth).toBe(1 << 20); // the schema's clamp, in the document
   expect(be.graphNode(`sys-${rebuilt}`)?.settings?.region).toBe("pal");
+  expect(store.systems()[0].resources.rom === resources.rom).toBe(false);
 });
 
 test("clear publishes the empty document and then gives every system's resources back", () => {

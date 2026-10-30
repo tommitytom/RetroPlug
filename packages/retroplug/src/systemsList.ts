@@ -33,9 +33,9 @@ export interface SystemEntry {
   /** The ROM's name a console that stages its ROM as a file takes its battery identity from (graph/systemResources.ts):
    *  its file's stem, or an embedded ROM's marker. Not serialized: it follows `romPath`/`embeddedRom`. */
   romName: string;
-  /** The resources the node that places this system boots it from, as the store's pool counts them (not serialized):
-   *  its ROM, and the seed its core starts with. The same handles survive a rebuild that keeps the ROM, and a
-   *  duplicate shares its source's ROM handle. */
+  /** The resources the node that places this system boots it from, as the store's pool holds them (not serialized):
+   *  its ROM, and the seed its core starts with. Every boot puts its own, so a rebuild replaces both and a duplicate
+   *  holds resources of its own. */
   resources: SystemResources;
 }
 

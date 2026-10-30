@@ -367,8 +367,8 @@ export class SystemsStore {
   /** Clone a system's LIVE state into a fresh appended instance with its own suffix. Orchestrated in
    *  TS: pull the source's savestate from the registry (it includes SRAM), then boot an INDEPENDENT
    *  core seeded from those bytes: the source's role config reaches the clone's node, so the clone
-   *  boots the same model the savestate was captured under, and from the source's own ROM resource,
-   *  which the two then share. No native duplicate method. */
+   *  boots the same model the savestate was captured under, and the ROM is read again from its source,
+   *  as every boot reads its own. No native duplicate method. */
   duplicateSystem(id: number): number | null {
     const src = findById(this.entries, id);
     if (!src) return null;
@@ -399,10 +399,10 @@ export class SystemsStore {
       savPath: "",
       savSuffix: suffix,
       embeddedRom: src.embeddedRom,
-      battery: src.battery, // same ROM as the source
+      battery: src.battery, // the same source, read again
       settings: { ...src.settings },
       roles: src.roles.map((r) => ({ kind: r.kind, config: { ...r.config } })),
-    }, { rom: src.resources.rom });
+    });
     if (!prepared) {
       console.warn(`[systems] duplicateSystem(${id}) failed (a resource would not put) - no instance added`);
       return null;
@@ -436,21 +436,19 @@ export class SystemsStore {
     const prev = findById(this.entries, id);
     if (!prev) return null;
     this.flushBeforeDrop(prev);
-    // A reload reads the ROM from disk again (the file watcher is a caller), so its resource is put fresh rather than
-    // shared with the core being replaced.
-    return this.rebuildInPlace(id, { sramBytes: this.backend.readSram(id) ?? undefined }, { rereadRom: true });
+    return this.rebuildInPlace(id, { sramBytes: this.backend.readSram(id) ?? undefined });
   }
 
   /** Reconstruct system `id` in place from seed bytes: capture the source's spec, build a fresh core
    *  under a new id that takes the old one's slot, and keep identity + focus. The seed (sramBytes
    *  = cold-boot battery, stateBytes = boot from savestate) overrides what native would read from disk.
    *  `savPathOverride` repoints the auto-save target (New SRAM…); omitted, the system keeps its own. The
-   *  shared body of reload / loadState / loadSram / newSramAs — the in-place twin of duplicateSystem
-   *  (which appends). */
+   *  shared body of reload / loadState / loadSram / newSramAs: the in-place twin of duplicateSystem
+   *  (which appends), and every boot reads its ROM again from its source. */
   private rebuildInPlace(
     id: number,
     seed: { sramBytes?: Uint8Array; stateBytes?: Uint8Array },
-    opts: { savPathOverride?: string; roles?: RoleInstance[]; rereadRom?: boolean } = {},
+    opts: { savPathOverride?: string; roles?: RoleInstance[] } = {},
   ): number | null {
     const src = findById(this.entries, id);
     if (!src) return null;
@@ -469,15 +467,15 @@ export class SystemsStore {
       sramBytes: seed.sramBytes,
       stateBytes: seed.stateBytes,
     }, roles);
-    // The same ROM boots again, so the new node names the ROM resource the old one did: the boot takes a second
-    // handle on it (and puts its own where the bytes moved, an asset role's new image among them), and the old
-    // entry's handle goes with the old entry once the new document has planned.
+    // Every rebuild reads the ROM again from its source (a fresh put by path, embedded marker or the asset roles'
+    // folded bytes), so a file a user rebuilt on disk is what Reset, New SRAM, Load SRAM, Load State and a
+    // construct-time edit boot. The old entry's handles go with the old entry once the new document has planned.
     const prepared = this.boot(spec, {
       ...src,
       id: newId,
       savPath: override,
       roles,
-    }, { rom: opts.rereadRom === true ? undefined : src.resources.rom });
+    });
     if (!prepared) return null;
     return this.replaceWith(id, src, prepared);
   }
@@ -644,7 +642,8 @@ export class SystemsStore {
    *  field publishes, and one moving only a param (a NES's expansion volume) sets it live (backend.setParam) with no
    *  publish. One moving a CONSTRUCT-TIME field (the SD root, the FIFO, the N8 link, the export mode, FM) rebuilds the
    *  system: those are read once, when its node builds its core, so the store runs the reset path itself - a new id,
-   *  the same ROM resource, the live battery carried - and the new value is in the document that replaces the old one.
+   *  the ROM read again from its source, the live battery carried - and the new value is in the document that replaces
+   *  the old one.
    *  A Game Boy's link group is wiring, so a change of its value publishes. Any other role (an asset override, a ROM's
    *  facts) never reaches the engine. False, the system as it was, when the rebuild could not be placed. */
   setRoleConfig(id: number, roleKind: string, partial: Record<string, unknown>): boolean {
@@ -1238,12 +1237,8 @@ export class SystemsStore {
   // Boot `spec` and make the entry it becomes: the one place a store boot goes through, so every verb puts its
   // resources the same way, takes the same handles and reports a put's refusal the same way. `rest` is the entry's
   // identity and settings, everything but the ROM's name and the resources, which the boot answers.
-  private boot(
-    spec: ConstructSpec,
-    rest: Omit<SystemEntry, "romName" | "resources">,
-    opts: { rom?: number } = {},
-  ): Prepared | null {
-    const booted = bootSystem(this.pool, spec, opts);
+  private boot(spec: ConstructSpec, rest: Omit<SystemEntry, "romName" | "resources">): Prepared | null {
+    const booted = bootSystem(this.pool, spec);
     if ("error" in booted) {
       console.warn(`[systems] ${rest.romPath || `the embedded ${rest.embeddedRom}`}: ${booted.error}`);
       return null;

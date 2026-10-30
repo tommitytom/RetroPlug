@@ -131,23 +131,25 @@ the entries, which is how a caller reads the new id a rebuild allocated.
   sets the system node's `gain` param live (`backend.setParam("sys-<id>", "gain", dB)`) with no publish; the
   next document, whatever publishes it, carries the same value. `reloadOnRomChange` is TS's alone (the file
   watcher reads it), so it reaches no backend. Every boot puts its ROM and seeds as resources through
-  [systemResources.ts](../packages/retroplug/src/graph/systemResources.ts) and records the handles on the entry; a
-  rebuild retains the ROM handle only when the boot's source is the same, a duplicate shares it, and a resource is
-  released once its last handle goes. An edit of the core-config role (the `"system"`-category role
+  [systemResources.ts](../packages/retroplug/src/graph/systemResources.ts) and records the handles on the entry; every
+  boot puts its own ROM (a rebuild reads the file again), and a resource is released when the system that holds it goes.
+  An edit of the core-config role (the `"system"`-category role
   whose kind is the core) is diffed through `systemKnobs`
   ([graph/buildGraph.ts](../packages/retroplug/src/graph/buildGraph.ts), the one table of which field is a
   setting, which a param and which construct-time): a moved setting field publishes, the node's settings carrying it; a
   moved param alone (a NES's `expansionVolume`) is set live with `setParam`; and a construct-time field (the FIFO
   and its overrides, `sdRoot`, the N8 link, `channelExportMode`, SMS `enableFm`) rebuilds the system at once through
-  the reset path (a new id, the same ROM resource, the live battery carried), so the new value is in the document
+  the reset path (a new id, the ROM read again, the live battery carried), so the new value is in the document
   that replaces the old one, and the store remembers the id it replaced so a `reset` of that id resets the
-  replacement (below). The comparison is through the role schema's parse of the stored config, so a sparse
-  stored config does not make a live knob edit look like a rebuild. A feature-role's config reaches only its protocol
-  node's settings, and for `lsdj-sync` also its Game Boy node's `serialOutCapture` (`"drive"` for MI.OUT,
-  `"listen"` for master sync, `"off"` otherwise), both in the document its edit publishes.
+  replacement (below). The comparison is `systemKnobs` over the stored config as written against the schema's parse of
+  the edit, and every construct-time field is written in full (the stored value, else the node's default), so a sparse
+  stored config adds no move while a stored value the schema repairs takes the rebuild it needs. A feature-role's
+  config reaches only its protocol node's settings, and for `lsdj-sync` also its Game Boy node's
+  `serialOutCapture` (`"drive"` for MI.OUT, `"listen"` for master sync, `"off"` otherwise), both in the document its
+  edit publishes.
 - **`duplicateSystem`** is TS orchestration with **no native duplicate method**: it pulls `readState(id)` (state
   includes SRAM), then boots a `ConstructSpec` seeded with those `stateBytes` under a fresh
-  `allocSystemId()` from the source's ROM resource, and appends.
+  `allocSystemId()` from the ROM put again from its source, and appends.
 - **`commitEdit`** is the one publish path: it installs the new entries, publishes once, and only then releases the
   resources the edit replaced (a dropped resource cannot be bound by a new instance). A refused document puts the
   entries and the focus back, gives back what the edit put, republishes the restored model (warning if that is
@@ -179,9 +181,9 @@ body: it captures the source spec (through the load-time role hooks, so an asset
 it under a **new id** that takes the old one's slot, and preserves identity + focus
 (`replaceById(entries, id, {...src, id: newId})`; `if (focusedId === id) focusedId = newId`).
 The `seed` overrides what the boot reads - `sramBytes` = cold-boot battery,
-`stateBytes` = boot-from-savestate - while `savPath` stays the auto-save target, and the new entry shares the old
-ROM resource where the source's bytes are the same. Five public operations are thin wrappers over it, and a
-construct-time `setRoleConfig` is a sixth:
+`stateBytes` = boot-from-savestate - while `savPath` stays the auto-save target. Every boot reads its ROM again from
+its source, so a file a user rebuilt on disk is what any of these boots, as before C3. Five public operations are thin
+wrappers over it, and a construct-time `setRoleConfig` is a sixth:
 
 | Op | Seed |
 |---|---|
@@ -318,15 +320,15 @@ lands the store's value).
 stores (the native tests, the CLI's `analyze-lsdj-sync` session and the `lsdj-detect-offsets` tool;
 one per process, `directGraph()`). Its `add(spec, id)` / `replace(oldId, spec, id)` / `remove(id)` keep its systems
 list in slot order (add appends, replace keeps the slot, remove shifts later slots down); each boot puts the spec's
-ROM and seeds through the shared helper (a replace shares the old ROM where the image is the same), and a resource is
-given back once the document that stopped naming it has planned, a refused change giving back what it put and
-restoring the document before it. A system it adds or replaces has no roles, and what the script nodes are told is
+ROM and seeds through the shared helper, and a resource is given back once the document that stopped naming it has
+planned, a refused change giving back what it put and restoring the document before it. A system it adds or replaces has no roles, and what the script nodes are told is
 three calls of its own, each a publish: `setPipeline(id,
 roles)` (each role with a protocol node placed as one, its config as given), `setMidiRouting(mode)` and
 `setController(controller)` (its app config parsed by the app's schema, as the project's is). Until
 `setMidiRouting` names a mode, no host MIDI is routed to any system. A system it adds has no core config
-either, so its node carries no setting field and its core keeps the settings it was built with, while
-its params still reach it at their defaults (its gain at 0 dB; a NES's expansion volume at 100%), until
+either, so its node carries no live setting field (a NES's or SMS's construct-time fields are written at their node's
+defaults) and its core keeps the settings it was built with, while its params still reach it at their defaults (its
+gain at 0 dB; a NES's expansion volume at 100%), until
 `setCoreConfig(id, partial)`, a publish, merges fields over what it gave before, in the labels the store's role
 spells them (a Game Boy's `linkGroupId` its link cable), and refuses, changing nothing, any field its node does not
 take (an ordinal, a construct-time field, another core's); `setParam(id, param, value)` sets a `gain` or an
