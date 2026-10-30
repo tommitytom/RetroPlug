@@ -173,3 +173,43 @@ int edio_menu_install(const char *path) {
 void edio_menu_start(void) {
     menu_cmd('s');   // fire-and-forget: the menu core drops out and the game runs
 }
+
+// --- SD-card file write (fileOpen + fileWrite + fileClose, as the PC host's Edio.cpp does) ---
+
+#define EDIO_CMD_F_FOPN   0xC9
+#define EDIO_CMD_F_FWR    0xCC
+#define EDIO_CMD_F_FCLOSE 0xCE
+#define FA_WRITE          0x02
+#define FA_CREATE_ALWAYS  0x08
+#define FS_MAKEPATH       0x80    // create parent dirs if missing
+#define ACK_BLOCK         1024    // the device releases each fileWrite block with a 0 ack byte
+#define SD_TIMEOUT_MS     5000    // an SD write or a FAT update can take a while
+
+int edio_file_put(const char *path, const uint8_t *data, uint32_t len) {
+    uint8_t f[4 + 1 + 2 + 128];
+    uint32_t plen = (uint32_t)strlen(path);
+    if (plen > 128) return -1;
+    f[0] = 0x2b; f[1] = 0xd4; f[2] = EDIO_CMD_F_FOPN; f[3] = (uint8_t)(EDIO_CMD_F_FOPN ^ 0xff);
+    f[4] = FA_WRITE | FA_CREATE_ALWAYS | FS_MAKEPATH;
+    f[5] = (uint8_t)plen; f[6] = (uint8_t)(plen >> 8);
+    memcpy(f + 7, path, plen);
+    if (!edio_write(f, 7 + plen)) return -1;
+    int st = edio_get_status();
+    if (st != 0) return st;
+
+    f[2] = EDIO_CMD_F_FWR; f[3] = (uint8_t)(EDIO_CMD_F_FWR ^ 0xff);
+    put32(f + 4, len);
+    if (!edio_write(f, 8)) return -1;
+    for (uint32_t off = 0; off < len; off += ACK_BLOCK) {
+        uint8_t ack = 0xff;
+        if (!edio_read_to(&ack, 1, SD_TIMEOUT_MS)) return -1;
+        if (ack != 0) return ack;
+        uint32_t n = len - off < ACK_BLOCK ? len - off : ACK_BLOCK;
+        if (!edio_write(data + off, n)) return -1;
+    }
+    st = edio_get_status();
+    if (st != 0) return st;
+
+    if (!tx_cmd(EDIO_CMD_F_FCLOSE)) return -1;
+    return edio_get_status();
+}

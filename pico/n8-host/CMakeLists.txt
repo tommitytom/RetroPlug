@@ -72,11 +72,15 @@ endif()
 
 # Experiment knobs, each a plain #define in main.c with a default: N8_MENU_TRIES (how many
 # '*t' attempts before giving up on the menu).
-foreach(knob N8_MENU_TRIES)
+foreach(knob N8_MENU_TRIES N8_APU_LAT)
     if(DEFINED ${knob})
         target_compile_definitions(n8_host PRIVATE ${knob}=${${knob}})
     endif()
 endforeach()
+# The SD path of the ROM to boot (a string, so it is quoted here): -DN8_ROM_PATH=usb-games/x.nes
+if(DEFINED N8_ROM_PATH)
+    target_compile_definitions(n8_host PRIVATE N8_ROM_PATH="${N8_ROM_PATH}")
+endif()
 
 # Console (printf) over UART0 (GP0/GP1) for the debug probe. Native USB stdio stays off:
 # in the PIO-USB build the native port is unused; in the native-USB build it IS the host

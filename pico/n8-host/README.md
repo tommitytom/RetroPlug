@@ -99,6 +99,7 @@ and capture the timestamped console until a verdict:
 ./loop.sh --native                            # the RP_NATIVE_USB build, in build-native/
 ./loop.sh --debug                             # + TinyUSB's attach/enumeration trace, in build-debug/
 ./loop.sh -DN8_MENU_TRIES=3                   # any CMake define; each set gets its own build dir
+./loop.sh --rom ../../../bliptoaster/build/bliptoaster.nes   # boot a freshly built ROM (below)
 ```
 
 The Pico is halted BEFORE the power-cycle: a working firmware left running would see the N8 come
@@ -107,6 +108,17 @@ and nothing to answer `*t`. It refuses to run while the N8 is enumerated on the 
 in the wrong place, so the run would test nothing); `--force` overrides that. The console is kept
 in `/tmp/n8-host-console.log` (`--log`). Exit 0 = done / `--until` seen, 1 = `--fail` seen or
 `--until` timed out, 2 = setup failed.
+
+**Booting a freshly built ROM: `--rom <file.nes>`.** The N8's SD card is only reachable over its
+USB, which belongs to the Pico, so `loop.sh` writes the ROM into the **Pico's own flash** (at
+`0x10200000`, 2 MB past the firmware: a 64-byte header - `N8RM`, size, SD path - then the ROM). Once
+the menu answers `*t`, the firmware copies it to `usb-games/pico/<name>.nes` with Edio's file
+commands (`edio_file_put`: the same open / write / close sequence as the PC's `n8-load
+--put-file`) and boots it from there: ~5 s for a 288 KB ROM. Its own `usb-games/pico/` folder
+keeps it clear of the files other tools put on the shared card. A run that flashes without
+`--rom` erases the header, and the firmware boots `N8_ROM_PATH` (default the older
+`usb-games/n8-midi.nes`; `-DN8_ROM_PATH=...` for another file already on the card).
+`stress.sh --rom <file>` passes it through.
 
 ### Driving the bridge from the container
 
@@ -168,7 +180,20 @@ average, ~1.04 ms worst** (it was ~4.6 ms typical with 11-19 ms outliers). Four 
 What remains is the frame itself: a write waits up to 1 ms for the next start-of-frame. Going
 under that means sending outside Pico-PIO-USB's frame schedule, i.e. patching the library. Add the
 MIDI wire itself (3 bytes at 31250 baud = ~1 ms, before the Pico sees the last byte) for the full
-picture. The ROM side (the N8 MCU, the cart FIFO, the ROM's poll) is not measured here.
+picture.
+
+**The ROM's share** - `-DN8_APU_LAT=1` builds a measurement firmware that, after a lone ch1
+note-on, polls Pulse1's volume (`$4000`) through the N8's live APU mirror until the ROM has written
+it. Each poll is a 1-byte memRD (~2 USB frames), so the answer is a bracket, and its floor is the
+USB round trip, not the ROM. 20 notes each, same rig (2026-10-30):
+
+| ROM | polls until the note showed | `$4000` written, after the last MIDI byte |
+|---|---|---|
+| BlipToaster (`ed0c843`) | **1, every note** | within ~0-3 ms: below what the probe resolves |
+| `n8-midi.nes` (older)   | 3, every note | between ~2.7 and ~6.7 ms (average bracket) |
+
+BlipToaster busy-polls the cart FIFO, so its own share is likely tens of µs; resolving it needs a
+cycle-exact measurement (the emulator), not this probe.
 
 ## Build + flash + verify
 

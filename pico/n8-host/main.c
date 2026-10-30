@@ -39,6 +39,11 @@
 #define N8_BRIDGE_VERBOSE 0
 #endif
 
+// 1 = measure how long the ROM takes to act on a note (apu_latency_probe). Measurement only.
+#ifndef N8_APU_LAT
+#define N8_APU_LAT 0
+#endif
+
 #ifndef N8_MENU_TRIES
 #define N8_MENU_TRIES 20
 #endif
@@ -122,6 +127,30 @@ void tuh_cdc_tx_complete_cb(uint8_t idx) {
     ack_pending = false;
 }
 
+#if N8_APU_LAT
+// Measurement build: after a lone ch1 note-on, poll Pulse1's volume ($4000) through the N8's live
+// APU mirror until the ROM has written it, and report when, from the note's last byte off the
+// UART. Poll i samples the register somewhere between sending its request and getting the reply,
+// so the write happened after the last miss's request (lo) and before the hit's reply (hi). Each
+// poll is a 1-byte memRD, ~2 USB frames. Holds the main loop while it runs: measurement only.
+static void apu_latency_probe(uint32_t from_us) {
+    uint32_t lo = 0, polls = 0;
+    while (time_us_32() - from_us < 100000) {
+        uint32_t req = time_us_32();
+        uint8_t v = 0;
+        if (!edio_mem_rd(EDIO_ADDR_SSR + 0x80, &v, 1)) { printf("[apu] read FAIL\n"); return; }
+        polls++;
+        if (v & 0x0f) {
+            printf("[apu] ROM wrote $4000 between %lu and %lu us after the note (%lu polls)\n",
+                   (unsigned long)lo, (unsigned long)(time_us_32() - from_us), (unsigned long)polls);
+            return;
+        }
+        lo = req - from_us;
+    }
+    printf("[apu] no $4000 write within 100 ms\n");
+}
+#endif
+
 static void batch_flush(void) {
     if (!batch_len) return;
     if (!ack_pending) { ack_from_us = batch_first_us; ack_pending = true; }   // armed first: the
@@ -137,6 +166,9 @@ static void batch_flush(void) {
     printf("[bridge] MIDI -> FIFO (%lu msgs):", (unsigned long)batch_msgs);
     for (uint32_t i = 0; i < batch_len; i++) printf(" %02x", batch[i]);
     printf("%s\n", ok ? "" : "  (write FAILED)");
+#endif
+#if N8_APU_LAT
+    if (ok && batch_msgs == 1 && batch[0] == 0x90 && batch[2]) apu_latency_probe(batch_first_us);
 #endif
     batch_len = batch_msgs = 0;
 }
@@ -189,9 +221,31 @@ static void n8_probe(void) {
 // If a game is already running (or wedged) the menu won't answer, and we just forward MIDI.
 // The handshake rides the cart-FIFO write (memWR to 0x1810000); it only works if nothing
 // touched cart memory while the menu was booting - see n8_probe().
-// The filename on the N8's PHYSICAL SD card, which is not renamed by this repo - it still reads n8-midi.nes
-// until the card is rewritten. Update both together.
-#define BLIPTOASTER_SD_PATH "usb-games/n8-midi.nes"
+// The ROM to boot, by its path on the N8's SD card (-DN8_ROM_PATH=usb-games/bliptoaster.nes for the
+// current BlipToaster). The default is the older MIDI ROM, still named n8-midi.nes on the card.
+#ifndef N8_ROM_PATH
+#define N8_ROM_PATH "usb-games/n8-midi.nes"
+#endif
+#define BLIPTOASTER_SD_PATH N8_ROM_PATH
+
+// A ROM staged in the Pico's own flash by `loop.sh --rom <file.nes>`: a 64-byte header, then the
+// ROM. When present, the menu boot first copies it to the N8's SD card and then boots it from
+// there, so a freshly built ROM reaches the console with the N8's USB never leaving the Pico.
+// Absent (loop.sh erases the header when run without --rom), N8_ROM_PATH is booted as found.
+#define ROM_BLOB_ADDR (XIP_BASE + 0x200000)   // 2 MB in: far past the firmware, inside the 4 MB part
+typedef struct {
+    char     magic[4];   // "N8RM"
+    uint32_t size;       // ROM bytes following the header
+    char     path[56];   // destination on the SD card, NUL-terminated
+} rom_blob_hdr;
+
+static const rom_blob_hdr *rom_blob(void) {
+    const rom_blob_hdr *h = (const rom_blob_hdr *)ROM_BLOB_ADDR;
+    if (memcmp(h->magic, "N8RM", 4) != 0) return NULL;          // erased flash reads 0xff
+    if (h->size == 0 || h->size > 0x100000) return NULL;
+    if (memchr(h->path, 0, sizeof h->path) == NULL) return NULL;
+    return h;
+}
 static void boot_bliptoaster(void) {
     // The N8's USB (MCU) enumerates before the menu core is ready, so retry the handshake
     // for a few seconds after a fresh power-up.
@@ -206,8 +260,22 @@ static void boot_bliptoaster(void) {
                "forwarding MIDI as-is\n");
         return;
     }
-    printf("[n8-host] menu up -> install %s (*n)...\n", BLIPTOASTER_SD_PATH);
-    int st = edio_menu_install(BLIPTOASTER_SD_PATH);
+    const char *path = BLIPTOASTER_SD_PATH;
+    const rom_blob_hdr *blob = rom_blob();
+    if (blob) {
+        printf("[n8-host] menu up -> upload the staged ROM (%lu bytes) to %s...\n",
+               (unsigned long)blob->size, blob->path);
+        uint64_t t0 = time_us_64();
+        int up = edio_file_put(blob->path, (const uint8_t *)(blob + 1), blob->size);
+        if (up != 0) {
+            printf("[n8-host] upload FAILED (status %d)\n", up);
+            return;
+        }
+        printf("[n8-host] uploaded in %lu ms\n", (unsigned long)((time_us_64() - t0) / 1000));
+        path = blob->path;
+    }
+    printf("[n8-host] menu up -> install %s (*n)...\n", path);
+    int st = edio_menu_install(path);
     if (st != 0) {
         printf("[n8-host] install FAILED (status %d)%s\n", st,
                st == 0x44 ? " - dirty menu heap, power-cycle to a fresh menu" : "");

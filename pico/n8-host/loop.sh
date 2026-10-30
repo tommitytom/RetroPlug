@@ -16,6 +16,8 @@
 #   ./loop.sh --native                          # the RP_NATIVE_USB build (build-native/)
 #   ./loop.sh --debug                           # + TinyUSB attach/enumeration trace (build-debug/)
 #   ./loop.sh -DN8_MENU_TRIES=3                 # any CMake define; each set gets its own build dir
+#   ./loop.sh --rom ../../../bliptoaster/build/bliptoaster.nes   # stage a ROM: the Pico copies it
+#                                               # to the SD (usb-games/pico/) and boots it
 #
 # Exit: 0 = done (or --until matched), 1 = --fail matched or --until timed out, 2 = setup failed.
 # The timestamped console is kept in --log (default /tmp/n8-host-console.log).
@@ -28,6 +30,7 @@ console=/dev/ttyDbgProbe
 
 do_build=1 do_flash=1 do_power=1 native=0 debug=0 force=0
 defs=()
+rom=
 secs=90 until_re= fail_re= log=/tmp/n8-host-console.log
 
 usage() { sed -n '3,/^set -u/{/^#/p}' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -40,6 +43,7 @@ while [ $# -gt 0 ]; do
 		--debug)    debug=1 ;;   # TinyUSB attach/enumeration trace on the console
 		-D*)        defs+=("$1") ;;   # a CMake define, e.g. -DN8_MENU_TRIES=3 (own build dir)
 		--force)    force=1 ;;   # run even though the N8 is enumerated on the PC
+		--rom)      rom=$2; shift ;;   # stage a .nes in Pico flash; the Pico uploads + boots it
 		--secs)     secs=$2; shift ;;
 		--until)    until_re=$2; shift ;;
 		--fail)     fail_re=$2; shift ;;
@@ -135,6 +139,25 @@ if [ $do_flash = 1 ]; then
 	fl+=(-c "program $elf verify")
 else
 	echo "== reset the Pico"
+fi
+# A ROM staged with --rom goes into Pico flash at 0x10200000 as a 64-byte header ("N8RM", size LE,
+# SD path) + the ROM; the firmware uploads it to the SD card and boots it (main.c rom_blob()).
+# Flashing without --rom erases that header, so a plain run boots N8_ROM_PATH as before.
+if [ -n "$rom" ]; then
+	[ -f "$rom" ] || die "--rom: no such file '$rom'"
+	size=$(stat -c %s "$rom"); sd="usb-games/pico/$(basename "$rom")"
+	[ ${#sd} -lt 56 ] || die "--rom: SD path '$sd' too long"
+	blob=/tmp/n8-host-rom.bin
+	{
+		printf 'N8RM'
+		printf "\\x$(printf %02x $((size & 255)))\\x$(printf %02x $((size >> 8 & 255)))\\x$(printf %02x $((size >> 16 & 255)))\\x$(printf %02x $((size >> 24 & 255)))"
+		printf '%s' "$sd"; head -c $((56 - ${#sd})) /dev/zero
+		cat "$rom"
+	} >"$blob"
+	echo "== stage $(basename "$rom") ($size bytes) in Pico flash -> SD $sd"
+	fl+=(-c "program $blob verify 0x10200000")
+elif [ $do_flash = 1 ]; then
+	fl+=(-c "flash erase_address 0x10200000 4096")
 fi
 fl+=(-c "reset run")
 for core in cm0 cm1; do fl+=(-c "targets rp2350.$core" -c "mww 0xe000edf0 0xa05f0000"); done

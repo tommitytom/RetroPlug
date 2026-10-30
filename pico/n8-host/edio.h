@@ -37,6 +37,11 @@ bool edio_mem_rd(uint32_t addr, uint8_t *buf, uint32_t len);
 bool edio_mem_wr(uint32_t addr, const uint8_t *data, uint32_t len);
 bool edio_fifo_wr(const uint8_t *data, uint32_t len);          // = mem_wr(ADDR_FIFO, ...)
 
+// Write a whole file to the N8's SD card (created or truncated, parent dirs made): fileOpen +
+// fileWrite + fileClose, as packages/native/src/host/n8/Edio.cpp does. 0 = ok, else the step's
+// device status (or -1 for no reply). An MCU-level operation: run it at the menu, not in a game.
+int  edio_file_put(const char *path, const uint8_t *data, uint32_t len);
+
 // N8 file-browser menu command channel: the running MENU reads '*'-prefixed commands from
 // the same cart FIFO the bridge writes to, and streams replies back over the CDC. Menu-only
 // (a running/frozen game won't answer). Mirrors packages/retroplug/src/n8/n8Menu.ts. Lets

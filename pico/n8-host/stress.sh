@@ -10,6 +10,7 @@
 #   ./stress.sh --soak 120      # soak length in seconds (default 30)
 #   ./stress.sh --rate 900      # soak rate in messages/s (default 500; MIDI wire speed is ~1000)
 #   ./stress.sh --no-recover    # skip the NES power-cycle under a live stream
+#   ./stress.sh --rom ../../../bliptoaster/build/bliptoaster.nes   # boot this ROM (staged, see loop.sh)
 #
 # Needs the CH345 USB MIDI cable's OUT in the Pico's TRS jack (see README.md).
 # Exit: 0 = every case passed, 1 = a case failed, 2 = setup failed.
@@ -19,12 +20,14 @@ here=$(cd "$(dirname "$0")" && pwd)
 console=/dev/ttyDbgProbe
 log=/tmp/n8-stress-console.log
 boot=1 soak=30 rate=500 recover=1
+boot_args=()
 while [ $# -gt 0 ]; do
 	case $1 in
 		--no-boot) boot=0 ;;
 		--soak)    soak=$2; shift ;;
 		--rate)    rate=$2; shift ;;
 		--no-recover) recover=0 ;;
+		--rom)     boot_args+=(--rom "$2"); shift ;;
 		*) echo "stress.sh: unknown option '$1'" >&2; exit 2 ;;
 	esac
 	shift
@@ -36,7 +39,7 @@ port=$(amidi -l 2>/dev/null | awk '/CH345/{print $2; exit}')
 
 if [ $boot = 1 ]; then
 	echo "== boot the ROM through the Pico (loop.sh)"
-	"$here/loop.sh" --until 'booted by the Pico' --fail "no 'k'|install FAILED" >/tmp/n8-stress-boot.log 2>&1 \
+	"$here/loop.sh" "${boot_args[@]}" --until 'booted by the Pico' --fail "no 'k'|FAILED" >/tmp/n8-stress-boot.log 2>&1 \
 		|| { tail -5 /tmp/n8-stress-boot.log; die "loop.sh could not boot the ROM"; }
 fi
 
