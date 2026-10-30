@@ -98,9 +98,9 @@ public:
     // 2-lane mix. See the per-channel tap below.
     std::vector<ChannelStream> channelLayout() const override;
 
-    // Set the per-system gain target (dB). Smoothed at audio rate inside
-    // finishBlock so live edits don't click. Not realtime-safe to call from
-    // the audio thread, but a simple atomic store would make it so if needed.
+    // Set the per-system gain target (dB). Smoothed at audio rate inside finishBlock so live edits don't click.
+    // The block thread calls it, as a system node applies its params there, and it allocates nothing (a test
+    // holds that); it is not callable from another thread.
     void setGainDb(float dB, bool immediate = false) override;
 
     // Tear down `gb_` and rebuild it with the current `config_`. Snapshots

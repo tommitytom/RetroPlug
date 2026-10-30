@@ -65,8 +65,8 @@ export function stringifyConfig(value: unknown): string {
  *  A fraction means nothing for any of these fields (a level, an index, a duration, a percentage of unity), and for
  *  `expansionVolume`, the one that reaches the engine as an int param, rounding is also what `ParamType::Int` does.
  *  Where 0 is a sentinel (`zoom` 0 inherits the user default, a controller's `systemId` 0 is the first system, an
- *  ungrouped `linkGroupId` 0), a hand-edited fraction in [0.5, 1) rounds up to 1, the first real value; the file it
- *  came from is already invalid. */
+ *  ungrouped `linkGroupId` 0), a hand-edited fraction in [0.5, 1) rounds up to 1, the first real value, a hand-edited
+ *  value the field's integer contract does not allow. */
 export function clampedInt(min: number, max: number, def: number) {
   return z.preprocess((v) => {
     const n = typeof v === "number" && Number.isFinite(v) ? Math.round(v) : def;

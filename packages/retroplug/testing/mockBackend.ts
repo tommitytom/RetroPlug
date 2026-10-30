@@ -621,8 +621,8 @@ export class MockBackend implements Backend {
     return Promise.resolve(this.browseQueue.length ? (this.browseQueue.shift() as string | null) : null);
   }
 
-  // Recorded; accepted for a node the last document sent places, as native accepts one the running plan places (the
-  // mock knows no node's params, so any param id passes).
+  // Recorded; accepted for a node the last document sent places, as native accepts one the last published plan places
+  // (the mock knows no node's params, so any param id passes).
   setParam(nodeId: string, paramId: string, value: number): boolean {
     this.log.push("setParam");
     this.paramCalls.push({ nodeId, paramId, value });
