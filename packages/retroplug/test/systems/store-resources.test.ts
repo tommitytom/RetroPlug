@@ -1,7 +1,8 @@
 // A system's resources, as the store owns them (docs/modular-graph-phase-c3-design.md section 6): a boot puts its ROM
 // and its seeds, the document that follows names their ids, and the engine is told to drop one only after the document
 // that stops naming it has planned. A refused document puts the store's model back, gives back what the edit put and
-// reports the verb's failure; a project load drops the system a refusal names and publishes the rest. And a
+// reports the verb's failure; a project load drops the system a refusal names and publishes the rest. Every release is
+// offered on its own, so one that throws is said and the handles behind it still reach the engine. And a
 // construct-time edit is a reset that carries the battery: a new id, a ROM re-read from its source, a new value in the
 // document. Every rebuild reads the ROM again, so a file rebuilt on disk is what the next boot runs.
 import { test, expect } from "../../testing/harness";
@@ -596,6 +597,36 @@ test("clear warns when the empty document is refused and still releases what it 
   expect(warnings.some((w) => w.includes("[systems] clear: the engine refused the empty document"))).toBe(true);
 });
 
+test("clear offers every handle it holds to the engine even when one release throws", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.sav", "battery");
+  be.seed("/roms/b.nes", nesRom());
+  store.addSystem("/roms/a.gb"); // its ROM and the battery seed
+  store.addSystem("/roms/b.nes"); // its ROM alone
+  const held = heldIds(be);
+  expect(held.length).toBe(3);
+  const releaseResource = be.releaseResource.bind(be);
+  const offered: number[] = [];
+  let first = true;
+  be.releaseResource = (handle: number): boolean => {
+    offered.push(handle);
+    if (first) {
+      first = false;
+      throw new Error("the releaseResource RPC died");
+    }
+    return releaseResource(handle);
+  };
+  const { warnings } = warned(() => store.clear());
+  be.releaseResource = releaseResource;
+  // `new` and a load have moved the entries on by the time these are released, so a release that dies mid-loop would
+  // strand every handle behind it: bytes the engine holds with no system, no document and no later verb to give them
+  // back. Each one is tried on its own, and the loop finishes.
+  expect(offered).toEqual(held); // every handle, in the order it was held, the throw among them
+  expect(store.systems()).toEqual([]);
+  expect(warnings.some((w) => w.includes("releasing a system's resource threw"))).toBe(true);
+});
+
 test("discard drops one system and its resources at once, publishing nothing", () => {
   const { be, store } = newStore();
   be.seed("/roms/a.gb", gbRom());
@@ -611,6 +642,37 @@ test("discard drops one system and its resources at once, publishing nothing", (
   expect(be.resource(doomed.resources.rom)).toBe(undefined);
   expect(store.discard(999)).toBe(undefined);
   expect(order(be)).toEqual(["releaseResource"]); // nothing to drop for an id it does not hold
+});
+
+test("discard offers every handle of the system it drops even when one release throws", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.sav", "battery");
+  be.seed("/roms/b.nes", nesRom());
+  const a = store.addSystem("/roms/a.gb")!;
+  const b = store.addSystem("/roms/b.nes")!;
+  const doomed = store.systems().find((e) => e.id === a)!;
+  const handles = systemHandles(doomed.resources);
+  expect(handles.length).toBe(2); // its ROM and the battery seed
+  const releaseResource = be.releaseResource.bind(be);
+  const offered: number[] = [];
+  let first = true;
+  be.releaseResource = (handle: number): boolean => {
+    offered.push(handle);
+    if (first) {
+      first = false;
+      throw new Error("the releaseResource RPC died");
+    }
+    return releaseResource(handle);
+  };
+  const { result, warnings } = warned(() => store.discard(a));
+  be.releaseResource = releaseResource;
+  // A project load's retry calls this between refusals, with its own list already shortened: a release that died here
+  // would throw out of the load and leave the handles behind it held by an engine that stopped naming their system.
+  expect(result).toEqual(doomed); // the entry it dropped, as it always answers
+  expect(offered).toEqual(handles); // both of them, the throw among them
+  expect(store.systems().map((e) => e.id)).toEqual([b]);
+  expect(warnings.some((w) => w.includes("releasing a dropped system's resource threw"))).toBe(true);
 });
 
 test("a restore republish that is refused too is reported, with the model still the one before the edit", () => {

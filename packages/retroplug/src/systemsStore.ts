@@ -730,7 +730,15 @@ export class SystemsStore {
         console.warn(
           "[systems] clear: the engine refused the empty document; its systems' resources are released anyway",
         );
-      for (const id of dropped) this.pool.drop(id);
+      for (const id of dropped) {
+        try {
+          this.pool.drop(id);
+        } catch (e) {
+          // The entries are already gone, so nothing else will ever offer these handles: a release the transport died
+          // on is said and the next one attempted, rather than stranding every handle behind it.
+          console.warn(`[systems] clear: releasing a system's resource threw: ${String(e)}`);
+        }
+      }
     }
   }
 
@@ -743,7 +751,15 @@ export class SystemsStore {
     if (!e) return undefined;
     this.entries = removeById(this.entries, id);
     this.focusedId = nextFocusAfterRemove(this.entries, id, this.focusedId);
-    for (const handle of systemHandles(e.resources)) this.pool.drop(handle);
+    // Called from a project load's retry, where the list is already shortened: a release the transport died on is said
+    // rather than thrown, or the load fails with the handles behind this one held by an engine that named no system.
+    for (const handle of systemHandles(e.resources)) {
+      try {
+        this.pool.drop(handle);
+      } catch (err) {
+        console.warn(`[systems] discard: releasing a dropped system's resource threw: ${String(err)}`);
+      }
+    }
     this.forgetReplacementsEndingIn(id);
     return e;
   }

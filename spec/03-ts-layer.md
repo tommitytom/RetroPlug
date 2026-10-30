@@ -158,7 +158,10 @@ the entries, which is how a caller reads the new id a rebuild allocated.
   refusal the engine answered, and [`engineGraph.ts`](../packages/retroplug/src/engineGraph.ts) counts it as refused
   (the engine keeps the plan it ran), so it takes the same rollback before the error reaches the caller. `clear()`
   publishes the empty document and releases every system's resources anyway; `discard(id)` drops one system and its
-  resources at once for a load's refused system, whose document never planned.
+  resources at once for a load's refused system, whose document never planned. Each of those loops guards its own
+  releases the way `commitEdit` does, warning and continuing: both run after the entries have moved on, so a throw that
+  escaped one would strand the handles behind it, and `discard` runs inside the load's retry, where it would fail a load
+  whose list is already shortened.
 - **The graph.** Every edit that changes what runs, what a system's protocol nodes are told, or a setting of
   a system's node, ends by publishing the engine's graph once (`setOnGraphChange` → `ProjectStore.publishGraph`
   → `EngineGraph.publish`, [engineGraph.ts](../packages/retroplug/src/engineGraph.ts)): the whole
