@@ -9,8 +9,9 @@
 // And what a rebuild CARRIES: a construct-time edit and a reset the battery, a duplicate the whole machine, a load-state
 // the file it was given. A Game Boy has no construct-time field of its own (its model and the rest are applied live), so
 // its rebuilds are the reset path itself. Every rebuild reads the ROM again, so a file a user rebuilt on disk is what
-// the next boot runs. A stored core config written by an older build holds only the fields it knew, and every document
-// names the rest at their defaults: an edit must stay live rather than move its node's rebuild key under a live id.
+// the next boot runs, and one that has gone fails the rebuild instead of booting nothing. A stored core config written
+// by an older build holds only the fields it knew, and every document names the rest at their defaults: an edit must
+// stay live rather than move its node's rebuild key under a live id.
 //
 // Run with: `pnpm test:native app-construct-edit`.
 import { test, expect, skip } from "../testing/harness";
@@ -234,7 +235,7 @@ test("a sparse stored NES config keeps a live edit, a param and a later live edi
   store.removeSystem(second);
 });
 
-test("a ROM rewritten on disk is what reset and a construct-time edit boot, as before C3", () => {
+test("a ROM rewritten on disk is what reset and a construct-time edit boot; a deleted one fails its rebuild", () => {
   const { be, project } = session();
   const first = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
   const second = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster-vrc6.nes";
@@ -260,6 +261,15 @@ test("a ROM rewritten on disk is what reset and a construct-time edit boot, as b
   expect(store.setRoleConfig(reset, "mesen", { fifo: "hardware" })).toBe(true);
   const rebuilt = store.view()[0].id;
   expect(rebuilt === reset).toBe(false);
+  const rebuiltResources = store.systems()[0].resources;
+  // A ROM deleted since it was booted fails the rebuild rather than silently succeeding on the old bytes: the verb
+  // answers null, the system is the one that was, and its core still runs the image it booted. This is what every
+  // in-place verb did before C3 parked a core, and what a node's re-read costs: the file is read again, so a gone
+  // file is a gone boot.
+  be.deleteFile(temp);
+  expect(store.reset(rebuilt)).toBe(null);
+  expect(store.view().map((e) => e.id)).toEqual([rebuilt]);
+  expect(store.systems()[0].resources).toEqual(rebuiltResources);
   expect(prg(rebuilt).slice(0, 64)).toEqual(a.slice(0, 64));
   store.removeSystem(rebuilt);
   be.deleteFile(temp);

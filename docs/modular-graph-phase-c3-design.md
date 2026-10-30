@@ -288,8 +288,8 @@ render path and every host go through the store as today.
 - **`test:native`** ([app-construct-edit.test.ts](../packages/retroplug/test-native/app-construct-edit.test.ts)): a NES
   FIFO profile edit changes the queue's capacity with no Reset, an export-mode edit makes the per-channel streams
   appear, an SMS FM edit silences an FM song, a sparse stored config keeps a live edit, a param and a later live edit
-  live, a ROM rewritten on disk is what reset and a construct-time edit boot, duplicate/reset/load-state carry what
-  they carry today, and a project with one unreadable ROM loads the rest.
+  live, a ROM rewritten on disk is what reset and a construct-time edit boot and a ROM deleted since fails its rebuild
+  again, duplicate/reset/load-state carry what they carry today, and a project with one unreadable ROM loads the rest.
 - **The acceptance run** as C2's: every suite, the Reaper leg, SDL, BlipToaster and NESVJ.
 
 ## 8. Landing
@@ -359,7 +359,7 @@ section 7; and the findings below.
   Reset boot stale bytes after a user rebuilt a ROM on disk (and made an asset role's previous image stick). Every
   boot now puts its own ROM from its source, as the pre-C3 build did with the `romPath`, so Reset, New SRAM, Load
   SRAM, Load State, a construct-time edit and a duplicate all boot what is on disk now, and a rebuild of a ROM since
-  deleted fails again as it did before C3 (sections 4 and 6).
+  deleted fails again as it did before C3, and a case in section 7's native list drives that reset.
 - **A stored value the role schema would have repaired now takes the node's default.** There is no blob to carry a
   repaired value. `systemKnobs` writes the node's own default where the stored value is one it would refuse, and notes
   it, so an out-of-range number or a fractional integer takes that default where the blob took the clamp or the rounded
