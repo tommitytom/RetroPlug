@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -944,20 +945,58 @@ double tsConstant(const char* path, const std::string& name) {
     return std::strtod(ts.c_str() + ts.find('=', at) + 1, nullptr);
 }
 
-// A construct-time field's fallback in buildGraph.ts's CONSTRUCT_FIELDS: the value a document names when the stored
-// config holds none the node takes, e.g. `n8LinkRttUs: { takes: intIn(0, 100'000), fallback: 2200 },`. The value is
-// the JSON token after `fallback:`, so a label comes back with its quotes and a number or a flag as written. Empty for
-// a field the table does not hold.
-std::string tsConstructFallback(const std::string& field) {
+// A construct-time field of a node type in buildGraph.ts's CONSTRUCT_FIELDS, with the fallback a document names when
+// the stored config holds none the node takes, e.g. `n8LinkRttUs: { takes: intIn(0, 100'000), fallback: 2200 },`.
+// Both are read out of the type's entry, so a field added there is one the case must cover: the fallback is the JSON
+// token after `fallback:`, so a label comes back with its quotes and a number or a flag as written.
+struct TsConstructField {
+    std::string name;
+    std::string fallback;
+};
+
+std::vector<TsConstructField> tsConstructFields(const std::string& type) {
     const auto bytes = readFile(RP_BUILD_GRAPH_TS_PATH);
     const std::string ts(bytes.begin(), bytes.end());
-    const auto at = ts.find(field + ": { takes:");
+    const auto table = ts.find("const CONSTRUCT_FIELDS:");
+    if (table == std::string::npos) return {};
+    const auto at = ts.find("\"" + type + "\": {", table);
     if (at == std::string::npos) return {};
-    const auto fallback = ts.find("fallback:", at);
-    if (fallback == std::string::npos) return {};
-    const auto start = ts.find_first_not_of(' ', fallback + std::strlen("fallback:"));
-    const auto end = ts.find_first_of(",}\n", start);
-    return start == std::string::npos || end == std::string::npos ? std::string() : ts.substr(start, end - start);
+    const auto open = ts.find('{', at);
+    if (open == std::string::npos) return {};
+    std::size_t depth = 0;
+    std::size_t close = open;
+    for (; close < ts.size(); ++close) {
+        if (ts[close] == '{') ++depth;
+        else if (ts[close] == '}' && --depth == 0) break;
+    }
+    if (close >= ts.size()) return {};
+    const std::string entry = ts.substr(open + 1, close - open - 1);
+    std::vector<TsConstructField> fields;
+    for (auto takes = entry.find(": { takes:"); takes != std::string::npos;
+         takes = entry.find(": { takes:", takes + 1)) {
+        auto name = takes;
+        while (name > 0 && (std::isalnum(static_cast<unsigned char>(entry[name - 1])) || entry[name - 1] == '_'))
+            --name;
+        const auto fallback = entry.find("fallback:", takes);
+        if (fallback == std::string::npos) continue;
+        const auto start = entry.find_first_not_of(' ', fallback + std::strlen("fallback:"));
+        const auto end = entry.find_first_of(",}\n", start);
+        if (start == std::string::npos || end == std::string::npos) continue;
+        std::string value = entry.substr(start, end - start);
+        while (!value.empty() && value.back() == ' ') value.pop_back();
+        fields.push_back({entry.substr(name, takes - name), value});
+    }
+    return fields;
+}
+
+// The construct-time fields as a settings body: `"field":value` for each, in the table's order.
+std::string constructJson(const std::vector<TsConstructField>& fields) {
+    std::string out;
+    for (const auto& field : fields) {
+        if (!out.empty()) out += ",";
+        out += "\"" + field.name + "\":" + field.fallback;
+    }
+    return out;
 }
 
 std::vector<std::string> labelsOf(const rfl::Generic::Object& knob) {
@@ -1489,16 +1528,14 @@ TEST_CASE("a document naming a construct-time field's fallback builds the core a
         const auto* const absent = dynamic_cast<const MesenNesSystem*>(rig.builtCore(1));
         REQUIRE(absent != nullptr);
         const MesenNesConfig atDefaults = absent->config();
-        // Every construct-time field, as the document buildGraph writes for a fresh config names it. A fallback the
-        // reader did not find leaves the member empty, which is not JSON: the document is refused and this fails.
-        const std::string named = R"("sdRoot":)" + tsConstructFallback("sdRoot") + R"(,"fifo":)" +
-                                  tsConstructFallback("fifo") + R"(,"fifoDepth":)" +
-                                  tsConstructFallback("fifoDepth") + R"(,"fifoBytesPerSecond":)" +
-                                  tsConstructFallback("fifoBytesPerSecond") + R"(,"n8Link":)" +
-                                  tsConstructFallback("n8Link") + R"(,"n8LinkRttUs":)" +
-                                  tsConstructFallback("n8LinkRttUs") + R"(,"channelExportMode":)" +
-                                  tsConstructFallback("channelExportMode");
-        REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot("rp.mesen.nes", 2, named))).ok);
+        // Every construct-time field, as the document buildGraph writes for a fresh config names it. The expected
+        // list is the check, not the source: a field added to CONSTRUCT_FIELDS fails here until its core comparison
+        // is added below.
+        const auto fields = tsConstructFields("rp.mesen.nes");
+        REQUIRE(constructJson(fields) ==
+                R"("sdRoot":"","fifo":"instant","fifoDepth":0,"fifoBytesPerSecond":0,"n8Link":"auto",)"
+                R"("n8LinkRttUs":2200,"channelExportMode":"mix")");
+        REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot("rp.mesen.nes", 2, constructJson(fields)))).ok);
         const auto* const core = dynamic_cast<const MesenNesSystem*>(rig.builtCore(2));
         REQUIRE(core != nullptr);
         const MesenNesConfig& cfg = core->config();
@@ -1515,12 +1552,13 @@ TEST_CASE("a document naming a construct-time field's fallback builds the core a
         REQUIRE(rig.set(knobbed("rp.mesen.sms", rig.boot("rp.mesen.sms", 1))).ok);
         const auto* const absent = dynamic_cast<const MesenSmsSystem*>(rig.builtCore(1));
         REQUIRE(absent != nullptr);
-        REQUIRE(rig.set(knobbed("rp.mesen.sms",
-                                rig.boot("rp.mesen.sms", 2, R"("enableFm":)" + tsConstructFallback("enableFm"))))
-                        .ok);
+        const MesenSmsConfig atDefaults = absent->config();
+        const auto fields = tsConstructFields("rp.mesen.sms");
+        REQUIRE(constructJson(fields) == R"("enableFm":true)");
+        REQUIRE(rig.set(knobbed("rp.mesen.sms", rig.boot("rp.mesen.sms", 2, constructJson(fields)))).ok);
         const auto* const core = dynamic_cast<const MesenSmsSystem*>(rig.builtCore(2));
         REQUIRE(core != nullptr);
-        CHECK(core->config().enableFm == absent->config().enableFm);
+        CHECK(core->config().enableFm == atDefaults.enableFm);
     }
 }
 
