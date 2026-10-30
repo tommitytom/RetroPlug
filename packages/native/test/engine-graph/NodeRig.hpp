@@ -62,6 +62,8 @@ struct NodeRig {
     EngineHostIo                                         hostIo{this, &takeNothing, &takeNothing, &isConnected, &recordMidiOut,
                                                                 &ignoreControllerOut, &recordCart};
     EngineSyncTrace                                      trace{this, &recordTrace};
+    // The `rom` resource each console's fixture was put under, by node type: one per rig, as one per Engine.
+    std::map<std::string, std::uint32_t>                 roms;
     // Last, so it is destroyed first: its nodes free their cores through the host's destroySystem into `released`.
     std::unique_ptr<rp::graph::GraphHost>                host;
 
@@ -109,9 +111,6 @@ struct NodeRig {
         if (!extra.empty()) settings += "," + extra;
         return settings;
     }
-    // The `rom` resource each console's fixture was put under, by node type: one per rig, as one per Engine.
-    std::map<std::string, std::uint32_t> roms;
-
     rp::graph::SetGraphResult set(const std::string& json) { return host->setGraph(json); }
 
     SystemBase* builtCore(SystemId id) const {
@@ -130,7 +129,7 @@ struct NodeRig {
     // rp.host.systems/1: the rig's factory builds the core, and the node owns it until its destructor, which the rig
     // records (the core's id in `released`) and deletes. No snapshot slot to claim here, and no live-id check: those are
     // the engine's, and the refusals they add are EngineGraph.test.cpp's.
-    static SystemBase* buildSystem(void* ctx, std::uint64_t id, const SystemBuildRequest& request, rp_error* err) {
+    static SystemBase* buildSystem(void* ctx, std::uint64_t id, SystemBuildRequest request, rp_error* err) {
         auto& rig = *static_cast<NodeRig*>(ctx);
         if (id == 0) {
             std::snprintf(err->message, sizeof err->message, "0 is not a system id");
@@ -142,7 +141,7 @@ struct NodeRig {
             return nullptr;
         }
         std::string why;
-        std::unique_ptr<SystemBase> core = rig.factory.build(static_cast<SystemId>(id), request, rig.rate, &why);
+        std::unique_ptr<SystemBase> core = rig.factory.build(static_cast<SystemId>(id), std::move(request), rig.rate, &why);
         if (!core) {
             std::snprintf(err->message, sizeof err->message, "%s", why.c_str());
             return nullptr;

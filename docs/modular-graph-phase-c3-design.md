@@ -292,8 +292,9 @@ models with Claude for the deep reviews and the final one.
   | Master System (smsggdj) | 0.3 ms | 0.7 ms | 128 KiB |
   | GBA (nanoloop287d) | 15.3 ms | 16.5 ms | 8192 KiB |
 
-  `setGraph` carries the boot, and only the GBA's is large enough to be noticed (its 8 MiB ROM is copied twice: into
-  the request and into the backend). A project load of N systems still plans once. Strict parity
+  `setGraph` carries the boot, and only the GBA's is large enough to be noticed (its 8 MiB ROM is copied once, from
+  the pinned resource into the request, and moved into the core from there). A project load of N systems still plans
+  once. Strict parity
   held bit for bit at every commit with nothing re-recorded: the core boots from the same config in the same order
   relative to its seeds, so build order moved no bit.
 - **How `rp.host.resources/1` sits in create, and whether the planner's bindings could serve.** As a settings field
@@ -364,6 +365,10 @@ section 7; and the findings below.
   golden documents' `res:` ids also had to be renumbered in one pass, since two can swap places (section 7).
 - **The unnamed Master System stem.** `romName` is optional for the build and not for battery identity: the fallback
   is `system-<id>`, unique within a Project but not across the several Projects one process holds (sections 3 and 9).
+- **A refused document still activates every other system in it.** The planner creates and activates every node even
+  after one has failed, so a document of N systems with one bad ROM pays N-1 boots for the refusal, and a project load's
+  recovery (drop the refused system, publish the rest) pays them twice. It buys one pass over every bad system in the
+  document, and only a GBA's boot is large enough to notice (section 9).
 
 ## 11. Left as it is
 

@@ -22,6 +22,7 @@
 #include "graph/node.hpp"
 #include "host/graph/HostServices.hpp"
 #include "system/SystemBase.hpp"
+#include "system/SystemFactory.hpp"
 #include "system/mesen/MesenGbaSystem.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
@@ -181,7 +182,7 @@ struct NesSettings {
     rp::resource_ref<"rom">                         rom;
     rp::resource_ref<"sram">                        sram;
     rp::resource_ref<"state">                       state;
-    std::optional<std::string>                     romName;
+    std::optional<std::string>                      romName;
     // The live knobs (C2).
     std::optional<knobs::Label<NesRegion>>         region;
     std::optional<bool>                            removeSpriteLimit;
@@ -210,15 +211,19 @@ struct NesSettings {
         bool operator==(const Key&) const = default;
     };
     Key key() const {
-        // A label compares by its ordinal (its place in the enumerator array), which only an equal label shares.
-        auto ordinal = [](const auto& label) {
+        // A label compares by its ordinal (its place in the enumerator array), which only an equal label shares; the
+        // numbers are already what the key compares.
+        auto ofLabel = [](const auto& label) {
             return label ? std::optional<int>(static_cast<int>(label->value())) : std::nullopt;
         };
-        return {system,                     romName,
-                sdRoot,                     ordinal(fifo),
-                ordinal(fifoDepth),         ordinal(fifoBytesPerSecond),
-                ordinal(n8Link),            ordinal(n8LinkRttUs),
-                ordinal(channelExportMode)};
+        auto ofNumber = [](const auto& number) {
+            return number ? std::optional<int>(number->value()) : std::nullopt;
+        };
+        return {system,                 romName,
+                sdRoot,                 ofLabel(fifo),
+                ofNumber(fifoDepth),    ofNumber(fifoBytesPerSecond),
+                ofLabel(n8Link),        ofNumber(n8LinkRttUs),
+                ofLabel(channelExportMode)};
     }
 };
 
@@ -285,10 +290,10 @@ bool moved(const std::optional<F>& to, const std::optional<F>& from) { return to
 // params (`gain` at least), supplies finish's lanes, may write output queues after the core has run (writeQueues), and
 // applies its own knobs (apply) and any param beyond the gain (applyParams).
 //
-// A node builds its core at activation from the bytes its resources hold (rp.host.systems/1, docs/
-// modular-graph-phase-c3-design.md section 5). The core is the host's: the snapshot slot under the system id, the live
-// cores, and the delete when the node is destroyed. Which fields a build reads is rebuild_key's, the construct-time
-// fields among them.
+// A node builds its core at activation from the bytes its resources hold (rp.host.systems/1,
+// docs/modular-graph-phase-c3-design.md section 5). The core is the host's: the snapshot slot under the system id, the
+// live cores, and the delete when the node is destroyed. Which fields a build reads is rebuild_key's, the
+// construct-time fields among them.
 //
 // Only a new core rebuilds (rebuild_key): every other setting is a knob the node applies to the core it has, so its
 // prepare reads nothing a commit writes and setGraph never waits on a system node's commit (stateless_prepare). A
@@ -318,7 +323,7 @@ struct SystemNode {
     static auto rebuild_key(const Settings& s) { return s.key(); }
     static constexpr bool stateless_prepare = true;
 
-    const HostSystems*                     systems = nullptr;  // null when the host builds no cores
+    const HostSystems*                     systems = nullptr;  // null when the host offers no builder
     const EngineSyncTrace*                 trace = nullptr;  // null when the host keeps none
     Core*                                  core = nullptr;  // owned
     std::array<std::uint8_t, kMaxOutputs>  connected{};
@@ -331,11 +336,10 @@ struct SystemNode {
     SystemNode(const SystemNode&) = delete;
     SystemNode& operator=(const SystemNode&) = delete;
     // Destroyed on the control thread, at reclaim once no plan runs it or as a refused plan is unwound. The core it
-    // built is the host's to release (its snapshot slot, and the live-core map, go with it).
+    // built is the host's to release (its snapshot slot, and the live-core map, go with it); a node that never built
+    // one has no core, and build throws before setting it when the host offers no systems service.
     ~SystemNode() {
-        if (!core) return;
-        if (systems) systems->destroy(systems->ctx, core);
-        else delete core;
+        if (core) systems->destroy(systems->ctx, core);
     }
 
     void bind_host(const rp_host* h) noexcept {
@@ -347,11 +351,12 @@ struct SystemNode {
         pending = true;
     }
 
-    // A create that names no system refuses here rather than planning a document whose node would run nothing (docs/
-    // modular-graph-phase-c3-design.md section 3). A node also names its ROM; the seeds are optional (a blank battery
-    // is legitimate).
+    // A create that names no system refuses here rather than planning a document whose node would run nothing
+    // (docs/modular-graph-phase-c3-design.md section 3). A node also names its ROM; the seeds are optional (a blank
+    // battery is legitimate).
     static std::optional<std::string> validate(const Settings& s) {
-        if (s.system == 0) return std::string("a system node names the system it builds ({\"system\": <id>, \"rom\": \"res:N\"})");
+        if (s.system == 0)
+            return std::string("a system node names the system it builds ({\"system\": <id>, \"rom\": \"res:N\"})");
         if (s.rom.ref.empty()) return std::string("a system node names its ROM as {\"rom\": \"res:N\"}");
         return std::nullopt;
     }
@@ -378,7 +383,7 @@ struct SystemNode {
         request.romName = settings->romName.value_or(std::string());
         request.config = std::move(config);
         rp_error err{};
-        SystemBase* made = systems->build(systems->ctx, settings->system, request, &err);
+        SystemBase* made = systems->build(systems->ctx, settings->system, std::move(request), &err);
         if (!made)
             throw std::runtime_error(err.message[0] ? std::string(err.message) : std::string("the core did not build"));
         core = dynamic_cast<Core*>(made);
@@ -645,7 +650,8 @@ struct Nes : SystemNode<Nes, MesenNesSystem, NesSettings> {
 
     static void adjust_layout(rp::graph::Layout& l, const Settings&) {
         using namespace rp::graph;
-        for (const char* port : kNesTaps) l.ports.push_back({port, PortDir::Out, PortKind::Audio, ChannelSpec::fixed(1, "mono"), {}, false});
+        for (const char* port : kNesTaps)
+            l.ports.push_back({port, PortDir::Out, PortKind::Audio, ChannelSpec::fixed(1, "mono"), {}, false});
         l.exclusive.push_back({"pins.*", "channels.*"});
     }
 

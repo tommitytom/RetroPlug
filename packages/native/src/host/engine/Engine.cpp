@@ -8,6 +8,7 @@
 #include <cstring>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -60,8 +61,8 @@ bool isSystemNodeType(const std::string& type) {
 }
 
 // The id a system node's settings name its system by: their `system`, the id its core is built under and its snapshot
-// slot's key (beside the core's knobs and construct-time fields, which the node reads: docs/
-// modular-graph-phase-c2-design.md section 3). The field must be a system id (1 to UINT32_MAX); a node without one is
+// slot's key (beside the core's knobs and construct-time fields, which the node reads:
+// docs/modular-graph-phase-c2-design.md section 3). The field must be a system id (1 to UINT32_MAX); a node without one is
 // left to its own create, which refuses it with a reason naming what it must name.
 struct SystemTarget {
     std::optional<SystemId> id;
@@ -191,10 +192,10 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
     // cores, and the table of the plan being built learns it (buildSystem).
     graph_->systems = {
         this,
-        [](void* ctx, std::uint64_t id, const SystemBuildRequest& request, rp_error* err) {
+        [](void* ctx, std::uint64_t id, SystemBuildRequest request, rp_error* err) {
             auto* self = static_cast<Engine*>(ctx);
             std::string why;
-            SystemBase* core = self->buildSystem(id, request, &why);
+            SystemBase* core = self->buildSystem(id, std::move(request), &why);
             if (!core && err) {
                 const std::size_t n = std::min(why.size(), sizeof err->message - 1);
                 std::memcpy(err->message, why.data(), n);
@@ -250,7 +251,7 @@ const void* Engine::graphInterface(void* ctx, const char* id) {
 
 bool Engine::pushCommand(const DspCommand& c) { return graph_->host->pushHostCommand(&c, sizeof c); }
 
-SystemBase* Engine::buildSystem(std::uint64_t system, const SystemBuildRequest& request, std::string* why) {
+SystemBase* Engine::buildSystem(std::uint64_t system, SystemBuildRequest request, std::string* why) {
     const auto refuse = [why](std::string reason) {
         if (why) *why = std::move(reason);
         return nullptr;
@@ -266,7 +267,7 @@ SystemBase* Engine::buildSystem(std::uint64_t system, const SystemBuildRequest& 
     // core's. A node of a plan not yet reclaimed still holds its core, so a construct-time edit under the id it was
     // built with is refused here rather than quietly sharing it.
     if (coreLive(id)) return refuse("system " + std::to_string(id) + " is live");
-    std::unique_ptr<SystemBase> core = factory_->build(id, request, sampleRate_, why);
+    std::unique_ptr<SystemBase> core = factory_->build(id, std::move(request), sampleRate_, why);
     if (!core) {
         if (why && why->empty()) *why = "the core did not build";
         return nullptr;
@@ -278,17 +279,17 @@ SystemBase* Engine::buildSystem(std::uint64_t system, const SystemBuildRequest& 
     SystemBase* built = core.release();
     liveCores_[id] = built;
     // The plan being planned learns its slot's core here: its table was built with a null entry for a system no node of
-    // an older plan is reused for, and the table is published with the plan once every node has activated.
-    if (building_) {
-        bool found = false;
-        for (auto& e : building_->slots)
-            if (e.id == id) {
-                e.core = built;
-                e.nes = dynamic_cast<MesenNesSystem*>(built);
-                found = true;
-            }
-        if (!found) std::fprintf(stderr, "[engine] system %u built outside the plan's slots\n", static_cast<unsigned>(id));
-    }
+    // an older plan is reused for, and the table is published with the plan once every node has activated. buildSystem
+    // only runs inside a setGraph, so the table is there; a build for an id its slots do not name is a host bug.
+    bool found = false;
+    for (auto& e : building_->slots)
+        if (e.id == id) {
+            e.core = built;
+            e.nes = dynamic_cast<MesenNesSystem*>(built);
+            found = true;
+        }
+    if (!found)
+        throw std::logic_error("system " + std::to_string(id) + " built outside the plan's slots");
     return built;
 }
 
@@ -434,11 +435,10 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
     for (const auto& e : result.errors) out.errors.push_back({e.nodeId, e.port, e.code, e.message});
     if (!result.ok) return out;
     out.ok = true;
-    // Every slot has a core by now: one already live, or one a node built while the plan activated. A null one would be a
-    // table the plan's per-block work dereferences, so it is said rather than left to crash.
-    for (const auto& e : table->slots)
-        if (!e.core)
-            std::fprintf(stderr, "[engine] system %u has no core after the plan activated\n", static_cast<unsigned>(e.id));
+    // Every slot has a core by now: one already live, or one a node built while the plan activated (the planner
+    // activates every node it plans). A null one would be a table the plan's per-block work dereferences, so it is an
+    // invariant rather than a diagnostic.
+    for (const auto& e : table->slots) assert(e.core);
     hostWidth_ = hostWidthOf(*doc);
     // A replan plans a copy of the request setGraph last kept (its re-arm cleared), so it must not replace it.
     if (replan) return out;

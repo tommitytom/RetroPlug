@@ -6,9 +6,9 @@
 #include <cstdint>
 
 #include "graph/rp_node.h"
-#include "system/SystemFactory.hpp"
 
 class SystemBase;
+struct SystemBuildRequest;  // system/SystemFactory.hpp, which only the builders need in full
 
 namespace rp::host {
 
@@ -24,7 +24,7 @@ struct HostSystems {
     // id that is live (held by a node of any plan not yet reclaimed) and a full snapshot pool. A core built here is
     // the node's until `destroy`: the host claimed its snapshot slot under `system` and keeps it among its live cores,
     // so the plan's table and the control plane see it at once.
-    SystemBase* (*build)(void* ctx, std::uint64_t system, const SystemBuildRequest& request, rp_error* err);
+    SystemBase* (*build)(void* ctx, std::uint64_t system, SystemBuildRequest request, rp_error* err);
     // The node is giving up a core it built: release its snapshot slot, leave the live cores and delete it.
     void (*destroy)(void* ctx, SystemBase* core);
 };

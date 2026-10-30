@@ -67,26 +67,26 @@ std::unique_ptr<SystemBase> MesenBackend::buildSms(SystemId id, MesenSmsConfig c
     return bootMesen(std::make_unique<MesenSmsSystem>(id, std::move(cfg), std::move(romBytes)), sampleRate, why);
 }
 
-std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildRequest& request,
+std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, SystemBuildRequest request,
                                                 double sampleRate, std::string* why) {
     if (const auto* nes = std::get_if<MesenNesConfig>(&request.config)) {
         MesenNesConfig cfg = *nes;
-        cfg.sram = request.sram;
-        cfg.savestate = request.savestate;
-        return buildNes(id, std::move(cfg), request.rom, sampleRate, why);
+        cfg.sram = std::move(request.sram);
+        cfg.savestate = std::move(request.savestate);
+        return buildNes(id, std::move(cfg), std::move(request.rom), sampleRate, why);
     }
     if (const auto* gba = std::get_if<MesenGbaConfig>(&request.config)) {
         MesenGbaConfig cfg = *gba;
-        cfg.sram = request.sram;
-        cfg.savestate = request.savestate;
-        return buildGba(id, std::move(cfg), request.rom, sampleRate, why);
+        cfg.sram = std::move(request.sram);
+        cfg.savestate = std::move(request.savestate);
+        return buildGba(id, std::move(cfg), std::move(request.rom), sampleRate, why);
     }
     if (const auto* sms = std::get_if<MesenSmsConfig>(&request.config)) {
         MesenSmsConfig cfg = *sms;
-        cfg.sram = request.sram;
-        cfg.savestate = request.savestate;
-        cfg.romName = request.romName;
-        return buildSms(id, std::move(cfg), request.rom, sampleRate, why);
+        cfg.sram = std::move(request.sram);
+        cfg.savestate = std::move(request.savestate);
+        cfg.romName = std::move(request.romName);
+        return buildSms(id, std::move(cfg), std::move(request.rom), sampleRate, why);
     }
     // The factory dispatched by the config, so this is a host bug rather than a caller's.
     if (why) *why = "Mesen does not build this console";

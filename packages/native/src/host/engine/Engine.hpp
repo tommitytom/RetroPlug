@@ -196,8 +196,8 @@ public:
     // any plain id; the RPC admits "rom", "sram" and "state", the ones a system is built from). Ids count up from 1
     // and are never reused.
     std::uint32_t putResource(const std::string& type, std::vector<std::uint8_t> bytes, std::string* error = nullptr);
-    // The owner's drop: idempotent, and it never frees a resource a plan still pins (that happens when the plan is
-    // reclaimed). False for an unknown or already dropped id.
+    // The owner's drop: idempotent, and it never frees a resource a plan or a node instance still pins (the plan's
+    // binding or the instance goes at the reclaim that frees it). False for an unknown or already dropped id.
     bool releaseResource(std::uint32_t id);
     // The resource a node may name while its owner still holds it, or null. Control thread: a node pins what it
     // reads, so nothing on the audio side needs this.
@@ -213,9 +213,8 @@ public:
     // yet reclaimed holds), a ROM the console's gate or the core refuses, and a full snapshot pool; the node throws
     // that reason, which the planner reports as activate-failed. The core is the calling node's until destroySystem,
     // which is the reclaim (or refused-plan unwind) that frees the node:
-    SystemBase* buildSystem(std::uint64_t system, const SystemBuildRequest& request, std::string* why);
-    void        destroySystem(SystemBase* core);
-    bool coreLive(SystemId id) const { return liveCores_.count(id) != 0; }
+    SystemBase* buildSystem(std::uint64_t system, SystemBuildRequest request, std::string* why);
+    bool        coreLive(SystemId id) const { return liveCores_.count(id) != 0; }
     // Every core alive: owned by a system node of a plan not yet reclaimed. Control thread.
     std::size_t liveSystemCount() const { return liveCores_.size(); }
     struct GraphRequest {
@@ -322,6 +321,10 @@ public:
     std::uint32_t scriptInstances() const;
 
 private:
+    // The node giving its core up, or a refused plan unwinding one it built. Only rp.host.systems/1's destroy lambda
+    // calls it, so the core a live node holds cannot be deleted by anyone else.
+    void destroySystem(SystemBase* core);
+
     struct Graph;
     // Host MIDI staged for the next block: each message's frame and its place in one flat arena of bytes. Both keep
     // their capacity, reserved at construction for what the input node taking them carries in a block, so staging
