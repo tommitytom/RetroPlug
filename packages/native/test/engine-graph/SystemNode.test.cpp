@@ -22,8 +22,10 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <functional>
 #include <memory>
+#include <random>
 #include <string>
 #include <thread>
 #include <vector>
@@ -1431,12 +1433,20 @@ TEST_CASE("a node's build carries every knob of its type, checked field by field
         CHECK(sounds(d));
     }
     SECTION("NES") {
+        // A card root this case alone names, in the `/` spelling a JSON string can hold (a Windows temp path is
+        // backslashed). Two cores given one sdRoot share one emulated card, which is what the setting is for and not
+        // what a knob check wants; the FIFO only stores the path it is given, so a case that names a root and runs no
+        // block leaves nothing on disk.
+        const std::string sdRoot =
+            (std::filesystem::temp_directory_path() /
+             ("rp-engine-graph-nes-sd-" + std::to_string(std::random_device{}())))
+                .generic_string();
         NodeRig rig(kRate);
         REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot(
                                                     "rp.mesen.nes", 1,
                                                     R"("region":"dendy","removeSpriteLimit":true,"apuLatencyMs":2,)"
                                                     R"("s5bNoise":"chip","mmc5PhaseReset":"chip",)"
-                                                    R"("sdRoot":"/tmp/rp-c3-sd-root","fifo":"hardware",)"
+                                                    R"("sdRoot":")" + sdRoot + R"(","fifo":"hardware",)"
                                                     R"("fifoDepth":4096,"fifoBytesPerSecond":150000,"n8Link":"off",)"
                                                     R"("n8LinkRttUs":3000,"channelExportMode":"individualMono")")))
                         .ok);
@@ -1448,7 +1458,7 @@ TEST_CASE("a node's build carries every knob of its type, checked field by field
         CHECK(cfg.apuLatencyMs == 2.0);
         CHECK(cfg.s5bNoise == static_cast<std::uint32_t>(CartridgeAccuracy::Chip));
         CHECK(cfg.mmc5PhaseReset == static_cast<std::uint32_t>(CartridgeAccuracy::Chip));
-        CHECK(cfg.sdRoot == "/tmp/rp-c3-sd-root");
+        CHECK(cfg.sdRoot == sdRoot);
         CHECK(cfg.fifo == 1);
         CHECK(cfg.fifoDepth == 4096);
         CHECK(cfg.fifoBytesPerSecond == 150000);
