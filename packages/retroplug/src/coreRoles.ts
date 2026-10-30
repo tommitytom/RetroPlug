@@ -2,8 +2,9 @@
 // rather than baked into the generic system config (so core-specific knobs like SameBoy's `highpass`
 // never sit in the generic config). Keyed by the `core` value (platform.ts), so the role's kind IS its
 // core. These are built-in, but ride the same generic registry a third-party extension would use. Each
-// role's config is a zod schema (roleSchema.ts): shape + defaults + clamping in one place. Ranges
-// mirror the native enums (SameBoyConfig.hpp: model 0..13, highpass 0..2, linkGroupId 0..255).
+// role's config is a zod schema (roleSchema.ts): shape + defaults + clamping in one place. Ranges mirror the native
+// enums where the field reaches a core (SameBoyConfig.hpp: model 0..13, highpass 0..2); linkGroupId is the graph's own,
+// turned into the Game Boy's link wires by buildGraph.ts (linkGroupOf), never a core setting.
 
 import type { RoleRegistry } from "./systemRoles";
 import { z, clampedInt, clampedNumber, boolField, enumField, stringField } from "./configSchema";
@@ -22,8 +23,8 @@ import {
 /** Register the built-in core-config system roles into `registry`. */
 export function registerCoreRoles(registry: RoleRegistry): void {
   // SameBoy: model / highpass / link group / fast boot, plus the display knobs below. model, highpass,
-  // colorCorrection and dmgPalette are string enums; the native reflect-cpp SameBoyRoleConfig takes
-  // their integer ordinals (converted at the boundary, settingsEnums).
+  // colorCorrection and dmgPalette are string enums; the system node's settings spell them as labels (knobs::Label), so
+  // the store hands them over as they are.
   //
   // The display group is additive and every default reproduces what the core did when these were
   // hardcoded (SameBoySystem.cpp), so an existing project loads pixel-identical and needs no migration.
@@ -52,9 +53,8 @@ export function registerCoreRoles(registry: RoleRegistry): void {
   // first three are NES-only, enableFm is SMS/GG-only, and GBA has none of its own yet - it carries
   // them all as inert bytes until it does, at which point the schema grows again.
   //
-  // Native decodes this one blob into a per-platform struct (MesenNesRoleConfig / MesenSmsRoleConfig),
-  // each reflect-cpp DefaultIfMissing-tolerant, so a field that means nothing on a platform is simply
-  // never read there.
+  // The system node reads the fields each platform reads (graph/buildGraph.ts's CONSTRUCT_FIELDS and SETTING_FIELDS),
+  // so a field that means nothing on a platform is simply never placed in its settings.
   registry.registerRole({
     kind: "mesen",
     category: "system",

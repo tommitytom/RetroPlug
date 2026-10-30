@@ -1,24 +1,18 @@
 #include "system/mesen/MesenBackend.hpp"
 
-#include <fstream>
-#include <iterator>
 #include <string>
-
-#include <rfl/json.hpp>
 
 #include "system/RomFormat.hpp"
 #include "system/SystemBase.hpp"
 #include "system/mesen/MesenGbaSystem.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
 #include "system/mesen/MesenSmsSystem.hpp"
-#include "util/SlurpFile.hpp"
 
 namespace {
 
-// Shared Mesen boot tail (mirrors SameBoyBackend::buildSameBoy): activate the core, reject the build
-// if Mesen's LoadRom failed (a corrupt ROM that passed the magic gate) rather than adopting a dead
-// system, then opt into the live snapshot plane so the control plane's readState/readSram see fresh
-// bytes instead of the boot seed frozen forever. `T` is MesenNesSystem, MesenGbaSystem or
+// Shared Mesen boot tail: activate the core, reject the build if Mesen's LoadRom failed (a corrupt ROM that passed the
+// magic gate) rather than adopting a dead system, then opt into the live snapshot plane so the control plane's
+// readState/readSram see fresh bytes instead of the boot seed frozen forever. `T` is MesenNesSystem, MesenGbaSystem or
 // MesenSmsSystem.
 template <typename T>
 std::unique_ptr<SystemBase> bootMesen(std::unique_ptr<T> sys, double sampleRate, std::string* why) {
@@ -31,27 +25,13 @@ std::unique_ptr<SystemBase> bootMesen(std::unique_ptr<T> sys, double sampleRate,
     return sys;                             // implicit upcast to unique_ptr<SystemBase>
 }
 
-// Parse the TS "mesen" role-config JSON (forward-tolerant: an absent field takes its default). The single place
-// that JSON is decoded: the NES construct blob.
-MesenNesRoleConfig decodeMesenNesRoleConfig(const std::string& json) {
-    const auto r = rfl::json::read<MesenNesRoleConfig, rfl::DefaultIfMissing>(json);
-    return r ? r.value() : MesenNesRoleConfig{};  // unparseable → all defaults (a no-op apply)
-}
-
-// The SMS/GG twin of the above, over the same JSON blob.
-MesenSmsRoleConfig decodeMesenSmsRoleConfig(const std::string& json) {
-    const auto r = rfl::json::read<MesenSmsRoleConfig, rfl::DefaultIfMissing>(json);
-    return r ? r.value() : MesenSmsRoleConfig{};  // unparseable → all defaults (a no-op apply)
-}
-
 } // namespace
 
 std::unique_ptr<SystemBase> MesenBackend::buildNes(SystemId id, MesenNesConfig cfg,
                                                    std::vector<std::uint8_t> romBytes, double sampleRate,
                                                    std::string* why) {
     // The platform's RomFormat gate confirms the bytes actually match the requested platform (a mislabelled ROM is
-    // rejected before Mesen sees it). Both paths reach it: the blob path from `spec.platform`, a system node from
-    // the node type that made the config.
+    // rejected before Mesen sees it). The node type that made the config is what picked this console.
     if (detectRomFormat(romBytes) != RomFormat::Nes) {
         if (why) *why = "the ROM is not a NES ROM";
         return nullptr;
@@ -87,71 +67,8 @@ std::unique_ptr<SystemBase> MesenBackend::buildSms(SystemId id, MesenSmsConfig c
     return bootMesen(std::make_unique<MesenSmsSystem>(id, std::move(cfg), std::move(romBytes)), sampleRate, why);
 }
 
-std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildSpec& spec,
-                                                double sampleRate) {
-    // TS-supplied effective ROM (e.g. risa asset overrides applied non-destructively) takes precedence over
-    // reading romPath — mirroring SameBoyBackend. cfg.romPath below keeps the on-disk path for the watcher +
-    // .sav resolution; only the loaded bytes differ. The per-platform typed build still sniffs it.
-    std::vector<std::uint8_t> romBytes = spec.romBytes.empty() ? slurpAll(spec.romPath) : spec.romBytes;
-    if (romBytes.empty()) return nullptr;
-
-    // Dispatch on the platform: one Mesen core, three consoles. Each typed build gates the bytes against it.
-    if (spec.platform == "nes") {
-        MesenNesConfig cfg;
-        cfg.romPath = spec.romPath;
-        cfg.sram = spec.sram;
-        cfg.savestate = spec.savestate;
-        // TS-owned "mesen" role knobs cross in the opaque settings blob so a loaded non-default region
-        // is applied AT construct (configureNes runs before LoadRom → no post-build reset). A fresh
-        // build sends no blob → the MesenNesConfig defaults (Auto region / sprite limit on).
-        const std::string settings(spec.settings.begin(), spec.settings.end());
-        const MesenNesRoleConfig role =
-            settings.empty() ? MesenNesRoleConfig{} : decodeMesenNesRoleConfig(settings);
-        cfg.region = role.region;
-        cfg.removeSpriteLimit = role.removeSpriteLimit;
-        cfg.channelExportMode = role.channelExportMode;
-        cfg.apuLatencyMs = role.apuLatencyMs;
-        cfg.expansionVolume = role.expansionVolume;  // seeded before LoadRom, so no frames play at the wrong level
-        cfg.sdRoot = role.sdRoot;
-        cfg.fifo = role.fifo;
-        cfg.fifoDepth = role.fifoDepth;
-        cfg.fifoBytesPerSecond = role.fifoBytesPerSecond;
-        cfg.n8Link = role.n8Link;
-        cfg.n8LinkRttUs = role.n8LinkRttUs;
-        return buildNes(id, std::move(cfg), std::move(romBytes), sampleRate, nullptr);
-    }
-
-    if (spec.platform == "gba") {
-        MesenGbaConfig cfg;
-        cfg.romPath = spec.romPath;
-        cfg.sram = spec.sram;
-        cfg.savestate = spec.savestate;
-        return buildGba(id, std::move(cfg), std::move(romBytes), sampleRate, nullptr);
-    }
-
-    // Master System / Game Gear - ONE system class, the platform string picks the machine.
-    if (spec.platform == "sms" || spec.platform == "gg") {
-        MesenSmsConfig cfg;
-        cfg.romPath = spec.romPath;
-        cfg.sram = spec.sram;
-        cfg.savestate = spec.savestate;
-        // The machine, which is the whole difference between the two platforms here. It reaches Mesen
-        // as the staged file's EXTENSION (stageRom), because SmsConsole::LoadRom picks its model from
-        // that and nothing else.
-        cfg.gameGear = (spec.platform == "gg");
-        // configureSms runs before LoadRom, so a loaded non-default FM setting has to be applied AT
-        // construct - same reason the NES branch above passes region through the settings blob.
-        const std::string settings(spec.settings.begin(), spec.settings.end());
-        cfg.enableFm = settings.empty() ? MesenSmsRoleConfig{}.enableFm
-                                        : decodeMesenSmsRoleConfig(settings).enableFm;
-        return buildSms(id, std::move(cfg), std::move(romBytes), sampleRate, nullptr);
-    }
-
-    return nullptr;  // Mesen doesn't serve this platform
-}
-
-std::unique_ptr<SystemBase> MesenBackend::buildTyped(SystemId id, const SystemBuildRequest& request,
-                                                     double sampleRate, std::string* why) {
+std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildRequest& request,
+                                                double sampleRate, std::string* why) {
     if (const auto* nes = std::get_if<MesenNesConfig>(&request.config)) {
         MesenNesConfig cfg = *nes;
         cfg.sram = request.sram;

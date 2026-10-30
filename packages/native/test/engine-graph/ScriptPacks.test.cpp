@@ -38,7 +38,6 @@
 #include "host/engine/DspCommand.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/script/ScriptHost.hpp"
-#include "system/mesen/MesenNesConfig.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
 
 using rp::host::ScriptHost;
@@ -1419,7 +1418,7 @@ TEST_CASE("under an audio thread, a load reclaims first: the generation a reload
     place(e, document({docNode("count", "test.back.count"), midiOut("1")}, {docWire("count.out", "midi-out.in1")}));
     CHECK(block(e) == std::vector<Out>{{1, 0, {1, 1}}});
     // The test thread is the block thread from here, and nothing reclaims but the loads, as in the plugin and SDL,
-    // which reclaim only inside setGraph, buildCore and a load.
+    // which reclaim only inside setGraph and a load.
     e.setAudioThreadOwns(true);
     const auto drained = [&] {
         e.drainCommands();
@@ -1506,53 +1505,23 @@ TEST_CASE("a pack's generation numbers only increase: every load of its id takes
     CHECK(e.faultCount() == 0);
 }
 
-TEST_CASE("a core parked since the last request stays parked across a reload's replan, for the document that places it",
-          "[script][packs][reload]") {
-    using rp::host::test::DocSystem;
-    using rp::host::test::kNesType;
-    Engine e(kRate);
-    load(e, "test.park", toys(tally("test.park.count", 1)));
-    const std::vector<std::string> nodes{docNode("count", "test.park.count"), midiOut("1")};
-    const std::vector<std::string> wires{docWire("count.out", "midi-out.in1")};
-    place(e, document(nodes, wires));
-    CHECK(block(e) == std::vector<Out>{{1, 0, {1, 1}}});
-    // A core built for the next document, parked after the last request was published, as TS parks one before the
-    // setGraph that places it.
-    MesenNesConfig cfg;
-    cfg.romPath = RP_BLIPTOASTER_ROM_PATH;
-    auto core = std::make_unique<MesenNesSystem>(1, cfg, rp::host::test::readFile(RP_BLIPTOASTER_ROM_PATH));
-    core->onActivate(kRate);
-    REQUIRE(e.parkCore(std::move(core)));
-    // The reload replans the running document, which places no system: the core is left where it was.
-    load(e, "test.park", toys(tally("test.park.count", 2)));
-    CHECK(block(e) == std::vector<Out>{{1, 0, {2, 1}}});
-    CHECK(e.coreLive(1));
-    CHECK(e.findSystem(1) == nullptr);
-    place(e, graphRequest(stereoDocument({DocSystem{1, kNesType}}, DocExtras{nodes, wires}), {1}));
-    CHECK(e.findSystem(1) != nullptr);
-    CHECK(block(e) == std::vector<Out>{{1, 0, {2, 2}}});
-    CHECK(e.scriptThrows() == 0);
-    CHECK(e.faultCount() == 0);
-}
-
 TEST_CASE("a reload's replan carries the running plan's tap as it is: neither restored nor armed again",
           "[script][packs][reload]") {
     using rp::host::test::DocSystem;
     using rp::host::test::kNesType;
     using rp::host::test::rearming;
+    using rp::host::test::withRoms;
     Engine e(kRate);
-    MesenNesConfig cfg;
-    cfg.romPath = RP_BLIPTOASTER_ROM_PATH;
-    auto core = std::make_unique<MesenNesSystem>(1, cfg, rp::host::test::readFile(RP_BLIPTOASTER_ROM_PATH));
-    core->onActivate(kRate);
-    auto* nes = core.get();
-    REQUIRE(e.parkCore(std::move(core)));
+    std::vector<DocSystem> systems{{1, kNesType}};
+    withRoms(e, systems);
     load(e, "test.tap", toys(tally("test.tap.count", 1)));
-    const auto request = graphRequest(stereoDocument({DocSystem{1, kNesType}},
+    const auto request = graphRequest(stereoDocument(systems,
                                                      DocExtras{{docNode("count", "test.tap.count"), midiOut("1")},
                                                                {docWire("count.out", "midi-out.in1")}}),
                                       {1});
-    place(e, rearming(request, 1, 1));  // the tap armed to mode 1 from the core's 0
+    place(e, rearming(request, 1, 1));  // the tap armed to mode 1 from the core's built mode 0
+    auto* nes = dynamic_cast<MesenNesSystem*>(e.findSystem(1));
+    REQUIRE(nes != nullptr);
     CHECK(nes->channelExportMode() == 1);
     CHECK(block(e) == std::vector<Out>{{1, 0, {1, 1}}});
     // Moved behind the engine's back, so a replan that restored the tap (to 0) or armed it again (to 1) would show.

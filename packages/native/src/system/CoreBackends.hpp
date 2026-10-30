@@ -2,7 +2,7 @@
 
 class SystemFactory;
 
-// Register the built-in core backends (sameboy + mesen) on `factory` — the one build path, keyed by the
-// `core` value (Mesen serves both NES and GBA, dispatching internally on platform). Each host calls this
-// once while composing its own backend graph.
+// Register the built-in core backends (sameboy + mesen) on `factory`: the Engine's one factory, which it registers
+// them on at construction. Dispatch is by the typed config a build request carries, not by a name: Mesen's config
+// alternative picks the console it builds (NES, GBA, or Master System / Game Gear).
 void registerCoreBackends(SystemFactory& factory);

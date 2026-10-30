@@ -221,12 +221,10 @@ public:
     // Mirrors the old code's "10 ms at sampleRate" default.
     std::uint32_t buttonSpacingSamples_ = 0;
 
-    // Serial-link state. Empty => standalone (no linking). Set by the system
-    // node's set_peers (host/graph/SystemNodes.cpp) when this system shares a
-    // nonzero SameBoyConfig::linkGroupId with one or more peers: the other
-    // members of its coupled group, which the graph steps in lockstep. Each
-    // peer's core is owned by its own node, which outlives the plan that
-    // pairs them.
+    // Serial-link state. Empty => standalone (no linking). The plan's `link` wires name the peers, and the system
+    // node's set_peers (host/graph/SystemNodes.cpp) fills this from them at adoption: the other members of its coupled
+    // group, which the graph steps in lockstep. Each peer's core is owned by its own node, which outlives the plan
+    // that pairs them.
     std::vector<SameBoySystem*> linkPeers_;
     bool                        bitToSend_ = false;
 

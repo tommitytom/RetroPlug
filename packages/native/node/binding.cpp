@@ -31,8 +31,6 @@
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "host/rpc/BackendRpcRegistration.hpp"
-#include "system/CoreBackends.hpp"
-#include "system/SystemFactory.hpp"
 #include "host/HostServices.hpp"
 
 namespace {
@@ -41,8 +39,8 @@ using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::NodeCodec>;
 
 // One per addon instance (one per Node context - a worker_thread gets its own, with its own Engine).
 // Held through napi_set_instance_data rather than a static, so multiple contexts don't share a
-// backend. Member order mirrors cli/main.cpp's composition block: the Engine and factory come first
-// because the services hold references to them.
+// backend. Member order mirrors cli/main.cpp's composition block: the Engine comes first because the
+// services hold references to it.
 struct AddonState {
     // The same graph every other host stands up (host/HostServices.hpp). It is codec-agnostic, which is
     // what lets this addon share it - the transport and server below are the N-API half and stay here.

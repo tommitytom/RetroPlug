@@ -21,7 +21,6 @@
 #include "host/engine/EngineInvoker.hpp"
 #include "host/rpc/EngineRpcService.hpp"
 #include "host/rpc/HostRpcService.hpp"
-#include "system/SystemFactory.hpp"
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
@@ -56,10 +55,9 @@ private:
     // The backend service graph (host + emulator only - the UI never drives the audio-render harness,
     // debugger, or background thread). Declaration order is load-bearing.
     Engine           engine_;
-    SystemFactory    factory_;
     QueuedInvoker    invoker_{engine_};
     HostRpcService   host_;
-    EngineRpcService engineSvc_{engine_, factory_, invoker_};
+    EngineRpcService engineSvc_{engine_, invoker_};
 
     std::unique_ptr<rpcpp::QuickJSTransport> transport_;
     std::unique_ptr<BackendRpcServer>        server_;

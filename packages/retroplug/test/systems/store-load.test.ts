@@ -41,7 +41,8 @@ test("load: defers to a sibling <rom>.rplg and builds nothing", () => {
   const r = store.loadRom("/roms/a.gb");
   expect(r).toEqual({ deferredProject: "/roms/a.rplg" });
   expect(store.view().length).toBe(0);
-  expect(be.log.includes("buildCore")).toBeFalsy();
+  expect(be.putResourceCalls.length).toBe(0); // no byte crossed, so no node to place
+  expect(be.graphRequests.length).toBe(0);
 });
 
 test("load: a paired save does NOT defer, and pins the different file as the savPath", () => {

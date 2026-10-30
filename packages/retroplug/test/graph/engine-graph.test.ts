@@ -101,7 +101,7 @@ test("after a refused publish the same model is sent again", () => {
   expect(e.requests[2].slots).toEqual([1, 2]);
 });
 
-test("after a refused publish the document running before it is sent, which frees the cores it parked", () => {
+test("after a refused publish the document running before it is sent, so the model and the engine agree again", () => {
   const e = new FakeEngine();
   const g = new EngineGraph(e);
   g.publish({ systems: [gb(1)], routing: "stereo" });

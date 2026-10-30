@@ -4,8 +4,6 @@
 #include <cmath>
 #include <cstdio>
 #include <cstddef>
-#include <fstream>
-#include <iterator>
 #include <span>
 #include <string>
 #include <utility>
@@ -13,17 +11,11 @@
 #include "graph/CanonicalJson.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
-#include "system/SystemFactory.hpp"
 
 #include "EmbeddedRoms.hpp"
 #include "system/SystemBase.hpp"
-#include "system/SystemTypes.hpp"
-#include "system/sameboy/SameBoyConfig.hpp"
-#include "system/sameboy/SameBoySystem.hpp"
-#include "system/mesen/MesenNesSystem.hpp"
-#include "host/graph/SystemNodes.hpp"
 
-#include "kit/KitCompiler.hpp"       // rp::kit::KitCompiler (generic, compileKit) — heavy, so only in this TU
+#include "kit/KitCompiler.hpp"       // rp::kit::KitCompiler (generic, compileKit) - heavy, so only in this TU
 #include "lsdj/LsdjKitCodec.hpp"     // rp::lsdj::LsdjKitCodec (the LSDJ nibble/16KB-bank codec)
 #include "risa/RisaDmcCodec.hpp"     // rp::risa::RisaDmcCodec (the risa NES-DPCM/8KB-bank codec)
 #include "util/SlurpFile.hpp"
@@ -35,49 +27,16 @@ rfl::Bytestring toBytestring(const std::vector<std::uint8_t>& v) {
     return rfl::Bytestring(p, p + v.size());
 }
 
-// The inverse for a wire seed (rfl::Bytestring, i.e. a Uint8Array) copied into the build spec's
-// byte vector — std::byte isn't implicitly convertible to std::uint8_t, so reinterpret + copy.
+// The inverse for a wire byte block (rfl::Bytestring, i.e. a Uint8Array) copied into a std::vector<std::uint8_t>:
+// std::byte isn't implicitly convertible to std::uint8_t, so reinterpret + copy.
 std::vector<std::uint8_t> toBytes(const rfl::Bytestring& b) {
     const auto* p = reinterpret_cast<const std::uint8_t*>(b.data());
     return std::vector<std::uint8_t>(p, p + b.size());
 }
 
-// The default core for a platform — the fallback when the wire spec omits `core`. TS always sends
-// both (derived via its own defaultCoreFor), so this only backstops a caller that sends platform alone.
-//
-// MIRRORS `DEFAULT_CORE` in packages/retroplug/src/platform.ts, and unlike that one it has no compiler
-// holding it to the platform list: DEFAULT_CORE is a `Record<Platform, Core>`, so adding a Platform
-// member is a hard TS error, whereas a missing case here just silently falls through to SameBoy and
-// the construct returns nullptr with no diagnostic. That is exactly how "sms"/"gg" were left behind
-// when they landed. app-cores.test.ts drives every platform through this path with `core` omitted.
-std::string defaultCoreFor(const std::string& platform) {
-    if (platform == "nes" || platform == "gba" || platform == "sms" || platform == "gg") return "mesen";
-    return "sameboy";  // "gb" (and unknown/absent) → SameBoy
-}
-
-// Map the wire construct spec to the backend-agnostic build spec: carry `core` (the factory-registry
-// key, defaulted from `platform` if absent) and `platform` (so a multi-platform core picks the right
-// system), resolve the SRAM/savestate seeds (zip-import bytes win, else the on-disk file, else empty),
-// and carry the opaque `settings` blob (decoded only by the matching backend) through unchanged.
-SystemBuildSpec toBuildSpec(const BackendConstructSpec& spec) {
-    SystemBuildSpec out;
-    out.platform = spec.platform.value_or("");
-    out.core = spec.core.value_or(defaultCoreFor(out.platform));
-    out.romPath = spec.romPath;
-    out.embeddedRom = spec.embeddedRom;
-    if (spec.romBytes) out.romBytes = toBytes(*spec.romBytes);
-    if (spec.sramBytes) out.sram = toBytes(*spec.sramBytes);
-    else if (spec.savPath) out.sram = slurpAll(*spec.savPath);
-    if (spec.stateBytes) out.savestate = toBytes(*spec.stateBytes);
-    else if (spec.statePath) out.savestate = slurpAll(*spec.statePath);
-    if (spec.settings) out.settings.assign(spec.settings->begin(), spec.settings->end());
-    return out;
-}
-
 } // namespace
 
-EngineRpcService::EngineRpcService(Engine& engine, SystemFactory& factory, QueuedInvoker& invoker)
-    : engine_(engine), factory_(factory), invoker_(invoker) {}
+EngineRpcService::EngineRpcService(Engine& engine, QueuedInvoker& invoker) : engine_(engine), invoker_(invoker) {}
 
 // Whether the planned graph writes exactly `channels` host channels: TS sets the shape a render call needs
 // before making it, and a render into buffers of another width would fill them from the wrong wiring.
@@ -138,28 +97,6 @@ RpcPutResourceResult EngineRpcService::putResource(BackendResourceSpec spec) {
 
 bool EngineRpcService::releaseResource(std::uint32_t id) { return engine_.releaseResource(id); }
 
-std::optional<RpcBuiltCore> EngineRpcService::buildCore(BackendConstructSpec spec) {
-    const SystemId id = spec.id;
-    if (id == 0) {  // the snapshot registry's free-slot id, so never a system's
-        std::fprintf(stderr, "[engine] buildCore: 0 is not a system id\n");
-        return std::nullopt;
-    }
-    // A core in a plan the audio thread has already handed back is freed first, so the id check sees it gone.
-    invoker_.reclaimReleased();
-    if (engine_.coreLive(id)) {
-        std::fprintf(stderr, "[engine] buildCore: system %u is still live\n", static_cast<unsigned>(id));
-        return std::nullopt;
-    }
-    auto sys = factory_.build(id, toBuildSpec(spec), engine_.sampleRate());
-    if (!sys) return std::nullopt;  // unknown backend / unreadable or unrecognised ROM
-    RpcBuiltCore facts{rp::host::systemNodeType(sys->kind()), 0, 0};
-    if (auto* nes = dynamic_cast<MesenNesSystem*>(sys.get())) facts.exportMode = nes->channelExportMode();
-    if (auto* sb = dynamic_cast<SameBoySystem*>(sys.get())) facts.linkGroup = sb->config_.linkGroupId;
-    // Parking claims the core's snapshot slot, seeded from it, so a read right after the build works.
-    if (!engine_.parkCore(std::move(sys))) return std::nullopt;  // the snapshot pool is full
-    return facts;
-}
-
 RpcSetGraphResult EngineRpcService::setGraph(RpcSetGraphRequest request) {
     Engine::GraphRequest r;
     r.document = std::move(request.document);
@@ -207,10 +144,10 @@ bool EngineRpcService::setParam(std::string nodeId, std::string paramId, double 
     return engine_.setParam(nodeId, paramId, value);
 }
 
-// duplicate, reload and remove are TS orchestration (SystemsStore over the registry reads + buildCore, and
-// the documents it publishes): duplicate pulls the source savestate and builds a seeded core; reload pulls
-// SRAM and cold-boots the ROM into the same slot; remove publishes a document without it. Native has no
-// bespoke method for any of them.
+// duplicate, reload and remove are TS orchestration (SystemsStore over the resource calls, the registry reads and
+// the documents it publishes): duplicate pulls the source savestate and boots a seeded system; reload pulls SRAM
+// and cold-boots the ROM under a new id; remove publishes a document without it. Native has no bespoke method for
+// any of them.
 
 // Reads of the owned snapshot registry — the control plane reads published copies by id, never the
 // live core, so they're safe while the audio thread runs (no audioRunning_ guard, no findSystem walk).

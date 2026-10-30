@@ -5,11 +5,11 @@
 // callers with no store) publishes through it, and the host shape is an edit of its own. One per native Engine: two
 // publishers with separate EngineGraphs would each skip a document the other had already replaced.
 //
-// A refused document leaves the running plan as it was and every core it named parked until a document plans.
-// The publisher keeps the model it published either way, so it is the model here too; the next document is
-// sent even if it matches the running one, so the parked cores are freed; and a refused re-arm rides it. A send
-// that throws counts as refused, and so does a withShape restore that did not plan, after which the engine still
-// runs the temporary shape: until a document plans, even a shape change to the current shape is sent.
+// A refused document leaves the running plan as it was, cores, resources and tap included. The publisher keeps the
+// model it published, so it is the model here too; the next document is sent even if it matches the running one, so
+// the model and the engine are in step again, and a refused re-arm rides it. A send that throws counts as refused, and
+// so does a withShape restore that did not plan, after which the engine still runs the temporary shape: until a
+// document plans, even a shape change to the current shape is sent.
 import { buildGraph, type GraphModel, type GraphSystem, type HostShape } from "./graph/buildGraph";
 import { toGraphJson } from "./graph/graphDocument";
 import type { Backend, GraphError, SetGraphRequest, SetGraphResult } from "./backend";
@@ -154,8 +154,8 @@ export class EngineGraph {
     return true;
   }
 
-  /** A document that was refused or whose send threw: its cores stay parked until a document plans, so the next
-   *  one is sent even if it is the running one, carrying `rearm`. */
+  /** A document that was refused or whose send threw: the engine keeps the plan it ran, so the next one is sent even
+   *  if it is the running one, carrying `rearm`. */
   private notPlanned(rearm: boolean): void {
     this.sent = null;
     this.rearmDue = rearm;

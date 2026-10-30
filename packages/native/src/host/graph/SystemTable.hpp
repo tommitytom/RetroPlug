@@ -21,9 +21,9 @@ struct SystemEntry {
 // The systems of one plan, in project slot order (docs/modular-graph-phase-b1-design.md section 4.5), and what else
 // the engine's per-block work reads off the plan. Built on the control thread with each document and adopted with
 // its plan, so the audio thread's lookups always match the plan that is running. The cores belong to the plan's
-// system nodes, which outlive the table. A slot whose core was parked before the plan is filled here; a `system`
-// node's slot is null until that node's activation builds its core and fills it, so the table is complete (no null
-// core) before it is published with the plan, and nothing writes it after publication.
+// system nodes, which outlive the table. A slot whose system a node of an older plan is reused for holds that node's
+// live core from here; every other is null until its node's activation builds its core and fills it, so the table is
+// complete (no null core) before it is published with the plan, and nothing writes it after publication.
 struct SystemTable {
     std::vector<SystemEntry> slots;
     // The system the plan's rp.n8.cart-mirror names (0 = none): one of the plan's NES systems.

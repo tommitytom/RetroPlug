@@ -22,7 +22,6 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
-#include <cstdio>
 #include <memory>
 #include <vector>
 
@@ -32,7 +31,6 @@
 #include "host/engine/DspCommand.hpp"
 #include "host/engine/Engine.hpp"
 #include "system/SystemBase.hpp"
-#include "system/mesen/MesenNesConfig.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
 #include "transport/MidiTypes.hpp"
 
@@ -46,32 +44,6 @@ constexpr double        kSampleRate = 48000.0;
 constexpr std::uint32_t kFrames     = 512;
 constexpr int           kBootBlocks = 90;   // ~1 s: boot + FIFO init before the note takes
 constexpr int           kPlayBlocks = 60;   // ~0.6 s of held note to measure
-
-std::vector<std::uint8_t> readRom() {
-    std::FILE* f = std::fopen(RP_BLIPTOASTER_ROM_PATH, "rb");
-    REQUIRE(f != nullptr);
-    std::fseek(f, 0, SEEK_END);
-    const long n = std::ftell(f);
-    std::fseek(f, 0, SEEK_SET);
-    REQUIRE(n > 0);
-    std::vector<std::uint8_t> bytes(static_cast<std::size_t>(n));
-    REQUIRE(std::fread(bytes.data(), 1, bytes.size(), f) == bytes.size());
-    std::fclose(f);
-    return bytes;
-}
-
-// A booted NES, built the way buildCore builds one: constructed with the DEFAULT (Mix) export mode, so
-// anything per-channel the Engine later reports had to be armed live.
-std::unique_ptr<MesenNesSystem> buildNes(SystemId id, std::uint32_t exportMode = 0) {
-    MesenNesConfig cfg;
-    cfg.romPath = RP_BLIPTOASTER_ROM_PATH;
-    cfg.channelExportMode = exportMode;
-    auto sys = std::make_unique<MesenNesSystem>(id, cfg, readRom());
-    sys->onActivate(kSampleRate);
-    REQUIRE(sys->activated());
-    REQUIRE(sys->channelExportMode() == exportMode);  // 0: constructed as a plain Mix system
-    return sys;
-}
 
 ::MidiEvent noteOnCh1() {
     ::MidiEvent e{};
@@ -130,12 +102,11 @@ void driveAndMeasure(Engine& eng, SystemId id, Lanes& lanes, std::size_t numOutp
 
 constexpr float kSignal = 1.0e-4f;  // "this lane carried audio"; a routed NES stem is orders above it
 
-// An engine placing the documents TS would send: a core is parked as buildCore parks one, then planned in.
+// An engine placing the documents TS would send: each system node builds its core from the rig's NES ROM resource.
 struct NesRig {
-    Engine eng{kSampleRate};
-    void park(std::unique_ptr<SystemBase> core) {
-        REQUIRE(eng.parkCore(std::move(core)));
-    }
+    Engine        eng{kSampleRate};
+    std::uint32_t rom;  // the one ROM every system's node builds from
+    NesRig() { rom = rp::host::test::putRom(eng, rp::host::test::kNesType); }
     void place(Engine::GraphRequest r) { REQUIRE(eng.setGraph(r).ok); }
 };
 
@@ -147,8 +118,7 @@ TEST_CASE("Engine PinSplit arms a real NES tap live and fans 3 mono pins across 
           "[audio][channelsplit][nes]") {
     NesRig rig;
     Engine& eng = rig.eng;
-    rig.park(buildNes(1));
-    rig.place(rearming(graphRequest(nesSplitDocument(1, "pins"), {1}), 1, 1));
+    rig.place(rearming(graphRequest(nesSplitDocument({1, kNesType, rig.rom}, "pins"), {1}), 1, 1));
 
     // The arm rode the plan's swap, against an already-booted core - no rebuild, no reset.
     auto* nes = dynamic_cast<MesenNesSystem*>(eng.findSystem(1));
@@ -173,8 +143,7 @@ TEST_CASE("Engine StereoPinSplit gives each pin its own PAIR, mirrored L=R",
           "[audio][channelsplit][nes]") {
     NesRig rig;
     Engine& eng = rig.eng;
-    rig.park(buildNes(1));
-    rig.place(rearming(graphRequest(nesSplitDocument(1, "stereoPins"), {1}), 1, 1));
+    rig.place(rearming(graphRequest(nesSplitDocument({1, kNesType, rig.rom}, "stereoPins"), {1}), 1, 1));
 
     // Same tap as PinSplit — the modes differ only in how many lanes the three streams spread over.
     auto* nes = dynamic_cast<MesenNesSystem*>(eng.findSystem(1));
@@ -205,8 +174,7 @@ TEST_CASE("StereoPinSplit needs 6 lanes, so a narrow host falls back rather than
     // Stereo and arms the tap all the same (the narrow-host defect, docs/modular-graph-phase-b0-design.md 2.5).
     NesRig rig;
     Engine& eng = rig.eng;
-    rig.park(buildNes(1));
-    rig.place(rearming(graphRequest(stereoDocument({{1, kNesType}}, 4), {1}), 1, 1));
+    rig.place(rearming(graphRequest(stereoDocument({{1, kNesType, rig.rom}}, 4), {1}), 1, 1));
 
     Lanes lanes;
     driveAndMeasure(eng, 1, lanes, 4);  // only 4 lanes offered — 6 needed
@@ -221,8 +189,7 @@ TEST_CASE("Engine ChannelSplit on a real NES fans 5 mono core channels across ou
           "[audio][channelsplit][nes]") {
     NesRig rig;
     Engine& eng = rig.eng;
-    rig.park(buildNes(1));
-    rig.place(rearming(graphRequest(nesSplitDocument(1, "channels"), {1}), 1, 3));
+    rig.place(rearming(graphRequest(nesSplitDocument({1, kNesType, rig.rom}, "channels"), {1}), 1, 3));
 
     auto* nes = dynamic_cast<MesenNesSystem*>(eng.findSystem(1));
     REQUIRE(nes != nullptr);
@@ -243,19 +210,18 @@ TEST_CASE("Leaving a split routing restores the NES tap and the plain stereo mix
           "[audio][channelsplit][nes]") {
     NesRig rig;
     Engine& eng = rig.eng;
-    rig.park(buildNes(1));
-    rig.place(rearming(graphRequest(stereoDocument({{1, kNesType}}, 8), {1})));
+    rig.place(rearming(graphRequest(stereoDocument({{1, kNesType, rig.rom}}, 8), {1})));
     auto* nes = dynamic_cast<MesenNesSystem*>(eng.findSystem(1));
     REQUIRE(nes != nullptr);
 
     // Round-trip every split mode. Each leaves the core exactly as it was found, so a user flipping
     // through the Audio Routing cycler can't strand the tap armed (which would leave the mix path
     // draining capture streams forever).
-    rig.place(rearming(graphRequest(nesSplitDocument(1, "pins"), {1}), 1, 1));
+    rig.place(rearming(graphRequest(nesSplitDocument({1, kNesType, rig.rom}, "pins"), {1}), 1, 1));
     CHECK(nes->channelExportMode() == 1);
-    rig.place(rearming(graphRequest(nesSplitDocument(1, "channels"), {1}), 1, 3));
+    rig.place(rearming(graphRequest(nesSplitDocument({1, kNesType, rig.rom}, "channels"), {1}), 1, 3));
     CHECK(nes->channelExportMode() == 3);
-    rig.place(rearming(graphRequest(stereoDocument({{1, kNesType}}, 8), {1})));
+    rig.place(rearming(graphRequest(stereoDocument({{1, kNesType, rig.rom}}, 8), {1})));
     CHECK(nes->channelExportMode() == 0);
     CHECK(nes->channelLayout().size() == 1);  // back to the single stereo "Mix" stream
 
@@ -271,8 +237,7 @@ TEST_CASE("A second system disarms the NES tap and falls back to Stereo",
           "[audio][channelsplit][nes]") {
     NesRig rig;
     Engine& eng = rig.eng;
-    rig.park(buildNes(1));
-    rig.place(rearming(graphRequest(nesSplitDocument(1, "pins"), {1}), 1, 1));
+    rig.place(rearming(graphRequest(nesSplitDocument({1, kNesType, rig.rom}, "pins"), {1}), 1, 1));
 
     auto* nes = dynamic_cast<MesenNesSystem*>(eng.findSystem(1));
     REQUIRE(nes != nullptr);
@@ -280,13 +245,12 @@ TEST_CASE("A second system disarms the NES tap and falls back to Stereo",
 
     // The splits are single-system-only, so adding a peer must retire the wiring AND the tap it needed:
     // otherwise the mix path would keep draining capture streams nothing reads. TS sends a restore only.
-    rig.park(buildNes(2));
-    rig.place(rearming(graphRequest(stereoDocument({{1, kNesType}, {2, kNesType}}, 8), {1, 2})));
+    rig.place(rearming(graphRequest(stereoDocument({{1, kNesType, rig.rom}, {2, kNesType, rig.rom}}, 8), {1, 2})));
     CHECK(nes->channelExportMode() == 0);
     CHECK(nes->channelLayout().size() == 1);
 
     // Removing the peer re-enters the split, re-arming from scratch.
-    rig.place(rearming(graphRequest(nesSplitDocument(1, "pins"), {1}), 1, 1));
+    rig.place(rearming(graphRequest(nesSplitDocument({1, kNesType, rig.rom}, "pins"), {1}), 1, 1));
     CHECK(nes->channelExportMode() == 1);
     CHECK(nes->channelLayout().size() == 3);
 }
@@ -295,8 +259,7 @@ TEST_CASE("A re-arm restores and arms again, even with an unchanged document",
           "[audio][channelsplit][nes]") {
     NesRig rig;
     Engine& eng = rig.eng;
-    rig.park(buildNes(1));
-    const Engine::GraphRequest pins = rearming(graphRequest(nesSplitDocument(1, "pins"), {1}), 1, 1);
+    const Engine::GraphRequest pins = rearming(graphRequest(nesSplitDocument({1, kNesType, rig.rom}, "pins"), {1}), 1, 1);
     rig.place(pins);
     auto* nes = dynamic_cast<MesenNesSystem*>(eng.findSystem(1));
     REQUIRE(nes != nullptr);
@@ -315,43 +278,15 @@ TEST_CASE("A replacing NES is armed afresh, never restored to the replaced core'
           "[audio][channelsplit][nes]") {
     NesRig rig;
     Engine& eng = rig.eng;
-    rig.park(buildNes(1, 2));  // built with the pins + mix-reference tap
-    rig.place(rearming(graphRequest(nesSplitDocument(1, "channels"), {1}), 1, 3));  // armed to 3, remembering 2
+    rig.place(rearming(graphRequest(nesSplitDocument({1, kNesType, rig.rom, R"("channelExportMode":"pinsPlusRef")"}, "channels"), {1}), 1, 3));  // armed to 3, remembering 2
     REQUIRE(dynamic_cast<MesenNesSystem*>(eng.findSystem(1))->channelExportMode() == 3);
 
-    rig.park(buildNes(2));  // a fresh core, built as plain Mix, in the replaced one's slot
-    rig.place(rearming(graphRequest(nesSplitDocument(2, "channels"), {2}), 2, 3));
+    rig.place(rearming(graphRequest(nesSplitDocument({2, kNesType, rig.rom}, "channels"), {2}), 2, 3));
     auto* fresh = dynamic_cast<MesenNesSystem*>(eng.findSystem(2));
     REQUIRE(fresh != nullptr);
     CHECK(fresh->channelExportMode() == 3);
     // Leaving the split puts back what THIS core was built with: the old core's 2 left with it.
-    rig.place(rearming(graphRequest(stereoDocument({{2, kNesType}}, 8), {2})));
-    CHECK(fresh->channelExportMode() == 0);
-}
-
-TEST_CASE("A NES parked again under the armed one's id is restored to its own mode, not the old core's",
-          "[audio][channelsplit][nes]") {
-    // TS builds every core under a new id, but the engine takes a raw caller's: a document that drops the armed
-    // NES without a re-arm leaves the tap's record of it behind, and the next re-arm finds a core under its id.
-    NesRig rig;
-    Engine& eng = rig.eng;
-    rig.park(buildNes(1, 2));  // built with the pins + mix-reference tap
-    rig.place(rearming(graphRequest(nesSplitDocument(1, "channels"), {1}), 1, 3));  // armed to 3, remembering 2
-    REQUIRE(dynamic_cast<MesenNesSystem*>(eng.findSystem(1))->channelExportMode() == 3);
-
-    // Built while the armed core is alive, so it cannot be given that core's address, the one thing the record
-    // compares.
-    auto replacement = buildNes(1);
-    rig.place(graphRequest(stereoDocument({}, 8), {}));  // dropped, no re-arm
-    eng.reclaim();
-    REQUIRE_FALSE(eng.coreLive(1));
-    rig.park(std::move(replacement));
-    rig.place(rearming(graphRequest(nesSplitDocument(1, "channels"), {1}), 1, 3));
-    auto* fresh = dynamic_cast<MesenNesSystem*>(eng.findSystem(1));
-    REQUIRE(fresh != nullptr);
-    CHECK(fresh->channelExportMode() == 3);
-    // Leaving the split puts back what this core was built with, not the 2 its predecessor was.
-    rig.place(rearming(graphRequest(stereoDocument({{1, kNesType}}, 8), {1})));
+    rig.place(rearming(graphRequest(stereoDocument({{2, kNesType, rig.rom}}, 8), {2})));
     CHECK(fresh->channelExportMode() == 0);
 }
 
@@ -359,8 +294,7 @@ TEST_CASE("A routing edit's plan and its tap arming take one ring slot, so they 
           "[audio][channelsplit][nes]") {
     NesRig rig;
     Engine& eng = rig.eng;
-    rig.park(buildNes(1));
-    rig.place(rearming(graphRequest(stereoDocument({{1, kNesType}}, 8), {1})));
+    rig.place(rearming(graphRequest(stereoDocument({{1, kNesType, rig.rom}}, 8), {1})));
     auto* nes = dynamic_cast<MesenNesSystem*>(eng.findSystem(1));
     REQUIRE(nes != nullptr);
 
@@ -376,7 +310,7 @@ TEST_CASE("A routing edit's plan and its tap arming take one ring slot, so they 
 
     // One slot left. Were the arming a command of its own it would be dropped here, and the pin wiring
     // would run against an unarmed tap.
-    REQUIRE(eng.setGraph(rearming(graphRequest(nesSplitDocument(1, "pins"), {1}), 1, 1)).ok);
+    REQUIRE(eng.setGraph(rearming(graphRequest(nesSplitDocument({1, kNesType, rig.rom}, "pins"), {1}), 1, 1)).ok);
     CHECK_FALSE(eng.pushCommand(bpm));
     eng.drainCommands();
     CHECK(nes->channelExportMode() == 1);

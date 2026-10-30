@@ -81,11 +81,6 @@ struct SameBoyConfig {
     bool                      embedRom = true;
     // Per-system trim, dB. Smoothed at audio rate inside SameBoySystem::mixInto.
     float                     gainDb   = 0.0f;
-    // Serial-link group. 0 = standalone (default). Same nonzero id on multiple
-    // systems links them on one cable: their serial ports are ferried
-    // bit-for-bit and they step in instruction-level lockstep, as one coupled
-    // group of the graph (packages/retroplug/src/graph/buildGraph.ts wires it).
-    std::uint8_t              linkGroupId = 0;
     std::string               romPath;    // absolute path; populated at bootstrap or load
     // Loose-battery disambiguator. 0 => this system owns the plain sibling
     // `<rom>.sav`; N>=2 => `<rom>-N.sav`. Assigned when a ROM ends up loaded

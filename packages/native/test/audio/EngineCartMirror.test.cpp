@@ -15,7 +15,6 @@
 // node, and the mirror from the mirrored system's protocol nodes. Run via `pnpm test:plugin`.
 
 #include <cstdint>
-#include <cstdio>
 #include <memory>
 #include <string>
 #include <vector>
@@ -26,46 +25,24 @@
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "system/SystemBase.hpp"
-#include "system/mesen/MesenNesConfig.hpp"
-#include "system/mesen/MesenNesSystem.hpp"
 
 #if !defined(RP_BLIPTOASTER_ROM_PATH)
 #error "RP_BLIPTOASTER_ROM_PATH must be defined (resources/roms/)"
 #endif
 
 using rp::host::test::DocExtras;
+using rp::host::test::DocSystem;
 using rp::host::test::docNode;
 using rp::host::test::docWire;
 using rp::host::test::graphRequest;
 using rp::host::test::kNesType;
+using rp::host::test::putRom;
 using rp::host::test::stereoDocument;
 
 namespace {
 
 constexpr double kRate = 48000.0;
 constexpr std::uint32_t kFrames = 256;
-
-std::vector<std::uint8_t> readRom(const char* path) {
-    std::vector<std::uint8_t> bytes;
-    if (std::FILE* f = std::fopen(path, "rb")) {
-        std::fseek(f, 0, SEEK_END);
-        bytes.resize(static_cast<std::size_t>(std::ftell(f)));
-        std::fseek(f, 0, SEEK_SET);
-        if (std::fread(bytes.data(), 1, bytes.size(), f) != bytes.size()) bytes.clear();
-        std::fclose(f);
-    }
-    INFO("ROM path: " << path);
-    REQUIRE(!bytes.empty());
-    return bytes;
-}
-
-std::unique_ptr<SystemBase> nes(SystemId id) {
-    MesenNesConfig cfg;
-    cfg.romPath = RP_BLIPTOASTER_ROM_PATH;
-    auto s = std::make_unique<MesenNesSystem>(id, cfg, readRom(RP_BLIPTOASTER_ROM_PATH));
-    s->onActivate(kRate);
-    return s;
-}
 
 using Bytes = std::vector<std::uint8_t>;
 
@@ -80,7 +57,7 @@ struct Sent {
 // risa's host sync too, under midiChannelToInstance routing (channel n to the system in slot n, rewritten to channel
 // 1); the cart mirrors `mirrored`, or nothing when it is 0: what its forward sends, and what its host sync sends when
 // it has one, as buildGraph wires a cart.
-Engine::GraphRequest twoNes(std::vector<SystemId> slots, SystemId mirrored, SystemId synced = 0) {
+Engine::GraphRequest twoNes(std::uint32_t rom, std::vector<SystemId> slots, SystemId mirrored, SystemId synced = 0) {
     std::string ids;
     for (const SystemId id : slots) ids += (ids.empty() ? "" : ",") + std::to_string(id);
     DocExtras extras;
@@ -101,18 +78,16 @@ Engine::GraphRequest twoNes(std::vector<SystemId> slots, SystemId mirrored, Syst
         extras.wires.push_back(docWire(forward + ".midi", "cart.midi"));
         if (id == synced) extras.wires.push_back(docWire(sync + ".bytes", "cart.bytes"));
     }
-    std::vector<rp::host::test::DocSystem> nodes;
-    for (const SystemId id : slots) nodes.push_back({id, kNesType});
+    std::vector<DocSystem> nodes;
+    for (const SystemId id : slots) nodes.push_back({id, kNesType, rom});
     return graphRequest(stereoDocument(nodes, extras), slots);
 }
 
 struct Rig {
-    Engine eng{kRate};
+    Engine        eng{kRate};
+    std::uint32_t rom;  // the NES ROM both systems' nodes build from: one resource, two nodes
     std::vector<Sent> cart;
-    Rig() {
-        REQUIRE(eng.parkCore(nes(1)));
-        REQUIRE(eng.parkCore(nes(2)));
-    }
+    Rig() { rom = putRom(eng, kNesType); }
     void sink() {
         eng.setCoreByteSink([this](std::uint32_t frame, const std::uint8_t* d, std::size_t n, bool flush) {
             cart.push_back({frame, Bytes(d, d + n), flush});
@@ -132,7 +107,7 @@ TEST_CASE("the cart mirrors its system's protocol nodes - routed MIDI and genera
     // Only system 2 runs risa's host sync, so neither system's output can pass for the other's: what the cart gets is
     // pinned whole, and a byte from the system it does not mirror is one too many.
     Rig rig;
-    REQUIRE(rig.eng.setGraph(twoNes({1, 2}, 1, 2)).ok);
+    REQUIRE(rig.eng.setGraph(twoNes(rig.rom, {1, 2}, 1, 2)).ok);
     CHECK(rig.eng.cartMirrorSystemId() == 1);
     rig.sink();
     rig.eng.setTransport(true);             // system 2's sync arms and starts: none of it the cart's
@@ -145,7 +120,7 @@ TEST_CASE("the cart mirrors its system's protocol nodes - routed MIDI and genera
     // System 2 mirrored instead, the transport stopped: its note, with its channel rewritten as its FIFO gets it, then
     // its sync's stop, all the MIDI before the bytes as rp.n8.cart-mirror sends them. System 1's note stays off it.
     rig.cart.clear();
-    REQUIRE(rig.eng.setGraph(twoNes({1, 2}, 2, 2)).ok);
+    REQUIRE(rig.eng.setGraph(twoNes(rig.rom, {1, 2}, 2, 2)).ok);
     CHECK(rig.eng.cartMirrorSystemId() == 2);
     rig.eng.setTransport(false);
     rig.eng.stageMidi(5, {0x91, 64, 100});
@@ -165,7 +140,7 @@ TEST_CASE("the cart mirrors its system's protocol nodes - routed MIDI and genera
 TEST_CASE("no mirror node, or no sink: nothing to mirror, so the hosts forward raw MIDI instead", "[audio][engine][n8]") {
     SECTION("no mirror node (TS places none without a NES)") {
         Rig rig;
-        REQUIRE(rig.eng.setGraph(twoNes({1, 2}, 0)).ok);
+        REQUIRE(rig.eng.setGraph(twoNes(rig.rom, {1, 2}, 0)).ok);
         rig.sink();
         CHECK(rig.eng.cartMirrorSystemId() == 0);
         rig.eng.stageMidi(0, {0x90, 60, 100});
@@ -174,7 +149,7 @@ TEST_CASE("no mirror node, or no sink: nothing to mirror, so the hosts forward r
     }
     SECTION("no sink (the CLI / tests)") {
         Rig rig;
-        REQUIRE(rig.eng.setGraph(twoNes({1, 2}, 1)).ok);
+        REQUIRE(rig.eng.setGraph(twoNes(rig.rom, {1, 2}, 1)).ok);
         rig.eng.stageMidi(0, {0x90, 60, 100});
         rig.block();  // the mirror must not touch a null std::function
         QueuedInvoker inv(rig.eng);
@@ -184,7 +159,7 @@ TEST_CASE("no mirror node, or no sink: nothing to mirror, so the hosts forward r
 
 TEST_CASE("a message staged straight at the cart system (a UI setting) reaches the cart too", "[audio][engine][n8]") {
     Rig rig;
-    REQUIRE(rig.eng.setGraph(twoNes({1, 2}, 1)).ok);
+    REQUIRE(rig.eng.setGraph(twoNes(rig.rom, {1, 2}, 1)).ok);
     rig.sink();
     const Bytes sx{0xF0, 0x7D, 0x42, 0x03, 0, 1, 0, 0, 0, 0xF7};
     // The UI's path: the invoker's ring, drained on the block thread as a running host drains it.
@@ -206,11 +181,11 @@ TEST_CASE("a message staged at the cart is judged against the plan adopted ahead
     // setting staged at each right behind it, send the cart system 2's and not 1's, though system 1 was the cart
     // when they were staged.
     Rig rig;
-    REQUIRE(rig.eng.setGraph(twoNes({1, 2}, 1)).ok);
+    REQUIRE(rig.eng.setGraph(twoNes(rig.rom, {1, 2}, 1)).ok);
     rig.sink();
     QueuedInvoker inv(rig.eng);
     inv.setAudioThreadOwns(true);
-    REQUIRE(rig.eng.setGraph(twoNes({2, 1}, 2)).ok);  // queued: the audio thread adopts it at its next drain
+    REQUIRE(rig.eng.setGraph(twoNes(rig.rom, {2, 1}, 2)).ok);  // queued: the audio thread adopts it at its next drain
     CHECK(rig.eng.cartMirrorSystemId() == 1);           // still the running plan's
     inv.stageSystemMidi(1, {0xF0, 0x7D, 0x01, 0xF7});
     inv.stageSystemMidi(2, {0xF0, 0x7D, 0x02, 0xF7});

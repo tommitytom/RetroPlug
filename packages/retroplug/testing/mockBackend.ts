@@ -4,8 +4,7 @@
 // "disk". This is what lets the whole application layer be tested with `tjs run`
 // and nothing else.
 
-import type { ApuState, ApuSquareState, Backend, BreakHitBatch, BuiltCore, SetGraphRequest, SetGraphResult, LoadScriptPackResult, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CoreTransportStats, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, PutResourceResult, ResourceSpec, ResourceType, TraceLine, ZipEntry } from "../src/backend";
-import { detectPlatform } from "../src/platform";
+import type { ApuState, ApuSquareState, Backend, BreakHitBatch, SetGraphRequest, SetGraphResult, LoadScriptPackResult, BreakInfo, Breakpoint, CallFrame, CoreTransportStats, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, PutResourceResult, ResourceSpec, ResourceType, TraceLine, ZipEntry } from "../src/backend";
 import { savFromJson } from "../src/lsdj";
 import type { GraphDocument, NodeDoc } from "../src/graph/graphDocument";
 
@@ -57,17 +56,6 @@ const refusedGraph = (nodeId: string, code: string, message: string): SetGraphRe
   errors: [{ nodeId, port: "", code, message }],
 });
 
-// buildCore's record of a build (the old path, which no TS code calls since the store boots systems from resources).
-function mockSystem(spec: ConstructSpec): MockSystem {
-  return {
-    romPath: spec.romPath,
-    embeddedRom: spec.embeddedRom,
-    savPath: spec.savPath,
-    statePath: spec.statePath,
-    restoredFromBytes: spec.sramBytes !== undefined || spec.stateBytes !== undefined,
-  };
-}
-
 /** What a document would boot a system from, read out of the mock's table: a helper for tests, not a model - the mock
  *  runs no cores, so this is what the node's settings and the resources they name ADD UP to. */
 export interface MockBoot {
@@ -105,20 +93,6 @@ export interface MockResource {
   source: "bytes" | "path" | "embedded";
 }
 
-// The node type native places a core of this platform as.
-function nodeTypeFor(spec: ConstructSpec): BuiltCore["type"] {
-  if (spec.embeddedRom || spec.platform === "gb") return "rp.sameboy.gb";
-  if (spec.platform === "nes") return "rp.mesen.nes";
-  if (spec.platform === "gba") return "rp.mesen.gba";
-  return "rp.mesen.sms";
-}
-
-// A number field of a spec's core config (0 when absent), as buildCore's facts reported it.
-function configNumber(spec: ConstructSpec, key: string): number {
-  const v = spec.coreConfig?.[key];
-  return typeof v === "number" ? v : 0;
-}
-
 export class MockBackend implements Backend {
   private files = new Map<string, Uint8Array>();
   private dir: string;
@@ -128,12 +102,8 @@ export class MockBackend implements Backend {
   readonly log: string[] = [];
 
   // --- emulator-lifecycle bookkeeping (mock-only) -------------------------
-  // (no id counter - TS owns ids and passes them to buildCore.)
+  // (no id counter - TS owns ids and names them in its documents.)
   private systems = new Map<number, MockSystem>();
-  /** Every buildCore call, in order, with the id it built under - lets tests assert the CONCRETE paths
-   *  TS resolved (savPath/statePath) and the seeds it carried. Duplicate and reload are TS orchestration
-   *  over buildCore, so they land here too (with stateBytes/sramBytes), not in a dedicated log. */
-  readonly buildCalls: (ConstructSpec & { id: number })[] = [];
   /** Every putResource call, in order, with the id it got (0 when refused) - so a test can assert what crossed and in
    *  what order. Ids count up from 1 and are never reused, as native's are. */
   readonly putResourceCalls: { spec: ResourceSpec; id: number }[] = [];
@@ -147,7 +117,7 @@ export class MockBackend implements Backend {
 
   /** Every system id a document has placed, in the order each first appeared. A store's rebuild takes a new id and a
    *  publish that keeps a system's id boots nothing, so this counts the boots: the length to compare before and after
-   *  an edit (the buildCalls count did, before nodes booted themselves). */
+   *  an edit. */
   readonly bootedIds: number[] = [];
 
   // --- file-dialog bookkeeping (mock-only) --------------------------------
@@ -444,21 +414,11 @@ export class MockBackend implements Backend {
     };
   }
 
-  /** The boot of the most recently booted system, in the last document that placed it (the shape buildCalls' last entry
-   *  had): the convenience for the many cases that own one system. Undefined when no document placed one. */
+  /** The boot of the most recently booted system, in the last document that placed it: the convenience for the many
+   *  cases that own one system. Undefined when no document placed one. */
   lastBoot(): MockBoot | undefined {
     const id = this.bootedIds[this.bootedIds.length - 1];
     return id === undefined ? undefined : this.bootOf(id);
-  }
-
-  // A built core is live from the build on, as native's is (its snapshot slot is claimed at the build, so its
-  // reads answer before any document places it).
-  buildCore(spec: ConstructSpec, id: number): BuiltCore | null {
-    this.log.push("buildCore");
-    this.buildCalls.push({ ...spec, id });
-    if (id === 0 || !this.buildable(spec) || this.systems.has(id)) return null; // 0 is the snapshot registry's free-slot id, as native refuses it
-    this.systems.set(id, mockSystem(spec));
-    return { type: nodeTypeFor(spec), exportMode: configNumber(spec, "channelExportMode"), linkGroup: configNumber(spec, "linkGroupId") };
   }
 
   // The slots become the live systems: every system the document does not place goes. The engine runs each system's
@@ -472,7 +432,7 @@ export class MockBackend implements Backend {
     const live = new Map<number, MockSystem>();
     for (const id of request.slots) {
       const node = nodes.get(`sys-${id}`);
-      if (!node) return refusedGraph(`sys-${id}`, "unknown-core", `no system node is placed for id ${id}`);
+      if (!node) return refusedGraph(`sys-${id}`, "slots", `the document places no system node for id ${id}`);
       const problem = this.resourceProblem(node);
       if (problem) return refusedGraph(node.id, problem.code, problem.message);
       live.set(id, this.systemOf(node));
@@ -540,24 +500,8 @@ export class MockBackend implements Backend {
     return before !== undefined && !this.graphRequests[at].slots.includes(before) ? before : undefined;
   }
 
-  // Build only when a real ROM is available: an embedded marker, TS-supplied effective ROM bytes (romBytes
-  // wins, as native does), or the on-disk romPath, classified to a known format.
-  //
-  // The SMS/GG carve-out mirrors MesenBackend's gate, and has to: the Sega magic is optional, so headerless
-  // homebrew reaches construct with bytes that classify as "unknown". Native accepts those (rejecting only
-  // bytes that are positively another platform), and a stricter mock would fail every headerless-ROM store
-  // test against a backend that would really have built it.
-  private buildable(spec: ConstructSpec): boolean {
-    if (spec.embeddedRom) return true;
-    const bytes = spec.romBytes ?? this.files.get(this.canonicalize(spec.romPath));
-    if (!bytes) return false;
-    const fmt = detectPlatform(bytes);
-    const sega = spec.platform === "sms" || spec.platform === "gg";
-    return fmt === "unknown" ? sega : !sega || fmt === "sms" || fmt === "gg";
-  }
-
-  // duplicate + reload are TS orchestration (SystemsStore) over readState/readSram + buildCore - the mock has
-  // no bespoke method; those store paths land as buildCalls (restoredFromBytes).
+  // duplicate + reload are TS orchestration (SystemsStore) over readState/readSram and the document it publishes; the
+  // mock has no bespoke method, and its systems' seeds are read off the document's resources (bootOf/restoredIds).
 
   readState(id: number): Uint8Array | null {
     this.log.push("readState");

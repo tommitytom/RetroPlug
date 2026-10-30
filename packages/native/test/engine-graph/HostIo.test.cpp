@@ -40,19 +40,18 @@
 #include "host/graph/HostIoNodes.hpp"
 #include "host/rpc/BackendRpcRegistration.hpp"
 #include "host/rpc/EngineRpcService.hpp"
-#include "system/SystemFactory.hpp"
-#include "system/mesen/MesenNesConfig.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
-#include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
 #include "transports/QuickJSTransport.h"
 
 using rp::host::test::DocExtras;
+using rp::host::test::DocSystem;
 using rp::host::test::docNode;
 using rp::host::test::docWire;
 using rp::host::test::graphRequest;
 using rp::host::test::readFile;
 using rp::host::test::stereoDocument;
+using rp::host::test::withRoms;
 
 namespace {
 
@@ -61,22 +60,6 @@ constexpr std::uint32_t kFrames = 1024;
 
 const char* const kGb = rp::host::test::kGbType;
 const char* const kNes = rp::host::test::kNesType;
-
-std::unique_ptr<SameBoySystem> mgb(SystemId id) {
-    SameBoyConfig cfg;
-    cfg.model = SameBoyModel::DmgB;
-    auto s = std::make_unique<SameBoySystem>(id, cfg, readFile(RP_MGB_ROM_PATH));
-    s->onActivate(kRate);
-    return s;
-}
-
-std::unique_ptr<SystemBase> bliptoaster(SystemId id) {
-    MesenNesConfig cfg;
-    cfg.romPath = RP_BLIPTOASTER_ROM_PATH;
-    auto s = std::make_unique<MesenNesSystem>(id, cfg, readFile(RP_BLIPTOASTER_ROM_PATH));
-    s->onActivate(kRate);
-    return s;
-}
 
 // One stereo block; the output, interleaved.
 std::vector<float> block(Engine& e, std::uint32_t frames = kFrames) {
@@ -121,9 +104,10 @@ Engine::GraphRequest hostIoOnly(std::vector<std::string> nodes, std::vector<std:
 // the block's first frame), through rp.host.midi-in into its midi input.
 std::vector<float> renderNes(const std::function<void(Engine&, std::uint64_t)>& stage) {
     Engine e(kRate);
-    REQUIRE(e.parkCore(bliptoaster(1)));
+    std::vector<DocSystem> systems{{1, kNes}};
+    withRoms(e, systems);
     const DocExtras extras{{docNode("midi-in", "rp.host.midi-in")}, {docWire("midi-in.midi", "sys-1.midi")}};
-    REQUIRE(e.setGraph(graphRequest(stereoDocument({{1, kNes}}, extras), {1})).ok);
+    REQUIRE(e.setGraph(graphRequest(stereoDocument(systems, extras), {1})).ok);
     std::vector<float> out;
     for (std::uint64_t at = 0; at < static_cast<std::uint64_t>(3.5 * kRate); at += kFrames) {
         stage(e, at);
@@ -180,14 +164,12 @@ Order stableOrder(const std::vector<std::uint32_t>& frames) {
 // A Game Boy (sys-1, MI.OUT capture armed) and a NES (sys-2) that the cart mirror names, the Game Boy's serialOut
 // wired to the mirror's bytes input: the core-byte sink sees every byte the port carries. The Game Boy's core.
 SameBoySystem* serialOutToCart(Engine& e) {
-    auto core = mgb(1);
-    core->setSerialOutCapture(SerialOutCapture::Drive);
-    SameBoySystem* const gb = core.get();
-    REQUIRE(e.parkCore(std::move(core)));
-    REQUIRE(e.parkCore(bliptoaster(2)));
+    std::vector<DocSystem> systems{{1, kGb, 0, R"("model":"dmgB","serialOutCapture":"drive")"},
+                                   {2, kNes}};
+    withRoms(e, systems);
     DocExtras extras{{docNode("cart", "rp.n8.cart-mirror", R"({"system":2})")}, {docWire("sys-1.serialOut", "cart.bytes")}};
-    REQUIRE(e.setGraph(graphRequest(stereoDocument({{1, kGb}, {2, kNes}}, extras), {1, 2})).ok);
-    return gb;
+    REQUIRE(e.setGraph(graphRequest(stereoDocument(systems, extras), {1, 2})).ok);
+    return dynamic_cast<SameBoySystem*>(e.findSystem(1));
 }
 
 // The bytes a Game Boy's core captured this block.
@@ -906,13 +888,14 @@ TEST_CASE("rp.n8.cart-mirror hands the cart every MIDI message, then every byte 
 TEST_CASE("the engine feeds the cart mirror to its core-byte sink, and reads the system it mirrors off the plan",
           "[engine-graph][host-io][n8]") {
     Engine e(kRate);
-    REQUIRE(e.parkCore(bliptoaster(1)));
+    std::vector<DocSystem> systems{{1, kNes}};
+    withRoms(e, systems);
     const auto mirrored = [](std::string settings) {
         return DocExtras{{docNode("midi-in", "rp.host.midi-in"), docNode("cart", "rp.n8.cart-mirror", std::move(settings))},
                          {docWire("midi-in.midi", "cart.midi")}};
     };
     CHECK(e.cartMirrorSystemId() == 0);
-    REQUIRE(e.setGraph(graphRequest(stereoDocument({{1, kNes}}, mirrored(R"({"system":1})")), {1})).ok);
+    REQUIRE(e.setGraph(graphRequest(stereoDocument(systems, mirrored(R"({"system":1})")), {1})).ok);
     CHECK(e.cartMirrorSystemId() == 1);
 
     // With no sink (the CLI, the tests), nothing goes anywhere.
@@ -929,25 +912,25 @@ TEST_CASE("the engine feeds the cart mirror to its core-byte sink, and reads the
     // One mirror at most, naming one of the document's systems; and none is 0.
     auto two = mirrored(R"({"system":1})");
     two.nodes.push_back(docNode("cart-2", "rp.n8.cart-mirror", R"({"system":1})"));
-    auto refused = e.setGraph(graphRequest(stereoDocument({{1, kNes}}, two), {1}));
+    auto refused = e.setGraph(graphRequest(stereoDocument(systems, two), {1}));
     REQUIRE_FALSE(refused.ok);
     CHECK(refused.errors.at(0).code == "cart-mirror");
-    refused = e.setGraph(graphRequest(stereoDocument({{1, kNes}}, mirrored(R"({"system":9})")), {1}));
+    refused = e.setGraph(graphRequest(stereoDocument(systems, mirrored(R"({"system":9})")), {1}));
     REQUIRE_FALSE(refused.ok);
     CHECK(refused.errors.at(0).code == "cart-mirror");
     CHECK(e.cartMirrorSystemId() == 1);
-    REQUIRE(e.setGraph(graphRequest(stereoDocument({{1, kNes}}), {1})).ok);
+    REQUIRE(e.setGraph(graphRequest(stereoDocument(systems), {1})).ok);
     CHECK(e.cartMirrorSystemId() == 0);
 }
 
 TEST_CASE("a cart mirror names one of the document's NES systems, its settings read as the node reads them",
           "[engine-graph][host-io][n8]") {
     Engine e(kRate);
-    REQUIRE(e.parkCore(bliptoaster(1)));
-    REQUIRE(e.parkCore(mgb(2)));
-    const auto mirroring = [](std::string settings) {
+    std::vector<DocSystem> systems{{1, kNes}, {2, kGb, 0, R"("model":"dmgB")"}};
+    withRoms(e, systems);
+    const auto mirroring = [&](std::string settings) {
         const DocExtras mirror{{docNode("cart", "rp.n8.cart-mirror", std::move(settings))}, {}};
-        return graphRequest(stereoDocument({{1, kNes}, {2, kGb}}, mirror), {1, 2});
+        return graphRequest(stereoDocument(systems, mirror), {1, 2});
     };
     // An N8 is a NES cart: a Game Boy is refused, as a system outside the slots is.
     const auto gb = e.setGraph(mirroring(R"({"system":2})"));
@@ -1061,14 +1044,14 @@ TEST_CASE("what a Game Boy's core captures decodes through rp.lsdj.serial-out in
     // each at the frame of a byte the core captured in that block (a wire frame straddling two blocks completes in the
     // later one), at most one a byte, and Engine::midiOut is frame-sorted.
     Engine e(kRate);
-    auto core = mgb(1);
-    core->setSerialOutCapture(SerialOutCapture::Drive);
-    SameBoySystem* const gb = core.get();
-    REQUIRE(e.parkCore(std::move(core)));
+    std::vector<DocSystem> systems{{1, kGb, 0, R"("model":"dmgB","serialOutCapture":"drive")"}};
+    withRoms(e, systems);
     const DocExtras extras{
         {docNode("decoder", "rp.lsdj.serial-out", R"({"mode":"midiOut"})"), loopOut()},
         {docWire("sys-1.serialOut", "decoder.serialOut"), docWire("decoder.midiOut", "midi-out.in1")}};
-    REQUIRE(e.setGraph(graphRequest(stereoDocument({{1, kGb}}, extras), {1})).ok);
+    REQUIRE(e.setGraph(graphRequest(stereoDocument(systems, extras), {1})).ok);
+    SameBoySystem* const gb = dynamic_cast<SameBoySystem*>(e.findSystem(1));
+    REQUIRE(gb != nullptr);
     const std::uint32_t sizes[] = {1024, 1, 333, 64, 2048, 7};
     std::size_t clocks = 0, bytes = 0;
     bool spread = false;
@@ -1114,16 +1097,19 @@ TEST_CASE("one setGraph switches a Game Boy's capture and its decoder's mode tog
     // Moved by two paths, the capture a block behind, master sync would decode a block of MI.OUT's bytes as clocks,
     // starting a run (docs/lsdj-master-sync-fix-design.md section 10).
     Engine e(kRate);
-    REQUIRE(e.parkCore(mgb(1)));
-    const auto switched = [](const char* capture, const char* mode) {
+    std::uint32_t rom;
+    {
+        std::vector<DocSystem> systems{{1, kGb}};
+        withRoms(e, systems);
+        rom = systems[0].rom;
+    }
+    const auto switched = [&](const char* capture, const char* mode) {
         const DocExtras extras{
             {docNode("decoder", "rp.lsdj.serial-out", std::string(R"({"mode":")") + mode + R"("})"), loopOut()},
             {docWire("sys-1.serialOut", "decoder.serialOut"), docWire("decoder.midiOut", "midi-out.in1")}};
-        auto r = graphRequest(stereoDocument({{1, kGb}}, extras), {1});
-        const std::string core = R"({"core":1})";
-        r.document.replace(r.document.find(core), core.size(),
-                           std::string(R"({"core":1,"serialOutCapture":")") + capture + R"("})");
-        return r;
+        std::vector<DocSystem> systems{{1, kGb, rom,
+                                        std::string(R"("model":"dmgB","serialOutCapture":")") + capture + "\""}};
+        return graphRequest(stereoDocument(systems, extras), {1});
     };
     const auto clocksOnly = [&] {
         for (const auto& m : e.midiOut())
@@ -1172,9 +1158,8 @@ TEST_CASE("a full output queue's drops reach the engine and the harness facet", 
     } js;  // first, so it outlives the server holding its context
 
     Engine           e(kRate);
-    SystemFactory    factory;
     QueuedInvoker    invoker(e);
-    EngineRpcService rpc(e, factory, invoker);
+    EngineRpcService rpc(e, invoker);
     rpcpp::QuickJSTransport                                   transport(js.ctx, [](JSContext*, JSValue) {});
     rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec> server(transport, rpcpp::QuickJSCodec{js.ctx});
     registerHarnessRpc(server, rpc);
@@ -1230,14 +1215,14 @@ TEST_CASE("a system node's bytes input reaches the engine's sync trace while it 
         setSyncTraceEnv(traced ? path.c_str() : nullptr);
         std::vector<std::string> lines;
         Engine e(kRate);
-        auto core = mgb(1);
-        core->setSerialOutCapture(SerialOutCapture::Drive);
-        SameBoySystem* const gb = core.get();
-        REQUIRE(e.parkCore(std::move(core)));
-        REQUIRE(e.parkCore(bliptoaster(2)));
-        REQUIRE(e.setGraph(graphRequest(stereoDocument({{1, kGb}, {2, kNes}}, DocExtras{{}, {docWire("sys-1.serialOut", "sys-2.bytes")}}),
+        std::vector<DocSystem> systems{{1, kGb, 0, R"("model":"dmgB","serialOutCapture":"drive")"},
+                                       {2, kNes}};
+        withRoms(e, systems);
+        REQUIRE(e.setGraph(graphRequest(stereoDocument(systems, DocExtras{{}, {docWire("sys-1.serialOut", "sys-2.bytes")}}),
                                         {1, 2}))
                     .ok);
+        SameBoySystem* const gb = dynamic_cast<SameBoySystem*>(e.findSystem(1));
+        REQUIRE(gb != nullptr);
         for (int b = 0; b < 200; ++b) {
             block(e, 256);
             std::string line;

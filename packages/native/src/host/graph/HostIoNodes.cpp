@@ -22,7 +22,7 @@ struct MidiOutSettings {
 };
 
 struct CartMirrorSettings {
-    // The system the cart mirrors (a system id, as a system node's {"core": <id>}).
+    // The system the cart mirrors (a system id, as a system node's {"system": <id>}).
     std::uint64_t system = 0;
 };
 

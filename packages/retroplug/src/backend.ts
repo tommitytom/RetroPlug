@@ -19,7 +19,6 @@
 
 import type { Platform, Core } from "./platform";
 import type { TapArm } from "./graph/buildGraph";
-import type { SystemNodeType } from "./platform";
 
 export interface Backend {
   // --- Filesystem ---------------------------------------------------------
@@ -104,9 +103,8 @@ export interface Backend {
   // (a patched image, a seed read back from a core); an unpatched ROM or a `.sav` is read natively from the path
   // `putResource` is given. Which cores run, in what order and wired how is the graph TS builds
   // (graph/buildGraph.ts); duplicate, reload and remove are TS orchestration over the resource calls and setGraph
-  // (SystemsStore), with no native method of their own. `buildCore` is the older path: a caller with no resource table
-  // parks a core for a document to take, and the app boots every system from resources instead.
-  // loadScriptPack adds script node types beside the built-in ones, for a document to place.
+  // (SystemsStore), with no native method of their own. loadScriptPack adds script node types beside the built-in ones,
+  // for a document to place.
 
   /** Put an immutable byte resource in the engine's resource table and answer its id, which a node's settings then
    *  name as `"res:<id>"` (docs/modular-graph-phase-c3-design.md section 4): a system node's ROM, its battery, a
@@ -123,16 +121,6 @@ export interface Backend {
    *  frees a resource a plan still pins: that happens when the plan is reclaimed, so a dropped resource stays readable
    *  to the plan that was reading it. */
   releaseResource(id: number): boolean;
-
-  /** Build + activate an emulator core from a spec under the TS-allocated `id` (TS owns the id counter;
-   *  native never mints one), and park it for the next graph document to place
-   *  (docs/modular-graph-phase-b2-design.md section 2.5). Nothing runs it until a `setGraph` document
-   *  names it as `sys-<id>`; a document published without it frees it. Returns what the core must be
-   *  placed as, or null when it did not build (an unreadable ROM, an unknown format, a full snapshot
-   *  registry) or a core under `id` is still live. A store boots its systems from resources instead
-   *  (graph/systemResources.ts), so nothing in the app calls this; a `ConstructSpec` carries the fields
-   *  this path reads. */
-  buildCore(spec: ConstructSpec, id: number): BuiltCore | null;
 
   /** Plan and publish a graph document TS built (graph/buildGraph.ts): the engine's systems, their wiring
    *  and the host's outputs, with the systems in slot order and the NES tap re-arm its edit makes. A
@@ -423,7 +411,7 @@ export type HostBackend = Pick<
 export type EmulatorBackend = Pick<
   Backend,
   | "putResource" | "releaseResource"
-  | "buildCore" | "setGraph" | "loadScriptPack" | "setParam"
+  | "setGraph" | "loadScriptPack" | "setParam"
   | "pressButton" | "stageSystemMidi" | "readState" | "readSram" | "readRam" | "writeRam" | "getFrame"
 >;
 
@@ -748,14 +736,6 @@ export type ResourceSpec =
 /** What `putResource` did: `id` when a resource was created, `error` (and no id) when none was. */
 export type PutResourceResult = { id: number } | { error: string };
 
-/** What `buildCore` built: the node type its core is placed as, and the two values the graph needs, as the
- *  core decoded them (a NES's channel export mode, a Game Boy's link group; 0 for every other core). */
-export interface BuiltCore {
-  type: SystemNodeType;
-  exportMode: number;
-  linkGroup: number;
-}
-
 /** A graph document for `setGraph`: `toGraphJson`'s text, its systems in slot order, and `tap` when the edit
  *  re-arms the NES tap (restore whatever is armed, then arm `tap.arm` if given). */
 export interface SetGraphRequest {
@@ -829,8 +809,9 @@ export interface ConstructSpec {
   /** What the ROM targets (TS classifies it via platform.ts). It picks the node the system is placed as
    *  (systemNodeTypeFor), and with it the console its core is built as. */
   platform: Platform;
-  /** The emulator that runs it (platform.ts). TS's own: the node type names the console, so nothing native reads this;
-   *  the stores key the system's core-config role by it. */
+  /** The kind of core whose role config `coreConfig` is (platform.ts's `Core`): the store keys a system's roles by it.
+   *  It selects no core: the platform picks the node type the system is placed as (systemNodeTypeFor), and with it the
+   *  console its core is built as. */
   core: Core;
   /** A binary-baked ROM marker (e.g. `"mgb"`); `""` for a file-backed ROM. */
   embeddedRom: string;

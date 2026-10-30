@@ -7,7 +7,6 @@
 #include <map>
 #include <memory>
 #include <optional>
-#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -101,11 +100,10 @@ public:
     // or a click in the timeline. Roles see it as a ppqStart discontinuity in the next block.
     void setPpq(double ppq);
 
-    // Host sample rate. Used at construct for new cores (findable via sampleRate()) AND pushed to every
-    // already-live core, the running plan's and the parked ones, so a host sample-rate change re-rates them
-    // in place (SameBoy GB_set_sample_rate, Mesen resampler). Safe to call with cores live only when the
-    // audio thread isn't draining: the plugin calls it from DPF's sampleRateChanged, which fires only while
-    // deactivated; the CLI, before any build.
+    // Host sample rate. Used at construct for new cores (findable via sampleRate()) AND, when quiescent, pushed to the
+    // running plan's cores, so a host sample-rate change re-rates them in place (SameBoy GB_set_sample_rate, Mesen
+    // resampler). Safe to call with cores live only when the audio thread isn't draining: the plugin calls it from DPF's
+    // sampleRateChanged, which fires only while deactivated; the CLI, before any build.
     void setSampleRate(double sr);
 
     // The host MIDI out of this block: what the plan's rp.host.midi-out appended, each tagged with the system that
@@ -211,19 +209,14 @@ public:
     // --- graphs TS builds (docs/modular-graph-phase-b2-design.md section 2.5), control thread ---
     // A system node that builds its own core (docs/modular-graph-phase-c3-design.md section 5), inside the setGraph
     // that activates it: the core is built from `request` at the engine's rate, its snapshot slot is claimed under
-    // `system` and it joins the live cores. Null, with the reason in *why, for a live id (a parked core, or one a node
-    // of any plan not yet reclaimed holds), a ROM the console's gate or the core refuses, and a full snapshot pool; the
-    // node throws that reason, which the planner reports as activate-failed. The core is the calling node's until
-    // destroySystem, which is the reclaim (or refused-plan unwind) that frees the node:
+    // `system` and it joins the live cores. Null, with the reason in *why, for a live id (one a node of any plan not
+    // yet reclaimed holds), a ROM the console's gate or the core refuses, and a full snapshot pool; the node throws
+    // that reason, which the planner reports as activate-failed. The core is the calling node's until destroySystem,
+    // which is the reclaim (or refused-plan unwind) that frees the node:
     SystemBase* buildSystem(std::uint64_t system, const SystemBuildRequest& request, std::string* why);
     void        destroySystem(SystemBase* core);
-    // Park a built core under its id until the system node a document names it in takes it, claiming its
-    // snapshot slot (seeded from the core, so a read right after the build works with no block run). False,
-    // with the core freed and the registry untouched, when the id is 0 or a core under it is still live
-    // (parked, or held by a node of any plan); false, with the core freed, when the snapshot pool is full.
-    bool parkCore(std::unique_ptr<SystemBase> core);
     bool coreLive(SystemId id) const { return liveCores_.count(id) != 0; }
-    // Every core alive anywhere: parked, or owned by a system node of a plan not yet reclaimed. Control thread.
+    // Every core alive: owned by a system node of a plan not yet reclaimed. Control thread.
     std::size_t liveSystemCount() const { return liveCores_.size(); }
     struct GraphRequest {
         std::string           document;  // a graph document, as toGraphJson writes it
@@ -241,18 +234,16 @@ public:
         std::vector<GraphError> errors;
     };
     // Plan `request` and publish it with its system table (built from the slots and the live cores) and its
-    // SyncTap. Refused before planning when a system node's `system` or `core` field is present but is not a system id,
-    // its node id is not `sys-<its id>`, two of its nodes name one system, its slots and its system nodes name different
+    // SyncTap. Refused before planning when a system node's `system` field is present but is not a system id, its node
+    // id is not `sys-<its id>`, two of its nodes name one system, its slots and its system nodes name different
     // systems, the tap arms a mode other than 1 to 3 or a system not in the slots, the document holds a second
     // rp.host.midi-in, rp.host.controller-in, rp.host.midi-out or rp.n8.cart-mirror, or its mirror names anything but
-    // one of its NES systems. A node that names both paths, or neither, is refused by its own create
-    // (settings-invalid) with the reason naming the two paths, and a node refused that way holds the slots and
-    // duplicate checks back rather than being lined up by an id it lacks. A `core` node must name a live core of its
-    // own type (unknown-core, core-type); a `system` node's failure to build (the ROM gate, a Mesen boot, a live id, a
-    // full snapshot pool, no builder) is activate-failed on that node. A refused plan destroys the cores its nodes
-    // built, re-parks the ones they took, and leaves the running plan, its cores, its slots and every resource pin as
-    // they were. Once it has published, a core still parked is one no document placed, and is freed, and the request is
-    // the one a script pack's reload replans (loadScriptPack).
+    // one of its NES systems. A node that names no system is refused by its own create (settings-invalid) with the
+    // reason naming what it must name, and a node refused that way holds the slots and duplicate checks back rather
+    // than being lined up by an id it lacks. A node's failure to build (the ROM gate, a Mesen boot, a live id, a full
+    // snapshot pool, no builder) is activate-failed on that node. A refused plan destroys the cores its nodes built and
+    // leaves the running plan, its cores, its slots and every resource pin as they were. The request is the one a
+    // script pack's reload replans (loadScriptPack).
     GraphResult setGraph(const GraphRequest& request);
     // A live change to a param of a node the last published plan places (GraphHost::setParam): clamped to the param's
     // range (and rounded for an int, enum or bool), and applied at the start of the next block, flushed inline while
@@ -300,7 +291,7 @@ public:
     // 5), all or nothing: its next generation is built as a load builds a pack, the registry swaps the pack's entries
     // for its, and the request setGraph last published is planned again without re-arming the tap (the running plan's
     // stays as it is), so every node of the pack is rebuilt on the new code, its JS state not carried over, while every
-    // other node keeps its instance; a core parked since that request stays parked. When the replan is refused (a
+    // other node keeps its instance, its core included. When the replan is refused (a
     // node's settings the new code refuses, a type the document places gone, the ring busy) the registry is swapped
     // back and the planner's errors are returned in `errors`, summed up in `error`: the old code runs on, its instances
     // untouched. The new generation is discarded: freed within the call when no audio thread runs. Under one, if the
@@ -312,10 +303,10 @@ public:
     // registry entries dropped with it, once its nodes' records come back: within the call when no audio thread runs.
     // Under one, they come back once a reclaim has freed the plan that held those nodes, queuing their releases to the
     // block thread, and a block has released them; the generation goes at the host's next reclaim after that, which is
-    // reclaim() or the one setGraph and every load begin with (buildCore's RPC calls reclaim() first too). The plugin
-    // and SDL reclaim only in those calls, and as they stop the audio thread, so the generation the last reload
-    // replaced stays until later ones have freed that plan and, once a block has released its nodes, found their
-    // records back. A document that places none of the pack's nodes is not replanned: it would plan as it runs.
+    // reclaim() or the one setGraph and every load begin with. The plugin and SDL reclaim only in those calls, and
+    // as they stop the audio thread, so the generation the last reload replaced stays until later ones have freed
+    // that plan and, once a block has released its nodes, found their records back. A document that places none of
+    // the pack's nodes is not replanned: it would plan as it runs.
     ScriptPackResult loadScriptPack(const std::string& id, const std::string& source, std::size_t memoryLimit = 0);
     // How much of the calling thread's CPU time one call into a script pack's JS may use, on either side
     // (ScriptHost::setCallDeadline): set it before an audio thread runs blocks.
@@ -361,11 +352,10 @@ private:
     // table instead, and threads that through.
     const rp::host::SystemTable& currentTable() const;
     // setGraph, or with `replan` a script pack's reload planning the request last published again, which leaves the
-    // parked cores and the request kept as they are.
+    // request kept as it is.
     GraphResult publishGraph(const GraphRequest& request, bool replan);
     void applyCommand(DspCommand& c, const rp::host::SystemTable& table);
     void syncTap(bool arm, SystemId id, std::uint32_t mode, const rp::host::SystemTable& table);
-    SystemBase* takeCore(std::uint64_t id);
     static const void* graphInterface(void* ctx, const char* id);
     static void onHostCommand(void* ctx, const rp::graph::HostCommand& cmd, const void* hostData, bool discard);
 
@@ -385,14 +375,13 @@ private:
     // emulated program has its own invariants over those bytes. That is the point of the feature.
     bool writeRam(SystemBase* sys, std::uint32_t offset, const std::vector<std::uint8_t>& bytes);
 
-    // The NES tap syncTap() armed, and what its export mode was BEFORE we touched it. Restored before
-    // every re-resolve so leaving a split mode (or gaining a second system) puts the core back exactly as
-    // found. Scoped to what WE armed on purpose: the CLI / RenderHost set channelExportMode at construct
-    // through the mesen role blob and never select a split routing, so they are never disturbed. `core`
-    // is compared, never followed: a fresh core replaced in under the same id is not the one armed. It is
-    // compared by address, so a core allocated where the armed one was freed defeats it; TS never gets there,
-    // since buildCore refuses a live id, the stores' id counter only goes up, and every TS edit that drops a
-    // core re-arms, which drops this record with it.
+    // The NES tap syncTap() armed, and what its export mode was BEFORE we touched it. Restored before every
+    // re-resolve so leaving a split mode (or gaining a second system) puts the core back exactly as found. Scoped
+    // to what WE armed on purpose: the CLI / RenderHost set channelExportMode in the system node's settings and
+    // never select a split routing, so they are never disturbed. `core` is compared, never followed: a fresh core
+    // replaced in under the same id is not the one armed. It is compared by address, so a core allocated where the
+    // armed one was freed defeats it; TS never gets there, since buildSystem refuses a live id, the stores' id
+    // counter only goes up, and every TS edit that drops a core re-arms, which drops this record with it.
     struct ArmedTap {
         bool                  active   = false;
         SystemId              id       = 0;
@@ -431,23 +420,16 @@ private:
     std::atomic<std::uint32_t> oversizedFrames_{0};
     std::uint32_t              oversizedReported_ = 0;
 
-    // Cores buildCore built, waiting for the node a document names them in (control thread), and every core
-    // alive anywhere by id: parked, or owned by a system node, until that node frees it.
-    std::map<SystemId, std::unique_ptr<SystemBase>> parked_;
-    std::map<SystemId, SystemBase*>                 liveCores_;
+    // Every core alive by id, owned by a system node until that node frees it (control thread).
+    std::map<SystemId, SystemBase*> liveCores_;
     // The system table publishGraph is filling while it plans (points into the one the plan is published with): a
     // system node's core does not exist before its activation, so buildSystem adds it to the slots here. Null outside
     // setGraph; only system nodes, on the control thread, call buildSystem.
     rp::host::SystemTable*                          building_ = nullptr;
-    // The one factory every host builds cores through, the same for buildCore's RPC and a system node's activation.
-    // Every core backend is registered here at construction, so a host that composes an Engine gets the build path
-    // whether or not it also keeps a factory of its own for the RPC.
+    // The one factory every core is built through, a system node's activation included. Every core backend is
+    // registered here at construction, so a host that composes an Engine gets the build path.
     std::unique_ptr<SystemFactory>                  factory_;
     std::uint32_t                                   hostWidth_ = 2;
-    // While setGraph plans (inSetGraph_), the ids takeCore hands out of parked_: a node of that plan which
-    // gives its core up again, the plan refused, puts it back in parked_ rather than freeing it.
-    bool                                            inSetGraph_ = false;
-    std::set<SystemId>                              takenInSetGraph_;
     // The request setGraph last published (the empty document's, from construction), which a reload replans.
     std::optional<GraphRequest>                     lastRequest_;
 

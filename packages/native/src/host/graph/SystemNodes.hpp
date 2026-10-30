@@ -6,9 +6,8 @@
 namespace rp::host {
 
 // The system node packages (docs/modular-graph-phase-b1-design.md section 3.1): rp.sameboy.gb, and
-// rp.mesen.nes / .gba / .sms. Each node adapts one of today's SystemBase cores. A node whose settings name a `system`
-// builds it at activation through rp.host.systems/1 (docs/modular-graph-phase-c3-design.md); one that names a parked
-// `core` receives it through rp.host.cores/1, which C3's last commit deletes.
+// rp.mesen.nes / .gba / .sms. Each node adapts one of today's SystemBase cores, and builds its own at activation from
+// the ROM and seed resources its settings name, through rp.host.systems/1 (docs/modular-graph-phase-c3-design.md).
 const rp_package* sameboyPackage();
 const rp_package* mesenPackage();
 

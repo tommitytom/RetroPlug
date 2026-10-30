@@ -12,28 +12,6 @@ class SystemBase;
 
 namespace rp::host {
 
-// The core handoff (docs/modular-graph-phase-b2-design.md section 2.5). buildCore parks each built core under
-// its system id, which the system node's settings name as {"core": <id>}; the node takes it when first
-// activated (not when created) and owns it from then on. [control]
-//
-// A core belongs to one node for life: take hands a core out once, so a second node naming the same id
-// finds nothing and fails to activate. A node that gives its core up (destroyed once no plan runs it, or
-// unwound with a plan refused after it took the core, or handed the wrong kind of core) says so through
-// `released`, and frees the core unless the host took it back.
-//
-// A node whose settings name a `system` rather than a parked `core` builds its own, through rp.host.systems/1
-// (docs/modular-graph-phase-c3-design.md section 5); the two paths coexist until C3's last commit deletes this one.
-#define RP_HOST_CORES_INTERFACE "rp.host.cores/1"
-struct HostCores {
-    void* ctx;
-    // The core parked under `token`, now the caller's; null if none is (taken already, or never parked).
-    SystemBase* (*take)(void* ctx, std::uint64_t token);
-    // A system node is giving up its core: release what the engine keeps for it (its snapshot slot), or take
-    // the core back, parked again for a later document's node to take. True when the host took it back: the
-    // node must not delete it.
-    bool (*released)(void* ctx, SystemBase* core);
-};
-
 // A system node building its core where it runs (docs/modular-graph-phase-c3-design.md section 5). [control]: build and
 // destroy both run there, build inside the setGraph that activates the node and destroy at the reclaim that frees the
 // plan which last ran it (or as a refused plan unwinds). A node's resources are pinned by its instance already, so a
@@ -43,9 +21,9 @@ struct HostSystems {
     void* ctx;
     // Build the core of the system `system`, from the ROM and seeds the node's resources hold and the config its
     // settings made. Null, with the reason in *err, for a ROM that console's gate refuses, a boot the core refuses, an
-    // id that is live (parked, or held by a node of any plan not yet reclaimed) and a full snapshot pool. A core built
-    // here is the node's until `destroy`: the host claimed its snapshot slot under `system` and keeps it among its live
-    // cores, so the plan's table and the control plane see it at once.
+    // id that is live (held by a node of any plan not yet reclaimed) and a full snapshot pool. A core built here is
+    // the node's until `destroy`: the host claimed its snapshot slot under `system` and keeps it among its live cores,
+    // so the plan's table and the control plane see it at once.
     SystemBase* (*build)(void* ctx, std::uint64_t system, const SystemBuildRequest& request, rp_error* err);
     // The node is giving up a core it built: release its snapshot slot, leave the live cores and delete it.
     void (*destroy)(void* ctx, SystemBase* core);

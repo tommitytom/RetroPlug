@@ -1,10 +1,9 @@
 #pragma once
 
 // A GraphHost carrying the system node packages, the host I/O nodes and the test nodes (TestNodes.hpp), with
-// stand-ins for the engine's services: a test parks a built core, plans a document naming its token, and the node
-// created for it takes it; a node naming a `system` and a `rom` resource builds one through the rig's factory, as the
-// Engine's rp.host.systems/1 would; what the host MIDI out, the cart mirror and the sync trace would hand the engine is
-// recorded instead.
+// stand-ins for the engine's services: a node naming a `system` and a `rom` resource builds its core through the rig's
+// factory and the rig's resource table, as the Engine's rp.host.systems/1 and putResource would; what the host MIDI out,
+// the cart mirror and the sync trace would hand the engine is recorded instead.
 
 #include <algorithm>
 #include <cstdio>
@@ -15,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "GraphDocs.hpp"
 #include "TestNodes.hpp"
 #include "graph/GraphHost.hpp"
 #include "graph/HostNodes.hpp"
@@ -27,18 +27,6 @@
 #include "system/SystemFactory.hpp"
 
 namespace rp::host::test {
-
-inline std::vector<std::uint8_t> readFile(const char* path) {
-    std::vector<std::uint8_t> bytes;
-    if (std::FILE* f = std::fopen(path, "rb")) {
-        std::fseek(f, 0, SEEK_END);
-        bytes.resize(static_cast<std::size_t>(std::ftell(f)));
-        std::fseek(f, 0, SEEK_SET);
-        if (std::fread(bytes.data(), 1, bytes.size(), f) != bytes.size()) bytes.clear();
-        std::fclose(f);
-    }
-    return bytes;
-}
 
 // One call a node made on the engine's cart sink or sync trace.
 struct HostCall {
@@ -58,15 +46,12 @@ struct NodeRig {
     rp::graph::NodeRegistry                              registry;
     rp::graph::ResourceTable                             resources;
     double                                               rate = 48000.0;
-    std::map<std::uint64_t, std::unique_ptr<SystemBase>> parked;
-    std::uint64_t                                        nextToken = 1;
     std::vector<SystemId>                                released;  // ids whose node gave its core up
     // The cores nodes built, alive with the plans that hold them: a test that has to feed one input (a note-on, a RAM
-    // poke) reads the core the node built, as it reads a parked one it built itself.
+    // poke) reads the core the node built.
     std::vector<SystemBase*>                             built;
     // The factory a `system` node builds through, every core backend registered: the engine's own on a smaller scale.
     SystemFactory                                        factory;
-    HostCores                                            cores{this, &take, &release};
     HostSystems                                          systems{this, &buildSystem, &destroySystem};
     // The host I/O stand-in: nothing is ever staged, `connected` is the control surface, and the host MIDI out and the
     // cart's calls are recorded. The control-surface out goes nowhere, since no test reads it off this rig
@@ -77,7 +62,7 @@ struct NodeRig {
     EngineHostIo                                         hostIo{this, &takeNothing, &takeNothing, &isConnected, &recordMidiOut,
                                                                 &ignoreControllerOut, &recordCart};
     EngineSyncTrace                                      trace{this, &recordTrace};
-    // Last, so it is destroyed first: its nodes free their cores through `cores` into `released`.
+    // Last, so it is destroyed first: its nodes free their cores through the host's destroySystem into `released`.
     std::unique_ptr<rp::graph::GraphHost>                host;
 
     explicit NodeRig(double sampleRate) {
@@ -92,7 +77,6 @@ struct NodeRig {
         config.interfaces = [](void* ctx, const char* id) -> const void* {
             auto* rig = static_cast<NodeRig*>(ctx);
             const std::string want(id);
-            if (want == RP_HOST_CORES_INTERFACE) return &rig->cores;
             if (want == RP_HOST_SYSTEMS_INTERFACE) return &rig->systems;
             if (want == RP_ENGINE_HOST_IO_INTERFACE) return &rig->hostIo;
             if (want == RP_ENGINE_SYNC_TRACE_INTERFACE) return &rig->trace;
@@ -102,11 +86,6 @@ struct NodeRig {
         host = std::make_unique<rp::graph::GraphHost>(registry, resources, config);
     }
 
-    std::uint64_t park(std::unique_ptr<SystemBase> core) {
-        parked.emplace(nextToken, std::move(core));
-        return nextToken++;
-    }
-
     // An immutable byte resource a document names as "res:<id>", as Engine::putResource makes one.
     std::uint32_t put(const char* type, std::vector<std::uint8_t> bytes) {
         std::string why;
@@ -114,6 +93,24 @@ struct NodeRig {
         if (id == 0) throw std::runtime_error(why);
         return id;
     }
+
+    // The settings members of a system node that builds its core (`type`'s node) as system `id`: its `system` and the
+    // `rom` resource its type's fixture was put under (put on first use, so two systems of one console share the
+    // bytes), then `extra`. A `rom` id given names that resource instead, for a case that put its own (another
+    // console's fixture, or two systems off one put). What Engine::putResource plus a document's {"system","rom"}
+    // are, on the rig's table.
+    std::string boot(const char* type, SystemId id, const std::string& extra = "", std::uint32_t rom = 0) {
+        if (rom == 0) {
+            std::uint32_t& fixture = roms[type];
+            if (fixture == 0) fixture = put("rom", romFor(type));
+            rom = fixture;
+        }
+        std::string settings = R"("system":)" + std::to_string(id) + R"(,"rom":"res:)" + std::to_string(rom) + "\"";
+        if (!extra.empty()) settings += "," + extra;
+        return settings;
+    }
+    // The `rom` resource each console's fixture was put under, by node type: one per rig, as one per Engine.
+    std::map<std::string, std::uint32_t> roms;
 
     rp::graph::SetGraphResult set(const std::string& json) { return host->setGraph(json); }
 
@@ -130,25 +127,18 @@ struct NodeRig {
         return *t;
     }
 
-    static SystemBase* take(void* ctx, std::uint64_t token) {
-        auto& p = static_cast<NodeRig*>(ctx)->parked;
-        const auto it = p.find(token);
-        if (it == p.end()) return nullptr;
-        SystemBase* core = it->second.release();
-        p.erase(it);
-        return core;
-    }
-    static bool release(void* ctx, SystemBase* core) {
-        static_cast<NodeRig*>(ctx)->released.push_back(core->id());
-        return false;
-    }
     // rp.host.systems/1: the rig's factory builds the core, and the node owns it until its destructor, which the rig
     // records (the core's id in `released`) and deletes. No snapshot slot to claim here, and no live-id check: those are
     // the engine's, and the refusals they add are EngineGraph.test.cpp's.
     static SystemBase* buildSystem(void* ctx, std::uint64_t id, const SystemBuildRequest& request, rp_error* err) {
         auto& rig = *static_cast<NodeRig*>(ctx);
-        if (id == 0 || id > UINT32_MAX) {
+        if (id == 0) {
             std::snprintf(err->message, sizeof err->message, "0 is not a system id");
+            return nullptr;
+        }
+        if (id > UINT32_MAX) {
+            std::snprintf(err->message, sizeof err->message, "system %llu is beyond a system id",
+                          static_cast<unsigned long long>(id));
             return nullptr;
         }
         std::string why;

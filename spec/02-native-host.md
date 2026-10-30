@@ -689,13 +689,13 @@ else sameboy); zip-import seed bytes win over on-disk paths; `settings` passes t
 
 ### `SameBoyBackend`
 
-[`SameBoyBackend::build`](../packages/native/src/system/sameboy/SameBoyBackend.cpp#L35) resolves the
+[`SameBoyBackend::build`](../packages/native/src/system/sameboy/SameBoyBackend.cpp) resolves the
 ROM (an embedded marker via `rp::embeddedRom` is SameBoy by fiat; a file-backed ROM is slurped
 and gated on `detectRomFormat == RomFormat::Gb`, so a non-GB file is rejected). It builds a
 `SameBoyConfig`, then decodes the opaque `settings` blob into a
 [`SameBoyRoleConfig`](../packages/native/src/system/sameboy/SameBoyBackend.hpp#L18) and applies
 model / highpass / linkGroupId / fastBoot **at construct**
-([`:69-72`](../packages/native/src/system/sameboy/SameBoyBackend.cpp#L69)): before `onActivate`, so a
+([`:32-40`](../packages/native/src/system/sameboy/SameBoyBackend.cpp#L32)): before `onActivate`, so a
 loaded non-default model doesn't trigger a post-build restart that would nuke the just-restored
 savestate. The shared build sequence
 [`buildSameBoy`](../packages/native/src/system/sameboy/SameBoyBackend.cpp#L24) is the critical seam:

@@ -91,26 +91,6 @@ struct RpcRenderBlocksResult {
     std::vector<RpcBlockMidiOut> midiOut;
 };
 
-// Mirrors the ConstructSpec (packages/retroplug/src/backend.ts): concrete
-// paths + an embedded-ROM marker + optional zip-import seed bytes. The optional string fields are
-// absent (nullopt) rather than "" when the TS side has null.
-struct BackendConstructSpec {
-    std::uint32_t                            id;        // TS owns the id counter; native never allocates
-    std::string                              romPath;
-    std::string                              embeddedRom;
-    std::optional<std::string>               platform;  // TS Platform ("gb"/"nes"/"gba"/"sms"/"gg"); which system a multi-platform core builds
-    std::optional<std::string>               core;      // TS Core ("sameboy"/"mesen"); the factory registry key. Absent → defaultCoreFor(platform)
-    std::optional<std::string>               savPath;
-    std::optional<std::string>               statePath;
-    std::optional<rfl::Bytestring> sramBytes;
-    std::optional<rfl::Bytestring> stateBytes;
-    // Effective ROM bytes to load INSTEAD of slurping romPath — a TS-supplied patched image (e.g. LSDj
-    // asset overrides applied non-destructively at construct). romPath still travels for the watcher +
-    // .sav resolution; only the loaded bytes differ. Honoured by SameBoy and by Mesen's NES, GBA and SMS / GG.
-    std::optional<rfl::Bytestring> romBytes;
-    std::optional<std::string>               settings;  // backend "system"-role config JSON (construct-time)
-};
-
 // putResource (docs/modular-graph-phase-c3-design.md section 4): one immutable byte block for the engine's
 // ResourceTable, whose id a node's settings name as "res:<id>". `type` is "rom", "sram" or "state"; the payload is
 // exactly one of `bytes` (a patched ROM, a battery or savestate seed TS holds), `path` (a file native reads, so a 32 MB
@@ -127,14 +107,6 @@ struct BackendResourceSpec {
 struct RpcPutResourceResult {
     std::optional<std::uint32_t> id;
     std::optional<std::string>   error;
-};
-
-// buildCore's answer (docs/modular-graph-phase-b2-design.md section 2.5): the node type the built core is
-// placed as, and the two values the graph needs, as the core decoded them.
-struct RpcBuiltCore {
-    std::string   type;        // rp.sameboy.gb / rp.mesen.nes / rp.mesen.gba / rp.mesen.sms
-    std::uint32_t exportMode;  // NES only: the channel export mode it was built with (0 otherwise)
-    std::uint32_t linkGroup;   // Game Boys only: its link group (0 otherwise)
 };
 
 // setGraph: a document TS built, its systems in slot order, and the NES tap re-arm its edit makes. `tap`

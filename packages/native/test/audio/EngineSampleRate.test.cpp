@@ -16,39 +16,23 @@
 
 #include "../engine-graph/GraphDocs.hpp"
 #include "host/engine/Engine.hpp"
-#include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
 
 #ifndef RP_MGB_ROM_PATH
 #error "RP_MGB_ROM_PATH must be defined (path to resources/roms/mGB.gb)"
 #endif
 
-namespace {
-
-std::vector<std::uint8_t> readRom() {
-    std::vector<std::uint8_t> bytes;
-    if (std::FILE* f = std::fopen(RP_MGB_ROM_PATH, "rb")) {
-        std::fseek(f, 0, SEEK_END);
-        bytes.resize(static_cast<std::size_t>(std::ftell(f)));
-        std::fseek(f, 0, SEEK_SET);
-        if (std::fread(bytes.data(), 1, bytes.size(), f) != bytes.size()) bytes.clear();
-        std::fclose(f);
-    }
-    return bytes;
-}
-
-} // namespace
-
 TEST_CASE("Engine::setSampleRate re-rates already-live systems", "[audio][samplerate][engine]") {
+    using namespace rp::host::test;
     Engine eng(44100.0);
 
-    auto sys = std::make_unique<SameBoySystem>(1, SameBoyConfig{}, readRom());
-    sys->onActivate(eng.sampleRate());  // built at the engine's current rate, as the factory does
-    SameBoySystem* raw = sys.get();
-    REQUIRE(eng.parkCore(std::move(sys)));
-    using namespace rp::host::test;
-    REQUIRE(eng.setGraph(graphRequest(stereoDocument({{1, kGbType}}), {1})).ok);
-    REQUIRE(eng.findSystem(1) == raw);
+    // A system node builds its core at the rate the plan runs at, as the factory does (the DMG boot ROM's chime needs
+    // the model its settings name).
+    std::vector<DocSystem> systems{{1, kGbType, 0, R"("model":"dmgB","fastBoot":false)"}};
+    withRoms(eng, systems);
+    REQUIRE(eng.setGraph(graphRequest(stereoDocument(systems), {1})).ok);
+    const auto* raw = dynamic_cast<const SameBoySystem*>(eng.findSystem(1));
+    REQUIRE(raw != nullptr);
     REQUIRE(raw->sampleRate_ == 44100.0);
 
     // A host sample-rate change (via DPF sampleRateChanged) must reach the live core.

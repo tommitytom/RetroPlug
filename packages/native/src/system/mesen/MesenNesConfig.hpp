@@ -34,8 +34,8 @@ struct MesenNesConfig {
     bool          embedRom = true;
     float         gainDb   = 0.0f;
     // TS-owned "mesen" system-role knobs (coreRoles.ts). region = ConsoleRegion
-    // (0=Auto,1=Ntsc,2=Pal,3=Dendy,4=NtscJapan) — applied at construct, live edit
-    // needs a reset. removeSpriteLimit toggles the PPU 8-sprites/line cap (live).
+    // (0=Auto,1=Ntsc,2=Pal,3=Dendy,4=NtscJapan) - configureNes runs before LoadRom, so it is a construct-time field, and
+    // a change is a rebuilt system (setRoleConfig). removeSpriteLimit toggles the PPU 8-sprites/line cap (live).
     std::uint32_t region            = 0;
     bool          removeSpriteLimit = false;
     // Cartridge-accuracy switches (TS enums, 0 = "chip", 1 = "n8"). Default to "n8" to match coreRoles.ts:
@@ -53,8 +53,8 @@ struct MesenNesConfig {
     // Per-channel audio export mode (CLI-only; spec/10 §5/§5b). 0 = Mix (default, the mixed stereo
     // output). 1 = StereoModPins: the two 2A03 output pins (Pulse | TND) + a lumped Expansion stream, 3
     // mono channelLayout() streams. 3 = IndividualMono: the 5 core channels (Square1/Square2/Triangle/
-    // Noise/DMC) as raw mono stems ("does not sum"). (2 = pins + a mix reference, native/test-only.) Set
-    // at construct via the "mesen" role blob (capture engages in onActivate); there is no live toggle.
+    // Noise/DMC) as raw mono stems ("does not sum"). (2 = pins + a mix reference, native/test-only.) A construct-time
+    // field of the system node's settings (capture engages in onActivate); there is no live toggle.
     std::uint32_t channelExportMode = 0;
     // APU flush window expressed as a latency in milliseconds — the worst-case NES audio latency the
     // resampler batching adds (window duration = cycleLength / cpuClock). Live-editable ("mesen" role knob);
@@ -63,7 +63,7 @@ struct MesenNesConfig {
     // Host directory the emulated EverDrive SD card maps to ("/" on the card), for a ROM that pulls
     // data off the cartridge's own storage. Empty => a per-process scratch dir (NesEverdriveFifo::
     // defaultSdRoot), NOT the working directory. Applied at activate; there is no live toggle, so a
-    // change needs a rebuild (setRoleConfig + reset), same as `region`.
+    // change needs a rebuild (setRoleConfig rebuilds the system), as `region` did when it was applied at construct.
     std::string   sdRoot;
     // How faithfully the emulated cart FIFO behaves like the device's. 0 = instant (unbounded and
     // delivered immediately - the permissive behaviour every existing test was written against),

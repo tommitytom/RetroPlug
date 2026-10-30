@@ -45,7 +45,7 @@ export function systemHandles(resources: SystemResources): number[] {
 }
 
 /** A boot that could not put its bytes: the reason the engine gave (an unreadable ROM, the failure the user saw when
- *  `buildCore` answered null), with every handle it had already taken given back. */
+ *  the system's node was refused), with every handle it had already taken given back. */
 export type BootResult = BootedSystem | { error: string };
 
 /** The ROM's name: the file's stem, or an embedded ROM's marker (`"mgb"`). Mesen stages a Master System or Game Gear

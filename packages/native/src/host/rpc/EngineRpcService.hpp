@@ -12,21 +12,20 @@
 #include "host/script/ScriptHost.hpp"  // DspAllocStats / DspGcResult / DspTraceSpan (no quickjs types)
 
 class Engine;
-class SystemFactory;
 class QueuedInvoker;
 namespace rp::kit { class KitCompiler; }  // fwd: lazy, kept out of the header (enkiTS/r8brain heavy)
 
 // The emulator surface (lifecycle / reads / MIDI / transport / profiling) as a THIN RPC layer over
-// (SystemFactory + Engine + the one Invoker). No threading branches: every mutation just pushes onto
+// (Engine + the one Invoker). No threading branches: every mutation just pushes onto
 // the invoker (which flushes inline when quiescent, or hands to the audio thread when it owns the
 // Engine); reads come from the snapshot registry, so they need no guard.
 class EngineRpcService {
 public:
-    EngineRpcService(Engine& engine, SystemFactory& factory, QueuedInvoker& invoker);
+    EngineRpcService(Engine& engine, QueuedInvoker& invoker);
     ~EngineRpcService();   // out-of-line: kitCompiler_ holds a fwd-declared KitCompiler
 
     // --- emulator lifecycle / reads ---
-    // (duplicate, reload and remove live in the TS SystemsStore as buildCore + setGraph orchestration.)
+    // (duplicate, reload and remove live in the TS SystemsStore over the resource calls and setGraph.)
     // Put an immutable byte resource in the engine's ResourceTable (docs/modular-graph-phase-c3-design.md section 4)
     // and answer its id, which a node's settings name as "res:<id>"; or, creating none, why. Its type is "rom",
     // "sram" or "state"; a file named by `path` is read here, so an unreadable or empty one is answered before any
@@ -35,9 +34,6 @@ public:
     // The owner's drop of a resource putResource made: idempotent (false for an unknown or already dropped id), and it
     // never frees one a plan still pins, which happens when that plan is reclaimed.
     bool                releaseResource(std::uint32_t id);
-    // Build a core and park it under spec.id (TS owns the id counter) for the next document to place: the
-    // core's facts, or null when the id is 0, the core did not build, or a core under that id is still live.
-    std::optional<RpcBuiltCore> buildCore(BackendConstructSpec spec);
     // Plan a document TS built (docs/modular-graph-phase-b2-design.md section 2.5).
     RpcSetGraphResult           setGraph(RpcSetGraphRequest request);
     // Load a pack of script node types, or reload one loaded already (Engine::loadScriptPack,
@@ -136,7 +132,6 @@ private:
     void accumulateMidiOut();
 
     Engine&        engine_;
-    SystemFactory& factory_;
     QueuedInvoker& invoker_;   // the one mutation path (push; flushes inline when quiescent)
 
     static constexpr std::uint32_t kBlockSize = 1024;

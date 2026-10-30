@@ -54,6 +54,9 @@ constexpr double kRate = 48000.0;
 // The B0 partitions (blocks-*.test.ts): every size, one after another, and the cycle repeats.
 constexpr std::array<std::uint32_t, 5> kBlocks = {64, 199, 512, 1024, 8192};
 
+// These `direct` helpers construct their core classes rather than going through the backend's typed build, on purpose:
+// a node's core crosses the backend (ROM gate, seeds, onActivate, the state snapshot) while one built here takes the same
+// config straight to the class, so a twin holds both to account, and it is what the twins have always compared against.
 std::unique_ptr<SameBoySystem> mgb(SystemId id) {
     SameBoyConfig cfg;
     cfg.model = SameBoyModel::DmgB;  // the DMG boot ROM plays its chime: real signal without MIDI
@@ -72,19 +75,46 @@ std::unique_ptr<MesenNesSystem> nes(SystemId id, std::uint32_t exportMode) {
     return sys;
 }
 
+// smsggdj reads its options from the battery at boot: an empty SMDJ4 image with the v1 block ('C' 'F', then PAL / SYNC /
+// video / FM off, then their sum) at $3F60 of a 32 KB image, SYNC off so the song free-runs (smsSyncSong.ts).
+std::vector<std::uint8_t> smsBattery() {
+    std::vector<std::uint8_t> sram(32 * 1024, 0);
+    const std::uint8_t header[] = {'S', 'M', 'D', 'J', '4', 1, 32}, options[] = {0x43, 0x46, 0, 0, 0, 0, 0};
+    std::memcpy(sram.data(), header, sizeof header);
+    std::memcpy(sram.data() + 0x3f60, options, sizeof options);
+    return sram;
+}
+
 std::unique_ptr<MesenSmsSystem> sms(SystemId id) {
     MesenSmsConfig cfg;
     cfg.romPath = RP_SMS_ROM_PATH;
     cfg.enableFm = false;  // as the TS side builds it for smsggdj
-    // smsggdj reads its options from the battery at boot: an empty SMDJ4 image with the v1 block ('C' 'F', then PAL / SYNC / video /
-    // FM off, then their sum) at $3F60 of a 32 KB image, SYNC off so the song free-runs (smsSyncSong.ts).
-    cfg.sram.assign(32 * 1024, 0);
-    const std::uint8_t header[] = {'S', 'M', 'D', 'J', '4', 1, 32}, options[] = {0x43, 0x46, 0, 0, 0, 0, 0};
-    std::memcpy(cfg.sram.data(), header, sizeof header);
-    std::memcpy(cfg.sram.data() + 0x3f60, options, sizeof options);
+    cfg.sram = smsBattery();
     auto sys = std::make_unique<MesenSmsSystem>(id, cfg, readFile(RP_SMS_ROM_PATH));
     sys->onActivate(kRate);
     return sys;
+}
+
+// The settings a node needs to build what each `direct` helper builds. mgb() is a DMG with no fast boot: the boot chime
+// is the signal these cases compare, so a node that must match it names both.
+constexpr const char* kGbDmg = R"("model":"dmgB","fastBoot":false)";
+// kGbDmg plus further settings members, which must not repeat one it has.
+std::string gbDmg(const std::string& extra) { return extra.empty() ? std::string(kGbDmg) : std::string(kGbDmg) + "," + extra; }
+// The NES's export mode, as the label its node reads.
+const char* nesMode(std::uint32_t mode) {
+    switch (mode) {
+        case 1: return R"("channelExportMode":"stereoModPins")";
+        case 2: return R"("channelExportMode":"pinsPlusRef")";
+        case 3: return R"("channelExportMode":"individualMono")";
+        default: return "";
+    }
+}
+// What sms() builds: FM off, its SMDJ4 battery as an `sram` seed, and the ROM's stem (the battery a staged Master
+// System file takes its name from).
+std::string smsNode(NodeRig& rig, SystemId id, const std::string& extra = "") {
+    const std::uint32_t sram = rig.put("sram", smsBattery());
+    return rig.boot("rp.mesen.sms", id, R"("enableFm":false,"romName":"smsggdj_v0_45","sram":"res:)" +
+                                          std::to_string(sram) + "\"" + (extra.empty() ? "" : "," + extra));
 }
 
 // A note-on for the NES (through its N8 FIFO), so the mix and every pin it plays carry signal.
@@ -242,8 +272,7 @@ TEST_CASE("a lone Game Boy node renders its core's mix and stems bit for bit", "
     SECTION("mix") {
         NodeRig rig(kRate);
         auto direct = mgb(1);
-        const auto token = rig.park(mgb(1));
-        REQUIRE(rig.set(R"({"nodes":[{"id":"gb","type":"rp.sameboy.gb","settings":{"core":)" + std::to_string(token) +
+        REQUIRE(rig.set(R"({"nodes":[{"id":"gb","type":"rp.sameboy.gb","settings":{)" + rig.boot("rp.sameboy.gb", 1, kGbDmg) +
                         R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
                             "wires":[{"from":"gb.mix","to":"out.out.1-2"}]})").ok);
         Direct d({direct.get()}, 2, {{0, 1}});
@@ -253,12 +282,11 @@ TEST_CASE("a lone Game Boy node renders its core's mix and stems bit for bit", "
     SECTION("stems") {
         NodeRig rig(kRate);
         auto direct = mgb(1);
-        const auto token = rig.park(mgb(1));
         std::string wires;
         for (int k = 1; k <= 4; ++k)
             wires += std::string(k > 1 ? "," : "") + R"({"from":"gb.ch)" + std::to_string(k) + R"(","to":"out.out.)" +
                      std::to_string(2 * k - 1) + "-" + std::to_string(2 * k) + R"("})";
-        REQUIRE(rig.set(R"({"nodes":[{"id":"gb","type":"rp.sameboy.gb","settings":{"core":)" + std::to_string(token) +
+        REQUIRE(rig.set(R"({"nodes":[{"id":"gb","type":"rp.sameboy.gb","settings":{)" + rig.boot("rp.sameboy.gb", 1, kGbDmg) +
                         R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2,2,2,2]}}],"wires":[)" + wires + "]}")
                     .ok);
         Direct d({direct.get()}, 8, {{0, 1, 2, 3, 4, 5, 6, 7}});
@@ -272,9 +300,9 @@ TEST_CASE("a linked pair of Game Boys steps in lockstep, member by member", "[en
     // observable with LSDj, which drives the cable: that is the fixture-only lsdj-link parity group. mGB is
     // an external-clock slave and never does, so what is pinned here is the wiring and its one audible
     // effect: a linked mGB's serial port belongs to the cable, so it hears no MIDI note.
-    const auto doc = [](std::uint64_t t1, std::uint64_t t2, bool linked) {
-        return R"({"nodes":[{"id":"a","type":"rp.sameboy.gb","settings":{"core":)" + std::to_string(t1) +
-               R"(}},{"id":"b","type":"rp.sameboy.gb","settings":{"core":)" + std::to_string(t2) +
+    const auto doc = [](const std::string& a, const std::string& b, bool linked) {
+        return R"({"nodes":[{"id":"a","type":"rp.sameboy.gb","settings":{)" + a +
+               R"(}},{"id":"b","type":"rp.sameboy.gb","settings":{)" + b +
                R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2,2]}}],"wires":[)" +
                (linked ? R"({"from":"a.link","to":"b.link"},)" : "") +
                R"({"from":"a.mix","to":"out.out.1-2"},{"from":"b.mix","to":"out.out.3-4"}]})";
@@ -283,11 +311,12 @@ TEST_CASE("a linked pair of Game Boys steps in lockstep, member by member", "[en
     auto d1 = mgb(1), d2 = mgb(2);
     d1->linkPeers_ = {d2.get()};
     d2->linkPeers_ = {d1.get()};
-    auto g1 = mgb(1), g2 = mgb(2);
-    SameBoySystem* const graph1 = g1.get();
-    SameBoySystem* const graph2 = g2.get();
-    const auto t1 = rig.park(std::move(g1)), t2 = rig.park(std::move(g2));
-    REQUIRE(rig.set(doc(t1, t2, true)).ok);
+    const std::string a = rig.boot("rp.sameboy.gb", 1, kGbDmg), b = rig.boot("rp.sameboy.gb", 2, kGbDmg);
+    REQUIRE(rig.set(doc(a, b, true)).ok);
+    auto* const graph1 = dynamic_cast<SameBoySystem*>(rig.builtCore(1));
+    auto* const graph2 = dynamic_cast<SameBoySystem*>(rig.builtCore(2));
+    REQUIRE(graph1 != nullptr);
+    REQUIRE(graph2 != nullptr);
     // The document's link wire filled each graph core's peer list with the other.
     CHECK(graph1->linkPeers_ == std::vector<SameBoySystem*>{graph2});
     CHECK(graph2->linkPeers_ == std::vector<SameBoySystem*>{graph1});
@@ -296,7 +325,7 @@ TEST_CASE("a linked pair of Game Boys steps in lockstep, member by member", "[en
     CHECK(sounds(d));
 
     // A document without the wire unlinks them again.
-    REQUIRE(rig.set(doc(t1, t2, false)).ok);
+    REQUIRE(rig.set(doc(a, b, false)).ok);
     CHECK(graph1->linkPeers_.empty());
     CHECK(graph2->linkPeers_.empty());
 
@@ -321,12 +350,11 @@ TEST_CASE("a lone NES node renders its mix, and its pins when tapped, bit for bi
     SECTION("mix") {
         NodeRig rig(kRate);
         auto direct = nes(1, 0);
-        auto viaGraph = nes(1, 0);
-        SystemBase* graphCore = viaGraph.get();
-        const auto token = rig.park(std::move(viaGraph));
-        REQUIRE(rig.set(R"({"nodes":[{"id":"nes","type":"rp.mesen.nes","settings":{"core":)" + std::to_string(token) +
+        REQUIRE(rig.set(R"({"nodes":[{"id":"nes","type":"rp.mesen.nes","settings":{)" + rig.boot("rp.mesen.nes", 1) +
                         R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
                             "wires":[{"from":"nes.mix","to":"out.out.1-2"}]})").ok);
+        SystemBase* const graphCore = rig.builtCore(1);
+        REQUIRE(graphCore != nullptr);
         Direct d({direct.get()}, 2, {{0, 1}});
         CHECK(compare(rig, d, 3.0, afterBoot(*direct, *graphCore)) == "");
         CHECK(sounds(d));
@@ -334,13 +362,12 @@ TEST_CASE("a lone NES node renders its mix, and its pins when tapped, bit for bi
     SECTION("pins") {
         NodeRig rig(kRate);
         auto direct = nes(1, 1);
-        auto viaGraph = nes(1, 1);
-        SystemBase* graphCore = viaGraph.get();
-        const auto token = rig.park(std::move(viaGraph));
-        REQUIRE(rig.set(R"({"nodes":[{"id":"nes","type":"rp.mesen.nes","settings":{"core":)" + std::to_string(token) +
+        REQUIRE(rig.set(R"({"nodes":[{"id":"nes","type":"rp.mesen.nes","settings":{)" + rig.boot("rp.mesen.nes", 1, nesMode(1)) +
                         R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[1,1,1]}}],
                             "wires":[{"from":"nes.pins.pulse","to":"out.out.1"},{"from":"nes.pins.tnd","to":"out.out.2"},
                                      {"from":"nes.pins.expansion","to":"out.out.3"}]})").ok);
+        SystemBase* const graphCore = rig.builtCore(1);
+        REQUIRE(graphCore != nullptr);
         Direct d({direct.get()}, 3, {{0, 0, 1, 1, 2, 2}});  // a mono stream's two lanes are one buffer
         CHECK(compare(rig, d, 3.0, afterBoot(*direct, *graphCore)) == "");
         CHECK(sounds(d));
@@ -350,31 +377,31 @@ TEST_CASE("a lone NES node renders its mix, and its pins when tapped, bit for bi
 TEST_CASE("a lone SMS node renders its core's mix bit for bit", "[engine-graph][system-node]") {
     NodeRig rig(kRate);
     auto direct = sms(1);
-    auto viaGraph = sms(1);
-    SystemBase* graphCore = viaGraph.get();
-    const auto token = rig.park(std::move(viaGraph));
-    REQUIRE(rig.set(R"({"nodes":[{"id":"sms","type":"rp.mesen.sms","settings":{"core":)" + std::to_string(token) +
+    REQUIRE(rig.set(R"({"nodes":[{"id":"sms","type":"rp.mesen.sms","settings":{)" + smsNode(rig, 1) +
                     R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
                         "wires":[{"from":"sms.mix","to":"out.out.1-2"}]})").ok);
+    SystemBase* const graphCore = rig.builtCore(1);
+    REQUIRE(graphCore != nullptr);
     Direct d({direct.get()}, 2, {{0, 1}});
     CHECK(compare(rig, d, 5.0, smsStart(*direct, *graphCore)) == "");
     CHECK(sounds(d));
 }
 
-TEST_CASE("a system node takes its core once, and releases it when destroyed", "[engine-graph][system-node]") {
+TEST_CASE("a system node builds its core once, and destroys it when the plan that ran it goes",
+          "[engine-graph][system-node]") {
     NodeRig rig(kRate);
-    const auto token = rig.park(mgb(7));
-    const std::string doc = R"({"nodes":[{"id":"gb","type":"rp.sameboy.gb","settings":{"core":)" + std::to_string(token) + "}}]," +
-                            R"("wires":[]})";
+    const std::string doc = R"({"nodes":[{"id":"gb","type":"rp.sameboy.gb","settings":{)" +
+                            rig.boot("rp.sameboy.gb", 7, kGbDmg) + R"(}}],"wires":[]})";
     REQUIRE(rig.set(doc).ok);
-    CHECK(rig.parked.empty());
+    REQUIRE(rig.builtCore(7) != nullptr);
+    CHECK(rig.built.size() == 1);
     REQUIRE(rig.set(doc).ok);  // the same document reuses the instance and its core
     CHECK(rig.released.empty());
+    CHECK(rig.built.size() == 1);
     REQUIRE(rig.set(R"({"nodes":[],"wires":[]})").ok);
     rig.host->reclaim();
     CHECK(rig.released == std::vector<SystemId>{7});
-    // A token nothing is parked under does not plan.
-    CHECK_FALSE(rig.set(R"({"nodes":[{"id":"gb","type":"rp.sameboy.gb","settings":{"core":999}}],"wires":[]})").ok);
+    CHECK(rig.built.empty());
 }
 
 namespace {
@@ -385,17 +412,16 @@ void nesTapCase(std::uint32_t mode, const std::vector<std::string>& ports, std::
                 const std::vector<int>& lanes) {
     NodeRig rig(kRate);
     auto direct = nes(1, mode);
-    auto viaGraph = nes(1, mode);
-    SystemBase* graphCore = viaGraph.get();
-    const auto token = rig.park(std::move(viaGraph));
     std::string wires, buses;
     for (std::size_t k = 0; k < ports.size(); ++k) {
         wires += std::string(k ? "," : "") + R"({"from":"nes.)" + ports[k] + R"(","to":"out.out.)" + std::to_string(k + 1) + R"("})";
         buses += std::string(k ? "," : "") + "1";
     }
-    REQUIRE(rig.set(R"({"nodes":[{"id":"nes","type":"rp.mesen.nes","settings":{"core":)" + std::to_string(token) +
+    REQUIRE(rig.set(R"({"nodes":[{"id":"nes","type":"rp.mesen.nes","settings":{)" + rig.boot("rp.mesen.nes", 1, nesMode(mode)) +
                     R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[)" + buses + R"(]}}],"wires":[)" + wires + "]}")
                 .ok);
+    SystemBase* const graphCore = rig.builtCore(1);
+    REQUIRE(graphCore != nullptr);
     Direct d({direct.get()}, channels, {lanes});
     CHECK(compare(rig, d, 3.0, afterBoot(*direct, *graphCore)) == "");
     CHECK(sounds(d));
@@ -415,35 +441,15 @@ TEST_CASE("a lone NES node renders channel-export mode 3 (five channel streams, 
 TEST_CASE("a NES node with its mix connected renders the mix even when the tap is armed", "[engine-graph][system-node]") {
     NodeRig rig(kRate);
     auto direct = nes(1, 1);
-    auto viaGraph = nes(1, 1);
-    SystemBase* graphCore = viaGraph.get();
-    const auto token = rig.park(std::move(viaGraph));
-    REQUIRE(rig.set(R"({"nodes":[{"id":"nes","type":"rp.mesen.nes","settings":{"core":)" + std::to_string(token) +
+    REQUIRE(rig.set(R"({"nodes":[{"id":"nes","type":"rp.mesen.nes","settings":{)" + rig.boot("rp.mesen.nes", 1, nesMode(1)) +
                     R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2,1]}}],
                         "wires":[{"from":"nes.mix","to":"out.out.1-2"},{"from":"nes.pins.pulse","to":"out.out.3"}]})").ok);
+    SystemBase* const graphCore = rig.builtCore(1);
+    REQUIRE(graphCore != nullptr);
     // Two lanes only, as on the narrow-host path: the connected pin is written as silence.
     Direct d({direct.get()}, 3, {{0, 1}});
     CHECK(compare(rig, d, 3.0, afterBoot(*direct, *graphCore)) == "");
     CHECK(sounds(d));
-}
-
-TEST_CASE("a core of the wrong kind under a node's token is refused and released", "[engine-graph][system-node]") {
-    NodeRig rig(kRate);
-    const auto wrong = rig.park(nes(5, 0));
-    CHECK_FALSE(rig.set(R"({"nodes":[{"id":"gb","type":"rp.sameboy.gb","settings":{"core":)" + std::to_string(wrong) +
-                       R"(}}],"wires":[]})").ok);
-    CHECK(rig.parked.empty());
-    CHECK(rig.released == std::vector<SystemId>{5});
-
-    // A core stays with its node id: the same token under another id finds nothing parked.
-    const auto token = rig.park(mgb(6));
-    const auto gb = [&](const char* id) {
-        return std::string(R"({"nodes":[{"id":")") + id + R"(","type":"rp.sameboy.gb","settings":{"core":)" + std::to_string(token) +
-               R"(}}],"wires":[]})";
-    };
-    REQUIRE(rig.set(gb("one")).ok);
-    CHECK_FALSE(rig.set(gb("two")).ok);
-    CHECK(rig.set(gb("one")).ok);
 }
 
 // ---- inputs ----------------------------------------------------------------------------------------------------
@@ -456,13 +462,13 @@ namespace {
 using rp::host::test::Feed;
 using rp::host::test::Probe;
 
-// A system node "sys" of `type` on its core's token, its mix on a stereo host pair, and the feed's outputs wired to
-// the system inputs of the same names.
-std::string fedDocument(const char* type, std::uint64_t token, const std::vector<std::string>& inputs) {
+// A system node "sys" of `type`, its `settings` members (what rig.boot answers), its mix on a stereo host pair, and the
+// feed's outputs wired to the system inputs of the same names.
+std::string fedDocument(const char* type, const std::string& settings, const std::vector<std::string>& inputs) {
     std::string wires = R"({"from":"sys.mix","to":"out.out.1-2"})";
     for (const auto& in : inputs) wires += R"(,{"from":"feed.)" + in + R"(","to":"sys.)" + in + R"("})";
     return R"({"nodes":[{"id":"feed","type":"rp.test.feed"},{"id":"sys","type":")" + std::string(type) +
-           R"(","settings":{"core":)" + std::to_string(token) +
+           R"(","settings":{)" + settings +
            R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],"wires":[)" + wires + "]}";
 }
 
@@ -497,7 +503,7 @@ TEST_CASE("a system node's inputs reach its core as the calls they map to, bit f
     SECTION("serialIn: one pushSerialIn per byte, at the message's frame") {
         NodeRig rig(kRate);
         auto direct = mgb(1), control = mgb(1);
-        REQUIRE(rig.set(fedDocument("rp.sameboy.gb", rig.park(mgb(1)), {"serialIn"})).ok);
+        REQUIRE(rig.set(fedDocument("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, kGbDmg), {"serialIn"})).ok);
         Feed& feed = rig.node<Feed>("feed");
         Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
         CHECK(compare(rig, d, 4.0, once(2.0, [&] {
@@ -509,7 +515,7 @@ TEST_CASE("a system node's inputs reach its core as the calls they map to, bit f
     SECTION("midi: a channel message through onMidi") {
         NodeRig rig(kRate);
         auto direct = nes(1, 0), control = nes(1, 0);
-        REQUIRE(rig.set(fedDocument("rp.mesen.nes", rig.park(nes(1, 0)), {"midi"})).ok);
+        REQUIRE(rig.set(fedDocument("rp.mesen.nes", rig.boot("rp.mesen.nes", 1), {"midi"})).ok);
         Feed& feed = rig.node<Feed>("feed");
         Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
         CHECK(compare(rig, d, 3.0, once(1.5, [&] {
@@ -522,7 +528,7 @@ TEST_CASE("a system node's inputs reach its core as the calls they map to, bit f
     SECTION("midi: a message longer than a MidiEvent holds goes down the core's byte path, unframed") {
         NodeRig rig(kRate);
         auto direct = nes(1, 0), control = nes(1, 0);
-        REQUIRE(rig.set(fedDocument("rp.mesen.nes", rig.park(nes(1, 0)), {"midi"})).ok);
+        REQUIRE(rig.set(fedDocument("rp.mesen.nes", rig.boot("rp.mesen.nes", 1), {"midi"})).ok);
         Feed& feed = rig.node<Feed>("feed");
         Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
         const std::vector<std::uint8_t> run{0x90, 60, 100, 0x90, 64, 100};  // two notes as one run
@@ -535,7 +541,7 @@ TEST_CASE("a system node's inputs reach its core as the calls they map to, bit f
     SECTION("bytes: pushCoreBytes, the flush flag riding RP_MESSAGE_FLUSH") {
         NodeRig rig(kRate);
         auto direct = nes(1, 0), control = nes(1, 0);
-        REQUIRE(rig.set(fedDocument("rp.mesen.nes", rig.park(nes(1, 0)), {"bytes"})).ok);
+        REQUIRE(rig.set(fedDocument("rp.mesen.nes", rig.boot("rp.mesen.nes", 1), {"bytes"})).ok);
         Feed& feed = rig.node<Feed>("feed");
         Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
         // A note, then a flushed message that drops it before it plays; a second, unflushed note plays.
@@ -556,9 +562,9 @@ TEST_CASE("a system node's inputs reach its core as the calls they map to, bit f
     SECTION("buttons: [button, down] through pressButton") {
         NodeRig rig(kRate);
         auto direct = sms(1), control = sms(1);
-        auto viaGraph = sms(1);
-        SystemBase* graphCore = viaGraph.get();
-        REQUIRE(rig.set(fedDocument("rp.mesen.sms", rig.park(std::move(viaGraph)), {"buttons"})).ok);
+        REQUIRE(rig.set(fedDocument("rp.mesen.sms", smsNode(rig, 1), {"buttons"})).ok);
+        SystemBase* const graphCore = rig.builtCore(1);
+        REQUIRE(graphCore != nullptr);
         Feed& feed = rig.node<Feed>("feed");
         Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
         // smsStart's song in every core, its PAUSE held (through the input, for the graph core) only where it plays.
@@ -581,7 +587,7 @@ TEST_CASE("a system node's inputs reach its core as the calls they map to, bit f
         // as the kernel stage fanned them out, but no core takes two of those in one queue.
         NodeRig rig(kRate);
         auto direct = nes(1, 0), control = nes(1, 0);
-        REQUIRE(rig.set(fedDocument("rp.mesen.nes", rig.park(nes(1, 0)), {"midi", "bytes"})).ok);
+        REQUIRE(rig.set(fedDocument("rp.mesen.nes", rig.boot("rp.mesen.nes", 1), {"midi", "bytes"})).ok);
         Feed& feed = rig.node<Feed>("feed");
         Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
         auto first = once(1.5, [&] {
@@ -611,7 +617,7 @@ TEST_CASE("a system node skips an empty midi or bytes message and a short button
     SECTION("midi: an empty message, then a note") {
         NodeRig rig(kRate);
         auto direct = nes(1, 0), control = nes(1, 0);
-        REQUIRE(rig.set(fedDocument("rp.mesen.nes", rig.park(nes(1, 0)), {"midi"})).ok);
+        REQUIRE(rig.set(fedDocument("rp.mesen.nes", rig.boot("rp.mesen.nes", 1), {"midi"})).ok);
         Feed& feed = rig.node<Feed>("feed");
         Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
         CHECK(compare(rig, d, 3.0, once(1.5, [&] {
@@ -624,7 +630,7 @@ TEST_CASE("a system node skips an empty midi or bytes message and a short button
     SECTION("bytes: an empty flushed message, then a note") {
         NodeRig rig(kRate);
         auto direct = nes(1, 0), control = nes(1, 0);
-        REQUIRE(rig.set(fedDocument("rp.mesen.nes", rig.park(nes(1, 0)), {"bytes"})).ok);
+        REQUIRE(rig.set(fedDocument("rp.mesen.nes", rig.boot("rp.mesen.nes", 1), {"bytes"})).ok);
         Feed& feed = rig.node<Feed>("feed");
         Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
         CHECK(compare(rig, d, 3.0, once(1.5, [&] {
@@ -639,9 +645,9 @@ TEST_CASE("a system node skips an empty midi or bytes message and a short button
         // that starts smsStart's song. Every core gets the song, and none a press, so all three render alike.
         NodeRig rig(kRate);
         auto direct = sms(1), control = sms(1);
-        auto viaGraph = sms(1);
-        SystemBase* graphCore = viaGraph.get();
-        REQUIRE(rig.set(fedDocument("rp.mesen.sms", rig.park(std::move(viaGraph)), {"buttons"})).ok);
+        REQUIRE(rig.set(fedDocument("rp.mesen.sms", smsNode(rig, 1), {"buttons"})).ok);
+        SystemBase* const graphCore = rig.builtCore(1);
+        REQUIRE(graphCore != nullptr);
         Feed& feed = rig.node<Feed>("feed");
         Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
         const auto pause = static_cast<std::uint8_t>(SmsButton::Start);
@@ -662,15 +668,15 @@ TEST_CASE("a linked Game Boy takes its inputs in prepare, before its group steps
     auto d1 = mgb(1), d2 = mgb(2);
     d1->linkPeers_ = {d2.get()};
     d2->linkPeers_ = {d1.get()};
-    auto g1 = mgb(1);
-    SameBoySystem* const graph1 = g1.get();
-    const auto t1 = rig.park(std::move(g1)), t2 = rig.park(mgb(2));
-    REQUIRE(rig.set(R"({"nodes":[{"id":"feed","type":"rp.test.feed"},{"id":"a","type":"rp.sameboy.gb","settings":{"core":)" +
-                    std::to_string(t1) + R"(}},{"id":"b","type":"rp.sameboy.gb","settings":{"core":)" + std::to_string(t2) +
+    REQUIRE(rig.set(std::string(R"({"nodes":[{"id":"feed","type":"rp.test.feed"},{"id":"a","type":"rp.sameboy.gb","settings":{)") +
+                    rig.boot("rp.sameboy.gb", 1, kGbDmg) + R"(}},{"id":"b","type":"rp.sameboy.gb","settings":{)" +
+                    rig.boot("rp.sameboy.gb", 2, kGbDmg) +
                     R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2,2]}}],"wires":[
                         {"from":"a.link","to":"b.link"},{"from":"a.mix","to":"out.out.1-2"},{"from":"b.mix","to":"out.out.3-4"},
                         {"from":"feed.serialIn","to":"a.serialIn"},{"from":"feed.buttons","to":"a.buttons"}]})")
                 .ok);
+    auto* const graph1 = dynamic_cast<SameBoySystem*>(rig.builtCore(1));
+    REQUIRE(graph1 != nullptr);
     Feed& feed = rig.node<Feed>("feed");
     Direct d({d1.get(), d2.get()}, 4, {{0, 1}, {2, 3}});
     Lanes graph(4);
@@ -705,13 +711,13 @@ TEST_CASE("the Game Boy's serialOut carries what its core captured this block, e
     // stamped at or past the block's end (completed in its last sample, or past it) at the block's last frame. The
     // node copies the core's log rather than draining it: the core clears it at its next prepareForBlock.
     NodeRig rig(kRate);
-    auto core = mgb(1);
-    core->setSerialOutCapture(SerialOutCapture::Drive);
-    SameBoySystem* const gb = core.get();
-    REQUIRE(rig.set(R"({"nodes":[{"id":"gb","type":"rp.sameboy.gb","settings":{"core":)" + std::to_string(rig.park(std::move(core))) +
+    REQUIRE(rig.set(R"({"nodes":[{"id":"gb","type":"rp.sameboy.gb","settings":{)" +
+                    rig.boot("rp.sameboy.gb", 1, R"("model":"dmgB","fastBoot":false,"serialOutCapture":"drive")") +
                     R"(}},{"id":"probe","type":"rp.test.probe"},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
                         "wires":[{"from":"gb.mix","to":"out.out.1-2"},{"from":"gb.serialOut","to":"probe.bytes"}]})")
                 .ok);
+    auto* const gb = dynamic_cast<SameBoySystem*>(rig.builtCore(1));
+    REQUIRE(gb != nullptr);
     Probe& probe = rig.node<Probe>("probe");
     Lanes graph(2);
     const rp_transport t{kRate, 120.0, 0.0, 0};
@@ -745,13 +751,13 @@ TEST_CASE("a Game Boy whose capture listens is never clocked: mGB, waiting on an
     // Listen captures only the bytes a Game Boy clocks out itself (master sync's LSDj). mGB holds its port in
     // external-clock receive, which Drive clocks a bit an audio frame (the case above); listening, nothing clocks it.
     NodeRig rig(kRate);
-    auto core = mgb(1);
-    core->setSerialOutCapture(SerialOutCapture::Listen);
-    SameBoySystem* const gb = core.get();
-    REQUIRE(rig.set(R"({"nodes":[{"id":"gb","type":"rp.sameboy.gb","settings":{"core":)" + std::to_string(rig.park(std::move(core))) +
+    REQUIRE(rig.set(R"({"nodes":[{"id":"gb","type":"rp.sameboy.gb","settings":{)" +
+                    rig.boot("rp.sameboy.gb", 1, R"("model":"dmgB","fastBoot":false,"serialOutCapture":"listen")") +
                     R"(}},{"id":"probe","type":"rp.test.probe"},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
                         "wires":[{"from":"gb.mix","to":"out.out.1-2"},{"from":"gb.serialOut","to":"probe.bytes"}]})")
                 .ok);
+    auto* const gb = dynamic_cast<SameBoySystem*>(rig.builtCore(1));
+    REQUIRE(gb != nullptr);
     Probe& probe = rig.node<Probe>("probe");
     Lanes graph(2);
     const rp_transport t{kRate, 120.0, 0.0, 0};
@@ -769,13 +775,13 @@ TEST_CASE("a capture-mode switch drops the Game Boy's half-assembled serial-out 
     // byte part-assembled. Kept across a switch, those bits would make every later byte straddle two transfers; the
     // store re-sends the mode on every lsdj-sync config edit, which must leave MI.OUT's partial byte alone.
     NodeRig rig(kRate);
-    auto core = mgb(1);
-    core->setSerialOutCapture(SerialOutCapture::Drive);
-    SameBoySystem* const gb = core.get();
-    REQUIRE(rig.set(R"({"nodes":[{"id":"gb","type":"rp.sameboy.gb","settings":{"core":)" + std::to_string(rig.park(std::move(core))) +
+    REQUIRE(rig.set(R"({"nodes":[{"id":"gb","type":"rp.sameboy.gb","settings":{)" +
+                    rig.boot("rp.sameboy.gb", 1, R"("model":"dmgB","fastBoot":false,"serialOutCapture":"drive")") +
                     R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
                         "wires":[{"from":"gb.mix","to":"out.out.1-2"}]})")
                 .ok);
+    auto* const gb = dynamic_cast<SameBoySystem*>(rig.builtCore(1));
+    REQUIRE(gb != nullptr);
     Lanes graph(2);
     const rp_transport t{kRate, 120.0, 0.0, 0};
     bool partial = false;
@@ -798,7 +804,7 @@ TEST_CASE("a system node records what its bytes input feeds the core in the engi
     // As the kernel stage recorded its core-bytes sink: the bytes input only, an empty message skipped, and a long
     // MIDI message (which also goes down the core's byte path) not at all.
     NodeRig rig(kRate);
-    REQUIRE(rig.set(fedDocument("rp.mesen.nes", rig.park(nes(1, 0)), {"midi", "bytes"})).ok);
+    REQUIRE(rig.set(fedDocument("rp.mesen.nes", rig.boot("rp.mesen.nes", 1), {"midi", "bytes"})).ok);
     Feed& feed = rig.node<Feed>("feed");
     feed.next[Feed::Bytes] = {{5, {1, 2, 3}}, {7, {}}};
     feed.next[Feed::Midi] = {{0, {0x90, 60, 100, 0x90, 64, 100}}};
@@ -811,21 +817,21 @@ TEST_CASE("a system node records what its bytes input feeds the core in the engi
 }
 
 // ---- settings ----------------------------------------------------------------------------------------------------
-// A system node's knobs (docs/modular-graph-phase-c2-design.md sections 3 and 4) are its settings beside `core`: each
-// reaches the core at the start of the first block of the plan that carries it, as the call the command ring made
-// (the core's own value-guarded setter), and everything present at activation, before the core first runs. A knob
-// absent leaves the core as it was. Compared, where the knob is audible, against an identical core given the same
-// call directly at the same block: bit for bit, so the knob landed in that block and restarted nothing the direct
-// call did not.
+// A system node's knobs (docs/modular-graph-phase-c2-design.md sections 3 and 4) are its settings beside the `system`
+// it names: each reaches the core at the start of the first block of the plan that carries it, as the call the command
+// ring made (the core's own value-guarded setter), and everything present at activation, before the core first runs. A
+// knob absent leaves the core as it was. Compared, where the knob is audible, against an identical core given the same
+// call directly at the same block: bit for bit, so the knob landed in that block and restarted nothing the direct call
+// did not.
 
 namespace {
 
-// A system node "sys" of `type` on its core's token, `knobs` its settings after the core (JSON members, or none) and
-// `params` its param values (JSON members, or none), its mix on a stereo host pair; a Game Boy's serialOut on a probe.
-std::string knobbed(const char* type, std::uint64_t token, const std::string& knobs = "", const std::string& params = "") {
+// A system node "sys" of `type`, its `settings` members (what rig.boot answers, the system and ROM included), its param
+// values (JSON members, or none), its mix on a stereo host pair; a Game Boy's serialOut on a probe.
+std::string knobbed(const char* type, const std::string& settings, const std::string& params = "") {
     const bool gb = std::string(type) == "rp.sameboy.gb";
-    return R"({"nodes":[{"id":"sys","type":")" + std::string(type) + R"(","settings":{"core":)" + std::to_string(token) +
-           (knobs.empty() ? "" : "," + knobs) + "}" + (params.empty() ? "" : R"(,"params":{)" + params + "}") + "}," +
+    return R"({"nodes":[{"id":"sys","type":")" + std::string(type) + R"(","settings":{)" + settings +
+           "}" + (params.empty() ? "" : R"(,"params":{)" + params + "}") + "}," +
            (gb ? R"({"id":"probe","type":"rp.test.probe"},)" : "") +
            R"({"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],"wires":[{"from":"sys.mix","to":"out.out.1-2"})" +
            (gb ? R"(,{"from":"sys.serialOut","to":"probe.bytes"})" : "") + "]}";
@@ -949,17 +955,16 @@ TEST_CASE("every system node prepares statelessly and rebuilds only for a new co
         INFO(type);
         CHECK(rig.registry.find(type)->type->flags == RP_TYPE_STATELESS_PREPARE);
     }
-    auto built = mgb(1);
-    SameBoySystem* const gb = built.get();
-    const auto token = rig.park(std::move(built));
-    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, kGbDmg))).ok);
+    const auto* const gb = dynamic_cast<const SameBoySystem*>(rig.builtCore(1));
+    REQUIRE(gb != nullptr);
     run(rig);
     rp_node* const before = rig.host->node("sys");
     rig.host->setAudioThreadOwns(true);  // and no block runs until the end, so nothing is adopted
     // Two edits, the second planned while the first is unadopted: neither waits (the adoption timeout is 2 s).
     const auto start = std::chrono::steady_clock::now();
-    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("dmgPalette":"dmg")")).ok);
-    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("dmgPalette":"gbl","highpass":"off")")).ok);
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, gbDmg(R"("dmgPalette":"dmg")")))).ok);
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, gbDmg(R"("dmgPalette":"gbl","highpass":"off")")))).ok);
     CHECK(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(500));
     CHECK(rig.host->node("sys") == before);
     run(rig);  // adopts both, in order, and the node applies the last
@@ -1044,35 +1049,32 @@ TEST_CASE("a system node's enum knobs take the labels the role configs spell, an
         }
         REQUIRE(gain);
     }
-    // The GBA and the SMS carry the fields every system node does (the core it names either way, its ROM, its two
-    // seeds and the ROM's name) and no knob of their own; the SMS adds its two construct-time fields (the machine and
-    // the FM unit).
-    const std::pair<const char*, std::size_t> shared[] = {{"rp.mesen.gba", 6}, {"rp.mesen.sms", 8}};
+    // The GBA and the SMS carry the fields every system node does (the system it names, its ROM, its two seeds and the
+    // ROM's name) and no knob of their own; the SMS adds its two construct-time fields (the machine and the FM unit).
+    const std::pair<const char*, std::size_t> shared[] = {{"rp.mesen.gba", 5}, {"rp.mesen.sms", 7}};
     for (const auto& [type, fields] : shared) {
         INFO(type);
         CHECK(settingsSchema(rig, type).get("properties")->to_object()->size() == fields);
     }
 
     // Anything else is refused with the document, the core as it was: an ordinal, another spelling, a number out of
-    // its range.
-    auto built = mgb(1);
-    SameBoySystem* const core = built.get();
-    const auto token = rig.park(std::move(built));
-    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+    // its range. Each refused document names a system of its own, so no field is spelt twice.
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, kGbDmg))).ok);
+    run(rig);
+    const auto* const core = dynamic_cast<const SameBoySystem*>(rig.builtCore(1));
+    REQUIRE(core != nullptr);
     for (const char* refused : {R"("model":9)", R"("model":"CgbC")", R"("model":"cgb-c")", R"("highpass":"removeDCOffset")",
                                 R"("lightTemperature":1.5)", R"("serialOutCapture":"loud")", R"("fastBoot":"yes")"}) {
         INFO(refused);
-        const auto r = rig.set(knobbed("rp.sameboy.gb", token, refused));
+        const auto r = rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 2, refused)));
         CHECK_FALSE(r.ok);
         CHECK(codes(r) == "settings-invalid");
     }
-    run(rig);
     CHECK(core->config_.model == SameBoyModel::DmgB);
     CHECK(core->config_.highpass == SameBoyHighpass::Accurate);
-    const auto nesToken = rig.park(nes(2, 0));
     for (const char* refused : {R"("apuLatencyMs":0.2)", R"("apuLatencyMs":7)", R"("region":"PAL")", R"("s5bNoise":1)"}) {
         INFO(refused);
-        CHECK(codes(rig.set(knobbed("rp.mesen.nes", nesToken, refused))) == "settings-invalid");
+        CHECK(codes(rig.set(knobbed("rp.mesen.nes", rig.boot("rp.mesen.nes", 2, refused)))) == "settings-invalid");
     }
 }
 
@@ -1080,15 +1082,15 @@ TEST_CASE("each knob reaches its core at the start of the next block of the plan
           "[engine-graph][system-node][settings]") {
     SECTION("Game Boy") {
         NodeRig rig(kRate);
-        auto built = mgb(1);
-        SameBoySystem* const gb = built.get();
-        const auto token = rig.park(std::move(built));
-        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, kGbDmg))).ok);
+        const auto* const gb = dynamic_cast<const SameBoySystem*>(rig.builtCore(1));
+        REQUIRE(gb != nullptr);
         run(rig);
         // The model's restart has its own case below; every other knob here, each off what mgb() built.
-        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token,
-                                R"("model":"dmgB","fastBoot":true,"highpass":"removeDcOffset","colorCorrection":"modernBalanced",)"
-                                R"("dmgPalette":"mgb","lightTemperature":-0.5,"serialOutCapture":"listen")"))
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot(
+                                              "rp.sameboy.gb", 1,
+                                              R"("model":"dmgB","fastBoot":true,"highpass":"removeDcOffset","colorCorrection":"modernBalanced",)"
+                                              R"("dmgPalette":"mgb","lightTemperature":-0.5,"serialOutCapture":"listen")")))
                     .ok);
         // Adopted as it was published (the rig is quiescent), but applied as the next block starts.
         CHECK(gb->config_.highpass == SameBoyHighpass::Accurate);
@@ -1101,22 +1103,22 @@ TEST_CASE("each knob reaches its core at the start of the next block of the plan
         CHECK(gb->config_.dmgPalette == SameBoyDmgPalette::Mgb);
         CHECK(gb->config_.lightTemperature == -0.5);
         CHECK(gb->serialOutCapture() == SerialOutCapture::Listen);
-        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("serialOutCapture":"drive")")).ok);
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, gbDmg(R"("serialOutCapture":"drive")")))).ok);
         run(rig);
         CHECK(gb->serialOutCapture() == SerialOutCapture::Drive);
     }
     SECTION("NES") {
         NodeRig rig(kRate);
-        auto built = nes(1, 0);
-        MesenNesSystem* const core = built.get();
-        const auto token = rig.park(std::move(built));
-        REQUIRE(rig.set(knobbed("rp.mesen.nes", token)).ok);
+        REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot("rp.mesen.nes", 1))).ok);
+        const auto* const core = dynamic_cast<const MesenNesSystem*>(rig.builtCore(1));
+        REQUIRE(core != nullptr);
         run(rig);
         const std::uint32_t window = core->apuFlushCycleLength();
         REQUIRE(core->config().s5bNoise == 1);  // MesenNesConfig's defaults, "n8"
         REQUIRE(core->config().mmc5PhaseReset == 1);
-        REQUIRE(rig.set(knobbed("rp.mesen.nes", token,
-                                R"("region":"pal","removeSpriteLimit":true,"apuLatencyMs":3.5,"s5bNoise":"chip","mmc5PhaseReset":"chip")"))
+        REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot(
+                                                    "rp.mesen.nes", 1,
+                                                    R"("region":"pal","removeSpriteLimit":true,"apuLatencyMs":3.5,"s5bNoise":"chip","mmc5PhaseReset":"chip")")))
                     .ok);
         CHECK(core->config().region == 0);
         run(rig);
@@ -1138,13 +1140,14 @@ TEST_CASE("a knob restarts or resets its core only where the core's own setter d
     SECTION("Game Boy: highpass and the display group apply in place") {
         NodeRig rig(kRate);
         auto direct = mgb(1), control = mgb(1);
-        const auto token = rig.park(mgb(1));
-        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, kGbDmg))).ok);
         Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
         // During the boot chime, so the filter is heard; a restart would replay the chime and break the match.
         CHECK(compare(rig, d, 3.0, once(0.3, [&] {
-                  REQUIRE(rig.set(knobbed("rp.sameboy.gb", token,
-                                          R"("highpass":"off","dmgPalette":"gbl","colorCorrection":"lowContrast","lightTemperature":0.25)"))
+                  REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot(
+                                                        "rp.sameboy.gb", 1,
+                                                        R"("model":"dmgB","fastBoot":false,"highpass":"off","dmgPalette":"gbl",)"
+                                                        R"("colorCorrection":"lowContrast","lightTemperature":0.25)")))
                               .ok);
                   direct->setHighpass(SameBoyHighpass::Off);
                   direct->setDmgPalette(SameBoyDmgPalette::Gbl);
@@ -1157,22 +1160,20 @@ TEST_CASE("a knob restarts or resets its core only where the core's own setter d
     SECTION("Game Boy: a palette alone changes no sample") {
         NodeRig rig(kRate);
         auto control = mgb(1);
-        const auto token = rig.park(mgb(1));
-        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, kGbDmg))).ok);
         Direct c({control.get()}, 2, {{0, 1}});
         CHECK(compare(rig, c, 3.0, once(0.3, [&] {
-                  REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("dmgPalette":"dmg")")).ok);
+                  REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, gbDmg(R"("dmgPalette":"dmg")")))).ok);
               })) == "");
         CHECK(sounds(c));
     }
     SECTION("Game Boy: a model change restarts the core") {
         NodeRig rig(kRate);
         auto direct = mgb(1), control = mgb(1);
-        const auto token = rig.park(mgb(1));
-        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("model":"dmgB")")).ok);
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, kGbDmg))).ok);
         Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
         CHECK(compare(rig, d, 4.0, once(2.0, [&] {
-                  REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("model":"mgb")")).ok);
+                  REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, R"("model":"mgb","fastBoot":false)"))).ok);
                   direct->setModel(SameBoyModel::Mgb);
               }), &c, &heard) == "");
         CHECK(heard >= static_cast<std::uint64_t>(2.0 * kRate));  // the chime again, from the block it landed in
@@ -1191,12 +1192,14 @@ TEST_CASE("a knob restarts or resets its core only where the core's own setter d
         };
         NodeRig rig(kRate);
         auto direct = build(), control = build();
-        const auto token = rig.park(build());
-        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("model":"dmgB","fastBoot":true)")).ok);
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb",
+                                rig.boot("rp.sameboy.gb", 1, R"("model":"dmgB","fastBoot":true)"))).ok);
         Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
         CHECK(compare(rig, d, 3.0, once(0.5, [&] {
-                  REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("model":"dmgB","fastBoot":false)")).ok);
-                  REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("model":"mgb","fastBoot":false)")).ok);
+                  REQUIRE(rig.set(knobbed("rp.sameboy.gb",
+                                          rig.boot("rp.sameboy.gb", 1, R"("model":"dmgB","fastBoot":false)"))).ok);
+                  REQUIRE(rig.set(knobbed("rp.sameboy.gb",
+                                          rig.boot("rp.sameboy.gb", 1, R"("model":"mgb","fastBoot":false)"))).ok);
                   direct->setFastBoot(false);
                   direct->setModel(SameBoyModel::Mgb);
                   control->setModel(SameBoyModel::Mgb);
@@ -1208,10 +1211,9 @@ TEST_CASE("a knob restarts or resets its core only where the core's own setter d
     SECTION("NES: the sprite limit and accuracy switches apply in place, a region change resets it") {
         NodeRig rig(kRate);
         auto direct = nes(1, 0), control = nes(1, 0);
-        auto viaGraph = nes(1, 0);
-        SystemBase* const graphCore = viaGraph.get();
-        const auto token = rig.park(std::move(viaGraph));
-        REQUIRE(rig.set(knobbed("rp.mesen.nes", token)).ok);
+        REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot("rp.mesen.nes", 1))).ok);
+        SystemBase* const graphCore = rig.builtCore(1);
+        REQUIRE(graphCore != nullptr);
         Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
         auto note = [&, sent = false](std::uint64_t at) mutable {  // as afterBoot, to all three
             if (sent || at < static_cast<std::uint64_t>(1.5 * kRate)) return;
@@ -1220,14 +1222,18 @@ TEST_CASE("a knob restarts or resets its core only where the core's own setter d
             sent = true;
         };
         auto inPlace = once(2.0, [&] {
-            REQUIRE(rig.set(knobbed("rp.mesen.nes", token, R"("removeSpriteLimit":true,"s5bNoise":"chip","mmc5PhaseReset":"chip")")).ok);
+            REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot(
+                                                      "rp.mesen.nes", 1,
+                                                      R"("removeSpriteLimit":true,"s5bNoise":"chip","mmc5PhaseReset":"chip")")))
+                        .ok);
             direct->setRemoveSpriteLimit(true);
             direct->setS5bNoise(0);
             direct->setMmc5PhaseReset(0);
         });
         auto reset = once(3.0, [&] {
-            REQUIRE(rig.set(knobbed("rp.mesen.nes", token,
-                                    R"("removeSpriteLimit":true,"s5bNoise":"chip","mmc5PhaseReset":"chip","region":"pal")"))
+            REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot(
+                                                      "rp.mesen.nes", 1,
+                                                      R"("removeSpriteLimit":true,"s5bNoise":"chip","mmc5PhaseReset":"chip","region":"pal")")))
                         .ok);
             direct->setRegion(static_cast<std::uint32_t>(NesRegion::Pal));
         });
@@ -1244,10 +1250,11 @@ TEST_CASE("a document that re-carries an unchanged model beside a highpass that 
     // path has moved the core: a document still carrying the model the node applied last leaves that model alone.
     NodeRig rig(kRate);
     auto direct = mgb(1);
-    auto built = mgb(1);
-    SameBoySystem* const gb = built.get();
-    const auto token = rig.park(std::move(built));
-    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("model":"mgb","highpass":"accurate")")).ok);
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb",
+                            rig.boot("rp.sameboy.gb", 1, R"("model":"mgb","fastBoot":false,"highpass":"accurate")")))
+                    .ok);
+    auto* const gb = dynamic_cast<SameBoySystem*>(rig.builtCore(1));
+    REQUIRE(gb != nullptr);
     direct->setModel(SameBoyModel::Mgb);
     direct->setHighpass(SameBoyHighpass::Accurate);
     Direct d({direct.get()}, 2, {{0, 1}});
@@ -1258,7 +1265,9 @@ TEST_CASE("a document that re-carries an unchanged model beside a highpass that 
     });
     // The next document re-carries mgb, unchanged since the one before, beside a highpass that moves.
     auto moved = once(1.0, [&] {
-        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("model":"mgb","highpass":"off")")).ok);
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb",
+                                rig.boot("rp.sameboy.gb", 1, R"("model":"mgb","fastBoot":false,"highpass":"off")")))
+                        .ok);
         direct->setHighpass(SameBoyHighpass::Off);
     });
     CHECK(compare(rig, d, 2.0, [&](std::uint64_t at) { elsewhere(at); moved(at); }) == "");
@@ -1280,66 +1289,39 @@ TEST_CASE("a region a document carries that the core already has resets it not a
     };
     NodeRig rig(kRate);
     auto direct = built(1, static_cast<std::uint32_t>(NesRegion::Pal));
-    auto viaGraph = built(1, static_cast<std::uint32_t>(NesRegion::Pal));
-    MesenNesSystem* const core = viaGraph.get();
-    const auto token = rig.park(std::move(viaGraph));
-    REQUIRE(rig.set(knobbed("rp.mesen.nes", token, R"("region":"ntsc")")).ok);
-    direct->setRegion(static_cast<std::uint32_t>(NesRegion::Ntsc));
+    REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot("rp.mesen.nes", 1, R"("region":"pal")"))).ok);
+    auto* const core = dynamic_cast<MesenNesSystem*>(rig.builtCore(1));
+    REQUIRE(core != nullptr);
+    // The direct core was built as Pal too: the document's value is the build's, so neither applies it at activation.
     Direct d({direct.get()}, 2, {{0, 1}});
     auto note = afterBoot(*direct, *core);
-    // Both cores are put on Pal by a path of their own, which the node's settings do not know about.
+    // Both cores are put on Ntsc by a path of their own, which the node's settings do not know about.
     auto elsewhere = once(0.5, [&] {
-        core->setRegion(static_cast<std::uint32_t>(NesRegion::Pal));
-        direct->setRegion(static_cast<std::uint32_t>(NesRegion::Pal));
+        core->setRegion(static_cast<std::uint32_t>(NesRegion::Ntsc));
+        direct->setRegion(static_cast<std::uint32_t>(NesRegion::Ntsc));
     });
-    // The next document carries pal, now a different value from the one it applied last, beside a knob that moves:
+    // The next document carries ntsc, now a different value from the one it applied last, beside a knob that moves:
     // the node applies the region, and setRegion's guard is what keeps the core from resetting.
     auto moved = once(1.0, [&] {
-        REQUIRE(rig.set(knobbed("rp.mesen.nes", token, R"("region":"pal","removeSpriteLimit":true)")).ok);
+        REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot("rp.mesen.nes", 1, R"("region":"ntsc","removeSpriteLimit":true)"))).ok);
         direct->setRemoveSpriteLimit(true);
     });
     CHECK(compare(rig, d, 3.0, [&](std::uint64_t at) { note(at); elsewhere(at); moved(at); }) == "");
-    CHECK(core->config().region == static_cast<std::uint32_t>(NesRegion::Pal));
+    CHECK(core->config().region == static_cast<std::uint32_t>(NesRegion::Ntsc));
     CHECK(core->config().removeSpriteLimit);
 }
 
-TEST_CASE("an activation whose model equals the core's own gives it no call",
-          "[engine-graph][system-node][settings]") {
-    // Activation applies every knob present, so a document carrying the model the core was built with reaches
-    // setModel; its guard, not the node's (activation has nothing to compare), is what leaves the core's own state
-    // where it is. Both cores have played a second already, so a restart would rewind this one and show.
-    const auto played = [](SystemId id) {
-        auto core = mgb(id);
-        Lanes out(2);
-        for (std::uint64_t at = 0; at < static_cast<std::uint64_t>(1.0 * kRate); at += 512) {
-            core->prepareForBlock(info(512));
-            while (core->stepIfBelowTarget(512)) {
-            }
-            core->finishBlock(info(512), out.ptrs.data(), 2);
-        }
-        return core;
-    };
-    NodeRig rig(kRate);
-    auto direct = played(1);
-    auto built = played(1);
-    SameBoySystem* const gb = built.get();
-    const auto token = rig.park(std::move(built));
-    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("model":"dmgB")")).ok);
-    CHECK(gb->config_.model == SameBoyModel::DmgB);
-    Direct d({direct.get()}, 2, {{0, 1}});  // given no call at all
-    CHECK(compare(rig, d, 2.0) == "");
-    CHECK(sounds(d));
-}
-
-TEST_CASE("a system node gives its core every knob its settings carry as it takes the core, before the core first runs",
+TEST_CASE("a system node gives its core every knob its settings carry as it builds it, before the core first runs",
           "[engine-graph][system-node][settings]") {
     SECTION("Game Boy, its capture included") {
         NodeRig rig(kRate);
         auto direct = mgb(1);
-        auto built = mgb(1);
-        SameBoySystem* const gb = built.get();
-        const auto token = rig.park(std::move(built));
-        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("model":"mgb","highpass":"off","serialOutCapture":"drive")")).ok);
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb",
+                                rig.boot("rp.sameboy.gb", 1,
+                                         R"("model":"mgb","fastBoot":false,"highpass":"off","serialOutCapture":"drive")")))
+                        .ok);
+        auto* const gb = dynamic_cast<SameBoySystem*>(rig.builtCore(1));
+        REQUIRE(gb != nullptr);
         // Activated as it was planned: no block has run.
         CHECK(gb->config_.model == SameBoyModel::Mgb);
         CHECK(gb->config_.highpass == SameBoyHighpass::Off);
@@ -1369,10 +1351,11 @@ TEST_CASE("a system node gives its core every knob its settings carry as it take
     }
     SECTION("NES") {
         NodeRig rig(kRate);
-        auto built = nes(1, 0);
-        MesenNesSystem* const core = built.get();
-        const auto token = rig.park(std::move(built));
-        REQUIRE(rig.set(knobbed("rp.mesen.nes", token, R"("region":"dendy","apuLatencyMs":2,"s5bNoise":"chip")")).ok);
+        REQUIRE(rig.set(knobbed("rp.mesen.nes",
+                                rig.boot("rp.mesen.nes", 1, R"("region":"dendy","apuLatencyMs":2,"s5bNoise":"chip")")))
+                        .ok);
+        const auto* const core = dynamic_cast<const MesenNesSystem*>(rig.builtCore(1));
+        REQUIRE(core != nullptr);
         CHECK(core->config().region == static_cast<std::uint32_t>(NesRegion::Dendy));
         CHECK(core->config().apuLatencyMs == 2.0);
         CHECK(core->config().s5bNoise == 0);
@@ -1399,10 +1382,14 @@ TEST_CASE("a knob absent from a system node's settings leaves its core as it was
         };
         NodeRig rig(kRate);
         auto direct = build();
-        auto built = build();
-        SameBoySystem* const gb = built.get();
-        const auto token = rig.park(std::move(built));
-        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot(
+                                              "rp.sameboy.gb", 1,
+                                              R"("model":"mgb","fastBoot":false,"highpass":"removeDcOffset",)"
+                                              R"("colorCorrection":"reduceContrast","dmgPalette":"gbl","lightTemperature":0.75,)"
+                                              R"("serialOutCapture":"drive")")))
+                        .ok);
+        auto* const gb = dynamic_cast<SameBoySystem*>(rig.builtCore(1));
+        REQUIRE(gb != nullptr);
         Direct d({direct.get()}, 2, {{0, 1}});
         CHECK(compare(rig, d, 2.0) == "");  // nothing restarted, nothing re-filtered
         CHECK(gb->config_.model == SameBoyModel::Mgb);
@@ -1414,29 +1401,28 @@ TEST_CASE("a knob absent from a system node's settings leaves its core as it was
         CHECK(gb->serialOutCapture() == SerialOutCapture::Drive);
 
         // Present, then dropped: the core keeps what the last document carrying it gave it.
-        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("highpass":"off","serialOutCapture":"listen")")).ok);
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot(
+                                              "rp.sameboy.gb", 1,
+                                              R"("model":"mgb","fastBoot":false,"highpass":"off","serialOutCapture":"listen")")))
+                        .ok);
         run(rig);
         REQUIRE(gb->config_.highpass == SameBoyHighpass::Off);
-        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, R"("model":"mgb","fastBoot":false)"))).ok);
         run(rig, 512, 4);
         CHECK(gb->config_.highpass == SameBoyHighpass::Off);
         CHECK(gb->serialOutCapture() == SerialOutCapture::Listen);
     }
     SECTION("NES") {
-        MesenNesConfig cfg;
-        cfg.romPath = RP_BLIPTOASTER_ROM_PATH;
-        cfg.region = static_cast<std::uint32_t>(NesRegion::Ntsc);
-        cfg.removeSpriteLimit = true;
-        cfg.apuLatencyMs = 3.0;
-        cfg.s5bNoise = 0;
-        cfg.mmc5PhaseReset = 0;
-        auto built = std::make_unique<MesenNesSystem>(1, cfg, readFile(RP_BLIPTOASTER_ROM_PATH));
-        built->onActivate(kRate);
-        MesenNesSystem* const core = built.get();
         NodeRig rig(kRate);
-        const auto token = rig.park(std::move(built));
-        // The core was built as Ntsc; a document that carries no region leaves it as it was built.
-        REQUIRE(rig.set(knobbed("rp.mesen.nes", token)).ok);
+        // Built as Ntsc; a document that carries no region leaves it as it was built.
+        REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot(
+                                                    "rp.mesen.nes", 1,
+                                                    R"("region":"ntsc","removeSpriteLimit":true,"apuLatencyMs":3,)"
+                                                    R"("s5bNoise":"chip","mmc5PhaseReset":"chip")")))
+                        .ok);
+        const auto* const core = dynamic_cast<const MesenNesSystem*>(rig.builtCore(1));
+        REQUIRE(core != nullptr);
+        REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot("rp.mesen.nes", 1))).ok);
         run(rig, 512, 4);
         CHECK(core->config().region == static_cast<std::uint32_t>(NesRegion::Ntsc));
         CHECK(core->config().removeSpriteLimit);
@@ -1451,17 +1437,17 @@ TEST_CASE("a Game Boy node's settings commit, and every knob it applies in place
     // Only a model's restart allocates, as it did through the command ring. (A NES's blocks allocate on their own, in
     // Mesen, and its region reset allocates; its other setters allocate nothing: the NES cases below hold both.)
     NodeRig rig(kRate);
-    auto built = mgb(1);
-    SameBoySystem* const gb = built.get();
-    const auto token = rig.park(std::move(built));
-    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, kGbDmg))).ok);
+    const auto* const gb = dynamic_cast<const SameBoySystem*>(rig.builtCore(1));
+    REQUIRE(gb != nullptr);
     Lanes out(2);
     const rp_transport t{kRate, 120.0, 0.0, 0};
     for (int b = 0; b < 8; ++b) rig.host->processBlock(512, t, out.ptrs.data(), 2);
     rig.host->setAudioThreadOwns(true);  // so the commit happens in a block, as it does under an audio thread
-    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token,
-                            R"("model":"dmgB","fastBoot":true,"highpass":"off","colorCorrection":"modernAccurate",)"
-                            R"("dmgPalette":"gbl","lightTemperature":0.5,"serialOutCapture":"listen")"))
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot(
+                                              "rp.sameboy.gb", 1,
+                                              R"("model":"dmgB","fastBoot":true,"highpass":"off","colorCorrection":"modernAccurate",)"
+                                              R"("dmgPalette":"gbl","lightTemperature":0.5,"serialOutCapture":"listen")")))
                 .ok);
     rp::test::beginCountingAllocations();
     for (int b = 0; b < 2; ++b) rig.host->processBlock(512, t, out.ptrs.data(), 2);
@@ -1480,12 +1466,10 @@ TEST_CASE("a NES node's settings allocate no more on the block thread than the s
     // is the no-edit window at the same emulated time. The block an edit lands in is skipped: the changed emulation can
     // make Mesen allocate a little differently there (the setters themselves are held separately below).
     NodeRig rig(kRate), control(kRate);
-    auto built = nes(1, 0), controlBuilt = nes(1, 0);
-    MesenNesSystem* const core = built.get();
-    const auto token = rig.park(std::move(built));
-    const auto controlToken = control.park(std::move(controlBuilt));
-    REQUIRE(rig.set(knobbed("rp.mesen.nes", token)).ok);
-    REQUIRE(control.set(knobbed("rp.mesen.nes", controlToken)).ok);
+    REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot("rp.mesen.nes", 1))).ok);
+    REQUIRE(control.set(knobbed("rp.mesen.nes", control.boot("rp.mesen.nes", 1))).ok);
+    const auto* const core = dynamic_cast<const MesenNesSystem*>(rig.builtCore(1));
+    REQUIRE(core != nullptr);
     Lanes out(2), controlOut(2);
     const rp_transport t{kRate, 120.0, 0.0, 0};
     for (int b = 0; b < 8; ++b) {
@@ -1501,8 +1485,9 @@ TEST_CASE("a NES node's settings allocate no more on the block thread than the s
     };
     window(control, controlOut);  // the control's edit block, at the same emulated time
     const auto idle = window(control, controlOut);
-    REQUIRE(rig.set(knobbed("rp.mesen.nes", token,
-                            R"("removeSpriteLimit":true,"apuLatencyMs":2,"s5bNoise":"chip","mmc5PhaseReset":"chip")"))
+    REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot(
+                                              "rp.mesen.nes", 1,
+                                              R"("removeSpriteLimit":true,"apuLatencyMs":2,"s5bNoise":"chip","mmc5PhaseReset":"chip")")))
                 .ok);
     window(rig, out);  // the block the settings land in
     const auto knobs = window(rig, out);
@@ -1551,17 +1536,17 @@ TEST_CASE("a Game Boy node takes knob edits published while an audio thread runs
     // never waiting, while the audio thread commits the last one and applies it, and the plans it hands back are freed
     // here with the settings they held.
     NodeRig rig(kRate);
-    auto built = mgb(1);
-    SameBoySystem* const gb = built.get();
-    const auto token = rig.park(std::move(built));
-    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, kGbDmg))).ok);
+    const auto* const gb = dynamic_cast<const SameBoySystem*>(rig.builtCore(1));
+    REQUIRE(gb != nullptr);
     const char* const palettes[] = {"grey", "dmg", "mgb", "gbl"};
     const char* const captures[] = {"off", "listen", "drive"};
     const auto edit = [&](int i) {
-        return knobbed("rp.sameboy.gb", token,
-                       std::string(R"("dmgPalette":")") + palettes[i % 4] + R"(","serialOutCapture":")" + captures[i % 3] +
-                           R"(","highpass":")" + (i % 2 ? "off" : "accurate") + R"(","lightTemperature":)" +
-                           std::to_string((i % 5) * 0.25 - 0.5));
+        return knobbed("rp.sameboy.gb",
+                       rig.boot("rp.sameboy.gb", 1,
+                                gbDmg(std::string(R"("dmgPalette":")") + palettes[i % 4] + R"(","serialOutCapture":")" +
+                                      captures[i % 3] + R"(","highpass":")" + (i % 2 ? "off" : "accurate") +
+                                      R"(","lightTemperature":)" + std::to_string((i % 5) * 0.25 - 0.5))));
     };
     std::atomic<bool> running{true};
     std::atomic<int>  blocks{0};
@@ -1637,10 +1622,9 @@ TEST_CASE("a system node gives its core the document's params before the core's 
     SECTION("Game Boy") {
         NodeRig rig(kRate);
         auto direct = mgb(1), control = mgb(1);
-        auto built = mgb(1);
-        SameBoySystem* const gb = built.get();
-        const auto token = rig.park(std::move(built));
-        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, "", R"("gain":-12)")).ok);
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, kGbDmg), R"("gain":-12)")).ok);
+        const auto* const gb = dynamic_cast<const SameBoySystem*>(rig.builtCore(1));
+        REQUIRE(gb != nullptr);
         // Planned and activated, but a node reads its params in a block: the core has the value as that block starts.
         CHECK(gb->config_.gainDb == 0.0f);
         direct->setGainDb(-12.0f, true);  // the node snaps its first value in
@@ -1656,10 +1640,9 @@ TEST_CASE("a system node gives its core the document's params before the core's 
     SECTION("NES, its expansion volume in whole percent") {
         NodeRig rig(kRate);
         auto direct = nes(1, 0);
-        auto built = nes(1, 0);
-        MesenNesSystem* const core = built.get();
-        const auto token = rig.park(std::move(built));
-        REQUIRE(rig.set(knobbed("rp.mesen.nes", token, "", R"("gain":-6,"expansionVolume":40)")).ok);
+        REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot("rp.mesen.nes", 1), R"("gain":-6,"expansionVolume":40)")).ok);
+        auto* const core = dynamic_cast<MesenNesSystem*>(rig.builtCore(1));
+        REQUIRE(core != nullptr);
         direct->setGainDb(-6.0f, true);  // the node snaps its first value in
         direct->setExpansionVolume(40);
         Direct d({direct.get()}, 2, {{0, 1}});
@@ -1678,10 +1661,9 @@ TEST_CASE("a system node gives its core the document's params before the core's 
     SECTION("SMS") {
         NodeRig rig(kRate);
         auto direct = sms(1);
-        auto viaGraph = sms(1);
-        SystemBase* const graphCore = viaGraph.get();
-        const auto token = rig.park(std::move(viaGraph));
-        REQUIRE(rig.set(knobbed("rp.mesen.sms", token, "", R"("gain":-9)")).ok);
+        REQUIRE(rig.set(knobbed("rp.mesen.sms", smsNode(rig, 1), R"("gain":-9)")).ok);
+        SystemBase* const graphCore = rig.builtCore(1);
+        REQUIRE(graphCore != nullptr);
         direct->setGainDb(-9.0f, true);  // the node snaps its first value in
         Direct d({direct.get()}, 2, {{0, 1}});
         CHECK(compare(rig, d, 5.0, smsStart(*direct, *graphCore)) == "");
@@ -1694,19 +1676,23 @@ TEST_CASE("a published param value the core already has changes nothing, and ano
           "[engine-graph][system-node][params]") {
     NodeRig rig(kRate);
     auto direct = mgb(1);
-    const auto token = rig.park(mgb(1));
-    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, kGbDmg))).ok);
     Direct d({direct.get()}, 2, {{0, 1}});
     auto live = once(0.3, [&] {
         REQUIRE(rig.host->setParam("sys", "gain", -12.0));
         direct->setGainDb(-12.0f);
     });
     // The store's next publish, for whatever reason, carries the value it set live: nothing moves.
-    auto same = once(0.6, [&] { REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("dmgPalette":"dmg")", R"("gain":-12)")).ok); });
+    auto same = once(0.6, [&] {
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, gbDmg(R"("dmgPalette":"dmg")")), R"("gain":-12)"))
+                    .ok);
+    });
     // A document dropping the param leaves the stream, and the core, where they were.
-    auto dropped = once(0.9, [&] { REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("dmgPalette":"dmg")")).ok); });
+    auto dropped = once(0.9, [&] {
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, gbDmg(R"("dmgPalette":"dmg")")))).ok);
+    });
     auto other = once(1.2, [&] {
-        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, "", R"("gain":-1.5)")).ok);
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, kGbDmg), R"("gain":-1.5)")).ok);
         direct->setGainDb(-1.5f);
     });
     CHECK(compare(rig, d, 2.0, [&](std::uint64_t at) { live(at); same(at); dropped(at); other(at); }) == "");
@@ -1715,10 +1701,9 @@ TEST_CASE("a published param value the core already has changes nothing, and ano
 
 TEST_CASE("a param edit, live or published, allocates nothing on the block thread", "[engine-graph][system-node][params]") {
     NodeRig rig(kRate);
-    auto built = mgb(1);
-    SameBoySystem* const gb = built.get();
-    const auto token = rig.park(std::move(built));
-    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, kGbDmg))).ok);
+    const auto* const gb = dynamic_cast<const SameBoySystem*>(rig.builtCore(1));
+    REQUIRE(gb != nullptr);
     Lanes out(2);
     const rp_transport t{kRate, 120.0, 0.0, 0};
     for (int b = 0; b < 8; ++b) rig.host->processBlock(512, t, out.ptrs.data(), 2);
@@ -1730,7 +1715,7 @@ TEST_CASE("a param edit, live or published, allocates nothing on the block threa
     CHECK(counted.allocations == 0);
     CHECK(counted.frees == 0);
     CHECK(gb->config_.gainDb == -6.0f);
-    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, "", R"("gain":-3)")).ok);
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot("rp.sameboy.gb", 1, kGbDmg), R"("gain":-3)")).ok);
     rp::test::beginCountingAllocations();
     for (int b = 0; b < 2; ++b) rig.host->processBlock(512, t, out.ptrs.data(), 2);
     counted = rp::test::endCountingAllocations();
@@ -1743,12 +1728,10 @@ TEST_CASE("a param edit, live or published, allocates nothing on the block threa
 TEST_CASE("a NES node's param edit allocates no more on the block thread than the same window with no edit",
           "[engine-graph][system-node][params]") {
     NodeRig rig(kRate), control(kRate);
-    auto built = nes(1, 0), controlBuilt = nes(1, 0);
-    MesenNesSystem* const core = built.get();
-    const auto token = rig.park(std::move(built));
-    const auto controlToken = control.park(std::move(controlBuilt));
-    REQUIRE(rig.set(knobbed("rp.mesen.nes", token)).ok);
-    REQUIRE(control.set(knobbed("rp.mesen.nes", controlToken)).ok);
+    REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot("rp.mesen.nes", 1))).ok);
+    REQUIRE(control.set(knobbed("rp.mesen.nes", control.boot("rp.mesen.nes", 1))).ok);
+    const auto* const core = dynamic_cast<const MesenNesSystem*>(rig.builtCore(1));
+    REQUIRE(core != nullptr);
     Lanes out(2), controlOut(2);
     const rp_transport t{kRate, 120.0, 0.0, 0};
     for (int b = 0; b < 8; ++b) {
@@ -1778,69 +1761,20 @@ TEST_CASE("a NES node's param edit allocates no more on the block thread than th
     CHECK(core->config().expansionVolume == 40);
 }
 
-TEST_CASE("a node placed with its gain plays the first block at it, not ramping down from 0 dB",
-          "[engine-graph][system-node][params]") {
-    // A Game Boy whose FIRST block carries sound: driven for a second before its node takes it, so its DMG boot tone is
-    // playing when the node gives it the document's gain. A fresh boot is silent in that block, which would hide a
-    // ramp from the smoother's 0 dB.
-    const auto soundingCore = [](SystemId id) {
-        auto core = mgb(id);
-        Lanes out(2);
-        float peak = 0.0f;
-        for (std::uint64_t at = 0; at < static_cast<std::uint64_t>(1.0 * kRate); at += 512) {
-            core->prepareForBlock(info(512));
-            while (core->stepIfBelowTarget(512)) {
-            }
-            core->finishBlock(info(512), out.ptrs.data(), 2);
-            peak = 0.0f;
-            for (const auto& ch : out.data)
-                for (std::uint32_t i = 0; i < 512; ++i) peak = std::max(peak, std::abs(ch[i]));
-        }
-        INFO("the last block it played before its node took it peaked at " << peak);
-        CHECK(peak > 0.001f);
-        return core;
-    };
-
-    const auto firstBlockPeak = [&](const char* gain) {
-        NodeRig rig(kRate);
-        const auto token = rig.park(soundingCore(1));
-        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, "", gain)).ok);
-        Lanes out(2);
-        const rp_transport t{kRate, 120.0, 0.0, 0};
-        rig.host->processBlock(256, t, out.ptrs.data(), 2);
-        float peak = 0.0f;
-        for (const auto& ch : out.data)
-            for (std::uint32_t i = 0; i < 256; ++i) peak = std::max(peak, std::abs(ch[i]));
-        return peak;
-    };
-    const float loud = firstBlockPeak(R"("gain":0)");
-    const float quiet = firstBlockPeak(R"("gain":-60)");
-    const float floor = firstBlockPeak(R"("gain":-90)");
-    INFO("peak at 0 dB " << loud << ", at -60 dB " << quiet << ", at -90 dB " << floor);
-    CHECK(loud > 0.01f);
-    // The value is snapped in: this block is at the document's level, not a ramp's. -90 dB is the core's mute floor
-    // (util/Gain.hpp maps it and anything below to 0), so the level is measured at -60 dB: a thousandth of unity, and
-    // a 20 ms ramp from unity would leave most of `loud` here.
-    CHECK(floor == 0.0f);
-    CHECK(std::abs(quiet - loud * 1e-3f) <= loud * 1e-3f * 0.02f);
-}
-
 TEST_CASE("a wire's value reaches a system node's params clamped to their ranges", "[engine-graph][system-node][params]") {
     const auto driven = [](bool infinite, double level) {
         NodeRig rig(kRate);
-        auto built = nes(1, 0);
-        MesenNesSystem* const core = built.get();
-        const auto token = rig.park(std::move(built));
         const std::string value = R"({"level":)" + rp::graph::jsNumber(level) +
                                   (infinite ? R"(,"infinite":true)" : "") + "}";
         const std::string doc = R"({"nodes":[{"id":"gain","type":"rp.test.level","settings":)" + value +
                                 R"(},{"id":"exp","type":"rp.test.level","settings":)" + value +
-                                R"(},{"id":"sys","type":"rp.mesen.nes","settings":{"core":)" +
-                                std::to_string(token) +
+                                R"(},{"id":"sys","type":"rp.mesen.nes","settings":{)" + rig.boot("rp.mesen.nes", 1) +
                                 R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],)" +
                                 R"("wires":[{"from":"gain.out","to":"sys.gain"},{"from":"exp.out","to":"sys.expansionVolume"},)" +
                                 R"({"from":"sys.mix","to":"out.out.1-2"}]})";
         REQUIRE(rig.set(doc).ok);
+        const auto* const core = dynamic_cast<const MesenNesSystem*>(rig.builtCore(1));
+        REQUIRE(core != nullptr);
         Lanes out(2);
         const rp_transport t{kRate, 120.0, 0.0, 0};
         for (int b = 0; b < 3; ++b) rig.host->processBlock(256, t, out.ptrs.data(), 2);
@@ -1857,10 +1791,9 @@ TEST_CASE("a system node takes param edits made while an audio thread runs its b
     // The race check for the params path under ThreadSanitizer (build-tsan/): live edits and documents carrying a value
     // from this thread, while the audio thread drains them and the node applies the latest.
     NodeRig rig(kRate);
-    auto built = nes(1, 0);
-    MesenNesSystem* const core = built.get();
-    const auto token = rig.park(std::move(built));
-    REQUIRE(rig.set(knobbed("rp.mesen.nes", token)).ok);
+    REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot("rp.mesen.nes", 1))).ok);
+    const auto* const core = dynamic_cast<const MesenNesSystem*>(rig.builtCore(1));
+    REQUIRE(core != nullptr);
     std::atomic<bool> running{true};
     std::atomic<int>  blocks{0};
     rig.host->setAudioThreadOwns(true);
@@ -1877,7 +1810,7 @@ TEST_CASE("a system node takes param edits made while an audio thread runs its b
     for (int i = 0; i < kEdits; ++i) {
         const double gain = -(i % 30), percent = 100 + i;
         const std::string values = R"("gain":)" + rp::graph::jsNumber(gain) + R"(,"expansionVolume":)" + rp::graph::jsNumber(percent);
-        const bool ok = i % 10 == 9 ? rig.set(knobbed("rp.mesen.nes", token, "", values)).ok
+        const bool ok = i % 10 == 9 ? rig.set(knobbed("rp.mesen.nes", rig.boot("rp.mesen.nes", 1), values)).ok
                                     : rig.host->setParam("sys", "gain", gain) && rig.host->setParam("sys", "expansionVolume", percent);
         accepted += ok ? 1 : 0;
         rig.host->reclaim();
@@ -1896,12 +1829,6 @@ TEST_CASE("a system node takes param edits made while an audio thread runs its b
 // ---- a node that builds its own core (docs/modular-graph-phase-c3-design.md sections 3 and 5) ---------------------
 
 namespace {
-
-// A `system` node's settings: the id it builds, its ROM resource, and whatever else the case adds.
-std::string buildSettings(SystemId system, std::uint32_t rom, const std::string& extra = "") {
-    return R"({"system":)" + std::to_string(system) + R"(,"rom":"res:)" + std::to_string(rom) + "\"" +
-           (extra.empty() ? "" : "," + extra) + "}";
-}
 
 // The resource id a byte block goes in as.
 std::uint32_t resource(NodeRig& rig, const char* type, std::vector<std::uint8_t> bytes) {
@@ -1933,9 +1860,9 @@ TEST_CASE("a Game Boy node built from its ROM resource renders what a core built
         NodeRig rig(kRate);
         auto direct = mgb(1);
         const auto romId = resource(rig, "rom", rom);
-        REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":)" +
-                        buildSettings(1, romId, R"("model":"dmgB","fastBoot":false)") +
-                        R"(},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+        REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":{)" +
+                        rig.boot("rp.sameboy.gb", 1, R"("model":"dmgB","fastBoot":false)", romId) +
+                        R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
                             "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
         Direct d({direct.get()}, 2, {{0, 1}});
         CHECK(compare(rig, d, 2.0) == "");
@@ -1951,9 +1878,11 @@ TEST_CASE("a Game Boy node built from its ROM resource renders what a core built
         direct->onActivate(kRate);
         const auto romId = resource(rig, "rom", rom);
         const auto sramId = resource(rig, "sram", cfg.sram);
-        REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":)" +
-                        buildSettings(1, romId, R"("model":"dmgB","fastBoot":false,"sram":"res:)" + std::to_string(sramId) + "\"") +
-                        R"(},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+        REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":{)" +
+                        rig.boot("rp.sameboy.gb", 1,
+                                 R"("model":"dmgB","fastBoot":false,"sram":"res:)" + std::to_string(sramId) + "\"",
+                                 romId) +
+                        R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
                             "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
         Direct d({direct.get()}, 2, {{0, 1}});
         CHECK(compare(rig, d, 2.0) == "");
@@ -1972,13 +1901,71 @@ TEST_CASE("a Game Boy node built from its ROM resource renders what a core built
         direct->onActivate(kRate);
         const auto romId = resource(rig, "rom", rom);
         const auto stateId = resource(rig, "state", state);
-        REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":)" +
-                        buildSettings(1, romId, R"("model":"dmgB","fastBoot":false,"state":"res:)" + std::to_string(stateId) + "\"") +
-                        R"(},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+        REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":{)" +
+                        rig.boot("rp.sameboy.gb", 1,
+                                 R"("model":"dmgB","fastBoot":false,"state":"res:)" + std::to_string(stateId) + "\"",
+                                 romId) +
+                        R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
                             "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
         Direct d({direct.get()}, 2, {{0, 1}});
         CHECK(compare(rig, d, 2.0) == "");
     }
+}
+
+TEST_CASE("a system node placed at a gain plays its first block at it, from the first sample",
+          "[engine-graph][system-node][params]") {
+    // The core's gain smoother starts at unity, so applyGain snaps a node's first value: a node placed at -12 dB never
+    // plays a block at 0 dB. A node always builds its core fresh, so the block its gain first lands in is normally
+    // silent; a `state` seed taken while the DMG boot chime sounds makes it audible, and a ramp down from unity would
+    // show in it.
+    const auto rom = readFile(RP_MGB_ROM_PATH);
+    SameBoyConfig sourceCfg;
+    sourceCfg.model = SameBoyModel::DmgB;
+    sourceCfg.fastBoot = false;
+    auto source = std::make_unique<SameBoySystem>(9, sourceCfg, rom);
+    source->onActivate(kRate);
+    Direct run({source.get()}, 2, {{0, 1}});
+    // The seed is taken at a block boundary whose next 64 frames sound: the chime is a sequence of notes, so a
+    // boundary inside a note is what makes the node's first block audible.
+    std::vector<std::uint8_t> before = source->saveStateBytes(), state;
+    for (int b = 0; b < 4000 && state.empty(); ++b) {
+        run.sounded = false;
+        run.block(64);
+        if (run.sounded) state = before;
+        else before = source->saveStateBytes();
+    }
+    REQUIRE(!state.empty());
+
+    NodeRig rig(kRate);
+    SameBoyConfig cfg = sourceCfg;
+    cfg.savestate = state;
+    auto direct = std::make_unique<SameBoySystem>(1, cfg, rom);
+    direct->onActivate(kRate);
+    direct->setGainDb(-12.0f, true);  // the snap the node makes at its first block
+    const auto romId = resource(rig, "rom", rom);
+    const auto stateId = resource(rig, "state", state);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":{)" +
+                    rig.boot("rp.sameboy.gb", 1,
+                             R"("model":"dmgB","fastBoot":false,"state":"res:)" + std::to_string(stateId) + "\"",
+                             romId) +
+                    R"(},"params":{"gain":-12}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                        "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
+    auto* const built = dynamic_cast<SameBoySystem*>(rig.builtCore(1));
+    REQUIRE(built != nullptr);
+    CHECK(built->config_.gainDb == 0.0f);  // the param lands at the first block, not at the build
+    // The seed's first block carries signal, which is what makes the snap observable there.
+    auto probe = std::make_unique<SameBoySystem>(1, cfg, rom);
+    probe->onActivate(kRate);
+    probe->setGainDb(-12.0f, true);
+    Direct first({probe.get()}, 2, {{0, 1}});
+    first.block(64);
+    REQUIRE(sounds(first));
+    // Bit for bit against a core snapped the same way: without the snap the node's first block sits at unity and ramps
+    // down, which the comparison covers inside its first 20 ms.
+    Direct d({direct.get()}, 2, {{0, 1}});
+    CHECK(compare(rig, d, 0.05) == "");
+    CHECK(sounds(d));
+    CHECK(built->config_.gainDb == -12.0f);
 }
 
 TEST_CASE("a non-default model reaches a Game Boy core before it boots, so a savestate seed is not lost to a restart",
@@ -2001,9 +1988,10 @@ TEST_CASE("a non-default model reaches a Game Boy core before it boots, so a sav
     direct->onActivate(kRate);
     const auto romId = resource(rig, "rom", rom);
     const auto stateId = resource(rig, "state", state);
-    REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":)" +
-                    buildSettings(1, romId, R"("model":"mgb","state":"res:)" + std::to_string(stateId) + "\"") +
-                    R"(},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+    REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":{)" +
+                    rig.boot("rp.sameboy.gb", 1,
+                             R"("model":"mgb","state":"res:)" + std::to_string(stateId) + "\"", romId) +
+                    R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
                         "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
     // The core the node built is the model the document carried; it never restarted into anything.
     auto* built = dynamic_cast<SameBoySystem*>(rig.builtCore(1));
@@ -2027,9 +2015,10 @@ TEST_CASE("a NES node built from its ROM resource takes its region, export mode 
     auto direct = std::make_unique<MesenNesSystem>(1, cfg, rom);
     direct->onActivate(kRate);
     const auto romId = resource(rig, "rom", rom);
-    REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.mesen.nes","settings":)" +
-                    buildSettings(1, romId, R"("region":"ntsc","channelExportMode":"stereoModPins")") +
-                    R"(,"params":{"expansionVolume":50}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[1,1,1]}}],
+    REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.mesen.nes","settings":{)" +
+                    rig.boot("rp.mesen.nes", 1,
+                             R"("region":"ntsc","channelExportMode":"stereoModPins")", romId) +
+                    R"(},"params":{"expansionVolume":50}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[1,1,1]}}],
                         "wires":[{"from":"sys-1.pins.pulse","to":"out.out.1"},{"from":"sys-1.pins.tnd","to":"out.out.2"},
                                  {"from":"sys-1.pins.expansion","to":"out.out.3"}]})").ok);
     auto* built = rig.builtCore(1);
@@ -2050,10 +2039,10 @@ TEST_CASE("a Master System node built from its ROM resource boots with FM off", 
     std::memcpy(sram.data(), header, sizeof header);
     std::memcpy(sram.data() + 0x3f60, options, sizeof options);
     const auto sramId = resource(rig, "sram", sram);
-    REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.mesen.sms","settings":)" +
-                    buildSettings(1, romId, R"("sram":"res:)" + std::to_string(sramId) + R"(","enableFm":false,
-                        "romName":"smsggdj_v0_45")") +
-                    R"(},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+    REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.mesen.sms","settings":{)" +
+                    rig.boot("rp.mesen.sms", 1, R"("sram":"res:)" + std::to_string(sramId) +
+                             R"(","enableFm":false,"romName":"smsggdj_v0_45")", romId) +
+                    R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
                         "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
     auto* built = rig.builtCore(1);
     REQUIRE(built != nullptr);
@@ -2073,8 +2062,9 @@ TEST_CASE("a GBA node built from its ROM resource renders what a core built from
     auto direct = std::make_unique<MesenGbaSystem>(1, MesenGbaConfig{}, rom);
     direct->onActivate(kRate);
     const auto romId = resource(rig, "rom", rom);
-    REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.mesen.gba","settings":)" + buildSettings(1, romId) +
-                    R"(},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+    REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.mesen.gba","settings":{)" +
+                    rig.boot("rp.mesen.gba", 1, "", romId) +
+                    R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
                         "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
     auto* built = rig.builtCore(1);
     REQUIRE(built != nullptr);
@@ -2101,8 +2091,9 @@ TEST_CASE("an LSDj node built from its ROM resource renders what a core built fr
     auto direct = std::make_unique<SameBoySystem>(1, SameBoyConfig{}, rom);
     direct->onActivate(kRate);
     const auto romId = resource(rig, "rom", rom);
-    REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":)" + buildSettings(1, romId) +
-                    R"(},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+    REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":{)" +
+                    rig.boot("rp.sameboy.gb", 1, "", romId) +
+                    R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
                         "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
     auto* built = rig.builtCore(1);
     REQUIRE(built != nullptr);
@@ -2117,10 +2108,11 @@ TEST_CASE("a Master System node without a romName stages each system under a ste
     NodeRig rig(kRate);
     const auto romId = resource(rig, "rom", readFile(RP_SMS_ROM_PATH));
     const std::string document =
-        R"({"nodes":[{"id":"sys-1","type":"rp.mesen.sms","settings":)" + buildSettings(1, romId, R"("enableFm":false)") +
-        R"(},{"id":"sys-2","type":"rp.mesen.sms","settings":)" +
-        buildSettings(2, romId, R"("enableFm":false,"romName":"smsggdj_v0_45")") +
-        R"(},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2,2]}}],
+        R"({"nodes":[{"id":"sys-1","type":"rp.mesen.sms","settings":{)" +
+        rig.boot("rp.mesen.sms", 1, R"("enableFm":false)", romId) +
+        R"(}},{"id":"sys-2","type":"rp.mesen.sms","settings":{)" +
+        rig.boot("rp.mesen.sms", 2, R"("enableFm":false,"romName":"smsggdj_v0_45")", romId) +
+        R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2,2]}}],
             "wires":[{"from":"sys-1.mix","to":"out.out.1-2"},{"from":"sys-2.mix","to":"out.out.3-4"}]})";
     REQUIRE(rig.set(document).ok);
     auto* unnamed = dynamic_cast<MesenSmsSystem*>(rig.builtCore(1));

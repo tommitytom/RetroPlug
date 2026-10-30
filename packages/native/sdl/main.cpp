@@ -75,8 +75,6 @@ extern "C" {
 #include "host/rpc/BackendRpcRegistration.hpp"
 #include "host/ui/LvglWheelScroll.hpp"       // shared wheel -> hit-tested scroll (also used by the plugin/test UI)
 #include "host/ui/SoftwareLvglDisplay.hpp"   // shared LvInputState + display/indev scaffold (also used by test/ui)
-#include "system/CoreBackends.hpp"
-#include "system/SystemFactory.hpp"
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
@@ -1271,8 +1269,6 @@ bool frameIsBlank(const AppState& a) {
 bool bootControlPlane(AppState& a) {
     if (!a.host.init()) { std::fprintf(stderr, "[retroplug-sdl] TjsHostRuntime init failed\n"); return false; }
     JSContext* ctx = a.host.context();
-
-    registerCoreBackends(a.svc.factory);
 
     a.transport = std::make_unique<rpcpp::QuickJSTransport>(ctx, [](JSContext*, JSValue) {});
     a.server    = std::make_unique<BackendRpcServer>(*a.transport, rpcpp::QuickJSCodec{ctx});

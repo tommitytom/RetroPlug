@@ -35,12 +35,11 @@ void registerHostRpc(Server& s, HostRpcService& h) {
     s.template addMethod<&HostRpcService::pngDecode>(h);
 }
 
-// --- emulator: resources / lifecycle / script node packs / live params / snapshot reads / input (14) ---
+// --- emulator: resources / lifecycle / script node packs / live params / snapshot reads / input (13) ---
 template <class Server>
 void registerEmulatorRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::putResource>(e);
     s.template addMethod<&EngineRpcService::releaseResource>(e);
-    s.template addMethod<&EngineRpcService::buildCore>(e);
     s.template addMethod<&EngineRpcService::setGraph>(e);
     s.template addMethod<&EngineRpcService::loadScriptPack>(e);
     s.template addMethod<&EngineRpcService::setParam>(e);
@@ -124,7 +123,7 @@ void registerDriverRpc(Server& s, AudioDriverRpcService& d) {
     s.template addMethod<&AudioDriverRpcService::drainReleased>(d);
 }
 
-// The full union (88 methods) + discovery - every facet mounted. Hosts that expose the whole surface
+// The full union (87 methods) + discovery - every facet mounted. Hosts that expose the whole surface
 // (the CLI + test host) use this; scoped hosts call the individual register functions they're allowed to.
 template <class Server>
 void registerAllBackendRpc(Server& s, HostRpcService& host, EngineRpcService& engine,

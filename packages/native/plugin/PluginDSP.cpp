@@ -30,8 +30,6 @@
 #include "host/engine/EngineInvoker.hpp"
 #include "Version.hpp"                    // single source of truth for the plugin version
 #include "host/rpc/BackendRpcRegistration.hpp"
-#include "system/CoreBackends.hpp"
-#include "system/SystemFactory.hpp"
 #include "host/n8/N8Host.hpp"             // physical Everdrive N8 link + config (shared with the SDL standalone)
 #include "host/n8/N8Hooks.hpp"            // binds the __rp_*N8* config hooks (shared)
 #include "host/n8/WjwwoodSerialPort.hpp"  // the serial-port factory + listSerialPorts for the N8 picker
@@ -383,8 +381,6 @@ private:
     void bootControlPlane() {
         if (!host_.init()) { d_stderr("[retroplug] TjsHostRuntime init failed"); return; }
         JSContext* ctx = host_.context();
-
-        registerCoreBackends(svc_.factory);  // sameboy + mesen — before the bundle autoloads any system
 
         transport_ = std::make_unique<rpcpp::QuickJSTransport>(ctx, [](JSContext*, JSValue) {});
         server_    = std::make_unique<PluginRpcServer>(*transport_, rpcpp::QuickJSCodec{ctx});

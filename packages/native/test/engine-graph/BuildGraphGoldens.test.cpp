@@ -230,8 +230,8 @@ std::optional<std::string> plan(const GoldenCase& c, const std::string& document
     for (const SystemId id : c.slots)
         if (byId.find(id) == byId.end()) return "slot " + std::to_string(id) + " is no system of the model";
     // Put each system's ROM and point the document at the engine's own ids: a node boots from its resources, and never
-    // from a path or a parked core. The ids are rewritten in ONE pass: two golden ids can each be the other's engine id,
-    // and replacing them one after another would let the second see the first's output.
+    // from a path. The ids are rewritten in ONE pass: two golden ids can each be the other's engine id, and replacing
+    // them one after another would let the second see the first's output.
     std::map<std::uint32_t, std::uint32_t> ids;
     for (const GoldenSystem& s : c.model.systems) {
         std::string why;

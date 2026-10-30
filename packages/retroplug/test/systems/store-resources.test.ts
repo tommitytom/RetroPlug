@@ -160,7 +160,7 @@ test("a refused publish puts the model back, gives back what it put, and reports
   const requests = be.graphRequests.length;
   refuse(be, 1);
   const failure = warned(() => store.reset(id));
-  expect(failure.result).toBe(null); // the reason a buildCore that answered null gave, as the verb's failure
+  expect(failure.result).toBe(null); // the reason the refused document gave, as the verb's failure
   expect(store.systems()[0]).toEqual(before); // the list as it was: the same id, the same handles
   expect(heldIds(be)).toEqual(heldBefore); // the seed the refused edit put is gone
   // The restored model is published again, so the engine keeps running the plan it ran (and the next edit starts from

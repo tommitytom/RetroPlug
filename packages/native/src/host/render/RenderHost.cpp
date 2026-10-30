@@ -9,8 +9,6 @@
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "host/rpc/BackendRpcRegistration.hpp"
-#include "system/CoreBackends.hpp"
-#include "system/SystemFactory.hpp"
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
@@ -220,11 +218,9 @@ RenderHost::Result RenderHost::run(const std::string& jobJson, RenderedFn onRend
     // is started, so the QueuedInvoker flushes inline on this thread. registerAllBackendRpc mounts the full
     // surface the worker's control plane calls (host fs, emulator, harness render, debug readCpu).
     Engine engine;
-    SystemFactory factory;
-    registerCoreBackends(factory);
     QueuedInvoker invoker{engine};
     HostRpcService hostSvc;
-    EngineRpcService engineSvc{engine, factory, invoker};
+    EngineRpcService engineSvc{engine, invoker};
     DebugRpcService debugSvc{engine};
     AudioDriverRpcService driver{engine, invoker};
 

@@ -13,7 +13,7 @@
 // recomposes them into the full `Backend`. openFileBrowser is the one async method and rides
 // a UI-direct native hook rather than the RPC bridge (see below).
 
-import type { ApuState, Backend, BreakHitBatch, BuiltCore, SetGraphRequest, SetGraphResult, LoadScriptPackRequest, LoadScriptPackResult, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CoreTransportStats, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, ExpansionAudioState, FileBrowserOpts, FrameData, HostBackend, PngImageData, PpuState, ProfiledFunction, PutResourceResult, ResourceSpec, TraceLine, ZipEntry } from "./backend";
+import type { ApuState, Backend, BreakHitBatch, SetGraphRequest, SetGraphResult, LoadScriptPackRequest, LoadScriptPackResult, BreakInfo, Breakpoint, CallFrame, ControlPlaneBackend, CoreTransportStats, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, ExpansionAudioState, FileBrowserOpts, FrameData, HostBackend, PngImageData, PpuState, ProfiledFunction, PutResourceResult, ResourceSpec, TraceLine, ZipEntry } from "./backend";
 import type { OpenSerialPort, SerialClient, SerialPortInfo } from "./n8/transport";
 import { savFromJson as savFromJsonTs } from "./lsdj";
 import { makeCall } from "./rpcClient";
@@ -59,18 +59,6 @@ function browseFile(opts: FileBrowserOpts): Promise<string | null> {
 // crosses as a Uint8Array in both directions (the qjs codec decodes a typed byte param straight
 // into rfl::Bytestring), so no number[] marshaling is needed either way.
 const bytesOrNull = (v: unknown): Uint8Array | null => (v == null ? null : (v as Uint8Array));
-
-// ConstructSpec → RPC params: omit null path fields (so native reads nullopt, not "") and pass the
-// seed bytes as a Uint8Array only when present.
-const specParams = (spec: ConstructSpec, id: number): Record<string, unknown> => {
-  const p: Record<string, unknown> = { id, romPath: spec.romPath, platform: spec.platform, core: spec.core, embeddedRom: spec.embeddedRom };
-  if (spec.savPath != null) p.savPath = spec.savPath;
-  if (spec.statePath != null) p.statePath = spec.statePath;
-  if (spec.romBytes) p.romBytes = spec.romBytes;
-  if (spec.sramBytes) p.sramBytes = spec.sramBytes;
-  if (spec.stateBytes) p.stateBytes = spec.stateBytes;
-  return p;
-};
 
 /** The fs / config / codec / sav facet + the async file dialog. Throws if no native RPC surface is bound. */
 export function createHostClient(): HostBackend {
@@ -121,7 +109,6 @@ export function createEmulatorClient(): EmulatorBackend {
       return { id: r.id };
     },
     releaseResource: (id: number) => call("releaseResource", id) as boolean,
-    buildCore: (spec: ConstructSpec, id: number) => (call("buildCore", specParams(spec, id)) as BuiltCore | null) ?? null,
     setGraph: (request: SetGraphRequest) => call("setGraph", request) as SetGraphResult,
     loadScriptPack: (request: LoadScriptPackRequest) => call("loadScriptPack", request) as LoadScriptPackResult,
     setParam: (nodeId, paramId, value) => call("setParam", nodeId, paramId, value) as boolean,

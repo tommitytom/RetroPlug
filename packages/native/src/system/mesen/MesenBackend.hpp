@@ -9,67 +9,18 @@
 
 class SystemBase;
 
-// The TS-owned "mesen" system-role config as it crosses the wire at construct (JSON, the settings blob):
-// the NES emulator knobs the UI edits. Field names match the TS role schema (coreRoles.ts). A live edit
-// reaches the core as its system node's settings and params instead (host/graph/SystemNodes.cpp).
-// Defaults mirror MesenNesConfig, so a missing field is a no-op.
-// (The role attaches to any Mesen system; GBA ignores these NES-only fields.)
-struct MesenNesRoleConfig {
-    std::uint32_t region            = 0;      // ConsoleRegion (Auto/Ntsc/Pal/Dendy/NtscJapan)
-    bool          removeSpriteLimit = false;
-    std::uint32_t channelExportMode = 0;      // 0 = Mix, 1 = pins, 3 = 5 mono (CLI-only; spec/10 §5/§5b)
-    double        apuLatencyMs      = 1.4;    // APU flush window as latency (ms); live. ~1.4ms ≈ 2500 cyc NTSC
-    // Cartridge-accuracy switches: 0 = the documented chip, 1 = match an Everdrive N8 Pro's FPGA core.
-    // s5bNoise 1 = no 5B noise generator (so tone-AND-noise mutes the channel); mmc5PhaseReset 1 = a
-    // $5003/$5007 write does not restart the pulse duty sequencer. Both live, both measured on hardware.
-    // Defaulted to 1 to match coreRoles.ts - the N8 is how NES music actually gets played back.
-    std::uint32_t s5bNoise          = 1;
-    std::uint32_t mmc5PhaseReset    = 1;
-    // The cartridge sound chip's level, percent of unity (100 = as the hardware mixes it). Live; the same
-    // value the UI writes to a connected Everdrive N8's `master_vol`, rescaled.
-    std::uint32_t expansionVolume   = 100;
-    // Host directory the emulated EverDrive N8 SD card maps to. Construct-time (the FIFO is built in
-    // onActivate), so a live edit needs a reset — like `region`. Empty => a per-process scratch dir.
-    std::string   sdRoot;
-    // Cart-FIFO fidelity: 0 = instant (unbounded, immediate), 1 = hardware (2048 deep, ~150 KB/s,
-    // drops when full). The two overrides are 0 = "use the profile's value". Construct-time, so an
-    // edit needs a reset, like sdRoot. Default 0 keeps every existing test's transport permissive.
-    std::uint32_t fifo               = 0;
-    std::uint32_t fifoDepth          = 0;
-    std::uint32_t fifoBytesPerSecond = 0;
-    // BlipToaster's reliable link: 0 = auto (on when the ROM's SIG advertises it), 1 = off (raw MIDI). And the
-    // modelled host->cart->host round trip a re-send waits, in us. Construct-time, like fifo.
-    std::uint32_t n8Link             = 0;
-    std::uint32_t n8LinkRttUs        = 2200;   // a real N8 Pro's fastest round trip, measured 2026-10-22
-};
-
-// The SMS/GG slice of that same TS "mesen" role. A separate struct rather than more fields on the one
-// above: reflect-cpp decodes each tolerantly (DefaultIfMissing), so one JSON blob can feed both, and a
-// per-platform struct keeps NES knobs from reading as if they meant something on a Master System.
-struct MesenSmsRoleConfig {
-    // Route the YM2413 (FM) at all. Load-bearing rather than cosmetic: Mesen models $F2 as a MUX, and
-    // its PSG branch memsets the buffer, so a tracker that writes $F2 = $01 at boot is SILENT on the
-    // PSG until this is off. Which side to default to is still an open question - this is the knob that
-    // lets it be answered by ear.
-    bool enableFm = true;
-};
-
-// The Mesen core — one backend spanning multiple platforms. Dispatches on `spec.platform` to build the
-// right Mesen system (NES, GBA, or Master System / Game Gear): slurp the ROM, gate on the platform's
-// magic, seed SRAM/savestate, and onActivate (which boots the core, or fails gracefully on a bad ROM).
-// GBA runs on Mesen's HLE boot ROM (biosPath left empty). The opaque settings blob carries the "mesen"
-// role knobs - region / remove-sprite-limit for NES, enableFm for SMS/GG; GBA has none yet. An unknown
-// platform or a mismatched ROM → nullptr.
+// The Mesen core, one backend spanning multiple platforms. A system node's settings make one of the configs below, and
+// which alternative the request carries picks the console: NES, GBA, or Master System / Game Gear, each through its own
+// build function (ROM gate, boot, onActivate, state snapshot). GBA runs on Mesen's HLE boot ROM (biosPath left empty).
 class MesenBackend final : public SystemBackend {
 public:
-    std::unique_ptr<SystemBase> build(SystemId id, const SystemBuildSpec& spec,
-                                      double sampleRate) override;
-    std::unique_ptr<SystemBase> buildTyped(SystemId id, const SystemBuildRequest& request,
-                                           double sampleRate, std::string* why) override;
+    std::unique_ptr<SystemBase> build(SystemId id, const SystemBuildRequest& request,
+                                      double sampleRate, std::string* why) override;
 
-    // One boot path per console, which buildCore's blob and a system node's typed request both reach: the ROM gate,
-    // then bootMesen (construct, onActivate, reject a refused ROM, enable the state snapshot). cfg and romBytes are
-    // consumed; a refusal's reason is in *why when it is given.
+private:
+    // One boot function per console, reached by build()'s config alternative and by nothing else: the ROM gate, then
+    // bootMesen (construct, onActivate, reject a refused ROM, enable the state snapshot). cfg and romBytes are consumed;
+    // a refusal's reason is in *why when it is given.
     static std::unique_ptr<SystemBase> buildNes(SystemId id, MesenNesConfig cfg,
                                                 std::vector<std::uint8_t> romBytes, double sampleRate,
                                                 std::string* why);

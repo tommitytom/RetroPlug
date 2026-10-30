@@ -35,8 +35,6 @@
 #include "NodeRig.hpp"
 #include "ScriptRig.hpp"
 #include "host/engine/Engine.hpp"
-#include "system/sameboy/SameBoyConfig.hpp"
-#include "system/sameboy/SameBoySystem.hpp"
 
 using rp::host::ScriptHost;
 using rp::host::test::Feed;
@@ -2700,17 +2698,15 @@ TEST_CASE("an Engine's apu-render spans its plan's whole run, each script node's
     constexpr double kRate = 48000.0;
     constexpr std::size_t kBlocks = 4;
     Engine e(kRate);
-    SameBoyConfig cfg;
-    cfg.model = SameBoyModel::DmgB;
-    auto core = std::make_unique<SameBoySystem>(1, cfg, rp::host::test::readFile(RP_MGB_ROM_PATH));
-    core->onActivate(kRate);
-    REQUIRE(e.parkCore(std::move(core)));
+    // A DMG core, whose boot ROM supplies the signal the spans are measured over.
+    std::vector<rp::host::test::DocSystem> systems{{1, rp::host::test::kGbType, 0, R"("model":"dmgB")"}};
+    rp::host::test::withRoms(e, systems);
     const DocExtras extras{{docNode("midi-in", "rp.host.midi-in"), docNode("mgb", "rp.mgb.midi"),
                             docNode("late", "rp.lsdj.serial-out")},
                            {docWire("midi-in.midi", "mgb.midi"), docWire("mgb.serialIn", "sys-1.serialIn"),
                             docWire("sys-1.serialOut", "late.serialOut")}};
     const auto planned =
-        e.setGraph(rp::host::test::graphRequest(rp::host::test::stereoDocument({{1, rp::host::test::kGbType}}, extras), {1}));
+        e.setGraph(rp::host::test::graphRequest(rp::host::test::stereoDocument(systems, extras), {1}));
     INFO((planned.errors.empty() ? std::string() : planned.errors[0].code + ": " + planned.errors[0].message));
     REQUIRE(planned.ok);
     REQUIRE(e.dspTraceReset(true));

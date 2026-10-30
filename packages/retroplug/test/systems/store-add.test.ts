@@ -75,7 +75,8 @@ test("add: an unknown or absent ROM is a no-op (rejected before construct)", () 
   expect(store.addSystem("/roms/missing.gb")).toBe(null); // not on disk at all
   expect(store.view().length).toBe(0);
   expect(changes()).toBe(0);
-  expect(be.log.includes("buildCore")).toBeFalsy(); // never reached native
+  expect(be.putResourceCalls.length).toBe(0); // never reached native: no byte crossed
+  expect(be.graphRequests.length).toBe(0);
 });
 
 test("focusNext: cycles focus forward/back through the instances in grid order, wrapping", () => {
