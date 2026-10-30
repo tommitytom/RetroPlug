@@ -2,9 +2,10 @@
 // reclaims. Under ThreadSanitizer (build-tsan/) this is the race check for the command ring, the release ring
 // and a reshape's new streams; in a normal build it checks that a system's own output and state survive
 // constant edits around it. The adoption handshake itself (setGraph waiting only while a published plan still
-// carries a settings commit to a type without RP_TYPE_STATELESS_PREPARE) has its own deterministic tests below
-// (it waits while a commit is queued, and while one is being adopted), since a race window that narrow is not
-// something a stress run can be relied on to hit.
+// carries a settings commit to a type without RP_TYPE_STATELESS_PREPARE) has its own deterministic tests below,
+// since a race window that narrow is not something a stress run can be relied on to hit: it never waits on a
+// stateless type, waits while a commit to another is queued and while one is being adopted, and a key change with a
+// same-key swap still unadopted rebuilds without seeing that swap.
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
@@ -273,23 +274,33 @@ TEST_CASE("setGraph never waits on a node that rebuilds on a key, whose key chan
     REQUIRE(rig.set(doc("a", 4)).ok);
     CHECK(rig.host->node("k") == before);
     rig.run();  // adopts all three, in order
-    const auto& k = rig.node<rp::graph::test::Keyed>("k");
-    CHECK(k.commits == 4);
-    CHECK(k.committed[1] == 2.0);
-    CHECK(k.committed[2] == 3.0);
-    CHECK(k.committed[3] == 4.0);
-    CHECK(k.blocks == 2);  // the same instance throughout
-    CHECK(k.level == 4.0f);
+    auto* k = &rig.node<rp::graph::test::Keyed>("k");
+    CHECK(k->commits == 4);
+    CHECK(k->committed[1] == 2.0);
+    CHECK(k->committed[2] == 3.0);
+    CHECK(k->committed[3] == 4.0);
+    CHECK(k->blocks == 2);  // the same instance throughout
+    CHECK(k->level == 4.0f);
 
-    // Another key is a new instance, its state afresh.
-    REQUIRE(rig.set(doc("b", 5)).ok);
-    rig.run();
+    // A key change while a same-key swap for this instance is still unadopted, the interleaving only a key type makes
+    // reachable (a host that stops calling process while it stays active). The queued commit lands on the old
+    // instance; the rebuilt one starts from its own settings alone.
+    REQUIRE(rig.set(doc("a", 5)).ok);  // a live swap, queued
+    REQUIRE(rig.set(doc("b", 6)).ok);  // another key, planned while that is unadopted
+    rig.run();                         // adopts the swap on the old instance, then the rebuild
     CHECK(rig.host->node("k") != before);
-    CHECK(rig.node<rp::graph::test::Keyed>("k").blocks == 1);
-    CHECK(rig.node<rp::graph::test::Keyed>("k").commits == 1);
-    CHECK(rig.set(doc("b", 6)).ok);
+    rp_node* const rebuilt = rig.host->node("k");
+    const auto* fresh = &rig.node<rp::graph::test::Keyed>("k");
+    CHECK(fresh->commits == 1);  // its own settings alone: the queued 5 never reached it
+    CHECK(fresh->level == 6.0f);
+    CHECK(fresh->blocks == 1);
+
+    // The new instance swaps its own settings like any other.
+    REQUIRE(rig.set(doc("b", 7)).ok);
     rig.run();
-    CHECK(rig.node<rp::graph::test::Keyed>("k").level == 6.0f);
+    CHECK(rig.host->node("k") == rebuilt);
+    CHECK(fresh->commits == 2);
+    CHECK(fresh->level == 7.0f);
     rig.host->setAudioThreadOwns(false);
 }
 

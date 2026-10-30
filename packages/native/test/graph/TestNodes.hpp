@@ -261,8 +261,8 @@ struct Shape {
 
 // Rebuilds when its settings' key changes and swaps any other change, deciding which with rebuild_key rather than
 // needs_rebuild, so its prepare is stateless. Each block it writes its level; `blocks` is the state a rebuild would
-// lose, and `committed` the level of each settings on_settings saw, in order. Not in testPackage: a test that places
-// it registers keyedPackage.
+// lose, and `committed` the level of each settings on_settings saw, in order. Not in testPackage, so Registry's type
+// count is unchanged: a test that runs it in a graph registers keyedPackage.
 struct KeyedSettings {
     std::string key = "a";
     double      level = 0.0;
@@ -290,6 +290,33 @@ struct Keyed {
         for (std::uint32_t i = 0; i < b.frames(); ++i) outputs.out[0][i] = level;
         ++blocks;
     }
+};
+
+// Reshapes and rebuilds on a key, so a change that moves the layout and the key together answers rebuild: the
+// REBUILD-before-RESHAPE order. Not in testPackage, like Keyed, and nothing places it in a graph.
+struct KeyedShapeSettings {
+    std::string              key = "a";
+    std::vector<std::string> outs;
+};
+
+struct KeyedShape {
+    static constexpr const char* id = "rp.test.keyedshape";
+    static constexpr bool reshapes = true;
+    static constexpr bool stateless_prepare = true;
+    using Settings = KeyedShapeSettings;
+    struct { rp::events_out out; } outputs;
+
+    static std::string rebuild_key(const Settings& s) { return s.key; }
+    static void adjust_layout(Layout& l, const Settings& s) {
+        for (const auto& id : s.outs) {
+            PortDesc p;
+            p.id = id;
+            p.dir = PortDir::Out;
+            p.kind = PortKind::Events;
+            l.ports.push_back(p);
+        }
+    }
+    void process(const rp::Block&) noexcept {}
 };
 
 inline const rp_package* keyedPackage() {

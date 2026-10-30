@@ -192,6 +192,21 @@ TEST_CASE("a node that reshapes answers reshape for a layout change, and a state
     CHECK(rp::node_type<test::Source>()->flags == 0u);  // by default prepare may read the current settings
 }
 
+TEST_CASE("a node that reshapes and rebuilds on a key answers rebuild for a change that does both",
+          "[graph][node][reshape]") {
+    // REBUILD is answered before RESHAPE, so a key change that moves the layout too is a new instance, never a
+    // reshape of the old one.
+    Made m{rp::node_type<test::KeyedShape>()};
+    make(m, R"({"key":"a","outs":["b"]})");
+    rp_error err{};
+    void* prepared = nullptr;
+    rp_settings wider = json(R"({"key":"a","outs":["a","b"]})");
+    REQUIRE(m.node->vt->prepare_settings(m.node, &wider, &prepared, &err) == RP_PREPARE_RESHAPE);
+    m.node->vt->release_settings(m.node, prepared);
+    rp_settings rekeyed = json(R"({"key":"b","outs":["a","b"]})");
+    CHECK(m.node->vt->prepare_settings(m.node, &rekeyed, &prepared, &err) == RP_PREPARE_REBUILD);
+}
+
 TEST_CASE("a node that rebuilds on a key compares the key it was created with, so it may prepare statelessly",
           "[graph][node]") {
     CHECK(rp::node_type<test::Keyed>()->flags == RP_TYPE_STATELESS_PREPARE);
