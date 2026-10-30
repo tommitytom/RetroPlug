@@ -1096,8 +1096,11 @@ TEST_CASE("a system node's enum knobs take the labels the role configs spell, an
         INFO(refused);
         CHECK(codes(rig.set(knobbed("rp.mesen.nes", rig.boot("rp.mesen.nes", 2, refused)))) == "settings-invalid");
     }
-    // A knob a refused document leaked would land at the next block, so one runs.
+    // A knob a refused document leaked would land at the next block, so one runs before the core is read again: what
+    // the refusals left unapplied is what they must not have applied.
     run(rig);
+    CHECK(core->config_.model == SameBoyModel::DmgB);
+    CHECK(core->config_.highpass == SameBoyHighpass::Accurate);
 }
 
 TEST_CASE("each knob reaches its core at the start of the next block of the plan that carries it",
