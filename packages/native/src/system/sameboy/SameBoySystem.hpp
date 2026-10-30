@@ -134,7 +134,6 @@ public:
     void setLightTemperature(double temperature);
 
     // SystemBase virtuals — see base class for contracts.
-    const std::string&        romPath() const override          { return config_.romPath; }
     std::uint32_t             savSuffix() const override         { return config_.savSuffix; }
     void                      setSavSuffix(std::uint32_t s) override { config_.savSuffix = s; }
     const std::string&        savPath() const override           { return config_.savPath; }

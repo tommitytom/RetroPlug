@@ -32,7 +32,8 @@ public:
     // document naming it is written.
     RpcPutResourceResult putResource(BackendResourceSpec spec);
     // The owner's drop of a resource putResource made: idempotent (false for an unknown or already dropped id), and it
-    // never frees one a plan still pins, which happens when that plan is reclaimed.
+    // never frees one a plan or a node instance still pins, which lasts until the plan that ran the instance is
+    // reclaimed.
     bool                releaseResource(std::uint32_t id);
     // Plan a document TS built (docs/modular-graph-phase-b2-design.md section 2.5).
     RpcSetGraphResult           setGraph(RpcSetGraphRequest request);

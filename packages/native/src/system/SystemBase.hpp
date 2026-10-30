@@ -144,13 +144,6 @@ public:
     // Default returns mean "this backend doesn't support the feature" — the
     // UI gates the menu row off when appropriate.
 
-    // Source ROM path. Empty when the system was constructed from embedded
-    // bytes only (no file on disk).
-    virtual const std::string& romPath() const {
-        static const std::string empty;
-        return empty;
-    }
-
     // Loose-battery disambiguator. 0 => this system owns the plain sibling
     // `<rom>.sav`; N>=2 => `<rom>-N.sav`. Lets multiple systems backed by the
     // same ROM file (Duplicate Instance / loading the same file twice) keep
@@ -159,10 +152,9 @@ public:
     virtual std::uint32_t savSuffix() const { return 0; }
     virtual void          setSavSuffix(std::uint32_t /*suffix*/) {}
 
-    // Explicit battery-file override. Empty => the loose `.sav` is derived from
-    // romPath + savSuffix (default). Non-empty => this exact file, set when the
-    // user pairs a hand-picked `.sav` with the ROM; all battery I/O targets it.
-    // The sav-path derivation lives in TS (savPaths.ts).
+    // Explicit battery-file override. Empty => the loose `.sav` is derived from the ROM's path and this suffix
+    // (default). Non-empty => this exact file, set when the user pairs a hand-picked `.sav` with the ROM; all battery
+    // I/O targets it. The sav-path derivation lives in TS (savPaths.ts).
     virtual const std::string& savPath() const {
         static const std::string empty;
         return empty;

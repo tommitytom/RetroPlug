@@ -75,13 +75,8 @@ struct SameBoyConfig {
     SameBoyColorCorrection    colorCorrection = SameBoyColorCorrection::Disabled;
     SameBoyDmgPalette         dmgPalette      = SameBoyDmgPalette::Grey;
     double                    lightTemperature = 0.0;  // -1 cool .. +1 warm, CGB only
-    // When true (default), saves embed `romBytes` so projects survive ROM
-    // file moves. When false, only `romPath` is persisted and the ROM is
-    // re-read from disk on load.
-    bool                      embedRom = true;
     // Per-system trim, dB. Smoothed at audio rate inside SameBoySystem::mixInto.
     float                     gainDb   = 0.0f;
-    std::string               romPath;    // absolute path; populated at bootstrap or load
     // Loose-battery disambiguator. 0 => this system owns the plain sibling
     // `<rom>.sav`; N>=2 => `<rom>-N.sav`. Assigned when a ROM ends up loaded
     // into more than one system (Duplicate Instance, or adding the same file
@@ -89,26 +84,14 @@ struct SameBoyConfig {
     // auto-saving over `<rom>.sav`. Persisted so it survives reload.
     std::uint32_t             savSuffix = 0;
     // Explicit battery-file override. Empty => derive `<rom>.sav` / `<rom>-N.sav`
-    // from romPath + savSuffix (the default). Non-empty => this exact file, set
-    // when the user pairs a hand-picked `.sav` with the ROM in the load browser;
+    // from the ROM's path and savSuffix (the default). Non-empty => this exact file,
+    // set when the user pairs a hand-picked `.sav` with the ROM in the load browser;
     // all battery reads/writes (auto-save, Save SRAM, project-load restore) then
     // target it instead of the sibling.
     std::string               savPath;
-    // Non-empty => this system's ROM is baked into the binary (id, e.g. "mgb"),
-    // not a file on disk. romPath stays empty (so no .sav / ROM-watcher); the
-    // bytes are supplied by rp::embeddedRom() on load (see EmbeddedRoms.hpp).
-    // Survives the thin-JSON strip (not a binary blob), so a saved project
-    // re-supplies the embedded ROM on reopen.
-    std::string               embeddedRom;
-    // Binary blobs (romBytes / sramBytes / stateBytes) are TS-owned now: projectStore
-    // frames a `.rplg.zip` with them as raw PKZIP entries, and a thin `.rplg` omits them
-    // entirely. Native only compresses. Nothing here serializes them.
-    std::vector<std::uint8_t> romBytes;   // populated when embedRom
-    // Cartridge battery RAM (.sav contents). Path-based ROM loads slurp the
-    // sibling `<rom>.sav` once and stash it here; subsequent host-project
-    // saves serialize whatever the running emulator currently has, so the
-    // SRAM is portable. Loaded into the emulator BEFORE `savestate`, so a
+    // Cartridge battery RAM (.sav contents), a build seed now: a node and a direct construction both hand the core
+    // bytes, and the emulator owns the battery once it is booted. Loaded into the emulator BEFORE `savestate`, so a
     // savestate's embedded SRAM still wins when both are set.
     std::vector<std::uint8_t> sram;
-    std::vector<std::uint8_t> savestate;  // optional, populated when persisting
+    std::vector<std::uint8_t> savestate;  // a state seed, likewise
 };

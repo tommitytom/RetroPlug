@@ -53,8 +53,9 @@ struct MesenSmsConfig {
     // fixtures keep it off for that, not because they must.
     bool          enableFm        = true;
 
-    bool          embedRom        = true;
     float         gainDb          = 0.0f;
+    // The file name Mesen stages the ROM under and logs it by. A node's build has only bytes and leaves this empty (the
+    // core stages "rom.sms", or `romName`'s stem); a direct construction in a test may name a file.
     std::string   romPath;
     // The ROM's file stem, for a core whose ROM is bytes with no path (a system node's rom resource). Mesen reads
     // three things out of the staged file's name: the machine (its extension), the battery stem, and the file Reset
@@ -67,10 +68,8 @@ struct MesenSmsConfig {
     // See SameBoyConfig::savPath. Empty => suffix-derived sibling; non-empty =>
     // a user-paired `.sav` file that all battery I/O targets.
     std::string   savPath;
-    // Binary blobs (romBytes / sramBytes / stateBytes) are TS-owned now: projectStore
-    // frames a `.rplg.zip` with them as raw PKZIP entries, and a thin `.rplg` omits them
-    // entirely. Native only compresses. Nothing here serializes them.
-    std::vector<std::uint8_t> romBytes;
+    // The battery and savestate seeds a node's resources carry, as a build takes them: the emulator owns both once it
+    // is booted, and a savestate's embedded SRAM wins when both are set.
     std::vector<std::uint8_t> sram;
     std::vector<std::uint8_t> savestate;
 };

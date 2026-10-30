@@ -118,8 +118,9 @@ export interface Backend {
 
   /** The owner's drop of a resource `putResource` made, once the document that names it has been replaced (a system
    *  removed, or rebuilt under a new id). Idempotent: false when the id was already dropped or never existed. It never
-   *  frees a resource a plan still pins: that happens when the plan is reclaimed, so a dropped resource stays readable
-   *  to the plan that was reading it. */
+   *  frees a resource a plan or a node instance still pins: a plan's binding and a node's settings field each hold one,
+   *  and the last goes when the plan that ran it is reclaimed, so a dropped resource stays readable to the plan that was
+   *  reading it. A new instance cannot acquire an owner-dropped id even while the old plan still pins it. */
   releaseResource(id: number): boolean;
 
   /** Plan and publish a graph document TS built (graph/buildGraph.ts): the engine's systems, their wiring

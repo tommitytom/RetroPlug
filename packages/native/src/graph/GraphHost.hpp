@@ -188,8 +188,8 @@ private:
     bool        waitForCommits();
     static const void* hostInterface(const rp_host* host, const char* id);
     static float* const* audioBuffers(const rp_host* host, std::uint32_t* count);
-    // rp.host.resources/1, over resources_: a node's hold on a resource its settings name (docs/
-    // modular-graph-phase-c3-design.md section 4), pinned at create and dropped when the instance is destroyed.
+    // rp.host.resources/1, over resources_: a node's hold on a resource its settings name
+    // (docs/modular-graph-phase-c3-design.md section 4), pinned at create and dropped when the instance is destroyed.
     static const rp_resource* resourceAcquire(void* ctx, std::uint32_t id, const char* type, rp_error* err);
     static bool               resourceRelease(void* ctx, std::uint32_t id);
     PlanOutcome planDocument(const GraphDocument& document, double sampleRate, std::uint32_t maxFrames);
