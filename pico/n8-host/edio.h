@@ -22,6 +22,7 @@ enum {
 #define EDIO_ADDR_SSR   0x1802000u   // sniffer: a running game's live APU/PPU/OAM write-mirror (0x200 B)
 #define EDIO_SNIFFER_SIZE 0x200u
 #define EDIO_ADDR_FIFO  0x1810000u   // cart FIFO -> the running ROM reads $40F0/$40F1
+#define EDIO_ADDR_CFG   0x1800020u   // the live mapper config the N8 OS writes at hand-over (16 B; [3] = expansion master volume)
 
 // Bind the CDC interface index the N8 is on (from tuh_cdc_mount_cb).
 void edio_bind(uint8_t cdc_idx);

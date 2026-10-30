@@ -18,6 +18,7 @@ PIO-USB - they don't contend.
 | 2.2 | **done (HW-verified)** | `edio.c/.h` port: status + sysInfo + memRD over PIO-USB |
 | 2.3 | **done (HW-verified 2026-10-30)** | `fifoWR` = memWR(0x1810000): the menu answers `*t`, and `boot_bliptoaster()` installs + boots the MIDI ROM through it, no PC (`loop.sh`, 5/5). It was blocked for months by the probe reading cart SRAM while the menu booted - see [`../pico-n8-fifo-write-bug.md`](../pico-n8-fifo-write-bug.md). |
 | 2.4 | **done (HW-verified 2026-10-30)** | the bridge: MIDI UART1/GP5 (reusing `../midi-in/midi.c`) -> one `fifoWR` per channel-voice message. Driven by a USB MIDI cable (CH345) into the TRS jack, with `amidi`: A4 / C5 on ch1 read back as Pulse1 timer 235 / 198 on the N8 sniffer and measured **440.3 Hz / 522.2 Hz** on the L6 capture (ch3), silent after note-off. (The August "verified" results were the PC host's residual note.) |
+| 2.5 | **done (HW-verified 2026-10-30)** | BlipToaster parity with the PC bridge: **SysEx** forwarded verbatim, the **expansion master volume** set when the cart needs it, aftertouch still filtered (BlipToaster ignores it). See "BlipToaster parity" below - Test G through the Pico matches the console numbers BlipToaster documented from the PC. |
 
 ## Dependencies (not in the repo yet - see "one-time setup")
 
@@ -143,6 +144,41 @@ forwarded batch. The L6 capture's ch3 measures the pitch
 Don't confuse it with the **L6's** own MIDI ports (`L6 MIDI I/O Port` etc.): those are USB
 control ports for the mixer, not a MIDI output, and writing to them can change capture settings.
 
+### BlipToaster parity: SysEx, expansion volume, aftertouch
+
+- **SysEx is forwarded verbatim.** The parser hands every SysEx byte (F0, payload, F7) to
+  `midi_sysex_to_fifo()`, which puts them in the same batch as the channel messages, so order is
+  kept and a long SysEx simply spans batches. A SysEx cut short by another status byte gets a
+  synthesised F7, so the ROM never sees one left open. BlipToaster takes N163 waves, GM System On
+  (a warm reboot) and its settings this way. `[stats]` counts them (`sysex=`).
+- **The expansion master volume** (VRC6 / VRC7 / N163 / Sunsoft 5B / MMC5) lives in the N8's
+  config block (`0x1800020` + 3). Whenever forwarding starts - after the Pico booted a ROM, or on
+  finding one already running - `exp_vol_check()` reads that block (the live config the N8 OS
+  writes at hand-over; system region, not a cart DMA). For an expansion mapper whose volume is 0
+  it writes `N8_EXP_VOL` (default 128, unity) and reads it back; a non-zero setting is left
+  alone. On this rig the N8 OS itself set 129-130 at every hand-over, so the raise has only been
+  exercised by forcing the register to 0 first (it then read back 128) - the PC tools' "0 after a
+  power-cycle" warning was not reproduced here.
+- **Aftertouch stays filtered.** BlipToaster's parser reads poly-aftertouch and channel pressure
+  and ignores both, and the older n8-midi.nes hung on the flood a Launchpad sends, so forwarding
+  them would only cost FIFO bandwidth.
+
+The base `bliptoaster.nes` is **2A03 only**: its mapper 69 (FME-7) banks the sample kits and drives
+no 5B voices - expansion audio needs a variant build (`bliptoaster-s5b.nes` etc.). Through the Pico
+(`--rom`), the 5B build plays A4 / C5 on ch6 at 440.06 Hz / 524.47 Hz, -27.9 dBFS on the L6's ch5.
+
+**BlipToaster's Test G** (its HARDWARE-TESTING.md: an N163 wave upload over SysEx while a note
+sounds), run through the Pico on the N163 build, against the numbers documented from the PC:
+
+| step (L6 capture) | through the Pico | BlipToaster doc (PC host) |
+|---|---|---|
+| control: 2A03 A4, ch3 | 440.30 Hz (+1.2 c), -32.9 dBFS | 440.31 Hz (+1.2 c), -34 dBFS |
+| N163 A3 on ch6, ch5 | 219.99 Hz (-0.1 c), -43.8 dBFS | 219.99 Hz (-0.1 c), -44.8 dBFS |
+| flat wave (SysEx) while it sounds | -77.4 dBFS: silent, no note-off | -75.7 dBFS |
+| restore (SysEx) | -43.8 dBFS | -44.8 dBFS |
+| square (SysEx) | -39.5 dBFS (+4.2 dB over the sine) | -41.2 dBFS (+3.6 dB) |
+| note-off | floor | floor |
+
 ### The stress test: `stress.sh`
 
 Boots the ROM fresh through `loop.sh`, then judges every case on the Pico's own counters (nothing
@@ -154,7 +190,8 @@ lost on the way in, everything forwarded) and on the ROM's state read back throu
 - a four-voice chord on and off (Pulse 1 / 2, triangle, noise);
 - running status and realtime bytes - as the cable re-serialises them: USB-MIDI packets carry
   whole messages, so the cable restores omitted status bytes (the parser's own handling of
-  running status and mid-message realtime bytes is `../midi-in/host_test.c`);
+  running status and mid-message realtime bytes is `../midi-in/parser_test.c`);
+- SysEx pass-through: a device inquiry and a 40-byte SysEx between notes, counted and in sync;
 - a paced soak (`--soak <s>`, `--rate <msgs/s>`; spawning amidi caps it near 300/s);
 - 40000 messages as one unbroken stream - the cable's own limit, ~800 msgs/s;
 - the NES power-cycled under a live stream: the Pico must re-boot the ROM itself and play again.

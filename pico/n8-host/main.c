@@ -63,6 +63,7 @@ typedef struct {
     uint32_t fwd_fail;     // messages in a fifoWR that returned false
     uint32_t writes;       // fifoWRs issued (each carries a batch of messages)
     uint32_t max_batch;    // most messages carried by one fifoWR
+    uint32_t sysex;        // complete SysEx messages forwarded (counted in fwd too)
     uint32_t filtered;     // aftertouch, dropped on purpose
     uint32_t not_ready;    // dropped because the N8 was not up
     uint32_t uart_oe;      // bytes lost to a full UART hardware FIFO
@@ -287,14 +288,12 @@ static void boot_bliptoaster(void) {
     printf("[n8-host] BlipToaster booted by the Pico - no PC used.\n");
 }
 
-// The bridge sink: a complete MIDI message from the parser -> the N8 FIFO. Forward
-// only channel-voice messages (0x80-0xEF); system + realtime bytes (clock/sensing/
-// transport) are dropped. CRITICAL: aftertouch is ALSO dropped - poly-aftertouch
-// (0xA0) and channel-pressure (0xD0) are high-rate continuous streams (a Launchpad
-// floods channel-pressure while any pad is held). Forwarding that flood overruns the
-// N8 cart FIFO faster than BlipToaster drains it, which desyncs its MIDI parser and
-// HANGS the ROM on the last note (observed on hardware). BlipToaster only plays notes,
-// so we forward note-on/off + program-change + pitch-bend + CC and drop the rest.
+// The bridge sink: a complete MIDI message from the parser -> the N8 FIFO. Channel-voice
+// messages (0x80-0xEF) are forwarded, SysEx through midi_sysex_to_fifo(); system common and
+// realtime bytes (clock / sensing / transport) are dropped. Aftertouch is dropped too:
+// poly-aftertouch (0xA0) and channel-pressure (0xD0) are high-rate continuous streams (a
+// Launchpad floods channel-pressure while any pad is held), and no ROM here uses them -
+// BlipToaster's parser reads and ignores both, and the older n8-midi.nes HUNG on that flood.
 // Program-change carries one data byte, the rest two. Every message is sent with its status
 // byte (no running status), so a batch is just the messages back to back.
 static void midi_to_fifo(const midi_message *m, void *user) {
@@ -307,11 +306,26 @@ static void midi_to_fifo(const midi_message *m, void *user) {
 
     uint32_t n = (m->type == MIDI_PROGRAM_CHANGE) ? 2 : 3;   // 1-data-byte message
     if (batch_len + n > BATCH_MAX) batch_flush();
+    if (batch_len == 0) batch_first_us = cur_byte_us;
     batch[batch_len++] = m->status;
     batch[batch_len++] = m->data0;
     if (n == 3) batch[batch_len++] = m->data1;
-    if (batch_msgs == 0) batch_first_us = cur_byte_us;
     batch_msgs++;
+}
+
+// SysEx, byte by byte from the parser (F0, payload, F7 - a terminator is synthesised if another
+// status cuts one short), into the same batch as the channel messages so order is kept. BlipToaster
+// takes N163 waves, GM System On and its settings this way. A long SysEx simply spans batches: the
+// ROM reads one byte stream. One whose start was dropped (the N8 not ready) is dropped whole.
+static bool sysex_open = false;
+static void midi_sysex_to_fifo(uint8_t b, void *user) {
+    (void)user;
+    if (b == 0xF0) sysex_open = forward_ok;
+    if (!sysex_open) { if (b == 0xF7) stats.not_ready++; return; }
+    if (batch_len + 1 > BATCH_MAX) batch_flush();
+    if (batch_len == 0) batch_first_us = cur_byte_us;
+    batch[batch_len++] = b;
+    if (b == 0xF7) { stats.sysex++; batch_msgs++; sysex_open = false; }
 }
 
 // Once a second, if anything moved: what the bridge received, forwarded and lost. A message
@@ -338,9 +352,10 @@ static void stats_report(void) {
     lat_sum = lat_n = lat_win_max = 0;
     if (memcmp(&last, &stats, sizeof stats) == 0) return;
     last = stats;
-    printf("[stats] rx=%lu msgs=%lu fwd=%lu fail=%lu writes=%lu maxbatch=%lu filtered=%lu "
+    printf("[stats] rx=%lu msgs=%lu sysex=%lu fwd=%lu fail=%lu writes=%lu maxbatch=%lu filtered=%lu "
            "notready=%lu oe=%lu fe=%lu ringfull=%lu maxfwd=%luus lat=%lu/%luus\n",
-           (unsigned long)stats.rx_bytes, (unsigned long)stats.msgs, (unsigned long)stats.fwd,
+           (unsigned long)stats.rx_bytes, (unsigned long)stats.msgs, (unsigned long)stats.sysex,
+           (unsigned long)stats.fwd,
            (unsigned long)stats.fwd_fail, (unsigned long)stats.writes,
            (unsigned long)stats.max_batch, (unsigned long)stats.filtered,
            (unsigned long)stats.not_ready, (unsigned long)stats.uart_oe,
@@ -382,6 +397,46 @@ static void sniff_report(void) {
     printf("[sniff] %s\n", line);
 }
 
+// The N8 mixes expansion audio (VRC6 / VRC7 / N163 / Sunsoft 5B / MMC5) through an FPGA master
+// volume that is 0 after a power-cycle - so every expansion voice is silent, which reads exactly
+// like a dead chip, until a host sets it. The PC tools do (`n8-play --exp-vol`, defaulting to unity
+// for these mappers); this is the same rule, run whenever forwarding starts - after the Pico booted
+// a ROM, or on finding one already running. It reads the live config block the N8 OS writes when it
+// hands a game over (system region, not a cart-bus DMA), so it covers a ROM booted from the SD path
+// as well as a staged one, and it only raises a volume still at 0: a deliberate setting is kept.
+#ifndef N8_EXP_VOL
+#define N8_EXP_VOL 128   // unity (0 mute, 255 = 2x)
+#endif
+static const char *expansion_chip(uint16_t mapper) {
+    switch (mapper) {
+        case 5:  return "MMC5";
+        case 19: return "N163";
+        case 24: case 26: return "VRC6";
+        case 69: return "Sunsoft 5B";
+        case 85: return "VRC7";
+        default: return NULL;
+    }
+}
+
+static void exp_vol_check(void) {
+    uint8_t cfg[16];
+    if (!edio_mem_rd(EDIO_ADDR_CFG, cfg, sizeof cfg)) { printf("[n8-host] config read FAILED\n"); return; }
+    uint16_t mapper = (uint16_t)(((cfg[2] >> 4) << 8) | cfg[0]);
+    bool game = (cfg[7] & 0x80) != 0;   // ctrl bit 7: a game core is configured (the menu is map 255)
+    const char *chip = expansion_chip(mapper);
+    if (!game || !chip) return;
+    if (cfg[3] != 0) {
+        printf("[n8-host] mapper %u (%s): expansion volume already %u\n", mapper, chip, cfg[3]);
+        return;
+    }
+    uint8_t v = N8_EXP_VOL;
+    bool ok = edio_mem_wr(EDIO_ADDR_CFG + 3, &v, 1);
+    uint8_t back = 0;   // a live register: read it back to confirm the write took
+    if (ok) ok = edio_mem_rd(EDIO_ADDR_CFG + 3, &back, 1) && back == v;
+    printf("[n8-host] mapper %u (%s): expansion volume 0 -> %u%s\n", mapper, chip, back,
+           ok ? "" : " (write FAILED)");
+}
+
 int main(void) {
 #ifndef USE_NATIVE_USB
     set_sys_clock_khz(120000, true);   // PIO-USB needs a 120 MHz-multiple clock
@@ -409,6 +464,7 @@ int main(void) {
 
     midi_parser parser;
     midi_parser_init(&parser, midi_to_fifo, NULL);
+    midi_parser_set_sysex_sink(&parser, midi_sysex_to_fifo);
     bool was_forwarding = false;
 
 #ifdef USE_NATIVE_USB
@@ -454,6 +510,9 @@ int main(void) {
         if (forward_ok && !was_forwarding) {
             rx_tail = rx_head;
             midi_parser_init(&parser, midi_to_fifo, NULL);
+            midi_parser_set_sysex_sink(&parser, midi_sysex_to_fifo);
+            sysex_open = false;
+            exp_vol_check();
         }
         was_forwarding = forward_ok;
         if (forward_ok) sniff_report();

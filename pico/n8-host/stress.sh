@@ -144,6 +144,20 @@ echo "== running status + realtime bytes (F8 clock, FE sensing)"
 judge runstat 6 24 '90 F8 45 7F F8 48 FE 7F 4C F8 7F' '90 45 00 F8 48 00 4C FE 00'
 reference runstat
 
+echo "== SysEx pass-through: a device inquiry, then a 40-byte SysEx, between notes"
+# Both go to the ROM verbatim (F0 .. F7); BlipToaster ignores these two, so the check is that the
+# bytes arrive, the Pico counts two SysEx forwarded, and the notes around them still play. (Not GM
+# System On: BlipToaster treats F0 7E 7F 09 01 F7 as a warm reboot. Test G in README.md drives a
+# SysEx the ROM acts on - an N163 wave upload - against the console's audio.)
+a=$(stats)
+send "90 45 7F F0 7E 7F 06 01 F7 80 45 00 F0 7D 7F $(printf '%02X ' $(seq 0 35))F7"
+b=$(stats)
+d_rx=$(( $(field rx "$b") - $(field rx "$a") )); d_sx=$(( $(field sysex "$b") - $(field sysex "$a") ))
+d_fwd=$(( $(field fwd "$b") - $(field fwd "$a") ))
+check sysex "bytes in $d_rx / 52, SysEx forwarded $d_sx / 2, messages forwarded $d_fwd / 4" \
+	$( [ $d_rx = 52 ] && [ $d_sx = 2 ] && [ $d_fwd = 4 ] && echo 1 || echo 0 )
+reference sysex
+
 echo "== soak: ${soak}s at ~${rate} messages/s, rotating ch1-ch3"
 a=$(stats); t0=$SECONDS; t_end=$((SECONDS + soak)); sent=0; i=0
 per=$(( rate / 20 )); [ $per -lt 1 ] && per=1     # note pairs per 100 ms chunk
