@@ -111,32 +111,60 @@ export class ResourcePool {
  *  back what it had already taken. Every boot puts its own ROM, so a rebuild's file is read again from its source. */
 export function bootSystem(pool: ResourcePool, spec: ConstructSpec): BootResult {
   const handles: number[] = [];
-  const giveBack = (error: string): BootResult => {
-    for (const id of handles) pool.drop(id);
-    return { error };
+  // What a boot that cannot finish gives back: every handle it took, each offered on its own so a release that throws
+  // too cannot strand the ones behind it. A put that throws is the transport's failure rather than a refusal the engine
+  // answered, and the document that would have named what this boot put never goes out, so nothing else could ever
+  // release it.
+  const giveBack = (): void => {
+    for (const id of handles) {
+      try {
+        pool.drop(id);
+      } catch (e) {
+        console.warn(`[resources] giving back a boot's resource threw too: ${String(e)}`);
+      }
+    }
   };
-  const put = pool.put(romSource(spec));
-  if ("error" in put) return { error: put.error };
-  const rom = put.id;
-  handles.push(rom);
-  let sram: number | undefined;
-  let state: number | undefined;
-  const there = (p: string): boolean => pool.backend.fileExists(p);
-  // The battery first, then the savestate, as a core applies them (a savestate restored over its own battery is the
-  // machine it was taken from).
-  const sramPut = seedSource("sram", spec.sramBytes, spec.savPath, there);
-  if (sramPut) {
-    const put = pool.put(sramPut);
-    if ("error" in put) return giveBack(put.error);
-    sram = put.id;
-    handles.push(sram);
+  try {
+    const put = pool.put(romSource(spec));
+    if ("error" in put) {
+      giveBack();
+      return { error: put.error };
+    }
+    const rom = put.id;
+    handles.push(rom);
+    let sram: number | undefined;
+    let state: number | undefined;
+    const there = (p: string): boolean => pool.backend.fileExists(p);
+    // The battery first, then the savestate, as a core applies them (a savestate restored over its own battery is the
+    // machine it was taken from).
+    const sramPut = seedSource("sram", spec.sramBytes, spec.savPath, there);
+    if (sramPut) {
+      const put = pool.put(sramPut);
+      if ("error" in put) {
+        giveBack();
+        return { error: put.error };
+      }
+      sram = put.id;
+      handles.push(sram);
+    }
+    const statePut = seedSource("state", spec.stateBytes, spec.statePath, there);
+    if (statePut) {
+      const put = pool.put(statePut);
+      if ("error" in put) {
+        giveBack();
+        return { error: put.error };
+      }
+      state = put.id;
+      handles.push(state);
+    }
+    return {
+      type: systemNodeTypeFor(spec.platform),
+      resources: { rom, sram, state },
+      romName: romNameOf(spec),
+      handles,
+    };
+  } catch (e) {
+    giveBack();
+    throw e;
   }
-  const statePut = seedSource("state", spec.stateBytes, spec.statePath, there);
-  if (statePut) {
-    const put = pool.put(statePut);
-    if ("error" in put) return giveBack(put.error);
-    state = put.id;
-    handles.push(state);
-  }
-  return { type: systemNodeTypeFor(spec.platform), resources: { rom, sram, state }, romName: romNameOf(spec), handles };
 }

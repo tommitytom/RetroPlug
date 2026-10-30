@@ -162,26 +162,52 @@ export class DirectGraph {
   }
 
   // Apply an edit to the model and publish; a refused document puts the model back, gives back the resources the edit
-  // put and releases the ones it replaced only once a document naming the new model has planned.
+  // put and releases the ones it replaced only once a document naming the new model has planned. A publish that throws
+  // is the engine's or the transport's failure rather than a refusal it answered, and the graph counts it as refused
+  // (the engine keeps the plan it ran), so it takes the same rollback before the error reaches the caller.
   private change(edit: () => unknown, rearmTap: boolean, put: number[] = [], drop: number[] = []): boolean {
     const systems = this.systems.slice();
     const routing = this.routing;
     const midiRouting = this.midiRouting;
     const controller = this.controller;
+    const rollback = (): void => {
+      this.systems = systems;
+      this.routing = routing;
+      this.midiRouting = midiRouting;
+      this.controller = controller;
+      for (const id of put) {
+        try {
+          this.pool.drop(id);
+        } catch (e) {
+          console.warn(`[graph] giving back a change's resource threw too: ${String(e)}`);
+        }
+      }
+    };
     edit();
-    if (this.publish(rearmTap)) {
-      for (const id of drop) this.pool.drop(id);
-      return true;
+    try {
+      if (this.publish(rearmTap)) {
+        for (const id of drop) this.pool.drop(id);
+        return true;
+      }
+    } catch (e) {
+      rollback();
+      this.resendRestored();
+      throw e;
     }
-    this.systems = systems;
-    this.routing = routing;
-    this.midiRouting = midiRouting;
-    this.controller = controller;
-    for (const id of put) this.pool.drop(id);
-    // EngineGraph keeps a refused document's systems as its model, so hand it the restored one: otherwise a later
-    // shape change would place the systems of the edit just rolled back.
-    this.publish(false);
+    rollback();
+    this.resendRestored();
     return false;
+  }
+
+  // EngineGraph keeps a refused document's systems as its model, so hand it the restored one: otherwise a later shape
+  // change would place the systems of the edit just rolled back. Its failure is said, never thrown, since the caller's
+  // own is the one it must see.
+  private resendRestored(): void {
+    try {
+      this.publish(false);
+    } catch (e) {
+      console.warn(`[graph] the restored model's send threw too: ${String(e)}`);
+    }
   }
 
   /** Put `spec`'s resources and the system its node places, or nothing with the reason logged when one would not

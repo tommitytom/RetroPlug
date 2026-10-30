@@ -286,14 +286,15 @@ render path and every host go through the store as today.
 - **`pnpm test`** ([store-resources.test.ts](../packages/retroplug/test/systems/store-resources.test.ts)): each verb's
   resource and publish order, the release after a publish, the rollback after a refusal, a restore republish refused
   too, a project load dropping its bad system, the construct-time reset, a construct-time edit to the value already
-  stored moving nothing, a publish that throws rolling back as a refusal does, a release that throws finishing the
-  rollback it is in and leaving the verb's own answer alone, `clear` and `discard` offering every handle either holds
-  when one release throws, a sparse stored config's live edits, a stored value the schema repairs taking its rebuild,
-  DirectGraph's add/replace/remove, every put balanced by a release; and the mock backend's own refusals
-  ([meta.test.ts](../packages/retroplug/test/meta.test.ts)): a resource spec with no source or more than one, a null
-  source counting as none, a path that is there and empty becoming an empty resource (a zero-byte `.sav`) while an
-  empty one for a `rom` is refused, and a system node's rebuild key moved under a live id (native's "system N is
-  live").
+  stored moving nothing, a publish that throws rolling back as a refusal does, a put that throws partway through a boot
+  giving back what that boot put and rethrowing, a release that throws finishing the rollback it is in and leaving the
+  verb's own answer alone, `clear` and `discard` offering every handle either holds when one release throws, a sparse
+  stored config's live edits, a stored value the schema repairs taking its rebuild, DirectGraph's add/replace/remove and
+  a DirectGraph publish that throws rolling back as a refusal does, every put balanced by a release; and the mock
+  backend's own refusals ([meta.test.ts](../packages/retroplug/test/meta.test.ts)): a resource spec with no source or
+  more than one, a null source counting as none, a path that is there and empty becoming an empty resource (a zero-byte
+  `.sav`) while an empty one for a `rom` is refused, and a system node's rebuild key moved under a live id (native's
+  "system N is live").
 - **`test:native`** ([app-construct-edit.test.ts](../packages/retroplug/test-native/app-construct-edit.test.ts)): a NES
   FIFO profile edit changes the queue's capacity with no Reset, an export-mode edit makes the per-channel streams
   appear, an SMS FM edit silences an FM song, a sparse stored config keeps a live edit, a param and a later live edit

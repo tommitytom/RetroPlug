@@ -177,6 +177,33 @@ test("a refused publish puts the model back, gives back what it put, and reports
   expect(failure.warnings.length).toBeGreaterThan(0); // the engine's reason, and the rollback, are said
 });
 
+test("a put that throws partway through a boot gives back what it already put, and rethrows", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.sav", "battery"); // so the boot puts the ROM, then the battery: the second put throws
+  const putResource = be.putResource.bind(be);
+  let puts = 0;
+  be.putResource = (spec) => {
+    if (++puts === 2) throw new Error("the putResource RPC died");
+    return putResource(spec);
+  };
+  const { result, warnings } = warned(() => {
+    try {
+      store.addSystem("/roms/a.gb");
+      return "no throw";
+    } catch (e) {
+      return String(e);
+    }
+  });
+  be.putResource = putResource;
+  expect(result.includes("the putResource RPC died")).toBe(true);
+  // A refusal gives the boot's handles back, and so does a throw: the document that would have named the ROM the boot
+  // had put never goes out, so no later verb could ever give it back. The system is not listed either.
+  expect(heldIds(be)).toEqual([]);
+  expect(store.systems()).toEqual([]);
+  expect(warnings).toEqual([]);
+});
+
 test("a project load drops the system a refusal names, with a note, and publishes the rest", () => {
   const be = new MockBackend("/cfg");
   be.seed("/roms/a.gb", gbRom());
@@ -715,6 +742,51 @@ test("DirectGraph puts each system's resources and releases them after the docum
   expect(g.remove(2)).toBe(true);
   expect(order(be)).toEqual(["setGraph", "releaseResource"]);
   expect(heldIds(be)).toEqual([]);
+});
+
+test("DirectGraph puts a throwing publish back as a refused one, and sends the restored model", () => {
+  const be = new MockBackend("/cfg");
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/b.nes", nesRom());
+  const g = new DirectGraph(be);
+  const spec = (romPath: string, platform: "gb" | "nes", core: "sameboy" | "mesen"): ConstructSpec => ({
+    romPath,
+    platform,
+    core,
+    embeddedRom: "",
+    savPath: null,
+    statePath: null,
+  });
+  expect(g.add(spec("/roms/a.gb", "gb", "sameboy"), 1)).toBe(true);
+  const heldBefore = heldIds(be);
+  const requests = be.graphRequests.length;
+  const setGraph = be.setGraph.bind(be);
+  let threw = false;
+  be.setGraph = (request) => {
+    if (!threw) {
+      threw = true;
+      throw new Error("the setGraph RPC died");
+    }
+    return setGraph(request);
+  };
+  const { result: failure, warnings } = warned(() => {
+    try {
+      g.add(spec("/roms/b.nes", "nes", "mesen"), 2);
+      return "";
+    } catch (e) {
+      return String(e);
+    }
+  });
+  be.setGraph = setGraph;
+  // A throw is the engine's failure, not a refusal it answered, and the graph counts it as refused (the engine keeps
+  // the plan it ran): the model goes back, the resource the edit put is given back, and the restored model is sent so
+  // a later shape change does not place the systems of the change just rolled back.
+  expect(failure.includes("the setGraph RPC died")).toBe(true);
+  expect(g.ids()).toEqual([1]);
+  expect(heldIds(be)).toEqual(heldBefore);
+  expect(be.graphRequests.length).toBe(requests + 1);
+  expect(be.graphRequests[be.graphRequests.length - 1].slots).toEqual([1]);
+  expect(warnings).toEqual([]);
 });
 
 test("DirectGraph gives back a refused change's resources and keeps the ones it still places", () => {

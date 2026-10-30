@@ -332,7 +332,9 @@ stores (the native tests, the CLI's `analyze-lsdj-sync` session and the `lsdj-de
 one per process, `directGraph()`). Its `add(spec, id)` / `replace(oldId, spec, id)` / `remove(id)` keep its systems
 list in slot order (add appends, replace keeps the slot, remove shifts later slots down); each boot puts the spec's
 ROM and seeds through the shared helper, and a resource is given back once the document that stopped naming it has
-planned, a refused change giving back what it put and restoring the document before it. A system it adds or replaces
+planned, a refused change giving back what it put and restoring the document before it. A publish that throws (an
+engine or transport fault, which the graph counts as refused) rolls back the same way before the error reaches the
+caller, as the store's `commitEdit` does. A system it adds or replaces
 has no roles, and what the script nodes are told is three calls of its own, each a publish: `setPipeline(id, roles)`
 (each role with a protocol node placed as one, its config as given), `setMidiRouting(mode)` and
 `setController(controller)` (its app config parsed by the app's schema, as the project's is). Until
