@@ -5,7 +5,9 @@
 // a case keeps the audio side owning the drain, which is how a pin is watched across a reclaim.
 #include <catch2/catch_test_macros.hpp>
 
+#include <stdexcept>
 #include <string>
+#include <string_view>
 
 #include "GraphRig.hpp"
 #include "graph/node.hpp"
@@ -460,4 +462,20 @@ TEST_CASE("needs_rebuild reads a resource through a resolved handle, and is skip
     CHECK(rig.needs().blocks == 0);
     rig.run();
     CHECK(rig.needs().blocks == 1);
+}
+
+TEST_CASE("the named field walk lets what its callers build throw out of it", "[graph][resource]") {
+    // The resource fields are walked with their JSON names because a field that is refused is named in the reason, and
+    // that reason (like the pins the same walk takes) is built inside the walk. An allocation that fails there has to
+    // reach the catch around a create or a prepare, which turns it into that node's refusal; a `noexcept` walk would
+    // make it a terminate, taking the host down for a document that could have been refused.
+    ResourceNodeSettings s;
+    int                  seen = 0;
+    CHECK_THROWS_AS(rp::detail::forEachNamedField(s, [&](std::string_view name, auto&) {
+                        if (name != "rom") return;
+                        ++seen;
+                        throw std::runtime_error("no room for " + std::string(name));
+                    }),
+                    std::runtime_error);
+    CHECK(seen == 1);  // the throw came from the field the resource walk is for
 }

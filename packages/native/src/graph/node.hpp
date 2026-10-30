@@ -433,10 +433,12 @@ template <class S, class F>
 void forEachField(S& s, F&& f) noexcept {
     rfl::to_view(s).apply([&](auto& field) { f(*field.value()); });
 }
-// The same walk with each field's JSON name, for the two that need it (the ports, and the resource fields a settings
-// struct declares).
+// The same walk with each field's JSON name, for the settings fields that name a resource: each refuses with a reason
+// that names the field. Not `noexcept`, unlike forEachField, whose bodies only bind ports and params: what runs inside
+// this one builds std::strings and the pins it takes, so an allocation that fails there has to reach the catch around
+// a create or a prepare, which turns it into that node's refusal. A `noexcept` here makes it a terminate instead.
 template <class S, class F>
-void forEachNamedField(S& s, F&& f) noexcept {
+void forEachNamedField(S& s, F&& f) {
     rfl::to_view(s).apply([&](auto&... fields) { (f(std::string_view(fields.name()), *fields.value()), ...); });
 }
 
