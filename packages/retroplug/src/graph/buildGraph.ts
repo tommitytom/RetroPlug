@@ -71,9 +71,9 @@ export interface GraphSystem {
   pipeline: ProtocolRole[];
   /** The config of the system's core-config role, the one whose kind is its core (`sameboy` or `mesen`, coreRoles.ts):
    *  where its node's setting fields and a NES's expansionVolume come from (systemKnobs). Absent for a system with
-   *  none (a DirectGraph's, a store's with no registry, the B1 goldens' models), whose node carries none of them, so
-   *  its core keeps the settings it was built with; the params it does not name still start at their defaults at its
-   *  first block. */
+   *  none (a DirectGraph's, a store's with no registry, the B1 goldens' models), whose node carries none of the live
+   *  fields (its construct-time fields are still written, at the node's default), so its core keeps the settings it was
+   *  built with; the params it does not name still start at their defaults at its first block. */
   coreConfig?: Readonly<Record<string, unknown>>;
   /** The system's gain in dB (CommonSettings.gainDb), its node's `gain` param. Absent places no value, which leaves
    *  the param's stream where it is: at its default, 0 dB, on a new node. */
@@ -175,22 +175,32 @@ const CONFIG_PARAMS: Readonly<Record<SystemNodeType, readonly string[]>> = {
   "rp.mesen.sms": [],
 };
 
+/** A construct-time field: whether the node takes the stored value as written, and the value written when it does not.
+ *  The fallback is the node's own default (SystemNodes.cpp's config structs), which the role schema fills for a fresh
+ *  config (coreRoles.ts), so a document names the same value whether or not the stored config held one. */
+interface ConstructField {
+  takes: Knob;
+  fallback: unknown;
+}
+
 /** Each system node type's CONSTRUCT-TIME fields from its core config: the ones its node reads once, when it builds
  *  its core at activation, so a change to one is a rebuild under a new system id rather than a document
- *  (docs/modular-graph-phase-c3-design.md section 3). */
-const CONSTRUCT_FIELDS: Readonly<Record<SystemNodeType, Readonly<Record<string, Knob>>>> = {
+ *  (docs/modular-graph-phase-c3-design.md section 3). Every one is written to every document, its default where the
+ *  config holds no value the node takes: an absent field and one at its default are different rebuild keys, so a
+ *  re-publish that flipped between them would ask for a new core under a live id. */
+const CONSTRUCT_FIELDS: Readonly<Record<SystemNodeType, Readonly<Record<string, ConstructField>>>> = {
   "rp.sameboy.gb": {},
   "rp.mesen.nes": {
-    sdRoot: (v) => typeof v === "string",
-    fifo: label(FIFO_PROFILE_VALUES),
-    fifoDepth: intIn(0, 1 << 20),
-    fifoBytesPerSecond: intIn(0, 100_000_000),
-    n8Link: label(N8_LINK_VALUES),
-    n8LinkRttUs: intIn(0, 100_000),
-    channelExportMode: label(CHANNEL_EXPORT_VALUES),
+    sdRoot: { takes: (v) => typeof v === "string", fallback: "" },
+    fifo: { takes: label(FIFO_PROFILE_VALUES), fallback: "instant" },
+    fifoDepth: { takes: intIn(0, 1 << 20), fallback: 0 },
+    fifoBytesPerSecond: { takes: intIn(0, 100_000_000), fallback: 0 },
+    n8Link: { takes: label(N8_LINK_VALUES), fallback: "auto" },
+    n8LinkRttUs: { takes: intIn(0, 100_000), fallback: 2200 },
+    channelExportMode: { takes: label(CHANNEL_EXPORT_VALUES), fallback: "mix" },
   },
   "rp.mesen.gba": {},
-  "rp.mesen.sms": { enableFm: flag },
+  "rp.mesen.sms": { enableFm: { takes: flag, fallback: true } },
 };
 
 /** A system node's knobs: what its settings carry beside its resources and its system id (and a Game Boy's capture,
@@ -213,15 +223,28 @@ function takenFields(
   return out;
 }
 
-/** The knobs a system node carries for `system`: its type's setting fields and construct-time fields as its core
- *  config holds them, each left out where absent or one the node would refuse; its gain; and its type's params from
- *  its core config. The one place that says which field is which: the store reads it too, to tell a setting's edit,
- *  which publishes, from a param's, which it sets live, and a construct-time field's, which rebuilds the system
- *  (SystemsStore.setRoleConfig). */
+// Every construct-time field of `type`, as its node builds its core: the config's value where the node takes it, the
+// node's own default otherwise. A value the node would refuse takes the default here rather than an absent field, so
+// the document never depends on which of the two the stored config held.
+function constructFields(
+  fields: Readonly<Record<string, ConstructField>>,
+  config: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [field, { takes, fallback }] of Object.entries(fields))
+    out[field] = takes(config[field]) ? config[field] : fallback;
+  return out;
+}
+
+/** The knobs a system node carries for `system`: its type's setting fields as its core config holds them (each left
+ *  out where absent or one the node would refuse), its construct-time fields in full (the default where the config
+ *  holds none the node takes), its gain, and its type's params from its core config. The one place that says which
+ *  field is which: the store reads it too, to tell a setting's edit, which publishes, from a param's, which it sets
+ *  live, and a construct-time field's, which rebuilds the system (SystemsStore.setRoleConfig). */
 export function systemKnobs(system: Pick<GraphSystem, "type" | "coreConfig" | "gainDb">): SystemKnobs {
   const config: Readonly<Record<string, unknown>> = system.coreConfig ?? {};
   const settings = takenFields(SETTING_FIELDS[system.type] ?? {}, config);
-  const construct = takenFields(CONSTRUCT_FIELDS[system.type] ?? {}, config);
+  const construct = constructFields(CONSTRUCT_FIELDS[system.type] ?? {}, config);
   const params: Record<string, number> = {};
   if (finite(system.gainDb)) params.gain = system.gainDb;
   for (const param of CONFIG_PARAMS[system.type] ?? []) {
@@ -231,19 +254,37 @@ export function systemKnobs(system: Pick<GraphSystem, "type" | "coreConfig" | "g
   return { settings, construct, params };
 }
 
-/** The knobs of `config` that `systemKnobs` leaves out for `type`, with their values: a setting or construct-time field
- *  whose value the node would refuse (another label, a number out of its range, another type), and a param whose value
- *  is not a finite number, which a document cannot carry (the planner clamps and rounds any number it is given). A
+/** The knobs of `config` that `systemKnobs` does not carry as written for `type`, with their values: a setting field
+ *  whose value the node would refuse (another label, a number out of its range, another type) is left out, a
+ *  construct-time field the node would refuse takes the node's default in its place, and a param whose value is not a
+ *  finite number cannot ride a document (the planner clamps and rounds any number it is given) and is left out. A
  *  caller with a config as written, not through its role's schema (SystemsStore.adopt), notes them, so a stored knob
  *  the document drops leaves a trace. */
 export function droppedKnobs(type: SystemNodeType, config: Readonly<Record<string, unknown>>): [string, unknown][] {
-  const fields = { ...SETTING_FIELDS[type], ...CONSTRUCT_FIELDS[type] };
+  const settings = SETTING_FIELDS[type];
+  const construct = CONSTRUCT_FIELDS[type];
   const params = CONFIG_PARAMS[type] ?? [];
   return Object.entries(config).filter(
     ([field, value]) =>
-      (Object.prototype.hasOwnProperty.call(fields, field) && !fields[field](value)) ||
+      (Object.prototype.hasOwnProperty.call(settings, field) && !settings[field](value)) ||
+      (Object.prototype.hasOwnProperty.call(construct, field) && !construct[field].takes(value)) ||
       (params.includes(field) && !finite(value)),
   );
+}
+
+/** The settings a system node's core is built from once, as the node's rebuild_key compares them (SystemNodes.cpp):
+ *  its type, its system id, its resources, its ROM's name, its machine (a Game Gear's `gameGear`) and every
+ *  construct-time field. A document that changes one of them under a system id an older plan still runs asks for a
+ *  new core while the old one is live, which the engine refuses ("system N is live"); TS moves a rebuild to a new id,
+ *  and the mock backend reads this to refuse the same. NodeDoc settings absent from the key are the live knobs and
+ *  params, which a document may change under the same id. */
+export function rebuildKeyOf(node: Pick<NodeDoc, "type" | "settings">): Record<string, unknown> {
+  const construct = (CONSTRUCT_FIELDS as Readonly<Record<string, Readonly<Record<string, ConstructField>>>>)[node.type];
+  const fields = ["system", "rom", "sram", "state", "romName", "gameGear", ...Object.keys(construct ?? {})];
+  const settings = node.settings ?? {};
+  const key: Record<string, unknown> = { type: node.type };
+  for (const field of fields) if (Object.prototype.hasOwnProperty.call(settings, field)) key[field] = settings[field];
+  return key;
 }
 
 /** The link group a system's core config names (a Game Boy's cable): its `linkGroupId`, or 0 for unlinked. */

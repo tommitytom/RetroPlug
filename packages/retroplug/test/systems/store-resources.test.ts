@@ -361,18 +361,21 @@ test("a refused setting edit leaves the role as it was", () => {
   expect(be.lastBoot()!.id).toBe(id);
 });
 
-test("a sparse stored core config leaves a live knob and a param live, not a rebuild", () => {
+test("a sparse stored core config keeps live edits live, and only a construct-time edit rebuilds", () => {
   const { be, store } = newStore();
   be.seed("/roms/a.nes", nesRom());
   // A project saved before the mesen role schema grew its construct-time fields: the stored config holds only what
-  // it knew. The comparison must use the schema's normalised view on both sides, or every omitted default looks like
-  // a construct-time move and a live knob restarts the cart.
+  // it knew. Every document names every construct-time field (the node's default where the stored config holds none),
+  // so what the running node was built from and what an edit writes are the same values.
   const id = store.adopt({
     romPath: "/roms/a.nes",
     core: "mesen",
     roles: [{ kind: "mesen", config: { region: "pal" } }],
   })!;
   const resources = store.systems()[0].resources;
+  // The document the adopt published already names them, so a live edit moves no rebuild key.
+  expect(be.graphNode(`sys-${id}`)?.settings?.fifo).toBe("instant");
+  expect(be.graphNode(`sys-${id}`)?.settings?.n8LinkRttUs).toBe(2200);
   be.log.length = 0;
   expect(store.setRoleConfig(id, "mesen", { removeSpriteLimit: true })).toBe(true); // a live setting: a document
   expect(store.systems()[0].id).toBe(id);
@@ -389,6 +392,43 @@ test("a sparse stored core config leaves a live knob and a param live, not a reb
     be.paramCalls.some((c) => c.nodeId === `sys-${id}` && c.paramId === "expansionVolume" && c.value === 40),
   ).toBe(true);
   expect(be.releaseResourceCalls).toEqual([]);
+
+  // A publish after the param-only edit names the whole config now, construct-time fields included: still the same
+  // node, so the edit lands live rather than being refused.
+  be.log.length = 0;
+  expect(store.setRoleConfig(id, "mesen", { region: "ntsc" })).toBe(true);
+  expect(store.systems()[0].id).toBe(id);
+  expect(order(be)).toEqual(["setGraph"]);
+  expect(be.graphNode(`sys-${id}`)?.settings?.region).toBe("ntsc");
+
+  // A construct-time field is the one edit that rebuilds, under a new id with the battery.
+  expect(store.setRoleConfig(id, "mesen", { fifo: "hardware" })).toBe(true);
+  const rebuilt = store.systems()[0].id;
+  expect(rebuilt === id).toBe(false);
+  expect(be.graphNode(`sys-${rebuilt}`)?.settings?.fifo).toBe("hardware");
+  expect(be.graphNode(`sys-${rebuilt}`)?.settings?.removeSpriteLimit).toBe(true);
+});
+
+test("a stored construct value the schema repairs takes the rebuild it needs, rather than a refused document", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.nes", nesRom());
+  // The stored depth is out of the role schema's range: the node never took it, so the adopt's document names the
+  // node's own default. An edit's schema parse clamps it, which is a different value from the one the live core was
+  // built with, so the edit rebuilds rather than publishing a document that moves the key under a live id.
+  const adopted = warned(() =>
+    store.adopt({
+      romPath: "/roms/a.nes",
+      core: "mesen",
+      roles: [{ kind: "mesen", config: { fifoDepth: 2_000_000 } }],
+    }),
+  );
+  const id = adopted.result!;
+  expect(be.graphNode(`sys-${id}`)?.settings?.fifoDepth).toBe(0);
+  expect(store.setRoleConfig(id, "mesen", { region: "pal" })).toBe(true);
+  const rebuilt = store.systems()[0].id;
+  expect(rebuilt === id).toBe(false);
+  expect(be.graphNode(`sys-${rebuilt}`)?.settings?.fifoDepth).toBe(1 << 20); // the schema's clamp, in the document
+  expect(be.graphNode(`sys-${rebuilt}`)?.settings?.region).toBe("pal");
 });
 
 test("clear publishes the empty document and then gives every system's resources back", () => {

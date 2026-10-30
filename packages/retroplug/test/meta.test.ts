@@ -119,6 +119,39 @@ test("mock backend: a document naming a resource the engine does not hold is ref
   });
 });
 
+test("mock backend: a document that moves a system node's rebuild key under a live id is refused, as native refuses it", () => {
+  const be = new MockBackend("/cfg");
+  const rom = be.putResource({ type: "rom", bytes: Uint8Array.of(1, 2, 3) });
+  const other = be.putResource({ type: "rom", bytes: Uint8Array.of(4, 5, 6) });
+  if ("error" in rom || "error" in other) throw new Error("the puts should have been taken");
+  const doc = (over: Record<string, unknown> = {}): SetGraphRequest => ({
+    document: JSON.stringify({
+      nodes: [
+        {
+          id: "sys-1",
+          type: "rp.mesen.nes",
+          settings: { system: 1, rom: `res:${rom.id}`, romName: "a", fifo: "instant", ...over },
+        },
+      ],
+      wires: [],
+    }),
+    slots: [1],
+  });
+  expect(be.setGraph(doc()).ok).toBe(true);
+  // A live knob and a param are the same node: the document plans under the id it already holds.
+  expect(be.setGraph(doc({ region: "pal" })).ok).toBe(true);
+  expect(be.setGraph(doc({ region: "pal", removeSpriteLimit: true })).ok).toBe(true);
+  // A construct-time field, the ROM's name and a moved resource each ask for a new core while the old one is live: the
+  // engine refuses the whole document, naming the node and its reason.
+  const live = { nodeId: "sys-1", port: "", code: "activate-failed", message: "system 1 is live" };
+  expect(be.setGraph(doc({ fifo: "hardware" })).errors[0]).toEqual(live);
+  expect(be.setGraph(doc({ region: "pal", removeSpriteLimit: true, n8Link: "off" })).errors[0]).toEqual(live);
+  expect(be.setGraph(doc({ romName: "b" })).errors[0]).toEqual(live);
+  expect(be.setGraph(doc({ rom: `res:${other.id}` })).errors[0]).toEqual(live);
+  // A refusal changes nothing: the document the engine runs is still the last one that planned.
+  expect(be.setGraph(doc({ region: "pal", removeSpriteLimit: true })).ok).toBe(true);
+});
+
 test("mock backend: loadScriptPack refuses every pack, before any replan, with no types", () => {
   // It has no JS engine to run a pack's nodes in (test-native/script-packs.test.ts runs them on the real host).
   const be: Backend = new MockBackend("/cfg");

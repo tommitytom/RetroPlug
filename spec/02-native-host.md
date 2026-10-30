@@ -422,7 +422,9 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   from -90 to 12, default 0; `expansionVolume` an int param, whole percent of unity from 0 to 200, default 100, as the
   core takes it. The construct-time fields are the ones the core reads as it boots and has no setter for: NES `sdRoot`,
   `fifo`, `fifoDepth`, `fifoBytesPerSecond`, `n8Link`, `n8LinkRttUs` and `channelExportMode`, SMS `enableFm` and
-  `gameGear`, each a label or an int in the range the store clamps it to.
+  `gameGear`, each a label or an int in the range the store clamps it to. `buildGraph` writes every one of them, the
+  node's default where the stored config holds no value the node takes, so a document never flips one between absent
+  and present under a system id (the key tells the two apart).
 - **Only a new core rebuilds.** The node keys its rebuild on `system`, `romName` and its construct-time fields
   (node.hpp's `rebuild_key`: prepare compares the new settings' key with the key the instance was created with, which
   no commit writes), declares `stateless_prepare`, so every other settings change is a commit that never makes

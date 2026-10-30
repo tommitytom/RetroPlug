@@ -66,6 +66,13 @@ test("adopt gives the node the saved mesen (NES) role config, its construct-time
     removeSpriteLimit: true,
     sdRoot: "/sd",
     fifo: "hardware",
+    // Every construct-time field the stored config leaves out is written at the node's default: an absent field and
+    // one at its default are different rebuild keys, so a document must never depend on which it held.
+    fifoDepth: 0,
+    fifoBytesPerSecond: 0,
+    n8Link: "auto",
+    n8LinkRttUs: 2200,
+    channelExportMode: "mix",
   }));
   expect("gameGear" in (boot?.settings ?? {})).toBe(false); // an SMS field: a NES node does not name it
 });

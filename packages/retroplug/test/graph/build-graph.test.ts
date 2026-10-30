@@ -96,7 +96,7 @@ test("Stereo sums every system into one pair, in slot order", () => {
 
 test("a system node names its core by its system id, and a Game Boy's its capture", () => {
   expect(built([gb(4)]).node("sys-4")).toEqual({ id: "sys-4", type: "rp.sameboy.gb", settings: { system: 4, rom: "res:4", romName: "rom4", serialOutCapture: "off" } });
-  expect(built([nes(5)]).node("sys-5")).toEqual({ id: "sys-5", type: "rp.mesen.nes", settings: { system: 5, rom: "res:5", romName: "rom5" } });
+  expect(built([nes(5)]).node("sys-5")).toEqual({ id: "sys-5", type: "rp.mesen.nes", settings: { system: 5, rom: "res:5", romName: "rom5", ...NES_CONSTRUCT } });
 });
 
 test("one system on a lane is wired straight in", () => {
@@ -491,6 +491,9 @@ registerCoreRoles(CORE_ROLES);
 const coreConfig = (kind: "sameboy" | "mesen", over: Record<string, unknown> = {}): Record<string, unknown> =>
   CORE_ROLES.roleType(kind)!.schema.parse(over) as Record<string, unknown>;
 const gba = (id: number): GraphSystem => ({ id, platform: "gba", type: "rp.mesen.gba", linkGroup: 0, exportMode: 0, resources: { rom: id }, romName: `rom${id}`, pipeline: [] });
+// Every construct-time field of a NES node at its default: buildGraph writes them all, so a document never depends on
+// whether a stored config held one, and a re-publish of an unchanged config never moves its node's rebuild key.
+const NES_CONSTRUCT = { sdRoot: "", fifo: "instant", fifoDepth: 0, fifoBytesPerSecond: 0, n8Link: "auto", n8LinkRttUs: 2200, channelExportMode: "mix" };
 
 test("each system node's settings carry its core config's setting fields, and its params its gain and a NES's expansion volume", () => {
   const sameboy = coreConfig("sameboy", { model: "dmgB", highpass: "removeDcOffset", fastBoot: false, colorCorrection: "lowContrast", dmgPalette: "gbl", lightTemperature: -0.25, linkGroupId: 3 });
@@ -528,15 +531,16 @@ test("each system node's settings carry its core config's setting fields, and it
   expect(built([configured]).node("sys-2")?.settings?.channelExportMode).toBe(exportLabel);
 });
 
-test("a system with no core config or gain carries none: its core keeps its settings, its params the defaults", () => {
+test("a system with no core config carries its construct-time fields at their defaults, and no knob or param", () => {
   const g = built([gb(1), nes(2), gba(3), sms(4)]);
   for (const id of [1, 2, 3, 4]) expect(g.node(`sys-${id}`)?.params, `sys-${id}`).toBe(undefined);
-  expect(g.node("sys-2")?.settings).toEqual({ system: 2, rom: "res:2", romName: "rom2" });
-  // A config holding only some fields gives the node those alone.
+  expect(g.node("sys-2")?.settings).toEqual({ system: 2, rom: "res:2", romName: "rom2", ...NES_CONSTRUCT });
+  expect(g.node("sys-4")?.settings).toEqual({ system: 4, rom: "res:4", romName: "rom4", enableFm: true });
+  // A config holding only some live fields gives the node those, and every construct-time field at its default.
   expect(built([{ ...nes(2), coreConfig: { region: "dendy" } }]).node("sys-2")).toEqual({
     id: "sys-2",
     type: "rp.mesen.nes",
-    settings: { system: 2, rom: "res:2", romName: "rom2", region: "dendy" },
+    settings: { system: 2, rom: "res:2", romName: "rom2", region: "dendy", ...NES_CONSTRUCT },
   });
 });
 
@@ -549,7 +553,7 @@ test("a knob the node would refuse is left out, so one stored config cannot refu
   ]);
   expect(g.node("sys-1")).toEqual({ id: "sys-1", type: "rp.sameboy.gb", settings: { system: 1, rom: "res:1", romName: "rom1", dmgPalette: "gbl", serialOutCapture: "off" } });
   // A param out of range is sent: the planner clamps it, as it clamps a live edit.
-  expect(g.node("sys-2")).toEqual({ id: "sys-2", type: "rp.mesen.nes", settings: { system: 2, rom: "res:2", romName: "rom2", s5bNoise: "n8" }, params: { gain: 999 } });
+  expect(g.node("sys-2")).toEqual({ id: "sys-2", type: "rp.mesen.nes", settings: { system: 2, rom: "res:2", romName: "rom2", s5bNoise: "n8", ...NES_CONSTRUCT }, params: { gain: 999 } });
 });
 
 test("a Game Boy captures its serial out for the mode its lsdj-sync node runs: drive for MI.OUT, listen for master sync, off otherwise", () => {

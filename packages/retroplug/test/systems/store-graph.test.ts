@@ -92,6 +92,18 @@ const knobs = (be: MockBackend, id: number): Record<string, unknown> => {
   return rest;
 };
 
+// Every construct-time field of a NES node at its default: buildGraph writes them all, so the document never depends
+// on whether the stored config held one.
+const NES_CONSTRUCT = {
+  sdRoot: "",
+  fifo: "instant",
+  fifoDepth: 0,
+  fifoBytesPerSecond: 0,
+  n8Link: "auto",
+  n8LinkRttUs: 2200,
+  channelExportMode: "mix",
+};
+
 // The nodes a role of `kind` on Game Boy `id` is placed as, in document order: lsdj-sync's two (its rp.lsdj.sync, and
 // its serial-out decoder after the systems), any other's one.
 const roleNodes = (id: number, kind: string): string[] =>
@@ -881,7 +893,7 @@ test("a stored core config value the system node would refuse is noted, so a dro
   const nes = (over: Record<string, unknown>) =>
     sys.adopt({ romPath: "/roms/c.nes", core: "mesen", roles: [{ kind: "mesen", config: over }] })!;
   const dropped = warned(() => nes({ region: "PAL", expansionVolume: "40" }));
-  expect(knobs(be, dropped.result!)).toEqual(canon({}));
+  expect(knobs(be, dropped.result!)).toEqual(canon(NES_CONSTRUCT));
   expect(be.graphNode(`sys-${dropped.result}`)?.params).toEqual({ gain: 0 }); // the param is left out, not sent
   expect(dropped.warnings).toEqual([
     '[systems] /roms/c.nes: its stored mesen config holds a value this build does not read as written: ' +
@@ -891,10 +903,10 @@ test("a stored core config value the system node would refuse is noted, so a dro
     '[systems] /roms/c.nes: its stored mesen config holds a value this build does not read as written: ' +
       'dropped expansionVolume null',
   ]);
-  // A construct-time field is a node setting too, so an unreadable one is dropped the same way: the node builds its
-  // core with its own default, and the load says so. An unknown label's schema default equals its native default, but
-  // a value the schema would clamp or round does not: the node's own default applies, not the repaired value. A finite
-  // fraction rides the param, as any number does, and the planner rounds it.
+  // A construct-time field is a node setting too, so an unreadable one is dropped the same way: the document names the
+  // node's own default in its place, and the load says so. An unknown label's schema default equals its native
+  // default, but a value the schema would clamp or round does not: the node's own default applies, not the repaired
+  // value. A finite fraction rides the param, as any number does, and the planner rounds it.
   const construct = warned(() => nes({ region: "pal", fifo: "futureBuild", expansionVolume: 25.7, sdRoot: "/sd" }));
   expect(construct.warnings).toEqual([
     '[systems] /roms/c.nes: its stored mesen config holds a value this build does not read as written: ' +
@@ -902,7 +914,7 @@ test("a stored core config value the system node would refuse is noted, so a dro
   ]);
   const settings = be.bootOf(construct.result!)!.settings;
   expect(settings.region).toBe("pal");
-  expect("fifo" in settings).toBe(false);
+  expect(settings.fifo).toBe("instant"); // the refused label's place is the node's default, written out
   expect(settings.sdRoot).toBe("/sd");
   expect(be.graphNode(`sys-${construct.result}`)?.params).toEqual(canon({ gain: 0, expansionVolume: 25.7 }));
   // The store still keeps what the file said, for a build that knows the label.
@@ -919,9 +931,9 @@ test("a stored core config value the system node would refuse is noted, so a dro
       'dropped fifoDepth 4096.5, dropped fifoBytesPerSecond 1000.25, dropped n8LinkRttUs 2200.5',
   ]);
   const fractionalSettings = be.bootOf(fractional.result!)!.settings;
-  expect("fifoDepth" in fractionalSettings).toBe(false);
-  expect("fifoBytesPerSecond" in fractionalSettings).toBe(false);
-  expect("n8LinkRttUs" in fractionalSettings).toBe(false);
+  expect(fractionalSettings.fifoDepth).toBe(0);
+  expect(fractionalSettings.fifoBytesPerSecond).toBe(0);
+  expect(fractionalSettings.n8LinkRttUs).toBe(2200);
 });
 
 test("an adopt never reports a key its document supplies itself (a Game Gear's gameGear)", () => {
@@ -943,15 +955,15 @@ test("an adopt never reports a key its document supplies itself (a Game Gear's g
 });
 
 test("a hand-edited sdRoot that is not a string loads at the node's empty root, not a failed load", () => {
-  // A hand edit for "no SD root" is null. The document cannot carry it (the node reads a string), so the field is
-  // left out and the node's own default - the empty root, a per-process scratch directory - applies: the load adopts
-  // the system rather than failing on a value the whole plan would be refused for.
+  // A hand edit for "no SD root" is null. The document cannot carry it (the node reads a string), so the node's own
+  // default - the empty root, a per-process scratch directory - is written in its place: the load adopts the system
+  // rather than failing on a value the whole plan would be refused for.
   const { be, sys } = project();
   const { result: id, warnings } = warned(() =>
     sys.adopt({ romPath: "/roms/c.nes", core: "mesen", roles: [{ kind: "mesen", config: { sdRoot: null } }] }),
   );
   expect(id !== null).toBe(true);
-  expect("sdRoot" in (be.bootOf(id!)?.settings ?? {})).toBe(false);
+  expect((be.bootOf(id!)?.settings ?? {}).sdRoot).toBe("");
   expect(warnings).toEqual([
     '[systems] /roms/c.nes: its stored mesen config holds a value this build does not read as written: ' +
       'dropped sdRoot null',

@@ -74,8 +74,11 @@ Every system node type (`rp.sameboy.gb`, `rp.mesen.nes`, `rp.mesen.gba`, `rp.mes
 | construct-time | NES `sdRoot`, `fifo`, `fifoDepth`, `fifoBytesPerSecond`, `n8Link`, `n8LinkRttUs`, `channelExportMode`; SMS `enableFm`, `gameGear` |
 | C2's | The live settings and params, unchanged |
 
-The construct-time fields are optional, like C2's settings: an absent one builds the core at its default. Their enums
-are labels as the role configs spell them, read by C2's `knobs::Label`.
+The construct-time fields are optional in the native settings, an absent one building the core at its default, and
+`buildGraph` writes every one: the stored value where the node takes it, else the node's own default, which the role
+schema fills for a fresh config. So no document flips a field between absent and present under one system id, which
+matters because the key tells the two apart. Their enums are labels as the role configs spell them, read by C2's
+`knobs::Label`.
 
 **`rebuild_key`** covers `system`, `romName` and every construct-time field, so a change to any of them rebuilds the
 node (and the system nodes keep `stateless_prepare`: a live knob edit still never makes `setGraph` wait). The resource
@@ -193,13 +196,14 @@ once: the document it was in never planned, so nothing pinned them.
 
 **A construct-time edit** is the reset path, run by `setRoleConfig` itself: the `systemKnobs` table gains a third
 column beside settings and params, and when one of its fields moves the store rebuilds the system under a new id with
-the new settings, carrying its battery, and answers whether that build planned. Its two sides are compared through the
-role schema's parse of the stored config (falling back to the raw config where the parse throws), so a sparse stored
-config looks like the same knobs a fresh one carries and a live knob edit stays live rather than rebuilding. A stored
-value the role schema would repair on the way in (a number clamped or rounded into range) now leaves the value out of
-the node's settings, so the node's own default applies: that matches the old repair where the repair was the default,
-and differs where it clamped or rounded. An unknown label keeps its old meaning, since the schema's default for one is
-the native default.
+the new settings, carrying its battery, and answers whether that build planned. Its two sides are `systemKnobs`: the
+stored config as written, which is what the running document carried, against the edit's schema parse. Every
+construct-time field is written in full, so a sparse stored config names the same values a fresh one does and a live
+knob edit stays live rather than rebuilding; a stored value the schema repairs becomes one the node takes, which the
+running core was not built with, so that edit takes the rebuild it needs. A stored value the role schema would repair on
+the way in (a number clamped or rounded into range) is one the running node never took, so its place in the document is
+the node's default: that matches the old repair where the repair was the default, and differs where it clamped or
+rounded. An unknown label keeps its old meaning, since the schema's default for one is the native default.
 
 **The id a rebuild replaced still resolves for `reset`.** A rebuild that swaps the id records `old -> new` in the
 store's `replacedBy` map, and `reset` is the one verb that reads it: a `reset(oldId)` follows a chain of rebuilds to
@@ -222,7 +226,8 @@ and `DirectGraph` name, with the node type and ROM name their documents write, s
 `DirectGraph.add` a literal spec barely change. Its
 `core` names the kind of core whose role config `coreConfig` is and selects no core. **The mock backend** implements
 `putResource` and `releaseResource`, and refuses a document naming an unknown or dropped resource, a wrong-typed one, a
-bad `res:` spelling or a system node with no ROM. The render path and every host go through the store as today.
+bad `res:` spelling or a system node with no ROM, and one that moves a system node's rebuild key under an id it already
+places (native's "system N is live"). The render path and every host go through the store as today.
 
 **Persistence:** nothing changes. A project saves roles and blobs; resources live only at runtime. No migration.
 
@@ -244,8 +249,9 @@ bad `res:` spelling or a system node with no ROM. The render path and every host
   plan that pinned it is reclaimed, pins balanced).
 - **`pnpm test`** ([store-resources.test.ts](../packages/retroplug/test/systems/store-resources.test.ts)): each verb's
   resource and publish order, the release after a publish, the rollback after a refusal, a restore republish refused
-  too, a project load dropping its bad system, the construct-time reset, a sparse stored config's live edit,
-  `clear`/`discard`, DirectGraph's add/replace/remove, every put balanced by a release.
+  too, a project load dropping its bad system, the construct-time reset, a sparse stored config's live edits, a stored
+  value the schema repairs taking its rebuild, the mock's refusal of a rebuild-key move under a live id, `clear`/
+  `discard`, DirectGraph's add/replace/remove, every put balanced by a release.
 - **`test:native`** ([app-construct-edit.test.ts](../packages/retroplug/test-native/app-construct-edit.test.ts)): a NES
   FIFO profile edit changes the queue's capacity with no Reset, an export-mode edit makes the per-channel streams
   appear, an SMS FM edit silences an FM song, duplicate/reset/load-state carry what they carry today, and a project
@@ -305,7 +311,7 @@ models with Claude for the deep reviews and the final one.
 The plan's list of departures is recorded across this document: the resources a document names, `rebuild_key`'s
 narrowed list and the staged stem in section 3; `rp::resource_ref` and the pins a node holds in section 4; the build at
 activation through `rp.host.systems/1`, the `SystemTable` it fills and the refusals in section 5; the store's verbs,
-the construct-time rebuild and the schema-parsed comparison in section 6; the per-console twins and the goldens in
+the construct-time rebuild and its comparison in section 6; the per-console twins and the goldens in
 section 7; and the findings below.
 
 - **A resource field needs no `rebuild_key` entry, and a knob edit keeps the pin.** `node.hpp` compares the prepared
@@ -315,14 +321,19 @@ section 7; and the findings below.
 - **A rebuild's ROM resource is only shared when its source is the same.** A rebuild that always shared the old ROM
   silently kept an asset role's previous image: `bootSystem` compares path, embedded marker or image bytes, and a
   reload puts a fresh ROM resource because the file watcher is one of its callers (sections 4 and 6).
-- **The stored value the role schema would have repaired now leaves the node's default.** There is no blob to carry a
-  repaired value. `systemKnobs` leaves out a value the node would refuse and notes it, so an out-of-range number or a
-  fractional integer takes the node's own default where the blob took the clamp or the rounded value; an unknown label
-  keeps its meaning because the schema's default and the native default agree (section 6).
-- **A construct-time edit is compared through the role schema's parse.** The store compares `systemKnobs` over the
-  stored config as its role schema reads it (falling back to the raw config when the parse throws) with the parsed
-  edited config. Without that, a sparse stored config looked like it moved every omitted field to its default, and a
-  live knob edit rebuilt the system under a new id (section 6).
+- **A stored value the role schema would have repaired now takes the node's default.** There is no blob to carry a
+  repaired value. `systemKnobs` writes the node's own default where the stored value is one it would refuse, and notes
+  it, so an out-of-range number or a fractional integer takes that default where the blob took the clamp or the rounded
+  value; an unknown label keeps its meaning because the schema's default and the native default agree (section 6).
+- **`buildGraph` writes every construct-time field, and a construct-time edit is compared over the stored config as
+  written.** A system node's rebuild key tells an absent construct-time field from one present at its default, and a
+  project saved before the schema grew a field (every NES project saved before `n8Link`) carries a sparse config. A
+  document that began writing the omitted defaults under the same id moved the key, so the engine refused the first
+  live knob edit ("system N is live"), and a param-only edit's later publish too. Every field is now written (the
+  stored value, else the node's default), and the store compares `systemKnobs` over the raw stored config, which is
+  what the running document carried, with the edit's schema parse: a sparse config adds no move, while a stored value
+  the schema repairs takes the rebuild it needs. The mock backend refuses a rebuild-key move under a live id with
+  native's text, so the mock tier can see this class of bug (sections 3 and 6).
 - **The pre-C3 `setRoleConfig` + `reset(oldId)` pattern still works.** The plan's review found both consumer suites
   relied on it: they move a construct-time field and then call `reset` on the id they held to learn the id carrying the
   new settings (BlipToaster's `bootRomWith` does `setRoleConfig(id0, "mesen", { n8Link: "off" })` then

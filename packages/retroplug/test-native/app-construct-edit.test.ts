@@ -8,7 +8,9 @@
 //  - an SMS's FM switch decides whether the YM2413 is emulated at all, so an FM-instrument song goes silent.
 // And what a rebuild CARRIES: a construct-time edit and a reset the battery, a duplicate the whole machine, a load-state
 // the file it was given. A Game Boy has no construct-time field of its own (its model and the rest are applied live), so
-// its rebuilds are the reset path itself.
+// its rebuilds are the reset path itself. A stored core config written by an older build holds only the fields it knew,
+// and every document names the rest at their defaults: an edit must stay live rather than move its node's rebuild key
+// under a live id.
 //
 // Run with: `pnpm test:native app-construct-edit`.
 import { test, expect, skip } from "../testing/harness";
@@ -202,6 +204,34 @@ test("duplicate takes the whole machine, reset carries the battery, load-state t
   expect(new Uint8Array(be.readState(loaded)!)).toEqual(saved);
   store.removeSystem(loaded);
   store.removeSystem(dup);
+});
+
+test("a sparse stored NES config keeps a live edit, a param and a later live edit live", () => {
+  const { be, project } = session();
+  if (!be.fileExists(NES)) skip(`no ROM at ${NES}`);
+  const store = project.systems;
+  // A project saved before the mesen role schema grew its construct-time fields: its core config holds only what that
+  // build knew. Every document names every construct-time field at the node's default, so the document the running
+  // node was planned from and the one an edit sends agree on what its core was built with.
+  const id = store.adopt({ romPath: NES, core: "mesen", roles: [{ kind: "mesen", config: { region: "pal" } }] })!;
+  expect(store.setRoleConfig(id, "mesen", { removeSpriteLimit: true })).toBe(true);
+  expect(store.view()[0].id).toBe(id); // a live setting: a document under the id the running node holds
+  expect(store.setRoleConfig(id, "mesen", { expansionVolume: 40 })).toBe(true);
+  expect(store.view()[0].id).toBe(id); // a param: set live, no document
+  // The publish after the param-only edit names the whole config again, construct-time fields included: still the same
+  // node, so it plans rather than being refused for a new core under a live id.
+  expect(store.setRoleConfig(id, "mesen", { region: "ntsc" })).toBe(true);
+  expect(store.view()[0].id).toBe(id);
+  const second = store.addSystem(NES)!;
+  expect(store.view().map((e) => e.id)).toEqual([id, second]);
+  // The one edit that is a rebuild still rebuilds, and the new core has the new value.
+  expect(store.setRoleConfig(id, "mesen", { fifo: "hardware" })).toBe(true);
+  const rebuilt = store.view()[0].id;
+  expect(rebuilt === id).toBe(false);
+  expect(store.view()[0].id).toBe(rebuilt);
+  expect(be.getCoreTransportStats(rebuilt).rxCapacity).toBe(2048);
+  store.removeSystem(rebuilt);
+  store.removeSystem(second);
 });
 
 test("a project with one unreadable ROM loads the rest, with a note", () => {

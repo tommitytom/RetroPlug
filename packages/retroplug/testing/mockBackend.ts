@@ -7,6 +7,8 @@
 import type { ApuState, ApuSquareState, Backend, BreakHitBatch, SetGraphRequest, SetGraphResult, LoadScriptPackResult, BreakInfo, Breakpoint, CallFrame, CoreTransportStats, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, PutResourceResult, ResourceSpec, ResourceType, TraceLine, ZipEntry } from "../src/backend";
 import { savFromJson } from "../src/lsdj";
 import type { GraphDocument, NodeDoc } from "../src/graph/graphDocument";
+import { rebuildKeyOf } from "../src/graph/buildGraph";
+import { canonicalJson } from "../src/graph/canonicalJson";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -414,6 +416,10 @@ export class MockBackend implements Backend {
     };
   }
 
+  /** The system node each live system was last placed with, by id: a document that changes one's rebuild key under
+   *  the id it already holds asks for a new core while the old one is live, which native refuses. */
+  private systemNodes = new Map<number, NodeDoc>();
+
   /** The boot of the most recently booted system, in the last document that placed it: the convenience for the many
    *  cases that own one system. Undefined when no document placed one. */
   lastBoot(): MockBoot | undefined {
@@ -424,21 +430,29 @@ export class MockBackend implements Backend {
   // The slots become the live systems: every system the document does not place goes. The engine runs each system's
   // node from the resources its settings name (docs/modular-graph-phase-c3-design.md section 6), so this is where a
   // document naming a resource the engine does not hold is refused: an unknown or dropped id, a resource of another
-  // type, a field that is not a reference at all, or no ROM.
+  // type, a field that is not a reference at all, or no ROM. A system it already places is reused only while its
+  // rebuild key holds: a document that moves one of those fields under the same id asks for a new core while the old
+  // one is live, which native refuses with the same words.
   setGraph(request: SetGraphRequest): SetGraphResult {
     this.log.push("setGraph");
     this.graphRequests.push(request);
     const nodes = new Map(((JSON.parse(request.document) as GraphDocument).nodes ?? []).map((n) => [n.id, n]));
     const live = new Map<number, MockSystem>();
+    const placed = new Map<number, NodeDoc>();
     for (const id of request.slots) {
       const node = nodes.get(`sys-${id}`);
       if (!node) return refusedGraph(`sys-${id}`, "slots", `the document places no system node for id ${id}`);
       const problem = this.resourceProblem(node);
       if (problem) return refusedGraph(node.id, problem.code, problem.message);
+      const was = this.systemNodes.get(id);
+      if (was && canonicalJson(rebuildKeyOf(was)) !== canonicalJson(rebuildKeyOf(node)))
+        return refusedGraph(node.id, "activate-failed", `system ${id} is live`);
       live.set(id, this.systemOf(node));
+      placed.set(id, node);
       if (!this.bootedIds.includes(id)) this.bootedIds.push(id);
     }
     this.systems = live;
+    this.systemNodes = placed;
     return { ok: true, errors: [] };
   }
 

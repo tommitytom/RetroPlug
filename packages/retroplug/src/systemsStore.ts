@@ -659,21 +659,14 @@ export class SystemsStore {
     const roles = e.roles.slice();
     roles[idx] = { kind: roleKind, config };
     const type = systemNodeTypeFor(e.platform);
-    // Compare two normalised views: the stored config as its role schema reads it, falling back to the raw config when
-    // that parse throws. A project saved by a build whose schema omitted a field would otherwise look like it moved
-    // every omitted field to its default, and a live knob edit would rebuild the system. The edited config is already
-    // the schema's parse.
-    const parsedBefore = (() => {
-      if (!rt) return was;
-      try {
-        return rt.schema.parse(was) as Record<string, unknown>;
-      } catch {
-        return was;
-      }
-    })();
-    // The core config's knobs before and after: a setting field that moved is a document of its own, a param that moved
-    // is set live unless that document carries it anyway, and a construct-time field that moved is a new system.
-    const before = systemKnobs({ type, coreConfig: parsedBefore });
+    // The core config's knobs before and after, both through systemKnobs: before over the stored config as written,
+    // which is what the running document carried, and after over the edit's schema parse. A construct-time field is
+    // written in full with the node's default where the stored config holds no value it takes, so a sparse config
+    // names the same values a fresh one does; a stored value the schema repairs becomes one the node takes, which is
+    // a different value from the one the live core was built with, and takes the rebuild it needs. A setting field that
+    // moved is a document of its own, a param that moved is set live unless that document carries it anyway, and a
+    // construct-time field that moved is a new system.
+    const before = systemKnobs({ type, coreConfig: was });
     const after = systemKnobs({ type, coreConfig: config });
     const linkGroupMoved = roleKind === e.core && linkGroupOf(was) !== linkGroupOf(config);
     const params: [string, number][] = [];
