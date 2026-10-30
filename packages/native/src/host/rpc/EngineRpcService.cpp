@@ -72,13 +72,14 @@ RpcPutResourceResult EngineRpcService::putResource(BackendResourceSpec spec) {
     } else if (spec.path) {
         bytes = slurpAll(*spec.path);
         if (bytes.empty()) {
-            out.error = "could not read " + *spec.path + ": the file is absent, unreadable or empty";
+            out.error = "could not read " + rp::graph::jsonString(*spec.path) +
+                        ": the file is absent, unreadable or empty";
             return out;
         }
     } else {
         const std::span<const std::uint8_t> rom = rp::embeddedRom(*spec.embedded);
         if (rom.empty()) {
-            out.error = "\"" + *spec.embedded + "\" is not an embedded ROM";
+            out.error = rp::graph::jsonString(*spec.embedded) + " is not an embedded ROM";
             return out;
         }
         bytes.assign(rom.begin(), rom.end());

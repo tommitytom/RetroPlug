@@ -638,6 +638,11 @@ TEST_CASE("putResource and releaseResource over the RPC layer", "[engine-graph][
     CHECK(blankPayload->data != nullptr);
     CHECK(put("{type: 'kit', bytes: new Uint8Array([1])}").error.find("\"rom\", \"sram\" or \"state\"") !=
           std::string::npos);
+    // A caller-supplied path and marker are quoted the way the graph layer quotes a settings field, so a name carrying
+    // a quote cannot forge or break the diagnostic a caller logs or parses.
+    CHECK(put(R"({type: 'sram', path: '/nonexistent/a"b.sav'})").error ==
+          R"(could not read "/nonexistent/a\"b.sav": the file is absent, unreadable or empty)");
+    CHECK(put(R"({type: 'rom', embedded: 'mg"b'})").error == R"("mg\"b" is not an embedded ROM)");
     CHECK(e.resource(byBytes.id) != nullptr);  // the refusals left what was there alone
 
     // The owner's drop: idempotent, answered as a boolean, and the id stays dead.
