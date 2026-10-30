@@ -15,9 +15,12 @@
 // probe -> /dev/ttyDbgProbe. UART1/GP5, PIO-USB and UART0 don't contend.
 
 #include <stdio.h>
+#include <string.h>
 #include "pico/stdlib.h"
 #include "hardware/clocks.h"
 #include "hardware/uart.h"
+#include "hardware/irq.h"
+#include "hardware/sync.h"
 #ifndef USE_NATIVE_USB
 #include "pio_usb.h"
 #endif
@@ -30,6 +33,12 @@
 #define N8_PID     0x0017
 
 // '*t' attempts before giving up on the menu (~2.4 s each); lowered for quick experiments.
+// 1 = print every forwarded message. Off by default: at 115200 baud the console line costs
+// more than the forward itself, so it caps the bridge's throughput; [stats] summarises instead.
+#ifndef N8_BRIDGE_VERBOSE
+#define N8_BRIDGE_VERBOSE 0
+#endif
+
 #ifndef N8_MENU_TRIES
 #define N8_MENU_TRIES 20
 #endif
@@ -41,6 +50,69 @@
 static volatile bool n8_ready    = false;   // set by the CDC mount callback
 static bool          probed      = false;   // run the probe once per mount
 static bool          forward_ok  = false;   // gate MIDI->FIFO on a ready+probed N8
+
+typedef struct {
+    uint32_t rx_bytes;     // bytes off the MIDI UART
+    uint32_t msgs;         // complete channel-voice messages parsed
+    uint32_t fwd;          // messages forwarded
+    uint32_t fwd_fail;     // messages in a fifoWR that returned false
+    uint32_t writes;       // fifoWRs issued (each carries a batch of messages)
+    uint32_t max_batch;    // most messages carried by one fifoWR
+    uint32_t filtered;     // aftertouch, dropped on purpose
+    uint32_t not_ready;    // dropped because the N8 was not up
+    uint32_t uart_oe;      // bytes lost to a full UART hardware FIFO
+    uint32_t uart_fe;      // framing / break errors (wiring, or a Type A/B swap)
+    uint32_t ring_full;    // bytes lost to a full receive ring
+    uint32_t max_fwd_us;   // slowest single fifoWR
+} bridge_stats;
+static bridge_stats stats;
+
+// MIDI receive is interrupt-driven into this ring, so bytes keep arriving while the main loop
+// is blocked in a USB write (~5 ms each). Polled, a burst overran the UART's 32-byte hardware
+// FIFO in ~10 ms and lost ~70% of its bytes. The ISR is the only writer of rx_head and of the
+// irq_* counters; the main loop is the only writer of rx_tail.
+#define RX_RING 4096
+static uint8_t           rx_ring[RX_RING];
+static volatile uint32_t rx_head = 0, rx_tail = 0;
+static volatile uint32_t irq_rx = 0, irq_oe = 0, irq_fe = 0, irq_ring_full = 0;
+
+static void on_midi_uart_irq(void) {
+    while (uart_is_readable(MIDI_UART)) {
+        // Read DR whole: bits 8-11 flag this byte's framing / parity / break / overrun.
+        uint32_t dr = uart_get_hw(MIDI_UART)->dr;
+        if (dr & UART_UARTDR_OE_BITS) irq_oe++;
+        if (dr & (UART_UARTDR_FE_BITS | UART_UARTDR_BE_BITS)) { irq_fe++; continue; }
+        uint32_t h = rx_head, next = (h + 1) % RX_RING;
+        if (next == rx_tail) { irq_ring_full++; continue; }
+        rx_ring[h] = (uint8_t)dr;
+        __dmb();   // the byte is in the ring before the main loop can see the new head
+        rx_head = next;
+        irq_rx++;
+    }
+}
+
+// Forwarded messages collect here and go out as ONE fifoWR per pass of the main loop: a write
+// costs the same ~5 ms whatever it carries, so batching is what lets a burst through.
+#define BATCH_MAX 192
+static uint8_t  batch[BATCH_MAX];
+static uint32_t batch_len = 0, batch_msgs = 0;
+
+static void batch_flush(void) {
+    if (!batch_len) return;
+    uint64_t t0 = time_us_64();
+    bool ok = edio_fifo_wr(batch, batch_len);
+    uint32_t us = (uint32_t)(time_us_64() - t0);
+    stats.writes++;
+    if (ok) stats.fwd += batch_msgs; else stats.fwd_fail += batch_msgs;
+    if (us > stats.max_fwd_us) stats.max_fwd_us = us;
+    if (batch_msgs > stats.max_batch) stats.max_batch = batch_msgs;
+#if N8_BRIDGE_VERBOSE
+    printf("[bridge] MIDI -> FIFO (%lu msgs):", (unsigned long)batch_msgs);
+    for (uint32_t i = 0; i < batch_len; i++) printf(" %02x", batch[i]);
+    printf("%s\n", ok ? "" : "  (write FAILED)");
+#endif
+    batch_len = batch_msgs = 0;
+}
 
 // TinyUSB's no-RTOS timing hook (no board layer), backed by the SDK clock.
 uint32_t tusb_time_millis_api(void) { return to_ms_since_boot(get_absolute_time()); }
@@ -128,41 +200,76 @@ static void boot_bliptoaster(void) {
 // N8 cart FIFO faster than BlipToaster drains it, which desyncs its MIDI parser and
 // HANGS the ROM on the last note (observed on hardware). BlipToaster only plays notes,
 // so we forward note-on/off + program-change + pitch-bend + CC and drop the rest.
-// Program-change carries one data byte, the rest two. One fifoWR per message.
+// Program-change carries one data byte, the rest two. Every message is sent with its status
+// byte (no running status), so a batch is just the messages back to back.
 static void midi_to_fifo(const midi_message *m, void *user) {
     (void)user;
     if (m->status >= 0xf0) return;                      // channel-voice only
+    stats.msgs++;
     if (m->type == MIDI_POLY_AFTERTOUCH ||
-        m->type == MIDI_CHANNEL_PRESSURE) return;        // drop the aftertouch flood
-    if (!forward_ok) return;                             // N8 not ready yet: drop
+        m->type == MIDI_CHANNEL_PRESSURE) { stats.filtered++; return; }   // the aftertouch flood
+    if (!forward_ok) { stats.not_ready++; return; }     // N8 not ready yet: drop
 
-    uint8_t b[3];
-    b[0] = m->status;
-    b[1] = m->data0;
     uint32_t n = (m->type == MIDI_PROGRAM_CHANGE) ? 2 : 3;   // 1-data-byte message
-    if (n == 3) b[2] = m->data1;
-
-    edio_fifo_wr(b, n);
-    printf("[bridge] MIDI -> FIFO:");
-    for (uint32_t i = 0; i < n; i++) printf(" %02x", b[i]);
-    printf("\n");
+    if (batch_len + n > BATCH_MAX) batch_flush();
+    batch[batch_len++] = m->status;
+    batch[batch_len++] = m->data0;
+    if (n == 3) batch[batch_len++] = m->data1;
+    batch_msgs++;
 }
 
-// Read-only confirmation: poll the running ROM's APU write-mirror and report Pulse1's
-// PITCH whenever it changes. Injects NOTHING (the forwarded MIDI is what drives it), so
-// a moving pitch here = BlipToaster really is following the notes (not stuck). Prints only
-// on change so held notes stay quiet. PAL 2A07: f = 1662607 / (16 * (timer + 1)).
+// Once a second, if anything moved: what the bridge received, forwarded and lost. A message
+// lost before the parser shows up as a UART overrun (oe) or framing error (fe), not as a drop.
+static void stats_report(void) {
+    static uint32_t next_ms = 0;
+    static bridge_stats last;
+    uint32_t t = to_ms_since_boot(get_absolute_time());
+    if (t < next_ms) return;
+    next_ms = t + 1000;
+    stats.rx_bytes = irq_rx;          // the ISR's counters, folded in for the report
+    stats.uart_oe = irq_oe;
+    stats.uart_fe = irq_fe;
+    stats.ring_full = irq_ring_full;
+    if (memcmp(&last, &stats, sizeof stats) == 0) return;
+    last = stats;
+    printf("[stats] rx=%lu msgs=%lu fwd=%lu fail=%lu writes=%lu maxbatch=%lu filtered=%lu "
+           "notready=%lu oe=%lu fe=%lu ringfull=%lu maxfwd=%luus\n",
+           (unsigned long)stats.rx_bytes, (unsigned long)stats.msgs, (unsigned long)stats.fwd,
+           (unsigned long)stats.fwd_fail, (unsigned long)stats.writes,
+           (unsigned long)stats.max_batch, (unsigned long)stats.filtered,
+           (unsigned long)stats.not_ready, (unsigned long)stats.uart_oe,
+           (unsigned long)stats.uart_fe, (unsigned long)stats.ring_full,
+           (unsigned long)stats.max_fwd_us);
+}
+
+// Read-only confirmation: poll the running ROM's APU write-mirror ($4000-$401F at s[0x80..])
+// and report each voice as <timer>/<level> whenever anything changes. Injects NOTHING (the
+// forwarded MIDI is what drives it), so moving values here = BlipToaster really is following
+// the notes (not stuck). Prints only on change so held notes stay quiet.
+// The ROM leaves a voice's timer alone at note-off and silences it through its level, so the
+// level is what says "sounding": the pulses' and noise's volume nibble ($4000/$4004/$400C),
+// the triangle's linear counter ($4008). Pulse1's Hz is for a PAL 2A07:
+// f = 1662607 / (16 * (timer + 1)).
 static void sniff_report(void) {
     static uint32_t next_ms = 0;
+    static char last[96];
     uint32_t t = to_ms_since_boot(get_absolute_time());
     if (t < next_ms) return;
     next_ms = t + 250;
 
     uint8_t s[EDIO_SNIFFER_SIZE];
     if (!edio_mem_rd(EDIO_ADDR_SSR, s, sizeof s)) { printf("[sniff] read FAIL\n"); return; }
-    uint16_t p1 = ((s[0x95] & 0x01) ? (s[0x82] | ((s[0x83] & 0x07) << 8)) : 0);
-    unsigned hz = p1 ? (1662607u / (16u * (p1 + 1u))) : 0;
-    printf("[sniff] timer=%-4u %4u Hz\n", p1, hz);
+    uint16_t p1  = s[0x82] | ((s[0x83] & 0x07) << 8);
+    uint16_t p2  = s[0x86] | ((s[0x87] & 0x07) << 8);
+    uint16_t tri = s[0x8a] | ((s[0x8b] & 0x07) << 8);
+    uint16_t noi = s[0x8e] & 0x0f;
+    unsigned hz = 1662607u / (16u * (p1 + 1u));
+    char line[96];
+    snprintf(line, sizeof line, "p1=%u/%x (%u Hz)  p2=%u/%x  tri=%u/%x  noise=%u/%x",
+             p1, s[0x80] & 0x0f, hz, p2, s[0x84] & 0x0f, tri, s[0x88] & 0x7f, noi, s[0x8c] & 0x0f);
+    if (strcmp(line, last) == 0) return;
+    strcpy(last, line);
+    printf("[sniff] %s\n", line);
 }
 
 int main(void) {
@@ -184,9 +291,15 @@ int main(void) {
     gpio_set_function(MIDI_RX_PIN, GPIO_FUNC_UART);
     uart_set_format(MIDI_UART, 8, 1, UART_PARITY_NONE);
     uart_set_fifo_enabled(MIDI_UART, true);
+    // Lowest priority: the ISR only copies bytes, and must never delay PIO-USB's own timer IRQ.
+    irq_set_exclusive_handler(UART_IRQ_NUM(MIDI_UART), on_midi_uart_irq);
+    irq_set_priority(UART_IRQ_NUM(MIDI_UART), PICO_LOWEST_IRQ_PRIORITY);
+    irq_set_enabled(UART_IRQ_NUM(MIDI_UART), true);
+    uart_set_irqs_enabled(MIDI_UART, true, false);
 
     midi_parser parser;
     midi_parser_init(&parser, midi_to_fifo, NULL);
+    bool was_forwarding = false;
 
 #ifdef USE_NATIVE_USB
     tuh_init(0);   // RP2350 native USB host controller (its own D+/D- pins)
@@ -201,11 +314,17 @@ int main(void) {
     while (true) {
         tuh_task();
 
-        // Drain any MIDI bytes -> parser (which forwards complete messages via the
-        // sink). Always drain so the UART FIFO can't overrun; the sink itself gates
-        // on forward_ok, so bytes before the N8 is ready are parsed and dropped.
-        while (uart_is_readable(MIDI_UART))
-            midi_parser_byte(&parser, uart_getc(MIDI_UART));
+        // Drain the receive ring -> parser, whose sink batches complete messages; then send
+        // the batch as one fifoWR. The sink gates on forward_ok, so bytes that arrive before
+        // the N8 is ready are parsed and dropped.
+        while (rx_tail != rx_head) {
+            uint32_t t = rx_tail;
+            uint8_t b = rx_ring[t];
+            __dmb();   // the byte is read before the ISR may reuse its slot
+            rx_tail = (t + 1) % RX_RING;
+            midi_parser_byte(&parser, b);
+        }
+        batch_flush();
 
         if (n8_ready && !probed) {
             probed = true;
@@ -213,7 +332,16 @@ int main(void) {
             boot_bliptoaster();
         }
         forward_ok = n8_ready && probed;
+        // Forwarding just became possible (after a mount, and the up-to-48 s menu boot): the ring
+        // may hold seconds of MIDI from before the N8 could take it, and playing that stale burst
+        // into the ROM now would only produce surprise notes. Start from a clean stream.
+        if (forward_ok && !was_forwarding) {
+            rx_tail = rx_head;
+            midi_parser_init(&parser, midi_to_fifo, NULL);
+        }
+        was_forwarding = forward_ok;
         if (forward_ok) sniff_report();
+        stats_report();
     }
 }
 

@@ -120,10 +120,38 @@ amidi -p $M -S 'B0 07 7F'                        # prime: the ROM drops its firs
 amidi -p $M -S '90 45 7F'; sleep 2; amidi -p $M -S '80 45 00'   # A4 on ch1 -> Pulse1
 ```
 
-The console shows `[bridge] MIDI -> FIFO: 90 45 7f` then `[sniff] timer=235   440 Hz`; the L6
-capture's ch3 measures it (`retroplug-cli analyze-capture <wav> --channel 3 --expect-hz 440`).
+The console shows `[sniff] p1=235/f (440 Hz) ...` - each voice as `<timer>/<level>`: this ROM
+keeps a voice's timer at note-off and silences it through its level, so `p1=235/0` is the note
+released, not a stuck one - plus a `[stats]` line once a second while anything moves (bytes in,
+messages parsed / forwarded, fifoWRs and their largest batch, and every way a byte can be lost:
+UART overrun, framing error, full receive ring). `-DN8_BRIDGE_VERBOSE=1` also prints each
+forwarded batch. The L6 capture's ch3 measures the pitch
+(`retroplug-cli analyze-capture <wav> --channel 3 --expect-hz 440`).
 Don't confuse it with the **L6's** own MIDI ports (`L6 MIDI I/O Port` etc.): those are USB
 control ports for the mixer, not a MIDI output, and writing to them can change capture settings.
+
+### The stress test: `stress.sh`
+
+Boots the ROM fresh through `loop.sh`, then judges every case on the Pico's own counters (nothing
+lost on the way in, everything forwarded) and on the ROM's state read back through the sniffer
+(still in sync: A4 sounds at timer 235, then goes silent):
+
+- bursts of 25 / 100 / 500 note pairs at wire speed, each in a single write;
+- a four-voice chord on and off (Pulse 1 / 2, triangle, noise);
+- running status and realtime bytes - as the cable re-serialises them: USB-MIDI packets carry
+  whole messages, so the cable restores omitted status bytes (the parser's own handling of
+  running status and mid-message realtime bytes is `../midi-in/host_test.c`);
+- a paced soak (`--soak <s>`, `--rate <msgs/s>`; spawning amidi caps it near 300/s);
+- 40000 messages as one unbroken stream - the cable's own limit, ~800 msgs/s;
+- the NES power-cycled under a live stream: the Pico must re-boot the ROM itself and play again.
+
+First run (2026-10-30), before the fix below: every burst lost ~70% of its bytes to UART overruns.
+Each fifoWR takes ~5 ms (`edio_mem_wr` sends five separate USB transfers), and receive was
+polled between forwards, so the UART's 32-byte hardware FIFO overflowed in ~10 ms. Receive is
+now interrupt-driven into a 4 KB ring, and every message parsed in one pass of the main loop goes
+out as ONE fifoWR (a batch of up to 64). Since then: 77,315 messages through, 0 lost, including
+the 40000-message stream and the recovery case. A write still costs ~5 ms; coalescing the five
+transfers into one would cut the latency, not needed for throughput (the largest batch seen is 29).
 
 ## Build + flash + verify
 
