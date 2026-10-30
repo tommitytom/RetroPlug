@@ -137,25 +137,6 @@ Goldens readGoldens(const char* path) {
     return out;
 }
 
-// The ROM bytes a system of `type` boots here: the same fixtures every case used, small enough to put per case. A GBA
-// node gates the bytes it is given (detectRomFormat), so its 1 KiB ROM - the smallest GbaConsole::LoadRom takes - carries
-// the Nintendo logo the way every licensed cart does.
-std::vector<std::uint8_t> romFor(const std::string& type) {
-    if (type == rp::host::test::kGbType) return readFile(RP_MGB_ROM_PATH);
-    if (type == rp::host::test::kNesType) return readFile(RP_BLIPTOASTER_ROM_PATH);
-    if (type == "rp.mesen.sms") return readFile(RP_SMS_ROM_PATH);
-    if (type == "rp.mesen.gba") {
-        static constexpr std::uint8_t kGbaLogo[] = {
-            0x24, 0xFF, 0xAE, 0x51, 0x69, 0x9A, 0xA2, 0x21, 0x3D, 0x84, 0x82, 0x0A, 0x84, 0xE4, 0x09, 0xAD,
-            0x11, 0x24, 0x8B, 0x98, 0xC0, 0x81, 0x7F, 0x21, 0xA3, 0x52, 0xBE, 0x19, 0x93, 0x09, 0xCE, 0x20,
-        };
-        std::vector<std::uint8_t> rom(1024, 0);
-        std::copy(std::begin(kGbaLogo), std::end(kGbaLogo), rom.begin() + 0x04);
-        return rom;
-    }
-    return {};
-}
-
 // The settings fields each system node type reads, from its descriptor's schema: the properties of the $defs entry
 // that is the settings struct itself (the others are the resource refs its fields name).
 const std::map<std::string, std::set<std::string>>& systemSettingsFields() {
@@ -172,7 +153,10 @@ const std::map<std::string, std::set<std::string>>& systemSettingsFields() {
                 REQUIRE(defs);
                 std::optional<rfl::Generic> settingsDef;
                 for (const auto& [name, def] : *defs)
-                    if (const auto entry = def.to_object(); entry && entry->get("properties")) settingsDef = def;
+                    if (const auto entry = def.to_object(); entry && entry->get("properties")) {
+                        REQUIRE_FALSE(settingsDef);  // one struct has properties; the rest are the refs it names
+                        settingsDef = def;
+                    }
                 REQUIRE(settingsDef);
                 const auto properties = settingsDef->to_object()->get("properties").and_then(
                     [](const rfl::Generic& g) { return g.to_object(); });
@@ -198,7 +182,9 @@ std::optional<std::string> unreadSettingsField(const std::string& document) {
         const auto settings = object->get("settings").and_then([](const rfl::Generic& g) { return g.to_object(); });
         if (!settings) continue;
         for (const auto& [field, _] : *settings)
-            if (!fields->second.count(field)) return *object->get("id")->to_string() + "'s settings name " + field + ", which its type does not read";
+            if (!fields->second.count(field))
+                return *object->get("id")->to_string() + "'s settings name " + field +
+                       ", which its type does not read";
     }
     return std::nullopt;
 }
@@ -230,34 +216,21 @@ std::optional<std::string> plan(const GoldenCase& c, const std::string& document
     for (const SystemId id : c.slots)
         if (byId.find(id) == byId.end()) return "slot " + std::to_string(id) + " is no system of the model";
     // Put each system's ROM and point the document at the engine's own ids: a node boots from its resources, and never
-    // from a path. The ids are rewritten in ONE pass: two golden ids can each be the other's engine id, and replacing
-    // them one after another would let the second see the first's output.
+    // from a path. `rebindResources` rewrites every `res:` in one pass, since two golden ids can each be the other's
+    // engine id.
     std::map<std::uint32_t, std::uint32_t> ids;
     for (const GoldenSystem& s : c.model.systems) {
         std::string why;
-        const auto rom = romFor(s.type);
+        const auto rom = rp::host::test::romFor(s.type);
         if (rom.empty()) return "no ROM fixture for " + s.type;
         const std::uint32_t id = e.putResource("rom", rom, &why);
         if (id == 0) return "the engine would not take " + s.type + "'s ROM: " + why;
         ids[s.resources.rom] = id;
     }
-    std::string doc;
-    for (std::size_t at = 0; at < document.size();) {
-        const auto found = document.find("\"res:", at);
-        if (found == std::string::npos) {
-            doc.append(document, at, std::string::npos);
-            break;
-        }
-        doc.append(document, at, found - at);
-        const auto digits = found + 5;  // past `"res:`
-        const auto end = document.find('"', digits);
-        if (end == std::string::npos) return "a resource reference runs off the document";
-        const auto mapped = ids.find(static_cast<std::uint32_t>(std::stoul(document.substr(digits, end - digits))));
-        if (mapped == ids.end()) return "the document names " + document.substr(found, end - found + 1) + ", which no system of the model has";
-        doc += "\"res:" + std::to_string(mapped->second) + "\"";
-        at = end + 1;
-    }
-    auto request = rp::host::test::graphRequest(doc, c.slots);
+    std::string why;
+    auto doc = rp::host::test::rebindResources(document, ids, &why);
+    if (!doc) return why;
+    auto request = rp::host::test::graphRequest(*doc, c.slots);
     if (c.tapArm) request = rp::host::test::rearming(std::move(request), c.tapArm->id, c.tapArm->mode);
     const Engine::GraphResult result = e.setGraph(request);
 
@@ -348,7 +321,8 @@ FileResult planAll(const char* path, bool driven) {
         if (!seen.insert(requestKey(c)).second) continue;
         REQUIRE(c.document < goldens.documents.size());
         if (documents.insert(c.document).second)
-            if (const auto why = unreadSettingsField(goldens.documents[c.document])) out.wrong.push_back(c.name + ": " + *why);
+            if (const auto why = unreadSettingsField(goldens.documents[c.document]))
+                out.wrong.push_back(c.name + ": " + *why);
         if (expectRefused(c.model)) ++out.refused;
         if (const auto why = plan(c, goldens.documents[c.document], driven)) out.wrong.push_back(c.name + ": " + *why);
     }
