@@ -61,10 +61,11 @@ export function stringifyConfig(value: unknown): string {
   return formatJson(value, "") + "\n";
 }
 
-/** An integer field: missing/non-number → `def`, out-of-range → nearest bound. */
+/** An integer field: missing/non-number → `def`, out-of-range → nearest bound, a fraction → the nearest whole, as
+ *  `ParamType::Int` rounds wherever the engine takes one. */
 export function clampedInt(min: number, max: number, def: number) {
   return z.preprocess((v) => {
-    const n = typeof v === "number" && Number.isFinite(v) ? Math.trunc(v) : def;
+    const n = typeof v === "number" && Number.isFinite(v) ? Math.round(v) : def;
     return Math.max(min, Math.min(max, n));
   }, z.number());
 }

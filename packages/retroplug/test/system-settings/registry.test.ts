@@ -57,12 +57,12 @@ test("mesen schema: fills defaults + defaults an unknown region", () => {
 
 test("mesen schema: expansion volume is a whole percent, as its node takes it", () => {
   // The node's param is an int: the planner rounds a document's value and the core takes whole percent, so the schema
-  // a store holds should not carry a fraction the node would round on its way to the core.
+  // a store holds rounds too, to the whole percent the node would give the core.
   const reg = new RoleRegistry();
   registerCoreRoles(reg);
   const mesen = reg.roleType("mesen")!;
   const volume = (v: unknown): number => (mesen.schema.parse({ expansionVolume: v }) as { expansionVolume: number }).expansionVolume;
-  expect(volume(25.7)).toBe(25);
+  expect(volume(25.7)).toBe(26);
   expect(volume(25.2)).toBe(25);
   expect(volume(-5)).toBe(0);
   expect(volume(250)).toBe(200);
