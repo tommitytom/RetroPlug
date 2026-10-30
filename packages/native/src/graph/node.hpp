@@ -234,10 +234,16 @@ struct link {
 // A TOP-LEVEL settings field that names a resource: the document writes "res:N" and the node reads the bytes without
 // ever touching the filesystem (docs/modular-graph-phase-c3-design.md section 4). The authoring layer takes the pin when
 // it creates the instance and drops it when the instance is destroyed, both on the control thread (the same pin
-// docs/modular-graph-design.md section 2.5 gives a node that references a resource from its settings), and puts the
-// handle in every settings object the node is handed. A field whose ref moved is a REBUILD, which node.hpp decides
-// itself: the fresh instance pins what it names and the old pin drops with the instance the last plan ran. So a
-// resource changes under a node only by a rebuild, and no pin is ever taken or dropped on the audio thread.
+// docs/modular-graph-design.md section 2.5 gives a node that references a resource from its settings). A field whose ref
+// moved is a REBUILD, which node.hpp decides itself: the fresh instance pins what it names and the old pin drops with the
+// instance the last plan ran. So a resource changes under a node only by a rebuild, and no pin is ever taken or dropped
+// on the audio thread.
+//
+// Create pins before any hook that sees the instance's settings runs, so `on_settings`, `activate`, `process`, `step` and
+// `finish` read a resolved handle (and a prepare that keeps the refs copies the instance's pins into the settings object
+// it installs). The hooks that run before create has pinned anything (`validate`, `adjust_layout`, `rebuild_key`,
+// `extra_memory`, `query_memory`) see only `ref`: a node must not read `bytes()` there. `needs_rebuild` sees handles in
+// both objects, and is skipped for a ref that moved, which is a rebuild on its own.
 //
 //   struct Settings { rp::resource_ref<"rom"> rom; };   // JSON: {"rom": "res:7"}; absent: the node names none
 //
@@ -420,12 +426,18 @@ template <class T> auto& outputsOf(T& t) { if constexpr (requires { t.outputs; }
 template <class T> auto& paramsOf(T& t) { if constexpr (requires { t.params; }) return t.params; else { static NoPorts none; return none; } }
 
 // The one place fields are walked (design 4.7's fields_of seam): swapping reflect-cpp's field reflection
-// for another one (standalone PFR) touches only these three.
+// for another one (standalone PFR) touches only these four.
 template <class S> using FieldsOf = typename rfl::named_tuple_t<S>::Fields;
 template <class S> inline constexpr std::size_t kFieldCount = rfl::num_fields<S>;
 template <class S, class F>
 void forEachField(S& s, F&& f) noexcept {
     rfl::to_view(s).apply([&](auto& field) { f(*field.value()); });
+}
+// The same walk with each field's JSON name, for the two that need it (the ports, and the resource fields a settings
+// struct declares).
+template <class S, class F>
+void forEachNamedField(S& s, F&& f) noexcept {
+    rfl::to_view(s).apply([&](auto&... fields) { (f(std::string_view(fields.name()), *fields.value()), ...); });
 }
 
 enum class Side { Inputs, Outputs };
@@ -736,16 +748,16 @@ template <fixed_string T>
 struct IsResourceRef<resource_ref<T>> : std::true_type {};
 
 template <class Field, class F>
-void resourceField(Field& field, F&& f) {
-    using P = std::remove_cvref_t<decltype(*field.value())>;
-    if constexpr (IsResourceRef<P>::value) f(std::string_view(Field::name()), *field.value());
+void resourceField(std::string_view name, Field& field, F&& f) {
+    using P = std::remove_cvref_t<Field>;
+    if constexpr (IsResourceRef<P>::value) f(name, field);
 }
 
 // A settings struct's resource fields, in declaration order, each with its JSON name: the order create pins them in
 // and prepare compares them by. Only settings fields are walked this way; a port or param of the same type is not.
 template <class S, class F>
 void forEachResourceField(S& s, F&& f) {
-    rfl::to_view(s).apply([&](auto&... fields) { (resourceField(fields, f), ...); });
+    forEachNamedField(s, [&](std::string_view name, auto& field) { resourceField(name, field, f); });
 }
 
 // Pin every resource `s` names into `inst`, resolving each field's handle, in field order. False, with the reason in
@@ -926,11 +938,6 @@ rp_prepare_result prepareFn(rp_node* n, const rp_settings* s, void** prepared, r
         bool rebuild = extraBytes<T>(*parsed) != inst->extra.size();
         if constexpr (!reshapesOf<T>())
             rebuild = rebuild || graph::layoutJson(layoutFor<T>(*parsed)) != inst->layoutJson;
-        if constexpr (requires(const S& a) { T::needs_rebuild(a, a); }) {
-            static_assert(!statelessPrepareOf<T>(),
-                          "a stateless_prepare node cannot have needs_rebuild, which reads its current settings");
-            rebuild = rebuild || T::needs_rebuild(*inst->settings, *parsed);
-        }
         if constexpr (kHasRebuildKey<T>) {
             // create engages it for a keyed type, so this only ever fires if the invariant broke.
             if (!inst->key) throw std::logic_error("a keyed instance was created without its key");
@@ -938,8 +945,16 @@ rp_prepare_result prepareFn(rp_node* n, const rp_settings* s, void** prepared, r
         }
         // A resource field that moved is a rebuild whatever the type's key says, and the one that stays puts this
         // instance's pins into the prepared settings (nothing is pinned or dropped here: only create and destroy do
-        // that, both on the control thread).
-        rebuild = rebuild || !resolveResources(*inst, *parsed);
+        // that, both on the control thread). Resolved before needs_rebuild, and that hook is skipped on a moved ref, so
+        // it never sees a settings object whose handle is null: a node that reads a resource there would otherwise
+        // rebuild on every prepare.
+        const bool resourcesMoved = !resolveResources(*inst, *parsed);
+        if constexpr (requires(const S& a) { T::needs_rebuild(a, a); }) {
+            static_assert(!statelessPrepareOf<T>(),
+                          "a stateless_prepare node cannot have needs_rebuild, which reads its current settings");
+            if (!resourcesMoved) rebuild = rebuild || T::needs_rebuild(*inst->settings, *parsed);
+        }
+        rebuild = rebuild || resourcesMoved;
         if (rebuild) return RP_PREPARE_REBUILD;
         *prepared = new S(std::move(*parsed));
         if constexpr (reshapesOf<T>()) return RP_PREPARE_RESHAPE;

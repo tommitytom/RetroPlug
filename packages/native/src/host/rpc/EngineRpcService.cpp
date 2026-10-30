@@ -23,13 +23,16 @@
 namespace {
 
 rfl::Bytestring toBytestring(const std::vector<std::uint8_t>& v) {
+    if (v.empty()) return {};
     const auto* p = reinterpret_cast<const std::byte*>(v.data());
     return rfl::Bytestring(p, p + v.size());
 }
 
 // The inverse for a wire byte block (rfl::Bytestring, i.e. a Uint8Array) copied into a std::vector<std::uint8_t>:
-// std::byte isn't implicitly convertible to std::uint8_t, so reinterpret + copy.
+// std::byte isn't implicitly convertible to std::uint8_t, so reinterpret + copy. A zero-length block answers an empty
+// vector rather than forming a range from its data pointer, which may be null.
 std::vector<std::uint8_t> toBytes(const rfl::Bytestring& b) {
+    if (b.size() == 0) return {};
     const auto* p = reinterpret_cast<const std::uint8_t*>(b.data());
     return std::vector<std::uint8_t>(p, p + b.size());
 }

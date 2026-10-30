@@ -69,19 +69,47 @@ struct PairNode {
 
     std::uint32_t romBytes = 0;
     std::uint32_t seedBytes = 0;  // 0 when the document names none
+    bool          seedData = false;  // the seed's rp_bytes carries a data pointer (non-null even when empty)
     std::uint32_t blocks = 0;     // state a rebuild loses
     void on_settings(const Settings& s) noexcept {
         const rp_bytes* r = s.rom.bytes();
         const rp_bytes* b = s.seed.bytes();
         romBytes = r ? static_cast<std::uint32_t>(r->size) : 0;
         seedBytes = b ? static_cast<std::uint32_t>(b->size) : 0;
+        seedData = b && b->data != nullptr;
     }
     void process(const rp::Block&) noexcept { ++blocks; }
 };
 
+// A node whose rebuild is decided by needs_rebuild, which reads a resource handle: both settings objects it compares
+// carry this instance's pin, and the hook is skipped when a ref moved (that is a rebuild already), so it never sees a
+// null handle. `calls` and `nullTo` are what the case watches to see both halves.
+struct NeedsNodeSettings {
+    rp::resource_ref<"rom"> rom;
+    double                  level = 1.0;
+};
+
+struct NeedsNode {
+    static constexpr const char* id = "rp.test.needs";
+    using Settings = NeedsNodeSettings;
+    struct { rp::audio_out<rp::mono> out; } outputs;
+
+    static inline int calls = 0;
+    static inline int nullTo = 0;
+    static bool needs_rebuild(const Settings& from, const Settings& to) {
+        ++calls;
+        if (!to.rom.bytes()) ++nullTo;
+        return !from.rom.bytes() || !to.rom.bytes() || from.rom.bytes()->size != to.rom.bytes()->size;
+    }
+
+    std::uint32_t blocks = 0;  // state a rebuild loses
+    void process(const rp::Block&) noexcept { ++blocks; }
+};
+
 const rp_package* resourcePackage() {
-    static const rp_node_type* const kTypes[] = {rp::node_type<ResourceNode>(), rp::node_type<PairNode>()};
-    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.resource","version":"1.0.0"})", 2, kTypes};
+    static const rp_node_type* const kTypes[] = {rp::node_type<ResourceNode>(), rp::node_type<PairNode>(),
+                                                 rp::node_type<NeedsNode>()};
+    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.resource","version":"1.0.0"})", 3, kTypes};
     return &kPackage;
 }
 
@@ -97,6 +125,11 @@ std::string docWithRefusedNode(const std::string& ref) {
 }
 std::string resRef(ResourceTable::Id id) { return "res:" + std::to_string(id); }
 
+std::string needsDoc(const std::string& ref, double level = 1.0) {
+    return R"({"nodes":[{"id":"r","type":"rp.test.needs","settings":{"rom":")" + ref + R"(","level":)" +
+           std::to_string(level) + R"(}}],"wires":[]})";
+}
+
 std::string pairDoc(const std::string& rom, const std::string& seed, double level = 1.0) {
     std::string settings = R"({"rom":")" + rom + R"(")";
     if (!seed.empty()) settings += R"(,"seed":")" + seed + R"(")";
@@ -108,6 +141,7 @@ struct Rig : GraphRig {
     Rig() : GraphRig(HostConfig{48000.0, 64, Target::Desktop}, 8, resourcePackage()) {}
     ResourceNode& toy() { return node<ResourceNode>("r"); }
     PairNode&     pair() { return node<PairNode>("r"); }
+    NeedsNode&    needs() { return node<NeedsNode>("r"); }
 };
 
 }  // namespace
@@ -375,4 +409,55 @@ TEST_CASE("a node with a resource field that names none keeps its other fields' 
     CHECK(rig.resources.pinCount(seed) == 0);
     CHECK(rig.pair().seedBytes == 0);
     CHECK(rig.pair().romBytes == 3);
+}
+
+TEST_CASE("an empty resource hands a node bytes of size 0 and a data pointer that is not null", "[graph][resource]") {
+    // A blank battery is a legal seed (a "new SRAM" is one), and a consumer forms its vector from (data, data + size):
+    // pointer arithmetic on a null data pointer is undefined even for size 0.
+    Rig rig;
+    const auto rom = rig.resources.createBytes("rom", {1, 2, 3});
+    const auto blank = rig.resources.createBytes("sram", {});
+    REQUIRE(rig.set(pairDoc(resRef(rom), resRef(blank))).ok);
+    CHECK(rig.pair().romBytes == 3);
+    CHECK(rig.pair().seedBytes == 0);
+    CHECK(rig.pair().seedData);
+    CHECK(rig.resources.pinCount(blank) == 1);
+    rig.run();
+    CHECK(rig.pair().blocks == 1);
+}
+
+TEST_CASE("needs_rebuild reads a resource through a resolved handle, and is skipped for a ref that moved",
+          "[graph][resource]") {
+    // The hook compares two settings objects; the instance's committed settings carry this instance's pin and the
+    // prepared one is resolved before the hook runs. A moved ref is a rebuild node.hpp decides, so the hook is not
+    // called then: it must never see a null handle on the object it is asked about.
+    Rig rig;
+    const auto first = rig.resources.createBytes("rom", {1, 2, 3});
+    const auto second = rig.resources.createBytes("rom", {4, 5, 6, 7});
+    REQUIRE(rig.set(needsDoc(resRef(first))).ok);
+    rig.run();
+    rig.run();
+    REQUIRE(rig.needs().blocks == 2);
+
+    // An unmoved ref: the hook runs once, with a handle on both sides, and the instance is kept.
+    NeedsNode::calls = 0;
+    NeedsNode::nullTo = 0;
+    REQUIRE(rig.set(needsDoc(resRef(first), 0.5)).ok);
+    CHECK(NeedsNode::calls == 1);
+    CHECK(NeedsNode::nullTo == 0);
+    CHECK(rig.resources.pinCount(first) == 1);
+    rig.run();
+    CHECK(rig.needs().blocks == 3);
+
+    // A ref that moved: no hook call, and a fresh instance that pinned what it names.
+    NeedsNode::calls = 0;
+    NeedsNode::nullTo = 0;
+    REQUIRE(rig.set(needsDoc(resRef(second), 0.5)).ok);
+    CHECK(NeedsNode::calls == 0);
+    CHECK(NeedsNode::nullTo == 0);
+    CHECK(rig.resources.pinCount(second) == 1);
+    CHECK(rig.resources.pinCount(first) == 0);
+    CHECK(rig.needs().blocks == 0);
+    rig.run();
+    CHECK(rig.needs().blocks == 1);
 }

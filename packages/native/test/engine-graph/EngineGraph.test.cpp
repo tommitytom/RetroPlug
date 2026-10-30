@@ -596,10 +596,14 @@ TEST_CASE("putResource and releaseResource over the RPC layer", "[engine-graph][
         CHECK(refused.id == 0);
         CHECK_FALSE(refused.error.empty());
     }
-    // An empty byte block is a resource for a seed (a blank battery), but never for a rom.
+    // An empty byte block is a resource for a seed (a blank battery), but never for a rom. Its payload carries a valid
+    // data pointer at size 0: a node forms its vector from (data, data + size), which is undefined on a null pointer.
     const Answer blank = put("{type: 'sram', bytes: new Uint8Array(0)}");
     REQUIRE(blank.error.empty());
-    CHECK(static_cast<const rp_bytes*>(e.resource(blank.id)->payload)->size == 0);
+    const auto* blankPayload = static_cast<const rp_bytes*>(e.resource(blank.id)->payload);
+    REQUIRE(blankPayload);
+    CHECK(blankPayload->size == 0);
+    CHECK(blankPayload->data != nullptr);
     CHECK(put("{type: 'kit', bytes: new Uint8Array([1])}").error.find("\"rom\", \"sram\" or \"state\"") !=
           std::string::npos);
     CHECK(e.resource(byBytes.id) != nullptr);  // the refusals left what was there alone

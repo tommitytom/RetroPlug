@@ -35,13 +35,18 @@ ResourceTable::Id refused(std::string* error, std::string why) {
     return 0;
 }
 
+// What an empty payload's rp_bytes.data points at. A consumer may form a range from (data, data + size), which is
+// undefined on a null pointer even when size is 0, and a blank battery is a legal seed (a system node's `sram`).
+constexpr std::uint8_t kNoBytes = 0;
+
 }  // namespace
 
 ResourceTable::ResourceTable() = default;
 
 ResourceTable::~ResourceTable() {
 #ifndef NDEBUG
-    for (const auto& entry : entries_) assert(entry.second->pins == 0 && "a plan still pins a resource the table is freeing");
+    for (const auto& entry : entries_)
+        assert(entry.second->pins == 0 && "a plan or a node instance still pins a resource the table is freeing");
 #endif
 }
 
@@ -77,7 +82,7 @@ ResourceTable::Id ResourceTable::createBytes(std::string type, std::vector<std::
     auto e = std::make_unique<Entry>();
     e->type = std::move(type);
     e->bytes = std::move(bytes);
-    e->bytesView = rp_bytes{e->bytes.data(), e->bytes.size()};
+    e->bytesView = rp_bytes{e->bytes.empty() ? &kNoBytes : e->bytes.data(), e->bytes.size()};
     e->resource = rp_resource{e->type.c_str(), &e->bytesView};
     return insert(std::move(e), error);
 }

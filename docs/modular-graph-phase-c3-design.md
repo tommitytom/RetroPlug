@@ -104,7 +104,9 @@ registry as the only read door, and the rule that the control plane never touche
   embedded: "mgb" }` (the built-in ROM). An unreadable file is answered here, before any document is written.
 - **`releaseResource(id)`**, the owner's drop: idempotent.
 
-The types are `rom`, `sram` and `state`; a node refuses a resource of another type.
+The types are `rom`, `sram` and `state`; a node refuses a resource of another type. An empty payload is legal (a
+blank battery is one), and the `rp_bytes` a node reads for it carries a valid data pointer at size 0, since a consumer
+forms a range from `(data, data + size)` and that arithmetic is undefined on a null pointer.
 
 **A node holds a resource its settings name** through a host interface, `rp.host.resources/1` (`acquire` a pin by id,
 `release` it). A system node acquires its `rom`, `sram` and `state` at create, on the control thread, and releases them
@@ -295,8 +297,10 @@ models with Claude for the deep reviews and the final one.
   held bit for bit at every commit with nothing re-recorded: the core boots from the same config in the same order
   relative to its seeds, so build order moved no bit.
 - **How `rp.host.resources/1` sits in create, and whether the planner's bindings could serve.** As a settings field
-  type, `rp::resource_ref<Type>`: `node.hpp` pins what it names at create and drops it at destroy, puts the handle in
-  every settings object the node is handed and decides a moved ref as a rebuild itself. A plan's binding cannot serve:
+  type, `rp::resource_ref<Type>`: `node.hpp` pins what it names at create and drops it at destroy, resolves the handle
+  in the settings object create installs and in the one a prepare that keeps the refs installs (a prepare whose ref
+  moved is a rebuild before `needs_rebuild` runs, and the hooks that run before create has pinned anything see only
+  `ref`), and decides a moved ref as a rebuild itself. A plan's binding cannot serve:
   the executor binds a port view only just before a call into the node, after create and activation, and a system node
   builds its core at activation.
 - **Whether any host, CLI session or consumer reaches `buildCore` or the `ConstructSpec` wire shape.** No. The store,

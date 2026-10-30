@@ -34,7 +34,8 @@ public:
     // channels or frames, a sample rate that is not a positive number, or a buffer beyond kMaxAudioSamples.
     Id createAudioBuffer(std::uint32_t channels, std::uint32_t frames, double sampleRate, std::string* error = nullptr);
     // An immutable byte resource of the given type ("bytes", "string", or a package's type). Returns 0, with
-    // a reason, for a type that is not a plain id (see isPlainId) or is "audio-buffer" (not a bytes payload).
+    // a reason, for a type that is not a plain id (see isPlainId) or is "audio-buffer" (not a bytes payload). An empty
+    // payload is legal (a blank battery), and its rp_bytes carries a valid data pointer with size 0.
     Id createBytes(std::string type, std::vector<std::uint8_t> bytes, std::string* error = nullptr);
 
     // Null unless the resource exists and its owner still holds it. A dropped resource stays alive while
@@ -43,7 +44,8 @@ public:
     rp_resource* get(Id id) const;
     // The owner's release. Idempotent: false (and nothing changes) for an unknown or already dropped id.
     bool drop(Id id);
-    // A plan's hold. pin is false for an id get() would refuse; unpin is false for an id that holds no pin.
+    // A plan's hold, or a node instance's (a settings field naming the resource pins it for the instance's life). pin
+    // is false for an id get() would refuse; unpin is false for an id that holds no pin.
     bool          pin(Id id);
     bool          unpin(Id id);
     std::uint32_t pinCount(Id id) const;
