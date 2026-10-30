@@ -847,6 +847,26 @@ test("an adopt whose core does not build logs nothing about the system it never 
   expect(warnings).toEqual([]);
 });
 
+test("a stored core config value the system node would refuse is noted, so a dropped knob leaves a trace", () => {
+  // A core config stays as written (the build spec carries it), so buildGraph leaves out a value its node would
+  // refuse: the core, the document and the stored config then disagree, and only the load can say so. Once the core
+  // has built, as every other repair a load makes is logged.
+  const { be, sys } = project();
+  const config = { model: "cgbF", highpass: 2, fastBoot: "yes", dmgPalette: "gbl", lightTemperature: 1.5 };
+  const stored = (romPath: string, over: Record<string, unknown>) =>
+    sys.adopt({ romPath, core: "sameboy", roles: [{ kind: "sameboy", config: over }] })!;
+  const { result: id, warnings } = warned(() => stored("/roms/a.gb", config));
+  expect(id !== null).toBe(true);
+  // The value the node takes is the one the document carries; the rest are the load's to report.
+  expect(be.graphNode(`sys-${id}`)?.settings).toEqual(canon({ core: id, dmgPalette: "gbl", serialOutCapture: "off" }));
+  expect(warnings).toEqual([
+    '[systems] /roms/a.gb: its stored sameboy config holds a value its node would refuse: ' +
+      'dropped model "cgbF", dropped highpass 2, dropped fastBoot "yes", dropped lightTemperature 1.5',
+  ]);
+  // A value absent is not a value refused, and one the node takes says nothing.
+  expect(warned(() => stored("/roms/b.gb", { model: "dmgB" })).warnings).toEqual([]);
+});
+
 test("a left-out lsdj-sync arms no serial-out capture: not where it is placed, nor on an edit", () => {
   // Capture is for the lsdj-sync role's decoder, rp.lsdj.serial-out, which decodes what the core sends (MI.OUT
   // drives, master sync listens). On an mGB cart whose project stored lsdj-sync, mgb wins serialIn and the role's

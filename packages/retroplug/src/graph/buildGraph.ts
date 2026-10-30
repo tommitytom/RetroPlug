@@ -184,6 +184,19 @@ export function systemKnobs(system: Pick<GraphSystem, "type" | "coreConfig" | "g
   return { settings, params };
 }
 
+/** The setting fields of `config` that `systemKnobs` leaves out for `type`, with their values: a value the node would
+ *  refuse (another label, a number out of its range, another type). A caller with a config as written, not through its
+ *  role's schema (SystemsStore.adopt), notes them, so a stored knob the document drops leaves a trace. */
+export function refusedSettings(
+  type: SystemNodeType,
+  config: Readonly<Record<string, unknown>>,
+): [string, unknown][] {
+  const fields = SETTING_FIELDS[type] ?? {};
+  return Object.entries(config).filter(
+    ([field, value]) => Object.prototype.hasOwnProperty.call(fields, field) && !fields[field](value),
+  );
+}
+
 /** A system's node: its core's id, its knobs and, on a Game Boy, `capture`. */
 function systemNode(system: GraphSystem, capture: SerialOutCaptureMode | null): NodeDoc {
   const knobs = systemKnobs(system);

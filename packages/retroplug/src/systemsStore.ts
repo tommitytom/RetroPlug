@@ -11,7 +11,7 @@
 // (PluginDSP.cpp:406-458), with every path derived by the pure kernels.
 
 import type { ConstructSpec, ControlPlaneBackend, HostBackend } from "./backend";
-import { systemKnobs, systemNodeId, type GraphSystem } from "./graph/buildGraph";
+import { refusedSettings, systemKnobs, systemNodeId, type GraphSystem } from "./graph/buildGraph";
 import { canonicalJson } from "./graph/canonicalJson";
 import { EngineGraph } from "./engineGraph";
 import { detectPlatform, romHasBattery, ROM_SNIFF_LEN, SEGA_SNIFF_LEN, defaultCoreFor, type Platform, type Core } from "./platform";
@@ -709,6 +709,17 @@ export class SystemsStore {
     const battery = this.detectBattery(romPath, embeddedRom, platform);
     const built = this.backend.buildCore(spec, id); // its LSDj capture, if any, comes with the document that places it
     if (!built) return null;
+    // A core config stays as written (its role's schema does not parse it: the build spec carries it), so the system
+    // node leaves out a value it would refuse and that one core keeps what it has. Say which, since the stored config,
+    // the document and the core then disagree.
+    if (systemRole) {
+      const refused = refusedSettings(built.type, systemRole.config);
+      if (refused.length)
+        notes.push(
+          `[systems] ${rom}: its stored ${core} config holds a value its node would refuse: ` +
+            refused.map(([field, value]) => `dropped ${field} ${JSON.stringify(value)}`).join(", "),
+        );
+    }
     for (const note of notes) console.warn(note);
     const wasEmpty = this.entries.length === 0;
     this.entries = appendEntry(this.entries, { id, platform, core, romPath, savPath: override, savSuffix, embeddedRom, battery, settings, roles, built });
