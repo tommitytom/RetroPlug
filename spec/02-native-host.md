@@ -398,20 +398,20 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
 | `rp.mesen.gba`, `rp.mesen.sms` | `core` | `gain` |
 
 - **Values.** `core` is the id `buildCore` parked the core under. Every setting is optional: absent, the node leaves
-  the core as it was built, or as the last document that carried the field left it. A param is optional too, but
-  absent means its default: a node's gain starts at 0 dB and a NES's expansion volume at 100%, at its first block.
-  An enum is a label as the role configs spell it
-  ([settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)), which is its C++ enumerator's name with the
-  first letter lowercased (`SameBoyModel::CgbC` is `"cgbC"`, `SameBoyHighpass::RemoveDcOffset` is
-  `"removeDcOffset"`): `knobs::Label<E>`, an `rfl::Literal` generated at compile time from reflect-cpp's
-  enumerator list, reads exactly those strings, lists them in the descriptor's schema and maps one back to its
-  enumerator by position, so native has one spelling of each label and a document and a saved `.rplg` carry the
-  same word. An ordinal, another spelling, or a number out of its range (`lightTemperature` -1 to 1,
-  `apuLatencyMs` 0.25 to 6, NaN included) refuses the settings, and with them the document, never clamped. A field
-  the type does not know is ignored (the settings reader takes extra fields), which is why
-  `BuildGraphGoldens.test.cpp` holds every golden document's system nodes to the fields their types' schemas list.
-  `serialOutCapture` is `off`, `listen` (master sync) or `drive` (MI.OUT). `gain` is dB from -90 to 12, default 0;
-  `expansionVolume` an int param, whole percent of unity from 0 to 200, default 100, as the core takes it.
+  the core as it was built, or as the last document that carried the field left it. A param is optional too: absent,
+  the stream is left where it is (its default, at a new node's first block), so a node's gain starts at 0 dB and a
+  NES's expansion volume at 100%. An enum is a label as the role configs spell it
+  ([settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)), which is its C++ enumerator's name with the first
+  letter lowercased (`SameBoyModel::CgbC` is `"cgbC"`, `SameBoyHighpass::RemoveDcOffset` is `"removeDcOffset"`):
+  `knobs::Label<E>`, an `rfl::Literal` generated at compile time from reflect-cpp's enumerator list, reads exactly
+  those strings, lists them in the descriptor's schema and maps one back to its enumerator by position, so native has
+  one spelling of each label and a document and a saved `.rplg` carry the same word. An ordinal, another spelling, or
+  a number out of its range (`lightTemperature` -1 to 1, `apuLatencyMs` 0.25 to 6, NaN included) refuses the settings,
+  and with them the document, never clamped. A field the type does not know is ignored (the settings reader takes
+  extra fields), which is why `BuildGraphGoldens.test.cpp` holds every golden document's system nodes to the fields
+  their types' schemas list. `serialOutCapture` is `off`, `listen` (master sync) or `drive` (MI.OUT). `gain` is dB
+  from -90 to 12, default 0; `expansionVolume` an int param, whole percent of unity from 0 to 200, default 100, as the
+  core takes it.
 - **Only a new core rebuilds.** The node keys its rebuild on `core` (node.hpp's `rebuild_key`: prepare compares
   the new settings' key with the key the instance was created with, which no commit writes) and declares
   `stateless_prepare`, so every other settings change is a commit that never makes `setGraph` wait for the
@@ -443,10 +443,10 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   first value is snapped into the core (whose gain smoother starts at 0 dB), so its first sample plays at the
   document's level; every later gain change is smoothed, as it always is. A document without a param leaves its
   stream where it was: at its default, on a new node.
-- **Allocation.** The knobs a node applies in place and every param allocate nothing on the block thread. A Game
-  Boy's model change restarts the core (`GB_alloc` / `GB_init`), which allocates, as it did on the command ring. A
-  NES's settings can: its core allocates inside Mesen in its own blocks, and its sprite-limit and accuracy setters do
-  too, whatever path calls them.
+- **Allocation.** A Game Boy's knobs, the ones it applies in place, and every param allocate nothing on the block
+  thread. Its model change restarts the core (`GB_alloc` / `GB_init`), which allocates, as it did on the command ring.
+  A NES's settings can: its core allocates inside Mesen in its own blocks, and its sprite-limit and accuracy setters
+  do too, whatever path calls them.
 - **A refused document** can still have given knobs to a core one of its nodes took, since activation runs while
   it plans: the core goes back to parked with them, for the next document, which in the app carries the same.
 

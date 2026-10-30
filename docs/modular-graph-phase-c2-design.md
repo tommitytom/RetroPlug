@@ -76,8 +76,9 @@ The user's, on 2026-10-30:
 - **Every setting is optional.** Absent, the node leaves its core as it was built, or as the last document that
   carried the field left it. So a Game Boy's node always carries its capture, `off` included, since one left out would
   leave an armed capture armed; and a system with no core config (a `DirectGraph`'s until it is given one, the B1
-  translator goldens' models) carries `core` and its capture alone. A param is optional too, but absent means its
-  default: a node's gain starts at 0 dB and a NES's expansion volume at 100%, at its first block.
+  translator goldens' models) carries `core` and its capture alone. A param is optional too: absent, the stream is
+  left where it is (its default, at a new node's first block), so a node's gain starts at 0 dB and a NES's expansion
+  volume at 100%.
 - **What stays outside C2:** the construct-time fields (SMS `enableFm`, NES `sdRoot`, the FIFO profile and its two
   overrides, the N8 link and its round trip, `channelExportMode`) stay in the build spec until C3 builds cores in their
   nodes; `buildCore`'s facts (the export mode, the link group) stay casts until C4; `linkGroupId` stays a TS-side field
@@ -164,20 +165,20 @@ The user's, on 2026-10-30:
 ## 6. Tests
 
 - **`retroplug-graph-test`:** a node with `rebuild_key` declares stateless prepare; a change of key rebuilds and a
-  same-key change swaps; `setGraph` never waits on its commit.
+  same-key change swaps; `setGraph` never waits on its commit; a live `GraphHost::setParam` is the value a later
+  document compares against, and a reshaped plan carries it (`Execution.test.cpp`, `Reshape.test.cpp`).
 - **`retroplug-engine-graph-test`:** every setting and param reaches its core (through a plan swap or `setParam`, at the
   next block); the value guards (a palette, highpass or sprite-limit change neither restarts nor resets the core, a model
   change restarts it); every setting applied at activation, before the core's first block, the capture included (a
   param at that first block); the atomic switch (one `setGraph` changing an LSDj's mode gives the Game Boy its capture
   in the block the decoder first runs in the new mode); `Engine::setParam` (unknown node or param refused, values
-  clamped, an integer value decoded, a later publish of the same value moving nothing); a live `setParam` is the
-  value a later document compares against, and a reshaped plan carries it; a knob a wire drives is clamped to its
-  range; a node's first block plays its gain at
-  the document's level, snapped rather than ramped from 0 dB; the restart order after a host command sent behind a
-  plan, and both layers of a knob's guard; no allocation on the block thread for the params path or the knobs a Game
-  Boy applies in place; the new cases under ThreadSanitizer. And every system node of every document in `buildGraph`'s
-  goldens names only the settings fields its type's schema lists, and the role goldens' every-node model places a GBA,
-  whose gain param reaches a real core (section 10).
+  clamped, an integer value decoded, a later publish of the same value moving nothing); a knob a wire drives is
+  clamped to its range; a node's first block plays its gain at the document's level, snapped rather than ramped from
+  0 dB; the restart order after a host command sent behind a plan, and both layers of a knob's guard; no allocation
+  on the block thread for the params path or the knobs a Game Boy applies in place; the new cases under
+  ThreadSanitizer. And every system node of every document in `buildGraph`'s goldens names only the settings fields
+  its type's schema lists, and the role goldens' every-node model places a GBA, whose gain param reaches a real core
+  (section 10).
 - **`pnpm test`:** `buildGraph`'s settings and params for every system type, the capture for each mode and `off` under
   the controller's forced MI.MAP; the store's gain and expansion volume calling `setParam` without publishing, a setting
   edit publishing, an `lsdj-sync` edit publishing its capture; the goldens re-recorded.
@@ -230,8 +231,8 @@ prototype answers (each answer follows its question):
   `COLOR_CORRECTION_VALUES`, `DMG_PALETTE_VALUES`, `REGION_VALUES`, `CARTRIDGE_ACCURACY_VALUES`, and `off` / `listen`
   / `drive`), so the two spellings cannot drift; it reads the numeric knobs' ranges out of `buildGraph.ts`'s
   `SETTING_FIELDS` and `coreRoles.ts`'s schema too, and the one param a core config carries (`expansionVolume`) out of
-  the role schema, and holds each to the node's JSON Schema minimum and maximum, so a range has one meaning in its
-  copies.
+  the role schema, and holds each knob to the node's JSON Schema bounds and the param to its declared range, so a
+  range has one meaning in its copies.
 - Whether a model or region change applied at a block's start, rather than in the command ring's drain, moves any
   parity case (it should not: both run before the block's first step). **None moved.** Strict parity held bit for bit
   at the five commits, with nothing re-recorded, its fixture cases among them (the later first-block gain snap moved
@@ -319,8 +320,8 @@ dropped value and `DirectGraph.setCoreConfig`'s refusal in sections 5 and 10; an
   expansion volume past its range, +-inf included; the NES rounds the clamped whole percent. `rp.test.level` drives
   1e9, -1e9 and both infinities into both params, and the node's clamp is what holds them.
 - **The role goldens' every-node model places a GBA.** Its gain param is in the documents the Catch2 golden run plans,
-  so a GBA's param reaches a real core too; the five `every-node/*` documents gain only `sys-5`, its wires and the
-  routing that names it.
+  so a GBA's param reaches a real core too; the five `every-node/*` documents gain `sys-5` and its splitter, widen the
+  add nodes' input counts and, where the case has one, the routing's system list.
 - **A document's param value is sent whenever the node does not hold it**, whoever gave the node the value it has: the
   planner lands a document's value for a fresh node, or one that differs from the value the node was last given, a
   live `setParam` included (`GraphHost::setParam` records what it queued). So a document repeating a value after a live
