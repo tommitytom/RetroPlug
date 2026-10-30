@@ -746,8 +746,10 @@ export class ProjectStore {
       // previous project's tiles, and the plugin would watch that project's ROMs. Either step's throw is logged, so
       // the load's own error is the one that propagates.
       this.holdGraph = false;
+      // Placed the way the success path places them, drop-and-retry included: a document the engine refuses here
+      // would otherwise leave the store listing systems the engine does not run.
       try {
-        this.publishRouting();
+        this.placeLoadedSystems();
       } catch (pe) {
         console.warn(`[project] placing the systems a failed load adopted threw: ${String(pe)}`);
       }

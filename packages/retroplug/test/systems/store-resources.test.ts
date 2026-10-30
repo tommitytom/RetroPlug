@@ -11,6 +11,7 @@ import { ProjectStore } from "../../src/projectStore";
 import { RecentStore } from "../../src/recentStore";
 import { buildAppRegistry } from "../../src/appHost";
 import { DirectGraph } from "../../src/graph/directGraph";
+import { systemHandles } from "../../src/graph/systemResources";
 import type { ConstructSpec, SetGraphResult } from "../../src/backend";
 import { warned } from "../_warnings";
 import { canonicalJson } from "../../src/graph/canonicalJson";
@@ -42,7 +43,7 @@ function refuse(be: MockBackend, n: number, nodeId = "", code = "activate-failed
 // `v` as a document carries it: canonical JSON, its keys sorted.
 const canon = (v: unknown): unknown => JSON.parse(canonicalJson(v));
 
-// The ids a boot put that the engine still holds, in put order (a refusals' id 0 aside).
+// The ids a boot put that the engine still holds, in put order (a refusal's id 0 aside).
 const heldIds = (be: MockBackend): number[] =>
   be.putResourceCalls.map((c) => c.id).filter((id) => id > 0 && be.resource(id) !== undefined);
 
@@ -206,8 +207,37 @@ test("a project load drops the system a refusal names, with a note, and publishe
   expect(placed.length).toBe(2);
   expect(placed.includes(`sys-${bad}`)).toBe(false); // the refused system is gone, the other two run
   expect(warnings.some((w) => w.includes("the engine refused it, so the project loads without it"))).toBe(true);
-  // The dropped system's resources went with it.
-  expect(project.systems.systems().every((e) => be.resource(e.resources.rom) !== undefined)).toBe(true);
+  // The dropped system's resources went with it: the engine holds exactly the survivors' handles, so a leaked ROM
+  // of the refused system cannot pass a check that only asks after the survivors.
+  const survivors = project.systems.systems().flatMap((e) => systemHandles(e.resources));
+  expect(heldIds(be).sort()).toEqual([...survivors].sort());
+});
+
+test("a publish that throws puts the model back, gives back what the edit put, and sends the restored one", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.sav", "battery");
+  const id = store.addSystem("/roms/a.gb")!;
+  const before = store.systems()[0];
+  const heldBefore = heldIds(be);
+  const setGraph = be.setGraph.bind(be);
+  let threw = false;
+  be.setGraph = (request) => {
+    if (!threw) {
+      threw = true;
+      throw new Error("the setGraph RPC died");
+    }
+    return setGraph(request);
+  };
+  expect(() => store.reset(id)).toThrow("the setGraph RPC died");
+  be.setGraph = setGraph;
+  // A throw is the engine's failure, not a refusal it answered, and the graph counts it as refused (the engine keeps
+  // the plan it ran): the edit is put back and its puts given back, as a refused document's are.
+  expect(store.systems()[0]).toEqual(before);
+  expect(heldIds(be)).toEqual(heldBefore);
+  // The model the graph keeps was the edit's, so the restored one is sent too: the plan the engine runs is what a
+  // later shape change rebuilds.
+  expect(be.lastBoot()!.id).toBe(id);
 });
 
 test("a construct-time edit resets the system: a new id, a re-read ROM, the battery carried, the new value", () => {
@@ -327,12 +357,19 @@ test("only reset follows a replaced id: removeSystem of one does nothing, as it 
   expect(be.resource(store.systems()[0].resources.rom)).toBeTruthy();
 });
 
-test("a construct-time edit that moves nothing live-rebuilds nothing, and a live knob stays a document", () => {
+test("a construct-time edit that moves nothing rebuilds nothing, and a live knob stays a document", () => {
   const { be, store } = newStore();
   be.seed("/roms/a.nes", nesRom());
   const id = store.addSystem("/roms/a.nes")!;
   const resources = store.systems()[0].resources;
   be.log.length = 0;
+  // The stored config already names the field's value (every document writes it in full), so writing it again moves
+  // no rebuild key: the same system, no put, no document.
+  expect(store.setRoleConfig(id, "mesen", { fifo: "instant" })).toBe(true);
+  expect(order(be)).toEqual([]);
+  expect(store.systems()[0].id).toBe(id);
+  expect(store.systems()[0].resources).toEqual(resources);
+  // A live setting is a document under the id the running node holds.
   expect(store.setRoleConfig(id, "mesen", { region: "pal" })).toBe(true); // a live setting: a document
   expect(order(be)).toEqual(["setGraph"]);
   expect(store.systems()[0].id).toBe(id);

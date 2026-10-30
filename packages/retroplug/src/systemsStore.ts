@@ -146,8 +146,8 @@ export class SystemsStore {
   private entries: SystemEntry[] = [];
   private focusedId = 0;
   private dirty = false;
-  /** The handles on the engine's resources every live entry's node names (graph/systemResources.ts): the ROM a
-   *  rebuild keeps, the ROM a duplicate shares, and the seeds each boot put. */
+  /** The handles on the engine's resources every live entry's node names (graph/systemResources.ts): every boot puts
+   *  its own ROM and seeds, and a system holds one handle on each until it goes. */
   private readonly pool: ResourcePool;
   private onFocusChange: () => void = () => {};
   // A store on its own publishes its systems at the default (stereo) routing, with no MIDI routing and no
@@ -1251,8 +1251,11 @@ export class SystemsStore {
 
   // Record an edit and publish the document that places it. A refused document puts the list and the focus back,
   // gives back what the edit put, and sends the restored model again so the next edit starts from the graph that
-  // runs (EngineGraph keeps a refused document's systems as its model). The resources an edit REPLACES are released
-  // only once its document has planned: a dropped resource cannot be bound by a new instance, and a refused
+  // runs (EngineGraph keeps a refused document's systems as its model). A publish that THROWS is the engine's failure
+  // rather than a refusal it answered, and EngineGraph counts it as refused (the engine keeps the plan it ran), so it
+  // is put back the same way before the error reaches the caller: the edit's puts are given back and the restored
+  // model is sent, so no later shape change rebuilds what the store rolled back. The resources an edit REPLACES are
+  // released only once its document has planned: a dropped resource cannot be bound by a new instance, and a refused
   // document's nodes are built afresh.
   private commitEdit(
     what: string,
@@ -1263,16 +1266,37 @@ export class SystemsStore {
     const focusedId = this.focusedId;
     this.entries = edit.entries;
     if (edit.focusedId !== undefined) this.focusedId = edit.focusedId;
-    if (this.onGraphChange(rearmTap)) {
+    const restore = (): void => {
+      this.entries = entries;
+      this.focusedId = focusedId;
+      for (const id of edit.put ?? []) this.pool.drop(id);
+    };
+    // The restored model's own send, after a refusal or a throw: the graph's model is the edit's either way, so the
+    // plan the engine runs is only what a later publish builds once this lands. Its failure is said, never thrown:
+    // the caller's own failure is the one it must see.
+    const resend = (): void => {
+      try {
+        if (!this.onGraphChange(rearmTap))
+          console.warn(`[systems] ${what}: the restored model was refused too; the engine keeps the previous plan`);
+      } catch (e) {
+        console.warn(`[systems] ${what}: the restored model's send threw too: ${String(e)}`);
+      }
+    };
+    let planned: boolean;
+    try {
+      planned = this.onGraphChange(rearmTap);
+    } catch (e) {
+      restore();
+      resend();
+      throw e;
+    }
+    if (planned) {
       for (const id of edit.drop ?? []) this.pool.drop(id);
       return true;
     }
     console.warn(`[systems] ${what}: the engine refused the document; the edit is rolled back`);
-    this.entries = entries;
-    this.focusedId = focusedId;
-    for (const id of edit.put ?? []) this.pool.drop(id);
-    if (!this.onGraphChange(rearmTap))
-      console.warn(`[systems] ${what}: the restored model was refused too; the engine keeps the previous plan`);
+    restore();
+    resend();
     return false;
   }
 }

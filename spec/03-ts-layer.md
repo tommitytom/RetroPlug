@@ -153,8 +153,11 @@ the entries, which is how a caller reads the new id a rebuild allocated.
 - **`commitEdit`** is the one publish path: it installs the new entries, publishes once, and only then releases the
   resources the edit replaced (a dropped resource cannot be bound by a new instance). A refused document puts the
   entries and the focus back, gives back what the edit put, republishes the restored model (warning if that is
-  refused too) and returns false. `clear()` publishes the empty document and releases every system's resources anyway;
-  `discard(id)` drops one system and its resources at once for a load's refused system, whose document never planned.
+  refused too) and returns false. A publish that throws is the engine's or the transport's failure rather than a
+  refusal the engine answered, and [`engineGraph.ts`](../packages/retroplug/src/engineGraph.ts) counts it as refused
+  (the engine keeps the plan it ran), so it takes the same rollback before the error reaches the caller. `clear()`
+  publishes the empty document and releases every system's resources anyway; `discard(id)` drops one system and its
+  resources at once for a load's refused system, whose document never planned.
 - **The graph.** Every edit that changes what runs, what a system's protocol nodes are told, or a setting of
   a system's node, ends by publishing the engine's graph once (`setOnGraphChange` → `ProjectStore.publishGraph`
   → `EngineGraph.publish`, [engineGraph.ts](../packages/retroplug/src/engineGraph.ts)): the whole
@@ -249,8 +252,9 @@ places the routing node, the controller node and a node per role from them, forc
 controller's cart into the sync mode it needs ([`graph/controller.ts`](../packages/retroplug/src/graph/controller.ts)).
 `refreshControllerSong` publishes too, when its poll finds the controller cart's song
 moved or a new start anchor. A load holds the publishes back while it adopts and publishes once; a
-load that throws partway publishes what it adopted before rethrowing, and every exit of a load tells the
-structure's observers (`onSystemsChange`) once.
+load that throws partway places what it adopted through the same drop-and-retry before rethrowing (a system the
+placement refuses does not stay listed), and every exit of a load tells the structure's observers
+(`onSystemsChange`) once.
 
 The project **name** is two-tier. `name()` is the project's own name - blank unless the user
 typed one under `Project` > `Name` (`setName`, which marks the project dirty), and the ONLY
