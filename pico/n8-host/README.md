@@ -57,10 +57,30 @@ socket (the same A-plug that went to the PC). Keep the debug probe attached (SWD
 the stage-1 MIDI opto circuit feeds GP5 (UART1 RX) - the bridge (slice 2.4) forwards it. PIO-USB
 forces a 120 MHz system clock (`set_sys_clock_khz(120000)`).
 
-## Build + flash + verify
+## The hands-off loop: `loop.sh`
+
+With the N8's cable left in this Pico's host socket, one command does a whole iteration -
+build, flash over SWD, power-cycle the NES (a fresh N8 menu, re-enumerated on the Pico), and
+capture the timestamped console until a verdict:
 
 ```sh
-export PICO_SDK_PATH=/workspaces/pico-sdk         # devcontainer sets this
+./loop.sh --until 'menu up' --fail "no 'k'"   # the FIFO-write repro: exit 0 = *t answered
+./loop.sh --no-power                          # keep what the NES is running; the Pico still resets
+./loop.sh --no-build --no-flash --secs 30     # just reset the Pico and watch
+./loop.sh --native                            # the RP_NATIVE_USB build, in build-native/
+```
+
+It refuses to run while the N8 is enumerated on the PC (the cable is in the wrong place, so the
+run would test nothing); `--force` overrides that. The console is kept in
+`/tmp/n8-host-console.log` (`--log`). Exit 0 = done / `--until` seen, 1 = `--fail` seen or
+`--until` timed out, 2 = setup failed.
+
+## Build + flash + verify
+
+`loop.sh` does all of this; by hand:
+
+```sh
+export PICO_SDK_PATH=/workspaces/pico-sdk         # NOT the image's /opt/pico-sdk: it has no TinyUSB
 cmake -S . -B build -G Ninja && cmake --build build
 sudo openocd -f interface/cmsis-dap.cfg -f target/rp2350.cfg \
      -c "program build/n8_host.elf verify reset exit"      # button-free SWD
