@@ -17,7 +17,7 @@ PIO-USB - they don't contend.
 | 2.1 | **done (HW-verified)** | USB host enumerates the N8 + Edio `CMD_STATUS` handshake (`main.c`) |
 | 2.2 | **done (HW-verified)** | `edio.c/.h` port: status + sysInfo + memRD over PIO-USB |
 | 2.3 | **done (HW-verified 2026-10-30)** | `fifoWR` = memWR(0x1810000): the menu answers `*t`, and `boot_bliptoaster()` installs + boots the MIDI ROM through it, no PC (`loop.sh`, 5/5). It was blocked for months by the probe reading cart SRAM while the menu booted - see [`../pico-n8-fifo-write-bug.md`](../pico-n8-fifo-write-bug.md). |
-| 2.4 | **coded, not re-verified** | the bridge (MIDI UART1/GP5, reuse `../midi-in/midi.c` -> `fifoWR`). Every earlier "verified" result was the PC host's residual note; it needs a real MIDI source on GP5 now that the FIFO write lands. |
+| 2.4 | **done (HW-verified 2026-10-30)** | the bridge: MIDI UART1/GP5 (reusing `../midi-in/midi.c`) -> one `fifoWR` per channel-voice message. Driven by a USB MIDI cable (CH345) into the TRS jack, with `amidi`: A4 / C5 on ch1 read back as Pulse1 timer 235 / 198 on the N8 sniffer and measured **440.3 Hz / 522.2 Hz** on the L6 capture (ch3), silent after note-off. (The August "verified" results were the PC host's residual note.) |
 
 ## Dependencies (not in the repo yet - see "one-time setup")
 
@@ -107,6 +107,23 @@ and nothing to answer `*t`. It refuses to run while the N8 is enumerated on the 
 in the wrong place, so the run would test nothing); `--force` overrides that. The console is kept
 in `/tmp/n8-host-console.log` (`--log`). Exit 0 = done / `--until` seen, 1 = `--fail` seen or
 `--until` timed out, 2 = setup failed.
+
+### Driving the bridge from the container
+
+A USB MIDI cable (CH345, `1a86:752d`) on the dev machine has its OUT plugged into the Pico's TRS
+jack (Type A), so the bridge can be driven by script. Its ALSA card number moves with plug order -
+find it by name, after `bash .devcontainer/hw-usb-perms.sh` has mirrored the node:
+
+```sh
+M=$(amidi -l | awk '/CH345/{print $2; exit}')    # e.g. hw:5,0,0
+amidi -p $M -S 'B0 07 7F'                        # prime: the ROM drops its first message after boot
+amidi -p $M -S '90 45 7F'; sleep 2; amidi -p $M -S '80 45 00'   # A4 on ch1 -> Pulse1
+```
+
+The console shows `[bridge] MIDI -> FIFO: 90 45 7f` then `[sniff] timer=235   440 Hz`; the L6
+capture's ch3 measures it (`retroplug-cli analyze-capture <wav> --channel 3 --expect-hz 440`).
+Don't confuse it with the **L6's** own MIDI ports (`L6 MIDI I/O Port` etc.): those are USB
+control ports for the mixer, not a MIDI output, and writing to them can change capture settings.
 
 ## Build + flash + verify
 

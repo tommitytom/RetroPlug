@@ -11,7 +11,7 @@ Three independent stages, built and verified one at a time:
 | Stage | Folder | What it does | Status |
 |-------|--------|--------------|--------|
 | 1. MIDI IN | [`midi-in/`](midi-in/) | Hardware MIDI TRS jack -> opto -> Pico UART | built + buildable |
-| 2. N8 USB host | [`n8-host/`](n8-host/) | Pico as USB host speaking the Edio protocol to the N8 | 2.1-2.3 HW-verified: the Pico boots a ROM through the N8 menu with no PC; 2.4 (MIDI forwarding) coded, not re-verified ([the months-long FIFO "bug"](pico-n8-fifo-write-bug.md)) |
+| 2. N8 USB host | [`n8-host/`](n8-host/) | Pico as USB host speaking the Edio protocol to the N8 | **done, HW-verified**: the Pico boots a ROM through the N8 menu and forwards MIDI into its FIFO, no PC ([the months-long FIFO "bug"](pico-n8-fifo-write-bug.md)) |
 | 3. Controller inject | `controller/` (todo) | Pico driving the NES controller ports (PIO) | planned |
 
 Target split: **two Picos** - one dedicated to the USB host (PIO-heavy), one for
