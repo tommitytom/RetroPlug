@@ -279,7 +279,7 @@ The box's own SysEx - `F0 7D 50 ...` (BlipToaster's are `7D 42`); acted on, neve
 
 | message | effect |
 |---|---|
-| `F0 7D 50 01 <n> F7` | boot staged ROM n at the next menu: press RESET or power-cycle the NES (a pending pick also survives a recovery reboot) |
+| `F0 7D 50 01 <n> F7` | boot staged ROM n at the next menu: power-cycle the NES (or press RESET, if your N8 returns to its menu on RESET) - a pending pick also survives a recovery reboot |
 | `F0 7D 50 02 F7` | print the staged ROMs, the booted one and the pending pick on the console; blink the booted index + 1 |
 | `F0 7D 50 7E F7` / `7D` | `-DN8_TEST_HOOKS=1` builds only: hang (the watchdog must fire) / fake a dead link (recovery must) |
 
@@ -302,11 +302,23 @@ booted again.
   false "never enumerated" reboot from a timer left stale by a long boot.
 - `stress.sh` on the box firmware: PASS, 50,805 messages, 0 lost.
 
+**Without the probe (2026-10-30).** With the debug probe unplugged - no console, no SWD - and judged
+only by the video capture and the L6: after a NES power-cycle the box booted BlipToaster by itself
+(on screen) and A4 / C5 played at 440.31 / 522.16 Hz; three rounds of three random power cuts each
+ended in a 440.30 Hz A4. Then the Pico's own power was unplugged and replugged - a cold boot with no
+debugger ever attached: with a game still running it forwarded at once (440.30 / 522.16 Hz), and after
+a NES power-cycle it drove the menu and booted the ROM (440.30 Hz).
+
+**RESET.** On this rig the NES's RESET button restarts the running ROM in place - the N8 does not show
+its menu (a 10 fps brightness trace of the press: ~2 s blank, ~1.4 s of lost signal, then BlipToaster
+again, never the menu's brighter frames) - so the box has nothing to do and plays on (440.30 Hz after
+two presses). Whether RESET goes to the menu is the N8's own setting; the box's menu-return path
+(`CMD_STATUS` 0 after a game) is for when it does, and that path is the one not seen here.
+
 **Not yet verified on hardware:** the "never enumerated" recovery firing for a real non-enumerating
-device (the only trigger seen was the false positive above, now fixed); the NES's RESET button
-bringing the menu back (needs a hand on the console); the error LED's double blink; and a run with the
-debug probe unplugged - everything above was observed through it (`loop.sh` clears the debugger's
-`C_DEBUGEN` after flashing, so the firmware behaves as it would with no debugger).
+device (the only trigger seen was the false positive above, now fixed); the menu-return path just
+described (this N8 never returned to its menu on RESET); and the error LED's double blink (no boot
+failed or stuck while it was being sampled).
 
 ## Build + flash + verify
 

@@ -402,7 +402,7 @@ static void sysex_emit(uint8_t b) {
 
 // The box's own commands: F0 7D 50 <cmd> ... F7 (7D = non-commercial, 50 = 'P' for Pico;
 // BlipToaster's are 7D 42). They are acted on here and never reach the ROM.
-//   F0 7D 50 01 <n> F7   boot staged ROM n at the next menu (press RESET or power-cycle the NES);
+//   F0 7D 50 01 <n> F7   boot staged ROM n at the next menu (power-cycle the NES, or RESET if the N8 returns to its menu on RESET);
 //                        the LED blinks n+1 times to acknowledge
 //   F0 7D 50 02 F7       report the staged ROMs and the choice on the console; blink current+1
 // Test builds (-DN8_TEST_HOOKS=1) also take 7E (hang: the watchdog must reboot) and 7D (treat the
@@ -418,7 +418,7 @@ static void box_command(const uint8_t *c, int n) {
             return;
         }
         box_set_pending_sel(c[1]);
-        printf("[box] ROM %u selected (%s) - boots at the next menu: press RESET or power-cycle the NES\n",
+        printf("[box] ROM %u selected (%s) - boots at the next menu: power-cycle the NES\n",
                c[1], rom_get(c[1])->path);
         led_count(c[1] + 1u);
     } else if (c[0] == 0x02) {
