@@ -348,13 +348,11 @@ export class MockBackend implements Backend {
     // typed code, but a test that casts past it must see the engine's answer, not the first source found.
     const sources = spec as { bytes?: Uint8Array; path?: string; embedded?: string };
     const given =
-      (sources.bytes !== undefined ? 1 : 0) +
-      (sources.path !== undefined ? 1 : 0) +
-      (sources.embedded !== undefined ? 1 : 0);
+      (sources.bytes != null ? 1 : 0) + (sources.path != null ? 1 : 0) + (sources.embedded != null ? 1 : 0);
     if (given !== 1) return refused(`a resource carries exactly one of bytes, path or embedded (${given} given)`);
     let bytes: Uint8Array | undefined;
-    if (sources.bytes !== undefined) bytes = sources.bytes;
-    else if (sources.path !== undefined) {
+    if (sources.bytes != null) bytes = sources.bytes;
+    else if (sources.path != null) {
       bytes = this.files.get(this.canonicalize(sources.path));
       if (!bytes || bytes.length === 0)
         return refused(`could not read ${JSON.stringify(sources.path)}: the file is absent, unreadable or empty`);

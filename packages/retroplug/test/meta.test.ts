@@ -75,6 +75,10 @@ test("mock backend: putResource answers ids that count up, and a dropped id stay
   expect(be.putResource(untyped({ type: "rom" }))).toEqual({
     error: "a resource carries exactly one of bytes, path or embedded (0 given)",
   });
+  // The RPC maps a JSON null to an absent optional, so native counts `path: null` as no source at all.
+  expect(be.putResource(untyped({ type: "rom", path: null }))).toEqual({
+    error: "a resource carries exactly one of bytes, path or embedded (0 given)",
+  });
   expect(be.putResource(untyped({ type: "rom", bytes: Uint8Array.of(1), path: "/cfg/a.gb" }))).toEqual({
     error: "a resource carries exactly one of bytes, path or embedded (2 given)",
   });
@@ -96,8 +100,8 @@ test("mock backend: putResource answers ids that count up, and a dropped id stay
     bytes: Uint8Array.of(5, 5),
   });
   expect(be.resource(copied.id)).toEqual({ type: "rom", bytes: Uint8Array.of(5, 5) });
-  expect(be.putResourceCalls.length).toBe(14); // refused puts are recorded too, with id 0
-  expect(be.putResourceCalls.filter((c) => c.id === 0).length).toBe(9);
+  expect(be.putResourceCalls.length).toBe(15); // refused puts are recorded too, with id 0
+  expect(be.putResourceCalls.filter((c) => c.id === 0).length).toBe(10);
 });
 
 test("mock backend: a document naming a resource the engine does not hold is refused, as native refuses it", () => {
@@ -145,7 +149,12 @@ test("mock backend: a slot with no system node is refused as native refuses it, 
   expect(be.setGraph({ document: JSON.stringify({ nodes: [], wires: [] }), slots: [1] })).toEqual({
     ok: false,
     errors: [
-      { nodeId: "", port: "", code: "slots", message: "the slots and the document's system nodes name different systems" },
+      {
+        nodeId: "",
+        port: "",
+        code: "slots",
+        message: "the slots and the document's system nodes name different systems",
+      },
     ],
   });
 });
