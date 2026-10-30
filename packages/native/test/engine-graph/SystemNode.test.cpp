@@ -1020,7 +1020,9 @@ TEST_CASE("a system node's enum knobs take the labels the role configs spell, an
         bool gain = false;
         for (const auto& p : *typeParams) {
             const auto o = *p.to_object();
-            if (*o.get("id")->to_string() != "gain") continue;
+            const auto id = o.get("id");
+            REQUIRE(id);
+            if (*id->to_string() != "gain") continue;
             gain = true;
             CHECK(*o.get("min")->to_double() == gainRange[0]);
             CHECK(*o.get("max")->to_double() == gainRange[1]);
