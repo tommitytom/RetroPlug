@@ -1640,11 +1640,15 @@ TEST_CASE("a node placed with its gain plays the first block at it, not ramping 
         return peak;
     };
     const float loud = firstBlockPeak(R"("gain":0)");
-    const float quiet = firstBlockPeak(R"("gain":-90)");
-    INFO("peak at 0 dB " << loud << ", at -90 dB " << quiet);
+    const float quiet = firstBlockPeak(R"("gain":-60)");
+    const float floor = firstBlockPeak(R"("gain":-90)");
+    INFO("peak at 0 dB " << loud << ", at -60 dB " << quiet << ", at -90 dB " << floor);
     CHECK(loud > 0.01f);
-    // The value is snapped in: a 20 ms ramp from unity leaves most of `loud` in this block.
-    CHECK(quiet < 1e-4f);
+    // The value is snapped in: this block is at the document's level, not a ramp's. -90 dB is the core's mute floor
+    // (util/Gain.hpp maps it and anything below to 0), so the level is measured at -60 dB: a thousandth of unity, and
+    // a 20 ms ramp from unity would leave most of `loud` here.
+    CHECK(floor == 0.0f);
+    CHECK(std::abs(quiet - loud * 1e-3f) <= loud * 1e-3f * 0.02f);
 }
 
 TEST_CASE("a wire's value reaches a system node's params clamped to their ranges", "[engine-graph][system-node][params]") {
