@@ -122,7 +122,7 @@ roles }`, plus the derived `battery` and `built` facts, never serialized); the p
 - **Mutators through `Backend`:** `addSystem` (append), `loadRom` (replace focused, or defer to a sibling
   `<rom>.rplg`), `loadMgb` (embedded), `replaceSystem`, `removeSystem`, plus the per-system `setGain`,
   `setReloadOnRomChange` and `setRoleConfig`
-  ([systemsStore.ts:550](../packages/retroplug/src/systemsStore.ts#L550)). A gain edit updates the store and
+  ([systemsStore.ts:539](../packages/retroplug/src/systemsStore.ts#L539)). A gain edit updates the store and
   sets the system node's `gain` param live (`backend.setParam("sys-<id>", "gain", dB)`) with no publish; the
   next document, whatever publishes it, carries the same value. `reloadOnRomChange` is TS's alone (the file
   watcher reads it), so it reaches no backend. An edit of the core-config role (the `"system"`-category role
@@ -283,8 +283,10 @@ one after the systems, before the host's outputs
 [`EngineGraph`](../packages/retroplug/src/engineGraph.ts) is one control-plane context's publisher:
 `publish({ systems, routing, midiRouting, controller }, { rearmTap })` makes that its model, builds the document at
 its host shape and sends it, skipping the send when the document's canonical text and slots match the
-last one that planned, so an edit that changes nothing sends nothing (a re-arm is sent all the same,
-and after a refusal the next document is sent even if unchanged).
+last one that planned, so an edit that changes nothing sends nothing (a re-arm is sent all the same;
+after a refusal the next document is sent even if unchanged; and so is one after a live `setParam`,
+`systemsMovedLive`, which the store calls whether or not the backend took it, so the next document
+lands the store's value).
 [`DirectGraph`](../packages/retroplug/src/graph/directGraph.ts) is the publisher for callers with no
 stores (the native tests, the CLI's `analyze-lsdj-sync` session and the `lsdj-detect-offsets` tool;
 one per process, `directGraph()`). Its `add` / `replace` / `remove` keep its systems list in slot order (add
@@ -293,11 +295,12 @@ roles, and what the script nodes are told is three calls of its own, each a publ
 roles)` (each role with a protocol node placed as one, its config as given), `setMidiRouting(mode)` and
 `setController(controller)` (its app config parsed by the app's schema, as the project's is). Until
 `setMidiRouting` names a mode, no host MIDI is routed to any system. A system it adds has no core config
-either, so its node carries no knob and its core runs as it was built, until `setCoreConfig(id, partial)`,
-a publish, merges fields over what it gave before, in the labels the store's role spells them (a Game Boy's
-`linkGroupId` its link cable), and refuses, changing nothing, any field its node does not take (an ordinal, a
-construct-time field, another core's); `setParam(id, param, value)` sets a `gain` or an `expansionVolume`
-live, as the store does, and keeps it for the next document.
+either, so its node carries no setting field and its core keeps the settings it was built with, while
+its params still reach it at their defaults (its gain at 0 dB; a NES's expansion volume at 100%), until
+`setCoreConfig(id, partial)`, a publish, merges fields over what it gave before, in the labels the store's role
+spells them (a Game Boy's `linkGroupId` its link cable), and refuses, changing nothing, any field its node does not
+take (an ordinal, a construct-time field, another core's); `setParam(id, param, value)` sets a `gain` or an
+`expansionVolume` live, as the store does, and keeps it for the next document.
 
 ### RecentStore — [`src/recentStore.ts`](../packages/retroplug/src/recentStore.ts)
 

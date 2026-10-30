@@ -96,8 +96,9 @@ export function registerCoreRoles(registry: RoleRegistry): void {
       // scratch directory - deliberately NOT the working directory, which made the card depend on where
       // the process was started and let a file one test wrote become every later run's card.
       //
-      // Construct-time, like `region`: the FIFO is built when the core activates, so an edit needs a
-      // rebuild (setRoleConfig then reset(id)) rather than taking effect live.
+      // Construct-time, unlike `region` (which the NES node applies live: a region change resets the core): the
+      // FIFO is built when the core activates, so an edit needs a rebuild (setRoleConfig then reset(id)) rather than
+      // taking effect live.
       sdRoot: z.string().default(""),
       // NES-only: how faithfully the emulated cart FIFO behaves like the device's (see
       // FIFO_PROFILE_VALUES). Default "instant" - unbounded and immediate - because that is the

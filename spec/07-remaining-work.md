@@ -101,12 +101,9 @@ Intentionally not planned; listed so the intent isn't lost.
 
 Stale scaffolding to sweep opportunistically — not work to schedule.
 
-A handful of in-code deferral / provenance comments still describe an earlier state and should be
-swept as their feature lands or when touched. Known ones:
-
-| Location | Marker |
-|---|---|
-| [host/graph/SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp) (`GameBoy::apply`) | `fastBoot` takes effect on the next restart, not live |
+None known. The last entry, [host/graph/SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)
+(`GameBoy::apply`), pointed at a comment that is load-bearing (why the fast boot is applied before the model)
+rather than at a deferral; its marker died with `applyConfigField`.
 
 Not cleanup (intentional domain terms that read like TODOs): `deferredProject` in
 [systemsStore.ts](../packages/retroplug/src/systemsStore.ts) and `kind: "deferred"` in
@@ -184,8 +181,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   `applySystemSetting` / `applyRoleConfig` / `setSerialOutCapture` RPCs, the build spec's capture) is gone. A Game
   Boy's capture rides the document that hands its decoder the mode, computed from the mode that decoder runs, so an
   LSDj mode switch is atomic (retiring the master-sync design's first accepted limit, its section 10) and a cart the
-  MI.MAP controller forces captures nothing (closing the B3b item below). Strict parity held bit for bit at every
-  commit. What it leaves (its sections 9 and 10):
+  MI.MAP controller forces captures nothing (closing the B3b item below). Strict parity held bit for bit at its five
+  commits; the later gain snap's 28 re-recorded cases are its section 10's. What it leaves (its sections 9 and 10):
   - **DAW automation of node params.** The plugin's parameters are not mapped onto `setParam`; params make it
     possible, and it is its own work.
   - **The plugin's sync latency report** (`__rp_syncLatencyMs`) still follows the stored `lsdj-sync` mode, not the
@@ -193,9 +190,10 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **The construct-time fields and `buildCore`'s facts.** SMS `enableFm`, NES `sdRoot`, the FIFO profile and its
     overrides, the N8 link and its round trip and `channelExportMode` stay in the build spec until C3 builds cores in
     their nodes; `buildCore`'s report of a NES's export mode and a Game Boy's link group stays a cast until C4.
-  - **A NES's settings allocate on the block thread.** Its core allocates inside Mesen in its own blocks, and its
-    sprite-limit and accuracy setters do too, whatever path calls them (they did on the command ring), so "no
-    allocation" holds for a Game Boy's knobs and every node's params only ([02-native-host.md](02-native-host.md)).
+  - **The knobs that allocate on the block thread.** A Game Boy's model change restarts the core, which allocates,
+    as it did on the command ring; a NES's settings do too, its core allocating inside Mesen in its own blocks and
+    its sprite-limit and accuracy setters allocating whatever path calls them. So "no allocation" holds for the
+    knobs a node applies in place and every node's params only ([02-native-host.md](02-native-host.md)).
   - **A system node ignores a settings field it does not know**, as every C++ node does: a misspelt knob plans and
     does nothing. `BuildGraphGoldens.test.cpp` holds the goldens' system nodes to their schemas' fields; a strict
     reader would refuse it at plan time instead.

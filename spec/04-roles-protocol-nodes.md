@@ -128,9 +128,9 @@ ROM in memory the same way.
 [SystemsStore](../packages/retroplug/src/systemsStore.ts) drives the registry:
 `defaultRoles(...)` reads a `ROLE_HEADER_LEN = 0x150` header prefix and calls
 `registry.defaultRoles(...)`
-([systemsStore.ts:789](../packages/retroplug/src/systemsStore.ts#L789)); `applyConstructHooks`
+([systemsStore.ts:818](../packages/retroplug/src/systemsStore.ts#L818)); `applyConstructHooks`
 folds each attached role's `onConstruct` over the spec before the build call
-([systemsStore.ts:967](../packages/retroplug/src/systemsStore.ts#L967)). See
+([systemsStore.ts:1000](../packages/retroplug/src/systemsStore.ts#L1000)). See
 [03-ts-layer.md](03-ts-layer.md) for the surrounding store idioms.
 
 ## The built-in roles
@@ -202,7 +202,7 @@ core is [02-native-host.md](02-native-host.md)'s):
 | a **feature-role** config edit | a publish, for a role with a protocol node | its protocol node's settings; for `lsdj-sync`, its Game Boy node's capture too |
 | `reloadOnRomChange` | *(none)* | TS's file watcher alone |
 
-[`SystemsStore.setRoleConfig`](../packages/retroplug/src/systemsStore.ts#L550) merges the partial and
+[`SystemsStore.setRoleConfig`](../packages/retroplug/src/systemsStore.ts#L568) merges the partial and
 re-parses through the role schema. For the core-config role (its kind is the system's core) it compares the
 system node's knobs before and after (`systemKnobs`,
 [graph/buildGraph.ts](../packages/retroplug/src/graph/buildGraph.ts)): a setting field that moved publishes,

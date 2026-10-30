@@ -212,7 +212,7 @@ DTO worth spelling out — it mirrors the TS `ConstructSpec`:
 | `savPath` / `statePath` | `optional<string>` | on-disk seed paths |
 | `sramBytes` / `stateBytes` | `optional<Bytestring>` | zip-import seed bytes (win over the on-disk paths) |
 | `romBytes` | `optional<Bytestring>` | ROM bytes to load instead of reading `romPath` (a patched image, e.g. LSDj asset overrides; honoured by SameBoy and by Mesen's NES, GBA and SMS / Game Gear), `romPath` still travelling for the watcher and `.sav` resolution |
-| `settings` | `optional<string>` | the backend "system"-role config JSON, decoded only by the matching backend, at the build: the construct-time fields, and the knobs the core starts with (its node gives it the document's at activation) |
+| `settings` | `optional<string>` | the backend "system"-role config JSON, decoded only by the matching backend, at the build: the construct-time fields, and the knobs the backend copies from it (a Game Boy's whole role config; a NES's not its accuracy pair, which its node's activation applies from the document) |
 
 ## `Engine` + `QueuedInvoker`: the mutation path
 
@@ -397,10 +397,12 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
 | `rp.mesen.nes` | `core`, `region`, `removeSpriteLimit`, `apuLatencyMs`, `s5bNoise`, `mmc5PhaseReset` | `gain`, `expansionVolume` |
 | `rp.mesen.gba`, `rp.mesen.sms` | `core` | `gain` |
 
-- **Values.** `core` is the id `buildCore` parked the core under. Every knob is optional: absent, the node leaves
-  the core as it was built, or as the last document that carried the field left it. An enum is a label as the role
-  configs spell it ([settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)), which is its C++ enumerator's
-  name with the first letter lowercased (`SameBoyModel::CgbC` is `"cgbC"`, `SameBoyHighpass::RemoveDcOffset` is
+- **Values.** `core` is the id `buildCore` parked the core under. Every setting is optional: absent, the node leaves
+  the core as it was built, or as the last document that carried the field left it. A param is optional too, but
+  absent means its default: a node's gain starts at 0 dB and a NES's expansion volume at 100%, at its first block.
+  An enum is a label as the role configs spell it
+  ([settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)), which is its C++ enumerator's name with the
+  first letter lowercased (`SameBoyModel::CgbC` is `"cgbC"`, `SameBoyHighpass::RemoveDcOffset` is
   `"removeDcOffset"`): `knobs::Label<E>`, an `rfl::Literal` generated at compile time from reflect-cpp's
   enumerator list, reads exactly those strings, lists them in the descriptor's schema and maps one back to its
   enumerator by position, so native has one spelling of each label and a document and a saved `.rplg` carry the
@@ -415,7 +417,7 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   `stateless_prepare`, so every other settings change is a commit that never makes `setGraph` wait for the
   audio thread.
 - **When a setting reaches the core.** `on_settings` only points the node at the committed settings (it never
-  allocates). At its first activation the node takes its core and gives it every knob present, before that core
+  allocates). At its first activation the node takes its core and gives it every setting present, before that core
   first runs; after that it gives it what moved (present, and absent from or different in what it gave last) at
   the start of its next block, in `prepare`, before its inputs and `prepareForBlock`, which a linked Game Boy's
   coupled group runs for every member before any of them steps. A setting therefore lands at the node's next
@@ -441,9 +443,10 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   first value is snapped into the core (whose gain smoother starts at 0 dB), so its first sample plays at the
   document's level; every later gain change is smoothed, as it always is. A document without a param leaves its
   stream where it was: at its default, on a new node.
-- **Allocation.** A Game Boy's knobs and every node's params allocate nothing on the block thread. A NES's settings
-  can: its core allocates inside Mesen in its own blocks, and its sprite-limit and accuracy setters do too,
-  whatever path calls them.
+- **Allocation.** The knobs a node applies in place and every param allocate nothing on the block thread. A Game
+  Boy's model change restarts the core (`GB_alloc` / `GB_init`), which allocates, as it did on the command ring. A
+  NES's settings can: its core allocates inside Mesen in its own blocks, and its sprite-limit and accuracy setters do
+  too, whatever path calls them.
 - **A refused document** can still have given knobs to a core one of its nodes took, since activation runs while
   it plans: the core goes back to parked with them, for the next document, which in the app carries the same.
 

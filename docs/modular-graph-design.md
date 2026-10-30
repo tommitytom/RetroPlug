@@ -719,8 +719,9 @@ The existing rings carry it; their invariants ([spec/01](../spec/01-architecture
 (Phase A's `GraphHost` has rings of its own, since nothing else runs on it yet; Phase B either folds them
 into the engine's, or fixes the order between the two - see §8 Phase B.)
 
-- **Out:** a `SwapPlan` command on the command ring. It replaces today's `AddSystem` / `ReplaceSystem` /
-  `RemoveSystem` / `SetAudioRouting` / `SetConfigField` / `SetSystems` / `LoadKernel` commands.
+- **Out:** a `SwapPlan` command on the command ring. It replaced the older `AddSystem` / `ReplaceSystem` /
+  `RemoveSystem` / `SetAudioRouting` / `SetSystems` / `LoadKernel` commands (B2, the last two B3a) and
+  `SetConfigField` (C2: a system's knobs are its node's settings and params).
 - **At the start of the next block:** the audio thread swaps the plan pointer, commits prepared settings,
   and calls `ports_changed` where connections changed. **A whole graph edit lands atomically, in one block.**
 - **Back:** the old plan returns on the release ring; the control thread frees its buffers, unpins its
@@ -1167,7 +1168,8 @@ node's, each a setting in the published document or a param, its value in the do
 `setParam` (§6.3). `node.hpp`'s `rebuild_key` lets the system nodes prepare statelessly, so a knob edit never makes
 `setGraph` wait; `ConfigField`, `Engine::applyConfigField` and its casts, the `applySystemSetting`, `applyRoleConfig`
 and `setSerialOutCapture` RPCs and the build spec's capture are gone; and an LSDj's capture rides the document that
-hands its decoder the mode, so a mode switch is atomic. Strict parity held bit for bit at every commit.
+hands its decoder the mode, so a mode switch is atomic. Strict parity held bit for bit at its five commits; the later
+first-block gain snap re-recorded 28 cases, its design's section 10.
 
 - Console-specific code moves into each node; every `dynamic_cast` in §6.5 goes.
 - `SystemBase` shrinks to the capability interfaces; `MesenAudioDevice` gets a preallocated ring (it

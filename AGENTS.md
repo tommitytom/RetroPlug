@@ -38,10 +38,10 @@ The rules below are the parts that don't fit those.
   `-graph-test` / `-engine-graph-test`) as `Catch2::Catch2WithMain`. `retroplug-engine-graph-test`
   holds the engine's graph to the cores it wraps: each system node renders what its core renders
   driven directly, bit for bit, its inputs, settings and params included (C2,
-  [docs/modular-graph-phase-c2-design.md](docs/modular-graph-phase-c2-design.md): each knob reaches its core at the
-  next block and every one at activation, an LSDj's capture switching in the block its decoder first runs in the new
-  mode); the engine places, re-arms and frees what the graph documents TS builds say; the host I/O nodes and the N8
-  cart mirror move what the hosts stage and drain;
+  [docs/modular-graph-phase-c2-design.md](docs/modular-graph-phase-c2-design.md): every setting reaches its core at
+  the next block and all of them at activation, a param at the node's first block, an LSDj's capture switching in the
+  block its decoder first runs in the new mode); the engine places, re-arms and frees what the graph documents TS builds
+  say; the host I/O nodes and the N8 cart mirror move what the hosts stage and drain;
   TS nodes run behind the C ABI in the script host (B3a,
   [docs/modular-graph-phase-b3a-design.md](docs/modular-graph-phase-b3a-design.md)): marshalling, reshape,
   creation and release on the block thread, throws, a node's promise jobs charged to it; script node packs beside the

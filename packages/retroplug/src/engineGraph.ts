@@ -43,9 +43,11 @@ export class EngineGraph {
   }
 
   /** Build and send the graph for this model (its systems in slot order) at the current shape. Skipped when the
-   *  document and slots are unchanged and no re-arm is due, so an edit that changes nothing sends nothing; a re-arm
-   *  is sent even then, since its plan carries the tap trailer. False when the planner refused it; the model is
-   *  this one either way, so a later shape change rebuilds it and not the one running. */
+   *  document and slots are unchanged, no re-arm is due and no live param edit is outstanding (`liveParamMoved`),
+   *  so an edit that changes nothing sends nothing; a re-arm and a document after a live edit are sent even then,
+   *  since the plan carries the tap trailer or the node no longer runs the last document's params. False when the
+   *  planner refused it; the model is this one either way, so a later shape change rebuilds it and not the one
+   *  running. */
   publish(model: PublishedModel, opts: { rearmTap?: boolean } = {}): boolean {
     this.model = {
       systems: model.systems.slice(),
@@ -56,10 +58,11 @@ export class EngineGraph {
     return this.send(this.shape_, opts.rearmTap === true);
   }
 
-  /** The model a live setParam left (the systems with the value the node now runs), without sending a document: a
-   *  later publish, a shape change among them, then builds the value the node has instead of the stale one the last
-   *  document carried. The running plan is no longer that document's either, so the next publish is sent even when
-   *  it rebuilds exactly the document already sent. */
+  /** The model a live param edit left (the systems as the store now has them), without sending a document: a later
+   *  publish, a shape change among them, then builds the store's value instead of the stale one the last document
+   *  carried. The store calls this whether or not the backend took the `setParam`, so a refusal leaves the core on
+   *  its old value until a document lands the store's. The running plan no longer matches that model's params, so
+   *  the next publish is sent even when it rebuilds exactly the document already sent. */
   systemsMovedLive(systems: readonly GraphSystem[]): void {
     this.model = { ...this.model, systems: systems.slice() };
     this.liveParamMoved = true;

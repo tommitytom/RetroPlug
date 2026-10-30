@@ -109,10 +109,10 @@ export class DirectGraph {
    *  their defaults at its first block). Its setting fields ride its node's settings and a NES's expansionVolume its
    *  params (buildGraph.ts systemKnobs), each reaching the core at the start of the next block, and a Game Boy's
    *  linkGroupId is its link cable. It publishes, the param included (a document's param value reaches the node when
-   *  it differs from the one last sent). False, changing nothing, when `id` is not placed here,
-   *  for a field its node does not take (a construct-time one, another core's, or a value the node would refuse, an
-   *  ordinal among them, which buildGraph would leave out, the core silently keeping what it has), or when the
-   *  document did not plan. */
+   *  the node does not hold it, a live `setParam`'s value included). False, changing nothing, when `id` is not placed
+   *  here, for a field its node does not take (a construct-time one, another core's, or a value the node would
+   *  refuse, an ordinal among them, which buildGraph would leave out, the core silently keeping what it has), or when
+   *  the document did not plan. */
   setCoreConfig(id: number, partial: Record<string, unknown>): boolean {
     const at = this.systems.findIndex((s) => s.id === id);
     if (at < 0) return false;

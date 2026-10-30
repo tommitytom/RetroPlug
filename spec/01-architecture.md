@@ -165,7 +165,8 @@ arrives one of three ways:
   or modulating) goes through `setParam`, which `EngineRpcService::setParam` hands to `Engine::setParam`, not
   through the invoker either: `GraphHost::setParam` clamps the value to the param's range and pushes it onto
   the ring as a param command, for a node the last published plan places, to land at the start of the next
-  block. The next document the stores publish carries the same value, so the two never disagree.
+  block. The next document the stores publish carries the same value, so a live edit the node did not take is sent
+  again.
 - **Everything else** (stage host MIDI, controller MIDI or one system's MIDI, set bpm / transport /
   ppq, press a button, write RAM) goes through the one
   [`QueuedInvoker`](../packages/native/src/host/engine/EngineInvoker.hpp), which packs it into a POD

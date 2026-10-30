@@ -100,7 +100,7 @@ void applyExpansionVolume(NesConfig& cfg, std::uint32_t percent) {
 
 // MesenNesConfig spells a NesRegion as ConsoleRegion's ordinal, ordinal for ordinal (MesenNesConfig.hpp), and the
 // accuracy switches read 0 as the documented chip. Neither the casts below nor those comparisons are checked, so hold
-// them here, where both enums are visible.
+// them here, where both enums are visible. A new NesRegion enumerator belongs in the asserted list.
 static_assert(static_cast<std::uint32_t>(NesRegion::Auto) == static_cast<std::uint32_t>(ConsoleRegion::Auto) &&
                   static_cast<std::uint32_t>(NesRegion::Ntsc) == static_cast<std::uint32_t>(ConsoleRegion::Ntsc) &&
                   static_cast<std::uint32_t>(NesRegion::Pal) == static_cast<std::uint32_t>(ConsoleRegion::Pal) &&

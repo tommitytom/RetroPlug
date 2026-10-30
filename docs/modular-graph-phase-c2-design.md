@@ -73,10 +73,11 @@ The user's, on 2026-10-30:
   spelling, or a setting's number out of its range (`lightTemperature` -1 to 1, `apuLatencyMs` 0.25 to 6) refuses the
   settings, never clamped, as a document's bad value always has; a param's value is clamped, as the planner clamps
   every param.
-- **Every knob is optional.** Absent, the node leaves its core as it was built, or as the last document that carried
-  the field left it. So a Game Boy's node always carries its capture, `off` included, since one left out would leave an
-  armed capture armed; and a system with no core config (a `DirectGraph`'s until it is given one, the B1 translator
-  goldens' models) carries `core` and its capture alone.
+- **Every setting is optional.** Absent, the node leaves its core as it was built, or as the last document that
+  carried the field left it. So a Game Boy's node always carries its capture, `off` included, since one left out would
+  leave an armed capture armed; and a system with no core config (a `DirectGraph`'s until it is given one, the B1
+  translator goldens' models) carries `core` and its capture alone. A param is optional too, but absent means its
+  default: a node's gain starts at 0 dB and a NES's expansion volume at 100%, at its first block.
 - **What stays outside C2:** the construct-time fields (SMS `enableFm`, NES `sdRoot`, the FIFO profile and its two
   overrides, the N8 link and its round trip, `channelExportMode`) stay in the build spec until C3 builds cores in their
   nodes; `buildCore`'s facts (the export mode, the link group) stay casts until C4; `linkGroupId` stays a TS-side field
@@ -97,8 +98,8 @@ The user's, on 2026-10-30:
   the core holds where it has one (`setFastBoot` and a NES's `setRemoveSpriteLimit` write unconditionally). A palette
   change reapplies the display group and restarts nothing, a model change restarts the core and a region change resets
   it, on the block thread as before. A Game Boy applies its fast boot first, which waits for the next restart and so
-  is what a model's restart boots with, then the rest in `applyRoleConfig`'s order, the capture last (section 10 says
-  why the fast boot moved). A param's control stream gives its latest value each block, applied value-guarded after
+  is what a model's restart boots with, then the rest in the store's role-config order, the capture last (section 10
+  says why the fast boot moved). A param's control stream gives its latest value each block, applied value-guarded after
   the settings and before the inputs: a change lands at the block's start (at most a block late, as the command
   ring's did). A value a wire drives is clamped to the param's range by the node, from the same constants the
   declaration takes its bounds from (the planner and `setParam` clamp a document's or a live edit's). Every param
@@ -157,7 +158,8 @@ The user's, on 2026-10-30:
   builds what the node runs and an edit that rebuilds exactly the last document sent is sent rather than skipped.
 - **Callers moved:** the `test-native` files, mock-tier tests and the CLI session (`analyze-lsdj-sync`) that call the
   old methods set a mode or a knob the way the app does, through the store or the published document. The parity rig
-  (`render-blocks`) is among them, and keeps its recorded output.
+  (`render-blocks`) is among them; its first-block gain cases moved with the later snap and were re-recorded
+  (section 10).
 
 ## 6. Tests
 
@@ -165,22 +167,31 @@ The user's, on 2026-10-30:
   same-key change swaps; `setGraph` never waits on its commit.
 - **`retroplug-engine-graph-test`:** every setting and param reaches its core (through a plan swap or `setParam`, at the
   next block); the value guards (a palette, highpass or sprite-limit change neither restarts nor resets the core, a model
-  change restarts it); everything applied at activation, before the core's first block, the capture included; the
-  atomic switch (one `setGraph` changing an LSDj's mode gives the Game Boy its capture in the block the decoder first
-  runs in the new mode); `Engine::setParam` (unknown node or param refused, values clamped, a later publish of the same
-  value moving nothing); no allocation on the block thread for the params path; the new cases under ThreadSanitizer.
-  And every system node of every document in `buildGraph`'s goldens names only the settings fields its type's schema
-  lists (section 10).
+  change restarts it); every setting applied at activation, before the core's first block, the capture included (a
+  param at that first block); the atomic switch (one `setGraph` changing an LSDj's mode gives the Game Boy its capture
+  in the block the decoder first runs in the new mode); `Engine::setParam` (unknown node or param refused, values
+  clamped, an integer value decoded, a later publish of the same value moving nothing); a live `setParam` is the
+  value a later document compares against, and a reshaped plan carries it; a knob a wire drives is clamped to its
+  range; a node's first block plays its gain at
+  the document's level, snapped rather than ramped from 0 dB; the restart order after a host command sent behind a
+  plan, and both layers of a knob's guard; no allocation on the block thread for the params path or the knobs a Game
+  Boy applies in place; the new cases under ThreadSanitizer. And every system node of every document in `buildGraph`'s
+  goldens names only the settings fields its type's schema lists, and the role goldens' every-node model places a GBA,
+  whose gain param reaches a real core (section 10).
 - **`pnpm test`:** `buildGraph`'s settings and params for every system type, the capture for each mode and `off` under
   the controller's forced MI.MAP; the store's gain and expansion volume calling `setParam` without publishing, a setting
   edit publishing, an `lsdj-sync` edit publishing its capture; the goldens re-recorded.
-- **`test:native`:** `app-settings` and `app-mesen-settings` drive every knob through the real host; the LSDj and
+- **`test:native`:** `app-settings`, `app-mesen-settings`, `app-sameboy-display`, `app-construct-settings`,
+  `cartridge-accuracy` and `expansion-volume` drive the knobs through the real host; `param-republish` holds a
+  document's value after a live edit moved the node, through the store and `DirectGraph.setCoreConfig`; the LSDj and
   model-switch tests set their modes through the store, or a `DirectGraph`'s `setCoreConfig` and `setPipeline`; and
   `lsdj-capture-settings` (it was `lsdj-midiout-build-flag`, which tested the build spec's capture) holds an LSDj
   adopted in MI.OUT or master sync to decode from the first document that places it, with no capture in its build
   spec.
-- **Parity:** knobs reach the core at a block's start, where the command ring delivered them, so strict parity must
-  hold unchanged; a case that moves is a finding to explain before anything is re-recorded.
+- **Parity:** knobs reach the core at a block's start, where the command ring delivered them, so strict parity held
+  unchanged through C2. The exception is a node whose first block carries a non-zero gain: it now starts at that level
+  instead of ramping from 0 dB, so those cases moved and were re-recorded by the user's decision (section 10). Any
+  other case that moves is a finding to explain before anything is re-recorded.
 
 ## 7. Docs
 
@@ -222,7 +233,8 @@ prototype answers (each answer follows its question):
   range has one meaning in its three copies.
 - Whether a model or region change applied at a block's start, rather than in the command ring's drain, moves any
   parity case (it should not: both run before the block's first step). **None moved.** Strict parity held bit for bit
-  at every commit, with nothing re-recorded, its fixture cases among them: every parity system node carries its whole
+  at the five commits, with nothing re-recorded, its fixture cases among them (the later first-block gain snap moved
+  28 cases, re-recorded by the user's decision, section 10): every parity system node carries its whole
   core config from the first document that places it, and the live edits parity makes (a gain mid-note, the routing
   gains, highpass, APU latency, a VRC6 expansion volume) reach the core through `setParam` or a publish at the block
   the command ring's did. The node's apply is the core's own setter at that block boundary, which a test holds bit for
@@ -241,10 +253,15 @@ prototype answers (each answer follows its question):
 - **The plugin's sync latency report** (`__rp_syncLatencyMs`) still follows the stored `lsdj-sync` mode, not the forced
   one.
 - **The construct-time fields and `buildCore`'s facts:** C3 and C4.
-- What section 10 found and leaves: a NES's settings allocating on the block thread, a settings field a node does not
-  know ignored, and an enum's two spellings on the C++ side.
+- What section 10 found and leaves: a NES's settings and a model's restart allocating on the block thread, a settings
+  field a node does not know ignored, and an enum's two spellings on the C++ side.
 
 ## 10. Found while building
+
+The plan's list of departures is recorded across this document: the params landing with the TS switch-over in section
+8; the optional knobs and a refused range in section 3; a param's first block and the fast boot's order in section 4;
+the capture on every Game Boy node in sections 3 and 10; `expansionVolume`'s integer type in section 3; `buildGraph`'s
+dropped value and `DirectGraph.setCoreConfig`'s refusal in sections 5 and 10; and the three latent bugs below.
 
 - **Three latent bugs, which the document's knobs fixed.** Each was proved failing before the switch-over and is
   pinned now. A loaded project's saved gain never reached its core: nothing applied the stored value until the gain
@@ -254,8 +271,10 @@ prototype answers (each answer follows its question):
   construct blob). Each system node gives its core the document's values by its first block.
 - **The NES core allocates on the block thread on its own**, inside Mesen (8 allocations and frees over two 512-frame
   blocks), and its sprite-limit and accuracy setters allocate whichever path calls them, as they did on the command
-  ring. So section 6's "no allocation on the block thread" holds for a Game Boy's knobs and for every param, which the
-  tests and a profile build's three windows hold at zero, and not for a NES's settings. Left as it is: Mesen's own.
+  ring. So section 6's "no allocation on the block thread" holds for the knobs a Game Boy applies in place and for
+  every param, which the tests and a profile build's three windows hold at zero, and not for a model change that
+  restarts the core (which allocates, as it did on the command ring) or for a NES's settings. Left as it is: Mesen's
+  own, and the model restart's, as it was on the command ring.
 - **The fast boot moved ahead of the model.** The prototype applied the Game Boy's knobs in `applyRoleConfig`'s order,
   model first. Several documents published between two blocks commit together, so a fast boot edit and a model edit
   landed in one block, and the model's restart booted with the old fast boot (`app-sameboy-display` failed). The fast
@@ -284,6 +303,22 @@ prototype answers (each answer follows its question):
   the restart replaces, and are wiped (on the NES, the ROM's reset handler runs after them). No in-tree caller does
   that; a caller that must act on the restarted core renders a block first, which SystemNodes.cpp's comment and
   spec/02 state as the contract, and a test pins it.
+- **A node's first block plays its gain at the document's level.** Every param reaches the core at the node's first
+  block, and a core's gain smoother starts at 0 dB, so a turned-down node ramped down from unity: a -90 dB document
+  played near -9 dB at 20 ms, an audible burst on a duplicate, a `loadState`, a reload, a project load or a render with
+  `--state`. The first value is now snapped into the smoother, and every later edit ramps as it always did. That moved
+  strict parity, as a first-block gain change must: 28 cases in four groups (`routing-stereo`,
+  `routing-onePerInstance` and `routing-twoPerInstance` at n>=2, and `render-shapes/perSystem-mixed`), segment 0 to the
+  new gain and later segments last-bit only, every moved case with a system at a non-zero gain at its first block. The
+  user chose to re-record them; `SystemNode.test.cpp` pins the snap on a sounding core and `app-settings` through a
+  duplicate at -90 dB.
+- **A wire's value is clamped to its param's range.** A control stream's latest value is clamped before its core call,
+  from the same constants the param declaration takes its bounds from, so a wire cannot drive a gain or a NES's
+  expansion volume past its range, +-inf included; the NES rounds the clamped whole percent. `rp.test.level` drives
+  1e9, -1e9 and both infinities into both params, and the node's clamp is what holds them.
+- **The role goldens' every-node model places a GBA.** Its gain param is in the documents the Catch2 golden run plans,
+  so a GBA's param reaches a real core too; the five `every-node/*` documents gain only `sys-5`, its wires and the
+  routing that names it.
 - **A document's param value is sent whenever the node does not hold it**, whoever gave the node the value it has: the
   planner lands a document's value for a fresh node, or one that differs from the value the node was last given, a
   live `setParam` included (`GraphHost::setParam` records what it queued). So a document repeating a value after a live

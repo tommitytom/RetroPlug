@@ -80,7 +80,7 @@ bool sameValues(const ParamDesc& a, const ParamDesc& b) {
 
 // An instance's ports for a layout. A reshape passes the instance's current ones as `carry`, which lends every
 // stream and slot whose param or port persists by id (a param whose values mean the same, a control or resource
-// output of the same kind and type), with the document value last sent to it; the rest start afresh. Lent, never
+// output of the same kind and type), with the value it was last given; the rest start afresh. Lent, never
 // copied: the running plan keeps writing them while this one is built, and this thread only takes addresses.
 std::shared_ptr<PortState> portState(const Layout& layout, const PortState* carry) {
     auto st = std::make_shared<PortState>();
