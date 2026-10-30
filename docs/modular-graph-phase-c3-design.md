@@ -201,8 +201,9 @@ Every boot reads its ROM again, so a file a user rebuilt on disk is what Reset, 
 construct-time edit and a duplicate boot (the pre-C3 behaviour, when the build took the `romPath` for every in-place
 verb); an asset role's hook folds its current bytes, so a changed override is the image booted. An edit's resources
 are released only once its document has planned: a dropped resource cannot be bound by a new instance, so the store
-publishes first and drops afterwards. `discard` drops one system's resources at once: the document it was in never
-planned, so nothing pinned them.
+publishes first and drops afterwards. A release that throws there is said rather than thrown - the document's answer is
+the caller's, not what the transport did to a handle afterwards - and the pool keeps a handle until the engine takes it
+back. `discard` drops one system's resources at once: the document it was in never planned, so nothing pinned them.
 
 **A construct-time edit** is the reset path, run by `setRoleConfig` itself: the `systemKnobs` table gains a third
 column beside settings and params, and when one of its fields moves the store rebuilds the system under a new id with
@@ -276,7 +277,8 @@ render path and every host go through the store as today.
 - **`pnpm test`** ([store-resources.test.ts](../packages/retroplug/test/systems/store-resources.test.ts)): each verb's
   resource and publish order, the release after a publish, the rollback after a refusal, a restore republish refused
   too, a project load dropping its bad system, the construct-time reset, a construct-time edit to the value already
-  stored moving nothing, a publish that throws rolling back as a refusal does, a sparse stored config's live edits, a
+  stored moving nothing, a publish that throws rolling back as a refusal does, a release that throws finishing the
+  rollback it is in and leaving the verb's own answer alone, a sparse stored config's live edits, a
   stored value the schema repairs taking its rebuild, `clear`/`discard`, DirectGraph's add/replace/remove, every put
   balanced by a release; and the mock backend's own refusals ([meta.test.ts](../packages/retroplug/test/meta.test.ts)):
   a resource spec with no source or more than one, a null source counting as none, and a system node's rebuild key moved
@@ -431,9 +433,10 @@ The follow-ups after the landing found these, each recorded the way the findings
   `path` and `embedded` (a null counts as absent, as the optional does on the wire), and a refusal quotes the caller's
   path and marker as native's does, so the mock tier sees the class of bug the real one reports (sections 4 and 6).
 - **A publish that throws finishes its rollback, a release that throws included.** The store restores its model and
-  focus, gives back the edit's puts, resends the restored model and rethrows the first failure; a throwing release
-  inside that path is logged and the rollback continues, so the caller still sees the publish's error and the restored
-  document still lands (section 6).
+  focus, gives back the edit's puts, resends the restored model and rethrows the first failure; a throwing release is
+  logged and the next handle still offered, on that rollback and after a planned document alike (where the verb's own
+  answer is already settled). A release that dies keeps its handle: the pool forgets an id only once the engine took it
+  back, so the one way left to drop that resource is not lost (section 6).
 
 ## 11. Left as it is
 

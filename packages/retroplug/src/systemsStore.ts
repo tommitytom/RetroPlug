@@ -1256,7 +1256,8 @@ export class SystemsStore {
   // is put back the same way before the error reaches the caller: the edit's puts are given back and the restored
   // model is sent, so no later shape change rebuilds what the store rolled back. The resources an edit REPLACES are
   // released only once its document has planned: a dropped resource cannot be bound by a new instance, and a refused
-  // document's nodes are built afresh.
+  // document's nodes are built afresh. A release that throws is said and the next one attempted, on both paths: the
+  // document's own answer is the caller's, not whatever the transport did to a handle afterwards.
   private commitEdit(
     what: string,
     edit: { entries: SystemEntry[]; focusedId?: number; put?: number[]; drop?: number[] },
@@ -1297,7 +1298,16 @@ export class SystemsStore {
       throw e;
     }
     if (planned) {
-      for (const id of edit.drop ?? []) this.pool.drop(id);
+      for (const id of edit.drop ?? []) {
+        try {
+          this.pool.drop(id);
+        } catch (e) {
+          // The document planned, so the edit is done and the verb's answer is its own: a release the transport died
+          // on cannot take that away, and must not strand the handles behind it either. What the engine was never
+          // told to drop stays live and unnamed - a leaked resource, not a wrong system.
+          console.warn(`[systems] ${what}: releasing a replaced resource threw: ${String(e)}`);
+        }
+      }
       return true;
     }
     console.warn(`[systems] ${what}: the engine refused the document; the edit is rolled back`);

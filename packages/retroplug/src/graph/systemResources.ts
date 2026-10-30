@@ -94,11 +94,14 @@ export class ResourcePool {
   }
 
   /** Give the handle back, telling the engine to drop the resource. Absent ids and ids this pool does not hold are
-   *  no-ops, so a caller can hand back the seeds a boot never took. */
+   *  no-ops, so a caller can hand back the seeds a boot never took. The id is forgotten only once the release got
+   *  through: a release the transport died on leaves the engine holding the resource, and this handle is the only way
+   *  left to ask for it back, so a caller that survives the throw can offer the same id again. */
   drop(id: number | undefined): void {
     if (id === undefined) return;
-    if (!this.held.delete(id)) return;
+    if (!this.held.has(id)) return;
     this.backend.releaseResource(id);
+    this.held.delete(id);
   }
 }
 

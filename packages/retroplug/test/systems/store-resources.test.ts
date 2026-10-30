@@ -11,7 +11,7 @@ import { ProjectStore } from "../../src/projectStore";
 import { RecentStore } from "../../src/recentStore";
 import { buildAppRegistry } from "../../src/appHost";
 import { DirectGraph } from "../../src/graph/directGraph";
-import { systemHandles } from "../../src/graph/systemResources";
+import { ResourcePool, systemHandles } from "../../src/graph/systemResources";
 import type { ConstructSpec, SetGraphResult } from "../../src/backend";
 import { warned } from "../_warnings";
 import { canonicalJson } from "../../src/graph/canonicalJson";
@@ -250,9 +250,10 @@ test("a throwing release does not replace the publish's error, and the restored 
   const before = store.systems()[0];
   const requests = be.graphRequests.length;
   const releaseResource = be.releaseResource.bind(be);
-  let givenBack = 0;
-  be.releaseResource = () => {
-    givenBack++;
+  const putsBefore = be.putResourceCalls.length;
+  const givenBack: number[] = [];
+  be.releaseResource = (handle: number): boolean => {
+    givenBack.push(handle);
     throw new Error("the releaseResource RPC died");
   };
   const setGraph = be.setGraph.bind(be);
@@ -277,11 +278,61 @@ test("a throwing release does not replace the publish's error, and the restored 
   // Both calls cross the same transport: a release that throws cannot replace the caller's own failure or stop the
   // rollback before the restored model is sent.
   expect(failure.includes("the setGraph RPC died")).toBe(true);
-  expect(givenBack).toBeGreaterThan(0); // every put was offered back, the loop not stopped
+  // The handles given back are the edit's own puts, every one in the order it took them. A loop that stopped at the
+  // first throw would leave the rest held by an engine whose document names none of them.
+  const editPuts = be.putResourceCalls.slice(putsBefore).map((c) => c.id);
+  expect(editPuts.length).toBe(2); // the reset put its ROM and the battery it carried
+  expect(givenBack).toEqual(editPuts);
   expect(store.systems()[0]).toEqual(before);
   expect(be.graphRequests.length).toBe(requests + 1);
   expect(be.graphRequests[be.graphRequests.length - 1].slots).toEqual([id]);
   expect(warnings.some((w) => w.includes("giving back the edit's resource threw too"))).toBe(true);
+});
+
+test("a release that throws after a planned document does not take the verb's answer, and the rest go back", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.sav", "battery");
+  const id = store.addSystem("/roms/a.gb")!;
+  const replaced = store.systems()[0].resources;
+  const releaseResource = be.releaseResource.bind(be);
+  const offered: number[] = [];
+  be.releaseResource = (handle: number): boolean => {
+    offered.push(handle);
+    throw new Error("the releaseResource RPC died");
+  };
+  const { result, warnings } = warned(() => store.reset(id));
+  be.releaseResource = releaseResource;
+  // The document planned, so the edit succeeded: what a replacement handle then does to the transport is said, not
+  // thrown over the verb's answer, and the handles behind the one that failed are still offered to the engine.
+  expect(result === null).toBe(false);
+  expect(offered).toEqual(systemHandles(replaced)); // the handles it replaced, every one, in the order it held them
+  expect(store.systems()[0].id).toBe(result);
+  expect(warnings.some((w) => w.includes("releasing a replaced resource threw"))).toBe(true);
+});
+
+test("a release that throws keeps its handle: the pool forgets it only once the engine gave it back", () => {
+  const be = new MockBackend("/cfg");
+  be.seed("/roms/a.gb", gbRom());
+  const pool = new ResourcePool(be);
+  const rom = (pool.put({ type: "rom", path: "/roms/a.gb" }) as { id: number }).id;
+  const releaseResource = be.releaseResource.bind(be);
+  let unreachable = true;
+  be.releaseResource = (): boolean => {
+    if (unreachable) throw new Error("the releaseResource RPC died");
+    return releaseResource(rom);
+  };
+  // A handle the engine never took back is the only way to drop that resource again, so a release that died keeps
+  // the id: the caller that survives the throw can offer it once more instead of leaving the engine holding a
+  // resource no handle can name.
+  expect(() => pool.drop(rom)).toThrow("the releaseResource RPC died");
+  expect(be.resource(rom)).toBeTruthy();
+  unreachable = false;
+  pool.drop(rom);
+  expect(be.resource(rom)).toBe(undefined);
+  be.releaseResource = releaseResource;
+  pool.drop(rom); // once it is given back, a further drop is the no-op it always was
+  expect(be.releaseResourceCalls).toEqual([rom]);
 });
 
 test("a construct-time edit resets the system: a new id, a re-read ROM, the battery carried, the new value", () => {
