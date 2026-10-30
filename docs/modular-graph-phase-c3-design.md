@@ -468,5 +468,11 @@ The follow-ups after the landing found these, each recorded the way the findings
 - **A stable node id across a ROM change:** a graph UI may later want a node to keep its id when its ROM changes. C3
   keeps every core generation a new id.
 - **The seeds' memory:** a node holds its seed bytes for its lifetime, a savestate per system.
+- **The pinned ROM's memory, and a removed system's resources until the next edit.** A system's `rom` resource stays in
+  the engine's table for the system's whole life, one more full copy beside the vector the build hands the core and
+  Mesen's own: a 32 MB GBA ROM is +32 MB per system, per plugin instance. The plugin and SDL reclaim only inside
+  `setGraph` and `loadScriptPack`, so a removed system's core, ROM and seeds stay until the next one of those (the core
+  always lived that long; its bytes are new). C4, which moves the console code into the nodes, could let a core borrow
+  the pinned bytes rather than copy them.
 - **The SD card:** a NES's default SD card is a fresh scratch directory per core, so a rebuild starts it empty, as a
   reset does today.

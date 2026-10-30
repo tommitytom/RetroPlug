@@ -218,6 +218,11 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     one process holds, so two projects' unnamed system 1 still name one battery. TS always sends a real `romName`.
   - **A stored value the role schema would repair leaves the node's default** rather than the repaired value: there
     is no blob to carry it, so `systemKnobs` drops it and `adopt` notes it.
+  - **Each system holds one more full copy of its ROM.** The `rom` resource a node pins for the system's life is on top
+    of the vector the build hands the core and Mesen's own copies: a 32 MB GBA ROM is +32 MB per system, per plugin
+    instance. And the plugin and SDL reclaim only inside `setGraph` and `loadScriptPack`, so a removed system's core,
+    ROM and seeds stay until the next one of those (the core always lived that long; the bytes are new). C4, which
+    moves the console code into the nodes, could let a core borrow the pinned bytes.
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
     moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype
