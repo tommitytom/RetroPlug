@@ -10,7 +10,13 @@
 // frame count. A real-core version lives in test-native/risa-render.ts. Mirrors start-truncation.test.ts.
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
-import { runRenderJob, decodeWav, type RenderContext, type RenderOpts } from "../../src/render";
+import {
+  runRenderJob,
+  decodeWav,
+  type RenderAudioDriver,
+  type RenderContext,
+  type RenderOpts,
+} from "../../src/render";
 import { runtime as risaRuntime } from "../../src/risa";
 
 const SR = 44100;
@@ -44,8 +50,9 @@ function risaRomBytes(): Uint8Array {
 
 /** A mock AudioDriver: silence until the SELECT+START gesture, then a tone until the song reaches
  *  SONG_FRAMES, after which the sequencer stops and it falls silent. `playFrames` counts tone frames from
- *  the gesture, so the render's captured audio and reported length align with SONG_FRAMES. */
-class RisaSpyAudio {
+ *  the gesture, so the render's captured audio and reported length align with SONG_FRAMES. Typed as a render's own
+ *  driver, so a call this stub lacks fails here at compile time; a mix render makes none of the four below. */
+class RisaSpyAudio implements RenderAudioDriver {
   renderAudio(ms: number): Float32Array {
     const frames = Math.round((ms * SR) / 1000);
     const out = new Float32Array(frames * 2); // interleaved stereo; NES mix takes the left lane
@@ -67,6 +74,22 @@ class RisaSpyAudio {
   sampleRate(): number {
     return SR;
   }
+
+  renderAudioPerChannel(_id: number, _ms: number): Float32Array[] {
+    return []; // never asked: the render splits nothing
+  }
+
+  setSampleRate(_sampleRate: number): boolean {
+    return true;
+  }
+
+  setBpm(_bpm: number): boolean {
+    return true;
+  }
+
+  setTransport(_running: boolean): boolean {
+    return true;
+  }
 }
 
 /** MockBackend + a live seq_mode: readRam returns an internal-RAM snapshot whose seq_mode/seq_active bytes
@@ -80,15 +103,15 @@ class RisaMockBackend extends MockBackend {
   }
 }
 
+/** The mock backend + the typed driver. buildSystem only needs `addSystem`, `adopt`, `view` and `loadState` from the
+ *  project store, so only that part is cast. */
 function mockCtx(): { ctx: RenderContext; backend: RisaMockBackend } {
   const backend = new RisaMockBackend("/config");
   backend.seed(RISA_ROM, risaRomBytes());
-  const ctx = {
-    backend,
-    audio: new RisaSpyAudio(),
-    project: { systems: { addSystem: () => 1, view: () => [{ id: 1 }], adopt: () => {}, loadState: () => 1 } },
-    dsp: {},
-  } as unknown as RenderContext;
+  const project = {
+    systems: { addSystem: () => 1, view: () => [{ id: 1 }], adopt: () => {}, loadState: () => 1 },
+  } as unknown as RenderContext["project"];
+  const ctx: RenderContext = { backend, audio: new RisaSpyAudio(), project };
   return { ctx, backend };
 }
 

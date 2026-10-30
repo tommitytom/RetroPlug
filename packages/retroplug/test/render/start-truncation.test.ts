@@ -10,7 +10,13 @@
 // The current code discards the button-hold chunk → first sample is ~100 ms up the ramp (drop ≈ 4410).
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
-import { runRenderJob, decodeWav, type RenderContext, type RenderOpts } from "../../src/render";
+import {
+  runRenderJob,
+  decodeWav,
+  type RenderAudioDriver,
+  type RenderContext,
+  type RenderOpts,
+} from "../../src/render";
 
 const SR = 44100;
 const GB_START = 7; // GameboyButton::Start — LSDj/mGB begin playback on a Start press (matches render.ts).
@@ -23,8 +29,9 @@ const SLOPE = 2e-5;
 const songSample = (playFrame: number): number => BASE + playFrame * SLOPE;
 
 /** A mock AudioDriver: emits silence until Start is pressed, then the ramp above. `playFrames` counts frames
- *  emitted since playback began — so `songSample(0)` is the true first sample of the song. */
-class SpyAudio {
+ *  emitted since playback began, so `songSample(0)` is the true first sample of the song. Typed as a render's own
+ *  driver, so a call this stub lacks fails here at compile time; a mix render makes none of the four below. */
+class SpyAudio implements RenderAudioDriver {
   private playing = false;
   private playFrames = 0; // frames emitted while playing (monotonic from the Start press)
 
@@ -47,18 +54,32 @@ class SpyAudio {
   sampleRate(): number {
     return SR;
   }
+
+  renderAudioPerChannel(_id: number, _ms: number): Float32Array[] {
+    return []; // never asked: the render splits nothing
+  }
+
+  setSampleRate(_sampleRate: number): boolean {
+    return true;
+  }
+
+  setBpm(_bpm: number): boolean {
+    return true;
+  }
+
+  setTransport(_running: boolean): boolean {
+    return true;
+  }
 }
 
-/** A RenderContext over the mock backend + mock audio. buildSystem's GB path only needs
- *  `project.systems.addSystem` to hand back an id; dsp is untouched on that branch. */
+/** A RenderContext over the mock backend + mock audio. buildSystem's GB path only needs `addSystem`, `adopt`, `view`
+ *  and `loadState` from the project store, so only that part is cast; the driver is the typed stub above. */
 function mockCtx(): { ctx: RenderContext; backend: MockBackend } {
   const backend = new MockBackend("/config");
-  const ctx = {
-    backend,
-    audio: new SpyAudio(),
-    project: { systems: { addSystem: () => 1, view: () => [{ id: 1 }], adopt: () => {}, loadState: () => 1 } },
-    dsp: {},
-  } as unknown as RenderContext;
+  const project = {
+    systems: { addSystem: () => 1, view: () => [{ id: 1 }], adopt: () => {}, loadState: () => 1 },
+  } as unknown as RenderContext["project"];
+  const ctx: RenderContext = { backend, audio: new SpyAudio(), project };
   return { ctx, backend };
 }
 
