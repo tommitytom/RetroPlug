@@ -1,6 +1,7 @@
 // The two "mesen" role switches that choose between the documented CHIP behaviour and an Everdrive N8
-// Pro's FPGA core. Both default to "chip" so ordinary games are untouched; "n8" exists so software
-// developed against that cartridge (BlipToaster) sounds the same in the emulator as it does on the console.
+// Pro's FPGA core. Both default to "n8" (coreRoles.ts: RetroPlug is music software, and NES music is
+// overwhelmingly played back through that cartridge), so what you hear here is what the cartridge does;
+// "chip" is the documented behaviour, for playback accuracy on a stock cartridge.
 //
 // Each is a real behavioural fork, measured on a real NES + N8 (PAL, capture ch5):
 //   s5bNoise       - the N8's 5B has no noise generator, and since the mixer ANDs tone with noise,
