@@ -39,7 +39,6 @@ public:
     virtual ~SystemBackend() = default;
     // The request names the console by the config alternative it carries, and this backend builds only the consoles it
     // serves (nullptr, with a reason, for another's). It is taken by value and consumed: the ROM is moved into the core
-    // rather than copied a second time. It is taken by value and consumed: the ROM is moved into the core
     // rather than copied a second time.
     virtual std::unique_ptr<SystemBase> build(SystemId id, SystemBuildRequest request,
                                               double sampleRate, std::string* why) = 0;
