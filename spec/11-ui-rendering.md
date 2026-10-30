@@ -122,7 +122,9 @@ so concurrent core construction can't race.
   length (PAL 59000 ms → NTSC 49800 ms, the 50/60 clock ratio), and a carried `gainDb` / role knob lands on
   the system the job builds. It has to be measured structurally like that: risa boots with randomized NES
   RAM, so two renders of one song differ by ~3 dB and no LEVEL comparison across renders means anything. What
-  each knob then does to the audio is its own test (`pnpm test:native expansion-volume`).
+  each knob then does to the audio is its own test (`pnpm test:native expansion-volume`). Mock tier,
+  `pnpm test render`: `render-document` reads the document the store publishes and finds the carried gain on
+  the system node's `params`.
 
 ## Not yet built / deferred
 
