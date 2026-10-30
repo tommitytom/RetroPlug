@@ -390,11 +390,18 @@ export interface SystemsStore {
   loadMgb(): number | null;
   removeSystem(id: number): boolean;
   /** Edit one of the system's role configs (validated by the role's schema; a "system" role's config is
-   *  applied to the live core). E.g. the NES console region: `setRoleConfig(id, "mesen", { region: "pal" })`
-   *  - baked at construct, so follow it with `reset(id)` to reboot in that region. False when the system
-   *  or the role is absent.
+   *  applied to the live core). A live setting such as the NES console region or the Game Boy model reaches
+   *  the core as its system node's settings: a model change restarts it and a region change resets it at the
+   *  next block. Only construct-time fields need a `reset(id)`: `sdRoot`, the FIFO profile and its
+   *  overrides, the N8 link and its round trip, `channelExportMode`, and SMS `enableFm`. A live model or
+   *  region edit lands after the next rendered block, so a `writeRam`, `pressButton` or `stageSystemMidi`
+   *  issued right after one in a quiescent session reaches the core the restart replaces: render a block
+   *  first when the command must act on the restarted core. False when the system or the role is absent.
    *
-   *  `sdRoot` is the other construct-time "mesen" knob a ROM test tends to want: the host directory the
+   *  E.g. `setRoleConfig(id, "mesen", { region: "pal" })` switches a running NES to PAL; follow a
+   *  construct-time edit with `reset(id)`.
+   *
+   *  `sdRoot` is the construct-time "mesen" knob a ROM test tends to want: the host directory the
    *  emulated EverDrive N8 SD card maps to, for a ROM that reads its data off the cartridge. Point it at
    *  a per-test temp dir and write the fixture there before `reset(id)`, so the ROM's boot-time SD init
    *  sees it. Left unset, the card is a per-process scratch dir - NOT the working directory, so a file a
