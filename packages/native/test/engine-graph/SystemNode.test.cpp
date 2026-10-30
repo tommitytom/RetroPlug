@@ -872,13 +872,19 @@ rfl::Generic::Object knobSchema(const rfl::Generic::Object& schema, const char* 
 
 // The numbers a TS field's own entry spells: `name: helper(<numbers>)`, e.g. `lightTemperature: within(-1, 1)` in
 // buildGraph.ts's SETTING_FIELDS, or `expansionVolume: clampedInt(0, 200, 100)` in coreRoles.ts's mesen schema. A
-// knob's entry has the range's two, a zod clamped field those and its default. The first textual match for `entry`
-// wins, so a comment that spells the entry above its own would be read instead of the field; the numbers then differ
-// from the node's and the case fails, so the reader does not skip comments.
+// knob's entry has the range's two, a zod clamped field those and its default. A match behind a `//` is skipped, so a
+// comment above the entry may spell it too; the first match outside one wins, and no match leaves the case failing on
+// an empty list.
 std::vector<double> tsNumbers(const char* path, const std::string& entry) {
     const auto bytes = readFile(path);
     const std::string ts(bytes.begin(), bytes.end());
-    const auto at = ts.find(entry);
+    auto at = ts.find(entry);
+    while (at != std::string::npos) {
+        const auto lineStart = ts.rfind('\n', at);
+        const auto comment = ts.find("//", lineStart == std::string::npos ? 0 : lineStart);
+        if (comment == std::string::npos || comment > at) break;
+        at = ts.find(entry, at + entry.size());
+    }
     if (at == std::string::npos) return {};
     const auto open = ts.find('(', at);
     const auto close = ts.find(')', open);

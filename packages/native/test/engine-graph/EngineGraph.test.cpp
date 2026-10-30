@@ -471,7 +471,10 @@ TEST_CASE("a setting lands at the node's next prepare, after a host command sent
     invoker.writeRam(1, 0, written);
     REQUIRE(ram() == written);
     e.processBlock(256, outs, 2);
-    CHECK(gb->config_.model == SameBoyModel::Mgb);
+    // The restart keeps the instance (its key is the core id), but the pointer is re-fetched as any restart's is.
+    const auto* restarted = dynamic_cast<const SameBoySystem*>(e.findSystem(1));
+    REQUIRE(restarted);
+    CHECK(restarted->config_.model == SameBoyModel::Mgb);
     CHECK(ram() != written);
 }
 
