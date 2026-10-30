@@ -201,14 +201,17 @@ wrappers over it, and a construct-time `setRoleConfig` is a sixth:
 | `newSram` | a blank `new Uint8Array(0x20000)` battery |
 | a construct-time `setRoleConfig` | live SRAM carried forward (the battery), the new field in the new document |
 
-Every rebuild that swaps the id records `old -> new` in the store's `replacedBy` map
+Every in-place rebuild that keeps the system's identity (`reset`, `reloadSystem`, `loadState`, `loadSram`,
+`newSram`, a construct-time `setRoleConfig`) records `old -> new` in the store's `replacedBy` map
 ([systemsStore.ts](../packages/retroplug/src/systemsStore.ts)), and `reset` is the one verb that reads it: a
 `reset(oldId)` follows a chain of rebuilds to the live system, resets that system and answers its id. That keeps
 the pre-C3 contract working, where a construct-time `setRoleConfig` was followed by `reset(id)` to learn the id
-that carried the new settings. Every other verb treats a replaced id as absent, so a stale handle cannot remove
-or edit a system it never named. An entry goes when the live system its chain ends in does (`removeSystem`,
-`discard`, `clear`), and the map is capped at 128 entries, since a long session of resets would otherwise keep
-every id it ever used.
+that carried the new settings. A user's ROM replacement (`replaceSystem`, `swapRom`, `loadRom` / `loadMgb`) is
+not a rebuild of that system but a different one in its slot, so it records nothing and `reset` of the id it
+replaced answers null, as it did before C3. Every other verb treats a replaced id as absent, so a stale handle
+cannot remove or edit a system it never named. An entry goes when the live system its chain ends in does
+(`removeSystem`, `discard`, `clear`), and the map is capped at 128 entries, since a long session of resets would
+otherwise keep every id it ever used.
 
 A separate **project-load rebuild seam** is deliberately quiet (no dirty/onChange, since a
 load isn't a user edit): `clear()` tears every system down and, when it had any, publishes the
@@ -334,18 +337,17 @@ list in slot order (add appends, replace keeps the slot, remove shifts later slo
 ROM and seeds through the shared helper, and a resource is given back once the document that stopped naming it has
 planned, a refused change giving back what it put and restoring the document before it. A publish that throws (an
 engine or transport fault, which the graph counts as refused) rolls back the same way before the error reaches the
-caller, as the store's `commitEdit` does. A system it adds or replaces
-has no roles, and what the script nodes are told is three calls of its own, each a publish: `setPipeline(id, roles)`
-(each role with a protocol node placed as one, its config as given), `setMidiRouting(mode)` and
-`setController(controller)` (its app config parsed by the app's schema, as the project's is). Until
-`setMidiRouting` names a mode, no host MIDI is routed to any system. A system it adds has no core config
-either, so its node carries no live setting field (a NES's or SMS's construct-time fields are written at their node's
-defaults) and its core keeps the settings it was built with, while its params still reach it at their defaults (its
-gain at 0 dB; a NES's expansion volume at 100%), until `setCoreConfig(id, partial)`, a publish, merges fields over what
-it gave before, in the labels the store's role spells them (a Game Boy's `linkGroupId` its link cable), and refuses,
-changing nothing, any field its node does not take (an ordinal, a construct-time field, another core's);
-`setParam(id, param, value)` sets a `gain` or an `expansionVolume` live, as the store does, and keeps it for the next
-document.
+caller, as the store's `commitEdit` does. A system it adds or replaces has no roles, and what the script nodes are told
+is three calls of its own, each a publish: `setPipeline(id, roles)` (each role with a protocol node placed as one, its
+config as given), `setMidiRouting(mode)` and `setController(controller)` (its app config parsed by the app's schema,
+as the project's is). Until `setMidiRouting` names a mode, no host MIDI is routed to any system. A system it adds has
+no core config either, so its node carries no live setting field (a NES's or SMS's construct-time fields are written at
+their node's defaults) and its core keeps the settings it was built with, while its params still reach it at their
+defaults (its gain at 0 dB; a NES's expansion volume at 100%), until `setCoreConfig(id, partial)`, a publish, merges
+fields over what it gave before, in the labels the store's role spells them (a Game Boy's `linkGroupId` its link
+cable), and refuses, changing nothing, any field its node does not take (an ordinal, a construct-time field, another
+core's); `setParam(id, param, value)` sets a `gain` or an `expansionVolume` live, as the store does, and keeps it for
+the next document.
 
 ### RecentStore — [`src/recentStore.ts`](../packages/retroplug/src/recentStore.ts)
 

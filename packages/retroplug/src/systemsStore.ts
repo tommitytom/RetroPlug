@@ -349,8 +349,10 @@ export class SystemsStore {
     return this.replaceWith(id, prev, prepared);
   }
 
-  /** Put `prepared` in system `id`'s slot, replacing `prev`: the system's identity and focus are kept, its resources
-   *  given back only once the document that stops naming them has planned. Null when that document was refused. */
+  /** Put `prepared` in system `id`'s slot, replacing `prev`: the slot and the focus are kept, its resources given
+   *  back only once the document that stops naming them has planned. Null when that document was refused. The
+   *  `replacedBy` map `reset` follows is `rebuildInPlace`'s, since that is the in-place change that keeps the
+   *  system's identity; a caller here may be swapping in a different game. */
   private replaceWith(id: number, prev: SystemEntry, prepared: Prepared): number | null {
     const focused = this.focusedId === id;
     if (!this.commitEdit("replace", {
@@ -359,7 +361,6 @@ export class SystemsStore {
       put: prepared.handles,
       drop: systemHandles(prev.resources),
     })) return null;
-    this.rememberReplacement(id, prepared.entry.id);
     this.markDirty();
     return prepared.entry.id;
   }
@@ -444,7 +445,9 @@ export class SystemsStore {
    *  = cold-boot battery, stateBytes = boot from savestate) overrides what native would read from disk.
    *  `savPathOverride` repoints the auto-save target (New SRAM…); omitted, the system keeps its own. The
    *  shared body of reload / loadState / loadSram / newSramAs: the in-place twin of duplicateSystem
-   *  (which appends), and every boot reads its ROM again from its source. */
+   *  (which appends), and every boot reads its ROM again from its source. This is also the one place that
+   *  records `old -> new` for `reset`: it rebuilds a system rather than swapping in another one, so it is the
+   *  only in-place change the pre-C3 `reset(oldId)` contract follows. */
   private rebuildInPlace(
     id: number,
     seed: { sramBytes?: Uint8Array; stateBytes?: Uint8Array },
@@ -477,7 +480,10 @@ export class SystemsStore {
       roles,
     });
     if (!prepared) return null;
-    return this.replaceWith(id, src, prepared);
+    const rebuilt = this.replaceWith(id, src, prepared);
+    if (rebuilt === null) return null;
+    this.rememberReplacement(id, rebuilt);
+    return rebuilt;
   }
 
   /** Dump system `id`'s live savestate to `path`. The registry read is safe while the audio thread runs.

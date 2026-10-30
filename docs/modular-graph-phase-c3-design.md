@@ -224,14 +224,17 @@ the way in (a number clamped or rounded into range) is one the running node neve
 the node's default: that matches the old repair where the repair was the default, and differs where it clamped or
 rounded. An unknown label keeps its old meaning, since the schema's default for one is the native default.
 
-**The id a rebuild replaced still resolves for `reset`.** A rebuild that swaps the id records `old -> new` in the
-store's `replacedBy` map, and `reset` is the one verb that reads it: a `reset(oldId)` follows a chain of rebuilds to
-the live system, resets that system and answers its id. That is what keeps the pre-C3 contract working, where a
-construct-time `setRoleConfig` was followed by `reset(id)` to learn the id carrying the new settings (section 10). An
-entry goes when the live system its chain ends in does (`removeSystem`, `discard`, `clear`), and the map is capped at
-128 entries, because a long session of resets would otherwise keep every id it ever used. Every other verb treats a
-replaced id as gone, so a stale handle cannot remove or edit a system it never named. Nothing serializes the map: a
-project load's `clear` empties it.
+**The id a rebuild replaced still resolves for `reset`.** An in-place rebuild that keeps the system's identity
+(`reset`, reload, new SRAM, load state, load SRAM, a construct-time edit) records `old -> new` in the store's
+`replacedBy` map, and `reset` is the one verb that reads it: a `reset(oldId)` follows a chain of rebuilds to the live
+system, resets that system and answers its id. That is what keeps the pre-C3 contract working, where a construct-time
+`setRoleConfig` was followed by `reset(id)` to learn the id carrying the new settings (section 10). A user's ROM
+replacement (`replaceSystem`, `swapRom`, `loadRom` / `loadMgb`) is not one: it puts a system of its own in the slot and
+records nothing, so `reset` of the id it replaced answers null, as it did before C3. An entry goes when the live system
+its chain ends in does (`removeSystem`, `discard`, `clear`), and the map is capped at 128 entries, because a long
+session of resets would otherwise keep every id it ever used. Every other verb treats a replaced id as gone, so a stale
+handle cannot remove or edit a system it never named (a second `setRoleConfig` on it answers false). Nothing serializes
+the map: a project load's `clear` empties it.
 
 **A refused publish names the node.** The store puts its model and its focus back as they were, gives back what the
 edit put, sends the restored model again and reports the reason, the failure the user saw when a core did not boot. A
@@ -289,12 +292,13 @@ render path and every host go through the store as today.
   stored moving nothing, a publish that throws rolling back as a refusal does, a put that throws partway through a boot
   giving back what that boot put and rethrowing, a release that throws finishing the rollback it is in and leaving the
   verb's own answer alone, `clear` and `discard` offering every handle either holds when one release throws, a sparse
-  stored config's live edits, a stored value the schema repairs taking its rebuild, DirectGraph's add/replace/remove and
-  a DirectGraph publish that throws rolling back as a refusal does, every put balanced by a release; and the mock
-  backend's own refusals ([meta.test.ts](../packages/retroplug/test/meta.test.ts)): a resource spec with no source or
-  more than one, a null source counting as none, a path that is there and empty becoming an empty resource (a zero-byte
-  `.sav`) while an empty one for a `rom` is refused, and a system node's rebuild key moved under a live id (native's
-  "system N is live").
+  stored config's live edits, a stored value the schema repairs taking its rebuild, a user's ROM replacement recording
+  no replaced id so `reset` of the id it took answers null, DirectGraph's add/replace/remove and a DirectGraph publish
+  that throws rolling back as a refusal does, every put balanced by a release; and the mock backend's own refusals
+  ([meta.test.ts](../packages/retroplug/test/meta.test.ts)): a resource spec with no source or more than one, a null
+  source counting as none, a path that is there and empty becoming an empty resource (a zero-byte `.sav`) while an
+  empty one for a `rom` is refused, and a system node's rebuild key moved under a live id (native's "system N is
+  live").
 - **`test:native`** ([app-construct-edit.test.ts](../packages/retroplug/test-native/app-construct-edit.test.ts)): a NES
   FIFO profile edit changes the queue's capacity with no Reset, an export-mode edit makes the per-channel streams
   appear, an SMS FM edit silences an FM song, a sparse stored config keeps a live edit, a param and a later live edit
@@ -391,7 +395,9 @@ section 7; and the findings below.
   new settings (BlipToaster's `bootRomWith` does `setRoleConfig(id0, "mesen", { n8Link: "off" })` then
   `reset(id0) ?? id0`; NESVJ's `bootRegion` throws when the reset answers null). Since the edit rebuilds the system
   itself, that id names nothing any more; the store's `replacedBy` map keeps the forward and `reset` follows it to the
-  live system (section 6), so neither consumer changes.
+  live system (section 6), so neither consumer changes. Only a rebuild records that move: an id a user's ROM
+  replacement took the slot from still answers null, and editing that id again (a second `setRoleConfig`) is refused,
+  since the edit belongs to the live id `systems()` lists.
 - **The gain's first value is snapped, and a node's core is always fresh.** A core a node builds is silent in the
   block its gain first lands in, so the first-value snap is observable only through a savestate seed taken mid-note:
   the case that pins it builds the node with that seed at a 64-frame boundary whose next 64 frames sound (section 7).

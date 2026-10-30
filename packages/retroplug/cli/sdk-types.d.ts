@@ -400,11 +400,13 @@ export interface SystemsStore {
    *  round trip, `channelExportMode`, SMS `enableFm`) is read once, when the core is built, so an edit of one
    *  rebuilds the system itself: its battery is carried, it gets a NEW id (the store's live list has it, see
    *  `systems()`), and no `reset(id)` follows. Code written against the old contract still works: it followed
-   *  such an edit with `reset(id)`, and a reset of the id it held resets what that id became (see `reset`). A
-   *  live model or region edit lands when the next block is rendered, so a `writeRam`, `pressButton` or
-   *  `stageSystemMidi` issued right after one in a quiescent session reaches the core the restart replaces:
-   *  render a block first when the command must act on the restarted core. False when the system or the role
-   *  is absent, or when the rebuild's document was refused (the system is then as it was).
+   *  such an edit with `reset(id)`, and a reset of the id it held resets what that id became (see `reset`). A second
+   *  edit of that old id answers false: only a reset follows a replaced id, since every other verb treats one as
+   *  absent, so the id carrying further edits is the one `systems()` lists. A live model or region edit lands when
+   *  the next block is rendered, so a `writeRam`, `pressButton` or `stageSystemMidi` issued right after one in a
+   *  quiescent session reaches the core the restart replaces: render a block first when the command must act on the
+   *  restarted core. False when the system or the role is absent, or when the rebuild's document was refused (the
+   *  system is then as it was).
    *
    *  E.g. `setRoleConfig(id, "mesen", { region: "pal" })` switches a running NES to PAL; a construct-time edit
    *  such as `{ fifo: "hardware" }` rebuilds the system where it stands.
@@ -423,7 +425,9 @@ export interface SystemsStore {
    *
    *  `id` may be one a rebuild replaced: a construct-time `setRoleConfig` rebuilds under a new id, and code
    *  written against the old contract follows it with `reset(id)`. That still works - the reset applies to
-   *  what `id` became, following a chain of rebuilds, and answers the live system's new id. */
+   *  what `id` became, following a chain of rebuilds, and answers the live system's new id. Only a rebuild
+   *  records that move: loading a different ROM (`loadRom`, `replaceSystem`, `swapRom`) builds a system of its
+   *  own in the slot, so an id one of those replaced answers null, as it did before. */
   reset(id: number): number | null;
 }
 

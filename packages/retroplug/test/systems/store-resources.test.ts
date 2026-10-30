@@ -480,6 +480,25 @@ test("only reset follows a replaced id: removeSystem of one does nothing, as it 
   expect(be.resource(store.systems()[0].resources.rom)).toBeTruthy();
 });
 
+test("a user's ROM replacement is no rebuild: reset of the id it replaced answers null", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/b.gb", gbRom());
+  const first = store.addSystem("/roms/a.gb")!;
+  // Swapping in another game keeps the tile's slot but is not a rebuild of the system that was there: before C3 the
+  // id the caller held named nothing once the ROM its system booted changed, and only a rebuild (reset, reload, a
+  // construct-time edit) kept the old id pointing at the system that carries the new settings.
+  const swapped = store.swapRom(first, "/roms/b.gb")!;
+  expect(swapped === first).toBe(false);
+  expect(store.systems().map((e) => e.id)).toEqual([swapped]);
+  expect(store.reset(first)).toBe(null);
+  // The new system's own id still resets it.
+  const reset = store.reset(swapped);
+  expect(reset === null).toBe(false);
+  expect(store.systems().map((e) => e.id)).toEqual([reset as number]);
+  store.removeSystem(reset as number);
+});
+
 test("a construct-time edit that moves nothing rebuilds nothing, and a live knob stays a document", () => {
   const { be, store } = newStore();
   be.seed("/roms/a.nes", nesRom());
