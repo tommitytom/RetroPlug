@@ -1478,8 +1478,7 @@ TEST_CASE("a node's build carries every knob of its type, checked field by field
         // block leaves nothing on disk.
         const std::string sdRoot =
             (std::filesystem::temp_directory_path() /
-             ("rp-engine-graph-nes-sd-" + std::to_string(std::random_device{}())))
-                .generic_string();
+             ("rp-engine-graph-nes-sd-" + std::to_string(std::random_device{}()))).generic_string();
         NodeRig rig(kRate);
         REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot(
                                                     "rp.mesen.nes", 1,
