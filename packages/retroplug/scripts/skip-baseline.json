@@ -2,10 +2,10 @@
  "native": {
   "app-construct-edit": {
    "skipped": 1,
-   "total": 7
+   "total": 8
   },
   "app-cores": {
-   "skipped": 2,
+   "skipped": 1,
    "total": 5
   },
   "app-lsdj-seed": {
