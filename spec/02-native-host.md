@@ -443,10 +443,10 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   first value is snapped into the core (whose gain smoother starts at 0 dB), so its first sample plays at the
   document's level; every later gain change is smoothed, as it always is. A document without a param leaves its
   stream where it was: at its default, on a new node.
-- **Allocation.** A Game Boy's knobs, the ones it applies in place, and every param allocate nothing on the block
-  thread. Its model change restarts the core (`GB_alloc` / `GB_init`), which allocates, as it did on the command ring.
-  A NES's settings can: its core allocates inside Mesen in its own blocks, and its sprite-limit and accuracy setters
-  do too, whatever path calls them.
+- **Allocation.** A Game Boy's knobs, the ones it applies in place, a NES's setters but its region, and every param
+  allocate nothing on the block thread. A Game Boy's model change restarts the core (`GB_alloc` / `GB_init`), which
+  allocates, as it did on the command ring; a NES's region change resets it, which allocates too. The NES core also
+  allocates inside Mesen in its own blocks.
 - **A refused document** can still have given knobs to a core one of its nodes took, since activation runs while
   it plans: the core goes back to parked with them, for the next document, which in the app carries the same.
 

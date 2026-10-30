@@ -908,6 +908,15 @@ std::vector<double> tsRange(const char* path, const std::string& entry) {
     return numbers.size() >= 2 ? std::vector<double>{numbers[0], numbers[1]} : std::vector<double>{};
 }
 
+// The number an exported TS constant spells, e.g. systemSettings.ts's `export const GAIN_MIN = -90;`.
+double tsConstant(const char* path, const std::string& name) {
+    const auto bytes = readFile(path);
+    const std::string ts(bytes.begin(), bytes.end());
+    const auto at = ts.find("export const " + name + " =");
+    if (at == std::string::npos) return 0.0;
+    return std::strtod(ts.c_str() + ts.find('=', at) + 1, nullptr);
+}
+
 std::vector<std::string> labelsOf(const rfl::Generic::Object& knob) {
     std::vector<std::string> labels;
     const auto values = knob.get("enum")->to_array();
@@ -997,6 +1006,27 @@ TEST_CASE("a system node's enum knobs take the labels the role configs spell, an
         CHECK(*o.get("max")->to_double() == roleRange[1]);
     }
     REQUIRE(found);
+    // Every type's gain param holds the range systemSettings.ts spells, the one the store clamps a saved gain to.
+    const std::vector<double> gainRange = {tsConstant(RP_SYSTEM_SETTINGS_TS_PATH, "GAIN_MIN"),
+                                           tsConstant(RP_SYSTEM_SETTINGS_TS_PATH, "GAIN_MAX")};
+    REQUIRE(gainRange == std::vector<double>{-90.0, 12.0});  // the reader found them
+    for (const char* type : {"rp.sameboy.gb", "rp.mesen.nes", "rp.mesen.gba", "rp.mesen.sms"}) {
+        INFO(type);
+        const auto typeDesc =
+            rp::graph::parseJson(rig.registry.find(type)->type->descriptor(rig.registry.find(type)->type));
+        REQUIRE(typeDesc);
+        const auto typeParams = typeDesc->to_object()->get("params")->to_array();
+        REQUIRE(typeParams);
+        bool gain = false;
+        for (const auto& p : *typeParams) {
+            const auto o = *p.to_object();
+            if (*o.get("id")->to_string() != "gain") continue;
+            gain = true;
+            CHECK(*o.get("min")->to_double() == gainRange[0]);
+            CHECK(*o.get("max")->to_double() == gainRange[1]);
+        }
+        REQUIRE(gain);
+    }
     for (const char* type : {"rp.mesen.gba", "rp.mesen.sms"}) {
         INFO(type);
         CHECK(settingsSchema(rig, type).get("properties")->to_object()->size() == 1);  // core alone
@@ -1396,9 +1426,8 @@ TEST_CASE("a knob absent from a system node's settings leaves its core as it was
 
 TEST_CASE("a Game Boy node's settings commit, and every knob it applies in place, allocate nothing on the block thread",
           "[engine-graph][system-node][settings]") {
-    // Only a model's restart allocates, as it did through the command ring. (A NES's block allocates on its own, in
-    // Mesen, and so do its core's setters, which write Mesen's settings, whichever path calls them; the node calls them
-    // as the ring's handler did.)
+    // Only a model's restart allocates, as it did through the command ring. (A NES's blocks allocate on their own, in
+    // Mesen, and its region reset allocates; its other setters allocate nothing: the NES cases below hold both.)
     NodeRig rig(kRate);
     auto built = mgb(1);
     SameBoySystem* const gb = built.get();
@@ -1421,6 +1450,78 @@ TEST_CASE("a Game Boy node's settings commit, and every knob it applies in place
     CHECK(gb->config_.highpass == SameBoyHighpass::Off);
     CHECK(gb->config_.dmgPalette == SameBoyDmgPalette::Gbl);
     CHECK(gb->serialOutCapture() == SerialOutCapture::Listen);
+}
+
+TEST_CASE("a NES node's settings allocate no more on the block thread than the same window with no edit",
+          "[engine-graph][system-node][settings]") {
+    // Mesen allocates inside its own blocks, so the claim is relative. A second core, warmed through the same blocks,
+    // is the no-edit window at the same emulated time. The block an edit lands in is skipped: the changed emulation can
+    // make Mesen allocate a little differently there (the setters themselves are held separately below).
+    NodeRig rig(kRate), control(kRate);
+    auto built = nes(1, 0), controlBuilt = nes(1, 0);
+    MesenNesSystem* const core = built.get();
+    const auto token = rig.park(std::move(built));
+    const auto controlToken = control.park(std::move(controlBuilt));
+    REQUIRE(rig.set(knobbed("rp.mesen.nes", token)).ok);
+    REQUIRE(control.set(knobbed("rp.mesen.nes", controlToken)).ok);
+    Lanes out(2), controlOut(2);
+    const rp_transport t{kRate, 120.0, 0.0, 0};
+    for (int b = 0; b < 8; ++b) {
+        rig.host->processBlock(512, t, out.ptrs.data(), 2);
+        control.host->processBlock(512, t, controlOut.ptrs.data(), 2);
+    }
+    rig.host->setAudioThreadOwns(true);      // so the commit happens in a block, as it does under an audio thread
+    control.host->setAudioThreadOwns(true);
+    const auto window = [&](NodeRig& r, Lanes& lanes) {
+        rp::test::beginCountingAllocations();
+        for (int b = 0; b < 2; ++b) r.host->processBlock(512, t, lanes.ptrs.data(), 2);
+        return rp::test::endCountingAllocations();
+    };
+    window(control, controlOut);  // the control's edit block, at the same emulated time
+    const auto idle = window(control, controlOut);
+    REQUIRE(rig.set(knobbed("rp.mesen.nes", token,
+                            R"("removeSpriteLimit":true,"apuLatencyMs":2,"s5bNoise":"chip","mmc5PhaseReset":"chip")"))
+                .ok);
+    window(rig, out);  // the block the settings land in
+    const auto knobs = window(rig, out);
+    rig.host->setAudioThreadOwns(false);
+    control.host->setAudioThreadOwns(false);
+    INFO("idle " << idle.allocations << " allocations / " << idle.frees << " frees, knobs " << knobs.allocations
+                 << " / " << knobs.frees);
+    CHECK(knobs.allocations == idle.allocations);
+    CHECK(knobs.frees == idle.frees);
+    CHECK(core->config().removeSpriteLimit);
+    CHECK(core->config().apuLatencyMs == 2.0);
+    CHECK(core->config().s5bNoise == 0);
+    CHECK(core->config().mmc5PhaseReset == 0);
+}
+
+TEST_CASE("a NES's setters that do not reset allocate nothing, and its region reset does",
+          "[engine-graph][system-node][settings]") {
+    auto core = nes(1, 0);
+    const auto count = [&](auto fn) {
+        rp::test::beginCountingAllocations();
+        fn();
+        return rp::test::endCountingAllocations();
+    };
+    const auto remove = count([&] { core->setRemoveSpriteLimit(true); });
+    const auto latency = count([&] { core->setApuLatencyMs(2.0); });
+    const auto s5b = count([&] { core->setS5bNoise(0); });
+    const auto mmc5 = count([&] { core->setMmc5PhaseReset(0); });
+    const auto gain = count([&] { core->setGainDb(-6.0f); });
+    const auto volume = count([&] { core->setExpansionVolume(40); });
+    const auto region = count([&] { core->setRegion(static_cast<std::uint32_t>(NesRegion::Dendy)); });
+    INFO("remove " << remove.allocations << ", latency " << latency.allocations << ", s5b " << s5b.allocations
+                   << ", mmc5 " << mmc5.allocations << ", gain " << gain.allocations << ", volume "
+                   << volume.allocations << ", region " << region.allocations);
+    CHECK(remove.allocations == 0);
+    CHECK(latency.allocations == 0);
+    CHECK(s5b.allocations == 0);
+    CHECK(mmc5.allocations == 0);
+    CHECK(gain.allocations == 0);
+    CHECK(volume.allocations == 0);
+    CHECK(region.allocations > 0);  // UpdateRegion + Reset
+    CHECK(core->config().region == static_cast<std::uint32_t>(NesRegion::Dendy));
 }
 
 TEST_CASE("a Game Boy node takes knob edits published while an audio thread runs its blocks", "[engine-graph][system-node][settings]") {
@@ -1615,6 +1716,44 @@ TEST_CASE("a param edit, live or published, allocates nothing on the block threa
     CHECK(counted.allocations == 0);
     CHECK(counted.frees == 0);
     CHECK(gb->config_.gainDb == -3.0f);
+}
+
+TEST_CASE("a NES node's param edit allocates no more on the block thread than the same window with no edit",
+          "[engine-graph][system-node][params]") {
+    NodeRig rig(kRate), control(kRate);
+    auto built = nes(1, 0), controlBuilt = nes(1, 0);
+    MesenNesSystem* const core = built.get();
+    const auto token = rig.park(std::move(built));
+    const auto controlToken = control.park(std::move(controlBuilt));
+    REQUIRE(rig.set(knobbed("rp.mesen.nes", token)).ok);
+    REQUIRE(control.set(knobbed("rp.mesen.nes", controlToken)).ok);
+    Lanes out(2), controlOut(2);
+    const rp_transport t{kRate, 120.0, 0.0, 0};
+    for (int b = 0; b < 8; ++b) {
+        rig.host->processBlock(512, t, out.ptrs.data(), 2);
+        control.host->processBlock(512, t, controlOut.ptrs.data(), 2);
+    }
+    rig.host->setAudioThreadOwns(true);
+    control.host->setAudioThreadOwns(true);
+    const auto window = [&](NodeRig& r, Lanes& lanes) {
+        rp::test::beginCountingAllocations();
+        for (int b = 0; b < 2; ++b) r.host->processBlock(512, t, lanes.ptrs.data(), 2);
+        return rp::test::endCountingAllocations();
+    };
+    window(control, controlOut);  // the control's edit block, at the same emulated time
+    const auto idle = window(control, controlOut);
+    REQUIRE(rig.host->setParam("sys", "gain", -6.0));
+    REQUIRE(rig.host->setParam("sys", "expansionVolume", 40));
+    window(rig, out);  // the block the params land in
+    const auto live = window(rig, out);
+    rig.host->setAudioThreadOwns(false);
+    control.host->setAudioThreadOwns(false);
+    INFO("idle " << idle.allocations << " allocations / " << idle.frees << " frees, live " << live.allocations << " / "
+                 << live.frees);
+    CHECK(live.allocations == idle.allocations);
+    CHECK(live.frees == idle.frees);
+    CHECK(core->config().gainDb == -6.0f);
+    CHECK(core->config().expansionVolume == 40);
 }
 
 TEST_CASE("a node placed with its gain plays the first block at it, not ramping down from 0 dB",

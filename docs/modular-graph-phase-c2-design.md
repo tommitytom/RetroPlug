@@ -167,18 +167,18 @@ The user's, on 2026-10-30:
 - **`retroplug-graph-test`:** a node with `rebuild_key` declares stateless prepare; a change of key rebuilds and a
   same-key change swaps; `setGraph` never waits on its commit; a live `GraphHost::setParam` is the value a later
   document compares against, and a reshaped plan carries it (`Execution.test.cpp`, `Reshape.test.cpp`).
-- **`retroplug-engine-graph-test`:** every setting and param reaches its core (through a plan swap or `setParam`, at the
-  next block); the value guards (a palette, highpass or sprite-limit change neither restarts nor resets the core, a model
-  change restarts it); every setting applied at activation, before the core's first block, the capture included (a
-  param at that first block); the atomic switch (one `setGraph` changing an LSDj's mode gives the Game Boy its capture
-  in the block the decoder first runs in the new mode); `Engine::setParam` (unknown node or param refused, values
-  clamped, an integer value decoded, a later publish of the same value moving nothing); a knob a wire drives is
-  clamped to its range; a node's first block plays its gain at the document's level, snapped rather than ramped from
-  0 dB; the restart order after a host command sent behind a plan, and both layers of a knob's guard; no allocation
-  on the block thread for the params path or the knobs a Game Boy applies in place; the new cases under
-  ThreadSanitizer. And every system node of every document in `buildGraph`'s goldens names only the settings fields
-  its type's schema lists, and the role goldens' every-node model places a GBA, whose gain param reaches a real core
-  (section 10).
+- **`retroplug-engine-graph-test`:** every setting and param reaches its core (through a plan swap or `setParam`, at
+  the next block); the value guards (a palette, highpass or sprite-limit change neither restarts nor resets the core,
+  a model change restarts it); every setting applied at activation, before the core's first block, the capture
+  included (a param at that first block); the atomic switch (one `setGraph` changing an LSDj's mode gives the Game Boy
+  its capture in the block the decoder first runs in the new mode); `Engine::setParam` (unknown node or param refused,
+  values clamped, an integer value decoded, a later publish of the same value moving nothing); a knob a wire drives is
+  clamped to its range; a node's first block plays its gain at the document's level, snapped rather than ramped from 0
+  dB; the restart order after a host command sent behind a plan, and both layers of a knob's guard; no allocation on
+  the block thread for the params path, the knobs a Game Boy applies in place, or a NES's setters but its region
+  reset; the new cases under ThreadSanitizer. And every system node of every document in `buildGraph`'s goldens names
+  only the settings fields its type's schema lists, and the role goldens' every-node model places a GBA, whose gain
+  param reaches a real core (section 10).
 - **`pnpm test`:** `buildGraph`'s settings and params for every system type, the capture for each mode and `off` under
   the controller's forced MI.MAP; the store's gain and expansion volume calling `setParam` without publishing, a setting
   edit publishing, an `lsdj-sync` edit publishing its capture; the goldens re-recorded.
@@ -255,8 +255,8 @@ prototype answers (each answer follows its question):
 - **The plugin's sync latency report** (`__rp_syncLatencyMs`) still follows the stored `lsdj-sync` mode, not the forced
   one.
 - **The construct-time fields and `buildCore`'s facts:** C3 and C4.
-- What section 10 found and leaves: a NES's settings and a model's restart allocating on the block thread, a settings
-  field a node does not know ignored, and an enum's two spellings on the C++ side.
+- What section 10 found and leaves: a NES's region reset and a model's restart allocating on the block thread, a
+  settings field a node does not know ignored, and an enum's two spellings on the C++ side.
 
 ## 10. Found while building
 
@@ -272,11 +272,13 @@ dropped value and `DirectGraph.setCoreConfig`'s refusal in sections 5 and 10; an
   NES's `s5bNoise` and `mmc5PhaseReset` never reached its core (`MesenBackend::build` does not copy them from the
   construct blob). Each system node gives its core the document's values by its first block.
 - **The NES core allocates on the block thread on its own**, inside Mesen (8 allocations and frees over two 512-frame
-  blocks), and its sprite-limit and accuracy setters allocate whichever path calls them, as they did on the command
-  ring. So section 6's "no allocation on the block thread" holds for the knobs a Game Boy applies in place and for
-  every param, which the tests and a profile build's three windows hold at zero, and not for a model change that
-  restarts the core (which allocates, as it did on the command ring) or for a NES's settings. Left as it is: Mesen's
-  own, and the model restart's, as it was on the command ring.
+  blocks), and one of its setters does: `setRegion` reconfigures timing and resets the core, which allocates (3).
+  Sprite limit, APU latency, the two accuracy switches, gain and expansion volume allocate nothing: a direct call counts
+  zero, and a settled block after the edit counts what the same block counts with no edit. The block an edit first lands
+  in can allocate differently because Mesen's changed emulation does, which is Mesen's own. So section 6's "no
+  allocation on the block thread" holds for the knobs a Game Boy applies in place, a NES's setters but its region, and
+  every param, and not for a model change that restarts the core, a NES region reset, or Mesen's own blocks. Left as it
+  is: Mesen's own, the region reset's and the model restart's, as the command ring had them.
 - **The fast boot moved ahead of the model.** The prototype applied the Game Boy's knobs in `applyRoleConfig`'s order,
   model first. Several documents published between two blocks commit together, so a fast boot edit and a model edit
   landed in one block, and the model's restart booted with the old fast boot (`app-sameboy-display` failed). The fast

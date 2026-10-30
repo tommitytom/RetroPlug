@@ -191,9 +191,9 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     overrides, the N8 link and its round trip and `channelExportMode` stay in the build spec until C3 builds cores in
     their nodes; `buildCore`'s report of a NES's export mode and a Game Boy's link group stays a cast until C4.
   - **The knobs that allocate on the block thread.** A Game Boy's model change restarts the core, which allocates, as
-    it did on the command ring; a NES's settings do too, its core allocating inside Mesen in its own blocks and its
-    sprite-limit and accuracy setters allocating whatever path calls them. So "no allocation" holds for a Game Boy's
-    knobs, the ones it applies in place, and every node's params only ([02-native-host.md](02-native-host.md)).
+    it did on the command ring, and a NES's region change resets its core, which allocates too; the NES core also
+    allocates inside Mesen in its own blocks. So "no allocation" holds for a Game Boy's knobs, the ones it applies in
+    place, a NES's setters but its region, and every node's params ([02-native-host.md](02-native-host.md)).
   - **A system node ignores a settings field it does not know**, as every C++ node does: a misspelt knob plans and
     does nothing. `BuildGraphGoldens.test.cpp` holds the goldens' system nodes to their schemas' fields; a strict
     reader would refuse it at plan time instead.
