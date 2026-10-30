@@ -872,7 +872,9 @@ rfl::Generic::Object knobSchema(const rfl::Generic::Object& schema, const char* 
 
 // The numbers a TS field's own entry spells: `name: helper(<numbers>)`, e.g. `lightTemperature: within(-1, 1)` in
 // buildGraph.ts's SETTING_FIELDS, or `expansionVolume: clampedInt(0, 200, 100)` in coreRoles.ts's mesen schema. A
-// knob's entry has the range's two, a zod clamped field those and its default.
+// knob's entry has the range's two, a zod clamped field those and its default. The first textual match for `entry`
+// wins, so a comment that spells the entry above its own would be read instead of the field; the numbers then differ
+// from the node's and the case fails, so the reader does not skip comments.
 std::vector<double> tsNumbers(const char* path, const std::string& entry) {
     const auto bytes = readFile(path);
     const std::string ts(bytes.begin(), bytes.end());
@@ -978,12 +980,17 @@ TEST_CASE("a system node's enum knobs take the labels the role configs spell, an
     REQUIRE(descriptor);
     const auto params = descriptor->to_object()->get("params")->to_array();
     REQUIRE(params);
+    bool found = false;
     for (const auto& p : *params) {
         const auto o = *p.to_object();
-        if (*o.get("id")->to_string() != "expansionVolume") continue;
+        const auto id = o.get("id");
+        REQUIRE(id);
+        if (*id->to_string() != "expansionVolume") continue;
+        found = true;
         CHECK(*o.get("min")->to_double() == roleRange[0]);
         CHECK(*o.get("max")->to_double() == roleRange[1]);
     }
+    REQUIRE(found);
     for (const char* type : {"rp.mesen.gba", "rp.mesen.sms"}) {
         INFO(type);
         CHECK(settingsSchema(rig, type).get("properties")->to_object()->size() == 1);  // core alone

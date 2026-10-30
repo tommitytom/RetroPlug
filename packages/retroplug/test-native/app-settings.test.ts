@@ -77,7 +77,7 @@ test("a duplicate of a sounding system plays its first block at the gain its doc
   // A duplicate boots a fresh core from the source's savestate, so it is sounding from its first block, where a loaded
   // project is still booting: only here can the first block's level be measured. A node gives its core the document's
   // gain at that block, snapped in, so a turned-down duplicate is silent from its first sample rather than ramping
-  // down from unity. (The loaded-project case above discards 1500 ms of boot, so a 20 ms ramp hides inside it.)
+  // down from unity. (The loaded-project case below discards 1500 ms of boot, so a 20 ms ramp hides inside it.)
   const firstBlockRms = (gainDb: number): number => {
     const src = project.systems.loadMgb()!;
     audio.renderAudio(1500); // the GB boot and mGB's firmware init
@@ -95,7 +95,7 @@ test("a duplicate of a sounding system plays its first block at the gain its doc
   const quiet = firstBlockRms(-90);
   console.log(`[app-settings] duplicate first 10 ms: 0 dB=${loud.toFixed(6)}, -90 dB=${quiet.toFixed(6)}`);
   expect(loud > 0.001).toBeTruthy(); // the clone rings from its first block
-  expect(quiet < loud * 0.01).toBeTruthy(); // and at -90 dB it is silent there, not a ramp from unity
+  expect(quiet).toBe(0); // and at -90 dB it is silent there: dbToLin's floor is exactly 0, not a ramp from unity
 });
 
 test("a project loaded with a saved gain plays at it from its first block, before any edit", () => {
