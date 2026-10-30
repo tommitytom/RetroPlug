@@ -266,6 +266,25 @@ TEST_CASE("a document value adopted with a swap beats a live change queued befor
     rig.host->setAudioThreadOwns(false);
 }
 
+TEST_CASE("a document value the node was moved away from is sent again, not skipped as unchanged", "[graph][exec]") {
+    GraphRig rig;
+    auto doc = [](int gain) {
+        return R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":0.5},"params":{"gain":)" +
+               std::to_string(gain) + R"(}},{"id":"out","type":"rp.host.audio-out"}],"wires":[{"from":"src.out","to":"out.out.1-2"}]})";
+    };
+    REQUIRE(rig.set(doc(2)).ok);
+    rig.run(64, 2);
+    CHECK(rig.outs[0][0] == 1.0f);
+    // A live change moves the core away from the value the last document carried.
+    REQUIRE(rig.host->setParam("src", "gain", 7.0));
+    rig.run(64, 2);
+    CHECK(rig.outs[0][0] == 3.5f);
+    // The same document again carries the value it carried before, which the node no longer has: it is sent.
+    REQUIRE(rig.set(doc(2)).ok);
+    rig.run(64, 2);
+    CHECK(rig.outs[0][0] == 1.0f);
+}
+
 TEST_CASE("a swap keeps every reused instance's state", "[graph][exec][swap]") {
     GraphRig rig;
     const std::string a = R"({"nodes":[{"id":"src","type":"rp.test.source","settings":{"value":0.5}},

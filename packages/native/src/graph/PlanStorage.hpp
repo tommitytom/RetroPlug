@@ -45,7 +45,7 @@ struct PortState {
     std::vector<std::shared_ptr<StreamStore>>  controlOutputs;   // per output ordinal; null unless control
     std::vector<std::shared_ptr<rp_resource*>> resourceOutputs;  // per output ordinal; null unless resource
     // Control side only.
-    std::map<std::string, double>              appliedParams;    // document values already sent
+    std::map<std::string, double>              appliedParams;    // the value each param was last given, by either route
     std::vector<std::uint8_t>                  wiredParams;      // per param: driven by a wire, so setParam is refused
     std::vector<std::uint8_t>                  lastMask;
     bool                                       maskSent = false;

@@ -108,8 +108,9 @@ public:
     // Call before setAudioThreadOwns(true): it writes plain members that drain() reads.
     void setHostCommandHandler(HostCommandHandler handler, void* ctx);
     // A live param change, clamped to the param's resolved range (and rounded for int, enum and bool, as a
-    // document value is) and applied at `frame` of the next block. False for an unknown node or param, a
-    // NaN value, or a param a wire drives.
+    // document value is) and applied at `frame` of the next block. The value queued is recorded as what the node was
+    // last given, so a later document carrying it back sends it (document X, setParam Y, document X ends at X).
+    // False for an unknown node or param, a NaN value, or a param a wire drives.
     bool setParam(std::string_view nodeId, std::string_view paramId, double value, std::uint32_t frame = 0);
     // Set true BEFORE the audio thread starts calling processBlock, false AFTER it has stopped.
     void setAudioThreadOwns(bool owns);

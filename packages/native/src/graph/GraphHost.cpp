@@ -217,11 +217,11 @@ void GraphHost::markFaulted(Instance& inst) {
 bool GraphHost::setParam(std::string_view nodeId, std::string_view paramId, double value, std::uint32_t frame) {
     const auto it = live_.find(std::string(nodeId));
     if (it == live_.end()) return false;
-    const PortState& ports = *it->second->ports;
-    const auto& params = ports.layout.params;
+    const std::shared_ptr<PortState>& ports = it->second->ports;
+    const auto& params = ports->layout.params;
     for (std::size_t k = 0; k < params.size(); ++k) {
         if (params[k].id != paramId) continue;
-        const auto& wired = ports.wiredParams;
+        const auto& wired = ports->wiredParams;
         if (value != value || (k < wired.size() && wired[k])) return false;
         const ParamDesc& d = params[k];
         double v = std::clamp(value, d.min, d.max);
@@ -229,10 +229,14 @@ bool GraphHost::setParam(std::string_view nodeId, std::string_view paramId, doub
         else if (d.type == ParamType::Bool) v = v >= 0.5 ? 1.0 : 0.0;
         Command c;
         c.kind = Command::Kind::SetParam;
-        c.queue = &ports.params[k]->queue;
+        c.queue = &ports->params[k]->queue;
         c.frame = frame;
         c.value = v;
-        return push(c);
+        if (!push(c)) return false;
+        // The value the node was last given, by either route, so a later document that carries it again compares
+        // against this one and sends it: document X, setParam Y, document X ends at X.
+        ports->appliedParams[params[k].id] = v;
+        return true;
     }
     return false;
 }

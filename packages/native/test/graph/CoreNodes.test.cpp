@@ -231,7 +231,7 @@ TEST_CASE("merge orders events from several inputs by frame, ties in input order
     CHECK(sink.eventBytes[2] == 3);
 }
 
-TEST_CASE("a constant drives a param, and keeps its live value across a swap", "[graph][core]") {
+TEST_CASE("a constant drives a param, and a swap sends a document value the live edit moved it away from", "[graph][core]") {
     GraphRig rig;
     REQUIRE(rig.set(R"({"nodes":[{"id":"k","type":"rp.core.constant","settings":{"min":0,"max":10},"params":{"value":3}},
                                   {"id":"sink","type":"rp.test.sink"}],
@@ -248,7 +248,7 @@ TEST_CASE("a constant drives a param, and keeps its live value across a swap", "
                                   {"id":"out","type":"rp.host.audio-out"}],
                          "wires":[{"from":"k.out","to":"src.gain"},{"from":"src.out","to":"out.out.1-2"}]})").ok);
     rig.run(64, 2);
-    CHECK(rig.outs[0][0] == 7.0f);  // the document still says 3, but 3 was already applied: the live 7 stands
+    CHECK(rig.outs[0][0] == 3.0f);  // the node has the live 7, so the document's 3 is sent: a document value wins
 }
 
 TEST_CASE("control + emits the sum at every frame where it changes", "[graph][core]") {
@@ -396,10 +396,11 @@ TEST_CASE("the recorder starts at the frame Record turns on and stops at the buf
     const auto ramp = rig.buffer(1, 64, [](std::uint32_t, std::uint32_t i) { return static_cast<float>(i); });
     const auto target = rig.resources.createAudioBuffer(1, 40, 48000.0);
     const auto other = rig.resources.createAudioBuffer(1, 8, 48000.0);
-    auto doc = [&](ResourceTable::Id t) {
+    auto doc = [&](ResourceTable::Id t, bool record = false) {
         return R"({"nodes":[{"id":"p","type":"rp.core.buffer-player","settings":{"channels":1,"layout":"mono"},
                              "resources":{"sample":)" + CoreRig::res(ramp) + R"(}},
-                            {"id":"rec","type":"rp.core.buffer-recorder","settings":{"channels":1},"params":{"record":false},
+                            {"id":"rec","type":"rp.core.buffer-recorder","settings":{"channels":1},"params":{"record":)" +
+               std::string(record ? "true" : "false") + R"(},
                              "resources":{"target":)" + CoreRig::res(t) + R"(}}],
                    "wires":[{"from":"p.out","to":"rec.in"}]})";
     };
@@ -422,9 +423,11 @@ TEST_CASE("the recorder starts at the frame Record turns on and stops at the buf
     rig.run();
     CHECK(sample(target, 0) == 0.0f);  // turned on again: back to the first frame, overwriting
     CHECK(sample(target, 39) == 39.0f);
-    REQUIRE(rig.set(doc(other)).ok);
+    // The document names the record value the live edit set, so nothing moves; the new target starts from its first
+    // frame and records.
+    REQUIRE(rig.set(doc(other, true)).ok);
     rig.run();
-    CHECK(sample(other, 0) == 0.0f);  // a new target starts from its first frame
+    CHECK(sample(other, 0) == 0.0f);
     CHECK(sample(other, 7) == 7.0f);
 }
 

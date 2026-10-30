@@ -216,7 +216,8 @@ TEST_CASE("a reshape moves which params a wire drives, and so which setParam ref
     CHECK(x.knobs['h'] == 0.25);
 }
 
-TEST_CASE("a reshape sends document values to the params it adds, not again to the ones it keeps", "[graph][reshape]") {
+TEST_CASE("a reshape sends a document value to a param the node does not hold, and adds the ones it did not have",
+          "[graph][reshape]") {
     GraphRig rig;
     REQUIRE(rig.set(doc(R"({"knobs":["h"]})", "", "", R"({"h":30})")).ok);
     rig.run();
@@ -229,7 +230,7 @@ TEST_CASE("a reshape sends document values to the params it adds, not again to t
     REQUIRE(rig.set(doc(R"({"knobs":["g","h"]})", "", "", R"({"g":7,"h":30})")).ok);
     rig.run();
     CHECK(x.knobs['g'] == 7.0);
-    CHECK(x.knobs['h'] == 50.0);  // h's document value was already sent; the live value stands
+    CHECK(x.knobs['h'] == 30.0);  // h has the live 50, so the document's 30 is sent; g is new and takes its 7
 
     // A param dropped and then added back is a new param, so its document value is sent again.
     REQUIRE(rig.set(doc(R"({"knobs":["h"]})", "", "", R"({"h":30})")).ok);
@@ -250,11 +251,12 @@ TEST_CASE("a param whose range changes restarts at its default, its document val
     rig.run(64, 2);
     REQUIRE(n.knob == 70.0);
 
-    // A reshape that leaves k's range as it was (o becomes events): carried, the live value stands.
-    REQUIRE(rig.set(retype(R"({"max":100,"level":"events"})", R"({"k":50})")).ok);
+    // A reshape that leaves k's range as it was (o becomes events) and names no value: carried, the live value
+    // stands.
+    REQUIRE(rig.set(retype(R"({"max":100,"level":"events"})", "")).ok);
     rig.run();
     CHECK(n.knob == 70.0);
-    // One that changes it: the value 70 meant something else, so k starts afresh and takes the document's 50.
+    // One that changes it: the value 70 meant something else, so k starts afresh and the document's 50 lands.
     REQUIRE(rig.set(retype(R"({"max":200,"level":"events"})", R"({"k":50})")).ok);
     rig.run();
     CHECK(n.knob == 50.0);
