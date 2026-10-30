@@ -124,7 +124,8 @@ The console shows `[sniff] p1=235/f (440 Hz) ...` - each voice as `<timer>/<leve
 keeps a voice's timer at note-off and silences it through its level, so `p1=235/0` is the note
 released, not a stuck one - plus a `[stats]` line once a second while anything moves (bytes in,
 messages parsed / forwarded, fifoWRs and their largest batch, and every way a byte can be lost:
-UART overrun, framing error, full receive ring). `-DN8_BRIDGE_VERBOSE=1` also prints each
+UART overrun, framing error, full receive ring; and `lat=avg/worst` in µs for the window).
+`-DN8_BRIDGE_VERBOSE=1` also prints each
 forwarded batch. The L6 capture's ch3 measures the pitch
 (`retroplug-cli analyze-capture <wav> --channel 3 --expect-hz 440`).
 Don't confuse it with the **L6's** own MIDI ports (`L6 MIDI I/O Port` etc.): those are USB
@@ -136,6 +137,7 @@ Boots the ROM fresh through `loop.sh`, then judges every case on the Pico's own 
 lost on the way in, everything forwarded) and on the ROM's state read back through the sniffer
 (still in sync: A4 sounds at timer 235, then goes silent):
 
+- latency: 40 isolated messages, worst case within 1.5 ms (see below);
 - bursts of 25 / 100 / 500 note pairs at wire speed, each in a single write;
 - a four-voice chord on and off (Pulse 1 / 2, triangle, noise);
 - running status and realtime bytes - as the cable re-serialises them: USB-MIDI packets carry
@@ -145,13 +147,28 @@ lost on the way in, everything forwarded) and on the ROM's state read back throu
 - 40000 messages as one unbroken stream - the cable's own limit, ~800 msgs/s;
 - the NES power-cycled under a live stream: the Pico must re-boot the ROM itself and play again.
 
-First run (2026-10-30), before the fix below: every burst lost ~70% of its bytes to UART overruns.
-Each fifoWR takes ~5 ms (`edio_mem_wr` sends five separate USB transfers), and receive was
-polled between forwards, so the UART's 32-byte hardware FIFO overflowed in ~10 ms. Receive is
-now interrupt-driven into a 4 KB ring, and every message parsed in one pass of the main loop goes
-out as ONE fifoWR (a batch of up to 64). Since then: 77,315 messages through, 0 lost, including
-the 40000-message stream and the recovery case. A write still costs ~5 ms; coalescing the five
-transfers into one would cut the latency, not needed for throughput (the largest batch seen is 29).
+**Throughput.** The first run lost ~70% of every burst to UART overruns: receive was polled between
+forwards, and a forward blocked the loop long enough for the UART's 32-byte hardware FIFO to
+overflow. Receive is now interrupt-driven into a 4 KB ring, and every message parsed in one pass of
+the main loop goes out as one fifoWR (a batch of up to 64). Full run since: 50,832 messages, 0 lost.
+
+**Latency** - a message's last byte off the UART to the N8 acknowledging the write: **~0.6 ms
+average, ~1.04 ms worst** (it was ~4.6 ms typical with 11-19 ms outliers). Four things had to go:
+
+- **Five USB transfers per write.** Pico-PIO-USB runs host transactions from its 1 ms
+  start-of-frame interrupt, one packet per endpoint per frame, and `edio_mem_wr` sent cmd / addr /
+  len / exec / data as five writes: 5 frames. One coalesced write is one frame.
+- **The UART receive timeout.** A 3-byte message is under the RX interrupt's 4-byte threshold, so
+  it waited ~1 ms for the timeout. The idle main loop now reads the UART itself (IRQ masked), and
+  the IRQ stays the safety net while the loop is blocked.
+- **The sniff's 512-byte read** - eight packets, ~10 ms of main loop. It reads the 22 bytes it uses.
+- **Console output.** A `[stats]` line blocks ~11 ms on the 115200 console. Diagnostics now run
+  only once MIDI has been quiet for 100 ms.
+
+What remains is the frame itself: a write waits up to 1 ms for the next start-of-frame. Going
+under that means sending outside Pico-PIO-USB's frame schedule, i.e. patching the library. Add the
+MIDI wire itself (3 bytes at 31250 baud = ~1 ms, before the Pico sees the last byte) for the full
+picture. The ROM side (the N8 MCU, the cart FIFO, the ROM's poll) is not measured here.
 
 ## Build + flash + verify
 

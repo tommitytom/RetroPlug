@@ -105,6 +105,19 @@ echo "== prime (the ROM drops its first message after boot) + reference"
 send 'B0 07 7F'; sleep 0.3
 reference prime
 
+echo "== latency: 40 isolated messages, last byte off the UART -> the N8 acknowledging the write"
+# Each travels alone (150 ms apart). The floor is one USB frame: PIO-USB sends at most one packet
+# per endpoint per 1 ms frame, so a write waits up to 1 ms for the next one. Anything past ~1.5 ms
+# means something is holding the main loop again (a print, a long USB read).
+mark=$(wc -l <"$log")
+for ((i = 0; i < 20; i++)); do send '90 45 7F'; sleep 0.15; send '80 45 00'; sleep 0.15; done
+sleep 1.4
+lats=$(tail -n +"$((mark + 1))" "$log" | grep '^\[stats\]' | grep -oE 'lat=[0-9]+/[0-9]+' | grep -v 'lat=0/0')
+worst=$(grep -oE '/[0-9]+' <<<"$lats" | tr -d / | sort -n | tail -1)
+avg=$(grep -oE '=[0-9]+' <<<"$lats" | tr -d = | awk '{s+=$1; n++} END {print n ? int(s/n) : 0}')
+check latency "worst ${worst:-?} us, average ~${avg} us  (budget 1500 us)" \
+	$( [ -n "$worst" ] && [ "$worst" -le 1500 ] && echo 1 || echo 0 )
+
 for n in 25 100 500; do
 	echo "== burst: $n note on/off pairs on ch1 at wire speed ($((n * 6)) bytes, one amidi write)"
 	judge "burst$n" $((n * 2)) $((n * 6)) "$(pairs $n 0 48 25)"

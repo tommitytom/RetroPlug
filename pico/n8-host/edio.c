@@ -88,39 +88,36 @@ bool edio_sys_info(uint8_t out[64]) {
     return edio_read(out, 64);
 }
 
+// Each Edio frame goes out as ONE edio_write. Pico-PIO-USB runs host transactions from its 1 ms
+// start-of-frame interrupt, one packet per endpoint per frame, so every separate write costs a
+// whole frame: memWR as five writes (cmd / addr / len / exec / data) took 5 ms, one write takes
+// one frame. The five-way split was an attempt at the "Pico can't write the cart FIFO" bug, which
+// turned out to be the probe reading cart SRAM during menu boot (../pico-n8-fifo-write-bug.md).
+#define EDIO_FRAME_MAX 256
+
+static uint32_t frame_hdr(uint8_t *f, uint8_t cmd, uint32_t addr, uint32_t len) {
+    f[0] = 0x2b; f[1] = 0xd4; f[2] = cmd; f[3] = (uint8_t)(cmd ^ 0xff);
+    put32(f + 4, addr);
+    put32(f + 8, len);
+    f[12] = 0;   // exec
+    return 13;
+}
+
 // memRD: CMD + addr(tx32) + len(tx32) + exec(0), then read `len` bytes.
 bool edio_mem_rd(uint32_t addr, uint8_t *buf, uint32_t len) {
-    if (!tx_cmd(EDIO_CMD_MEM_RD)) return false;
-    uint8_t h[9];
-    put32(h, addr);
-    put32(h + 4, len);
-    h[8] = 0;
-    if (!edio_write(h, sizeof h)) return false;
+    uint8_t f[13];
+    if (!edio_write(f, frame_hdr(f, EDIO_CMD_MEM_RD, addr, len))) return false;
     return edio_read(buf, len);
 }
 
 // memWR: CMD + addr(tx32) + len(tx32) + exec(0) + data. Fire-and-forget (no status).
-// The frame (cmd + 9-byte header + payload) MUST go out as ONE contiguous CDC write.
-// The host's kernel CDC driver coalesces its separate tx calls into one bulk transfer,
-// but the Pico's edio_write flushes each part on its own - and the cart FIFO (a streaming
-// register, unlike RAM) mis-handles a write split across USB transfers with gaps: memWR to
-// RAM (SRM) still round-trips, but a split FIFO write is silently dropped by the running
-// NES code (menu *t/*v got zero reply until this was coalesced). So coalesce here.
 bool edio_mem_wr(uint32_t addr, const uint8_t *data, uint32_t len) {
     if (len == 0) return true;
-    // Match the host's exact write chunking (observed via strace of a working FIFO memWR):
-    // FIVE separate transfers - cmd, addr, len, exec, data - with exec in its own 1-byte
-    // write. edio_write drains each to completion, so each phase is its own USB transfer.
-    // The cart FIFO needs this staging (a coalesced or cmd+9-header write is silently
-    // dropped by the FIFO, though it works for RAM). See ../pico-n8-fifo-write-bug.md.
-    uint8_t a[4], l[4], e = 0;
-    put32(a, addr);
-    put32(l, len);
-    if (!tx_cmd(EDIO_CMD_MEM_WR)) return false;   // 2b d4 1a e5
-    if (!edio_write(a, 4)) return false;          // addr (LE)
-    if (!edio_write(l, 4)) return false;          // len  (LE)
-    if (!edio_write(&e, 1)) return false;         // exec
-    return edio_write(data, len);                 // payload
+    uint8_t f[EDIO_FRAME_MAX];
+    uint32_t n = frame_hdr(f, EDIO_CMD_MEM_WR, addr, len);
+    if (n + len > sizeof f) return edio_write(f, n) && edio_write(data, len);
+    memcpy(f + n, data, len);
+    return edio_write(f, n + len);
 }
 
 bool edio_fifo_wr(const uint8_t *data, uint32_t len) {
