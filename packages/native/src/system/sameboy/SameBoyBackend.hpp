@@ -42,8 +42,4 @@ public:
     static std::unique_ptr<SameBoySystem> buildSameBoy(SystemId id, SameBoyConfig cfg,
                                                        std::vector<std::uint8_t> romBytes,
                                                        double sampleRate);
-
-    // Parse the TS "sameboy" role-config JSON (forward-tolerant: an absent field takes its default).
-    // The single place that JSON is decoded: the construct blob.
-    static SameBoyRoleConfig decodeSameBoyRoleConfig(const std::string& json);
 };

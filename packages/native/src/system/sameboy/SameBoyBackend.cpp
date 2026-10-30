@@ -14,12 +14,14 @@
 
 namespace {
 
-} // namespace
-
-SameBoyRoleConfig SameBoyBackend::decodeSameBoyRoleConfig(const std::string& json) {
+// Parse the TS "sameboy" role-config JSON (forward-tolerant: an absent field takes its default). The single place
+// that JSON is decoded: the construct blob.
+SameBoyRoleConfig decodeSameBoyRoleConfig(const std::string& json) {
     const auto r = rfl::json::read<SameBoyRoleConfig, rfl::DefaultIfMissing>(json);
     return r ? r.value() : SameBoyRoleConfig{};  // unparseable → all defaults (a no-op apply)
 }
+
+} // namespace
 
 std::unique_ptr<SameBoySystem> SameBoyBackend::buildSameBoy(SystemId id, SameBoyConfig cfg,
                                                            std::vector<std::uint8_t> romBytes,

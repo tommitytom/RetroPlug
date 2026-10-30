@@ -28,17 +28,20 @@ std::unique_ptr<SystemBase> bootMesen(std::unique_ptr<T> sys, double sampleRate)
     return sys;                             // implicit upcast to unique_ptr<SystemBase>
 }
 
-} // namespace
-
-MesenNesRoleConfig MesenBackend::decodeMesenNesRoleConfig(const std::string& json) {
+// Parse the TS "mesen" role-config JSON (forward-tolerant: an absent field takes its default). The single place
+// that JSON is decoded: the NES construct blob.
+MesenNesRoleConfig decodeMesenNesRoleConfig(const std::string& json) {
     const auto r = rfl::json::read<MesenNesRoleConfig, rfl::DefaultIfMissing>(json);
     return r ? r.value() : MesenNesRoleConfig{};  // unparseable → all defaults (a no-op apply)
 }
 
-MesenSmsRoleConfig MesenBackend::decodeMesenSmsRoleConfig(const std::string& json) {
+// The SMS/GG twin of the above, over the same JSON blob.
+MesenSmsRoleConfig decodeMesenSmsRoleConfig(const std::string& json) {
     const auto r = rfl::json::read<MesenSmsRoleConfig, rfl::DefaultIfMissing>(json);
     return r ? r.value() : MesenSmsRoleConfig{};  // unparseable → all defaults (a no-op apply)
 }
+
+} // namespace
 
 std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildSpec& spec,
                                                 double sampleRate) {

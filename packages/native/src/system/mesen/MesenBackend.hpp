@@ -63,11 +63,4 @@ class MesenBackend final : public SystemBackend {
 public:
     std::unique_ptr<SystemBase> build(SystemId id, const SystemBuildSpec& spec,
                                       double sampleRate) override;
-
-    // Parse the TS "mesen" role-config JSON (forward-tolerant: an absent field takes its default).
-    // The single place that JSON is decoded: the NES construct blob.
-    static MesenNesRoleConfig decodeMesenNesRoleConfig(const std::string& json);
-
-    // The SMS/GG twin of the above, over the same JSON blob.
-    static MesenSmsRoleConfig decodeMesenSmsRoleConfig(const std::string& json);
 };
