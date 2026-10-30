@@ -337,16 +337,16 @@ bool moved(const std::optional<F>& to, const std::optional<F>& from) { return to
 // start of its next block, before the core's prepareForBlock, and everything present once at activation, as it takes
 // or builds its core, before that core first runs. What the core was given is `applied`, a Settings::Applied, which is
 // the live knobs alone: the fields carrying a string (romName, sdRoot, the resource refs) all rebuild the node or move
-// a resource, which no application sees, so the copy a commit makes on the block thread copies no string. So a setting
-// lands at the node's next prepare, after every host command queued behind its plan (the host drains its ring before it
-// runs a block): a caller that must act on the restarted core renders a block first, since a RAM write or staged core
-// bytes sent after a model change reach the core it is about to replace. Each knob is guarded twice, first by `moved`
-// against what this node last applied, so a document's unchanged field is not re-applied even where the core was
-// changed by another path, then by the core's own setter where it has one (setFastBoot and a NES's setRemoveSpriteLimit
-// write unconditionally). A palette change re-applies the display group and restarts nothing, while a model change
-// restarts the core and a region change resets it (docs/modular-graph-phase-c2-design.md section 4). A settings field
-// the type does not know is ignored (node.hpp reads with rfl::DefaultIfMissing and no rfl::NoExtraFields), so a
-// misspelt knob plans and does nothing.
+// a resource, which no application sees, so the copy the node makes when it applies a commit, on the block thread,
+// copies no string. So a setting lands at the node's next prepare, after every host command queued behind its plan
+// (the host drains its ring before it runs a block): a caller that must act on the restarted core renders a block
+// first, since a RAM write or staged core bytes sent after a model change reach the core it is about to replace. Each
+// knob is guarded twice, first by `moved` against what this node last applied, so a document's unchanged field is not
+// re-applied even where the core was changed by another path, then by the core's own setter where it has one
+// (setFastBoot and a NES's setRemoveSpriteLimit write unconditionally). A palette change re-applies the display group
+// and restarts nothing, while a model change restarts the core and a region change resets it
+// (docs/modular-graph-phase-c2-design.md section 4). A settings field the type does not know is ignored (node.hpp
+// reads with rfl::DefaultIfMissing and no rfl::NoExtraFields), so a misspelt knob plans and does nothing.
 //
 // A param's value reaches the core at the start of each block whose control stream moves it, before the core's
 // prepareForBlock and after the settings (a model's restart first, then the levels), each value-guarded against the

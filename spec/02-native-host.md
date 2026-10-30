@@ -438,20 +438,20 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   from or different in what it gave last) at the start of its next block, in `prepare`, before its inputs and
   `prepareForBlock`, which a linked Game Boy's coupled group runs for every member before any of them steps. What it
   gave last is its `Settings::Applied`, the live knobs alone and trivially copyable: the fields that carry a string
-  (`romName`, `sdRoot`, the resource refs) rebuild the node or move a resource, so a commit's copy on the block thread
-  copies no string. A setting therefore lands at the node's next `prepare`, after any host command queued behind its
-  plan (`GraphHost` drains its ring before a block runs), so a caller that must act on the restarted core renders a
-  block first: a `writeRam` or staged core bytes sent after a model change reach the core it is about to replace.
-  Each knob is guarded twice: `moved` compares it with what the node applied last, so a document's unchanged field is
-  not applied again even where the core was changed by another path, and the core's own setter compares it with what
-  the core holds where it has such a guard (`setFastBoot` and a NES's `setRemoveSpriteLimit` write unconditionally). So
-  a palette change reapplies the display group and restarts nothing, a model change restarts the core
-  (`restartEmulator`; the cable needs no rewiring because `linkPeers_` holds the systems, which survive it) and a
-  region change resets it. A Game Boy gives `fastBoot` first, which waits for the next restart and so is what a
-  model's restart boots with, then the rest in the role config's order, the capture last. The capture lands at the
-  start of the first block of the plan that carries it, the block `rp.lsdj.serial-out` first runs in its new mode, so
-  no byte captured in one mode is decoded in the other. A construct-time field is read once, at the build, so a
-  change to one is a new system id and a new core.
+  (`romName`, `sdRoot`, the resource refs) rebuild the node or move a resource, so the copy the node makes when it
+  applies a commit copies no string. A setting therefore lands at the node's next `prepare`, after any host command
+  queued behind its plan (`GraphHost` drains its ring before a block runs), so a caller that must act on the restarted
+  core renders a block first: a `writeRam` or staged core bytes sent after a model change reach the core it is about
+  to replace. Each knob is guarded twice: `moved` compares it with what the node applied last, so a document's
+  unchanged field is not applied again even where the core was changed by another path, and the core's own setter
+  compares it with what the core holds where it has such a guard (`setFastBoot` and a NES's `setRemoveSpriteLimit`
+  write unconditionally). So a palette change reapplies the display group and restarts nothing, a model change
+  restarts the core (`restartEmulator`; the cable needs no rewiring because `linkPeers_` holds the systems, which
+  survive it) and a region change resets it. A Game Boy gives `fastBoot` first, which waits for the next restart and
+  so is what a model's restart boots with, then the rest in the role config's order, the capture last. The capture
+  lands at the start of the first block of the plan that carries it, the block `rp.lsdj.serial-out` first runs in its
+  new mode, so no byte captured in one mode is decoded in the other. A construct-time field is read once, at the
+  build, so a change to one is a new system id and a new core.
 - **When a param reaches the core.** Each param's latest value in the block is given after the settings and
   before the inputs, value-guarded against the value the core was given last (a live `setParam` included, whose
   queued value the host records), so a publish carrying the value the core already has calls nothing, and one

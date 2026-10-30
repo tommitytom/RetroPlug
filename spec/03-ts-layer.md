@@ -189,8 +189,9 @@ it under a **new id** that takes the old one's slot, and preserves identity + fo
 (`replaceById(entries, id, {...src, id: newId})`; `if (focusedId === id) focusedId = newId`).
 The `seed` overrides what the boot reads: `sramBytes` = cold-boot battery,
 `stateBytes` = boot-from-savestate, while `savPath` stays the auto-save target. Every boot reads its ROM again from
-its source, so a file a user rebuilt on disk is what any of these boots, as before C3. Five public operations are thin
-wrappers over it, and a construct-time `setRoleConfig` is a sixth:
+its source, so a file a user rebuilt on disk is what any of these boots, as before C3. Six public operations are
+wrappers over it (only `newSramAs` adds anything of its own: it flushes the old save target, then materialises the new
+one), and a construct-time `setRoleConfig` is a seventh:
 
 | Op | Seed |
 |---|---|
@@ -199,10 +200,11 @@ wrappers over it, and a construct-time `setRoleConfig` is a sixth:
 | `loadState(path)` | `stateBytes` from the file |
 | `loadSram(path)` | `sramBytes` from the file |
 | `newSram` | a blank `new Uint8Array(0x20000)` battery |
+| `newSramAs(savPath)` ("New SRAM...") | the same blank battery, the auto-save target repointed to the picked file |
 | a construct-time `setRoleConfig` | live SRAM carried forward (the battery), the new field in the new document |
 
-Every in-place rebuild that keeps the system's identity (`reset`, `reloadSystem`, `loadState`, `loadSram`,
-`newSram`, a construct-time `setRoleConfig`) records `old -> new` in the store's `replacedBy` map
+Every in-place rebuild that keeps the system's identity (`reset`, `reloadSystem`, `loadState`, `loadSram`, `newSram`,
+`newSramAs`, a construct-time `setRoleConfig`) records `old -> new` in the store's `replacedBy` map
 ([systemsStore.ts](../packages/retroplug/src/systemsStore.ts)), and `reset` is the one verb that reads it: a
 `reset(oldId)` follows a chain of rebuilds to the live system, resets that system and answers its id. That keeps
 the pre-C3 contract working, where a construct-time `setRoleConfig` was followed by `reset(id)` to learn the id
