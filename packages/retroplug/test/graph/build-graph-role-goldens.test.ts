@@ -49,6 +49,7 @@ const system = (id: number, type: SystemNodeType, roles: RoleInstance[], linkGro
 const gb = (id: number, roles: RoleInstance[], linkGroup = 0) => system(id, "rp.sameboy.gb", roles, linkGroup);
 const nes = (id: number, roles: RoleInstance[], exportMode = 0) => system(id, "rp.mesen.nes", roles, 0, exportMode);
 const sms = (id: number, roles: RoleInstance[]) => system(id, "rp.mesen.sms", roles);
+const gba = (id: number, roles: RoleInstance[]) => system(id, "rp.mesen.gba", roles);
 
 const MGB: RoleInstance = { kind: "mgb", config: {} };
 const N8: RoleInstance = { kind: "nes-n8-midi", config: {} };
@@ -109,8 +110,10 @@ const knobbed = (s: GraphSystem, kind: "sameboy" | "mesen", gainDb: number, over
 
 // Every protocol node type on the system type it is placed for: mGB and an LSDj decoding MI.OUT on Game Boys (the
 // LSDj's serial out read by its decoder after the systems, whose host MIDI out is an input of rp.host.midi-out, and
-// captured as its node's settings say), the N8 and risa on a NES (which the cart mirrors), smsggdj on an SMS. Each with
-// its core config and gain, every setting and param away from its default on the first Game Boy and the NES.
+// captured as its node's settings say), the N8 and risa on a NES (which the cart mirrors), smsggdj on an SMS, and a
+// GBA with no protocol role of its own. Each with its core config and gain, every setting and param away from its
+// default on the first Game Boy and the NES; the GBA and SMS carry their gain alone, since a node of theirs has no
+// setting field and no param from its core config.
 const everyNode = (): GraphSystem[] => [
   knobbed(gb(1, [MGB]), "sameboy", -6, {
     model: "dmgB", fastBoot: false, highpass: "removeDcOffset", colorCorrection: "modernBalanced", dmgPalette: "mgb", lightTemperature: 0.5,
@@ -120,6 +123,7 @@ const everyNode = (): GraphSystem[] => [
     region: "pal", removeSpriteLimit: true, apuLatencyMs: 2, s5bNoise: "chip", mmc5PhaseReset: "chip", expansionVolume: 40,
   }),
   knobbed(sms(4, [smsSync("sms")]), "mesen", 1.5),
+  knobbed(gba(5, []), "mesen", 2.5),
 ];
 
 const CASES: Case[] = [
