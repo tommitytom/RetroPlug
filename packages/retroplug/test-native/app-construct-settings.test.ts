@@ -1,7 +1,7 @@
-// Chunk B: the construct-time settings blob applies a system's saved "sameboy" role config AT build.
+// Chunk B: a system adopted with a saved "sameboy" role config builds its node's core with that config.
 // fastBoot is the sharp proof: applied live it's DEFERRED to the next restart (setFastBoot only
-// changes the next boot), so an audible GB boot chime at THIS boot can only come from the blob being
-// decoded in SameBoyBackend::build. The control is app-play-mgb's fastBoot=true start (idle ~0.00003
+// changes the next boot), so an audible GB boot chime at THIS boot can only come from the role config being
+// part of the build its node makes. The control is app-play-mgb's fastBoot=true start (idle ~0.00003
 // — the boot screen skipped, silent). Here fastBoot=false runs the boot ROM, which chimes.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
@@ -16,7 +16,7 @@ const rms = (a: Float32Array): number => {
   return a.length ? Math.sqrt(s / a.length) : 0;
 };
 
-test("a system adopted with fastBoot=false plays the GB boot chime (construct-time settings blob)", () => {
+test("a system adopted with fastBoot=false plays the GB boot chime (construct-time role config)", () => {
   const be = createRealBackend();
   const registry = buildAppRegistry();
   const recent = new RecentStore(be);
@@ -25,7 +25,7 @@ test("a system adopted with fastBoot=false plays the GB boot chime (construct-ti
 
   // Adopt the embedded mGB with an explicit sameboy role whose fastBoot is FALSE, so construct runs
   // the boot ROM instead of skipping it. (adopt is the load seam; it forwards the sameboy role config
-  // as the construct-time settings blob.)
+  // to the system node's knobs, which is what its build reads.)
   const id = project.systems.adopt({
     embeddedRom: "mgb",
     roles: [
@@ -43,15 +43,16 @@ test("a system adopted with fastBoot=false plays the GB boot chime (construct-ti
   project.systems.removeSystem(id);
 });
 
-test("a label native cannot read does not build the core from every default (the construct blob is narrowed)", () => {
+test("a label native cannot read is left out of the build, not defaulted over the fields beside it", () => {
   const be = createRealBackend();
   const registry = buildAppRegistry();
   const project = new ProjectStore(be, new RecentStore(be), registry);
   const audio = createAudioDriver();
 
   // A newer build's palette label (additive, so no version bump) beside a construct-time field the core does read.
-  // Decoded all-or-nothing, the unknown label would make the whole blob default, so both configs below would build
-  // with fastBoot true and sound the same. The true case is the control: it must stay silent.
+  // The document writes only the fields the node takes, so the unknown label is left out and the readable fastBoot
+  // still reaches the build: both configs below are the node's, not one defaulted whole. The true case is the control:
+  // it must stay silent.
   const bootFor = (fastBoot: boolean): number => {
     const id = project.systems.adopt({
       embeddedRom: "mgb",

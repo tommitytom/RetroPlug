@@ -330,7 +330,8 @@ export interface Backend {
    *
    *  The only way to SEE the transport lose a byte rather than infer it from garbled output. It can only
    *  be non-zero when the queue is bounded, which is opt-in: `setRoleConfig(id, "mesen", { fifo:
-   *  "hardware" })` rebuilds the system with it. `droppedBytes` never resets, so sample it and subtract. */
+   *  "hardware" })` rebuilds the system with it, under a NEW id (read it from `systems()`), so ask for the
+   *  stats of the id the rebuild produced. `droppedBytes` never resets, so sample it and subtract. */
   getCoreTransportStats(id: number): CoreTransportStats;
   /** Load a cc65 `.dbg` symbol file so profiling / breakpoints / disassembly / call stack show names. */
   loadLabels(id: number, path: string): boolean;

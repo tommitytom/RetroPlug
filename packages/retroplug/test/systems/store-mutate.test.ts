@@ -35,8 +35,8 @@ test("duplicate: appends a clone with a fresh suffix + concrete auto-save path",
   expect(v[1].romPath).toBe("/roms/a.gb"); // clone carries the source ROM
   expect(v[1].savSuffix).toBe(2); // 0 owned -> 2
   expect(store.focused()).toBe(a); // duplicate doesn't steal focus
-  // Duplicate is TS orchestration: readState(src) -> a state seed for the clone, which shares its source's ROM
-  // resource. The clone owns its own auto-save target, resolved from its suffix.
+  // Duplicate is TS orchestration: readState(src) -> a state seed for the clone, whose ROM is read from its source
+  // again. The clone owns its own auto-save target, resolved from its suffix.
   const call = be.lastBoot()!;
   expect(call.romPath).toBe("/roms/a.gb");
   const clone = store.view()[1];

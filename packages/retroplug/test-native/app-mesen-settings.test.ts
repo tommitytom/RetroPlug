@@ -1,6 +1,6 @@
 // C2: the "mesen" system-role knobs (NES Region + Remove Sprite Limit) reach a REAL Mesen core.
-// Two native paths: (1) a non-default region seeded via the construct settings blob boots the core
-// (configureNes consumes it before LoadRom); (2) live setRoleConfig edits ride the published document as the
+// Two native paths: (1) a non-default region is a construct-time field its system node builds the core with
+// (the config reaches configureNes before LoadRom); (2) live setRoleConfig edits ride the published document as the
 // NES node's settings, which it hands the setters at its next block: the live sprite-limit toggle and the
 // region change (which forces emu_->Reset()) both leave the core alive and rendering. (Honest scope: this proves the
 // round-trip reaches the core and survives both apply modes; the knobs' visible/timing effect isn't
@@ -15,14 +15,14 @@ import { buildAppRegistry } from "../src/appHost";
 declare const __REPO_RESOURCES_DIR__: string;
 const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 
-test("a NES core boots with a non-default region seeded from its role config (construct blob)", () => {
+test("a NES core boots with a non-default region from its role config (its node's build)", () => {
   const be = createRealBackend();
   if (!be.fileExists(NES)) skip("no NES rom");
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const audio = createAudioDriver();
 
-  // adopt a saved NES system whose mesen role carries region PAL (2) → its node's settings carry it as
-  // the settings blob → MesenBackend decodes it → configureNes applies it before LoadRom.
+  // adopt a saved NES system whose mesen role carries region PAL → its node's settings carry it → the build's
+  // MesenNesConfig gives it to configureNes before LoadRom.
   project.systems.adopt({ romPath: NES, roles: [{ kind: "mesen", config: { region: "pal", removeSpriteLimit: false } }] });
   const v = project.systems.view()[0];
   expect(v.platform).toBe("nes");

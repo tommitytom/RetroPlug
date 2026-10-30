@@ -269,8 +269,8 @@ test("a project with one unreadable ROM loads the rest, with a note", () => {
   const { be } = session();
   if (!be.fileExists(NES)) skip(`no ROM at ${NES}`);
   // A ROM this build cannot boot: an iNES header with no PRG banks, which Mesen refuses. It classifies as NES, so a load
-  // reaches the file and the engine's BUILD is what fails - the case a saved project has to survive, since a build that
-  // fails answers null without refusing the project.
+  // reaches the file and the engine's BUILD is what fails - the case a saved project has to survive, since a node whose
+  // build fails refuses its document and the load drops that system.
   const badPath = "/tmp/rp-construct-edit-bad.nes";
   const bad = new Uint8Array(16);
   bad.set([0x4e, 0x45, 0x53, 0x1a], 0); // "NES\x1A", 0 PRG banks, 0 CHR banks

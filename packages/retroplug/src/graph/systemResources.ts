@@ -19,8 +19,9 @@ export type ResourceBackend = Pick<EmulatorBackend, "putResource" | "releaseReso
  *  engine's table, never a path. */
 export const resourceRef = (id: number): string => `res:${id}`;
 
-/** A system's resources, as the store counts and DirectGraph places them: the ROM its core boots from, and the seed
- *  its core starts with (the savestate, or the battery when it has no savestate). */
+/** A system's resources, as the store counts and DirectGraph places them: the ROM its core boots from, and the seeds
+ *  it may start from - the battery, the savestate, or both when both were there, which the node holds and the core
+ *  applies in that order (the savestate wins). */
 export interface SystemResources {
   rom: number;
   sram?: number;
@@ -44,8 +45,8 @@ export function systemHandles(resources: SystemResources): number[] {
   return [resources.rom, resources.sram, resources.state].filter((id): id is number => id !== undefined);
 }
 
-/** A boot that could not put its bytes: the reason the engine gave (an unreadable ROM, the failure the user saw when
- *  the system's node was refused), with every handle it had already taken given back. */
+/** A boot that could not put its bytes: the reason the engine gave (an unreadable ROM, a seed it refused), from a put
+ *  that happens before any node exists, with every handle it had already taken given back. */
 export type BootResult = BootedSystem | { error: string };
 
 /** The ROM's name: the file's stem, or an embedded ROM's marker (`"mgb"`). Mesen stages a Master System or Game Gear

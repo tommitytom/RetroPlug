@@ -183,12 +183,16 @@ interface ConstructField {
   fallback: unknown;
 }
 
+/** Each node type's construct-time fields, by type id and field name. Indexed by string because a document's node
+ *  `type` is one (rebuildKeyOf); a type with no construct-time field has an empty entry rather than a miss. */
+type ConstructFieldTable = Readonly<Record<string, Readonly<Record<string, ConstructField>>>>;
+
 /** Each system node type's CONSTRUCT-TIME fields from its core config: the ones its node reads once, when it builds
  *  its core at activation, so a change to one is a rebuild under a new system id rather than a document
  *  (docs/modular-graph-phase-c3-design.md section 3). Every one is written to every document, its default where the
  *  config holds no value the node takes: an absent field and one at its default are different rebuild keys, so a
  *  re-publish that flipped between them would ask for a new core under a live id. */
-const CONSTRUCT_FIELDS: Readonly<Record<SystemNodeType, Readonly<Record<string, ConstructField>>>> = {
+const CONSTRUCT_FIELDS: ConstructFieldTable = {
   "rp.sameboy.gb": {},
   "rp.mesen.nes": {
     sdRoot: { takes: (v) => typeof v === "string", fallback: "" },
@@ -272,14 +276,14 @@ export function droppedKnobs(type: SystemNodeType, config: Readonly<Record<strin
   );
 }
 
-/** The settings a system node's core is built from once, as the node's rebuild_key compares them (SystemNodes.cpp):
- *  its type, its system id, its resources, its ROM's name, its machine (a Game Gear's `gameGear`) and every
- *  construct-time field. A document that changes one of them under a system id an older plan still runs asks for a
- *  new core while the old one is live, which the engine refuses ("system N is live"); TS moves a rebuild to a new id,
- *  and the mock backend reads this to refuse the same. NodeDoc settings absent from the key are the live knobs and
- *  params, which a document may change under the same id. */
+/** The settings a system node's core is built from once, as the node's rebuild key compares them (SystemNodes.cpp)
+ *  plus the resource refs node.hpp rebuilds a moved ref by itself: its type, its system id, its resources, its ROM's
+ *  name, its machine (a Game Gear's `gameGear`) and every construct-time field. A document that changes one of them
+ *  under a system id an older plan still runs asks for a new core while the old one is live, which the engine refuses
+ *  ("system N is live"); TS moves a rebuild to a new id, and the mock backend reads this to refuse the same. NodeDoc
+ *  settings absent from the key are the live knobs and params, which a document may change under the same id. */
 export function rebuildKeyOf(node: Pick<NodeDoc, "type" | "settings">): Record<string, unknown> {
-  const construct = (CONSTRUCT_FIELDS as Readonly<Record<string, Readonly<Record<string, ConstructField>>>>)[node.type];
+  const construct = CONSTRUCT_FIELDS[node.type];
   const fields = ["system", "rom", "sram", "state", "romName", "gameGear", ...Object.keys(construct ?? {})];
   const settings = node.settings ?? {};
   const key: Record<string, unknown> = { type: node.type };
