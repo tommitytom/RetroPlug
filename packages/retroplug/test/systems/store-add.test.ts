@@ -6,6 +6,7 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { gbRom, garbage } from "./fixtures";
+import { resolveSavPath } from "../../src/savPaths";
 
 function newStore() {
   const be = new MockBackend("/cfg");
@@ -30,14 +31,16 @@ test("add: classifies, appends, and auto-focuses the first system", () => {
   expect(changes()).toBe(1);
 });
 
-test("add: passes native a concrete resolved savPath (the suffix-0 sibling)", () => {
+test("add: targets the suffix-0 sibling and seeds nothing from a .sav that is not there", () => {
   const { be, store } = newStore();
   be.seed("/roms/a.gb", gbRom());
   store.addSystem("/roms/a.gb");
-  const spec = be.buildCalls[be.buildCalls.length - 1];
+  const spec = be.lastBoot()!;
   expect(spec.romPath).toBe("/roms/a.gb");
   expect(spec.embeddedRom).toBe("");
-  expect(spec.savPath).toBe("/roms/a.gb".replace(".gb", ".sav")); // /roms/a.sav
+  const e = store.view()[0];
+  expect(resolveSavPath(e.romPath, e.savSuffix, e.savPath)).toBe("/roms/a.sav"); // /roms/a.sav
+  expect(spec.sram).toBe(undefined); // nothing on disk: a fresh cartridge, not a failed boot
   expect(spec.statePath).toBe(null);
 });
 
@@ -48,8 +51,8 @@ test("add: disambiguates the sav suffix against the live list (0, then 2, then 3
   store.addSystem("/roms/a.gb"); // 0 owned -> 2
   store.addSystem("/roms/a.gb"); // 0,2 owned -> 3
   expect(store.view().map((v) => v.savSuffix)).toEqual([0, 2, 3]);
-  // concrete savPaths the store handed native
-  expect(be.buildCalls.map((c) => c.savPath)).toEqual([
+  // The concrete savPath each system resolves to, which is what its battery writes to
+  expect(store.view().map((v) => resolveSavPath(v.romPath, v.savSuffix, v.savPath))).toEqual([
     "/roms/a.sav",
     "/roms/a-2.sav",
     "/roms/a-3.sav",

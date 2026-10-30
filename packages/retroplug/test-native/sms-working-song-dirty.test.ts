@@ -73,7 +73,7 @@ test("a freshly booted cart is clean, and a keypress on the SONG grid makes it d
     graph.add(
       {
         romPath: ROM, platform: "sms", core: "mesen", embeddedRom: "",
-        savPath: null, statePath: null, sramBytes: sav, settings: JSON.stringify({ enableFm: false }),
+        savPath: null, statePath: null, sramBytes: sav, coreConfig: { enableFm: false },
       },
       id,
     ),

@@ -13,14 +13,16 @@
 import { createRealBackend } from "../realBackend";
 import type { AudioRouting, MidiRouting } from "../settingsEnums";
 import type { RoleInstance } from "../systemRoles";
-import type { ConstructSpec, EmulatorBackend } from "../backend";
+import type { ConstructSpec, EmulatorBackend, HostBackend } from "../backend";
 import { EngineGraph } from "../engineGraph";
 import { parseAppConfig } from "../controller/registry";
-import { systemKnobs, systemNodeId, type GraphSystem } from "./buildGraph";
+import { exportModeOf, linkGroupOf, systemKnobs, systemNodeId, type GraphSystem } from "./buildGraph";
+import { bootSystem, ResourcePool, systemHandles, type BootedSystem } from "./systemResources";
 import type { GraphController } from "./controller";
 import { protocolPipeline, type LeftOutRole } from "./protocolNodes";
 
-export type DirectBackend = Pick<EmulatorBackend, "buildCore" | "setGraph" | "setParam">;
+export type DirectBackend = Pick<EmulatorBackend, "putResource" | "releaseResource" | "setGraph" | "setParam"> &
+  Pick<HostBackend, "fileExists">;
 
 // Whether `o` owns `key`: `in` also finds every key Object.prototype carries, so `{toString: 1}` would count as a
 // setting field.
@@ -32,12 +34,15 @@ export class DirectGraph {
   private routing: AudioRouting = "stereo";
   private midiRouting: MidiRouting | null = null;
   private controller: GraphController | null = null;
+  /** The handles on the resources each placed system's node boots from (graph/systemResources.ts). */
+  private readonly pool: ResourcePool;
 
   constructor(
     private readonly backend: DirectBackend,
     graph?: EngineGraph,
   ) {
     this.graph = graph ?? new EngineGraph(backend);
+    this.pool = new ResourcePool(backend);
   }
 
   /** The systems this graph places, in slot order. */
@@ -45,33 +50,39 @@ export class DirectGraph {
     return this.systems.map((s) => s.id);
   }
 
-  /** Build a core under `id` and append it, with no roles. False when it did not build, or the graph did not plan
-   *  (the core is then freed by the next document that plans). */
+  /** Boot a system from `spec` under `id` and append it, with no roles. False when its resources would not put, or the
+   *  graph did not plan (the resources are then given back). */
   add(spec: ConstructSpec, id: number): boolean {
-    const built = this.backend.buildCore(spec, id);
-    if (!built) return false;
-    return this.change(() => this.systems.push({ id, ...built, pipeline: [] }), true);
+    const placed = this.place(id, spec);
+    if (!placed) return false;
+    return this.change(() => this.systems.push(placed.system), true, placed.handles);
   }
 
-  /** Build a core under `id` in `oldId`'s slot, with no roles (a new system: the protocol nodes of `oldId` go with
-   *  it). False when `oldId` is absent (the tap is re-armed all the same, as a replace of a gone system always
-   *  did), or when the core did not build. */
+  /** Boot a system from `spec` under `id` in `oldId`'s slot, with no roles (a new system: the protocol nodes of
+   *  `oldId` go with it, and so does its ROM resource once the new document plans). False when `oldId` is absent (the
+   *  tap is re-armed all the same, as a replace of a gone system always did), or when its resources would not put. */
   replace(oldId: number, spec: ConstructSpec, id: number): boolean {
     const at = this.systems.findIndex((s) => s.id === oldId);
     if (at < 0) {
       this.publish(true);
       return false;
     }
-    const built = this.backend.buildCore(spec, id);
-    if (!built) return false;
-    return this.change(() => (this.systems[at] = { id, ...built, pipeline: [] }), true);
+    const placed = this.place(id, spec);
+    if (!placed) return false;
+    return this.change(
+      () => (this.systems[at] = placed.system),
+      true,
+      placed.handles,
+      systemHandles(this.systems[at].resources),
+    );
   }
 
-  /** Drop system `id`; later slots shift down. An id already gone re-arms the tap and changes nothing else. */
+  /** Drop system `id`; later slots shift down, and its resources go once the document that stops naming them has
+   *  planned. An id already gone re-arms the tap and changes nothing else. */
   remove(id: number): boolean {
     const at = this.systems.findIndex((s) => s.id === id);
     if (at < 0) return this.publish(true);
-    return this.change(() => this.systems.splice(at, 1), true);
+    return this.change(() => this.systems.splice(at, 1), true, [], systemHandles(this.systems[at].resources));
   }
 
   setRouting(routing: AudioRouting): boolean {
@@ -150,22 +161,48 @@ export class DirectGraph {
     return true;
   }
 
-  // Apply an edit to the model and publish; a refused document puts the model back.
-  private change(edit: () => unknown, rearmTap: boolean): boolean {
+  // Apply an edit to the model and publish; a refused document puts the model back, gives back the resources the edit
+  // put and releases the ones it replaced only once a document naming the new model has planned.
+  private change(edit: () => unknown, rearmTap: boolean, put: number[] = [], drop: number[] = []): boolean {
     const systems = this.systems.slice();
     const routing = this.routing;
     const midiRouting = this.midiRouting;
     const controller = this.controller;
     edit();
-    if (this.publish(rearmTap)) return true;
+    if (this.publish(rearmTap)) {
+      for (const id of drop) this.pool.drop(id);
+      return true;
+    }
     this.systems = systems;
     this.routing = routing;
     this.midiRouting = midiRouting;
     this.controller = controller;
+    for (const id of put) this.pool.drop(id);
     // EngineGraph keeps a refused document's systems as its model, so hand it the restored one: otherwise a later
     // shape change would place the systems of the edit just rolled back.
     this.publish(false);
     return false;
+  }
+
+  /** Put `spec`'s resources and the system its node places, or nothing with the reason logged when one would not
+   *  put. */
+  private place(id: number, spec: ConstructSpec): { system: GraphSystem; handles: number[] } | null {
+    const booted: BootedSystem | { error: string } = bootSystem(this.pool, spec);
+    if ("error" in booted) {
+      console.warn(`[graph] system ${id}: ${booted.error}`);
+      return null;
+    }
+    const system: GraphSystem = {
+      id,
+      platform: spec.platform,
+      type: booted.type,
+      linkGroup: linkGroupOf(spec.coreConfig),
+      exportMode: exportModeOf(spec.coreConfig),
+      resources: booted.resources,
+      romName: booted.romName,
+      pipeline: [],
+    };
+    return { system: spec.coreConfig ? { ...system, coreConfig: spec.coreConfig } : system, handles: booted.handles };
   }
 
   private publish(rearmTap: boolean): boolean {

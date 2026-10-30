@@ -62,7 +62,7 @@ const nameFieldClean = (ram: Uint8Array): boolean => nameField(ram).every((c) =>
 function construct(id: number, rom: { path: string; platform: Platform }, sav: Uint8Array): void {
   expect(
     graph.add(
-      { romPath: rom.path, platform: rom.platform, core: "mesen", embeddedRom: "", savPath: null, statePath: null, sramBytes: sav, settings: JSON.stringify({ enableFm: false }) },
+      { romPath: rom.path, platform: rom.platform, core: "mesen", embeddedRom: "", savPath: null, statePath: null, sramBytes: sav, coreConfig: { enableFm: false } },
       id,
     ),
   ).toBeTruthy();

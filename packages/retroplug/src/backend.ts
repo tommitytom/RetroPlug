@@ -18,7 +18,8 @@
 // belongs in the application layer, not here.
 
 import type { Platform, Core } from "./platform";
-import type { SystemNodeType, TapArm } from "./graph/buildGraph";
+import type { TapArm } from "./graph/buildGraph";
+import type { SystemNodeType } from "./platform";
 
 export interface Backend {
   // --- Filesystem ---------------------------------------------------------
@@ -95,14 +96,16 @@ export interface Backend {
 
   // --- Emulator lifecycle -------------------------------------------------
   //
-  // The narrow native service: put the bytes a core is built from, build the core, and place what has been built. It
-  // takes CONCRETE, already-resolved paths: TS does every bit of derivation (suffix math, sibling paths, the
-  // paired-sav override, classification, pairing) with the pure kernels and hands native only finished paths.
-  // Native never sees a suffix, never looks for a sibling, never classifies. Bytes cross only for what TS holds
+  // The narrow native service: put the byte resources a system boots from, and place the graph that names them in the
+  // systems' nodes' settings, each of which builds its own core at activation (docs/modular-graph-phase-c3-design.md
+  // section 6). It takes CONCRETE, already-resolved paths: TS does every bit of derivation (suffix math, sibling
+  // paths, the paired-sav override, classification, pairing) with the pure kernels and hands native only finished
+  // paths. Native never sees a suffix, never looks for a sibling, never classifies. Bytes cross only for what TS holds
   // (a patched image, a seed read back from a core); an unpatched ROM or a `.sav` is read natively from the path
   // `putResource` is given. Which cores run, in what order and wired how is the graph TS builds
-  // (graph/buildGraph.ts); duplicate, reload and remove are TS orchestration over buildCore and setGraph
-  // (SystemsStore), with no native method of their own.
+  // (graph/buildGraph.ts); duplicate, reload and remove are TS orchestration over the resource calls and setGraph
+  // (SystemsStore), with no native method of their own. `buildCore` is the older path: a caller with no resource table
+  // parks a core for a document to take, and the app boots every system from resources instead.
   // loadScriptPack adds script node types beside the built-in ones, for a document to place.
 
   /** Put an immutable byte resource in the engine's resource table and answer its id, which a node's settings then
@@ -126,7 +129,9 @@ export interface Backend {
    *  (docs/modular-graph-phase-b2-design.md section 2.5). Nothing runs it until a `setGraph` document
    *  names it as `sys-<id>`; a document published without it frees it. Returns what the core must be
    *  placed as, or null when it did not build (an unreadable ROM, an unknown format, a full snapshot
-   *  registry) or a core under `id` is still live. */
+   *  registry) or a core under `id` is still live. A store boots its systems from resources instead
+   *  (graph/systemResources.ts), so nothing in the app calls this; a `ConstructSpec` carries the fields
+   *  this path reads. */
   buildCore(spec: ConstructSpec, id: number): BuiltCore | null;
 
   /** Plan and publish a graph document TS built (graph/buildGraph.ts): the engine's systems, their wiring
@@ -814,41 +819,39 @@ export interface FileBrowserOpts {
   directory?: boolean;
 }
 
-/** What TS hands the native builder: concrete paths only — everything is resolved
- *  TS-side before the call. `savPath`/`statePath` are the exact files to load-from +
- *  auto-save-to / boot-from, or `null` for fresh / cold. */
+/** What TS has to boot a system from: concrete paths, or the bytes it holds (docs/modular-graph-phase-c3-design.md
+ *  section 6). This is TS's own description of a system to boot, not a wire type: graph/systemResources.ts turns it
+ *  into the engine's resources and the settings a system node names them in, and nothing native reads it.
+ *  `savPath`/`statePath` are the exact files to load-from + auto-save-to / boot-from, or `null` for fresh / cold. */
 export interface ConstructSpec {
-  /** The ROM file to slurp; `""` when an embedded ROM is used instead. */
+  /** The ROM file to read; `""` when an embedded ROM is used instead. */
   romPath: string;
-  /** What the ROM targets (TS classifies it via platform.ts) — tells a multi-platform core (Mesen)
-   *  which system to build. */
+  /** What the ROM targets (TS classifies it via platform.ts). It picks the node the system is placed as
+   *  (systemNodeTypeFor), and with it the console its core is built as. */
   platform: Platform;
-  /** The emulator that runs it — the native factory's registry key ("sameboy" / "mesen"). Derived
-   *  from `platform` via `defaultCoreFor` (no override in v1). */
+  /** The emulator that runs it (platform.ts). TS's own: the node type names the console, so nothing native reads this;
+   *  the stores key the system's core-config role by it. */
   core: Core;
   /** A binary-baked ROM marker (e.g. `"mgb"`); `""` for a file-backed ROM. */
   embeddedRom: string;
-  /** Exact battery file: SRAM is loaded from it and auto-saved to it. `null` = fresh. */
+  /** Exact battery file: its bytes seed the battery when the file is there, and it is the auto-save target. `null` =
+   *  fresh, and a path whose file is absent is fresh too (a missing save is not a failure). */
   savPath: string | null;
-  /** Exact savestate file to boot from. `null` = cold boot (the systems domain
-   *  always passes null; present for the later Project domain). */
+  /** Exact savestate file to boot from when the file is there. `null` = cold boot (the systems domain always passes
+   *  null; present for the later Project domain). */
   statePath: string | null;
-  /** Effective ROM bytes to load INSTEAD of slurping `romPath` — a load-time role's patched image (e.g.
-   *  LSDj asset overrides applied non-destructively). `romPath` still travels (for the ROM watcher and
-   *  `.sav` resolution); only the loaded bytes differ. Honoured by SameBoy (GB) and Mesen (NES, GBA,
-   *  SMS / GG).
-   *  Rides as a Uint8Array (rfl::Bytestring). */
+  /** Effective ROM bytes to boot INSTEAD of reading `romPath` - a load-time role's patched image (e.g. LSDj asset
+   *  overrides applied non-destructively). `romPath` still names the system (its stem, its sav resolution); only the
+   *  bytes differ. */
   romBytes?: Uint8Array;
-  /** Seed SRAM bytes (a zip-import blob, a reload's carried battery, or a load-time role's
-   *  synthesized sav). When set, native seeds from these instead of reading `savPath`; `savPath`
-   *  remains the auto-save target. Rides the RPC bridge as a Uint8Array (rfl::Bytestring). */
+  /** Seed SRAM bytes (a zip-import blob, a carried battery, or a load-time role's synthesized sav). When set they seed
+   *  the battery instead of `savPath`'s file, which stays the auto-save target. */
   sramBytes?: Uint8Array;
-  /** Seed savestate bytes (a zip-import blob or a duplicate's captured state). When set, native
-   *  boots from these instead of reading `statePath`. Rides as a Uint8Array (rfl::Bytestring). */
+  /** Seed savestate bytes (a zip-import blob or a duplicate's captured state). When set the core boots from these
+   *  instead of `statePath`'s file; a savestate wins over a battery, as it does at the core. */
   stateBytes?: Uint8Array;
-  /** The system's backend ("system"-role) config as JSON, so a loaded non-default setting
-   *  (SameBoy model/highpass/…) is applied at CONSTRUCT rather than via a post-build restart
-   *  that would nuke the just-restored savestate. Omitted for a fresh build (backend defaults
-   *  match the role-schema defaults). */
-  settings?: string;
+  /** The system's backend ("system"-role) config, in the labels its node reads (coreRoles.ts): its construct-time
+   *  fields (a NES's SD root and FIFO, an SMS's FM) and its live knobs, each left out of the node's settings where it
+   *  is absent or a value the node would refuse. Omitted for a system with no core-config role. */
+  coreConfig?: Readonly<Record<string, unknown>>;
 }

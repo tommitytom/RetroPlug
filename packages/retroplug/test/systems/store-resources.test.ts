@@ -1,0 +1,511 @@
+// A system's resources, as the store owns them (docs/modular-graph-phase-c3-design.md section 6): a boot puts its ROM
+// and its seeds, the document that follows names their ids, and the engine is told to drop one only after the document
+// that stops naming it has planned. A refused document puts the store's model back, gives back what the edit put and
+// reports the verb's failure; a project load drops the system a refusal names and publishes the rest. And a
+// construct-time edit is a reset that carries the battery: a new id, the same ROM resource, a new value in the
+// document.
+import { test, expect } from "../../testing/harness";
+import { MockBackend, sramBytesFor, stateBytesFor } from "../../testing/mockBackend";
+import { SystemsStore } from "../../src/systemsStore";
+import { ProjectStore } from "../../src/projectStore";
+import { RecentStore } from "../../src/recentStore";
+import { buildAppRegistry } from "../../src/appHost";
+import { DirectGraph } from "../../src/graph/directGraph";
+import type { ConstructSpec, SetGraphResult } from "../../src/backend";
+import { warned } from "../_warnings";
+import { canonicalJson } from "../../src/graph/canonicalJson";
+import { gbRom, nesRom } from "./fixtures";
+
+// A store with the real role registry: a system's core-config role is what carries a construct-time field.
+function newStore() {
+  const be = new MockBackend("/cfg");
+  const store = new SystemsStore(be, () => {}, buildAppRegistry());
+  return { be, store };
+}
+
+// The resource and graph calls in the order the store made them: what a boot put, when the document naming it went
+// out, and when the resource it replaced was dropped.
+const order = (be: MockBackend): string[] =>
+  be.log.filter((e) => e === "putResource" || e === "releaseResource" || e === "setGraph");
+
+// Refuse the next `n` documents with a reason naming `nodeId`, recording the request as the mock does.
+function refuse(be: MockBackend, n: number, nodeId = "", code = "activate-failed"): void {
+  const setGraph = be.setGraph.bind(be);
+  be.setGraph = (request) => {
+    if (n-- <= 0) return setGraph(request);
+    be.graphRequests.push(request);
+    const result: SetGraphResult = { ok: false, errors: [{ nodeId, port: "", code, message: "refused for the test" }] };
+    return result;
+  };
+}
+
+// `v` as a document carries it: canonical JSON, its keys sorted.
+const canon = (v: unknown): unknown => JSON.parse(canonicalJson(v));
+
+// The ids a boot put that the engine still holds, in put order (a refusals' id 0 aside).
+const heldIds = (be: MockBackend): number[] =>
+  be.putResourceCalls.map((c) => c.id).filter((id) => id > 0 && be.resource(id) !== undefined);
+
+test("add: puts the ROM and the battery seed, then publishes the document that names them", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.sav", "battery");
+  const id = store.addSystem("/roms/a.gb")!;
+  expect(order(be)).toEqual(["putResource", "putResource", "setGraph"]);
+  // The ROM is the file the engine reads itself; the battery is the .sav, also by path (TS never holds its bytes).
+  expect(be.putResourceCalls.map((c) => c.spec)).toEqual([
+    { type: "rom", path: "/roms/a.gb" },
+    { type: "sram", path: "/roms/a.sav" },
+  ]);
+  expect(canon(be.bootOf(id)!.settings)).toEqual(canon({
+    system: id,
+    rom: "res:1",
+    sram: "res:2",
+    romName: "a",
+    model: "cgbC",
+    highpass: "accurate",
+    fastBoot: true,
+    colorCorrection: "disabled",
+    dmgPalette: "grey",
+    lightTemperature: 0,
+    serialOutCapture: "off",
+  }));
+});
+
+test("remove: drops the document first, then gives every resource of the system back", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.sav", "battery");
+  const id = store.addSystem("/roms/a.gb")!;
+  const held = store.systems()[0].resources;
+  be.log.length = 0;
+  expect(store.removeSystem(id)).toBe(true);
+  expect(order(be)).toEqual(["setGraph", "releaseResource", "releaseResource"]);
+  expect(be.releaseResourceCalls).toEqual([held.rom, held.sram]);
+  expect(heldIds(be)).toEqual([]);
+});
+
+test("reset: the same ROM boots again from its resource, and only the new seed is put", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.sav", "battery");
+  const id = store.addSystem("/roms/a.gb")!;
+  const before = store.systems()[0].resources;
+  be.log.length = 0;
+  const next = store.reset(id)!;
+  // The ROM resource is shared, not put again; the battery is a new seed (the live one), put before the document.
+  expect(order(be)).toEqual(["putResource", "setGraph", "releaseResource"]);
+  expect(store.systems()[0].resources.rom).toBe(before.rom);
+  expect(be.bootOf(next)!.sramBytes).toEqual(sramBytesFor(id)); // the live battery, read back rather than re-read
+  expect(be.releaseResourceCalls).toEqual([before.sram]); // the old seed, after the document that stopped naming it
+  expect(be.resource(before.rom)).toBeTruthy(); // the ROM is still the running plan's
+});
+
+test("reload: re-reads the ROM from disk, so its resource is put again rather than shared", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  const id = store.addSystem("/roms/a.gb")!;
+  const before = store.systems()[0].resources;
+  be.log.length = 0;
+  const next = store.reloadSystem(id)!;
+  // The ROM and the live battery as a seed; then the document; then the two handles the old system held.
+  expect(order(be)).toEqual(["putResource", "putResource", "setGraph", "releaseResource"]);
+  expect(store.systems()[0].resources.rom === before.rom).toBe(false);
+  expect(be.releaseResourceCalls).toEqual([before.rom]); // the old system held no seed: no .sav on disk
+  expect(be.bootOf(next)!.rom!.spec).toEqual({ type: "rom", path: "/roms/a.gb" });
+});
+
+test("duplicate: shares the source's ROM and seeds the clone from its live state", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  const id = store.addSystem("/roms/a.gb")!;
+  const src = store.systems()[0].resources;
+  be.log.length = 0;
+  const copy = store.duplicateSystem(id)!;
+  expect(order(be)).toEqual(["putResource", "setGraph"]); // the state seed, then the document; no ROM put
+  const clone = store.systems().find((e) => e.id === copy)!;
+  expect(clone.resources.rom).toBe(src.rom); // one resource, two handles
+  expect(be.bootOf(copy)!.stateBytes).toEqual(stateBytesFor(id)); // the source's published machine
+  expect(be.bootOf(copy)!.state!.source).toBe("bytes");
+  // Removing the source keeps the clone's ROM: its handle is the one that is left.
+  store.removeSystem(id);
+  expect(be.resource(src.rom)).toBeTruthy();
+  store.removeSystem(copy);
+  expect(be.resource(src.rom)).toBe(undefined);
+});
+
+test("every put is balanced by a release once every system is gone", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.sav", "battery");
+  be.seed("/roms/b.nes", nesRom());
+  const a = store.addSystem("/roms/a.gb")!;
+  const b = store.addSystem("/roms/b.nes")!;
+  store.duplicateSystem(a);
+  store.reset(a);
+  store.reloadSystem(b);
+  expect(heldIds(be).length).toBeGreaterThan(0);
+  for (const e of store.systems()) store.removeSystem(e.id);
+  expect(store.systems().length).toBe(0);
+  expect(heldIds(be)).toEqual([]); // every resource the engine was given has been given back
+});
+
+test("a refused publish puts the model back, gives back what it put, and reports the verb's failure", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.sav", "battery");
+  const id = store.addSystem("/roms/a.gb")!;
+  const before = store.systems()[0];
+  const heldBefore = heldIds(be);
+  const requests = be.graphRequests.length;
+  refuse(be, 1);
+  const failure = warned(() => store.reset(id));
+  expect(failure.result).toBe(null); // the reason a buildCore that answered null gave, as the verb's failure
+  expect(store.systems()[0]).toEqual(before); // the list as it was: the same id, the same handles
+  expect(heldIds(be)).toEqual(heldBefore); // the seed the refused edit put is gone
+  // The restored model is published again, so the engine keeps running the plan it ran (and the next edit starts from
+  // a graph that matches the store). The refused document and that one are the two requests.
+  expect(be.graphRequests.length).toBe(requests + 2);
+  expect(be.graphRequests[be.graphRequests.length - 1].slots).toEqual([id]);
+  expect(failure.warnings.length).toBeGreaterThan(0); // the engine's reason, and the rollback, are said
+});
+
+test("a project load drops the system a refusal names, with a note, and publishes the rest", () => {
+  const be = new MockBackend("/cfg");
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/b.nes", nesRom());
+  be.seed("/roms/c.gb", gbRom());
+  const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
+  project.systems.addSystem("/roms/a.gb");
+  project.systems.addSystem("/roms/b.nes");
+  project.systems.addSystem("/roms/c.gb");
+  const bytes = project.exportBytes()!;
+
+  be.seed("/proj/p.rplg.zip", bytes);
+  const setGraph = be.setGraph.bind(be);
+  let bad = 0;
+  be.setGraph = (request) => {
+    // The engine refuses the second system the load places, as a core that would not build does.
+    const second = request.slots[1];
+    if (!bad && second !== undefined) {
+      bad = second;
+      be.graphRequests.push(request);
+      return { ok: false, errors: [{ nodeId: `sys-${second}`, port: "", code: "activate-failed", message: "the ROM is not a NES ROM" }] };
+    }
+    return setGraph(request);
+  };
+  const { warnings, result } = warned(() => project.load("/proj/p.rplg.zip"));
+  be.setGraph = setGraph;
+  expect(result).toEqual({ kind: "loaded", systems: 2 });
+  const placed = be.lastDocument()!.nodes.filter((n) => n.id.startsWith("sys-")).map((n) => n.id);
+  expect(placed.length).toBe(2);
+  expect(placed.includes(`sys-${bad}`)).toBe(false); // the refused system is gone, the other two run
+  expect(warnings.some((w) => w.includes("the engine refused it, so the project loads without it"))).toBe(true);
+  // The dropped system's resources went with it.
+  expect(project.systems.systems().every((e) => be.resource(e.resources.rom) !== undefined)).toBe(true);
+});
+
+test("a construct-time edit resets the system with its battery: a new id, the same ROM, the new value in the document", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.nes", nesRom());
+  const id = store.addSystem("/roms/a.nes")!;
+  const before = store.systems()[0].resources;
+  be.log.length = 0;
+  expect(store.setRoleConfig(id, "mesen", { fifo: "hardware", fifoDepth: 4096 })).toBe(true);
+  const next = store.systems()[0].id;
+  expect(next === id).toBe(false); // a construct-time field is read at the build, so the node is rebuilt
+  expect(store.systems().length).toBe(1);
+  expect(store.focused()).toBe(next);
+  // The live battery is carried: the seed is the old core's, read back rather than the .sav on disk.
+  expect(be.bootOf(next)!.sramBytes).toEqual(sramBytesFor(id));
+  expect(store.systems()[0].resources.rom).toBe(before.rom); // the same ROM resource
+  const settings = be.bootOf(next)!.settings;
+  expect(settings.fifo).toBe("hardware");
+  expect(settings.fifoDepth).toBe(4096);
+  // Nothing of the old system's is dropped: the ROM is shared and it held no seed (no .sav on disk). The one put is
+  // the carried battery, made before the document that names it.
+  expect(order(be)).toEqual(["putResource", "setGraph"]);
+  expect(be.releaseResourceCalls).toEqual([]);
+  expect(be.resource(before.rom)).toBeTruthy();
+});
+
+test("reset of the id a construct-time edit replaced resets what it became, carrying that system's battery", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.nes", nesRom());
+  const id = store.addSystem("/roms/a.nes")!;
+  expect(store.setRoleConfig(id, "mesen", { fifo: "hardware", fifoDepth: 4096 })).toBe(true);
+  const rebuilt = store.systems()[0].id;
+  expect(rebuilt === id).toBe(false);
+  const replacement = store.systems()[0].resources;
+  // The pre-C3 contract: follow the construct-time edit with a reset of the id the caller held.
+  be.log.length = 0;
+  const next = store.reset(id);
+  expect(next === null).toBe(false);
+  expect(next === rebuilt).toBe(false); // the reset builds a system of its own, under a new id
+  expect(store.systems().map((e) => e.id)).toEqual([next as number]);
+  expect(store.focused()).toBe(next);
+  // What it reset is the system the edit built: the new value is still its node's, and the battery it boots with is
+  // the replacement's live one, not the system the caller's id named before the edit.
+  expect(be.bootOf(next as number)!.settings.fifo).toBe("hardware");
+  expect(be.bootOf(next as number)!.settings.fifoDepth).toBe(4096);
+  expect(be.bootOf(next as number)!.sramBytes).toEqual(sramBytesFor(rebuilt));
+  // The replacement's own seed is the one the document stopped naming, so it goes after the document planned; its ROM
+  // is still the running plan's.
+  expect(order(be)).toEqual(["putResource", "setGraph", "releaseResource"]);
+  expect(be.releaseResourceCalls).toEqual([replacement.sram]);
+  expect(be.resource(replacement.rom)).toBeTruthy();
+});
+
+test("reset follows a chain of rebuilds: the first id resets the live end of it", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.nes", nesRom());
+  const first = store.addSystem("/roms/a.nes")!;
+  expect(store.setRoleConfig(first, "mesen", { fifo: "hardware" })).toBe(true);
+  const second = store.systems()[0].id;
+  expect(store.setRoleConfig(second, "mesen", { fifoDepth: 4096 })).toBe(true);
+  const third = store.systems()[0].id;
+  expect(third === second).toBe(false);
+  const next = store.reset(first);
+  expect(next === null).toBe(false);
+  expect(next === third).toBe(false);
+  expect(store.systems().map((e) => e.id)).toEqual([next as number]);
+  // Both edits are still what its node names, and the battery carried is the live end's.
+  expect(be.bootOf(next as number)!.settings.fifo).toBe("hardware");
+  expect(be.bootOf(next as number)!.settings.fifoDepth).toBe(4096);
+  expect(be.bootOf(next as number)!.sramBytes).toEqual(sramBytesFor(third));
+});
+
+test("the replaced-id map is capped: a very old id stops resolving, the recent ones still do", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.nes", nesRom());
+  const first = store.addSystem("/roms/a.nes")!;
+  // Every construct-time edit replaces the system, so a session that does this hundreds of times must not keep every
+  // id that ever named it. The cap keeps the most recent ones, which is what code written against the old contract
+  // holds: it reset the id it had just edited.
+  for (let i = 0; i < 200; i++) {
+    const id = store.systems()[0].id;
+    expect(store.setRoleConfig(id, "mesen", { fifo: "hardware", fifoDepth: 1000 + i })).toBe(true);
+  }
+  expect(store.systems().length).toBe(1);
+  expect(store.reset(first)).toBe(null); // evicted long ago
+  const recent = store.reset(first + 190);
+  expect(recent === null).toBe(false);
+  expect(store.systems().map((e) => e.id)).toEqual([recent as number]);
+  expect(be.bootOf(recent as number)!.settings.fifoDepth).toBe(1199); // the live system's own value
+  store.removeSystem(recent as number);
+  expect(store.reset(first + 190)).toBe(null); // its chain ended with it
+});
+
+test("reset of a replaced id whose live system was removed answers null", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.nes", nesRom());
+  const id = store.addSystem("/roms/a.nes")!;
+  expect(store.setRoleConfig(id, "mesen", { fifo: "hardware" })).toBe(true);
+  const rebuilt = store.systems()[0].id;
+  expect(store.removeSystem(rebuilt)).toBe(true);
+  expect(store.reset(id)).toBe(null);
+  expect(store.reset(rebuilt)).toBe(null);
+  expect(store.systems()).toEqual([]);
+  expect(heldIds(be)).toEqual([]);
+});
+
+test("only reset follows a replaced id: removeSystem of one does nothing, as it always has", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.nes", nesRom());
+  const id = store.addSystem("/roms/a.nes")!;
+  expect(store.setRoleConfig(id, "mesen", { fifo: "hardware" })).toBe(true);
+  const rebuilt = store.systems()[0].id;
+  be.log.length = 0;
+  expect(store.removeSystem(id)).toBe(false);
+  expect(store.systems().map((e) => e.id)).toEqual([rebuilt]);
+  expect(order(be)).toEqual([]); // no document, no release: the replaced id names nothing the store holds
+  expect(be.resource(store.systems()[0].resources.rom)).toBeTruthy();
+});
+
+test("a construct-time edit that moves nothing live-rebuilds nothing, and a live knob stays a document", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.nes", nesRom());
+  const id = store.addSystem("/roms/a.nes")!;
+  const resources = store.systems()[0].resources;
+  be.log.length = 0;
+  expect(store.setRoleConfig(id, "mesen", { region: "pal" })).toBe(true); // a live setting: a document
+  expect(order(be)).toEqual(["setGraph"]);
+  expect(store.systems()[0].id).toBe(id);
+  expect(store.systems()[0].resources).toEqual(resources);
+});
+
+test("a construct-time edit whose rebuild is refused leaves the system as it was", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.nes", nesRom());
+  const id = store.addSystem("/roms/a.nes")!;
+  const before = store.systems()[0];
+  const heldBefore = heldIds(be);
+  refuse(be, 1);
+  expect(warned(() => store.setRoleConfig(id, "mesen", { fifo: "hardware" })).result).toBe(false);
+  expect(store.systems()[0]).toEqual(before);
+  expect(store.systems()[0].roles[0].config.fifo).toBe("instant"); // the edit went with the refused rebuild
+  expect(heldIds(be)).toEqual(heldBefore);
+});
+
+test("a refused setting edit leaves the role as it was", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  const id = store.addSystem("/roms/a.gb")!;
+  const before = store.systems()[0];
+  const n = be.graphRequests.length;
+  refuse(be, 1);
+  expect(store.setRoleConfig(id, "sameboy", { highpass: "off" })).toBe(false); // a setting: its document was refused
+  expect(store.systems()[0]).toEqual(before);
+  // The restored model is sent again, so the document the engine runs is the one the store holds.
+  expect(be.graphRequests.length).toBe(n + 2);
+  expect(be.lastBoot()!.id).toBe(id);
+});
+
+test("a sparse stored core config leaves a live knob and a param live, not a rebuild", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.nes", nesRom());
+  // A project saved before the mesen role schema grew its construct-time fields: the stored config holds only what
+  // it knew. The comparison must use the schema's normalised view on both sides, or every omitted default looks like
+  // a construct-time move and a live knob restarts the cart.
+  const id = store.adopt({
+    romPath: "/roms/a.nes",
+    core: "mesen",
+    roles: [{ kind: "mesen", config: { region: "pal" } }],
+  })!;
+  const resources = store.systems()[0].resources;
+  be.log.length = 0;
+  expect(store.setRoleConfig(id, "mesen", { removeSpriteLimit: true })).toBe(true); // a live setting: a document
+  expect(store.systems()[0].id).toBe(id);
+  expect(store.systems()[0].resources).toEqual(resources);
+  expect(order(be)).toEqual(["setGraph"]);
+  expect(be.graphNode(`sys-${id}`)?.settings?.removeSpriteLimit).toBe(true);
+
+  be.log.length = 0;
+  expect(store.setRoleConfig(id, "mesen", { expansionVolume: 40 })).toBe(true); // a param: live, no document
+  expect(store.systems()[0].id).toBe(id);
+  expect(store.systems()[0].resources).toEqual(resources);
+  expect(order(be)).toEqual([]);
+  expect(
+    be.paramCalls.some((c) => c.nodeId === `sys-${id}` && c.paramId === "expansionVolume" && c.value === 40),
+  ).toBe(true);
+  expect(be.releaseResourceCalls).toEqual([]);
+});
+
+test("clear publishes the empty document and then gives every system's resources back", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/b.nes", nesRom());
+  store.addSystem("/roms/a.gb");
+  store.addSystem("/roms/b.nes");
+  be.log.length = 0;
+  store.clear();
+  expect(order(be)).toEqual(["setGraph", "releaseResource", "releaseResource"]);
+  expect(store.systems()).toEqual([]);
+  expect(heldIds(be)).toEqual([]);
+});
+
+test("clear warns when the empty document is refused and still releases what it held", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/b.nes", nesRom());
+  store.addSystem("/roms/a.gb");
+  store.addSystem("/roms/b.nes");
+  refuse(be, 1);
+  const { warnings } = warned(() => store.clear());
+  expect(store.systems()).toEqual([]);
+  expect(heldIds(be)).toEqual([]);
+  expect(warnings.some((w) => w.includes("[systems] clear: the engine refused the empty document"))).toBe(true);
+});
+
+test("discard drops one system and its resources at once, publishing nothing", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/b.nes", nesRom());
+  const a = store.addSystem("/roms/a.gb")!;
+  const b = store.addSystem("/roms/b.nes")!;
+  const doomed = store.systems().find((e) => e.id === a)!;
+  be.log.length = 0;
+  expect(store.discard(a)).toEqual(doomed);
+  expect(order(be)).toEqual(["releaseResource"]);
+  expect(be.releaseResourceCalls).toEqual([doomed.resources.rom]);
+  expect(store.systems().map((e) => e.id)).toEqual([b]);
+  expect(be.resource(doomed.resources.rom)).toBe(undefined);
+  expect(store.discard(999)).toBe(undefined);
+  expect(order(be)).toEqual(["releaseResource"]); // nothing to drop for an id it does not hold
+});
+
+test("a restore republish that is refused too is reported, with the model still the one before the edit", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  const id = store.addSystem("/roms/a.gb")!;
+  const before = store.systems()[0];
+  const heldBefore = heldIds(be);
+  refuse(be, 2); // the edit's document, then the restored model's
+  const failure = warned(() => store.reset(id));
+  expect(failure.result).toBe(null);
+  expect(store.systems()[0]).toEqual(before);
+  expect(heldIds(be)).toEqual(heldBefore);
+  expect(failure.warnings.some((w) => w.includes("the restored model was refused too"))).toBe(true);
+});
+
+test("DirectGraph puts each system's resources and releases them after the document that stopped naming them", () => {
+  const be = new MockBackend("/cfg");
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/b.nes", nesRom());
+  const g = new DirectGraph(be);
+  const spec = (romPath: string, platform: "gb" | "nes", core: "sameboy" | "mesen"): ConstructSpec => ({
+    romPath,
+    platform,
+    core,
+    embeddedRom: "",
+    savPath: null,
+    statePath: null,
+  });
+  be.log.length = 0;
+  expect(g.add(spec("/roms/a.gb", "gb", "sameboy"), 1)).toBe(true);
+  const first = be.bootOf(1)!;
+  expect(order(be)).toEqual(["putResource", "setGraph"]);
+  be.log.length = 0;
+  expect(g.replace(1, spec("/roms/b.nes", "nes", "mesen"), 2)).toBe(true);
+  // The replacing system's ROM is put before the document, the old one released only after it planned.
+  expect(order(be)).toEqual(["putResource", "setGraph", "releaseResource"]);
+  expect(be.releaseResourceCalls).toEqual([first.rom!.id]);
+  be.log.length = 0;
+  expect(g.remove(2)).toBe(true);
+  expect(order(be)).toEqual(["setGraph", "releaseResource"]);
+  expect(heldIds(be)).toEqual([]);
+});
+
+test("DirectGraph gives back a refused change's resources and keeps the ones it still places", () => {
+  const be = new MockBackend("/cfg");
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/b.nes", nesRom());
+  const g = new DirectGraph(be);
+  const gb: ConstructSpec = {
+    romPath: "/roms/a.gb",
+    platform: "gb",
+    core: "sameboy",
+    embeddedRom: "",
+    savPath: null,
+    statePath: null,
+  };
+  const nes: ConstructSpec = {
+    romPath: "/roms/b.nes",
+    platform: "nes",
+    core: "mesen",
+    embeddedRom: "",
+    savPath: null,
+    statePath: null,
+  };
+  expect(g.add(gb, 1)).toBe(true);
+  const heldBefore = heldIds(be);
+  be.log.length = 0;
+  refuse(be, 1);
+  expect(g.add(nes, 2)).toBe(false);
+  expect(g.ids()).toEqual([1]);
+  expect(heldIds(be)).toEqual(heldBefore);
+  // The refused document (which this test's refusal helper records without logging), the resource its boot put given
+  // back, then the restored model.
+  expect(order(be)).toEqual(["putResource", "releaseResource", "setGraph"]);
+  expect(be.graphRequests[be.graphRequests.length - 1].slots).toEqual([1]);
+});

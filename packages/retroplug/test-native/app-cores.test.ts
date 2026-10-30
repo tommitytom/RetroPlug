@@ -11,10 +11,6 @@ import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry } from "../src/appHost";
-import { directGraph } from "../src/graph/directGraph";
-
-// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
-const graph = directGraph();
 
 declare const __RESOURCES_DIR__: string;
 declare const __REPO_RESOURCES_DIR__: string;
@@ -83,35 +79,25 @@ test("the Game Gear backend picks the GG machine, not SMS (geometry is the proof
   bootsAndRenders(GG, "gg", 1000, { width: 160, height: 144 });
 });
 
-// The wire spec's `core` is OPTIONAL (BackendConstructSpec), and native falls back to
-// EngineRpcService's defaultCoreFor when it is absent. Nothing exercised that fallback: TS always
-// sends `core` explicitly, so the native mirror silently rotted - it read `nes || gba` long after
-// "sms"/"gg" shipped, which would route an SMS spec to SameBoy and return nullptr with no diagnostic.
-//
-// TS's own DEFAULT_CORE is a `Record<Platform, Core>`, so a new Platform is a hard compile error there;
-// the C++ side has no such guard, and this test is the substitute. `core` is deleted rather than
-// omitted because ConstructSpec requires it - the point is precisely a caller that does not send it.
-function buildsWithoutCore(rom: string, platform: string): void {
+// The store picks a system's node from the platform it detects in the ROM's bytes, not from the file's extension. A
+// file whose name lies still reaches the console its content says (platform.ts detectPlatform), and that platform
+// picks the node type the engine builds that console's core from (systemNodeTypeFor). This is what the resource path
+// replaced `core` with: there is no wire field to omit, so the guard is the mapping itself.
+test("the store picks a system's node type from the ROM it detects, not the file's extension", () => {
   const be = createRealBackend();
-  if (!be.fileExists(rom)) skip(`app-cores default-core: ROM not found at ${rom}`);
-  const spec: Record<string, unknown> = {
-    romPath: rom,
-    platform,
-    embeddedRom: "",
-    savPath: null,
-    statePath: null,
-  };
-  const id = 900 + platform.length; // outside the store's allocator, distinct per case
-  expect(graph.add(spec as never, id)).toBeTruthy();
-  createAudioDriver().renderAudio(500);
-  expect(be.getFrame(id)?.published ?? false).toBeTruthy(); // a real core, not a nullptr swallowed
-  expect(graph.remove(id)).toBeTruthy();
-}
-
-test("a wire spec that omits `core` still reaches the right backend, for every platform", () => {
-  // gb goes to SameBoy; the four Mesen platforms must not fall through to it.
-  buildsWithoutCore(NES, "nes");
-  buildsWithoutCore(SMS, "sms");
-  buildsWithoutCore(GG, "gg");
-  buildsWithoutCore(GBA, "gba");
+  if (!be.fileExists(NES)) skip(`app-cores detected-platform: ROM not found at ${NES}`);
+  const lying = "/tmp/rp-app-cores-lies.gb"; // a NES ROM under a Game Boy extension
+  expect(be.writeFileAtomic(lying, be.readFile(NES)!)).toBeTruthy();
+  const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
+  const audio = createAudioDriver(project.graph);
+  const res = project.systems.loadRom(lying);
+  expect(res != null && "system" in res).toBeTruthy();
+  const id = (res as { system: number }).system;
+  const system = project.systems.graphSystems()[0];
+  expect(system.platform).toBe("nes"); // the content says NES, the extension says .gb
+  expect(system.type).toBe("rp.mesen.nes"); // and the platform, not the extension, picks the node
+  audio.renderAudio(500);
+  expect(be.getFrame(id)?.published ?? false).toBeTruthy(); // a real Mesen core, not a refused build
+  project.systems.removeSystem(id);
+  be.deleteFile(lying);
 });

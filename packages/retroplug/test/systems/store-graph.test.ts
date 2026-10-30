@@ -84,6 +84,14 @@ function refuseNext(be: MockBackend, n: number): void {
 // `v` as a document carries it: canonical JSON, its keys sorted.
 const canon = (v: unknown): unknown => JSON.parse(canonicalJson(v));
 
+// A system node's settings beyond the { system, rom, romName } every one carries (the store's puts number its
+// resources): the knobs an edit or a load sets, which is what these cases are about. Throws if `id` is not placed.
+const knobs = (be: MockBackend, id: number): Record<string, unknown> => {
+  const { system, rom, romName, ...rest } = (be.graphNode(`sys-${id}`)?.settings ?? {}) as Record<string, unknown>;
+  if (system !== id || typeof rom !== "string" || typeof romName !== "string") throw new Error(`sys-${id} is not placed`);
+  return rest;
+};
+
 // The nodes a role of `kind` on Game Boy `id` is placed as, in document order: lsdj-sync's two (its rp.lsdj.sync, and
 // its serial-out decoder after the systems), any other's one.
 const roleNodes = (id: number, kind: string): string[] =>
@@ -121,9 +129,10 @@ test("a replace takes the slot of the system it replaces", () => {
   const n = be.graphRequests.length;
   const c = sys.replaceSystem(a, "/roms/c.nes")!;
   expect(since(be, n)).toEqual([{ slots: [c, b], tap: {} }]);
-  expect(be.replacedBy(be.buildCalls[be.buildCalls.length - 1])).toBe(a);
-  // The replacing NES was built in the default (mix) mode, and the graph places it as a NES.
-  expect(sys.systems()[0].built).toEqual({ type: "rp.mesen.nes", exportMode: 0, linkGroup: 0 });
+  expect(be.replacedBy({ id: c })).toBe(a);
+  // The replacing NES boots in the default (mix) mode, and the graph places it as a NES.
+  expect(be.bootOf(c)?.type).toBe("rp.mesen.nes");
+  expect(be.bootOf(c)?.settings.channelExportMode).toBe("mix");
 });
 
 test("a gain or expansion-volume edit sets its param live and publishes nothing", () => {
@@ -136,7 +145,6 @@ test("a gain or expansion-volume edit sets its param live and publishes nothing"
   expect(sys.setGain(c, -500)).toBe(true); // clamped
   expect(sys.setRoleConfig(c, "mesen", { expansionVolume: 40 })).toBe(true);
   expect(sys.setRoleConfig(c, "mesen", { expansionVolume: 40 })).toBe(true); // moves nothing: sets nothing
-  expect(sys.setRoleConfig(c, "mesen", { fifo: "hardware", sdRoot: "/sd" })).toBe(true); // construct-time: a rebuild's
   expect(publishes.n).toBe(0); // not even a document for the dedupe to drop
   expect(since(be, n)).toEqual([]);
   expect(be.paramCalls).toEqual([
@@ -166,8 +174,8 @@ test("a setting edit publishes its system node's settings, without a re-arm; a l
   expect(since(be, n)).toEqual([{ slots: [a, b, c] }]);
   expect(be.graphNode(`sys-${a}`)?.settings?.highpass).toBe("removeDcOffset");
   sys.setRoleConfig(a, "sameboy", { model: "dmgB", dmgPalette: "dmg" });
-  expect(be.graphNode(`sys-${a}`)?.settings).toEqual(
-    canon({ core: a, model: "dmgB", fastBoot: true, highpass: "removeDcOffset", colorCorrection: "disabled", dmgPalette: "dmg", lightTemperature: 0, serialOutCapture: "off" }),
+  expect(knobs(be, a)).toEqual(
+    canon({ model: "dmgB", fastBoot: true, highpass: "removeDcOffset", colorCorrection: "disabled", dmgPalette: "dmg", lightTemperature: 0, serialOutCapture: "off" }),
   );
   sys.setRoleConfig(c, "mesen", { region: "pal", expansionVolume: 25 }); // the document carries the param too
   expect(be.graphNode(`sys-${c}`)?.settings?.region).toBe("pal");
@@ -236,7 +244,7 @@ test("a duplicate is placed after its source, and inheriting the link group cabl
   sys.inheritLinkGroup(d, a);
   expect(since(be, n + 1)).toEqual([{ slots: [a, d] }]);
   expect(linked(be, `sys-${d}.link`)).toBe(true);
-  expect(sys.systems().map((e) => e.built.linkGroup)).toEqual([1, 1]);
+  expect(sys.graphSystems().map((s) => s.linkGroup)).toEqual([1, 1]);
 });
 
 test("a routing change re-arms the tap, even to the mode already set", () => {
@@ -284,9 +292,9 @@ test("a load where one system does not build publishes once, with the rest", () 
   sys.addSystem("/roms/b.gb");
   sys.addSystem("/roms/c.nes");
   const bytes = p.exportBytes()!;
-  const buildCore = be.buildCore.bind(be);
-  let builds = 0;
-  be.buildCore = (spec, id) => (++builds === 2 ? null : buildCore(spec, id));
+  const putResource = be.putResource.bind(be);
+  let roms = 0;
+  be.putResource = (spec) => (spec.type === "rom" && ++roms === 2 ? { error: "could not read it" } : putResource(spec));
   const n = be.graphRequests.length;
   expect(p.loadBytes(bytes, "/")).toEqual({ kind: "loaded", systems: 2 });
   const [first, third] = sys.systems().map((e) => e.id);
@@ -301,17 +309,17 @@ test("a load that throws partway places what it adopted, and the edits after it 
   sys.addSystem("/roms/a.gb");
   sys.addSystem("/roms/b.gb");
   const bytes = p.exportBytes()!;
-  const buildCore = be.buildCore.bind(be);
-  let builds = 0;
-  be.buildCore = (spec, id) => {
-    if (++builds === 2) throw new Error("the build RPC died"); // as an RPC error reply throws
-    return buildCore(spec, id);
+  const putResource = be.putResource.bind(be);
+  let roms = 0;
+  be.putResource = (spec) => {
+    if (spec.type === "rom" && ++roms === 2) throw new Error("the putResource RPC died"); // as an RPC error reply throws
+    return putResource(spec);
   };
   const n = be.graphRequests.length;
   let notified = 0;
   p.setOnSystemsChange(() => notified++);
-  expect(() => p.loadBytes(bytes, "/")).toThrow("the build RPC died");
-  be.buildCore = buildCore;
+  expect(() => p.loadBytes(bytes, "/")).toThrow("the putResource RPC died");
+  be.putResource = putResource;
   const adopted = sys.systems().map((e) => e.id);
   expect(adopted.length).toBe(1);
   // The structure's observers hear of it (the UI's tiles, the plugin's watched ROMs): the clear and the adopts are
@@ -339,22 +347,22 @@ test("a load whose final publish throws still tells the observers once", () => {
   sys.addSystem("/roms/a.gb");
   sys.addSystem("/roms/b.gb");
   const bytes = p.exportBytes()!;
-  const buildCore = be.buildCore.bind(be);
+  const putResource = be.putResource.bind(be);
   const setGraph = be.setGraph.bind(be);
-  let builds = 0;
-  be.buildCore = (spec, id) => {
-    builds++;
-    return buildCore(spec, id);
+  let roms = 0;
+  be.putResource = (spec) => {
+    if (spec.type === "rom") roms++;
+    return putResource(spec);
   };
-  // The load's clear publishes before any build, and its final publish after both: that one dies, as an RPC would.
+  // The load's clear publishes before any boot, and its final publish after both: that one dies, as an RPC would.
   be.setGraph = (...args) => {
-    if (builds === 2) throw new Error("the setGraph RPC died");
+    if (roms === 2) throw new Error("the setGraph RPC died");
     return setGraph(...args);
   };
   let notified = 0;
   p.setOnSystemsChange(() => notified++);
   expect(() => p.loadBytes(bytes, "/")).toThrow("the setGraph RPC died");
-  be.buildCore = buildCore;
+  be.putResource = putResource;
   be.setGraph = setGraph;
   expect(sys.systems().length).toBe(2);
   expect(notified).toBe(1);
@@ -382,10 +390,10 @@ test("a load whose clear's publish throws still tells the observers once", () =>
   expect(routed(be)).toEqual([]);
 });
 
-test("an adopt whose settings do not parse throws before it builds a core", () => {
+test("an adopt whose settings do not parse throws before it puts a resource", () => {
   const { be, sys } = project();
   expect(() => sys.adopt({ romPath: "/roms/a.gb", settings: "loud" as never })).toThrow();
-  expect(be.buildCalls.length).toBe(0);
+  expect(be.putResourceCalls.length).toBe(0);
   expect(sys.systems().length).toBe(0);
 });
 
@@ -437,8 +445,8 @@ test("a system in an LSDj MIDI-out mode captures its serial out as its document 
   expect(placed()).toBe("listen");
   sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MidiSync });
   expect(placed()).toBe("off");
-  // No build spec carries a capture: the core runs only once a document places it, and its node arms it first.
-  expect(be.buildCalls.filter((c) => "serialOutCapture" in c)).toEqual([]);
+  // No resource a boot puts carries a capture: it lives in the node's settings alone.
+  expect(be.putResourceCalls.every((c) => !("serialOutCapture" in (c.spec as Record<string, unknown>)))).toBe(true);
 });
 
 test("a cart the controller drives in MI.MAP captures nothing, and gets its stored mode's capture back with the controller off", () => {
@@ -835,9 +843,9 @@ test("a kind stored twice: the first is placed and is the one an edit reaches, a
   expect(stored.map((r) => (r.config as { tempoDivisor: number }).tempoDivisor)).toEqual([8, 4]);
 });
 
-test("an adopt whose core does not build logs nothing about the system it never added", () => {
+test("an adopt whose resources would not put logs nothing about the system it never added", () => {
   const { be, sys } = project();
-  be.buildCore = () => null;
+  be.putResource = () => ({ error: "refused for the test" });
   const roles: RoleInstance[] = [
     { kind: "sameboy", config: {} },
     { kind: "mgb", config: {} },
@@ -845,7 +853,9 @@ test("an adopt whose core does not build logs nothing about the system it never 
   ];
   const { result, warnings } = warned(() => sys.adopt({ romPath: "/roms/lsdj.gb", core: "sameboy", roles }));
   expect(result).toBe(null);
-  expect(warnings).toEqual([]);
+  expect(sys.systems().length).toBe(0);
+  // The put's own refusal is said once; the notes it collected about the roles go with the system it never added.
+  expect(warnings).toEqual(["[systems] /roms/lsdj.gb: refused for the test"]);
 });
 
 test("a stored core config value the system node would refuse is noted, so a dropped knob leaves a trace", () => {
@@ -859,7 +869,7 @@ test("a stored core config value the system node would refuse is noted, so a dro
   const { result: id, warnings } = warned(() => stored("/roms/a.gb", config));
   expect(id !== null).toBe(true);
   // The value the node takes is the one the document carries; the rest are the load's to report.
-  expect(be.graphNode(`sys-${id}`)?.settings).toEqual(canon({ core: id, dmgPalette: "gbl", serialOutCapture: "off" }));
+  expect(knobs(be, id)).toEqual(canon({ dmgPalette: "gbl", serialOutCapture: "off" }));
   expect(warnings).toEqual([
     '[systems] /roms/a.gb: its stored sameboy config holds a value this build does not read as written: ' +
       'dropped model "cgbF", dropped highpass 2, dropped fastBoot "yes", dropped lightTemperature 1.5',
@@ -871,7 +881,7 @@ test("a stored core config value the system node would refuse is noted, so a dro
   const nes = (over: Record<string, unknown>) =>
     sys.adopt({ romPath: "/roms/c.nes", core: "mesen", roles: [{ kind: "mesen", config: over }] })!;
   const dropped = warned(() => nes({ region: "PAL", expansionVolume: "40" }));
-  expect(be.graphNode(`sys-${dropped.result}`)?.settings).toEqual(canon({ core: dropped.result }));
+  expect(knobs(be, dropped.result!)).toEqual(canon({}));
   expect(be.graphNode(`sys-${dropped.result}`)?.params).toEqual({ gain: 0 }); // the param is left out, not sent
   expect(dropped.warnings).toEqual([
     '[systems] /roms/c.nes: its stored mesen config holds a value this build does not read as written: ' +
@@ -881,40 +891,71 @@ test("a stored core config value the system node would refuse is noted, so a dro
     '[systems] /roms/c.nes: its stored mesen config holds a value this build does not read as written: ' +
       'dropped expansionVolume null',
   ]);
-  // A construct-time field is not a node knob, but the blob cannot carry an unreadable value either: the schema's
-  // value is what builds the core, and the load says so. A finite fraction is repaired the way the planner rounds it.
+  // A construct-time field is a node setting too, so an unreadable one is dropped the same way: the node builds its
+  // core with its own default, and the load says so. An unknown label's schema default equals its native default, but
+  // a value the schema would clamp or round does not: the node's own default applies, not the repaired value. A finite
+  // fraction rides the param, as any number does, and the planner rounds it.
   const construct = warned(() => nes({ region: "pal", fifo: "futureBuild", expansionVolume: 25.7, sdRoot: "/sd" }));
   expect(construct.warnings).toEqual([
     '[systems] /roms/c.nes: its stored mesen config holds a value this build does not read as written: ' +
-      'repaired fifo "futureBuild" to "instant", repaired expansionVolume 25.7 to 26',
+      'dropped fifo "futureBuild"',
   ]);
-  const blob = JSON.parse(be.buildCalls[be.buildCalls.length - 1].settings!) as Record<string, unknown>;
-  expect(blob.region).toBe(2);
-  expect(blob.fifo).toBe(0);
-  expect(blob.expansionVolume).toBe(26);
-  expect(blob.sdRoot).toBe("/sd");
+  const settings = be.bootOf(construct.result!)!.settings;
+  expect(settings.region).toBe("pal");
+  expect("fifo" in settings).toBe(false);
+  expect(settings.sdRoot).toBe("/sd");
+  expect(be.graphNode(`sys-${construct.result}`)?.params).toEqual(canon({ gain: 0, expansionVolume: 25.7 }));
   // The store still keeps what the file said, for a build that knows the label.
   const kept = sys.view().find((v) => v.id === construct.result)!.roles.find((r) => r.kind === "mesen")!.config;
   expect(kept.fifo).toBe("futureBuild");
   expect(kept.expansionVolume).toBe(25.7);
+  // A construct-time integer field is an integer natively (reflect-cpp reads it with static_cast<int>), so a fraction
+  // is a value the node would not read as written: left out and noted like any other, never silently truncated.
+  const fractional = warned(() =>
+    nes({ fifoDepth: 4096.5, fifoBytesPerSecond: 1_000.25, n8LinkRttUs: 2200.5 }),
+  );
+  expect(fractional.warnings).toEqual([
+    '[systems] /roms/c.nes: its stored mesen config holds a value this build does not read as written: ' +
+      'dropped fifoDepth 4096.5, dropped fifoBytesPerSecond 1000.25, dropped n8LinkRttUs 2200.5',
+  ]);
+  const fractionalSettings = be.bootOf(fractional.result!)!.settings;
+  expect("fifoDepth" in fractionalSettings).toBe(false);
+  expect("fifoBytesPerSecond" in fractionalSettings).toBe(false);
+  expect("n8LinkRttUs" in fractionalSettings).toBe(false);
 });
 
-test("a hand-edited sdRoot that is not a string loads at the schema's empty root, not a failed load", () => {
-  // A hand edit for "no SD root" is null, and the role schema is what the construct blob is parsed by. A field its
-  // helpers repair defaults, so the load adopts the system; one the schema refuses would throw out of projectStore's
-  // adopt loop, after the systems before it cleared, and fail the whole load.
+test("an adopt never reports a key its document supplies itself (a Game Gear's gameGear)", () => {
+  const { be, sys } = project();
+  const gg = smsggdjRom();
+  gg[0x7ff0 + 0xf] = 0x50; // the region nibble says Game Gear
+  be.seed("/roms/a.gg", gg);
+  const { result, warnings } = warned(() =>
+    sys.adopt({
+      romPath: "/roms/a.gg",
+      core: "mesen",
+      roles: [{ kind: "mesen", config: { gameGear: true } }],
+    }),
+  );
+  expect(result !== null).toBe(true);
+  // A Game Gear's `gameGear` is not a stored knob the schema dropped: buildGraph writes it from the platform.
+  expect(warnings.filter((w) => w.includes("gameGear"))).toEqual([]);
+  expect(be.bootOf(result!)!.settings.gameGear).toBe(true);
+});
+
+test("a hand-edited sdRoot that is not a string loads at the node's empty root, not a failed load", () => {
+  // A hand edit for "no SD root" is null. The document cannot carry it (the node reads a string), so the field is
+  // left out and the node's own default - the empty root, a per-process scratch directory - applies: the load adopts
+  // the system rather than failing on a value the whole plan would be refused for.
   const { be, sys } = project();
   const { result: id, warnings } = warned(() =>
     sys.adopt({ romPath: "/roms/c.nes", core: "mesen", roles: [{ kind: "mesen", config: { sdRoot: null } }] }),
   );
   expect(id !== null).toBe(true);
-  const spec = be.buildCalls[be.buildCalls.length - 1];
-  expect((JSON.parse(spec.settings!) as Record<string, unknown>).sdRoot).toBe("");
+  expect("sdRoot" in (be.bootOf(id!)?.settings ?? {})).toBe(false);
   expect(warnings).toEqual([
     '[systems] /roms/c.nes: its stored mesen config holds a value this build does not read as written: ' +
-      'repaired sdRoot null to ""',
+      'dropped sdRoot null',
   ]);
-  expect(be.graphNode(`sys-${id}`)?.settings).toEqual(canon({ core: id }));
 });
 
 test("a left-out lsdj-sync arms no serial-out capture: not where it is placed, nor on an edit", () => {
@@ -953,13 +994,14 @@ test("DirectGraph keeps the B1 model: append, replace in place, remove shifting 
   expect(since(be, 0).map((r) => r.slots)).toEqual([[1], [1, 2], [1, 2, 3], [4, 2, 3], [4, 3]]);
   // A remove or replace of an id already gone re-arms and changes nothing else.
   const n = be.graphRequests.length;
+  const puts = be.putResourceCalls.length;
   expect(g.remove(9)).toBe(true);
   expect(g.replace(9, MGB, 5)).toBe(false);
   expect(since(be, n)).toEqual([
     { slots: [4, 3], tap: {} },
     { slots: [4, 3], tap: {} },
   ]);
-  expect(be.buildCalls.some((c) => c.id === 5)).toBe(false);
+  expect(be.putResourceCalls.length).toBe(puts); // nothing was put for the replace of a system that is not placed
 });
 
 test("DirectGraph's core config: a link group rewires, a setting rides its node, an unknown field is refused", () => {
@@ -969,7 +1011,7 @@ test("DirectGraph's core config: a link group rewires, a setting rides its node,
   g.add(MGB, 2);
   // None until set: the node carries no setting field, so its core keeps the settings it was built with (its gain
   // param still starts at its default, 0 dB, at its first block).
-  expect(be.graphNode("sys-1")?.settings).toEqual({ core: 1, serialOutCapture: "off" });
+  expect(knobs(be, 1)).toEqual({ serialOutCapture: "off" });
   const n = be.graphRequests.length;
   expect(g.setCoreConfig(1, { linkGroupId: 1 })).toBe(true);
   expect(g.setCoreConfig(2, { linkGroupId: 1 })).toBe(true);
@@ -978,8 +1020,8 @@ test("DirectGraph's core config: a link group rewires, a setting rides its node,
   // Merged over what it had: the group stays, the model rides the node's settings as its label.
   expect(g.setCoreConfig(2, { model: "dmgB", highpass: "off" })).toBe(true);
   expect(linked(be, "sys-2.link")).toBe(true);
-  const sys2 = canon({ core: 2, model: "dmgB", highpass: "off", serialOutCapture: "off" });
-  expect(be.graphNode("sys-2")?.settings).toEqual(sys2);
+  const sys2 = canon({ model: "dmgB", highpass: "off", serialOutCapture: "off" });
+  expect(knobs(be, 2)).toEqual(sys2);
   // An ordinal, a construct-time field, another core's field, a key every object inherits: each refused, changing
   // nothing.
   const sent = be.graphRequests.length;
@@ -991,7 +1033,7 @@ test("DirectGraph's core config: a link group rewires, a setting rides its node,
   expect(be.graphNode("sys-2")?.settings?.model).toBe("dmgB");
   // The next document, another system's edit, carries the config last taken: a refused edit left nothing behind.
   expect(g.setCoreConfig(1, { model: "mgb" })).toBe(true);
-  expect(be.graphNode("sys-2")?.settings).toEqual(sys2);
+  expect(knobs(be, 2)).toEqual(sys2);
 });
 
 test("DirectGraph's params: set live with no publish, and carried by the next document", () => {

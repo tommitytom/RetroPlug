@@ -23,7 +23,7 @@ import { normalizeSaveContainer, listSongs, isRisaSav } from "../../src/risaSav"
 const findItem = (items: MenuItem[], id: string) => items.find((i) => i.id === id);
 const noop = () => {};
 const handlers = { toggle: noop, toggleAll: noop, apply: noop, onClose: noop };
-const lastSram = (be: MockBackend): Uint8Array => be.buildCalls[be.buildCalls.length - 1].sramBytes!;
+const lastSram = (be: MockBackend): Uint8Array => be.lastBoot()!.sram!.bytes;
 
 // --- fixtures ------------------------------------------------------------------------------------------
 
@@ -198,9 +198,9 @@ test("applyImport reports a PARTIAL import when the target fills up (imported < 
 test("applyImport with nothing checked is a no-op (no write)", () => {
   const { be, stores, sys } = lsdjSystem();
   const pick = planImport(sys(), lsdjSource()) as PickState;
-  const before = be.buildCalls.length;
+  const before = be.bootedIds.length;
   expect(applyImport(stores, { ...pick, checked: new Set() })).toEqual({ requested: 0, imported: 0 });
-  expect(be.buildCalls.length).toBe(before); // no rebuild → nothing written
+  expect(be.bootedIds.length).toBe(before); // no rebuild → nothing written
 });
 
 // --- menu wiring: the Songs "Add..." routes a picked .sav to beginSongImport --------------------------

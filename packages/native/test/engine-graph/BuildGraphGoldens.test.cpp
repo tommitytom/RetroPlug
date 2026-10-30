@@ -9,10 +9,11 @@
 // protocol node type wired into the system node it feeds, an LSDj's serial-out decoder after its Game Boy, the N8 cart
 // mirror and a controller each way.
 //
-// The cores are real: a system node takes its core by its concrete class, so a stand-in reporting only its
-// kind is refused when the node activates. Each is built as the case's model says (a Game Boy's link group, a
-// NES's export mode), and the case's tap arm rides the request, so each NES must end in the mode it armed, or
-// the one it was built in. Each plan then runs, and its blocks must fault no node, throw in no script node and drop no
+// The cores are real: each system node builds its own from the resources its settings name (docs/
+// modular-graph-phase-c3-design.md section 6), so here each of a case's systems' ROMs is put in the engine's resource
+// table and the document is pointed at those ids before it is handed over. A NES in the case's model carries its export
+// mode as its node's construct-time setting, and the case's tap arm rides the request, so each NES must end in the mode
+// it armed, or the one it was built in. Each plan then runs, and its blocks must fault no node, throw in no script node and drop no
 // message: a document can plan and still wedge a linked group or a node's process, and the script host catches a
 // script node's throw, counts it and runs the node again next block, rather than faulting. A build-graph.json plan runs
 // one quiet block. A build-graph-roles.json plan runs twenty, with the transport playing, host MIDI on four channels
@@ -44,14 +45,7 @@
 #include "graph/CanonicalJson.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/graph/SystemNodes.hpp"
-#include "system/mesen/MesenGbaConfig.hpp"
-#include "system/mesen/MesenGbaSystem.hpp"
-#include "system/mesen/MesenNesConfig.hpp"
-#include "system/mesen/MesenNesSystem.hpp"
-#include "system/mesen/MesenSmsConfig.hpp"
-#include "system/mesen/MesenSmsSystem.hpp"
-#include "system/sameboy/SameBoyConfig.hpp"
-#include "system/sameboy/SameBoySystem.hpp"
+#include "system/mesen/MesenNesSystem.hpp"  // the export mode a NES ended in
 
 using rp::host::test::readFile;
 
@@ -69,13 +63,21 @@ constexpr int kDrivenBlocks = 20;
 // DTO fails to compile.
 namespace build_graph_golden {
 
+// A system's resources as the model names them (graph/systemResources.ts): the golden's own ids, which this file maps
+// onto the ones it puts. Only the ROM is used; the seeds the goldens' models carry are none.
+struct GoldenResources {
+    std::uint32_t rom = 0;
+};
 // A golden case, as build-graph-goldens.test.ts reads it; the model's routing is what built the document, and
 // nothing here needs it.
 struct GoldenSystem {
-    std::uint32_t exportMode = 0;
-    SystemId      id = 0;
-    std::uint32_t linkGroup = 0;
-    std::string   type;
+    std::uint32_t   exportMode = 0;
+    SystemId        id = 0;
+    std::uint32_t   linkGroup = 0;
+    std::string     type;
+    std::string     platform;
+    GoldenResources resources;
+    std::string     romName;
 };
 struct GoldenShape {
     std::string kind;
@@ -135,28 +137,23 @@ Goldens readGoldens(const char* path) {
     return out;
 }
 
-// The core buildCore would build for `s`, activated at the engine's rate as the factory activates one.
-std::unique_ptr<SystemBase> build(const GoldenSystem& s) {
-    std::unique_ptr<SystemBase> core;
-    if (s.type == rp::host::test::kGbType) {
-        SameBoyConfig cfg;
-        cfg.linkGroupId = static_cast<std::uint8_t>(s.linkGroup);
-        core = std::make_unique<SameBoySystem>(s.id, cfg, readFile(RP_MGB_ROM_PATH));
-    } else if (s.type == rp::host::test::kNesType) {
-        MesenNesConfig cfg;
-        cfg.romPath = RP_BLIPTOASTER_ROM_PATH;
-        cfg.channelExportMode = s.exportMode;
-        core = std::make_unique<MesenNesSystem>(s.id, cfg, readFile(RP_BLIPTOASTER_ROM_PATH));
-    } else if (s.type == "rp.mesen.gba") {
-        // The smallest ROM GbaConsole::LoadRom takes (GbaAudio.test.cpp); with no BIOS it boots HLE.
-        core = std::make_unique<MesenGbaSystem>(s.id, MesenGbaConfig{}, std::vector<std::uint8_t>(1024, 0));
-    } else if (s.type == "rp.mesen.sms") {
-        MesenSmsConfig cfg;
-        cfg.romPath = RP_SMS_ROM_PATH;
-        core = std::make_unique<MesenSmsSystem>(s.id, cfg, readFile(RP_SMS_ROM_PATH));
+// The ROM bytes a system of `type` boots here: the same fixtures every case used, small enough to put per case. A GBA
+// node gates the bytes it is given (detectRomFormat), so its 1 KiB ROM - the smallest GbaConsole::LoadRom takes - carries
+// the Nintendo logo the way every licensed cart does.
+std::vector<std::uint8_t> romFor(const std::string& type) {
+    if (type == rp::host::test::kGbType) return readFile(RP_MGB_ROM_PATH);
+    if (type == rp::host::test::kNesType) return readFile(RP_BLIPTOASTER_ROM_PATH);
+    if (type == "rp.mesen.sms") return readFile(RP_SMS_ROM_PATH);
+    if (type == "rp.mesen.gba") {
+        static constexpr std::uint8_t kGbaLogo[] = {
+            0x24, 0xFF, 0xAE, 0x51, 0x69, 0x9A, 0xA2, 0x21, 0x3D, 0x84, 0x82, 0x0A, 0x84, 0xE4, 0x09, 0xAD,
+            0x11, 0x24, 0x8B, 0x98, 0xC0, 0x81, 0x7F, 0x21, 0xA3, 0x52, 0xBE, 0x19, 0x93, 0x09, 0xCE, 0x20,
+        };
+        std::vector<std::uint8_t> rom(1024, 0);
+        std::copy(std::begin(kGbaLogo), std::end(kGbaLogo), rom.begin() + 0x04);
+        return rom;
     }
-    if (core) core->onActivate(kRate);
-    return core;
+    return {};
 }
 
 // The settings fields each system node type reads, from its descriptor's schema: the properties of the $defs entry
@@ -230,14 +227,37 @@ std::optional<std::string> plan(const GoldenCase& c, const std::string& document
     Engine e(kRate);
     std::map<SystemId, const GoldenSystem*> byId;
     for (const GoldenSystem& s : c.model.systems) byId[s.id] = &s;
-    for (const SystemId id : c.slots) {
-        const auto it = byId.find(id);
-        if (it == byId.end()) return "slot " + std::to_string(id) + " is no system of the model";
-        auto core = build(*it->second);
-        if (!core) return "no core is built as " + it->second->type;
-        if (!e.parkCore(std::move(core))) return "the engine would not park core " + std::to_string(id);
+    for (const SystemId id : c.slots)
+        if (byId.find(id) == byId.end()) return "slot " + std::to_string(id) + " is no system of the model";
+    // Put each system's ROM and point the document at the engine's own ids: a node boots from its resources, and never
+    // from a path or a parked core. The ids are rewritten in ONE pass: two golden ids can each be the other's engine id,
+    // and replacing them one after another would let the second see the first's output.
+    std::map<std::uint32_t, std::uint32_t> ids;
+    for (const GoldenSystem& s : c.model.systems) {
+        std::string why;
+        const auto rom = romFor(s.type);
+        if (rom.empty()) return "no ROM fixture for " + s.type;
+        const std::uint32_t id = e.putResource("rom", rom, &why);
+        if (id == 0) return "the engine would not take " + s.type + "'s ROM: " + why;
+        ids[s.resources.rom] = id;
     }
-    auto request = rp::host::test::graphRequest(document, c.slots);
+    std::string doc;
+    for (std::size_t at = 0; at < document.size();) {
+        const auto found = document.find("\"res:", at);
+        if (found == std::string::npos) {
+            doc.append(document, at, std::string::npos);
+            break;
+        }
+        doc.append(document, at, found - at);
+        const auto digits = found + 5;  // past `"res:`
+        const auto end = document.find('"', digits);
+        if (end == std::string::npos) return "a resource reference runs off the document";
+        const auto mapped = ids.find(static_cast<std::uint32_t>(std::stoul(document.substr(digits, end - digits))));
+        if (mapped == ids.end()) return "the document names " + document.substr(found, end - found + 1) + ", which no system of the model has";
+        doc += "\"res:" + std::to_string(mapped->second) + "\"";
+        at = end + 1;
+    }
+    auto request = rp::host::test::graphRequest(doc, c.slots);
     if (c.tapArm) request = rp::host::test::rearming(std::move(request), c.tapArm->id, c.tapArm->mode);
     const Engine::GraphResult result = e.setGraph(request);
 

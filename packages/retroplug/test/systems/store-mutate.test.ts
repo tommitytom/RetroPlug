@@ -35,12 +35,13 @@ test("duplicate: appends a clone with a fresh suffix + concrete auto-save path",
   expect(v[1].romPath).toBe("/roms/a.gb"); // clone carries the source ROM
   expect(v[1].savSuffix).toBe(2); // 0 owned -> 2
   expect(store.focused()).toBe(a); // duplicate doesn't steal focus
-  // Duplicate is TS orchestration now: readState(src) → buildCore seeded with those bytes + the
-  // clone's own auto-save path. No bespoke backend method: it lands as a build call.
-  const call = be.buildCalls[be.buildCalls.length - 1];
+  // Duplicate is TS orchestration: readState(src) -> a state seed for the clone, which shares its source's ROM
+  // resource. The clone owns its own auto-save target, resolved from its suffix.
+  const call = be.lastBoot()!;
   expect(call.romPath).toBe("/roms/a.gb");
-  expect(call.savPath).toBe("/roms/a-2.sav");
-  expect(new Uint8Array(call.stateBytes!)).toEqual(stateBytesFor(a as number));
+  const clone = store.view()[1];
+  expect(resolveSavPath(clone.romPath, clone.savSuffix, clone.savPath)).toBe("/roms/a-2.sav");
+  expect(call.state!.bytes).toEqual(stateBytesFor(a as number));
 });
 
 test("addSystem adopts an existing <rom>.srm battery when there is no <rom>.sav (NES/risa)", () => {
@@ -48,7 +49,7 @@ test("addSystem adopts an existing <rom>.srm battery when there is no <rom>.sav 
   be.seed("/roms/tune.nes", nesRom());
   be.seed("/roms/tune.srm", "battery"); // only a .srm sibling on disk, no .sav
   store.addSystem("/roms/tune.nes");
-  expect(be.buildCalls[be.buildCalls.length - 1].savPath).toBe("/roms/tune.srm"); // loaded + auto-saved there
+  expect(be.lastBoot()!.savPath).toBe("/roms/tune.srm"); // the battery seed, read from there
   expect(store.view()[0].savPath).toBe("/roms/tune.srm"); // recorded as an override (persisted in the project)
 });
 
@@ -58,13 +59,13 @@ test("addSystem prefers <rom>.sav over <rom>.srm, and derives .sav when neither 
   be.seed("/roms/a.sav", "battery");
   be.seed("/roms/a.srm", "battery"); // both present → the .sav wins
   store.addSystem("/roms/a.nes");
-  expect(be.buildCalls[be.buildCalls.length - 1].savPath).toBe("/roms/a.sav");
+  expect(be.lastBoot()!.savPath).toBe("/roms/a.sav");
   expect(store.view()[0].savPath).toBe(""); // derived, no override
 
   be.seed("/roms/b.nes", nesRom()); // neither .sav nor .srm
   store.addSystem("/roms/b.nes");
-  expect(be.buildCalls[be.buildCalls.length - 1].savPath).toBe("/roms/b.sav"); // the default write target
-  expect(store.view()[1].savPath).toBe("");
+  expect(be.lastBoot()!.sram).toBe(undefined); // no file is no seed: a fresh cartridge
+  expect(store.view()[1].savPath).toBe(""); // and the auto-save target is the derived sibling
 });
 
 test("duplicate: an absent id is a no-op", () => {
@@ -125,11 +126,11 @@ test("swapRom: changes the ROM in place carrying the live battery, reclassifying
   expect(v[0].platform).toBe("nes"); // reclassified — platform/core follow the new cart
   expect(v[0].savSuffix).toBe(0);
   expect(store.focused()).toBe(newId); // focus followed the swap
-  const call = be.buildCalls[be.buildCalls.length - 1];
+  const call = be.lastBoot()!;
   expect(store.view().map((s) => s.id)).toEqual([call.id]); // built in the replaced system's slot
   expect(call.romPath).toBe("/roms/b.nes");
-  expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(a)); // the OLD system's live battery carried forward
-  expect(call.stateBytes).toBe(undefined); // cold boot with the carried SRAM, no savestate
+  expect(new Uint8Array(call.sram!.bytes)).toEqual(sramBytesFor(a)); // the OLD system's live battery carried forward
+  expect(call.state).toBe(undefined); // cold boot with the carried SRAM, no savestate
   expect(store.swapRom(9999, "/roms/b.nes")).toBe(null); // absent id -> no-op
   expect(store.swapRom(newId as number, "/roms/none.gb")).toBe(null); // unclassifiable ROM -> no-op, untouched
   expect(store.view()[0].romPath).toBe("/roms/b.nes"); // the failed swap left the instance in place
@@ -160,11 +161,11 @@ test("swapRom: an LSDj→LSDj swap carries the song forward — the seed-hook st
   const seedsBeforeSwap = be.log.filter((e) => e === "savFromJson").length;
   const newId = store.swapRom(a, "/roms/v2.gb");
   expect(newId).toBeTruthy();
-  const call = be.buildCalls[be.buildCalls.length - 1];
+  const call = be.lastBoot()!;
   expect(call.romPath).toBe("/roms/v2.gb");
   // The carried live battery must survive: lsdjSeedSav sees spec.sramBytes set and stands down, so it does
   // NOT overwrite it with an empty savFromJson("{}") seed. This is the whole point of the feature.
-  expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(a));
+  expect(new Uint8Array(call.sram!.bytes)).toEqual(sramBytesFor(a));
   expect(be.log.filter((e) => e === "savFromJson").length).toBe(seedsBeforeSwap); // no empty-sav seed during the swap
   expect(store.view()[0].roles.some((r) => r.kind === "lsdj-sync")).toBeTruthy(); // new cart re-sniffed as LSDj
 });
@@ -198,9 +199,9 @@ test("loadState: reconstructs the system in place, booted from the file's bytes"
   expect(v.length).toBe(1); // swapped, not appended
   expect(v[0].id).toBe(newId);
   expect(store.focused()).toBe(newId); // focus followed the swap
-  const call = be.buildCalls[be.buildCalls.length - 1];
+  const call = be.lastBoot()!;
   expect(store.view().map((s) => s.id)).toEqual([call.id]); // built in the replaced system's slot
-  expect(new Uint8Array(call.stateBytes!)).toEqual(stateBytesFor(999)); // the file's bytes seeded the core
+  expect(new Uint8Array(call.state!.bytes)).toEqual(stateBytesFor(999)); // the file's bytes seeded the core
   expect(store.loadState(9999, "/states/x.ss0")).toBe(null); // absent id -> no-op
   expect(store.loadState(newId as number, "/nope.ss0")).toBe(null); // unreadable file -> no-op
 });
@@ -213,11 +214,10 @@ test("loadSram: cold-boots the ROM in place with the file's SRAM and repoints th
   const newId = store.loadSram(a, "/saves/x.sav");
   expect(newId).toBeTruthy();
   expect(newId === a).toBeFalsy();
-  const call = be.buildCalls[be.buildCalls.length - 1];
+  const call = be.lastBoot()!;
   expect(store.view().map((s) => s.id)).toEqual([call.id]); // built in the replaced system's slot
-  expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(999));
-  expect(call.savPath).toBe("/saves/x.sav"); // native's auto-save target repointed to the loaded file
-  expect(store.view()[0].savPath).toBe("/saves/x.sav"); // ...and recorded on the entry (persisted in the project)
+  expect(call.sram!.bytes).toEqual(sramBytesFor(999));
+  expect(store.view()[0].savPath).toBe("/saves/x.sav"); // the auto-save target repointed (persisted in the project)
 });
 
 test("loadSram: loading the ROM's own natural sibling keeps the suffix target (override collapses to \"\")", () => {
@@ -242,10 +242,10 @@ test("reset: reboots in place carrying the live battery, with a new id + focus",
   expect(v[0].id).toBe(newId);
   expect(v[0].romPath).toBe("/roms/a.gb"); // identity preserved
   expect(store.focused()).toBe(newId); // focus followed the swap
-  const call = be.buildCalls[be.buildCalls.length - 1];
+  const call = be.lastBoot()!;
   expect(store.view().map((s) => s.id)).toEqual([call.id]); // built in the replaced system's slot
-  expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(a)); // the live battery carried forward
-  expect(call.stateBytes).toBe(undefined); // cold boot, no savestate
+  expect(new Uint8Array(call.sram!.bytes)).toEqual(sramBytesFor(a)); // the live battery carried forward
+  expect(call.state).toBe(undefined); // cold boot, no savestate
   expect(store.reset(9999)).toBe(null); // absent -> no-op
 });
 
@@ -258,12 +258,12 @@ test("newSram: cold-boots in place with a blank (all-zero) battery", () => {
   expect(newId === a).toBeFalsy();
   expect(store.view().length).toBe(1); // swapped, not appended
   expect(store.focused()).toBe(newId); // focus followed the swap
-  const call = be.buildCalls[be.buildCalls.length - 1];
+  const call = be.lastBoot()!;
   expect(store.view().map((s) => s.id)).toEqual([call.id]); // built in the replaced system's slot
-  const seed = new Uint8Array(call.sramBytes!);
+  const seed = new Uint8Array(call.sram!.bytes);
   expect(seed.length).toBe(0x20000); // native truncates/zero-pads this to the cart's real battery size
   expect(seed.every((b) => b === 0)).toBeTruthy(); // blank battery
-  expect(call.stateBytes).toBe(undefined); // cold boot, no savestate
+  expect(call.state).toBe(undefined); // cold boot, no savestate
   expect(store.newSram(9999)).toBe(null); // absent -> no-op
 });
 
@@ -281,9 +281,9 @@ test("newSramAs: cold-boots blank, repoints the auto-save target to the picked f
   expect(v[0].savPath).toBe("/saves/fresh.sav"); // auto-save target repointed to the picked file
   expect(v[0].settings.gainDb).toBe(-6); // settings preserved across the rebuild
   expect(store.focused()).toBe(newId);
-  const call = be.buildCalls[be.buildCalls.length - 1];
+  const call = be.lastBoot()!;
   expect(store.view().map((s) => s.id)).toEqual([call.id]); // built in the replaced system's slot
-  const seed = new Uint8Array(call.sramBytes!);
+  const seed = new Uint8Array(call.sram!.bytes);
   expect(seed.length).toBe(0x20000);
   expect(seed.every((b) => b === 0)).toBeTruthy(); // blank battery
   expect(be.fileExists("/saves/fresh.sav")).toBeTruthy(); // the fresh save was created at the pick

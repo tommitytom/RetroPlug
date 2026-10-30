@@ -762,7 +762,7 @@ export class ProjectStore {
     }
     this.projectSettings = { ...DEFAULT_SETTINGS, ...cfg.settings };
     try {
-      this.publishRouting(); // place the loaded systems, with the loaded project's routing
+      this.placeLoadedSystems(); // place the loaded systems, with the loaded project's routing
     } catch (e) {
       // Every system is adopted by now, so the observers hear of them as the rebuild's failure path tells them:
       // once, here, as the success path below is not reached.
@@ -796,6 +796,23 @@ export class ProjectStore {
    *  to the mode already set. */
   private publishRouting(): void {
     this.publishGraph(true);
+  }
+
+  /** Place the systems a load adopted, once for all of them. A document the engine refuses is published again without
+   *  the system the refusal names (an unreadable ROM, a node whose stored settings this build cannot read), with a
+   *  note saying which, until a document plans or no system is left: one bad system costs only itself. */
+  private placeLoadedSystems(): void {
+    for (;;) {
+      if (this.publishGraph(true)) return;
+      const refusal = this.graph.lastErrors.find((e) => /^sys-\d+(?:\/|$)/.test(e.nodeId));
+      const id = refusal ? Number(/^sys-(\d+)/.exec(refusal.nodeId)?.[1] ?? 0) : 0;
+      const dropped = id > 0 ? this.systems.discard(id) : undefined;
+      if (!dropped) return; // a refusal no system explains: the load cannot fix it by dropping one
+      console.warn(
+        `[systems] ${dropped.romPath || `the embedded ${dropped.embeddedRom}`}: the engine refused it, so the project ` +
+          `loads without it (${refusal?.code}: ${refusal?.message})`,
+      );
+    }
   }
 
   private markDirty(): void {

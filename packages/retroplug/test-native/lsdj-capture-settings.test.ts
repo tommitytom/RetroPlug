@@ -1,7 +1,7 @@
 // A loaded LSDj in a MIDI-out mode captures its serial out from its Game Boy node's settings alone
-// (docs/modular-graph-phase-c2-design.md section 4): the store adopts it as a project load does, its core built with
-// no capture (a build spec carries none), and the first document that places its node carries `serialOutCapture`,
-// which the node gives the core as it takes it, before the core first runs, so the core captures from its first block.
+// (docs/modular-graph-phase-c2-design.md section 4): the store adopts it as a project load does, its boot puts no
+// capture with a resource, and the first document that places its node carries `serialOutCapture`, which the node gives
+// the core as it takes it, before the core first runs, so the core captures from its first block.
 // Each mode once, on the ROM it targets: MI.OUT drives (an Arduinoboy build, its N commands' NoteOns reaching the
 // host), master sync listens (a stock LSDj in SYNC=LSDj, its clocks reaching the host, which they would not had its
 // capture ever driven it: clocked while stopped, it stops answering START). (lsdj-midiout.test.ts and
@@ -58,21 +58,21 @@ const session = bootSession();
 const { project, audio, backend: be } = session;
 project.systems.setBatteryFlush(false); // a remove must not write the song into the fixture ROM's .sav
 
-// What a run saw: whether its build spec carried a capture, the capture its node was first placed with, the status
+// What a run saw: whether a boot put a capture with a resource, the capture its node was first placed with, the status
 // bytes its decoder sent while LSDj booted, and those it sent once LSDj played.
-type Run = { builtWithCapture: boolean; placed: unknown; boot: number[]; played: number[] };
+type Run = { captureInABoot: boolean; placed: unknown; boot: number[]; played: number[] };
 
-// Adopt an LSDj in `mode` as a project load adopts each system, recording its build spec and every document published;
-// boot it, then play its song. Removed at the end.
+// Adopt an LSDj in `mode` as a project load adopts each system, recording its resource puts and every document
+// published; boot it, then play its song. Removed at the end.
 function play(romPath: string, song: SavInput, mode: string): Run {
-  const buildCore = be.buildCore;
   const setGraph = be.setGraph;
-  let builtWithCapture = true;
-  const documents: GraphDocument[] = [];
-  be.buildCore = (spec, id) => {
-    builtWithCapture = "serialOutCapture" in spec;
-    return buildCore(spec, id);
+  const putResource = be.putResource;
+  const putSpecs: Record<string, unknown>[] = [];
+  be.putResource = (spec) => {
+    putSpecs.push(spec as unknown as Record<string, unknown>);
+    return putResource(spec);
   };
+  const documents: GraphDocument[] = [];
   be.setGraph = (request) => {
     documents.push(JSON.parse(request.document) as GraphDocument);
     return setGraph(request);
@@ -92,18 +92,20 @@ function play(romPath: string, song: SavInput, mode: string): Run {
     audio.pressButton(id!, START, false);
     audio.renderAudio(3000);
     const played = audio.drainMidiOut().map((m) => m.data[0]);
-    return { builtWithCapture, placed, boot, played };
+    // The capture is the node's own setting: no resource a boot put carried it.
+    const captureInABoot = putSpecs.some((spec) => Object.prototype.hasOwnProperty.call(spec, "serialOutCapture"));
+    return { captureInABoot, placed, boot, played };
   } finally {
     if (id !== null) project.systems.removeSystem(id);
-    be.buildCore = buildCore;
     be.setGraph = setGraph;
+    be.putResource = putResource;
   }
 }
 
 test("an LSDj loaded in MI.OUT is built with no capture, placed driving, and its NoteOns reach the host", () => {
   if (!be.fileExists(ABOY)) skip(`lsdj-capture-settings: aboy LSDj ROM not found at ${ABOY}`);
   const run = play(ABOY, MIDIOUT_SONG, LsdjSyncMode.MidiOut);
-  expect(run.builtWithCapture, "a capture in the build spec").toBe(false);
+  expect(run.captureInABoot, "a capture in a resource put").toBe(false);
   expect(run.placed, "the capture its node was first placed with").toBe("drive");
   const noteOns = run.played.filter((s) => (s & 0xf0) === 0x90).length;
   console.log(`[lsdj-capture-settings] MI.OUT: ${noteOns} NoteOns`);
@@ -114,7 +116,7 @@ test("an LSDj loaded in MI.OUT is built with no capture, placed driving, and its
 test("an LSDj loaded in master sync is built with no capture, placed listening, and its clocks reach the host", () => {
   if (!be.fileExists(LSDJ)) skip(`lsdj-capture-settings: LSDj ROM not found at ${LSDJ}`);
   const run = play(LSDJ, MASTER_SONG, LsdjSyncMode.MasterSync);
-  expect(run.builtWithCapture, "a capture in the build spec").toBe(false);
+  expect(run.captureInABoot, "a capture in a resource put").toBe(false);
   expect(run.placed, "the capture its node was first placed with").toBe("listen");
   // A stopped master waits on an external clock, which listening never supplies, so its boot sends nothing; and one
   // that was ever clocked would take that clock for another master's and stop answering START.

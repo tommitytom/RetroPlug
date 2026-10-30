@@ -8,7 +8,7 @@
 // (docs/modular-graph-phase-c2-design.md section 5): its core config's setting fields and a Game Boy's serial-out
 // capture as settings, its gain and a NES's expansion volume as params.
 import { test, expect } from "../../testing/harness";
-import { buildGraph, type GraphModel, type GraphSystem, type HostShape } from "../../src/graph/buildGraph";
+import { buildGraph, exportModeOf, type GraphModel, type GraphSystem, type HostShape } from "../../src/graph/buildGraph";
 import { protocolPipeline, type LeftOutRole, type ProtocolRole } from "../../src/graph/protocolNodes";
 import { controllerSyncOverride, serialOutCaptureFor, type GraphController } from "../../src/graph/controller";
 import { RoleRegistry } from "../../src/systemRoles";
@@ -23,8 +23,13 @@ import { LSDJ_SYNC_NODE_TYPE } from "../../src/script/nodes/lsdjSync";
 import { LSDJ_SERIAL_OUT_NODE_TYPE } from "../../src/script/nodes/lsdjSerialOut";
 import { LSDJ_MODE_VALUES, type AudioRouting, type MidiRouting } from "../../src/settingsEnums";
 
-const gb = (id: number, linkGroup = 0, pipeline: ProtocolRole[] = []): GraphSystem => ({ id, type: "rp.sameboy.gb", linkGroup, exportMode: 0, pipeline });
-const nes = (id: number, exportMode = 0, pipeline: ProtocolRole[] = []): GraphSystem => ({ id, type: "rp.mesen.nes", linkGroup: 0, exportMode, pipeline });
+// A system as the store hands buildGraph one: its id doubles as its ROM resource's, so a document names `res:<id>`.
+const gb = (id: number, linkGroup = 0, pipeline: ProtocolRole[] = []): GraphSystem => ({
+  id, platform: "gb", type: "rp.sameboy.gb", linkGroup, exportMode: 0, resources: { rom: id }, romName: `rom${id}`, pipeline,
+});
+const nes = (id: number, exportMode = 0, pipeline: ProtocolRole[] = []): GraphSystem => ({
+  id, platform: "nes", type: "rp.mesen.nes", linkGroup: 0, exportMode, resources: { rom: id }, romName: `rom${id}`, pipeline,
+});
 const multi = (channels: number): HostShape => ({ kind: "multi", channels });
 
 // The host's I/O and the script nodes around the systems, which every document carries; the B1 tables below are the
@@ -90,8 +95,8 @@ test("Stereo sums every system into one pair, in slot order", () => {
 });
 
 test("a system node names its core by its system id, and a Game Boy's its capture", () => {
-  expect(built([gb(4)]).node("sys-4")).toEqual({ id: "sys-4", type: "rp.sameboy.gb", settings: { core: 4, serialOutCapture: "off" } });
-  expect(built([nes(5)]).node("sys-5")).toEqual({ id: "sys-5", type: "rp.mesen.nes", settings: { core: 5 } });
+  expect(built([gb(4)]).node("sys-4")).toEqual({ id: "sys-4", type: "rp.sameboy.gb", settings: { system: 4, rom: "res:4", romName: "rom4", serialOutCapture: "off" } });
+  expect(built([nes(5)]).node("sys-5")).toEqual({ id: "sys-5", type: "rp.mesen.nes", settings: { system: 5, rom: "res:5", romName: "rom5" } });
 });
 
 test("one system on a lane is wired straight in", () => {
@@ -134,7 +139,7 @@ test("linked Game Boys run after the unlinked ones, each group in slot order", (
 });
 
 test("only Game Boys link: a link group on any other system is ignored", () => {
-  const other: GraphSystem = { id: 2, type: "rp.mesen.nes", linkGroup: 1, exportMode: 0, pipeline: [] };
+  const other: GraphSystem = { id: 2, platform: "nes", type: "rp.mesen.nes", linkGroup: 1, exportMode: 0, resources: { rom: 2 }, romName: "rom2", pipeline: [] };
   const g = built([gb(1, 1), other]);
   expect(g.audioOrder.slice(0, 2)).toEqual(["sys-1", "sys-2"]);
   expect(g.document.wires.some((w) => w.to.endsWith(".link"))).toBe(false);
@@ -238,7 +243,7 @@ const N8 = role("nes-n8-midi");
 const RISA = role("risa-sync");
 const SMS = role("sms-sync", { machine: "gg" });
 const LSDJ = (mode = "midiSync"): ProtocolRole => role("lsdj-sync", { mode, tempoDivisor: 1, autoStart: false });
-const sms = (id: number, pipeline: ProtocolRole[] = []): GraphSystem => ({ id, type: "rp.mesen.sms", linkGroup: 0, exportMode: 0, pipeline });
+const sms = (id: number, pipeline: ProtocolRole[] = []): GraphSystem => ({ id, platform: "sms", type: "rp.mesen.sms", linkGroup: 0, exportMode: 0, resources: { rom: id }, romName: `rom${id}`, pipeline });
 
 const CONTROLLER: GraphController = {
   app: "lsdj-midimap", target: "system", systemId: 0, appConfig: { quantise: "bar", follow: true, page: 0 },
@@ -485,7 +490,7 @@ const CORE_ROLES = new RoleRegistry();
 registerCoreRoles(CORE_ROLES);
 const coreConfig = (kind: "sameboy" | "mesen", over: Record<string, unknown> = {}): Record<string, unknown> =>
   CORE_ROLES.roleType(kind)!.schema.parse(over) as Record<string, unknown>;
-const gba = (id: number): GraphSystem => ({ id, type: "rp.mesen.gba", linkGroup: 0, exportMode: 0, pipeline: [] });
+const gba = (id: number): GraphSystem => ({ id, platform: "gba", type: "rp.mesen.gba", linkGroup: 0, exportMode: 0, resources: { rom: id }, romName: `rom${id}`, pipeline: [] });
 
 test("each system node's settings carry its core config's setting fields, and its params its gain and a NES's expansion volume", () => {
   const sameboy = coreConfig("sameboy", { model: "dmgB", highpass: "removeDcOffset", fastBoot: false, colorCorrection: "lowContrast", dmgPalette: "gbl", lightTemperature: -0.25, linkGroupId: 3 });
@@ -496,33 +501,42 @@ test("each system node's settings carry its core config's setting fields, and it
     { ...gba(3), coreConfig: mesen, gainDb: -1.5 },
     { ...sms(4), coreConfig: mesen, gainDb: 0 },
   ]);
-  // The labels as the role config spells them; nothing that is wiring (the link group) or construct-time (FM, the FIFO,
-  // the SD root, the export mode, the N8 link) is a setting.
+  // The labels as the role config spells them, the construct-time fields among them (what the node builds its core
+  // with) but nothing that is wiring (the link group).
   expect(g.node("sys-1")).toEqual({
     id: "sys-1",
     type: "rp.sameboy.gb",
-    settings: { core: 1, model: "dmgB", fastBoot: false, highpass: "removeDcOffset", colorCorrection: "lowContrast", dmgPalette: "gbl", lightTemperature: -0.25, serialOutCapture: "off" },
+    settings: { system: 1, rom: "res:1", romName: "rom1", model: "dmgB", fastBoot: false, highpass: "removeDcOffset", colorCorrection: "lowContrast", dmgPalette: "gbl", lightTemperature: -0.25, serialOutCapture: "off" },
     params: { gain: -6 },
   });
   expect(g.node("sys-2")).toEqual({
     id: "sys-2",
     type: "rp.mesen.nes",
-    settings: { core: 2, region: "pal", removeSpriteLimit: true, apuLatencyMs: 2.5, s5bNoise: "chip", mmc5PhaseReset: "n8" },
+    settings: {
+      system: 2, rom: "res:2", romName: "rom2", region: "pal", removeSpriteLimit: true, apuLatencyMs: 2.5, s5bNoise: "chip",
+      mmc5PhaseReset: "n8", sdRoot: "/sd", fifo: "hardware", fifoDepth: 0, fifoBytesPerSecond: 0, n8Link: "auto",
+      n8LinkRttUs: 2200, channelExportMode: "mix",
+    },
     params: { gain: 3, expansionVolume: 40 },
   });
-  expect(g.node("sys-3")).toEqual({ id: "sys-3", type: "rp.mesen.gba", settings: { core: 3 }, params: { gain: -1.5 } });
-  expect(g.node("sys-4")).toEqual({ id: "sys-4", type: "rp.mesen.sms", settings: { core: 4 }, params: { gain: 0 } });
+  expect(g.node("sys-3")).toEqual({ id: "sys-3", type: "rp.mesen.gba", settings: { system: 3, rom: "res:3", romName: "rom3" }, params: { gain: -1.5 } });
+  expect(g.node("sys-4")).toEqual({ id: "sys-4", type: "rp.mesen.sms", settings: { system: 4, rom: "res:4", romName: "rom4", enableFm: false }, params: { gain: 0 } });
+  // A NES's model export mode and its core config's label name the same thing, and the node carries the label.
+  const exportLabel = "individualMono";
+  const configured = { ...nes(2, 3), coreConfig: coreConfig("mesen", { channelExportMode: exportLabel }) };
+  expect(exportModeOf(configured.coreConfig)).toBe(configured.exportMode);
+  expect(built([configured]).node("sys-2")?.settings?.channelExportMode).toBe(exportLabel);
 });
 
 test("a system with no core config or gain carries none: its core keeps its settings, its params the defaults", () => {
   const g = built([gb(1), nes(2), gba(3), sms(4)]);
   for (const id of [1, 2, 3, 4]) expect(g.node(`sys-${id}`)?.params, `sys-${id}`).toBe(undefined);
-  expect(g.node("sys-2")?.settings).toEqual({ core: 2 });
+  expect(g.node("sys-2")?.settings).toEqual({ system: 2, rom: "res:2", romName: "rom2" });
   // A config holding only some fields gives the node those alone.
   expect(built([{ ...nes(2), coreConfig: { region: "dendy" } }]).node("sys-2")).toEqual({
     id: "sys-2",
     type: "rp.mesen.nes",
-    settings: { core: 2, region: "dendy" },
+    settings: { system: 2, rom: "res:2", romName: "rom2", region: "dendy" },
   });
 });
 
@@ -533,9 +547,9 @@ test("a knob the node would refuse is left out, so one stored config cannot refu
     { ...gb(1), coreConfig: { model: "cgbF", highpass: 2, fastBoot: "yes", colorCorrection: null, dmgPalette: "gbl", lightTemperature: 1.5 }, gainDb: Number.NaN },
     { ...nes(2), coreConfig: { region: "PAL", apuLatencyMs: 9, removeSpriteLimit: 1, s5bNoise: "n8", expansionVolume: "40" }, gainDb: 999 },
   ]);
-  expect(g.node("sys-1")).toEqual({ id: "sys-1", type: "rp.sameboy.gb", settings: { core: 1, dmgPalette: "gbl", serialOutCapture: "off" } });
+  expect(g.node("sys-1")).toEqual({ id: "sys-1", type: "rp.sameboy.gb", settings: { system: 1, rom: "res:1", romName: "rom1", dmgPalette: "gbl", serialOutCapture: "off" } });
   // A param out of range is sent: the planner clamps it, as it clamps a live edit.
-  expect(g.node("sys-2")).toEqual({ id: "sys-2", type: "rp.mesen.nes", settings: { core: 2, s5bNoise: "n8" }, params: { gain: 999 } });
+  expect(g.node("sys-2")).toEqual({ id: "sys-2", type: "rp.mesen.nes", settings: { system: 2, rom: "res:2", romName: "rom2", s5bNoise: "n8" }, params: { gain: 999 } });
 });
 
 test("a Game Boy captures its serial out for the mode its lsdj-sync node runs: drive for MI.OUT, listen for master sync, off otherwise", () => {

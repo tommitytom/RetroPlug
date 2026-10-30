@@ -25,8 +25,9 @@ const nesUnder = (mode: AudioRouting) => (rig: Rig) => {
 
 const roleMode = (mode: ChannelExportMode) => (rig: Rig) => {
   const id = rig.add(ROMS.bliptoaster);
+  // channelExportMode is a construct-time setting, so the edit IS the rebuild: the store resets the system with its
+  // battery under a new id, and no reload follows it (docs/modular-graph-phase-c3-design.md section 2).
   if (!rig.project.systems.setRoleConfig(id, "mesen", { channelExportMode: mode })) throw new Error(`setRoleConfig refused ${mode}`);
-  if (rig.project.systems.reloadSystem(id) == null) throw new Error("the reload did not build");
 };
 
 const cases: ParityCase[] = [

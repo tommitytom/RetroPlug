@@ -12,14 +12,19 @@
 // per-lane sum is the translator's.
 import {
   CARTRIDGE_ACCURACY_VALUES,
+  CHANNEL_EXPORT_VALUES,
   COLOR_CORRECTION_VALUES,
   DMG_PALETTE_VALUES,
+  FIFO_PROFILE_VALUES,
   HIGHPASS_VALUES,
   MODEL_VALUES,
+  N8_LINK_VALUES,
   REGION_VALUES,
   type AudioRouting,
   type MidiRouting,
 } from "../settingsEnums";
+import { type Platform, type SystemNodeType } from "../platform";
+import { resourceRef, type SystemResources } from "./systemResources";
 import type { GraphDocument, NodeDoc, WireDoc } from "./graphDocument";
 import {
   outNodeOf,
@@ -38,22 +43,28 @@ import {
   type SerialOutCaptureMode,
 } from "./controller";
 
-export type SystemNodeType = "rp.sameboy.gb" | "rp.mesen.nes" | "rp.mesen.gba" | "rp.mesen.sms";
-
 /** The output shape a document is built for: the host's own outputs routed by the project's mode (multi),
  *  each system on its own pair (perSystem), or one system's streams on a pair each (perChannel). A multi
  *  shape's `channels` is a positive integer: every placement is modulo it. */
 export type HostShape = { kind: "multi"; channels: number } | { kind: "perSystem" } | { kind: "perChannel" };
 
 export interface GraphSystem {
-  /** The TS system id. */
+  /** The TS system id, which its node names as `system` (and the node id as `sys-<id>`). */
   id: number;
-  /** The node type its core is placed as, as buildCore reported it. */
+  /** What its ROM is: it picks the node type (systemNodeTypeFor) and, for a Game Gear, the machine its node builds. */
+  platform: Platform;
+  /** The node type its core is placed as. */
   type: SystemNodeType;
   /** Game Boys only (ignored for any other type); 0 = unlinked. */
   linkGroup: number;
-  /** NES only: the channel export mode its core was built with. */
+  /** NES only: the channel export mode its core is built with. */
   exportMode: number;
+  /** The resources its node boots from (graph/systemResources.ts): its ROM and, when it has one, the seed its core
+   *  starts with. The ids are the engine's, and the store counts the handles on them. */
+  resources: SystemResources;
+  /** The ROM's name for a console that stages it as a file (a Master System's battery identity): its file's stem, or an
+   *  embedded ROM's marker. */
+  romName: string;
   /** The roles placed as protocol nodes, in the system's order, each with the node type it is placed as and its config
    *  as that node's settings (graph/protocolNodes.ts protocolPipeline, which leaves out a role with no node and one
    *  whose node would write an input an earlier role's does; ProtocolRole says who parsed the config). */
@@ -130,6 +141,9 @@ type Knob = (v: unknown) => boolean;
 const label = (values: readonly string[]): Knob => (v) => typeof v === "string" && values.includes(v);
 const flag: Knob = (v) => typeof v === "boolean";
 const within = (min: number, max: number): Knob => (v) => typeof v === "number" && v >= min && v <= max;
+// Native reads a construct-time int with static_cast<int>, so a fraction is a value its node cannot carry faithfully:
+// left out like any other it would refuse, rather than silently truncated.
+const intIn = (min: number, max: number): Knob => (v) => within(min, max)(v) && Number.isInteger(v);
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
 /** Each system node type's setting fields from its core config, and what the node takes for each. */
@@ -161,38 +175,69 @@ const CONFIG_PARAMS: Readonly<Record<SystemNodeType, readonly string[]>> = {
   "rp.mesen.sms": [],
 };
 
-/** A system node's knobs: what its settings carry beside `core` (and a Game Boy's capture, which buildGraph adds from
- *  its pipeline), and its param values. */
+/** Each system node type's CONSTRUCT-TIME fields from its core config: the ones its node reads once, when it builds
+ *  its core at activation, so a change to one is a rebuild under a new system id rather than a document
+ *  (docs/modular-graph-phase-c3-design.md section 3). */
+const CONSTRUCT_FIELDS: Readonly<Record<SystemNodeType, Readonly<Record<string, Knob>>>> = {
+  "rp.sameboy.gb": {},
+  "rp.mesen.nes": {
+    sdRoot: (v) => typeof v === "string",
+    fifo: label(FIFO_PROFILE_VALUES),
+    fifoDepth: intIn(0, 1 << 20),
+    fifoBytesPerSecond: intIn(0, 100_000_000),
+    n8Link: label(N8_LINK_VALUES),
+    n8LinkRttUs: intIn(0, 100_000),
+    channelExportMode: label(CHANNEL_EXPORT_VALUES),
+  },
+  "rp.mesen.gba": {},
+  "rp.mesen.sms": { enableFm: flag },
+};
+
+/** A system node's knobs: what its settings carry beside its resources and its system id (and a Game Boy's capture,
+ *  which buildGraph adds from its pipeline), and its param values. `construct` are the fields its core reads once, at
+ *  the build; `settings` are the ones it applies live (C2). */
 export interface SystemKnobs {
   settings: Record<string, unknown>;
+  construct: Record<string, unknown>;
   params: Record<string, number>;
 }
 
-/** The knobs a system node carries for `system`: its type's setting fields as its core config holds them, each left
- *  out where absent or one the node would refuse; its gain; and its type's params from its core config. The one place
- *  that says which field is which: the store reads it too, to tell a setting's edit, which publishes, from a param's,
- *  which it sets live (SystemsStore.setRoleConfig). */
+// The fields of `type` that `config` holds a value for, as its node takes them: a value the node would refuse is left
+// out, so one bad field never refuses the whole document.
+function takenFields(
+  fields: Readonly<Record<string, Knob>>,
+  config: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [field, takes] of Object.entries(fields)) if (takes(config[field])) out[field] = config[field];
+  return out;
+}
+
+/** The knobs a system node carries for `system`: its type's setting fields and construct-time fields as its core
+ *  config holds them, each left out where absent or one the node would refuse; its gain; and its type's params from
+ *  its core config. The one place that says which field is which: the store reads it too, to tell a setting's edit,
+ *  which publishes, from a param's, which it sets live, and a construct-time field's, which rebuilds the system
+ *  (SystemsStore.setRoleConfig). */
 export function systemKnobs(system: Pick<GraphSystem, "type" | "coreConfig" | "gainDb">): SystemKnobs {
   const config: Readonly<Record<string, unknown>> = system.coreConfig ?? {};
-  const settings: Record<string, unknown> = {};
-  for (const [field, takes] of Object.entries(SETTING_FIELDS[system.type] ?? {}))
-    if (takes(config[field])) settings[field] = config[field];
+  const settings = takenFields(SETTING_FIELDS[system.type] ?? {}, config);
+  const construct = takenFields(CONSTRUCT_FIELDS[system.type] ?? {}, config);
   const params: Record<string, number> = {};
   if (finite(system.gainDb)) params.gain = system.gainDb;
   for (const param of CONFIG_PARAMS[system.type] ?? []) {
     const value = config[param];
     if (finite(value)) params[param] = value;
   }
-  return { settings, params };
+  return { settings, construct, params };
 }
 
-/** The knobs of `config` that `systemKnobs` leaves out for `type`, with their values: a setting field whose value the
- *  node would refuse (another label, a number out of its range, another type), and a param whose value is not a finite
- *  number, which a document cannot carry (the planner clamps and rounds any number it is given). A caller with a config
- *  as written, not through its role's schema (SystemsStore.adopt), notes them, so a stored knob the document drops
- *  leaves a trace. */
+/** The knobs of `config` that `systemKnobs` leaves out for `type`, with their values: a setting or construct-time field
+ *  whose value the node would refuse (another label, a number out of its range, another type), and a param whose value
+ *  is not a finite number, which a document cannot carry (the planner clamps and rounds any number it is given). A
+ *  caller with a config as written, not through its role's schema (SystemsStore.adopt), notes them, so a stored knob
+ *  the document drops leaves a trace. */
 export function droppedKnobs(type: SystemNodeType, config: Readonly<Record<string, unknown>>): [string, unknown][] {
-  const fields = SETTING_FIELDS[type] ?? {};
+  const fields = { ...SETTING_FIELDS[type], ...CONSTRUCT_FIELDS[type] };
   const params = CONFIG_PARAMS[type] ?? [];
   return Object.entries(config).filter(
     ([field, value]) =>
@@ -201,10 +246,34 @@ export function droppedKnobs(type: SystemNodeType, config: Readonly<Record<strin
   );
 }
 
-/** A system's node: its core's id, its knobs and, on a Game Boy, `capture`. */
+/** The link group a system's core config names (a Game Boy's cable): its `linkGroupId`, or 0 for unlinked. */
+export function linkGroupOf(config: Readonly<Record<string, unknown>> | undefined): number {
+  const group = config?.linkGroupId;
+  return typeof group === "number" && Number.isInteger(group) && group > 0 && group <= 255 ? group : 0;
+}
+
+/** The export mode a system's core config names (a NES's channel split), as the native enum's ordinal: the position of
+ *  its label in CHANNEL_EXPORT_VALUES, or 0 (mix) where it names none this build reads. */
+export function exportModeOf(config: Readonly<Record<string, unknown>> | undefined): number {
+  const mode = config?.channelExportMode;
+  const index = typeof mode === "string" ? (CHANNEL_EXPORT_VALUES as readonly string[]).indexOf(mode) : -1;
+  return index < 0 ? 0 : index;
+}
+
+/** A system's node: its system id, the resources its core boots from, its ROM's name, its construct-time fields, its
+ *  knobs and, on a Game Boy, `capture`. */
 function systemNode(system: GraphSystem, capture: SerialOutCaptureMode | null): NodeDoc {
   const knobs = systemKnobs(system);
-  const settings: Record<string, unknown> = { core: system.id, ...knobs.settings };
+  const settings: Record<string, unknown> = {
+    system: system.id,
+    rom: resourceRef(system.resources.rom),
+    romName: system.romName,
+    ...(system.resources.sram === undefined ? {} : { sram: resourceRef(system.resources.sram) }),
+    ...(system.resources.state === undefined ? {} : { state: resourceRef(system.resources.state) }),
+    ...knobs.settings,
+    ...knobs.construct,
+  };
+  if (system.platform === "gg") settings.gameGear = true;
   if (capture !== null) settings.serialOutCapture = capture;
   const node: NodeDoc = { id: systemNodeId(system.id), type: system.type, settings };
   if (Object.keys(knobs.params).length > 0) node.params = knobs.params;

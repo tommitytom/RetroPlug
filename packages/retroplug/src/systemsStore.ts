@@ -1,9 +1,10 @@
 // SystemsStore: the live systems list as the app owns it. TS is the source of truth
-// for order, ids-as-handles, focus, and dirty; the Backend is a narrow emulator-
-// lifecycle service (build a core, and place what has been built) that takes CONCRETE
-// paths TS has already resolved. All the orchestration lives here: classify a ROM (TS-side, from
-// its header), disambiguate a sav suffix against the live list, resolve a paired-sav
-// override, pick a sibling ROM, and apply the load/add/replace + focus rules.
+// for order, ids-as-handles, focus, and dirty; the Backend is a narrow service that puts the byte
+// resources a system boots from and places the graph a document builds (docs/modular-graph-phase-c3-design.md
+// section 6), and every path it is handed is CONCRETE - TS resolved it. All the orchestration lives here:
+// classify a ROM (TS-side, from its header), disambiguate a sav suffix against the live list, resolve a
+// paired-sav override, pick a sibling ROM, boot a system from its resources, and apply the
+// load/add/replace + focus rules.
 //
 // Mirrors RecentStore's shape (constructor(backend, onChange), view(), mutators,
 // no-op-guarded change signal). Reproduces the legacy native service's constructSystem /
@@ -11,10 +12,27 @@
 // (PluginDSP.cpp:406-458), with every path derived by the pure kernels.
 
 import type { ConstructSpec, ControlPlaneBackend, HostBackend } from "./backend";
-import { droppedKnobs, systemKnobs, systemNodeId, type GraphSystem } from "./graph/buildGraph";
+import {
+  droppedKnobs,
+  exportModeOf,
+  linkGroupOf,
+  systemKnobs,
+  systemNodeId,
+  type GraphSystem,
+} from "./graph/buildGraph";
+import { bootSystem, ResourcePool, systemHandles } from "./graph/systemResources";
 import { canonicalJson } from "./graph/canonicalJson";
 import { EngineGraph } from "./engineGraph";
-import { detectPlatform, romHasBattery, ROM_SNIFF_LEN, SEGA_SNIFF_LEN, defaultCoreFor, type Platform, type Core } from "./platform";
+import {
+  detectPlatform,
+  romHasBattery,
+  ROM_SNIFF_LEN,
+  SEGA_SNIFF_LEN,
+  defaultCoreFor,
+  systemNodeTypeFor,
+  type Platform,
+  type Core,
+} from "./platform";
 
 import { resolveSavPath, siblingSavPath, siblingRplgPath, nextFreeSavSuffix, siblingSavCandidates } from "./savPaths";
 import { flushBatteryForTeardown, type SramTarget } from "./sramAutoSave";
@@ -34,7 +52,6 @@ import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettings
 import type { RoleRegistry, RoleInstance } from "./systemRoles";
 import { protocolNodeOf, protocolPipeline, protocolWrites } from "./graph/protocolNodes";
 import { blipToasterChip, needsChipLabelScan, BLIPTOASTER_CHIP_SCAN_LEN } from "./bliptoaster/romDetect";
-import { roleConfigForNative } from "./settingsEnums";
 
 // How much ROM header to read for the role providers (title lives at 0x134).
 const ROLE_HEADER_LEN = 0x150;
@@ -52,7 +69,8 @@ const ROLE_HEADER_LEN = 0x150;
  *
  *  One read at construct, not on the classify path. */
 function readRoleHeader(backend: RoleHeaderCaps, platform: Platform, romPath: string): Uint8Array {
-  if (platform === "sms" || platform === "gg") return backend.readFilePrefix(romPath, SEGA_SNIFF_LEN) ?? new Uint8Array();
+  if (platform === "sms" || platform === "gg")
+    return backend.readFilePrefix(romPath, SEGA_SNIFF_LEN) ?? new Uint8Array();
 
   const short = backend.readFilePrefix(romPath, ROLE_HEADER_LEN) ?? new Uint8Array();
   if (platform !== "nes" || !needsChipLabelScan(short)) return short;
@@ -63,11 +81,11 @@ interface RoleHeaderCaps {
   readFilePrefix(path: string, length: number): Uint8Array | null;
 }
 
-/** The config a construct blob is built from: the role schema's parse of the stored one, so an unknown enum label
- *  falls back field by field, an integer rounds and a range clamps, and every value native's role struct decodes is
- *  one it can read. The stored config stays as written (a build that knows a newer label keeps it). A role this
- *  registry does not register has no schema to parse by, and crosses as it is. */
-function configForBlob(registry: RoleRegistry | undefined, role: RoleInstance): Record<string, unknown> {
+/** The role schema's parse of a stored role config: its fields as this build reads them, each defaulted, clamped or
+ *  rounded. A load holds the stored config against it to note a key no build reads (SystemsStore.adopt); the stored
+ *  config itself stays as written, so a load in a build that knows a newer label keeps it. A role this registry does
+ *  not register has no schema to parse by, and comes back as it is. */
+function parsedRoleConfig(registry: RoleRegistry | undefined, role: RoleInstance): Record<string, unknown> {
   const rt = registry?.roleType(role.kind);
   return rt ? (rt.schema.parse(role.config) as Record<string, unknown>) : role.config;
 }
@@ -128,14 +146,17 @@ export class SystemsStore {
   private entries: SystemEntry[] = [];
   private focusedId = 0;
   private dirty = false;
+  /** The handles on the engine's resources every live entry's node names (graph/systemResources.ts): the ROM a
+   *  rebuild keeps, the ROM a duplicate shares, and the seeds each boot put. */
+  private readonly pool: ResourcePool;
   private onFocusChange: () => void = () => {};
   // A store on its own publishes its systems at the default (stereo) routing, with no MIDI routing and no
   // controller, through a graph of its own; the ProjectStore that owns one replaces this with its own publish, which
   // adds the project's audio and MIDI routing and its controller.
   private ownGraph: EngineGraph | null = null;
-  private onGraphChange: (rearmTap: boolean) => void = (rearmTap) => {
+  private onGraphChange: (rearmTap: boolean) => boolean = (rearmTap) => {
     this.ownGraph ??= new EngineGraph(this.backend);
-    this.ownGraph.publish({ systems: this.graphSystems(), routing: "stereo" }, { rearmTap });
+    return this.ownGraph.publish({ systems: this.graphSystems(), routing: "stereo" }, { rearmTap });
   };
   // A live param edit updates the graph's model without publishing, so a later publish (a render's shape among them)
   // builds the value the node runs rather than the stale one the last document carried.
@@ -144,12 +165,19 @@ export class SystemsStore {
   };
   // Whether a core teardown writes the battery to disk first. Off only for an offline render.
   private batteryFlush = true;
+  /** The ids a rebuild replaced, A -> B, so `reset` written against the pre-C3 contract still reaches the system (see
+   *  reset): a chain A -> B -> C follows to the live C. Only `reset` reads it. An entry goes when the live system its
+   *  chain ends in does (remove, discard, clear), and the whole map is capped, because a session that resets one system
+   *  a thousand times would otherwise keep a thousand dead ids. */
+  private readonly replacedBy = new Map<number, number>();
 
   constructor(
     private readonly backend: ControlPlaneBackend,
     private readonly onChange: () => void = () => {},
     private readonly registry?: RoleRegistry,
-  ) {}
+  ) {
+    this.pool = new ResourcePool(backend);
+  }
 
   /** Snapshot for the UI, with live focus + missing flags. */
   view(): SystemView[] {
@@ -177,14 +205,20 @@ export class SystemsStore {
    *  DSP behaviour (asset overrides, a ROM's facts) stay out of the document, so an asset edit leaves it as it was, and
    *  so does a role whose kind is already placed or whose node would write an input an earlier role's does (one writer
    *  per input, graph/protocolNodes.ts). The core config reaches the document as its system node's knobs
-   *  (systemKnobs): its setting fields as settings, a NES's expansion volume, like the gain, as a param. The same with
-   *  a registry or without one. */
+   *  (systemKnobs): its setting fields as live settings, a NES's expansion volume, like the gain, as a param, and its
+   *  construct-time fields beside them for the node's build. The node's resources are the entry's handles. The same
+   *  with a registry or without one. */
   graphSystems(): GraphSystem[] {
     return this.entries.map((e) => {
       const coreConfig = e.roles.find((r) => r.kind === e.core)?.config;
       const system: GraphSystem = {
         id: e.id,
-        ...e.built,
+        platform: e.platform,
+        type: systemNodeTypeFor(e.platform),
+        linkGroup: linkGroupOf(coreConfig),
+        exportMode: exportModeOf(coreConfig),
+        resources: e.resources,
+        romName: e.romName,
         pipeline: protocolPipeline(e.roles),
         gainDb: e.settings.gainDb,
       };
@@ -213,8 +247,9 @@ export class SystemsStore {
   /** Install the hook that publishes the engine's graph (the ProjectStore's, which adds the routing, the MIDI
    *  routing and the controller; without one the store publishes its systems at the default stereo routing itself).
    *  Called once at the end of every edit that changes what the graph places for a system, BEFORE the structural
-   *  onChange: `rearmTap` for an edit that builds or drops a core, which re-arms the NES tap. */
-  setOnGraphChange(fn: (rearmTap: boolean) => void): void {
+   *  onChange: `rearmTap` for an edit that builds or drops a core, which re-arms the NES tap. False when the engine
+   *  refused the document, which an edit reads to put its model back (commitEdit). */
+  setOnGraphChange(fn: (rearmTap: boolean) => boolean): void {
     this.onGraphChange = fn;
   }
 
@@ -257,12 +292,16 @@ export class SystemsStore {
    *  live list. Returns the new id, or null when the ROM is unknown/unreadable. */
   addSystem(romPath: string, opts?: { explicitSav?: string }): number | null {
     const suffix = this.freeSuffix(romPath);
-    const built = this.construct(romPath, "", suffix, opts?.explicitSav);
-    if (!built) return null;
+    const prepared = this.construct(romPath, "", suffix, opts?.explicitSav);
+    if (!prepared) return null;
     const wasEmpty = this.entries.length === 0;
-    this.entries = appendEntry(this.entries, built.entry);
-    if (wasEmpty) this.focusedId = built.id;
-    return this.committed(built.id);
+    if (!this.commitEdit("add", {
+      entries: appendEntry(this.entries, prepared.entry),
+      focusedId: wasEmpty ? prepared.entry.id : this.focusedId,
+      put: prepared.handles,
+    })) return null;
+    this.markDirty();
+    return prepared.entry.id;
   }
 
   /** Load `romPath`, replacing the focused tile (or adopting into an empty project).
@@ -286,11 +325,9 @@ export class SystemsStore {
     const prev = findById(this.entries, id);
     if (!prev) return null;
     this.flushBeforeDrop(prev);
-    const built = this.construct(romPath, "", this.replacementSuffix(id, romPath), opts?.explicitSav);
-    if (!built) return null;
-    this.entries = replaceById(this.entries, id, built.entry);
-    if (this.focusedId === id) this.focusedId = built.id;
-    return this.committed(built.id);
+    const prepared = this.construct(romPath, "", this.replacementSuffix(id, romPath), opts?.explicitSav);
+    if (!prepared) return null;
+    return this.replaceWith(id, prev, prepared);
   }
 
   /** Swap system `id`'s ROM for `romPath` in place, carrying its LIVE battery SRAM forward — the ROM
@@ -307,17 +344,31 @@ export class SystemsStore {
     if (!prev) return null;
     const sramBytes = this.backend.readSram(id) ?? undefined;
     this.flushBeforeDrop(prev); // the OLD cart's sav — the carried battery lands on the new ROM's
-    const built = this.construct(romPath, "", this.replacementSuffix(id, romPath), undefined, sramBytes);
-    if (!built) return null;
-    this.entries = replaceById(this.entries, id, built.entry);
-    if (this.focusedId === id) this.focusedId = built.id;
-    return this.committed(built.id);
+    const prepared = this.construct(romPath, "", this.replacementSuffix(id, romPath), undefined, sramBytes);
+    if (!prepared) return null;
+    return this.replaceWith(id, prev, prepared);
+  }
+
+  /** Put `prepared` in system `id`'s slot, replacing `prev`: the system's identity and focus are kept, its resources
+   *  given back only once the document that stops naming them has planned. Null when that document was refused. */
+  private replaceWith(id: number, prev: SystemEntry, prepared: Prepared): number | null {
+    const focused = this.focusedId === id;
+    if (!this.commitEdit("replace", {
+      entries: replaceById(this.entries, id, prepared.entry),
+      focusedId: focused ? prepared.entry.id : this.focusedId,
+      put: prepared.handles,
+      drop: systemHandles(prev.resources),
+    })) return null;
+    this.rememberReplacement(id, prepared.entry.id);
+    this.markDirty();
+    return prepared.entry.id;
   }
 
   /** Clone a system's LIVE state into a fresh appended instance with its own suffix. Orchestrated in
-   *  TS: pull the source's savestate from the registry (it includes SRAM), then build an INDEPENDENT
-   *  core seeded from those bytes — the source's role config crosses as the construct settings blob so
-   *  the clone boots the same model the savestate was captured under. No native duplicate method. */
+   *  TS: pull the source's savestate from the registry (it includes SRAM), then boot an INDEPENDENT
+   *  core seeded from those bytes: the source's role config reaches the clone's node, so the clone
+   *  boots the same model the savestate was captured under, and from the source's own ROM resource,
+   *  which the two then share. No native duplicate method. */
   duplicateSystem(id: number): number | null {
     const src = findById(this.entries, id);
     if (!src) return null;
@@ -328,7 +379,6 @@ export class SystemsStore {
     }
     const suffix = this.freeSuffix(src.romPath);
     const savPath = src.embeddedRom ? null : resolveSavPath(src.romPath, suffix, "");
-    const systemRole = src.roles.find((r) => r.kind === src.core);
     const newId = allocSystemId();
     // Through the load-time role hooks, as rebuildInPlace is: the clone boots the effective ROM its role
     // config describes (asset overrides folded in), the image the source's savestate expects.
@@ -340,16 +390,8 @@ export class SystemsStore {
       savPath,
       statePath: null,
       stateBytes: state,
-      settings: systemRole
-        ? JSON.stringify(roleConfigForNative(systemRole.kind, configForBlob(this.registry, systemRole)))
-        : undefined,
     }, src.roles);
-    const built = this.backend.buildCore(spec, newId);
-    if (!built) {
-      console.warn(`[systems] duplicateSystem(${id}) failed (the core did not build) - no instance added`);
-      return null;
-    }
-    this.entries = appendEntry(this.entries, {
+    const prepared = this.boot(spec, {
       id: newId,
       platform: src.platform,
       core: src.core,
@@ -360,9 +402,15 @@ export class SystemsStore {
       battery: src.battery, // same ROM as the source
       settings: { ...src.settings },
       roles: src.roles.map((r) => ({ kind: r.kind, config: { ...r.config } })),
-      built,
-    });
-    return this.committed(newId);
+    }, { rom: src.resources.rom });
+    if (!prepared) {
+      console.warn(`[systems] duplicateSystem(${id}) failed (a resource would not put) - no instance added`);
+      return null;
+    }
+    const entries = appendEntry(this.entries, prepared.entry);
+    if (!this.commitEdit("duplicate", { entries, put: prepared.handles })) return null;
+    this.markDirty();
+    return newId;
   }
 
   /** Drop a system; refocus the front if it was focused. False when absent. */
@@ -370,9 +418,13 @@ export class SystemsStore {
     const e = findById(this.entries, id);
     if (!e) return false;
     this.flushBeforeDrop(e);
-    this.entries = removeById(this.entries, id);
-    this.focusedId = nextFocusAfterRemove(this.entries, id, this.focusedId);
-    this.onGraphChange(true);
+    const entries = removeById(this.entries, id);
+    if (!this.commitEdit("remove", {
+      entries,
+      focusedId: nextFocusAfterRemove(entries, id, this.focusedId),
+      drop: systemHandles(e.resources),
+    })) return false;
+    this.forgetReplacementsEndingIn(id);
     this.markDirty();
     return true;
   }
@@ -384,7 +436,9 @@ export class SystemsStore {
     const prev = findById(this.entries, id);
     if (!prev) return null;
     this.flushBeforeDrop(prev);
-    return this.rebuildInPlace(id, { sramBytes: this.backend.readSram(id) ?? undefined });
+    // A reload reads the ROM from disk again (the file watcher is a caller), so its resource is put fresh rather than
+    // shared with the core being replaced.
+    return this.rebuildInPlace(id, { sramBytes: this.backend.readSram(id) ?? undefined }, { rereadRom: true });
   }
 
   /** Reconstruct system `id` in place from seed bytes: capture the source's spec, build a fresh core
@@ -396,12 +450,12 @@ export class SystemsStore {
   private rebuildInPlace(
     id: number,
     seed: { sramBytes?: Uint8Array; stateBytes?: Uint8Array },
-    savPathOverride?: string,
+    opts: { savPathOverride?: string; roles?: RoleInstance[]; rereadRom?: boolean } = {},
   ): number | null {
     const src = findById(this.entries, id);
     if (!src) return null;
-    const override = savPathOverride ?? src.savPath;
-    const systemRole = src.roles.find((r) => r.kind === src.core);
+    const override = opts.savPathOverride ?? src.savPath;
+    const roles = opts.roles ?? src.roles;
     const newId = allocSystemId();
     // Route through the load-time role hooks too, so a reload re-applies e.g. LSDj asset overrides
     // (the patched effective ROM) — not just the fresh-load path.
@@ -414,15 +468,18 @@ export class SystemsStore {
       statePath: null,
       sramBytes: seed.sramBytes,
       stateBytes: seed.stateBytes,
-      settings: systemRole
-        ? JSON.stringify(roleConfigForNative(systemRole.kind, configForBlob(this.registry, systemRole)))
-        : undefined,
-    }, src.roles);
-    const built = this.backend.buildCore(spec, newId);
-    if (!built) return null;
-    this.entries = replaceById(this.entries, id, { ...src, id: newId, savPath: override, built });
-    if (this.focusedId === id) this.focusedId = newId;
-    return this.committed(newId);
+    }, roles);
+    // The same ROM boots again, so the new node names the ROM resource the old one did: the boot takes a second
+    // handle on it (and puts its own where the bytes moved, an asset role's new image among them), and the old
+    // entry's handle goes with the old entry once the new document has planned.
+    const prepared = this.boot(spec, {
+      ...src,
+      id: newId,
+      savPath: override,
+      roles,
+    }, { rom: opts.rereadRom === true ? undefined : src.resources.rom });
+    if (!prepared) return null;
+    return this.replaceWith(id, src, prepared);
   }
 
   /** Dump system `id`'s live savestate to `path`. The registry read is safe while the audio thread runs.
@@ -490,17 +547,24 @@ export class SystemsStore {
     const override = src.embeddedRom
       ? undefined // embedded synth has no on-disk save target to repoint
       : resolveSavOverride(src.romPath, src.savSuffix, path, (p) => this.backend.canonicalize(p));
-    return this.rebuildInPlace(id, { sramBytes: bytes }, override);
+    return this.rebuildInPlace(id, { sramBytes: bytes }, { savPathOverride: override });
   }
 
   /** Reboot system `id` in place, carrying its live battery SRAM forward — a hardware-style reset: the
    *  save persists, the running state is dropped. Reconstructs from the ROM (the same engine
-   *  as reload) rather than a live GB_reset. Null when `id` is absent. */
+   *  as reload) rather than a live GB_reset. Null when `id` is absent.
+   *
+   *  `id` may be one a rebuild replaced (the store's `replacedBy` map): a system's id does not survive a rebuild, and
+   *  the pre-C3 SDK told a caller to follow a construct-time `setRoleConfig` with `reset(id)` to learn the id of the
+   *  system that carried the new settings. `setRoleConfig` now rebuilds itself, but a reset of the old id keeps
+   *  working: it resets what that id became, following a chain of rebuilds to the live system, and answers the new
+   *  id. Only reset follows the map - every other verb treats a replaced id as gone, so a stale handle cannot remove
+   *  or edit a system it never named. */
   reset(id: number): number | null {
-    const prev = findById(this.entries, id);
-    if (!prev) return null;
-    this.flushBeforeDrop(prev);
-    return this.rebuildInPlace(id, { sramBytes: this.backend.readSram(id) ?? undefined });
+    const live = this.liveEntryFor(id);
+    if (!live) return null;
+    this.flushBeforeDrop(live);
+    return this.rebuildInPlace(live.id, { sramBytes: this.backend.readSram(live.id) ?? undefined });
   }
 
   /** Wipe system `id`'s battery SRAM (a fresh cartridge) and cold-boot it in place. Seeds an all-zero
@@ -524,7 +588,11 @@ export class SystemsStore {
     this.flushBeforeDrop(src, savPath); // the old target keeps the CURRENT battery, never the blank one
     // Normalise the pick the way construct does: "" when it's just the natural sibling, else the raw path.
     const override = resolveSavOverride(src.romPath, src.savSuffix, savPath, (p) => this.backend.canonicalize(p));
-    const newId = this.rebuildInPlace(id, { sramBytes: new Uint8Array(BLANK_SRAM_BYTES) }, override);
+    const newId = this.rebuildInPlace(
+      id,
+      { sramBytes: new Uint8Array(BLANK_SRAM_BYTES) },
+      { savPathOverride: override },
+    );
     if (newId === null) return null;
     // Materialise the fresh save at the SAME path the core will auto-save to — resolveSavPath(…override),
     // NOT the raw pick. They diverge when the pick normalises to "" (e.g. a duplicate instance, savSuffix≥2,
@@ -573,11 +641,12 @@ export class SystemsStore {
    *  engine is what the published graph carries. A role with a protocol node is placed with its config as that node's
    *  settings, so its edit publishes (an lsdj-sync's mode among them, and with it the capture its Game Boy's node
    *  runs). The core-config role (kind === core) is its system node's knobs (systemKnobs): an edit moving a setting
-   *  field publishes, one moving only a param (a NES's expansion volume) sets it live (backend.setParam) with no
-   *  publish, and one moving neither (a construct-time field: the FIFO, the SD root, the N8 link, the export mode, FM)
-   *  leaves the engine as it is until the reset or reload that rebuilds the core from it. A Game Boy's link group is
-   *  wiring, so a change of its value publishes. Any other role (an asset override, a ROM's facts) never reaches the
-   *  engine. */
+   *  field publishes, and one moving only a param (a NES's expansion volume) sets it live (backend.setParam) with no
+   *  publish. One moving a CONSTRUCT-TIME field (the SD root, the FIFO, the N8 link, the export mode, FM) rebuilds the
+   *  system: those are read once, when its node builds its core, so the store runs the reset path itself - a new id,
+   *  the same ROM resource, the live battery carried - and the new value is in the document that replaces the old one.
+   *  A Game Boy's link group is wiring, so a change of its value publishes. Any other role (an asset override, a ROM's
+   *  facts) never reaches the engine. False, the system as it was, when the rebuild could not be placed. */
   setRoleConfig(id: number, roleKind: string, partial: Record<string, unknown>): boolean {
     const e = findById(this.entries, id);
     if (!e) return false;
@@ -589,28 +658,44 @@ export class SystemsStore {
     const config = rt ? rt.schema.parse(merged) : merged;
     const roles = e.roles.slice();
     roles[idx] = { kind: roleKind, config };
-    // A Game Boy's link group is the one system-role field that is also wiring: the cable follows it, so a change of
-    // its value publishes.
-    const linkGroupId = (config as { linkGroupId?: unknown }).linkGroupId;
-    const linkGroup = typeof linkGroupId === "number" ? linkGroupId : 0;
-    const rewired = roleKind === "sameboy" && e.built.type === "rp.sameboy.gb" && linkGroup !== e.built.linkGroup;
-    const built = rewired ? { ...e.built, linkGroup } : e.built;
-    this.entries = replaceById(this.entries, id, { ...e, roles, built });
-    // The core config's knobs before and after: a setting field that moved is a document of its own, and a param that
-    // moved is set live unless that document carries it anyway.
-    let settingMoved = false;
+    const type = systemNodeTypeFor(e.platform);
+    // Compare two normalised views: the stored config as its role schema reads it, falling back to the raw config when
+    // that parse throws. A project saved by a build whose schema omitted a field would otherwise look like it moved
+    // every omitted field to its default, and a live knob edit would rebuild the system. The edited config is already
+    // the schema's parse.
+    const parsedBefore = (() => {
+      if (!rt) return was;
+      try {
+        return rt.schema.parse(was) as Record<string, unknown>;
+      } catch {
+        return was;
+      }
+    })();
+    // The core config's knobs before and after: a setting field that moved is a document of its own, a param that moved
+    // is set live unless that document carries it anyway, and a construct-time field that moved is a new system.
+    const before = systemKnobs({ type, coreConfig: parsedBefore });
+    const after = systemKnobs({ type, coreConfig: config });
+    const linkGroupMoved = roleKind === e.core && linkGroupOf(was) !== linkGroupOf(config);
     const params: [string, number][] = [];
     if (roleKind === e.core) {
-      const before = systemKnobs({ type: e.built.type, coreConfig: was });
-      const after = systemKnobs({ type: e.built.type, coreConfig: config });
-      settingMoved = canonicalJson(before.settings) !== canonicalJson(after.settings);
       for (const [param, value] of Object.entries(after.params))
         if (before.params[param] !== value) params.push([param, value]);
     }
-    if (rewired || settingMoved || protocolNodeOf(roleKind) !== undefined) this.onGraphChange(false);
-    else if (params.length > 0) {
-      for (const [param, value] of params) this.backend.setParam(systemNodeId(id), param, value);
-      this.onLiveParam(this.graphSystems());
+    if (roleKind === e.core && canonicalJson(before.construct) !== canonicalJson(after.construct)) {
+      // A construct-time edit IS a reset, and a reset carries the battery: the same rows the System menu's Reset runs.
+      this.flushBeforeDrop(e);
+      return this.rebuildInPlace(id, { sramBytes: this.backend.readSram(id) ?? undefined }, { roles }) !== null;
+    }
+    const entries = replaceById(this.entries, id, { ...e, roles });
+    const settingMoved = roleKind === e.core && canonicalJson(before.settings) !== canonicalJson(after.settings);
+    if (linkGroupMoved || settingMoved || protocolNodeOf(roleKind) !== undefined) {
+      if (!this.commitEdit("setRoleConfig", { entries }, false)) return false;
+    } else {
+      this.entries = entries;
+      if (params.length > 0) {
+        for (const [param, value] of params) this.backend.setParam(systemNodeId(id), param, value);
+        this.onLiveParam(this.graphSystems());
+      }
     }
     this.markDirty();
     return true;
@@ -636,13 +721,38 @@ export class SystemsStore {
 
   /** Tear down every system + reset the list/focus (for `new` + before a load). Publishes the empty graph
    *  (a load builds its systems only after their predecessors are gone, so it never holds both), but no
-   *  onChange: the caller notifies once it is done. */
+   *  onChange: the caller notifies once it is done. Every system's resources go once that document has planned. */
   clear(): void {
     const had = this.entries.length > 0;
     for (const e of this.entries) this.flushBeforeDrop(e);
+    const dropped = this.entries.flatMap((e) => systemHandles(e.resources));
     this.entries = [];
     this.focusedId = 0;
-    if (had) this.onGraphChange(true);
+    // Every chain ends in a system that no longer exists, so no old id can name anything a later document places.
+    this.replacedBy.clear();
+    if (had) {
+      // A refused empty document leaves the old plan running and the entries already gone, so nothing else will ever
+      // release these handles: warn, then give them back anyway. The old plan keeps its own pins until it is reclaimed.
+      if (!this.onGraphChange(true))
+        console.warn(
+          "[systems] clear: the engine refused the empty document; its systems' resources are released anyway",
+        );
+      for (const id of dropped) this.pool.drop(id);
+    }
+  }
+
+  /** Drop system `id` from the list without a document of its own, answering the entry it was (or undefined when it
+   *  was not placed): what a project load does with the system the engine refused, so the document that stops naming
+   *  it is the load's next publish. Its resources go at once: that document never planned, so no instance pinned them,
+   *  and no later document names them. */
+  discard(id: number): SystemEntry | undefined {
+    const e = findById(this.entries, id);
+    if (!e) return undefined;
+    this.entries = removeById(this.entries, id);
+    this.focusedId = nextFocusAfterRemove(this.entries, id, this.focusedId);
+    for (const handle of systemHandles(e.resources)) this.pool.drop(handle);
+    this.forgetReplacementsEndingIn(id);
+    return e;
   }
 
   /** Reconstruct one system from a serialized config entry, preserving its EXACT
@@ -706,13 +816,12 @@ export class SystemsStore {
               `which its ${r.by} role's already does`,
       ),
     );
-    // The core-config "system" role (kind === core) carries the emulator config; pass it as the
-    // construct-time settings blob so a loaded non-default model/highpass is applied AT build, not via
-    // a post-construct restart that would nuke the just-restored savestate.
+    // The core-config "system" role (kind === core) carries the emulator config, and it rides the document as its
+    // system node's settings: a loaded non-default model/highpass is applied at the core's build (or live, for C2's
+    // knobs), never by a post-construct restart that would nuke the just-restored savestate. Parsed before the boot, so
+    // a throw here leaves nothing put, and once: the note below holds the stored config against it.
     const systemRole = config.roles?.find((r) => r.kind === core);
-    // Parsed before the build, so a throw here leaves no core behind, and once: the blob builds the core and is what
-    // the note below compares the stored config against.
-    const blob = systemRole ? configForBlob(this.registry, systemRole) : undefined;
+    const parsed = systemRole ? parsedRoleConfig(this.registry, systemRole) : undefined;
     const id = allocSystemId();
     const spec = this.applyConstructHooks({
       romPath,
@@ -723,32 +832,41 @@ export class SystemsStore {
       statePath: null,
       sramBytes: blobs?.sramBytes,
       stateBytes: blobs?.stateBytes,
-      settings: systemRole && blob
-        ? JSON.stringify(roleConfigForNative(systemRole.kind, blob))
-        : undefined,
     }, roles);
     // Stored settings/roles win; a config that omits them re-attaches defaults. Parsed, like the battery read,
     // before the build, so a throw here leaves no core behind.
     const settings = commonSettingsSchema.parse(config.settings ?? {}) as CommonSettings;
     const battery = this.detectBattery(romPath, embeddedRom, platform);
-    const built = this.backend.buildCore(spec, id); // its LSDj capture, if any, comes with the document that places it
-    if (!built) return null;
-    // The stored core config stays as written, so the system node leaves out a value it would refuse (or a param's
-    // value that is not a finite number), and the construct blob takes its role schema's value for one native cannot
-    // read. Say which: the stored config, the document and the core then disagree.
-    if (systemRole && blob) {
-      const dropped = droppedKnobs(built.type, systemRole.config);
-      const reported = new Set(dropped.map(([field]) => field));
-      const repaired = Object.entries(systemRole.config)
-        .filter(([field, value]) => !reported.has(field) && JSON.stringify(blob[field]) !== JSON.stringify(value))
-        .map(([field, value]) =>
-          Object.prototype.hasOwnProperty.call(blob, field)
-            ? `repaired ${field} ${JSON.stringify(value)} to ${JSON.stringify(blob[field])}`
-            : `dropped ${field} ${JSON.stringify(value)}`,
-        );
+    const prepared = this.boot(spec, {
+      id,
+      platform,
+      core,
+      romPath,
+      savPath: override,
+      savSuffix,
+      embeddedRom,
+      battery,
+      settings,
+      roles,
+    });
+    if (!prepared) return null; // its LSDj capture, if any, comes with the document that places it
+    // The stored core config stays as written, so the system node leaves out a value its node would refuse (or a
+    // param's value that is not a finite number), and a key no build reads; its own default applies to each. Say which:
+    // the stored config and the document then disagree.
+    if (systemRole) {
+      const refused = droppedKnobs(systemNodeTypeFor(platform), systemRole.config);
+      const reported = new Set(refused.map(([field]) => field));
+      // `gameGear` is written by buildGraph from the platform, not read from the stored config, so a Game Gear
+      // document carries it whether or not the stored config does (and the role schema knows no such key).
+      const supplied = platform === "gg" ? "gameGear" : null;
       const changes = [
-        ...dropped.map(([field, value]) => `dropped ${field} ${JSON.stringify(value)}`),
-        ...repaired,
+        ...refused.map(([field, value]) => `dropped ${field} ${JSON.stringify(value)}`),
+        ...Object.entries(systemRole.config)
+          .filter(
+            ([field]) =>
+              field !== supplied && !reported.has(field) && !Object.prototype.hasOwnProperty.call(parsed, field),
+          )
+          .map(([field, value]) => `dropped ${field} ${JSON.stringify(value)}`),
       ];
       if (changes.length)
         notes.push(
@@ -758,9 +876,11 @@ export class SystemsStore {
     }
     for (const note of notes) console.warn(note);
     const wasEmpty = this.entries.length === 0;
-    this.entries = appendEntry(this.entries, { id, platform, core, romPath, savPath: override, savSuffix, embeddedRom, battery, settings, roles, built });
-    if (wasEmpty) this.focusedId = id;
-    this.onGraphChange(true);
+    if (!this.commitEdit("adopt", {
+      entries: appendEntry(this.entries, prepared.entry),
+      focusedId: wasEmpty ? id : this.focusedId,
+      put: prepared.handles,
+    })) return null;
     return id;
   }
 
@@ -770,24 +890,33 @@ export class SystemsStore {
   private loadInPlace(romPath: string, embeddedRom: string, explicitSav?: string): number | null {
     const empty = this.entries.length === 0;
     const target = empty ? undefined : this.effectiveFocus();
-    const built = this.construct(romPath, embeddedRom, this.replacementSuffix(target, romPath), explicitSav);
-    if (!built) return null;
-    this.entries = empty
-      ? appendEntry(this.entries, built.entry)
-      : replaceById(this.entries, target as number, built.entry);
-    this.focusedId = built.id;
-    return this.committed(built.id);
+    const prepared = this.construct(romPath, embeddedRom, this.replacementSuffix(target, romPath), explicitSav);
+    if (!prepared) return null;
+    if (empty) {
+      const placed = this.commitEdit("load", {
+        entries: appendEntry(this.entries, prepared.entry),
+        focusedId: prepared.entry.id,
+        put: prepared.handles,
+      });
+      if (!placed) return null;
+      this.markDirty();
+    } else {
+      const prev = findById(this.entries, target as number);
+      if (!prev || this.replaceWith(target as number, prev, prepared) === null) return null;
+    }
+    this.focusedId = prepared.entry.id;
+    return prepared.entry.id;
   }
 
-  // Classify (unless embedded), resolve the concrete savPath, and build via native.
-  // Returns the new id + the thin entry to record, or null when rejected/failed.
+  // Classify (unless embedded), resolve the concrete savPath, and boot from the ROM and seeds.
+  // Returns the entry to record with the handles its boot took, or null when rejected/failed.
   private construct(
     romPath: string,
     embeddedRom: string,
     suffix: number,
     explicitSav: string | undefined,
-    sramBytes?: Uint8Array, // seed the cold-boot battery (swap-ROM-preserve-SRAM); undefined = native reads from disk
-  ): { id: number; entry: SystemEntry } | null {
+    sramBytes?: Uint8Array, // seed the cold-boot battery (swap-ROM-preserve-SRAM); undefined = read the .sav from disk
+  ): Prepared | null {
     let platform: Platform;
     if (embeddedRom) {
       platform = "gb"; // embedded ROMs are always Game Boy
@@ -806,29 +935,26 @@ export class SystemsStore {
     if (!override && !explicitSav && !embeddedRom) override = this.adoptExistingSavSibling(romPath, suffix);
     const savPath = embeddedRom ? null : resolveSavPath(romPath, suffix, override);
     const id = allocSystemId();
-    // Roles are known before the build (a pure function of core/platform/header), so a role's
+    // Roles are known before the boot (a pure function of core/platform/header), so a role's
     // load-time hook can seed the spec — e.g. an empty LSDj sav — before the core is instantiated.
     const roles = this.defaultRoles(core, platform, romPath, embeddedRom);
-    const spec = this.applyConstructHooks({ romPath, platform, core, embeddedRom, savPath, statePath: null, sramBytes }, roles);
-    const battery = this.detectBattery(romPath, embeddedRom, platform); // before the build: a throw leaves no core
-    const built = this.backend.buildCore(spec, id);
-    if (!built) return null;
-    return {
+    const spec = this.applyConstructHooks(
+      { romPath, platform, core, embeddedRom, savPath, statePath: null, sramBytes },
+      roles,
+    );
+    const battery = this.detectBattery(romPath, embeddedRom, platform); // before the boot: a throw leaves nothing put
+    return this.boot(spec, {
       id,
-      entry: {
-        id,
-        platform,
-        core,
-        romPath,
-        savPath: override,
-        savSuffix: suffix,
-        embeddedRom,
-        battery,
-        settings: { ...DEFAULT_COMMON_SETTINGS },
-        roles,
-        built,
-      },
-    };
+      platform,
+      core,
+      romPath,
+      savPath: override,
+      savSuffix: suffix,
+      embeddedRom,
+      battery,
+      settings: { ...DEFAULT_COMMON_SETTINGS },
+      roles,
+    });
   }
 
   // The battery save to adopt for a freshly-built system when the caller didn't pick one: keep deriving
@@ -944,9 +1070,9 @@ export class SystemsStore {
    *
    *  Three deliberate limits:
    *
-   *  - **Feature roles only.** The core-config role (kind === core) is skipped, because adopt reads the
-   *    construct-time `settings` blob from the STORED roles: synthesising one here would start passing
-   *    schema defaults where `undefined` is passed today and native applies its own.
+   *  - **Feature roles only.** The core-config role (kind === core) is skipped: its config is the emulator's, which
+   *    a system node reads as its settings (graph/buildGraph.ts systemKnobs), and synthesising one here would
+   *    write schema defaults into a project that stores none, where the node's own defaults already apply.
    *  - **A stored role is never touched** here, so a configured sync mode or a kit override survives
    *    (adopt has parsed one with a protocol node by its schema first, which keeps the value of every field
    *    the schema reads).
@@ -1082,11 +1208,91 @@ export class SystemsStore {
     this.onChange();
   }
 
-  // Finish a successful mutation that built a core: publish the graph that places it, mark dirty + notify,
-  // return the id.
-  private committed(id: number): number {
-    this.onGraphChange(true);
-    this.markDirty();
-    return id;
+  /** How many replaced ids the store remembers. A chain older than this can lose a middle link and then answer null,
+   *  which is what a caller saw for any id it had not just used; the cap is what keeps a long editing session from
+   *  growing the map with every reset. */
+  private static readonly REPLACED_LIMIT = 128;
+
+  /** Remember that a rebuild replaced `oldId` with `newId`, dropping the oldest entries past the limit (a Map iterates
+   *  in insertion order, so that is the first key). */
+  private rememberReplacement(oldId: number, newId: number): void {
+    this.replacedBy.set(oldId, newId);
+    for (const key of this.replacedBy.keys()) {
+      if (this.replacedBy.size <= SystemsStore.REPLACED_LIMIT) break;
+      this.replacedBy.delete(key);
+    }
+  }
+
+  /** The live entry `id` became, following a chain of rebuilds; the entry `id` itself when it was never replaced. */
+  private liveEntryFor(id: number): SystemEntry | undefined {
+    return findById(this.entries, this.chainEnd(id));
+  }
+
+  // The last id of a rebuild chain, without asking the entries (a caller may be removing that system).
+  private chainEnd(id: number): number {
+    let cur = id;
+    for (let next = this.replacedBy.get(cur); next !== undefined; next = this.replacedBy.get(cur)) cur = next;
+    return cur;
+  }
+
+  /** Forget every chain that ends in `id`, which is about to stop being live: the ids that named it, and it. */
+  private forgetReplacementsEndingIn(id: number): void {
+    const dead: number[] = [];
+    for (const oldId of this.replacedBy.keys()) if (this.chainEnd(oldId) === id) dead.push(oldId);
+    for (const oldId of dead) this.replacedBy.delete(oldId);
+  }
+
+  // Boot `spec` and make the entry it becomes: the one place a store boot goes through, so every verb puts its
+  // resources the same way, takes the same handles and reports a put's refusal the same way. `rest` is the entry's
+  // identity and settings, everything but the ROM's name and the resources, which the boot answers.
+  private boot(
+    spec: ConstructSpec,
+    rest: Omit<SystemEntry, "romName" | "resources">,
+    opts: { rom?: number } = {},
+  ): Prepared | null {
+    const booted = bootSystem(this.pool, spec, opts);
+    if ("error" in booted) {
+      console.warn(`[systems] ${rest.romPath || `the embedded ${rest.embeddedRom}`}: ${booted.error}`);
+      return null;
+    }
+    return {
+      entry: { ...rest, romName: booted.romName, resources: booted.resources },
+      handles: booted.handles,
+    };
+  }
+
+  // Record an edit and publish the document that places it. A refused document puts the list and the focus back,
+  // gives back what the edit put, and sends the restored model again so the next edit starts from the graph that
+  // runs (EngineGraph keeps a refused document's systems as its model). The resources an edit REPLACES are released
+  // only once its document has planned: a dropped resource cannot be bound by a new instance, and a refused
+  // document's nodes are built afresh.
+  private commitEdit(
+    what: string,
+    edit: { entries: SystemEntry[]; focusedId?: number; put?: number[]; drop?: number[] },
+    rearmTap = true,
+  ): boolean {
+    const entries = this.entries;
+    const focusedId = this.focusedId;
+    this.entries = edit.entries;
+    if (edit.focusedId !== undefined) this.focusedId = edit.focusedId;
+    if (this.onGraphChange(rearmTap)) {
+      for (const id of edit.drop ?? []) this.pool.drop(id);
+      return true;
+    }
+    console.warn(`[systems] ${what}: the engine refused the document; the edit is rolled back`);
+    this.entries = entries;
+    this.focusedId = focusedId;
+    for (const id of edit.put ?? []) this.pool.drop(id);
+    if (!this.onGraphChange(rearmTap))
+      console.warn(`[systems] ${what}: the restored model was refused too; the engine keeps the previous plan`);
+    return false;
   }
 }
+
+/** A system TS has booted, its resources put and its handles held, but not yet placed: the entry it becomes and the
+ *  handles its boot took, which an edit gives back when its document is refused. */
+interface Prepared {
+  entry: SystemEntry;
+  handles: number[];
+}
+

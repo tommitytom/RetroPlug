@@ -12,7 +12,7 @@ import { siblingSavPath, siblingRomCandidates } from "./savPaths";
 import type { Platform, Core } from "./platform";
 import type { CommonSettings } from "./systemSettings";
 import type { RoleInstance } from "./systemRoles";
-import type { BuiltCore } from "./backend";
+import type { SystemResources } from "./graph/systemResources";
 
 /** The per-system record TS owns. `savSuffix` + `savPath` (an override, `""` when the
  *  natural sibling is used) are the persistent identity. `platform` (what the ROM is) and
@@ -30,10 +30,13 @@ export interface SystemEntry {
   battery: boolean; // derived (not serialized): the cart has battery-backed save memory
   settings: CommonSettings;
   roles: RoleInstance[];
-  /** What buildCore reported for the core now running this entry (not serialized): the node type it is
-   *  placed as, the export mode it was built with, and its link group, kept in step with each live
-   *  link-group edit. The graph is built from these. */
-  built: BuiltCore;
+  /** The ROM's name a console that stages its ROM as a file takes its battery identity from (graph/systemResources.ts):
+   *  its file's stem, or an embedded ROM's marker. Not serialized: it follows `romPath`/`embeddedRom`. */
+  romName: string;
+  /** The resources the node that places this system boots it from, as the store's pool counts them (not serialized):
+   *  its ROM, and the seed its core starts with. The same handles survive a rebuild that keeps the ROM, and a
+   *  duplicate shares its source's ROM handle. */
+  resources: SystemResources;
 }
 
 /** The live system with `id`, or undefined. */

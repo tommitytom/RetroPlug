@@ -69,7 +69,6 @@ const specParams = (spec: ConstructSpec, id: number): Record<string, unknown> =>
   if (spec.romBytes) p.romBytes = spec.romBytes;
   if (spec.sramBytes) p.sramBytes = spec.sramBytes;
   if (spec.stateBytes) p.stateBytes = spec.stateBytes;
-  if (spec.settings != null) p.settings = spec.settings;
   return p;
 };
 

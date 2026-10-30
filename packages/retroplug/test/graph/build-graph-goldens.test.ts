@@ -8,8 +8,12 @@
 // I/O around the audio (every model gained an empty kernel structure), and B3b for the script nodes that replaced
 // the kernel (every model routes the host's MIDI to all its systems, with no controller and no roles, so each
 // document places the routing node and no protocol node), and C2 for the system nodes' knobs (every Game Boy's node
-// carries its serial-out capture, off with no lsdj-sync placed; no model carries a core config or a gain, so no node
-// carries another knob); the audio of every document is the translator's still.
+// carries its serial-out capture, off with no lsdj-sync placed); and C3 for the resources they boot from (every case's
+// model now carries its `platform`, its `resources`, whose ids are the model's resource ids, and its `romName`, a NES's
+// `coreConfig` with the export-mode label its `exportMode` names, and a Game Gear's `gameGear` setting). A NES whose
+// model differed only by `exportMode` used to build a byte-identical document; it now carries that label in its node,
+// so the 840 cases point at 298 documents instead of 238, and 714 of them moved index. The documents are still each
+// system node's settings and the wiring around them, and the audio of every document is the translator's still.
 // Documents with roles and a controller are buildGraph's own record, golden/build-graph-roles.json
 // (build-graph-role-goldens.test.ts). Not every golden document plans: the thirty-three systems under perSystem give
 // rp.host.audio-out 33 buses, past the 32 it takes.

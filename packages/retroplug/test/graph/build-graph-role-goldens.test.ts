@@ -23,11 +23,12 @@
 // N8 cart mirror. Every document must plan, and its blocks fault no node, throw in no script node and drop no message.
 import { test, expect } from "../../testing/harness";
 import { canonicalJson } from "../../src/graph/canonicalJson";
-import { buildGraph, type GraphModel, type GraphSystem, type HostShape, type SystemNodeType, type TapArm } from "../../src/graph/buildGraph";
+import { buildGraph, type GraphModel, type GraphSystem, type HostShape, type TapArm } from "../../src/graph/buildGraph";
+import type { SystemNodeType } from "../../src/platform";
 import { outNodeOf, protocolPipeline } from "../../src/graph/protocolNodes";
 import type { GraphController } from "../../src/graph/controller";
 import type { RoleInstance } from "../../src/systemRoles";
-import { MIDI_ROUTING_VALUES, type ControllerTarget } from "../../src/settingsEnums";
+import { CHANNEL_EXPORT_VALUES, MIDI_ROUTING_VALUES, type ControllerTarget } from "../../src/settingsEnums";
 import { RoleRegistry } from "../../src/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import golden from "./golden/build-graph-roles.json";
@@ -39,12 +40,24 @@ const GOLDEN_PATH = "test/graph/golden/build-graph-roles.json";
 // ---- the models ----------------------------------------------------------------------------------------------------
 
 // A system's roles as a store holds them, parsed by each role's schema; its pipeline is what protocolPipeline places.
+const PLATFORM: Record<SystemNodeType, GraphSystem["platform"]> = {
+  "rp.sameboy.gb": "gb",
+  "rp.mesen.nes": "nes",
+  "rp.mesen.gba": "gba",
+  "rp.mesen.sms": "sms",
+};
+// The id doubles as the system's ROM resource id, so a document names `res:<id>`. A NES's export mode is one of its
+// node's construct-time settings, so the model names it the way a store's core config does.
 const system = (id: number, type: SystemNodeType, roles: RoleInstance[], linkGroup = 0, exportMode = 0): GraphSystem => ({
   id,
+  platform: PLATFORM[type],
   type,
   linkGroup,
   exportMode,
+  resources: { rom: id },
+  romName: `rom${id}`,
   pipeline: protocolPipeline(roles),
+  ...(type === "rp.mesen.nes" ? { coreConfig: { channelExportMode: CHANNEL_EXPORT_VALUES[exportMode] } } : {}),
 });
 const gb = (id: number, roles: RoleInstance[], linkGroup = 0) => system(id, "rp.sameboy.gb", roles, linkGroup);
 const nes = (id: number, roles: RoleInstance[], exportMode = 0) => system(id, "rp.mesen.nes", roles, 0, exportMode);

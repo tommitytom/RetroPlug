@@ -72,9 +72,9 @@ test("a lsdprjKit override patches the effective ROM's kit at construct (via rel
   store.setRoleConfig(id, "lsdj-assets", { overrides: [{ type: "kit", slot: 0, name: "DRUMS", path: "/p.lsdprj", lsdprjKit: 0 }] });
   store.reloadSystem(id);
 
-  const spec = be.buildCalls[be.buildCalls.length - 1];
+  const spec = be.lastBoot()!;
   expect(spec.romBytes != null).toBeTruthy();
-  const patched = LsdjRom.fromBytes(spec.romBytes!);
+  const patched = LsdjRom.fromBytes(spec.rom!.bytes);
   expect(patched.kit(0).valid).toBeTruthy();
   expect(patched.kit(0).name()).toBe("DRUMS"); // bank extracted from the .lsdprj by ordinal
   expect([...be.readFile("/roms/song.gb")!]).toEqual([...lsdjRom1M()]); // base .gb untouched

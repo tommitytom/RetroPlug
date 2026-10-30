@@ -10,7 +10,8 @@ import { protocolNodeOf } from "../../src/graph/protocolNodes";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { registerDspRoles } from "../../src/dspRoles";
 import { z, clampedInt } from "../../src/configSchema";
-import { roleConfigForNative } from "../../src/settingsEnums";
+import { systemKnobs } from "../../src/graph/buildGraph";
+import type { SystemNodeType } from "../../src/platform";
 import { sameboyRoleConfig } from "../systems/fixtures";
 
 // A ROM header (0x150 bytes) carrying an ASCII cartridge title at 0x134.
@@ -48,19 +49,25 @@ test("systemRoleFor: the core registers a SameBoy and a Mesen system role", () =
   expect(mesen?.schema.parse({})).toEqual({ region: "auto", removeSpriteLimit: false, enableFm: true, apuLatencyMs: 1.4, s5bNoise: "n8", mmc5PhaseReset: "n8", expansionVolume: 100, channelExportMode: "mix", sdRoot: "", fifo: "instant", fifoDepth: 0, fifoBytesPerSecond: 0, n8Link: "auto", n8LinkRttUs: 2200 });
 });
 
-test("every system role's parsed config crosses to native as numbers and flags, with no string but sdRoot", () => {
-  // The construct blob always carries every field its role schema fills, and a role struct is refused whole for one
-  // string where native reads a uint32. So every string enum field must be in ROLE_NATIVE_ENUMS: a knob added to a
-  // system role and forgotten there ships a string, and the core builds at every default. sdRoot is the one string
-  // native reads as a string. The registered kinds are read, not listed, so a new system role is covered too.
+test("every field a system role's schema fills reaches some system node", () => {
+  // A core config is what its system node's settings are built from (graph/buildGraph.ts systemKnobs): a setting the
+  // node applies live, a construct-time field it builds its core with, or a param. A field in neither table is dead -
+  // a knob added to a role and forgotten there would never reach a core, and only a document would look right. The
+  // registered kinds are read, not listed, so a new system role is covered too.
+  const types: SystemNodeType[] = ["rp.sameboy.gb", "rp.mesen.nes", "rp.mesen.gba", "rp.mesen.sms"];
   const system = kindsRegisteredBy(() => registerCoreRoles(new RoleRegistry())).filter((t) => t.category === "system");
   expect(system.map((t) => t.kind)).toEqual(["sameboy", "mesen"]);
+  const has = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
   for (const t of system) {
-    const blob = roleConfigForNative(t.kind, t.schema.parse({}));
-    const strings = Object.entries(blob)
-      .filter(([, v]) => typeof v === "string")
-      .map(([k]) => k);
-    expect(strings, t.kind).toEqual(t.kind === "mesen" ? ["sdRoot"] : []);
+    const config = t.schema.parse({}) as Record<string, unknown>;
+    for (const field of Object.keys(config)) {
+      if (field === "linkGroupId") continue; // wiring (the link cable), not a node setting
+      const taken = types.some((type) => {
+        const knobs = systemKnobs({ type, coreConfig: config });
+        return has(knobs.settings, field) || has(knobs.construct, field) || has(knobs.params, field);
+      });
+      expect(taken, `${t.kind}.${field}`).toBe(true);
+    }
   }
 });
 

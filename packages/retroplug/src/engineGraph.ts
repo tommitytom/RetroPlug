@@ -12,7 +12,7 @@
 // runs the temporary shape: until a document plans, even a shape change to the current shape is sent.
 import { buildGraph, type GraphModel, type GraphSystem, type HostShape } from "./graph/buildGraph";
 import { toGraphJson } from "./graph/graphDocument";
-import type { Backend, SetGraphRequest, SetGraphResult } from "./backend";
+import type { Backend, GraphError, SetGraphRequest, SetGraphResult } from "./backend";
 
 export type GraphBackend = Pick<Backend, "setGraph">;
 
@@ -35,6 +35,9 @@ export class EngineGraph {
   /** A live param change moved a node away from the value the last document carried, so the engine no longer runs
    *  that document's params: set by systemsMovedLive, cleared by a plan. */
   private liveParamMoved = false;
+  /** The planner's errors for the last document it refused, empty after one that planned: a caller that has a
+   *  fallback for a refusal (a project load dropping the system it names) reads which node it was. */
+  lastErrors: GraphError[] = [];
 
   constructor(private readonly backend: GraphBackend) {}
 
@@ -128,6 +131,7 @@ export class EngineGraph {
       try {
         result = this.backend.setGraph(request);
       } catch (e) {
+        this.lastErrors = [];
         this.notPlanned(rearm);
         throw e;
       }
@@ -136,9 +140,11 @@ export class EngineGraph {
           const at = e.nodeId ? ` at ${e.nodeId}${e.port ? "." + e.port : ""}` : "";
           console.warn(`[graph] the engine refused a document (${e.code})${at}: ${e.message}`);
         }
+        this.lastErrors = result.errors;
         this.notPlanned(rearm);
         return false;
       }
+      this.lastErrors = [];
       this.sent = key;
       this.rearmDue = false;
       this.engineMayDiffer = false;

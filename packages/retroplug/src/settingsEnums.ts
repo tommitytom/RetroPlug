@@ -1,10 +1,9 @@
 // The single source of truth for every string-valued enum setting in a project. Each enum is an
 // index-ordered value tuple whose position EQUALS the native enum integer — the tuple feeds
-// `z.enum(...)` (configSchema.enumField), indexes the menu cyclers' display-name arrays, and drives
-// the string<->int conversion at the construct boundary. TS carries the strings everywhere, a system
-// node's settings included (its C++ type reads the labels); the construct blob native decodes (the
-// reflect-cpp role structs) stays numeric, so the boundary encoder here (`roleConfigForNative`) maps
-// back to the ints it reads.
+// `z.enum(...)` (configSchema.enumField) and indexes the menu cyclers' display-name arrays. TS carries the
+// strings everywhere: a system node's settings name a label, which its C++ type reads (graph/buildGraph.ts
+// systemKnobs), and a node reads a NES export mode's position in its tuple where the graph needs the mode as
+// a number (exportModeOf).
 //
 // A LEAF module: it imports nothing, so the schema, the domain modules (layout/midiRouting/dspRoles),
 // the stores, the menu, and the project migration can all share these values without an import cycle.
@@ -111,7 +110,7 @@ export type ChannelExportMode = (typeof CHANNEL_EXPORT_VALUES)[number];
 //                those hide bug classes when they are absent: a ROM that cannot lose a byte never has
 //                its recovery path exercised, and one handed a whole chunk atomically is never
 //                starved mid-structure the way a real wire starves it.
-// Construct-time (the FIFO is built when the core activates), so an edit needs setRoleConfig + reset.
+// Construct-time (the FIFO is built when the core activates): setRoleConfig rebuilds the system for an edit.
 export const FIFO_PROFILE_VALUES = ["instant", "hardware"] as const;
 export type FifoProfile = (typeof FIFO_PROFILE_VALUES)[number];
 
@@ -120,7 +119,7 @@ export type FifoProfile = (typeof FIFO_PROFILE_VALUES)[number];
 //   "auto" - on whenever the ROM advertises it. The DEFAULT: the emulator should lose and recover bytes the way
 //            the cartridge does, not be quietly better than it.
 //   "off"  - raw MIDI, unframed - for tests that drive the protocol (or a malformed stream) by hand.
-// Construct-time (the FIFO role is built when the core activates), so an edit needs setRoleConfig + reset.
+// Construct-time (the FIFO role is built when the core activates): setRoleConfig rebuilds the system for an edit.
 export const N8_LINK_VALUES = ["auto", "off"] as const;
 export type N8LinkMode = (typeof N8_LINK_VALUES)[number];
 
@@ -149,44 +148,3 @@ export const LsdjSyncMode = {
   MidiOut: "midiOut",
   MasterSync: "masterSync",
 } as const satisfies Record<string, LsdjSyncMode>;
-
-// --- native boundary encoders ----------------------------------------------
-
-// Which fields of a native-facing role config are string enums, and their value tuples. Only the two
-// "system"-category roles cross to native's reflect-cpp structs (SameBoyRoleConfig / MesenNesRoleConfig);
-// lsdj-sync is a pure-TS DSP role, so its `mode` string never needs an int here.
-const ROLE_NATIVE_ENUMS: Record<string, Record<string, readonly string[]>> = {
-  sameboy: {
-    model: MODEL_VALUES,
-    highpass: HIGHPASS_VALUES,
-    colorCorrection: COLOR_CORRECTION_VALUES,
-    dmgPalette: DMG_PALETTE_VALUES,
-  },
-  mesen: {
-    region: REGION_VALUES,
-    channelExportMode: CHANNEL_EXPORT_VALUES,
-    s5bNoise: CARTRIDGE_ACCURACY_VALUES,
-    mmc5PhaseReset: CARTRIDGE_ACCURACY_VALUES,
-    fifo: FIFO_PROFILE_VALUES,
-    n8Link: N8_LINK_VALUES,
-  },
-};
-
-/** Encode a role config for the construct blob (ConstructSpec.settings): replace each string enum field with
- *  its native integer (index), passing every other field (linkGroupId, fastBoot, removeSpriteLimit, …) through
- *  unchanged. A role kind that doesn't cross to native returns its config untouched. The blob stays numeric;
- *  this is the one place TS strings become the ints reflect-cpp expects. A live edit reaches the core as its
- *  system node's settings and params instead, in the labels themselves (graph/buildGraph.ts systemKnobs). */
-export function roleConfigForNative(kind: string, config: Record<string, unknown>): Record<string, unknown> {
-  const fields = ROLE_NATIVE_ENUMS[kind];
-  if (!fields) return config;
-  const out: Record<string, unknown> = { ...config };
-  for (const key of Object.keys(fields)) {
-    const v = out[key];
-    if (typeof v === "string") {
-      const i = fields[key].indexOf(v);
-      if (i >= 0) out[key] = i;
-    }
-  }
-  return out;
-}

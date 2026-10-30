@@ -88,17 +88,17 @@ export function registerCoreRoles(registry: RoleRegistry): void {
       // you are hearing the emulator or the console. 100 = the chip as the hardware mixes it.
       expansionVolume: clampedInt(0, 200, 100),
       // CLI-only per-channel export mode (spec/10 §5/§5b): mix, stereoModPins (Pulse | TND + Expansion),
-      // individualMono (5 core channels). Set at construct (via adopt) — the settings menu doesn't surface
-      // it. Additive. (pinsPlusRef = pins + a mix reference, native/test-only.)
+      // individualMono (5 core channels). Construct-time: a render's adopt sets it, an edit rebuilds the system, and
+      // the settings menu does not surface it. Additive. (pinsPlusRef = pins + a mix reference, native/test-only.)
       channelExportMode: enumField(CHANNEL_EXPORT_VALUES, "mix"),
       // NES-only: the host directory the emulated EverDrive N8 SD card maps to ("/" on the card), for a
       // ROM that pulls its data off the cartridge rather than over MIDI. Empty means a per-process
       // scratch directory - deliberately NOT the working directory, which made the card depend on where
       // the process was started and let a file one test wrote become every later run's card.
       //
-      // Construct-time, unlike `region` (which the NES node applies live: a region change resets the core): the
-      // FIFO is built when the core activates, so an edit needs a rebuild (setRoleConfig then reset(id)) rather than
-      // taking effect live.
+      // Construct-time, unlike `region` (which the NES node applies live: a region change resets the core): the FIFO
+      // is built when the core activates, so an edit needs a rebuild, which setRoleConfig makes itself (the system's
+      // node reads it once), carrying the battery.
       sdRoot: stringField(""),
       // NES-only: how faithfully the emulated cart FIFO behaves like the device's (see
       // FIFO_PROFILE_VALUES). Default "instant" - unbounded and immediate - because that is the
@@ -108,14 +108,14 @@ export function registerCoreRoles(registry: RoleRegistry): void {
       // copy loop can be starved mid-structure rather than only between chunks).
       //
       // The two overrides are 0 = "take the profile's value", so a rate sweep can vary one without
-      // restating the other. Construct-time, like `sdRoot`: setRoleConfig then reset(id).
+      // restating the other. Construct-time, like `sdRoot`: an edit rebuilds the system.
       fifo: enumField(FIFO_PROFILE_VALUES, "instant"),
       fifoDepth: clampedInt(0, 1 << 20, 0),
       fifoBytesPerSecond: clampedInt(0, 100_000_000, 0),
       // NES-only: BlipToaster's reliable link (see N8_LINK_VALUES) and the round trip the emulator models for a
       // re-send, in microseconds - the host->cart->host latency of a physical N8 over USB, so a hit the link recovers
       // lands as late in the plugin as on the cartridge: 2200 = a real N8 Pro's fastest round trip (the ROM's ack out,
-      // the re-sent frame back), measured 2026-10-22. Construct-time: setRoleConfig then reset(id).
+      // the re-sent frame back), measured 2026-10-22. Construct-time: an edit rebuilds the system.
       n8Link: enumField(N8_LINK_VALUES, "auto"),
       n8LinkRttUs: clampedInt(0, 100_000, 2200),
     }),

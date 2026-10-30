@@ -72,7 +72,24 @@ test("a NES system auto-gets the mesen system role; editing region crosses to th
     canon({
       id: `sys-${id}`,
       type: "rp.mesen.nes",
-      settings: { core: id, region: "pal", removeSpriteLimit: false, apuLatencyMs: 1.4, s5bNoise: "n8", mmc5PhaseReset: "n8" },
+      settings: {
+        system: id,
+        rom: "res:1",
+        romName: "g",
+        region: "pal",
+        removeSpriteLimit: false,
+        apuLatencyMs: 1.4,
+        s5bNoise: "n8",
+        mmc5PhaseReset: "n8",
+        // The construct-time fields its node builds the core with.
+        sdRoot: "",
+        fifo: "instant",
+        fifoDepth: 0,
+        fifoBytesPerSecond: 0,
+        n8Link: "auto",
+        n8LinkRttUs: 2200,
+        channelExportMode: "mix",
+      },
       params: { gain: 0, expansionVolume: 100 },
     }),
   );
@@ -91,7 +108,9 @@ test("setRoleConfig on a system role: updates, clamps, publishes its node's sett
   expect(be.graphRequests.length).toBe(sent + 1);
   expect(be.graphNode(`sys-${id}`)?.settings).toEqual(
     canon({
-      core: id,
+      system: id,
+      rom: "res:1",
+      romName: "a",
       model: "sgb",
       highpass: "accurate",
       fastBoot: true,

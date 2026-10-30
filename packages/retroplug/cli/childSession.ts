@@ -6,8 +6,8 @@
 // second control plane over one native Engine. That does not work: each publishes the engine's whole
 // graph through its own EngineGraph, so either one's next edit publishes a graph without the other's
 // systems, which frees their cores (src/bootSession.ts). The dispatcher and the SDK are also separate
-// bundles with a system-id counter each, so the session's buildCore is refused any id that a core the tool
-// built still holds.
+// bundles with a system-id counter each, so the session's boot is refused any system id that the tool's
+// cores still hold.
 //
 // Spawning also gives `test` the per-file isolation it needs anyway: a fresh Engine per file, and a fresh
 // config dir so runs never cross-contaminate.

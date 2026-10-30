@@ -34,7 +34,7 @@ function boot(): { be: ReturnType<typeof createRealBackend>; audio: ReturnType<t
     graph.add(
       {
         romPath: ROM, platform: "sms", core: "mesen", embeddedRom: "",
-        savPath: null, statePath: null, settings: JSON.stringify({ enableFm: false }),
+        savPath: null, statePath: null, coreConfig: { enableFm: false },
       },
       id,
     ),

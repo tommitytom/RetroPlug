@@ -83,7 +83,7 @@ function boot(id: number, romPath: string, platform: Platform, sram: Uint8Array)
       {
         romPath, platform, core: "mesen", embeddedRom: "",
         savPath: null, statePath: null, sramBytes: sram,
-        settings: JSON.stringify({ enableFm: false }),
+        coreConfig: { enableFm: false },
       },
       id,
     ),

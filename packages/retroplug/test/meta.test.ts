@@ -3,7 +3,7 @@
 // TDD loop is ready and every subsequent feature test can rely on it.
 import { test, expect } from "../testing/harness";
 import { MockBackend } from "../testing/mockBackend";
-import type { Backend } from "../src/backend";
+import type { Backend, SetGraphRequest } from "../src/backend";
 
 test("harness: expect matchers behave", () => {
   expect(1 + 1).toBe(2);
@@ -80,6 +80,43 @@ test("mock backend: putResource answers ids that count up, and a dropped id stay
   expect(be.resource(copied.id)).toEqual({ type: "rom", bytes: Uint8Array.of(5, 5) });
   expect(be.putResourceCalls.length).toBe(9); // refused puts are recorded too, with id 0
   expect(be.putResourceCalls.filter((c) => c.id === 0).length).toBe(4);
+});
+
+test("mock backend: a document naming a resource the engine does not hold is refused, as native refuses it", () => {
+  const be = new MockBackend("/cfg");
+  const rom = be.putResource({ type: "rom", bytes: Uint8Array.of(1, 2, 3) });
+  const sram = be.putResource({ type: "sram", bytes: Uint8Array.of(4) });
+  if ("error" in rom || "error" in sram) throw new Error("the puts should have been taken");
+  const doc = (settings: Record<string, unknown>): SetGraphRequest => ({
+    document: JSON.stringify({ nodes: [{ id: "sys-1", type: "rp.sameboy.gb", settings }], wires: [] }),
+    slots: [1],
+  });
+  const name = (field: string, id: number): Record<string, unknown> => ({ rom: `res:${rom.id}`, [field]: `res:${id}` });
+  expect(be.setGraph(doc(name("sram", sram.id))).ok).toBe(true); // a live rom and a live battery plan
+  // A dropped id is not a resource: the engine keeps its own table, and a stale reference must not name whatever took
+  // its place, so it is refused with the text native's node gives.
+  const dropped = be.putResource({ type: "sram", bytes: Uint8Array.of(9) });
+  if ("error" in dropped) throw new Error(dropped.error);
+  be.releaseResource(dropped.id);
+  expect(be.setGraph(doc(name("sram", dropped.id)))).toEqual({
+    ok: false,
+    errors: [{ nodeId: "sys-1", port: "", code: "create-failed", message: `sram: "res:${dropped.id}" is not a live resource` }],
+  });
+  expect(be.setGraph(doc(name("state", 999))).errors[0].message).toBe('state: "res:999" is not a live resource');
+  // A resource of another type, a field that is not a reference at all, and no ROM: each its own reason.
+  expect(be.setGraph(doc(name("sram", rom.id))).errors[0]).toEqual({
+    nodeId: "sys-1",
+    port: "",
+    code: "create-failed",
+    message: `sram: "res:${rom.id}" is a rom resource, not a sram`,
+  });
+  expect(be.setGraph(doc({ rom: "res:007" })).errors[0].message).toBe('rom: "res:007" is not a resource reference (res:N)');
+  expect(be.setGraph(doc({ sram: `res:${sram.id}` })).errors[0]).toEqual({
+    nodeId: "sys-1",
+    port: "",
+    code: "settings-invalid",
+    message: 'a system node names its ROM as {"rom": "res:N"}',
+  });
 });
 
 test("mock backend: loadScriptPack refuses every pack, before any replan, with no types", () => {

@@ -77,7 +77,7 @@ test("a live song load repaints the cart's screen, without the user touching any
   const audio = createAudioDriver();
   expect(
     graph.add(
-      { romPath: ROM, platform: "sms", core: "mesen", embeddedRom: "", savPath: null, statePath: null, sramBytes: sav, settings: JSON.stringify({ enableFm: false }) },
+      { romPath: ROM, platform: "sms", core: "mesen", embeddedRom: "", savPath: null, statePath: null, sramBytes: sav, coreConfig: { enableFm: false } },
       id,
     ),
   ).toBeTruthy();

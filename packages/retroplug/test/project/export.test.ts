@@ -81,10 +81,10 @@ test("export then load: round-trips systems (blobs seed each emulator) + setting
 
   // Both new systems were reconstructed FROM the archive's blobs (not cold-booted).
   expect(be.restoredIds()).toEqual(project.systems.systems().map((s) => s.id).sort((a, b) => a - b));
-  // The exact archive bytes (keyed by the EXPORT-time ids) reached construct.
-  const imported = be.buildCalls.slice(-2);
-  expect(new Uint8Array(imported[0].stateBytes!)).toEqual(stateBytesFor(mgbId));
-  expect(new Uint8Array(imported[1].stateBytes!)).toEqual(stateBytesFor(aId));
+  // The exact archive bytes (keyed by the EXPORT-time ids) reached each system's node as its state seed.
+  const imported = project.systems.systems().map((s) => be.bootOf(s.id)!);
+  expect(imported[0].state!.bytes).toEqual(stateBytesFor(mgbId));
+  expect(imported[1].state!.bytes).toEqual(stateBytesFor(aId));
 });
 
 test("load export: a moved cartridge ROM reports missing (blobs cover only sram/state)", () => {

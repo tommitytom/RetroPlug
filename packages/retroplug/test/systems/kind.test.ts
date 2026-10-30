@@ -1,5 +1,6 @@
-// The store classifies a ROM (platform.ts) and passes that platform + core to buildCore, so native
-// routes it to the right backend (sameboy / mesen-nes / mesen-gba). Embedded ROMs are always SameBoy.
+// The store classifies a ROM (platform.ts), and the platform picks the node type its core is placed as
+// (systemNodeTypeFor): the node's C++ type is what builds that console's core, so the platform and core the
+// entry carries and the node it is placed as are one decision. Embedded ROMs are always SameBoy.
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
@@ -10,26 +11,27 @@ function makeStore() {
   return { be, store: new SystemsStore(be) };
 }
 
-test("buildCore carries the classified platform and core for each backend", () => {
-  const cases: Array<[string, Uint8Array, string, string]> = [
-    ["/roms/a.gb", gbRom(), "gb", "sameboy"],
-    ["/roms/a.nes", nesRom(), "nes", "mesen"],
-    ["/roms/a.gba", gbaRom(), "gba", "mesen"],
+test("a system's classified platform picks the node it is placed as, and the core its entry names", () => {
+  const cases: Array<[string, Uint8Array, string, string, string]> = [
+    ["/roms/a.gb", gbRom(), "rp.sameboy.gb", "gb", "sameboy"],
+    ["/roms/a.nes", nesRom(), "rp.mesen.nes", "nes", "mesen"],
+    ["/roms/a.gba", gbaRom(), "rp.mesen.gba", "gba", "mesen"],
   ];
-  for (const [path, bytes, platform, core] of cases) {
+  for (const [path, bytes, type, platform, core] of cases) {
     const { be, store } = makeStore();
     be.seed(path, bytes);
     expect(store.addSystem(path) != null).toBeTruthy();
-    const spec = be.buildCalls[be.buildCalls.length - 1];
-    expect(spec.platform).toBe(platform);
-    expect(spec.core).toBe(core);
+    expect(be.lastBoot()!.type).toBe(type);
+    expect(store.view()[0].platform).toBe(platform);
+    expect(store.view()[0].core).toBe(core);
   }
 });
 
-test("embedded mGB constructs as sameboy", () => {
+test("embedded mGB is placed as a Game Boy node, from its marker", () => {
   const { be, store } = makeStore();
   store.loadMgb();
-  const spec = be.buildCalls[be.buildCalls.length - 1];
-  expect(spec.platform).toBe("gb");
-  expect(spec.core).toBe("sameboy");
+  const spec = be.lastBoot()!;
+  expect(spec.type).toBe("rp.sameboy.gb");
+  expect(spec.embeddedRom).toBe("mgb");
+  expect(spec.romName).toBe("mgb"); // the marker names the ROM: an embedded one has no path to take a stem from
 });

@@ -125,7 +125,7 @@ for (const m of MACHINES) {
           savPath: null,
           statePath: null,
           sramBytes: buildSmsMetronomeSav(SMS_SYNC_IN24),
-          settings: JSON.stringify({ enableFm: false }),
+          coreConfig: { enableFm: false },
         },
         1,
       ),

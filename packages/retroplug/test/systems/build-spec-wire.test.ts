@@ -42,20 +42,18 @@ test("buildCore carries each BackendConstructSpec field under its name, a null p
   const romBytes = new Uint8Array([4]);
   const sramBytes = new Uint8Array([1, 2, 3]);
   const stateBytes = new Uint8Array([5, 6]);
-  const carried = {
-    savPath: "/roms/a.sav", statePath: "/roms/a.state", romBytes, sramBytes, stateBytes, settings: "{}",
-  };
+  const carried = { savPath: "/roms/a.sav", statePath: "/roms/a.state", romBytes, sramBytes, stateBytes };
   client.buildCore(spec(carried), 7);
   client.buildCore(spec(), 8);
   expect(sent.map((r) => r.method)).toEqual(["buildCore", "buildCore"]);
   const params = sent.map((r) => r.params[0] as Record<string, unknown>);
   const named = ["core", "embeddedRom", "id", "platform", "romPath"];
+  // No construct-time settings blob: the node takes those as its own settings now (graph/systemResources.ts), so the
+  // old path carries what is left of ConstructSpec's wire.
   expect(Object.keys(params[0]).sort()).toEqual([
-    ...named, "romBytes", "savPath", "settings", "sramBytes", "stateBytes", "statePath",
+    ...named, "romBytes", "savPath", "sramBytes", "stateBytes", "statePath",
   ].sort());
-  expect([params[0].id, params[0].savPath, params[0].statePath, params[0].settings]).toEqual([
-    7, "/roms/a.sav", "/roms/a.state", "{}",
-  ]);
+  expect([params[0].id, params[0].savPath, params[0].statePath]).toEqual([7, "/roms/a.sav", "/roms/a.state"]);
   // Each as the Uint8Array it was: rfl::Bytestring on the native side.
   expect([params[0].romBytes, params[0].sramBytes, params[0].stateBytes]).toEqual([romBytes, sramBytes, stateBytes]);
   expect(Object.keys(params[1]).sort()).toEqual(named);

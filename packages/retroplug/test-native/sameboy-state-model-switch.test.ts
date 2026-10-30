@@ -53,13 +53,14 @@ const eq = (a: Uint8Array, b: Uint8Array): boolean => {
   return true;
 };
 
-/** Build a system on an explicit model. `settings` is the native SameBoyRoleConfig (integer fields),
- *  applied AT CONSTRUCT - which is what sizes the snapshot slot for that model. */
+/** Build a system on an explicit model (`model` is the native ordinal the MODEL_VALUES tuple indexes).
+ *  The model is a construct-time setting, so it is what the node builds the core with - which is what sizes the
+ *  snapshot slot for that model. */
 const buildOn = (id: number, model: number): boolean =>
   graph.add({
     romPath: LSDJ, platform: "gb", core: "sameboy", embeddedRom: "",
     savPath: null, statePath: null, sramBytes: savFrom(SONG),
-    settings: JSON.stringify({ model }),
+    coreConfig: { model: MODEL_VALUES[model] },
   }, id);
 
 /** Switch a built system to `model` (an ordinal, as buildOn takes it) through its node's model setting. */

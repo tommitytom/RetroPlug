@@ -69,7 +69,7 @@ test("a song decoded from a .sav loads into a PLAYING cart in one call", () => {
       {
         romPath: ROM, platform: "sms", core: "mesen", embeddedRom: "",
         savPath: null, statePath: null, sramBytes: sav,
-        settings: JSON.stringify({ enableFm: false }),
+        coreConfig: { enableFm: false },
       },
       1,
     ),

@@ -108,12 +108,10 @@ function bootWith(rom: Uint8Array, path: string, sdRoot?: string): { s: Session;
   let id = s.project.systems.addSystem(path);
   if (id == null) throw new Error(`addSystem failed for ${path}`);
   if (sdRoot != null) {
-    // sdRoot is baked in when the core is constructed (the FIFO is built at activate), so it only takes
-    // effect after a reset — which hands back a NEW id, exactly like the `region` knob.
+    // sdRoot is read when the core is built (the FIFO is built at activate), so SystemsStore.setRoleConfig resets the
+    // system itself - the same rows System > Reset runs, carrying the battery - and hands back a NEW id.
     expect(s.project.systems.setRoleConfig(id, "mesen", { sdRoot })).toBeTruthy();
-    const next = s.project.systems.reset(id);
-    if (next == null) throw new Error("reset after setRoleConfig failed");
-    id = next;
+    id = s.project.systems.view()[0].id;
   }
   return { s, id };
 }
@@ -351,12 +349,10 @@ function floodParkedRom(fifoCfg: Record<string, unknown> | null, total: number) 
   let id = s.project.systems.addSystem(path);
   if (id == null) throw new Error("addSystem failed");
   if (fifoCfg) {
-    // Construct-time, like sdRoot: the FIFO is built when the core activates, so the reset is what
-    // applies it, and it hands back a new id.
+    // Construct-time, like sdRoot: the FIFO is built when the core activates, so the edit resets the system itself
+    // (carrying its battery) and hands back a new id.
     expect(s.project.systems.setRoleConfig(id, "mesen", fifoCfg)).toBeTruthy();
-    const next = s.project.systems.reset(id);
-    if (next == null) throw new Error("reset after setRoleConfig failed");
-    id = next;
+    id = s.project.systems.view()[0].id;
   }
   s.audio.renderAudio(10); // let the ROM reach its parked loop
 

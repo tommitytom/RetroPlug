@@ -31,17 +31,33 @@ export function sramBytesFor(id: number): Uint8Array {
   return Uint8Array.of(0x53, 0x52, id & 0xff, (id >>> 8) & 0xff);
 }
 
-// A constructed emulator, as the mock tracks it — enough to answer duplicate /
-// reload / remove and to let tests inspect what native was asked to build.
+// A constructed emulator, as the mock tracks it - enough to answer duplicate /
+// reload / remove and to let tests inspect what the engine was asked to place. The mock runs no
+// cores, so it reads one from the node a document places: the resources' sources say what a boot
+// would be seeded with.
 interface MockSystem {
   romPath: string;
   embeddedRom: string;
   savPath: string | null;
   statePath: string | null;
-  /** True when the system was reconstructed from in-memory zip blobs (import). */
+  /** True when the system was reconstructed from in-memory seed blobs (import, a carried battery). */
   restoredFromBytes: boolean;
 }
 
+// The node types a document places a system with: the ones whose settings name a rom resource
+// (graph/systemResources.ts), and the only ones the mock checks for one.
+const SYSTEM_NODE_TYPES = new Set(["rp.sameboy.gb", "rp.mesen.nes", "rp.mesen.gba", "rp.mesen.sms"]);
+
+// A node's resource field as native's parser spells it (graph/GraphDocument.cpp parseResourceRef): `res:<id>` with
+// one spelling per id, so no `res:007` and no `res:0`.
+const RES_REF = /^res:([1-9]\d*)$/;
+
+const refusedGraph = (nodeId: string, code: string, message: string): SetGraphResult => ({
+  ok: false,
+  errors: [{ nodeId, port: "", code, message }],
+});
+
+// buildCore's record of a build (the old path, which no TS code calls since the store boots systems from resources).
 function mockSystem(spec: ConstructSpec): MockSystem {
   return {
     romPath: spec.romPath,
@@ -52,6 +68,43 @@ function mockSystem(spec: ConstructSpec): MockSystem {
   };
 }
 
+/** What a document would boot a system from, read out of the mock's table: a helper for tests, not a model - the mock
+ *  runs no cores, so this is what the node's settings and the resources they name ADD UP to. */
+export interface MockBoot {
+  /** The system's id. */
+  id: number;
+  type: string;
+  settings: Record<string, unknown>;
+  /** The ROM's name (its node settings' `romName`), which a Master System stages its ROM under. */
+  romName: string;
+  /** Where the ROM came from: a file path, or an embedded ROM's marker ("" for one put from bytes). */
+  romPath: string;
+  embeddedRom: string;
+  /** The path the battery seed was read from (`null` when it came from bytes or there is none), and the savestate's. */
+  savPath: string | null;
+  statePath: string | null;
+  /** Each resource the node names, with the id, the spec it was put from, the bytes the spec carried when TS held
+   *  them (`bytes`, undefined for a file the engine reads), and the bytes the engine holds (`content`). Absent when the
+   *  node names none. */
+  rom?: MockResource;
+  sram?: MockResource;
+  state?: MockResource;
+  /** The bytes the ROM was put from, when TS held them (an asset role's patched image; a base ROM is a path), and
+   *  likewise the seeds TS held. Undefined when the resource came from a file or an embedded marker. */
+  romBytes?: Uint8Array;
+  sramBytes?: Uint8Array;
+  stateBytes?: Uint8Array;
+}
+
+/** A resource as a boot named it: the id, what it was put from, and the bytes the engine holds. */
+export interface MockResource {
+  id: number;
+  spec: ResourceSpec;
+  bytes: Uint8Array;
+  /** Where the bytes came from: TS held them, the engine read a file, or a ROM baked into the binary. */
+  source: "bytes" | "path" | "embedded";
+}
+
 // The node type native places a core of this platform as.
 function nodeTypeFor(spec: ConstructSpec): BuiltCore["type"] {
   if (spec.embeddedRom || spec.platform === "gb") return "rp.sameboy.gb";
@@ -60,10 +113,9 @@ function nodeTypeFor(spec: ConstructSpec): BuiltCore["type"] {
   return "rp.mesen.sms";
 }
 
-// A number field of the construct-time settings blob, as native decodes it (0 when absent).
-function settingsNumber(spec: ConstructSpec, key: string): number {
-  if (!spec.settings) return 0;
-  const v = (JSON.parse(spec.settings) as Record<string, unknown>)[key];
+// A number field of a spec's core config (0 when absent), as buildCore's facts reported it.
+function configNumber(spec: ConstructSpec, key: string): number {
+  const v = spec.coreConfig?.[key];
   return typeof v === "number" ? v : 0;
 }
 
@@ -89,9 +141,14 @@ export class MockBackend implements Backend {
   readonly releaseResourceCalls: number[] = [];
   /** Every setGraph request, in order: the documents TS published, their slots and their tap re-arms. */
   readonly graphRequests: SetGraphRequest[] = [];
-  /** The resources a putResource created and their owner still holds: the type and the bytes. */
-  private resources = new Map<number, { type: ResourceType; bytes: Uint8Array }>();
+  /** The resources a putResource created and their owner still holds: the type, the bytes and where they came from. */
+  private resources = new Map<number, { type: ResourceType; bytes: Uint8Array; spec: ResourceSpec }>();
   private nextResourceId = 1;
+
+  /** Every system id a document has placed, in the order each first appeared. A store's rebuild takes a new id and a
+   *  publish that keeps a system's id boots nothing, so this counts the boots: the length to compare before and after
+   *  an edit (the buildCalls count did, before nodes booted themselves). */
+  readonly bootedIds: number[] = [];
 
   // --- file-dialog bookkeeping (mock-only) --------------------------------
   /** Opts passed to each openFileBrowser call, in order — lets tests assert which
@@ -327,7 +384,7 @@ export class MockBackend implements Backend {
     if (bytes.length === 0 && spec.type === "rom")
       return refused("a rom resource cannot be empty: a zero-length ROM cannot boot");
     const id = this.nextResourceId++;
-    this.resources.set(id, { type: spec.type, bytes: new Uint8Array(bytes) });
+    this.resources.set(id, { type: spec.type, bytes: new Uint8Array(bytes), spec: "bytes" in spec ? { ...spec, bytes: new Uint8Array(spec.bytes) } : { ...spec } });
     record(id);
     return { id };
   }
@@ -346,6 +403,54 @@ export class MockBackend implements Backend {
     return r && { type: r.type, bytes: new Uint8Array(r.bytes) };
   }
 
+  /** What the last document sent would boot `system` from, read out of the mock's resource table: its node's type,
+   *  settings and ROM name, and each resource the node names with the spec it was put from. Undefined when the last
+   *  document places no such node. */
+  bootOf(system: number): MockBoot | undefined {
+    const node = this.graphNode(`sys-${system}`);
+    if (!node) return undefined;
+    const settings = node.settings ?? {};
+    const named = (field: string): MockBoot["rom"] => {
+      const value = settings[field];
+      const match = typeof value === "string" ? RES_REF.exec(value) : null;
+      const held = match ? this.resources.get(Number(match[1])) : undefined;
+      if (!held) return undefined;
+      return {
+        id: Number(match![1]),
+        spec: held.spec,
+        bytes: new Uint8Array(held.bytes),
+        source: "bytes" in held.spec ? "bytes" : "path" in held.spec ? "path" : "embedded",
+      };
+    };
+    const rom = named("rom");
+    const sram = named("sram");
+    const state = named("state");
+    const path = (r: MockBoot["rom"]): string | null => (r && "path" in r.spec ? r.spec.path : null);
+    return {
+      id: system,
+      type: node.type,
+      settings,
+      romName: typeof settings.romName === "string" ? settings.romName : "",
+      romPath: path(rom) ?? "",
+      embeddedRom: rom && "embedded" in rom.spec ? rom.spec.embedded : "",
+      savPath: path(sram),
+      statePath: path(state),
+      rom,
+      sram,
+      state,
+      romBytes: rom?.source === "bytes" ? rom.bytes : undefined,
+      sramBytes: sram?.source === "bytes" ? sram.bytes : undefined,
+      stateBytes: state?.source === "bytes" ? state.bytes : undefined,
+    };
+  }
+
+  /** The boot of the most recently booted system, in the last document that placed it (the shape buildCalls' last entry
+   *  had): the convenience for the many cases that own one system. Undefined when no document placed one. */
+  lastBoot(): MockBoot | undefined {
+    const id = this.bootedIds[this.bootedIds.length - 1];
+    return id === undefined ? undefined : this.bootOf(id);
+  }
+
   // A built core is live from the build on, as native's is (its snapshot slot is claimed at the build, so its
   // reads answer before any document places it).
   buildCore(spec: ConstructSpec, id: number): BuiltCore | null {
@@ -353,22 +458,69 @@ export class MockBackend implements Backend {
     this.buildCalls.push({ ...spec, id });
     if (id === 0 || !this.buildable(spec) || this.systems.has(id)) return null; // 0 is the snapshot registry's free-slot id, as native refuses it
     this.systems.set(id, mockSystem(spec));
-    return { type: nodeTypeFor(spec), exportMode: settingsNumber(spec, "channelExportMode"), linkGroup: settingsNumber(spec, "linkGroupId") };
+    return { type: nodeTypeFor(spec), exportMode: configNumber(spec, "channelExportMode"), linkGroup: configNumber(spec, "linkGroupId") };
   }
 
-  // The slots become the live systems: every core the document does not place goes, whether it ran in the
-  // last document or was never placed, as native frees them.
+  // The slots become the live systems: every system the document does not place goes. The engine runs each system's
+  // node from the resources its settings name (docs/modular-graph-phase-c3-design.md section 6), so this is where a
+  // document naming a resource the engine does not hold is refused: an unknown or dropped id, a resource of another
+  // type, a field that is not a reference at all, or no ROM.
   setGraph(request: SetGraphRequest): SetGraphResult {
     this.log.push("setGraph");
     this.graphRequests.push(request);
+    const nodes = new Map(((JSON.parse(request.document) as GraphDocument).nodes ?? []).map((n) => [n.id, n]));
     const live = new Map<number, MockSystem>();
     for (const id of request.slots) {
-      const sys = this.systems.get(id);
-      if (!sys) return { ok: false, errors: [{ nodeId: `sys-${id}`, port: "", code: "unknown-core", message: `no core is built under id ${id}` }] };
-      live.set(id, sys);
+      const node = nodes.get(`sys-${id}`);
+      if (!node) return refusedGraph(`sys-${id}`, "unknown-core", `no system node is placed for id ${id}`);
+      const problem = this.resourceProblem(node);
+      if (problem) return refusedGraph(node.id, problem.code, problem.message);
+      live.set(id, this.systemOf(node));
+      if (!this.bootedIds.includes(id)) this.bootedIds.push(id);
     }
     this.systems = live;
     return { ok: true, errors: [] };
+  }
+
+  /** Why the resources a system node names would fail its create, or null when they are all live and of its type. */
+  private resourceProblem(node: NodeDoc): { code: string; message: string } | null {
+    if (!SYSTEM_NODE_TYPES.has(node.type)) return null;
+    const settings = node.settings ?? {};
+    for (const [field, type] of [["rom", "rom"], ["sram", "sram"], ["state", "state"]] as const) {
+      const value = settings[field];
+      if (value === undefined) {
+        if (field === "rom") return { code: "settings-invalid", message: `a system node names its ROM as {"rom": "res:N"}` };
+        continue;
+      }
+      const match = typeof value === "string" ? RES_REF.exec(value) : null;
+      if (!match) return { code: "create-failed", message: `${field}: ${JSON.stringify(value)} is not a resource reference (res:N)` };
+      const held = this.resources.get(Number(match[1]));
+      if (!held) return { code: "create-failed", message: `${field}: "${value}" is not a live resource` };
+      if (held.type !== type) return { code: "create-failed", message: `${field}: "${value}" is a ${held.type} resource, not a ${type}` };
+    }
+    return null;
+  }
+
+  /** The system a node places, as the mock's reads and tests see it: its ROM's source and seeds, read off the
+   *  resources its settings name. */
+  private systemOf(node: NodeDoc): MockSystem {
+    const settings = node.settings ?? {};
+    const spec = (field: string): ResourceSpec | undefined => {
+      const value = settings[field];
+      const id = typeof value === "string" ? RES_REF.exec(value) : null;
+      return id ? this.resources.get(Number(id[1]))?.spec : undefined;
+    };
+    const rom = spec("rom");
+    const sram = spec("sram");
+    const state = spec("state");
+    const path = (s: ResourceSpec | undefined): string | null => (s && "path" in s ? s.path : null);
+    return {
+      romPath: path(rom) ?? "",
+      embeddedRom: rom && "embedded" in rom ? rom.embedded : "",
+      savPath: path(sram),
+      statePath: path(state),
+      restoredFromBytes: (sram !== undefined && "bytes" in sram) || (state !== undefined && "bytes" in state),
+    };
   }
 
   // Script packs need a JS engine to run their nodes in, which the mock does not have: it refuses every one, before

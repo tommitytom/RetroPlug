@@ -392,24 +392,32 @@ export interface SystemsStore {
   /** Edit one of the system's role configs (validated by the role's schema; a "system" role's config is
    *  applied to the live core). A live setting such as the NES console region or the Game Boy model reaches
    *  the core as its system node's settings: a model change restarts it and a region change resets it at the
-   *  next block. Only construct-time fields need a `reset(id)`: `sdRoot`, the FIFO profile and its
-   *  overrides, the N8 link and its round trip, `channelExportMode`, and SMS `enableFm`. A live model or
+   *  next block. A construct-time field (`sdRoot`, the FIFO profile and its overrides, the N8 link and its
+   *  round trip, `channelExportMode`, and SMS `enableFm`) is read once, when the core is built, so editing one
+   *  rebuilds the system under a NEW id, carrying its battery. Code written against the old contract still
+   *  works: it followed such an edit with `reset(id)`, and a reset of the id it held resets what that id became
+   *  (see `reset`). A live model or
    *  region edit lands when the next block is rendered, so a `writeRam`, `pressButton` or `stageSystemMidi`
    *  issued right after one in a quiescent session reaches the core the restart replaces: render a block
    *  first when the command must act on the restarted core. False when the system or the role is absent.
    *
-   *  E.g. `setRoleConfig(id, "mesen", { region: "pal" })` switches a running NES to PAL; follow a
-   *  construct-time edit with `reset(id)`.
+   *  E.g. `setRoleConfig(id, "mesen", { region: "pal" })` switches a running NES to PAL. A construct-time
+   *  edit such as `{ sdRoot: dir }` rebuilds the system itself; `setRoleConfig(id, ...)` then `reset(id)` (of
+   *  the id you held) answers a live system, one rebuild further on.
    *
    *  `sdRoot` is the construct-time "mesen" knob a ROM test tends to want: the host directory the
    *  emulated EverDrive N8 SD card maps to, for a ROM that reads its data off the cartridge. Point it at
-   *  a per-test temp dir and write the fixture there before `reset(id)`, so the ROM's boot-time SD init
-   *  sees it. Left unset, the card is a per-process scratch dir - NOT the working directory, so a file a
-   *  test writes can't become the next run's card. */
+   *  a per-test temp dir and write the fixture there before the edit, so the ROM's boot-time SD init sees it
+   *  (a following `reset(id)` boots it again). Left unset, the card is a per-process scratch dir - NOT the
+   *  working directory, so a file a test writes can't become the next run's card. */
   setRoleConfig(id: number, roleKind: string, partial: Record<string, unknown>): boolean;
   /** Reboot `id` in place, carrying its battery SRAM forward (a hardware-style reset: the save persists,
    *  the running state is dropped). Rebuilds the core, so the system gets a NEW id - use the returned one;
-   *  null when `id` is absent. */
+   *  null when `id` is absent.
+   *
+   *  `id` may be one a rebuild replaced: a construct-time `setRoleConfig` rebuilds under a new id, and code
+   *  written against the old contract follows it with `reset(id)`. That still works - the reset applies to
+   *  what `id` became, following a chain of rebuilds, and answers the live system's new id. */
   reset(id: number): number | null;
 }
 

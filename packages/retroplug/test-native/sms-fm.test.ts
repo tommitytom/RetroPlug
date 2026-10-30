@@ -102,7 +102,7 @@ function play(voices: Voices, enableFm: boolean, cartFm: number): number {
         savPath: null,
         statePath: null,
         sramBytes: buildSmdj4Sav(block, buildConfigBlock(SMS_SYNC_OFF, cartFm)),
-        settings: JSON.stringify({ enableFm }),
+        coreConfig: { enableFm },
       },
       id,
     ),

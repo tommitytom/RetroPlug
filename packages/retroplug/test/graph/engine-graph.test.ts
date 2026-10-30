@@ -19,8 +19,8 @@ class FakeEngine {
   }
 }
 
-const gb = (id: number, linkGroup = 0): GraphSystem => ({ id, type: "rp.sameboy.gb", linkGroup, exportMode: 0, pipeline: [] });
-const nes = (id: number): GraphSystem => ({ id, type: "rp.mesen.nes", linkGroup: 0, exportMode: 0, pipeline: [] });
+const gb = (id: number, linkGroup = 0): GraphSystem => ({ id, platform: "gb", type: "rp.sameboy.gb", linkGroup, exportMode: 0, resources: { rom: id }, romName: `rom${id}`, pipeline: [] });
+const nes = (id: number): GraphSystem => ({ id, platform: "nes", type: "rp.mesen.nes", linkGroup: 0, exportMode: 0, resources: { rom: id }, romName: `rom${id}`, pipeline: [] });
 const buses = (r: SetGraphRequest): unknown =>
   (JSON.parse(r.document) as { nodes: { id: string; settings?: { buses?: number[] } }[] }).nodes.find((n) => n.id === "out")?.settings?.buses;
 

@@ -124,7 +124,7 @@ function boot(syncMode: number, m: Machine) {
     savPath: null,
     statePath: null,
     sramBytes: buildSmsMetronomeSav(syncMode),
-    settings: JSON.stringify({ enableFm: false }),
+    coreConfig: { enableFm: false },
   }, id);
   expect(ok).toBeTruthy();
   audio.renderAudio(3000); // boot: splash, config_load, song_new

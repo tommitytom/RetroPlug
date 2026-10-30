@@ -93,11 +93,11 @@ test("importSongFiles skips a .lsdprj when the base ROM can't be read (no reboot
   be.setSram(id, savFrom({}));
   be.seed("/s/b.lsdprj", lsdprjWithKit());
   const sys = store.view().find((s) => s.id === id)!;
-  const before = be.buildCalls.length;
+  const before = be.bootedIds.length;
   const orig = be.readFile.bind(be);
   be.readFile = (p: string) => (p === "/roms/song.gb" ? null : orig(p)); // the ROM becomes unreadable
   expect(importSongFiles(be, store, sys, ["/s/b.lsdprj"])).toBe(false); // .lsdprj needs the ROM → skipped → nothing applied
-  expect(be.buildCalls.length).toBe(before); // no cold-boot
+  expect(be.bootedIds.length).toBe(before); // no cold-boot
 });
 
 test("importSongFiles applies the valid song and skips a malformed one in the same batch (one reboot)", () => {
@@ -110,9 +110,9 @@ test("importSongFiles applies the valid song and skips a malformed one in the sa
   be.seed("/s/bad.lsdprj", new Uint8Array([9, 9, 9])); // malformed .lsdprj
   const sys = store.view().find((s) => s.id === id)!;
   expect(importSongFiles(be, store, sys, ["/s/good.lsdsng", "/s/bad.lsdprj"])).toBe(true); // the good one still lands
-  const spec = be.buildCalls[be.buildCalls.length - 1];
-  expect(listProjects(spec.sramBytes!).map((p) => p.name)).toEqual(["GOOD"]); // only the good song; the bad file corrupted nothing
-  expect(sameBytes(decompressSlot(spec.sramBytes!, 0)!, good)).toBe(true);
+  const spec = be.lastBoot()!;
+  expect(listProjects(spec.sram!.bytes).map((p) => p.name)).toEqual(["GOOD"]); // only the good song; the bad file corrupted nothing
+  expect(sameBytes(decompressSlot(spec.sram!.bytes, 0)!, good)).toBe(true);
 });
 
 test("importSongFiles: a failed atomic write aborts cleanly — false, no reboot, nothing on disk", () => {
@@ -122,10 +122,10 @@ test("importSongFiles: a failed atomic write aborts cleanly — false, no reboot
   be.setSram(id, savFrom({}));
   be.seed("/s/good.lsdsng", encodeLsdsngRaw("GOOD", 1, rawSong(90)));
   const sys = store.view().find((s) => s.id === id)!;
-  const before = be.buildCalls.length;
+  const before = be.bootedIds.length;
   be.writeFileAtomic = () => false; // the disk write fails
   expect(importSongFiles(be, store, sys, ["/s/good.lsdsng"])).toBe(false);
-  expect(be.buildCalls.length).toBe(before); // no cold-boot from a failed write
+  expect(be.bootedIds.length).toBe(before); // no cold-boot from a failed write
   expect(be.readFile("/roms/song.sav")).toBe(null); // nothing was written to disk
   // the lsdj-assets role config was never touched (no override written)
   expect(readOverrides(store.view().find((s) => s.id === id)?.roles.find((r) => r.kind === "lsdj-assets")?.config).length).toBe(0);

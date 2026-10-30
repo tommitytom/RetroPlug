@@ -36,6 +36,23 @@ export function defaultCoreFor(platform: Platform): Core {
   return DEFAULT_CORE[platform];
 }
 
+/** The graph node type that runs a system of a platform (graph/buildGraph.ts): the node a document places a system
+ *  with, which is also what the engine reads the node's console from (its C++ type builds that console's core). */
+export type SystemNodeType = "rp.sameboy.gb" | "rp.mesen.nes" | "rp.mesen.gba" | "rp.mesen.sms";
+
+const NODE_TYPE: Record<Platform, SystemNodeType> = {
+  gb: "rp.sameboy.gb",
+  nes: "rp.mesen.nes",
+  gba: "rp.mesen.gba",
+  sms: "rp.mesen.sms",
+  gg: "rp.mesen.sms", // one Master System node: its `gameGear` setting picks the machine
+};
+
+/** The node type that places a system of `platform`. */
+export function systemNodeTypeFor(platform: Platform): SystemNodeType {
+  return NODE_TYPE[platform];
+}
+
 // Bytes needed to classify a Nintendo ROM: the Game Boy logo ends at $0133, so a 0x134-byte prefix
 // covers all three headers (NES needs 4, GBA needs 36). This is how much to read when classifying from
 // a file header rather than the whole ROM.
