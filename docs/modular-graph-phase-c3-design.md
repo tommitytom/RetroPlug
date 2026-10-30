@@ -102,10 +102,12 @@ registry as the only read door, and the rule that the control plane never touche
 - **`putResource(spec) → { id } | { error }`** creates an immutable byte resource in the engine's `ResourceTable`. The
   spec is one of `{ type, bytes }` (a patched ROM, a battery or savestate seed), `{ type, path }` (native reads the
   file, so an unpatched ROM or a `.sav` never crosses the RPC as bytes; a GBA ROM can be 32 MB) or `{ type: "rom",
-  embedded: "mgb" }` (the built-in ROM). A file that cannot be opened or read is answered here, before any document is
-  written (a path naming a directory opens and its read fails, which is that same answer rather than an exception out
-  of the RPC). One that opens and is empty is not: an empty payload is a resource, so a zero-byte `.sav` beside a ROM
-  is a fresh cartridge rather than a load failure, while a zero-byte ROM is refused since it has nothing to boot.
+  embedded: "mgb" }` (the built-in ROM). A file that cannot be opened or cannot be read is answered here, before any
+  document is written, and reading it whole is what tells the two empties apart: the read goes by the size the stream
+  reports, so a path naming a directory (which opens, and then fails every read) and a read that stops short are
+  refusals rather than the short or empty payload they would otherwise be. A file that opens and genuinely holds
+  nothing is not one: an empty payload is a resource, so a zero-byte `.sav` beside a ROM is a fresh cartridge rather
+  than a load failure, while a zero-byte ROM is refused since it has nothing to boot.
 - **`releaseResource(id)`**, the owner's drop: idempotent.
 
 The types are `rom`, `sram` and `state`; a node refuses a resource of another type. An empty payload is legal (a
@@ -275,10 +277,12 @@ render path and every host go through the store as today.
   stems of their own. A missing resource, an unrecognised ROM, a live id, a full snapshot pool and a build outside
   `setGraph` each refuse the document and leave the running plan, the pins and the slots as they were (a dropped or
   wrong-typed resource is `retroplug-graph-test`'s, below). A resource put from a file that opens and is empty is
-  created (a zero-byte `.sav` is a blank battery) while a file that cannot be opened or read is refused, and so is an
-  empty ROM. A construct-time change under the same id is refused and under a new id rebuilds; a document changing
-  only a param or a live knob keeps the core; every pin and every snapshot slot comes back after a removal, a rebuild
-  and a refused plan; ThreadSanitizer and AddressSanitizer over a system added and removed while an audio thread plays.
+  created (a zero-byte `.sav` is a blank battery) while a file that cannot be opened or read is refused - the reader's
+  own case, on a path that is absent, one that is a directory, an empty file and a payload bigger than the chunk it
+  reads by - and so is an empty ROM. A construct-time change under the same id is refused and under a new id rebuilds;
+  a document changing only a param or a live knob keeps the core; every pin and every snapshot slot comes back after a
+  removal, a rebuild and a refused plan; ThreadSanitizer and AddressSanitizer over a system added and removed while an
+  audio thread plays.
 - **The goldens** ([build-graph-goldens.test.ts](../packages/retroplug/test/graph/build-graph-goldens.test.ts),
   [build-graph-role-goldens.test.ts](../packages/retroplug/test/graph/build-graph-role-goldens.test.ts) and
   `BuildGraphGoldens.test.cpp` in the engine-graph binary): the documents `buildGraph` writes for the B1 matrix and for
@@ -426,11 +430,19 @@ section 7; and the findings below.
 The follow-ups after the landing found these, each recorded the way the findings above are:
 
 - **An empty resource is legal, and its `rp_bytes` is never null.** A blank battery ("new SRAM") is a zero-length
-  payload, and a file that opens and holds nothing is that same resource: only a file that cannot be opened or read is
-  a refusal (a path naming a directory opens and its read throws, which the reader answers as "cannot read" so the
-  caller still gets an `{error}`), which is what keeps a zero-byte `.sav` beside a ROM a fresh cartridge while a
-  zero-byte ROM is still refused (sections 4 and 7). A consumer forms a range from `(data, data + size)`, so the table
-  points one at a static byte rather than at null: a node reads size 0 with a valid pointer.
+  payload, and a file that opens and holds nothing is that same resource: only a file that cannot be opened or cannot
+  be read is a refusal, which is what keeps a zero-byte `.sav` beside a ROM a fresh cartridge while a zero-byte ROM is
+  still refused (sections 4 and 7). A consumer forms a range from `(data, data + size)`, so the table points one at a
+  static byte rather than at null: a node reads size 0 with a valid pointer.
+- **A file is read whole, by the size it reports, and that size is never an allocation.** Opening and reading are two
+  questions and a stream answers only the first: a path naming a directory opens, and it is the read that fails. A copy
+  run to the end cannot tell a file that ended from one whose read stopped partway, and the short or empty vector that
+  answers either would become a blank battery the core auto-saves over the user's real save - so the reader asks for
+  the size the stream reported and refuses whatever does not add up to it. That size is only a target: `lseek` on a
+  directory succeeds with the largest offset the platform can name rather than an error, so the read goes in chunks and
+  nothing reserves what the stream claimed. A pseudo-file is refused along the way, and rightly for a ROM or a battery:
+  what a pipe or a character device reports is no size at all (`/dev/zero`, which a copy to the end slurps forever,
+  among them), and what a sysfs attribute reports is its buffer rather than its content.
 - **A resource handle is resolved before `needs_rebuild`, and a moved ref skips that hook.** The prepare resolves each
   resource field into the settings it installs first, then asks `needs_rebuild`, so a node that reads a resource there
   sees a handle on both sides; a moved ref is already a rebuild, so the hook does not run on the document that moved it

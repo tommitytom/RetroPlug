@@ -28,8 +28,9 @@ public:
     // (duplicate, reload and remove live in the TS SystemsStore over the resource calls and setGraph.)
     // Put an immutable byte resource in the engine's ResourceTable (docs/modular-graph-phase-c3-design.md section 4)
     // and answer its id, which a node's settings name as "res:<id>"; or, creating none, why. Its type is "rom",
-    // "sram" or "state"; a file named by `path` is read here, so an unreadable or empty one is answered before any
-    // document naming it is written.
+    // "sram" or "state"; a file named by `path` is read here, so one that is absent or cannot be read is answered
+    // before any document naming it is written, and an empty one only when its type is a rom: an empty seed file is a
+    // blank battery, which is what a zero-byte `.sav` beside a ROM is.
     RpcPutResourceResult putResource(BackendResourceSpec spec);
     // The owner's drop of a resource putResource made: idempotent (false for an unknown or already dropped id), and it
     // never frees one a plan or a node instance still pins, which lasts until the plan that ran the instance is

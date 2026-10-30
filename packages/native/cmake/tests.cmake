@@ -91,6 +91,7 @@ retroplug_add_test_binary(
     SOURCES  test/engine-graph/Deterministic.cpp
              test/engine-graph/SystemNode.test.cpp
              test/engine-graph/EngineGraph.test.cpp
+             test/engine-graph/SlurpFile.test.cpp     # the file reader putResource reads a `path` resource with
              test/engine-graph/HostIo.test.cpp
              test/engine-graph/ScriptNodes.test.cpp
              test/engine-graph/ScriptPacks.test.cpp
