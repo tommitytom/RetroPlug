@@ -16,11 +16,15 @@ import type { RoleInstance } from "../systemRoles";
 import type { ConstructSpec, EmulatorBackend } from "../backend";
 import { EngineGraph } from "../engineGraph";
 import { parseAppConfig } from "../controller/registry";
-import { systemKnobs, type GraphSystem } from "./buildGraph";
+import { systemKnobs, systemNodeId, type GraphSystem } from "./buildGraph";
 import type { GraphController } from "./controller";
 import { protocolPipeline, type LeftOutRole } from "./protocolNodes";
 
 export type DirectBackend = Pick<EmulatorBackend, "buildCore" | "setGraph" | "setParam">;
+
+// Whether `o` owns `key`: `in` also finds every key Object.prototype carries, so `{toString: 1}` would count as a
+// setting field.
+const has = (o: object, key: string): boolean => Object.prototype.hasOwnProperty.call(o, key);
 
 export class DirectGraph {
   readonly graph: EngineGraph;
@@ -102,9 +106,8 @@ export class DirectGraph {
   /** Edit system `id`'s core config as the stores' core-config role spells it (`sameboy` or `mesen`, coreRoles.ts: an
    *  enum as its label, never an ordinal), merged over what this graph gave it before: none at first, so its node
    *  carries no setting field and its core keeps the settings it was built with (the params it does not name start at
-   *  their defaults at its first block). Its setting fields ride its node's settings and a
-   *  NES's expansionVolume its params (buildGraph.ts systemKnobs), each reaching the core at the start of the next
-   *  block, and a Game Boy's linkGroupId is its link cable. It publishes, the param included (a document's param value
+   *  their defaults at its first block). Its setting fields ride its node's settings and a NES's expansionVolume its
+   *  params (buildGraph.ts systemKnobs), each reaching the core at the start of the next block, and a Game Boy's linkGroupId is its link cable. It publishes, the param included (a document's param value
    *  reaches the node when it differs from the one last sent). False, changing nothing, when `id` is not placed here,
    *  for a field its node does not take (a construct-time one, another core's, or a value the node would refuse, an
    *  ordinal among them, which buildGraph would leave out, the core silently keeping what it has), or when the
@@ -117,8 +120,8 @@ export class DirectGraph {
     const group = partial.linkGroupId;
     const isGroup = typeof group === "number" && Number.isInteger(group) && group >= 0 && group <= 255;
     const takes = (field: string): boolean =>
-      field in knobs.settings ||
-      field in knobs.params ||
+      has(knobs.settings, field) ||
+      has(knobs.params, field) ||
       (field === "linkGroupId" && system.type === "rp.sameboy.gb" && isGroup);
     if (!Object.keys(partial).every(takes)) return false;
     const coreConfig = { ...system.coreConfig, ...partial };
@@ -134,7 +137,7 @@ export class DirectGraph {
   setParam(id: number, param: string, value: number): boolean {
     const at = this.systems.findIndex((s) => s.id === id);
     if (at < 0 || (param !== "gain" && param !== "expansionVolume")) return false;
-    if (!this.backend.setParam(`sys-${id}`, param, value)) return false;
+    if (!this.backend.setParam(systemNodeId(id), param, value)) return false;
     const system = this.systems[at];
     this.systems[at] =
       param === "gain"

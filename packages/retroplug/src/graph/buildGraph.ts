@@ -108,10 +108,11 @@ interface Stream {
   stereo: boolean;
 }
 
-const sysNode = (id: number): string => `sys-${id}`;
+// A system's node id in the documents buildGraph builds (`sys-<id>`), which the stores set live params on.
+export const systemNodeId = (id: number): string => `sys-${id}`;
 
 /** A system's protocol node: sys-<id>/<role-kind>, the main design's convention. */
-const protocolId = (system: number, kind: string): string => `${sysNode(system)}/${kind}`;
+const protocolId = (system: number, kind: string): string => `${systemNodeId(system)}/${kind}`;
 
 // ---- the system nodes' knobs ----------------------------------------------------------------------------------------
 //
@@ -188,7 +189,7 @@ function systemNode(system: GraphSystem, capture: SerialOutCaptureMode | null): 
   const knobs = systemKnobs(system);
   const settings: Record<string, unknown> = { core: system.id, ...knobs.settings };
   if (capture !== null) settings.serialOutCapture = capture;
-  const node: NodeDoc = { id: sysNode(system.id), type: system.type, settings };
+  const node: NodeDoc = { id: systemNodeId(system.id), type: system.type, settings };
   if (Object.keys(knobs.params).length > 0) node.params = knobs.params;
   return node;
 }
@@ -295,7 +296,7 @@ export function buildGraph(model: GraphModel): BuiltGraph {
   // Each system's protocol nodes, in slot order, then pipeline order. Their outputs feed the system's inputs of the
   // same name; what reads MIDI reads its system's routed output.
   for (const s of systems) {
-    const n = sysNode(s.id);
+    const n = systemNodeId(s.id);
     for (const role of s.pipeline) {
       const spec: ProtocolNodeSpec = PROTOCOL_NODES[role.node];
       const id = protocolId(s.id, role.kind);
@@ -330,7 +331,11 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     nodes.push(systemNode(s, s.type === "rp.sameboy.gb" ? serialOutCaptureFor(s.pipeline, forced) : null));
   }
   for (const g of groups)
-    for (let k = 1; k < g.length; ++k) wire(`${sysNode(systems[g[k - 1]].id)}.link`, `${sysNode(systems[g[k]].id)}.link`);
+    for (let k = 1; k < g.length; ++k) {
+      const from = systemNodeId(systems[g[k - 1]].id);
+      const to = systemNodeId(systems[g[k]].id);
+      wire(`${from}.link`, `${to}.link`);
+    }
   // After the systems, so each reads its system's output of this block: a Game Boy's serial out, which LSDj's
   // decoder turns into host MIDI at each byte's frame.
   for (const a of after) {
@@ -360,7 +365,7 @@ export function buildGraph(model: GraphModel): BuiltGraph {
   if (shape.kind === "perSystem") {
     // Slot i's mix on channels 2i and 2i + 1.
     systems.forEach((s, i) => {
-      wire(`${sysNode(s.id)}.mix`, outPort(2 * i, 2));
+      wire(`${systemNodeId(s.id)}.mix`, outPort(2 * i, 2));
       buses.push(2);
     });
   } else if (shape.kind === "perChannel") {
@@ -369,10 +374,10 @@ export function buildGraph(model: GraphModel): BuiltGraph {
       const s = systems[0];
       streamsOf(s.type, nesMode(tapArm, s)).forEach((stream, k) => {
         if (stream.stereo) {
-          wire(`${sysNode(s.id)}.${stream.port}`, outPort(2 * k, 2));
+          wire(`${systemNodeId(s.id)}.${stream.port}`, outPort(2 * k, 2));
           buses.push(2);
         } else {
-          wire(`${sysNode(s.id)}.${stream.port}`, outPort(2 * k, 1));
+          wire(`${systemNodeId(s.id)}.${stream.port}`, outPort(2 * k, 1));
           buses.push(1, 1);
         }
       });
@@ -400,7 +405,7 @@ export function buildGraph(model: GraphModel): BuiltGraph {
       const s = systems[0];
       streams.forEach((stream, k) => {
         const l = (stride * k) % n;
-        const from = `${sysNode(s.id)}.${stream.port}`;
+        const from = `${systemNodeId(s.id)}.${stream.port}`;
         if (stream.stereo) {
           const [lo, ro] = halves(from, `stem-${s.id}-${k}`);
           addTo(l, lo);
@@ -414,7 +419,7 @@ export function buildGraph(model: GraphModel): BuiltGraph {
       // Multi-out placement, every split that fell back included: each system's L then R, in sum order.
       for (const i of order) {
         const s = systems[i];
-        const [lo, ro] = halves(`${sysNode(s.id)}.mix`, `split-${s.id}`);
+        const [lo, ro] = halves(`${systemNodeId(s.id)}.mix`, `split-${s.id}`);
         if (routing === "onePerInstance") {
           addTo(i % n, lo);
           addTo(i % n, ro);

@@ -11,7 +11,7 @@
 // (PluginDSP.cpp:406-458), with every path derived by the pure kernels.
 
 import type { ConstructSpec, ControlPlaneBackend, HostBackend } from "./backend";
-import { systemKnobs, type GraphSystem } from "./graph/buildGraph";
+import { systemKnobs, systemNodeId, type GraphSystem } from "./graph/buildGraph";
 import { canonicalJson } from "./graph/canonicalJson";
 import { EngineGraph } from "./engineGraph";
 import { detectPlatform, romHasBattery, ROM_SNIFF_LEN, SEGA_SNIFF_LEN, defaultCoreFor, type Platform, type Core } from "./platform";
@@ -1043,6 +1043,3 @@ export class SystemsStore {
     return id;
   }
 }
-
-/** A system's node in the graph documents buildGraph builds, whose params the store sets live. */
-const systemNodeId = (id: number): string => `sys-${id}`;

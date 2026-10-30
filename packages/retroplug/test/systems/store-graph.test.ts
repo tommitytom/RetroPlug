@@ -892,7 +892,7 @@ test("DirectGraph keeps the B1 model: append, replace in place, remove shifting 
   expect(be.buildCalls.some((c) => c.id === 5)).toBe(false);
 });
 
-test("DirectGraph's core config: a link group rewires, a setting rides its node, a field it cannot set is refused", () => {
+test("DirectGraph's core config: a link group rewires, a setting rides its node, an unknown field is refused", () => {
   const be = new MockBackend("/cfg");
   const g = new DirectGraph(be);
   g.add(MGB, 1);
@@ -910,11 +910,12 @@ test("DirectGraph's core config: a link group rewires, a setting rides its node,
   expect(linked(be, "sys-2.link")).toBe(true);
   const sys2 = canon({ core: 2, model: "dmgB", highpass: "off", serialOutCapture: "off" });
   expect(be.graphNode("sys-2")?.settings).toEqual(sys2);
-  // An ordinal, a construct-time field, another core's field: each refused, changing nothing.
+  // An ordinal, a construct-time field, another core's field, a key every object inherits: each refused, changing
+  // nothing.
   const sent = be.graphRequests.length;
-  const refused: Record<string, unknown>[] = [{ model: 1 }, { channelExportMode: "pins" }, { region: "pal" }];
-  refused.push({ linkGroupId: -1 }, { model: "mgb", fifo: 1 }); // the last: one bad field refuses the whole edit
-  for (const partial of refused) expect(g.setCoreConfig(2, partial)).toBe(false);
+  for (const partial of [{ model: 1 }, { channelExportMode: "pins" }, { region: "pal" }, { toString: "loud" },
+    { linkGroupId: -1 }, { model: "mgb", fifo: 1 }]) // the last: one bad field refuses the whole edit
+    expect(g.setCoreConfig(2, partial), JSON.stringify(partial)).toBe(false);
   expect(g.setCoreConfig(9, { model: "mgb" })).toBe(false); // not placed
   expect(be.graphRequests.length).toBe(sent);
   expect(be.graphNode("sys-2")?.settings?.model).toBe("dmgB");
