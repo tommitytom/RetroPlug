@@ -22,7 +22,9 @@
 // fine. Do not overload a hook name: an overload set cannot be inspected, so it would not be checked.)
 //
 //   using Settings = SomeNamedStruct;                     reflect-cpp-readable, in a NAMED namespace (its
-//                                                         JSON Schema $defs key comes from the type name)
+//                                                         JSON Schema $defs key comes from the type name). A
+//                                                         field of type rp::resource_ref<Type> names a resource
+//                                                         ("res:N"), which create pins and destroy releases
 //   static std::optional<std::string> validate(const Settings&);      reject settings with a reason
 //   static void adjust_layout(rp::graph::Layout&, const Settings&);   patch reflected specs (a queue's capacity
 //                                                         among them), append ports or params; never remove or
@@ -83,6 +85,7 @@
 
 #include "graph/CanonicalJson.hpp"
 #include "graph/Descriptor.hpp"
+#include "graph/GraphDocument.hpp"
 #include "graph/Queue.hpp"
 #include "graph/rp_node.h"
 
@@ -226,6 +229,37 @@ struct resource_out {
 struct link {
     static constexpr auto rp_kind = graph::PortKind::Link;
     static constexpr auto rp_dir  = graph::PortDir::Link;
+};
+
+// A TOP-LEVEL settings field that names a resource: the document writes "res:N" and the node reads the bytes without
+// ever touching the filesystem (docs/modular-graph-phase-c3-design.md section 4). The authoring layer takes the pin when
+// it creates the instance and drops it when the instance is destroyed, both on the control thread (the same pin
+// docs/modular-graph-design.md section 2.5 gives a node that references a resource from its settings), and puts the
+// handle in every settings object the node is handed. A field whose ref moved is a REBUILD, which node.hpp decides
+// itself: the fresh instance pins what it names and the old pin drops with the instance the last plan ran. So a
+// resource changes under a node only by a rebuild, and no pin is ever taken or dropped on the audio thread.
+//
+//   struct Settings { rp::resource_ref<"rom"> rom; };   // JSON: {"rom": "res:7"}; absent: the node names none
+//
+// The type is the resource type an id must have (the host's putResource makes "rom", "sram", "state"); a resource
+// of another type, an unknown or dropped id, or a host with no table refuses the create with the field's name.
+template <fixed_string Type>
+struct resource_ref {
+    // rfl reads and writes the ref as the plain string the document carries, never the handle it resolves to.
+    using ReflectionType = std::string;
+
+    static constexpr std::string_view resource_type() { return Type.view(); }
+
+    std::string        ref;                 // "res:N" as the document names it (empty: none)
+    const rp_resource* resource = nullptr;  // resolved by the host layer at create, and again at each prepare
+
+    std::string reflection() const { return ref; }
+    // The payload of a bytes resource (every type but "audio-buffer"), or null when the field names none.
+    const rp_bytes* bytes() const {
+        return resource && resource->payload && std::strcmp(resource->type, "audio-buffer") != 0
+                   ? static_cast<const rp_bytes*>(resource->payload)
+                   : nullptr;
+    }
 };
 
 // ---- params ----------------------------------------------------------------------------------------------
@@ -597,8 +631,47 @@ constexpr bool checkHooks() {
 
 // ---- the ABI table ---------------------------------------------------------------------------------------------
 
+// One pin an instance holds on a resource its settings name, and how to drop it: the host's table, by id. A field
+// that names no resource still holds its place, so the pins line up with the settings' resource fields in order.
+struct ResourceHold {
+    const rp_host_resources* service = nullptr;
+    std::string              ref;  // the ref the settings named, so prepare can tell whether it moved
+    std::uint32_t            id = 0;
+    const rp_resource*       resource = nullptr;
+
+    ResourceHold() = default;
+    ResourceHold(const ResourceHold&) = delete;
+    ResourceHold& operator=(const ResourceHold&) = delete;
+    ResourceHold(ResourceHold&& other) noexcept
+        : service(std::exchange(other.service, nullptr)),
+          ref(std::move(other.ref)),
+          id(std::exchange(other.id, 0)),
+          resource(std::exchange(other.resource, nullptr)) {}
+    ResourceHold& operator=(ResourceHold&& other) noexcept {
+        if (this != &other) {
+            drop();
+            service = std::exchange(other.service, nullptr);
+            ref = std::move(other.ref);
+            id = std::exchange(other.id, 0);
+            resource = std::exchange(other.resource, nullptr);
+        }
+        return *this;
+    }
+    ~ResourceHold() { drop(); }
+
+    void drop() noexcept {
+        if (service && id) service->release(service->ctx, id);
+        service = nullptr;
+        id = 0;
+        resource = nullptr;
+    }
+};
+
 template <class T>
 struct Instance : rp_node {
+    // The resources this instance's settings name, pinned at create (ResourceHold). Declared first so they are
+    // released after the node, which may read one of them in its destructor.
+    std::vector<ResourceHold>     resources;
     T                             node;
     typename SettingsOf<T>::type* settings = nullptr;
     std::string                   layoutJson;  // as created, which prepare compares against; empty if it reshapes
@@ -654,6 +727,91 @@ constexpr std::size_t alignUp(std::size_t n, std::size_t a) { return (n + a - 1)
 
 template <class T>
 std::size_t extraOffset() { return alignUp(sizeof(Instance<T>), alignof(std::max_align_t)); }
+
+// ---- resources named by settings (docs/modular-graph-phase-c3-design.md section 4) ------------------------
+
+template <class T>
+struct IsResourceRef : std::false_type {};
+template <fixed_string T>
+struct IsResourceRef<resource_ref<T>> : std::true_type {};
+
+template <class Field, class F>
+void resourceField(Field& field, F&& f) {
+    using P = std::remove_cvref_t<decltype(*field.value())>;
+    if constexpr (IsResourceRef<P>::value) f(std::string_view(Field::name()), *field.value());
+}
+
+// A settings struct's resource fields, in declaration order, each with its JSON name: the order create pins them in
+// and prepare compares them by. Only settings fields are walked this way; a port or param of the same type is not.
+template <class S, class F>
+void forEachResourceField(S& s, F&& f) {
+    rfl::to_view(s).apply([&](auto&... fields) { (resourceField(fields, f), ...); });
+}
+
+// Pin every resource `s` names into `inst`, resolving each field's handle, in field order. False, with the reason in
+// *why, for a ref that is not "res:N", a host that offers no table, an id that is unknown or dropped, or a resource
+// of another type than the field declares (a "rom" where the document names an sram).
+template <class T>
+bool acquireResources(Instance<T>& inst, const rp_host* host, typename SettingsOf<T>::type& s, std::string* why) {
+    bool any = false;
+    forEachResourceField(s, [&](std::string_view, auto&) { any = true; });
+    if (!any) return true;  // a node that names none never looks the service up
+    const auto* service =
+        host ? static_cast<const rp_host_resources*>(host->get_interface(host, RP_HOST_RESOURCES_INTERFACE)) : nullptr;
+    bool ok = true;
+    forEachResourceField(s, [&](std::string_view name, auto& field) {
+        ResourceHold hold;
+        hold.ref = field.ref;
+        inst.resources.push_back(std::move(hold));
+        if (!ok || field.ref.empty()) return;  // the document names none here
+        ResourceHold& held = inst.resources.back();
+        if (!service) {
+            *why = std::string(name) + ": the host offers no resource table";
+            ok = false;
+            return;
+        }
+        const auto id = graph::parseResourceRef(field.ref);
+        if (!id) {
+            *why = std::string(name) + ": " + graph::jsonString(field.ref) + " is not a resource reference (res:N)";
+            ok = false;
+            return;
+        }
+        rp_error err{};
+        const rp_resource* r = service->acquire(service->ctx, *id, std::string(field.resource_type()).c_str(), &err);
+        if (!r) {
+            // The service's reason continues the sentence: "rom: \"res:7\" is not a live resource".
+            *why = std::string(name) + ": " + graph::jsonString(field.ref) + " " +
+                   (err.message[0] ? std::string(err.message) : std::string("cannot be used"));
+            ok = false;
+            return;
+        }
+        held.service = service;
+        held.id = *id;
+        held.resource = r;
+        field.resource = r;
+    });
+    return ok;
+}
+
+// Put the instance's held handles into the resource fields of `s`, which prepare parsed from a new document, and
+// report whether they are the same resources: a ref that moved is a rebuild, since the fresh instance pins what it
+// names and this one keeps reading what it holds until its plan is reclaimed. Reads only what create fixed (the
+// pins), never the committed settings, so a type whose prepare is stateless may still call it.
+template <class T>
+bool resolveResources(Instance<T>& inst, typename SettingsOf<T>::type& s) {
+    bool same = true;
+    std::size_t i = 0;
+    forEachResourceField(s, [&](std::string_view, auto& field) {
+        if (!same) return;
+        if (i >= inst.resources.size() || inst.resources[i].ref != field.ref) {
+            same = false;
+            return;
+        }
+        field.resource = inst.resources[i].resource;
+        ++i;
+    });
+    return same && i == inst.resources.size();
+}
 
 template <class T> const rp_node_vtable* vtable();
 
@@ -778,6 +936,10 @@ rp_prepare_result prepareFn(rp_node* n, const rp_settings* s, void** prepared, r
             if (!inst->key) throw std::logic_error("a keyed instance was created without its key");
             rebuild = rebuild || !(T::rebuild_key(*parsed) == *inst->key);
         }
+        // A resource field that moved is a rebuild whatever the type's key says, and the one that stays puts this
+        // instance's pins into the prepared settings (nothing is pinned or dropped here: only create and destroy do
+        // that, both on the control thread).
+        rebuild = rebuild || !resolveResources(*inst, *parsed);
         if (rebuild) return RP_PREPARE_REBUILD;
         *prepared = new S(std::move(*parsed));
         if constexpr (reshapesOf<T>()) return RP_PREPARE_RESHAPE;
@@ -931,19 +1093,27 @@ rp_node* createFn(const rp_node_type*, [[maybe_unused]] const rp_host* host, voi
         inst->key = std::move(key);
         inst->settings = new S(std::move(*parsed));
         if constexpr (requires(T& t) { t.bind_host(host); }) inst->node.bind_host(host);
-        if (extra) {
-            inst->extra = std::span<std::byte>(static_cast<std::byte*>(memory) + extraOffset<T>(), extra);
-            std::memset(inst->extra.data(), 0, extra);
-            if constexpr (requires(T& t, std::span<std::byte> e) { t.attach(e); }) inst->node.attach(inst->extra);
+        // The resources the settings name are pinned before any hook sees the settings, so on_settings and activate
+        // read the handles; a resource that cannot be pinned fails the create, and with it the document.
+        std::string refused;
+        if (!acquireResources<T>(*inst, host, *inst->settings, &refused)) {
+            copyError(err, refused);
+        } else {
+            if (extra) {
+                inst->extra = std::span<std::byte>(static_cast<std::byte*>(memory) + extraOffset<T>(), extra);
+                std::memset(inst->extra.data(), 0, extra);
+                if constexpr (requires(T& t, std::span<std::byte> e) { t.attach(e); }) inst->node.attach(inst->extra);
+            }
+            if constexpr (requires(T& t, const S& st) { t.on_settings(st); }) inst->node.on_settings(*inst->settings);
+            return inst;
         }
-        if constexpr (requires(T& t, const S& st) { t.on_settings(st); }) inst->node.on_settings(*inst->settings);
-        return inst;
     } catch (const std::exception& e) {
         copyError(err, e.what());
     } catch (...) {
         copyError(err, "create threw");
     }
-    if (inst) {  // only an allocation failure gets here after construction; leave nothing behind
+    // An allocation failure, or a resource that would not pin, after the instance exists: leave nothing behind.
+    if (inst) {
         delete inst->settings;
         inst->~Instance<T>();
     }

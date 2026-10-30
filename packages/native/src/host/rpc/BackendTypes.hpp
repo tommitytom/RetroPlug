@@ -111,6 +111,24 @@ struct BackendConstructSpec {
     std::optional<std::string>               settings;  // backend "system"-role config JSON (construct-time)
 };
 
+// putResource (docs/modular-graph-phase-c3-design.md section 4): one immutable byte block for the engine's
+// ResourceTable, whose id a node's settings name as "res:<id>". `type` is "rom", "sram" or "state"; the payload is
+// exactly one of `bytes` (a patched ROM, a battery or savestate seed TS holds), `path` (a file native reads, so a 32 MB
+// GBA ROM and a .sav never cross the bridge) or `embedded` (a built-in ROM's marker, "mgb"). One spec struct with
+// optionals rather than a tagged union: it is how every other field that may be absent is spelt here, and the RPC
+// reads which source it got. An absent field is nullopt, never "".
+struct BackendResourceSpec {
+    std::string                    type;
+    std::optional<rfl::Bytestring> bytes;
+    std::optional<std::string>     path;
+    std::optional<std::string>     embedded;
+};
+// Its answer: `id` (a live resource was created) or `error` (none was, and why). Exactly one is present.
+struct RpcPutResourceResult {
+    std::optional<std::uint32_t> id;
+    std::optional<std::string>   error;
+};
+
 // buildCore's answer (docs/modular-graph-phase-b2-design.md section 2.5): the node type the built core is
 // placed as, and the two values the graph needs, as the core decoded them.
 struct RpcBuiltCore {

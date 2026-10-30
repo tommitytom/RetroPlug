@@ -129,9 +129,10 @@ does.
 ### `EngineRpcService`: emulator / MIDI / transport
 
 Every mutation here routes through the `QueuedInvoker` except these, which call the `Engine`
-directly on the control thread: `buildCore`, `setGraph`, `loadScriptPack` and `setParam` (`Engine::parkCore` /
-`Engine::setGraph` / `Engine::loadScriptPack` / `Engine::setParam`, which pushes onto the GraphHost's ring
-itself),
+directly on the control thread: `putResource`, `releaseResource`, `buildCore`, `setGraph`, `loadScriptPack` and
+`setParam` (`Engine::putResource` / `Engine::releaseResource`, whose table only the control thread touches,
+`Engine::parkCore` / `Engine::setGraph` / `Engine::loadScriptPack` / `Engine::setParam`, which pushes onto the
+GraphHost's ring itself),
 `setSampleRate` (`Engine::setSampleRate`, so it refuses while the audio thread owns the engine or the
 running plan holds a system), the render calls, and the profile calls `dspResetAllocStats`,
 `dspRunGc` and `dspTraceReset` (which the script host refuses while the audio thread owns its
@@ -142,6 +143,8 @@ read of a core's state routes through the `SnapshotRegistry`. No method walks a 
 
 | Method | Signature | Behaviour |
 |---|---|---|
+| `putResource` | `(BackendResourceSpec) → RpcPutResourceResult` | an immutable byte resource for the engine's `ResourceTable` (`Engine::putResource`): `type` is `rom`, `sram` or `state` and the payload is `bytes`, `path` (read here, so a 32 MB ROM or a `.sav` never crosses the bridge) or `embedded` (a baked-in ROM's marker, `mgb`). Answers `{id}`; `{error}` for a type a node would not read, no source or more than one, a file that is absent, unreadable or empty, an empty byte block for a `rom` (an empty `sram` is a blank battery), or an unknown marker |
+| `releaseResource` | `(uint32 id) → bool` | the owner's drop, idempotent. A resource a plan or a live node still pins stays readable and is freed when the last pin goes |
 | `buildCore` | `(BackendConstructSpec) → optional<RpcBuiltCore>` | TS-owned `spec.id`; `factory_.build` → `Engine::parkCore`, which claims the registry slot. Returns the core's node type, export mode and link group, or null (below) |
 | `setGraph` | `(RpcSetGraphRequest) → RpcSetGraphResult` | a graph document TS built, its slots and its tap re-arm → `Engine::setGraph` (below) |
 | `loadScriptPack` | `(RpcLoadScriptPackRequest) → RpcLoadScriptPackResult` | a pack of script node types, by its id, its source and the memory limit each of its runtimes is held to (`memoryLimitBytes`, a double, absent or 0 for 64 MiB, refused unless a whole number of bytes) → `Engine::loadScriptPack`, which loads it or, for an id loaded already, reloads it (the script host, below); returns `ok`, `error` (empty on success), the planner's `errors` when a reload's replan refused (empty for a refusal before any replan) and the pack's `types`, each with its descriptor JSON |
@@ -159,10 +162,10 @@ read of a core's state routes through the `SnapshotRegistry`. No method walks a 
 
 The table is a selection. The facets
 ([`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp)) hold 19
-`host` methods, 12 `emulator`, 22 `harness` (the renders, transport and sample rate, staged MIDI in and
+`host` methods, 14 `emulator`, 22 `harness` (the renders, transport and sample rate, staged MIDI in and
 MIDI out, `droppedMessages`, `buildTarget`, the kit compiles and the audio runtimes' profiling calls),
 27 `debug` and
-6 `driver`: 86 in the union. There is no call for what the roles do on the audio thread: their protocol
+6 `driver`: 88 in the union. There is no call for what the roles do on the audio thread: their protocol
 nodes are script node types every Engine embeds, and each node's settings ride the documents `setGraph`
 plans. Nor is there one for a system's knobs: they are its system node's settings, in the same documents,
 and its params, whose live edits are `setParam`
@@ -542,6 +545,12 @@ The document `buildGraph` writes:
 - **Cores.** A node takes its core on first activation through the host service `rp.host.cores/1`
   ([HostServices.hpp](../packages/native/src/host/graph/HostServices.hpp)), by the id its settings name,
   and owns it from then on.
+- **Resources.** A node that reads a resource its settings name (a system node's ROM, its battery, a savestate seed,
+  each written `"res:N"`) pins it at create through `rp.host.resources/1` (GraphHost's own, over the engine's
+  `ResourceTable`), and the pin drops when the instance is destroyed, both on the control thread: the audio thread
+  never takes or drops one. A resource field that moves rebuilds the node, so a running node's bytes never change under
+  it. The bytes arrive as `putResource`'s, so a node never touches the filesystem
+  ([modular-graph-phase-c3-design.md](../docs/modular-graph-phase-c3-design.md) section 4).
 - **The system nodes' knobs** (`systemKnobs` in `buildGraph.ts`, the one table of which core-config field is a
   setting and which a param, which the store reads too). A system node's settings carry `core`, the setting fields
   of its system's core-config role (the role whose kind is its core, `sameboy` or `mesen`) as that config spells

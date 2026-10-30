@@ -29,6 +29,14 @@ void hostFree(void*, void* ptr) { ::operator delete(ptr); }
 
 void hostLog(void*, int, const char* message) { std::fprintf(stderr, "[graph] %s\n", message); }
 
+// A reason the node layer reads as the rest of its own sentence ("rom: \"res:7\" <this>").
+void writeError(rp_error* err, std::string_view what) {
+    if (!err) return;
+    const std::size_t n = what.size() < sizeof err->message - 1 ? what.size() : sizeof err->message - 1;
+    std::memcpy(err->message, what.data(), n);
+    err->message[n] = '\0';
+}
+
 constexpr const char* kAudioOut = "rp.host.audio-out";
 
 }  // namespace
@@ -36,9 +44,33 @@ constexpr const char* kAudioOut = "rp.host.audio-out";
 // GraphHost's own services first, then the embedder's.
 const void* GraphHost::hostInterface(const rp_host* host, const char* id) {
     static constexpr rp_host_audio_buffers kAudioBuffers{&GraphHost::audioBuffers};
-    if (std::strcmp(id, RP_HOST_AUDIO_BUFFERS_INTERFACE) == 0) return &kAudioBuffers;
     const auto* self = static_cast<const GraphHost*>(host->ctx);
+    if (std::strcmp(id, RP_HOST_AUDIO_BUFFERS_INTERFACE) == 0) return &kAudioBuffers;
+    if (std::strcmp(id, RP_HOST_RESOURCES_INTERFACE) == 0) return &self->resourceService_;
     return self->config_.interfaces ? self->config_.interfaces(self->config_.interfacesCtx, id) : nullptr;
+}
+
+const rp_resource* GraphHost::resourceAcquire(void* ctx, std::uint32_t id, const char* type, rp_error* err) {
+    auto* self = static_cast<GraphHost*>(ctx);
+    rp_resource* r = self->resources_.get(id);
+    if (!r) {
+        writeError(err, "is not a live resource");
+        return nullptr;
+    }
+    if (type && std::strcmp(r->type, type) != 0) {
+        writeError(err, "is a " + std::string(r->type) + " resource, not a " + type);
+        return nullptr;
+    }
+    // get() refused an id with no owner left, so the pin below cannot fail; a table that disagrees is a host bug.
+    if (!self->resources_.pin(id)) {
+        writeError(err, "cannot be pinned");
+        return nullptr;
+    }
+    return r;
+}
+
+bool GraphHost::resourceRelease(void* ctx, std::uint32_t id) {
+    return static_cast<GraphHost*>(ctx)->resources_.unpin(id);
 }
 
 float* const* GraphHost::audioBuffers(const rp_host* host, std::uint32_t* count) {
@@ -59,6 +91,7 @@ GraphHost::GraphHost(const NodeRegistry& registry, ResourceTable& resources, Hos
     : registry_(registry), resources_(resources), config_(config) {
     if (auto why = checkConfig(config.sampleRate, config.maxFrames)) throw std::invalid_argument(*why);
     host_ = rp_host{RP_ABI_VERSION, this, &hostAlloc, &hostFree, &hostLog, &GraphHost::hostInterface};
+    resourceService_ = rp_host_resources{this, &GraphHost::resourceAcquire, &GraphHost::resourceRelease};
 }
 
 GraphHost::~GraphHost() {

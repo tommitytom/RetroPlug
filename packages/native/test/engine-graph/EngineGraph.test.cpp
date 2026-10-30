@@ -8,9 +8,11 @@
 //
 // Run via `pnpm test:plugin engine-graph`.
 
+#include <filesystem>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <random>
 #include <string>
 #include <utility>
 #include <vector>
@@ -18,6 +20,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <quickjs.h>
 
+#include "EmbeddedRoms.hpp"
 #include "GraphDocs.hpp"
 #include "NodeRig.hpp"
 #include "TypedRpcServer.h"
@@ -611,4 +614,135 @@ TEST_CASE("setParam over the RPC layer takes the node, the param and the value a
     REQUIRE(nes);
     CHECK(gb->config_.gainDb == -6.5f);
     CHECK(nes->config().expansionVolume == 40);
+}
+
+TEST_CASE("putResource and releaseResource over the RPC layer", "[engine-graph][resource]") {
+    // The two calls createEmulatorClient makes for a resource (docs/modular-graph-phase-c3-design.md section 4): the
+    // answer realBackend turns into {id} or {error}, and the drop. Driven through the QuickJS codec, because the
+    // optional fields are the wire shape: `id` a number when a resource was created, `error` a string when none was.
+    struct Js {
+        JSRuntime* rt  = JS_NewRuntime();
+        JSContext* ctx = JS_NewContext(rt);
+        ~Js() {
+            JS_FreeContext(ctx);
+            JS_FreeRuntime(rt);
+        }
+    } js;  // first, so it outlives the server holding its context
+
+    Engine           e(kRate);
+    SystemFactory    factory;
+    registerCoreBackends(factory);
+    QueuedInvoker    invoker(e);
+    EngineRpcService rpc(e, factory, invoker);
+    rpcpp::QuickJSTransport                                   transport(js.ctx, [](JSContext*, JSValue) {});
+    rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec> server(transport, rpcpp::QuickJSCodec{js.ctx});
+    registerEmulatorRpc(server, rpc);
+
+    // One call, answering its `result` (owned by the caller).
+    const auto call = [&](const char* method, const std::string& params) -> JSValue {
+        const std::string src = std::string("({jsonrpc: '2.0', id: 1, method: '") + method + "', params: [" + params + "]})";
+        JSValue message = JS_Eval(js.ctx, src.c_str(), src.size(), "<rpc>", JS_EVAL_TYPE_GLOBAL);
+        if (JS_IsException(message)) {
+            JS_FreeValue(js.ctx, message);
+            return JS_UNDEFINED;
+        }
+        std::optional<rpcpp::QuickJSOut> reply = server.processMessage(message);
+        JS_FreeValue(js.ctx, message);
+        if (!reply) return JS_UNDEFINED;
+        JSValue answer = reply->materialize(js.ctx);
+        JSValue result = JS_GetPropertyStr(js.ctx, answer, "result");
+        JS_FreeValue(js.ctx, answer);
+        return result;
+    };
+    struct Answer {
+        std::uint32_t id = 0;  // 0: absent
+        std::string   error;   // empty: absent
+    };
+    const auto put = [&](const std::string& params) {
+        Answer a;
+        JSValue result = call("putResource", params);
+        JSValue id = JS_GetPropertyStr(js.ctx, result, "id");
+        if (JS_IsNumber(id)) {
+            double value = 0.0;
+            JS_ToFloat64(js.ctx, &value, id);
+            a.id = static_cast<std::uint32_t>(value);
+        }
+        JS_FreeValue(js.ctx, id);
+        JSValue error = JS_GetPropertyStr(js.ctx, result, "error");
+        if (JS_IsString(error)) {
+            if (const char* text = JS_ToCString(js.ctx, error)) {
+                a.error = text;
+                JS_FreeCString(js.ctx, text);
+            }
+        }
+        JS_FreeValue(js.ctx, error);
+        JS_FreeValue(js.ctx, result);
+        return a;
+    };
+
+    // The bytes themselves: an immutable resource of the type the spec gave, owned and pinned by nobody yet.
+    const Answer byBytes = put("{type: 'rom', bytes: new Uint8Array([1, 2, 3, 4])}");
+    REQUIRE(byBytes.error.empty());
+    CHECK(byBytes.id != 0);
+    const rp_resource* bytesRom = e.resource(byBytes.id);
+    REQUIRE(bytesRom);
+    CHECK(std::string(bytesRom->type) == "rom");
+    const auto* payload = static_cast<const rp_bytes*>(bytesRom->payload);
+    REQUIRE(payload);
+    CHECK(payload->size == 4);
+    CHECK(payload->data[2] == 3);
+    CHECK(e.resourcePinCount(byBytes.id) == 0);
+
+    // A path: native reads the file, so a battery or a 32 MB ROM never crosses the bridge. The SMS tracker's `.sav` is
+    // a real battery the tree already carries.
+    const Answer byPath = put(std::string("{type: 'sram', path: '") + RP_SMS_SAV_PATH + "'}");
+    REQUIRE(byPath.error.empty());
+    const rp_resource* sram = e.resource(byPath.id);
+    REQUIRE(sram);
+    CHECK(std::string(sram->type) == "sram");
+    CHECK(static_cast<const rp_bytes*>(sram->payload)->size == std::filesystem::file_size(RP_SMS_SAV_PATH));
+
+    // An embedded ROM, by its marker.
+    const Answer byMarker = put("{type: 'rom', embedded: 'mgb'}");
+    REQUIRE(byMarker.error.empty());
+    REQUIRE(e.resource(byMarker.id));
+    CHECK(static_cast<const rp_bytes*>(e.resource(byMarker.id)->payload)->size == rp::embeddedMgbRom().size());
+
+    // Every refusal answers `error` and creates nothing: a type no node reads, a file that is not there, a marker the
+    // binary does not carry, and a spec with no source or two.
+    for (const auto& refused : {
+             put("{type: 'kit', bytes: new Uint8Array([1])}"),
+             put("{type: 'sram', path: '/nonexistent/rp-resource.sav'}"),
+             put("{type: 'rom', embedded: 'nope'}"),
+             put("{type: 'rom'}"),
+             put("{type: 'rom', bytes: new Uint8Array([1]), embedded: 'mgb'}"),
+             put("{type: 'rom', bytes: new Uint8Array(0)}"),
+         }) {
+        CHECK(refused.id == 0);
+        CHECK_FALSE(refused.error.empty());
+    }
+    // An empty byte block is a resource for a seed (a blank battery), but never for a rom.
+    const Answer blank = put("{type: 'sram', bytes: new Uint8Array(0)}");
+    REQUIRE(blank.error.empty());
+    CHECK(static_cast<const rp_bytes*>(e.resource(blank.id)->payload)->size == 0);
+    CHECK(put("{type: 'kit', bytes: new Uint8Array([1])}").error.find("\"rom\", \"sram\" or \"state\"") !=
+          std::string::npos);
+    CHECK(e.resource(byBytes.id) != nullptr);  // the refusals left what was there alone
+
+    // The owner's drop: idempotent, answered as a boolean, and the id stays dead.
+    const auto release = [&](std::uint32_t id) {
+        JSValue result = call("releaseResource", std::to_string(id));
+        const bool dropped = JS_IsBool(result) && JS_ToBool(js.ctx, result);
+        JS_FreeValue(js.ctx, result);
+        return dropped;
+    };
+    CHECK(release(byBytes.id));
+    CHECK_FALSE(release(byBytes.id));
+    CHECK(e.resource(byBytes.id) == nullptr);
+    CHECK_FALSE(release(9999));
+    // Something the running plan pins would stay alive here instead; nothing pins these, so a drop frees them.
+    CHECK(release(byMarker.id));
+    const Answer later = put("{type: 'rom', bytes: new Uint8Array([9])}");
+    REQUIRE(later.error.empty());
+    CHECK(later.id > byMarker.id);  // ids are never reused
 }

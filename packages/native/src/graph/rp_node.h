@@ -153,6 +153,22 @@ typedef struct rp_audio_buffer {
 /* The payload of "bytes" and "string" resources. */
 typedef struct rp_bytes { const uint8_t* data; size_t size; } rp_bytes;
 
+/* The host's resource table (docs/modular-graph-phase-c3-design.md section 4), through rp_host.get_interface. A node
+ * that reads a resource its SETTINGS name (a system node's ROM, its battery) pins it at CREATE, when the authoring
+ * layer parses the settings into a new instance, and holds the pin until the instance is destroyed: prepare never
+ * pins or drops one, and the audio thread may pass a resource handle around but never takes or drops a pin. [control]
+ * both ways. A resource whose owner has dropped it can no longer be pinned, so a document naming it is refused at
+ * create rather than planning or not depending on when the last plan that read it was reclaimed. */
+#define RP_HOST_RESOURCES_INTERFACE "rp.host.resources/1"
+typedef struct rp_host_resources {
+    void* ctx;
+    /* Pin resource `id` if it exists, its owner still holds it and its type is `type` (null: any type); the handle,
+     * or null with a NUL-terminated reason in err->message. */
+    const rp_resource* (*acquire)(void* ctx, uint32_t id, const char* type, rp_error* err);
+    /* Drop a pin acquire took. False, dropping nothing, for an id this table holds no pin on. */
+    bool (*release)(void* ctx, uint32_t id);
+} rp_host_resources;
+
 typedef enum rp_port_kind {
     RP_PORT_AUDIO    = 0,
     RP_PORT_EVENTS   = 1,

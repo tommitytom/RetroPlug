@@ -403,6 +403,17 @@ bool Engine::setParam(std::string_view nodeId, std::string_view paramId, double 
     return graph_->host->setParam(nodeId, paramId, value);
 }
 
+// The table is Graph's, so it outlives every plan that pins one of its resources and every node that names one.
+std::uint32_t Engine::putResource(const std::string& type, std::vector<std::uint8_t> bytes, std::string* error) {
+    return graph_->resources.createBytes(type, std::move(bytes), error);
+}
+
+bool Engine::releaseResource(std::uint32_t id) { return graph_->resources.drop(id); }
+
+const rp_resource* Engine::resource(std::uint32_t id) const { return graph_->resources.get(id); }
+
+std::uint32_t Engine::resourcePinCount(std::uint32_t id) const { return graph_->resources.pinCount(id); }
+
 void Engine::drainCommands() { graph_->host->drain(); }
 
 // The script host knows first that an audio thread will run blocks, and last that it has stopped: between the two, a

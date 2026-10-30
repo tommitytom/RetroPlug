@@ -31,7 +31,8 @@ struct HostConfig {
     // How long setGraph waits for a stalled audio thread to adopt a published settings commit (to a node whose
     // prepare reads its current settings) before answering busy.
     std::uint32_t adoptionTimeoutMs = 2000;
-    // The embedder's own host services; GraphHost answers its own ids (rp.host.audio-buffers/1) first.
+    // The embedder's own host services; GraphHost answers its own ids (rp.host.audio-buffers/1,
+    // rp.host.resources/1) first.
     HostInterfaceFn interfaces = nullptr;
     void*           interfacesCtx = nullptr;
 };
@@ -187,6 +188,10 @@ private:
     bool        waitForCommits();
     static const void* hostInterface(const rp_host* host, const char* id);
     static float* const* audioBuffers(const rp_host* host, std::uint32_t* count);
+    // rp.host.resources/1, over resources_: a node's hold on a resource its settings name (docs/
+    // modular-graph-phase-c3-design.md section 4), pinned at create and dropped when the instance is destroyed.
+    static const rp_resource* resourceAcquire(void* ctx, std::uint32_t id, const char* type, rp_error* err);
+    static bool               resourceRelease(void* ctx, std::uint32_t id);
     PlanOutcome planDocument(const GraphDocument& document, double sampleRate, std::uint32_t maxFrames);
     bool        publish(PlanOutcome& outcome, const GraphDocument& document, const HostCommand* trailer = nullptr);
     void        markFaulted(Instance& inst);
@@ -197,6 +202,7 @@ private:
 
     const NodeRegistry&                                   registry_;
     ResourceTable&                                        resources_;
+    rp_host_resources                                     resourceService_{};
     HostConfig                                            config_;
     rp_host                                               host_{};
     SpscRing<Command, kCommandCapacity>                   commands_;

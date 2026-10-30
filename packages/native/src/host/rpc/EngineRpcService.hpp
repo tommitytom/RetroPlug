@@ -27,6 +27,14 @@ public:
 
     // --- emulator lifecycle / reads ---
     // (duplicate, reload and remove live in the TS SystemsStore as buildCore + setGraph orchestration.)
+    // Put an immutable byte resource in the engine's ResourceTable (docs/modular-graph-phase-c3-design.md section 4)
+    // and answer its id, which a node's settings name as "res:<id>"; or, creating none, why. Its type is "rom",
+    // "sram" or "state"; a file named by `path` is read here, so an unreadable or empty one is answered before any
+    // document naming it is written.
+    RpcPutResourceResult putResource(BackendResourceSpec spec);
+    // The owner's drop of a resource putResource made: idempotent (false for an unknown or already dropped id), and it
+    // never frees one a plan still pins, which happens when that plan is reclaimed.
+    bool                releaseResource(std::uint32_t id);
     // Build a core and park it under spec.id (TS owns the id counter) for the next document to place: the
     // core's facts, or null when the id is 0, the core did not build, or a core under that id is still live.
     std::optional<RpcBuiltCore> buildCore(BackendConstructSpec spec);

@@ -95,15 +95,31 @@ export interface Backend {
 
   // --- Emulator lifecycle -------------------------------------------------
   //
-  // The narrow native service: build an emulator core, and place what has been built. It takes
-  // CONCRETE, already-resolved paths — TS does every bit of derivation (suffix math,
-  // sibling paths, the paired-sav override, classification, pairing) with the pure
-  // kernels and hands native only finished paths. Native never sees a suffix, never
-  // looks for a sibling, never classifies. No ROM/SRAM bytes cross for construction:
-  // native slurps the paths it's given. Which cores run, in what order and wired how is
-  // the graph TS builds (graph/buildGraph.ts); duplicate, reload and remove are TS
-  // orchestration over buildCore and setGraph (SystemsStore), with no native method of their own.
+  // The narrow native service: put the bytes a core is built from, build the core, and place what has been built. It
+  // takes CONCRETE, already-resolved paths: TS does every bit of derivation (suffix math, sibling paths, the
+  // paired-sav override, classification, pairing) with the pure kernels and hands native only finished paths.
+  // Native never sees a suffix, never looks for a sibling, never classifies. Bytes cross only for what TS holds
+  // (a patched image, a seed read back from a core); an unpatched ROM or a `.sav` is read natively from the path
+  // `putResource` is given. Which cores run, in what order and wired how is the graph TS builds
+  // (graph/buildGraph.ts); duplicate, reload and remove are TS orchestration over buildCore and setGraph
+  // (SystemsStore), with no native method of their own.
   // loadScriptPack adds script node types beside the built-in ones, for a document to place.
+
+  /** Put an immutable byte resource in the engine's resource table and answer its id, which a node's settings then
+   *  name as `"res:<id>"` (docs/modular-graph-phase-c3-design.md section 4): a system node's ROM, its battery, a
+   *  savestate seed. Native reads a `path` itself, so an unpatched ROM or a `.sav` never crosses the bridge; only a
+   *  patched image, a seed TS holds or an embedded ROM's marker arrives as a source. Refused, creating nothing, with
+   *  `error` saying why: a type that is not `rom`, `sram` or `state`, no source or more than one, a file that is
+   *  absent, unreadable or empty, or an embedded marker this build does not carry. An empty `sram` is a resource (a
+   *  blank battery) while an empty `rom` is refused: a zero-length ROM cannot boot. Ids count up from 1 and are never
+   *  reused, so a stale `res:N` is refused rather than naming whatever took its place. */
+  putResource(spec: ResourceSpec): PutResourceResult;
+
+  /** The owner's drop of a resource `putResource` made, once the document that names it has been replaced (a system
+   *  removed, or rebuilt under a new id). Idempotent: false when the id was already dropped or never existed. It never
+   *  frees a resource a plan still pins: that happens when the plan is reclaimed, so a dropped resource stays readable
+   *  to the plan that was reading it. */
+  releaseResource(id: number): boolean;
 
   /** Build + activate an emulator core from a spec under the TS-allocated `id` (TS owns the id counter;
    *  native never mints one), and park it for the next graph document to place
@@ -401,6 +417,7 @@ export type HostBackend = Pick<
 /** Emulator lifecycle / live params / input / snapshot reads: bound by the plugin, UI, CLI, test host. */
 export type EmulatorBackend = Pick<
   Backend,
+  | "putResource" | "releaseResource"
   | "buildCore" | "setGraph" | "loadScriptPack" | "setParam"
   | "pressButton" | "stageSystemMidi" | "readState" | "readSram" | "readRam" | "writeRam" | "getFrame"
 >;
@@ -710,6 +727,21 @@ export const MemoryRegion = {
   NametableRam: 7,
   ExtWorkRam: 8,
 } as const;
+
+/** The type of a resource a core is built from: a ROM image, a battery (SRAM) or a savestate seed. A node refuses a
+ *  resource of any other type, and so does `putResource`. */
+export type ResourceType = "rom" | "sram" | "state";
+
+/** What `putResource` is given: the type, and exactly one source. `bytes` when TS holds them (an asset role's patched
+ *  image, a seed read back from a core); `path` for a file native reads itself (an unpatched ROM, a `.sav`, a
+ *  savestate); `embedded` for a ROM baked into the binary, by its marker (`"mgb"`). */
+export type ResourceSpec =
+  | { type: ResourceType; bytes: Uint8Array }
+  | { type: ResourceType; path: string }
+  | { type: ResourceType; embedded: string };
+
+/** What `putResource` did: `id` when a resource was created, `error` (and no id) when none was. */
+export type PutResourceResult = { id: number } | { error: string };
 
 /** What `buildCore` built: the node type its core is placed as, and the two values the graph needs, as the
  *  core decoded them (a NES's channel export mode, a Game Boy's link group; 0 for every other core). */

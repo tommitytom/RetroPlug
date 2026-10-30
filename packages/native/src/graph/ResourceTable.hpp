@@ -13,10 +13,11 @@ namespace rp::graph {
 // Resources: typed blocks of data that live outside the wires (section 2.5). Created, pinned, unpinned and
 // freed on the CONTROL thread only; one table belongs to one host's control thread and is not shared.
 //
-// A resource has one owner, its creator (TS, through putResource), and any number of pins, one per plan
-// binding it. It is freed once the owner has dropped it AND the last pin is gone. The two are counted
-// apart so a duplicate drop (a dispose run twice, a retried RPC) cannot take a plan's pin with it: the
-// audio thread only ever sees rp_resource pointers a plan has pinned, so it never holds the last one.
+// A resource has one owner, its creator (TS, through putResource), and any number of pins: a plan's binding,
+// and a node's settings naming it, held by that node's instance for its life. It is freed once the owner has
+// dropped it AND the last pin is gone. The two are counted apart so a duplicate drop (a dispose run twice, a
+// retried RPC) cannot take a pin with it: the audio thread only ever sees rp_resource pointers a pin holds,
+// so it never holds the last one.
 //
 // Ids count up from 1 and are never reused, so a stale "res:N" is refused as unknown rather than binding
 // whatever took its place. Id 0 is never a resource.

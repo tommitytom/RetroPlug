@@ -13,7 +13,7 @@
 // recomposes them into the full `Backend`. openFileBrowser is the one async method and rides
 // a UI-direct native hook rather than the RPC bridge (see below).
 
-import type { ApuState, Backend, BreakHitBatch, BuiltCore, SetGraphRequest, SetGraphResult, LoadScriptPackRequest, LoadScriptPackResult, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CoreTransportStats, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, ExpansionAudioState, FileBrowserOpts, FrameData, HostBackend, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
+import type { ApuState, Backend, BreakHitBatch, BuiltCore, SetGraphRequest, SetGraphResult, LoadScriptPackRequest, LoadScriptPackResult, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CoreTransportStats, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, ExpansionAudioState, FileBrowserOpts, FrameData, HostBackend, PngImageData, PpuState, ProfiledFunction, PutResourceResult, ResourceSpec, TraceLine, ZipEntry } from "./backend";
 import type { OpenSerialPort, SerialClient, SerialPortInfo } from "./n8/transport";
 import { savFromJson as savFromJsonTs } from "./lsdj";
 import { makeCall } from "./rpcClient";
@@ -101,10 +101,27 @@ export function createHostClient(): HostBackend {
   };
 }
 
+// ResourceSpec → RPC params: exactly one source is present, so the fields the spec does not carry are absent
+// (native reads nullopt), not "".
+const resourceParams = (spec: ResourceSpec): Record<string, unknown> => {
+  const p: Record<string, unknown> = { type: spec.type };
+  if ("bytes" in spec) p.bytes = spec.bytes;
+  else if ("path" in spec) p.path = spec.path;
+  else p.embedded = spec.embedded;
+  return p;
+};
+
 /** The emulator lifecycle / live params / input / snapshot-reads facet. Throws if no RPC surface is bound. */
 export function createEmulatorClient(): EmulatorBackend {
   const call = makeCall();
   return {
+    // Native answers { id } or { error }: one optional each way, so a refused put has no id to name.
+    putResource: (spec: ResourceSpec): PutResourceResult => {
+      const r = call("putResource", resourceParams(spec)) as { id?: number | null; error?: string | null } | null;
+      if (r == null || r.id == null) return { error: r?.error ?? "the engine created no resource" };
+      return { id: r.id };
+    },
+    releaseResource: (id: number) => call("releaseResource", id) as boolean,
     buildCore: (spec: ConstructSpec, id: number) => (call("buildCore", specParams(spec, id)) as BuiltCore | null) ?? null,
     setGraph: (request: SetGraphRequest) => call("setGraph", request) as SetGraphResult,
     loadScriptPack: (request: LoadScriptPackRequest) => call("loadScriptPack", request) as LoadScriptPackResult,

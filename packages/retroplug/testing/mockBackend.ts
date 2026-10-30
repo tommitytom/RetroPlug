@@ -4,7 +4,7 @@
 // "disk". This is what lets the whole application layer be tested with `tjs run`
 // and nothing else.
 
-import type { ApuState, ApuSquareState, Backend, BreakHitBatch, BuiltCore, SetGraphRequest, SetGraphResult, LoadScriptPackResult, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CoreTransportStats, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
+import type { ApuState, ApuSquareState, Backend, BreakHitBatch, BuiltCore, SetGraphRequest, SetGraphResult, LoadScriptPackResult, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CoreTransportStats, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, PutResourceResult, ResourceSpec, ResourceType, TraceLine, ZipEntry } from "../src/backend";
 import { detectPlatform } from "../src/platform";
 import { savFromJson } from "../src/lsdj";
 import type { GraphDocument, NodeDoc } from "../src/graph/graphDocument";
@@ -82,8 +82,16 @@ export class MockBackend implements Backend {
    *  TS resolved (savPath/statePath) and the seeds it carried. Duplicate and reload are TS orchestration
    *  over buildCore, so they land here too (with stateBytes/sramBytes), not in a dedicated log. */
   readonly buildCalls: (ConstructSpec & { id: number })[] = [];
+  /** Every putResource call, in order, with the id it got (0 when refused) - so a test can assert what crossed and in
+   *  what order. Ids count up from 1 and are never reused, as native's are. */
+  readonly putResourceCalls: { spec: ResourceSpec; id: number }[] = [];
+  /** Every releaseResource call, in order (dropped or not), so a test can assert each put is balanced. */
+  readonly releaseResourceCalls: number[] = [];
   /** Every setGraph request, in order: the documents TS published, their slots and their tap re-arms. */
   readonly graphRequests: SetGraphRequest[] = [];
+  /** The resources a putResource created and their owner still holds: the type and the bytes. */
+  private resources = new Map<number, { type: ResourceType; bytes: Uint8Array }>();
+  private nextResourceId = 1;
 
   // --- file-dialog bookkeeping (mock-only) --------------------------------
   /** Opts passed to each openFileBrowser call, in order — lets tests assert which
@@ -288,6 +296,55 @@ export class MockBackend implements Backend {
   }
 
   // --- Emulator lifecycle -------------------------------------------------
+
+  // The resource table, as native's: an immutable byte block of one of three types, its id never reused. The mock has
+  // no baked ROMs, so an embedded marker becomes a deterministic blob of its own, and only "mgb" exists (the one the
+  // app loads), as native refuses a marker this build does not carry.
+  putResource(spec: ResourceSpec): PutResourceResult {
+    this.log.push("putResource");
+    // A recorded call keeps its own copy, so a caller that mutates its Uint8Array afterwards cannot rewrite history.
+    const record = (id: number): void => {
+      this.putResourceCalls.push({
+        spec: "bytes" in spec ? { ...spec, bytes: new Uint8Array(spec.bytes) } : { ...spec },
+        id,
+      });
+    };
+    const refused = (error: string): PutResourceResult => {
+      record(0);
+      return { error };
+    };
+    if (spec.type !== "rom" && spec.type !== "sram" && spec.type !== "state")
+      return refused(`a resource type is "rom", "sram" or "state", not "${spec.type}"`);
+    let bytes: Uint8Array | undefined;
+    if ("bytes" in spec) bytes = spec.bytes;
+    else if ("path" in spec) {
+      bytes = this.files.get(this.canonicalize(spec.path));
+      if (!bytes || bytes.length === 0)
+        return refused(`could not read ${spec.path}: the file is absent, unreadable or empty`);
+    } else if (spec.embedded !== "mgb") return refused(`"${spec.embedded}" is not an embedded ROM`);
+    else bytes = enc.encode("embedded:mgb");
+    // An empty payload is a legitimate seed (a blank battery), but a ROM has to have something to boot.
+    if (bytes.length === 0 && spec.type === "rom")
+      return refused("a rom resource cannot be empty: a zero-length ROM cannot boot");
+    const id = this.nextResourceId++;
+    this.resources.set(id, { type: spec.type, bytes: new Uint8Array(bytes) });
+    record(id);
+    return { id };
+  }
+
+  // The owner's drop: idempotent, and a dropped id stays dropped (it never comes back, and ids are never reused). Native
+  // keeps a dropped resource alive while a plan still pins it, which the mock has no plans to model.
+  releaseResource(id: number): boolean {
+    this.log.push("releaseResource");
+    this.releaseResourceCalls.push(id);
+    return this.resources.delete(id);
+  }
+
+  /** The resource `putResource` created under `id`, or undefined when it was never created or has been dropped. */
+  resource(id: number): { type: ResourceType; bytes: Uint8Array } | undefined {
+    const r = this.resources.get(id);
+    return r && { type: r.type, bytes: new Uint8Array(r.bytes) };
+  }
 
   // A built core is live from the build on, as native's is (its snapshot slot is claimed at the build, so its
   // reads answer before any document places it).

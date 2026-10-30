@@ -24,10 +24,13 @@ struct GraphRig {
     std::vector<float*>        outPointers;
     rp_transport               transport{48000.0, 120.0, 0.0, 0};
 
-    explicit GraphRig(HostConfig config = {48000.0, 64, Target::Desktop}, std::uint32_t hostChannels = 8) {
+    // `extra` is a test's own package of node types, registered after the shared ones.
+    explicit GraphRig(HostConfig config = {48000.0, 64, Target::Desktop}, std::uint32_t hostChannels = 8,
+                      const rp_package* extra = nullptr) {
         registry.addPackage(corePackage());
         registry.addPackage(hostPackage());
         registry.addPackage(testPackage());
+        if (extra) registry.addPackage(extra);
         host = std::make_unique<GraphHost>(registry, resources, config);
         outs.assign(hostChannels, std::vector<float>(kHostFrames, 0.0f));  // room for blocks after a reactivate
         for (auto& o : outs) outPointers.push_back(o.data());

@@ -190,6 +190,22 @@ public:
     // Grow the plan's block size to a host's maximum (never below kDefaultMaxBlockFrames). Quiescent.
     void setMaxBlockFrames(std::uint32_t frames);
 
+    // --- resources (docs/modular-graph-phase-c3-design.md section 4), control thread ---
+    // An immutable byte resource in the engine's ResourceTable, which a node's settings name as "res:<id>" and a
+    // document binds to a resource input. Returns 0, with the reason in *error, for a type the table refuses (it takes
+    // any plain id; the RPC admits "rom", "sram" and "state", the ones a system is built from). Ids count up from 1
+    // and are never reused.
+    std::uint32_t putResource(const std::string& type, std::vector<std::uint8_t> bytes, std::string* error = nullptr);
+    // The owner's drop: idempotent, and it never frees a resource a plan still pins (that happens when the plan is
+    // reclaimed). False for an unknown or already dropped id.
+    bool releaseResource(std::uint32_t id);
+    // The resource a node may name while its owner still holds it, or null. Control thread: a node pins what it
+    // reads, so nothing on the audio side needs this.
+    const rp_resource* resource(std::uint32_t id) const;
+    // How many pins it holds (one per instance whose settings name it, and one per plan binding), or 0 for an
+    // unknown or dropped id that no plan holds.
+    std::uint32_t resourcePinCount(std::uint32_t id) const;
+
     // --- graphs TS builds (docs/modular-graph-phase-b2-design.md section 2.5), control thread ---
     // Park a built core under its id until the system node a document names it in takes it, claiming its
     // snapshot slot (seeded from the core, so a read right after the build works with no block run). False,

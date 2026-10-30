@@ -6,9 +6,11 @@
 #include <cstddef>
 #include <fstream>
 #include <iterator>
+#include <span>
 #include <string>
 #include <utility>
 
+#include "graph/CanonicalJson.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "system/SystemFactory.hpp"
@@ -88,6 +90,53 @@ bool EngineRpcService::rendersInto(std::size_t channels) const {
 
 // Out-of-line so unique_ptr<KitCompiler> can destroy a complete type (fwd-declared in the header).
 EngineRpcService::~EngineRpcService() = default;
+
+RpcPutResourceResult EngineRpcService::putResource(BackendResourceSpec spec) {
+    RpcPutResourceResult out{std::nullopt, std::nullopt};
+    // A node reads a resource as one of three things (a system's ROM, its battery, a savestate), so the wire takes
+    // no other type: a resource of a type no node wants could only be a mistake in the caller.
+    if (spec.type != "rom" && spec.type != "sram" && spec.type != "state") {
+        out.error = "a resource type is \"rom\", \"sram\" or \"state\", not " + rp::graph::jsonString(spec.type);
+        return out;
+    }
+    const int sources = (spec.bytes ? 1 : 0) + (spec.path ? 1 : 0) + (spec.embedded ? 1 : 0);
+    if (sources != 1) {
+        out.error = "a resource carries exactly one of bytes, path or embedded (" + std::to_string(sources) + " given)";
+        return out;
+    }
+    std::vector<std::uint8_t> bytes;
+    if (spec.bytes) {
+        bytes = toBytes(*spec.bytes);
+    } else if (spec.path) {
+        bytes = slurpAll(*spec.path);
+        if (bytes.empty()) {
+            out.error = "could not read " + *spec.path + ": the file is absent, unreadable or empty";
+            return out;
+        }
+    } else {
+        const std::span<const std::uint8_t> rom = rp::embeddedRom(*spec.embedded);
+        if (rom.empty()) {
+            out.error = "\"" + *spec.embedded + "\" is not an embedded ROM";
+            return out;
+        }
+        bytes.assign(rom.begin(), rom.end());
+    }
+    // An empty byte block is a legitimate seed (a blank battery), but a ROM with no bytes has nothing to boot.
+    if (bytes.empty() && spec.type == "rom") {
+        out.error = "a rom resource cannot be empty: a zero-length ROM cannot boot";
+        return out;
+    }
+    std::string why;
+    const std::uint32_t id = engine_.putResource(spec.type, std::move(bytes), &why);
+    if (id == 0) {
+        out.error = why.empty() ? "the engine created no resource" : why;
+        return out;
+    }
+    out.id = id;
+    return out;
+}
+
+bool EngineRpcService::releaseResource(std::uint32_t id) { return engine_.releaseResource(id); }
 
 std::optional<RpcBuiltCore> EngineRpcService::buildCore(BackendConstructSpec spec) {
     const SystemId id = spec.id;
