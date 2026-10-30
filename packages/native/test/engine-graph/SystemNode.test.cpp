@@ -1459,6 +1459,34 @@ TEST_CASE("a param edit, live or published, allocates nothing on the block threa
     CHECK(gb->config_.gainDb == -3.0f);
 }
 
+TEST_CASE("a wire's value reaches a system node's params clamped to their ranges", "[engine-graph][system-node][params]") {
+    const auto driven = [](bool infinite, double level) {
+        NodeRig rig(kRate);
+        auto built = nes(1, 0);
+        MesenNesSystem* const core = built.get();
+        const auto token = rig.park(std::move(built));
+        const std::string value = R"({"level":)" + rp::graph::jsNumber(level) +
+                                  (infinite ? R"(,"infinite":true)" : "") + "}";
+        const std::string doc = R"({"nodes":[{"id":"gain","type":"rp.test.level","settings":)" + value +
+                                R"(},{"id":"exp","type":"rp.test.level","settings":)" + value +
+                                R"(},{"id":"sys","type":"rp.mesen.nes","settings":{"core":)" +
+                                std::to_string(token) +
+                                R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],)" +
+                                R"("wires":[{"from":"gain.out","to":"sys.gain"},{"from":"exp.out","to":"sys.expansionVolume"},)" +
+                                R"({"from":"sys.mix","to":"out.out.1-2"}]})";
+        REQUIRE(rig.set(doc).ok);
+        Lanes out(2);
+        const rp_transport t{kRate, 120.0, 0.0, 0};
+        for (int b = 0; b < 3; ++b) rig.host->processBlock(256, t, out.ptrs.data(), 2);
+        return std::pair{core->config().gainDb, core->config().expansionVolume};
+    };
+    // A wire carries any double: a value past the range lands at the range's end, and an infinity too.
+    CHECK(driven(false, 1e9) == std::pair{12.0f, 200u});
+    CHECK(driven(false, -1e9) == std::pair{-90.0f, 0u});
+    CHECK(driven(true, 1.0) == std::pair{12.0f, 200u});
+    CHECK(driven(true, -1.0) == std::pair{-90.0f, 0u});
+}
+
 TEST_CASE("a system node takes param edits made while an audio thread runs its blocks", "[engine-graph][system-node][params]") {
     // The race check for the params path under ThreadSanitizer (build-tsan/): live edits and documents carrying a value
     // from this thread, while the audio thread drains them and the node applies the latest.

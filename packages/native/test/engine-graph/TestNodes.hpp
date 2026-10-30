@@ -4,8 +4,10 @@
 // one output per system node input, and a probe that records what reaches its inputs.
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <iterator>
+#include <limits>
 #include <span>
 #include <vector>
 
@@ -79,8 +81,33 @@ struct Probe {
     }
 };
 
+// A control source: every block it pushes its settings' `level` at frame 0 on its one control output (an infinity
+// signed by `level` when `infinite`, which a wire can carry and no param range covers).
+struct LevelSettings {
+    double level = 0.0;
+    bool   infinite = false;
+};
+
+struct Level {
+    static constexpr const char* id = "rp.test.level";
+    static constexpr bool stateless_prepare = true;
+    using Settings = LevelSettings;
+    struct { rp::control_out out; } outputs;
+
+    double level = 0.0;
+    bool   infinite = false;
+    void on_settings(const Settings& s) noexcept {
+        level = s.level;
+        infinite = s.infinite;
+    }
+    void process(const rp::Block&) noexcept {
+        outputs.out.push(0, infinite ? std::copysign(std::numeric_limits<double>::infinity(), level) : level);
+    }
+};
+
 inline const rp_package* testPackage() {
-    static const rp_node_type* const kTypes[] = {rp::node_type<Feed>(), rp::node_type<Probe>()};
+    static const rp_node_type* const kTypes[] = {rp::node_type<Feed>(), rp::node_type<Probe>(),
+                                                 rp::node_type<Level>()};
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.engine-graph"})",
                                      static_cast<std::uint32_t>(std::size(kTypes)), kTypes};
     return &kPackage;

@@ -132,9 +132,15 @@ constexpr std::size_t kMaxOutputs = 16;
 // The params (docs/modular-graph-phase-c2-design.md section 3): what is worth playing, automating or modulating, so
 // each is also a control input, its value in the document and its live edits through Engine::setParam. Every system
 // node has `gain`, in dB over the range the store clamps a gain to (systemSettings.ts GAIN_MIN / GAIN_MAX); a NES has
-// `expansionVolume` too, its cartridge sound chip's level in whole percent of unity, as its core takes it.
-using GainParam = rp::float_param<"Gain", rp::range{-90, 12, 0}, "dB">;
-using ExpansionVolumeParam = rp::int_param<"Expansion volume", rp::range{0, 200, 100}, "%">;
+// `expansionVolume` too, its cartridge sound chip's level in whole percent of unity, as its core takes it. Each range is
+// one constant, used by the param's declaration and by the node's own clamp of a wire-driven value.
+constexpr double kGainMinDb = -90.0;
+constexpr double kGainMaxDb = 12.0;
+constexpr int    kExpansionVolumeMin = 0;
+constexpr int    kExpansionVolumeMax = 200;
+using GainParam = rp::float_param<"Gain", rp::range{kGainMinDb, kGainMaxDb, 0}, "dB">;
+using ExpansionVolumeParam =
+    rp::int_param<"Expansion volume", rp::range{kExpansionVolumeMin, kExpansionVolumeMax, 100}, "%">;
 
 // What a param's last-applied value holds before the core has been given any: no value equals it, NaN included.
 constexpr double kUnapplied = std::numeric_limits<double>::quiet_NaN();
@@ -267,11 +273,14 @@ struct SystemNode {
     }
 
     // Each param's latest value this block, where it differs from what the core has: a change anywhere in the block
-    // lands at its start. This one for a type whose one param is its gain.
+    // lands at its start. This one for a type whose one param is its gain. A value a wire carries is clamped to the
+    // param's range here, as the planner and setParam clamp a document's or a live edit's.
     void applyParams() noexcept { applyGain(); }
     void applyGain() noexcept {
-        const double db = static_cast<Self*>(this)->params.gain.latest();
-        if (db != db || db == gainApplied) return;  // NaN reaches a param only over a wire, and moves nothing
+        const double latest = static_cast<Self*>(this)->params.gain.latest();
+        if (latest != latest) return;  // NaN reaches a param only over a wire, and moves nothing
+        const double db = std::clamp(latest, kGainMinDb, kGainMaxDb);
+        if (db == gainApplied) return;
         core->setGainDb(static_cast<float>(db));
         gainApplied = db;
     }
@@ -482,9 +491,12 @@ struct Nes : SystemNode<Nes, MesenNesSystem, NesSettings> {
     // takes it (the planner and setParam round an int param's value; a wire's is clamped and rounded here).
     void applyParams() noexcept {
         applyGain();
-        const double percent = params.expansionVolume.latest();
-        if (percent != percent || percent == expansionApplied) return;
-        core->setExpansionVolume(static_cast<std::uint32_t>(std::lround(std::clamp(percent, 0.0, 200.0))));
+        const double latest = params.expansionVolume.latest();
+        if (latest != latest) return;
+        const double percent = std::lround(std::clamp(latest, static_cast<double>(kExpansionVolumeMin),
+                                                     static_cast<double>(kExpansionVolumeMax)));
+        if (percent == expansionApplied) return;
+        core->setExpansionVolume(static_cast<std::uint32_t>(percent));
         expansionApplied = percent;
     }
 };
