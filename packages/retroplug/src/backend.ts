@@ -834,8 +834,8 @@ export interface ConstructSpec {
   stateBytes?: Uint8Array;
   /** The system's backend ("system"-role) config, in the labels its node reads (coreRoles.ts): its construct-time
    *  fields (a NES's SD root and FIFO, an SMS's FM) and its live knobs, each left out of the node's settings where it
-   *  is absent or a value the node would refuse. Only a caller placing a literal spec (DirectGraph) writes it: the store
-   *  reads the core role's config from the entry's own roles and never this field. Omitted for a system with no
+   *  is absent or a value the node would refuse. Only a caller placing a literal spec (DirectGraph) writes it; the
+   *  store reads the core role's config from the entry's own roles and never this field. Omitted for a system with no
    *  core-config role. */
   coreConfig?: Readonly<Record<string, unknown>>;
 }
