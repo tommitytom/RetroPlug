@@ -942,6 +942,22 @@ double tsConstant(const char* path, const std::string& name) {
     return std::strtod(ts.c_str() + ts.find('=', at) + 1, nullptr);
 }
 
+// A construct-time field's fallback in buildGraph.ts's CONSTRUCT_FIELDS: the value a document names when the stored
+// config holds none the node takes, e.g. `n8LinkRttUs: { takes: intIn(0, 100'000), fallback: 2200 },`. The value is
+// the JSON token after `fallback:`, so a label comes back with its quotes and a number or a flag as written. Empty for
+// a field the table does not hold.
+std::string tsConstructFallback(const std::string& field) {
+    const auto bytes = readFile(RP_BUILD_GRAPH_TS_PATH);
+    const std::string ts(bytes.begin(), bytes.end());
+    const auto at = ts.find(field + ": { takes:");
+    if (at == std::string::npos) return {};
+    const auto fallback = ts.find("fallback:", at);
+    if (fallback == std::string::npos) return {};
+    const auto start = ts.find_first_not_of(' ', fallback + std::strlen("fallback:"));
+    const auto end = ts.find_first_of(",}\n", start);
+    return start == std::string::npos || end == std::string::npos ? std::string() : ts.substr(start, end - start);
+}
+
 std::vector<std::string> labelsOf(const rfl::Generic::Object& knob) {
     std::vector<std::string> labels;
     const auto values = knob.get("enum")->to_array();
@@ -1444,6 +1460,54 @@ TEST_CASE("a node's build carries every knob of its type, checked field by field
         REQUIRE(core != nullptr);
         CHECK_FALSE(core->config().enableFm);
         CHECK(core->config().gameGear);
+    }
+}
+
+TEST_CASE("a document naming a construct-time field's fallback builds the core a document naming none builds",
+          "[engine-graph][system-node][settings]") {
+    // A fresh role config names every construct-time field at the value buildGraph.ts writes as its fallback
+    // (CONSTRUCT_FIELDS), read here out of the TS the way the knob ranges above are. A node builds its core at the
+    // config's own default when a field is absent, so a document naming the fallbacks must build the same core: a
+    // later native default the fallback does not follow would make a sparse stored config name another value than a
+    // fresh one, and an old project would rebuild - losing its state - on its first edit.
+    SECTION("NES") {
+        NodeRig rig(kRate);
+        REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot("rp.mesen.nes", 1))).ok);
+        const auto* const absent = dynamic_cast<const MesenNesSystem*>(rig.builtCore(1));
+        REQUIRE(absent != nullptr);
+        const MesenNesConfig atDefaults = absent->config();
+        // Every construct-time field, as the document buildGraph writes for a fresh config names it. A fallback the
+        // reader did not find leaves the member empty, which is not JSON: the document is refused and this fails.
+        const std::string named = R"("sdRoot":)" + tsConstructFallback("sdRoot") + R"(,"fifo":)" +
+                                  tsConstructFallback("fifo") + R"(,"fifoDepth":)" +
+                                  tsConstructFallback("fifoDepth") + R"(,"fifoBytesPerSecond":)" +
+                                  tsConstructFallback("fifoBytesPerSecond") + R"(,"n8Link":)" +
+                                  tsConstructFallback("n8Link") + R"(,"n8LinkRttUs":)" +
+                                  tsConstructFallback("n8LinkRttUs") + R"(,"channelExportMode":)" +
+                                  tsConstructFallback("channelExportMode");
+        REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot("rp.mesen.nes", 2, named))).ok);
+        const auto* const core = dynamic_cast<const MesenNesSystem*>(rig.builtCore(2));
+        REQUIRE(core != nullptr);
+        const MesenNesConfig& cfg = core->config();
+        CHECK(cfg.sdRoot == atDefaults.sdRoot);
+        CHECK(cfg.fifo == atDefaults.fifo);
+        CHECK(cfg.fifoDepth == atDefaults.fifoDepth);
+        CHECK(cfg.fifoBytesPerSecond == atDefaults.fifoBytesPerSecond);
+        CHECK(cfg.n8Link == atDefaults.n8Link);
+        CHECK(cfg.n8LinkRttUs == atDefaults.n8LinkRttUs);
+        CHECK(cfg.channelExportMode == atDefaults.channelExportMode);
+    }
+    SECTION("Master System") {
+        NodeRig rig(kRate);
+        REQUIRE(rig.set(knobbed("rp.mesen.sms", rig.boot("rp.mesen.sms", 1))).ok);
+        const auto* const absent = dynamic_cast<const MesenSmsSystem*>(rig.builtCore(1));
+        REQUIRE(absent != nullptr);
+        REQUIRE(rig.set(knobbed("rp.mesen.sms",
+                                rig.boot("rp.mesen.sms", 2, R"("enableFm":)" + tsConstructFallback("enableFm"))))
+                        .ok);
+        const auto* const core = dynamic_cast<const MesenSmsSystem*>(rig.builtCore(2));
+        REQUIRE(core != nullptr);
+        CHECK(core->config().enableFm == absent->config().enableFm);
     }
 }
 

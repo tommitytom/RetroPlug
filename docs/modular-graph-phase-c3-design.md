@@ -218,8 +218,9 @@ project load's `clear` empties it.
 
 **A refused publish names the node.** The store puts its model and its focus back as they were, gives back what the
 edit put, sends the restored model again and reports the reason, the failure the user saw when a core did not boot. A
-project load publishes once for every system, as today; a refusal naming `sys-K` drops system K with a load note and
-publishes the rest, so one unreadable ROM still costs only its own system.
+publish that throws (an engine or transport fault, which the graph counts as refused) takes the same rollback before
+the error reaches the caller. A project load publishes once for every system, as today; a refusal naming `sys-K` drops
+system K with a load note and publishes the rest, so one unreadable ROM still costs only its own system.
 
 **`buildGraph`** writes `system`, `rom`, `sram`, `state`, `romName`, the construct-time fields, C2's knobs and the
 params. **`ConstructSpec`** stays as TS's description of what to boot, no longer a wire type: one helper
@@ -241,7 +242,8 @@ places (native's "system N is live"). The render path and every host go through 
   the same bytes renders, bit for bit, seeds included (a Game Boy plain, with a battery seed and with a savestate seed;
   a non-default model under a savestate; a NES with its region, export mode and expansion volume; an SMS with FM off,
   its battery and a `romName`; a GBA; an LSDj); and each type's every build knob, away from its default, is read back off
-  the built core, with a battery-backed cart's seed saved back by the core it reached; a Master System's two nodes stage
+  the built core, with a battery-backed cart's seed saved back by the core it reached, and each construct-time field's
+  fallback builds the core its absence builds; a Master System's two nodes stage
   under stems of their own; a missing,
   dropped or wrong-typed resource, an unrecognised ROM, a live id, a full snapshot pool and a build outside `setGraph`
   each refuse the document and leave the running plan, the pins and the slots as they were; a construct-time change
@@ -253,8 +255,9 @@ places (native's "system N is live"). The render path and every host go through 
   plan that pinned it is reclaimed, pins balanced).
 - **`pnpm test`** ([store-resources.test.ts](../packages/retroplug/test/systems/store-resources.test.ts)): each verb's
   resource and publish order, the release after a publish, the rollback after a refusal, a restore republish refused
-  too, a project load dropping its bad system, the construct-time reset, a sparse stored config's live edits, a stored
-  value the schema repairs taking its rebuild, the mock's refusal of a rebuild-key move under a live id, `clear`/
+  too, a project load dropping its bad system, the construct-time reset, a construct-time edit to the value already
+  stored moving nothing, a publish that throws rolling back as a refusal does, a sparse stored config's live edits, a
+  stored value the schema repairs taking its rebuild, the mock's refusal of a rebuild-key move under a live id, `clear`/
   `discard`, DirectGraph's add/replace/remove, every put balanced by a release.
 - **`test:native`** ([app-construct-edit.test.ts](../packages/retroplug/test-native/app-construct-edit.test.ts)): a NES
   FIFO profile edit changes the queue's capacity with no Reset, an export-mode edit makes the per-channel streams

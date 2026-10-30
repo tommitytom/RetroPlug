@@ -68,6 +68,13 @@ test("every field a system role's schema fills reaches some system node", () => 
       });
       expect(taken, `${t.kind}.${field}`).toBe(true);
     }
+    // A construct-time field a stored config does not take is written at the fallback, which must be the same value
+    // the role schema fills for a fresh config: a later schema default not mirrored there would make an old project's
+    // sparse config name a different value than a fresh one, and its first edit would rebuild for no reason.
+    for (const type of types)
+      expect(systemKnobs({ type, coreConfig: config }).construct, `${t.kind} -> ${type}`).toEqual(
+        systemKnobs({ type }).construct,
+      );
   }
 });
 
