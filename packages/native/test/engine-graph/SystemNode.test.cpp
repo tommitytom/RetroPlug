@@ -1090,7 +1090,7 @@ TEST_CASE("a knob restarts or resets its core only where the core's own setter d
         CHECK(heard >= static_cast<std::uint64_t>(0.5 * kRate));
         CHECK(heard != kNever);
     }
-    SECTION("NES: the sprite limit, latency and accuracy switches apply in place, a region change resets it") {
+    SECTION("NES: the sprite limit and accuracy switches apply in place, a region change resets it") {
         NodeRig rig(kRate);
         auto direct = nes(1, 0), control = nes(1, 0);
         auto viaGraph = nes(1, 0);
@@ -1117,9 +1117,103 @@ TEST_CASE("a knob restarts or resets its core only where the core's own setter d
             direct->setRegion(static_cast<std::uint32_t>(NesRegion::Pal));
         });
         CHECK(compare(rig, d, 4.0, [&](std::uint64_t at) { note(at); inPlace(at); reset(at); }, &c, &heard) == "");
-        CHECK(heard >= static_cast<std::uint64_t>(3.0 * kRate));  // nothing heard of the switches; the reset is
+        // Nothing of the switches is heard; the reset is, from the block it landed in.
+        CHECK(heard >= static_cast<std::uint64_t>(3.0 * kRate));
         CHECK(heard != kNever);
     }
+}
+
+TEST_CASE("a document that re-carries an unchanged model beside a highpass that moves applies only the highpass",
+          "[engine-graph][system-node][settings]") {
+    // The node's own guard (moved) is the one that decides, which the core's setter cannot stand in for once another
+    // path has moved the core: a document still carrying the model the node applied last leaves that model alone.
+    NodeRig rig(kRate);
+    auto direct = mgb(1);
+    auto built = mgb(1);
+    SameBoySystem* const gb = built.get();
+    const auto token = rig.park(std::move(built));
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("model":"mgb","highpass":"accurate")")).ok);
+    direct->setModel(SameBoyModel::Mgb);
+    direct->setHighpass(SameBoyHighpass::Accurate);
+    Direct d({direct.get()}, 2, {{0, 1}});
+    // Both cores are moved to another model by a path of their own, so a re-applied mgb would restart the node's.
+    auto elsewhere = once(0.5, [&] {
+        gb->setModel(SameBoyModel::DmgB);
+        direct->setModel(SameBoyModel::DmgB);
+    });
+    // The next document re-carries mgb, unchanged since the one before, beside a highpass that moves.
+    auto moved = once(1.0, [&] {
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("model":"mgb","highpass":"off")")).ok);
+        direct->setHighpass(SameBoyHighpass::Off);
+    });
+    CHECK(compare(rig, d, 2.0, [&](std::uint64_t at) { elsewhere(at); moved(at); }) == "");
+    CHECK(gb->config_.model == SameBoyModel::DmgB);  // the document's mgb was not applied again
+    CHECK(gb->config_.highpass == SameBoyHighpass::Off);
+}
+
+TEST_CASE("a region a document carries that the core already has resets it not at all",
+          "[engine-graph][system-node][settings]") {
+    // The core setter's own guard, reached mid-run: the document's value differs from the one the node applied last,
+    // so the node applies it, and the core, already holding it through another path, must not reset.
+    const auto built = [](SystemId id, std::uint32_t region) {
+        MesenNesConfig cfg;
+        cfg.romPath = RP_BLIPTOASTER_ROM_PATH;
+        cfg.region = region;
+        auto sys = std::make_unique<MesenNesSystem>(id, cfg, readFile(RP_BLIPTOASTER_ROM_PATH));
+        sys->onActivate(kRate);
+        return sys;
+    };
+    NodeRig rig(kRate);
+    auto direct = built(1, static_cast<std::uint32_t>(NesRegion::Pal));
+    auto viaGraph = built(1, static_cast<std::uint32_t>(NesRegion::Pal));
+    MesenNesSystem* const core = viaGraph.get();
+    const auto token = rig.park(std::move(viaGraph));
+    REQUIRE(rig.set(knobbed("rp.mesen.nes", token, R"("region":"ntsc")")).ok);
+    direct->setRegion(static_cast<std::uint32_t>(NesRegion::Ntsc));
+    Direct d({direct.get()}, 2, {{0, 1}});
+    auto note = afterBoot(*direct, *core);
+    // Both cores are put on Pal by a path of their own, which the node's settings do not know about.
+    auto elsewhere = once(0.5, [&] {
+        core->setRegion(static_cast<std::uint32_t>(NesRegion::Pal));
+        direct->setRegion(static_cast<std::uint32_t>(NesRegion::Pal));
+    });
+    // The next document carries pal, now a different value from the one it applied last, beside a knob that moves:
+    // the node applies the region, and setRegion's guard is what keeps the core from resetting.
+    auto moved = once(1.0, [&] {
+        REQUIRE(rig.set(knobbed("rp.mesen.nes", token, R"("region":"pal","removeSpriteLimit":true)")).ok);
+        direct->setRemoveSpriteLimit(true);
+    });
+    CHECK(compare(rig, d, 3.0, [&](std::uint64_t at) { note(at); elsewhere(at); moved(at); }) == "");
+    CHECK(core->config().region == static_cast<std::uint32_t>(NesRegion::Pal));
+    CHECK(core->config().removeSpriteLimit);
+}
+
+TEST_CASE("an activation whose model equals the core's own gives it no call",
+          "[engine-graph][system-node][settings]") {
+    // Activation applies every knob present, so a document carrying the model the core was built with reaches
+    // setModel; its guard, not the node's (activation has nothing to compare), is what leaves the core's own state
+    // where it is. Both cores have played a second already, so a restart would rewind this one and show.
+    const auto played = [](SystemId id) {
+        auto core = mgb(id);
+        Lanes out(2);
+        for (std::uint64_t at = 0; at < static_cast<std::uint64_t>(1.0 * kRate); at += 512) {
+            core->prepareForBlock(info(512));
+            while (core->stepIfBelowTarget(512)) {
+            }
+            core->finishBlock(info(512), out.ptrs.data(), 2);
+        }
+        return core;
+    };
+    NodeRig rig(kRate);
+    auto direct = played(1);
+    auto built = played(1);
+    SameBoySystem* const gb = built.get();
+    const auto token = rig.park(std::move(built));
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("model":"dmgB")")).ok);
+    CHECK(gb->config_.model == SameBoyModel::DmgB);
+    Direct d({direct.get()}, 2, {{0, 1}});  // given no call at all
+    CHECK(compare(rig, d, 2.0) == "");
+    CHECK(sounds(d));
 }
 
 TEST_CASE("a system node gives its core every knob its settings carry as it takes the core, before the core first runs",

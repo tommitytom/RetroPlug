@@ -428,6 +428,47 @@ TEST_CASE("a system node's settings carry its knobs beside its core, and the eng
     CHECK(refused.errors[0].nodeId == "sys-3");
     CHECK(e.coreLive(3));
     CHECK(e.systemCount() == 2);
+    // A block runs the plan still published, whose knobs are untouched.
+    std::vector<float> left(256), right(256);
+    float* outs[2] = {left.data(), right.data()};
+    e.processBlock(256, outs, 2);
+    CHECK(gb->config_.highpass == SameBoyHighpass::Off);
+    CHECK(gb->serialOutCapture() == SerialOutCapture::Listen);
+    CHECK(nes->config().removeSpriteLimit);
+}
+
+TEST_CASE("a setting lands at the node's next prepare, after the host commands queued behind its plan",
+          "[engine-graph][settings]") {
+    // A caller that must act on the restarted core renders a block first: a model change is only pending when a
+    // quiescent writeRam follows it, so the write lands on the core the next block's prepare restarts, and the
+    // restarted core never sees it. A knob applied in place leaves the write alone.
+    Engine e(kRate);
+    REQUIRE(e.parkCore(mgb(1)));
+    REQUIRE(e.setGraph(withKnobs(request({{1, kGb}}), 1, R"("model":"dmgB")")).ok);
+    std::vector<float> l(256), r(256);
+    float* outs[2] = {l.data(), r.data()};
+    e.processBlock(256, outs, 2);
+    const std::vector<std::uint8_t> written = {0xde, 0xad, 0xbe, 0xef, 0x01, 0x23, 0x45, 0x67};
+    const auto ram = [&] {
+        auto access = e.findSystem(1)->getMemory(rp::MemoryType::Ram, rp::AccessType::ReadWrite);
+        REQUIRE(access.valid());
+        return std::vector<std::uint8_t>(access.data(), access.data() + written.size());
+    };
+    QueuedInvoker invoker(e);
+    // The same model again is a knob that restarts nothing: the write is on the core when the block starts, and
+    // stays there.
+    REQUIRE(e.setGraph(withKnobs(request({{1, kGb}}), 1, R"("model":"dmgB")")).ok);
+    invoker.writeRam(1, 0, written);
+    REQUIRE(ram() == written);
+    e.processBlock(256, outs, 2);
+    CHECK(ram() == written);
+    // A model change first, then the write: the write lands on the core the block's prepare replaces.
+    REQUIRE(e.setGraph(withKnobs(request({{1, kGb}}), 1, R"("model":"mgb")")).ok);
+    invoker.writeRam(1, 0, written);
+    REQUIRE(ram() == written);
+    e.processBlock(256, outs, 2);
+    CHECK(dynamic_cast<const SameBoySystem*>(e.findSystem(1))->config_.model == SameBoyModel::Mgb);
+    CHECK(ram() != written);
 }
 
 TEST_CASE("Engine::setParam reaches a param of the running plan at the next block, clamped", "[engine-graph][settings]") {
