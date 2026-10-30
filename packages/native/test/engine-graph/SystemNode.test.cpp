@@ -875,10 +875,14 @@ rfl::Generic::Object settingsSchema(NodeRig& rig, const char* type) {
     REQUIRE(settings);
     const auto defs = settings->get("$defs")->to_object();
     REQUIRE(defs);
+    std::optional<rfl::Generic::Object> settingsDef;
     for (const auto& [name, def] : *defs)
-        if (const auto entry = def.to_object(); entry && entry->get("properties")) return *entry;
-    REQUIRE(false);
-    return {};
+        if (const auto entry = def.to_object(); entry && entry->get("properties")) {
+            REQUIRE_FALSE(settingsDef);  // one struct has properties; the rest are the refs it names
+            settingsDef = *entry;
+        }
+    REQUIRE(settingsDef);
+    return *settingsDef;
 }
 
 // A property's schema: the non-null branch of the anyOf an optional field is.
@@ -1076,6 +1080,8 @@ TEST_CASE("a system node's enum knobs take the labels the role configs spell, an
         INFO(refused);
         CHECK(codes(rig.set(knobbed("rp.mesen.nes", rig.boot("rp.mesen.nes", 2, refused)))) == "settings-invalid");
     }
+    // A knob a refused document leaked would land at the next block, so one runs.
+    run(rig);
 }
 
 TEST_CASE("each knob reaches its core at the start of the next block of the plan that carries it",
@@ -1089,7 +1095,8 @@ TEST_CASE("each knob reaches its core at the start of the next block of the plan
         // The model's restart has its own case below; every other knob here, each off what mgb() built.
         REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot(
                                               "rp.sameboy.gb", 1,
-                                              R"("model":"dmgB","fastBoot":true,"highpass":"removeDcOffset","colorCorrection":"modernBalanced",)"
+                                              R"("model":"dmgB","fastBoot":true,"highpass":"removeDcOffset",)"
+                                              R"("colorCorrection":"modernBalanced",)"
                                               R"("dmgPalette":"mgb","lightTemperature":-0.5,"serialOutCapture":"listen")")))
                     .ok);
         // Adopted as it was published (the rig is quiescent), but applied as the next block starts.
@@ -1118,7 +1125,8 @@ TEST_CASE("each knob reaches its core at the start of the next block of the plan
         REQUIRE(core->config().mmc5PhaseReset == 1);
         REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot(
                                                     "rp.mesen.nes", 1,
-                                                    R"("region":"pal","removeSpriteLimit":true,"apuLatencyMs":3.5,"s5bNoise":"chip","mmc5PhaseReset":"chip")")))
+                                                    R"("region":"pal","removeSpriteLimit":true,"apuLatencyMs":3.5,)"
+                                                    R"("s5bNoise":"chip","mmc5PhaseReset":"chip")")))
                     .ok);
         CHECK(core->config().region == 0);
         run(rig);
@@ -1233,7 +1241,8 @@ TEST_CASE("a knob restarts or resets its core only where the core's own setter d
         auto reset = once(3.0, [&] {
             REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot(
                                                       "rp.mesen.nes", 1,
-                                                      R"("removeSpriteLimit":true,"s5bNoise":"chip","mmc5PhaseReset":"chip","region":"pal")")))
+                                                      R"("removeSpriteLimit":true,"s5bNoise":"chip",)"
+                                                      R"("mmc5PhaseReset":"chip","region":"pal")")))
                         .ok);
             direct->setRegion(static_cast<std::uint32_t>(NesRegion::Pal));
         });
@@ -1363,6 +1372,81 @@ TEST_CASE("a system node gives its core every knob its settings carry as it buil
     }
 }
 
+TEST_CASE("a node's build carries every knob of its type, checked field by field on the core it built",
+          "[engine-graph][system-node][settings]") {
+    // A field a type's config() forgets is seeded as applied and never reaches the core, which no twin at the defaults
+    // catches: every knob here is away from its default, and each is read back off the built core. The Game Boy's
+    // highpass is audible, so its section also compares the core bit for bit against one built from the same config.
+    SECTION("Game Boy") {
+        const auto build = [] {
+            SameBoyConfig cfg;
+            cfg.model = SameBoyModel::DmgB;
+            cfg.fastBoot = false;
+            cfg.highpass = SameBoyHighpass::RemoveDcOffset;
+            cfg.colorCorrection = SameBoyColorCorrection::ReduceContrast;
+            cfg.dmgPalette = SameBoyDmgPalette::Gbl;
+            cfg.lightTemperature = 0.75;
+            auto sys = std::make_unique<SameBoySystem>(1, cfg, readFile(RP_MGB_ROM_PATH));
+            sys->onActivate(kRate);
+            return sys;
+        };
+        NodeRig rig(kRate);
+        auto direct = build();
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot(
+                                              "rp.sameboy.gb", 1,
+                                              R"("model":"dmgB","fastBoot":false,"highpass":"removeDcOffset",)"
+                                              R"("colorCorrection":"reduceContrast","dmgPalette":"gbl",)"
+                                              R"("lightTemperature":0.75)")))
+                        .ok);
+        auto* const gb = dynamic_cast<SameBoySystem*>(rig.builtCore(1));
+        REQUIRE(gb != nullptr);
+        CHECK(gb->config_.model == SameBoyModel::DmgB);
+        CHECK(gb->config_.fastBoot == false);
+        CHECK(gb->config_.highpass == SameBoyHighpass::RemoveDcOffset);
+        CHECK(gb->config_.colorCorrection == SameBoyColorCorrection::ReduceContrast);
+        CHECK(gb->config_.dmgPalette == SameBoyDmgPalette::Gbl);
+        CHECK(gb->config_.lightTemperature == 0.75);
+        // The highpass twin: the built core filters what a core built from the same config filters, bit for bit.
+        Direct d({direct.get()}, 2, {{0, 1}});
+        CHECK(compare(rig, d, 2.0) == "");
+        CHECK(sounds(d));
+    }
+    SECTION("NES") {
+        NodeRig rig(kRate);
+        REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot(
+                                                    "rp.mesen.nes", 1,
+                                                    R"("region":"dendy","removeSpriteLimit":true,"apuLatencyMs":2,)"
+                                                    R"("s5bNoise":"chip","mmc5PhaseReset":"chip",)"
+                                                    R"("sdRoot":"/tmp/rp-c3-sd-root","fifo":"hardware",)"
+                                                    R"("fifoDepth":4096,"fifoBytesPerSecond":150000,"n8Link":"off",)"
+                                                    R"("n8LinkRttUs":3000,"channelExportMode":"individualMono")")))
+                        .ok);
+        const auto* const core = dynamic_cast<const MesenNesSystem*>(rig.builtCore(1));
+        REQUIRE(core != nullptr);
+        const MesenNesConfig& cfg = core->config();
+        CHECK(cfg.region == static_cast<std::uint32_t>(NesRegion::Dendy));
+        CHECK(cfg.removeSpriteLimit);
+        CHECK(cfg.apuLatencyMs == 2.0);
+        CHECK(cfg.s5bNoise == static_cast<std::uint32_t>(CartridgeAccuracy::Chip));
+        CHECK(cfg.mmc5PhaseReset == static_cast<std::uint32_t>(CartridgeAccuracy::Chip));
+        CHECK(cfg.sdRoot == "/tmp/rp-c3-sd-root");
+        CHECK(cfg.fifo == 1);
+        CHECK(cfg.fifoDepth == 4096);
+        CHECK(cfg.fifoBytesPerSecond == 150000);
+        CHECK(cfg.n8Link == 1u);  // "off"
+        CHECK(cfg.n8LinkRttUs == 3000);
+        CHECK(cfg.channelExportMode == 3);
+    }
+    SECTION("Master System") {
+        NodeRig rig(kRate);
+        REQUIRE(rig.set(knobbed("rp.mesen.sms", rig.boot("rp.mesen.sms", 1, R"("enableFm":false,"gameGear":true)"))).ok);
+        const auto* const core = dynamic_cast<const MesenSmsSystem*>(rig.builtCore(1));
+        REQUIRE(core != nullptr);
+        CHECK_FALSE(core->config().enableFm);
+        CHECK(core->config().gameGear);
+    }
+}
+
 TEST_CASE("a knob absent from a system node's settings leaves its core as it was built, or as the last document left it",
           "[engine-graph][system-node][settings]") {
     SECTION("Game Boy") {
@@ -1446,8 +1530,9 @@ TEST_CASE("a Game Boy node's settings commit, and every knob it applies in place
     rig.host->setAudioThreadOwns(true);  // so the commit happens in a block, as it does under an audio thread
     REQUIRE(rig.set(knobbed("rp.sameboy.gb", rig.boot(
                                               "rp.sameboy.gb", 1,
-                                              R"("model":"dmgB","fastBoot":true,"highpass":"off","colorCorrection":"modernAccurate",)"
-                                              R"("dmgPalette":"gbl","lightTemperature":0.5,"serialOutCapture":"listen")")))
+                                              R"("model":"dmgB","fastBoot":true,"highpass":"off",)"
+                                              R"("colorCorrection":"modernAccurate","dmgPalette":"gbl",)"
+                                              R"("lightTemperature":0.5,"serialOutCapture":"listen")")))
                 .ok);
     rp::test::beginCountingAllocations();
     for (int b = 0; b < 2; ++b) rig.host->processBlock(512, t, out.ptrs.data(), 2);
@@ -1487,7 +1572,8 @@ TEST_CASE("a NES node's settings allocate no more on the block thread than the s
     const auto idle = window(control, controlOut);
     REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot(
                                               "rp.mesen.nes", 1,
-                                              R"("removeSpriteLimit":true,"apuLatencyMs":2,"s5bNoise":"chip","mmc5PhaseReset":"chip")")))
+                                              R"("removeSpriteLimit":true,"apuLatencyMs":2,"s5bNoise":"chip",)"
+                                              R"("mmc5PhaseReset":"chip")")))
                 .ok);
     window(rig, out);  // the block the settings land in
     const auto knobs = window(rig, out);
@@ -1909,7 +1995,29 @@ TEST_CASE("a Game Boy node built from its ROM resource renders what a core built
                             "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
         Direct d({direct.get()}, 2, {{0, 1}});
         CHECK(compare(rig, d, 2.0) == "");
+        CHECK(sounds(d));  // the seed's window is inside the boot chime
     }
+}
+
+TEST_CASE("a battery seed reaches a battery-backed cart, and the built core is what saves it back",
+          "[engine-graph][system-node][resources]") {
+    // The Game Boy twins' mGB cart has no battery (GB_save_battery_size is 0), so both cores ignore an sram seed there
+    // and nothing pins SameBoyBackend's copy. LSDj's cart has one: the seed a node names is what the built core saves.
+    // The ROM is a sibling fixture, so the case leaves on a run without one (as CI's).
+    const auto rom = resourceFixture("/roms/lsdj/lsdj9_4_1-develop.gb");
+    if (rom.empty()) return;
+    std::vector<std::uint8_t> sram(128 * 1024);  // LSDj 9.4.1's cart: a pattern no fresh battery holds
+    for (std::size_t i = 0; i < sram.size(); ++i) sram[i] = static_cast<std::uint8_t>(i * 7 + 3);
+    NodeRig rig(kRate);
+    const auto romId = resource(rig, "rom", rom);
+    const auto sramId = resource(rig, "sram", sram);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":{)" +
+                    rig.boot("rp.sameboy.gb", 1, R"("sram":"res:)" + std::to_string(sramId) + "\"", romId) +
+                    R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                        "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
+    auto* const built = dynamic_cast<SameBoySystem*>(rig.builtCore(1));
+    REQUIRE(built != nullptr);
+    CHECK(built->saveSramBytes() == sram);
 }
 
 TEST_CASE("a system node placed at a gain plays its first block at it, from the first sample",
@@ -1971,14 +2079,16 @@ TEST_CASE("a system node placed at a gain plays its first block at it, from the 
 TEST_CASE("a non-default model reaches a Game Boy core before it boots, so a savestate seed is not lost to a restart",
           "[engine-graph][system-node][resources]") {
     // The state is taken from a core running as the model the document names: the node built at the default model and
-    // restarted into CGB would lose exactly this. SameBoy's own restart discards the savestate it just restored.
+    // restarted into CGB would lose exactly this. SameBoy's own restart discards the savestate it just restored. The
+    // model is dmgB (SameBoyConfig's default is cgbC) and the state is taken inside the boot chime, so the seed's next
+    // block sounds and a restart into another model is heard as well as compared.
     const auto rom = readFile(RP_MGB_ROM_PATH);
     SameBoyConfig sourceCfg;
-    sourceCfg.model = SameBoyModel::Mgb;
-    sourceCfg.fastBoot = true;
+    sourceCfg.model = SameBoyModel::DmgB;
+    sourceCfg.fastBoot = false;
     auto source = std::make_unique<SameBoySystem>(9, sourceCfg, rom);
     source->onActivate(kRate);
-    const auto state = stateAfter(*source, 400);  // past the boot chime, so the state carries signal
+    const auto state = stateAfter(*source, 100);  // about 1.07 s in: the boot chime is still playing
     REQUIRE(!state.empty());
 
     NodeRig rig(kRate);
@@ -1990,17 +2100,17 @@ TEST_CASE("a non-default model reaches a Game Boy core before it boots, so a sav
     const auto stateId = resource(rig, "state", state);
     REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":{)" +
                     rig.boot("rp.sameboy.gb", 1,
-                             R"("model":"mgb","state":"res:)" + std::to_string(stateId) + "\"", romId) +
+                             R"("model":"dmgB","fastBoot":false,"state":"res:)" + std::to_string(stateId) + "\"",
+                             romId) +
                     R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
                         "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
     // The core the node built is the model the document carried; it never restarted into anything.
     auto* built = dynamic_cast<SameBoySystem*>(rig.builtCore(1));
     REQUIRE(built != nullptr);
-    CHECK(built->config_.model == SameBoyModel::Mgb);
+    CHECK(built->config_.model == SameBoyModel::DmgB);
     Direct d({direct.get()}, 2, {{0, 1}});
-    // mGB itself is silent as an Mgb (its chime is a DMG boot ROM's), so the comparison is the observation: a core
-    // restarted into another model would not follow this state bit for bit.
     CHECK(compare(rig, d, 2.0) == "");
+    CHECK(sounds(d));
 }
 
 TEST_CASE("a NES node built from its ROM resource takes its region, export mode and expansion volume",
@@ -2011,16 +2121,17 @@ TEST_CASE("a NES node built from its ROM resource takes its region, export mode 
     cfg.romPath = RP_BLIPTOASTER_ROM_PATH;
     cfg.region = static_cast<std::uint32_t>(NesRegion::Ntsc);
     cfg.channelExportMode = 1;  // stereoModPins: three mono streams
-    cfg.expansionVolume = 50;   // the blob path builds the core AT the volume; the node gives its param at its first block
+    cfg.expansionVolume = 50;   // a direct core built at the volume; the node gives its param at its first block
     auto direct = std::make_unique<MesenNesSystem>(1, cfg, rom);
     direct->onActivate(kRate);
     const auto romId = resource(rig, "rom", rom);
     REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.mesen.nes","settings":{)" +
                     rig.boot("rp.mesen.nes", 1,
                              R"("region":"ntsc","channelExportMode":"stereoModPins")", romId) +
-                    R"(},"params":{"expansionVolume":50}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[1,1,1]}}],
-                        "wires":[{"from":"sys-1.pins.pulse","to":"out.out.1"},{"from":"sys-1.pins.tnd","to":"out.out.2"},
-                                 {"from":"sys-1.pins.expansion","to":"out.out.3"}]})").ok);
+                    R"(},"params":{"expansionVolume":50}},{"id":"out","type":"rp.host.audio-out",)"
+                    R"("settings":{"buses":[1,1,1]}}],"wires":[{"from":"sys-1.pins.pulse","to":"out.out.1"},)"
+                    R"({"from":"sys-1.pins.tnd","to":"out.out.2"},{"from":"sys-1.pins.expansion","to":"out.out.3"}]})")
+                    .ok);
     auto* built = rig.builtCore(1);
     REQUIRE(built != nullptr);
     CHECK(dynamic_cast<MesenNesSystem*>(built)->config().region == static_cast<std::uint32_t>(NesRegion::Ntsc));
