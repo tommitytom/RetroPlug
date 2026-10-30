@@ -217,7 +217,9 @@ prototype answers (each answer follows its question):
   `rfl::internal::StringLiteral`, an internal reflect-cpp type, so a reflect-cpp bump is to check it. A test reads
   `settingsEnums.ts` and holds every enum knob's schema list to its TS list (`MODEL_VALUES`, `HIGHPASS_VALUES`,
   `COLOR_CORRECTION_VALUES`, `DMG_PALETTE_VALUES`, `REGION_VALUES`, `CARTRIDGE_ACCURACY_VALUES`, and `off` / `listen`
-  / `drive`), so the two spellings cannot drift.
+  / `drive`), so the two spellings cannot drift; it reads the numeric knob's range out of `buildGraph.ts`'s
+  `SETTING_FIELDS` and `coreRoles.ts`'s schema too, and holds both to the node's JSON Schema minimum and maximum, so a
+  range has one meaning in its three copies.
 - Whether a model or region change applied at a block's start, rather than in the command ring's drain, moves any
   parity case (it should not: both run before the block's first step). **None moved.** Strict parity held bit for bit
   at every commit, with nothing re-recorded, its fixture cases among them: every parity system node carries its whole

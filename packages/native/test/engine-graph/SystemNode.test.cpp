@@ -19,6 +19,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <memory>
@@ -869,6 +870,36 @@ rfl::Generic::Object knobSchema(const rfl::Generic::Object& schema, const char* 
     return *(*branches)[0].to_object();
 }
 
+// The numbers a TS field's own entry spells: `name: helper(<numbers>)`, e.g. `lightTemperature: within(-1, 1)` in
+// buildGraph.ts's SETTING_FIELDS, or `expansionVolume: clampedInt(0, 200, 100)` in coreRoles.ts's mesen schema. A
+// knob's entry has the range's two, a zod clamped field those and its default.
+std::vector<double> tsNumbers(const char* path, const std::string& entry) {
+    const auto bytes = readFile(path);
+    const std::string ts(bytes.begin(), bytes.end());
+    const auto at = ts.find(entry);
+    if (at == std::string::npos) return {};
+    const auto open = ts.find('(', at);
+    const auto close = ts.find(')', open);
+    if (open == std::string::npos || close == std::string::npos) return {};
+    const std::string args = ts.substr(open + 1, close - open - 1);
+    std::vector<double> out;
+    for (const char* p = args.c_str(); *p;) {
+        char* end = nullptr;
+        const double value = std::strtod(p, &end);
+        if (end == p) break;
+        out.push_back(value);
+        p = end;
+        while (*p == ' ' || *p == ',') ++p;
+    }
+    return out;
+}
+
+// The range a knob's numbers spell: its first two, whether or not a default follows.
+std::vector<double> tsRange(const char* path, const std::string& entry) {
+    const auto numbers = tsNumbers(path, entry);
+    return numbers.size() >= 2 ? std::vector<double>{numbers[0], numbers[1]} : std::vector<double>{};
+}
+
 std::vector<std::string> labelsOf(const rfl::Generic::Object& knob) {
     std::vector<std::string> labels;
     const auto values = knob.get("enum")->to_array();
@@ -931,8 +962,28 @@ TEST_CASE("a system node's enum knobs take the labels the role configs spell, an
                 if (const auto v = branch.to_object()->get(key)) b.push_back(*v->to_double());
         return b;
     };
+    // Each range is TS's, in all three copies: buildGraph's SETTING_FIELDS, which picks a value for the document, the
+    // role schema's clamped field, which a stored or edited config comes through, and the node's own declaration.
+    CHECK(bounds(knobSchema(gb, "lightTemperature")) == tsRange(RP_BUILD_GRAPH_TS_PATH, "lightTemperature:"));
+    CHECK(bounds(knobSchema(gb, "lightTemperature")) == tsRange(RP_CORE_ROLES_TS_PATH, "lightTemperature:"));
     CHECK(bounds(knobSchema(gb, "lightTemperature")) == std::vector<double>{-1.0, 1.0});
+    CHECK(bounds(knobSchema(nesSchema, "apuLatencyMs")) == tsRange(RP_BUILD_GRAPH_TS_PATH, "apuLatencyMs:"));
+    CHECK(bounds(knobSchema(nesSchema, "apuLatencyMs")) == tsRange(RP_CORE_ROLES_TS_PATH, "apuLatencyMs:"));
     CHECK(bounds(knobSchema(nesSchema, "apuLatencyMs")) == std::vector<double>{0.25, 6.0});
+    // The NES's one param whose value comes from its core config, whole percent, the same range its role schema clamps.
+    const auto roleRange = tsNumbers(RP_CORE_ROLES_TS_PATH, "expansionVolume:");
+    REQUIRE(roleRange.size() == 3);
+    const auto nesType = rig.registry.find("rp.mesen.nes")->type;
+    const auto descriptor = rp::graph::parseJson(nesType->descriptor(nesType));
+    REQUIRE(descriptor);
+    const auto params = descriptor->to_object()->get("params")->to_array();
+    REQUIRE(params);
+    for (const auto& p : *params) {
+        const auto o = *p.to_object();
+        if (*o.get("id")->to_string() != "expansionVolume") continue;
+        CHECK(*o.get("min")->to_double() == roleRange[0]);
+        CHECK(*o.get("max")->to_double() == roleRange[1]);
+    }
     for (const char* type : {"rp.mesen.gba", "rp.mesen.sms"}) {
         INFO(type);
         CHECK(settingsSchema(rig, type).get("properties")->to_object()->size() == 1);  // core alone
