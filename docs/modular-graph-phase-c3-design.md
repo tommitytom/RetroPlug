@@ -75,10 +75,11 @@ Every system node type (`rp.sameboy.gb`, `rp.mesen.nes`, `rp.mesen.gba`, `rp.mes
 | C2's | The live settings and params, unchanged |
 
 The construct-time fields are optional in the native settings, an absent one building the core at its default, and
-`buildGraph` writes every one: the stored value where the node takes it, else the node's own default, which the role
-schema fills for a fresh config. So no document flips a field between absent and present under one system id, which
-matters because the key tells the two apart. Their enums are labels as the role configs spell them, read by C2's
-`knobs::Label`.
+`buildGraph` writes every field the core-config role carries: the stored value where the node takes it, else the node's
+own default, which the role schema fills for a fresh config. `gameGear` is the platform's rather than the role's: it is
+written `true` for a Game Gear and left out otherwise, and a system's platform never changes under a live id, so it
+flips no key either. So no document flips a field between absent and present under one system id, which matters because
+the key tells the two apart. Their enums are labels as the role configs spell them, read by C2's `knobs::Label`.
 
 **`rebuild_key`** covers `system`, `romName` and every construct-time field, so a change to any of them rebuilds the
 node (and the system nodes keep `stateless_prepare`: a live knob edit still never makes `setGraph` wait). The resource
@@ -138,10 +139,13 @@ resources, checking their types.
 **Activate** (control thread, inside `setGraph`) builds the core through `rp.host.systems/1`, which replaces
 `rp.host.cores/1`:
 
-1. `build(...)` hands the backend a typed config made from the node's settings: SameBoy a `SameBoyConfig` with every
-   knob present (the model and fast boot among them), Mesen a `MesenNesConfig`, `MesenSmsConfig` or `MesenGbaConfig`
-   with the construct-time fields, the region and the accuracy pair, and both the ROM and seed bytes and `romName`.
-2. The backend applies before `onActivate` what it applies there today, boots, restores the seeds and enables the state
+1. `build(...)` takes the request by value and hands the backend a typed config made from the node's settings: SameBoy
+   a `SameBoyConfig` with every knob present (the model and fast boot among them), Mesen a `MesenNesConfig`,
+   `MesenSmsConfig` or `MesenGbaConfig` with the construct-time fields, the region and the accuracy pair, and both the
+   ROM and seed bytes and `romName`. A node's pins are copied into that request once, and its bytes are moved into the
+   core from there.
+2. The backend constructs the core with that config and boots it: the core applies the model, fast boot, highpass and
+   display group inside `onActivate`, before the ROM and the seeds load, then restores the seeds and enables the state
    snapshot. A loaded non-default model still boots as that model, never restarting afterwards; the node seeds the
    settings it built from (less what the config does not carry, a Game Boy's capture) as what the core already has, so
    its own first application finds every value equal and calls nothing, as in C2.
@@ -156,8 +160,9 @@ config, and the backends' ROM gates (`detectRomFormat`) stay.
 **A failure to build** (the core's ROM gate, a Mesen boot that fails, a full snapshot pool, a live id) is the planner's
 existing `activate-failed`, with the node id and a reason. A build outside the `setGraph` that activates it is refused
 too, with its own reason: no document can cause it. Nor can one cause a build for an id the plan being built has no
-slot for: that host bug is asserted, and refused through the same helper, the slot and the live-core entry the claim
-took given back first, since a refusal that left them behind would hold that id live for the rest of the process.
+slot for: that host bug is asserted, and refused through the same helper, which destroys the core it built and gives
+back the slot and the live-core entry the claim took first, since a refusal that left them behind would hold that id
+live for the rest of the process.
 A refused document changes nothing: the running plan keeps running, and the cores the refused plan built are destroyed
 as its instances unwind, on the control thread, releasing their slots. There is no "parked for a corrected document"
 state; a retry builds again.
@@ -188,7 +193,7 @@ its config, where they started. Every verb that called `buildCore` keeps its orc
 | duplicate | the ROM put again from its source; a `state` seed from `readState` | the whole machine |
 | reload, reset | the ROM put again from its source; an `sram` seed from `readSram` | the battery |
 | new SRAM | the ROM put again from its source; a blank `sram` seed | nothing |
-| load state, load SRAM | the ROM put again from its source; the file by path | the file |
+| load state, load SRAM | the ROM put again from its source; the file's bytes as a `state` seed (load state) or an `sram` seed (load SRAM) | the file |
 | project load | each system's ROM; the archive's blobs | what the archive saved |
 | a construct-time edit | the ROM put again from its source; an `sram` seed from `readSram` | the battery |
 
@@ -202,9 +207,10 @@ planned, so nothing pinned them.
 **A construct-time edit** is the reset path, run by `setRoleConfig` itself: the `systemKnobs` table gains a third
 column beside settings and params, and when one of its fields moves the store rebuilds the system under a new id with
 the new settings, carrying its battery, and answers whether that build planned. Its two sides are `systemKnobs`: the
-stored config as written, which is what the running document carried, against the edit's schema parse. Every
-construct-time field is written in full, so a sparse stored config names the same values a fresh one does and a live
-knob edit stays live rather than rebuilding; a stored value the schema repairs becomes one the node takes, which the
+stored config as written, which is what the running document carried, against the edit's schema parse. Every field the
+core-config role carries is written in full (`gameGear` is the platform's, and a platform never changes under a live
+id), so a sparse stored config names the same values a fresh one does and a live knob edit stays live rather than
+rebuilding; a stored value the schema repairs becomes one the node takes, which the
 running core was not built with, so that edit takes the rebuild it needs. A stored value the role schema would repair on
 the way in (a number clamped or rounded into range) is one the running node never took, so its place in the document is
 the node's default: that matches the old repair where the repair was the default, and differs where it clamped or
@@ -227,15 +233,17 @@ of its protocol nodes (`sys-K/<kind>`, `sys-K/<kind>/out`) drops system K with a
 one unreadable ROM still costs only its own system. A document-wide refusal names no system, so nothing is dropped and
 the load warns that the systems it lists do not run.
 
-**`buildGraph`** writes `system`, `rom`, `sram`, `state`, `romName`, the construct-time fields, C2's knobs and the
-params. **`ConstructSpec`** stays as TS's description of what to boot, no longer a wire type: one helper
+**`buildGraph`** writes `system`, `rom`, `sram`, `state`, `romName`, every construct-time field the core-config role
+carries (and a Game Gear's `gameGear`), C2's knobs and the params. **`ConstructSpec`** stays as TS's description of what
+to boot, no longer a wire type: one helper
 ([systemResources.ts](../packages/retroplug/src/graph/systemResources.ts)) turns it into the resources both the store
 and `DirectGraph` name, with the node type and ROM name their documents write, so the native tests that hand
-`DirectGraph.add` a literal spec barely change. Its
-`core` names the kind of core whose role config `coreConfig` is and selects no core. **The mock backend** implements
-`putResource` and `releaseResource`, and refuses a document naming an unknown or dropped resource, a wrong-typed one, a
-bad `res:` spelling or a system node with no ROM, and one that moves a system node's rebuild key under an id it already
-places (native's "system N is live"). The render path and every host go through the store as today.
+`DirectGraph.add` a literal spec barely change. Its `core` names the kind of core whose role config `coreConfig` is and
+selects no core. **The mock backend** implements `putResource` and `releaseResource`, takes native's rule that a resource
+carries exactly one source (a null one counting as none) and quotes the caller's path and marker as native does, and
+refuses a document naming an unknown or dropped resource, a wrong-typed one, a bad `res:` spelling or a system node with
+no ROM, and one that moves a system node's rebuild key under an id it already places (native's "system N is live"). The
+render path and every host go through the store as today.
 
 **Persistence:** nothing changes. A project saves roles and blobs; resources live only at runtime. No migration.
 
@@ -246,25 +254,33 @@ places (native's "system N is live"). The render path and every host go through 
 - **`retroplug-engine-graph-test`**: each console's node, built from resources, renders what a core built directly from
   the same bytes renders, bit for bit, seeds included (a Game Boy plain, with a battery seed and with a savestate seed;
   a non-default model under a savestate; a NES with its region, export mode and expansion volume; an SMS with FM off,
-  its battery and a `romName`; a GBA; an LSDj); and each type's every build knob, away from its default, is read back off
-  the built core, with a battery-backed cart's seed saved back by the core it reached, and each construct-time field's
-  fallback builds the core its absence builds; a Master System's two nodes stage
-  under stems of their own; a missing,
-  dropped or wrong-typed resource, an unrecognised ROM, a live id, a full snapshot pool and a build outside `setGraph`
-  each refuse the document and leave the running plan, the pins and the slots as they were; a construct-time change
-  under the same id is refused and under a new id rebuilds; a document changing only a param or a live knob keeps the
-  core; every pin and every snapshot slot comes back after a removal, a rebuild and a refused plan; ThreadSanitizer and
-  AddressSanitizer over a system added and removed while an audio thread plays.
+  its battery and a `romName`; a GBA; an LSDj); each type's every build knob, away from its default, is read back off
+  the built core, with a battery-backed cart's seed saved back by the core it reached; and each construct-time field's
+  fallback, read out of `buildGraph.ts`, builds the core its absence builds. A Master System's two nodes stage under
+  stems of their own. A missing resource, an unrecognised ROM, a live id, a full snapshot pool and a build outside
+  `setGraph` each refuse the document and leave the running plan, the pins and the slots as they were (a dropped or
+  wrong-typed resource is `retroplug-graph-test`'s, below). A construct-time change under the same id is refused and
+  under a new id rebuilds; a document changing only a param or a live knob keeps the core; every pin and every snapshot
+  slot comes back after a removal, a rebuild and a refused plan; ThreadSanitizer and AddressSanitizer over a system
+  added and removed while an audio thread plays.
+- **The goldens** ([build-graph-goldens.test.ts](../packages/retroplug/test/graph/build-graph-goldens.test.ts),
+  [build-graph-role-goldens.test.ts](../packages/retroplug/test/graph/build-graph-role-goldens.test.ts) and
+  `BuildGraphGoldens.test.cpp` in the engine-graph binary): the documents `buildGraph` writes for the B1 matrix and for
+  its own roles record, held whole and re-recorded when a change moves them (a document's `res:` ids renumbered in one
+  pass, since two can swap places); and every one of those documents planned on a real Engine, the matrix a quiet
+  block each and the roles record twenty driven blocks each.
 - **`retroplug-graph-test`**: `rp.host.resources/1` with a toy node (acquire at create, release at destroy, a moved ref
   rebuilding, a knob edit keeping the pin, a refused plan unwinding its new pins, a dropped resource readable until the
-  plan that pinned it is reclaimed, pins balanced, and the field walk that names each field letting an allocation that
-  failed inside it reach the create's catch, which refuses the node rather than terminating on a `noexcept`).
+  plan that pinned it is reclaimed, pins balanced, and the field walk that names each field letting what its callers
+  build throw out of it, so a create's catch sees it as a refusal rather than a `noexcept` terminate).
 - **`pnpm test`** ([store-resources.test.ts](../packages/retroplug/test/systems/store-resources.test.ts)): each verb's
   resource and publish order, the release after a publish, the rollback after a refusal, a restore republish refused
   too, a project load dropping its bad system, the construct-time reset, a construct-time edit to the value already
   stored moving nothing, a publish that throws rolling back as a refusal does, a sparse stored config's live edits, a
-  stored value the schema repairs taking its rebuild, the mock's refusal of a rebuild-key move under a live id, `clear`/
-  `discard`, DirectGraph's add/replace/remove, every put balanced by a release.
+  stored value the schema repairs taking its rebuild, `clear`/`discard`, DirectGraph's add/replace/remove, every put
+  balanced by a release; and the mock backend's own refusals ([meta.test.ts](../packages/retroplug/test/meta.test.ts)):
+  a resource spec with no source or more than one, a null source counting as none, and a system node's rebuild key moved
+  under a live id (native's "system N is live").
 - **`test:native`** ([app-construct-edit.test.ts](../packages/retroplug/test-native/app-construct-edit.test.ts)): a NES
   FIFO profile edit changes the queue's capacity with no Reset, an export-mode edit makes the per-channel streams
   appear, an SMS FM edit silences an FM song, a sparse stored config keeps a live edit, a param and a later live edit
@@ -344,14 +360,15 @@ section 7; and the findings below.
   repaired value. `systemKnobs` writes the node's own default where the stored value is one it would refuse, and notes
   it, so an out-of-range number or a fractional integer takes that default where the blob took the clamp or the rounded
   value; an unknown label keeps its meaning because the schema's default and the native default agree (section 6).
-- **`buildGraph` writes every construct-time field, and a construct-time edit is compared over the stored config as
-  written.** A system node's rebuild key tells an absent construct-time field from one present at its default, and a
-  project saved before the schema grew a field (every NES project saved before `n8Link`) carries a sparse config. A
-  document that began writing the omitted defaults under the same id moved the key, so the engine refused the first
-  live knob edit ("system N is live"), and a param-only edit's later publish too. Every field is now written (the
-  stored value, else the node's default), and the store compares `systemKnobs` over the raw stored config, which is
-  what the running document carried, with the edit's schema parse: a sparse config adds no move, while a stored value
-  the schema repairs takes the rebuild it needs. The mock backend refuses a rebuild-key move under a live id with
+- **`buildGraph` writes a system node's construct-time fields, and a construct-time edit is compared over the stored
+  config as written.** A system node's rebuild key tells an absent construct-time field from one present at its default,
+  and a project saved before the schema grew a field (every NES project saved before `n8Link`) carries a sparse config.
+  A document that began writing the omitted defaults under the same id moved the key, so the engine refused the first
+  live knob edit ("system N is live"), and a param-only edit's later publish too. Every field the core-config role
+  carries is now written (the stored value, else the node's default), `gameGear` is the platform's (written for a Game
+  Gear alone), and a platform never changes under a live id; the store compares `systemKnobs` over the raw stored config,
+  which is what the running document carried, with the edit's schema parse: a sparse config adds no move, while a stored
+  value the schema repairs takes the rebuild it needs. The mock backend refuses a rebuild-key move under a live id with
   native's text, so the mock tier can see this class of bug (sections 3 and 6).
 - **The pre-C3 `setRoleConfig` + `reset(oldId)` pattern still works.** The plan's review found both consumer suites
   relied on it: they move a construct-time field and then call `reset` on the id they held to learn the id carrying the
@@ -380,6 +397,43 @@ section 7; and the findings below.
   after one has failed, so a document of N systems with one bad ROM pays N-1 boots for the refusal, and a project load's
   recovery (drop the refused system, publish the rest) pays them twice. It buys one pass over every bad system in the
   document, and only a GBA's boot is large enough to notice (section 9).
+
+The follow-ups after the landing found these, each recorded the way the findings above are:
+
+- **An empty resource is legal, and its `rp_bytes` is never null.** A blank battery ("new SRAM") is a zero-length
+  payload, and a consumer forms a range from `(data, data + size)`, so the table points one at a static byte rather
+  than at null: a node reads size 0 with a valid pointer (section 4).
+- **A resource handle is resolved before `needs_rebuild`, and a moved ref skips that hook.** The prepare resolves each
+  resource field into the settings it installs first, then asks `needs_rebuild`, so a node that reads a resource there
+  sees a handle on both sides; a moved ref is already a rebuild, so the hook does not run on the document that moved it
+  (section 4, and section 9's answer).
+- **The named-field walk may throw, and a create's failure is its caller's refusal.** `forEachNamedField` has no
+  `noexcept`: its callers build the reason strings and take the pins inside it, and an allocation that fails there must
+  reach the catch around `createFn`/`prepareFn`, which turns it into that node's refusal rather than a terminate
+  (sections 4, 5 and 7).
+- **The build request is taken by value.** A node's pins are copied into it once and its bytes are moved into the core
+  from there, so a GBA's 8 MiB ROM is not copied a second time (sections 5 and 9).
+- **The not-in-the-slots refusal gives everything back.** That host bug destroys the core it built and gives back the
+  snapshot slot and the live-core entry before the reason goes out, so a refusal cannot hold that id live for the rest
+  of the process (section 5).
+- **The configs' ROM fields went with the old path.** `SameBoyConfig`'s `romPath`, `embedRom`, `embeddedRom` and
+  `romBytes`, the Mesen configs' `embedRom` and `romBytes`, and `SystemBase::romPath()` with its overrides had no reader
+  left once a node handed the build its bytes and `romName` (section 5); Mesen's `romPath` stays, since its consoles
+  stage and log under it.
+- **Each type's build knobs and a battery seed have cases of their own.** Every construct-time knob of each console,
+  away from its default, is read back off the built core field by field, and an LSDj's `sram` seed is saved back by the
+  core it reached, so a knob a build forgets and a seed a build drops both fail (section 7).
+- **A slots refusal names a node; only a slot-set mismatch names none.** A system's own node is `sys-<id>` and its
+  protocol nodes `sys-<id>/<kind>` (and `sys-<id>/<kind>/out`), and the planner reports a node's own failure under that
+  id, so a project load's retry drops the system either way; a document-wide refusal (the slot-set mismatch) names no
+  system, and the load then warns that the systems it lists do not run (section 6).
+- **The mock backend takes native's resource-source rule and its quoting.** A spec carries exactly one of `bytes`,
+  `path` and `embedded` (a null counts as absent, as the optional does on the wire), and a refusal quotes the caller's
+  path and marker as native's does, so the mock tier sees the class of bug the real one reports (sections 4 and 6).
+- **A publish that throws finishes its rollback, a release that throws included.** The store restores its model and
+  focus, gives back the edit's puts, resends the restored model and rethrows the first failure; a throwing release
+  inside that path is logged and the rollback continues, so the caller still sees the publish's error and the restored
+  document still lands (section 6).
 
 ## 11. Left as it is
 

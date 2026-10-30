@@ -1357,11 +1357,11 @@ here so it is not lost.
      checked canonical text, most of `toGraphJson` (below), but none of the planning.
 
   The table is the planner alone: not `Engine::setGraph`'s own work (the slot and system-node checks, the
-  system table, the boot a new node's activation runs), and not TS. On the TS side `EngineGraph` sends what
-  `buildGraph` and `toGraphJson` write, and for a 10,030-node document (4,700 unlinked Game Boys under stereo,
-  14,728 wires) those cost about 7 ms and 105 ms under QuickJS (medians of 7, a one-off script run by
-  `retroplug-cli`, not committed): `toGraphJson`'s checks about 40 ms and its canonical JSON about 59 ms, where a plain
-  `JSON.stringify` of the same document takes about 9 ms. So at that size the TS side costs about what the
+  system table) and not TS; nor does it time the boot a new node's activation now runs inside `setGraph`. On the TS
+  side `EngineGraph` sends what `buildGraph` and `toGraphJson` write, and for a 10,030-node document (4,700 unlinked
+  Game Boys under stereo, 14,728 wires) those cost about 7 ms and 105 ms under QuickJS (medians of 7, a one-off script
+  run by `retroplug-cli`, not committed): `toGraphJson`'s checks about 40 ms and its canonical JSON about 59 ms, where a
+  plain `JSON.stringify` of the same document takes about 9 ms. So at that size the TS side costs about what the
   chain's native plan does, plus the RPC hop, and `toGraphJson` is a cost of its own. `EngineGraph` pays it
   on every publish, even one its dedupe then skips: it builds and serialises the whole document before
   comparing it with the last one that planned (`engineGraph.ts`). The bench's nodes

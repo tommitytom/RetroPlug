@@ -211,7 +211,8 @@ public:
     // that activates it: the core is built from `request` at the engine's rate, its snapshot slot is claimed under
     // `system` and it joins the live cores. Null, with the reason in *why, for a live id (one a node of any plan not
     // yet reclaimed holds), a ROM the console's gate or the core refuses, a full snapshot pool, and an id the plan
-    // being built has no slot for (which gives back the slot and the live-core entry that claim took); the node throws
+    // being built has no slot for (which destroys the core it built and gives back the slot and the live-core entry
+    // that claim took); the node throws
     // that reason, which the planner reports as activate-failed. The core is the calling node's until destroySystem,
     // which is the reclaim (or refused-plan unwind) that frees the node:
     SystemBase* buildSystem(std::uint64_t system, SystemBuildRequest request, std::string* why);
