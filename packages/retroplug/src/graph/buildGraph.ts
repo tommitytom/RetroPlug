@@ -109,7 +109,8 @@ interface Stream {
   stereo: boolean;
 }
 
-// A system's node id in the documents buildGraph builds (`sys-<id>`), which the stores set live params on.
+// A system's node id in the documents buildGraph builds (`sys-<id>`), which the store and `DirectGraph` address a
+// system node by.
 export const systemNodeId = (id: number): string => `sys-${id}`;
 
 /** A system's protocol node: sys-<id>/<role-kind>, the main design's convention. */
