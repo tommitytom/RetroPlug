@@ -10,6 +10,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 #include <rfl/Literal.hpp>
@@ -152,6 +153,12 @@ struct SystemNodeSettings {  // rp.mesen.gba
         bool operator==(const Key&) const = default;
     };
     Key key() const { return {system, romName}; }
+
+    // The live knobs alone, which is what the node's `applied` holds: a construct-time field or the ROM's name rebuilds
+    // the node instead of being applied to the core it has, so the block thread's copy of what the core was given
+    // copies no string. A Game Boy Advance has none of its own yet.
+    struct Applied {};
+    Applied liveKnobs() const { return {}; }
 };
 
 struct GameBoySettings {
@@ -175,6 +182,20 @@ struct GameBoySettings {
         bool operator==(const Key&) const = default;
     };
     Key key() const { return {system, romName}; }
+
+    // The live knobs alone (the comment on SystemNodeSettings::Applied says why).
+    struct Applied {
+        std::optional<knobs::Label<SameBoyModel>>           model;
+        std::optional<bool>                                 fastBoot;
+        std::optional<knobs::Label<SameBoyHighpass>>        highpass;
+        std::optional<knobs::Label<SameBoyColorCorrection>> colorCorrection;
+        std::optional<knobs::Label<SameBoyDmgPalette>>      dmgPalette;
+        std::optional<knobs::LightTemperature>              lightTemperature;
+        std::optional<knobs::Label<SerialOutCapture>>       serialOutCapture;
+    };
+    Applied liveKnobs() const {
+        return {model, fastBoot, highpass, colorCorrection, dmgPalette, lightTemperature, serialOutCapture};
+    }
 };
 
 struct NesSettings {
@@ -225,6 +246,16 @@ struct NesSettings {
                 ofLabel(n8Link),        ofNumber(n8LinkRttUs),
                 ofLabel(channelExportMode)};
     }
+
+    // The live knobs alone (the comment on SystemNodeSettings::Applied says why).
+    struct Applied {
+        std::optional<knobs::Label<NesRegion>>         region;
+        std::optional<bool>                            removeSpriteLimit;
+        std::optional<knobs::ApuLatencyMs>             apuLatencyMs;
+        std::optional<knobs::Label<CartridgeAccuracy>> s5bNoise;
+        std::optional<knobs::Label<CartridgeAccuracy>> mmc5PhaseReset;
+    };
+    Applied liveKnobs() const { return {region, removeSpriteLimit, apuLatencyMs, s5bNoise, mmc5PhaseReset}; }
 };
 
 struct SmsSettings {
@@ -245,6 +276,11 @@ struct SmsSettings {
         bool operator==(const Key&) const = default;
     };
     Key key() const { return {system, romName, enableFm, gameGear}; }
+
+    // The live knobs alone (the comment on SystemNodeSettings::Applied says why): an SMS has none, every field it takes
+    // being read when its core is built.
+    struct Applied {};
+    Applied liveKnobs() const { return {}; }
 };
 
 namespace {
@@ -299,15 +335,18 @@ bool moved(const std::optional<F>& to, const std::optional<F>& from) { return to
 // prepare reads nothing a commit writes and setGraph never waits on a system node's commit (stateless_prepare). A
 // commit only points `settings` at the new settings (on_settings never allocates); the node applies what moved at the
 // start of its next block, before the core's prepareForBlock, and everything present once at activation, as it takes
-// or builds its core, before that core first runs. So a setting lands at the node's next prepare, after every host
-// command queued behind its plan (the host drains its ring before it runs a block): a caller that must act on the
-// restarted core renders a block first, since a RAM write or staged core bytes sent after a model change reach the
-// core it is about to replace. Each knob is guarded twice, first by `moved` against what this node last applied, so a
-// document's unchanged field is not re-applied even where the core was changed by another path, then by the core's own
-// setter where it has one (setFastBoot and a NES's setRemoveSpriteLimit write unconditionally). A palette change
-// re-applies the display group and restarts nothing, while a model change restarts the core and a region change resets
-// it (docs/modular-graph-phase-c2-design.md section 4). A settings field the type does not know is ignored (node.hpp
-// reads with rfl::DefaultIfMissing and no rfl::NoExtraFields), so a misspelt knob plans and does nothing.
+// or builds its core, before that core first runs. What the core was given is `applied`, a Settings::Applied, which is
+// the live knobs alone: the fields carrying a string (romName, sdRoot, the resource refs) all rebuild the node or move
+// a resource, which no application sees, so the copy a commit makes on the block thread copies no string. So a setting
+// lands at the node's next prepare, after every host command queued behind its plan (the host drains its ring before it
+// runs a block): a caller that must act on the restarted core renders a block first, since a RAM write or staged core
+// bytes sent after a model change reach the core it is about to replace. Each knob is guarded twice, first by `moved`
+// against what this node last applied, so a document's unchanged field is not re-applied even where the core was
+// changed by another path, then by the core's own setter where it has one (setFastBoot and a NES's setRemoveSpriteLimit
+// write unconditionally). A palette change re-applies the display group and restarts nothing, while a model change
+// restarts the core and a region change resets it (docs/modular-graph-phase-c2-design.md section 4). A settings field
+// the type does not know is ignored (node.hpp reads with rfl::DefaultIfMissing and no rfl::NoExtraFields), so a
+// misspelt knob plans and does nothing.
 //
 // A param's value reaches the core at the start of each block whose control stream moves it, before the core's
 // prepareForBlock and after the settings (a model's restart first, then the levels), each value-guarded against the
@@ -320,6 +359,12 @@ bool moved(const std::optional<F>& to, const std::optional<F>& from) { return to
 template <class Self, class Core, class S = SystemNodeSettings>
 struct SystemNode {
     using Settings = S;
+    // What the core was given (the live knobs alone, per Settings::Applied): trivially copyable, since the block thread
+    // writes it, so a string-valued live knob would have to be added here deliberately rather than ride a copy of the
+    // whole settings.
+    using Applied = typename Settings::Applied;
+    static_assert(std::is_trivially_copyable_v<Applied>,
+                  "a settings application must not allocate on the block thread");
     static auto rebuild_key(const Settings& s) { return s.key(); }
     static constexpr bool stateless_prepare = true;
 
@@ -328,7 +373,7 @@ struct SystemNode {
     Core*                                  core = nullptr;  // owned
     std::array<std::uint8_t, kMaxOutputs>  connected{};
     const Settings*                        settings = nullptr;  // the committed ones, alive until the next commit
-    Settings                               applied{};           // what the core was given last (none before activation)
+    Applied                                applied{};           // the live knobs the core was given last (none before)
     bool                                   pending = false;     // settings committed and not yet applied
     double                                 gainApplied = kUnapplied;  // the gain param's value the core has, in dB
 
@@ -391,11 +436,11 @@ struct SystemNode {
             systems->destroy(systems->ctx, made);
             throw std::runtime_error(std::string("the built core is not a ") + Self::name);
         }
-        // The build applied the config, so its fields are on the core already: `applied` is seeded with the settings,
-        // less what the config does not carry, so the node's own first application finds them equal and calls nothing (a
-        // model change would restart the core and lose the savestate the build restored). What is left over is a live
-        // knob, which reaches the core now.
-        applied = *settings;
+        // The build applied the config, so its fields are on the core already: `applied` is seeded with the settings'
+        // live knobs, less what the config does not carry, so the node's own first application finds them equal and
+        // calls nothing (a model change would restart the core and lose the savestate the build restored). What is left
+        // over is a live knob, which reaches the core now.
+        applied = settings->liveKnobs();
         static_cast<Self*>(this)->configApplied(applied);
         applySettings();
     }
@@ -407,15 +452,15 @@ struct SystemNode {
     }
 
     // A type whose config carries none of its knobs clears them here, so the node's first block applies them.
-    void configApplied(Settings&) const noexcept {}
+    void configApplied(Applied&) const noexcept {}
 
     void applySettings() noexcept {
         static_cast<Self*>(this)->apply(*settings, applied);
-        applied = *settings;
+        applied = settings->liveKnobs();
         pending = false;
     }
     // A core with no knobs of its own (the GBA, the SMS).
-    void apply(const Settings&, const Settings&) noexcept {}
+    void apply(const Settings&, const Applied&) noexcept {}
 
     void ports_changed(std::span<const std::uint8_t> mask) noexcept {
         connected.fill(0);
@@ -603,7 +648,7 @@ struct GameBoy : SystemNode<GameBoy, SameBoySystem, GameBoySettings> {
 
     // The capture mode is not part of SameBoyConfig: the core takes it through its own setter, so the build did not
     // apply it and the node's own first application must.
-    void configApplied(Settings& applied) const noexcept { applied.serialOutCapture.reset(); }
+    void configApplied(Applied& applied) const noexcept { applied.serialOutCapture.reset(); }
 
     // The fast boot first, which waits for the next restart and so is what a model's restart boots with: a block that
     // carries both (several documents published between two blocks commit together) restarts on the new fast boot,
@@ -611,7 +656,7 @@ struct GameBoy : SystemNode<GameBoy, SameBoySystem, GameBoySettings> {
     // rest in the order the store's role config lists them, the capture last. The capture lands at the start of the
     // first block of the plan that carries it, the block rp.lsdj.serial-out first runs in its new mode, so no byte
     // captured in one mode is decoded in the other.
-    void apply(const Settings& to, const Settings& from) noexcept {
+    void apply(const Settings& to, const Applied& from) noexcept {
         if (moved(to.fastBoot, from.fastBoot)) core->setFastBoot(*to.fastBoot);
         if (moved(to.model, from.model)) core->setModel(knobs::valueOf<SameBoyModel>(*to.model));
         if (moved(to.highpass, from.highpass)) core->setHighpass(knobs::valueOf<SameBoyHighpass>(*to.highpass));
@@ -695,7 +740,7 @@ struct Nes : SystemNode<Nes, MesenNesSystem, NesSettings> {
 
     // The region first, because a region change resets the core (setRegion); the rest apply in place, in the order
     // the store's role config lists them.
-    void apply(const Settings& to, const Settings& from) noexcept {
+    void apply(const Settings& to, const Applied& from) noexcept {
         if (moved(to.region, from.region))
             core->setRegion(static_cast<std::uint32_t>(knobs::valueOf<NesRegion>(*to.region)));
         if (moved(to.removeSpriteLimit, from.removeSpriteLimit)) core->setRemoveSpriteLimit(*to.removeSpriteLimit);
