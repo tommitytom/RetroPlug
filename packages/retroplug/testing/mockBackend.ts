@@ -344,13 +344,21 @@ export class MockBackend implements Backend {
     };
     if (spec.type !== "rom" && spec.type !== "sram" && spec.type !== "state")
       return refused(`a resource type is "rom", "sram" or "state", not "${spec.type}"`);
+    // Native's exactly-one-source rule (EngineRpcService.cpp): the union makes a malformed spec unrepresentable in
+    // typed code, but a test that casts past it must see the engine's answer, not the first source found.
+    const sources = spec as { bytes?: Uint8Array; path?: string; embedded?: string };
+    const given =
+      (sources.bytes !== undefined ? 1 : 0) +
+      (sources.path !== undefined ? 1 : 0) +
+      (sources.embedded !== undefined ? 1 : 0);
+    if (given !== 1) return refused(`a resource carries exactly one of bytes, path or embedded (${given} given)`);
     let bytes: Uint8Array | undefined;
-    if ("bytes" in spec) bytes = spec.bytes;
-    else if ("path" in spec) {
-      bytes = this.files.get(this.canonicalize(spec.path));
+    if (sources.bytes !== undefined) bytes = sources.bytes;
+    else if (sources.path !== undefined) {
+      bytes = this.files.get(this.canonicalize(sources.path));
       if (!bytes || bytes.length === 0)
-        return refused(`could not read ${spec.path}: the file is absent, unreadable or empty`);
-    } else if (spec.embedded !== "mgb") return refused(`"${spec.embedded}" is not an embedded ROM`);
+        return refused(`could not read ${JSON.stringify(sources.path)}: the file is absent, unreadable or empty`);
+    } else if (sources.embedded !== "mgb") return refused(`${JSON.stringify(sources.embedded)} is not an embedded ROM`);
     else bytes = enc.encode("embedded:mgb");
     // An empty payload is a legitimate seed (a blank battery), but a ROM has to have something to boot.
     if (bytes.length === 0 && spec.type === "rom")
@@ -441,7 +449,9 @@ export class MockBackend implements Backend {
     const placed = new Map<number, NodeDoc>();
     for (const id of request.slots) {
       const node = nodes.get(`sys-${id}`);
-      if (!node) return refusedGraph(`sys-${id}`, "slots", `the document places no system node for id ${id}`);
+      // Native names no node for this: the slots and the document's system nodes disagree, which is the document's
+      // fault rather than one node's (Engine.cpp), so a load cannot read it as one system's refusal.
+      if (!node) return refusedGraph("", "slots", "the slots and the document's system nodes name different systems");
       const problem = this.resourceProblem(node);
       if (problem) return refusedGraph(node.id, problem.code, problem.message);
       const was = this.systemNodes.get(id);

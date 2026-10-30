@@ -3,7 +3,7 @@
 // TDD loop is ready and every subsequent feature test can rely on it.
 import { test, expect } from "../testing/harness";
 import { MockBackend } from "../testing/mockBackend";
-import type { Backend, SetGraphRequest } from "../src/backend";
+import type { Backend, ResourceSpec, SetGraphRequest } from "../src/backend";
 
 test("harness: expect matchers behave", () => {
   expect(1 + 1).toBe(2);
@@ -61,8 +61,26 @@ test("mock backend: putResource answers ids that count up, and a dropped id stay
   expect(be.putResource({ type: "rom", embedded: "mgb" })).toEqual({ id: 3 }); // never reused
   expect(be.putResource({ type: "rom", embedded: "nope" })).toEqual({ error: '"nope" is not an embedded ROM' });
   expect(be.putResource({ type: "rom", path: "/cfg/missing.gb" })).toEqual({
-    error: "could not read /cfg/missing.gb: the file is absent, unreadable or empty",
+    error: 'could not read "/cfg/missing.gb": the file is absent, unreadable or empty',
   });
+  // A caller's path and marker are quoted the way native quotes them (graph/CanonicalJson.cpp jsonString), so a name
+  // carrying a quote cannot forge or break the diagnostic a caller logs or parses.
+  expect(be.putResource({ type: "sram", path: '/cfg/a"b.sav' })).toEqual({
+    error: 'could not read "/cfg/a\\"b.sav": the file is absent, unreadable or empty',
+  });
+  expect(be.putResource({ type: "rom", embedded: 'mg"b' })).toEqual({ error: '"mg\\"b" is not an embedded ROM' });
+  // Native's exactly-one-source rule: a test that casts past the typed union sees the engine's answer, not a silent
+  // pick among the sources it was given.
+  const untyped = (spec: object): ResourceSpec => spec as ResourceSpec;
+  expect(be.putResource(untyped({ type: "rom" }))).toEqual({
+    error: "a resource carries exactly one of bytes, path or embedded (0 given)",
+  });
+  expect(be.putResource(untyped({ type: "rom", bytes: Uint8Array.of(1), path: "/cfg/a.gb" }))).toEqual({
+    error: "a resource carries exactly one of bytes, path or embedded (2 given)",
+  });
+  expect(
+    be.putResource(untyped({ type: "rom", bytes: Uint8Array.of(1), path: "/cfg/a.gb", embedded: "mgb" })),
+  ).toEqual({ error: "a resource carries exactly one of bytes, path or embedded (3 given)" });
   // A blank battery is a legitimate empty seed; a zero-length ROM has nothing to boot.
   expect(be.putResource({ type: "rom", bytes: new Uint8Array(0) })).toEqual({
     error: "a rom resource cannot be empty: a zero-length ROM cannot boot",
@@ -78,8 +96,8 @@ test("mock backend: putResource answers ids that count up, and a dropped id stay
     bytes: Uint8Array.of(5, 5),
   });
   expect(be.resource(copied.id)).toEqual({ type: "rom", bytes: Uint8Array.of(5, 5) });
-  expect(be.putResourceCalls.length).toBe(9); // refused puts are recorded too, with id 0
-  expect(be.putResourceCalls.filter((c) => c.id === 0).length).toBe(4);
+  expect(be.putResourceCalls.length).toBe(14); // refused puts are recorded too, with id 0
+  expect(be.putResourceCalls.filter((c) => c.id === 0).length).toBe(9);
 });
 
 test("mock backend: a document naming a resource the engine does not hold is refused, as native refuses it", () => {
@@ -116,6 +134,19 @@ test("mock backend: a document naming a resource the engine does not hold is ref
     port: "",
     code: "settings-invalid",
     message: 'a system node names its ROM as {"rom": "res:N"}',
+  });
+});
+
+test("mock backend: a slot with no system node is refused as native refuses it, naming no node", () => {
+  // native's slots check lines the document's system nodes up with the request's slots, which is the document's
+  // fault rather than one node's, so it answers `nodeId: ""`: a load's drop-and-retry keys on a node id and must not
+  // read this refusal as a system to drop.
+  const be = new MockBackend("/cfg");
+  expect(be.setGraph({ document: JSON.stringify({ nodes: [], wires: [] }), slots: [1] })).toEqual({
+    ok: false,
+    errors: [
+      { nodeId: "", port: "", code: "slots", message: "the slots and the document's system nodes name different systems" },
+    ],
   });
 });
 
