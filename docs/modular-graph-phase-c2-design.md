@@ -99,8 +99,9 @@ The user's, on 2026-10-30:
   to the param's range by the node, from the same constants the declaration takes its bounds from (the planner and
   `setParam` clamp a document's or a live edit's). Every param reaches the core at the node's first block, not at
   activation: a node reads its params only in a block (the host binds its control streams there, landing the document's
-  values as it adopts the plan), and a core runs nothing before its node's first block, so it plays its first sample at
-  the document's level.
+  values as it adopts the plan), and a core runs nothing before its node's first block. That first value is snapped
+  into the core, whose gain smoother starts at 0 dB, so it plays its first sample at the document's level; every later
+  gain edit ramps, as it always did.
 - **The atomic switch.** `serialOutCapture` reaches the Game Boy at the start of the first block of the plan that
   carries it, the block in which `rp.lsdj.serial-out` first runs in the new mode, so no byte captured in one mode is
   decoded in the other.

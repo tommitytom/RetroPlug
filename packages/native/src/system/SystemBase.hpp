@@ -175,9 +175,11 @@ public:
     virtual void                setFastBoot(bool /*on*/) {}
 
     // Live output gain in dB — a universal per-system setting every backend
-    // honours (smoothed at the audio frame). Default no-op so trivial backends /
-    // test doubles need not implement it; SameBoy + both Mesen systems override.
-    virtual void setGainDb(float /*dB*/) {}
+    // honours (smoothed at the audio frame). `immediate` snaps to the value
+    // rather than ramping to it: a core's first value, from the document at the
+    // node's first block. Default no-op so trivial backends / test doubles need
+    // not implement it; SameBoy + both Mesen systems override.
+    virtual void setGainDb(float /*dB*/, bool /*immediate*/ = false) {}
 
     // Cartridge battery RAM. Empty vector when the cartridge has no battery
     // or the backend doesn't yet support snapshotting.

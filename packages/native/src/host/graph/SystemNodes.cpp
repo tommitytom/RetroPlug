@@ -181,8 +181,9 @@ bool moved(const std::optional<F>& to, const std::optional<F>& from) { return to
 // value the core was given last: a publish carrying the value the core already has calls nothing. Every one is given
 // at the node's first block, before the core's first prepareForBlock: a node reads its params only in a block (the
 // host binds its control streams there, and lands the document's values in them as it adopts the plan), and a core a
-// node has taken runs nothing before that, so it plays its first sample at the document's level. The gain is smoothed
-// by the core, as every gain edit is.
+// node has taken runs nothing before that. The first value is snapped into the core, whose gain smoother starts at
+// 0 dB, so the node plays its first sample at the document's level; every later gain change is smoothed by the core,
+// as every gain edit is.
 template <class Self, class Core, class S = SystemNodeSettings>
 struct SystemNode {
     using Settings = S;
@@ -281,7 +282,9 @@ struct SystemNode {
         if (latest != latest) return;  // NaN reaches a param only over a wire, and moves nothing
         const double db = std::clamp(latest, kGainMinDb, kGainMaxDb);
         if (db == gainApplied) return;
-        core->setGainDb(static_cast<float>(db));
+        // The core's smoother starts at 0 dB, so its first value is snapped: a node placed at -90 dB is silent from
+        // its first sample rather than ramping down from unity. Later edits ramp as every gain edit does.
+        core->setGainDb(static_cast<float>(db), gainApplied != gainApplied);
         gainApplied = db;
     }
     bool step(std::uint32_t target) noexcept { return !core->stepIfBelowTarget(target); }

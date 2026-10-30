@@ -106,7 +106,7 @@ public:
     std::size_t               stateSnapshotSize() const override;
     bool                      captureStateSnapshot(std::vector<std::uint8_t>& dst) override;
 
-    void setGainDb(float dB) override;
+    void setGainDb(float dB, bool immediate = false) override;
 
     // "mesen" system-role knobs (coreRoles.ts), applied live by the NES's system node (its settings, and its
     // expansionVolume param). Each but setRemoveSpriteLimit is value-guarded, and that one is a plain flag write.

@@ -303,9 +303,10 @@ void MesenNesSystem::onSampleRateChanged(double sampleRate) {
 }
 
 
-void MesenNesSystem::setGainDb(float dB) {
+void MesenNesSystem::setGainDb(float dB, bool immediate) {
     config_.gainDb = dB;
     gainSmoother_.setTargetValue(nesGain(dB));
+    if (immediate) gainSmoother_.clearToTargetValue();
 }
 
 void MesenNesSystem::setRemoveSpriteLimit(bool on) {

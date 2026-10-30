@@ -331,9 +331,10 @@ void SameBoySystem::onSampleRateChanged(double sampleRate) {
     }
 }
 
-void SameBoySystem::setGainDb(float dB) {
+void SameBoySystem::setGainDb(float dB, bool immediate) {
     config_.gainDb = dB;
     gainSmoother_.setTargetValue(dbToLin(dB));
+    if (immediate) gainSmoother_.clearToTargetValue();
 }
 
 void SameBoySystem::serialBitReceived(bool bit) {

@@ -138,7 +138,7 @@ public:
     std::size_t               stateSnapshotSize() const override;
     bool                      captureStateSnapshot(std::vector<std::uint8_t>& dst) override;
 
-    void setGainDb(float dB) override;
+    void setGainDb(float dB, bool immediate = false) override;
 
     // Visible resolution after overscan. The VDP always emits a 256x240
     // RenderedFrame (SmsVdp.cpp:648) and BaseVideoFilter subtracts the

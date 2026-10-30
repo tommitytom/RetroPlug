@@ -91,7 +91,7 @@ public:
     std::size_t               stateSnapshotSize() const override;
     bool                      captureStateSnapshot(std::vector<std::uint8_t>& dst) override;
 
-    void setGainDb(float dB) override;
+    void setGainDb(float dB, bool immediate = false) override;
 
     // GBA native resolution (240x160). Public so callers can construct a
     // FrameBufferTriple-sized read buffer without hard-coding the constant.

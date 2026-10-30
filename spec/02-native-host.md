@@ -432,9 +432,10 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   param's range by the node, from the same constants the declaration takes its bounds from; a change anywhere in a
   block lands at its start. A node reads its params only in a block (the host binds its control streams there,
   landing the document's values in them as it adopts the plan), so they reach the core at the node's first block,
-  before its first `prepareForBlock`, not in `activate`: a core its node has taken runs nothing before that, so
-  its first sample plays at the document's level. A document without a param leaves its stream where it was: at
-  its default, on a new node.
+  before its first `prepareForBlock`, not in `activate`: a core its node has taken runs nothing before that. That
+  first value is snapped into the core (whose gain smoother starts at 0 dB), so its first sample plays at the
+  document's level; every later gain change is smoothed, as it always is. A document without a param leaves its
+  stream where it was: at its default, on a new node.
 - **Allocation.** A Game Boy's knobs and every node's params allocate nothing on the block thread. A NES's settings
   can: its core allocates inside Mesen in its own blocks, and its sprite-limit and accuracy setters do too,
   whatever path calls them.

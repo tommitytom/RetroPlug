@@ -1362,7 +1362,7 @@ TEST_CASE("a system node gives its core the document's params before the core's 
         REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, "", R"("gain":-12)")).ok);
         // Planned and activated, but a node reads its params in a block: the core has the value as that block starts.
         CHECK(gb->config_.gainDb == 0.0f);
-        direct->setGainDb(-12.0f);
+        direct->setGainDb(-12.0f, true);  // the node snaps its first value in
         Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
         CHECK(compare(rig, d, 3.0, once(1.0, [&] {
                   REQUIRE(rig.host->setParam("sys", "gain", -3.0));
@@ -1379,7 +1379,7 @@ TEST_CASE("a system node gives its core the document's params before the core's 
         MesenNesSystem* const core = built.get();
         const auto token = rig.park(std::move(built));
         REQUIRE(rig.set(knobbed("rp.mesen.nes", token, "", R"("gain":-6,"expansionVolume":40)")).ok);
-        direct->setGainDb(-6.0f);
+        direct->setGainDb(-6.0f, true);  // the node snaps its first value in
         direct->setExpansionVolume(40);
         Direct d({direct.get()}, 2, {{0, 1}});
         auto edit = once(2.0, [&] {
@@ -1401,7 +1401,7 @@ TEST_CASE("a system node gives its core the document's params before the core's 
         SystemBase* const graphCore = viaGraph.get();
         const auto token = rig.park(std::move(viaGraph));
         REQUIRE(rig.set(knobbed("rp.mesen.sms", token, "", R"("gain":-9)")).ok);
-        direct->setGainDb(-9.0f);
+        direct->setGainDb(-9.0f, true);  // the node snaps its first value in
         Direct d({direct.get()}, 2, {{0, 1}});
         CHECK(compare(rig, d, 5.0, smsStart(*direct, *graphCore)) == "");
         CHECK(sounds(d));
@@ -1457,6 +1457,49 @@ TEST_CASE("a param edit, live or published, allocates nothing on the block threa
     CHECK(counted.allocations == 0);
     CHECK(counted.frees == 0);
     CHECK(gb->config_.gainDb == -3.0f);
+}
+
+TEST_CASE("a node placed with its gain plays the first block at it, not ramping down from 0 dB",
+          "[engine-graph][system-node][params]") {
+    // A Game Boy whose FIRST block carries sound: driven for a second before its node takes it, so its DMG boot tone is
+    // playing when the node gives it the document's gain. A fresh boot is silent in that block, which would hide a
+    // ramp from the smoother's 0 dB.
+    const auto soundingCore = [](SystemId id) {
+        auto core = mgb(id);
+        Lanes out(2);
+        float peak = 0.0f;
+        for (std::uint64_t at = 0; at < static_cast<std::uint64_t>(1.0 * kRate); at += 512) {
+            core->prepareForBlock(info(512));
+            while (core->stepIfBelowTarget(512)) {
+            }
+            core->finishBlock(info(512), out.ptrs.data(), 2);
+            peak = 0.0f;
+            for (const auto& ch : out.data)
+                for (std::uint32_t i = 0; i < 512; ++i) peak = std::max(peak, std::abs(ch[i]));
+        }
+        INFO("the last block it played before its node took it peaked at " << peak);
+        CHECK(peak > 0.001f);
+        return core;
+    };
+
+    const auto firstBlockPeak = [&](const char* gain) {
+        NodeRig rig(kRate);
+        const auto token = rig.park(soundingCore(1));
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, "", gain)).ok);
+        Lanes out(2);
+        const rp_transport t{kRate, 120.0, 0.0, 0};
+        rig.host->processBlock(256, t, out.ptrs.data(), 2);
+        float peak = 0.0f;
+        for (const auto& ch : out.data)
+            for (std::uint32_t i = 0; i < 256; ++i) peak = std::max(peak, std::abs(ch[i]));
+        return peak;
+    };
+    const float loud = firstBlockPeak(R"("gain":0)");
+    const float quiet = firstBlockPeak(R"("gain":-90)");
+    INFO("peak at 0 dB " << loud << ", at -90 dB " << quiet);
+    CHECK(loud > 0.01f);
+    // The value is snapped in: a 20 ms ramp from unity leaves most of `loud` in this block.
+    CHECK(quiet < 1e-4f);
 }
 
 TEST_CASE("a wire's value reaches a system node's params clamped to their ranges", "[engine-graph][system-node][params]") {

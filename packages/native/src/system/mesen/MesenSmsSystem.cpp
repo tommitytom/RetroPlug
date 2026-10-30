@@ -335,9 +335,10 @@ void MesenSmsSystem::onSampleRateChanged(double sampleRate) {
 }
 
 
-void MesenSmsSystem::setGainDb(float dB) {
+void MesenSmsSystem::setGainDb(float dB, bool immediate) {
     config_.gainDb = dB;
     gainSmoother_.setTargetValue(dbToLin(dB));
+    if (immediate) gainSmoother_.clearToTargetValue();
 }
 
 void MesenSmsSystem::pressButton(std::uint8_t button, bool down) {

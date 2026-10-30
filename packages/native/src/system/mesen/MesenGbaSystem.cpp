@@ -187,9 +187,10 @@ void MesenGbaSystem::onSampleRateChanged(double sampleRate) {
 }
 
 
-void MesenGbaSystem::setGainDb(float dB) {
+void MesenGbaSystem::setGainDb(float dB, bool immediate) {
     config_.gainDb = dB;
     gainSmoother_.setTargetValue(dbToLin(dB));
+    if (immediate) gainSmoother_.clearToTargetValue();
 }
 
 void MesenGbaSystem::pressButton(std::uint8_t button, bool down) {
