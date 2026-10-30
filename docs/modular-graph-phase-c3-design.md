@@ -208,10 +208,11 @@ back. `discard` drops one system's resources at once: the document it was in nev
 **A construct-time edit** is the reset path, run by `setRoleConfig` itself: the `systemKnobs` table gains a third
 column beside settings and params, and when one of its fields moves the store rebuilds the system under a new id with
 the new settings, carrying its battery, and answers whether that build planned. Its two sides are `systemKnobs`: the
-stored config as written, which is what the running document carried, against the edit's schema parse. Every field the
-core-config role carries is written in full (`gameGear` is the platform's, and a platform never changes under a live
-id), so a sparse stored config names the same values a fresh one does and a live knob edit stays live rather than
-rebuilding; a stored value the schema repairs becomes one the node takes, which the
+stored config as written, which is what the running document carried (a param-only edit stores its parse unpublished,
+and reaching that path means its construct fields are the values the live core was built with), against the edit's
+schema parse. Every field the core-config role carries is written in full (`gameGear` is the platform's, and a
+platform never changes under a live id), so a sparse stored config names the same values a fresh one does and a live
+knob edit stays live rather than rebuilding; a stored value the schema repairs becomes one the node takes, which the
 running core was not built with, so that edit takes the rebuild it needs. A stored value the role schema would repair on
 the way in (a number clamped or rounded into range) is one the running node never took, so its place in the document is
 the node's default: that matches the old repair where the repair was the default, and differs where it clamped or
@@ -279,8 +280,8 @@ render path and every host go through the store as today.
   resource and publish order, the release after a publish, the rollback after a refusal, a restore republish refused
   too, a project load dropping its bad system, the construct-time reset, a construct-time edit to the value already
   stored moving nothing, a publish that throws rolling back as a refusal does, a release that throws finishing the
-  rollback it is in and leaving the verb's own answer alone, a sparse stored config's live edits, a
-  stored value the schema repairs taking its rebuild, `clear`/`discard`, DirectGraph's add/replace/remove, every put
+  rollback it is in and leaving the verb's own answer alone, a sparse stored config's live edits, a stored value the
+  schema repairs taking its rebuild, `clear`/`discard`, DirectGraph's add/replace/remove, every put
   balanced by a release; and the mock backend's own refusals ([meta.test.ts](../packages/retroplug/test/meta.test.ts)):
   a resource spec with no source or more than one, a null source counting as none, and a system node's rebuild key moved
   under a live id (native's "system N is live").

@@ -659,12 +659,13 @@ export class SystemsStore {
     roles[idx] = { kind: roleKind, config };
     const type = systemNodeTypeFor(e.platform);
     // The core config's knobs before and after, both through systemKnobs: before over the stored config as written,
-    // which is what the running document carried, and after over the edit's schema parse. A construct-time field is
-    // written in full with the node's default where the stored config holds no value it takes, so a sparse config
-    // names the same values a fresh one does; a stored value the schema repairs becomes one the node takes, which is
-    // a different value from the one the live core was built with, and takes the rebuild it needs. A setting field that
-    // moved is a document of its own, a param that moved is set live unless that document carries it anyway, and a
-    // construct-time field that moved is a new system.
+    // which is what the running document carried - after a param-only edit it is that edit's parse unpublished, whose
+    // construct fields are the values the live core was built with, which is what made the edit param-only - and after
+    // over the edit's schema parse. A construct-time field is written in full with the node's default where the stored
+    // config holds no value it takes, so a sparse config names the same values a fresh one does; a stored value the
+    // schema repairs becomes one the node takes, which is a different value from the one the live core was built with,
+    // and takes the rebuild it needs. A setting field that moved is a document of its own, a param that moved is set
+    // live unless that document carries it anyway, and a construct-time field that moved is a new system.
     const before = systemKnobs({ type, coreConfig: was });
     const after = systemKnobs({ type, coreConfig: config });
     const linkGroupMoved = roleKind === e.core && linkGroupOf(was) !== linkGroupOf(config);
