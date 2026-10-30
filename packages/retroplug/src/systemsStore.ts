@@ -710,6 +710,9 @@ export class SystemsStore {
     // construct-time settings blob so a loaded non-default model/highpass is applied AT build, not via
     // a post-construct restart that would nuke the just-restored savestate.
     const systemRole = config.roles?.find((r) => r.kind === core);
+    // Parsed before the build, so a throw here leaves no core behind, and once: the blob builds the core and is what
+    // the note below compares the stored config against.
+    const blob = systemRole ? configForBlob(this.registry, systemRole) : undefined;
     const id = allocSystemId();
     const spec = this.applyConstructHooks({
       romPath,
@@ -720,8 +723,8 @@ export class SystemsStore {
       statePath: null,
       sramBytes: blobs?.sramBytes,
       stateBytes: blobs?.stateBytes,
-      settings: systemRole
-        ? JSON.stringify(roleConfigForNative(systemRole.kind, configForBlob(this.registry, systemRole)))
+      settings: systemRole && blob
+        ? JSON.stringify(roleConfigForNative(systemRole.kind, blob))
         : undefined,
     }, roles);
     // Stored settings/roles win; a config that omits them re-attaches defaults. Parsed, like the battery read,
@@ -733,9 +736,8 @@ export class SystemsStore {
     // The stored core config stays as written, so the system node leaves out a value it would refuse (or a param's
     // value that is not a finite number), and the construct blob takes its role schema's value for one native cannot
     // read. Say which: the stored config, the document and the core then disagree.
-    if (systemRole) {
+    if (systemRole && blob) {
       const dropped = droppedKnobs(built.type, systemRole.config);
-      const blob = configForBlob(this.registry, systemRole);
       const reported = new Set(dropped.map(([field]) => field));
       const repaired = Object.entries(systemRole.config)
         .filter(([field, value]) => !reported.has(field) && JSON.stringify(blob[field]) !== JSON.stringify(value))

@@ -6,7 +6,7 @@
 // mirror the native enums (SameBoyConfig.hpp: model 0..13, highpass 0..2, linkGroupId 0..255).
 
 import type { RoleRegistry } from "./systemRoles";
-import { z, clampedInt, clampedNumber, boolField, enumField } from "./configSchema";
+import { z, clampedInt, clampedNumber, boolField, enumField, stringField } from "./configSchema";
 import {
   MODEL_VALUES,
   HIGHPASS_VALUES,
@@ -99,7 +99,7 @@ export function registerCoreRoles(registry: RoleRegistry): void {
       // Construct-time, unlike `region` (which the NES node applies live: a region change resets the core): the
       // FIFO is built when the core activates, so an edit needs a rebuild (setRoleConfig then reset(id)) rather than
       // taking effect live.
-      sdRoot: z.string().default(""),
+      sdRoot: stringField(""),
       // NES-only: how faithfully the emulated cart FIFO behaves like the device's (see
       // FIFO_PROFILE_VALUES). Default "instant" - unbounded and immediate - because that is the
       // transport every existing test assumes, and because a lossy queue is something a test should

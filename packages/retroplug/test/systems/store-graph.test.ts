@@ -899,6 +899,24 @@ test("a stored core config value the system node would refuse is noted, so a dro
   expect(kept.expansionVolume).toBe(25.7);
 });
 
+test("a hand-edited sdRoot that is not a string loads at the schema's empty root, not a failed load", () => {
+  // A hand edit for "no SD root" is null, and the role schema is what the construct blob is parsed by. A field its
+  // helpers repair defaults, so the load adopts the system; one the schema refuses would throw out of projectStore's
+  // adopt loop, after the systems before it cleared, and fail the whole load.
+  const { be, sys } = project();
+  const { result: id, warnings } = warned(() =>
+    sys.adopt({ romPath: "/roms/c.nes", core: "mesen", roles: [{ kind: "mesen", config: { sdRoot: null } }] }),
+  );
+  expect(id !== null).toBe(true);
+  const spec = be.buildCalls[be.buildCalls.length - 1];
+  expect((JSON.parse(spec.settings!) as Record<string, unknown>).sdRoot).toBe("");
+  expect(warnings).toEqual([
+    '[systems] /roms/c.nes: its stored mesen config holds a value this build does not read as written: ' +
+      'repaired sdRoot null to ""',
+  ]);
+  expect(be.graphNode(`sys-${id}`)?.settings).toEqual(canon({ core: id }));
+});
+
 test("a left-out lsdj-sync arms no serial-out capture: not where it is placed, nor on an edit", () => {
   // Capture is for the lsdj-sync role's decoder, rp.lsdj.serial-out, which decodes what the core sends (MI.OUT
   // drives, master sync listens). On an mGB cart whose project stored lsdj-sync, mgb wins serialIn and the role's
