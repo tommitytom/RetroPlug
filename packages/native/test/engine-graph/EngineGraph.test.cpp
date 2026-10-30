@@ -531,7 +531,8 @@ TEST_CASE("setParam over the RPC layer takes the node, the param and the value a
     rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec> server(transport, rpcpp::QuickJSCodec{js.ctx});
     registerEmulatorRpc(server, rpc);
     REQUIRE(e.parkCore(mgb(1)));
-    REQUIRE(e.setGraph(request({{1, kGb}})).ok);
+    REQUIRE(e.parkCore(bliptoaster(2)));
+    REQUIRE(e.setGraph(request({{1, kGb}, {2, kNes}})).ok);
 
     // The call createEmulatorClient makes: true when the engine took it.
     const auto setParam = [&](const std::string& params) {
@@ -549,12 +550,17 @@ TEST_CASE("setParam over the RPC layer takes the node, the param and the value a
         return accepted;
     };
     CHECK(setParam("'sys-1', 'gain', -6.5"));
+    // An integer: a whole-percent param, decoded to the double the engine takes rather than refused.
+    CHECK(setParam("'sys-2', 'expansionVolume', 40"));
     CHECK_FALSE(setParam("'sys-1', 'nope', 0"));
     CHECK_FALSE(setParam("'sys-9', 'gain', 0"));
     std::vector<float> l(256), r(256);
     float* outs[2] = {l.data(), r.data()};
     e.processBlock(256, outs, 2);
     const auto* gb = dynamic_cast<const SameBoySystem*>(e.findSystem(1));
+    const auto* nes = dynamic_cast<const MesenNesSystem*>(e.findSystem(2));
     REQUIRE(gb);
+    REQUIRE(nes);
     CHECK(gb->config_.gainDb == -6.5f);
+    CHECK(nes->config().expansionVolume == 40);
 }
