@@ -808,8 +808,8 @@ export class ProjectStore {
       if (this.publishGraph(true)) return;
       // A system's own node is sys-<id>; its protocol nodes are sys-<id>/<kind> and sys-<id>/<kind>/out, and native
       // reports a node's own failure under that node's id (Planner.cpp), so a refusal naming either belongs to the
-      // system. Only a document-wide refusal (the slots and the document's system nodes disagree) names no node, and
-      // dropping a system cannot fix it.
+      // system. What names no node cannot be charged to one: an unparsable document, a tap that arms a mode or a
+      // system outside the slots, two system nodes naming one system, planning out of memory.
       let refusal: GraphError | undefined;
       let id = 0;
       for (const error of this.graph.lastErrors) {
@@ -831,7 +831,7 @@ export class ProjectStore {
               `${this.systems.systems().length} system(s) the engine does not run (${reason})`,
           );
         }
-        return; // the load cannot fix this refusal by dropping a system
+        return; // nothing left to drop: either no refusal named a system, or the system it named is already gone
       }
       console.warn(
         `[systems] ${dropped.romPath || `the embedded ${dropped.embeddedRom}`}: the engine refused it, so the project ` +

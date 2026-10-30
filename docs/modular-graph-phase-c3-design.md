@@ -231,8 +231,9 @@ edit put, sends the restored model again and reports the reason, the failure the
 publish that throws (an engine or transport fault, which the graph counts as refused) takes the same rollback before
 the error reaches the caller. A project load publishes once for every system, as today; a refusal naming `sys-K` or one
 of its protocol nodes (`sys-K/<kind>`, `sys-K/<kind>/out`) drops system K with a load note and publishes the rest, so
-one unreadable ROM still costs only its own system. A document-wide refusal names no system, so nothing is dropped and
-the load warns that the systems it lists do not run.
+one unreadable ROM still costs only its own system. A refusal that names no node cannot be charged to a system, so
+nothing is dropped and the load warns that the systems it lists do not run: an unparsable document, a tap that arms a
+mode or a system outside the slots, two system nodes naming one system, planning out of memory.
 
 **`buildGraph`** writes `system`, `rom`, `sram`, `state`, `romName`, every construct-time field the core-config role
 carries (and a Game Gear's `gameGear`), C2's knobs and the params. **`ConstructSpec`** stays as TS's description of what
@@ -425,10 +426,11 @@ The follow-ups after the landing found these, each recorded the way the findings
 - **Each type's build knobs and a battery seed have cases of their own.** Every construct-time knob of each console,
   away from its default, is read back off the built core field by field, and an LSDj's `sram` seed is saved back by the
   core it reached, so a knob a build forgets and a seed a build drops both fail (section 7).
-- **A slots refusal names a node; only a slot-set mismatch names none.** A system's own node is `sys-<id>` and its
+- **A refusal names the node it belongs to, or no node at all.** A system's own node is `sys-<id>` and its
   protocol nodes `sys-<id>/<kind>` (and `sys-<id>/<kind>/out`), and the planner reports a node's own failure under that
-  id, so a project load's retry drops the system either way; a document-wide refusal (the slot-set mismatch) names no
-  system, and the load then warns that the systems it lists do not run (section 6).
+  id, so a project load's retry drops the system either way. The refusals that name no node (an unparsable document, a
+  tap that arms a mode or a system outside the slots, two system nodes naming one system, planning out of memory)
+  cannot be charged to one, and the load then warns that the systems it lists do not run (section 6).
 - **The mock backend takes native's resource-source rule and its quoting.** A spec carries exactly one of `bytes`,
   `path` and `embedded` (a null counts as absent, as the optional does on the wire), and a refusal quotes the caller's
   path and marker as native's does, so the mock tier sees the class of bug the real one reports (sections 4 and 6).

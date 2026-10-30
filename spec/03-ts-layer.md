@@ -215,8 +215,9 @@ which publishes once its systems are all built)
 ([systemsStore.ts](../packages/retroplug/src/systemsStore.ts)) reconstructs
 one system preserving its **exact** `savSuffix`/`savPath`, with `blobs` seeding SRAM/state on
 a zip import. The publish retries without the system a refusal names, its own node `sys-<id>` or a protocol node
-`sys-<id>/<kind>` (`ProjectStore.placeLoadedSystems`), so one unreadable ROM costs only its own system; a
-document-wide refusal names none, so nothing is dropped and the load warns that the listed systems do not run. Default
+`sys-<id>/<kind>` (`ProjectStore.placeLoadedSystems`), so one unreadable ROM costs only its own system; a refusal that
+names no node (an unparsable document, a tap arm outside the slots, two system nodes naming one system, planning out of
+memory) cannot be charged to one, so nothing is dropped and the load warns that the listed systems do not run. Default
 roles are derived before the boot from a `ROLE_HEADER_LEN` (0x150) header prefix via `defaultRoles`, and each role's
 `onConstruct` hook folds over the spec
 (`applyConstructHooks`), e.g. the LSDj empty-sav seed, before its resources are put.
