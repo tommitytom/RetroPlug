@@ -126,7 +126,9 @@ lives, since every later document names them too, and drops them when the system
 Every boot puts its own ROM, read again from its source (a path, an embedded marker or the asset roles' folded bytes),
 so a rebuild after a ROM file changed on disk boots the new bytes and a duplicate gets a resource of its own; no two
 systems share one. A dropped resource is freed when the plan that last ran its node is reclaimed. Holding the seeds
-costs nothing extra: the node pins them for its lifetime regardless.
+costs nothing extra: the node pins them for its lifetime regardless. A boot that stops short gives back every handle
+it took: a put the engine refuses answers its reason, a put that throws is given back and rethrown, and each release is
+offered on its own so a transport that died on one cannot strand the rest.
 
 **The bytes come from** a path (a plain ROM, a `.sav`, a savestate file), the asset roles (`lsdj-assets`,
 `risa-assets`, `bliptoaster-assets` fold their overrides into ROM bytes, and `lsdj-sync`'s empty-save seeding becomes an
