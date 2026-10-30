@@ -155,6 +155,7 @@ export class ProjectStore {
       registry,
     );
     this.systems.setOnGraphChange((rearmTap) => this.publishGraph(rearmTap));
+    this.systems.setOnLiveParam((systems) => this.graph.systemsMovedLive(systems));
   }
 
   // Publish the engine's graph for the systems, the audio and MIDI routing and the controller as they stand

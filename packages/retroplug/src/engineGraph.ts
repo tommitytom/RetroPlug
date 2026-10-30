@@ -10,7 +10,7 @@
 // sent even if it matches the running one, so the parked cores are freed; and a refused re-arm rides it. A send
 // that throws counts as refused, and so does a withShape restore that did not plan, after which the engine still
 // runs the temporary shape: until a document plans, even a shape change to the current shape is sent.
-import { buildGraph, type GraphModel, type HostShape } from "./graph/buildGraph";
+import { buildGraph, type GraphModel, type GraphSystem, type HostShape } from "./graph/buildGraph";
 import { toGraphJson } from "./graph/graphDocument";
 import type { Backend, SetGraphRequest, SetGraphResult } from "./backend";
 
@@ -32,6 +32,9 @@ export class EngineGraph {
   /** A document did not plan, so the engine may be running another than `shape_` and `sent` say; cleared when
    *  one plans. Not `sent === null`: a graph that never sent anything still skips its own shape. */
   private engineMayDiffer = false;
+  /** A live param change moved a node away from the value the last document carried, so the engine no longer runs
+   *  that document's params: set by systemsMovedLive, cleared by a plan. */
+  private liveParamMoved = false;
 
   constructor(private readonly backend: GraphBackend) {}
 
@@ -51,6 +54,15 @@ export class EngineGraph {
       controller: model.controller ?? null,
     };
     return this.send(this.shape_, opts.rearmTap === true);
+  }
+
+  /** The model a live setParam left (the systems with the value the node now runs), without sending a document: a
+   *  later publish, a shape change among them, then builds the value the node has instead of the stale one the last
+   *  document carried. The running plan is no longer that document's either, so the next publish is sent even when
+   *  it rebuilds exactly the document already sent. */
+  systemsMovedLive(systems: readonly GraphSystem[]): void {
+    this.model = { ...this.model, systems: systems.slice() };
+    this.liveParamMoved = true;
   }
 
   /** Rebuild the model (the last one published) at another output shape. A no-op when it is the
@@ -106,7 +118,7 @@ export class EngineGraph {
     // one document when nothing in it lists the systems in slot order, as the routing node does; the key holds
     // either way.)
     const key = `${document}\n${built.slots.join(",")}`;
-    if (key !== this.sent || rearm) {
+    if (key !== this.sent || rearm || this.liveParamMoved) {
       const request: SetGraphRequest = { document, slots: built.slots };
       if (rearm) request.tap = built.tapArm ? { arm: built.tapArm } : {};
       let result: SetGraphResult;
@@ -127,6 +139,7 @@ export class EngineGraph {
       this.sent = key;
       this.rearmDue = false;
       this.engineMayDiffer = false;
+      this.liveParamMoved = false;
     }
     this.shape_ = { ...shape };
     return true;
@@ -138,5 +151,6 @@ export class EngineGraph {
     this.sent = null;
     this.rearmDue = rearm;
     this.engineMayDiffer = true;
+    this.liveParamMoved = false;
   }
 }

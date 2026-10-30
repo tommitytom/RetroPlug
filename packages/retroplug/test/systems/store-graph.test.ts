@@ -148,6 +148,11 @@ test("a gain or expansion-volume edit sets its param live and publishes nothing"
   p.setMidiRouting(MidiRouting.OneChannelPerInstance);
   expect(be.graphNode(`sys-${a}`)?.params).toEqual(canon({ gain: -6 }));
   expect(be.graphNode(`sys-${c}`)?.params).toEqual(canon({ gain: -90, expansionVolume: 40 }));
+  // A render's shape republish too: it builds from the graph's model, which the live edit kept in step, so it does
+  // not put back the values the last document carried.
+  expect(p.graph.withShape({ kind: "perSystem" }, () => true)).toBe(true);
+  expect(be.graphNode(`sys-${a}`)?.params).toEqual(canon({ gain: -6 }));
+  expect(be.graphNode(`sys-${c}`)?.params).toEqual(canon({ gain: -90, expansionVolume: 40 }));
 });
 
 test("a setting edit publishes its system node's settings, without a re-arm; a link-group change rewires", () => {
@@ -892,7 +897,8 @@ test("DirectGraph's core config: a link group rewires, a setting rides its node,
   const g = new DirectGraph(be);
   g.add(MGB, 1);
   g.add(MGB, 2);
-  // None until set: the node carries no setting field, so its core runs as it was built.
+  // None until set: the node carries no setting field, so its core keeps the settings it was built with (its gain
+  // param still starts at its default, 0 dB, at its first block).
   expect(be.graphNode("sys-1")?.settings).toEqual({ core: 1, serialOutCapture: "off" });
   const n = be.graphRequests.length;
   expect(g.setCoreConfig(1, { linkGroupId: 1 })).toBe(true);
@@ -930,6 +936,22 @@ test("DirectGraph's params: set live with no publish, and carried by the next do
   expect(be.paramCalls.length).toBe(1);
   g.setCoreConfig(1, { highpass: "off" });
   expect(be.graphNode("sys-1")?.params).toEqual({ gain: -12 });
+});
+
+test("DirectGraph sends the document again after a live param moved its node away from it", () => {
+  const be = new MockBackend("/cfg");
+  be.seed("/roms/c.nes", nesRom());
+  const g = new DirectGraph(be);
+  const nes = { romPath: "/roms/c.nes", platform: "nes" as const, core: "mesen" as const, embeddedRom: "", savPath: null, statePath: null };
+  expect(g.add(nes, 1)).toBe(true);
+  expect(g.setCoreConfig(1, { expansionVolume: 200 })).toBe(true);
+  expect(g.setParam(1, "expansionVolume", 100)).toBe(true); // live: the node is at 100, the last document at 200
+  const n = be.graphRequests.length;
+  // The model names 200 again, the value the last SENT document carried, but the node does not have it: the document
+  // is sent (the engine then compares against the value the live edit recorded) rather than skipped as unchanged.
+  expect(g.setCoreConfig(1, { expansionVolume: 200 })).toBe(true);
+  expect(be.graphRequests.length).toBe(n + 1);
+  expect(be.graphNode("sys-1")?.params).toEqual({ expansionVolume: 200 });
 });
 
 test("DirectGraph republishes the model a refused edit put back, which frees the core the edit built", () => {

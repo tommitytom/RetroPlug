@@ -128,6 +128,11 @@ export class SystemsStore {
     this.ownGraph ??= new EngineGraph(this.backend);
     this.ownGraph.publish({ systems: this.graphSystems(), routing: "stereo" }, { rearmTap });
   };
+  // A live param edit updates the graph's model without publishing, so a later publish (a render's shape among them)
+  // builds the value the node runs rather than the stale one the last document carried.
+  private onLiveParam: (systems: GraphSystem[]) => void = (systems) => {
+    this.ownGraph?.systemsMovedLive(systems);
+  };
   // Whether a core teardown writes the battery to disk first. Off only for an offline render.
   private batteryFlush = true;
 
@@ -197,6 +202,13 @@ export class SystemsStore {
    *  onChange: `rearmTap` for an edit that builds or drops a core, which re-arms the NES tap. */
   setOnGraphChange(fn: (rearmTap: boolean) => void): void {
     this.onGraphChange = fn;
+  }
+
+  /** Install the hook that keeps the graph's model in step with a live param edit (the ProjectStore's, which owns
+   *  the graph; without one the store's own graph takes it). A param set live sends no document, but the next one a
+   *  shape change builds must carry what the node runs. */
+  setOnLiveParam(fn: (systems: GraphSystem[]) => void): void {
+    this.onLiveParam = fn;
   }
 
   /** Turn the before-teardown battery flush off for this store. For a throwaway headless session — an
@@ -525,6 +537,7 @@ export class SystemsStore {
     const gainDb = clampGain(db);
     this.entries = replaceById(this.entries, id, { ...e, settings: { ...e.settings, gainDb } });
     this.backend.setParam(systemNodeId(id), "gain", gainDb);
+    this.onLiveParam(this.graphSystems());
     this.markDirty();
     return true;
   }
@@ -576,7 +589,10 @@ export class SystemsStore {
       for (const [param, value] of Object.entries(after.params)) if (before.params[param] !== value) params.push([param, value]);
     }
     if (rewired || settingMoved || protocolNodeOf(roleKind) !== undefined) this.onGraphChange(false);
-    else for (const [param, value] of params) this.backend.setParam(systemNodeId(id), param, value);
+    else if (params.length > 0) {
+      for (const [param, value] of params) this.backend.setParam(systemNodeId(id), param, value);
+      this.onLiveParam(this.graphSystems());
+    }
     this.markDirty();
     return true;
   }

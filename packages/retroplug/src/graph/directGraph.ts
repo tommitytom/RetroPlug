@@ -2,7 +2,8 @@
 // 2.4): the native tests, the CLI's analysis sessions and the offset tools. It keeps the systems list the B1
 // translator kept (add appends, replace keeps the slot, remove shifts later slots down), each system's roles with a
 // protocol node (docs/modular-graph-phase-b3b-design.md section 4), none until set, its core config and gain, its
-// node's knobs (docs/modular-graph-phase-c2-design.md section 5), none until set (so its core runs as it was built),
+// node's knobs (docs/modular-graph-phase-c2-design.md section 5), none until set (so its core keeps the settings it was
+// built with, while the params it does not name start at their defaults at its first block),
 // and the project's MIDI routing and controller, none until set (so no MIDI is routed to any system). It publishes
 // after each call but setParam, which sets a param live. Use one per process, directGraph(): two publishers with
 // separate EngineGraphs would each drop the other's systems from the document. Sharing a session's EngineGraph (so
@@ -100,7 +101,8 @@ export class DirectGraph {
 
   /** Edit system `id`'s core config as the stores' core-config role spells it (`sameboy` or `mesen`, coreRoles.ts: an
    *  enum as its label, never an ordinal), merged over what this graph gave it before: none at first, so its node
-   *  carries no setting field and its core runs as it was built. Its setting fields ride its node's settings and a
+   *  carries no setting field and its core keeps the settings it was built with (the params it does not name start at
+   *  their defaults at its first block). Its setting fields ride its node's settings and a
    *  NES's expansionVolume its params (buildGraph.ts systemKnobs), each reaching the core at the start of the next
    *  block, and a Game Boy's linkGroupId is its link cable. It publishes, the param included (a document's param value
    *  reaches the node when it differs from the one last sent). False, changing nothing, when `id` is not placed here,
@@ -138,6 +140,9 @@ export class DirectGraph {
       param === "gain"
         ? { ...system, gainDb: value }
         : { ...system, coreConfig: { ...system.coreConfig, [param]: value } };
+    // The engine's node now holds a value its last document does not, so the graph's model takes it too (a shape
+    // change must not rebuild the stale one) and the next document is sent even if it repeats the last one sent.
+    this.graph.systemsMovedLive(this.systems);
     return true;
   }
 
