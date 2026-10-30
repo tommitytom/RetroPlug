@@ -113,9 +113,8 @@ the **control-plane** registry only; the script-node bundle never sees a role, a
 
 `onConstruct` runs at boot time for each role actually attached to a system (so it is inherently
 ROM-gated), transforming the resolved `ConstructSpec` before its resources are put. It sees only a narrow
-`ConstructCaps` slice
-(`savFromJson`, `fileExists`, `readFile`, `pngDecode`), which the full `Backend` satisfies structurally,
-so the store passes itself. What it writes into the spec is what the system's node names: its `romBytes`
+`ConstructCaps` slice (`savFromJson`, `fileExists`, `readFile`, `pngDecode`), which the full `Backend` satisfies
+structurally, so the store passes itself. What it writes into the spec is what the system's node names: its `romBytes`
 become the `rom` resource's bytes, its `sramBytes` a battery seed's.
 
 LSDj's empty-sav seed ([dspRoles.ts:16](../packages/retroplug/src/dspRoles.ts#L16)) is the plainest: a

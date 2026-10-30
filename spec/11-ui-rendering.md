@@ -86,10 +86,8 @@ so concurrent core construction can't race.
   says. `buildSystem` therefore goes through `adopt` whenever roles/gain are carried (the same construct-time
   path a project load uses: the roles' construct-time fields reach the system node that builds the core, and the
   gain and the core config's knobs reach the core as its system node's params and settings in the document that
-  places it), and
-  folds a NES split's `channelExportMode` INTO the carried `mesen` role rather
-  than replacing the list. A CLI render carries neither — it has no project to copy and correctly boots the
-  ROM as it ships.
+  places it), and folds a NES split's `channelExportMode` INTO the carried `mesen` role rather than replacing the
+  list. A CLI render carries neither: it has no project to copy and correctly boots the ROM as it ships.
 - **Menu** — `System > Render` holds selectors — **Audio Routing** (the split mode: Mix / Channels / Pins,
   gated on platform), **Sample Rate** (44100 / 48000 / 96000), **Max Duration** (Left/Right ±1s,
   PageUp/PageDown ±30s) — persisted

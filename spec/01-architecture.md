@@ -60,8 +60,7 @@ that shared context rather than routed through RPC (defined in [03-ts-layer.md](
 
 There is **no single facade object**. A host composes a shared `Engine` (which owns the one `SystemFactory`, every
 core backend registered on it at construction) and the ONE `QueuedInvoker`, plus a handful of stateless service
-instances, and mounts each service's
-methods as one or more **facets** onto the rpcpp server
+instances, and mounts each service's methods as one or more **facets** onto the rpcpp server
 ([`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp)).
 Registration is **cross-object** — `addMethod<&Service::m>(instance)` — and **the method name IS
 the wire name** (rpcpp derives it), so the C++ names must match the TypeScript `Backend` surface
@@ -475,8 +474,7 @@ lost mutation.
 
 8. **TypeScript owns identity, orchestration and structure; native never mints or decides.** System
    ids are allocated by TS and named by a system node's `system` setting; native builds the core it
-   names and never an id
-   ([`EngineRpcService.cpp`](../packages/native/src/host/rpc/EngineRpcService.cpp)). Which systems
+   names and never an id ([`EngineRpcService.cpp`](../packages/native/src/host/rpc/EngineRpcService.cpp)). Which systems
    run, in what order and wired how is the graph document TS builds and sends with `setGraph`.
    Duplicate, reload and remove are TS orchestration over a new system node whose settings name a
    state-seed resource, registry reads and the documents the stores publish, not native methods.

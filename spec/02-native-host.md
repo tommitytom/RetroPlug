@@ -41,9 +41,8 @@ two test hosts link — so all three drive the *same* `Engine` over the *same* R
 
 There is **no single facade object**. A host composes a shared
 [`Engine`](../packages/native/src/host/engine/Engine.hpp) (which owns the one
-[`SystemFactory`](../packages/native/src/system/SystemFactory.hpp), every backend registered on it at
-construction by
-[`registerCoreBackends`](../packages/native/src/system/CoreBackends.cpp#L9)) and the ONE
+[`SystemFactory`](../packages/native/src/system/SystemFactory.hpp), every backend registered on it at construction
+by [`registerCoreBackends`](../packages/native/src/system/CoreBackends.cpp#L9)) and the ONE
 [`QueuedInvoker`](../packages/native/src/host/engine/EngineInvoker.hpp), plus a handful of
 stateless service instances that hold references to them:
 
@@ -175,8 +174,8 @@ and its params, whose live edits are `setParam`
 `duplicate`, `reload` and `remove` are **not** native methods: they are TS orchestration over
 resources, the registry reads and the documents the stores publish
 ([`EngineRpcService.cpp`](../packages/native/src/host/rpc/EngineRpcService.cpp)):
-duplicate pulls a source savestate and puts it as a `state` seed for a new system node that shares the
-source's ROM resource; reload puts the ROM again and seeds the battery from `readSram`; remove publishes a
+duplicate pulls a source savestate and puts it as a `state` seed for a new system node whose ROM is put
+again from its source; reload puts the ROM again and seeds the battery from `readSram`; remove publishes a
 document without the system and releases its resources once that document has planned. Routing is not a
 native call either: it is the wiring of the document. This is the thesis in miniature: native
 offers the primitives, TS composes the meaning.
@@ -218,7 +217,8 @@ DTO worth spelling out. `putResource` takes exactly one source of the bytes, and
 A type a node would not read, no source or more than one, a file that is absent, unreadable or empty, an
 empty byte block for a `rom` (an empty `sram` is a blank battery) and an unknown marker are each answered
 here, before any document is written. Ids count up from 1 and are never reused, so a stale `"res:N"` is
-refused as unknown rather than binding whatever took its place.
+refused as unknown rather than binding whatever took its place. A resource may be empty (a blank battery is one), and a
+node that reads one gets a valid data pointer at size 0, since a consumer forms a range from `(data, data + size)`.
 
 ## `Engine` + `QueuedInvoker`: the mutation path
 
@@ -420,11 +420,12 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   extra fields), which is why `BuildGraphGoldens.test.cpp` holds every golden document's system nodes to the fields
   their types' schemas list. `serialOutCapture` is `off`, `listen` (master sync) or `drive` (MI.OUT). `gain` is dB
   from -90 to 12, default 0; `expansionVolume` an int param, whole percent of unity from 0 to 200, default 100, as the
-  core takes it. The construct-time fields are the ones the core reads as it boots and has no setter for: NES `sdRoot`,
-  `fifo`, `fifoDepth`, `fifoBytesPerSecond`, `n8Link`, `n8LinkRttUs` and `channelExportMode`, SMS `enableFm` and
-  `gameGear`, each a label or an int in the range the store clamps it to. `buildGraph` writes every one of them, the
-  node's default where the stored config holds no value the node takes, so a document never flips one between absent
-  and present under a system id (the key tells the two apart).
+  core takes it. The construct-time fields are the ones the core reads as it boots and has no setter for: NES `sdRoot`
+  (a string), `fifo`, `n8Link` and `channelExportMode` (labels), `fifoDepth`, `fifoBytesPerSecond` and `n8LinkRttUs`
+  (ints in the range the store clamps them to), SMS `enableFm` and `gameGear` (flags). `buildGraph` writes every field
+  the core-config role carries, the node's default where the stored config holds no value the node takes; `gameGear`
+  is the platform's, written `true` for a Game Gear and left out otherwise, and a platform never changes under a live
+  id. So a document never flips a field between absent and present under a system id (the key tells the two apart).
 - **Only a new core rebuilds.** The node keys its rebuild on `system`, `romName` and its construct-time fields
   (node.hpp's `rebuild_key`: prepare compares the new settings' key with the key the instance was created with, which
   no commit writes), declares `stateless_prepare`, so every other settings change is a commit that never makes
@@ -561,24 +562,24 @@ The document `buildGraph` writes:
 - **Resources.** A node that reads a resource its settings name (a system node's ROM, its battery, a savestate seed,
   each written `"res:N"`) pins it at create through `rp.host.resources/1` (GraphHost's own, over the engine's
   `ResourceTable`), and the pin drops when the instance is destroyed, both on the control thread: the audio thread
-  never takes or drops one. A resource field that moves rebuilds the node (node.hpp decides that itself), so a running
-  node's bytes never change under it, and a prepare that keeps the refs copies the instance's pins into the new
-  settings object. The bytes arrive as `putResource`'s, so a node never touches the filesystem
+  never takes or drops one. A resource field that moves rebuilds the node (node.hpp decides that itself, resolving each
+  field's handle before `needs_rebuild` runs and skipping that hook on a moved ref), so a running node's bytes never
+  change under it, and a prepare that keeps the refs copies the instance's pins into the new settings object. The bytes
+  arrive as `putResource`'s, so a node never touches the filesystem
   ([modular-graph-phase-c3-design.md](../docs/modular-graph-phase-c3-design.md) section 4).
 - **The system nodes' knobs** (`systemKnobs` in `buildGraph.ts`, the one table of which core-config field is a
   setting and which a param, which the store reads too). A system node's settings carry `system`, its `rom` and
   seeds, `romName`, the setting fields of its system's core-config role (the role whose kind is its core, `sameboy`
   or `mesen`) as that config spells them, its type's construct-time fields, and on a Game Boy `serialOutCapture`,
-  for the mode its `lsdj-sync` node actually runs, after the MI.MAP controller's override
-  (`serialOutCaptureFor`,
+  for the mode its `lsdj-sync` node actually runs, after the MI.MAP controller's override (`serialOutCaptureFor`,
   [graph/controller.ts](../packages/retroplug/src/graph/controller.ts)): `drive` for MI.OUT, `listen` for master
   sync, and `off` otherwise, a Game Boy with no `lsdj-sync` placed included, since a capture left out would leave an
   armed one armed. Its params carry the system's `gain` and a NES's `expansionVolume`. A setting value the node
   would refuse (another label, a number out of range, another type) is left out rather than sent, the core keeping
   what it has: the planner refuses a whole document for one node's settings, and a loaded project keeps its config
   as written. A param passes any finite number, which the planner clamps. A system with no core config (a
-  `DirectGraph`'s until `setCoreConfig`, the B1 translator goldens' models) carries its system and resources and a
-  Game Boy's capture alone.
+  `DirectGraph`'s until `setCoreConfig`, the B1 translator goldens' models) carries its system, its resources, its
+  type's construct-time fields at their defaults and a Game Boy's capture alone.
 
 ### `QueuedInvoker`
 
@@ -692,14 +693,14 @@ the key from the request's config alternative (`SameBoyConfig` is `"sameboy"`, a
 so a request cannot carry a NES config under a Game Boy node, and returns nullptr for a core no host
 registered.
 
-Every backend consumes a
-[`SystemBuildRequest`](../packages/native/src/system/SystemFactory.hpp): the ROM bytes, the
+Every backend takes a
+[`SystemBuildRequest`](../packages/native/src/system/SystemFactory.hpp) by value and consumes it: the ROM bytes, the
 `sram`/`savestate` seed bytes, the ROM's `romName`, and a `SystemConfig`
 (`std::variant<SameBoyConfig, MesenNesConfig, MesenSmsConfig, MesenGbaConfig>`, whose alternative names the
 console). A [`SystemBackend::build`](../packages/native/src/system/SystemFactory.hpp) runs on the
 control thread (heavy, non-RT) and returns an **already-`onActivate`'d** system, or nullptr with the reason
 in `*why`. The bytes come from the node's resources (its `build` copies them out of the pins its instance
-holds), so nothing here reads a file or decodes a role config.
+holds into the request, and the core takes them from there), so nothing here reads a file or decodes a role config.
 
 ### `SameBoyBackend`
 
@@ -714,12 +715,12 @@ sys->onActivate(sampleRate);       // boots gb_ + restores sram then savestate
 sys->enableStateSnapshot();        // tear-free savestate each block for the registry / Duplicate
 ```
 
-The config's model, fast boot, highpass and display group are applied **at construct**, before
-`onActivate`, so a loaded non-default model never triggers a post-build restart that would nuke the
+The config's model, fast boot, highpass and display group are applied inside `onActivate`, before the ROM and
+the seeds load, so a loaded non-default model never triggers a post-build restart that would nuke the
 just-restored savestate. The capture is not part of `SameBoyConfig` (it is a setter), so the node's own
 first application gives it, after the build.
 
-The cores are built **bare** - no feature behaviour is baked into C++. The DSP-thread behaviours
+The cores are built **bare**: no feature behaviour is baked into C++. The DSP-thread behaviours
 (LSDj sync, mGB, Arduinoboy) run as TS protocol script nodes; kit-patch instead is `lsdj-assets`' `onConstruct`
 folding the overrides into the ROM in memory at construct, with no audio-thread part. See 04. The role
 model is 04's topic; a live knob reaches the core as its system node's settings (above).

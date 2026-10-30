@@ -66,11 +66,11 @@ a self-contained synchronous JSON-RPC `call()`
 This same adapter serves all three hosts — the difference is only which
 set of RPC facets is bound behind `__rpcSend` (see doc 01/02).
 
-### `ConstructSpec` - TS's description of a boot
+### `ConstructSpec`: TS's description of a boot
 
 A boot takes a `ConstructSpec`
 ([backend.ts](../packages/retroplug/src/backend.ts)) in which **TS has
-already resolved every path, suffix, sibling, and classification** - *native never sees a
+already resolved every path, suffix, sibling, and classification**: *native never sees a
 suffix, never looks for a sibling, never classifies.* It is no longer a wire type: one helper
 ([graph/systemResources.ts](../packages/retroplug/src/graph/systemResources.ts)) turns it into the resources a
 system node names, with the node type and ROM name the documents write, for the store, `DirectGraph` and the render
@@ -142,11 +142,12 @@ the entries, which is how a caller reads the new id a rebuild allocated.
   the reset path (a new id, the ROM read again, the live battery carried), so the new value is in the document
   that replaces the old one, and the store remembers the id it replaced so a `reset` of that id resets the
   replacement (below). The comparison is `systemKnobs` over the stored config as written against the schema's parse of
-  the edit, and every construct-time field is written in full (the stored value, else the node's default), so a sparse
-  stored config adds no move while a stored value the schema repairs takes the rebuild it needs. A feature-role's
-  config reaches only its protocol node's settings, and for `lsdj-sync` also its Game Boy node's
-  `serialOutCapture` (`"drive"` for MI.OUT, `"listen"` for master sync, `"off"` otherwise), both in the document its
-  edit publishes.
+  the edit, and every field the core-config role carries is written in full (the stored value, else the node's
+  default), so a sparse stored config adds no move while a stored value the schema repairs takes the rebuild it needs.
+  `gameGear` is the platform's, written `true` for a Game Gear and left out otherwise, and a platform never changes
+  under a live id. A feature-role's config reaches only its protocol node's settings, and for `lsdj-sync` also its
+  Game Boy node's `serialOutCapture` (`"drive"` for MI.OUT, `"listen"` for master sync, `"off"` otherwise), both in the
+  document its edit publishes.
 - **`duplicateSystem`** is TS orchestration with **no native duplicate method**: it pulls `readState(id)` (state
   includes SRAM), then boots a `ConstructSpec` seeded with those `stateBytes` under a fresh
   `allocSystemId()` from the ROM put again from its source, and appends.
@@ -183,8 +184,8 @@ in-place SRAM clear). The private `rebuildInPlace(id, seed)`
 body: it captures the source spec (through the load-time role hooks, so an asset override is re-folded), boots
 it under a **new id** that takes the old one's slot, and preserves identity + focus
 (`replaceById(entries, id, {...src, id: newId})`; `if (focusedId === id) focusedId = newId`).
-The `seed` overrides what the boot reads - `sramBytes` = cold-boot battery,
-`stateBytes` = boot-from-savestate - while `savPath` stays the auto-save target. Every boot reads its ROM again from
+The `seed` overrides what the boot reads: `sramBytes` = cold-boot battery,
+`stateBytes` = boot-from-savestate, while `savPath` stays the auto-save target. Every boot reads its ROM again from
 its source, so a file a user rebuilt on disk is what any of these boots, as before C3. Five public operations are thin
 wrappers over it, and a construct-time `setRoleConfig` is a sixth:
 
@@ -218,7 +219,7 @@ a zip import. The publish retries without the system a refusal names, its own no
 document-wide refusal names none, so nothing is dropped and the load warns that the listed systems do not run. Default
 roles are derived before the boot from a `ROLE_HEADER_LEN` (0x150) header prefix via `defaultRoles`, and each role's
 `onConstruct` hook folds over the spec
-(`applyConstructHooks`) - e.g. the LSDj empty-sav seed - before its resources are put.
+(`applyConstructHooks`), e.g. the LSDj empty-sav seed, before its resources are put.
 
 ### ProjectStore — [`src/projectStore.ts`](../packages/retroplug/src/projectStore.ts)
 
@@ -327,18 +328,18 @@ stores (the native tests, the CLI's `analyze-lsdj-sync` session and the `lsdj-de
 one per process, `directGraph()`). Its `add(spec, id)` / `replace(oldId, spec, id)` / `remove(id)` keep its systems
 list in slot order (add appends, replace keeps the slot, remove shifts later slots down); each boot puts the spec's
 ROM and seeds through the shared helper, and a resource is given back once the document that stopped naming it has
-planned, a refused change giving back what it put and restoring the document before it. A system it adds or replaces has no roles, and what the script nodes are told is
-three calls of its own, each a publish: `setPipeline(id,
-roles)` (each role with a protocol node placed as one, its config as given), `setMidiRouting(mode)` and
+planned, a refused change giving back what it put and restoring the document before it. A system it adds or replaces
+has no roles, and what the script nodes are told is three calls of its own, each a publish: `setPipeline(id, roles)`
+(each role with a protocol node placed as one, its config as given), `setMidiRouting(mode)` and
 `setController(controller)` (its app config parsed by the app's schema, as the project's is). Until
 `setMidiRouting` names a mode, no host MIDI is routed to any system. A system it adds has no core config
 either, so its node carries no live setting field (a NES's or SMS's construct-time fields are written at their node's
 defaults) and its core keeps the settings it was built with, while its params still reach it at their defaults (its
-gain at 0 dB; a NES's expansion volume at 100%), until
-`setCoreConfig(id, partial)`, a publish, merges fields over what it gave before, in the labels the store's role
-spells them (a Game Boy's `linkGroupId` its link cable), and refuses, changing nothing, any field its node does not
-take (an ordinal, a construct-time field, another core's); `setParam(id, param, value)` sets a `gain` or an
-`expansionVolume` live, as the store does, and keeps it for the next document.
+gain at 0 dB; a NES's expansion volume at 100%), until `setCoreConfig(id, partial)`, a publish, merges fields over what
+it gave before, in the labels the store's role spells them (a Game Boy's `linkGroupId` its link cable), and refuses,
+changing nothing, any field its node does not take (an ordinal, a construct-time field, another core's);
+`setParam(id, param, value)` sets a `gain` or an `expansionVolume` live, as the store does, and keeps it for the next
+document.
 
 ### RecentStore — [`src/recentStore.ts`](../packages/retroplug/src/recentStore.ts)
 
