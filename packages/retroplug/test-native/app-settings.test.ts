@@ -73,6 +73,31 @@ test("live gain silences/restores a ringing mGB, and sameboy role config dispatc
   project.systems.removeSystem(id);
 });
 
+test("a duplicate of a sounding system plays its first block at the gain its document carries, not a ramp", () => {
+  // A duplicate boots a fresh core from the source's savestate, so it is sounding from its first block, where a loaded
+  // project is still booting: only here can the first block's level be measured. A node gives its core the document's
+  // gain at that block, snapped in, so a turned-down duplicate is silent from its first sample rather than ramping
+  // down from unity. (The loaded-project case above discards 1500 ms of boot, so a 20 ms ramp hides inside it.)
+  const firstBlockRms = (gainDb: number): number => {
+    const src = project.systems.loadMgb()!;
+    audio.renderAudio(1500); // the GB boot and mGB's firmware init
+    CHORD.forEach((m) => audio.stageMidiIn(m));
+    audio.renderAudio(500); // the chord rings
+    if (gainDb !== 0) expect(project.systems.setGain(src, gainDb)).toBeTruthy();
+    audio.renderAudio(150); // a live edit's own ramp settles before the state is captured
+    const clone = project.systems.duplicateSystem(src)!;
+    project.systems.removeSystem(src); // the clone alone, so what is measured is its first block
+    const first = rms(audio.renderAudio(10)); // the first ~10 ms it plays
+    project.systems.removeSystem(clone);
+    return first;
+  };
+  const loud = firstBlockRms(0);
+  const quiet = firstBlockRms(-90);
+  console.log(`[app-settings] duplicate first 10 ms: 0 dB=${loud.toFixed(6)}, -90 dB=${quiet.toFixed(6)}`);
+  expect(loud > 0.001).toBeTruthy(); // the clone rings from its first block
+  expect(quiet < loud * 0.01).toBeTruthy(); // and at -90 dB it is silent there, not a ramp from unity
+});
+
 test("a project loaded with a saved gain plays at it from its first block, before any edit", () => {
   // Nothing but the published document carries the saved gain to a loaded core: it is built at 0 dB.
   const saved = project.systems.loadMgb()!;
