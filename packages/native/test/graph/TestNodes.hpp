@@ -259,6 +259,45 @@ struct Shape {
     }
 };
 
+// Rebuilds when its settings' key changes and swaps any other change, deciding which with rebuild_key rather than
+// needs_rebuild, so its prepare is stateless. Each block it writes its level; `blocks` is the state a rebuild would
+// lose, and `committed` the level of each settings on_settings saw, in order. Not in testPackage: a test that places
+// it registers keyedPackage.
+struct KeyedSettings {
+    std::string key = "a";
+    double      level = 0.0;
+};
+
+struct Keyed {
+    static constexpr const char* id = "rp.test.keyed";
+    static constexpr bool stateless_prepare = true;
+    using Settings = KeyedSettings;
+    struct { rp::audio_out<rp::mono> out; } outputs;
+
+    static std::string rebuild_key(const Settings& s) { return s.key; }
+
+    float                 level = 0.0f;
+    std::uint32_t         blocks = 0;
+    std::array<double, 8> committed{};
+    std::uint32_t         commits = 0;
+
+    void on_settings(const Settings& s) noexcept {
+        level = static_cast<float>(s.level);
+        if (commits < committed.size()) committed[commits] = s.level;
+        ++commits;
+    }
+    void process(const rp::Block& b) noexcept {
+        for (std::uint32_t i = 0; i < b.frames(); ++i) outputs.out[0][i] = level;
+        ++blocks;
+    }
+};
+
+inline const rp_package* keyedPackage() {
+    static const rp_node_type* const kTypes[] = {rp::node_type<Keyed>()};
+    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.keyed","version":"1.0.0"})", 1, kTypes};
+    return &kPackage;
+}
+
 inline const rp_package* testPackage() {
     static const rp_node_type* const kTypes[] = {
         rp::node_type<Source>(), rp::node_type<Sink>(),  rp::node_type<Linked>(),  rp::node_type<NoStep>(),

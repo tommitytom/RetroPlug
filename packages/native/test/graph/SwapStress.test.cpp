@@ -255,6 +255,44 @@ TEST_CASE("setGraph waits while a published settings commit is unadopted", "[gra
     rig.host->setAudioThreadOwns(false);
 }
 
+TEST_CASE("setGraph never waits on a node that rebuilds on a key, whose key change rebuilds it", "[graph][swap]") {
+    GraphRig rig({48000.0, 64, rp::graph::Target::Desktop, 50});  // a 50 ms adoption timeout
+    REQUIRE(rig.registry.addPackage(rp::graph::test::keyedPackage()));
+    const auto doc = [](const char* key, int level) {
+        return std::string(R"({"nodes":[{"id":"k","type":"rp.test.keyed","settings":{"key":")") + key +
+               R"(","level":)" + std::to_string(level) + R"(}}],"wires":[]})";
+    };
+    REQUIRE(rig.set(doc("a", 1)).ok);
+    rig.run();
+    rp_node* const before = rig.host->node("k");
+    rig.host->setAudioThreadOwns(true);  // and no block runs until the end, so nothing is adopted
+    // Three swaps committing settings to k, each planned while the one before is unadopted, where a node that
+    // decides with needs_rebuild (rp.test.tunable, above) answers busy to the second.
+    REQUIRE(rig.set(doc("a", 2)).ok);
+    REQUIRE(rig.set(doc("a", 3)).ok);
+    REQUIRE(rig.set(doc("a", 4)).ok);
+    CHECK(rig.host->node("k") == before);
+    rig.run();  // adopts all three, in order
+    const auto& k = rig.node<rp::graph::test::Keyed>("k");
+    CHECK(k.commits == 4);
+    CHECK(k.committed[1] == 2.0);
+    CHECK(k.committed[2] == 3.0);
+    CHECK(k.committed[3] == 4.0);
+    CHECK(k.blocks == 2);  // the same instance throughout
+    CHECK(k.level == 4.0f);
+
+    // Another key is a new instance, its state afresh.
+    REQUIRE(rig.set(doc("b", 5)).ok);
+    rig.run();
+    CHECK(rig.host->node("k") != before);
+    CHECK(rig.node<rp::graph::test::Keyed>("k").blocks == 1);
+    CHECK(rig.node<rp::graph::test::Keyed>("k").commits == 1);
+    CHECK(rig.set(doc("b", 6)).ok);
+    rig.run();
+    CHECK(rig.node<rp::graph::test::Keyed>("k").level == 6.0f);
+    rig.host->setAudioThreadOwns(false);
+}
+
 namespace {
 
 // Holds the audio thread inside a settings commit for as long as `held` is set.

@@ -192,6 +192,40 @@ TEST_CASE("a node that reshapes answers reshape for a layout change, and a state
     CHECK(rp::node_type<test::Source>()->flags == 0u);  // by default prepare may read the current settings
 }
 
+TEST_CASE("a node that rebuilds on a key compares the key it was created with, so it may prepare statelessly",
+          "[graph][node]") {
+    CHECK(rp::node_type<test::Keyed>()->flags == RP_TYPE_STATELESS_PREPARE);
+    Made m{rp::node_type<test::Keyed>()};
+    make(m, R"({"key":"a","level":1})");
+    rp_error err{};
+    void* prepared = nullptr;
+    void* old = nullptr;
+
+    // The same key swaps, and on_settings sees the new settings.
+    rp_settings louder = json(R"({"key":"a","level":2})");
+    REQUIRE(m.node->vt->prepare_settings(m.node, &louder, &prepared, &err) == RP_PREPARE_SWAP);
+    m.node->vt->commit_settings(m.node, prepared, &old);
+    m.node->vt->release_settings(m.node, old);
+    CHECK(rp::peer_as<test::Keyed>(m.node)->level == 2.0f);
+
+    // Another key rebuilds.
+    rp_settings rekeyed = json(R"({"key":"b","level":2})");
+    CHECK(m.node->vt->prepare_settings(m.node, &rekeyed, &prepared, &err) == RP_PREPARE_REBUILD);
+
+    // The key compared is the one create kept, never the current settings' (what a commit writes): settings with
+    // another key, committed past prepare, leave the answers as they were.
+    m.node->vt->commit_settings(m.node, new test::KeyedSettings{"b", 3.0}, &old);
+    m.node->vt->release_settings(m.node, old);
+    REQUIRE(rp::peer_as<test::Keyed>(m.node)->level == 3.0f);
+    rp_settings back = json(R"({"key":"a","level":4})");
+    REQUIRE(m.node->vt->prepare_settings(m.node, &back, &prepared, &err) == RP_PREPARE_SWAP);
+    m.node->vt->release_settings(m.node, prepared);
+    CHECK(m.node->vt->prepare_settings(m.node, &rekeyed, &prepared, &err) == RP_PREPARE_REBUILD);
+
+    rp_settings bad = json(R"({"key":7})");
+    CHECK(m.node->vt->prepare_settings(m.node, &bad, &prepared, &err) == RP_PREPARE_INVALID);
+}
+
 namespace {
 
 struct PickySettings {

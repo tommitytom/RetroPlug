@@ -28,6 +28,11 @@
 //                                                         among them), append ports or params; never remove or
 //                                                         reorder reflected ones
 //   static bool needs_rebuild(const Settings& from, const Settings& to);
+//   static Key rebuild_key(const Settings&);              a value only a rebuild can change (Key is any copyable
+//                                                         type with ==): prepare compares the new settings' key
+//                                                         with the key the instance was created with, which no
+//                                                         commit writes, so unlike needs_rebuild it allows
+//                                                         stateless_prepare. Never both on one type
 //   static std::size_t extra_memory(const Settings&);     host-supplied tail memory (max_align_t aligned)
 //   void attach(std::span<std::byte>) noexcept;           receives it, at create
 //   void on_settings(const Settings&) noexcept;           at create (control) and each commit (audio): copy,
@@ -47,6 +52,7 @@
 //   static constexpr bool stateless_prepare;              prepare reads nothing a commit writes, so setGraph never
 //                                                         waits for this node's commits (RP_TYPE_STATELESS_PREPARE);
 //                                                         rules out needs_rebuild, which reads the current settings
+//                                                         (rebuild_key does not)
 //
 // process(const rp::Block&) is required, noexcept, and returns void or rp_status. Exceptions never cross
 // the ABI: every control-thread entry catches, and every audio-thread entry is noexcept.
@@ -364,6 +370,17 @@ template <class T> constexpr bool statelessPrepareOf() {
     if constexpr (requires { T::stateless_prepare; }) return T::stateless_prepare; else return false;
 }
 
+// What rebuild_key returns, or NoKey for a type without one. Detected by the call, as needs_rebuild is in prepareFn,
+// so the key the instance keeps and the key prepare compares are found the same way.
+struct NoKey {};
+template <class T> struct RebuildKeyOf { using type = NoKey; };
+template <class T>
+    requires requires(const typename SettingsOf<T>::type& s) { T::rebuild_key(s); }
+struct RebuildKeyOf<T> {
+    using type = std::remove_cvref_t<decltype(T::rebuild_key(std::declval<const typename SettingsOf<T>::type&>()))>;
+};
+template <class T> inline constexpr bool kHasRebuildKey = !std::is_same_v<typename RebuildKeyOf<T>::type, NoKey>;
+
 template <class T> auto& inputsOf(T& t) { if constexpr (requires { t.inputs; }) return t.inputs; else { static NoPorts none; return none; } }
 template <class T> auto& outputsOf(T& t) { if constexpr (requires { t.outputs; }) return t.outputs; else { static NoPorts none; return none; } }
 template <class T> auto& paramsOf(T& t) { if constexpr (requires { t.params; }) return t.params; else { static NoPorts none; return none; } }
@@ -529,6 +546,15 @@ constexpr bool checkHooks() {
     if constexpr (requires { requires kIsFunction<decltype(&T::needs_rebuild)>; })
         static_assert(requires(const S& s) { { T::needs_rebuild(s, s) } -> std::same_as<bool>; },
                       "needs_rebuild must be `static bool needs_rebuild(const Settings&, const Settings&)`");
+    if constexpr (requires { requires kIsFunction<decltype(&T::rebuild_key)>; }) {
+        static_assert(requires(const S& s) { T::rebuild_key(s); },
+                      "rebuild_key must be `static Key rebuild_key(const Settings&)`");
+        using K = typename RebuildKeyOf<T>::type;
+        static_assert(!std::is_void_v<K> && std::copy_constructible<K> && std::equality_comparable<K>,
+                      "rebuild_key's Key must be copyable and compare with ==");
+    }
+    static_assert(!(kHasRebuildKey<T> && requires(const S& s) { T::needs_rebuild(s, s); }),
+                  "a node has needs_rebuild or rebuild_key, not both: the key already decides what rebuilds");
     if constexpr (requires { requires kIsFunction<decltype(&T::extra_memory)>; })
         static_assert(requires(const S& s) { { T::extra_memory(s) } -> std::same_as<std::size_t>; },
                       "extra_memory must be `static std::size_t extra_memory(const Settings&)`");
@@ -574,6 +600,9 @@ struct Instance : rp_node {
     typename SettingsOf<T>::type* settings = nullptr;
     std::string                   layoutJson;  // as created, which prepare compares against; empty if it reshapes
     std::span<std::byte>          extra;
+    // The rebuild_key of the settings it was created with, which prepare compares against (empty without the
+    // hook). A different key rebuilds, so it never changes while the instance lives, and no commit writes it.
+    std::optional<typename RebuildKeyOf<T>::type> key;
 };
 
 inline void copyError(rp_error* err, std::string_view what) {
@@ -712,14 +741,16 @@ rp_status processFn(rp_node* n, const rp_process* p) noexcept {
     }
 }
 
-// Compares against the instance's extra memory and, unless it reshapes, its layout, neither of which changes
-// after create; a node that reshapes never compares layouts, since the planner takes a reshape that keeps the
-// layout as a swap. Only needs_rebuild reads the instance's current settings, which is safe because a host never
+// Compares against the instance's extra memory, its rebuild_key and, unless it reshapes, its layout, none of which
+// changes after create; a node that reshapes never compares layouts, since the planner takes a reshape that keeps
+// the layout as a swap. Only needs_rebuild reads the instance's current settings, which is safe because a host never
 // prepares while a commit for the same instance may be in flight: GraphHost waits for a published commit to be
 // adopted before it plans, but only for commits from types without RP_TYPE_STATELESS_PREPARE (awaitsAdoption). A C++
 // node without stateless_prepare is such a type; a stateless_prepare type (every script node) is not waited for,
 // which is why that flag rules needs_rebuild out. The rule is asserted on the call itself, so no form of
-// needs_rebuild this would call (a template, an overload set, a callable static member) slips past it.
+// needs_rebuild this would call (a template, an overload set, a callable static member) slips past it. A
+// rebuild_key decides the same thing from the key create kept, so a type that rebuilds on a key prepares
+// statelessly.
 template <class T>
 rp_prepare_result prepareFn(rp_node* n, const rp_settings* s, void** prepared, rp_error* err) {
     using S = typename SettingsOf<T>::type;
@@ -738,6 +769,7 @@ rp_prepare_result prepareFn(rp_node* n, const rp_settings* s, void** prepared, r
                           "a stateless_prepare node cannot have needs_rebuild, which reads its current settings");
             rebuild = rebuild || T::needs_rebuild(*inst->settings, *parsed);
         }
+        if constexpr (kHasRebuildKey<T>) rebuild = rebuild || !(T::rebuild_key(*parsed) == *inst->key);
         if (rebuild) return RP_PREPARE_REBUILD;
         *prepared = new S(std::move(*parsed));
         if constexpr (reshapesOf<T>()) return RP_PREPARE_RESHAPE;
@@ -877,15 +909,18 @@ rp_node* createFn(const rp_node_type*, [[maybe_unused]] const rp_host* host, voi
             copyError(err, parsed.error().what());
             return nullptr;
         }
-        // Everything that can throw on the node's behalf (adjust_layout) runs before the instance exists. Only a node
-        // that does not reshape keeps its layout, for prepare to compare against.
+        // Everything that can throw on the node's behalf (adjust_layout, rebuild_key) runs before the instance exists.
+        // Only a node that does not reshape keeps its layout, for prepare to compare against.
         std::string layout;
         if constexpr (reshapesOf<T>()) (void)layoutFor<T>(*parsed);
         else layout = graph::layoutJson(layoutFor<T>(*parsed));
+        std::optional<typename RebuildKeyOf<T>::type> key;
+        if constexpr (kHasRebuildKey<T>) key.emplace(T::rebuild_key(*parsed));
         const std::size_t extra = extraBytes<T>(*parsed);
         inst = new (memory) Instance<T>{};
         inst->vt = vtable<T>();
         inst->layoutJson = std::move(layout);
+        if (key) inst->key.emplace(std::move(*key));
         inst->settings = new S(std::move(*parsed));
         if constexpr (requires(T& t) { t.bind_host(host); }) inst->node.bind_host(host);
         if (extra) {
