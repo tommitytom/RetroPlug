@@ -1,8 +1,7 @@
-// The build spec as realBackend.ts puts it on the wire. A loaded LSDj in a MIDI-out mode is built capturing serial
-// out through `serialOutCapture`, and native skips a field it does not know, so the key must be the one
-// BackendConstructSpec names (the engine-graph Catch2 case decodes that same key on the native side). And setParam,
-// how the stores set a gain or a NES's expansion volume live, as EngineRpcService::setParam takes it. Driven over a
-// stand-in __rpcSend that records each request, so no native host is needed.
+// The build spec as realBackend.ts puts it on the wire: native skips a field it does not know, so each key must be the
+// one BackendConstructSpec names, and a null path is left out rather than sent as "" (native reads an absent field as
+// nullopt). And setParam, how the stores set a gain or a NES's expansion volume live, as EngineRpcService::setParam
+// takes it. Driven over a stand-in __rpcSend that records each request, so no native host is needed.
 import { test, expect } from "../../testing/harness";
 import { createEmulatorClient } from "../../src/realBackend";
 import type { ConstructSpec } from "../../src/backend";
@@ -38,27 +37,18 @@ const spec = (extra: Partial<ConstructSpec> = {}): ConstructSpec => ({
   ...extra,
 });
 
-test("buildCore carries serialOutCapture under that exact key, each mode as its name", () => {
+test("buildCore carries each field under BackendConstructSpec's name, a null path and an absent seed left out", () => {
   const { sent, client } = recording();
-  client.buildCore(spec({ serialOutCapture: "drive" }), 7);
-  client.buildCore(spec({ serialOutCapture: "listen" }), 8);
+  const sramBytes = new Uint8Array([1, 2, 3]);
+  client.buildCore(spec({ savPath: "/roms/a.sav", sramBytes, settings: "{}" }), 7);
+  client.buildCore(spec(), 8);
   expect(sent.map((r) => r.method)).toEqual(["buildCore", "buildCore"]);
   const params = sent.map((r) => r.params[0] as Record<string, unknown>);
-  expect(params.map((p) => [p.id, p.serialOutCapture])).toEqual([[7, "drive"], [8, "listen"]]);
-});
-
-test("buildCore does not arm the capture for a spec without the field", () => {
-  const { sent, client } = recording();
-  client.buildCore(spec(), 7);
-  expect(sent.length).toBe(1);
-  expect("serialOutCapture" in (sent[0].params[0] as Record<string, unknown>)).toBe(false);
-});
-
-test("setSerialOutCapture carries the mode, and null for off", () => {
-  const { sent, client } = recording();
-  client.setSerialOutCapture(3, "listen");
-  client.setSerialOutCapture(3, null);
-  expect(sent.map((r) => [r.method, ...r.params])).toEqual([["setSerialOutCapture", 3, "listen"], ["setSerialOutCapture", 3, null]]);
+  const named = ["core", "embeddedRom", "id", "platform", "romPath"];
+  expect(Object.keys(params[0]).sort()).toEqual([...named, "savPath", "settings", "sramBytes"]);
+  expect([params[0].id, params[0].savPath, params[0].settings]).toEqual([7, "/roms/a.sav", "{}"]);
+  expect(params[0].sramBytes).toBe(sramBytes); // as the Uint8Array it was: rfl::Bytestring on the native side
+  expect(Object.keys(params[1]).sort()).toEqual(named);
 });
 
 test("setParam carries the node, the param and the value, in that order", () => {

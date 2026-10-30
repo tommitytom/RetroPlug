@@ -14,7 +14,7 @@
 // native Engine is shared per host process).
 import { test, expect, skip } from "../testing/harness";
 import { createAudioDriver } from "../src/audioDriver";
-import type { ConstructSpec, SerialOutCapture } from "../src/backend";
+import type { ConstructSpec } from "../src/backend";
 import { directGraph } from "../src/graph/directGraph";
 import { savFrom, type SavInput } from "../src/lsdjSav";
 import { createRealBackend } from "../src/realBackend";
@@ -327,15 +327,14 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
     romPath: string,
     song: SavInput,
     mode: string,
-    capture: SerialOutCapture,
     minClocks: number,
   ): void => {
     if (!be.fileExists(romPath)) skip(`dsp-bench: the ${workload} window needs the LSDj ROM at ${romPath}`);
     const id = extra + 1;
     const spec: ConstructSpec = { romPath, platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null };
     expect(graph.add({ ...spec, sramBytes: savFrom(song) }, id)).toBeTruthy();
+    // The mode's capture rides the same document, on the Game Boy's node, as a store places it.
     expect(graph.setPipeline(id, [{ kind: "lsdj-sync", config: { mode } }])).toBeTruthy();
-    expect(be.setSerialOutCapture(id, capture)).toBeTruthy(); // what the store does for the mode
     audio.renderAudio(6000); // the song screen
     audio.pressButton(id, LSDJ_START, true); // play
     audio.renderAudio(80);
@@ -378,6 +377,6 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
     expectWindowLive();
   };
   const seconds = (lsdjBlocks * BLOCK_MS) / 1000;
-  lsdjWindow("lsdj-masterSync", LSDJ_ROM, MASTER_SONG, "masterSync", "listen", 40 * seconds);
-  lsdjWindow("lsdj-midiOut", LSDJ_ABOY_ROM, MIDIOUT_SONG, "midiOut", "drive", 2 * seconds);
+  lsdjWindow("lsdj-masterSync", LSDJ_ROM, MASTER_SONG, "masterSync", 40 * seconds);
+  lsdjWindow("lsdj-midiOut", LSDJ_ABOY_ROM, MIDIOUT_SONG, "midiOut", 2 * seconds);
 });

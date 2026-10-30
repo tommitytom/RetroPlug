@@ -70,7 +70,6 @@ const specParams = (spec: ConstructSpec, id: number): Record<string, unknown> =>
   if (spec.sramBytes) p.sramBytes = spec.sramBytes;
   if (spec.stateBytes) p.stateBytes = spec.stateBytes;
   if (spec.settings != null) p.settings = spec.settings;
-  if (spec.serialOutCapture) p.serialOutCapture = spec.serialOutCapture;
   return p;
 };
 
@@ -102,7 +101,7 @@ export function createHostClient(): HostBackend {
   };
 }
 
-/** The emulator lifecycle / live config / input / snapshot-reads facet. Throws if no RPC surface is bound. */
+/** The emulator lifecycle / live params / input / snapshot-reads facet. Throws if no RPC surface is bound. */
 export function createEmulatorClient(): EmulatorBackend {
   const call = makeCall();
   return {
@@ -110,10 +109,6 @@ export function createEmulatorClient(): EmulatorBackend {
     setGraph: (request: SetGraphRequest) => call("setGraph", request) as SetGraphResult,
     loadScriptPack: (request: LoadScriptPackRequest) => call("loadScriptPack", request) as LoadScriptPackResult,
     setParam: (nodeId, paramId, value) => call("setParam", nodeId, paramId, value) as boolean,
-    applySystemSetting: (id, key, value) =>
-      call("applySystemSetting", id, key, typeof value === "boolean" ? (value ? 1 : 0) : value) as boolean,
-    applyRoleConfig: (id, kind, config) => call("applyRoleConfig", id, kind, JSON.stringify(config)) as boolean,
-    setSerialOutCapture: (id, mode) => call("setSerialOutCapture", id, mode) as boolean,
     pressButton: (id, button, down) => call("pressButton", id, button, down) as boolean,
     stageSystemMidi: (id, bytes) => call("stageSystemMidi", id, bytes) as boolean,
     readState: (id) => bytesOrNull(call("readState", id)),

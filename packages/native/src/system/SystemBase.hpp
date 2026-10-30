@@ -174,12 +174,6 @@ public:
     virtual std::optional<bool> fastBoot() const { return std::nullopt; }
     virtual void                setFastBoot(bool /*on*/) {}
 
-    // "Reload when the ROM file changes on disk" — a UI-thread flag, not a core one.
-    // The control plane watches the path (HostRpcService::drainChangedPaths, over
-    // NativeFileWatcher) and reloads; nothing on the audio thread reads this.
-    virtual bool wantsRomReload() const  { return false; }
-    virtual void setRomReload(bool /*on*/) {}
-
     // Live output gain in dB — a universal per-system setting every backend
     // honours (smoothed at the audio frame). Default no-op so trivial backends /
     // test doubles need not implement it; SameBoy + both Mesen systems override.
@@ -379,7 +373,7 @@ protected:
     // Arms an immediate republish, which refreshes both together within one block instead of up to
     // kStateSnapshotIntervalSec later. Allocates NOTHING: the triple was sized to a ceiling covering
     // every model the backend can switch into, which is exactly what makes this callable from the audio
-    // thread (where Engine::applyConfigField runs while the audio thread owns the Engine).
+    // thread (where a system node applies its settings while the audio thread owns the Engine).
     void rearmStateSnapshot();
 
     // State-snapshot backend hooks (default: unsupported). Overridden by

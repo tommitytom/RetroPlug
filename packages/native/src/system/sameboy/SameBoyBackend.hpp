@@ -11,10 +11,10 @@
 
 class SameBoySystem;
 
-// The TS-owned "sameboy" system-role config as it crosses the wire (JSON): the emulator knobs the UI
-// edits. Field names match the TS role schema (coreRoles.ts). Decoded both live (applyRoleConfig)
-// and at construct (the settings blob). Defaults mirror the struct + TS defaults, so a missing field
-// is a no-op.
+// The TS-owned "sameboy" system-role config as it crosses the wire at construct (JSON, the settings
+// blob): the emulator knobs the UI edits. Field names match the TS role schema (coreRoles.ts). A live
+// edit reaches the core as its system node's settings instead (host/graph/SystemNodes.cpp). Defaults
+// mirror the struct + TS defaults, so a missing field is a no-op.
 struct SameBoyRoleConfig {
     std::uint32_t model       = static_cast<std::uint32_t>(SameBoyModel::CgbC);
     std::uint32_t highpass    = static_cast<std::uint32_t>(SameBoyHighpass::Accurate);
@@ -44,6 +44,6 @@ public:
                                                        double sampleRate);
 
     // Parse the TS "sameboy" role-config JSON (forward-tolerant: an absent field takes its default).
-    // The single place that JSON is decoded — shared by live applyRoleConfig + the construct blob.
+    // The single place that JSON is decoded: the construct blob.
     static SameBoyRoleConfig decodeSameBoyRoleConfig(const std::string& json);
 };

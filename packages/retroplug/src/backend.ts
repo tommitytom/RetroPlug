@@ -149,8 +149,7 @@ export interface Backend {
   // TS owns the config. A system's knobs ride the graph document (graph/buildGraph.ts): its core config's setting
   // fields and its LSDj capture as its node's settings, which an edit publishes, and its gain and a NES's expansion
   // volume as its node's params, whose live edits go through setParam with no publish
-  // (docs/modular-graph-phase-c2-design.md section 5). The three calls after it are the side path the document
-  // replaced: nothing in the app makes them (native tests and a CLI session do).
+  // (docs/modular-graph-phase-c2-design.md section 5).
 
   /** A live change to a param of a node the running plan places, applied at the start of the next block, clamped to
    *  the param's range (and rounded for an int, enum or bool). The store sets a system's `gain` (dB) and a NES's
@@ -158,21 +157,6 @@ export interface Backend {
    *  value. False for a node or a param the running plan does not have (a node the next document places takes its
    *  value from that document), a NaN, a param a wire drives, or a full command ring. */
   setParam(nodeId: string, paramId: string, value: number): boolean;
-
-  /** Apply a universal per-system setting (`"gainDb"` / `"reloadOnRomChange"`) to the
-   *  live emulator. Returns false on failure. */
-  applySystemSetting(id: number, key: string, value: number | boolean): boolean;
-
-  /** Apply a SYSTEM-role's (backend) config to the live emulator — native dispatches
-   *  by kind (e.g. `"sameboy"`: model → restart, highpass → live). Returns false on
-   *  failure. */
-  applyRoleConfig(id: number, kind: string, config: Record<string, unknown>): boolean;
-
-  /** Set capture of a system's outgoing serial bytes (SerialOutCapture), or null for off: armed, the Game Boy node's
-   *  `serialOut` port carries the raw bytes, a wire into its rp.lsdj.serial-out node, for the MI.OUT and master-sync
-   *  decoders. A Game Boy node's `serialOutCapture` setting does the same from the document. False for a mode native
-   *  does not know. SameBoy-only (a no-op on other cores). */
-  setSerialOutCapture(id: number, mode: SerialOutCapture | null): boolean;
 
   // --- Live emulator input ------------------------------------------------
   // The UI→DSP direction for game input: a joypad button transition on the focused system. Native queues
@@ -414,10 +398,10 @@ export type HostBackend = Pick<
   | "zip" | "unzip" | "pngEncode" | "pngDecode" | "savFromJson" | "openFileBrowser"
 >;
 
-/** Emulator lifecycle / live config / input / snapshot reads — bound by the plugin, UI, CLI, test host. */
+/** Emulator lifecycle / live params / input / snapshot reads: bound by the plugin, UI, CLI, test host. */
 export type EmulatorBackend = Pick<
   Backend,
-  | "buildCore" | "setGraph" | "loadScriptPack" | "setParam" | "applySystemSetting" | "applyRoleConfig" | "setSerialOutCapture"
+  | "buildCore" | "setGraph" | "loadScriptPack" | "setParam"
   | "pressButton" | "stageSystemMidi" | "readState" | "readSram" | "readRam" | "writeRam" | "getFrame"
 >;
 
@@ -798,12 +782,6 @@ export interface FileBrowserOpts {
   directory?: boolean;
 }
 
-/** What a Game Boy's serial-out capture does. `listen`: capture the bytes it clocks out itself (LSDj as master sync's
- *  master). `drive`: that, and clock a transfer waiting on an external clock, capturing its bytes too (the
- *  Arduinoboy's part in LSDj MI.OUT). Only MI.OUT may drive: a stopped LSDj master, clocked, takes the idle bytes for
- *  another master's clock and stops answering START (docs/lsdj-master-sync-fix-design.md). */
-export type SerialOutCapture = "listen" | "drive";
-
 /** What TS hands the native builder: concrete paths only — everything is resolved
  *  TS-side before the call. `savPath`/`statePath` are the exact files to load-from +
  *  auto-save-to / boot-from, or `null` for fresh / cold. */
@@ -836,10 +814,6 @@ export interface ConstructSpec {
   /** Seed savestate bytes (a zip-import blob or a duplicate's captured state). When set, native
    *  boots from these instead of reading `statePath`. Rides as a Uint8Array (rfl::Bytestring). */
   stateBytes?: Uint8Array;
-  /** Arm a Game Boy's serial-out capture before the core first runs, as setSerialOutCapture would on a running
-   *  one. Omitted (off) for every system without an lsdj-sync role in a capturing mode. Its node's settings carry a
-   *  capture too, which its activation applies before the core first runs, so the document's wins. */
-  serialOutCapture?: SerialOutCapture;
   /** The system's backend ("system"-role) config as JSON, so a loaded non-default setting
    *  (SameBoy model/highpass/…) is applied at CONSTRUCT rather than via a post-build restart
    *  that would nuke the just-restored savestate. Omitted for a fresh build (backend defaults

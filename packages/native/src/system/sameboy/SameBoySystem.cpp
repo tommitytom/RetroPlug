@@ -284,7 +284,7 @@ void SameBoySystem::onActivate(double sampleRate) {
     // Reset the serial shift-register state so a re-activation (e.g. a
     // model-change restart, which routes through onDeactivate→onActivate)
     // doesn't carry over half-shifted bytes. Serial-out capture's mode is set
-    // separately by the host via setSerialOutCapture.
+    // separately, by the system node, via setSerialOutCapture.
     serialIn_.clear();
     serialBitsRemaining_ = 0;
     serialOutByte_ = 0;

@@ -131,8 +131,6 @@ public:
     void                      setSavSuffix(std::uint32_t s) override { config_.savSuffix = s; }
     const std::string&        savPath() const override        { return config_.savPath; }
     void                      setSavPath(const std::string& p) override { config_.savPath = p; }
-    bool                      wantsRomReload() const override { return config_.reloadOnRomChange; }
-    void                      setRomReload(bool on) override  { config_.reloadOnRomChange = on; }
     std::vector<std::uint8_t> saveSramBytes() const override;
     void                      clearSram() override;
     std::vector<std::uint8_t> saveStateBytes() const override;

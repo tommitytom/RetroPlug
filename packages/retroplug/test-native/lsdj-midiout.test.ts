@@ -1,11 +1,11 @@
 // Arduinoboy MIDIOUT (MI.OUT / "Arduinoboy Master", mode 7) — the full end-to-end functional proof on a
 // real LSDj core. A song authored with SYNC=MI.OUT + N (NoteOn) commands, once playing, emits the
-// Arduinoboy protocol on LSDj's serial-out port; native captures those raw bytes (armed via
-// setSerialOutCapture) and feeds them, in the block it captured them, to the lsdj-sync role's decoder after the
-// Game Boy (rp.lsdj.serial-out), where the mode-7 decoder strips the flag-gated framing + decodes the byte
-// protocol into host MIDI (its midiOut port), each message at the frame of the byte that completes it. We drain
-// that MIDI and assert a transport START (0xFA), a clock stream (0xF8), and NoteOns (0x9x), at frames inside
-// their blocks.
+// Arduinoboy protocol on LSDj's serial-out port; native captures those raw bytes (`drive`, the Game Boy node's
+// capture setting the mode places) and feeds them, in the block it captured them, to the lsdj-sync role's
+// decoder after the Game Boy (rp.lsdj.serial-out), where the mode-7 decoder strips the flag-gated framing +
+// decodes the byte protocol into host MIDI (its midiOut port), each message at the frame of the byte that
+// completes it. We drain that MIDI and assert a transport START (0xFA), a clock stream (0xF8), and NoteOns
+// (0x9x), at frames inside their blocks.
 //
 // This is the reversal of the old "MI.OUT is unreachable headlessly" folklore (docs/lsdj.md): SYNC=MI.OUT
 // is byte 9 (cold-authored here), and the wire's 1-flag-bit + 7-payload-bit framing — which the raw 8-bit
@@ -69,10 +69,8 @@ test("MIDIOUT (mode 7): a real LSDj in SYNC=MI.OUT emits Arduinoboy MIDI its dec
   }, id)).toBeTruthy();
 
   expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
+  // The mode's capture, `drive`, rides the same document on the Game Boy's node, as a store places it.
   expect(graph.setPipeline(id, lsdjSync(MIDIOUT))).toBeTruthy();
-
-  // Arm serial-out capture (what the store does when a system's lsdj-sync mode is MIDIOUT).
-  expect(be.setSerialOutCapture(id, "drive")).toBeTruthy();
 
   audio.renderAudio(6000); // reach the song screen
   audio.drainMidiOut(); // discard any boot-time noise

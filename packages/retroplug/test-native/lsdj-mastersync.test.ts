@@ -1,14 +1,14 @@
 // LSDj Master Sync (Arduinoboy "Mode 2 — LSDJ as MIDI Master Sync", lsdj-sync mode 8) — the end-to-end
 // functional proof on a real LSDj core. A stock LSDj set to SYNC=LSDj, once playing, self-clocks as the
 // serial MASTER and streams one byte out its link port per MIDI-clock tick. Native captures those bytes
-// (setSerialOutCapture's `listen`: the internal-clock serialStart path, same serialOutLog_ MI.OUT uses, no
-// peer needed, and never `drive`, which would clock a stopped LSDj's wait for another master and turn it
-// slave) and feeds them, in the block it captured them, to the lsdj-sync role's decoder after the Game Boy
-// (rp.lsdj.serial-out), where the mode-8 decoder turns each byte into a 0xF8 clock at its frame (+ a song-row
-// NoteOn/0xFA at run start) and a 200 ms silence into 0xFC. So the host follows LSDj's tempo. The decoder times
-// the silence on the bytes' own frames and sends every message at a frame of its own, so what it decodes must not
-// depend on how the host cuts its blocks, at either rate, and its clocks lie a tempo period apart whatever the
-// block size: the second case holds it to both.
+// (`listen`, the Game Boy node's capture setting the mode places: the internal-clock serialStart path, same
+// serialOutLog_ MI.OUT uses, no peer needed, and never `drive`, which would clock a stopped LSDj's wait for
+// another master and turn it slave) and feeds them, in the block it captured them, to the lsdj-sync role's
+// decoder after the Game Boy (rp.lsdj.serial-out), where the mode-8 decoder turns each byte into a 0xF8 clock
+// at its frame (+ a song-row NoteOn/0xFA at run start) and a 200 ms silence into 0xFC. So the host follows
+// LSDj's tempo. The decoder times the silence on the bytes' own frames and sends every message at a frame of
+// its own, so what it decodes must not depend on how the host cuts its blocks, at either rate, and its clocks
+// lie a tempo period apart whatever the block size: the second case holds it to both.
 //
 // A playing stock LSDj master emits a TEMPO-LOCKED byte stream (~50/sec = ~130 BPM at 24 PPQN: tens a second,
 // NOT thousands), and a stopped one goes quiet. The thousands-a-second stream once taken for SYNC=LSDj's raw link
@@ -67,8 +67,7 @@ test("Master Sync (mode 8): a stock LSDj in SYNC=LSDj clocks the host — byte�
   }, id)).toBeTruthy();
 
   expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
-  expect(graph.setPipeline(id, lsdjSync(MASTER_SYNC))).toBeTruthy();
-  expect(be.setSerialOutCapture(id, "listen")).toBeTruthy(); // what the store does for mode 8
+  expect(graph.setPipeline(id, lsdjSync(MASTER_SYNC))).toBeTruthy(); // its Game Boy's node listens, as a store's does
 
   audio.renderAudio(6000); // reach the song screen
   // Nothing from the boot: a stopped LSDj master waits on an external clock, which `listen` never supplies.
@@ -154,7 +153,6 @@ test("Master Sync tells one story at 44.1 and 48 kHz in 1-frame, FL-style ragged
       expect(graph.add({ romPath: LSDJ, platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null, sramBytes: savFrom(MASTER_SONG) }, id)).toBeTruthy();
       expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
       expect(graph.setPipeline(id, lsdjSync(MASTER_SYNC))).toBeTruthy();
-      expect(be.setSerialOutCapture(id, "listen")).toBeTruthy();
       // Each message with its absolute frame: its block's start, counted from the system's first block, plus its frame.
       const sent: { at: number; data: number[] }[] = [];
       let next = 0; // the absolute frame the next render starts at

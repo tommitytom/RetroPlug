@@ -1174,7 +1174,7 @@ TEST_CASE("a system node gives its core every knob its settings carry as it take
 TEST_CASE("a knob absent from a system node's settings leaves its core as it was built, or as the last document left it",
           "[engine-graph][system-node][settings]") {
     SECTION("Game Boy") {
-        // Every knob built away from SameBoyConfig's defaults, and the capture armed, as buildCore arms it.
+        // Every knob built away from SameBoyConfig's defaults, and the capture armed on the core directly.
         const auto build = [] {
             SameBoyConfig cfg;
             cfg.model = SameBoyModel::Mgb;

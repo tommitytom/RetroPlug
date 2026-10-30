@@ -52,10 +52,10 @@ test("LSDj link-cable sync: the follower plays in lockstep with the leader (per-
   const leader = 1, follower = 2;
   expect(construct(leader, "Lsdj")).toBeTruthy();
   expect(construct(follower, "Lsdj")).toBeTruthy(); // same one-note SYNC=LSDJ song
-  // Put both in link group 1 → DirectGraph.applyRoleConfig publishes again, buildGraph wires the cable, and
+  // Put both in link group 1 → DirectGraph.setCoreConfig publishes again, buildGraph wires the cable, and
   // the pair steps as one coupled group.
-  expect(graph.applyRoleConfig(leader, "sameboy", { linkGroupId: 1 })).toBeTruthy();
-  expect(graph.applyRoleConfig(follower, "sameboy", { linkGroupId: 1 })).toBeTruthy();
+  expect(graph.setCoreConfig(leader, { linkGroupId: 1 })).toBeTruthy();
+  expect(graph.setCoreConfig(follower, { linkGroupId: 1 })).toBeTruthy();
 
   audio.renderAudio(6000); // valid savs skip the self-test; still need a few s to the song screen
 

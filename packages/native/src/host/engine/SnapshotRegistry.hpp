@@ -33,8 +33,8 @@ class SystemBase;
 // slot is never concurrently freed.
 //
 // That allocation rule is why the state slot is sized to a CEILING rather than to the live savestate:
-// a SameBoy model switch arrives on the audio thread (Engine::applyConfigField) and resizes the core's
-// state, so growing this buffer to match would be an audio-thread realloc racing a control-thread read.
+// a SameBoy model switch arrives on the audio thread (its system node applies its settings there) and resizes the
+// core's state, so growing this buffer to match would be an audio-thread realloc racing a control-thread read.
 // Sizing once, big enough for any model the backend can switch into, removes the need entirely.
 class SnapshotRegistry {
 public:

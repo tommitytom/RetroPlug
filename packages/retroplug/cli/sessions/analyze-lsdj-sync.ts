@@ -37,8 +37,9 @@ runSession((s) => {
     savPath: null, statePath: null, sramBytes: songSav(sync),
   }, id);
   if (!construct(1, "Lsdj") || !construct(2, "Lsdj")) throw new Error("construct failed");
-  graph.applyRoleConfig(1, "sameboy", { linkGroupId: 1 });
-  graph.applyRoleConfig(2, "sameboy", { linkGroupId: 1 });
+  // One link group: the cable is wiring, which the document the second edit publishes places.
+  if (!graph.setCoreConfig(1, { linkGroupId: 1 }) || !graph.setCoreConfig(2, { linkGroupId: 1 }))
+    throw new Error("link failed");
 
   s.audio.renderAudio(6000); // reach the song screen from the savs
   s.audio.pressButton(1, START, true); // START on the leader only

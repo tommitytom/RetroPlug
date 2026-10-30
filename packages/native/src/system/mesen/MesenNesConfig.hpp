@@ -32,9 +32,6 @@ struct MesenNesConfig {
     using Tag = rfl::Literal<"nes">;
 
     bool          embedRom = true;
-    // Watch `romPath` on disk; the UI thread reloads the system when the
-    // file's mtime advances. No-op when romPath is empty.
-    bool          reloadOnRomChange = false;
     float         gainDb   = 0.0f;
     // TS-owned "mesen" system-role knobs (coreRoles.ts). region = ConsoleRegion
     // (0=Auto,1=Ntsc,2=Pal,3=Dendy,4=NtscJapan) — applied at construct, live edit

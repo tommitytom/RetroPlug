@@ -1,24 +1,25 @@
 // Structure for the callers that build systems without stores (docs/modular-graph-phase-b2-design.md section
 // 2.4): the native tests, the CLI's analysis sessions and the offset tools. It keeps the systems list the B1
 // translator kept (add appends, replace keeps the slot, remove shifts later slots down), each system's roles with a
-// protocol node (docs/modular-graph-phase-b3b-design.md section 4), none until set, and the project's MIDI routing
-// and controller, none until set (so no MIDI is routed to any system). It publishes after each call. Use one per
-// process, directGraph(): two publishers with separate EngineGraphs would each drop the other's systems from the
-// document. Sharing a session's EngineGraph (so the session's render calls render what this places) does not merge
-// the two models either: each publish replaces the graph's model with the publisher's own systems. It is safe only
-// while the session's stores place nothing, the two publishing in turn, as test-native/parity/render-blocks.test.ts
-// and cli/sessions/analyze-lsdj-sync.ts do.
+// protocol node (docs/modular-graph-phase-b3b-design.md section 4), none until set, its core config and gain, its
+// node's knobs (docs/modular-graph-phase-c2-design.md section 5), none until set (so its core runs as it was built),
+// and the project's MIDI routing and controller, none until set (so no MIDI is routed to any system). It publishes
+// after each call but setParam, which sets a param live. Use one per process, directGraph(): two publishers with
+// separate EngineGraphs would each drop the other's systems from the document. Sharing a session's EngineGraph (so
+// the session's render calls render what this places) does not merge the two models either: each publish replaces
+// the graph's model with the publisher's own systems. It is safe only while the session's stores place nothing, the
+// two publishing in turn, as test-native/parity/render-blocks.test.ts and cli/sessions/analyze-lsdj-sync.ts do.
 import { createRealBackend } from "../realBackend";
 import type { AudioRouting, MidiRouting } from "../settingsEnums";
 import type { RoleInstance } from "../systemRoles";
 import type { ConstructSpec, EmulatorBackend } from "../backend";
 import { EngineGraph } from "../engineGraph";
 import { parseAppConfig } from "../controller/registry";
-import type { GraphSystem } from "./buildGraph";
+import { systemKnobs, type GraphSystem } from "./buildGraph";
 import type { GraphController } from "./controller";
 import { protocolPipeline, type LeftOutRole } from "./protocolNodes";
 
-export type DirectBackend = Pick<EmulatorBackend, "buildCore" | "setGraph" | "applyRoleConfig">;
+export type DirectBackend = Pick<EmulatorBackend, "buildCore" | "setGraph" | "setParam">;
 
 export class DirectGraph {
   readonly graph: EngineGraph;
@@ -97,15 +98,47 @@ export class DirectGraph {
     return this.change(() => (this.controller = parsed), false);
   }
 
-  /** Apply a system role's config to the live core. A `sameboy` config's link group is wiring as well: native
-   *  decodes a config without one as group 0, so the cable follows what the core is told. */
-  applyRoleConfig(id: number, kind: string, config: Record<string, unknown>): boolean {
-    const ok = this.backend.applyRoleConfig(id, kind, config);
+  /** Edit system `id`'s core config as the stores' core-config role spells it (`sameboy` or `mesen`, coreRoles.ts: an
+   *  enum as its label, never an ordinal), merged over what this graph gave it before: none at first, so its node
+   *  carries no setting field and its core runs as it was built. Its setting fields ride its node's settings and a
+   *  NES's expansionVolume its params (buildGraph.ts systemKnobs), each reaching the core at the start of the next
+   *  block, and a Game Boy's linkGroupId is its link cable. It publishes, the param included (a document's param value
+   *  reaches the node when it differs from the one last sent). False, changing nothing, when `id` is not placed here,
+   *  for a field its node does not take (a construct-time one, another core's, or a value the node would refuse, an
+   *  ordinal among them, which buildGraph would leave out, the core silently keeping what it has), or when the
+   *  document did not plan. */
+  setCoreConfig(id: number, partial: Record<string, unknown>): boolean {
     const at = this.systems.findIndex((s) => s.id === id);
-    if (kind !== "sameboy" || at < 0 || this.systems[at].type !== "rp.sameboy.gb") return ok;
-    const group = typeof config.linkGroupId === "number" ? config.linkGroupId : 0;
-    if (group !== this.systems[at].linkGroup) this.change(() => (this.systems[at] = { ...this.systems[at], linkGroup: group }), false);
-    return ok;
+    if (at < 0) return false;
+    const system = this.systems[at];
+    const knobs = systemKnobs({ type: system.type, coreConfig: partial });
+    const group = partial.linkGroupId;
+    const isGroup = typeof group === "number" && Number.isInteger(group) && group >= 0 && group <= 255;
+    const takes = (field: string): boolean =>
+      field in knobs.settings ||
+      field in knobs.params ||
+      (field === "linkGroupId" && system.type === "rp.sameboy.gb" && isGroup);
+    if (!Object.keys(partial).every(takes)) return false;
+    const coreConfig = { ...system.coreConfig, ...partial };
+    const linkGroup = typeof group === "number" ? group : system.linkGroup;
+    return this.change(() => (this.systems[at] = { ...system, coreConfig, linkGroup }), false);
+  }
+
+  /** A live change to a param of system `id`'s node: its `gain` (dB), or a NES's `expansionVolume` (percent), set
+   *  through backend.setParam at the start of the next block with no publish, and kept in the model, so a document
+   *  published later carries the value the node runs, as the store keeps one. False, keeping nothing, when `id` is not
+   *  placed here, for a param no system node has, or when the engine refuses it (a param this node does not have, a
+   *  NaN). */
+  setParam(id: number, param: string, value: number): boolean {
+    const at = this.systems.findIndex((s) => s.id === id);
+    if (at < 0 || (param !== "gain" && param !== "expansionVolume")) return false;
+    if (!this.backend.setParam(`sys-${id}`, param, value)) return false;
+    const system = this.systems[at];
+    this.systems[at] =
+      param === "gain"
+        ? { ...system, gainDb: value }
+        : { ...system, coreConfig: { ...system.coreConfig, [param]: value } };
+    return true;
   }
 
   // Apply an edit to the model and publish; a refused document puts the model back.

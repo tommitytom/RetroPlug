@@ -11,8 +11,6 @@
 
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
-#include "system/mesen/MesenBackend.hpp"
-#include "system/sameboy/SameBoyBackend.hpp"
 #include "system/SystemFactory.hpp"
 
 #include "EmbeddedRoms.hpp"
@@ -74,16 +72,6 @@ SystemBuildSpec toBuildSpec(const BackendConstructSpec& spec) {
     return out;
 }
 
-// A serial-out capture mode as TS names it on the wire (ConstructSpec.serialOutCapture, setSerialOutCapture): absent is
-// off, and an unknown name is no mode at all.
-std::optional<SerialOutCapture> serialOutCaptureMode(const std::optional<std::string>& name) {
-    if (!name) return SerialOutCapture::Off;
-    if (*name == "listen") return SerialOutCapture::Listen;
-    if (*name == "drive") return SerialOutCapture::Drive;
-    std::fprintf(stderr, "[engine] \"%s\" is not a serial-out capture mode\n", name->c_str());
-    return std::nullopt;
-}
-
 } // namespace
 
 EngineRpcService::EngineRpcService(Engine& engine, SystemFactory& factory, QueuedInvoker& invoker)
@@ -113,11 +101,8 @@ std::optional<RpcBuiltCore> EngineRpcService::buildCore(BackendConstructSpec spe
         std::fprintf(stderr, "[engine] buildCore: system %u is still live\n", static_cast<unsigned>(id));
         return std::nullopt;
     }
-    const std::optional<SerialOutCapture> capture = serialOutCaptureMode(spec.serialOutCapture);
-    if (!capture) return std::nullopt;
     auto sys = factory_.build(id, toBuildSpec(spec), engine_.sampleRate());
     if (!sys) return std::nullopt;  // unknown backend / unreadable or unrecognised ROM
-    if (auto* sb = dynamic_cast<SameBoySystem*>(sys.get())) sb->setSerialOutCapture(*capture);
     RpcBuiltCore facts{rp::host::systemNodeType(sys->kind()), 0, 0};
     if (auto* nes = dynamic_cast<MesenNesSystem*>(sys.get())) facts.exportMode = nes->channelExportMode();
     if (auto* sb = dynamic_cast<SameBoySystem*>(sys.get())) facts.linkGroup = sb->config_.linkGroupId;
@@ -177,47 +162,6 @@ bool EngineRpcService::setParam(std::string nodeId, std::string paramId, double 
 // the documents it publishes): duplicate pulls the source savestate and builds a seeded core; reload pulls
 // SRAM and cold-boots the ROM into the same slot; remove publishes a document without it. Native has no
 // bespoke method for any of them.
-
-bool EngineRpcService::applySystemSetting(std::uint32_t id, std::string key, double value) {
-    // A universal per-system setting → the live core, pushed through the invoker (flushed inline when
-    // quiescent, applied on the audio thread while it runs). The store gates existence on its own list.
-    if (key == "gainDb")
-        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::Gain), value);
-    else if (key == "reloadOnRomChange")
-        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::ReloadOnRomChange), value);
-    else
-        return false;  // unknown key
-    return true;
-}
-
-bool EngineRpcService::applyRoleConfig(std::uint32_t id, std::string kind, std::string config) {
-    // A backend "system" role carries live emulator config, keyed by core ("sameboy" | "mesen"). The
-    // store re-sends the WHOLE role config, so each field applies guarded (Engine no-ops an unchanged
-    // one — no spurious model restart / region reset when only a sibling knob moved).
-    if (kind == "sameboy") {
-        const SameBoyRoleConfig c = SameBoyBackend::decodeSameBoyRoleConfig(config);
-        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::Model), static_cast<double>(c.model));
-        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::Highpass), static_cast<double>(c.highpass));
-        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::LinkGroup), static_cast<double>(c.linkGroupId));
-        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::FastBoot), c.fastBoot ? 1.0 : 0.0);
-        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::ColorCorrection), static_cast<double>(c.colorCorrection));
-        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::DmgPalette), static_cast<double>(c.dmgPalette));
-        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::LightTemperature), c.lightTemperature);
-        return true;
-    }
-    if (kind == "mesen") {
-        // Attaches to any Mesen system; a GBA system casts to null in Engine::applyConfigField → no-op.
-        const MesenNesRoleConfig c = MesenBackend::decodeMesenNesRoleConfig(config);
-        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::NesRegion), static_cast<double>(c.region));
-        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::NesRemoveSpriteLimit), c.removeSpriteLimit ? 1.0 : 0.0);
-        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::NesApuLatencyMs), c.apuLatencyMs);
-        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::NesS5bNoise), static_cast<double>(c.s5bNoise));
-        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::NesMmc5PhaseReset), static_cast<double>(c.mmc5PhaseReset));
-        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::NesExpansionVolume), static_cast<double>(c.expansionVolume));
-        return true;
-    }
-    return false;
-}
 
 // Reads of the owned snapshot registry — the control plane reads published copies by id, never the
 // live core, so they're safe while the audio thread runs (no audioRunning_ guard, no findSystem walk).
@@ -497,15 +441,6 @@ bool EngineRpcService::stageMidiIn(std::vector<std::uint8_t> bytes, std::uint32_
 
 bool EngineRpcService::stageControllerIn(std::vector<std::uint8_t> bytes) {
     return invoker_.stageControllerMidi(std::move(bytes));  // a pad press is 3 bytes; the ring carries 4 inline
-}
-
-bool EngineRpcService::setSerialOutCapture(std::uint32_t id, std::optional<std::string> mode) {
-    // Control-plane, through the invoker's config path (SameBoy-only in Engine::applyConfigField; a no-op on a
-    // Mesen/GBA system). The store gates existence on its own list, so a known mode is accepted optimistically.
-    const std::optional<SerialOutCapture> capture = serialOutCaptureMode(mode);
-    if (!capture) return false;
-    invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::SerialOutCapture), static_cast<double>(*capture));
-    return true;
 }
 
 void EngineRpcService::accumulateMidiOut() {

@@ -21,9 +21,6 @@ struct MesenGbaConfig {
 
     bool          embedRom        = true;
     bool          skipBootScreen  = true;
-    // Watch `romPath` on disk; the UI thread reloads the system when the
-    // file's mtime advances. No-op when romPath is empty.
-    bool          reloadOnRomChange = false;
     float         gainDb          = 0.0f;
     std::string   romPath;
     // See SameBoyConfig::savSuffix. 0 => owns `<rom>.sav`; N>=2 => `<rom>-N.sav`,

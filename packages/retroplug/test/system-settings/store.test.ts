@@ -76,7 +76,6 @@ test("a NES system auto-gets the mesen system role; editing region crosses to th
       params: { gain: 0, expansionVolume: 100 },
     }),
   );
-  expect(be.applyRoleCalls.length).toBe(0);
 });
 
 test("setRoleConfig on a system role: updates, clamps, publishes its node's settings, dirties", () => {
@@ -102,7 +101,6 @@ test("setRoleConfig on a system role: updates, clamps, publishes its node's sett
       serialOutCapture: "off",
     }),
   );
-  expect(be.applyRoleCalls.length).toBe(0);
   expect(changes()).toBe(before + 1);
   // unknown enum → defaulted, not stored raw
   store.setRoleConfig(id, "sameboy", { model: 99 });
@@ -128,7 +126,6 @@ test("setGain / setReloadOnRomChange: clamp, update; the gain set live on its no
     { nodeId: `sys-${id}`, paramId: "gain", value: -90 },
   ]);
   expect(be.graphRequests.length).toBe(sent); // no publish
-  expect(be.applySettingCalls.length).toBe(0);
   expect(changes()).toBe(before + 3); // each dirties
   expect(store.setGain(9999, 0)).toBeFalsy(); // absent id
   expect(store.setReloadOnRomChange(9999, true)).toBeFalsy();
@@ -141,9 +138,11 @@ test("a feature role attaches via the provider; editing it is PURE TS (no emulat
   const kinds = store.view()[0].roles.map((r) => r.kind);
   expect(kinds).toEqual(["sameboy", "demo-sync"]); // system role + provider feature role
 
+  const sent = be.graphRequests.length;
   expect(store.setRoleConfig(id, "demo-sync", { level: 5 })).toBeTruthy();
   expect(store.view()[0].roles[1].config.level).toBe(5);
-  expect(be.applyRoleCalls.length).toBe(0); // feature-role config never crosses to native
+  // Feature-role config never crosses to native: no document, no param.
+  expect(be.graphRequests.length).toBe(sent);
   expect(be.paramCalls.length).toBe(0);
 });
 

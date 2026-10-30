@@ -13,7 +13,7 @@
 struct DspCommand {
     enum class Kind : std::uint8_t {
         None = 0, StageMidi = 3,
-        SetBpm = 7, SetTransport = 8, SetConfigField = 9, PressButton = 10,
+        SetBpm = 7, SetTransport = 8, PressButton = 10,
         SetPpq = 12, StageControllerMidi = 13, WriteRam = 14,
         StageSystemMidi = 15,
         // The NES tap arming every structural change does (docs/modular-graph-phase-b1-design.md section
@@ -30,7 +30,6 @@ struct DspCommand {
         struct { std::uint8_t data[4]; std::uint8_t len; std::uint32_t frame; std::vector<std::uint8_t>* ext; } stageMidi;
         struct { double value; } setBpm;                          // transport as a queued op
         struct { bool value; } setTransport;
-        struct { std::uint32_t id; std::uint8_t field; double value; } setConfigField; // live setting → core
         struct { std::uint32_t id; std::uint8_t button; bool down; } pressButton; // joypad transition → core
         struct { double value; } setPpq;                         // host playhead jump (locate)
         // Host poke into a core's work RAM. Owning payload (a song block is ~7 KB, far past what the

@@ -48,8 +48,8 @@ const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
 // instead of muting it (see sms-fm.test.ts) - but it is kept, for a different reason: with FM off the
 // YM2413 provider contributes nothing to the mix at all, so the drift render measures the PSG
 // metronome alone. The battery's OPTIONS block sets the ROM's own fm_on = 0 to match. Passed as a role
-// config so it lands at CONSTRUCT: configureSms runs before LoadRom, so a later applyRoleConfig would
-// not take.
+// config so it lands at CONSTRUCT: configureSms runs before LoadRom, so a later edit would not take
+// (enableFm is a construct-time field, rebuilt by a reset).
 const id = project.systems.adopt(
   {
     romPath: __SMS_ROM__,

@@ -116,7 +116,7 @@ for (const file of files) {
             const context = lines.slice(Math.max(0, i - 2), i + 1).join(" ");
             const ids = new Set();
             for (const t of `${text} ${context}`.matchAll(/`([A-Za-z_][A-Za-z0-9_:.>-]{3,})`/g)) {
-                // Take the last path/namespace segment: `Engine::applyConfigField` -> applyConfigField.
+                // Take the last path/namespace segment: `Engine::setParam` -> setParam.
                 const id = t[1].replace(/^.*[:.]/, "").replace(/[^A-Za-z0-9_]/g, "");
                 if (id.length >= 4) ids.add(id);
             }

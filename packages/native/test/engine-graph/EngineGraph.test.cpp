@@ -1,11 +1,10 @@
 // The engine's side of graphs TS builds (docs/modular-graph-phase-b2-design.md section 2.5): a built core parks
 // under its id until a document's system node takes it, a document's system nodes and its slots must name the
 // same systems, the tap re-arm rides the swap, a refused document leaves its cores parked, and a core no
-// published document placed is freed; a build spec reaches the core under the field names TS sends; a system node's
-// settings carry its core's knobs beside the core (docs/modular-graph-phase-c2-design.md section 4); and
-// Engine::setParam reaches a param of the running plan at the next block, a system node's gain and a NES's expansion
-// volume among them, over the RPC as TS calls it. Driven on a quiescent Engine, so every plan applies as it is
-// published, except where a test owns the drain itself.
+// published document placed is freed; a system node's settings carry its core's knobs beside the core
+// (docs/modular-graph-phase-c2-design.md section 4); and Engine::setParam reaches a param of the running plan at the
+// next block, a system node's gain and a NES's expansion volume among them, over the RPC as TS calls it. Driven on a
+// quiescent Engine, so every plan applies as it is published, except where a test owns the drain itself.
 //
 // Run via `pnpm test:plugin engine-graph`.
 
@@ -337,86 +336,6 @@ TEST_CASE("buildCore and setGraph over the RPC layer", "[engine-graph][b2]") {
     CHECK(placed.ok);
     CHECK(placed.errors.empty());
     CHECK(e.findSystem(5) != nullptr);
-}
-
-TEST_CASE("a build spec's serialOutCapture crosses the wire under the name TS sends", "[engine-graph][b2]") {
-    // A loaded LSDj in a MIDI-out mode captures serial out only through this field, and reflect-cpp skips a
-    // field it does not know, so a name that drifted between realBackend.ts's specParams and
-    // BackendConstructSpec would drop it with nothing failing. Each mode arrives as itself, and a name that is no
-    // mode refuses the build rather than building a core that captures nothing. The spec is decoded as every host decodes it: a
-    // live JS object, through rpcpp's QuickJS codec, into the registered buildCore.
-    struct Js {
-        JSRuntime* rt  = JS_NewRuntime();
-        JSContext* ctx = JS_NewContext(rt);
-        ~Js() {
-            JS_FreeContext(ctx);
-            JS_FreeRuntime(rt);
-        }
-    } js;  // first, so it outlives the server holding its context
-
-    Engine           e(kRate);
-    SystemFactory    factory;
-    registerCoreBackends(factory);
-    QueuedInvoker    invoker(e);
-    EngineRpcService rpc(e, factory, invoker);
-    rpcpp::QuickJSTransport                                   transport(js.ctx, [](JSContext*, JSValue) {});
-    rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec> server(transport, rpcpp::QuickJSCodec{js.ctx});
-    registerEmulatorRpc(server, rpc);
-
-    // The call specParams makes for an embedded mGB, `extra` appended to the spec. True when it built.
-    const auto buildCore = [&](SystemId id, const std::string& extra) {
-        const std::string src = "({jsonrpc: '2.0', id: 1, method: 'buildCore', params: [{id: " + std::to_string(id) +
-                                ", romPath: '', platform: 'gb', core: 'sameboy', embeddedRom: 'mgb'" + extra + "}]})";
-        JSValue message = JS_Eval(js.ctx, src.c_str(), src.size(), "<buildCore>", JS_EVAL_TYPE_GLOBAL);
-        std::optional<rpcpp::QuickJSOut> reply;
-        if (!JS_IsException(message)) reply = server.processMessage(message);
-        JS_FreeValue(js.ctx, message);
-        if (!reply) return false;
-        JSValue answer = reply->materialize(js.ctx);
-        JSValue result = JS_GetPropertyStr(js.ctx, answer, "result");
-        const bool built = JS_IsObject(result);
-        JS_FreeValue(js.ctx, result);
-        JS_FreeValue(js.ctx, answer);
-        return built;
-    };
-    REQUIRE(buildCore(1, ", serialOutCapture: 'drive'"));
-    REQUIRE(buildCore(2, ", serialOutCapture: 'listen'"));
-    REQUIRE(buildCore(3, ""));
-    CHECK_FALSE(buildCore(4, ", serialOutCapture: 'loud'"));
-    REQUIRE(e.setGraph(request({{1, kGb}, {2, kGb}, {3, kGb}})).ok);
-    const auto mode = [&](SystemId id) {
-        const auto* sb = dynamic_cast<const SameBoySystem*>(e.findSystem(id));
-        REQUIRE(sb != nullptr);
-        return sb->serialOutCapture();
-    };
-    CHECK(mode(1) == SerialOutCapture::Drive);
-    CHECK(mode(2) == SerialOutCapture::Listen);
-    CHECK(mode(3) == SerialOutCapture::Off);
-    CHECK_FALSE(e.coreLive(4));
-
-    // The live call takes the same names, and null for off; a name that is no mode is refused and changes nothing.
-    const auto setCapture = [&](SystemId id, const std::string& name) {
-        const std::string src = "({jsonrpc: '2.0', id: 2, method: 'setSerialOutCapture', params: [" + std::to_string(id) + ", " +
-                                name + "]})";
-        JSValue message = JS_Eval(js.ctx, src.c_str(), src.size(), "<setSerialOutCapture>", JS_EVAL_TYPE_GLOBAL);
-        std::optional<rpcpp::QuickJSOut> reply;
-        if (!JS_IsException(message)) reply = server.processMessage(message);
-        JS_FreeValue(js.ctx, message);
-        if (!reply) return false;
-        JSValue answer = reply->materialize(js.ctx);
-        JSValue result = JS_GetPropertyStr(js.ctx, answer, "result");
-        const bool accepted = JS_IsBool(result) && JS_ToBool(js.ctx, result);
-        JS_FreeValue(js.ctx, result);
-        JS_FreeValue(js.ctx, answer);
-        invoker.drainInto(e);
-        return accepted;
-    };
-    CHECK(setCapture(3, "'listen'"));
-    CHECK(mode(3) == SerialOutCapture::Listen);
-    CHECK_FALSE(setCapture(3, "'loud'"));
-    CHECK(mode(3) == SerialOutCapture::Listen);
-    CHECK(setCapture(1, "null"));
-    CHECK(mode(1) == SerialOutCapture::Off);
 }
 
 TEST_CASE("a render into buffers the planned graph does not write is refused", "[engine-graph][b2]") {

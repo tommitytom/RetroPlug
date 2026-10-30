@@ -12,7 +12,6 @@
 
 import type { ConstructSpec, ControlPlaneBackend, HostBackend } from "./backend";
 import { systemKnobs, type GraphSystem } from "./graph/buildGraph";
-import { serialOutCaptureFor } from "./graph/controller";
 import { canonicalJson } from "./graph/canonicalJson";
 import { EngineGraph } from "./engineGraph";
 import { detectPlatform, romHasBattery, ROM_SNIFF_LEN, SEGA_SNIFF_LEN, defaultCoreFor, type Platform, type Core } from "./platform";
@@ -692,7 +691,7 @@ export class SystemsStore {
     // before the build, so a throw here leaves no core behind.
     const settings = commonSettingsSchema.parse(config.settings ?? {}) as CommonSettings;
     const battery = this.detectBattery(romPath, embeddedRom, platform);
-    const built = this.backend.buildCore(spec, id); // a loaded system already in MIDIOUT mode is built capturing
+    const built = this.backend.buildCore(spec, id); // its LSDj capture, if any, comes with the document that places it
     if (!built) return null;
     for (const note of notes) console.warn(note);
     const wasEmpty = this.entries.length === 0;
@@ -972,11 +971,7 @@ export class SystemsStore {
         const rt = this.registry.roleType(r.kind);
         if (rt?.onConstruct) s = rt.onConstruct(s, this.backend, r.config);
       }
-    // A core is built with its serial-out capture already armed, the capture its node's settings carry anyway, from
-    // the mode of the lsdj-sync its pipeline places (graph/controller.ts serialOutCaptureFor): its activation applies
-    // the document's, the controller's MI.MAP override included, before the core first runs.
-    const capture = serialOutCaptureFor(protocolPipeline(roles));
-    return capture !== "off" ? { ...s, serialOutCapture: capture } : s;
+    return s;
   }
 
   // Write a system's live battery to its own `.sav` before its core is destroyed. Every teardown path

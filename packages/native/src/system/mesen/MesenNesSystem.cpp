@@ -356,7 +356,7 @@ void MesenNesSystem::setApuLatencyMs(double ms) {
     if (config_.apuLatencyMs == ms) return;
     config_.apuLatencyMs = ms;
     // Live: the mixer converts ms→cycles against the region clock and re-thresholds the flush window.
-    // No reset — just a scalar change, safe on the audio thread (arrives via Engine::applyConfigField).
+    // No reset, just a scalar change: safe on the audio thread, where the NES's system node applies it.
     if (nesMixer_) nesMixer_->SetLatencyMs(ms);
 }
 

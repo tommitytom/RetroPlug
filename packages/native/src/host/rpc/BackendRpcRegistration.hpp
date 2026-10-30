@@ -35,15 +35,13 @@ void registerHostRpc(Server& s, HostRpcService& h) {
     s.template addMethod<&HostRpcService::pngDecode>(h);
 }
 
-// --- emulator: lifecycle / script node packs / live params and config / snapshot reads / input (15) ---
+// --- emulator: lifecycle / script node packs / live params / snapshot reads / input (12) ---
 template <class Server>
 void registerEmulatorRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::buildCore>(e);
     s.template addMethod<&EngineRpcService::setGraph>(e);
     s.template addMethod<&EngineRpcService::loadScriptPack>(e);
     s.template addMethod<&EngineRpcService::setParam>(e);
-    s.template addMethod<&EngineRpcService::applySystemSetting>(e);
-    s.template addMethod<&EngineRpcService::applyRoleConfig>(e);
     s.template addMethod<&EngineRpcService::readState>(e);
     s.template addMethod<&EngineRpcService::readSram>(e);
     s.template addMethod<&EngineRpcService::readRam>(e);
@@ -52,7 +50,6 @@ void registerEmulatorRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::getFrame>(e);
     s.template addMethod<&EngineRpcService::pressButton>(e);
     s.template addMethod<&EngineRpcService::stageSystemMidi>(e);
-    s.template addMethod<&EngineRpcService::setSerialOutCapture>(e);
 }
 
 // --- harness: audio render / transport / MIDI + DSP profiling + kit compile + graph drops (22; CLI + tests only) ---
@@ -125,7 +122,7 @@ void registerDriverRpc(Server& s, AudioDriverRpcService& d) {
     s.template addMethod<&AudioDriverRpcService::drainReleased>(d);
 }
 
-// The full union (89 methods) + discovery - every facet mounted. Hosts that expose the whole surface
+// The full union (86 methods) + discovery - every facet mounted. Hosts that expose the whole surface
 // (the CLI + test host) use this; scoped hosts call the individual register functions they're allowed to.
 template <class Server>
 void registerAllBackendRpc(Server& s, HostRpcService& host, EngineRpcService& engine,

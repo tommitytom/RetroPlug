@@ -77,13 +77,6 @@ void QueuedInvoker::setPpq(double ppq) {
     push(c);
 }
 
-void QueuedInvoker::applyConfigField(SystemId id, std::uint8_t field, double value) {
-    DspCommand c;
-    c.kind = DspCommand::Kind::SetConfigField;
-    c.setConfigField = { static_cast<std::uint32_t>(id), field, value };
-    push(c);  // no heap payload: dropped on a full ring
-}
-
 void QueuedInvoker::pressButton(SystemId id, std::uint8_t button, bool down) {
     DspCommand c;
     c.kind = DspCommand::Kind::PressButton;

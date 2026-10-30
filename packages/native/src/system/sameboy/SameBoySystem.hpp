@@ -122,11 +122,11 @@ public:
     // next rendered frame, so no restart. Called from `onActivate` and from the display setters below.
     void applyDisplayConfig();
 
-    // The live "sameboy" role knobs, as the Game Boy's system node and Engine::applyConfigField apply them. Each is
-    // value-guarded, a same-value call doing nothing, since a caller may hand over a whole config when one knob
-    // moved: a model change restarts the core (restartEmulator), highpass re-applies the filter mode, and the three
-    // display knobs re-apply the display group, none of those restarting anything. setFastBoot and
-    // setSerialOutCapture are the other two.
+    // The live "sameboy" role knobs, as the Game Boy's system node applies its settings. Each is value-guarded, a
+    // same-value call doing nothing, since the node applies every knob its settings carry when it takes the core: a
+    // model change restarts the core (restartEmulator), highpass re-applies the filter mode, and the three display
+    // knobs re-apply the display group, none of those restarting anything. setFastBoot and setSerialOutCapture are
+    // the other two.
     void setModel(SameBoyModel model);
     void setHighpass(SameBoyHighpass highpass);
     void setColorCorrection(SameBoyColorCorrection mode);
@@ -141,8 +141,6 @@ public:
     void                      setSavPath(const std::string& p) override { config_.savPath = p; }
     std::optional<bool>       fastBoot() const override         { return config_.fastBoot; }
     void                      setFastBoot(bool on) override     { config_.fastBoot = on; }
-    bool                      wantsRomReload() const override   { return config_.reloadOnRomChange; }
-    void                      setRomReload(bool on) override    { config_.reloadOnRomChange = on; }
     void                      clearSram() override;
     std::vector<std::uint8_t> saveSramBytes() const override;
     std::vector<std::uint8_t> saveStateBytes() const override;
@@ -168,14 +166,14 @@ public:
     // callback reads this to decide whether to accumulate LSDJ's outgoing bytes.
     bool serialOutCaptureEnabled() const { return serialOutCapture_ != SerialOutCapture::Off; }
     SerialOutCapture serialOutCapture() const { return serialOutCapture_; }
-    // Set serial-out capture's mode. The host drives it through this (the TS
-    // store picks it from a system's lsdj-sync mode: Drive for MI.OUT, Listen for
-    // master sync). Stays set across a model-change restart (onActivate no
-    // longer clears it). A switch drops the half-assembled byte: Drive clocks
-    // continuously, so a switch lands mid-byte 7 times in 8, and the old mode's
-    // bits would leave every later byte straddling two transfers. A same-mode
-    // call keeps them, since the store re-sends the mode on every lsdj-sync
-    // config edit and MI.OUT's partial byte must survive that.
+    // Set serial-out capture's mode. The Game Boy's system node drives it
+    // through this, from its serialOutCapture setting (TS picks it from the mode
+    // the system's lsdj-sync node runs: Drive for MI.OUT, Listen for master
+    // sync). Stays set across a model-change restart (onActivate leaves it). A
+    // switch drops the half-assembled byte: Drive clocks continuously, so a
+    // switch lands mid-byte 7 times in 8, and the old mode's bits would leave
+    // every later byte straddling two transfers. A same-mode call keeps them:
+    // MI.OUT's partial byte must survive a call that changes nothing.
     void setSerialOutCapture(SerialOutCapture mode) {
         if (mode != serialOutCapture_) {
             serialOutByte_ = 0;

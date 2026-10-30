@@ -84,8 +84,6 @@ public:
     void                      setSavPath(const std::string& p) override { config_.savPath = p; }
     std::optional<bool>       fastBoot() const override       { return config_.skipBootScreen; }
     void                      setFastBoot(bool on) override;
-    bool                      wantsRomReload() const override { return config_.reloadOnRomChange; }
-    void                      setRomReload(bool on) override  { config_.reloadOnRomChange = on; }
     std::vector<std::uint8_t> saveSramBytes() const override;
     void                      clearSram() override;
     std::vector<std::uint8_t> saveStateBytes() const override;

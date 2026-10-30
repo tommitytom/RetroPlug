@@ -73,7 +73,11 @@ export function controllerSyncOverride(
 }
 
 /** What a Game Boy captures of its serial out for LSDj's decoder (its node's `serialOutCapture` setting, as the C++
- *  node spells it): `listen` for master sync, `drive` for MI.OUT, `off` for no capture. */
+ *  node spells it), which the node gives the core when it takes it, before the core first runs, and at the start of
+ *  the first block of a plan that changes it. `listen`: capture the bytes it clocks out itself (LSDj as master sync's
+ *  master). `drive`: that, and clock a transfer waiting on an external clock, capturing its bytes too (the
+ *  Arduinoboy's part in LSDj MI.OUT). Only MI.OUT may drive: a stopped LSDj master, clocked, takes the idle bytes for
+ *  another master's clock and stops answering START (docs/lsdj-master-sync-fix-design.md). `off`: no capture. */
 export type SerialOutCaptureMode = "off" | "listen" | "drive";
 
 /** The serial-out capture of a Game Boy whose protocol nodes are `pipeline` (protocolPipeline's), for the mode its

@@ -40,8 +40,6 @@ public:
     // system node's gain or a NES's expansionVolume, as the store sends an edit of either, with no publish. False for a
     // node or a param that plan does not have, a NaN, or a full command ring.
     bool setParam(std::string nodeId, std::string paramId, double value);
-    bool applySystemSetting(std::uint32_t id, std::string key, double value);
-    bool applyRoleConfig(std::uint32_t id, std::string kind, std::string config);
     std::optional<rfl::Bytestring> readState(std::uint32_t id);
     std::optional<rfl::Bytestring> readSram(std::uint32_t id);
     std::optional<rfl::Bytestring> readRam(std::uint32_t id);   // work RAM (WRAM), per-block published copy
@@ -93,10 +91,6 @@ public:
     // The control-surface twin: staged as `controllerIn` rather than musical MIDI, so a headless test
     // can drive a Launchpad app without a Launchpad. Harness-facet only, like stageMidiIn.
     bool            stageControllerIn(std::vector<std::uint8_t> bytes);
-    // Set a SameBoy's serial-out capture: "drive" (LSDj MI.OUT), "listen" (master sync), or absent for off;
-    // false for any other string. Control-plane, via the invoker's config path (ConfigField::SerialOutCapture):
-    // the TS store calls it when a system's lsdj-sync mode changes.
-    bool            setSerialOutCapture(std::uint32_t id, std::optional<std::string> mode);
     // Drain the host MIDI out (LSDj's serial-out decoders, a controller's launches), accumulated across renderAudio
     // blocks since the last drain. For headless tests; the plugin drains Engine::midiOut() to the DAW directly.
     std::vector<RpcMidiOut> drainMidiOut();

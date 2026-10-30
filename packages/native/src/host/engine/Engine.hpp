@@ -26,23 +26,6 @@ struct DspCommand;
 namespace rp::graph { struct HostCommand; }
 namespace rp::host { struct SystemTable; }
 
-// A per-system config field a control-plane edit applies to the live core (SameBoy today). Carried
-// as a double across the command ring: gain in dB; a bool as 0/1; an enum/int as its integer value.
-enum class ConfigField : std::uint8_t {
-    Gain = 0, ReloadOnRomChange = 1,
-    Model = 2, Highpass = 3, LinkGroup = 4, FastBoot = 5,     // SameBoy
-    NesRegion = 6, NesRemoveSpriteLimit = 7,                  // Mesen (NES)
-    SerialOutCapture = 8,                                     // SameBoy (LSDj MI.OUT, master sync): a SerialOutCapture
-    NesApuLatencyMs = 9,                                      // Mesen (NES) — APU flush window as latency (ms)
-    // SameBoy display group — all live (they land on the next rendered frame), all routed through
-    // SameBoySystem::applyDisplayConfig.
-    ColorCorrection = 10, DmgPalette = 11, LightTemperature = 12,
-    // Mesen (NES) cartridge-accuracy switches — 0 = chip, 1 = Everdrive N8. Both live.
-    NesS5bNoise = 13, NesMmc5PhaseReset = 14,
-    // Mesen (NES) — the cartridge sound chip's level, percent of unity. Live.
-    NesExpansionVolume = 15,
-};
-
 // One message of the host MIDI out (Engine::midiOut), tagged with the system that emitted it.
 struct EngineMidiOut {
     std::uint32_t             system = 0;
@@ -367,9 +350,6 @@ private:
     // Deliberately unguarded beyond bounds: writing a running core's RAM CAN confuse it, because the
     // emulated program has its own invariants over those bytes. That is the point of the feature.
     bool writeRam(SystemBase* sys, std::uint32_t offset, const std::vector<std::uint8_t>& bytes);
-    // Apply a live config edit to a system. Value-guarded per field so a whole-config re-send only acts on
-    // what changed (no spurious model restart).
-    void applyConfigField(SystemBase* sys, std::uint8_t field, double value);
 
     // The NES tap syncTap() armed, and what its export mode was BEFORE we touched it. Restored before
     // every re-resolve so leaving a split mode (or gaining a second system) puts the core back exactly as

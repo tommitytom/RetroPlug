@@ -4,7 +4,7 @@
 // "disk". This is what lets the whole application layer be tested with `tjs run`
 // and nothing else.
 
-import type { ApuState, ApuSquareState, Backend, BreakHitBatch, BuiltCore, SetGraphRequest, SetGraphResult, LoadScriptPackResult, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CoreTransportStats, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, SerialOutCapture, TraceLine, ZipEntry } from "../src/backend";
+import type { ApuState, ApuSquareState, Backend, BreakHitBatch, BuiltCore, SetGraphRequest, SetGraphResult, LoadScriptPackResult, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CoreTransportStats, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
 import { detectPlatform } from "../src/platform";
 import { savFromJson } from "../src/lsdj";
 import type { GraphDocument, NodeDoc } from "../src/graph/graphDocument";
@@ -94,10 +94,7 @@ export class MockBackend implements Backend {
 
   /** Every setParam call, in order: the live param edits the stores made (a gain, a NES's expansion volume). */
   readonly paramCalls: { nodeId: string; paramId: string; value: number }[] = [];
-  /** Live-config applies recorded for assertions. */
-  readonly applySettingCalls: { id: number; key: string; value: number | boolean }[] = [];
-  readonly applyRoleCalls: { id: number; kind: string; config: Record<string, unknown> }[] = [];
-  readonly serialOutCaptureCalls: { id: number; mode: SerialOutCapture | null }[] = [];
+  /** Joypad edges (backend.pressButton), in call order. */
   readonly pressButtonCalls: { id: number; button: number; down: boolean }[] = [];
   /** Control MIDI aimed at one system (backend.stageSystemMidi), in call order. */
   readonly stageSystemMidiCalls: { id: number; bytes: number[] }[] = [];
@@ -630,24 +627,6 @@ export class MockBackend implements Backend {
     this.log.push("setParam");
     this.paramCalls.push({ nodeId, paramId, value });
     return !Number.isNaN(value) && this.graphNode(nodeId) !== undefined;
-  }
-
-  applySystemSetting(id: number, key: string, value: number | boolean): boolean {
-    this.log.push("applySystemSetting");
-    this.applySettingCalls.push({ id, key, value });
-    return true;
-  }
-
-  applyRoleConfig(id: number, kind: string, config: Record<string, unknown>): boolean {
-    this.log.push("applyRoleConfig");
-    this.applyRoleCalls.push({ id, kind, config });
-    return true;
-  }
-
-  setSerialOutCapture(id: number, mode: SerialOutCapture | null): boolean {
-    this.log.push("setSerialOutCapture");
-    this.serialOutCaptureCalls.push({ id, mode });
-    return true;
   }
 
   pressButton(id: number, button: number, down: boolean): boolean {

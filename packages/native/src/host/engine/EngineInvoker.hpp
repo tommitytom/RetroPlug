@@ -44,7 +44,6 @@ public:
     void setBpm(double bpm);
     void setTransport(bool playing);
     void setPpq(double ppq);
-    void applyConfigField(SystemId id, std::uint8_t field, double value);
     void pressButton(SystemId id, std::uint8_t button, bool down);
     void writeRam(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes);
 

@@ -44,7 +44,7 @@ test("live gain silences/restores a ringing mGB, and sameboy role config dispatc
 
   const loud = chordRms(); // the chord rings
 
-  // --- live gain: the crisp proof that applySystemSetting reaches the running core. Discard a short
+  // --- live gain: the crisp proof that the gain param the store sets reaches the running core. Discard a short
   // settle window after each edit so RMS measures the settled level, not the ~20 ms gain ramp. ---
   expect(project.systems.setGain(id, -90)).toBeTruthy(); // floor → ~silence
   audio.renderAudio(150); // let the gain smoother ramp down (discard the transient)
@@ -58,8 +58,8 @@ test("live gain silences/restores a ringing mGB, and sameboy role config dispatc
   expect(silenced < 0.001).toBeTruthy(); // -90 dB attenuated it to silence
   expect(restored > silenced).toBeTruthy(); // 0 dB brought it back — gain edits reach the live core
 
-  // --- sameboy system-role config: highpass is live, model triggers a restart. Both must dispatch
-  // through applyRoleConfig and leave the system playing. ---
+  // --- sameboy system-role config: highpass is live, model triggers a restart. Both must reach the core
+  // as its node's settings, published, and leave the system playing. ---
   expect(project.systems.setRoleConfig(id, "sameboy", { highpass: "removeDcOffset" })).toBeTruthy(); // RemoveDcOffset, live
   const afterHighpass = rms(audio.renderAudio(500));
   expect(afterHighpass > 0.001).toBeTruthy(); // still ringing after a live filter change

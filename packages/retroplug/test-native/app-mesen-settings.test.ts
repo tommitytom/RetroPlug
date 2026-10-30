@@ -1,8 +1,8 @@
 // C2: the "mesen" system-role knobs (NES Region + Remove Sprite Limit) reach a REAL Mesen core.
 // Two native paths: (1) a non-default region seeded via the construct settings blob boots the core
-// (configureNes consumes it before LoadRom); (2) live setRoleConfig edits cross applyRoleConfig →
-// Engine::applyConfigField → the setters — the live sprite-limit toggle and the region change (which
-// forces emu_->Reset()) both leave the core alive and rendering. (Honest scope: this proves the
+// (configureNes consumes it before LoadRom); (2) live setRoleConfig edits ride the published document as the
+// NES node's settings, which it hands the setters at its next block: the live sprite-limit toggle and the
+// region change (which forces emu_->Reset()) both leave the core alive and rendering. (Honest scope: this proves the
 // round-trip reaches the core and survives both apply modes; the knobs' visible/timing effect isn't
 // asserted headlessly — the TS mock tests carry the semantics.)
 import { test, expect, skip } from "../testing/harness";

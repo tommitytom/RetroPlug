@@ -48,8 +48,8 @@ test("LSDj link-cable sync control: the follower stays silent without SYNC=LSDJ"
   const leader = 1, follower = 2;
   expect(construct(leader, "None")).toBeTruthy();
   expect(construct(follower, "None")).toBeTruthy(); // SYNC=None → no link response
-  expect(graph.applyRoleConfig(leader, "sameboy", { linkGroupId: 1 })).toBeTruthy();
-  expect(graph.applyRoleConfig(follower, "sameboy", { linkGroupId: 1 })).toBeTruthy();
+  expect(graph.setCoreConfig(leader, { linkGroupId: 1 })).toBeTruthy();
+  expect(graph.setCoreConfig(follower, { linkGroupId: 1 })).toBeTruthy();
 
   audio.renderAudio(6000);
 

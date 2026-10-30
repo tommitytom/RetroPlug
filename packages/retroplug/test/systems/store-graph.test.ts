@@ -181,17 +181,19 @@ test("a setting edit publishes its system node's settings, without a re-arm; a l
   expect(linked(be, `sys-${b}.link`)).toBe(true);
 });
 
-test("no store edit takes the side path the document replaced", () => {
+test("a knob edit reaches the engine as a document or a param, and reload-on-ROM-change not at all", () => {
   const { be, sys } = project();
   const a = sys.addSystem("/roms/lsdj.gb")!;
   const c = sys.addSystem("/roms/c.nes")!;
+  const from = be.log.length;
   sys.setGain(a, -3);
   sys.setReloadOnRomChange(a, true);
   sys.setRoleConfig(a, "sameboy", { model: "sgb", lightTemperature: 0.5 });
   sys.setRoleConfig(a, "lsdj-sync", { mode: LsdjSyncMode.MasterSync });
   sys.setRoleConfig(c, "mesen", { region: "ntsc", expansionVolume: 150, removeSpriteLimit: true });
   sys.setRoleConfig(c, "mesen", { expansionVolume: 120 });
-  expect(be.log.filter((m) => ["applySystemSetting", "applyRoleConfig", "setSerialOutCapture"].includes(m))).toEqual([]);
+  // The gain and the last expansion volume set live, every other edit a document: nothing else reaches the backend.
+  expect(be.log.slice(from).filter((m) => m !== "setGraph")).toEqual(["setParam", "setParam"]);
   // reload-on-ROM-change is TS's alone (the file watcher): it reaches no backend at all.
   expect(sys.view()[0].settings.reloadOnRomChange).toBe(true);
 });
@@ -417,22 +419,20 @@ test("an adopt outside a load places its core at once", () => {
 test("a system in an LSDj MIDI-out mode captures its serial out as its document says: MI.OUT drives, master sync listens", () => {
   const { be, sys } = project();
   let id = sys.addSystem("/roms/lsdj.gb")!;
-  const lastBuild = () => be.buildCalls[be.buildCalls.length - 1].serialOutCapture;
   const placed = () => be.graphNode(`sys-${id}`)?.settings?.serialOutCapture;
-  expect(lastBuild()).toBe(undefined); // midiSync by default
-  expect(placed()).toBe("off");
+  expect(placed()).toBe("off"); // midiSync by default
   sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MidiOut });
   expect(placed()).toBe("drive"); // in the document that hands its decoder the mode
-  id = sys.reset(id)!; // a rebuild, under a new id: the build arms the capture its node carries too
-  expect(lastBuild()).toBe("drive");
+  id = sys.reset(id)!; // a rebuild, under a new id: the document that places it carries the capture its build does not
   expect(placed()).toBe("drive");
   sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MasterSync });
   expect(placed()).toBe("listen");
   id = sys.reset(id)!;
-  expect(lastBuild()).toBe("listen");
+  expect(placed()).toBe("listen");
   sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MidiSync });
   expect(placed()).toBe("off");
-  expect(be.serialOutCaptureCalls).toEqual([]);
+  // No build spec carries a capture: the core runs only once a document places it, and its node arms it first.
+  expect(be.buildCalls.filter((c) => "serialOutCapture" in c)).toEqual([]);
 });
 
 test("a cart the controller drives in MI.MAP captures nothing, and gets its stored mode's capture back with the controller off", () => {
@@ -842,7 +842,7 @@ test("an adopt whose core does not build logs nothing about the system it never 
   expect(warnings).toEqual([]);
 });
 
-test("a left-out lsdj-sync arms no serial-out capture: not at a build, nor on an edit", () => {
+test("a left-out lsdj-sync arms no serial-out capture: not where it is placed, nor on an edit", () => {
   // Capture is for the lsdj-sync role's decoder, rp.lsdj.serial-out, which decodes what the core sends (MI.OUT
   // drives, master sync listens). On an mGB cart whose project stored lsdj-sync, mgb wins serialIn and the role's
   // nodes are not placed, so nothing would read the capture, and a driving core would clock the serial port under
@@ -853,18 +853,15 @@ test("a left-out lsdj-sync arms no serial-out capture: not at a build, nor on an
     { kind: "sameboy", config: {} },
     { kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiOut } },
   ];
-  const lastBuild = () => be.buildCalls[be.buildCalls.length - 1].serialOutCapture;
   const placed = (id: number) => be.graphNode(`sys-${id}`)?.settings?.serialOutCapture;
   let id = warned(() => sys.adopt({ romPath: "/roms/mgb.gb", core: "sameboy", roles })!).result;
   expect(be.protocolNodes(id)).toEqual([`sys-${id}/mgb`]);
-  expect(lastBuild()).toBe(undefined); // a load, stored in MI.OUT
-  expect(placed(id)).toBe("off");
+  expect(placed(id)).toBe("off"); // a load, stored in MI.OUT
   for (const mode of [LsdjSyncMode.MasterSync, LsdjSyncMode.MidiOut]) {
     expect(sys.setRoleConfig(id, "lsdj-sync", { mode })).toBe(true);
     expect(placed(id)).toBe("off"); // an edit
     id = sys.reset(id)!;
-    expect(lastBuild()).toBe(undefined); // a rebuild
-    expect(placed(id)).toBe("off");
+    expect(placed(id)).toBe("off"); // a rebuild
   }
 });
 
@@ -890,20 +887,49 @@ test("DirectGraph keeps the B1 model: append, replace in place, remove shifting 
   expect(be.buildCalls.some((c) => c.id === 5)).toBe(false);
 });
 
-test("DirectGraph rewires a Game Boy's link group as the core is told it", () => {
+test("DirectGraph's core config: a link group rewires, a setting rides its node, a field it cannot set is refused", () => {
   const be = new MockBackend("/cfg");
   const g = new DirectGraph(be);
   g.add(MGB, 1);
   g.add(MGB, 2);
+  // None until set: the node carries no setting field, so its core runs as it was built.
+  expect(be.graphNode("sys-1")?.settings).toEqual({ core: 1, serialOutCapture: "off" });
   const n = be.graphRequests.length;
-  g.applyRoleConfig(1, "sameboy", { linkGroupId: 1 });
-  g.applyRoleConfig(2, "sameboy", { linkGroupId: 1 });
-  expect(be.applyRoleCalls.length).toBe(2);
-  expect(since(be, n)).toEqual([{ slots: [1, 2] }]);
+  expect(g.setCoreConfig(1, { linkGroupId: 1 })).toBe(true);
+  expect(g.setCoreConfig(2, { linkGroupId: 1 })).toBe(true);
+  expect(since(be, n)).toEqual([{ slots: [1, 2] }]); // a group of one is no cable: the first sends nothing
   expect(linked(be, "sys-2.link")).toBe(true);
-  // A config with no link group decodes natively as group 0, so the cable goes with it.
-  g.applyRoleConfig(2, "sameboy", { model: 1 });
-  expect(linked(be, "sys-2.link")).toBe(false);
+  // Merged over what it had: the group stays, the model rides the node's settings as its label.
+  expect(g.setCoreConfig(2, { model: "dmgB", highpass: "off" })).toBe(true);
+  expect(linked(be, "sys-2.link")).toBe(true);
+  const sys2 = canon({ core: 2, model: "dmgB", highpass: "off", serialOutCapture: "off" });
+  expect(be.graphNode("sys-2")?.settings).toEqual(sys2);
+  // An ordinal, a construct-time field, another core's field: each refused, changing nothing.
+  const sent = be.graphRequests.length;
+  const refused: Record<string, unknown>[] = [{ model: 1 }, { channelExportMode: "pins" }, { region: "pal" }];
+  refused.push({ linkGroupId: -1 }, { model: "mgb", fifo: 1 }); // the last: one bad field refuses the whole edit
+  for (const partial of refused) expect(g.setCoreConfig(2, partial)).toBe(false);
+  expect(g.setCoreConfig(9, { model: "mgb" })).toBe(false); // not placed
+  expect(be.graphRequests.length).toBe(sent);
+  expect(be.graphNode("sys-2")?.settings?.model).toBe("dmgB");
+  // The next document, another system's edit, carries the config last taken: a refused edit left nothing behind.
+  expect(g.setCoreConfig(1, { model: "mgb" })).toBe(true);
+  expect(be.graphNode("sys-2")?.settings).toEqual(sys2);
+});
+
+test("DirectGraph's params: set live with no publish, and carried by the next document", () => {
+  const be = new MockBackend("/cfg");
+  const g = new DirectGraph(be);
+  g.add(MGB, 1);
+  const n = be.graphRequests.length;
+  expect(g.setParam(1, "gain", -12)).toBe(true);
+  expect(be.paramCalls).toEqual([{ nodeId: "sys-1", paramId: "gain", value: -12 }]);
+  expect(be.graphRequests.length).toBe(n);
+  expect(g.setParam(1, "level", 1)).toBe(false); // no system node's param
+  expect(g.setParam(9, "gain", 0)).toBe(false); // not placed
+  expect(be.paramCalls.length).toBe(1);
+  g.setCoreConfig(1, { highpass: "off" });
+  expect(be.graphNode("sys-1")?.params).toEqual({ gain: -12 });
 });
 
 test("DirectGraph republishes the model a refused edit put back, which frees the core the edit built", () => {

@@ -99,8 +99,6 @@ public:
     void                      setSavSuffix(std::uint32_t s) override { config_.savSuffix = s; }
     const std::string&        savPath() const override        { return config_.savPath; }
     void                      setSavPath(const std::string& p) override { config_.savPath = p; }
-    bool                      wantsRomReload() const override { return config_.reloadOnRomChange; }
-    void                      setRomReload(bool on) override  { config_.reloadOnRomChange = on; }
     std::vector<std::uint8_t> saveSramBytes() const override;
     void                      clearSram() override;
     std::vector<std::uint8_t> saveStateBytes() const override;
@@ -110,8 +108,8 @@ public:
 
     void setGainDb(float dB) override;
 
-    // "mesen" system-role knobs (coreRoles.ts), applied live by the NES's system node (its settings) and by
-    // Engine::applyConfigField. Each but setRemoveSpriteLimit is value-guarded, and that one is a plain flag write.
+    // "mesen" system-role knobs (coreRoles.ts), applied live by the NES's system node (its settings, and its
+    // expansionVolume param). Each but setRemoveSpriteLimit is value-guarded, and that one is a plain flag write.
     // removeSpriteLimit is a live PPU toggle; region reconfigures timing so it forces a reset.
     void setRemoveSpriteLimit(bool on);
     void setRegion(std::uint32_t region);
@@ -129,7 +127,7 @@ public:
     // 3 = 5 individual mono); channelLayout() follows it. Value-guarded, and pre-onActivate it only records
     // the mode (onActivate arms from config_). NOT cheap - SetChannelCapture allocates the per-stream blip
     // buffers + resamplers - but it is a user menu action, not a per-block cost, and it runs on the same
-    // audio thread that already absorbs SameBoySystem::restartEmulator from applyConfigField.
+    // audio thread that already absorbs SameBoySystem::restartEmulator from a Game Boy node's model setting.
     void setChannelExportMode(std::uint32_t mode);
     /** The armed per-channel export mode (0 = off). Lets the Engine record what it found before arming,
      *  so it can restore a construct-time (CLI / render) value it did not set. */

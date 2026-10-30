@@ -13,8 +13,7 @@
 
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"   // AudioBlockInfo, SystemId
-#include "system/sameboy/SameBoySystem.hpp"  // live-apply cast target (model/highpass/gain/…)
-#include "system/mesen/MesenNesSystem.hpp"    // live-apply cast target (NES region / sprite limit)
+#include "system/mesen/MesenNesSystem.hpp"    // the system table's NES, the tap SyncTap arms
 
 #include "transport/FrameBufferTriple.hpp"
 #include "native/core/img/png/lodepng.h"
@@ -603,9 +602,6 @@ void Engine::applyCommand(DspCommand& cmd, const rp::host::SystemTable& table) {
         case DspCommand::Kind::SetBpm:          setBpm(cmd.setBpm.value); break;
         case DspCommand::Kind::SetTransport:    setTransport(cmd.setTransport.value); break;
         case DspCommand::Kind::SetPpq:          setPpq(cmd.setPpq.value); break;
-        case DspCommand::Kind::SetConfigField:
-            applyConfigField(core(cmd.setConfigField.id), cmd.setConfigField.field, cmd.setConfigField.value);
-            break;
         case DspCommand::Kind::PressButton:
             if (SystemBase* sys = core(cmd.pressButton.id))
                 sys->pressButton(cmd.pressButton.button, cmd.pressButton.down);  // spread across the block in onProcess
@@ -883,94 +879,4 @@ bool Engine::stageSystemMidi(SystemBase* sys, const std::uint8_t* bytes, std::si
     for (std::size_t i = 0; i < len; ++i) ev.data[i] = bytes[i];
     sys->onMidi(&ev, 1);
     return true;
-}
-
-void Engine::applyConfigField(SystemBase* sys, std::uint8_t field, double value) {
-    if (!sys) return;
-
-    // The two UNIVERSAL settings apply to every backend through the base interface — they must run
-    // before the SameBoy-only cast below, or they silently no-op on a Mesen (NES/GBA) system even
-    // though its gain slider / reload toggle look live in the UI.
-    switch (static_cast<ConfigField>(field)) {
-        case ConfigField::Gain:
-            sys->setGainDb(static_cast<float>(value));  // live, smoothed
-            return;
-        case ConfigField::ReloadOnRomChange:
-            sys->setRomReload(value != 0.0);  // a UI-thread ROM-watch flag; no core effect
-            return;
-        default:
-            break;
-    }
-
-    // The remaining fields are backend-specific emulator knobs, dispatched by concrete type (a system
-    // is exactly one, so the order of the casts below doesn't matter). Mesen (NES) first.
-    if (auto* mn = dynamic_cast<MesenNesSystem*>(sys)) {
-        switch (static_cast<ConfigField>(field)) {
-            case ConfigField::NesRegion:
-                mn->setRegion(static_cast<std::uint32_t>(value));  // value-guarded; resets the core on change
-                break;
-            case ConfigField::NesRemoveSpriteLimit:
-                mn->setRemoveSpriteLimit(value != 0.0);            // live — the PPU re-reads it per scanline
-                break;
-            case ConfigField::NesApuLatencyMs:
-                mn->setApuLatencyMs(value);                        // live — re-thresholds the APU flush window
-                break;
-            case ConfigField::NesS5bNoise:
-                mn->setS5bNoise(static_cast<std::uint32_t>(value));         // live — read per sample
-                break;
-            case ConfigField::NesMmc5PhaseReset:
-                mn->setMmc5PhaseReset(static_cast<std::uint32_t>(value));   // live — read per register write
-                break;
-            case ConfigField::NesExpansionVolume:
-                mn->setExpansionVolume(static_cast<std::uint32_t>(value));  // live — mixer re-reads per buffer
-                break;
-            default:
-                break;
-        }
-        return;
-    }
-
-    // SameBoy emulator knobs, through the core's own value-guarded setters, which the Game Boy's system node applies
-    // its settings through too.
-    auto* sb = dynamic_cast<SameBoySystem*>(sys);
-    if (!sb) return;
-    switch (static_cast<ConfigField>(field)) {
-        case ConfigField::Model:
-            sb->setModel(static_cast<SameBoyModel>(static_cast<std::uint32_t>(value)));  // restarts on a change
-            break;
-        case ConfigField::Highpass:
-            sb->setHighpass(static_cast<SameBoyHighpass>(static_cast<std::uint32_t>(value)));
-            break;
-        case ConfigField::LinkGroup: {
-            const auto g = static_cast<std::uint8_t>(static_cast<std::uint32_t>(value));
-            if (sb->config_.linkGroupId != g) {
-                sb->config_.linkGroupId = g;
-                // the cable is wiring: TS republishes the graph with the group (graph/buildGraph.ts)
-            }
-            break;
-        }
-        case ConfigField::FastBoot:
-            sb->setFastBoot(value != 0.0);  // deferred to the next restart
-            break;
-        case ConfigField::SerialOutCapture: {
-            // Live: the capture mode (LSDj MI.OUT or master sync) as its SerialOutCapture value. Out of range is off.
-            const auto mode = static_cast<std::uint32_t>(value);
-            sb->setSerialOutCapture(mode <= static_cast<std::uint32_t>(SerialOutCapture::Drive) ? static_cast<SerialOutCapture>(mode)
-                                                                                              : SerialOutCapture::Off);
-            break;
-        }
-        // The display group: each setter re-pushes the group, a handful of cheap core setters, only when its knob
-        // moved (the store re-sends the whole role config on every edit).
-        case ConfigField::ColorCorrection:
-            sb->setColorCorrection(static_cast<SameBoyColorCorrection>(static_cast<std::uint32_t>(value)));
-            break;
-        case ConfigField::DmgPalette:
-            sb->setDmgPalette(static_cast<SameBoyDmgPalette>(static_cast<std::uint32_t>(value)));
-            break;
-        case ConfigField::LightTemperature:
-            sb->setLightTemperature(value);
-            break;
-        default:
-            break;  // the universal fields (Gain / ReloadOnRomChange) were handled above
-    }
 }

@@ -1,7 +1,7 @@
 // Regression: a live SameBoy model switch must not freeze the published savestate / SRAM.
 //
 // The state snapshot slot is sized, and its region table captured, when the system is BUILT. A model
-// switch rebuilds the core in place (Engine::applyConfigField -> restartEmulator) while keeping the same
+// switch rebuilds the core in place (its system node's model setting -> restartEmulator) while keeping the same
 // SystemId, so before the fix the slot kept describing the dead core: a larger capture overflowed it and
 // publishStateSnapshot skipped forever, freezing readState/readSram at their pre-switch values. Downstream
 // that is real data loss - the SRAM auto-save mirror stops tracking the battery, and a project export
@@ -9,7 +9,8 @@
 //
 // Why the existing coverage missed it: the default model is cgbC and the one live-switch test goes
 // cgbC -> dmgB, which SHRINKS and therefore fits. Seeing the overflow needs a DMG-family model at build
-// and a switch UP. These tests construct on dmgB via the construct-time `settings` blob.
+// and a switch UP. These tests construct on dmgB via the construct-time `settings` blob, which takes a
+// model as its native ordinal, and switch through the node's model setting, which takes it as its label.
 //
 // The WRAM plane was already fixed this way (lsdj-wram-seam.test.ts); this is its state/SRAM twin.
 // MODEL_VALUES indices: 1 = dmgB, 3 = sgb, 9 = cgbC, 12 = agb.
@@ -18,6 +19,7 @@ import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";
 import { MemoryRegion } from "../src/backend";
+import { MODEL_VALUES } from "../src/settingsEnums";
 import { directGraph } from "../src/graph/directGraph";
 
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
@@ -60,6 +62,9 @@ const buildOn = (id: number, model: number): boolean =>
     settings: JSON.stringify({ model }),
   }, id);
 
+/** Switch a built system to `model` (an ordinal, as buildOn takes it) through its node's model setting. */
+const switchTo = (id: number, model: number): boolean => graph.setCoreConfig(id, { model: MODEL_VALUES[model] });
+
 const requireRom = (be: ReturnType<typeof createRealBackend>, name: string): void => {
   if (!be.fileExists(LSDJ)) skip(`${name}: LSDj ROM not found at ${LSDJ}`);
 };
@@ -77,7 +82,7 @@ test("readState tracks a live model switch that GROWS the savestate (dmgB â†’ cg
   expect(be.readRam(id)!.length).toBe(DMG_WRAM); // corroborates the core really booted as DMG
 
   // Switch UP: the CGB core's savestate is exactly RAM_VRAM_DELTA larger than the DMG one it replaces.
-  expect(graph.applyRoleConfig(id, "sameboy", { model: CGB_C })).toBeTruthy();
+  expect(switchTo(id, CGB_C)).toBeTruthy();
   audio.renderAudio(2000);
 
   const cgbState = be.readState(id)!;
@@ -113,7 +118,7 @@ test("readSram stays correct across a switch that MOVES the SRAM offset (dmgB â†
   // DMG<->CGB switch this genuinely MOVES Sram.offset. A fix that only widened the slot (without
   // re-reading the region table) would slice here at the stale, too-low offset and hand the SRAM
   // auto-save mirror the SGB section's bytes as if they were the battery.
-  expect(graph.applyRoleConfig(id, "sameboy", { model: SGB })).toBeTruthy();
+  expect(switchTo(id, SGB)).toBeTruthy();
   audio.renderAudio(2000);
 
   const sgbState = be.readState(id)!;
@@ -147,7 +152,7 @@ test("a switched-into model publishes the same state size as one constructed on 
     const built = be.readState(fresh)!.length;
     graph.remove(fresh); // a live system is emulated by every later renderAudio in this file
 
-    expect(graph.applyRoleConfig(live, "sameboy", { model: m })).toBeTruthy();
+    expect(switchTo(live, m)).toBeTruthy();
     audio.renderAudio(1600);
     const switched = be.readState(live)!.length;
 

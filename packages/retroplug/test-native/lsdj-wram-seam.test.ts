@@ -80,7 +80,8 @@ test("readRam publishes live WRAM per block on the emulator facet, and drives th
 // Regression: a live SameBoy model switch RESIZES the WRAM region (CGB 32K ↔ DMG 8K). The snapshot slot
 // carries a length prefix + headroom instead of being pinned to the construct-time size, so readRam tracks
 // the new size every block. (Before the fix, the registry only republished on an EXACT size match, so any
-// resize froze readRam at the pre-switch snapshot forever.) MODEL_VALUES index 1 = "dmgB", 9 = "cgbC".
+// resize froze readRam at the pre-switch snapshot forever.) The switch is the Game Boy node's model setting, a
+// label.
 test("readRam tracks a live model switch that resizes WRAM (CGB 32K → DMG 8K), never freezing", () => {
   const be = createRealBackend();
   if (!be.fileExists(LSDJ)) skip(`lsdj-wram-model-switch: LSDj ROM not found at ${LSDJ}`);
@@ -95,7 +96,7 @@ test("readRam tracks a live model switch that resizes WRAM (CGB 32K → DMG 8K),
   expect(be.readRam(id)!.length).toBe(0x8000); // cgbC default → 32K CGB WRAM
 
   // Switch to a DMG-family model → restartEmulator rebuilds the core with an 8K WRAM region.
-  expect(graph.applyRoleConfig(id, "sameboy", { model: 1 })).toBeTruthy(); // dmgB
+  expect(graph.setCoreConfig(id, { model: "dmgB" })).toBeTruthy(); // its node's model setting
   audio.renderAudio(2000); // a block republishes the (now smaller) region
 
   const dmgRam = be.readRam(id)!;

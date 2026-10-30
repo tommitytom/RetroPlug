@@ -8,9 +8,10 @@
 
 class SystemBase;
 
-// The TS-owned "mesen" system-role config as it crosses the wire (JSON): the NES emulator knobs the UI
-// edits. Field names match the TS role schema (coreRoles.ts). Decoded both live (applyRoleConfig) and
-// at construct (the settings blob). Defaults mirror MesenNesConfig, so a missing field is a no-op.
+// The TS-owned "mesen" system-role config as it crosses the wire at construct (JSON, the settings blob):
+// the NES emulator knobs the UI edits. Field names match the TS role schema (coreRoles.ts). A live edit
+// reaches the core as its system node's settings and params instead (host/graph/SystemNodes.cpp).
+// Defaults mirror MesenNesConfig, so a missing field is a no-op.
 // (The role attaches to any Mesen system; GBA ignores these NES-only fields.)
 struct MesenNesRoleConfig {
     std::uint32_t region            = 0;      // ConsoleRegion (Auto/Ntsc/Pal/Dendy/NtscJapan)
@@ -64,7 +65,7 @@ public:
                                       double sampleRate) override;
 
     // Parse the TS "mesen" role-config JSON (forward-tolerant: an absent field takes its default).
-    // The single place that JSON is decoded — shared by live applyRoleConfig + the NES construct blob.
+    // The single place that JSON is decoded: the NES construct blob.
     static MesenNesRoleConfig decodeMesenNesRoleConfig(const std::string& json);
 
     // The SMS/GG twin of the above, over the same JSON blob.

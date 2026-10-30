@@ -187,8 +187,7 @@ test("MIDI out through renderBlocks is what renderAudio + drainMidiOut yields, t
       ),
     ).toBeTruthy();
     expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
-    expect(graph.setPipeline(id, [{ kind: "lsdj-sync", config: { mode: "midiOut" } }])).toBeTruthy();
-    expect(be.setSerialOutCapture(id, "drive")).toBeTruthy();
+    expect(graph.setPipeline(id, [{ kind: "lsdj-sync", config: { mode: "midiOut" } }])).toBeTruthy(); // and its capture
     render(6000); // reach the song screen; its output is not compared
     const out: Msg[] = [];
     const tap = () => {

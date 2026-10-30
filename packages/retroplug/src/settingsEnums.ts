@@ -1,9 +1,10 @@
 // The single source of truth for every string-valued enum setting in a project. Each enum is an
 // index-ordered value tuple whose position EQUALS the native enum integer — the tuple feeds
 // `z.enum(...)` (configSchema.enumField), indexes the menu cyclers' display-name arrays, and drives
-// the string<->int conversion at the native boundary. TS carries the strings everywhere;
-// native (the reflect-cpp role structs) stays numeric, so the boundary encoder here
-// (`roleConfigForNative`) maps back to the ints native decodes.
+// the string<->int conversion at the construct boundary. TS carries the strings everywhere, a system
+// node's settings included (its C++ type reads the labels); the construct blob native decodes (the
+// reflect-cpp role structs) stays numeric, so the boundary encoder here (`roleConfigForNative`) maps
+// back to the ints it reads.
 //
 // A LEAF module: it imports nothing, so the schema, the domain modules (layout/midiRouting/dspRoles),
 // the stores, the menu, and the project migration can all share these values without an import cycle.
@@ -171,10 +172,11 @@ const ROLE_NATIVE_ENUMS: Record<string, Record<string, readonly string[]>> = {
   },
 };
 
-/** Encode a role config for native: replace each string enum field with its native integer (index),
- *  passing every other field (linkGroupId, fastBoot, removeSpriteLimit, …) through unchanged. A role
- *  kind that doesn't cross to native returns its config untouched. Native stays numeric; this is the
- *  one place TS strings become the ints reflect-cpp expects. */
+/** Encode a role config for the construct blob (ConstructSpec.settings): replace each string enum field with
+ *  its native integer (index), passing every other field (linkGroupId, fastBoot, removeSpriteLimit, …) through
+ *  unchanged. A role kind that doesn't cross to native returns its config untouched. The blob stays numeric;
+ *  this is the one place TS strings become the ints reflect-cpp expects. A live edit reaches the core as its
+ *  system node's settings and params instead, in the labels themselves (graph/buildGraph.ts systemKnobs). */
 export function roleConfigForNative(kind: string, config: Record<string, unknown>): Record<string, unknown> {
   const fields = ROLE_NATIVE_ENUMS[kind];
   if (!fields) return config;
