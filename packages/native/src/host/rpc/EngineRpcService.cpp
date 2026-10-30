@@ -70,7 +70,7 @@ RpcPutResourceResult EngineRpcService::putResource(BackendResourceSpec spec) {
     if (spec.bytes) {
         bytes = toBytes(*spec.bytes);
     } else if (spec.path) {
-        // A file that cannot be opened is refused; one that opens empty is not, since an empty payload is a
+        // A file that cannot be opened or read is refused; one that opens empty is not, since an empty payload is a
         // resource (a zero-byte `.sav` is a blank battery, as a zero-byte byte block is). An empty rom is refused
         // below, for the same reason a byte block is: it has nothing to boot.
         std::optional<std::vector<std::uint8_t>> file = slurpAll(*spec.path);

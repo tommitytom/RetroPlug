@@ -660,6 +660,13 @@ TEST_CASE("putResource and releaseResource over the RPC layer", "[engine-graph][
     CHECK(put(R"({type: 'rom', embedded: 'mg"b'})").error == R"("mg\"b" is not an embedded ROM)");
     CHECK(e.resource(byBytes.id) != nullptr);  // the refusals left what was there alone
 
+    // A directory opens and cannot be read: the stream reports that as its own failure, which the RPC answers as an
+    // unreadable file rather than throwing out of the call. Matched by its tail, as the path in the head is quoted.
+    const Answer aDirectory =
+        put("{type: 'rom', path: '" + std::filesystem::temp_directory_path().generic_string() + "'}");
+    CHECK(aDirectory.id == 0);
+    CHECK(aDirectory.error.find("the file is absent or unreadable") != std::string::npos);
+
     // The owner's drop: idempotent, answered as a boolean, and the id stays dead.
     const auto release = [&](std::uint32_t id) {
         JSValue result = call("releaseResource", std::to_string(id));
