@@ -86,7 +86,7 @@ export function registerCoreRoles(registry: RoleRegistry): void {
       // It is also what a connected Everdrive N8 Pro is set to: the FPGA has the same control (`master_vol`,
       // 128 = unity) and the UI rescales this value into it, so one knob decides how loud the chip is whether
       // you are hearing the emulator or the console. 100 = the chip as the hardware mixes it.
-      expansionVolume: clampedNumber(0, 200, 100),
+      expansionVolume: clampedInt(0, 200, 100),
       // CLI-only per-channel export mode (spec/10 §5/§5b): mix, stereoModPins (Pulse | TND + Expansion),
       // individualMono (5 core channels). Set at construct (via adopt) — the settings menu doesn't surface
       // it. Additive. (pinsPlusRef = pins + a mix reference, native/test-only.)

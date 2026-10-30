@@ -55,6 +55,20 @@ test("mesen schema: fills defaults + defaults an unknown region", () => {
   expect(mesen.schema.parse({ removeSpriteLimit: true })).toEqual({ region: "auto", removeSpriteLimit: true, enableFm: true, apuLatencyMs: 1.4, s5bNoise: "n8", mmc5PhaseReset: "n8", expansionVolume: 100, channelExportMode: "mix", sdRoot: "", fifo: "instant", fifoDepth: 0, fifoBytesPerSecond: 0, n8Link: "auto", n8LinkRttUs: 2200 });
 });
 
+test("mesen schema: expansion volume is a whole percent, as its node takes it", () => {
+  // The node's param is an int: the planner rounds a document's value and the core takes whole percent, so the schema
+  // a store holds should not carry a fraction the node would round on its way to the core.
+  const reg = new RoleRegistry();
+  registerCoreRoles(reg);
+  const mesen = reg.roleType("mesen")!;
+  const volume = (v: unknown): number => (mesen.schema.parse({ expansionVolume: v }) as { expansionVolume: number }).expansionVolume;
+  expect(volume(25.7)).toBe(25);
+  expect(volume(25.2)).toBe(25);
+  expect(volume(-5)).toBe(0);
+  expect(volume(250)).toBe(200);
+  expect(volume(Number.NaN)).toBe(100); // the helper's default, as a non-number gets
+});
+
 test("schema: fills defaults + defaults unknown enums, clamps numeric fields", () => {
   const reg = new RoleRegistry();
   registerCoreRoles(reg);
