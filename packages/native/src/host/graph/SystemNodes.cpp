@@ -34,13 +34,14 @@ namespace rp::host {
 
 // ---- settings ---------------------------------------------------------------------------------------------------
 
-// The knobs' value types. An enum knob is a label as the role configs spell it (packages/retroplug/src/settingsEnums.ts),
-// which is the name of its C++ enumerator with the first letter lowercased: SameBoyModel::CgbC is "cgbC",
-// SameBoyHighpass::RemoveDcOffset "removeDcOffset", SameBoyModel::Auto "auto". So the enumerators are native's one
-// spelling of every label: Label<E> is the rfl::Literal made of them, which reads exactly those strings (anything else
-// refuses the settings), lists them in the descriptor's schema, and maps back to its enumerator by position (valueOf).
-// Never an ordinal: the document and a saved project carry the same word (docs/modular-graph-phase-c2-design.md
-// section 3).
+// The knobs' value types. An enum knob is a label as the role configs spell it
+// (packages/retroplug/src/settingsEnums.ts), which is the name of its C++ enumerator with the first letter lowercased:
+// SameBoyModel::CgbC is "cgbC", SameBoyHighpass::RemoveDcOffset "removeDcOffset", SameBoyModel::Auto "auto". So the
+// enumerators are native's one spelling of every label: Label<E> is the rfl::Literal made of them, which reads exactly
+// those strings (anything else refuses the settings), lists them in the descriptor's schema, and maps back to its
+// enumerator by position (valueOf). Never an ordinal: the document and a saved project carry the same word
+// (docs/modular-graph-phase-c2-design.md section 3). labelAt and same's Literal overloads name
+// rfl::internal::StringLiteral, an internal reflect-cpp type, so a reflect-cpp bump is to check them.
 namespace knobs {
 
 template <class E, std::size_t I>
@@ -79,6 +80,7 @@ struct LightTemperatureRange {
     static constexpr double min = -1.0, max = 1.0;  // SameBoy's own: applyDisplayConfig clamps to it
 };
 struct ApuLatencyRange {
+    // The store's own bounds (packages/retroplug/src/coreRoles.ts clampedNumber(0.25, 6.0, 1.4)).
     static constexpr double min = 0.25, max = 6.0;  // milliseconds
 };
 
@@ -91,6 +93,8 @@ E valueOf(const Label<E>& label) {
 }
 
 using LightTemperature = rfl::Validator<double, Within<LightTemperatureRange>>;
+// Optional wherever it appears: rfl::Validator's own default constructor validates T() (0.0), which this range
+// refuses, so a field that ever defaulted it with rfl::DefaultIfMissing would throw instead of taking a value.
 using ApuLatencyMs = rfl::Validator<double, Within<ApuLatencyRange>>;
 
 }  // namespace knobs
@@ -171,10 +175,16 @@ bool moved(const std::optional<F>& to, const std::optional<F>& from) { return to
 // Only a new core rebuilds (rebuild_key): every other setting is a knob the node applies to the core it has, so its
 // prepare reads nothing a commit writes and setGraph never waits on a system node's commit (stateless_prepare). A
 // commit only points `settings` at the new settings (on_settings never allocates); the node applies what moved at the
-// start of its next block, before the core's prepareForBlock, on the block thread as the command ring's knobs were,
-// and everything present once at activation, as it takes its core, before that core first runs. Each knob is
-// value-guarded by the core's own setter, so a palette change re-applies the display group and restarts nothing, while
-// a model change restarts the core and a region change resets it (docs/modular-graph-phase-c2-design.md section 4).
+// start of its next block, before the core's prepareForBlock, and everything present once at activation, as it takes
+// its core, before that core first runs. So a setting lands at the node's next prepare, after every host command
+// queued behind its plan (the host drains its ring before it runs a block): a caller that must act on the restarted
+// core renders a block first, since a RAM write or staged core bytes sent after a model change reach the core it is
+// about to replace. Each knob is guarded twice, first by `moved` against what this node last applied, so a document's
+// unchanged field is not re-applied even where the core was changed by another path, then by the core's own setter
+// where it has one (setFastBoot and a NES's setRemoveSpriteLimit write unconditionally). A palette change re-applies
+// the display group and restarts nothing, while a model change restarts the core and a region change resets it
+// (docs/modular-graph-phase-c2-design.md section 4). A settings field the type does not know is ignored (node.hpp
+// reads with rfl::DefaultIfMissing and no rfl::NoExtraFields), so a misspelt knob plans and does nothing.
 //
 // A param's value reaches the core at the start of each block whose control stream moves it, before the core's
 // prepareForBlock and after the settings (a model's restart first, then the levels), each value-guarded against the
@@ -223,7 +233,8 @@ struct SystemNode {
 
     // The first activation takes the core and gives it every knob the settings carry; later ones (a re-activation)
     // keep it. The factory activated the core at the engine's rate when it built it, and Engine::setSampleRate re-rates
-    // live cores itself.
+    // live cores itself. A plan that is then refused leaves those knobs on the core it gives back, which the engine
+    // parks again for a corrected document.
     bool activate(double, std::uint32_t) {
         if (core) return true;
         if (!cores) return false;
@@ -264,8 +275,8 @@ struct SystemNode {
     }
     // The knobs that moved, the params that moved, then the inputs, are applied here, where process starts too: a
     // linked Game Boy's coupled group prepares every member (rp.step/1) before any of them steps, and never calls
-    // process. Knobs first, as the command ring's were drained before the block ran: a model change restarts the core
-    // before its inputs reach it.
+    // process. Knobs first, because a model change restarts the core before its inputs reach it, and because this
+    // prepare is where a setting lands.
     void prepare(const rp::Block& b) noexcept {
         if (pending) applySettings();
         static_cast<Self*>(this)->applyParams();
@@ -416,10 +427,10 @@ struct GameBoy : SystemNode<GameBoy, SameBoySystem, GameBoySettings> {
 
     // The fast boot first, which waits for the next restart and so is what a model's restart boots with: the edits
     // that land in one block (several documents published between two blocks commit together) restart the core as if
-    // made one at a time, a fast boot edit before a model edit included. Then the rest, in the order the store's role
-    // config reached the core through the command ring, the capture last. The capture lands at the start of the first
-    // block of the plan that carries it, the block rp.lsdj.serial-out first runs in its new mode, so no byte captured
-    // in one mode is decoded in the other.
+    // made one at a time, a fast boot edit before a model edit included. Then the rest in the order the store's role
+    // config lists them, the capture last. The capture lands at the start of the first block of the plan that carries
+    // it, the block rp.lsdj.serial-out first runs in its new mode, so no byte captured in one mode is decoded in the
+    // other.
     void apply(const Settings& to, const Settings& from) noexcept {
         if (moved(to.fastBoot, from.fastBoot)) core->setFastBoot(*to.fastBoot);
         if (moved(to.model, from.model)) core->setModel(knobs::valueOf<SameBoyModel>(*to.model));
@@ -477,8 +488,8 @@ struct Nes : SystemNode<Nes, MesenNesSystem, NesSettings> {
         return 2 * streams;
     }
 
-    // In the order the store's role config reached the core through the command ring. A region change resets the
-    // core (setRegion); the rest apply in place.
+    // The region first, because a region change resets the core (setRegion); the rest apply in place, in the order
+    // the store's role config lists them.
     void apply(const Settings& to, const Settings& from) noexcept {
         if (moved(to.region, from.region))
             core->setRegion(static_cast<std::uint32_t>(knobs::valueOf<NesRegion>(*to.region)));

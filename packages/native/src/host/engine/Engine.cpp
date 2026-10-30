@@ -178,7 +178,8 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
                          auto* self = static_cast<Engine*>(ctx);
                          const SystemId id = core->id();
                          // A node of a plan setGraph is refusing, giving back the core it took in that call:
-                         // parked again, still live, its snapshot slot kept, for a corrected document to place.
+                         // parked again, still live, its snapshot slot kept, for a corrected document to place. The
+                         // knobs its activation applied stay on it; the next document carries the same ones.
                          if (self->inSetGraph_ && self->takenInSetGraph_.erase(id) != 0) {
                              self->parked_[id].reset(core);
                              return true;

@@ -90,18 +90,22 @@ The user's, on 2026-10-30:
 - **When a value reaches its core.** `on_settings` only copies (node.hpp: never allocate there; the node keeps a
   pointer to the committed settings), so the node applies what moved at the start of its next block, before its inputs
   and `prepareForBlock`, and every setting present once at activation, right after it takes its core and before that
-  core first runs. Each field is value-guarded, as `applyConfigField` was: a palette change reapplies the display group
-  and restarts nothing, a model change restarts the core and a region change resets it, on the block thread as before.
-  A Game Boy applies its fast boot first, which waits for the next restart and so is what a model's restart boots with,
-  then the rest in `applyRoleConfig`'s order, the capture last (section 10 says why the fast boot moved). A param's
-  control stream gives its latest value each block, applied value-guarded after the settings and before the inputs: a
-  change lands at the block's start (at most a block late, as the command ring's did). A value a wire drives is clamped
-  to the param's range by the node, from the same constants the declaration takes its bounds from (the planner and
-  `setParam` clamp a document's or a live edit's). Every param reaches the core at the node's first block, not at
-  activation: a node reads its params only in a block (the host binds its control streams there, landing the document's
-  values as it adopts the plan), and a core runs nothing before its node's first block. That first value is snapped
-  into the core, whose gain smoother starts at 0 dB, so it plays its first sample at the document's level; every later
-  gain edit ramps, as it always did.
+  core first runs. A setting thus lands at the node's next prepare, after any host command queued behind its plan
+  (the host drains its ring before a block), so a caller that must act on the restarted core renders a block first.
+  Each field is guarded twice: `moved` compares it with what the node applied last (a document's unchanged field is
+  not applied again, even where the core was changed by another path) and the core's own setter compares it with what
+  the core holds where it has one (`setFastBoot` and a NES's `setRemoveSpriteLimit` write unconditionally). A palette
+  change reapplies the display group and restarts nothing, a model change restarts the core and a region change resets
+  it, on the block thread as before. A Game Boy applies its fast boot first, which waits for the next restart and so
+  is what a model's restart boots with, then the rest in `applyRoleConfig`'s order, the capture last (section 10 says
+  why the fast boot moved). A param's control stream gives its latest value each block, applied value-guarded after
+  the settings and before the inputs: a change lands at the block's start (at most a block late, as the command
+  ring's did). A value a wire drives is clamped to the param's range by the node, from the same constants the
+  declaration takes its bounds from (the planner and `setParam` clamp a document's or a live edit's). Every param
+  reaches the core at the node's first block, not at activation: a node reads its params only in a block (the host
+  binds its control streams there, landing the document's values as it adopts the plan), and a core runs nothing
+  before its node's first block. That first value is snapped into the core, whose gain smoother starts at 0 dB, so it
+  plays its first sample at the document's level; every later gain edit ramps, as it always did.
 - **The atomic switch.** `serialOutCapture` reaches the Game Boy at the start of the first block of the plan that
   carries it, the block in which `rp.lsdj.serial-out` first runs in the new mode, so no byte captured in one mode is
   decoded in the other.
@@ -271,6 +275,11 @@ prototype answers (each answer follows its question):
 - **A refused document can still have changed a core it took.** Activation runs while a document plans, so the knobs a
   node gives its core there stay on it when the plan is refused and the core goes back to parked. In the app the next
   document carries the same knobs, so nothing shows.
+- **A setting lands at the node's next prepare, after the host commands queued behind its plan**, where the command
+  ring applied its knobs in ring order: a `writeRam` or staged core bytes sent after a model change reach the core
+  the restart replaces, and are wiped (on the NES, the ROM's reset handler runs after them). No in-tree caller does
+  that; a caller that must act on the restarted core renders a block first, which SystemNodes.cpp's comment and
+  spec/02 state as the contract, and a test pins it.
 - **A document's param value is sent whenever the node does not hold it**, whoever gave the node the value it has: the
   planner lands a document's value for a fresh node, or one that differs from the value the node was last given, a
   live `setParam` included (`GraphHost::setParam` records what it queued). So a document repeating a value after a live
