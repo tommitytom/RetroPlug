@@ -289,11 +289,15 @@ dropped value and `DirectGraph.setCoreConfig`'s refusal in sections 5 and 10; an
   goes through its role schema when it is edited, but a loaded project keeps it as written (`adopt`), so a value the
   node would refuse comes from a hand-edited file or a newer build's label: sent, it would refuse the whole document
   and silence every system, so `systemKnobs` leaves it out and that one core keeps what it has. The same goes for a
-  param whose stored value is not a finite number, which a document's param cannot carry. `adopt` notes each knob it
-  dropped, a refused setting field and a dropped param alike, in the log it writes once the core has built, so the
-  stored config, the document and the core disagreeing leaves a trace. A `DirectGraph` caller is a test or a tool,
-  which should hear of its mistake: `setCoreConfig` refuses an ordinal (`{ model: 1 }`, as two tests passed one before),
-  a construct-time field, another core's field or a link group outside 0 to 255, changing nothing.
+  param whose stored value is not a finite number, which a document's param cannot carry. The construct blob goes
+  through the same role schema before the build (`SystemsStore.configForBlob`), so a value native cannot decode (an
+  unknown label, a fractional integer, a wrong type) defaults or rounds field by field there instead of failing the
+  whole struct and building the core at every default, which would also discard the savestate the project just loaded.
+  `adopt` notes each knob it dropped from the document and each value the blob took from its schema instead (a
+  construct-time field's label included), in the log it writes once the core has built, so the stored config, the
+  document and the core disagreeing leaves a trace. A `DirectGraph` caller is a test or a tool, which should hear of
+  its mistake: `setCoreConfig` refuses an ordinal (`{ model: 1 }`, as two tests passed one before), a construct-time
+  field, another core's field or a link group outside 0 to 255, changing nothing.
 - **`setCoreConfig` merges where `applyRoleConfig` reset.** The old call decoded a partial config with every absent
   field at its default and applied them all, so `{ linkGroupId: 1 }` also reset the model, highpass, fast boot and
   display group; `setCoreConfig` leaves an absent field as it was. No caller depended on the reset (every number the

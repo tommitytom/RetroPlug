@@ -861,7 +861,7 @@ test("a stored core config value the system node would refuse is noted, so a dro
   // The value the node takes is the one the document carries; the rest are the load's to report.
   expect(be.graphNode(`sys-${id}`)?.settings).toEqual(canon({ core: id, dmgPalette: "gbl", serialOutCapture: "off" }));
   expect(warnings).toEqual([
-    '[systems] /roms/a.gb: its stored sameboy config holds a value its node would refuse: ' +
+    '[systems] /roms/a.gb: its stored sameboy config holds a value this build does not read as written: ' +
       'dropped model "cgbF", dropped highpass 2, dropped fastBoot "yes", dropped lightTemperature 1.5',
   ]);
   // A value absent is not a value refused, and one the node takes says nothing.
@@ -874,12 +874,29 @@ test("a stored core config value the system node would refuse is noted, so a dro
   expect(be.graphNode(`sys-${dropped.result}`)?.settings).toEqual(canon({ core: dropped.result }));
   expect(be.graphNode(`sys-${dropped.result}`)?.params).toEqual({ gain: 0 }); // the param is left out, not sent
   expect(dropped.warnings).toEqual([
-    '[systems] /roms/c.nes: its stored mesen config holds a value its node would refuse: ' +
+    '[systems] /roms/c.nes: its stored mesen config holds a value this build does not read as written: ' +
       'dropped region "PAL", dropped expansionVolume "40"',
   ]);
   expect(warned(() => nes({ expansionVolume: null })).warnings).toEqual([
-    '[systems] /roms/c.nes: its stored mesen config holds a value its node would refuse: dropped expansionVolume null',
+    '[systems] /roms/c.nes: its stored mesen config holds a value this build does not read as written: ' +
+      'dropped expansionVolume null',
   ]);
+  // A construct-time field is not a node knob, but the blob cannot carry an unreadable value either: the schema's
+  // value is what builds the core, and the load says so. A finite fraction is repaired the way the planner rounds it.
+  const construct = warned(() => nes({ region: "pal", fifo: "futureBuild", expansionVolume: 25.7, sdRoot: "/sd" }));
+  expect(construct.warnings).toEqual([
+    '[systems] /roms/c.nes: its stored mesen config holds a value this build does not read as written: ' +
+      'repaired fifo "futureBuild" to "instant", repaired expansionVolume 25.7 to 26',
+  ]);
+  const blob = JSON.parse(be.buildCalls[be.buildCalls.length - 1].settings!) as Record<string, unknown>;
+  expect(blob.region).toBe(2);
+  expect(blob.fifo).toBe(0);
+  expect(blob.expansionVolume).toBe(26);
+  expect(blob.sdRoot).toBe("/sd");
+  // The store still keeps what the file said, for a build that knows the label.
+  const kept = sys.view().find((v) => v.id === construct.result)!.roles.find((r) => r.kind === "mesen")!.config;
+  expect(kept.fifo).toBe("futureBuild");
+  expect(kept.expansionVolume).toBe(25.7);
 });
 
 test("a left-out lsdj-sync arms no serial-out capture: not where it is placed, nor on an edit", () => {

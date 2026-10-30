@@ -703,8 +703,10 @@ folding the overrides into the ROM in memory at construct, with no audio-thread 
 schema (`SameBoyRoleConfig` field names) mirrors TS's
 `coreRoles.ts`; [`decodeSameBoyRoleConfig`](../packages/native/src/system/sameboy/SameBoyBackend.cpp#L19)
 reads with `rfl::DefaultIfMissing` (forward-tolerant) and is the single JSON decode point, for the
-construct blob alone: a live edit reaches the core as its system node's settings (above). The role model is
-04's topic.
+construct blob alone: a live edit reaches the core as its system node's settings (above). TS builds that blob from its
+role schema's parse of the stored config (`SystemsStore.configForBlob`), so a newer label or a fractional integer
+defaults or rounds there rather than failing the whole struct at decode; the stored config stays as written. The role
+model is 04's topic.
 
 ### `MesenBackend`
 

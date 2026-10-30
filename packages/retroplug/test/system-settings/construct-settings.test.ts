@@ -26,7 +26,16 @@ test("adopt forwards the saved sameboy role config as the construct-time setting
 
   const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.settings != null).toBeTruthy();
-  expect(JSON.parse(spec.settings!)).toEqual({ model: 1, highpass: 2, linkGroupId: 0, fastBoot: true }); // native-encoded blob
+  // The blob is the role schema's parse, so every field it fills rides along with the two the file carried.
+  expect(JSON.parse(spec.settings!)).toEqual({
+    model: 1,
+    highpass: 2,
+    linkGroupId: 0,
+    fastBoot: true,
+    colorCorrection: 0,
+    dmgPalette: 0,
+    lightTemperature: 0,
+  });
 });
 
 test("adopt forwards the saved mesen (NES) role config as the construct-time settings blob", () => {
@@ -40,7 +49,22 @@ test("adopt forwards the saved mesen (NES) role config as the construct-time set
 
   const spec = be.buildCalls[be.buildCalls.length - 1];
   expect(spec.settings != null).toBeTruthy();
-  expect(JSON.parse(spec.settings!)).toEqual({ region: 2, removeSpriteLimit: true }); // native-encoded blob
+  expect(JSON.parse(spec.settings!)).toEqual({
+    region: 2,
+    removeSpriteLimit: true,
+    enableFm: true,
+    apuLatencyMs: 1.4,
+    s5bNoise: 1,
+    mmc5PhaseReset: 1,
+    expansionVolume: 100,
+    channelExportMode: 0,
+    sdRoot: "",
+    fifo: 0,
+    fifoDepth: 0,
+    fifoBytesPerSecond: 0,
+    n8Link: 0,
+    n8LinkRttUs: 2200,
+  });
 });
 
 test("a fresh add sends no settings blob (backend defaults suffice)", () => {

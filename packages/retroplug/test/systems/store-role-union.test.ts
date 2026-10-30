@@ -171,7 +171,12 @@ test("a stored role with a protocol node is parsed by its schema; the core's rol
   // defaults its node would fill anyway: no repair, so nothing is logged.
   const sync = roles.find((r) => r.kind === "lsdj-sync")!.config;
   expect(sync).toEqual({ mode: "midiOut", tempoDivisor: 1, autoStart: false });
-  expect(warnings).toEqual([]);
+  // The core role is kept as written for the store, but its construct blob goes through the same schema, so the
+  // unread key is dropped there and the load says so.
+  expect(warnings).toEqual([
+    '[systems] /roms/l.gb: its stored sameboy config holds a value this build does not read as written: ' +
+      'dropped futureKnob 1',
+  ]);
   expect(roles.find((r) => r.kind === "sameboy")!.config).toEqual({ futureKnob: 1 });
   expect(roles.find((r) => r.kind === "lsdj-assets")!.config).toEqual({ overrides: [], futureKnob: 2 });
 });

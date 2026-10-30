@@ -40,4 +40,36 @@ test("a system adopted with fastBoot=false plays the GB boot chime (construct-ti
   const boot = rms(audio.renderAudio(3000));
   console.log(`[app-construct-settings] boot(fastBoot=false)=${boot.toFixed(5)}`);
   expect(boot > 0.001).toBeTruthy(); // the boot chime sounded → the construct-time blob took effect
+  project.systems.removeSystem(id);
+});
+
+test("a label native cannot read does not build the core from every default (the construct blob is narrowed)", () => {
+  const be = createRealBackend();
+  const registry = buildAppRegistry();
+  const project = new ProjectStore(be, new RecentStore(be), registry);
+  const audio = createAudioDriver();
+
+  // A newer build's palette label (additive, so no version bump) beside a construct-time field the core does read.
+  // Decoded all-or-nothing, the unknown label would make the whole blob default, so both configs below would build
+  // with fastBoot true and sound the same. The true case is the control: it must stay silent.
+  const bootFor = (fastBoot: boolean): number => {
+    const id = project.systems.adopt({
+      embeddedRom: "mgb",
+      roles: [
+        { kind: "sameboy", config: { fastBoot, dmgPalette: "aPaletteFromANewerBuild" } },
+        { kind: "mgb", config: {} },
+      ],
+    })!;
+    expect(typeof id).toBe("number");
+    const boot = rms(audio.renderAudio(3000));
+    project.systems.removeSystem(id);
+    return boot;
+  };
+  const silent = bootFor(true);
+  const chime = bootFor(false);
+  console.log(
+    `[app-construct-settings] unknown palette: fastBoot true=${silent.toFixed(5)}, ` +
+      `false=${chime.toFixed(5)}`,
+  );
+  expect(chime > silent * 2).toBeTruthy(); // the readable fastBoot still reached the core
 });

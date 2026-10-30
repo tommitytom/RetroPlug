@@ -63,6 +63,15 @@ interface RoleHeaderCaps {
   readFilePrefix(path: string, length: number): Uint8Array | null;
 }
 
+/** The config a construct blob is built from: the role schema's parse of the stored one, so an unknown enum label
+ *  falls back field by field, an integer rounds and a range clamps, and every value native's role struct decodes is
+ *  one it can read. The stored config stays as written (a build that knows a newer label keeps it). A role this
+ *  registry does not register has no schema to parse by, and crosses as it is. */
+function configForBlob(registry: RoleRegistry | undefined, role: RoleInstance): Record<string, unknown> {
+  const rt = registry?.roleType(role.kind);
+  return rt ? (rt.schema.parse(role.config) as Record<string, unknown>) : role.config;
+}
+
 // TS owns the system-id counter (native never allocates). Module-scoped so it's ONE id space per
 // control-plane JS context, which is 1:1 with the native Engine in every host (a plugin instance has
 // its own JS context + Engine; a native test file shares one host + Engine across its cases). Ids are
@@ -331,7 +340,9 @@ export class SystemsStore {
       savPath,
       statePath: null,
       stateBytes: state,
-      settings: systemRole ? JSON.stringify(roleConfigForNative(systemRole.kind, systemRole.config)) : undefined,
+      settings: systemRole
+        ? JSON.stringify(roleConfigForNative(systemRole.kind, configForBlob(this.registry, systemRole)))
+        : undefined,
     }, src.roles);
     const built = this.backend.buildCore(spec, newId);
     if (!built) {
@@ -403,7 +414,9 @@ export class SystemsStore {
       statePath: null,
       sramBytes: seed.sramBytes,
       stateBytes: seed.stateBytes,
-      settings: systemRole ? JSON.stringify(roleConfigForNative(systemRole.kind, systemRole.config)) : undefined,
+      settings: systemRole
+        ? JSON.stringify(roleConfigForNative(systemRole.kind, configForBlob(this.registry, systemRole)))
+        : undefined,
     }, src.roles);
     const built = this.backend.buildCore(spec, newId);
     if (!built) return null;
@@ -707,7 +720,9 @@ export class SystemsStore {
       statePath: null,
       sramBytes: blobs?.sramBytes,
       stateBytes: blobs?.stateBytes,
-      settings: systemRole ? JSON.stringify(roleConfigForNative(systemRole.kind, systemRole.config)) : undefined,
+      settings: systemRole
+        ? JSON.stringify(roleConfigForNative(systemRole.kind, configForBlob(this.registry, systemRole)))
+        : undefined,
     }, roles);
     // Stored settings/roles win; a config that omits them re-attaches defaults. Parsed, like the battery read,
     // before the build, so a throw here leaves no core behind.
@@ -715,15 +730,28 @@ export class SystemsStore {
     const battery = this.detectBattery(romPath, embeddedRom, platform);
     const built = this.backend.buildCore(spec, id); // its LSDj capture, if any, comes with the document that places it
     if (!built) return null;
-    // A core config stays as written (its role's schema does not parse it: the build spec carries it), so the system
-    // node leaves out a value it would refuse, or a param's value that is not a finite number, and that one core keeps
-    // what it has. Say which, since the stored config, the document and the core then disagree.
+    // The stored core config stays as written, so the system node leaves out a value it would refuse (or a param's
+    // value that is not a finite number), and the construct blob takes its role schema's value for one native cannot
+    // read. Say which: the stored config, the document and the core then disagree.
     if (systemRole) {
       const dropped = droppedKnobs(built.type, systemRole.config);
-      if (dropped.length)
+      const blob = configForBlob(this.registry, systemRole);
+      const reported = new Set(dropped.map(([field]) => field));
+      const repaired = Object.entries(systemRole.config)
+        .filter(([field, value]) => !reported.has(field) && JSON.stringify(blob[field]) !== JSON.stringify(value))
+        .map(([field, value]) =>
+          Object.prototype.hasOwnProperty.call(blob, field)
+            ? `repaired ${field} ${JSON.stringify(value)} to ${JSON.stringify(blob[field])}`
+            : `dropped ${field} ${JSON.stringify(value)}`,
+        );
+      const changes = [
+        ...dropped.map(([field, value]) => `dropped ${field} ${JSON.stringify(value)}`),
+        ...repaired,
+      ];
+      if (changes.length)
         notes.push(
-          `[systems] ${rom}: its stored ${core} config holds a value its node would refuse: ` +
-            dropped.map(([field, value]) => `dropped ${field} ${JSON.stringify(value)}`).join(", "),
+          `[systems] ${rom}: its stored ${core} config holds a value this build does not read as written: ` +
+            changes.join(", "),
         );
     }
     for (const note of notes) console.warn(note);
