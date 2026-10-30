@@ -1,8 +1,8 @@
 // C2's params in the document: a document carries a param's value only when it differs from the one the node was last
-// given (docs/modular-graph-phase-c2-design.md section 5), and a live setParam is one of the ways a node is given one. So
-// a document repeating the value it carried before still lands when a live edit moved the core away from it. Both routes
-// TS has are here: the store's mixed edit (a setting field and a NES's expansionVolume in one setRoleConfig, so it
-// publishes rather than setting the param live) and a DirectGraph's setCoreConfig repeating its value.
+// given (docs/modular-graph-phase-c2-design.md section 5), and a live setParam is one of the ways a node is given one.
+// So a document repeating the value it carried before still lands when a live edit moved the core away from it. Both
+// routes TS has are here: the store's mixed edit (a setting field and a NES's expansionVolume in one setRoleConfig, so
+// it publishes rather than setting the param live) and a DirectGraph's setCoreConfig repeating its value.
 //
 // The value is watched where only the core can show it: the expansion chip's own level, 200% against a live 100%.
 import { test, expect, skip } from "../testing/harness";
@@ -21,7 +21,7 @@ function rms(a: Float32Array): number {
   return Math.sqrt(s / a.length);
 }
 
-test("the store's mixed edit lands the document's expansion volume, though a live edit moved the core away from it", () => {
+test("the store's mixed edit lands the document's expansion volume, though a live edit moved the core away", () => {
   const s = bootSession();
   if (!s.backend.fileExists(VRC6)) skip("no VRC6 rom");
   const id = s.project.systems.addSystem(VRC6);
@@ -44,7 +44,9 @@ test("the store's mixed edit lands the document's expansion volume, though a liv
   expect(s.project.systems.setRoleConfig(id, "mesen", { region: "pal", expansionVolume: 100 })).toBeTruthy();
   s.audio.renderAudio(1500); // the reset's boot
   const back = level();
-  console.log(`[param-republish] store: 100% ${full.toFixed(2)} dBFS, live 50% ${half.toFixed(2)}, document 100% ${back.toFixed(2)}`);
+  console.log(
+    `[param-republish] store: 100% ${full.toFixed(2)} dBFS, live 50% ${half.toFixed(2)}, document 100% ${back.toFixed(2)}`,
+  );
 
   expect(full, "the cartridge chip sounds at unity").toBeGreaterThan(-60);
   expect(half, "the live 50% is ~6 dB down").toBeCloseTo(full - 6, 0.5);
@@ -59,7 +61,14 @@ test("DirectGraph's setCoreConfig lands a param a live edit moved the core away 
   // Structure for this file's directly built system, its graph rendering through its own audio driver.
   const graph = new DirectGraph(s.backend);
   const audio = createAudioDriver(graph.graph);
-  const spec = { romPath: VRC6, platform: "nes" as const, core: "mesen" as const, embeddedRom: "", savPath: null, statePath: null };
+  const spec = {
+    romPath: VRC6,
+    platform: "nes" as const,
+    core: "mesen" as const,
+    embeddedRom: "",
+    savPath: null,
+    statePath: null,
+  };
   expect(graph.add(spec, 77)).toBeTruthy();
   // A DirectGraph places no roles of its own: the NES needs its n8 MIDI-to-FIFO role to hear host MIDI at all.
   expect(graph.setPipeline(77, [{ kind: "nes-n8-midi", config: {} }])).toBeTruthy();
@@ -82,7 +91,9 @@ test("DirectGraph's setCoreConfig lands a param a live edit moved the core away 
   expect(graph.setCoreConfig(77, { expansionVolume: 200 })).toBeTruthy();
   audio.renderAudio(150);
   const back = level();
-  console.log(`[param-republish] DirectGraph: 200% ${full.toFixed(2)} dBFS, live 100% ${low.toFixed(2)}, document 200% ${back.toFixed(2)}`);
+  console.log(
+    `[param-republish] DirectGraph: 200% ${full.toFixed(2)} dBFS, live 100% ${low.toFixed(2)}, document 200% ${back.toFixed(2)}`,
+  );
 
   expect(full, "the cartridge chip sounds").toBeGreaterThan(-60);
   expect(full - low, "the live 100% is ~6 dB down").toBeGreaterThan(3);
