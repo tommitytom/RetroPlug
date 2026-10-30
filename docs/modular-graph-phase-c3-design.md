@@ -240,7 +240,9 @@ places (native's "system N is live"). The render path and every host go through 
 - **`retroplug-engine-graph-test`**: each console's node, built from resources, renders what a core built directly from
   the same bytes renders, bit for bit, seeds included (a Game Boy plain, with a battery seed and with a savestate seed;
   a non-default model under a savestate; a NES with its region, export mode and expansion volume; an SMS with FM off,
-  its battery and a `romName`; a GBA; an LSDj); a Master System's two nodes stage under stems of their own; a missing,
+  its battery and a `romName`; a GBA; an LSDj); and each type's every build knob, away from its default, is read back off
+  the built core, with a battery-backed cart's seed saved back by the core it reached; a Master System's two nodes stage
+  under stems of their own; a missing,
   dropped or wrong-typed resource, an unrecognised ROM, a live id, a full snapshot pool and a build outside `setGraph`
   each refuse the document and leave the running plan, the pins and the slots as they were; a construct-time change
   under the same id is refused and under a new id rebuilds; a document changing only a param or a live knob keeps the
