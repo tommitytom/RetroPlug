@@ -1269,7 +1269,13 @@ export class SystemsStore {
     const restore = (): void => {
       this.entries = entries;
       this.focusedId = focusedId;
-      for (const id of edit.put ?? []) this.pool.drop(id);
+      for (const id of edit.put ?? []) {
+        try {
+          this.pool.drop(id);
+        } catch (e) {
+          console.warn(`[systems] ${what}: giving back the edit's resource threw too: ${String(e)}`);
+        }
+      }
     };
     // The restored model's own send, after a refusal or a throw: the graph's model is the edit's either way, so the
     // plan the engine runs is only what a later publish builds once this lands. Its failure is said, never thrown:

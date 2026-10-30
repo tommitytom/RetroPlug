@@ -220,6 +220,7 @@ test("a publish that throws puts the model back, gives back what the edit put, a
   const id = store.addSystem("/roms/a.gb")!;
   const before = store.systems()[0];
   const heldBefore = heldIds(be);
+  const requests = be.graphRequests.length;
   const setGraph = be.setGraph.bind(be);
   let threw = false;
   be.setGraph = (request) => {
@@ -236,8 +237,51 @@ test("a publish that throws puts the model back, gives back what the edit put, a
   expect(store.systems()[0]).toEqual(before);
   expect(heldIds(be)).toEqual(heldBefore);
   // The model the graph keeps was the edit's, so the restored one is sent too: the plan the engine runs is what a
-  // later shape change rebuilds.
-  expect(be.lastBoot()!.id).toBe(id);
+  // later shape change rebuilds. The throw is not recorded as a request, so the one new request is that resend.
+  expect(be.graphRequests.length).toBe(requests + 1);
+  expect(be.graphRequests[be.graphRequests.length - 1].slots).toEqual([id]);
+});
+
+test("a throwing release does not replace the publish's error, and the restored model still goes out", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.sav", "battery");
+  const id = store.addSystem("/roms/a.gb")!;
+  const before = store.systems()[0];
+  const requests = be.graphRequests.length;
+  const releaseResource = be.releaseResource.bind(be);
+  let givenBack = 0;
+  be.releaseResource = () => {
+    givenBack++;
+    throw new Error("the releaseResource RPC died");
+  };
+  const setGraph = be.setGraph.bind(be);
+  let threw = false;
+  be.setGraph = (request) => {
+    if (!threw) {
+      threw = true;
+      throw new Error("the setGraph RPC died");
+    }
+    return setGraph(request);
+  };
+  const { result: failure, warnings } = warned(() => {
+    try {
+      store.reset(id);
+      return "";
+    } catch (e) {
+      return String(e);
+    }
+  });
+  be.releaseResource = releaseResource;
+  be.setGraph = setGraph;
+  // Both calls cross the same transport: a release that throws cannot replace the caller's own failure or stop the
+  // rollback before the restored model is sent.
+  expect(failure.includes("the setGraph RPC died")).toBe(true);
+  expect(givenBack).toBeGreaterThan(0); // every put was offered back, the loop not stopped
+  expect(store.systems()[0]).toEqual(before);
+  expect(be.graphRequests.length).toBe(requests + 1);
+  expect(be.graphRequests[be.graphRequests.length - 1].slots).toEqual([id]);
+  expect(warnings.some((w) => w.includes("giving back the edit's resource threw too"))).toBe(true);
 });
 
 test("a construct-time edit resets the system: a new id, a re-read ROM, the battery carried, the new value", () => {
