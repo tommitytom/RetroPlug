@@ -362,7 +362,8 @@ test("a load that throws partway drops a system the placement refuses, as the su
   const putResource = be.putResource.bind(be);
   let roms = 0;
   be.putResource = (spec) => {
-    if (spec.type === "rom" && ++roms === 2) throw new Error("the putResource RPC died"); // as an RPC error reply throws
+    if (spec.type === "rom" && ++roms === 2)
+      throw new Error("the putResource RPC died"); // as an RPC error reply throws
     return putResource(spec);
   };
   // The system the throw left adopted is refused when the catch places it, as a core that would not build is: the
@@ -375,7 +376,12 @@ test("a load that throws partway drops a system the placement refuses, as the su
     const result: SetGraphResult = {
       ok: false,
       errors: [
-        { nodeId: `sys-${request.slots[0]}`, port: "", code: "activate-failed", message: "the ROM is not a Game Boy ROM" },
+        {
+          nodeId: `sys-${request.slots[0]}`,
+          port: "",
+          code: "activate-failed",
+          message: "the ROM is not a Game Boy ROM",
+        },
       ],
     };
     return result;
@@ -409,10 +415,51 @@ test("a load's retry drops only a system the refusal names, and native's slots r
       ],
     };
   };
-  const outcome = p.loadBytes(bytes, "/");
+  const { result: outcome, warnings } = warned(() => p.loadBytes(bytes, "/"));
   be.setGraph = setGraph;
   expect(outcome.kind).toBe("loaded");
   expect(sys.systems().length).toBe(1); // not dropped in turn: the refusal describes the document, not a system
+  // The store still lists the system, so the load says why nothing runs instead of returning silently.
+  expect(warnings.some((w) => w.includes("naming no system"))).toBe(true);
+});
+
+test("a load's retry drops a system whose protocol node the refusal names, and places the rest", () => {
+  const { be, p, sys } = project();
+  sys.addSystem("/roms/a.gb");
+  sys.addSystem("/roms/b.gb");
+  const lsdj = sys.addSystem("/roms/lsdj.gb")!;
+  sys.setRoleConfig(lsdj, "lsdj-sync", { mode: LsdjSyncMode.MidiSync });
+  const bytes = p.exportBytes()!;
+  const setGraph = be.setGraph.bind(be);
+  let bad = 0;
+  // Native reports a protocol node's own failure under `sys-<id>/<kind>` (Planner.cpp), and that node belongs to
+  // the system, so the load drops it as it drops one whose `sys-<id>` node the refusal names.
+  be.setGraph = (request) => {
+    if (!bad && request.slots.length > 0) {
+      bad = request.slots[request.slots.length - 1];
+      be.graphRequests.push(request);
+      return {
+        ok: false,
+        errors: [
+          {
+            nodeId: `sys-${bad}/lsdj-sync`,
+            port: "",
+            code: "activate-failed",
+            message: "the script host refused its settings",
+          },
+        ],
+      };
+    }
+    return setGraph(request);
+  };
+  const { warnings, result } = warned(() => p.loadBytes(bytes, "/"));
+  be.setGraph = setGraph;
+  expect(result).toEqual({ kind: "loaded", systems: 2 });
+  expect(sys.systems().map((e) => e.id).includes(bad)).toBe(false); // the refused system is gone
+  const placed = be.lastDocument()!.nodes.filter((n) => n.id.startsWith("sys-")).map((n) => n.id);
+  expect(placed.length).toBe(2);
+  expect(placed.includes(`sys-${bad}`)).toBe(false);
+  expect(warnings.some((w) => w.includes("the engine refused it, so the project loads without it"))).toBe(true);
 });
 
 test("a load whose final publish throws still tells the observers once", () => {

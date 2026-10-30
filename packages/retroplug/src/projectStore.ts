@@ -13,7 +13,7 @@
 //     and frames the archive; native only compresses (backend.zip). A `.rplg.zip`
 //     loads back through the same scan/relink tail, its blobs seeding each system.
 
-import type { ControlPlaneBackend, ZipEntry } from "./backend";
+import type { ControlPlaneBackend, GraphError, ZipEntry } from "./backend";
 import { SystemsStore } from "./systemsStore";
 import { EngineGraph } from "./engineGraph";
 import type { SystemEntry } from "./systemsList";
@@ -806,12 +806,33 @@ export class ProjectStore {
   private placeLoadedSystems(): void {
     for (;;) {
       if (this.publishGraph(true)) return;
-      // A system's node is sys-<system id>, which is the only node id native can attribute a system's failure to
-      // (a document's own fault, a slots mismatch among them, names no node at all).
-      const refusal = this.graph.lastErrors.find((e) => /^sys-\d+$/.test(e.nodeId));
-      const id = refusal ? Number(/^sys-(\d+)$/.exec(refusal.nodeId)?.[1] ?? 0) : 0;
+      // A system's own node is sys-<id>; its protocol nodes are sys-<id>/<kind> and sys-<id>/<kind>/out, and native
+      // reports a node's own failure under that node's id (Planner.cpp), so a refusal naming either belongs to the
+      // system. Only a document-wide refusal (the slots and the document's system nodes disagree) names no node, and
+      // dropping a system cannot fix it.
+      let refusal: GraphError | undefined;
+      let id = 0;
+      for (const error of this.graph.lastErrors) {
+        const match = /^sys-(\d+)(?:\/|$)/.exec(error.nodeId);
+        if (!match) continue;
+        refusal = error;
+        id = Number(match[1]);
+        break;
+      }
       const dropped = id > 0 ? this.systems.discard(id) : undefined;
-      if (!dropped) return; // a refusal no system explains: the load cannot fix it by dropping one
+      if (!dropped) {
+        // A refusal no system explains leaves the store listing systems the engine does not run: say so rather
+        // than returning silently, so a user knows why nothing plays.
+        if (!refusal) {
+          const why = this.graph.lastErrors[0];
+          const reason = why ? `${why.code}: ${why.message}` : "no reason given";
+          console.warn(
+            `[systems] the engine refused the systems a project load placed, naming no system: the project lists ` +
+              `${this.systems.systems().length} system(s) the engine does not run (${reason})`,
+          );
+        }
+        return; // the load cannot fix this refusal by dropping a system
+      }
       console.warn(
         `[systems] ${dropped.romPath || `the embedded ${dropped.embeddedRom}`}: the engine refused it, so the project ` +
           `loads without it (${refusal?.code}: ${refusal?.message})`,

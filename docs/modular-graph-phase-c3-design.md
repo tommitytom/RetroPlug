@@ -222,8 +222,10 @@ project load's `clear` empties it.
 **A refused publish names the node.** The store puts its model and its focus back as they were, gives back what the
 edit put, sends the restored model again and reports the reason, the failure the user saw when a core did not boot. A
 publish that throws (an engine or transport fault, which the graph counts as refused) takes the same rollback before
-the error reaches the caller. A project load publishes once for every system, as today; a refusal naming `sys-K` drops
-system K with a load note and publishes the rest, so one unreadable ROM still costs only its own system.
+the error reaches the caller. A project load publishes once for every system, as today; a refusal naming `sys-K` or one
+of its protocol nodes (`sys-K/<kind>`, `sys-K/<kind>/out`) drops system K with a load note and publishes the rest, so
+one unreadable ROM still costs only its own system. A document-wide refusal names no system, so nothing is dropped and
+the load warns that the systems it lists do not run.
 
 **`buildGraph`** writes `system`, `rom`, `sram`, `state`, `romName`, the construct-time fields, C2's knobs and the
 params. **`ConstructSpec`** stays as TS's description of what to boot, no longer a wire type: one helper
