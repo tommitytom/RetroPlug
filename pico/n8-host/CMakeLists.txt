@@ -34,6 +34,7 @@ endif()
 add_executable(n8_host
     main.c
     edio.c
+    box.c
     # Stage-1 MIDI parser, reused as-is (the bridge forwards its decoded messages).
     ${CMAKE_CURRENT_LIST_DIR}/../midi-in/midi.c
 )
@@ -48,6 +49,7 @@ target_link_libraries(n8_host
     pico_stdlib
     hardware_uart
     tinyusb_host
+    hardware_watchdog
 )
 
 if(RP_NATIVE_USB)
@@ -72,7 +74,7 @@ endif()
 
 # Experiment knobs, each a plain #define in main.c with a default: N8_MENU_TRIES (how many
 # '*t' attempts before giving up on the menu).
-foreach(knob N8_MENU_TRIES N8_APU_LAT N8_EXP_VOL)
+foreach(knob N8_MENU_TRIES N8_APU_LAT N8_EXP_VOL N8_TEST_HOOKS)
     if(DEFINED ${knob})
         target_compile_definitions(n8_host PRIVATE ${knob}=${${knob}})
     endif()

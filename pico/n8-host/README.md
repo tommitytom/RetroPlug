@@ -19,6 +19,7 @@ PIO-USB - they don't contend.
 | 2.3 | **done (HW-verified 2026-10-30)** | `fifoWR` = memWR(0x1810000): the menu answers `*t`, and `boot_bliptoaster()` installs + boots the MIDI ROM through it, no PC (`loop.sh`, 5/5). It was blocked for months by the probe reading cart SRAM while the menu booted - see [`../pico-n8-fifo-write-bug.md`](../pico-n8-fifo-write-bug.md). |
 | 2.4 | **done (HW-verified 2026-10-30)** | the bridge: MIDI UART1/GP5 (reusing `../midi-in/midi.c`) -> one `fifoWR` per channel-voice message. Driven by a USB MIDI cable (CH345) into the TRS jack, with `amidi`: A4 / C5 on ch1 read back as Pulse1 timer 235 / 198 on the N8 sniffer and measured **440.3 Hz / 522.2 Hz** on the L6 capture (ch3), silent after note-off. (The August "verified" results were the PC host's residual note.) |
 | 2.5 | **done (HW-verified 2026-10-30)** | BlipToaster parity with the PC bridge: **SysEx** forwarded verbatim, the **expansion master volume** set when the cart needs it, aftertouch still filtered (BlipToaster ignores it). See "BlipToaster parity" below - Test G through the Pico matches the console numbers BlipToaster documented from the PC. |
+| 2.6 | **done (HW-verified 2026-10-30)** | the standalone box (`box.c`): status LED, watchdog + recovery reboots with backoff, several ROMs staged in flash and picked over MIDI (`F0 7D 50 01 <n> F7`), the choice saved on the SD. `faults.sh`: random NES power cuts, 8/8 rounds recovered and played. See "The standalone box". |
 
 ## Dependencies (not in the repo yet - see "one-time setup")
 
@@ -100,7 +101,7 @@ and capture the timestamped console until a verdict:
 ./loop.sh --native                            # the RP_NATIVE_USB build, in build-native/
 ./loop.sh --debug                             # + TinyUSB's attach/enumeration trace, in build-debug/
 ./loop.sh -DN8_MENU_TRIES=3                   # any CMake define; each set gets its own build dir
-./loop.sh --rom ../../../bliptoaster/build/bliptoaster.nes   # boot a freshly built ROM (below)
+./loop.sh --rom a.nes --rom b.nes             # stage ROMs in Pico flash; the box boots the chosen one
 ```
 
 The Pico is halted BEFORE the power-cycle: a working firmware left running would see the N8 come
@@ -110,16 +111,17 @@ in the wrong place, so the run would test nothing); `--force` overrides that. Th
 in `/tmp/n8-host-console.log` (`--log`). Exit 0 = done / `--until` seen, 1 = `--fail` seen or
 `--until` timed out, 2 = setup failed.
 
-**Booting a freshly built ROM: `--rom <file.nes>`.** The N8's SD card is only reachable over its
-USB, which belongs to the Pico, so `loop.sh` writes the ROM into the **Pico's own flash** (at
-`0x10200000`, 2 MB past the firmware: a 64-byte header - `N8RM`, size, SD path - then the ROM). Once
-the menu answers `*t`, the firmware copies it to `usb-games/pico/<name>.nes` with Edio's file
-commands (`edio_file_put`: the same open / write / close sequence as the PC's `n8-load
---put-file`) and boots it from there: ~5 s for a 288 KB ROM. Its own `usb-games/pico/` folder
-keeps it clear of the files other tools put on the shared card. A run that flashes without
-`--rom` erases the header, and the firmware boots `N8_ROM_PATH` (default the older
-`usb-games/n8-midi.nes`; `-DN8_ROM_PATH=...` for another file already on the card).
-`stress.sh --rom <file>` passes it through.
+**Booting a freshly built ROM: `--rom <file.nes>` (repeatable).** The N8's SD card is only reachable
+over its USB, which belongs to the Pico, so `loop.sh` writes the ROMs into the **Pico's own flash**
+(at `0x10200000`, 2 MB past the firmware: per ROM a 64-byte header - `N8RM`, size, SD path - then the
+ROM, padded to 4 KB; one erased 4 KB block after the last ends the table). Once the menu answers `*t`,
+the firmware copies the chosen one to `usb-games/pico/<name>.nes` with Edio's file commands
+(`edio_file_put`: the same open / write / close sequence as the PC's `n8-load --put-file`) and boots
+it from there: ~5 s for a 288 KB ROM, and no upload at all when its CRC says it is already there (see
+"The standalone box"). Its own `usb-games/pico/` folder keeps it clear of the files other tools put
+on the shared card. A run that flashes without `--rom` erases the first header, and the firmware
+boots `N8_ROM_PATH` (default the older `usb-games/n8-midi.nes`; `-DN8_ROM_PATH=...` for another file
+already on the card). `stress.sh --rom` and `faults.sh --rom` pass it through.
 
 ### Driving the bridge from the container
 
@@ -231,6 +233,80 @@ USB round trip, not the ROM. 20 notes each, same rig (2026-10-30):
 
 BlipToaster busy-polls the cart FIFO, so its own share is likely tens of µs; resolving it needs a
 cycle-exact measurement (the emulator), not this probe.
+
+## The standalone box
+
+`box.c` turns the bridge into something that runs unattended. Everything here was exercised on the
+rig; what was not is said so at the end.
+
+**Status LED** (the Pico's own, GP25):
+
+| pattern | meaning |
+|---|---|
+| short blip once a second | no N8 on the socket, or the NES is off |
+| 4 Hz blink | N8 up, not forwarding yet: probe, menu, upload, boot |
+| solid, dropping out briefly per batch | forwarding MIDI |
+| double blink | the boot failed, or the menu is stuck (power-cycle the NES) |
+| n quick blinks | acknowledging a ROM pick (n = ROM index + 1) |
+
+**Watchdog and recovery.** A 3 s hardware watchdog reboots a hung Pico; every Edio wait pumps it
+(`edio_set_idle_hook`), so a long upload or install never trips it. The box also reboots itself on
+purpose (`box_recover`) when the link is wedged in a way a fresh USB host clears: a device on the
+socket that never enumerates (8 s), the N8 not answering `CMD_STATUS` (3 checks a second apart,
+while forwarding and MIDI is quiet), or 5 failed writes in a row. Why it rebooted and how many
+times in a row survive the reboot in watchdog scratch 0-2 (the SDK owns 4-7); consecutive
+recoveries back off 5 / 10 / 20 / 40 / 60 s and 60 s of a healthy link clears the count, so a fault
+the box cannot clear (the N8 itself wedged) is an error LED, not a reboot loop. Only a watchdog reset
+continues the count - a debugger's reset (a reflash) is a fresh start.
+
+A boot never outlives its N8: a power cut mid-boot unmounts it, and a new one can be at a fresh menu
+before a slow step returns, so every step checks a mount generation and abandons a boot whose N8 has
+gone (`boot abandoned`), and every Edio wait fails at once when the link drops instead of running
+out its timeout. `CMD_STATUS` before `*t` says whether a game already runs (forward at once) or the
+menu is up. A menu that reports status 0 but never answers `*t` - seen once, after a power cut whose
+"off" the Zigbee plug applied 2.3 s late, leaving the NES off ~2.7 s - is held as **stuck**: no
+forwarding (a `2A` data byte is the menu's `*` prefix), the error LED, a retry every 20 s.
+
+**ROM selection.** `loop.sh --rom a.nes --rom b.nes ...` stages several ROMs in the Pico's flash
+(2 MB at `0x10200000`, about six BlipToaster builds). The box boots the one picked over MIDI, else
+the one saved on the SD card as last booted (`usb-games/pico/box.cfg`), else the first. Its CRC-32 is
+saved with the choice, so an unchanged ROM is not uploaded again: a power-on goes from the N8 mounting
+to the ROM installed in ~0.75 s instead of ~5.6 s. `box.cfg` is only rewritten when the choice or the
+ROM changes, so an ordinary power-on writes nothing to the card. If the menu cannot load a file the
+CRC said was there (someone deleted it), the box uploads it again and retries once.
+
+The box's own SysEx - `F0 7D 50 ...` (BlipToaster's are `7D 42`); acted on, never forwarded:
+
+| message | effect |
+|---|---|
+| `F0 7D 50 01 <n> F7` | boot staged ROM n at the next menu: press RESET or power-cycle the NES (a pending pick also survives a recovery reboot) |
+| `F0 7D 50 02 F7` | print the staged ROMs, the booted one and the pending pick on the console; blink the booted index + 1 |
+| `F0 7D 50 7E F7` / `7D` | `-DN8_TEST_HOOKS=1` builds only: hang (the watchdog must fire) / fake a dead link (recovery must) |
+
+The menu coming back is noticed by `CMD_STATUS` turning 0 after a game was seen, and the chosen ROM is
+booted again.
+
+**Tests (2026-10-30).**
+- Selection: two ROMs staged (the base build, mapper 69; the N163 build, mapper 19). A fresh box
+  uploaded and booted ROM 0; a MIDI pick of ROM 1 + a power-cycle uploaded and booted the N163 build;
+  the next power-cycle booted it again from the saved choice with no upload. The CRCs the box computed
+  (`f39a6773`, `1c8dffcd`) match the gzip trailer's independent CRC-32 of the same files.
+- Watchdog: the hang hook rebooted the Pico 3.1 s later, reported as recovery #1, and it resumed.
+- Recovery and backoff: the dead-link hook recovered after 3 failed checks; triggered again inside a
+  60 s backoff window, 53 failed checks went by with no reboot until the window closed.
+- LED: sampled over SWD (GP25 `OUTTOPAD`): solid while forwarding, the 1 s blip with the NES off, the
+  4 Hz blink through an upload.
+- `faults.sh` (24 random cuts, 8 rounds): 8/8 recovered and played, 6 boots abandoned and redone,
+  no recovery reboots, no uploads. It found three bugs on the way, all fixed: a boot outliving its N8
+  (then a ~48 s blind `*t` against a running game), a re-upload fired by a lost link's timeout, and a
+  false "never enumerated" reboot from a timer left stale by a long boot.
+- `stress.sh` on the box firmware: PASS, 50,805 messages, 0 lost.
+
+**Not yet verified on hardware:** the "never enumerated" recovery firing for a real non-enumerating
+device (the only trigger seen was the false positive above, now fixed); the NES's RESET button
+bringing the menu back (needs a hand on the console); the error LED's double blink; and a run with the
+debug probe unplugged - everything above was observed through it (`loop.sh` clears the debugger's
+`C_DEBUGEN` after flashing, so the firmware behaves as it would with no debugger).
 
 ## Build + flash + verify
 

@@ -1,12 +1,12 @@
-// N8 standalone bridge - stage 2, slice 2.4: the MIDI -> N8 bridge (no PC).
+// N8 standalone bridge: MIDI in -> the N8's cart FIFO -> the ROM running on a real NES.
 //
-// One Pico does the whole thing. MIDI comes in on a hardware UART (UART1/GP5, the
-// stage-1 6N138 opto circuit) and is decoded by the reusable parser (../midi-in/
-// midi.c). Each complete channel-voice message is forwarded straight to the N8's
-// cart FIFO via Edio fifoWR (= memWR to 0x1810000) - which, with the BlipToaster ROM
-// running on the NES, plays it on the 2A03. The N8 is hosted over PIO-USB
-// (slice 2.1) and driven with the Edio port (slice 2.2/2.3). A read-only sniff of
-// the running ROM's APU write-mirror reports Pulse1 on/off as live confirmation.
+// One Pico does the whole thing. MIDI comes in on a hardware UART (UART1/GP5, the stage-1
+// 6N138 opto circuit) and is decoded by the reusable parser (../midi-in/midi.c); channel-voice
+// messages and SysEx are forwarded to the N8's cart FIFO via Edio fifoWR (= memWR to
+// 0x1810000). The N8 is hosted over PIO-USB and driven with the Edio port (edio.c). When the N8
+// shows its menu, the Pico boots a ROM through it - one staged in its own flash (uploaded to the
+// SD first) or one already on the card. box.c makes it a standalone box: status LED, watchdog
+// and recovery reboots, and which staged ROM to boot (picked over MIDI, saved on the SD).
 //
 // So: play a MIDI keyboard -> the real NES plays it, with no computer in the loop.
 //
@@ -23,8 +23,10 @@
 #include "hardware/sync.h"
 #ifndef USE_NATIVE_USB
 #include "pio_usb.h"
+#include "pio_usb_ll.h"
 #endif
 #include "tusb.h"
+#include "box.h"
 #include "edio.h"
 #include "midi.h"
 
@@ -32,7 +34,6 @@
 #define N8_VID     0x38df
 #define N8_PID     0x0017
 
-// '*t' attempts before giving up on the menu (~2.4 s each); lowered for quick experiments.
 // 1 = print every forwarded message. Off by default: at 115200 baud the console line costs
 // more than the forward itself, so it caps the bridge's throughput; [stats] summarises instead.
 #ifndef N8_BRIDGE_VERBOSE
@@ -44,8 +45,14 @@
 #define N8_APU_LAT 0
 #endif
 
+// '*t' attempts before giving up on the menu (~2.4 s each); lowered for quick experiments.
 #ifndef N8_MENU_TRIES
 #define N8_MENU_TRIES 20
+#endif
+
+// 1 = accept the box's test SysEx commands (hang, fake a dead link): tests only.
+#ifndef N8_TEST_HOOKS
+#define N8_TEST_HOOKS 0
 #endif
 
 #define MIDI_UART   uart1     // stage-1 MIDI IN
@@ -55,6 +62,12 @@
 static volatile bool n8_ready    = false;   // set by the CDC mount callback
 static bool          probed      = false;   // run the probe once per mount
 static bool          forward_ok  = false;   // gate MIDI->FIFO on a ready+probed N8
+static volatile bool any_mounted = false;   // some USB device has enumerated (the N8, or its MCU alone)
+static volatile uint32_t n8_gen  = 0;      // bumped on every N8 mount: a boot checks it is still its N8
+static bool          boot_error  = false;   // the last menu boot failed: LED_ERROR until the next mount
+static int           write_fail_streak = 0; // consecutive failed fifoWRs
+static int           cur_sel     = -1;      // the staged ROM the box last booted (-1 = none / unknown)
+static uint32_t      menu_stuck_until = 0; // !0: the menu stopped answering - no forwarding; retry the boot then
 
 typedef struct {
     uint32_t rx_bytes;     // bytes off the MIDI UART
@@ -161,6 +174,8 @@ static void batch_flush(void) {
     uint32_t us = (uint32_t)(time_us_64() - t0);
     stats.writes++;
     if (ok) stats.fwd += batch_msgs; else { stats.fwd_fail += batch_msgs; ack_pending = false; }
+    write_fail_streak = ok ? 0 : write_fail_streak + 1;
+    if (ok) led_activity();
     if (us > stats.max_fwd_us) stats.max_fwd_us = us;
     if (batch_msgs > stats.max_batch) stats.max_batch = batch_msgs;
 #if N8_BRIDGE_VERBOSE
@@ -185,7 +200,7 @@ static void hexdump(const char *label, const uint8_t *d, int n) {
 
 // Run the Edio probe. Called from the main loop (not a callback) because the
 // edio_* ops block + pump tuh_task() internally.
-static void n8_probe(void) {
+static int n8_probe(void) {
     printf("[n8-host] --- Edio probe ---\n");
 
     // Status is 0 (OK) at the N8 menu; a running ROM reports a non-zero busy state
@@ -215,77 +230,135 @@ static void n8_probe(void) {
     // power-cycle: '*t' never got its 'k' in 9 of 10 trials, against 8 of 8 without the read.
     // That was the whole "Pico can't write the cart FIFO" blocker (../pico-n8-fifo-write-bug.md).
     printf("[n8-host] --- probe done ---\n");
+    return st;
 }
 
-// Autonomous boot: if the N8 file-browser MENU is running (it answers '*t' with 'k'),
-// drive it over the cart FIFO (edio_menu_*) to install + boot BlipToaster, no PC in the loop.
-// If a game is already running (or wedged) the menu won't answer, and we just forward MIDI.
+// Pump USB, feed the watchdog and run the LED for `ms` - the boot's waits, never a bare sleep.
+static void wait_ms(uint32_t ms) {
+    uint32_t until = to_ms_since_boot(get_absolute_time()) + ms;
+    while ((int32_t)(to_ms_since_boot(get_absolute_time()) - until) < 0) {
+        tuh_task();
+        box_feed();
+    }
+}
+
+// Autonomous boot: if the N8 file-browser MENU is running (it answers '*t' with 'k'), drive it
+// over the cart FIFO (edio_menu_*) to install + boot a ROM, no PC in the loop. If a game is
+// already running (or wedged) the menu won't answer, and we just forward MIDI to it.
 // The handshake rides the cart-FIFO write (memWR to 0x1810000); it only works if nothing
 // touched cart memory while the menu was booting - see n8_probe().
-// The ROM to boot, by its path on the N8's SD card (-DN8_ROM_PATH=usb-games/bliptoaster.nes for the
-// current BlipToaster). The default is the older MIDI ROM, still named n8-midi.nes on the card.
+//
+// Which ROM: with ROMs staged in the Pico's flash (`loop.sh --rom ...`, box.c), the one picked
+// over MIDI if a pick is waiting, else the one saved on the SD card as last booted, else the
+// first - uploaded to the SD unless the saved CRC says it is already there. With none staged,
+// N8_ROM_PATH, a ROM already on the card (-DN8_ROM_PATH=usb-games/bliptoaster.nes for the
+// current BlipToaster; the default is the older MIDI ROM, still named n8-midi.nes there).
 #ifndef N8_ROM_PATH
 #define N8_ROM_PATH "usb-games/n8-midi.nes"
 #endif
-#define BLIPTOASTER_SD_PATH N8_ROM_PATH
 
-// A ROM staged in the Pico's own flash by `loop.sh --rom <file.nes>`: a 64-byte header, then the
-// ROM. When present, the menu boot first copies it to the N8's SD card and then boots it from
-// there, so a freshly built ROM reaches the console with the N8's USB never leaving the Pico.
-// Absent (loop.sh erases the header when run without --rom), N8_ROM_PATH is booted as found.
-#define ROM_BLOB_ADDR (XIP_BASE + 0x200000)   // 2 MB in: far past the firmware, inside the 4 MB part
-typedef struct {
-    char     magic[4];   // "N8RM"
-    uint32_t size;       // ROM bytes following the header
-    char     path[56];   // destination on the SD card, NUL-terminated
-} rom_blob_hdr;
-
-static const rom_blob_hdr *rom_blob(void) {
-    const rom_blob_hdr *h = (const rom_blob_hdr *)ROM_BLOB_ADDR;
-    if (memcmp(h->magic, "N8RM", 4) != 0) return NULL;          // erased flash reads 0xff
-    if (h->size == 0 || h->size > 0x100000) return NULL;
-    if (memchr(h->path, 0, sizeof h->path) == NULL) return NULL;
-    return h;
+static bool upload_rom(const rom_blob_hdr *rom) {
+    printf("[n8-host] upload %s (%lu bytes)...\n", rom->path, (unsigned long)rom->size);
+    uint64_t t0 = time_us_64();
+    int up = edio_file_put(rom->path, (const uint8_t *)(rom + 1), rom->size);
+    if (up != 0) { printf("[n8-host] upload FAILED (status %d)\n", up); return false; }
+    printf("[n8-host] uploaded in %lu ms\n", (unsigned long)((time_us_64() - t0) / 1000));
+    return true;
 }
-static void boot_bliptoaster(void) {
+
+// Each step of a boot checks that the N8 it started on is still the one mounted: a power cut
+// mid-boot unmounts it, and a new one can be up (at a fresh menu) before a slow step returns.
+#define BOOT_GONE() (n8_gen != gen || !n8_ready)
+#define ABANDON() do { printf("[n8-host] boot abandoned: the N8 went away\n"); return; } while (0)
+
+static void boot_rom(int status) {
+    const uint32_t gen = n8_gen;
+    if (status > 0) {   // CMD_STATUS is 0 at the menu and non-zero while a game runs
+        printf("[n8-host] a game is already running (status %d) - forwarding MIDI to it\n", status);
+        return;
+    }
     // The N8's USB (MCU) enumerates before the menu core is ready, so retry the handshake
     // for a few seconds after a fresh power-up.
     printf("[n8-host] menu handshake (*t)...\n");
     bool menu = false;
-    for (int i = 0; i < N8_MENU_TRIES && !menu; i++) {
+    for (int i = 0; i < N8_MENU_TRIES && !menu && !BOOT_GONE(); i++) {
         menu = edio_menu_test();
-        if (!menu) for (int j = 0; j < 4; j++) { sleep_ms(100); tuh_task(); }
+        if (!menu) wait_ms(400);
     }
+    if (BOOT_GONE()) ABANDON();
     if (!menu) {
-        printf("[n8-host] no 'k' - a game is already running (or the FIFO write is blocked); "
-               "forwarding MIDI as-is\n");
-        return;
-    }
-    const char *path = BLIPTOASTER_SD_PATH;
-    const rom_blob_hdr *blob = rom_blob();
-    if (blob) {
-        printf("[n8-host] menu up -> upload the staged ROM (%lu bytes) to %s...\n",
-               (unsigned long)blob->size, blob->path);
-        uint64_t t0 = time_us_64();
-        int up = edio_file_put(blob->path, (const uint8_t *)(blob + 1), blob->size);
-        if (up != 0) {
-            printf("[n8-host] upload FAILED (status %d)\n", up);
+        int now_st = edio_get_status();
+        if (now_st == 0) {
+            // CMD_STATUS says menu, but the menu does not answer: the console came back in a bad
+            // state (seen after a power cut only ~2.7 s long). MIDI must not go into a menu's FIFO -
+            // a 0x2A data byte is its '*' command prefix - so hold off, show the error, and try
+            // the boot again in 20 s in case it comes alive. A power-cycle of the NES clears it.
+            printf("[n8-host] the N8 menu is not answering *t - power-cycle the NES (retrying in 20 s)\n");
+            boot_error = true;
+            menu_stuck_until = to_ms_since_boot(get_absolute_time()) + 20000;
             return;
         }
-        printf("[n8-host] uploaded in %lu ms\n", (unsigned long)((time_us_64() - t0) / 1000));
-        path = blob->path;
+        printf("[n8-host] no 'k', and CMD_STATUS %d - a game is running; forwarding MIDI to it\n", now_st);
+        return;
     }
+
+    const char *path = N8_ROM_PATH;
+    const rom_blob_hdr *rom = NULL;
+    bool uploaded = false;
+    int n = rom_count();
+    if (n > 0) {
+        box_state st;
+        bool have = box_state_load(&st);
+        int sel = box_pending_sel();
+        if (sel < 0) sel = have ? st.sel : 0;
+        if (sel >= n) sel = 0;
+        rom = rom_get(sel);
+        uint32_t crc = rom_crc32(rom);
+        printf("[box] ROM %d of %d: %s (crc %08lx)%s\n", sel, n, rom->path, (unsigned long)crc,
+               box_pending_sel() >= 0 ? " - picked over MIDI" : have ? " - saved choice" : "");
+        if (have && st.crc == crc) {
+            printf("[box] already on the SD (its CRC was saved at the last upload) - no upload\n");
+        } else {
+            if (!upload_rom(rom)) { if (BOOT_GONE()) ABANDON(); boot_error = true; return; }
+            uploaded = true;
+        }
+        // Saved only when it changed: an unchanged boot then writes nothing to the SD card, and a
+        // card write is the one thing a power cut at the wrong moment can damage.
+        if (!have || st.sel != sel || st.crc != crc) {
+            memcpy(st.magic, "N8PB", 4);
+            st.sel = (uint8_t)sel;
+            memset(st.pad, 0, sizeof st.pad);
+            st.crc = crc;
+            st.reserved = 0;
+            if (!box_state_save(&st)) printf("[box] could not save the choice to %s\n", BOX_STATE_PATH);
+        }
+        box_set_pending_sel(-1);
+        cur_sel = sel;
+        path = rom->path;
+    }
+
+    if (BOOT_GONE()) ABANDON();
     printf("[n8-host] menu up -> install %s (*n)...\n", path);
     int st = edio_menu_install(path);
+    if (st > 0 && st != 0x44 && rom && !uploaded) {   // the device's own status, not a lost link
+        // The saved CRC said the file was on the card, but the menu could not load it - it was
+        // deleted or replaced behind the box's back. Put it back and try once more.
+        printf("[n8-host] install FAILED (status %d) - uploading it again\n", st);
+        if (!upload_rom(rom)) { if (BOOT_GONE()) ABANDON(); boot_error = true; return; }
+        st = edio_menu_install(path);
+    }
+    if (BOOT_GONE()) ABANDON();
     if (st != 0) {
         printf("[n8-host] install FAILED (status %d)%s\n", st,
                st == 0x44 ? " - dirty menu heap, power-cycle to a fresh menu" : "");
+        boot_error = true;
         return;
     }
-    printf("[n8-host] installed -> boot (*s); BlipToaster starting...\n");
+    printf("[n8-host] installed -> boot (*s); the ROM is starting...\n");
     edio_menu_start();
-    for (int i = 0; i < 40; i++) { sleep_ms(100); tuh_task(); }   // let the NES reboot into the game
-    printf("[n8-host] BlipToaster booted by the Pico - no PC used.\n");
+    wait_ms(4000);   // let the NES reboot into the game
+    if (BOOT_GONE()) ABANDON();
+    printf("[n8-host] %s booted by the Pico - no PC used.\n", path);
 }
 
 // The bridge sink: a complete MIDI message from the parser -> the N8 FIFO. Channel-voice
@@ -318,14 +391,73 @@ static void midi_to_fifo(const midi_message *m, void *user) {
 // takes N163 waves, GM System On and its settings this way. A long SysEx simply spans batches: the
 // ROM reads one byte stream. One whose start was dropped (the N8 not ready) is dropped whole.
 static bool sysex_open = false;
-static void midi_sysex_to_fifo(uint8_t b, void *user) {
-    (void)user;
+static void sysex_emit(uint8_t b) {
     if (b == 0xF0) sysex_open = forward_ok;
     if (!sysex_open) { if (b == 0xF7) stats.not_ready++; return; }
     if (batch_len + 1 > BATCH_MAX) batch_flush();
     if (batch_len == 0) batch_first_us = cur_byte_us;
     batch[batch_len++] = b;
     if (b == 0xF7) { stats.sysex++; batch_msgs++; sysex_open = false; }
+}
+
+// The box's own commands: F0 7D 50 <cmd> ... F7 (7D = non-commercial, 50 = 'P' for Pico;
+// BlipToaster's are 7D 42). They are acted on here and never reach the ROM.
+//   F0 7D 50 01 <n> F7   boot staged ROM n at the next menu (press RESET or power-cycle the NES);
+//                        the LED blinks n+1 times to acknowledge
+//   F0 7D 50 02 F7       report the staged ROMs and the choice on the console; blink current+1
+// Test builds (-DN8_TEST_HOOKS=1) also take 7E (hang: the watchdog must reboot) and 7D (treat the
+// link as dead: the health check must recover).
+static bool fake_dead_link = false;
+static void box_command(const uint8_t *c, int n) {
+    if (n < 1) return;
+    int count = rom_count();
+    if (c[0] == 0x01 && n >= 2) {
+        if (c[1] >= count) {
+            printf("[box] select %u: only %d ROM(s) staged\n", c[1], count);
+            led_count(10);
+            return;
+        }
+        box_set_pending_sel(c[1]);
+        printf("[box] ROM %u selected (%s) - boots at the next menu: press RESET or power-cycle the NES\n",
+               c[1], rom_get(c[1])->path);
+        led_count(c[1] + 1u);
+    } else if (c[0] == 0x02) {
+        printf("[box] %d ROM(s) staged; booted: %d; picked for the next menu: %d\n",
+               count, cur_sel, box_pending_sel());
+        for (int i = 0; i < count; i++)
+            printf("[box]   %d: %s (%lu bytes)\n", i, rom_get(i)->path, (unsigned long)rom_get(i)->size);
+        if (cur_sel >= 0) led_count((unsigned)cur_sel + 1u);
+#if N8_TEST_HOOKS
+    } else if (c[0] == 0x7E) {
+        printf("[box] test: hanging - the watchdog should reboot within 3 s\n");
+        for (;;) tight_loop_contents();
+    } else if (c[0] == 0x7D) {
+        printf("[box] test: treating the link as dead\n");
+        fake_dead_link = true;
+#endif
+    }
+}
+
+static uint8_t sx_head[3], sx_cmd[8];
+static int     sx_head_n = 0, sx_cmd_n = 0;
+static bool    sx_box = false;
+static void midi_sysex_to_fifo(uint8_t b, void *user) {
+    (void)user;
+    if (b == 0xF0) { sx_head_n = 0; sx_box = false; }
+    if (sx_head_n < 3) {
+        // Hold the F0 and the two ID bytes until it is known whose SysEx this is.
+        sx_head[sx_head_n++] = b;
+        if (b == 0xF7 || sx_head_n == 3) {
+            sx_box = sx_head_n == 3 && sx_head[1] == 0x7D && sx_head[2] == 0x50;
+            sx_cmd_n = 0;
+            if (!sx_box) for (int i = 0; i < sx_head_n; i++) sysex_emit(sx_head[i]);
+            if (b == 0xF7) sx_head_n = 3;   // ended inside the header: nothing more to hold
+        }
+        return;
+    }
+    if (!sx_box) { sysex_emit(b); return; }
+    if (b == 0xF7) box_command(sx_cmd, sx_cmd_n);
+    else if (sx_cmd_n < (int)sizeof sx_cmd) sx_cmd[sx_cmd_n++] = b;
 }
 
 // Once a second, if anything moved: what the bridge received, forwarded and lost. A message
@@ -398,9 +530,10 @@ static void sniff_report(void) {
 }
 
 // The N8 mixes expansion audio (VRC6 / VRC7 / N163 / Sunsoft 5B / MMC5) through an FPGA master
-// volume that is 0 after a power-cycle - so every expansion voice is silent, which reads exactly
-// like a dead chip, until a host sets it. The PC tools do (`n8-play --exp-vol`, defaulting to unity
-// for these mappers); this is the same rule, run whenever forwarding starts - after the Pico booted
+// volume; at 0 every expansion voice is silent, which reads exactly like a dead chip. The PC tools
+// warn it is 0 after a power-cycle and set it (`n8-play --exp-vol`, defaulting to unity for these
+// mappers). On this rig the N8 OS set it to 129-130 itself at every hand-over, so this is a guard
+// rather than the usual path: the same rule, run whenever forwarding starts - after the Pico booted
 // a ROM, or on finding one already running. It reads the live config block the N8 OS writes when it
 // hands a game over (system region, not a cart-bus DMA), so it covers a ROM booted from the SD path
 // as well as a staged one, and it only raises a volume still at 0: a deliberate setting is kept.
@@ -437,6 +570,63 @@ static void exp_vol_check(void) {
            ok ? "" : " (write FAILED)");
 }
 
+// --- Recovery triggers and the menu coming back ---------------------------------------------------
+
+static void recover(int reason) {
+    if (box_may_recover()) box_recover(reason);   // backing off: leave it, the LED shows the error
+}
+
+// Something is on the socket but never enumerated (a stuck enumeration leaves the host stack
+// waiting for a disconnect that never comes), or the writes keep failing: a fresh USB host clears
+// both, and a Pico-only reboot re-enumerates a powered N8 reliably.
+// When the current "attached, nothing enumerated" stretch began (0 = not in one). Reset by the
+// mount callbacks themselves: link_watch() can go unrun for seconds while a boot blocks, and a
+// start time left over from before that boot read as 13 s without enumeration (a false reboot).
+static volatile uint32_t attached_since_ms = 0;
+
+static void link_watch(void) {
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+#ifndef USE_NATIVE_USB
+    bool attached = PIO_USB_ROOT_PORT(0)->connected;
+#else
+    bool attached = false;
+#endif
+    if (attached && !any_mounted) {
+        if (!attached_since_ms) attached_since_ms = now;
+        else if (now - attached_since_ms > 8000) recover(RECOVER_NO_ENUM);
+    } else {
+        attached_since_ms = 0;
+    }
+    if (write_fail_streak >= 5) recover(RECOVER_WRITES_FAIL);
+}
+
+// Once a second, while forwarding with MIDI quiet: is the N8 still answering, and is a game still
+// running? CMD_STATUS is 0 at the menu and non-zero while a game runs, so 0 after a game has been
+// seen means the console went back to the menu (RESET) - boot the chosen ROM again.
+static bool game_seen = false;
+static void health_check(void) {
+    static uint32_t next_ms = 0;
+    static int fails = 0;
+    if (!midi_quiet()) return;
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+    if ((int32_t)(now - next_ms) < 0) return;
+    next_ms = now + 1000;
+    int st = fake_dead_link ? -1 : edio_get_status();
+    if (st < 0) {
+        printf("[box] the N8 did not answer CMD_STATUS (%d in a row)\n", ++fails);
+        if (fails >= 3) recover(RECOVER_LINK_DEAD);
+        return;
+    }
+    fails = 0;
+    box_note_healthy();
+    if (st != 0) { game_seen = true; return; }
+    if (game_seen) {
+        printf("[box] the N8 is back at its menu - booting the chosen ROM\n");
+        game_seen = false;
+        probed = false;   // the main loop re-runs the probe and the menu boot
+    }
+}
+
 int main(void) {
 #ifndef USE_NATIVE_USB
     set_sys_clock_khz(120000, true);   // PIO-USB needs a 120 MHz-multiple clock
@@ -450,6 +640,10 @@ int main(void) {
     printf("\n[n8-host] USB host up (PIO-USB D+=GP%d, D-=GP%d). MIDI IN on UART1/GP%d @ %d. "
            "Waiting for the N8...\n", PIN_USB_DP, PIN_USB_DP + 1, MIDI_RX_PIN, MIDI_BAUD);
 #endif
+
+    led_init();
+    box_start();                        // says why we (re)booted, then arms the watchdog
+    edio_set_idle_hook(box_feed);       // the long Edio waits keep it fed
 
     // MIDI IN (stage-1 opto circuit) on UART1/GP5.
     uart_init(MIDI_UART, MIDI_BAUD);
@@ -478,6 +672,7 @@ int main(void) {
 #endif
 
     while (true) {
+        box_feed();
         tuh_task();
 
         // Drain the receive ring -> parser, whose sink batches complete messages; then send
@@ -499,11 +694,18 @@ int main(void) {
         batch_flush();
 
         if (n8_ready && !probed) {
+            led_set_mode(LED_BUSY);   // the boot blocks for seconds: show it now, not after
             probed = true;
-            n8_probe();
-            boot_bliptoaster();
+            int status = n8_probe();
+            game_seen = false;
+            boot_rom(status);
         }
-        forward_ok = n8_ready && probed;
+        if (menu_stuck_until && (int32_t)(to_ms_since_boot(get_absolute_time()) - menu_stuck_until) >= 0) {
+            menu_stuck_until = 0;
+            boot_error = false;
+            probed = false;   // try the menu boot again
+        }
+        forward_ok = n8_ready && probed && !menu_stuck_until;
         // Forwarding just became possible (after a mount, and the up-to-48 s menu boot): the ring
         // may hold seconds of MIDI from before the N8 could take it, and playing that stale burst
         // into the ROM now would only produce surprise notes. Start from a clean stream.
@@ -515,7 +717,9 @@ int main(void) {
             exp_vol_check();
         }
         was_forwarding = forward_ok;
-        if (forward_ok) sniff_report();
+        if (forward_ok) { sniff_report(); health_check(); }
+        link_watch();
+        led_set_mode(boot_error ? LED_ERROR : !n8_ready ? LED_NO_N8 : !forward_ok ? LED_BUSY : LED_READY);
         stats_report();
     }
 }
@@ -523,12 +727,16 @@ int main(void) {
 void tuh_mount_cb(uint8_t daddr) {
     uint16_t vid = 0, pid = 0;
     tuh_vid_pid_get(daddr, &vid, &pid);
+    any_mounted = true;
+    attached_since_ms = 0;
     printf("[n8-host] device mounted: addr %u  VID:PID %04x:%04x%s\n",
            daddr, vid, pid, (vid == N8_VID && pid == N8_PID) ? "   <- N8!" : "");
 }
 
 void tuh_umount_cb(uint8_t daddr) {
     printf("[n8-host] device %u unmounted\n", daddr);
+    any_mounted = false;
+    attached_since_ms = 0;   // a new stretch starts with the next link_watch()
     n8_ready = false;
     probed = false;
 }
@@ -542,6 +750,9 @@ void tuh_cdc_mount_cb(uint8_t idx) {
     printf("[n8-host] CDC mounted (idx %u, VID:PID %04x:%04x)\n", idx, vid, pid);
     if (vid == N8_VID && pid == N8_PID) {
         edio_bind(idx);
+        menu_stuck_until = 0;
+        n8_gen++;
+        boot_error = false;   // a fresh mount gets a fresh boot
         n8_ready = true;
         probed = false;
     }
@@ -549,6 +760,7 @@ void tuh_cdc_mount_cb(uint8_t idx) {
 
 void tuh_cdc_umount_cb(uint8_t idx) {
     (void)idx;
+    edio_unbind();
     n8_ready = false;
     probed = false;
 }

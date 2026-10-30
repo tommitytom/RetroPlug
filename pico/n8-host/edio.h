@@ -26,6 +26,10 @@ enum {
 
 // Bind the CDC interface index the N8 is on (from tuh_cdc_mount_cb).
 void edio_bind(uint8_t cdc_idx);
+void edio_unbind(void);   // the N8 went away: every wait fails at once until the next bind
+
+// Called on every pump of the blocking waits below (the watchdog + the status LED).
+void edio_set_idle_hook(void (*fn)(void));
 
 // Blocking primitives over the CDC link (pump tuh_task; false on timeout).
 bool edio_write(const uint8_t *data, uint32_t len);
@@ -42,6 +46,8 @@ bool edio_fifo_wr(const uint8_t *data, uint32_t len);          // = mem_wr(ADDR_
 // fileWrite + fileClose, as packages/native/src/host/n8/Edio.cpp does. 0 = ok, else the step's
 // device status (or -1 for no reply). An MCU-level operation: run it at the menu, not in a game.
 int  edio_file_put(const char *path, const uint8_t *data, uint32_t len);
+// Read the first `len` (<= 512) bytes of a file on the SD card. 0 = ok, else a device status / -1.
+int  edio_file_get(const char *path, uint8_t *data, uint32_t len);
 
 // N8 file-browser menu command channel: the running MENU reads '*'-prefixed commands from
 // the same cart FIFO the bridge writes to, and streams replies back over the CDC. Menu-only

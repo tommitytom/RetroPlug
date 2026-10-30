@@ -6,8 +6,24 @@
 #define EDIO_TIMEOUT_MS 2000
 
 static uint8_t g_idx = 0;
+static void (*idle_hook)(void) = 0;
 
-void edio_bind(uint8_t cdc_idx) { g_idx = cdc_idx; }
+void edio_set_idle_hook(void (*fn)(void)) { idle_hook = fn; }
+
+// Every wait in here pumps the USB host and the idle hook, which keeps the watchdog fed and the
+// status LED alive through the long ones (a ROM upload, the menu loading a ROM off the SD).
+static void pump(void) {
+    tuh_task();
+    if (idle_hook) idle_hook();
+}
+
+// The link is up from edio_bind() until edio_unbind() (the CDC unmount): while it is down every
+// wait below fails at once, instead of running out its timeout against a device that has gone -
+// up to 12 s for a menu install, during which the N8 may already be back as a new device.
+static volatile bool link_up = false;
+
+void edio_bind(uint8_t cdc_idx) { g_idx = cdc_idx; link_up = true; }
+void edio_unbind(void) { link_up = false; }
 
 static inline uint32_t now_ms(void) { return to_ms_since_boot(get_absolute_time()); }
 
@@ -16,7 +32,8 @@ static inline uint32_t now_ms(void) { return to_ms_since_boot(get_absolute_time(
 static bool edio_read_to(uint8_t *buf, uint32_t len, uint32_t timeout_ms) {
     uint32_t got = 0, start = now_ms();
     while (got < len) {
-        tuh_task();
+        pump();
+        if (!link_up) return false;
         uint32_t n = tuh_cdc_read(g_idx, buf + got, len - got);
         if (n) { got += n; start = now_ms(); }
         else if (now_ms() - start > timeout_ms) return false;
@@ -28,7 +45,8 @@ bool edio_write(const uint8_t *data, uint32_t len) {
     uint32_t avail_before = tuh_cdc_write_available(g_idx);   // TX FIFO free space when idle
     uint32_t sent = 0, start = now_ms();
     while (sent < len) {
-        tuh_task();
+        pump();
+        if (!link_up) return false;
         uint32_t n = tuh_cdc_write(g_idx, data + sent, len - sent);
         if (n) {
             sent += n;
@@ -43,7 +61,8 @@ bool edio_write(const uint8_t *data, uint32_t len) {
     // the TX FIFO fully drains (free space back to avail_before) = the transfer completed.
     start = now_ms();
     while (now_ms() - start < 500) {
-        tuh_task();
+        pump();
+        if (!link_up) return false;
         tuh_cdc_write_flush(g_idx);
         if (tuh_cdc_write_available(g_idx) >= avail_before) return true;   // TX drained = transfer done
     }
@@ -53,7 +72,8 @@ bool edio_write(const uint8_t *data, uint32_t len) {
 bool edio_read(uint8_t *buf, uint32_t len) {
     uint32_t got = 0, start = now_ms();
     while (got < len) {
-        tuh_task();
+        pump();
+        if (!link_up) return false;
         uint32_t n = tuh_cdc_read(g_idx, buf + got, len - got);
         if (n) {
             got += n;
@@ -146,7 +166,8 @@ static void edio_flush_input(void) {
     uint8_t tmp[64];
     uint32_t idle = now_ms();
     while (now_ms() - idle < 20) {          // 20ms with nothing = drained
-        tuh_task();
+        pump();
+        if (!link_up) return;
         if (tuh_cdc_read(g_idx, tmp, sizeof tmp)) idle = now_ms();
     }
 }
@@ -212,4 +233,37 @@ int edio_file_put(const char *path, const uint8_t *data, uint32_t len) {
 
     if (!tx_cmd(EDIO_CMD_F_FCLOSE)) return -1;
     return edio_get_status();
+}
+
+#define EDIO_CMD_F_FRD    0xCA
+#define FA_READ           0x01
+
+// Read exactly `len` (<= 512) bytes from the start of a file: fileOpen(FA_READ) + one fileRead
+// block (CMD_F_FRD + len, a 0 status byte, then the data) + fileClose. 0 = ok; a missing file
+// fails at the open with the device's status.
+int edio_file_get(const char *path, uint8_t *data, uint32_t len) {
+    uint8_t f[4 + 1 + 2 + 128];
+    uint32_t plen = (uint32_t)strlen(path);
+    if (plen > 128 || len > 512) return -1;
+    f[0] = 0x2b; f[1] = 0xd4; f[2] = EDIO_CMD_F_FOPN; f[3] = (uint8_t)(EDIO_CMD_F_FOPN ^ 0xff);
+    f[4] = FA_READ;
+    f[5] = (uint8_t)plen; f[6] = (uint8_t)(plen >> 8);
+    memcpy(f + 7, path, plen);
+    if (!edio_write(f, 7 + plen)) return -1;
+    int st = edio_get_status();
+    if (st != 0) return st;
+
+    f[2] = EDIO_CMD_F_FRD; f[3] = (uint8_t)(EDIO_CMD_F_FRD ^ 0xff);
+    put32(f + 4, len);
+    int rc = 0;
+    uint8_t resp = 0xff;
+    if (!edio_write(f, 8) || !edio_read_to(&resp, 1, SD_TIMEOUT_MS)) rc = -1;
+    else if (resp != 0) rc = resp;
+    else if (!edio_read_to(data, len, SD_TIMEOUT_MS)) rc = -1;
+
+    if (tx_cmd(EDIO_CMD_F_FCLOSE)) {
+        int cst = edio_get_status();
+        if (rc == 0) rc = cst;
+    }
+    return rc;
 }
