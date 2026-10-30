@@ -4,7 +4,9 @@
 // across block sizes. Both cores power on in the same state (Deterministic.cpp) and hear the same input.
 // The node's inputs (docs/modular-graph-phase-b3a-design.md section 3.1) are held the same way: what reaches a
 // node's input must render what the core call it maps to renders, made directly; and the Game Boy's serialOut
-// must carry what its core captured.
+// must carry what its core captured. So are its settings' knobs (docs/modular-graph-phase-c2-design.md sections 3 and
+// 4): each must reach the core as the core's own setter, called directly at the start of the block of the plan that
+// carries it, or at activation, renders it, and the descriptors must spell the labels the role configs do.
 //
 // There is no GBA case: Mesen's GBA core needs a BIOS image, and no fixture here carries one.
 //
@@ -12,16 +14,21 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <functional>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "../graph/CountingAllocator.hpp"
 #include "NodeRig.hpp"
+#include "graph/CanonicalJson.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
 #include "system/mesen/MesenSmsConfig.hpp"
@@ -786,4 +793,491 @@ TEST_CASE("a system node records what its bytes input feeds the core in the engi
     REQUIRE(rig.traced.size() == 1);
     CHECK(rig.traced[0].frame == 5);
     CHECK(rig.traced[0].data == std::vector<std::uint8_t>{1, 2, 3});
+}
+
+// ---- settings ----------------------------------------------------------------------------------------------------
+// A system node's knobs (docs/modular-graph-phase-c2-design.md sections 3 and 4) are its settings beside `core`: each
+// reaches the core at the start of the first block of the plan that carries it, as the call the command ring made
+// (the core's own value-guarded setter), and everything present at activation, before the core first runs. A knob
+// absent leaves the core as it was. Compared, where the knob is audible, against an identical core given the same
+// call directly at the same block: bit for bit, so the knob landed in that block and restarted nothing the direct
+// call did not.
+
+namespace {
+
+// A system node "sys" of `type` on its core's token, `knobs` its settings after the core (JSON members, or none), its
+// mix on a stereo host pair; a Game Boy's serialOut on a probe.
+std::string knobbed(const char* type, std::uint64_t token, const std::string& knobs = "") {
+    const bool gb = std::string(type) == "rp.sameboy.gb";
+    return R"({"nodes":[{"id":"sys","type":")" + std::string(type) + R"(","settings":{"core":)" + std::to_string(token) +
+           (knobs.empty() ? "" : "," + knobs) + R"(}},)" + (gb ? R"({"id":"probe","type":"rp.test.probe"},)" : "") +
+           R"({"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],"wires":[{"from":"sys.mix","to":"out.out.1-2"})" +
+           (gb ? R"(,{"from":"sys.serialOut","to":"probe.bytes"})" : "") + "]}";
+}
+
+std::string codes(const rp::graph::SetGraphResult& r) {
+    std::string s;
+    for (const auto& e : r.errors) s += (s.empty() ? "" : ",") + e.code;
+    return s;
+}
+
+void run(NodeRig& rig, std::uint32_t frames = 512, int blocks = 1) {
+    Lanes out(2);
+    const rp_transport t{kRate, 120.0, 0.0, 0};
+    for (int b = 0; b < blocks; ++b) rig.host->processBlock(frames, t, out.ptrs.data(), 2);
+}
+
+// The quoted strings of `export const <name> = [...] as const;` in packages/retroplug/src/settingsEnums.ts.
+std::vector<std::string> tsValues(const std::string& name) {
+    const auto bytes = readFile(RP_SETTINGS_ENUMS_PATH);
+    const std::string ts(bytes.begin(), bytes.end());
+    const std::string head = "export const " + name + " = [";
+    const auto start = ts.find(head);
+    if (start == std::string::npos) return {};
+    const auto end = ts.find("] as const;", start);
+    std::vector<std::string> values;
+    for (auto q = ts.find('"', start); q < end; q = ts.find('"', q + 1)) {
+        const auto close = ts.find('"', q + 1);
+        values.push_back(ts.substr(q + 1, close - q - 1));
+        q = close;
+    }
+    return values;
+}
+
+// The settings schema of a registered type, at its $defs entry.
+rfl::Generic::Object settingsSchema(NodeRig& rig, const char* type) {
+    const auto descriptor = rp::graph::parseJson(rig.registry.find(type)->type->descriptor(rig.registry.find(type)->type));
+    REQUIRE(descriptor);
+    const auto settings = descriptor->to_object()->get("settings")->to_object();
+    REQUIRE(settings);
+    const auto defs = settings->get("$defs")->to_object();
+    REQUIRE(defs);
+    REQUIRE(defs->size() == 1);
+    return *defs->begin()->second.to_object();
+}
+
+// A property's schema: the non-null branch of the anyOf an optional field is.
+rfl::Generic::Object knobSchema(const rfl::Generic::Object& schema, const char* knob) {
+    const auto property = schema.get("properties")->to_object()->get(knob)->to_object();
+    REQUIRE(property);
+    const auto branches = property->get("anyOf")->to_array();
+    REQUIRE(branches);
+    REQUIRE(branches->size() == 2);
+    return *(*branches)[0].to_object();
+}
+
+std::vector<std::string> labelsOf(const rfl::Generic::Object& knob) {
+    std::vector<std::string> labels;
+    const auto values = knob.get("enum")->to_array();
+    REQUIRE(values);
+    for (const auto& v : *values) labels.push_back(*v.to_string());
+    return labels;
+}
+
+}  // namespace
+
+TEST_CASE("every system node prepares statelessly and rebuilds only for a new core, so setGraph never waits on one",
+          "[engine-graph][system-node][settings]") {
+    NodeRig rig(kRate);
+    for (const char* type : {"rp.sameboy.gb", "rp.mesen.nes", "rp.mesen.gba", "rp.mesen.sms"}) {
+        INFO(type);
+        CHECK(rig.registry.find(type)->type->flags == RP_TYPE_STATELESS_PREPARE);
+    }
+    auto built = mgb(1);
+    SameBoySystem* const gb = built.get();
+    const auto token = rig.park(std::move(built));
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+    run(rig);
+    rp_node* const before = rig.host->node("sys");
+    rig.host->setAudioThreadOwns(true);  // and no block runs until the end, so nothing is adopted
+    // Two edits, the second planned while the first is unadopted: neither waits (the adoption timeout is 2 s).
+    const auto start = std::chrono::steady_clock::now();
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("dmgPalette":"dmg")")).ok);
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("dmgPalette":"gbl","highpass":"off")")).ok);
+    CHECK(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(500));
+    CHECK(rig.host->node("sys") == before);
+    run(rig);  // adopts both, in order, and the node applies the last
+    CHECK(gb->config_.dmgPalette == SameBoyDmgPalette::Gbl);
+    CHECK(gb->config_.highpass == SameBoyHighpass::Off);
+    rig.host->setAudioThreadOwns(false);
+}
+
+TEST_CASE("a system node's enum knobs take the labels the role configs spell, and its numbers their ranges",
+          "[engine-graph][system-node][settings]") {
+    NodeRig rig(kRate);
+    const auto gb = settingsSchema(rig, "rp.sameboy.gb");
+    CHECK(labelsOf(knobSchema(gb, "model")) == tsValues("MODEL_VALUES"));
+    CHECK(labelsOf(knobSchema(gb, "highpass")) == tsValues("HIGHPASS_VALUES"));
+    CHECK(labelsOf(knobSchema(gb, "colorCorrection")) == tsValues("COLOR_CORRECTION_VALUES"));
+    CHECK(labelsOf(knobSchema(gb, "dmgPalette")) == tsValues("DMG_PALETTE_VALUES"));
+    CHECK(labelsOf(knobSchema(gb, "serialOutCapture")) == std::vector<std::string>{"off", "listen", "drive"});
+    CHECK(*knobSchema(gb, "fastBoot").get("type")->to_string() == "boolean");
+    const auto nesSchema = settingsSchema(rig, "rp.mesen.nes");
+    CHECK(labelsOf(knobSchema(nesSchema, "region")) == tsValues("REGION_VALUES"));
+    CHECK(labelsOf(knobSchema(nesSchema, "s5bNoise")) == tsValues("CARTRIDGE_ACCURACY_VALUES"));
+    CHECK(labelsOf(knobSchema(nesSchema, "mmc5PhaseReset")) == tsValues("CARTRIDGE_ACCURACY_VALUES"));
+    CHECK(*knobSchema(nesSchema, "removeSpriteLimit").get("type")->to_string() == "boolean");
+    CHECK(tsValues("MODEL_VALUES").size() == 14);  // the reader found them
+    // A range's bounds, each its own allOf branch.
+    const auto bounds = [](const rfl::Generic::Object& knob) {
+        std::vector<double> b;
+        const auto branches = knob.get("allOf")->to_array();
+        REQUIRE(branches);
+        for (const auto& branch : *branches)
+            for (const char* key : {"minimum", "maximum"})
+                if (const auto v = branch.to_object()->get(key)) b.push_back(*v->to_double());
+        return b;
+    };
+    CHECK(bounds(knobSchema(gb, "lightTemperature")) == std::vector<double>{-1.0, 1.0});
+    CHECK(bounds(knobSchema(nesSchema, "apuLatencyMs")) == std::vector<double>{0.25, 6.0});
+    for (const char* type : {"rp.mesen.gba", "rp.mesen.sms"}) {
+        INFO(type);
+        CHECK(settingsSchema(rig, type).get("properties")->to_object()->size() == 1);  // core alone
+    }
+
+    // Anything else is refused with the document, the core as it was: an ordinal, another spelling, a number out of
+    // its range.
+    auto built = mgb(1);
+    SameBoySystem* const core = built.get();
+    const auto token = rig.park(std::move(built));
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+    for (const char* refused : {R"("model":9)", R"("model":"CgbC")", R"("model":"cgb-c")", R"("highpass":"removeDCOffset")",
+                                R"("lightTemperature":1.5)", R"("serialOutCapture":"loud")", R"("fastBoot":"yes")"}) {
+        INFO(refused);
+        const auto r = rig.set(knobbed("rp.sameboy.gb", token, refused));
+        CHECK_FALSE(r.ok);
+        CHECK(codes(r) == "settings-invalid");
+    }
+    run(rig);
+    CHECK(core->config_.model == SameBoyModel::DmgB);
+    CHECK(core->config_.highpass == SameBoyHighpass::Accurate);
+    const auto nesToken = rig.park(nes(2, 0));
+    for (const char* refused : {R"("apuLatencyMs":0.2)", R"("apuLatencyMs":7)", R"("region":"PAL")", R"("s5bNoise":1)"}) {
+        INFO(refused);
+        CHECK(codes(rig.set(knobbed("rp.mesen.nes", nesToken, refused))) == "settings-invalid");
+    }
+}
+
+TEST_CASE("each knob reaches its core at the start of the next block of the plan that carries it",
+          "[engine-graph][system-node][settings]") {
+    SECTION("Game Boy") {
+        NodeRig rig(kRate);
+        auto built = mgb(1);
+        SameBoySystem* const gb = built.get();
+        const auto token = rig.park(std::move(built));
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+        run(rig);
+        // The model's restart has its own case below; every other knob here, each off what mgb() built.
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token,
+                                R"("model":"dmgB","fastBoot":true,"highpass":"removeDcOffset","colorCorrection":"modernBalanced",)"
+                                R"("dmgPalette":"mgb","lightTemperature":-0.5,"serialOutCapture":"listen")"))
+                    .ok);
+        // Adopted as it was published (the rig is quiescent), but applied as the next block starts.
+        CHECK(gb->config_.highpass == SameBoyHighpass::Accurate);
+        CHECK(gb->serialOutCapture() == SerialOutCapture::Off);
+        run(rig);
+        CHECK(gb->config_.model == SameBoyModel::DmgB);
+        CHECK(gb->config_.fastBoot == true);
+        CHECK(gb->config_.highpass == SameBoyHighpass::RemoveDcOffset);
+        CHECK(gb->config_.colorCorrection == SameBoyColorCorrection::ModernBalanced);
+        CHECK(gb->config_.dmgPalette == SameBoyDmgPalette::Mgb);
+        CHECK(gb->config_.lightTemperature == -0.5);
+        CHECK(gb->serialOutCapture() == SerialOutCapture::Listen);
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("serialOutCapture":"drive")")).ok);
+        run(rig);
+        CHECK(gb->serialOutCapture() == SerialOutCapture::Drive);
+    }
+    SECTION("NES") {
+        NodeRig rig(kRate);
+        auto built = nes(1, 0);
+        MesenNesSystem* const core = built.get();
+        const auto token = rig.park(std::move(built));
+        REQUIRE(rig.set(knobbed("rp.mesen.nes", token)).ok);
+        run(rig);
+        const std::uint32_t window = core->apuFlushCycleLength();
+        REQUIRE(core->config().s5bNoise == 1);  // MesenNesConfig's defaults, "n8"
+        REQUIRE(core->config().mmc5PhaseReset == 1);
+        REQUIRE(rig.set(knobbed("rp.mesen.nes", token,
+                                R"("region":"pal","removeSpriteLimit":true,"apuLatencyMs":3.5,"s5bNoise":"chip","mmc5PhaseReset":"chip")"))
+                    .ok);
+        CHECK(core->config().region == 0);
+        run(rig);
+        CHECK(core->config().region == static_cast<std::uint32_t>(NesRegion::Pal));
+        CHECK(core->config().removeSpriteLimit);
+        CHECK(core->config().apuLatencyMs == 3.5);
+        CHECK(core->apuFlushCycleLength() != window);  // the live window, re-thresholded
+        CHECK(core->config().s5bNoise == static_cast<std::uint32_t>(CartridgeAccuracy::Chip));
+        CHECK(core->config().mmc5PhaseReset == static_cast<std::uint32_t>(CartridgeAccuracy::Chip));
+    }
+}
+
+TEST_CASE("a knob restarts or resets its core only where the core's own setter does, in the block the plan lands",
+          "[engine-graph][system-node][settings]") {
+    // The graph core against a direct one given the same setter calls at the same block, bit for bit, and against a
+    // control that hears none: where the knob is audible, the direct core differs from the control from that block on.
+    std::uint64_t heard = kNever;
+
+    SECTION("Game Boy: highpass and the display group apply in place") {
+        NodeRig rig(kRate);
+        auto direct = mgb(1), control = mgb(1);
+        const auto token = rig.park(mgb(1));
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+        Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
+        // During the boot chime, so the filter is heard; a restart would replay the chime and break the match.
+        CHECK(compare(rig, d, 3.0, once(0.3, [&] {
+                  REQUIRE(rig.set(knobbed("rp.sameboy.gb", token,
+                                          R"("highpass":"off","dmgPalette":"gbl","colorCorrection":"lowContrast","lightTemperature":0.25)"))
+                              .ok);
+                  direct->setHighpass(SameBoyHighpass::Off);
+                  direct->setDmgPalette(SameBoyDmgPalette::Gbl);
+                  direct->setColorCorrection(SameBoyColorCorrection::LowContrast);
+                  direct->setLightTemperature(0.25);
+              }), &c, &heard) == "");
+        CHECK(heard >= static_cast<std::uint64_t>(0.3 * kRate));
+        CHECK(heard != kNever);
+    }
+    SECTION("Game Boy: a palette alone changes no sample") {
+        NodeRig rig(kRate);
+        auto control = mgb(1);
+        const auto token = rig.park(mgb(1));
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+        Direct c({control.get()}, 2, {{0, 1}});
+        CHECK(compare(rig, c, 3.0, once(0.3, [&] {
+                  REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("dmgPalette":"dmg")")).ok);
+              })) == "");
+        CHECK(sounds(c));
+    }
+    SECTION("Game Boy: a model change restarts the core") {
+        NodeRig rig(kRate);
+        auto direct = mgb(1), control = mgb(1);
+        const auto token = rig.park(mgb(1));
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("model":"dmgB")")).ok);
+        Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
+        CHECK(compare(rig, d, 4.0, once(2.0, [&] {
+                  REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("model":"mgb")")).ok);
+                  direct->setModel(SameBoyModel::Mgb);
+              }), &c, &heard) == "");
+        CHECK(heard >= static_cast<std::uint64_t>(2.0 * kRate));  // the chime again, from the block it landed in
+        CHECK(heard != kNever);
+    }
+    SECTION("NES: the sprite limit, latency and accuracy switches apply in place, a region change resets it") {
+        NodeRig rig(kRate);
+        auto direct = nes(1, 0), control = nes(1, 0);
+        auto viaGraph = nes(1, 0);
+        SystemBase* const graphCore = viaGraph.get();
+        const auto token = rig.park(std::move(viaGraph));
+        REQUIRE(rig.set(knobbed("rp.mesen.nes", token)).ok);
+        Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
+        auto note = [&, sent = false](std::uint64_t at) mutable {  // as afterBoot, to all three
+            if (sent || at < static_cast<std::uint64_t>(1.5 * kRate)) return;
+            for (SystemBase* s : {graphCore, static_cast<SystemBase*>(direct.get()), static_cast<SystemBase*>(control.get())})
+                noteOn(*s, 0, 60);
+            sent = true;
+        };
+        auto inPlace = once(2.0, [&] {
+            REQUIRE(rig.set(knobbed("rp.mesen.nes", token, R"("removeSpriteLimit":true,"s5bNoise":"chip","mmc5PhaseReset":"chip")")).ok);
+            direct->setRemoveSpriteLimit(true);
+            direct->setS5bNoise(0);
+            direct->setMmc5PhaseReset(0);
+        });
+        auto reset = once(3.0, [&] {
+            REQUIRE(rig.set(knobbed("rp.mesen.nes", token,
+                                    R"("removeSpriteLimit":true,"s5bNoise":"chip","mmc5PhaseReset":"chip","region":"pal")"))
+                        .ok);
+            direct->setRegion(static_cast<std::uint32_t>(NesRegion::Pal));
+        });
+        CHECK(compare(rig, d, 4.0, [&](std::uint64_t at) { note(at); inPlace(at); reset(at); }, &c, &heard) == "");
+        CHECK(heard >= static_cast<std::uint64_t>(3.0 * kRate));  // nothing heard of the switches; the reset is
+        CHECK(heard != kNever);
+    }
+}
+
+TEST_CASE("a system node gives its core every knob its settings carry as it takes the core, before the core first runs",
+          "[engine-graph][system-node][settings]") {
+    SECTION("Game Boy, its capture included") {
+        NodeRig rig(kRate);
+        auto direct = mgb(1);
+        auto built = mgb(1);
+        SameBoySystem* const gb = built.get();
+        const auto token = rig.park(std::move(built));
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("model":"mgb","highpass":"off","serialOutCapture":"drive")")).ok);
+        // Activated as it was planned: no block has run.
+        CHECK(gb->config_.model == SameBoyModel::Mgb);
+        CHECK(gb->config_.highpass == SameBoyHighpass::Off);
+        CHECK(gb->serialOutCapture() == SerialOutCapture::Drive);
+        direct->setModel(SameBoyModel::Mgb);
+        direct->setHighpass(SameBoyHighpass::Off);
+        direct->setSerialOutCapture(SerialOutCapture::Drive);
+        // From the first block on, the graph core renders and captures what the direct one, given the same calls
+        // before its first block, does: mGB opens its port once the boot ROM has run, about 2.5 s in.
+        Direct d({direct.get()}, 2, {{0, 1}});
+        Lanes graph(2);
+        const rp_transport t{kRate, 120.0, 0.0, 0};
+        std::size_t captured = 0;
+        for (int b = 0; b < 160; ++b) {
+            rig.host->processBlock(1024, t, graph.ptrs.data(), 2);
+            d.block(1024);
+            INFO("block " << b);
+            REQUIRE(std::memcmp(graph.data[0].data(), d.out.data[0].data(), 1024 * sizeof(float)) == 0);
+            std::vector<std::uint8_t> carried, logged;
+            for (const auto& m : rig.node<Probe>("probe").bytes) carried.insert(carried.end(), m.data.begin(), m.data.end());
+            for (const auto& entry : direct->serialOutLog_) logged.push_back(entry.second);
+            REQUIRE(carried == logged);
+            captured += carried.size();
+        }
+        CHECK(captured > 0);
+        CHECK(sounds(d));
+    }
+    SECTION("NES") {
+        NodeRig rig(kRate);
+        auto built = nes(1, 0);
+        MesenNesSystem* const core = built.get();
+        const auto token = rig.park(std::move(built));
+        REQUIRE(rig.set(knobbed("rp.mesen.nes", token, R"("region":"dendy","apuLatencyMs":2,"s5bNoise":"chip")")).ok);
+        CHECK(core->config().region == static_cast<std::uint32_t>(NesRegion::Dendy));
+        CHECK(core->config().apuLatencyMs == 2.0);
+        CHECK(core->config().s5bNoise == 0);
+        CHECK(core->config().mmc5PhaseReset == 1);  // absent: as built
+    }
+}
+
+TEST_CASE("a knob absent from a system node's settings leaves its core as it was built, or as the last document left it",
+          "[engine-graph][system-node][settings]") {
+    SECTION("Game Boy") {
+        // Every knob built away from SameBoyConfig's defaults, and the capture armed, as buildCore arms it.
+        const auto build = [] {
+            SameBoyConfig cfg;
+            cfg.model = SameBoyModel::Mgb;
+            cfg.fastBoot = false;
+            cfg.highpass = SameBoyHighpass::RemoveDcOffset;
+            cfg.colorCorrection = SameBoyColorCorrection::ReduceContrast;
+            cfg.dmgPalette = SameBoyDmgPalette::Gbl;
+            cfg.lightTemperature = 0.75;
+            auto sys = std::make_unique<SameBoySystem>(1, cfg, readFile(RP_MGB_ROM_PATH));
+            sys->onActivate(kRate);
+            sys->setSerialOutCapture(SerialOutCapture::Drive);
+            return sys;
+        };
+        NodeRig rig(kRate);
+        auto direct = build();
+        auto built = build();
+        SameBoySystem* const gb = built.get();
+        const auto token = rig.park(std::move(built));
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+        Direct d({direct.get()}, 2, {{0, 1}});
+        CHECK(compare(rig, d, 2.0) == "");  // nothing restarted, nothing re-filtered
+        CHECK(gb->config_.model == SameBoyModel::Mgb);
+        CHECK(gb->config_.fastBoot == false);
+        CHECK(gb->config_.highpass == SameBoyHighpass::RemoveDcOffset);
+        CHECK(gb->config_.colorCorrection == SameBoyColorCorrection::ReduceContrast);
+        CHECK(gb->config_.dmgPalette == SameBoyDmgPalette::Gbl);
+        CHECK(gb->config_.lightTemperature == 0.75);
+        CHECK(gb->serialOutCapture() == SerialOutCapture::Drive);
+
+        // Present, then dropped: the core keeps what the last document carrying it gave it.
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("highpass":"off","serialOutCapture":"listen")")).ok);
+        run(rig);
+        REQUIRE(gb->config_.highpass == SameBoyHighpass::Off);
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+        run(rig, 512, 4);
+        CHECK(gb->config_.highpass == SameBoyHighpass::Off);
+        CHECK(gb->serialOutCapture() == SerialOutCapture::Listen);
+    }
+    SECTION("NES") {
+        MesenNesConfig cfg;
+        cfg.romPath = RP_BLIPTOASTER_ROM_PATH;
+        cfg.region = static_cast<std::uint32_t>(NesRegion::Pal);
+        cfg.removeSpriteLimit = true;
+        cfg.apuLatencyMs = 3.0;
+        cfg.s5bNoise = 0;
+        cfg.mmc5PhaseReset = 0;
+        auto built = std::make_unique<MesenNesSystem>(1, cfg, readFile(RP_BLIPTOASTER_ROM_PATH));
+        built->onActivate(kRate);
+        MesenNesSystem* const core = built.get();
+        NodeRig rig(kRate);
+        const auto token = rig.park(std::move(built));
+        REQUIRE(rig.set(knobbed("rp.mesen.nes", token)).ok);
+        run(rig, 512, 4);
+        CHECK(core->config().region == static_cast<std::uint32_t>(NesRegion::Pal));
+        CHECK(core->config().removeSpriteLimit);
+        CHECK(core->config().apuLatencyMs == 3.0);
+        CHECK(core->config().s5bNoise == 0);
+        CHECK(core->config().mmc5PhaseReset == 0);
+    }
+}
+
+TEST_CASE("a Game Boy node's settings commit, and every knob it applies in place, allocate nothing on the block thread",
+          "[engine-graph][system-node][settings]") {
+    // Only a model's restart allocates, as it did through the command ring. (A NES's block allocates on its own, in
+    // Mesen, and so do its core's setters, which write Mesen's settings, whichever path calls them; the node calls them
+    // as the ring's handler did.)
+    NodeRig rig(kRate);
+    auto built = mgb(1);
+    SameBoySystem* const gb = built.get();
+    const auto token = rig.park(std::move(built));
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+    Lanes out(2);
+    const rp_transport t{kRate, 120.0, 0.0, 0};
+    for (int b = 0; b < 8; ++b) rig.host->processBlock(512, t, out.ptrs.data(), 2);
+    rig.host->setAudioThreadOwns(true);  // so the commit happens in a block, as it does under an audio thread
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token,
+                            R"("model":"dmgB","fastBoot":true,"highpass":"off","colorCorrection":"modernAccurate",)"
+                            R"("dmgPalette":"gbl","lightTemperature":0.5,"serialOutCapture":"listen")"))
+                .ok);
+    rp::test::beginCountingAllocations();
+    for (int b = 0; b < 2; ++b) rig.host->processBlock(512, t, out.ptrs.data(), 2);
+    const auto counted = rp::test::endCountingAllocations();
+    rig.host->setAudioThreadOwns(false);
+    CHECK(counted.allocations == 0);
+    CHECK(counted.frees == 0);
+    CHECK(gb->config_.highpass == SameBoyHighpass::Off);
+    CHECK(gb->config_.dmgPalette == SameBoyDmgPalette::Gbl);
+    CHECK(gb->serialOutCapture() == SerialOutCapture::Listen);
+}
+
+TEST_CASE("a Game Boy node takes knob edits published while an audio thread runs its blocks", "[engine-graph][system-node][settings]") {
+    // The race check for the settings path under ThreadSanitizer (build-tsan/): each edit is planned on this thread,
+    // never waiting, while the audio thread commits the last one and applies it, and the plans it hands back are freed
+    // here with the settings they held.
+    NodeRig rig(kRate);
+    auto built = mgb(1);
+    SameBoySystem* const gb = built.get();
+    const auto token = rig.park(std::move(built));
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+    const char* const palettes[] = {"grey", "dmg", "mgb", "gbl"};
+    const char* const captures[] = {"off", "listen", "drive"};
+    const auto edit = [&](int i) {
+        return knobbed("rp.sameboy.gb", token,
+                       std::string(R"("dmgPalette":")") + palettes[i % 4] + R"(","serialOutCapture":")" + captures[i % 3] +
+                           R"(","highpass":")" + (i % 2 ? "off" : "accurate") + R"(","lightTemperature":)" +
+                           std::to_string((i % 5) * 0.25 - 0.5));
+    };
+    std::atomic<bool> running{true};
+    std::atomic<int>  blocks{0};
+    rig.host->setAudioThreadOwns(true);
+    std::thread audio([&] {
+        Lanes out(2);
+        const rp_transport t{kRate, 120.0, 0.0, 0};
+        while (running.load(std::memory_order_acquire)) {
+            rig.host->processBlock(256, t, out.ptrs.data(), 2);
+            blocks.fetch_add(1, std::memory_order_release);
+        }
+    });
+    int accepted = 0;
+    constexpr int kEdits = 60;
+    for (int i = 0; i < kEdits; ++i) {
+        accepted += rig.set(edit(i)).ok ? 1 : 0;
+        rig.host->reclaim();
+        const int seen = blocks.load(std::memory_order_acquire);
+        while (blocks.load(std::memory_order_acquire) < seen + 2) std::this_thread::yield();  // let a block or two run
+    }
+    running.store(false, std::memory_order_release);
+    audio.join();
+    rig.host->setAudioThreadOwns(false);
+    CHECK(accepted == kEdits);
+    run(rig);  // whatever the audio thread left unapplied
+    CHECK(gb->config_.dmgPalette == SameBoyDmgPalette::Gbl);  // the last edit's, 59
+    CHECK(gb->serialOutCapture() == SerialOutCapture::Drive);
+    CHECK(gb->config_.highpass == SameBoyHighpass::Off);
+    CHECK(gb->config_.lightTemperature == 0.5);
 }

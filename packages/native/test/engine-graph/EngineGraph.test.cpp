@@ -1,14 +1,18 @@
 // The engine's side of graphs TS builds (docs/modular-graph-phase-b2-design.md section 2.5): a built core parks
 // under its id until a document's system node takes it, a document's system nodes and its slots must name the
 // same systems, the tap re-arm rides the swap, a refused document leaves its cores parked, and a core no
-// published document placed is freed; and a build spec reaches the core under the field names TS sends. Driven
-// on a quiescent Engine, so every plan applies as it is published, except where a test owns the drain itself.
+// published document placed is freed; a build spec reaches the core under the field names TS sends; a system node's
+// settings carry its core's knobs beside the core (docs/modular-graph-phase-c2-design.md section 4); and
+// Engine::setParam reaches a param of the running plan at the next block. Driven on a quiescent Engine, so every plan
+// applies as it is published, except where a test owns the drain itself.
 //
 // Run via `pnpm test:plugin engine-graph`.
 
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -434,4 +438,114 @@ TEST_CASE("a render into buffers the planned graph does not write is refused", "
     CHECK(svc.renderAudioPerSystem(10.0).size() == 2);
     CHECK(svc.renderAudio(10.0).empty());
     CHECK(svc.renderBlocks(blocks).error.empty());
+}
+
+// ---- knobs (docs/modular-graph-phase-c2-design.md section 4) -----------------------------------------------------
+
+namespace {
+
+// `r` with system `id`'s settings carrying `knobs` (JSON members) beside its core.
+Engine::GraphRequest withKnobs(Engine::GraphRequest r, SystemId id, const std::string& knobs) {
+    const std::string core = R"({"core":)" + std::to_string(id) + "}";
+    const auto at = r.document.find(core);
+    REQUIRE(at != std::string::npos);
+    r.document.replace(at, core.size(), R"({"core":)" + std::to_string(id) + "," + knobs + "}");
+    return r;
+}
+
+// A pack of one node, knobs.level, whose param `level` (-1 to 1, 0 by default) it writes to every frame of its mono
+// output from the frame each change lands at.
+const char* const kLevelPack = R"JS(
+(function () {
+  var nodes = globalThis.__rp_scriptNodes = globalThis.__rp_scriptNodes || [];
+  var ports = [{ id: "out", dir: "out", kind: "audio", channels: { count: 1, layout: "mono" } }];
+  var params = [{ id: "level", name: "Level", type: "float", min: -1, max: 1, default: 0 }];
+  nodes[nodes.length] = {
+    id: "knobs.level",
+    descriptor: function () { return { id: "knobs.level", ports: ports, params: params, settings: { type: "object" } }; },
+    parseSettings: function (raw) { return raw === undefined ? {} : raw; },
+    layout: function () { return { ports: ports, params: params }; },
+    create: function () {
+      return { process: function (b) {
+        var level = b.control("level"), out = b.audio("out")[0], changes = level.changes, v = level.start, k = 0;
+        for (var f = 0; f < b.frames; f++) {
+          while (k < changes.length && changes[k].frame <= f) v = changes[k++].value;
+          out[f] = v;
+        }
+      } };
+    },
+    reshapes: false,
+    faultOnThrow: false,
+  };
+})();
+)JS";
+
+}  // namespace
+
+TEST_CASE("a system node's settings carry its knobs beside its core, and the engine places it", "[engine-graph][settings]") {
+    Engine e(kRate);
+    REQUIRE(e.parkCore(mgb(1)));
+    REQUIRE(e.parkCore(bliptoaster(2)));
+    auto r = withKnobs(withKnobs(request({{1, kGb}, {2, kNes}}), 1, R"("highpass":"off","serialOutCapture":"listen")"), 2,
+                       R"("removeSpriteLimit":true)");
+    REQUIRE(e.setGraph(r).ok);
+    // Given as the nodes took their cores, before a block.
+    const auto* gb = dynamic_cast<const SameBoySystem*>(e.findSystem(1));
+    const auto* nes = dynamic_cast<const MesenNesSystem*>(e.findSystem(2));
+    REQUIRE(gb);
+    REQUIRE(nes);
+    CHECK(gb->config_.highpass == SameBoyHighpass::Off);
+    CHECK(gb->serialOutCapture() == SerialOutCapture::Listen);
+    CHECK(nes->config().removeSpriteLimit);
+
+    // Settings a node refuses refuse the document: the running plan keeps its knobs, and a core it would place stays
+    // parked.
+    REQUIRE(e.parkCore(mgb(3)));
+    const auto refused = e.setGraph(withKnobs(request({{1, kGb}, {2, kNes}, {3, kGb}}), 3, R"("model":"cgb-c")"));
+    CHECK_FALSE(refused.ok);
+    REQUIRE(refused.errors.size() == 1);
+    CHECK(refused.errors[0].code == "settings-invalid");
+    CHECK(refused.errors[0].nodeId == "sys-3");
+    CHECK(e.coreLive(3));
+    CHECK(e.systemCount() == 2);
+}
+
+TEST_CASE("Engine::setParam reaches a param of the running plan at the next block, clamped", "[engine-graph][settings]") {
+    Engine e(kRate);
+    REQUIRE(e.loadScriptPack("knobs", kLevelPack).ok);
+    REQUIRE(e.parkCore(mgb(1)));
+    const rp::host::test::DocExtras extras{{rp::host::test::docNode("level", "knobs.level")},
+                                           {rp::host::test::docWire("level.out", "out.out.2")}};
+    // The Game Boy alone on channel 1, so channel 2 is the toy's.
+    auto r = rp::host::test::graphRequest(rp::host::test::stereoDocument({{1, kGb}}, extras), {1});
+    const auto split = r.document.find(R"({"from":"split-1.out2","to":"out.out.2"})");
+    REQUIRE(split != std::string::npos);
+    r.document.erase(split, std::string(R"({"from":"split-1.out2","to":"out.out.2"},)").size());
+    REQUIRE(e.setGraph(r).ok);
+    std::vector<float> l(256), right(256);
+    const auto block = [&] {
+        float* outs[2] = {l.data(), right.data()};
+        e.processBlock(256, outs, 2);
+        return std::pair{right.front(), right.back()};
+    };
+    CHECK(block() == std::pair{0.0f, 0.0f});
+
+    // Refused: a node or a param the plan does not have, a NaN, and every system node, which has no param yet.
+    CHECK_FALSE(e.setParam("nope", "level", 0.5));
+    CHECK_FALSE(e.setParam("level", "nope", 0.5));
+    CHECK_FALSE(e.setParam("level", "level", std::numeric_limits<double>::quiet_NaN()));
+    CHECK_FALSE(e.setParam("sys-1", "gain", 0.0));
+    CHECK(block() == std::pair{0.0f, 0.0f});
+
+    CHECK(e.setParam("level", "level", 0.5));
+    CHECK(block() == std::pair{0.5f, 0.5f});  // from the first frame of the next block
+    CHECK(e.setParam("level", "level", 5.0));  // clamped to the param's range
+    CHECK(block() == std::pair{1.0f, 1.0f});
+    CHECK(e.setParam("level", "level", -3.0));
+    CHECK(block() == std::pair{-1.0f, -1.0f});
+    CHECK(block() == std::pair{-1.0f, -1.0f});  // and held
+
+    // A published document carrying the node again keeps the value it holds.
+    REQUIRE(e.setGraph(r).ok);
+    CHECK(block() == std::pair{-1.0f, -1.0f});
 }

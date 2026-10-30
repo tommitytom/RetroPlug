@@ -110,7 +110,8 @@ public:
 
     void setGainDb(float dB) override;
 
-    // "mesen" system-role knobs (coreRoles.ts), applied live via Engine::applyConfigField.
+    // "mesen" system-role knobs (coreRoles.ts), applied live by the NES's system node (its settings) and by
+    // Engine::applyConfigField. Each but setRemoveSpriteLimit is value-guarded, and that one is a plain flag write.
     // removeSpriteLimit is a live PPU toggle; region reconfigures timing so it forces a reset.
     void setRemoveSpriteLimit(bool on);
     void setRegion(std::uint32_t region);
@@ -136,6 +137,8 @@ public:
     // The live APU flush window in CPU cycles (the mixer's conversion of apuLatencyMs against the region
     // clock). 0 before onActivate. Exposed for tests / introspection.
     std::uint32_t apuFlushCycleLength() const;
+    // The config the setters above keep, read-only. Exposed for tests / introspection.
+    const MesenNesConfig& config() const { return config_; }
 
     // NES native resolution (256x240). Public so callers can construct a
     // FrameBufferTriple-sized read buffer without hard-coding the constant.

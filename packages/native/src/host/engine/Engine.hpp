@@ -10,6 +10,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "system/SystemTypes.hpp"
@@ -236,6 +237,12 @@ public:
     // core still parked is one no document placed, and is freed, and the request is the one a script pack's reload
     // replans (loadScriptPack).
     GraphResult setGraph(const GraphRequest& request);
+    // A live change to a param of a node the last published plan places (GraphHost::setParam): clamped to the param's
+    // range (and rounded for an int, enum or bool), and applied at the start of the next block, flushed inline while
+    // no audio thread runs, on the command ring like every other edit. False for a node or a param that plan does not
+    // have (a node the next publish adds takes its value from the document), a NaN value, a param a wire drives, or a
+    // full ring. Control thread.
+    bool setParam(std::string_view nodeId, std::string_view paramId, double value);
     // The host channels the last published plan writes (the sum of its rp.host.audio-out buses). Control thread.
     std::uint32_t hostWidth() const { return hostWidth_; }
     // Nodes faulted so far, each counted once and bypassed from then on (GraphHost::faultCount). An atomic the

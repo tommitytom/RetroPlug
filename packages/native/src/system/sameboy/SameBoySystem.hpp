@@ -105,8 +105,8 @@ public:
 
     // Tear down `gb_` and rebuild it with the current `config_`. Snapshots
     // SRAM through `config_.sram` so it survives the cycle; clears
-    // `config_.savestate` (model-specific). Called from the DSP command
-    // drain when the user changes Model from the menu — the allocations
+    // `config_.savestate` (model-specific). Called by setModel, on the
+    // block thread, when the user changes Model from the menu: the allocations
     // inside `GB_init` are the same ones a fresh Load Project does, so
     // accepting them on the audio thread for an explicit user action is
     // consistent with that precedent.
@@ -114,14 +114,24 @@ public:
 
     // Push `config_.highpass` into the SameBoy core. Safe to call at runtime
     // (the filter samples its mode every audio frame). Called from
-    // `onActivate` and from the SetHighpass command handler.
+    // `onActivate` and from setHighpass.
     void applyHighpassMode();
 
     // Push the whole `config_` display group (colour correction, DMG palette, light temperature,
     // background/object rendering) into the core. Safe to call at runtime — every one lands on the
-    // next rendered frame, so no restart. Called from `onActivate` and from the display config
-    // handlers in Engine::applyConfigField.
+    // next rendered frame, so no restart. Called from `onActivate` and from the display setters below.
     void applyDisplayConfig();
+
+    // The live "sameboy" role knobs, as the Game Boy's system node and Engine::applyConfigField apply them. Each is
+    // value-guarded, a same-value call doing nothing, since a caller may hand over a whole config when one knob
+    // moved: a model change restarts the core (restartEmulator), highpass re-applies the filter mode, and the three
+    // display knobs re-apply the display group, none of those restarting anything. setFastBoot and
+    // setSerialOutCapture are the other two.
+    void setModel(SameBoyModel model);
+    void setHighpass(SameBoyHighpass highpass);
+    void setColorCorrection(SameBoyColorCorrection mode);
+    void setDmgPalette(SameBoyDmgPalette palette);
+    void setLightTemperature(double temperature);
 
     // SystemBase virtuals — see base class for contracts.
     const std::string&        romPath() const override          { return config_.romPath; }

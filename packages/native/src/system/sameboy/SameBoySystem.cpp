@@ -159,7 +159,7 @@ namespace {
 
 // Extra savestate capacity so a LIVE model switch never outgrows the snapshot slot.
 //
-// A model change rebuilds gb_ in place (Engine::applyConfigField → restartEmulator) while the system
+// A model change rebuilds gb_ in place (setModel → restartEmulator) while the system
 // keeps its id, so the slot allocated at construct has to serve every model the user can cycle to. It
 // cannot be resized on the fly: the publish can run on the audio thread, and SnapshotRegistry sized its
 // shadow slot from our capacity at claim.
@@ -511,6 +511,38 @@ bool SameBoySystem::nextSerialInBit() {
 void SameBoySystem::onMidi(const ::MidiEvent* events, std::uint32_t count) {
     if (events == nullptr || count == 0) return;
     pendingMidi_.insert(pendingMidi_.end(), events, events + count);
+}
+
+void SameBoySystem::setModel(SameBoyModel model) {
+    if (config_.model == model) return;
+    config_.model = model;
+    // Rebuilds gb_, clearing the savestate (a new model cannot restore an old one) and re-arming the state snapshot
+    // onto the new model. linkPeers_ hold the systems, which survive the restart, so the cable needs no rewiring.
+    restartEmulator();
+}
+
+void SameBoySystem::setHighpass(SameBoyHighpass highpass) {
+    if (config_.highpass == highpass) return;
+    config_.highpass = highpass;
+    applyHighpassMode();  // live: the filter samples its mode every audio frame
+}
+
+void SameBoySystem::setColorCorrection(SameBoyColorCorrection mode) {
+    if (config_.colorCorrection == mode) return;
+    config_.colorCorrection = mode;
+    applyDisplayConfig();
+}
+
+void SameBoySystem::setDmgPalette(SameBoyDmgPalette palette) {
+    if (config_.dmgPalette == palette) return;
+    config_.dmgPalette = palette;
+    applyDisplayConfig();
+}
+
+void SameBoySystem::setLightTemperature(double temperature) {
+    if (config_.lightTemperature == temperature) return;
+    config_.lightTemperature = temperature;
+    applyDisplayConfig();
 }
 
 // TODO: Remove references to old code in comments

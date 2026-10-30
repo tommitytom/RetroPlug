@@ -75,13 +75,13 @@ retroplug_add_test_binary(
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
              RP_GG_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.gg")
 
-# Guards the engine's graph (docs/modular-graph-phase-b1-design.md, -b2-design.md, -b3a-design.md, -b3b-design.md):
-# each system node renders exactly what its core renders driven directly, its inputs included, the engine places,
-# re-arms and frees what the documents TS builds say, the host I/O nodes and the cart mirror move what the hosts stage
-# and drain, TS nodes run behind the C ABI in the script host, a script node pack loads beside the built-in one into
-# runtimes of its own and reloads, the generation it replaced freed off the audio thread, the protocol script nodes
-# send what the DSP kernel they replaced was recorded sending, and every document in buildGraph's goldens, its role
-# goldens among them, plans on it.
+# Guards the engine's graph (docs/modular-graph-phase-b1-design.md, -b2-design.md, -b3a-design.md, -b3b-design.md,
+# -c2-design.md): each system node renders exactly what its core renders driven directly, its inputs and its settings'
+# knobs included, the engine places, re-arms and frees what the documents TS builds say, the host I/O nodes and the
+# cart mirror move what the hosts stage and drain, TS nodes run behind the C ABI in the script host, a script node
+# pack loads beside the built-in one into runtimes of its own and reloads, the generation it replaced freed off the
+# audio thread, the protocol script nodes send what the DSP kernel they replaced was recorded sending, and every
+# document in buildGraph's goldens, its role goldens among them, plans on it.
 # A hidden bench times a script node per block.
 # Every core in it powers on in a fixed state (test/engine-graph/Deterministic.cpp), so two identical cores agree.
 # CountingAllocator.cpp is shared with retroplug-graph-test, for the no-allocation checks. The script tests' bundle
@@ -106,6 +106,7 @@ retroplug_add_test_binary(
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
              RP_BUILD_GRAPH_GOLDENS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/test/graph/golden/build-graph.json"
              RP_BUILD_GRAPH_ROLE_GOLDENS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/test/graph/golden/build-graph-roles.json"
+             RP_SETTINGS_ENUMS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/src/settingsEnums.ts"  # the labels a knob takes
              RP_BUILD_TYPE="$<CONFIG>")                 # the bench prints the configuration it was built in
 add_dependencies(retroplug-engine-graph-test retroplug-script-test-bundle)  # the embedded bytecode first
 

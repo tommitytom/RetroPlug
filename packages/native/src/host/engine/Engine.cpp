@@ -58,11 +58,12 @@ bool isSystemNodeType(const std::string& type) {
     return false;
 }
 
-// The id a system node's settings name its core by, {"core": <id>}; nullopt for anything else.
+// The id a system node's settings name its core by, their "core" (beside the core's knobs, which the node reads:
+// docs/modular-graph-phase-c2-design.md section 3); nullopt for anything else.
 std::optional<SystemId> coreIdOf(const rp::graph::NodeDoc& n) {
     if (!n.settings) return std::nullopt;
     const auto object = n.settings->to_object();
-    if (!object || object->size() != 1) return std::nullopt;
+    if (!object) return std::nullopt;
     const auto core = object->get("core");
     if (!core) return std::nullopt;
     const auto id = core->to_int64();
@@ -277,14 +278,14 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
     auto doc = rp::graph::parseGraphDocument(request.document);
     if (!doc) return refuse("", "document", std::string("not a graph document: ") + doc.error().what());
 
-    // The system nodes and the slots name the same systems, each node as sys-<id> with {"core": <id>}.
+    // The system nodes and the slots name the same systems, each node as sys-<id>, its settings {"core": <id>, ...}.
     std::vector<std::pair<SystemId, const rp::graph::NodeDoc*>> systemNodes;
     std::vector<SystemId> named;
     for (const auto& n : doc->nodes) {
         if (!isSystemNodeType(n.type)) continue;
         const auto id = coreIdOf(n);
         if (!id || n.id != "sys-" + std::to_string(*id))
-            return refuse(n.id, "slots", "a system node is sys-<id>, its settings {\"core\": <id>}");
+            return refuse(n.id, "slots", "a system node is sys-<id>, its settings naming its core as {\"core\": <id>}");
         systemNodes.emplace_back(*id, &n);
         named.push_back(*id);
     }
@@ -396,6 +397,10 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
     }
     parked_.clear();
     return out;
+}
+
+bool Engine::setParam(std::string_view nodeId, std::string_view paramId, double value) {
+    return graph_->host->setParam(nodeId, paramId, value);
 }
 
 void Engine::drainCommands() { graph_->host->drain(); }
@@ -925,28 +930,17 @@ void Engine::applyConfigField(SystemBase* sys, std::uint8_t field, double value)
         return;
     }
 
-    // SameBoy emulator knobs (model / highpass / link group / fast boot).
+    // SameBoy emulator knobs, through the core's own value-guarded setters, which the Game Boy's system node applies
+    // its settings through too.
     auto* sb = dynamic_cast<SameBoySystem*>(sys);
     if (!sb) return;
     switch (static_cast<ConfigField>(field)) {
-        case ConfigField::Model: {
-            const auto m = static_cast<SameBoyModel>(static_cast<std::uint32_t>(value));
-            if (sb->config_.model != m) {
-                sb->config_.model = m;
-                sb->restartEmulator();  // rebuilds gb_, clears the savestate (a new model can't restore an
-                                        // old one), and re-arms the state snapshot onto the new model
-                // linkPeers_ hold the systems, which survive the restart, so the cable needs no rewiring
-            }
+        case ConfigField::Model:
+            sb->setModel(static_cast<SameBoyModel>(static_cast<std::uint32_t>(value)));  // restarts on a change
             break;
-        }
-        case ConfigField::Highpass: {
-            const auto hp = static_cast<SameBoyHighpass>(static_cast<std::uint32_t>(value));
-            if (sb->config_.highpass != hp) {
-                sb->config_.highpass = hp;
-                sb->applyHighpassMode();  // live — the filter samples its mode every audio frame
-            }
+        case ConfigField::Highpass:
+            sb->setHighpass(static_cast<SameBoyHighpass>(static_cast<std::uint32_t>(value)));
             break;
-        }
         case ConfigField::LinkGroup: {
             const auto g = static_cast<std::uint8_t>(static_cast<std::uint32_t>(value));
             if (sb->config_.linkGroupId != g) {
@@ -965,30 +959,16 @@ void Engine::applyConfigField(SystemBase* sys, std::uint8_t field, double value)
                                                                                               : SerialOutCapture::Off);
             break;
         }
-        // The display group. Each is value-guarded like the knobs above (the store re-sends the whole
-        // role config on every edit, so an unguarded apply would re-push all five on every keystroke)
-        // and then re-pushes the group, which is a handful of cheap core setters.
-        case ConfigField::ColorCorrection: {
-            const auto cc = static_cast<SameBoyColorCorrection>(static_cast<std::uint32_t>(value));
-            if (sb->config_.colorCorrection != cc) {
-                sb->config_.colorCorrection = cc;
-                sb->applyDisplayConfig();
-            }
+        // The display group: each setter re-pushes the group, a handful of cheap core setters, only when its knob
+        // moved (the store re-sends the whole role config on every edit).
+        case ConfigField::ColorCorrection:
+            sb->setColorCorrection(static_cast<SameBoyColorCorrection>(static_cast<std::uint32_t>(value)));
             break;
-        }
-        case ConfigField::DmgPalette: {
-            const auto p = static_cast<SameBoyDmgPalette>(static_cast<std::uint32_t>(value));
-            if (sb->config_.dmgPalette != p) {
-                sb->config_.dmgPalette = p;
-                sb->applyDisplayConfig();
-            }
+        case ConfigField::DmgPalette:
+            sb->setDmgPalette(static_cast<SameBoyDmgPalette>(static_cast<std::uint32_t>(value)));
             break;
-        }
         case ConfigField::LightTemperature:
-            if (sb->config_.lightTemperature != value) {
-                sb->config_.lightTemperature = value;
-                sb->applyDisplayConfig();
-            }
+            sb->setLightTemperature(value);
             break;
         default:
             break;  // the universal fields (Gain / ReloadOnRomChange) were handled above

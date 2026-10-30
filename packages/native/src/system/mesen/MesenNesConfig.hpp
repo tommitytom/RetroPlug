@@ -10,6 +10,23 @@
 // Mirrors SameBoyConfig's shape (embed / rom / sram / savestate) so the system
 // backends handle the concrete configs uniformly.
 
+// The console region, Mesen's ConsoleRegion ordinal for ordinal (Core/Shared/SettingTypes.h, a header this one keeps
+// out of the rest of the codebase), so MesenNesConfig::region holds either.
+enum class NesRegion : std::uint32_t {
+    Auto      = 0,
+    Ntsc      = 1,
+    Pal       = 2,
+    Dendy     = 3,
+    NtscJapan = 4,
+};
+
+// A cartridge-accuracy switch (MesenNesConfig::s5bNoise, mmc5PhaseReset): the chip as documented, or as an
+// Everdrive N8 Pro's FPGA core has it.
+enum class CartridgeAccuracy : std::uint32_t {
+    Chip = 0,
+    N8   = 1,
+};
+
 struct MesenNesConfig {
     // On-disk variant discriminator (`"kind":"nes"`).
     using Tag = rfl::Literal<"nes">;

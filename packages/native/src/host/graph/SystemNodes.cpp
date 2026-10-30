@@ -4,25 +4,123 @@
 #include <array>
 #include <cstring>
 #include <iterator>
+#include <optional>
 #include <span>
 #include <string>
+#include <string_view>
+#include <utility>
 
+#include <rfl/Literal.hpp>
+#include <rfl/Result.hpp>
+#include <rfl/Validator.hpp>
+#include <rfl/enums.hpp>
+#include <rfl/parsing/schema/ValidationType.hpp>
+
+#include "graph/CanonicalJson.hpp"
 #include "graph/node.hpp"
 #include "host/graph/HostServices.hpp"
 #include "system/SystemBase.hpp"
 #include "system/mesen/MesenGbaSystem.hpp"
+#include "system/mesen/MesenNesConfig.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
 #include "system/mesen/MesenSmsSystem.hpp"
+#include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
 #include "transport/MidiTypes.hpp"
 
 namespace rp::host {
 
-// Named, so its JSON Schema $defs key is the same under every compiler.
-struct SystemNodeSettings {
-    // The system id buildCore parked this node's core under (docs/modular-graph-phase-b2-design.md section
-    // 2.5). A new core is a new id, so it is always a new instance.
+// ---- settings ---------------------------------------------------------------------------------------------------
+
+// The knobs' value types. An enum knob is a label as the role configs spell it (packages/retroplug/src/settingsEnums.ts),
+// which is the name of its C++ enumerator with the first letter lowercased: SameBoyModel::CgbC is "cgbC",
+// SameBoyHighpass::RemoveDcOffset "removeDcOffset", SameBoyModel::Auto "auto". So the enumerators are native's one
+// spelling of every label: Label<E> is the rfl::Literal made of them, which reads exactly those strings (anything else
+// refuses the settings), lists them in the descriptor's schema, and maps back to its enumerator by position (valueOf).
+// Never an ordinal: the document and a saved project carry the same word (docs/modular-graph-phase-c2-design.md
+// section 3).
+namespace knobs {
+
+template <class E, std::size_t I>
+constexpr auto labelAt() {
+    constexpr std::string_view name = rfl::get_enumerator_array<E>()[I].first;
+    std::array<char, name.size() + 1> chars{};
+    for (std::size_t k = 0; k < name.size(); ++k) chars[k] = name[k];
+    if (chars[0] >= 'A' && chars[0] <= 'Z') chars[0] = static_cast<char>(chars[0] - 'A' + 'a');
+    return rfl::internal::StringLiteral<name.size() + 1>(chars);
+}
+
+template <class E, std::size_t... I>
+rfl::Literal<labelAt<E, I>()...> literalOf(std::index_sequence<I...>);
+
+// A number refused outside [R::min, R::max], as a settings value out of its range is refused anywhere (a document is
+// checked, never quietly changed; the store clamps every knob to the same range before it publishes), with the range
+// in the descriptor's schema. The bounds ride a type rather than template values: a floating-point template argument
+// is beyond some of the compilers the build supports.
+template <class R>
+struct Within {
+    template <class T>
+    static rfl::Result<T> validate(T value) noexcept {
+        if (value >= R::min && value <= R::max) return value;  // NaN is refused too
+        return rfl::error("Value expected to be between " + rp::graph::jsNumber(R::min) + " and " +
+                          rp::graph::jsNumber(R::max) + ", but got " + rp::graph::jsNumber(value) + ".");
+    }
+    template <class T>
+    static rfl::parsing::schema::ValidationType to_schema() {
+        using V = rfl::parsing::schema::ValidationType;
+        return V{V::AllOf{.types_ = {V{V::Minimum{.value_ = rfl::Variant<double, int>(R::min)}},
+                                     V{V::Maximum{.value_ = rfl::Variant<double, int>(R::max)}}}}};
+    }
+};
+
+struct LightTemperatureRange {
+    static constexpr double min = -1.0, max = 1.0;  // SameBoy's own: applyDisplayConfig clamps to it
+};
+struct ApuLatencyRange {
+    static constexpr double min = 0.25, max = 6.0;  // milliseconds
+};
+
+template <class E>
+using Label = decltype(literalOf<E>(std::make_index_sequence<rfl::get_enumerator_array<E>().size()>{}));
+
+template <class E>
+E valueOf(const Label<E>& label) {
+    return rfl::get_enumerator_array<E>()[label.value()].second;
+}
+
+using LightTemperature = rfl::Validator<double, Within<LightTemperatureRange>>;
+using ApuLatencyMs = rfl::Validator<double, Within<ApuLatencyRange>>;
+
+}  // namespace knobs
+
+// Each type's settings, named so their JSON Schema $defs keys are the same under every compiler. `core` is the system
+// id buildCore parked the node's core under (docs/modular-graph-phase-b2-design.md section 2.5): a new core is a new
+// id, so it is always a new instance (rebuild_key). Every other field is a knob of that core
+// (docs/modular-graph-phase-c2-design.md section 3), and optional: absent, the node leaves the core as it was built,
+// or as the last document that carried the field left it.
+struct SystemNodeSettings {  // rp.mesen.gba, rp.mesen.sms
     std::uint64_t core = 0;
+};
+
+struct GameBoySettings {
+    std::uint64_t                                       core = 0;
+    std::optional<knobs::Label<SameBoyModel>>           model;
+    std::optional<bool>                                 fastBoot;
+    std::optional<knobs::Label<SameBoyHighpass>>        highpass;
+    std::optional<knobs::Label<SameBoyColorCorrection>> colorCorrection;
+    std::optional<knobs::Label<SameBoyDmgPalette>>      dmgPalette;
+    std::optional<knobs::LightTemperature>              lightTemperature;
+    // What the core captures of its serial port for LSDj's decoder: "listen" for master sync, "drive" for MI.OUT.
+    std::optional<knobs::Label<SerialOutCapture>>       serialOutCapture;
+};
+
+struct NesSettings {
+    std::uint64_t                                  core = 0;
+    std::optional<knobs::Label<NesRegion>>         region;
+    std::optional<bool>                            removeSpriteLimit;
+    std::optional<knobs::ApuLatencyMs>             apuLatencyMs;
+    std::optional<knobs::Label<CartridgeAccuracy>> s5bNoise;
+    std::optional<knobs::Label<CartridgeAccuracy>> mmc5PhaseReset;
 };
 
 namespace {
@@ -37,19 +135,41 @@ constexpr std::size_t kMaxOutputs = 16;
 //   bytes     bytes   pushCoreBytes(frame, data, size, flush), the flush flag riding RP_MESSAGE_FLUSH
 //   buttons   events  pressButton(button, down), from a 2-byte payload [button, down]
 
-// What every system node shares: the core handoff, the connected-output mask, its inputs, and prepare / step /
-// finish mapped one to one onto the core's block triad. `Self` supplies finish's lanes, and may write output
-// queues after the core has run (writeQueues).
-template <class Self, class Core>
+// Whether a knob is to be applied: present in `to`, and absent from `from`, what was applied last, or another value
+// there. A knob absent from `to` is never applied, so a field a document drops leaves the core as it is.
+inline bool same(bool a, bool b) { return a == b; }
+template <rfl::internal::StringLiteral... L>
+bool same(const rfl::Literal<L...>& a, const rfl::Literal<L...>& b) { return a.value() == b.value(); }
+template <class T, class... V>
+bool same(const rfl::Validator<T, V...>& a, const rfl::Validator<T, V...>& b) { return a.value() == b.value(); }
+template <class F>
+bool moved(const std::optional<F>& to, const std::optional<F>& from) { return to && !(from && same(*from, *to)); }
+
+// What every system node shares: the core handoff, its settings reaching the core, the connected-output mask, its
+// inputs, and prepare / step / finish mapped one to one onto the core's block triad. `Self` supplies finish's lanes,
+// may write output queues after the core has run (writeQueues), and applies its own knobs (apply).
+//
+// Only a new core rebuilds (rebuild_key): every other setting is a knob the node applies to the core it has, so its
+// prepare reads nothing a commit writes and setGraph never waits on a system node's commit (stateless_prepare). A
+// commit only points `settings` at the new settings (on_settings never allocates); the node applies what moved at the
+// start of its next block, before the core's prepareForBlock, on the block thread as the command ring's knobs were,
+// and everything present once at activation, as it takes its core, before that core first runs. Each knob is
+// value-guarded by the core's own setter, so a palette change re-applies the display group and restarts nothing, while
+// a model change restarts the core and a region change resets it (docs/modular-graph-phase-c2-design.md section 4).
+template <class Self, class Core, class S = SystemNodeSettings>
 struct SystemNode {
-    using Settings = SystemNodeSettings;
-    static bool needs_rebuild(const Settings& a, const Settings& b) { return a.core != b.core; }
+    using Settings = S;
+    static std::uint64_t rebuild_key(const Settings& s) { return s.core; }
+    static constexpr bool stateless_prepare = true;
 
     const HostCores*                       cores = nullptr;
     const EngineSyncTrace*                 trace = nullptr;  // null when the host keeps none
     std::uint64_t                          token = 0;
     Core*                                  core = nullptr;  // owned
     std::array<std::uint8_t, kMaxOutputs>  connected{};
+    const Settings*                        settings = nullptr;  // the committed ones, alive until the next commit
+    Settings                               applied{};           // what the core was given last (none before activation)
+    bool                                   pending = false;     // settings committed and not yet applied
 
     SystemNode() = default;
     SystemNode(const SystemNode&) = delete;
@@ -66,10 +186,15 @@ struct SystemNode {
         cores = static_cast<const HostCores*>(h->get_interface(h, RP_HOST_CORES_INTERFACE));
         trace = static_cast<const EngineSyncTrace*>(h->get_interface(h, RP_ENGINE_SYNC_TRACE_INTERFACE));
     }
-    void on_settings(const Settings& s) noexcept { token = s.core; }
+    void on_settings(const Settings& s) noexcept {
+        settings = &s;
+        token = s.core;
+        pending = true;
+    }
 
-    // The first activation takes the core; later ones (a re-activation) keep it. The factory activated the
-    // core at the engine's rate when it built it, and Engine::setSampleRate re-rates live cores itself.
+    // The first activation takes the core and gives it every knob the settings carry; later ones (a re-activation)
+    // keep it. The factory activated the core at the engine's rate when it built it, and Engine::setSampleRate re-rates
+    // live cores itself.
     bool activate(double, std::uint32_t) {
         if (core) return true;
         if (!cores) return false;
@@ -78,8 +203,18 @@ struct SystemNode {
         // An id naming another kind of core is a host bug (Engine::setGraph checks the kinds before it
         // plans). The engine keeps a snapshot slot for it, as for any core, or takes it back.
         if (!core && built && !cores->released(cores->ctx, built)) delete built;
-        return core != nullptr;
+        if (!core) return false;
+        applySettings();  // against `applied`, which holds none yet, so every knob present
+        return true;
     }
+
+    void applySettings() noexcept {
+        static_cast<Self*>(this)->apply(*settings, applied);
+        applied = *settings;
+        pending = false;
+    }
+    // A core with no knobs of its own (the GBA, the SMS).
+    void apply(const Settings&, const Settings&) noexcept {}
 
     void ports_changed(std::span<const std::uint8_t> mask) noexcept {
         connected.fill(0);
@@ -98,9 +233,11 @@ struct SystemNode {
         }
         finish(b);
     }
-    // The inputs are applied here, where process starts too: a linked Game Boy's coupled group prepares every member
-    // (rp.step/1) before any of them steps, and never calls process.
+    // The knobs that moved, then the inputs, are applied here, where process starts too: a linked Game Boy's coupled
+    // group prepares every member (rp.step/1) before any of them steps, and never calls process. Knobs first, as the
+    // command ring's were drained before the block ran: a model change restarts the core before its inputs reach it.
     void prepare(const rp::Block& b) noexcept {
+        if (pending) applySettings();
         applyInputs();
         core->prepareForBlock(info(b));
     }
@@ -177,7 +314,7 @@ struct SystemNode {
 // speed): what does not fit is dropped and counted (GraphHost::droppedMessages), never lost silently.
 constexpr rp::capacity kSerialOutCapacity{.messages = 8256, .bytes = 8256};
 
-struct GameBoy : SystemNode<GameBoy, SameBoySystem> {
+struct GameBoy : SystemNode<GameBoy, SameBoySystem, GameBoySettings> {
     static constexpr const char* id = "rp.sameboy.gb";
     static constexpr const char* name = "Game Boy";
     static constexpr const char* category = "system";
@@ -229,6 +366,23 @@ struct GameBoy : SystemNode<GameBoy, SameBoySystem> {
         for (rp_node* p : peers)
             if (GameBoy* gb = rp::peer_as<GameBoy>(p)) core->linkPeers_.push_back(gb->core);
     }
+
+    // In the order the store's role config reached the core through the command ring (the model's restart first, with
+    // the fast boot it already had, since that one waits for the next restart), the capture last. The capture lands at
+    // the start of the first block of the plan that carries it, the block rp.lsdj.serial-out first runs in its new
+    // mode, so no byte captured in one mode is decoded in the other.
+    void apply(const Settings& to, const Settings& from) noexcept {
+        if (moved(to.model, from.model)) core->setModel(knobs::valueOf<SameBoyModel>(*to.model));
+        if (moved(to.highpass, from.highpass)) core->setHighpass(knobs::valueOf<SameBoyHighpass>(*to.highpass));
+        if (moved(to.fastBoot, from.fastBoot)) core->setFastBoot(*to.fastBoot);
+        if (moved(to.colorCorrection, from.colorCorrection))
+            core->setColorCorrection(knobs::valueOf<SameBoyColorCorrection>(*to.colorCorrection));
+        if (moved(to.dmgPalette, from.dmgPalette))
+            core->setDmgPalette(knobs::valueOf<SameBoyDmgPalette>(*to.dmgPalette));
+        if (moved(to.lightTemperature, from.lightTemperature)) core->setLightTemperature(to.lightTemperature->value());
+        if (moved(to.serialOutCapture, from.serialOutCapture))
+            core->setSerialOutCapture(knobs::valueOf<SerialOutCapture>(*to.serialOutCapture));
+    }
 };
 
 // Output order: mix, then the tap ports by the mode that drives them.
@@ -237,7 +391,7 @@ constexpr const char* kNesTaps[] = {"pins.pulse",  "pins.tnd",     "pins.expansi
 constexpr std::uint32_t kPinsFirst = 1;      // output index of pins.pulse
 constexpr std::uint32_t kChannelsFirst = 5;  // output index of channels.sq1
 
-struct Nes : SystemNode<Nes, MesenNesSystem> {
+struct Nes : SystemNode<Nes, MesenNesSystem, NesSettings> {
     static constexpr const char* id = "rp.mesen.nes";
     static constexpr const char* name = "NES";
     static constexpr const char* category = "system";
@@ -267,6 +421,19 @@ struct Nes : SystemNode<Nes, MesenNesSystem> {
         const std::uint32_t first = mode == 3 ? kChannelsFirst : kPinsFirst;
         for (std::uint32_t k = 0; k < streams; ++k) out[2 * k] = out[2 * k + 1] = b.output(first + k).u.audio.channels[0];
         return 2 * streams;
+    }
+
+    // In the order the store's role config reached the core through the command ring. A region change resets the
+    // core (setRegion); the rest apply in place.
+    void apply(const Settings& to, const Settings& from) noexcept {
+        if (moved(to.region, from.region))
+            core->setRegion(static_cast<std::uint32_t>(knobs::valueOf<NesRegion>(*to.region)));
+        if (moved(to.removeSpriteLimit, from.removeSpriteLimit)) core->setRemoveSpriteLimit(*to.removeSpriteLimit);
+        if (moved(to.apuLatencyMs, from.apuLatencyMs)) core->setApuLatencyMs(to.apuLatencyMs->value());
+        if (moved(to.s5bNoise, from.s5bNoise))
+            core->setS5bNoise(static_cast<std::uint32_t>(knobs::valueOf<CartridgeAccuracy>(*to.s5bNoise)));
+        if (moved(to.mmc5PhaseReset, from.mmc5PhaseReset))
+            core->setMmc5PhaseReset(static_cast<std::uint32_t>(knobs::valueOf<CartridgeAccuracy>(*to.mmc5PhaseReset)));
     }
 };
 

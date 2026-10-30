@@ -4,9 +4,10 @@
 // rp.host.midi-out (each input under the system its settings name, merged by frame, every frame inside its block) and
 // controller-out, rp.n8.cart-mirror feeds the engine's core-byte sink, the Game Boy's serialOut carries MI.OUT, which
 // LSDj's decoder (rp.lsdj.serial-out) sends on as host MIDI inside each block, its master-sync run carried over a
-// change of the engine's rate, and a full queue's drops reach the engine and the harness RPC. A document holds one
-// midi-in, one controller-in, one midi-out and one cart mirror at most, the mirror naming a NES. Driven on a quiescent
-// Engine, and on a NodeRig where a node's calls on the engine are what is checked.
+// change of the engine's rate, one document switching the capture and the decoder's mode together, and a full queue's
+// drops reach the engine and the harness RPC. A document holds one midi-in, one controller-in, one midi-out and one
+// cart mirror at most, the mirror naming a NES. Driven on a quiescent Engine, and on a NodeRig where a node's calls on
+// the engine are what is checked.
 //
 // Run via `pnpm test:plugin engine-graph`.
 
@@ -1100,6 +1101,62 @@ TEST_CASE("what a Game Boy's core captures decodes through rp.lsdj.serial-out in
     // A clock a byte, but for the one other byte as it boots and the one that completes an unpaired value.
     CHECK(clocks + 2 >= bytes);
     CHECK(spread);  // the frames are the bytes', not one frame for the whole block
+    CHECK(e.scriptThrows() == 0);
+    CHECK(e.droppedMessages() == 0);
+}
+
+TEST_CASE("one setGraph switches a Game Boy's capture and its decoder's mode together, in the same block",
+          "[engine-graph][host-io][settings]") {
+    // MI.OUT drives mGB's port, and its decoder reads the idle 0xFF bytes as LSDj's clock; master sync only listens,
+    // and mGB, waiting on an external clock, sends nothing. The capture is a setting of the Game Boy's node and the
+    // mode one of its decoder's (docs/modular-graph-phase-c2-design.md section 4), so one document carries both and
+    // they land in one block: the first block of the plan that carries them captures in the new mode and decodes in it.
+    // Moved by two paths, the capture a block behind, master sync would decode a block of MI.OUT's bytes as clocks,
+    // starting a run (docs/lsdj-master-sync-fix-design.md section 10).
+    Engine e(kRate);
+    REQUIRE(e.parkCore(mgb(1)));
+    const auto switched = [](const char* capture, const char* mode) {
+        const DocExtras extras{
+            {docNode("decoder", "rp.lsdj.serial-out", std::string(R"({"mode":")") + mode + R"("})"), loopOut()},
+            {docWire("sys-1.serialOut", "decoder.serialOut"), docWire("decoder.midiOut", "midi-out.in1")}};
+        auto r = graphRequest(stereoDocument({{1, kGb}}, extras), {1});
+        const std::string core = R"({"core":1})";
+        r.document.replace(r.document.find(core), core.size(),
+                           std::string(R"({"core":1,"serialOutCapture":")") + capture + R"("})");
+        return r;
+    };
+    const auto clocksOnly = [&] {
+        for (const auto& m : e.midiOut())
+            if (m.data != std::vector<std::uint8_t>{0xF8}) return false;
+        return !e.midiOut().empty();
+    };
+    REQUIRE(e.setGraph(switched("drive", "midiOut")).ok);
+    const auto* gb = dynamic_cast<const SameBoySystem*>(e.findSystem(1));
+    REQUIRE(gb);
+    // mGB opens its port once the boot ROM has run, about 2.5 s in; then every block clocks.
+    int b = 0;
+    while (b < 200 && e.midiOut().empty()) {
+        block(e);
+        ++b;
+    }
+    REQUIRE(b < 200);
+    block(e);
+    REQUIRE(clocksOnly());
+
+    REQUIRE(e.setGraph(switched("listen", "masterSync")).ok);
+    CHECK(gb->serialOutCapture() == SerialOutCapture::Drive);  // the plan is adopted; the capture waits for its block
+    for (int k = 0; k < 20; ++k) {
+        block(e);
+        INFO("block " << k << " of master sync");
+        CHECK(gb->serialOutCapture() == SerialOutCapture::Listen);
+        CHECK(gb->serialOutLog_.empty());
+        CHECK(e.midiOut().empty());
+    }
+
+    REQUIRE(e.setGraph(switched("drive", "midiOut")).ok);
+    block(e);  // its first block captures in drive and decodes in MI.OUT
+    CHECK(gb->serialOutLog_.size() > 64);
+    CHECK(clocksOnly());
     CHECK(e.scriptThrows() == 0);
     CHECK(e.droppedMessages() == 0);
 }
