@@ -64,6 +64,12 @@ else()
     target_link_libraries(n8_host pico_pio_usb)
 endif()
 
+# -DN8_TUSB_DEBUG=2 traces TinyUSB's attach / enumeration on the console - the first thing to
+# look at when the N8 never mounts (no attach line at all = nothing electrical on D+/D-).
+if(DEFINED N8_TUSB_DEBUG)
+    target_compile_definitions(n8_host PRIVATE CFG_TUSB_DEBUG=${N8_TUSB_DEBUG})
+endif()
+
 # Console (printf) over UART0 (GP0/GP1) for the debug probe. Native USB stdio stays off:
 # in the PIO-USB build the native port is unused; in the native-USB build it IS the host
 # port, so it must not be a stdio device.

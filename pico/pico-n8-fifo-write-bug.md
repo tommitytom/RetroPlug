@@ -19,6 +19,13 @@ Consequence: every earlier "hardware-verified" result for the Pico bridge (repea
 "261 Hz audio", the play trace) was actually the **host's** residual note - the N8 was hot-moved
 from the host to the Pico while BlipToaster held that note. The Pico never drove it.
 
+**Re-confirmed 2026-10-30, hands-off** with `n8-host/loop.sh --until 'menu up' --fail "no 'k'"`
+(power-cycle, flash, console): the N8 mounts 0.5 s after the Pico boots, `CMD_STATUS` = 0, and
+48 s of `*t` retries get no `k` - twice in a row. The current firmware writes nothing to cart
+memory before `*t`; it only reads 16 bytes of SRM. That read is also ruled out: the same read
+issued from the PC at a fresh menu (`retroplug-n8-hwtest peek 1000000 16`) leaves the menu
+answering, and `n8-load` boots straight after it.
+
 ## What works from the Pico
 USB enumeration + CDC mount; `CMD_STATUS` (0 at menu / non-zero running); `SYS_INF`;
 `memRD` (SRM, sniffer 0x1802000); **`memWR` to SRM (0x1000000) round-trips**. So the Edio

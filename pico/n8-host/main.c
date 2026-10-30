@@ -20,6 +20,7 @@
 #include "hardware/uart.h"
 #ifndef USE_NATIVE_USB
 #include "pio_usb.h"
+#include "pio_usb_ll.h"
 #endif
 #include "tusb.h"
 #include "edio.h"
@@ -165,6 +166,32 @@ static void sniff_report(void) {
     printf("[sniff] timer=%-4u %4u Hz\n", p1, hz);
 }
 
+#ifndef USE_NATIVE_USB
+// RP2350-E9 (chip revisions up to A2, which is what this board carries): a Bank 0 pad with its
+// input enabled latches at ~2.2V once it has been high, and the internal pull-down cannot pull
+// it back. With D+ AND D- latched the idle bus reads SE1, which is neither attach state, so the
+// N8 is never detected - measured after a flash or a NES power-cycle with the N8 plugged in:
+// both pads read high with NOTHING attached, and dropped low once input-enable was cleared.
+// Pico-PIO-USB already clears IE before each line-state read, but for 8 nops (~67 ns at
+// 120 MHz) - enough for a bare pin, not for D+/D- wired out to a socket, whose capacitance takes
+// microseconds to drain through the ~50k pull-down. So, while the port has nothing connected,
+// hold IE off long enough to drain it. Never while connected: the PIO samples these pads.
+static void e9_drain_idle_port(void) {
+#if PICO_RP2350
+    static uint32_t next_ms = 0;
+    if (rp2350_chip_version() > 2 || PIO_USB_ROOT_PORT(0)->connected) return;
+    uint32_t t = to_ms_since_boot(get_absolute_time());
+    if (t < next_ms) return;
+    next_ms = t + 50;
+    gpio_set_input_enabled(PIN_USB_DP, false);
+    gpio_set_input_enabled(PIN_USB_DP + 1, false);
+    busy_wait_us(50);
+    gpio_set_input_enabled(PIN_USB_DP, true);
+    gpio_set_input_enabled(PIN_USB_DP + 1, true);
+#endif
+}
+#endif
+
 int main(void) {
 #ifndef USE_NATIVE_USB
     set_sys_clock_khz(120000, true);   // PIO-USB needs a 120 MHz-multiple clock
@@ -200,6 +227,9 @@ int main(void) {
 
     while (true) {
         tuh_task();
+#ifndef USE_NATIVE_USB
+        e9_drain_idle_port();
+#endif
 
         // Drain any MIDI bytes -> parser (which forwards complete messages via the
         // sink). Always drain so the UART FIFO can't overrun; the sink itself gates

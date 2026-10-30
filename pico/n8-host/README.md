@@ -57,6 +57,17 @@ socket (the same A-plug that went to the PC). Keep the debug probe attached (SWD
 the stage-1 MIDI opto circuit feeds GP5 (UART1 RX) - the bridge (slice 2.4) forwards it. PIO-USB
 forces a 120 MHz system clock (`set_sys_clock_khz(120000)`).
 
+**RP2350-E9 (this board's chip is revision A2).** A GP pad with its input enabled latches at
+~2.2V once it has been high, and the internal pull-down can't bring it back. On D+/D- that reads
+as SE1 (both high) with NOTHING plugged in, which is neither attach state, so the N8 is never
+detected - and it looks exactly like D+ shorted to D-. Tell the two apart over SWD: clear
+input-enable on GP2/GP3 for a moment (pads at `0x4003800c` / `0x40038010`, bit 6) and re-read
+`IO_BANK0` STATUS bit 17 (`0x40028010` / `0x40028018`); a latch drops to 0, a short doesn't.
+Pico-PIO-USB's own E9 workaround holds input-enable off for only 8 nops, too short to drain
+pins wired out to a socket, so `main.c` (`e9_drain_idle_port`) holds it off for 50 us while
+nothing is connected. The hardware fix Raspberry Pi gives for E9 is an external pull-down of
+8.2k or less on each pin.
+
 ## The hands-off loop: `loop.sh`
 
 With the N8's cable left in this Pico's host socket, one command does a whole iteration -
@@ -68,6 +79,7 @@ capture the timestamped console until a verdict:
 ./loop.sh --no-power                          # keep what the NES is running; the Pico still resets
 ./loop.sh --no-build --no-flash --secs 30     # just reset the Pico and watch
 ./loop.sh --native                            # the RP_NATIVE_USB build, in build-native/
+./loop.sh --debug                             # + TinyUSB's attach/enumeration trace, in build-debug/
 ```
 
 It refuses to run while the N8 is enumerated on the PC (the cable is in the wrong place, so the
