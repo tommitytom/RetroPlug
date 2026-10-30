@@ -107,8 +107,9 @@ export class DirectGraph {
    *  enum as its label, never an ordinal), merged over what this graph gave it before: none at first, so its node
    *  carries no setting field and its core keeps the settings it was built with (the params it does not name start at
    *  their defaults at its first block). Its setting fields ride its node's settings and a NES's expansionVolume its
-   *  params (buildGraph.ts systemKnobs), each reaching the core at the start of the next block, and a Game Boy's linkGroupId is its link cable. It publishes, the param included (a document's param value
-   *  reaches the node when it differs from the one last sent). False, changing nothing, when `id` is not placed here,
+   *  params (buildGraph.ts systemKnobs), each reaching the core at the start of the next block, and a Game Boy's
+   *  linkGroupId is its link cable. It publishes, the param included (a document's param value reaches the node when
+   *  it differs from the one last sent). False, changing nothing, when `id` is not placed here,
    *  for a field its node does not take (a construct-time one, another core's, or a value the node would refuse, an
    *  ordinal among them, which buildGraph would leave out, the core silently keeping what it has), or when the
    *  document did not plan. */
