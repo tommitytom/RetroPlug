@@ -283,8 +283,8 @@ TEST_CASE("setGraph never waits on a node that rebuilds on a key, whose key chan
     CHECK(k->level == 4.0f);
 
     // A key change while a same-key swap for this instance is still unadopted, the interleaving only a key type makes
-    // reachable (a host that stops calling process while it stays active). The queued commit lands on the old
-    // instance; the rebuilt one starts from its own settings alone.
+    // reachable (a host that stops calling process while it stays active). The rebuilt instance starts from its own
+    // settings alone: the queued 5 never reached it.
     REQUIRE(rig.set(doc("a", 5)).ok);  // a live swap, queued
     REQUIRE(rig.set(doc("b", 6)).ok);  // another key, planned while that is unadopted
     rig.run();                         // adopts the swap on the old instance, then the rebuild
@@ -298,7 +298,7 @@ TEST_CASE("setGraph never waits on a node that rebuilds on a key, whose key chan
     // The new instance swaps its own settings like any other.
     REQUIRE(rig.set(doc("b", 7)).ok);
     rig.run();
-    CHECK(rig.host->node("k") == rebuilt);
+    REQUIRE(rig.host->node("k") == rebuilt);
     CHECK(fresh->commits == 2);
     CHECK(fresh->level == 7.0f);
     rig.host->setAudioThreadOwns(false);
