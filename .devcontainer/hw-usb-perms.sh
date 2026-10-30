@@ -9,8 +9,8 @@
 #     predictable path regardless of which ttyACMn the host assigned it.
 #
 # Everything here is best-effort: it must NEVER fail container start (the runArgs
-# already bind-mount /dev/bus/usb and grant the 189/166 device-cgroup rules; this
-# just makes them usable without sudo and pins the probe's console name).
+# only grant the device-cgroup majors; this creates the nodes those rules permit,
+# opens them to the user and pins the probe's console name).
 set +e
 
 # 0. Hot-pluggable char devices: the N8's USB-serial (ttyACM*, major 166), the NES capture card
@@ -39,8 +39,36 @@ sync_class /sys/class/tty 'ttyACM*' /dev 166
 sync_class /sys/class/video4linux 'video*' /dev 81
 sync_class /sys/class/sound '*' /dev/snd 116
 
-# 1. Raw USB (usbfs) nodes used by OpenOCD/picotool via libusb.
-sudo chmod -R a+rw /dev/bus/usb 2>/dev/null
+# 1. Raw USB (usbfs) nodes used by OpenOCD/picotool via libusb: /dev/bus/usb/BBB/DDD, major 189.
+#    Same mirror-from-sysfs as above, but the node name is the bus + device NUMBER, which the host
+#    reassigns on every replug - including a Pico re-enumerating into BOOTSEL for picotool - so a
+#    node made earlier is stale, not just missing. If /dev/bus/usb is instead a bind mount of the
+#    host's tree it is already live and its nodes are the HOST's: only open them, never mknod/rm.
+sync_usb() {
+	local d mm bus dev path t cur
+	local -A want=()
+	if mountpoint -q /dev/bus/usb 2>/dev/null; then
+		sudo chmod -R a+rw /dev/bus/usb
+		return
+	fi
+	for d in /sys/bus/usb/devices/*; do
+		[ -e "$d/dev" ] && [ -e "$d/busnum" ] || continue
+		mm=$(cat "$d/dev" 2>/dev/null) || continue
+		[ "${mm%:*}" = 189 ] || continue
+		bus=$(printf %03d "$(cat "$d/busnum")") dev=$(printf %03d "$(cat "$d/devnum")")
+		path=/dev/bus/usb/$bus/$dev
+		want[$path]=1
+		cur=$(stat -c '%t:%T' "$path" 2>/dev/null)
+		[ -n "$cur" ] && [ "$((16#${cur%:*})):$((16#${cur#*:}))" = "$mm" ] && { sudo chmod a+rw "$path"; continue; }
+		sudo mkdir -p "/dev/bus/usb/$bus"
+		sudo rm -f "$path"
+		sudo mknod "$path" c 189 "${mm#*:}" && sudo chmod a+rw "$path"
+	done
+	for t in /dev/bus/usb/*/*; do
+		[ -c "$t" ] && [ -z "${want[$t]}" ] && sudo rm -f "$t"
+	done
+}
+sync_usb
 
 # 2. The Raspberry Pi Debug Probe (VID:PID 2e8a:000c) exposes two USB interfaces:
 #    interface 00 = CMSIS-DAP (reached over /dev/bus/usb above), interface 01 =

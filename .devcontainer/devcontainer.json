@@ -45,11 +45,13 @@
   // plugging something in later, re-run `bash .devcontainer/hw-usb-perms.sh` - no rebuild.
   //
   // Raw USB passthrough (to flash / drive RP2040 boards such as the Raspberry Pi Debug Probe,
-  // VID:PID 2e8a:000c, over SWD with OpenOCD): bind-mount the whole /dev/bus/usb tree + grant the
-  // USB (major 189) and tty-ACM (major 166) device-cgroup rules. Unlike --device this is a directory
-  // mount, so it does NOT hard-fail when a board is absent and it stays live across replug.
-  // hw-usb-perms.sh (postStart) then opens the usb nodes to the user and exposes the probe's dynamic
-  // CDC console under a stable /dev/ttyDbgProbe. See pico/README.md.
+  // VID:PID 2e8a:000c, over SWD with OpenOCD, or a Pico in BOOTSEL with picotool): the same scheme,
+  // with the USB major (189) granted below and hw-usb-perms.sh mknod-ing /dev/bus/usb/BBB/DDD for
+  // every device the host's /sys lists. Those numbers change on every replug (BOOTSEL included), so
+  // re-run the script after one. It also exposes the probe's dynamic CDC console under a stable
+  // /dev/ttyDbgProbe. The commented-out bind mount of the host's /dev/bus/usb is the alternative
+  // that stays live across replug by itself; the script detects it and then only opens the nodes.
+  // See pico/README.md.
   //
   // usbmon URB capture: bind-mount the host's debugfs so /sys/kernel/debug/usb/usbmon/<bus>u (a plain
   // text URB log) is readable in the container after `sudo modprobe usbmon` on the host. Used to diff

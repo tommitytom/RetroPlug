@@ -19,12 +19,19 @@ static uint8_t voice_data_len(uint8_t status) {
 
 void midi_parser_init(midi_parser *p, midi_sink sink, void *user) {
     p->sink = sink;
+    p->sysex = 0;
     p->user = user;
     p->running_status = 0;
     p->cur_status = 0;
     p->have = 0;
     p->need = 0;
     p->in_sysex = 0;
+}
+
+void midi_parser_set_sysex_sink(midi_parser *p, midi_sysex_sink sysex) { p->sysex = sysex; }
+
+static void sysex_out(midi_parser *p, uint8_t b) {
+    if (p->sysex) p->sysex(b, p->user);
 }
 
 // Emit the message currently assembled under `status` (data in p->data).
@@ -54,8 +61,19 @@ void midi_parser_byte(midi_parser *p, uint8_t b) {
 
     // Status byte (0x80..0xF7).
     if (b >= 0x80) {
-        if (b == 0xF0) { p->in_sysex = 1; p->running_status = 0; p->cur_status = 0; return; }
-        if (b == 0xF7) { p->in_sysex = 0; p->running_status = 0; p->cur_status = 0; return; }
+        // Any status byte ends a SysEx in progress; only F7 is its own terminator, so the others
+        // get a synthesised one before they are handled.
+        if (p->in_sysex && b != 0xF7) sysex_out(p, 0xF7);
+        if (b == 0xF0) {
+            p->in_sysex = 1; p->running_status = 0; p->cur_status = 0;
+            sysex_out(p, 0xF0);
+            return;
+        }
+        if (b == 0xF7) {
+            if (p->in_sysex) sysex_out(p, 0xF7);
+            p->in_sysex = 0; p->running_status = 0; p->cur_status = 0;
+            return;
+        }
         p->in_sysex = 0;
 
         if (b >= 0xF1 && b <= 0xF6) {
@@ -77,7 +95,7 @@ void midi_parser_byte(midi_parser *p, uint8_t b) {
     }
 
     // Data byte (0x00..0x7F).
-    if (p->in_sysex) return; // ignore SysEx payload
+    if (p->in_sysex) { sysex_out(p, b); return; }   // SysEx payload: passed on, or skipped
 
     if (p->cur_status == 0) {
         if (p->running_status == 0) return; // stray data byte, no status yet

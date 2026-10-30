@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+#
+# One iteration of the n8-host hardware loop, with no hands on the rig:
+#   build -> halt the Pico -> power-cycle the NES (Home Assistant) -> flash over SWD (the Debug
+#   Probe) -> capture the Pico's console (the probe's UART) until a pattern or a timeout.
+#
+# The N8's USB cable stays in the Pico's host socket throughout. With the Pico halted, the
+# power-cycle leaves the N8 at a fresh file-browser menu that no host has touched, so the
+# flashed firmware is the first thing to talk to it and every run starts from the same state.
+# A good run ends with the Pico booting a ROM through that menu, no PC involved.
+#
+#   ./loop.sh                                   # full loop, 90 s of console
+#   ./loop.sh --until 'booted by the Pico' --fail "no 'k'"   # stop at the verdict, exit 0 / 1
+#   ./loop.sh --no-power                        # keep whatever the NES is running (the Pico
+#                                               # reset still re-mounts the N8)
+#   ./loop.sh --native                          # the RP_NATIVE_USB build (build-native/)
+#   ./loop.sh --debug                           # + TinyUSB attach/enumeration trace (build-debug/)
+#   ./loop.sh -DN8_MENU_TRIES=3                 # any CMake define; each set gets its own build dir
+#   ./loop.sh --rom a.nes --rom b.nes           # stage ROMs: the Pico copies the chosen one
+#                                               # to the SD (usb-games/pico/) and boots it
+#
+# Exit: 0 = done (or --until matched), 1 = --fail matched or --until timed out, 2 = setup failed.
+# The timestamped console is kept in --log (default /tmp/n8-host-console.log).
+set -u
+
+here=$(cd "$(dirname "$0")" && pwd)
+repo=$(cd "$here/../.." && pwd)
+power=/workspaces/.nes-power.sh
+console=/dev/ttyDbgProbe
+
+do_build=1 do_flash=1 do_power=1 native=0 debug=0 force=0
+defs=()
+roms=()
+secs=90 until_re= fail_re= log=/tmp/n8-host-console.log
+
+usage() { sed -n '3,/^set -u/{/^#/p}' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+while [ $# -gt 0 ]; do
+	case $1 in
+		--no-build) do_build=0 ;;
+		--no-flash) do_flash=0 ;;
+		--no-power) do_power=0 ;;
+		--native)   native=1 ;;
+		--debug)    debug=1 ;;   # TinyUSB attach/enumeration trace on the console
+		-D*)        defs+=("$1") ;;   # a CMake define, e.g. -DN8_MENU_TRIES=3 (own build dir)
+		--force)    force=1 ;;   # run even though the N8 is enumerated on the PC
+		--rom)      roms+=("$2"); shift ;;   # stage a .nes in Pico flash (repeatable); the Pico uploads + boots it
+		--secs)     secs=$2; shift ;;
+		--until)    until_re=$2; shift ;;
+		--fail)     fail_re=$2; shift ;;
+		--log)      log=$2; shift ;;
+		-h|--help)  usage ;;
+		*) echo "loop.sh: unknown option '$1'" >&2; usage ;;
+	esac
+	shift
+done
+
+die() { echo "loop.sh: $*" >&2; exit 2; }
+usb_present() { grep -qx "$1" <(for d in /sys/bus/usb/devices/*; do
+	[ -e "$d/idVendor" ] && echo "$(cat "$d/idVendor"):$(cat "$d/idProduct")"; done); }
+
+# --- preflight -------------------------------------------------------------------------------
+# Mirror the host's USB + tty nodes first: the probe or the N8 may have re-enumerated since the
+# container started, and OpenOCD needs the probe's /dev/bus/usb node.
+bash "$repo/.devcontainer/hw-usb-perms.sh" >/dev/null 2>&1
+usb_present 2e8a:000c || die "no Raspberry Pi Debug Probe (2e8a:000c) on USB"
+[ -c "$console" ] || die "$console missing (hw-usb-perms.sh found no probe UART)"
+# The host's /sys lists every USB device on the machine, so the N8 showing up there means its
+# cable is in the PC, not the Pico - and the run would test nothing.
+if usb_present 38df:0017 && [ $force = 0 ]; then
+	die "the N8 (38df:0017) is enumerated on the PC - move its cable to the Pico's host socket (or --force)"
+fi
+
+# Use whichever SDK actually carries TinyUSB: the image's baked /opt/pico-sdk has no submodules.
+sdk=${PICO_SDK_PATH:-}
+[ -n "$sdk" ] && [ -e "$sdk/lib/tinyusb/src/tusb.h" ] || sdk=/workspaces/pico-sdk
+[ -e "$sdk/lib/tinyusb/src/tusb.h" ] || die "no Pico SDK with TinyUSB (tried \$PICO_SDK_PATH and $sdk)"
+
+if [ $native = 1 ]; then bdir=$here/build-native cfg=-DRP_NATIVE_USB=ON
+else bdir=$here/build cfg=-DRP_NATIVE_USB=OFF; fi
+if [ $debug = 1 ]; then bdir=$bdir-debug cfg="$cfg -DN8_TUSB_DEBUG=2"; fi
+# Each define set builds in its own dir, so flipping between experiment builds never reconfigures.
+for d in "${defs[@]}"; do bdir=$bdir-$(echo "${d#-D}" | tr -c "A-Za-z0-9\n" "_"); cfg="$cfg $d"; done
+elf=$bdir/n8_host.elf
+
+# --- build -----------------------------------------------------------------------------------
+if [ $do_build = 1 ]; then
+	echo "== build ($(basename "$bdir"), SDK $sdk)"
+	if [ ! -f "$bdir/build.ninja" ]; then
+		mkdir -p "$bdir"
+		PICO_SDK_PATH=$sdk cmake -S "$here" -B "$bdir" -G Ninja $cfg >"$bdir/loop-configure.log" 2>&1 \
+			|| { tail -20 "$bdir/loop-configure.log"; die "configure failed (log: $bdir/loop-configure.log)"; }
+	fi
+	cmake --build "$bdir" -j"$(nproc)" >"$bdir/loop-build.log" 2>&1 \
+		|| { grep -E 'error|Error' "$bdir/loop-build.log" | head -20; die "build failed (log: $bdir/loop-build.log)"; }
+fi
+[ -f "$elf" ] || die "$elf not built"
+
+# --- halt the running firmware first -----------------------------------------------------------
+# Before the power-cycle, not after: a working firmware left running sees the N8 come back, and
+# boots a ROM through its menu before this run's firmware is flashed - which then finds a game
+# running and no menu to answer. Halting also stops its output reaching this run's log.
+ocd=(openocd -f interface/cmsis-dap.cfg -f target/rp2350.cfg -c "adapter speed 5000")
+"${ocd[@]}" -c "init; reset halt; exit" >/tmp/n8-host-openocd.log 2>&1 \
+	|| { tail -15 /tmp/n8-host-openocd.log; die "halt failed (log: /tmp/n8-host-openocd.log)"; }
+
+# --- power-cycle the NES -> fresh N8 menu, before the Pico boots and enumerates it -----------
+if [ $do_power = 1 ]; then
+	echo "== power-cycle the NES"
+	"$power" reset >/dev/null || die "power-cycle failed ($power)"
+fi
+
+# --- console capture -------------------------------------------------------------------------
+# Started BEFORE the flash so the boot banner is caught. Each line is stamped with seconds since
+# the capture began, which is what the menu-readiness and retry timings get read from.
+stty -F "$console" 115200 raw -echo || die "cannot configure $console"
+timeout 0.3 cat "$console" >/dev/null   # drop what the old firmware left in the tty buffer
+: >"$log"
+t0=$(date +%s%N)
+(
+	while IFS= read -r line; do
+		printf '[%6.1f] %s\n' "$(( ($(date +%s%N) - t0) / 1000000 ))e-3" "${line%$'\r'}"
+	done <"$console" >>"$log"
+) &
+reader=$!
+cleanup() { kill "$reader" 2>/dev/null; wait 2>/dev/null; }
+trap cleanup EXIT
+sleep 0.3
+
+# --- flash (or just reset, so every run starts from a firmware boot) -------------------------
+# Then hand the cores back with C_DEBUGEN cleared. OpenOCD sets it on attach and leaves it set
+# on exit, and TinyUSB's TU_ASSERT executes BKPT whenever it is set - so with the probe merely
+# plugged in, the first failed USB transfer (the N8 powering off under a live link) parked the
+# core on a breakpoint for good, which reads exactly like a hung host stack. Without a debugger
+# the same assert just returns false, which is what the standalone box will see. A later manual
+# OpenOCD session sets it again; re-run with --no-build --no-flash to clear it.
+fl=(-c init)
+if [ $do_flash = 1 ]; then
+	echo "== flash $(basename "$elf")"
+	fl+=(-c "program $elf verify")
+else
+	echo "== reset the Pico"
+fi
+# ROMs staged with --rom (repeatable) go into Pico flash at 0x10200000, back to back: a 64-byte
+# header ("N8RM", size LE, SD path) + the ROM, padded to the next 4 KB, then one erased 4 KB block
+# so a longer table from an earlier run cannot show through after the last entry (box.c reads
+# until a slot lacks the magic). The firmware boots the one picked over MIDI, else the one saved
+# on the SD as last booted, else the first. Flashing without --rom erases the first header, so a
+# plain run boots N8_ROM_PATH as before.
+if [ ${#roms[@]} -gt 0 ]; then
+	blob=/tmp/n8-host-roms.bin; : >"$blob"
+	ff() { head -c "$1" /dev/zero | tr '\0' '\377'; }
+	n_staged=0
+	for rom in "${roms[@]}"; do
+		[ -f "$rom" ] || die "--rom: no such file '$rom'"
+		size=$(stat -c %s "$rom"); sd="usb-games/pico/$(basename "$rom")"
+		[ ${#sd} -lt 56 ] || die "--rom: SD path '$sd' too long"
+		{
+			printf 'N8RM'
+			printf "\\x$(printf %02x $((size & 255)))\\x$(printf %02x $((size >> 8 & 255)))\\x$(printf %02x $((size >> 16 & 255)))\\x$(printf %02x $((size >> 24 & 255)))"
+			printf '%s' "$sd"; head -c $((56 - ${#sd})) /dev/zero
+			cat "$rom"
+			ff $(( (4096 - (64 + size) % 4096) % 4096 ))
+		} >>"$blob"
+		echo "== stage ROM $n_staged: $(basename "$rom") ($size bytes) -> SD $sd"
+		n_staged=$((n_staged + 1))
+	done
+	ff 4096 >>"$blob"
+	[ "$(stat -c %s "$blob")" -le $((0x200000)) ] || die "--rom: the ROMs do not fit the 2 MB staging area"
+	fl+=(-c "program $blob verify 0x10200000")
+elif [ $do_flash = 1 ]; then
+	fl+=(-c "flash erase_address 0x10200000 4096")
+fi
+fl+=(-c "reset run")
+for core in cm0 cm1; do fl+=(-c "targets rp2350.$core" -c "mww 0xe000edf0 0xa05f0000"); done
+"${ocd[@]}" "${fl[@]}" -c exit >/tmp/n8-host-openocd.log 2>&1 \
+	|| { tail -15 /tmp/n8-host-openocd.log; die "flash/reset failed (log: /tmp/n8-host-openocd.log)"; }
+
+
+# --- wait for a verdict ----------------------------------------------------------------------
+echo "== console (${secs}s${until_re:+, until /$until_re/}${fail_re:+, fail /$fail_re/})"
+# The loop is also the viewer: it prints whatever the reader appended since the last pass, so the
+# matching line is always on screen before the verdict (tail -f polls too slowly to promise that).
+shown=0 verdict=
+show_new() { local n; n=$(wc -l <"$log"); [ "$n" -gt "$shown" ] && sed -n "$((shown + 1)),${n}p" "$log"; shown=$n; }
+deadline=$((SECONDS + secs))
+while [ $SECONDS -lt $deadline ]; do
+	show_new
+	if [ -n "$fail_re" ] && grep -qE -- "$fail_re" "$log"; then verdict=fail; break; fi
+	if [ -n "$until_re" ] && grep -qE -- "$until_re" "$log"; then verdict=ok; break; fi
+	sleep 0.2
+done
+show_new
+case $verdict in
+	fail) echo "== FAIL: /$fail_re/ seen"; rc=1 ;;
+	ok)   echo "== OK: /$until_re/ seen"; rc=0 ;;
+	*)    if [ -n "$until_re" ]; then echo "== TIMEOUT: /$until_re/ not seen in ${secs}s"; rc=1; else rc=0; fi ;;
+esac
+echo "== log: $log"
+exit $rc
