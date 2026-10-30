@@ -514,13 +514,20 @@ test("each system node's settings carry its core config's setting fields, and it
   expect(g.node("sys-4")).toEqual({ id: "sys-4", type: "rp.mesen.sms", settings: { core: 4 }, params: { gain: 0 } });
 });
 
-test("a system with no core config or gain carries none: its node leaves its core as it was built", () => {
+test(
+  "a system with no core config or gain carries none: its core's settings stay as it was built, and its params are the defaults",
+  () => {
   const g = built([gb(1), nes(2), gba(3), sms(4)]);
   for (const id of [1, 2, 3, 4]) expect(g.node(`sys-${id}`)?.params, `sys-${id}`).toBe(undefined);
   expect(g.node("sys-2")?.settings).toEqual({ core: 2 });
   // A config holding only some fields gives the node those alone.
-  expect(built([{ ...nes(2), coreConfig: { region: "dendy" } }]).node("sys-2")).toEqual({ id: "sys-2", type: "rp.mesen.nes", settings: { core: 2, region: "dendy" } });
-});
+  expect(built([{ ...nes(2), coreConfig: { region: "dendy" } }]).node("sys-2")).toEqual({
+    id: "sys-2",
+    type: "rp.mesen.nes",
+    settings: { core: 2, region: "dendy" },
+  });
+  },
+);
 
 test("a knob the node would refuse is left out, so one stored config cannot refuse every system's document", () => {
   // A loaded project keeps its core config as written: a hand edit, a newer build's label, an ordinal from before the
