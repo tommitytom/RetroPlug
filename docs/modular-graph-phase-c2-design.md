@@ -95,10 +95,12 @@ The user's, on 2026-10-30:
   A Game Boy applies its fast boot first, which waits for the next restart and so is what a model's restart boots with,
   then the rest in `applyRoleConfig`'s order, the capture last (section 10 says why the fast boot moved). A param's
   control stream gives its latest value each block, applied value-guarded after the settings and before the inputs: a
-  change lands at the block's start (at most a block late, as the command ring's did), and the core smooths gain as it
-  does now. Every param reaches the core at the node's first block, not at activation: a node reads its params only
-  in a block (the host binds its control streams there, landing the document's values as it adopts the plan), and a
-  core runs nothing before its node's first block, so it plays its first sample at the document's level.
+  change lands at the block's start (at most a block late, as the command ring's did). A value a wire drives is clamped
+  to the param's range by the node, from the same constants the declaration takes its bounds from (the planner and
+  `setParam` clamp a document's or a live edit's). Every param reaches the core at the node's first block, not at
+  activation: a node reads its params only in a block (the host binds its control streams there, landing the document's
+  values as it adopts the plan), and a core runs nothing before its node's first block, so it plays its first sample at
+  the document's level.
 - **The atomic switch.** `serialOutCapture` reaches the Game Boy at the start of the first block of the plan that
   carries it, the block in which `rp.lsdj.serial-out` first runs in the new mode, so no byte captured in one mode is
   decoded in the other.
@@ -132,7 +134,9 @@ The user's, on 2026-10-30:
   the B1 goldens' 238 documents changed, by the capture alone, since their models carry no core config or gain, and 30
   of the 37 role golden cases.
 - **The stores.** A gain edit, or a NES's expansion volume, updates the store's value and calls
-  `backend.setParam("sys-<id>", ...)`, with no publish; the next publish, for whatever reason, carries the same value.
+  `backend.setParam("sys-<id>", ...)`, with no publish; the next publish, for whatever reason, carries the same value,
+  and the store hands the graph the systems it just changed (`setOnLiveParam`) so the graph's model is that value too,
+  which a render's shape republish builds from.
   An edit of a setting field of `sameboy` / `mesen` updates the role config and publishes, as a link-group edit
   already does. The store tells them apart by the system node's knobs before and after the edit (`systemKnobs`): a
   moved setting publishes, a moved param alone is `setParam`, and an edit moving both publishes, the document carrying
@@ -144,7 +148,8 @@ The user's, on 2026-10-30:
   build spec's `serialOutCapture`. `DirectGraph` loses `applyRoleConfig` and gains `setParam` and `setCoreConfig(id,
   partial)`: a core config in the labels the store's role spells, merged over what it gave the system before and
   published (a Game Boy's `linkGroupId` its link cable), which refuses, changing nothing, a field its node does not
-  take (section 8's third question).
+  take (section 8's third question). A live `setParam` also gives the graph the model it left, so a shape change
+  builds what the node runs and an edit that rebuilds exactly the last document sent is sent rather than skipped.
 - **Callers moved:** the `test-native` files, mock-tier tests and the CLI session (`analyze-lsdj-sync`) that call the
   old methods set a mode or a knob the way the app does, through the store or the published document. The parity rig
   (`render-blocks`) is among them, and keeps its recorded output.
@@ -265,11 +270,13 @@ prototype answers (each answer follows its question):
 - **A refused document can still have changed a core it took.** Activation runs while a document plans, so the knobs a
   node gives its core there stay on it when the plan is refused and the core goes back to parked. In the app the next
   document carries the same knobs, so nothing shows.
-- **A republished document leaves a param's live value alone** unless its value moved from the last document's: the
-  planner lands a document's param value only for a fresh node or a value that differs from the one it last landed. So
-  the stores keep every value they set live in their model, and the next document carries what the node runs. A NES a
-  `DirectGraph` places with no core config gets `expansionVolume` 100 at its first block, its param's default; only one
-  built with another construct-time volume would notice.
+- **A document's param value is sent whenever the node does not hold it**, whoever gave the node the value it has: the
+  planner lands a document's value for a fresh node, or one that differs from the value the node was last given, a
+  live `setParam` included (`GraphHost::setParam` records what it queued). So a document repeating a value after a live
+  edit moved the node away from it sends it again, which is what makes the stores' model, kept in step by every live
+  edit, win; a document that names no value for a param leaves the live one alone. A NES a `DirectGraph` places with
+  no core config gets `expansionVolume` 100 at its first block, its param's default; only one built with another
+  construct-time volume would notice.
 - **A C++ node ignores a settings field it does not know** (node.hpp reads settings with `rfl::DefaultIfMissing` and
   no `rfl::NoExtraFields`), so a misspelt knob would plan and do nothing. `BuildGraphGoldens.test.cpp` fails on a
   golden document whose system node names a field its type's schema does not list (it caught a deliberate

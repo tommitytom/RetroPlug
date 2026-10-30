@@ -426,9 +426,11 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   the start of the first block of the plan that carries it, the block `rp.lsdj.serial-out` first runs in its new
   mode, so no byte captured in one mode is decoded in the other.
 - **When a param reaches the core.** Each param's latest value in the block is given after the settings and
-  before the inputs, value-guarded against the value the core was given last, so a publish carrying the value the
-  core already has calls nothing; a change anywhere in a block lands at its start, and the core smooths gain as
-  it does every gain change. A node reads its params only in a block (the host binds its control streams there,
+  before the inputs, value-guarded against the value the core was given last (a live `setParam` included, whose
+  queued value the host records), so a publish carrying the value the core already has calls nothing, and one
+  carrying a value a live edit moved the core away from sends it again. A value a wire drives is clamped to the
+  param's range by the node, from the same constants the declaration takes its bounds from; a change anywhere in a
+  block lands at its start. A node reads its params only in a block (the host binds its control streams there,
   landing the document's values in them as it adopts the plan), so they reach the core at the node's first block,
   before its first `prepareForBlock`, not in `activate`: a core its node has taken runs nothing before that, so
   its first sample plays at the document's level. A document without a param leaves its stream where it was: at
