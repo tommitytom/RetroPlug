@@ -1,8 +1,9 @@
-// A loaded LSDj in a MIDI-out mode captures its serial out through its build alone
-// (docs/modular-graph-phase-b2-design.md section 3): the store adopts it as a project load does, building the core
-// with `serialOutCapture` in the spec, and nothing calls setSerialOutCapture after it. The same system in the same
-// mode, built without that flag, emits nothing, so the flag is what arms the capture. (lsdj-midiout.test.ts proves
-// the decode itself, armed by the live command.)
+// A loaded LSDj in a MIDI-out mode captures its serial out with no live command (docs/modular-graph-phase-b2-design.md
+// section 3): the store adopts it as a project load does, building the core with `serialOutCapture` in the spec, and
+// nothing calls setSerialOutCapture after it. Its Game Boy's node carries the same capture in its settings
+// (docs/modular-graph-phase-c2-design.md section 5), which the node gives the core as it takes it, before the core
+// first runs, so the same system built without the flag captures all the same. (lsdj-midiout.test.ts proves the decode
+// itself.)
 import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../src/bootSession";
 import { savFrom, type SavInput } from "../src/lsdjSav";
@@ -83,7 +84,7 @@ test("an adopted LSDj in MIDI-out mode is built capturing, and its NoteOns reach
   expect(project.systems.systems().length).toBe(0);
 });
 
-test("the same system built without the flag emits none: the flag is what arms the capture", () => {
+test("the same system built without the flag captures from its node's settings: the document arms it too", () => {
   if (!be.fileExists(ABOY)) skip(`lsdj-midiout-build-flag: aboy LSDj ROM not found at ${ABOY}`);
   const run = playMidiOut((spec) => {
     const bare = { ...spec };
@@ -92,6 +93,7 @@ test("the same system built without the flag emits none: the flag is what arms t
   });
   expect(run.spec.serialOutCapture, "the build flag").toBe(undefined);
   expect(run.liveArms, "setSerialOutCapture calls").toBe(0);
-  expect(run.noteOns).toBe(0);
+  console.log(`[lsdj-midiout-build-flag] armed by its node: ${run.noteOns} NoteOns`);
+  expect(run.noteOns).toBeGreaterThan(0);
   expect(project.systems.systems().length).toBe(0);
 });

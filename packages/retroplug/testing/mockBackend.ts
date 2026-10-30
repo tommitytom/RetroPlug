@@ -92,6 +92,8 @@ export class MockBackend implements Backend {
   /** One response per dialog the flow will open, consumed FIFO. `null` = cancel. */
   private browseQueue: (string | null)[] = [];
 
+  /** Every setParam call, in order: the live param edits the stores made (a gain, a NES's expansion volume). */
+  readonly paramCalls: { nodeId: string; paramId: string; value: number }[] = [];
   /** Live-config applies recorded for assertions. */
   readonly applySettingCalls: { id: number; key: string; value: number | boolean }[] = [];
   readonly applyRoleCalls: { id: number; kind: string; config: Record<string, unknown> }[] = [];
@@ -620,6 +622,14 @@ export class MockBackend implements Backend {
     this.log.push("openFileBrowser");
     this.fileBrowserCalls.push(opts);
     return Promise.resolve(this.browseQueue.length ? (this.browseQueue.shift() as string | null) : null);
+  }
+
+  // Recorded; accepted for a node the last document sent places, as native accepts one the running plan places (the
+  // mock knows no node's params, so any param id passes).
+  setParam(nodeId: string, paramId: string, value: number): boolean {
+    this.log.push("setParam");
+    this.paramCalls.push({ nodeId, paramId, value });
+    return !Number.isNaN(value) && this.graphNode(nodeId) !== undefined;
   }
 
   applySystemSetting(id: number, key: string, value: number | boolean): boolean {

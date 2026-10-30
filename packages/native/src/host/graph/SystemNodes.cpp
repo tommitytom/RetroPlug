@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <iterator>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -127,6 +129,16 @@ namespace {
 
 constexpr std::size_t kMaxOutputs = 16;
 
+// The params (docs/modular-graph-phase-c2-design.md section 3): what is worth playing, automating or modulating, so
+// each is also a control input, its value in the document and its live edits through Engine::setParam. Every system
+// node has `gain`, in dB over the range the store clamps a gain to (systemSettings.ts GAIN_MIN / GAIN_MAX); a NES has
+// `expansionVolume` too, its cartridge sound chip's level in whole percent of unity, as its core takes it.
+using GainParam = rp::float_param<"Gain", rp::range{-90, 12, 0}, "dB">;
+using ExpansionVolumeParam = rp::int_param<"Expansion volume", rp::range{0, 200, 100}, "%">;
+
+// What a param's last-applied value holds before the core has been given any: no value equals it, NaN included.
+constexpr double kUnapplied = std::numeric_limits<double>::quiet_NaN();
+
 // The inputs every system node has (docs/modular-graph-phase-b3a-design.md section 3.1), each mapped onto the core
 // call SystemBase already has. A type declares them in its `inputs`, under these names.
 //
@@ -145,9 +157,10 @@ bool same(const rfl::Validator<T, V...>& a, const rfl::Validator<T, V...>& b) { 
 template <class F>
 bool moved(const std::optional<F>& to, const std::optional<F>& from) { return to && !(from && same(*from, *to)); }
 
-// What every system node shares: the core handoff, its settings reaching the core, the connected-output mask, its
-// inputs, and prepare / step / finish mapped one to one onto the core's block triad. `Self` supplies finish's lanes,
-// may write output queues after the core has run (writeQueues), and applies its own knobs (apply).
+// What every system node shares: the core handoff, its settings and params reaching the core, the connected-output
+// mask, its inputs, and prepare / step / finish mapped one to one onto the core's block triad. `Self` declares its
+// params (`gain` at least), supplies finish's lanes, may write output queues after the core has run (writeQueues),
+// and applies its own knobs (apply) and any param beyond the gain (applyParams).
 //
 // Only a new core rebuilds (rebuild_key): every other setting is a knob the node applies to the core it has, so its
 // prepare reads nothing a commit writes and setGraph never waits on a system node's commit (stateless_prepare). A
@@ -156,6 +169,14 @@ bool moved(const std::optional<F>& to, const std::optional<F>& from) { return to
 // and everything present once at activation, as it takes its core, before that core first runs. Each knob is
 // value-guarded by the core's own setter, so a palette change re-applies the display group and restarts nothing, while
 // a model change restarts the core and a region change resets it (docs/modular-graph-phase-c2-design.md section 4).
+//
+// A param's value reaches the core at the start of each block whose control stream moves it, before the core's
+// prepareForBlock and after the settings (a model's restart first, then the levels), each value-guarded against the
+// value the core was given last: a publish carrying the value the core already has calls nothing. Every one is given
+// at the node's first block, before the core's first prepareForBlock: a node reads its params only in a block (the
+// host binds its control streams there, and lands the document's values in them as it adopts the plan), and a core a
+// node has taken runs nothing before that, so it plays its first sample at the document's level. The gain is smoothed
+// by the core, as every gain edit is.
 template <class Self, class Core, class S = SystemNodeSettings>
 struct SystemNode {
     using Settings = S;
@@ -170,6 +191,7 @@ struct SystemNode {
     const Settings*                        settings = nullptr;  // the committed ones, alive until the next commit
     Settings                               applied{};           // what the core was given last (none before activation)
     bool                                   pending = false;     // settings committed and not yet applied
+    double                                 gainApplied = kUnapplied;  // the gain param's value the core has, in dB
 
     SystemNode() = default;
     SystemNode(const SystemNode&) = delete;
@@ -233,13 +255,25 @@ struct SystemNode {
         }
         finish(b);
     }
-    // The knobs that moved, then the inputs, are applied here, where process starts too: a linked Game Boy's coupled
-    // group prepares every member (rp.step/1) before any of them steps, and never calls process. Knobs first, as the
-    // command ring's were drained before the block ran: a model change restarts the core before its inputs reach it.
+    // The knobs that moved, the params that moved, then the inputs, are applied here, where process starts too: a
+    // linked Game Boy's coupled group prepares every member (rp.step/1) before any of them steps, and never calls
+    // process. Knobs first, as the command ring's were drained before the block ran: a model change restarts the core
+    // before its inputs reach it.
     void prepare(const rp::Block& b) noexcept {
         if (pending) applySettings();
+        static_cast<Self*>(this)->applyParams();
         applyInputs();
         core->prepareForBlock(info(b));
+    }
+
+    // Each param's latest value this block, where it differs from what the core has: a change anywhere in the block
+    // lands at its start. This one for a type whose one param is its gain.
+    void applyParams() noexcept { applyGain(); }
+    void applyGain() noexcept {
+        const double db = static_cast<Self*>(this)->params.gain.latest();
+        if (db != db || db == gainApplied) return;  // NaN reaches a param only over a wire, and moves nothing
+        core->setGainDb(static_cast<float>(db));
+        gainApplied = db;
     }
     bool step(std::uint32_t target) noexcept { return !core->stepIfBelowTarget(target); }
 
@@ -333,6 +367,7 @@ struct GameBoy : SystemNode<GameBoy, SameBoySystem, GameBoySettings> {
         rp::audio_out<rp::stereo>                ch4;
         rp::bytes_out::sized<kSerialOutCapacity> serialOut;
     } outputs;
+    struct { GainParam gain; } params;
     static constexpr std::uint32_t kSerialOut = 5;  // its output index
 
     // The four stems (8 lanes) once any is connected, else the mix (2): finishBlock's two lane counts.
@@ -367,14 +402,16 @@ struct GameBoy : SystemNode<GameBoy, SameBoySystem, GameBoySettings> {
             if (GameBoy* gb = rp::peer_as<GameBoy>(p)) core->linkPeers_.push_back(gb->core);
     }
 
-    // In the order the store's role config reached the core through the command ring (the model's restart first, with
-    // the fast boot it already had, since that one waits for the next restart), the capture last. The capture lands at
-    // the start of the first block of the plan that carries it, the block rp.lsdj.serial-out first runs in its new
-    // mode, so no byte captured in one mode is decoded in the other.
+    // The fast boot first, which waits for the next restart and so is what a model's restart boots with: the edits
+    // that land in one block (several documents published between two blocks commit together) restart the core as if
+    // made one at a time, a fast boot edit before a model edit included. Then the rest, in the order the store's role
+    // config reached the core through the command ring, the capture last. The capture lands at the start of the first
+    // block of the plan that carries it, the block rp.lsdj.serial-out first runs in its new mode, so no byte captured
+    // in one mode is decoded in the other.
     void apply(const Settings& to, const Settings& from) noexcept {
+        if (moved(to.fastBoot, from.fastBoot)) core->setFastBoot(*to.fastBoot);
         if (moved(to.model, from.model)) core->setModel(knobs::valueOf<SameBoyModel>(*to.model));
         if (moved(to.highpass, from.highpass)) core->setHighpass(knobs::valueOf<SameBoyHighpass>(*to.highpass));
-        if (moved(to.fastBoot, from.fastBoot)) core->setFastBoot(*to.fastBoot);
         if (moved(to.colorCorrection, from.colorCorrection))
             core->setColorCorrection(knobs::valueOf<SameBoyColorCorrection>(*to.colorCorrection));
         if (moved(to.dmgPalette, from.dmgPalette))
@@ -402,6 +439,11 @@ struct Nes : SystemNode<Nes, MesenNesSystem, NesSettings> {
         rp::events_in buttons;
     } inputs;
     struct { rp::audio_out<rp::stereo> mix; } outputs;
+    struct {
+        GainParam            gain;
+        ExpansionVolumeParam expansionVolume;
+    } params;
+    double expansionApplied = kUnapplied;  // the expansionVolume param's value the core has
 
     static void adjust_layout(rp::graph::Layout& l, const Settings&) {
         using namespace rp::graph;
@@ -435,6 +477,16 @@ struct Nes : SystemNode<Nes, MesenNesSystem, NesSettings> {
         if (moved(to.mmc5PhaseReset, from.mmc5PhaseReset))
             core->setMmc5PhaseReset(static_cast<std::uint32_t>(knobs::valueOf<CartridgeAccuracy>(*to.mmc5PhaseReset)));
     }
+
+    // The gain, then the expansion volume, which the core's mixer re-reads each buffer: whole percent, as the core
+    // takes it (the planner and setParam round an int param's value; a wire's is clamped and rounded here).
+    void applyParams() noexcept {
+        applyGain();
+        const double percent = params.expansionVolume.latest();
+        if (percent != percent || percent == expansionApplied) return;
+        core->setExpansionVolume(static_cast<std::uint32_t>(std::lround(std::clamp(percent, 0.0, 200.0))));
+        expansionApplied = percent;
+    }
 };
 
 struct Gba : SystemNode<Gba, MesenGbaSystem> {
@@ -448,6 +500,7 @@ struct Gba : SystemNode<Gba, MesenGbaSystem> {
         rp::events_in buttons;
     } inputs;
     struct { rp::audio_out<rp::stereo> mix; } outputs;
+    struct { GainParam gain; } params;
     std::size_t lanes(const rp::Block& b, std::array<float*, 2 * kMaxOutputs>& out) const { return mixLanes(b, out); }
 };
 
@@ -462,6 +515,7 @@ struct Sms : SystemNode<Sms, MesenSmsSystem> {
         rp::events_in buttons;
     } inputs;
     struct { rp::audio_out<rp::stereo> mix; } outputs;
+    struct { GainParam gain; } params;
     std::size_t lanes(const rp::Block& b, std::array<float*, 2 * kMaxOutputs>& out) const { return mixLanes(b, out); }
 };
 

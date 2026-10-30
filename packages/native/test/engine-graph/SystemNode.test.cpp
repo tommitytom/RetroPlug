@@ -6,7 +6,9 @@
 // node's input must render what the core call it maps to renders, made directly; and the Game Boy's serialOut
 // must carry what its core captured. So are its settings' knobs (docs/modular-graph-phase-c2-design.md sections 3 and
 // 4): each must reach the core as the core's own setter, called directly at the start of the block of the plan that
-// carries it, or at activation, renders it, and the descriptors must spell the labels the role configs do.
+// carries it, or at activation, renders it, and the descriptors must spell the labels the role configs do. Its params
+// too: each value must reach the core as its setter, called directly before the core's first block or at the start
+// of the block a change lands in, renders it.
 //
 // There is no GBA case: Mesen's GBA core needs a BIOS image, and no fixture here carries one.
 //
@@ -805,12 +807,13 @@ TEST_CASE("a system node records what its bytes input feeds the core in the engi
 
 namespace {
 
-// A system node "sys" of `type` on its core's token, `knobs` its settings after the core (JSON members, or none), its
-// mix on a stereo host pair; a Game Boy's serialOut on a probe.
-std::string knobbed(const char* type, std::uint64_t token, const std::string& knobs = "") {
+// A system node "sys" of `type` on its core's token, `knobs` its settings after the core (JSON members, or none) and
+// `params` its param values (JSON members, or none), its mix on a stereo host pair; a Game Boy's serialOut on a probe.
+std::string knobbed(const char* type, std::uint64_t token, const std::string& knobs = "", const std::string& params = "") {
     const bool gb = std::string(type) == "rp.sameboy.gb";
     return R"({"nodes":[{"id":"sys","type":")" + std::string(type) + R"(","settings":{"core":)" + std::to_string(token) +
-           (knobs.empty() ? "" : "," + knobs) + R"(}},)" + (gb ? R"({"id":"probe","type":"rp.test.probe"},)" : "") +
+           (knobs.empty() ? "" : "," + knobs) + "}" + (params.empty() ? "" : R"(,"params":{)" + params + "}") + "}," +
+           (gb ? R"({"id":"probe","type":"rp.test.probe"},)" : "") +
            R"({"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],"wires":[{"from":"sys.mix","to":"out.out.1-2"})" +
            (gb ? R"(,{"from":"sys.serialOut","to":"probe.bytes"})" : "") + "]}";
 }
@@ -1060,6 +1063,33 @@ TEST_CASE("a knob restarts or resets its core only where the core's own setter d
         CHECK(heard >= static_cast<std::uint64_t>(2.0 * kRate));  // the chime again, from the block it landed in
         CHECK(heard != kNever);
     }
+    SECTION("Game Boy: a fast boot edit and a model edit landing in one block restart it with the new fast boot") {
+        // Two documents published before a block commit together; the restart reads the fast boot, so it applies
+        // first, as the two edits made one block apart would. The other order is audible: off, the boot ROM chimes.
+        const auto build = [] {
+            SameBoyConfig cfg;
+            cfg.model = SameBoyModel::DmgB;
+            cfg.fastBoot = true;
+            auto sys = std::make_unique<SameBoySystem>(1, cfg, readFile(RP_MGB_ROM_PATH));
+            sys->onActivate(kRate);
+            return sys;
+        };
+        NodeRig rig(kRate);
+        auto direct = build(), control = build();
+        const auto token = rig.park(build());
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("model":"dmgB","fastBoot":true)")).ok);
+        Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
+        CHECK(compare(rig, d, 3.0, once(0.5, [&] {
+                  REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("model":"dmgB","fastBoot":false)")).ok);
+                  REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("model":"mgb","fastBoot":false)")).ok);
+                  direct->setFastBoot(false);
+                  direct->setModel(SameBoyModel::Mgb);
+                  control->setModel(SameBoyModel::Mgb);
+                  control->setFastBoot(false);
+              }), &c, &heard) == "");
+        CHECK(heard >= static_cast<std::uint64_t>(0.5 * kRate));
+        CHECK(heard != kNever);
+    }
     SECTION("NES: the sprite limit, latency and accuracy switches apply in place, a region change resets it") {
         NodeRig rig(kRate);
         auto direct = nes(1, 0), control = nes(1, 0);
@@ -1280,4 +1310,191 @@ TEST_CASE("a Game Boy node takes knob edits published while an audio thread runs
     CHECK(gb->serialOutCapture() == SerialOutCapture::Drive);
     CHECK(gb->config_.highpass == SameBoyHighpass::Off);
     CHECK(gb->config_.lightTemperature == 0.5);
+}
+
+// ---- params -----------------------------------------------------------------------------------------------------
+//
+// A system node's params (docs/modular-graph-phase-c2-design.md sections 3 and 4): every type's gain, and a NES's
+// expansion volume. The document's value reaches the core before its first block, and each change (setParam, or a
+// document carrying another value) at the start of the block it lands in, as the core's own setter called directly
+// there renders it, bit for bit; a value the core already has calls nothing.
+
+namespace {
+
+// Each param a registered type declares, as "<id> <type> <min>..<max> <default> <unit>".
+std::vector<std::string> declaredParams(NodeRig& rig, const char* type) {
+    const auto descriptor = rp::graph::parseJson(rig.registry.find(type)->type->descriptor(rig.registry.find(type)->type));
+    REQUIRE(descriptor);
+    const auto params = descriptor->to_object()->get("params")->to_array();
+    REQUIRE(params);
+    std::vector<std::string> out;
+    for (const auto& p : *params) {
+        const auto o = *p.to_object();
+        const auto num = [&](const char* key) { return rp::graph::jsNumber(*o.get(key)->to_double()); };
+        out.push_back(*o.get("id")->to_string() + " " + *o.get("type")->to_string() + " " + num("min") + ".." + num("max") +
+                      " " + num("default") + " " + *o.get("unit")->to_string());
+    }
+    return out;
+}
+
+}  // namespace
+
+TEST_CASE("every system node takes its gain as a param, and a NES its expansion volume", "[engine-graph][system-node][params]") {
+    NodeRig rig(kRate);
+    for (const char* type : {"rp.sameboy.gb", "rp.mesen.gba", "rp.mesen.sms"}) {
+        INFO(type);
+        CHECK(declaredParams(rig, type) == std::vector<std::string>{"gain float -90..12 0 dB"});
+    }
+    CHECK(declaredParams(rig, "rp.mesen.nes") == std::vector<std::string>{"gain float -90..12 0 dB", "expansionVolume int 0..200 100 %"});
+}
+
+TEST_CASE("a system node gives its core the document's params before the core's first block, and each change at the "
+          "start of the block it lands in",
+          "[engine-graph][system-node][params]") {
+    std::uint64_t heard = kNever;
+
+    SECTION("Game Boy") {
+        NodeRig rig(kRate);
+        auto direct = mgb(1), control = mgb(1);
+        auto built = mgb(1);
+        SameBoySystem* const gb = built.get();
+        const auto token = rig.park(std::move(built));
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, "", R"("gain":-12)")).ok);
+        // Planned and activated, but a node reads its params in a block: the core has the value as that block starts.
+        CHECK(gb->config_.gainDb == 0.0f);
+        direct->setGainDb(-12.0f);
+        Direct d({direct.get()}, 2, {{0, 1}}), c({control.get()}, 2, {{0, 1}});
+        CHECK(compare(rig, d, 3.0, once(1.0, [&] {
+                  REQUIRE(rig.host->setParam("sys", "gain", -3.0));
+                  direct->setGainDb(-3.0f);
+              }), &c, &heard) == "");
+        CHECK(heard < static_cast<std::uint64_t>(1.0 * kRate));  // the document's gain, on the boot chime
+        CHECK(gb->config_.gainDb == -3.0f);
+        CHECK(sounds(d));
+    }
+    SECTION("NES, its expansion volume in whole percent") {
+        NodeRig rig(kRate);
+        auto direct = nes(1, 0);
+        auto built = nes(1, 0);
+        MesenNesSystem* const core = built.get();
+        const auto token = rig.park(std::move(built));
+        REQUIRE(rig.set(knobbed("rp.mesen.nes", token, "", R"("gain":-6,"expansionVolume":40)")).ok);
+        direct->setGainDb(-6.0f);
+        direct->setExpansionVolume(40);
+        Direct d({direct.get()}, 2, {{0, 1}});
+        auto edit = once(2.0, [&] {
+            REQUIRE(rig.host->setParam("sys", "expansionVolume", 150.4));  // rounded, as an int param's value is
+            REQUIRE(rig.host->setParam("sys", "gain", 3.0));
+            direct->setExpansionVolume(150);
+            direct->setGainDb(3.0f);
+        });
+        auto note = afterBoot(*direct, *core);
+        CHECK(compare(rig, d, 3.0, [&](std::uint64_t at) { note(at); edit(at); }) == "");
+        CHECK(core->config().gainDb == 3.0f);
+        CHECK(core->config().expansionVolume == 150);
+        CHECK(sounds(d));
+    }
+    SECTION("SMS") {
+        NodeRig rig(kRate);
+        auto direct = sms(1);
+        auto viaGraph = sms(1);
+        SystemBase* const graphCore = viaGraph.get();
+        const auto token = rig.park(std::move(viaGraph));
+        REQUIRE(rig.set(knobbed("rp.mesen.sms", token, "", R"("gain":-9)")).ok);
+        direct->setGainDb(-9.0f);
+        Direct d({direct.get()}, 2, {{0, 1}});
+        CHECK(compare(rig, d, 5.0, smsStart(*direct, *graphCore)) == "");
+        CHECK(sounds(d));
+    }
+}
+
+TEST_CASE("a published param value the core already has changes nothing, and another value lands at the start of its "
+          "plan's first block",
+          "[engine-graph][system-node][params]") {
+    NodeRig rig(kRate);
+    auto direct = mgb(1);
+    const auto token = rig.park(mgb(1));
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+    Direct d({direct.get()}, 2, {{0, 1}});
+    auto live = once(0.3, [&] {
+        REQUIRE(rig.host->setParam("sys", "gain", -12.0));
+        direct->setGainDb(-12.0f);
+    });
+    // The store's next publish, for whatever reason, carries the value it set live: nothing moves.
+    auto same = once(0.6, [&] { REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("dmgPalette":"dmg")", R"("gain":-12)")).ok); });
+    // A document dropping the param leaves the stream, and the core, where they were.
+    auto dropped = once(0.9, [&] { REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, R"("dmgPalette":"dmg")")).ok); });
+    auto other = once(1.2, [&] {
+        REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, "", R"("gain":-1.5)")).ok);
+        direct->setGainDb(-1.5f);
+    });
+    CHECK(compare(rig, d, 2.0, [&](std::uint64_t at) { live(at); same(at); dropped(at); other(at); }) == "");
+    CHECK(sounds(d));
+}
+
+TEST_CASE("a param edit, live or published, allocates nothing on the block thread", "[engine-graph][system-node][params]") {
+    NodeRig rig(kRate);
+    auto built = mgb(1);
+    SameBoySystem* const gb = built.get();
+    const auto token = rig.park(std::move(built));
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token)).ok);
+    Lanes out(2);
+    const rp_transport t{kRate, 120.0, 0.0, 0};
+    for (int b = 0; b < 8; ++b) rig.host->processBlock(512, t, out.ptrs.data(), 2);
+    rig.host->setAudioThreadOwns(true);  // so each edit lands in a block, as it does under an audio thread
+    REQUIRE(rig.host->setParam("sys", "gain", -6.0));
+    rp::test::beginCountingAllocations();
+    for (int b = 0; b < 2; ++b) rig.host->processBlock(512, t, out.ptrs.data(), 2);
+    auto counted = rp::test::endCountingAllocations();
+    CHECK(counted.allocations == 0);
+    CHECK(counted.frees == 0);
+    CHECK(gb->config_.gainDb == -6.0f);
+    REQUIRE(rig.set(knobbed("rp.sameboy.gb", token, "", R"("gain":-3)")).ok);
+    rp::test::beginCountingAllocations();
+    for (int b = 0; b < 2; ++b) rig.host->processBlock(512, t, out.ptrs.data(), 2);
+    counted = rp::test::endCountingAllocations();
+    rig.host->setAudioThreadOwns(false);
+    CHECK(counted.allocations == 0);
+    CHECK(counted.frees == 0);
+    CHECK(gb->config_.gainDb == -3.0f);
+}
+
+TEST_CASE("a system node takes param edits made while an audio thread runs its blocks", "[engine-graph][system-node][params]") {
+    // The race check for the params path under ThreadSanitizer (build-tsan/): live edits and documents carrying a value
+    // from this thread, while the audio thread drains them and the node applies the latest.
+    NodeRig rig(kRate);
+    auto built = nes(1, 0);
+    MesenNesSystem* const core = built.get();
+    const auto token = rig.park(std::move(built));
+    REQUIRE(rig.set(knobbed("rp.mesen.nes", token)).ok);
+    std::atomic<bool> running{true};
+    std::atomic<int>  blocks{0};
+    rig.host->setAudioThreadOwns(true);
+    std::thread audio([&] {
+        Lanes out(2);
+        const rp_transport t{kRate, 120.0, 0.0, 0};
+        while (running.load(std::memory_order_acquire)) {
+            rig.host->processBlock(256, t, out.ptrs.data(), 2);
+            blocks.fetch_add(1, std::memory_order_release);
+        }
+    });
+    int accepted = 0;
+    constexpr int kEdits = 60;
+    for (int i = 0; i < kEdits; ++i) {
+        const double gain = -(i % 30), percent = 100 + i;
+        const std::string values = R"("gain":)" + rp::graph::jsNumber(gain) + R"(,"expansionVolume":)" + rp::graph::jsNumber(percent);
+        const bool ok = i % 10 == 9 ? rig.set(knobbed("rp.mesen.nes", token, "", values)).ok
+                                    : rig.host->setParam("sys", "gain", gain) && rig.host->setParam("sys", "expansionVolume", percent);
+        accepted += ok ? 1 : 0;
+        rig.host->reclaim();
+        const int seen = blocks.load(std::memory_order_acquire);
+        while (blocks.load(std::memory_order_acquire) < seen + 2) std::this_thread::yield();
+    }
+    running.store(false, std::memory_order_release);
+    audio.join();
+    rig.host->setAudioThreadOwns(false);
+    CHECK(accepted == kEdits);
+    run(rig);
+    CHECK(core->config().gainDb == -29.0f);  // the last edit's, 59
+    CHECK(core->config().expansionVolume == 159);
 }

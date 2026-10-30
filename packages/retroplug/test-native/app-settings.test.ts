@@ -1,8 +1,10 @@
 // Phase 1: system settings actually take effect on the LIVE core, driven through the stores. Gain is
-// the crisp proof — a -90 dB edit silences a ringing mGB and 0 dB restores it, so applySystemSetting
-// reaches the running emulator (not the old no-op stub). Then the "sameboy" system-role config
-// (highpass live, model via restart) dispatches through applyRoleConfig without breaking playback.
-// One test / one mGB system: whole-mix RMS needs a single system in the shared native engine.
+// the crisp proof: a -90 dB edit silences a ringing mGB and 0 dB restores it, so the gain param the store
+// sets (setParam) reaches the running emulator. Then the "sameboy" system-role config (highpass live,
+// model via restart) reaches it as its system node's settings, published, without breaking playback. And a
+// loaded project's saved gain is what its core plays at from its first block, which only the published
+// document carries to it (docs/modular-graph-phase-c2-design.md section 5).
+// One mGB system at a time: whole-mix RMS needs a single system in the shared native engine.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
@@ -24,19 +26,23 @@ const rms = (a: Float32Array): number => {
   return a.length ? Math.sqrt(s / a.length) : 0;
 };
 
-test("live gain silences/restores a ringing mGB, and sameboy role config dispatches (through the stores)", () => {
-  const be = createRealBackend();
-  const registry = buildAppRegistry();
-  const recent = new RecentStore(be);
-  const project = new ProjectStore(be, recent, registry);
-  const audio = createAudioDriver();
+// One project for the file: its graph is the engine's (one publisher per Engine), and each test removes what it built.
+const be = createRealBackend();
+const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
+const audio = createAudioDriver();
 
+// Warm a fresh mGB up (GB boot + mGB firmware init), sound the chord, and measure it.
+const chordRms = (): number => {
+  audio.renderAudio(1500);
+  CHORD.forEach((m) => audio.stageMidiIn(m));
+  return rms(audio.renderAudio(500));
+};
+
+test("live gain silences/restores a ringing mGB, and sameboy role config dispatches (through the stores)", () => {
   const id = project.systems.loadMgb()!;
   expect(typeof id).toBe("number");
 
-  audio.renderAudio(1500); // warm up: GB boot + mGB firmware init
-  CHORD.forEach((m) => audio.stageMidiIn(m));
-  const loud = rms(audio.renderAudio(500)); // the chord rings
+  const loud = chordRms(); // the chord rings
 
   // --- live gain: the crisp proof that applySystemSetting reaches the running core. Discard a short
   // settle window after each edit so RMS measures the settled level, not the ~20 ms gain ramp. ---
@@ -64,4 +70,24 @@ test("live gain silences/restores a ringing mGB, and sameboy role config dispatc
   const afterModel = rms(audio.renderAudio(1500));
   console.log(`[app-settings] afterHighpass=${afterHighpass.toFixed(5)} afterModel=${afterModel.toFixed(5)}`);
   expect(afterModel > 0.001).toBeTruthy(); // survived the model-change restart and plays on the new model
+  project.systems.removeSystem(id);
+});
+
+test("a project loaded with a saved gain plays at it from its first block, before any edit", () => {
+  // Nothing but the published document carries the saved gain to a loaded core: it is built at 0 dB.
+  const saved = project.systems.loadMgb()!;
+  expect(project.systems.setGain(saved, -90)).toBeTruthy();
+  const bytes = project.exportBytes()!;
+  project.newProject();
+  expect(project.loadBytes(bytes).kind).toBe("loaded");
+  const [id] = project.systems.systems().map((e) => e.id);
+  expect(project.systems.view()[0].settings.gainDb).toBe(-90);
+  const loaded = chordRms();
+  expect(project.systems.setGain(id, 0)).toBeTruthy();
+  audio.renderAudio(150); // the ramp back up
+  const restored = rms(audio.renderAudio(500));
+  console.log(`[app-settings] loaded at -90 dB=${loaded.toFixed(5)} restored=${restored.toFixed(5)}`);
+  expect(loaded < 0.001).toBeTruthy(); // silent: the core runs at the gain the project saved
+  expect(restored > 0.001).toBeTruthy(); // and it is the gain: at 0 dB the same system rings
+  project.systems.removeSystem(id);
 });

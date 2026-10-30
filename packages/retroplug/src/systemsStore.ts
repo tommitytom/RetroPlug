@@ -10,8 +10,10 @@
 // duplicateSystem / reload orchestration and the DSP list handlers
 // (PluginDSP.cpp:406-458), with every path derived by the pure kernels.
 
-import type { ConstructSpec, ControlPlaneBackend, HostBackend, SerialOutCapture } from "./backend";
-import type { GraphSystem } from "./graph/buildGraph";
+import type { ConstructSpec, ControlPlaneBackend, HostBackend } from "./backend";
+import { systemKnobs, type GraphSystem } from "./graph/buildGraph";
+import { serialOutCaptureFor } from "./graph/controller";
+import { canonicalJson } from "./graph/canonicalJson";
 import { EngineGraph } from "./engineGraph";
 import { detectPlatform, romHasBattery, ROM_SNIFF_LEN, SEGA_SNIFF_LEN, defaultCoreFor, type Platform, type Core } from "./platform";
 
@@ -31,9 +33,9 @@ import {
 } from "./systemsList";
 import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettingsSchema } from "./systemSettings";
 import type { RoleRegistry, RoleInstance } from "./systemRoles";
-import { placedRole, protocolNodeOf, protocolPipeline, protocolWrites } from "./graph/protocolNodes";
+import { protocolNodeOf, protocolPipeline, protocolWrites } from "./graph/protocolNodes";
 import { blipToasterChip, needsChipLabelScan, BLIPTOASTER_CHIP_SCAN_LEN } from "./bliptoaster/romDetect";
-import { roleConfigForNative, LsdjSyncMode } from "./settingsEnums";
+import { roleConfigForNative } from "./settingsEnums";
 
 // How much ROM header to read for the role providers (title lives at 0x134).
 const ROLE_HEADER_LEN = 0x150;
@@ -158,12 +160,18 @@ export class SystemsStore {
     return this.entries.slice();
   }
   /** The systems as the engine's graph places them, in slot order (graph/buildGraph.ts), each with the roles that
-   *  have a protocol node, in order, as its pipeline: the core's config role and the features with no DSP behaviour
-   *  (asset overrides, a ROM's facts) stay out of the document, so a model, palette or asset edit leaves it as it
-   *  was, and so does a role whose kind is already placed or whose node would write an input an earlier role's does
-   *  (one writer per input, graph/protocolNodes.ts). The same with a registry or without one. */
+   *  have a protocol node, in order, as its pipeline, its core-config role's config and its gain: the features with no
+   *  DSP behaviour (asset overrides, a ROM's facts) stay out of the document, so an asset edit leaves it as it was, and
+   *  so does a role whose kind is already placed or whose node would write an input an earlier role's does (one writer
+   *  per input, graph/protocolNodes.ts). The core config reaches the document as its system node's knobs
+   *  (systemKnobs): its setting fields as settings, a NES's expansion volume, like the gain, as a param. The same with
+   *  a registry or without one. */
   graphSystems(): GraphSystem[] {
-    return this.entries.map((e) => ({ id: e.id, ...e.built, pipeline: protocolPipeline(e.roles) }));
+    return this.entries.map((e) => {
+      const coreConfig = e.roles.find((r) => r.kind === e.core)?.config;
+      const system: GraphSystem = { id: e.id, ...e.built, pipeline: protocolPipeline(e.roles), gainDb: e.settings.gainDb };
+      return coreConfig ? { ...system, coreConfig } : system;
+    });
   }
   focused(): number {
     return this.focusedId;
@@ -510,44 +518,66 @@ export class SystemsStore {
 
   // --- per-system settings + roles ----------------------------------------
 
-  /** Set a system's audio gain (dB, clamped); applies to the live emulator. */
+  /** Set a system's audio gain (dB, clamped): its node's `gain` param, set live (backend.setParam, at the next block)
+   *  with no publish. The next document, whatever publishes it, carries the same value. */
   setGain(id: number, db: number): boolean {
-    return this.applySetting(id, "gainDb", clampGain(db));
+    const e = findById(this.entries, id);
+    if (!e) return false;
+    const gainDb = clampGain(db);
+    this.entries = replaceById(this.entries, id, { ...e, settings: { ...e.settings, gainDb } });
+    this.backend.setParam(systemNodeId(id), "gain", gainDb);
+    this.markDirty();
+    return true;
   }
 
-  /** Toggle reload-on-ROM-change; applies to the live emulator. */
+  /** Toggle reload-on-ROM-change: TS's alone, read by the file watcher (fileWatcher.ts), so nothing native hears it. */
   setReloadOnRomChange(id: number, on: boolean): boolean {
-    return this.applySetting(id, "reloadOnRomChange", on);
+    const e = findById(this.entries, id);
+    if (!e) return false;
+    this.entries = replaceById(this.entries, id, { ...e, settings: { ...e.settings, reloadOnRomChange: on } });
+    this.markDirty();
+    return true;
   }
 
-  /** Edit a role's config (validated/clamped via its RoleType). A "system" role's
-   *  config is applied to the live emulator; a "feature" role's config reaches only its
-   *  protocol node, as the node's settings in the next published graph. False when the role is absent. */
+  /** Edit a role's config (validated/clamped via its RoleType). False when the role is absent. What reaches the
+   *  engine is what the published graph carries. A role with a protocol node is placed with its config as that node's
+   *  settings, so its edit publishes (an lsdj-sync's mode among them, and with it the capture its Game Boy's node
+   *  runs). The core-config role (kind === core) is its system node's knobs (systemKnobs): an edit moving a setting
+   *  field publishes, one moving only a param (a NES's expansion volume) sets it live (backend.setParam) with no
+   *  publish, and one moving neither (a construct-time field: the FIFO, the SD root, the N8 link, the export mode, FM)
+   *  leaves the engine as it is until the reset or reload that rebuilds the core from it. A Game Boy's link group is
+   *  wiring, so a change of its value publishes. Any other role (an asset override, a ROM's facts) never reaches the
+   *  engine. */
   setRoleConfig(id: number, roleKind: string, partial: Record<string, unknown>): boolean {
     const e = findById(this.entries, id);
     if (!e) return false;
     const idx = e.roles.findIndex((r) => r.kind === roleKind);
     if (idx < 0) return false;
     const rt = this.registry?.roleType(roleKind);
-    const merged = { ...e.roles[idx].config, ...partial };
+    const was = e.roles[idx].config;
+    const merged = { ...was, ...partial };
     const config = rt ? rt.schema.parse(merged) : merged;
-    if (rt?.category === "system") this.backend.applyRoleConfig(id, roleKind, roleConfigForNative(roleKind, config));
     const roles = e.roles.slice();
     roles[idx] = { kind: roleKind, config };
-    // A Game Boy's link group is the one system-role field that is also wiring: the cable follows it, so only a
-    // change of its value publishes (a model or palette edit leaves the document as it was).
+    // A Game Boy's link group is the one system-role field that is also wiring: the cable follows it, so a change of
+    // its value publishes.
     const linkGroupId = (config as { linkGroupId?: unknown }).linkGroupId;
     const linkGroup = typeof linkGroupId === "number" ? linkGroupId : 0;
     const rewired = roleKind === "sameboy" && e.built.type === "rp.sameboy.gb" && linkGroup !== e.built.linkGroup;
     const built = rewired ? { ...e.built, linkGroup } : e.built;
     this.entries = replaceById(this.entries, id, { ...e, roles, built });
-    // A feature role stays pure TS, EXCEPT lsdj-sync's serial-out capture mode, set on any change to an lsdj-sync the
-    // pipeline places: drive for MI.OUT, listen for master sync, none otherwise (the decoders themselves run in the
-    // role's rp.lsdj.serial-out node, after the Game Boy, which the publish below hands the new mode).
-    if (roleKind === "lsdj-sync") this.syncSerialOutCapture(id);
-    // A role with a protocol node is placed with its config as that node's settings, so its edit publishes; an edit
-    // the document does not carry (a model or palette, an asset override) leaves it as it was.
-    if (rewired || protocolNodeOf(roleKind) !== undefined) this.onGraphChange(false);
+    // The core config's knobs before and after: a setting field that moved is a document of its own, and a param that
+    // moved is set live unless that document carries it anyway.
+    let settingMoved = false;
+    const params: [string, number][] = [];
+    if (roleKind === e.core) {
+      const before = systemKnobs({ type: e.built.type, coreConfig: was });
+      const after = systemKnobs({ type: e.built.type, coreConfig: config });
+      settingMoved = canonicalJson(before.settings) !== canonicalJson(after.settings);
+      for (const [param, value] of Object.entries(after.params)) if (before.params[param] !== value) params.push([param, value]);
+    }
+    if (rewired || settingMoved || protocolNodeOf(roleKind) !== undefined) this.onGraphChange(false);
+    else for (const [param, value] of params) this.backend.setParam(systemNodeId(id), param, value);
     this.markDirty();
     return true;
   }
@@ -555,7 +585,7 @@ export class SystemsStore {
   /** Link a freshly-created instance to the one it was created from: the child joins the parent's link group,
    *  and if the parent is ungrouped (0) the parent is promoted to group 1 so the pair is linked. A no-op unless
    *  BOTH are SameBoy (GB) systems — link groups are a Game Boy link-cable concept. Routes through
-   *  setRoleConfig, so native-apply + dirty + the publish are handled. */
+   *  setRoleConfig, so dirty and the publish are handled. */
   inheritLinkGroup(childId: number, parentId: number): void {
     const parentSb = findById(this.entries, parentId)?.roles.find((r) => r.kind === "sameboy");
     const childSb = findById(this.entries, childId)?.roles.find((r) => r.kind === "sameboy");
@@ -564,19 +594,6 @@ export class SystemsStore {
     const target = g > 0 ? g : 1;
     if (g === 0) this.setRoleConfig(parentId, "sameboy", { linkGroupId: target }); // promote the lone parent
     this.setRoleConfig(childId, "sameboy", { linkGroupId: target }); // child joins the parent's group
-  }
-
-  // A universal-setting change: emulator-apply + update + dirty. False when absent.
-  private applySetting(id: number, key: keyof CommonSettings, value: number | boolean): boolean {
-    const e = findById(this.entries, id);
-    if (!e) return false;
-    this.backend.applySystemSetting(id, key, value);
-    this.entries = replaceById(this.entries, id, {
-      ...e,
-      settings: { ...e.settings, [key]: value } as CommonSettings,
-    });
-    this.markDirty();
-    return true;
   }
 
   // --- project-load rebuild seam ------------------------------------------
@@ -955,9 +972,11 @@ export class SystemsStore {
         const rt = this.registry.roleType(r.kind);
         if (rt?.onConstruct) s = rt.onConstruct(s, this.backend, r.config);
       }
-    // A core is built with its serial-out capture already armed, so no command has to chase it.
-    const capture = serialOutCaptureFor(roles);
-    return capture ? { ...s, serialOutCapture: capture } : s;
+    // A core is built with its serial-out capture already armed, the capture its node's settings carry anyway, from
+    // the mode of the lsdj-sync its pipeline places (graph/controller.ts serialOutCaptureFor): its activation applies
+    // the document's, the controller's MI.MAP override included, before the core first runs.
+    const capture = serialOutCaptureFor(protocolPipeline(roles));
+    return capture !== "off" ? { ...s, serialOutCapture: capture } : s;
   }
 
   // Write a system's live battery to its own `.sav` before its core is destroyed. Every teardown path
@@ -1012,28 +1031,7 @@ export class SystemsStore {
     this.markDirty();
     return id;
   }
-
-  // Set native serial-out capture for a running system from its lsdj-sync mode (serialOutCaptureFor). Called
-  // only when the mode changes (setRoleConfig): a core that is built or rebuilt carries its capture in the build
-  // spec instead (applyConstructHooks). A no-op for a system whose pipeline places no lsdj-sync: a non-LSDj system,
-  // or one whose lsdj-sync the one-writer rule leaves out. Which roles are placed is fixed with the system's role kinds
-  // and their order, which an edit never changes (there is no adding or removing a role), so its core was built with
-  // no capture either, and there is nothing to disarm.
-  private syncSerialOutCapture(id: number): void {
-    const roles = findById(this.entries, id)?.roles;
-    if (!roles || !placedRole(roles, "lsdj-sync")) return;
-    this.backend.setSerialOutCapture(id, serialOutCaptureFor(roles));
-  }
 }
 
-// How a system with these roles captures its serial out: both LSDj-to-host MIDI-out modes need it. MidiOut
-// (SYNC=MI.OUT) drives, playing the Arduinoboy that clocks LSDj as the serial slave; MasterSync (SYNC=LSDJ) only
-// listens to the clock LSDj sends as the master. Null for no capture, which is also what an lsdj-sync the pipeline
-// leaves out gets, whatever its mode: what a capture delivers is decoded by the role's rp.lsdj.serial-out node, which
-// is not placed, and a driving core would clock the serial port under the bytes the placed role writes.
-function serialOutCaptureFor(roles: RoleInstance[]): SerialOutCapture | null {
-  const mode = (placedRole(roles, "lsdj-sync")?.config as { mode?: LsdjSyncMode } | undefined)?.mode;
-  if (mode === LsdjSyncMode.MidiOut) return "drive";
-  if (mode === LsdjSyncMode.MasterSync) return "listen";
-  return null;
-}
+/** A system's node in the graph documents buildGraph builds, whose params the store sets live. */
+const systemNodeId = (id: number): string => `sys-${id}`;

@@ -4,11 +4,15 @@
 // carried over when buildGraph replaced it; build-graph-goldens.test.ts holds the two builders to each other.
 // Then the script nodes ahead of the systems and the host's I/O around them (docs/modular-graph-phase-b3b-design.md
 // section 4): the MIDI routing, the controller and each role's protocol node, wired as the DSP kernel's ports were; and
-// after the systems, LSDj's serial-out decoder (docs/lsdj-serial-out-design.md section 3).
+// after the systems, LSDj's serial-out decoder (docs/lsdj-serial-out-design.md section 3). And each system node's knobs
+// (docs/modular-graph-phase-c2-design.md section 5): its core config's setting fields and a Game Boy's serial-out
+// capture as settings, its gain and a NES's expansion volume as params.
 import { test, expect } from "../../testing/harness";
 import { buildGraph, type GraphModel, type GraphSystem, type HostShape } from "../../src/graph/buildGraph";
 import { protocolPipeline, type LeftOutRole, type ProtocolRole } from "../../src/graph/protocolNodes";
-import { controllerSyncOverride, type GraphController } from "../../src/graph/controller";
+import { controllerSyncOverride, serialOutCaptureFor, type GraphController } from "../../src/graph/controller";
+import { RoleRegistry } from "../../src/systemRoles";
+import { registerCoreRoles } from "../../src/coreRoles";
 import { MIDI_ROUTE_NODE_TYPE } from "../../src/script/nodes/midiRoute";
 import { CONTROLLER_SESSION_NODE_TYPE } from "../../src/script/nodes/controllerSession";
 import { MGB_MIDI_NODE_TYPE } from "../../src/script/nodes/mgbMidi";
@@ -17,7 +21,7 @@ import { RISA_SYNC_NODE_TYPE } from "../../src/script/nodes/risaSync";
 import { SMS_SYNC_NODE_TYPE } from "../../src/script/nodes/smsSync";
 import { LSDJ_SYNC_NODE_TYPE } from "../../src/script/nodes/lsdjSync";
 import { LSDJ_SERIAL_OUT_NODE_TYPE } from "../../src/script/nodes/lsdjSerialOut";
-import type { AudioRouting, MidiRouting } from "../../src/settingsEnums";
+import { LSDJ_MODE_VALUES, type AudioRouting, type MidiRouting } from "../../src/settingsEnums";
 
 const gb = (id: number, linkGroup = 0, pipeline: ProtocolRole[] = []): GraphSystem => ({ id, type: "rp.sameboy.gb", linkGroup, exportMode: 0, pipeline });
 const nes = (id: number, exportMode = 0, pipeline: ProtocolRole[] = []): GraphSystem => ({ id, type: "rp.mesen.nes", linkGroup: 0, exportMode, pipeline });
@@ -85,9 +89,9 @@ test("Stereo sums every system into one pair, in slot order", () => {
   expect(built([gb(1), gb(3)]).lane(0)).toEqual(["split-1.out1", "split-3.out1"]);
 });
 
-test("a system node names its core by its system id", () => {
-  const g = built([gb(4)]);
-  expect(g.node("sys-4")).toEqual({ id: "sys-4", type: "rp.sameboy.gb", settings: { core: 4 } });
+test("a system node names its core by its system id, and a Game Boy's its capture", () => {
+  expect(built([gb(4)]).node("sys-4")).toEqual({ id: "sys-4", type: "rp.sameboy.gb", settings: { core: 4, serialOutCapture: "off" } });
+  expect(built([nes(5)]).node("sys-5")).toEqual({ id: "sys-5", type: "rp.mesen.nes", settings: { core: 5 } });
 });
 
 test("one system on a lane is wired straight in", () => {
@@ -472,4 +476,86 @@ test("the override leaves the model's own pipeline as it was", () => {
   expect(syncModeOf(built(systems, "stereo", multi(2), withController({ cartSync: "MidiMap" })), 1)).toBe("midiMap");
   expect(systems[0].pipeline[0].config.mode).toBe("midiSync");
   expect(syncModeOf(built(systems), 1)).toBe("midiSync");
+});
+
+// --- the system nodes' knobs (docs/modular-graph-phase-c2-design.md sections 3 and 5) ----------------------------
+
+// A core-config role's config as a store holds it, its role's schema parsed (coreRoles.ts): every field filled.
+const CORE_ROLES = new RoleRegistry();
+registerCoreRoles(CORE_ROLES);
+const coreConfig = (kind: "sameboy" | "mesen", over: Record<string, unknown> = {}): Record<string, unknown> =>
+  CORE_ROLES.roleType(kind)!.schema.parse(over) as Record<string, unknown>;
+const gba = (id: number): GraphSystem => ({ id, type: "rp.mesen.gba", linkGroup: 0, exportMode: 0, pipeline: [] });
+
+test("each system node's settings carry its core config's setting fields, and its params its gain and a NES's expansion volume", () => {
+  const sameboy = coreConfig("sameboy", { model: "dmgB", highpass: "removeDcOffset", fastBoot: false, colorCorrection: "lowContrast", dmgPalette: "gbl", lightTemperature: -0.25, linkGroupId: 3 });
+  const mesen = coreConfig("mesen", { region: "pal", removeSpriteLimit: true, apuLatencyMs: 2.5, s5bNoise: "chip", expansionVolume: 40, enableFm: false, fifo: "hardware", sdRoot: "/sd" });
+  const g = built([
+    { ...gb(1), coreConfig: sameboy, gainDb: -6 },
+    { ...nes(2), coreConfig: mesen, gainDb: 3 },
+    { ...gba(3), coreConfig: mesen, gainDb: -1.5 },
+    { ...sms(4), coreConfig: mesen, gainDb: 0 },
+  ]);
+  // The labels as the role config spells them; nothing that is wiring (the link group) or construct-time (FM, the FIFO,
+  // the SD root, the export mode, the N8 link) is a setting.
+  expect(g.node("sys-1")).toEqual({
+    id: "sys-1",
+    type: "rp.sameboy.gb",
+    settings: { core: 1, model: "dmgB", fastBoot: false, highpass: "removeDcOffset", colorCorrection: "lowContrast", dmgPalette: "gbl", lightTemperature: -0.25, serialOutCapture: "off" },
+    params: { gain: -6 },
+  });
+  expect(g.node("sys-2")).toEqual({
+    id: "sys-2",
+    type: "rp.mesen.nes",
+    settings: { core: 2, region: "pal", removeSpriteLimit: true, apuLatencyMs: 2.5, s5bNoise: "chip", mmc5PhaseReset: "n8" },
+    params: { gain: 3, expansionVolume: 40 },
+  });
+  expect(g.node("sys-3")).toEqual({ id: "sys-3", type: "rp.mesen.gba", settings: { core: 3 }, params: { gain: -1.5 } });
+  expect(g.node("sys-4")).toEqual({ id: "sys-4", type: "rp.mesen.sms", settings: { core: 4 }, params: { gain: 0 } });
+});
+
+test("a system with no core config or gain carries none: its node leaves its core as it was built", () => {
+  const g = built([gb(1), nes(2), gba(3), sms(4)]);
+  for (const id of [1, 2, 3, 4]) expect(g.node(`sys-${id}`)?.params, `sys-${id}`).toBe(undefined);
+  expect(g.node("sys-2")?.settings).toEqual({ core: 2 });
+  // A config holding only some fields gives the node those alone.
+  expect(built([{ ...nes(2), coreConfig: { region: "dendy" } }]).node("sys-2")).toEqual({ id: "sys-2", type: "rp.mesen.nes", settings: { core: 2, region: "dendy" } });
+});
+
+test("a knob the node would refuse is left out, so one stored config cannot refuse every system's document", () => {
+  // A loaded project keeps its core config as written: a hand edit, a newer build's label, an ordinal from before the
+  // labels. The planner would refuse the whole document for it.
+  const g = built([
+    { ...gb(1), coreConfig: { model: "cgbF", highpass: 2, fastBoot: "yes", colorCorrection: null, dmgPalette: "gbl", lightTemperature: 1.5 }, gainDb: Number.NaN },
+    { ...nes(2), coreConfig: { region: "PAL", apuLatencyMs: 9, removeSpriteLimit: 1, s5bNoise: "n8", expansionVolume: "40" }, gainDb: 999 },
+  ]);
+  expect(g.node("sys-1")).toEqual({ id: "sys-1", type: "rp.sameboy.gb", settings: { core: 1, dmgPalette: "gbl", serialOutCapture: "off" } });
+  // A param out of range is sent: the planner clamps it, as it clamps a live edit.
+  expect(g.node("sys-2")).toEqual({ id: "sys-2", type: "rp.mesen.nes", settings: { core: 2, s5bNoise: "n8" }, params: { gain: 999 } });
+});
+
+test("a Game Boy captures its serial out for the mode its lsdj-sync node runs: drive for MI.OUT, listen for master sync, off otherwise", () => {
+  const capture = (pipeline: ProtocolRole[]) => built([gb(1, 0, pipeline)]).node("sys-1")?.settings?.serialOutCapture;
+  for (const mode of LSDJ_MODE_VALUES)
+    expect(capture([LSDJ(mode)]), mode).toBe(mode === "midiOut" ? "drive" : mode === "masterSync" ? "listen" : "off");
+  expect(capture([])).toBe("off");
+  expect(capture([MGB])).toBe("off");
+  // An lsdj-sync the pipeline leaves out (mGB writes serialIn first): its decoder is not placed, so nothing captures.
+  const leftOut = protocolPipeline([{ kind: "mgb", config: {} }, { kind: "lsdj-sync", config: { mode: "midiOut" } }]);
+  expect(leftOut.map((r) => r.kind)).toEqual(["mgb"]);
+  expect(capture(leftOut)).toBe("off");
+  // Only a Game Boy has one.
+  expect(built([nes(2, 0, [N8])]).node("sys-2")?.settings?.serialOutCapture).toBe(undefined);
+  expect(serialOutCaptureFor([LSDJ("midiOut")], "midiMap")).toBe("off");
+});
+
+test("a cart the controller drives in MI.MAP captures nothing, whatever its stored mode, and its peers keep their own", () => {
+  const captures = (g: ReturnType<typeof built>) => [1, 2].map((id) => g.node(`sys-${id}`)?.settings?.serialOutCapture);
+  const systems = [gb(1, 0, [LSDJ("midiOut")]), gb(2, 0, [LSDJ("masterSync")])];
+  expect(captures(built(systems))).toEqual(["drive", "listen"]);
+  expect(captures(built(systems, "stereo", multi(2), withController()))).toEqual(["off", "listen"]); // forced midiMap
+  expect(captures(built(systems, "stereo", multi(2), withController({ systemId: 2 })))).toEqual(["drive", "off"]);
+  expect(captures(built(systems, "stereo", multi(2), withController({ systemId: 2, cartSync: "Lsdj" })))).toEqual(["drive", "off"]); // forced off
+  // Driving a real Game Boy forces no cart, so none loses its capture.
+  expect(captures(built(systems, "stereo", multi(2), withController({ target: "midiOut" })))).toEqual(["drive", "listen"]);
 });

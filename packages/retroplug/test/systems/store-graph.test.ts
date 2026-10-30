@@ -4,7 +4,10 @@
 // spec carrying serial-out capture; and DirectGraph keeping the B1 translator's model for callers with no store.
 // Each document places the script nodes that feed the systems (docs/modular-graph-phase-b3b-design.md section 4): the
 // MIDI routing, the controller and a protocol node for each role that has one, so an edit to such a role, the MIDI
-// routing or the controller publishes too, and nothing else does.
+// routing or the controller publishes too. And each system node carries its knobs
+// (docs/modular-graph-phase-c2-design.md section 5): an edit of a setting (a core config's setting field, an LSDj's
+// mode and with it its Game Boy's capture) publishes, an edit of a param (a gain, a NES's expansion volume) is set live
+// with no publish, and nothing else publishes.
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { ProjectStore } from "../../src/projectStore";
@@ -123,24 +126,95 @@ test("a replace takes the slot of the system it replaces", () => {
   expect(sys.systems()[0].built).toEqual({ type: "rp.mesen.nes", exportMode: 0, linkGroup: 0 });
 });
 
-test("a live setting publishes nothing; a link-group change rewires without a re-arm", () => {
+test("a gain or expansion-volume edit sets its param live and publishes nothing", () => {
+  const { be, p, sys } = project();
+  const a = sys.addSystem("/roms/a.gb")!;
+  const c = sys.addSystem("/roms/c.nes")!;
+  const n = be.graphRequests.length;
+  const publishes = countPublishes(p.graph);
+  expect(sys.setGain(a, -6)).toBe(true);
+  expect(sys.setGain(c, -500)).toBe(true); // clamped
+  expect(sys.setRoleConfig(c, "mesen", { expansionVolume: 40 })).toBe(true);
+  expect(sys.setRoleConfig(c, "mesen", { expansionVolume: 40 })).toBe(true); // moves nothing: sets nothing
+  expect(sys.setRoleConfig(c, "mesen", { fifo: "hardware", sdRoot: "/sd" })).toBe(true); // construct-time: a rebuild's
+  expect(publishes.n).toBe(0); // not even a document for the dedupe to drop
+  expect(since(be, n)).toEqual([]);
+  expect(be.paramCalls).toEqual([
+    { nodeId: `sys-${a}`, paramId: "gain", value: -6 },
+    { nodeId: `sys-${c}`, paramId: "gain", value: -90 },
+    { nodeId: `sys-${c}`, paramId: "expansionVolume", value: 40 },
+  ]);
+  // The next document, whatever publishes it, carries the values set live.
+  p.setMidiRouting(MidiRouting.OneChannelPerInstance);
+  expect(be.graphNode(`sys-${a}`)?.params).toEqual(canon({ gain: -6 }));
+  expect(be.graphNode(`sys-${c}`)?.params).toEqual(canon({ gain: -90, expansionVolume: 40 }));
+});
+
+test("a setting edit publishes its system node's settings, without a re-arm; a link-group change rewires", () => {
   const { be, p, sys } = project();
   const a = sys.addSystem("/roms/a.gb")!;
   const b = sys.addSystem("/roms/b.gb")!;
+  const c = sys.addSystem("/roms/c.nes")!;
   const n = be.graphRequests.length;
   const publishes = countPublishes(p.graph);
-  sys.setGain(a, -6);
   sys.setRoleConfig(a, "sameboy", { highpass: "removeDcOffset" });
+  expect(since(be, n)).toEqual([{ slots: [a, b, c] }]);
+  expect(be.graphNode(`sys-${a}`)?.settings?.highpass).toBe("removeDcOffset");
   sys.setRoleConfig(a, "sameboy", { model: "dmgB", dmgPalette: "dmg" });
-  sys.setRoleConfig(a, "sameboy", { linkGroupId: 0 }); // the group it is already in
-  expect(publishes.n).toBe(0); // not even a document for the dedupe to drop
-  expect(since(be, n)).toEqual([]);
-  sys.setRoleConfig(a, "sameboy", { linkGroupId: 1 }); // a group of one is no cable yet: nothing changes
-  expect(publishes.n).toBe(1);
-  expect(since(be, n)).toEqual([]);
+  expect(be.graphNode(`sys-${a}`)?.settings).toEqual(
+    canon({ core: a, model: "dmgB", fastBoot: true, highpass: "removeDcOffset", colorCorrection: "disabled", dmgPalette: "dmg", lightTemperature: 0, serialOutCapture: "off" }),
+  );
+  sys.setRoleConfig(c, "mesen", { region: "pal", expansionVolume: 25 }); // the document carries the param too
+  expect(be.graphNode(`sys-${c}`)?.settings?.region).toBe("pal");
+  expect(be.graphNode(`sys-${c}`)?.params).toEqual(canon({ gain: 0, expansionVolume: 25 }));
+  expect(since(be, n).length).toBe(3);
+  expect(be.paramCalls).toEqual([]);
+  // An edit that moves no setting publishes nothing: the same values, the group it is already in.
+  sys.setRoleConfig(a, "sameboy", { model: "dmgB" });
+  sys.setRoleConfig(a, "sameboy", { linkGroupId: 0 });
+  expect(publishes.n).toBe(3);
+  sys.setRoleConfig(a, "sameboy", { linkGroupId: 1 }); // a group of one is no cable yet: the document is unchanged
+  expect(publishes.n).toBe(4);
+  expect(since(be, n).length).toBe(3);
   sys.setRoleConfig(b, "sameboy", { linkGroupId: 1 });
-  expect(since(be, n)).toEqual([{ slots: [a, b] }]);
+  expect(since(be, n)[3]).toEqual({ slots: [a, b, c] });
   expect(linked(be, `sys-${b}.link`)).toBe(true);
+});
+
+test("no store edit takes the side path the document replaced", () => {
+  const { be, sys } = project();
+  const a = sys.addSystem("/roms/lsdj.gb")!;
+  const c = sys.addSystem("/roms/c.nes")!;
+  sys.setGain(a, -3);
+  sys.setReloadOnRomChange(a, true);
+  sys.setRoleConfig(a, "sameboy", { model: "sgb", lightTemperature: 0.5 });
+  sys.setRoleConfig(a, "lsdj-sync", { mode: LsdjSyncMode.MasterSync });
+  sys.setRoleConfig(c, "mesen", { region: "ntsc", expansionVolume: 150, removeSpriteLimit: true });
+  sys.setRoleConfig(c, "mesen", { expansionVolume: 120 });
+  expect(be.log.filter((m) => ["applySystemSetting", "applyRoleConfig", "setSerialOutCapture"].includes(m))).toEqual([]);
+  // reload-on-ROM-change is TS's alone (the file watcher): it reaches no backend at all.
+  expect(sys.view()[0].settings.reloadOnRomChange).toBe(true);
+});
+
+test("a loaded project's saved gain and core config reach its system's node in the load's document", () => {
+  // Nothing else carries a saved gain to a core, which is built at 0 dB: before the document carried it, a loaded
+  // project played at 0 dB until its gain was edited.
+  const { be, p, sys } = project();
+  const a = sys.addSystem("/roms/a.gb")!;
+  const c = sys.addSystem("/roms/c.nes")!;
+  sys.setGain(a, -12);
+  sys.setRoleConfig(a, "sameboy", { model: "mgb" });
+  sys.setRoleConfig(c, "mesen", { expansionVolume: 60, s5bNoise: "chip" });
+  const bytes = p.exportBytes()!;
+  p.newProject();
+  const calls = be.paramCalls.length;
+  expect(p.loadBytes(bytes, "/").kind).toBe("loaded");
+  const [la, lc] = sys.systems().map((e) => e.id);
+  expect(be.graphNode(`sys-${la}`)?.params).toEqual(canon({ gain: -12 }));
+  expect(be.graphNode(`sys-${la}`)?.settings?.model).toBe("mgb");
+  expect(be.graphNode(`sys-${lc}`)?.params).toEqual(canon({ gain: 0, expansionVolume: 60 }));
+  expect(be.graphNode(`sys-${lc}`)?.settings?.s5bNoise).toBe("chip");
+  expect(be.paramCalls.length).toBe(calls); // the document, not a live call
 });
 
 test("a duplicate is placed after its source, and inheriting the link group cables the pair", () => {
@@ -340,22 +414,38 @@ test("an adopt outside a load places its core at once", () => {
   expect(since(be, 0)).toEqual([{ slots: [id], tap: {} }]);
 });
 
-test("a system in an LSDj MIDI-out mode is built capturing its serial out: MI.OUT drives, master sync listens", () => {
+test("a system in an LSDj MIDI-out mode captures its serial out as its document says: MI.OUT drives, master sync listens", () => {
   const { be, sys } = project();
   let id = sys.addSystem("/roms/lsdj.gb")!;
   const lastBuild = () => be.buildCalls[be.buildCalls.length - 1].serialOutCapture;
-  const lastLive = () => be.serialOutCaptureCalls[be.serialOutCaptureCalls.length - 1];
+  const placed = () => be.graphNode(`sys-${id}`)?.settings?.serialOutCapture;
   expect(lastBuild()).toBe(undefined); // midiSync by default
+  expect(placed()).toBe("off");
   sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MidiOut });
-  expect(lastLive()).toEqual({ id, mode: "drive" }); // live
-  id = sys.reset(id)!; // a rebuild, under a new id: the new core is armed at the build
+  expect(placed()).toBe("drive"); // in the document that hands its decoder the mode
+  id = sys.reset(id)!; // a rebuild, under a new id: the build arms the capture its node carries too
   expect(lastBuild()).toBe("drive");
+  expect(placed()).toBe("drive");
   sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MasterSync });
-  expect(lastLive()).toEqual({ id, mode: "listen" });
+  expect(placed()).toBe("listen");
   id = sys.reset(id)!;
   expect(lastBuild()).toBe("listen");
   sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MidiSync });
-  expect(lastLive()).toEqual({ id, mode: null });
+  expect(placed()).toBe("off");
+  expect(be.serialOutCaptureCalls).toEqual([]);
+});
+
+test("a cart the controller drives in MI.MAP captures nothing, and gets its stored mode's capture back with the controller off", () => {
+  const { be, p, sys } = project();
+  const id = sys.addSystem("/roms/lsdj.gb")!;
+  sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MidiOut });
+  const placed = () => be.graphNode(`sys-${id}`)?.settings?.serialOutCapture;
+  expect(placed()).toBe("drive");
+  p.setController({ enabled: true, app: "lsdj-midimap", target: "system", systemId: id });
+  expect(be.graphNode(`sys-${id}/lsdj-sync`)?.settings?.mode).toBe("midiMap");
+  expect(placed()).toBe("off"); // in the one document that forces the node's mode
+  p.setController({ enabled: false });
+  expect(placed()).toBe("drive");
 });
 
 test("a systems store on its own publishes its systems at the stereo routing", () => {
@@ -392,8 +482,8 @@ test("an edit to a role with a protocol node publishes its settings, without a r
   expect(be.graphNode(`sys-${id}/lsdj-sync`)).toEqual(
     canon({ id: `sys-${id}/lsdj-sync`, type: "rp.lsdj.sync", settings: { mode: LsdjSyncMode.MidiOut, tempoDivisor: 1, autoStart: false } }),
   );
-  // The capture arm is the command it always was, sent before the plan that hands the node the new mode.
-  expect(be.log.lastIndexOf("setSerialOutCapture")).toBeLessThan(be.log.lastIndexOf("setGraph"));
+  // The capture rides the same document, on the Game Boy's node, so the two change in one plan.
+  expect(be.graphNode(`sys-${id}`)?.settings?.serialOutCapture).toBe("drive");
   sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MidiOut });
   expect(since(be, n).length).toBe(1);
 });
@@ -764,15 +854,17 @@ test("a left-out lsdj-sync arms no serial-out capture: not at a build, nor on an
     { kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiOut } },
   ];
   const lastBuild = () => be.buildCalls[be.buildCalls.length - 1].serialOutCapture;
-  const captures = (id: number) => be.serialOutCaptureCalls.filter((c) => c.id === id);
+  const placed = (id: number) => be.graphNode(`sys-${id}`)?.settings?.serialOutCapture;
   let id = warned(() => sys.adopt({ romPath: "/roms/mgb.gb", core: "sameboy", roles })!).result;
   expect(be.protocolNodes(id)).toEqual([`sys-${id}/mgb`]);
   expect(lastBuild()).toBe(undefined); // a load, stored in MI.OUT
+  expect(placed(id)).toBe("off");
   for (const mode of [LsdjSyncMode.MasterSync, LsdjSyncMode.MidiOut]) {
     expect(sys.setRoleConfig(id, "lsdj-sync", { mode })).toBe(true);
-    expect(captures(id)).toEqual([]); // an edit
+    expect(placed(id)).toBe("off"); // an edit
     id = sys.reset(id)!;
     expect(lastBuild()).toBe(undefined); // a rebuild
+    expect(placed(id)).toBe("off");
   }
 });
 

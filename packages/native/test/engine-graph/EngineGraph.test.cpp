@@ -3,8 +3,9 @@
 // same systems, the tap re-arm rides the swap, a refused document leaves its cores parked, and a core no
 // published document placed is freed; a build spec reaches the core under the field names TS sends; a system node's
 // settings carry its core's knobs beside the core (docs/modular-graph-phase-c2-design.md section 4); and
-// Engine::setParam reaches a param of the running plan at the next block. Driven on a quiescent Engine, so every plan
-// applies as it is published, except where a test owns the drain itself.
+// Engine::setParam reaches a param of the running plan at the next block, a system node's gain and a NES's expansion
+// volume among them, over the RPC as TS calls it. Driven on a quiescent Engine, so every plan applies as it is
+// published, except where a test owns the drain itself.
 //
 // Run via `pnpm test:plugin engine-graph`.
 
@@ -530,11 +531,11 @@ TEST_CASE("Engine::setParam reaches a param of the running plan at the next bloc
     };
     CHECK(block() == std::pair{0.0f, 0.0f});
 
-    // Refused: a node or a param the plan does not have, a NaN, and every system node, which has no param yet.
+    // Refused: a node or a param the plan does not have, and a NaN.
     CHECK_FALSE(e.setParam("nope", "level", 0.5));
     CHECK_FALSE(e.setParam("level", "nope", 0.5));
     CHECK_FALSE(e.setParam("level", "level", std::numeric_limits<double>::quiet_NaN()));
-    CHECK_FALSE(e.setParam("sys-1", "gain", 0.0));
+    CHECK_FALSE(e.setParam("sys-1", "volume", 0.0));
     CHECK(block() == std::pair{0.0f, 0.0f});
 
     CHECK(e.setParam("level", "level", 0.5));
@@ -548,4 +549,93 @@ TEST_CASE("Engine::setParam reaches a param of the running plan at the next bloc
     // A published document carrying the node again keeps the value it holds.
     REQUIRE(e.setGraph(r).ok);
     CHECK(block() == std::pair{-1.0f, -1.0f});
+}
+
+TEST_CASE("Engine::setParam sets a system node's gain and a NES's expansion volume at the next block, clamped",
+          "[engine-graph][settings][params]") {
+    Engine e(kRate);
+    REQUIRE(e.parkCore(mgb(1)));
+    REQUIRE(e.parkCore(bliptoaster(2)));
+    REQUIRE(e.setGraph(request({{1, kGb}, {2, kNes}})).ok);
+    const auto* gb = dynamic_cast<const SameBoySystem*>(e.findSystem(1));
+    const auto* nes = dynamic_cast<const MesenNesSystem*>(e.findSystem(2));
+    REQUIRE(gb);
+    REQUIRE(nes);
+    std::vector<float> l(256), r(256);
+    const auto block = [&] {
+        float* outs[2] = {l.data(), r.data()};
+        e.processBlock(256, outs, 2);
+    };
+    block();
+    CHECK(gb->config_.gainDb == 0.0f);
+    CHECK(nes->config().expansionVolume == 100);
+    CHECK(e.setParam("sys-1", "gain", -6.0));
+    CHECK(e.setParam("sys-2", "expansionVolume", 40.0));
+    CHECK(e.setParam("sys-2", "gain", 30.0));  // clamped to +12
+    CHECK(gb->config_.gainDb == 0.0f);         // at the next block, not before
+    block();
+    CHECK(gb->config_.gainDb == -6.0f);
+    CHECK(nes->config().expansionVolume == 40);
+    CHECK(nes->config().gainDb == 12.0f);
+    CHECK_FALSE(e.setParam("sys-1", "expansionVolume", 40.0));  // a NES's alone
+    // A document carrying a value moves it; one dropping the param keeps the live value.
+    auto withParams = request({{1, kGb}, {2, kNes}});
+    const std::string core = R"({"core":1})";
+    const auto at = withParams.document.find(core);
+    REQUIRE(at != std::string::npos);
+    withParams.document.insert(at + core.size(), R"(,"params":{"gain":-20})");
+    REQUIRE(e.setGraph(withParams).ok);
+    block();
+    CHECK(gb->config_.gainDb == -20.0f);
+    REQUIRE(e.setGraph(request({{1, kGb}, {2, kNes}})).ok);
+    block();
+    CHECK(gb->config_.gainDb == -20.0f);
+    CHECK(nes->config().expansionVolume == 40);
+}
+
+TEST_CASE("setParam over the RPC layer takes the node, the param and the value as realBackend sends them", "[engine-graph][params]") {
+    struct Js {
+        JSRuntime* rt  = JS_NewRuntime();
+        JSContext* ctx = JS_NewContext(rt);
+        ~Js() {
+            JS_FreeContext(ctx);
+            JS_FreeRuntime(rt);
+        }
+    } js;  // first, so it outlives the server holding its context
+
+    Engine           e(kRate);
+    SystemFactory    factory;
+    registerCoreBackends(factory);
+    QueuedInvoker    invoker(e);
+    EngineRpcService rpc(e, factory, invoker);
+    rpcpp::QuickJSTransport                                   transport(js.ctx, [](JSContext*, JSValue) {});
+    rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec> server(transport, rpcpp::QuickJSCodec{js.ctx});
+    registerEmulatorRpc(server, rpc);
+    REQUIRE(e.parkCore(mgb(1)));
+    REQUIRE(e.setGraph(request({{1, kGb}})).ok);
+
+    // The call createEmulatorClient makes: true when the engine took it.
+    const auto setParam = [&](const std::string& params) {
+        const std::string src = "({jsonrpc: '2.0', id: 1, method: 'setParam', params: [" + params + "]})";
+        JSValue message = JS_Eval(js.ctx, src.c_str(), src.size(), "<setParam>", JS_EVAL_TYPE_GLOBAL);
+        std::optional<rpcpp::QuickJSOut> reply;
+        if (!JS_IsException(message)) reply = server.processMessage(message);
+        JS_FreeValue(js.ctx, message);
+        if (!reply) return false;
+        JSValue answer = reply->materialize(js.ctx);
+        JSValue result = JS_GetPropertyStr(js.ctx, answer, "result");
+        const bool accepted = JS_IsBool(result) && JS_ToBool(js.ctx, result);
+        JS_FreeValue(js.ctx, result);
+        JS_FreeValue(js.ctx, answer);
+        return accepted;
+    };
+    CHECK(setParam("'sys-1', 'gain', -6.5"));
+    CHECK_FALSE(setParam("'sys-1', 'nope', 0"));
+    CHECK_FALSE(setParam("'sys-9', 'gain', 0"));
+    std::vector<float> l(256), r(256);
+    float* outs[2] = {l.data(), r.data()};
+    e.processBlock(256, outs, 2);
+    const auto* gb = dynamic_cast<const SameBoySystem*>(e.findSystem(1));
+    REQUIRE(gb);
+    CHECK(gb->config_.gainDb == -6.5f);
 }

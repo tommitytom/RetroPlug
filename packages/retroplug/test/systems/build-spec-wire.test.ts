@@ -1,7 +1,8 @@
-// The build spec as realBackend.ts puts it on the wire. A loaded LSDj in a MIDI-out mode captures serial out
-// only through `serialOutCapture`, and native skips a field it does not know, so the key must be the one
-// BackendConstructSpec names (the engine-graph Catch2 case decodes that same key on the native side). Driven
-// over a stand-in __rpcSend that records each request, so no native host is needed.
+// The build spec as realBackend.ts puts it on the wire. A loaded LSDj in a MIDI-out mode is built capturing serial
+// out through `serialOutCapture`, and native skips a field it does not know, so the key must be the one
+// BackendConstructSpec names (the engine-graph Catch2 case decodes that same key on the native side). And setParam,
+// how the stores set a gain or a NES's expansion volume live, as EngineRpcService::setParam takes it. Driven over a
+// stand-in __rpcSend that records each request, so no native host is needed.
 import { test, expect } from "../../testing/harness";
 import { createEmulatorClient } from "../../src/realBackend";
 import type { ConstructSpec } from "../../src/backend";
@@ -58,4 +59,11 @@ test("setSerialOutCapture carries the mode, and null for off", () => {
   client.setSerialOutCapture(3, "listen");
   client.setSerialOutCapture(3, null);
   expect(sent.map((r) => [r.method, ...r.params])).toEqual([["setSerialOutCapture", 3, "listen"], ["setSerialOutCapture", 3, null]]);
+});
+
+test("setParam carries the node, the param and the value, in that order", () => {
+  const { sent, client } = recording();
+  client.setParam("sys-3", "gain", -6.5);
+  client.setParam("sys-4", "expansionVolume", 40);
+  expect(sent.map((r) => [r.method, ...r.params])).toEqual([["setParam", "sys-3", "gain", -6.5], ["setParam", "sys-4", "expansionVolume", 40]]);
 });

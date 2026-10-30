@@ -28,6 +28,8 @@ import { outNodeOf, protocolPipeline } from "../../src/graph/protocolNodes";
 import type { GraphController } from "../../src/graph/controller";
 import type { RoleInstance } from "../../src/systemRoles";
 import { MIDI_ROUTING_VALUES, type ControllerTarget } from "../../src/settingsEnums";
+import { RoleRegistry } from "../../src/systemRoles";
+import { registerCoreRoles } from "../../src/coreRoles";
 import golden from "./golden/build-graph-roles.json";
 
 declare const tjs: { env: Record<string, string | undefined>; writeFile(path: string, data: string): Promise<void> };
@@ -94,10 +96,31 @@ const model = (systems: GraphSystem[], over: Partial<GraphModel> = {}): GraphMod
   ...over,
 });
 
+// A core-config role's config as a store holds it, its role's schema parsed (coreRoles.ts), and a gain: what the
+// store's projection hands buildGraph beside the pipeline (SystemsStore.graphSystems), which the system node carries
+// as its settings and params (docs/modular-graph-phase-c2-design.md section 3).
+const CORE_ROLES = new RoleRegistry();
+registerCoreRoles(CORE_ROLES);
+const knobbed = (s: GraphSystem, kind: "sameboy" | "mesen", gainDb: number, over: Record<string, unknown> = {}): GraphSystem => ({
+  ...s,
+  coreConfig: CORE_ROLES.roleType(kind)!.schema.parse(over) as Record<string, unknown>,
+  gainDb,
+});
+
 // Every protocol node type on the system type it is placed for: mGB and an LSDj decoding MI.OUT on Game Boys (the
-// LSDj's serial out read by its decoder after the systems, whose host MIDI out is an input of rp.host.midi-out), the
-// N8 and risa on a NES (which the cart mirrors), smsggdj on an SMS.
-const everyNode = (): GraphSystem[] => [gb(1, [MGB]), gb(2, [lsdj("midiOut")]), nes(3, [N8, RISA]), sms(4, [smsSync("sms")])];
+// LSDj's serial out read by its decoder after the systems, whose host MIDI out is an input of rp.host.midi-out, and
+// captured as its node's settings say), the N8 and risa on a NES (which the cart mirrors), smsggdj on an SMS. Each with
+// its core config and gain, every setting and param away from its default on the first Game Boy and the NES.
+const everyNode = (): GraphSystem[] => [
+  knobbed(gb(1, [MGB]), "sameboy", -6, {
+    model: "dmgB", fastBoot: false, highpass: "removeDcOffset", colorCorrection: "modernBalanced", dmgPalette: "mgb", lightTemperature: 0.5,
+  }),
+  knobbed(gb(2, [lsdj("midiOut")]), "sameboy", 0),
+  knobbed(nes(3, [N8, RISA]), "mesen", -3, {
+    region: "pal", removeSpriteLimit: true, apuLatencyMs: 2, s5bNoise: "chip", mmc5PhaseReset: "chip", expansionVolume: 40,
+  }),
+  knobbed(sms(4, [smsSync("sms")]), "mesen", 1.5),
+];
 
 const CASES: Case[] = [
   // The routing in each mode, and none (a DirectGraph, or a store on its own, before a mode is set: no node's MIDI

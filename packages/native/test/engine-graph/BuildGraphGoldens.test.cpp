@@ -19,10 +19,12 @@
 // and a control surface attached and pressed, so its protocol nodes send into the system inputs they feed and its
 // controller launches into its cart or out of the host. What reaches a system input the engine does not hand back, so
 // only the host's side has a floor: a controller sends its surface something, and one driving a real Game Boy sends
-// the host its launch under the system it resolved. No core here captures its serial out (that is armed only for an
-// LSDj in a MIDI-out mode, by the control plane), so the LSDj decoders send the host nothing, and host MIDI under the
-// controller's system is the controller's. The thirty-three systems under perSystem give
-// rp.host.audio-out 33 buses, past the 32 it takes: those are refused instead.
+// the host its launch under the system it resolved. A Game Boy captures its serial out as its node's settings say
+// (an LSDj in a MIDI-out mode, docs/modular-graph-phase-c2-design.md section 5), but every core here runs mGB, which
+// never plays the serial master, so a decoder's host MIDI is not counted on, and host MIDI under the controller's
+// system is the controller's. The thirty-three systems under perSystem give rp.host.audio-out 33 buses, past the 32 it
+// takes: those are refused instead. And since a C++ node reads only the settings fields it knows, ignoring any other,
+// each system node's settings may name only fields its type's schema lists: a misspelt knob would plan, and do nothing.
 //
 // Run via `pnpm test:plugin engine-graph`.
 
@@ -41,6 +43,7 @@
 #include "NodeRig.hpp"
 #include "graph/CanonicalJson.hpp"
 #include "host/engine/Engine.hpp"
+#include "host/graph/SystemNodes.hpp"
 #include "system/mesen/MesenGbaConfig.hpp"
 #include "system/mesen/MesenGbaSystem.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
@@ -154,6 +157,49 @@ std::unique_ptr<SystemBase> build(const GoldenSystem& s) {
     }
     if (core) core->onActivate(kRate);
     return core;
+}
+
+// The settings fields each system node type reads, from its descriptor's schema: the properties of its one $defs entry.
+const std::map<std::string, std::set<std::string>>& systemSettingsFields() {
+    static const std::map<std::string, std::set<std::string>> fields = [] {
+        std::map<std::string, std::set<std::string>> out;
+        for (const rp_package* package : {rp::host::sameboyPackage(), rp::host::mesenPackage()})
+            for (std::uint32_t t = 0; t < package->node_type_count; ++t) {
+                const rp_node_type* type = package->node_types[t];
+                const auto descriptor = rp::graph::parseJson(type->descriptor(type));
+                REQUIRE(descriptor);
+                const auto object = descriptor->to_object();
+                const auto id = object->get("id")->to_string();
+                const auto defs = object->get("settings")->to_object()->get("$defs")->to_object();
+                REQUIRE(defs);
+                REQUIRE(defs->size() == 1);
+                const auto properties = defs->begin()->second.to_object()->get("properties").and_then(
+                    [](const rfl::Generic& g) { return g.to_object(); });
+                REQUIRE(properties);
+                for (const auto& [field, _] : *properties) out[*id].insert(field);
+            }
+        return out;
+    }();
+    return fields;
+}
+
+// A settings field a system node of `document` names that its type does not read, or nothing.
+std::optional<std::string> unreadSettingsField(const std::string& document) {
+    const auto doc = rp::graph::parseJson(document);
+    REQUIRE(doc);
+    const auto nodes = doc->to_object()->get("nodes").and_then([](const rfl::Generic& g) { return g.to_array(); });
+    REQUIRE(nodes);
+    for (const auto& node : *nodes) {
+        const auto object = node.to_object();
+        REQUIRE(object);
+        const auto fields = systemSettingsFields().find(*object->get("type")->to_string());
+        if (fields == systemSettingsFields().end()) continue;
+        const auto settings = object->get("settings").and_then([](const rfl::Generic& g) { return g.to_object(); });
+        if (!settings) continue;
+        for (const auto& [field, _] : *settings)
+            if (!fields->second.count(field)) return *object->get("id")->to_string() + "'s settings name " + field + ", which its type does not read";
+    }
+    return std::nullopt;
 }
 
 // rp.host.audio-out takes 32 buses, and perSystem gives each system one.
@@ -277,7 +323,8 @@ FileResult planAll(const char* path, bool driven) {
     for (const GoldenCase& c : goldens.cases) {
         if (!seen.insert(requestKey(c)).second) continue;
         REQUIRE(c.document < goldens.documents.size());
-        documents.insert(c.document);
+        if (documents.insert(c.document).second)
+            if (const auto why = unreadSettingsField(goldens.documents[c.document])) out.wrong.push_back(c.name + ": " + *why);
         if (expectRefused(c.model)) ++out.refused;
         if (const auto why = plan(c, goldens.documents[c.document], driven)) out.wrong.push_back(c.name + ": " + *why);
     }

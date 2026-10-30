@@ -1,8 +1,9 @@
 // The systems store carrying per-system settings + roles. A constructed system
 // auto-gets its backend "system" role (SameBoy = model/highpass/…) + universal
-// settings (gain/reload). Editing a SYSTEM role applies to the emulator; editing a
-// FEATURE role is pure TS (behaviour deferred). A fake extension proves the feature
-// path with no LSDj in the core.
+// settings (gain/reload). Editing a SYSTEM role reaches the emulator as its system node's
+// knobs (a setting publishes the document, a param is set live); editing a FEATURE role
+// with no protocol node is pure TS. A fake extension proves the feature path with no LSDj
+// in the core.
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
@@ -10,6 +11,10 @@ import { RoleRegistry } from "../../src/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { z, clampedInt } from "../../src/configSchema";
 import { gbRom, nesRom, sameboyRoleConfig } from "../systems/fixtures";
+import { canonicalJson } from "../../src/graph/canonicalJson";
+
+// `v` as a document carries it: canonical JSON, its keys sorted.
+const canon = (v: unknown): unknown => JSON.parse(canonicalJson(v));
 
 // A GB ROM (valid logo for classification) carrying a cartridge title at 0x134.
 function gbRomWithTitle(title: string): Uint8Array {
@@ -52,7 +57,7 @@ test("a SameBoy system auto-gets the sameboy system role + universal settings", 
   expect(v.roles).toEqual([{ kind: "sameboy", config: sameboyRoleConfig() }]);
 });
 
-test("a NES system auto-gets the mesen system role; editing region crosses to the emulator", () => {
+test("a NES system auto-gets the mesen system role; editing region crosses to the emulator in the document", () => {
   const { be, store } = newStore();
   be.seed("/roms/g.nes", nesRom());
   const id = store.addSystem("/roms/g.nes") as number;
@@ -62,36 +67,42 @@ test("a NES system auto-gets the mesen system role; editing region crosses to th
 
   expect(store.setRoleConfig(id, "mesen", { region: "pal" })).toBeTruthy(); // PAL
   expect(store.view()[0].roles[0].config.region).toBe("pal");
-  expect(be.applyRoleCalls[be.applyRoleCalls.length - 1]).toEqual({
-    id,
-    kind: "mesen",
-    config: { region: 2, removeSpriteLimit: false, enableFm: true, apuLatencyMs: 1.4, s5bNoise: 1, mmc5PhaseReset: 1, expansionVolume: 100, channelExportMode: 0, sdRoot: "", fifo: 0, fifoDepth: 0, fifoBytesPerSecond: 0, n8Link: 0, n8LinkRttUs: 2200 }, // whole role config crosses (system-category, native-encoded)
-  });
+  // Its node's settings, labels as the role spells them; its params, the gain and the expansion volume.
+  expect(be.graphNode(`sys-${id}`)).toEqual(
+    canon({
+      id: `sys-${id}`,
+      type: "rp.mesen.nes",
+      settings: { core: id, region: "pal", removeSpriteLimit: false, apuLatencyMs: 1.4, s5bNoise: "n8", mmc5PhaseReset: "n8" },
+      params: { gain: 0, expansionVolume: 100 },
+    }),
+  );
+  expect(be.applyRoleCalls.length).toBe(0);
 });
 
-test("setRoleConfig on a system role: updates, clamps, applies to the emulator, dirties", () => {
+test("setRoleConfig on a system role: updates, clamps, publishes its node's settings, dirties", () => {
   const { be, store, changes } = newStore();
   be.seed("/roms/a.gb", gbRom());
   const id = store.addSystem("/roms/a.gb") as number;
   const before = changes();
+  const sent = be.graphRequests.length;
   expect(store.setRoleConfig(id, "sameboy", { model: "sgb" })).toBeTruthy();
   expect(store.view()[0].roles[0].config.model).toBe("sgb");
-  // Native-encoded: every string enum in the role has become its ordinal (model "sgb" → 3,
-  // highpass "accurate" → 1, colorCorrection "disabled" → 0, dmgPalette "grey" → 0), and the
-  // non-enum fields pass through as-is. That mapping is roleConfigForNative's whole job.
-  expect(be.applyRoleCalls[be.applyRoleCalls.length - 1]).toEqual({
-    id,
-    kind: "sameboy",
-    config: {
-      model: 3,
-      highpass: 1,
-      linkGroupId: 0,
+  // The labels as the role config spells them, never ordinals: the document and a saved project carry one word. The
+  // link group is wiring, not a setting.
+  expect(be.graphRequests.length).toBe(sent + 1);
+  expect(be.graphNode(`sys-${id}`)?.settings).toEqual(
+    canon({
+      core: id,
+      model: "sgb",
+      highpass: "accurate",
       fastBoot: true,
-      colorCorrection: 0,
-      dmgPalette: 0,
+      colorCorrection: "disabled",
+      dmgPalette: "grey",
       lightTemperature: 0,
-    },
-  });
+      serialOutCapture: "off",
+    }),
+  );
+  expect(be.applyRoleCalls.length).toBe(0);
   expect(changes()).toBe(before + 1);
   // unknown enum → defaulted, not stored raw
   store.setRoleConfig(id, "sameboy", { model: 99 });
@@ -100,18 +111,27 @@ test("setRoleConfig on a system role: updates, clamps, applies to the emulator, 
   expect(store.setRoleConfig(id, "nope", { x: 1 })).toBeFalsy();
 });
 
-test("setGain / setReloadOnRomChange: clamp, update, apply to the emulator", () => {
-  const { be, store } = newStore();
+test("setGain / setReloadOnRomChange: clamp, update; the gain set live on its node, the reload flag TS's alone", () => {
+  const { be, store, changes } = newStore();
   be.seed("/roms/a.gb", gbRom());
   const id = store.addSystem("/roms/a.gb") as number;
+  const before = changes();
+  const sent = be.graphRequests.length;
   expect(store.setGain(id, -6)).toBeTruthy();
   expect(store.view()[0].settings.gainDb).toBe(-6);
   expect(store.setGain(id, -500)).toBeTruthy(); // below -90 → clamped
   expect(store.view()[0].settings.gainDb).toBe(-90);
   store.setReloadOnRomChange(id, true);
   expect(store.view()[0].settings.reloadOnRomChange).toBeTruthy();
-  expect(be.applySettingCalls.map((c) => c.key)).toEqual(["gainDb", "gainDb", "reloadOnRomChange"]);
+  expect(be.paramCalls).toEqual([
+    { nodeId: `sys-${id}`, paramId: "gain", value: -6 },
+    { nodeId: `sys-${id}`, paramId: "gain", value: -90 },
+  ]);
+  expect(be.graphRequests.length).toBe(sent); // no publish
+  expect(be.applySettingCalls.length).toBe(0);
+  expect(changes()).toBe(before + 3); // each dirties
   expect(store.setGain(9999, 0)).toBeFalsy(); // absent id
+  expect(store.setReloadOnRomChange(9999, true)).toBeFalsy();
 });
 
 test("a feature role attaches via the provider; editing it is PURE TS (no emulator apply)", () => {
@@ -124,6 +144,7 @@ test("a feature role attaches via the provider; editing it is PURE TS (no emulat
   expect(store.setRoleConfig(id, "demo-sync", { level: 5 })).toBeTruthy();
   expect(store.view()[0].roles[1].config.level).toBe(5);
   expect(be.applyRoleCalls.length).toBe(0); // feature-role config never crosses to native
+  expect(be.paramCalls.length).toBe(0);
 });
 
 test("no registry → no roles attached (back-compat)", () => {

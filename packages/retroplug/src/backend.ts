@@ -146,10 +146,18 @@ export interface Backend {
   openFileBrowser(opts: FileBrowserOpts): Promise<string | null>;
 
   // --- Live emulator config ----------------------------------------------
-  // TS owns the config; these apply a change to the LIVE emulator. Only EMULATOR
-  // config crosses: the two universal settings + SYSTEM-role config (a backend's own
-  // knobs). Feature-role config never reaches native — its behaviour is the deferred
-  // TS-script future (doc 06), so it stays pure TS config.
+  // TS owns the config. A system's knobs ride the graph document (graph/buildGraph.ts): its core config's setting
+  // fields and its LSDj capture as its node's settings, which an edit publishes, and its gain and a NES's expansion
+  // volume as its node's params, whose live edits go through setParam with no publish
+  // (docs/modular-graph-phase-c2-design.md section 5). The three calls after it are the side path the document
+  // replaced: nothing in the app makes them (native tests and a CLI session do).
+
+  /** A live change to a param of a node the running plan places, applied at the start of the next block, clamped to
+   *  the param's range (and rounded for an int, enum or bool). The store sets a system's `gain` (dB) and a NES's
+   *  `expansionVolume` (percent) on its node, `sys-<id>`, this way; the next document it publishes carries the same
+   *  value. False for a node or a param the running plan does not have (a node the next document places takes its
+   *  value from that document), a NaN, a param a wire drives, or a full command ring. */
+  setParam(nodeId: string, paramId: string, value: number): boolean;
 
   /** Apply a universal per-system setting (`"gainDb"` / `"reloadOnRomChange"`) to the
    *  live emulator. Returns false on failure. */
@@ -160,10 +168,10 @@ export interface Backend {
    *  failure. */
   applyRoleConfig(id: number, kind: string, config: Record<string, unknown>): boolean;
 
-  /** Set capture of a system's outgoing serial bytes (SerialOutCapture), or null for off. The store calls this when
-   *  a system's `lsdj-sync` mode changes: armed, the Game Boy node's `serialOut` port carries the raw bytes, a wire
-   *  into its rp.lsdj.serial-out node, for the MI.OUT and master-sync decoders. False for a mode native does not know.
-   *  SameBoy-only (a no-op on other cores). */
+  /** Set capture of a system's outgoing serial bytes (SerialOutCapture), or null for off: armed, the Game Boy node's
+   *  `serialOut` port carries the raw bytes, a wire into its rp.lsdj.serial-out node, for the MI.OUT and master-sync
+   *  decoders. A Game Boy node's `serialOutCapture` setting does the same from the document. False for a mode native
+   *  does not know. SameBoy-only (a no-op on other cores). */
   setSerialOutCapture(id: number, mode: SerialOutCapture | null): boolean;
 
   // --- Live emulator input ------------------------------------------------
@@ -409,7 +417,7 @@ export type HostBackend = Pick<
 /** Emulator lifecycle / live config / input / snapshot reads — bound by the plugin, UI, CLI, test host. */
 export type EmulatorBackend = Pick<
   Backend,
-  | "buildCore" | "setGraph" | "loadScriptPack" | "applySystemSetting" | "applyRoleConfig" | "setSerialOutCapture"
+  | "buildCore" | "setGraph" | "loadScriptPack" | "setParam" | "applySystemSetting" | "applyRoleConfig" | "setSerialOutCapture"
   | "pressButton" | "stageSystemMidi" | "readState" | "readSram" | "readRam" | "writeRam" | "getFrame"
 >;
 
@@ -829,7 +837,8 @@ export interface ConstructSpec {
    *  boots from these instead of reading `statePath`. Rides as a Uint8Array (rfl::Bytestring). */
   stateBytes?: Uint8Array;
   /** Arm a Game Boy's serial-out capture before the core first runs, as setSerialOutCapture would on a running
-   *  one. Omitted (off) for every system without an lsdj-sync role in a capturing mode. */
+   *  one. Omitted (off) for every system without an lsdj-sync role in a capturing mode. Its node's settings carry a
+   *  capture too, which its activation applies before the core first runs, so the document's wins. */
   serialOutCapture?: SerialOutCapture;
   /** The system's backend ("system"-role) config as JSON, so a loaded non-default setting
    *  (SameBoy model/highpass/…) is applied at CONSTRUCT rather than via a post-build restart

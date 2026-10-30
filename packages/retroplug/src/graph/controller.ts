@@ -1,10 +1,13 @@
 // A control-surface session as buildGraph places it (docs/modular-graph-phase-b3b-design.md section 4): what the
-// control plane hands it, the system its launches are for, and the lsdj-sync mode the cart it drives must be in.
-// Pure and registry-free: the publisher (ProjectStore, or a DirectGraph) parses the app's config with the app's own
-// schema before it gets here, so neither buildGraph nor the node it places imports a zod schema.
-import type { ControllerTarget } from "../settingsEnums";
+// control plane hands it, the system its launches are for, and the lsdj-sync mode the cart it drives must be in; and,
+// beside that override, the serial-out capture a Game Boy runs for the mode its lsdj-sync node actually runs
+// (docs/modular-graph-phase-c2-design.md section 5). Pure and registry-free: the publisher (ProjectStore, or a
+// DirectGraph) parses the app's config with the app's own schema before it gets here, so neither buildGraph nor the
+// node it places imports a zod schema.
+import { LsdjSyncMode, type ControllerTarget } from "../settingsEnums";
 import type { RowTicksTable } from "../lsdj/playback/predict";
 import type { ControllerAnchor } from "../lsdj/playback/anchor";
+import type { ProtocolRole } from "./protocolNodes";
 
 /** An enabled controller: the user's choices, and what the control plane derived for it. */
 export interface GraphController {
@@ -67,6 +70,28 @@ export function controllerSyncOverride(
   // not been published yet, and refusing to drive it would be a worse guess than trying.
   const mode = controller.cartSync && controller.cartSync !== "MidiMap" ? "off" : "midiMap";
   return { systemId, mode };
+}
+
+/** What a Game Boy captures of its serial out for LSDj's decoder (its node's `serialOutCapture` setting, as the C++
+ *  node spells it): `listen` for master sync, `drive` for MI.OUT, `off` for no capture. */
+export type SerialOutCaptureMode = "off" | "listen" | "drive";
+
+/** The serial-out capture of a Game Boy whose protocol nodes are `pipeline` (protocolPipeline's), for the mode its
+ *  lsdj-sync node runs: `forced`, the controller's override of this system's mode (controllerSyncOverride), when it
+ *  has one, else the role's own. Both LSDj-to-host MIDI modes need one: MI.OUT (midiOut) drives, playing the
+ *  Arduinoboy that clocks LSDj as the serial slave; master sync (masterSync, SYNC=LSDJ) listens to the clock LSDj
+ *  sends as the master. Every other mode is `off`, the forced ones among them (the controller's midiMap and off): the
+ *  capture follows the node that decodes it, so a cart the controller drives in MI.MAP is never clocked under the
+ *  bytes it is sent. And so is a pipeline that places no lsdj-sync, whatever a role left out of it says: what a
+ *  capture delivers is decoded by that role's rp.lsdj.serial-out node, which is not placed, and a driving core would
+ *  clock the serial port under the bytes the placed role writes. */
+export function serialOutCaptureFor(pipeline: readonly ProtocolRole[], forced?: string | null): SerialOutCaptureMode {
+  const role = pipeline.find((r) => r.node === "rp.lsdj.sync");
+  if (!role) return "off";
+  const mode = forced ?? (role.config as { mode?: unknown }).mode;
+  if (mode === LsdjSyncMode.MidiOut) return "drive";
+  if (mode === LsdjSyncMode.MasterSync) return "listen";
+  return "off";
 }
 
 /** The controller node's settings (script/nodes/controllerSession.ts): its system resolved (0 is the node's none),

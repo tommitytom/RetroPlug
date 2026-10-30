@@ -36,6 +36,10 @@ public:
     // docs/modular-graph-phase-c1-design.md section 7), while the audio thread runs blocks or not. Refused, changing
     // nothing, for a memory limit that is no whole number of bytes from 0 to 2^53 - 1 (BackendTypes.hpp).
     RpcLoadScriptPackResult     loadScriptPack(RpcLoadScriptPackRequest request);
+    // A live change to a param of a node the running plan places (Engine::setParam), at the start of the next block: a
+    // system node's gain or a NES's expansionVolume, as the store sends an edit of either, with no publish. False for a
+    // node or a param that plan does not have, a NaN, or a full command ring.
+    bool setParam(std::string nodeId, std::string paramId, double value);
     bool applySystemSetting(std::uint32_t id, std::string key, double value);
     bool applyRoleConfig(std::uint32_t id, std::string kind, std::string config);
     std::optional<rfl::Bytestring> readState(std::uint32_t id);

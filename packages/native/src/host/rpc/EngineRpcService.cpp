@@ -169,6 +169,10 @@ RpcLoadScriptPackResult EngineRpcService::loadScriptPack(RpcLoadScriptPackReques
     return out;
 }
 
+bool EngineRpcService::setParam(std::string nodeId, std::string paramId, double value) {
+    return engine_.setParam(nodeId, paramId, value);
+}
+
 // duplicate, reload and remove are TS orchestration (SystemsStore over the registry reads + buildCore, and
 // the documents it publishes): duplicate pulls the source savestate and builds a seeded core; reload pulls
 // SRAM and cold-boots the ROM into the same slot; remove publishes a document without it. Native has no

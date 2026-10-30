@@ -7,7 +7,9 @@
 // each case's model through buildGraph), and says why in its commit. B3a did so for the DSP kernel and the host
 // I/O around the audio (every model gained an empty kernel structure), and B3b for the script nodes that replaced
 // the kernel (every model routes the host's MIDI to all its systems, with no controller and no roles, so each
-// document places the routing node and no protocol node); the audio of every document is the translator's still.
+// document places the routing node and no protocol node), and C2 for the system nodes' knobs (every Game Boy's node
+// carries its serial-out capture, off with no lsdj-sync placed; no model carries a core config or a gain, so no node
+// carries another knob); the audio of every document is the translator's still.
 // Documents with roles and a controller are buildGraph's own record, golden/build-graph-roles.json
 // (build-graph-role-goldens.test.ts). Not every golden document plans: the thirty-three systems under perSystem give
 // rp.host.audio-out 33 buses, past the 32 it takes.

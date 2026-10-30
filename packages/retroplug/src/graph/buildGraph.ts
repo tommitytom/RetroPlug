@@ -5,9 +5,21 @@
 // system that has one, wired between the host's I/O and the systems as the DSP kernel's ports were. After the
 // systems, it places each role's second node where its type names one, which reads what its system sent in the same
 // block: LSDj's serial-out decoder, whose host MIDI goes where the kernel's did (docs/lsdj-serial-out-design.md).
-// Pure, and held to test/graph/golden/build-graph.json, whose audio wiring is the B1 native translator's, so every
-// audio node id, the document order (which is the plan order on ties) and every per-lane sum is the translator's.
-import type { AudioRouting, MidiRouting } from "../settingsEnums";
+// Each system node carries its core's knobs (docs/modular-graph-phase-c2-design.md section 5): its core config's
+// setting fields and, on a Game Boy, the serial-out capture its LSDj's decoder needs, as settings; its gain and a NES's
+// expansion volume as params. Pure, and held to test/graph/golden/build-graph.json, whose audio wiring is the B1
+// native translator's, so every audio node id, the document order (which is the plan order on ties) and every
+// per-lane sum is the translator's.
+import {
+  CARTRIDGE_ACCURACY_VALUES,
+  COLOR_CORRECTION_VALUES,
+  DMG_PALETTE_VALUES,
+  HIGHPASS_VALUES,
+  MODEL_VALUES,
+  REGION_VALUES,
+  type AudioRouting,
+  type MidiRouting,
+} from "../settingsEnums";
 import type { GraphDocument, NodeDoc, WireDoc } from "./graphDocument";
 import {
   outNodeOf,
@@ -16,7 +28,15 @@ import {
   type ProtocolRole,
   type SystemInput,
 } from "./protocolNodes";
-import { controllerSettings, controllerSyncOverride, controllerTarget, NO_SYSTEM, type GraphController } from "./controller";
+import {
+  controllerSettings,
+  controllerSyncOverride,
+  controllerTarget,
+  NO_SYSTEM,
+  serialOutCaptureFor,
+  type GraphController,
+  type SerialOutCaptureMode,
+} from "./controller";
 
 export type SystemNodeType = "rp.sameboy.gb" | "rp.mesen.nes" | "rp.mesen.gba" | "rp.mesen.sms";
 
@@ -38,6 +58,14 @@ export interface GraphSystem {
    *  as that node's settings (graph/protocolNodes.ts protocolPipeline, which leaves out a role with no node and one
    *  whose node would write an input an earlier role's does; ProtocolRole says who parsed the config). */
   pipeline: ProtocolRole[];
+  /** The config of the system's core-config role, the one whose kind is its core (`sameboy` or `mesen`, coreRoles.ts):
+   *  where its node's setting fields and a NES's expansionVolume come from (systemKnobs). Absent for a system with none
+   *  (a DirectGraph's, a store's with no registry, the B1 goldens' models), whose node carries none of them, which
+   *  leaves its core as it was built. */
+  coreConfig?: Readonly<Record<string, unknown>>;
+  /** The system's gain in dB (CommonSettings.gainDb), its node's `gain` param. Absent places no value, which leaves
+   *  the param's stream where it is: at its default, 0 dB, on a new node. */
+  gainDb?: number;
 }
 
 export interface GraphModel {
@@ -84,6 +112,86 @@ const sysNode = (id: number): string => `sys-${id}`;
 
 /** A system's protocol node: sys-<id>/<role-kind>, the main design's convention. */
 const protocolId = (system: number, kind: string): string => `${sysNode(system)}/${kind}`;
+
+// ---- the system nodes' knobs ----------------------------------------------------------------------------------------
+//
+// A system node's knobs (docs/modular-graph-phase-c2-design.md section 3): the setting fields each type takes from its
+// core config, under the names and in the labels the role config spells them (coreRoles.ts), which are what the C++
+// node reads (SystemNodes.cpp), and the params it takes from the system. A value the node would refuse (another label,
+// a number out of its range, another type) is left out rather than sent: the planner refuses the whole document for
+// one node's settings, and a loaded project keeps its core config as written (SystemsStore.adopt), so a hand edit or a
+// newer build's label would silence every system. Left out, the core keeps what it has. Params are not checked so: the
+// planner clamps a param's value to its range, and rounds an int's, so any finite number is sent.
+
+type Knob = (v: unknown) => boolean;
+const label = (values: readonly string[]): Knob => (v) => typeof v === "string" && values.includes(v);
+const flag: Knob = (v) => typeof v === "boolean";
+const within = (min: number, max: number): Knob => (v) => typeof v === "number" && v >= min && v <= max;
+const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/** Each system node type's setting fields from its core config, and what the node takes for each. */
+const SETTING_FIELDS: Readonly<Record<SystemNodeType, Readonly<Record<string, Knob>>>> = {
+  "rp.sameboy.gb": {
+    model: label(MODEL_VALUES),
+    fastBoot: flag,
+    highpass: label(HIGHPASS_VALUES),
+    colorCorrection: label(COLOR_CORRECTION_VALUES),
+    dmgPalette: label(DMG_PALETTE_VALUES),
+    lightTemperature: within(-1, 1), // SameBoy's own range
+  },
+  "rp.mesen.nes": {
+    region: label(REGION_VALUES),
+    removeSpriteLimit: flag,
+    apuLatencyMs: within(0.25, 6),
+    s5bNoise: label(CARTRIDGE_ACCURACY_VALUES),
+    mmc5PhaseReset: label(CARTRIDGE_ACCURACY_VALUES),
+  },
+  "rp.mesen.gba": {},
+  "rp.mesen.sms": {},
+};
+
+/** The params each system node type takes from its core config, beside the gain every one takes from the system. */
+const CONFIG_PARAMS: Readonly<Record<SystemNodeType, readonly string[]>> = {
+  "rp.sameboy.gb": [],
+  "rp.mesen.nes": ["expansionVolume"],
+  "rp.mesen.gba": [],
+  "rp.mesen.sms": [],
+};
+
+/** A system node's knobs: what its settings carry beside `core` (and a Game Boy's capture, which buildGraph adds from
+ *  its pipeline), and its param values. */
+export interface SystemKnobs {
+  settings: Record<string, unknown>;
+  params: Record<string, number>;
+}
+
+/** The knobs a system node carries for `system`: its type's setting fields as its core config holds them, each left
+ *  out where absent or one the node would refuse; its gain; and its type's params from its core config. The one place
+ *  that says which field is which: the store reads it too, to tell a setting's edit, which publishes, from a param's,
+ *  which it sets live (SystemsStore.setRoleConfig). */
+export function systemKnobs(system: Pick<GraphSystem, "type" | "coreConfig" | "gainDb">): SystemKnobs {
+  const config: Readonly<Record<string, unknown>> = system.coreConfig ?? {};
+  const settings: Record<string, unknown> = {};
+  for (const [field, takes] of Object.entries(SETTING_FIELDS[system.type] ?? {}))
+    if (takes(config[field])) settings[field] = config[field];
+  const params: Record<string, number> = {};
+  if (finite(system.gainDb)) params.gain = system.gainDb;
+  for (const param of CONFIG_PARAMS[system.type] ?? []) {
+    const value = config[param];
+    if (finite(value)) params[param] = value;
+  }
+  return { settings, params };
+}
+
+/** A system's node: its core's id, its knobs and, on a Game Boy, `capture`. */
+function systemNode(system: GraphSystem, capture: SerialOutCaptureMode | null): NodeDoc {
+  const knobs = systemKnobs(system);
+  const settings: Record<string, unknown> = { core: system.id, ...knobs.settings };
+  if (capture !== null) settings.serialOutCapture = capture;
+  const node: NodeDoc = { id: sysNode(system.id), type: system.type, settings };
+  if (Object.keys(knobs.params).length > 0) node.params = knobs.params;
+  return node;
+}
 
 /** The streams a core reports in `mode` (a NES's export mode; ignored otherwise), as channelLayout() does. */
 function streamsOf(type: SystemNodeType, mode: number): Stream[] {
@@ -179,7 +287,7 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     hostMidi.push({ from: "controller.midiOut", system: target });
   }
   // The MI.MAP controller's cart, in the lsdj-sync mode it needs: the settings of that role's two nodes alone (its
-  // rp.lsdj.sync and its serial-out decoder), never the project's.
+  // rp.lsdj.sync and its serial-out decoder), and the capture its Game Boy runs for them, never the project's.
   const sync = controllerSyncOverride(systems, controller);
   // The nodes placed after the systems, in slot order, then pipeline order: each role's second node, and the system
   // output it reads, if any.
@@ -213,7 +321,14 @@ export function buildGraph(model: GraphModel): BuiltGraph {
   }
   const groups = linkGroups(systems);
   const order = sumOrder(systems, groups);
-  for (const i of order) nodes.push({ id: sysNode(systems[i].id), type: systems[i].type, settings: { core: systems[i].id } });
+  // Each Game Boy captures its serial out for the mode its lsdj-sync node runs, the controller's forced one included,
+  // so the capture and the decoder reading it change in one plan: no byte captured in one mode is decoded in the
+  // other.
+  for (const i of order) {
+    const s = systems[i];
+    const forced = sync !== null && sync.systemId === s.id ? sync.mode : null;
+    nodes.push(systemNode(s, s.type === "rp.sameboy.gb" ? serialOutCaptureFor(s.pipeline, forced) : null));
+  }
   for (const g of groups)
     for (let k = 1; k < g.length; ++k) wire(`${sysNode(systems[g[k - 1]].id)}.link`, `${sysNode(systems[g[k]].id)}.link`);
   // After the systems, so each reads its system's output of this block: a Game Boy's serial out, which LSDj's
