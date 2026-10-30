@@ -8,7 +8,6 @@
 #include <cstring>
 #include <optional>
 #include <span>
-#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -280,7 +279,10 @@ SystemBase* Engine::buildSystem(std::uint64_t system, SystemBuildRequest request
     liveCores_[id] = built;
     // The plan being planned learns its slot's core here: its table was built with a null entry for a system no node of
     // an older plan is reused for, and the table is published with the plan once every node has activated. buildSystem
-    // only runs inside a setGraph, so the table is there; a build for an id its slots do not name is a host bug.
+    // only runs inside a setGraph, so the table is there, and publishGraph has already refused a document whose system
+    // nodes and slots name different systems, so an id the slots do not name is a host bug. Asserted, and refused with
+    // what the claim took given back, so that a broken invariant costs a refused activation rather than a core and a
+    // snapshot slot the process then holds for ever under an id no plan can free.
     bool found = false;
     for (auto& e : building_->slots)
         if (e.id == id) {
@@ -288,8 +290,11 @@ SystemBase* Engine::buildSystem(std::uint64_t system, SystemBuildRequest request
             e.nes = dynamic_cast<MesenNesSystem*>(built);
             found = true;
         }
-    if (!found)
-        throw std::logic_error("system " + std::to_string(id) + " built outside the plan's slots");
+    assert(found);
+    if (!found) {
+        destroySystem(built);  // the slot, the live-core entry and the core itself
+        return refuse("system " + std::to_string(id) + " is not in the plan's slots");
+    }
     return built;
 }
 
