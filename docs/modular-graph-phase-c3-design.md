@@ -155,9 +155,12 @@ config, and the backends' ROM gates (`detectRomFormat`) stay.
 
 **A failure to build** (the core's ROM gate, a Mesen boot that fails, a full snapshot pool, a live id) is the planner's
 existing `activate-failed`, with the node id and a reason. A build outside the `setGraph` that activates it is refused
-too, with its own reason: no document can cause it. A refused document changes nothing: the running plan keeps running,
-and the cores the refused plan built are destroyed as its instances unwind, on the control thread, releasing their
-slots. There is no "parked for a corrected document" state; a retry builds again.
+too, with its own reason: no document can cause it. Nor can one cause a build for an id the plan being built has no
+slot for: that host bug is asserted, and refused through the same helper, the slot and the live-core entry the claim
+took given back first, since a refusal that left them behind would hold that id live for the rest of the process.
+A refused document changes nothing: the running plan keeps running, and the cores the refused plan built are destroyed
+as its instances unwind, on the control thread, releasing their slots. There is no "parked for a corrected document"
+state; a retry builds again.
 
 **Destroy** (at reclaim, control thread) goes through `rp.host.systems/1`'s `destroy`: releases the snapshot slot,
 leaves the live-core map and deletes the core; the node's own destructor releases its resources.
@@ -252,7 +255,8 @@ places (native's "system N is live"). The render path and every host go through 
   AddressSanitizer over a system added and removed while an audio thread plays.
 - **`retroplug-graph-test`**: `rp.host.resources/1` with a toy node (acquire at create, release at destroy, a moved ref
   rebuilding, a knob edit keeping the pin, a refused plan unwinding its new pins, a dropped resource readable until the
-  plan that pinned it is reclaimed, pins balanced).
+  plan that pinned it is reclaimed, pins balanced, and the field walk that names each field letting an allocation that
+  failed inside it reach the create's catch, which refuses the node rather than terminating on a `noexcept`).
 - **`pnpm test`** ([store-resources.test.ts](../packages/retroplug/test/systems/store-resources.test.ts)): each verb's
   resource and publish order, the release after a publish, the rollback after a refusal, a restore republish refused
   too, a project load dropping its bad system, the construct-time reset, a construct-time edit to the value already
