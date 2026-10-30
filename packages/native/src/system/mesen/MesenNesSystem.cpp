@@ -98,6 +98,19 @@ void applyExpansionVolume(NesConfig& cfg, std::uint32_t percent) {
     for (int i = kFirstExpansionChannel; i <= kLastExpansionChannel; ++i) cfg.ChannelVolumes[i] = percent;
 }
 
+// MesenNesConfig spells a NesRegion as ConsoleRegion's ordinal, ordinal for ordinal (MesenNesConfig.hpp), and the
+// accuracy switches read 0 as the documented chip. Neither the casts below nor those comparisons are checked, so hold
+// them here, where both enums are visible.
+static_assert(static_cast<std::uint32_t>(NesRegion::Auto) == static_cast<std::uint32_t>(ConsoleRegion::Auto) &&
+                  static_cast<std::uint32_t>(NesRegion::Ntsc) == static_cast<std::uint32_t>(ConsoleRegion::Ntsc) &&
+                  static_cast<std::uint32_t>(NesRegion::Pal) == static_cast<std::uint32_t>(ConsoleRegion::Pal) &&
+                  static_cast<std::uint32_t>(NesRegion::Dendy) == static_cast<std::uint32_t>(ConsoleRegion::Dendy) &&
+                  static_cast<std::uint32_t>(NesRegion::NtscJapan) ==
+                      static_cast<std::uint32_t>(ConsoleRegion::NtscJapan),
+              "NesRegion must spell ConsoleRegion's ordinals");
+static_assert(static_cast<std::uint32_t>(CartridgeAccuracy::Chip) == 0,
+              "the accuracy switches read mode 0 as the documented chip");
+
 void configureNes(Emulator& emu, std::uint32_t region, bool removeSpriteLimit,
                   std::uint32_t s5bNoise, std::uint32_t mmc5PhaseReset, std::uint32_t expansionVolume) {
     EmuSettings* settings = emu.GetSettings();
