@@ -73,6 +73,8 @@ On the wire the mode is a string, `"listen"` or `"drive"`, absent for off, parse
   boolean to the mode.
 - `setSerialOutCapture(id, mode)` takes the mode or null ([EngineRpcService](../packages/native/src/host/rpc/EngineRpcService.cpp));
   an unknown string is refused. It rides `ConfigField::SerialOutCapture` as 0 (off), 1 (`listen`) or 2 (`drive`).
+  C3 removed the build spec, its `serialOutCapture` and the RPC call; the mode is the Game Boy node's
+  `serialOutCapture` setting now ([modular-graph-phase-c3-design.md](modular-graph-phase-c3-design.md) section 6).
 - `serialOutCaptureFor` ([systemsStore.ts](../packages/retroplug/src/systemsStore.ts)) returns `"drive"` for
   `midiOut`, `"listen"` for `masterSync`, and null otherwise; the build hook and the live re-arm both send it.
 

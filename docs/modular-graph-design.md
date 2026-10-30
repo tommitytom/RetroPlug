@@ -897,7 +897,9 @@ expansion volume), and everything else is a setting, highpass and the colour and
 NES's accuracy switches and APU latency and a Game Boy's LSDj serial-out capture. A setting reaches the core at the
 start of the first block of the plan that carries it, a param's live edit at the start of the next block, each
 value-guarded by the node; the side path and its casts are gone. The ROM, the seeds, Game Gear mode and the other
-construct-time fields stay in the build spec until C3 builds cores in their nodes.
+construct-time fields are C3's: the ROM and seeds are resources its system node names, the construct-time fields are
+its settings, and it builds its core from them at activation
+([modular-graph-phase-c3-design.md](modular-graph-phase-c3-design.md)).
 
 ### 6.4 System capability interfaces
 
@@ -1035,7 +1037,7 @@ B3b ([modular-graph-phase-b3b-design.md](modular-graph-phase-b3b-design.md)) bui
 
 | Stays or arrives | Goes |
 |---|---|
-| `setGraph(doc)` (built in B2: [modular-graph-phase-b2-design.md](modular-graph-phase-b2-design.md)) | `constructSystem`, `removeSystem` (gone in B2; building a core stays a native call, `buildCore`, until Phase C) |
+| `setGraph(doc)` (built in B2: [modular-graph-phase-b2-design.md](modular-graph-phase-b2-design.md)) | `constructSystem`, `removeSystem` (gone in B2; a core is built by the node that places it since C3, from the resources its settings name) |
 | `putResource(type, bytes)` -> handle, `releaseResource(handle)` | `setAudioRouting` (gone in B2) |
 | capability calls (memory, SRAM, state, ROM info) addressed by node id | `applyRoleConfig`, `applySystemSetting` (gone in C2: a system's knobs are its node's settings and params) |
 | `setParam(node, param, value)` (built in C2: [modular-graph-phase-c2-design.md](modular-graph-phase-c2-design.md)) | `setSerialOutCapture` (gone in C2: the capture is a Game Boy node's setting) |
@@ -1141,8 +1143,8 @@ B2 is built: [modular-graph-phase-b2-design.md](modular-graph-phase-b2-design.md
 moved out of B2 as designed: the role-config commands
 (`applySystemSetting`, `applyRoleConfig`, `ConfigField`) stay until Phase C, where the live knobs become
 node params (C2 deleted them), and the kernel commands stay until B3 deletes the kernel (B3a deleted them).
-Building a core stays a native call (`buildCore`) until Phase C, when system nodes build their own from settings
-and resources.
+Building a core is the system node's own work since C3: its settings name the ROM and the seeds as resources, and
+it builds its core at activation ([modular-graph-phase-c3-design.md](modular-graph-phase-c3-design.md)).
 
 B3 is split in two. B3a is built ([modular-graph-phase-b3a-design.md](modular-graph-phase-b3a-design.md)): the
 kernel's input and output became real wires (host I/O nodes, input ports on every system node, the Game Boy's
@@ -1170,6 +1172,13 @@ node's, each a setting in the published document or a param, its value in the do
 and `setSerialOutCapture` RPCs and the build spec's capture are gone; and an LSDj's capture rides the document that
 hands its decoder the mode, so a mode switch is atomic. Strict parity held bit for bit at its five commits; the later
 first-block gain snap re-recorded 28 cases, its design's section 10.
+
+C3 is built ([modular-graph-phase-c3-design.md](modular-graph-phase-c3-design.md)): a system node's settings name its
+ROM, its seeds and every construct-time field, the bytes as resources (`putResource` / `releaseResource` in the
+engine's `ResourceTable`, pinned through `rp.host.resources/1`), and the node builds its core at activation through
+`rp.host.systems/1`. `buildCore`, the parked cores, the construct blob and its decoders and `toBuildSpec` are gone,
+and a construct-time edit rebuilds the system at once, carrying its battery. Strict parity held bit for bit, nothing
+re-recorded.
 
 - Console-specific code moves into each node; every `dynamic_cast` in §6.5 goes.
 - `SystemBase` shrinks to the capability interfaces; `MesenAudioDevice` gets a preallocated ring (it
@@ -1348,10 +1357,10 @@ here so it is not lost.
      checked canonical text, most of `toGraphJson` (below), but none of the planning.
 
   The table is the planner alone: not `Engine::setGraph`'s own work (the slot and system-node checks, the
-  system table, freeing parked cores), and not TS. On the TS side `EngineGraph` sends what `buildGraph` and
-  `toGraphJson` write, and for a 10,030-node document (4,700 unlinked Game Boys under stereo, 14,728 wires)
-  those cost about 7 ms and 105 ms under QuickJS (medians of 7, a one-off script run by `retroplug-cli`, not
-  committed): `toGraphJson`'s checks about 40 ms and its canonical JSON about 59 ms, where a plain
+  system table, the boot a new node's activation runs), and not TS. On the TS side `EngineGraph` sends what
+  `buildGraph` and `toGraphJson` write, and for a 10,030-node document (4,700 unlinked Game Boys under stereo,
+  14,728 wires) those cost about 7 ms and 105 ms under QuickJS (medians of 7, a one-off script run by
+  `retroplug-cli`, not committed): `toGraphJson`'s checks about 40 ms and its canonical JSON about 59 ms, where a plain
   `JSON.stringify` of the same document takes about 9 ms. So at that size the TS side costs about what the
   chain's native plan does, plus the RPC hop, and `toGraphJson` is a cost of its own. `EngineGraph` pays it
   on every publish, even one its dedupe then skips: it builds and serialises the whole document before

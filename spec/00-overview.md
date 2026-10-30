@@ -27,7 +27,7 @@ Every design decision serves one split:
   classification, path/sibling/suffix resolution, the project model and its
   serialization, config schemas, role/DSP behaviour, routing decisions, and the
   UI. TS drives native through one narrow **`Backend`** RPC surface over resolved
-  paths, opaque byte buffers, and opaque config blobs.
+  paths, opaque byte buffers, and the graph documents it builds.
 
 Two consequences show up everywhere and are worth stating once here:
 
@@ -40,8 +40,9 @@ Two consequences show up everywhere and are worth stating once here:
   overrides into the ROM in memory when the core is constructed; it has no protocol
   node.) See [04-roles-protocol-nodes.md](04-roles-protocol-nodes.md).
 - **TS owns the system-id counter and orchestration.** Native never mints an id;
-  `duplicate`/`reload` are TS orchestration over a `buildCore`-with-state
-  call plus snapshot reads, not native methods. See [03-ts-layer.md](03-ts-layer.md).
+  `duplicate`/`reload` are TS orchestration over a new system node seeded from a resource
+  (a savestate for a duplicate, the battery for a reload) plus snapshot reads, not native methods.
+  See [03-ts-layer.md](03-ts-layer.md).
 
 ## The three hosts
 

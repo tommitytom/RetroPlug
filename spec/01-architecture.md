@@ -58,8 +58,9 @@ that shared context rather than routed through RPC (defined in [03-ts-layer.md](
 
 ### The RPC services and their facets
 
-There is **no single facade object**. A host composes a shared `Engine` + `SystemFactory` +
-the ONE `QueuedInvoker`, plus a handful of stateless service instances, and mounts each service's
+There is **no single facade object**. A host composes a shared `Engine` (which owns the one `SystemFactory`, every
+core backend registered on it at construction) and the ONE `QueuedInvoker`, plus a handful of stateless service
+instances, and mounts each service's
 methods as one or more **facets** onto the rpcpp server
 ([`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp)).
 Registration is **cross-object** — `addMethod<&Service::m>(instance)` — and **the method name IS
@@ -70,7 +71,7 @@ glance:
 | Service | Facet(s) | Concern | Thread |
 |---|---|---|---|
 | [`HostRpcService`](../packages/native/src/host/rpc/HostRpcService.hpp) | `host` | filesystem, config dir, zip/unzip — stateless, pure | control |
-| [`EngineRpcService`](../packages/native/src/host/rpc/EngineRpcService.hpp) | `emulator` + `harness` | build cores and place them (`buildCore` / `setGraph`), load script node packs (`loadScriptPack`), reads, MIDI, transport, render/profile | control (pushes mutations) |
+| [`EngineRpcService`](../packages/native/src/host/rpc/EngineRpcService.hpp) | `emulator` + `harness` | put and drop immutable byte resources a node names (`putResource` / `releaseResource`), place systems (`setGraph`) and load script node packs (`loadScriptPack`), reads, MIDI, transport, render/profile | control (pushes mutations) |
 | [`DebugRpcService`](../packages/native/src/host/rpc/DebugRpcService.hpp) | `debug` | live-core inspection / stepping / breakpoints (CLI only — [09-cli-debugging.md](09-cli-debugging.md)) | control |
 | [`AudioDriverRpcService`](../packages/native/src/host/rpc/AudioDriverRpcService.hpp) | `driver` | background audio thread (`startAudio`/`stopAudio`/`audioCaptured`/`drainReleased`) | control; owns `audioThread_` (**test host only**) |
 
@@ -157,10 +158,11 @@ arrives one of three ways:
   of a system's core config, the MIDI routing, the controller); it builds the document with
   [`buildGraph`](../packages/retroplug/src/graph/buildGraph.ts) and sends it with the `setGraph` RPC,
   which `EngineRpcService::setGraph` hands straight to `Engine::setGraph`, not through the invoker.
-  `Engine::setGraph` builds the plan's `SystemTable` from the request's slots and the live cores
-  (parked by `buildCore`, or placed by an earlier plan), and calls `GraphHost::setGraph`, which plans
+  `Engine::setGraph` builds the plan's `SystemTable` from the request's slots and the live cores (a node reused from an
+  earlier plan is already there), and calls `GraphHost::setGraph`, which plans
   the document on the control thread (every layout checked before any instance is created, every new
-  instance created and activated) and pushes the plan onto the ring as a plan swap.
+  instance created and activated, and a node that builds a core filling the plan's table entry as it activates) and
+  pushes the plan onto the ring as a plan swap.
 - **A param's live value** (a system's gain, a NES's expansion volume: what is worth playing, automating
   or modulating) goes through `setParam`, which `EngineRpcService::setParam` hands to `Engine::setParam`, not
   through the invoker either: `GraphHost::setParam` clamps the value to the param's range and pushes it onto
@@ -185,8 +187,9 @@ such a node to prepare again while its last commit may still be landing. The com
 documents carry are the script nodes', whenever their settings change (a system added or removed, which
 moves the routing node's outputs, a role's config, the MIDI routing, the controller), the system nodes',
 whenever a knob moves (a model, a palette, an LSDj's capture), and the cart mirror's, and all of them prepare
-statelessly: every script type does, and a system node rebuilds only for a new core, which it compares
-against the core it was created with (node.hpp's `rebuild_key`), never against settings a commit writes.
+statelessly: every script type does, and a system node rebuilds only for a new system id, `romName` or a
+construct-time field, which it compares against the key of the instance it was created with (node.hpp's
+`rebuild_key`; a moved resource ref rebuilds it too), never against settings a commit writes.
 `rp.host.midi-out` swaps or rebuilds, statelessly too, and the other C++ nodes take each settings change
 they meet as a rebuild. So `setGraph` never waits on the audio thread: several plans can sit in the ring
 at once, adopted in push order in one drain. What bounds edits is the ring itself. While no block runs with
@@ -234,12 +237,11 @@ the NES channel tap (every edit that builds or drops a core, and every routing c
 already set), and the plan's swap command carries it as a `SyncTap` trailer (dispatched in the same pop,
 right after the plan is adopted), which restores whatever is armed and then arms the tap the request names
 against the plan just adopted ([10-multichannel-audio-out.md](10-multichannel-audio-out.md) section 4). A
-Game Boy's link group is wiring alone: the store publishes the graph with the cable (the `linkGroupId` a
-core decodes at its build is only what `buildCore` reports back). A document that does not plan (refused,
-or a full ring) changes nothing: a core a node of the refused plan had taken goes back to parked, and the
-store keeps its model. A core parked for it waits for the next document that plans, which frees it unless
-it places it. The store's next publish is sent even when its document matches the running one, so the
-refused document sent again places those cores once it plans.
+Game Boy's link group is wiring alone: the store publishes the graph with the cable (`buildGraph` turns its
+`linkGroupId` into the `link` wires, and no core decodes it). A document that does not plan (refused,
+or a full ring) changes nothing: the cores its nodes built are destroyed as its instances unwind, and the
+store keeps its model. The store's next publish is sent even when its document matches the running one, so the
+refused document sent again builds those cores again once it plans.
 
 The handler (`Engine::onHostCommand` → `applyCommand`) switches on `DspCommand::Kind`, applies each
 command and deletes its owning payload. The block drivers (the plugin's `run()`, the test host's
@@ -285,9 +287,8 @@ thread**. Two ordering rules make this race-free:
   bytes.
 - **Clear the id FIRST.** `release` does `id.store(0, release)` before freeing the buffers, so a
   stray block-thread scan can never match a slot that is being torn down. `release` runs when a
-  system node destroys its core at reclaim, once no running plan holds the system, and for each
-  core still parked once a `setGraph` plans, which no running plan ever held. Neither can race an
-  in-flight `publishSystem`.
+  system node destroys its core at reclaim or as a refused plan unwinds, once no running plan holds
+  the system. Neither can race an in-flight `publishSystem`.
 
 **Publish cadence.** `publishSystem` copies a system's frame **every block** (cheap), and copies
 its savestate+SRAM on a **coarse 0.5 s interval** (`kStateIntervalSec`, matching the core's own
@@ -317,18 +318,16 @@ A core's life, end to end:
 
 | Direction | Trigger | Mechanism |
 |---|---|---|
-| **build → park** | `buildCore` builds and activates a core (`factory.build`) | `Engine::parkCore` claims its registry slot and parks it under its system id; the document TS sends names it as `{ "core": <id> }` in its node's settings |
-| **plan → take** | `setGraph` plans the document on the control thread | the new node's first `activate` takes the core through the host service `rp.host.cores/1` and owns it from then on |
-| **adopt → hand back** | the audio thread drains the plan swap | the replaced plan is pushed onto the release ring, the last one of a drain only after every command of that drain is applied |
-| **reclaim → free** | the control thread reclaims | `reclaim()` deletes each released plan; a node only that plan held destroys its core: `registry.release(id)` first, then `delete` |
+| **build** | `setGraph` plans the document on the control thread, and a new node's first `activate` builds its core through `rp.host.systems/1` (`Engine::buildSystem`) | the backend boots it from the ROM and seed bytes its resources hold and the config its settings made; the engine claims its registry slot under the system id, records it among the live cores, and fills the plan's `SystemTable` entry |
+| **adopt → hand back** | the audio thread drains the plan swap | the replaced plan is pushed onto the release ring, the last one of a drain only after every command of that drain is applied; the system table rides with the plan |
+| **reclaim → free** | the control thread reclaims | `reclaim()` deletes each released plan; a node only that plan held destroys its core through `rp.host.systems/1` (`Engine::destroySystem`: `registry.release(id)` first, then `delete`) and releases its resource pins |
 
 The stores never reuse a system id (a `DirectGraph` caller may, once the old core is gone), and
-`buildCore` refuses an id that is still live (parked, or held by a node of any plan not yet
-reclaimed), so a new core always plans as a new instance. A core no published
-document placed is freed by the engine once a document plans without it, releasing its slot the same
-way.
+`buildSystem` refuses an id that is still live (held by a node of any plan not yet
+reclaimed), so a new core always plans as a new instance. A core a refused plan built is destroyed as
+that plan's instances unwind.
 
-`reclaim` runs at every `setGraph`, every `loadScriptPack` and every `buildCore` RPC, in every
+`reclaim` runs at every `setGraph` and every `loadScriptPack`, in every
 inline flush (quiescent), and at the hosts' stop and deactivate points; it returns the number of
 plans freed and is exposed on the wire as `drainReleased` (`QueuedInvoker::reclaimReleased`) for
 the test host to pump while running. A removed core is freed at the first of those after the audio
@@ -441,8 +440,8 @@ lost mutation.
    left.
 
 4. **The audio thread never builds or frees a core or a plan.** Cores are built, activated and
-   seeded on the control thread before handoff, and every node of a plan is created and activated
-   there by the planner. A replaced plan goes back through the release ring and is destroyed, with
+   seeded on the control thread, inside `setGraph`, as the planner creates and activates a plan's
+   system nodes. A replaced plan goes back through the release ring and is destroyed, with
    any core only it held, on the control thread. Adopting a plan inside a block is a pointer swap
    and the calls its plan carries (settings commits, `ports_changed`). The block thread does allocate
    and free in the script host's audio runtimes: a script node's JS instance is created in its pack's
@@ -475,11 +474,12 @@ lost mutation.
    and is re-anchored to the calling thread on every entry.
 
 8. **TypeScript owns identity, orchestration and structure; native never mints or decides.** System
-   ids are allocated by TS and passed into `buildCore`; native returns what it built, never an id
+   ids are allocated by TS and named by a system node's `system` setting; native builds the core it
+   names and never an id
    ([`EngineRpcService.cpp`](../packages/native/src/host/rpc/EngineRpcService.cpp)). Which systems
    run, in what order and wired how is the graph document TS builds and sends with `setGraph`.
-   Duplicate, reload and remove are TS orchestration over `buildCore`-with-state, registry reads and
-   the documents the stores publish, not native methods.
+   Duplicate, reload and remove are TS orchestration over a new system node whose settings name a
+   state-seed resource, registry reads and the documents the stores publish, not native methods.
    Cores are built bare (no default roles baked into C++); feature behaviour lives in TS, the audio
    thread's part in the protocol script nodes.
 
@@ -505,7 +505,7 @@ lost mutation.
 | [`buildGraph.ts`](../packages/retroplug/src/graph/buildGraph.ts) / [`engineGraph.ts`](../packages/retroplug/src/engineGraph.ts) | the engine's graph as TS builds it from the stores, and its publisher (the `ProjectStore`'s, or a `DirectGraph`'s or bare `SystemsStore`'s own) |
 | [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) / [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) / [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp) | the cores as nodes (each owning its core), the host I/O nodes and the cart mirror, and the host services they ask for |
 | [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) | the id-keyed read door; claim/publishSystem/read/release |
-| [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) | the single-threaded owner of the graph (with the script host its TS nodes run in), the staged host MIDI, the host outputs and the registry; `parkCore` / `setGraph` / `loadScriptPack`, `processBlock`, the command handler, `SyncTap` |
+| [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) | the single-threaded owner of the graph (with the script host its TS nodes run in), its one `SystemFactory`, the staged host MIDI, the host outputs and the registry; `buildSystem` / `destroySystem` / `setGraph` / `loadScriptPack`, `processBlock`, the command handler, `SyncTap` |
 | [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp) | the script-node runtime: TS nodes behind the C ABI in packs, each two bare QuickJS runtimes of its own (the built-in pack first, more loaded and reloaded at runtime), and the audio runtimes' profiling |
 | [`nodes/`](../packages/retroplug/src/script/nodes) / [`bundle.ts`](../packages/retroplug/src/script/bundle.ts) | the script nodes buildGraph places (the MIDI routing, each role's protocol node, the controller session), and the script-node bundle every Engine embeds |
 | [`PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp) | plugin control-plane bring-up + the `run()` block driver |

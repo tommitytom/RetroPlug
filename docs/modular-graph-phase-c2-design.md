@@ -82,7 +82,10 @@ The user's, on 2026-10-30:
 - **What stays outside C2:** the construct-time fields (SMS `enableFm`, NES `sdRoot`, the FIFO profile and its two
   overrides, the N8 link and its round trip, `channelExportMode`) stay in the build spec until C3 builds cores in their
   nodes; `buildCore`'s facts (the export mode, the link group) stay casts until C4; `linkGroupId` stays a TS-side field
-  that only `buildGraph`'s wiring reads.
+  that only `buildGraph`'s wiring reads. C3 built that part: the construct-time fields are their system node's
+  settings and the node builds its core, so the build spec, the blob and `buildCore` are gone
+  ([modular-graph-phase-c3-design.md](modular-graph-phase-c3-design.md)); the export mode and the link group come from
+  the core config in TS.
 
 ## 4. The native side
 
@@ -149,7 +152,8 @@ The user's, on 2026-10-30:
   moved setting publishes, a moved param alone is `setParam`, and an edit moving both publishes, the document carrying
   the param. A construct-time field's edit stays as it is (a rebuild through `reset(id)`). An `lsdj-sync` edit
   already publishes, and the capture rides that document; `syncSerialOutCapture` goes. `reloadOnRomChange` stays a
-  TS-only setting with no backend call.
+  TS-only setting with no backend call. C3 made that rebuild `setRoleConfig`'s own work (a new id, the battery
+  carried), so no `reset(id)` follows a construct-time edit.
 - **`Backend`** gains `setParam(nodeId, paramId, value): boolean` (the real backend over its RPC, on the `emulator`
   facet; the mock records each call), and loses `applySystemSetting`, `applyRoleConfig`, `setSerialOutCapture` and the
   build spec's `serialOutCapture`. `DirectGraph` loses `applyRoleConfig` and gains `setParam` and `setCoreConfig(id,
@@ -255,7 +259,9 @@ prototype answers (each answer follows its question):
   own work.
 - **The plugin's sync latency report** (`__rp_syncLatencyMs`) still follows the stored `lsdj-sync` mode, not the forced
   one.
-- **The construct-time fields and `buildCore`'s facts:** C3 and C4.
+- **The construct-time fields and `buildCore`'s facts:** built by C3
+  ([modular-graph-phase-c3-design.md](modular-graph-phase-c3-design.md)); C4 keeps the console code's move into the
+  nodes.
 - What section 10 found and leaves: a NES's region reset and a model's restart allocating on the block thread, a
   settings field a node does not know ignored, and an enum's two spellings on the C++ side.
 
@@ -301,7 +307,9 @@ dropped value and `DirectGraph.setCoreConfig`'s refusal in sections 5 and 10; an
   construct-time field's label included), in the log it writes once the core has built, so the stored config, the
   document and the core disagreeing leaves a trace. A `DirectGraph` caller is a test or a tool, which should hear of
   its mistake: `setCoreConfig` refuses an ordinal (`{ model: 1 }`, as two tests passed one before), a construct-time
-  field, another core's field or a link group outside 0 to 255, changing nothing.
+  field, another core's field or a link group outside 0 to 255, changing nothing. C3 removed the blob and
+  `configForBlob` ([modular-graph-phase-c3-design.md](modular-graph-phase-c3-design.md) section 6): a value the node
+  would refuse is left out of the document and the node's own default applies, and `adopt` notes that.
 - **`setCoreConfig` merges where `applyRoleConfig` reset.** The old call decoded a partial config with every absent
   field at its default and applied them all, so `{ linkGroupId: 1 }` also reset the model, highpass, fast boot and
   display group; `setCoreConfig` leaves an absent field as it was. No caller depended on the reset (every number the
@@ -349,6 +357,7 @@ dropped value and `DirectGraph.setCoreConfig`'s refusal in sections 5 and 10; an
   whose bounds are a type's constants rather than floating-point template arguments, which some of the compilers the
   build supports lack (older AppleClang). No Mac has compiled it yet.
 - **Nothing was lost with `ConfigField::LinkGroup`.** It wrote a live core's `linkGroupId`, which only `buildCore`'s
-  report reads, at the build; the cable is the document's wiring.
+  report reads, at the build; the cable is the document's wiring. C3 removed the report: `buildGraph` reads the link
+  group from the core config and writes the `link` wires.
 - **Renamed:** `test-native/lsdj-midiout-build-flag.test.ts`, whose build-spec flag is gone, is
   `lsdj-capture-settings.test.ts` (section 6); the B2 design, which names the old file, is left as the record it is.

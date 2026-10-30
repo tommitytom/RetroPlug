@@ -166,8 +166,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     authoring work.
   - **A retired generation waits for the host's reclaims.** Under an audio thread, a generation a reload replaced is
     freed at the host's next reclaim after its nodes' records come back, which they do once a reclaim has freed the
-    plan that held them and a block has released them. The plugin and SDL reclaim only inside `setGraph`,
-    `buildCore` and `loadScriptPack` while their audio runs, so the generation the last reload replaced, its two
+    plan that held them and a block has released them. The plugin and SDL reclaim only inside `setGraph` and
+    `loadScriptPack` while their audio runs, so the generation the last reload replaced, its two
     runtimes, stays until later calls have done that; an idle reclaim in the plugin and SDL would free it sooner.
   - **A record the release ring back cannot take keeps its pack for the host's life**, as it leaks its record rather
     than free it on the audio thread; nothing has filled that ring. A profile build's absolute live heap leaves out
@@ -187,9 +187,10 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     possible, and it is its own work.
   - **The plugin's sync latency report** (`__rp_syncLatencyMs`) still follows the stored `lsdj-sync` mode, not the
     one the MI.MAP controller forces.
-  - **The construct-time fields and `buildCore`'s facts.** SMS `enableFm`, NES `sdRoot`, the FIFO profile and its
-    overrides, the N8 link and its round trip and `channelExportMode` stay in the build spec until C3 builds cores in
-    their nodes; `buildCore`'s report of a NES's export mode and a Game Boy's link group stays a cast until C4.
+  - **The construct-time fields and the facts a build reports: closed by C3.** SMS `enableFm`, NES `sdRoot`, the
+    FIFO profile and its overrides, the N8 link and its round trip and `channelExportMode` are their system node's
+    settings now, and the node builds the core from them; the export mode and a Game Boy's link group come from the
+    system's core config in TS, where `buildGraph` reads them for its wiring.
   - **The knobs that allocate on the block thread.** A Game Boy's model change restarts the core, which allocates, as
     it did on the command ring, and a NES's region change resets its core, which allocates too; the NES core also
     allocates inside Mesen in its own blocks. So "no allocation" holds for a Game Boy's knobs, the ones it applies in
@@ -201,6 +202,22 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     the enumerator's name with its first letter lowercased (`"cgbC"`, `knobs::Label` in
     [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)), where node.hpp's `enum_param` labels are
     kebab-case (`"cgb-c"`), so a knob moved from a setting to an enum param would change the word a document carries.
+- **System nodes build their own cores, built in Phase C3**
+  ([modular-graph-phase-c3-design.md](../docs/modular-graph-phase-c3-design.md)): a system node's settings name its
+  system, its ROM, its seeds and its construct-time fields, the bytes as resources (`putResource` /
+  `releaseResource`, pinned through `rp.host.resources/1`), and the node builds its core at activation through
+  `rp.host.systems/1`; the old build call, the parked cores, the construct blob and its decoders are gone, and a
+  construct-time edit rebuilds the system at once, carrying its battery. Strict parity held bit for bit at its five
+  commits, nothing re-recorded. What it leaves (its section 10):
+  - **A stale NES-tap record can still match a fresh core** allocated where the armed one was freed: `armedTap_`
+    compares the core's address, and the record survives a drop and reclaim. TS never gets there (its ids only go up,
+    and every edit that drops a core re-arms), and the suite pins only the new-id replacement.
+  - **A node's first block is silent**, so the gain's first-value snap is observable only through a savestate seed
+    taken mid-note, which is the case that pins it.
+  - **The unnamed Master System stem is `system-<id>`**: unique within a Project, not across the several Projects
+    one process holds, so two projects' unnamed system 1 still name one battery. TS always sends a real `romName`.
+  - **A stored value the role schema would repair leaves the node's default** rather than the repaired value: there
+    is no blob to carry it, so `systemKnobs` drops it and `adopt` notes it.
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
     moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype

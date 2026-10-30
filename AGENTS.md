@@ -40,7 +40,10 @@ The rules below are the parts that don't fit those.
   driven directly, bit for bit, its inputs, settings and params included (C2,
   [docs/modular-graph-phase-c2-design.md](docs/modular-graph-phase-c2-design.md): every setting reaches its core at
   the next block and all of them at activation, a param at the node's first block, an LSDj's capture switching in the
-  block its decoder first runs in the new mode); the engine places, re-arms and frees what the graph documents TS builds
+  block its decoder first runs in the new mode); a system node builds its core at activation from the resources its
+  settings name (C3, [docs/modular-graph-phase-c3-design.md](docs/modular-graph-phase-c3-design.md)): the ROM and the
+  seeds as resources, its construct-time fields, each console's twin against a directly built core, and a refused plan
+  unwinding the cores and pins it built; the engine places, re-arms and frees what the graph documents TS builds
   say; the host I/O nodes and the N8 cart mirror move what the hosts stage and drain;
   TS nodes run behind the C ABI in the script host (B3a,
   [docs/modular-graph-phase-b3a-design.md](docs/modular-graph-phase-b3a-design.md)): marshalling, reshape,

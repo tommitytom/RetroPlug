@@ -1,15 +1,16 @@
 # Phase C3: system nodes build their own cores
 
-**Date:** 2026-10-30 · **Branch:** `feature/modularize` · **Status:** designed; the prototype answers section 9
+**Date:** 2026-10-30 · **Branch:** `feature/modularize` · **Status:** built: section 8's five commits; what building
+them changed is in the sections it changed, and what it found is section 10
 
-A system's core is built today by a call of its own beside the graph: TS hands `buildCore` a `ConstructSpec` (the ROM
-as a path or patched bytes, the battery and savestate seeds, and an opaque JSON blob of the construct-time fields), the
-engine boots the core and parks it under the system id, and the system node the next document places takes it at
-activation. This phase moves the build into the node. A system node's settings name everything its core is built from:
-the ROM and the seeds as **resources**, typed byte blocks TS puts into the engine, and every construct-time field as a
-plain setting. The node builds its core at activation, `buildCore` and the parked cores go, and a construct-time edit
-takes effect at once instead of waiting for the user to press Reset. It is Phase C's third piece
-([modular-graph-design.md](modular-graph-design.md) section 8), after C1's script node packs
+A system's core was built before this phase by a call of its own beside the graph: TS hands `buildCore` a
+`ConstructSpec` (the ROM as a path or patched bytes, the battery and savestate seeds, and an opaque JSON blob of the
+construct-time fields), the engine boots the core and parks it under the system id, and the system node the next
+document places takes it at activation. This phase moves the build into the node. A system node's settings name
+everything its core is built from: the ROM and the seeds as **resources**, typed byte blocks TS puts into the engine,
+and every construct-time field as a plain setting. The node builds its core at activation, `buildCore` and the parked
+cores go, and a construct-time edit takes effect at once instead of waiting for the user to press Reset. It is Phase C's
+third piece ([modular-graph-design.md](modular-graph-design.md) section 8), after C1's script node packs
 ([modular-graph-phase-c1-design.md](modular-graph-phase-c1-design.md)) and C2's live knobs
 ([modular-graph-phase-c2-design.md](modular-graph-phase-c2-design.md)), whose section 3 left exactly this: "the
 construct-time fields ... stay in the build spec until C3 builds cores in their nodes".
@@ -68,19 +69,21 @@ Every system node type (`rp.sameboy.gb`, `rp.mesen.nes`, `rp.mesen.gba`, `rp.mes
 |---|---|
 | `system` | The system id TS allocated (it replaces `core`): the snapshot slot's key, and why the node id is `sys-<id>` |
 | `rom` | `"res:N"`, a `rom` resource. Always a resource: a node never touches the filesystem |
-| `sram`, `state` | Optional `"res:N"` seeds, an `sram` and a `state` resource; given both, the savestate wins, as today |
-| `romName` | Optional: the ROM's file stem, which Mesen stages a Master System or Game Gear ROM under (its battery stem) |
+| `sram`, `state` | Optional `"res:N"` seeds, an `sram` and a `state` resource; given both, the savestate wins, as it does at the core |
+| `romName` | Optional: the ROM's file stem, which Mesen stages a Master System or Game Gear ROM under (its battery stem). A node that sends none stages under `system-<id>`, so two unnamed systems never share one |
 | construct-time | NES `sdRoot`, `fifo`, `fifoDepth`, `fifoBytesPerSecond`, `n8Link`, `n8LinkRttUs`, `channelExportMode`; SMS `enableFm`, `gameGear` |
 | C2's | The live settings and params, unchanged |
 
 The construct-time fields are optional, like C2's settings: an absent one builds the core at its default. Their enums
 are labels as the role configs spell them, read by C2's `knobs::Label`.
 
-**`rebuild_key`** covers `system`, every resource field and every construct-time field, so a change to any of them
-rebuilds the node (and the system nodes keep `stateless_prepare`: a live knob edit still never makes `setGraph` wait).
-The new instance claims the snapshot slot under its `system` id at activation, refusing a live id, so a construct-time
+**`rebuild_key`** covers `system`, `romName` and every construct-time field, so a change to any of them rebuilds the
+node (and the system nodes keep `stateless_prepare`: a live knob edit still never makes `setGraph` wait). The resource
+fields need not be in it: `node.hpp` compares the `res:N` refs a prepared settings object names with the pins its
+instance holds and answers a rebuild itself, so a moved resource rebuilds the node whatever its type's key says. The
+new instance claims the snapshot slot under its `system` id at activation, refusing a live id, so a construct-time
 change under the id an older instance still holds fails the document loudly ("system N is live") rather than doing
-nothing. TS moves to a new id for every rebuild, as it does today.
+nothing. TS moves to a new id for every rebuild.
 
 **What goes:** `buildCore` and its facts (TS writes the node type, the export mode and the link group itself);
 `BackendConstructSpec`, `toBuildSpec`, `SystemBuildSpec`'s blob and the three role-config decoders; the parked cores
@@ -102,15 +105,20 @@ The types are `rom`, `sram` and `state`; a node refuses a resource of another ty
 
 **A node holds a resource its settings name** through a host interface, `rp.host.resources/1` (`acquire` a pin by id,
 `release` it). A system node acquires its `rom`, `sram` and `state` at create, on the control thread, and releases them
-when it is destroyed, at reclaim, on the control thread. Every resource field is in `rebuild_key`, so a resource changes
-only by a rebuild, and no pin is taken or dropped on the audio thread. A missing, dropped or wrong-typed resource fails
-the node's create.
+when it is destroyed, at reclaim, on the control thread. A resource field that moves is a rebuild `node.hpp` decides
+itself, so a resource changes only by a rebuild, and no pin is taken or dropped on the audio thread; a prepare that
+keeps the same refs copies the instance's own pins into the new settings object, so a knob edit keeps them. A missing,
+dropped or wrong-typed resource fails the node's create. A plan's own binding pin could not serve instead: the executor
+binds a port view (`rp_port_view.u.resource`) just before `process`, `prepare` or `step`, which is after the planner has
+created and activated the node, and a system node builds its core at activation.
 
 **TS owns them per system.** A store entry owns its ROM resource and the seeds it booted from for as long as the system
 lives, since every later document names them too, and drops them when the system is removed or rebuilt under a new id.
-A rebuild that keeps the same ROM reuses its resource, and a duplicate shares the source's, so TS counts references to
-each and drops a resource when its count reaches zero. A dropped resource is freed when the plan that last ran its node
-is reclaimed. Holding the seeds costs nothing extra: the node pins them for its lifetime regardless.
+A rebuild reuses its ROM resource only when the source is the same (the same path, the same embedded marker, or the
+same image byte for byte), so a rebuild whose asset role folded in a different image puts its own; a duplicate shares
+the source's. TS counts references to each and drops a resource when its count reaches zero. A dropped resource is
+freed when the plan that last ran its node is reclaimed. Holding the seeds costs nothing extra: the node pins them for
+its lifetime regardless.
 
 **The bytes come from** a path (a plain ROM, a `.sav`, a savestate file), the asset roles (`lsdj-assets`,
 `risa-assets`, `bliptoaster-assets` fold their overrides into ROM bytes, and `lsdj-sync`'s empty-save seeding becomes an
@@ -120,7 +128,8 @@ duplicate).
 ## 5. The native side
 
 **Create** (control thread) parses the node's settings field by field, C2's machinery (optional fields, refused ranges
-and labels, so one bad field never defaults the rest), and acquires its resources, checking their types.
+and labels, so one bad field never defaults the rest), refuses a node naming no system or no ROM, and acquires its
+resources, checking their types.
 
 **Activate** (control thread, inside `setGraph`) builds the core through `rp.host.systems/1`, which replaces
 `rp.host.cores/1`:
@@ -129,36 +138,41 @@ and labels, so one bad field never defaults the rest), and acquires its resource
    knob present (the model and fast boot among them), Mesen a `MesenNesConfig`, `MesenSmsConfig` or `MesenGbaConfig`
    with the construct-time fields, the region and the accuracy pair, and both the ROM and seed bytes and `romName`.
 2. The backend applies before `onActivate` what it applies there today, boots, restores the seeds and enables the state
-   snapshot. A loaded non-default model still boots as that model, never restarting afterwards; the node's own first
-   application then finds every value equal and applies nothing, as in C2.
-3. The host claims the snapshot slot under `system`, refusing a live id, and records the core among the engine's live
-   cores.
+   snapshot. A loaded non-default model still boots as that model, never restarting afterwards; the node seeds the
+   settings it built from (less what the config does not carry, a Game Boy's capture) as what the core already has, so
+   its own first application finds every value equal and calls nothing, as in C2.
+3. The host claims the snapshot slot under `system`, refusing a live id, records the core among the engine's live
+   cores, and fills the plan's `SystemTable` entry for that id, so the table is complete before the plan is published.
+   The claim comes after the build because it seeds the slot from the core: a GBA pays its boot before a full pool can
+   refuse it.
 
 The backends keep the console code (C4 moves it into the nodes); `SystemBuildSpec`'s opaque blob gives way to the typed
 config, and the backends' ROM gates (`detectRomFormat`) stay.
 
 **A failure to build** (the core's ROM gate, a Mesen boot that fails, a full snapshot pool, a live id) is the planner's
-existing `activate-failed`, with the node id and a reason. A refused document changes nothing: the running plan keeps
-running, and the cores the refused plan built are destroyed as its instances unwind, on the control thread, releasing
-their slots. There is no "parked for a corrected document" state; a retry builds again.
+existing `activate-failed`, with the node id and a reason. A build outside the `setGraph` that activates it is refused
+too, with its own reason: no document can cause it. A refused document changes nothing: the running plan keeps running,
+and the cores the refused plan built are destroyed as its instances unwind, on the control thread, releasing their
+slots. There is no "parked for a corrected document" state; a retry builds again.
 
-**Destroy** (at reclaim, control thread) releases the snapshot slot, leaves the live-core map, deletes the core and
-releases the node's resources.
+**Destroy** (at reclaim, control thread) goes through `rp.host.systems/1`'s `destroy`: releases the snapshot slot,
+leaves the live-core map and deletes the core; the node's own destructor releases its resources.
 
 **Unchanged:** the linked Game Boys' `set_peers` (the plan hands each node its peers' live cores at adoption, after
-activation); the NES tap record (`Engine::syncTap` compares core addresses, which monotonic ids keep apart); the N8
-mirror; MIDI routing; lanes; `setSampleRate` over the plan's cores (the parked half goes); deterministic power-on,
-which happens inside `onActivate`. `setGraph` now includes each new system's boot: the work `buildCore` plus `setGraph`
-did before, in one call, the audio thread running the old plan meanwhile. A project load still boots N cores and plans
-once.
+activation); the NES tap record (`Engine::syncTap` compares core addresses as well as ids, so a core that has gone is
+never restored by id; the address half's stale-record hazard predates C3, section 10); the N8
+mirror; MIDI routing; lanes; `setSampleRate` over the plan's cores, which are every live core while quiescent;
+deterministic power-on, which happens inside `onActivate`. `setGraph` includes each new system's boot in one call, the
+audio thread running the old plan meanwhile. A project load still boots N cores and plans once.
 
 ## 6. The TS side
 
 **The store.** An entry's `built: { type, exportMode, linkGroup }` gives way to its platform (detected by
-[platform.ts](../packages/retroplug/src/platform.ts), which gives the node type) and its resources `{ rom, sram?,
-state? }`, counted handles; the export mode and the link group come from its config, where they started. Every verb
-that called `buildCore` keeps its orchestration over the new calls (put the resources, allocate the id, change the
-model, publish):
+[platform.ts](../packages/retroplug/src/platform.ts), which gives the node type), the `romName` its boot answers
+([systemResources.ts](../packages/retroplug/src/graph/systemResources.ts) `romNameOf`) and its resources
+`{ rom, sram?, state? }` (the handles `bootSystem` put, counted); the export mode and the link group come from
+its config, where they started. Every verb that called `buildCore` keeps its orchestration over the new calls
+(put the resources, allocate the id, change the model, publish):
 
 | Verb | Resources | Carries |
 |---|---|---|
@@ -171,20 +185,44 @@ model, publish):
 | project load | each system's ROM; the archive's blobs | what the archive saved |
 | a construct-time edit | the same ROM; an `sram` seed from `readSram` | the battery |
 
+A rebuild reuses its ROM resource only when it offers the one it holds and its source is the same (a path, an
+embedded marker or image bytes); `reload` offers none, since the ROM watcher's reread is one of its callers, so it
+puts a fresh one. An edit's resources are released only once its document has planned: a dropped resource cannot be
+bound by a new instance, so the store publishes first and drops afterwards. `discard` drops one system's resources at
+once: the document it was in never planned, so nothing pinned them.
+
 **A construct-time edit** is the reset path, run by `setRoleConfig` itself: the `systemKnobs` table gains a third
 column beside settings and params, and when one of its fields moves the store rebuilds the system under a new id with
-the new settings, carrying its battery.
+the new settings, carrying its battery, and answers whether that build planned. Its two sides are compared through the
+role schema's parse of the stored config (falling back to the raw config where the parse throws), so a sparse stored
+config looks like the same knobs a fresh one carries and a live knob edit stays live rather than rebuilding. A stored
+value the role schema would repair on the way in (a number clamped or rounded into range) now leaves the value out of
+the node's settings, so the node's own default applies: that matches the old repair where the repair was the default,
+and differs where it clamped or rounded. An unknown label keeps its old meaning, since the schema's default for one is
+the native default.
 
-**A refused publish names the node.** The store puts its model back as it was, releases what it put, and reports the
-reason, the failure the user saw when `buildCore` returned null. A project load publishes once for every system, as
-today; a refusal naming `sys-K` drops system K with a load note and publishes the rest, so one unreadable ROM still costs
-only its own system.
+**The id a rebuild replaced still resolves for `reset`.** A rebuild that swaps the id records `old -> new` in the
+store's `replacedBy` map, and `reset` is the one verb that reads it: a `reset(oldId)` follows a chain of rebuilds to
+the live system, resets that system and answers its id. That is what keeps the pre-C3 contract working, where a
+construct-time `setRoleConfig` was followed by `reset(id)` to learn the id carrying the new settings (section 10). An
+entry goes when the live system its chain ends in does (`removeSystem`, `discard`, `clear`), and the map is capped at
+128 entries, because a long session of resets would otherwise keep every id it ever used. Every other verb treats a
+replaced id as gone, so a stale handle cannot remove or edit a system it never named. Nothing serializes the map: a
+project load's `clear` empties it.
+
+**A refused publish names the node.** The store puts its model and its focus back as they were, gives back what the
+edit put, sends the restored model again and reports the reason, the failure the user saw when a core did not boot. A
+project load publishes once for every system, as today; a refusal naming `sys-K` drops system K with a load note and
+publishes the rest, so one unreadable ROM still costs only its own system.
 
 **`buildGraph`** writes `system`, `rom`, `sram`, `state`, `romName`, the construct-time fields, C2's knobs and the
-params. **`ConstructSpec`** stays as TS's description of what to boot, no longer a wire type: one helper turns it into
-resources and node settings for both the store and `DirectGraph`, so the native tests that hand `DirectGraph.add` a
-literal spec barely change. **The mock backend** implements `putResource` and `releaseResource`, and refuses a document
-naming an unknown or dropped resource. The render path and every host go through the store as today.
+params. **`ConstructSpec`** stays as TS's description of what to boot, no longer a wire type: one helper
+([systemResources.ts](../packages/retroplug/src/graph/systemResources.ts)) turns it into the resources both the store
+and `DirectGraph` name, with the node type and ROM name their documents write, so the native tests that hand
+`DirectGraph.add` a literal spec barely change. Its
+`core` names the kind of core whose role config `coreConfig` is and selects no core. **The mock backend** implements
+`putResource` and `releaseResource`, and refuses a document naming an unknown or dropped resource, a wrong-typed one, a
+bad `res:` spelling or a system node with no ROM. The render path and every host go through the store as today.
 
 **Persistence:** nothing changes. A project saves roles and blobs; resources live only at runtime. No migration.
 
@@ -193,18 +231,25 @@ naming an unknown or dropped resource. The render path and every host go through
 - **Parity** (`pnpm test:native parity`) holds bit for bit at every commit, nothing re-recorded: the core boots from the
   same config in the same order relative to its seeds. A moved case is a finding to explain.
 - **`retroplug-engine-graph-test`**: each console's node, built from resources, renders what a core built directly from
-  the same bytes renders, bit for bit, seeds included; a missing, dropped or wrong-typed resource, an unrecognised ROM,
-  a live id and a full snapshot pool each refuse the document and leave the running plan; a construct-time change under
-  the same id is refused and under a new id rebuilds; every pin and every snapshot slot comes back after a removal, a
-  rebuild and a refused plan; ThreadSanitizer and AddressSanitizer over a system added and removed while an audio thread
-  plays.
-- **`retroplug-graph-test`**: `rp.host.resources/1` with a toy node (acquire at create, release at destroy, a dropped
-  resource refused, pins balanced).
-- **`pnpm test`**: each verb's resource and publish order, the rollback after a refusal, a project load skipping its bad
-  system, the construct-time reset, every put balanced by a release.
-- **`test:native`**: each construct-time field lands with no Reset, observably (the export mode's lanes, the FM chip's
-  sound, the FIFO profile, the SD root); duplicate, reset and load state carry exactly what they carry today; a project
-  with one bad ROM loads the rest.
+  the same bytes renders, bit for bit, seeds included (a Game Boy plain, with a battery seed and with a savestate seed;
+  a non-default model under a savestate; a NES with its region, export mode and expansion volume; an SMS with FM off,
+  its battery and a `romName`; a GBA; an LSDj); a Master System's two nodes stage under stems of their own; a missing,
+  dropped or wrong-typed resource, an unrecognised ROM, a live id, a full snapshot pool and a build outside `setGraph`
+  each refuse the document and leave the running plan, the pins and the slots as they were; a construct-time change
+  under the same id is refused and under a new id rebuilds; a document changing only a param or a live knob keeps the
+  core; every pin and every snapshot slot comes back after a removal, a rebuild and a refused plan; ThreadSanitizer and
+  AddressSanitizer over a system added and removed while an audio thread plays.
+- **`retroplug-graph-test`**: `rp.host.resources/1` with a toy node (acquire at create, release at destroy, a moved ref
+  rebuilding, a knob edit keeping the pin, a refused plan unwinding its new pins, a dropped resource readable until the
+  plan that pinned it is reclaimed, pins balanced).
+- **`pnpm test`** ([store-resources.test.ts](../packages/retroplug/test/systems/store-resources.test.ts)): each verb's
+  resource and publish order, the release after a publish, the rollback after a refusal, a restore republish refused
+  too, a project load dropping its bad system, the construct-time reset, a sparse stored config's live edit,
+  `clear`/`discard`, DirectGraph's add/replace/remove, every put balanced by a release.
+- **`test:native`** ([app-construct-edit.test.ts](../packages/retroplug/test-native/app-construct-edit.test.ts)): a NES
+  FIFO profile edit changes the queue's capacity with no Reset, an export-mode edit makes the per-channel streams
+  appear, an SMS FM edit silences an FM song, duplicate/reset/load-state carry what they carry today, and a project
+  with one unreadable ROM loads the rest.
 - **The acceptance run** as C2's: every suite, the Reaper leg, SDL, BlipToaster and NESVJ.
 
 ## 8. Landing
@@ -218,20 +263,91 @@ Five commits, each green:
    reset; the goldens re-recorded.
 4. **The old path deleted:** `buildCore`, the parked cores, the facts, the blob and its decoders, `toBuildSpec` and
    the wire DTO.
-5. **Docs:** spec/01 to 04, 06, 07, AGENTS.md, the main design.
+5. **Docs:** spec/00 to 04, 06, 07, 09, 10, 11, 13, AGENTS.md, the main design, the C2 and LSDj master-sync designs'
+   pointers and `sdk-types.d.ts`.
 
 Then the acceptance run. As C2: a prototype on a local branch first, the plan written from it, executed on the pi
 models with Claude for the deep reviews and the final one.
 
-## 9. Prototype questions
+## 9. Prototype questions, answered
 
-- What a boot costs per console (now inside `setGraph`), and whether build order can move a bit of parity.
-- How `rp.host.resources/1` sits in node.hpp's create path (a C++ node's settings naming resources), and whether the
-  planner's own resource pins can serve instead.
-- Whether any host, CLI session or consumer (BlipToaster, NESVJ) reaches `buildCore` or the `ConstructSpec` wire shape.
-- Whether a Master System's staged file and battery stem need anything beyond `romName`.
+- **What a boot costs per console.** `build` is construct + `onActivate` (ROM, battery, savestate) +
+  `enableStateSnapshot`; `through setGraph` is the same through the engine (slot claim, one plan, published), Release
+  at 48 kHz, median of 5, printed by `build/bin/retroplug-engine-graph-test "[bench]"`:
 
-## 10. Left as it is
+  | console | build | through setGraph | ROM |
+  |---|---|---|---|
+  | mGB (embedded) | 0.1 ms | 0.4 ms | 64 KiB |
+  | LSDj | 0.4 ms | 0.8 ms | 1024 KiB |
+  | NES (bliptoaster) | 0.8 ms | 1.0 ms | 288 KiB |
+  | Master System (smsggdj) | 0.3 ms | 0.7 ms | 128 KiB |
+  | GBA (nanoloop287d) | 15.3 ms | 16.5 ms | 8192 KiB |
+
+  `setGraph` carries the boot, and only the GBA's is large enough to be noticed (its 8 MiB ROM is copied twice: into
+  the request and into the backend). A project load of N systems still plans once. Strict parity
+  held bit for bit at every commit with nothing re-recorded: the core boots from the same config in the same order
+  relative to its seeds, so build order moved no bit.
+- **How `rp.host.resources/1` sits in create, and whether the planner's bindings could serve.** As a settings field
+  type, `rp::resource_ref<Type>`: `node.hpp` pins what it names at create and drops it at destroy, puts the handle in
+  every settings object the node is handed and decides a moved ref as a rebuild itself. A plan's binding cannot serve:
+  the executor binds a port view only just before a call into the node, after create and activation, and a system node
+  builds its core at activation.
+- **Whether any host, CLI session or consumer reaches `buildCore` or the `ConstructSpec` wire shape.** No. The store,
+  `DirectGraph` (the CLI's analyze session and the native tests included) and the render path all boot from resources;
+  the only remaining trace is `ConstructSpec` itself, which is TS's own description of a boot.
+- **Whether a Master System's staged file and battery stem need anything beyond `romName`.** A refinement: `romName`
+  is enough when it is sent, and TS always sends it (the ROM's stem, `mgb` for the embedded ROM). A node that sends
+  none stages under `system-<id>`, unique within a Project, so two unnamed systems never share a battery; only a real
+  stem lets two instances of one game share its own battery.
+
+## 10. Found while building
+
+The plan's list of departures is recorded across this document: the resources a document names, `rebuild_key`'s
+narrowed list and the staged stem in section 3; `rp::resource_ref` and the pins a node holds in section 4; the build at
+activation through `rp.host.systems/1`, the `SystemTable` it fills and the refusals in section 5; the store's verbs,
+the construct-time rebuild and the schema-parsed comparison in section 6; the per-console twins and the goldens in
+section 7; and the findings below.
+
+- **A resource field needs no `rebuild_key` entry, and a knob edit keeps the pin.** `node.hpp` compares the prepared
+  settings' `res:N` refs with the pins its instance holds, so a moved ref is a rebuild on its own, and a prepare that
+  keeps them copies the instance's pins into the new settings object. That is stronger than section 3's rule, and it
+  keeps `stateless_prepare` sound because it reads only what create fixed (sections 3 and 4).
+- **A rebuild's ROM resource is only shared when its source is the same.** A rebuild that always shared the old ROM
+  silently kept an asset role's previous image: `bootSystem` compares path, embedded marker or image bytes, and a
+  reload puts a fresh ROM resource because the file watcher is one of its callers (sections 4 and 6).
+- **The stored value the role schema would have repaired now leaves the node's default.** There is no blob to carry a
+  repaired value. `systemKnobs` leaves out a value the node would refuse and notes it, so an out-of-range number or a
+  fractional integer takes the node's own default where the blob took the clamp or the rounded value; an unknown label
+  keeps its meaning because the schema's default and the native default agree (section 6).
+- **A construct-time edit is compared through the role schema's parse.** The store compares `systemKnobs` over the
+  stored config as its role schema reads it (falling back to the raw config when the parse throws) with the parsed
+  edited config. Without that, a sparse stored config looked like it moved every omitted field to its default, and a
+  live knob edit rebuilt the system under a new id (section 6).
+- **The pre-C3 `setRoleConfig` + `reset(oldId)` pattern still works.** The plan's review found both consumer suites
+  relied on it: they move a construct-time field and then call `reset` on the id they held to learn the id carrying the
+  new settings (BlipToaster's `bootRomWith` does `setRoleConfig(id0, "mesen", { n8Link: "off" })` then
+  `reset(id0) ?? id0`; NESVJ's `bootRegion` throws when the reset answers null). Since the edit rebuilds the system
+  itself, that id names nothing any more; the store's `replacedBy` map keeps the forward and `reset` follows it to the
+  live system (section 6), so neither consumer changes.
+- **The gain's first value is snapped, and a node's core is always fresh.** A core a node builds is silent in the
+  block its gain first lands in, so the first-value snap is observable only through a savestate seed taken mid-note:
+  the case that pins it builds the node with that seed at a 64-frame boundary whose next 64 frames sound (section 7).
+- **A stale NES-tap record can still match a fresh core allocated where the armed one was freed.** `armedTap_`
+  compares the core's address, and the record survives a drop and reclaim. The hazard predates C3; TS never gets there
+  because its system ids only go up and every edit that drops a core re-arms, which drops the record. The suite pins
+  the new-id replacement, not the allocator-dependent half (section 5).
+- **The `SystemTable`'s pre-fill is load-bearing for reuse.** A node reused from the previous plan (its key unchanged)
+  returns from `activate` without building, so `publishGraph` seeds its slot's core from the live cores before the
+  planner runs; the table is complete before publication and nothing writes it afterwards (section 5).
+- **Two `SystemFactory` instances existed while both paths did.** The Engine owns the one every node builds through;
+  the RPC service held a second for `buildCore` until the old path went (section 5; commit 4 deleted the second).
+- **A golden runner's synthetic GBA ROM could not boot through a node.** A KiB of zeros was enough for a directly
+  constructed `MesenGbaSystem`, but a node's build gates the bytes, so the runner carries the Nintendo logo. The
+  golden documents' `res:` ids also had to be renumbered in one pass, since two can swap places (section 7).
+- **The unnamed Master System stem.** `romName` is optional for the build and not for battery identity: the fallback
+  is `system-<id>`, unique within a Project but not across the several Projects one process holds (sections 3 and 9).
+
+## 11. Left as it is
 
 - **C4:** the console code moves into the nodes; `SystemBase` shrinks to the capability interfaces.
 - **A stable node id across a ROM change:** a graph UI may later want a node to keep its id when its ROM changes. C3

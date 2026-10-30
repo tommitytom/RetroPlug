@@ -63,7 +63,7 @@ Contributed by the built-ins (or, eventually, an extension). Fields
 | `kind` | the string key (for a system-role, `kind` IS the core, e.g. `"sameboy"`) |
 | `category` | `"system"` or `"feature"` |
 | `schema` | a zod schema whose `.parse` fills defaults + clamps a partial/invalid config into a full one; `.parse({})` yields the default config |
-| `onConstruct?` | a load-time hook that transforms the resolved `ConstructSpec` just before the core is built (ADDITIVE by contract: seed only what's otherwise absent) |
+| `onConstruct?` | a load-time hook that transforms the resolved `ConstructSpec` just before the boot puts its resources (ADDITIVE by contract: seed only what's otherwise absent) |
 | `ui?` | **deferred**: a UI-thread behaviour + settings render descriptor (see [Not yet built](#not-yet-built--deferred)) |
 
 A role type says nothing about the audio thread. Which role kinds have a protocol node, and which node
@@ -111,26 +111,28 @@ the **control-plane** registry only; the script-node bundle never sees a role, a
 
 ### `ConstructCaps` + `onConstruct` hooks
 
-`onConstruct` runs at construct time for each role actually attached to a system (so it is inherently
-ROM-gated), transforming the resolved `ConstructSpec`. It sees only a narrow `ConstructCaps` slice
+`onConstruct` runs at boot time for each role actually attached to a system (so it is inherently
+ROM-gated), transforming the resolved `ConstructSpec` before its resources are put. It sees only a narrow
+`ConstructCaps` slice
 (`savFromJson`, `fileExists`, `readFile`, `pngDecode`), which the full `Backend` satisfies structurally,
-so the store passes itself.
+so the store passes itself. What it writes into the spec is what the system's node names: its `romBytes`
+become the `rom` resource's bytes, its `sramBytes` a battery seed's.
 
 LSDj's empty-sav seed ([dspRoles.ts:16](../packages/retroplug/src/dspRoles.ts#L16)) is the plainest: a
 fresh LSDj cart with no save data runs a 12-15 s cartridge self-test on boot. When nothing else will seed
-the battery (no savestate, no SRAM blob, no on-disk `.sav` for native to load) the hook hands it a valid
-empty sav via `savFromJson("{}")` so LSDj boots straight to the song screen. It is additive: the spec is
-returned untouched when real save data is present. The asset roles' hooks fold their overrides into the
-ROM in memory the same way.
+the battery (no savestate, no SRAM blob, no on-disk `.sav` for the boot to read) the hook hands it a valid
+empty sav via `savFromJson("{}")`, which becomes an `sram` resource, so LSDj boots straight to the song screen. It
+is additive: the spec is returned untouched when real save data is present. The asset roles' hooks fold their
+overrides into the ROM bytes the same way, and the resource helper puts the folded image as the `rom` resource.
 
 ### Where derivation happens in the store
 
 [SystemsStore](../packages/retroplug/src/systemsStore.ts) drives the registry:
 `defaultRoles(...)` reads a `ROLE_HEADER_LEN = 0x150` header prefix and calls
 `registry.defaultRoles(...)`
-([systemsStore.ts:818](../packages/retroplug/src/systemsStore.ts#L818)); `applyConstructHooks`
-folds each attached role's `onConstruct` over the spec before the build call
-([systemsStore.ts:1000](../packages/retroplug/src/systemsStore.ts#L1000)). See
+([systemsStore.ts](../packages/retroplug/src/systemsStore.ts)); `applyConstructHooks`
+folds each attached role's `onConstruct` over the spec before the boot puts its resources
+([systemsStore.ts](../packages/retroplug/src/systemsStore.ts)). See
 [03-ts-layer.md](03-ts-layer.md) for the surrounding store idioms.
 
 ## The built-in roles
@@ -150,11 +152,12 @@ which is what a `.rplg` saves and what the system node reads:
 
 Not every system-role field is live. The live ones are the system node's knobs (below);
 `channelExportMode`, `sdRoot`, the FIFO profile and its two overrides, the N8 link and its round trip, and
-SMS `enableFm` are read only when the core is **constructed**, so an edit takes effect only after a
-rebuild: `setRoleConfig(id, …)` then `reset(id)`, which re-sends the stored role config as the construct
-`settings` blob and hands back a new id. (`region` is read at construct too, and is also a knob: a live
-edit resets the core, as switching a console's region would.) `sdRoot` is the host directory the emulated
-EverDrive N8 SD card maps to (`"/"` on the card), for a NES ROM that pulls its data off the cartridge;
+SMS `enableFm` are read only when the core is **constructed**, so an edit is a rebuild the same call makes:
+`setRoleConfig(id, …)` builds a new system under a new id with the battery carried, and no `reset(id)` follows
+it: code written against the old contract may still issue one, and a reset of the old id resets its replacement
+([03](03-ts-layer.md) has the construct-time paragraph and the forwarding). (`region` is read at construct too, and
+is also a knob: a live edit resets the core, as switching a console's region would.) `sdRoot` is the host directory the
+emulated EverDrive N8 SD card maps to (`"/"` on the card), for a NES ROM that pulls its data off the cartridge;
 empty means a per-process scratch directory, not the working directory. Reading back what such a ROM sends
 is `drainCoreBytes` ([09](09-cli-debugging.md)). A ROM can also skip the CPU entirely: `CMD_F_FRD_MEM` has
 the emulated MCU read the open file straight into cartridge memory over the PI bus, which `MesenNesSystem`
@@ -198,7 +201,7 @@ core is [02-native-host.md](02-native-host.md)'s):
 | a system's gain (`setGain`) | `setParam("sys-<id>", "gain", dB)`, no publish | the node's `gain` param, at the start of the next block |
 | a **system-role** edit moving a setting field (a model, a palette, a NES's region) | a publish | the node's settings, given to the core at the start of the first block of the plan that carries them |
 | a **system-role** edit moving only a param (a NES's `expansionVolume`) | `setParam`, no publish | the node's param, at the start of the next block |
-| a **system-role** edit moving a construct-time field (noted above) | *(none until a rebuild)* | the core `reset(id)` or a reload builds next |
+| a **system-role** edit moving a construct-time field (noted above) | a rebuild, in the same call | a new system node, built from the new value; a `reset` of the old id resets it |
 | a **feature-role** config edit | a publish, for a role with a protocol node | its protocol node's settings; for `lsdj-sync`, its Game Boy node's capture too |
 | `reloadOnRomChange` | *(none)* | TS's file watcher alone |
 

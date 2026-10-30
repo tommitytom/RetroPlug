@@ -5,8 +5,8 @@ of the thesis **"native owns bytes and cores; TypeScript owns meaning."** Everyt
 user *decides* lives here: system identity and order, ROM classification, path/sibling/
 suffix resolution, the project model and its serialization, the config schemas, routing
 and role behaviour, and the whole UI. TS drives native through one narrow **`Backend`**
-interface over resolved paths, opaque byte buffers, and opaque config blobs — it never
-asks native to make a policy choice.
+interface over resolved paths, opaque byte buffers, and the graph documents it builds;
+it never asks native to make a policy choice.
 
 The layer is organised as three concentric rings, each depending only on the one inside
 it:
@@ -46,7 +46,7 @@ The methods, grouped by concern:
 |---|---|---|
 | **Filesystem** | `readFile` · `writeFile` · `writeFileAtomic` · `fileExists` · `rename` · `listDir` · `deleteFile` · `drainChangedPaths` · `setWatchedRoms` | `std::filesystem` bytes; atomic temp+rename; a generic non-recursive readdir; the pull-drain of the native efsw file watcher + the ROM-set registration that feeds it |
 | **Paths** | `canonicalize` · `readFilePrefix` · `configDir` | `weakly_canonical` (the dedupe key); a header-only prefix read (ROM sniff without marshalling MBs); the per-OS config dir |
-| **Emulator lifecycle** | `buildCore(spec, id)` · `setGraph(request)` · `loadScriptPack(request)` | Build/activate a core under a **TS-allocated id** and park it; plan a graph document TS built (which cores run, in what order and wired how). No `remove`/`duplicate`/`reload` primitive: those are TS orchestration over the first two. Load a pack of script node types beside the built-in ones, or reload one, while audio runs ([modular-graph-phase-c1-design.md](../docs/modular-graph-phase-c1-design.md)): `{ ok, error, errors, types }`, the pack's types with their descriptors, or why not (the planner's `errors` when a reload's replan refused). Nothing in the app calls it yet, and the mock refuses it |
+| **Emulator lifecycle** | `putResource(spec)` · `releaseResource(id)` · `setGraph(request)` · `loadScriptPack(request)` | Put an immutable byte block in the engine's `ResourceTable` (a ROM, a battery, a savestate) or drop the owner's hold on one; plan a graph document TS built (which systems run, in what order and wired how, each system node naming the resources its core boots from). No `remove`/`duplicate`/`reload` primitive: those are TS orchestration over these and the snapshot reads. Load a pack of script node types beside the built-in ones, or reload one, while audio runs ([modular-graph-phase-c1-design.md](../docs/modular-graph-phase-c1-design.md)): `{ ok, error, errors, types }`, the pack's types with their descriptors, or why not (the planner's `errors` when a reload's replan refused). Nothing in the app calls it yet, and the mock refuses it |
 | **File dialog** | `openFileBrowser(opts)` → `Promise` | Open the OS browser, resolve the picked path (the one async method) |
 | **Live params** | `setParam(nodeId,paramId,value)` | Set a param of a node the last published plan places, at the start of the next block, clamped to its range: the store's live gain and a NES's expansion volume, on the system's node `sys-<id>`. A system's other knobs are its node's settings in the document `setGraph` plans, and the audio routing is the graph's wiring, so neither is a call ([modular-graph-phase-c2-design.md](../docs/modular-graph-phase-c2-design.md)) |
 | **Live input** | `pressButton(id,button,down)` | Queue a joypad edge to the core's audio-thread button sink |
@@ -59,26 +59,30 @@ The real adapter [`src/realBackend.ts`](../packages/retroplug/src/realBackend.ts
 a self-contained synchronous JSON-RPC `call()`
 ([rpcClient.ts:28](../packages/retroplug/src/rpcClient.ts#L28)). Binary rides as
 `Uint8Array` in both directions (the QuickJS codec decodes a typed byte param straight into
-`rfl::Bytestring`), so nothing is base64'd or number-array'd on this path. `specParams`
-([realBackend.ts:65](../packages/retroplug/src/realBackend.ts#L65)) omits null path
-fields (so native reads `nullopt`, not `""`) and attaches seed bytes only when present.
+`rfl::Bytestring`), so nothing is base64'd or number-array'd on this path. `putResource`'s adapter
+([realBackend.ts](../packages/retroplug/src/realBackend.ts)) sends exactly one of `bytes`, `path` or
+`embedded` (so native sees no null source it has to interpret) and narrows the answer to `{ id }` or
+`{ error }`.
 This same adapter serves all three hosts — the difference is only which
 set of RPC facets is bound behind `__rpcSend` (see doc 01/02).
 
-### `ConstructSpec` — the resolved-paths-only build request
+### `ConstructSpec` - TS's description of a boot
 
-`buildCore` takes a `ConstructSpec`
-([backend.ts:788](../packages/retroplug/src/backend.ts#L788)) in which **TS has
-already resolved every path, suffix, sibling, and classification** — *native never sees a
-suffix, never looks for a sibling, never classifies.*
+A boot takes a `ConstructSpec`
+([backend.ts](../packages/retroplug/src/backend.ts)) in which **TS has
+already resolved every path, suffix, sibling, and classification** - *native never sees a
+suffix, never looks for a sibling, never classifies.* It is no longer a wire type: one helper
+([graph/systemResources.ts](../packages/retroplug/src/graph/systemResources.ts)) turns it into the resources a
+system node names, with the node type and ROM name the documents write, for the store, `DirectGraph` and the render
+path alike.
 
 | Field | Meaning |
 |---|---|
-| `romPath` / `embeddedRom` | The ROM file to slurp, or a binary-baked marker (e.g. `"mgb"`) with `romPath = ""` |
-| `platform` / `core` | What the ROM targets + which factory builds it — TS classifies via [`platform.ts`](../packages/retroplug/src/platform.ts) |
-| `savPath` / `statePath` | The exact battery file (load-from + auto-save-to) and savestate to boot from, or `null` |
-| `sramBytes?` / `stateBytes?` | Seed bytes (zip-import blob, carried battery, role-synthesized sav) that override what native reads from disk; `savPath` stays the auto-save target |
-| `settings?` | The role schema's parse of the stored system-role config as JSON, applied **at construct** so a restored savestate isn't nuked by a post-build restart: the construct-time fields reach the core only this way, and its knobs again from its node's settings in the document that places it (`roleConfigForNative` encodes the parse, its enums as ordinals) |
+| `romPath` / `embeddedRom` | The ROM file the engine reads, or a binary-baked marker (e.g. `"mgb"`) with `romPath = ""` |
+| `platform` / `core` | What the ROM targets, which picks the node type (and with it the console its core is built as) via [`platform.ts`](../packages/retroplug/src/platform.ts), and the kind of core whose role config `coreConfig` is (it selects no core) |
+| `savPath` / `statePath` | The exact battery file (loaded as the seed when it is there, and the auto-save target) and savestate to boot from, or `null` |
+| `romBytes?` / `sramBytes?` / `stateBytes?` | Bytes TS holds (an asset role's patched image, a zip-import blob, a carried battery, a savestate read back from a live core); they win over the files at the paths. A `romBytes` image becomes the `rom` resource's bytes |
+| `coreConfig?` | The system's core-config role config in the labels its node reads: its live knobs, and its construct-time fields, which become the node's settings (a value the node would refuse is left out) |
 
 `openFileBrowser` is the odd one out and does **not** ride the RPC bridge: it uses the
 UI-direct hooks `__rp_openFileBrowser` / `__rp_onFileBrowserResult` on the shared context
@@ -106,11 +110,12 @@ tracks order, never knows which system is focused, and never decides the project
 The live systems list. `SystemEntry[]`
 ([systemsList.ts:22](../packages/retroplug/src/systemsList.ts#L22)) is the persistent
 model (`{ id, platform, core, romPath, savPath override, savSuffix, embeddedRom, settings,
-roles }`, plus the derived `battery` and `built` facts, never serialized); the private state is
-`entries`, `focusedId`, and `dirty`
-([systemsStore.ts:119-121](../packages/retroplug/src/systemsStore.ts#L119)). `view()`
+roles }`, plus the derived `battery`, `romName` and `resources` facts, never serialized); the private state is
+`entries`, `focusedId`, `dirty` and the `ResourcePool` that counts its handles
+([systemsStore.ts](../packages/retroplug/src/systemsStore.ts)). `view()`
 ([systemsStore.ts:141](../packages/retroplug/src/systemsStore.ts#L141)) projects a
-`SystemView[]` for the UI, computing the live `focused` and `missing` flags each call.
+`SystemView[]` for the UI, computing the live `focused` and `missing` flags each call, and `systems()` gives
+the entries, which is how a caller reads the new id a rebuild allocated.
 
 - **TS owns the system-id counter.** `allocSystemId()` increments a module-scoped
   `nextSystemId` ([systemsStore.ts:70](../packages/retroplug/src/systemsStore.ts#L70)):
@@ -120,71 +125,93 @@ roles }`, plus the derived `battery` and `built` facts, never serialized); the p
 - **`classifyRom`** ([systemsStore.ts:89](../packages/retroplug/src/systemsStore.ts#L89))
   is the one place ROM bytes enter TS — and just the `ROM_SNIFF_LEN` (0x134) header prefix.
 - **Mutators through `Backend`:** `addSystem` (append), `loadRom` (replace focused, or defer to a sibling
-  `<rom>.rplg`), `loadMgb` (embedded), `replaceSystem`, `removeSystem`, plus the per-system `setGain`,
+  `<rom>.rplg`), `loadMgb` (embedded), `replaceSystem`, `swapRom`, `removeSystem`, plus the per-system `setGain`,
   `setReloadOnRomChange` and `setRoleConfig`
-  ([systemsStore.ts:539](../packages/retroplug/src/systemsStore.ts#L539)). A gain edit updates the store and
+  ([systemsStore.ts](../packages/retroplug/src/systemsStore.ts)). A gain edit updates the store and
   sets the system node's `gain` param live (`backend.setParam("sys-<id>", "gain", dB)`) with no publish; the
   next document, whatever publishes it, carries the same value. `reloadOnRomChange` is TS's alone (the file
-  watcher reads it), so it reaches no backend. An edit of the core-config role (the `"system"`-category role
+  watcher reads it), so it reaches no backend. Every boot puts its ROM and seeds as resources through
+  [systemResources.ts](../packages/retroplug/src/graph/systemResources.ts) and records the handles on the entry; a
+  rebuild retains the ROM handle only when the boot's source is the same, a duplicate shares it, and a resource is
+  released once its last handle goes. An edit of the core-config role (the `"system"`-category role
   whose kind is the core) is diffed through `systemKnobs`
   ([graph/buildGraph.ts](../packages/retroplug/src/graph/buildGraph.ts), the one table of which field is a
-  setting and which a param): a moved setting field publishes, the node's settings carrying it; a moved
-  param alone (a NES's `expansionVolume`) is set live with `setParam`; and a construct-time field (the FIFO
-  and its overrides, `sdRoot`, the N8 link, `channelExportMode`, SMS `enableFm`) reaches nothing until the
-  `reset(id)` or reload that rebuilds the core from it. A feature-role's config reaches only its protocol
+  setting, which a param and which construct-time): a moved setting field publishes, the node's settings carrying it; a
+  moved param alone (a NES's `expansionVolume`) is set live with `setParam`; and a construct-time field (the FIFO
+  and its overrides, `sdRoot`, the N8 link, `channelExportMode`, SMS `enableFm`) rebuilds the system at once through
+  the reset path (a new id, the same ROM resource, the live battery carried), so the new value is in the document
+  that replaces the old one, and the store remembers the id it replaced so a `reset` of that id resets the
+  replacement (below). The comparison is through the role schema's parse of the stored config, so a sparse
+  stored config does not make a live knob edit look like a rebuild. A feature-role's config reaches only its protocol
   node's settings, and for `lsdj-sync` also its Game Boy node's `serialOutCapture` (`"drive"` for MI.OUT,
   `"listen"` for master sync, `"off"` otherwise), both in the document its edit publishes.
-- **`duplicateSystem`** ([systemsStore.ts:295](../packages/retroplug/src/systemsStore.ts#L295))
-  is TS orchestration with **no native duplicate method**: it pulls `readState(id)` (state
-  includes SRAM), then `buildCore` seeded with those `stateBytes` under a fresh
-  `allocSystemId()`, and appends.
+- **`duplicateSystem`** is TS orchestration with **no native duplicate method**: it pulls `readState(id)` (state
+  includes SRAM), then boots a `ConstructSpec` seeded with those `stateBytes` under a fresh
+  `allocSystemId()` from the source's ROM resource, and appends.
+- **`commitEdit`** is the one publish path: it installs the new entries, publishes once, and only then releases the
+  resources the edit replaced (a dropped resource cannot be bound by a new instance). A refused document puts the
+  entries and the focus back, gives back what the edit put, republishes the restored model (warning if that is
+  refused too) and returns false. `clear()` publishes the empty document and releases every system's resources anyway;
+  `discard(id)` drops one system and its resources at once for a load's refused system, whose document never planned.
 - **The graph.** Every edit that changes what runs, what a system's protocol nodes are told, or a setting of
   a system's node, ends by publishing the engine's graph once (`setOnGraphChange` → `ProjectStore.publishGraph`
   → `EngineGraph.publish`, [engineGraph.ts](../packages/retroplug/src/engineGraph.ts)): the whole
   document, built by [`buildGraph`](../packages/retroplug/src/graph/buildGraph.ts) from the entries in
-  list order, each entry's `built` facts (what `buildCore` reported, with its live link group), its
+  list order, each entry's platform, resources and `romName` (which its system node names), its
   pipeline (`graphSystems`: its roles that have a protocol node, each with the node type it is placed as
   and its parsed config, by [`graph/protocolNodes.ts`](../packages/retroplug/src/graph/protocolNodes.ts)'s
-  table, with or without a registry), its core-config role's config and its gain (its system node's settings
-  and params), the project's audio and MIDI routing and its controller, with a NES tap re-arm when the edit
-  built or dropped a core. So a `setRoleConfig` on a role with a protocol node publishes, one on the
-  core-config role publishes when it moves a setting field (a model, a palette) or a Game Boy's link group, and
+  table, with or without a registry), its core-config role's config, its construct-time fields and its gain (its
+  system node's settings and params), the project's audio and MIDI routing and its controller, with a NES tap
+  re-arm when the edit built or dropped a core. So a `setRoleConfig` on a role with a protocol node publishes, one on
+  the core-config role publishes when it moves a setting field (a model, a palette) or a Game Boy's link group, and
   one on a role with neither (an asset override) changes no document. A
   `SystemsStore` used without a `ProjectStore` publishes its systems itself, at the default stereo
   routing and with no MIDI routing or controller (so no MIDI is routed). An unchanged document is not sent unless it
-  re-arms or the last one did not plan; a refused one leaves the store's model as it is, and is logged
+  re-arms or the last one did not plan; a refused one leaves the store's model as it was, and is logged
   ([modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md) section 2.2).
 
 ### The reconstruct-in-place idiom
 
 The control plane **reconstructs** a core rather than live-injecting into it (no `GB_reset`, no
 in-place SRAM clear). The private `rebuildInPlace(id, seed)`
-([systemsStore.ts:368](../packages/retroplug/src/systemsStore.ts#L368)) is the shared
-body: it captures the source spec, builds a fresh core under a **new id** that takes the old
-one's slot, and preserves identity + focus
+([systemsStore.ts](../packages/retroplug/src/systemsStore.ts)) is the shared
+body: it captures the source spec (through the load-time role hooks, so an asset override is re-folded), boots
+it under a **new id** that takes the old one's slot, and preserves identity + focus
 (`replaceById(entries, id, {...src, id: newId})`; `if (focusedId === id) focusedId = newId`).
-The `seed` overrides what native would read from disk — `sramBytes` = cold-boot battery,
-`stateBytes` = boot-from-savestate — while `savPath` stays the auto-save target. Five public
-operations are thin wrappers over it:
+The `seed` overrides what the boot reads - `sramBytes` = cold-boot battery,
+`stateBytes` = boot-from-savestate - while `savPath` stays the auto-save target, and the new entry shares the old
+ROM resource where the source's bytes are the same. Five public operations are thin wrappers over it, and a
+construct-time `setRoleConfig` is a sixth:
 
 | Op | Seed |
 |---|---|
 | `reloadSystem` | live SRAM carried forward, cold boot |
-| `reset` | live SRAM carried forward (hardware-style reset) |
+| `reset` | live SRAM carried forward (hardware-style reset); an id a rebuild replaced resets its replacement |
 | `loadState(path)` | `stateBytes` from the file |
 | `loadSram(path)` | `sramBytes` from the file |
 | `newSram` | a blank `new Uint8Array(0x20000)` battery |
+| a construct-time `setRoleConfig` | live SRAM carried forward (the battery), the new field in the new document |
+
+Every rebuild that swaps the id records `old -> new` in the store's `replacedBy` map
+([systemsStore.ts](../packages/retroplug/src/systemsStore.ts)), and `reset` is the one verb that reads it: a
+`reset(oldId)` follows a chain of rebuilds to the live system, resets that system and answers its id. That keeps
+the pre-C3 contract working, where a construct-time `setRoleConfig` was followed by `reset(id)` to learn the id
+that carried the new settings. Every other verb treats a replaced id as absent, so a stale handle cannot remove
+or edit a system it never named. An entry goes when the live system its chain ends in does (`removeSystem`,
+`discard`, `clear`), and the map is capped at 128 entries, since a long session of resets would otherwise keep
+every id it ever used.
 
 A separate **project-load rebuild seam** is deliberately quiet (no dirty/onChange, since a
 load isn't a user edit): `clear()` tears every system down and, when it had any, publishes the
 empty graph;
 `adopt(config, blobs?)` (which publishes the graph that places it, except inside a project load,
 which publishes once its systems are all built)
-([systemsStore.ts:623](../packages/retroplug/src/systemsStore.ts#L623)) reconstructs
+([systemsStore.ts](../packages/retroplug/src/systemsStore.ts)) reconstructs
 one system preserving its **exact** `savSuffix`/`savPath`, with `blobs` seeding SRAM/state on
-a zip import. Default roles are derived before the build from a `ROLE_HEADER_LEN` (0x150)
+a zip import. The publish retries without the system a refusal names (`ProjectStore.placeLoadedSystems`), so one
+unreadable ROM costs only its own system. Default roles are derived before the boot from a `ROLE_HEADER_LEN` (0x150)
 header prefix via `defaultRoles`, and each role's `onConstruct` hook folds over the spec
-(`applyConstructHooks`) — e.g. the LSDj empty-sav seed — before instantiation.
+(`applyConstructHooks`) - e.g. the LSDj empty-sav seed - before its resources are put.
 
 ### ProjectStore — [`src/projectStore.ts`](../packages/retroplug/src/projectStore.ts)
 
@@ -289,9 +316,12 @@ after a refusal the next document is sent even if unchanged; and so is one after
 lands the store's value).
 [`DirectGraph`](../packages/retroplug/src/graph/directGraph.ts) is the publisher for callers with no
 stores (the native tests, the CLI's `analyze-lsdj-sync` session and the `lsdj-detect-offsets` tool;
-one per process, `directGraph()`). Its `add` / `replace` / `remove` keep its systems list in slot order (add
-appends, replace keeps the slot, remove shifts later slots down), a system it adds or replaces has no
-roles, and what the script nodes are told is three calls of its own, each a publish: `setPipeline(id,
+one per process, `directGraph()`). Its `add(spec, id)` / `replace(oldId, spec, id)` / `remove(id)` keep its systems
+list in slot order (add appends, replace keeps the slot, remove shifts later slots down); each boot puts the spec's
+ROM and seeds through the shared helper (a replace shares the old ROM where the image is the same), and a resource is
+given back once the document that stopped naming it has planned, a refused change giving back what it put and
+restoring the document before it. A system it adds or replaces has no roles, and what the script nodes are told is
+three calls of its own, each a publish: `setPipeline(id,
 roles)` (each role with a protocol node placed as one, its config as given), `setMidiRouting(mode)` and
 `setController(controller)` (its app config parsed by the app's schema, as the project's is). Until
 `setMidiRouting` names a mode, no host MIDI is routed to any system. A system it adds has no core config

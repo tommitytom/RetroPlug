@@ -178,8 +178,8 @@ systems (and LSDj's serial-out decoder, which reads its Game Boy), one system no
 **TS builds the graph** (Phase B2,
 [docs/modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md)): the stores publish one
 whole document per structural edit through `EngineGraph` (`buildGraph` writes it from the systems, the
-routing and the host shape), native builds each core with `buildCore` and plans the document with
-`setGraph`, and every other edit rides the one ring as a command
+routing and the host shape), each system node builds its core from the resources its settings name and native plans
+the document with `setGraph`, and every other edit rides the one ring as a command
 ([01-architecture.md](01-architecture.md), [02-native-host.md](02-native-host.md)). **The kernel became
 script nodes** (Phase B3a,
 [docs/modular-graph-phase-b3a-design.md](../docs/modular-graph-phase-b3a-design.md), then B3b,
