@@ -10,7 +10,8 @@
 // too: each value must reach the core as its setter, called directly before the core's first block or at the start
 // of the block a change lands in, renders it.
 //
-// There is no GBA case: Mesen's GBA core needs a BIOS image, and no fixture here carries one.
+// The GBA and LSDj cases use sibling fixture ROMs, so each leaves on a run without the resources tree (as CI's) rather
+// than failing there.
 //
 // Run via `pnpm test:plugin`.
 
@@ -30,8 +31,11 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "../graph/CountingAllocator.hpp"
+#include "EmbeddedRoms.hpp"
+#include "GraphDocs.hpp"
 #include "NodeRig.hpp"
 #include "graph/CanonicalJson.hpp"
+#include "system/mesen/MesenGbaSystem.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
 #include "system/mesen/MesenSmsConfig.hpp"
@@ -96,10 +100,12 @@ void noteOn(SystemBase& sys, std::uint8_t channel, std::uint8_t key) {
 // BlipToaster ignores MIDI for about a second after power-on (parity/scenes.ts BOOT_MS): send both cores
 // the same note once 1.5 s have rendered.
 std::function<void(std::uint64_t)> afterBoot(SystemBase& a, SystemBase& b) {
-    return [&a, &b, sent = false](std::uint64_t at) mutable {
+    // The cores by pointer: a lambda that captured the references themselves would keep the stack slots of this call,
+    // not the cores.
+    return [a = &a, b = &b, sent = false](std::uint64_t at) mutable {
         if (sent || at < static_cast<std::uint64_t>(1.5 * kRate)) return;
-        noteOn(a, 0, 60);
-        noteOn(b, 0, 60);
+        noteOn(*a, 0, 60);
+        noteOn(*b, 0, 60);
         sent = true;
     };
 }
@@ -135,17 +141,18 @@ void pokeMetronome(SystemBase& s) {
 }
 
 std::function<void(std::uint64_t)> smsStart(SystemBase& a, SystemBase& b) {
-    return [&a, &b, stage = 0](std::uint64_t at) mutable {
+    // The cores by pointer, as afterBoot keeps them.
+    return [a = &a, b = &b, stage = 0](std::uint64_t at) mutable {
         const auto pause = static_cast<std::uint8_t>(SmsButton::Start);
         if (stage == 0 && at >= static_cast<std::uint64_t>(3.0 * kRate)) {
-            for (SystemBase* s : {&a, &b}) {
+            for (SystemBase* s : {a, b}) {
                 pokeMetronome(*s);
                 s->pressButton(pause, true);
             }
             stage = 1;
         } else if (stage == 1 && at >= static_cast<std::uint64_t>(3.6 * kRate)) {
-            a.pressButton(pause, false);
-            b.pressButton(pause, false);
+            a->pressButton(pause, false);
+            b->pressButton(pause, false);
             stage = 2;
         }
     };
@@ -211,8 +218,13 @@ std::string compare(NodeRig& rig, Direct& direct, double seconds, const std::fun
         direct.block(frames);
         if (control) control->block(frames);
         for (std::size_t c = 0; c < graph.data.size(); ++c)
-            if (std::memcmp(graph.data[c].data(), direct.out.data[c].data(), frames * sizeof(float)) != 0)
-                return "block " + std::to_string(b) + " (" + std::to_string(frames) + " frames), channel " + std::to_string(c);
+            if (std::memcmp(graph.data[c].data(), direct.out.data[c].data(), frames * sizeof(float)) != 0) {
+                std::uint32_t at0 = 0;
+                while (at0 < frames && graph.data[c][at0] == direct.out.data[c][at0]) ++at0;
+                return "block " + std::to_string(b) + " (" + std::to_string(frames) + " frames), channel " + std::to_string(c) +
+                       " from frame " + std::to_string(at0) + ": " + std::to_string(graph.data[c][at0]) + " vs " +
+                       std::to_string(direct.out.data[c][at0]);
+            }
         if (control && firstDifference && *firstDifference == kNever)
             for (std::size_t c = 0; c < graph.data.size(); ++c)
                 for (std::uint32_t i = 0; i < frames; ++i)
@@ -848,7 +860,8 @@ std::vector<std::string> tsValues(const std::string& name) {
     return values;
 }
 
-// The settings schema of a registered type, at its $defs entry.
+// The settings schema of a registered type, at its $defs entry: the one that is the settings struct (the rest are the
+// resource refs its fields name).
 rfl::Generic::Object settingsSchema(NodeRig& rig, const char* type) {
     const auto descriptor = rp::graph::parseJson(rig.registry.find(type)->type->descriptor(rig.registry.find(type)->type));
     REQUIRE(descriptor);
@@ -856,8 +869,10 @@ rfl::Generic::Object settingsSchema(NodeRig& rig, const char* type) {
     REQUIRE(settings);
     const auto defs = settings->get("$defs")->to_object();
     REQUIRE(defs);
-    REQUIRE(defs->size() == 1);
-    return *defs->begin()->second.to_object();
+    for (const auto& [name, def] : *defs)
+        if (const auto entry = def.to_object(); entry && entry->get("properties")) return *entry;
+    REQUIRE(false);
+    return {};
 }
 
 // A property's schema: the non-null branch of the anyOf an optional field is.
@@ -1029,9 +1044,13 @@ TEST_CASE("a system node's enum knobs take the labels the role configs spell, an
         }
         REQUIRE(gain);
     }
-    for (const char* type : {"rp.mesen.gba", "rp.mesen.sms"}) {
+    // The GBA and the SMS carry the fields every system node does (the core it names either way, its ROM, its two
+    // seeds and the ROM's name) and no knob of their own; the SMS adds its two construct-time fields (the machine and
+    // the FM unit).
+    const std::pair<const char*, std::size_t> shared[] = {{"rp.mesen.gba", 6}, {"rp.mesen.sms", 8}};
+    for (const auto& [type, fields] : shared) {
         INFO(type);
-        CHECK(settingsSchema(rig, type).get("properties")->to_object()->size() == 1);  // core alone
+        CHECK(settingsSchema(rig, type).get("properties")->to_object()->size() == fields);
     }
 
     // Anything else is refused with the document, the core as it was: an ordinal, another spelling, a number out of
@@ -1406,7 +1425,7 @@ TEST_CASE("a knob absent from a system node's settings leaves its core as it was
     SECTION("NES") {
         MesenNesConfig cfg;
         cfg.romPath = RP_BLIPTOASTER_ROM_PATH;
-        cfg.region = static_cast<std::uint32_t>(NesRegion::Pal);
+        cfg.region = static_cast<std::uint32_t>(NesRegion::Ntsc);
         cfg.removeSpriteLimit = true;
         cfg.apuLatencyMs = 3.0;
         cfg.s5bNoise = 0;
@@ -1416,9 +1435,10 @@ TEST_CASE("a knob absent from a system node's settings leaves its core as it was
         MesenNesSystem* const core = built.get();
         NodeRig rig(kRate);
         const auto token = rig.park(std::move(built));
+        // The core was built as Ntsc; a document that carries no region leaves it as it was built.
         REQUIRE(rig.set(knobbed("rp.mesen.nes", token)).ok);
         run(rig, 512, 4);
-        CHECK(core->config().region == static_cast<std::uint32_t>(NesRegion::Pal));
+        CHECK(core->config().region == static_cast<std::uint32_t>(NesRegion::Ntsc));
         CHECK(core->config().removeSpriteLimit);
         CHECK(core->config().apuLatencyMs == 3.0);
         CHECK(core->config().s5bNoise == 0);
@@ -1871,4 +1891,311 @@ TEST_CASE("a system node takes param edits made while an audio thread runs its b
     run(rig);
     CHECK(core->config().gainDb == -29.0f);  // the last edit's, 59
     CHECK(core->config().expansionVolume == 159);
+}
+
+// ---- a node that builds its own core (docs/modular-graph-phase-c3-design.md sections 3 and 5) ---------------------
+
+namespace {
+
+// A `system` node's settings: the id it builds, its ROM resource, and whatever else the case adds.
+std::string buildSettings(SystemId system, std::uint32_t rom, const std::string& extra = "") {
+    return R"({"system":)" + std::to_string(system) + R"(,"rom":"res:)" + std::to_string(rom) + "\"" +
+           (extra.empty() ? "" : "," + extra) + "}";
+}
+
+// The resource id a byte block goes in as.
+std::uint32_t resource(NodeRig& rig, const char* type, std::vector<std::uint8_t> bytes) {
+    return rig.put(type, std::move(bytes));
+}
+
+// The bytes of a fixture the resources tree holds, or empty when it is not there (as CI runs): the LSDj and GBA ROMs
+// are not in the repository.
+std::vector<std::uint8_t> resourceFixture(const char* relative) {
+    const char* root = std::getenv("RETROPLUG_RESOURCES_DIR");
+    if (!root) return {};
+    return readFile((std::string(root) + relative).c_str());
+}
+
+// Run `core` directly for `blocks` blocks of 512 frames, as the engine's triad would, and return the savestate it then
+// has: the seed a later core restores, as a duplicate's or a saved state's.
+std::vector<std::uint8_t> stateAfter(SystemBase& core, int blocks) {
+    Direct d({&core}, 2, {{0, 1}});
+    for (int b = 0; b < blocks; ++b) d.block(512);
+    return core.saveStateBytes();
+}
+
+}  // namespace
+
+TEST_CASE("a Game Boy node built from its ROM resource renders what a core built from the same bytes renders",
+          "[engine-graph][system-node][resources]") {
+    const auto rom = readFile(RP_MGB_ROM_PATH);
+    SECTION("no seed") {
+        NodeRig rig(kRate);
+        auto direct = mgb(1);
+        const auto romId = resource(rig, "rom", rom);
+        REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":)" +
+                        buildSettings(1, romId, R"("model":"dmgB","fastBoot":false)") +
+                        R"(},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                            "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
+        Direct d({direct.get()}, 2, {{0, 1}});
+        CHECK(compare(rig, d, 2.0) == "");
+        CHECK(sounds(d));
+    }
+    SECTION("an sram seed") {
+        NodeRig rig(kRate);
+        SameBoyConfig cfg;
+        cfg.model = SameBoyModel::DmgB;
+        cfg.fastBoot = false;
+        cfg.sram.assign(8 * 1024, 0x5a);
+        auto direct = std::make_unique<SameBoySystem>(1, cfg, rom);
+        direct->onActivate(kRate);
+        const auto romId = resource(rig, "rom", rom);
+        const auto sramId = resource(rig, "sram", cfg.sram);
+        REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":)" +
+                        buildSettings(1, romId, R"("model":"dmgB","fastBoot":false,"sram":"res:)" + std::to_string(sramId) + "\"") +
+                        R"(},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                            "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
+        Direct d({direct.get()}, 2, {{0, 1}});
+        CHECK(compare(rig, d, 2.0) == "");
+        CHECK(sounds(d));
+    }
+    SECTION("a state seed") {
+        NodeRig rig(kRate);
+        auto source = mgb(9);
+        const auto state = stateAfter(*source, 24);
+        REQUIRE(!state.empty());
+        SameBoyConfig cfg;
+        cfg.model = SameBoyModel::DmgB;
+        cfg.fastBoot = false;
+        cfg.savestate = state;
+        auto direct = std::make_unique<SameBoySystem>(1, cfg, rom);
+        direct->onActivate(kRate);
+        const auto romId = resource(rig, "rom", rom);
+        const auto stateId = resource(rig, "state", state);
+        REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":)" +
+                        buildSettings(1, romId, R"("model":"dmgB","fastBoot":false,"state":"res:)" + std::to_string(stateId) + "\"") +
+                        R"(},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                            "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
+        Direct d({direct.get()}, 2, {{0, 1}});
+        CHECK(compare(rig, d, 2.0) == "");
+    }
+}
+
+TEST_CASE("a non-default model reaches a Game Boy core before it boots, so a savestate seed is not lost to a restart",
+          "[engine-graph][system-node][resources]") {
+    // The state is taken from a core running as the model the document names: the node built at the default model and
+    // restarted into CGB would lose exactly this. SameBoy's own restart discards the savestate it just restored.
+    const auto rom = readFile(RP_MGB_ROM_PATH);
+    SameBoyConfig sourceCfg;
+    sourceCfg.model = SameBoyModel::Mgb;
+    sourceCfg.fastBoot = true;
+    auto source = std::make_unique<SameBoySystem>(9, sourceCfg, rom);
+    source->onActivate(kRate);
+    const auto state = stateAfter(*source, 400);  // past the boot chime, so the state carries signal
+    REQUIRE(!state.empty());
+
+    NodeRig rig(kRate);
+    SameBoyConfig cfg = sourceCfg;
+    cfg.savestate = state;
+    auto direct = std::make_unique<SameBoySystem>(1, cfg, rom);
+    direct->onActivate(kRate);
+    const auto romId = resource(rig, "rom", rom);
+    const auto stateId = resource(rig, "state", state);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":)" +
+                    buildSettings(1, romId, R"("model":"mgb","state":"res:)" + std::to_string(stateId) + "\"") +
+                    R"(},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                        "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
+    // The core the node built is the model the document carried; it never restarted into anything.
+    auto* built = dynamic_cast<SameBoySystem*>(rig.builtCore(1));
+    REQUIRE(built != nullptr);
+    CHECK(built->config_.model == SameBoyModel::Mgb);
+    Direct d({direct.get()}, 2, {{0, 1}});
+    // mGB itself is silent as an Mgb (its chime is a DMG boot ROM's), so the comparison is the observation: a core
+    // restarted into another model would not follow this state bit for bit.
+    CHECK(compare(rig, d, 2.0) == "");
+}
+
+TEST_CASE("a NES node built from its ROM resource takes its region, export mode and expansion volume",
+          "[engine-graph][system-node][resources]") {
+    const auto rom = readFile(RP_BLIPTOASTER_ROM_PATH);
+    NodeRig rig(kRate);
+    MesenNesConfig cfg;
+    cfg.romPath = RP_BLIPTOASTER_ROM_PATH;
+    cfg.region = static_cast<std::uint32_t>(NesRegion::Ntsc);
+    cfg.channelExportMode = 1;  // stereoModPins: three mono streams
+    cfg.expansionVolume = 50;   // the blob path builds the core AT the volume; the node gives its param at its first block
+    auto direct = std::make_unique<MesenNesSystem>(1, cfg, rom);
+    direct->onActivate(kRate);
+    const auto romId = resource(rig, "rom", rom);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.mesen.nes","settings":)" +
+                    buildSettings(1, romId, R"("region":"ntsc","channelExportMode":"stereoModPins")") +
+                    R"(,"params":{"expansionVolume":50}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[1,1,1]}}],
+                        "wires":[{"from":"sys-1.pins.pulse","to":"out.out.1"},{"from":"sys-1.pins.tnd","to":"out.out.2"},
+                                 {"from":"sys-1.pins.expansion","to":"out.out.3"}]})").ok);
+    auto* built = rig.builtCore(1);
+    REQUIRE(built != nullptr);
+    CHECK(dynamic_cast<MesenNesSystem*>(built)->config().region == static_cast<std::uint32_t>(NesRegion::Ntsc));
+    Direct d({direct.get()}, 3, {{0, 0, 1, 1, 2, 2}});  // a mono stream's two lanes are one buffer
+    CHECK(compare(rig, d, 3.0, afterBoot(*direct, *built)) == "");
+    CHECK(sounds(d));
+}
+
+TEST_CASE("a Master System node built from its ROM resource boots with FM off", "[engine-graph][system-node][resources]") {
+    NodeRig rig(kRate);
+    auto direct = sms(1);
+    const auto romId = resource(rig, "rom", readFile(RP_SMS_ROM_PATH));
+    // smsggdj reads its options from the battery: the same image, and the same seed sms() builds the core with.
+    std::vector<std::uint8_t> sram(32 * 1024, 0);
+    const std::uint8_t header[] = {'S', 'M', 'D', 'J', '4', 1, 32}, options[] = {0x43, 0x46, 0, 0, 0, 0, 0};
+    std::memcpy(sram.data(), header, sizeof header);
+    std::memcpy(sram.data() + 0x3f60, options, sizeof options);
+    const auto sramId = resource(rig, "sram", sram);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.mesen.sms","settings":)" +
+                    buildSettings(1, romId, R"("sram":"res:)" + std::to_string(sramId) + R"(","enableFm":false,
+                        "romName":"smsggdj_v0_45")") +
+                    R"(},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                        "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
+    auto* built = rig.builtCore(1);
+    REQUIRE(built != nullptr);
+    CHECK_FALSE(dynamic_cast<MesenSmsSystem*>(built)->config().enableFm);
+    Direct d({direct.get()}, 2, {{0, 1}});
+    CHECK(compare(rig, d, 5.0, smsStart(*direct, *built)) == "");
+    CHECK(sounds(d));
+}
+
+TEST_CASE("a GBA node built from its ROM resource renders what a core built from the same bytes renders",
+          "[engine-graph][system-node][resources]") {
+    // The GBA is the one console whose typed path no other resource case reaches, and its ROM is a sibling fixture, so
+    // the case leaves on a run without one (as CI's) rather than failing there.
+    const auto rom = resourceFixture("/roms/nanoloop287d.gba");
+    if (rom.empty()) return;
+    NodeRig rig(kRate);
+    auto direct = std::make_unique<MesenGbaSystem>(1, MesenGbaConfig{}, rom);
+    direct->onActivate(kRate);
+    const auto romId = resource(rig, "rom", rom);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.mesen.gba","settings":)" + buildSettings(1, romId) +
+                    R"(},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                        "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
+    auto* built = rig.builtCore(1);
+    REQUIRE(built != nullptr);
+    CHECK(dynamic_cast<MesenGbaSystem*>(built) != nullptr);
+    Direct d({direct.get()}, 2, {{0, 1}});
+    // Nanoloop plays nothing until it is told to: both cores get the same Start.
+    const auto start = [a = direct.get(), b = built, pressed = false](std::uint64_t at) mutable {
+        if (pressed || at < static_cast<std::uint64_t>(1.0 * kRate)) return;
+        for (SystemBase* s : {static_cast<SystemBase*>(a), b})
+            s->pressButton(static_cast<std::uint8_t>(GbaButton::Start), true);
+        pressed = true;
+    };
+    CHECK(compare(rig, d, 4.0, start) == "");
+    CHECK(d.sounded);
+}
+
+TEST_CASE("an LSDj node built from its ROM resource renders what a core built from the same bytes renders",
+          "[engine-graph][system-node][resources]") {
+    // A 1 MiB Game Boy ROM whose banking exercises more of the typed SameBoy path than the embedded mGB image does. The
+    // ROM is a sibling fixture, so the case leaves on a run without one (as CI's).
+    const auto rom = resourceFixture("/roms/lsdj/lsdj9_4_1-develop.gb");
+    if (rom.empty()) return;
+    NodeRig rig(kRate);
+    auto direct = std::make_unique<SameBoySystem>(1, SameBoyConfig{}, rom);
+    direct->onActivate(kRate);
+    const auto romId = resource(rig, "rom", rom);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":)" + buildSettings(1, romId) +
+                    R"(},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                        "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
+    auto* built = rig.builtCore(1);
+    REQUIRE(built != nullptr);
+    CHECK(dynamic_cast<SameBoySystem*>(built) != nullptr);
+    Direct d({direct.get()}, 2, {{0, 1}});
+    CHECK(compare(rig, d, 2.0) == "");
+    CHECK(d.sounded);
+}
+
+TEST_CASE("a Master System node without a romName stages each system under a stem of its own",
+          "[engine-graph][system-node][resources]") {
+    NodeRig rig(kRate);
+    const auto romId = resource(rig, "rom", readFile(RP_SMS_ROM_PATH));
+    const std::string document =
+        R"({"nodes":[{"id":"sys-1","type":"rp.mesen.sms","settings":)" + buildSettings(1, romId, R"("enableFm":false)") +
+        R"(},{"id":"sys-2","type":"rp.mesen.sms","settings":)" +
+        buildSettings(2, romId, R"("enableFm":false,"romName":"smsggdj_v0_45")") +
+        R"(},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2,2]}}],
+            "wires":[{"from":"sys-1.mix","to":"out.out.1-2"},{"from":"sys-2.mix","to":"out.out.3-4"}]})";
+    REQUIRE(rig.set(document).ok);
+    auto* unnamed = dynamic_cast<MesenSmsSystem*>(rig.builtCore(1));
+    auto* named = dynamic_cast<MesenSmsSystem*>(rig.builtCore(2));
+    REQUIRE(unnamed != nullptr);
+    REQUIRE(named != nullptr);
+    // Mesen reads the battery's stem out of the staged file's name, so two systems staged under one fallback name share
+    // one battery. A node with no romName gets its system id in the stem; a node with one stages under that instead.
+    const std::filesystem::path staged(unnamed->stagedRomPath()), explicitName(named->stagedRomPath());
+    CHECK(staged.stem().string() == "system-1");
+    CHECK(explicitName.stem().string() == "smsggdj_v0_45");
+    CHECK(staged != explicitName);
+}
+
+// ---- what a boot costs (docs/modular-graph-phase-c3-design.md section 9) --------------------------------------------
+
+TEST_CASE("a boot's cost per console, through the build a system node makes", "[.][bench]") {
+    using Clock = std::chrono::steady_clock;
+    auto micros = [](Clock::time_point t0) { return std::chrono::duration<double, std::micro>(Clock::now() - t0).count(); };
+    constexpr int kRuns = 5;
+
+    NodeRig rig(kRate);
+    const auto embedded = rp::embeddedMgbRom();
+    struct Boot {
+        const char*               name;
+        SystemConfig              config;
+        std::vector<std::uint8_t> rom;
+    };
+    std::vector<Boot> boots;
+    boots.push_back({"mGB (embedded)", SameBoyConfig{}, {embedded.begin(), embedded.end()}});
+    if (auto lsdj = resourceFixture("/roms/lsdj/lsdj9_4_1-develop.gb"); !lsdj.empty())
+        boots.push_back({"LSDj", SameBoyConfig{}, std::move(lsdj)});
+    boots.push_back({"NES", MesenNesConfig{}, readFile(RP_BLIPTOASTER_ROM_PATH)});
+    boots.push_back({"Master System", MesenSmsConfig{}, readFile(RP_SMS_ROM_PATH)});
+    if (auto gba = resourceFixture("/roms/nanoloop287d.gba"); !gba.empty())
+        boots.push_back({"GBA", MesenGbaConfig{}, std::move(gba)});
+
+    std::printf("\nboot through rp.host.systems/1's build at %.1f kHz: construct, onActivate (ROM, battery, savestate), the "
+                "state snapshot, and the same build through setGraph (slot claim and one plan with it); median of %d runs\n",
+                kRate / 1000.0, kRuns);
+    for (auto& boot : boots) {
+        std::vector<double> built, planned;
+        for (int run = 0; run < kRuns; ++run) {
+            SystemBuildRequest request;
+            request.rom = boot.rom;
+            request.config = boot.config;
+            std::string why;
+            const auto t0 = Clock::now();
+            std::unique_ptr<SystemBase> core = rig.factory.build(1, request, kRate, &why);
+            built.push_back(micros(t0));
+            REQUIRE(core);
+        }
+        // The same boot where it happens in the engine: a plan with one system node, published on a quiescent engine.
+        Engine engine(kRate);
+        const std::string type = std::holds_alternative<SameBoyConfig>(boot.config)   ? "rp.sameboy.gb"
+                                 : std::holds_alternative<MesenNesConfig>(boot.config) ? "rp.mesen.nes"
+                                 : std::holds_alternative<MesenSmsConfig>(boot.config) ? "rp.mesen.sms"
+                                                                                       : "rp.mesen.gba";
+        for (int run = 0; run < kRuns; ++run) {
+            const std::uint32_t romId = engine.putResource("rom", boot.rom);
+            REQUIRE(romId != 0);
+            const auto t0 = Clock::now();
+            const auto placed = engine.setGraph(rp::host::test::graphRequest(
+                R"({"nodes":[{"id":"sys-1","type":")" + type + R"(","settings":{"system":1,"rom":"res:)" +
+                    std::to_string(romId) + R"("}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                        "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})",
+                {1}));
+            planned.push_back(micros(t0));
+            REQUIRE(placed.ok);
+            REQUIRE(engine.setGraph(rp::host::test::graphRequest(rp::host::test::stereoDocument({}), {})).ok);
+            engine.reclaim();
+        }
+        std::sort(built.begin(), built.end());
+        std::sort(planned.begin(), planned.end());
+        std::printf("  %-16s boot %7.1f ms   through setGraph %7.1f ms   (%zu KiB of ROM)\n", boot.name,
+                    built[built.size() / 2] / 1000.0, planned[planned.size() / 2] / 1000.0, boot.rom.size() / 1024);
+    }
 }

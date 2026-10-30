@@ -13,6 +13,8 @@
 
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"   // AudioBlockInfo, SystemId
+#include "system/CoreBackends.hpp"  // registerCoreBackends: the engine owns the one factory every build goes through
+#include "system/SystemFactory.hpp"
 #include "system/mesen/MesenNesSystem.hpp"    // the system table's NES, the tap SyncTap arms
 
 #include "transport/FrameBufferTriple.hpp"
@@ -57,17 +59,40 @@ bool isSystemNodeType(const std::string& type) {
     return false;
 }
 
-// The id a system node's settings name its core by, their "core" (beside the core's knobs, which the node reads:
-// docs/modular-graph-phase-c2-design.md section 3); nullopt for anything else.
-std::optional<SystemId> coreIdOf(const rp::graph::NodeDoc& n) {
-    if (!n.settings) return std::nullopt;
+// The id a system node's settings name its core by: their `system` for a node that builds its own (C3), their `core`
+// for one that takes a parked core (beside the core's knobs, which the node reads: docs/modular-graph-phase-c2-design.md
+// section 3). A field that is present must be a system id (1 to UINT32_MAX); a node that names neither, or both, is left
+// to its own create, which refuses it with a reason naming the two paths. A node naming both keeps that reason whatever
+// the two fields hold, so a `system` that is not an id never turns it into a `core` node here.
+struct SystemTarget {
+    std::optional<SystemId> id;
+    bool                    builds = false;   // names `system`: no core exists before its activation
+    bool                    namesAny = false; // carries `system` or `core` at all
+    bool                    namesBoth = false;
+};
+
+SystemTarget systemTargetOf(const rp::graph::NodeDoc& n) {
+    SystemTarget out;
+    if (!n.settings) return out;
     const auto object = n.settings->to_object();
-    if (!object) return std::nullopt;
-    const auto core = object->get("core");
-    if (!core) return std::nullopt;
-    const auto id = core->to_int64();
-    if (!id || *id <= 0 || *id > static_cast<std::int64_t>(UINT32_MAX)) return std::nullopt;
-    return static_cast<SystemId>(*id);
+    if (!object) return out;
+    const auto systemField = object->get("system");
+    const auto coreField = object->get("core");
+    out.namesAny = systemField.has_value() || coreField.has_value();
+    out.namesBoth = systemField.has_value() && coreField.has_value();
+    if (out.namesBoth) return out;
+    auto positive = [](const rfl::Result<rfl::Generic>& field) -> std::optional<SystemId> {
+        if (!field) return std::nullopt;
+        const auto id = field->to_int64();
+        if (!id || *id <= 0 || *id > static_cast<std::int64_t>(UINT32_MAX)) return std::nullopt;
+        return static_cast<SystemId>(*id);
+    };
+    const auto system = positive(systemField);
+    const auto core = positive(coreField);
+    if (system.has_value() == core.has_value()) return out;  // neither, or a field that is not an id
+    out.id = system ? system : core;
+    out.builds = system.has_value();
+    return out;
 }
 
 // The channels an rp.host.audio-out writes when its settings name no buses: its default buses, {2, 2, 2, 2}
@@ -125,9 +150,10 @@ std::span<const rp::host::ScriptHost::Chunk> embeddedScripts() {
 } // namespace
 
 // The Engine's graph: the script host, the node packages and the GraphHost running the plan. Destroyed first (graph_ is
-// the Engine's last member), and the host (whose system nodes call cores->released from their destructors)
-// before the core handoff and the engine services (the host I/O, the sync trace) its nodes call into, and before the
-// script host its script nodes release their instances through.
+// the Engine's last member), and with it the host: a system node giving its core up from its destructor calls
+// `released` (a parked one) or destroySystem (one it built) while the core handoff and the engine services (the host
+// I/O, the sync trace) its nodes call into are still there, and before the script host its script nodes release their
+// instances through.
 struct Engine::Graph {
     // First, so it goes last: the script nodes the host destroys hand their instances back to it, and its packs' types
     // are the registry's script entries.
@@ -143,6 +169,7 @@ struct Engine::Graph {
     rp::graph::NodeRegistry                registry;
     rp::graph::ResourceTable               resources;
     rp::host::HostCores                    cores{};
+    rp::host::HostSystems                  systems{};
     rp::host::EngineHostIo                 hostIo{};
     rp::host::EngineSyncTrace              syncTrace{};
     std::unique_ptr<rp::graph::GraphHost>  host;
@@ -156,6 +183,10 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
       pendingMidi_(rp::host::kHostMidiInMessages, rp::host::kHostMidiInBytes),
       pendingControllerMidi_(rp::host::kControllerInMessages, rp::host::kControllerInBytes) {
     graph_ = std::make_unique<Graph>();
+    // The one factory a system node's build goes through, with every core backend on it: a host that composes an Engine
+    // builds cores whether or not it also keeps a factory for buildCore's RPC (until C3's last commit deletes that).
+    factory_ = std::make_unique<SystemFactory>();
+    registerCoreBackends(*factory_);
     // The script node types first: the bundle runs in both of the built-in pack's contexts, and its definitions become
     // one more package. One that will not load registers no type, so a document naming one is refused (unknown-type).
     std::string why;
@@ -188,6 +219,23 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
                          self->liveCores_.erase(id);
                          return false;
                      }};
+    // rp.host.systems/1: a system node that builds its own core, on the control thread, inside the setGraph that
+    // activates it. The id it names must not be live; the core it builds claims its snapshot slot and joins the live
+    // cores, and the table of the plan being built learns it (buildSystem).
+    graph_->systems = {
+        this,
+        [](void* ctx, std::uint64_t id, const SystemBuildRequest& request, rp_error* err) {
+            auto* self = static_cast<Engine*>(ctx);
+            std::string why;
+            SystemBase* core = self->buildSystem(id, request, &why);
+            if (!core && err) {
+                const std::size_t n = std::min(why.size(), sizeof err->message - 1);
+                std::memcpy(err->message, why.data(), n);
+                err->message[n] = '\0';
+            }
+            return core;
+        },
+        [](void* ctx, SystemBase* core) { static_cast<Engine*>(ctx)->destroySystem(core); }};
     // rp.engine.host-io/2: the staging the hosts fill and the buffers they drain, on the block thread.
     graph_->hostIo = {
         this,
@@ -228,6 +276,7 @@ Engine::~Engine() = default;
 const void* Engine::graphInterface(void* ctx, const char* id) {
     auto* self = static_cast<Engine*>(ctx);
     if (std::strcmp(id, RP_HOST_CORES_INTERFACE) == 0) return &self->graph_->cores;
+    if (std::strcmp(id, RP_HOST_SYSTEMS_INTERFACE) == 0) return &self->graph_->systems;
     if (std::strcmp(id, RP_ENGINE_HOST_IO_INTERFACE) == 0) return &self->graph_->hostIo;
     if (std::strcmp(id, RP_ENGINE_SYNC_TRACE_INTERFACE) == 0) return &self->graph_->syncTrace;
     return nullptr;
@@ -264,6 +313,56 @@ bool Engine::parkCore(std::unique_ptr<SystemBase> core) {
     return true;
 }
 
+SystemBase* Engine::buildSystem(std::uint64_t system, const SystemBuildRequest& request, std::string* why) {
+    const auto refuse = [why](std::string reason) {
+        if (why) *why = std::move(reason);
+        return nullptr;
+    };
+    // The plan being built is where the id's slot is filled (below); a build with no setGraph in progress would join the
+    // live cores and claim a snapshot slot with no plan to publish it, and a later plan's slot for that id would stay
+    // null while processBlock dereferences it. Refused, rather than left to the comment on this method.
+    if (!building_) return refuse("a system is built only inside the setGraph that activates it (rp.host.systems/1)");
+    if (system == 0) return refuse("0 is not a system id");
+    if (system > UINT32_MAX) return refuse("system " + std::to_string(system) + " is beyond a system id");
+    const SystemId id = static_cast<SystemId>(system);
+    // Checked before the claim, for the reason parkCore checks it: the registry finds a slot by id, and a second slot
+    // under a live id would free the live core's. A node of a plan not yet reclaimed still holds its core, so a
+    // construct-time edit under the id it was built with is refused here rather than quietly sharing it.
+    if (coreLive(id)) return refuse("system " + std::to_string(id) + " is live");
+    std::unique_ptr<SystemBase> core = factory_->build(id, request, sampleRate_, why);
+    if (!core) {
+        if (why && why->empty()) *why = "the core did not build";
+        return nullptr;
+    }
+    // The slot is claimed after the build, not before, because the claim seeds the slot from the core: a GBA pays its
+    // whole boot (its 8 MiB ROM included) before a full pool can refuse it. That is the price of one claim that both
+    // keeps the slot and seeds it, and only a document that finds the pool full pays it.
+    if (!registry_.claim(id, *core)) return refuse("the snapshot pool is full");
+    SystemBase* built = core.release();
+    liveCores_[id] = built;
+    // The plan being planned learns its slot's core here: its table was built with a null entry for an id no parked
+    // core answered to, and the table is published with the plan once every node has activated.
+    if (building_) {
+        bool found = false;
+        for (auto& e : building_->slots)
+            if (e.id == id) {
+                e.core = built;
+                e.nes = dynamic_cast<MesenNesSystem*>(built);
+                found = true;
+            }
+        if (!found) std::fprintf(stderr, "[engine] system %u built outside the plan's slots\n", static_cast<unsigned>(id));
+    }
+    return built;
+}
+
+void Engine::destroySystem(SystemBase* core) {
+    if (!core) return;
+    const SystemId id = core->id();
+    registry_.release(id);
+    liveCores_.erase(id);
+    delete core;
+}
+
 Engine::GraphResult Engine::setGraph(const GraphRequest& request) { return publishGraph(request, false); }
 
 Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool replan) {
@@ -278,33 +377,59 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
     auto doc = rp::graph::parseGraphDocument(request.document);
     if (!doc) return refuse("", "document", std::string("not a graph document: ") + doc.error().what());
 
-    // The system nodes and the slots name the same systems, each node as sys-<id>, its settings {"core": <id>, ...}.
-    std::vector<std::pair<SystemId, const rp::graph::NodeDoc*>> systemNodes;
+    // The system nodes and the slots name the same systems, each node as sys-<id>: its settings `system` for one that
+    // builds its own core, `core` for one that takes the parked one. A node naming neither or both is left to its own
+    // create, which refuses it with a reason naming the two paths (so the whole check waits: a node with no id cannot
+    // be lined up against the slots).
+    struct SystemNodeInDoc {
+        SystemId              id = 0;
+        const rp::graph::NodeDoc* node = nullptr;
+        bool                  builds = false;  // its settings name `system`: no core exists before its activation
+    };
+    std::vector<SystemNodeInDoc> systemNodes;
     std::vector<SystemId> named;
+    bool malformed = false;
     for (const auto& n : doc->nodes) {
         if (!isSystemNodeType(n.type)) continue;
-        const auto id = coreIdOf(n);
-        if (!id || n.id != "sys-" + std::to_string(*id))
-            return refuse(n.id, "slots", "a system node is sys-<id>, its settings naming its core as {\"core\": <id>}");
-        systemNodes.emplace_back(*id, &n);
-        named.push_back(*id);
+        const SystemTarget target = systemTargetOf(n);
+        if (!target.id) {
+            // A field is there, is not a system id, and the node names only that path: that is the document's mistake,
+            // said here. Neither or both is the node's own create refusal, which says which of the two it wants.
+            if (target.namesAny && !target.namesBoth)
+                return refuse(n.id, "slots", "a system node's core or system is a system id, 1 to 4294967295");
+            malformed = true;
+            continue;
+        }
+        if (n.id != "sys-" + std::to_string(*target.id))
+            return refuse(n.id, "slots",
+                          "a system node is sys-<id>, its settings naming its system (or its core) as {\"system\": <id>}");
+        systemNodes.push_back({*target.id, &n, target.builds});
+        named.push_back(*target.id);
     }
     std::vector<SystemId> slots = request.slots;
     std::sort(named.begin(), named.end());
     std::sort(slots.begin(), slots.end());
-    if (std::adjacent_find(slots.begin(), slots.end()) != slots.end() || slots != named)
-        return refuse("", "slots", "the slots and the document's system nodes name different systems");
+    if (!malformed) {
+        // Two nodes naming one system would build or take one core twice.
+        const auto duplicate = std::adjacent_find(named.begin(), named.end());
+        if (duplicate != named.end())
+            return refuse("", "slots", "two system nodes name system " + std::to_string(*duplicate));
+        if (std::adjacent_find(slots.begin(), slots.end()) != slots.end() || slots != named)
+            return refuse("", "slots", "the slots and the document's system nodes name different systems");
+    }
 
-    // Each names a live core, and is the type that core is placed as: a node of another type would take the
-    // core, find it the wrong kind, and give it up.
-    for (const auto& [id, n] : systemNodes) {
-        const auto it = liveCores_.find(id);
+    // A node that takes a parked core names one that is live, and is the type that core is placed as: a node of another
+    // type would take the core, find it the wrong kind, and give it up. A node that builds its own needs no core yet;
+    // the type it builds is its own config's console.
+    for (const auto& e : systemNodes) {
+        if (e.builds) continue;
+        const auto it = liveCores_.find(e.id);
         if (it == liveCores_.end())
-            return refuse(n->id, "unknown-core", "no core is built under id " + std::to_string(id));
+            return refuse(e.node->id, "unknown-core", "no core is built under id " + std::to_string(e.id));
         const char* type = rp::host::systemNodeType(it->second->kind());
-        if (n->type != type)
-            return refuse(n->id, "core-type", "the core under id " + std::to_string(id) + " is placed as " + type +
-                                                  ", not " + n->type);
+        if (e.node->type != type)
+            return refuse(e.node->id, "core-type", "the core under id " + std::to_string(e.id) + " is placed as " + type +
+                                                  ", not " + e.node->type);
     }
 
     // The tap arms one of the NES's export modes (1 to 3), on one of the document's systems.
@@ -317,8 +442,11 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
 
     auto table = std::make_shared<rp::host::SystemTable>();
     for (const SystemId id : request.slots) {
-        SystemBase* core = liveCores_.at(id);
-        table->slots.push_back({id, core, dynamic_cast<MesenNesSystem*>(core)});
+        // A slot whose core is live already (taken from parked_) is in the plan from here; one whose node builds its
+        // own has a null entry until that node's activation, and buildSystem fills it.
+        const auto it = liveCores_.find(id);
+        SystemBase* core = it == liveCores_.end() ? nullptr : it->second;
+        table->slots.push_back({id, core, core ? dynamic_cast<MesenNesSystem*>(core) : nullptr});
     }
     // The host inputs, one of each at most: each takes everything staged, wired or not, so a second would take it from
     // the first whenever it ran first. The host MIDI out, one at most: it frame-sorts what it merges, and a second
@@ -350,10 +478,13 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
         const auto id = rp::host::cartMirrorSystem(n.settings ? rp::graph::canonicalJson(*n.settings) : std::string("{}"));
         if (!id || std::find(request.slots.begin(), request.slots.end(), *id) == request.slots.end())
             return refuse(n.id, "cart-mirror", "a cart mirror's settings are {\"system\": <id>}, naming one of the slots");
-        if (liveCores_.at(*id)->kind() != SystemKind::MesenNes)
+        // The document's own type for the slot, which is the core a built one becomes: a NES system's node builds a NES.
+        const SystemNodeInDoc* systemNode = nullptr;
+        for (const auto& e : systemNodes)
+            if (e.id == *id) systemNode = &e;
+        if (systemNode && systemNode->node->type != rp::host::systemNodeType(SystemKind::MesenNes))
             return refuse(n.id, "cart-mirror", "a cart mirror names a NES, the one system an N8 is a cart for: system " +
-                                                   std::to_string(*id) + " is placed as " +
-                                                   rp::host::systemNodeType(liveCores_.at(*id)->kind()));
+                                                   std::to_string(*id) + " is placed as " + systemNode->node->type);
         table->cartMirror = *id;
     }
 
@@ -365,27 +496,37 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
     // The nodes the planner makes take their cores out of parked_. If the plan is then refused (a later node
     // fails to activate, the ring has no room for its swap), those nodes are destroyed before the host's
     // setGraph returns, and each puts its core back (the cores lambda). A core only an older plan held, freed
-    // by a reclaim in there, was not taken here, so it is freed as usual.
+    // by a reclaim in there, was not taken here, so it is freed as usual. The same window is where a node that builds
+    // its own core adds it to the plan's table (buildSystem), so that table is complete before it is published.
     struct InSetGraph {
         Engine& e;
-        explicit InSetGraph(Engine& engine) : e(engine) {
+        InSetGraph(Engine& engine, rp::host::SystemTable* table) : e(engine) {
             e.takenInSetGraph_.clear();
             e.inSetGraph_ = true;
+            e.building_ = table;
         }
         ~InSetGraph() {
             e.inSetGraph_ = false;
+            e.building_ = nullptr;
             e.takenInSetGraph_.clear();
         }
     };
     rp::graph::SetGraphResult result;
     {
-        const InSetGraph window(*this);
-        result = graph_->host->setGraph(*doc, std::move(table), request.rearmTap ? &trailer : nullptr);
+        const InSetGraph window(*this, table.get());
+        // The table is handed on by copy: this thread filled its slots (buildSystem, as the plan activated) and reads
+        // them below, where the plan's own view belongs to whichever thread adopts it.
+        result = graph_->host->setGraph(*doc, table, request.rearmTap ? &trailer : nullptr);
     }
     graph_->script.reclaim();  // a quiescent swap released its script nodes in there: what they left in cycles goes now
     for (const auto& e : result.errors) out.errors.push_back({e.nodeId, e.port, e.code, e.message});
     if (!result.ok) return out;
     out.ok = true;
+    // Every slot has a core by now: one already live, or one a node built while the plan activated. A null one would be
+    // a table the plan's per-block work dereferences, so it is said rather than left to crash.
+    for (const auto& e : table->slots)
+        if (!e.core)
+            std::fprintf(stderr, "[engine] system %u has no core after the plan activated\n", static_cast<unsigned>(e.id));
     hostWidth_ = hostWidthOf(*doc);
     if (replan) return out;  // a core parked since the document was published is for TS's next one
     lastRequest_ = request;

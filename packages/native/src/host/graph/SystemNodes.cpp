@@ -97,19 +97,75 @@ using LightTemperature = rfl::Validator<double, Within<LightTemperatureRange>>;
 // refuses, so a field that ever defaulted it with rfl::DefaultIfMissing would throw instead of taking a value.
 using ApuLatencyMs = rfl::Validator<double, Within<ApuLatencyRange>>;
 
+// The construct-time fields' labels (packages/retroplug/src/settingsEnums.ts): the cart FIFO's profile, the N8
+// reliable link's mode, and the NES per-channel export mode. As with C2's knobs, an enumerator's name is its label
+// with the first letter lowercased, and the ordinals are the ones the core's config takes.
+enum class FifoProfile : std::uint32_t { Instant = 0, Hardware = 1 };
+enum class N8LinkMode : std::uint32_t { Auto = 0, Off = 1 };
+enum class ChannelExportMode : std::uint32_t { Mix = 0, StereoModPins = 1, PinsPlusRef = 2, IndividualMono = 3 };
+
+template <class E>
+using Label = decltype(literalOf<E>(std::make_index_sequence<rfl::get_enumerator_array<E>().size()>{}));
+
+// The ranges the store clamps its ints to (packages/retroplug/src/coreRoles.ts clampedInt), refused outside rather than
+// clamped, as C2's numbers are: 0 means "take the profile's value" for the two FIFO overrides, so 0 is in range.
+struct FifoDepthRange {
+    static constexpr int min = 0, max = 1 << 20;
+};
+struct FifoRateRange {
+    static constexpr int min = 0, max = 100'000'000;
+};
+struct N8LinkRttRange {
+    static constexpr int min = 0, max = 100'000;
+};
+using FifoDepth          = rfl::Validator<int, Within<FifoDepthRange>>;
+using FifoBytesPerSecond = rfl::Validator<int, Within<FifoRateRange>>;
+using N8LinkRttUs        = rfl::Validator<int, Within<N8LinkRttRange>>;
+
 }  // namespace knobs
 
-// Each type's settings, named so their JSON Schema $defs keys are the same under every compiler. `core` is the system
-// id buildCore parked the node's core under (docs/modular-graph-phase-b2-design.md section 2.5): a new core is a new
-// id, so it is always a new instance (rebuild_key). Every other field is a knob of that core
-// (docs/modular-graph-phase-c2-design.md section 3), and optional: absent, the node leaves the core as it was built,
-// or as the last document that carried the field left it.
-struct SystemNodeSettings {  // rp.mesen.gba, rp.mesen.sms
-    std::uint64_t core = 0;
+// Each type's settings, named so their JSON Schema $defs keys are the same under every compiler.
+//
+// A node names the core it runs ONE of two ways (docs/modular-graph-phase-c3-design.md section 3): its `core`, the
+// system id buildCore parked one under (docs/modular-graph-phase-b2-design.md section 2.5), which it takes at
+// activation; or a `system` it builds a core for at activation, with the ROM and seeds as resources. A new core is a
+// new id, so either is a new instance (rebuild_key); both at once, or neither, is a create refusal. `rom` is always a
+// resource (a node never touches the filesystem); `sram` and `state` are optional seeds, and with both given the
+// savestate wins, as buildCore's does. `romName` is the ROM's file stem, which a Master System or Game Gear core stages
+// its file under (its battery stem) now that its ROM is bytes.
+//
+// Every other field is either a knob of that core (docs/modular-graph-phase-c2-design.md section 3), optional and
+// applied to the core the node has, or a construct-time field, which the core is built with and which therefore
+// rebuilds the node (rebuild_key). The core-naming fields repeat in each type rather than nesting, so a document's
+// settings stay one flat object and a type's schema lists only what it reads. Only a builder reads `romName` and the
+// construct-time fields; a `core` node takes a core already built from buildCore's spec, so its key carries neither
+// them nor `romName`, and a document that changes one on it keeps its core.
+struct SystemNodeSettings {  // rp.mesen.gba
+    std::uint64_t              core = 0;
+    std::uint64_t              system = 0;
+    rp::resource_ref<"rom">    rom;
+    rp::resource_ref<"sram">   sram;
+    rp::resource_ref<"state">  state;
+    std::optional<std::string> romName;
+
+    // What a rebuild is decided by: which core the node names, and every field the build reads (the resource refs
+    // are not here: node.hpp rebuilds a moved ref by itself). A `core` node builds nothing, so `romName` is not a
+    // build input for it either.
+    struct Key {
+        std::uint64_t              core = 0, system = 0;
+        std::optional<std::string> romName;
+        bool operator==(const Key&) const = default;
+    };
+    Key key() const { return {core, system, system != 0 ? romName : std::nullopt}; }
 };
 
 struct GameBoySettings {
-    std::uint64_t                                       core = 0;
+    std::uint64_t                                      core = 0;
+    std::uint64_t                                      system = 0;
+    rp::resource_ref<"rom">                            rom;
+    rp::resource_ref<"sram">                           sram;
+    rp::resource_ref<"state">                          state;
+    std::optional<std::string>                         romName;
     std::optional<knobs::Label<SameBoyModel>>           model;
     std::optional<bool>                                 fastBoot;
     std::optional<knobs::Label<SameBoyHighpass>>        highpass;
@@ -118,15 +174,87 @@ struct GameBoySettings {
     std::optional<knobs::LightTemperature>              lightTemperature;
     // What the core captures of its serial port for LSDj's decoder: "listen" for master sync, "drive" for MI.OUT.
     std::optional<knobs::Label<SerialOutCapture>>       serialOutCapture;
+
+    struct Key {
+        std::uint64_t              core = 0, system = 0;
+        std::optional<std::string> romName;
+        bool operator==(const Key&) const = default;
+    };
+    Key key() const { return {core, system, system != 0 ? romName : std::nullopt}; }
 };
 
 struct NesSettings {
-    std::uint64_t                                  core = 0;
+    std::uint64_t                                   core = 0;
+    std::uint64_t                                   system = 0;
+    rp::resource_ref<"rom">                         rom;
+    rp::resource_ref<"sram">                        sram;
+    rp::resource_ref<"state">                       state;
+    std::optional<std::string>                     romName;
+    // The live knobs (C2).
     std::optional<knobs::Label<NesRegion>>         region;
     std::optional<bool>                            removeSpriteLimit;
     std::optional<knobs::ApuLatencyMs>             apuLatencyMs;
     std::optional<knobs::Label<CartridgeAccuracy>> s5bNoise;
     std::optional<knobs::Label<CartridgeAccuracy>> mmc5PhaseReset;
+    // The construct-time fields: the core reads them as it boots and has no setter for one, so a change is a rebuild.
+    std::optional<std::string>                      sdRoot;
+    std::optional<knobs::Label<knobs::FifoProfile>> fifo;
+    std::optional<knobs::FifoDepth>                 fifoDepth;
+    std::optional<knobs::FifoBytesPerSecond>        fifoBytesPerSecond;
+    std::optional<knobs::Label<knobs::N8LinkMode>>  n8Link;
+    std::optional<knobs::N8LinkRttUs>               n8LinkRttUs;
+    std::optional<knobs::Label<knobs::ChannelExportMode>> channelExportMode;  // the tap's mode, armed at boot
+
+    struct Key {
+        std::uint64_t              core = 0, system = 0;
+        std::optional<std::string> romName;
+        std::optional<std::string> sdRoot;
+        std::optional<int>         fifo;                 // labels compared by their ordinal
+        std::optional<int>         fifoDepth;
+        std::optional<int>         fifoBytesPerSecond;
+        std::optional<int>         n8Link;
+        std::optional<int>         n8LinkRttUs;
+        std::optional<int>         channelExportMode;
+        bool operator==(const Key&) const = default;
+    };
+    Key key() const {
+        // A label compares by its ordinal (its place in the enumerator array), which only an equal label shares. A
+        // `core` node has no build inputs of its own, so only the core it names is in its key.
+        if (system == 0) return {core, system};
+        auto ordinal = [](const auto& label) {
+            return label ? std::optional<int>(static_cast<int>(label->value())) : std::nullopt;
+        };
+        return {core,                      system,
+                romName,                   sdRoot,
+                ordinal(fifo),             ordinal(fifoDepth),
+                ordinal(fifoBytesPerSecond), ordinal(n8Link),
+                ordinal(n8LinkRttUs),      ordinal(channelExportMode)};
+    }
+};
+
+struct SmsSettings {
+    std::uint64_t              core = 0;
+    std::uint64_t              system = 0;
+    rp::resource_ref<"rom">    rom;
+    rp::resource_ref<"sram">   sram;
+    rp::resource_ref<"state">  state;
+    std::optional<std::string> romName;
+    // The construct-time fields: the machine, and whether the YM2413 is emulated at all (configureSms runs before
+    // LoadRom, so neither has a setter).
+    std::optional<bool> enableFm;
+    std::optional<bool> gameGear;
+
+    struct Key {
+        std::uint64_t              core = 0, system = 0;
+        std::optional<std::string> romName;
+        std::optional<bool>        enableFm, gameGear;
+        bool operator==(const Key&) const = default;
+    };
+    Key key() const {
+        // A `core` node has no build inputs of its own: its key is the core it names alone.
+        if (system == 0) return {core, system};
+        return {core, system, romName, enableFm, gameGear};
+    }
 };
 
 namespace {
@@ -167,23 +295,29 @@ bool same(const rfl::Validator<T, V...>& a, const rfl::Validator<T, V...>& b) { 
 template <class F>
 bool moved(const std::optional<F>& to, const std::optional<F>& from) { return to && !(from && same(*from, *to)); }
 
-// What every system node shares: the core handoff, its settings and params reaching the core, the connected-output
-// mask, its inputs, and prepare / step / finish mapped one to one onto the core's block triad. `Self` declares its
-// params (`gain` at least), supplies finish's lanes, may write output queues after the core has run (writeQueues),
-// and applies its own knobs (apply) and any param beyond the gain (applyParams).
+// What every system node shares: the two ways it gets its core, its settings and params reaching that core, the
+// connected-output mask, its inputs, and prepare / step / finish mapped one to one onto the core's block triad. `Self`
+// declares its params (`gain` at least), supplies finish's lanes, may write output queues after the core has run
+// (writeQueues), and applies its own knobs (apply) and any param beyond the gain (applyParams).
+//
+// A node either builds its core at activation from the bytes its resources hold (its settings' `system`, C3) or takes
+// the parked one its settings' `core` names (B2's handoff, until C3's last commit deletes it). A built core is the
+// host's (rp.host.systems/1: the snapshot slot under the system id, the live cores, and the delete when the node is
+// destroyed); a taken one goes back through `released`, so a refused document can be corrected and republished. Which
+// path a node is on is fixed by its settings, which rebuild_key settles with the construct-time fields.
 //
 // Only a new core rebuilds (rebuild_key): every other setting is a knob the node applies to the core it has, so its
 // prepare reads nothing a commit writes and setGraph never waits on a system node's commit (stateless_prepare). A
 // commit only points `settings` at the new settings (on_settings never allocates); the node applies what moved at the
 // start of its next block, before the core's prepareForBlock, and everything present once at activation, as it takes
-// its core, before that core first runs. So a setting lands at the node's next prepare, after every host command
-// queued behind its plan (the host drains its ring before it runs a block): a caller that must act on the restarted
-// core renders a block first, since a RAM write or staged core bytes sent after a model change reach the core it is
-// about to replace. Each knob is guarded twice, first by `moved` against what this node last applied, so a document's
-// unchanged field is not re-applied even where the core was changed by another path, then by the core's own setter
-// where it has one (setFastBoot and a NES's setRemoveSpriteLimit write unconditionally). A palette change re-applies
-// the display group and restarts nothing, while a model change restarts the core and a region change resets it
-// (docs/modular-graph-phase-c2-design.md section 4). A settings field the type does not know is ignored (node.hpp
+// or builds its core, before that core first runs. So a setting lands at the node's next prepare, after every host
+// command queued behind its plan (the host drains its ring before it runs a block): a caller that must act on the
+// restarted core renders a block first, since a RAM write or staged core bytes sent after a model change reach the
+// core it is about to replace. Each knob is guarded twice, first by `moved` against what this node last applied, so a
+// document's unchanged field is not re-applied even where the core was changed by another path, then by the core's own
+// setter where it has one (setFastBoot and a NES's setRemoveSpriteLimit write unconditionally). A palette change
+// re-applies the display group and restarts nothing, while a model change restarts the core and a region change resets
+// it (docs/modular-graph-phase-c2-design.md section 4). A settings field the type does not know is ignored (node.hpp
 // reads with rfl::DefaultIfMissing and no rfl::NoExtraFields), so a misspelt knob plans and does nothing.
 //
 // A param's value reaches the core at the start of each block whose control stream moves it, before the core's
@@ -191,19 +325,21 @@ bool moved(const std::optional<F>& to, const std::optional<F>& from) { return to
 // value the core was given last: a publish carrying the value the core already has calls nothing. Every one is given
 // at the node's first block, before the core's first prepareForBlock: a node reads its params only in a block (the
 // host binds its control streams there, and lands the document's values in them as it adopts the plan), and a core a
-// node has taken runs nothing before that. The first value is snapped into the core, whose gain smoother starts at
-// 0 dB, so the node plays its first sample at the document's level; every later gain change is smoothed by the core,
-// as every gain edit is.
+// node has taken or built runs nothing before that. The first value is snapped into the core, whose gain smoother
+// starts at 0 dB, so the node plays its first sample at the document's level; every later gain change is smoothed by
+// the core, as every gain edit is.
 template <class Self, class Core, class S = SystemNodeSettings>
 struct SystemNode {
     using Settings = S;
-    static std::uint64_t rebuild_key(const Settings& s) { return s.core; }
+    static auto rebuild_key(const Settings& s) { return s.key(); }
     static constexpr bool stateless_prepare = true;
 
     const HostCores*                       cores = nullptr;
+    const HostSystems*                     systems = nullptr;  // null when the host builds no cores
     const EngineSyncTrace*                 trace = nullptr;  // null when the host keeps none
     std::uint64_t                          token = 0;
     Core*                                  core = nullptr;  // owned
+    bool                                   built = false;   // built here from a `system`, not a parked `core`
     std::array<std::uint8_t, kMaxOutputs>  connected{};
     const Settings*                        settings = nullptr;  // the committed ones, alive until the next commit
     Settings                               applied{};           // what the core was given last (none before activation)
@@ -213,16 +349,23 @@ struct SystemNode {
     SystemNode() = default;
     SystemNode(const SystemNode&) = delete;
     SystemNode& operator=(const SystemNode&) = delete;
-    // Destroyed on the control thread, at reclaim once no plan runs it or as a refused plan is unwound: the
-    // snapshot slot first, then the core, unless the host took the core back.
+    // Destroyed on the control thread, at reclaim once no plan runs it or as a refused plan is unwound. A core the node
+    // built is the host's to release (its snapshot slot, and the live-core map, go with it); one it took from a parked
+    // core is given back through `released`, unless the host took it back, and deleted otherwise.
     ~SystemNode() {
         if (!core) return;
+        if (built) {
+            if (systems) systems->destroy(systems->ctx, core);
+            else delete core;
+            return;
+        }
         if (cores && cores->released(cores->ctx, core)) return;
         delete core;
     }
 
     void bind_host(const rp_host* h) noexcept {
         cores = static_cast<const HostCores*>(h->get_interface(h, RP_HOST_CORES_INTERFACE));
+        systems = static_cast<const HostSystems*>(h->get_interface(h, RP_HOST_SYSTEMS_INTERFACE));
         trace = static_cast<const EngineSyncTrace*>(h->get_interface(h, RP_ENGINE_SYNC_TRACE_INTERFACE));
     }
     void on_settings(const Settings& s) noexcept {
@@ -231,22 +374,80 @@ struct SystemNode {
         pending = true;
     }
 
-    // The first activation takes the core and gives it every knob the settings carry; later ones (a re-activation)
-    // keep it. The factory activated the core at the engine's rate when it built it, and Engine::setSampleRate re-rates
-    // live cores itself. A plan that is then refused leaves those knobs on the core it gives back, which the engine
-    // parks again for a corrected document.
+    // A node names the core it runs one of two ways, and a create that names both, or neither, refuses here rather than
+    // planning a document whose node would run nothing (docs/modular-graph-phase-c3-design.md section 3). A node that
+    // builds its own also names its ROM; the seeds are optional (a blank battery is legitimate).
+    static std::optional<std::string> validate(const Settings& s) {
+        if (s.core != 0 && s.system != 0)
+            return std::string("a system node names its parked core or its system and rom, not both ({\"core\": ") +
+                   std::to_string(s.core) + "}, {\"system\": " + std::to_string(s.system) + "})";
+        if (s.core == 0 && s.system == 0)
+            return std::string("a system node names the system it builds ({\"system\": <id>, \"rom\": \"res:N\"}) or the "
+                               "parked core it takes ({\"core\": <id>})");
+        if (s.system != 0 && s.rom.ref.empty()) return std::string("a system node names its ROM as {\"rom\": \"res:N\"}");
+        return std::nullopt;
+    }
+
+    // The first activation builds the core a `system` node names, or takes the parked one a `core` node names, and
+    // gives it every knob the settings carry; later ones (a re-activation) keep it. A core is built at the rate the plan
+    // runs at, which Engine::setSampleRate re-rates, as it does a taken one. A plan that is then refused destroys a built
+    // core as it unwinds, and hands a taken one back for the engine to park again.
     bool activate(double, std::uint32_t) {
         if (core) return true;
+        if (settings->system != 0) {
+            build(static_cast<Self*>(this)->config(*settings));
+            return true;
+        }
         if (!cores) return false;
-        SystemBase* built = cores->take(cores->ctx, token);
-        core = dynamic_cast<Core*>(built);
+        SystemBase* taken = cores->take(cores->ctx, token);
+        core = dynamic_cast<Core*>(taken);
         // An id naming another kind of core is a host bug (Engine::setGraph checks the kinds before it
         // plans). The engine keeps a snapshot slot for it, as for any core, or takes it back.
-        if (!core && built && !cores->released(cores->ctx, built)) delete built;
+        if (!core && taken && !cores->released(cores->ctx, taken)) delete taken;
         if (!core) return false;
         applySettings();  // against `applied`, which holds none yet, so every knob present
         return true;
     }
+
+    // Build the core the settings name, through rp.host.systems/1, with the bytes this instance's resources pinned and
+    // the config its settings made: the backend applies the config before onActivate and boots and restores the seeds
+    // there, so a non-default model never restarts the core it just restored. A failure throws its reason, which
+    // rp::detail::activateFn reports and the planner shows as activate-failed on this node.
+    void build(SystemConfig config) {
+        if (!systems) throw std::runtime_error("the host offers no system builder (rp.host.systems/1)");
+        SystemBuildRequest request;
+        request.rom = bytesOf(settings->rom);
+        request.sram = bytesOf(settings->sram);
+        request.savestate = bytesOf(settings->state);
+        request.romName = settings->romName.value_or(std::string());
+        request.config = std::move(config);
+        rp_error err{};
+        SystemBase* made = systems->build(systems->ctx, settings->system, request, &err);
+        if (!made)
+            throw std::runtime_error(err.message[0] ? std::string(err.message) : std::string("the core did not build"));
+        core = dynamic_cast<Core*>(made);
+        if (!core) {  // the config names the console, so this is a host or settings bug rather than a document's
+            systems->destroy(systems->ctx, made);
+            throw std::runtime_error(std::string("the built core is not a ") + Self::name);
+        }
+        built = true;
+        // The build applied the config, so its fields are on the core already: `applied` is seeded with the settings,
+        // less what the config does not carry, so the node's own first application finds them equal and calls nothing (a
+        // model change would restart the core and lose the savestate the build restored). What is left over is a live
+        // knob, which reaches the core now, as the parked path applies every knob at activation.
+        applied = *settings;
+        static_cast<Self*>(this)->configApplied(applied);
+        applySettings();
+    }
+
+    static std::vector<std::uint8_t> bytesOf(const auto& field) {
+        std::vector<std::uint8_t> out;
+        if (const rp_bytes* bytes = field.bytes()) out.assign(bytes->data, bytes->data + bytes->size);
+        return out;
+    }
+
+    // A type whose config carries none of its knobs clears them here, so the node's first block applies them.
+    void configApplied(Settings&) const noexcept {}
 
     void applySettings() noexcept {
         static_cast<Self*>(this)->apply(*settings, applied);
@@ -425,6 +626,25 @@ struct GameBoy : SystemNode<GameBoy, SameBoySystem, GameBoySettings> {
             if (GameBoy* gb = rp::peer_as<GameBoy>(p)) core->linkPeers_.push_back(gb->core);
     }
 
+    // The config the core is built with (a `system` node): every knob the settings carry, the model and the fast boot
+    // among them, which the backend applies before onActivate, so a loaded non-default model boots as that model and
+    // never restarts afterwards. A knob absent from the settings keeps SameBoyConfig's default, which is the role
+    // schema's.
+    static SystemConfig config(const Settings& s) {
+        SameBoyConfig c;
+        if (s.model) c.model = knobs::valueOf<SameBoyModel>(*s.model);
+        if (s.fastBoot) c.fastBoot = *s.fastBoot;
+        if (s.highpass) c.highpass = knobs::valueOf<SameBoyHighpass>(*s.highpass);
+        if (s.colorCorrection) c.colorCorrection = knobs::valueOf<SameBoyColorCorrection>(*s.colorCorrection);
+        if (s.dmgPalette) c.dmgPalette = knobs::valueOf<SameBoyDmgPalette>(*s.dmgPalette);
+        if (s.lightTemperature) c.lightTemperature = s.lightTemperature->value();
+        return c;
+    }
+
+    // The capture mode is not part of SameBoyConfig: the core takes it through its own setter, so the build did not
+    // apply it and the node's own first application must.
+    void configApplied(Settings& applied) const noexcept { applied.serialOutCapture.reset(); }
+
     // The fast boot first, which waits for the next restart and so is what a model's restart boots with: a block that
     // carries both (several documents published between two blocks commit together) restarts on the new fast boot,
     // where making the edits one at a time would not have when the fast boot was published after the model. Then the
@@ -488,6 +708,30 @@ struct Nes : SystemNode<Nes, MesenNesSystem, NesSettings> {
         return 2 * streams;
     }
 
+    // The config the core is built with (a `system` node): the construct-time fields, the region, the sprite limit, the
+    // APU latency and the cartridge-accuracy pair, each as the settings carry it. The expansion volume is not here: it
+    // is a param, given at the node's first block before the core steps, so the core boots at its own default and never
+    // plays a frame at it.
+    static SystemConfig config(const Settings& s) {
+        MesenNesConfig c;
+        if (s.region) c.region = static_cast<std::uint32_t>(knobs::valueOf<NesRegion>(*s.region));
+        if (s.removeSpriteLimit) c.removeSpriteLimit = *s.removeSpriteLimit;
+        if (s.apuLatencyMs) c.apuLatencyMs = s.apuLatencyMs->value();
+        if (s.s5bNoise) c.s5bNoise = static_cast<std::uint32_t>(knobs::valueOf<CartridgeAccuracy>(*s.s5bNoise));
+        if (s.mmc5PhaseReset)
+            c.mmc5PhaseReset = static_cast<std::uint32_t>(knobs::valueOf<CartridgeAccuracy>(*s.mmc5PhaseReset));
+        if (s.sdRoot) c.sdRoot = *s.sdRoot;
+        if (s.fifo) c.fifo = static_cast<std::uint32_t>(knobs::valueOf<knobs::FifoProfile>(*s.fifo));
+        if (s.fifoDepth) c.fifoDepth = static_cast<std::uint32_t>(s.fifoDepth->value());
+        if (s.fifoBytesPerSecond) c.fifoBytesPerSecond = static_cast<std::uint32_t>(s.fifoBytesPerSecond->value());
+        if (s.n8Link) c.n8Link = static_cast<std::uint32_t>(knobs::valueOf<knobs::N8LinkMode>(*s.n8Link));
+        if (s.n8LinkRttUs) c.n8LinkRttUs = static_cast<std::uint32_t>(s.n8LinkRttUs->value());
+        if (s.channelExportMode)
+            c.channelExportMode =
+                static_cast<std::uint32_t>(knobs::valueOf<knobs::ChannelExportMode>(*s.channelExportMode));
+        return c;
+    }
+
     // The region first, because a region change resets the core (setRegion); the rest apply in place, in the order
     // the store's role config lists them.
     void apply(const Settings& to, const Settings& from) noexcept {
@@ -528,9 +772,11 @@ struct Gba : SystemNode<Gba, MesenGbaSystem> {
     struct { rp::audio_out<rp::stereo> mix; } outputs;
     struct { GainParam gain; } params;
     std::size_t lanes(const rp::Block& b, std::array<float*, 2 * kMaxOutputs>& out) const { return mixLanes(b, out); }
+    // A Game Boy Advance has no construct-time field of its own yet: its config is the struct's defaults.
+    static SystemConfig config(const Settings&) { return MesenGbaConfig{}; }
 };
 
-struct Sms : SystemNode<Sms, MesenSmsSystem> {
+struct Sms : SystemNode<Sms, MesenSmsSystem, SmsSettings> {
     static constexpr const char* id = "rp.mesen.sms";
     static constexpr const char* name = "Master System / Game Gear";
     static constexpr const char* category = "system";
@@ -543,6 +789,14 @@ struct Sms : SystemNode<Sms, MesenSmsSystem> {
     struct { rp::audio_out<rp::stereo> mix; } outputs;
     struct { GainParam gain; } params;
     std::size_t lanes(const rp::Block& b, std::array<float*, 2 * kMaxOutputs>& out) const { return mixLanes(b, out); }
+    // The machine and the FM unit, both of which configureSms sets before LoadRom and neither of which has a setter: a
+    // change is a rebuild, which the settings' key decides.
+    static SystemConfig config(const Settings& s) {
+        MesenSmsConfig c;
+        if (s.enableFm) c.enableFm = *s.enableFm;
+        if (s.gameGear) c.gameGear = *s.gameGear;
+        return c;
+    }
 };
 
 }  // namespace

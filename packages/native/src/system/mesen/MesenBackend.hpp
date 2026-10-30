@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "system/SystemFactory.hpp"
 
@@ -63,4 +64,19 @@ class MesenBackend final : public SystemBackend {
 public:
     std::unique_ptr<SystemBase> build(SystemId id, const SystemBuildSpec& spec,
                                       double sampleRate) override;
+    std::unique_ptr<SystemBase> buildTyped(SystemId id, const SystemBuildRequest& request,
+                                           double sampleRate, std::string* why) override;
+
+    // One boot path per console, which buildCore's blob and a system node's typed request both reach: the ROM gate,
+    // then bootMesen (construct, onActivate, reject a refused ROM, enable the state snapshot). cfg and romBytes are
+    // consumed; a refusal's reason is in *why when it is given.
+    static std::unique_ptr<SystemBase> buildNes(SystemId id, MesenNesConfig cfg,
+                                                std::vector<std::uint8_t> romBytes, double sampleRate,
+                                                std::string* why);
+    static std::unique_ptr<SystemBase> buildGba(SystemId id, MesenGbaConfig cfg,
+                                                std::vector<std::uint8_t> romBytes, double sampleRate,
+                                                std::string* why);
+    static std::unique_ptr<SystemBase> buildSms(SystemId id, MesenSmsConfig cfg,
+                                                std::vector<std::uint8_t> romBytes, double sampleRate,
+                                                std::string* why);
 };

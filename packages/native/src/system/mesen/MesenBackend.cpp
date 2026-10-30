@@ -21,9 +21,12 @@ namespace {
 // bytes instead of the boot seed frozen forever. `T` is MesenNesSystem, MesenGbaSystem or
 // MesenSmsSystem.
 template <typename T>
-std::unique_ptr<SystemBase> bootMesen(std::unique_ptr<T> sys, double sampleRate) {
+std::unique_ptr<SystemBase> bootMesen(std::unique_ptr<T> sys, double sampleRate, std::string* why) {
     sys->onActivate(sampleRate);
-    if (!sys->activated()) return nullptr;  // core rejected the ROM at LoadRom → fail the construct
+    if (!sys->activated()) {  // core rejected the ROM at LoadRom → fail the construct
+        if (why) *why = "Mesen refused the ROM";
+        return nullptr;
+    }
     sys->enableStateSnapshot();             // republish a tear-free savestate every ~0.5s (Duplicate/Save State)
     return sys;                             // implicit upcast to unique_ptr<SystemBase>
 }
@@ -43,18 +46,57 @@ MesenSmsRoleConfig decodeMesenSmsRoleConfig(const std::string& json) {
 
 } // namespace
 
+std::unique_ptr<SystemBase> MesenBackend::buildNes(SystemId id, MesenNesConfig cfg,
+                                                   std::vector<std::uint8_t> romBytes, double sampleRate,
+                                                   std::string* why) {
+    // The platform's RomFormat gate confirms the bytes actually match the requested platform (a mislabelled ROM is
+    // rejected before Mesen sees it). Both paths reach it: the blob path from `spec.platform`, a system node from
+    // the node type that made the config.
+    if (detectRomFormat(romBytes) != RomFormat::Nes) {
+        if (why) *why = "the ROM is not a NES ROM";
+        return nullptr;
+    }
+    return bootMesen(std::make_unique<MesenNesSystem>(id, std::move(cfg), std::move(romBytes)), sampleRate, why);
+}
+
+std::unique_ptr<SystemBase> MesenBackend::buildGba(SystemId id, MesenGbaConfig cfg,
+                                                   std::vector<std::uint8_t> romBytes, double sampleRate,
+                                                   std::string* why) {
+    if (detectRomFormat(romBytes) != RomFormat::Gba) {
+        if (why) *why = "the ROM is not a GBA ROM";
+        return nullptr;
+    }
+    // biosPath left empty → HLE boot ROM; skipBootScreen stays the default (true).
+    return bootMesen(std::make_unique<MesenGbaSystem>(id, std::move(cfg), std::move(romBytes)), sampleRate, why);
+}
+
+std::unique_ptr<SystemBase> MesenBackend::buildSms(SystemId id, MesenSmsConfig cfg,
+                                                   std::vector<std::uint8_t> romBytes, double sampleRate,
+                                                   std::string* why) {
+    // Deliberately NOT an exact-match gate like the two above. The Sega magic is not required by
+    // any boot ROM, so headerless homebrew is legitimate and TS admits it on the strength of the
+    // file extension (platform.ts). An == RomFormat::Sms gate here would accept such a ROM in the
+    // UI and then fail the construct with no diagnostic. What this still catches - and all it needs
+    // to - is bytes that are positively SOMETHING ELSE, which is the mislabelled-ROM case the gate
+    // exists for. Content wins whenever it says anything, exactly as it does in TS.
+    const RomFormat fmt = detectRomFormat(romBytes);
+    if (fmt != RomFormat::Sms && fmt != RomFormat::Unknown) {
+        if (why) *why = "the ROM is not a Master System or Game Gear ROM";
+        return nullptr;
+    }
+    return bootMesen(std::make_unique<MesenSmsSystem>(id, std::move(cfg), std::move(romBytes)), sampleRate, why);
+}
+
 std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildSpec& spec,
                                                 double sampleRate) {
     // TS-supplied effective ROM (e.g. risa asset overrides applied non-destructively) takes precedence over
     // reading romPath — mirroring SameBoyBackend. cfg.romPath below keeps the on-disk path for the watcher +
-    // .sav resolution; only the loaded bytes differ. The per-platform RomFormat gate below still sniffs it.
+    // .sav resolution; only the loaded bytes differ. The per-platform typed build still sniffs it.
     std::vector<std::uint8_t> romBytes = spec.romBytes.empty() ? slurpAll(spec.romPath) : spec.romBytes;
     if (romBytes.empty()) return nullptr;
 
-    // Dispatch on the platform: one Mesen core, two systems. The RomFormat gate confirms the bytes
-    // actually match the requested platform (a mislabelled ROM is rejected).
+    // Dispatch on the platform: one Mesen core, three consoles. Each typed build gates the bytes against it.
     if (spec.platform == "nes") {
-        if (detectRomFormat(romBytes) != RomFormat::Nes) return nullptr;
         MesenNesConfig cfg;
         cfg.romPath = spec.romPath;
         cfg.sram = spec.sram;
@@ -76,31 +118,19 @@ std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildSp
         cfg.fifoBytesPerSecond = role.fifoBytesPerSecond;
         cfg.n8Link = role.n8Link;
         cfg.n8LinkRttUs = role.n8LinkRttUs;
-        return bootMesen(std::make_unique<MesenNesSystem>(id, std::move(cfg), std::move(romBytes)),
-                         sampleRate);
+        return buildNes(id, std::move(cfg), std::move(romBytes), sampleRate, nullptr);
     }
 
     if (spec.platform == "gba") {
-        if (detectRomFormat(romBytes) != RomFormat::Gba) return nullptr;
         MesenGbaConfig cfg;
         cfg.romPath = spec.romPath;
         cfg.sram = spec.sram;
         cfg.savestate = spec.savestate;
-        // biosPath left empty → HLE boot ROM; skipBootScreen stays the default (true).
-        return bootMesen(std::make_unique<MesenGbaSystem>(id, std::move(cfg), std::move(romBytes)),
-                         sampleRate);
+        return buildGba(id, std::move(cfg), std::move(romBytes), sampleRate, nullptr);
     }
 
     // Master System / Game Gear - ONE system class, the platform string picks the machine.
     if (spec.platform == "sms" || spec.platform == "gg") {
-        // Deliberately NOT an exact-match gate like the two above. The Sega magic is not required by
-        // any boot ROM, so headerless homebrew is legitimate and TS admits it on the strength of the
-        // file extension (platform.ts). An == RomFormat::Sms gate here would accept such a ROM in the
-        // UI and then fail the construct with no diagnostic. What this still catches - and all it needs
-        // to - is bytes that are positively SOMETHING ELSE, which is the mislabelled-ROM case the gate
-        // exists for. Content wins whenever it says anything, exactly as it does in TS.
-        const RomFormat fmt = detectRomFormat(romBytes);
-        if (fmt != RomFormat::Sms && fmt != RomFormat::Unknown) return nullptr;
         MesenSmsConfig cfg;
         cfg.romPath = spec.romPath;
         cfg.sram = spec.sram;
@@ -114,9 +144,34 @@ std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildSp
         const std::string settings(spec.settings.begin(), spec.settings.end());
         cfg.enableFm = settings.empty() ? MesenSmsRoleConfig{}.enableFm
                                         : decodeMesenSmsRoleConfig(settings).enableFm;
-        return bootMesen(std::make_unique<MesenSmsSystem>(id, std::move(cfg), std::move(romBytes)),
-                         sampleRate);
+        return buildSms(id, std::move(cfg), std::move(romBytes), sampleRate, nullptr);
     }
 
     return nullptr;  // Mesen doesn't serve this platform
+}
+
+std::unique_ptr<SystemBase> MesenBackend::buildTyped(SystemId id, const SystemBuildRequest& request,
+                                                     double sampleRate, std::string* why) {
+    if (const auto* nes = std::get_if<MesenNesConfig>(&request.config)) {
+        MesenNesConfig cfg = *nes;
+        cfg.sram = request.sram;
+        cfg.savestate = request.savestate;
+        return buildNes(id, std::move(cfg), request.rom, sampleRate, why);
+    }
+    if (const auto* gba = std::get_if<MesenGbaConfig>(&request.config)) {
+        MesenGbaConfig cfg = *gba;
+        cfg.sram = request.sram;
+        cfg.savestate = request.savestate;
+        return buildGba(id, std::move(cfg), request.rom, sampleRate, why);
+    }
+    if (const auto* sms = std::get_if<MesenSmsConfig>(&request.config)) {
+        MesenSmsConfig cfg = *sms;
+        cfg.sram = request.sram;
+        cfg.savestate = request.savestate;
+        cfg.romName = request.romName;
+        return buildSms(id, std::move(cfg), request.rom, sampleRate, why);
+    }
+    // The factory dispatched by the config, so this is a host bug rather than a caller's.
+    if (why) *why = "Mesen does not build this console";
+    return nullptr;
 }

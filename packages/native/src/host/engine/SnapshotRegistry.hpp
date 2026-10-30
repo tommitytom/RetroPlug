@@ -71,6 +71,12 @@ public:
     // Free a slot when its system is deleted (control thread). Idempotent (no-op for an unknown id).
     void release(SystemId id);
 
+    // How many systems' snapshots the pool holds at once: a full pool fails the construct.
+    static constexpr std::size_t kSlotCount = 64;
+
+    // The slots in use (control thread): what a test holds the registry to across a removal or a refused document.
+    std::size_t liveCount() const;
+
 private:
     struct Slot {
         std::atomic<SystemId>                 id{0};          // 0 = free; the block thread scans this
@@ -97,7 +103,7 @@ private:
 
     // Generous: RetroPlug never approaches this, but tests share one engine across a file's cases
     // so slots accumulate. A full pool fails the construct (logged) rather than corrupting.
-    static constexpr std::size_t kMaxSlots         = 64;
+    static constexpr std::size_t kMaxSlots         = kSlotCount;
     static constexpr double      kStateIntervalSec = 0.5;              // matches the core's own snapshot cadence
     static constexpr std::size_t kMaxStateBytes    = 16 * 1024 * 1024; // sanity bound on one savestate
 

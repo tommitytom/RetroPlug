@@ -25,7 +25,13 @@ SameBoyRoleConfig decodeSameBoyRoleConfig(const std::string& json) {
 
 std::unique_ptr<SameBoySystem> SameBoyBackend::buildSameBoy(SystemId id, SameBoyConfig cfg,
                                                            std::vector<std::uint8_t> romBytes,
-                                                           double sampleRate) {
+                                                           double sampleRate, std::string* why) {
+    // The ROM gate every SameBoy build passes (the embedded mGB carries the same Nintendo logo a cart does): bytes
+    // that are positively another console's, or nothing at all, never reach the core.
+    if (romBytes.empty() || detectRomFormat(romBytes) != RomFormat::Gb) {
+        if (why) *why = "the ROM is not a Game Boy ROM";
+        return nullptr;
+    }
     // Cores are bare - feature roles (LSDj sync, MGB passthrough, ...) run as TS protocol script nodes.
     auto sys = std::make_unique<SameBoySystem>(id, std::move(cfg), std::move(romBytes));
     sys->onActivate(sampleRate);       // boots gb_ + restores cfg.sram then cfg.savestate
@@ -46,11 +52,9 @@ std::unique_ptr<SystemBase> SameBoyBackend::build(SystemId id, const SystemBuild
         // TS-supplied effective ROM (e.g. LSDj asset overrides applied non-destructively): use it instead
         // of reading romPath, but still sniff it. cfg.romPath below keeps the on-disk path for the watcher.
         romBytes = spec.romBytes;
-        if (detectRomFormat(romBytes) != RomFormat::Gb) return nullptr;
     } else {
         // File-backed: slurp the full ROM and sniff. SameBoy-only gate here.
         romBytes = slurpAll(spec.romPath);
-        if (romBytes.empty() || detectRomFormat(romBytes) != RomFormat::Gb) return nullptr;
     }
 
     SameBoyConfig cfg;
@@ -75,5 +79,18 @@ std::unique_ptr<SystemBase> SameBoyBackend::build(SystemId id, const SystemBuild
     cfg.colorCorrection = static_cast<SameBoyColorCorrection>(role.colorCorrection);
     cfg.dmgPalette = static_cast<SameBoyDmgPalette>(role.dmgPalette);
     cfg.lightTemperature = role.lightTemperature;
-    return buildSameBoy(id, std::move(cfg), std::move(romBytes), sampleRate);
+    return buildSameBoy(id, std::move(cfg), std::move(romBytes), sampleRate, nullptr);
+}
+
+std::unique_ptr<SystemBase> SameBoyBackend::buildTyped(SystemId id, const SystemBuildRequest& request,
+                                                       double sampleRate, std::string* why) {
+    const auto* cfg = std::get_if<SameBoyConfig>(&request.config);
+    if (!cfg) {  // the factory dispatched by the config, so this is a host bug rather than a caller's
+        if (why) *why = "SameBoy does not build this console";
+        return nullptr;
+    }
+    SameBoyConfig typed = *cfg;
+    typed.sram = request.sram;
+    typed.savestate = request.savestate;
+    return buildSameBoy(id, std::move(typed), request.rom, sampleRate, why);
 }

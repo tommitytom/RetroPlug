@@ -214,6 +214,12 @@ SmsConsole* MesenSmsSystem::smsConsole() const {
 // ROMs share a stem from overwriting each other's staged bytes (which Reset
 // would then reload as the wrong game) while leaving the battery stem honest.
 //
+// A node that names no romName (an SMS/GG built from a rom resource whose TS
+// side sends none) stages under `system-<id>` rather than a constant: the stem
+// is the battery identity, so a constant would put every unnamed system's
+// battery in one file. A named one is the game's own stem, which is what lets
+// two instances of one game share its battery.
+//
 // That directory is named per system INSTANCE, and deliberately NOT by the
 // system id. Ids come from a counter TS keeps per control-plane context
 // (systemsStore.ts), i.e. one id space per Project - and a process holds several
@@ -231,9 +237,10 @@ std::string MesenSmsSystem::stageRom() {
     namespace fs = std::filesystem;
     std::error_code ec;
 
-    std::string stem = "rom";
-    if (!config_.romPath.empty()) {
-        const fs::path p(config_.romPath);
+    std::string stem = "system-" + std::to_string(id());
+    const std::string& named = config_.romPath.empty() ? config_.romName : config_.romPath;
+    if (!named.empty()) {
+        const fs::path p(named);
         if (!p.stem().empty()) stem = p.stem().string();
     }
     const char* ext = config_.gameGear ? ".gg" : ".sms";

@@ -56,6 +56,11 @@ struct MesenSmsConfig {
     bool          embedRom        = true;
     float         gainDb          = 0.0f;
     std::string   romPath;
+    // The ROM's file stem, for a core whose ROM is bytes with no path (a system node's rom resource). Mesen reads
+    // three things out of the staged file's name: the machine (its extension), the battery stem, and the file Reset
+    // re-reads; `romPath`'s stem wins when there is one, so this only names a file that has no path. A core built
+    // without one stages under `system-<id>`: the stem is the battery identity, so two unnamed systems never share one.
+    std::string   romName;
     // See SameBoyConfig::savSuffix. 0 => owns `<rom>.sav`; N>=2 => `<rom>-N.sav`,
     // so duplicated / repeat-loaded instances don't clobber a shared sibling.
     std::uint32_t savSuffix = 0;

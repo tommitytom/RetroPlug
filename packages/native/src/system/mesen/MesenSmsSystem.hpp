@@ -140,6 +140,13 @@ public:
 
     void setGainDb(float dB, bool immediate = false) override;
 
+    // The config the core was built from (tests read a construct-time field back, as MesenNesSystem::config).
+    const MesenSmsConfig& config() const { return config_; }
+
+    // Diagnostic: the file the ROM was staged as. Its stem is what Mesen derives the battery's from, and its directory
+    // is this instance's own (see stageRom).
+    const std::string& stagedRomPath() const { return stagedRomPath_; }
+
     // Visible resolution after overscan. The VDP always emits a 256x240
     // RenderedFrame (SmsVdp.cpp:648) and BaseVideoFilter subtracts the
     // configured overscan, which Mesen defaults to ZERO because its real

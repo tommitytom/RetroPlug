@@ -30,16 +30,19 @@ struct SameBoyRoleConfig {
 // Builds a real SameBoySystem (Game Boy). The only place SameBoyConfig is constructed on the
 // build path: resolves the ROM (embedded marker or file + sniff), decodes the opaque settings
 // blob (today: the LSDJ sync-role seed), seeds SRAM/savestate, and onActivates. SameBoy-only —
-// a non-GB file-backed ROM is rejected (nullptr).
+// a non-GB ROM is rejected (nullptr), the embedded marker included (it carries a cart's logo).
 class SameBoyBackend final : public SystemBackend {
 public:
     std::unique_ptr<SystemBase> build(SystemId id, const SystemBuildSpec& spec,
                                       double sampleRate) override;
+    std::unique_ptr<SystemBase> buildTyped(SystemId id, const SystemBuildRequest& request,
+                                           double sampleRate, std::string* why) override;
 
-    // The shared ctor + seed-order + onActivate + enableStateSnapshot sequence. SRAM/savestate go
-    // into cfg BEFORE construct — a live core restores them inside onActivate. cfg + romBytes are
-    // consumed. (Reload/duplicate are TS orchestration over buildCore now, not a native reuse.)
+    // The shared ctor + ROM gate + seed-order + onActivate + enableStateSnapshot sequence, which both paths
+    // reach: the blob path decodes its role config into `cfg` and calls this, and so does buildTyped. SRAM and
+    // savestate go into cfg BEFORE construct: a live core restores them inside onActivate, the savestate last.
+    // cfg + romBytes are consumed. (Reload/duplicate are TS orchestration over buildCore now, not a native reuse.)
     static std::unique_ptr<SameBoySystem> buildSameBoy(SystemId id, SameBoyConfig cfg,
                                                        std::vector<std::uint8_t> romBytes,
-                                                       double sampleRate);
+                                                       double sampleRate, std::string* why);
 };

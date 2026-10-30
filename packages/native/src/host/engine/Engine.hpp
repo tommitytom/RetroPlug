@@ -21,8 +21,10 @@
 #include "host/script/ScriptHost.hpp"
 
 class SystemBase;
+class SystemFactory;
 class MesenNesSystem;
 struct DspCommand;
+struct SystemBuildRequest;
 namespace rp::graph { struct HostCommand; }
 namespace rp::host { struct SystemTable; }
 
@@ -207,12 +209,22 @@ public:
     std::uint32_t resourcePinCount(std::uint32_t id) const;
 
     // --- graphs TS builds (docs/modular-graph-phase-b2-design.md section 2.5), control thread ---
+    // A system node that builds its own core (docs/modular-graph-phase-c3-design.md section 5), inside the setGraph
+    // that activates it: the core is built from `request` at the engine's rate, its snapshot slot is claimed under
+    // `system` and it joins the live cores. Null, with the reason in *why, for a live id (a parked core, or one a node
+    // of any plan not yet reclaimed holds), a ROM the console's gate or the core refuses, and a full snapshot pool; the
+    // node throws that reason, which the planner reports as activate-failed. The core is the calling node's until
+    // destroySystem, which is the reclaim (or refused-plan unwind) that frees the node:
+    SystemBase* buildSystem(std::uint64_t system, const SystemBuildRequest& request, std::string* why);
+    void        destroySystem(SystemBase* core);
     // Park a built core under its id until the system node a document names it in takes it, claiming its
     // snapshot slot (seeded from the core, so a read right after the build works with no block run). False,
     // with the core freed and the registry untouched, when the id is 0 or a core under it is still live
     // (parked, or held by a node of any plan); false, with the core freed, when the snapshot pool is full.
     bool parkCore(std::unique_ptr<SystemBase> core);
     bool coreLive(SystemId id) const { return liveCores_.count(id) != 0; }
+    // Every core alive anywhere: parked, or owned by a system node of a plan not yet reclaimed. Control thread.
+    std::size_t liveSystemCount() const { return liveCores_.size(); }
     struct GraphRequest {
         std::string           document;  // a graph document, as toGraphJson writes it
         std::vector<SystemId> slots;     // the document's systems, in slot order
@@ -229,12 +241,18 @@ public:
         std::vector<GraphError> errors;
     };
     // Plan `request` and publish it with its system table (built from the slots and the live cores) and its
-    // SyncTap. Refused before planning when a system node's type is not its core's, the tap arms a mode other
-    // than 1 to 3 or a system not in the slots, the document holds a second rp.host.midi-in, rp.host.controller-in,
-    // rp.host.midi-out or rp.n8.cart-mirror, or its mirror names anything but one of its NES systems. Refused at all,
-    // every core stays where it was: one a node of the refused plan took goes back to parked. Once it has published, a
-    // core still parked is one no document placed, and is freed, and the request is the one a script pack's reload
-    // replans (loadScriptPack).
+    // SyncTap. Refused before planning when a system node's `system` or `core` field is present but is not a system id,
+    // its node id is not `sys-<its id>`, two of its nodes name one system, its slots and its system nodes name different
+    // systems, the tap arms a mode other than 1 to 3 or a system not in the slots, the document holds a second
+    // rp.host.midi-in, rp.host.controller-in, rp.host.midi-out or rp.n8.cart-mirror, or its mirror names anything but
+    // one of its NES systems. A node that names both paths, or neither, is refused by its own create
+    // (settings-invalid) with the reason naming the two paths, and a node refused that way holds the slots and
+    // duplicate checks back rather than being lined up by an id it lacks. A `core` node must name a live core of its
+    // own type (unknown-core, core-type); a `system` node's failure to build (the ROM gate, a Mesen boot, a live id, a
+    // full snapshot pool, no builder) is activate-failed on that node. A refused plan destroys the cores its nodes
+    // built, re-parks the ones they took, and leaves the running plan, its cores, its slots and every resource pin as
+    // they were. Once it has published, a core still parked is one no document placed, and is freed, and the request is
+    // the one a script pack's reload replans (loadScriptPack).
     GraphResult setGraph(const GraphRequest& request);
     // A live change to a param of a node the last published plan places (GraphHost::setParam): clamped to the param's
     // range (and rounded for an int, enum or bool), and applied at the start of the next block, flushed inline while
@@ -417,6 +435,14 @@ private:
     // alive anywhere by id: parked, or owned by a system node, until that node frees it.
     std::map<SystemId, std::unique_ptr<SystemBase>> parked_;
     std::map<SystemId, SystemBase*>                 liveCores_;
+    // The system table publishGraph is filling while it plans (points into the one the plan is published with): a
+    // system node's core does not exist before its activation, so buildSystem adds it to the slots here. Null outside
+    // setGraph; only system nodes, on the control thread, call buildSystem.
+    rp::host::SystemTable*                          building_ = nullptr;
+    // The one factory every host builds cores through, the same for buildCore's RPC and a system node's activation.
+    // Every core backend is registered here at construction, so a host that composes an Engine gets the build path
+    // whether or not it also keeps a factory of its own for the RPC.
+    std::unique_ptr<SystemFactory>                  factory_;
     std::uint32_t                                   hostWidth_ = 2;
     // While setGraph plans (inSetGraph_), the ids takeCore hands out of parked_: a node of that plan which
     // gives its core up again, the plan refused, puts it back in parked_ rather than freeing it.

@@ -746,3 +746,397 @@ TEST_CASE("putResource and releaseResource over the RPC layer", "[engine-graph][
     REQUIRE(later.error.empty());
     CHECK(later.id > byMarker.id);  // ids are never reused
 }
+
+// ---- a system node builds its core from its settings (docs/modular-graph-phase-c3-design.md sections 3 and 5) -------
+
+namespace {
+
+// A stereo document placing one system node that builds its own core: sys-<id> names `system` and its ROM resource,
+// with whatever construct-time settings or params the case adds.
+std::string builtDoc(SystemId id, const char* type, std::uint32_t rom, const std::string& extra = "",
+                     const std::string& params = "") {
+    const std::string node = "sys-" + std::to_string(id);
+    const std::string settings = R"({"system":)" + std::to_string(id) + R"(,"rom":"res:)" + std::to_string(rom) + "\"" +
+                                 (extra.empty() ? "" : "," + extra) + "}";
+    return R"({"nodes":[{"id":")" + node + R"(","type":")" + type + R"(","settings":)" + settings +
+           (params.empty() ? "" : R"(,"params":)" + params) +
+           R"(},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                "wires":[{"from":")" + node + R"(.mix","to":"out.out.1-2"}]})";
+}
+
+Engine::GraphRequest builtRequest(std::string document, std::vector<SystemId> slots) {
+    return rp::host::test::graphRequest(std::move(document), std::move(slots));
+}
+
+// A document naming one system node that takes a parked core, with whatever settings the case adds beside it.
+std::string coreDoc(SystemId id, const char* type, const std::string& extra = "") {
+    const std::string node = "sys-" + std::to_string(id);
+    return R"({"nodes":[{"id":")" + node + R"(","type":")" + type + R"(","settings":{"core":)" +
+           std::to_string(id) + (extra.empty() ? "" : "," + extra) +
+           R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                "wires":[{"from":")" + node + R"(.mix","to":"out.out.1-2"}]})";
+}
+
+// The one reason a refusal gives, as "node: code: message".
+std::string refusal(const Engine::GraphResult& r) {
+    if (r.ok || r.errors.size() != 1) return r.ok ? "ok" : std::to_string(r.errors.size()) + " errors";
+    const auto& e = r.errors.front();
+    return e.nodeId + ": " + e.code + ": " + e.message;
+}
+
+// A core that publishes nothing: claiming a snapshot slot for one costs no boot, so 64 of them can fill the pool.
+class EmptyCore final : public SystemBase {
+public:
+    explicit EmptyCore(SystemId id) : SystemBase(id) {}
+    SystemKind kind() const override { return SystemKind::SameBoy; }
+    void onActivate(double) override {}
+    void onSampleRateChanged(double) override {}
+};
+
+}  // namespace
+
+TEST_CASE("a system node builds its core from its system and ROM resource, and gives it all back at reclaim",
+          "[engine-graph][b2][systems]") {
+    Engine e(kRate);
+    const std::uint32_t rom = e.putResource("rom", readFile(RP_MGB_ROM_PATH));
+    REQUIRE(rom != 0);
+    CHECK(e.setGraph(builtRequest(builtDoc(1, rp::host::test::kGbType, rom), {1})).ok);
+    CHECK(e.findSystem(1) != nullptr);
+    CHECK(e.findSystem(1)->kind() == SystemKind::SameBoy);
+    CHECK(e.coreLive(1));
+    CHECK(e.liveSystemCount() == 1);
+    CHECK(e.registry().liveCount() == 1);
+    CHECK(e.resourcePinCount(rom) == 1);  // the node's instance
+    CHECK(e.ramSize(1) > 0);              // its snapshot slot is claimed and seeded, as a parked core's is
+
+    std::vector<float> lanes(2 * 256, 0.0f);
+    float* outs[2] = {&lanes[0], &lanes[256]};
+    e.processBlock(256, outs, 2);
+
+    // The empty document takes it out: the plan it ran in is reclaimed, and with it the core, its slot and its pins.
+    REQUIRE(e.setGraph(builtRequest(rp::host::test::stereoDocument({}), {})).ok);
+    e.reclaim();
+    CHECK_FALSE(e.coreLive(1));
+    CHECK(e.liveSystemCount() == 0);
+    CHECK(e.registry().liveCount() == 0);
+    CHECK(e.resourcePinCount(rom) == 0);
+}
+
+TEST_CASE("a build that fails refuses the document and leaves the running plan, the pins and the slots as they were",
+          "[engine-graph][b2][systems]") {
+    Engine e(kRate);
+    const std::uint32_t mgbRom = e.putResource("rom", readFile(RP_MGB_ROM_PATH));
+    const std::uint32_t nesRom = e.putResource("rom", readFile(RP_BLIPTOASTER_ROM_PATH));
+    REQUIRE(mgbRom != 0);
+    REQUIRE(nesRom != 0);
+    REQUIRE(e.setGraph(builtRequest(builtDoc(1, rp::host::test::kGbType, mgbRom), {1})).ok);
+    const std::size_t cores = e.liveSystemCount(), slots = e.registry().liveCount();
+
+    SECTION("a ROM the console's gate refuses") {
+        const auto r = e.setGraph(builtRequest(builtDoc(2, rp::host::test::kGbType, nesRom), {2}));
+        CHECK_FALSE(r.ok);
+        CHECK(refusal(r) == "sys-2: activate-failed: the ROM is not a Game Boy ROM");
+        CHECK_FALSE(e.coreLive(2));
+        CHECK(e.resourcePinCount(nesRom) == 0);  // pinned at create, dropped as the refused plan unwinds
+    }
+    SECTION("an id a live core still holds") {
+        // A different ROM resource under the same system id is a different node, so it is a fresh instance that builds:
+        // the id the older instance still holds refuses the build rather than sharing the core.
+        const std::uint32_t otherRom = e.putResource("rom", readFile(RP_MGB_ROM_PATH));
+        const auto r = e.setGraph(builtRequest(builtDoc(1, rp::host::test::kGbType, otherRom), {1}));
+        CHECK_FALSE(r.ok);
+        CHECK(refusal(r) == "sys-1: activate-failed: system 1 is live");
+        CHECK(e.resourcePinCount(otherRom) == 0);
+    }
+    SECTION("two nodes naming one system") {
+        // Both would have to be sys-2, so the node ids repeat; naming one system twice is what the document is refused
+        // for, before the planner reaches the repeated id.
+        const std::string document =
+            R"({"nodes":[{"id":"sys-2","type":"rp.sameboy.gb","settings":{"system":2,"rom":"res:)" + std::to_string(mgbRom) +
+            R"("}},{"id":"sys-2","type":"rp.sameboy.gb","settings":{"system":2,"rom":"res:)" + std::to_string(mgbRom) + R"("}}],
+                "wires":[]})";
+        const auto r = e.setGraph(builtRequest(document, {2}));
+        CHECK_FALSE(r.ok);
+        CHECK(refusal(r) == ": slots: two system nodes name system 2");
+    }
+    SECTION("a node naming both paths, or neither") {
+        const auto both = e.setGraph(builtRequest(
+            R"({"nodes":[{"id":"sys-2","type":"rp.sameboy.gb","settings":{"core":1,"system":2,"rom":"res:)" +
+                std::to_string(mgbRom) + R"("}}],"wires":[]})", {2}));
+        CHECK(refusal(both) == "sys-2: settings-invalid: a system node names its parked core or its system and rom, not both "
+                              "({\"core\": 1}, {\"system\": 2})");
+        // A `system` field that is not a system id does not turn a node naming both into a `core` node: its own reason
+        // is the one the caller sees, whatever the two fields hold.
+        const auto bothOutOfRange = e.setGraph(builtRequest(
+            R"({"nodes":[{"id":"sys-2","type":"rp.sameboy.gb","settings":{"core":1,"system":99999999999,"rom":"res:)" +
+                std::to_string(mgbRom) + R"("}}],"wires":[]})", {2}));
+        CHECK(refusal(bothOutOfRange) ==
+              "sys-2: settings-invalid: a system node names its parked core or its system and rom, not both "
+              "({\"core\": 1}, {\"system\": 99999999999})");
+        const auto neither = e.setGraph(builtRequest(
+            R"({"nodes":[{"id":"sys-2","type":"rp.sameboy.gb","settings":{}}],"wires":[]})", {2}));
+        CHECK(refusal(neither) ==
+              "sys-2: settings-invalid: a system node names the system it builds ({\"system\": <id>, \"rom\": \"res:N\"}) or "
+              "the parked core it takes ({\"core\": <id>})");
+    }
+
+    // Every section: the running plan, its core, its slot and the pins are exactly what they were.
+    CHECK(e.coreLive(1));
+    CHECK(e.findSystem(1) != nullptr);
+    CHECK(e.liveSystemCount() == cores);
+    CHECK(e.registry().liveCount() == slots);
+    CHECK(e.resourcePinCount(mgbRom) == 1);
+}
+
+TEST_CASE("a full snapshot pool refuses the build, and the core it built is dropped", "[engine-graph][b2][systems]") {
+    Engine e(kRate);
+    const std::uint32_t rom = e.putResource("rom", readFile(RP_MGB_ROM_PATH));
+    std::vector<std::unique_ptr<EmptyCore>> stubs;
+    for (std::uint32_t i = 0; i < SnapshotRegistry::kSlotCount; ++i) {
+        stubs.push_back(std::make_unique<EmptyCore>(1000 + i));
+        REQUIRE(e.registry().claim(1000 + i, *stubs.back()));
+    }
+    const auto r = e.setGraph(builtRequest(builtDoc(3, rp::host::test::kGbType, rom), {3}));
+    CHECK(refusal(r) == "sys-3: activate-failed: the snapshot pool is full");
+    CHECK_FALSE(e.coreLive(3));
+    CHECK(e.liveSystemCount() == 0);
+    CHECK(e.registry().liveCount() == SnapshotRegistry::kSlotCount);
+    CHECK(e.resourcePinCount(rom) == 0);
+    for (std::uint32_t i = 0; i < SnapshotRegistry::kSlotCount; ++i) e.registry().release(1000 + i);
+    stubs.clear();
+    CHECK(e.registry().liveCount() == 0);
+    // The pool has room again: the same document builds.
+    CHECK(e.setGraph(builtRequest(builtDoc(3, rp::host::test::kGbType, rom), {3})).ok);
+    CHECK(e.coreLive(3));
+}
+
+TEST_CASE("a construct-time field is applied by building a new core, which an id an older one holds refuses",
+          "[engine-graph][b2][systems]") {
+    Engine e(kRate);
+    const std::uint32_t rom = e.putResource("rom", readFile(RP_BLIPTOASTER_ROM_PATH));
+    REQUIRE(e.setGraph(builtRequest(builtDoc(1, rp::host::test::kNesType, rom, R"("channelExportMode":"mix")"), {1})).ok);
+    auto* first = dynamic_cast<MesenNesSystem*>(e.findSystem(1));
+    REQUIRE(first != nullptr);
+    CHECK(first->config().channelExportMode == 0);
+    const std::size_t cores = e.liveSystemCount(), slots = e.registry().liveCount();
+
+    // The same id: the older instance still holds it, so the build refuses rather than sharing the core.
+    const auto sameId = e.setGraph(builtRequest(builtDoc(1, rp::host::test::kNesType, rom, R"("channelExportMode":"individualMono")"), {1}));
+    CHECK(refusal(sameId) == "sys-1: activate-failed: system 1 is live");
+    CHECK(e.findSystem(1) == first);  // the running plan still runs the same core
+    CHECK(first->config().channelExportMode == 0);
+
+    // A new id, as TS rebuilds: the new core is built with the new field.
+    REQUIRE(e.setGraph(builtRequest(builtDoc(2, rp::host::test::kNesType, rom, R"("channelExportMode":"individualMono")"), {2})).ok);
+    auto* second = dynamic_cast<MesenNesSystem*>(e.findSystem(2));
+    REQUIRE(second != nullptr);
+    CHECK(second->config().channelExportMode == 3);
+    // Quiescent, so publishing the new plan freed the old one with it: one core and one slot, as before the rebuild,
+    // and the ROM pinned once (the new plan's node, and only it).
+    CHECK(e.liveSystemCount() == cores);
+    CHECK(e.registry().liveCount() == slots);
+    CHECK(e.resourcePinCount(rom) == 1);
+    CHECK_FALSE(e.coreLive(1));
+}
+
+TEST_CASE("a refused plan destroys the core its earlier node built, down to the last slot and pin",
+          "[engine-graph][b2][systems]") {
+    Engine e(kRate);
+    const std::uint32_t mgbRom = e.putResource("rom", readFile(RP_MGB_ROM_PATH));
+    const std::uint32_t nesRom = e.putResource("rom", readFile(RP_BLIPTOASTER_ROM_PATH));
+    REQUIRE(mgbRom != 0);
+    REQUIRE(nesRom != 0);
+    const std::size_t cores = e.liveSystemCount(), slots = e.registry().liveCount();
+
+    // sys-1 builds a real core first, claimed and in the plan's table; sys-2 then finds NES bytes under a Game Boy node,
+    // so the plan is refused while sys-1's core is built. The unwind destroys it (the design's section 5 cleanup), which
+    // is the only place destroySystem runs before a published plan owns the core.
+    const std::string document =
+        R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":{"system":1,"rom":"res:)" +
+        std::to_string(mgbRom) + R"("}},{"id":"sys-2","type":"rp.sameboy.gb","settings":{"system":2,"rom":"res:)" +
+        std::to_string(nesRom) + R"("}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+            "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})";
+    const auto refused = e.setGraph(builtRequest(document, {1, 2}));
+    CHECK(refusal(refused) == "sys-2: activate-failed: the ROM is not a Game Boy ROM");
+    CHECK_FALSE(e.coreLive(1));
+    CHECK(e.findSystem(1) == nullptr);
+    CHECK(e.liveSystemCount() == cores);
+    CHECK(e.registry().liveCount() == slots);
+    CHECK(e.resourcePinCount(mgbRom) == 0);
+    CHECK(e.resourcePinCount(nesRom) == 0);
+
+    // The id and its slot went back: the same document without its bad node builds system 1 again. A slot left claimed
+    // by the unwound core would refuse this with "the snapshot pool is full", and a live-core map entry it left would
+    // refuse every later document naming system 1.
+    REQUIRE(e.setGraph(builtRequest(builtDoc(1, rp::host::test::kGbType, mgbRom), {1})).ok);
+    CHECK(e.coreLive(1));
+}
+
+TEST_CASE("a plan refused for a busy ring destroys the core its node built", "[engine-graph][b2][systems]") {
+    Engine e(kRate);
+    const std::uint32_t rom = e.putResource("rom", readFile(RP_MGB_ROM_PATH));
+    REQUIRE(rom != 0);
+    const std::size_t cores = e.liveSystemCount(), slots = e.registry().liveCount();
+    // The test thread is the audio thread from here: a push only queues, so the ring fills and the plan's swap finds
+    // no room after its node built and claimed its core.
+    e.setAudioThreadOwns(true);
+    DspCommand bpm;
+    bpm.kind = DspCommand::Kind::SetBpm;
+    bpm.setBpm = {120.0};
+    while (e.pushCommand(bpm)) {
+    }
+    const auto refused = e.setGraph(builtRequest(builtDoc(1, rp::host::test::kGbType, rom), {1}));
+    CHECK_FALSE(refused.ok);
+    REQUIRE(refused.errors.size() == 1);
+    CHECK(refused.errors[0].code == "busy");
+    CHECK_FALSE(e.coreLive(1));
+    CHECK(e.liveSystemCount() == cores);
+    CHECK(e.registry().liveCount() == slots);
+    CHECK(e.resourcePinCount(rom) == 0);
+
+    // With the ring drained, the same document builds and keeps its core.
+    e.drainCommands();
+    REQUIRE(e.setGraph(builtRequest(builtDoc(1, rp::host::test::kGbType, rom), {1})).ok);
+    e.drainCommands();
+    CHECK(e.coreLive(1));
+    e.setAudioThreadOwns(false);
+}
+
+TEST_CASE("a document changing only a param or a live knob keeps a system node's core",
+          "[engine-graph][b2][systems]") {
+    Engine e(kRate);
+    const std::uint32_t rom = e.putResource("rom", readFile(RP_MGB_ROM_PATH));
+    REQUIRE(rom != 0);
+    const char* gb = rp::host::test::kGbType;
+    REQUIRE(e.setGraph(builtRequest(builtDoc(1, gb, rom), {1})).ok);
+    auto* core = e.findSystem(1);
+    REQUIRE(core != nullptr);
+    CHECK(e.liveSystemCount() == 1);
+
+    // Only the params: the store republishes the document for every edit, and the node's rebuild_key is unchanged, so the
+    // instance is reused and its core never rebuilds (a rebuild under the same id would refuse "system 1 is live").
+    CHECK(e.setGraph(builtRequest(builtDoc(1, gb, rom, "", R"({"gain":-6})"), {1})).ok);
+    CHECK(e.findSystem(1) == core);
+    CHECK(e.liveSystemCount() == 1);
+
+    // Only a live knob: applied to the same core at its next block.
+    CHECK(e.setGraph(builtRequest(builtDoc(1, gb, rom, R"("highpass":"off")"), {1})).ok);
+    CHECK(e.findSystem(1) == core);
+    CHECK(e.liveSystemCount() == 1);
+
+    // The identical document again: nothing changed, nothing built.
+    CHECK(e.setGraph(builtRequest(builtDoc(1, gb, rom, R"("highpass":"off")"), {1})).ok);
+    CHECK(e.findSystem(1) == core);
+    CHECK(e.liveSystemCount() == 1);
+    CHECK(e.resourcePinCount(rom) == 1);
+
+    // A document mixing the two paths: the pre-fill puts the parked core in sys-2's slot, and sys-1's node keeps the
+    // core it built.
+    auto parked = mgb(2);
+    auto* parkedRaw = parked.get();
+    REQUIRE(e.parkCore(std::move(parked)));
+    const std::string mixed =
+        R"({"nodes":[{"id":"sys-1","type":"rp.sameboy.gb","settings":{"system":1,"rom":"res:)" +
+        std::to_string(rom) + R"("}},{"id":"sys-2","type":"rp.sameboy.gb","settings":{"core":2}},
+            {"id":"out","type":"rp.host.audio-out","settings":{"buses":[2,2]}}],
+            "wires":[{"from":"sys-1.mix","to":"out.out.1-2"},{"from":"sys-2.mix","to":"out.out.3-4"}]})";
+    const auto mix = e.setGraph(builtRequest(mixed, {1, 2}));
+    CHECK(mix.ok);
+    CHECK(e.findSystem(1) == core);
+    CHECK(e.findSystem(2) == parkedRaw);
+    CHECK(e.liveSystemCount() == 2);
+    CHECK(e.registry().liveCount() == 2);
+    CHECK(e.resourcePinCount(rom) == 1);
+}
+
+TEST_CASE("a build outside the setGraph that activates it is refused rather than joining the live cores",
+          "[engine-graph][b2][systems]") {
+    Engine e(kRate);
+    const std::uint32_t rom = e.putResource("rom", readFile(RP_MGB_ROM_PATH));
+    REQUIRE(rom != 0);
+    SystemBuildRequest request;
+    request.rom = readFile(RP_MGB_ROM_PATH);
+    request.config = SameBoyConfig{};
+    std::string why;
+    CHECK(e.buildSystem(1, request, &why) == nullptr);
+    CHECK(why.find("setGraph") != std::string::npos);
+    CHECK_FALSE(e.coreLive(1));
+    CHECK(e.liveSystemCount() == 0);
+    CHECK(e.registry().liveCount() == 0);
+    CHECK(e.resourcePinCount(rom) == 0);
+}
+
+TEST_CASE("a core node's romName and construct-time fields are not build inputs, so changing one keeps its core",
+          "[engine-graph][b2][systems]") {
+    // A `core` node takes a core already built from buildCore's spec, so a field only a builder reads changes nothing on
+    // it. Carrying one in rebuild_key would rebuild on the next document that dropped it, and the fresh instance would
+    // find no parked core to take.
+    SECTION("a Game Boy's romName") {
+        Engine e(kRate);
+        REQUIRE(e.parkCore(mgb(1)));
+        REQUIRE(e.setGraph(builtRequest(coreDoc(1, rp::host::test::kGbType, R"("romName":"mGB")"), {1})).ok);
+        auto* core = e.findSystem(1);
+        REQUIRE(core != nullptr);
+        const auto dropped = e.setGraph(builtRequest(coreDoc(1, rp::host::test::kGbType), {1}));
+        CHECK(dropped.ok);
+        CHECK(e.findSystem(1) == core);
+        CHECK(e.liveSystemCount() == 1);
+        CHECK(e.registry().liveCount() == 1);
+    }
+    SECTION("a NES construct-time field") {
+        Engine e(kRate);
+        REQUIRE(e.parkCore(bliptoaster(1)));
+        REQUIRE(e.setGraph(builtRequest(coreDoc(1, rp::host::test::kNesType, R"("channelExportMode":"pinsPlusRef")"), {1})).ok);
+        auto* core = e.findSystem(1);
+        REQUIRE(core != nullptr);
+        const auto dropped = e.setGraph(builtRequest(coreDoc(1, rp::host::test::kNesType), {1}));
+        CHECK(dropped.ok);
+        CHECK(e.findSystem(1) == core);
+    }
+}
+
+TEST_CASE("a system built from resources joins and leaves while an audio thread runs its blocks",
+          "[engine-graph][b2][systems][sanitizer]") {
+    Engine e(kRate);
+    const std::uint32_t rom = e.putResource("rom", readFile(RP_MGB_ROM_PATH));
+    REQUIRE(rom != 0);
+    e.setAudioThreadOwns(true);
+    std::atomic<bool> running{true};
+    std::atomic<int>  blocks{0};
+    std::thread       audio([&] {
+        std::vector<std::vector<float>> lanes(2, std::vector<float>(512, 0.0f));
+        float* outs[2] = {lanes[0].data(), lanes[1].data()};
+        while (running.load(std::memory_order_acquire)) {
+            e.drainCommands();
+            e.processBlock(512, outs, 2);
+            blocks.fetch_add(1, std::memory_order_release);
+        }
+    });
+    auto waitBlocks = [&](int n) {
+        const int seen = blocks.load(std::memory_order_acquire);
+        while (blocks.load(std::memory_order_acquire) < seen + n) std::this_thread::yield();
+    };
+    for (SystemId id = 1; id <= 3; ++id) {
+        REQUIRE(e.setGraph(builtRequest(builtDoc(id, rp::host::test::kGbType, rom), {id})).ok);
+        // The plan the audio thread adopts is the block thread's view, so the control thread watches the live cores
+        // instead: the build put this one there before the plan was published.
+        CHECK(e.coreLive(id));
+        waitBlocks(2);
+        REQUIRE(e.setGraph(builtRequest(rp::host::test::stereoDocument({}), {})).ok);
+        // The audio thread hands the old plan back on its next block; the core leaves with it.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (e.coreLive(id) && std::chrono::steady_clock::now() < deadline) {
+            e.reclaim();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK_FALSE(e.coreLive(id));
+        waitBlocks(2);
+    }
+    running.store(false, std::memory_order_release);
+    audio.join();
+    e.setAudioThreadOwns(false);
+    e.reclaim();
+    CHECK(e.liveSystemCount() == 0);
+    CHECK(e.registry().liveCount() == 0);
+    CHECK(e.resourcePinCount(rom) == 0);
+}

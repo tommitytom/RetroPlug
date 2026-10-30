@@ -159,7 +159,8 @@ std::unique_ptr<SystemBase> build(const GoldenSystem& s) {
     return core;
 }
 
-// The settings fields each system node type reads, from its descriptor's schema: the properties of its one $defs entry.
+// The settings fields each system node type reads, from its descriptor's schema: the properties of the $defs entry
+// that is the settings struct itself (the others are the resource refs its fields name).
 const std::map<std::string, std::set<std::string>>& systemSettingsFields() {
     static const std::map<std::string, std::set<std::string>> fields = [] {
         std::map<std::string, std::set<std::string>> out;
@@ -172,8 +173,11 @@ const std::map<std::string, std::set<std::string>>& systemSettingsFields() {
                 const auto id = object->get("id")->to_string();
                 const auto defs = object->get("settings")->to_object()->get("$defs")->to_object();
                 REQUIRE(defs);
-                REQUIRE(defs->size() == 1);
-                const auto properties = defs->begin()->second.to_object()->get("properties").and_then(
+                std::optional<rfl::Generic> settingsDef;
+                for (const auto& [name, def] : *defs)
+                    if (const auto entry = def.to_object(); entry && entry->get("properties")) settingsDef = def;
+                REQUIRE(settingsDef);
+                const auto properties = settingsDef->to_object()->get("properties").and_then(
                     [](const rfl::Generic& g) { return g.to_object(); });
                 REQUIRE(properties);
                 for (const auto& [field, _] : *properties) out[*id].insert(field);

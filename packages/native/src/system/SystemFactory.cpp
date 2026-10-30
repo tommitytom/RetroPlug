@@ -12,3 +12,16 @@ std::unique_ptr<SystemBase> SystemFactory::build(SystemId id, const SystemBuildS
     if (it == backends_.end()) return nullptr;  // unknown core
     return it->second->build(id, spec, sampleRate);
 }
+
+std::unique_ptr<SystemBase> SystemFactory::build(SystemId id, const SystemBuildRequest& request,
+                                                 double sampleRate, std::string* why) const {
+    // Which backend serves a request is the console its config names: one Mesen core builds three consoles, one
+    // SameBoy core builds the Game Boy.
+    const char* core = std::holds_alternative<SameBoyConfig>(request.config) ? "sameboy" : "mesen";
+    const auto it = backends_.find(core);
+    if (it == backends_.end()) {
+        if (why) *why = std::string("the host has no ") + core + " core";
+        return nullptr;
+    }
+    return it->second->buildTyped(id, request, sampleRate, why);
+}

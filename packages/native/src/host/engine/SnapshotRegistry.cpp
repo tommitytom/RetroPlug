@@ -249,3 +249,10 @@ void SnapshotRegistry::release(SystemId id) {
     s->sramFromCore = false;
     s->sampleAccum = 0;
 }
+
+std::size_t SnapshotRegistry::liveCount() const {
+    std::size_t n = 0;
+    for (const Slot& s : slots_)
+        if (s.id.load(std::memory_order_acquire) != 0) ++n;
+    return n;
+}
