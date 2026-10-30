@@ -197,15 +197,16 @@ test("a knob edit reaches the engine as a document or a param, and reload-on-ROM
   sys.setRoleConfig(a, "lsdj-sync", { mode: LsdjSyncMode.MasterSync });
   sys.setRoleConfig(c, "mesen", { region: "ntsc", expansionVolume: 150, removeSpriteLimit: true });
   sys.setRoleConfig(c, "mesen", { expansionVolume: 120 });
-  // The gain and the last expansion volume set live, every other edit a document: nothing else reaches the backend.
-  expect(be.log.slice(from).filter((m) => m !== "setGraph")).toEqual(["setParam", "setParam"]);
+  // The gain and the last expansion volume set live, every other edit a document, in that order: nothing else reaches
+  // the backend.
+  expect(be.log.slice(from)).toEqual(["setParam", "setGraph", "setGraph", "setGraph", "setParam"]);
   // reload-on-ROM-change is TS's alone (the file watcher): it reaches no backend at all.
   expect(sys.view()[0].settings.reloadOnRomChange).toBe(true);
 });
 
 test("a loaded project's saved gain and core config reach its system's node in the load's document", () => {
-  // Nothing else carries a saved gain to a core, which is built at 0 dB: before the document carried it, a loaded
-  // project played at 0 dB until its gain was edited.
+  // Nothing else carries a saved gain to a core, which is built at 0 dB: the document is what makes it play at the
+  // gain it was saved with.
   const { be, p, sys } = project();
   const a = sys.addSystem("/roms/a.gb")!;
   const c = sys.addSystem("/roms/c.nes")!;
