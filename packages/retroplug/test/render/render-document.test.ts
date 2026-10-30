@@ -11,9 +11,12 @@ import { buildAppRegistry } from "../../src/appHost";
 import { runRenderJob, type RenderContext, type RenderOpts } from "../../src/render";
 import { gbRom } from "../systems/fixtures";
 
-/** The driver calls a fixed render makes, answering silence. */
-const silentAudio = () => ({
-  renderAudio: (ms: number) => new Float32Array(Math.round((ms * 44100) / 1000) * 2),
+/** The driver calls a fixed render makes, answering silence. Typed to the context's own driver type, so a render that
+ *  starts calling another method fails to compile here rather than at runtime. */
+const silence = (ms: number): Float32Array => new Float32Array(Math.round((ms * 44100) / 1000) * 2);
+const silentAudio = (): RenderContext["audio"] => ({
+  renderAudio: silence,
+  renderAudioPerChannel: (_id: number, ms: number) => [silence(ms)],
   sampleRate: () => 44100,
   setSampleRate: () => true,
   setBpm: () => true,
@@ -37,7 +40,7 @@ test("a render's document carries the instance's gain as its system node's gain 
   const be = new MockBackend("/config");
   be.seed("/roms/song.gb", gbRom());
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
-  runRenderJob({ backend: be, audio: silentAudio(), project } as unknown as RenderContext, opts({ gainDb: -6 }), {
+  runRenderJob({ backend: be, audio: silentAudio(), project }, opts({ gainDb: -6 }), {
     log: () => {},
     warn: () => {},
   });

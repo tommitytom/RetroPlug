@@ -44,12 +44,20 @@ export interface RenderOpts {
   gainDb?: number; // the instance's own gain (CommonSettings.gainDb); 0 / absent = unity
 }
 
+/** The driver calls a render makes: the subset of `AudioDriver` a `RenderContext` needs. Naming it is what keeps a
+ *  stub a checked stand-in: a render that starts driving another method must add it here, and every stub then fails to
+ *  compile until it answers it. */
+export type RenderAudioDriver = Pick<
+  AudioDriver,
+  "pressButton" | "renderAudio" | "renderAudioPerChannel" | "sampleRate" | "setSampleRate" | "setBpm" | "setTransport"
+>;
+
 /** The subset of a booted control plane the render orchestration drives. `Session` (cli/session.ts)
  *  satisfies this structurally; the worker constructs the same fields over its own backend. */
 export interface RenderContext {
   backend: Backend; // readFile / readCpu + the WavBackend writers (writeFile / appendFile / writeFileAt)
   project: ProjectStore;
-  audio: AudioDriver;
+  audio: RenderAudioDriver;
 }
 
 /** Host callbacks. All optional so the CLI passes none (logging defaults to console, no progress/cancel).
