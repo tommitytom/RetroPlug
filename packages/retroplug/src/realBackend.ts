@@ -6,7 +6,7 @@
 // free.
 //
 // The client is split by CAPABILITY into three factories — host (fs/config/codec/sav + the
-// file dialog), emulator (lifecycle / live config / input / reads), and debug (live-core
+// file dialog), emulator (lifecycle / live params / input / reads), and debug (live-core
 // inspection) — mirroring the native RPC facets a host binds. All three resolve the SAME
 // __rpcSend channel; the split is about which subset a consumer depends on, so a store that
 // only needs the filesystem can't reach emulator or debug methods. `createRealBackend`

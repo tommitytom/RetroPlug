@@ -136,8 +136,8 @@ constexpr std::size_t kMaxOutputs = 16;
 // The params (docs/modular-graph-phase-c2-design.md section 3): what is worth playing, automating or modulating, so
 // each is also a control input, its value in the document and its live edits through Engine::setParam. Every system
 // node has `gain`, in dB over the range the store clamps a gain to (systemSettings.ts GAIN_MIN / GAIN_MAX); a NES has
-// `expansionVolume` too, its cartridge sound chip's level in whole percent of unity, as its core takes it. Each range is
-// one constant, used by the param's declaration and by the node's own clamp of a wire-driven value.
+// `expansionVolume` too, its cartridge sound chip's level in whole percent of unity, as its core takes it. Each range
+// is one constant, used by the param's declaration and by the node's own clamp of a wire-driven value.
 constexpr double kGainMinDb = -90.0;
 constexpr double kGainMaxDb = 12.0;
 constexpr int    kExpansionVolumeMin = 0;
@@ -425,12 +425,12 @@ struct GameBoy : SystemNode<GameBoy, SameBoySystem, GameBoySettings> {
             if (GameBoy* gb = rp::peer_as<GameBoy>(p)) core->linkPeers_.push_back(gb->core);
     }
 
-    // The fast boot first, which waits for the next restart and so is what a model's restart boots with: the edits
-    // that land in one block (several documents published between two blocks commit together) restart the core as if
-    // made one at a time, a fast boot edit before a model edit included. Then the rest in the order the store's role
-    // config lists them, the capture last. The capture lands at the start of the first block of the plan that carries
-    // it, the block rp.lsdj.serial-out first runs in its new mode, so no byte captured in one mode is decoded in the
-    // other.
+    // The fast boot first, which waits for the next restart and so is what a model's restart boots with: a block that
+    // carries both (several documents published between two blocks commit together) restarts on the new fast boot,
+    // where making the edits one at a time would not have when the fast boot was published after the model. Then the
+    // rest in the order the store's role config lists them, the capture last. The capture lands at the start of the
+    // first block of the plan that carries it, the block rp.lsdj.serial-out first runs in its new mode, so no byte
+    // captured in one mode is decoded in the other.
     void apply(const Settings& to, const Settings& from) noexcept {
         if (moved(to.fastBoot, from.fastBoot)) core->setFastBoot(*to.fastBoot);
         if (moved(to.model, from.model)) core->setModel(knobs::valueOf<SameBoyModel>(*to.model));

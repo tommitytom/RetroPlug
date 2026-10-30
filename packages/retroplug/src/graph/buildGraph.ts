@@ -59,9 +59,10 @@ export interface GraphSystem {
    *  whose node would write an input an earlier role's does; ProtocolRole says who parsed the config). */
   pipeline: ProtocolRole[];
   /** The config of the system's core-config role, the one whose kind is its core (`sameboy` or `mesen`, coreRoles.ts):
-   *  where its node's setting fields and a NES's expansionVolume come from (systemKnobs). Absent for a system with none
-   *  (a DirectGraph's, a store's with no registry, the B1 goldens' models), whose node carries none of them, so its core
-   *  keeps the settings it was built with; the params it does not name still start at their defaults at its first block. */
+   *  where its node's setting fields and a NES's expansionVolume come from (systemKnobs). Absent for a system with
+   *  none (a DirectGraph's, a store's with no registry, the B1 goldens' models), whose node carries none of them, so
+   *  its core keeps the settings it was built with; the params it does not name still start at their defaults at its
+   *  first block. */
   coreConfig?: Readonly<Record<string, unknown>>;
   /** The system's gain in dB (CommonSettings.gainDb), its node's `gain` param. Absent places no value, which leaves
    *  the param's stream where it is: at its default, 0 dB, on a new node. */

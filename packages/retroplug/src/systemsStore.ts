@@ -173,7 +173,12 @@ export class SystemsStore {
   graphSystems(): GraphSystem[] {
     return this.entries.map((e) => {
       const coreConfig = e.roles.find((r) => r.kind === e.core)?.config;
-      const system: GraphSystem = { id: e.id, ...e.built, pipeline: protocolPipeline(e.roles), gainDb: e.settings.gainDb };
+      const system: GraphSystem = {
+        id: e.id,
+        ...e.built,
+        pipeline: protocolPipeline(e.roles),
+        gainDb: e.settings.gainDb,
+      };
       return coreConfig ? { ...system, coreConfig } : system;
     });
   }
@@ -586,7 +591,8 @@ export class SystemsStore {
       const before = systemKnobs({ type: e.built.type, coreConfig: was });
       const after = systemKnobs({ type: e.built.type, coreConfig: config });
       settingMoved = canonicalJson(before.settings) !== canonicalJson(after.settings);
-      for (const [param, value] of Object.entries(after.params)) if (before.params[param] !== value) params.push([param, value]);
+      for (const [param, value] of Object.entries(after.params))
+        if (before.params[param] !== value) params.push([param, value]);
     }
     if (rewired || settingMoved || protocolNodeOf(roleKind) !== undefined) this.onGraphChange(false);
     else if (params.length > 0) {

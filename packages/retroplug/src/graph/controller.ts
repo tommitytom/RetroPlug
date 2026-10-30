@@ -89,7 +89,10 @@ export type SerialOutCaptureMode = "off" | "listen" | "drive";
  *  bytes it is sent. And so is a pipeline that places no lsdj-sync, whatever a role left out of it says: what a
  *  capture delivers is decoded by that role's rp.lsdj.serial-out node, which is not placed, and a driving core would
  *  clock the serial port under the bytes the placed role writes. */
-export function serialOutCaptureFor(pipeline: readonly ProtocolRole[], forced?: string | null): SerialOutCaptureMode {
+export function serialOutCaptureFor(
+  pipeline: readonly ProtocolRole[],
+  forced?: LsdjSyncMode | null,
+): SerialOutCaptureMode {
   const role = pipeline.find((r) => r.node === "rp.lsdj.sync");
   if (!role) return "off";
   const mode = forced ?? (role.config as { mode?: unknown }).mode;

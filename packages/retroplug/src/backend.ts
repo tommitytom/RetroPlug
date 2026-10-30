@@ -151,11 +151,11 @@ export interface Backend {
   // volume as its node's params, whose live edits go through setParam with no publish
   // (docs/modular-graph-phase-c2-design.md section 5).
 
-  /** A live change to a param of a node the running plan places, applied at the start of the next block, clamped to
-   *  the param's range (and rounded for an int, enum or bool). The store sets a system's `gain` (dB) and a NES's
-   *  `expansionVolume` (percent) on its node, `sys-<id>`, this way; the next document it publishes carries the same
-   *  value. False for a node or a param the running plan does not have (a node the next document places takes its
-   *  value from that document), a NaN, a param a wire drives, or a full command ring. */
+  /** A live change to a param of a node the last published plan places, applied at the start of the next block,
+   *  clamped to the param's range (and rounded for an int, enum or bool). The store sets a system's `gain` (dB) and a
+   *  NES's `expansionVolume` (percent) on its node, `sys-<id>`, this way; the next document it publishes carries the
+   *  same value. False for a node or a param that plan does not have (a node the next document places takes its value
+   *  from that document), a NaN, a param a wire drives, or a full command ring. */
   setParam(nodeId: string, paramId: string, value: number): boolean;
 
   // --- Live emulator input ------------------------------------------------
