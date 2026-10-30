@@ -114,7 +114,7 @@ world currently owns the `Engine`, and therefore who drains the command ring.
         ┌────────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
         │  command ring          │  │  SnapshotRegistry    │  │  release ring        │
         │  GraphHost: plan       │  │  frame/state/SRAM    │  │  GraphHost: the      │
-        │  swaps + DspCommands,  │  │  (owned triple-bufs) │  │  replaced plans      │
+        │  swaps + commands,     │  │  (owned triple-bufs) │  │  replaced plans      │
         │  in push order         │  │                      │  │  (PlanStorage*)      │
         └────────────────────────┘  └──────────────────────┘  └──────────────────────┘
                          │                    ▲                    ▲
@@ -142,43 +142,53 @@ All three are built on the shared-core transport primitives:
 Every control-plane edit lands on ONE ring: the `SpscRing<Command, 256>` inside the Engine's
 [`GraphHost`](../packages/native/src/graph/GraphHost.hpp)
 ([modular-graph-phase-b1-design.md](../docs/modular-graph-phase-b1-design.md) section 5). An edit
-arrives one of two ways:
+arrives one of three ways:
 
-- **Structure** (which systems run, in what order and wired how, a Game Boy's link cable, the host's
-  output shape, and the script nodes, each with its settings: ahead of the systems the MIDI routing, the
-  controller session and each role's protocol node, and after its Game Boy an LSDj's serial-out decoder) is
-  a graph document TS builds
+- **Structure** (which systems run, in what order and wired how, a Game Boy's link cable, each system
+  node's settings, which are its core's knobs (a Game Boy's model, palette and the serial-out capture its LSDj
+  needs, a NES's region), and its params' values, the host's output shape, and the script nodes, each with its
+  settings: ahead of the systems the MIDI routing, the controller session and each role's protocol node, and
+  after its Game Boy an LSDj's serial-out decoder) is a graph document TS builds
   ([modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md),
-  [modular-graph-phase-b3b-design.md](../docs/modular-graph-phase-b3b-design.md)). The stores call
+  [modular-graph-phase-b3b-design.md](../docs/modular-graph-phase-b3b-design.md),
+  [modular-graph-phase-c2-design.md](../docs/modular-graph-phase-c2-design.md)). The stores call
   [`EngineGraph.publish`](../packages/retroplug/src/engineGraph.ts) once at the end of every edit that
-  changes what the document holds (a structural edit, the config of a role with a protocol node, the MIDI
-  routing, the controller); it builds the document with
+  changes what the document holds (a structural edit, the config of a role with a protocol node, a setting
+  of a system's core config, the MIDI routing, the controller); it builds the document with
   [`buildGraph`](../packages/retroplug/src/graph/buildGraph.ts) and sends it with the `setGraph` RPC,
   which `EngineRpcService::setGraph` hands straight to `Engine::setGraph`, not through the invoker.
   `Engine::setGraph` builds the plan's `SystemTable` from the request's slots and the live cores
   (parked by `buildCore`, or placed by an earlier plan), and calls `GraphHost::setGraph`, which plans
   the document on the control thread (every layout checked before any instance is created, every new
   instance created and activated) and pushes the plan onto the ring as a plan swap.
+- **A param's live value** (a system's gain, a NES's expansion volume: what is worth playing, automating
+  or modulating) goes through `setParam`, which `EngineRpcService::setParam` hands to `Engine::setParam`, not
+  through the invoker either: `GraphHost::setParam` clamps the value to the param's range and pushes it onto
+  the ring as a param command, for a node the last published plan places, to land at the start of the next
+  block. The next document the stores publish carries the same value, so the two never disagree.
 - **Everything else** (stage host MIDI, controller MIDI or one system's MIDI, set bpm / transport /
-  ppq, apply a config field, press a button, write RAM) goes through the one
+  ppq, press a button, write RAM) goes through the one
   [`QueuedInvoker`](../packages/native/src/host/engine/EngineInvoker.hpp), which packs it into a POD
   [`DspCommand`](../packages/native/src/host/engine/DspCommand.hpp) and pushes it onto the same ring
   as an opaque host command (`GraphHost::pushHostCommand`).
 
-At drain the ring is applied **in push order**: a plan swap adopts its plan, and a host command goes
-to the Engine's handler, which applies it against the `SystemTable` of the plan current at that
-point. A command pushed after a structural edit therefore sees the new systems and one pushed before
-it sees the old, even when both plans are adopted in the same drain.
+At drain the ring is applied **in push order**: a plan swap adopts its plan, a param command lands in
+its param's stream, and a host command goes to the Engine's handler, which applies it against the
+`SystemTable` of the plan current at that point. A command pushed after a structural edit therefore sees
+the new systems and one pushed before it sees the old, even when both plans are adopted in the same drain.
 
 `setGraph` waits (`GraphHost::waitForCommits`, up to a 2 s timeout, then `busy`) only while a plan it
 published carries a settings commit to a node type whose prepare reads the node's current settings,
 one without `RP_TYPE_STATELESS_PREPARE` (`PlanStorage::awaitsAdoption`): the planner must not ask
 such a node to prepare again while its last commit may still be landing. The commits the engine's
 documents carry are the script nodes', whenever their settings change (a system added or removed, which
-moves the routing node's outputs, a role's config, the MIDI routing, the controller), and the cart
-mirror's, and both prepare statelessly (every script type does); `rp.host.midi-out` swaps or rebuilds,
-statelessly too, and the other C++ nodes take each settings change they meet as a rebuild. So `setGraph` never waits on the audio thread: several plans can sit in the ring at once,
-adopted in push order in one drain. What bounds edits is the ring itself. While no block runs with
+moves the routing node's outputs, a role's config, the MIDI routing, the controller), the system nodes',
+whenever a knob moves (a model, a palette, an LSDj's capture), and the cart mirror's, and all of them prepare
+statelessly: every script type does, and a system node rebuilds only for a new core, which it compares
+against the core it was created with (node.hpp's `rebuild_key`), never against settings a commit writes.
+`rp.host.midi-out` swaps or rebuilds, statelessly too, and the other C++ nodes take each settings change
+they meet as a rebuild. So `setGraph` never waits on the audio thread: several plans can sit in the ring
+at once, adopted in push order in one drain. What bounds edits is the ring itself. While no block runs with
 the audio thread still owning the engine (a host that stops calling process while the plugin stays
 active, as CLAP's `stop_processing` allows), each edit queues one plan, holding its buffers, and once
 the ring is full (255 usable slots, shared with the queued commands) `setGraph` answers `busy`.
@@ -211,25 +221,24 @@ outputs before the handoff.
 
 Producer methods pack a command and push. Lightweight commands are pure POD: `stageMidi` (a message
 of up to 4 bytes rides inline), `stageControllerMidi`, `setBpm`, `setTransport`, `setPpq`,
-`applyConfigField`, `pressButton`; if the ring is full they are simply dropped (a lost edge, never a
-leak). Heavy commands carry an **owning heap payload**: `writeRam`, and a `stageMidi` /
-`stageSystemMidi` longer than 4 bytes, box a `new`-ed buffer (deleted after apply or, if the push
-fails, immediately). `stageControllerMidi` is inline only: a message longer than 4 bytes is refused
+`pressButton`; if the ring is full they are simply dropped (a lost edge, never a leak), as is a
+`setParam`'s, which answers false then. Heavy commands carry an **owning heap payload**: `writeRam`,
+and a `stageMidi` / `stageSystemMidi` longer than 4 bytes, box a `new`-ed buffer (deleted after apply
+or, if the push fails, immediately). `stageControllerMidi` is inline only: a message longer than 4 bytes is refused
 before it is pushed. A staged message lands in the engine's staging at drain, where the plan's
 `rp.host.midi-in` / `controller-in` take it at the top of the next block.
 
-Structure never rides the ring as a command. A `setGraph` request carries a `tap` when its edit
-re-arms the NES channel tap (every edit that builds or drops a core, and every routing change, even to
-the mode already set), and the plan's swap command carries it as a `SyncTap` trailer (dispatched in the
-same pop, right after the plan is adopted), which restores whatever is armed and then arms the tap the
-request names against the plan just adopted
-([10-multichannel-audio-out.md](10-multichannel-audio-out.md) section 4). The `LinkGroup` config field
-goes both ways: the field reaches the core as a command, and the store republishes the graph with the
-cable. A document that does not plan (refused, or a full ring) changes nothing: a core a node of the
-refused plan had taken goes back to parked, and the store keeps its model. A core parked for it waits
-for the next document that plans, which frees it unless it places it. The store's next publish is sent
-even when its document matches the running one, so the refused document sent again places those cores
-once it plans.
+Structure never rides the ring as a command. A `setGraph` request carries a `tap` when its edit re-arms
+the NES channel tap (every edit that builds or drops a core, and every routing change, even to the mode
+already set), and the plan's swap command carries it as a `SyncTap` trailer (dispatched in the same pop,
+right after the plan is adopted), which restores whatever is armed and then arms the tap the request names
+against the plan just adopted ([10-multichannel-audio-out.md](10-multichannel-audio-out.md) section 4). A
+Game Boy's link group is wiring alone: the store publishes the graph with the cable (the `linkGroupId` a
+core decodes at its build is only what `buildCore` reports back). A document that does not plan (refused,
+or a full ring) changes nothing: a core a node of the refused plan had taken goes back to parked, and the
+store keeps its model. A core parked for it waits for the next document that plans, which frees it unless
+it places it. The store's next publish is sent even when its document matches the running one, so the
+refused document sent again places those cores once it plans.
 
 The handler (`Engine::onHostCommand` → `applyCommand`) switches on `DspCommand::Kind`, applies each
 command and deletes its owning payload. The block drivers (the plugin's `run()`, the test host's
@@ -387,15 +396,16 @@ A pack's audio side runs on **both** threads over its lifetime (the control thre
 guard to the current thread with `JS_UpdateStackTop` before entering JS, or a call from a
 different stack throws a spurious overflow. The control side does the same.
 
-`Engine::processBlock` runs the plan: `rp.host.midi-in` and `rp.host.controller-in` take what the
-hosts staged; the routing node fans the host MIDI out to the systems, the controller session reads the
-surface, and each system's protocol nodes read their routed MIDI (risa and smsggdj read only the
-transport) and send that system node its inputs; the system nodes apply those inputs and run their cores;
-an LSDj's serial-out decoder reads what its Game Boy captured on its link port in that block and decodes
-it to host MIDI, each message at its byte's frame; `rp.n8.cart-mirror` hands a physical N8 what the first
-NES was sent, and `rp.host.midi-out` / `controller-out` hand the host the script nodes' MIDI (merged by
-frame) and control-surface output; the mixing nodes and `rp.host.audio-out` fill the host's buffers. Then
-`registry_.publishSystem(...)` runs for each system: the one place every driver funnels the block
+`Engine::processBlock` runs the plan: `rp.host.midi-in` and `rp.host.controller-in` take what the hosts
+staged; the routing node fans the host MIDI out to the systems, the controller session reads the surface,
+and each system's protocol nodes read their routed MIDI (risa and smsggdj read only the transport) and
+send that system node its inputs; the system nodes give their cores what moved of their settings and
+params, then those inputs, and run them; an LSDj's serial-out decoder reads what its Game Boy captured on
+its link port in that block and decodes it to host MIDI, each message at its byte's frame;
+`rp.n8.cart-mirror` hands a physical N8 what the first NES was sent, and `rp.host.midi-out` /
+`controller-out` hand the host the script nodes' MIDI (merged by frame) and control-surface output; the
+mixing nodes and `rp.host.audio-out` fill the host's buffers. Then `registry_.publishSystem(...)` runs for
+each system: the one place every driver funnels the block
 ([`Engine.cpp`](../packages/native/src/host/engine/Engine.cpp); the full order is in
 [02-native-host.md](02-native-host.md)). The host MIDI out (LSDj's MI.OUT and master sync, the
 controller's launches to a real Game Boy), through `rp.host.midi-out`, is drained after the block by the
@@ -410,9 +420,9 @@ The load-bearing rules. Breaking any one of them reintroduces a data race, a use
 lost mutation.
 
 1. **The control plane and the audio thread never touch each other's memory directly.** All
-   control→audio change is a plan or a `DspCommand` on the one command ring, applied in push order;
-   a command is applied against the plan current at its position in the ring. All audio→control
-   observation is a registry read or a release-ring handback. Nothing else crosses.
+   control→audio change is a plan, a param's value or a `DspCommand` on the one command ring, applied in
+   push order; a command is applied against the plan current at its position in the ring. All
+   audio→control observation is a registry read or a release-ring handback. Nothing else crosses.
 
 2. **`audioThreadOwns_` is the single source of truth for who owns the `Engine`.** It is written
    only on the control thread: set true **before** the audio thread starts, cleared **after** it

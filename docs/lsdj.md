@@ -60,8 +60,8 @@ const spec = { romPath: LSDJ, platform: "gb", core: "sameboy",
                embeddedRom: "", savPath: null, statePath: null, sramBytes: sav } as const;
 graph.add(spec, 1);                                      // the leader
 graph.add(spec, 2);                                      // the follower: the same SYNC=LSDJ song
-graph.applyRoleConfig(1, "sameboy", { linkGroupId: 1 }); // link group 1: a group of one is no cable yet
-graph.applyRoleConfig(2, "sameboy", { linkGroupId: 1 }); // the second member: the graph wires the cable
+graph.setCoreConfig(1, { linkGroupId: 1 });              // link group 1: a group of one is no cable yet
+graph.setCoreConfig(2, { linkGroupId: 1 });              // the second member: the graph wires the cable
 
 audio.renderAudio(6000);                                 // MILLISECONDS of emulated audio, not frames
 audio.pressButton(1, 7 /* Start */, true);               // START on the leader only
@@ -92,8 +92,10 @@ The two config surfaces are distinct and easy to confuse:
   the role's two protocol nodes: [lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts) before the
   Game Boy, host to cart, and [lsdjSerialOut.ts](../packages/retroplug/src/script/nodes/lsdjSerialOut.ts)
   after it, MI.OUT and master sync from the cart to the host). A feature role: it is set with the store's
-  `setRoleConfig` and handed to both nodes as their settings in the graph the project publishes, while
-  native's `applyRoleConfig` takes only the `sameboy` and `mesen` system roles (any other kind returns false).
+  `setRoleConfig` and handed to both nodes as their settings in the graph the project publishes, which also
+  gives the Game Boy's own node the serial-out capture that mode needs (below). The core's own knobs, the
+  `sameboy` system role's model, highpass and display group, are that node's settings too, and its link group is
+  the graph's cable (a `DirectGraph` sets them with `setCoreConfig`, in the role's labels).
 
 A test that builds through a `DirectGraph` has no store, so it hands the graph a system's roles and the
 MIDI routing itself, each call a publish of the graph that places their nodes. Until a routing mode is
@@ -103,7 +105,7 @@ set, no host MIDI reaches any system. From
 ```ts
 graph.setMidiRouting("sendToAll");                                                 // host MIDI to every system
 graph.setPipeline(id, [{ kind: "lsdj-sync", config: { mode: "masterSync" } }]);    // places rp.lsdj.sync and rp.lsdj.serial-out
-be.setSerialOutCapture(id, "listen"); // the store sets it ("drive" for midiOut, "listen" for masterSync); a DirectGraph caller does it itself
+// ...and the same document sets the Game Boy node's capture to "listen" ("drive" for midiOut), as a store's does
 ```
 
 A `DirectGraph` hands each node its config as given, where a store hands the config the role's schema
@@ -580,8 +582,10 @@ mode selected" indicator on the aboy build. Read the SYNC field text (or the
 
 ### Master mode (MI.OUT) verification
 
-Serial-out capture is a mode the store sets from the `lsdj-sync` mode (`serialOutCaptureFor` in
-[systemsStore.ts](../packages/retroplug/src/systemsStore.ts)): `drive` for MI.OUT, `listen` for master sync.
+Serial-out capture is a setting of the Game Boy's node, which `buildGraph` writes for the mode the system's
+`lsdj-sync` node runs (`serialOutCaptureFor` in [graph/controller.ts](../packages/retroplug/src/graph/controller.ts),
+the MI.MAP controller's forced mode included): `drive` for MI.OUT, `listen` for master sync, `off` otherwise. It
+rides the document that hands the decoder its mode, so a mode switch changes both in the same block.
 The captured bytes reach the system's `rp.lsdj.serial-out` node, placed after the Game Boy, over a forward
 wire from the Game Boy node's `serialOut`, in the block the core captured them, each at the frame its core
 completed it, and the decoders send each message in that same block, at its byte's frame:

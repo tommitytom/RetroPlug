@@ -84,7 +84,9 @@ so concurrent core construction can't race.
   role's schema DEFAULTS and render a PAL project at NTSC, a Game Boy as the wrong model, a replaced DMC kit
   from the cart's original samples, or an expansion chip at unity whatever the instance's Expansion Volume
   says. `buildSystem` therefore goes through `adopt` whenever roles/gain are carried (the same construct-time
-  path a project load uses), and folds a NES split's `channelExportMode` INTO the carried `mesen` role rather
+  path a project load uses: the roles' construct-time fields reach the build, and the gain and the core
+  config's knobs reach the core as its system node's params and settings in the document that places it), and
+  folds a NES split's `channelExportMode` INTO the carried `mesen` role rather
   than replacing the list. A CLI render carries neither — it has no project to copy and correctly boots the
   ROM as it ships.
 - **Menu** — `System > Render` holds selectors — **Audio Routing** (the split mode: Mix / Channels / Pins,

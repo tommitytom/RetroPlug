@@ -1,6 +1,7 @@
 # Phase C2: live knobs as system node settings and params
 
-**Date:** 2026-10-30 · **Branch:** `feature/modularize` · **Status:** designed
+**Date:** 2026-10-30 · **Branch:** `feature/modularize` · **Status:** built: section 8's five commits; what building
+them changed is in the sections it changed, and what it found is section 10
 
 A system's live knobs (a Game Boy's model, highpass and display group, a NES's region and accuracy switches, every
 system's gain) reach its core today through their own path beside the graph: TS calls `applyRoleConfig` /
@@ -63,11 +64,19 @@ The user's, on 2026-10-30:
 | `rp.mesen.nes` | `core`, `region`, `removeSpriteLimit`, `apuLatencyMs`, `s5bNoise`, `mmc5PhaseReset` | `gain`, `expansionVolume` |
 | `rp.mesen.gba`, `rp.mesen.sms` | `core` | `gain` |
 
-- `gain`: dB, -90 to 12, default 0 (the store's `GAIN_MIN` / `GAIN_MAX`). `expansionVolume`: percent of unity, 0 to
-  200, default 100. `serialOutCapture`: `off`, `listen` (master sync) or `drive` (MI.OUT), default `off`.
+- `gain`: dB, -90 to 12, default 0 (the store's `GAIN_MIN` / `GAIN_MAX`). `expansionVolume`: whole percent of unity
+  (an int param, as the core takes it), 0 to 200, default 100. `serialOutCapture`: `off`, `listen` (master sync) or
+  `drive` (MI.OUT), default `off`.
 - **Enums travel as labels**, never ordinals (design section 2.4): the labels the role configs already spell
   (`"cgbC"`, `"removeDcOffset"`, `"n8"`), which are what a `.rplg` saves, so the document and the saved project agree.
-  C++ maps them to its enums; the goldens pin the spelling.
+  C++ maps them to its enums (section 8's first question says how); the goldens pin the spelling. An ordinal, another
+  spelling, or a setting's number out of its range (`lightTemperature` -1 to 1, `apuLatencyMs` 0.25 to 6) refuses the
+  settings, never clamped, as a document's bad value always has; a param's value is clamped, as the planner clamps
+  every param.
+- **Every knob is optional.** Absent, the node leaves its core as it was built, or as the last document that carried
+  the field left it. So a Game Boy's node always carries its capture, `off` included, since one left out would leave an
+  armed capture armed; and a system with no core config (a `DirectGraph`'s until it is given one, the B1 translator
+  goldens' models) carries `core` and its capture alone.
 - **What stays outside C2:** the construct-time fields (SMS `enableFm`, NES `sdRoot`, the FIFO profile and its two
   overrides, the N8 link and its round trip, `channelExportMode`) stay in the build spec until C3 builds cores in their
   nodes; `buildCore`'s facts (the export mode, the link group) stay casts until C4; `linkGroupId` stays a TS-side field
@@ -75,15 +84,21 @@ The user's, on 2026-10-30:
 
 ## 4. The native side
 
-- **Each system node type's settings struct grows its table's fields**, and the types declare their params (node.hpp's
-  `float_param`), so the descriptor lists them and the planner checks and clamps a document's values.
-- **When a value reaches its core.** `on_settings` only copies (node.hpp: never allocate there), so the node applies
-  what moved at the start of its next block, before `prepareForBlock`, and everything once at activation, right after it
-  takes its core and before that core first runs. Each field is value-guarded, as `applyConfigField` was: a palette
-  change reapplies the display group and restarts nothing, a model change restarts the core and a region change resets
-  it, on the block thread as before. A param's control stream gives its latest value each block, applied value-guarded
-  before `prepareForBlock`: a change lands at the block's start (at most a block late, as the command ring's did), and
-  the core smooths gain as it does now.
+- **Each system node type's settings struct grows its table's fields**, each optional (section 3), and the types
+  declare their params (node.hpp's `float_param`, and `int_param` for `expansionVolume`), so the descriptor lists them
+  and the planner checks and clamps a document's values.
+- **When a value reaches its core.** `on_settings` only copies (node.hpp: never allocate there; the node keeps a
+  pointer to the committed settings), so the node applies what moved at the start of its next block, before its inputs
+  and `prepareForBlock`, and every setting present once at activation, right after it takes its core and before that
+  core first runs. Each field is value-guarded, as `applyConfigField` was: a palette change reapplies the display group
+  and restarts nothing, a model change restarts the core and a region change resets it, on the block thread as before.
+  A Game Boy applies its fast boot first, which waits for the next restart and so is what a model's restart boots with,
+  then the rest in `applyRoleConfig`'s order, the capture last (section 10 says why the fast boot moved). A param's
+  control stream gives its latest value each block, applied value-guarded after the settings and before the inputs: a
+  change lands at the block's start (at most a block late, as the command ring's did), and the core smooths gain as it
+  does now. Every param reaches the core at the node's first block, not at activation: a node reads its params only
+  in a block (the host binds its control streams there, landing the document's values as it adopts the plan), and a
+  core runs nothing before its node's first block, so it plays its first sample at the document's level.
 - **The atomic switch.** `serialOutCapture` reaches the Game Boy at the start of the first block of the plan that
   carries it, the block in which `rp.lsdj.serial-out` first runs in the new mode, so no byte captured in one mode is
   decoded in the other.
@@ -94,7 +109,8 @@ The user's, on 2026-10-30:
   thread that may not be running.
 - **`Engine::setParam(nodeId, paramId, value)`** on the control thread, over `GraphHost::setParam`: the command ring,
   flushed inline while quiescent, the value clamped and rounded to the param's range; false for a node or param the
-  running plan does not have (a node the next publish adds takes its value from the document).
+  last published plan does not have (a node the next publish adds takes its value from the document), a NaN, a param
+  a wire drives, or a full ring.
 - **Deleted:** `ConfigField`, `DspCommand::SetConfigField`, `EngineInvoker::applyConfigField` and
   `Engine::applyConfigField` with its casts; the `applySystemSetting`, `applyRoleConfig` and `setSerialOutCapture`
   RPCs; the build spec's `serialOutCapture` and `buildCore`'s arming of it (activation applies it before the core first
@@ -108,17 +124,27 @@ The user's, on 2026-10-30:
   capture is computed from the mode the placed `lsdj-sync` node actually runs, after the controller's MI.MAP override
   (`controllerSyncOverride`): `drive` for MI.OUT, `listen` for master sync, `off` otherwise. `serialOutCaptureFor` moves
   from the store into the graph layer beside the override, which retires the spec/07 item where a forced node and its
-  capture disagreed. The B1 translator goldens and the role goldens are re-recorded, the diff exactly the new settings
-  and params on system nodes.
+  capture disagreed. A setting value the node would refuse (another label, a number out of its range, another type) is
+  left out rather than sent, the core keeping what it has (section 10). `GraphSystem` gains two optional fields,
+  `coreConfig` (the config of the role whose kind is the core) and `gainDb`, which the store's `graphSystems()` fills,
+  and `systemKnobs` is the one table of which core-config field is a setting and which a param. The B1 translator
+  goldens and the role goldens are re-recorded, the diff exactly the new settings and params on system nodes: 161 of
+  the B1 goldens' 238 documents changed, by the capture alone, since their models carry no core config or gain, and 30
+  of the 37 role golden cases.
 - **The stores.** A gain edit, or a NES's expansion volume, updates the store's value and calls
   `backend.setParam("sys-<id>", ...)`, with no publish; the next publish, for whatever reason, carries the same value.
   An edit of a setting field of `sameboy` / `mesen` updates the role config and publishes, as a link-group edit
-  already does. A construct-time field's edit stays as it is (a rebuild through `reset(id)`). An `lsdj-sync` edit
+  already does. The store tells them apart by the system node's knobs before and after the edit (`systemKnobs`): a
+  moved setting publishes, a moved param alone is `setParam`, and an edit moving both publishes, the document carrying
+  the param. A construct-time field's edit stays as it is (a rebuild through `reset(id)`). An `lsdj-sync` edit
   already publishes, and the capture rides that document; `syncSerialOutCapture` goes. `reloadOnRomChange` stays a
   TS-only setting with no backend call.
 - **`Backend`** gains `setParam(nodeId, paramId, value): boolean` (the real backend over its RPC, on the `emulator`
   facet; the mock records each call), and loses `applySystemSetting`, `applyRoleConfig`, `setSerialOutCapture` and the
-  build spec's `serialOutCapture`. `DirectGraph` loses `applyRoleConfig` and gains `setParam`.
+  build spec's `serialOutCapture`. `DirectGraph` loses `applyRoleConfig` and gains `setParam` and `setCoreConfig(id,
+  partial)`: a core config in the labels the store's role spells, merged over what it gave the system before and
+  published (a Game Boy's `linkGroupId` its link cable), which refuses, changing nothing, a field its node does not
+  take (section 8's third question).
 - **Callers moved:** the `test-native` files, mock-tier tests and the CLI session (`analyze-lsdj-sync`) that call the
   old methods set a mode or a knob the way the app does, through the store or the published document. The parity rig
   (`render-blocks`) is among them, and keeps its recorded output.
@@ -133,11 +159,16 @@ The user's, on 2026-10-30:
   atomic switch (one `setGraph` changing an LSDj's mode gives the Game Boy its capture in the block the decoder first
   runs in the new mode); `Engine::setParam` (unknown node or param refused, values clamped, a later publish of the same
   value moving nothing); no allocation on the block thread for the params path; the new cases under ThreadSanitizer.
+  And every system node of every document in `buildGraph`'s goldens names only the settings fields its type's schema
+  lists (section 10).
 - **`pnpm test`:** `buildGraph`'s settings and params for every system type, the capture for each mode and `off` under
   the controller's forced MI.MAP; the store's gain and expansion volume calling `setParam` without publishing, a setting
   edit publishing, an `lsdj-sync` edit publishing its capture; the goldens re-recorded.
 - **`test:native`:** `app-settings` and `app-mesen-settings` drive every knob through the real host; the LSDj and
-  model-switch tests set their modes through the store.
+  model-switch tests set their modes through the store, or a `DirectGraph`'s `setCoreConfig` and `setPipeline`; and
+  `lsdj-capture-settings` (it was `lsdj-midiout-build-flag`, which tested the build spec's capture) holds an LSDj
+  adopted in MI.OUT or master sync to decode from the first document that places it, with no capture in its build
+  spec.
 - **Parity:** knobs reach the core at a block's start, where the command ring delivered them, so strict parity must
   hold unchanged; a case that moves is a finding to explain before anything is re-recorded.
 
@@ -153,22 +184,43 @@ spec/01, spec/02 (the system nodes, the command ring's fields, the RPC table), s
 Five commits, each green on its own:
 
 1. **node.hpp's `rebuild_key`**, with its graph-layer tests; no existing node changes.
-2. **System nodes take settings and params, and `Engine::setParam`**; the old path still works beside them.
-3. **TS switches over:** `buildGraph`'s settings, params and capture, the stores' `setParam` and publishes,
-   `Backend.setParam` over its RPC, the goldens re-recorded.
+2. **System nodes take settings, and `Engine::setParam`**; the old path still works beside them.
+3. **TS switches over, and the system nodes' params:** `buildGraph`'s settings, params and capture, the stores'
+   `setParam` and publishes, `Backend.setParam` over its RPC, the goldens re-recorded. The params landed here rather
+   than in the second commit: a node gives its core its params' values from its first block, so params placed while
+   no document carried a value would have given every core their defaults, over the gain and expansion volume the old
+   path or the build had set.
 4. **The old path deleted:** `ConfigField`, `applyConfigField`, the three RPCs and `Backend` methods, the build spec's
    capture, the reload flag; the `test-native` callers and the CLI session moved.
 5. **The docs.**
 
 As for C1, a prototype is built first in these five commits on a local branch, and the plan is written from it. The
-prototype answers:
+prototype answers (each answer follows its question):
 
 - How C++ maps the role configs' labels to its enums in a settings struct (reflect-cpp's enum names differ in case),
-  without a second spelling.
+  without a second spelling. **From the enumerators' own names, first letter lowercased.** Every label the role
+  configs spell is its C++ enumerator's name with the first letter lowercased (`CgbC` is `"cgbC"`, `RemoveDcOffset`
+  `"removeDcOffset"`, `Auto` `"auto"`), so `knobs::Label<E>` in
+  [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp) is an `rfl::Literal` generated at compile time
+  from `rfl::get_enumerator_array<E>()`: it reads exactly those strings (an ordinal, `"CgbC"` or `"cgb-c"` refuses the
+  settings), lists them as the schema's enum and maps one back to its enumerator by position. It builds each name with
+  `rfl::internal::StringLiteral`, an internal reflect-cpp type, so a reflect-cpp bump is to check it. A test reads
+  `settingsEnums.ts` and holds every enum knob's schema list to its TS list (`MODEL_VALUES`, `HIGHPASS_VALUES`,
+  `COLOR_CORRECTION_VALUES`, `DMG_PALETTE_VALUES`, `REGION_VALUES`, `CARTRIDGE_ACCURACY_VALUES`, and `off` / `listen`
+  / `drive`), so the two spellings cannot drift.
 - Whether a model or region change applied at a block's start, rather than in the command ring's drain, moves any
-  parity case (it should not: both run before the block's first step).
+  parity case (it should not: both run before the block's first step). **None moved.** Strict parity held bit for bit
+  at every commit, with nothing re-recorded, its fixture cases among them: every parity system node carries its whole
+  core config from the first document that places it, and the live edits parity makes (a gain mid-note, the routing
+  gains, highpass, APU latency, a VRC6 expansion volume) reach the core through `setParam` or a publish at the block
+  the command ring's did. The node's apply is the core's own setter at that block boundary, which a test holds bit for
+  bit against a core given the same edit directly.
 - Whether every caller of the old methods can set its knob through the store, or a test needs `setParam` or a document
-  of its own.
+  of its own. **Every one could, through the store or the document.** The parity rig and every store-driven caller
+  moved to the store's own calls; the `DirectGraph` callers (two link-group tests, the CLI's `analyze-lsdj-sync`
+  session, the WRAM seam and the model-switch test) needed `DirectGraph.setCoreConfig`, since a model switch must name
+  its label, and the four that set a capture directly needed nothing, `setPipeline` already publishing it.
+  `DirectGraph.setParam` has only mock-tier callers.
 
 ## 9. Left as it is
 
@@ -177,3 +229,59 @@ prototype answers:
 - **The plugin's sync latency report** (`__rp_syncLatencyMs`) still follows the stored `lsdj-sync` mode, not the forced
   one.
 - **The construct-time fields and `buildCore`'s facts:** C3 and C4.
+- What section 10 found and leaves: a NES's settings allocating on the block thread, a settings field a node does not
+  know ignored, and an enum's two spellings on the C++ side.
+
+## 10. Found while building
+
+- **Three latent bugs, which the document's knobs fixed.** Each was proved failing before the switch-over and is
+  pinned now. A loaded project's saved gain never reached its core: nothing applied the stored value until the gain
+  was edited, so a system saved at -90 dB played at 0 dB (`app-settings`: RMS 0.10399 where 0 was due). The UI's
+  System > Render ignored the gain it carried (`render.ts` handed it to `adopt`, which never applied it). And a loaded
+  NES's `s5bNoise` and `mmc5PhaseReset` never reached its core (`MesenBackend::build` does not copy them from the
+  construct blob). Each system node gives its core the document's values by its first block.
+- **The NES core allocates on the block thread on its own**, inside Mesen (8 allocations and frees over two 512-frame
+  blocks), and its sprite-limit and accuracy setters allocate whichever path calls them, as they did on the command
+  ring. So section 6's "no allocation on the block thread" holds for a Game Boy's knobs and for every param, which the
+  tests and a profile build's three windows hold at zero, and not for a NES's settings. Left as it is: Mesen's own.
+- **The fast boot moved ahead of the model.** The prototype applied the Game Boy's knobs in `applyRoleConfig`'s order,
+  model first. Several documents published between two blocks commit together, so a fast boot edit and a model edit
+  landed in one block, and the model's restart booted with the old fast boot (`app-sameboy-display` failed). The fast
+  boot waits for the next restart, so it goes first, and the edits restart the core as if made one at a time
+  (section 4); a test pins the order.
+- **The capture is on every Game Boy node, `off` included** (section 3): an absent knob leaves the core as it is, so a
+  capture left out once a mode stops needing one would stay armed. Every Game Boy node in the B1 goldens gained
+  `"serialOutCapture": "off"`, the only change in their 161 changed documents.
+- **`buildGraph` leaves out a value its node would refuse; `DirectGraph.setCoreConfig` refuses it.** The store's config
+  has been through its role schema, so a value the node would refuse comes from a hand-edited file or a newer build's
+  label, and a loaded project keeps its config as written (`adopt`): sent, it would refuse the whole document and
+  silence every system, so `systemKnobs` leaves it out and that one core keeps what it has. A `DirectGraph` caller is
+  a test or a tool, which should hear of its mistake: `setCoreConfig` refuses an ordinal (`{ model: 1 }`, as two tests
+  passed one before), a construct-time field, another core's field or a link group outside 0 to 255, changing nothing.
+- **`setCoreConfig` merges where `applyRoleConfig` reset.** The old call decoded a partial config with every absent
+  field at its default and applied them all, so `{ linkGroupId: 1 }` also reset the model, highpass, fast boot and
+  display group; `setCoreConfig` leaves an absent field as it was. No caller depended on the reset (every number the
+  moved tests log is unchanged).
+- **A refused document can still have changed a core it took.** Activation runs while a document plans, so the knobs a
+  node gives its core there stay on it when the plan is refused and the core goes back to parked. In the app the next
+  document carries the same knobs, so nothing shows.
+- **A republished document leaves a param's live value alone** unless its value moved from the last document's: the
+  planner lands a document's param value only for a fresh node or a value that differs from the one it last landed. So
+  the stores keep every value they set live in their model, and the next document carries what the node runs. A NES a
+  `DirectGraph` places with no core config gets `expansionVolume` 100 at its first block, its param's default; only one
+  built with another construct-time volume would notice.
+- **A C++ node ignores a settings field it does not know** (node.hpp reads settings with `rfl::DefaultIfMissing` and
+  no `rfl::NoExtraFields`), so a misspelt knob would plan and do nothing. `BuildGraphGoldens.test.cpp` fails on a
+  golden document whose system node names a field its type's schema does not list (it caught a deliberate
+  `"dmgPallete"`). That guard replaced the Catch2 case "a build spec's serialOutCapture crosses the wire under the name
+  TS sends", deleted with the field. Left as it is: a strict reader would refuse the document at plan time instead.
+- **Enum labels have two spellings on the C++ side.** The system nodes' enum settings read the role configs' labels
+  (`"cgbC"`), where node.hpp's `enum_param` labels are kebab-case (`"cgb-c"`): a knob moved from a setting to an enum
+  param would change the word a document carries. Left as it is; no enum knob is a param.
+- **A setting's range rides a type.** `lightTemperature` and `apuLatencyMs` are refused out of range by a validator
+  whose bounds are a type's constants rather than floating-point template arguments, which some of the compilers the
+  build supports lack (older AppleClang). No Mac has compiled it yet.
+- **Nothing was lost with `ConfigField::LinkGroup`.** It wrote a live core's `linkGroupId`, which only `buildCore`'s
+  report reads, at the build; the cable is the document's wiring.
+- **Renamed:** `test-native/lsdj-midiout-build-flag.test.ts`, whose build-spec flag is gone, is
+  `lsdj-capture-settings.test.ts` (section 6); the B2 design, which names the old file, is left as the record it is.

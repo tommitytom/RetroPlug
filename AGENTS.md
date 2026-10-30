@@ -37,8 +37,11 @@ The rules below are the parts that don't fit those.
   `-watcher-test` / `-dynparams-test` / `-midi-test` / `-launchpad-test` / `-lottie-test` /
   `-graph-test` / `-engine-graph-test`) as `Catch2::Catch2WithMain`. `retroplug-engine-graph-test`
   holds the engine's graph to the cores it wraps: each system node renders what its core renders
-  driven directly, bit for bit, its inputs included; the engine places, re-arms and frees what the graph
-  documents TS builds say; the host I/O nodes and the N8 cart mirror move what the hosts stage and drain;
+  driven directly, bit for bit, its inputs, settings and params included (C2,
+  [docs/modular-graph-phase-c2-design.md](docs/modular-graph-phase-c2-design.md): each knob reaches its core at the
+  next block and every one at activation, an LSDj's capture switching in the block its decoder first runs in the new
+  mode); the engine places, re-arms and frees what the graph documents TS builds say; the host I/O nodes and the N8
+  cart mirror move what the hosts stage and drain;
   TS nodes run behind the C ABI in the script host (B3a,
   [docs/modular-graph-phase-b3a-design.md](docs/modular-graph-phase-b3a-design.md)): marshalling, reshape,
   creation and release on the block thread, throws, a node's promise jobs charged to it; script node packs beside the
@@ -58,8 +61,10 @@ The rules below are the parts that don't fit those.
   ([docs/lsdj-serial-out-design.md](docs/lsdj-serial-out-design.md)), and every case that records digests holds a
   second one over its system inputs alone, which the rig gave equal at the commit before the decoder moved, so the
   move changed no system input; and every document in `buildGraph`'s goldens, handed to the engine with real cores,
-  plans and runs with no node faulting, no script node throwing and no message dropped: the B1 translator's matrix a
-  block each (the 33-system `perSystem` ones are refused, as they must be), and `golden/build-graph-roles.json`,
+  plans and runs with no node faulting, no script node throwing, no message dropped and no system node's settings
+  naming a field its type does not read (a C++ node ignores one, so a misspelt knob would plan and do nothing): the
+  B1 translator's matrix a block each (the 33-system `perSystem` ones are refused, as they must be), and
+  `golden/build-graph-roles.json`,
   `buildGraph`'s own record of documents with every protocol node type, a controller each way and every MIDI routing,
   twenty driven blocks each (the wiring itself is `buildGraph`'s, held by `pnpm test graph` to explicit tables, to the
   B1 translator's goldens and to the role goldens, which `RP_GOLDEN_UPDATE=1 pnpm test graph/build-graph-role-goldens`

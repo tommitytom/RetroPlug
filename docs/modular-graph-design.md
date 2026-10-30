@@ -1,6 +1,6 @@
 # Design: the modular node-graph engine
 
-**Date:** 2026-10-23 · **Branch:** `feature/modularize` · **Status:** Phase A built (`packages/native/src/graph/`, `packages/retroplug/src/graph/`); Phase B0 to B3b built, and Phase C1 (the rest of Phases C to E not yet built).
+**Date:** 2026-10-23 · **Branch:** `feature/modularize` · **Status:** Phase A built (`packages/native/src/graph/`, `packages/retroplug/src/graph/`); Phase B0 to B3b built, and Phases C1 and C2 (the rest of Phases C to E not yet built).
 
 RetroPlug's long-term direction is a modular system in the spirit of Reaktor: emulated consoles (and
 the real hardware they can drive) appear as nodes in a graph alongside DSP effects and routing nodes.
@@ -436,7 +436,10 @@ never calls its `prepare_settings` while a `commit_settings` for the same node m
 may read its current settings there to compare against; `setGraph` waits for such a commit to be adopted first
 (§5.3). A type that declares the flag promises its prepare reads nothing a commit writes, so its commits never
 make `setGraph` wait. Every script type declares it ([B3a §2.4](modular-graph-phase-b3a-design.md)); a C++ node does
-with `static constexpr bool stateless_prepare`, which rules out `needs_rebuild`. The wait is global: one commit to a
+with `static constexpr bool stateless_prepare`, which rules out `needs_rebuild`. A C++ node that rebuilds only on a
+value its creation fixed declares `static Key rebuild_key(const Settings&)` instead: prepare compares the new
+settings' key with the key the instance was created with, which no commit writes, so it may declare the flag (the
+system nodes key on their core, [C2 §4](modular-graph-phase-c2-design.md)). The wait is global: one commit to a
 type without the flag holds back an edit that touches only nodes with it (a gate per instance is possible later). And
 a `node.hpp` node without `needs_rebuild` already prepares statelessly, so for C++ nodes the flag could be derived
 rather than declared.
@@ -887,6 +890,14 @@ Each node handles its own params, so `Engine::applyConfigField` (its `dynamic_ca
 `ConfigField` enum) goes away, and so does `EngineRpcService::applyRoleConfig`'s `"sameboy"` / `"mesen"`
 branch: decoding a node's settings is the node's job.
 
+C2 built the live knobs ([modular-graph-phase-c2-design.md](modular-graph-phase-c2-design.md)) with a stricter split
+than the list above: **a param is what is worth playing, automating or modulating** (every system's gain, a NES's
+expansion volume), and everything else is a setting, highpass and the colour and palette knobs among them, as are a
+NES's accuracy switches and APU latency and a Game Boy's LSDj serial-out capture. A setting reaches the core at the
+start of the first block of the plan that carries it, a param's live edit at the start of the next block, each
+value-guarded by the node; the side path and its casts are gone. The ROM, the seeds, Game Gear mode and the other
+construct-time fields stay in the build spec until C3 builds cores in their nodes.
+
 ### 6.4 System capability interfaces
 
 Today's fat `SystemBase` splits into optional interfaces:
@@ -909,12 +920,12 @@ Extensions only ever see host RPC that routes through those two doors.
 
 | Today | Becomes |
 |---|---|
-| `Engine::applyConfigField` casts | node params and settings |
+| `Engine::applyConfigField` casts | node params and settings (gone in C2) |
 | `Engine::syncSplitPlan` casts | `ports_changed` (§3.5) |
 | `Engine`'s gather of SameBoy `serialOutLog_` | the GB `serialOut` port |
 | `LinkGroup`, `Project::rebuildLinkGroups` | `link` wires, the planner's coupled groups |
 | `BlockRunner` / `OfflineRender` including SameBoy headers | the console-neutral executor |
-| `SystemKind`, `ConfigField`, native `AudioRouting` | deleted |
+| `SystemKind`, `ConfigField`, native `AudioRouting` | deleted (`ConfigField` in C2) |
 
 What remains of `Engine` is the executor, the rings and the registry.
 
@@ -1025,8 +1036,8 @@ B3b ([modular-graph-phase-b3b-design.md](modular-graph-phase-b3b-design.md)) bui
 |---|---|
 | `setGraph(doc)` (built in B2: [modular-graph-phase-b2-design.md](modular-graph-phase-b2-design.md)) | `constructSystem`, `removeSystem` (gone in B2; building a core stays a native call, `buildCore`, until Phase C) |
 | `putResource(type, bytes)` -> handle, `releaseResource(handle)` | `setAudioRouting` (gone in B2) |
-| capability calls (memory, SRAM, state, ROM info) addressed by node id | `applyRoleConfig` (Phase C) |
-| `setParam(node, param, value)` | `setSerialOutCapture` (Phase C) |
+| capability calls (memory, SRAM, state, ROM info) addressed by node id | `applyRoleConfig`, `applySystemSetting` (gone in C2: a system's knobs are its node's settings and params) |
+| `setParam(node, param, value)` (built in C2: [modular-graph-phase-c2-design.md](modular-graph-phase-c2-design.md)) | `setSerialOutCapture` (gone in C2: the capture is a Game Boy node's setting) |
 | snapshot reads (unchanged) | `dspSetSystems`, kernel loading (gone in B3a: the kernel's structure became its node's settings in the document, and every Engine embeds its bundle; since B3b each role's node's settings are its config) |
 | host I/O, transport (unchanged) | |
 
@@ -1128,8 +1139,9 @@ B2 is built: [modular-graph-phase-b2-design.md](modular-graph-phase-b2-design.md
 `buildCore`, which builds without placing), `removeSystem` and `setAudioRouting` are gone. Two things
 moved out of B2 as designed: the role-config commands
 (`applySystemSetting`, `applyRoleConfig`, `ConfigField`) stay until Phase C, where the live knobs become
-node params, and the kernel commands stay until B3 deletes the kernel (B3a deleted them). Building a core
-stays a native call (`buildCore`) until Phase C, when system nodes build their own from settings and resources.
+node params (C2 deleted them), and the kernel commands stay until B3 deletes the kernel (B3a deleted them).
+Building a core stays a native call (`buildCore`) until Phase C, when system nodes build their own from settings
+and resources.
 
 B3 is split in two. B3a is built ([modular-graph-phase-b3a-design.md](modular-graph-phase-b3a-design.md)): the
 kernel's input and output became real wires (host I/O nodes, input ports on every system node, the Game Boy's
@@ -1149,6 +1161,13 @@ C1 is built ([modular-graph-phase-c1-design.md](modular-graph-phase-c1-design.md
 pack of script node types in a QuickJS runtime pair of its own with the built-in bundle the first, a pack loads and
 reloads while audio runs (`loadScriptPack`, on every host), and a node pays for its own promise jobs and its pack's
 memory limit. Strict parity held bit for bit at every commit.
+
+C2 is built ([modular-graph-phase-c2-design.md](modular-graph-phase-c2-design.md)): a system's live knobs are its
+node's, each a setting in the published document or a param, its value in the document and its live edits through
+`setParam` (§6.3). `node.hpp`'s `rebuild_key` lets the system nodes prepare statelessly, so a knob edit never makes
+`setGraph` wait; `ConfigField`, `Engine::applyConfigField` and its casts, the `applySystemSetting`, `applyRoleConfig`
+and `setSerialOutCapture` RPCs and the build spec's capture are gone; and an LSDj's capture rides the document that
+hands its decoder the mode, so a mode switch is atomic. Strict parity held bit for bit at every commit.
 
 - Console-specific code moves into each node; every `dynamic_cast` in §6.5 goes.
 - `SystemBase` shrinks to the capability interfaces; `MesenAudioDevice` gets a preallocated ring (it

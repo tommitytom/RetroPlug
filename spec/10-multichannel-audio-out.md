@@ -264,8 +264,8 @@ a gigabyte.
   `channelExportMode` at construct and never selects a split routing, is never disturbed. `buildGraph`
   wires tap ports only when the mode it computes for the core (the routing's arm, else the export mode
   `buildCore` reported) is the one those ports need, so the wiring and the armed tap agree by the time
-  the NES runs. Deliberately NOT a `ConfigField` / `applyRoleConfig` entry: routing
-  is the single owner in a live host.
+  the NES runs. Deliberately NOT a setting of the NES's node (`channelExportMode` stays a construct-time field):
+  routing is the single owner in a live host.
 - **Gating (authority in `buildGraph`).** It wires a split **only** when the routing is a split
   mode and there is exactly one system; both pin modes additionally require it to be a NES, since
   nothing else has output pins. Otherwise it wires the per-system routing (as Stereo) and the layout

@@ -29,12 +29,14 @@ re-explaining them. For the C++ script host the nodes run in, see [02-native-hos
 | Attached by | backend/core kind | ROM identity (a `RomProvider`) |
 | `category` | `"system"` | `"feature"` |
 | Examples today | `sameboy`, `mesen` | `mgb`, `lsdj-sync`, `risa-sync`, `lsdj-assets` |
-| Config reaches the live core? | **yes**: the only role config that crosses, via `applyRoleConfig` | **no**: its config never gets a C++ struct |
-| Where behaviour lives | inside the core (native applies the fields) | its protocol node, when it has one; otherwise the control plane (an asset override is folded into the ROM there) |
+| Config reaches the live core? | **yes**: the only role config that does, its live fields as its system node's settings and params | **no**: its config never gets a C++ struct |
+| Where behaviour lives | inside the core (its system node applies the fields) | its protocol node, when it has one; otherwise the control plane (an asset override is folded into the ROM there) |
 
-The dividing line is load-bearing: **only a system-role's config crosses the RPC boundary into the
-live emulator**. A feature-role's config is pure TS: for a role with a protocol node it travels only as
-that node's settings in the graph document the project publishes (below).
+The dividing line is load-bearing: **only a system-role's config reaches the live emulator**, as its
+system node's knobs in the graph document the project publishes and, for the fields read at construct, the
+build spec. A feature-role's config is pure TS: for a role with a protocol node it travels only as that
+node's settings in the same document (below), and for `lsdj-sync` it also decides one knob of its Game Boy's
+node, the serial-out capture its decoder needs.
 
 ## The role model
 
@@ -126,9 +128,9 @@ ROM in memory the same way.
 [SystemsStore](../packages/retroplug/src/systemsStore.ts) drives the registry:
 `defaultRoles(...)` reads a `ROLE_HEADER_LEN = 0x150` header prefix and calls
 `registry.defaultRoles(...)`
-([systemsStore.ts:769](../packages/retroplug/src/systemsStore.ts#L769)); `applyConstructHooks`
+([systemsStore.ts:789](../packages/retroplug/src/systemsStore.ts#L789)); `applyConstructHooks`
 folds each attached role's `onConstruct` over the spec before the build call
-([systemsStore.ts:951](../packages/retroplug/src/systemsStore.ts#L951)). See
+([systemsStore.ts:967](../packages/retroplug/src/systemsStore.ts#L967)). See
 [03-ts-layer.md](03-ts-layer.md) for the surrounding store idioms.
 
 ## The built-in roles
@@ -138,23 +140,26 @@ takes `registerCoreRoles`, `registerDspRoles`, the asset and marker roles (`lsdj
 `risa-assets`, `bliptoaster`, `bliptoaster-assets`) and `registerRomProviders`.
 
 **System roles** ([coreRoles.ts](../packages/retroplug/src/coreRoles.ts)), keyed by core
-value, ranges mirroring the native enums:
+value, each enum a label mirroring a native enum ([settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)),
+which is what a `.rplg` saves and what the system node reads:
 
 | Role | Config (zod, defaults) |
 |---|---|
-| `sameboy` | `model` 0-13 (CgbC=9), `highpass` 0-2, `linkGroupId` 0-255, `fastBoot` bool (true), plus the display group (`colorCorrection`, `dmgPalette`, `lightTemperature`) |
+| `sameboy` | `model` (`"cgbC"`), `highpass` (`"accurate"`), `linkGroupId` 0-255, `fastBoot` bool (true), plus the display group (`colorCorrection`, `dmgPalette`, `lightTemperature`) |
 | `mesen` | one role for every Mesen platform, so the knobs are per-platform and the menu gates each group. NES: `region`, `removeSpriteLimit`, `apuLatencyMs`, the cartridge-accuracy pair (`s5bNoise` / `mmc5PhaseReset`, both defaulting to `"n8"`), `expansionVolume` (the cartridge sound chip's level, percent of unity: the same value the UI rescales into a connected N8's `master_vol`), `channelExportMode`, `sdRoot`. SMS/GG: `enableFm` |
 
-Not every system-role field is live. `region`, `channelExportMode` and `sdRoot` are read when the core
-is **constructed**, so an edit takes effect only after a rebuild: `setRoleConfig(id, …)` then
-`reset(id)`, which re-sends the stored role config as the construct `settings` blob and hands back a
-new id. `sdRoot` is the host directory the emulated EverDrive N8 SD card maps to (`"/"` on the card),
-for a NES ROM that pulls its data off the cartridge; empty means a per-process scratch directory, not
-the working directory. Reading back what such a ROM sends is `drainCoreBytes` ([09](09-cli-debugging.md)).
-A ROM can also skip the CPU entirely: `CMD_F_FRD_MEM` has the emulated MCU read the open file straight
-into cartridge memory over the PI bus, which `MesenNesSystem` backs for the CHR-RAM window
-(PI `0xC00000`) only. That transfer's duration is modelled from the rate measured on real hardware,
-so the ROM's wait loop spins about as long here as it does on a console.
+Not every system-role field is live. The live ones are the system node's knobs (below);
+`channelExportMode`, `sdRoot`, the FIFO profile and its two overrides, the N8 link and its round trip, and
+SMS `enableFm` are read only when the core is **constructed**, so an edit takes effect only after a
+rebuild: `setRoleConfig(id, …)` then `reset(id)`, which re-sends the stored role config as the construct
+`settings` blob and hands back a new id. (`region` is read at construct too, and is also a knob: a live
+edit resets the core, as switching a console's region would.) `sdRoot` is the host directory the emulated
+EverDrive N8 SD card maps to (`"/"` on the card), for a NES ROM that pulls its data off the cartridge;
+empty means a per-process scratch directory, not the working directory. Reading back what such a ROM sends
+is `drainCoreBytes` ([09](09-cli-debugging.md)). A ROM can also skip the CPU entirely: `CMD_F_FRD_MEM` has
+the emulated MCU read the open file straight into cartridge memory over the PI bus, which `MesenNesSystem`
+backs for the CHR-RAM window (PI `0xC00000`) only. That transfer's duration is modelled from the rate
+measured on real hardware, so the ROM's wait loop spins about as long here as it does on a console.
 
 `fifo` (plus the `fifoDepth` / `fifoBytesPerSecond` overrides) says how faithfully that FIFO behaves
 like the cartridge's. It defaults to `"instant"` (unbounded and delivered immediately, which is what
@@ -183,21 +188,28 @@ project's settings, as it places a protocol node for a role.
 
 ## Which config reaches the live core
 
-Two channels cross the RPC boundary to a running emulator, and no feature-role config uses either:
+A running emulator hears a config edit one of two ways, both the graph's: its system node's settings, in the
+next document the project publishes, or a param of that node, set live with `setParam`
+([modular-graph-phase-c2-design.md](../docs/modular-graph-phase-c2-design.md); how the node gives them to its
+core is [02-native-host.md](02-native-host.md)'s):
 
-| Change | RPC | Reaches |
+| Change | Path | Reaches |
 |---|---|---|
-| the two universal settings (`gainDb`, `reloadOnRomChange`) | `applySystemSetting` | the live core (see [03-ts-layer.md](03-ts-layer.md)) |
-| a **system-role** config edit | `applyRoleConfig(id, kind, config)` | the live core (`sameboy` + `mesen`), minus the construct-time fields noted above |
-| a **feature-role** config edit | *(none to the core)* | only its protocol node, as its settings in the next document the project publishes |
+| a system's gain (`setGain`) | `setParam("sys-<id>", "gain", dB)`, no publish | the node's `gain` param, at the start of the next block |
+| a **system-role** edit moving a setting field (a model, a palette, a NES's region) | a publish | the node's settings, given to the core at the start of the first block of the plan that carries them |
+| a **system-role** edit moving only a param (a NES's `expansionVolume`) | `setParam`, no publish | the node's param, at the start of the next block |
+| a **system-role** edit moving a construct-time field (noted above) | *(none until a rebuild)* | the core `reset(id)` or a reload builds next |
+| a **feature-role** config edit | a publish, for a role with a protocol node | its protocol node's settings; for `lsdj-sync`, its Game Boy node's capture too |
+| `reloadOnRomChange` | *(none)* | TS's file watcher alone |
 
-[`SystemsStore.setRoleConfig`](../packages/retroplug/src/systemsStore.ts#L526) merges the
-partial, re-parses through the role schema, and calls `backend.applyRoleConfig` **only when the role's
-`category === "system"`**. On the native side
-[`EngineRpcService::applyRoleConfig`](../packages/native/src/host/rpc/EngineRpcService.cpp#L189)
-accepts `kind == "sameboy"` and `"mesen"`, decodes the whole role config, and pushes each field as a
-guarded config field (an unchanged field is a no-op, so moving `highpass` never triggers a spurious
-model restart).
+[`SystemsStore.setRoleConfig`](../packages/retroplug/src/systemsStore.ts#L550) merges the partial and
+re-parses through the role schema. For the core-config role (its kind is the system's core) it compares the
+system node's knobs before and after (`systemKnobs`,
+[graph/buildGraph.ts](../packages/retroplug/src/graph/buildGraph.ts)): a setting field that moved publishes,
+the document carrying any param that moved with it; a param that moved alone goes to `backend.setParam`; an
+edit moving neither reaches nothing. The node value-guards each knob as it gives it to the core, so a document
+that carries every knob again moves only what changed (moving `highpass` never restarts the model). A Game
+Boy's link group publishes as wiring.
 
 A **feature**-role config edit takes a different path: `setRoleConfig` updates TS state and, for a
 role that has a protocol node, publishes the graph (`setOnGraphChange` → `ProjectStore.publishGraph`),
@@ -206,10 +218,13 @@ at the plan swap (`onSettings`), keeping the instance and its state, since every
 An edit to a role with no node (an asset override) changes no document. Then `markDirty` fires the
 systems `onChange` → the project's `onSystemsChange`
 ([projectStore.ts:215](../packages/retroplug/src/projectStore.ts#L215)) for the structure's
-observers. The core is never told, with one exception: an `lsdj-sync` mode change sets the Game Boy's
-serial-out capture (`setSerialOutCapture`), which `rp.lsdj.serial-out` decodes in the two MIDI-out modes:
-`drive` for MI.OUT, where the core plays the Arduinoboy that clocks LSDj, and `listen` for master sync, where
-LSDj clocks itself.
+observers. The core hears one thing of it: an `lsdj-sync`'s mode decides its Game Boy node's
+`serialOutCapture`, which `rp.lsdj.serial-out` decodes in the two MIDI-out modes: `drive` for MI.OUT, where
+the core plays the Arduinoboy that clocks LSDj, and `listen` for master sync, where LSDj clocks itself; `off`
+in every other mode. It follows the mode the placed node actually runs, the MI.MAP controller's forced one
+included (`serialOutCaptureFor`, [graph/controller.ts](../packages/retroplug/src/graph/controller.ts)), and
+rides the document that hands the decoder its new mode, so the capture and the decoder change in the same
+block and no byte captured in one mode is decoded in the other.
 
 ## The protocol nodes
 
@@ -288,16 +303,13 @@ routing node's outputs follow the systems); a system removed and added again get
   falls in, a mark at or past the block's end carried to the next block; a run carried into a block at another
   host rate has its silence counted again in that rate's frames, kept fractional so that several changes in one
   silence do not compound, and a mark a rise leaves before the block's start goes at its first frame). In every
-  other mode it sends nothing and reads nothing of its input, which is usually empty: the core captures for the
-  two decoded modes alone, but the capture follows the role's stored mode, so a cart stored in MI.OUT or master
-  sync that the MI.MAP controller forces (to MidiMap, or Off) keeps capturing
-  ([07-remaining-work.md](07-remaining-work.md)), and those bytes go unread. Each message goes on `midiOut` at
-  that frame, from one of three arrays made with the instance, one a message length. MI.OUT's bit accumulator and
-  pending command are kept on the instance across mode changes; master sync's state is dropped outside that
-  mode, so coming back opens a fresh run. Its settings are the role's config through the schema
-  `rp.lsdj.sync` takes too
-  ([nodes/lsdjSyncSettings.ts](../packages/retroplug/src/script/nodes/lsdjSyncSettings.ts)); it reads only
-  `mode`.
+  other mode it sends nothing and reads nothing of its input, which is empty: the core captures for the two decoded
+  modes alone, its node's capture following the mode this node runs, so a cart stored in MI.OUT or master sync that
+  the MI.MAP controller forces (to MidiMap, or Off) captures nothing. Each message goes on `midiOut` at that frame,
+  from one of three arrays made with the instance, one a message length. MI.OUT's bit accumulator and pending
+  command are kept on the instance across mode changes; master sync's state is dropped outside that mode, so coming
+  back opens a fresh run. Its settings are the role's config through the schema `rp.lsdj.sync` takes too
+  ([nodes/lsdjSyncSettings.ts](../packages/retroplug/src/script/nodes/lsdjSyncSettings.ts)); it reads only `mode`.
 - **`rp.controller.session`** runs a `ControllerSession` ([controller/session.ts](../packages/retroplug/src/controller/session.ts))
   for the app its settings name (`controller/apps/index.ts`, the apps' runtime, zod-free): the surface's
   traffic and the block's clock in (its tick derived from ppq at 24 PPQN), its LED bytes out on
@@ -372,9 +384,11 @@ After the systems and their link wires, and before the cart mirror and the host 
 node a role's type names to run after its system (its `out`), in slot order: `rp.lsdj.serial-out` for an
 `lsdj-sync` on a Game Boy, `sys-<id>/lsdj-sync/out`, with the settings its `rp.lsdj.sync` got (the MI.MAP
 controller's forced mode included), fed `sys-<id>.serialOut` over a forward wire, so it reads what the core
-captured in the same block. It is placed whatever the mode, so a mode switch is a change of settings and
-never of the document, and only on a Game Boy, the one system with a serial out (a hand-edited `lsdj-sync`
-on another system places its `rp.lsdj.sync` alone, and host MIDI out takes no input for it). The rule under
+captured in the same block; the Game Boy's node captures for that same mode (its `serialOutCapture` setting:
+`drive` for MI.OUT, `listen` for master sync, `off` otherwise, and `off` on every Game Boy with no `lsdj-sync`
+placed). It is placed whatever the mode, so a mode switch is a change of settings and never of the document's
+structure, and only on a Game Boy, the one system with a serial out (a hand-edited `lsdj-sync` on another
+system places its `rp.lsdj.sync` alone, and host MIDI out takes no input for it). The rule under
 both: every node reads only nodes placed before it in the document, but over a feedback wire, which orders
 nothing, so the plan runs the nodes, the script nodes among them, in document order. No document `buildGraph`
 builds holds a feedback wire: `test/graph/build-graph-role-goldens.test.ts` holds every wire of its role
@@ -401,7 +415,7 @@ pipeline places (`placedRole`), so a left-out one arms nothing. `DirectGraph.set
 without the later role and can report it through a callback.
 
 **Loaded role configs are parsed.** A loaded protocol role's config is parsed by its `RoleType` schema in `adopt`
-(so the node's settings, the capture the core is built with, the menus and a save all see the parsed one), and a
+(so the node's settings, the capture its Game Boy's node runs, the menus and a save all see the parsed one), and a
 repair is logged once with the ROM and each repaired value. A config the schema refuses outright falls back to
 what the ROM's providers suggest for the role, then to the schema's defaults. The parse drops a key the schema does
 not read, as an edit already did, and names it in the log.
@@ -426,7 +440,8 @@ The rest of the document follows from those nodes:
   from the cart's battery, on the control plane. The `lsdj-sync` nodes of the cart the MI.MAP app drives
   are forced to `midiMap`, or to `off` when the cart's own SYNC setting is not MI.MAP
   (`controllerSyncOverride`), its `rp.lsdj.serial-out` with its `rp.lsdj.sync`, so a forced cart sends no
-  host MIDI. The override is those nodes' settings alone, so nothing reaches the `.rplg`.
+  host MIDI, and its Game Boy's node captures nothing for them. The override is those nodes' settings and that
+  capture alone, so nothing reaches the `.rplg`.
 
 Where nothing produces for a system input, or no controller is enabled, the input or the host I/O node is
 left unwired. The plugin loads nothing for any of this
@@ -485,9 +500,7 @@ Native ([packages/native/src/](../packages/native/src/)):
 - [ScriptHost.hpp](../packages/native/src/host/script/ScriptHost.hpp) /
   [ScriptHost.cpp](../packages/native/src/host/script/ScriptHost.cpp): the script-node runtime the
   protocol nodes run in.
-- [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp): each system node's inputs,
-  applied before its core runs.
+- [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp): each system node's settings, params
+  and inputs, applied before its core runs.
 - [HostIoNodes.cpp](../packages/native/src/host/graph/HostIoNodes.cpp): the host I/O nodes the protocol
   nodes read from and send to, and the N8 cart mirror.
-- [EngineRpcService.cpp](../packages/native/src/host/rpc/EngineRpcService.cpp#L189): `applyRoleConfig`
-  (system-role only).

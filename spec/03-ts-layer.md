@@ -48,7 +48,7 @@ The methods, grouped by concern:
 | **Paths** | `canonicalize` · `readFilePrefix` · `configDir` | `weakly_canonical` (the dedupe key); a header-only prefix read (ROM sniff without marshalling MBs); the per-OS config dir |
 | **Emulator lifecycle** | `buildCore(spec, id)` · `setGraph(request)` · `loadScriptPack(request)` | Build/activate a core under a **TS-allocated id** and park it; plan a graph document TS built (which cores run, in what order and wired how). No `remove`/`duplicate`/`reload` primitive: those are TS orchestration over the first two. Load a pack of script node types beside the built-in ones, or reload one, while audio runs ([modular-graph-phase-c1-design.md](../docs/modular-graph-phase-c1-design.md)): `{ ok, error, errors, types }`, the pack's types with their descriptors, or why not (the planner's `errors` when a reload's replan refused). Nothing in the app calls it yet, and the mock refuses it |
 | **File dialog** | `openFileBrowser(opts)` → `Promise` | Open the OS browser, resolve the picked path (the one async method) |
-| **Live config** | `applySystemSetting(id,key,value)` · `applyRoleConfig(id,kind,config)` | Apply the two universal settings + a **system-role**'s knobs to the live core (the audio routing is the graph's wiring, not a call) |
+| **Live params** | `setParam(nodeId,paramId,value)` | Set a param of a node the last published plan places, at the start of the next block, clamped to its range: the store's live gain and a NES's expansion volume, on the system's node `sys-<id>`. A system's other knobs are its node's settings in the document `setGraph` plans, and the audio routing is the graph's wiring, so neither is a call ([modular-graph-phase-c2-design.md](../docs/modular-graph-phase-c2-design.md)) |
 | **Live input** | `pressButton(id,button,down)` | Queue a joypad edge to the core's audio-thread button sink |
 | **Live reads** | `readState(id)` · `readSram(id)` · `getFrame(id)` | Pull the latest tear-free snapshot from the `SnapshotRegistry` (see doc 01) — never touches a live core |
 | **Byte codecs** | `zip(entries)` · `unzip(bytes)` | miniz deflate/inflate — the only native part of `.rplg` framing (TS assembles every entry) |
@@ -68,7 +68,7 @@ set of RPC facets is bound behind `__rpcSend` (see doc 01/02).
 ### `ConstructSpec` — the resolved-paths-only build request
 
 `buildCore` takes a `ConstructSpec`
-([backend.ts:800](../packages/retroplug/src/backend.ts#L800)) in which **TS has
+([backend.ts:788](../packages/retroplug/src/backend.ts#L788)) in which **TS has
 already resolved every path, suffix, sibling, and classification** — *native never sees a
 suffix, never looks for a sibling, never classifies.*
 
@@ -77,9 +77,8 @@ suffix, never looks for a sibling, never classifies.*
 | `romPath` / `embeddedRom` | The ROM file to slurp, or a binary-baked marker (e.g. `"mgb"`) with `romPath = ""` |
 | `platform` / `core` | What the ROM targets + which factory builds it — TS classifies via [`platform.ts`](../packages/retroplug/src/platform.ts) |
 | `savPath` / `statePath` | The exact battery file (load-from + auto-save-to) and savestate to boot from, or `null` |
-| `serialOutCapture?` | Arm a Game Boy's serial-out capture before the core first runs: `"drive"` (LSDj MI.OUT) or `"listen"` (master sync) |
 | `sramBytes?` / `stateBytes?` | Seed bytes (zip-import blob, carried battery, role-synthesized sav) that override what native reads from disk; `savPath` stays the auto-save target |
-| `settings?` | The system-role config as JSON, applied **at construct** so a restored savestate isn't nuked by a post-build restart |
+| `settings?` | The system-role config as JSON, applied **at construct** so a restored savestate isn't nuked by a post-build restart: the construct-time fields reach the core only this way, and its knobs again from its node's settings in the document that places it (`roleConfigForNative` encodes it, its enums as ordinals) |
 
 `openFileBrowser` is the odd one out and does **not** ride the RPC bridge: it uses the
 UI-direct hooks `__rp_openFileBrowser` / `__rp_onFileBrowserResult` on the shared context
@@ -109,39 +108,48 @@ The live systems list. `SystemEntry[]`
 model (`{ id, platform, core, romPath, savPath override, savSuffix, embeddedRom, settings,
 roles }`, plus the derived `battery` and `built` facts, never serialized); the private state is
 `entries`, `focusedId`, and `dirty`
-([systemsStore.ts:117-119](../packages/retroplug/src/systemsStore.ts#L117)). `view()`
-([systemsStore.ts:139](../packages/retroplug/src/systemsStore.ts#L139)) projects a
+([systemsStore.ts:119-121](../packages/retroplug/src/systemsStore.ts#L119)). `view()`
+([systemsStore.ts:141](../packages/retroplug/src/systemsStore.ts#L141)) projects a
 `SystemView[]` for the UI, computing the live `focused` and `missing` flags each call.
 
 - **TS owns the system-id counter.** `allocSystemId()` increments a module-scoped
-  `nextSystemId` ([systemsStore.ts:68](../packages/retroplug/src/systemsStore.ts#L68)):
+  `nextSystemId` ([systemsStore.ts:70](../packages/retroplug/src/systemsStore.ts#L70)):
   *"native never allocates."* Ids are opaque handles, one id space per control-plane JS
   context (1:1 with the native `Engine`), and start at **1** because the snapshot registry
   uses 0 as its free-slot sentinel.
-- **`classifyRom`** ([systemsStore.ts:87](../packages/retroplug/src/systemsStore.ts#L87))
+- **`classifyRom`** ([systemsStore.ts:89](../packages/retroplug/src/systemsStore.ts#L89))
   is the one place ROM bytes enter TS — and just the `ROM_SNIFF_LEN` (0x134) header prefix.
-- **Mutators through `Backend`:** `addSystem` (append), `loadRom` (replace focused, or defer
-  to a sibling `<rom>.rplg`), `loadMgb` (embedded), `replaceSystem`, `removeSystem`, plus the
-  per-system `setGain` / `setReloadOnRomChange` (→ `applySystemSetting`) and `setRoleConfig`
-  ([systemsStore.ts:536](../packages/retroplug/src/systemsStore.ts#L536)), where
-  **only a `"system"`-category role's config crosses to the live core** (`applyRoleConfig`);
-  a feature-role's config stays pure TS, but for `lsdj-sync`, whose mode sets the Game Boy's serial-out
-  capture (`setSerialOutCapture`: `"drive"` for MI.OUT, `"listen"` for master sync, null otherwise).
-- **`duplicateSystem`** ([systemsStore.ts:298](../packages/retroplug/src/systemsStore.ts#L298))
+- **Mutators through `Backend`:** `addSystem` (append), `loadRom` (replace focused, or defer to a sibling
+  `<rom>.rplg`), `loadMgb` (embedded), `replaceSystem`, `removeSystem`, plus the per-system `setGain`,
+  `setReloadOnRomChange` and `setRoleConfig`
+  ([systemsStore.ts:550](../packages/retroplug/src/systemsStore.ts#L550)). A gain edit updates the store and
+  sets the system node's `gain` param live (`backend.setParam("sys-<id>", "gain", dB)`) with no publish; the
+  next document, whatever publishes it, carries the same value. `reloadOnRomChange` is TS's alone (the file
+  watcher reads it), so it reaches no backend. An edit of the core-config role (the `"system"`-category role
+  whose kind is the core) is diffed through `systemKnobs`
+  ([graph/buildGraph.ts](../packages/retroplug/src/graph/buildGraph.ts), the one table of which field is a
+  setting and which a param): a moved setting field publishes, the node's settings carrying it; a moved
+  param alone (a NES's `expansionVolume`) is set live with `setParam`; and a construct-time field (the FIFO
+  and its overrides, `sdRoot`, the N8 link, `channelExportMode`, SMS `enableFm`) reaches nothing until the
+  `reset(id)` or reload that rebuilds the core from it. A feature-role's config reaches only its protocol
+  node's settings, and for `lsdj-sync` also its Game Boy node's `serialOutCapture` (`"drive"` for MI.OUT,
+  `"listen"` for master sync, `"off"` otherwise), both in the document its edit publishes.
+- **`duplicateSystem`** ([systemsStore.ts:295](../packages/retroplug/src/systemsStore.ts#L295))
   is TS orchestration with **no native duplicate method**: it pulls `readState(id)` (state
   includes SRAM), then `buildCore` seeded with those `stateBytes` under a fresh
   `allocSystemId()`, and appends.
-- **The graph.** Every edit that changes what runs, or what a system's protocol nodes are told, ends by
-  publishing the engine's graph once (`setOnGraphChange` → `ProjectStore.publishGraph` →
-  `EngineGraph.publish`, [engineGraph.ts](../packages/retroplug/src/engineGraph.ts)): the whole
+- **The graph.** Every edit that changes what runs, what a system's protocol nodes are told, or a setting of
+  a system's node, ends by publishing the engine's graph once (`setOnGraphChange` → `ProjectStore.publishGraph`
+  → `EngineGraph.publish`, [engineGraph.ts](../packages/retroplug/src/engineGraph.ts)): the whole
   document, built by [`buildGraph`](../packages/retroplug/src/graph/buildGraph.ts) from the entries in
-  list order, each entry's `built` facts (what `buildCore` reported, with its live link group) and its
+  list order, each entry's `built` facts (what `buildCore` reported, with its live link group), its
   pipeline (`graphSystems`: its roles that have a protocol node, each with the node type it is placed as
   and its parsed config, by [`graph/protocolNodes.ts`](../packages/retroplug/src/graph/protocolNodes.ts)'s
-  table, with or without a registry), the project's audio and MIDI routing and its controller, with a NES
-  tap re-arm when the edit built or dropped a core. So a `setRoleConfig` on a role with a protocol node
-  publishes, one on a role with none (a model, a palette, an asset override) changes no document, and one
-  on a system role publishes only when it moves a Game Boy's link group. A
+  table, with or without a registry), its core-config role's config and its gain (its system node's settings
+  and params), the project's audio and MIDI routing and its controller, with a NES tap re-arm when the edit
+  built or dropped a core. So a `setRoleConfig` on a role with a protocol node publishes, one on the
+  core-config role publishes when it moves a setting field (a model, a palette) or a Game Boy's link group, and
+  one on a role with neither (an asset override) changes no document. A
   `SystemsStore` used without a `ProjectStore` publishes its systems itself, at the default stereo
   routing and with no MIDI routing or controller (so no MIDI is routed). An unchanged document is not sent unless it
   re-arms or the last one did not plan; a refused one leaves the store's model as it is, and is logged
@@ -151,7 +159,7 @@ roles }`, plus the derived `battery` and `built` facts, never serialized); the p
 
 The control plane **reconstructs** a core rather than live-injecting into it (no `GB_reset`, no
 in-place SRAM clear). The private `rebuildInPlace(id, seed)`
-([systemsStore.ts:371](../packages/retroplug/src/systemsStore.ts#L371)) is the shared
+([systemsStore.ts:368](../packages/retroplug/src/systemsStore.ts#L368)) is the shared
 body: it captures the source spec, builds a fresh core under a **new id** that takes the old
 one's slot, and preserves identity + focus
 (`replaceById(entries, id, {...src, id: newId})`; `if (focusedId === id) focusedId = newId`).
@@ -172,7 +180,7 @@ load isn't a user edit): `clear()` tears every system down and, when it had any,
 empty graph;
 `adopt(config, blobs?)` (which publishes the graph that places it, except inside a project load,
 which publishes once its systems are all built)
-([systemsStore.ts:616](../packages/retroplug/src/systemsStore.ts#L616)) reconstructs
+([systemsStore.ts:623](../packages/retroplug/src/systemsStore.ts#L623)) reconstructs
 one system preserving its **exact** `savSuffix`/`savPath`, with `blobs` seeding SRAM/state on
 a zip import. Default roles are derived before the build from a `ROLE_HEADER_LEN` (0x150)
 header prefix via `defaultRoles`, and each role's `onConstruct` hook folds over the spec
@@ -246,8 +254,11 @@ records nothing until it's opened.
 (`{ systems, routing, shape, midiRouting?, controller? }`) to the document `setGraph` plans
 ([modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md) section 2.1; the node
 order, the routing as wiring and the host shapes are in [02-native-host.md](02-native-host.md)).
-Besides the system nodes and their mixing it places the script nodes: those that feed a system between the
-host's inputs and the systems, and those that read one after the systems, before the host's outputs
+Besides the system nodes, each with its core's knobs as its settings and params (`systemKnobs`, and a Game
+Boy's serial-out capture for the mode its LSDj's nodes run, the controller's forced one included:
+[modular-graph-phase-c2-design.md](../docs/modular-graph-phase-c2-design.md) section 5), and their mixing, it
+places the script nodes: those that feed a system between the host's inputs and the systems, and those that read
+one after the systems, before the host's outputs
 ([modular-graph-phase-b3b-design.md](../docs/modular-graph-phase-b3b-design.md) section 4,
 [lsdj-serial-out-design.md](../docs/lsdj-serial-out-design.md) section 3,
 [04-roles-protocol-nodes.md](04-roles-protocol-nodes.md)):
@@ -281,7 +292,12 @@ appends, replace keeps the slot, remove shifts later slots down), a system it ad
 roles, and what the script nodes are told is three calls of its own, each a publish: `setPipeline(id,
 roles)` (each role with a protocol node placed as one, its config as given), `setMidiRouting(mode)` and
 `setController(controller)` (its app config parsed by the app's schema, as the project's is). Until
-`setMidiRouting` names a mode, no host MIDI is routed to any system.
+`setMidiRouting` names a mode, no host MIDI is routed to any system. A system it adds has no core config
+either, so its node carries no knob and its core runs as it was built, until `setCoreConfig(id, partial)`,
+a publish, merges fields over what it gave before, in the labels the store's role spells them (a Game Boy's
+`linkGroupId` its link cable), and refuses, changing nothing, any field its node does not take (an ordinal, a
+construct-time field, another core's); `setParam(id, param, value)` sets a `gain` or an `expansionVolume`
+live, as the store does, and keeps it for the next document.
 
 ### RecentStore — [`src/recentStore.ts`](../packages/retroplug/src/recentStore.ts)
 
@@ -592,13 +608,14 @@ processed, so opening a menu mid-hold can't strand a key down. Pinned by
 
 Two concepts touched throughout this doc belong fully to **doc 04**:
 
-- **Roles.** A `RoleInstance = { kind, config }` is what serializes on a `SystemEntry`.
-  A **system-role** (e.g. `"sameboy"`: model/highpass/linkGroup/fastBoot) is the *only*
-  role config that crosses to the live core (via `applyRoleConfig`). **Feature-roles**
-  (LSDj-sync, mGB, the asset overrides) are pure TS whose config **never** gets a C++
-  struct. The control-plane `RoleRegistry` (built by `buildAppRegistry`) attaches feature
-  roles to a system by ROM identity ([`romProviders.ts`](../packages/retroplug/src/romProviders.ts),
-  the TS replacement for the legacy build's native `RomSniffer`, which is gone).
+- **Roles.** A `RoleInstance = { kind, config }` is what serializes on a `SystemEntry`. A **system-role**
+  (e.g. `"sameboy"`: model/highpass/linkGroup/fastBoot) is the *only* role config that reaches the live
+  core: its live fields as its system node's settings and params in the published document, its
+  construct-time ones in the build spec. **Feature-roles** (LSDj-sync, mGB, the asset overrides) are pure TS
+  whose config **never** gets a C++ struct (an `lsdj-sync`'s mode decides its Game Boy node's capture, which
+  does). The control-plane `RoleRegistry` (built by `buildAppRegistry`) attaches feature roles to a system
+  by ROM identity ([`romProviders.ts`](../packages/retroplug/src/romProviders.ts), the TS replacement for
+  the legacy build's native `RomSniffer`, which is gone).
 - **The protocol nodes.** A role whose work is the audio thread's runs as a script node of its own
   ([`src/script/nodes/`](../packages/retroplug/src/script/nodes)), which `buildGraph` places for each
   system that has the role ([`graph/protocolNodes.ts`](../packages/retroplug/src/graph/protocolNodes.ts)),

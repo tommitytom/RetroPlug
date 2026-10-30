@@ -129,8 +129,9 @@ does.
 ### `EngineRpcService`: emulator / MIDI / transport
 
 Every mutation here routes through the `QueuedInvoker` except these, which call the `Engine`
-directly on the control thread: `buildCore`, `setGraph` and `loadScriptPack` (`Engine::parkCore` /
-`Engine::setGraph` / `Engine::loadScriptPack`),
+directly on the control thread: `buildCore`, `setGraph`, `loadScriptPack` and `setParam` (`Engine::parkCore` /
+`Engine::setGraph` / `Engine::loadScriptPack` / `Engine::setParam`, which pushes onto the GraphHost's ring
+itself),
 `setSampleRate` (`Engine::setSampleRate`, so it refuses while the audio thread owns the engine or the
 running plan holds a system), the render calls, and the profile calls `dspResetAllocStats`,
 `dspRunGc` and `dspTraceReset` (which the script host refuses while the audio thread owns its
@@ -144,8 +145,7 @@ read of a core's state routes through the `SnapshotRegistry`. No method walks a 
 | `buildCore` | `(BackendConstructSpec) → optional<RpcBuiltCore>` | TS-owned `spec.id`; `factory_.build` → `Engine::parkCore`, which claims the registry slot. Returns the core's node type, export mode and link group, or null (below) |
 | `setGraph` | `(RpcSetGraphRequest) → RpcSetGraphResult` | a graph document TS built, its slots and its tap re-arm → `Engine::setGraph` (below) |
 | `loadScriptPack` | `(RpcLoadScriptPackRequest) → RpcLoadScriptPackResult` | a pack of script node types, by its id, its source and the memory limit each of its runtimes is held to (`memoryLimitBytes`, a double, absent or 0 for 64 MiB, refused unless a whole number of bytes) → `Engine::loadScriptPack`, which loads it or, for an id loaded already, reloads it (the script host, below); returns `ok`, `error` (empty on success), the planner's `errors` when a reload's replan refused (empty for a refusal before any replan) and the pack's `types`, each with its descriptor JSON |
-| `applySystemSetting` | `(uint32 id, string key, double value) → bool` | `gainDb` / `reloadOnRomChange` → a `ConfigField` |
-| `applyRoleConfig` | `(uint32 id, string kind, string config) → bool` | `kind` `"sameboy"` or `"mesen"`, false for any other; decodes the whole role config and pushes each field as a `ConfigField` (sameboy: Model/Highpass/LinkGroup/FastBoot/ColorCorrection/DmgPalette/LightTemperature; mesen: NesRegion/NesRemoveSpriteLimit/NesApuLatencyMs/NesS5bNoise/NesMmc5PhaseReset/NesExpansionVolume) |
+| `setParam` | `(string nodeId, string paramId, double value) → bool` | a live change to a param of a node the last published plan places (`Engine::setParam` → `GraphHost::setParam`): clamped to the param's range (rounded for an int, enum or bool) and applied at the start of the next block, on the command ring. The store sends a system's `gain` and a NES's `expansionVolume` to its node, `sys-<id>`, this way, with no publish. False for a node or param that plan does not have (a node the next document places takes its value from that document), a NaN, a param a wire drives, or a full ring |
 | `readState` | `(uint32 id) → optional<Bytestring>` | published savestate from the registry |
 | `readSram` | `(uint32 id) → optional<Bytestring>` | SRAM sliced from the published savestate |
 | `screenshot` | `(uint32 id, string path) → bool` | encodes the registry frame to PNG |
@@ -159,12 +159,14 @@ read of a core's state routes through the `SnapshotRegistry`. No method walks a 
 
 The table is a selection. The facets
 ([`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp)) hold 19
-`host` methods, 14 `emulator`, 22 `harness` (the renders, transport and sample rate, staged MIDI in and
+`host` methods, 12 `emulator`, 22 `harness` (the renders, transport and sample rate, staged MIDI in and
 MIDI out, `droppedMessages`, `buildTarget`, the kit compiles and the audio runtimes' profiling calls),
 27 `debug` and
-6 `driver`: 88 in the union. There is no call for what the roles do on the audio thread: their protocol
+6 `driver`: 86 in the union. There is no call for what the roles do on the audio thread: their protocol
 nodes are script node types every Engine embeds, and each node's settings ride the documents `setGraph`
-plans.
+plans. Nor is there one for a system's knobs: they are its system node's settings, in the same documents,
+and its params, whose live edits are `setParam`
+([modular-graph-phase-c2-design.md](../docs/modular-graph-phase-c2-design.md)).
 
 `duplicate`, `reload` and `remove` are **not** native methods: they are TS orchestration over
 `buildCore`-with-state, the registry reads and the documents the stores publish
@@ -210,8 +212,7 @@ DTO worth spelling out — it mirrors the TS `ConstructSpec`:
 | `savPath` / `statePath` | `optional<string>` | on-disk seed paths |
 | `sramBytes` / `stateBytes` | `optional<Bytestring>` | zip-import seed bytes (win over the on-disk paths) |
 | `romBytes` | `optional<Bytestring>` | ROM bytes to load instead of reading `romPath` (a patched image, e.g. LSDj asset overrides; honoured by SameBoy and by Mesen's NES, GBA and SMS / Game Gear), `romPath` still travelling for the watcher and `.sav` resolution |
-| `settings` | `optional<string>` | the backend "system"-role config JSON, decoded only by the matching backend |
-| `serialOutCapture` | `optional<string>` | arm a Game Boy's serial-out capture before its first block: `"drive"` (LSDj MI.OUT) or `"listen"` (master sync); any other name refuses the build; ignored by every other core |
+| `settings` | `optional<string>` | the backend "system"-role config JSON, decoded only by the matching backend, at the build: the construct-time fields, and the knobs the core starts with (its node gives it the document's at activation) |
 
 ## `Engine` + `QueuedInvoker`: the mutation path
 
@@ -297,13 +298,9 @@ staging). Then, in order:
 6. `syncTrace_.endBlock()`, then advance `ppq_` only if transport is running (so the protocol nodes'
    `walkTicks` and the cores see the same block-start ppq).
 
-Live config edits land in `Engine::applyConfigField`, dispatched by the core's concrete type and
-**value-guarded per field** so a whole-config re-send only acts on what changed (a `Model` change
-triggers `restartEmulator()` in place, and the cable needs no rewiring because `linkPeers_` holds
-the systems, which survive it; an unchanged one no-ops, avoiding a spurious restart that would nuke
-a restored savestate). It applies at drain against the plan current at that point, finding the core
-by id in that plan's `SystemTable`. `Engine::setSampleRate` re-rates the running plan's cores in slot
-order, then the parked ones, then re-activates the graph's buffers at the new rate;
+A system's live knobs never ride a host command: they are its system node's settings and params (below),
+which the node gives its core at the start of a block. `Engine::setSampleRate` re-rates the running plan's
+cores in slot order, then the parked ones, then re-activates the graph's buffers at the new rate;
 `Engine::setMaxBlockFrames` grows the plan's block size to a host's maximum (never below 8192, the
 largest block the parity matrix holds), and the plugin and the SDL standalone call it before handing
 the engine over.
@@ -355,8 +352,8 @@ queues into a list nothing reads); mGB and LSDj hear MIDI through `serialIn`. Th
 `serialOut` output (bytes): after `finishBlock`, while it is connected, the node copies the bytes its
 core captured on the serial port this block, each a message at the frame the core completed it, a byte
 completed past the block's end at its last frame (the core clears its log at its next
-`prepareForBlock`). Capture runs only while armed (the build-time `serialOutCapture`, or
-`setSerialOutCapture`; TS arms it for LSDj's two MIDI-out modes), in one of two modes
+`prepareForBlock`). Capture runs only while armed, by the node's `serialOutCapture` setting (below; TS
+sets it for LSDj's two MIDI-out modes and `off` otherwise), in one of two modes
 (`SerialOutCapture`): `listen` takes the bytes the Game Boy clocks out itself (LSDj as master sync's
 master), and `drive` also clocks a transfer waiting on an external clock, a bit an audio frame, taking a
 byte every 8 frames while the Game Boy holds the port for one, idle bytes included (the Arduinoboy's part
@@ -386,35 +383,91 @@ atomic and the GraphHost's, `GraphHost::reclaim` names a node the first time its
 `Engine::droppedMessages()` (the harness RPC `droppedMessages`) reads the total, which the parity rig and
 the native goldens run hold at zero.
 
+### The system nodes' settings and params
+
+A system's live knobs are its node's ([SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp),
+[modular-graph-phase-c2-design.md](../docs/modular-graph-phase-c2-design.md)): each is either a **setting**, in
+the document, which an edit publishes, or a **param**, its value in the document and its live edits through
+`setParam` (above). A param is what is worth playing, automating or modulating, so it is also a control input a
+wire could drive; everything else, display knobs, accuracy switches and latencies among them, is a setting.
+
+| Node | Settings | Params |
+|---|---|---|
+| `rp.sameboy.gb` | `core`, `model`, `fastBoot`, `highpass`, `colorCorrection`, `dmgPalette`, `lightTemperature`, `serialOutCapture` | `gain` |
+| `rp.mesen.nes` | `core`, `region`, `removeSpriteLimit`, `apuLatencyMs`, `s5bNoise`, `mmc5PhaseReset` | `gain`, `expansionVolume` |
+| `rp.mesen.gba`, `rp.mesen.sms` | `core` | `gain` |
+
+- **Values.** `core` is the id `buildCore` parked the core under. Every knob is optional: absent, the node leaves
+  the core as it was built, or as the last document that carried the field left it. An enum is a label as the role
+  configs spell it ([settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)), which is its C++ enumerator's
+  name with the first letter lowercased (`SameBoyModel::CgbC` is `"cgbC"`, `SameBoyHighpass::RemoveDcOffset` is
+  `"removeDcOffset"`): `knobs::Label<E>`, an `rfl::Literal` generated at compile time from reflect-cpp's
+  enumerator list, reads exactly those strings, lists them in the descriptor's schema and maps one back to its
+  enumerator by position, so native has one spelling of each label and a document and a saved `.rplg` carry the
+  same word. An ordinal, another spelling, or a number out of its range (`lightTemperature` -1 to 1,
+  `apuLatencyMs` 0.25 to 6, NaN included) refuses the settings, and with them the document, never clamped. A field
+  the type does not know is ignored (the settings reader takes extra fields), which is why
+  `BuildGraphGoldens.test.cpp` holds every golden document's system nodes to the fields their types' schemas list.
+  `serialOutCapture` is `off`, `listen` (master sync) or `drive` (MI.OUT). `gain` is dB from -90 to 12, default 0;
+  `expansionVolume` an int param, whole percent of unity from 0 to 200, default 100, as the core takes it.
+- **Only a new core rebuilds.** The node keys its rebuild on `core` (node.hpp's `rebuild_key`: prepare compares
+  the new settings' key with the key the instance was created with, which no commit writes) and declares
+  `stateless_prepare`, so every other settings change is a commit that never makes `setGraph` wait for the
+  audio thread.
+- **When a setting reaches the core.** `on_settings` only points the node at the committed settings (it never
+  allocates). At its first activation the node takes its core and gives it every knob present, before that core
+  first runs; after that it gives it what moved (present, and absent from or different in what it gave last) at
+  the start of its next block, in `prepare`, before its inputs and `prepareForBlock`, which a linked Game Boy's
+  coupled group runs for every member before any of them steps. Each goes through the core's own value-guarded
+  setter, so a palette change reapplies the display group and restarts nothing, a model change restarts the core
+  (`restartEmulator`; the cable needs no rewiring because `linkPeers_` holds the systems, which survive it) and a
+  region change resets it. A Game Boy gives `fastBoot` first, which waits for the next restart and so is what a
+  model's restart boots with, then the rest in the role config's order, the capture last. The capture lands at
+  the start of the first block of the plan that carries it, the block `rp.lsdj.serial-out` first runs in its new
+  mode, so no byte captured in one mode is decoded in the other.
+- **When a param reaches the core.** Each param's latest value in the block is given after the settings and
+  before the inputs, value-guarded against the value the core was given last, so a publish carrying the value the
+  core already has calls nothing; a change anywhere in a block lands at its start, and the core smooths gain as
+  it does every gain change. A node reads its params only in a block (the host binds its control streams there,
+  landing the document's values in them as it adopts the plan), so they reach the core at the node's first block,
+  before its first `prepareForBlock`, not in `activate`: a core its node has taken runs nothing before that, so
+  its first sample plays at the document's level. A document without a param leaves its stream where it was: at
+  its default, on a new node.
+- **Allocation.** A Game Boy's knobs and every node's params allocate nothing on the block thread. A NES's settings
+  can: its core allocates inside Mesen in its own blocks, and its sprite-limit and accuracy setters do too,
+  whatever path calls them.
+- **A refused document** can still have given knobs to a core one of its nodes took, since activation runs while
+  it plans: the core goes back to parked with them, for the next document, which in the app carries the same.
+
 ### Graph requests
 
 Structure arrives as a graph document TS builds
 ([`buildGraph.ts`](../packages/retroplug/src/graph/buildGraph.ts),
 [modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md)), in two calls:
 
-- **`buildCore(spec)`** builds and activates a core on the control thread (`factory.build`), arms a Game
-  Boy's serial-out capture if the spec asks, and parks it under its system id with `Engine::parkCore`,
-  which claims its snapshot slot (after checking the id is not live: the registry finds a slot by id, first
-  match). It answers with the node type the core is placed as and the two values the graph needs as the
-  core decoded them (a NES's export mode, a Game Boy's link group), or null. It refuses id 0 (the
-  registry's free-slot id) and an id that is still live: parked, or held by a node of any plan not yet
-  reclaimed (it reclaims first, so with no audio thread running every removed core is already gone).
+- **`buildCore(spec)`** builds and activates a core on the control thread (`factory.build`) and parks it
+  under its system id with `Engine::parkCore`, which claims its snapshot slot (after checking the id is
+  not live: the registry finds a slot by id, first match). It answers with the node type the core is
+  placed as and the two values the graph needs as the core decoded them (a NES's export mode, a Game Boy's
+  link group), or null. It refuses id 0 (the registry's free-slot id) and an id that is still live:
+  parked, or held by a node of any plan not yet reclaimed (it reclaims first, so with no audio thread
+  running every removed core is already gone).
 - **`setGraph({ document, slots, tap? })`** (`Engine::setGraph`) first reclaims what the audio thread
   handed back (the GraphHost's plans, the script host's released instances), then checks that the
-  document's system nodes and the slots name the same systems, each node `sys-<id>` with settings
-  `{ "core": <id> }`, of the node type its core is placed as, that a tap arm names one of the slots and
-  a mode from 1 to 3, that there is at most one `rp.host.midi-in` and one `rp.host.controller-in`, and at
-  most one `rp.n8.cart-mirror`, naming one of the slots' NES systems (any of these refuses the document
-  before anything is built); builds the plan's `SystemTable` (a slot-ordered list of
-  `{ id, SystemBase*, MesenNesSystem* }`, the NES pointer for the channel tap, plus the system the cart mirrors,
+  document's system nodes and the slots name the same systems, each node `sys-<id>` with settings naming
+  its core (`"core": <id>`, beside its knobs, which the node reads), of the node type its core is placed
+  as, that a tap arm names one of the slots and a mode from 1 to 3, that there is at most one
+  `rp.host.midi-in` and one `rp.host.controller-in`, and at most one `rp.n8.cart-mirror`, naming one of
+  the slots' NES systems (any of these refuses the document before anything is built); builds the plan's
+  `SystemTable` (a slot-ordered list of `{ id, SystemBase*, MesenNesSystem* }`, the NES pointer for the
+  channel tap, plus the system the cart mirrors,
   [SystemTable.hpp](../packages/native/src/host/graph/SystemTable.hpp)) from the slots and the live cores;
   turns `tap` into the swap's `SyncTap` trailer; and hands both to `GraphHost::setGraph`, which computes
   every node's layout from the document (`layout_for` on each node type), runs every layout check, and
-  only then creates and activates the new instances. The table rides with the plan, so the audio
-  thread's lookups always match the plan that is running. Once a document has published, a core still
-  parked is one no document placed, and is freed with its snapshot slot. A refused document changes
-  nothing: a core a node of the refused plan had taken goes back to parked, for a corrected document to
-  place.
+  only then creates and activates the new instances. The table rides with the plan, so the audio thread's
+  lookups always match the plan that is running. Once a document has published, a core still parked is one
+  no document placed, and is freed with its snapshot slot. A refused document changes nothing: a core a
+  node of the refused plan had taken goes back to parked, for a corrected document to place.
 
 The document `buildGraph` writes:
 
@@ -478,13 +531,26 @@ The document `buildGraph` writes:
 - **Cores.** A node takes its core on first activation through the host service `rp.host.cores/1`
   ([HostServices.hpp](../packages/native/src/host/graph/HostServices.hpp)), by the id its settings name,
   and owns it from then on.
+- **The system nodes' knobs** (`systemKnobs` in `buildGraph.ts`, the one table of which core-config field is a
+  setting and which a param, which the store reads too). A system node's settings carry `core`, the setting fields
+  of its system's core-config role (the role whose kind is its core, `sameboy` or `mesen`) as that config spells
+  them, and on a Game Boy `serialOutCapture`, for the mode its `lsdj-sync` node actually runs, after the MI.MAP
+  controller's override (`serialOutCaptureFor`,
+  [graph/controller.ts](../packages/retroplug/src/graph/controller.ts)): `drive` for MI.OUT, `listen` for master
+  sync, and `off` otherwise, a Game Boy with no `lsdj-sync` placed included, since a capture left out would leave an
+  armed one armed. Its params carry the system's `gain` and a NES's `expansionVolume`. A setting value the node
+  would refuse (another label, a number out of range, another type) is left out rather than sent, the core keeping
+  what it has: the planner refuses a whole document for one node's settings, and a loaded project keeps its config
+  as written. A param passes any finite number, which the planner clamps. A system with no core config (a
+  `DirectGraph`'s until `setCoreConfig`, the B1 translator goldens' models) carries `core` and a Game Boy's capture
+  alone.
 
 ### `QueuedInvoker`
 
 [`QueuedInvoker`](../packages/native/src/host/engine/EngineInvoker.hpp) (in the files
 `EngineInvoker.{hpp,cpp}`) is **the one command path; there is no Direct/Queued fork**. Structure
-arrives as graph requests (above). Every other edit packs into a POD
-[`DspCommand`](../packages/native/src/host/engine/DspCommand.hpp) and pushes onto the GraphHost's
+arrives as graph requests (above), and a param's value through `setParam`. Every other edit packs into a
+POD [`DspCommand`](../packages/native/src/host/engine/DspCommand.hpp) and pushes onto the GraphHost's
 one `SpscRing<Command, 256>` as an opaque host command, behind any plan already there. The single
 control-thread bit `audioThreadOwns_` (forwarded to `GraphHost::setAudioThreadOwns`) decides who
 drains: while the audio thread owns the `Engine` it drains each block and the producer just pushes;
@@ -502,7 +568,6 @@ cleanly.
 | `StageControllerMidi` | `uint8 data[4]`, `len` | inline only; a message over 4 bytes is refused before it is pushed |
 | `StageSystemMidi` | `id`, `data[4]` / `len` or `ext` | as `StageMidi`, delivered at drain to one system's ingress (and to the cart when the plan's cart mirror names that system), never through the routing node |
 | `SetBpm` / `SetTransport` / `SetPpq` | `double` / `bool` / `double` | inline |
-| `SetConfigField` | `id`, `field`, `value` | inline |
 | `PressButton` | `id`, `button`, `down` | inline |
 | `WriteRam` | `id`, `offset`, `vector<uint8>* bytes` | owning |
 | `SyncTap` | `arm`, `mode`, `id` | inline; rides in the plan's swap command as a trailer for every `setGraph` request carrying a `tap` |
@@ -516,9 +581,8 @@ export mode (either pin split 1, `ChannelSplit` 3, as `buildGraph` decides for a
 single NES), recording what it replaced. TS sends it on every edit that builds or drops a core and on
 every routing change, even when the wanted mode is unchanged, and each run resets the capture streams;
 it rides the plan's swap, so no block runs between the two. `armedTap_` holds the core pointer as well
-as the id, so a core that has gone is never restored onto another. The `LinkGroup` config field is the
-one field that is also structure: the invoker pushes it to the core, and the store republishes the
-graph with the cable.
+as the id, so a core that has gone is never restored onto another. A param's value from `setParam` rides
+the same ring as a command of the GraphHost's own, not a `DspCommand`, into its param's control stream.
 
 **Ownership handoff.** A displaced or removed core leaves with the plan that last ran it, and is
 freed on the control thread when that plan is reclaimed (`reclaimReleased` → `GraphHost::reclaim`):
@@ -627,8 +691,9 @@ The cores are built **bare** — no feature behaviour is baked into C++. The DSP
 folding the overrides into the ROM in memory at construct, with no audio-thread part. See 04. The system-role config
 schema (`SameBoyRoleConfig` field names) mirrors TS's
 `coreRoles.ts`; [`decodeSameBoyRoleConfig`](../packages/native/src/system/sameboy/SameBoyBackend.cpp#L19)
-reads with `rfl::DefaultIfMissing` (forward-tolerant) and is the single JSON decode point,
-shared by live `applyRoleConfig` and the construct blob. The role model is 04's topic.
+reads with `rfl::DefaultIfMissing` (forward-tolerant) and is the single JSON decode point, for the
+construct blob alone: a live edit reaches the core as its system node's settings (above). The role model is
+04's topic.
 
 ### `MesenBackend`
 
@@ -862,7 +927,7 @@ its **runtime** classes:
 | Shared class | Host use |
 |---|---|
 | [`SystemBase`](../packages/native/src/system/SystemBase.hpp) | the abstract core; owned by its system node in the running plan (`SystemNode<T>`, [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)); drives `onActivate`/`onProcess`/`framebuffer`/`saveStateBytes`/`readStateSnapshot`/`stateRegions`/`enableStateSnapshot`/`pressButton`/`pushSerialIn` |
-| [`SameBoySystem`](../packages/native/src/system/sameboy/SameBoySystem.hpp) | the GB core; the live-apply `dynamic_cast` target for `applyConfigField`; its `linkPeers_` are the serial cable, set by its node's `rp.link/1` `set_peers` (the other members of its coupled group, in member order) |
+| [`SameBoySystem`](../packages/native/src/system/sameboy/SameBoySystem.hpp) | the GB core; its node gives it its knobs through value-guarded setters (`setModel`, `setHighpass`, the display group, `setSerialOutCapture`); its `linkPeers_` are the serial cable, set by its node's `rp.link/1` `set_peers` (the other members of its coupled group, in member order) |
 | [`MesenNesSystem` / `MesenGbaSystem` / `MesenSmsSystem`](../packages/native/src/system/mesen) | the NES, GBA and SMS/GG cores; the NES is the `SyncTap` target |
 | the LSDj kit/sample pipeline (`KitCompiler` / `KitUtil` / `SampleCache` / `Effects`), `util/MinizZip`, `EmbeddedRoms` | backing kit patching, `zip`/`unzip`, and embedded-ROM resolution |
 | `SpscRing` / `FrameBufferTriple` / `MemorySnapshotTriple` | the transport **primitives** the command/release rings and the snapshot registry are built on |
@@ -917,9 +982,9 @@ is one automatable parameter applied post-render across all 8 channels
 
 - [`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp) — mounts the capability facets onto a server; the single source of truth for the wire surface.
 - [`CoreBackends.cpp`](../packages/native/src/system/CoreBackends.cpp) — registers the `sameboy` / `mesen` backends into the `SystemFactory`.
-- [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp): the single-threaded owner of the graph (with its script host), the staged host MIDI, the host outputs and the registry; `processBlock`, `setGraph`, `loadScriptPack`, the command handler, `SyncTap`.
+- [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp): the single-threaded owner of the graph (with its script host), the staged host MIDI, the host outputs and the registry; `processBlock`, `setGraph`, `setParam`, `loadScriptPack`, the command handler, `SyncTap`.
 - [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp): `QueuedInvoker`, the one command path; [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp).
-- [`host/graph/`](../packages/native/src/host/graph): [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) (the cores as nodes), [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) (the host I/O nodes and the cart mirror), [`SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp), [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp).
+- [`host/graph/`](../packages/native/src/host/graph): [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) (the cores as nodes, with their settings and params), [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) (the host I/O nodes and the cart mirror), [`SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp), [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp).
 - [`GraphHost.hpp`](../packages/native/src/graph/GraphHost.hpp) / [`.cpp`](../packages/native/src/graph/GraphHost.cpp), [`rp_node.h`](../packages/native/src/graph/rp_node.h): the one ring, plan swap and reclaim; the node ABI (`layout_for` per type).
 - [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) — the owned read door.
 - [`SystemFactory.hpp`](../packages/native/src/system/SystemFactory.hpp), [`SameBoyBackend.cpp`](../packages/native/src/system/sameboy/SameBoyBackend.cpp), [`MesenBackend.cpp`](../packages/native/src/system/mesen/MesenBackend.cpp) — the build path.

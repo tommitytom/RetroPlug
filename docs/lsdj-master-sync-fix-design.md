@@ -153,7 +153,8 @@ Each goes through review.
 
 - **A live switch from MI.OUT to master sync** can decode the one block captured under `drive` before the capture
   flips as clocks: master sync sends a NoteOn, 0xFA and clocks for it, then the real run's clocks, or 0xFC 200 ms on
-  if none follow. Accepted, since it needs a user's mode switch on an LSDj set to the other SYNC mode.
+  if none follow. Accepted, since it needs a user's mode switch on an LSDj set to the other SYNC mode. Retired by
+  [Phase C2](modular-graph-phase-c2-design.md): the capture rides the document that hands the decoder its mode.
 - **Only the fixture-only LSDj tests prove `listen` captures a self-clocked byte**
   ([lsdj-mastersync.test.ts](../packages/retroplug/test-native/lsdj-mastersync.test.ts) and the master-sync parity
   cases). CI checks the modes on the wire and that `listen` never clocks (mGB, section 7).

@@ -106,7 +106,7 @@ swept as their feature lands or when touched. Known ones:
 
 | Location | Marker |
 |---|---|
-| [host/engine/Engine.cpp](../packages/native/src/host/engine/Engine.cpp) | `fastBoot` takes effect on the next restart, not live |
+| [host/graph/SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp) (`GameBoy::apply`) | `fastBoot` takes effect on the next restart, not live |
 
 Not cleanup (intentional domain terms that read like TODOs): `deferredProject` in
 [systemsStore.ts](../packages/retroplug/src/systemsStore.ts) and `kind: "deferred"` in
@@ -134,9 +134,6 @@ decodes MI.OUT and master sync in the block the core captured the bytes and send
 frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate nothing, and the profile's
 `apu-render` spans the plan. What is left, in order:
 
-- **The capture mode as a Game Boy node setting** (Phase C, with the other live knobs): carried in the
-  published document rather than through `ConfigField::SerialOutCapture` plus a publish, it would make a mode
-  switch atomic and retire the master-sync design's first accepted limit (its section 10).
 - **Script node packs, built in Phase C1**
   ([modular-graph-phase-c1-design.md](../docs/modular-graph-phase-c1-design.md)): each pack of script node types
   runs in a QuickJS runtime pair of its own, the built-in bundle the first, packs load and reload while audio runs
@@ -178,6 +175,34 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **A record the release ring back cannot take keeps its pack for the host's life**, as it leaks its record rather
     than free it on the audio thread; nothing has filled that ring. A profile build's absolute live heap leaves out
     what the load of any pack loaded beside the built-in one allocated (its deltas are exact).
+- **Live knobs as system node settings and params, built in Phase C2**
+  ([modular-graph-phase-c2-design.md](../docs/modular-graph-phase-c2-design.md)): each system's knobs are its node's,
+  a setting in the published document (a Game Boy's model, display group and LSDj capture, a NES's region, accuracy
+  switches and APU latency) or a param (every system's gain, a NES's expansion volume), its value in the document and
+  its live edits through `setParam`; node.hpp's `rebuild_key` lets the system nodes prepare statelessly, so a knob
+  edit never makes `setGraph` wait; and the side path (`ConfigField`, `Engine::applyConfigField` and its casts, the
+  `applySystemSetting` / `applyRoleConfig` / `setSerialOutCapture` RPCs, the build spec's capture) is gone. A Game
+  Boy's capture rides the document that hands its decoder the mode, computed from the mode that decoder runs, so an
+  LSDj mode switch is atomic (retiring the master-sync design's first accepted limit, its section 10) and a cart the
+  MI.MAP controller forces captures nothing (closing the B3b item below). Strict parity held bit for bit at every
+  commit. What it leaves (its sections 9 and 10):
+  - **DAW automation of node params.** The plugin's parameters are not mapped onto `setParam`; params make it
+    possible, and it is its own work.
+  - **The plugin's sync latency report** (`__rp_syncLatencyMs`) still follows the stored `lsdj-sync` mode, not the
+    one the MI.MAP controller forces.
+  - **The construct-time fields and `buildCore`'s facts.** SMS `enableFm`, NES `sdRoot`, the FIFO profile and its
+    overrides, the N8 link and its round trip and `channelExportMode` stay in the build spec until C3 builds cores in
+    their nodes; `buildCore`'s report of a NES's export mode and a Game Boy's link group stays a cast until C4.
+  - **A NES's settings allocate on the block thread.** Its core allocates inside Mesen in its own blocks, and its
+    sprite-limit and accuracy setters do too, whatever path calls them (they did on the command ring), so "no
+    allocation" holds for a Game Boy's knobs and every node's params only ([02-native-host.md](02-native-host.md)).
+  - **A system node ignores a settings field it does not know**, as every C++ node does: a misspelt knob plans and
+    does nothing. `BuildGraphGoldens.test.cpp` holds the goldens' system nodes to their schemas' fields; a strict
+    reader would refuse it at plan time instead.
+  - **Enum labels have two spellings on the C++ side.** A system node's enum settings read the role configs' labels,
+    the enumerator's name with its first letter lowercased (`"cgbC"`, `knobs::Label` in
+    [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)), where node.hpp's `enum_param` labels are
+    kebab-case (`"cgb-c"`), so a knob moved from a setting to an enum param would change the word a document carries.
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
     moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype
@@ -216,13 +241,11 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     ([parameterMap.ts](../packages/retroplug/src/parameterMap.ts)), which still exposes mGB's CC lanes for an LSDj
     cart carrying a stale `mgb`. The fix is `placedRole(...)`
     ([graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts)) in those readers. Not fixed.
-  - **The controller's MI.MAP override changes only the document.** `controllerSyncOverride`
+  - **The controller's MI.MAP override changed only the document: closed by C2.** `controllerSyncOverride`
     ([graph/controller.ts](../packages/retroplug/src/graph/controller.ts), applied in `buildGraph`) runs an LSDj's
-    nodes in `midiMap` for a cart reading MidiMap (in `off` for one reading another SYNC), but `serialOutCaptureFor`
-    (`systemsStore.ts`) and `__rp_syncLatencyMs` still follow the stored `lsdj-sync` mode: an LSDj stored in MI.OUT
-    (or master sync) whose nodes the controller forces keeps capture "drive" (or "listen") while its nodes run the
-    forced mode, and its `rp.lsdj.serial-out` leaves those bytes unread. Pre-existing: `kernelProjection` behaved
-    the same.
+    nodes in `midiMap` for a cart reading MidiMap (in `off` for one reading another SYNC), and `serialOutCaptureFor`,
+    beside it since C2, computes the Game Boy's capture from that forced mode, so a forced cart captures nothing. Only
+    `__rp_syncLatencyMs` still follows the stored mode, listed with C2's leftovers above.
   - A few test-native case names still say "the kernel" (in `dsp-lsdj-midisync`, `dsp-risa-sync`,
     `dsp-sms-sync` and `plugin-controlplane`), where they mean the protocol nodes. Renaming
     a case is harmless but was kept out of B3b, which changed no test's identity it did not have to (the one case
