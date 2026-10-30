@@ -1414,17 +1414,17 @@ TEST_CASE("a knob absent from a system node's settings leaves its core as it was
     }
     SECTION("NES") {
         NodeRig rig(kRate);
-        // Built as Ntsc; a document that carries no region leaves it as it was built.
+        // Built as Pal; a document that carries no region leaves it as it was built.
         REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot(
                                                     "rp.mesen.nes", 1,
-                                                    R"("region":"ntsc","removeSpriteLimit":true,"apuLatencyMs":3,)"
+                                                    R"("region":"pal","removeSpriteLimit":true,"apuLatencyMs":3,)"
                                                     R"("s5bNoise":"chip","mmc5PhaseReset":"chip")")))
                         .ok);
         const auto* const core = dynamic_cast<const MesenNesSystem*>(rig.builtCore(1));
         REQUIRE(core != nullptr);
         REQUIRE(rig.set(knobbed("rp.mesen.nes", rig.boot("rp.mesen.nes", 1))).ok);
         run(rig, 512, 4);
-        CHECK(core->config().region == static_cast<std::uint32_t>(NesRegion::Ntsc));
+        CHECK(core->config().region == static_cast<std::uint32_t>(NesRegion::Pal));
         CHECK(core->config().removeSpriteLimit);
         CHECK(core->config().apuLatencyMs == 3.0);
         CHECK(core->config().s5bNoise == 0);
