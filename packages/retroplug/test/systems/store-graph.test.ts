@@ -866,6 +866,20 @@ test("a stored core config value the system node would refuse is noted, so a dro
   ]);
   // A value absent is not a value refused, and one the node takes says nothing.
   expect(warned(() => stored("/roms/b.gb", { model: "dmgB" })).warnings).toEqual([]);
+  // A core config's param is a knob too: a value that is not a finite number cannot ride a document's param, so it is
+  // dropped like a refused setting field and noted with it.
+  const nes = (over: Record<string, unknown>) =>
+    sys.adopt({ romPath: "/roms/c.nes", core: "mesen", roles: [{ kind: "mesen", config: over }] })!;
+  const dropped = warned(() => nes({ region: "PAL", expansionVolume: "40" }));
+  expect(be.graphNode(`sys-${dropped.result}`)?.settings).toEqual(canon({ core: dropped.result }));
+  expect(be.graphNode(`sys-${dropped.result}`)?.params).toEqual({ gain: 0 }); // the param is left out, not sent
+  expect(dropped.warnings).toEqual([
+    '[systems] /roms/c.nes: its stored mesen config holds a value its node would refuse: ' +
+      'dropped region "PAL", dropped expansionVolume "40"',
+  ]);
+  expect(warned(() => nes({ expansionVolume: null })).warnings).toEqual([
+    '[systems] /roms/c.nes: its stored mesen config holds a value its node would refuse: dropped expansionVolume null',
+  ]);
 });
 
 test("a left-out lsdj-sync arms no serial-out capture: not where it is placed, nor on an edit", () => {

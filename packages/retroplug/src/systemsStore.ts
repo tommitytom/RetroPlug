@@ -11,7 +11,7 @@
 // (PluginDSP.cpp:406-458), with every path derived by the pure kernels.
 
 import type { ConstructSpec, ControlPlaneBackend, HostBackend } from "./backend";
-import { refusedSettings, systemKnobs, systemNodeId, type GraphSystem } from "./graph/buildGraph";
+import { droppedKnobs, systemKnobs, systemNodeId, type GraphSystem } from "./graph/buildGraph";
 import { canonicalJson } from "./graph/canonicalJson";
 import { EngineGraph } from "./engineGraph";
 import { detectPlatform, romHasBattery, ROM_SNIFF_LEN, SEGA_SNIFF_LEN, defaultCoreFor, type Platform, type Core } from "./platform";
@@ -716,14 +716,14 @@ export class SystemsStore {
     const built = this.backend.buildCore(spec, id); // its LSDj capture, if any, comes with the document that places it
     if (!built) return null;
     // A core config stays as written (its role's schema does not parse it: the build spec carries it), so the system
-    // node leaves out a value it would refuse and that one core keeps what it has. Say which, since the stored config,
-    // the document and the core then disagree.
+    // node leaves out a value it would refuse, or a param's value that is not a finite number, and that one core keeps
+    // what it has. Say which, since the stored config, the document and the core then disagree.
     if (systemRole) {
-      const refused = refusedSettings(built.type, systemRole.config);
-      if (refused.length)
+      const dropped = droppedKnobs(built.type, systemRole.config);
+      if (dropped.length)
         notes.push(
           `[systems] ${rom}: its stored ${core} config holds a value its node would refuse: ` +
-            refused.map(([field, value]) => `dropped ${field} ${JSON.stringify(value)}`).join(", "),
+            dropped.map(([field, value]) => `dropped ${field} ${JSON.stringify(value)}`).join(", "),
         );
     }
     for (const note of notes) console.warn(note);
