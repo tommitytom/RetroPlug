@@ -109,9 +109,9 @@ scratch (4352 indices twice: 34 KiB), the run arena (74752 bytes, 73 KiB), the F
 78849-byte bound, 154 KiB), its largest command frame (65538 bytes, 64 KiB), the wire queue (73 KiB), fifo_a's RAM
 (2 KiB) and the press queue, about 500 KiB more: a NES with its role is about 1.2 MiB at the floor. A Master System's
 sync role holds 74752 levels of 8 bytes and a second copy for the sort (598016 bytes each, 1.14 MiB), so with the press
-queue and the ring it is about 1.4 MiB. A Game Boy's serial input is a 147456-byte ring and 8256 runs of 8 bytes (144 KiB
-and 64 KiB) and its press queue is 1024 entries of 8 (8 KiB), about 217 KiB on top of its own scratch sets, and the
-queues are sized whether or not a document uses them, which is what keeps the first block from allocating.
+queue and the ring it is about 1.4 MiB. A Game Boy's serial input is a 147456-byte ring and 8256 runs of 8 bytes
+(144 KiB and 64 KiB) and its press queue is 1024 entries of 8 (8 KiB), about 217 KiB on top of its own scratch sets,
+and the queues are sized whether or not a document uses them, which is what keeps the first block from allocating.
 
 **Overflow** drops the NEWEST frames, the ones that do not fit, copies the prefix that does, counts the rest in
 `overflowFrames_` and asserts in a debug build. The queued frames are the ones the pending block's sample indices and
@@ -433,14 +433,14 @@ None of them is reachable from the block cases (the in-repo NES ROM never issues
 is ROM-dependent for the SD path.
 
 **A reply the permissive FIFO cannot hold answers a status, and a read stops when its bytes are dropped.** fifo_a's
-permissive profile has a storage bound but no modelled depth (section 11), so a `CMD_F_FRD` or `CMD_F_DIR_GET` reply past
-`_rxBound` used to be delivered up to the bound and then lose its tail byte by byte, which leaves the ROM's parser
+permissive profile has a storage bound but no modelled depth (section 11), so a `CMD_F_FRD` or `CMD_F_DIR_GET` reply
+past `_rxBound` used to be delivered up to the bound and then lose its tail byte by byte, which leaves the ROM's parser
 mid-record rather than telling it the command failed. Both commands measure the reply against the room before pushing a
 byte and answer `EDIO_INVALID_PARAMETER` (0x13) instead; a modelled depth is the device's own overflow, which still
 truncates. `execFileRead` also stops at the chunk whose pushes start being dropped, rather than reading the rest of a
-ROM-chosen length off the card for bytes the FIFO will refuse. And `CMD_F_FRD_MEM` validates the range the ROM asked for,
-not the bytes the file happened to hold: a short file cannot turn a request the device cannot serve into a partial
-success, so the answer is 0x13 and neither the cart nor the file pointer moves.
+ROM-chosen length off the card for bytes the FIFO will refuse. And `CMD_F_FRD_MEM` validates the range the ROM asked
+for, not the bytes the file happened to hold: a short file cannot turn a request the device cannot serve into a
+partial success, so the answer is 0x13 and neither the cart nor the file pointer moves.
 
 ## 10. Found while building
 
@@ -742,16 +742,18 @@ the core itself (section 12).
   per-instance output drops, since `rp_process` carries no instance-drop pointer and an input-drop service on the node
   seam is its own change.
 - **A freshly built core's first block pays its boot savestate capture** (sections 4, 6, 9): `enableStateSnapshot`
-  arms an immediate publish so a Save right after load works, and a whole savestate through Mesen's streaming serializer
-  allocates by nature. It cannot be warmed at activation instead: `NesApu::Serialize` calls `EndFrame`, so the capture's
-  point is emulation state, and moving it moves parity (a tried first attempt did, one byte of work RAM). The first
-  block's case therefore pins the block to exactly one capture's allocations on the platform it runs on, measured on a
-  twin that ran the same block; everything else in a fresh first block is warmed at activation. The periodic capture
-  (below) is the same cost recurring.
+  arms an immediate publish so a Save right after load works, and a Mesen console's savestate is a whole one through
+  Mesen's streaming serializer, which allocates by nature. It cannot be warmed at activation instead:
+  `NesApu::Serialize` calls `EndFrame`, so the capture's point is emulation state, and moving it moves parity (a tried
+  first attempt did, one byte of work RAM). A Game Boy's capture is not a streaming serializer: it is one `resize` of
+  the scratch it reuses, so its first block pays one allocation and every later capture is free. The first block's
+  case therefore pins the block to exactly one capture's allocations on the platform it runs on, measured on a twin
+  that ran the same block; everything else in a fresh first block is warmed at activation. The periodic capture
+  (below) is the same cost recurring on a Mesen console.
 - **A thread's first NESTED notification send still allocates** (section 9): the top-level copy is a `thread_local`
   object now, so a console's first frame on a thread allocates nothing, but a listener that sends a notification of its
   own takes a pool entry on first use, and a thread whose first send has a non-empty listener list grows the copy's
-  storage. This host registers no listeners, so the first is the only one reachable here.
+  storage. Neither is reachable here: the only notification path this host takes is the top-level one, which is free.
 - **Two output-side allocations remain** (section 2's third decision's scope was inputs): the N8 `_txQueue` is a
   `std::vector` a debug `drainCoreBytes` RPC swaps empty, so a non-link ROM's next `CMD_USB_WR` after a drain grows it,
   and a Game Boy's `serialOutLog_` is cleared each block but its capacity grows to the largest block's capture while

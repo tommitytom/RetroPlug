@@ -513,12 +513,14 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   allocates inside Mesen's streaming serializer; and the N8 firmware's SD path allocates in its command handlers, in
   a bigger directory listing and in an unbounded TX queue ([07-remaining-work.md](07-remaining-work.md)). A Game
   Boy's knobs, the ones it applies in place, a NES's setters but its region, and every param allocate nothing at all.
-- **A freshly built core's first block is the warmed block with one exception.** The controller snapshot, the four
-  persistent frame input copies and the video filter's output buffer are sized at activation, off the block thread, and
-  a core built directly has a first block that allocates and frees nothing. A core the Engine builds also arms its boot
-  savestate capture for the first block (`enableStateSnapshot`), and that is a whole savestate through Mesen's
-  serializer, which allocates by nature: it cannot move to activation without moving `NesApu::EndFrame` with it, so the
-  first-block case pins that block to exactly one capture and nothing else.
+- **A freshly built core's first block is the warmed block with one exception.** A Mesen core's controller snapshot, the
+  four persistent frame input copies and the video filter's output buffer are sized at activation, off the block thread,
+  so a core built directly has a first block that allocates and frees nothing. A core the Engine builds also arms its
+  boot savestate capture for the first block (`enableStateSnapshot`). A Mesen console's capture is a whole savestate
+  through Mesen's serializer, which allocates by nature, and it cannot move to activation without moving
+  `NesApu::EndFrame` with it; a Game Boy has none of that plumbing, and its capture is one `resize` of the scratch it
+  reuses, so its first block pays that one allocation and its periodic captures are free. Either way the first-block
+  case pins that block to exactly one capture and nothing else.
 - **A refused document** can still have given knobs to a node it reuses, since activation runs while it plans: a
   reused node's core keeps them, and the next document in the app carries the same. A core a refused plan's new node
   built is destroyed as that plan's instances unwind, with its snapshot slot and its resource pins.
@@ -757,10 +759,10 @@ Every backend takes a
 build outside a plan) and a `SystemConfig` (`std::variant<SameBoyConfig, MesenNesConfig, MesenSmsConfig,
 MesenGbaConfig>`, whose alternative names the console). The block size is what a core sizes its audio ring and its
 per-block scratches to *before* it activates, so a 64-frame plan's core never holds an 8192-frame plan's buffers; no
-Engine host plans below 8192 today (`setMaxBlockFrames` only grows), so only a `GraphHost` built directly reaches that. A
-core built outside a plan keeps `SystemBase::kDefaultBlockFrames` (8192, held to `Engine::kDefaultMaxBlockFrames` by a test;
-Mesen cores size from `MesenAudioDevice::kDefaultBlockFrames`, held to the same constant, so two names stand for one
-contract until they collapse).
+Engine host plans below 8192 today (`setMaxBlockFrames` only grows), so only a `GraphHost` built directly reaches that.
+A core built outside a plan keeps `SystemBase::kDefaultBlockFrames` (8192, held to
+`Engine::kDefaultMaxBlockFrames` by a test; Mesen cores size from `MesenAudioDevice::kDefaultBlockFrames`, held to the
+same constant, so two names stand for one contract until they collapse).
 A [`SystemBackend::build`](../packages/native/src/system/SystemFactory.hpp) runs on the
 control thread (heavy, non-RT) and returns an **already-`onActivate`'d** system, or nullptr with the reason
 in `*why`. The bytes come from the node's resources (its `build` copies them out of the pins its instance

@@ -3258,15 +3258,17 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
 
 TEST_CASE("a freshly built core's first block costs the boot savestate and nothing else",
           "[engine-graph][system-node][alloc]") {
-    // A system added while others play is built and activated on the control thread, and its FIRST block then runs on
-    // the block thread with Mesen's frame plumbing still cold: the control manager's port snapshot, the four
+    // A system added while others play is built and activated on the control thread, and a Mesen core's FIRST block
+    // then runs on the block thread with its frame plumbing still cold: the control manager's port snapshot, the four
     // persistent RenderedFrame input copies (the PPU's, the decoder's two and the renderer's last) and the video
     // filter's output buffer (about 240 KiB for a NES). Those are warmed at activation now, so a core built directly
     // (as the cases above build theirs) has a first block that allocates and frees nothing, and a core the Engine
     // builds pays exactly one more thing: the boot savestate capture that enableStateSnapshot arms for the first
-    // block. That capture allocates inside Mesen's serializer by nature, and it cannot move off the block thread
-    // without moving emulation: NesApu::Serialize calls EndFrame, so capturing at activation instead of at the first
-    // block's end would end an APU frame at a different point (and parity catches it). So it is pinned instead: the
+    // block. A Mesen console's capture allocates inside Mesen's serializer by nature, and it cannot move off the block
+    // thread without moving emulation: NesApu::Serialize calls EndFrame, so capturing at activation instead of at the
+    // first block's end would end an APU frame at a different point (and parity catches it). A Game Boy has neither
+    // that plumbing nor that serializer: its capture is one resize of the scratch it reuses, so its first block pays
+    // that one allocation and every later capture is free. Either way the capture is pinned rather than moved: the
     // first block's count is measured against one capture on a twin core, so a regression that puts any other
     // allocation back into that block fails here, on every platform, without pinning a platform's allocator.
     const auto firstBlock = [](SystemBase& core, const std::vector<float*>& lanes) {
