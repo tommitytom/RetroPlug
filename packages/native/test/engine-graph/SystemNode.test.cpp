@@ -3415,12 +3415,28 @@ TEST_CASE("a Mesen press burst cannot push a release out of its queue", "[engine
     // leave the button held. A Mesen core's queue holds one transition a button and is applied whole before the
     // emulator polls its controller, so a transition for a button already queued replaces its entry: the burst
     // collapses and the release always lands.
-    const auto burst = [](SystemBase& core) {
+    const auto burst = [](auto& core) {
         for (std::uint32_t i = 0; i < rp::kPressInput + 64; ++i) core.pressButton(0, true);
         for (int i = 0; i < 4; ++i) core.pressButton(0, false);   // the releases, behind a queue a plain FIFO filled
         for (int i = 0; i < 4; ++i) core.pressButton(1, true);    // a button the burst never named still gets in
         CHECK(core.inputDropped() == 0);
         CHECK(core.inputAccepted() == rp::kPressInput + 72);
+        // The counts alone cannot tell a coalescing that replaces a button's entry from one that keeps the first: both
+        // refuse nothing and accept everything. What the fix buys is the surviving entry's value, so read it: button 0's
+        // stands as a release (one that kept the press would leave that button held for the rest of the session), the
+        // button the burst never named stands as its press, and a button nothing named holds nothing.
+        bool down = true;
+        REQUIRE(core.peekPendingPress(0, down));
+        CHECK_FALSE(down);
+        REQUIRE(core.peekPendingPress(1, down));
+        CHECK(down);
+        CHECK_FALSE(core.peekPendingPress(2, down));
+    };
+    // The block applies the whole queue and empties it, which is how a transition it holds reaches the controller.
+    const auto applied = [](auto& core) {
+        bool down = true;
+        CHECK_FALSE(core.peekPendingPress(0, down));
+        CHECK_FALSE(core.peekPendingPress(1, down));
     };
     SECTION("NES") {
         auto core = nes(1, 0);
@@ -3429,6 +3445,7 @@ TEST_CASE("a Mesen press burst cannot push a release out of its queue", "[engine
         burst(*core);
         wholeBlock(*core, 1024, {lanes.ptrs[0], lanes.ptrs[1]}, true, NoInput{});  // applied, in a free block
         CHECK(core->inputDropped() == 0);
+        applied(*core);
     }
     SECTION("SMS") {
         auto core = sms(1);
@@ -3437,6 +3454,7 @@ TEST_CASE("a Mesen press burst cannot push a release out of its queue", "[engine
         burst(*core);
         wholeBlock(*core, 1024, {lanes.ptrs[0], lanes.ptrs[1]}, true, NoInput{});
         CHECK(core->inputDropped() == 0);
+        applied(*core);
     }
     SECTION("Game Boy Advance") {
         const auto rom = resourceFixture("/roms/nanoloop287d.gba");
@@ -3448,6 +3466,7 @@ TEST_CASE("a Mesen press burst cannot push a release out of its queue", "[engine
         burst(*core);
         wholeBlock(*core, 1024, {lanes.ptrs[0], lanes.ptrs[1]}, true, NoInput{});
         CHECK(core->inputDropped() == 0);
+        applied(*core);
     }
 }
 

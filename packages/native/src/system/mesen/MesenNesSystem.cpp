@@ -472,6 +472,19 @@ NesController::Buttons toNesButton(std::uint8_t b) {
 }
 } // namespace
 
+bool MesenNesSystem::peekPendingPress(std::uint8_t button, bool& down) const {
+    // The pass below sets a button once per entry that names it, so the transition that stands for `button` is the last
+    // queued entry naming it.
+    const int native = toNesButton(button);
+    bool held = false;
+    for (const auto& pending : pendingButtons_) {
+        if (toNesButton(pending.button) != native) continue;
+        down = pending.down;
+        held = true;
+    }
+    return held;
+}
+
 void MesenNesSystem::prepareForBlock(const AudioBlockInfo& /*info*/) {
     if (!activated_ || !emu_) return;
 

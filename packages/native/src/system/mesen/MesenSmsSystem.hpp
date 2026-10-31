@@ -55,6 +55,13 @@ public:
     // name index (SmsButton wire byte); remapped to Mesen's native
     // SmsController::Buttons ordering at apply time. Applied in prepareForBlock.
     void pressButton(std::uint8_t button, bool down) override;
+
+    // The transition this queue will leave on the console button `button` names when it applies, false when it leaves
+    // none (a queue with no entry for it, or a byte that names no button of this console). The queue is applied entry
+    // by entry in order, so the entry that stands is the last one naming that button. A test seam of the shape
+    // SameBoySystem::peekSerialByte is: a block applies the queue and empties it, so a false after a block is the read
+    // that the transition reached the controller.
+    bool peekPendingPress(std::uint8_t button, bool& down) const;
     std::uint64_t inputAccepted() const override;
     std::uint64_t inputDropped() const override;
     // The levels the sync role's queue has taken since the core was built: the non-press half of inputAccepted(), for

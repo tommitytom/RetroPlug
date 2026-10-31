@@ -264,7 +264,10 @@ to 3 is the other console name `Engine` keeps (section 12).
   queue (NES, SMS, GBA and Game Boy presses, a Game Boy's serial bytes and runs, an SMS's levels, a NES's N8 runs and
   bytes) that pushes past the bound, holds the refused count and `inputAccepted()` before it, and then runs a block so
   the core still fills; a Mesen press queue is the one with no refusal path (it holds a transition a button, and its
-  bound covers the button range), which the case says instead. The audio suite has the FIFO's own cases (the
+  bound covers the button range), which the case says instead. That case also reads the transition a button's queue
+  entry holds, through the core's own `peekPendingPress` (`SameBoySystem::peekSerialByte`'s shape): a burst leaves
+  `inputAccepted()` and `inputDropped()` the same whether the coalescing replaced the queued entry or kept it, so the
+  surviving entry's value is the thing to hold. The audio suite has the FIFO's own cases (the
   permissive fifo_a past `_rxBound`, the wire past a block's input), the NES's carried-run rebase, and the reliable
   link's 48-frame window giving up its oldest frame.
 - **ThreadSanitizer and AddressSanitizer** ran over every case touched (the `[alloc]` and `[input-drops]` tags, the

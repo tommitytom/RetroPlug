@@ -250,6 +250,19 @@ GbaController::Buttons toGbaButton(std::uint8_t wire) {
 }
 } // namespace
 
+bool MesenGbaSystem::peekPendingPress(std::uint8_t button, bool& down) const {
+    // The pass below sets a button once per entry that names it, so the transition that stands for `button` is the last
+    // queued entry naming it.
+    const int native = toGbaButton(button);
+    bool held = false;
+    for (const auto& pending : pendingButtons_) {
+        if (toGbaButton(pending.button) != native) continue;
+        down = pending.down;
+        held = true;
+    }
+    return held;
+}
+
 void MesenGbaSystem::prepareForBlock(const AudioBlockInfo& /*info*/) {
     if (!activated_ || !emu_) return;
 

@@ -384,6 +384,20 @@ void MesenSmsSystem::pressButton(std::uint8_t button, bool down) {
     if (pendingButtons_.push({ button, down })) ++pressesAccepted_;
 }
 
+bool MesenSmsSystem::peekPendingPress(std::uint8_t button, bool& down) const {
+    // The pass below sets a button once per entry that names it, so the transition that stands for `button` is the
+    // last queued entry naming it - an entry that names no button of this console (a Select's -1) sets nothing.
+    const int native = toSmsButton(button);
+    if (native < 0) return false;
+    bool held = false;
+    for (const auto& pending : pendingButtons_) {
+        if (toSmsButton(pending.button) != native) continue;
+        down = pending.down;
+        held = true;
+    }
+    return held;
+}
+
 std::uint64_t MesenSmsSystem::inputAccepted() const {
     return pressesAccepted_ + levelsAccepted();
 }
