@@ -57,6 +57,17 @@ length. What still allocates is work that makes something:
 | `rp.risa.sync`'s arm ([risaSync.ts](../packages/retroplug/src/risaSync.ts)) | two objects on a start or a seek: `risaLocate`'s object and `risaArmPacket`'s array |
 | `rp.controller.session`'s surface diff and launches ([controller/session.ts](../packages/retroplug/src/controller/session.ts)) | per LED change and per launch, while a surface is in use |
 
+**The cores.** Since C4 a system core allocates nothing in a warmed block either, Mesen's per-frame video and input
+plumbing included: a Mesen core's audio ring, its per-block scratches and its tap rings are sized at activation from
+the build request's `maxBlockFrames`, its frame and controller-state buffers are reused, and SameBoy's two scratch sets
+are sized the same way. That holds with a block's host input staged into it too, since the input-queue stage: every
+queue a press, a MIDI run, a serial byte or a raw message lands in is bounded and sized when the core is built. The C++
+suite holds that promise directly (`retroplug-engine-graph-test`'s `[alloc]` cases, [06-build-test.md](06-build-test.md));
+the profile benches measure the JS side, so their 0 is the script host's, not the core's. What still allocates inside a
+long run is Mesen's 0.5 s savestate capture (its streaming serializer), a NES's region reset and a Game Boy's model
+restart, the N8 firmware's SD-command path (`std::string` / `std::filesystem`, a bigger directory listing, an unbounded
+TX queue) and a Game Boy's serial-out capture log; [07-remaining-work.md](07-remaining-work.md) lists them.
+
 **How it got here.** Under the DSP kernel (one TS kernel running every role, until B3b) the first
 measure was **~171 allocs/block** on Profile A: the kernel built a `Map` of routed inboxes, per-system
 `keys` / `buttons` filters, and a `SystemCtx` with four sink closures per system and stage, every block.
@@ -228,6 +239,18 @@ past `renderAudio`'s 1024-frame block).
   RPC), and `allocStats()` / `resetAllocStats(disableAutoGc)` (pins `JS_SetGCThreshold(SIZE_MAX)`) / `runGc()`
   (timed `JS_RunGC`). The window, the live and peak heap and the block bracket are behind
   `#ifdef RETROPLUG_PROFILE`; the `#else` path returns `enabled:false`.
+- **Native allocations counted in the C++ suite too** (C4): `retroplug-engine-graph-test` links
+  [test/graph/CountingAllocator](../packages/native/test/graph/CountingAllocator.cpp), which replaces the global
+  `operator new`/`delete` (every form) and counts what a stretch of code allocates and frees on the calling thread
+  (`beginCountingAllocations` / `endCountingAllocations`), and can refuse every allocation from a size up. Since C4 it
+  also interposes the C library's `malloc` / `calloc` / `realloc` / `free`, forwarding to glibc's own, so a core's C
+  blocks are seen; that half is **opt-in per window** (`beginCountingAllocations(true)`) and platform-gated, because it
+  is possible only on glibc and not in a sanitizer build (ASan and TSan own the allocator) or on Windows (the static CRT
+  cannot define `malloc`), and it would otherwise count a subsystem whose own allocations *are* malloc's (QuickJS).
+  `countsCAllocations()` reports which binary sees them, so a case whose promise includes a C allocation SKIPS where it
+  is false. The `[alloc]` cases are the users (section 3's core promise): the whole-block cases count the C library's
+  blocks where the binary can, and prove the operator-new half of the promise where it cannot. The profile benches keep
+  counting QuickJS alone.
 - **The trace window** (Tier B), on the same runtime: `traceReset(arm)` opens a window of nested wall-time
   spans, recorded only while armed. Every script node's process is a span **named by its type**
   (`rp.midi.route`, `rp.mgb.midi`, ...), holding `marshal` (its audio copies in and the transport) and

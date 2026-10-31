@@ -308,8 +308,9 @@ A system's live knobs never ride a host command: they are its system node's sett
 which the node gives its core at the start of a block. `Engine::setSampleRate` re-rates the running plan's
 cores in slot order, then re-activates the graph's buffers at the new rate;
 `Engine::setMaxBlockFrames` grows the plan's block size to a host's maximum (never below 8192, the
-largest block the parity matrix holds), and the plugin and the SDL standalone call it before handing
-the engine over.
+largest block the parity matrix holds) and re-activates the graph while it is quiescent, where each core's
+`reserveAudio` moves its audio ring and its per-block scratches with no block in flight; the plugin and the SDL
+standalone call it before handing the engine over.
 
 ### Host I/O, the system nodes' inputs and queue capacities
 
@@ -371,12 +372,21 @@ with slack, rather than sized from the plan's block size, so a feedback wire fro
 across every swap; a CGB clocking the port itself on its fast clock can outrun it in a very long block, and
 what does not fit is dropped and counted.
 
-The core side is bounded too, and fixed: each core sizes its ingress queues (a Game Boy's serial runs, a
-NES's FIFO runs and frame window, a Master System's levels, each console's presses) when it is built, from
-what one block's input can deliver ([InputCapacity.hpp](../packages/native/src/system/InputCapacity.hpp),
-the capacities the sources' outputs above declare), so a block that carries host MIDI, raw bytes, serial-in
-bytes or presses allocates nothing in the core. An input a queue cannot take is refused and counted, the way
-a push past a graph queue's capacity is dropped and counted.
+The core side is bounded too, and fixed: each core sizes its ingress queues when it is built, from what one
+block's input can deliver ([InputCapacity.hpp](../packages/native/src/system/InputCapacity.hpp), the
+capacities the sources' outputs above declare: `serialIn` and `midi` 4096 messages / 72 KiB, `bytes` 256 /
+1 KiB, `buttons` 64, a Game Boy's `serialOut` 8256 / 8256), so a block that carries host MIDI, raw bytes,
+serial-in bytes or presses allocates nothing in the core. The queues are a Mesen console's presses (320: a
+block's 64 plus `GraphHost::commandCapacity()`'s 256, a `static_assert` holding the two together), a Game
+Boy's presses (1024, sixteen blocks of a saturated buttons input, because presses are scheduled ahead) and
+its serial-in (a run a message over a byte ring of two blocks' `serialIn` or one `serialOut`), a NES's N8
+runs (4352) and their bytes (74752), and a Master System's levels (74752, in bytes from both doors). A push
+past a bound is dropped rather than grown, and counted: the core reports `inputAccepted()` and
+`inputDropped()`, and the N8 FIFO's `coreTransportStats()` adds `droppedBytes`, the same vocabulary as a
+graph queue's overflow. The reliable link refuses nothing: a full 48-frame window gives up its oldest frame
+and re-syncs. The FIFO's permissive profile (`_rxCapacity == 0`) means no modelled depth, not no storage
+bound: fifo_a still drops and counts a reply past `_rxBound` (a block's input plus `FILE_READ_MAX`), its
+vector reserved to twice that because `pop` compacts the consumed prefix lazily.
 
 An events or bytes output may declare its queue's capacity (`rp::bytes_out::sized<rp::capacity{...}>` in
 C++, `events.out(capacity)` / `bytes.out(capacity)` in TS), by default 256 messages and 4096 bytes, at
@@ -470,10 +480,18 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   first value is snapped into the core (whose gain smoother starts at 0 dB), so its first sample plays at the
   document's level; every later gain change is smoothed, as it always is. A document without a param leaves its
   stream where it was: at its default, on a new node.
-- **Allocation.** A Game Boy's knobs, the ones it applies in place, a NES's setters but its region, and every param
-  allocate nothing on the block thread. A Game Boy's model change restarts the core (`GB_alloc` / `GB_init`), which
-  allocates, as it did on the command ring; a NES's region change resets it, which allocates too. The NES core also
-  allocates inside Mesen in its own blocks.
+- **Allocation.** A warmed core's whole block allocates and frees nothing, emulation included: its audio ring and its
+  per-block scratches are sized at activation (the block size arrives in the build request, `maxBlockFrames`, and a
+  later host growth re-activates the graph quiescently, where `reserveAudio` moves the sizes with no block in flight),
+  and Mesen's per-frame plumbing reuses its buffers. That holds with a block's host input staged into it too: every
+  ingress queue a press, a MIDI run, a serial byte or a raw message lands in is bounded and sized when the core is
+  built, and a push past its bound is dropped and counted (above), so the counted window may carry what a node applies
+  before the core's `prepareForBlock`. What still allocates on the block thread is work that makes
+  something: a Game Boy's model change restarts the core (`GB_alloc` / `GB_init`), which allocates, as it did on the
+  command ring; a NES's region change resets it, which allocates too; the 0.5 s state-snapshot capture allocates inside
+  Mesen's streaming serializer; and the N8 firmware's SD path allocates in its command handlers, in a bigger directory
+  listing and in an unbounded TX queue ([07-remaining-work.md](07-remaining-work.md)). A Game Boy's knobs, the ones it
+  applies in place, a NES's setters but its region, and every param allocate nothing at all.
 - **A refused document** can still have given knobs to a node it reuses, since activation runs while it plans: a
   reused node's core keeps them, and the next document in the app carries the same. A core a refused plan's new node
   built is destroyed as that plan's instances unwind, with its snapshot slot and its resource pins.
@@ -491,11 +509,12 @@ name:
   handed back (the GraphHost's plans, the script host's released instances), then checks that the
   document's system nodes and the slots name the same systems, each node `sys-<id>` with settings naming
   its system (`"system": <id>`) and its ROM (`"rom": "res:N"`), that a tap arm names one of the slots and a mode
-  from 1 to 3, that there is at most one
+  from 1 to 3 (the NES's own numbering, which the engine validates rather than the capability: the arm travels as a
+  byte TS numbers, and a NES's tap is the only one today), that there is at most one
   `rp.host.midi-in` and one `rp.host.controller-in`, and at most one `rp.n8.cart-mirror`, naming one of
   the slots' NES systems (any of these refuses the document before anything is built); builds the plan's
-  `SystemTable` (a slot-ordered list of `{ id, SystemBase*, MesenNesSystem* }`, the NES pointer for the
-  channel tap, plus the system the cart mirrors,
+  `SystemTable` (a slot-ordered list of `{ id, SystemBase*, ChannelTap* }`, the tap filled from
+  `SystemBase::channelTap()` and null for a core that offers none, plus the system the cart mirrors,
   [SystemTable.hpp](../packages/native/src/host/graph/SystemTable.hpp)) from the slots and the live cores, a slot
   whose node is reused from the previous plan already filled;
   turns `tap` into the swap's `SyncTap` trailer; and hands both to `GraphHost::setGraph`, which computes
@@ -621,14 +640,16 @@ cleanly.
 Heavy, rare payloads (RAM writes, long MIDI) cross as raw **owning** pointers: the accepted
 non-RT-on-rare-op pattern. At drain the GraphHost hands each host command to `Engine::onHostCommand`,
 which applies it (`applyCommand`) against the `SystemTable` of the plan current at that point, and
-`delete`s owning payloads after apply. `SyncTap` is the NES channel-tap
-arming: restore whatever `armedTap_` armed, then, when the request names an arm, set that NES to its
-export mode (either pin split 1, `ChannelSplit` 3, as `buildGraph` decides for a split routing over a
-single NES), recording what it replaced. TS sends it on every edit that builds or drops a core and on
-every routing change, even when the wanted mode is unchanged, and each run resets the capture streams;
-it rides the plan's swap, so no block runs between the two. `armedTap_` holds the core pointer as well
-as the id, so a core that has gone is never restored onto another. A param's value from `setParam` rides
-the same ring as a command of the GraphHost's own, not a `DspCommand`, into its param's control stream.
+`delete`s owning payloads after apply. `SyncTap` is the channel-tap arming: restore whatever `armedTap_` armed,
+then, when the request names an arm, set that core's tap to its export mode (either pin split 1, `ChannelSplit` 3, as
+`buildGraph` decides for a split routing over a single NES), recording what it replaced. A core that offers no tap
+(`channelTap()` null) has nothing to arm, so the arm reaches nothing. TS sends it on every edit that builds or drops a
+core and on every routing change, even when the wanted mode is unchanged, and each run resets the capture streams;
+it rides the plan's swap, so no block runs between the two. `armedTap_` holds the tap's address as well as the id, so a
+duplicate id does not restore onto another core; a NES's tap is the core object, so the address differs from the core
+pointer's by a per-class constant and, within one class, tap equality is core equality. A core allocated where the
+armed tap was freed still matches, which TS cannot reach (design section 12). A param's value from `setParam`
+rides the same ring as a command of the GraphHost's own, not a `DspCommand`, into its param's control stream.
 
 **Ownership handoff.** A displaced or removed core leaves with the plan that last ran it, and is
 freed on the control thread when that plan is reclaimed (`reclaimReleased` → `GraphHost::reclaim`):
@@ -705,9 +726,14 @@ registered.
 
 Every backend takes a
 [`SystemBuildRequest`](../packages/native/src/system/SystemFactory.hpp) by value and consumes it: the ROM bytes, the
-`sram`/`savestate` seed bytes, the ROM's `romName`, and a `SystemConfig`
-(`std::variant<SameBoyConfig, MesenNesConfig, MesenSmsConfig, MesenGbaConfig>`, whose alternative names the
-console). A [`SystemBackend::build`](../packages/native/src/system/SystemFactory.hpp) runs on the
+`sram`/`savestate` seed bytes, the ROM's `romName`, the largest block the plan will run (`maxBlockFrames`, 0 for a
+build outside a plan) and a `SystemConfig` (`std::variant<SameBoyConfig, MesenNesConfig, MesenSmsConfig,
+MesenGbaConfig>`, whose alternative names the console). The block size is what a core sizes its audio ring and its
+per-block scratches to *before* it activates, so a 64-frame plan's core never holds an 8192-frame plan's buffers; a core
+built outside a plan keeps `SystemBase::kDefaultBlockFrames` (8192, held to `Engine::kDefaultMaxBlockFrames` by a test;
+Mesen cores size from `MesenAudioDevice::kDefaultBlockFrames`, held to the same constant, so two names stand for one
+contract until they collapse).
+A [`SystemBackend::build`](../packages/native/src/system/SystemFactory.hpp) runs on the
 control thread (heavy, non-RT) and returns an **already-`onActivate`'d** system, or nullptr with the reason
 in `*why`. The bytes come from the node's resources (its `build` copies them out of the pins its instance
 holds into the request, and the core takes them from there), so nothing here reads a file or decodes a role config.
@@ -721,6 +747,7 @@ gate), and builds the core:
 
 ```cpp
 auto sys = std::make_unique<SameBoySystem>(id, std::move(typed), request.rom);
+if (request.maxBlockFrames) sys->reserveAudio(request.maxBlockFrames);  // the plan's block, before any block runs
 sys->onActivate(sampleRate);       // boots gb_ + restores sram then savestate
 sys->enableStateSnapshot();        // tear-free savestate each block for the registry / Duplicate
 ```
@@ -742,9 +769,19 @@ serving three consoles, picked by the config alternative: `buildNes` gates `RomF
 `MesenNesSystem`, `buildGba` gates `RomFormat::Gba` and builds a `MesenGbaSystem` (empty `biosPath` → HLE
 boot ROM), and `buildSms` refuses a ROM that is positively another console's but accepts a headerless one
 (TS admits homebrew by its extension). The NES and GBA cores take their seeds through the config; the SMS
-takes the `romName` it stages its file under. All three run the same tail, `onActivate` then
+takes the `romName` it stages its file under. All three run the same tail, `reserveAudio` then `onActivate` then
 `enableStateSnapshot`, and refuse a boot Mesen's `LoadRom` rejected after the magic gate ("Mesen refused the
 ROM"), so NES/GBA/SMS cores publish a tear-free savestate for the registry / Duplicate just like SameBoy.
+
+Their audio arrives through [`MesenAudioDevice`](../packages/native/src/system/mesen/MesenAudioDevice.hpp), a
+fixed-capacity ring of interleaved stereo `int16` sized `maxBlockFrames + kMaxPlayBufferFrames` (32768: the most one
+Mesen `PlayBuffer` can carry, the whole of the mixer's own output buffer, `_sampleBuffer`'s 0x10000 `int16` stereo,
+which `PlayAudioBuffer` is given exactly as its output cap). `availableFrames()` is its fill, which is
+the block clock the step loops and the N8 FIFO's scheduling gate on; `PlayBuffer` writes at the tail, `drain` reads from
+the head, and a write past capacity drops the newest frames and counts them rather than moving the queued ones (the
+bound makes it unreachable; a debug build asserts). The ring grows only, keeping what it holds, so a host that raises
+its block size through `setMaxBlockFrames` never loses a queued frame. The NES's per-channel tap rings
+(`NesSoundMixer::_streamBuf`, one a stream) and its blips are sized and made with the same reserve.
 
 ## `ScriptHost` + `ScriptCompiler`: the script-node runtime
 
@@ -966,9 +1003,9 @@ its **runtime** classes:
 
 | Shared class | Host use |
 |---|---|
-| [`SystemBase`](../packages/native/src/system/SystemBase.hpp) | the abstract core; owned by its system node in the running plan (`SystemNode<T>`, [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)); drives `onActivate`/`onProcess`/`framebuffer`/`saveStateBytes`/`readStateSnapshot`/`stateRegions`/`enableStateSnapshot`/`pressButton`/`pushSerialIn` |
+| [`SystemBase`](../packages/native/src/system/SystemBase.hpp) | the abstract core; owned by its system node in the running plan (`SystemNode<T>`, [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)); drives `onActivate`/`onProcess`/`framebuffer`/`saveStateBytes`/`readStateSnapshot`/`stateRegions`/`enableStateSnapshot`/`pressButton`/`pushSerialIn`/`reserveAudio`. Its surface is what the engine and the nodes call: no battery-path accessors, no `fastBoot()` getter, no `clearSram`, no sub-block MIDI out, and no memory-snapshot arming (C4). The capabilities beside `debugTarget()` are `channelTap()`, and the per-block contract is `reserveAudio` plus `kDefaultBlockFrames`; its ingress queues report `inputAccepted()` / `inputDropped()` |
 | [`SameBoySystem`](../packages/native/src/system/sameboy/SameBoySystem.hpp) | the GB core; its node gives it its knobs through value-guarded setters (`setModel`, `setHighpass`, the display group, `setSerialOutCapture`); its `linkPeers_` are the serial cable, set by its node's `rp.link/1` `set_peers` (the other members of its coupled group, in member order) |
-| [`MesenNesSystem` / `MesenGbaSystem` / `MesenSmsSystem`](../packages/native/src/system/mesen) | the NES, GBA and SMS/GG cores; the NES is the `SyncTap` target |
+| [`MesenNesSystem` / `MesenGbaSystem` / `MesenSmsSystem`](../packages/native/src/system/mesen) | the NES, GBA and SMS/GG cores; the NES is the one core with a [`ChannelTap`](../packages/native/src/system/ChannelTap.hpp) today (it implements the interface itself, `channelTap()` returning `this`), so it is the `SyncTap` target. The engine's tap and build check name no console: it forward-declares `ChannelTap` and includes no core header, and its one console check is the N8 cart mirror's (`SystemKind::MesenNes`, NES by construction) |
 | the LSDj kit/sample pipeline (`KitCompiler` / `KitUtil` / `SampleCache` / `Effects`), `util/MinizZip`, `EmbeddedRoms` | backing kit patching, `zip`/`unzip`, and embedded-ROM resolution |
 | `SpscRing` / `FrameBufferTriple` / `MemorySnapshotTriple` | the transport **primitives** the command/release rings and the snapshot registry are built on |
 
@@ -1009,9 +1046,10 @@ is one automatable parameter applied post-render across all 8 channels
 
 ## Not yet built / deferred
 
-- **Live memory-region subscription.** There is no live "watch RAM" streaming path
-  (`enableMemorySnapshot(type)`). Reads are one-shot through the registry read door; if live
-  memory streaming to the UI is ever needed, that arming seam must be built.
+- **Live memory-region subscription.** There is no live "watch RAM" streaming path. Reads are one-shot through the
+  registry read door; if live memory streaming to the UI is ever needed, the arming seam has to be built: the old
+  `enableMemorySnapshot(type)` / `publishMemorySnapshots` mechanism had no caller and published nothing, and C4 deleted
+  it outright, so nothing is left to enable.
 - **Per-block host buttons/keys.** No node has an input for them (the DSP kernel carried empty `buttons`
   and `keys` arrays until B3b) and no host feeds them yet: this blocks the raw LSDj Keyboard mode, which
   needs `keys` on `rp.lsdj.sync` ([07-remaining-work.md](07-remaining-work.md)).

@@ -43,8 +43,15 @@ The rules below are the parts that don't fit those.
   block its decoder first runs in the new mode); a system node builds its core at activation from the resources its
   settings name (C3, [docs/modular-graph-phase-c3-design.md](docs/modular-graph-phase-c3-design.md)): the ROM and the
   seeds as resources, its construct-time fields, each console's twin against a directly built core, and a refused plan
-  unwinding the cores and pins it built; the engine places, re-arms and frees what the graph documents TS builds
-  say; the host I/O nodes and the N8 cart mirror move what the hosts stage and drain;
+  unwinding the cores and pins it built; a warmed core's whole block allocates and frees nothing, emulation included,
+  and does so with a block's host input staged into it (C4,
+  [docs/modular-graph-phase-c4-design.md](docs/modular-graph-phase-c4-design.md)): the ring, the scratches, the tap
+  rings and the ingress queues sized from the build request's block and the capacities the inputs' sources declare,
+  the audio path and then the whole block counted at ragged sizes with input staged, the `[video]` hashes, a live arm
+  sizing nothing, a `[input-drops]` case per queue kind, the tap a capability only a NES offers (so the tap and the
+  node's kind check name no console; the one console name left in the host is the N8 cart mirror's), and a node
+  refusing a core of another console's kind; the engine places, re-arms and frees what the graph documents
+  TS builds say; the host I/O nodes and the N8 cart mirror move what the hosts stage and drain;
   TS nodes run behind the C ABI in the script host (B3a,
   [docs/modular-graph-phase-b3a-design.md](docs/modular-graph-phase-b3a-design.md)): marshalling, reshape,
   creation and release on the block thread, throws, a node's promise jobs charged to it; script node packs beside the

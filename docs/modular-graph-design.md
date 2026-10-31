@@ -879,8 +879,8 @@ product, so `mesen` can be split per console without renaming anything.
 | GBA | `buttons` | `mix` (stereo) |
 
 MIDI never reaches a core directly; it goes through a node that knows a protocol: `mgb.midi` (MIDI ->
-GB serial bytes), `n8.midi-to-fifo` (MIDI -> FIFO writes, replacing native `NesN8FifoRole`). That also
-retires a current oddity: SameBoy's `onMidi` stores MIDI that nothing reads.
+GB serial bytes), `n8.midi-to-fifo` (MIDI -> FIFO writes, replacing native `NesN8FifoRole`). The oddity this
+retires is gone: SameBoy's `onMidi` stored MIDI nothing read, and C4 deleted the buffer and the override.
 
 ### 6.3 Settings and params
 
@@ -913,6 +913,14 @@ Today's fat `SystemBase` splits into optional interfaces:
 | `rp.system.video/1` | framebuffer triple, size, format |
 | `rp.system.buttons/1` | button names to ids, so bindings and extensions say `"start"`, not per-console enums |
 | `rp.system.debug/1` | today's `IDebugTarget` |
+| `rp.system.tap/1` | the per-channel audio tap a split routing arms |
+
+C4 built the first piece of this list that the engine itself needed, and not as an `rp.system.*` interface: the tap is
+`ChannelTap` ([ChannelTap.hpp](../packages/native/src/system/ChannelTap.hpp), `exportMode` / `setExportMode` and nothing
+else), which `SystemBase::channelTap()` returns or answers null for, and `SystemTable`'s slot carries that pointer, so
+`Engine`'s tap arming and build check name no console
+([modular-graph-phase-c4-design.md](modular-graph-phase-c4-design.md); the one console name left in `src/host/` is the
+N8 cart mirror's, NES by construction). The rest of the split is P7's.
 
 **The threading rule is unchanged: the control plane never touches a live core.** The executor calls
 these interfaces at safe points on the audio thread. Reads come from published snapshots; writes and
@@ -928,7 +936,12 @@ Extensions only ever see host RPC that routes through those two doors.
 | `Engine`'s gather of SameBoy `serialOutLog_` | the GB `serialOut` port |
 | `LinkGroup`, `Project::rebuildLinkGroups` | `link` wires, the planner's coupled groups |
 | `BlockRunner` / `OfflineRender` including SameBoy headers | the console-neutral executor |
-| `SystemKind`, `ConfigField`, native `AudioRouting` | deleted (`ConfigField` in C2) |
+| `SystemKind`, `ConfigField`, native `AudioRouting` | deleted (`ConfigField` in C2; `SystemKind` survives as the node's build check) |
+
+Two more went in C4, and they were the last outside the cores: `Engine::syncTap`'s two casts (the plan's build and
+`publishGraph`'s pre-fill) are `SystemBase::channelTap()`, and `SystemNodes.cpp`'s build compares `kind()` with its
+core's `kKind` and then `static_cast`s. So `packages/native/src` has no `dynamic_cast` outside `src/system/`. The
+suites keep their console-only casts (a config field, `linkPeers_`, a ring counter), which is the core's own business.
 
 What remains of `Engine` is the executor, the rings and the registry.
 
@@ -1180,9 +1193,17 @@ engine's `ResourceTable`, pinned through `rp.host.resources/1`), and the node bu
 and a construct-time edit rebuilds the system at once, carrying its battery. Strict parity held bit for bit, nothing
 re-recorded.
 
-- Console-specific code moves into each node; every `dynamic_cast` in §6.5 goes.
-- `SystemBase` shrinks to the capability interfaces; `MesenAudioDevice` gets a preallocated ring (it
-  currently allocates on the audio thread).
+C4 is built ([modular-graph-phase-c4-design.md](modular-graph-phase-c4-design.md)): `SystemBase`'s dead surface is
+gone, a Mesen core collects its audio in a fixed ring sized from the build request's block, its per-frame video and
+input plumbing reuses its buffers, the tap a split routing arms is a `ChannelTap` capability, and a system node's build
+compares its core's `kind()` rather than casting. A warmed core's whole block allocates and frees nothing, and so does
+one carrying host input in it: every ingress queue a press, a MIDI run, a serial byte or a raw message lands in is a
+bounded ring sized when the core is built. Strict parity held bit for bit at every commit, nothing re-recorded.
+
+- Console-specific code moves into each node; every `dynamic_cast` in §6.5 goes: done in C4 for `src/`, the suites'
+  console-only casts aside.
+- `SystemBase` shrinks to the capability interfaces (§6.4): its dead surface went in C4, the split itself is P7's.
+  `MesenAudioDevice`'s preallocated ring is built.
 - `rp.n8.nes` and `rp.launchpad.surface` replace the N8 mirror sink and the controller special cases.
 
 ### Phase D: the DSP library and offline graphs

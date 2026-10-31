@@ -43,8 +43,8 @@ namespace rp {
 // with kMemoryTypeCount sizing SystemBase::StateRegionTable - so it is a
 // wire-format change, not a local one.
 //
-// The integer values double as the wire byte used in subscribe / getMemory
-// RPC calls; keep them stable.
+// The integer values are also the `type` a getMemory call carries (the debug
+// facet's peek), so keep them stable.
 enum class MemoryType : std::uint8_t {
     Ram          = 0,
     Rom          = 1,

@@ -46,13 +46,15 @@ built ([05-data-persistence.md](05-data-persistence.md)).
 
 ### Live memory-region subscription
 
-There is no live "watch RAM" streaming path (`enableMemorySnapshot(type)`). Reads are one-shot through
+There is no live "watch RAM" streaming path. Reads are one-shot through
 the [`SnapshotRegistry`](../packages/native/src/host/engine/SnapshotRegistry.hpp) read door, and the
 consumers that want live memory poll it: the LSDj overlay per frame, and the HD player
 ([useLsdjHdSession.ts](../packages/retroplug/ui/screens/hd/useLsdjHdSession.ts)) on a frame divider,
 because a full 128 KiB WRAM copy plus a song decode is too expensive to do every frame. So this is a
 cost question, not a capability one - an arming seam would let those two stop copying the whole image
-to read a few hundred bytes of it.
+to read a few hundred bytes of it. Nothing of the old mechanism is left to switch on: `enableMemorySnapshot`,
+`disableMemorySnapshot`, `memorySnapshot`, `publishMemorySnapshots` and the nine-slot array behind them had no caller and
+published nothing, and C4 deleted them.
 
 ### MIDI **out** is capped at 4 bytes
 
@@ -192,9 +194,12 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     settings now, and the node builds the core from them; the export mode and a Game Boy's link group come from the
     system's core config in TS, where `buildGraph` reads them for its wiring.
   - **The knobs that allocate on the block thread.** A Game Boy's model change restarts the core, which allocates, as
-    it did on the command ring, and a NES's region change resets its core, which allocates too; the NES core also
-    allocates inside Mesen in its own blocks. So "no allocation" holds for a Game Boy's knobs, the ones it applies in
-    place, a NES's setters but its region, and every node's params ([02-native-host.md](02-native-host.md)).
+    it did on the command ring, and a NES's region change resets its core, which allocates too. So "no allocation"
+    holds for a Game Boy's knobs, the ones it applies in place, a NES's setters but its region, and every node's params
+    ([02-native-host.md](02-native-host.md)). A warmed block itself allocates nothing since C4, Mesen's emulation
+    included, and since the input-queue stage a block carrying host input does too: the ingress queues are bounded and
+    sized when the core is built. The exceptions are the 0.5 s state publish and the N8 firmware's SD path, listed
+    under C4 below.
   - **A system node ignores a settings field it does not know**, as every C++ node does: a misspelt knob plans and
     does nothing. `BuildGraphGoldens.test.cpp` holds the goldens' system nodes to their schemas' fields; a strict
     reader would refuse it at plan time instead.
@@ -209,9 +214,11 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   `rp.host.systems/1`; the old build call, the parked cores, the construct blob and its decoders are gone, and a
   construct-time edit rebuilds the system at once, carrying its battery. Strict parity held bit for bit at its five
   commits, nothing re-recorded. What it leaves (its section 10):
-  - **A stale NES-tap record can still match a fresh core** allocated where the armed one was freed: `armedTap_`
-    compares the core's address, and the record survives a drop and reclaim. TS never gets there (its ids only go up,
-    and every edit that drops a core re-arms), and the suite pins only the new-id replacement.
+  - **A stale tap record can still match a fresh core** allocated where the armed tap was freed: `armedTap_` compares
+    the tap's address (a NES's tap is the core object, a per-class constant offset from the core pointer, so tap
+    equality is core equality within one class), and the record survives a drop and reclaim. TS never gets there (its
+    ids only go up, and every edit that drops a core re-arms), and the suite pins only the new-id replacement. C4
+    restated this at the tap's address and left it as it is.
   - **A node's first block is silent**, so the gain's first-value snap is observable only through a savestate seed
     taken mid-note, which is the case that pins it.
   - **The unnamed Master System stem is `system-<id>`**: unique within a Project, not across the several Projects
@@ -221,8 +228,40 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **Each system holds one more full copy of its ROM.** The `rom` resource a node pins for the system's life is on top
     of the vector the build hands the core and Mesen's own copies: a 32 MB GBA ROM is +32 MB per system, per plugin
     instance. And the plugin and SDL reclaim only inside `setGraph` and `loadScriptPack`, so a removed system's core,
-    ROM and seeds stay until the next one of those (the core always lived that long; the bytes are new). C4, which
-    moves the console code into the nodes, could let a core borrow the pinned bytes.
+    ROM and seeds stay until the next one of those (the core always lived that long; the bytes are new). Phase C's
+    P3 (below) is the piece that would let a core borrow the pinned bytes.
+- **C4 built: the tap and the build check name no console, and no allocation in a warmed block**
+  ([modular-graph-phase-c4-design.md](../docs/modular-graph-phase-c4-design.md), six commits): `SystemBase`'s dead
+  surface is gone, a Mesen core collects its audio in a fixed ring sized from the build request's `maxBlockFrames`, the
+  tap is a `ChannelTap` capability any core may offer, and the node's build compares `kind()` with its core's `kKind`
+  instead of casting. A warmed core's whole block allocates and frees nothing, Mesen's per-frame video and input
+  plumbing included, and a block carrying host input does too: every ingress queue is a bounded ring sized when the
+  core is built, and a push past its bound is dropped and counted. Strict parity held bit for bit at every commit,
+  nothing re-recorded. The one console name `Engine` still makes is the N8 cart mirror's (`SystemKind::MesenNes`, NES
+  by construction), plus the tap's 1-to-3 mode bound. What it leaves (its section 12):
+  - **P3, cores borrowing their node's pinned ROM bytes**, and **P4, the snapshot registry's double copy** (section 3
+    above), and **P7, the full capability split of `SystemBase`** and one node file per console, best done when C5's
+    hardware nodes need the interfaces.
+  - **The N8 firmware's SD path still allocates**: `std::string` and `std::filesystem` in the command handlers, a
+    bigger directory listing, and `_txQueue`'s unbounded growth when a ROM writes CMD_USB_WR and no host drains it.
+    Bounding the queue would change the "never drop a byte the device would deliver" contract. Nothing in the block
+    tests drives an SD command, so it is ROM-dependent.
+  - **The 0.5 s state publish allocates** inside Mesen's streaming serializer on the block thread (every 24 k frames at
+    48 kHz). It is the one allocation a long run makes that neither a ROM command nor an armed serial-out capture
+    triggers, so every `[alloc]` case on an Engine-built core charges a whole interval uncounted first.
+  - **The input-drop counters are not surfaced beside the graph's.** Each core reports `inputAccepted()` /
+    `inputDropped()` and the N8 FIFO's `coreTransportStats()` adds `droppedBytes`, but `rp_process` carries no
+    instance-drop pointer, so nothing reports them where `GraphHost` counts its per-instance output drops. An
+    input-drop service on the node seam is its own change.
+  - **Two output-side allocations remain**: a NES's `_txQueue`, a `std::vector` a debug `drainCoreBytes` RPC swaps
+    empty, so a non-link ROM's next `CMD_USB_WR` after a drain grows it; and a Game Boy's `serialOutLog_`, cleared
+    each block but grown to the largest block's capture while MI.OUT capture is armed. Neither is on the steady-state
+    path the `[alloc]` cases hold.
+  - **The tap's mode bound is the engine's, not the capability's**: `Engine::setGraph` still validates 1 to 3, the NES's
+    numbering, because TS owns it and the arm travels as a byte. `maxMode()` on `ChannelTap` is the later move.
+  - **The cores this fork does not run** (PCE, SNES, WS) still copy a frame's snapshot once more per emulated frame.
+  - **The suite keeps its console-only casts** (`EngineGraph`, `SystemNode`, `HostIo`, `EngineSampleRate` tests read a
+    config field, `linkPeers_` or a ring counter); no tap read casts any more.
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
     moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype

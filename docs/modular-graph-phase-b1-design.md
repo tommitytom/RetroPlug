@@ -158,7 +158,8 @@ that has gone is not found and its record is dropped, as today.
 (set-routing to the same split, PinSplit to StereoPinSplit), and each call resets the capture streams and
 their resamplers (`NesSoundMixer::SetChannelCapture`), while `ports_changed` fires only when the wiring
 changes. The record (`armedTap_`) therefore stays on the Engine, and the table carries each NES's
-`MesenNesSystem*` so the command needs no cast.
+`MesenNesSystem*` so the command needs no cast (C4 later replaced that pointer with a `ChannelTap*`, so the record
+holds the tap's address; [modular-graph-phase-c4-design.md](modular-graph-phase-c4-design.md) section 5).
 
 The wiring only sets the lane count (§3.1). Which mode a connected tap port means:
 
@@ -288,7 +289,9 @@ holds, B0 §4) and the host's own maximum, re-activated quiescently if a host re
 ### 4.5 The system table
 
 A slot-ordered list of `{ id, SystemBase*, SameBoySystem*, MesenNesSystem* }` (each of the last two null
-for other kinds), built with each document and handed to `setGraph` with it. `GraphHost` stores it with
+for other kinds), built with each document and handed to `setGraph` with it. (C4 replaced the two core pointers
+with a `ChannelTap*`; see [modular-graph-phase-c4-design.md](modular-graph-phase-c4-design.md) section 5.)
+`GraphHost` stores it with
 the plan (opaque host data, freed with the plan on reclaim) and exposes the current plan's table on the
 audio thread. The kernel's fan-out, the command handler (§5.1, `SyncTap` included), the MI.OUT collection
 and the registry read it, so a lookup always matches the plan that is running, including between two swaps
