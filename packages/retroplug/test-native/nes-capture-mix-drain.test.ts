@@ -62,3 +62,50 @@ test("NES per-channel capture survives a MIX-path drain (renderAudio) then plays
   expect(streamCount).toBe(3); // Pulse / TND / Expansion — the per-channel path is alive (not stalled to 0)
   expect(pulsePeak > 0.001).toBe(true); // the core kept stepping through the mix drain → the note still rings
 });
+
+test("a NES split export's 1500 ms mix settle is the unarmed mix's, so the render does not drift", () => {
+  // A split render (src/render/render.ts) builds a NES whose mesen role carries the channel export, then settles
+  // 1500 ms through renderAudio: the tap is armed while the block is wired as the mix, which is also the path a host
+  // too narrow for the split takes (docs/modular-graph-phase-b0-design.md section 2.5). The core gates on the ring its
+  // block drains, so that settle is an unarmed NES's settle and the sound from there on is the same, block for block.
+  // Before that fix the armed core gated on the tap's rings while the block drained the mix: the mix fell one flush
+  // behind every block and the settle ran the console ahead (about 5% fast), so a render started from a different
+  // place. Work RAM is not compared: two Mesen cores do not power on byte-identically (uninitialised RAM), while their
+  // sound for the same input is bit-identical. The two runs are one project each, in turn, since a split is wired for
+  // a single system only.
+  const be = createRealBackend();
+  if (!be.fileExists(NES)) skip(`nes-split-render-drift: no ROM at ${NES}`);
+
+  const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
+  const audio = createAudioDriver(project.graph);
+  const settle = (exportMode: "stereoModPins" | undefined): { mix: Float32Array; id: number } => {
+    const id = project.systems.adopt({
+      romPath: NES,
+      roles: [{ kind: "nes-n8-midi", config: {} }, { kind: "mesen", config: exportMode ? { channelExportMode: exportMode } : {} }],
+    });
+    expect(id !== null).toBe(true);
+    // BlipToaster ignores its first MIDI message, so the note is sent twice.
+    for (let i = 0; i < 2; i++) audio.stageMidiIn(NOTE_ON_CH1);
+    audio.renderAudio(1500); // the split render's boot settle, through the mix
+    // A fresh note after the settle, so the captured mix carries signal either way: a drifted core's mix still holds
+    // the previous blocks' frames, and the note reaches the host late (a core that ran ahead reaches its own later).
+    for (let i = 0; i < 2; i++) audio.stageMidiIn(NOTE_ON_CH1);
+    const [mix] = audio.renderAudioPerSystem(1000);
+    expect(mix !== undefined).toBe(true);
+    return { mix: mix!, id: id! };
+  };
+
+  const armed = settle("stereoModPins");
+  // The armed core really was armed: its per-channel export offers the three pin streams. Read after the mix is
+  // captured, since draining the tap discards the mix backlog the comparison below covers.
+  expect(audio.renderAudioPerChannel(armed.id, 20).length).toBe(3);
+  project.systems.clear();
+  const plain = settle(undefined);
+
+  let diff = -1;
+  for (let i = 0; i < Math.min(armed.mix.length, plain.mix.length); i++)
+    if (armed.mix[i] !== plain.mix[i]) { diff = i; break; }
+  console.log(`[nes-split-render-drift] post-settle mix: ${armed.mix.length}/${plain.mix.length} samples, first difference ${diff}`);
+  expect(armed.mix.length === plain.mix.length && armed.mix.length > 0).toBe(true);
+  expect(diff).toBe(-1);
+});
