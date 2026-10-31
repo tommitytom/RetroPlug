@@ -25,6 +25,7 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -238,7 +239,10 @@ struct Direct {
 
     void block(std::uint32_t frames) {
         for (auto& d : out.data) std::fill_n(d.begin(), frames, 0.0f);
-        for (SystemBase* s : members) s->prepareForBlock(info(frames));
+        for (std::size_t m = 0; m < members.size(); ++m) {
+            members[m]->setBlockLanes(laneMaps[m].size());  // as the node's prepare says: which ring this block drains
+            members[m]->prepareForBlock(info(frames));
+        }
         for (bool below = true; below;) {
             below = false;
             for (SystemBase* s : members)
@@ -2517,6 +2521,7 @@ constexpr std::array<std::uint32_t, 8> kRaggedBlocks = {33, 1, 222, 1, 7, 4096, 
 rp::test::AllocationCount drainBlock(SystemBase& core, std::uint32_t frames, float* const* lanes, std::size_t laneCount,
                                      bool count, bool fill) {
     for (std::size_t l = 0; l < laneCount; ++l) std::fill_n(lanes[l], frames, 0.0f);
+    core.setBlockLanes(laneCount);  // what a node's prepare tells a core: which ring this block drains
     core.prepareForBlock(info(frames));
     if (fill) {
         while (core.stepIfBelowTarget(frames)) {
@@ -2641,6 +2646,7 @@ rp::test::AllocationCount wholeBlock(SystemBase& core, std::uint32_t frames, con
     for (float* const lane : lanes) std::fill_n(lane, frames, 0.0f);
     if (count) rp::test::beginCountingAllocations(true);
     stage(core, frames);
+    core.setBlockLanes(lanes.size());  // what a node's prepare tells a core: which ring this block drains
     core.prepareForBlock(info(frames));
     while (core.stepIfBelowTarget(frames)) {
     }
@@ -2812,6 +2818,97 @@ TEST_CASE("a Mesen audio ring keeps a block in fixed storage, draining, wrapping
     }
 }
 
+TEST_CASE("a NES whose tap is armed over the mix keeps its mix ring to one block, however long it runs",
+          "[engine-graph][system-node][mesen][tap][alloc]") {
+    // The narrow-host path: TS wires a single NES's mix on a host too narrow for its split, and the engine still arms
+    // the tap (docs/modular-graph-phase-b0-design.md section 2.5). The step gates on ONE of the core's rings and the
+    // mix path drains the other, so the mix ring used to keep each block's flush overshoot: at 512-frame blocks about
+    // 25 frames a block, which filled C4's fixed ring after about 17 s and then dropped audio every block. The core
+    // gates on the ring the block drains (SystemNode::prepare tells it the lane count), so the mix ring keeps at most
+    // the overshoot of one flush, as the plain mix path's does, and nothing is dropped.
+    const auto oneFlush = [](MesenNesSystem& core) {
+        // The most one gate's overshoot can be: the APU flush window (apuLatencyMs) in host frames.
+        return static_cast<std::uint32_t>(std::ceil(core.config().apuLatencyMs / 1000.0 * kRate)) + 1;
+    };
+    const auto narrowHost = [](Engine& e, rp::host::test::Roms& roms) {
+        auto systems = std::vector<rp::host::test::DocSystem>{{1, rp::host::test::kNesType}};
+        rp::host::test::withRoms(e, systems, roms);
+        // What buildGraph sends for a split routing on a 2-lane host: the mix wired, the tap armed anyway.
+        REQUIRE(e.setGraph(rp::host::test::rearming(
+                            rp::host::test::graphRequest(rp::host::test::stereoDocument(systems), {1}), 1, 1))
+                    .ok);
+        auto* const core = dynamic_cast<MesenNesSystem*>(e.findSystem(1));
+        REQUIRE(core != nullptr);
+        REQUIRE(core->channelExportMode() == 1);
+        return core;
+    };
+
+    SECTION("past the capacity the drift filled, in one-frame blocks") {
+        // A one-frame block needs one flush to satisfy the gate and drains one frame, so the old gate left a whole
+        // flush in the mix ring every block: 40960 frames of ring in about 620 blocks, then a drop every block. 2000
+        // blocks run well past that, and the fill stays within one block plus one flush the whole way.
+        Engine e(kRate);
+        rp::host::test::Roms roms;
+        auto* const core = narrowHost(e, roms);
+        const std::uint32_t bound = 1 + oneFlush(*core);
+        Lanes lanes(2);
+        for (int b = 0; b < 2000; ++b) {
+            e.processBlock(1, lanes.ptrs.data(), 2);
+            if (b % 100 == 0)
+                INFO("block " << b << ": fill " << core->audioRingFill() << " of " << core->audioRingCapacity());
+            CHECK(core->audioRingFill() <= bound);
+        }
+        CHECK(core->audioRingOverflow() == 0);
+        REQUIRE(core->channelExportMode() == 1);  // still armed: the case ran the defect's path, not a plain mix
+        CHECK(core->tapOverflow() == 0);
+
+        // And the drain of a real block, with emulated frames in it, allocates nothing (the snapshot interval is
+        // charged first: 2000 one-frame blocks plus this stretch stay under it).
+        chargeSnapshotInterval(*core);
+        for (int b = 0; b < 16; ++b) {
+            for (float* const lane : lanes.ptrs) std::fill_n(lane, 512, 0.0f);
+            rp::test::beginCountingAllocations(true);
+            e.processBlock(512, lanes.ptrs.data(), 2);
+            const auto counted = rp::test::endCountingAllocations();
+            INFO("block " << b << ": " << counted.allocations << " allocations, " << counted.frees << " frees");
+            REQUIRE(counted.allocations == 0);
+            REQUIRE(counted.frees == 0);
+            CHECK(core->audioRingFill() <= 512 + oneFlush(*core));
+        }
+        CHECK(core->audioRingOverflow() == 0);
+    }
+
+    SECTION("a narrow host hears exactly what the mix alone hears") {
+        // What the fix buys the user: continuing audio at one block's latency. The mix path drains the mix ring and
+        // gates on it, exactly as an unarmed NES does, so the tap changes nothing the host hears: no drift, no dropped
+        // frames, no discontinuity at a block boundary.
+        Engine wide(kRate), narrow(kRate);
+        rp::host::test::Roms wideRoms, narrowRoms;
+        std::vector<rp::host::test::DocSystem> systems{{1, rp::host::test::kNesType}};
+        rp::host::test::withRoms(wide, systems, wideRoms);
+        REQUIRE(wide.setGraph(rp::host::test::graphRequest(rp::host::test::stereoDocument(systems), {1})).ok);
+        auto* const plain = wide.findSystem(1);
+        REQUIRE(plain != nullptr);
+        auto* const tapped = narrowHost(narrow, narrowRoms);
+        Lanes mixed(2), stereo(2);
+        for (int b = 0; b < 40; ++b) {
+            std::fill_n(mixed.ptrs[0], 512, 0.0f);
+            std::fill_n(mixed.ptrs[1], 512, 0.0f);
+            std::fill_n(stereo.ptrs[0], 512, 0.0f);
+            std::fill_n(stereo.ptrs[1], 512, 0.0f);
+            narrow.processBlock(512, mixed.ptrs.data(), 2);
+            wide.processBlock(512, stereo.ptrs.data(), 2);
+            INFO("block " << b);
+            CHECK(mixed.data[0] == stereo.data[0]);
+            CHECK(mixed.data[1] == stereo.data[1]);
+        }
+        CHECK(tapped->audioRingOverflow() == 0);
+        // The console ran the same frames too: the tap changes nothing the game sees either (the two rings fill in
+        // lockstep, and the block that drains the mix gates on the mix).
+        CHECK(ramHash(*tapped) == ramHash(*plain));
+    }
+}
+
 TEST_CASE("a Mesen core's audio path drains without allocating at every block size",
           "[engine-graph][system-node][alloc]") {
     // The audio path's own promise. Warm, then one block at each ragged size with the ring already holding what the
@@ -2845,6 +2942,7 @@ TEST_CASE("a Mesen core's audio path drains without allocating at every block si
         Lanes lanes(2);
         checkRaggedDrainsAreFree(*core, {lanes.ptrs[0], lanes.ptrs[1]});
         CHECK(core->tapOverflow() == 0);
+        CHECK(core->audioRingOverflow() == 0);
     }
     SECTION("SMS") {
         auto core = sms(1);
@@ -2906,6 +3004,19 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
         }
         const auto acceptedBefore = core->inputAccepted();
         checkWholeBlocksAreFree(*core, tap, NesInput{});
+        CHECK(core->tapOverflow() == 0);
+        CHECK(core->inputAccepted() > acceptedBefore);
+    }
+    SECTION("NES, tap armed, driven through the mix") {
+        // The narrow host's path (a split routing on a host too narrow for it): the tap captures every block and
+        // finishBlock discards it, while the block itself is the mix's. Its drain, the discard, the scratches and the
+        // discard's chunking are this section's subject, with a block's host input staged inside the window.
+        auto core = nes(1, 1);
+        core->reserveAudio(8192);
+        Lanes lanes(2);
+        const auto acceptedBefore = core->inputAccepted();
+        checkWholeBlocksAreFree(*core, {lanes.ptrs[0], lanes.ptrs[1]}, NesInput{});
+        CHECK(core->audioRingOverflow() == 0);
         CHECK(core->tapOverflow() == 0);
         CHECK(core->inputAccepted() > acceptedBefore);
     }
@@ -3260,6 +3371,7 @@ TEST_CASE("a tap armed live on an activated NES sizes nothing on the block threa
     chargeSnapshotInterval(*core);
     checkRaggedDrainsAreFree(*core, {mix.ptrs[0], mix.ptrs[1]});
     CHECK(core->tapOverflow() == 0);
+    CHECK(core->audioRingOverflow() == 0);
 }
 
 TEST_CASE("a node re-activation grows a Mesen core's audio ring to the new block",

@@ -80,6 +80,14 @@ public:
     virtual void finishBlock(const AudioBlockInfo& /*info*/, float* const* /*outs*/,
                              std::size_t /*laneCount*/) {}
 
+    // How many lanes this block will drain into, told at the start of the block: the system node, from the ports the
+    // plan wired, is the authority, and finishBlock receives the same number. A core whose step gates on a ring of its
+    // own uses it to fill the ring the block actually drains, the one finishBlock will read (a NES's tap's streams
+    // when the tap's ports are wired, its mix otherwise), so a host too narrow for a split, which the node wires to the
+    // mix, steps on the mix's clock. 0 is "not told": a driver that does not say (a test, a tool) leaves the core its
+    // own rule, and a node always says.
+    virtual void setBlockLanes(std::size_t /*laneCount*/) {}
+
     // The largest host block this core will be asked to run (`maxBlockFrames` frames), so a backend can size the
     // per-block buffers it must not allocate in while a block runs. A system node gives it at activation - as it
     // builds the core, and again when a host grows its block, which reactivates the graph while it is quiescent - and

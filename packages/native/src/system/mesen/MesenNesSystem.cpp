@@ -500,15 +500,17 @@ bool MesenNesSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
     // NesApu::EndFrame(). ~227 samples per flush at 44.1 kHz, so blockSize
     // samples are ready well within one PPU frame.
     //
-    // In pins mode gate on the CAPTURE streams, not the mix ring: the pins take
-    // their own resampler path, so gating on the mix ring could leave a pin one
-    // sample short (finishBlock would then truncate it). The pins are mutually
-    // aligned, so stream 0's count is authoritative.
+    // The gate is the ring this block DRAINS, which is what finishBlock will read: the tap's streams when the node
+    // wired them (a pin is drained on its own resampler path, so gating on the mix ring could leave a pin one sample
+    // short and finishBlock would truncate it; the pins are mutually aligned, so stream 0's count is authoritative),
+    // else the mix ring.
+    // The other pair is a defect's: a split routing arms the tap on a host too narrow for the split, where the node
+    // wires the mix instead. Gating on the tap's rings there left the mix ring holding each block's flush overshoot,
+    // which nothing drained, so it grew until it dropped audio. See drainsTap().
     // Before each instruction, release any host-MIDI bytes whose intra-block sample offset the audio has
     // reached, so the ROM can't read note N before its sample position. The ring drains from the FRONT, so
     // its depth IS the output-block sample index (leftover from a prior block occupies indices [0, depth) —
-    // an event there simply fires ASAP). Gate on the SAME metric the loop uses (capture streams in pins
-    // mode, else the mix ring).
+    // an event there simply fires ASAP). Gate on the SAME metric the loop uses.
     // Passive breakpoint capture (spec/09). Mesen's headless driver records a break and RETURNS
     // rather than blocking, so an ordinary render can notice one, log it and carry on, which turns
     // a conditional watchpoint into a continuous invariant instead of something only runUntilBreak
@@ -518,7 +520,7 @@ bool MesenNesSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
         (debugSession_ && debugSession_->breakCaptureArmed()) ? debugSession_.get() : nullptr;
 
     std::uint64_t budget = nesInstructionBudget(framesNeeded, sampleRate_);
-    if (channelCapture_ && nesMixer_) {
+    if (drainsTap()) {
         while (nesMixer_->AvailableCaptureFrames() < framesNeeded && budget-- > 0) {
             if (n8Role_) n8Role_->pumpUntil(static_cast<std::uint32_t>(nesMixer_->AvailableCaptureFrames()));
             cpu->Exec();
@@ -546,7 +548,7 @@ void MesenNesSystem::finishBlock(const AudioBlockInfo& info, float* const* outs,
     // shifting its offset back by the block length so it keeps its relative timing (mirrors SameBoy).
     if (n8Role_) n8Role_->rebase(blockSize);
 
-    if (channelCapture_ && laneCount >= 6) {
+    if (channelCapture_ && laneCount >= kTapLanes) {
         // Pins mode: fan the mono pin streams (Pulse/TND/Expansion, +MixRef under mode 2) into their own L
         // lanes (stream k -> outs[2k]); the R lanes stay at the caller-zeroed 0 (mono streams). We gated on
         // the capture streams, so blockSize frames are ready in each. ONE smoothed gain per frame across
@@ -624,10 +626,24 @@ std::uint32_t MesenNesSystem::audioRingCapacity() const {
     return audioDevice_ ? audioDevice_->capacityFrames() : 0;
 }
 
-std::uint32_t MesenNesSystem::availableFrames() const {
-    // The metric stepIfBelowTarget gates on: the capture streams when the tap is armed, else the mix ring.
-    if (channelCapture_ && nesMixer_) return nesMixer_->AvailableCaptureFrames();
+std::uint32_t MesenNesSystem::audioRingFill() const {
     return audioDevice_ ? static_cast<std::uint32_t>(audioDevice_->availableFrames()) : 0;
+}
+
+std::uint32_t MesenNesSystem::availableFrames() const {
+    // The metric stepIfBelowTarget gates on: the ring this block drains.
+    if (drainsTap()) return nesMixer_->AvailableCaptureFrames();
+    return audioDevice_ ? static_cast<std::uint32_t>(audioDevice_->availableFrames()) : 0;
+}
+
+// The ring this block's step must fill. The tap's streams are drained by a block the node wired them for (its lane
+// count says so), and the mix ring by every other block, whether or not the tap is armed: a host too narrow for a split
+// arms the tap and is wired to the mix, and gating that block on the tap's rings was the narrow-host defect - the mix
+// ring kept the flush overshoot past the block, ~25 frames a block at 48 kHz in 512-frame blocks, and with a fixed ring
+// that ends in a drop every block. 0 lanes means no driver said (a direct test or tool), and the core keeps the rule it
+// had before a node told it: the tap's rings whenever they are armed.
+bool MesenNesSystem::drainsTap() const {
+    return channelCapture_ && nesMixer_ && (drainLanes_ == 0 || drainLanes_ >= kTapLanes);
 }
 
 std::uint64_t MesenNesSystem::audioRingOverflow() const {

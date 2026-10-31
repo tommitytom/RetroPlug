@@ -139,6 +139,10 @@ public:
     ChannelTap*   channelTap() override { return this; }
     std::uint32_t exportMode() const override { return channelExportMode(); }
     void          setExportMode(std::uint32_t mode) override { setChannelExportMode(mode); }
+    // Which of the two rings this block's step fills: the tap's streams when the block drains them, else the mix. A
+    // split routing on a host too narrow for the split is wired to the mix and still arms the tap, so the core cannot
+    // read one from the other: drainsTap() decides, and finishBlock's branch uses the same count.
+    void          setBlockLanes(std::size_t laneCount) override { drainLanes_ = laneCount; }
     // The live APU flush window in CPU cycles (the mixer's conversion of apuLatencyMs against the region
     // clock). 0 before onActivate. Exposed for tests / introspection.
     std::uint32_t apuFlushCycleLength() const;
@@ -148,9 +152,13 @@ public:
     // (0 unless a block ran bigger than the ring it was given, which activation prevents). The tap's own rings report
     // their drops the same way. For tests / introspection.
     std::uint32_t audioRingCapacity() const;
+    // The mix ring's fill in frames, whether or not the tap is armed. For tests / introspection: the narrow-host path
+    // (the tap armed, the block drained through the mix) is the one where the ring is not the step loop's clock, so a
+    // case reads this rather than availableFrames() to hold that path's fill stays bounded.
+    std::uint32_t audioRingFill() const;
     // Frames captured for the block in progress, before finishBlock drains them - the same metric stepIfBelowTarget
-    // gates on (the capture streams when the tap is armed, else the mix ring). For tests / introspection: it is what a
-    // whole-block case reads to hold that the step phase filled the block.
+    // gates on: the tap's streams when this block drains them, else the mix ring. For tests / introspection: it is what
+    // a whole-block case reads to hold that the step phase filled the block.
     std::uint32_t availableFrames() const;
     std::uint64_t audioRingOverflow() const;
     std::uint64_t tapOverflow() const;
@@ -168,6 +176,8 @@ private:
     // a block's audio path must not allocate (docs/modular-graph-phase-c4-design.md section 4).
     void          sizePerBlockBuffers();
     std::size_t   captureStreamCount() const;  // streams the armed mode captures (0 = none)
+    // Does this block's drain read the tap's streams (so the step must gate on their rings), or the mix ring?
+    bool          drainsTap() const;
 
     MesenNesConfig                       config_;
     std::vector<std::uint8_t>         rom_;
@@ -188,8 +198,15 @@ private:
     // 4 with the mix-reference (mode 2), or 5 core channels (mode 3). Each is one block of the largest block size,
     // sized at activation whether or not the tap is armed, so a routing change that arms it costs no allocation.
     static constexpr std::size_t      kMaxChannelStreams = 5;
+    // The lane count a block the node drains through the tap arrives with: every captured stream on a pair of its own,
+    // so three pins are six lanes and the five core channels are ten. Anything narrower is the mix's two.
+    static constexpr std::size_t      kTapLanes = 6;
     NesSoundMixer*                    nesMixer_ = nullptr;
     bool                              channelCapture_ = false;
+    // The lane count the last block was told to drain (SystemBase::setBlockLanes). It says which of the core's two
+    // rings the step must fill: 0 means no driver said, and the core keeps its own rule (the tap's rings when they are
+    // armed).
+    std::size_t                       drainLanes_ = 0;
     std::array<std::vector<float>, kMaxChannelStreams> chanAccum_;
 
     // Pending NES button transitions (pos 0..7 from NesButton enum). Applied

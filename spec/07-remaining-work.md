@@ -237,7 +237,9 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   instead of casting. A warmed core's whole block allocates and frees nothing, Mesen's per-frame video and input
   plumbing included, and a block carrying host input does too: every ingress queue is a bounded ring sized when the
   core is built, and a push past its bound is dropped and counted. Strict parity held bit for bit at every commit,
-  nothing re-recorded. The one console name `Engine` still makes is the N8 cart mirror's (`SystemKind::MesenNes`, NES
+  nothing re-recorded; the narrow-host defect the B0 design records was fixed afterwards, in a follow-up of its own
+  that re-recorded the two groups it pinned (section 10 of the C4 design). The one console name `Engine` still makes is
+  the N8 cart mirror's (`SystemKind::MesenNes`, NES
   by construction), plus the tap's 1-to-3 mode bound. What it leaves (its section 12):
   - **P3, cores borrowing their node's pinned ROM bytes**, and **P4, the snapshot registry's double copy** (section 3
     above), and **P7, the full capability split of `SystemBase`** and one node file per console, best done when C5's
@@ -259,6 +261,10 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     path the `[alloc]` cases hold.
   - **The tap's mode bound is the engine's, not the capability's**: `Engine::setGraph` still validates 1 to 3, the NES's
     numbering, because TS owns it and the arm travels as a byte. `maxMode()` on `ChannelTap` is the later move.
+  - **A split routing on a host too narrow for it still arms the tap.** The block is the mix's and the core steps on
+    the mix's clock, so nothing the host hears depends on it, but the capture, its resamplers and the per-block
+    discard are paid for. Not arming a split that does not fit is a CPU-only change (`buildGraph` knows the lane
+    budget) and is nobody's bug.
   - **The cores this fork does not run** (PCE, SNES, WS) still copy a frame's snapshot once more per emulated frame.
   - **The suite keeps its console-only casts** (`EngineGraph`, `SystemNode`, `HostIo`, `EngineSampleRate` tests read a
     config field, `linkPeers_` or a ring counter); no tap read casts any more.

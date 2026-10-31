@@ -171,13 +171,23 @@ almost none) nor sufficient: divisor 4 at 4096 frames is silent while divisors 4
 fix built only on that model may be incomplete. The existing test passes only because `renderAudio` always
 uses 1024-frame blocks. The baseline pins the silent cases; fixing it is its own change with a re-record.
 
-A fifth defect is recorded as it is, not fixed (§1): **a single NES under a split routing on a host
-narrower than the split needs does not fall back to Stereo.** `Engine::syncSplitPlan` arms the NES capture
-tap before `processBlock` checks the lane budget, so the mix path then drifts (added latency grows about
-49 ms per second, measured at 48 kHz in 512-frame blocks, where it is about 25 frames per block, so it scales with the block rate). A Game Boy and two-system projects do fall back, bit-identical to Stereo. The plugin
-always passes 8 outputs and cannot hit it; the SDL standalone (2 channels by default) and 2-lane renders
-can. The baseline pins `nes-channelSplit-o2/o4`, `nes-pinSplit-o2` and `nes-stereoPinSplit-o2/o4` as they
-are; fixing it is its own change with a re-record.
+A fifth defect was recorded as it was (§1), and has since been fixed: **a single NES under a split routing on
+a host narrower than the split needs did not fall back to Stereo.** `buildGraph` asks for the tap (`tapArm`) on
+any host, so `Engine::syncTap` armed the NES's capture tap while the lane budget made the node wire the mix, and
+the mix path then drifted: added latency grew about 49 ms per second, measured at 48 kHz in 512-frame blocks,
+where it was about 25 frames per block, so it scaled with the block rate. A Game Boy and two-system projects did
+fall back, bit-identical to Stereo. The plugin always passes 8 outputs and could not hit it; the SDL standalone
+(2 channels by default) and 2-lane renders could. The cause: the core gated its step on the tap's rings whenever
+they were armed, so a block drained through the mix took one block out of the mix ring and left each flush's
+overshoot there. While the ring was a vector that meant ever-growing latency (recorded here); with C4's fixed ring
+it also filled after about 17 s and then dropped audio every block, which is what made it a defect to fix rather
+than to record. The fix, C4's follow-up `fix(mesen): a NES steps on the ring its block drains, so a narrow host
+hears the mix at one block`, has the node tell its core how many lanes the block will drain before it steps, and
+the core gate on the ring it drains: the tap's streams for a pins block, the mix ring for a mix block. The narrow
+path is then bit-identical to Stereo, in the console's own frames as well as the host's. The baseline pins
+`nes-channelSplit-o2/o4`, `nes-pinSplit-o2` and `nes-stereoPinSplit-o2/o4` (`routing-split`) and `render-shapes`'
+six NES shape cases, whose boot segment renders a split routing at 2 channels (the same path) before their own
+shape render; all eleven were re-recorded with the fix.
 
 A sixth defect was recorded as it was (§1), and has since been fixed: **LSDj master sync was broken at 48 kHz and
 above while serial-out capture was armed.** Measured at 48 kHz in 512-frame blocks: all 17 captured MIDI messages

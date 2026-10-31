@@ -270,9 +270,11 @@ a gigabyte.
   mode and there is exactly one system; both pin modes additionally require it to be a NES, since
   nothing else has output pins. Otherwise it wires the per-system routing (as Stereo) and the layout
   is inert. A multi-instance project can never mis-route. (On a host too narrow for the split, the
-  `SyncTap` still arms a lone NES's tap while the wiring falls back to its mix, so the mix drifts:
-  one of the engine defects the parity baseline pins on purpose, design section 2.5 of
-  [modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md).) The TS UI mirrors this gating purely for UX
+  `SyncTap` still arms a lone NES's tap while the wiring falls back to its mix. The core steps on the ring the
+  block drains, so the host hears that mix, bit-identical to Stereo, at one block's latency: the drift design
+  section 2.5 of [modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md) recorded is fixed
+  ([modular-graph-phase-c4-design.md](../docs/modular-graph-phase-c4-design.md) section 10).) The TS UI mirrors
+  this gating purely for UX
   (`validAudioRoutings` in [menuDefs.ts](../packages/retroplug/ui/screens/menu/menuDefs.ts), whose
   predicate mirrors `validSplits`).
 - **The edit:** `ProjectStore.setAudioRouting` refuses an unknown value, then publishes the graph with

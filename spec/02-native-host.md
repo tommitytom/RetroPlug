@@ -278,8 +278,10 @@ staging). Then, in order:
       one step per member until none is below the block's target, then finish each, so their serial
       cable stays in instruction lockstep. The node zeroes the buffers it hands `finishBlock` (which
       adds into them) and sets the lane count from which of its outputs are connected
-      ([10-multichannel-audio-out.md](10-multichannel-audio-out.md) section 1); a Game Boy then writes
-      its `serialOut`.
+      ([10-multichannel-audio-out.md](10-multichannel-audio-out.md) section 1), telling the core that count before
+      it steps (`SystemBase::setBlockLanes`): a core whose step gates on a ring of its own (the NES, which collects
+      its audio in a mix ring and, with the tap armed, tap rings too) fills the one the block drains, so a block
+      the wiring sends to the mix steps on the mix's clock; a Game Boy then writes its `serialOut`.
    3. **The script nodes that read the systems.** An LSDj's serial-out decoder (`rp.lsdj.serial-out`)
       reads its Game Boy's `serialOut` of this block, over a forward wire, and sends its host MIDI out to
       `rp.host.midi-out`, each message at its byte's frame.

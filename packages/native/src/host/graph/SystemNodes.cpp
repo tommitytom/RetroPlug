@@ -501,6 +501,11 @@ struct SystemNode {
         if (pending) applySettings();
         static_cast<Self*>(this)->applyParams();
         applyInputs();
+        // The core learns how many lanes this block drains before it steps: a core whose step gates on a ring of its
+        // own fills the one finish() will read, and finishBlock gets the same count. Only the lane COUNT is wanted
+        // here, so this is the same lookup finish() makes, into a throwaway array.
+        std::array<float*, 2 * kMaxOutputs> lanes{};
+        core->setBlockLanes(static_cast<Self*>(this)->lanes(b, lanes));
         core->prepareForBlock(info(b));
     }
 

@@ -98,7 +98,9 @@ pitch-adjust path, below 100 % emulation speed) is capped by a smaller buffer at
 **Overflow** drops the NEWEST frames, the ones that do not fit, copies the prefix that does, counts the rest in
 `overflowFrames_` and asserts in a debug build. The queued frames are the ones the pending block's sample indices and the
 N8 FIFO's already-scheduled bytes refer to, and they are what `availableFrames()` has already told the step loop it has,
-so overwriting them would move every later sample earlier in the block. The capacity makes a drop unreachable.
+so overwriting them would move every later sample earlier in the block. The capacity makes a drop unreachable, once the
+narrow-host defect section 10 records is fixed: it gated a mix-drained block on the tap's rings, so the mix ring kept one
+flush's overshoot every block and filled.
 
 **The block size comes with the build.** `SystemBuildRequest` carries `maxBlockFrames`, a system node sets it from its
 plan's maximum in `activate` before `build`, and each backend reserves it before `onActivate`, so the ring is the plan's
@@ -193,6 +195,11 @@ to 3 is the other console name `Engine` keeps (section 12).
   - *the audio path* (`[system-node][alloc]`): a Mesen core drains without allocating at every ragged size (33, 1, 222,
     1, 7, 4096, 2, 8192), the first block at each size being the counted one, for NES mixed, NES with its pins wired,
     NES with the tap armed over the mix, SMS and GBA.
+  - *the narrow host* (`[mesen][tap][alloc]`, section 10): a lone NES whose tap is armed over the mix, which is what a
+    split routing gets on a host too narrow for it, run 2000 one-frame blocks past the capacity the old drift filled,
+    with the mix ring's fill within one block plus one flush every block and nothing dropped, a counted 512-frame drain
+    on that path with emulated frames in it, and a block-for-block comparison with an unarmed NES that must match in
+    audio and in work RAM.
   - *the whole block*: a warmed core's whole block allocates and frees nothing, emulation included: NES mixed, NES with
     its tap armed, NES through the Engine (the whole graph block, so the system node's per-block work is inside the
     window), SMS, Game Boy (the mix and the four stem pairs) and GBA. Each warms through the real triad with a button
@@ -389,6 +396,24 @@ section 11. The ones worth naming on their own:
 - **The counted allocation every dozen blocks with the tap armed over a mix** turned out to be a video frame: the step
   gate is then the tap's ring, which `finishBlock` discards, so each 1-frame block emulates a whole flush window and a
   video frame lands every dozen (sections 6, 9).
+- **The ring's overflow was reachable through the narrow-host defect, so the defect is fixed rather than recorded again**
+  (sections 4, 6; the B0 design's fifth defect). A lone NES under a split routing on a host too narrow for it arms the
+  tap (`buildGraph`'s `tapArm`, `Engine::syncTap`) while the node wires the mix, and the core gated its step on the
+  tap's rings: the block drained one block from the mix ring and left each flush's overshoot there. The vector ring had
+  turned that into ever-growing latency; the fixed ring fills after about 17 s at 48 kHz in 512-frame blocks and then
+  drops audio every block (a debug build asserting in `PlayBuffer`). The user's decision was to fix it in its own
+  commit, with the parity cases that pin it re-recorded, as a pinned defect is fixed, not to record it again. The step
+  gates on the ring the block drains: the node tells the core the block's lane count before it steps
+  (`SystemBase::setBlockLanes`, from the same `lanes()` lookup `finishBlock` reads), and the NES gates on its tap's
+  rings only when the block drains them. A mix-drained block is then the unarmed core's block, bit for bit, in the
+  console's frames as well as the host's, and the mix ring keeps at most one flush's overshoot, as the plain mix path
+  does. The engine still arms the tap on a host too narrow for the split, so that capture work is wasted; not arming a
+  split that does not fit is a separate, CPU-only change. Eleven parity cases moved, every one of them the defect's
+  path: `nes-channelSplit-o2/o4`, `nes-pinSplit-o2` and `nes-stereoPinSplit-o2/o4` (`routing-split`), and
+  `render-shapes`' five per-channel NES shapes plus `perSystem-nes-channelSplit`, whose boot segment renders a split
+  routing at 2 channels (the same path) before its own shape render. The case that holds the fix runs the narrow path
+  past the old ring's capacity in one-frame blocks with the fill bounded and nothing dropped, counts a real block's
+  drain on that path, and compares it block for block with an unarmed NES.
 - **Without the block size in the build request, a memory saving was lost** (section 4). A core built at the 8192
   default and then reserved down keeps the larger ring for its life, so a DAW running 64-frame blocks would pay for a
   plan it never runs; the request's `maxBlockFrames` is what sizes it to the plan from construction.
