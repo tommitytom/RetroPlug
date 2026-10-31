@@ -9,6 +9,7 @@
 #include <string_view>
 #include <vector>
 
+#include "system/ChannelTap.hpp"
 #include "system/CpuState.hpp"
 #include "system/InputTypes.hpp"
 #include "system/MemoryAccessor.hpp"
@@ -233,6 +234,15 @@ public:
     // getProgramCounter(); returns false immediately if the backend can't step
     // or has no program counter. Not virtual — identical for every backend.
     bool runUntilPc(std::uint32_t target, std::uint64_t maxCycles);
+
+    // -- Per-channel audio tap ----------------------------------------------
+    //
+    // Optional audio capability: the object that exports the core's streams one by one, behind a split routing. Null
+    // when the core has no tap (every core but the NES today). One capability object rather than a virtual per caller;
+    // callers branch on nullptr (no dynamic_cast), as with debugTarget(). The system owns it and it lives as long as
+    // the core does: a reset or deactivation leaves the pointer valid, and a caller re-asks only after the core is
+    // replaced.
+    virtual ChannelTap* channelTap() { return nullptr; }
 
     // -- Debugger / profiler ------------------------------------------------
     //

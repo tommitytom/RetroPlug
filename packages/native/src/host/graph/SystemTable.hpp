@@ -6,16 +6,16 @@
 #include "system/SystemTypes.hpp"
 
 class SystemBase;
-class MesenNesSystem;
+class ChannelTap;
 
 namespace rp::host {
 
-// One system as a plan sees it: its core, plus the concrete pointer the engine's NES tap needs, so the tap needs no
-// dynamic_cast on the block thread.
+// One system as a plan sees it: its core, plus the core's channel tap if it offers one, so a split routing arms it
+// without a cast on the block thread.
 struct SystemEntry {
-    SystemId        id = 0;
-    SystemBase*     core = nullptr;
-    MesenNesSystem* nes = nullptr;  // null unless a NES
+    SystemId    id = 0;
+    SystemBase* core = nullptr;
+    ChannelTap* tap = nullptr;  // core->channelTap(): null unless the core offers one
 };
 
 // The systems of one plan, in project slot order (docs/modular-graph-phase-b1-design.md section 4.5), and what else

@@ -38,7 +38,7 @@
 #include "host/engine/DspCommand.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/script/ScriptHost.hpp"
-#include "system/mesen/MesenNesSystem.hpp"
+#include "system/ChannelTap.hpp"
 
 using rp::host::ScriptHost;
 using rp::host::test::DocExtras;
@@ -1521,18 +1521,19 @@ TEST_CASE("a reload's replan carries the running plan's tap as it is: neither re
                                                                {docWire("count.out", "midi-out.in1")}}),
                                       {1});
     place(e, rearming(request, 1, 1));  // the tap armed to mode 1 from the core's built mode 0
-    auto* nes = dynamic_cast<MesenNesSystem*>(e.findSystem(1));
-    REQUIRE(nes != nullptr);
-    CHECK(nes->channelExportMode() == 1);
+    SystemBase* core = e.findSystem(1);
+    ChannelTap* tap = core ? core->channelTap() : nullptr;
+    REQUIRE(tap != nullptr);
+    CHECK(tap->exportMode() == 1);
     CHECK(block(e) == std::vector<Out>{{1, 0, {1, 1}}});
     // Moved behind the engine's back, so a replan that restored the tap (to 0) or armed it again (to 1) would show.
-    nes->setChannelExportMode(2);
+    tap->setExportMode(2);
     load(e, "test.tap", toys(tally("test.tap.count", 2)));
     CHECK(block(e) == std::vector<Out>{{1, 0, {2, 1}}});  // the pack's node rebuilt on the new code
-    CHECK(nes->channelExportMode() == 2);
+    CHECK(tap->exportMode() == 2);
     // And the engine still holds what it armed: a re-arm with nothing to arm restores the mode the core had before.
     place(e, rearming(request));
-    CHECK(nes->channelExportMode() == 0);
+    CHECK(tap->exportMode() == 0);
     CHECK(e.scriptThrows() == 0);
     CHECK(e.faultCount() == 0);
 }

@@ -21,7 +21,7 @@
 
 class SystemBase;
 class SystemFactory;
-class MesenNesSystem;
+class ChannelTap;
 struct DspCommand;
 struct SystemBuildRequest;
 namespace rp::graph { struct HostCommand; }
@@ -380,18 +380,20 @@ private:
     // emulated program has its own invariants over those bytes. That is the point of the feature.
     bool writeRam(SystemBase* sys, std::uint32_t offset, const std::vector<std::uint8_t>& bytes);
 
-    // The NES tap syncTap() armed, and what its export mode was BEFORE we touched it. Restored before every
+    // The tap syncTap() armed, and what its export mode was BEFORE we touched it. Restored before every
     // re-resolve so leaving a split mode (or gaining a second system) puts the core back exactly as found. Scoped
     // to what WE armed on purpose: the CLI / RenderHost set channelExportMode in the system node's settings and
-    // never select a split routing, so they are never disturbed. `core` is compared, never followed: a fresh core
-    // replaced in under the same id is not the one armed. It is compared by address, so a core allocated where the
-    // armed one was freed defeats it; TS never gets there, since buildSystem refuses a live id, the stores' id
-    // counter only goes up, and every TS edit that drops a core re-arms, which drops this record with it.
+    // never select a split routing, so they are never disturbed. `tap` is compared, never followed: a fresh core
+    // replaced in under the same id is not the one armed. A NES's tap IS the core object, so the record cannot
+    // outlive it, and its address differs from the core pointer's by a per-class constant, so within one class tap
+    // equality is core equality. It is compared by address, so a core whose tap lands where the armed tap was
+    // defeats it; TS never gets there, since buildSystem refuses a live id, the stores' id counter only goes up,
+    // and every TS edit that drops a core re-arms, which drops this record with it.
     struct ArmedTap {
-        bool                  active   = false;
-        SystemId              id       = 0;
-        const MesenNesSystem* core     = nullptr;
-        std::uint32_t         prevMode = 0;
+        bool              active   = false;
+        SystemId          id       = 0;
+        const ChannelTap* tap      = nullptr;
+        std::uint32_t     prevMode = 0;
     };
     ArmedTap armedTap_;
 

@@ -11,11 +11,11 @@
 #include <string>
 #include <utility>
 
+#include "system/ChannelTap.hpp"  // the capability SyncTap arms
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"   // AudioBlockInfo, SystemId
 #include "system/CoreBackends.hpp"  // registerCoreBackends: the engine owns the one factory every build goes through
 #include "system/SystemFactory.hpp"
-#include "system/mesen/MesenNesSystem.hpp"    // the system table's NES, the tap SyncTap arms
 
 #include "transport/FrameBufferTriple.hpp"
 #include "native/core/img/png/lodepng.h"
@@ -287,7 +287,7 @@ SystemBase* Engine::buildSystem(std::uint64_t system, SystemBuildRequest request
     for (auto& e : building_->slots)
         if (e.id == id) {
             e.core = built;
-            e.nes = dynamic_cast<MesenNesSystem*>(built);
+            e.tap = built->channelTap();
             found = true;
         }
     assert(found);
@@ -373,7 +373,7 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
         // plan from here; a new instance's has a null entry until its activation, and buildSystem fills it.
         const auto it = liveCores_.find(id);
         SystemBase* core = it == liveCores_.end() ? nullptr : it->second;
-        table->slots.push_back({id, core, core ? dynamic_cast<MesenNesSystem*>(core) : nullptr});
+        table->slots.push_back({id, core, core ? core->channelTap() : nullptr});
     }
     // The host inputs, one of each at most: each takes everything staged, wired or not, so a second would take it from
     // the first whenever it ran first. The host MIDI out, one at most: it frame-sorts what it merges, and a second
@@ -680,23 +680,24 @@ void Engine::applyCommand(DspCommand& cmd, const rp::host::SystemTable& table) {
     }
 }
 
-// The NES tap arming at every structural change, against `table`, the plan just adopted (design section 3.2):
+// The audio tap arming at every structural change, against `table`, the plan just adopted (design section 3.2):
 // restore whatever was armed, then arm `id` to `mode` if `arm`. It runs even when the wanted mode is
 // unchanged, and each run resets the capture streams. A core that has gone (removed, or replaced under
-// its id or a new one) is not restored, and its record is dropped.
+// its id or a new one) is not restored, and its record is dropped; a core that offers no tap
+// (channelTap() null) has nothing to arm, so the document's arm reaches nothing.
 void Engine::syncTap(bool arm, SystemId id, std::uint32_t mode, const rp::host::SystemTable& table) {
     if (armedTap_.active) {
-        if (const auto* e = table.find(armedTap_.id); e && e->nes == armedTap_.core)
-            e->nes->setChannelExportMode(armedTap_.prevMode);
+        if (const auto* e = table.find(armedTap_.id); e && e->tap == armedTap_.tap)
+            e->tap->setExportMode(armedTap_.prevMode);
         armedTap_ = {};
     }
     if (!arm) return;
     const auto* e = table.find(id);
-    MesenNesSystem* nes = e ? e->nes : nullptr;
-    if (!nes) return;
-    if (nes->channelExportMode() != mode) {
-        armedTap_ = { true, nes->id(), nes, nes->channelExportMode() };
-        nes->setChannelExportMode(mode);
+    ChannelTap* tap = e ? e->tap : nullptr;
+    if (!tap) return;
+    if (tap->exportMode() != mode) {
+        armedTap_ = { true, e->id, tap, tap->exportMode() };
+        tap->setExportMode(mode);
     }
 }
 

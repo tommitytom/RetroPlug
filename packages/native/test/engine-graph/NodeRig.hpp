@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <map>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -42,7 +43,29 @@ struct HostMidiOut {
     bool operator==(const HostMidiOut&) const = default;
 };
 
+// A core the rig hands a node with another console's kind, so a case can drive the node's build check (no real host
+// gets a build's kind wrong). Only the two remaining pure virtuals (onActivate, onSampleRateChanged) reach the core it
+// wraps; everything else resolves to SystemBase's defaults, which is safe because a node only observes the wrapper
+// through the refused build. It owns that core, so the node's destroy frees both.
+class KindWrapper final : public SystemBase {
+public:
+    KindWrapper(std::unique_ptr<SystemBase> core, SystemKind kind)
+        : SystemBase(core->id()), core_(std::move(core)), kind_(kind) {}
+
+    SystemKind kind() const override { return kind_; }
+    void       onActivate(double sampleRate) override { core_->onActivate(sampleRate); }
+    void       onSampleRateChanged(double sampleRate) override { core_->onSampleRateChanged(sampleRate); }
+
+private:
+    std::unique_ptr<SystemBase> core_;
+    SystemKind                  kind_;
+};
+
 struct NodeRig {
+    // The kind a core the factory built is REPORTED as, when set: a node's build compares the kind of the core
+    // rp.host.systems/1 hands back with the kind its type builds, and no real host gets that wrong, so a case that
+    // holds the check sets this and the rig hands the right core back behind a wrapper reporting another kind.
+    std::optional<SystemKind>                            reportKind;
     rp::graph::NodeRegistry                              registry;
     rp::graph::ResourceTable                             resources;
     double                                               rate = 48000.0;
@@ -148,6 +171,7 @@ struct NodeRig {
             std::snprintf(err->message, sizeof err->message, "%s", why.c_str());
             return nullptr;
         }
+        if (rig.reportKind) core = std::make_unique<KindWrapper>(std::move(core), *rig.reportKind);
         rig.built.push_back(core.get());
         return core.release();
     }

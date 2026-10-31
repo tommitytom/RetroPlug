@@ -45,7 +45,7 @@
 #include "graph/CanonicalJson.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/graph/SystemNodes.hpp"
-#include "system/mesen/MesenNesSystem.hpp"  // the export mode a NES ended in
+#include "system/SystemBase.hpp"  // the tap the export mode is read through
 
 using rp::host::test::readFile;
 
@@ -250,11 +250,16 @@ std::optional<std::string> plan(const GoldenCase& c, const std::string& document
     if (e.systemCount() != c.slots.size()) return std::string("planned, but not every slot is placed");
     // Each NES is in the mode the arm asked for, or the one it was built in.
     for (const SystemId id : c.slots) {
-        const auto* nes = dynamic_cast<const MesenNesSystem*>(e.findSystem(id));
-        if (!nes) continue;
+        SystemBase* core = e.findSystem(id);
+        const ChannelTap* tap = core ? core->channelTap() : nullptr;
+        if (!tap) {
+            if (byId.at(id)->type == rp::host::test::kNesType)
+                return "NES " + std::to_string(id) + " offers no tap";
+            continue;
+        }
         const std::uint32_t want = c.tapArm && c.tapArm->id == id ? c.tapArm->mode : byId.at(id)->exportMode;
-        if (nes->channelExportMode() != want)
-            return "NES " + std::to_string(id) + " is in mode " + std::to_string(nes->channelExportMode()) +
+        if (tap->exportMode() != want)
+            return "NES " + std::to_string(id) + " is in mode " + std::to_string(tap->exportMode()) +
                    ", not " + std::to_string(want);
     }
     // Into as many channels as the plan writes. Driven, each block stages a note and its release on each of four

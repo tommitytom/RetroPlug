@@ -2847,6 +2847,69 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
     }
 }
 
+TEST_CASE("the tap is a capability only a NES offers", "[engine-graph][system-node][tap]") {
+    // SystemBase::channelTap() is how the engine finds the tap a split routing arms
+    // (docs/modular-graph-phase-c4-design.md section 5), so a core without one answers null and the engine arms
+    // nothing. The NES is the only core with one: its tap is the core itself, so the interface and the core's own mode
+    // accessors are one mode.
+    SECTION("NES") {
+        auto core = nes(1, 0);
+        REQUIRE(core->channelTap() != nullptr);
+        CHECK(core->channelTap()->exportMode() == 0);
+        core->channelTap()->setExportMode(1);
+        CHECK(core->channelExportMode() == 1);
+    }
+    SECTION("Game Boy") {
+        auto core = mgb(1);
+        CHECK(core->channelTap() == nullptr);
+    }
+    SECTION("Master System") {
+        auto core = sms(1);
+        CHECK(core->channelTap() == nullptr);
+    }
+    SECTION("GBA") {
+        auto core = std::make_unique<MesenGbaSystem>(1, MesenGbaConfig{}, rp::host::test::romFor("rp.mesen.gba"));
+        core->onActivate(kRate);
+        CHECK(core->channelTap() == nullptr);
+    }
+}
+
+TEST_CASE("a node refuses a core built with another console's kind", "[engine-graph][system-node]") {
+    // The node's build checks that the core rp.host.systems/1 hands back is the kind its own type builds, then casts
+    // it to that type: the config alternative it sent already named the console, so a mismatch is a host or settings
+    // bug, and the check is what keeps the cast sound. No real host can produce one, so the rig reports the kind a case
+    // asks for, and the core it built is given back before the refusal. Every console's node against each other kind
+    // also pins the invariant the cast rests on, that no two core classes report one kind: a duplicated enumerator
+    // would let the wrong class through the comparison, and this matrix is what would see it.
+    struct Type {
+        const char* type;
+        const char* name;
+        const char* extra;
+    };
+    const Type types[] = {
+        {"rp.sameboy.gb", "Game Boy", kGbDmg},
+        {"rp.mesen.nes", "NES", ""},
+        {"rp.mesen.gba", "Game Boy Advance", ""},
+        {"rp.mesen.sms", "Master System / Game Gear", ""},
+    };
+    const SystemKind kinds[] = {SystemKind::SameBoy, SystemKind::MesenNes, SystemKind::MesenGba, SystemKind::MesenSms};
+    for (std::size_t t = 0; t < sizeof(types) / sizeof(types[0]); ++t) {
+        for (const SystemKind kind : kinds) {
+            if (static_cast<std::size_t>(kind) == t) continue;
+            INFO(types[t].type << " node handed a kind " << static_cast<std::uint32_t>(kind) << " core");
+            NodeRig rig(kRate);
+            rig.reportKind = kind;
+            const auto r = rig.set(knobbed(types[t].type, rig.boot(types[t].type, 1, types[t].extra)));
+            CHECK_FALSE(r.ok);
+            REQUIRE(r.errors.size() == 1);
+            CHECK(r.errors[0].code == "activate-failed");
+            CHECK(r.errors[0].message == std::string("the built core is not a ") + types[t].name);
+            CHECK(rig.built.empty());
+            CHECK(rig.released == std::vector<SystemId>{1});
+        }
+    }
+}
+
 TEST_CASE("a tap armed live on an activated NES sizes nothing on the block thread, and its audio path stays free",
           "[engine-graph][system-node][mesen][tap][alloc]") {
     // A plugin routing change arms the tap through the plan's SyncTap trailer (Engine::syncTap), which the block thread

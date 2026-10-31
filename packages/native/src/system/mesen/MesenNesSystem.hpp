@@ -23,14 +23,17 @@ class NesN8FifoRole;
 // gain. Native NES resolution: 256x240. Audio runs at the host sample rate
 // (Mesen's SoundMixer resamples internally). Input arrives as NesButton; host
 // MIDI is forwarded to the N8 FIFO (NesN8FifoRole).
-class MesenNesSystem final : public SystemBase {
+class MesenNesSystem final : public SystemBase, public ChannelTap {
 public:
     MesenNesSystem(SystemId id,
                    MesenNesConfig config,
                    std::vector<std::uint8_t> romBytes);
     ~MesenNesSystem() override;
 
-    SystemKind kind() const override { return SystemKind::MesenNes; }
+    // The console a system node of this type builds: the node compares a built core's kind() with this before it casts
+    // it to this class, and kind() answers it, so the two cannot drift.
+    static constexpr SystemKind kKind = SystemKind::MesenNes;
+    SystemKind kind() const override { return kKind; }
 
     void onActivate(double sampleRate) override;
     void onDeactivate() override;
@@ -127,6 +130,11 @@ public:
     /** The armed per-channel export mode (0 = off). Lets the Engine record what it found before arming,
      *  so it can restore a construct-time (CLI / render) value it did not set. */
     std::uint32_t channelExportMode() const { return config_.channelExportMode; }
+    // The tap as the engine sees it (SystemBase::channelTap): this core is its own, so the two methods above ARE the
+    // capability, and a split routing arms a NES without the engine naming the console.
+    ChannelTap*   channelTap() override { return this; }
+    std::uint32_t exportMode() const override { return channelExportMode(); }
+    void          setExportMode(std::uint32_t mode) override { setChannelExportMode(mode); }
     // The live APU flush window in CPU cycles (the mixer's conversion of apuLatencyMs against the region
     // clock). 0 before onActivate. Exposed for tests / introspection.
     std::uint32_t apuFlushCycleLength() const;

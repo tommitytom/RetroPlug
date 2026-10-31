@@ -36,7 +36,10 @@ public:
                   std::vector<std::uint8_t> romBytes);
     ~SameBoySystem() override;
 
-    SystemKind kind() const override { return SystemKind::SameBoy; }
+    // The console a system node of this type builds: the node compares a built core's kind() with this before it casts
+    // it to this class, and kind() answers it, so the two cannot drift.
+    static constexpr SystemKind kKind = SystemKind::SameBoy;
+    SystemKind kind() const override { return kKind; }
 
     void onActivate(double sampleRate) override;
     void onDeactivate() override;

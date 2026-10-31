@@ -441,11 +441,15 @@ struct SystemNode {
         SystemBase* made = systems->build(systems->ctx, settings->system, std::move(request), &err);
         if (!made)
             throw std::runtime_error(err.message[0] ? std::string(err.message) : std::string("the core did not build"));
-        core = dynamic_cast<Core*>(made);
-        if (!core) {  // the config names the console, so this is a host or settings bug rather than a document's
+        // The config alternative the request carries names the console, so the core handed back must be that console's:
+        // a host that built another reports another kind(), and every core class reports a kind no other one does, so
+        // the comparison checks the type the cast below then assumes. A mismatch is a host or settings bug rather than
+        // a document's, and the core it built is given back before the refusal.
+        if (made->kind() != Core::kKind) {
             systems->destroy(systems->ctx, made);
             throw std::runtime_error(std::string("the built core is not a ") + Self::name);
         }
+        core = static_cast<Core*>(made);
         // The build applied the config, so its fields are on the core already: `applied` is seeded with the settings'
         // live knobs, less what the config does not carry, so the node's own first application finds them equal and
         // calls nothing (a model change would restart the core and lose the savestate the build restored). What is left
