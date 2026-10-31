@@ -500,8 +500,8 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   and Mesen's per-frame plumbing reuses its buffers. That holds with a block's host input staged into it too: every
   ingress queue a press, a MIDI run, a serial byte or a raw message lands in is bounded and sized when the core is
   built, and a push past its bound is dropped and counted (above), so the counted window may carry what a node applies
-  before the core's `prepareForBlock`. The cases that prove it leave the GBA out where its sibling fixture ROM is not
-  present, as on CI, and cover it where the resources tree is. What still allocates on the block thread is work that
+  before the core's `prepareForBlock`. The cases that prove it `SKIP` the GBA, counted, where its sibling fixture ROM
+  is not present, as on CI, and cover it where the resources tree is. What still allocates on the block thread is work that
   makes something: a Game Boy's model change restarts the core (`GB_alloc` / `GB_init`), which allocates, as it did on
   the command ring; a NES's region change resets it, which allocates too; the 0.5 s state-snapshot capture allocates
   inside Mesen's streaming serializer; and the N8 firmware's SD path allocates in its command handlers, in a bigger

@@ -271,9 +271,6 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     console's they cannot coalesce. A session that applies pushes inline between blocks (the CLI, an offline render)
     can queue more than that; what is past the bound is dropped and counted, and the tail can be a release, leaving
     its button held. A rule that keeps a release, or headroom reserved for one, is its own change.
-  - **The GBA's counted cases are fixture-only**: its ROM is a sibling resource, so the `[alloc]`, `[input-drops]`
-    and `[video]` sections leave early on a run without the resources tree (as CI's) and prove nothing there. They
-    should `SKIP` and be counted rather than return.
   - **The suite keeps its console-only casts** (`EngineGraph`, `SystemNode`, `HostIo`, `EngineSampleRate` tests read a
     config field, `linkPeers_` or a ring counter); no tap read casts any more.
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):

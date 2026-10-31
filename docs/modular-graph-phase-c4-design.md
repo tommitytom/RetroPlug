@@ -210,8 +210,8 @@ mode bound 1 to 3 is the other console name `Engine` keeps (section 12).
   - *the audio path* (`[system-node][alloc]`): a Mesen core drains without allocating at every ragged size (33, 1, 222,
     1, 7, 4096, 2, 8192), the first block at each size being the counted one, for NES mixed, NES with its pins wired,
     NES with the tap armed over the mix, SMS and GBA. Every GBA section, here and below (`[video]`'s row included),
-    reads a sibling fixture ROM and leaves early where the resources tree has none, as CI's does: a `SKIP` that counts
-    the gap is a code follow-up's.
+    reads a sibling fixture ROM and `SKIP`s, counted, where the resources tree has none, as CI's does, so the gap is
+    visible rather than a silent pass.
   - *the narrow host* (`[mesen][tap][alloc]`, section 10): a lone NES whose tap is armed over the mix, which is what a
     split routing gets on a host too narrow for it, run 2000 one-frame blocks past the capacity the old drift filled,
     with the mix ring's fill within one block plus one flush every block and nothing dropped, a counted 512-frame drain
@@ -644,8 +644,8 @@ the core itself (section 12).
   carry a release, leaving its button held. A press a block cannot lose would need a coalescing rule of its own or a
   headroom reserved for releases, which is its own change.
 - **The GBA's counted cases are fixture-only** (section 6): its ROM is a sibling resource, so the `[alloc]`,
-  `[input-drops]` and `[video]` sections leave early on a run without the resources tree (as CI's) and prove nothing
-  there. They should `SKIP` and be counted rather than return, which is a code follow-up's.
+  `[input-drops]` and `[video]` sections `SKIP` on a run without the resources tree (as CI's) and prove nothing
+  there. The skip is counted, so the coverage gap is visible.
 - **P3, the ROM borrow:** a system holds its ROM in its node's pinned resource and again in its core (up to 32 MB for
   a GBA); a true borrow needs a regenerated vendored SameBoy patch, and an SMS re-reads its staged file on reset.
 - **P4, the snapshot double copy:** the registry copies each core's published frame and savestate again; that copy is

@@ -10,8 +10,8 @@
 // too: each value must reach the core as its setter, called directly before the core's first block or at the start
 // of the block a change lands in, renders it.
 //
-// The GBA and LSDj cases use sibling fixture ROMs, so each leaves on a run without the resources tree (as CI's) rather
-// than failing there.
+// The GBA cases use a sibling fixture ROM, so each SKIPs, counted, on a run without the resources tree (as CI's); the
+// LSDj cases leave early there rather than failing.
 //
 // The last cases hold the block thread's allocation promise (docs/modular-graph-phase-c4-design.md section 4): a
 // warmed core's block allocates and frees nothing, both for the audio path on its own (a fixed audio ring, and
@@ -2353,9 +2353,9 @@ TEST_CASE("a Master System node built from its ROM resource boots with FM off", 
 TEST_CASE("a GBA node built from its ROM resource renders what a core built from the same bytes renders",
           "[engine-graph][system-node][resources]") {
     // The GBA is the one console whose typed path no other resource case reaches, and its ROM is a sibling fixture, so
-    // the case leaves on a run without one (as CI's) rather than failing there.
+    // the case SKIPs, counted, on a run without one (as CI's) rather than passing as if it had run.
     const auto rom = resourceFixture("/roms/nanoloop287d.gba");
-    if (rom.empty()) return;
+    if (rom.empty()) SKIP("the GBA fixture ROM is absent from the resources tree");
     NodeRig rig(kRate);
     auto direct = std::make_unique<MesenGbaSystem>(1, MesenGbaConfig{}, rom);
     direct->onActivate(kRate);
@@ -3068,9 +3068,9 @@ TEST_CASE("a Mesen core's audio path drains without allocating at every block si
         CHECK(core->audioRingOverflow() == 0);
     }
     SECTION("GBA") {
-        // A sibling fixture, so this leaves on a run without one (as CI's) rather than failing there.
+        // A sibling fixture, so this SKIPs, counted, on a run without one (as CI's) rather than passing silently.
         const auto rom = resourceFixture("/roms/nanoloop287d.gba");
-        if (rom.empty()) return;
+        if (rom.empty()) SKIP("the GBA fixture ROM is absent from the resources tree");
         auto core = std::make_unique<MesenGbaSystem>(1, MesenGbaConfig{}, rom);
         core->onActivate(kRate);
         core->reserveAudio(8192);
@@ -3237,9 +3237,9 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
         }
     }
     SECTION("GBA") {
-        // A sibling fixture, so this leaves on a run without one (as CI's) rather than failing there.
+        // A sibling fixture, so this SKIPs, counted, on a run without one (as CI's) rather than passing silently.
         const auto rom = resourceFixture("/roms/nanoloop287d.gba");
-        if (rom.empty()) return;
+        if (rom.empty()) SKIP("the GBA fixture ROM is absent from the resources tree");
         auto core = std::make_unique<MesenGbaSystem>(1, MesenGbaConfig{}, rom);
         core->onActivate(kRate);
         core->reserveAudio(8192);
@@ -3331,7 +3331,7 @@ TEST_CASE("a core's ingress queues drop what is past their bound, count it, and 
     }
     SECTION("GBA presses") {
         const auto rom = resourceFixture("/roms/nanoloop287d.gba");
-        if (rom.empty()) return;
+        if (rom.empty()) SKIP("the GBA fixture ROM is absent from the resources tree");
         auto core = std::make_unique<MesenGbaSystem>(1, MesenGbaConfig{}, rom);
         core->onActivate(kRate);
         core->reserveAudio(8192);
@@ -3471,7 +3471,7 @@ TEST_CASE("a Mesen press burst cannot push a release out of its queue", "[engine
     }
     SECTION("Game Boy Advance") {
         const auto rom = resourceFixture("/roms/nanoloop287d.gba");
-        if (rom.empty()) return;
+        if (rom.empty()) SKIP("the GBA fixture ROM is absent from the resources tree");
         auto core = std::make_unique<MesenGbaSystem>(1, MesenGbaConfig{}, rom);
         core->onActivate(kRate);
         core->reserveAudio(8192);
@@ -3511,7 +3511,7 @@ TEST_CASE("a press of a byte the console has no button for drives no button",
     }
     SECTION("Game Boy Advance") {
         const auto rom = resourceFixture("/roms/nanoloop287d.gba");
-        if (rom.empty()) return;
+        if (rom.empty()) SKIP("the GBA fixture ROM is absent from the resources tree");
         auto core = std::make_unique<MesenGbaSystem>(1, MesenGbaConfig{}, rom);
         core->onActivate(kRate);
         strayByte(*core, 200);
@@ -3796,9 +3796,9 @@ TEST_CASE("each console renders the frames it always has, bit for bit",
                                                13782190143996438851ull});
     }
     SECTION("GBA") {
-        // A sibling fixture, so this leaves on a run without one (as CI's) rather than failing there.
+        // A sibling fixture, so this SKIPs, counted, on a run without one (as CI's) rather than passing silently.
         const auto rom = resourceFixture("/roms/nanoloop287d.gba");
-        if (rom.empty()) return;
+        if (rom.empty()) SKIP("the GBA fixture ROM is absent from the resources tree");
         auto core = std::make_unique<MesenGbaSystem>(1, MesenGbaConfig{}, rom);
         core->onActivate(kRate);
         const std::vector<std::uint64_t> got = frameHashes(*core, 3);
