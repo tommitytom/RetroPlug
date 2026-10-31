@@ -130,13 +130,13 @@ private:
     std::uint64_t             dropped_  = 0;
 };
 
-// Stable sort of a block's queued entries by offset through a scratch buffer sized before the block runs, so the block
-// thread allocates nothing: std::stable_sort takes a temporary buffer, which the block thread may not have. A bottom-up
-// merge sort moves each entry once a pass, so a full queue costs about n * ceil(log2 n) moves; the in-place insertion
-// sort this replaced cost n * n / 2 on a reversed queue, which the Master System's 74752 levels made about 2.8 G swaps
-// on the audio thread (a realistic two-feed block, the midi door's levels at one offset after the bytes door's at an
-// earlier one, about 75 M). Stability is the merge's: on a tie the left run's entry goes first, so entries sharing an
-// offset keep their enqueue order.
+// Stable sort of a block's queued entries by offset through a scratch buffer sized before the block runs, so the
+// block thread allocates nothing: std::stable_sort takes a temporary buffer, which the block thread may not have. A
+// bottom-up merge sort moves each entry once a pass, so a full queue costs about n * ceil(log2 n) moves; the
+// in-place insertion sort this replaced cost n * n / 2 on a reversed queue, which the Master System's 74752 levels
+// made about 2.8 G swaps on the audio thread (a realistic two-feed block, the midi door's levels at one offset after
+// the bytes door's at an earlier one, about 75 M). Stability is the merge's: on a tie the left run's entry goes
+// first, so entries sharing an offset keep their enqueue order.
 template <class T>
 class SortScratch {
 public:

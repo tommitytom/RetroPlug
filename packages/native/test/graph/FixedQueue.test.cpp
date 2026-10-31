@@ -167,7 +167,7 @@ TEST_CASE("SortScratch bounds a full reversed queue to a merge's moves, and allo
     std::vector<CountedEntry> entries;
     entries.reserve(kCount);
     for (std::size_t i = 0; i < kCount; ++i) entries.emplace_back(static_cast<std::uint32_t>(kCount - i), 0);
-    rp::SortScratch<CountedEntry> scratch(kCount);  // sized where a role's queue is, so the sort itself allocates nothing
+    rp::SortScratch<CountedEntry> scratch(kCount);  // sized with a role's queue, so the sort allocates nothing
     const auto less = [](const CountedEntry& a, const CountedEntry& b) {
         ++CountedEntry::comparisons;
         return a.key < b.key;

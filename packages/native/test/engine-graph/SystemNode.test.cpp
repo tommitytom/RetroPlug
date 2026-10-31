@@ -2685,9 +2685,9 @@ void checkWholeBlocksAreFree(SystemBase& core, const std::vector<float*>& lanes,
     core.pressButton(0, false);
     for (int b = 0; b < 3; ++b) wholeBlock(core, 1024, lanes, false, stage);
     for (const std::uint32_t frames : kRaggedBlocks) {
-        // A window holds what it staged landed, not only that it was free: nothing it delivered was refused. A queue
-        // that grew instead of dropping would show in the allocation count above, and one sized 0 or an arena bound off
-        // by one would show here.
+        // A window holds what it staged landed, not only that it was free: nothing it delivered was refused. A
+        // queue that grew instead of dropping would show in the allocation count above, and one sized 0 or an arena
+        // bound off by one would show here.
         const std::uint64_t droppedBefore = core.inputDropped();
         const auto counted = wholeBlock(core, frames, lanes, true, stage);
         INFO(frames << " frames: " << counted.allocations << " allocations, " << counted.frees << " frees, "
@@ -3050,12 +3050,12 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
     }
     SECTION("NES, through the engine") {
         // The same promise at the level the host sees: the whole graph block, so the system node's own per-block work
-        // (params, settings, the tap's sync, its message digests) is inside the window too, together with the core-side
-        // release of what the host staged. The staging goes through the invoker's stageSystemMidi, which
-        // Engine::applyCommand applies to the core directly (its raw byte door, as a protocol node's bytes input would
-        // reach it): a short message and a settings-length SysEx, staged between blocks - the invoker applies every push
-        // inline while the audio thread owns nothing, so the window holds the release, not the staging, and the
-        // acceptance below is what holds the staging reached the core. The core is the Engine's, so it publishes a
+        // (params, settings, the tap's sync, its message digests) is inside the window too, together with the
+        // core-side release of what the host staged. The staging goes through the invoker's stageSystemMidi, which
+        // Engine::applyCommand applies to the core directly (its raw byte door, as a protocol node's bytes input
+        // would reach it): a short message and a settings-length SysEx, staged between blocks - the invoker applies
+        // every push inline while the audio thread owns nothing, so the window holds the release, not the staging, and
+        // the acceptance below is what holds the staging reached the core. The core is the Engine's, so it publishes a
         // whole savestate every 0.5 s: that capture allocates in Mesen's serializer, and is charged a full interval
         // here before the window, which stays under one interval (~12.5 k of 24 k frames).
         Engine e(kRate);
@@ -3307,8 +3307,8 @@ TEST_CASE("a Mesen press burst cannot push a release out of its queue", "[engine
     // command ring bounds nothing between two renders: a host can queue more transitions than a block's doors deliver.
     // With a plain queue that dropped the tail, a burst of presses followed by a release could lose the release and
     // leave the button held. A Mesen core's queue holds one transition a button and is applied whole before the
-    // emulator polls its controller, so a transition for a button already queued replaces its entry: the burst collapses
-    // and the release always lands.
+    // emulator polls its controller, so a transition for a button already queued replaces its entry: the burst
+    // collapses and the release always lands.
     const auto burst = [](SystemBase& core) {
         for (std::uint32_t i = 0; i < rp::kPressInput + 64; ++i) core.pressButton(0, true);
         for (int i = 0; i < 4; ++i) core.pressButton(0, false);   // the releases, behind a queue a plain FIFO filled
@@ -3321,7 +3321,7 @@ TEST_CASE("a Mesen press burst cannot push a release out of its queue", "[engine
         core->reserveAudio(8192);
         Lanes lanes(2);
         burst(*core);
-        wholeBlock(*core, 1024, {lanes.ptrs[0], lanes.ptrs[1]}, true, NoInput{});  // the queue applied, and it was free
+        wholeBlock(*core, 1024, {lanes.ptrs[0], lanes.ptrs[1]}, true, NoInput{});  // applied, in a free block
         CHECK(core->inputDropped() == 0);
     }
     SECTION("SMS") {
