@@ -23,14 +23,21 @@ namespace {
 	}
 
 	// One SendNotification's buffer: taken from the pool on construction, handed back on any exit (a listener is
-	// arbitrary code and may throw).
+	// arbitrary code and may throw). It hands its references back with it: a copy that kept its weak_ptrs past the
+	// send would hold a dead listener's control block alive until the next send at that depth overwrote the buffer,
+	// so removing one of two consoles would free it on the audio thread inside the survivor's next block. clear()
+	// keeps the capacity, so the next send still allocates nothing.
 	struct DispatchBuffer
 	{
 		vector<weak_ptr<INotificationListener>>& listeners;
 
 		DispatchBuffer() : listeners(takeDispatchBuffer()) {}
 
-		~DispatchBuffer() { dispatchDepth--; }
+		~DispatchBuffer()
+		{
+			listeners.clear();
+			dispatchDepth--;
+		}
 	};
 }
 

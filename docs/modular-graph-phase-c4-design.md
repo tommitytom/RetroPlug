@@ -240,8 +240,10 @@ to 3 is the other console name `Engine` keeps (section 12).
   change that wants the drawn path should hash frames after bliptoaster starts drawing.
 - **Mesen's shared classes, directly** (`MesenShared.test.cpp`): a cleared controller device's state stays empty (two
   of the four devices that read emptiness as data depend on it; the other two are section 9's, not this file's) and a
-  hub's composite state round-trips a pressed button through a second hub; and a notification's listener copy survives a
-  listener destroying another in a nested send, the manager and its copy holding only `weak_ptr`s.
+  hub's composite state round-trips a pressed button through a second hub; a notification's listener copy survives a
+  listener destroying another in a nested send, the manager and its copy holding only `weak_ptr`s; and a send hands
+  its references back when it returns, so the next manager's send frees nothing after another console's listener has
+  died.
 - **The tap as a capability:** `NesSplitRouting.test.cpp`'s nine cases read it through `channelTap()`, the goldens'
   "each NES ends in the mode it was built in" reads it (and fails on a NES slot that offers no tap, rather than skipping
   the check), "the tap is a capability only a NES offers" holds a NES's tap and its own accessors to one mode and the
@@ -259,7 +261,8 @@ to 3 is the other console name `Engine` keeps (section 12).
   them with `InputCapacity.hpp`, so either side drifting is visible; and a `[input-drops]` case has a section per core
   queue (NES, SMS, GBA and Game Boy presses, a Game Boy's serial bytes and runs, an SMS's levels, a NES's N8 runs and
   bytes) that pushes past the bound, holds the refused count and `inputAccepted()` before it, and then runs a block so
-  the core still fills. The audio suite has the FIFO's own cases (the permissive fifo_a past `_rxBound`, the wire past a
+  the core still fills; a Mesen press queue is the one with no refusal path (it holds a transition a button, and its
+  bound covers the button range), which the case says instead. The audio suite has the FIFO's own cases (the permissive fifo_a past `_rxBound`, the wire past a
   block's input), the NES's carried-run rebase, and the reliable link's 48-frame window giving up its oldest frame.
 - **ThreadSanitizer and AddressSanitizer** ran over every case touched (the `[alloc]` and `[input-drops]` tags, the
   `[control-state]` / `[notification]` / `[video]` cases, the tap and kind cases, the audio suite's `[channelsplit]`
@@ -324,7 +327,7 @@ return-address hook (removed before the commit):
 | `BaseControlManager::GetPortStates` | 3 (vector growth) | fills the manager's own `_portStates` and returns it by `const&` |
 | `BaseControlDevice::GetRawState` | 2, one a device | a new `GetRawState(ControlDeviceState&)` fills the caller's state, whose vector keeps its capacity; the returning form delegates to it, so its other callers are untouched |
 | `RenderedFrame`'s `InputData` | 12 | `RenderedFrame::Reset` + `SetInputData` assign in place, a frame member per PPU (`BaseNesPpu`, `SmsVdp`, `GbaPpu`), `VideoDecoder::_convertedFrame`, the persistent frames refilled rather than assigned, and the by-value `RenderedFrame` parameter made `const&` |
-| `NotificationManager::SendNotification` | 1 | the copy it iterates (it must be a copy: a listener may unregister mid-notify) is reused per thread and per nesting depth, pooled as `unique_ptr<vector<weak_ptr<...>>>`, so growth moves pointers and never the buffer a send is iterating |
+| `NotificationManager::SendNotification` | 1 | the copy it iterates (it must be a copy: a listener may unregister mid-notify) is reused per thread and per nesting depth, pooled as `unique_ptr<vector<weak_ptr<...>>>`, so growth moves pointers and never the buffer a send is iterating; each send clears its buffer on the way out (capacity kept), so a dead listener's control block is not freed by the next send |
 
 `VideoRenderer::UpdateFrame`'s `_lastFrame = frame` was on the list and turned out to allocate nothing, since copy
 assignment into a persistent member reuses its vectors' capacity; it needed no change and still measures zero.

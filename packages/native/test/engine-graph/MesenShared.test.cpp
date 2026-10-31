@@ -17,6 +17,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "../graph/CountingAllocator.hpp"
 #include "NES/Input/BarcodeBattlerReader.h"
 #include "NES/Input/FourScore.h"
 #include "Shared/NotificationManager.h"
@@ -131,4 +132,34 @@ TEST_CASE("a notification's copy of the listener list survives a nested send and
     seen.clear();
     manager.SendNotification(ConsoleNotificationType::PpuFrameDone);
     CHECK(seen == std::vector<std::string>{"first", "third"});
+}
+
+TEST_CASE("a send hands its listener references back, so the next manager's send frees nothing",
+          "[engine-graph][mesen][notification]") {
+    // The dispatch buffer is pooled per thread and per depth, so the copy a send iterates outlives the send. A copy
+    // that kept its weak_ptrs would keep a dead listener's control block alive until the next send at that depth
+    // overwrote the buffer: removing one of two consoles would free it on the audio thread inside the survivor's next
+    // block. A send releases its references before it returns, so the control block goes when its owner does.
+    std::vector<std::string> seen;
+    {
+        NotificationManager gone;
+        auto only = listener("first", &seen);
+        gone.RegisterNotificationListener(only);
+        gone.SendNotification(ConsoleNotificationType::PpuFrameDone);
+    }
+    // The console and its listener are both destroyed here (Mesen owns its emulator's listeners): the listener's
+    // control block survives only while the pooled buffer holds a weak_ptr to it.
+    REQUIRE(seen == std::vector<std::string>{"first"});
+
+    NotificationManager live;
+    auto other = listener("live", &seen);
+    live.RegisterNotificationListener(other);
+    seen.clear();
+    rp::test::beginCountingAllocations();
+    live.SendNotification(ConsoleNotificationType::PpuFrameDone);
+    const auto counted = rp::test::endCountingAllocations();
+    INFO("send: " << counted.allocations << " allocations, " << counted.frees << " frees");
+    CHECK(counted.allocations == 0);  // the pool's buffer and its capacity are the ones the first send left
+    CHECK(counted.frees == 0);        // and the dead listener's control block was NOT freed here
+    CHECK(seen == std::vector<std::string>{"live"});
 }
