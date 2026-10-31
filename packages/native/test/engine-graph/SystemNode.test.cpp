@@ -2965,6 +2965,7 @@ TEST_CASE("a NES whose tap is armed over the mix keeps its mix ring to one block
         INFO("after a 1-frame pins block: " << counted.allocations << " allocations, " << counted.frees << " frees");
         CHECK(counted.allocations == 0);
         CHECK(counted.frees == 0);
+        CHECK(core->tapDiscardChunk() == 8192);  // the reserved block, not the one-frame scratch the pins block left
         CHECK(core->audioRingOverflow() == 0);
         CHECK(core->tapOverflow() == 0);
         drainBlock(*core, 0, tap.data(), tap.size(), false, false);     // a pins block of none: the scratch empties
@@ -2972,6 +2973,9 @@ TEST_CASE("a NES whose tap is armed over the mix keeps its mix ring to one block
         INFO("after a 0-frame pins block: " << counted.allocations << " allocations, " << counted.frees << " frees");
         CHECK(counted.allocations == 0);
         CHECK(counted.frees == 0);
+        // The chunk is observed, not assumed: a zero one ends the discard with frames left (the guard in finishBlock)
+        // and fails here, where relying on the loop's progress would have hung the suite instead.
+        CHECK(core->tapDiscardChunk() == 8192);
         CHECK(core->audioRingOverflow() == 0);
         CHECK(core->tapOverflow() == 0);
     }
@@ -3513,7 +3517,15 @@ TEST_CASE("the tap is a capability only a NES offers", "[engine-graph][system-no
         auto core = nes(1, 0);
         REQUIRE(core->channelTap() != nullptr);
         CHECK(core->channelTap()->exportMode() == 0);
+        // A core built at mode 0 and armed later sizes nothing: onActivate sized the tap's rings, its resample scratch
+        // and each stream's blip, so an arm only switches the streams on. The blips are C blocks (CountingAllocator),
+        // which only a glibc build counts; the rings and scratches are vectors and count in every build.
+        rp::test::beginCountingAllocations(true);
         core->channelTap()->setExportMode(1);
+        const auto arm = rp::test::endCountingAllocations();
+        INFO("arm: " << arm.allocations << " allocations, " << arm.frees << " frees");
+        CHECK(arm.allocations == 0);
+        CHECK(arm.frees == 0);
         CHECK(core->channelExportMode() == 1);
     }
     SECTION("Game Boy") {

@@ -172,6 +172,10 @@ public:
     std::uint32_t availableFrames() const;
     std::uint64_t audioRingOverflow() const;
     std::uint64_t tapOverflow() const;
+    // The chunk the mix path's tap discard drained through, as its last block computed it. For tests / introspection:
+    // a zero-size chunk ends the discard with frames left rather than spinning, and this is what a case reads to see
+    // the chunk the ring is drained in at all.
+    std::size_t tapDiscardChunk() const { return tapDiscardChunk_; }
 
     // NES native resolution (256x240). Public so callers can construct a
     // FrameBufferTriple-sized read buffer without hard-coding the constant.
@@ -218,6 +222,7 @@ private:
     // armed).
     std::size_t                       drainLanes_ = 0;
     std::array<std::vector<float>, kMaxChannelStreams> chanAccum_;
+    std::size_t                       tapDiscardChunk_ = 0;
 
     // Pending NES button transitions (pos 0..7 from NesButton enum). Applied
     // at the top of onProcess via NesController::SetBitValue. Single-shot —
