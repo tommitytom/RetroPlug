@@ -144,6 +144,42 @@ TEST_CASE("FixedByteRing wraps and delivers in arrival order over more than its 
     CHECK(ring.dropped() == 1);
 }
 
+TEST_CASE("FixedByteRing is not copyable, and a move leaves an empty ring behind", "[graph][fixed-byte-ring]") {
+    // The defaulted move left capacity_ set with an empty bytes_, so a later push wrote out of bounds (the same trap
+    // FC-5 fixed in FixedQueue).
+    STATIC_REQUIRE(!std::is_copy_constructible_v<rp::FixedByteRing>);
+    STATIC_REQUIRE(!std::is_copy_assignable_v<rp::FixedByteRing>);
+    STATIC_REQUIRE(std::is_move_constructible_v<rp::FixedByteRing>);
+    STATIC_REQUIRE(std::is_move_assignable_v<rp::FixedByteRing>);
+
+    rp::FixedByteRing ring(4);
+    for (std::uint8_t b = 1; b <= 4; ++b) CHECK(ring.push(b));
+    ring.pop();
+    ring.pop();
+    CHECK(ring.push(5));
+    CHECK(ring.push(6));  // wrapped: head is 2
+    rp::FixedByteRing moved(std::move(ring));
+    CHECK(moved.capacity() == 4);
+    CHECK(moved.size() == 4);  // the bytes 3, 4, 5, 6 in arrival order
+    CHECK(moved.front() == 3);
+    // The source is an empty ring that refuses, not one whose push indexes the storage it gave away.
+    CHECK(ring.empty());
+    CHECK(ring.size() == 0);
+    CHECK_FALSE(ring.push(7));
+    CHECK(ring.dropped() == 1);
+
+    rp::FixedByteRing target(2);
+    CHECK(target.push(9));
+    target = std::move(moved);
+    CHECK(target.capacity() == 4);
+    CHECK(target.size() == 4);
+    CHECK(target.front() == 3);
+    CHECK(moved.empty());
+    CHECK(moved.size() == 0);
+    CHECK_FALSE(moved.push(8));
+    CHECK(moved.dropped() == 1);
+}
+
 TEST_CASE("FixedByteRing reserve re-lays a wrapped queue out, keeping its bytes in order", "[graph][fixed-byte-ring]") {
     rp::FixedByteRing ring(4);
     for (std::uint8_t b = 1; b <= 4; ++b) CHECK(ring.push(b));

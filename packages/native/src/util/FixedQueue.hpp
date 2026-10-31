@@ -119,6 +119,16 @@ class FixedByteRing {
 public:
     FixedByteRing() = default;
     explicit FixedByteRing(std::size_t capacity) { reserve(capacity); }
+    // As FixedQueue's: a copy would lose the reservation (vector's copy allocates size(), not capacity()) and a
+    // defaulted move would leave the source with its capacity but no bytes, so push() would index an empty buffer. The
+    // move carries the ring and leaves the source an empty ring that refuses.
+    FixedByteRing(const FixedByteRing&)            = delete;
+    FixedByteRing& operator=(const FixedByteRing&) = delete;
+    FixedByteRing(FixedByteRing&& other) noexcept { takeFrom(other); }
+    FixedByteRing& operator=(FixedByteRing&& other) noexcept {
+        if (this != &other) takeFrom(other);
+        return *this;
+    }
 
     void reserve(std::size_t capacity) {
         if (capacity <= capacity_) return;
@@ -156,6 +166,21 @@ public:
     std::uint64_t dropped() const { return dropped_; }
 
 private:
+    void takeFrom(FixedByteRing& other) noexcept {
+        bytes_    = std::move(other.bytes_);
+        head_     = other.head_;
+        size_     = other.size_;
+        capacity_ = other.capacity_;
+        dropped_  = other.dropped_;
+        // The source's reservation went with the buffer, so it is left an empty ring with no capacity: push() refuses
+        // and counts rather than indexing storage it gave away.
+        other.bytes_.clear();
+        other.head_     = 0;
+        other.size_     = 0;
+        other.capacity_ = 0;
+        other.dropped_  = 0;
+    }
+
     std::vector<std::uint8_t> bytes_;
     std::size_t               head_     = 0;
     std::size_t               size_     = 0;
