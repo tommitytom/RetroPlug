@@ -176,8 +176,11 @@ a host narrower than the split needs did not fall back to Stereo.** `buildGraph`
 any host, so `Engine::syncTap` armed the NES's capture tap while the lane budget made the node wire the mix, and
 the mix path then drifted: added latency grew about 49 ms per second, measured at 48 kHz in 512-frame blocks,
 where it was about 25 frames per block, so it scaled with the block rate. A Game Boy and two-system projects did
-fall back, bit-identical to Stereo. The plugin always passes 8 outputs and could not hit it; the SDL standalone
-(2 channels by default) and 2-lane renders could. The cause: the core gated its step on the tap's rings whenever
+fall back, bit-identical to Stereo. Two ways reached it: a split routing on a host too narrow for it, and a NES whose
+mesen role carries a non-mix `channelExportMode` under a mix wiring, whose capture is on from construction whatever the
+routing and host width, so the plugin's 8 outputs could reach it too; the SDL standalone (2 channels by default) and
+2-lane renders took the first way. An earlier version of this record said the plugin could not, which was wrong. The
+cause: the core gated its step on the tap's rings whenever
 they were armed, so a block drained through the mix took one block out of the mix ring and left each flush's
 overshoot there. While the ring was a vector that meant ever-growing latency (recorded here); with C4's fixed ring
 it also filled after about 17 s and then dropped audio every block, which is what made it a defect to fix rather
@@ -185,9 +188,16 @@ than to record. The fix, C4's follow-up `fix(mesen): a NES steps on the ring its
 hears the mix at one block`, has the node tell its core how many lanes the block will drain before it steps, and
 the core gate on the ring it drains: the tap's streams for a pins block, the mix ring for a mix block. The narrow
 path is then bit-identical to Stereo, in the console's own frames as well as the host's. The baseline pins
-`nes-channelSplit-o2/o4`, `nes-pinSplit-o2` and `nes-stereoPinSplit-o2/o4` (`routing-split`) and `render-shapes`'
-six NES shape cases, whose boot segment renders a split routing at 2 channels (the same path) before their own
-shape render; all eleven were re-recorded with the fix.
+`nes-channelSplit-o2/o4`, `nes-pinSplit-o2` and `nes-stereoPinSplit-o2/o4` (`routing-split`) and six of
+`render-shapes`' NES shape cases, and all eleven were re-recorded with the fix. The three role cases among them
+(`perChannel-nes-pinsPlusRef`, `-stereoModPins-role` and `-individualMono-role`) reach the second way, built through
+the mesen role under the default Stereo routing, where the tap is armed at construction and the mix wired; the other
+two per-channel cases (`perChannel-nes-pins`, `-channels`) and `perSystem-nes-channelSplit` reach the first, their
+boot segment rendering a split routing at 2 channels before their own shape render. A third entry no parity case
+records, the render library's NES split export, which builds its capture and settles 1500 ms through `renderAudio`
+with the mix wired, changed for the better with the fix: CLI `render --split pins|channels` and System > Render's NES
+exports now settle as an unarmed NES does, which the follow-up's
+[nes-capture-mix-drain.test.ts](../packages/retroplug/test-native/nes-capture-mix-drain.test.ts) holds.
 
 A sixth defect was recorded as it was (§1), and has since been fixed: **LSDj master sync was broken at 48 kHz and
 above while serial-out capture was armed.** Measured at 48 kHz in 512-frame blocks: all 17 captured MIDI messages
@@ -231,7 +241,7 @@ suite is 23 test files with `determinism`, `render-blocks` and `comparator`); th
 |---|---|---|
 | `blocks-{mgb,nes,sms,gg}` | each system × {44.1, 48 kHz} × blocks of {64, 199, 512, 1024, 8192} and a cycle of all of them | partitioning, MIDI inside blocks; the mgb and nes cases end with one trailing segment, the same irregular block list for every partition, whose note starts on a block's first frame and ends on a later block's last (edge events are delivered; not an off-by-one pin) |
 | `routing-{stereo,twoPerInstance,onePerInstance}` | outputs {2,4,8} × {1,2,3,5} systems, mixed mGB / BlipToaster / VRC6 | summation order, OnePerInstance's mono association, more systems than pairs |
-| `routing-split`, `routing-split-expansion` | ChannelSplit (GB stems, NES core channels), PinSplit, StereoPinSplit × {2,4,8}; each expansion build under PinSplit and ChannelSplit; a split with two systems | lane plans, the fall-back to Stereo for a Game Boy and for two systems (a single NES on a narrow host is the recorded defect, §2.5) |
+| `routing-split`, `routing-split-expansion` | ChannelSplit (GB stems, NES core channels), PinSplit, StereoPinSplit × {2,4,8}; each expansion build under PinSplit and ChannelSplit; a split with two systems | lane plans, the fall-back to Stereo for a Game Boy and for two systems (a single NES on a narrow host is the fall-back that was the recorded defect, §2.5) |
 | `midi-routing` | the 4 modes over 3 systems on separate pairs, notes on all 16 channels with ties, a SysEx; a mid-run mode switch | the routing role; fix 1 |
 | `link` | two linked mGBs, a third unlinked, a link made and broken mid-run | how linked systems render (a linked mGB hears no MIDI: its serial port is the cable, and it never drives it, so lockstep stepping is not observable here: `lsdj-link` covers it) |
 | `edits-live`, `edits-structure` | gain through a held note, live role knobs; reset, duplicate, add, remove, replace mid-run, a split losing and regaining its single system, a pin split left | edit timing, per-frame gain smoothing, the tap restore; fix 2 is covered by its unit test in `test/systems/bliptoaster-assets.test.ts`, not by this case (duplicate-mid-run duplicates an mGB, which has no construct hooks) |
@@ -410,12 +420,14 @@ The implementation plan's tasks, each verified before the next:
   Neither gets a case of its own.
 - The render library's per-channel and pins exports (`src/render/render.ts`, used by the CLI `render`
   command and the UI's System > Render) go through `renderAudioPerChannel` and
-  `Engine::processBlockPerChannel`, a separate engine entry point over the routers B1 rewrites. No case
-  covers it; B1 should add one before replacing it.
+  `Engine::processBlockPerChannel`, a separate engine entry point over the routers B1 rewrites. No case in
+  the matrix covers it; `test-native/nes-capture-mix-drain.test.ts` covers a NES export's mix settle since
+  C4's follow-up, and B1 should add its own before replacing it.
 - Exact audio on arm64, macOS and Windows: those targets get the determinism and integer-state checks of
   §5.2 (never yet run), and §1's argument for the audio bits, which a B1 change to multiply-add fusion on
   arm64 could break unseen.
-- Fixing the Arduinoboy block-size defect, the narrow-host NES split defect, the LSDj master-sync defect at >= 48 kHz, or the MI.OUT sample-rate dependence (§2.5).
+- Fixing either of the two defects still pinned (§2.5), the Arduinoboy block-size one and MI.OUT's sample-rate
+  dependence; the narrow-host NES split and LSDj master-sync defects were fixed with re-records since.
 
 Regression classes the suite would not catch, so a B step that touches one needs its own check:
 

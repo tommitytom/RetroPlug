@@ -1,7 +1,8 @@
 # Phase C4: the tap and the build check name no console
 
-**Date:** 2026-10-31 · **Branch:** `feature/modularize` · **Status:** built: section 7's six commits; what building
-them changed is in the sections it changed, and what it found is section 10
+**Date:** 2026-10-31 · **Branch:** `feature/modularize` · **Status:** built: section 7's six commits, plus the
+follow-up fixes section 10 records; what building them changed is in the sections it changed, and what it found is
+section 10
 
 After C3 a system node builds its own core, but the engine still knows one console by name and one core still allocates
 on the audio thread. `Engine` finds a NES core with `dynamic_cast<MesenNesSystem*>` to arm its per-channel tap, a system
@@ -20,8 +21,8 @@ taken after this design's first draft (section 11); the rest is section 12's.
 
 - **`SystemBase`** ([SystemBase.hpp](../packages/native/src/system/SystemBase.hpp)) carries members with no production
   caller: the battery-path accessors `savSuffix` / `setSavSuffix` / `savPath` / `setSavPath` (the paths are TS's,
-  `savPaths.ts`), the `fastBoot()` getter (fast boot reaches the core as a node setting), `clearSram` (a blank battery is
-  a seed), `loadStateBytes` from outside (a savestate is a seed; the core's own seed path calls it internally),
+  `savPaths.ts`), the `fastBoot()` getter (fast boot reaches the core as a node setting), `clearSram` (a blank battery
+  is a seed), `loadStateBytes` from outside (a savestate is a seed; the core's own seed path calls it internally),
   `midiOut()` / `midiOut_` (the old core-side MIDI out; the serial-out decoder replaced it), and a live memory-snapshot
   mechanism nothing enables (`enableMemorySnapshot`, `disableMemorySnapshot`, `memorySnapshot`,
   `publishMemorySnapshots`, `snapshots_`), whose publish every core's `finishBlock` still runs over nine empty slots.
@@ -95,12 +96,19 @@ pitch-adjust path, below 100 % emulation speed) is capped by a smaller buffer at
 `reserveAudio` sizes the ring, grows only, and carries what is queued across in at most two `memcpy`s;
 `capacityFrames()` and `overflowFrames()` exist for the tests.
 
+**What a system holds besides the ring.** Sizing at activation is what makes an arm allocation-free, so a NES holds its
+tap's five rings, the mixer's two resample scratches and its own mix and per-channel scratches whether or not the tap is
+ever armed: at the 8192-frame floor the ring is 160 KiB and those about 530 KiB (five tap rings of block plus 12800
+frames, 205 KiB; two resample scratches, 100 KiB; the five per-channel scratches, 160 KiB; the mix scratch, 64 KiB),
+about 690 KiB a NES in all, and at the 65536 ceiling the ring is 384 KiB and those about 2.6 MiB, about 3 MB. A SMS or
+a GBA has the ring and one mix scratch: about 224 KiB at the floor and 896 KiB at the ceiling.
+
 **Overflow** drops the NEWEST frames, the ones that do not fit, copies the prefix that does, counts the rest in
-`overflowFrames_` and asserts in a debug build. The queued frames are the ones the pending block's sample indices and the
-N8 FIFO's already-scheduled bytes refer to, and they are what `availableFrames()` has already told the step loop it has,
-so overwriting them would move every later sample earlier in the block. The capacity makes a drop unreachable, once the
-narrow-host defect section 10 records is fixed: it gated a mix-drained block on the tap's rings, so the mix ring kept one
-flush's overshoot every block and filled.
+`overflowFrames_` and asserts in a debug build. The queued frames are the ones the pending block's sample indices and
+the N8 FIFO's already-scheduled bytes refer to, and they are what `availableFrames()` has already told the step loop it
+has, so overwriting them would move every later sample earlier in the block. The capacity makes a drop unreachable now
+that section 10's narrow-host defect is fixed: that gated a mix-drained block on the tap's rings, so the mix ring kept
+one flush's overshoot every block and filled.
 
 **The block size comes with the build.** `SystemBuildRequest` carries `maxBlockFrames`, a system node sets it from its
 plan's maximum in `activate` before `build`, and each backend reserves it before `onActivate`, so the ring is the plan's
@@ -113,15 +121,18 @@ plan's ring is 128.25 KiB where an 8192-frame plan's is 160 KiB.
 **Everything else a block touches is sized at activation.** Each Mesen core sizes its per-block scratches there
 (`stereoAccum_` two floats a frame, every `chanAccum_[k]` one) and at a larger reserve; the NES's tap rings
 (`NesSoundMixer::_streamBuf`, an in-tree patch) are sized by `SetCaptureCapacity(maxBlockFrames)` to
-`maxBlockFrames + MaxSamplesPerFrame` (12800, the most one `CaptureStreams` call appends), and a reset or a re-arm clears
-their queues but keeps their storage; and SameBoy's two scratch sets are sized the same way. A core's ingress queues are
-sized the same way too, from what one block's inputs can deliver, so a block's host input grows nothing (section 11).
+`maxBlockFrames + MaxSamplesPerFrame` (12800, the most one `CaptureStreams` call appends), and a reset or a re-arm
+clears their queues but keeps their storage; and SameBoy's two scratch sets are sized the same way. A core's ingress
+queues are sized the same way too, from what one block's inputs can deliver, so a block's host input grows nothing
+(section 11).
 **An arm sizes nothing**:
 the two discards that used to size a scratch from the capture mode drain in block-sized chunks instead, so
 `setChannelExportMode` no longer grows anything. It still calls `SetChannelCapture`, which calls `SetCaptureCapacity` on
-every arm, so "sizes nothing" rests on the activation reserve having already made that call a no-op: an arm before
-activation, or at a block larger than the reserve, would size. The plumbing commit (section 9) took the arm's last
-allocation too:
+every arm, so "sizes nothing" rests on the activation having already made that call a no-op: an arm before activation
+records the mode and returns, since there is no mixer yet, and activation sizes the rings from the block the build
+carried (the default outside a plan). `setChannelExportMode` passes that same recorded block, so after activation the
+call always sees a size the core already has, however a host grew it. The plumbing commit (section 9) took the arm's
+last allocation too:
 `blip_reset(m, size)` replays `blip_new`'s order exactly (the default factor, then `blip_clear`), `SetCaptureCapacity`
 creates all five stream blips with the rings, and an arm re-initialises one with `blip_reset` and then calls
 `blip_set_rates`, which is the state a fresh `blip_new` would reach at the same phase; a disarm keeps the blips for the
@@ -139,9 +150,10 @@ SD-command path (section 9).
 ## 5. P5 and P6, as built: the tap a capability, and the build check
 
 **P5.** `SystemBase` gained `virtual ChannelTap* channelTap()`, null by default, in a "Per-channel audio tap" section
-beside `debugTarget()`'s capability pattern. `ChannelTap` ([ChannelTap.hpp](../packages/native/src/system/ChannelTap.hpp))
-is the interface in the global namespace, with `SystemBase` and `ChannelStream`, because the engine reads it as a core
-capability: `exportMode() const`, `setExportMode(std::uint32_t)` and a virtual destructor, and nothing else. A mode is
+beside `debugTarget()`'s capability pattern. `ChannelTap`
+([ChannelTap.hpp](../packages/native/src/system/ChannelTap.hpp)) is the interface in the global namespace, with
+`SystemBase` and `ChannelStream`, because the engine reads it as a core capability: `exportMode() const`,
+`setExportMode(std::uint32_t)` and a virtual destructor, and nothing else. A mode is
 the backend's own numbering (a NES's 0 is the mixed output and 1 to 3 are its split exports), and an arm must neither
 allocate nor restart the core: a routing flip must not reset a playing game. `setExportMode` runs between two blocks on
 the block thread, or on the control thread while the engine is quiescent.
@@ -154,9 +166,10 @@ followed, so it may outlive the core it names; C3's residual (a core allocated w
 match) keeps its shape at the tap's address (section 12).
 
 **`SystemTable`.** A slot is `{ id, SystemBase* core, ChannelTap* tap }`, the tap filled from `channelTap()` where the
-two casts were (the plan's build and `publishGraph`'s pre-fill for a reused node), so a slot whose core offers none holds
-null and an arm reaches nothing. `Engine` no longer includes `MesenNesSystem.hpp` (it includes `system/ChannelTap.hpp`
-and forward-declares `ChannelTap`), and TS does not change: the arm still names a system id and a mode.
+two casts were (the plan's build and `publishGraph`'s pre-fill for a reused node), so a slot whose core offers none
+holds null and an arm reaches nothing. `Engine` no longer includes `MesenNesSystem.hpp` (it includes
+`system/ChannelTap.hpp` and forward-declares `ChannelTap`), and TS does not change: the arm still names a system id and
+a mode.
 
 **The mode range stays with the engine, as a deliberate residual.** `Engine::setGraph` still refuses a tap mode outside
 1 to 3, which is the NES's numbering rather than the capability's. TS owns the numbering and the arm travels as a byte,
@@ -164,10 +177,10 @@ so a second console's tap would be validated against the NES's range; moving the
 (`maxMode()`) is the later move, and needs no core change.
 
 **P6.** Each core class carries `static constexpr SystemKind kKind`, which its `kind()` returns, and the node's build
-compares what `rp.host.systems/1` handed back with `Core::kKind`, then destroys it and refuses with the same message on a
-mismatch, or `static_cast`s it on a match. `kKind` is on the core class rather than on the node type so there is one
-source of truth: the value the node compares with is the value the core answers by construction, so the two can only
-differ through an edit to the class, which would refuse every plan of that console at once. The cast's soundness is the
+compares what `rp.host.systems/1` handed back with `Core::kKind`, then destroys it and refuses with the same message
+on a mismatch, or `static_cast`s it on a match. `kKind` is on the core class rather than on the node type so there is
+one source of truth: the value the node compares with is the value the core answers by construction, so the two can
+only differ through an edit to the class, which refuses every plan of that console at once. The cast's soundness is the
 invariant `SystemFactory` and `MesenBackend` already rest on, kinds being unique per core class: the config alternative
 names the console, the factory builds that console's class, and each class reports a kind no other does.
 
@@ -175,17 +188,19 @@ After both, no unchecked cast to a concrete core is left outside `packages/nativ
 has no `dynamic_cast` outside it, one `static_cast` in `SameBoySystem.cpp` (inside it, from GB user data), and the
 node's own checked `static_cast<Core*>`.
 
-**The one console name left in `src/host/` is the N8 cart mirror's, and it is NES by construction.** `Engine::setGraph`
-reads a `rp.n8.cart-mirror` node's settings as a system id, then refuses one whose document node is not
-`rp::host::systemNodeType(SystemKind::MesenNes)` (`Engine.cpp`), because the N8 mirror is a NES's cart reader and no
-other console's. That is a fact about the device, not a cast and not an arming, so it stays: what C4 did is make the
-tap and the build check name no console, not put the string `MesenNes` nowhere in `src/host/`. The tap's mode bound 1
-to 3 is the other console name `Engine` keeps (section 12).
+**The one console check the engine still makes is the N8 cart mirror's, and it is NES by construction.**
+`Engine::setGraph` reads a `rp.n8.cart-mirror` node's settings as a system id, then refuses one whose document node is
+not `rp::host::systemNodeType(SystemKind::MesenNes)` (`Engine.cpp`), because the N8 mirror is a NES's cart reader and
+no other console's. That is a fact about the device, not a cast and not an arming, so it stays: what C4 did is make
+the tap and the build check name no console, not put a console's name nowhere in `src/host/`. The per-console node
+definitions in `src/host/graph/SystemNodes.cpp` still name their cores (`struct Nes : SystemNode<Nes, MesenNesSystem,
+...>` and its three siblings), which is the seam C3 put them there for rather than a check the engine makes. The tap's
+mode bound 1 to 3 is the other console name `Engine` keeps (section 12).
 
 ## 6. Tests, as built
 
 - **Parity** held bit for bit at every commit, nothing re-recorded: the ring changes where samples wait, not which
-  samples are made.
+  samples are made. The narrow-host follow-up then re-recorded exactly the two groups the fix moved, section 10.
 - **The allocation cases** (`SystemNode.test.cpp`, `[alloc]`), each red before its fix:
   - *the ring* (`[mesen][audio-ring]`): fill, drain, `availableFrames`; a wrap whose tail runs off the end and continues
     at the front, the whole drained sequence checked frame by frame; a reserve that keeps the buffered frames and a
@@ -194,7 +209,9 @@ to 3 is the other console name `Engine` keeps (section 12).
     and zero frees. It also pins `kMaxPlayBufferFrames == 0x8000` and the default block size against the engine's.
   - *the audio path* (`[system-node][alloc]`): a Mesen core drains without allocating at every ragged size (33, 1, 222,
     1, 7, 4096, 2, 8192), the first block at each size being the counted one, for NES mixed, NES with its pins wired,
-    NES with the tap armed over the mix, SMS and GBA.
+    NES with the tap armed over the mix, SMS and GBA. Every GBA section, here and below (`[video]`'s row included),
+    reads a sibling fixture ROM and leaves early where the resources tree has none, as CI's does: a `SKIP` that counts
+    the gap is a code follow-up's.
   - *the narrow host* (`[mesen][tap][alloc]`, section 10): a lone NES whose tap is armed over the mix, which is what a
     split routing gets on a host too narrow for it, run 2000 one-frame blocks past the capacity the old drift filled,
     with the mix ring's fill within one block plus one flush every block and nothing dropped, a counted 512-frame drain
@@ -202,20 +219,27 @@ to 3 is the other console name `Engine` keeps (section 12).
     audio and in work RAM.
   - *the whole block*: a warmed core's whole block allocates and frees nothing, emulation included: NES mixed, NES with
     its tap armed, NES through the Engine (the whole graph block, so the system node's per-block work is inside the
-    window), SMS, Game Boy (the mix and the four stem pairs) and GBA. Each warms through the real triad with a button
-    press, which is where a device's one-time state sizing happens, and **each counted window stages a block's host
-    input inside it**, the way a node applies its inputs before the core's `prepareForBlock`: notes, clocks, a raw run
-    and a settings-length SysEx into a NES (and a section with the reliable link on, whose ROM capability byte is
-    flipped so the framing path really runs), the transport's levels into a SMS, MIDI runs and a press burst into a
-    Game Boy in both stream shapes, presses into every console, and through the Engine the same staging by the node's
-    own doors. The press counts and run lengths are past what a library deque allocates its first node for, so a queue
-    that grew on the block thread shows in a window even when it would not grow every block. Each counted window proves
-    it emulated (the node-level ones by the frames the capture holds, by the same measure the step loop gates on, or
-    SameBoy's audio frame count; the Engine one by its work RAM moving at the plan's largest size), so a window whose
-    step loop stopped cannot be vacuously free.
+    window), SMS, Game Boy (the mix and the four stem pairs) and GBA. Each direct-core section warms through the real
+    triad with a button press (a device's state capacity is its constructor's, so no poll sizes one), and **each of
+    their counted windows stages a block's host input inside it**, the way a node applies its inputs before the core's
+    `prepareForBlock`: notes, clocks, a raw run and a settings-length SysEx into a NES (and a section with the reliable
+    link on, whose ROM capability byte is flipped so the framing path really runs), the transport's levels into a SMS,
+    MIDI runs and a press burst into a Game Boy in both stream shapes, and presses into every console. The Engine
+    section warms through eight graph blocks with no press and stages its bytes between blocks through the invoker,
+    which applies a push inline while the audio thread owns nothing, so its counted window carries the node's
+    application of what the host staged rather than the staging, and the accepted byte count read after the window is
+    what holds that the staging reached the core. The press counts and run lengths are past what a library deque
+    allocates its first node for, so a queue that grew on the block thread shows in a window even when it would not
+    grow every block. Each counted window proves it emulated (the node-level ones by the frames the capture holds, by
+    the same measure the step loop gates on, or SameBoy's audio frame count; the Engine one by its work RAM moving at
+    the plan's largest size), so a window whose step loop stopped cannot be vacuously free, and each holds that what it
+    staged landed: `inputDropped()` unchanged, and the non-press door's own count exact (a NES's 12 x 271 bytes, a
+    SMS's 12 x 4 levels, a Game Boy's 12 x 72 serial bytes, a GBA's 2 + 12 x 12 presses).
   - *the live arm*: a tap armed on an activated NES sizes nothing on the block thread and its audio path stays free. It
-    drains more than the armed ring holds, so head and tail wrap mid-drain. It SKIPS where `countsCAllocations()` is
-    false (a sanitizer build, Windows, macOS), since a stream's blip, a C block, is what it would catch.
+    drains more than the armed ring holds, so head and tail wrap mid-drain. One section arms a core it built and
+    activated directly, with no node's activation to reserve for it, which is where `onActivate` sizes the tap's rings.
+    It SKIPS where `countsCAllocations()` is false (a sanitizer build, Windows, macOS), since a stream's blip, a C
+    block, is what it would catch.
   - *re-activation*: a node reactivation grows the ring to the new block, through `GraphHost::reactivate` (what
     `Engine::setMaxBlockFrames` does).
   - *the plan size*: a node sizes its core's block buffers to the plan it was built by, not the engine's default, and a
@@ -224,18 +248,18 @@ to 3 is the other console name `Engine` keeps (section 12).
   only; it now also interposes `malloc` / `calloc` / `realloc` / `free` and forwards to glibc's own, so a blip's or
   Mesen's C block is seen. That is opt-in per window (`beginCountingAllocations(true)`), and it is off in a sanitizer
   build (ASan and TSan own the allocator: the first attempt segfaulted TSan at startup), on Windows (the static CRT,
-  where defining `malloc` collides with `libcmt`) and on macOS (no glibc name to forward to); `countsCAllocations()` says
-  whether the binary sees them. Forcing it on changes exactly one existing case: the script block path's 448 allocations
-  are QuickJS's own, which that case measures through QuickJS's counters. The audio-path and whole-block helpers call
-  `beginCountingAllocations(true)` unconditionally and do not skip where `countsCAllocations()` is false: on Windows and
-  macOS they prove the operator-new half of the promise, where the live-arm case skips because a C block is its one
-  subject.
+  where defining `malloc` collides with `libcmt`) and on macOS (no glibc name to forward to); `countsCAllocations()`
+  says whether the binary sees them. Forcing it on changes exactly one existing case: the script block path's 448
+  allocations are QuickJS's own, which that case measures through QuickJS's counters. The audio-path and whole-block
+  helpers call `beginCountingAllocations(true)` unconditionally and do not skip where `countsCAllocations()` is false:
+  on Windows and macOS they prove the operator-new half of the promise, where the live-arm case skips because a C block
+  is its one subject.
 - **The `[video]` hashes.** Three 4096-frame blocks per console, the frame the core published hashed by FNV-1a over its
   width, height and XRGB8888 bytes, recorded with the video-path files restored to the commit before the plumbing and
   equal after it: NES 14252490387203307000 three times (the boot screen, before bliptoaster draws), SMS
   16816052646246439624, 16816052646246439624, 668230188373870873, Game Boy 8259550387572866035, 10074299620259861403,
-  13782190143996438851, GBA 3100562949282106931, 3100562949282106931, 2667698829920294451. The hashes are per console and
-  per ROM; a real video change re-records that console's row, as parity re-records a group. The NES's three are its
+  13782190143996438851, GBA 3100562949282106931, 3100562949282106931, 2667698829920294451. The hashes are per console
+  and per ROM; a real video change re-records that console's row, as parity re-records a group. The NES's three are its
   boot screen, before bliptoaster draws, so the console whose per-frame plumbing changed is held to one image; a later
   change that wants the drawn path should hash frames after bliptoaster starts drawing.
 - **Mesen's shared classes, directly** (`MesenShared.test.cpp`): a cleared controller device's state stays empty (two
@@ -265,14 +289,14 @@ to 3 is the other console name `Engine` keeps (section 12).
   declarations ([nodes/ports.ts](../packages/retroplug/src/script/nodes/ports.ts)) and compares
   them with `InputCapacity.hpp`, so either side drifting is visible; and a `[input-drops]` case has a section per core
   queue (NES, SMS, GBA and Game Boy presses, a Game Boy's serial bytes and runs, an SMS's levels, a NES's N8 runs and
-  bytes) that pushes past the bound, holds the refused count and `inputAccepted()` before it, and then runs a block so
+  bytes) that pushes past the bound, holds the refused count and the accepted count exactly, and then runs a block so
   the core still fills; a Mesen press queue is the one with no refusal path (it holds a transition a button, and its
   bound covers the button range), which the case says instead. That case also reads the transition a button's queue
   entry holds, through the core's own `peekPendingPress` (`SameBoySystem::peekSerialByte`'s shape): a burst leaves
   `inputAccepted()` and `inputDropped()` the same whether the coalescing replaced the queued entry or kept it, so the
   surviving entry's value is the thing to hold. The audio suite has the FIFO's own cases (the
   permissive fifo_a past `_rxBound`, the wire past a block's input), the NES's carried-run rebase, and the reliable
-  link's 48-frame window giving up its oldest frame.
+  link's 48-frame window giving up the window and re-syncing.
 - **ThreadSanitizer and AddressSanitizer** ran over every case touched (the `[alloc]` and `[input-drops]` tags, the
   `[control-state]` / `[notification]` / `[video]` cases, the tap and kind cases, the audio suite's `[channelsplit]`
   cases) with no report, and the profile benches stayed at zero allocations a block.
@@ -346,11 +370,13 @@ vector and left it EMPTY, and an input poll clears every device before re-readin
 data: `ControllerHub::UpdateStateFromPorts` appends `[len][bytes]` to what a clear leaves, and `BarcodeBattlerReader`,
 `DatachBarcodeReader` and `FamilyBasicDataRecorder` treat `size() > 0` as "the tape plays". Sizing the state to its
 maximum (64 bytes) in place therefore broke them, the Epoch reader throwing `std::length_error` from every poll. So the
-state stays EMPTY (`_state.State.clear()`) and its capacity grows to `ControlDeviceState::MaxBytes` at the device's first
-poll, and `GetPortStates` sizes each snapshot entry's state before filling it and pads it to 64 bytes, so a port that
-appears late (a mapper or role device the control manager registers a few frames in) does not grow five snapshot
-destinations inside a block. A savestate blob grows by about 62 bytes a device as a result; old savestates still load,
-since Mesen reads a vector's length from the blob. The redundant `clear()` in `SetTextState` went.
+state stays EMPTY (`_state.State.clear()`) and its capacity is reserved to `ControlDeviceState::MaxBytes` in the
+device's constructor, off the block thread, before any read can grow one inside a block; `GetPortStates` reserves the
+same capacity on each snapshot entry's state before filling it, so a port that appears late (a mapper or role device
+the control manager registers a few frames in) does not grow five snapshot destinations inside a block. A device no ROM
+has read yet therefore carries an empty state, as upstream's did, where the first version's padding gave it 64 NULs.
+A savestate blob grows by about 62 bytes a device as a result; old savestates still load, since Mesen reads a
+vector's length from the blob. The redundant `clear()` in `SetTextState` went.
 
 **What the same commit fixed in our code.** The N8 FIFO's parser reserved its per-command vectors inside the block:
 `_params` is now reserved to the protocol's largest command frame (`3 + 0xFFFF`) at construction and `_writeBlock` to
@@ -362,8 +388,8 @@ Game Boy now reaches `SystemBase`'s no-op.
 
 **The SD path, what was cheap and what remains.** `execFileRead` and `performDma` share one `_ioScratch` member instead
 of allocating a vector per command, and `_rxQueue` is a vector-backed FIFO (a head index, compacted as it is read,
-reserved to `FILE_READ_MAX + 1`) rather than a `std::queue`, whose deque allocates its first node inside a block. What
-still allocates there, and why:
+reserved to twice its live bound, section 11) rather than a `std::queue`, whose deque allocates its first node inside
+a block. What still allocates there, and why:
 
 - `readParamString` returns a `std::string` a command, and `toHostPath` builds a `std::filesystem::path` plus strings:
   the allocation is inherent to those types, and an SD command is a ROM-initiated once-a-command event, not per frame.
@@ -385,7 +411,8 @@ The findings that changed a section are in it: the ring's overflow policy and th
 section 4; the tap's interface, the NES being its own tap and the mode range staying with the engine in section 5; the
 allocation cases, the C-counting options and the `[video]` hashes in section 6; the plumbing's four Mesen sites, the
 `ClearState` contract and the SD path in section 9; and the ingress queues, their bounds and the in-place sort in
-section 11. The ones worth naming on their own:
+section 11. The follow-ups' fixes are here too, each tagged with the section it changed. The ones worth naming on their
+own:
 
 - **The design's "zero allocations" could not hold for a Mesen console as vendored** (sections 2, 4, 9). Mesen's video
   path allocates 13 to 18 times an emulated frame on the audio thread, so any window with an emulated frame in it can
@@ -405,29 +432,43 @@ section 11. The ones worth naming on their own:
 - **The C interposer must stay off under sanitizers** (section 6). Under TSan, defining `malloc` and `free` segfaulted
   the binary at startup, a block the sanitizer's allocator made being freed through glibc's. So the sanitizer runs hold
   the operator-new half of every case, and the arm's blip count is only visible in a plain build.
-- **`ClearState` mattered as much as `EnsureCapacity`** (section 9), and the first version of the fix broke the
-  controller hub and the two barcode readers and the Family BASIC recorder, which is why the case is in the suite.
+- **`ClearState` mattered as much as `EnsureCapacity`** (sections 6, 9), and the first version of the fix broke the
+  controller hub and the two barcode readers and the Family BASIC recorder, which is why the case is in the suite. A
+  later pass moved the state's capacity reserve into `BaseControlDevice`'s constructor, where no control-manager poll
+  can be what sizes it, and dropped `GetPortStates`' padding of the snapshot entry: a device no ROM has read carries an
+  empty state, as upstream's did.
 - **The counted allocation every dozen blocks with the tap armed over a mix** turned out to be a video frame: the step
-  gate is then the tap's ring, which `finishBlock` discards, so each 1-frame block emulates a whole flush window and a
-  video frame lands every dozen (sections 6, 9).
-- **The ring's overflow was reachable through the narrow-host defect, so the defect is fixed rather than recorded again**
-  (sections 4, 6; the B0 design's fifth defect). A lone NES under a split routing on a host too narrow for it arms the
-  tap (`buildGraph`'s `tapArm`, `Engine::syncTap`) while the node wires the mix, and the core gated its step on the
-  tap's rings: the block drained one block from the mix ring and left each flush's overshoot there. The vector ring had
-  turned that into ever-growing latency; the fixed ring fills after about 17 s at 48 kHz in 512-frame blocks and then
-  drops audio every block (a debug build asserting in `PlayBuffer`). The user's decision was to fix it in its own
-  commit, with the parity cases that pin it re-recorded, as a pinned defect is fixed, not to record it again. The step
-  gates on the ring the block drains: the node tells the core the block's lane count before it steps
+  gate was then the tap's ring, which `finishBlock` discards, so each 1-frame block emulated a whole flush window and a
+  video frame landed every dozen (sections 6, 9). With the gate on the drained ring (below), such a block emulates its
+  own frames and the video frame lands at the emulator's own pace.
+- **The ring's overflow was reachable through the narrow-host defect, so the defect is fixed rather than recorded
+  again** (sections 4, 6; the B0 design's fifth defect). A lone NES under a split routing on a host too narrow for it
+  arms the tap (`buildGraph`'s `tapArm`, `Engine::syncTap`) while the node wires the mix, and the core gated its step
+  on the tap's rings: the block drained one block from the mix ring and left each flush's overshoot there. The vector
+  ring had turned that into ever-growing latency; the fixed ring fills after about 17 s at 48 kHz in 512-frame blocks
+  and then drops audio every block (a debug build asserting in `PlayBuffer`). The user's decision was to fix it in its
+  own commit, with the parity cases that pin it re-recorded, as a pinned defect is fixed, not to record it again. The
+  step gates on the ring the block drains: the node tells the core the block's lane count before it steps
   (`SystemBase::setBlockLanes`, from the same `lanes()` lookup `finishBlock` reads), and the NES gates on its tap's
   rings only when the block drains them. A mix-drained block is then the unarmed core's block, bit for bit, in the
   console's frames as well as the host's, and the mix ring keeps at most one flush's overshoot, as the plain mix path
   does. The engine still arms the tap on a host too narrow for the split, so that capture work is wasted; not arming a
   split that does not fit is a separate, CPU-only change. Eleven parity cases moved, every one of them the defect's
-  path: `nes-channelSplit-o2/o4`, `nes-pinSplit-o2` and `nes-stereoPinSplit-o2/o4` (`routing-split`), and
-  `render-shapes`' five per-channel NES shapes plus `perSystem-nes-channelSplit`, whose boot segment renders a split
-  routing at 2 channels (the same path) before its own shape render. The case that holds the fix runs the narrow path
-  past the old ring's capacity in one-frame blocks with the fill bounded and nothing dropped, counts a real block's
-  drain on that path, and compares it block for block with an unarmed NES.
+  path, and they reach it two ways: a split routing on a host too narrow for it, the mix wired and the tap armed
+  anyway (`routing-split`'s five, `nes-channelSplit-o2/o4`, `nes-pinSplit-o2` and `nes-stereoPinSplit-o2/o4`), and a
+  NES whose mesen role carries a non-mix `channelExportMode` under a mix wiring, whose capture is on from construction
+  at any host width (`render-shapes`' `perChannel-nes-pinsPlusRef`, `-stereoModPins-role` and
+  `-individualMono-role`, built through the role under the default Stereo routing); that group's
+  `perChannel-nes-pins`, `perChannel-nes-channels` and `perSystem-nes-channelSplit` reach the first way, their boot
+  segment rendering a split routing at 2 channels before their own shape render. The plugin could reach the second
+  way, its 8 outputs included, so an earlier record's "always passes 8 outputs and could not hit it" was wrong. A
+  third place nothing recorded: the render library builds a NES split export with its capture on and settles 1500 ms
+  through `renderAudio` with the mix wired, so CLI `render --split pins|channels` and System > Render's NES exports
+  start from a different, now unarmed-equal console state (a follow-up's `nes-capture-mix-drain.test.ts` settles an
+  armed export and a plain mix NES in turn and compares the next second sample for sample). The case that holds the fix
+  runs the narrow path past the old ring's capacity in one-frame blocks with the fill bounded and nothing dropped,
+  counts a real block's drain on that path, and compares it block for block with an unarmed NES, on sound and on work
+  RAM.
 - **Without the block size in the build request, a memory saving was lost** (section 4). A core built at the 8192
   default and then reserved down keeps the larger ring for its life, so a DAW running 64-frame blocks would pay for a
   plan it never runs; the request's `maxBlockFrames` is what sizes it to the plan from construction.
@@ -436,9 +477,11 @@ section 11. The ones worth naming on their own:
   extended case found 7 allocations and 7 frees at the NES's first counted window (11 and 7 with the reliable link on),
   1 and 4 through the Engine, and 4 and 2 on a Game Boy carrying presses and serial bytes, all of them queues; the fix
   is section 11's. A later pass made each counted window hold that what it staged landed: `inputDropped()` unchanged
-  across every window, the non-press counters checked exactly (`acceptedBytes()`, `levelsAccepted()`,
-  `serialInAccepted()`), a Game Boy's stems half run on a fresh core, so the presses the first half scheduled cannot
-  fill the queue the second half stages into, and the Engine section's acceptance read after its staging.
+  across every window, each non-press door's count exact (`acceptedBytes()` 12 x 271 on a NES, `levelsAccepted()` 12 x 4
+  on a SMS, `serialInAccepted()` 12 x 72 on a Game Boy, and presses 2 + 12 x 12 on a GBA), a Game Boy's stems half run
+  on a fresh core, so the presses the first half scheduled cannot fill the queue the second half stages into, and the
+  Engine section's acceptance read after its staging, in a comment that says the staging is the invoker's and happens
+  between blocks.
 - **libstdc++'s `std::deque` allocates its first node eagerly** (sections 6, 11). A one-block burst of tens of entries
   hides a deque regression, so the `[alloc]` case's press counts and run lengths (64 presses, 24 messages a block) are
   sized past that on purpose; a later case that stages less will not see a re-introduced deque.
@@ -446,7 +489,39 @@ section 11. The ones worth naming on their own:
   sort was an allocation on the block thread; the in-place insertion sort that replaced it allocated nothing but was
   quadratic, about 2.8 G swaps (8.4 G counted entry moves) for a Master System level queue full and reversed, on the
   audio thread, so the sort is now a bottom-up merge through `rp::SortScratch`, sized with the queue: at most
-  n * (ceil(log2 n) + 1) moves and still nothing allocated.
+  n * (ceil(log2 n) + 1) moves and still nothing allocated. The scratch is a second copy of the queue, held for the
+  core's life (598016 bytes for a Master System role's 74752 levels, 52224 for the NES role's 4352 runs), so a role's
+  queue costs twice its entries and the docs price it that way (section 11, spec/02).
+- **A notification's pooled copy outlived its listeners** (sections 6, 9). Reusing the dispatch buffer per thread and
+  depth kept its capacity but also kept the last send's `weak_ptr`s, so removing one of two Mesen systems made the
+  survivor's next frame free the dead listeners' control blocks on the audio thread. Each send clears its copy on the
+  way out now (capacity kept), and a two-manager case holds that the next send frees nothing.
+- **A press burst could still leave a button held** (sections 6, 11). A Mesen press queue bounded by a block's two
+  doors would refuse the tail of a quiescent run of more than 320 transitions, and the tail could be a release. Since
+  the whole queue is applied before the emulator polls its controller, a transition for a button already queued now
+  replaces its entry: the queue holds one transition a button, its real bound is the button range, and nothing is
+  refused. That argument needs the wire-to-button map to be injective, and it was not: an unknown wire byte fell
+  through to A on a NES and a GBA, so two bytes could name one bit and the surviving entries' order could leave a
+  button pressed. Each console's map answers -1 for a byte it has no button for now (the SMS's Select was the known
+  one), such an entry sets nothing, and a case holds each map at that. A Game Boy's press queue cannot coalesce (its
+  transitions are scheduled and meant to be seen), so a quiescent flood of more than 1024 transitions still drops the
+  tail, release included (section 12).
+- **The N8's file staging buffer could be made to shrink** (section 9). `execFileRead` sized `_ioScratch` from the u32
+  length a ROM asked for, so one huge read grew it inside a block, and the give-back that followed was a second
+  allocation on the block thread to free memory. Both readers now take the file a `FILE_READ_MAX` chunk at a time
+  through a buffer that cannot grow past it, the give-back is gone, and a case reads and DMAs twice that length with 0
+  allocations and 0 frees.
+- **Nothing proved the tap's rings were sized at activation** (sections 4, 6). A core built and activated directly,
+  never reserved, sized its ring and its scratches but not its tap's rings, so the first arm allocated them on the
+  arming thread; `onActivate` sizes them now, and the live-arm case arms exactly such a core under a counted window
+  (red at 12 allocations before it).
+- **The suite's own traps, which the follow-ups closed** (section 6): the ring case's wrap section never compared the
+  frames the wrap left (it does now: the 400 that continue at the front, then the 100 the drain did not reach); the mix
+  discard's red was a hang rather than a failure, so the chunk is a seam the case reads and a zero one ends the loop;
+  the kind matrix skipped by kind value, which skips the very collision it exists to catch (it skips its own column by
+  index now, and six requirements pin the four kinds distinct); a Debug configure did not compile the ring case
+  (`if (!NDEBUG)` is `#ifndef NDEBUG`); and the "bit identical to the unarmed mix" section passed on the defective
+  code because both sides were silent, so it primes the ROM, holds notes and runs 400 blocks.
 - **The N8 role's rebase must compact its arena in ascending byte order, not queue order** (section 11). The sort by
   offset can permute the live runs, and a forward compaction in queue order overwrote a run it had not copied yet, so
   two feeds that both carried a run past the block end could swap payloads; a case stages exactly that and reads each
@@ -454,9 +529,14 @@ section 11. The ones worth naming on their own:
 - **The permissive FIFO profile still has a storage bound** (sections 9, 11). `_rxCapacity == 0` means no modelled
   depth, not an unbounded vector: fifo_a's delivered bytes are reserved to `2 * _rxBound` (the live bound plus room for
   the consumed prefix `pop` has not compacted yet), and a reply past `_rxBound` is dropped and counted even then.
-- **The engine names one console still, and it is the cart mirror's** (section 5). `Engine::setGraph` checks a cart
-  mirror's system for `SystemKind::MesenNes`, which is a fact about an N8 being a NES's cart reader; a reader grepping
-  for a console name in `src/host/` finds that one, plus the tap's 1-to-3 mode bound, and neither is a cast.
+- **A comment's contract was its neighbour's, and the tap record's lifetime read backwards** (sections 3, 5):
+  `saveStateBytes`' note stated `loadStateBytes`' bool return, and the `ArmedTap` note said the record cannot outlive
+  its core, which invites following the pointer the compare-not-follow rule forbids; the record is compared and never
+  followed (section 5), and only the tap object, a core subobject, cannot outlive the core it belongs to.
+- **The engine names one console still, and it is the cart mirror's check** (section 5). `Engine::setGraph` checks a
+  cart mirror's system for `SystemKind::MesenNes`, which is a fact about an N8 being a NES's cart reader; a reader
+  grepping the engine and its table for a console name finds that one, plus the tap's 1-to-3 mode bound, and neither is
+  a cast. The per-console node definitions `SystemNodes.cpp` holds are the seam C3 made for them.
 - **The kind check's red was heap corruption, not a clean failure** (section 5). With the comparison removed, the node
   casts the wrong core and runs the Game Boy's application through a `KindWrapper`, so the failure is an immediately
   unsound call rather than a later one.
@@ -475,10 +555,11 @@ section 11. The ones worth naming on their own:
 
 Section 2's third decision, one commit of its own between the tap and the docs. It answers the promise's one hole: the
 `[alloc]` cases warmed with a press and staged nothing inside their counted windows, so a warmed core's block was free
-only while its node handed it nothing. Extended to stage a block's input inside every window, the case failed at its
-first counted window on every console: 7 allocations and 7 frees on a NES's mixed block, 11 and 7 with the reliable link
-on, 7 and 7 with the tap armed, 1 and 4 through the Engine, 1 and 1 on a SMS, 4 and 2 on a Game Boy carrying presses and
-serial bytes. On the commit, every section is 0 and 0.
+only while its node handed it nothing. Extended to stage a block's input into every window (the Engine's staged
+just before its whole-graph block, since the invoker applies a push inline while the audio thread owns nothing), the
+case failed at its first counted window on every console: 7 allocations and 7 frees on a NES's mixed block, 11 and 7
+with the reliable link on, 7 and 7 with the tap armed, 1 and 4 through the Engine, 1 and 1 on a SMS, 4 and 2 on a Game
+Boy carrying presses and serial bytes. On the commit, every section is 0 and 0.
 
 **What each queue became.** Every ingress queue is a fixed ring (`util/FixedQueue.hpp`: `rp::FixedQueue<T>`, one
 reserved vector and a head index, `push` refusing past `capacity()` and counting; `rp::FixedByteRing`, a byte ring
@@ -501,7 +582,9 @@ queue, a second copy of its entries: 598016 bytes for a Master System role's 747
   is a press surviving its own release; a case holds each console's map at that.
 - **A Game Boy's presses** were a `std::deque`, whose first node is allocated eagerly. Now a `FixedQueue` of 1024,
   sixteen blocks of a saturated buttons input, because a press is scheduled 10 ms into the future and carried across
-  blocks; a press past it is dropped and counted.
+  blocks; a press past it is dropped and counted. Unlike a Mesen console's, these transitions cannot coalesce (each is
+  scheduled and meant to be seen), so a quiescent session that pushes more than 1024 transitions between two blocks
+  drops the tail, and the tail may carry a release (section 12).
 - **A Game Boy's serial-in** was a `std::deque<PendingByte>`, a byte an entry. Now runs in a `FixedQueue` (a message's
   bytes share its frame, so they extend one run) over a 147456-byte `FixedByteRing`, two blocks of `serialIn` or one
   `serialOut` block; the front byte a bit shift reads is the ring's head, so nothing moves and nothing grows.
@@ -522,16 +605,17 @@ queue, a second copy of its entries: 598016 bytes for a Master System role's 747
 
 The bounds are `system/InputCapacity.hpp`'s: what the outputs that feed a system node's inputs declare (a script
 node's `midi` and `serialIn` 4096 messages / 72 KiB, its `bytes` 256 / 1 KiB, its `buttons` 64; a Game Boy's
-`serialOut` 8256 / 8256), which are the numbers `script/nodes/ports.ts` gives, and a case holds the two equal. A core
-cannot read its node's inputs when it builds (a wire carries its source's queue, and an input is bound only after
-`activate`), so the constants are the contract rather than the plan's own capacities.
+`serialOut` 8256 / 8256). The four script declarations are the numbers `script/nodes/ports.ts` gives, and a case reads
+both sides to hold them equal; the Game Boy's `serialOut` capacity is native (`SystemNodes.cpp`), so no `ports.ts`
+number ties it. A core cannot read its node's inputs when it builds (a wire carries its source's queue, and an input is
+bound only after `activate`), so the constants are the contract rather than the plan's own capacities.
 
 **What a refusal costs.** A push past a bound is dropped, not grown: `FixedQueue::push` answers false, the queue counts
 it, and each core reports `inputAccepted()` and `inputDropped()` (`SystemBase`), which sum its queues. A Mesen press
 queue has no refusal to reach: its coalescing bounds it by the button range, inside `kPressInput`. A run past the
 N8 role's bound is dropped whole and counted as its bytes; a level past the SMS bound likewise. The reliable link is
-the one exception: a full window gives up its oldest frame and re-syncs, the policy it already had, so it refuses
-nothing and has no dropped count.
+the one exception: a full window gives up the window (its unacked frames) and re-syncs, the policy it already had, so
+it refuses nothing and has no dropped count.
 
 **The FIFO's permissive profile now has a storage bound.** `_rxCapacity == 0` meant no depth limit and a vector that
 could grow; it now means no modelled depth, since a reply is still refused past `_rxBound` and counted in
@@ -551,6 +635,15 @@ the core itself (section 12).
 
 ## 12. Left as it is
 
+- **A Game Boy's press queue drops the tail of a quiescent flood** (sections 6, 11): 1024 transitions, sixteen blocks
+  of a saturated buttons input. Its presses are scheduled 10 ms apart and carried across blocks, so unlike a Mesen
+  console's they cannot coalesce, and a session that applies pushes inline between blocks (the CLI, an offline render)
+  can queue more than that before a block drains them; what is past the bound is dropped and counted, and the tail can
+  carry a release, leaving its button held. A press a block cannot lose would need a coalescing rule of its own or a
+  headroom reserved for releases, which is its own change.
+- **The GBA's counted cases are fixture-only** (section 6): its ROM is a sibling resource, so the `[alloc]`,
+  `[input-drops]` and `[video]` sections leave early on a run without the resources tree (as CI's) and prove nothing
+  there. They should `SKIP` and be counted rather than return, which is a code follow-up's.
 - **P3, the ROM borrow:** a system holds its ROM in its node's pinned resource and again in its core (up to 32 MB for
   a GBA); a true borrow needs a regenerated vendored SameBoy patch, and an SMS re-reads its staged file on reset.
 - **P4, the snapshot double copy:** the registry copies each core's published frame and savestate again; that copy is

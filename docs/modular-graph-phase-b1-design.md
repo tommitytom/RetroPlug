@@ -165,7 +165,7 @@ The wiring only sets the lane count (§3.1). Which mode a connected tap port mea
 
 | Connected | Lanes | The mode it needs |
 |---|---|---|
-| `mix` | 2 | any (the tap may be armed: the narrow-host defect) |
+| `mix` | 2 | any (a mix the tap may be armed over: a split that does not fit the host, B0 section 2.5) |
 | `pins.pulse` / `.tnd` / `.expansion` | 6 | 1 (pins) |
 | those three and `pins.mixref` | 8 | 2 (pins plus reference) |
 | `channels.*` | 10 | 3 (five mono channels) |
@@ -173,9 +173,11 @@ The wiring only sets the lane count (§3.1). Which mode a connected tap port mea
 The translator only wires tap ports when the mode it computes for the core (the routing's arm, else the
 build mode) is the one the table needs, so the two always agree by the time the NES runs.
 
-**The narrow-host defect stays as it is** (B0 §2.5): a split that does not fit the host falls back to
-Stereo wiring, the `SyncTap` arms the tap regardless, as today, and the NES outputs its mix with the
-capture armed, so the mix drifts. Fixing the defect is its own commit with its re-record.
+**The narrow-host defect was fixed after B1** (B0 section 2.5, the C4 design's section 10): a split that does not fit
+the host falls back to Stereo wiring, the `SyncTap` arms the tap regardless, as here, and the NES outputs its mix with
+the capture armed, which is now bit-identical to a mix drain with no capture at all: the node tells the core how many
+lanes its block drains and the core gates on that ring. So the translator needs no change; a split that does not fit
+still arms the tap, and only the wasted capture is left (spec/07).
 `setChannelExportMode` allocates nothing on the audio thread: a stream's blip is created with the tap's rings at
 activation, and an arm re-initialises it in place
 ([C4](modular-graph-phase-c4-design.md) section 4).
@@ -453,7 +455,8 @@ Then, behind the switch:
   an input yet.
 - Deleting `ConfigField` / `applyConfigField` and the kernel commands: B2, when TS sends documents. (Moved
   to Phase C and B3: [modular-graph-phase-b2-design.md](modular-graph-phase-b2-design.md) §0.)
-- Fixing any of B0's four recorded defects, the audio-thread allocations B1 carries over
+- Fixing either of B0's two remaining recorded defects (the Arduinoboy block size and MI.OUT's sample rate),
+  the audio-thread allocations B1 carries over
   (`setChannelExportMode`, SameBoy's restart and lazy buffer growth, the payload frees), or the growth of a
   linked Game Boy's unread serial queue.
 - How B2 hands cores to TS-built documents: B1's core token is a translator detail, and B2 decides whether
