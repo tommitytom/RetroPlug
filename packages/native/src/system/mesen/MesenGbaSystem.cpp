@@ -219,7 +219,9 @@ void MesenGbaSystem::setGainDb(float dB, bool immediate) {
 void MesenGbaSystem::pressButton(std::uint8_t button, bool down) {
     // A transition for a button that has one queued replaces it: prepareForBlock applies the whole queue before the
     // emulator polls its controller, so only a button's last transition is observable. The queue then holds one
-    // entry a button, so a press burst cannot fill it and a release cannot be refused behind one.
+    // entry a button, so a press burst cannot fill it and a release cannot be refused behind one. The coalescing keys
+    // on the wire byte, so one console bit must not be nameable by two of them - which is why toGbaButton answers -1
+    // for a byte the pad does not have rather than falling through onto a face button.
     for (auto& pending : pendingButtons_) {
         if (pending.button != button) continue;
         pending.down = down;
@@ -230,10 +232,12 @@ void MesenGbaSystem::pressButton(std::uint8_t button, bool down) {
 }
 
 namespace {
-GbaController::Buttons toGbaButton(std::uint8_t wire) {
-    // Wire byte is the GbaButton name-index (position-aligned with the
-    // other system kinds for the shared 8 names). Mesen's native enum has
-    // a different order; the switch is the explicit remap.
+// The GBA keypad bit a wire byte drives, or -1 for a byte the console has no bit for (the same shape the Master
+// System's map has). The shared wire table is position-aligned for its eight names and adds L and R after them, while
+// Mesen's own GbaController::Buttons (GbaController.h:61) runs Up, Down, Left, Right, Start, Select, B, A, L, R, so the
+// remap is an explicit switch. The -1 is what keeps the press queue's coalescing honest: it keys on the wire byte, so
+// two bytes naming one bit would leave one entry in the other's place, and the block applies that order.
+int toGbaButton(std::uint8_t wire) {
     switch (static_cast<GbaButton>(wire)) {
         case GbaButton::Right:  return GbaController::Buttons::Right;
         case GbaButton::Left:   return GbaController::Buttons::Left;
@@ -245,15 +249,19 @@ GbaController::Buttons toGbaButton(std::uint8_t wire) {
         case GbaButton::Start:  return GbaController::Buttons::Start;
         case GbaButton::L:      return GbaController::Buttons::L;
         case GbaButton::R:      return GbaController::Buttons::R;
-        default:                return GbaController::Buttons::A;
+        // Shoulder buttons past R, or a byte the wire table never named: nothing to set, the way a Master System
+        // Select is nothing to set. Folding it onto a face button would give a malformed press that bit.
+        default:                return -1;
     }
 }
 } // namespace
 
 bool MesenGbaSystem::peekPendingPress(std::uint8_t button, bool& down) const {
     // The pass below sets a button once per entry that names it, so the transition that stands for `button` is the last
-    // queued entry naming it.
+    // queued entry naming it - and an entry that names no button of this console (a byte outside the wire table) sets
+    // nothing.
     const int native = toGbaButton(button);
+    if (native < 0) return false;
     bool held = false;
     for (const auto& pending : pendingButtons_) {
         if (toGbaButton(pending.button) != native) continue;
@@ -281,7 +289,8 @@ void MesenGbaSystem::prepareForBlock(const AudioBlockInfo& /*info*/) {
     if (!pendingButtons_.empty()) {
         if (auto controller = console->GetControlManager()->GetControlDeviceByIndex(0)) {
             for (const auto& pb : pendingButtons_) {
-                controller->SetBitValue(toGbaButton(pb.button), pb.down);
+                const int native = toGbaButton(pb.button);
+                if (native >= 0) controller->SetBitValue(static_cast<std::uint8_t>(native), pb.down);
             }
         }
         pendingButtons_.clear();

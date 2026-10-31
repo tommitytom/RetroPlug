@@ -48,7 +48,7 @@ public:
 
     // Audio-thread: queue a GBA button transition. The byte is the
     // position-aligned name index (GbaButton wire byte); remapped to
-    // Mesen's native GbaController::Buttons ordering at apply time.
+    // Mesen's native GbaController::Buttons ordering at apply time, a byte outside the GBA's table driving no button.
     // Applied at the top of the next onProcess.
     void pressButton(std::uint8_t button, bool down) override;
 

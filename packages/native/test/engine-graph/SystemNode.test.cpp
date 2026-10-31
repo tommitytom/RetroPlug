@@ -3470,6 +3470,40 @@ TEST_CASE("a Mesen press burst cannot push a release out of its queue", "[engine
     }
 }
 
+TEST_CASE("a press of a byte the console has no button for drives no button",
+          "[engine-graph][system-node][input-drops]") {
+    // The press queue coalesces by the wire byte, so the entry that stands for a button is the last one naming it -
+    // which is what the console ends up with only while no two entries drive one console bit. A byte outside a
+    // console's button range therefore has to drive no bit rather than fall through onto one: a press of it queued
+    // behind a release would else re-press the button that release released, the stuck button the coalescing exists to
+    // prevent arriving by another road. The Master System already maps this way, its pad having no Select at all.
+    const auto strayByte = [](auto& core, const std::uint8_t stray) {
+        core.pressButton(4, true);      // A, the shared wire byte 4
+        core.pressButton(stray, true);  // a byte outside this console's table
+        core.pressButton(4, false);     // the release, which must be the last word on A
+        CHECK(core.inputAccepted() == 3);  // the queue took all three: a byte it has no bit for is still a press
+        CHECK(core.inputDropped() == 0);
+        bool down = true;
+        REQUIRE(core.peekPendingPress(4, down));
+        CHECK_FALSE(down);
+    };
+    SECTION("NES") {
+        auto core = nes(1, 0);
+        strayByte(*core, 200);
+    }
+    SECTION("Master System") {
+        auto core = sms(1);
+        strayByte(*core, 200);
+    }
+    SECTION("Game Boy Advance") {
+        const auto rom = resourceFixture("/roms/nanoloop287d.gba");
+        if (rom.empty()) return;
+        auto core = std::make_unique<MesenGbaSystem>(1, MesenGbaConfig{}, rom);
+        core->onActivate(kRate);
+        strayByte(*core, 200);
+    }
+}
+
 TEST_CASE("the tap is a capability only a NES offers", "[engine-graph][system-node][tap]") {
     // SystemBase::channelTap() is how the engine finds the tap a split routing arms
     // (docs/modular-graph-phase-c4-design.md section 5), so a core without one answers null and the engine arms

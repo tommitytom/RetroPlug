@@ -382,7 +382,9 @@ serial-in bytes or presses allocates nothing in the core. The queues are a Mesen
 block's 64 plus `GraphHost::commandCapacity()`'s 256, a `static_assert` holding the two together; one entry
 a button, because the block applies the whole queue before the emulator polls its controller, so a
 transition for a button already queued replaces it and the button range is the real bound: no burst fills
-it, and a release is never dropped behind one), a Game
+it, and a release is never dropped behind one; because that coalescing keys on the wire byte, each
+console's map names at most one button per byte, and a byte the console has no button for - a Master
+System's Select, a byte past any console's table - drives nothing), a Game
 Boy's presses (1024, sixteen blocks of a saturated buttons input, because presses are scheduled ahead) and
 its serial-in (a run a message over a byte ring of two blocks' `serialIn` or one `serialOut`), a NES's N8
 runs (4352) and their bytes (74752), and a Master System's levels (74752, in bytes from both doors). A push

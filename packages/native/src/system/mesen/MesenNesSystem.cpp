@@ -406,7 +406,9 @@ void MesenNesSystem::setChannelExportMode(std::uint32_t mode) {
 void MesenNesSystem::pressButton(std::uint8_t button, bool down) {
     // A transition for a button that has one queued replaces it: prepareForBlock applies the whole queue before the
     // emulator polls its controller, so only a button's last transition is observable. The queue then holds one
-    // entry a button, so a press burst cannot fill it and a release cannot be refused behind one.
+    // entry a button, so a press burst cannot fill it and a release cannot be refused behind one. The coalescing keys
+    // on the wire byte, so one console bit must not be nameable by two of them - which is why toNesButton answers -1
+    // for a byte the pad does not have rather than falling through onto a face button.
     for (auto& pending : pendingButtons_) {
         if (pending.button != button) continue;
         pending.down = down;
@@ -457,7 +459,12 @@ std::uint64_t MesenNesSystem::inputDropped() const {
 }
 
 namespace {
-NesController::Buttons toNesButton(std::uint8_t b) {
+// The NES controller bit a wire byte drives, or -1 for a byte the console has no bit for. The shared wire table is
+// position-aligned with the other consoles and stops at Start, while Mesen's own NesController::Buttons (NesController.h:80)
+// runs Up, Down, Left, Right, Start, Select, B, A, so the remap is an explicit switch. The -1 is what keeps the press
+// queue's coalescing honest: it keys on the wire byte, so two bytes naming one bit would leave one entry in the
+// other's place, and the block applies that order.
+int toNesButton(std::uint8_t b) {
     switch (static_cast<NesButton>(b)) {
         case NesButton::Right:  return NesController::Buttons::Right;
         case NesButton::Left:   return NesController::Buttons::Left;
@@ -467,15 +474,19 @@ NesController::Buttons toNesButton(std::uint8_t b) {
         case NesButton::B:      return NesController::Buttons::B;
         case NesButton::Select: return NesController::Buttons::Select;
         case NesButton::Start:  return NesController::Buttons::Start;
-        default:                return NesController::Buttons::A;
+        // The pad has eight bits and no microphone on the wire: a byte past them drives nothing, the way the Master
+        // System's Select already drives nothing. Folding it onto a face button would give a malformed press that bit.
+        default:                return -1;
     }
 }
 } // namespace
 
 bool MesenNesSystem::peekPendingPress(std::uint8_t button, bool& down) const {
     // The pass below sets a button once per entry that names it, so the transition that stands for `button` is the last
-    // queued entry naming it.
+    // queued entry naming it - and an entry that names no button of this console (a byte outside the wire table) sets
+    // nothing.
     const int native = toNesButton(button);
+    if (native < 0) return false;
     bool held = false;
     for (const auto& pending : pendingButtons_) {
         if (toNesButton(pending.button) != native) continue;
@@ -503,7 +514,8 @@ void MesenNesSystem::prepareForBlock(const AudioBlockInfo& /*info*/) {
     if (!pendingButtons_.empty()) {
         if (auto controller = console->GetControlManager()->GetControlDeviceByIndex(0)) {
             for (const auto& pb : pendingButtons_) {
-                controller->SetBitValue(toNesButton(pb.button), pb.down);
+                const int native = toNesButton(pb.button);
+                if (native >= 0) controller->SetBitValue(static_cast<std::uint8_t>(native), pb.down);
             }
         }
         pendingButtons_.clear();

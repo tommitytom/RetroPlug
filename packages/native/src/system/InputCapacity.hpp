@@ -34,7 +34,9 @@ inline constexpr std::uint32_t kPressInput = kButtonsInput + kCommandRingCapacit
 // A Mesen core's press queue holds one transition a button: it applies the whole queue before the emulator polls its
 // controller, so only a button's last transition before the poll is observable and a transition for a button already
 // queued replaces it. Its bound is then the button range, not what the doors deliver, and kPressInput covers every
-// value a button byte can hold, so no burst fills it and a release is never refused behind one.
+// value a button byte can hold, so no burst fills it and a release is never refused behind one. The coalescing keys on
+// that byte, so a console's map names at most one button per value - and a value it has no button for names none, which
+// keeps every entry that does name a button the only one driving it.
 static_assert(kPressInput >= 256, "a Mesen press queue must cover every button value");
 
 }  // namespace rp

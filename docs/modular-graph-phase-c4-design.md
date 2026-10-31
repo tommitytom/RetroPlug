@@ -488,7 +488,11 @@ queue) sized when the core is built:
   for a button already queued replaces its entry, which makes the button range (a byte) the queue's real bound and
   means no burst can fill it. That is what keeps a release from being dropped behind a burst: a quiescent host (the
   CLI, an offline render) applies every push inline, so the command ring bounds nothing between two renders, and a
-  plain FIFO's dropped tail could hold a release and leave its button pressed.
+  plain FIFO's dropped tail could hold a release and leave its button pressed. The coalescing keys on the wire byte,
+  so a console's map may name one bit for at most one of them: each of the three answers `-1` for a byte that console
+  has no button for (the Master System's Select is the known one), and such an entry sets nothing. Were two bytes to
+  name one bit, the entry that survived would stand in the other's place and the block would apply that order, which
+  is a press surviving its own release; a case holds each console's map at that.
 - **A Game Boy's presses** were a `std::deque`, whose first node is allocated eagerly. Now a `FixedQueue` of 1024,
   sixteen blocks of a saturated buttons input, because a press is scheduled 10 ms into the future and carried across
   blocks; a press past it is dropped and counted.
