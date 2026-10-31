@@ -104,6 +104,9 @@ private:
     };
     static constexpr std::size_t kPendingLevels = std::size_t(rp::kMidiInput.bytes) + rp::kBytesInput.bytes;
     rp::FixedQueue<PendingLevel> pending_{kPendingLevels};
+    // The sort's scratch, sized with the queue (all of a block's enqueuing precedes the step loop, so the queue never
+    // grows inside a sort), so the block thread merges without allocating one.
+    rp::SortScratch<PendingLevel> sortScratch_{kPendingLevels};
     std::uint64_t            acceptedLevels_ = 0;
     bool                     needsSort_    = false;  // set on enqueue; pumpUntil stable-sorts once
     std::uint8_t             lastApplied_  = 0xFF;   // idle: every line released

@@ -383,7 +383,9 @@ block's 64 plus `GraphHost::commandCapacity()`'s 256, a `static_assert` holding 
 Boy's presses (1024, sixteen blocks of a saturated buttons input, because presses are scheduled ahead) and
 its serial-in (a run a message over a byte ring of two blocks' `serialIn` or one `serialOut`), a NES's N8
 runs (4352) and their bytes (74752), and a Master System's levels (74752, in bytes from both doors). A push
-past a bound is dropped rather than grown, and counted: the core reports `inputAccepted()` and
+past a bound is dropped rather than grown, and counted (a Mesen press queue has none to reach), and the
+sort a block's queued bytes or levels take is a merge through a scratch buffer sized with the queue, so it
+allocates nothing and costs about n * ceil(log2 n) moves: the core reports `inputAccepted()` and
 `inputDropped()`, and the N8 FIFO's `coreTransportStats()` adds `droppedBytes`, the same vocabulary as a
 graph queue's overflow. The reliable link refuses nothing: a full 48-frame window gives up its oldest frame
 and re-syncs. The FIFO's permissive profile (`_rxCapacity == 0`) means no modelled depth, not no storage

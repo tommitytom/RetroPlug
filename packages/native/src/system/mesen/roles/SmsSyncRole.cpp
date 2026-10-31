@@ -13,8 +13,10 @@ void SmsSyncRole::pushBytes(std::uint32_t offset, const std::uint8_t* data, std:
     for (std::size_t i = 0; i < count; ++i) {
         if (pending_.push({ offset, data[i] })) ++acceptedLevels_;
     }
-    // A second feed could enqueue after this one with an earlier offset; pumpUntil re-sorts once
-    // before draining rather than keeping the queue ordered on every push.
+    // A second feed could enqueue after this one with an earlier offset; pumpUntil re-sorts once before draining
+    // rather than keeping the queue ordered on every push. A full reversed queue is the worst case that sort can be
+    // handed, and rp::SortScratch bounds it to a merge's about n * ceil(log2 n) moves rather than an insertion sort's
+    // n * n / 2.
     needsSort_ = true;
 }
 
@@ -25,8 +27,8 @@ void SmsSyncRole::pumpUntil(std::uint32_t sampleOffset) {
         // Stable so levels sharing an offset keep enqueue order - the last one queued for a given
         // sample is the one that ends up on the line. Runs once per block (all enqueuing precedes
         // the step loop), after which this is a plain front-drain and the loop below is one compare.
-        rp::stableSortEntries(pending_.begin(), pending_.end(),
-                              [](const PendingLevel& a, const PendingLevel& b) { return a.offset < b.offset; });
+        sortScratch_.sort(pending_.begin(), pending_.end(),
+                          [](const PendingLevel& a, const PendingLevel& b) { return a.offset < b.offset; });
         needsSort_ = false;
     }
 

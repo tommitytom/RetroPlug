@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <utility>
@@ -129,16 +130,59 @@ private:
     std::uint64_t             dropped_  = 0;
 };
 
-// Stable sort of a block's queued entries by offset, in place and allocating nothing: std::stable_sort takes a
-// temporary buffer, which the block thread may not have. The queue is built from one or two feeds, each already in
-// offset order, so the insertion pass costs about one run of the second feed rather than a sort (the same trade
-// Engine::Staging::sortByFrame makes for the host's staged MIDI). A producer that stamps decreasing offsets is
-// allowed, though, and the N8 role's queue holds 4352 runs: that worst case is about 9 M entry moves, quadratic on
-// the block thread, which is why the feeds' order is the thing to keep.
-template <class T, class Less>
-void stableSortEntries(T* first, T* last, Less less) {
-    for (T* i = first + 1; i < last; ++i)
-        for (T* j = i; j > first && less(*j, *(j - 1)); --j) std::swap(*j, *(j - 1));
-}
+// Stable sort of a block's queued entries by offset through a scratch buffer sized before the block runs, so the block
+// thread allocates nothing: std::stable_sort takes a temporary buffer, which the block thread may not have. A bottom-up
+// merge sort moves each entry once a pass, so a full queue costs about n * ceil(log2 n) moves; the in-place insertion
+// sort this replaced cost n * n / 2 on a reversed queue, which the Master System's 74752 levels made about 2.8 G swaps
+// on the audio thread (a realistic two-feed block, the midi door's levels at one offset after the bytes door's at an
+// earlier one, about 75 M). Stability is the merge's: on a tie the left run's entry goes first, so entries sharing an
+// offset keep their enqueue order.
+template <class T>
+class SortScratch {
+public:
+    SortScratch() = default;
+    explicit SortScratch(std::size_t capacity) { reserve(capacity); }
+    SortScratch(const SortScratch&) = delete;
+    SortScratch& operator=(const SortScratch&) = delete;
+
+    // Room for `capacity` entries. Growth only, and only where allocating is allowed (a core's construction, where its
+    // queue is sized too): a sort never grows it while a block runs.
+    void reserve(std::size_t capacity) {
+        if (capacity <= buffer_.size()) return;
+        buffer_.resize(capacity);
+    }
+    std::size_t capacity() const { return buffer_.size(); }
+
+    // Stable sort of [first, last) by `less`. The range must fit capacity(): each pass writes its merged pairs into
+    // the other buffer, so the sort needs a full copy's worth of room.
+    template <class Less>
+    void sort(T* first, T* last, Less less) {
+        const std::size_t count = static_cast<std::size_t>(last - first);
+        if (count < 2) return;
+        T* src = first;
+        T* dst = buffer_.data();
+        for (std::size_t width = 1; width < count; width *= 2) {
+            for (std::size_t lo = 0; lo < count; lo += 2 * width) {
+                const std::size_t mid = std::min(lo + width, count);
+                const std::size_t hi  = std::min(lo + 2 * width, count);
+                std::size_t i = lo, j = mid, k = lo;
+                while (i < mid && j < hi) {
+                    if (less(src[j], src[i])) dst[k++] = std::move(src[j++]);
+                    else                      dst[k++] = std::move(src[i++]);
+                }
+                while (i < mid) dst[k++] = std::move(src[i++]);
+                while (j < hi)  dst[k++] = std::move(src[j++]);
+            }
+            std::swap(src, dst);
+        }
+        // The passes alternate buffers, so an odd pass count leaves the sorted run in the scratch: move it back.
+        if (src != first) {
+            for (std::size_t i = 0; i < count; ++i) first[i] = std::move(src[i]);
+        }
+    }
+
+private:
+    std::vector<T> buffer_;
+};
 
 }  // namespace rp

@@ -162,6 +162,8 @@ private:
     static constexpr std::size_t kPendingRuns = std::size_t(rp::kMidiInput.messages) + rp::kBytesInput.messages;
     static constexpr std::size_t kPendingBytes = std::size_t(rp::kMidiInput.bytes) + rp::kBytesInput.bytes;
     rp::FixedQueue<PendingRun> pending_{kPendingRuns};
+    // The sort's scratch, sized with the queue, so a block's re-sort merges without allocating one (rp::SortScratch).
+    rp::SortScratch<PendingRun> sortScratch_{kPendingRuns};
     std::vector<std::uint8_t>  bytes_;             // the runs' bytes, in enqueue order; the reserve is the bound
     // Live run indices, ascending by start, for rebase's compaction (sized with the queue, so that pass allocates
     // nothing).
