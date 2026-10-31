@@ -2766,7 +2766,14 @@ TEST_CASE("a Mesen audio ring keeps a block in fixed storage, draining, wrapping
         CHECK(ring.drain(out.data(), capacity - 100) == capacity - 100);
         CHECK(expect(500, capacity - 600, out.data()) == "");
         CHECK(expect(capacity - 100, 100, out.data() + std::size_t(capacity - 600) * 2) == "");
+        // The drain crosses the end 400 frames in: those 400 values sit at the front of the ring, where the write's
+        // second half put them, and are read by the drain's second range.
+        CHECK(expect(capacity, 400, out.data() + std::size_t(capacity - 500) * 2) == "");
         CHECK(ring.availableFrames() == 100);
+        // And the rest of the write, which the drain above did not reach.
+        CHECK(ring.drain(out.data(), 100) == 100);
+        CHECK(expect(capacity + 400, 100, out.data()) == "");
+        CHECK(ring.availableFrames() == 0);
     }
 
     SECTION("a resize on re-activation keeps what the ring holds") {
@@ -2786,7 +2793,9 @@ TEST_CASE("a Mesen audio ring keeps a block in fixed storage, draining, wrapping
     SECTION("a write past capacity drops the newest and counts them") {
         // The drop policy is unreachable in production, so the ring asserts when it happens (a debug build): it is only
         // holdable where that assert is compiled out, which is every configured build here but a debug one.
-        if (!NDEBUG) SKIP("a debug build asserts on the overflow this provokes");
+#ifndef NDEBUG
+        SKIP("a debug build asserts on the overflow this provokes");
+#endif
         const std::uint32_t capacity = ring.capacityFrames();
         put(0, capacity, in);
         ring.PlayBuffer(in.data(), capacity, 48000, true);
