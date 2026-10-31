@@ -345,7 +345,8 @@ namespace rp {
 			// the first time a block carries a bigger command frame, file block or reply than any before it, which the
 			// block thread may not do. A file read's reply is one resp byte plus up to the 4096 the SDK reads per
 			// command, so that is what a reply buffer is given; a larger one (a big directory listing) is past
-			// _rxBound, and is dropped and counted rather than growing it, even under the permissive profile.
+			// _rxBound, and is answered with a refusal status rather than growing it, even under the permissive
+			// profile.
 			_params.reserve(MAX_COMMAND_PARAMS);
 			_writeBlock.reserve(ACK_BLOCK_SIZE);
 			// A block's host input, plus the largest reply: fifo_a holds everything a block delivered that the ROM has
@@ -597,10 +598,10 @@ namespace rp {
 		// fifo_a: delivery and depth - called with _mutex held
 		// ----------------------------------------------------------------
 
-		// The ONLY way a byte enters the ROM's read queue, whether it came off the wire or from the
-		// MCU answering an Edio command. On the device those share one 2048-byte fifo_a, so the depth
-		// applies to both: a command reply landing while the ROM is behind on reading is exactly the
-		// case nesvj's EDIO_BLOCK of 1792 is sized to avoid.
+		// The ONLY way a data byte enters the ROM's read queue, whether it came off the wire or from the
+		// MCU answering an Edio command (the refusal status is the one exception; see pushRxStatus). On the
+		// device those share one 2048-byte fifo_a, so the depth applies to both: a command reply landing
+		// while the ROM is behind on reading is exactly the case nesvj's EDIO_BLOCK of 1792 is sized to avoid.
 		//
 		// A full queue DROPS, and counts. Byte-granular, which is the honest model of "no room": the
 		// losses nesvj measured on hardware came in exact multiples of 2048, but that is a host/MCU
@@ -611,15 +612,40 @@ namespace rp {
 			// plus one reply): the reserve is a hard bound, so fifo_a never grows on the block thread either.
 			const std::size_t limit = rxLimit();
 			if (_rxQueue.size() >= limit) {
-				++_droppedBytes;
-				if (fifoTraceEnabled())
-					std::fprintf(stderr, "[fifo] DROP %02X (full at %zu, dropped=%llu)\n",
-					             byte, limit, static_cast<unsigned long long>(_droppedBytes));
+				dropRx(byte, limit);
 				return;
 			}
+			deliver(byte);
+		}
+
+		// A refusal status is control, not data, so it gets one byte past the bound: a ROM whose own backlog filled
+		// fifo_a would otherwise never learn why its request was refused, and would wait on an answer that cannot
+		// arrive. Only the permissive profile refuses at all (a modelled depth truncates instead, see replyFits), and
+		// the byte lands in the storage the queue is already reserved to. The allowance is that ONE byte: a second
+		// refusal while the first status is still unread is past what fifo_a may hold, and drops like any other.
+		void pushRxStatus(uint8_t byte) {
+			const std::size_t limit = rxLimit();
+			if (_rxQueue.size() > limit) {
+				dropRx(byte, limit);
+				return;
+			}
+			deliver(byte);
+		}
+
+		// Where a delivered byte lands: the queue the ROM drains, and the RAM slot a read of an empty fifo_a answers
+		// from (see _rxRam).
+		void deliver(uint8_t byte) {
 			_rxQueue.push(byte);
 			_rxRam[_rxWriteSlot] = byte;
 			_rxWriteSlot = (_rxWriteSlot + 1) % FIFO_HW_DEPTH;
+		}
+
+		// A byte fifo_a cannot take: counted, and traced when the trace is on.
+		void dropRx(uint8_t byte, std::size_t limit) {
+			++_droppedBytes;
+			if (fifoTraceEnabled())
+				std::fprintf(stderr, "[fifo] DROP %02X (full at %zu, dropped=%llu)\n",
+				             byte, limit, static_cast<unsigned long long>(_droppedBytes));
 		}
 
 		// fifo_a's bound under the profile in force: a modelled depth when one is set (never above the storage
@@ -1108,7 +1134,7 @@ namespace rp {
 				replyBytes += recordBytes(_dirRecords[idx]);
 			}
 			if (!replyFits(replyBytes)) {
-				pushRx(EDIO_INVALID_PARAMETER);
+				pushRxStatus(EDIO_INVALID_PARAMETER);
 				return;
 			}
 
@@ -1202,7 +1228,7 @@ namespace rp {
 				return;
 			}
 			if (!replyFits(std::size_t(1) + serve)) {
-				pushRx(EDIO_INVALID_PARAMETER);
+				pushRxStatus(EDIO_INVALID_PARAMETER);
 				return;
 			}
 

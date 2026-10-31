@@ -683,16 +683,20 @@ the one exception: a full window gives up the window (its unacked frames) and re
 it refuses nothing and has no dropped count.
 
 **The FIFO's permissive profile now has a storage bound.** `_rxCapacity == 0` meant no depth limit and a vector that
-could grow; it now means no modelled depth, since a reply is still refused past `_rxBound` and counted in
-`_droppedBytes`. The wire's own staging is a block's host input for the same reason: it stands for the host's outbound
-buffer, and a host that outruns a modelled wire by more than a block is now a counted drop.
+could grow; it now means no modelled depth, and what a byte past fifo_a's bound does depends on which door it came
+through: a reply that cannot fit is refused whole with a status (below), while a host push past it is dropped and
+counted in `_droppedBytes`. The wire's own staging is a block's host input for the same reason: it stands for the
+host's outbound buffer, and a host that outruns a modelled wire by more than a block is now a counted drop.
 
 **A reply is answered whole or refused.** Cutting one short at the storage bound leaves the ROM's parser mid-record, so
-both commands that can produce a long reply measure it first (`CMD_F_FRD` from the file's remaining bytes, `CMD_F_DIR_GET`
-from the records it will emit) and answer 0x13 when the permissive profile cannot hold it. A modelled depth stays the
-device's own overflow and still truncates, but the read loop stops at the chunk whose pushes start dropping instead of
-reading a ROM-chosen length off the card for bytes that cannot be delivered. Section 9 has the DMA's half, which keeps
-its whole-range validation.
+both commands that can produce a long reply measure it first (`CMD_F_FRD` from the file's remaining bytes,
+`CMD_F_DIR_GET` from the records it will emit) and answer 0x13 when the permissive profile cannot hold it. The status
+is delivered even when fifo_a is at its bound, one byte past it (one byte is the whole allowance, so a second refusal
+while the first is still unread drops like any other byte past the bound): a queue the ROM's own backlog filled would
+otherwise swallow the refusal, and the ROM would wait on an answer that cannot come. A modelled depth stays the device's
+own overflow and still truncates, but the read loop stops at the chunk whose pushes start dropping instead of reading a
+ROM-chosen length off the card for bytes that cannot be delivered. Section 9 has the DMA's half, which keeps its
+whole-range validation.
 
 **What did not change.** Every queue's accepted behaviour is the same: the same bytes reach the cores in the same order
 at the same frames, the N8 role's sort and drain order are unchanged, and the link frames the same bytes with the same

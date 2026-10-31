@@ -402,9 +402,11 @@ graph queue's overflow. The reliable link refuses nothing: a full 48-frame windo
 unacked frames) and re-syncs. The FIFO's permissive profile (`_rxCapacity == 0`) means no modelled depth, not no
 storage bound: fifo_a still refuses a reply past `_rxBound` (a block's input plus `FILE_READ_MAX`), its vector reserved
 to twice that because `pop` compacts the consumed prefix lazily. A reply that cannot fit answers
-`EDIO_INVALID_PARAMETER` (0x13) up front rather than being cut short mid-record, and a read stops at the chunk whose
-pushes start dropping; a modelled depth still truncates, as the device's fifo_a does. A `CMD_F_FRD_MEM` validates the
-range the ROM asked for, not the bytes the file held, and answers 0x13 when the cart cannot back it.
+`EDIO_INVALID_PARAMETER` (0x13) up front rather than being cut short mid-record, and that status is delivered even when
+the ROM's own backlog has filled fifo_a, one byte past the bound (one byte only, so a second refusal while the first
+is unread drops); a read stops at the chunk whose pushes start dropping; a modelled depth still truncates, as the
+device's fifo_a does. A `CMD_F_FRD_MEM` validates the range the ROM asked for, not the bytes the file held, and
+answers 0x13 when the cart cannot back it.
 
 An events or bytes output may declare its queue's capacity (`rp::bytes_out::sized<rp::capacity{...}>` in
 C++, `events.out(capacity)` / `bytes.out(capacity)` in TS), by default 256 messages and 4096 bytes, at

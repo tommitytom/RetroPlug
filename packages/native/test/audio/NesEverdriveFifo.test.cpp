@@ -989,8 +989,9 @@ TEST_CASE("the default profile is the permissive queue every existing test assum
 TEST_CASE("the permissive profile still drops past fifo_a's hard bound, and keeps the rest",
           "[audio][nes][fifo][wire]") {
     // depth 0 means "not modelled", not "unbounded forever": fifo_a's storage is still bounded by what a block's
-    // host input can deliver plus one reply, so a directory listing past it is dropped and counted rather than growing
-    // the vector inside a block. The bytes before the bound stay, in order.
+    // host input can deliver plus one reply, and a host push past it is dropped and counted rather than growing the
+    // vector inside a block (a reply too large for it is refused whole with a status instead; see the case below).
+    // The bytes before the bound stay, in order.
     rp::NesEverdriveFifo fifo;
     constexpr std::size_t kBound = std::size_t(rp::kMidiInput.bytes) + rp::kBytesInput.bytes +
                                    rp::FILE_READ_MAX + 1;
@@ -1186,6 +1187,29 @@ TEST_CASE("a permissive reply that cannot fit fifo_a answers a status instead of
         CHECK(std::uint32_t(reply[1] | (reply[2] << 8) | (reply[3] << 16) | (reply[4] << 24)) == 4);
         CHECK(std::string(reply.begin() + static_cast<std::ptrdiff_t>(kNameAt),
                           reply.begin() + static_cast<std::ptrdiff_t>(kNameAt + 5)) == "a.bin");
+    }
+
+    SECTION("CMD_F_FRD with the ROM's own backlog filling fifo_a") {
+        // The refusal is control, not data, so it gets the one byte past the storage bound the queue is reserved
+        // for: a ROM whose unread backlog has filled fifo_a would otherwise never learn that its request failed,
+        // and would wait on a reply that is not coming. One byte is the whole allowance, so a second refusal while
+        // the first status is still unread drops like any other byte past the bound.
+        const std::vector<std::uint8_t> burst = pattern(kBound);
+        for (std::uint8_t b : burst) fifo.pushByte(b);
+        REQUIRE(fifo.stats().rxDepth == kBound);
+        const std::uint64_t droppedBefore = fifo.stats().droppedBytes;
+        writeCmd(fifo, CMD_F_FRD);
+        writeU32(fifo, static_cast<std::uint32_t>(kBound));
+        CHECK(fifo.stats().rxDepth == kBound + 1);
+        CHECK(fifo.stats().droppedBytes == droppedBefore);
+        writeCmd(fifo, CMD_F_FRD);
+        writeU32(fifo, static_cast<std::uint32_t>(kBound));
+        CHECK(fifo.stats().rxDepth == kBound + 1);
+        CHECK(fifo.stats().droppedBytes == droppedBefore + 1);
+        const auto all = readBytes(fifo, kBound + 1);
+        REQUIRE(all.size() == kBound + 1);
+        CHECK(std::vector<std::uint8_t>(all.begin(), all.end() - 1) == burst);
+        CHECK(all.back() == 0x13);
     }
 }
 
