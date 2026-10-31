@@ -408,10 +408,16 @@ struct SystemNode {
 
     // The first activation builds the core the settings name, and gives it every knob the settings carry; later ones
     // (a re-activation) keep it. A core is built at the rate the plan runs at, which Engine::setSampleRate re-rates. A
-    // plan that is then refused destroys it as it unwinds.
-    bool activate(double, std::uint32_t) {
-        if (core) return true;
+    // plan that is then refused destroys it as it unwinds. Either way the core learns the largest block it will run,
+    // which is how its audio ring and per-block scratches are sized before its first block: a plan that grows a host's
+    // block reactivates the whole graph quiescent, so the sizes move with no block in flight.
+    bool activate(double, std::uint32_t maxFrames) {
+        if (core) {
+            core->reserveAudio(maxFrames);
+            return true;
+        }
         build(static_cast<Self*>(this)->config(*settings));
+        core->reserveAudio(maxFrames);
         return true;
     }
 

@@ -154,7 +154,25 @@ void MesenGbaSystem::onActivate(double sampleRate) {
     // GbaSaveRam region rather than going through Mesen's BatteryManager.
     seedSramAndState(config_.sram, config_.savestate);
 
+    // The block scratch exists before the first block: a block's audio path may not allocate
+    // (docs/modular-graph-phase-c4-design.md section 4). A node that builds at another block size grows it through
+    // reserveAudio before that block runs.
+    audioDevice_->reserveAudio(blockFrames(MesenAudioDevice::kDefaultBlockFrames));
+    sizeBlockScratch();
+
     activated_ = true;
+}
+
+void MesenGbaSystem::reserveAudio(std::uint32_t maxBlockFrames) {
+    SystemBase::reserveAudio(maxBlockFrames);
+    if (audioDevice_) audioDevice_->reserveAudio(blockFrames(MesenAudioDevice::kDefaultBlockFrames));
+    sizeBlockScratch();
+}
+
+// sumStereoWithGain writes one block of stereo floats through it, and a block is the most it ever needs.
+void MesenGbaSystem::sizeBlockScratch() {
+    const std::size_t needed = std::size_t(blockFrames(MesenAudioDevice::kDefaultBlockFrames)) * 2;
+    if (stereoAccum_.size() < needed) stereoAccum_.assign(needed, 0.0f);
 }
 
 void MesenGbaSystem::onDeactivate() {

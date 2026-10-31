@@ -39,6 +39,7 @@ public:
     void prepareForBlock(const AudioBlockInfo& info) override;
     bool stepIfBelowTarget(std::uint32_t framesNeeded) override;
     void finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) override;
+    void reserveAudio(std::uint32_t maxBlockFrames) override;
 
     // Audio-thread: queue a GBA button transition. The byte is the
     // position-aligned name index (GbaButton wire byte); remapped to
@@ -93,6 +94,7 @@ public:
 private:
     // Restore a savestate seed over the battery seedSramAndState() already put into the core.
     bool loadStateBytes(const std::vector<std::uint8_t>& bytes) override;
+    void sizeBlockScratch();  // stereoAccum_: at activation, never on the block thread
 
     MesenGbaConfig                   config_;
     std::vector<std::uint8_t>         rom_;
@@ -103,7 +105,8 @@ private:
     bool                              activated_      = false;
     double                            sampleRate_     = 44100.0;
     ExpSmoother                       gainSmoother_;
-    std::vector<float>                stereoAccum_;   // sized lazily to 2*blockSize
+    // Sized at activation (reserveAudio), never on the block thread.
+    std::vector<float>                stereoAccum_;   // 2 * the largest block's frames
 
     // Pending GBA button transitions. The byte is the GbaButton wire value
     // (Right=0..Start=7, L=8, R=9); remapped to Mesen's native

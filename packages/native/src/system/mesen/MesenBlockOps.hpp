@@ -18,6 +18,10 @@
  *  and summed those into the output: a stale echo rather than the silence the caller expects. Zeroing the
  *  unfilled tail is the whole fix, and it only costs anything in the case that was broken.
  *
+ *  The growth below is not load-bearing for the Mesen cores: they size `scratch` at activation (reserveAudio), so a
+ *  Mesen block never takes it. It is kept for a backend that does not (SameBoy's, today), and for a directly built
+ *  core running a block bigger than the one it reserved.
+ *
  *  A short ring is a backstop-only path on SMS and NES: their step loops loop until the ring is full and
  *  give up only at smsInstructionBudget / nesInstructionBudget, both derived from the block with ~8x slack
  *  over the shortest instruction. GBA's loop is bounded by a video-frame count instead. */

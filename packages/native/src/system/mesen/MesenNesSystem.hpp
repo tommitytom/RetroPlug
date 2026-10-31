@@ -43,6 +43,7 @@ public:
     void prepareForBlock(const AudioBlockInfo& info) override;
     bool stepIfBelowTarget(std::uint32_t framesNeeded) override;
     void finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) override;
+    void reserveAudio(std::uint32_t maxBlockFrames) override;
 
     // Default = one stereo "Mix" stream. Under channelExportMode == StereoModPins (CLI-only), reports
     // the three mono pin streams (Pulse | TND | Expansion) the NesSoundMixer tap captures (spec/10 §5).
@@ -118,9 +119,10 @@ public:
     // can reach the split modes without rebuilding the core the way setRegion does — a routing flip must
     // not reset a playing game. Same modes as MesenNesConfig::channelExportMode (0 = off/Mix, 1 = pins,
     // 3 = 5 individual mono); channelLayout() follows it. Value-guarded, and pre-onActivate it only records
-    // the mode (onActivate arms from config_). NOT cheap - SetChannelCapture allocates the per-stream blip
-    // buffers + resamplers - but it is a user menu action, not a per-block cost, and it runs on the same
-    // audio thread that already absorbs SameBoySystem::restartEmulator from a Game Boy node's model setting.
+    // the mode (onActivate arms from config_). Sizes nothing on the block thread: the tap's rings, its resample
+    // scratch and the per-block scratches are sized by reserveAudio at activation, so an arm only switches modes and
+    // resets the streams. A newly armed stream still creates its own blip (Mesen's blip_new, a fixed ~50 KB), which is
+    // what a routing change costs on whichever thread the plan's trailer runs on.
     void setChannelExportMode(std::uint32_t mode);
     /** The armed per-channel export mode (0 = off). Lets the Engine record what it found before arming,
      *  so it can restore a construct-time (CLI / render) value it did not set. */
@@ -130,6 +132,12 @@ public:
     std::uint32_t apuFlushCycleLength() const;
     // The config the setters above keep, read-only. Exposed for tests / introspection.
     const MesenNesConfig& config() const { return config_; }
+    // The audio ring's capacity in frames (a plan's maximum block plus one Mesen flush), and the frames it had to drop
+    // (0 unless a block ran bigger than the ring it was given, which activation prevents). The tap's own rings report
+    // their drops the same way. For tests / introspection.
+    std::uint32_t audioRingCapacity() const;
+    std::uint64_t audioRingOverflow() const;
+    std::uint64_t tapOverflow() const;
 
     // NES native resolution (256x240). Public so callers can construct a
     // FrameBufferTriple-sized read buffer without hard-coding the constant.
@@ -139,6 +147,11 @@ public:
 private:
     // Restore a savestate seed over the battery seedSramAndState() already put into the core.
     bool loadStateBytes(const std::vector<std::uint8_t>& bytes) override;
+
+    // The mix path's drain scratch and the tap's per-stream drains, sized at activation (SystemBase::blockFrames):
+    // a block's audio path must not allocate (docs/modular-graph-phase-c4-design.md section 4).
+    void          sizePerBlockBuffers();
+    std::size_t   captureStreamCount() const;  // streams the armed mode captures (0 = none)
 
     MesenNesConfig                       config_;
     std::vector<std::uint8_t>         rom_;
@@ -151,12 +164,13 @@ private:
     bool                              activated_      = false;
     double                            sampleRate_     = 44100.0;
     ExpSmoother                       gainSmoother_;
-    std::vector<float>                stereoAccum_;   // sized lazily to 2*blockSize
+    std::vector<float>                stereoAccum_;   // 2 * one block of the largest block size
 
     // nesMixer_ is owned by emu_'s NesConsole and borrowed for the whole activated lifetime (nulled in
     // onDeactivate) — used by the live APU-latency knob (all NES systems) AND per-channel capture (spec/10
     // §5 pins / §5b individual mono). chanAccum_ holds the per-stream mono drain each block: 3 pins (mode 1),
-    // 4 with the mix-reference (mode 2), or 5 core channels (mode 3).
+    // 4 with the mix-reference (mode 2), or 5 core channels (mode 3). Each is one block of the largest block size,
+    // sized at activation whether or not the tap is armed, so a routing change that arms it costs no allocation.
     static constexpr std::size_t      kMaxChannelStreams = 5;
     NesSoundMixer*                    nesMixer_ = nullptr;
     bool                              channelCapture_ = false;

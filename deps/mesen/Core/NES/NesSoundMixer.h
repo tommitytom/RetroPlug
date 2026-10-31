@@ -83,7 +83,15 @@ private:
 	HermiteResampler _streamResampler[MaxCaptureStreams];
 	vector<int16_t> _streamScratch;               // interleaved 96k read + expand scratch
 	vector<int16_t> _streamOutScratch;            // interleaved host resample scratch
-	vector<int16_t> _streamBuf[MaxCaptureStreams];// host-rate mono ring (drained by MesenNesSystem)
+	// Host-rate mono rings (drained by MesenNesSystem). FIXED capacity, sized by SetCaptureCapacity from the largest
+	// host block the caller will run plus one flush, so capturing and draining the tap never allocate on the audio
+	// thread. _streamHead is the read position of the oldest queued frame and _streamCount the frames queued; an
+	// append past capacity drops the newest and counts them, which the sizing makes unreachable.
+	uint32_t _streamCapacity = 0;
+	uint32_t _streamHead[MaxCaptureStreams] = {};
+	uint32_t _streamCount[MaxCaptureStreams] = {};
+	uint64_t _streamOverflow = 0;
+	vector<int16_t> _streamBuf[MaxCaptureStreams];
 
 	__forceinline double GetChannelOutput(AudioChannel channel, bool forRightChannel);
 	__forceinline int16_t GetOutputVolume(bool forRightChannel);
@@ -118,12 +126,18 @@ public:
 
 	// RetroPlug per-channel capture (spec/10 §5/§5b). `mode` is the channelExportMode: 0 = off, 1 = pins,
 	// 2 = pins + reference (fidelity test), 3 = 5 individual core mono channels. `hostRate` is passed in
-	// (the caller's sample rate) so the mixer needn't reach into settings. AvailableCaptureFrames reports
-	// host frames ready (all captured streams stay equal length); DrainChannel pops `frameCount` mono float
-	// samples from stream k (int16→float ÷32768, erase-from-front), like MesenAudioDevice::drain.
-	void SetChannelCapture(uint32_t mode, uint32_t hostRate);
+	// (the caller's sample rate) so the mixer needn't reach into settings. `maxBlockFrames` is the largest host block
+	// the caller will drain; SetCaptureCapacity has already sized the rings and the resample scratch from it at
+	// activation, so arming only switches modes (a newly armed stream still creates its own blip).
+	// AvailableCaptureFrames reports host frames ready (all captured streams stay equal length); DrainChannel pops
+	// `frameCount` mono float samples from stream k (int16→float ÷32768, oldest first), like MesenAudioDevice::drain.
+	void SetCaptureCapacity(uint32_t maxBlockFrames);
+	void SetChannelCapture(uint32_t mode, uint32_t hostRate, uint32_t maxBlockFrames);
 	uint32_t AvailableCaptureFrames() const;
 	uint32_t DrainChannel(uint32_t stream, float* dest, uint32_t frameCount);
+	// How many frames a capture ring had to drop (always 0: the capacity is a block plus one flush). Exposed so a test
+	// can hold that the sizing is what makes it unreachable.
+	uint64_t CaptureOverflowFrames() const { return _streamOverflow; }
 
 	void Serialize(Serializer& s) override;
 };

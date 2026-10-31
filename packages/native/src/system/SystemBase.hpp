@@ -79,6 +79,16 @@ public:
     virtual void finishBlock(const AudioBlockInfo& /*info*/, float* const* /*outs*/,
                              std::size_t /*laneCount*/) {}
 
+    // The largest host block this core will be asked to run (`maxBlockFrames` frames), so a backend can size the
+    // per-block buffers it must not allocate in while a block runs. A system node gives it at activation - as it
+    // builds the core, and again when a host grows its block, which reactivates the graph while it is quiescent - and
+    // a core built directly (a test, a tool) keeps its backend's own default. Growth only: a plan's maximum never
+    // shrinks. The reservation is recorded here; a backend that sizes per-block buffers overrides this, calls it
+    // first, and sizes from blockFrames().
+    virtual void reserveAudio(std::uint32_t maxBlockFrames) {
+        if (maxBlockFrames > maxBlockFrames_) maxBlockFrames_ = maxBlockFrames;
+    }
+
     // The output streams this system can emit. Default = one stereo "Mix" stream
     // (the mixed console output). A backend that can split its audio reports one
     // entry per stream; that layout only takes effect when the plan wires the
@@ -296,6 +306,11 @@ public:
     }
 
 protected:
+    // The block size a node has reserved for, in frames, or `fallback` (the backend's own default) until one does.
+    std::uint32_t blockFrames(std::uint32_t fallback) const {
+        return maxBlockFrames_ != 0 ? maxBlockFrames_ : fallback;
+    }
+
     // DSP thread (or the control thread while quiescent): the backend has rebuilt its core in place —
     // a SameBoy model switch — so the published blob and region table now describe a core that is gone.
     // Arms an immediate republish, which refreshes both together within one block instead of up to
@@ -327,6 +342,8 @@ private:
     // stateSnapshotCapacity() at claim, so a resize here would silently desync the two. Backends size it
     // to a ceiling instead (see stateSnapshotSize). interval ~0.5s.
     static constexpr double                kStateSnapshotIntervalSec = 0.5;
+    // The largest block a node has reserved for (reserveAudio), in frames; 0 until one does.
+    std::uint32_t                          maxBlockFrames_ = 0;
     // Sanity bound on a single savestate. Comfortably above any GB/NES/GBA
     // state; rejects an absurd size rather than allocating wildly.
     static constexpr std::size_t           kMaxStateSnapshotBytes = 16 * 1024 * 1024;

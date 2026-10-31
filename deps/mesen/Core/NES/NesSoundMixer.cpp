@@ -69,7 +69,8 @@ void NesSoundMixer::Reset()
 		_streamPrev[i] = 0;
 		_streamResampler[i].Reset();
 		_streamResampler[i].SetSampleRates(_sampleRate, _captureHostRate);
-		_streamBuf[i].clear();
+		_streamHead[i] = 0;
+		_streamCount[i] = 0;
 	}
 
 	_timestamps.clear();
@@ -370,25 +371,59 @@ void NesSoundMixer::CaptureStreams()
 	// time), and its own Hermite resampler (96k→host, fresh phase, dynamic-rate 1.0 headless) emits the
 	// same host count as the mix ring — so the pins stay sample-aligned with the mix and re-sum to it.
 	// Read the blip mono into the even lanes, mirror to the odd (the stereo HermiteResampler wants
-	// interleaved L/R), resample, then keep the left lane of the host output.
-	_streamScratch.resize((size_t)NesSoundMixer::MaxSamplesPerFrame * 2);
-	_streamOutScratch.resize((size_t)NesSoundMixer::MaxSamplesPerFrame * 2);
+	// interleaved L/R), resample, then keep the left lane of the host output. The scratch is sized by
+	// SetCaptureCapacity, which is off the block thread.
 	for(uint32_t k = 0; k < _captureStreams; k++) {
 		int n96 = blip_read_samples(_streamBlip[k], _streamScratch.data(), NesSoundMixer::MaxSamplesPerFrame, 1);
 		for(int i = 0; i < n96; i++) {
 			_streamScratch[i * 2 + 1] = _streamScratch[i * 2];
 		}
 		uint32_t nHost = _streamResampler[k].Resample<false>(_streamScratch.data(), (uint32_t)n96, _streamOutScratch.data(), NesSoundMixer::MaxSamplesPerFrame);
-		size_t base = _streamBuf[k].size();
-		_streamBuf[k].resize(base + nHost);
-		for(uint32_t i = 0; i < nHost; i++) {
-			_streamBuf[k][base + i] = _streamOutScratch[i * 2];
+		if(nHost > _streamCapacity - _streamCount[k]) {
+			// Unreachable with the capacity SetCaptureCapacity sizes: a block plus the most one flush appends. Drop the
+			// newest and count them rather than let the ring wrap onto frames the step loop has already been promised.
+			_streamOverflow += nHost - (_streamCapacity - _streamCount[k]);
+			nHost = _streamCapacity - _streamCount[k];
 		}
+		uint32_t tail = (_streamHead[k] + _streamCount[k]) % _streamCapacity;
+		for(uint32_t i = 0; i < nHost; i++) {
+			_streamBuf[k][tail] = _streamOutScratch[i * 2];
+			tail = tail + 1 == _streamCapacity ? 0 : tail + 1;
+		}
+		_streamCount[k] += nHost;
 	}
 }
 
-void NesSoundMixer::SetChannelCapture(uint32_t mode, uint32_t hostRate)
+void NesSoundMixer::SetCaptureCapacity(uint32_t maxBlockFrames)
 {
+	// One host block plus the most one CaptureStreams call can append (MaxSamplesPerFrame host frames): the step loops
+	// gate on AvailableCaptureFrames, so they stop with at most one flush over a block. Grow only, keeping the frames
+	// already queued: a plan's block size never shrinks, and what a capture ring holds is still aligned with the mix.
+	uint32_t want = maxBlockFrames + MaxSamplesPerFrame;
+	if(want <= _streamCapacity) {
+		return;
+	}
+	// The rings and the resample scratch are allocated HERE, off the block thread, so an armed block's capture and
+	// drain never allocate. (Each stream's blip stays SetChannelCapture's: it is blip_new's, fixed-size, and created
+	// when a stream arms.)
+	for(uint32_t k = 0; k < MaxCaptureStreams; k++) {
+		vector<int16_t> grown(want, 0);
+		uint32_t from = _streamHead[k];
+		for(uint32_t i = 0; i < _streamCount[k]; i++) {
+			grown[i] = _streamBuf[k][from];
+			from = from + 1 == _streamCapacity ? 0 : from + 1;
+		}
+		_streamBuf[k].swap(grown);
+		_streamHead[k] = 0;
+	}
+	_streamScratch.resize((size_t)MaxSamplesPerFrame * 2);
+	_streamOutScratch.resize((size_t)MaxSamplesPerFrame * 2);
+	_streamCapacity = want;
+}
+
+void NesSoundMixer::SetChannelCapture(uint32_t mode, uint32_t hostRate, uint32_t maxBlockFrames)
+{
+	SetCaptureCapacity(maxBlockFrames);
 	// Stream count per mode: 1 pins → 3, 2 pins+ref → 4, 3 individual-mono → 5, else off.
 	const uint32_t want = mode == 1 ? 3u : mode == 2 ? 4u : mode == 3 ? 5u : 0u;
 	_captureMode = want > 0 ? mode : 0u;
@@ -398,7 +433,8 @@ void NesSoundMixer::SetChannelCapture(uint32_t mode, uint32_t hostRate)
 			blip_delete(_streamBlip[k]);
 			_streamBlip[k] = nullptr;
 		}
-		_streamBuf[k].clear();
+		_streamHead[k] = 0;
+		_streamCount[k] = 0;
 	}
 	_captureStreams = want;
 	if(want > 0) {
@@ -414,7 +450,8 @@ void NesSoundMixer::SetChannelCapture(uint32_t mode, uint32_t hostRate)
 			_streamResampler[k].Reset();
 			_streamResampler[k].SetSampleRates(_sampleRate, hostRate);
 			_streamPrev[k] = 0;
-			_streamBuf[k].clear();
+			_streamHead[k] = 0;
+			_streamCount[k] = 0;
 		}
 	}
 }
@@ -423,7 +460,7 @@ uint32_t NesSoundMixer::AvailableCaptureFrames() const
 {
 	// All captured streams advance in lockstep (identical rates + input counts), so stream 0's length is
 	// the available frame count for every stream.
-	return _captureStreams > 0 ? (uint32_t)_streamBuf[0].size() : 0;
+	return _captureStreams > 0 ? _streamCount[0] : 0;
 }
 
 uint32_t NesSoundMixer::DrainChannel(uint32_t stream, float* dest, uint32_t frameCount)
@@ -432,12 +469,13 @@ uint32_t NesSoundMixer::DrainChannel(uint32_t stream, float* dest, uint32_t fram
 		return 0;
 	}
 	vector<int16_t>& buf = _streamBuf[stream];
-	uint32_t take = std::min((uint32_t)buf.size(), frameCount);
+	uint32_t take = std::min(_streamCount[stream], frameCount);
 	constexpr float scale = 1.0f / 32768.0f;
 	for(uint32_t i = 0; i < take; i++) {
-		dest[i] = buf[i] * scale;
+		dest[i] = buf[_streamHead[stream]] * scale;
+		_streamHead[stream] = _streamHead[stream] + 1 == _streamCapacity ? 0 : _streamHead[stream] + 1;
 	}
-	buf.erase(buf.begin(), buf.begin() + take);
+	_streamCount[stream] -= take;
 	return take;
 }
 

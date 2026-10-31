@@ -13,6 +13,10 @@
 // The GBA and LSDj cases use sibling fixture ROMs, so each leaves on a run without the resources tree (as CI's) rather
 // than failing there.
 //
+// The last cases hold the Mesen block path's allocation promise for the audio path (docs/modular-graph-phase-c4-design.md
+// section 4): a fixed audio ring, and scratches and tap buffers sized at activation, so a block's audio work allocates
+// nothing at any block size, and arming the tap sizes nothing on the thread that arms it.
+//
 // Run via `pnpm test:plugin`.
 
 #include <algorithm>
@@ -38,6 +42,7 @@
 #include "GraphDocs.hpp"
 #include "NodeRig.hpp"
 #include "graph/CanonicalJson.hpp"
+#include "system/mesen/MesenAudioDevice.hpp"
 #include "system/mesen/MesenGbaSystem.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
@@ -193,11 +198,11 @@ std::function<void(std::uint64_t)> smsStart(SystemBase& a, SystemBase& b) {
 
 AudioBlockInfo info(std::uint32_t frames) { return AudioBlockInfo{frames, kRate, 120.0, 0.0, false}; }
 
-// `lanes` host channels, each as long as the largest block.
+// `lanes` host channels, each as long as the largest block (`frames`, the default being the engine's 8192).
 struct Lanes {
     std::vector<std::vector<float>> data;
     std::vector<float*>             ptrs;
-    explicit Lanes(std::size_t n) : data(n, std::vector<float>(8192, 0.0f)) {
+    explicit Lanes(std::size_t n, std::size_t frames = 8192) : data(n, std::vector<float>(frames, 0.0f)) {
         for (auto& d : data) ptrs.push_back(d.data());
     }
 };
@@ -2457,4 +2462,325 @@ TEST_CASE("a boot's cost per console, through the build a system node makes", "[
         std::printf("  %-16s boot %7.1f ms   through setGraph %7.1f ms   (%zu KiB of ROM)\n", boot.name,
                     built[built.size() / 2] / 1000.0, planned[planned.size() / 2] / 1000.0, boot.rom.size() / 1024);
     }
+}
+// The block thread's allocation promise for the AUDIO PATH (docs/modular-graph-phase-c4-design.md section 4). A Mesen
+// core collects its audio in a fixed ring (MesenAudioDevice), and sizes its per-block scratches, the tap's rings and the
+// tap's resample scratch at activation, so the audio path allocates and frees nothing while a block runs, at every block
+// size a host splits to, and arming the tap only switches modes (a newly armed stream still creates its fixed-size
+// blip, which is Mesen's blip_new). Mesen's own
+// video path is a different matter: it allocates about a dozen times per EMULATED frame (its per-frame controller
+// snapshot and the frame copies, BaseControlManager::GetPortStates through VideoDecoder/RenderedFrame), which is Mesen's
+// and is recorded in the stage's report rather than bounded here. These cases therefore measure the audio path alone:
+// the ring and the scratch work one block does, at ragged sizes, with the ring already holding what the block drains (the
+// ring's fill is the block clock, so a full ring means nothing steps), and the tap's arm, which runs between two blocks.
+
+namespace {
+
+// Host block sizes this file's other cases never run a core at, as parity/blocks-tiny.ts records the FL shapes: 1-frame
+// blocks between odd sizes, a small block, and the plan's maximum, the widest swing a block's buffers have to survive.
+constexpr std::array<std::uint32_t, 8> kRaggedBlocks = {33, 1, 222, 1, 7, 4096, 2, 8192};
+
+// One block as the node runs it: zero the lanes the system sums into, prepare, and - when `fill` - run the step phase
+// between the prepare and the drain. That order is the node's own triad, so the per-block counters the SMS and the NES
+// reset in prepare are reset BEFORE the step and not after it. `frames` is a ragged size from kRaggedBlocks, or 512 for
+// the long tapped run, so the scratches and the tap's rings see every shape. kRaggedBlocks drains ~12.5 k frames: well
+// under SystemBase's 0.5 s snapshot interval (24 k frames at 48 kHz), so no savestate capture - which allocates, in
+// Mesen's serializer - can land in a counted window. A counted stretch longer than that has to account for the publish
+// (chargeSnapshotInterval below).
+//
+// The step stays OUTSIDE the counted window: it emulates, and Mesen's video path allocates inside any window that runs
+// an emulated frame. The counted window is the drain.
+rp::test::AllocationCount drainBlock(SystemBase& core, std::uint32_t frames, float* const* lanes, std::size_t laneCount,
+                                     bool count, bool fill) {
+    for (std::size_t l = 0; l < laneCount; ++l) std::fill_n(lanes[l], frames, 0.0f);
+    core.prepareForBlock(info(frames));
+    if (fill) {
+        while (core.stepIfBelowTarget(frames)) {
+        }
+    }
+    if (count) rp::test::beginCountingAllocations();
+    core.finishBlock(info(frames), lanes, laneCount);
+    return count ? rp::test::endCountingAllocations() : rp::test::AllocationCount{};
+}
+
+// Every ragged size on `core`, drained through `lanes`. The block drained at each size is the FIRST one at that size,
+// filled by real emulation just before it (a window that found an empty ring would measure the zero-fill instead of
+// the drain): a buffer that still grew lazily at a new high-water mark would allocate here. One 1-frame block is run
+// first, because a core's very first block publishes its state snapshot without being asked (SystemBase arms an
+// immediate publish at activation) and that capture allocates inside Mesen.
+void checkRaggedDrainsAreFree(SystemBase& core, const std::vector<float*>& lanes) {
+    drainBlock(core, 1, lanes.data(), lanes.size(), false, true);
+    for (const std::uint32_t frames : kRaggedBlocks) {
+        const auto counted = drainBlock(core, frames, lanes.data(), lanes.size(), true, true);
+        INFO(frames << " frames: " << counted.allocations << " allocations, " << counted.frees << " frees");
+        REQUIRE(counted.allocations == 0);
+        REQUIRE(counted.frees == 0);
+    }
+}
+
+// A core the Engine built publishes a whole savestate every 0.5 s of block frames (SystemBase's accumulator), and that
+// capture allocates, in Mesen's streaming serializer. Charge a whole interval uncounted, through the publish call
+// itself, so the capture happens HERE and not inside a counted window: every counted stretch below then stays under
+// the interval (24 k frames at this file's rate) and cannot reach it.
+void chargeSnapshotInterval(SystemBase& core) {
+    core.publishStateSnapshot(static_cast<std::uint32_t>(kRate * 0.5), kRate);
+}
+
+}  // namespace
+
+TEST_CASE("a Mesen audio ring keeps a block in fixed storage, draining, wrapping and growing without allocating",
+          "[engine-graph][mesen][audio-ring][alloc]") {
+    // One PlayBuffer can never carry more than Mesen's own output buffer holds, and a core built outside a plan
+    // defaults to the engine's plan size (a node hands its own in at activation).
+    STATIC_REQUIRE(MesenAudioDevice::kMaxPlayBufferFrames == 0x8000);
+    STATIC_REQUIRE(MesenAudioDevice::kDefaultBlockFrames == Engine::kDefaultMaxBlockFrames);
+
+    MesenAudioDevice ring;
+    CHECK(ring.capacityFrames() == MesenAudioDevice::kDefaultBlockFrames + MesenAudioDevice::kMaxPlayBufferFrames);
+    CHECK(ring.availableFrames() == 0);
+
+    // A frame's samples are (n, -n) mod 30000, so a drained frame says where it was written.
+    const auto put = [](std::uint32_t first, std::uint32_t count, std::vector<int16_t>& into) {
+        into.resize(std::size_t(count) * 2);
+        for (std::uint32_t i = 0; i < count; ++i) {
+            const auto v = static_cast<std::int16_t>(static_cast<std::int32_t>((first + i) % 30000) - 15000);
+            into[i * 2] = v;
+            into[i * 2 + 1] = static_cast<std::int16_t>(-v);
+        }
+    };
+    // What `count` drained frames from written index `first` must be, bit for bit (the ring normalises with the same
+    // 1/32768). The first frame that is not, or "" when they all are.
+    const auto expect = [](std::uint32_t first, std::uint32_t count, const float* got) -> std::string {
+        constexpr float kScale = 1.0f / 32768.0f;
+        for (std::uint32_t i = 0; i < count; ++i) {
+            const auto v = static_cast<std::int32_t>((first + i) % 30000) - 15000;
+            if (got[i * 2] != static_cast<float>(v) * kScale || got[i * 2 + 1] != static_cast<float>(-v) * kScale)
+                return "frame " + std::to_string(first + i) + ": " + std::to_string(got[i * 2]) + " / " +
+                       std::to_string(got[i * 2 + 1]);
+        }
+        return "";
+    };
+
+    std::vector<int16_t> in;
+    std::vector<float>   out;
+
+    SECTION("fill, drain, and the frame count the block clock reads") {
+        put(0, 5, in);
+        ring.PlayBuffer(in.data(), 5, 48000, true);
+        CHECK(ring.availableFrames() == 5);
+        out.resize(10);
+        CHECK(ring.drain(out.data(), 3) == 3);
+        CHECK(ring.availableFrames() == 2);
+        CHECK(expect(0, 3, out.data()) == "");
+        CHECK(ring.drain(out.data(), 8) == 2);
+        CHECK(ring.availableFrames() == 0);
+        CHECK(expect(3, 2, out.data()) == "");
+        CHECK(ring.drain(out.data(), 8) == 0);
+    }
+
+    SECTION("wrap: a tail that runs off the end continues at the front") {
+        const std::uint32_t capacity = ring.capacityFrames();
+        put(0, capacity - 100, in);
+        ring.PlayBuffer(in.data(), capacity - 100, 48000, true);
+        out.resize(std::size_t(capacity) * 2);
+        CHECK(ring.drain(out.data(), 500) == 500);
+        CHECK(expect(0, 500, out.data()) == "");
+        // The tail now sits 100 frames short of the end, so this write crosses it: 100 frames at the end, 500 at the
+        // front, over the space the drain just freed.
+        put(capacity - 100, 600, in);
+        ring.PlayBuffer(in.data(), 600, 48000, true);
+        CHECK(ring.availableFrames() == capacity);
+        CHECK(ring.drain(out.data(), capacity - 100) == capacity - 100);
+        CHECK(expect(500, capacity - 600, out.data()) == "");
+        CHECK(expect(capacity - 100, 100, out.data() + std::size_t(capacity - 600) * 2) == "");
+        CHECK(ring.availableFrames() == 100);
+    }
+
+    SECTION("a resize on re-activation keeps what the ring holds") {
+        put(0, 7, in);
+        ring.PlayBuffer(in.data(), 7, 48000, true);
+        ring.reserveAudio(65536);  // a host grew its block: the node re-activates and the ring learns the new maximum
+        CHECK(ring.capacityFrames() == 65536 + MesenAudioDevice::kMaxPlayBufferFrames);
+        CHECK(ring.availableFrames() == 7);
+        out.resize(14);
+        CHECK(ring.drain(out.data(), 7) == 7);
+        CHECK(expect(0, 7, out.data()) == "");
+        // Growth only, and a smaller request is not a shrink.
+        ring.reserveAudio(1);
+        CHECK(ring.capacityFrames() == 65536 + MesenAudioDevice::kMaxPlayBufferFrames);
+    }
+
+    SECTION("a write past capacity drops the newest and counts them") {
+        // The drop policy is unreachable in production, so the ring asserts when it happens (a debug build): it is only
+        // holdable where that assert is compiled out, which is every configured build here but a debug one.
+        if (!NDEBUG) SKIP("a debug build asserts on the overflow this provokes");
+        const std::uint32_t capacity = ring.capacityFrames();
+        put(0, capacity, in);
+        ring.PlayBuffer(in.data(), capacity, 48000, true);
+        put(capacity, 5, in);
+        ring.PlayBuffer(in.data(), 5, 48000, true);
+        CHECK(ring.overflowFrames() == 5);
+        CHECK(ring.availableFrames() == capacity);
+        out.resize(std::size_t(capacity) * 2);
+        CHECK(ring.drain(out.data(), capacity) == capacity);
+        // What was already queued survived in order; the five frames that did not fit are gone, not wrapped over it.
+        CHECK(expect(0, capacity, out.data()) == "");
+    }
+
+    SECTION("a warm ring allocates nothing to write or drain") {
+        ring.reserveAudio(4096);
+        std::array<int16_t, 1024 * 2>  chunk{};
+        std::array<float, 8192 * 2>    dest{};
+        for (int i = 0; i < int(chunk.size()); ++i) chunk[std::size_t(i)] = static_cast<std::int16_t>(i);
+        rp::test::beginCountingAllocations();
+        for (int b = 0; b < 64; ++b) {
+            ring.PlayBuffer(chunk.data(), 1024, 48000, true);
+            ring.drain(dest.data(), 1024);
+            (void)ring.availableFrames();
+        }
+        const auto counted = rp::test::endCountingAllocations();
+        INFO("ring: " << counted.allocations << " allocations, " << counted.frees << " frees");
+        CHECK(counted.allocations == 0);
+        CHECK(counted.frees == 0);
+    }
+}
+
+TEST_CASE("a Mesen core's audio path drains without allocating at every block size",
+          "[engine-graph][system-node][alloc]") {
+    // The audio path's own promise. Warm, then one block at each ragged size with the ring already holding what the
+    // block drains: the drain, the scratches and the tap's rings, with no emulated frame in the window. The step phase
+    // is where Mesen's frame plumbing allocates, and it is outside every window here.
+    SECTION("NES, mixed") {
+        auto core = nes(1, 0);
+        core->reserveAudio(8192);  // what a node's activate does with its plan's maximum
+        Lanes lanes(2);
+        checkRaggedDrainsAreFree(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+        CHECK(core->audioRingOverflow() == 0);
+    }
+    SECTION("NES, tap armed, its pins wired") {
+        auto core = nes(1, 1);
+        core->reserveAudio(8192);
+        Lanes lanes(3);
+        // The node points both lanes of a mono stream at its one port buffer.
+        std::vector<float*> tap;
+        for (std::size_t k = 0; k < 3; ++k) {
+            tap.push_back(lanes.ptrs[k]);
+            tap.push_back(lanes.ptrs[k]);
+        }
+        checkRaggedDrainsAreFree(*core, tap);
+        CHECK(core->tapOverflow() == 0);
+    }
+    SECTION("NES, tap armed, driven through the mix") {
+        // A split render's boot settle: the tap captures while the block is fanned out as the mix, so finishBlock also
+        // drains and discards the tap's rings, a block at a time.
+        auto core = nes(1, 1);
+        core->reserveAudio(8192);
+        Lanes lanes(2);
+        checkRaggedDrainsAreFree(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+        CHECK(core->tapOverflow() == 0);
+    }
+    SECTION("SMS") {
+        auto core = sms(1);
+        core->reserveAudio(8192);
+        Lanes lanes(2);
+        checkRaggedDrainsAreFree(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+    }
+    SECTION("GBA") {
+        // A sibling fixture, so this leaves on a run without one (as CI's) rather than failing there.
+        const auto rom = resourceFixture("/roms/nanoloop287d.gba");
+        if (rom.empty()) return;
+        auto core = std::make_unique<MesenGbaSystem>(1, MesenGbaConfig{}, rom);
+        core->onActivate(kRate);
+        core->reserveAudio(8192);
+        Lanes lanes(2);
+        checkRaggedDrainsAreFree(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+    }
+}
+
+TEST_CASE("a tap armed live on an activated NES sizes nothing on the block thread, and its audio path stays free",
+          "[engine-graph][system-node][mesen][tap][alloc]") {
+    // A plugin routing change arms the tap through the plan's SyncTap trailer (Engine::syncTap), which the block thread
+    // runs as it adopts the new plan - i.e. BETWEEN two blocks, on the audio thread. Nothing may be SIZED there: the
+    // ring, the per-block scratches, the tap's rings and its resample scratch were all sized at activation
+    // (reserveAudio). The counted window is the arm itself; the one allocation an arm still makes is a newly armed
+    // stream's blip, which is blip_new's malloc (fixed-size, not the block's), so this allocator does not see it. The
+    // blocks after it are held the way the case above holds a core's: their drain is counted, their step (and Mesen's
+    // frame plumbing inside it) is not.
+    Engine e(kRate);
+    rp::host::test::Roms roms;
+    auto systems = std::vector<rp::host::test::DocSystem>{{1, rp::host::test::kNesType}};
+    rp::host::test::withRoms(e, systems, roms);
+    const auto document = [&] { return rp::host::test::graphRequest(rp::host::test::stereoDocument(systems), {1}); };
+    REQUIRE(e.setGraph(document()).ok);
+    auto* const core = dynamic_cast<MesenNesSystem*>(e.findSystem(1));
+    REQUIRE(core != nullptr);
+    REQUIRE(core->channelExportMode() == 0);
+    CHECK(core->audioRingCapacity() == 8192 + MesenAudioDevice::kMaxPlayBufferFrames);
+
+    std::vector<std::vector<float>> lanes(2, std::vector<float>(8192, 0.0f));
+    float* outs[2] = {lanes[0].data(), lanes[1].data()};
+    for (int b = 0; b < 4; ++b) e.processBlock(4096, outs, 2);  // real blocks: the ring has sound in flight
+
+    // The audio thread owns the next plan's adoption, so the arm is queued and the block thread runs it.
+    e.setAudioThreadOwns(true);
+    REQUIRE(e.setGraph(rp::host::test::rearming(document(), 1, 1)).ok);
+    rp::test::beginCountingAllocations();
+    e.drainCommands();
+    const auto arm = rp::test::endCountingAllocations();
+    e.setAudioThreadOwns(false);
+    INFO("arm: " << arm.allocations << " allocations, " << arm.frees << " frees");
+    CHECK(arm.allocations == 0);
+    CHECK(arm.frees == 0);
+    REQUIRE(core->channelExportMode() == 1);
+    CHECK(core->channelLayout().size() == 3);
+
+    // The blocks after it: the pins the arm just armed, drained through the node's six lanes.
+    Lanes pins(3);
+    std::vector<float*> tap;
+    for (std::size_t k = 0; k < 3; ++k) {
+        tap.push_back(pins.ptrs[k]);
+        tap.push_back(pins.ptrs[k]);
+    }
+    chargeSnapshotInterval(*core);
+    checkRaggedDrainsAreFree(*core, tap);
+    CHECK(core->tapOverflow() == 0);
+
+    // A long armed run, its drain counted a block at a time: the tap's rings take on more than a ringful (so their head
+    // and tail wrap, and DrainChannel crosses the end mid-drain) and never drop or allocate.
+    chargeSnapshotInterval(*core);
+    for (int b = 0; b < 46; ++b) {
+        const auto counted = drainBlock(*core, 512, tap.data(), tap.size(), true, true);
+        INFO("block " << b << ": " << counted.allocations << " allocations, " << counted.frees << " frees");
+        REQUIRE(counted.allocations == 0);
+        REQUIRE(counted.frees == 0);
+    }
+    CHECK(core->tapOverflow() == 0);
+
+    // And through the mix, which discards what the tap captured, a block at a time.
+    Lanes mix(2);
+    chargeSnapshotInterval(*core);
+    checkRaggedDrainsAreFree(*core, {mix.ptrs[0], mix.ptrs[1]});
+    CHECK(core->tapOverflow() == 0);
+}
+
+TEST_CASE("a node re-activation grows a Mesen core's audio ring to the new block",
+          "[engine-graph][system-node][alloc]") {
+    // Engine::setMaxBlockFrames re-activates the graph while it is quiescent, which is where the core's ring learns the
+    // plan's new maximum: the node's activate returns early for a core it holds and reserves for the new block.
+    NodeRig rig(kRate);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"nes","type":"rp.mesen.nes","settings":{)" + rig.boot("rp.mesen.nes", 1) +
+                    R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                        "wires":[{"from":"nes.mix","to":"out.out.1-2"}]})").ok);
+    auto* const core = dynamic_cast<MesenNesSystem*>(rig.builtCore(1));
+    REQUIRE(core != nullptr);
+    CHECK(core->audioRingCapacity() == 8192 + MesenAudioDevice::kMaxPlayBufferFrames);
+    Lanes small(2);
+    const rp_transport t{kRate, 120.0, 0.0, 0};
+    rig.host->processBlock(512, t, small.ptrs.data(), 2);  // sound in flight when the plan is re-activated
+    std::string why;
+    REQUIRE(rig.host->reactivate(kRate, 16384, &why));
+    CHECK(core->audioRingCapacity() == 16384 + MesenAudioDevice::kMaxPlayBufferFrames);
+    Lanes big(2, 16384);
+    rig.host->processBlock(16384, t, big.ptrs.data(), 2);
+    CHECK(core->audioRingOverflow() == 0);
 }

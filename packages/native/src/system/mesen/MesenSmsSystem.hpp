@@ -44,6 +44,7 @@ public:
     void prepareForBlock(const AudioBlockInfo& info) override;
     bool stepIfBelowTarget(std::uint32_t framesNeeded) override;
     void finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) override;
+    void reserveAudio(std::uint32_t maxBlockFrames) override;
 
     // Audio-thread: queue a button transition. The byte is the position-aligned
     // name index (SmsButton wire byte); remapped to Mesen's native
@@ -160,6 +161,7 @@ private:
     // meanings out of. Returns the path, or empty on failure. See the comment
     // on the definition.
     std::string stageRom();
+    void sizeBlockScratch();  // stereoAccum_: at activation, never on the block thread
 
     // The staging directory this system owns, as `<home>/staged/<stagingSlot_>`.
     // Unique per system INSTANCE, which the system id is NOT: ids are allocated
@@ -176,7 +178,8 @@ private:
     bool                              activated_      = false;
     double                            sampleRate_     = 44100.0;
     ExpSmoother                       gainSmoother_;
-    std::vector<float>                stereoAccum_;   // sized lazily to 2*blockSize
+    // Sized at activation (reserveAudio), never on the block thread.
+    std::vector<float>                stereoAccum_;   // 2 * the largest block's frames
 
     // The on-disk file handed to Mesen's LoadRom. NOT cosmetic: the VirtualFile
     // name is simultaneously the machine selector, the battery-file stem and

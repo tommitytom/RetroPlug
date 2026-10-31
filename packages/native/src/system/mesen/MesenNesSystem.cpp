@@ -261,7 +261,8 @@ void MesenNesSystem::onActivate(double sampleRate) {
         // (native/test-only), mode 3 = the 5 individual core channels. (CLI-only; a normal Mix build never
         // touches this and stays byte-identical.)
         if (config_.channelExportMode >= 1) {
-            nesMixer_->SetChannelCapture(config_.channelExportMode, static_cast<std::uint32_t>(sampleRate));
+            nesMixer_->SetChannelCapture(config_.channelExportMode, static_cast<std::uint32_t>(sampleRate),
+                                         blockFrames(MesenAudioDevice::kDefaultBlockFrames));
             channelCapture_ = true;
         }
     }
@@ -271,6 +272,12 @@ void MesenNesSystem::onActivate(double sampleRate) {
     // tmp home folder, almost always empty). Override by writing directly
     // into the live NesSaveRam region.
     seedSramAndState(config_.sram, config_.savestate);
+
+    // The per-block buffers exist before the first block: a block's audio path may not allocate
+    // (docs/modular-graph-phase-c4-design.md section 4). A node that builds at another block size grows them through
+    // reserveAudio before that block runs.
+    if (audioDevice_) audioDevice_->reserveAudio(blockFrames(MesenAudioDevice::kDefaultBlockFrames));
+    sizePerBlockBuffers();
 
     activated_ = true;
 }
@@ -311,7 +318,8 @@ void MesenNesSystem::onSampleRateChanged(double sampleRate) {
     }
     // Re-arm the tap at the new host rate (re-inits the per-stream resamplers).
     if (channelCapture_ && nesMixer_) {
-        nesMixer_->SetChannelCapture(config_.channelExportMode, static_cast<std::uint32_t>(sampleRate));
+        nesMixer_->SetChannelCapture(config_.channelExportMode, static_cast<std::uint32_t>(sampleRate),
+                                     blockFrames(MesenAudioDevice::kDefaultBlockFrames));
     }
 }
 
@@ -383,10 +391,13 @@ void MesenNesSystem::setChannelExportMode(std::uint32_t mode) {
     config_.channelExportMode = mode;
     // Before onActivate there is no mixer yet — the new mode is recorded and onActivate arms from it.
     if (!nesMixer_) return;
-    // Re-arms (or, at mode 0, frees) the per-stream blip buffers + resamplers. Any frames already
-    // captured under the OLD mode are dropped with them, which is what we want: the streams change
-    // shape, so a partial block of the previous layout would fan out to the wrong lanes.
-    nesMixer_->SetChannelCapture(mode, static_cast<std::uint32_t>(sampleRate_));
+    // Re-arms (or, at mode 0, frees) the per-stream blip buffers + resamplers. The tap's rings and its resample scratch
+    // were sized at activation, so nothing here grows a buffer: only a newly armed stream's blip is allocated (a fixed
+    // size, not the block's). It may therefore run as the plan's trailer on the block thread. Any frames already
+    // captured under the OLD mode are dropped, which is what we want: the streams change shape, so a partial block of
+    // the previous layout would fan out to the wrong lanes.
+    nesMixer_->SetChannelCapture(mode, static_cast<std::uint32_t>(sampleRate_),
+                                 blockFrames(MesenAudioDevice::kDefaultBlockFrames));
     channelCapture_ = mode >= 1;
 }
 
@@ -541,10 +552,15 @@ void MesenNesSystem::finishBlock(const AudioBlockInfo& info, float* const* outs,
                 outs[2 * k][i] += chanAccum_[k][i] * g;
             }
         }
-        // Flush the mix ring (discard) so it stays bounded — the loop gated on the capture streams, not it.
-        const std::uint32_t mixAvail = static_cast<std::uint32_t>(audioDevice_->availableFrames());
-        if (stereoAccum_.size() < std::size_t(mixAvail) * 2) stereoAccum_.assign(std::size_t(mixAvail) * 2, 0.0f);
-        audioDevice_->drain(stereoAccum_.data(), mixAvail);
+        // Flush the mix ring (discard) so it stays bounded: the loop gated on the capture streams, not it. The ring can
+        // hold a block plus one Mesen flush, so it drains a block at a time through the block scratch, which is one
+        // block.
+        std::uint32_t mixAvail = static_cast<std::uint32_t>(audioDevice_->availableFrames());
+        while (mixAvail > 0) {
+            const auto chunk = static_cast<std::uint32_t>(std::min<std::size_t>(mixAvail, stereoAccum_.size() / 2));
+            audioDevice_->drain(stereoAccum_.data(), chunk);
+            mixAvail -= chunk;
+        }
     } else {
         assert(laneCount == 2); // mixed stereo (default single stereo stream)
         (void)laneCount;
@@ -554,12 +570,16 @@ void MesenNesSystem::finishBlock(const AudioBlockInfo& info, float* const* outs,
         // they accumulate, and a later renderAudioPerChannel finds enough buffered frames to satisfy the
         // block WITHOUT stepping the CPU — the core stalls (input never reaches it, no fresh audio comes).
         if (channelCapture_ && nesMixer_) {
-            if (const std::uint32_t avail = nesMixer_->AvailableCaptureFrames(); avail > 0) {
-                auto& discard = chanAccum_[0]; // reuse a per-stream scratch; the mix path doesn't fan it out
-                if (discard.size() < avail) discard.assign(avail, 0.0f);
-                const std::size_t nStreams = channelLayout().size();
+            // Reuse a per-stream scratch; the mix path doesn't fan it out. The tap's rings can hold a block plus one
+            // Mesen flush (the step loop gated on them, not on the mix ring), so they drain a block at a time.
+            auto& discard = chanAccum_[0];
+            const std::size_t nStreams = captureStreamCount();
+            std::uint32_t left = nesMixer_->AvailableCaptureFrames();
+            while (left > 0) {
+                const auto chunk = static_cast<std::uint32_t>(std::min<std::size_t>(left, discard.size()));
                 for (std::size_t k = 0; k < nStreams; ++k)
-                    nesMixer_->DrainChannel(static_cast<std::uint32_t>(k), discard.data(), avail);
+                    nesMixer_->DrainChannel(static_cast<std::uint32_t>(k), discard.data(), chunk);
+                left -= chunk;
             }
         }
         sumStereoWithGain(*audioDevice_, stereoAccum_, outs, blockSize, gainSmoother_);
@@ -572,19 +592,52 @@ void MesenNesSystem::finishBlock(const AudioBlockInfo& info, float* const* outs,
 }
 
 std::vector<ChannelStream> MesenNesSystem::channelLayout() const {
-    if (channelCapture_) {
-        // Mode 3 (§5b): the 5 individual core channels as raw mono stems ("does not sum").
-        if (config_.channelExportMode == 3) {
-            return {{"Square1", false}, {"Square2", false}, {"Triangle", false}, {"Noise", false}, {"DMC", false}};
-        }
-        // The two 2A03 stereo-mod output pins + the lumped expansion term, as mono streams (spec/10 §5).
-        // Mode 2 (native/test-only) appends the mix-reference stream for the fidelity test.
-        if (config_.channelExportMode == 2) {
-            return {{"Pulse", false}, {"TND", false}, {"Expansion", false}, {"MixRef", false}};
-        }
-        return {{"Pulse", false}, {"TND", false}, {"Expansion", false}};
-    }
+    const std::size_t streams = captureStreamCount();
+    // Mode 3 (§5b): the 5 individual core channels as raw mono stems ("does not sum").
+    if (streams == 5)
+        return {{"Square1", false}, {"Square2", false}, {"Triangle", false}, {"Noise", false}, {"DMC", false}};
+    // The two 2A03 stereo-mod output pins + the lumped expansion term, as mono streams (spec/10 §5). Mode 2
+    // (native/test-only) appends the mix-reference stream for the fidelity test.
+    if (streams == 4) return {{"Pulse", false}, {"TND", false}, {"Expansion", false}, {"MixRef", false}};
+    if (streams == 3) return {{"Pulse", false}, {"TND", false}, {"Expansion", false}};
     return {{"Mix", true}};
+}
+
+// How many streams the armed mode captures, as channelLayout offers them. finishBlock reads it rather than
+// channelLayout(), whose vector would be an allocation on the block thread.
+std::size_t MesenNesSystem::captureStreamCount() const {
+    if (!channelCapture_) return 0;
+    return config_.channelExportMode == 3 ? 5 : config_.channelExportMode == 2 ? 4 : 3;
+}
+
+std::uint32_t MesenNesSystem::audioRingCapacity() const {
+    return audioDevice_ ? audioDevice_->capacityFrames() : 0;
+}
+
+std::uint64_t MesenNesSystem::audioRingOverflow() const {
+    return audioDevice_ ? audioDevice_->overflowFrames() : 0;
+}
+
+std::uint64_t MesenNesSystem::tapOverflow() const {
+    return nesMixer_ ? nesMixer_->CaptureOverflowFrames() : 0;
+}
+
+void MesenNesSystem::reserveAudio(std::uint32_t maxBlockFrames) {
+    SystemBase::reserveAudio(maxBlockFrames);
+    const std::uint32_t block = blockFrames(MesenAudioDevice::kDefaultBlockFrames);
+    if (audioDevice_) audioDevice_->reserveAudio(block);
+    if (nesMixer_) nesMixer_->SetCaptureCapacity(block);
+    sizePerBlockBuffers();
+}
+
+// The two scratch sets the block path writes through, each one block of the largest block this core will run: the mix
+// path's drain scratch, and the per-stream scratch a drain (or a discard) goes through. Sized at activation and on a
+// larger reserve, never in a block. Growth only, so a later smaller reserve keeps the memory.
+void MesenNesSystem::sizePerBlockBuffers() {
+    const std::size_t block = blockFrames(MesenAudioDevice::kDefaultBlockFrames);
+    if (stereoAccum_.size() < block * 2) stereoAccum_.assign(block * 2, 0.0f);
+    for (std::vector<float>& scratch : chanAccum_)
+        if (scratch.size() < block) scratch.assign(block, 0.0f);
 }
 
 std::size_t MesenNesSystem::stateSnapshotSize() const {
