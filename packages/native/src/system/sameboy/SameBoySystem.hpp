@@ -82,6 +82,9 @@ public:
     // drop is zero unless a core is fed outside a plan's queues.
     std::uint64_t inputAccepted() const override { return serialInAccepted_ + pressesAccepted_; }
     std::uint64_t inputDropped() const override { return serialInDropped_ + pendingButtons_.dropped(); }
+    // The serial-in bytes the queues have taken since the core was built: the non-press half of inputAccepted(), for a
+    // test that holds a staged serial run reached the core rather than only a press.
+    std::uint64_t serialInAccepted() const { return serialInAccepted_; }
     // The byte the serial queue would deliver next. False, touching nothing, when it holds none: the queued runs only
     // name their bytes' offsets, so this is the test seam that holds a serial input reached the core.
     bool peekSerialByte(std::uint8_t& byte) const {

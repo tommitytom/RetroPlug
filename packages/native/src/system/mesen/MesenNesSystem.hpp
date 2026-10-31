@@ -68,6 +68,9 @@ public:
     CoreTransportStats coreTransportStats() override;
     std::uint64_t inputAccepted() const override;
     std::uint64_t inputDropped() const override;
+    // The bytes the N8 role's queues have taken since the core was built: the non-press half of inputAccepted(), for
+    // a test that holds a staged MIDI run or raw message reached the core rather than only a press.
+    std::uint64_t acceptedBytes() const;
 
     // Audio-thread: queue a NES button transition. The byte is reinterpreted
     // as NesButton (Right/Left/Up/Down/A/B/Select/Start, positions 0..7).

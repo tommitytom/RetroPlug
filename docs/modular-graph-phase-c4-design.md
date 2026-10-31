@@ -426,7 +426,10 @@ section 11. The ones worth naming on their own:
   staged nothing, so every queue a block's input lands in could grow on the block thread with no case seeing it. The
   extended case found 7 allocations and 7 frees at the NES's first counted window (11 and 7 with the reliable link on),
   1 and 4 through the Engine, and 4 and 2 on a Game Boy carrying presses and serial bytes, all of them queues; the fix
-  is section 11's.
+  is section 11's. A later pass made each counted window hold that what it staged landed: `inputDropped()` unchanged
+  across every window, the non-press counters checked exactly (`acceptedBytes()`, `levelsAccepted()`,
+  `serialInAccepted()`), a Game Boy's stems half run on a fresh core so its scheduled press queue never fills and
+  counts a refusal instead, and the Engine section's acceptance read after its staging.
 - **libstdc++'s `std::deque` allocates its first node eagerly** (sections 6, 11). A one-block burst of tens of entries
   hides a deque regression, so the `[alloc]` case's press counts and run lengths (64 presses, 24 messages a block) are
   sized past that on purpose; a later case that stages less will not see a re-introduced deque.

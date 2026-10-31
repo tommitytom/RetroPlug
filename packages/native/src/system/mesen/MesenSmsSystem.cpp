@@ -381,8 +381,10 @@ void MesenSmsSystem::pressButton(std::uint8_t button, bool down) {
 }
 
 std::uint64_t MesenSmsSystem::inputAccepted() const {
-    return pressesAccepted_ + syncRole_.acceptedLevels();
+    return pressesAccepted_ + levelsAccepted();
 }
+
+std::uint64_t MesenSmsSystem::levelsAccepted() const { return syncRole_.acceptedLevels(); }
 
 std::uint64_t MesenSmsSystem::inputDropped() const {
     return pendingButtons_.dropped() + syncRole_.pendingDropped();

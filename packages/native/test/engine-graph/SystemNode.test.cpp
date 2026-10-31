@@ -2591,7 +2591,8 @@ struct NesInput {
         core.onMidi(&clock, 1);
         const std::uint8_t raw[] = {0x90, 67, 100, 0xF8, 0x80, 67, 0x00};
         core.pushCoreBytes(frames / 8, raw, sizeof raw, false);
-        // A settings upload's shape: a SysEx far longer than a MidiEvent holds, so it takes the node's raw door.
+        // A settings upload's shape: a SysEx far longer than a MidiEvent holds, down the raw door a node hands one to
+        // (pushCoreBytes), which is also what a protocol node's bytes input reaches.
         std::array<std::uint8_t, 256> sysex{};
         sysex.front() = 0xF0;
         sysex.back()  = 0xF7;
@@ -2615,9 +2616,10 @@ struct SmsInput {
 // and a burst of presses.
 struct GameBoyInput {
     void operator()(SystemBase& core, std::uint32_t frames) const {
-        // A run of notes and clocks, each message its bytes at its own frame, past a library deque's node (64 entries
-        // at this queue's size) and past what one block's presses leave queued, so a queue that grew on the block
-        // thread would show here even though it need not grow every block.
+        // A run of notes and clocks, each message's bytes at its own frame: a library deque allocates its first node
+        // on the first push, so a queue that grew on the block thread would show even though it need not grow every
+        // block. The 64 presses a block outrun what their 10 ms spacing consumes, so the press queue stays deep
+        // (the stems half takes a fresh core rather than filling it).
         for (int m = 0; m < 24; ++m) {
             const std::uint8_t status = (m % 4 == 3) ? 0xF8 : (m % 2 == 0 ? 0x90 : 0x80);
             const std::uint8_t bytes[] = {status, static_cast<std::uint8_t>(48 + m), 100};
@@ -2683,10 +2685,16 @@ void checkWholeBlocksAreFree(SystemBase& core, const std::vector<float*>& lanes,
     core.pressButton(0, false);
     for (int b = 0; b < 3; ++b) wholeBlock(core, 1024, lanes, false, stage);
     for (const std::uint32_t frames : kRaggedBlocks) {
+        // A window holds what it staged landed, not only that it was free: nothing it delivered was refused. A queue
+        // that grew instead of dropping would show in the allocation count above, and one sized 0 or an arena bound off
+        // by one would show here.
+        const std::uint64_t droppedBefore = core.inputDropped();
         const auto counted = wholeBlock(core, frames, lanes, true, stage);
-        INFO(frames << " frames: " << counted.allocations << " allocations, " << counted.frees << " frees");
+        INFO(frames << " frames: " << counted.allocations << " allocations, " << counted.frees << " frees, "
+                    << (core.inputDropped() - droppedBefore) << " dropped");
         REQUIRE(counted.allocations == 0);
         REQUIRE(counted.frees == 0);
+        REQUIRE(core.inputDropped() == droppedBefore);
     }
 }
 
@@ -2983,10 +2991,15 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
         auto core = nes(1, 0);
         core->reserveAudio(8192);  // what a node's activate does with its plan's maximum
         Lanes lanes(2);
-        const auto acceptedBefore = core->inputAccepted();
+        // Every block stages the same 271 non-press bytes (two notes, two clocks, a 7-byte raw run and a 256-byte
+        // SysEx), so the twelve the helper runs must have taken exactly that many: presses alone would leave a refused
+        // MIDI or raw run invisible.
+        const auto bytesBefore = core->acceptedBytes();
+        const auto droppedBefore = core->inputDropped();
         checkWholeBlocksAreFree(*core, {lanes.ptrs[0], lanes.ptrs[1]}, NesInput{});
         CHECK(core->audioRingOverflow() == 0);
-        CHECK(core->inputAccepted() > acceptedBefore);  // the staged input really reached the core
+        CHECK(core->acceptedBytes() - bytesBefore == 12 * (3 + 3 + 1 + 1 + 7 + 256));
+        CHECK(core->inputDropped() == droppedBefore);
     }
     SECTION("NES, its reliable link on") {
         // The link's own block-thread work: every message the host sends is framed as the block's emulation reaches its
@@ -2995,9 +3008,11 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
         auto core = linkedNes(1);
         core->reserveAudio(8192);
         Lanes lanes(2);
-        const auto acceptedBefore = core->inputAccepted();
+        const auto bytesBefore = core->acceptedBytes();
+        const auto droppedBefore = core->inputDropped();
         checkWholeBlocksAreFree(*core, {lanes.ptrs[0], lanes.ptrs[1]}, NesInput{});
-        CHECK(core->inputAccepted() > acceptedBefore);
+        CHECK(core->acceptedBytes() - bytesBefore == 12 * (3 + 3 + 1 + 1 + 7 + 256));
+        CHECK(core->inputDropped() == droppedBefore);
         const auto stats = core->coreTransportStats();
         CHECK(stats.linkFrames > 0);  // the frames really were built and sent, not skipped by a link that stayed off
     }
@@ -3011,10 +3026,12 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
             tap.push_back(lanes.ptrs[k]);
             tap.push_back(lanes.ptrs[k]);
         }
-        const auto acceptedBefore = core->inputAccepted();
+        const auto bytesBefore = core->acceptedBytes();
+        const auto droppedBefore = core->inputDropped();
         checkWholeBlocksAreFree(*core, tap, NesInput{});
         CHECK(core->tapOverflow() == 0);
-        CHECK(core->inputAccepted() > acceptedBefore);
+        CHECK(core->acceptedBytes() - bytesBefore == 12 * (3 + 3 + 1 + 1 + 7 + 256));
+        CHECK(core->inputDropped() == droppedBefore);
     }
     SECTION("NES, tap armed, driven through the mix") {
         // The narrow host's path (a split routing on a host too narrow for it): the tap captures every block and
@@ -3023,19 +3040,24 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
         auto core = nes(1, 1);
         core->reserveAudio(8192);
         Lanes lanes(2);
-        const auto acceptedBefore = core->inputAccepted();
+        const auto bytesBefore = core->acceptedBytes();
+        const auto droppedBefore = core->inputDropped();
         checkWholeBlocksAreFree(*core, {lanes.ptrs[0], lanes.ptrs[1]}, NesInput{});
         CHECK(core->audioRingOverflow() == 0);
         CHECK(core->tapOverflow() == 0);
-        CHECK(core->inputAccepted() > acceptedBefore);
+        CHECK(core->acceptedBytes() - bytesBefore == 12 * (3 + 3 + 1 + 1 + 7 + 256));
+        CHECK(core->inputDropped() == droppedBefore);
     }
     SECTION("NES, through the engine") {
         // The same promise at the level the host sees: the whole graph block, so the system node's own per-block work
         // (params, settings, the tap's sync, its message digests) is inside the window too, together with the core-side
-        // release of what the host staged through the node's own doors: a short message down pushCoreBytes, and a
-        // settings-length SysEx down the raw door the node uses for one longer than a MidiEvent holds. The core is the
-        // Engine's, so it publishes a whole savestate every 0.5 s: that capture allocates in Mesen's serializer, and is
-        // charged a full interval here before the window, which stays under one interval (~12.5 k of 24 k frames).
+        // release of what the host staged. The staging goes through the invoker's stageSystemMidi, which
+        // Engine::applyCommand applies to the core directly (its raw byte door, as a protocol node's bytes input would
+        // reach it): a short message and a settings-length SysEx, staged between blocks - the invoker applies every push
+        // inline while the audio thread owns nothing, so the window holds the release, not the staging, and the
+        // acceptance below is what holds the staging reached the core. The core is the Engine's, so it publishes a
+        // whole savestate every 0.5 s: that capture allocates in Mesen's serializer, and is charged a full interval
+        // here before the window, which stays under one interval (~12.5 k of 24 k frames).
         Engine e(kRate);
         rp::host::test::Roms roms;
         auto systems = std::vector<rp::host::test::DocSystem>{{1, rp::host::test::kNesType}};
@@ -3047,17 +3069,21 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
         Lanes lanes(2);
         for (int b = 0; b < 8; ++b) e.processBlock(1024, lanes.ptrs.data(), 2);  // warm
         chargeSnapshotInterval(*core);
+        const std::uint64_t bytesBefore = core->acceptedBytes();
+        const std::uint64_t droppedBefore = core->inputDropped();
+        std::size_t stagedBytes = 0;
         for (const std::uint32_t frames : kRaggedBlocks) {
             std::fill_n(lanes.ptrs[0], frames, 0.0f);
             std::fill_n(lanes.ptrs[1], frames, 0.0f);
             const std::uint64_t before = ramHash(*core);
-            // Staged between blocks, as a host stages it: what the node's inputs hold when the counted block begins.
             const std::uint8_t note[] = {0x90, 64, 100, 0xF8, 0x80, 64, 0x00};
             invoker.stageSystemMidi(1, std::vector<std::uint8_t>(note, note + sizeof note));
+            stagedBytes += sizeof note;
             std::array<std::uint8_t, 192> sysex{};
             sysex.front() = 0xF0;
             sysex.back()  = 0xF7;
             invoker.stageSystemMidi(1, std::vector<std::uint8_t>(sysex.begin(), sysex.end()));
+            stagedBytes += sysex.size();
             rp::test::beginCountingAllocations(true);
             e.processBlock(frames, lanes.ptrs.data(), 2);
             const auto counted = rp::test::endCountingAllocations();
@@ -3067,25 +3093,46 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
             // The plan's largest block ran: it was not refused as too long, and the core's RAM moved.
             if (frames == 8192) REQUIRE(ramHash(*core) != before);
         }
+        CHECK(core->acceptedBytes() - bytesBefore == stagedBytes);  // the staged bytes reached the core's queue
+        CHECK(core->inputDropped() == droppedBefore);
     }
     SECTION("SMS") {
         auto core = sms(1);
         core->reserveAudio(8192);
         Lanes lanes(2);
-        const auto acceptedBefore = core->inputAccepted();
+        // Four levels a block: the transport's own door, which a press-only check would not see landed.
+        const auto levelsBefore = core->levelsAccepted();
+        const auto droppedBefore = core->inputDropped();
         checkWholeBlocksAreFree(*core, {lanes.ptrs[0], lanes.ptrs[1]}, SmsInput{});
-        CHECK(core->inputAccepted() > acceptedBefore);
+        CHECK(core->levelsAccepted() - levelsBefore == 12 * 4);
+        CHECK(core->inputDropped() == droppedBefore);
     }
     SECTION("Game Boy") {
-        // Both shapes: the mixed stream, and the four stem pairs a plan that wires ch1..ch4 hands it.
-        auto core = mgb(1);
-        core->reserveAudio(8192);
-        Lanes mix(2);
-        const auto acceptedBefore = core->inputAccepted();
-        checkWholeBlocksAreFree(*core, {mix.ptrs[0], mix.ptrs[1]}, GameBoyInput{});
-        CHECK(core->inputAccepted() > acceptedBefore);
-        Lanes stems(8);
-        checkWholeBlocksAreFree(*core, stems.ptrs, GameBoyInput{});
+        // Both shapes, on a core each: the mixed stream, and the four stem pairs a plan that wires ch1..ch4 hands it.
+        // A fresh core for the second because a Game Boy schedules each press 10 ms after the previous one and carries
+        // the queue across blocks, so two long runs on one core would fill it and every later window would measure
+        // refusals rather than a free block. 72 serial bytes land a block (24 messages of three), on the queue a press
+        // burst does not reach.
+        {
+            auto core = mgb(1);
+            core->reserveAudio(8192);
+            Lanes mix(2);
+            const auto bytesBefore = core->serialInAccepted();
+            const auto droppedBefore = core->inputDropped();
+            checkWholeBlocksAreFree(*core, {mix.ptrs[0], mix.ptrs[1]}, GameBoyInput{});
+            CHECK(core->serialInAccepted() - bytesBefore == 12 * 24 * 3);
+            CHECK(core->inputDropped() == droppedBefore);
+        }
+        {
+            auto core = mgb(1);
+            core->reserveAudio(8192);
+            Lanes stems(8);
+            const auto bytesBefore = core->serialInAccepted();
+            const auto droppedBefore = core->inputDropped();
+            checkWholeBlocksAreFree(*core, stems.ptrs, GameBoyInput{});
+            CHECK(core->serialInAccepted() - bytesBefore == 12 * 24 * 3);
+            CHECK(core->inputDropped() == droppedBefore);
+        }
     }
     SECTION("GBA") {
         // A sibling fixture, so this leaves on a run without one (as CI's) rather than failing there.
@@ -3095,9 +3142,13 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
         core->onActivate(kRate);
         core->reserveAudio(8192);
         Lanes lanes(2);
-        const auto acceptedBefore = core->inputAccepted();
+        // Presses are the one door a GBA core offers, so acceptance is theirs to hold: the twelve blocks stage twelve
+        // each, and the helper's own warm-up pair (one press and its release) sits outside them.
+        const auto pressesBefore = core->inputAccepted();
+        const auto droppedBefore = core->inputDropped();
         checkWholeBlocksAreFree(*core, {lanes.ptrs[0], lanes.ptrs[1]}, GbaInput{});
-        CHECK(core->inputAccepted() > acceptedBefore);
+        CHECK(core->inputAccepted() - pressesBefore == 2 + 12 * 12);
+        CHECK(core->inputDropped() == droppedBefore);
     }
 }
 

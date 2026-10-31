@@ -445,8 +445,10 @@ CoreTransportStats MesenNesSystem::coreTransportStats() {
 }
 
 std::uint64_t MesenNesSystem::inputAccepted() const {
-    return pressesAccepted_ + (n8Role_ ? n8Role_->acceptedBytes() : 0);
+    return pressesAccepted_ + acceptedBytes();
 }
+
+std::uint64_t MesenNesSystem::acceptedBytes() const { return n8Role_ ? n8Role_->acceptedBytes() : 0; }
 
 std::uint64_t MesenNesSystem::inputDropped() const {
     if (!n8Role_) return pendingButtons_.dropped();

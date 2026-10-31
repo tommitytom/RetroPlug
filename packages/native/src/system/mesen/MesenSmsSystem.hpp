@@ -57,6 +57,9 @@ public:
     void pressButton(std::uint8_t button, bool down) override;
     std::uint64_t inputAccepted() const override;
     std::uint64_t inputDropped() const override;
+    // The levels the sync role's queue has taken since the core was built: the non-press half of inputAccepted(), for
+    // a test that holds a staged level reached the core rather than only a press.
+    std::uint64_t levelsAccepted() const;
 
     // Audio-thread: schedule host-transport sync levels at intra-block sample offsets. Each byte is
     // a controller-port level word (see SmsSyncRole for the encoding), NOT a protocol byte - this
