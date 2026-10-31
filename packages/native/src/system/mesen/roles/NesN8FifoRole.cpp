@@ -151,23 +151,16 @@ void NesN8FifoRole::rebase(std::uint32_t frames) {
     // Hand back the bytes of the runs that were released. They sit in front of the live ones in `bytes_`, but the
     // live runs are in queue order, which a sort by offset may have permuted, so the arena's bytes are not in queue
     // order: compacting front-to-back in queue order would overwrite a run it has not copied yet. Order the live run
-    // indices by where their bytes are instead, and move each run in that order; the index array is reserved with the
-    // queue, so this pass allocates nothing at the block's end.
+    // indices by where their bytes are instead, and move each run in that order; the index array and the sort's
+    // scratch are sized with the queue, so this pass allocates nothing at the block's end.
     const std::size_t liveRuns = pending_.size();
     if (liveRuns == 0) {
         bytes_.clear();
         return;
     }
     for (std::size_t i = 0; i < liveRuns; ++i) rebaseOrder_[i] = static_cast<std::uint32_t>(i);
-    for (std::size_t i = 1; i < liveRuns; ++i) {
-        const std::uint32_t index = rebaseOrder_[i];
-        std::size_t j = i;
-        while (j > 0 && pending_[rebaseOrder_[j - 1]].start > pending_[index].start) {
-            rebaseOrder_[j] = rebaseOrder_[j - 1];
-            --j;
-        }
-        rebaseOrder_[j] = index;
-    }
+    rebaseSort_.sort(rebaseOrder_.data(), rebaseOrder_.data() + liveRuns,
+                     [this](std::uint32_t a, std::uint32_t b) { return pending_[a].start < pending_[b].start; });
     std::size_t live = 0;
     for (std::size_t i = 0; i < liveRuns; ++i) {
         auto& run = pending_[rebaseOrder_[i]];

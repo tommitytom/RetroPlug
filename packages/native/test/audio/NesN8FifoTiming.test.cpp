@@ -16,6 +16,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "graph/CountingAllocator.hpp"
 #include "system/mesen/roles/NesN8FifoRole.hpp"
 #include "transport/MidiTypes.hpp"
 
@@ -240,6 +241,36 @@ TEST_CASE("flushAll empties both queues, unlike clear", "[audio][nes]") {
     role.flushAll();
     CHECK(role.fifoRxCount() == 0);
     CHECK(role.readFifoByte() == -1);
+}
+
+TEST_CASE("a rebase orders many carried runs without allocating", "[audio][nes][alloc]") {
+    // The rebase's index sort exists because the queue's order (by offset) and the arena's (by enqueue) differ. The
+    // worst case is the two feeds interleaving so the indices come out nearly reversed, which an insertion sort pays
+    // n * n / 2 for on the audio thread. rp::SortScratch keeps its buffer from construction, so the pass allocates
+    // nothing; the bytes read back in order hold that the compaction moved every run correctly.
+    NesN8FifoRole role;
+    constexpr std::uint32_t kBlock = 512;
+    constexpr int kRuns = 1024;
+    for (int i = 0; i < kRuns; ++i) {
+        const std::uint8_t byte = static_cast<std::uint8_t>(i);
+        // Descending offsets: after the offset sort the queue is in reverse enqueue order, so the arena order the
+        // rebase has to move the runs in is the reverse of the queue order.
+        role.pushBytes(kBlock + static_cast<std::uint32_t>(kRuns - i), &byte, 1);
+    }
+    role.pumpUntil(kBlock);
+    REQUIRE(role.pendingCount() == static_cast<std::size_t>(kRuns));
+    rp::test::beginCountingAllocations();
+    role.rebase(kBlock);
+    const auto counted = rp::test::endCountingAllocations();
+    INFO("rebase: " << counted.allocations << " allocations, " << counted.frees << " frees");
+    CHECK(counted.allocations == 0);
+    CHECK(counted.frees == 0);
+    // The run enqueued last is at offset 1; each pump releases the next offset, and its byte is the reverse of the
+    // enqueue order. A payload moved onto a run it had not copied yet shows up here.
+    for (int i = 0; i < kRuns; ++i) {
+        role.pumpUntil(static_cast<std::uint32_t>(i + 1));
+        CHECK(role.readFifoByte() == ((kRuns - 1 - i) & 0xFF));
+    }
 }
 
 TEST_CASE("a carried MIDI run and raw run keep their bytes across a rebase", "[audio][nes]") {

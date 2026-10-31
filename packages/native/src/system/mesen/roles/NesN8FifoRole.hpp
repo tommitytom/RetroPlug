@@ -175,8 +175,12 @@ private:
     rp::SortScratch<PendingRun> sortScratch_{kPendingRuns};
     std::vector<std::uint8_t>  bytes_;             // the runs' bytes, in enqueue order; the reserve is the bound
     // Live run indices, ascending by start, for rebase's compaction (sized with the queue, so that pass allocates
-    // nothing).
+    // nothing). The sort through them is rp::SortScratch's stable merge, not an insertion sort: the queue's order is
+    // by offset and the arena's by start, so the two feeds interleaving gives nearly reversed indices, which an
+    // insertion sort pays n * n / 2 for on the audio thread (about a million moves for these 4352 runs, every block a
+    // no-step block carries them all through).
     std::array<std::uint32_t, kPendingRuns> rebaseOrder_{};
+    rp::SortScratch<std::uint32_t>          rebaseSort_{kPendingRuns};
     std::uint64_t              pendingDropped_ = 0;
     std::uint64_t              acceptedBytes_  = 0;
     bool                       needsSort_ = false;  // set on enqueue; pumpUntil sorts by offset once
