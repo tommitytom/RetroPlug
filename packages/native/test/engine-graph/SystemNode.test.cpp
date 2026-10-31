@@ -46,6 +46,8 @@
 #include "graph/CanonicalJson.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "host/graph/HostIoNodes.hpp"
+#include "system/CoreBackends.hpp"
+#include "system/SystemFactory.hpp"
 #include "system/mesen/MesenAudioDevice.hpp"
 #include "system/mesen/MesenGbaSystem.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
@@ -2538,8 +2540,8 @@ rp::test::AllocationCount drainBlock(SystemBase& core, std::uint32_t frames, flo
 // Every ragged size on `core`, drained through `lanes`. The block drained at each size is the FIRST one at that size,
 // filled by real emulation just before it (a window that found an empty ring would measure the zero-fill instead of
 // the drain): a buffer that still grew lazily at a new high-water mark would allocate here. One 1-frame block is run
-// first, because a core's very first block publishes its state snapshot without being asked (SystemBase arms an
-// immediate publish at activation) and that capture allocates inside Mesen.
+// first, so none of the counted drains is a core's first block: a first block's storage filling, and the boot capture
+// a backend-built core arms, is the first-block case below; this one holds the drain on an already-running core.
 void checkRaggedDrainsAreFree(SystemBase& core, const std::vector<float*>& lanes) {
     drainBlock(core, 1, lanes.data(), lanes.size(), false, true);
     for (const std::uint32_t frames : kRaggedBlocks) {
@@ -3251,6 +3253,237 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
         checkWholeBlocksAreFree(*core, {lanes.ptrs[0], lanes.ptrs[1]}, GbaInput{});
         CHECK(core->inputAccepted() - pressesBefore == 2 + 12 * 12);
         CHECK(core->inputDropped() == droppedBefore);
+    }
+}
+
+TEST_CASE("a freshly built core's first block costs the boot savestate and nothing else",
+          "[engine-graph][system-node][alloc]") {
+    // A system added while others play is built and activated on the control thread, and its FIRST block then runs on
+    // the block thread with Mesen's frame plumbing still cold: the control manager's port snapshot, the four
+    // persistent RenderedFrame input copies (the PPU's, the decoder's two and the renderer's last) and the video
+    // filter's output buffer (about 240 KiB for a NES). Those are warmed at activation now, so a core built directly
+    // (as the cases above build theirs) has a first block that allocates and frees nothing, and a core the Engine
+    // builds pays exactly one more thing: the boot savestate capture that enableStateSnapshot arms for the first
+    // block. That capture allocates inside Mesen's serializer by nature, and it cannot move off the block thread
+    // without moving emulation: NesApu::Serialize calls EndFrame, so capturing at activation instead of at the first
+    // block's end would end an APU frame at a different point (and parity catches it). So it is pinned instead: the
+    // first block's count is measured against one capture on a twin core, so a regression that puts any other
+    // allocation back into that block fails here, on every platform, without pinning a platform's allocator.
+    const auto firstBlock = [](SystemBase& core, const std::vector<float*>& lanes) {
+        return wholeBlock(core, 1024, lanes, true, NoInput{});
+    };
+    // What one boot capture costs, measured on a twin that has run the same first block: the capture's allocation
+    // count follows its state's size, so a capture taken at boot (before the block) is not the same measurement.
+    const auto captureAfterFirstBlock = [](SystemBase& twin, const std::vector<float*>& lanes) {
+        wholeBlock(twin, 1024, lanes, false, NoInput{});
+        rp::test::beginCountingAllocations(true);
+        const auto bytes = twin.saveStateBytes();
+        const auto counted = rp::test::endCountingAllocations();
+        REQUIRE(!bytes.empty());
+        return counted;
+    };
+    SystemFactory factory;
+    registerCoreBackends(factory);
+    std::string why;
+    const auto build = [&factory, &why](SystemBuildRequest request) {
+        return factory.build(1, std::move(request), kRate, &why);
+    };
+    const auto nesCfg = [] {
+        MesenNesConfig c;
+        c.romPath = RP_BLIPTOASTER_ROM_PATH;
+        return c;
+    };
+    const auto smsCfg = [](bool gameGear, bool enableFm) {
+        MesenSmsConfig c;
+        c.romPath = gameGear ? RP_GG_ROM_PATH : RP_SMS_ROM_PATH;
+        c.gameGear = gameGear;
+        c.enableFm = enableFm;
+        return c;
+    };
+    const auto nesRequest = [&] {
+        SystemBuildRequest request;
+        request.rom = readFile(RP_BLIPTOASTER_ROM_PATH);
+        request.maxBlockFrames = 8192;
+        request.config = nesCfg();
+        return request;
+    };
+    const auto smsRequest = [&](bool gameGear, bool enableFm) {
+        SystemBuildRequest request;
+        request.rom = readFile(gameGear ? RP_GG_ROM_PATH : RP_SMS_ROM_PATH);
+        request.maxBlockFrames = 8192;
+        request.config = smsCfg(gameGear, enableFm);
+        return request;
+    };
+    const auto gbRequest = [] {
+        SameBoyConfig cfg;
+        cfg.model = SameBoyModel::DmgB;  // the DMG boot ROM plays its chime: real signal on the first block
+        cfg.fastBoot = false;
+        SystemBuildRequest request;
+        request.rom = readFile(RP_MGB_ROM_PATH);
+        request.maxBlockFrames = 8192;
+        request.config = cfg;
+        return request;
+    };
+
+    // A core built directly has no state snapshot enabled, so its first block is the frame plumbing's, which is warm.
+    SECTION("NES, built directly") {
+        auto core = nes(1, 0);
+        core->reserveAudio(8192);
+        Lanes lanes(2);
+        const auto counted = firstBlock(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+        INFO("first block: " << counted.allocations << " allocations, " << counted.frees << " frees");
+        CHECK(counted.allocations == 0);
+        CHECK(counted.frees == 0);
+    }
+    SECTION("NES, built by the Engine") {
+        auto twin = build(nesRequest());
+        REQUIRE(twin != nullptr);
+        Lanes twinLanes(2);
+        const auto capture = captureAfterFirstBlock(*twin, {twinLanes.ptrs[0], twinLanes.ptrs[1]});
+        auto core = build(nesRequest());
+        REQUIRE(core != nullptr);
+        Lanes lanes(2);
+        const auto counted = firstBlock(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+        INFO("first block: " << counted.allocations << " allocations, " << counted.frees << " frees; one capture: "
+                             << capture.allocations << " allocations, " << capture.frees << " frees");
+        REQUIRE(capture.allocations > 0);
+        CHECK(counted.allocations == capture.allocations);
+        CHECK(counted.frees == capture.frees);
+    }
+    SECTION("SMS, built directly") {
+        auto core = sms(1);
+        core->reserveAudio(8192);
+        Lanes lanes(2);
+        const auto counted = firstBlock(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+        INFO("first block: " << counted.allocations << " allocations, " << counted.frees << " frees");
+        CHECK(counted.allocations == 0);
+        CHECK(counted.frees == 0);
+    }
+    SECTION("SMS, built by the Engine") {
+        auto twin = build(smsRequest(false, false));
+        REQUIRE(twin != nullptr);
+        Lanes twinLanes(2);
+        const auto capture = captureAfterFirstBlock(*twin, {twinLanes.ptrs[0], twinLanes.ptrs[1]});
+        auto core = build(smsRequest(false, false));
+        REQUIRE(core != nullptr);
+        Lanes lanes(2);
+        const auto counted = firstBlock(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+        INFO("first block: " << counted.allocations << " allocations, " << counted.frees << " frees; one capture: "
+                             << capture.allocations << " allocations, " << capture.frees << " frees");
+        REQUIRE(capture.allocations > 0);
+        CHECK(counted.allocations == capture.allocations);
+        CHECK(counted.frees == capture.frees);
+    }
+    // A settings change that rebuilds a Master System (gameGear, enableFm) builds the core the same way, so the
+    // rebuilt core's first block is the same shape: the frame plumbing warm, one boot capture.
+    SECTION("SMS rebuilt as a Game Gear, built directly") {
+        auto core = std::make_unique<MesenSmsSystem>(1, smsCfg(true, false), readFile(RP_GG_ROM_PATH));
+        core->onActivate(kRate);
+        core->reserveAudio(8192);
+        Lanes lanes(2);
+        const auto counted = firstBlock(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+        INFO("first block: " << counted.allocations << " allocations, " << counted.frees << " frees");
+        CHECK(counted.allocations == 0);
+        CHECK(counted.frees == 0);
+    }
+    SECTION("SMS rebuilt as a Game Gear, built by the Engine") {
+        auto twin = build(smsRequest(true, false));
+        REQUIRE(twin != nullptr);
+        Lanes twinLanes(2);
+        const auto capture = captureAfterFirstBlock(*twin, {twinLanes.ptrs[0], twinLanes.ptrs[1]});
+        auto core = build(smsRequest(true, false));
+        REQUIRE(core != nullptr);
+        Lanes lanes(2);
+        const auto counted = firstBlock(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+        INFO("first block: " << counted.allocations << " allocations, " << counted.frees << " frees; one capture: "
+                             << capture.allocations << " allocations, " << capture.frees << " frees");
+        REQUIRE(capture.allocations > 0);
+        CHECK(counted.allocations == capture.allocations);
+        CHECK(counted.frees == capture.frees);
+    }
+    SECTION("SMS rebuilt with FM on, built directly") {
+        auto core = std::make_unique<MesenSmsSystem>(1, smsCfg(false, true), readFile(RP_SMS_ROM_PATH));
+        core->onActivate(kRate);
+        core->reserveAudio(8192);
+        Lanes lanes(2);
+        const auto counted = firstBlock(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+        INFO("first block: " << counted.allocations << " allocations, " << counted.frees << " frees");
+        CHECK(counted.allocations == 0);
+        CHECK(counted.frees == 0);
+    }
+    SECTION("SMS rebuilt with FM on, built by the Engine") {
+        auto twin = build(smsRequest(false, true));
+        REQUIRE(twin != nullptr);
+        Lanes twinLanes(2);
+        const auto capture = captureAfterFirstBlock(*twin, {twinLanes.ptrs[0], twinLanes.ptrs[1]});
+        auto core = build(smsRequest(false, true));
+        REQUIRE(core != nullptr);
+        Lanes lanes(2);
+        const auto counted = firstBlock(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+        INFO("first block: " << counted.allocations << " allocations, " << counted.frees << " frees; one capture: "
+                             << capture.allocations << " allocations, " << capture.frees << " frees");
+        REQUIRE(capture.allocations > 0);
+        CHECK(counted.allocations == capture.allocations);
+        CHECK(counted.frees == capture.frees);
+    }
+    SECTION("GBA, built directly") {
+        // A sibling fixture, so this SKIPs, counted, on a run without one (as CI's) rather than passing silently.
+        const auto rom = resourceFixture("/roms/nanoloop287d.gba");
+        if (rom.empty()) SKIP("the GBA fixture ROM is absent from the resources tree");
+        auto core = std::make_unique<MesenGbaSystem>(1, MesenGbaConfig{}, rom);
+        core->onActivate(kRate);
+        core->reserveAudio(8192);
+        Lanes lanes(2);
+        const auto counted = firstBlock(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+        INFO("first block: " << counted.allocations << " allocations, " << counted.frees << " frees");
+        CHECK(counted.allocations == 0);
+        CHECK(counted.frees == 0);
+    }
+    SECTION("GBA, built by the Engine") {
+        const auto rom = resourceFixture("/roms/nanoloop287d.gba");
+        if (rom.empty()) SKIP("the GBA fixture ROM is absent from the resources tree");
+        SystemBuildRequest request;
+        request.rom = rom;
+        request.maxBlockFrames = 8192;
+        request.config = MesenGbaConfig{};
+        auto twin = build(request);
+        REQUIRE(twin != nullptr);
+        Lanes twinLanes(2);
+        const auto capture = captureAfterFirstBlock(*twin, {twinLanes.ptrs[0], twinLanes.ptrs[1]});
+        request.rom = rom;
+        auto core = build(std::move(request));
+        REQUIRE(core != nullptr);
+        Lanes lanes(2);
+        const auto counted = firstBlock(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+        INFO("first block: " << counted.allocations << " allocations, " << counted.frees << " frees; one capture: "
+                             << capture.allocations << " allocations, " << capture.frees << " frees");
+        REQUIRE(capture.allocations > 0);
+        CHECK(counted.allocations == capture.allocations);
+        CHECK(counted.frees == capture.frees);
+    }
+    SECTION("Game Boy, built directly") {
+        auto core = mgb(1);
+        core->reserveAudio(8192);
+        Lanes lanes(2);
+        const auto counted = firstBlock(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+        INFO("first block: " << counted.allocations << " allocations, " << counted.frees << " frees");
+        CHECK(counted.allocations == 0);
+        CHECK(counted.frees == 0);
+    }
+    SECTION("Game Boy, built by the Engine") {
+        auto twin = build(gbRequest());
+        REQUIRE(twin != nullptr);
+        Lanes twinLanes(2);
+        const auto capture = captureAfterFirstBlock(*twin, {twinLanes.ptrs[0], twinLanes.ptrs[1]});
+        auto core = build(gbRequest());
+        REQUIRE(core != nullptr);
+        Lanes lanes(2);
+        const auto counted = firstBlock(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+        INFO("first block: " << counted.allocations << " allocations, " << counted.frees << " frees; one capture: "
+                             << capture.allocations << " allocations, " << capture.frees << " frees");
+        REQUIRE(capture.allocations > 0);
+        CHECK(counted.allocations == capture.allocations);
+        CHECK(counted.frees == capture.frees);
     }
 }
 

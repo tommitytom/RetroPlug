@@ -47,7 +47,8 @@ The rules below are the parts that don't fit those.
   and does so with a block's host input staged into it (C4,
   [docs/modular-graph-phase-c4-design.md](docs/modular-graph-phase-c4-design.md)): the ring, the scratches, the tap
   rings and the ingress queues sized from the build request's block and the capacities the inputs' sources declare,
-  the audio path and then the whole block counted at ragged sizes with input staged, the `[video]` hashes, a live arm
+  the audio path and then the whole block counted at ragged sizes with input staged, a freshly built core's first
+  block costing only the boot savestate capture, the `[video]` hashes, a live arm
   sizing nothing, a `[input-drops]` case per queue kind, the tap a capability only a NES offers (so the tap and the
   node's kind check name no console; the engine's one remaining console check is the N8 cart mirror's), and a node
   refusing a core of another console's kind; the engine places, re-arms and frees what the graph documents

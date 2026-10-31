@@ -43,6 +43,13 @@ public:
 
 	void Init();
 
+	// RetroPlug: size everything the first decoded frame will use, without decoding or emitting a frame: the two
+	// persistent frames' input snapshots, the video filter's output buffer (at the size the console's PPU emits) and
+	// the renderer's last-frame copy. A core calls this at activation, on the thread that builds it, so its first block
+	// does not allocate Mesen's frame plumbing on the block thread. Nothing a frame shows or carries changes: no
+	// notification, no frame count, no renderer call.
+	void WarmUp(uint32_t width, uint32_t height, const vector<ControllerData>& inputData);
+
 	void DecodeFrame(bool synchronous = false);
 	void TakeScreenshot();
 	void TakeScreenshot(std::stringstream &stream);

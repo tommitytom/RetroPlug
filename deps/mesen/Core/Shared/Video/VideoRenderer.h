@@ -77,6 +77,9 @@ public:
 	void StopThread();
 
 	void UpdateFrame(RenderedFrame& frame);
+	// RetroPlug: fill the last-frame copy's buffers for a frame, without passing it on to the rendering device, so a
+	// console's first block does not grow it. The next real UpdateFrame refills it in place, as ever.
+	void WarmUp(const RenderedFrame& frame);
 	void ClearFrame();
 	void RegisterRenderingDevice(IRenderingDevice *renderer);
 	void UnregisterRenderingDevice(IRenderingDevice *renderer);

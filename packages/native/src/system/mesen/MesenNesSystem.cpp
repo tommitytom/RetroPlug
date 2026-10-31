@@ -15,7 +15,9 @@
 #include "system/mesen/roles/NesN8FifoRole.hpp"
 
 #include "Core/NES/Input/NesController.h"
+#include "Core/NES/BaseNesPpu.h"
 #include "Core/NES/NesConsole.h"
+#include "Core/NES/NesConstants.h"
 #include "Core/NES/NesCpu.h"
 #include "Core/NES/NesSoundMixer.h"
 #include "Core/NES/NesMemoryManager.h"
@@ -266,6 +268,10 @@ void MesenNesSystem::onActivate(double sampleRate) {
                                          blockFrames(MesenAudioDevice::kDefaultBlockFrames));
             channelCapture_ = true;
         }
+
+        // The first emulated frame is this core's first block: warm the frame plumbing's storage here, on the thread
+        // that builds the core, so that block allocates nothing (docs/modular-graph-phase-c4-design.md section 4).
+        warmMesenFrames(*emu_, nesConsole->GetPpu(), NesConstants::ScreenWidth, NesConstants::ScreenHeight);
     }
 
     // Restore persisted battery RAM / savestate. Mesen's BatteryManager will

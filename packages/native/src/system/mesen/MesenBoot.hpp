@@ -8,7 +8,10 @@
 #include "Shared/Emulator.h"
 #include "Shared/SettingTypes.h"
 #include "Shared/Video/VideoRenderer.h"
+#include "Shared/Video/VideoDecoder.h"
 #include "Shared/Audio/SoundMixer.h"
+#include "Shared/BaseControlManager.h"
+#include "Shared/Interfaces/IConsole.h"
 #include "Utilities/VirtualFile.h"
 
 #include "system/mesen/MesenAudioDevice.hpp"
@@ -77,4 +80,20 @@ inline MesenCore bootMesenCore(const char*                           tag,
     out.emu->GetVideoRenderer()->RegisterRenderingDevice(out.video.get());
 
     return out;
+}
+
+/** Warm Mesen's per-frame video and input plumbing, off the block thread, at activation.
+ *
+ *  The first emulated frame is the core's first block, and it is what fills four persistent RenderedFrame input
+ *  snapshots (the PPU's own, the decoder's two and the renderer's last-frame copy), the control manager's port
+ *  snapshot and the video filter's output buffer (about 240 KiB for a NES). All of that is storage: filling it here,
+ *  with the states the control manager already holds and the size the console's PPU emits, leaves every frame and
+ *  every piece of emulation state exactly as it was, and takes the allocations off the block thread. `ppu` is the
+ *  console's PPU (or VDP); null skips its own frame, which only a console whose PPU has no persistent frame would do.
+ */
+template <typename Ppu>
+void warmMesenFrames(Emulator& emu, Ppu* ppu, std::uint32_t width, std::uint32_t height) {
+    const std::vector<ControllerData>& ports = emu.GetConsole()->GetControlManager()->GetPortStates();
+    if (ppu != nullptr) ppu->WarmUpFrame(ports);
+    emu.GetVideoDecoder()->WarmUp(width, height, ports);
 }

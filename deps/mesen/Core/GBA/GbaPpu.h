@@ -266,6 +266,14 @@ public:
 	
 	void DebugSendFrame();
 
+	// RetroPlug: fill the frame object's input snapshot at activation, so the first frame the PPU emits does not grow
+	// it inside a block. Only storage is sized; no frame is emitted and the next frame refills it before use.
+	void WarmUpFrame(const vector<ControllerData>& inputData)
+	{
+		_renderedFrame.Reset(nullptr, GbaConstants::ScreenWidth, GbaConstants::ScreenHeight, 1.0, 0);
+		_renderedFrame.SetInputData(inputData);
+	}
+
 	void WriteRegister(uint32_t addr, uint8_t value);
 	uint8_t ReadRegister(uint32_t addr);
 

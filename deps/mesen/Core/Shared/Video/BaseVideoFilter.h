@@ -47,6 +47,11 @@ public:
 	template<typename T> static void InitNtscFilter(T& ntscSetup, VideoConfig& cfg);
 
 	uint32_t* GetOutputBuffer();
+	// RetroPlug: size the output buffer for a frame of this base size, without applying a filter to anything. The
+	// first frame a console emits runs SendFrame inside its first block, and UpdateBufferSize's new uint32_t[w*h]
+	// would land on the block thread; a core warms this at activation instead, with the size its PPU emits, so the
+	// first frame only writes into a buffer that is already there. No frame, pixel or filter state changes.
+	void WarmUp(FrameInfo baseFrameInfo);
 	FrameInfo SendFrame(uint16_t *ppuOutputBuffer, uint32_t frameNumber, uint32_t videoPhase, void* frameData, bool enableOverscan = true);
 	void TakeScreenshot(string romName, VideoFilterType filterType);
 	void TakeScreenshot(VideoFilterType filterType, string filename, std::stringstream *stream = nullptr);

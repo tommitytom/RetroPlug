@@ -8,18 +8,28 @@ namespace {
 	// notification of its own gets a buffer of its own from the pool, so nesting stays correct. The pool grows to
 	// the deepest nesting a thread has seen and never again, so a frame's notifications allocate nothing.
 	//
-	// Each buffer is held behind its own pointer: growing the pool for a deeper nesting moves the pool's elements,
-	// and a reference to a buffer must stay valid across the nested send that grew it.
-	thread_local vector<unique_ptr<vector<weak_ptr<INotificationListener>>>> dispatchBuffers;
+	// The top-level buffer is a thread_local object of its own rather than an entry in the pool. A console sends at
+	// least one notification per frame (a resolution change, a frame-done), so the first send on ANY thread is the
+	// first block's, and allocating the pool's first entry there would put two allocations back on the audio thread.
+	// A nested send still gets its buffer from the pool, held behind its own pointer: growing the pool for a deeper
+	// nesting moves the pool's elements, and a reference to a buffer must stay valid across the nested send that
+	// grew it.
+	thread_local vector<weak_ptr<INotificationListener>> topLevelBuffer;
+	thread_local vector<unique_ptr<vector<weak_ptr<INotificationListener>>>> nestedBuffers;
 	thread_local size_t dispatchDepth = 0;
 
 	vector<weak_ptr<INotificationListener>>& takeDispatchBuffer()
 	{
-		if(dispatchBuffers.size() <= dispatchDepth) {
-			dispatchBuffers.push_back(std::make_unique<vector<weak_ptr<INotificationListener>>>());
+		if(dispatchDepth == 0) {
+			++dispatchDepth;
+			return topLevelBuffer;
 		}
-		unique_ptr<vector<weak_ptr<INotificationListener>>>& buffer = dispatchBuffers[dispatchDepth++];
-		return *buffer;
+		const size_t index = dispatchDepth - 1;
+		if(nestedBuffers.size() <= index) {
+			nestedBuffers.push_back(std::make_unique<vector<weak_ptr<INotificationListener>>>());
+		}
+		++dispatchDepth;
+		return *nestedBuffers[index];
 	}
 
 	// One SendNotification's buffer: taken from the pool on construction, handed back on any exit (a listener is

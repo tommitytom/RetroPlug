@@ -111,6 +111,16 @@ uint32_t* BaseVideoFilter::GetOutputBuffer()
 	return _outputBuffer;
 }
 
+// RetroPlug: the same two steps SendFrame takes to size its output, without OnBeforeApplyFilter or ApplyFilter. The
+// base frame info is the size the console's PPU emits (256x240 for the NES and SMS, 240x160 for the GBA), so the
+// first real frame's UpdateBufferSize finds a buffer of exactly the size it would have allocated.
+void BaseVideoFilter::WarmUp(FrameInfo baseFrameInfo)
+{
+	_baseFrameInfo = baseFrameInfo;
+	_frameInfo = GetFrameInfo();
+	UpdateBufferSize();
+}
+
 void BaseVideoFilter::InitConversionMatrix(double hueShift, double saturationShift)
 {
 	double hue = hueShift * PI;

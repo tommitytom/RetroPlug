@@ -16,6 +16,7 @@
 #include "Core/GBA/APU/GbaApu.h"
 #include "Core/GBA/GbaConsole.h"
 #include "Core/GBA/GbaCpu.h"
+#include "Core/GBA/GbaPpu.h"
 #include "Core/GBA/GbaMemoryManager.h"
 #include "Core/GBA/Input/GbaController.h"
 #include "Core/Shared/Audio/SoundMixer.h"
@@ -153,6 +154,11 @@ void MesenGbaSystem::onActivate(double sampleRate) {
     // Restore persisted battery RAM / savestate. Write directly into the
     // GbaSaveRam region rather than going through Mesen's BatteryManager.
     seedSramAndState(config_.sram, config_.savestate);
+
+    // The first emulated frame is this core's first block: warm the frame plumbing's storage here, on the thread that
+    // builds the core, so that block allocates nothing (docs/modular-graph-phase-c4-design.md section 4).
+    if (auto* console = dynamic_cast<GbaConsole*>(emu_->GetConsole().get()))
+        warmMesenFrames(*emu_, console->GetPpu(), GbaConstants::ScreenWidth, GbaConstants::ScreenHeight);
 
     // The block scratch exists before the first block, sized to the largest block this core will run: a block's audio
     // path may not allocate (docs/modular-graph-phase-c4-design.md section 4). A build for a plan is handed that plan's

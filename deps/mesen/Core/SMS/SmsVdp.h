@@ -183,6 +183,14 @@ public:
 	void SetRegion(ConsoleRegion region);
 
 	void DebugSendFrame();
+
+	// RetroPlug: fill the frame object's input snapshot at activation, so the first frame the VDP emits does not grow
+	// it inside a block. The VDP always emits 256x240 (see SmsVdp.cpp's SendFrame); only storage is sized.
+	void WarmUpFrame(const vector<ControllerData>& inputData)
+	{
+		_renderedFrame.Reset(nullptr, 256, 240, 1.0, 0);
+		_renderedFrame.SetInputData(inputData);
+	}
 	uint16_t GetScanline() { return _state.Scanline; }
 	uint16_t GetScanlineCount() { return _scanlineCount; }
 	uint16_t GetCycle() { return _state.Cycle; }

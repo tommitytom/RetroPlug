@@ -159,6 +159,17 @@ void VideoDecoder::WaitForAsyncFrameDecode()
 	//}
 }
 
+void VideoDecoder::WarmUp(uint32_t width, uint32_t height, const vector<ControllerData>& inputData)
+{
+	UpdateVideoFilter();
+	_videoFilter->WarmUp({ width, height });
+	_frame.Reset(nullptr, width, height, 1.0, 0);
+	_frame.SetInputData(inputData);
+	_convertedFrame.Reset(nullptr, width, height, 1.0, 0);
+	_convertedFrame.SetInputData(inputData);
+	_emu->GetVideoRenderer()->WarmUp(_frame);
+}
+
 void VideoDecoder::UpdateFrame(const RenderedFrame& frame, bool sync, bool forRewind)
 {
 	if(_emu->IsRunAheadFrame()) {

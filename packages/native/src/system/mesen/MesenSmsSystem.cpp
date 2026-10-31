@@ -17,6 +17,7 @@
 
 #include "Core/SMS/Input/SmsController.h"
 #include "Core/SMS/SmsConsole.h"
+#include "Core/SMS/SmsVdp.h"
 #include "Core/SMS/SmsControlManager.h"
 #include "Core/SMS/SmsCpu.h"
 #include "Core/SMS/SmsMemoryManager.h"
@@ -302,6 +303,11 @@ void MesenSmsSystem::onActivate(double sampleRate) {
         // dynamic_cast per event on the audio thread.
         controlManager_ = dynamic_cast<SmsControlManager*>(console->GetControlManager());
         if (controlManager_) syncRole_.onAttach(*controlManager_, console->GetMemoryManager(), config_.gameGear);
+
+        // The first emulated frame is this core's first block: warm the frame plumbing's storage here, on the thread
+        // that builds the core, so that block allocates nothing (docs/modular-graph-phase-c4-design.md section 4).
+        // The VDP always emits 256x240 (its overscan, not the frame, is what changes for a Game Gear).
+        warmMesenFrames(*emu_, console->GetVdp(), 256, 240);
     }
 
     // Restore persisted battery RAM / savestate. Write directly into the

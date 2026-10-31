@@ -2,6 +2,7 @@
 #include "pch.h"
 #include "NES/INesMemoryHandler.h"
 #include "Utilities/ISerializable.h"
+#include "NES/NesConstants.h"
 #include "NES/NesTypes.h"
 #include "Shared/RenderedFrame.h"
 
@@ -149,6 +150,15 @@ public:
 	void WritePaletteRam(uint16_t addr, uint8_t value);
 
 	void DebugSendFrame();
+
+	// RetroPlug: fill the frame object's input snapshot at activation, on the thread that builds the core, so the
+	// first frame the PPU emits does not grow it inside a block. Only the snapshot's storage is sized: no frame is
+	// emitted and nothing the next frame carries changes (SendFrame refills it before use).
+	void WarmUpFrame(const vector<ControllerData>& inputData)
+	{
+		_renderedFrame.Reset(nullptr, NesConstants::ScreenWidth, NesConstants::ScreenHeight, 1.0, 0);
+		_renderedFrame.SetInputData(inputData);
+	}
 
 	virtual PpuModel GetPpuModel() = 0;
 	virtual uint32_t GetPixelBrightness(uint8_t x, uint8_t y) = 0;

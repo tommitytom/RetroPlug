@@ -163,6 +163,14 @@ void VideoRenderer::UpdateFrame(RenderedFrame& frame)
 	}
 }
 
+void VideoRenderer::WarmUp(const RenderedFrame& frame)
+{
+	auto lock = _frameLock.AcquireSafe();
+	_lastFrame.Reset(frame.FrameBuffer, frame.Width, frame.Height, frame.Scale, frame.FrameNumber, frame.VideoPhase);
+	_lastFrame.Data = frame.Data;
+	_lastFrame.SetInputData(frame.InputData);
+}
+
 void VideoRenderer::ClearFrame()
 {
 	if(_renderer) {
