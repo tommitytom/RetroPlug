@@ -59,9 +59,10 @@ std::unique_ptr<MesenNesSystem> buildNes(std::uint32_t channelExportMode) {
     return sys;
 }
 
-// The block triad driven directly, as the engine's system node drives it: prepare, step until the block
-// is produced, finish into `lanes` (which the caller zeroed).
+// The block triad driven directly, as the engine's system node drives it: tell the core which lanes the block
+// drains, prepare, step until the block is produced, finish into `lanes` (which the caller zeroed).
 void runBlock(SystemBase& s, const AudioBlockInfo& info, float* const* lanes, std::size_t laneCount) {
+    s.setBlockLanes(laneCount);
     s.prepareForBlock(info);
     while (s.stepIfBelowTarget(info.frames)) {
     }

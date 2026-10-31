@@ -11,8 +11,8 @@
 // reader-hint discipline as FrameBufferTriple, but the slot type is a
 // fixed-size std::vector<std::uint8_t> sized at construction.
 //
-// Writer: the block thread, between emulator-step boundaries (after onProcess()
-// finishes a block, guaranteed internally consistent state).
+// Writer: the block thread, between emulator-step boundaries (after the block's
+// finishBlock publish; the CPU is not mid-instruction, so the state is internally consistent).
 // Readers: SnapshotRegistry::publishSystem on that same block thread, for
 // SystemBase's whole-savestate triple, and the control thread for the
 // registry's own shadows. Tear-free for multi-byte structs because the writer

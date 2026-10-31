@@ -11,7 +11,7 @@
 // packages/retroplug/src/script/nodes/ports.ts declares, and none of them depend on the block size.
 //
 // A core sizes its ingress queues from them when it is built, so a block's input grows nothing on the block thread
-// (docs/modular-graph-phase-c4-design.md section 4).
+// (docs/modular-graph-phase-c4-design.md section 11).
 namespace rp {
 
 struct InputCapacity {

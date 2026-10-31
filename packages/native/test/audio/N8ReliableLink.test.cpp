@@ -117,10 +117,10 @@ TEST_CASE("reliable link: a window that fills without an ack gives up the oldest
     // The sender's window is 48 frames. A cart that stops answering must not make it grow: at the 49th frame the
     // oldest are given up and a sync goes out ahead of the new frame, so the ROM is re-pointed at what follows.
     N8ReliableSender s;
-    std::size_t framesInWire = 0;
+    Bytes wire;
     int framesSentByEmit = 0;  // the seq >= 0 marker counts first sends (and later re-sends) on the wire
     const auto emit = [&](const std::uint8_t* d, std::size_t n, int seq) {
-        framesInWire += n;
+        wire.insert(wire.end(), d, d + n);
         if (seq >= 0) ++framesSentByEmit;
     };
     for (int i = 0; i < 49; ++i) {
@@ -130,7 +130,13 @@ TEST_CASE("reliable link: a window that fills without an ack gives up the oldest
     CHECK(s.framesSent() == 49);
     CHECK(framesSentByEmit == 49);
     CHECK(s.outstanding() == 1);   // the 49th send cleared the window before its own frame
-    CHECK(framesInWire > 0);
+    // And the re-sync it gave the ROM first: F4 <next seq> immediately ahead of that 49th frame, so the ROM is
+    // re-pointed at what follows rather than left expecting a frame that is never coming.
+    const Bytes last = frame(48, noteOn(0, 60, 100));
+    REQUIRE(wire.size() >= last.size() + 2);
+    CHECK(Bytes(wire.end() - static_cast<std::ptrdiff_t>(last.size()), wire.end()) == last);
+    CHECK(wire[wire.size() - last.size() - 2] == 0xF4);
+    CHECK(wire[wire.size() - last.size() - 1] == 48);
 }
 
 TEST_CASE("reliable link: running status is expanded, real-time passes through, SysEx is one frame", "[audio][nes][link]") {

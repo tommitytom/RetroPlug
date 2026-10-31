@@ -46,8 +46,9 @@ thread_local std::size_t refuseFrom = SIZE_MAX;  // an allocation of at least th
 std::atomic<int>  allocations{0};  // while counting
 std::atomic<int>  frees{0};        // while counting
 
-// The allocator the blocks are actually allocated from. Under C counting that is glibc's, called by name so the
-// interposed free below does not see (and count) the frees our own operator delete makes.
+// The allocator the blocks are actually allocated from. Under C counting that is glibc's: systemFree calls it by name
+// so the interposed free below does not see (and count) the frees our own operator delete makes, and systemAlloc asks
+// it directly rather than through malloc, which this file redefines.
 void* systemAlloc(std::size_t n, std::size_t align) {
     if (align < alignof(std::max_align_t)) align = alignof(std::max_align_t);
     if (n > SIZE_MAX - align) return nullptr;  // rounding up would wrap

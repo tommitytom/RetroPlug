@@ -182,7 +182,8 @@ TEST_CASE("Engine StereoPinSplit gives each pin its own PAIR, mirrored L=R",
 TEST_CASE("StereoPinSplit needs 6 lanes, so a narrow host falls back rather than truncating",
           "[audio][channelsplit][nes]") {
     // The SDL 4-channel case: mono Pins (3 lanes) fits, the pair-per-pin layout does not, so TS wires it as
-    // Stereo and arms the tap all the same (the narrow-host defect, docs/modular-graph-phase-b0-design.md 2.5).
+    // Stereo and arms the tap all the same: the tap's capture is wasted, and the block hears the mix (the narrow
+    // host's path; docs/modular-graph-phase-b0-design.md 2.5 and modular-graph-phase-c4-design.md section 10).
     NesRig rig;
     Engine& eng = rig.eng;
     rig.place(rearming(graphRequest(stereoDocument({{1, kNesType, rig.rom}}, 4), {1}), 1, 1));

@@ -7,11 +7,11 @@
 //
 // A C library's blocks are malloc's, not operator new's, so the C library's allocation entry points (malloc,
 // calloc, realloc, free) are replaced too, where the platform's allocator can be reached by name: on glibc, and not
-// under AddressSanitizer (whose allocator must see every block) or on Windows (which links the static CRT, where the
-// CRT's malloc cannot be defined twice). countsCAllocations() says whether this binary sees them, so a case that holds
-// a C allocation can say what it measured. They are counted only on request, because a window can be measuring a
-// subsystem whose own allocations ARE the C library's: the script host's QuickJS allocates through malloc, and the
-// script cases read QuickJS's counters for its side and hold operator new to zero for ours.
+// under AddressSanitizer or ThreadSanitizer (whose allocators must see every block) or on Windows (which links the
+// static CRT, where the CRT's malloc cannot be defined twice). countsCAllocations() says whether this binary sees
+// them, so a case that holds a C allocation can say what it measured. They are counted only on request, because a
+// window can be measuring a subsystem whose own allocations ARE the C library's: the script host's QuickJS allocates
+// through malloc, and the script cases read QuickJS's counters for its side and hold operator new to zero for ours.
 
 #include <cstddef>
 

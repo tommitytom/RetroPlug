@@ -122,7 +122,12 @@ public:
 
     // Drop all queued (not-yet-delivered) bytes — on reset, to avoid stale MIDI after a state change. With the link
     // on, its window goes too and the next frame is preceded by a sync: the ROM's sequence may no longer be ours.
-    void clear() { pending_.clear(); bytes_.clear(); needsSort_ = false; if (link_) { link_->reset(); linkDueCycle_ = kNoDue; } }
+    void clear() {
+        pending_.clear();
+        bytes_.clear();
+        needsSort_ = false;
+        if (link_) { link_->reset(); linkDueCycle_ = kNoDue; }
+    }
 
     // Drop BOTH queues: the not-yet-delivered bytes AND the delivered-but-unread ones sitting in the
     // FIFO's RX queue. `clear()` alone leaves the latter, which the ROM would still read. Used on a
@@ -133,8 +138,10 @@ public:
     // Introspection / tests.
     // Queued raw BYTES; link-mode messages wait unframed and are not counted (no caller needs them).
     std::size_t pendingCount() const;
-    // Bytes the queue dropped for want of room since this role was built. The queue holds what a block's midi and
-    // bytes inputs can deliver, so this is zero unless a role is fed outside a plan's queues.
+    // Bytes the queue dropped for want of room since this role was built. It holds a block of the midi and bytes
+    // inputs' declared capacities, so zero is what a plan's block gives it; a Game Boy serialOut block wired into
+    // bytes (8256 messages) or a maximal linked block (framing and re-sends add bytes) can exceed that, and those
+    // bytes are dropped and counted rather than growing the queue.
     std::uint64_t pendingDropped() const { return pendingDropped_; }
     // Bytes the queue has accepted since this role was built, for a test that staged input reached it.
     std::uint64_t acceptedBytes() const { return acceptedBytes_; }
@@ -157,8 +164,10 @@ private:
         std::uint32_t start;    // first byte in bytes_
         std::uint32_t count;
     };
-    // Sized to what a block's midi and bytes inputs can deliver: a run a message, and its bytes here. The bound is
-    // also the FIFO's first two stages' (NesEverdriveFifo), so a block's host input fits all the way through.
+    // Sized to a block of the midi and bytes inputs' declared capacities: a run a message, and its bytes here. The
+    // FIFO's own stages are bounded the same way (NesEverdriveFifo), so a plan's block fits all the way through; a
+    // Game Boy serialOut block wired into bytes (8256 runs) or a maximal linked block's framing bytes can exceed both,
+    // and are dropped and counted at whichever bound comes first.
     static constexpr std::size_t kPendingRuns = std::size_t(rp::kMidiInput.messages) + rp::kBytesInput.messages;
     static constexpr std::size_t kPendingBytes = std::size_t(rp::kMidiInput.bytes) + rp::kBytesInput.bytes;
     rp::FixedQueue<PendingRun> pending_{kPendingRuns};

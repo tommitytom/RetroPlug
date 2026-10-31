@@ -51,8 +51,8 @@ void NesN8FifoRole::pushBytes(std::uint32_t offset, const std::uint8_t* data, st
     // stream position it replaces.
     if (flush) flushAll();
     // One run per message, whichever way it is delivered: the bytes go into the FIFO in order as their offset comes due
-    // (raw mode), or are framed and sent as one message (the link), which is why a long SysEx or a multi-message run
-    // survives the link's framing.
+    // (raw mode), or are framed and sent as one message (the link). A multi-message run survives the framing; a SysEx
+    // longer than a frame may carry (kMaxMessage) does not, and the sender drops it rather than split it.
     queue(offset, data, count);
 }
 
@@ -92,8 +92,9 @@ void NesN8FifoRole::serviceLink() {
 void NesN8FifoRole::onMidi(const ::MidiEvent* events, std::uint32_t count) {
     if (events == nullptr || count == 0) return;
     // Each event is one MIDI-framed run at its frame: pushed into the FIFO in order when it comes due (raw mode), or
-    // framed as one message then (the link). The link ignores anything longer than a MidiEvent holds, and the node sends
-    // such a run down pushCoreBytes instead.
+    // framed as one message then (the link). A message longer than a MidiEvent holds is clamped to kDataSize here, in
+    // both modes (the sender would drop a frame over kMaxMessage); the node sends such a run down pushCoreBytes
+    // instead.
     for (std::uint32_t i = 0; i < count; ++i) {
         const auto& ev = events[i];
         const std::uint32_t size = ev.size > ::MidiEvent::kDataSize ? ::MidiEvent::kDataSize : ev.size;
@@ -110,9 +111,9 @@ std::size_t NesN8FifoRole::pendingCount() const {
 
 void NesN8FifoRole::pumpUntil(std::uint32_t sampleOffset) {
     if (needsSort_) {
-        // Stable so two runs at one offset keep their enqueue order (the sender's parser relies on it: running status,
-        // a SysEx split across pushes) with any carried in from an earlier block ahead of them, and so a run's own bytes
-        // stay together. Runs once per block (all enqueuing precedes the step loop), after which this is a plain
+        // Stable so two runs at one offset keep their enqueue order (the sender's parser relies on it: running
+        // status, a SysEx split across pushes) with any carried in from an earlier block ahead of them, and so a run's
+        // own bytes stay together. Runs once per block (all enqueuing precedes the step loop), after which this is a plain
         // front-drain. A split SysEx holds together only at ONE offset: halves at different offsets with a message
         // released between them are cut by the sender's parser (no caller splits one that way).
         sortScratch_.sort(pending_.begin(), pending_.end(),

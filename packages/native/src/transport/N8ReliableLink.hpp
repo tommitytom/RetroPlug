@@ -172,7 +172,8 @@ private:
             msgTooLong_ = false;
         }
         if (b == 0xF0) { status_ = 0; msg_[0] = b; msgLen_ = 1; msgTooLong_ = false; inSysex_ = true; return; }
-        if (b >= 0xF0) { status_ = 0; msgLen_ = 0; msgTooLong_ = false; return; }  // System Common: the ROM ignores them
+        // System Common: the ROM ignores them.
+        if (b >= 0xF0) { status_ = 0; msgLen_ = 0; msgTooLong_ = false; return; }
         if (b & 0x80) { status_ = b; msg_[0] = b; msgLen_ = 1; return; }
         if (status_ == 0) return;                       // data with no status: junk
         if (msgLen_ == 0) msg_[msgLen_++] = status_;    // running status: every frame carries its status

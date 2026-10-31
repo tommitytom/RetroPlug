@@ -262,7 +262,8 @@ namespace rp {
 
 		// One block of file data, reused by the two paths that read the open file (a CMD_F_FRD reply and a
 		// CMD_F_FRD_MEM transfer). Each writes the whole length it asks for before reading any of it, so what the
-		// buffer held does not matter. It grows to the largest read a ROM has asked for and keeps that.
+		// buffer held does not matter. It grows to the read in progress and keeps only the SDK's largest read
+		// (FILE_READ_MAX) between them: a ROM that asks for one huge read does not pin that buffer for the core's life.
 		std::vector<uint8_t> _ioScratch;
 
 		// CMD_F_FWR block state: bytes still owed for the whole write, and the block being collected.
@@ -300,9 +301,9 @@ namespace rp {
 		// What the host has handed over but the wire has not yet carried: it stands for the host's own
 		// outbound buffer, which has no cartridge counterpart. Bytes cross into _rxQueue at
 		// _wireBytesPerSecond (see pumpWire), and only there can they be dropped, by the queue being full.
-		// The buffer is sized to one block's host input (kMidiInput + kBytesInput, what a system node's midi
-		// and bytes inputs can deliver), so a block never grows it; a push beyond that is dropped and counted
-		// with the RX queue's drops, which no host that outruns the modelled wire by more than a block does.
+		// The buffer is sized to one block of the midi and bytes inputs' declared capacities (kMidiInput + kBytesInput),
+		// so a plan's block never grows it; a push beyond that is dropped and counted with the RX queue's drops. A Game
+		// Boy serialOut block wired into bytes, or a maximal linked block's framing bytes, can exceed it.
 		rp::FixedQueue<uint8_t> _wireQueue{std::size_t(kMidiInput.bytes) + kBytesInput.bytes};
 		uint32_t _wireBytesPerSecond = 0;   // 0 = instant: the wire is not modelled
 		uint64_t _wireLastCycle      = 0;
@@ -914,6 +915,11 @@ namespace rp {
 			return _ioScratch.data();
 		}
 
+		// Give back a scratch grown past the SDK's largest read once the read that needed it is done.
+		void releaseIoScratch() {
+			if (_ioScratch.size() > FILE_READ_MAX) std::vector<uint8_t>(FILE_READ_MAX).swap(_ioScratch);
+		}
+
 		// Read a length-prefixed string out of _params at a given offset.
 		// Returns the string and advances offset past it.
 		std::string readParamString(size_t offset) {
@@ -1128,12 +1134,14 @@ namespace rp {
 			// Nothing to give (no open file, or already at EOF) is an ERROR, not a success with no data:
 			// a resp of 0 followed by no bytes leaves a polling ROM waiting for a payload forever.
 			if (got == 0) {
+				releaseIoScratch();
 				pushRx(0x04); // FAT_NO_FILE
 				return;
 			}
 
 			pushRx(0x00); // success resp
 			for (uint32_t i = 0; i < got; i++) pushRx(buf[i]);
+			releaseIoScratch();
 		}
 
 		// CMD_F_FRD_MEM: STAGE the transfer, do NOT perform it. The ROM arms $40FF AFTER sending
@@ -1202,7 +1210,9 @@ namespace rp {
 
 			// The writer validates the whole range before writing a byte, so a refusal leaves both
 			// cartridge memory and the file pointer untouched.
-			if (!_cartWriter(piAddr, buf, got)) return 0x13;
+			const bool written = _cartWriter(piAddr, buf, got);
+			releaseIoScratch();
+			if (!written) return 0x13;
 
 			_filePtr += got;
 			return 0;

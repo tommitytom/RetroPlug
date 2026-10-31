@@ -250,14 +250,21 @@ TEST_CASE("a carried MIDI run and raw run keep their bytes across a rebase", "[a
     NesN8FifoRole role;
     constexpr std::uint32_t kBlock = 512;
 
-    const ::MidiEvent message = noteOn(kBlock + 388, 64);  // 900, enqueued first
+    // A run that IS released this block, queued first, so its bytes sit in front of both carried runs and the
+    // compaction has to move each of them down (without it, the carried runs start where the released one did and
+    // every memmove is skipped).
+    const std::uint8_t early[] = {0xAA, 0xBB};
+    role.pushBytes(100, early, sizeof early);
+    const ::MidiEvent message = noteOn(kBlock + 388, 64);  // 900, enqueued second
     role.onMidi(&message, 1);
-    const std::uint8_t raw[] = {0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04};  // 600, enqueued second
+    const std::uint8_t raw[] = {0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04};  // 600, enqueued third
     role.pushBytes(kBlock + 88, raw, sizeof raw);
 
-    role.pumpUntil(kBlock);  // neither is due; the sort puts the raw run ahead of the message in the queue
+    role.pumpUntil(kBlock);  // the early run comes due; the sort puts the raw run ahead of the message in the queue
+    CHECK(role.fifoRxCount() == static_cast<int>(sizeof early));
+    for (const std::uint8_t byte : early) CHECK(role.readFifoByte() == static_cast<int>(byte));
     CHECK(role.pendingCount() == 3 + sizeof raw);
-    role.rebase(kBlock);     // both carried: 88 and 388
+    role.rebase(kBlock);     // both carried: 88 and 388, moved down past where the early run's bytes were
 
     role.pumpUntil(88);
     CHECK(role.fifoRxCount() == static_cast<int>(sizeof raw));
