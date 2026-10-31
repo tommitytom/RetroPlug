@@ -1,9 +1,10 @@
-// The fixed storage a core's ingress queues are built from (docs/modular-graph-phase-c4-design.md section 4):
+// The fixed storage a core's ingress queues are built from (docs/modular-graph-phase-c4-design.md section 11):
 // FixedQueue's refusal and its compaction when the storage is full but a prefix was consumed, FixedByteRing's wrap,
 // and SortScratch's stability and its bound. These are the branches a block relies on and a core's cases reach only
 // indirectly.
 
 #include <cstdint>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -66,6 +67,25 @@ TEST_CASE("FixedQueue compacts a consumed prefix before a push, keeping the live
     CHECK(live == std::vector<int>{20, 30, 40});
 }
 
+TEST_CASE("FixedQueue pop on an empty queue is a no-op, and the queue still takes an entry", "[graph][fixed-queue]") {
+    rp::FixedQueue<int> queue(2);
+    queue.pop();  // moving the head past the end would make size() wrap round
+    CHECK(queue.empty());
+    CHECK(queue.size() == 0);
+    CHECK(queue.push(1));
+    CHECK(queue.size() == 1);
+    CHECK(queue.front() == 1);
+    queue.pop();
+    CHECK(queue.empty());
+}
+
+TEST_CASE("FixedQueue is not copyable, so a copy cannot silently lose its reservation", "[graph][fixed-queue]") {
+    // vector's copy allocates size(), not capacity(), so a copied queue would reallocate on its next push.
+    STATIC_REQUIRE(!std::is_copy_constructible_v<rp::FixedQueue<int>>);
+    STATIC_REQUIRE(!std::is_copy_assignable_v<rp::FixedQueue<int>>);
+    STATIC_REQUIRE(std::is_move_constructible_v<rp::FixedQueue<int>>);
+}
+
 TEST_CASE("FixedByteRing wraps and delivers in arrival order over more than its capacity", "[graph][fixed-byte-ring]") {
     rp::FixedByteRing ring(4);
     CHECK(ring.capacity() == 4);
@@ -91,6 +111,24 @@ TEST_CASE("FixedByteRing wraps and delivers in arrival order over more than its 
     }
     CHECK(got == std::vector<std::uint8_t>{3, 4, 5, 6});
     CHECK(ring.dropped() == 1);
+}
+
+TEST_CASE("FixedByteRing reserve re-lays a wrapped queue out, keeping its bytes in order", "[graph][fixed-byte-ring]") {
+    rp::FixedByteRing ring(4);
+    for (std::uint8_t b = 1; b <= 4; ++b) CHECK(ring.push(b));
+    ring.pop();
+    ring.pop();
+    CHECK(ring.push(5));
+    CHECK(ring.push(6));  // head is 2 and the queue has wrapped: 3 and 4 sit after the new bytes
+    ring.reserve(8);
+    CHECK(ring.capacity() == 8);
+    CHECK(ring.size() == 4);
+    std::vector<std::uint8_t> got;
+    while (!ring.empty()) {
+        got.push_back(ring.front());
+        ring.pop();
+    }
+    CHECK(got == std::vector<std::uint8_t>{3, 4, 5, 6});
 }
 
 namespace {

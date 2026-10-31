@@ -7,12 +7,14 @@
 #include <vector>
 
 // The queues a block feeds, held in storage sized before the block runs (docs/modular-graph-phase-c4-design.md
-// section 4). A core's ingress queues are filled on the block thread, so they may not grow there: each is reserved to
+// section 11). A core's ingress queues are filled on the block thread, so they may not grow there: each is reserved to
 // the most a block can deliver when the core is built, and a push that does not fit is dropped and counted rather than
 // allocating. The bound is the one a graph queue has (a push that does not fit is dropped and counted).
 //
 // One buffer and a head index rather than a deque: a deque allocates a node on its first push (or at construction, on
-// libstdc++), and allocates another as it grows, on whichever thread first reaches that depth.
+// libstdc++), and allocates another as it grows, on whichever thread first reaches that depth. The buffer stays
+// contiguous because a block sorts the live range in place before it drains it (rp::SortScratch); a push that finds
+// the storage full with a consumed prefix compacts it (an O(entries) move) rather than wrapping round.
 
 namespace rp {
 
@@ -21,6 +23,12 @@ class FixedQueue {
 public:
     FixedQueue() = default;
     explicit FixedQueue(std::size_t capacity) { reserve(capacity); }
+    // A copy would lose the reservation (vector's copy allocates size(), not capacity()) and its next push would
+    // reallocate on the block thread, so copies are not offered. A move carries the reservation.
+    FixedQueue(const FixedQueue&)            = delete;
+    FixedQueue& operator=(const FixedQueue&) = delete;
+    FixedQueue(FixedQueue&&)                 = default;
+    FixedQueue& operator=(FixedQueue&&)      = default;
 
     // Room for `capacity` entries. Growth only, and only where allocating is allowed (a core's construction, an
     // activation): a queue never grows while a block runs.
@@ -60,6 +68,7 @@ public:
     T&       back() { return buffer_.back(); }
     const T& back() const { return buffer_.back(); }
     void     pop() {
+        if (head_ == buffer_.size()) return;  // empty: a head past the end would make size() wrap round
         ++head_;
         if (head_ == buffer_.size()) clear();
     }
@@ -94,7 +103,12 @@ public:
 
     void reserve(std::size_t capacity) {
         if (capacity <= capacity_) return;
-        bytes_.resize(capacity);
+        // Re-lay the live bytes out from the front, so a wrapped queue keeps its arrival order when the modulus
+        // changes. Only construction and activation call this, when the ring is usually empty (nothing to move).
+        std::vector<std::uint8_t> grown(capacity, 0);
+        for (std::size_t i = 0; i < size_; ++i) grown[i] = bytes_[(head_ + i) % capacity_];
+        bytes_.swap(grown);
+        head_ = 0;
         capacity_ = capacity;
     }
     std::size_t capacity() const { return capacity_; }
