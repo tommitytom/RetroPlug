@@ -266,6 +266,14 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     discard are paid for. Not arming a split that does not fit is a CPU-only change (`buildGraph` knows the lane
     budget) and is nobody's bug.
   - **The cores this fork does not run** (PCE, SNES, WS) still copy a frame's snapshot once more per emulated frame.
+  - **A Game Boy's press queue drops the tail of a quiescent flood.** Its 1024 entries hold sixteen blocks of a
+    saturated buttons input, and its presses are scheduled 10 ms apart and carried across blocks, so unlike a Mesen
+    console's they cannot coalesce. A session that applies pushes inline between blocks (the CLI, an offline render)
+    can queue more than that; what is past the bound is dropped and counted, and the tail can be a release, leaving
+    its button held. A rule that keeps a release, or headroom reserved for one, is its own change.
+  - **The GBA's counted cases are fixture-only**: its ROM is a sibling resource, so the `[alloc]`, `[input-drops]`
+    and `[video]` sections leave early on a run without the resources tree (as CI's) and prove nothing there. They
+    should `SKIP` and be counted rather than return.
   - **The suite keeps its console-only casts** (`EngineGraph`, `SystemNode`, `HostIo`, `EngineSampleRate` tests read a
     config field, `linkPeers_` or a ring counter); no tap read casts any more.
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):

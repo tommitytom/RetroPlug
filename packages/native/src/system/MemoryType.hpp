@@ -41,10 +41,8 @@ namespace rp {
 // colour RAM. Adding either means adding an enum member, and these integer
 // values are the RPC wire byte (mirrored in backend.ts and cli/sdk-types.d.ts)
 // with kMemoryTypeCount sizing SystemBase::StateRegionTable - so it is a
-// wire-format change, not a local one.
-//
-// The integer values are also the `type` a getMemory call carries (the debug
-// facet's peek), so keep them stable.
+// wire-format change, not a local one, and the `type` a getMemory call carries
+// into DebugRpcService::readMemory, so keep them stable.
 enum class MemoryType : std::uint8_t {
     Ram          = 0,
     Rom          = 1,

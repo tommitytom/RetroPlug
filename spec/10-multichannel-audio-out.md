@@ -458,7 +458,8 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
    mixed path stays byte-identical when off; the tap only READS `_currentOutput`. `MesenNesSystem`
    reports a 3-mono `channelLayout()` (Pulse/TND/Expansion) under a new `MesenNesConfig.channelExportMode`
    (set at construct via the "mesen" role blob — `coreRoles.ts` `clampedInt(0,1,0)` → `MesenBackend` →
-   config; additive, no migration), gates the block pull loop on the capture streams, and fans them into
+   config; additive, no migration), gates the block pull loop on the capture streams for a block that drains them
+   (the lanes the node wires, `SystemBase::setBlockLanes`) and on the mix ring for one that does not, and fans them into
    the lanes in `finishBlock`. CLI-only — `renderAudioPerChannel` needs no change (it sizes N from
    `channelLayout()`; the mono pins ride the interleaved carrier with a silent R). `export-nes-channels.ts`
    writes 3 mono WAVs + one 3-channel WAV. Guards: `app-play-nes-channels.test.ts` (real separation — a ch1

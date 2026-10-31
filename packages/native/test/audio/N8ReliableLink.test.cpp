@@ -112,10 +112,10 @@ TEST_CASE("reliable link: messages go out as frames behind one sync", "[audio][n
     CHECK(s.outstanding() == 2);
 }
 
-TEST_CASE("reliable link: a window that fills without an ack gives up the oldest and re-syncs, not grows",
+TEST_CASE("reliable link: a window that fills without an ack gives up the window and re-syncs, not grows",
           "[audio][nes][link]") {
     // The sender's window is 48 frames. A cart that stops answering must not make it grow: at the 49th frame the
-    // oldest are given up and a sync goes out ahead of the new frame, so the ROM is re-pointed at what follows.
+    // whole window is given up and a sync goes out ahead of the new frame, so the ROM is re-pointed at what follows.
     N8ReliableSender s;
     Bytes wire;
     int framesSentByEmit = 0;  // the seq >= 0 marker counts first sends (and later re-sends) on the wire

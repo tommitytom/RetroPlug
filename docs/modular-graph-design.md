@@ -919,8 +919,9 @@ C4 built the first piece of this list that the engine itself needed, and not as 
 `ChannelTap` ([ChannelTap.hpp](../packages/native/src/system/ChannelTap.hpp), `exportMode` / `setExportMode` and nothing
 else), which `SystemBase::channelTap()` returns or answers null for, and `SystemTable`'s slot carries that pointer, so
 `Engine`'s tap arming and build check name no console
-([modular-graph-phase-c4-design.md](modular-graph-phase-c4-design.md); the one console name left in `src/host/` is the
-N8 cart mirror's, NES by construction). The rest of the split is P7's.
+([modular-graph-phase-c4-design.md](modular-graph-phase-c4-design.md); the one console check the engine still makes is
+the N8 cart mirror's, NES by construction, and the per-console node definitions keep naming their cores, which is the
+seam C3 made for them). The rest of the split is P7's.
 
 **The threading rule is unchanged: the control plane never touches a live core.** The executor calls
 these interfaces at safe points on the audio thread. Reads come from published snapshots; writes and
@@ -938,10 +939,10 @@ Extensions only ever see host RPC that routes through those two doors.
 | `BlockRunner` / `OfflineRender` including SameBoy headers | the console-neutral executor |
 | `SystemKind`, `ConfigField`, native `AudioRouting` | deleted (`ConfigField` in C2; `SystemKind` survives as the node's build check) |
 
-Two more went in C4, and they were the last outside the cores: `Engine::syncTap`'s two casts (the plan's build and
-`publishGraph`'s pre-fill) are `SystemBase::channelTap()`, and `SystemNodes.cpp`'s build compares `kind()` with its
-core's `kKind` and then `static_cast`s. So `packages/native/src` has no `dynamic_cast` outside `src/system/`. The
-suites keep their console-only casts (a config field, `linkPeers_`, a ring counter), which is the core's own business.
+Two more went in C4, and they were the last outside the cores: the plan build's and `publishGraph`'s two casts are
+`SystemBase::channelTap()`, and `SystemNodes.cpp`'s build compares `kind()` with its core's `kKind` and then
+`static_cast`s. So `packages/native/src` has no `dynamic_cast` outside `src/system/`. The suites keep their
+console-only casts (a config field, `linkPeers_`, a ring counter), which is the core's own business.
 
 What remains of `Engine` is the executor, the rings and the registry.
 
@@ -1198,7 +1199,9 @@ gone, a Mesen core collects its audio in a fixed ring sized from the build reque
 input plumbing reuses its buffers, the tap a split routing arms is a `ChannelTap` capability, and a system node's build
 compares its core's `kind()` rather than casting. A warmed core's whole block allocates and frees nothing, and so does
 one carrying host input in it: every ingress queue a press, a MIDI run, a serial byte or a raw message lands in is a
-bounded ring sized when the core is built. Strict parity held bit for bit at every commit, nothing re-recorded.
+bounded ring sized when the core is built. Strict parity held bit for bit at every commit, nothing re-recorded; the
+narrow-host defect the B0 design records was fixed afterwards, in a follow-up that re-recorded the two groups it
+pinned (section 10 of the C4 design).
 
 - Console-specific code moves into each node; every `dynamic_cast` in §6.5 goes: done in C4 for `src/`, the suites'
   console-only casts aside.

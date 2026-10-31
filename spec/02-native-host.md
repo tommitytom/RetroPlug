@@ -356,8 +356,9 @@ before any of them steps), each in queue order, the inputs in this order:
 | `buttons` | events | `pressButton(button, down)`, from a 2-byte payload `[button, down]` |
 
 The order shows only on the NES, where MIDI and bytes land in the same FIFO: a flushed byte message
-discards the MIDI queued ahead of it. A Game Boy's `midi` input has no effect (SameBoy's `onMidi`
-queues into a list nothing reads); mGB and LSDj hear MIDI through `serialIn`. The Game Boy also has a
+discards the MIDI queued ahead of it. A Game Boy's `midi` input has no effect (`SystemBase::onMidi`'s
+default is a no-op, as it is for the other consoles that take MIDI through a protocol node); mGB and LSDj
+hear MIDI through `serialIn`. The Game Boy also has a
 `serialOut` output (bytes): after `finishBlock`, while it is connected, the node copies the bytes its
 core captured on the serial port this block, each a message at the frame the core completed it, a byte
 completed past the block's end at its last frame (the core clears its log at its next
@@ -385,17 +386,20 @@ transition for a button already queued replaces it and the button range is the r
 it, and a release is never dropped behind one; because that coalescing keys on the wire byte, each
 console's map names at most one button per byte, and a byte the console has no button for - a Master
 System's Select, a byte past any console's table - drives nothing), a Game
-Boy's presses (1024, sixteen blocks of a saturated buttons input, because presses are scheduled ahead) and
-its serial-in (a run a message over a byte ring of two blocks' `serialIn` or one `serialOut`), a NES's N8
+Boy's presses (1024, sixteen blocks of a saturated buttons input, because presses are scheduled ahead; a Mesen
+console's presses coalesce, but these cannot, since each is scheduled and meant to be seen, so a quiescent session that
+pushes more than 1024 transitions between two blocks drops the tail, release included, which
+[07-remaining-work.md](07-remaining-work.md) records) and its serial-in (a run a message over a byte ring of two
+blocks' `serialIn` or one `serialOut`), a NES's N8
 runs (4352) and their bytes (74752), and a Master System's levels (74752, in bytes from both doors). A push
 past a bound is dropped rather than grown, and counted (a Mesen press queue has none to reach), and the
 sort a block's queued bytes or levels take is a merge through a scratch buffer sized with the queue (a second
 copy of its entries, 598016 bytes for a Master System role and 52224 for a NES role, held for the core's life), so it
 allocates nothing and costs at most n * (ceil(log2 n) + 1) moves: the core reports `inputAccepted()` and
 `inputDropped()`, and the N8 FIFO's `coreTransportStats()` adds `droppedBytes`, the same vocabulary as a
-graph queue's overflow. The reliable link refuses nothing: a full 48-frame window gives up its oldest frame
-and re-syncs. The FIFO's permissive profile (`_rxCapacity == 0`) means no modelled depth, not no storage
-bound: fifo_a still drops and counts a reply past `_rxBound` (a block's input plus `FILE_READ_MAX`), its
+graph queue's overflow. The reliable link refuses nothing: a full 48-frame window gives up the window (its
+unacked frames) and re-syncs. The FIFO's permissive profile (`_rxCapacity == 0`) means no modelled depth, not no
+storage bound: fifo_a still drops and counts a reply past `_rxBound` (a block's input plus `FILE_READ_MAX`), its
 vector reserved to twice that because `pop` compacts the consumed prefix lazily.
 
 An events or bytes output may declare its queue's capacity (`rp::bytes_out::sized<rp::capacity{...}>` in
@@ -496,12 +500,13 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   and Mesen's per-frame plumbing reuses its buffers. That holds with a block's host input staged into it too: every
   ingress queue a press, a MIDI run, a serial byte or a raw message lands in is bounded and sized when the core is
   built, and a push past its bound is dropped and counted (above), so the counted window may carry what a node applies
-  before the core's `prepareForBlock`. What still allocates on the block thread is work that makes
-  something: a Game Boy's model change restarts the core (`GB_alloc` / `GB_init`), which allocates, as it did on the
-  command ring; a NES's region change resets it, which allocates too; the 0.5 s state-snapshot capture allocates inside
-  Mesen's streaming serializer; and the N8 firmware's SD path allocates in its command handlers, in a bigger directory
-  listing and in an unbounded TX queue ([07-remaining-work.md](07-remaining-work.md)). A Game Boy's knobs, the ones it
-  applies in place, a NES's setters but its region, and every param allocate nothing at all.
+  before the core's `prepareForBlock`. The cases that prove it leave the GBA out where its sibling fixture ROM is not
+  present, as on CI, and cover it where the resources tree is. What still allocates on the block thread is work that
+  makes something: a Game Boy's model change restarts the core (`GB_alloc` / `GB_init`), which allocates, as it did on
+  the command ring; a NES's region change resets it, which allocates too; the 0.5 s state-snapshot capture allocates
+  inside Mesen's streaming serializer; and the N8 firmware's SD path allocates in its command handlers, in a bigger
+  directory listing and in an unbounded TX queue ([07-remaining-work.md](07-remaining-work.md)). A Game Boy's knobs, the
+  ones it applies in place, a NES's setters but its region, and every param allocate nothing at all.
 - **A refused document** can still have given knobs to a node it reuses, since activation runs while it plans: a
   reused node's core keeps them, and the next document in the app carries the same. A core a refused plan's new node
   built is destroyed as that plan's instances unwind, with its snapshot slot and its resource pins.

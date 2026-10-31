@@ -299,8 +299,9 @@ A node applies them once, at the top of its `prepare`, where `process` starts to
 group (which steps through `rp.step/1` and never calls `process`) has them all before any member steps. They go in
 the old fan-out's order, `serialIn`, then `midi`, then `bytes`, then `buttons`, each in queue order. Only MIDI before
 bytes is observable, on the NES, where both land in the same FIFO: a flushed bytes message drops what the FIFO still
-holds, the same block's MIDI included, as it did. A Game Boy's `midi` input has no effect, as before (SameBoy's
-`onMidi` queues into a list nothing reads); mGB and LSDj hear MIDI through `serialIn`.
+holds, the same block's MIDI included, as it did. A Game Boy's `midi` input has no effect, as before
+(`SystemBase::onMidi`'s default is a no-op: C4 deleted SameBoy's dead `onMidi` and its queue); mGB and LSDj hear MIDI
+through `serialIn`.
 
 ### 3.2 The Game Boy's `serialOut`
 

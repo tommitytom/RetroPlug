@@ -195,8 +195,8 @@ private:
             synced_ = true;
         }
         if (window_.size() >= kWindow) {
-            // The cart has stopped answering (unplugged, crashed, a ROM without the link): give the oldest up and
-            // re-point the ROM past them rather than grow without bound.
+            // The cart has stopped answering (unplugged, crashed, a ROM without the link): give the whole window up
+            // and re-point the ROM past it rather than grow without bound.
             window_.clear();
             const std::uint8_t s[2] = { SYNC, nextSeq_ };
             emit(s, 2, -1);
