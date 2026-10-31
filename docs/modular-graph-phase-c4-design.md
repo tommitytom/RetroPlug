@@ -476,7 +476,12 @@ queue) sized when the core is built:
 - **The three Mesen consoles' presses** were a `std::vector` grown by `push_back` (5 allocations for 12 presses). Now a
   `FixedQueue` of `kPressInput` 320 = `kButtonsInput` 64 + `GraphHost::commandCapacity()` 256, the two doors a block
   can press through (the buttons input, and `Engine::applyCommand(PressButton)` on the command ring), with a
-  `static_assert` holding the ring's 256 to the host's. `prepareForBlock` already emptied the queue every block.
+  `static_assert` holding the ring's 256 to the host's. `prepareForBlock` already emptied the queue every block. It
+  holds one transition a button: the whole queue is applied before the emulator polls its controller, so a transition
+  for a button already queued replaces its entry, which makes the button range (a byte) the queue's real bound and
+  means no burst can fill it. That is what keeps a release from being dropped behind a burst: a quiescent host (the
+  CLI, an offline render) applies every push inline, so the command ring bounds nothing between two renders, and a
+  plain FIFO's dropped tail could hold a release and leave its button pressed.
 - **A Game Boy's presses** were a `std::deque`, whose first node is allocated eagerly. Now a `FixedQueue` of 1024,
   sixteen blocks of a saturated buttons input, because a press is scheduled 10 ms into the future and carried across
   blocks; a press past it is dropped and counted.
@@ -505,7 +510,8 @@ cannot read its node's inputs when it builds (a wire carries its source's queue,
 `activate`), so the constants are the contract rather than the plan's own capacities.
 
 **What a refusal costs.** A push past a bound is dropped, not grown: `FixedQueue::push` answers false, the queue counts
-it, and each core reports `inputAccepted()` and `inputDropped()` (`SystemBase`), which sum its queues. A run past the
+it, and each core reports `inputAccepted()` and `inputDropped()` (`SystemBase`), which sum its queues. A Mesen press
+queue has no refusal to reach: its coalescing bounds it by the button range, inside `kPressInput`. A run past the
 N8 role's bound is dropped whole and counted as its bytes; a level past the SMS bound likewise. The reliable link is
 the one exception: a full window gives up its oldest frame and re-syncs, the policy it already had, so it refuses
 nothing and has no dropped count.

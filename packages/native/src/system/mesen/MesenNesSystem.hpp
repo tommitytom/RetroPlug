@@ -212,8 +212,9 @@ private:
     // Pending NES button transitions (pos 0..7 from NesButton enum). Applied
     // at the top of onProcess via NesController::SetBitValue. Single-shot —
     // we don't bother spreading across the block since NES input polling
-    // happens once per frame, not per sample. Sized to the most a block's buttons input can carry, and cleared at
-    // each prepare, so a block's presses never make it grow (docs/modular-graph-phase-c4-design.md section 4).
+    // happens once per frame, not per sample. One entry a button: the whole queue is applied before the poll, so a
+    // transition for a button already queued replaces it, and the queue is cleared at each prepare
+    // (docs/modular-graph-phase-c4-design.md section 11).
     struct PendingNesButton { std::uint8_t button; bool down; };
     rp::FixedQueue<PendingNesButton>  pendingButtons_{rp::kPressInput};
     std::uint64_t                     pressesAccepted_ = 0;

@@ -379,7 +379,10 @@ block's input can deliver ([InputCapacity.hpp](../packages/native/src/system/Inp
 capacities the sources' outputs above declare: `serialIn` and `midi` 4096 messages / 72 KiB, `bytes` 256 /
 1 KiB, `buttons` 64, a Game Boy's `serialOut` 8256 / 8256), so a block that carries host MIDI, raw bytes,
 serial-in bytes or presses allocates nothing in the core. The queues are a Mesen console's presses (320: a
-block's 64 plus `GraphHost::commandCapacity()`'s 256, a `static_assert` holding the two together), a Game
+block's 64 plus `GraphHost::commandCapacity()`'s 256, a `static_assert` holding the two together; one entry
+a button, because the block applies the whole queue before the emulator polls its controller, so a
+transition for a button already queued replaces it and the button range is the real bound: no burst fills
+it, and a release is never dropped behind one), a Game
 Boy's presses (1024, sixteen blocks of a saturated buttons input, because presses are scheduled ahead) and
 its serial-in (a run a message over a byte ring of two blocks' `serialIn` or one `serialOut`), a NES's N8
 runs (4352) and their bytes (74752), and a Master System's levels (74752, in bytes from both doors). A push

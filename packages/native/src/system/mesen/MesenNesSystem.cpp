@@ -403,6 +403,15 @@ void MesenNesSystem::setChannelExportMode(std::uint32_t mode) {
 }
 
 void MesenNesSystem::pressButton(std::uint8_t button, bool down) {
+    // A transition for a button that has one queued replaces it: prepareForBlock applies the whole queue before the
+    // emulator polls its controller, so only a button's last transition is observable. The queue then holds one entry
+    // a button, so a press burst cannot fill it and a release cannot be refused behind one.
+    for (auto& pending : pendingButtons_) {
+        if (pending.button != button) continue;
+        pending.down = down;
+        ++pressesAccepted_;
+        return;
+    }
     if (pendingButtons_.push({ button, down })) ++pressesAccepted_;
 }
 

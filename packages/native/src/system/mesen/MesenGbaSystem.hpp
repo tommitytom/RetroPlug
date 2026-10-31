@@ -117,8 +117,9 @@ private:
 
     // Pending GBA button transitions. The byte is the GbaButton wire value
     // (Right=0..Start=7, L=8, R=9); remapped to Mesen's native
-    // GbaController::Buttons enum in onProcess. Sized to the most a block's buttons input can carry, and cleared at
-    // each prepare, so a block's presses never make it grow (docs/modular-graph-phase-c4-design.md section 4).
+    // GbaController::Buttons enum in onProcess. One entry a button: the whole queue is applied before the poll, so a
+    // transition for a button already queued replaces it, and the queue is cleared at each prepare
+    // (docs/modular-graph-phase-c4-design.md section 11).
     struct PendingGbaButton { std::uint8_t button; bool down; };
     rp::FixedQueue<PendingGbaButton>  pendingButtons_{rp::kPressInput};
     std::uint64_t                     pressesAccepted_ = 0;

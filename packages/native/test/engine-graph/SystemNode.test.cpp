@@ -3146,14 +3146,17 @@ TEST_CASE("a core's ingress queues drop what is past their bound, count it, and 
         wholeBlock(core, 1024, lanes, true, NoInput{});  // the REQUIRE inside holds the block was really filled
     };
 
+    // A Mesen core's press queue is the exception: it holds one transition a button (the block applies the whole queue
+    // before the emulator polls its controller), so a burst coalesces instead of overrunning it, and it refuses
+    // nothing. Its bound is the button range, which kPressInput covers (InputCapacity.hpp's static_assert).
     SECTION("NES presses") {
         auto core = nes(1, 0);
         core->reserveAudio(8192);
         Lanes lanes(2);
         for (std::uint32_t i = 0; i < rp::kPressInput + 3; ++i)
             core->pressButton(static_cast<std::uint8_t>(i % 8), (i % 2) == 0);
-        CHECK(core->inputAccepted() == rp::kPressInput);
-        CHECK(core->inputDropped() == 3);
+        CHECK(core->inputAccepted() == rp::kPressInput + 3);
+        CHECK(core->inputDropped() == 0);
         ran(*core, {lanes.ptrs[0], lanes.ptrs[1]});
     }
     SECTION("SMS presses") {
@@ -3162,8 +3165,8 @@ TEST_CASE("a core's ingress queues drop what is past their bound, count it, and 
         Lanes lanes(2);
         for (std::uint32_t i = 0; i < rp::kPressInput + 2; ++i)
             core->pressButton(static_cast<std::uint8_t>(i % 8), (i % 2) == 0);
-        CHECK(core->inputAccepted() == rp::kPressInput);
-        CHECK(core->inputDropped() == 2);
+        CHECK(core->inputAccepted() == rp::kPressInput + 2);
+        CHECK(core->inputDropped() == 0);
         ran(*core, {lanes.ptrs[0], lanes.ptrs[1]});
     }
     SECTION("GBA presses") {
@@ -3175,8 +3178,8 @@ TEST_CASE("a core's ingress queues drop what is past their bound, count it, and 
         Lanes lanes(2);
         for (std::uint32_t i = 0; i < rp::kPressInput + 1; ++i)
             core->pressButton(static_cast<std::uint8_t>(i % 8), (i % 2) == 0);
-        CHECK(core->inputAccepted() == rp::kPressInput);
-        CHECK(core->inputDropped() == 1);
+        CHECK(core->inputAccepted() == rp::kPressInput + 1);
+        CHECK(core->inputDropped() == 0);
         ran(*core, {lanes.ptrs[0], lanes.ptrs[1]});
     }
     SECTION("Game Boy presses") {
@@ -3245,6 +3248,49 @@ TEST_CASE("a core's ingress queues drop what is past their bound, count it, and 
         core->pushCoreBytes(0, bytes.data(), bytes.size(), false);
         CHECK(core->inputDropped() == kCapacity + 2);   // a run past the arena is dropped whole, as a graph queue's is
         ran(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+    }
+}
+
+TEST_CASE("a Mesen press burst cannot push a release out of its queue", "[engine-graph][system-node][input-drops]") {
+    // In a quiescent session (the CLI, an offline render) every push applies inline on the control thread, so the
+    // command ring bounds nothing between two renders: a host can queue more transitions than a block's doors deliver.
+    // With a plain queue that dropped the tail, a burst of presses followed by a release could lose the release and
+    // leave the button held. A Mesen core's queue holds one transition a button and is applied whole before the
+    // emulator polls its controller, so a transition for a button already queued replaces its entry: the burst collapses
+    // and the release always lands.
+    const auto burst = [](SystemBase& core) {
+        for (std::uint32_t i = 0; i < rp::kPressInput + 64; ++i) core.pressButton(0, true);
+        for (int i = 0; i < 4; ++i) core.pressButton(0, false);   // the releases, behind a queue a plain FIFO filled
+        for (int i = 0; i < 4; ++i) core.pressButton(1, true);    // a button the burst never named still gets in
+        CHECK(core.inputDropped() == 0);
+        CHECK(core.inputAccepted() == rp::kPressInput + 72);
+    };
+    SECTION("NES") {
+        auto core = nes(1, 0);
+        core->reserveAudio(8192);
+        Lanes lanes(2);
+        burst(*core);
+        wholeBlock(*core, 1024, {lanes.ptrs[0], lanes.ptrs[1]}, true, NoInput{});  // the queue applied, and it was free
+        CHECK(core->inputDropped() == 0);
+    }
+    SECTION("SMS") {
+        auto core = sms(1);
+        core->reserveAudio(8192);
+        Lanes lanes(2);
+        burst(*core);
+        wholeBlock(*core, 1024, {lanes.ptrs[0], lanes.ptrs[1]}, true, NoInput{});
+        CHECK(core->inputDropped() == 0);
+    }
+    SECTION("Game Boy Advance") {
+        const auto rom = resourceFixture("/roms/nanoloop287d.gba");
+        if (rom.empty()) return;
+        auto core = std::make_unique<MesenGbaSystem>(1, MesenGbaConfig{}, rom);
+        core->onActivate(kRate);
+        core->reserveAudio(8192);
+        Lanes lanes(2);
+        burst(*core);
+        wholeBlock(*core, 1024, {lanes.ptrs[0], lanes.ptrs[1]}, true, NoInput{});
+        CHECK(core->inputDropped() == 0);
     }
 }
 
