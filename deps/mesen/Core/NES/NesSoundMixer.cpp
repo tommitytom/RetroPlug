@@ -420,7 +420,11 @@ void NesSoundMixer::SetCaptureCapacity(uint32_t maxBlockFrames)
 	_streamCapacity = want;
 	// The stream blips too: every stream the tap can arm into gets its fixed-size buffer here, so an arm (which runs
 	// on the block thread) re-initialises one with blip_reset instead of allocating. They are kept across a disarm
-	// and re-initialised by the next arm, which is what a fresh blip_new gave it anyway.
+	// and re-initialised by the next arm, which is what a fresh blip_new gave it anyway. The one behaviour change is a
+	// direct switch between two non-zero modes: a surviving stream's blip is reset to the default rate before its own
+	// rates are set, so every arm starts at the same fractional phase instead of the one the old arm left. A core built
+	// with one mode and then armed to another is what would hear it; no parity case takes that path, and its split cases
+	// did not move.
 	for(uint32_t k = 0; k < MaxCaptureStreams; k++) {
 		if(!_streamBlip[k]) {
 			_streamBlip[k] = blip_new(NesSoundMixer::MaxSamplesPerFrame);

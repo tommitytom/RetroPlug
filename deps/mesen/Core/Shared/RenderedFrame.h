@@ -27,9 +27,9 @@ struct RenderedFrame
 		InputData({})
 	{}
 
-	// RetroPlug: the consoles this fork does not run (PCE, SNES, WS) still build a frame through this constructor, so
-	// they copy the port snapshot one extra time per frame. The NES, SMS and GBA refill a member instead (Reset and
-	// SetInputData), so "no copies" is theirs and not universal.
+	// RetroPlug: the consoles this fork does not run (PCE, SNES, WS) still build a frame through this constructor, and
+	// so does Mesen's own Game Boy (GbPpu), so they copy the port snapshot one extra time per frame. The NES, SMS and
+	// GBA refill a member instead (Reset and SetInputData), so "no copies" is theirs and not universal.
 	RenderedFrame(void* buffer, uint32_t width, uint32_t height, double scale, uint32_t frameNumber, vector<ControllerData> inputData, uint32_t videoPhase = 0) :
 		FrameBuffer(buffer),
 		Data(nullptr),

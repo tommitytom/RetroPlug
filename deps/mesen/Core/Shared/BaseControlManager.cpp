@@ -67,18 +67,16 @@ const vector<ControllerData>& BaseControlManager::GetPortStates()
 		ControllerData& state = _portStates[i];
 		state.Type = _controlDevices[i]->GetControllerType();
 		state.Port = _controlDevices[i]->GetPort();
-		// RetroPlug: the snapshot's state buffer is sized before it is filled and padded after, to the largest state a
-		// device can produce, so a frame's snapshot has one length for the frame's whole life. Without it, a device no
-		// ROM has read yet - or a mapper or role device the control manager has just registered - carries an empty state,
-		// and the first read (thousands of frames in, for a ROM that polls its controller late) would be what grows this
-		// vector and every copy of it: the frame's, the decoder's and the renderer's, inside a block.
+		// RetroPlug: the snapshot's state buffer is reserved before it is filled, to the largest state a device can
+		// produce, so a copy into it never grows it. Without it, a device no ROM has read yet - or a mapper or role
+		// device the control manager has just registered - carries an empty state, and the first read (thousands of
+		// frames in, for a ROM that polls its controller late) would be what grows this vector and every copy of it:
+		// the frame's, the decoder's and the renderer's, inside a block. The state keeps the length the device gives
+		// it (a pad's is one byte), which is what a reader of the frame's input snapshot sees.
 		if (state.State.State.capacity() < ControlDeviceState::MaxBytes) {
 			state.State.State.reserve(ControlDeviceState::MaxBytes);
 		}
 		_controlDevices[i]->GetRawState(state.State);
-		if (state.State.State.size() < ControlDeviceState::MaxBytes) {
-			state.State.State.resize(ControlDeviceState::MaxBytes, 0);
-		}
 	}
 	return _portStates;
 }

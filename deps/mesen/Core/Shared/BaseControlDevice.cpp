@@ -14,6 +14,10 @@ BaseControlDevice::BaseControlDevice(Emulator* emu, ControllerType type, uint8_t
 	_port = port;
 	_strobe = false;
 	_keyMappings = keyMappingSet.GetKeyMappingArray();
+	// RetroPlug: every device's state buffer exists, with room for the largest state, from construction: the SMS and
+	// GBA control managers skip the base poll that calls ClearState (RetroPlug patches), so their devices are sized
+	// here instead, off the block thread, before any read can grow one inside a block.
+	_state.State.reserve(ControlDeviceState::MaxBytes);
 }
 
 BaseControlDevice::~BaseControlDevice()
@@ -76,9 +80,8 @@ void BaseControlDevice::ClearState()
 	// EMPTY, which four devices read as their contract: a controller hub builds its composite state by appending to what
 	// a clear leaves, and the barcode readers and the data recorder take "no state" to mean the tape is not playing.
 	//
-	// The buffer is sized here, at the device's FIRST poll, rather than left to the first read: a ROM may not read its
-	// controller for thousands of frames, and that first read must not be the thing that allocates on the block thread.
-	// This is the only place a state is ever sized from nothing.
+	// The capacity is the constructor's (and this keeps it): a ROM may not read its controller for thousands of
+	// frames, and that first read must not be the thing that allocates on the block thread.
 	if (_state.State.capacity() < ControlDeviceState::MaxBytes) {
 		_state.State.reserve(ControlDeviceState::MaxBytes);
 	}
