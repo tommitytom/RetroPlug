@@ -1,14 +1,14 @@
 #include "system/mesen/roles/NesN8FifoRole.hpp"
 
-#include <algorithm>
 #include <cstdio>
+#include <cstring>
 
 #include "Core/NES/NesConsole.h"
 #include "Core/NES/NesConstants.h"
 #include "Core/NES/NesCpu.h"
 #include "Core/NES/NesMemoryManager.h"
 
-NesN8FifoRole::NesN8FifoRole() = default;
+NesN8FifoRole::NesN8FifoRole() { bytes_.reserve(kPendingBytes); }
 NesN8FifoRole::~NesN8FifoRole() = default;
 
 void NesN8FifoRole::onAttach(NesConsole& console) {
@@ -32,24 +32,28 @@ void NesN8FifoRole::onAttach(NesConsole& console) {
     std::fprintf(stderr, "[NesN8FifoRole] FIFO attached at $40F0/$40F1/$40FF\n");
 }
 
-void NesN8FifoRole::pushBytes(std::uint32_t offset, const std::uint8_t* data, std::size_t count, bool flush) {
-    if (data == nullptr || count == 0) return;
-    // A barrier message drops everything still in flight first, in BOTH queues, so it can't be preceded
-    // by bytes belonging to the stream position it replaces.
-    if (flush) flushAll();
-    if (link_) {
-        // A link-capable ROM ignores unframed MIDI, and this is how a long SysEx (anything over a MidiEvent's 4
-        // bytes) or a multi-message run arrives - so it is framed like onMidi's, when pumpUntil releases it.
-        pendingMsgs_.push_back({ offset, std::vector<std::uint8_t>(data, data + count) });
-        needsSort_ = true;
+void NesN8FifoRole::queue(std::uint32_t offset, const std::uint8_t* data, std::size_t count) {
+    if (count == 0) return;
+    const auto start = static_cast<std::uint32_t>(bytes_.size());
+    if (bytes_.size() + count > kPendingBytes ||
+        !pending_.push({ offset, start, static_cast<std::uint32_t>(count) })) {
+        pendingDropped_ += count;
         return;
     }
-    // Queue (don't deliver) each byte at `offset`. Contiguous + ordered, so pumpUntil releases the whole
-    // run together once its offset is reached. No framing/cap — the raw twin of onMidi.
-    for (std::size_t b = 0; b < count; ++b) {
-        pending_.push_back({ offset, data[b] });
-    }
-    needsSort_ = true;  // a second feed may enqueue after MIDI with an earlier offset — re-sort before draining
+    bytes_.insert(bytes_.end(), data, data + count);
+    acceptedBytes_ += count;
+    needsSort_ = true;  // a second feed may enqueue after this one with an earlier offset - re-sort before draining
+}
+
+void NesN8FifoRole::pushBytes(std::uint32_t offset, const std::uint8_t* data, std::size_t count, bool flush) {
+    if (data == nullptr || count == 0) return;
+    // A barrier message drops everything still in flight first, so it can't be preceded by bytes belonging to the
+    // stream position it replaces.
+    if (flush) flushAll();
+    // One run per message, whichever way it is delivered: the bytes go into the FIFO in order as their offset comes due
+    // (raw mode), or are framed and sent as one message (the link), which is why a long SysEx or a multi-message run
+    // survives the link's framing.
+    queue(offset, data, count);
 }
 
 void NesN8FifoRole::enableLink(rp::N8ReliableSender::Timing timing) {
@@ -87,66 +91,88 @@ void NesN8FifoRole::serviceLink() {
 
 void NesN8FifoRole::onMidi(const ::MidiEvent* events, std::uint32_t count) {
     if (events == nullptr || count == 0) return;
-    if (link_) {
-        // Framed by pumpUntil as it releases them: each event's bytes become frames (plus a sync ahead of the first) at
-        // the event's offset, numbered in release order.
-        for (std::uint32_t i = 0; i < count; ++i) {
-            const auto& ev = events[i];
-            const std::uint32_t size = ev.size > ::MidiEvent::kDataSize ? ::MidiEvent::kDataSize : ev.size;
-            pendingMsgs_.push_back({ ev.frame, std::vector<std::uint8_t>(ev.data, ev.data + size) });
-        }
-        needsSort_ = true;
-        return;
-    }
-    // MIDI-framed adapter over pushBytes: each event's bytes share ev.frame (clamped to the inline size).
+    // Each event is one MIDI-framed run at its frame: pushed into the FIFO in order when it comes due (raw mode), or
+    // framed as one message then (the link). The link ignores anything longer than a MidiEvent holds, and the node sends
+    // such a run down pushCoreBytes instead.
     for (std::uint32_t i = 0; i < count; ++i) {
         const auto& ev = events[i];
         const std::uint32_t size = ev.size > ::MidiEvent::kDataSize ? ::MidiEvent::kDataSize : ev.size;
-        pushBytes(ev.frame, ev.data, size);
+        queue(ev.frame, ev.data, size);
     }
+}
+
+std::size_t NesN8FifoRole::pendingCount() const {
+    if (link_) return 0;  // a message waits unframed and unframed bytes are not what a caller counts
+    std::size_t bytes = 0;
+    for (const auto& run : pending_) bytes += run.count;
+    return bytes;
 }
 
 void NesN8FifoRole::pumpUntil(std::uint32_t sampleOffset) {
     if (needsSort_) {
-        // Stable so bytes of one message (same offset, contiguous) stay together + in order, and link messages at one
-        // offset keep their enqueue order (the sender's parser relies on it: running status, a SysEx split across
-        // pushes) with any carried in from an earlier block ahead of them. A split SysEx holds together only at ONE
-        // offset: halves at different offsets with a message released between them are cut by the sender's parser
-        // (no caller splits one that way). Runs once per block (all enqueuing precedes the step loop), after which
-        // this is a plain front-drain.
-        std::stable_sort(pending_.begin(), pending_.end(),
-                         [](const PendingByte& a, const PendingByte& b) { return a.offset < b.offset; });
-        std::stable_sort(pendingMsgs_.begin(), pendingMsgs_.end(),
-                         [](const PendingMsg& a, const PendingMsg& b) { return a.offset < b.offset; });
+        // Stable so two runs at one offset keep their enqueue order (the sender's parser relies on it: running status,
+        // a SysEx split across pushes) with any carried in from an earlier block ahead of them, and so a run's own bytes
+        // stay together. Runs once per block (all enqueuing precedes the step loop), after which this is a plain
+        // front-drain. A split SysEx holds together only at ONE offset: halves at different offsets with a message
+        // released between them are cut by the sender's parser (no caller splits one that way).
+        rp::stableSortEntries(pending_.begin(), pending_.end(),
+                              [](const PendingRun& a, const PendingRun& b) { return a.offset < b.offset; });
         needsSort_ = false;
     }
     while (!pending_.empty() && pending_.front().offset <= sampleOffset) {
-        fifo_.pushByte(pending_.front().byte);
-        pending_.pop_front();
-    }
-    // Link mode: a message is framed the moment it is released, so its sequence number is the next one the ROM sees -
-    // whichever feed queued it, in whatever order, and however many blocks it was carried by rebase.
-    while (link_ && !pendingMsgs_.empty() && pendingMsgs_.front().offset <= sampleOffset) {
-        const auto& m = pendingMsgs_.front();
-        const std::int64_t now = nowNs();
-        link_->send(m.bytes.data(), m.bytes.size(), [&](const std::uint8_t* data, std::size_t n, int seq) {
-            for (std::size_t b = 0; b < n; ++b) fifo_.pushByte(data[b]);
-            if (seq >= 0) {
-                link_->onSent(seq, now);
-                if (linkDueCycle_ == kNoDue) linkDueCycle_ = 0;   // a frame in flight: its timeout needs arming
-            }
-        });
-        pendingMsgs_.pop_front();
+        const PendingRun run = pending_.front();
+        const std::uint8_t* const data = bytes_.data() + run.start;
+        if (link_) {
+            // A message is framed the moment it is released, so its sequence number is the next one the ROM sees -
+            // whichever feed queued it, in whatever order, and however many blocks it was carried by rebase.
+            const std::int64_t now = nowNs();
+            link_->send(data, run.count, [&](const std::uint8_t* bytes, std::size_t n, int seq) {
+                for (std::size_t b = 0; b < n; ++b) fifo_.pushByte(bytes[b]);
+                if (seq >= 0) {
+                    link_->onSent(seq, now);
+                    if (linkDueCycle_ == kNoDue) linkDueCycle_ = 0;   // a frame in flight: its timeout needs arming
+                }
+            });
+        } else {
+            // Raw mode: every byte into the FIFO, in order, as the run comes due.
+            for (std::uint32_t b = 0; b < run.count; ++b) fifo_.pushByte(data[b]);
+        }
+        pending_.pop();
     }
     // Called before every instruction, so this is the link's clock tick: one compare unless work is due.
     if (linkDueCycle_ != kNoDue && cycles_ && cycles_() >= linkDueCycle_) serviceLink();
 }
 
 void NesN8FifoRole::rebase(std::uint32_t frames) {
-    for (auto& e : pending_) {
-        e.offset = (e.offset > frames) ? e.offset - frames : 0;
+    for (auto& run : pending_) {
+        run.offset = (run.offset > frames) ? run.offset - frames : 0;
     }
-    for (auto& m : pendingMsgs_) {
-        m.offset = (m.offset > frames) ? m.offset - frames : 0;
+    // Hand back the bytes of the runs that were released. They sit in front of the live ones in `bytes_`, but the
+    // live runs are in queue order, which a sort by offset may have permuted, so the arena's bytes are not in queue
+    // order: compacting front-to-back in queue order would overwrite a run it has not copied yet. Order the live run
+    // indices by where their bytes are instead, and move each run in that order; the index array is reserved with the
+    // queue, so this pass allocates nothing at the block's end.
+    const std::size_t liveRuns = pending_.size();
+    if (liveRuns == 0) {
+        bytes_.clear();
+        return;
     }
+    for (std::size_t i = 0; i < liveRuns; ++i) rebaseOrder_[i] = static_cast<std::uint32_t>(i);
+    for (std::size_t i = 1; i < liveRuns; ++i) {
+        const std::uint32_t index = rebaseOrder_[i];
+        std::size_t j = i;
+        while (j > 0 && pending_[rebaseOrder_[j - 1]].start > pending_[index].start) {
+            rebaseOrder_[j] = rebaseOrder_[j - 1];
+            --j;
+        }
+        rebaseOrder_[j] = index;
+    }
+    std::size_t live = 0;
+    for (std::size_t i = 0; i < liveRuns; ++i) {
+        auto& run = pending_[rebaseOrder_[i]];
+        if (run.start != live) std::memmove(bytes_.data() + live, bytes_.data() + run.start, run.count);
+        run.start = static_cast<std::uint32_t>(live);
+        live += run.count;
+    }
+    bytes_.resize(live);
 }

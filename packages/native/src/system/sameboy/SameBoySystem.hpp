@@ -2,16 +2,17 @@
 
 #include <array>
 #include <cstdint>
-#include <deque>
 #include <memory>
 #include <vector>
 
+#include "system/InputCapacity.hpp"
 #include "system/InputTypes.hpp"
 #include "system/SystemBase.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoyConstants.hpp"
 #include "transport/FrameBufferTriple.hpp"
 #include "util/ExpSmoother.hpp"
+#include "util/FixedQueue.hpp"
 
 // Forward declare the C type so this header doesn't drag <gb.h> into the
 // rest of the codebase.
@@ -59,8 +60,34 @@ public:
     // Queue a raw byte for the GB serial port, scheduled at sample offset
     // `frame` within the block. Drained MSB-first by nextSerialInBit() / the
     // slave-mode pump in stepIfBelowTarget(), neither before `frame` is reached.
+    // A message's bytes share its frame, so they extend one run; a byte with no room left in the run queue or the
+    // byte ring is refused and counted, as a graph queue's overflow is.
     void pushSerialIn(std::uint32_t frame, std::uint8_t byte) override {
-        serialIn_.push_back({ frame, byte });
+        if (!serialIn_.empty() && serialIn_.back().offset == frame && serialBytes_.size() < serialBytes_.capacity()) {
+            serialBytes_.push(byte);
+            ++serialIn_.back().count;
+            ++serialInAccepted_;
+            return;
+        }
+        if (serialIn_.size() < serialIn_.capacity() && serialBytes_.size() < serialBytes_.capacity() &&
+            serialIn_.push({frame, 1})) {
+            serialBytes_.push(byte);
+            ++serialInAccepted_;
+            return;
+        }
+        ++serialInDropped_;
+    }
+    // What this core's ingress queues have taken and dropped since it was built (SystemBase::inputAccepted /
+    // inputDropped): serial-in bytes and button presses. A block can only deliver what the queues are sized for, so a
+    // drop is zero unless a core is fed outside a plan's queues.
+    std::uint64_t inputAccepted() const override { return serialInAccepted_ + pressesAccepted_; }
+    std::uint64_t inputDropped() const override { return serialInDropped_ + pendingButtons_.dropped(); }
+    // The byte the serial queue would deliver next. False, touching nothing, when it holds none: the queued runs only
+    // name their bytes' offsets, so this is the test seam that holds a serial input reached the core.
+    bool peekSerialByte(std::uint8_t& byte) const {
+        if (serialBytes_.empty()) return false;
+        byte = serialBytes_.front();
+        return true;
     }
 
     FrameBufferTriple* framebuffer() override { return &frames_; }
@@ -201,15 +228,18 @@ public:
     bool                      activated_  = false;
     double                    sampleRate_ = 44100.0;
 
-    // Pending button transitions, ordered by sample offset within the block.
-    // Spread across each block so a press+release pair doesn't collapse to
-    // zero duration (which the SameBoy joypad debouncer would miss).
+    // Pending button transitions, ordered by sample offset. Spread across each block so a press+release pair doesn't
+    // collapse to zero duration (which the SameBoy joypad debouncer would miss): each press is scheduled 10 ms after
+    // the one before it, so what a block adds can still be queued several blocks later. The bound is a block's buttons
+    // input sixteen times over (about ten seconds of scheduled presses at 48 kHz), and a press beyond it is refused
+    // and counted rather than growing the queue on the block thread.
     struct PendingButton {
         std::uint32_t offset;   // samples from block start
         GameboyButton button;   // reinterpreted from the uint8_t opcode
         bool          down;
     };
-    std::deque<PendingButton> pendingButtons_;
+    rp::FixedQueue<PendingButton> pendingButtons_{rp::kButtonsInput * 16};   // at least kPressInput: see above
+    std::uint64_t                 pressesAccepted_ = 0;
 
     // Default per-press duration (samples) used to space queued transitions.
     // Mirrors the old code's "10 ms at sampleRate" default.
@@ -222,20 +252,35 @@ public:
     std::vector<SameBoySystem*> linkPeers_;
     bool                        bitToSend_ = false;
 
-    // Bytes queued by roles / host MIDI-in for the GB serial port, each tagged
-    // with the sample offset it should not be delivered before. Drained one bit
-    // at a time (MSB first) by `nextSerialInBit()` from the SameBoy serial-end
-    // callback, or whole-byte by the slave-mode pump in stepIfBelowTarget() —
-    // both gated on `offset <= audioFrameCount_` so a burst of host MIDI keeps
-    // its intra-block timing instead of collapsing to the block start.
-    // `serialBitsRemaining_` counts how many bits are left in the current front
-    // byte (8 → fresh byte, 0 → next call pops & reloads).
+    // Bytes queued by roles / host MIDI-in for the GB serial port, each run of them (a message's bytes share its
+    // frame) tagged with the sample offset it should not be delivered before. Drained one bit at a time (MSB first) by
+    // `nextSerialInBit()` from the SameBoy serial-end callback, or whole-byte by the slave-mode pump in
+    // stepIfBelowTarget(), both gated on `offset <= audioFrameCount_` so a burst of host MIDI keeps its
+    // intra-block timing instead of collapsing to the block start. `serialBitsRemaining_` counts how many bits are left
+    // in the current front byte (8 → fresh byte, 0 → next call pops & reloads).
+    //
+    // The bytes are held in a fixed ring and the runs in a fixed queue, each sized to what a block's serialIn input can
+    // deliver, so a block's MIDI never grows one: a run is a message's bytes at one frame (a slot per distinct frame),
+    // and the ring holds their bytes (docs/modular-graph-phase-c4-design.md section 4).
     struct PendingSerial {
         std::uint32_t offset;   // samples from block start
-        std::uint8_t  byte;
+        std::uint32_t count;    // bytes at this offset, front-first in serialBytes_
     };
-    std::deque<PendingSerial> serialIn_;
-    int                       serialBitsRemaining_ = 0;
+    // Two blocks of a script serialIn stream, or one of a Game Boy serialOut (8256, the larger single block), in
+    // runs; the same two blocks' bytes in the ring, or a serialOut block's. See InputCapacity.hpp.
+    static constexpr std::size_t kSerialRuns =
+        rp::kSerialOutInput.messages > 2 * rp::kSerialInInput.messages
+            ? rp::kSerialOutInput.messages
+            : 2 * rp::kSerialInInput.messages;
+    static constexpr std::size_t kSerialBytes =
+        rp::kSerialOutInput.bytes > 2 * rp::kSerialInInput.bytes
+            ? rp::kSerialOutInput.bytes
+            : 2 * rp::kSerialInInput.bytes;
+    rp::FixedQueue<PendingSerial> serialIn_{kSerialRuns};
+    rp::FixedByteRing             serialBytes_{kSerialBytes};
+    std::uint64_t                 serialInAccepted_   = 0;
+    std::uint64_t                 serialInDropped_    = 0;
+    int                           serialBitsRemaining_ = 0;
 
     // Outgoing-serial byte accumulator. Bits arrive MSB-first from the GB;
     // on every 8th bit the assembled byte is appended to serialOutLog_ for the
@@ -254,6 +299,8 @@ public:
 private:
     // Size stereoAccum_ and chanAccum_ for blockFrames(), keeping what they hold (growth only).
     void sizePerBlockBuffers();
+    // Take the front byte of the serial queue (its run loses one, and the run goes when its last byte has).
+    void popSerialByte();
 
     ExpSmoother gainSmoother_;
 };

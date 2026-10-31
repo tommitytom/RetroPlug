@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstdint>
-#include <deque>
+
+#include "system/InputCapacity.hpp"
+#include "util/FixedQueue.hpp"
 
 class SmsControlManager;
 class SmsMemoryManager;
@@ -58,7 +60,11 @@ public:
     void onDetach() { controlManager_ = nullptr; memoryManager_ = nullptr; clear(); }
 
     // Audio-thread: QUEUE each byte in `data` as a level tagged with `offset` (samples from block
-    // start). Released by pumpUntil once the block's emulated position reaches that offset.
+    // start). Released by pumpUntil once the block's emulated position reaches that offset. The queue is sized
+    // to what BOTH of its doors can deliver in one block: a level is one byte, so the `bytes` input's 1 KiB costs
+    // 1024 entries, and a message longer than a MidiEvent reaches the same door from the `midi` input (the node's
+    // pushCoreBytes) at up to its 72 KiB. That is 74752 levels, which is a lot of storage but no message the plan
+    // can deliver is dropped; a level past the bound is dropped and counted, as a graph queue's would be.
     //
     // `flush` is accepted and IGNORED, unlike the N8 FIFO's. It exists on the SystemBase seam for
     // byte protocols that need a barrier; a level has no undelivered-stream hazard to clear, and
@@ -87,6 +93,8 @@ public:
 
     // Introspection / tests.
     std::size_t   pendingCount() const { return pending_.size(); }
+    std::uint64_t pendingDropped() const { return pending_.dropped(); }
+    std::uint64_t acceptedLevels() const { return acceptedLevels_; }
     std::uint8_t  lastApplied()  const { return lastApplied_; }
 
 private:
@@ -94,7 +102,9 @@ private:
         std::uint32_t offset;   // samples from block start
         std::uint8_t  levels;
     };
-    std::deque<PendingLevel> pending_;
+    static constexpr std::size_t kPendingLevels = std::size_t(rp::kMidiInput.bytes) + rp::kBytesInput.bytes;
+    rp::FixedQueue<PendingLevel> pending_{kPendingLevels};
+    std::uint64_t            acceptedLevels_ = 0;
     bool                     needsSort_    = false;  // set on enqueue; pumpUntil stable-sorts once
     std::uint8_t             lastApplied_  = 0xFF;   // idle: every line released
     SmsControlManager*       controlManager_ = nullptr;

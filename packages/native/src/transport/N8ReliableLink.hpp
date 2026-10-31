@@ -1,11 +1,13 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
+#include <cstring>
 #include <functional>
 #include <limits>
-#include <vector>
+
+#include "util/FixedQueue.hpp"
 
 // The host half of BlipToaster's reliable link (bliptoaster src/midi/main.c "The reliable link").
 //
@@ -66,11 +68,12 @@ public:
         window_.clear();
         synced_ = false;
         status_ = 0;
-        msg_.clear();
+        msgLen_ = 0;
+        msgTooLong_ = false;
         inSysex_ = false;
         ackState_ = 0;
         resendAt_ = kNever;
-        pendingSync_.clear();
+        pendingSyncLen_ = 0;
     }
 
     // Host MIDI in - any run of bytes, possibly several messages, running status, SysEx, real-time. Each complete
@@ -110,12 +113,12 @@ public:
         if (nowNs >= resendAt_ || timedOut) {
             resendAt_ = kNever;
             ++resends_;
-            if (!pendingSync_.empty()) { emit(pendingSync_.data(), pendingSync_.size(), -1); pendingSync_.clear(); }
+            if (pendingSyncLen_) { emit(pendingSync_.data(), pendingSyncLen_, -1); pendingSyncLen_ = 0; }
             for (auto& f : window_) {
                 if (f.sentNs < 0) continue;   // still queued in the transport: it goes out on its own
                 f.sentNs = -1;                // re-armed; onSent marks it again when it actually leaves
                 ++framesResent_;
-                emit(f.bytes.data(), f.bytes.size(), f.seq);
+                emit(f.bytes, f.size, f.seq);
             }
         }
         return nextDue();
@@ -133,10 +136,12 @@ public:
     static constexpr std::int64_t kNever = std::numeric_limits<std::int64_t>::max();
 
 private:
+    // A frame's bytes are inline: a window of 48 frames is a fixed ~3 KiB however many messages a block carries.
     struct Frame {
-        std::uint8_t              seq;
-        std::vector<std::uint8_t> bytes;    // F5 seq message...
-        std::int64_t              sentNs;   // -1 = not on its way yet
+        std::uint8_t seq;
+        std::int64_t sentNs;                    // -1 = not on its way yet
+        std::uint32_t size;
+        std::uint8_t  bytes[3 + kMaxMessage];   // F5 seq message... sum
     };
 
     // Is `a` before `b` in the 7-bit sequence space (within half the space)?
@@ -154,23 +159,32 @@ private:
         if (b >= 0xF8) { emit(&b, 1, -1); return; }   // real-time: unframed, anywhere (the ROM skips or acts on it)
         if (inSysex_) {
             if (b == 0xF7) {
-                msg_.push_back(b);
-                if (msg_.size() <= kMaxMessage) frame(emit);   // longer: no frame (see kMaxMessage)
-                else msg_.clear();
+                msgPush(b);
+                if (!msgTooLong_ && msgLen_ <= kMaxMessage) frame(emit);   // longer: no frame (see kMaxMessage)
+                msgLen_ = 0;
+                msgTooLong_ = false;
                 inSysex_ = false;
                 return;
             }
-            if (b < 0x80) { msg_.push_back(b); return; }
+            if (b < 0x80) { msgPush(b); return; }
             inSysex_ = false;   // a status cut the SysEx short: drop it (the ROM would not have applied it either)
-            msg_.clear();
+            msgLen_ = 0;
+            msgTooLong_ = false;
         }
-        if (b == 0xF0) { status_ = 0; msg_.assign(1, b); inSysex_ = true; return; }
-        if (b >= 0xF0) { status_ = 0; msg_.clear(); return; }   // other System Common: the ROM ignores them
-        if (b & 0x80) { status_ = b; msg_.assign(1, b); return; }
+        if (b == 0xF0) { status_ = 0; msg_[0] = b; msgLen_ = 1; msgTooLong_ = false; inSysex_ = true; return; }
+        if (b >= 0xF0) { status_ = 0; msgLen_ = 0; msgTooLong_ = false; return; }  // System Common: the ROM ignores them
+        if (b & 0x80) { status_ = b; msg_[0] = b; msgLen_ = 1; return; }
         if (status_ == 0) return;                       // data with no status: junk
-        if (msg_.empty()) msg_.push_back(status_);      // running status: every frame carries its status
-        msg_.push_back(b);
-        if (msg_.size() == 1 + dataLen(status_)) { frame(emit); }
+        if (msgLen_ == 0) msg_[msgLen_++] = status_;    // running status: every frame carries its status
+        msgPush(b);
+        if (msgLen_ == 1 + dataLen(status_)) { frame(emit); }
+    }
+
+    // Append one byte of the message being collected. Past the longest message a frame may carry the bytes are dropped,
+    // which is what a frame would do with them anyway (see kMaxMessage), and the message is marked too long.
+    void msgPush(std::uint8_t b) {
+        if (msgLen_ < sizeof msg_) msg_[msgLen_++] = b;
+        else msgTooLong_ = true;
     }
 
     void frame(const Emit& emit) {
@@ -186,19 +200,22 @@ private:
             const std::uint8_t s[2] = { SYNC, nextSeq_ };
             emit(s, 2, -1);
         }
-        Frame f{ nextSeq_, {}, -1 };
-        f.bytes.reserve(3 + msg_.size());
-        f.bytes.push_back(FRAME);
-        f.bytes.push_back(nextSeq_);
-        f.bytes.insert(f.bytes.end(), msg_.begin(), msg_.end());
+        Frame f{};
+        f.seq = nextSeq_;
+        f.sentNs = -1;
+        f.size = 3 + static_cast<std::uint32_t>(msgLen_);
+        f.bytes[0] = FRAME;
+        f.bytes[1] = nextSeq_;
+        std::memcpy(f.bytes + 2, msg_.data(), msgLen_);
         unsigned sum = nextSeq_;
-        for (auto b : msg_) sum += b;
-        f.bytes.push_back(static_cast<std::uint8_t>(sum & 0x7F));   // the ROM checks it before anything applies
+        for (std::size_t i = 0; i < msgLen_; ++i) sum += msg_[i];
+        f.bytes[2 + msgLen_] = static_cast<std::uint8_t>(sum & 0x7F);   // the ROM checks it before anything applies
         ++framesSent_;
         nextSeq_ = static_cast<std::uint8_t>((nextSeq_ + 1) & 0x7F);
-        window_.push_back(std::move(f));
-        emit(window_.back().bytes.data(), window_.back().bytes.size(), window_.back().seq);
-        msg_.clear();
+        window_.push(f);
+        emit(window_.back().bytes, window_.back().size, window_.back().seq);
+        msgLen_ = 0;
+        msgTooLong_ = false;
     }
 
     void onAck(std::uint8_t next, std::uint8_t last, std::int64_t nowNs) {
@@ -211,7 +228,7 @@ private:
                 lastRttNs_ = rtt;
                 if (rttMinNs_ < 0 || rtt < rttMinNs_) rttMinNs_ = rtt;
             }
-            window_.pop_front();
+            window_.pop();
         }
         if (window_.empty()) { resendAt_ = kNever; return; }
         if (advanced) resendAt_ = kNever;   // what a pending re-send was for has (partly) arrived: decide afresh
@@ -220,7 +237,8 @@ private:
             // The ROM expects something we no longer hold (it rebooted and latched another number, or we reset):
             // point it at our oldest frame and re-send from there.
             const std::uint8_t s[2] = { SYNC, oldest.seq };
-            pendingSync_.assign(s, s + 2);
+            std::memcpy(pendingSync_.data(), s, 2);
+            pendingSyncLen_ = 2;
             scheduleResend(nowNs);
             return;
         }
@@ -250,16 +268,21 @@ private:
     }
 
     Timing                    timing_;
-    std::deque<Frame>         window_;
+    // Fixed storage, sized once here: the sender runs inside a block (the NES role frames a released message as the
+    // block's emulation reaches it), so neither the window nor the message being collected may grow there.
+    rp::FixedQueue<Frame>     window_{kWindow};
     std::uint8_t              nextSeq_    = 0;
     bool                      synced_     = false;
     std::uint8_t              status_     = 0;
-    std::vector<std::uint8_t> msg_;
+    std::array<std::uint8_t, kMaxMessage + 2> msg_{};   // F0, up to kMaxMessage of payload, F7
+    std::size_t               msgLen_     = 0;
+    bool                      msgTooLong_ = false;      // a byte past what a frame could carry was dropped
     bool                      inSysex_    = false;
     std::uint8_t              ackState_   = 0;   // 0 idle, 1 after F5, 2 after <next>
     std::uint8_t              ackNext_    = 0;
     std::int64_t              resendAt_   = kNever;
-    std::vector<std::uint8_t> pendingSync_;   // a re-sync onAck decided on: poll() sends it ahead of the re-send
+    std::array<std::uint8_t, 2> pendingSync_{};  // a re-sync onAck decided on: poll() sends it ahead of the re-send
+    std::size_t               pendingSyncLen_ = 0;
     std::uint64_t             resends_    = 0;
     std::uint64_t             framesSent_   = 0;
     std::uint64_t             framesResent_ = 0;

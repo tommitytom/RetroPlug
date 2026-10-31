@@ -16,6 +16,7 @@
 #include "system/SystemTypes.hpp"   // AudioBlockInfo, SystemId
 #include "system/CoreBackends.hpp"  // registerCoreBackends: the engine owns the one factory every build goes through
 #include "system/SystemFactory.hpp"
+#include "system/InputCapacity.hpp"
 
 #include "transport/FrameBufferTriple.hpp"
 #include "native/core/img/png/lodepng.h"
@@ -34,6 +35,10 @@
 #include "host/graph/SystemTable.hpp"
 
 namespace {
+
+// A press queue is sized from the two doors a block can press through: its buttons input and this command ring.
+static_assert(rp::kCommandRingCapacity == rp::graph::GraphHost::commandCapacity(),
+              "InputCapacity.hpp's command-ring bound must match GraphHost's ring");
 
 // The table before the first plan. At namespace scope, not function-local: currentTable() may first run on
 // the audio thread, which must not take a static's init guard or register its destructor.

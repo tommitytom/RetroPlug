@@ -403,7 +403,7 @@ void MesenNesSystem::setChannelExportMode(std::uint32_t mode) {
 }
 
 void MesenNesSystem::pressButton(std::uint8_t button, bool down) {
-    pendingButtons_.push_back({ button, down });
+    if (pendingButtons_.push({ button, down })) ++pressesAccepted_;
 }
 
 void MesenNesSystem::onMidi(const ::MidiEvent* events, std::uint32_t count) {
@@ -433,6 +433,15 @@ CoreTransportStats MesenNesSystem::coreTransportStats() {
     CoreTransportStats out{ s.rxDepth, s.rxCapacity, s.droppedBytes, s.wirePending, s.txDepth };
     if (const auto* l = n8Role_->link()) { out.linkFrames = l->framesSent(); out.linkResent = l->framesResent(); }
     return out;
+}
+
+std::uint64_t MesenNesSystem::inputAccepted() const {
+    return pressesAccepted_ + (n8Role_ ? n8Role_->acceptedBytes() : 0);
+}
+
+std::uint64_t MesenNesSystem::inputDropped() const {
+    if (!n8Role_) return pendingButtons_.dropped();
+    return pendingButtons_.dropped() + n8Role_->pendingDropped() + n8Role_->fifoStats().droppedBytes;
 }
 
 namespace {

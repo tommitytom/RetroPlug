@@ -109,5 +109,7 @@ TEST_CASE("SameBoy rebases serial offsets past the block end", "[audio][sameboy]
     // Untouched this block (offset was past the end), rebased to 100 for the next.
     REQUIRE(sys->serialIn_.size() == 1);
     CHECK(sys->serialIn_.front().offset == 100);
-    CHECK(sys->serialIn_.front().byte == 0x42);
+    std::uint8_t front = 0;
+    REQUIRE(sys->peekSerialByte(front));
+    CHECK(front == 0x42);
 }

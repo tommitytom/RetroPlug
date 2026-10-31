@@ -1,7 +1,5 @@
 #include "system/mesen/roles/SmsSyncRole.hpp"
 
-#include <algorithm>
-
 #include "Core/SMS/SmsControlManager.h"
 #include "Core/SMS/SmsMemoryManager.h"
 
@@ -13,10 +11,10 @@ namespace { constexpr std::uint8_t kSyncPort = 1; }
 void SmsSyncRole::pushBytes(std::uint32_t offset, const std::uint8_t* data, std::size_t count, bool /*flush*/) {
     if (data == nullptr || count == 0) return;
     for (std::size_t i = 0; i < count; ++i) {
-        pending_.push_back({ offset, data[i] });
+        if (pending_.push({ offset, data[i] })) ++acceptedLevels_;
     }
     // A second feed could enqueue after this one with an earlier offset; pumpUntil re-sorts once
-    // before draining rather than keeping the deque ordered on every push.
+    // before draining rather than keeping the queue ordered on every push.
     needsSort_ = true;
 }
 
@@ -27,8 +25,8 @@ void SmsSyncRole::pumpUntil(std::uint32_t sampleOffset) {
         // Stable so levels sharing an offset keep enqueue order - the last one queued for a given
         // sample is the one that ends up on the line. Runs once per block (all enqueuing precedes
         // the step loop), after which this is a plain front-drain and the loop below is one compare.
-        std::stable_sort(pending_.begin(), pending_.end(),
-                         [](const PendingLevel& a, const PendingLevel& b) { return a.offset < b.offset; });
+        rp::stableSortEntries(pending_.begin(), pending_.end(),
+                              [](const PendingLevel& a, const PendingLevel& b) { return a.offset < b.offset; });
         needsSort_ = false;
     }
 
@@ -39,7 +37,7 @@ void SmsSyncRole::pumpUntil(std::uint32_t sampleOffset) {
         } else if (controlManager_) {
             controlManager_->SetExternalInput(kSyncPort, lastApplied_);
         }
-        pending_.pop_front();
+        pending_.pop();
     }
 }
 

@@ -5,10 +5,12 @@
 #include <memory>
 #include <vector>
 
+#include "system/InputCapacity.hpp"
 #include "system/SystemBase.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
 #include "transport/FrameBufferTriple.hpp"
 #include "util/ExpSmoother.hpp"
+#include "util/FixedQueue.hpp"
 
 class Emulator;
 class NesSoundMixer;
@@ -64,6 +66,8 @@ public:
     // last drain. Empty before activation or when the ROM has sent nothing.
     std::vector<std::uint8_t> drainCoreBytes() override;
     CoreTransportStats coreTransportStats() override;
+    std::uint64_t inputAccepted() const override;
+    std::uint64_t inputDropped() const override;
 
     // Audio-thread: queue a NES button transition. The byte is reinterpreted
     // as NesButton (Right/Left/Up/Down/A/B/Select/Start, positions 0..7).
@@ -191,7 +195,9 @@ private:
     // Pending NES button transitions (pos 0..7 from NesButton enum). Applied
     // at the top of onProcess via NesController::SetBitValue. Single-shot —
     // we don't bother spreading across the block since NES input polling
-    // happens once per frame, not per sample.
+    // happens once per frame, not per sample. Sized to the most a block's buttons input can carry, and cleared at
+    // each prepare, so a block's presses never make it grow (docs/modular-graph-phase-c4-design.md section 4).
     struct PendingNesButton { std::uint8_t button; bool down; };
-    std::vector<PendingNesButton>     pendingButtons_;
+    rp::FixedQueue<PendingNesButton>  pendingButtons_{rp::kPressInput};
+    std::uint64_t                     pressesAccepted_ = 0;
 };

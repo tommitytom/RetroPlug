@@ -168,6 +168,9 @@ public:
     const void* hostData() const;
 
     const HostConfig& config() const { return config_; }
+    // What the command ring holds, which is also how many host commands (a button press among them) can be queued
+    // between two blocks: a core sizing an input queue from both doors reads this.
+    static constexpr std::size_t commandCapacity() { return kCommandCapacity; }
 
 private:
     struct Command {

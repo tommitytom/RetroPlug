@@ -241,3 +241,33 @@ TEST_CASE("flushAll empties both queues, unlike clear", "[audio][nes]") {
     CHECK(role.fifoRxCount() == 0);
     CHECK(role.readFifoByte() == -1);
 }
+
+TEST_CASE("a carried MIDI run and raw run keep their bytes across a rebase", "[audio][nes]") {
+    // Both feeds enqueue past the block end, out of frame order: the MIDI message is queued first (so its bytes come
+    // first in the arena), the raw run second (so it sorts ahead of the message). Both are carried into the next block.
+    // The arena's compaction must not assume the live runs are in queue order: it has to move them in the order their
+    // bytes occupy, or the first memmove overwrites a run it has not copied yet.
+    NesN8FifoRole role;
+    constexpr std::uint32_t kBlock = 512;
+
+    const ::MidiEvent message = noteOn(kBlock + 388, 64);  // 900, enqueued first
+    role.onMidi(&message, 1);
+    const std::uint8_t raw[] = {0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04};  // 600, enqueued second
+    role.pushBytes(kBlock + 88, raw, sizeof raw);
+
+    role.pumpUntil(kBlock);  // neither is due; the sort puts the raw run ahead of the message in the queue
+    CHECK(role.pendingCount() == 3 + sizeof raw);
+    role.rebase(kBlock);     // both carried: 88 and 388
+
+    role.pumpUntil(88);
+    CHECK(role.fifoRxCount() == static_cast<int>(sizeof raw));
+    for (const std::uint8_t byte : raw) CHECK(role.readFifoByte() == static_cast<int>(byte));
+    CHECK(role.readFifoByte() == -1);
+
+    role.pumpUntil(388);
+    CHECK(role.fifoRxCount() == 3);
+    CHECK(role.readFifoByte() == 0x90);
+    CHECK(role.readFifoByte() == 64);
+    CHECK(role.readFifoByte() == 100);
+    CHECK(role.readFifoByte() == -1);
+}

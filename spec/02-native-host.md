@@ -371,6 +371,13 @@ with slack, rather than sized from the plan's block size, so a feedback wire fro
 across every swap; a CGB clocking the port itself on its fast clock can outrun it in a very long block, and
 what does not fit is dropped and counted.
 
+The core side is bounded too, and fixed: each core sizes its ingress queues (a Game Boy's serial runs, a
+NES's FIFO runs and frame window, a Master System's levels, each console's presses) when it is built, from
+what one block's input can deliver ([InputCapacity.hpp](../packages/native/src/system/InputCapacity.hpp),
+the capacities the sources' outputs above declare), so a block that carries host MIDI, raw bytes, serial-in
+bytes or presses allocates nothing in the core. An input a queue cannot take is refused and counted, the way
+a push past a graph queue's capacity is dropped and counted.
+
 An events or bytes output may declare its queue's capacity (`rp::bytes_out::sized<rp::capacity{...}>` in
 C++, `events.out(capacity)` / `bytes.out(capacity)` in TS), by default 256 messages and 4096 bytes, at
 most 1 Mi messages and 16 MiB. A wire carries its source's queue, so an input declares none (both parsers

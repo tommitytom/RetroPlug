@@ -896,6 +896,51 @@ TEST_CASE("the default profile is the permissive queue every existing test assum
     CHECK(readBytes(fifo, burst.size()) == burst);
 }
 
+TEST_CASE("the permissive profile still drops past fifo_a's hard bound, and keeps the rest",
+          "[audio][nes][fifo][wire]") {
+    // depth 0 means "not modelled", not "unbounded forever": fifo_a's storage is still bounded by what a block's
+    // host input can deliver plus one reply, so a directory listing past it is dropped and counted rather than growing
+    // the vector inside a block. The bytes before the bound stay, in order.
+    rp::NesEverdriveFifo fifo;
+    constexpr std::size_t kBound = std::size_t(rp::kMidiInput.bytes) + rp::kBytesInput.bytes +
+                                   rp::FILE_READ_MAX + 1;
+    const auto burst = pattern(kBound + 3);
+    for (std::uint8_t b : burst) fifo.pushByte(b);
+
+    const auto stats = fifo.stats();
+    CHECK(stats.rxCapacity == 0);
+    CHECK(stats.rxDepth == kBound);
+    CHECK(stats.wirePending == 0);
+    CHECK(stats.droppedBytes == 3);
+    CHECK(readBytes(fifo, 5) == std::vector<std::uint8_t>(burst.begin(), burst.begin() + 5));
+}
+
+TEST_CASE("the wire's own buffer drops past a block's input and counts it", "[audio][nes][fifo][wire]") {
+    // The wire buffer stands for the host's outbound buffer and is sized to one block's host input. With no clock
+    // time passing, nothing crosses it, so the push past its bound is the one this case measures; making the wire
+    // instant afterwards shows the retained bytes still arrive in order.
+    rp::NesEverdriveFifo fifo;
+    std::uint64_t cycles = 0;
+    fifo.setCartClock([&cycles] { return cycles; }, PAL_CLOCK_HZ);
+    fifo.setFifoProfile(/*depth*/ 0, /*bytesPerSecond*/ 1);   // a wire that has not had time to carry anything
+
+    constexpr std::size_t kCapacity = std::size_t(rp::kMidiInput.bytes) + rp::kBytesInput.bytes;
+    const auto burst = pattern(kCapacity + 3);
+    for (std::uint8_t b : burst) fifo.pushByte(b);
+
+    auto stats = fifo.stats();
+    CHECK(stats.wirePending == kCapacity);
+    CHECK(stats.rxDepth == 0);
+    CHECK(stats.droppedBytes == 3);
+
+    fifo.setFifoProfile(/*depth*/ 0, /*bytesPerSecond*/ 0);   // instant from here: what was queued crosses
+    stats = fifo.stats();
+    CHECK(stats.wirePending == 0);
+    CHECK(stats.rxDepth == kCapacity);
+    CHECK(stats.droppedBytes == 3);
+    CHECK(readBytes(fifo, 5) == std::vector<std::uint8_t>(burst.begin(), burst.begin() + 5));
+}
+
 TEST_CASE("a rated wire delivers over time instead of atomically", "[audio][nes][fifo][wire]") {
     // The difference that hid nesvj's worst bug: its copy loop kept a byte offset so it could resume
     // when the FIFO ran dry, and the resume path was wrong. Fed a chunk atomically the loop never

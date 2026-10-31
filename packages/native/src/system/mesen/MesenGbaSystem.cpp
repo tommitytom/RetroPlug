@@ -213,7 +213,7 @@ void MesenGbaSystem::setGainDb(float dB, bool immediate) {
 }
 
 void MesenGbaSystem::pressButton(std::uint8_t button, bool down) {
-    pendingButtons_.push_back({ button, down });
+    if (pendingButtons_.push({ button, down })) ++pressesAccepted_;
 }
 
 namespace {

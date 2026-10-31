@@ -1,15 +1,17 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
-#include <deque>
 #include <functional>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "system/InputCapacity.hpp"
 #include "system/mesen/NesEverdriveFifo.hpp"
 #include "transport/MidiTypes.hpp"
 #include "transport/N8ReliableLink.hpp"
+#include "util/FixedQueue.hpp"
 
 class NesConsole;
 
@@ -120,7 +122,7 @@ public:
 
     // Drop all queued (not-yet-delivered) bytes — on reset, to avoid stale MIDI after a state change. With the link
     // on, its window goes too and the next frame is preceded by a sync: the ROM's sequence may no longer be ours.
-    void clear() { pending_.clear(); pendingMsgs_.clear(); needsSort_ = false; if (link_) { link_->reset(); linkDueCycle_ = kNoDue; } }
+    void clear() { pending_.clear(); bytes_.clear(); needsSort_ = false; if (link_) { link_->reset(); linkDueCycle_ = kNoDue; } }
 
     // Drop BOTH queues: the not-yet-delivered bytes AND the delivered-but-unread ones sitting in the
     // FIFO's RX queue. `clear()` alone leaves the latter, which the ROM would still read. Used on a
@@ -129,8 +131,13 @@ public:
     void flushAll() { clear(); fifo_.clearRx(); }
 
     // Introspection / tests.
-    // Queued raw BYTES; link-mode messages wait unframed in pendingMsgs_ and are not counted (no caller needs them).
-    std::size_t pendingCount() const { return pending_.size(); }
+    // Queued raw BYTES; link-mode messages wait unframed and are not counted (no caller needs them).
+    std::size_t pendingCount() const;
+    // Bytes the queue dropped for want of room since this role was built. The queue holds what a block's midi and
+    // bytes inputs can deliver, so this is zero unless a role is fed outside a plan's queues.
+    std::uint64_t pendingDropped() const { return pendingDropped_; }
+    // Bytes the queue has accepted since this role was built, for a test that staged input reached it.
+    std::uint64_t acceptedBytes() const { return acceptedBytes_; }
     std::size_t fifoRxCount() { return fifo_.rxCount(); }
     // Write a byte to the FIFO as the ROM would (STA $40F0) - an Edio command to the MCU, e.g. a CMD_USB_WR ack.
     void writeFifoByte(std::uint8_t b) { fifo_.WriteRam(0x40F0, b); }
@@ -141,21 +148,32 @@ public:
     }
 
 private:
-    struct PendingByte {
+    // One feed's bytes at one frame: a MIDI event's bytes (which share its frame), or a raw message's. Held in one
+    // queue for both feeds and both modes, since only one of the two modes is ever in use: without the link the run's
+    // bytes are pushed into the FIFO as they come due, and with it the run is framed and sent as one message - so the
+    // sequence numbers follow release order, not the order the feeds queued them.
+    struct PendingRun {
         std::uint32_t offset;   // samples from block start
-        std::uint8_t  byte;
+        std::uint32_t start;    // first byte in bytes_
+        std::uint32_t count;
     };
-    std::deque<PendingByte> pending_;
-    // Link mode: whole messages wait here unframed, sorted by offset like the bytes, and pumpUntil frames each as it
-    // releases it - so the sequence numbers follow release order, not the order the feeds queued them.
-    // Invariant: in link mode pending_ stays empty (both feeds go here), so pumpUntil's raw-then-messages drain order
-    // never matters. A mid-stream enableLink (bytes already in pending_) would need to revisit that.
-    struct PendingMsg {
-        std::uint32_t             offset;
-        std::vector<std::uint8_t> bytes;
-    };
-    std::deque<PendingMsg>  pendingMsgs_;
-    bool                    needsSort_ = false;  // set on enqueue; pumpUntil stable-sorts by offset once
+    // Sized to what a block's midi and bytes inputs can deliver: a run a message, and its bytes here. The bound is
+    // also the FIFO's first two stages' (NesEverdriveFifo), so a block's host input fits all the way through.
+    static constexpr std::size_t kPendingRuns = std::size_t(rp::kMidiInput.messages) + rp::kBytesInput.messages;
+    static constexpr std::size_t kPendingBytes = std::size_t(rp::kMidiInput.bytes) + rp::kBytesInput.bytes;
+    rp::FixedQueue<PendingRun> pending_{kPendingRuns};
+    std::vector<std::uint8_t>  bytes_;             // the runs' bytes, in enqueue order; the reserve is the bound
+    // Live run indices, ascending by start, for rebase's compaction (sized with the queue, so that pass allocates
+    // nothing).
+    std::array<std::uint32_t, kPendingRuns> rebaseOrder_{};
+    std::uint64_t              pendingDropped_ = 0;
+    std::uint64_t              acceptedBytes_  = 0;
+    bool                       needsSort_ = false;  // set on enqueue; pumpUntil sorts by offset once
+
+    // Append `count` bytes at `offset` as one run. A block's input fits by the bounds above; a run that does not is
+    // dropped whole and counted, as a graph queue's overflow is.
+    void queue(std::uint32_t offset, const std::uint8_t* data, std::size_t count);
+
     rp::NesEverdriveFifo    fifo_;
 
     // The reliable link (null = raw MIDI). Its clock is the CPU's: cycles_ and clockHz_ come from onAttach.

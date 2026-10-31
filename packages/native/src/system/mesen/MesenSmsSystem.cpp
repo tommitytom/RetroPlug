@@ -368,7 +368,15 @@ void MesenSmsSystem::setGainDb(float dB, bool immediate) {
 }
 
 void MesenSmsSystem::pressButton(std::uint8_t button, bool down) {
-    pendingButtons_.push_back({ button, down });
+    if (pendingButtons_.push({ button, down })) ++pressesAccepted_;
+}
+
+std::uint64_t MesenSmsSystem::inputAccepted() const {
+    return pressesAccepted_ + syncRole_.acceptedLevels();
+}
+
+std::uint64_t MesenSmsSystem::inputDropped() const {
+    return pendingButtons_.dropped() + syncRole_.pendingDropped();
 }
 
 void MesenSmsSystem::pushCoreBytes(std::uint32_t frame, const std::uint8_t* data, std::size_t size,

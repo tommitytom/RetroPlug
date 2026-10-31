@@ -5,10 +5,12 @@
 #include <string>
 #include <vector>
 
+#include "system/InputCapacity.hpp"
 #include "system/SystemBase.hpp"
 #include "system/mesen/MesenGbaConfig.hpp"
 #include "transport/FrameBufferTriple.hpp"
 #include "util/ExpSmoother.hpp"
+#include "util/FixedQueue.hpp"
 
 class Emulator;
 class MesenAudioDevice;
@@ -49,6 +51,8 @@ public:
     // Mesen's native GbaController::Buttons ordering at apply time.
     // Applied at the top of the next onProcess.
     void pressButton(std::uint8_t button, bool down) override;
+    std::uint64_t inputAccepted() const override { return pressesAccepted_; }
+    std::uint64_t inputDropped() const override { return pendingButtons_.dropped(); }
 
     FrameBufferTriple* framebuffer() override { return &frames_; }
 
@@ -113,9 +117,11 @@ private:
 
     // Pending GBA button transitions. The byte is the GbaButton wire value
     // (Right=0..Start=7, L=8, R=9); remapped to Mesen's native
-    // GbaController::Buttons enum in onProcess.
+    // GbaController::Buttons enum in onProcess. Sized to the most a block's buttons input can carry, and cleared at
+    // each prepare, so a block's presses never make it grow (docs/modular-graph-phase-c4-design.md section 4).
     struct PendingGbaButton { std::uint8_t button; bool down; };
-    std::vector<PendingGbaButton>     pendingButtons_;
+    rp::FixedQueue<PendingGbaButton>  pendingButtons_{rp::kPressInput};
+    std::uint64_t                     pressesAccepted_ = 0;
 
     // This system's private firmware directory: which one it owns, and where it ended up once a BIOS
     // was actually installed there (empty when none was). Private per INSTANCE because Mesen's own

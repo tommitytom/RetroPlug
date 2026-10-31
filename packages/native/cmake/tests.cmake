@@ -113,6 +113,7 @@ retroplug_add_test_binary(
              RP_BUILD_GRAPH_TS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/src/graph/buildGraph.ts"  # the knob ranges
              RP_CORE_ROLES_TS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/src/coreRoles.ts"  # their ranges
              RP_SYSTEM_SETTINGS_TS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/src/systemSettings.ts"  # gain's range
+             RP_PORTS_TS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/src/script/nodes/ports.ts"  # the queue capacities
              RP_BUILD_TYPE="$<CONFIG>")                 # the bench prints the configuration it was built in
 add_dependencies(retroplug-engine-graph-test retroplug-script-test-bundle)  # the embedded bytecode first
 
@@ -231,6 +232,7 @@ retroplug_add_test_binary(
              test/graph/CanonicalJson.test.cpp
              test/graph/Descriptor.test.cpp
              test/graph/NodeLayer.test.cpp
+             test/graph/FixedQueue.test.cpp              # the fixed ingress storage: refusal, compaction and wrap
              test/graph/Registry.test.cpp
              test/graph/Planner.test.cpp
              test/graph/Execution.test.cpp

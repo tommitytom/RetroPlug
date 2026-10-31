@@ -6,11 +6,13 @@
 #include <string>
 #include <vector>
 
+#include "system/InputCapacity.hpp"
 #include "system/SystemBase.hpp"
 #include "system/mesen/MesenSmsConfig.hpp"
 #include "system/mesen/roles/SmsSyncRole.hpp"
 #include "transport/FrameBufferTriple.hpp"
 #include "util/ExpSmoother.hpp"
+#include "util/FixedQueue.hpp"
 
 class Emulator;
 class MesenAudioDevice;
@@ -53,6 +55,8 @@ public:
     // name index (SmsButton wire byte); remapped to Mesen's native
     // SmsController::Buttons ordering at apply time. Applied in prepareForBlock.
     void pressButton(std::uint8_t button, bool down) override;
+    std::uint64_t inputAccepted() const override;
+    std::uint64_t inputDropped() const override;
 
     // Audio-thread: schedule host-transport sync levels at intra-block sample offsets. Each byte is
     // a controller-port level word (see SmsSyncRole for the encoding), NOT a protocol byte - this
@@ -207,7 +211,9 @@ private:
 
     // Pending button transitions. The byte is the SmsButton wire value
     // (Right=0..Start=7); remapped to Mesen's native SmsController::Buttons
-    // enum in prepareForBlock.
+    // enum in prepareForBlock. Sized to the most a block's buttons input can carry, and cleared at each prepare, so a
+    // block's presses never make it grow (docs/modular-graph-phase-c4-design.md section 4).
     struct PendingSmsButton { std::uint8_t button; bool down; };
-    std::vector<PendingSmsButton>     pendingButtons_;
+    rp::FixedQueue<PendingSmsButton>  pendingButtons_{rp::kPressInput};
+    std::uint64_t                     pressesAccepted_ = 0;
 };

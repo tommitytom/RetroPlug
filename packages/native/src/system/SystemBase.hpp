@@ -138,6 +138,12 @@ public:
     // with no such transport. Control-thread read; the NES implementation is mutex-guarded.
     virtual CoreTransportStats coreTransportStats() { return {}; }
 
+    // What this core's ingress queues have taken and dropped since it was built: bytes for the serial / N8
+    // byte queues, presses for a button queue. A test reads these to hold that staged input reached the core and
+    // that a push past a queue's bound is counted rather than growing it. Zero for a core with no inputs.
+    virtual std::uint64_t inputAccepted() const { return 0; }
+    virtual std::uint64_t inputDropped() const { return 0; }
+
     // Audio-thread: enqueue a button transition.
     virtual void pressButton(std::uint8_t /*button*/, bool /*down*/) {}
 

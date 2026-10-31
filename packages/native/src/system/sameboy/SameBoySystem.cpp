@@ -286,6 +286,7 @@ void SameBoySystem::onActivate(double sampleRate) {
     // doesn't carry over half-shifted bytes. Serial-out capture's mode is set
     // separately, by the system node, via setSerialOutCapture.
     serialIn_.clear();
+    serialBytes_.clear();
     serialBitsRemaining_ = 0;
     serialOutByte_ = 0;
     serialOutBits_ = 0;
@@ -490,15 +491,22 @@ bool SameBoySystem::nextSerialInBit() {
         serialBitsRemaining_ = 8;
     }
 
-    const std::uint8_t byte = serialIn_.front().byte;
+    const std::uint8_t byte = serialBytes_.front();
     const int bitIndex = serialBitsRemaining_ - 1; // MSB-first: 7..0
     const bool bit = ((byte >> bitIndex) & 1u) != 0;
 
     --serialBitsRemaining_;
     if (serialBitsRemaining_ == 0) {
-        serialIn_.pop_front();
+        popSerialByte();
     }
     return bit;
+}
+
+// Take the front byte of the serial queue: its run loses one, and the run goes when its last byte has gone. The ring's
+// head is always the front run's first byte, since both are consumed front-first only.
+void SameBoySystem::popSerialByte() {
+    serialBytes_.pop();
+    if (--serialIn_.front().count == 0) serialIn_.pop();
 }
 
 void SameBoySystem::setModel(SameBoyModel model) {
@@ -598,7 +606,7 @@ void SameBoySystem::pressButton(std::uint8_t button, bool down) {
     std::uint32_t offset = 0;
     if (!pendingButtons_.empty())
         offset = pendingButtons_.back().offset + buttonSpacingSamples_;
-    pendingButtons_.push_back(PendingButton{offset, static_cast<GameboyButton>(button), down});
+    if (pendingButtons_.push(PendingButton{offset, static_cast<GameboyButton>(button), down})) ++pressesAccepted_;
 }
 
 std::vector<ChannelStream> SameBoySystem::channelLayout() const {
@@ -711,7 +719,7 @@ bool SameBoySystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
            pendingButtons_.front().offset <= audioFrameCount_) {
         const auto& pb = pendingButtons_.front();
         GB_set_key_state(gb_, static_cast<GB_key_t>(pb.button), pb.down);
-        pendingButtons_.pop_front();
+        pendingButtons_.pop();
     }
 
     // Slave-mode serial pump. mGB and other "MIDI-listener" ROMs hold SC at
@@ -727,8 +735,8 @@ bool SameBoySystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
         serialIn_.front().offset <= audioFrameCount_) {
         const std::uint8_t sc = GB_safe_read_memory(gb_, 0xFF02);
         if ((sc & 0x80) && !(sc & 0x01)) {
-            const std::uint8_t byte = serialIn_.front().byte;
-            serialIn_.pop_front();
+            const std::uint8_t byte = serialBytes_.front();
+            popSerialByte();
             for (int b = 7; b >= 0; --b) {
                 GB_serial_set_data_bit(gb_, ((byte >> b) & 1u) != 0);
             }

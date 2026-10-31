@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <queue>
 #include <vector>
 #include <mutex>
 #include <fstream>
@@ -16,6 +15,8 @@
 
 #include "Core/NES/INesMemoryHandler.h"
 
+#include "system/InputCapacity.hpp"
+#include "util/FixedQueue.hpp"
 #include "util/ProcessId.hpp"
 
 // EverDrive N8 Pro FIFO emulator. Maps to NES address space at $40F0 (data)
@@ -157,10 +158,11 @@ namespace rp {
 	// -----------------------------------------------------------------------
 	// FIFO fidelity profile: how closely the host->NES queue behaves like the cartridge's
 	// -----------------------------------------------------------------------
-	// The default is PERMISSIVE - unbounded and delivered instantly - because that is what every
-	// existing test was written against. The device is neither, and the difference hides whole
-	// classes of bug: a ROM that can never lose a byte never has its recovery path exercised, and
-	// one fed a whole chunk atomically is never starved mid-structure the way a real wire starves it.
+	// The default is PERMISSIVE - no modelled depth and delivered instantly - because that is what every
+	// existing test was written against. (The storage still has its hard bound; see _rxBound.) The device is
+	// neither, and the difference hides whole classes of bug: a ROM that can never lose a byte never has its
+	// recovery path exercised, and one fed a whole chunk atomically is never starved mid-structure the way a
+	// real wire starves it.
 	// A test opts in to the hardware profile through the "mesen" role's `fifo` field.
 	//
 	// The measured constants, kept here rather than in a shell script:
@@ -190,8 +192,8 @@ namespace rp {
 		// fifo_a's delivered bytes, oldest first. A vector read from a moving head rather than a std::queue, whose
 		// deque allocates a node on its first push: an Edio reply is pushed WHOLE before the ROM reads a byte of it (a
 		// file read is up to 4 KB), so a block that answers an SD command would allocate inside the block. The vector
-		// keeps its capacity, and what has been read is dropped once the head has moved past half of it, so it stays
-		// bounded by the largest reply rather than by every byte ever delivered.
+		// keeps its capacity (see the constructor for the bound), and what has been read is dropped once the head has
+		// moved past half of it, so it stays bounded by the largest reply rather than by every byte ever delivered.
 		struct DeliveredBytes {
 			std::vector<uint8_t> bytes;
 			std::size_t          head = 0;
@@ -217,6 +219,10 @@ namespace rp {
 		};
 
 		DeliveredBytes _rxQueue;
+		// fifo_a's LIVE storage bound: what one block's host input can add to it (the inputs a system node's midi and
+		// bytes ports feed this FIFO through), plus the largest single reply. The vector is reserved to twice this,
+		// because its consumed prefix can sit dead below head until pop() compacts it (see the constructor).
+		static constexpr std::size_t _rxBound = std::size_t(kMidiInput.bytes) + kBytesInput.bytes + FILE_READ_MAX + 1;
 		std::mutex _mutex;
 
 		// What fifo_a's RAM holds, by slot. On the device the FIFO is a ring over 2048 bytes of block
@@ -291,17 +297,19 @@ namespace rp {
 		uint8_t _lastStatus = 0;
 
 		// ----- The wire (host -> MCU -> fifo_a) -------------------------
-		// What the host has handed over but the wire has not yet carried. Unbounded on purpose: it
-		// stands for the host's own outbound buffer, which has no cartridge counterpart and must not
-		// drop - a byte lost HERE would be the emulation inventing a failure the device never has.
-		// Bytes cross into _rxQueue at _wireBytesPerSecond (see pumpWire), and only there can they be
-		// dropped, by the queue being full.
-		std::queue<uint8_t> _wireQueue;
+		// What the host has handed over but the wire has not yet carried: it stands for the host's own
+		// outbound buffer, which has no cartridge counterpart. Bytes cross into _rxQueue at
+		// _wireBytesPerSecond (see pumpWire), and only there can they be dropped, by the queue being full.
+		// The buffer is sized to one block's host input (kMidiInput + kBytesInput, what a system node's midi
+		// and bytes inputs can deliver), so a block never grows it; a push beyond that is dropped and counted
+		// with the RX queue's drops, which no host that outruns the modelled wire by more than a block does.
+		rp::FixedQueue<uint8_t> _wireQueue{std::size_t(kMidiInput.bytes) + kBytesInput.bytes};
 		uint32_t _wireBytesPerSecond = 0;   // 0 = instant: the wire is not modelled
 		uint64_t _wireLastCycle      = 0;
 		double   _wireCredit         = 0.0; // fractional bytes carried over between pumps
 
-		// fifo_a's depth, and what it has cost. 0 = unbounded (the permissive default).
+		// fifo_a's modelled depth, and what it has cost. 0 = no modelled depth (the permissive default); its storage
+		// is still bounded by _rxBound.
 		uint32_t _rxCapacity   = 0;
 		uint64_t _droppedBytes = 0;         // cumulative, never cleared by a read: a test samples it
 
@@ -331,10 +339,15 @@ namespace rp {
 			// The parser's and fifo_a's buffers live as long as the FIFO; without this they grow (push_back / reserve)
 			// the first time a block carries a bigger command frame, file block or reply than any before it, which the
 			// block thread may not do. A file read's reply is one resp byte plus up to the 4096 the SDK reads per
-			// command, so that is what a reply buffer is given; a larger one (a big directory listing) still grows it.
+			// command, so that is what a reply buffer is given; a larger one (a big directory listing) is past
+			// _rxBound, and is dropped and counted rather than growing it, even under the permissive profile.
 			_params.reserve(MAX_COMMAND_PARAMS);
 			_writeBlock.reserve(ACK_BLOCK_SIZE);
-			_rxQueue.bytes.reserve(FILE_READ_MAX + 1);
+			// A block's host input, plus the largest reply: fifo_a holds everything a block delivered that the ROM has
+			// not read yet, and one reply behind it. Twice the live bound, because pop() only erases the consumed
+			// prefix once head passes half of bytes.size(): the vector can hold a dead prefix nearly as large as the
+			// live tail, and a reserve of exactly _rxBound would reallocate inside a block when both are near it.
+			_rxQueue.bytes.reserve(2 * _rxBound);
 		}
 
 		// Set the host directory that stands in for the SD card root ("/"). Must be set before the ROM
@@ -383,7 +396,7 @@ namespace rp {
 			_wireLastCycle = _cartCycles ? _cartCycles() : 0;
 		}
 
-		// How faithfully the host->NES queue behaves like fifo_a. `depth` 0 = unbounded,
+		// How faithfully the host->NES queue behaves like fifo_a. `depth` 0 = no modelled depth,
 		// `bytesPerSecond` 0 = instant delivery; both together are the permissive default every
 		// existing test was written against. MesenNesSystem resolves the "mesen" role's `fifo`
 		// profile (and any explicit override) into this pair at activate.
@@ -517,7 +530,7 @@ namespace rp {
 			// Carry what is already owed before adding to the queue, so an idle gap between pushes is
 			// the host's gap rather than credit the wire banks up and then bursts through.
 			pumpWire();
-			_wireQueue.push(byte);
+			if (!_wireQueue.push(byte)) ++_droppedBytes;   // the wire's buffer is a block's worth (see _wireQueue)
 			if (fifoTraceEnabled())
 				std::fprintf(stderr, "[fifo] midi %02X (wire=%zu depth=%zu) @%llu\n",
 				             byte, _wireQueue.size(), _rxQueue.size(), static_cast<unsigned long long>(_cartCycles ? _cartCycles() : 0));
@@ -539,8 +552,7 @@ namespace rp {
 		void clearRx() {
 			std::lock_guard<std::mutex> lock(_mutex);
 			_rxQueue.clear();
-			std::queue<uint8_t> emptyWire;
-			_wireQueue.swap(emptyWire);
+			_wireQueue.clear();
 			_wireCredit = 0.0;
 			_wireLastCycle = _cartCycles ? _cartCycles() : 0;
 		}
@@ -585,11 +597,14 @@ namespace rp {
 		// accounting artefact of the USB link, and reproducing the number by fitting to it would be
 		// inventing a mechanism rather than modelling one.
 		void pushRx(uint8_t byte) {
-			if (_rxCapacity != 0 && _rxQueue.size() >= _rxCapacity) {
+			// The profile's depth when one is modelled, else the bound the queue is reserved to (a block's host input
+			// plus one reply): the reserve is a hard bound, so fifo_a never grows on the block thread either.
+			const std::size_t limit = _rxCapacity != 0 ? std::min<std::size_t>(_rxCapacity, _rxBound) : _rxBound;
+			if (_rxQueue.size() >= limit) {
 				++_droppedBytes;
 				if (fifoTraceEnabled())
-					std::fprintf(stderr, "[fifo] DROP %02X (full at %u, dropped=%llu)\n",
-					             byte, _rxCapacity, static_cast<unsigned long long>(_droppedBytes));
+					std::fprintf(stderr, "[fifo] DROP %02X (full at %zu, dropped=%llu)\n",
+					             byte, limit, static_cast<unsigned long long>(_droppedBytes));
 				return;
 			}
 			_rxQueue.push(byte);
@@ -598,8 +613,8 @@ namespace rp {
 		}
 
 		// `$40F0` on an empty fifo_a: the slot the read pointer rests on, which is the write pointer's
-		// (see _rxRam). Holds even when the queue is unbounded and outran the ring: the slot has been
-		// rewritten since, exactly as the device's would have been.
+		// (see _rxRam). Holds even when the modelled depth is unbounded and the queue outran the ring: the slot has
+		// been rewritten since, exactly as the device's would have been.
 		uint8_t staleRead() const { return _rxRam[_rxWriteSlot]; }
 
 		// Carry bytes from the host's outbound buffer into fifo_a at the modelled wire rate. Without
