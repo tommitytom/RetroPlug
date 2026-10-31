@@ -11,7 +11,8 @@ for (const outputs of [2, 4, 8] as const) {
   // triangle, and an added in-range note (split.ts) sounds noise on lane 3; DMC stays silent because
   // nothing plays a sample. On a host narrower than 8 (o2, o4) the split does not fit: the mix is wired
   // and the tap stays armed, and the host hears exactly the unarmed mix, bit for bit (split.ts; B0
-  // section 2.5 and C4 section 10). All three widths now hold one mix digest.
+  // section 2.5 and C4 section 10). o2 and o4, the narrow widths, hold one mix digest; o8 still holds
+  // the split's four.
   cases.push(single(`nes-channelSplit-o${outputs}`, "channelSplit", outputs, outputs === 8 ? range(4) : [0, 1], (rig) => rig.add(ROMS.bliptoaster), [0, 1, 2, 3]));
   // Pins: Pulse | TND | Expansion (silent on the 2A03-only build), mono on 3 lanes or a pair each on 6.
   // Narrow hosts (pinSplit o2, stereoPinSplit o2/o4) are the same fallback to the mix as above.

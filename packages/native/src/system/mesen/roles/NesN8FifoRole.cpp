@@ -113,9 +113,9 @@ void NesN8FifoRole::pumpUntil(std::uint32_t sampleOffset) {
     if (needsSort_) {
         // Stable so two runs at one offset keep their enqueue order (the sender's parser relies on it: running
         // status, a SysEx split across pushes) with any carried in from an earlier block ahead of them, and so a run's
-        // own bytes stay together. Runs once per block (all enqueuing precedes the step loop), after which this is a plain
-        // front-drain. A split SysEx holds together only at ONE offset: halves at different offsets with a message
-        // released between them are cut by the sender's parser (no caller splits one that way).
+        // own bytes stay together. Runs once per block (all enqueuing precedes the step loop), after which this is a
+        // plain front-drain. A split SysEx holds together only at ONE offset: halves at different offsets with a
+        // message released between them are cut by the sender's parser (no caller splits one that way).
         sortScratch_.sort(pending_.begin(), pending_.end(),
                           [](const PendingRun& a, const PendingRun& b) { return a.offset < b.offset; });
         needsSort_ = false;

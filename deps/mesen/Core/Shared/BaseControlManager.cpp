@@ -68,11 +68,11 @@ const vector<ControllerData>& BaseControlManager::GetPortStates()
 		state.Type = _controlDevices[i]->GetControllerType();
 		state.Port = _controlDevices[i]->GetPort();
 		// RetroPlug: the snapshot's state buffer is reserved before it is filled, to the largest state a device can
-		// produce, so a copy into it never grows it. Without it, a device no ROM has read yet - or a mapper or role
-		// device the control manager has just registered - carries an empty state, and the first read (thousands of
-		// frames in, for a ROM that polls its controller late) would be what grows this vector and every copy of it:
-		// the frame's, the decoder's and the renderer's, inside a block. The state keeps the length the device gives
-		// it (a pad's is one byte), which is what a reader of the frame's input snapshot sees.
+		// produce, so a copy into it never grows it. The device's own state is already grown to MaxBytes in one step
+		// by BaseControlDevice::EnsureCapacity, so a copy into this reserve never allocates either; without the
+		// reserve here, a copy of a device no ROM has read yet (a mapper or role device just registered, or a pad a
+		// ROM polls thousands of frames in) would be what grows this vector and every copy of it: the frame's, the
+		// decoder's and the renderer's, inside a block. Such a device carries an empty state, as upstream's did.
 		if (state.State.State.capacity() < ControlDeviceState::MaxBytes) {
 			state.State.State.reserve(ControlDeviceState::MaxBytes);
 		}

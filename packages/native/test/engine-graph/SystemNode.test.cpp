@@ -2682,9 +2682,8 @@ std::uint64_t ramHash(SystemBase& core) {
 // being the counted one. The warm run is deliberately below the ragged set's maximum, so the 8192-frame window is still
 // the first block at that size: a buffer that grew lazily at a new high-water mark would allocate there. ~4 k frames of
 // warm-up is several emulated frames' worth of Mesen's frame path and of SameBoy's own per-frame work, so what remains
-// is steady state, and it is where a device's state is sized (the first poll reserves it; see ClearState) and where a
-// control manager that registers a port of its own has done so. That one-time sizing is warm-up, like a core's first
-// frame.
+// is steady state, and it is long enough that a control manager which registers a port of its own has done so. A
+// device's state capacity is its constructor's (`ClearState` keeps it), so no poll can be what sizes it.
 template <class Stage>
 void checkWholeBlocksAreFree(SystemBase& core, const std::vector<float*>& lanes, Stage stage) {
     core.pressButton(0, true);
@@ -3105,8 +3104,9 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
     }
     SECTION("NES, its reliable link on") {
         // The link's own block-thread work: every message the host sends is framed as the block's emulation reaches its
-        // offset (a window entry, a sync ahead of the first frame, a re-send when one is due), and a run too long for a
-        // frame takes the raw door.
+        // offset (a window entry, a sync ahead of the first frame, a re-send when one is due), and the 256-byte SysEx,
+        // longer than a frame can carry, is dropped by the link's framing: its bytes never reach the ROM, which is why
+        // the run is in the accepted count below but not in the frames sent.
         auto core = linkedNes(1);
         core->reserveAudio(8192);
         Lanes lanes(2);

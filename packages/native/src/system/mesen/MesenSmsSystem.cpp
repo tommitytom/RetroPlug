@@ -287,9 +287,10 @@ void MesenSmsSystem::onActivate(double sampleRate) {
     if (stagedRomPath_.empty()) return;
 
     VirtualFile romFile(stagedRomPath_);
-    MesenCore core = bootMesenCore(
-        "MesenSmsSystem", romFile, stagedRomPath_, sampleRate, &frames_, blockFrames(MesenAudioDevice::kDefaultBlockFrames),
-        [this](Emulator& emu) { configureSms(emu, config_.gameGear, config_.enableFm); });
+    MesenCore core = bootMesenCore("MesenSmsSystem", romFile, stagedRomPath_, sampleRate, &frames_,
+                                   blockFrames(MesenAudioDevice::kDefaultBlockFrames), [this](Emulator& emu) {
+                                       configureSms(emu, config_.gameGear, config_.enableFm);
+                                   });
     if (!core) return;
     emu_         = std::move(core.emu);
     audioDevice_ = std::move(core.audio);
