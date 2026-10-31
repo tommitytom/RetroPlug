@@ -258,9 +258,10 @@ to 3 is the other console name `Engine` keeps (section 12).
 - `kind()` is no longer dead: the node's check is its production reader.
 - **The input queues**, added after this design's first draft (section 11): `FixedQueue.test.cpp` in
   `retroplug-graph-test` holds a push past the bound and the count, a consumed prefix's compaction keeping the live
-  order, `FixedByteRing`'s wrap over more than its capacity, and `rp::SortScratch`'s stability on equal keys and its
-  bound: a full reversed queue (the Master System's 74752 levels) costs at most n * ceil(log2 n) entry moves and
-  allocates nothing, where the in-place insertion sort it replaced cost n * n / 2; a case reads `ports.ts`'s four
+  order, `FixedByteRing`'s wrap over more than its capacity, and `rp::SortScratch`'s stability on equal keys, its
+  order against a reference stable insertion sort over two thousand random runs, and its bound: a full reversed queue
+  (the Master System's 74752 levels) costs at most n * (ceil(log2 n) + 1) entry moves and allocates nothing, where the
+  in-place insertion sort it replaced cost n * n / 2; a case reads `ports.ts`'s four
   declarations ([nodes/ports.ts](../packages/retroplug/src/script/nodes/ports.ts)) and compares
   them with `InputCapacity.hpp`, so either side drifting is visible; and a `[input-drops]` case has a section per core
   queue (NES, SMS, GBA and Game Boy presses, a Game Boy's serial bytes and runs, an SMS's levels, a NES's N8 runs and
@@ -434,16 +435,16 @@ section 11. The ones worth naming on their own:
   1 and 4 through the Engine, and 4 and 2 on a Game Boy carrying presses and serial bytes, all of them queues; the fix
   is section 11's. A later pass made each counted window hold that what it staged landed: `inputDropped()` unchanged
   across every window, the non-press counters checked exactly (`acceptedBytes()`, `levelsAccepted()`,
-  `serialInAccepted()`), a Game Boy's stems half run on a fresh core so its scheduled press queue never fills and
-  counts a refusal instead, and the Engine section's acceptance read after its staging.
+  `serialInAccepted()`), a Game Boy's stems half run on a fresh core, so the presses the first half scheduled cannot
+  fill the queue the second half stages into, and the Engine section's acceptance read after its staging.
 - **libstdc++'s `std::deque` allocates its first node eagerly** (sections 6, 11). A one-block burst of tens of entries
   hides a deque regression, so the `[alloc]` case's press counts and run lengths (64 presses, 24 messages a block) are
   sized past that on purpose; a later case that stages less will not see a re-introduced deque.
 - **`std::stable_sort` allocates** (section 11). It takes a temporary buffer, so the two roles' once-a-block offset
   sort was an allocation on the block thread; the in-place insertion sort that replaced it allocated nothing but was
-  quadratic, about 2.8 G entry moves for a Master System level queue full and reversed, on the audio thread, so the
-  sort is now a bottom-up merge through `rp::SortScratch`, sized with the queue: about n * ceil(log2 n) moves and still
-  nothing allocated.
+  quadratic, about 2.8 G swaps (8.4 G counted entry moves) for a Master System level queue full and reversed, on the
+  audio thread, so the sort is now a bottom-up merge through `rp::SortScratch`, sized with the queue: at most
+  n * (ceil(log2 n) + 1) moves and still nothing allocated.
 - **The N8 role's rebase must compact its arena in ascending byte order, not queue order** (section 11). The sort by
   offset can permute the live runs, and a forward compaction in queue order overwrote a run it had not copied yet, so
   two feeds that both carried a run past the block end could swap payloads; a case stages exactly that and reads each
@@ -480,7 +481,8 @@ serial bytes. On the commit, every section is 0 and 0.
 **What each queue became.** Every ingress queue is a fixed ring (`util/FixedQueue.hpp`: `rp::FixedQueue<T>`, one
 reserved vector and a head index, `push` refusing past `capacity()` and counting; `rp::FixedByteRing`, a byte ring
 consumed front-first; `rp::SortScratch<T>`, a stable bottom-up merge sort through a scratch buffer sized with the
-queue) sized when the core is built:
+queue, a second copy of its entries: 598016 bytes for a Master System role's 74752 levels, 52224 for the NES role's
+4352 runs) sized when the core is built:
 
 - **The three Mesen consoles' presses** were a `std::vector` grown by `push_back` (5 allocations for 12 presses). Now a
   `FixedQueue` of `kPressInput` 320 = `kButtonsInput` 64 + `GraphHost::commandCapacity()` 256, the two doors a block

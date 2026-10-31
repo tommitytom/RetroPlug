@@ -1,9 +1,10 @@
 // The fixed storage a core's ingress queues are built from (docs/modular-graph-phase-c4-design.md section 11):
 // FixedQueue's refusal and its compaction when the storage is full but a prefix was consumed, FixedByteRing's wrap,
-// and SortScratch's stability and its bound. These are the branches a block relies on and a core's cases reach only
-// indirectly.
+// and SortScratch's stability, its order against a reference sort and its bound. These are the branches a block relies
+// on and a core's cases reach only indirectly.
 
 #include <cstdint>
+#include <random>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -189,6 +190,53 @@ TEST_CASE("SortScratch keeps equal keys in their original order", "[graph][fixed
     scratch.sort(one.data(), one.data(), [](const Entry& a, const Entry& b) { return a.key < b.key; });
     scratch.sort(one.data(), one.data() + 1, [](const Entry& a, const Entry& b) { return a.key < b.key; });
     CHECK(one.front().seq == 7);
+}
+
+TEST_CASE("SortScratch keeps the order a stable insertion sort would, over random runs", "[graph][fixed-queue]") {
+    // The case above is five entries and the bound case holds one shape; what the roles rely on is the whole order for
+    // any input: a tie keeps the earlier enqueue, so entries sharing an offset stay in the order the feeds queued them.
+    // A reference insertion sort moves the same entries and breaks a tie the same way, and every run is compared on
+    // the key and the sequence, at shapes from empty to longer than a block's queue.
+    struct Entry {
+        int key;
+        int seq;
+    };
+    const auto less = [](const Entry& a, const Entry& b) { return a.key < b.key; };
+    std::mt19937 rng(0x5eed1234u);
+    const auto compare = [&](const std::vector<Entry>& input, int trial) {
+        std::vector<Entry> expected = input;
+        for (std::size_t i = 1; i < expected.size(); ++i) {
+            const Entry entry = expected[i];
+            std::size_t j = i;
+            while (j > 0 && less(entry, expected[j - 1])) {
+                expected[j] = expected[j - 1];
+                --j;
+            }
+            expected[j] = entry;
+        }
+
+        rp::SortScratch<Entry> scratch(input.size());
+        std::vector<Entry> got = input;
+        scratch.sort(got.data(), got.data() + got.size(), less);
+        for (std::size_t i = 0; i < got.size(); ++i) {
+            INFO("trial " << trial << ", " << got.size() << " entries, index " << i);
+            CHECK(got[i].key == expected[i].key);
+            CHECK(got[i].seq == expected[i].seq);
+        }
+    };
+    for (int trial = 0; trial < 2000; ++trial) {
+        const std::size_t count = rng() % 41;
+        const int         keys  = 1 + static_cast<int>(rng() % 4);  // few keys, so ties are the common case
+        std::vector<Entry> input;
+        for (std::size_t i = 0; i < count; ++i)
+            input.push_back({static_cast<int>(rng() % static_cast<std::uint32_t>(keys)), static_cast<int>(i)});
+        compare(input, trial);
+    }
+    // One run past the widths the random ones reach, so a long merge alternates buffers several times over.
+    constexpr std::size_t kLong = 4097;
+    std::vector<Entry> longRun;
+    for (std::size_t i = 0; i < kLong; ++i) longRun.push_back({static_cast<int>(rng() % 7), static_cast<int>(i)});
+    compare(longRun, -1);
 }
 
 TEST_CASE("SortScratch bounds a full reversed queue to a merge's moves, and allocates nothing",

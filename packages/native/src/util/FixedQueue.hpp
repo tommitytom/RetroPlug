@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <utility>
@@ -145,33 +146,28 @@ private:
 };
 
 // Stable sort of a block's queued entries by offset through a scratch buffer sized before the block runs, so the
-// block thread allocates nothing: std::stable_sort takes a temporary buffer, which the block thread may not have. A
-// bottom-up merge sort moves each entry once a pass, so a full queue costs about n * ceil(log2 n) moves; the
-// in-place insertion sort this replaced cost n * n / 2 on a reversed queue, which the Master System's 74752 levels
-// made about 2.8 G swaps on the audio thread (a realistic two-feed block, the midi door's levels at one offset after
-// the bytes door's at an earlier one, about 75 M). Stability is the merge's: on a tie the left run's entry goes
-// first, so entries sharing an offset keep their enqueue order.
+// block thread allocates nothing: std::stable_sort takes a temporary buffer, which the block thread may not have. The
+// scratch is a second copy of the queue's entries (598016 bytes for the Master System's 74752 levels, 52224 for the
+// NES role's 4352 runs), held for the core's life. A bottom-up merge sort moves each entry once a pass, so a full
+// queue costs about n * (ceil(log2 n) + 1) moves; the in-place insertion sort this replaced cost n * n / 2 on a
+// reversed queue, which the Master System's 74752 levels made about 2.8 G swaps on the audio thread (a realistic
+// two-feed block, the midi door's levels at one offset after the bytes door's at an earlier one, about 75 M).
+// Stability is the merge's: on a tie the left run's entry goes first, so entries sharing an offset keep their enqueue
+// order.
 template <class T>
 class SortScratch {
 public:
     SortScratch() = default;
-    explicit SortScratch(std::size_t capacity) { reserve(capacity); }
+    explicit SortScratch(std::size_t capacity) : buffer_(capacity) {}
     SortScratch(const SortScratch&) = delete;
     SortScratch& operator=(const SortScratch&) = delete;
 
-    // Room for `capacity` entries. Growth only, and only where allocating is allowed (a core's construction, where its
-    // queue is sized too): a sort never grows it while a block runs.
-    void reserve(std::size_t capacity) {
-        if (capacity <= buffer_.size()) return;
-        buffer_.resize(capacity);
-    }
-    std::size_t capacity() const { return buffer_.size(); }
-
-    // Stable sort of [first, last) by `less`. The range must fit capacity(): each pass writes its merged pairs into
-    // the other buffer, so the sort needs a full copy's worth of room.
+    // Stable sort of [first, last) by `less`. The range must fit the capacity it was constructed with: each pass
+    // writes its merged pairs into the other buffer, so the sort needs a full copy's worth of room.
     template <class Less>
     void sort(T* first, T* last, Less less) {
         const std::size_t count = static_cast<std::size_t>(last - first);
+        assert(count <= buffer_.size());
         if (count < 2) return;
         T* src = first;
         T* dst = buffer_.data();

@@ -15,8 +15,8 @@ void SmsSyncRole::pushBytes(std::uint32_t offset, const std::uint8_t* data, std:
     }
     // A second feed could enqueue after this one with an earlier offset; pumpUntil re-sorts once before draining
     // rather than keeping the queue ordered on every push. A full reversed queue is the worst case that sort can be
-    // handed, and rp::SortScratch bounds it to a merge's about n * ceil(log2 n) moves rather than an insertion sort's
-    // n * n / 2.
+    // handed, and rp::SortScratch bounds it to a merge's at most n * (ceil(log2 n) + 1) moves rather than an insertion
+    // sort's n * n / 2.
     needsSort_ = true;
 }
 
