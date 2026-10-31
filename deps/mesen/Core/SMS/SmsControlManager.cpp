@@ -47,7 +47,14 @@ void SmsControlManager::UpdateControlDevices()
 {
 	SmsConfig& cfg = _emu->GetSettings()->GetSmsConfig();
 	CvConfig& cvCfg = _emu->GetSettings()->GetCvConfig();
-	if(_emu->GetSettings()->IsEqual(_prevConfig, cfg) && _emu->GetSettings()->IsEqual(_prevCvConfig, cvCfg) && _controlDevices.size() > 0) {
+	// RetroPlug: compare both configs before either decides, because IsEqual is what records the config it is given.
+	// Under the && short-circuit a call whose SMS config differs - every activation's, since RetroPlug registers both
+	// pads - left _prevCvConfig at its default, so the next call saw a "change" that was not one and rebuilt the
+	// devices. That next call is the first frame's ProcessEndOfFrame, inside a block, where the rebuild discarded the
+	// button bits the block had just applied. Comparing both records both, so only a real change rebuilds.
+	bool smsEqual = _emu->GetSettings()->IsEqual(_prevConfig, cfg);
+	bool cvEqual = _emu->GetSettings()->IsEqual(_prevCvConfig, cvCfg);
+	if(smsEqual && cvEqual && _controlDevices.size() > 0) {
 		//Do nothing if configuration is unchanged
 		return;
 	}
