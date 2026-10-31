@@ -271,6 +271,15 @@ bool MesenGbaSystem::peekPendingPress(std::uint8_t button, bool& down) const {
     return held;
 }
 
+bool MesenGbaSystem::buttonDown(std::uint8_t button) const {
+    const int native = toGbaButton(button);
+    if (native < 0 || !emu_) return false;
+    auto* console = dynamic_cast<GbaConsole*>(emu_->GetConsole().get());
+    if (!console) return false;
+    auto controller = console->GetControlManager()->GetControlDeviceByIndex(0);
+    return controller && controller->IsPressed(static_cast<std::uint8_t>(native));
+}
+
 void MesenGbaSystem::prepareForBlock(const AudioBlockInfo& /*info*/) {
     if (!activated_ || !emu_) return;
 

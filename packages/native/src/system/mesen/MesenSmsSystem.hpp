@@ -60,8 +60,13 @@ public:
     // none (a queue with no entry for it, or a byte that names no button of this console). The queue is applied entry
     // by entry in order, so the entry that stands is the last one naming that button. A test seam of the shape
     // SameBoySystem::peekSerialByte is: a block applies the queue and empties it, so a false after a block is the read
-    // that the transition reached the controller.
+    // that the transition was consumed, and buttonDown below is the read that the pad then holds it.
     bool peekPendingPress(std::uint8_t button, bool& down) const;
+
+    // Whether the console's controller 0 holds the button `button` now, through BaseControlDevice::IsPressed: the bit
+    // the last block applied, not the queue. False for a byte that names no button of this console, and before
+    // activation, where there is no pad to read. A read-only test seam beside peekPendingPress.
+    bool buttonDown(std::uint8_t button) const;
     std::uint64_t inputAccepted() const override;
     std::uint64_t inputDropped() const override;
     // The levels the sync role's queue has taken since the core was built: the non-press half of inputAccepted(), for

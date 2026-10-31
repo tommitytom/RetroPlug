@@ -497,6 +497,15 @@ bool MesenNesSystem::peekPendingPress(std::uint8_t button, bool& down) const {
     return held;
 }
 
+bool MesenNesSystem::buttonDown(std::uint8_t button) const {
+    const int native = toNesButton(button);
+    if (native < 0 || !emu_) return false;
+    auto* console = dynamic_cast<NesConsole*>(emu_->GetConsole().get());
+    if (!console) return false;
+    auto controller = console->GetControlManager()->GetControlDeviceByIndex(0);
+    return controller && controller->IsPressed(static_cast<std::uint8_t>(native));
+}
+
 void MesenNesSystem::prepareForBlock(const AudioBlockInfo& /*info*/) {
     if (!activated_ || !emu_) return;
 

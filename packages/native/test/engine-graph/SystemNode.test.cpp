@@ -3426,9 +3426,9 @@ TEST_CASE("a Mesen press burst cannot push a release out of its queue", "[engine
         CHECK(core.inputDropped() == 0);
         CHECK(core.inputAccepted() == rp::kPressInput + 72);
         // The counts alone cannot tell a coalescing that replaces a button's entry from one that keeps the first: both
-        // refuse nothing and accept everything. What the fix buys is the surviving entry's value, so read it: button 0's
-        // stands as a release (one that kept the press would leave that button held for the rest of the session), the
-        // button the burst never named stands as its press, and a button nothing named holds nothing.
+        // refuse nothing and accept everything. What the fix buys is the surviving entry's value, so read it: button
+        // 0's stands as a release (one that kept the press would leave that button held for the rest of the session),
+        // the button the burst never named stands as its press, and a button nothing named holds nothing.
         bool down = true;
         REQUIRE(core.peekPendingPress(0, down));
         CHECK_FALSE(down);
@@ -3436,17 +3436,25 @@ TEST_CASE("a Mesen press burst cannot push a release out of its queue", "[engine
         CHECK(down);
         CHECK_FALSE(core.peekPendingPress(2, down));
     };
-    // The block applies the whole queue and empties it, which is how a transition it holds reaches the controller.
+    // What the block does with the whole queue is the other half: it applies it, so the pad holds the two transitions
+    // that stood, and empties it. Reading the queue alone would pass a block that cleared it without a SetBitValue.
+    const auto padQuiet = [](auto& core) {
+        CHECK_FALSE(core.buttonDown(0));
+        CHECK_FALSE(core.buttonDown(1));
+    };
     const auto applied = [](auto& core) {
         bool down = true;
         CHECK_FALSE(core.peekPendingPress(0, down));
         CHECK_FALSE(core.peekPendingPress(1, down));
+        CHECK_FALSE(core.buttonDown(0));  // the release the burst ended on
+        CHECK(core.buttonDown(1));        // the press the burst queued behind it
     };
     SECTION("NES") {
         auto core = nes(1, 0);
         core->reserveAudio(8192);
         Lanes lanes(2);
         burst(*core);
+        padQuiet(*core);
         wholeBlock(*core, 1024, {lanes.ptrs[0], lanes.ptrs[1]}, true, NoInput{});  // applied, in a free block
         CHECK(core->inputDropped() == 0);
         applied(*core);
@@ -3456,6 +3464,7 @@ TEST_CASE("a Mesen press burst cannot push a release out of its queue", "[engine
         core->reserveAudio(8192);
         Lanes lanes(2);
         burst(*core);
+        padQuiet(*core);
         wholeBlock(*core, 1024, {lanes.ptrs[0], lanes.ptrs[1]}, true, NoInput{});
         CHECK(core->inputDropped() == 0);
         applied(*core);
@@ -3468,6 +3477,7 @@ TEST_CASE("a Mesen press burst cannot push a release out of its queue", "[engine
         core->reserveAudio(8192);
         Lanes lanes(2);
         burst(*core);
+        padQuiet(*core);
         wholeBlock(*core, 1024, {lanes.ptrs[0], lanes.ptrs[1]}, true, NoInput{});
         CHECK(core->inputDropped() == 0);
         applied(*core);

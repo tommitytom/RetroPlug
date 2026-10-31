@@ -294,7 +294,9 @@ mode bound 1 to 3 is the other console name `Engine` keeps (section 12).
   bound covers the button range), which the case says instead. That case also reads the transition a button's queue
   entry holds, through the core's own `peekPendingPress` (`SameBoySystem::peekSerialByte`'s shape): a burst leaves
   `inputAccepted()` and `inputDropped()` the same whether the coalescing replaced the queued entry or kept it, so the
-  surviving entry's value is the thing to hold. The audio suite has the FIFO's own cases (the
+  surviving entry's value is the thing to hold. Each section then reads the pad's own bit after the block through
+  `buttonDown` (`BaseControlDevice::IsPressed` by the console's control manager), so a block that emptied the queue
+  without applying it, or applied only the first entry, fails rather than passing on the queue read alone. The audio suite has the FIFO's own cases (the
   permissive fifo_a past `_rxBound`, the wire past a block's input), the NES's carried-run rebase, and the reliable
   link's 48-frame window giving up the window and re-syncing.
 - **ThreadSanitizer and AddressSanitizer** ran over every case touched (the `[alloc]` and `[input-drops]` tags, the

@@ -417,6 +417,14 @@ void MesenSmsSystem::pushCoreBytes(std::uint32_t frame, const std::uint8_t* data
     syncRole_.pushBytes(frame, data, size, flush);
 }
 
+bool MesenSmsSystem::buttonDown(std::uint8_t button) const {
+    const int native = toSmsButton(button);
+    SmsConsole* console = smsConsole();
+    if (native < 0 || !console) return false;
+    auto controller = console->GetControlManager()->GetControlDeviceByIndex(0);
+    return controller && controller->IsPressed(static_cast<std::uint8_t>(native));
+}
+
 void MesenSmsSystem::prepareForBlock(const AudioBlockInfo& /*info*/) {
     if (!activated_ || !emu_) return;
 
