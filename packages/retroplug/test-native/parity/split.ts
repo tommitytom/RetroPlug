@@ -1,12 +1,14 @@
 // One system's channels fanned across the host's outputs: ChannelSplit (a Game Boy's 4 stereo channels,
 // a NES's 5 mono core channels), PinSplit and StereoPinSplit (a NES's 3 output pins, mono or a pair
 // each). A split needs its lanes. A Game Boy on a host too narrow for it, and any two-system project,
-// fall back to Stereo (bit-identical to it). A single NES on a narrow host does NOT: KNOWN DEFECT,
-// recorded as it is. The engine's SyncTap arms the NES capture tap whatever the lane budget (tapArmOf in
-// graph/buildGraph.ts asks for it on any host), while buildGraph, finding no room, wires the mix, so the
-// mix path then drifts (added latency grows ~49 ms per second, measured at 48 kHz in 512-frame blocks:
-// about 25 frames per block, so it scales with the block rate). The plugin always passes 8 outputs and
-// cannot hit it; the SDL standalone (2 channels by default) and 2-lane renders can.
+// fall back to Stereo (bit-identical to it). A single NES on a narrow host falls back to its mix the same
+// way: the engine still arms its capture tap whatever the lane budget (tapArmOf in graph/buildGraph.ts
+// asks for it on any host) while buildGraph, finding no room, wires the mix, so the tap's capture is
+// wasted and the block drains the mix. The core gates on the ring the block drains, so a host too narrow
+// for a NES split hears exactly the unarmed mix, at one block's latency and with no drift
+// (docs/modular-graph-phase-b0-design.md section 2.5 records the defect that was, and
+// docs/modular-graph-phase-c4-design.md section 10 the fix). The shape a NES split does not fit is
+// reached at any width, too, by a construct-time export mode under a mix wiring.
 // The cases are routing-split.test.ts and routing-split-expansion.test.ts.
 import type { ParityCase } from "./group";
 import { even, type Rig } from "./rig";

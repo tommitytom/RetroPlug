@@ -9,11 +9,12 @@ for (const outputs of [2, 4, 8] as const) {
   cases.push(single(`gb-channelSplit-o${outputs}`, "channelSplit", outputs, outputs === 8 ? range(8) : [0, 1], (rig) => mgb(rig), [0, 1, 2, 3]));
   // A NES splits into its 5 core channels, one lane each. The phrase sounds the two pulses and the
   // triangle, and an added in-range note (split.ts) sounds noise on lane 3; DMC stays silent because
-  // nothing plays a sample. On a host narrower than 8 (o2, o4) this is the KNOWN DEFECT recorded as it is
-  // (split.ts has the cause): no Stereo fallback, and the mix path drifts. Those cases pin the drift.
+  // nothing plays a sample. On a host narrower than 8 (o2, o4) the split does not fit: the mix is wired
+  // and the tap stays armed, and the host hears exactly the unarmed mix, bit for bit (split.ts; B0
+  // section 2.5 and C4 section 10). All three widths now hold one mix digest.
   cases.push(single(`nes-channelSplit-o${outputs}`, "channelSplit", outputs, outputs === 8 ? range(4) : [0, 1], (rig) => rig.add(ROMS.bliptoaster), [0, 1, 2, 3]));
   // Pins: Pulse | TND | Expansion (silent on the 2A03-only build), mono on 3 lanes or a pair each on 6.
-  // Narrow hosts (pinSplit o2, stereoPinSplit o2/o4) are the same KNOWN DEFECT as above.
+  // Narrow hosts (pinSplit o2, stereoPinSplit o2/o4) are the same fallback to the mix as above.
   cases.push(single(`nes-pinSplit-o${outputs}`, "pinSplit", outputs, [0, 1], (rig) => rig.add(ROMS.bliptoaster), [0, 1, 2, 3]));
   cases.push(single(`nes-stereoPinSplit-o${outputs}`, "stereoPinSplit", outputs, outputs === 8 ? range(4) : [0, 1], (rig) => rig.add(ROMS.bliptoaster), [0, 1, 2, 3]));
 }

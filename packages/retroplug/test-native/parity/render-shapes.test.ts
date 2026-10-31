@@ -46,8 +46,9 @@ const cases: ParityCase[] = [
     segments: [boot, { blocks: [], shape: { perSystem: true, ms: 600 }, midi: held([0, 1, 2, 3]) }],
   },
   {
-    // One NES under ChannelSplit, rendered per system: the tap is armed but the shape asks for the mix, the
-    // narrow-host defect's path (split.ts), recorded as it is.
+    // One NES under ChannelSplit, rendered per system: the tap is armed but the shape asks for the mix, so the
+    // block drains the mix and the core gates on it, exactly as an unarmed NES (split.ts). This is the same path a
+    // host too narrow for a split takes, and its boot segment holds the fixed shape (B0 section 2.5, C4 section 10).
     name: "perSystem-nes-channelSplit",
     sampleRate: SR,
     outputs: 2,
