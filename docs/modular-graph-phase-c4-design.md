@@ -103,6 +103,16 @@ frames, 205 KiB; two resample scratches, 100 KiB; the five per-channel scratches
 about 690 KiB a NES in all, and at the 65536 ceiling the ring is 384 KiB and those about 2.6 MiB, about 3 MB. A SMS or
 a GBA has the ring and one mix scratch: about 224 KiB at the floor and 896 KiB at the ceiling.
 
+**The ingress queues are on top of that, and they are not small.** A NES always attaches its N8 role, so it also holds
+the role's run queue and its sort scratch (4352 runs of 12 bytes, twice: 102 KiB), its rebase indices and their sort's
+scratch (4352 indices twice: 34 KiB), the run arena (74752 bytes, 73 KiB), the FIFO's delivered-bytes reserve (twice its
+78849-byte bound, 154 KiB), its largest command frame (65538 bytes, 64 KiB), the wire queue (73 KiB), fifo_a's RAM
+(2 KiB) and the press queue, about 500 KiB more: a NES with its role is about 1.2 MiB at the floor. A Master System's
+sync role holds 74752 levels of 8 bytes and a second copy for the sort (598016 bytes each, 1.14 MiB), so with the press
+queue and the ring it is about 1.4 MiB. A Game Boy's serial input is a 147456-byte ring and 8256 runs of 8 bytes (144 KiB
+and 64 KiB) and its press queue is 1024 entries of 8 (8 KiB), about 217 KiB on top of its own scratch sets, and the
+queues are sized whether or not a document uses them, which is what keeps the first block from allocating.
+
 **Overflow** drops the NEWEST frames, the ones that do not fit, copies the prefix that does, counts the rest in
 `overflowFrames_` and asserts in a debug build. The queued frames are the ones the pending block's sample indices and
 the N8 FIFO's already-scheduled bytes refer to, and they are what `availableFrames()` has already told the step loop it
@@ -116,7 +126,9 @@ from construction and the activation-time reserve is a no-op. A build outside a 
 the core sizes for `kDefaultBlockFrames` (8192, the engine's default plan size, which a test holds equal to
 `Engine::kDefaultMaxBlockFrames`). A host that grows its block later reaches the same reserve through the reactivation
 `Engine::setMaxBlockFrames` performs while the graph is quiescent. Memory a plan does not need is not kept: a 64-frame
-plan's ring is 128.25 KiB where an 8192-frame plan's is 160 KiB.
+plan's ring is 128.25 KiB where an 8192-frame plan's is 160 KiB, but no Engine host plans below its 8192-frame floor
+today (`Engine::setMaxBlockFrames` only grows), so that saving is reachable only through a `GraphHost` built directly in
+a test or a tool; the plan's size is still what a core sizes to, so such a plan does not pay for a block it never runs.
 
 **Everything else a block touches is sized at activation.** Each Mesen core sizes its per-block scratches there
 (`stereoAccum_` two floats a frame, every `chanAccum_[k]` one) and at a larger reserve; the NES's tap rings
@@ -143,9 +155,11 @@ allocation count both.
 **The promise** is the audio path's and, since section 9's commit, the whole block's: a warmed core's block allocates
 and frees nothing, emulation included, and since section 11's commit that holds with a block's host input staged into it
 too. Each queue that input lands in is bounded and sized when the core is built, so a press, a MIDI run, a serial byte
-or a raw message is refused and counted rather than grown. What still allocates inside a long run is Mesen's periodic
-savestate capture (0.5 s, its streaming serializer, charged outside every test window) and the N8 firmware's
-SD-command path (section 9).
+or a raw message is refused and counted rather than grown. It is a *warmed* core's block; a freshly built one's first
+block pays one more thing, the boot savestate capture `enableStateSnapshot` arms, which is a whole savestate through
+Mesen's serializer and cannot move to activation without moving `NesApu::EndFrame` with it (section 12). What still
+allocates inside a long run is Mesen's periodic savestate capture (0.5 s, its streaming serializer, charged outside
+every test window) and the N8 firmware's SD-command path (section 9).
 
 ## 5. P5 and P6, as built: the tap a capability, and the build check
 
@@ -235,6 +249,15 @@ mode bound 1 to 3 is the other console name `Engine` keeps (section 12).
     the plan's largest size), so a window whose step loop stopped cannot be vacuously free, and each holds that what it
     staged landed: `inputDropped()` unchanged, and the non-press door's own count exact (a NES's 12 x 271 bytes, a
     SMS's 12 x 4 levels, a Game Boy's 12 x 72 serial bytes, a GBA's 2 + 12 x 12 presses).
+  - *a freshly built core's first block* (`[alloc]`): the block the warmed cases above deliberately skip, with no
+    warm-up before it, for a core built directly and for one the Engine builds through the backend, at
+    `MesenBackend`'s and `SameBoyBackend`'s own activation path. A core built directly has no state snapshot enabled,
+    so its first block allocates and frees nothing: the controller snapshot, the four persistent RenderedFrame input
+    copies and the video filter's output buffer are all sized at activation now, and the NES, SMS, the two SMS rebuilds
+    (Game Gear, FM on) and the Game Boy each have a section; the GBA's two sections need the fixture ROM and `SKIP`,
+    counted. A core the Engine builds adds exactly the boot savestate capture and nothing else, measured against one
+    capture on a twin that has run the same first block (the capture's allocation count follows its state's size, so a
+    boot-time measurement would undercount), which pins the block's cost on every platform without naming an allocator.
   - *the live arm*: a tap armed on an activated NES sizes nothing on the block thread and its audio path stays free. It
     drains more than the armed ring holds, so head and tail wrap mid-drain. One section arms a core it built and
     activated directly, with no node's activation to reserve for it, which is where `onActivate` sizes the tap's rings.
@@ -362,7 +385,7 @@ return-address hook (removed before the commit):
 | `BaseControlManager::GetPortStates` | 3 (vector growth) | fills the manager's own `_portStates` and returns it by `const&` |
 | `BaseControlDevice::GetRawState` | 2, one a device | a new `GetRawState(ControlDeviceState&)` fills the caller's state, whose vector keeps its capacity; the returning form delegates to it, so its other callers are untouched |
 | `RenderedFrame`'s `InputData` | 12 | `RenderedFrame::Reset` + `SetInputData` assign in place, a frame member per PPU (`BaseNesPpu`, `SmsVdp`, `GbaPpu`), `VideoDecoder::_convertedFrame`, the persistent frames refilled rather than assigned, and the by-value `RenderedFrame` parameter made `const&` |
-| `NotificationManager::SendNotification` | 1 | the copy it iterates (it must be a copy: a listener may unregister mid-notify) is reused per thread and per nesting depth, pooled as `unique_ptr<vector<weak_ptr<...>>>`, so growth moves pointers and never the buffer a send is iterating; each send clears its buffer on the way out (capacity kept), so a dead listener's control block is not freed by the next send |
+| `NotificationManager::SendNotification` | 1 | the copy it iterates (it must be a copy: a listener may unregister mid-notify) is reused per thread and per nesting depth. The top-level buffer is a `thread_local` object of its own, because a console sends at least one notification per frame, so the first send on a thread is the first block's and pooling that entry would put two allocations back on the audio thread. A nested send takes a pooled `unique_ptr<vector<weak_ptr<...>>>`, so growth moves pointers and never the buffer a send is iterating; each send clears its buffer on the way out (capacity kept), so a dead listener's control block is not freed by the next send |
 
 `VideoRenderer::UpdateFrame`'s `_lastFrame = frame` was on the list and turned out to allocate nothing, since copy
 assignment into a persistent member reuses its vectors' capacity; it needed no change and still measures zero.
@@ -408,6 +431,16 @@ a block. What still allocates there, and why:
 
 None of them is reachable from the block cases (the in-repo NES ROM never issues an SD command), so the whole-block case
 is ROM-dependent for the SD path.
+
+**A reply the permissive FIFO cannot hold answers a status, and a read stops when its bytes are dropped.** fifo_a's
+permissive profile has a storage bound but no modelled depth (section 11), so a `CMD_F_FRD` or `CMD_F_DIR_GET` reply past
+`_rxBound` used to be delivered up to the bound and then lose its tail byte by byte, which leaves the ROM's parser
+mid-record rather than telling it the command failed. Both commands measure the reply against the room before pushing a
+byte and answer `EDIO_INVALID_PARAMETER` (0x13) instead; a modelled depth is the device's own overflow, which still
+truncates. `execFileRead` also stops at the chunk whose pushes start being dropped, rather than reading the rest of a
+ROM-chosen length off the card for bytes the FIFO will refuse. And `CMD_F_FRD_MEM` validates the range the ROM asked for,
+not the bytes the file happened to hold: a short file cannot turn a request the device cannot serve into a partial
+success, so the answer is 0x13 and neither the cart nor the file pointer moves.
 
 ## 10. Found while building
 
@@ -474,8 +507,9 @@ own:
   counts a real block's drain on that path, and compares it block for block with an unarmed NES, on sound and on work
   RAM.
 - **Without the block size in the build request, a memory saving was lost** (section 4). A core built at the 8192
-  default and then reserved down keeps the larger ring for its life, so a DAW running 64-frame blocks would pay for a
-  plan it never runs; the request's `maxBlockFrames` is what sizes it to the plan from construction.
+  default and then reserved down keeps the larger ring for its life, so a plan smaller than the default would pay for
+  buffers it never runs; the request's `maxBlockFrames` is what sizes it to the plan from construction. No Engine host
+  plans below 8192 today, so the saving is a direct `GraphHost`'s (a test's or a tool's), not a DAW's.
 - **The promise's counted windows carried no host input** (sections 4, 6, 11). The cases warmed with a press and then
   staged nothing, so every queue a block's input lands in could grow on the block thread with no case seeing it. The
   extended case found 7 allocations and 7 frees at the NES's first counted window (11 and 7 with the reliable link on),
@@ -519,6 +553,28 @@ own:
   never reserved, sized its ring and its scratches but not its tap's rings, so the first arm allocated them on the
   arming thread; `onActivate` sizes them now, and the live-arm case arms exactly such a core under a counted window
   (red at 12 allocations before it).
+- **A fresh core's first block was never measured, and the frame plumbing it fills was still cold** (sections 4, 6).
+  Every `[alloc]` case warmed first, so the block a system added while others play actually runs bought the control
+  manager's port snapshot, the four persistent RenderedFrame input copies and the video filter's output buffer (about
+  240 KiB for a NES) inside a block. The frame plumbing is now sized at activation, off the block thread, with the
+  states the control manager already holds and the size the console's PPU emits; no frame, pixel or emulation state
+  moves, and parity and the `[video]` hashes are unchanged. What is left is the boot savestate capture
+  `enableStateSnapshot` arms, which cannot move without moving `NesApu::EndFrame` (a first attempt did, one byte of work
+  RAM) and is pinned instead (section 12).
+- **The notification dispatch's first send was still two allocations on the audio thread** (sections 6, 9). The pooled
+  copy was per thread and grew its first entry on first use, and every console sends a notification per frame, so the
+  first block paid it. The top-level buffer is a `thread_local` object now; the pool remains for a nested send.
+- **The N8 rebase sorted its carried runs with an insertion sort** (section 11). The queue's offset order and the
+  arena's enqueue order reverse under two interleaved feeds, so a no-step block carrying every run cost about a million
+  moves each rebase. It uses an `rp::SortScratch<std::uint32_t>` sized with the queue now, and a case pins both the
+  order and zero allocations.
+- **A permissive Edio reply could be cut short, and a read could outlive its bytes** (sections 9, 11). A reply past the
+  storage bound lost its tail mid-record; it answers 0x13 up front now, and the read stops at the chunk whose pushes
+  start dropping. The DMA's whole-range validation is kept, and a case pins the short-file case that used to succeed.
+- **`FixedByteRing` still had the moved-from trap `FixedQueue` had fixed** (section 11): a defaulted move left the
+  source with its capacity but no buffer, so a later push indexed storage it had given away. Its moves carry the ring
+  and leave an empty source that refuses, with a unit case beside `FixedQueue`'s.
+
 - **The suite's own traps, which the follow-ups closed** (section 6): the ring case's wrap section never compared the
   frames the wrap left (it does now: the 400 that continue at the front, then the 100 the drain did not reach); the mix
   discard's red was a hang rather than a failure, so the chunk is a seam the case reads and a zero one ends the loop;
@@ -532,7 +588,9 @@ own:
   payload back.
 - **The permissive FIFO profile still has a storage bound** (sections 9, 11). `_rxCapacity == 0` means no modelled
   depth, not an unbounded vector: fifo_a's delivered bytes are reserved to `2 * _rxBound` (the live bound plus room for
-  the consumed prefix `pop` has not compacted yet), and a reply past `_rxBound` is dropped and counted even then.
+  the consumed prefix `pop` has not compacted yet), and a reply past `_rxBound` answers `EDIO_INVALID_PARAMETER` up
+  front rather than being delivered up to the bound and losing its tail (a host push past it is still dropped and
+  counted, section 11).
 - **A comment's contract was its neighbour's, and the tap record's lifetime read backwards** (sections 3, 5):
   `saveStateBytes`' note stated `loadStateBytes`' bool return, and the `ArmedTap` note said the record cannot outlive
   its core, which invites following the pointer the compare-not-follow rule forbids; the record is compared and never
@@ -595,7 +653,10 @@ queue, a second copy of its entries: 598016 bytes for a Master System role's 747
 - **The NES N8 role's two feeds** were `std::deque<PendingByte>` for the raw feed and, under the reliable link,
   `std::deque<PendingMsg>` with a fresh `std::vector` per message. Now one run queue of 4352 descriptors over one
   74752-byte arena, shared by both feeds and both modes: a run's bytes stay where they were appended and only the
-  descriptors sort, so a long SysEx is one descriptor and one copy.
+  descriptors sort, so a long SysEx is one descriptor and one copy. The rebase's carried-run indices are sorted by an
+  `rp::SortScratch<std::uint32_t>` too: the queue order (by offset) and the arena order (by enqueue) are opposite when
+  the two feeds interleave, and the insertion sort this replaced cost n * n / 2 on the audio thread for a block that
+  does not step and carries every run.
 - **A Master System's sync levels** were a `std::deque<PendingLevel>`. Now a `FixedQueue` of 74752 levels,
   `kMidiInput.bytes + kBytesInput.bytes`, because a message longer than a `MidiEvent` reaches the raw door at up to
   72 KiB; a level past it is dropped and counted.
@@ -625,6 +686,13 @@ it refuses nothing and has no dropped count.
 could grow; it now means no modelled depth, since a reply is still refused past `_rxBound` and counted in
 `_droppedBytes`. The wire's own staging is a block's host input for the same reason: it stands for the host's outbound
 buffer, and a host that outruns a modelled wire by more than a block is now a counted drop.
+
+**A reply is answered whole or refused.** Cutting one short at the storage bound leaves the ROM's parser mid-record, so
+both commands that can produce a long reply measure it first (`CMD_F_FRD` from the file's remaining bytes, `CMD_F_DIR_GET`
+from the records it will emit) and answer 0x13 when the permissive profile cannot hold it. A modelled depth stays the
+device's own overflow and still truncates, but the read loop stops at the chunk whose pushes start dropping instead of
+reading a ROM-chosen length off the card for bytes that cannot be delivered. Section 9 has the DMA's half, which keeps
+its whole-range validation.
 
 **What did not change.** Every queue's accepted behaviour is the same: the same bytes reach the cores in the same order
 at the same frames, the N8 role's sort and drain order are unchanged, and the link frames the same bytes with the same
@@ -669,6 +737,17 @@ the core itself (section 12).
   `coreTransportStats().droppedBytes` on the FIFO are read by tests and by the cores, not reported beside `GraphHost`'s
   per-instance output drops, since `rp_process` carries no instance-drop pointer and an input-drop service on the node
   seam is its own change.
+- **A freshly built core's first block pays its boot savestate capture** (sections 4, 6, 9): `enableStateSnapshot`
+  arms an immediate publish so a Save right after load works, and a whole savestate through Mesen's streaming serializer
+  allocates by nature. It cannot be warmed at activation instead: `NesApu::Serialize` calls `EndFrame`, so the capture's
+  point is emulation state, and moving it moves parity (a tried first attempt did, one byte of work RAM). The first
+  block's case therefore pins the block to exactly one capture's allocations on the platform it runs on, measured on a
+  twin that ran the same block; everything else in a fresh first block is warmed at activation. The periodic capture
+  (below) is the same cost recurring.
+- **A thread's first NESTED notification send still allocates** (section 9): the top-level copy is a `thread_local`
+  object now, so a console's first frame on a thread allocates nothing, but a listener that sends a notification of its
+  own takes a pool entry on first use, and a thread whose first send has a non-empty listener list grows the copy's
+  storage. This host registers no listeners, so the first is the only one reachable here.
 - **Two output-side allocations remain** (section 2's third decision's scope was inputs): the N8 `_txQueue` is a
   `std::vector` a debug `drainCoreBytes` RPC swaps empty, so a non-link ROM's next `CMD_USB_WR` after a drain grows it,
   and a Game Boy's `serialOutLog_` is cleared each block but its capacity grows to the largest block's capture while

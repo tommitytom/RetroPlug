@@ -250,7 +250,12 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     tests drives an SD command, so it is ROM-dependent.
   - **The 0.5 s state publish allocates** inside Mesen's streaming serializer on the block thread (every 24 k frames at
     48 kHz). It is the one allocation a long run makes that neither a ROM command nor an armed serial-out capture
-    triggers, so every `[alloc]` case on an Engine-built core charges a whole interval uncounted first.
+    triggers, so every `[alloc]` case on an Engine-built core charges a whole interval uncounted first. The same capture
+    is what a freshly built core's first block pays: `enableStateSnapshot` arms it, and it cannot move to activation
+    without moving `NesApu::EndFrame` and parity, so the first block is pinned to exactly one capture (C4's section 12).
+  - **A thread's first nested notification send allocates**: the top-level dispatch copy is a `thread_local` object,
+    so a console's first frame allocates nothing, but a listener that sends its own notification takes a pool entry on
+    first use. This host registers no listeners.
   - **The input-drop counters are not surfaced beside the graph's.** Each core reports `inputAccepted()` /
     `inputDropped()` and the N8 FIFO's `coreTransportStats()` adds `droppedBytes`, but `rp_process` carries no
     instance-drop pointer, so nothing reports them where `GraphHost` counts its per-instance output drops. An

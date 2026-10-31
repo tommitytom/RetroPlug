@@ -394,13 +394,17 @@ blocks' `serialIn` or one `serialOut`), a NES's N8
 runs (4352) and their bytes (74752), and a Master System's levels (74752, in bytes from both doors). A push
 past a bound is dropped rather than grown, and counted (a Mesen press queue has none to reach), and the
 sort a block's queued bytes or levels take is a merge through a scratch buffer sized with the queue (a second
-copy of its entries, 598016 bytes for a Master System role and 52224 for a NES role, held for the core's life), so it
+copy of its entries, 598016 bytes for a Master System role and 52224 for a NES role, held for the core's life; the NES
+role keeps a second, 17408-byte scratch for the run indices its rebase orders), so it
 allocates nothing and costs at most n * (ceil(log2 n) + 1) moves: the core reports `inputAccepted()` and
 `inputDropped()`, and the N8 FIFO's `coreTransportStats()` adds `droppedBytes`, the same vocabulary as a
 graph queue's overflow. The reliable link refuses nothing: a full 48-frame window gives up the window (its
 unacked frames) and re-syncs. The FIFO's permissive profile (`_rxCapacity == 0`) means no modelled depth, not no
-storage bound: fifo_a still drops and counts a reply past `_rxBound` (a block's input plus `FILE_READ_MAX`), its
-vector reserved to twice that because `pop` compacts the consumed prefix lazily.
+storage bound: fifo_a still refuses a reply past `_rxBound` (a block's input plus `FILE_READ_MAX`), its vector reserved
+to twice that because `pop` compacts the consumed prefix lazily. A reply that cannot fit answers
+`EDIO_INVALID_PARAMETER` (0x13) up front rather than being cut short mid-record, and a read stops at the chunk whose
+pushes start dropping; a modelled depth still truncates, as the device's fifo_a does. A `CMD_F_FRD_MEM` validates the
+range the ROM asked for, not the bytes the file held, and answers 0x13 when the cart cannot back it.
 
 An events or bytes output may declare its queue's capacity (`rp::bytes_out::sized<rp::capacity{...}>` in
 C++, `events.out(capacity)` / `bytes.out(capacity)` in TS), by default 256 messages and 4096 bytes, at
@@ -507,6 +511,12 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   allocates inside Mesen's streaming serializer; and the N8 firmware's SD path allocates in its command handlers, in
   a bigger directory listing and in an unbounded TX queue ([07-remaining-work.md](07-remaining-work.md)). A Game
   Boy's knobs, the ones it applies in place, a NES's setters but its region, and every param allocate nothing at all.
+- **A freshly built core's first block is the warmed block with one exception.** The controller snapshot, the four
+  persistent frame input copies and the video filter's output buffer are sized at activation, off the block thread, and
+  a core built directly has a first block that allocates and frees nothing. A core the Engine builds also arms its boot
+  savestate capture for the first block (`enableStateSnapshot`), and that is a whole savestate through Mesen's
+  serializer, which allocates by nature: it cannot move to activation without moving `NesApu::EndFrame` with it, so the
+  first-block case pins that block to exactly one capture and nothing else.
 - **A refused document** can still have given knobs to a node it reuses, since activation runs while it plans: a
   reused node's core keeps them, and the next document in the app carries the same. A core a refused plan's new node
   built is destroyed as that plan's instances unwind, with its snapshot slot and its resource pins.
@@ -744,8 +754,9 @@ Every backend takes a
 `sram`/`savestate` seed bytes, the ROM's `romName`, the largest block the plan will run (`maxBlockFrames`, 0 for a
 build outside a plan) and a `SystemConfig` (`std::variant<SameBoyConfig, MesenNesConfig, MesenSmsConfig,
 MesenGbaConfig>`, whose alternative names the console). The block size is what a core sizes its audio ring and its
-per-block scratches to *before* it activates, so a 64-frame plan's core never holds an 8192-frame plan's buffers; a core
-built outside a plan keeps `SystemBase::kDefaultBlockFrames` (8192, held to `Engine::kDefaultMaxBlockFrames` by a test;
+per-block scratches to *before* it activates, so a 64-frame plan's core never holds an 8192-frame plan's buffers; no
+Engine host plans below 8192 today (`setMaxBlockFrames` only grows), so only a `GraphHost` built directly reaches that. A
+core built outside a plan keeps `SystemBase::kDefaultBlockFrames` (8192, held to `Engine::kDefaultMaxBlockFrames` by a test;
 Mesen cores size from `MesenAudioDevice::kDefaultBlockFrames`, held to the same constant, so two names stand for one
 contract until they collapse).
 A [`SystemBackend::build`](../packages/native/src/system/SystemFactory.hpp) runs on the
