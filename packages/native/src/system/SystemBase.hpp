@@ -1,11 +1,11 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
 #include <memory>
 #include <optional>
-#include <string>
 #include <string_view>
 #include <vector>
 
@@ -133,38 +133,10 @@ public:
     // Returns nullptr for systems without video (or before activation).
     virtual FrameBufferTriple* framebuffer() { return nullptr; }
 
-    // Per-block MIDI output, drained by PluginDSP into DPF's writeMidiEvent
-    // after onProcess.
-    std::vector<::MidiEvent>&       midiOut()       { return midiOut_; }
-    const std::vector<::MidiEvent>& midiOut() const { return midiOut_; }
-
-    // -- Per-system menu actions --------------------------------------------
-    //
-    // Surfaces used by the UI menu (Save SRAM, Save State, Duplicate, etc.).
-    // Default returns mean "this backend doesn't support the feature" — the
-    // UI gates the menu row off when appropriate.
-
-    // Loose-battery disambiguator. 0 => this system owns the plain sibling
-    // `<rom>.sav`; N>=2 => `<rom>-N.sav`. Lets multiple systems backed by the
-    // same ROM file (Duplicate Instance / loading the same file twice) keep
-    // independent battery files instead of clobbering one another. Persisted
-    // in the per-system config; the sav-path derivation lives in TS (savPaths.ts).
-    virtual std::uint32_t savSuffix() const { return 0; }
-    virtual void          setSavSuffix(std::uint32_t /*suffix*/) {}
-
-    // Explicit battery-file override. Empty => the loose `.sav` is derived from the ROM's path and this suffix
-    // (default). Non-empty => this exact file, set when the user pairs a hand-picked `.sav` with the ROM; all battery
-    // I/O targets it. The sav-path derivation lives in TS (savPaths.ts).
-    virtual const std::string& savPath() const {
-        static const std::string empty;
-        return empty;
-    }
-    virtual void          setSavPath(const std::string& /*path*/) {}
-
-    // Boot-time toggle. SameBoy maps this to fastBoot; GBA to skipBootScreen.
-    // Mesen returns nullopt → the UI hides the Fast boot row.
-    virtual std::optional<bool> fastBoot() const { return std::nullopt; }
-    virtual void                setFastBoot(bool /*on*/) {}
+    // Boot-time toggle. SameBoy's node setting maps it to fastBoot; the GBA core maps it to skipBootScreen, but no
+    // node setting reaches that one today (its node builds from the config's default). A core that has no boot-screen
+    // skip keeps the no-op default, and the node does not offer it.
+    virtual void setFastBoot(bool /*on*/) {}
 
     // Live output gain in dB — a universal per-system setting every backend
     // honours (smoothed at the audio frame). `immediate` snaps to the value
@@ -176,12 +148,10 @@ public:
     // Cartridge battery RAM. Empty vector when the cartridge has no battery
     // or the backend doesn't yet support snapshotting.
     virtual std::vector<std::uint8_t> saveSramBytes() const { return {}; }
-    virtual void                       clearSram() {}
 
     // Savestate, byte-for-byte. False on unsupported backends or malformed
     // buffers.
     virtual std::vector<std::uint8_t> saveStateBytes() const { return {}; }
-    virtual bool loadStateBytes(const std::vector<std::uint8_t>& /*bytes*/) { return false; }
 
 
     // -- Memory access -------------------------------------------------------
@@ -258,41 +228,6 @@ public:
     // is owned by the system and invalidated by reset/deactivation.
     virtual rp::IDebugTarget* debugTarget() { return nullptr; }
 
-    // -- Live memory snapshots ----------------------------------------------
-    //
-    // The DSP thread publishes tear-free snapshots into MemorySnapshotTriple
-    // buffers after each onProcess(). The UI thread reads them at uiIdle.
-    //
-    // Subscription is refcounted: multiple UI consumers can subscribe to the
-    // same (system, type); the triple-buffer is allocated on the 0→1
-    // transition and freed on the 1→0 transition. enable/disable are called
-    // from the DSP thread (via the SubscribeMemory / UnsubscribeMemory
-    // command drain) so memorySnapshot() and publishSnapshots() never race.
-
-    // DSP thread: bump refcount. Allocates the triple on first reference.
-    // Returns true on success; false if `type` is unsupported on this
-    // system (the matching getMemory() returns an invalid accessor).
-    bool enableMemorySnapshot(rp::MemoryType type);
-
-    // DSP thread: drop refcount. Frees the triple on last release. No-op if
-    // not subscribed.
-    void disableMemorySnapshot(rp::MemoryType type);
-
-    // UI thread: get the triple to read from. Returns nullptr if not
-    // subscribed. Cheap atomic load.
-    MemorySnapshotTriple* memorySnapshot(rp::MemoryType type);
-
-    // Cap on the size we'll triple-buffer for live streaming. Larger
-    // regions (ROM, GBA EWRAM, large SRAM) refuse subscription and are
-    // one-shot only via getMemory RPC. 64 KiB covers GB RAM (8 KB), GBA
-    // IWRAM (32 KB), NES nametables (2 KB), OAM (≤ 1 KB) comfortably.
-    static constexpr std::size_t kMaxStreamableBytes = 64 * 1024;
-
-    // DSP thread: called from each concrete system's onProcess() AFTER the
-    // emulator step finishes. Walks active subscriptions, copies each
-    // region into its triple-buffer, publishes. Cheap when no subs.
-    void publishMemorySnapshots();
-
     // -- Whole-savestate snapshot -------------------------------------------
     //
     // The DSP thread captures the entire savestate into a triple-buffer on a
@@ -345,9 +280,10 @@ public:
     std::size_t stateSnapshotCapacity() const;
 
     /** Seed a freshly-built core from its construct spec: cartridge battery first, then a savestate over
-     *  the top if one was supplied. Both Mesen and SameBoy backends end onActivate with exactly this, so
-     *  it lives here rather than three times over. A savestate LAST is deliberate - it carries its own
-     *  SRAM, so restoring it after the seed is what makes "boot from a savestate" mean what it says. */
+     *  the top if one was supplied. The Mesen backends end onActivate with exactly this, so it lives here
+     *  rather than three times over; SameBoy seeds its own battery and restores its state inline. A
+     *  savestate LAST is deliberate - it carries its own SRAM, so restoring it after the seed is what makes
+     *  "boot from a savestate" mean what it says. */
     void seedSramAndState(const std::vector<std::uint8_t>& sram, const std::vector<std::uint8_t>& state) {
         if (!sram.empty()) {
             auto accessor = getMemory(rp::MemoryType::Sram, rp::AccessType::ReadWrite);
@@ -360,8 +296,6 @@ public:
     }
 
 protected:
-    std::vector<::MidiEvent> midiOut_;
-
     // DSP thread (or the control thread while quiescent): the backend has rebuilt its core in place —
     // a SameBoy model switch — so the published blob and region table now describe a core that is gone.
     // Arms an immediate republish, which refreshes both together within one block instead of up to
@@ -382,11 +316,10 @@ protected:
     virtual StateRegionTable stateSnapshotRegions() const { return {}; }
 
 private:
-    struct SnapshotEntry {
-        std::unique_ptr<MemorySnapshotTriple> triple;
-        std::uint32_t                         refcount = 0;
-    };
-    std::array<SnapshotEntry, rp::kMemoryTypeCount> snapshots_;
+    // Restore a savestate over the core seedSramAndState() has already put its battery into. Private
+    // because a savestate is a build seed: the only restore is that one, on a core that was just
+    // built, and a core never has a state loaded into it mid-life.
+    virtual bool loadStateBytes(const std::vector<std::uint8_t>& /*bytes*/) { return false; }
 
     // Whole-savestate snapshot. The triple is allocated once at enable and freed only in the destructor,
     // never resized mid-life, for two reasons: publishStateSnapshot can run on the audio thread, where

@@ -565,9 +565,9 @@ void MesenNesSystem::finishBlock(const AudioBlockInfo& info, float* const* outs,
         sumStereoWithGain(*audioDevice_, stereoAccum_, outs, blockSize, gainSmoother_);
     }
 
-    // Tear-free memory snapshots for any UI subscriptions. End-of-block =
-    // internally consistent state because the CPU isn't mid-instruction.
-    publishMemorySnapshots();
+    // Publish the whole-savestate snapshot the registry reads, on its coarse interval (the very next
+    // block after enableStateSnapshot or rearmStateSnapshot, which push the accumulator past the
+    // threshold). End-of-block = internally consistent state because the CPU isn't mid-instruction.
     publishStateSnapshot(info.frames, sampleRate_);
 }
 
@@ -721,14 +721,6 @@ std::vector<std::uint8_t> MesenNesSystem::saveSramBytes() const {
     if (!accessor.valid() || accessor.size() == 0) return {};
     return std::vector<std::uint8_t>(accessor.data(),
                                      accessor.data() + accessor.size());
-}
-
-void MesenNesSystem::clearSram() {
-    if (!emu_) return;
-    auto accessor = getMemory(rp::MemoryType::Sram, rp::AccessType::ReadWrite);
-    if (!accessor.valid() || accessor.size() == 0) return;
-    std::memset(accessor.data(), 0, accessor.size());
-    config_.sram.clear();
 }
 
 std::vector<std::uint8_t> MesenNesSystem::saveStateBytes() const {

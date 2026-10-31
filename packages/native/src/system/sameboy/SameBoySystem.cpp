@@ -376,15 +376,6 @@ void SameBoySystem::restartEmulator() {
     rearmStateSnapshot();
 }
 
-void SameBoySystem::clearSram() {
-    if (!gb_) return;
-    const int sramSize = GB_save_battery_size(gb_);
-    if (sramSize <= 0) return;
-    std::vector<std::uint8_t> zeros(static_cast<std::size_t>(sramSize), 0);
-    GB_load_battery_from_buffer(gb_, zeros.data(), zeros.size());
-    config_.sram.clear();
-}
-
 std::vector<std::uint8_t> SameBoySystem::saveSramBytes() const {
     if (!gb_) return {};
     const int sramSize = GB_save_battery_size(const_cast<GB_gameboy_t*>(gb_));
@@ -405,11 +396,6 @@ std::vector<std::uint8_t> SameBoySystem::saveStateBytes() const {
     std::vector<std::uint8_t> out(size);
     GB_save_state_to_buffer(const_cast<GB_gameboy_t*>(gb_), out.data());
     return out;
-}
-
-bool SameBoySystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
-    if (!gb_ || bytes.empty()) return false;
-    return GB_load_state_from_buffer(gb_, bytes.data(), bytes.size()) == 0;
 }
 
 // -- Whole-savestate snapshot ------------------------------------------------
@@ -785,9 +771,9 @@ void SameBoySystem::finishBlock(const AudioBlockInfo& info, float* const* outs, 
     // Clear this block's MIDI so the next block starts empty.
     pendingMidi_.clear();
 
-    // Tear-free memory snapshots for any UI subscriptions. Done AFTER role
-    // processing so kit patches applied this block are visible immediately.
-    publishMemorySnapshots();
+    // Publish the whole-savestate snapshot the registry reads, on its coarse interval (the very next
+    // block after enableStateSnapshot or rearmStateSnapshot, which push the accumulator past the
+    // threshold). Done AFTER role processing so a kit patch applied this block is in the blob.
     publishStateSnapshot(frames, sampleRate_);
 }
 

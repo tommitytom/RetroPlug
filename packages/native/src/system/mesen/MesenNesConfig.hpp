@@ -80,12 +80,6 @@ struct MesenNesConfig {
     // The file name Mesen stages the ROM under and logs it by. A node's build has only bytes and leaves this empty (the
     // core stages "rom.nes"); a direct construction in a test may name a file.
     std::string   romPath;
-    // See SameBoyConfig::savSuffix. 0 => owns `<rom>.sav`; N>=2 => `<rom>-N.sav`,
-    // so duplicated / repeat-loaded instances don't clobber a shared sibling.
-    std::uint32_t savSuffix = 0;
-    // See SameBoyConfig::savPath. Empty => suffix-derived sibling; non-empty =>
-    // a user-paired `.sav` file that all battery I/O targets.
-    std::string   savPath;
     // The battery and savestate seeds a node's resources carry, as a build takes them: the emulator owns both once it
     // is booted, and a savestate's embedded SRAM wins when both are set.
     std::vector<std::uint8_t> sram;

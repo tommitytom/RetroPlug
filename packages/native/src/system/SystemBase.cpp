@@ -1,16 +1,7 @@
 #include "system/SystemBase.hpp"
 
-#include <algorithm>
 #include <cstdio>
 #include <cstring>
-
-namespace {
-
-constexpr std::size_t typeIndex(rp::MemoryType t) {
-    return static_cast<std::size_t>(t);
-}
-
-} // namespace
 
 void SystemBase::onProcess(const AudioBlockInfo& info, float* const* outs) {
     // Drive the triad to the block target, then finish: what an unlinked
@@ -18,46 +9,6 @@ void SystemBase::onProcess(const AudioBlockInfo& info, float* const* outs) {
     prepareForBlock(info);
     while (stepIfBelowTarget(info.frames)) {}
     finishBlock(info, outs, 2); // the convenience entry is stereo (one Mix stream = two lanes)
-}
-
-bool SystemBase::enableMemorySnapshot(rp::MemoryType type) {
-    const std::size_t idx = typeIndex(type);
-    if (idx >= rp::kMemoryTypeCount) return false;
-    auto& entry = snapshots_[idx];
-
-    // Already streaming: bump the refcount and we're done.
-    if (entry.triple) {
-        ++entry.refcount;
-        return true;
-    }
-
-    // Probe the region first. Unsupported types return an invalid accessor
-    // and we refuse subscription so the UI can branch cleanly.
-    rp::MemoryAccessor probe = getMemory(type, rp::AccessType::Read);
-    if (!probe.valid()) return false;
-
-    // Size cap protects the audio thread from per-block memcpy of multi-MB
-    // regions. ROM / GBA EWRAM / large SRAM are one-shot only.
-    if (probe.size() > kMaxStreamableBytes) return false;
-
-    entry.triple   = std::make_unique<MemorySnapshotTriple>(probe.size());
-    entry.refcount = 1;
-    return true;
-}
-
-void SystemBase::disableMemorySnapshot(rp::MemoryType type) {
-    const std::size_t idx = typeIndex(type);
-    if (idx >= rp::kMemoryTypeCount) return;
-    auto& entry = snapshots_[idx];
-    if (!entry.triple) return;
-    if (entry.refcount > 0) --entry.refcount;
-    if (entry.refcount == 0) entry.triple.reset();
-}
-
-MemorySnapshotTriple* SystemBase::memorySnapshot(rp::MemoryType type) {
-    const std::size_t idx = typeIndex(type);
-    if (idx >= rp::kMemoryTypeCount) return nullptr;
-    return snapshots_[idx].triple.get();
 }
 
 bool SystemBase::runUntilPc(std::uint32_t target, std::uint64_t maxCycles) {
@@ -74,19 +25,6 @@ bool SystemBase::runUntilPc(std::uint32_t target, std::uint64_t maxCycles) {
         if (pc && *pc == target) return true;
     }
     return false;
-}
-
-void SystemBase::publishMemorySnapshots() {
-    for (std::size_t i = 0; i < rp::kMemoryTypeCount; ++i) {
-        auto& entry = snapshots_[i];
-        if (!entry.triple) continue;
-        rp::MemoryAccessor accessor =
-            getMemory(static_cast<rp::MemoryType>(i), rp::AccessType::Read);
-        if (!accessor.valid()) continue;
-        const std::size_t n = std::min(accessor.size(), entry.triple->size());
-        std::memcpy(entry.triple->writeSlot(), accessor.data(), n);
-        entry.triple->publish();
-    }
 }
 
 // The slot layout is [len:4 LE][savestate bytes][unused tail]. The tail is

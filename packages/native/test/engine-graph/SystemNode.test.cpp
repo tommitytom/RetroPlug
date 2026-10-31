@@ -2180,7 +2180,7 @@ TEST_CASE("a system node placed at a gain plays its first block at it, from the 
     probe->onActivate(kRate);
     probe->setGainDb(-12.0f, true);
     Direct first({probe.get()}, 2, {{0, 1}});
-    first.block(64);
+    first.block(512);
     REQUIRE(sounds(first));
     // Bit for bit against a core snapped the same way: without the snap the node's first block sits at unity and ramps
     // down, which the comparison covers inside its first 20 ms.
@@ -2224,6 +2224,48 @@ TEST_CASE("a non-default model reaches a Game Boy core before it boots, so a sav
     CHECK(built->config_.model == SameBoyModel::DmgB);
     Direct d({direct.get()}, 2, {{0, 1}});
     CHECK(compare(rig, d, 2.0) == "");
+    CHECK(sounds(d));
+}
+
+TEST_CASE("a NES node built from its ROM resource restores a savestate seed, bit for bit",
+          "[engine-graph][system-node][resources]") {
+    // A savestate is a build seed, and a Mesen core's restore is a private virtual reached only through
+    // seedSramAndState, so this pins the dispatch: the node's core and a directly built one restore the same bytes
+    // and render the same block, the N8 flush a restore makes included. The seed is taken while the ROM is playing a
+    // note, so a core that skips the restore starts silent and the comparison sees it. The ROM is in the repository,
+    // so CI runs it.
+    NodeRig rig(kRate);
+    auto source = nes(9, 0);
+    Direct run({source.get()}, 2, {{0, 1}});
+    std::vector<std::uint8_t> state;
+    for (int b = 0, at = 0; b < 400 && state.empty(); ++b, at += 512) {
+        if (at < static_cast<int>(1.5 * kRate) && at + 512 >= static_cast<int>(1.5 * kRate)) noteOn(*source, 0, 60);
+        run.sounded = false;
+        run.block(512);
+        if (run.sounded) state = source->saveStateBytes();  // the note is sounding across the next boundary
+    }
+    REQUIRE(!state.empty());
+    MesenNesConfig cfg;
+    cfg.romPath = RP_BLIPTOASTER_ROM_PATH;
+    cfg.savestate = state;
+    auto direct = std::make_unique<MesenNesSystem>(1, cfg, readFile(RP_BLIPTOASTER_ROM_PATH));
+    direct->onActivate(kRate);
+    // The seed's first block carries signal, which is what makes a core that boots fresh instead of restoring audible.
+    auto probe = std::make_unique<MesenNesSystem>(1, cfg, readFile(RP_BLIPTOASTER_ROM_PATH));
+    probe->onActivate(kRate);
+    Direct first({probe.get()}, 2, {{0, 1}});
+    first.block(512);
+    REQUIRE(sounds(first));
+    const auto romId = resource(rig, "rom", readFile(RP_BLIPTOASTER_ROM_PATH));
+    const auto stateId = resource(rig, "state", state);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"sys-1","type":"rp.mesen.nes","settings":{)" +
+                    rig.boot("rp.mesen.nes", 1, R"("state":"res:)" + std::to_string(stateId) + "\"", romId) +
+                    R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                        "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
+    SystemBase* const built = rig.builtCore(1);
+    REQUIRE(built != nullptr);
+    Direct d({direct.get()}, 2, {{0, 1}});
+    CHECK(compare(rig, d, 1.0) == "");
     CHECK(sounds(d));
 }
 

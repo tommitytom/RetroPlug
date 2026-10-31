@@ -11,14 +11,17 @@
 // reader-hint discipline as FrameBufferTriple, but the slot type is a
 // fixed-size std::vector<std::uint8_t> sized at construction.
 //
-// Writer: the DSP thread, between emulator-step boundaries (after
-// onProcess() finishes a block — guaranteed internally consistent state).
-// Reader: the UI thread, at uiIdle cadence. Tear-free for multi-byte
-// structs because the writer copies a complete buffer into a stable slot
-// before publishing.
+// Writer: the block thread, between emulator-step boundaries (after onProcess()
+// finishes a block, guaranteed internally consistent state).
+// Readers: SnapshotRegistry::publishSystem on that same block thread, for
+// SystemBase's whole-savestate triple, and the control thread for the
+// registry's own shadows. Tear-free for multi-byte structs because the writer
+// copies a complete buffer into a stable slot before publishing.
 //
-// Use case: per-(system, type) memory snapshot for live UI subscriptions.
-// Allocated on subscribe, freed on unsubscribe.
+// Users: SystemBase's stateSnapshot_ (the whole savestate) and
+// SnapshotRegistry's state/SRAM/WRAM shadows, claimed in SnapshotRegistry::claim.
+// Sized once at construction and never resized, because a writer on the block
+// thread may not allocate.
 class MemorySnapshotTriple {
 public:
     explicit MemorySnapshotTriple(std::size_t regionSize)

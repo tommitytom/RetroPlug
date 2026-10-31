@@ -123,17 +123,9 @@ public:
     std::optional<std::uint8_t> readCpuByte(std::uint32_t addr) const override;
     bool                        writeCpuByte(std::uint32_t addr, std::uint8_t value) override;
 
-    // SystemBase virtuals - see base class for contracts. fastBoot() is
-    // deliberately NOT overridden: Mesen's SmsConfig has no boot-screen skip,
-    // so the base nullopt hides the Fast boot row.
-    std::uint32_t             savSuffix() const override      { return config_.savSuffix; }
-    void                      setSavSuffix(std::uint32_t s) override { config_.savSuffix = s; }
-    const std::string&        savPath() const override        { return config_.savPath; }
-    void                      setSavPath(const std::string& p) override { config_.savPath = p; }
+    // SystemBase virtuals - see base class for contracts.
     std::vector<std::uint8_t> saveSramBytes() const override;
-    void                      clearSram() override;
     std::vector<std::uint8_t> saveStateBytes() const override;
-    bool                      loadStateBytes(const std::vector<std::uint8_t>& bytes) override;
     std::size_t               stateSnapshotSize() const override;
     bool                      captureStateSnapshot(std::vector<std::uint8_t>& dst) override;
 
@@ -159,6 +151,9 @@ public:
     static constexpr std::uint32_t kGgPixelHeight  = 144;
 
 private:
+    // Restore a savestate seed over the battery seedSramAndState() already put into the core.
+    bool loadStateBytes(const std::vector<std::uint8_t>& bytes) override;
+
     SmsConsole* smsConsole() const;
 
     // Write rom_ to a real file whose name Mesen can read three separate

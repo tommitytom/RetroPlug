@@ -134,16 +134,9 @@ public:
     void setLightTemperature(double temperature);
 
     // SystemBase virtuals — see base class for contracts.
-    std::uint32_t             savSuffix() const override         { return config_.savSuffix; }
-    void                      setSavSuffix(std::uint32_t s) override { config_.savSuffix = s; }
-    const std::string&        savPath() const override           { return config_.savPath; }
-    void                      setSavPath(const std::string& p) override { config_.savPath = p; }
-    std::optional<bool>       fastBoot() const override         { return config_.fastBoot; }
     void                      setFastBoot(bool on) override     { config_.fastBoot = on; }
-    void                      clearSram() override;
     std::vector<std::uint8_t> saveSramBytes() const override;
     std::vector<std::uint8_t> saveStateBytes() const override;
-    bool                      loadStateBytes(const std::vector<std::uint8_t>& bytes) override;
     std::size_t               stateSnapshotSize() const override;
     bool                      captureStateSnapshot(std::vector<std::uint8_t>& dst) override;
     StateRegionTable          stateSnapshotRegions() const override;

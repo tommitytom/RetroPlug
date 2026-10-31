@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <string>
 #include <vector>
 
 #include "rfl/Literal.hpp"
@@ -77,18 +76,6 @@ struct SameBoyConfig {
     double                    lightTemperature = 0.0;  // -1 cool .. +1 warm, CGB only
     // Per-system trim, dB. Smoothed at audio rate inside SameBoySystem::mixInto.
     float                     gainDb   = 0.0f;
-    // Loose-battery disambiguator. 0 => this system owns the plain sibling
-    // `<rom>.sav`; N>=2 => `<rom>-N.sav`. Assigned when a ROM ends up loaded
-    // into more than one system (Duplicate Instance, or adding the same file
-    // twice) so the instances keep independent battery files instead of all
-    // auto-saving over `<rom>.sav`. Persisted so it survives reload.
-    std::uint32_t             savSuffix = 0;
-    // Explicit battery-file override. Empty => derive `<rom>.sav` / `<rom>-N.sav`
-    // from the ROM's path and savSuffix (the default). Non-empty => this exact file,
-    // set when the user pairs a hand-picked `.sav` with the ROM in the load browser;
-    // all battery reads/writes (auto-save, Save SRAM, project-load restore) then
-    // target it instead of the sibling.
-    std::string               savPath;
     // Cartridge battery RAM (.sav contents), a build seed now: a node and a direct construction both hand the core
     // bytes, and the emulator owns the battery once it is booted. Loaded into the emulator BEFORE `savestate`, so a
     // savestate's embedded SRAM still wins when both are set.
