@@ -296,9 +296,9 @@ mode bound 1 to 3 is the other console name `Engine` keeps (section 12).
   `inputAccepted()` and `inputDropped()` the same whether the coalescing replaced the queued entry or kept it, so the
   surviving entry's value is the thing to hold. Each section then reads the pad's own bit after the block through
   `buttonDown` (`BaseControlDevice::IsPressed` by the console's control manager), so a block that emptied the queue
-  without applying it, or applied only the first entry, fails rather than passing on the queue read alone. The audio suite has the FIFO's own cases (the
-  permissive fifo_a past `_rxBound`, the wire past a block's input), the NES's carried-run rebase, and the reliable
-  link's 48-frame window giving up the window and re-syncing.
+  without applying it, or applied only the first entry, fails rather than passing on the queue read alone. The audio
+  suite has the FIFO's own cases (the permissive fifo_a past `_rxBound`, the wire past a block's input), the NES's
+  carried-run rebase, and the reliable link's 48-frame window giving up the window and re-syncing.
 - **ThreadSanitizer and AddressSanitizer** ran over every case touched (the `[alloc]` and `[input-drops]` tags, the
   `[control-state]` / `[notification]` / `[video]` cases, the tap and kind cases, the audio suite's `[channelsplit]`
   cases) with no report, and the profile benches stayed at zero allocations a block.
@@ -377,8 +377,10 @@ device's constructor, off the block thread, before any read can grow one inside 
 same capacity on each snapshot entry's state before filling it, so a port that appears late (a mapper or role device
 the control manager registers a few frames in) does not grow five snapshot destinations inside a block. A device no ROM
 has read yet therefore carries an empty state, as upstream's did, where the first version's padding gave it 64 NULs.
-A savestate blob grows by about 62 bytes a device as a result; old savestates still load, since Mesen reads a
-vector's length from the blob. The redundant `clear()` in `SetTextState` went.
+A device the emulator has polled or a ROM has read holds its whole 64-byte state, where upstream's grew only to the
+byte its highest button needed (1 for a Master System pad, 2 for a NES pad's microphone bit or a GBA's shoulders), so
+a savestate blob grows by about 62 bytes a device; old savestates still load, since Mesen reads a vector's length
+from the blob. The redundant `clear()` in `SetTextState` went.
 
 **What the same commit fixed in our code.** The N8 FIFO's parser reserved its per-command vectors inside the block:
 `_params` is now reserved to the protocol's largest command frame (`3 + 0xFFFF`) at construction and `_writeBlock` to
@@ -400,9 +402,9 @@ a block. What still allocates there, and why:
   each `EdioDirRecord::name` is a `std::string` from a `directory_entry`.
 - `_txQueue` (CMD_USB_WR with no sink) grows while a ROM writes and no host drains it, unbounded on purpose: a ring
   would change the "never drop a byte the device would deliver" contract.
-- `_ioScratch` is the SDK's largest read (`FILE_READ_MAX`), and both readers take the file a chunk of that size at a
-  time, so a length taken from a u32 cannot grow it, and no read gives memory back (a second allocation) in the block
-  that asked for it.
+- `_ioScratch` is the SDK's largest read (`FILE_READ_MAX`): a read grows the buffer to the chunk it takes (never past
+  that cap), and no read shrinks it or gives memory back (a second allocation) in the block that asked; only a read
+  longer than every earlier one allocates there.
 
 None of them is reachable from the block cases (the in-repo NES ROM never issues an SD command), so the whole-block case
 is ROM-dependent for the SD path.

@@ -461,10 +461,10 @@ std::uint64_t MesenNesSystem::inputDropped() const {
 
 namespace {
 // The NES controller bit a wire byte drives, or -1 for a byte the console has no bit for. The shared wire table is
-// position-aligned with the other consoles and stops at Start, while Mesen's own NesController::Buttons (NesController.h:80)
-// runs Up, Down, Left, Right, Start, Select, B, A, so the remap is an explicit switch. The -1 is what keeps the press
-// queue's coalescing honest: it keys on the wire byte, so two bytes naming one bit would leave one entry in the
-// other's place, and the block applies that order.
+// position-aligned with the other consoles and stops at Start, while Mesen's own NesController::Buttons
+// (NesController.h:80) runs Up, Down, Left, Right, Start, Select, B, A, so the remap is an explicit switch. The -1 is
+// what keeps the press queue's coalescing honest: it keys on the wire byte, so two bytes naming one bit would leave one
+// entry in the other's place, and the block applies that order.
 int toNesButton(std::uint8_t b) {
     switch (static_cast<NesButton>(b)) {
         case NesButton::Right:  return NesController::Buttons::Right;

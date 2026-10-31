@@ -79,8 +79,9 @@ stream port on the default path, so a wide `outs` is **structurally impossible**
 mode or the per-channel render shape. If a system handed its stems to lanes meant for the mix,
 `finishBlock` would sum four *pre-highpass* stems into pair 0 and silently replace the shipped
 highpassed, gain-smoothed mix. So the authority is the wiring: the node sets the lane count from
-what is connected, and the backend branches on `laneCount` (`≤2` → today's mixed path; `≥8` →
-per-channel).
+what is connected, and the backend branches on `laneCount` (`≤2` → today's mixed path, above that →
+per-channel, at the layout's own threshold: 6 lanes for a NES pins block, 8 for its pins plus the mix
+reference, 8 for a Game Boy's four stereo streams, 10 for a NES's channels).
 
 Two placement layers, mutually exclusive in the 8-lane budget:
 
