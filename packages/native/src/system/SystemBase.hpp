@@ -179,8 +179,7 @@ public:
     // or the backend doesn't yet support snapshotting.
     virtual std::vector<std::uint8_t> saveSramBytes() const { return {}; }
 
-    // Savestate, byte-for-byte. False on unsupported backends or malformed
-    // buffers.
+    // Savestate, byte for byte. Empty when the backend doesn't support savestates.
     virtual std::vector<std::uint8_t> saveStateBytes() const { return {}; }
 
 
