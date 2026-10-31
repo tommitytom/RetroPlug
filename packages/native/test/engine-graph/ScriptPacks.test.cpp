@@ -38,7 +38,7 @@
 #include "host/engine/DspCommand.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/script/ScriptHost.hpp"
-#include "system/ChannelTap.hpp"
+#include "system/SystemBase.hpp"
 
 using rp::host::ScriptHost;
 using rp::host::test::DocExtras;

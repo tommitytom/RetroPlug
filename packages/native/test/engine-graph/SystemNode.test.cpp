@@ -45,6 +45,7 @@
 #include "NodeRig.hpp"
 #include "graph/CanonicalJson.hpp"
 #include "host/engine/EngineInvoker.hpp"
+#include "host/graph/HostIoNodes.hpp"
 #include "system/mesen/MesenAudioDevice.hpp"
 #include "system/mesen/MesenGbaSystem.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
@@ -2209,7 +2210,7 @@ TEST_CASE("a system node placed at a gain plays its first block at it, from the 
     probe->onActivate(kRate);
     probe->setGainDb(-12.0f, true);
     Direct first({probe.get()}, 2, {{0, 1}});
-    first.block(512);
+    first.block(64);
     REQUIRE(sounds(first));
     // Bit for bit against a core snapped the same way: without the snap the node's first block sits at unity and ramps
     // down, which the comparison covers inside its first 20 ms.
@@ -2291,8 +2292,9 @@ TEST_CASE("a NES node built from its ROM resource restores a savestate seed, bit
                     rig.boot("rp.mesen.nes", 1, R"("state":"res:)" + std::to_string(stateId) + "\"", romId) +
                     R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
                         "wires":[{"from":"sys-1.mix","to":"out.out.1-2"}]})").ok);
-    SystemBase* const built = rig.builtCore(1);
+    auto* const built = dynamic_cast<MesenNesSystem*>(rig.builtCore(1));
     REQUIRE(built != nullptr);
+    CHECK(built->config().savestate == state);  // the seed reached the built core's config, not only its audio
     Direct d({direct.get()}, 2, {{0, 1}});
     CHECK(compare(rig, d, 1.0) == "");
     CHECK(sounds(d));
@@ -2487,6 +2489,7 @@ TEST_CASE("a boot's cost per console, through the build a system node makes", "[
                     built[built.size() / 2] / 1000.0, planned[planned.size() / 2] / 1000.0, boot.rom.size() / 1024);
     }
 }
+
 // The block thread's allocation promise (docs/modular-graph-phase-c4-design.md section 4): a warmed core's block
 // allocates and frees nothing, emulation included. Two kinds of case hold it.
 //
@@ -2652,9 +2655,13 @@ rp::test::AllocationCount wholeBlock(SystemBase& core, std::uint32_t frames, con
     core.prepareForBlock(info(frames));
     while (core.stepIfBelowTarget(frames)) {
     }
-    if (count) REQUIRE(capturedFrames(core) >= frames);
+    const std::uint32_t captured = count ? capturedFrames(core) : 0;  // read, not asserted, inside the window
     core.finishBlock(info(frames), lanes.data(), lanes.size());
-    return count ? rp::test::endCountingAllocations() : rp::test::AllocationCount{};
+    const auto counted = count ? rp::test::endCountingAllocations() : rp::test::AllocationCount{};
+    // After the window: under -s or a reporter that records every assertion, a REQUIRE builds assertion stats, which
+    // allocate, and every counted window would fail spuriously.
+    if (count) REQUIRE(captured >= frames);
+    return counted;
 }
 
 // A hash of a core's whole work RAM, to hold that a counted window really emulated: a plan that refused the block
@@ -2798,6 +2805,28 @@ TEST_CASE("a Mesen audio ring keeps a block in fixed storage, draining, wrapping
         CHECK(ring.capacityFrames() == 65536 + MesenAudioDevice::kMaxPlayBufferFrames);
     }
 
+    SECTION("a resize while the queued frames wrap keeps them, in order") {
+        // The re-activation copy has two ranges to move (the tail before the end and the head after it). The section
+        // above grows a queue whose head is 0, so only the first runs; this one wraps first, then grows.
+        const std::uint32_t capacity = ring.capacityFrames();
+        put(0, capacity - 100, in);
+        ring.PlayBuffer(in.data(), capacity - 100, 48000, true);
+        out.resize(std::size_t(capacity) * 2);
+        CHECK(ring.drain(out.data(), 500) == 500);  // head moves 500 frames into the buffer
+        put(capacity - 100, 600, in);
+        ring.PlayBuffer(in.data(), 600, 48000, true);  // wraps: the queue now starts 500 in and continues at the front
+        CHECK(ring.availableFrames() == capacity);
+        ring.reserveAudio(65536);  // larger than the current capacity, so the frames are copied out of the ring
+        CHECK(ring.capacityFrames() == 65536 + MesenAudioDevice::kMaxPlayBufferFrames);
+        CHECK(ring.availableFrames() == capacity);
+        std::vector<float> all(std::size_t(capacity) * 2);
+        CHECK(ring.drain(all.data(), capacity) == capacity);
+        // What was queued before the wrap, then the write that wrapped, still in arrival order and bit for bit.
+        CHECK(expect(500, capacity - 600, all.data()) == "");
+        CHECK(expect(capacity - 100, 600, all.data() + std::size_t(capacity - 600) * 2) == "");
+        CHECK(ring.availableFrames() == 0);
+    }
+
     SECTION("a write past capacity drops the newest and counts them") {
         // The drop policy is unreachable in production, so the ring asserts when it happens (a debug build): it is only
         // holdable where that assert is compiled out, which is every configured build here but a debug one.
@@ -2818,7 +2847,6 @@ TEST_CASE("a Mesen audio ring keeps a block in fixed storage, draining, wrapping
     }
 
     SECTION("a warm ring allocates nothing to write or drain") {
-        ring.reserveAudio(4096);
         std::array<int16_t, 1024 * 2>  chunk{};
         std::array<float, 8192 * 2>    dest{};
         for (int i = 0; i < int(chunk.size()); ++i) chunk[std::size_t(i)] = static_cast<std::int16_t>(i);
@@ -2871,8 +2899,7 @@ TEST_CASE("a NES whose tap is armed over the mix keeps its mix ring to one block
         Lanes lanes(2);
         for (int b = 0; b < 2000; ++b) {
             e.processBlock(1, lanes.ptrs.data(), 2);
-            if (b % 100 == 0)
-                INFO("block " << b << ": fill " << core->audioRingFill() << " of " << core->audioRingCapacity());
+            INFO("block " << b << ": fill " << core->audioRingFill() << " of " << core->audioRingCapacity());
             CHECK(core->audioRingFill() <= bound);
         }
         CHECK(core->audioRingOverflow() == 0);
@@ -2895,10 +2922,66 @@ TEST_CASE("a NES whose tap is armed over the mix keeps its mix ring to one block
         CHECK(core->audioRingOverflow() == 0);
     }
 
+    SECTION("a driver that does not say which ring it drains keeps the tap's gate") {
+        // SystemBase::setBlockLanes is how a driver says what its block drains; 0 (the default) is "not told", and a
+        // core then keeps its own rule: the tap's rings whenever they are armed. The engine's node always tells, so
+        // this is a test or tool's path, and it is held here rather than left as an accident: driven untold, the mix
+        // ring keeps each block's flush overshoot (the tap ring is discarded and starts empty), so its fill grows past
+        // one flush; told the two mix lanes, the same core drains the ring it gates on and stays bounded.
+        Lanes untold(2), told(2);
+        auto untoldCore = nes(1, 1);
+        auto toldCore = nes(1, 1);
+        untoldCore->reserveAudio(8192);
+        toldCore->reserveAudio(8192);
+        for (int b = 0; b < 8; ++b) {
+            for (float* const lane : untold.ptrs) std::fill_n(lane, 512, 0.0f);
+            untoldCore->prepareForBlock(info(512));
+            while (untoldCore->stepIfBelowTarget(512)) {
+            }
+            untoldCore->finishBlock(info(512), untold.ptrs.data(), 2);
+            drainBlock(*toldCore, 512, told.ptrs.data(), 2, false, true);
+        }
+        CHECK(untoldCore->availableFrames() == 0);  // the gate's metric is the tap's rings, which the mix drain emptied
+        // Each block's flush overshoot stayed in the mix ring, so the fill is several flushes deep.
+        CHECK(untoldCore->audioRingFill() > 1 + oneFlush(*untoldCore));
+        CHECK(toldCore->audioRingFill() <= 1 + oneFlush(*toldCore));
+    }
+
+    SECTION("a short pins block does not set the mix discard's chunk") {
+        // The mix path discards the tap's rings through chanAccum_[0], whose size a pins block assigns to ITS block
+        // size. A one-frame pins block must not leave the discard draining a frame at a time, and a zero-frame one
+        // must not leave a zero-size scratch at all: that loop would never advance. The engine never hands a block of
+        // zero frames to finishBlock, so the zero-frame half drives the triad directly, as a tool could.
+        auto core = nes(1, 1);
+        core->reserveAudio(8192);
+        Lanes pins(3), mix(2);
+        std::vector<float*> tap;
+        for (std::size_t k = 0; k < 3; ++k) {
+            tap.push_back(pins.ptrs[k]);
+            tap.push_back(pins.ptrs[k]);
+        }
+        drainBlock(*core, 1, tap.data(), tap.size(), false, true);      // a pins block of one frame
+        auto counted = drainBlock(*core, 512, mix.ptrs.data(), 2, true, true);
+        INFO("after a 1-frame pins block: " << counted.allocations << " allocations, " << counted.frees << " frees");
+        CHECK(counted.allocations == 0);
+        CHECK(counted.frees == 0);
+        CHECK(core->audioRingOverflow() == 0);
+        CHECK(core->tapOverflow() == 0);
+        drainBlock(*core, 0, tap.data(), tap.size(), false, false);     // a pins block of none: the scratch empties
+        counted = drainBlock(*core, 512, mix.ptrs.data(), 2, true, true);
+        INFO("after a 0-frame pins block: " << counted.allocations << " allocations, " << counted.frees << " frees");
+        CHECK(counted.allocations == 0);
+        CHECK(counted.frees == 0);
+        CHECK(core->audioRingOverflow() == 0);
+        CHECK(core->tapOverflow() == 0);
+    }
+
     SECTION("a narrow host hears exactly what the mix alone hears") {
         // What the fix buys the user: continuing audio at one block's latency. The mix path drains the mix ring and
         // gates on it, exactly as an unarmed NES does, so the tap changes nothing the host hears: no drift, no dropped
-        // frames, no discontinuity at a block boundary.
+        // frames, no discontinuity at a block boundary. The comparison carries sound, which is what makes a drift
+        // audible: BlipToaster ignores MIDI until 1.5 s have rendered, so both cores get the first note after that
+        // boot, and notes keep coming for the rest of the run (a tracker note sustains until another replaces it).
         Engine wide(kRate), narrow(kRate);
         rp::host::test::Roms wideRoms, narrowRoms;
         std::vector<rp::host::test::DocSystem> systems{{1, rp::host::test::kNesType}};
@@ -2907,8 +2990,19 @@ TEST_CASE("a NES whose tap is armed over the mix keeps its mix ring to one block
         auto* const plain = wide.findSystem(1);
         REQUIRE(plain != nullptr);
         auto* const tapped = narrowHost(narrow, narrowRoms);
+        // 400 blocks of 512 are 4.27 s: the ROM's boot, then over two seconds of the notes sounding, which is 200+
+        // blocks of drift on the old gate (about 25 frames a block, so the mix ring's tail is heard a block late).
         Lanes mixed(2), stereo(2);
-        for (int b = 0; b < 40; ++b) {
+        constexpr std::uint8_t kKeys[] = {60, 64, 67, 72};
+        std::uint64_t at = 0;
+        bool heard = false;
+        for (int b = 0; b < 400; ++b, at += 512) {
+            for (const std::uint8_t key : kKeys)
+                if (at >= static_cast<std::uint64_t>(1.5 * kRate) + std::uint64_t(key - kKeys[0]) * 12000 &&
+                    at - 512 < static_cast<std::uint64_t>(1.5 * kRate) + std::uint64_t(key - kKeys[0]) * 12000) {
+                    noteOn(*plain, 0, key);
+                    noteOn(*tapped, 0, key);
+                }
             std::fill_n(mixed.ptrs[0], 512, 0.0f);
             std::fill_n(mixed.ptrs[1], 512, 0.0f);
             std::fill_n(stereo.ptrs[0], 512, 0.0f);
@@ -2918,7 +3012,9 @@ TEST_CASE("a NES whose tap is armed over the mix keeps its mix ring to one block
             INFO("block " << b);
             CHECK(mixed.data[0] == stereo.data[0]);
             CHECK(mixed.data[1] == stereo.data[1]);
+            for (float v : stereo.data[0]) heard = heard || v != 0.0f;
         }
+        REQUIRE(heard);  // the comparison above held two silent lanes would hold nothing
         CHECK(tapped->audioRingOverflow() == 0);
         // The console ran the same frames too: the tap changes nothing the game sees either (the two rings fill in
         // lockstep, and the block that drains the mix gates on the mix).
@@ -2966,6 +3062,7 @@ TEST_CASE("a Mesen core's audio path drains without allocating at every block si
         core->reserveAudio(8192);
         Lanes lanes(2);
         checkRaggedDrainsAreFree(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+        CHECK(core->audioRingOverflow() == 0);
     }
     SECTION("GBA") {
         // A sibling fixture, so this leaves on a run without one (as CI's) rather than failing there.
@@ -2976,17 +3073,18 @@ TEST_CASE("a Mesen core's audio path drains without allocating at every block si
         core->reserveAudio(8192);
         Lanes lanes(2);
         checkRaggedDrainsAreFree(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+        CHECK(core->audioRingOverflow() == 0);
     }
 }
 
 TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation included",
           "[engine-graph][system-node][alloc]") {
-    // The promise's other half: a REAL block, with the step phase in the counted window, so the video frames, controller
-    // polls and notifications a block carries are counted too, and with the block's host input staged inside the window
-    // (the calls a node's applyInputs makes before the core's prepareForBlock), so what a MIDI run, a byte run and a
-    // press burst do to a core's ingress queues is counted rather than assumed. Each core is built directly (as the
-    // cases above build theirs), warmed by 4 x 1024 frames and then run at every ragged size, and every core is expected
-    // to be free at every size.
+    // The promise's other half: a REAL block, with the step phase in the counted window, so the video frames,
+    // controller polls and notifications a block carries are counted too, and with the block's host input staged
+    // inside the window (the calls a node's applyInputs makes before the core's prepareForBlock), so what a MIDI run,
+    // a byte run and a press burst do to a core's ingress queues is counted rather than assumed. Each core is built
+    // directly (as the cases above build theirs), warmed by 4 x 1024 frames and then run at every ragged size, and
+    // every core is expected to be free at every size.
     SECTION("NES, mixed") {
         auto core = nes(1, 0);
         core->reserveAudio(8192);  // what a node's activate does with its plan's maximum
@@ -3186,6 +3284,13 @@ TEST_CASE("the ingress capacities match the queue capacities ports.ts declares",
     CHECK(bytes.second == rp::kBytesInput.bytes);
     const auto buttons = capacity("BUTTONS");
     CHECK(buttons.first == rp::kButtonsInput);
+    // A routed MIDI stream and the host's own MIDI-in output reach a system's midi input too, so both hold no more
+    // than the core's queue (InputCapacity.hpp's contract: the bound is what the feeding outputs declare).
+    const auto routed = capacity("ROUTED_MIDI");
+    CHECK(routed.first == rp::host::kHostMidiInMessages);
+    CHECK(routed.second == rp::host::kHostMidiInBytes);
+    CHECK(routed.first <= rp::kMidiInput.messages);
+    CHECK(routed.second <= rp::kMidiInput.bytes);
 }
 
 TEST_CASE("a core's ingress queues drop what is past their bound, count it, and keep running",
@@ -3298,6 +3403,7 @@ TEST_CASE("a core's ingress queues drop what is past their bound, count it, and 
         const std::vector<std::uint8_t> bytes(kCapacity + 2, 0xF8);
         core->pushCoreBytes(0, bytes.data(), bytes.size(), false);
         CHECK(core->inputDropped() == kCapacity + 2);   // a run past the arena is dropped whole, as a graph queue's is
+        CHECK(core->inputAccepted() == 0);              // and none of it was taken, so the two halves agree
         ran(*core, {lanes.ptrs[0], lanes.ptrs[1]});
     }
 }
@@ -3417,14 +3523,12 @@ TEST_CASE("a tap armed live on an activated NES sizes nothing on the block threa
     // runs as it adopts the new plan - i.e. BETWEEN two blocks, on the audio thread. Nothing may be SIZED or allocated
     // there: the ring, the per-block scratches, the tap's rings, its resample scratch and each stream's blip were all
     // created at activation (reserveAudio), so an arm only re-initialises the streams it switches on. The counted
-    // window is the arm itself, C allocations included, because a stream's blip would be blip_new's malloc: that is what
-    // the counting allocator's C half is for, and this case measures it. Which builds prove the arm: a plain glibc build,
-    // where countsCAllocations() is true. Under ASan/TSan the sanitizer owns the allocator and the C half is off by
-    // design, and Windows' static CRT and macOS have no glibc name to forward to, so the case SKIPS there rather than
-    // pass green at a parent that allocated: a case whose promise is a C allocation cannot be held without it. The
+    // window is the arm itself, C allocations included, because a stream's blip would be blip_new's malloc: what
+    // the counting allocator's C half is for, and this case measures it. The operator-new half runs in every build. The
+    // C half is only visible where countsCAllocations() is true (a plain glibc build): under ASan/TSan the sanitizer
+    // owns the allocator and the C interposer is off by design, and Windows' static CRT and macOS have no glibc name to
+    // forward to, so on those the zero below holds the C++ half and the C half is unmeasured rather than assumed. The
     // blocks after it are held the way the case above holds a core's: their drain is counted, their step is not.
-    if (!rp::test::countsCAllocations())
-        SKIP("the counting allocator's C half is off in this build, so the arm's blip allocation is not visible");
     Engine e(kRate);
     rp::host::test::Roms roms;
     auto systems = std::vector<rp::host::test::DocSystem>{{1, rp::host::test::kNesType}};
@@ -3578,7 +3682,7 @@ std::vector<std::uint64_t> frameHashes(SystemBase& core, int blocks, std::uint32
 TEST_CASE("each console renders the frames it always has, bit for bit",
           "[engine-graph][system-node][video]") {
     // The video path this stage made reuse its buffers is held to the bytes it produced before the change: these are
-    // the frames four consoles publish over their first blocks, recorded at e30c39f5 (the parent of the commit that
+    // the frames four consoles publish over their first blocks, recorded at 903f2371 (the parent of the commit that
     // made a frame's buffers reusable) and equal after it. Parity is audio plus integer state, so without this a
     // change to RenderedFrame, VideoDecoder or a PPU's frame plumbing would be read, not checked.
     SECTION("NES") {

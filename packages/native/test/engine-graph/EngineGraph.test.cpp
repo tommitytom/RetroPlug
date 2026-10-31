@@ -155,32 +155,57 @@ TEST_CASE("the tap re-arm rides the swap: restore, then arm", "[engine-graph][b2
     auto nesRequest = [&](std::uint32_t channels = 2) {
         return rp::host::test::graphRequest(rp::host::test::stereoDocument(systems, channels), {1});
     };
-    auto* nes = dynamic_cast<MesenNesSystem*>(e.findSystem(1));
-    CHECK(nes == nullptr);  // not built until a document places it
+    CHECK(e.findSystem(1) == nullptr);  // not built until a document places it
+    // Read through the capability the engine itself uses, so this case's mode reads are the ones a console cannot
+    // change behind the engine's back.
+    const auto mode = [&e] {
+        SystemBase* core = e.findSystem(1);
+        REQUIRE(core != nullptr);
+        ChannelTap* tap = core->channelTap();
+        REQUIRE(tap != nullptr);
+        return tap->exportMode();
+    };
 
     REQUIRE(e.setGraph(arming(nesRequest(), 1, 1)).ok);
-    nes = dynamic_cast<MesenNesSystem*>(e.findSystem(1));
-    REQUIRE(nes != nullptr);
-    CHECK(nes->channelExportMode() == 1);
+    CHECK(mode() == 1);
 
     // No re-arm: the tap is left as it is.
     REQUIRE(e.setGraph(nesRequest()).ok);
-    CHECK(nes->channelExportMode() == 1);
+    CHECK(mode() == 1);
 
     // A re-arm with nothing to arm restores the mode the core had.
     auto restore = nesRequest();
     restore.rearmTap = true;
     REQUIRE(e.setGraph(restore).ok);
-    CHECK(nes->channelExportMode() == 0);
+    CHECK(mode() == 0);
 
     // Channels, then a re-arm to the same mode, which restores and arms again.
     const auto armChannels = arming(nesRequest(), 1, 3);
     REQUIRE(e.setGraph(armChannels).ok);
-    CHECK(nes->channelExportMode() == 3);
+    CHECK(mode() == 3);
     REQUIRE(e.setGraph(armChannels).ok);
-    CHECK(nes->channelExportMode() == 3);
+    CHECK(mode() == 3);
     REQUIRE(e.setGraph(restore).ok);
-    CHECK(nes->channelExportMode() == 0);
+    CHECK(mode() == 0);
+}
+
+TEST_CASE("a re-arm at a system with no tap arms nothing and the block still runs", "[engine-graph][b2]") {
+    // The tap is a capability: a document can name a mode for any slot, and only a core that offers one has anything
+    // to arm. A Game Boy passes the engine's validation, so this is the null check on the arm path held at the
+    // Engine seam, where a missing check would reach the block thread.
+    Engine e(kRate);
+    rp::host::test::Roms roms;
+    auto systems = std::vector<DocSystem>{{1, kGb}};
+    withRoms(e, systems, roms);
+    const auto document = [&] { return rp::host::test::graphRequest(rp::host::test::stereoDocument(systems), {1}); };
+    REQUIRE(e.setGraph(arming(document(), 1, 1)).ok);
+    SystemBase* const gb = e.findSystem(1);
+    REQUIRE(gb != nullptr);
+    CHECK(gb->channelTap() == nullptr);
+    std::vector<float> lanes(2 * 256);
+    float* outs[2] = {&lanes[0], &lanes[256]};
+    e.processBlock(256, outs, 2);
+    CHECK(e.faultCount() == 0);
 }
 
 TEST_CASE("a sample-rate change re-rates the running plan's cores", "[engine-graph][b2]") {
