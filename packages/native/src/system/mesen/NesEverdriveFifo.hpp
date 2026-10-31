@@ -105,6 +105,10 @@ namespace rp {
 	// not recommended, to avoid fifo overload"), so a reply buffer is given room for it and its response byte.
 	static constexpr uint32_t FILE_READ_MAX = 4096;
 
+	// The Edio status a request the emulation cannot serve answers with: a garbled parameter, or a reply that
+	// cannot fit fifo_a's storage (see replyFits). The DMA path already answers a range it cannot back with it.
+	static constexpr uint8_t EDIO_INVALID_PARAMETER = 0x13;
+
 	// The largest command frame the parser can be asked to collect: a parameter block that is a
 	// u16-length-prefixed payload (CMD_USB_WR / CMD_FIFO_WR / CMD_UART_WR) or string (the file commands),
 	// plus its header. The parser's frame buffer is reserved to this once, so collecting a command never
@@ -605,7 +609,7 @@ namespace rp {
 		void pushRx(uint8_t byte) {
 			// The profile's depth when one is modelled, else the bound the queue is reserved to (a block's host input
 			// plus one reply): the reserve is a hard bound, so fifo_a never grows on the block thread either.
-			const std::size_t limit = _rxCapacity != 0 ? std::min<std::size_t>(_rxCapacity, _rxBound) : _rxBound;
+			const std::size_t limit = rxLimit();
 			if (_rxQueue.size() >= limit) {
 				++_droppedBytes;
 				if (fifoTraceEnabled())
@@ -616,6 +620,41 @@ namespace rp {
 			_rxQueue.push(byte);
 			_rxRam[_rxWriteSlot] = byte;
 			_rxWriteSlot = (_rxWriteSlot + 1) % FIFO_HW_DEPTH;
+		}
+
+		// fifo_a's bound under the profile in force: a modelled depth when one is set (never above the storage
+		// bound), otherwise the storage bound itself.
+		std::size_t rxLimit() const {
+			return _rxCapacity != 0 ? std::min<std::size_t>(_rxCapacity, _rxBound) : _rxBound;
+		}
+
+		// What fifo_a can still take. A reply is answered whole or not at all under the permissive profile (no
+		// modelled depth): the device's fifo_a is 2048 bytes, and cutting a reply short desyncs the ROM's parser
+		// rather than telling it the request failed - so one that cannot fit answers EDIO_INVALID_PARAMETER up
+		// front, as the DMA path answers a range it cannot back. A modelled depth is the device's own overflow,
+		// which does truncate, so the reply is still delivered byte by byte there.
+		std::size_t rxRoom() const {
+			const std::size_t limit = rxLimit();
+			return _rxQueue.size() >= limit ? 0 : limit - _rxQueue.size();
+		}
+
+		bool replyFits(std::size_t bytes) const {
+			return _rxCapacity != 0 || bytes <= rxRoom();
+		}
+
+		// Bytes left in the open file from _filePtr, clamped to `len`. Seeks to the end, so a caller that is about
+		// to read must seek back to _filePtr. An unreadable position answers `len` (the request is assumed fully
+		// served) rather than refusing a read the file might have.
+		uint32_t readableBytes(uint32_t len) {
+			if (!_openFile.is_open()) return 0;
+			_openFile.clear();
+			_openFile.seekg(0, std::ios::end);
+			const std::streamoff end = _openFile.tellg();
+			if (end < 0) return len;
+			const std::uint64_t from = _filePtr;
+			const std::uint64_t at = static_cast<std::uint64_t>(end);
+			if (at <= from) return 0;
+			return static_cast<uint32_t>(std::min<std::uint64_t>(at - from, len));
 		}
 
 		// `$40F0` on an empty fifo_a: the slot the read pointer rests on, which is the write pointer's
@@ -1049,6 +1088,30 @@ namespace rp {
 			uint16_t amount     = readParamU16(2);
 			uint16_t maxNameLen = readParamU16(4);
 
+			// The listing's reply is measured before the first byte is pushed, so a range that cannot fit the
+			// permissive profile's storage answers a status instead of losing its tail mid-record (see rxRoom).
+			// One resp byte and the file-info record (u32 size, u16 date, u16 time, u8 attrib, u16 length + name)
+			// a record; an index past the listing is the one-byte end marker.
+			const auto recordBytes = [maxNameLen](const EdioDirRecord& r) {
+				const std::size_t nameLen = (maxNameLen > 0 && r.name.size() > maxNameLen)
+				                                ? std::size_t(maxNameLen)
+				                                : r.name.size();
+				return std::size_t(1 + 4 + 2 + 2 + 1 + 2) + nameLen;
+			};
+			std::size_t replyBytes = 0;
+			for (uint16_t i = 0; i < amount; i++) {
+				const std::size_t idx = std::size_t(startIdx) + i;
+				if (idx >= _dirRecords.size()) {
+					replyBytes += 1;
+					break;
+				}
+				replyBytes += recordBytes(_dirRecords[idx]);
+			}
+			if (!replyFits(replyBytes)) {
+				pushRx(EDIO_INVALID_PARAMETER);
+				return;
+			}
+
 			for (uint16_t i = 0; i < amount; i++) {
 				size_t idx = startIdx + i;
 				if (idx >= _dirRecords.size()) {
@@ -1125,18 +1188,31 @@ namespace rp {
 				return;
 			}
 
-			// The reply is one resp byte and then `len` bytes however long the read is, so the file goes through the
-			// staging buffer a chunk at a time: a u32 length used to size the buffer, so one huge read grew it inside a
-			// block and then gave it back (another allocation) once the read was done.
-			std::uint8_t* const buf = ioScratch(std::min(len, FILE_READ_MAX));
-			uint32_t got = 0;
-			if (_openFile.is_open()) {
-				_openFile.clear();  // a prior read to EOF leaves eofbit set, which fails the next seek
-				_openFile.seekg(_filePtr);
+			// The reply is one resp byte and then as many bytes as the file has left (at most `len`) however long
+			// the read is, so the file goes through the staging buffer a chunk at a time: a u32 length used to size
+			// the buffer, so one huge read grew it inside a block and then gave it back (another allocation) once
+			// the read was done. How much is left is measured first, so a reply that cannot fit the permissive
+			// profile's storage answers a status before a byte of it is pushed (see rxRoom); a modelled depth is
+			// the device's own overflow, which still truncates, and the loop stops reading there.
+			const uint32_t serve = readableBytes(len);
+			if (serve == 0) {
+				// Nothing to give (no open file, or already at EOF) is an ERROR, not a success with no data:
+				// a resp of 0 followed by no bytes leaves a polling ROM waiting for a payload forever.
+				pushRx(0x04); // FAT_NO_FILE
+				return;
 			}
+			if (!replyFits(std::size_t(1) + serve)) {
+				pushRx(EDIO_INVALID_PARAMETER);
+				return;
+			}
+
+			std::uint8_t* const buf = ioScratch(std::min(serve, FILE_READ_MAX));
+			uint32_t got = 0;
+			_openFile.clear();  // a prior read to EOF leaves eofbit set, which fails the next seek
+			_openFile.seekg(_filePtr);
 			bool answered = false;
-			while (_openFile.is_open() && got < len) {
-				const uint32_t want = std::min(len - got, FILE_READ_MAX);
+			while (_openFile.is_open() && got < serve) {
+				const uint32_t want = std::min(serve - got, FILE_READ_MAX);
 				_openFile.read(reinterpret_cast<char*>(buf), want);
 				const uint32_t chunk = static_cast<uint32_t>(_openFile.gcount());
 				if (chunk == 0) break;  // at EOF: the bytes before it are the whole reply
@@ -1144,13 +1220,16 @@ namespace rp {
 					pushRx(0x00); // success resp, before the first byte of the payload
 					answered = true;
 				}
+				const std::uint64_t droppedBefore = _droppedBytes;
 				for (uint32_t i = 0; i < chunk; i++) pushRx(buf[i]);
 				got += chunk;
 				_filePtr += chunk;
+				// A modelled depth just refused a byte: every byte after this chunk's would be refused too, and
+				// reading the file to learn that is disk I/O on the block thread for a reply the ROM cannot use.
+				if (_droppedBytes != droppedBefore) break;
 			}
 
-			// Nothing to give (no open file, or already at EOF) is an ERROR, not a success with no data:
-			// a resp of 0 followed by no bytes leaves a polling ROM waiting for a payload forever.
+			// Nothing to give at all is the error above; a short serve is what the file had left.
 			if (!answered) pushRx(0x04); // FAT_NO_FILE
 		}
 
@@ -1205,15 +1284,18 @@ namespace rp {
 		// Returns the Edio status the ROM will collect with its CMD_STATUS query.
 		uint8_t performDma(uint32_t piAddr, uint32_t len) {
 			if (len == 0) return 0;
-			if (len > DMA_MAX_LEN) return 0x13;     // garbled parameter (FR_INVALID_PARAMETER)
-			if (!_cartWriter) return 0x13;          // no backing memory at all
+			if (len > DMA_MAX_LEN) return EDIO_INVALID_PARAMETER;  // garbled parameter (FR_INVALID_PARAMETER)
+			if (!_cartWriter) return EDIO_INVALID_PARAMETER;       // no backing memory at all
 			if (!_openFile.is_open()) return 0x04;  // FAT_NO_FILE
 
 			// The destination is validated whole before the file is touched or the buffer is sized, so a refusal
 			// leaves both cartridge memory and the file pointer untouched (a null buffer asks the writer to validate
-			// only). The bytes then move a chunk at a time: the staging buffer is the SDK's largest read, and a length
-			// taken from a u32 must not grow it (nor be given back afterwards, which allocates).
-			if (!_cartWriter(piAddr, nullptr, len)) return 0x13;
+			// only). That refuses a request whose range overruns the cart even when the file is shorter, which used to
+			// succeed on the bytes read: a ROM told "done" about a transfer it could never complete reads stale
+			// pixels forever, so the answer is the same 0x13 as for any range the device cannot back. The bytes then
+			// move a chunk at a time: the staging buffer is the SDK's largest read, and a length taken from a u32 must
+			// not grow it (nor be given back afterwards, which allocates).
+			if (!_cartWriter(piAddr, nullptr, len)) return EDIO_INVALID_PARAMETER;
 
 			std::uint8_t* const buf = ioScratch(std::min(len, FILE_READ_MAX));
 			_openFile.clear();  // a prior read to EOF leaves eofbit set, which fails the next seek
@@ -1225,7 +1307,7 @@ namespace rp {
 				const uint32_t got = static_cast<uint32_t>(_openFile.gcount());
 				if (got == 0) break;  // at EOF: what moved is the whole transfer
 				// Validated above, so a chunk cannot refuse the range; a writer that did still gets an error out.
-				if (!_cartWriter(piAddr + moved, buf, got)) return 0x13;
+				if (!_cartWriter(piAddr + moved, buf, got)) return EDIO_INVALID_PARAMETER;
 				moved += got;
 				_filePtr += got;
 			}

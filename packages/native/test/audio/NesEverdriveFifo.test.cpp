@@ -113,6 +113,8 @@ constexpr std::uint8_t CMD_FIFO_WR = 0x23;
 constexpr std::uint8_t CMD_UART_WR = 0x24;
 constexpr std::uint8_t CMD_F_FOPN  = 0xC9;
 constexpr std::uint8_t CMD_F_FRD   = 0xCA;
+constexpr std::uint8_t CMD_F_DIR_LD = 0xC5;
+constexpr std::uint8_t CMD_F_DIR_GET = 0xC8;
 constexpr std::uint8_t CMD_F_FWR   = 0xCC;
 constexpr std::uint8_t CMD_F_FCLOSE = 0xCE;
 constexpr std::uint8_t CMD_F_FPTR  = 0xCF;
@@ -802,6 +804,35 @@ TEST_CASE("a DMA to memory that isn't backed fails, and writes nothing", "[audio
           std::vector<std::uint8_t>(file.begin(), file.begin() + 4));
 }
 
+TEST_CASE("a DMA whose requested range overruns the cart is refused even when the file is shorter",
+          "[audio][nes][fifo][dma]") {
+    // Kept from the plumbing's validation change: the range the ROM asked for is what is checked, not the bytes the
+    // file happens to hold. A short file turning a request the device cannot serve into a partial success is a ROM
+    // told "done" about a transfer that could never have completed, and the leftover bytes would land wherever the
+    // next arming pointed. Nothing is written and the file pointer does not move, so the ROM can fall back.
+    ScratchCard card;
+    const std::vector<std::uint8_t> file = pattern(64);
+    card.put("short.bin", file);
+
+    FakeCart cart;
+    rp::NesEverdriveFifo fifo;
+    fifo.setSdRoot(card.root);
+    fifo.setCartWriter(cart.writer());
+    openForRead(fifo, "/short.bin");
+
+    writeDmaRequest(fifo, PI_CHR_RAM + 32 * 1024 - 8, 64);  // 56 bytes past the window, a file only 64 long
+    CHECK(spinForDma(fifo) == 0);
+    CHECK(queryStatus(fifo) == 0x13);
+    CHECK(cart.untouched());
+    writeCmd(fifo, CMD_F_FRD);
+    writeU32(fifo, 16);
+    const auto reply = readBytes(fifo, 17);
+    REQUIRE(reply.size() == 17);
+    CHECK(reply[0] == 0x00);
+    CHECK(std::vector<std::uint8_t>(reply.begin() + 1, reply.end()) ==
+          std::vector<std::uint8_t>(file.begin(), file.begin() + 16));
+}
+
 TEST_CASE("a DMA with nowhere to go, or nothing to read, is an error", "[audio][nes][fifo][dma]") {
     ScratchCard card;
     card.put("clip.bin", pattern(64));
@@ -1089,6 +1120,102 @@ TEST_CASE("an Edio reply is subject to the queue's depth but not to the wire", "
     writeU32(fifo, 16);
     CHECK(fifo.stats().rxDepth == 4);
     CHECK(fifo.stats().droppedBytes - droppedBefore == 13);
+}
+
+TEST_CASE("a permissive reply that cannot fit fifo_a answers a status instead of being cut short",
+          "[audio][nes][fifo][wire]") {
+    // The permissive profile has no modelled depth, but its storage is still bounded (_rxBound: a block's host input
+    // plus the largest reply). A reply past that bound used to be delivered up to it and then lose its tail byte by
+    // byte, which leaves the ROM's parser mid-record; it answers EDIO_INVALID_PARAMETER up front instead, as the DMA
+    // path answers a range it cannot back. Nothing was read and nothing was dropped when it refuses.
+    ScratchCard card;
+    constexpr std::size_t kBound = std::size_t(rp::kMidiInput.bytes) + rp::kBytesInput.bytes +
+                                   rp::FILE_READ_MAX + 1;
+    const std::vector<std::uint8_t> file = pattern(kBound + 16);
+    card.put("huge.bin", file);
+
+    rp::NesEverdriveFifo fifo;
+    fifo.setSdRoot(card.root);
+    openForRead(fifo, "/huge.bin");
+
+    SECTION("CMD_F_FRD larger than the storage bound") {
+        // One resp byte plus kBound data bytes needs one byte past the bound.
+        writeCmd(fifo, CMD_F_FRD);
+        writeU32(fifo, static_cast<std::uint32_t>(kBound));
+        CHECK(readBytes(fifo, kBound) == std::vector<std::uint8_t>{0x13});
+        CHECK(fifo.stats().droppedBytes == 0);
+        // Refused before the file was touched, so the CPU-mediated path still starts at byte 0.
+        writeCmd(fifo, CMD_F_FRD);
+        writeU32(fifo, 16);
+        const auto reply = readBytes(fifo, 17);
+        REQUIRE(reply.size() == 17);
+        CHECK(reply[0] == 0x00);
+        CHECK(std::vector<std::uint8_t>(reply.begin() + 1, reply.end()) ==
+              std::vector<std::uint8_t>(file.begin(), file.begin() + 16));
+    }
+
+    SECTION("CMD_F_DIR_GET whose listing would not fit") {
+        card.put("a.bin", pattern(4));
+        writeCmd(fifo, CMD_F_DIR_LD);
+        writeByte(fifo, 0);
+        writeString(fifo, "/");
+        // Leave fifo_a one byte of room: the status fits, the record cannot, and nothing is dropped.
+        const std::vector<std::uint8_t> burst = pattern(kBound - 1);
+        for (std::uint8_t b : burst) fifo.pushByte(b);
+        REQUIRE(fifo.stats().rxDepth == kBound - 1);
+        const std::uint64_t droppedBefore = fifo.stats().droppedBytes;
+        writeCmd(fifo, CMD_F_DIR_GET);
+        writeU16(fifo, 0);   // start index
+        writeU16(fifo, 1);   // amount
+        writeU16(fifo, 0);   // maxNameLen: the whole name
+        CHECK(fifo.stats().rxDepth == kBound);
+        CHECK(fifo.stats().droppedBytes == droppedBefore);
+        const auto all = readBytes(fifo, kBound);
+        REQUIRE(all.size() == kBound);
+        CHECK(std::vector<std::uint8_t>(all.begin(), all.begin() + static_cast<std::ptrdiff_t>(burst.size())) == burst);
+        CHECK(all.back() == 0x13);
+        // The listing itself was not consumed: with room, the record arrives whole.
+        writeCmd(fifo, CMD_F_DIR_GET);
+        writeU16(fifo, 0);
+        writeU16(fifo, 1);
+        writeU16(fifo, 0);
+        const auto reply = readBytes(fifo, 64);
+        constexpr std::size_t kNameAt = 1 + 4 + 2 + 2 + 1 + 2;  // resp, size, date, time, attrib, name length
+        REQUIRE(reply.size() == kNameAt + 5);
+        CHECK(reply[0] == 0x00);
+        CHECK(std::uint32_t(reply[1] | (reply[2] << 8) | (reply[3] << 16) | (reply[4] << 24)) == 4);
+        CHECK(std::string(reply.begin() + static_cast<std::ptrdiff_t>(kNameAt),
+                          reply.begin() + static_cast<std::ptrdiff_t>(kNameAt + 5)) == "a.bin");
+    }
+}
+
+TEST_CASE("a read stops at the chunk a modelled fifo_a drops", "[audio][nes][fifo][wire]") {
+    // With a modelled depth, the device's fifo_a overflows (that is what the depth models), but the MCU must not go
+    // on reading a ROM-chosen length off the card once every further byte would be refused: that is disk I/O on the
+    // block thread for a reply the ROM cannot use. The loop stops after the chunk that started dropping, and what the
+    // file pointer advanced by is what proves it.
+    constexpr std::uint32_t kChunk = rp::FILE_READ_MAX;
+    ScratchCard card;
+    const std::vector<std::uint8_t> file = pattern(kChunk * 3);
+    card.put("long.bin", file);
+
+    rp::NesEverdriveFifo fifo;
+    fifo.setSdRoot(card.root);
+    fifo.setFifoProfile(/*depth*/ 2048, /*bytesPerSecond*/ 0);
+    openForRead(fifo, "/long.bin");
+
+    writeCmd(fifo, CMD_F_FRD);
+    writeU32(fifo, kChunk * 3);
+    CHECK(fifo.stats().rxDepth == 2048);
+    CHECK(fifo.stats().droppedBytes > 0);
+    REQUIRE(readBytes(fifo, 2048).size() == 2048);
+    writeCmd(fifo, CMD_F_FRD);
+    writeU32(fifo, 16);
+    const auto reply = readBytes(fifo, 17);
+    REQUIRE(reply.size() == 17);
+    CHECK(reply[0] == 0x00);
+    CHECK(std::vector<std::uint8_t>(reply.begin() + 1, reply.end()) ==
+          std::vector<std::uint8_t>(file.begin() + kChunk, file.begin() + kChunk + 16));
 }
 
 TEST_CASE("a barrier drops what is on the wire as well as what was delivered", "[audio][nes][fifo][wire]") {

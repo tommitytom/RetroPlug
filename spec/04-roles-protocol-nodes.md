@@ -161,7 +161,10 @@ empty means a per-process scratch directory, not the working directory. Reading 
 is `drainCoreBytes` ([09](09-cli-debugging.md)). A ROM can also skip the CPU entirely: `CMD_F_FRD_MEM` has
 the emulated MCU read the open file straight into cartridge memory over the PI bus, which `MesenNesSystem`
 backs for the CHR-RAM window (PI `0xC00000`) only. That transfer's duration is modelled from the rate
-measured on real hardware, so the ROM's wait loop spins about as long here as it does on a console.
+measured on real hardware, so the ROM's wait loop spins about as long here as it does on a console. The whole
+range the ROM asks for is validated before a byte moves, so a request that overruns the window answers an Edio
+error (`0x13`) and leaves both the cartridge and the file pointer untouched, even when the file would have run out
+first.
 
 `fifo` (plus the `fifoDepth` / `fifoBytesPerSecond` overrides) says how faithfully that FIFO behaves
 like the cartridge's. It defaults to `"instant"` (unbounded and delivered immediately, which is what
