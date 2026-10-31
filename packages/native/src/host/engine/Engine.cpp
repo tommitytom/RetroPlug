@@ -671,7 +671,9 @@ void Engine::applyCommand(DspCommand& cmd, const rp::host::SystemTable& table) {
         case DspCommand::Kind::SetPpq:          setPpq(cmd.setPpq.value); break;
         case DspCommand::Kind::PressButton:
             if (SystemBase* sys = core(cmd.pressButton.id))
-                sys->pressButton(cmd.pressButton.button, cmd.pressButton.down);  // spread across the block in onProcess
+                // A Mesen core's press queue is applied whole at the next block's prepare, before the emulator polls
+                // its controller; a Game Boy schedules the press ahead instead.
+                sys->pressButton(cmd.pressButton.button, cmd.pressButton.down);
             break;
         case DspCommand::Kind::WriteRam:
             writeRam(core(cmd.writeRam.id), cmd.writeRam.offset, *cmd.writeRam.bytes);
