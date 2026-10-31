@@ -289,7 +289,7 @@ void MesenSmsSystem::onActivate(double sampleRate) {
 
     VirtualFile romFile(stagedRomPath_);
     MesenCore core = bootMesenCore("MesenSmsSystem", romFile, stagedRomPath_, sampleRate, &frames_,
-                                   [this](Emulator& emu) { configureSms(emu, config_.gameGear, config_.enableFm); });
+                                   blockFrames(MesenAudioDevice::kDefaultBlockFrames), [this](Emulator& emu) { configureSms(emu, config_.gameGear, config_.enableFm); });
     if (!core) return;
     emu_         = std::move(core.emu);
     audioDevice_ = std::move(core.audio);
@@ -307,9 +307,10 @@ void MesenSmsSystem::onActivate(double sampleRate) {
     // SmsCartRam region rather than going through Mesen's BatteryManager.
     seedSramAndState(config_.sram, config_.savestate);
 
-    // The block scratch exists before the first block: a block's audio path may not allocate
-    // (docs/modular-graph-phase-c4-design.md section 4). A node that builds at another block size grows it through
-    // reserveAudio before that block runs.
+    // The block scratch exists before the first block, sized to the largest block this core will run: a block's audio
+    // path may not allocate (docs/modular-graph-phase-c4-design.md section 4). A build for a plan is handed that plan's
+    // maximum in its request, which reserved it before this ran; a build outside a plan keeps the default, and a host
+    // that grows its block later grows it through reserveAudio before that block runs.
     audioDevice_->reserveAudio(blockFrames(MesenAudioDevice::kDefaultBlockFrames));
     sizeBlockScratch();
 

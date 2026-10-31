@@ -2,6 +2,7 @@
 #include "pch.h"
 #include "GBA/GbaTypes.h"
 #include "Shared/Emulator.h"
+#include "Shared/RenderedFrame.h"
 #include "Utilities/Timer.h"
 #include "Utilities/ISerializable.h"
 
@@ -118,6 +119,9 @@ private:
 
 	uint16_t* _outputBuffers[2] = {};
 	uint16_t* _currentBuffer = nullptr;
+
+	// RetroPlug: the frame SendFrame refills, so a video frame's input snapshot reuses its storage.
+	RenderedFrame _renderedFrame;
 
 	GbaPixelData* _oamWriteOutput = nullptr;
 	GbaPixelData* _oamReadOutput = nullptr;

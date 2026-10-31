@@ -26,6 +26,9 @@ private:
 	FrameInfo _baseFrameSize = {};
 	FrameInfo _lastFrameSize = {};
 	RenderedFrame _frame = {};
+	// RetroPlug: the decoded frame DecodeFrame hands on, refilled per frame for the same reason _frame is kept (its
+	// input snapshot's storage survives from frame to frame).
+	RenderedFrame _convertedFrame = {};
 
 	VideoFilterType _videoFilterType = VideoFilterType::None;
 	unique_ptr<BaseVideoFilter> _videoFilter;
@@ -51,7 +54,7 @@ public:
 	FrameInfo GetFrameInfo();
 	double GetLastFrameScale() { return _frame.Scale; }
 
-	void UpdateFrame(RenderedFrame frame, bool sync, bool forRewind);
+	void UpdateFrame(const RenderedFrame& frame, bool sync, bool forRewind);
 
 	void WaitForAsyncFrameDecode();
 

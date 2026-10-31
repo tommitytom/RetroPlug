@@ -290,6 +290,12 @@ void SameBoySystem::onActivate(double sampleRate) {
     serialOutByte_ = 0;
     serialOutBits_ = 0;
 
+    // The per-block scratches exist before the first block, sized to the largest block this core will run: a block's
+    // audio path may not allocate. A build for a plan is handed that plan's maximum in its request, which reserved it
+    // before this ran; a build outside a plan keeps the default, and a host that grows its block later grows them
+    // through reserveAudio before that block runs.
+    sizePerBlockBuffers();
+
     activated_ = true;
 }
 
@@ -495,11 +501,6 @@ bool SameBoySystem::nextSerialInBit() {
     return bit;
 }
 
-void SameBoySystem::onMidi(const ::MidiEvent* events, std::uint32_t count) {
-    if (events == nullptr || count == 0) return;
-    pendingMidi_.insert(pendingMidi_.end(), events, events + count);
-}
-
 void SameBoySystem::setModel(SameBoyModel model) {
     if (config_.model == model) return;
     config_.model = model;
@@ -683,6 +684,22 @@ void SameBoySystem::prepareForBlock(const AudioBlockInfo& info) {
     serialOutLog_.clear();
 }
 
+void SameBoySystem::reserveAudio(std::uint32_t maxBlockFrames) {
+    SystemBase::reserveAudio(maxBlockFrames);
+    sizePerBlockBuffers();
+}
+
+// The two scratch sets prepareForBlock zeroes, each one block of the largest block this core will run, plus the
+// headroom writeAudioSample leaves for the at most one sample a block can overproduce. Sized at activation and on a
+// larger reserve, never in a block. Growth only, so a later smaller reserve keeps the memory (as prepareForBlock's
+// own lazily-grown sizing did).
+void SameBoySystem::sizePerBlockBuffers() {
+    const std::size_t want = std::size_t(blockFrames(kDefaultBlockFrames)) * 2 + 16;
+    if (stereoAccum_.size() < want) stereoAccum_.assign(want, 0.0f);
+    for (std::vector<float>& acc : chanAccum_)
+        if (acc.size() < want) acc.assign(want, 0.0f);
+}
+
 bool SameBoySystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
     if (!activated_ || !gb_) return false;
     if (audioFrameCount_ >= framesNeeded) return false;
@@ -767,9 +784,6 @@ void SameBoySystem::finishBlock(const AudioBlockInfo& info, float* const* outs, 
     }
 
     audioFrameCount_ = 0;
-
-    // Clear this block's MIDI so the next block starts empty.
-    pendingMidi_.clear();
 
     // Publish the whole-savestate snapshot the registry reads, on its coarse interval (the very next
     // block after enableStateSnapshot or rearmStateSnapshot, which push the accumulator past the

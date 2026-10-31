@@ -408,30 +408,34 @@ struct SystemNode {
 
     // The first activation builds the core the settings name, and gives it every knob the settings carry; later ones
     // (a re-activation) keep it. A core is built at the rate the plan runs at, which Engine::setSampleRate re-rates. A
-    // plan that is then refused destroys it as it unwinds. Either way the core learns the largest block it will run,
-    // which is how its audio ring and per-block scratches are sized before its first block: a plan that grows a host's
-    // block reactivates the whole graph quiescent, so the sizes move with no block in flight.
+    // plan that is then refused destroys it as it unwinds. Either way the core learns the largest block it will run
+    // before it runs one: a build is handed the plan's maximum, so the core sizes its audio ring and per-block
+    // scratches to it as it activates (a default-sized core would keep that memory for a small host block's whole
+    // life), and a plan that grows a host's block reactivates the whole graph quiescent, where reserveAudio moves the
+    // sizes with no block in flight.
     bool activate(double, std::uint32_t maxFrames) {
         if (core) {
             core->reserveAudio(maxFrames);
             return true;
         }
-        build(static_cast<Self*>(this)->config(*settings));
+        build(static_cast<Self*>(this)->config(*settings), maxFrames);
         core->reserveAudio(maxFrames);
         return true;
     }
 
-    // Build the core the settings name, through rp.host.systems/1, with the bytes this instance's resources pinned and
-    // the config its settings made: the backend applies the config before onActivate and boots and restores the seeds
-    // there, so a non-default model never restarts the core it just restored. A failure throws its reason, which
-    // rp::detail::activateFn reports and the planner shows as activate-failed on this node.
-    void build(SystemConfig config) {
+    // Build the core the settings name, through rp.host.systems/1, with the bytes this instance's resources pinned, the
+    // config its settings made and the plan's largest block: the backend applies the config and reserves that block
+    // before onActivate, and boots and restores the seeds there, so a non-default model never restarts the core it just
+    // restored. A failure throws its reason, which rp::detail::activateFn reports and the planner shows as
+    // activate-failed on this node.
+    void build(SystemConfig config, std::uint32_t maxBlockFrames) {
         if (!systems) throw std::runtime_error("the host offers no system builder (rp.host.systems/1)");
         SystemBuildRequest request;
         request.rom = bytesOf(settings->rom);
         request.sram = bytesOf(settings->sram);
         request.savestate = bytesOf(settings->state);
         request.romName = settings->romName.value_or(std::string());
+        request.maxBlockFrames = maxBlockFrames;
         request.config = std::move(config);
         rp_error err{};
         SystemBase* made = systems->build(systems->ctx, settings->system, std::move(request), &err);

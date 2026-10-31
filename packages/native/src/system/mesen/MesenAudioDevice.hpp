@@ -16,9 +16,9 @@
 // The ring never allocates on the block thread. Its capacity is one host block plus the most a single PlayBuffer can
 // carry: Mesen's mixer resamples into a fixed 0x10000-int16 buffer and hands the device at most 0x10000 / 2 frames
 // per call (SoundMixer::PlayAudioBuffer), on every console and at every sample rate, and a step loop that gates on
-// `availableFrames() >= framesNeeded` stops with at most one such flush over a block. A system node sizes the ring
-// from the plan's maximum block before its core runs its first block, and again when a host grows its block, which
-// reactivates the graph while it is quiescent (reserveAudio).
+// `availableFrames() >= framesNeeded` stops with at most one such flush over a block. A core built for a plan reserves
+// the plan's maximum block before it activates, and reserves again when a host grows its block, which reactivates the
+// graph while it is quiescent (reserveAudio).
 class MesenAudioDevice final : public IAudioDevice {
 public:
     // The most frames Mesen's SoundMixer hands over in one PlayBuffer. It is the mixer's own output buffer, not a
@@ -31,7 +31,10 @@ public:
     // runs blocks the same size an engine starts at. A system node replaces it with the plan's maximum at activation.
     static constexpr std::uint32_t kDefaultBlockFrames = 8192;
 
-    MesenAudioDevice() { reserveAudio(kDefaultBlockFrames); }
+    // A core built outside a plan (a test, a tool) sizes its ring for the default block; one built for a plan passes
+    // the plan's maximum, so the ring is the plan's from the start rather than the default and then grown.
+    MesenAudioDevice() : MesenAudioDevice(kDefaultBlockFrames) {}
+    explicit MesenAudioDevice(std::uint32_t blockFrames) { reserveAudio(blockFrames); }
 
     // Size the ring for blocks of up to `maxBlockFrames`, keeping the frames it already holds in order. Grows only:
     // a plan's maximum only ever grows (Engine::setMaxBlockFrames), and keeping a larger ring costs nothing but the

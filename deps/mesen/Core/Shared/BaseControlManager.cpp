@@ -58,17 +58,29 @@ void BaseControlManager::UnregisterInputRecorder(IInputRecorder* provider)
 	vec.erase(std::remove(vec.begin(), vec.end(), provider), vec.end());
 }
 
-vector<ControllerData> BaseControlManager::GetPortStates()
+// RetroPlug: fills the manager's own vector rather than building a new one per call, and asks each device for its
+// state through the buffer-filling overload, so the video frame a console emits every frame copies no vectors.
+const vector<ControllerData>& BaseControlManager::GetPortStates()
 {
-	vector<ControllerData> states;
-	for(shared_ptr<BaseControlDevice>& device : _controlDevices) {
-		states.push_back({
-			device->GetControllerType(),
-			device->GetRawState(),
-			device->GetPort()
-		});
+	_portStates.resize(_controlDevices.size());
+	for(size_t i = 0; i < _controlDevices.size(); i++) {
+		ControllerData& state = _portStates[i];
+		state.Type = _controlDevices[i]->GetControllerType();
+		state.Port = _controlDevices[i]->GetPort();
+		// RetroPlug: the snapshot's state buffer is sized before it is filled and padded after, to the largest state a
+		// device can produce, so a frame's snapshot has one length for the frame's whole life. Without it, a device no
+		// ROM has read yet - or a mapper or role device the control manager has just registered - carries an empty state,
+		// and the first read (thousands of frames in, for a ROM that polls its controller late) would be what grows this
+		// vector and every copy of it: the frame's, the decoder's and the renderer's, inside a block.
+		if (state.State.State.capacity() < ControlDeviceState::MaxBytes) {
+			state.State.State.reserve(ControlDeviceState::MaxBytes);
+		}
+		_controlDevices[i]->GetRawState(state.State);
+		if (state.State.State.size() < ControlDeviceState::MaxBytes) {
+			state.State.State.resize(ControlDeviceState::MaxBytes, 0);
+		}
 	}
-	return states;
+	return _portStates;
 }
 
 shared_ptr<BaseControlDevice> BaseControlManager::GetControlDevice(uint8_t port, uint8_t subPort)

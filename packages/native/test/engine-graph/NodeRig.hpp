@@ -67,7 +67,9 @@ struct NodeRig {
     // Last, so it is destroyed first: its nodes free their cores through the host's destroySystem into `released`.
     std::unique_ptr<rp::graph::GraphHost>                host;
 
-    explicit NodeRig(double sampleRate) {
+    // `maxFrames` is the plan's maximum block, as an Engine's is: a node builds its core for it, so a rig can hold what
+    // a small host block sizes a core to.
+    explicit NodeRig(double sampleRate, std::uint32_t maxFrames = 8192) {
         rate = sampleRate;
         registerCoreBackends(factory);
         for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), sameboyPackage(), mesenPackage(),
@@ -75,7 +77,7 @@ struct NodeRig {
             registry.addPackage(p);
         rp::graph::HostConfig config;
         config.sampleRate = sampleRate;
-        config.maxFrames = 8192;
+        config.maxFrames = maxFrames;
         config.interfaces = [](void* ctx, const char* id) -> const void* {
             auto* rig = static_cast<NodeRig*>(ctx);
             const std::string want(id);

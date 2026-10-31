@@ -175,7 +175,9 @@ build mode) is the one the table needs, so the two always agree by the time the 
 **The narrow-host defect stays as it is** (B0 §2.5): a split that does not fit the host falls back to
 Stereo wiring, the `SyncTap` arms the tap regardless, as today, and the NES outputs its mix with the
 capture armed, so the mix drifts. Fixing the defect is its own commit with its re-record.
-`setChannelExportMode` still allocates on the audio thread (`blip_new`), as today.
+`setChannelExportMode` allocates nothing on the audio thread: a stream's blip is created with the tap's rings at
+activation, and an arm re-initialises it in place
+([C4](modular-graph-phase-c4-design.md) section 4).
 
 ### 3.3 `rp.dsp.kernel`
 

@@ -89,6 +89,11 @@ public:
         if (maxBlockFrames > maxBlockFrames_) maxBlockFrames_ = maxBlockFrames;
     }
 
+    // The block a core built outside a plan (a test, a tool) sizes its per-block buffers for: the engine's default
+    // plan size, which a test holds this to (a system core cannot include the engine), so its buffers are already
+    // sized when no node has reserved for it.
+    static constexpr std::uint32_t kDefaultBlockFrames = 8192;
+
     // The output streams this system can emit. Default = one stereo "Mix" stream
     // (the mixed console output). A backend that can split its audio reports one
     // entry per stream; that layout only takes effect when the plan wires the

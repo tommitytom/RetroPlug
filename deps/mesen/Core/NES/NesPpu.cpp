@@ -1195,8 +1195,11 @@ template<class T> void NesPpu<T>::SendFrame()
 		videoPhase = _frameCount & 0x01;
 	}
 
-	RenderedFrame frame(_currentOutputBuffer, NesConstants::ScreenWidth, NesConstants::ScreenHeight, 1.0, _frameCount, _console->GetControlManager()->GetPortStates(), videoPhase);
-	frame.Data = frameData; //HD packs
+	// RetroPlug: one frame object for this PPU, refilled instead of constructed per frame, so the input snapshot it
+	// carries reuses its storage (see RenderedFrame::Reset).
+	_renderedFrame.Reset(_currentOutputBuffer, NesConstants::ScreenWidth, NesConstants::ScreenHeight, 1.0, _frameCount, videoPhase);
+	_renderedFrame.SetInputData(_console->GetControlManager()->GetPortStates());
+	_renderedFrame.Data = frameData; //HD packs
 
 	if(_console->GetVsMainConsole() || _console->GetVsSubConsole()) {
 		SendFrameVsDualSystem();
@@ -1205,7 +1208,7 @@ template<class T> void NesPpu<T>::SendFrame()
 		}
 	} else {
 		bool forRewind = _emu->GetRewindManager()->IsRewinding();
-		_emu->GetVideoDecoder()->UpdateFrame(frame, forRewind, forRewind);
+		_emu->GetVideoDecoder()->UpdateFrame(_renderedFrame, forRewind, forRewind);
 		_emu->ProcessEndOfFrame();
 	}
 
@@ -1217,12 +1220,14 @@ template<class T> void NesPpu<T>::SendFrameVsDualSystem()
 	NesConfig& cfg = _settings->GetNesConfig();
 	bool forRewind = _emu->GetRewindManager()->IsRewinding();
 
-	RenderedFrame frame(_currentOutputBuffer, NesConstants::ScreenWidth, NesConstants::ScreenHeight, 1.0, _frameCount, _console->GetControlManager()->GetPortStates());
+	// RetroPlug: refilled in place, as the main frame is (see RenderedFrame::Reset).
+	_vsRenderedFrame.Reset(_currentOutputBuffer, NesConstants::ScreenWidth, NesConstants::ScreenHeight, 1.0, _frameCount);
+	_vsRenderedFrame.SetInputData(_console->GetControlManager()->GetPortStates());
 
 	if(cfg.VsDualVideoOutput == VsDualOutputOption::MainSystemOnly && _console->IsVsMainConsole()) {
-		_emu->GetVideoDecoder()->UpdateFrame(frame, forRewind, forRewind);
+		_emu->GetVideoDecoder()->UpdateFrame(_vsRenderedFrame, forRewind, forRewind);
 	} else if(cfg.VsDualVideoOutput == VsDualOutputOption::SubSystemOnly && !_console->IsVsMainConsole()) {
-		_emu->GetVideoDecoder()->UpdateFrame(frame, forRewind, forRewind);
+		_emu->GetVideoDecoder()->UpdateFrame(_vsRenderedFrame, forRewind, forRewind);
 	} else if(cfg.VsDualVideoOutput == VsDualOutputOption::Both) {
 		if(_console->IsVsMainConsole()) {
 			uint16_t* mergedBuffer = new uint16_t[NesConstants::ScreenWidth * NesConstants::ScreenHeight * 2];
@@ -1239,8 +1244,9 @@ template<class T> void NesPpu<T>::SendFrameVsDualSystem()
 				in2 += NesConstants::ScreenWidth;
 			}
 
-			RenderedFrame mergedFrame(mergedBuffer, NesConstants::ScreenWidth*2, NesConstants::ScreenHeight, 1.0, _frameCount, _console->GetControlManager()->GetPortStates());
-			_emu->GetVideoDecoder()->UpdateFrame(mergedFrame, true, forRewind);
+			_mergedRenderedFrame.Reset(mergedBuffer, NesConstants::ScreenWidth*2, NesConstants::ScreenHeight, 1.0, _frameCount);
+			_mergedRenderedFrame.SetInputData(_console->GetControlManager()->GetPortStates());
+			_emu->GetVideoDecoder()->UpdateFrame(_mergedRenderedFrame, true, forRewind);
 			delete[] mergedBuffer;
 		}
 	}

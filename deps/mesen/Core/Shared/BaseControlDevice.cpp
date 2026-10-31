@@ -70,13 +70,33 @@ void BaseControlDevice::StrobeProcessWrite(uint8_t value)
 void BaseControlDevice::ClearState()
 {
 	auto lock = _stateLock.AcquireSafe();
-	_state = ControlDeviceState();
+	// RetroPlug: cleared in place rather than replaced with a fresh empty state, so the vector keeps its capacity. A poll
+	// clears every device before it re-reads the input, and replacing the state freed its buffer every frame; clearing
+	// it frees nothing, and the read that follows grows the state back into the capacity it already has. The state stays
+	// EMPTY, which four devices read as their contract: a controller hub builds its composite state by appending to what
+	// a clear leaves, and the barcode readers and the data recorder take "no state" to mean the tape is not playing.
+	//
+	// The buffer is sized here, at the device's FIRST poll, rather than left to the first read: a ROM may not read its
+	// controller for thousands of frames, and that first read must not be the thing that allocates on the block thread.
+	// This is the only place a state is ever sized from nothing.
+	if (_state.State.capacity() < ControlDeviceState::MaxBytes) {
+		_state.State.reserve(ControlDeviceState::MaxBytes);
+	}
+	_state.State.clear();
+}
+
+// RetroPlug: assigns into the caller's state (whose vector keeps its capacity) instead of returning a copy.
+void BaseControlDevice::GetRawState(ControlDeviceState& state)
+{
+	auto lock = _stateLock.AcquireSafe();
+	state.State = _state.State;
 }
 
 ControlDeviceState BaseControlDevice::GetRawState()
 {
-	auto lock = _stateLock.AcquireSafe();
-	return _state;
+	ControlDeviceState state;
+	GetRawState(state);
+	return state;
 }
 
 void BaseControlDevice::DrawController(InputHud& hud)
@@ -100,6 +120,7 @@ void BaseControlDevice::SetTextState(string textState)
 	ClearState();
 
 	if(IsRawString()) {
+		//ClearState left the state empty, so the text is all of it
 		_state.State.insert(_state.State.end(), textState.begin(), textState.end());
 	} else {
 		if(HasCoordinates()) {
@@ -167,7 +188,10 @@ void BaseControlDevice::EnsureCapacity(int32_t minBitCount)
 	int32_t gap = minByteCount - (int32_t)_state.State.size();
 
 	if(gap > 0) {
-		_state.State.insert(_state.State.end(), gap, 0);
+		// Grown to the maximum in one step, not to the byte this caller needs: a second growth would land inside a
+		// frame (NES $4016's microphone bit is Byte 1, after the eight ToByte() reads sized the state to one), and
+		// every copy of the state - the port snapshot a video frame carries - has to grow with it.
+		_state.State.insert(_state.State.end(), ControlDeviceState::MaxBytes - _state.State.size(), 0);
 	}
 }
 

@@ -132,7 +132,8 @@ void VideoDecoder::DecodeFrame(bool forRewind)
 		ScanlineFilter::ApplyFilter(outputBuffer, frameSize.Width, frameSize.Height, _emu->GetSettings()->GetVideoConfig().ScanlineIntensity, scale);
 	}
 
-	RenderedFrame convertedFrame((void*)outputBuffer, frameSize.Width, frameSize.Height, _frame.Scale, _frame.FrameNumber, _frame.InputData);
+	_convertedFrame.Reset((void*)outputBuffer, frameSize.Width, frameSize.Height, _frame.Scale, _frame.FrameNumber);
+	_convertedFrame.SetInputData(_frame.InputData);
 
 	double aspectRatio = _emu->GetSettings()->GetAspectRatio(_emu->GetRegion(), _baseFrameSize);
 	if(frameSize.Height != _lastFrameSize.Height || frameSize.Width != _lastFrameSize.Width || aspectRatio != _lastAspectRatio) {
@@ -142,7 +143,7 @@ void VideoDecoder::DecodeFrame(bool forRewind)
 	_lastFrameSize = frameSize;
 	
 	//Rewind manager will take care of sending the correct frame to the video renderer
-	_emu->GetRewindManager()->SendFrame(convertedFrame, forRewind);
+	_emu->GetRewindManager()->SendFrame(_convertedFrame, forRewind);
 }
 
 uint32_t VideoDecoder::GetFrameCount()
@@ -158,7 +159,7 @@ void VideoDecoder::WaitForAsyncFrameDecode()
 	//}
 }
 
-void VideoDecoder::UpdateFrame(RenderedFrame frame, bool sync, bool forRewind)
+void VideoDecoder::UpdateFrame(const RenderedFrame& frame, bool sync, bool forRewind)
 {
 	if(_emu->IsRunAheadFrame()) {
 		return;
@@ -166,7 +167,11 @@ void VideoDecoder::UpdateFrame(RenderedFrame frame, bool sync, bool forRewind)
 
 	_emu->OnBeforeSendFrame();
 
-	_frame = frame;
+	// RetroPlug: refilled in place rather than assigned, so the input snapshot goes through SetInputData's presized
+	// destinations (a port the control manager registered late is a new element there, not a fresh state buffer).
+	_frame.Reset(frame.FrameBuffer, frame.Width, frame.Height, frame.Scale, frame.FrameNumber, frame.VideoPhase);
+	_frame.Data = frame.Data;
+	_frame.SetInputData(frame.InputData);
 	DecodeFrame(forRewind);
 	_frameCount++;
 }

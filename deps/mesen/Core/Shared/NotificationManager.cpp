@@ -2,6 +2,38 @@
 #include <algorithm>
 #include "Shared/NotificationManager.h"
 
+namespace {
+	// RetroPlug: the copy SendNotification iterates (a listener may unregister while the notification runs, so the
+	// list cannot be iterated under the lock) is reused per thread, and per nesting depth: a listener that sends a
+	// notification of its own gets a buffer of its own from the pool, so nesting stays correct. The pool grows to
+	// the deepest nesting a thread has seen and never again, so a frame's notifications allocate nothing.
+	//
+	// Each buffer is held behind its own pointer: growing the pool for a deeper nesting moves the pool's elements,
+	// and a reference to a buffer must stay valid across the nested send that grew it.
+	thread_local vector<unique_ptr<vector<weak_ptr<INotificationListener>>>> dispatchBuffers;
+	thread_local size_t dispatchDepth = 0;
+
+	vector<weak_ptr<INotificationListener>>& takeDispatchBuffer()
+	{
+		if(dispatchBuffers.size() <= dispatchDepth) {
+			dispatchBuffers.push_back(std::make_unique<vector<weak_ptr<INotificationListener>>>());
+		}
+		unique_ptr<vector<weak_ptr<INotificationListener>>>& buffer = dispatchBuffers[dispatchDepth++];
+		return *buffer;
+	}
+
+	// One SendNotification's buffer: taken from the pool on construction, handed back on any exit (a listener is
+	// arbitrary code and may throw).
+	struct DispatchBuffer
+	{
+		vector<weak_ptr<INotificationListener>>& listeners;
+
+		DispatchBuffer() : listeners(takeDispatchBuffer()) {}
+
+		~DispatchBuffer() { dispatchDepth--; }
+	};
+}
+
 void NotificationManager::RegisterNotificationListener(shared_ptr<INotificationListener> notificationListener)
 {
 	auto lock = _lock.AcquireSafe();
@@ -33,7 +65,8 @@ void NotificationManager::CleanupNotificationListeners()
 
 void NotificationManager::SendNotification(ConsoleNotificationType type, void* parameter)
 {
-	vector<weak_ptr<INotificationListener>> listeners;
+	DispatchBuffer dispatch;
+	vector<weak_ptr<INotificationListener>>& listeners = dispatch.listeners;
 	{
 		auto lock = _lock.AcquireSafe();
 		CleanupNotificationListeners();
@@ -41,7 +74,7 @@ void NotificationManager::SendNotification(ConsoleNotificationType type, void* p
 	}
 
 	//Iterate on a copy without using a lock
-	for(weak_ptr<INotificationListener> notificationListener : listeners) {
+	for(weak_ptr<INotificationListener>& notificationListener : listeners) {
 		shared_ptr<INotificationListener> listener = notificationListener.lock();
 		if(listener) {
 			listener->ProcessNotification(type, parameter);

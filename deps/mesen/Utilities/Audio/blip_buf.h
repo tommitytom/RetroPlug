@@ -27,6 +27,12 @@ so that there are blip_max_ratio clocks per sample. Returns pointer to new
 buffer, or NULL if insufficient memory. */
 EXPORT blip_t* blip_new( int sample_count );
 
+/** Re-initialises an existing buffer in place, exactly as blip_new() leaves a
+fresh one: the default rate, then a clear (whose starting phase blip_clear
+derives from that rate). sample_count must be the size the buffer was created
+with. Lets a caller keep a buffer across uses without allocating. */
+EXPORT void blip_reset( blip_t*, int sample_count );
+
 /** Sets approximate input clock rate and output sample rate. For every
 clock_rate input clocks, approximately sample_rate samples are generated. */
 EXPORT void blip_set_rates( blip_t*, double clock_rate, double sample_rate );

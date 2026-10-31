@@ -127,8 +127,9 @@ public:
 	// RetroPlug per-channel capture (spec/10 §5/§5b). `mode` is the channelExportMode: 0 = off, 1 = pins,
 	// 2 = pins + reference (fidelity test), 3 = 5 individual core mono channels. `hostRate` is passed in
 	// (the caller's sample rate) so the mixer needn't reach into settings. `maxBlockFrames` is the largest host block
-	// the caller will drain; SetCaptureCapacity has already sized the rings and the resample scratch from it at
-	// activation, so arming only switches modes (a newly armed stream still creates its own blip).
+	// the caller will drain; SetCaptureCapacity has sized the rings, the resample scratch and every stream's blip from
+	// it at activation, so arming only switches modes and re-initialises the streams (blip_reset) - it allocates
+	// nothing, which matters because an arm can run on the audio thread.
 	// AvailableCaptureFrames reports host frames ready (all captured streams stay equal length); DrainChannel pops
 	// `frameCount` mono float samples from stream k (int16→float ÷32768, oldest first), like MesenAudioDevice::drain.
 	void SetCaptureCapacity(uint32_t maxBlockFrames);

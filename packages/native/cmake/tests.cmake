@@ -90,6 +90,7 @@ retroplug_add_test_binary(
     NAME     retroplug-engine-graph-test
     SOURCES  test/engine-graph/Deterministic.cpp
              test/engine-graph/SystemNode.test.cpp
+             test/engine-graph/MesenShared.test.cpp    # ClearState's empty state, and the notification dispatch's copy
              test/engine-graph/EngineGraph.test.cpp
              test/engine-graph/SlurpFile.test.cpp     # the file reader putResource reads a `path` resource with
              test/engine-graph/HostIo.test.cpp

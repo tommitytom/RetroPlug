@@ -13,9 +13,10 @@
 // The GBA and LSDj cases use sibling fixture ROMs, so each leaves on a run without the resources tree (as CI's) rather
 // than failing there.
 //
-// The last cases hold the Mesen block path's allocation promise for the audio path (docs/modular-graph-phase-c4-design.md
-// section 4): a fixed audio ring, and scratches and tap buffers sized at activation, so a block's audio work allocates
-// nothing at any block size, and arming the tap sizes nothing on the thread that arms it.
+// The last cases hold the block thread's allocation promise (docs/modular-graph-phase-c4-design.md section 4): a
+// warmed core's block allocates and frees nothing, both for the audio path on its own (a fixed audio ring, and
+// scratches, tap buffers and stream blips sized at activation) and for a whole block with emulation in it (Mesen's
+// per-frame video path and SameBoy's own), and arming the tap allocates nothing on the thread that arms it.
 //
 // Run via `pnpm test:plugin`.
 
@@ -2463,16 +2464,20 @@ TEST_CASE("a boot's cost per console, through the build a system node makes", "[
                     built[built.size() / 2] / 1000.0, planned[planned.size() / 2] / 1000.0, boot.rom.size() / 1024);
     }
 }
-// The block thread's allocation promise for the AUDIO PATH (docs/modular-graph-phase-c4-design.md section 4). A Mesen
-// core collects its audio in a fixed ring (MesenAudioDevice), and sizes its per-block scratches, the tap's rings and the
-// tap's resample scratch at activation, so the audio path allocates and frees nothing while a block runs, at every block
-// size a host splits to, and arming the tap only switches modes (a newly armed stream still creates its fixed-size
-// blip, which is Mesen's blip_new). Mesen's own
-// video path is a different matter: it allocates about a dozen times per EMULATED frame (its per-frame controller
-// snapshot and the frame copies, BaseControlManager::GetPortStates through VideoDecoder/RenderedFrame), which is Mesen's
-// and is recorded in the stage's report rather than bounded here. These cases therefore measure the audio path alone:
-// the ring and the scratch work one block does, at ragged sizes, with the ring already holding what the block drains (the
-// ring's fill is the block clock, so a full ring means nothing steps), and the tap's arm, which runs between two blocks.
+// The block thread's allocation promise (docs/modular-graph-phase-c4-design.md section 4): a warmed core's block
+// allocates and frees nothing, emulation included. Two kinds of case hold it.
+//
+// The AUDIO PATH's own case drains a ring a previous block filled, so no emulated frame runs inside its window: the
+// ring and the scratch work one block does, at ragged sizes, with the ring already holding what the block drains (the
+// ring's fill is the block clock, so a full ring means nothing steps). A Mesen core collects its audio in a fixed ring
+// (MesenAudioDevice), and sizes its per-block scratches, the tap's rings, its resample scratch and each stream's blip
+// at activation, so that path allocates nothing at any block size a host splits to, and arming the tap allocates
+// nothing either (it re-initialises a stream's blip in place; see blip_reset).
+//
+// The WHOLE-BLOCK case runs the node's whole triad inside the window - prepare, step, finish - so it also holds what a
+// real block carries: Mesen's per-frame video path (BaseControlManager::GetPortStates, the controller states and the
+// RenderedFrame input snapshot through VideoDecoder, the notification dispatch) and SameBoy's own per-frame work.
+// Both console paths are Mesen's frame plumbing and ours; neither allocates once the core is warm.
 
 namespace {
 
@@ -2488,8 +2493,8 @@ constexpr std::array<std::uint32_t, 8> kRaggedBlocks = {33, 1, 222, 1, 7, 4096, 
 // Mesen's serializer - can land in a counted window. A counted stretch longer than that has to account for the publish
 // (chargeSnapshotInterval below).
 //
-// The step stays OUTSIDE the counted window: it emulates, and Mesen's video path allocates inside any window that runs
-// an emulated frame. The counted window is the drain.
+// The step stays OUTSIDE this window: the case holds the drain's own promise (the ring, the scratches, the tap), and
+// the whole-block case below runs the step inside its window too.
 rp::test::AllocationCount drainBlock(SystemBase& core, std::uint32_t frames, float* const* lanes, std::size_t laneCount,
                                      bool count, bool fill) {
     for (std::size_t l = 0; l < laneCount; ++l) std::fill_n(lanes[l], frames, 0.0f);
@@ -2498,7 +2503,7 @@ rp::test::AllocationCount drainBlock(SystemBase& core, std::uint32_t frames, flo
         while (core.stepIfBelowTarget(frames)) {
         }
     }
-    if (count) rp::test::beginCountingAllocations();
+    if (count) rp::test::beginCountingAllocations(true);
     core.finishBlock(info(frames), lanes, laneCount);
     return count ? rp::test::endCountingAllocations() : rp::test::AllocationCount{};
 }
@@ -2512,6 +2517,68 @@ void checkRaggedDrainsAreFree(SystemBase& core, const std::vector<float*>& lanes
     drainBlock(core, 1, lanes.data(), lanes.size(), false, true);
     for (const std::uint32_t frames : kRaggedBlocks) {
         const auto counted = drainBlock(core, frames, lanes.data(), lanes.size(), true, true);
+        INFO(frames << " frames: " << counted.allocations << " allocations, " << counted.frees << " frees");
+        REQUIRE(counted.allocations == 0);
+        REQUIRE(counted.frees == 0);
+    }
+}
+
+// The samples the step phase captured for the block in progress, before finishBlock drains them. Every backend stops
+// stepping at the block's frame count, so "at least `frames`" is what proves the block was filled by emulation: a core
+// whose step loop stopped, or a plan that refused the block, leaves the ring short, finishBlock blanks what is missing,
+// and the window would have been vacuously free.
+std::uint32_t capturedFrames(SystemBase& core) {
+    if (auto* nes = dynamic_cast<MesenNesSystem*>(&core)) return nes->availableFrames();
+    if (auto* sms = dynamic_cast<MesenSmsSystem*>(&core)) return sms->availableFrames();
+    if (auto* gba = dynamic_cast<MesenGbaSystem*>(&core)) return gba->availableFrames();
+    if (auto* gb = dynamic_cast<SameBoySystem*>(&core)) return gb->audioFrameCount_;
+    return 0;
+}
+
+// One whole block as the node runs it, with the step phase inside the counted window: prepare, step until the core has
+// filled the block, finish. This is the promise's real shape - a block with emulated frames, video frames, controller
+// polls and notifications in it - so it counts everything the block does, not just the drain, and the block it counts
+// is proven filled above.
+rp::test::AllocationCount wholeBlock(SystemBase& core, std::uint32_t frames, const std::vector<float*>& lanes,
+                                     bool count) {
+    for (float* const lane : lanes) std::fill_n(lane, frames, 0.0f);
+    if (count) rp::test::beginCountingAllocations(true);
+    core.prepareForBlock(info(frames));
+    while (core.stepIfBelowTarget(frames)) {
+    }
+    if (count) REQUIRE(capturedFrames(core) >= frames);
+    core.finishBlock(info(frames), lanes.data(), lanes.size());
+    return count ? rp::test::endCountingAllocations() : rp::test::AllocationCount{};
+}
+
+// A hash of a core's whole work RAM, to hold that a counted window really emulated: a plan that refused the block
+// (Engine::processBlock's early return), a node that stopped stepping, or a core that stepped without running the
+// console leaves the memory where it was. Read outside the counted window, on both sides of it.
+std::uint64_t ramHash(SystemBase& core) {
+    auto ram = core.getMemory(rp::MemoryType::Ram, rp::AccessType::Read);
+    REQUIRE(ram.valid());
+    std::uint64_t hash = 1469598103934665603ull;
+    for (std::size_t i = 0; i < ram.size(); ++i) {
+        hash ^= ram[i];
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+// Warm `core` through real blocks, then run every ragged size as a counted WHOLE block, the first block at each size
+// being the counted one. The warm run is deliberately below the ragged set's maximum, so the 8192-frame window is still
+// the first block at that size: a buffer that grew lazily at a new high-water mark would allocate there. ~4 k frames of
+// warm-up is several emulated frames' worth of Mesen's frame path and of SameBoy's own per-frame work, so what remains
+// is steady state, and it is where a device's state is sized (the first poll reserves it; see ClearState) and where a
+// control manager that registers a port of its own has done so. That one-time sizing is warm-up, like a core's first
+// frame.
+void checkWholeBlocksAreFree(SystemBase& core, const std::vector<float*>& lanes) {
+    core.pressButton(0, true);
+    wholeBlock(core, 1024, lanes, false);
+    core.pressButton(0, false);
+    for (int b = 0; b < 3; ++b) wholeBlock(core, 1024, lanes, false);
+    for (const std::uint32_t frames : kRaggedBlocks) {
+        const auto counted = wholeBlock(core, frames, lanes, true);
         INFO(frames << " frames: " << counted.allocations << " allocations, " << counted.frees << " frees");
         REQUIRE(counted.allocations == 0);
         REQUIRE(counted.frees == 0);
@@ -2534,6 +2601,7 @@ TEST_CASE("a Mesen audio ring keeps a block in fixed storage, draining, wrapping
     // defaults to the engine's plan size (a node hands its own in at activation).
     STATIC_REQUIRE(MesenAudioDevice::kMaxPlayBufferFrames == 0x8000);
     STATIC_REQUIRE(MesenAudioDevice::kDefaultBlockFrames == Engine::kDefaultMaxBlockFrames);
+    STATIC_REQUIRE(SystemBase::kDefaultBlockFrames == Engine::kDefaultMaxBlockFrames);
 
     MesenAudioDevice ring;
     CHECK(ring.capacityFrames() == MesenAudioDevice::kDefaultBlockFrames + MesenAudioDevice::kMaxPlayBufferFrames);
@@ -2697,15 +2765,102 @@ TEST_CASE("a Mesen core's audio path drains without allocating at every block si
     }
 }
 
+TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation included",
+          "[engine-graph][system-node][alloc]") {
+    // The promise's other half: a REAL block, with the step phase in the counted window, so the video frames, controller
+    // polls and notifications a block carries are counted too. Each core is built directly (as the cases above build
+    // theirs), warmed by 4 x 1024 frames and then run at every ragged size, and every core is expected to be free at
+    // every size.
+    SECTION("NES, mixed") {
+        auto core = nes(1, 0);
+        core->reserveAudio(8192);  // what a node's activate does with its plan's maximum
+        Lanes lanes(2);
+        checkWholeBlocksAreFree(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+        CHECK(core->audioRingOverflow() == 0);
+    }
+    SECTION("NES, tap armed, its pins wired") {
+        // The tap's own per-block work: the pin blips, the per-stream resamplers and the capture rings, every block.
+        auto core = nes(1, 1);
+        core->reserveAudio(8192);
+        Lanes lanes(3);
+        std::vector<float*> tap;
+        for (std::size_t k = 0; k < 3; ++k) {
+            tap.push_back(lanes.ptrs[k]);
+            tap.push_back(lanes.ptrs[k]);
+        }
+        checkWholeBlocksAreFree(*core, tap);
+        CHECK(core->tapOverflow() == 0);
+    }
+    SECTION("NES, through the engine") {
+        // The same promise at the level the host sees: the whole graph block, so the system node's own per-block work
+        // (params, settings, the tap's sync, its message digests) is inside the window too. The core is the Engine's,
+        // so it publishes a whole savestate every 0.5 s: that capture allocates in Mesen's serializer, and is charged a
+        // full interval here before the window, which stays under one interval (~12.5 k of 24 k frames).
+        Engine e(kRate);
+        rp::host::test::Roms roms;
+        auto systems = std::vector<rp::host::test::DocSystem>{{1, rp::host::test::kNesType}};
+        rp::host::test::withRoms(e, systems, roms);
+        REQUIRE(e.setGraph(rp::host::test::graphRequest(rp::host::test::stereoDocument(systems), {1})).ok);
+        auto* const core = dynamic_cast<MesenNesSystem*>(e.findSystem(1));
+        REQUIRE(core != nullptr);
+        Lanes lanes(2);
+        for (int b = 0; b < 8; ++b) e.processBlock(1024, lanes.ptrs.data(), 2);  // warm
+        chargeSnapshotInterval(*core);
+        for (const std::uint32_t frames : kRaggedBlocks) {
+            std::fill_n(lanes.ptrs[0], frames, 0.0f);
+            std::fill_n(lanes.ptrs[1], frames, 0.0f);
+            const std::uint64_t before = ramHash(*core);
+            rp::test::beginCountingAllocations(true);
+            e.processBlock(frames, lanes.ptrs.data(), 2);
+            const auto counted = rp::test::endCountingAllocations();
+            INFO(frames << " frames: " << counted.allocations << " allocations, " << counted.frees << " frees");
+            REQUIRE(counted.allocations == 0);
+            REQUIRE(counted.frees == 0);
+            // The plan's largest block ran: it was not refused as too long, and the core's RAM moved.
+            if (frames == 8192) REQUIRE(ramHash(*core) != before);
+        }
+    }
+    SECTION("SMS") {
+        auto core = sms(1);
+        core->reserveAudio(8192);
+        Lanes lanes(2);
+        checkWholeBlocksAreFree(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+    }
+    SECTION("Game Boy") {
+        // Both shapes: the mixed stream, and the four stem pairs a plan that wires ch1..ch4 hands it.
+        auto core = mgb(1);
+        core->reserveAudio(8192);
+        Lanes mix(2);
+        checkWholeBlocksAreFree(*core, {mix.ptrs[0], mix.ptrs[1]});
+        Lanes stems(8);
+        checkWholeBlocksAreFree(*core, stems.ptrs);
+    }
+    SECTION("GBA") {
+        // A sibling fixture, so this leaves on a run without one (as CI's) rather than failing there.
+        const auto rom = resourceFixture("/roms/nanoloop287d.gba");
+        if (rom.empty()) return;
+        auto core = std::make_unique<MesenGbaSystem>(1, MesenGbaConfig{}, rom);
+        core->onActivate(kRate);
+        core->reserveAudio(8192);
+        Lanes lanes(2);
+        checkWholeBlocksAreFree(*core, {lanes.ptrs[0], lanes.ptrs[1]});
+    }
+}
+
 TEST_CASE("a tap armed live on an activated NES sizes nothing on the block thread, and its audio path stays free",
           "[engine-graph][system-node][mesen][tap][alloc]") {
     // A plugin routing change arms the tap through the plan's SyncTap trailer (Engine::syncTap), which the block thread
-    // runs as it adopts the new plan - i.e. BETWEEN two blocks, on the audio thread. Nothing may be SIZED there: the
-    // ring, the per-block scratches, the tap's rings and its resample scratch were all sized at activation
-    // (reserveAudio). The counted window is the arm itself; the one allocation an arm still makes is a newly armed
-    // stream's blip, which is blip_new's malloc (fixed-size, not the block's), so this allocator does not see it. The
-    // blocks after it are held the way the case above holds a core's: their drain is counted, their step (and Mesen's
-    // frame plumbing inside it) is not.
+    // runs as it adopts the new plan - i.e. BETWEEN two blocks, on the audio thread. Nothing may be SIZED or allocated
+    // there: the ring, the per-block scratches, the tap's rings, its resample scratch and each stream's blip were all
+    // created at activation (reserveAudio), so an arm only re-initialises the streams it switches on. The counted
+    // window is the arm itself, C allocations included, because a stream's blip would be blip_new's malloc: that is what
+    // the counting allocator's C half is for, and this case measures it. Which builds prove the arm: a plain glibc build,
+    // where countsCAllocations() is true. Under ASan/TSan the sanitizer owns the allocator and the C half is off by
+    // design, and Windows' static CRT and macOS have no glibc name to forward to, so the case SKIPS there rather than
+    // pass green at a parent that allocated: a case whose promise is a C allocation cannot be held without it. The
+    // blocks after it are held the way the case above holds a core's: their drain is counted, their step is not.
+    if (!rp::test::countsCAllocations())
+        SKIP("the counting allocator's C half is off in this build, so the arm's blip allocation is not visible");
     Engine e(kRate);
     rp::host::test::Roms roms;
     auto systems = std::vector<rp::host::test::DocSystem>{{1, rp::host::test::kNesType}};
@@ -2724,7 +2879,7 @@ TEST_CASE("a tap armed live on an activated NES sizes nothing on the block threa
     // The audio thread owns the next plan's adoption, so the arm is queued and the block thread runs it.
     e.setAudioThreadOwns(true);
     REQUIRE(e.setGraph(rp::host::test::rearming(document(), 1, 1)).ok);
-    rp::test::beginCountingAllocations();
+    rp::test::beginCountingAllocations(true);  // the arm's blips are C blocks (see CountingAllocator)
     e.drainCommands();
     const auto arm = rp::test::endCountingAllocations();
     e.setAudioThreadOwns(false);
@@ -2783,4 +2938,114 @@ TEST_CASE("a node re-activation grows a Mesen core's audio ring to the new block
     Lanes big(2, 16384);
     rig.host->processBlock(16384, t, big.ptrs.data(), 2);
     CHECK(core->audioRingOverflow() == 0);
+}
+
+TEST_CASE("a node sizes its core's block buffers to the plan it was built by, not the engine's default",
+          "[engine-graph][system-node][alloc]") {
+    // The plan's maximum reaches the core in its build request, so activation sizes the ring and the per-block
+    // scratches to it: a DAW that runs 64-frame blocks does not keep the memory an 8192-frame plan would need until a
+    // host grows its block. A core built outside a plan (the direct twins the rest of this file builds) keeps the
+    // console's default.
+    SECTION("NES, at a 64-frame plan") {
+        NodeRig rig(kRate, 64);
+        REQUIRE(rig.set(R"({"nodes":[{"id":"nes","type":"rp.mesen.nes","settings":{)" + rig.boot("rp.mesen.nes", 1) +
+                        R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                            "wires":[{"from":"nes.mix","to":"out.out.1-2"}]})").ok);
+        auto* const core = dynamic_cast<MesenNesSystem*>(rig.builtCore(1));
+        REQUIRE(core != nullptr);
+        CHECK(core->audioRingCapacity() == 64 + MesenAudioDevice::kMaxPlayBufferFrames);
+    }
+    SECTION("Game Boy, at a 64-frame plan") {
+        NodeRig rig(kRate, 64);
+        REQUIRE(rig.set(R"({"nodes":[{"id":"gb","type":"rp.sameboy.gb","settings":{)" +
+                        rig.boot("rp.sameboy.gb", 1, kGbDmg) +
+                        R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                            "wires":[{"from":"gb.mix","to":"out.out.1-2"}]})").ok);
+        auto* const core = dynamic_cast<SameBoySystem*>(rig.builtCore(1));
+        REQUIRE(core != nullptr);
+        CHECK(core->stereoAccum_.size() == std::size_t(2 * 64 + 16));
+        for (const auto& channel : core->chanAccum_) CHECK(channel.size() == std::size_t(2 * 64 + 16));
+    }
+    SECTION("a core built outside a plan keeps the default") {
+        auto mesen = nes(1, 0);
+        CHECK(mesen->audioRingCapacity() ==
+              MesenAudioDevice::kDefaultBlockFrames + MesenAudioDevice::kMaxPlayBufferFrames);
+        auto gameboy = mgb(1);
+        CHECK(gameboy->stereoAccum_.size() == std::size_t(2 * SameBoySystem::kDefaultBlockFrames + 16));
+    }
+}
+
+namespace {
+
+// A hash of a frame's bytes, dimensions included, as FNV-1a. The frame the core last published is what a host reads.
+std::uint64_t frameHash(SystemBase& core) {
+    FrameBufferTriple* fb = core.framebuffer();
+    REQUIRE(fb != nullptr);
+    std::vector<std::uint32_t> pixels(static_cast<std::size_t>(fb->width()) * fb->height());
+    REQUIRE(fb->readInto(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+    std::uint64_t hash = 1469598103934665603ull;
+    const auto mix = [&hash](const void* bytes, std::size_t size) {
+        const auto* p = static_cast<const std::uint8_t*>(bytes);
+        for (std::size_t i = 0; i < size; ++i) {
+            hash ^= p[i];
+            hash *= 1099511628211ull;
+        }
+    };
+    const std::uint32_t dims[2] = {fb->width(), fb->height()};
+    mix(dims, sizeof dims);
+    mix(pixels.data(), pixels.size() * sizeof(std::uint32_t));
+    return hash;
+}
+
+// `blocks` real blocks on `core`, the hash of the frame the core published in each.
+std::vector<std::uint64_t> frameHashes(SystemBase& core, int blocks, std::uint32_t frames = 4096) {
+    std::vector<std::uint64_t> hashes;
+    Lanes lanes(2, frames);
+    for (int b = 0; b < blocks; ++b) {
+        wholeBlock(core, frames, {lanes.ptrs[0], lanes.ptrs[1]}, false);
+        hashes.push_back(frameHash(core));
+    }
+    return hashes;
+}
+
+}  // namespace
+
+TEST_CASE("each console renders the frames it always has, bit for bit",
+          "[engine-graph][system-node][video]") {
+    // The video path this stage made reuse its buffers is held to the bytes it produced before the change: these are
+    // the frames four consoles publish over their first blocks, recorded at e30c39f5 (the parent of the commit that
+    // made a frame's buffers reusable) and equal after it. Parity is audio plus integer state, so without this a
+    // change to RenderedFrame, VideoDecoder or a PPU's frame plumbing would be read, not checked.
+    SECTION("NES") {
+        auto core = nes(1, 0);
+        const std::vector<std::uint64_t> got = frameHashes(*core, 3);
+        INFO("NES: " << got[0] << ", " << got[1] << ", " << got[2]);
+        CHECK(got == std::vector<std::uint64_t>{14252490387203307000ull, 14252490387203307000ull,
+                                               14252490387203307000ull});
+    }
+    SECTION("Master System") {
+        auto core = sms(1);
+        const std::vector<std::uint64_t> got = frameHashes(*core, 3);
+        INFO("SMS: " << got[0] << ", " << got[1] << ", " << got[2]);
+        CHECK(got == std::vector<std::uint64_t>{16816052646246439624ull, 16816052646246439624ull,
+                                               668230188373870873ull});
+    }
+    SECTION("Game Boy") {
+        auto core = mgb(1);
+        const std::vector<std::uint64_t> got = frameHashes(*core, 3);
+        INFO("GB: " << got[0] << ", " << got[1] << ", " << got[2]);
+        CHECK(got == std::vector<std::uint64_t>{8259550387572866035ull, 10074299620259861403ull,
+                                               13782190143996438851ull});
+    }
+    SECTION("GBA") {
+        // A sibling fixture, so this leaves on a run without one (as CI's) rather than failing there.
+        const auto rom = resourceFixture("/roms/nanoloop287d.gba");
+        if (rom.empty()) return;
+        auto core = std::make_unique<MesenGbaSystem>(1, MesenGbaConfig{}, rom);
+        core->onActivate(kRate);
+        const std::vector<std::uint64_t> got = frameHashes(*core, 3);
+        INFO("GBA: " << got[0] << ", " << got[1] << ", " << got[2]);
+        CHECK(got == std::vector<std::uint64_t>{3100562949282106931ull, 3100562949282106931ull,
+                                               2667698829920294451ull});
+    }
 }

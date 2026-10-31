@@ -100,6 +100,16 @@ namespace rp {
 	// the ROM answers with up to this many payload bytes, and so on until the length is met.
 	static constexpr uint32_t ACK_BLOCK_SIZE = 1024;
 
+	// The most data the SDK's file read asks for in one CMD_F_FRD ("we can read up to 4096 in a single block, but
+	// not recommended, to avoid fifo overload"), so a reply buffer is given room for it and its response byte.
+	static constexpr uint32_t FILE_READ_MAX = 4096;
+
+	// The largest command frame the parser can be asked to collect: a parameter block that is a
+	// u16-length-prefixed payload (CMD_USB_WR / CMD_FIFO_WR / CMD_UART_WR) or string (the file commands),
+	// plus its header. The parser's frame buffer is reserved to this once, so collecting a command never
+	// grows it while a block runs (docs/modular-graph-phase-c4-design.md section 4).
+	static constexpr uint32_t MAX_COMMAND_PARAMS = 3 + 0xFFFF;
+
 	// -----------------------------------------------------------------------
 	// $40FF (REG_MSTAT) - the mapper status register the DMA handshake polls
 	// -----------------------------------------------------------------------
@@ -177,7 +187,36 @@ namespace rp {
 	class NesEverdriveFifo : public INesMemoryHandler {
 	private:
 		// ----- RX queue (emulator → NES) --------------------------------
-		std::queue<uint8_t> _rxQueue;
+		// fifo_a's delivered bytes, oldest first. A vector read from a moving head rather than a std::queue, whose
+		// deque allocates a node on its first push: an Edio reply is pushed WHOLE before the ROM reads a byte of it (a
+		// file read is up to 4 KB), so a block that answers an SD command would allocate inside the block. The vector
+		// keeps its capacity, and what has been read is dropped once the head has moved past half of it, so it stays
+		// bounded by the largest reply rather than by every byte ever delivered.
+		struct DeliveredBytes {
+			std::vector<uint8_t> bytes;
+			std::size_t          head = 0;
+
+			std::size_t size() const { return bytes.size() - head; }
+			bool empty() const { return head == bytes.size(); }
+			uint8_t front() const { return bytes[head]; }
+			void push(uint8_t byte) { bytes.push_back(byte); }
+			void pop() {
+				++head;
+				if (head == bytes.size()) {
+					bytes.clear();
+					head = 0;
+				} else if (head * 2 >= bytes.size()) {
+					bytes.erase(bytes.begin(), bytes.begin() + static_cast<std::ptrdiff_t>(head));
+					head = 0;
+				}
+			}
+			void clear() {
+				bytes.clear();
+				head = 0;
+			}
+		};
+
+		DeliveredBytes _rxQueue;
 		std::mutex _mutex;
 
 		// What fifo_a's RAM holds, by slot. On the device the FIFO is a ring over 2048 bytes of block
@@ -214,6 +253,11 @@ namespace rp {
 		uint8_t     _currentCmd    = 0;
 		std::vector<uint8_t> _params;
 		size_t      _paramBytesNeeded = 0;
+
+		// One block of file data, reused by the two paths that read the open file (a CMD_F_FRD reply and a
+		// CMD_F_FRD_MEM transfer). Each writes the whole length it asks for before reading any of it, so what the
+		// buffer held does not matter. It grows to the largest read a ROM has asked for and keeps that.
+		std::vector<uint8_t> _ioScratch;
 
 		// CMD_F_FWR block state: bytes still owed for the whole write, and the block being collected.
 		// The payload arrives OUTSIDE the command frame (the ROM interleaves it with our ack bytes), so
@@ -283,6 +327,16 @@ namespace rp {
 		uint64_t _dmaDoneAtCycle = 0;
 
 	public:
+		NesEverdriveFifo() {
+			// The parser's and fifo_a's buffers live as long as the FIFO; without this they grow (push_back / reserve)
+			// the first time a block carries a bigger command frame, file block or reply than any before it, which the
+			// block thread may not do. A file read's reply is one resp byte plus up to the 4096 the SDK reads per
+			// command, so that is what a reply buffer is given; a larger one (a big directory listing) still grows it.
+			_params.reserve(MAX_COMMAND_PARAMS);
+			_writeBlock.reserve(ACK_BLOCK_SIZE);
+			_rxQueue.bytes.reserve(FILE_READ_MAX + 1);
+		}
+
 		// Set the host directory that stands in for the SD card root ("/"). Must be set before the ROM
 		// runs any SD command; MesenNesSystem does it at activate from the "mesen" role's `sdRoot`.
 		//
@@ -484,8 +538,7 @@ namespace rp {
 		// re-pointed.
 		void clearRx() {
 			std::lock_guard<std::mutex> lock(_mutex);
-			std::queue<uint8_t> empty;
-			_rxQueue.swap(empty);
+			_rxQueue.clear();
 			std::queue<uint8_t> emptyWire;
 			_wireQueue.swap(emptyWire);
 			_wireCredit = 0.0;
@@ -840,6 +893,12 @@ namespace rp {
 			for (uint8_t c : s) pushRx(c);
 		}
 
+		// Room for `len` bytes of file data, kept between reads (see _ioScratch). Caller writes all of it.
+		std::uint8_t* ioScratch(uint32_t len) {
+			if (_ioScratch.size() < len) _ioScratch.resize(len);
+			return _ioScratch.data();
+		}
+
 		// Read a length-prefixed string out of _params at a given offset.
 		// Returns the string and advances offset past it.
 		std::string readParamString(size_t offset) {
@@ -1041,12 +1100,12 @@ namespace rp {
 				return;
 			}
 
-			std::vector<uint8_t> buf(len, 0x00);
+			std::uint8_t* const buf = ioScratch(len);
 			uint32_t got = 0;
 			if (_openFile.is_open()) {
 				_openFile.clear();  // a prior read to EOF leaves eofbit set, which fails the next seek
 				_openFile.seekg(_filePtr);
-				_openFile.read(reinterpret_cast<char*>(buf.data()), len);
+				_openFile.read(reinterpret_cast<char*>(buf), len);
 				got = static_cast<uint32_t>(_openFile.gcount());
 				_filePtr += got;
 			}
@@ -1117,10 +1176,10 @@ namespace rp {
 			if (!_cartWriter) return 0x13;          // no backing memory at all
 			if (!_openFile.is_open()) return 0x04;  // FAT_NO_FILE
 
-			std::vector<uint8_t> buf(len, 0x00);
+			std::uint8_t* const buf = ioScratch(len);
 			_openFile.clear();  // a prior read to EOF leaves eofbit set, which fails the next seek
 			_openFile.seekg(_filePtr);
-			_openFile.read(reinterpret_cast<char*>(buf.data()), len);
+			_openFile.read(reinterpret_cast<char*>(buf), len);
 			const uint32_t got = static_cast<uint32_t>(_openFile.gcount());
 			// Already at EOF is an ERROR, not a success that moved nothing, by the same reasoning
 			// as execFileRead: a ROM told "fine" about an empty transfer reads stale pixels forever.
@@ -1128,7 +1187,7 @@ namespace rp {
 
 			// The writer validates the whole range before writing a byte, so a refusal leaves both
 			// cartridge memory and the file pointer untouched.
-			if (!_cartWriter(piAddr, buf.data(), got)) return 0x13;
+			if (!_cartWriter(piAddr, buf, got)) return 0x13;
 
 			_filePtr += got;
 			return 0;
@@ -1148,7 +1207,6 @@ namespace rp {
 
 			_writeRemaining = len;
 			_writeBlock.clear();
-			_writeBlock.reserve(std::min(len, ACK_BLOCK_SIZE));
 			pushRx(0x00);  // ack the first block; collectWriteByte takes it from here
 			_parseState = ParseState::CollectWriteData;
 		}

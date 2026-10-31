@@ -646,9 +646,12 @@ void SmsVdp::ProcessEndOfScanline()
 
 		_emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::PpuFrameDone);
 
-		RenderedFrame frame(_currentOutputBuffer, 256, 240, 1.0, _state.FrameCount, _console->GetControlManager()->GetPortStates());
+		// RetroPlug: refilled in place rather than constructed per frame, so the input snapshot it carries reuses
+		// its storage (see RenderedFrame::Reset).
+		_renderedFrame.Reset(_currentOutputBuffer, 256, 240, 1.0, _state.FrameCount);
+		_renderedFrame.SetInputData(_console->GetControlManager()->GetPortStates());
 		bool rewinding = _emu->GetRewindManager()->IsRewinding();
-		_emu->GetVideoDecoder()->UpdateFrame(frame, rewinding, rewinding);
+		_emu->GetVideoDecoder()->UpdateFrame(_renderedFrame, rewinding, rewinding);
 
 		UpdateConfig();
 

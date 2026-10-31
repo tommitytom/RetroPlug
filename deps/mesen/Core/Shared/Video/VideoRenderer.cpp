@@ -151,7 +151,10 @@ void VideoRenderer::UpdateFrame(RenderedFrame& frame)
 
 	{
 		auto lock = _frameLock.AcquireSafe();
-		_lastFrame = frame;
+		// RetroPlug: refilled in place rather than assigned, for the same reason the decoder's frame is.
+		_lastFrame.Reset(frame.FrameBuffer, frame.Width, frame.Height, frame.Scale, frame.FrameNumber, frame.VideoPhase);
+		_lastFrame.Data = frame.Data;
+		_lastFrame.SetInputData(frame.InputData);
 	}
 
 	if(_renderer) {

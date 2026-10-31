@@ -119,10 +119,10 @@ public:
     // can reach the split modes without rebuilding the core the way setRegion does — a routing flip must
     // not reset a playing game. Same modes as MesenNesConfig::channelExportMode (0 = off/Mix, 1 = pins,
     // 3 = 5 individual mono); channelLayout() follows it. Value-guarded, and pre-onActivate it only records
-    // the mode (onActivate arms from config_). Sizes nothing on the block thread: the tap's rings, its resample
-    // scratch and the per-block scratches are sized by reserveAudio at activation, so an arm only switches modes and
-    // resets the streams. A newly armed stream still creates its own blip (Mesen's blip_new, a fixed ~50 KB), which is
-    // what a routing change costs on whichever thread the plan's trailer runs on.
+    // the mode (onActivate arms from config_). Allocates nothing on the block thread: the tap's rings, its resample
+    // scratch, each stream's blip and the per-block scratches are sized by reserveAudio at activation, so an arm only
+    // switches modes and re-initialises the streams (blip_reset puts a stream's blip back in the state a fresh one
+    // starts in). A routing change therefore costs nothing on whichever thread the plan's trailer runs on.
     void setChannelExportMode(std::uint32_t mode);
     /** The armed per-channel export mode (0 = off). Lets the Engine record what it found before arming,
      *  so it can restore a construct-time (CLI / render) value it did not set. */
@@ -136,6 +136,10 @@ public:
     // (0 unless a block ran bigger than the ring it was given, which activation prevents). The tap's own rings report
     // their drops the same way. For tests / introspection.
     std::uint32_t audioRingCapacity() const;
+    // Frames captured for the block in progress, before finishBlock drains them - the same metric stepIfBelowTarget
+    // gates on (the capture streams when the tap is armed, else the mix ring). For tests / introspection: it is what a
+    // whole-block case reads to hold that the step phase filled the block.
+    std::uint32_t availableFrames() const;
     std::uint64_t audioRingOverflow() const;
     std::uint64_t tapOverflow() const;
 

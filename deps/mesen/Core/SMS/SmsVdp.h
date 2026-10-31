@@ -4,6 +4,7 @@
 #include "Shared/SettingTypes.h"
 #include "Shared/ColorUtilities.h"
 #include "Utilities/ISerializable.h"
+#include "Shared/RenderedFrame.h"
 
 class Emulator;
 class SmsConsole;
@@ -58,6 +59,9 @@ private:
 
 	uint16_t* _outputBuffers[2] = {};
 	uint16_t* _currentOutputBuffer = nullptr;
+
+	// RetroPlug: the frame ProcessEndOfScanline refills, so a video frame's input snapshot reuses its storage.
+	RenderedFrame _renderedFrame;
 
 	SmsVdpState _state = {};
 	uint64_t _lastMasterClock = 0;

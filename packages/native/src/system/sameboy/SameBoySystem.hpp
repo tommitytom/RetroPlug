@@ -47,11 +47,6 @@ public:
     // serial-end callback in standalone mode.
     bool nextSerialInBit();
 
-    // Append the routed events to `pendingMidi_` (cleared at the top of each
-    // onProcess). Consumers that care about timing read MidiEvent::frame from
-    // the events themselves.
-    void onMidi(const ::MidiEvent* events, std::uint32_t count) override;
-
     // Queue a button transition. Called from DSP-thread command-drain at the
     // top of each block. The byte is reinterpreted as GameboyButton; pending
     // transitions are spread across the block in applyPending() (port of old
@@ -88,6 +83,10 @@ public:
     // interleaves and serial bits ferry mid-block; an unlinked system is the
     // 1-member case of the same triad, driven by its own node.
     ExpSmoother& gainSmoother() noexcept { return gainSmoother_; }
+    // Sizes the per-block accumulators for the largest block a node reserved for, so a block only ever zeroes them;
+    // a block that had to grow one would allocate on the block thread (docs/modular-graph-phase-c4-design.md
+    // section 4). Called at activation and when a host grows its block, never inside a block.
+    void reserveAudio(std::uint32_t maxBlockFrames) override;
     void prepareForBlock(const AudioBlockInfo& info) override;
     bool stepIfBelowTarget(std::uint32_t framesNeeded) override;
     void finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) override;
@@ -183,8 +182,8 @@ public:
     GB_gameboy_t_fwd*         gb_ = nullptr;
     FrameBufferTriple         frames_{sameboy::kPixelWidth, sameboy::kPixelHeight};
 
-    // Stereo accumulator, sized to 2 * maxBlockSize. Resized lazily in
-    // onProcess if a host hands us a larger block than we've seen.
+    // Stereo accumulator, sized to 2 * the plan's block at activation (or the default outside a plan) and on a larger
+    // reserve (sizePerBlockBuffers); prepareForBlock still grows it for a block bigger than any reserve asked for.
     std::vector<float>        stereoAccum_;
     std::uint32_t             audioFrameCount_ = 0;
 
@@ -220,10 +219,6 @@ public:
     std::vector<SameBoySystem*> linkPeers_;
     bool                        bitToSend_ = false;
 
-    // MIDI events that landed on this system in the current block. Cleared
-    // at the top of onProcess.
-    std::vector<::MidiEvent> pendingMidi_;
-
     // Bytes queued by roles / host MIDI-in for the GB serial port, each tagged
     // with the sample offset it should not be delivered before. Drained one bit
     // at a time (MSB first) by `nextSerialInBit()` from the SameBoy serial-end
@@ -254,5 +249,8 @@ public:
     std::vector<std::pair<std::uint32_t, std::uint8_t>> serialOutLog_;
 
 private:
+    // Size stereoAccum_ and chanAccum_ for blockFrames(), keeping what they hold (growth only).
+    void sizePerBlockBuffers();
+
     ExpSmoother gainSmoother_;
 };

@@ -47,6 +47,7 @@ inline MesenCore bootMesenCore(const char*                           tag,
                                const std::string&                    romPathForLog,
                                double                                sampleRate,
                                FrameBufferTriple*                    frames,
+                               std::uint32_t                         maxBlockFrames,
                                const std::function<void(Emulator&)>& configure) {
     // Mesen's home folder + message options are process-global; set them once, thread-safely, so
     // concurrent core construction on background render threads doesn't race (see MesenGlobalInit).
@@ -67,7 +68,8 @@ inline MesenCore bootMesenCore(const char*                           tag,
     audioCfg.SampleRate  = static_cast<uint32_t>(sampleRate);
     out.emu->GetSettings()->SetAudioConfig(audioCfg);
 
-    out.audio = std::make_shared<MesenAudioDevice>();
+    out.audio = std::make_shared<MesenAudioDevice>(
+        maxBlockFrames ? maxBlockFrames : MesenAudioDevice::kDefaultBlockFrames);
     out.emu->GetSoundMixer()->RegisterAudioDevice(out.audio.get());
 
     out.video = std::make_shared<MesenVideoDevice>();

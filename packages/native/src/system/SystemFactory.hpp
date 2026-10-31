@@ -28,6 +28,12 @@ struct SystemBuildRequest {
     // The ROM's file stem. A Master System or Game Gear core stages its ROM as a file and takes its battery stem from
     // that name, and now that its ROM is bytes it has nothing else to name the file by; empty keeps the core's "rom".
     std::string  romName;
+    // The largest block the plan this core is built for will run, in frames; 0 for a build outside a plan (a test, a
+    // tool), which then keeps the console's default. It is reserved before the core activates, so its audio ring and
+    // its per-block scratches are sized to the plan from the start rather than to the default and then grown
+    // (docs/modular-graph-phase-c4-design.md section 4). A host that grows its block later reserves again, through
+    // SystemBase::reserveAudio on the reactivation that is quiescent with respect to the core.
+    std::uint32_t maxBlockFrames = 0;
     SystemConfig config;
 };
 

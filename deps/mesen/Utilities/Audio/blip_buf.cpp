@@ -110,6 +110,20 @@ static void check_assumptions( void )
 	assert( blip_max_frame <= (fixed_t) -1 >> time_bits );
 }
 
+/* RetroPlug: the state blip_new() gives a fresh buffer, applied in place, so a
+caller can re-use a buffer it already owns without allocating on the audio
+thread. The order is blip_new's and it matters: blip_clear() seeds the starting
+phase from the current factor, so the default rate has to be set first. */
+void blip_reset( blip_t* m, int size )
+{
+	assert( m != NULL );
+	assert( size >= 0 );
+
+	m->factor = time_unit / blip_max_ratio;
+	m->size   = size;
+	blip_clear( m );
+}
+
 blip_t* blip_new( int size )
 {
 	blip_t* m;
@@ -118,9 +132,7 @@ blip_t* blip_new( int size )
 	m = (blip_t*) malloc( sizeof *m + (size + buf_extra) * sizeof (buf_t) );
 	if ( m )
 	{
-		m->factor = time_unit / blip_max_ratio;
-		m->size   = size;
-		blip_clear( m );
+		blip_reset( m, size );
 		check_assumptions();
 	}
 	return m;

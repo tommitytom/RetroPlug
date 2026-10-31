@@ -24,6 +24,9 @@ protected:
 	SimpleLock _deviceLock;
 	vector<shared_ptr<BaseControlDevice>> _systemDevices;
 	vector<shared_ptr<BaseControlDevice>> _controlDevices;
+	// RetroPlug: the port snapshot a video frame carries is built here, so the vector (and each device's state
+	// buffer) keeps its storage from frame to frame instead of being rebuilt for every frame.
+	vector<ControllerData> _portStates;
 	uint32_t _pollCounter = 0;
 	uint32_t _lagCounter = 0;
 	bool _wasInputRead = false;
@@ -65,7 +68,9 @@ public:
 
 	virtual shared_ptr<BaseControlDevice> CreateControllerDevice(ControllerType type, uint8_t port) = 0;
 
-	vector<ControllerData> GetPortStates();
+	// RetroPlug: the manager's own snapshot, refilled per call (no allocation once it has seen this many devices);
+	// the reference is valid until the next call.
+	const vector<ControllerData>& GetPortStates();
 
 	shared_ptr<BaseControlDevice> GetControlDevice(uint8_t port, uint8_t subPort = 0);
 	shared_ptr<BaseControlDevice> GetControlDeviceByIndex(uint8_t index);

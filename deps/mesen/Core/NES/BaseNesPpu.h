@@ -3,6 +3,7 @@
 #include "NES/INesMemoryHandler.h"
 #include "Utilities/ISerializable.h"
 #include "NES/NesTypes.h"
+#include "Shared/RenderedFrame.h"
 
 enum class ConsoleRegion;
 
@@ -89,6 +90,12 @@ protected:
 	bool _hasSprite[257] = {};
 	//705
 	NesSpriteInfo _spriteTiles[64] = {};
+
+	// RetroPlug: the frame objects SendFrame refills, one per output shape it can emit (the VS dual system has its
+	// own, and a merged dual picture its own), so a video frame's input snapshot reuses its storage.
+	RenderedFrame _renderedFrame;
+	RenderedFrame _vsRenderedFrame;
+	RenderedFrame _mergedRenderedFrame;
 
 	Emulator* _emu = nullptr;
 	EmuSettings* _settings = nullptr;

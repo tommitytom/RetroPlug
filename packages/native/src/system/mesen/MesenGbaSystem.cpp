@@ -140,7 +140,7 @@ void MesenGbaSystem::onActivate(double sampleRate) {
     VirtualFile romFile(rom_.data(), rom_.size(),
                         config_.romPath.empty() ? std::string("rom.gba") : config_.romPath);
     MesenCore core = bootMesenCore("MesenGbaSystem", romFile, config_.romPath, sampleRate, &frames_,
-                                   [this](Emulator& emu) {
+                                   blockFrames(MesenAudioDevice::kDefaultBlockFrames), [this](Emulator& emu) {
                                        // Before LoadRom, which is what reads the boot ROM.
                                        if (!firmwareDir_.empty()) emu.SetFirmwareFolderOverride(firmwareDir_);
                                        configureGba(emu, config_.skipBootScreen);
@@ -154,9 +154,10 @@ void MesenGbaSystem::onActivate(double sampleRate) {
     // GbaSaveRam region rather than going through Mesen's BatteryManager.
     seedSramAndState(config_.sram, config_.savestate);
 
-    // The block scratch exists before the first block: a block's audio path may not allocate
-    // (docs/modular-graph-phase-c4-design.md section 4). A node that builds at another block size grows it through
-    // reserveAudio before that block runs.
+    // The block scratch exists before the first block, sized to the largest block this core will run: a block's audio
+    // path may not allocate (docs/modular-graph-phase-c4-design.md section 4). A build for a plan is handed that plan's
+    // maximum in its request, which reserved it before this ran; a build outside a plan keeps the default, and a host
+    // that grows its block later grows it through reserveAudio before that block runs.
     audioDevice_->reserveAudio(blockFrames(MesenAudioDevice::kDefaultBlockFrames));
     sizeBlockScratch();
 

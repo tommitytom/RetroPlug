@@ -188,7 +188,7 @@ void MesenNesSystem::onActivate(double sampleRate) {
     VirtualFile romFile(rom_.data(), rom_.size(),
                         config_.romPath.empty() ? std::string("rom.nes") : config_.romPath);
     MesenCore core = bootMesenCore("MesenNesSystem", romFile, config_.romPath, sampleRate, &frames_,
-                                   [this](Emulator& emu) {
+                                   blockFrames(MesenAudioDevice::kDefaultBlockFrames), [this](Emulator& emu) {
                                        configureNes(emu, config_.region, config_.removeSpriteLimit,
                                                     config_.s5bNoise, config_.mmc5PhaseReset,
                                                     config_.expansionVolume);
@@ -273,9 +273,10 @@ void MesenNesSystem::onActivate(double sampleRate) {
     // into the live NesSaveRam region.
     seedSramAndState(config_.sram, config_.savestate);
 
-    // The per-block buffers exist before the first block: a block's audio path may not allocate
-    // (docs/modular-graph-phase-c4-design.md section 4). A node that builds at another block size grows them through
-    // reserveAudio before that block runs.
+    // The per-block buffers exist before the first block, sized to the largest block this core will run: a block's
+    // audio path may not allocate (docs/modular-graph-phase-c4-design.md section 4). A build for a plan is handed that
+    // plan's maximum in its request, which reserved it before this ran; a build outside a plan keeps the default, and a
+    // host that grows its block later grows these through reserveAudio before that block runs.
     if (audioDevice_) audioDevice_->reserveAudio(blockFrames(MesenAudioDevice::kDefaultBlockFrames));
     sizePerBlockBuffers();
 
@@ -391,11 +392,11 @@ void MesenNesSystem::setChannelExportMode(std::uint32_t mode) {
     config_.channelExportMode = mode;
     // Before onActivate there is no mixer yet — the new mode is recorded and onActivate arms from it.
     if (!nesMixer_) return;
-    // Re-arms (or, at mode 0, frees) the per-stream blip buffers + resamplers. The tap's rings and its resample scratch
-    // were sized at activation, so nothing here grows a buffer: only a newly armed stream's blip is allocated (a fixed
-    // size, not the block's). It may therefore run as the plan's trailer on the block thread. Any frames already
-    // captured under the OLD mode are dropped, which is what we want: the streams change shape, so a partial block of
-    // the previous layout would fan out to the wrong lanes.
+    // Re-arms (or, at mode 0, leaves idle) the per-stream blip buffers + resamplers. The tap's rings, its resample
+    // scratch and every stream's blip were created at activation, so nothing here allocates or frees a buffer: an arm
+    // re-initialises the streams it switches on (blip_reset). It may therefore run as the plan's trailer on the block
+    // thread, and so may a disarm. Any frames already captured under the OLD mode are dropped, which is what we want:
+    // the streams change shape, so a partial block of the previous layout would fan out to the wrong lanes.
     nesMixer_->SetChannelCapture(mode, static_cast<std::uint32_t>(sampleRate_),
                                  blockFrames(MesenAudioDevice::kDefaultBlockFrames));
     channelCapture_ = mode >= 1;
@@ -612,6 +613,12 @@ std::size_t MesenNesSystem::captureStreamCount() const {
 
 std::uint32_t MesenNesSystem::audioRingCapacity() const {
     return audioDevice_ ? audioDevice_->capacityFrames() : 0;
+}
+
+std::uint32_t MesenNesSystem::availableFrames() const {
+    // The metric stepIfBelowTarget gates on: the capture streams when the tap is armed, else the mix ring.
+    if (channelCapture_ && nesMixer_) return nesMixer_->AvailableCaptureFrames();
+    return audioDevice_ ? static_cast<std::uint32_t>(audioDevice_->availableFrames()) : 0;
 }
 
 std::uint64_t MesenNesSystem::audioRingOverflow() const {

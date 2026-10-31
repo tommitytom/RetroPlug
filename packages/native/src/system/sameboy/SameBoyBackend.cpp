@@ -24,6 +24,9 @@ std::unique_ptr<SystemBase> SameBoyBackend::build(SystemId id, SystemBuildReques
     typed.sram = std::move(request.sram);
     typed.savestate = std::move(request.savestate);
     auto sys = std::make_unique<SameBoySystem>(id, std::move(typed), std::move(request.rom));
+    // Before onActivate: a node hands over the plan's largest block, so the per-block scratches are sized to it as the
+    // core activates. A build outside a plan leaves it 0, and the core keeps the default block.
+    if (request.maxBlockFrames != 0) sys->reserveAudio(request.maxBlockFrames);
     sys->onActivate(sampleRate);       // boots gb_ + restores cfg.sram then cfg.savestate
     sys->enableStateSnapshot();        // publish a tear-free savestate each block so Duplicate can clone
                                        // off the snapshot while the audio thread runs (getFrame's analogue)

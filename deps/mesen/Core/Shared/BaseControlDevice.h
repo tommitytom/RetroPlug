@@ -91,6 +91,9 @@ public:
 	virtual void OnAfterSetState() { }
 	
 	virtual void SetRawState(ControlDeviceState state);
+	// RetroPlug: the buffer-filling form is what the per-frame port snapshot uses; it copies into a state the caller
+	// keeps, so a warm caller allocates nothing. The returning form is the same read for the callers that want a copy.
+	virtual void GetRawState(ControlDeviceState& state);
 	virtual ControlDeviceState GetRawState();
 
 	virtual void InternalDrawController(InputHud& hud) {}

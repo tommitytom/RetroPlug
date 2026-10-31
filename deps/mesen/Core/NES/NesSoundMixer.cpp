@@ -404,8 +404,7 @@ void NesSoundMixer::SetCaptureCapacity(uint32_t maxBlockFrames)
 		return;
 	}
 	// The rings and the resample scratch are allocated HERE, off the block thread, so an armed block's capture and
-	// drain never allocate. (Each stream's blip stays SetChannelCapture's: it is blip_new's, fixed-size, and created
-	// when a stream arms.)
+	// drain never allocate.
 	for(uint32_t k = 0; k < MaxCaptureStreams; k++) {
 		vector<int16_t> grown(want, 0);
 		uint32_t from = _streamHead[k];
@@ -419,6 +418,14 @@ void NesSoundMixer::SetCaptureCapacity(uint32_t maxBlockFrames)
 	_streamScratch.resize((size_t)MaxSamplesPerFrame * 2);
 	_streamOutScratch.resize((size_t)MaxSamplesPerFrame * 2);
 	_streamCapacity = want;
+	// The stream blips too: every stream the tap can arm into gets its fixed-size buffer here, so an arm (which runs
+	// on the block thread) re-initialises one with blip_reset instead of allocating. They are kept across a disarm
+	// and re-initialised by the next arm, which is what a fresh blip_new gave it anyway.
+	for(uint32_t k = 0; k < MaxCaptureStreams; k++) {
+		if(!_streamBlip[k]) {
+			_streamBlip[k] = blip_new(NesSoundMixer::MaxSamplesPerFrame);
+		}
+	}
 }
 
 void NesSoundMixer::SetChannelCapture(uint32_t mode, uint32_t hostRate, uint32_t maxBlockFrames)
@@ -427,12 +434,8 @@ void NesSoundMixer::SetChannelCapture(uint32_t mode, uint32_t hostRate, uint32_t
 	// Stream count per mode: 1 pins → 3, 2 pins+ref → 4, 3 individual-mono → 5, else off.
 	const uint32_t want = mode == 1 ? 3u : mode == 2 ? 4u : mode == 3 ? 5u : 0u;
 	_captureMode = want > 0 ? mode : 0u;
-	// Free any streams no longer wanted (e.g. re-arming with fewer streams).
+	// Drop any streams no longer wanted (e.g. re-arming with fewer streams). Their blips stay for the next arm.
 	for(uint32_t k = want; k < MaxCaptureStreams; k++) {
-		if(_streamBlip[k]) {
-			blip_delete(_streamBlip[k]);
-			_streamBlip[k] = nullptr;
-		}
 		_streamHead[k] = 0;
 		_streamCount[k] = 0;
 	}
@@ -440,10 +443,9 @@ void NesSoundMixer::SetChannelCapture(uint32_t mode, uint32_t hostRate, uint32_t
 	if(want > 0) {
 		_captureHostRate = hostRate;
 		for(uint32_t k = 0; k < want; k++) {
-			if(!_streamBlip[k]) {
-				_streamBlip[k] = blip_new(NesSoundMixer::MaxSamplesPerFrame);
-			}
-			blip_clear(_streamBlip[k]);
+			// What a fresh blip_new() would leave: the default rate, a clear that seeds the phase from it, then the
+			// real rates. The buffer itself was allocated with the rings (SetCaptureCapacity).
+			blip_reset(_streamBlip[k], NesSoundMixer::MaxSamplesPerFrame);
 			if(_clockRate > 0) {
 				blip_set_rates(_streamBlip[k], _clockRate, _sampleRate);
 			}
