@@ -250,9 +250,11 @@ to 3 is the other console name `Engine` keeps (section 12).
   Game Boy, Master System and GBA to null, and the ScriptPacks reload case reads the tap rather than casting.
 - **The kind check:** "a node refuses a core built with another console's kind" is a 12-way matrix (each of the four
   consoles against the three other kinds), requiring the refusal, `activate-failed`, the same-node message, no built
-  core and the core given back. It also pins kind uniqueness. The seam is `NodeRig`'s `reportKind`, which wraps the real
-  core in a `KindWrapper` that owns it, so the refusal's destroy frees the core and the rig stays truthful: the real host
-  cannot produce the mismatch.
+  core and the core given back. It also pins kind uniqueness: six requirements that the four cores' `kKind`s are
+  pairwise different, and each row skips the column at its own index rather than the one holding its own value, so were
+  an enumerator ever duplicated the requirement names it and the matrix still tries it. The seam is `NodeRig`'s
+  `reportKind`, which wraps the real core in a `KindWrapper` that owns it, so the refusal's destroy frees the core and
+  the rig stays truthful: the real host cannot produce the mismatch.
 - `kind()` is no longer dead: the node's check is its production reader.
 - **The input queues**, added after this design's first draft (section 11): `FixedQueue.test.cpp` in
   `retroplug-graph-test` holds a push past the bound and the count, a consumed prefix's compaction keeping the live

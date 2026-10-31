@@ -3534,28 +3534,42 @@ TEST_CASE("the tap is a capability only a NES offers", "[engine-graph][system-no
 TEST_CASE("a node refuses a core built with another console's kind", "[engine-graph][system-node]") {
     // The node's build checks that the core rp.host.systems/1 hands back is the kind its own type builds, then casts
     // it to that type: the config alternative it sent already named the console, so a mismatch is a host or settings
-    // bug, and the check is what keeps the cast sound. No real host can produce one, so the rig reports the kind a case
-    // asks for, and the core it built is given back before the refusal. Every console's node against each other kind
-    // also pins the invariant the cast rests on, that no two core classes report one kind: a duplicated enumerator
-    // would let the wrong class through the comparison, and this matrix is what would see it, for the four consoles it
-    // lists. Each row names the kind its node builds, so the row's own kind is skipped explicitly rather than by an
-    // ordinal an enum edit would silently break.
+    // bug, and the check is what keeps the cast sound. No real host can produce one, so the rig reports the kind a
+    // case asks for, and the core it built is given back before the refusal. The cast rests on no two core classes
+    // reporting one kind, which the six requirements below say directly; the matrix then holds the refusal itself,
+    // every console's node against each kind but the one its own type builds.
+    STATIC_REQUIRE(SameBoySystem::kKind != MesenNesSystem::kKind);
+    STATIC_REQUIRE(SameBoySystem::kKind != MesenGbaSystem::kKind);
+    STATIC_REQUIRE(SameBoySystem::kKind != MesenSmsSystem::kKind);
+    STATIC_REQUIRE(MesenNesSystem::kKind != MesenGbaSystem::kKind);
+    STATIC_REQUIRE(MesenNesSystem::kKind != MesenSmsSystem::kKind);
+    STATIC_REQUIRE(MesenGbaSystem::kKind != MesenSmsSystem::kKind);
     struct Type {
         const char* type;
         const char* name;
         SystemKind  kind;
         const char* extra;
     };
-    const Type types[] = {
+    constexpr Type types[] = {
         {"rp.sameboy.gb", "Game Boy", SystemKind::SameBoy, kGbDmg},
         {"rp.mesen.nes", "NES", SystemKind::MesenNes, ""},
         {"rp.mesen.gba", "Game Boy Advance", SystemKind::MesenGba, ""},
         {"rp.mesen.sms", "Master System / Game Gear", SystemKind::MesenSms, ""},
     };
-    const SystemKind kinds[] = {SystemKind::SameBoy, SystemKind::MesenNes, SystemKind::MesenGba, SystemKind::MesenSms};
-    for (const Type& type : types) {
-        for (const SystemKind kind : kinds) {
-            if (kind == type.kind) continue;
+    // The columns are the four kinds those rows build, listed on their own rather than derived from the rows, and the
+    // requirement below keeps the two lists in one order so a row's index is its own kind. A row skips the column at
+    // its own index, not the one holding its own value: were two enumerators ever made equal, skipping by value would
+    // let both rows the collision belongs to skip the column, so no row would hand a GBA node an SMS core - the one
+    // mismatch the node's own comparison lets through, since it compares values.
+    constexpr SystemKind kinds[] = {SystemKind::SameBoy, SystemKind::MesenNes, SystemKind::MesenGba,
+                                    SystemKind::MesenSms};
+    STATIC_REQUIRE(types[0].kind == kinds[0] && types[1].kind == kinds[1] && types[2].kind == kinds[2] &&
+                   types[3].kind == kinds[3]);
+    for (std::size_t row = 0; row < std::size(types); ++row) {
+        const Type& type = types[row];
+        for (std::size_t col = 0; col < std::size(kinds); ++col) {
+            if (col == row) continue;
+            const SystemKind kind = kinds[col];
             INFO(type.type << " node handed a kind " << static_cast<std::uint32_t>(kind) << " core");
             NodeRig rig(kRate);
             rig.reportKind = kind;
