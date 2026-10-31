@@ -8,8 +8,8 @@
 
 // The queues a block feeds, held in storage sized before the block runs (docs/modular-graph-phase-c4-design.md
 // section 11). A core's ingress queues are filled on the block thread, so they may not grow there: each is reserved to
-// the most a block can deliver when the core is built, and a push that does not fit is dropped and counted rather than
-// allocating. The bound is the one a graph queue has (a push that does not fit is dropped and counted).
+// the most a block can deliver when the core is built, and a push that does not fit is refused and counted rather
+// than allocating, as a graph queue's own bound refuses one.
 //
 // One buffer and a head index rather than a deque: a deque allocates a node on its first push (or at construction, on
 // libstdc++), and allocates another as it grows, on whichever thread first reaches that depth. The buffer stays
