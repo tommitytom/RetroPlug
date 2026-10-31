@@ -278,7 +278,8 @@ void MesenNesSystem::onActivate(double sampleRate) {
     // plan's maximum in its request, which reserved it before this ran; a build outside a plan keeps the default, and a
     // host that grows its block later grows these through reserveAudio before that block runs.
     if (audioDevice_) audioDevice_->reserveAudio(blockFrames(MesenAudioDevice::kDefaultBlockFrames));
-    sizePerBlockBuffers();
+    if (nesMixer_) nesMixer_->SetCaptureCapacity(blockFrames(MesenAudioDevice::kDefaultBlockFrames));
+    sizePerBlockBuffers(blockFrames(MesenAudioDevice::kDefaultBlockFrames));
 
     activated_ = true;
 }
@@ -515,9 +516,8 @@ bool MesenNesSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
     // wired them (a pin is drained on its own resampler path, so gating on the mix ring could leave a pin one sample
     // short and finishBlock would truncate it; the pins are mutually aligned, so stream 0's count is authoritative),
     // else the mix ring.
-    // The other pair is a defect's: a split routing arms the tap on a host too narrow for the split, where the node
-    // wires the mix instead. Gating on the tap's rings there left the mix ring holding each block's flush overshoot,
-    // which nothing drained, so it grew until it dropped audio. See drainsTap().
+    // A split routing on a host too narrow for it arms the tap while the node wires the mix; that block drains the mix,
+    // so it gates on the mix (drainsTap()).
     // Before each instruction, release any host-MIDI bytes whose intra-block sample offset the audio has
     // reached, so the ROM can't read note N before its sample position. The ring drains from the FRONT, so
     // its depth IS the output-block sample index (leftover from a prior block occupies indices [0, depth) —
@@ -554,6 +554,9 @@ void MesenNesSystem::finishBlock(const AudioBlockInfo& info, float* const* outs,
     if (!activated_ || !emu_) return;
 
     const std::uint32_t blockSize = info.frames;
+    // A driver that said which ring it drains must drain that count (setBlockLanes): gate and drain come from one
+    // lookup on the node's path, and this is what would catch a future driver that says one count and drains another.
+    assert(drainLanes_ == 0 || drainLanes_ == laneCount);
 
     // Carry any host-MIDI byte that didn't fire this block (offset past the block end) into the next,
     // shifting its offset back by the block length so it keeps its relative timing (mirrors SameBoy).
@@ -594,12 +597,16 @@ void MesenNesSystem::finishBlock(const AudioBlockInfo& info, float* const* outs,
         // block WITHOUT stepping the CPU — the core stalls (input never reaches it, no fresh audio comes).
         if (channelCapture_ && nesMixer_) {
             // Reuse a per-stream scratch; the mix path doesn't fan it out. The tap's rings can hold a block plus one
-            // Mesen flush (the step loop gated on them, not on the mix ring), so they drain a block at a time.
+            // Mesen flush (they fill in lockstep with the mix ring, whichever of the two the step gated on), so they
+            // drain one reserved block at a time. The chunk is the reserved block, not whatever the last pins block
+            // left the scratch at: a one-frame pins block shrinks its size, and a zero-frame one would leave none.
             auto& discard = chanAccum_[0];
+            const std::size_t chunkSize = blockFrames(MesenAudioDevice::kDefaultBlockFrames);
+            if (discard.size() < chunkSize) discard.resize(chunkSize);  // within capacity (sized at activation)
             const std::size_t nStreams = captureStreamCount();
             std::uint32_t left = nesMixer_->AvailableCaptureFrames();
             while (left > 0) {
-                const auto chunk = static_cast<std::uint32_t>(std::min<std::size_t>(left, discard.size()));
+                const auto chunk = static_cast<std::uint32_t>(std::min<std::size_t>(left, chunkSize));
                 for (std::size_t k = 0; k < nStreams; ++k)
                     nesMixer_->DrainChannel(static_cast<std::uint32_t>(k), discard.data(), chunk);
                 left -= chunk;
@@ -666,18 +673,21 @@ std::uint64_t MesenNesSystem::tapOverflow() const {
 }
 
 void MesenNesSystem::reserveAudio(std::uint32_t maxBlockFrames) {
-    SystemBase::reserveAudio(maxBlockFrames);
-    const std::uint32_t block = blockFrames(MesenAudioDevice::kDefaultBlockFrames);
+    // Size from the larger of this request and what the core already has, and record the request only once every
+    // size has landed: a sizing that throws (OOM, refused by the caller) leaves the recorded maximum as it was, so
+    // re-activating at the old size for the rollback does not retry the allocation that just failed.
+    const std::uint32_t block = std::max(maxBlockFrames, blockFrames(0));
     if (audioDevice_) audioDevice_->reserveAudio(block);
     if (nesMixer_) nesMixer_->SetCaptureCapacity(block);
-    sizePerBlockBuffers();
+    sizePerBlockBuffers(block);
+    SystemBase::reserveAudio(maxBlockFrames);
 }
 
 // The two scratch sets the block path writes through, each one block of the largest block this core will run: the mix
 // path's drain scratch, and the per-stream scratch a drain (or a discard) goes through. Sized at activation and on a
 // larger reserve, never in a block. Growth only, so a later smaller reserve keeps the memory.
-void MesenNesSystem::sizePerBlockBuffers() {
-    const std::size_t block = blockFrames(MesenAudioDevice::kDefaultBlockFrames);
+void MesenNesSystem::sizePerBlockBuffers(std::uint32_t frames) {
+    const std::size_t block = frames;
     if (stereoAccum_.size() < block * 2) stereoAccum_.assign(block * 2, 0.0f);
     for (std::vector<float>& scratch : chanAccum_)
         if (scratch.size() < block) scratch.assign(block, 0.0f);

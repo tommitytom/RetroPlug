@@ -1,10 +1,10 @@
 #include "system/mesen/MesenGbaSystem.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <cmath>
 #include <cstdio>
-#include <cstring>
 #include <filesystem>
 #include <sstream>
 #include <thread>
@@ -159,20 +159,24 @@ void MesenGbaSystem::onActivate(double sampleRate) {
     // maximum in its request, which reserved it before this ran; a build outside a plan keeps the default, and a host
     // that grows its block later grows it through reserveAudio before that block runs.
     audioDevice_->reserveAudio(blockFrames(MesenAudioDevice::kDefaultBlockFrames));
-    sizeBlockScratch();
+    sizeBlockScratch(blockFrames(MesenAudioDevice::kDefaultBlockFrames));
 
     activated_ = true;
 }
 
 void MesenGbaSystem::reserveAudio(std::uint32_t maxBlockFrames) {
+    // Size from the larger of this request and what the core already has, and record the request only once the size
+    // has landed: a sizing that throws leaves the recorded maximum as it was, so a re-activation's rollback at the
+    // old size does not retry it.
+    const std::uint32_t block = std::max(maxBlockFrames, blockFrames(0));
+    if (audioDevice_) audioDevice_->reserveAudio(block);
+    sizeBlockScratch(block);
     SystemBase::reserveAudio(maxBlockFrames);
-    if (audioDevice_) audioDevice_->reserveAudio(blockFrames(MesenAudioDevice::kDefaultBlockFrames));
-    sizeBlockScratch();
 }
 
 // sumStereoWithGain writes one block of stereo floats through it, and a block is the most it ever needs.
-void MesenGbaSystem::sizeBlockScratch() {
-    const std::size_t needed = std::size_t(blockFrames(MesenAudioDevice::kDefaultBlockFrames)) * 2;
+void MesenGbaSystem::sizeBlockScratch(std::uint32_t frames) {
+    const std::size_t needed = std::size_t(frames) * 2;
     if (stereoAccum_.size() < needed) stereoAccum_.assign(needed, 0.0f);
 }
 
@@ -311,6 +315,10 @@ bool MesenGbaSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
 
 std::uint32_t MesenGbaSystem::availableFrames() const {
     return audioDevice_ ? static_cast<std::uint32_t>(audioDevice_->availableFrames()) : 0;
+}
+
+std::uint64_t MesenGbaSystem::audioRingOverflow() const {
+    return audioDevice_ ? audioDevice_->overflowFrames() : 0;
 }
 
 void MesenGbaSystem::finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) {

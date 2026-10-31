@@ -5,7 +5,6 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
-#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -288,8 +287,9 @@ void MesenSmsSystem::onActivate(double sampleRate) {
     if (stagedRomPath_.empty()) return;
 
     VirtualFile romFile(stagedRomPath_);
-    MesenCore core = bootMesenCore("MesenSmsSystem", romFile, stagedRomPath_, sampleRate, &frames_,
-                                   blockFrames(MesenAudioDevice::kDefaultBlockFrames), [this](Emulator& emu) { configureSms(emu, config_.gameGear, config_.enableFm); });
+    MesenCore core = bootMesenCore(
+        "MesenSmsSystem", romFile, stagedRomPath_, sampleRate, &frames_, blockFrames(MesenAudioDevice::kDefaultBlockFrames),
+        [this](Emulator& emu) { configureSms(emu, config_.gameGear, config_.enableFm); });
     if (!core) return;
     emu_         = std::move(core.emu);
     audioDevice_ = std::move(core.audio);
@@ -312,20 +312,24 @@ void MesenSmsSystem::onActivate(double sampleRate) {
     // maximum in its request, which reserved it before this ran; a build outside a plan keeps the default, and a host
     // that grows its block later grows it through reserveAudio before that block runs.
     audioDevice_->reserveAudio(blockFrames(MesenAudioDevice::kDefaultBlockFrames));
-    sizeBlockScratch();
+    sizeBlockScratch(blockFrames(MesenAudioDevice::kDefaultBlockFrames));
 
     activated_ = true;
 }
 
 void MesenSmsSystem::reserveAudio(std::uint32_t maxBlockFrames) {
+    // Size from the larger of this request and what the core already has, and record the request only once the size
+    // has landed: a sizing that throws leaves the recorded maximum as it was, so a re-activation's rollback at the
+    // old size does not retry it.
+    const std::uint32_t block = std::max(maxBlockFrames, blockFrames(0));
+    if (audioDevice_) audioDevice_->reserveAudio(block);
+    sizeBlockScratch(block);
     SystemBase::reserveAudio(maxBlockFrames);
-    if (audioDevice_) audioDevice_->reserveAudio(blockFrames(MesenAudioDevice::kDefaultBlockFrames));
-    sizeBlockScratch();
 }
 
 // sumStereoWithGain writes one block of stereo floats through it, and a block is the most it ever needs.
-void MesenSmsSystem::sizeBlockScratch() {
-    const std::size_t needed = std::size_t(blockFrames(MesenAudioDevice::kDefaultBlockFrames)) * 2;
+void MesenSmsSystem::sizeBlockScratch(std::uint32_t frames) {
+    const std::size_t needed = std::size_t(frames) * 2;
     if (stereoAccum_.size() < needed) stereoAccum_.assign(needed, 0.0f);
 }
 
@@ -430,6 +434,10 @@ void MesenSmsSystem::prepareForBlock(const AudioBlockInfo& /*info*/) {
 
 std::uint32_t MesenSmsSystem::availableFrames() const {
     return audioDevice_ ? static_cast<std::uint32_t>(audioDevice_->availableFrames()) : 0;
+}
+
+std::uint64_t MesenSmsSystem::audioRingOverflow() const {
+    return audioDevice_ ? audioDevice_->overflowFrames() : 0;
 }
 
 void MesenSmsSystem::setExternalInput(std::uint8_t port, std::uint8_t levels) {

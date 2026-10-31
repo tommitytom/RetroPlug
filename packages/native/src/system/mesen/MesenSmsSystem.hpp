@@ -117,6 +117,9 @@ public:
     // decoupled (the ring lags by up to one flush window), so asserting the
     // relationship between them needs both.
     std::uint32_t availableFrames() const;
+    // Frames the audio ring dropped for want of room since activation. It stays zero on a driven core (the ring is
+    // sized to a block plus one flush); a test reads it to hold that a block never overran its storage.
+    std::uint64_t audioRingOverflow() const;
 
     // MemoryType -> Mesen MemoryType. Maps to Sms* regions; returns invalid for
     // OAM (SMS sprites live in VRAM), IORegisters, HRam, NametableRam and
@@ -171,7 +174,7 @@ private:
     // meanings out of. Returns the path, or empty on failure. See the comment
     // on the definition.
     std::string stageRom();
-    void sizeBlockScratch();  // stereoAccum_: at activation, never on the block thread
+    void sizeBlockScratch(std::uint32_t frames);  // stereoAccum_: at activation, never on the block thread
 
     // The staging directory this system owns, as `<home>/staged/<stagingSlot_>`.
     // Unique per system INSTANCE, which the system id is NOT: ids are allocated

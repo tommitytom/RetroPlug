@@ -177,7 +177,7 @@ private:
 
     // The mix path's drain scratch and the tap's per-stream drains, sized at activation (SystemBase::blockFrames):
     // a block's audio path must not allocate (docs/modular-graph-phase-c4-design.md section 4).
-    void          sizePerBlockBuffers();
+    void          sizePerBlockBuffers(std::uint32_t frames);
     std::size_t   captureStreamCount() const;  // streams the armed mode captures (0 = none)
     // Does this block's drain read the tap's streams (so the step must gate on their rings), or the mix ring?
     bool          drainsTap() const;

@@ -78,8 +78,8 @@ public:
         ++serialInDropped_;
     }
     // What this core's ingress queues have taken and dropped since it was built (SystemBase::inputAccepted /
-    // inputDropped): serial-in bytes and button presses. A block can only deliver what the queues are sized for, so a
-    // drop is zero unless a core is fed outside a plan's queues.
+    // inputDropped): serial-in bytes and button presses. A plan's block fits the queues, so a drop is a push outside
+    // one: a core fed by a test or tool, or a press burst scheduled past the queue's carry.
     std::uint64_t inputAccepted() const override { return serialInAccepted_ + pressesAccepted_; }
     std::uint64_t inputDropped() const override { return serialInDropped_ + pendingButtons_.dropped(); }
     // The serial-in bytes the queues have taken since the core was built: the non-press half of inputAccepted(), for a
@@ -241,7 +241,8 @@ public:
         GameboyButton button;   // reinterpreted from the uint8_t opcode
         bool          down;
     };
-    rp::FixedQueue<PendingButton> pendingButtons_{rp::kButtonsInput * 16};   // at least kPressInput: see above
+    rp::FixedQueue<PendingButton> pendingButtons_{rp::kButtonsInput * 16};
+    static_assert(rp::kButtonsInput * 16 >= rp::kPressInput, "a Game Boy's press queue must hold both doors");
     std::uint64_t                 pressesAccepted_ = 0;
 
     // Default per-press duration (samples) used to space queued transitions.
@@ -262,9 +263,10 @@ public:
     // intra-block timing instead of collapsing to the block start. `serialBitsRemaining_` counts how many bits are left
     // in the current front byte (8 → fresh byte, 0 → next call pops & reloads).
     //
-    // The bytes are held in a fixed ring and the runs in a fixed queue, each sized to what a block's serialIn input can
-    // deliver, so a block's MIDI never grows one: a run is a message's bytes at one frame (a slot per distinct frame),
-    // and the ring holds their bytes (docs/modular-graph-phase-c4-design.md section 4).
+    // The bytes are held in a fixed ring and the runs in a fixed queue, each sized below to two blocks of a script
+    // serialIn input or one of a Game Boy serialOut (the larger single block), so a block's MIDI never grows one: a run
+    // is a message's bytes at one frame (a slot per distinct frame), and the ring holds their bytes
+    // (docs/modular-graph-phase-c4-design.md section 11).
     struct PendingSerial {
         std::uint32_t offset;   // samples from block start
         std::uint32_t count;    // bytes at this offset, front-first in serialBytes_
@@ -300,8 +302,8 @@ public:
     std::vector<std::pair<std::uint32_t, std::uint8_t>> serialOutLog_;
 
 private:
-    // Size stereoAccum_ and chanAccum_ for blockFrames(), keeping what they hold (growth only).
-    void sizePerBlockBuffers();
+    // Size stereoAccum_ and chanAccum_ for `frames`, growth only: a smaller block keeps the memory the larger one took.
+    void sizePerBlockBuffers(std::uint32_t frames);
     // Take the front byte of the serial queue (its run loses one, and the run goes when its last byte has).
     void popSerialByte();
 

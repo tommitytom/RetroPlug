@@ -295,7 +295,7 @@ void SameBoySystem::onActivate(double sampleRate) {
     // audio path may not allocate. A build for a plan is handed that plan's maximum in its request, which reserved it
     // before this ran; a build outside a plan keeps the default, and a host that grows its block later grows them
     // through reserveAudio before that block runs.
-    sizePerBlockBuffers();
+    sizePerBlockBuffers(blockFrames(kDefaultBlockFrames));
 
     activated_ = true;
 }
@@ -693,16 +693,19 @@ void SameBoySystem::prepareForBlock(const AudioBlockInfo& info) {
 }
 
 void SameBoySystem::reserveAudio(std::uint32_t maxBlockFrames) {
+    // Size from the larger of this request and what the core already has, and record the request only once the size
+    // has landed: a sizing that throws leaves the recorded maximum as it was, so a re-activation's rollback at the
+    // old size does not retry it.
+    sizePerBlockBuffers(std::max(maxBlockFrames, blockFrames(0)));
     SystemBase::reserveAudio(maxBlockFrames);
-    sizePerBlockBuffers();
 }
 
 // The two scratch sets prepareForBlock zeroes, each one block of the largest block this core will run, plus the
 // headroom writeAudioSample leaves for the at most one sample a block can overproduce. Sized at activation and on a
 // larger reserve, never in a block. Growth only, so a later smaller reserve keeps the memory (as prepareForBlock's
 // own lazily-grown sizing did).
-void SameBoySystem::sizePerBlockBuffers() {
-    const std::size_t want = std::size_t(blockFrames(kDefaultBlockFrames)) * 2 + 16;
+void SameBoySystem::sizePerBlockBuffers(std::uint32_t frames) {
+    const std::size_t want = std::size_t(frames) * 2 + 16;
     if (stereoAccum_.size() < want) stereoAccum_.assign(want, 0.0f);
     for (std::vector<float>& acc : chanAccum_)
         if (acc.size() < want) acc.assign(want, 0.0f);

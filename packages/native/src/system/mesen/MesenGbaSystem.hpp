@@ -66,6 +66,9 @@ public:
     // and finishBlock drained a short ring" - which look identical from the output buffer, since
     // finishBlock sums into a caller-sized array either way. The SMS twin exists for the same reason.
     std::uint32_t availableFrames() const;
+    // Frames the audio ring dropped for want of room since activation. A GBA's step overshoots by a whole video frame,
+    // the largest of the three cores, so a test reads this to hold that even that stays inside the ring.
+    std::uint64_t audioRingOverflow() const;
 
     // MemoryType → Mesen MemoryType. Maps to Gba* regions; returns invalid
     // for IORegisters / HRam / NametableRam (GB / NES only). Ram = IWRAM
@@ -101,7 +104,7 @@ public:
 private:
     // Restore a savestate seed over the battery seedSramAndState() already put into the core.
     bool loadStateBytes(const std::vector<std::uint8_t>& bytes) override;
-    void sizeBlockScratch();  // stereoAccum_: at activation, never on the block thread
+    void sizeBlockScratch(std::uint32_t frames);  // stereoAccum_: at activation, never on the block thread
 
     MesenGbaConfig                   config_;
     std::vector<std::uint8_t>         rom_;

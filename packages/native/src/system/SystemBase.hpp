@@ -92,8 +92,10 @@ public:
     // per-block buffers it must not allocate in while a block runs. A system node gives it at activation - as it
     // builds the core, and again when a host grows its block, which reactivates the graph while it is quiescent - and
     // a core built directly (a test, a tool) keeps its backend's own default. Growth only: a plan's maximum never
-    // shrinks. The reservation is recorded here; a backend that sizes per-block buffers overrides this, calls it
-    // first, and sizes from blockFrames().
+    // shrinks. The reservation is recorded here; a backend that sizes per-block buffers overrides this, sizes from
+    // the larger of `maxBlockFrames` and what is already recorded (`blockFrames(0)`), and calls this LAST: a sizing
+    // that throws then leaves the recorded maximum as it was, so reactivating at it for a rollback does not retry the
+    // allocation that failed.
     virtual void reserveAudio(std::uint32_t maxBlockFrames) {
         if (maxBlockFrames > maxBlockFrames_) maxBlockFrames_ = maxBlockFrames;
     }
@@ -149,6 +151,10 @@ public:
     // What this core's ingress queues have taken and dropped since it was built: bytes for the serial / N8
     // byte queues, presses for a button queue. A test reads these to hold that staged input reached the core and
     // that a push past a queue's bound is counted rather than growing it. Zero for a core with no inputs.
+    // Block thread (or the control thread while quiescent): the counters are plain integers the block thread writes,
+    // like the queues they count. A dropped count is a refused push, plus - on the NES - the FIFO's own modelled drops
+    // (a hardware-profile fifo_a overflow, a dropped Edio reply), so a byte can be accepted by the role and dropped
+    // later, counted in both.
     virtual std::uint64_t inputAccepted() const { return 0; }
     virtual std::uint64_t inputDropped() const { return 0; }
 
@@ -181,7 +187,6 @@ public:
 
     // Savestate, byte for byte. Empty when the backend doesn't support savestates.
     virtual std::vector<std::uint8_t> saveStateBytes() const { return {}; }
-
 
     // -- Memory access -------------------------------------------------------
 
@@ -254,7 +259,9 @@ public:
     // when the core has no tap (every core but the NES today). One capability object rather than a virtual per caller;
     // callers branch on nullptr (no dynamic_cast), as with debugTarget(). The system owns it and it lives as long as
     // the core does: a reset or deactivation leaves the pointer valid, and a caller re-asks only after the core is
-    // replaced.
+    // replaced. It may be asked on the control thread while the core runs a block (the engine reads a running plan's
+    // answer before it publishes a new one), so it is a pure read: no allocation, no mutation, and the same pointer for
+    // the core's lifetime.
     virtual ChannelTap* channelTap() { return nullptr; }
 
     // -- Debugger / profiler ------------------------------------------------
@@ -317,6 +324,7 @@ public:
     // (stateSnapshotSize() is the backend's ceiling).
     std::size_t stateSnapshotCapacity() const;
 
+protected:
     /** Seed a freshly-built core from its construct spec: cartridge battery first, then a savestate over
      *  the top if one was supplied. The Mesen backends end onActivate with exactly this, so it lives here
      *  rather than three times over; SameBoy seeds its own battery and restores its state inline. A
@@ -333,7 +341,6 @@ public:
         if (!state.empty()) loadStateBytes(state);
     }
 
-protected:
     // The block size a node has reserved for, in frames, or `fallback` (the backend's own default) until one does.
     std::uint32_t blockFrames(std::uint32_t fallback) const {
         return maxBlockFrames_ != 0 ? maxBlockFrames_ : fallback;

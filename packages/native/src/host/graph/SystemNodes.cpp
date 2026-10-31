@@ -21,6 +21,7 @@
 
 #include "graph/CanonicalJson.hpp"
 #include "graph/node.hpp"
+#include "system/InputCapacity.hpp"
 #include "host/graph/HostServices.hpp"
 #include "system/SystemBase.hpp"
 #include "system/SystemFactory.hpp"
@@ -409,10 +410,10 @@ struct SystemNode {
     // The first activation builds the core the settings name, and gives it every knob the settings carry; later ones
     // (a re-activation) keep it. A core is built at the rate the plan runs at, which Engine::setSampleRate re-rates. A
     // plan that is then refused destroys it as it unwinds. Either way the core learns the largest block it will run
-    // before it runs one: a build is handed the plan's maximum, so the core sizes its audio ring and per-block
-    // scratches to it as it activates (a default-sized core would keep that memory for a small host block's whole
-    // life), and a plan that grows a host's block reactivates the whole graph quiescent, where reserveAudio moves the
-    // sizes with no block in flight.
+    // before it runs one: a build is handed the plan's maximum, so the core sizes its audio ring, its tap's rings and
+    // its per-block scratches to it as it activates (a default-sized core would keep that memory for a small host
+    // block's whole life), and a plan that grows a host's block reactivates the whole graph quiescent, where
+    // reserveAudio moves the sizes with no block in flight.
     bool activate(double, std::uint32_t maxFrames) {
         if (core) {
             core->reserveAudio(maxFrames);
@@ -720,9 +721,9 @@ struct Nes : SystemNode<Nes, MesenNesSystem, NesSettings> {
         l.exclusive.push_back({"pins.*", "channels.*"});
     }
 
-    // With mix connected, the mix (2 lanes), whether or not the tap is armed: the narrow-host defect's
-    // path. Otherwise the armed mode's streams, each mono stream's two lanes pointed at its one port
-    // buffer (the NES writes only lane 2k).
+    // With mix connected, the mix (2 lanes), whether or not the tap is armed: a split routing on a host too narrow
+    // for it still arms the tap, and this block drains the mix. Otherwise the armed mode's streams, each mono
+    // stream's two lanes pointed at its one port buffer (the NES writes only lane 2k).
     std::size_t lanes(const rp::Block& b, std::array<float*, 2 * kMaxOutputs>& out) const {
         bool tap = false;
         for (std::uint32_t o = kPinsFirst; o < 1 + std::size(kNesTaps); ++o) tap = tap || connected[o];

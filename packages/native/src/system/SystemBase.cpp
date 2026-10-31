@@ -4,11 +4,13 @@
 #include <cstring>
 
 void SystemBase::onProcess(const AudioBlockInfo& info, float* const* outs) {
-    // Drive the triad to the block target, then finish: what an unlinked
-    // system's node does each block (host/graph/SystemNodes.cpp).
+    // Drive the triad to the block target, then finish, with the two lanes this entry drains: the mix. It says so to
+    // the core the way a node's prepare does, so a core that gates on a ring of its own fills the one finishBlock
+    // reads (host/graph/SystemNodes.cpp).
+    setBlockLanes(2);
     prepareForBlock(info);
     while (stepIfBelowTarget(info.frames)) {}
-    finishBlock(info, outs, 2); // the convenience entry is stereo (one Mix stream = two lanes)
+    finishBlock(info, outs, 2);
 }
 
 bool SystemBase::runUntilPc(std::uint32_t target, std::uint64_t maxCycles) {
