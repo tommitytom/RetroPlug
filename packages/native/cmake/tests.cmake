@@ -69,7 +69,9 @@ retroplug_add_test_binary(
              test/audio/NesTeardown.test.cpp           # the NES twin of SMS's construct/destruct guard
              test/audio/SameBoyModels.test.cpp         # every SameBoyModel (incl. SGB variants) boots + renders
              test/audio/EngineInvoker.test.cpp         # the command ring's inline slot + teardown payload frees
+             test/graph/CountingAllocator.cpp          # replaces operator new / delete: the N8 FIFO's [alloc] case
     LIBS     retroplug-backend                         # Engine + retroplug-core (SystemBase + the cores)
+    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test          # graph/CountingAllocator.hpp
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
              RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"

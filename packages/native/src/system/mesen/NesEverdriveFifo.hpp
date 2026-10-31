@@ -262,8 +262,8 @@ namespace rp {
 
 		// One block of file data, reused by the two paths that read the open file (a CMD_F_FRD reply and a
 		// CMD_F_FRD_MEM transfer). Each writes the whole length it asks for before reading any of it, so what the
-		// buffer held does not matter. It grows to the read in progress and keeps only the SDK's largest read
-		// (FILE_READ_MAX) between them: a ROM that asks for one huge read does not pin that buffer for the core's life.
+		// buffer held does not matter. Both take the file a FILE_READ_MAX chunk at a time, so it never grows past the
+		// SDK's largest read whatever length a ROM asks for, and it is never given back mid-block.
 		std::vector<uint8_t> _ioScratch;
 
 		// CMD_F_FWR block state: bytes still owed for the whole write, and the block being collected.
@@ -378,7 +378,8 @@ namespace rp {
 		// The whole range MUST be validated before a single byte is written. PRG, SRAM and CHR-ROM
 		// are legal PI targets on the device but have no verified emulated counterpart, and a
 		// silent drop would look EXACTLY like a working DMA to the ROM - the worst failure mode
-		// available here - so an unbacked address is an Edio error, not a no-op.
+		// available here - so an unbacked address is an Edio error, not a no-op. A null `data` is a
+		// validation-only call: answer whether the range is backed, write nothing.
 		void setCartWriter(std::function<bool(uint32_t piAddr, const uint8_t* data, size_t len)> fn) {
 			std::lock_guard<std::mutex> lock(_mutex);
 			_cartWriter = std::move(fn);
@@ -427,6 +428,10 @@ namespace rp {
 			pumpWire();
 			return FifoStats{ _rxQueue.size(), _rxCapacity, _droppedBytes, _wireQueue.size(), _txQueue.size() };
 		}
+
+		// The file-data staging buffer's size, for a case that holds it to the SDK's largest read (FILE_READ_MAX): a
+		// long read passes through it a chunk at a time rather than growing it.
+		std::size_t ioScratchSize() const { return _ioScratch.size(); }
 
 		// Drop the DMA handshake: any staged-but-unexecuted transfer, the pending bits and the
 		// wait-time deadline. Called wherever the ROM restarts (core reset, savestate load) - a
@@ -909,15 +914,14 @@ namespace rp {
 			for (uint8_t c : s) pushRx(c);
 		}
 
-		// Room for `len` bytes of file data, kept between reads (see _ioScratch). Caller writes all of it.
+		// Room for `len` bytes of file data, kept between reads (see _ioScratch). Caller writes all of it. Never more
+		// than the SDK's largest read: both readers take the file a chunk at a time, so the length a ROM asks for cannot
+		// grow the buffer past that, and no read has to give memory back (which would be an allocation) on the block
+		// thread once it is done.
 		std::uint8_t* ioScratch(uint32_t len) {
+			len = std::min(len, FILE_READ_MAX);
 			if (_ioScratch.size() < len) _ioScratch.resize(len);
 			return _ioScratch.data();
-		}
-
-		// Give back a scratch grown past the SDK's largest read once the read that needed it is done.
-		void releaseIoScratch() {
-			if (_ioScratch.size() > FILE_READ_MAX) std::vector<uint8_t>(FILE_READ_MAX).swap(_ioScratch);
 		}
 
 		// Read a length-prefixed string out of _params at a given offset.
@@ -1121,27 +1125,33 @@ namespace rp {
 				return;
 			}
 
-			std::uint8_t* const buf = ioScratch(len);
+			// The reply is one resp byte and then `len` bytes however long the read is, so the file goes through the
+			// staging buffer a chunk at a time: a u32 length used to size the buffer, so one huge read grew it inside a
+			// block and then gave it back (another allocation) once the read was done.
+			std::uint8_t* const buf = ioScratch(std::min(len, FILE_READ_MAX));
 			uint32_t got = 0;
 			if (_openFile.is_open()) {
 				_openFile.clear();  // a prior read to EOF leaves eofbit set, which fails the next seek
 				_openFile.seekg(_filePtr);
-				_openFile.read(reinterpret_cast<char*>(buf), len);
-				got = static_cast<uint32_t>(_openFile.gcount());
-				_filePtr += got;
+			}
+			bool answered = false;
+			while (_openFile.is_open() && got < len) {
+				const uint32_t want = std::min(len - got, FILE_READ_MAX);
+				_openFile.read(reinterpret_cast<char*>(buf), want);
+				const uint32_t chunk = static_cast<uint32_t>(_openFile.gcount());
+				if (chunk == 0) break;  // at EOF: the bytes before it are the whole reply
+				if (!answered) {
+					pushRx(0x00); // success resp, before the first byte of the payload
+					answered = true;
+				}
+				for (uint32_t i = 0; i < chunk; i++) pushRx(buf[i]);
+				got += chunk;
+				_filePtr += chunk;
 			}
 
 			// Nothing to give (no open file, or already at EOF) is an ERROR, not a success with no data:
 			// a resp of 0 followed by no bytes leaves a polling ROM waiting for a payload forever.
-			if (got == 0) {
-				releaseIoScratch();
-				pushRx(0x04); // FAT_NO_FILE
-				return;
-			}
-
-			pushRx(0x00); // success resp
-			for (uint32_t i = 0; i < got; i++) pushRx(buf[i]);
-			releaseIoScratch();
+			if (!answered) pushRx(0x04); // FAT_NO_FILE
 		}
 
 		// CMD_F_FRD_MEM: STAGE the transfer, do NOT perform it. The ROM arms $40FF AFTER sending
@@ -1199,22 +1209,29 @@ namespace rp {
 			if (!_cartWriter) return 0x13;          // no backing memory at all
 			if (!_openFile.is_open()) return 0x04;  // FAT_NO_FILE
 
-			std::uint8_t* const buf = ioScratch(len);
+			// The destination is validated whole before the file is touched or the buffer is sized, so a refusal
+			// leaves both cartridge memory and the file pointer untouched (a null buffer asks the writer to validate
+			// only). The bytes then move a chunk at a time: the staging buffer is the SDK's largest read, and a length
+			// taken from a u32 must not grow it (nor be given back afterwards, which allocates).
+			if (!_cartWriter(piAddr, nullptr, len)) return 0x13;
+
+			std::uint8_t* const buf = ioScratch(std::min(len, FILE_READ_MAX));
 			_openFile.clear();  // a prior read to EOF leaves eofbit set, which fails the next seek
 			_openFile.seekg(_filePtr);
-			_openFile.read(reinterpret_cast<char*>(buf), len);
-			const uint32_t got = static_cast<uint32_t>(_openFile.gcount());
+			uint32_t moved = 0;
+			while (moved < len) {
+				const uint32_t want = std::min(len - moved, FILE_READ_MAX);
+				_openFile.read(reinterpret_cast<char*>(buf), want);
+				const uint32_t got = static_cast<uint32_t>(_openFile.gcount());
+				if (got == 0) break;  // at EOF: what moved is the whole transfer
+				// Validated above, so a chunk cannot refuse the range; a writer that did still gets an error out.
+				if (!_cartWriter(piAddr + moved, buf, got)) return 0x13;
+				moved += got;
+				_filePtr += got;
+			}
 			// Already at EOF is an ERROR, not a success that moved nothing, by the same reasoning
 			// as execFileRead: a ROM told "fine" about an empty transfer reads stale pixels forever.
-			if (got == 0) return 0x04;
-
-			// The writer validates the whole range before writing a byte, so a refusal leaves both
-			// cartridge memory and the file pointer untouched.
-			const bool written = _cartWriter(piAddr, buf, got);
-			releaseIoScratch();
-			if (!written) return 0x13;
-
-			_filePtr += got;
+			if (moved == 0) return 0x04;
 			return 0;
 		}
 

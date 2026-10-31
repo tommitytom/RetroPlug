@@ -372,7 +372,9 @@ still allocates there, and why:
   each `EdioDirRecord::name` is a `std::string` from a `directory_entry`.
 - `_txQueue` (CMD_USB_WR with no sink) grows while a ROM writes and no host drains it, unbounded on purpose: a ring
   would change the "never drop a byte the device would deliver" contract.
-- `_ioScratch` grows to the largest single read a ROM asks for; the first read of a new size is the one allocation.
+- `_ioScratch` is the SDK's largest read (`FILE_READ_MAX`), and both readers take the file a chunk of that size at a
+  time, so a length taken from a u32 cannot grow it, and no read gives memory back (a second allocation) in the block
+  that asked for it.
 
 None of them is reachable from the block cases (the in-repo NES ROM never issues an SD command), so the whole-block case
 is ROM-dependent for the SD path.

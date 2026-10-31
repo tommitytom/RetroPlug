@@ -34,6 +34,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "graph/CountingAllocator.hpp"
 #include "system/mesen/NesEverdriveFifo.hpp"
 
 namespace {
@@ -206,6 +207,7 @@ struct FakeCart {
             if (piAddr < PI_CHR_RAM) return false;
             const std::uint64_t off = piAddr - PI_CHR_RAM;
             if (off + len > mem.size()) return false;
+            if (data == nullptr) return true;  // validation only, as the FIFO's contract says
             std::memcpy(mem.data() + off, data, len);
             return true;
         };
@@ -470,6 +472,63 @@ TEST_CASE("CMD_F_FRD sends one resp byte for the whole request, not one per 512"
         writeU32(fifo, 8);
         CHECK(readBytes(fifo, 16) == std::vector<std::uint8_t>{0x04});
     }
+}
+
+TEST_CASE("a read longer than the SDK's largest takes the staging buffer in chunks, allocating nothing",
+          "[audio][nes][fifo][alloc]") {
+    // The staging buffer is the SDK's largest read (FILE_READ_MAX), and the two readers take the file a chunk at a
+    // time: a u32 length used to size the buffer, so one huge read grew it inside a block and then gave it back by
+    // allocating the small one, inside the same block. The reply is unchanged (one resp, then every byte in order) and
+    // the file pointer advances by exactly what was read.
+    constexpr std::uint32_t kLong = rp::FILE_READ_MAX * 2;
+    ScratchCard card;
+    const std::vector<std::uint8_t> file = pattern(kLong + 64);
+    card.put("big.bin", file);
+
+    FakeCart cart;
+    rp::NesEverdriveFifo fifo;
+    fifo.setSdRoot(card.root);
+    fifo.setCartWriter(cart.writer());
+    openForRead(fifo, "/big.bin");
+
+    // Warm-up: the first read sizes the buffer to a chunk, and a small DMA warms the command's parameter vector, the
+    // way a core's first block is warm-up rather than the promise.
+    writeCmd(fifo, CMD_F_FRD);
+    writeU32(fifo, rp::FILE_READ_MAX);
+    REQUIRE(readBytes(fifo, rp::FILE_READ_MAX + 1).size() == rp::FILE_READ_MAX + 1);
+    CHECK(fifo.ioScratchSize() == rp::FILE_READ_MAX);
+    writeDmaRequest(fifo, PI_CHR_RAM + 0x4000, 64);
+    REQUIRE(queryStatus(fifo) == 0);
+    writeCmd(fifo, CMD_F_FPTR);
+    writeU32(fifo, 0);  // the warm-up moved the file pointer, so both measured reads start at the front
+
+    rp::test::beginCountingAllocations();
+    writeCmd(fifo, CMD_F_FRD);
+    writeU32(fifo, kLong);
+    const auto frd = rp::test::endCountingAllocations();
+    const auto reply = readBytes(fifo, kLong + 1);
+    INFO("long read: " << frd.allocations << " allocations, " << frd.frees << " frees");
+    CHECK(frd.allocations == 0);
+    CHECK(frd.frees == 0);
+    REQUIRE(reply.size() == kLong + 1);
+    CHECK(reply[0] == 0x00);
+    CHECK(std::vector<std::uint8_t>(reply.begin() + 1, reply.end()) ==
+          std::vector<std::uint8_t>(file.begin(), file.begin() + kLong));
+    CHECK(fifo.ioScratchSize() == rp::FILE_READ_MAX);
+
+    // A DMA of the same length is validated whole, then read and written a chunk at a time, so it allocates nothing
+    // either and the destination holds the same bytes.
+    writeCmd(fifo, CMD_F_FPTR);
+    writeU32(fifo, 0);
+    rp::test::beginCountingAllocations();
+    writeDmaRequest(fifo, PI_CHR_RAM, kLong);
+    const auto dma = rp::test::endCountingAllocations();
+    INFO("long DMA: " << dma.allocations << " allocations, " << dma.frees << " frees");
+    CHECK(dma.allocations == 0);
+    CHECK(dma.frees == 0);
+    CHECK(queryStatus(fifo) == 0);
+    CHECK(cart.at(0, kLong) == std::vector<std::uint8_t>(file.begin(), file.begin() + kLong));
+    CHECK(fifo.ioScratchSize() == rp::FILE_READ_MAX);
 }
 
 TEST_CASE("a read with no file open reports an error instead of a silent success", "[audio][nes][fifo]") {

@@ -245,6 +245,7 @@ void MesenNesSystem::onActivate(double sampleRate) {
             // and still report success.
             const std::uint64_t offset = piAddr - rp::PI_ADDR_CHR_RAM;
             if (offset + len > static_cast<std::uint64_t>(info.Size)) return false;
+            if (data == nullptr) return true;  // validation only: the range is backed, so write nothing
             std::memcpy(static_cast<std::uint8_t*>(info.Memory) + offset, data, len);
             return true;
         });
@@ -628,9 +629,12 @@ void MesenNesSystem::finishBlock(const AudioBlockInfo& info, float* const* outs,
             auto& discard = chanAccum_[0];
             const std::size_t chunkSize = blockFrames(MesenAudioDevice::kDefaultBlockFrames);
             if (discard.size() < chunkSize) discard.resize(chunkSize);  // within capacity (sized at activation)
+            tapDiscardChunk_ = chunkSize;
             const std::size_t nStreams = captureStreamCount();
             std::uint32_t left = nesMixer_->AvailableCaptureFrames();
-            while (left > 0) {
+            // A pass that took a zero-size chunk would not advance, so the loop needs one: the chunk is the reserved
+            // block, and a case reads tapDiscardChunk() to see that, and to fail rather than spin if it ever is not.
+            while (left > 0 && chunkSize > 0) {
                 const auto chunk = static_cast<std::uint32_t>(std::min<std::size_t>(left, chunkSize));
                 for (std::size_t k = 0; k < nStreams; ++k)
                     nesMixer_->DrainChannel(static_cast<std::uint32_t>(k), discard.data(), chunk);
