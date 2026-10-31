@@ -3281,30 +3281,33 @@ TEST_CASE("a node refuses a core built with another console's kind", "[engine-gr
     // bug, and the check is what keeps the cast sound. No real host can produce one, so the rig reports the kind a case
     // asks for, and the core it built is given back before the refusal. Every console's node against each other kind
     // also pins the invariant the cast rests on, that no two core classes report one kind: a duplicated enumerator
-    // would let the wrong class through the comparison, and this matrix is what would see it.
+    // would let the wrong class through the comparison, and this matrix is what would see it, for the four consoles it
+    // lists. Each row names the kind its node builds, so the row's own kind is skipped explicitly rather than by an
+    // ordinal an enum edit would silently break.
     struct Type {
         const char* type;
         const char* name;
+        SystemKind  kind;
         const char* extra;
     };
     const Type types[] = {
-        {"rp.sameboy.gb", "Game Boy", kGbDmg},
-        {"rp.mesen.nes", "NES", ""},
-        {"rp.mesen.gba", "Game Boy Advance", ""},
-        {"rp.mesen.sms", "Master System / Game Gear", ""},
+        {"rp.sameboy.gb", "Game Boy", SystemKind::SameBoy, kGbDmg},
+        {"rp.mesen.nes", "NES", SystemKind::MesenNes, ""},
+        {"rp.mesen.gba", "Game Boy Advance", SystemKind::MesenGba, ""},
+        {"rp.mesen.sms", "Master System / Game Gear", SystemKind::MesenSms, ""},
     };
     const SystemKind kinds[] = {SystemKind::SameBoy, SystemKind::MesenNes, SystemKind::MesenGba, SystemKind::MesenSms};
-    for (std::size_t t = 0; t < sizeof(types) / sizeof(types[0]); ++t) {
+    for (const Type& type : types) {
         for (const SystemKind kind : kinds) {
-            if (static_cast<std::size_t>(kind) == t) continue;
-            INFO(types[t].type << " node handed a kind " << static_cast<std::uint32_t>(kind) << " core");
+            if (kind == type.kind) continue;
+            INFO(type.type << " node handed a kind " << static_cast<std::uint32_t>(kind) << " core");
             NodeRig rig(kRate);
             rig.reportKind = kind;
-            const auto r = rig.set(knobbed(types[t].type, rig.boot(types[t].type, 1, types[t].extra)));
+            const auto r = rig.set(knobbed(type.type, rig.boot(type.type, 1, type.extra)));
             CHECK_FALSE(r.ok);
             REQUIRE(r.errors.size() == 1);
             CHECK(r.errors[0].code == "activate-failed");
-            CHECK(r.errors[0].message == std::string("the built core is not a ") + types[t].name);
+            CHECK(r.errors[0].message == std::string("the built core is not a ") + type.name);
             CHECK(rig.built.empty());
             CHECK(rig.released == std::vector<SystemId>{1});
         }

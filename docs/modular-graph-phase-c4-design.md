@@ -149,9 +149,9 @@ the block thread, or on the control thread while the engine is quiescent.
 **The NES is its own tap.** `MesenNesSystem` implements `ChannelTap` and `channelTap()` returns `this`: the mode is
 `MesenNesConfig::channelExportMode` and the arm is `setChannelExportMode`, so there is no state to own. That is what
 keeps `ArmedTap`'s address comparison sound: a secondary-base `ChannelTap*` is the core object's address plus a
-per-class constant, so within one class tap equality is core equality, the record cannot outlive the core, and C3's
-residual (a core allocated where the armed tap was freed would match) keeps its shape at the tap's address
-(section 12).
+per-class constant, so within one class tap equality is core equality. The record's pointer is compared and never
+followed, so it may outlive the core it names; C3's residual (a core allocated where the armed tap was freed would
+match) keeps its shape at the tap's address (section 12).
 
 **`SystemTable`.** A slot is `{ id, SystemBase* core, ChannelTap* tap }`, the tap filled from `channelTap()` where the
 two casts were (the plan's build and `publishGraph`'s pre-fill for a reused node), so a slot whose core offers none holds

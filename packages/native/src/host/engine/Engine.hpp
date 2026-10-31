@@ -384,10 +384,11 @@ private:
     // re-resolve so leaving a split mode (or gaining a second system) puts the core back exactly as found. Scoped
     // to what WE armed on purpose: the CLI / RenderHost set channelExportMode in the system node's settings and
     // never select a split routing, so they are never disturbed. `tap` is compared, never followed: a fresh core
-    // replaced in under the same id is not the one armed. A NES's tap IS the core object, so the record cannot
-    // outlive it, and its address differs from the core pointer's by a per-class constant, so within one class tap
-    // equality is core equality. It is compared by address, so a core whose tap lands where the armed tap was
-    // defeats it; TS never gets there, since buildSystem refuses a live id, the stores' id counter only goes up,
+    // replaced in under the same id is not the one armed, and a pointer taken from this record is never dereferenced
+    // (the restore follows the plan's tap, and only when the two addresses agree). A NES's tap is the core object, so
+    // its address differs from the core pointer's by a per-class constant and within one class tap equality is core
+    // equality. The record itself survives a drop and reclaim, so a core whose tap landed where the armed tap was
+    // freed defeats it; TS never gets there, since buildSystem refuses a live id, the stores' id counter only goes up,
     // and every TS edit that drops a core re-arms, which drops this record with it.
     struct ArmedTap {
         bool              active   = false;
