@@ -25,11 +25,16 @@ public:
     FixedQueue() = default;
     explicit FixedQueue(std::size_t capacity) { reserve(capacity); }
     // A copy would lose the reservation (vector's copy allocates size(), not capacity()) and its next push would
-    // reallocate on the block thread, so copies are not offered. A move carries the reservation.
+    // reallocate on the block thread, so copies are not offered. A move carries the reservation and leaves the source
+    // an empty queue that refuses: the defaulted move would leave it with its head and capacity but no buffer, so its
+    // size() would wrap round and its front()/push() would index one.
     FixedQueue(const FixedQueue&)            = delete;
     FixedQueue& operator=(const FixedQueue&) = delete;
-    FixedQueue(FixedQueue&&)                 = default;
-    FixedQueue& operator=(FixedQueue&&)      = default;
+    FixedQueue(FixedQueue&& other) noexcept { takeFrom(other); }
+    FixedQueue& operator=(FixedQueue&& other) noexcept {
+        if (this != &other) takeFrom(other);
+        return *this;
+    }
 
     // Room for `capacity` entries. Growth only, and only where allocating is allowed (a core's construction, an
     // activation): a queue never grows while a block runs.
@@ -89,6 +94,19 @@ public:
     const T& operator[](std::size_t i) const { return buffer_[head_ + i]; }
 
 private:
+    void takeFrom(FixedQueue& other) noexcept {
+        buffer_   = std::move(other.buffer_);
+        head_     = other.head_;
+        capacity_ = other.capacity_;
+        dropped_  = other.dropped_;
+        // The source's reservation went with the buffer, so leaving its size/capacity behind would describe storage
+        // it no longer has. As an empty queue with no capacity it refuses a push and counts it, which is valid.
+        other.buffer_.clear();
+        other.head_     = 0;
+        other.capacity_ = 0;
+        other.dropped_  = 0;
+    }
+
     std::vector<T> buffer_;
     std::size_t    head_     = 0;
     std::size_t    capacity_ = 0;

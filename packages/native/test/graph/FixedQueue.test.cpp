@@ -80,11 +80,41 @@ TEST_CASE("FixedQueue pop on an empty queue is a no-op, and the queue still take
     CHECK(queue.empty());
 }
 
-TEST_CASE("FixedQueue is not copyable, so a copy cannot silently lose its reservation", "[graph][fixed-queue]") {
+TEST_CASE("FixedQueue is not copyable, and a move leaves an empty queue behind rather than a broken one",
+          "[graph][fixed-queue]") {
     // vector's copy allocates size(), not capacity(), so a copied queue would reallocate on its next push.
     STATIC_REQUIRE(!std::is_copy_constructible_v<rp::FixedQueue<int>>);
     STATIC_REQUIRE(!std::is_copy_assignable_v<rp::FixedQueue<int>>);
     STATIC_REQUIRE(std::is_move_constructible_v<rp::FixedQueue<int>>);
+    STATIC_REQUIRE(std::is_move_assignable_v<rp::FixedQueue<int>>);
+
+    rp::FixedQueue<int> queue(3);
+    queue.push(10);
+    queue.push(20);
+    queue.pop();  // a consumed prefix, so the head is not 0 when the move happens
+    rp::FixedQueue<int> moved(std::move(queue));
+    CHECK(moved.capacity() == 3);
+    CHECK(moved.size() == 1);
+    CHECK(moved.front() == 20);
+    // The source is a shell: an empty queue that refuses and counts, not one whose size wraps round and whose front()
+    // indexes a buffer it gave away.
+    CHECK(queue.empty());
+    CHECK(queue.size() == 0);
+    CHECK_FALSE(queue.push(30));
+    CHECK(queue.dropped() == 1);
+
+    // Move assignment over a live destination, which takes the source's entries and reservation.
+    rp::FixedQueue<int> target(2);
+    target.push(7);
+    target.push(8);
+    target = std::move(moved);
+    CHECK(target.capacity() == 3);
+    CHECK(target.size() == 1);
+    CHECK(target.front() == 20);
+    CHECK(moved.empty());
+    CHECK(moved.size() == 0);
+    CHECK_FALSE(moved.push(40));
+    CHECK(moved.dropped() == 1);
 }
 
 TEST_CASE("FixedByteRing wraps and delivers in arrival order over more than its capacity", "[graph][fixed-byte-ring]") {
