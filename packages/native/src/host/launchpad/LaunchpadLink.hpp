@@ -96,9 +96,12 @@ public:
     std::uint64_t messagesSent() const { return sent_.load(std::memory_order_relaxed); }
     // The pushes that lost their bytes while the device was attached: the send ring was full, or the message was wider
     // than a slot. What a session pushed while nothing was connected is counted apart (messagesDetached): the device
-    // was never going to take it, and the session repaints, so it is no frame the surface is missing.
+    // was never going to take it, and the session repaints, so it is no frame the surface is missing. A message the
+    // device sent that the receive ring had no room for is counted apart too (messagesInboundDropped): that is a press
+    // the audio side missed, not a frame the device is missing, and the status line keeps the two apart.
     std::uint64_t messagesDropped() const { return dropped_.load(std::memory_order_relaxed); }
     std::uint64_t messagesDetached() const { return detached_.load(std::memory_order_relaxed); }
+    std::uint64_t messagesInboundDropped() const { return inboundDropped_.load(std::memory_order_relaxed); }
 
 private:
     void pushInputRing(const std::uint8_t* data, std::size_t n);  // backend callback thread
@@ -116,7 +119,8 @@ private:
     std::atomic<bool>          connected_{false};
     std::atomic<std::uint64_t> sent_{0};
     std::atomic<std::uint64_t> dropped_{0};
-    std::atomic<std::uint64_t> detached_{0};   // pushed while nothing was connected, counted apart from dropped_
+    std::atomic<std::uint64_t> detached_{0};        // pushed while nothing was connected, counted apart from dropped_
+    std::atomic<std::uint64_t> inboundDropped_{0};  // received messages the ring had no room for, counted apart
 
     // device -> audio. Fixed-capacity SPSC ring of fixed slots: the producer (backend callback) copies the bytes into
     // a slot, the consumer (audio thread) copies them out, so neither end of the block thread's path allocates or

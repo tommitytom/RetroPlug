@@ -59,13 +59,13 @@ void LaunchpadLink::disconnect() {
 void LaunchpadLink::pushInputRing(const std::uint8_t* data, std::size_t n) {
     if (!data || n == 0) return;
     if (n > kMaxOutMessage) {  // wider than any message the protocol produces: count it, never truncate it
-        dropped_.fetch_add(1, std::memory_order_relaxed);
+        inboundDropped_.fetch_add(1, std::memory_order_relaxed);
         return;
     }
     const std::size_t t    = inTail_.load(std::memory_order_relaxed);
     const std::size_t next = (t + 1) % kInCapacity;
     if (next == inHead_.load(std::memory_order_acquire)) {  // full -> drop
-        dropped_.fetch_add(1, std::memory_order_relaxed);
+        inboundDropped_.fetch_add(1, std::memory_order_relaxed);
         return;
     }
     inRing_[t].size = static_cast<std::uint16_t>(n);

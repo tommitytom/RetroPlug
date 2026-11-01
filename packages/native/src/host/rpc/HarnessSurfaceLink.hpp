@@ -29,7 +29,8 @@ public:
 
     // [control] Stage one message as the device would have sent it, at frame 0 of the next block. False, and nothing
     // staged, for an empty one, one wider than kMaxDeviceMessage, or a full ring - the last of which is the one counted
-    // in dropped(), as a real link counts only what its ring had no room for.
+    // in dropped(); an empty or oversized message is refused without being counted, where a real link counts an
+    // oversized arrival too.
     bool queueInput(std::span<const std::uint8_t> bytes) {
         if (bytes.empty() || bytes.size() > kMaxDeviceMessage) return false;
         DeviceMessage m;

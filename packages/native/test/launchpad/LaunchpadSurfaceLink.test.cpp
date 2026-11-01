@@ -105,14 +105,15 @@ TEST_CASE("LaunchpadSurfaceLink: a message wider than a slot is dropped and coun
     log.receiver(huge.data(), huge.size());
     DeviceMessage out[1];
     CHECK(surface.drainInput(out, 1) == 0);
-    CHECK(link.messagesDropped() == 1);
+    CHECK(link.messagesInboundDropped() == 1);
+    CHECK(link.messagesDropped() == 0);  // a press the audio side missed is not a frame the device is missing
 
     // The exact bound still fits, in a slot of its own.
     const std::vector<std::uint8_t> big(kMaxDeviceMessage, 0x7F);
     log.receiver(big.data(), big.size());
     REQUIRE(surface.drainInput(out, 1) == 1);
     CHECK(out[0].size == kMaxDeviceMessage);
-    CHECK(link.messagesDropped() == 1);
+    CHECK(link.messagesInboundDropped() == 1);
 }
 
 TEST_CASE("LaunchpadSurfaceLink: a full ring drops and counts what the device sent", "[launchpad]") {
@@ -127,7 +128,8 @@ TEST_CASE("LaunchpadSurfaceLink: a full ring drops and counts what the device se
     constexpr std::size_t kHeld  = kSlots - 1;
     const std::uint8_t    m[2]   = {0x90, 0x51};
     for (std::size_t i = 0; i < kSlots + 8; ++i) log.receiver(m, sizeof m);
-    CHECK(link.messagesDropped() == kSlots + 8 - kHeld);
+    CHECK(link.messagesInboundDropped() == kSlots + 8 - kHeld);
+    CHECK(link.messagesDropped() == 0);
 
     // And what did fit comes out whole, oldest first.
     std::vector<DeviceMessage> out(kSlots);
