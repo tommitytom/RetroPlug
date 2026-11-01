@@ -87,6 +87,11 @@ jobs:
         run: pnpm test:native
 
       - name: Plugin unit tests (Catch2)
+        # The kit baseline compares exact bank bytes only on the host it recorded them on, so this job demands that
+        # this is that host, as the parity step above demands it of the audio baseline; the arm64, macOS and Windows
+        # jobs run the same step without it and fall back to each case agreeing with itself.
+        env:
+          RP_KIT_GOLDEN_REQUIRE_TARGET: "1"
         run: pnpm test:plugin
 
       - name: UI tests (headless LVGL)

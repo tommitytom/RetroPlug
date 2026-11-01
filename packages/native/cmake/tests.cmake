@@ -69,13 +69,15 @@ retroplug_add_test_binary(
              test/audio/SameBoyModels.test.cpp         # every SameBoyModel (incl. SGB variants) boots + renders
              test/audio/EngineInvoker.test.cpp         # the teardown discards a staged-message payload
              test/audio/Dither.test.cpp                # the kit TPDF dithers are seeded from their input
+             test/audio/KitBaseline.test.cpp           # every kit the compilers build is held to its recorded bank hash
              test/graph/CountingAllocator.cpp          # replaces operator new / delete: the N8 FIFO's [alloc] case
     LIBS     retroplug-backend                         # Engine + retroplug-core (SystemBase + the cores)
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test          # graph/CountingAllocator.hpp
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
              RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
-             RP_GG_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.gg")
+             RP_GG_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.gg"
+             RP_KIT_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/audio/golden")
 
 # Guards the engine's graph (docs/modular-graph-phase-b1-design.md, -b2-design.md, -b3a-design.md, -b3b-design.md,
 # -c2-design.md): each system node renders exactly what its core renders driven directly, its inputs and its settings'

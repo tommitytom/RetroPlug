@@ -18,6 +18,7 @@
 #include "kit/KitCompiler.hpp"       // rp::kit::KitCompiler (generic, compileKit) - heavy, so only in this TU
 #include "lsdj/LsdjKitCodec.hpp"     // rp::lsdj::LsdjKitCodec (the LSDJ nibble/16KB-bank codec)
 #include "risa/RisaDmcCodec.hpp"     // rp::risa::RisaDmcCodec (the risa NES-DPCM/8KB-bank codec)
+#include "util/BuildTarget.hpp"      // rp::buildTarget (shared with the kit baseline's golden)
 #include "util/SlurpFile.hpp"
 
 namespace {
@@ -583,49 +584,7 @@ RpcRenderBlocksResult EngineRpcService::renderBlocks(RpcRenderBlocksRequest req)
 
 std::uint32_t EngineRpcService::droppedMessages() const { return engine_.droppedMessages(); }
 
-// "<os>-<arch>-<compiler><major>", from the compiler's own macros so each slice of a universal binary
-// names itself (a CMake variable would name the configure host).
-#define RP_STR2(x) #x
-#define RP_STR(x) RP_STR2(x)
-#if defined(__linux__)
-#define RP_TARGET_OS "linux"
-#elif defined(__APPLE__)
-#define RP_TARGET_OS "darwin"
-#elif defined(_WIN32)
-#define RP_TARGET_OS "windows"
-#else
-#define RP_TARGET_OS "unknown"
-#endif
-#if defined(__x86_64__) || defined(_M_X64)
-#define RP_TARGET_ARCH "x64"
-#elif defined(__aarch64__) || defined(_M_ARM64)
-#define RP_TARGET_ARCH "arm64"
-#else
-#define RP_TARGET_ARCH "unknown"
-#endif
-#if defined(__clang__) && defined(__apple_build_version__)
-#define RP_TARGET_CC "appleclang" RP_STR(__clang_major__)
-#elif defined(__clang__)
-#define RP_TARGET_CC "clang" RP_STR(__clang_major__)
-#elif defined(_MSC_VER)
-#define RP_TARGET_CC "msvc" RP_STR(_MSC_VER)  // the full number: MSVC 14.44 and 14.51 differ
-#elif defined(__GNUC__)
-#define RP_TARGET_CC "gnu" RP_STR(__GNUC__)
-#else
-#define RP_TARGET_CC "unknown"
-#endif
-
-std::string EngineRpcService::buildTarget() const {
-    return RP_TARGET_OS "-" RP_TARGET_ARCH "-" RP_TARGET_CC;
-}
-
-// On Windows the SameBoy core is compiled by clang-cl (cmake/sameboy.cmake), whose version this key does not
-// carry; that would matter only if a Windows baseline were ever recorded.
-#undef RP_STR2
-#undef RP_STR
-#undef RP_TARGET_OS
-#undef RP_TARGET_ARCH
-#undef RP_TARGET_CC
+std::string EngineRpcService::buildTarget() const { return rp::buildTarget(); }
 
 // Direct engine_ access (not the invoker): the benchmark drives the synchronous renderAudio pull path
 // and never startAudio, so the control thread owns the Engine here — same regime as readState.

@@ -12,15 +12,13 @@ namespace rp::risa {
 namespace {
 
 // --- DMC / kit-bank constants (tools/rom_patcher/src/kit_editor/constants.js) ---
-constexpr std::size_t kBankSize        = 0x2000; // 8 KB
+// The bank size and the index table's offset live on RisaDmcCodec, so a bank reader and this assembler share them.
 constexpr std::size_t kSampleRegion    = 0x1EC0; // 7872 B for packed DPCM
 constexpr std::size_t kNameOffset      = 0x1EC0;
 constexpr std::size_t kNameSize        = 16;
 constexpr std::size_t kNameMaxChars    = 6;
 constexpr std::size_t kSampleNames     = 0x1ED0;
 constexpr std::size_t kSampleNameLen   = 3;
-constexpr std::size_t kIndexOffset     = 0x1F00;
-constexpr std::size_t kIndexEntry      = 4;
 constexpr std::size_t kSlotCount       = 16;
 constexpr std::size_t kMagicOffset     = 0x1F40;
 constexpr std::uint8_t kMagic          = 0xA5;

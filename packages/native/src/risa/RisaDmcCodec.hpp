@@ -35,6 +35,12 @@ struct CompileDmcSampleSpec {
 
 class RisaDmcCodec final : public rp::kit::KitCodec {
 public:
+    // The bank layout this codec assembles, exposed beside it so a reader of a compiled bank names the same offsets
+    // the assembler writes: 16 slots, each with a 4-byte index entry [addr, length-reg, rate, flags].
+    static constexpr std::size_t kBankSize    = 0x2000; // 8 KB
+    static constexpr std::size_t kIndexOffset = 0x1F00;
+    static constexpr std::size_t kIndexEntry  = 4;
+
     RisaDmcCodec(std::string kitName, std::vector<CompileDmcSampleSpec> samples)
         : kitName_(std::move(kitName)), samples_(std::move(samples)) {}
 
