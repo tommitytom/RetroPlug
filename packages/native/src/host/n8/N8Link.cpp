@@ -364,7 +364,8 @@ void N8Link::runJob(TimedChunk& chunk, bool& have) {
             // be trusted with another chunk, so the link stops exactly as a failed write stops it, with the reason kept
             // for the UI (lastError), and a job that never started hears that the link went down rather than failing
             // with no reason at all. A job whose own `run` threw did run: re-running it would report a boot that
-            // happened as the link going down, so it is left with what it recorded.
+            // happened as the link going down, so it is left with what it recorded, which for one that threw before
+            // recording anything is a failure with an empty reason (only a bad_alloc gets there).
             setError(std::string("serial write failed (N8 unplugged?): ") + e.what());
             if (!started) {
                 try {

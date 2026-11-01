@@ -22,6 +22,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -1051,6 +1052,37 @@ TEST_CASE("the pause waits a bounded time for acks a silent cart never sends, an
         CHECK(job.error == "the link went down before the job ran");
         CHECK_FALSE(rig.host.cartJobBusy());
     }
+}
+
+TEST_CASE("a paused job whose run throws is run once, its completion is still posted, and the link stops with the "
+          "reason", "[n8][cart-jobs]") {
+    FakeN8 dev;
+    N8Link link(factoryFor(dev));
+    link.setLinkAllowed(false);
+    REQUIRE(link.connect("/dev/fake"));
+    std::atomic<int> runs{0}, unrun{0}, dones{0};
+    N8Link::PausedJob job;
+    job.run = [&](Edio* edio) -> N8Link::AfterJob {
+        if (!edio) {
+            ++unrun;  // what a job that never ran is told
+            return N8Link::AfterJob::Resume;
+        }
+        ++runs;
+        throw std::runtime_error("the job's own throw");
+    };
+    job.done = [&] { ++dones; };
+    REQUIRE(link.runPaused(std::move(job)));
+    REQUIRE(waitUntil([&] { return dones.load() == 1; }));
+    // It ran: being told afterwards that the link went down before it could would overwrite what it recorded.
+    CHECK(runs.load() == 1);
+    CHECK(unrun.load() == 0);
+    CHECK_FALSE(link.jobPending());
+    CHECK_FALSE(link.isConnected());
+    CHECK(link.lastError() == "serial write failed (N8 unplugged?): the job's own throw");
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));  // the thread is gone: nothing runs it again
+    CHECK(runs.load() == 1);
+    CHECK(unrun.load() == 0);
+    CHECK(dones.load() == 1);
 }
 
 TEST_CASE("a restore whose write fails says the battery file is replaced and incomplete, and closes it; a failed read "

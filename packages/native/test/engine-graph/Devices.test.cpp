@@ -375,9 +375,9 @@ TEST_CASE("a handover to a new node never leaves the cart link with no holder", 
     CHECK(cart.holders == 1);
     REQUIRE(e.setGraph(probeDocumentAs("cart-b")).ok);
     CHECK(cart.acquires == 2);
-    CHECK(cart.releases <= 1);
+    CHECK(cart.releases == 1);  // with no audio thread the old plan is reclaimed at the publish: its node released
     CHECK(cart.holders == 1);
-    CHECK(cart.minHolders >= 1);
+    CHECK(cart.minHolders >= 1);  // ... after the new one acquired, so that release left a holder
     block(e);
     CHECK(script.rate == kRate);  // the new node runs on the handle it took
 
