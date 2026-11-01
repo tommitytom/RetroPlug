@@ -578,8 +578,8 @@ struct ProtocolRig {
     }
 
     // One block: what the host staged, each Game Boy's MI.OUT a byte a message at its frame as its serialOut carries
-    // it, then the block as the engine runs it (the host outputs cleared first, as the engine clears them), and every
-    // output recorded.
+    // it, then the block as the engine runs it (the rig's own records are cleared first, since it reads them per
+    // block), and every output recorded.
     void block(const BlockIn& in) {
         stagedMidi = in.midi;
         // The device's link carries the session's traffic in, and what the session writes reaches it through the

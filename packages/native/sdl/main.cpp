@@ -269,9 +269,9 @@ struct AppState {
         svc.host.configDir()};
 
     // The device links the graph's hardware nodes bind (rp.host.devices/1): the cart and the surface this host owns.
-    // svc (the engine) is declared above them (n8Host and launchpadHost read its config dir), so it is destroyed LAST,
-    // after both links. The destructor below reclaims the plans first, while every member is still alive: a node may
-    // use its handle in destroy, and it must reach a live link. The engine has no plan left to destroy by then.
+    // svc (the engine) is declared above them (n8Host and launchpadHost read its config dir), so it is destroyed after
+    // both links. The destructor below reclaims the plans first, while every member is still alive: a node may use its
+    // handle in destroy, and it must reach a live link. The engine has no plan left to destroy by then.
     retroplug::N8CartLink           n8CartLink{n8Host};
     retroplug::LaunchpadSurfaceLink launchpadSurfaceLink{launchpadHost.link()};
 

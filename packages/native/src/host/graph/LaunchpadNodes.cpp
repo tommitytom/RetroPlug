@@ -61,7 +61,7 @@ struct SurfaceIn : SurfaceNode {
     // One device, one link: the planner refuses a second node of this type in a plan.
     static constexpr bool unique = true;
 
-    // Named rather than spelled inline so the two ports below declare flush, as rp.host.midi-in's does.
+    // Named rather than spelled inline, so the two ports below line up.
     using InQueue = rp::events_out::sized<rp::capacity{.messages = kSurfaceInMessages, .bytes = kSurfaceInBytes}>;
     struct {
         InQueue         in;

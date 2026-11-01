@@ -36,7 +36,6 @@ namespace rp::host::test {
 struct HostCall {
     std::uint32_t             frame = 0;
     std::vector<std::uint8_t> data;
-    bool                      flush = false;
 };
 
 // One message a node appended to the host MIDI out, as the system it names.
@@ -198,7 +197,7 @@ struct NodeRig {
         static_cast<NodeRig*>(ctx)->midiOut.push_back({system, frame, bytesOf(data, size)});
     }
     static void recordTrace(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size) {
-        static_cast<NodeRig*>(ctx)->traced.push_back({frame, bytesOf(data, size), false});
+        static_cast<NodeRig*>(ctx)->traced.push_back({frame, bytesOf(data, size)});
     }
     static CartLink* acquireCart(void* ctx, const char* name) {
         return static_cast<NodeRig*>(ctx)->devices.acquireCart(name);

@@ -6,10 +6,10 @@
 // nodes rather than one because a session is fed by the device and feeds it: one node would be a cycle the planner
 // refuses, and breaking it on a feedback wire would deliver the LED stream a block late.
 //
-// The link here is stage 1's fake: what it was scripted to send, what a node handed it, and the nodes holding it.
-// ProtocolNodes.test.cpp holds the session behind these nodes to its recorded digests; these cases hold the nodes
-// themselves, their acquire and release, the missing device, the uniqueness rule the types declare, and a warmed
-// block's allocation count.
+// The link here is the [devices] suite's fake: what it was scripted to send, what a node handed it, and the nodes
+// holding it. ProtocolNodes.test.cpp holds the session behind these nodes to its recorded digests; these cases hold
+// the nodes themselves, their acquire and release, the missing device, the uniqueness rule the types declare, and a
+// warmed block's allocation count.
 //
 // Run via `pnpm test:plugin engine-graph`, or `build/bin/retroplug-engine-graph-test "[launchpad]"`.
 

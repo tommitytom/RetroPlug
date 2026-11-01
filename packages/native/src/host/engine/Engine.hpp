@@ -381,8 +381,8 @@ private:
     static const void* graphInterface(void* ctx, const char* id);
     static void onHostCommand(void* ctx, const rp::graph::HostCommand& cmd, const void* hostData, bool discard);
 
-    // --- the per-system commands, applied by applyCommand to the core its table names (false, or nothing,
-    // when it names none) ---
+    // --- the staged and per-system commands: stageNodeMidi by the id a document gives a node, the rest applied by
+    // applyCommand to the core its table names (false, or nothing, when it names none) ---
     // Hand `len` staged bytes to the node the plan running at this point of the drain places under `nodeId`, through
     // the rp.stage/1 interface the node answers (a system node hands them to its core's ingress, a device node to its
     // device). See DspCommand::stageNodeMidi: the id is the document's, so the engine reads no node's type. [audio]

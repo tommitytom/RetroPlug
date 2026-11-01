@@ -406,6 +406,8 @@ struct SystemNode {
     bool stageMessage(const std::uint8_t* data, std::size_t size) {
         if (core == nullptr || data == nullptr || size == 0) return false;
         if (core->hasCoreBytesIn()) {
+            // flush=false: a flush DISCARDS whatever the device still holds, which for the N8 FIFO is the performance
+            // queued behind this. A settings message is not a barrier; it joins the stream.
             core->pushCoreBytes(0, data, size, false);
             return true;
         }

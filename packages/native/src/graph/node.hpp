@@ -1045,7 +1045,9 @@ template <class T> constexpr const char* versionOf() { if constexpr (requires { 
 template <class T> constexpr bool heapOf() { if constexpr (requires { T::heap; }) return T::heap; else return false; }
 template <class T> constexpr bool threadsOf() { if constexpr (requires { T::threads; }) return T::threads; else return false; }
 // At most one node of the type in a plan (the planner refuses a second): a type that binds a host-owned device sets it.
-template <class T> constexpr bool uniqueOf() { if constexpr (requires { T::unique; }) return T::unique; else return false; }
+template <class T> constexpr bool uniqueOf() {
+    if constexpr (requires { T::unique; }) return T::unique; else return false;
+}
 template <class T> constexpr std::uint32_t typeFlags() {
     std::uint32_t flags = 0;
     if constexpr (statelessPrepareOf<T>()) flags |= RP_TYPE_STATELESS_PREPARE;

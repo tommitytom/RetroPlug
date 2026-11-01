@@ -419,7 +419,8 @@ function checkMetadata<S>(def: NodeDefinition<S>): void {
     if (v !== undefined && typeof v !== "boolean") throw new Error(`node type ${q(def.id)}: requires.${key} must be true or false`);
   }
   // Read by the C++ planner as given, so a false would be a rule in a form it does not read.
-  if (def.unique !== undefined && def.unique !== true) throw new Error(`node type ${q(def.id)}: unique is true or absent`);
+  if (def.unique !== undefined && def.unique !== true)
+    throw new Error(`node type ${q(def.id)}: unique is true or absent`);
   // Read by the script host as given, so a false would be a promise in a form it does not read.
   for (const key of ["reshapes", "faultOnThrow"] as const)
     if (def[key] !== undefined && def[key] !== true) throw new Error(`node type ${q(def.id)}: ${key} is true or absent`);
