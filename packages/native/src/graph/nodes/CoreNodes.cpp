@@ -100,12 +100,6 @@ std::optional<std::string> checkCount(std::uint32_t n, std::string_view what) {
     return std::nullopt;
 }
 
-std::optional<std::string> checkChannels(std::uint64_t n, std::string_view what) {
-    if (n < 1 || n > kMaxChannels)
-        return std::string(what) + " must be between 1 and " + std::to_string(kMaxChannels) + " channels";
-    return std::nullopt;
-}
-
 // A list of per-port channel counts: 1..kMaxPorts ports of at least one channel, kMaxChannels in all.
 std::optional<std::string> checkChannelList(const std::vector<std::uint32_t>& counts, std::string_view what) {
     const auto ports = static_cast<std::uint32_t>(std::min<std::size_t>(counts.size(), UINT32_MAX));

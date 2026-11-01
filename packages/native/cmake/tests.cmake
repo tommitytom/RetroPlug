@@ -263,8 +263,11 @@ retroplug_add_test_binary(
              test/graph/QueueCapacity.test.cpp
              test/graph/PlannerBench.test.cpp         # hidden: run with "[bench]"
              test/graph/Dsp.test.cpp                  # the rp::dsp kernels: streaming, no allocation, the kit's arithmetic
+             test/graph/DspNodes.test.cpp             # the rp.dsp nodes, through real plans, against those kernels
     LIBS     retroplug-graph
-             retroplug-dsp-kernels                     # core-free: the standard library and r8brain
+             retroplug-dsp-nodes                      # the rp.dsp package under test
+             retroplug-dsp-kernels                    # core-free: the standard library
+             retroplug-dsp-resample                   # Dsp.test.cpp's resampler
              r8brain                                   # Dsp.test.cpp's reference copy of the kit path's resample
              Threads::Threads                          # SwapStress runs a real audio thread
     DEFS     RP_GRAPH_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/graph/golden")

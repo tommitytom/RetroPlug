@@ -37,25 +37,36 @@ endif()
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/test-binary.cmake)
 
 # --- retroplug-dsp-kernels: the DSP the kit compilers run, as block-streaming kernels (src/dsp/,
-# docs/modular-graph-phase-d1-design.md section 4): gain and peak, the RBJ biquads, dither / quantise, and the
-# r8brain resampler. Core-free on purpose: it links the C++ standard library and, for the resampler alone,
-# r8brain, so retroplug-graph-test and the rp.dsp node package can use it with no core, txiki or backend.
-# (Not `retroplug-dsp`: dpf_add_plugin(retroplug) already names the plugin's own DSP library that.) r8brain is
-# PRIVATE because no header here includes it (Resample.hpp holds it behind a pointer); a static library still
-# hands it to whatever links this one.
-# Threads is found before the target because the resampler object alone brings pthreads and RTTI through r8brain: its
-# filter cache is a std::mutex and its resampler classes are virtual. On a libc that does not fold pthreads into libc
-# this library would otherwise fail to link for a consumer that links nothing else thread-related. It is also why a
-# Pico build wants a source list without Resample.cpp.
-find_package(Threads REQUIRED)
+# docs/modular-graph-phase-d1-design.md section 4): gain and peak, the RBJ biquads, and dither / quantise. Core-free
+# on purpose: it links the C++ standard library and nothing else, so retroplug-graph-test and the rp.dsp node package
+# can use it with no core, txiki, backend or r8brain. (Not `retroplug-dsp`: dpf_add_plugin(retroplug) already names
+# the plugin's own DSP library that.)
+#
+# The resampler is its own target on purpose, because its kernel is the one that is not freestanding: r8brain brings
+# the heap, pthreads (its filter cache is a std::mutex) and RTTI (its resamplers are virtual). A build that has no use
+# for it - the Pico's, which runs rp.dsp's gain / biquad / dither alone - omits the target and never sees any of that,
+# and the rp.dsp package's resample node, which is the only node that needs it, is a target of its own for the same
+# reason.
 add_library(retroplug-dsp-kernels STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Gain.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Biquad.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Dither.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Resample.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Dither.cpp)
 target_include_directories(retroplug-dsp-kernels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(retroplug-dsp-kernels PRIVATE r8brain Threads::Threads)
 set_target_properties(retroplug-dsp-kernels PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON)   # linked into the plugin .so through retroplug-core
+
+# Threads: r8brain's filter cache is a std::mutex, efsw-static needs pthreads on Linux (its CMake links it to the
+# shared lib only), and the Launchpad scan thread and N8Link's serial thread do too. Found once, for this directory.
+find_package(Threads REQUIRED)
+add_library(retroplug-dsp-resample STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Resample.cpp)
+target_include_directories(retroplug-dsp-resample PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# r8brain is PRIVATE because no header here includes it (Resample.hpp holds it behind a pointer); a static library
+# still hands it to whatever links this one.
+target_link_libraries(retroplug-dsp-resample PRIVATE r8brain Threads::Threads)
+set_target_properties(retroplug-dsp-resample PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     POSITION_INDEPENDENT_CODE ON)   # linked into the plugin .so through retroplug-core
@@ -121,7 +132,8 @@ target_link_libraries(retroplug-core PUBLIC
     sameboy
     mesen
     rpcpp     # transitively pulls reflectcpp
-    retroplug-dsp-kernels  # the kit path's gain, biquad, dither and r8brain resample (src/dsp/)
+    retroplug-dsp-kernels  # the kit path's gain, biquad and dither (src/dsp/)
+    retroplug-dsp-resample # the kit path's r8brain resample
     enkiTS    # used by KitCompiler for per-sample parallel compile
     miniaudio # header-only audio decoder used by SampleCache
     miniz     # used by projectConfigToZip for --save-rplg
@@ -200,13 +212,10 @@ target_include_directories(retroplug-backend PUBLIC
     #  miniz header dir, arrive PUBLIC from retroplug-core above.)
 )
 
-find_package(Threads REQUIRED)  # efsw-static needs pthreads on Linux (its CMake links it to the shared lib only);
-                                # also the Launchpad scan thread and N8Link's serial thread, below.
-
-
 target_link_libraries(retroplug-backend PUBLIC
     retroplug-core      # SystemBase + SameBoy/Mesen; PUBLIC-brings rpcpp + miniz
     retroplug-graph     # the graph executor, planner and GraphHost the engine runs on
+    retroplug-dsp-nodes # the rp.dsp package (gain, biquad, dither), which the engine registers
     tjs                 # txiki.js/QuickJS runtime (transitively brings qjs + libuv)
     efsw-static         # NativeFileWatcher's filesystem watcher (PUBLIC-brings efsw/efsw.hpp include dir)
     Threads::Threads

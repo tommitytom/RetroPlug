@@ -38,7 +38,7 @@ if(MSVC)
     set(_rp_werror_targets
         retroplug-core retroplug-backend retroplug-host retroplug-cli retroplug-sdl
         retroplug retroplug-dsp retroplug-ui
-        retroplug-graph-exec retroplug-graph retroplug-dsp-kernels)
+        retroplug-graph-exec retroplug-graph retroplug-dsp-kernels retroplug-dsp-resample retroplug-dsp-nodes)
     foreach(_t IN LISTS _rp_werror_targets)
         if(TARGET ${_t})
             target_compile_options(${_t} PRIVATE ${_rp_warn_flags})

@@ -561,6 +561,12 @@ const ParamDesc* findParam(const Layout& layout, std::string_view id) {
     return nullptr;
 }
 
+std::optional<std::string> checkChannels(std::uint64_t n, std::string_view what) {
+    if (n < 1 || n > kMaxChannels)
+        return std::string(what) + " must be between 1 and " + std::to_string(kMaxChannels) + " channels";
+    return std::nullopt;
+}
+
 std::optional<std::string> checkCapacity(const PortDesc& port) {
     const QueueCapacity& c = port.capacity;
     if (!c.messages && !c.bytes) return std::nullopt;

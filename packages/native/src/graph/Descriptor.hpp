@@ -105,6 +105,10 @@ std::string_view kindName(PortKind kind);
 // The most channels one audio port carries; the planner refuses a port that resolves to more.
 constexpr std::uint32_t kMaxChannels = 64;
 
+// Why a channel count outside 1..kMaxChannels cannot be used, or nullopt. `what` names the thing in the message ("a
+// delay", "inputs together"), which is the part of a settings refusal a document's author reads.
+std::optional<std::string> checkChannels(std::uint64_t n, std::string_view what);
+
 // Why a port's declared capacity cannot be used (it is on a port that is not events or bytes, or on an input, or a
 // part lies outside 1 to its kMaxQueue*), or nullopt. The parser refuses the same, in the same words; the C++
 // authoring layer asks it of every layout it builds, so a capacity adjust_layout sets from settings is checked too.

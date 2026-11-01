@@ -27,6 +27,7 @@
 #include "graph/HostNodes.hpp"
 #include "graph/Queue.hpp"
 #include "graph/nodes/CoreNodes.hpp"
+#include "graph/nodes/DspNodes.hpp"
 #include "host/dsp/ScriptCompiler.hpp"
 #include "host/devices/DeviceRegistry.hpp"
 #include "host/engine/DspCommand.hpp"
@@ -192,10 +193,11 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
     if (!graph_->script.load(scriptBundle, &why))
         std::fprintf(stderr, "[engine] the script-node bundle did not load (%s); no script node type is registered\n", why.c_str());
     // The routing, the controller and the protocol nodes are the script package's (src/script/nodes/).
-    for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), rp::host::sameboyPackage(),
-                                rp::host::mesenPackage(), rp::host::hostIoPackage(), rp::host::n8Package(),
-                                rp::host::launchpadPackage()})
-        graph_->registry.addPackage(p);
+    for (const rp_package* p : {rp::graph::corePackage(), rp::graph::dspPackage(), rp::graph::hostPackage(),
+                                rp::host::sameboyPackage(), rp::host::mesenPackage(), rp::host::hostIoPackage(),
+                                rp::host::n8Package(), rp::host::launchpadPackage()})
+        if (!graph_->registry.addPackage(p, &why))
+            std::fprintf(stderr, "[engine] a node package was refused (%s); its types are not registered\n", why.c_str());
     if (!graph_->registry.addPackage(graph_->script.package(), &why))
         std::fprintf(stderr, "[engine] the script node types were refused (%s); none is registered\n", why.c_str());
     // rp.host.systems/1: a system node that builds its own core, on the control thread, inside the setGraph that

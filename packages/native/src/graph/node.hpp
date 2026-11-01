@@ -36,7 +36,11 @@
 //                                                         commit writes, so unlike needs_rebuild it allows
 //                                                         stateless_prepare. Never both on one type
 //   static std::size_t extra_memory(const Settings&);     host-supplied tail memory (max_align_t aligned)
-//   void attach(std::span<std::byte>) noexcept;           receives it, at create
+//   void attach(std::span<std::byte>) noexcept;           receives it, at create. The objects a node builds
+//                                                         there are never destroyed - nothing runs a destructor
+//                                                         over tail memory - so a node whose state owns anything
+//                                                         (an allocation, a handle) keeps it in a member, built
+//                                                         in activate, which destroy does free
 //   void on_settings(const Settings&) noexcept;           at create (control) and each commit (audio): copy,
 //                                                         never allocate
 //   void bind_host(const rp_host*) noexcept;              at create: host services
