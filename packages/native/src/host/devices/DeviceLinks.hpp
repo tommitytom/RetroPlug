@@ -101,16 +101,17 @@ public:
 
     // [audio] Copy the messages the device sent since the last drain into `out` and answer how many: min(available,
     // capacity), and fewer only when nothing is left, so a caller draining in batches can stop on a short answer.
-    // Allocation-free and free-free: both ends keep every message in a fixed slot of their own, and one the caller has
-    // no room for stays queued rather than being dropped or freed here.
+    // It allocates and frees nothing: both ends keep every message in a fixed slot of their own, and one the caller
+    // has no room for stays queued rather than being dropped or freed here.
     virtual std::size_t drainInput(DeviceMessage* out, std::size_t capacity) = 0;
     // [audio] Queue one message for the device (an LED frame, a mode change). Lock-free, never blocks; drops (and
     // counts in dropped()) when nothing is connected, the message is wider than kMaxDeviceMessage, or the ring is full.
     virtual void pushOutput(const std::uint8_t* data, std::size_t size) = 0;
     // [any] Whether the device is attached.
     virtual bool connected() const = 0;
-    // [any] The pushes that lost their bytes: the link was down, or its send ring was full. As CartLink's, so a node
-    // reads the LED traffic that never reached the device even while an old path pushes at the same device.
+    // [any] The pushes that lost their bytes: the link was down, or its send ring was full. As CartLink's, the count
+    // is the link's own, so it covers what any path pushing at the same device lost. No node reads it: the surface's
+    // reachable loss is counted where the host shows it (LaunchpadLink's status line).
     virtual std::uint64_t dropped() const = 0;
 
     // As CartLink's: a node keeps a handle it holds across a reactivate, and releases it once in destroy.
