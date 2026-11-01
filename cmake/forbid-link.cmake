@@ -1,11 +1,11 @@
 # --- retroplug_forbid_linking(<target>): no target in the tree may link a vendored target we compile ourselves --------
 #
 # Included by the root CMakeLists.txt and called after every target exists. RetroPlug builds r8brain's one non-header
-# source (deps/r8brain/r8bbase.cpp) inside retroplug-dsp-resample, on its throwing allocator
-# (packages/native/src/dsp/R8bAllocator.hpp, R8bBase.cpp): that file defines the filter, FFT and frac-bank caches every
-# r8brain class shares, so building it twice would put two definitions of each class in the program and let the linker
-# keep whichever copy it reaches first, silently, with no diagnostic. The dep's own target stays in the tree for its
-# include directory; linking it is a configure error here rather than an ODR hazard at run time.
+# source (deps/r8brain/r8bbase.cpp) in retroplug-r8brain-base, on its throwing allocator (packages/native/src/dsp/
+# R8bAllocator.hpp, R8bBase.cpp): that file defines the filter, FFT and frac-bank caches every r8brain class shares, so
+# building it twice would put two definitions of each class in the program and let the linker keep whichever copy it
+# reaches first, silently, with no diagnostic. The dep's own target stays in the tree for its include directory; linking
+# it is a configure error here rather than an ODR hazard at run time.
 #
 # A CMake target that does not exist cannot be linked by accident at all, so dropping the vendored target would enforce
 # the same thing - but it would also drop its include interface and the one place that says the dep is still there for

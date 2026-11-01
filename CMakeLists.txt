@@ -277,9 +277,9 @@ add_subdirectory(deps/mesen)
 
 # --- r8brain-free: high-quality SRC for LSDJ kit compilation.
 # Also used for non-44.1 kHz host-rate sync accuracy.
-# EXCLUDE_FROM_ALL: nothing links this target any more. retroplug-dsp-resample compiles its one source itself, on a
-# throwing allocator (packages/native/src/dsp/R8bBase.cpp), so the archive would only be dead weight; the target stays
-# for the include directory and so that retroplug_forbid_linking() below has something to refuse.
+# EXCLUDE_FROM_ALL: nothing links this target any more. retroplug-r8brain-base compiles its one source on a throwing
+# allocator (packages/native/src/dsp/R8bBase.cpp), so the archive would only be dead weight; the target stays for the
+# include directory and so that retroplug_forbid_linking() below has something to refuse.
 add_subdirectory(deps/r8brain)
 retroplug_silence_dep_warnings(r8brain)
 set_target_properties(r8brain PROPERTIES EXCLUDE_FROM_ALL ON)

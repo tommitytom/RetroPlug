@@ -49,6 +49,9 @@ if(MSVC)
         endif()
     endforeach()
 
+    # retroplug-r8brain-base is deliberately NOT on that list: its one source is vendored r8brain code (R8bBase.cpp
+    # includes r8bbase.cpp), so it is built at the compiler's default level, the treatment the deps themselves get.
+
     # Two VENDORED SOURCES are compiled straight into our targets (rather than linked from a dep
     # library), so the target's /W4 lands on them. They are not ours to fix, but list the numbers
     # rather than blanket-disabling: a NEW warning class in either still fails the build loudly.
