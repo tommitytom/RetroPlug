@@ -385,7 +385,7 @@ void updateCoefficients(const FilterEffect& effect, FilterState& s) {
     }
 }
 
-/** The old whole-buffer pass: the coefficients once, then the transposed loop, the feedback taken before the clamp. */
+/** The old whole-buffer pass: the coefficients once, then the direct form I loop, its feedback before the clamp. */
 std::vector<float> referenceBiquad(const FilterEffect& effect, float sampleRate, std::vector<float> target) {
     FilterState s;
     s.sampleRate = sampleRate;

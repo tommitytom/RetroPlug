@@ -1,8 +1,7 @@
 #pragma once
 
-// Neither <algorithm> nor <cmath> has a user in this header any more: the gain fold and the filter set-up moved into
-// src/dsp/, and kPi's only remaining caller is test/audio/Dither.test.cpp. They stay because host/rpc/BackendTypes.hpp
-// re-exports this header across the plugin's DSP surface, and a transitive include is not worth removing blind.
+// <algorithm> and <cmath> are kept for whoever reaches them through this header: host/rpc/BackendTypes.hpp re-exports
+// it across the plugin's DSP surface, and kPi's only caller is test/audio/Dither.test.cpp.
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -16,10 +15,11 @@
 //
 // Each effect is a plain-data struct that round-trips via reflectcpp; the
 // `LsdjEffect` TaggedUnion below is the serialized effect descriptor, which the
-// compileKit / compileDmc RPCs decode. The per-effect `processEffect(...)`
+// compileKit / compileDmc RPCs decode. The gain and filter `processEffect(...)`
 // overloads run in `KitUtil::compileSample` and `RisaDmcCodec::encode` against a
-// float buffer in [-1, 1] (or, for dither, expect [-1, 1] and output samples
-// pre-quantized into [0, 2^bitDepth - 1]). They are whole-buffer loops over the
+// float buffer in [-1, 1]; the dither one is the 4-bit codes as floats, which
+// `KitUtil::compileSample` gets from `quantise` instead, so its only caller is
+// test/audio/Dither.test.cpp. All of them are whole-buffer loops over the
 // rp::dsp kernels (src/dsp/), which hold the arithmetic; this file only maps an
 // effect's fields onto a kernel's.
 

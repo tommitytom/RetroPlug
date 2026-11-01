@@ -3,18 +3,24 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <limits>
 
 #include "util/Hash.hpp"
 
 namespace rp::dsp {
+
+// The hash and its big-endian branch both read a float as IEEE-754 binary32, which is what makes a seed a function of
+// the samples and not of a representation a target happens to pick. Fail the build rather than re-seed every kit.
+static_assert(sizeof(float) == sizeof(std::uint32_t) && std::numeric_limits<float>::is_iec559,
+              "the dither seed hashes a float's binary32 bytes");
 
 namespace {
 
 // One salt per TPDF algorithm: FNV-1a 64 of the algorithm's name, folded to 32 bits. A stable constant rather than
 // the enum's ordinal, so the order `DitherAlgorithm` (or the kit effect's `DitherType`) declares its algorithms in
 // cannot re-seed a kit that uses one of them.
-constexpr std::uint32_t kHighPassTPDFSalt = 0x8064fcc5u; // fnv1a64("HighPassTPDF")
-constexpr std::uint32_t kShapedTPDFSalt   = 0x262f0818u; // fnv1a64("ShapedTPDF")
+constexpr std::uint32_t kHighPassTPDFSalt = 0x8064fcc5u; // fold(fnv1a64("HighPassTPDF"))
+constexpr std::uint32_t kShapedTPDFSalt   = 0x262f0818u; // fold(fnv1a64("ShapedTPDF"))
 
 // A uniform in [0, 1) from raw `mt19937` output, 24 bits at a time: `(x >> 8) * 2^-24`. The standard specifies
 // mt19937's sequence, so this draw is the same on every host, where `std::uniform_real_distribution`'s is not (the

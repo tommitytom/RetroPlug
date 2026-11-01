@@ -16,7 +16,7 @@ background renders onto that driver.
 - **The DSP is the kit path's, whole-buffer, in `retroplug-core`.** `lsdj/Effects` holds three effects in one tagged
   union (`GainEffect`, `FilterEffect`, `DitherEffect`) that each process a whole `std::vector<float>` in place:
   - gain: an optional peak normalise over the whole buffer, then a linear multiply;
-  - filter: eight RBJ biquad types in `float`, a transposed direct-form loop with per-call state and its output clamped
+  - filter: eight RBJ biquad types in `float`, a direct form I loop with per-call state and its output clamped
     to [-1, 1];
   - dither: five algorithms quantising to 4 bits, out as floats in [0, 15] for the nibble packer.
 

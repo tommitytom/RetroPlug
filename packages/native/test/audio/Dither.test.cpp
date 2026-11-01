@@ -2,7 +2,7 @@
 //
 // `KitUtil::compileSample` hands the dither the WINDOWED, POST-EFFECT, RESAMPLED buffer at the Game Boy kit rate
 // (11468 Hz), before `frameAlign` trims it to whole 32-sample frames, so that is the input the seed is drawn from.
-// Both cases here call the effect directly on a buffer at that rate, the way the kit path does, and hold what the
+// Every case here calls the effect directly on a buffer at that rate, the way the kit path does, and holds what the
 // seed has to give: a compile gives the same bytes for the same input, two different samples do not share one noise
 // sequence (which a single fixed seed would), and the noise is a specified function of the input and the algorithm,
 // so it is the same on any host whose float arithmetic is IEEE-754 - the draw comes from raw `mt19937` output and the
@@ -105,6 +105,8 @@ TEST_CASE("each TPDF dither's noise from a fixed input is those exact codes", "[
     const auto sp = dithered(silence, rp::lsdj::DitherType::ShapedTPDF);
     CHECK(firstDifference(hp, highPass) == -1);
     CHECK(firstDifference(sp, shaped) == -1);
-    // The salt's whole purpose: the two algorithms over one buffer must not start from one word.
+    // Over one buffer the two algorithms do not give the same codes. This alone does not prove the salt (their shaping
+    // and error terms differ too); the exact codes above are what pin each algorithm's salt, since either constant
+    // moving changes them.
     CHECK(firstDifference(hp, sp) != -1);
 }

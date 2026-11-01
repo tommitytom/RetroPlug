@@ -3,8 +3,8 @@
 // The biquad kernel: the RBJ cookbook's eight filters, in `float`.
 //
 // The arithmetic is the kit path's to the bit (a kit bank's bytes depend on it): each coefficient set is computed in
-// `float` with a `float` pi and normalised to a0 = 1 at setup, the loop is a transposed direct form with its feedback
-// taken BEFORE the output clamp, and the output is clamped to [-1, 1].
+// `float` with a `float` pi and normalised to a0 = 1 at setup, the loop is direct form I (two input and two output
+// delays) with its feedback taken BEFORE the output clamp, and the output is clamped to [-1, 1].
 
 #include <cstddef>
 #include <cstdint>
