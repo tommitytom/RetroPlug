@@ -7,13 +7,15 @@
 // the real decode path (miniaudio) as well as the window, the effects, the r8brain resample and the pack. Nothing
 // here reads a fixture: the matrix runs wherever the binary does.
 //
-// The matrix is fixed. Sources: two sine frequencies, a chirp, seeded noise (`std::mt19937`, a fixed seed) and
-// silence, each at 22.05, 44.1 and 48 kHz, plus a 600-frame source shorter than one resampler chunk. LSDj
+// The matrix is fixed. Sources: two sine frequencies, a quiet sine, a chirp, seeded noise (`std::mt19937`, a fixed
+// seed) and silence, each at 22.05, 44.1 and 48 kHz, plus a 600-frame source shorter than one resampler chunk. LSDj
 // cases: no effect, a non-unity gain with normalise off, the same gain with normalise on, that normalise over a
-// silent source, each of the eight filter types, each of the five dither algorithms, rotate on and off, one chain of
-// filter then gain then dither, the short source on its own, and one bank carrying a second slot beside the first.
-// risa cases: the DMC codec at five rate indices, with and without a pre-effect, with normalise off and with loop set,
-// a normalise of a silent source, the short source on its own, and one bank of two slots. One of the two-slot cases
+// silent source, a negative gain, a normalise of the quiet source (whose `gain / peak` lands far above the gain
+// node's range) at every rate and through a dither, each of the eight filter types, two filter specs outside the
+// biquad node's ranges, each of the five dither algorithms, rotate on and off, one chain of filter then gain then
+// dither, the short source on its own, and one bank carrying a second slot beside the first. risa cases: the DMC codec
+// at five rate indices, with and without a pre-effect, with normalise off and with loop set, a normalise of a silent
+// source, the short source on its own, and one bank of two slots. One of the two-slot cases
 // names its bank with a lowercase, over-long string, so `writeString`'s uppercase and truncation are in the baseline
 // as well as the assembler's offset accumulation for every slot but the first.
 //
@@ -97,7 +99,7 @@ bool envFlag(const char* name) {
 /** The source signals. Every one is used at every rate below (the short one only at 44.1 kHz, a rate whose resampler
  *  chunk it is shorter than), so a case that changed only one rate's source would not go untested. Silence is a
  *  source of its own because it is the only input that reaches the effects' "no peak to normalise by" branch. */
-enum class Signal { Sine440, Sine1200, Chirp, Noise, Silence, Short };
+enum class Signal { Sine440, Sine1200, Quiet, Chirp, Noise, Silence, Short };
 
 struct SignalDesc {
     Signal      signal;
@@ -108,6 +110,7 @@ struct SignalDesc {
 constexpr SignalDesc kSignals[] = {
     {Signal::Sine440, "sine440", 8192},
     {Signal::Sine1200, "sine1200", 8192},
+    {Signal::Quiet, "quiet", 8192},
     {Signal::Chirp, "chirp", 8192},
     {Signal::Noise, "noise", 8192},
     {Signal::Silence, "silence", 8192},
@@ -163,6 +166,14 @@ std::vector<float> signalSamples(Signal signal, std::uint32_t rate) {
     switch (signal) {
     case Signal::Sine440:  return sine(440.0, rate, frames);
     case Signal::Sine1200: return sine(1200.0, rate, frames);
+    // A 440 Hz sine at 0.8 scaled down by 16 (an exact power of two, so the samples are the sine's times 0.0625): a
+    // peak of about 0.05, roughly 26 dB below full scale. A kit normalising it to 0.37 asks for a gain near 7.4, well
+    // past `rp.dsp.gain`'s 0 .. 4, which is what a quiet sample in an ordinary kit asks for.
+    case Signal::Quiet: {
+        std::vector<float> out = sine(440.0, rate, frames);
+        for (float& v : out) v *= 0.0625f;
+        return out;
+    }
     case Signal::Chirp:    return chirp(rate, frames);
     case Signal::Noise:    return noise(frames);
     case Signal::Silence:  return std::vector<float>(frames, 0.0f);
@@ -273,6 +284,17 @@ std::vector<KitCase> kitCases() {
         // A silent source is the only input that reaches `GainEffect`'s "maxAmp > 0" guard, the one division in the
         // effect: a non-silent source never takes that branch.
         {"lsdj/normalize-silence", KitCodec::Lsdj, Signal::Silence, 44100, {gainEffect(0.37f, true)}},
+        // The quiet source normalised: `gain / peak` is about 7.4, far above `rp.dsp.gain`'s 0 .. 4, so a graph node
+        // given the spec's gain would clamp it silently and compile a different bank. All three rates pin it through a
+        // different resampler pair, and the middle case dithers the result, so the over-range multiply reaches the
+        // seed and the quantiser as well as the multiply.
+        {"lsdj/normalize-quiet", KitCodec::Lsdj, Signal::Quiet, 22050, {gainEffect(0.37f, true)}},
+        {"lsdj/normalize-quiet-dither", KitCodec::Lsdj, Signal::Quiet, 44100,
+         {gainEffect(0.37f, true), ditherEffect(DitherType::HighPassTPDF)}},
+        {"lsdj/normalize-quiet-48000", KitCodec::Lsdj, Signal::Quiet, 48000, {gainEffect(0.25f, true)}},
+        // A negative gain is a phase flip: a legal kit spec and outside the gain node's range, where a clamp would keep
+        // the magnitude and lose the flip.
+        {"lsdj/gain-negative", KitCodec::Lsdj, Signal::Sine440, 44100, {gainEffect(-1.0f, false)}},
         {"lsdj/filter/low-pass", KitCodec::Lsdj, Signal::Sine440, 44100,
          {filterEffect(FilterType::LowPass, 2000.0f, 0.9f)}},
         {"lsdj/filter/high-pass", KitCodec::Lsdj, Signal::Sine440, 22050,
@@ -289,6 +311,13 @@ std::vector<KitCase> kitCases() {
          {filterEffect(FilterType::HighShelf, 3000.0f, 0.7f, 4.0f)}},
         {"lsdj/filter/all-pass", KitCodec::Lsdj, Signal::Noise, 48000,
          {filterEffect(FilterType::AllPass, 1500.0f, 1.2f)}},
+        // Filter specs the biquad node's ranges would clamp: 10 Hz is below its 20 Hz floor and a Q of 20 is past its
+        // 10, and a 30 dB shelf is past its +/-24 dB. Each is a legal `FilterEffect` today, so a graph compile that
+        // sent the spec through the params would silently filter a different spec.
+        {"lsdj/filter/high-pass-outside-range", KitCodec::Lsdj, Signal::Sine440, 44100,
+         {filterEffect(FilterType::HighPass, 10.0f, 20.0f)}},
+        {"lsdj/filter/high-shelf-outside-range", KitCodec::Lsdj, Signal::Noise, 22050,
+         {filterEffect(FilterType::HighShelf, 3000.0f, 0.7f, 30.0f)}},
         {"lsdj/dither/high-pass-tpdf", KitCodec::Lsdj, Signal::Sine1200, 22050,
          {ditherEffect(DitherType::HighPassTPDF)}},
         {"lsdj/dither/shaped-tpdf", KitCodec::Lsdj, Signal::Noise, 44100,
