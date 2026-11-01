@@ -54,16 +54,16 @@ struct ProbeScript {
     std::vector<CartPush>         cart;          // pushed on the next block, in order
     std::array<DeviceMessage, 16> drained{};     // what the last block drained from the surface
     std::size_t                   drainedCount = 0;
-    double                        rate         = 0.0;  // the rate the last block pushed the cart at
-    int                           volume       = -2;   // the expansion register to set, -2 to leave it alone
-    std::uint64_t                 cartDropped    = 0;  // the cart link's count of lost pushes, as the node reads it
-    std::uint64_t                 surfaceDropped = 0;  // the surface link's count, read the same way
+    double                        rate         = 0.0;      // the rate the last block pushed the cart at
+    int                           volume       = -2;       // the expansion register to set, -2 to leave it alone
+    std::uint64_t                 cartDropped    = 0;       // the cart link's lost pushes, as the node reads it
+    std::uint64_t                 surfaceDropped = 0;       // the surface link's count, read the same way
     bool                          cartConnected    = false;  // what the two handles answer, as the node reads them
     bool                          surfaceConnected = false;
-    const char*                   cartName     = rp::host::kCartDeviceName;     // what the node asks for
-    const char*                   surfaceName  = rp::host::kSurfaceDeviceName;  // what the node asks for
-    bool                          destroyed    = false;  // the node's destroy ran
-    std::uint64_t                 droppedAtDestroy = 0;  // a read of the cart's count from the destroy
+    const char*                   cartName         = rp::host::kCartDeviceName;     // what the node asks for
+    const char*                   surfaceName      = rp::host::kSurfaceDeviceName;  // what the node asks for
+    bool                          destroyed        = false;  // the node's destroy ran
+    std::uint64_t                 droppedAtDestroy = 0;      // a read of the cart's count from the destroy
 };
 ProbeScript script;
 
@@ -323,6 +323,7 @@ TEST_CASE("a host with no device still plans and runs the node, whose pushes go 
     REQUIRE(e.setGraph(probeDocument()).ok);
 
     script.cart = {{0, {0x90, 0x40, 0x7F}, false}, {7, {0x80, 0x40, 0x00}, false}};
+    script.volume = 42;  // through the fallback's setExpansionVolume too: a no-op, and no fault
     block(e);
     block(e);
     script.cart.clear();
