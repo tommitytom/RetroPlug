@@ -26,8 +26,10 @@ public:
     }
     void          pushOutput(const std::uint8_t* data, std::size_t size) override { link_.pushOutput(data, size); }
     bool          connected() const override { return link_.isConnected(); }
-    // Both counts the link keeps: a push the device was not there for went nowhere just as a full ring's did, and a
-    // node reads one number for "the device never got this".
+    // The link's two outbound counts (messagesDropped and messagesDetached): a push the device was not there for went
+    // nowhere just as a full ring's did, and a node reads one number for "the device never got this". The inbound loss
+    // (messagesInboundDropped) is what the device sent that the audio side missed, not a frame it never got, so the
+    // handle does not answer it.
     std::uint64_t dropped() const override { return link_.messagesDropped() + link_.messagesDetached(); }
 
 private:

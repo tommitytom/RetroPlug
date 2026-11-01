@@ -441,10 +441,11 @@ drives through `rp.host.devices/1`
 ([DeviceLinks.hpp](../packages/native/src/host/devices/DeviceLinks.hpp)): a `CartLink` for the cart, with a push per
 message (frame, bytes, the flush flag, the block's rate) that answers whether all of it reached the device, the link's
 connected state and drop count, the expansion-volume register and `submitJob` / `abandonJobs`; a `SurfaceLink` for the
-pad, with a drain into the node's own array, a push, the connected state and its drop count. A real surface link's
-`dropped()` is a push it lost while the device was attached; the paint a session pushed while nothing was connected
-and a message the device sent that its receive ring had no room for are counted apart, so the status line's `dropped`
-stays a frame the device is missing. A host installs its links with `Engine::setDeviceLinks` before its first plan (the
+pad, with a drain into the node's own array, a push, the connected state and its drop count. `LaunchpadLink` keeps the
+pushes it lost while the device was attached (`messagesDropped`) apart from the paint a session pushed while nothing
+was connected (`messagesDetached`) and a message the device sent that its receive ring held no slot for
+(`messagesInboundDropped`); the handle a node holds answers the first two, and the status line's `dropped` is the first.
+A host installs its links with `Engine::setDeviceLinks` before its first plan (the
 plugin passes its `N8CartLink` and no surface, the SDL standalone both, the test host a `HarnessSurfaceLink`, and the
 CLI, the Node addon and the render host neither), and a name it has no device for answers a handle that is never
 connected and that drops and counts everything, so a document plans and runs in every host. A node keeps its handle

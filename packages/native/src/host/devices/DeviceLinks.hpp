@@ -109,9 +109,12 @@ public:
     virtual void pushOutput(const std::uint8_t* data, std::size_t size) = 0;
     // [any] Whether the device is attached.
     virtual bool connected() const = 0;
-    // [any] The pushes that lost their bytes: the link was down, or its send ring was full. As CartLink's, the count
-    // is the link's own, so it covers what any path pushing at the same device lost. No node reads it: the surface's
-    // reachable loss is counted where the host shows it (LaunchpadLink's status line).
+    // [any] The pushes that lost their bytes: the device was detached, or its send ring was full. As CartLink's, the
+    // count is the link's own, so it covers what any path pushing at the same device lost. A real surface link answers
+    // the pushes it lost while attached and the paint sent while nothing was connected (LaunchpadLink's
+    // messagesDropped and messagesDetached), so a node reads one number for what the device never got; a message the
+    // device sent that its receive ring had no room for is counted apart (messagesInboundDropped), and this does not
+    // answer it.
     virtual std::uint64_t dropped() const = 0;
 
     // As CartLink's: a node keeps a handle it holds across a reactivate, and releases it once in destroy.

@@ -442,13 +442,13 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   allocation made when the link is built, and the drain still copies out of fixed slots and frees nothing. The same
   pass moved the standalone's plan teardown ahead of the surface's farewell, so a surface node's destroy reaches a
   link that is still open, as the plugin's already did (section 3).
-- **A detached Launchpad's paint inflated the status line's fault count** (stage 4). The link counts a push while
-  nothing is connected apart from a frame it lost while attached (a full send ring, an oversized message), and the
-  handle a node holds answers their sum; the status line keeps `dropped` for the frames the device is missing and names
-  the detached traffic as such, so one unplugged cable does not mark the device as faulting for the rest of the run.
-  A message the device sends that the receive ring had no room for is counted apart again (`messagesInboundDropped`),
-  since that is a press the audio side missed, not an LED frame the device never got; `dropped` therefore stays the
-  outbound-while-attached figure both the status line and the node read.
+- **A detached Launchpad's paint inflated the status line's fault count** (stage 4). `LaunchpadLink` keeps three counts
+  apart: `messagesDropped` is a push it lost while the device was attached (a full send ring, an oversized message),
+  `messagesDetached` is the paint a session pushed while nothing was connected, and `messagesInboundDropped` is a
+  message the device sent that the receive ring had no room for, since that is a press the audio side missed, not an
+  LED frame the device never got. The handle a node holds answers the first two; the status line's `dropped` is the
+  first and it names the detached traffic as `detached`, so one unplugged cable does not mark the device as faulting
+  for the rest of the run. The inbound loss is counted and shown nowhere.
 
 ### The suite, as built
 

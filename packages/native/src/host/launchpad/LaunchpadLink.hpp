@@ -98,7 +98,9 @@ public:
     // than a slot. What a session pushed while nothing was connected is counted apart (messagesDetached): the device
     // was never going to take it, and the session repaints, so it is no frame the surface is missing. A message the
     // device sent that the receive ring had no room for is counted apart too (messagesInboundDropped): that is a press
-    // the audio side missed, not a frame the device is missing, and the status line keeps the two apart.
+    // the audio side missed, not a frame the device is missing. The handle a node holds (LaunchpadSurfaceLink::dropped)
+    // answers the first two; the status line's `dropped` is messagesDropped alone, it shows messagesDetached as
+    // `detached`, and it shows the inbound loss nowhere.
     std::uint64_t messagesDropped() const { return dropped_.load(std::memory_order_relaxed); }
     std::uint64_t messagesDetached() const { return detached_.load(std::memory_order_relaxed); }
     std::uint64_t messagesInboundDropped() const { return inboundDropped_.load(std::memory_order_relaxed); }
