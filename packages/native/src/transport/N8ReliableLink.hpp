@@ -148,7 +148,7 @@ public:
     static constexpr std::int64_t kNever = std::numeric_limits<std::int64_t>::max();
 
 private:
-    // A frame's bytes are inline: a window of 48 frames is a fixed ~3 KiB however many messages a block carries.
+    // A frame's bytes are inline: a window of 48 frames is a fixed ~3.4 KiB however many messages a block carries.
     struct Frame {
         std::uint8_t seq;
         std::int64_t sentNs;                    // -1 = not on its way yet

@@ -1129,8 +1129,8 @@ TEST_CASE("a probe on a link that never goes quiet is refused for that, not as a
     std::string why;
     const auto t0 = Clock::now();
     CHECK_FALSE(rig.submit(battery("dump"), job, &why));
-    CHECK(why == "the reliable link never went quiet for the cart's config read: a running game is still acknowledging "
-                 "the stream");
+    CHECK(why == "the reliable link never went quiet for the cart's config read: the cart kept acknowledging the "
+                 "stream");
     CHECK(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t0).count() >= 900);  // its deadline
     CHECK(rig.cart.connected());  // nothing paused
     CHECK(rig.dev.count("file-") == 0);

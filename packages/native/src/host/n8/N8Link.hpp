@@ -92,7 +92,9 @@ public:
     // behind.
     void          wakeControl() { controlWanted_.store(true, std::memory_order_release); }
     // [any] Whether the serial thread's last turn was quiet for a read (see OnControl): what tells a probe that timed
-    // out on a link that kept acknowledging from one whose read never answered.
+    // out on a link that kept acknowledging from one whose read never answered. The last turn's answer, not the probe's
+    // whole second: a quiet turn with the probe pending always applies it, since runningMapper stores its answer before
+    // the generation is checked.
     bool          backChannelQuiet() const { return backChannelQuiet_.load(std::memory_order_relaxed); }
     // Hand the serial thread a job to run with streaming paused (see PausedJob). False, and nothing runs, while the
     // link is down or another job is pending. From the moment the thread takes it until it is done, isConnected()

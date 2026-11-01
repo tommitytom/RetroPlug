@@ -378,8 +378,8 @@ bool N8Host::submitCartJob(const rp::host::JobRequest& r, rp::host::Job& job, co
     const int mapper = probeMenu();
     if (mapper == kProbeLinkDown) return refuse("not connected");
     if (mapper == kProbeLinkBusy)
-        return refuse("the reliable link never went quiet for the cart's config read: a running game is still "
-                      "acknowledging the stream");
+        return refuse("the reliable link never went quiet for the cart's config read: the cart kept acknowledging the "
+                      "stream");
     if (mapper < 0) return refuse("the cart's config block did not answer");
     if (mapper != kMenuMapper) return refuse(dump || restore ? kBatteryAtGame : kUploadAtGame);
     if (!cartJob_.claim(job, owner)) return refuse("busy: the cart is running another job");

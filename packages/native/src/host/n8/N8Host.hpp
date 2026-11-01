@@ -134,10 +134,11 @@ public:
     // between MIDI chunks, the expansion volume's path, and refuses there: a job a running game will not have pauses
     // nothing, so the notes the block pushes meanwhile reach the cart. The read waits for a turn quiet for it
     // (N8Link::OnControl: nothing outstanding on the reliable link, or a cart silent for a while, as one at its menu
-    // is), so an ack for an outstanding frame cannot land inside it. Within a second: a link that keeps acknowledging
-    // the whole time is refused for that ("the reliable link never went quiet ..."), and a read that does not answer
-    // as such ("the cart's config block did not answer"); the job checks again at its first step, for a cart that
-    // changed in between.
+    // is), so an ack the cart owes for a frame it is answering now cannot land inside it (a cart silent past that
+    // bound is taken not to be answering at all, the risk the pause's drain already takes). Within a second: a link
+    // that keeps acknowledging the whole time is refused for that ("the reliable link never went quiet ..."), and a
+    // read that does not answer as such ("the cart's config block did not answer"); the job checks again at its first
+    // step, for a cart that changed in between.
     // [control], like abandonCartJobs: the node submitting is the job's owner, and a node leaving the plan abandons its
     // job, which fails at once (Removed) and stops at its next safe point.
     bool submitCartJob(const rp::host::JobRequest& request, rp::host::Job& job, const void* owner, std::string* error);
