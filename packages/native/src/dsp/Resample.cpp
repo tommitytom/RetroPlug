@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cassert>
 
-#include <CDSPResampler.h>
+#include "dsp/R8bAllocator.hpp"  // r8brain, with an allocation failure made an exception
 
 namespace rp::dsp {
 

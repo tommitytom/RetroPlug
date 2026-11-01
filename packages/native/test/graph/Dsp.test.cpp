@@ -13,7 +13,8 @@
 //   gives the codes test/audio/Dither.test.cpp pins through the kit effect. (inputSeed's big-endian half cannot be
 //   exercised on a little-endian host; the two halves are held to one value by construction, not by a case here.)
 // - Resample: the output stream is independent of how the input arrives (a source shorter than one chunk included),
-//   and equals a direct fixed-chunk feed of r8brain, written out here as a reference.
+//   and equals a direct fixed-chunk feed of r8brain, written out here as a reference; a failed allocation in `init`
+//   throws and leaves the resampler unbuilt.
 //
 // The kit baseline (test/audio/KitBaseline.test.cpp) holds the same kernels to whole kit banks' bytes.
 #include <catch2/catch_test_macros.hpp>
@@ -27,14 +28,14 @@
 #include <iterator>
 #include <random>
 #include <thread>
+#include <type_traits>
 #include <vector>
-
-#include <CDSPResampler.h>
 
 #include "CountingAllocator.hpp"
 #include "dsp/Biquad.hpp"
 #include "dsp/Dither.hpp"
 #include "dsp/Gain.hpp"
+#include "dsp/R8bAllocator.hpp"  // r8brain, for the reference resample below
 #include "dsp/Resample.hpp"
 
 namespace {
@@ -529,7 +530,9 @@ TEST_CASE("codes map back to the quantised levels", "[dsp][dither]") {
     CHECK(rp::dsp::codeToLevel(65535, 16) == 1.0f);
     // The LSDj kit decoder's level for a 4-bit code (SampleUtil::convertNibblesToF32), so a dither node's audio is
     // what the Game Boy would play.
-    for (std::uint32_t c = 0; c < 16; ++c) CHECK(rp::dsp::codeToLevel(c, 4) == (static_cast<float>(c) / 15.0f) * 2.0f - 1.0f);
+    for (std::uint32_t c = 0; c < 16; ++c) {
+        CHECK(rp::dsp::codeToLevel(c, 4) == (static_cast<float>(c) / 15.0f) * 2.0f - 1.0f);
+    }
 }
 
 TEST_CASE("init clamps the bit depth and a NaN reads as the lowest code", "[dsp][dither]") {
@@ -725,11 +728,47 @@ TEST_CASE("the resampler's available count follows what is pushed and pulled", "
     while (r.available() == 0 && pushed < 8 * rp::dsp::Resampler::kChunk) pushed += r.push(in.data(), in.size());
     const std::size_t produced = r.available();
     CHECK(produced > 0);
-    CHECK(pushed <= 8 * rp::dsp::Resampler::kChunk);  // it stopped as soon as there was something to pull
+    // The loop's own bound proves nothing, so both ends do: the run-in keeps output from the first chunk, and the
+    // output arrived before the bound, so the loop stopped on `available`, not on the bound.
+    CHECK(pushed > rp::dsp::Resampler::kChunk);
+    CHECK(pushed < 8 * rp::dsp::Resampler::kChunk);
 
     float out[64] = {};
     CHECK(r.pull(out, std::size(out)) == std::size(out));
     CHECK(r.available() == produced - std::size(out));
+}
+
+TEST_CASE("a failed r8brain allocation throws out of init and leaves it unbuilt", "[dsp][resample]") {
+    // r8brain allocates its filter banks and buffers in the constructor and checks each result with an assertion that
+    // compiles to nothing, so dsp/R8bAllocator.hpp points its two memory hooks at an allocator that throws. Pin that
+    // the hooks reach the library, then drive `init`'s failure itself: the limit is the allocator's test seam, and one
+    // byte makes the very first allocation fail, so nothing is left half-built to leak.
+    static_assert(std::is_base_of_v<rp::dsp::R8bAllocator, r8b::CDSPResampler24>,
+                  "r8brain's resampler must be built on the throwing allocator");
+    static_assert(std::is_base_of_v<rp::dsp::R8bAllocator, r8b::CFixedBuffer<double>>,
+                  "r8brain's buffers must come from the throwing allocator");
+
+    struct Limit {
+        explicit Limit(std::size_t bytes) { rp::dsp::R8bAllocator::allocationLimitForTest = bytes; }
+        ~Limit() { rp::dsp::R8bAllocator::allocationLimitForTest = 0; }
+        Limit(const Limit&)            = delete;
+        Limit& operator=(const Limit&) = delete;
+    };
+
+    rp::dsp::Resampler r;
+    r.init(44100.0, 11468.0);
+    REQUIRE(r.ready());
+    {
+        const Limit failing(1);
+        // Both hooks the library reaches a buffer through throw rather than hand back a null.
+        CHECK_THROWS_AS(rp::dsp::R8bAllocator::allocmem(64), std::bad_alloc);
+        CHECK_THROWS_AS(rp::dsp::R8bAllocator::reallocmem(nullptr, 64), std::bad_alloc);
+        CHECK_THROWS_AS(r.init(44100.0, 11468.0), std::bad_alloc);
+        CHECK_FALSE(r.ready());
+    }
+    // Unbuilt, not broken: the same resampler builds again once the memory is there.
+    r.init(44100.0, 11468.0);
+    CHECK(r.ready());
 }
 
 TEST_CASE("a re-initialised resampler starts a fresh stream", "[dsp][resample]") {

@@ -262,7 +262,7 @@ retroplug_add_test_binary(
              test/graph/Resources.test.cpp            # a node that reads a resource its settings name
              test/graph/QueueCapacity.test.cpp
              test/graph/PlannerBench.test.cpp         # hidden: run with "[bench]"
-             test/graph/Dsp.test.cpp                  # the rp::dsp kernels: streaming, no allocation, the kit's arithmetic
+             test/graph/Dsp.test.cpp                  # the rp::dsp kernels: streaming, no allocation, the kit's math
              test/graph/DspNodes.test.cpp             # the rp.dsp nodes, through real plans, against those kernels
              test/graph/DspResample.test.cpp          # rp.dsp.resample, through real plans, against its kernel
     LIBS     retroplug-graph

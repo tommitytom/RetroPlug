@@ -312,6 +312,11 @@ findings worth naming; each stage's own report is the full record.
   is load-bearing: r8brain's double output depends on how its input is split across calls (low bits in 60 to 90% of
   samples, though the cast to float hides almost all of it), so the fixed 1024-frame chunk rule is part of the bytes and
   nothing may feed r8brain host blocks. Two 20000-frame `[dsp]` cases make the reference likelier to see such a flip.
+  Its allocations are `::malloc` checked only by `R8BASSERT`, which compiles to nothing, so a failure would have left a
+  built resampler holding a null buffer: `dsp/R8bAllocator.hpp` points both of its memory hooks (`R8B_BASECLASS`,
+  `R8B_MEMALLOCCLASS`) at an allocator that throws, and every translation unit here reaches r8brain through it, so a
+  failed `init` is `std::bad_alloc` with `ready()` false. Its run-in is in the contract too: output lags input, and the
+  first frames of 44100 -> 11468 come after seven chunks, so a consumer pushes ahead of what it plays.
 - **Can `retroplug-graph-test` link the DSP libraries without the core, and do the Pico refusals hold?** Yes to both.
   The test links `retroplug-graph` + `retroplug-dsp-nodes` + `retroplug-dsp-kernels` (and the resample library for
   `Dsp.test.cpp`'s reference), with no core, txiki, efsw, LVGL or backend; `nm -u` of the kernels plus r8brain shows

@@ -15,6 +15,11 @@
 // how many frames it took) until `pull` makes room, so neither ever allocates. A puller wanting N frames alternates
 // the two until it has them. The resampler and the store are built in `init`, on the control thread: r8brain
 // allocates there, and only there (its `process` writes into buffers it sized at construction).
+//
+// The run-in is part of the contract: r8brain's filter keeps output behind input, so the first chunks can produce no
+// output at all (44100 -> 11468 gives its first frames after seven chunks), and the lag is in its latency, not in the
+// kernel's. A consumer must therefore push ahead of what it plays, and the first frames it pulls are the source's
+// first frames, not a loss.
 
 #include <cstddef>
 #include <memory>
@@ -33,8 +38,10 @@ public:
     Resampler& operator=(Resampler&&) noexcept;
 
     // Builds the resampler and its stores for `inRate` -> `outRate` (both > 0), discarding any stream in progress.
-    // Allocates; throws std::bad_alloc when it cannot, leaving the resampler unbuilt (`ready()` is false) rather than
-    // holding the old stream, so a caller that catches the throw can drop it or call `init` again.
+    // Allocates, r8brain's own buffers included; throws std::bad_alloc when it cannot (a failed r8brain allocation is
+    // an exception rather than the null buffer its compiled-out assertion would leave, dsp/R8bAllocator.hpp), leaving
+    // the resampler unbuilt (`ready()` is false) rather than holding the old stream, so a caller that catches the throw
+    // can drop it or call `init` again.
     void init(double inRate, double outRate);
     bool ready() const noexcept { return impl_ != nullptr; }
 
